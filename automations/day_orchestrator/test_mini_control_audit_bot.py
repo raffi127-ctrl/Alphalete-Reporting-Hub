@@ -76,8 +76,30 @@ class AuditBotWindow(unittest.TestCase):
     def test_quarantine_refuses_escape(self):
         self.assertFalse(mc._action_audit_bot_quarantine("../../etc/hosts")[0])
 
+    def test_deploy_backs_up_and_refuses_broken_code(self):
+        repo = Path(self.tmp.name) / "repo"
+        p = mock.patch.object(mc, "_audit_bot_repo_dir",
+                              return_value=repo)
+        p.start()
+        self.addCleanup(p.stop)
+        repo.mkdir()
+        (self.rt / ".runtime" / "audit.py").write_text("OLD = 1\n")
+        (repo / "audit.py").write_text("def broken(:\n")
+        ok, msg = mc._action_audit_bot_deploy("audit.py")
+        self.assertFalse(ok, msg)
+        self.assertEqual((self.rt / ".runtime" / "audit.py").read_text(), "OLD = 1\n")
+        (repo / "audit.py").write_text("NEW = 2\n")
+        with mock.patch.object(mc.subprocess, "run", wraps=mc.subprocess.run) as run:
+            ok, msg = mc._action_audit_bot_deploy("audit.py")
+        self.assertTrue(ok, msg)
+        self.assertEqual((self.rt / ".runtime" / "audit.py").read_text(), "NEW = 2\n")
+        backups = list((self.rt / ".runtime").glob("backup-*/audit.py"))
+        self.assertEqual(backups[0].read_text(), "OLD = 1\n")
+        self.assertFalse(mc._action_audit_bot_deploy(".env")[0])
+
     def test_actions_registered_and_off_budget(self):
-        for a in ("audit_bot_ls", "audit_bot_peek", "audit_bot_quarantine"):
+        for a in ("audit_bot_ls", "audit_bot_peek", "audit_bot_quarantine",
+                  "audit_bot_snapshot", "audit_bot_deploy"):
             self.assertIn(a, mc.ACTIONS)
             self.assertIn(a, mc.PLUMBING_ACTIONS)
 

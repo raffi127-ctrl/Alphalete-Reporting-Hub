@@ -273,6 +273,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # output/logs, and one bounded move-aside. Diagnosing a
                     # crash-looping bot must not spend the report budget.
                     "audit_bot_ls", "audit_bot_peek", "audit_bot_quarantine",
+                    "audit_bot_snapshot", "audit_bot_deploy",
                     # A HAND-SENT TEXT IS NOT REPORT CHURN: one message per row,
                     # typed by a person. On 2026-09-23 the cap (hit by a day of
                     # log reads + a backfill) held Khalil's group test until
@@ -1834,6 +1835,122 @@ def _action_audit_bot_quarantine(args: str) -> tuple[bool, str]:
     os.rename(src, dest)
     return True, (f"[{label}] moved {raw} -> failed/{src.name} "
                   f"({dest.stat().st_size:,} bytes, nothing deleted)")
+
+
+# The bot's code lived ONLY on Lucy 1 — no history, and no way to read or change
+# it from off the office LAN. snapshot copies it INTO the repo (and pushes);
+# deploy copies the repo's version back into .runtime. Secrets never travel:
+# .env is never copied, and any file whose text looks like a token is skipped.
+# (Megan OK'd the bot's code living in the private Hub repo, 2026-10-20.)
+_AUDIT_BOT_CODE_EXT = {".py", ".sh", ".txt", ".md", ".json"}
+_AUDIT_BOT_TOKEN_RE = re.compile(r"xox[abpr]-|xapp-|AIza[0-9A-Za-z_-]{20}|sk-[A-Za-z0-9]{20}")
+
+
+def _audit_bot_repo_dir(label: str) -> Path:
+    return REPO_ROOT / "automations" / "audit_bot" / label
+
+
+def _action_audit_bot_snapshot(args: str) -> tuple[bool, str]:
+    """Copy the audit bot's CODE (top-level .py/.sh/.txt/.md/.json in .runtime,
+    no .env, nothing that contains a token) into automations/audit_bot/<raf|
+    colten>/ and commit + push ONLY that folder.
+
+      audit_bot_snapshot
+      audit_bot_snapshot colten"""
+    root, _rest, label = _audit_bot_root(shlex.split(args or ""))
+    rt = root / ".runtime"
+    if not rt.is_dir():
+        return False, f"no such folder: {rt}"
+    dest = _audit_bot_repo_dir(label)
+    dest.mkdir(parents=True, exist_ok=True)
+    copied, skipped = [], []
+    for p in sorted(rt.iterdir()):
+        if not p.is_file() or p.suffix.lower() not in _AUDIT_BOT_CODE_EXT:
+            continue
+        if _AUDIT_BOT_SECRET_RE.search(p.name) or p.stat().st_size > 512 * 1024:
+            skipped.append(p.name)
+            continue
+        text = p.read_text(encoding="utf-8", errors="replace")
+        if _AUDIT_BOT_TOKEN_RE.search(text):
+            skipped.append(p.name + " (token)")
+            continue
+        (dest / p.name).write_text(text, encoding="utf-8")
+        copied.append(p.name)
+    rel = str(dest.relative_to(REPO_ROOT))
+
+    def _git(*a):
+        return subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                              capture_output=True, text=True, timeout=120)
+    _git("add", "--", rel)
+    if _git("diff", "--cached", "--quiet", "--", rel).returncode == 0:
+        return True, (f"{len(copied)} file(s) already match the repo — nothing "
+                      f"to commit. skipped: {', '.join(skipped) or 'none'}")
+    r = _git("-c", "user.name=Alphalete Runner",
+             "-c", "user.email=alphaletereporting@gmail.com",
+             "commit", "-m",
+             f"audit bot: snapshot {label}'s live code from Lucy 1\n\n"
+             f"- {len(copied)} file(s) from ~/{root.name}/.runtime\n"
+             f"- skipped (secrets/size): {', '.join(skipped) or 'none'}\n\n"
+             "Co-Authored-By: Claude <noreply@anthropic.com>", "--", rel)
+    if r.returncode != 0:
+        return False, f"commit failed: {(r.stderr or r.stdout).strip()[:200]}"
+    r = _git("pull", "--rebase", "--autostash", "origin", "main")
+    if r.returncode != 0:
+        return False, f"rebase failed (commit is local): {(r.stderr or r.stdout).strip()[:200]}"
+    r = _git("push", "origin", "HEAD:main")
+    if r.returncode != 0:
+        return False, f"push failed (commit is local): {(r.stderr or r.stdout).strip()[:200]}"
+    head = _git("log", "--oneline", "-1").stdout.strip()
+    return True, (f"pushed {head[:60]} · {len(copied)} file(s) · skipped: "
+                  f"{', '.join(skipped) or 'none'}")
+
+
+def _action_audit_bot_deploy(args: str) -> tuple[bool, str]:
+    """Install the repo's copy of named bot files into .runtime, then restart
+    ONLY the audit watcher. The old files go to .runtime/backup-<stamp>/ first,
+    and a .py that doesn't compile is refused before anything is touched.
+
+      audit_bot_deploy audit.py
+      audit_bot_deploy colten audit.py slack_watcher.py"""
+    import shutil
+    root, names, label = _audit_bot_root(shlex.split(args or ""))
+    if not names:
+        return False, "usage: audit_bot_deploy [colten] <file> [file…]"
+    rt, src_dir = root / ".runtime", _audit_bot_repo_dir(label)
+    for n in names:
+        if "/" in n or ".." in n or _AUDIT_BOT_SECRET_RE.search(n):
+            return False, f"refused: {n!r}"
+        if not (src_dir / n).is_file():
+            return False, f"not in the repo: {src_dir.name}/{n} (run `update` first?)"
+        if n.endswith(".py"):
+            c = subprocess.run([sys.executable, "-m", "py_compile", str(src_dir / n)],
+                               capture_output=True, text=True, timeout=60)
+            if c.returncode != 0:
+                return False, f"{n} does not compile — nothing deployed: {c.stderr.strip()[-200:]}"
+    backup = rt / f"backup-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    backup.mkdir()
+    for n in names:
+        if (rt / n).exists():
+            shutil.copy2(rt / n, backup / n)
+        shutil.copy2(src_dir / n, rt / n)
+    # Restart the audit watcher (the heartbeat brings it straight back). Only
+    # processes whose working folder is THIS bot copy — never the other twin.
+    killed = []
+    ps = subprocess.run(["ps", "-axo", "pid,command"], capture_output=True,
+                        text=True, timeout=15).stdout
+    for line in ps.splitlines():
+        if "audit.py --watch" not in line:
+            continue
+        pid = line.split()[0]
+        cwd = subprocess.run(["lsof", "-a", "-p", pid, "-d", "cwd", "-Fn"],
+                             capture_output=True, text=True, timeout=15).stdout
+        if any(l == "n" + str(rt) for l in cwd.splitlines()):
+            subprocess.run(["kill", pid], timeout=15)
+            killed.append(pid)
+    return True, (f"[{label}] deployed {', '.join(names)} (old copies in "
+                  f"{backup.name}/); stopped audit watcher pid(s) "
+                  f"{', '.join(killed) or 'none found'} — heartbeat restarts it "
+                  "within 5 min")
 
 
 def _action_install_night_knocks(args: str) -> tuple[bool, str]:
@@ -8868,6 +8985,8 @@ ACTIONS = {
     "audit_bot_ls": _action_audit_bot_ls,
     "audit_bot_peek": _action_audit_bot_peek,
     "audit_bot_quarantine": _action_audit_bot_quarantine,
+    "audit_bot_snapshot": _action_audit_bot_snapshot,
+    "audit_bot_deploy": _action_audit_bot_deploy,
     "text_replies": _action_text_replies,
     "install_night_knocks": _action_install_night_knocks,
     "install_ad_photo_threads": _action_install_ad_photo_threads,
