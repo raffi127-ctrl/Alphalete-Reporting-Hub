@@ -129,6 +129,7 @@ METRICS_CITY = {
     "nii": "wilkes_barre", "jacob": "memphis",
     "jairo": "miami",           # Profits Management, Miami (305)
     "frank": "deerfield_beach", # Peak Management, Deerfield Beach FL (Megan 2026-10-09); ECO key frank
+    "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
     "tre": "houston",           # Mission III Management, Houston -- #mission-iii-sales (2026-10-07)
 }
