@@ -762,6 +762,67 @@ AUTOMATED_REPORTS = [
             "message_failed": "❌ Below the Mark failed — see the log above.",
         },
     },
+    # Lucy Focus Report Fixer — its own LaunchAgent (com.alphalete.focus-report-fixer),
+    # Mondays 18:00 on Lucy 4 (Eve 2026-10-19), NOT the 4am batch. CARD ID
+    # MUST SLUG-MATCH the wrapper's report_id (`focus_report_fixer`).
+    {
+        "id": "focus-report-fixer",
+        "name": "Lucy Focus Report Fixer",
+        "category": "📊 Metrics",
+        "creator": "Eve & Claude",
+        "emoji": "🛠",
+        "color": "#34A853",
+        "assignees": ["Lucy 4"],
+        "run_machine": "Lucy 4",
+        "run_rerun_id": "focus_report_fixer",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],
+            "time": "6:00 PM",
+            "time_label": "Mondays 6 PM",
+            "estimated_minutes": 10,
+        },
+        "sheet_url": (
+            "https://docs.google.com/spreadsheets/d/"
+            "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
+        ),
+        "description": (
+            "Every Monday at the end of the day, checks every office tab of the "
+            "four Focus Report books — **ATT Program**, **Alphalete Org 1on1s**, "
+            "**NDS Program** and **Carlos 1on1s** — and fixes what broke: "
+            "formulas showing **#REF!**, a week left empty in a formula row, "
+            "and color rules that can never work."
+            "\n\n"
+            "Each tab is compared with the template of its own campaign (B2B, "
+            "NDS, JE, BOX, Retail, Frontier, Fiber). A copy of every tab it "
+            "writes is saved first."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads every office tab of the four books (Raf Hidalgo's tab "
+            "is only read, never written).\n"
+            "**•** **#REF!** → puts back the formula the rest of that row uses "
+            "(the template if the whole row is broken) — only when that just "
+            "fills the hole and leaves the rest of the formula as it was.\n"
+            "**•** An empty week between two weeks that have the row's formula "
+            "gets the formula back. Future weeks are never filled.\n"
+            "**•** Deletes color rules carrying #REF! or repeated exactly.\n"
+            "\n"
+            "WHAT TO WATCH\n"
+            "**•** Everything else is only listed, in "
+            "`output/focus_report_fixer/<date>_report.md`: a different formula "
+            "than the rest of the row, a template row missing on the tab, week "
+            "dates out of order, errors in the last 4 weeks.\n"
+            "**•** More than 400 fixes on one tab means it read the tab wrong: "
+            "nothing is written there.\n"
+            "**•** Backups: `output/focus_report_fixer/backup_<date>_<tab>.json`."
+        ),
+        "post_run": {
+            "message_success": "✅ Focus Report Fixer — the four books checked and fixed.",
+            "message_failed": "❌ Focus Report Fixer failed — see the log above.",
+        },
+    },
     # Intraday knock boards — its own LaunchAgent (com.alphalete.knocks-intraday)
     # ticking every 5 min, NOT the 4am batch, so self_scheduled puts it under
     # ⏰ TIME SET REPORTS with its real times on the pill (Megan 2026-08-25).
