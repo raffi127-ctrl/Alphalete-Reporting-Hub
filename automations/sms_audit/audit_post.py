@@ -89,6 +89,9 @@ NOT_A_NAME = {"who", "how", "what", "for", "the", "mr", "mrs", "miss",
 MIN_CALLS = 3
 # How many people get their own reply before the rest are one line.
 MAX_PEOPLE = 5
+# Marks the DAY STREAK. Deliberately not a flag: the issues found
+# on the day are what "flag" means everywhere else in this audit.
+STREAK_DOT = "\U0001F534"
 
 
 def _spoken(rec):
@@ -195,7 +198,7 @@ def summary(rows):
     # just the calls: texts, AppStream settings and the
     # confirmation-call check are sections that join it here.
     out = ["*Booking calls* — {} audited · {} caller{} · {} clean, "
-           "{} with a flag"
+           "{} with an issue"
            .format(n, people, "" if people == 1 else "s", clean, n - clean)]
     shown = [r for r in rows if r.get("shown") is not None]
     if shown:
@@ -203,7 +206,7 @@ def summary(rows):
         out.append("Of the {} with a known outcome so far, {:.0f}% showed."
                    .format(len(shown), 100.0 * s / len(shown)))
     if flagged:
-        out.append("{} caller{} flagged below.".format(
+        out.append("{} caller{} below.".format(
             flagged, "" if flagged == 1 else "s"))
     return "\n".join(out)
 
@@ -213,12 +216,18 @@ def person_block(name, hits, streak=0):
 
     The quote is the point. "You named a location on 3 calls" is an argument;
     "We are located in Irving, Texas, at 0:31" is a fact."""
-    # One red flag per day in a row. Someone on their fourth day is a
-    # different conversation from someone on their first, and the row
-    # should say so before the name does.
-    lines = ["{}*{}* — {} flag{}".format(
-        ("\U0001F6A9" * streak + " ") if streak else "",
-        name, len(hits), "" if len(hits) == 1 else "s")]
+    # TWO DIFFERENT COUNTS, SO TWO DIFFERENT WORDS. Megan 2026-10-20:
+    # "calling both flags and then using a flag to mark the day is
+    # confusing". The dots are DAYS IN A ROW; the issues are what they
+    # did wrong today. Each number says which it is, and the streak
+    # emoji is not the same symbol as the thing being counted.
+    lines = []
+    head = "*{}* — {} issue{} today".format(
+        name, len(hits), "" if len(hits) == 1 else "s")
+    if streak > 1:
+        head = "{} {}  ·  {} days in a row".format(
+            STREAK_DOT * streak, head, streak)
+    lines.append(head)
     seen = collections.Counter(h[0] for h in hits)
     for key, cnt in seen.most_common():
         lines.append("• {}{}".format(G.SHORT.get(key, key),
