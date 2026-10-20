@@ -70,6 +70,18 @@ THREADS_SINCE = "2026-09-14"
 # again the thread is pinned back (post.reconcile_pins).
 STALE_PIN_DAYS = 21
 
+# Live / closed mark on each thread's title (Maddie + Carlos 2026-10-20): an ad
+# with a 1st round in the last LIVE_AD_DAYS gets "✅ " before its title, one
+# without gets "❌ " (closed). 7 = Carlos's "doesn't get a 1st round Monday -
+# Friday". Eve 10/20: every office ("all"); a set of keys narrows it again.
+LIVE_AD_DAYS = 7
+STATUS_MARK_OFFICES = "all"
+
+
+def marks_on(key: str) -> bool:
+    """Does office `key` get the live/closed mark on its thread titles?"""
+    return STATUS_MARK_OFFICES == "all" or key in STATUS_MARK_OFFICES
+
 # Threads that stay UNPINNED for good, {channel: {thread_ts}} -- the nightly
 # pin pass never puts them back. Raf's funnels got their own channels
 # 2026-09-28: these 9 threads in his original channel hold ONLY 2nd-funnel

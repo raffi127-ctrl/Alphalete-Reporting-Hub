@@ -55,9 +55,13 @@ def week_label(monday: dt.date, through: dt.date) -> str:
     return f"{days} · {week_tag(monday)}"
 
 
-def header_text(title: str, prefix: str = "") -> str:
-    """Just the ad title in bold (Carlos 10/5: the numbers moved inside)."""
-    return f"*{prefix}{title}*"
+LIVE, CLOSED = "✅ ", "❌ "
+
+
+def header_text(title: str, prefix: str = "", mark: str = "") -> str:
+    """Just the ad title in bold (Carlos 10/5: the numbers moved inside),
+    after the live/closed mark when the office has it (mark_status)."""
+    return f"{mark}*{prefix}{title}*"
 
 
 def stats_header(monday: dt.date, through: dt.date) -> str:
@@ -332,7 +336,7 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
                  only_keys: Optional[List[str]] = None,
                  history: Optional[Dict[str, List[tuple]]] = None,
                  skip=None, before_first=None, title_header: bool = False,
-                 on_done=None) -> Dict[str, object]:
+                 on_done=None, mark: str = "") -> Dict[str, object]:
     """Post (or re-post) one week's block in each ad's thread.
 
     `history` = ad_history() for the "Total stats for this ad" lines; left
@@ -348,6 +352,7 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
     `title_header` edits an existing header down to just the title (the old
     "- 50% Removed / Avg 3⭐ WE 9.20" headers) and opens a new thread when
     the header was deleted, rather than loose replies in the channel.
+    `mark` goes before the title (LIVE: an ad posted tonight is running).
     `on_done(item, ts, new)` runs after each ad's block is up, so the caller
     can save state ad by ad (a pass that dies halfway keeps what it did). Order inside the block: the list +
     photos, then the numbers -- each upload waits until it is visible in the
@@ -386,12 +391,12 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
             if title_header:
                 try:
                     cl.chat_update(channel=channel, ts=ts,
-                                   text=header_text(item["title"], prefix))
+                                   text=header_text(item["title"], prefix, mark))
                 except Exception as e:           # noqa: BLE001 — never costs the photos
                     print(f"  header update failed for {item['title']!r}: {str(e)[:160]}")
         else:
             ts = cl.chat_postMessage(channel=channel,
-                                     text=header_text(item["title"], prefix))["ts"]
+                                     text=header_text(item["title"], prefix, mark))["ts"]
             threads[item["key"]] = ts
             counts["threads_new"] += 1
             counts["new_keys"].append(item["key"])
@@ -479,13 +484,48 @@ def _recorder(channel: str, monday: dt.date, cl, out: dict, pin: bool = True):
     return done
 
 
+def mark_status(channel: str, today: dt.date, *, cl=None, dry_run: bool = False,
+                fresh=()) -> Dict[str, List[str]]:
+    """Maddie + Carlos 10/20: "put an X on that ad title or a CHECK if it's
+    still live". Every thread's title gets LIVE when the ad had a 1st round
+    in the last config.LIVE_AD_DAYS, CLOSED when not; a closed ad that gets a
+    1st round again turns back to LIVE on its own. Only titles whose mark
+    changed are edited (state "mark"), so most nights cost no Slack call.
+    `fresh` = keys whose header publish_week just wrote with LIVE."""
+    state = post._load_state()
+    wk = _forever(state, channel)
+    out: Dict[str, List[str]] = {"live": [], "closed": [], "failed": []}
+    for key, ad in sorted(wk.items(), key=lambda kv: (kv[1].get("title") or kv[0]).lower()):
+        ts, title, last = ad.get("thread_ts"), ad.get("title"), post.last_active(ad)
+        if not (ts and title and last):
+            continue
+        want = LIVE if (today - last).days < config.LIVE_AD_DAYS else CLOSED
+        if key in fresh:
+            ad["mark"] = LIVE
+        if ad.get("mark") == want:
+            continue
+        if not dry_run:
+            try:
+                (cl or collect._client()).chat_update(
+                    channel=channel, ts=ts, text=header_text(title, mark=want))
+            except Exception as e:               # noqa: BLE001 — next title still runs
+                out["failed"].append(f"{title}: {str(e)[:120]}")
+                continue
+            ad["mark"] = want
+        out["live" if want == LIVE else "closed"].append(title)
+    if not dry_run:
+        post._save_state(state)
+    return out
+
+
 def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
-                    crop: bool = True, cache: Optional[dict] = None
-                    ) -> Dict[str, object]:
+                    crop: bool = True, cache: Optional[dict] = None,
+                    mark: bool = False) -> Dict[str, object]:
     """The evening post for a weekly channel: this week's days so far are
     read (the sheet once), and every ad whose block changed since last
     evening gets it re-posted (Monday's "Monday", Tuesday's "Monday -
-    Tuesday", ...). Same counts keys post.publish returns, for the pin DM."""
+    Tuesday", ...). Same counts keys post.publish returns, for the pin DM.
+    `mark` = the office has the live/closed title mark (mark_status)."""
     build = build or collect.build
     cl = cl or collect._client()
     monday = post.week_monday(day)
@@ -510,7 +550,8 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
     history = ad_history(reports[-1].book, since, day, cache=cache)
     got = publish_week(reports, channel, cl=cl, threads=threads, crop=crop,
                        history=history, skip=unchanged, title_header=True,
-                       on_done=_recorder(channel, monday, cl, out))
+                       on_done=_recorder(channel, monday, cl, out),
+                       mark=LIVE if mark else "")
     for k in ("threads_new", "blocks", "cleared", "photos"):
         out[k] += got[k]
     seconds = load_seconds()
@@ -520,6 +561,12 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
                                                     seconds, cl=cl)
         except Exception as e:                   # noqa: BLE001 — never costs the post
             print(f"  2nd-round refresh failed: {type(e).__name__}: {str(e)[:160]}")
+    if mark:
+        try:
+            m = mark_status(channel, day, cl=cl, fresh=got["keys"])
+            out["marked"] = {k: len(v) for k, v in m.items()}
+        except Exception as e:                   # noqa: BLE001 — never costs the post
+            print(f"  live/closed marks failed: {type(e).__name__}: {str(e)[:160]}")
     return out
 
 

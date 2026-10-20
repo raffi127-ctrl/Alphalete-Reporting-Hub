@@ -200,6 +200,34 @@ def redo_all(through: dt.date, crop: bool = True) -> int:
     return 1 if failed else 0
 
 
+def mark_all(day: dt.date, apply: bool, channel: Optional[str] = None) -> int:
+    """`--mark-status`: the live ✅ / closed ❌ mark on the thread titles, now.
+    `channel` = that one channel; None = every live office (`--office all`,
+    Eve 10/20). Lists only unless `apply`."""
+    from automations.ad_photo_threads import config, weekly
+    if channel:
+        targets = [("", channel)]
+    else:
+        targets = [(o["key"], o["live_channel"]) for o in config.OFFICES if o.get("live")]
+    verb, failed = ("" if apply else "WOULD BE "), 0
+    for key, ch in targets:
+        if not weekly.is_weekly(ch):
+            print(f"[{key or ch}] not weekly yet, skipped")
+            continue
+        got = weekly.mark_status(ch, day, dry_run=not apply)
+        for t in got["live"]:
+            print(f"[{key or ch}] {verb}✅ {t}")
+        for t in got["closed"]:
+            print(f"[{key or ch}] {verb}❌ {t}")
+        for t in got["failed"]:
+            print(f"[{key or ch}] FAILED {t}")
+        failed += len(got["failed"])
+        print(f"[{key or ch}] {len(got['live'])} to live, {len(got['closed'])} to closed")
+    if not apply:
+        print("Nothing changed -- add --apply.")
+    return 1 if failed else 0
+
+
 def _scheduled_merges() -> None:
     """config.SCHEDULED_MERGES, {office key: "YYYY-MM-DD"}: on the first tick
     on/after that date (Central), fold that office's duplicate threads once.
@@ -262,7 +290,8 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
           + (" (weekly)" if weekly_layout else ""))
     print(summary(rep))
     if weekly_layout:
-        counts = weekly.publish_nightly(day, channel, cache=cache)
+        counts = weekly.publish_nightly(day, channel, cache=cache,
+                                        mark=config.marks_on(o["key"]))
     else:
         counts = post.publish(rep, channel)
     print("\nPosted:", counts)
@@ -390,6 +419,11 @@ def main(argv=None) -> int:
                            "(Carlos 10/7): Lucy's daily replies out, one block per "
                            "week back in, same threads. --date = through, --since "
                            "= first day. The nightly goes weekly for that channel after.")
+    mode.add_argument("--mark-status", action="store_true",
+                      help="Put the live ✅ / closed ❌ mark on every ad title in "
+                           "the office's weekly channel now (the nightly keeps "
+                           "it up for config.STATUS_MARK_OFFICES). Lists only "
+                           "unless you add --apply.")
     ap.add_argument("--since", help="With --redo-weekly: first day YYYY-MM-DD "
                                     "(default: the channel's first posted day).")
     mode.add_argument("--scorecard", action="store_true",
@@ -449,6 +483,9 @@ def main(argv=None) -> int:
     if a.redo_weekly and a.office == "all":
         return redo_all(dt.date.fromisoformat(a.date) if a.date else collect.central_today(),
                         crop=not a.no_crop)
+    if a.mark_status and a.office == "all":
+        day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
+        return mark_all(day, a.apply)
     from automations.ad_photo_threads import config
     config.use(config.office(a.office or "rafael"))
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
@@ -494,6 +531,8 @@ def main(argv=None) -> int:
         for t in got["untouched"]:
             print(f"  untouched (old layout kept): {t}")
         return 0
+    if a.mark_status:
+        return mark_all(day, a.apply, a.channel or config.LIVE_CHANNEL_ID)
     if a.add_photo or a.add_notes or a.unmerge or a.merge_dups or a.watch:
         from automations.ad_photo_threads import weekly
         if weekly.is_weekly(a.channel or config.LIVE_CHANNEL_ID):

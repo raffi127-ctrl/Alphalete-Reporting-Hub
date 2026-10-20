@@ -151,10 +151,11 @@ class LiveSlack(ThreadSlack):
 
     def __init__(self):
         super().__init__()
-        self.pins, self.updates = [], {}
+        self.pins, self.updates, self.updates_log = [], {}, []
 
     def chat_update(self, **kw):
         self.updates[kw["ts"]] = kw["text"]
+        self.updates_log.append(kw["ts"])
         for m in self.msgs:
             if m["ts"] == kw["ts"]:
                 m["text"] = kw["text"]
@@ -248,6 +249,30 @@ class LivePathTest(unittest.TestCase):
         ad = post._load_state()["C1"]["weeks"]["forever"]["frisco"]
         self.assertIn(tue.isoformat(), ad["days"])              # reconcile_pins reads days
         self.assertEqual(ad["stats"][tue.isoformat()]["removed"], 1)
+
+    def test_live_closed_mark_on_the_title(self):
+        """Maddie + Carlos 10/20: ✅ while the ad had a 1st round in the last
+        7 days, ❌ after a week without one, ✅ again when it comes back."""
+        cl = LiveSlack()
+        by_day = {MON: [cand("Ana")]}
+        weekly.redo_channel("C1", MON, since=MON, cl=cl, build=week_of(by_day), crop=False)
+        ts = post._load_state()["C1"]["weeks"]["forever"]["frisco"]["thread_ts"]
+        weekly.publish_nightly(MON + dt.timedelta(days=1), "C1", cl=cl,
+                               build=week_of(by_day), crop=False, mark=True)
+        self.assertEqual(cl.updates[ts], "✅ *ATT Sales Rep Frisco*")
+        nxt = MON + dt.timedelta(days=7)
+        dry = weekly.mark_status("C1", nxt, cl=cl, dry_run=True)
+        self.assertEqual(dry["closed"], ["ATT Sales Rep Frisco"])
+        self.assertEqual(cl.updates[ts], "✅ *ATT Sales Rep Frisco*")     # dry run edits nothing
+        weekly.publish_nightly(nxt, "C1", cl=cl, build=week_of(by_day), crop=False, mark=True)
+        self.assertEqual(cl.updates[ts], "❌ *ATT Sales Rep Frisco*")
+        n = len(cl.updates_log)
+        weekly.mark_status("C1", nxt, cl=cl)
+        self.assertEqual(len(cl.updates_log), n)                          # unchanged: no Slack call
+        by_day[nxt + dt.timedelta(days=1)] = [cand("Bo")]
+        weekly.publish_nightly(nxt + dt.timedelta(days=1), "C1", cl=cl,
+                               build=week_of(by_day), crop=False, mark=True)
+        self.assertEqual(cl.updates[ts], "✅ *ATT Sales Rep Frisco*")
 
     def test_redo_since_keeps_earlier_daily_replies(self):
         """Drew 10/8: the old source channel is gone, so --since 9/28 keeps
