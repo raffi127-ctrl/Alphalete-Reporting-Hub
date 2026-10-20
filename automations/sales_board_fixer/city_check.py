@@ -48,6 +48,11 @@ from automations.terminated_reps.board import base_name
 
 LOCATION = "location"
 HUB_PHASE = "sales-board-city-check"
+# Raf's Loom (2026-10-18): "Allison, maybe once a week ... or the AI somehow
+# pings if for a reason we don't have it". Eve 2026-10-20: a group DM, Lucy
+# sends, Alisson + Evelyn in it. Lucy is the token's owner, so she is implied.
+DM_USERS = ("U0BBG374GE9",   # Alisson Rodriguez
+            "U088E2KJEV8")   # Evelyn (Eve)
 
 
 class Change(NamedTuple):
@@ -142,6 +147,30 @@ def blueink_cities(names: List[str]) -> Dict[str, Dict[str, str]]:
     return out
 
 
+def dm_text(title: str, blanks: List[tuple], why: Dict[str, str]) -> str:
+    """The Tuesday ping: only the reps still WITHOUT a city after the fill.
+    Empty string = nothing to ask anyone, so nothing is sent."""
+    if not blanks:
+        return ""
+    lines = ["*%s* - %d rep%s still %s no city in *Location* and Blue Ink "
+             "doesn't have it either. Please add it by hand:"
+             % (title, len(blanks), "" if len(blanks) == 1 else "s",
+                "has" if len(blanks) == 1 else "have")]
+    lines += ["- %s (%s)" % (n, why.get(n) or "no signed Blue Ink packet")
+              for _, n, _ in blanks]
+    return "\n".join(lines)
+
+
+def send_dm(text: str) -> str:
+    """Group DM as Lucy (the user token on Lucy 2, as_bot=False on purpose --
+    see reference_lucy-slack-identity). conversations_open is idempotent: the
+    same three people get the same DM every week."""
+    from automations.shared import slack_metrics_post as smp
+    cl = smp._client()
+    ch = cl.conversations_open(users=",".join(DM_USERS))["channel"]["id"]
+    return cl.chat_postMessage(channel=ch, text=text).get("ts", "")
+
+
 def _note_request(sheet_id: int, row: int, col: int, old_note: str,
                   before: str, after: str, when: str) -> dict:
     text = "Lucy (%s): city from Blue Ink. Was: %s." % (when, before or "blank")
@@ -197,6 +226,8 @@ def main(argv=None) -> int:
     ap.add_argument("--apply", action="store_true", help="escribir (backup antes)")
     ap.add_argument("--sheet-id", default=R.SHEET_ID)
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
+    ap.add_argument("--no-dm", action="store_true",
+                    help="no mandar el DM a Alisson + Evelyn")
     a = ap.parse_args(argv)
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     title = R.week_tabs(today)[0]
@@ -235,6 +266,15 @@ def main(argv=None) -> int:
     if a.apply and changes:
         done = apply(sh, ws, col, changes)
         print("  escritas: %d" % len(done))
+    blanks = [m for m in missing if not m[2]]
+    text = dm_text(title, blanks, {n: v["why"] for n, v in info.items()})
+    if text and a.apply and not a.no_dm and a.sheet_id == R.SHEET_ID and not a.date:
+        try:
+            print("  DM Alisson + Evelyn:", send_dm(text))
+        except Exception as e:  # noqa: BLE001 -- the board is already fixed
+            print("  DM falló: %s: %s" % (type(e).__name__, str(e)[:200]))
+    elif text:
+        print("  DM (no se manda en esta corrida):\n" + text)
     if a.apply and a.sheet_id == R.SHEET_ID and not a.date:
         # a step on the Sales Board card, like the rest of the fixer
         R.hub_phase(HUB_PHASE, "Lucy Salesboard Fixer — rep cities", True)

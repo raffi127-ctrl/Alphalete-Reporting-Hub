@@ -55,3 +55,12 @@ def test_tidy_city():
     assert CC.tidy_city("  FORT   WORTH ") == "Fort Worth"
     assert CC.tidy_city("mckinney") == "McKinney"
     assert CC.tidy_city("Mc") == "Mc"
+
+
+def test_dm_lists_only_reps_still_blank():
+    blanks = [(19, "Samajai Hoy (Wk 2)", ""), (23, "Geovany Torres", "")]
+    text = CC.dm_text("Sales Board WE 10.25", blanks,
+                      {"Geovany Torres": "no signed Blue Ink packet"})
+    assert "2 reps" in text and "Samajai Hoy (Wk 2)" in text
+    assert "- Geovany Torres (no signed Blue Ink packet)" in text
+    assert CC.dm_text("Sales Board WE 10.25", [], {}) == ""
