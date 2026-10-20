@@ -43,18 +43,30 @@ class WhoMadeTheCall(unittest.TestCase):
             rows = [rec(said=spoken) for _ in range(5)]
             self.assertEqual(AP._who(rows[0], AP._roster(rows)), person, spoken)
 
-    def test_the_cs_test_callers_are_not_in_the_audit_at_all(self):
-        """Megan 2026-10-20: "Taylor and corey were testing for CS calls".
-        Grading a customer-service test against a booking rubric is noise."""
-        for spoken in ("Taylor", "Corey", "Korea"):
-            self.assertFalse(AP.is_recruiting(rec(said=spoken)), spoken)
-        self.assertTrue(AP.is_recruiting(rec(said="Danny")))
+    def test_the_phone_aliases_resolve_to_the_real_person(self):
+        """Dani Pena, 2026-10-20: "Zalika goes by Taylor, Reuben goes by
+        Corey, and Tyrique goes by Josh."  Nothing in AppStream or
+        Ringover records this, so without it the audit credits people who
+        do not exist."""
+        for spoken, person in (("Taylor", "Zalika Henderson APT"),
+                               ("Corey", "Reuben Martinez"),
+                               ("Korea", "Reuben Martinez"),
+                               ("Josh", "Tyrique")):
+            rows = [rec(said=spoken) for _ in range(5)]
+            self.assertEqual(AP._who(rows[0], AP._roster(rows)), person, spoken)
 
-    def test_a_different_name_on_someone_elses_line_is_left_alone(self):
-        """Taylor is on Zalika's line but is not assumed to BE Zalika —
-        a second person sharing a line is likelier than a nickname."""
-        rows = [rec(said="Taylor", line="Zalika Henderson") for _ in range(5)]
-        self.assertEqual(AP._who(rows[0], AP._roster(rows)), "Taylor")
+    def test_nobody_is_excluded_from_the_audit(self):
+        """Taylor and Corey were briefly dropped as CS tests before the
+        alias list showed they are real recruiters."""
+        for spoken in ("Taylor", "Corey", "Danny"):
+            self.assertTrue(AP.is_recruiting(rec(said=spoken)), spoken)
+
+    def test_an_unmapped_name_is_left_alone(self):
+        """A name with no alias entry stands on its own rather than being
+        guessed at from the line — Raf's line alone carries three people,
+        so the line never identifies the caller."""
+        rows = [rec(said="Sidney", line="Zalika Henderson") for _ in range(5)]
+        self.assertEqual(AP._who(rows[0], AP._roster(rows)), "Sidney")
 
     def test_an_english_word_is_not_a_caller(self):
         """The intro regex catches "this is who" / "this is for"."""

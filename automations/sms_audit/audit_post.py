@@ -89,15 +89,26 @@ CANON = {"George": "Jorge Pena",
          "Dulce": "Dulce Lamb APT",
          "Letty": "Leticia Robinson", "Lettie": "Leticia Robinson",
          "Luddy": "Leticia Robinson", "Leslie": "Leticia Robinson",
-         "Letty Robinson": "Leticia Robinson"}
+         "Letty Robinson": "Leticia Robinson",
+         # THE PHONE ALIASES, from Dani Pena in #rafs-office-recruiting
+         # 2026-10-20, answering Cruise Turner asking for exactly this
+         # list "so we can track better on ring over":
+         #   "Zalika goes by Taylor, Reuben goes by Corey, and Tyrique
+         #    goes by Josh. Those are the only three admins."
+         # The line data agrees: Taylor was on Zalika Henderson's line
+         # 100% of 125 calls. Reuben is a floater, so Corey turns up on
+         # whichever line he is covering. Josh has not appeared yet.
+         "Taylor": "Zalika Henderson APT",
+         "Corey": "Reuben Martinez", "Korea": "Reuben Martinez",
+         "Square": "Reuben Martinez", "Cory": "Reuben Martinez",
+         "Josh": "Tyrique"}
 
-# NOT RECRUITERS. Megan 2026-10-20: "Taylor and corey were testing for
-# CS calls". Their calls are not recruiting calls, so they are dropped
-# from the audit entirely rather than merely left unmerged — grading a
-# customer-service test against a booking-call rubric is noise, and it
-# would put two people at the top of an offenders list they do not
-# belong on.
-NOT_RECRUITING = {"Taylor", "Corey", "Korea", "Square", "Cory"}
+# Nobody is excluded any more. Taylor and Corey were briefly dropped as
+# "CS test calls" (Megan 2026-10-20) before Dani's alias list arrived
+# the same day and showed they are two of the three admin aliases. The
+# calls themselves look like ordinary booking calls, so they are graded
+# — under the real person's name.
+NOT_RECRUITING = set()
 
 # "this is who", "this is how", "this is for" -- the intro regex catches
 # these and they are not people. A real name also recurs; a one-off is
