@@ -1355,6 +1355,18 @@ class StationsBoardLists(unittest.TestCase):
         self.assertTrue(any("STATIONS: board list H6 starts at row 6" in x
                             for x in found), found)
 
+    def test_the_terminated_helper_is_not_a_board_list(self):
+        """T5 stacks each board's TERMINATED rows from its own first data row
+        (6 / 10 / 8) on purpose -- flagged every morning until 2026-10-20."""
+        ok_nds = ("=IFERROR(SORT(FILTER('NDS Sales Board'!$B$5:$B$60,"
+                  "'NDS Sales Board'!$L$5:$L$60=\"NDS\")),\"\")")
+        term = ("=IFERROR(UNIQUE(TOCOL(VSTACK(IFERROR(FILTER('NDS Sales Board'!$B$6:$B$56,"
+                "'NDS Sales Board'!$P$6:$P$56=\"Terminated\"),\"\"),"
+                "IFERROR(FILTER('BOX Sales Board'!$B$10:$B$61,"
+                "'BOX Sales Board'!$P$10:$P$61=\"Terminated\"),\"\")),1)),\"\")")
+        ns = self.NEW_START.replace("'Sales Board'!$B$2", "'NDS Sales Board'!$B$2")
+        self.assertEqual(self._findings({7: ok_nds, 19: term, 22: ns}), [])
+
     def test_renamed_boards_lists(self):
         """The 2026-10-03 titles: 'NDS Sales Board' / 'Verizon Sales Board'
         lists from row 5 are fine, from row 6 are caught — and a new-start

@@ -1271,9 +1271,15 @@ def _audit_stations_tab(prefix, vals, form, week_board, known,
             n_formula += 1
             at = "%s%d" % (_a1col(j), i)
             starts = BOARD_RANGE.findall(c)
+            # THE TERMINATED HELPER IS NOT A BOARD LIST (2026-10-20). T5 stacks
+            # the boards' TERMINATED rows (FILTER ... ="Terminated") and reads
+            # each board from its own first data row (6 / 10 / 8) on purpose;
+            # it reported "top reps are being dropped" every morning.
+            terminated_helper = '"Terminated"' in c
             if starts:
                 n_board += 1
-                bad = sorted({s for s in starts if s != "5"})
+                bad = sorted({s for s in starts if s != "5"}
+                             ) if not terminated_helper else []
                 if bad:
                     out.append(f"{prefix}: board list {at} starts at row "
                                f"{'/'.join(bad)} instead of 5 — top reps are "
