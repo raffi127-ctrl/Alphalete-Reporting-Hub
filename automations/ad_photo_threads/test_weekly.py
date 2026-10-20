@@ -274,26 +274,27 @@ class LivePathTest(unittest.TestCase):
                                build=week_of(by_day), crop=False, mark=True)
         self.assertEqual(cl.updates[ts], "✅ *ATT Sales Rep Frisco*")
 
-    def test_pinned_live_ads_message(self):
-        """Rafael 10/20 "Pinned live ads is a great idea": one pinned message
-        lists the ✅ threads; edited in place, re-posted if deleted."""
+    def test_only_live_threads_stay_pinned(self):
+        """Eve 10/20: the pins ARE the live ads -- a ❌ thread loses its pin
+        the night it closes (not 21 days later); a leftover "Live ads"
+        message from 0137a391 comes down."""
         cl = LiveSlack()
+        cl.pins_remove = lambda **kw: cl.pins.remove(kw["timestamp"])
         by_day = {MON: [cand("Ana")]}
         weekly.redo_channel("C1", MON, since=MON, cl=cl, build=week_of(by_day), crop=False)
         ts = post._load_state()["C1"]["weeks"]["forever"]["frisco"]["thread_ts"]
-        weekly.publish_nightly(MON + dt.timedelta(days=1), "C1", cl=cl,
-                               build=week_of(by_day), crop=False, mark=True)
-        board = post._load_state()["C1"]["live_board"]
-        self.assertIn(board["ts"], cl.pins)
-        self.assertIn("ATT Sales Rep Frisco", board["text"])
-        self.assertIn(post.permalink("C1", ts), board["text"])
-        n = len(cl.updates_log)
-        weekly.live_board("C1", MON + dt.timedelta(days=1), cl=cl)
-        self.assertEqual(len(cl.updates_log), n)                          # same text: no call
-        weekly.live_board("C1", MON + dt.timedelta(days=7), cl=cl)        # closed now
-        self.assertEqual(cl.updates_log[-1], board["ts"])
-        self.assertNotIn("Frisco", cl.updates[board["ts"]])
-        self.assertIn("No live ads", cl.updates[board["ts"]])
+        self.assertIn(ts, cl.pins)
+        st = post._load_state()
+        st["C1"]["live_board"] = {"ts": "9.9", "text": "x", "pinned": True}
+        post._save_state(st)
+        cl.pins.append("9.9")
+        post.reconcile_pins(["C1"], today=MON + dt.timedelta(days=6), cl=cl, dry_run=False)
+        self.assertIn(ts, cl.pins)                                        # still ✅
+        post.reconcile_pins(["C1"], today=MON + dt.timedelta(days=7), cl=cl, dry_run=False)
+        self.assertNotIn(ts, cl.pins)                                     # ❌ = unpinned
+        self.assertTrue(weekly.drop_live_board("C1", cl=cl))
+        self.assertNotIn("9.9", cl.pins)
+        self.assertNotIn("live_board", post._load_state()["C1"])
 
     def test_redo_since_keeps_earlier_daily_replies(self):
         """Drew 10/8: the old source channel is gone, so --since 9/28 keeps

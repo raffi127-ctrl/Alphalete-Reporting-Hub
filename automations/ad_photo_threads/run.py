@@ -201,11 +201,11 @@ def redo_all(through: dt.date, crop: bool = True) -> int:
 
 
 def mark_all(day: dt.date, apply: bool, channel: Optional[str] = None) -> int:
-    """`--mark-status`: the live ✅ / closed ❌ mark on the thread titles and
-    the pinned "Live ads" message (weekly.live_board), now.
+    """`--mark-status`: the live ✅ / closed ❌ mark on the thread titles, and
+    the pins to match (only ✅ threads stay pinned, Eve 10/20), now.
     `channel` = that one channel; None = every live office (`--office all`,
     Eve 10/20). Lists only unless `apply`."""
-    from automations.ad_photo_threads import config, weekly
+    from automations.ad_photo_threads import config, post, weekly
     if channel:
         targets = [("", channel)]
     else:
@@ -224,9 +224,12 @@ def mark_all(day: dt.date, apply: bool, channel: Optional[str] = None) -> int:
             print(f"[{key or ch}] FAILED {t}")
         failed += len(got["failed"])
         print(f"[{key or ch}] {len(got['live'])} to live, {len(got['closed'])} to closed")
-        b = weekly.live_board(ch, day, dry_run=not apply)
-        print(f"[{key or ch}] pinned \"Live ads\" message: {b['ads']} ads, "
-              f"{verb}{b['action']}" + (f" -- {b['error']}" if b["error"] else ""))
+        pins = post.reconcile_pins([ch], today=day, dry_run=not apply).get(ch) or {}
+        print(f"[{key or ch}] pins: {verb}+{len(pins.get('pinned', []))} "
+              f"/ -{len(pins.get('unpinned', []))}, {len(pins.get('failed', {}))} failed")
+        failed += len(pins.get("failed", {}))
+        if weekly.drop_live_board(ch, dry_run=not apply):
+            print(f"[{key or ch}] {verb}removed the \"Live ads\" message")
     if not apply:
         print("Nothing changed -- add --apply.")
     return 1 if failed else 0
@@ -425,8 +428,8 @@ def main(argv=None) -> int:
                            "= first day. The nightly goes weekly for that channel after.")
     mode.add_argument("--mark-status", action="store_true",
                       help="Put the live ✅ / closed ❌ mark on every ad title in "
-                           "the office's weekly channel now, + the pinned \"Live "
-                           "ads\" message (the nightly keeps "
+                           "the office's weekly channel now, and pin only the ✅ "
+                           "threads (the nightly keeps "
                            "it up for config.STATUS_MARK_OFFICES). Lists only "
                            "unless you add --apply.")
     ap.add_argument("--since", help="With --redo-weekly: first day YYYY-MM-DD "

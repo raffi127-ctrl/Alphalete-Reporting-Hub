@@ -64,18 +64,19 @@ THREADS_SINCE = "2026-09-14"
 # An ad with no 1st round in this many days is treated as no longer running,
 # and its thread is unpinned -- so a channel's pins stay "the ads we're running
 # now" instead of growing forever (Slack caps a channel at 100 pins). Calendar
-# days, so it has to clear a weekend and a slow week: 21 is three weeks with no
-# single interview. It never deletes the thread -- the history stays in the
+# days (value below). It never deletes the thread -- the history stays in the
 # channel, only the pin goes -- and the moment that ad produces a 1st round
 # again the thread is pinned back (post.reconcile_pins).
-STALE_PIN_DAYS = 21
-
 # Live / closed mark on each thread's title (Maddie + Carlos 2026-10-20): an ad
 # with a 1st round in the last LIVE_AD_DAYS gets "✅ " before its title, one
 # without gets "❌ " (closed). 7 = Carlos's "doesn't get a 1st round Monday -
 # Friday". Eve 10/20: every office ("all"); a set of keys narrows it again.
 LIVE_AD_DAYS = 7
 STATUS_MARK_OFFICES = "all"
+# Was 21. Eve 10/20: only the ✅ threads stay pinned, so the channel's pins ARE
+# the live ads (instead of a separate "Live ads" message lost among them).
+# reconcile_pins keeps a pin while days <= STALE_PIN_DAYS = the ✅ rule.
+STALE_PIN_DAYS = LIVE_AD_DAYS - 1
 
 
 def marks_on(key: str) -> bool:
