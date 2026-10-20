@@ -199,7 +199,8 @@ TEAMS: Dict[str, tuple] = {
     "Chan":   ("fiber", "Chan's Team"),
     "Tony":   ("fiber", "Tony's Team"),
     "Sahil":  ("fiber", "Sahil's Team"),
-    "Carlos": ("b2b", "Carlos's Team"),
+    # Carlos retired 2026-10-20: his captainship dissolved and his board box
+    # came off; "Carlos's Team" left the SFDC filter on 10/14.
     "Eveliz": ("b2b", "Eveliz's Team"),
     "Luis":   ("b2b", "Luis's Team"),
     # Atef, 2026-10-10 (Eve). "Atef's Team" has been in the SFDC filter since

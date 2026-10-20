@@ -181,13 +181,14 @@ REPORTS = [
      "owners_fiber_wireless_org.csv", pull.make_wireless_parser("jess"),
      pull.PERIODS),
     # ----- B2B (Phase 2) -----
-    # Carlos (2026-10-13): "Carlos's Team" left Tableau's captain filter, so
-    # his saved view went blank — all-teams view cut to his board block, like
-    # Luke. See pull.fetch_b2b_atef.
-    ("carlos", "Carlos Hidalgo (B2B)",
-     pull.fetch_b2b_carlos, fill.open_ws_b2b_carlos,
-     "owners_b2b_carlos.csv", pull.make_b2b_board_roster_parser("Carlos"),
-     pull.B2B_PERIODS),
+    # Carlos RETIRED 2026-10-20 (Eve): his captainship dissolved (his mail of
+    # 10/18; "Carlos's Team" left Tableau's filter 10/14) and his box came off
+    # the Org Sales Board, which is the roster this pull was cut to. His tab
+    # stays as it was. To bring him back: restore this entry —
+    # ("carlos", "Carlos Hidalgo (B2B)", pull.fetch_b2b_carlos,
+    #  fill.open_ws_b2b_carlos, "owners_b2b_carlos.csv",
+    #  pull.make_b2b_board_roster_parser("Carlos"), pull.B2B_PERIODS) —
+    # and a CARLOS' CAPTAIN TEAM box on the board.
     ("eveliz", "Eveliz Wright (B2B)",
      pull.fetch_b2b_eveliz, fill.open_ws_b2b_eveliz,
      "owners_b2b_eveliz.csv", pull.parse_b2b, pull.B2B_PERIODS),
@@ -538,7 +539,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
 ONLY_GROUPS = {
     "wireless": ["wayne-wl", "starr-wl", "chan-wl", "tony-wl", "sahil-wl"],
     "fiber":    ["wayne", "starr", "chan", "tony", "sahil"],
-    "b2b":      ["carlos", "eveliz", "luis", "atef", "luke"],
+    "b2b":      ["eveliz", "luis", "atef", "luke"],
     "nds":      ["khalil", "colten", "jairo", "atef-nds"],
 }
 
