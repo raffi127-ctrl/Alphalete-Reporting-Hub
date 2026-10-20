@@ -4232,7 +4232,7 @@
   },
   "rc_contact_sync_raf": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Raf Wrap-Up Check — the RUN half (automations/rc_contact_sync_raf): checks who was texted on DYLAN's RingCentral line (the rc_autoread account) for yesterday's sales under Raf's code (all reps), and posts the reps who didn't send a wrap-up to #alphalete-sales — a header listing the reps + a threaded reply with each un-texted customer (name / phone / Internet-TV-Wireless) and the reps @tagged at the bottom. Internet upgrades excluded. NO browser: reads the 'Raf All Orders' handoff + the baked-in rc_autoread creds. SCHEDULED by the STANDALONE com.alphalete.rc-contact-sync-raf LaunchAgent on LUCY 1 (05:00 — deploy/rc_contact_sync_raf.sh pulls then posts), NOT the 4am batch, so on_scheduler:false. Present here so `lucy rerun rc_contact_sync_raf --machine \"Lucy 1\"` can re-post and a failure publishes a manifest alert. base_args carry --live; the module is DRY RUN by default. NO contacts step — Dylan's RC app lacks ReadContacts.",
+   "_off_scheduler_note": "Raf Wrap-Up Check \u2014 the RUN half (automations/rc_contact_sync_raf): checks who was texted on DYLAN's RingCentral line (the rc_autoread account) for yesterday's sales under Raf's code (all reps), and posts the reps who didn't send a wrap-up to #alphalete-sales \u2014 a header listing the reps + a threaded reply with each un-texted customer (name / phone / Internet-TV-Wireless) and the reps @tagged at the bottom. Internet upgrades excluded. NO browser: reads the 'Raf All Orders' handoff + the baked-in rc_autoread creds. SCHEDULED by the STANDALONE com.alphalete.rc-contact-sync-raf LaunchAgent on LUCY 1 (05:00 \u2014 deploy/rc_contact_sync_raf.sh pulls then posts), NOT the 4am batch, so on_scheduler:false. Present here so `lucy rerun rc_contact_sync_raf --machine \"Lucy 1\"` can re-post and a failure publishes a manifest alert. base_args carry --live; the module is DRY RUN by default. NO contacts step \u2014 Dylan's RC app lacks ReadContacts.",
    "display_name": "Raf Wrap-Up Check (RingCentral)",
    "machine": "Lucy 1",
    "source_type": "api",
@@ -14700,8 +14700,8 @@
   "hasani_metrics": {
    "order": 26.9,
    "machine": "Lucy 4",
-   "on_scheduler": false,
-   "display_name": "Hasani's Daily Metrics (channel from ECO sign-up)",
+   "on_scheduler": true,
+   "display_name": "Hasani's Daily Metrics (office-sales-covenant)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"
@@ -14734,7 +14734,7 @@
     "report_id": "hasani_metrics"
    },
    "_onboarded": true,
-   "_note": "Office metrics for hasani (Hasani Lynch, Covenant United, Inc., OwnerVille 23701). Wired by hand 2026-10-20 (Megan: enrolling in Lucy ECO today; metrics + trackers + weather; dry run first). AT&T D2D like tre/jenny, all 11 boards. OFF until `lucy rerun hasani_metrics --dry-run` on Lucy 4 shows data on every board and his ECO sign-up names the channel -- never a blank first post."
+   "_note": "Office metrics for hasani (Hasani Lynch, Covenant United, Inc., OwnerVille 23701). Wired by hand 2026-10-20 (Megan: enrolling in Lucy ECO today; metrics + trackers + weather; dry run first). AT&T D2D like tre/jenny, all 11 boards. SWITCHED ON 2026-10-20 ~16:50 CT: the Lucy 4 dry run (rerun-2026-10-20-134757) showed data on all 11 boards (34 reps) and his ECO sign-up named #office-sales-covenant (C0CAM3RUEH1)."
   }
  },
  "read_only_standalone": {

@@ -389,9 +389,11 @@
   },
   {
     "key": "hasani",
-    "label": "Hasani's Local Office (channel from ECO sign-up)",
+    "label": "#office-sales-covenant",
     "owner": "Hasani Lynch",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CAM3RUEH1"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
@@ -403,6 +405,6 @@
       "quantum_fiber",
       "vzftr"
     ],
-    "notes": "wired by hand 2026-10-20; all 9 trackers like tre/jenny; channel_ids filled once his Lucy ECO sign-up names the room."
+    "notes": "wired by hand 2026-10-20; all 9 trackers like tre/jenny; channel #office-sales-covenant from his Lucy ECO sign-up 2026-10-20."
   }
 ]
