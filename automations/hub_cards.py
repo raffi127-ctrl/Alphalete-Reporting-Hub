@@ -3226,6 +3226,81 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "rc-contact-sync-raf",
+        "name": "Raf Wrap-Up Check (RingCentral)",
+        "creator": "Dylan",
+        "emoji": "📞",
+        "color": "#60A5FA",
+        "category": "📊 Metrics",
+        "description": "For every sale under Raf's SaraPlus code yesterday (all reps), checks whether the customer was ever texted on Dylan's RingCentral line, and posts the ones who weren't — grouped by rep — to #alphalete-sales. The B2B Customer Contacts report, mirrored for Raf's office.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "The twin of B2B Customer Contacts, for RAF's office. For each of "
+            "yesterday's sales under Raf's SaraPlus code (ALL reps), it asks "
+            "whether the customer was EVER messaged on **Dylan's** RingCentral "
+            "line — the same account rc_autoread uses — matched by phone, and "
+            "as a backstop by customer or business name. The window starts on "
+            "the day of the sale and runs to now.\n\n"
+            "IT POSTS\n"
+            "A header — \"Reps that didn't send wrap ups\" — in "
+            "#alphalete-sales, and in that header's thread each un-texted "
+            "customer (name / phone / Internet·TV·Wireless) grouped under the "
+            "rep who sold them, with the reps @tagged at the bottom. A re-run replies to the same header "
+            "instead of posting a second one.\n\n"
+            "NO CONTACTS ARE CREATED\n"
+            "Dylan's RingCentral app can read messages but not contacts (no "
+            "ReadContacts scope), so unlike the B2B report this one does the "
+            "check and the post only.\n\n"
+            "WHEN IT RUNS\n"
+            "Every morning at 5 AM (Central) on Lucy 1 — Raf's SaraPlus login, Dylan's "
+            "RingCentral login. A bare run is a DRY RUN and posts nothing."
+        ),
+        "assignees": ["Lucy 1"],
+        # Raf's SaraPlus profile + Dylan's in-repo RingCentral creds both work
+        # on Lucy 1, so a Hub button from any other machine QUEUES the run
+        # there.
+        "run_machine": "Lucy 1",
+        "schedule": {
+            "frequency": "daily",
+            # Every day — the LaunchAgent fires daily at 05:00 Central; a day with
+            # no sales posts nothing. Python weekday(): Monday = 0.
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "time": "5 AM",
+            "estimated_minutes": 6,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Checked yesterday's sales under Raf's code and posted the un-texted customers to #alphalete-sales.",
+            "message_failed": "❌ Something didn't land. The log names it. The usual causes: the Raf SaraPlus pull on Lucy 1 is missing or stale (re-run 'Refresh Raf pull'), or the RingCentral token isn't Dylan's — the report stops rather than reading the wrong inbox.",
+        },
+        "actions": [
+            {
+                "label": "Check Yesterday + Post",
+                "icon": "▶",
+                "primary": True,
+                "help": "Reads yesterday's sales under Raf's code and posts the un-texted customers, grouped by rep, to #alphalete-sales.",
+                "module": "automations.rc_contact_sync_raf.run",
+                "args_fn": lambda: ["--live"],
+            },
+            {
+                "label": "Refresh Raf pull (Lucy 1)",
+                "icon": "⟳",
+                "primary": False,
+                "help": "Logs into Raf's SaraPlus and refreshes the order handoff. Run this first if the check says the pull is missing or stale.",
+                "module": "automations.rc_contact_sync_raf.pull_raf",
+                "args_fn": lambda: ["--pull"],
+            },
+            {
+                "label": "Preview (posts nothing)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Shows exactly what the Slack post would say, without posting.",
+                "module": "automations.rc_contact_sync_raf.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "energy-crossref",
         "name": "Energy Cross-reference (webform check)",
         "creator": "Eve",
