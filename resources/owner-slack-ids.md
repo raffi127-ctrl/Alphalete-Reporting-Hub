@@ -39,6 +39,20 @@ When you confirm a new ID, add it here in the same commit.
 | Valeria Rodea | | U06JQ4S1MRA | |
 | Valeria Zavala | | U054BLVL94N | ⚠ two Valerias |
 
+## Recruiting audit channels — one per AppStream account number
+
+Raf, via Megan 2026-10-20: each account gets its own channel, named by the
+account number. The daily audit flags that day's offenders there so coaching
+happens the same day; a weekly overall follows. ONE SHORT HEADER POST, all
+detail in the thread. [[feedback_short_header_posts]]
+
+| Account | Owner | Channel ID | Notes |
+|---|---|---|---|
+| 11280 | Rafael Hidalgo (main) | C0AUAS88FGW | Confirmed by Megan 2026-10-20 |
+| 11580 | Carlos Hidalgo | | not given yet |
+| 23965 | Rafael 2nd Funnel | | not given yet |
+| 24065 | Raf New Recruiter | | not given yet |
+
 ## Where else IDs live in code (keep in sync)
 - `automations/icd_alerts/offices.py`: `slack_user_id` per ECO office.
 - The "ICD Signup" rows in the Lucy Access App: owner IDs for relay offices.
