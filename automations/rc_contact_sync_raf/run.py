@@ -88,15 +88,6 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
     return "\n".join(lines)
 
 
-def missing_rep_lines(missing: List[Dict[str, str]]) -> List[str]:
-    """The PARENT post's body: just the reps who have an un-texted customer,
-    one per line (Dylan 2026-10-20 — the header lists the reps, the per-customer
-    detail goes in the threaded reply). Plain names, not @mentions; the tags
-    live at the bottom of the reply."""
-    reps = sorted({titlecase_name(m.get("rep", "")) or NO_REP for m in missing})
-    return ["• %s" % r for r in reps]
-
-
 class IdentityError(RuntimeError):
     pass
 
@@ -144,7 +135,6 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
     from automations.shared import slack_metrics_post as smp
 
     title = C.SLACK_HEADER
-    rep_lines = missing_rep_lines(missing)   # the parent post's body
     body = missing_names_reply(missing, total)
     if prefix:
         body = prefix + "\n" + body
@@ -152,18 +142,15 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
     for chan in C.CHANNELS:
         label = C.CHANNEL_LABEL.get(chan, chan)
         if dry_run:
-            head_preview = "\n".join(["    header: %s — %s" % (title, day)]
-                                     + ["      " + ln for ln in rep_lines])
-            log("  [dry-run] would post to %s:\n%s\n    reply:\n%s"
-                % (label, head_preview, "\n".join("      " + ln
-                                                  for ln in body.split("\n"))))
+            log("  [dry-run] would post to %s:\n    header: %s — %s\n    reply:\n%s"
+                % (label, title, day, "\n".join("      " + ln
+                                                for ln in body.split("\n"))))
             continue
         try:
             ts = C.saved_thread_ts(day, chan)
             existed = bool(ts)
             if not ts:
-                head = smp.ensure_named_thread(title, day, lines=rep_lines,
-                                               channel_id=chan)
+                head = smp.ensure_named_thread(title, day, channel_id=chan)
                 ts = head.get("thread_ts")
                 if not ts:
                     raise RuntimeError("no thread_ts came back: %s" % head)
