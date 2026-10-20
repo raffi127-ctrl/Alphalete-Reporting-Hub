@@ -297,7 +297,7 @@ READONLY_ACTIONS = {"push_appstream_fleet",
                     "focus_dm_check",
                     # Messages lookups: they read the chat list and send nothing.
                     "find_group", "group_members", "text_resolve",
-                    "text_replies"}
+                    "text_replies", "logdump"}
 
 # --- lanes --------------------------------------------------------------------
 # The queue is ONE serial worker, so a 2-second read waits behind whatever report
@@ -1651,6 +1651,39 @@ def _action_text_replies(args: str) -> tuple[bool, str]:
                   "output/logs/text_replies.txt on its next tick (a few minutes); "
                   "then `logtail text_replies.txt \"\" 200`."
                   % (days, " mentioning %r" % needle if needle else ""))
+
+
+def _action_logdump(args: str) -> tuple[bool, str]:
+    """READ-ONLY: copy a whole output/logs file into a tab of the control
+    workbook, one line per row, so the laptop can read all of it at once.
+
+      logdump rerun-2026-10-20-134757-hasani_metrics.log
+
+    logtail answers two or three lines a page for a long-lined log, and the
+    Result cell keeps ~480 characters; a 350-line log took seven round trips
+    and still did not show its board counts (Hasani's dry run, 2026-10-20).
+    The tab is 'logdump (<machine>)', cleared and rewritten each call."""
+    name = (args or "").strip().strip('"').strip("'")
+    if not name or "/" in name or ".." in name:
+        return False, "usage: logdump <file name in output/logs>"
+    path = REPO_ROOT / "output" / "logs" / name
+    if not path.exists():
+        return False, "no log in output/logs named %r" % name
+    lines = path.read_text(errors="replace").splitlines()
+    try:
+        sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+        title = "logdump (%s)" % _machine_profile()
+        try:
+            ws = sh.worksheet(title)
+            ws.clear()
+        except Exception:  # noqa: BLE001 -- worksheet-not-found
+            ws = sh.add_worksheet(title=title, rows=4000, cols=1)
+        rows = [[name]] + [[l[:4000]] for l in lines][:3900]
+        ws.update("A1", rows, value_input_option="RAW")
+    except Exception as e:  # noqa: BLE001
+        return False, "read %d line(s) but the tab write failed: %s: %s" % (
+            len(lines), type(e).__name__, str(e)[:120])
+    return True, "%d line(s) of %s written to the '%s' tab" % (len(lines), name, title)
 
 
 def _action_peek(args: str) -> tuple[bool, str]:
@@ -8988,6 +9021,7 @@ ACTIONS = {
     "audit_bot_snapshot": _action_audit_bot_snapshot,
     "audit_bot_deploy": _action_audit_bot_deploy,
     "text_replies": _action_text_replies,
+    "logdump": _action_logdump,
     "install_night_knocks": _action_install_night_knocks,
     "install_ad_photo_threads": _action_install_ad_photo_threads,
     "install_jiraiya": _action_install_jiraiya,
