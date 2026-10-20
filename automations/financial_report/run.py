@@ -506,6 +506,15 @@ def main() -> int:
                         note=_note)
             except Exception:  # noqa: BLE001 — manifest is best-effort
                 pass
+        # Last step: rebuild Rafael's Financial Bulletin tab in the Org
+        # workbook from the tabs just filled. Best-effort — the fill is done.
+        if live and not args.only_sheet:
+            try:
+                from automations.financial_bulletin import run as _fb
+                _fb.main([])
+            except Exception as e:  # noqa: BLE001
+                print(f"financial bulletin: skipped "
+                      f"({type(e).__name__}: {str(e)[:120]})")
         print("done")
         return 0
     finally:
