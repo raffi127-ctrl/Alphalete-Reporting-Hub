@@ -212,6 +212,12 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
 ### 2026-10-20 (manual)
+- **11580 (Carlos) now pushes LIVE from Carlos's own computer**, not Lucy 2
+  (Megan, "just take it live", release 2026.10.20.3). Lucy 2 keeps 23467 +
+  11901. His computer holds `Lucy Resume Pushing` and switches to 11580 before
+  each walk. Lost vs Lucy 2: no re-texts, no vision read, no noon/4pm to-do
+  post in his channel. Rollback: 11580 back into Lucy 2's ROTATION_BY_MACHINE,
+  carlos -> "dry" in PUSH_OFFICES, applicant_push hand_run_only off.
 - **Office relay machines no longer use the Resume Helper batch robot** (Indeed
   detects the bulk resume pull and blocks it). `icd_alerts/resume_push.py` now
   runs the SAME One App at a time walk as Lucy 2/4 (`oat_processing.run_walk`,
