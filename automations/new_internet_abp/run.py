@@ -28,6 +28,17 @@ except Exception:
     pass
 
 
+def nothing_yet_this_week(in_view: bool, today, n_roster: int) -> bool:
+    """An office early in the week with no new internet sales YET, not a
+    broken pull (2026-10-20). The view is 'This Week', so on a Tuesday morning
+    it holds only Monday: Cyrus and Salik had their 22 reps in it with no ABP %
+    because nobody sold new internet Monday -- and the metric failed, on 10/06
+    and 10/20, both Tuesdays. Only Mon/Tue, and only when the owner IS in the
+    view with reps: an office missing from the view, or an empty week by
+    Wednesday, still fails loudly."""
+    return bool(in_view and n_roster > 0 and today.weekday() in (0, 1))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="new_internet_abp")
     ap.add_argument("--date", default=None, help="Override date (YYYY-MM-DD).")
@@ -85,7 +96,8 @@ def main(argv=None) -> int:
         print(f"  ✓ {csv_path}")
 
     parsed = pull.parse(csv_path)
-    if not pull.owner_in_view(csv_path):
+    in_view = pull.owner_in_view(csv_path)
+    if not in_view:
         # Not "sold nothing" — the owner isn't in the Metrics data at all. Rebuild
         # the same numbers from the Order Log (proof in pull.py, 2026-10-10).
         print(f"  ↪ {pull.OWNER} isn't in the Metrics view — computing ABP "
@@ -110,6 +122,12 @@ def main(argv=None) -> int:
           f"({pull.fmt_units(office) or '-'}); {n_data} reps with ABP data "
           f"({len(reps)} in roster).")
     if not office and n_data == 0:
+        if nothing_yet_this_week(in_view, today, len(reps)):
+            print("  ↪ %s is in the view with %d reps but no new internet "
+                  "sales yet this week — nothing to fill today (tab left as "
+                  "is, nothing posted)" % (pull.OWNER, len(reps)))
+            print("=== done ===")
+            return 0
         print("  ⚠ No ABP data parsed — aborting so we don't blank the tab.")
         return 1
 
