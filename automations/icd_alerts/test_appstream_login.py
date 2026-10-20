@@ -197,19 +197,6 @@ class TheBackgroundPusher(unittest.TestCase):
 
 class ADryRunSendsNothing(unittest.TestCase):
 
-    def test_dry_run_never_clicks(self):
-        from automations.icd_alerts import push_batch as B
-
-        def boom(*a, **k):
-            raise AssertionError("a dry run clicked %r" % (a[1:],))
-        with mock.patch.object(B, "_click_if_present", boom), \
-             mock.patch.object(B, "_select_all", boom), \
-             mock.patch.object(B, "render_all_rows", return_value=12), \
-             mock.patch.object(B, "ready_for_extraction", return_value=4), \
-             mock.patch.object(B, "run_extract_once", boom):
-            self.assertEqual(B.send_loop(object(), dry_run=True), 0)
-            self.assertEqual(B.extract_loop(object(), dry_run=True), 4)
-
     def test_the_cli_is_a_dry_run_unless_live(self):
         from automations.icd_alerts import resume_push as RP
         with mock.patch.object(RP, "push", return_value=0) as pu:

@@ -6,14 +6,24 @@ one machine is slow across that many offices. On the office's own relay
 machine each office pushes only itself, and "they can always have an eye on
 it".
 
-IN THE BACKGROUND, NOT HEADLESS. The resume read is the Resume Helper Chrome
-extension, which only runs in a real Google Chrome. So this is a real Chrome
-on Lucy's OWN profile (never theirs), kept out of the way.
+ONE APPLICANT AT A TIME, NOT THE BATCH ROBOT (2026-10-20). This used to run
+AppStream's "Process in Batches" page, where the Resume Helper extension pulls
+every resume off Indeed in one burst. Indeed spots that burst and blocks it,
+so the batch robot is gone. The push now works the office's "One App at a
+time" queue the way a person does, and the way Lucy 2 and Lucy 4 already do:
+open the applicant, read the number from AppStream's attachment (or the Indeed
+resume, one page view), fill it in, Send to AI. It is the SAME walk the Lucys
+run (automations/oat_processing/run.py, run_walk), shipped here, not a copy:
+a fix to the walk reaches every office machine on the next self-update.
+
+IN THE BACKGROUND, NOT HEADLESS. A real Google Chrome on Lucy's OWN profile
+(never theirs), kept out of the way. Real, because Indeed's "Verify you are
+human" box needs a browser a person at that desk can click when it shows.
 
 MEASURED ON A MAC, 2026-10-05: Chrome brings ITSELF to the front whenever it
 starts or opens a window -- `open -g`, `open -j`, a minimized window and a
-background tab do not stop it, and the extension opens a tab of its own for
-every batch. Left alone, that is the "takes up the screen" Carlos means. So:
+background tab do not stop it, and the walk opens a tab of its own for
+every Indeed resume it reads. Left alone, that is the "takes up the screen" Carlos means. So:
   * Mac: Lucy's Chrome starts hidden, and for a few seconds after Lucy opens
     a window, _FocusGuard HIDES her Chrome (as Cmd-H would) the moment it
     takes the front -- which hands focus straight back to whatever the person
@@ -37,9 +47,13 @@ and this machine both push it.
 
     python -m automations.icd_alerts.resume_push            # dry run, visible
     python -m automations.icd_alerts.resume_push --live     # really sends
-    python -m automations.icd_alerts.resume_push --setup    # install Resume Helper
 
-SEND TO AI CANNOT BE UNDONE. The command line is a dry run unless --live.
+SEND TO AI CANNOT BE UNDONE. The command line is a dry run unless --live,
+and --live only sends for an office in LIVE_OFFICE_KEYS. Everyone else gets a
+dry run, scheduled or not -- see LIVE_OFFICE_KEYS for why.
+
+NEVER REMOVES FOR MISSING CONTACT INFO, NEVER TEXTS (Carlos, 9/13 + 8/29):
+pinned below in _point_walk_here, per PUSHING-OPERATIONS-README.md section 4.
 """
 from __future__ import annotations
 
@@ -56,15 +70,9 @@ from pathlib import Path
 from typing import Optional
 
 from automations.icd_alerts import config as C
-from automations.icd_alerts import push_batch as B
 
 IS_WINDOWS = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
-
-# Resume Helper, the extension AppStream's batch page relies on. When it is
-# missing, AppStream's robot button sends you to its Web Store page instead.
-EXT_ID = "goofbdglmeckblcbcoffnkdnmpehhhmo"
-STORE_URL = "https://chromewebstore.google.com/detail/" + EXT_ID
 
 AS_HOME = "https://applicantstream.com/"
 AS_BASE = "https://applicantstream.com/index.cfm"
@@ -84,6 +92,26 @@ DAY_START = (7, 0)
 DAY_END = (22, 0)
 # A push that has held the lock this long has died without cleaning up.
 LOCK_STALE_MINUTES = 60
+# The walk stops itself this long after it starts, well inside the lock, so it
+# always writes its files and its result before the next tick could start.
+WALK_MINUTES = 15
+
+# OFFICES WHOSE MACHINE REALLY SENDS. Empty = every office machine dry-runs.
+#
+# Every machine that said "yes, push my resumes" already runs this --live
+# every 10 minutes. Until 2026-10-20 that was harmless: the batch robot was
+# missing on all of them, so each tick stopped before touching anyone. The
+# walk needs nothing installed, so the day it shipped it would have started
+# sending for real on every one of them at once, including offices Lucy 2
+# and Lucy 4 already push (two pushers on one queue) -- with the rollout on
+# hold (Megan, 10/7). So a send is switched on per office, here, in code,
+# after a supervised dry run on that machine. Same idea as PUSH_ALLOWED in
+# automations/applicant_push/run.py, which this does not replace.
+#
+# TO SWITCH AN OFFICE ON: add its office_key here AND take it out of
+# ROTATION_BY_MACHINE in automations/applicant_push/offices.py, in the same
+# commit -- one office, one pusher.
+LIVE_OFFICE_KEYS: frozenset = frozenset()
 LOGIN_POLL_SECONDS = 90
 
 # Chrome slows timers and rendering in a minimized window. These keep a
@@ -99,8 +127,6 @@ def _log(msg: str) -> None:
     print("%s  %s" % (dt.datetime.now().strftime("%H:%M:%S"), msg), flush=True)
 
 
-B.set_log(_log)
-
 
 # --- who pushes ----------------------------------------------------------------
 def push_record() -> dict:
@@ -113,6 +139,20 @@ def push_record() -> dict:
 
 def enabled() -> bool:
     return bool(push_record()) and bool(C.appstream_creds())
+
+
+def armed(record: Optional[dict] = None) -> bool:
+    """May this machine really Send to AI? Only for an office switched on in
+    LIVE_OFFICE_KEYS. Fails closed: no record, no key, no send."""
+    rec = push_record() if record is None else record
+    return str(rec.get("office_key") or "") in LIVE_OFFICE_KEYS
+
+
+def quiet_now(now: Optional[dt.datetime] = None) -> bool:
+    """The weekend quiet window: nothing pushes Friday 1pm -> Sunday 1pm
+    (Carlos, 9/4). The Lucys' own rule, imported, not retyped."""
+    from automations.applicant_push.window import quiet_window
+    return quiet_window(now or dt.datetime.now())
 
 
 def in_window(now: Optional[dt.datetime] = None) -> bool:
@@ -207,10 +247,6 @@ def chrome_path() -> Optional[str]:
                 if exe.exists():
                     return str(exe)
     return None
-
-
-def extension_installed() -> bool:
-    return (PROFILE_DIR / "Default" / "Extensions" / EXT_ID).is_dir()
 
 
 def _port_alive() -> bool:
@@ -588,8 +624,8 @@ def _connect(p, background: bool, url: str = AS_BASE, guard=None):
                 for pid in lucy:
                     _hide_app(pid)        # helpers are not apps; a no-op
             guard.expect()
-            # The extension opens its own tab to read resumes, and Chrome
-            # comes forward with it. Give the focus straight back.
+            # The walk opens each Indeed resume in a tab of its own, and
+            # Chrome comes forward with it. Give the focus straight back.
             ctx.on("page", lambda pg: guard.expect())
         else:
             minimize(ctx, page)
@@ -665,35 +701,6 @@ def report_setup_failure(summary: str, detail: str = "", log=_log) -> bool:
         return False
 
 
-def setup_extension(log=_log, wait_seconds: int = 300) -> bool:
-    """Open Resume Helper's store page in LUCY'S Chrome and wait for the click.
-
-    Their own Chrome having it does nothing for Lucy -- an extension belongs
-    to a browser profile, and this is a different one. One click, once.
-    """
-    if extension_installed():
-        log("Resume Helper is already installed in Lucy's Chrome")
-        return True
-    from patchright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser, ctx, page = _connect(p, background=False, url=STORE_URL)
-        if not page:
-            return False
-        try:
-            page.goto(STORE_URL, wait_until="domcontentloaded", timeout=45_000)
-            page.bring_to_front()
-        except Exception:  # noqa: BLE001
-            pass
-        deadline = time.time() + wait_seconds
-        while time.time() < deadline:
-            if extension_installed():
-                log("Resume Helper is installed")
-                return True
-            time.sleep(3)
-    log("Resume Helper was not added")
-    return False
-
-
 def _report_once(result: str, summary: str, detail: str = "") -> None:
     """To #claudecorrections-and-requests, never an office channel -- and only
     when the result CHANGES, or a 10-minute job repeats one fault all day."""
@@ -710,11 +717,92 @@ def _report_once(result: str, summary: str, detail: str = "") -> None:
     _save_state(st)
 
 
+# --- the walk --------------------------------------------------------------------
+def _point_walk_here(office_id: str, record: dict) -> None:
+    """Aim the shared walk at THIS office, with THIS machine's rules.
+
+    The walk's defaults are Carlos's office; applicant_push/offices.py
+    rebinds them per office on the Lucys. Here the same rebinding, with the
+    rules every office machine gets -- stated, never inherited:
+      * never remove anyone for missing contact info (Carlos, 9/13),
+      * never text an applicant (texting is 11580/23467 only, on Lucy 2),
+      * never remove on a blocked or unreadable resume read.
+    """
+    from automations.oat_processing import config as OC
+    OC.OFFICE_ID = str(office_id)
+    OC.OFFICE_HINT = str(record.get("owner") or record.get("office_key") or "")
+    OC.FILE_SUFFIX = "-%s" % office_id
+    OC.WALK_DIAG_TAB = "OAT Walk Diag %s" % office_id
+    OC.REMOVE_NO_PHONE = False
+    OC.ALLOW_RETEXT = False
+    OC.REMOVE_BLOCKED_READ = False
+    OC.MAX_WALK_SECONDS = WALK_MINUTES * 60
+    OC.WALK_DEADLINE_EPOCH = time.time() + WALK_MINUTES * 60
+
+
+def _pin_office(seen: Optional[str], record: dict) -> "tuple[bool, str]":
+    """(ok, why). Whose queue is this, and is it the one it was last time?
+
+    An office's own login sees only that office (resources/lucy-login-
+    standard.md rule 3), so the first walk LEARNS the Office ID off the
+    page and saves it. Every walk after must show the same one: a different
+    ID means the saved login is not this office's any more, and the walk
+    refuses before a single applicant is touched.
+    """
+    if not seen:
+        return False, "no Office ID on the One App at a time page"
+    pinned = str(record.get("as_office_id") or "")
+    if not pinned:
+        record["as_office_id"] = seen
+        try:
+            C.add_enrollment(record)
+        except Exception:  # noqa: BLE001 -- learned again next tick
+            pass
+        _log("this computer pushes AppStream office %s (saved)" % seen)
+        return True, ""
+    if pinned != seen:
+        return False, ("AppStream shows office %s, but this computer pushes "
+                       "office %s" % (seen, pinned))
+    return True, ""
+
+
+def _walk(page, live: bool, record: dict) -> dict:
+    """One walk of the office's One App at a time queue. Returns
+    {'reached', 'office', 'rc', 'sent', 'walled', 'why'}."""
+    from automations.oat_processing import run as OAT
+    OAT.attach_dialog_accept(page)
+    if not OAT.open_oat(page):
+        return {"reached": False, "why": "could not open One App at a time"}
+    page.wait_for_timeout(1500)
+    seen = OAT.office_on_page(page)
+    ok, why = _pin_office(seen, record)
+    if not ok:
+        return {"reached": True, "office": seen, "rc": 2, "why": why}
+    _point_walk_here(seen, record)
+    before = len(OAT._ACTIVITY_ROWS)
+    rc = OAT.run_walk(page, live=live)
+    rows = OAT._ACTIVITY_ROWS[before:] if live else []
+    sent = sum(1 for r in rows if len(r) > 5
+               and str(r[5]).startswith("sent"))
+    return {"reached": True, "office": seen, "rc": rc, "sent": sent,
+            "walled": bool(OAT._cf_walled()),
+            "why": "" if rc == 0 else "the walk stopped (rc=%s)" % rc}
+
+
 def push(live: bool, scheduled: bool = False) -> int:
     """One push. 0 = done (or nothing to do), 1 = failed."""
     if not C.appstream_creds():
         _log("no AppStream login saved -- nothing to push with")
         return 1
+    record = push_record()
+    if live and not armed(record):
+        _log("DRY RUN: office %r is not switched on for live pushing yet "
+             "(LIVE_OFFICE_KEYS) -- reading only, nothing is sent"
+             % (record.get("office_key") or "?"))
+        live = False
+    if live and quiet_now():
+        _log("weekend quiet window (Fri 1pm - Sun 1pm): nothing pushes")
+        return 0
     C.APP_DIR.mkdir(parents=True, exist_ok=True)
     LOCK_PATH.write_text(str(time.time()))
     st = _state()
@@ -722,13 +810,6 @@ def push(live: bool, scheduled: bool = False) -> int:
     _save_state(st)
     result, out, guard = "ok", {}, None
     try:
-        if not extension_installed():
-            result = "no_extension"
-            _report_once(result, "Resume Helper is not installed in Lucy's "
-                                 "Chrome, so resumes cannot be pushed",
-                         "Fix on that computer: python -m "
-                         "automations.icd_alerts.resume_push --setup")
-            return 1
         from patchright.sync_api import sync_playwright
         guard = _FocusGuard().start() if scheduled else None
         with sync_playwright() as p:
@@ -744,23 +825,35 @@ def push(live: bool, scheduled: bool = False) -> int:
                                      "machine; resumes are not being pushed",
                              LAST_SIGNIN_PAGE)
                 return 1
-            try:
-                out = B.run_batch(page, dry_run=not live)
-            except B.ExtractionStalled as e:
-                result = "stalled"
-                _log("extract stalled: %s" % e)
-                return 1
+            out = _walk(page, live, record)
             if not out.get("reached"):
-                result = "no_batch_page"
-                _report_once(result, "the resume push could not reach Process "
-                                     "in Batches on AppStream")
+                result = "no_queue_page"
+                _report_once(result, "the resume push could not open One App "
+                                     "at a time on AppStream")
                 return 1
+            if out.get("rc") == 2 and out.get("why", "").startswith(
+                    ("AppStream shows", "no Office ID")):
+                result = "wrong_office"
+                _report_once(result, "resume push refused: %s" % out["why"],
+                             "Nothing was sent. If this office really changed "
+                             "its AppStream login, clear as_office_id in this "
+                             "computer's enrollment so it learns the new one.")
+                return 1
+            if out.get("walled"):
+                result = "walled"
+                _report_once(result, "Indeed is asking to verify a human on "
+                                     "this office's computer; no numbers are "
+                                     "being read",
+                             "Someone at that desk: click Lucy's Chrome in "
+                             "the Dock / taskbar and tick the box once. "
+                             "Nobody is removed meanwhile; they stay queued.")
             # LEAVE CHROME RUNNING, minimized. The next tick reuses it, so the
             # session and the security check it already passed carry over.
-            _log("%s: %s waiting, %s still unread, %d sent to AI"
-                 % ("LIVE" if live else "DRY RUN", out.get("waiting"),
-                    out.get("left"), out.get("sent", 0)))
-            return 0
+            _log("%s: office %s, %d sent to AI%s"
+                 % ("LIVE" if live else "DRY RUN", out.get("office"),
+                    out.get("sent", 0),
+                    " -- Indeed's check is up" if out.get("walled") else ""))
+            return 0 if out.get("rc") == 0 else 1
     except Exception as e:  # noqa: BLE001
         result = "crash"
         import traceback
@@ -775,6 +868,7 @@ def push(live: bool, scheduled: bool = False) -> int:
         st = _state()
         st["last_end"] = dt.datetime.now().isoformat(timespec="seconds")
         st["last_result"] = result
+        st["last_live"] = bool(live)
         if out:
             day = dt.date.today().isoformat()
             sent = st.get("sent_by_day") or {}
@@ -782,7 +876,7 @@ def push(live: bool, scheduled: bool = False) -> int:
                 dt.date.today() - dt.timedelta(days=14)).isoformat()}
             sent[day] = int(sent.get(day, 0)) + int(out.get("sent", 0))
             st["sent_by_day"] = sent
-            st["waiting"] = out.get("waiting")
+            st["office"] = out.get("office")
         if result == "ok":
             st.pop("reported", None)    # the next fault is news again
         _save_state(st)
@@ -799,12 +893,14 @@ def main(argv=None) -> int:
     ap.add_argument("--scheduled", action="store_true",
                     help="what the agent's tick runs: in the background")
     ap.add_argument("--setup", action="store_true",
-                    help="add Resume Helper to Lucy's Chrome")
+                    help="nothing to install any more (kept so old "
+                         "instructions do not error)")
     ap.add_argument("--check-login", action="store_true",
                     help="sign in to AppStream and stop")
     args = ap.parse_args(argv)
     if args.setup:
-        return 0 if setup_extension() else 1
+        _log("nothing to set up: the push no longer uses Resume Helper")
+        return 0
     if args.check_login:
         rc = check_login()
         if rc == NO_CHROME:

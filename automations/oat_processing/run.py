@@ -50,9 +50,10 @@ import os
 import sys
 import time
 
-from automations.shared.tableau_patchright import (
-    appstream_direct_session, AppStreamBusy)
-from automations.recruiting_report import fetch_office
+# The patchright session and the office switch are imported inside run(), the
+# standalone path, and nowhere else. run_walk() never needs them, and an office's
+# own relay machine ships this file WITHOUT the Hub's session stack (2026-10-20:
+# office machines walk their own queue -- automations/icd_alerts/resume_push.py).
 
 from . import config
 from .classify import (Applicant, Action, Decision, classify,
@@ -3929,6 +3930,10 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
     mode = "LIVE" if live else "DRY-RUN"
     _log(f"[oat] OAT Processing — office {config.OFFICE_ID} "
          f"({config.OFFICE_HINT}) — {mode}")
+
+    from automations.shared.tableau_patchright import (
+        appstream_direct_session, AppStreamBusy)
+    from automations.recruiting_report import fetch_office
 
     try:
         # Same holder-warmed AppStream session resume_pushing rides. No

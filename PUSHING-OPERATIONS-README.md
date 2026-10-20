@@ -211,6 +211,21 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
+### 2026-10-20 (manual)
+- **Office relay machines no longer use the Resume Helper batch robot** (Indeed
+  detects the bulk resume pull and blocks it). `icd_alerts/resume_push.py` now
+  runs the SAME One App at a time walk as Lucy 2/4 (`oat_processing.run_walk`,
+  shipped to office machines whole, not copied). `push_batch.py` deleted; setup
+  no longer asks for the extension.
+- Office machines walk with: no removals for contact info, no texting, no
+  removal on blocked reads, weekend quiet window, Office ID learned on first
+  walk then pinned (a different ID refuses).
+- **Every office machine is DRY RUN** until its `office_key` is added to
+  `LIVE_OFFICE_KEYS` in `resume_push.py` (empty today; rollout still held).
+  Switching one on = same commit takes the office out of `ROTATION_BY_MACHINE`.
+- No vision read on office machines (no API key ships there): resumes that
+  only render as an image stay flagged for a human.
+
 ### 2026-09-06 (initial)
 - README created. Credential fix for `lucyresume` landed 9/5–9/6; pushing
   verified live in both offices (130+/103+ ✅ sends Sunday afternoon);

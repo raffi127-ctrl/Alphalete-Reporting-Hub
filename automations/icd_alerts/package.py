@@ -74,7 +74,18 @@ AGENT_FILES = [
     # check runs it, so it has to be there when setup.py is.
     "automations/icd_alerts/as_signin.py",
     "automations/icd_alerts/resume_push.py",
-    "automations/icd_alerts/push_batch.py",
+    # THE WALK ITSELF, shipped whole rather than copied (2026-10-20): the
+    # office machine runs the same One App at a time walk as Lucy 2 and
+    # Lucy 4, so a walk fix reaches every office on its next self-update.
+    # Its few Hub-only reach-outs are listed in HUB_ONLY_IMPORTS below.
+    "automations/oat_processing/__init__.py",
+    "automations/oat_processing/config.py",
+    "automations/oat_processing/classify.py",
+    "automations/oat_processing/resume_download.py",
+    "automations/oat_processing/run.py",
+    # The weekend quiet window, the Lucys' own rule (stdlib only).
+    "automations/applicant_push/__init__.py",
+    "automations/applicant_push/window.py",
     "automations/icd_alerts/watchdog.py",
     "automations/icd_alerts/presence.py",
     "automations/icd_alerts/autoprompt.py",
@@ -100,6 +111,37 @@ AGENT_FILES = [
     "automations/shared/sale_hype.py",
     "automations/shared/browser_banner.py",
 ]
+
+# HUB-ONLY IMPORTS THAT SHIP ON PURPOSE, each inside a function, never at
+# module level. (shipped file, module it reaches for, the function it sits in.)
+#
+# The One App at a time walk ships whole (see AGENT_FILES) so office machines
+# and the Lucys run ONE walk. A few of its extras exist only on our side: the
+# Sheets diag rows, a Slack DM of a screenshot, the vision read. On an office
+# machine those imports raise, and every one of them is either inside a
+# try/except that drops the extra and carries on, or in a function the office
+# push never calls. test_resume_walk_ships pins both, so an entry here cannot
+# quietly become a crash.
+HUB_ONLY_IMPORTS = {
+    # Best effort, inside try: the walk goes on without them.
+    ("automations/oat_processing/run.py", "automations.recruiting_report",
+     "_write_walk_diag"),
+    ("automations/oat_processing/run.py", "automations.recruiting_report",
+     "probe_resume"),
+    ("automations/oat_processing/run.py", "automations.shared",
+     "_shot"),
+    ("automations/oat_processing/run.py", "automations.brand_audit",
+     "_ocr_phone"),
+    # Lucy-only entry points the office push never calls.
+    ("automations/oat_processing/run.py", "automations.recruiting_report",
+     "_nophone_ws"),
+    ("automations/oat_processing/run.py", "automations.shared.tableau_patchright",
+     "run"),
+    ("automations/oat_processing/run.py", "automations.recruiting_report",
+     "run"),
+}
+# The functions in that list the office push must never reach.
+HUB_ONLY_ENTRY_POINTS = {"_nophone_ws", "run"}
 
 # The repo's automations/__init__.py installs the Hub's auto-publish hook. That
 # is Hub machinery and has no business on an ICD's laptop, so the bundle gets

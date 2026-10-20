@@ -14,7 +14,13 @@ automations/icd_alerts/box_signin.py
 automations/icd_alerts/sara_signin.py
 automations/icd_alerts/as_signin.py
 automations/icd_alerts/resume_push.py
-automations/icd_alerts/push_batch.py
+automations/oat_processing/__init__.py
+automations/oat_processing/config.py
+automations/oat_processing/classify.py
+automations/oat_processing/resume_download.py
+automations/oat_processing/run.py
+automations/applicant_push/__init__.py
+automations/applicant_push/window.py
 automations/icd_alerts/watchdog.py
 automations/icd_alerts/presence.py
 automations/icd_alerts/autoprompt.py

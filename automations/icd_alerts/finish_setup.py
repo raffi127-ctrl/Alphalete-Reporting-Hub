@@ -187,8 +187,9 @@ def _service_cloud(log) -> str:
 
 def _resume_push(log) -> str:
     """Resume pushing from this computer (Carlos 2026-10-05). Asked ONCE per
-    machine; a NO is remembered, a YES gets its login, sign-in and Resume
-    Helper checked every time this runs."""
+    machine; a NO is remembered, a YES gets its login and sign-in checked
+    every time this runs. Nothing to install: the push walks One App at a
+    time and no longer needs the Resume Helper extension (2026-10-20)."""
     try:
         from automations.icd_alerts import resume_push as RP
         from automations.icd_alerts import dialogs as ask
@@ -240,18 +241,6 @@ def _resume_push(log) -> str:
                                 "thread)",
                                 getattr(RP, "LAST_SIGNIN_PAGE", ""), log=log)
         return "still needs signing in"
-    if not RP.extension_installed():
-        log("")
-        log("  Lucy's Chrome needs the Resume Helper extension once.")
-        log("  Click 'Add to Chrome' in the window that opens.")
-        try:
-            added = RP.setup_extension(log=log)
-        except Exception as e:  # noqa: BLE001
-            return _resume_push_crashed(RP, "adding Resume Helper", e, log)
-        if not added:
-            RP.report_setup_failure("Resume Helper was not added to Lucy's "
-                                    "Chrome", log=log)
-            return "still needs Resume Helper added"
     return "done"
 
 

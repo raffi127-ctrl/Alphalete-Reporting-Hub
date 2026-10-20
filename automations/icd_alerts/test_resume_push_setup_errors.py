@@ -79,14 +79,6 @@ class TheRealReasonIsShown(_Setup):
         self.assertIn("ValueError: profile folder is read-only", got)
         self.assertIn("line 2", self.said())
 
-    def test_a_crash_adding_resume_helper_names_that_step(self):
-        got = self.step(check_login=mock.Mock(return_value=0),
-                        extension_installed=mock.Mock(return_value=False),
-                        setup_extension=mock.Mock(side_effect=CLOSED))
-        self.assertIn("window was closed", got)
-        self.assertIn("adding Resume Helper", self.said())
-        self.assertIn("adding Resume Helper", self.reports[0]["summary"])
-
     def test_chrome_that_never_opens_is_not_called_a_bad_login(self):
         got = self.step(check_login=mock.Mock(return_value=RP.NO_CHROME))
         self.assertIn("Chrome", got)
@@ -113,8 +105,7 @@ class FailuresReachTheChannel(_Setup):
         self.assertEqual(len(self.reports), 1)
 
     def test_success_files_nothing(self):
-        got = self.step(check_login=mock.Mock(return_value=0),
-                        extension_installed=mock.Mock(return_value=True))
+        got = self.step(check_login=mock.Mock(return_value=0))
         self.assertEqual(got, "done")
         self.assertEqual(self.reports, [])
 

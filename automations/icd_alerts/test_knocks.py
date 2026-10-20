@@ -489,10 +489,27 @@ class ShippedClosureTests(unittest.TestCase):
                     out.append("%s/%s.py" % (base, n))
             return out
 
+        from automations.icd_alerts.package import HUB_ONLY_IMPORTS
+
+        def nodes_with_function(tree):
+            """(node, name of the function it sits in, or None)."""
+            stack = [(tree, None)]
+            while stack:
+                n, fn = stack.pop()
+                for c in ast.iter_child_nodes(n):
+                    f2 = c.name if isinstance(
+                        c, (ast.FunctionDef, ast.AsyncFunctionDef)) else fn
+                    yield c, fn
+                    stack.append((c, f2))
+
         missing = []
         for rel in AGENT_FILES:
             tree = ast.parse((repo / rel).read_text())
-            for node in ast.walk(tree):
+            for node, fn in nodes_with_function(tree):
+                # Named, guarded Hub-only extras: test_resume_walk_ships.
+                if (isinstance(node, ast.ImportFrom)
+                        and (rel, node.module, fn) in HUB_ONLY_IMPORTS):
+                    continue
                 if isinstance(node, ast.ImportFrom):
                     paths = wanted(node.module or "",
                                    [a.name for a in node.names])
