@@ -196,14 +196,15 @@ def _numfmt(v: dict):
     return (kind, pat.lower() if kind.startswith("DATE") else pat)
 
 
-def audit(t: dict, tenure=None) -> list:
-    """tenure = (history, earliest sunday) from tenure_history(), or None."""
+def audit(t: dict, tenure=None, owner: bool = False) -> list:
+    """tenure = (history, earliest sunday) from tenure_history(), or None.
+    owner: an owner's board -- the Roll Call word is learned off the board."""
     title, v, f = t["title"], t["values"], t["formulas"]
     if "lanes" in t:
         found = lanes_findings(t)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
     elif K.is_board(v):
-        found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v)
+        found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v, learn=owner)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"]))
         first, last = K.block_rows(v)
@@ -244,7 +245,7 @@ def backup(t: dict, stamp: str) -> Path:
 
 def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     """Write the fixable findings. Returns the ones actually written.
-    notes=False: no hover notes (owners' boards, Eve 2026-10-12)."""
+    notes=False: no hover notes (owners' boards had none 10/12-10/20)."""
     ws = t["ws"]
     # The board re-sorts during the day: re-read the names and drop any row
     # whose rep is no longer the one the finding was made for.
@@ -384,24 +385,33 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
     """kinds: only these finding kinds get written, the rest is just reported
     (owners' boards: OWNER_KINDS, no notes)."""
     results = {}
+    owner = kinds is not None
     for title in titles:
         t = load(sh, title)
         widened = []
         if do_apply and tenure:
             # Widening the filter re-sorts the rows, so it goes first, alone,
             # and everything else is read again after it.
-            widened = [x for x in audit(t, tenure) if x.kind == "filter_short"]
+            widened = [x for x in audit(t, tenure, owner) if x.kind == "filter_short"]
             if widened:
                 print("  backup:", backup(t, stamp + "_prefilter"))
                 sh.batch_update({"requests": [x.request for x in widened]})
                 print("  filtro ampliado: %s -> %s" % (widened[0].before, widened[0].after))
                 t = load(sh, title)
-        found = audit(t, tenure)
-        if kinds is not None:
+        if do_apply:
+            # last week's 'Lucy fixed this' notes come along when a week tab
+            # is copied: take Lucy's old ones off first, so today's go on clean
+            clear, t["notes"] = K.old_note_requests(t["sheet_id"], t.get("notes"), dt.date.today())
+            if clear:
+                sh.batch_update({"requests": clear})
+                print("  notas viejas de Lucy borradas: %d" % len(clear))
+        found = audit(t, tenure, owner)
+        if owner:
             name_col = K.layout(t["values"]).name_col if K.is_board(t["values"]) else 0
             for x in found:
-                if x.kind not in kinds or _owners_rank_cell(x, name_col):   # report only
-                    x.value = x.request = None
+                if (x.kind not in kinds or _owners_rank_cell(x, name_col)
+                        or (x.kind == "x_over_formula" and not _x_kept(x, t["values"], found))):
+                    x.value = x.request = None                      # report only
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
         if do_apply and n_fix > MAX_FIXES:
@@ -411,9 +421,9 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                   % (n_fix, MAX_FIXES))
         elif do_apply:
             print("  backup:", backup(t, stamp))
-            done = apply(sh, t, found, notes=kinds is None)
+            done = apply(sh, t, found)
             print("  escritos: %d" % len(done))
-            left = [x for x in audit(load(sh, title), tenure)
+            left = [x for x in audit(load(sh, title), tenure, owner)
                     if kinds is None or x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
@@ -543,13 +553,43 @@ def lane_tabs(sh, only_for=None) -> list:
     return out
 
 
-# What Lucy writes on an OWNER's board (Eve, 2026-10-12): broken formulas and
-# broken color rules, nothing else -- no notes, no fonts / number formats, no
-# Roll Call. An X typed over a formula is only reported: on our board the
-# Roll Call fill keeps the X, on theirs restoring the formula would erase it.
+# What Lucy writes on an OWNER's board. Eve 2026-10-12: broken formulas and
+# color rules only. Eve 2026-10-20: everything ours gets -- fonts, number
+# formats, Roll Call, hover notes -- each judged by THAT board's own way: the
+# column majority of that board, the Roll Call word that board writes
+# (checks.roll_call_words). An X typed over a formula is put back only when the
+# Roll Call carries the same status, so the formula shows the X again (_x_kept).
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate",
+               "font", "number_format", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
+
+
+def _x_kept(x, values, found) -> bool:
+    """An X/T typed over an owner's Int formula: putting the formula back is
+    safe only if it reads that day's Roll Call and the Roll Call says the same
+    status (already, or by today's roll_call_blank fix) -- otherwise the X,
+    the attendance record, would vanish."""
+    m = re.match(r"([A-Z]+)(\d+)$", x.where or "")
+    if not m:
+        return False
+    c, r = K.col_index(m.group(1)), int(m.group(2))
+    status = str(x.before).strip().upper()
+    for ic, rc in K.roll_call_cols(values).values():
+        if ic != c:
+            continue
+        rc_cell = K.a1(r, rc)
+        if not re.search(r"(?<![A-Z$])\$?%s\$?%d(?!\d)" % (K.col_letter(rc), r), x.value or ""):
+            return False
+        now = K._g(values, r, rc).strip()
+        if not now:
+            return any(y.kind == "roll_call_blank" and y.where == rc_cell and y.value
+                       for y in found)
+        word = K.roll_call_words(values).get(status)
+        return now.upper() == status or (word is not None and now == word)
+    return False
+
+
 def _owners_rank_cell(x, name_col: int) -> bool:
     """The '#' column left of the names. Owners write it their own way --
     Rashad switched to =IF(B5<>"",ROW()-3,"") on purpose (2026-10-13) and a

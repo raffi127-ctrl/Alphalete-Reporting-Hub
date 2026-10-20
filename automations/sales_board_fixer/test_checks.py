@@ -85,6 +85,17 @@ class Notes(unittest.TestCase):
         self.assertIn("Now: Off.", text)
         self.assertEqual(reqs[0]["updateCells"]["fields"], "note")
 
+    def test_last_weeks_lucy_notes_go_a_persons_note_stays(self):
+        import datetime as dt
+        notes = [["Raf: call him\n\nLucy fixed this (10/14):\n- x. Was: a. Now: b.",
+                  "Lucy fixed this (10/20):\n- x.",
+                  "Lucy (10/13): city from Blue Ink. Was: blank."]]
+        reqs, kept = K.old_note_requests(7, notes, dt.date(2026, 10, 21))
+        self.assertEqual(kept, [["Raf: call him", "Lucy fixed this (10/20):\n- x.", ""]])
+        self.assertEqual(len(reqs), 2)
+        _, kept = K.old_note_requests(7, [["Lucy fixed this (12/29):"]], dt.date(2027, 1, 6))
+        self.assertEqual(kept, [[""]])                      # last year's, before Monday
+
     def test_rule_deletes_get_no_note(self):
         rule = Conditional.rule(None, "=COUNTIF(#REF!,A4)>0")
         found = K.check_conditional("t", 7, [rule], ncols=36)
@@ -139,6 +150,16 @@ class OwnerLayout(unittest.TestCase):
         v[5][6] = "X"                                   # Rep 2, TUE Int
         found = K.check_roll_call("t", v)
         self.assertEqual([(y.where, y.name, y.value) for y in found], [("H6", "Rep 2", "Off")])
+
+    def test_owner_roll_call_uses_the_boards_own_word(self):
+        v = owner_board(6)
+        for r in (3, 4, 5):                               # Rep 0..2 MON: X -> "OFF"
+            v[r][3], v[r][4] = "X", "OFF"
+        v[6][6] = "X"                                     # Rep 3 TUE: X, Roll Call blank
+        v[7][6] = "T"                                     # Rep 4 TUE: T, never shown here
+        found = {y.where: y.value for y in K.check_roll_call("t", v, learn=True)}
+        self.assertEqual(found, {"H7": "OFF", "H8": None})   # T: reported, not guessed
+        self.assertEqual(K.check_roll_call("t", v)[0].value, "Off")   # ours: fixed word
 
     def test_blank_template_rows_dont_set_the_format(self):
         v = owner_board(6, blanks=20)

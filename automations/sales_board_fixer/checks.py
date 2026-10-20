@@ -476,6 +476,53 @@ def note_requests(found: List[Finding], sheet_id: int, notes, when: str) -> List
     return out
 
 
+# Lucy's own notes: 'Lucy fixed this (10/20):' (this fixer) and
+# 'Lucy (10/20): city from Blue Ink.' (city_check.py).
+LUCY_NOTE = re.compile(r"^Lucy (?:fixed this )?\((\d{1,2})/(\d{1,2})\)")
+
+
+def old_note_requests(sheet_id: int, notes, today) -> Tuple[List[dict], list]:
+    """(requests, notes as they stay) -- Lucy's notes from before this week's
+    Monday taken off. A new week's tab is a copy of the last one, notes and
+    all, and a board kept in one tab forever would pile them up (Eve
+    2026-10-20). Only Lucy's paragraphs go; whatever a person wrote in the
+    same note stays."""
+    import datetime as dt
+    monday = today - dt.timedelta(days=today.weekday())
+    out, kept = [], []
+    for r, row in enumerate(notes or [], 1):
+        new_row = []
+        for c, note in enumerate(row, 1):
+            note = note or ""
+            if "Lucy" not in note:
+                new_row.append(note)
+                continue
+            parts = note.split("\n\n")
+            stay = [p for p in parts if not _lucy_before(p, monday, today)]
+            if len(stay) != len(parts):
+                note = "\n\n".join(stay)
+                out.append({"updateCells": {"range": _cell_range(sheet_id, r, c),
+                                            "rows": [{"values": [{"note": note}]}],
+                                            "fields": "note"}})
+            new_row.append(note)
+        kept.append(new_row)
+    return out, kept
+
+
+def _lucy_before(paragraph: str, monday, today) -> bool:
+    import datetime as dt
+    m = LUCY_NOTE.match(paragraph.strip())
+    if not m:
+        return False
+    try:
+        d = dt.date(today.year, int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return False
+    if d > today + dt.timedelta(days=1):       # a December note read in January
+        d = d.replace(year=today.year - 1)
+    return d < monday
+
+
 def _short(s: str) -> str:
     s = str(s or "")
     return s if len(s) <= 60 else s[:57] + "..."
@@ -494,10 +541,37 @@ def roll_call_cols(values) -> Dict[str, Tuple[int, int]]:
     return out
 
 
-def check_roll_call(tab: str, values) -> List[Finding]:
-    """X/T typed in the Int cell with the day's Roll Call empty. The X is the
-    attendance record and stays; the Roll Call gets the matching status."""
+ROLL_CALL_MIN = 3        # rows a board needs to show before its word is trusted
+
+
+def roll_call_words(values) -> Dict[str, str]:
+    """{status: word} this board itself writes in the Roll Call when Int says
+    X / T -- an owner may say 'OFF', 'Day Off' or 'X' where we say 'Off'
+    (Eve 2026-10-20: each office its own way). A status with fewer than
+    ROLL_CALL_MIN examples, or no 70% favourite, is left out: no guess."""
     first, last = block_rows(values)
+    seen: Dict[str, collections.Counter] = {}
+    for ic, rc in roll_call_cols(values).values():
+        for r in range(first, last + 1):
+            status, word = _g(values, r, ic).strip().upper(), _g(values, r, rc).strip()
+            if name_at(values, r) and status in ROLL_CALL_FOR and word:
+                seen.setdefault(status, collections.Counter())[word] += 1
+    out = {}
+    for status, cnt in seen.items():
+        word, hits = cnt.most_common(1)[0]
+        total = sum(cnt.values())
+        if total >= ROLL_CALL_MIN and hits >= MAJORITY * total:
+            out[status] = word
+    return out
+
+
+def check_roll_call(tab: str, values, learn: bool = False) -> List[Finding]:
+    """X/T typed in the Int cell with the day's Roll Call empty. The X is the
+    attendance record and stays; the Roll Call gets the matching status.
+    learn=True (owners' boards): the status is written in the board's OWN
+    word (roll_call_words); a status the board never shows is only reported."""
+    first, last = block_rows(values)
+    words = roll_call_words(values) if learn else ROLL_CALL_FOR
     out = []
     for day, (ic, rc) in roll_call_cols(values).items():
         for r in range(first, last + 1):
@@ -505,11 +579,13 @@ def check_roll_call(tab: str, values) -> List[Finding]:
             status = _g(values, r, ic).strip().upper()
             if not name or status not in ROLL_CALL_FOR or _g(values, r, rc).strip():
                 continue
+            word = words.get(status)
             out.append(Finding(
                 "roll_call_blank", tab, a1(r, rc),
                 "%s (%s): Int dice %s" % (KIND_LABEL["roll_call_blank"], day, status),
-                row=r, name=name, before="(vacía)", after=ROLL_CALL_FOR[status],
-                value=ROLL_CALL_FOR[status], extra={"day": day}))
+                row=r, name=name, before="(vacía)",
+                after=word or "(esta oficina no muestra qué palabra usa)",
+                value=word, extra={"day": day, "int_col": ic}))
     return out
 
 
