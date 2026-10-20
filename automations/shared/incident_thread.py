@@ -715,7 +715,11 @@ def _history(client, channel: str) -> list:
             kw = dict(channel=channel, limit=_HISTORY_LIMIT)
             if cursor:
                 kw["cursor"] = cursor
-            resp = client.conversations_history(**kw)
+            # Retried on a cut-off body (IncompleteRead): a failed scan reads
+            # as "nothing open", which posts a DUPLICATE ticket instead of
+            # following up the live one (2026-10-20, same error as the sweep).
+            from automations.shared import slack_retry
+            resp = slack_retry.read(client.conversations_history, **kw)
             msgs.extend(resp.get("messages") or [])
             cursor = (resp.get("response_metadata") or {}).get("next_cursor")
             if not cursor:

@@ -86,7 +86,11 @@ def _history(client, channel: str, days: int) -> List[dict]:
         kw = dict(channel=channel, oldest=oldest, limit=_PAGE)
         if cursor:
             kw["cursor"] = cursor
-        resp = client.conversations_history(**kw)
+        # A body cut off mid-read (IncompleteRead) is retried, not fatal:
+        # 2026-10-20 09:22 the sweep read 66 KB of 329 KB, gave up, and swept
+        # nothing all day.
+        from automations.shared import slack_retry
+        resp = slack_retry.read(client.conversations_history, **kw)
         msgs.extend(resp.get("messages") or [])
         cursor = (resp.get("response_metadata") or {}).get("next_cursor")
         if not cursor:
