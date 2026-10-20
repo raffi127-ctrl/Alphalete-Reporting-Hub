@@ -282,6 +282,7 @@ _HUB_CARD = {
     "jenny_metrics": "office-metrics",     # 2026-10-06, Jennifer Figueroa, same card
     "tre_metrics": "office-metrics",       # 2026-10-07, Tre Mitchell, same card
     "frank_metrics": "office-metrics",     # 2026-10-09, Frank Matos, same card
+    "hasani_metrics": "office-metrics",    # 2026-10-20, Hasani Lynch, same card
     # nii + trang had self-registered their own Report Library cards; folded
     # onto the one card 2026-09-28 (Megan: "consolidate"). Their library rows
     # were deleted.
@@ -579,7 +580,13 @@ def incomplete_status(report_id: str) -> str:
     return "partial"
 
 
-def ran_ok_today(report_id: str, day: str = "") -> bool:
+def _card_is_shared(report_id: str, card: str) -> bool:
+    """Does any OTHER report_id publish to this card? Then a success row on it
+    is not, by itself, proof that THIS report ran."""
+    return any(rid != report_id and c == card for rid, c in _HUB_CARD.items())
+
+
+def ran_ok_today(report_id: str, day: str = "", report_name: str = "") -> bool:
     """Did THIS REPORT's card already record a successful run today, from any
     machine? Read-only; False on any error.
 
@@ -599,25 +606,24 @@ def ran_ok_today(report_id: str, day: str = "") -> bool:
         card = hub_card_id(report_id)
         if not card:
             return False
-        # A SHARED card answers for a sibling too (2026-10-15): dd_week_roll
-        # publishes to the dd_populate card, so its 9:21 success read as
-        # "dd_populate already ran" and the noon backstop adopted a DONE for a
-        # report that never ran — the DD Bulletin then built on an empty week
-        # ($0 headline). On a shared card only a row under THIS report's own
-        # name counts; no known name answers False (never invent a DONE).
-        want_name = None
-        if _card_shared(report_id, card):
-            want_name = _display_name(report_id)
-            if not want_name:
-                return False
+        # SHARED CARD (2026-10-15, dd_bulletin went out $0-blocked). dd_week_roll
+        # publishes to the dd_populate card on purpose (one "Weekly Prep" pill,
+        # 1/2 -> 2/2). At noon the backstop asked "did dd_populate run?", found
+        # the 09:20 ROLL's success row on that card, adopted populate DONE — and
+        # populate never ran: the new 10.11.26 column stayed empty and the
+        # bulletin hard-blocked all day. On a shared card only a row carrying
+        # THIS report's name counts; with no name to compare, it can't be proven.
+        shared = _card_is_shared(report_id, card)
+        if shared and not report_name.strip():
+            return False
+        want = report_name.strip().casefold()
         day = day or _dt.date.today().isoformat()
         for r in _ws().get_all_records():
             if str(r.get("Report ID") or "").strip() != card:
                 continue
             if not str(r.get("Started At") or "").startswith(day):
                 continue
-            if (want_name is not None and
-                    _name_key(r.get("Report Name")) != _name_key(want_name)):
+            if shared and str(r.get("Report Name") or "").strip().casefold() != want:
                 continue
             if str(r.get("Status") or "").strip().lower() in ("success", "done"):
                 return True

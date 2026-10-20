@@ -387,5 +387,23 @@
       "vzftr"
     ],
     "notes": "wired by hand 2026-10-09; all 9 trackers like colten/jairo; channel #peakmanagement-att-sales from his Lucy ECO sign-up 2026-10-09."
+  },
+  {
+    "key": "hasani",
+    "label": "Hasani's Local Office (channel from ECO sign-up)",
+    "owner": "Hasani Lynch",
+    "channel_ids": [],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-10-20; all 9 trackers like tre/jenny; channel_ids filled once his Lucy ECO sign-up names the room."
   }
 ]
