@@ -64,24 +64,40 @@ ACCOUNTS = {
 FLAGS = ("wrong_place", "retail", "base_pay", "quoted_pay", "nine_to_five",
          "unsure")
 
-# SPOKEN NAME -> THE PERSON, and only where the data shows it is the same
-# person. Checked on 789 graded calls for 11280: each of these is on ONE
-# Ringover line 100% of the time, and the line is that person's.
-#   George  n=164  Jorge Pena   100%   (Jorge, anglicised)
-#   Letty   n= 19  Letty Robinson 100%
-#   Lettie  n= 17  Letty Robinson 100%  (Whisper mis-hearing)
-#   Luddy   n=  7  Letty Robinson 100%  (same)
-# NOT merged, because a different first name on someone else's line is
-# more likely a second person sharing it than a nickname -- Raf's line
-# alone carries Danny, Mariana and Dulce. Megan is confirming who these
-# are; until then they stand on their own so nobody is coached for a
-# call they did not make:
-#   Taylor (Zalika Henderson's line) · Leslie (Letty Robinson's)
-#   Danny, Mariana, Dulce (Rafael Hidalgo's) · Corey (Dani Pena's)
+# SPOKEN NAME -> THE PERSON ON THE ROSTER.
+#
+# The roster is not a guess: it is the 26 distinct `sent_by` values on
+# 11280's SMS log. Every merge below is a spoken name that (a) is on ONE
+# Ringover line 100% of the time and (b) matches a real sender on that
+# account. Counts are from 789 graded calls.
+#   George  n=164  Jorge Pena's line      -> Jorge Pena (anglicised)
+#   Danny   n= 37  Rafael Hidalgo's line  -> Dani Pena
+#   Mariana n= 25  Rafael Hidalgo's line  -> Mariana Gamboa
+#   Dulce   n=  5  Rafael Hidalgo's line  -> Dulce Lamb APT
+#   Letty / Lettie / Luddy / Leslie       -> Leticia Robinson
+#
+# Leslie (n=58) is the one inference rather than a match: there is no
+# Leslie among the 26 senders, she is on Leticia Robinson's line 100% of
+# the time, and Lettie and Luddy are already Whisper mis-hearings of the
+# same person off the same line. If a real Leslie turns up, split it.
+#
+# NOTE the two spellings: the roster says "Leticia Robinson", Ringover
+# says "Letty Robinson". [[feedback_alias_list]]
 CANON = {"George": "Jorge Pena",
-         "Letty": "Letty Robinson", "Lettie": "Letty Robinson",
-         "Luddy": "Letty Robinson",
-         "Korea": "Corey", "Square": "Corey", "Cory": "Corey"}
+         "Danny": "Dani Pena",
+         "Mariana": "Mariana Gamboa",
+         "Dulce": "Dulce Lamb APT",
+         "Letty": "Leticia Robinson", "Lettie": "Leticia Robinson",
+         "Luddy": "Leticia Robinson", "Leslie": "Leticia Robinson",
+         "Letty Robinson": "Leticia Robinson"}
+
+# NOT RECRUITERS. Megan 2026-10-20: "Taylor and corey were testing for
+# CS calls". Their calls are not recruiting calls, so they are dropped
+# from the audit entirely rather than merely left unmerged — grading a
+# customer-service test against a booking-call rubric is noise, and it
+# would put two people at the top of an offenders list they do not
+# belong on.
+NOT_RECRUITING = {"Taylor", "Corey", "Korea", "Square", "Cory"}
 
 # "this is who", "this is how", "this is for" -- the intro regex catches
 # these and they are not people. A real name also recurs; a one-off is
@@ -100,7 +116,14 @@ STREAK_MARK = "\U0001F4C5"
 
 def _spoken(rec):
     n = (rec.get("said_their_name") or "").strip()
-    return "" if n.lower() in NOT_A_NAME else CANON.get(n, n)
+    if n.lower() in NOT_A_NAME:
+        return ""
+    return CANON.get(n, n)
+
+
+def is_recruiting(rec):
+    """False for the CS test calls, which are not recruiting at all."""
+    return (rec.get("said_their_name") or "").strip() not in NOT_RECRUITING
 
 
 def _who(rec, seen=None):
@@ -127,13 +150,17 @@ def _roster(rows):
 
 
 def load(office, day=None):
-    """Graded calls for one account, optionally one day."""
+    """Graded calls for one account, optionally one day.
+
+    CS test calls are not recruiting calls and never reach the audit."""
     out = []
     for f in sorted(GRADES.glob("*.json")):
         d = json.loads(f.read_text(encoding="utf-8"))
         if d.get("skip") or d.get("office") != office:
             continue
         if day and (d.get("when") or "")[:10] != day.isoformat():
+            continue
+        if not is_recruiting(d):
             continue
         out.append(d)
     return out

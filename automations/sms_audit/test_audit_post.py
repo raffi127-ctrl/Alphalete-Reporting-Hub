@@ -25,16 +25,30 @@ def rec(said="", line="Rafael Hidalgo", office="11280", shown=None, **flags):
 class WhoMadeTheCall(unittest.TestCase):
 
     def test_the_spoken_name_beats_the_line(self):
-        """Raf's line alone is used by Danny, Mariana and Dulce."""
+        """Raf's line alone is used by Dani Pena, Mariana Gamboa and
+        Dulce Lamb, so the line can never name the caller."""
         rows = [rec(said="Danny") for _ in range(5)]
-        self.assertEqual(AP._who(rows[0], AP._roster(rows)), "Danny")
+        self.assertEqual(AP._who(rows[0], AP._roster(rows)), "Dani Pena")
 
     def test_a_known_variant_folds_to_the_person(self):
-        """George is on Jorge Pena's line 100% of 164 calls."""
-        for spoken in ("George", "Letty", "Lettie", "Luddy"):
+        """Every merge matches a real sender on the account's SMS log."""
+        for spoken, person in (("George", "Jorge Pena"),
+                               ("Danny", "Dani Pena"),
+                               ("Mariana", "Mariana Gamboa"),
+                               ("Dulce", "Dulce Lamb APT"),
+                               ("Letty", "Leticia Robinson"),
+                               ("Lettie", "Leticia Robinson"),
+                               ("Luddy", "Leticia Robinson"),
+                               ("Leslie", "Leticia Robinson")):
             rows = [rec(said=spoken) for _ in range(5)]
-            got = AP._who(rows[0], AP._roster(rows))
-            self.assertIn(got, ("Jorge Pena", "Letty Robinson"), spoken)
+            self.assertEqual(AP._who(rows[0], AP._roster(rows)), person, spoken)
+
+    def test_the_cs_test_callers_are_not_in_the_audit_at_all(self):
+        """Megan 2026-10-20: "Taylor and corey were testing for CS calls".
+        Grading a customer-service test against a booking rubric is noise."""
+        for spoken in ("Taylor", "Corey", "Korea"):
+            self.assertFalse(AP.is_recruiting(rec(said=spoken)), spoken)
+        self.assertTrue(AP.is_recruiting(rec(said="Danny")))
 
     def test_a_different_name_on_someone_elses_line_is_left_alone(self):
         """Taylor is on Zalika's line but is not assumed to BE Zalika —
@@ -58,7 +72,7 @@ class OnlyFactualFlags(unittest.TestCase):
     def test_a_wrong_location_is_flagged(self):
         rows = [rec(said="Danny", wrong_place="we are located in Irving")
                 for _ in range(3)]
-        self.assertIn("Danny", AP.offenders(rows))
+        self.assertIn("Dani Pena", AP.offenders(rows))
 
     def test_a_merely_off_script_call_is_not(self):
         """Four tests found the rubric does not predict show-up, so a
@@ -122,7 +136,7 @@ class RepeatOffenders(unittest.TestCase):
     def test_consecutive_days_count_up(self):
         flagged = [rec(said="Danny", wrong_place="Irving") for _ in range(3)]
         self._fake({self._day(i): flagged for i in range(4)})
-        self.assertEqual(AP.streaks("11280", self._day(3))["Danny"], 4)
+        self.assertEqual(AP.streaks("11280", self._day(3))["Dani Pena"], 4)
 
     def test_a_clean_day_breaks_the_run(self):
         """Flagged Mon, Tue, clean Wed, flagged Thu is a streak of ONE —
@@ -131,12 +145,12 @@ class RepeatOffenders(unittest.TestCase):
         clean = [rec(said="Danny") for _ in range(3)]
         self._fake({self._day(0): flagged, self._day(1): flagged,
                     self._day(2): clean, self._day(3): flagged})
-        self.assertEqual(AP.streaks("11280", self._day(3))["Danny"], 1)
+        self.assertEqual(AP.streaks("11280", self._day(3))["Dani Pena"], 1)
 
     def test_it_stops_at_five(self):
         flagged = [rec(said="Danny", wrong_place="Irving") for _ in range(3)]
         self._fake({self._day(i): flagged for i in range(5)})
-        self.assertEqual(AP.streaks("11280", self._day(4))["Danny"], 5)
+        self.assertEqual(AP.streaks("11280", self._day(4))["Dani Pena"], 5)
 
     def test_the_week_is_monday_to_friday_only(self):
         """Monday starts again — last week's run does not carry over."""
