@@ -23,7 +23,7 @@ wrong is not a typo: it staples one person's background check onto another
 person's row, which is the exact failure mode the whole compliance rule in
 parse.py exists to prevent. So a proposal is POSTED, not applied:
 
-    ✅ by Tiff / Alisson / Aimee  -> we rename the OBCL row (and say so)
+    ✅ by Alisson / Aisha / Tiff  -> we rename the OBCL row (and say so)
     ❌                            -> we never ask again, and we flag it loudly:
                                      that BG check is lined up with the WRONG
                                      applicant and needs a human to unpick it
@@ -65,9 +65,9 @@ REJECT_EMOJI = "x"                   # ❌ no — wrong applicant
 # WHO GETS TAGGED. Onboarding owns the sheet, so onboarding gets the ping —
 # the same three digi_docs escalates to, confirmed in this channel 2026-08-26.
 DECIDERS = (
+# Tiff dropped from the tags 2026-10-20 (Megan: no BG/onboarding pings for
+# her any more); Aimee Garibay removed entirely, terminated.
     ("Alisson", "U0BBG374GE9"),    # Alisson Rodriguez
-    ("Tiff", "U0B9924FHCL"),       # Tiffani Brown
-    ("Aimee", "U0APVP29QSD"),      # Aimee Garibay
     ("Aisha", "U083X5ZJWSH"),      # Aisha Ceron — named on the ask, not just
                                    # counted (Megan 2026-08-26)
 )
@@ -77,6 +77,7 @@ DECIDERS = (
 # weren't on this list (2026-08-26). Being tagged is about who should answer;
 # counting is about whose answer is good, and theirs always is.
 ALSO_DECIDE = (
+    ("Tiff", "U0B9924FHCL"),       # Tiffani Brown — untagged 2026-10-20, her answer still good
     ("Megan", "U04G5HJBGFN"),      # Megan Hidalgo
     ("Raf", "U045Z8N0ZQC"),        # Rafael Hidalgo
     ("JD", "U05094TTPKQ"),         # JD Mascorro — the workspace has two of him;

@@ -32,8 +32,8 @@ HEADER = "Slack / Skool Email"
 # Who fixes a missing address. Same three as the Blue Ink summary, by user ID
 # rather than @handle: "tiff" matches six people in this workspace.
 TAG_USER_IDS = [
-    "U0B9924FHCL",   # Tiffani Brown
-    "U0APVP29QSD",   # Aimee Garibay
+    # Tiffani Brown + Aimee Garibay dropped 2026-10-20 (Megan): Tiff off
+    # onboarding pings, Aimee terminated.
     "U0BBG374GE9",   # Alisson Rodriguez
 ]
 

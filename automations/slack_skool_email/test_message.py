@@ -251,7 +251,7 @@ def test_the_slack_thread_names_anyone_who_was_missed():
                            [("Ana Griffin", 24, "no email on the sheet")])
     assert "*52*" in body
     assert "Ana Griffin" in body and "row 24" in body
-    assert "<@U0B9924FHCL>" in body      # tagged so somebody fixes it
+    assert "<@U0BBG374GE9>" in body      # tagged so somebody fixes it
 
 
 def test_a_clean_week_says_nothing_extra():

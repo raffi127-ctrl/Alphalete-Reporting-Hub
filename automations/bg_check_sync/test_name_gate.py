@@ -404,7 +404,7 @@ class VoteTests(unittest.TestCase):
                  "key": "coleman|nikki", "locations": [["D2D OBCL", 12]]}
         state = {"pid1": entry}
         rx = [{"name": "white_check_mark", "users": ["U0B9924FHCL"]},
-              {"name": "x", "users": ["U0APVP29QSD"]}]
+              {"name": "x", "users": ["U0BBG374GE9"]}]
         orig = name_gate._client
         name_gate._client = lambda: None
         thread = name_gate._thread_reactions
@@ -416,7 +416,7 @@ class VoteTests(unittest.TestCase):
             name_gate._thread_reactions = thread
         self.assertEqual(approved, [])
         self.assertEqual(len(rejected), 1)
-        self.assertEqual(rejected[0]["decided_by"], "U0APVP29QSD")
+        self.assertEqual(rejected[0]["decided_by"], "U0BBG374GE9")
 
 
 class SpellingFixTests(unittest.TestCase):

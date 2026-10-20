@@ -39,8 +39,8 @@ HEADER = "Blueink Status Update"
 # workspace lookup + Megan (2026-08-24); "tiff" matched six people, and she
 # named Tiffani Brown.
 TAG_USER_IDS = [
-    "U0B9924FHCL",   # Tiffani Brown
-    "U0APVP29QSD",   # Aimee Garibay
+    # Tiffani Brown + Aimee Garibay dropped 2026-10-20 (Megan): Tiff off
+    # onboarding pings, Aimee terminated.
     "U0BBG374GE9",   # Alisson Rodriguez
 ]
 

@@ -353,6 +353,6 @@ SLACK_CHANNEL = "#rafs-office-recruiting-11280"
 # Tiffanys and she is the only one in this room, display name "tiff".
 ESCALATE_ON_FAILURE = (
     ("Alisson", "U0BBG374GE9"),    # Alisson Rodriguez  (@machadopaola2020)
-    ("Tiff", "U0B9924FHCL"),       # Tiffani Brown      (@tiffanibrown8)
-    ("Aimee", "U0APVP29QSD"),      # Aimee Garibay      (@aimeegaribaygutierrez)
+# Tiff and Aimee Garibay dropped 2026-10-20 (Megan): Tiff no longer gets
+# onboarding pings, Aimee is terminated.
 )

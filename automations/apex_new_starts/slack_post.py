@@ -1,4 +1,4 @@
-"""Post the leftovers to #rafs-office-recruiting-11280, for Alisson and Tiff.
+"""Post the leftovers to #rafs-office-recruiting-11280, for Alisson.
 
 Megan (2026-09-09): anything the run couldn't do goes in a Slack thread in that
 channel, tagging the two people who will do it by hand.
@@ -42,7 +42,7 @@ HEADER = "New Starts → Apex"
 # module already did.
 TAG_USER_IDS = [
     "U0BBG374GE9",   # Alisson Rodriguez
-    "U0B9924FHCL",   # Tiffani Brown
+    # Tiffani Brown dropped 2026-10-20 (Megan): no more onboarding pings.
 ]
 
 
