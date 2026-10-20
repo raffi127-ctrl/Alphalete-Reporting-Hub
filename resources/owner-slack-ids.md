@@ -51,7 +51,7 @@ detail in the thread. [[feedback_short_header_posts]]
 | 11280 | Rafael Hidalgo (main) | C0AUAS88FGW | Confirmed by Megan 2026-10-20 |
 | 11580 | Carlos Hidalgo | C09L1S3MQ1E | Confirmed by Megan 2026-10-20 |
 | 23965 | Tiffani Brown | C0CAV0P4RRS | `raf-hidalgo-recruiting-23965-tiffani`, created 2026-10-20 |
-| 24065 | Maria Quintero | C0CBLLEF2CQ | `raf-hidalgo-recruiting-24064-maria` — **the channel name says 24064, the account is 24065.** No `SMS Dump 24064` tab exists and 24065 is what resume_pushing, schedule_config and first_round_scorecards all use. Channel name is the typo; worth renaming. |
+| 24065 | Maria Quintero | C0CBLLEF2CQ | `raf-hidalgo-recruiting-24065-maria`. Was named ...-24064- until Megan renamed it 2026-10-20; the id did not change. |
 
 ## Where else IDs live in code (keep in sync)
 - `automations/icd_alerts/offices.py`: `slack_user_id` per ECO office.
