@@ -203,10 +203,10 @@ TEAMS: Dict[str, tuple] = {
     # came off; "Carlos's Team" left the SFDC filter on 10/14.
     "Eveliz": ("b2b", "Eveliz's Team"),
     "Luis":   ("b2b", "Luis's Team"),
-    # Atef, 2026-10-10 (Eve). "Atef's Team" has been in the SFDC filter since
-    # 2026-09-03; the saved-view route needed a view per captain and nobody saved
-    # his, so he was never scanned.
-    "Atef":   ("b2b", "Atef's Team"),
+    # Atef off 2026-10-20 (Eve): his captainship moved to NDS, "Atef's Team" left
+    # the SFDC filter (CB-Owner Metrics exports 0 thumbs, same as Carlos), and
+    # NDS Captain Teams has no "Atef's Team" yet. Add him back as
+    # ("nds", "Atef's Team") once that value shows up there.
     "Khalil": ("nds", "Khalil's Team"),
     "Colten": ("nds", "Colten's Team"),
     "Jairo":  ("nds", "Jairo's Team"),
