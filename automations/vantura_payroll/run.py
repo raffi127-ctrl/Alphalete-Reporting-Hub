@@ -1276,6 +1276,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--raf-test", action="store_true",
                     help="ONLY pull the Raf-owner DD slice and print what the "
                          "allowlist reps brought in. Never writes.")
+    ap.add_argument("--rafdd-probe", action="store_true",
+                    help="ONLY scrape Raf's PROGRAM SUMMARY downline grid "
+                         "(per-person deposit dollars) for the 10/4 and 10/11 "
+                         "weeks and dump every row to 'DD Probe'. Never writes.")
     ap.add_argument("--fiber-probe", action="store_true",
                     help="ONLY pull the org-wide D2D ORDERLOG (SalesBoard"
                          "Original, the fiber order log) for sales since 9/28 "
@@ -1304,6 +1308,56 @@ def main(argv: list[str] | None = None) -> int:
         resp = requests.get(url, params={"action": "refresh"}, timeout=600)
         resp.raise_for_status()
         _log(f"refresh -> {resp.text[:200]}")
+        return 0
+
+    if args.rafdd_probe:
+        from automations.shared.tableau_patchright import tableau_session
+        from automations.recruiting_report.opt_phase import (
+            _program_summary_url, scrape_view_data)
+        rl = []
+
+        def rlog2(msg):
+            _log(msg)
+            rl.append(str(msg))
+
+        XY = ((0.033, 0.539), (0.033, 0.560), (0.05, 0.47))
+        with tableau_session(verbose=False) as page:
+            for we in (dt.date(2026, 10, 4), dt.date(2026, 10, 11)):
+                url = _program_summary_url(we)
+                got = False
+                for xy in XY:
+                    try:
+                        fields, records = scrape_view_data(
+                            url, verbose=False, page=page, activate_xy=xy)
+                    except Exception as e:  # noqa: BLE001
+                        rlog2(f"[{we}] scrape at {xy} failed: {str(e)[:90]}")
+                        continue
+                    if len(records) < 5:
+                        rlog2(f"[{we}] {xy} -> {len(records)} row(s), retry")
+                        continue
+                    rlog2(f"[{we}] downline grid: {len(records)} rows; "
+                          f"cols: {fields}")
+                    for r in records:
+                        rlog2(f"[{we}] " + " | ".join(str(x)[:26] for x in r))
+                    got = True
+                    break
+                if not got:
+                    rlog2(f"[{we}] NO grid captured")
+        try:
+            import gspread
+            from automations.recruiting_report import fill as _f
+            _ctl = _f._client().open_by_key(
+                "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try:
+                _tab = _ctl.worksheet("DD Probe")
+                _tab.clear()
+            except gspread.WorksheetNotFound:
+                _tab = _ctl.add_worksheet("DD Probe", rows=600, cols=2)
+            _tab.update([[ln] for ln in rl[:580]], "A1",
+                        value_input_option="RAW")
+            _log(f"rafdd-probe: {len(rl)} line(s) -> 'DD Probe' tab")
+        except Exception as _e:
+            _log(f"rafdd-probe: tab write failed ({_e!r})")
         return 0
 
     if args.fiber_probe:
