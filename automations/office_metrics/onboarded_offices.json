@@ -303,7 +303,9 @@
     "machine": "Lucy 1",
     "campaign": "fiber_d2d",
     "notes": "",
-    "email_to": [],
+    "email_to": [
+      "joseph@loganlegacygroup.com"
+    ],
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
