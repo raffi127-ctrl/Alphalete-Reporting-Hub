@@ -457,6 +457,7 @@ OFFICE_TIMEZONES: dict = {
     "jairo":   "America/New_York",             # Miami, FL — EASTERN (ECO sign-up, 305 number)
     "frank":   "America/New_York",             # Peak Management, South Shore org (FL) — EASTERN; confirm on his ECO sign-up
     "lajahnik": "America/Denver",              # Aventis Consulting, Utah — MOUNTAIN (customer 801/385 numbers on her order log, 2026-10-09)
+    "joseph":  "America/Detroit",              # Logan Legacy Group, Grandville, MI — EASTERN
 }
 
 # The fallback for an office nobody has harvested yet. Most of the org is Texas,

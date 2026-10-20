@@ -272,8 +272,8 @@
     "report_id": "joseph_metrics",
     "label": "Joseph's Local Office",
     "owner": "Joseph Logan",
-    "channel_id": "",
-    "channel_name": "",
+    "channel_id": "C0CA93VPTUP",
+    "channel_name": "logan-legacy-sales",
     "sheet_id": "1rDuey-hcHzJP8T7CKgs2iWgBvFX7wtCryHF0OiPc0qw",
     "knocks_office": "Joseph Logan",
     "ov_account": "23376",
@@ -303,9 +303,7 @@
     "machine": "Lucy 1",
     "campaign": "fiber_d2d",
     "notes": "",
-    "email_to": [
-      "joseph@loganlegacygroup.com"
-    ],
+    "email_to": [],
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
