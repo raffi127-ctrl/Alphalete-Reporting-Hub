@@ -86,9 +86,21 @@ def _scan(ss, args) -> int:
                 fresh, captain=captain, source="Tableau captain filter",
                 ss=ss, dry_run=args.dry_run, logfn=print))
     print(f"\n{fresh_total} new rep(s) waiting for a ✅ from this scan.")
-    # Exit 0 is this report's delivery (schedule_config close_on: exit_zero), so
-    # it has to mean EVERY captain was scanned. A skipped captain is a run that
-    # can't say "nobody new" for that team — it fails, and its ticket stays open.
+    # THE DELIVERY RECORD (2026-10-19). This comment used to say exit 0 was the
+    # delivery via `close_on: exit_zero` — but that was never in schedule_config,
+    # so a clean scan could not close its ticket and failure-new_owners_scan sat
+    # open for days after the 38a8f07 fix. A manifest naming every captain
+    # scanned (and any that weren't) is the proof `verify: manifest` reads.
+    if not args.dry_run:
+        try:
+            from automations.shared.run_manifest import write_manifest
+            write_manifest("new_owners_scan", failed=failed,
+                           succeeded=[c for c in rosters if c not in failed],
+                           note=f"{fresh_total} new rep(s) proposed")
+        except Exception as e:  # noqa: BLE001 — never fail the scan over it
+            print(f"  (manifest not written: {type(e).__name__})")
+    # A skipped captain is a run that can't say "nobody new" for that team —
+    # it fails, and its ticket stays open.
     if failed:
         print(f"⚠ {len(failed)} captainship(s) not scanned: {', '.join(failed)}")
         return 1
