@@ -67,6 +67,7 @@ CITIES = {
     "southfield": ("Southfield / Detroit, MI", 42.4734, -83.2219, "America/Detroit"),
     "corpus_christi": ("Corpus Christi, TX", 27.8006, -97.3964, "America/Chicago"),
     "austin": ("Austin, TX", 30.2672, -97.7431, "America/Chicago"),
+    "grandville": ("Grandville / Grand Rapids, MI", 42.9095, -85.7631, "America/Detroit"),
     "wilkes_barre": ("Wilkes-Barre, PA", 41.2459, -75.8813, "America/New_York"),
     "memphis": ("Memphis, TN", 35.1495, -90.0490, "America/Chicago"),
     # jamis / Midspire: "Chicago Business Development Consulting" is the
@@ -130,6 +131,7 @@ METRICS_CITY = {
     "jairo": "miami",           # Profits Management, Miami (305)
     "frank": "deerfield_beach", # Peak Management, Deerfield Beach FL (Megan 2026-10-09); ECO key frank
     "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
+    "joseph": "grandville",     # Logan Legacy Group, Grandville MI (OwnerVille office address, harvested 2026-10-20); #logan-legacy-sales
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
     "tre": "houston",           # Mission III Management, Houston -- #mission-iii-sales (2026-10-07)
 }
