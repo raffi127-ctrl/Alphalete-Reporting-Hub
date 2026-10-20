@@ -14266,6 +14266,22 @@
    "verify": null,
    "timeout_minutes": 15
   },
+  "social_media_posting": {
+   "on_scheduler": false,
+   "display_name": "Alphalete social media posting (Run Now)",
+   "_note": "MANUAL HANDLE ONLY (2026-10-19). The scheduled passes are the noon + 4pm social-scanner LaunchAgent on Lucy 1 (deploy/social_scanner_noon.sh). This entry exists so `lucy rerun social_media_posting` can run an extra pass from the queue (e.g. after Lucy 1 was down for both slots on 10/19). Same command the agent runs. It only SCHEDULES a post the approvers already gave a check to; new photos get proposed, never posted, on this pass.",
+   "source_type": "local",
+   "data_sources": [],
+   "command": ["automations.brand_audit.social_inbox"],
+   "base_args": [],
+   "cadence": {"weekdays": []},
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20,
+   "machine": "Lucy 1"
+  },
   "sci_recruiting": {
    "on_scheduler": false,
    "_note": "SCI Recruiting Dashboard refresh (captainship split, Carlos 2026-10-02): runs funnel_board + indeed_source_report + ad_sales_board against the SCI book (1aWWdtMtv1...) with deploy/sci-roster.json (the 15 captainship-only owners as that book's org). MANUAL HANDLE ONLY - the deploy wrappers already run an SCI pass after every Alphalete pass, so the hourly/chain schedules cover both books; this exists because `lucy rerun` cannot set env vars. `lucy rerun sci_recruiting`; --steps funnel|indeed|adsales to scope, --dry-run forwards to every step.",
