@@ -49,8 +49,8 @@ and this machine both push it.
     python -m automations.icd_alerts.resume_push --live     # really sends
 
 SEND TO AI CANNOT BE UNDONE. The command line is a dry run unless --live,
-and --live only sends for an office in LIVE_OFFICE_KEYS. Everyone else gets a
-dry run, scheduled or not -- see LIVE_OFFICE_KEYS for why.
+and --live only sends for an office listed "live" in PUSH_OFFICES. An office
+not listed there does nothing -- see PUSH_OFFICES for why.
 
 NEVER REMOVES FOR MISSING CONTACT INFO, NEVER TEXTS (Carlos, 9/13 + 8/29):
 pinned below in _point_walk_here, per PUSHING-OPERATIONS-README.md section 4.
@@ -96,22 +96,31 @@ LOCK_STALE_MINUTES = 60
 # always writes its files and its result before the next tick could start.
 WALK_MINUTES = 15
 
-# OFFICES WHOSE MACHINE REALLY SENDS. Empty = every office machine dry-runs.
+# WHICH OFFICE MACHINES PUSH, AND HOW. office_key -> (AppStream office ID,
+# "dry" or "live"). An office not listed here does nothing at all.
 #
-# Every machine that said "yes, push my resumes" already runs this --live
-# every 10 minutes. Until 2026-10-20 that was harmless: the batch robot was
-# missing on all of them, so each tick stopped before touching anyone. The
-# walk needs nothing installed, so the day it shipped it would have started
-# sending for real on every one of them at once, including offices Lucy 2
-# and Lucy 4 already push (two pushers on one queue) -- with the rollout on
-# hold (Megan, 10/7). So a send is switched on per office, here, in code,
-# after a supervised dry run on that machine. Same idea as PUSH_ALLOWED in
-# automations/applicant_push/run.py, which this does not replace.
-#
-# TO SWITCH AN OFFICE ON: add its office_key here AND take it out of
-# ROTATION_BY_MACHINE in automations/applicant_push/offices.py, in the same
-# commit -- one office, one pusher.
-LIVE_OFFICE_KEYS: frozenset = frozenset()
+# Every machine that said "yes, push my resumes" already ticks --live every
+# 10 minutes. Until 2026-10-20 that was harmless: the batch robot was missing
+# on all of them, so each tick stopped before touching anyone. The walk needs
+# nothing installed, so without this list the update would have started
+# sending for real on all of them at once -- including offices Lucy 2 and
+# Lucy 4 already push (two pushers on one queue) -- and even a dry run opens
+# Indeed resumes, which is the traffic Indeed blocks. So each office is
+# switched on here, in code, one at a time:
+#   "dry"  -- walks and reads, sends nothing. The supervised first step.
+#   "live" -- really Sends to AI. Same commit must take the office out of
+#             ROTATION_BY_MACHINE in automations/applicant_push/offices.py:
+#             one office, one pusher.
+# The AppStream office ID is stated, never learned: some offices' computers
+# hold a login that sees many offices, and the walk refuses unless the page's
+# "Office ID:" banner is exactly this one.
+PUSH_OFFICES = {
+    # Carlos, first supervised dry run (Megan 2026-10-20). Both of his
+    # campaigns' enrollments live on one machine; either may carry the
+    # push_resumes answer. 11580 stays live on Lucy 2 meanwhile.
+    "carlos": ("11580", "dry"),
+    "carlos-b2batt": ("11580", "dry"),
+}
 LOGIN_POLL_SECONDS = 90
 
 # Chrome slows timers and rendering in a minimized window. These keep a
@@ -137,15 +146,22 @@ def push_record() -> dict:
     return {}
 
 
+def _listed(record: Optional[dict] = None):
+    """(AppStream office ID, mode) for this machine's office, or None."""
+    rec = push_record() if record is None else record
+    return PUSH_OFFICES.get(str(rec.get("office_key") or ""))
+
+
 def enabled() -> bool:
-    return bool(push_record()) and bool(C.appstream_creds())
+    return (bool(push_record()) and bool(C.appstream_creds())
+            and _listed() is not None)
 
 
 def armed(record: Optional[dict] = None) -> bool:
-    """May this machine really Send to AI? Only for an office switched on in
-    LIVE_OFFICE_KEYS. Fails closed: no record, no key, no send."""
-    rec = push_record() if record is None else record
-    return str(rec.get("office_key") or "") in LIVE_OFFICE_KEYS
+    """May this machine really Send to AI? Only for an office listed "live"
+    in PUSH_OFFICES. Fails closed: no record, no key, no send."""
+    got = _listed(record)
+    return bool(got) and got[1] == "live"
 
 
 def quiet_now(now: Optional[dt.datetime] = None) -> bool:
@@ -741,28 +757,17 @@ def _point_walk_here(office_id: str, record: dict) -> None:
 
 
 def _pin_office(seen: Optional[str], record: dict) -> "tuple[bool, str]":
-    """(ok, why). Whose queue is this, and is it the one it was last time?
-
-    An office's own login sees only that office (resources/lucy-login-
-    standard.md rule 3), so the first walk LEARNS the Office ID off the
-    page and saves it. Every walk after must show the same one: a different
-    ID means the saved login is not this office's any more, and the walk
-    refuses before a single applicant is touched.
-    """
+    """(ok, why). Is the queue on screen THIS office's, by the number stated
+    in PUSH_OFFICES? Checked before a single applicant is read; the walk then
+    re-checks the banner before every click."""
+    got = _listed(record)
+    if not got:
+        return False, "this office is not in PUSH_OFFICES"
     if not seen:
         return False, "no Office ID on the One App at a time page"
-    pinned = str(record.get("as_office_id") or "")
-    if not pinned:
-        record["as_office_id"] = seen
-        try:
-            C.add_enrollment(record)
-        except Exception:  # noqa: BLE001 -- learned again next tick
-            pass
-        _log("this computer pushes AppStream office %s (saved)" % seen)
-        return True, ""
-    if pinned != seen:
+    if seen != got[0]:
         return False, ("AppStream shows office %s, but this computer pushes "
-                       "office %s" % (seen, pinned))
+                       "office %s" % (seen, got[0]))
     return True, ""
 
 
@@ -795,10 +800,13 @@ def push(live: bool, scheduled: bool = False) -> int:
         _log("no AppStream login saved -- nothing to push with")
         return 1
     record = push_record()
+    if _listed(record) is None:
+        _log("office %r is not switched on for resume pushing yet "
+             "(PUSH_OFFICES) -- nothing to do" % (record.get("office_key") or "?"))
+        return 0
     if live and not armed(record):
-        _log("DRY RUN: office %r is not switched on for live pushing yet "
-             "(LIVE_OFFICE_KEYS) -- reading only, nothing is sent"
-             % (record.get("office_key") or "?"))
+        _log("DRY RUN: office %r is switched on for reading only "
+             "(PUSH_OFFICES) -- nothing is sent" % record.get("office_key"))
         live = False
     if live and quiet_now():
         _log("weekend quiet window (Fri 1pm - Sun 1pm): nothing pushes")
@@ -835,9 +843,9 @@ def push(live: bool, scheduled: bool = False) -> int:
                     ("AppStream shows", "no Office ID")):
                 result = "wrong_office"
                 _report_once(result, "resume push refused: %s" % out["why"],
-                             "Nothing was sent. If this office really changed "
-                             "its AppStream login, clear as_office_id in this "
-                             "computer's enrollment so it learns the new one.")
+                             "Nothing was sent. The login saved on this "
+                             "computer is showing another office: fix the "
+                             "login, or the number in PUSH_OFFICES.")
                 return 1
             if out.get("walled"):
                 result = "walled"

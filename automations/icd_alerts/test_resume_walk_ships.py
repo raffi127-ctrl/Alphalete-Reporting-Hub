@@ -8,7 +8,8 @@ safe to ship to a machine nobody can reach:
 
   * the walk's Hub-only extras are the NAMED ones, and each is either inside
     a try or in a function the office push never calls;
-  * no office machine really sends until its office is switched on;
+  * no office machine does anything until its office is listed, and
+    none really sends until it is listed "live";
   * the rules every office machine walks by are stated, not inherited;
   * nothing asks for, or checks, Resume Helper any more.
 
@@ -87,31 +88,47 @@ class TheWalkShipsWhole(unittest.TestCase):
 class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
 
     def test_no_office_is_live_yet(self):
-        # Rollout on hold (Megan, 10/7). Adding one is a deliberate commit.
-        self.assertEqual(RP.LIVE_OFFICE_KEYS, frozenset())
+        # Rollout on hold (Megan, 10/7). Going live is a deliberate commit.
+        self.assertEqual([k for k, (_, mode) in RP.PUSH_OFFICES.items()
+                          if mode == "live"], [])
 
-    def test_an_unlisted_office_is_never_armed(self):
+    def test_every_listed_office_states_its_number_and_mode(self):
+        for key, (office, mode) in RP.PUSH_OFFICES.items():
+            self.assertTrue(office.isdigit(), key)
+            self.assertIn(mode, ("dry", "live"), key)
+
+    def test_an_unlisted_office_does_nothing(self):
         self.assertFalse(RP.armed({"office_key": "drew"}))
         self.assertFalse(RP.armed({}))
+        with mock.patch.object(RP, "push_record",
+                               return_value={"office_key": "drew"}), \
+             mock.patch.object(RP.C, "appstream_creds",
+                               return_value={"username": "u", "password": "p"}):
+            self.assertFalse(RP.enabled())
+            with mock.patch.object(RP, "_connect") as conn:
+                self.assertEqual(RP.push(live=True), 0)
+            conn.assert_not_called()
 
-    def test_a_listed_office_is_armed(self):
-        with mock.patch.object(RP, "LIVE_OFFICE_KEYS", frozenset({"drew"})):
+    def test_a_dry_office_is_never_armed(self):
+        self.assertFalse(RP.armed({"office_key": "carlos"}))
+
+    def test_a_live_office_is_armed(self):
+        with mock.patch.dict(RP.PUSH_OFFICES, {"drew": ("24680", "live")}):
             self.assertTrue(RP.armed({"office_key": "drew"}))
 
-    def test_a_scheduled_live_tick_walks_as_a_dry_run(self):
+    def test_a_scheduled_live_tick_on_a_dry_office_walks_dry(self):
         seen = {}
 
         def fake_walk(page, live, record):
             seen["live"] = live
-            return {"reached": True, "office": "12345", "rc": 0, "sent": 0}
-        fake_ctx = mock.MagicMock()
+            return {"reached": True, "office": "11580", "rc": 0, "sent": 0}
         with mock.patch.object(RP.C, "appstream_creds",
                                return_value={"username": "u", "password": "p"}), \
              mock.patch.object(RP, "push_record",
-                               return_value={"office_key": "drew"}), \
+                               return_value={"office_key": "carlos"}), \
              mock.patch.object(RP, "quiet_now", return_value=False), \
              mock.patch.object(RP, "_connect",
-                               return_value=(None, fake_ctx, object())), \
+                               return_value=(None, mock.MagicMock(), object())), \
              mock.patch.object(RP, "sign_in", return_value=True), \
              mock.patch.object(RP, "_walk", side_effect=fake_walk), \
              mock.patch.object(RP, "_save_state"), \
@@ -143,21 +160,23 @@ class TheRulesAreStated(unittest.TestCase):
 
 
 class TheOfficeIsPinned(unittest.TestCase):
+    """The number is stated in PUSH_OFFICES, never learned off the page: a
+    login that sees many offices would teach it the wrong one."""
 
-    def test_first_walk_learns_the_office(self):
-        rec = {"office_key": "drew"}
-        with mock.patch.object(RP.C, "add_enrollment") as add:
-            self.assertEqual(RP._pin_office("24680", rec), (True, ""))
-        self.assertEqual(rec["as_office_id"], "24680")
-        add.assert_called_once()
+    def test_the_stated_office_passes(self):
+        self.assertEqual(RP._pin_office("11580", {"office_key": "carlos"}),
+                         (True, ""))
 
-    def test_a_different_office_is_refused(self):
-        ok, why = RP._pin_office("11580", {"as_office_id": "24680"})
+    def test_another_office_is_refused(self):
+        ok, why = RP._pin_office("23467", {"office_key": "carlos"})
         self.assertFalse(ok)
-        self.assertIn("11580", why)
+        self.assertIn("23467", why)
 
     def test_an_unreadable_banner_is_refused(self):
-        self.assertFalse(RP._pin_office(None, {"as_office_id": "24680"})[0])
+        self.assertFalse(RP._pin_office(None, {"office_key": "carlos"})[0])
+
+    def test_an_unlisted_office_is_refused(self):
+        self.assertFalse(RP._pin_office("24680", {"office_key": "drew"})[0])
 
 
 class ResumeHelperIsGone(unittest.TestCase):
