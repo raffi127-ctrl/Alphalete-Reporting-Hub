@@ -52,8 +52,12 @@ GRADES = (Path(__file__).resolve().parents[2]
 ACCOUNTS = {
     "11280": ("Rafael Hidalgo", "C0AUAS88FGW"),
     "11580": ("Carlos Hidalgo", "C09L1S3MQ1E"),
-    "23965": ("Rafael 2nd Funnel", ""),
-    "24065": ("Raf New Recruiter", ""),
+    "23965": ("Tiffani Brown", "C0CAV0P4RRS"),
+    # The channel is named ...-24064-maria but the ACCOUNT is 24065:
+    # there is no "SMS Dump 24064" tab, and 24065 is what
+    # resume_pushing, schedule_config and first_round_scorecards use.
+    # Keyed on the account, because that is what the data is keyed on.
+    "24065": ("Maria Quintero", "C0CBLLEF2CQ"),
 }
 
 # The red-flag items worth waking someone up about. Deliberately a SUBSET of
