@@ -100,6 +100,10 @@ ALIASES: Dict[str, str] = {
     # ever say "Bas"/"BAS" — so this is also what the map DISPLAYS for him
     # (Megan 2026-09-20, who supplied the spelling).
     "bas": "Basil Elhassan",
+    # Brenden Mendez's Trainer cell says "Justin Avilla"; his row is "Justin
+    # Carlos Avila". Both on Se7en Sins (WE 10.25) — without this he came back
+    # as a phantom team head of one.
+    "justin avilla": "Justin Carlos Avila",
 }
 
 # A trainer the board writes as a first name only, and the name to show for
@@ -124,17 +128,20 @@ NO_TRAINER = "New starts · no trainer yet"
 NEW_START_BG = "#F9BCD2"                  # onboarding, not on the board yet
 UPLINE_BG = "#DCD8CE"                     # a team head with no row on the board
 
-LEADER_LEVELS = {"level 1", "level 2", "mastermind"}
+LEADER_LEVELS = {"level 1", "level 2", "level 3", "mastermind"}
+# Level 3 arrived with Anthony Marchetti (WE 10.25). Left out, his row read as
+# "not a person": he vanished and his four Level 1s hung straight off Al Kennel
+# (Al, 10/20).
 # What goes UNDER a name on the bubble. Raf's shorthand, not the board's
 # wording: he never says "in training", and "Lvl 2" is what he asked for.
-RANK_LABELS = {"mastermind": "Mastermind", "level 2": "Lvl 2",
+RANK_LABELS = {"mastermind": "Mastermind", "level 3": "Lvl 3", "level 2": "Lvl 2",
                "level 1": "Lvl 1", "entry level": "Entry Lvl",
                "in training": "WK1 New Start"}
 # LEFT TO RIGHT, HIGHEST RANK FIRST (Raf 2026-09-23: "Entry lvls should go to
 # the right side of the picture. Jacari and bo would be more toward the end").
 # Size only breaks ties inside a rank.
-RANK_ORDER = {"mastermind": 0, "level 2": 1, "level 1": 2, "entry level": 3,
-              "in training": 4}
+RANK_ORDER = {"mastermind": 0, "level 3": 1, "level 2": 2, "level 1": 3,
+              "entry level": 4, "in training": 5}
 
 
 def _place(rep: "Rep"):
