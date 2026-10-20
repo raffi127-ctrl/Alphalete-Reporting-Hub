@@ -12,6 +12,12 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
+# Weekly agent: pull first so a fix pushed during the week runs on Monday
+# (the auto-pull is per wrapper, not per machine).
+if [ -d .git ]; then
+  perl -e 'alarm 60; exec @ARGV' git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+fi
+
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"
 
