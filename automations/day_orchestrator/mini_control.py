@@ -1875,7 +1875,9 @@ def _action_audit_bot_quarantine(args: str) -> tuple[bool, str]:
 # deploy copies the repo's version back into .runtime. Secrets never travel:
 # .env is never copied, and any file whose text looks like a token is skipped.
 # (Megan OK'd the bot's code living in the private Hub repo, 2026-10-20.)
-_AUDIT_BOT_CODE_EXT = {".py", ".sh", ".txt", ".md", ".json"}
+# Code only. The .json files next to it are the bot's DATA (rep + owner
+# names, spend, Slack thread map) — those stay on Lucy 1.
+_AUDIT_BOT_CODE_EXT = {".py", ".sh", ".md"}
 _AUDIT_BOT_TOKEN_RE = re.compile(r"xox[abpr]-|xapp-|AIza[0-9A-Za-z_-]{20}|sk-[A-Za-z0-9]{20}")
 
 
