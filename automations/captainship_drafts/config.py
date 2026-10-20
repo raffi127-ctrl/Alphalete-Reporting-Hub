@@ -546,6 +546,9 @@ RECIPIENTS: dict = {
         "cywadeambient@gmail.com", "dylanjtwaddle@gmail.com",
         "m.hammad.malikk@gmail.com",
         "haythamnagi1@gmail.com", "doverjacob94@gmail.com",
+        # IN 2026-10-20 (Eve): Hasan Salame, owner nuevo de Fiber (org de Raf,
+        # promovido por Haytham Nagi). Agregado primero al grupo VIVO.
+        "hsalame1124@gmail.com",
         "Loganjoseph81@yahoo.com", "Palace.kash@gmail.com",
         "maudmiller4@gmail.com", "Zenithzenith2099@gmail.com",
         "niitagoe4@gmail.com", "raffi127@gmail.com",

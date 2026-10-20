@@ -82,6 +82,8 @@ RECIPIENTS: dict[str, List[str]] = {
         "cywadeambient@gmail.com", "dylanjtwaddle@gmail.com",
         "m.hammad.malikk@gmail.com",
         "haythamnagi1@gmail.com", "doverjacob94@gmail.com",
+        # IN 2026-10-20: Hasan Salame — same add as captainship_drafts.config.
+        "hsalame1124@gmail.com",
         "Loganjoseph81@yahoo.com", "Palace.kash@gmail.com",
         # Kiarri McBroom + Preppie Olison dropped 2026-07-30: they are not in
         # "Raf's Captain Team", and that group is now the list.
