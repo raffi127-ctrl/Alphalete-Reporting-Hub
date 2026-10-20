@@ -1374,6 +1374,32 @@ def main(argv: list[str] | None = None) -> int:
                                  == "Already Paid")
                 if ddates:
                     flog(f"PAYWEEK {rep}: {dict(ddates.most_common(8))}")
+        # Full per-line order log for the allowlist reps -> 'Fiber Order Log' tab
+        _loglines = []
+        for r in mine:
+            _loglines.append([str(r.get(k, "")) for k in (
+                "Rep", "sp.Order Date (copy)", "Customer Name",
+                "Product Type (Broken Out)", "sp.SPM Number", "spe.TN Type",
+                "DTR Status", "Order Status", "Pay Eligibility",
+                "cl.DD Date", "spe.Install Date", "Days to Disconnect (Order Log)")])
+        try:
+            import gspread as _gs
+            from automations.recruiting_report import fill as _f0
+            _c0 = _f0._client().open_by_key(
+                "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try:
+                _lt = _c0.worksheet("Fiber Order Log")
+                _lt.clear()
+            except _gs.WorksheetNotFound:
+                _lt = _c0.add_worksheet("Fiber Order Log", rows=2000, cols=12)
+            _lt.update([["Rep", "Sale Date", "Customer", "Product",
+                         "Order #", "Line Type", "DTR Status", "Order Status",
+                         "Pay Eligibility", "DD Date", "Install Date",
+                         "Days to Disconnect"]] + _loglines[:1900], "A1",
+                       value_input_option="RAW")
+            flog(f"order log: {len(_loglines)} line(s) -> 'Fiber Order Log' tab")
+        except Exception as _e0:  # noqa: BLE001
+            flog(f"order log tab write failed: {str(_e0)[:120]}")
         # Per-rep deposit dollars: the org DOWNLINEVIEW grid (every campaign,
         # each rep as their own ICD line), pinned per DD week so we can see
         # WHO was credited for the allowlist reps' paid lines each week.
