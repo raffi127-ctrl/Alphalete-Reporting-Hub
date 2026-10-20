@@ -1845,6 +1845,41 @@
    "verify": null,
    "close_on": "exit_zero"
   },
+  "focus_report_fixer": {
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "Lucy Focus Report Fixer (Rafael's list #5; Eve rolled out 2026-10-19). Every morning: audits every office tab of ATT Program - Focus Report (writes there; the Org 1on1s / NDS / Carlos books are read with --book once Eve OKs writing them) and fixes only the safe things -- #REF! formulas put back from the row's own majority (template as fallback), holes in a formula row, broken/duplicate conditional-format rules. Raf Hidalgo's tab is report-only. Backup of each written tab + a plain-Spanish report to output/focus_report_fixer. More than 400 fixes on one tab = read wrong, nothing written. Between the two Salesboard Fixer runs so they don't share the Sheets read quota. Pure Sheets API, no browser.",
+   "order": 34,
+   "display_name": "Lucy Focus Report Fixer",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.focus_report_fixer.run"
+   ],
+   "base_args": [
+    "--book",
+    "att",
+    "--all-tabs",
+    "--apply"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
   "install_vantura_payroll_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_payroll_agent` can install/refresh the STANDALONE com.alphalete.vantura-payroll-wed LaunchAgent on Lucy 2, which runs the Vantura payroll PREP (automations.vantura_payroll.run) Wednesday 11:00am machine-local time via deploy/vantura_payroll_wed.sh. The wrapper passes --live (LIVE since 2026-07-15 \u2014 it writes the board), and now also publishes to the vantura-payroll Hub card. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
