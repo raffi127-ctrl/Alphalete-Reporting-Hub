@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.rc-contact-sync-raf</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path. Runs on LUCY 1 — Raf's SaraPlus creds
+         + the verified .saraplus_profile only exist there (and his login has
+         no emailed-passcode step), and the RingCentral creds are baked into
+         rc_autoread, so they travel with the repo. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/rc_contact_sync_raf.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 05:00 Central, every day: AFTER raf_guest_orders' 04:15 pass and
+         BEFORE its 06:30 one and the 07:00 sales-board sweep, so the shared
+         .saraplus_profile is free (the wrapper's pid guards are the backstop).
+         A single pass — this POSTS to Slack, so a second would double the
+         reply; a missed morning is recovered with `lucy rerun`. Running every
+         day is harmless on a day with no sales: the run posts nothing. Hour is
+         machine LOCAL time; Lucy 1 is Central. -->
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/rc-contact-sync-raf.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/rc-contact-sync-raf.launchd.err.log</string>
+</dict>
+</plist>

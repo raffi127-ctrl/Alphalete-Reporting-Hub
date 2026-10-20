@@ -4230,6 +4230,48 @@
    "timeout_minutes": 15,
    "machine": "Lucy 1"
   },
+  "rc_contact_sync_raf": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Raf Wrap-Up Check — the RUN half (automations/rc_contact_sync_raf): checks who was texted on DYLAN's RingCentral line (the rc_autoread account) for yesterday's sales under Raf's code (all reps), and posts the reps who didn't send a wrap-up to #alphalete-sales — a header listing the reps + a threaded reply with each un-texted customer (name / phone / Internet-TV-Wireless) and the reps @tagged at the bottom. Internet upgrades excluded. NO browser: reads the 'Raf All Orders' handoff + the baked-in rc_autoread creds. SCHEDULED by the STANDALONE com.alphalete.rc-contact-sync-raf LaunchAgent on LUCY 1 (05:00 — deploy/rc_contact_sync_raf.sh pulls then posts), NOT the 4am batch, so on_scheduler:false. Present here so `lucy rerun rc_contact_sync_raf --machine \"Lucy 1\"` can re-post and a failure publishes a manifest alert. base_args carry --live; the module is DRY RUN by default. NO contacts step — Dylan's RC app lacks ReadContacts.",
+   "display_name": "Raf Wrap-Up Check (RingCentral)",
+   "machine": "Lucy 1",
+   "source_type": "api",
+   "_source_note": "SaraPlus handoff tab + the RingCentral API, no Tableau/AppStream. 'api' = no readiness probe and no stray-Chrome guard (this half opens no browser; the pull half does, under source_type 'local').",
+   "data_sources": [],
+   "command": [
+    "automations.rc_contact_sync_raf.run"
+   ],
+   "base_args": [
+    "--live"
+   ],
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": {
+    "type": "manifest",
+    "report_id": "rc_contact_sync_raf"
+   }
+  },
+  "install_rc_contact_sync_raf_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_rc_contact_sync_raf_agent --machine \"Lucy 1\"` can install the STANDALONE com.alphalete.rc-contact-sync-raf LaunchAgent on LUCY 1 (05:00, deploy/rc_contact_sync_raf.sh: pull then --live post). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
+   "display_name": "Install Raf Wrap-Up Check agent (5:00am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "rc-contact-sync-raf"
+   ],
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 1"
+  },
   "install_raf_guest_orders_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_raf_guest_orders_agent --machine \"Lucy 1\"` can install the STANDALONE com.alphalete.raf-guest-orders LaunchAgent on LUCY 1 (03:45/04:15/06:30/12:45, deploy/raf_guest_orders.sh, --pull). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
