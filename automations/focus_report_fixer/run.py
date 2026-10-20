@@ -58,6 +58,9 @@ CF_FIXES = {"cf_broken", "cf_duplicate", "cf_foreign"}
 # the other books' old tabs keep rules reaching past their last column: not
 # proven dead there (Sheets may clip the range), so only reported
 CF_FIXES_OTHER = {"cf_broken", "cf_duplicate"}
+# Hub: last step of each Focus Report card (recruiting, recruiting-carlos,
+# recruiting-alphalete-org, nds-program-focus 'phases')
+HUB_PHASE = "focus-report-fixer"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "focus_report_fixer"
 
@@ -167,6 +170,18 @@ def report(results: dict, stamp: str, applied: list) -> Path:
     return md
 
 
+def hub_phase(phase_id: str, name: str, ok: bool) -> None:
+    """Colour this fixer's step on the card of the report it fixes (Eve
+    2026-10-19: a fixer is a gate behind its report, not a card of its own).
+    register_card=False: a PHASE row, never a library card. Best-effort."""
+    try:
+        from automations.shared import hub_activity
+        hub_activity.log_completed(phase_id, name, status="success" if ok else "failed",
+                                   register_card=False)
+    except Exception as e:  # noqa: BLE001 -- a Hub hiccup never fails the fix
+        print("  hub: %s" % e)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--book", action="append", choices=sorted(BOOKS),
@@ -179,7 +194,19 @@ def main(argv=None) -> int:
     if a.apply and not (a.tab or a.all_tabs):
         print("--apply necesita --tab (preview, default %r) o --all-tabs (rollout)" % PREVIEW_TAB)
         return 2
+    phase = a.apply and a.all_tabs and not a.tab and not a.book   # the Monday pass
+    try:
+        rc = _main(a)
+    except Exception:
+        if phase:
+            hub_phase(HUB_PHASE, "Lucy Focus Report Fixer", False)
+        raise
+    if phase:
+        hub_phase(HUB_PHASE, "Lucy Focus Report Fixer", rc == 0)
+    return rc
 
+
+def _main(a) -> int:
     today = dt.date.today()
     filled = FC.rows_filled_by_reports()
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")

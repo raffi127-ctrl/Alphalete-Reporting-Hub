@@ -310,6 +310,23 @@ def report(results: dict, stamp: str, applied: bool) -> Path:
     return md
 
 
+# Hub: steps on the Sales Board card ('alphalete-sales-board' phases)
+HUB_PHASE = "sales-board-fixer"
+HUB_PHASE_OWNERS = "sales-board-fixer-owners"
+
+
+def hub_phase(phase_id: str, name: str, ok: bool) -> None:
+    """Colour this fixer's step on the card of the report it fixes (Eve
+    2026-10-19: a fixer is a gate behind its report, not a card of its own).
+    register_card=False: a PHASE row, never a library card. Best-effort."""
+    try:
+        from automations.shared import hub_activity
+        hub_activity.log_completed(phase_id, name, status="success" if ok else "failed",
+                                   register_card=False)
+    except Exception as e:  # noqa: BLE001 -- a Hub hiccup never fails the fix
+        print("  hub: %s" % e)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--tab", action="append",
@@ -321,6 +338,26 @@ def main(argv=None) -> int:
                     help="revisar los All-in-One de los dueños (owners.json); "
                          "sólo escribe en los que tienen \"apply\": true")
     a = ap.parse_args(argv)
+    # only the full scheduled pass colours the card; a --tab / one owner / a
+    # read-only look doesn't
+    if a.owners is not None:
+        phase = HUB_PHASE_OWNERS if a.apply and a.owners == "" else None
+        name = "Lucy Salesboard Fixer (owners)"
+    else:
+        phase = HUB_PHASE if a.apply and not a.tab and a.sheet_id == SHEET_ID else None
+        name = "Lucy Salesboard Fixer"
+    try:
+        rc = _main(a)
+    except Exception:
+        if phase:
+            hub_phase(phase, name, False)
+        raise
+    if phase:
+        hub_phase(phase, name, rc == 0)
+    return rc
+
+
+def _main(a) -> int:
     if a.owners is not None:
         stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M") + "_owners"
         results = run_owners(a.owners, a.apply, stamp)

@@ -95,6 +95,14 @@ def slug(report_id: str) -> str:
 # sync() recreates them. jiraiya_bot is deliberately NOT here (Megan wants the /dd
 # + promo listener visible as a card). Swept 2026-08-02. [[reference_hub_card_rendering_rules]]
 _NOT_A_REPORT = frozenset({
+    # The fixers are GATES behind the report they fix, not cards (Eve
+    # 2026-10-19): each run colours its own step on that report's card
+    # (`phases` in hub_cards.py, hub_activity.log_completed register_card=False).
+    # Both spellings: the scheduler door keys on the report_id, the plist door
+    # on the agent name.
+    "sales_board_fixer", "sales-board-fixer",
+    "sales_board_fixer_owners", "sales-board-fixer-owners",
+    "focus_report_fixer", "focus-report-fixer",
     # Local Office 1on1s knock backfill (2026-09-29): scheduled Sun+Mon only
     # because local_1on1s_fill depends_on it. It fills a cache, nothing a
     # person reads; its runs belong to the 1on1s fill, not a card of its own.
