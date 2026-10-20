@@ -43,10 +43,15 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
     """The threaded reply: the un-texted customers, grouped by the rep who
     sold them, each with their phone and their product categories.
 
-    Based on rc_contact_sync.run.missing_names_reply (grouped by rep, bold
-    names not @mentions — no rep→Slack-id map for these reps, and duplicate
-    first names in this workspace), extended per Dylan 2026-10-20 to carry the
-    customer's phone and products (Internet / TV / Wireless)."""
+    Based on rc_contact_sync.run.missing_names_reply (grouped by rep), extended
+    per Dylan 2026-10-20 to carry the customer's phone + products (Internet /
+    TV / Wireless) and to @MENTION the rep. The rep→Slack-id resolution is the
+    universal shared store (slack_tag_learning), which is spelling-safe: a rep
+    not in the store is left as a bold name (never a guessed @mention — the
+    whole reason Carlos's B2B version tags nobody) and listed at the bottom so
+    a human can add them once. 'Jordan Ruiz' never resolves to 'Analay Ruiz'."""
+    from automations.shared import slack_tag_learning as tags
+
     if not missing:
         return ("The 1 customer was messaged. :white_check_mark:" if total == 1
                 else "All %d customers were messaged. :white_check_mark:" % total)
@@ -56,8 +61,15 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
                           []).append(m)
     lines = ["%d of %d customer%s never got a message:"
              % (len(missing), total, "" if total == 1 else "s")]
+    untagged: List[str] = []
     for rep in sorted(by_rep):
-        lines.append("*%s*" % rep)
+        sid = tags.lookup(rep) if rep != NO_REP else None
+        if sid:
+            lines.append("<@%s>" % sid)
+        else:
+            lines.append("*%s*" % rep)
+            if rep != NO_REP:
+                untagged.append(rep)
         for m in by_rep[rep]:
             who = titlecase_name(m.get("business", "")) or \
                   titlecase_name(m.get("customer_name", "")) or "(no name)"
@@ -66,6 +78,11 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
             phone = m.get("phone") or "no phone on file"
             prods = ", ".join(m.get("products") or []) or "no product on file"
             lines.append("  • %s%s — %s — %s" % (who, tail, phone, prods))
+    if untagged:
+        lines.append("")
+        lines.append(":warning: No Slack match to tag: %s — add them to "
+                     "automations/shared/slack_known_users.json and they'll "
+                     "tag next run." % ", ".join(untagged))
     return "\n".join(lines)
 
 

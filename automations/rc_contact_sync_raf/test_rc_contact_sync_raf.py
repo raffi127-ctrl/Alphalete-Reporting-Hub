@@ -166,6 +166,39 @@ class TestProductTags(unittest.TestCase):
         self.assertEqual(out[0]["products"], [])
 
 
+class TestReplyTagging(unittest.TestCase):
+    def _reply(self, missing, total, idmap):
+        from automations.rc_contact_sync_raf import run as R
+        with mock.patch("automations.shared.slack_tag_learning.lookup",
+                        side_effect=lambda n: idmap.get(n)):
+            return R.missing_names_reply(missing, total)
+
+    def _cust(self, rep, name, phone="214-000-0000", products=("Internet",)):
+        return {"rep": rep, "business": "", "customer_name": name,
+                "phone": phone, "products": list(products), "alt_phones": [],
+                "wireless_order": "", "ban": ""}
+
+    def test_resolved_rep_is_mentioned(self):
+        out = self._reply([self._cust("Jordan Ruiz", "Yani Young")], 5,
+                          {"Jordan Ruiz": "U0B36GDTT6F"})
+        self.assertIn("<@U0B36GDTT6F>", out)
+        self.assertNotIn("*Jordan Ruiz*", out)
+
+    def test_unresolved_rep_stays_bold_and_flagged(self):
+        out = self._reply([self._cust("Alexis Renteria", "Jazmin Garcia")], 5,
+                          {})   # nobody resolves
+        self.assertIn("*Alexis Renteria*", out)
+        self.assertNotIn("<@", out)
+        self.assertIn("No Slack match to tag: Alexis Renteria", out)
+
+    def test_line_has_phone_and_products(self):
+        out = self._reply(
+            [self._cust("Hank Tran", "Rebecca Alcantara", "469-343-5714",
+                        ("Internet", "TV", "Wireless"))], 5,
+            {"Hank Tran": "U0BRVG0U0QP"})
+        self.assertIn("469-343-5714 — Internet, TV, Wireless", out)
+
+
 class TestConfigWiring(unittest.TestCase):
     def test_points_at_dylans_account(self):
         # The identity the run guards on is Dylan's rc_autoread extension,
