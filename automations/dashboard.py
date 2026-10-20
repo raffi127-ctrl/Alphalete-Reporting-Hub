@@ -1015,7 +1015,11 @@ def _read_shared_library_rows() -> list[dict]:
         meta["module"] = module
         meta.setdefault("creator", str(r.get("Created By") or ""))
         out.append(meta)
-    return out
+    # One card per id — the LAST (newest) row wins. Self-registration can append
+    # a second row for the same report (ad_photo_threads: rows 201 + 251,
+    # 2026-10-20), and two rows = two buttons with one key =
+    # StreamlitDuplicateElementKey, which kills the whole Report Library page.
+    return list({m["id"]: m for m in out}.values())
 
 
 def _consolidated_office_metric_ids() -> set[str]:
