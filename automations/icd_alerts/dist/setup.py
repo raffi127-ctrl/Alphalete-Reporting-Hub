@@ -471,7 +471,9 @@ def ask_about_resume_pushing():
         pick = ask.choose(
             "Do you want Lucy to push your resumes (send applicants to the "
             "AI call list) from this computer?\n\n"
-            "If yes, she needs your AppStream login.", [PUSH_YES, PUSH_NO])
+            "If yes, she needs your office's Lucy Resume login for "
+            "AppStream (the one the reporting team gives you -- not your "
+            "own).", [PUSH_YES, PUSH_NO])
     except ask.Cancelled:
         say("      skipped -- the reporting team will check with you.")
         return False
@@ -481,11 +483,15 @@ def ask_about_resume_pushing():
 
 
 def ask_for_appstream(replace=False):
-    """THEIR AppStream login. It sees only their office, which is the point:
-    a push can only reach what the account can see (lucy-login-standard
-    rule 3). Not required -- credit checks and boards work without it."""
-    return _ask_one("appstream-creds.json", "AppStream", "username",
-                    "username", "password", required=False, replace=replace)
+    """The office's own LUCY RESUME login (Megan's recap, 2026-10-20: "make
+    each ICD a Lucy Res Login"). One per office, and it sees only that office,
+    which is the point: a push can only reach what the account can see
+    (lucy-login-standard rule 3). Not the owner's own login -- the push signs
+    in by itself every 10 minutes, and a person's login is one they use.
+    Not required -- credit checks and boards work without it."""
+    return _ask_one("appstream-creds.json", "AppStream (Lucy Resume)",
+                    "username", "username", "password", required=False,
+                    replace=replace)
 
 
 def check_appstream() -> bool:
@@ -533,27 +539,23 @@ def appstream_until_it_works(attempts=2):
     return False
 
 
-def resume_helper_ready() -> bool:
-    """Resume Helper into LUCY'S Chrome, then a dry run to prove the push can
-    see their resumes. Their own Chrome having the extension does nothing for
-    Lucy: an extension belongs to one browser profile, and hers is separate.
-    """
-    say("      Lucy's Chrome needs the Resume Helper extension once.")
-    say("      Click 'Add to Chrome' in the window that opens.")
-    proc = subprocess.run(
-        [str(venv_python()), "-m", "automations.icd_alerts.resume_push",
-         "--setup"], cwd=str(APP_DIR))
-    if proc.returncode != 0:
-        say("      Resume Helper was not added -- run this again to retry.")
-        return False
-    say("      checking Lucy can see your resumes (nothing is sent)...")
+def push_dry_run_ready() -> bool:
+    """A dry run to prove the push can reach this office's queue. Nothing is
+    sent. Nothing to install first: the push works One App at a time and no
+    longer uses the Resume Helper extension (2026-10-20)."""
+    say("      checking Lucy can see your queue (nothing is sent)...")
     proc = subprocess.run(
         [str(venv_python()), "-m", "automations.icd_alerts.resume_push"],
         cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     lines = [l.strip() for l in proc.stdout.decode("utf-8", "replace")
              .splitlines() if l.strip()]
     if proc.returncode == 0:
-        say("      " + (lines[-1] if lines else "it can."))
+        last = lines[-1] if lines else "it can."
+        if "not switched on" in last:
+            say("      login works. The reporting team switches your office")
+            say("      on for pushing when it is ready -- nothing to do.")
+            return True
+        say("      " + last)
         say("      from now on it pushes every 10 minutes, 7am to 10pm, in")
         say("      the background -- click Lucy's Chrome in the Dock to watch.")
         return True
@@ -1247,11 +1249,6 @@ def install_problems(awake=None):
     if wants_push and not (CONFIG_DIR / "appstream-creds.json").exists():
         notes.append("no AppStream login, so Lucy cannot push resumes from "
                      "this computer yet")
-    elif wants_push and not (CONFIG_DIR / "chrome-profile-as" / "Default"
-                             / "Extensions"
-                             / "goofbdglmeckblcbcoffnkdnmpehhhmo").is_dir():
-        notes.append("Resume Helper is not added to Lucy's Chrome, so resumes "
-                     "cannot be pushed yet")
     if not (CONFIG_DIR / "install.json").exists():
         blocking.append("this office's settings were never written")
     if awake and not awake.get("never_sleeps"):
@@ -1341,7 +1338,7 @@ def main() -> int:
     if ask_about_resume_pushing():
         as_ok = appstream_until_it_works()
         if as_ok:
-            as_ok = resume_helper_ready()
+            as_ok = push_dry_run_ready()
 
     step(7, total, "Where your alerts should go")
     ask_for_ov_name()
@@ -1466,7 +1463,7 @@ def main() -> int:
     if ok and as_ok is False:
         report_fault("install", "resume pushing did not verify during setup",
                      "The office asked for resume pushing on this machine, "
-                     "but its AppStream login, Resume Helper or the dry run "
+                     "but its AppStream login or the dry run "
                      "did not check out. Nothing else is affected.")
 
     ask.message(done, error=not ok)

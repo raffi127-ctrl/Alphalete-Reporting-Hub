@@ -37,9 +37,11 @@ TO WATCH IT, click Lucy's Chrome in the Dock / taskbar. The guard only acts
 right after Lucy herself opened something, so a person bringing it forward
 is left alone.
 
-THEIR OWN APPSTREAM LOGIN, signed in by us with the 30s waits that clear the
-security box (resources/lucy-login-standard.md rule 1). Their account sees
-only their office, so the push can only reach their office (rule 3).
+THE OFFICE'S OWN LUCY RESUME LOGIN (Megan, 2026-10-20), signed in by us with
+the 30s waits that clear the security box (resources/lucy-login-standard.md
+rule 1). One per office, scoped to that office only, so the push can only
+reach that office -- and the walk still refuses unless the page shows the
+Office ID stated in PUSH_OFFICES.
 
 ONE OFFICE, ONE MACHINE. When an office starts pushing from here, take it out
 of ROTATION_BY_MACHINE in automations/applicant_push/offices.py, or Lucy 2/4
@@ -115,11 +117,12 @@ WALK_MINUTES = 15
 # hold a login that sees many offices, and the walk refuses unless the page's
 # "Office ID:" banner is exactly this one.
 PUSH_OFFICES = {
-    # Carlos, first supervised dry run (Megan 2026-10-20). Both of his
+    # Carlos, LIVE (Megan 2026-10-20: "just take it live"). Both of his
     # campaigns' enrollments live on one machine; either may carry the
-    # push_resumes answer. 11580 stays live on Lucy 2 meanwhile.
-    "carlos": ("11580", "dry"),
-    "carlos-b2batt": ("11580", "dry"),
+    # push_resumes answer. 11580 left Lucy 2 in the same change
+    # (ROTATION_BY_MACHINE "Carlos's office computer (relay)").
+    "carlos": ("11580", "live"),
+    "carlos-b2batt": ("11580", "live"),
 }
 LOGIN_POLL_SECONDS = 90
 
@@ -664,6 +667,16 @@ def check_login(log=_log) -> int:
         browser, ctx, page = _connect(p, background=False)
         if not page:
             return NO_CHROME
+        # THE RED BAR (Megan's recap, 2026-10-20). This is the one AppStream
+        # sign-in a person watches, and the helpful thing to do with a
+        # half-finished login is finish it -- which is what breaks it. Only
+        # here: it rides this connection, so the scheduled push, where a
+        # person may be asked to tick Indeed's box, never shows it.
+        from automations.shared import browser_banner
+        browser_banner.attach(ctx, detail=(
+            "Lucy is signing herself in to AppStream. The security check "
+            "clears by itself in 20-30 seconds. Don't type anything and "
+            "don't click the box -- just leave this window alone."))
         return 0 if sign_in(page, ctx, log) else 1
 
 
@@ -776,6 +789,19 @@ def _walk(page, live: bool, record: dict) -> dict:
     {'reached', 'office', 'rc', 'sent', 'walled', 'why'}."""
     from automations.oat_processing import run as OAT
     OAT.attach_dialog_accept(page)
+    # A LOGIN THAT SEES MANY OFFICES (Carlos's computer holds the six-office
+    # `Lucy Resume Pushing`, Megan 2026-10-20: "fine for his") lands on
+    # whichever office it was on last, and Lucy 2/4 move that same account
+    # around all day. So switch to THIS office first, with the Lucys' own
+    # switch. An office-only login has no switcher (#searchMC) and skips this.
+    # The banner check below still decides; the switch only makes it pass.
+    listed = _listed(record)
+    if listed and page.locator(CONSOLE).count() > 0:
+        from automations.recruiting_report import fetch_office as FO
+        if not FO._switch_office(page, listed[0], ""):
+            return {"reached": True, "office": None, "rc": 2,
+                    "why": "no Office ID: could not switch AppStream to "
+                           "office %s" % listed[0]}
     if not OAT.open_oat(page):
         return {"reached": False, "why": "could not open One App at a time"}
     page.wait_for_timeout(1500)

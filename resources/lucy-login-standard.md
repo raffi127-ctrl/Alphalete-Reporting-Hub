@@ -24,6 +24,18 @@ that login. Each office is pushed by exactly ONE machine —
 `ROTATION_BY_MACHINE` in `automations/applicant_push/offices.py` is the
 assignment, and `test_offices` fails on an office assigned twice or not at all.
 
+**Resume pushing from an office's own computer (LucyECO)**
+Since 2026-10-20 an office can push from its own relay computer
+(`automations/icd_alerts/resume_push.py`), one applicant at a time — no batch
+robot. Each such office gets **its own Lucy Resume login**, created in the
+ApplicantStream admin and scoped to **that office only** (Megan's recap,
+2026-10-20: "make each ICD a Lucy Res Login"). Never the owner's personal login.
+Exception: Carlos's computer holds `Lucy Resume Pushing` (six offices; Megan,
+2026-10-20: "fine for his") — it switches to 11580 before each walk. The computer only pushes an
+office listed in `PUSH_OFFICES` in that file, and refuses if the page shows any
+other Office ID. When an office goes live there, it leaves `ROTATION_BY_MACHINE`
+for the Lucys in the same change (11580 / Carlos was the first, 2026-10-20).
+
 **OwnerVille**
 Lucy 2 is logged in as **Carlos**. Lucy 1, Lucy 3 and Lucy 4 are logged in as
 **Raf**. This is per person, and it is a different question from AppStream.
@@ -101,9 +113,11 @@ goes through — and the console still renders off the previous session's cookie
 carrying no new token. Every layer above reads that as success, including the
 renewal that reports "renewed". It took out a whole 4am batch.
 
-### 3. Two AppStream accounts exist — no third
+### 3. Two AppStream accounts on the Lucys — no third
 
 `Lucy Reports` for every report; `Lucy Resume Pushing` for the resume pusher only.
+(Office relay computers are the one exception: each holds its own office-only
+Lucy Resume login — see "Resume pushing from an office's own computer" above.)
 
 The resume login is deliberately scoped to the offices the push works (Carlos,
 Atef, Khalil and Raf's three streams, each assigned to it by hand in the

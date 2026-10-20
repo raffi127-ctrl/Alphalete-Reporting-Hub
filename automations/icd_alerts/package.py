@@ -83,6 +83,10 @@ AGENT_FILES = [
     "automations/oat_processing/classify.py",
     "automations/oat_processing/resume_download.py",
     "automations/oat_processing/run.py",
+    # The Lucys' own office switch (stdlib + patchright only), for an office
+    # computer holding a login that sees more than one office.
+    "automations/recruiting_report/__init__.py",
+    "automations/recruiting_report/fetch_office.py",
     # The weekend quiet window, the Lucys' own rule (stdlib only).
     "automations/applicant_push/__init__.py",
     "automations/applicant_push/window.py",

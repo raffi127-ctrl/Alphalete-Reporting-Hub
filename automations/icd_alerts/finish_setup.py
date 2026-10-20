@@ -204,7 +204,8 @@ def _resume_push(log) -> str:
         try:
             yes = ask.choose(
                 "Do you want Lucy to push your resumes (send applicants to "
-                "the AI call list) from this computer?",
+                "the AI call list) from this computer?\n\nIf yes, she needs "
+                "your office's Lucy Resume login for AppStream.",
                 ["Yes, push my resumes from this computer", "No"]
             ).startswith("Yes")
         except ask.Cancelled:
@@ -216,9 +217,13 @@ def _resume_push(log) -> str:
             return "not wanted"
     if not C.appstream_creds():
         try:
-            user = ask.text("Your AppStream username (type it exactly, "
-                            "spaces and all):").strip()
-            pwd = ask.password("Your AppStream password:")
+            # The office's own LUCY RESUME login, not the owner's (Megan's
+            # recap, 2026-10-20): see ask_for_appstream in dist/setup.py.
+            user = ask.text("Your office's Lucy Resume login for AppStream "
+                            "(the one the reporting team gave you -- not "
+                            "your own). Username, typed exactly, spaces "
+                            "and all:").strip()
+            pwd = ask.password("Lucy Resume password:")
         except ask.Cancelled:
             return "skipped — needs your AppStream login"
         if not (user and pwd):

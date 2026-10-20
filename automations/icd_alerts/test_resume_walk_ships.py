@@ -87,10 +87,22 @@ class TheWalkShipsWhole(unittest.TestCase):
 
 class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
 
-    def test_no_office_is_live_yet(self):
-        # Rollout on hold (Megan, 10/7). Going live is a deliberate commit.
-        self.assertEqual([k for k, (_, mode) in RP.PUSH_OFFICES.items()
-                          if mode == "live"], [])
+    def test_a_live_office_has_no_lucy_pushing_it_too(self):
+        # One office, one pusher: a live office machine's office must sit
+        # ONLY under a relay entry in ROTATION_BY_MACHINE, never on a Lucy.
+        from automations.applicant_push import offices
+        for key, (office, mode) in RP.PUSH_OFFICES.items():
+            if mode != "live":
+                continue
+            homes = [m for m, offs in offices.ROTATION_BY_MACHINE.items()
+                     if office in offs]
+            self.assertEqual(len(homes), 1, (key, homes))
+            self.assertIn(homes[0], offices.RELAY_MACHINES, (key, homes))
+
+    def test_a_relay_entry_is_never_a_lucy(self):
+        from automations.applicant_push import offices
+        for m in offices.RELAY_MACHINES:
+            self.assertNotIn("lucy", m.lower().replace("lucy reports", ""))
 
     def test_every_listed_office_states_its_number_and_mode(self):
         for key, (office, mode) in RP.PUSH_OFFICES.items():
@@ -110,7 +122,8 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
             conn.assert_not_called()
 
     def test_a_dry_office_is_never_armed(self):
-        self.assertFalse(RP.armed({"office_key": "carlos"}))
+        with mock.patch.dict(RP.PUSH_OFFICES, {"drew": ("24680", "dry")}):
+            self.assertFalse(RP.armed({"office_key": "drew"}))
 
     def test_a_live_office_is_armed(self):
         with mock.patch.dict(RP.PUSH_OFFICES, {"drew": ("24680", "live")}):
@@ -124,8 +137,9 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
             return {"reached": True, "office": "11580", "rc": 0, "sent": 0}
         with mock.patch.object(RP.C, "appstream_creds",
                                return_value={"username": "u", "password": "p"}), \
+             mock.patch.dict(RP.PUSH_OFFICES, {"drew": ("24680", "dry")}), \
              mock.patch.object(RP, "push_record",
-                               return_value={"office_key": "carlos"}), \
+                               return_value={"office_key": "drew"}), \
              mock.patch.object(RP, "quiet_now", return_value=False), \
              mock.patch.object(RP, "_connect",
                                return_value=(None, mock.MagicMock(), object())), \
@@ -177,6 +191,48 @@ class TheOfficeIsPinned(unittest.TestCase):
 
     def test_an_unlisted_office_is_refused(self):
         self.assertFalse(RP._pin_office("24680", {"office_key": "drew"})[0])
+
+
+class AManyOfficeLoginSwitchesFirst(unittest.TestCase):
+    """Carlos's computer holds the six-office Lucy Resume Pushing login, which
+    lands on whatever office it was on last. The walk switches to the stated
+    office before reading anyone -- and stops if it cannot."""
+
+    def _page(self, has_switcher):
+        page = mock.MagicMock()
+        page.locator.return_value.count.return_value = 1 if has_switcher else 0
+        return page
+
+    def test_switches_to_the_stated_office(self):
+        from automations.recruiting_report import fetch_office as FO
+        from automations.oat_processing import run as OAT
+        with mock.patch.object(FO, "_switch_office", return_value=True) as sw, \
+             mock.patch.object(OAT, "open_oat", return_value=False):
+            RP._walk(self._page(True), False, {"office_key": "carlos"})
+        self.assertEqual(sw.call_args.args[1], "11580")
+
+    def test_a_failed_switch_reads_nobody(self):
+        from automations.recruiting_report import fetch_office as FO
+        from automations.oat_processing import run as OAT
+        with mock.patch.object(FO, "_switch_office", return_value=False), \
+             mock.patch.object(OAT, "open_oat") as oo, \
+             mock.patch.object(OAT, "run_walk") as rw:
+            out = RP._walk(self._page(True), True, {"office_key": "carlos"})
+        oo.assert_not_called()
+        rw.assert_not_called()
+        self.assertEqual(out["rc"], 2)
+
+    def test_an_office_only_login_does_not_switch(self):
+        from automations.recruiting_report import fetch_office as FO
+        from automations.oat_processing import run as OAT
+        with mock.patch.object(FO, "_switch_office") as sw, \
+             mock.patch.object(OAT, "open_oat", return_value=False):
+            RP._walk(self._page(False), False, {"office_key": "carlos"})
+        sw.assert_not_called()
+
+    def test_the_switch_ships(self):
+        self.assertIn("automations/recruiting_report/fetch_office.py",
+                      package.AGENT_FILES)
 
 
 class ResumeHelperIsGone(unittest.TestCase):

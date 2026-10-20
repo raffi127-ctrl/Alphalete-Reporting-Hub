@@ -8,9 +8,10 @@ and the security check it passes here are exactly what the first scheduled
 push reuses. A sign-in proven in some other browser would prove nothing
 about that one.
 
-THEIR LOGIN, NEVER OURS. An office's own AppStream account sees only that
-office, and Send-to-AI reaches whatever the ACCOUNT can see -- so an account
-that cannot see another office cannot push it (lucy-login-standard rule 3).
+THE OFFICE'S OWN LUCY RESUME LOGIN (Megan, 2026-10-20), never the owner's
+personal one and never the six-office `Lucy Resume Pushing`. It sees only
+that office, and Send-to-AI reaches whatever the ACCOUNT can see -- so an
+account that cannot see another office cannot push it (lucy-login-standard).
 
 SAME FORM AS OWNERVILLE, SAME TRICK: username -> NEXT -> wait 30s -> password
 -> wait 30s -> submit. Nobody has to tick the security box.
