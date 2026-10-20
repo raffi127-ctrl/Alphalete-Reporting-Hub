@@ -369,6 +369,15 @@ def _scorecard_sheet_if_due(o: dict, day: dt.date) -> None:
 
 
 def main(argv=None) -> int:
+    # This job runs every 30 min on the Lucys and pulls its own code first, so
+    # it is the ride for a Lucy restarting its OWN stalled queue reader
+    # (2026-10-20: Lucy 1's queue died at 17:56 and the fix needed a person).
+    # Best-effort; never touches this report's own work.
+    try:
+        from automations.day_orchestrator.queue_selfheal import kick_if_stale
+        kick_if_stale()
+    except Exception:  # noqa: BLE001
+        pass
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
     ap.add_argument("--office", default=None,
