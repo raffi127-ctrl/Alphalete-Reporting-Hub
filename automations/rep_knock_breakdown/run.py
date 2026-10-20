@@ -164,10 +164,10 @@ def streak_texts(rep: Dict, day: dt.date) -> List[Dict]:
         dists = [S.distance_text(r.get("gps", "")) for r in run]
         dists = [x for x in dists if x]
         body = ("GPS alert: %s has %d knocks in a row that failed GPS "
-                "(%s to %s%s)."
+                "(%s to %s) — %s%s."
                 % (rep["name"], len(run), run[0].get("time", ""),
-                   run[-1].get("time", ""),
-                   ", " + " / ".join(dists[:5]) + " from the door" if dists else ""))
+                   run[-1].get("time", ""), S.reason_text(run),
+                   " (" + " / ".join(dists[:5]) + " from the door)" if dists else ""))
         out.append({"key": S.streak_key(day, rep["pid"], run[0]), "body": body})
     return out
 

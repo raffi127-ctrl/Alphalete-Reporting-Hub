@@ -65,6 +65,23 @@ class StreakTests(unittest.TestCase):
         self.assertIn("Diego Del Pozo Borres has 3 knocks in a row", body)
         self.assertIn("08:28 PM to 08:30 PM", body)
 
+    def test_text_names_location_turned_off(self):
+        off = "Failure, User denied Geolocation"
+        rep = {"pid": "1", "name": "Safiya Mahmoud",
+               "rows": [row("04:00 PM", off), row("04:02 PM", FAIL),
+                        row("04:05 PM", off)]}
+        body = R.streak_texts(rep, dt.date(2026, 10, 20))[0]["body"]
+        self.assertIn("2 location turned off, 1 too far from door", body)
+        self.assertIn("(0.45 mi from the door)", body)
+
+    def test_reason(self):
+        self.assertEqual(S.reason("Failure, User denied Geolocation"), "location turned off")
+        self.assertEqual(S.reason("Failure, Failure, GPS Location Permission denied. "
+                                  "Please set Location Services permission to ALWAYS."),
+                         "location turned off")
+        self.assertEqual(S.reason(FAIL), "too far from door")
+        self.assertEqual(S.reason("Failure, Timeout expired"), "GPS timed out")
+
     def test_week_starts_sunday(self):
         self.assertEqual(R.week_sunday(dt.date(2026, 10, 13)), dt.date(2026, 10, 11))
         self.assertEqual(R.week_sunday(dt.date(2026, 10, 11)), dt.date(2026, 10, 11))

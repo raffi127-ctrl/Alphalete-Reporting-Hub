@@ -60,6 +60,30 @@ def distance_text(gps: str) -> str:
     return "%s %s" % (m.group(1), unit)
 
 
+def reason(gps: str) -> str:
+    """Why a knock failed GPS, in the words the text uses. OwnerVille writes
+    'Failure, User denied Geolocation' (or '... Permission denied ...') when the
+    phone's location is off for the app — Raf asked to see that by name."""
+    t = (gps or "").lower()
+    if "denied" in t:
+        return "location turned off"
+    if "out of range" in t:
+        return "too far from door"
+    if "time" in t:
+        return "GPS timed out"
+    return "GPS failed"
+
+
+def reason_text(rows: List[Dict]) -> str:
+    """'3 location turned off, 2 too far from door' — most common first."""
+    counts: Dict[str, int] = {}
+    for r in rows:
+        k = reason(r.get("gps", ""))
+        counts[k] = counts.get(k, 0) + 1
+    return ", ".join("%d %s" % (n, k) for k, n in
+                     sorted(counts.items(), key=lambda kv: -kv[1]))
+
+
 def streak_key(day: dt.date, pid: str, first_row: Dict) -> str:
     """One text per streak: keyed on the knock that started it, so a streak
     that grows from 3 to 7 over the next hour is still the same alert."""
