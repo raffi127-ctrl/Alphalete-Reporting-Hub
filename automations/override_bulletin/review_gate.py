@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -165,7 +166,8 @@ def _companion_page(d, verbose: bool = True) -> list:
         return []
 
 
-def build_pdf(html_paths=None, verbose: bool = True) -> Path:
+def build_pdf(html_paths=None, verbose: bool = True,
+              today: Optional[dt.date] = None) -> Path:
     """Render the review pages into one PDF.
 
     A PDF and not the HTML: Drive shows a PDF inline, so a reviewer opens the
@@ -195,7 +197,10 @@ def build_pdf(html_paths=None, verbose: bool = True) -> Path:
     for p in paths:
         if not p.exists():
             raise RuntimeError(f"no page at {p} — build it first (--post does)")
-    out = DB.OUT_DIR / f"Organization-Bulletin-WE-{week_label()}.pdf"
+    # `today` = the run's --date. Without it a --refresh run after the next
+    # Sunday named the file for the NEW week, so upload_pdf found no match and
+    # made a second file — the posted link kept showing the old PDF (10/20).
+    out = DB.OUT_DIR / f"Organization-Bulletin-WE-{week_label(today)}.pdf"
     parts = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
@@ -768,6 +773,10 @@ def main(argv=None) -> int:
                     help="with --check --send: send even though this week "
                          "already went out — a CORRECTED re-send. Never "
                          "overrides a hard block.")
+    ap.add_argument("--late-week", default=None, metavar="WEEK",
+                    help="with --check --send: send an OLDER week that is still "
+                         "the newest column (e.g. 10.11.26), approved late. "
+                         "Must be typed exactly; never re-sends a sent week.")
     ap.add_argument("--remind", action="store_true",
                     help="nudge if still unapproved after --after-hours. Once.")
     ap.add_argument("--close-day", action="store_true",
@@ -789,6 +798,10 @@ def main(argv=None) -> int:
                          "that just ended, Central.")
     args = ap.parse_args(argv)
     today = dt.date.fromisoformat(args.date) if args.date else None
+    if args.late_week:
+        # Read by dd_data.load() here AND in the send.py / companion
+        # subprocesses, which inherit the environment.
+        os.environ["DD_LATE_WEEK"] = args.late_week.strip()
 
     if args.pdf_only:
         paths, _ = build_preview()
@@ -825,7 +838,7 @@ def main(argv=None) -> int:
     # other two gates.
     if args.refresh:
         paths, _ = build_preview()
-        link = upload_pdf(build_pdf(paths))
+        link = upload_pdf(build_pdf(paths, today=today))
         print(f"✓ refreshed in place, existing link still valid: {link}",
               flush=True)
         return 0

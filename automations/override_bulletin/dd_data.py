@@ -30,6 +30,7 @@ Rules live in DD_SOURCES.md. In short:
 from __future__ import annotations
 
 import datetime as dt
+import os
 import re
 from zoneinfo import ZoneInfo
 
@@ -324,7 +325,14 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     # on the page is a wrong figure, not a short one.
     _newest = week_date(weeks[0]) if weeks else None
     _due = week_just_ended()
-    if _newest and _newest != _due:
+    # LATE SEND, by name only (Eve 2026-10-20: WE 10.11.26 was approved the
+    # Tuesday after the next week ended, and this block refused it). The
+    # person types the exact week (`--late-week 10.11.26` on review_gate, which
+    # sets DD_LATE_WEEK for send.py). It only lifts THIS check, only for an
+    # OLDER week that is still the newest column — the already-sent guard in
+    # send.py stays, so a week that went out still never goes twice.
+    _late = week_date(os.environ.get("DD_LATE_WEEK", ""))
+    if _newest and _newest != _due and not (_late and _late == _newest < _due):
         msg = ("WRONG WEEK: the newest column on '{}' is {} but the week that "
                "just ended is {} — this would republish a week that already went "
                "out (exactly what happened 7/30). NOT sending. Roll the {} column "
