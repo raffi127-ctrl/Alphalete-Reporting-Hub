@@ -126,6 +126,11 @@ EXCLUDE: Dict[str, tuple] = {
     # 2026-09-29 (Eve), two-week zero rule: oficina 23576 cerrada el 9/9,
     # cero en WE 09.27 y WE 09.20 en las dos cajas Fiber de Chan.
     "Chan":   ("Kimberly Rodriguez",),                   # 2026-09-29
+    # 2026-10-20 (Eve): Dhey Patel sale de la capitania de Atef. En Tableau ya
+    # no esta bajo Atef: en B2B Captain's Teams (SFDC) figura en Blake's Team y
+    # en NDS no hay "Atef's Team" ni aparece el. Las dos grafias: el board dice
+    # "Dhey", Tableau "Dhyey".
+    "Atef":   ("Dhey Patel", "Dhyey Patel"),             # 2026-10-20
 }
 
 
