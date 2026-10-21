@@ -332,7 +332,8 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "",
     return True
 
 
-def _set_week_and_submit(page: Page, week_start: dt.date) -> None:
+def _set_week_and_submit(page: Page, week_start: dt.date,
+                         _second_try: bool = False) -> None:
     """Set weekStart input to the target Sunday and submit the form.
 
     The input is a jQuery UI datepicker (readonly). To change its value we use
@@ -458,8 +459,26 @@ def _set_week_and_submit(page: Page, week_start: dt.date) -> None:
     # Colten Wright + Rafael Hidalgo's last-week pulls (2026-07-01). 30s budget
     # matches the office-switch nav on _switch_office above. If the table isn't
     # ready, _scrape_metrics reads empty → the caller's retry/skip handles it.
-    with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
-        page.locator('input[name="submit"][type="submit"]').first.click()
+    # THE SUBMIT CLICK MUST NOT HANG EITHER (2026-10-20). After the switch-
+    # click fix, the 10/20 rerun still logged "Locator.click: Timeout 30000ms"
+    # here, on Submit: a page not settled after the office switch (or a
+    # left-open dropdown over the button) made click() wait its full 30s, office
+    # after office. Short wait; on a miss, clear overlays, get back to the
+    # report, redo the week + submit ONCE, then raise fast (callers retry).
+    try:
+        with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
+            page.locator('input[name="submit"][type="submit"]').first.click(
+                timeout=10000)
+    except PWTimeout:
+        if _second_try:
+            raise PWTimeout("week %s: Submit would not take a click after a "
+                            "retry — transient, retried by the caller"
+                            % formatted_dash)
+        print("[picker] Submit did not take the click — clearing overlays and "
+              "redoing the week once", flush=True)
+        _dismiss_overlays(page)
+        _ensure_on_retention_report(page)
+        return _set_week_and_submit(page, week_start, _second_try=True)
     post_nav = page.locator("#weekStart").input_value()
     print(f"[picker] AFTER submit/navigation: input_value={post_nav!r} url={page.url[:120]}",
           flush=True)
