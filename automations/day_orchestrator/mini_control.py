@@ -1655,6 +1655,30 @@ def _action_text_replies(args: str) -> tuple[bool, str]:
                   % (days, " mentioning %r" % needle if needle else ""))
 
 
+def _action_approve_office(args: str) -> tuple[bool, str]:
+    """approve_office <office key> [--channel C…] [--knocks] [--texts]: run
+    icd_alerts.approve ON THIS LUCY. Needed for an office whose Slack lives in
+    another workspace (Trang / FRESH SUCCESS, 2026-10-21): the bot token that
+    can see her rooms is only on the posting Lucy, so a laptop run can neither
+    resolve the channel nor check who is in it. Writes the sign-off exactly as
+    a laptop run would; posts nothing."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, "usage: approve_office <office key> [--channel C…] [--knocks] [--texts]"
+    cmd = [sys.executable, "-m", "automations.icd_alerts.approve"] + parts
+    try:
+        r = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=600)
+    except Exception as e:  # noqa: BLE001
+        return False, "could not run approve: %s: %s" % (type(e).__name__, str(e)[:120])
+    out = (r.stdout + "\n" + r.stderr).strip()
+    out = "\n".join(l for l in out.splitlines() if "Warning" not in l and "warnings.warn" not in l)
+    return r.returncode == 0, out[-1400:]
+
+
 def _action_logdump(args: str) -> tuple[bool, str]:
     """READ-ONLY: copy a whole output/logs file into a tab of the control
     workbook, one line per row, so the laptop can read all of it at once.
@@ -9130,6 +9154,7 @@ ACTIONS = {
     "audit_bot_deploy": _action_audit_bot_deploy,
     "text_replies": _action_text_replies,
     "logdump": _action_logdump,
+    "approve_office": _action_approve_office,
     "install_night_knocks": _action_install_night_knocks,
     "install_ad_photo_threads": _action_install_ad_photo_threads,
     "install_jiraiya": _action_install_jiraiya,

@@ -15,6 +15,7 @@ import datetime as dt
 import os
 import re
 import ssl
+from typing import Optional
 import time
 from pathlib import Path
 
@@ -207,10 +208,13 @@ def _recording_client_class():
 _RECORDING_CLIENT = None
 
 
-def _client():
+def _client(token: Optional[str] = None):
+    """The posting client. `token` overrides the machine's default -- an
+    office whose Slack lives in another workspace posts with its own bot
+    (icd_alerts.office_slack.client_for)."""
     import certifi
     ctx = ssl.create_default_context(cafile=certifi.where())
-    return _recording_client_class()(token=_load_token(), ssl=ctx,
+    return _recording_client_class()(token=token or _load_token(), ssl=ctx,
                                      retry_handlers=_retry_handlers())
 
 

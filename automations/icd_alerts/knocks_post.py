@@ -706,7 +706,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     posted_at[_board_marker(cid)] = now
                 else:
                     _upload(d["channel_id"], boards,
-                            captions[d["channel_id"]])
+                            captions[d["channel_id"]], office=key)
                 posted_at[d["channel_id"]] = now
                 # THE HOUR IS SPENT ONLY ON A LIST THAT ACTUALLY WENT OUT. A
                 # room that failed, or one where nobody was over the line,
@@ -1224,7 +1224,7 @@ THREADED_CHANNELS = set(THREAD_TITLES)
 METRICS_THREAD_CHANNELS = {"C07J46MQNUX"}
 
 
-def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
+def _day_thread_ts(smp, channel_id: str, office: Optional[str] = None) -> Optional[str]:
     """Today's parent in a threaded room, posted by the first board of the day.
     None = post loose: a board in the wrong place beats a board not posted."""
     if channel_id not in THREADED_CHANNELS:
@@ -1236,7 +1236,8 @@ def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
             # own "Box Knocks Board" parent is the fallback when the metrics
             # job has not posted yet.
             from automations.b2b_dispositions import slack_post as _bsp
-            ts = _bsp.box_metrics_parent_ts(smp._client(), channel_id, dt.date.today())
+            from automations.icd_alerts import office_slack as _OS
+            ts = _bsp.box_metrics_parent_ts(_OS.client_for(office), channel_id, dt.date.today())
             if ts:
                 return ts
         return smp.ensure_named_thread(THREAD_TITLES[channel_id], dt.date.today(),
@@ -1247,7 +1248,7 @@ def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
         return None
 
 
-def _upload(channel_id: str, boards, comment: str) -> None:
+def _upload(channel_id: str, boards, comment: str, office: Optional[str] = None) -> None:
     """Every board this shape produced, in post order, AT CHANNEL LEVEL. A
     wireless office gets a pair (the board and its Time Gaps twin) and both
     belong in the room.
@@ -1264,8 +1265,9 @@ def _upload(channel_id: str, boards, comment: str) -> None:
     to see is a board they stop looking at.
     """
     from automations.shared import slack_metrics_post as smp
-    client = smp._client()
-    thread_ts = _day_thread_ts(smp, channel_id)
+    from automations.icd_alerts import office_slack as _OS
+    client = _OS.client_for(office) if _OS.is_cross_workspace(office) else smp._client()
+    thread_ts = _day_thread_ts(smp, channel_id, office=office)
     for i, board in enumerate(boards):
         kw = {"thread_ts": thread_ts} if thread_ts else {}
         client.files_upload_v2(

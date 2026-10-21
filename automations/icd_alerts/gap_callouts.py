@@ -779,13 +779,15 @@ def already_said(channel_id: str, text: str, now: dt.datetime, client=None) -> b
         return True
 
 
-def _say(channel_id: str, text: str, now: dt.datetime, log) -> None:
+def _say(channel_id: str, text: str, now: dt.datetime, log, office: Optional[str] = None) -> None:
     """Post one call-out, unless that room already has this exact line."""
-    if already_said(channel_id, text, now):
+    from automations.icd_alerts import office_slack as _OS
+    if already_said(channel_id, text, now,
+                    client=_OS.client_for(office) if _OS.is_cross_workspace(office) else None):
         log("%-14s already has this line in the last %d min — skipped"
             % (channel_id, DUP_WINDOW_MIN))
         return
-    P._slack(channel_id, text)
+    P._slack(channel_id, text, **_OS.post_kwargs(office))
 
 
 def after_the_bell(office, now: dt.datetime, within_min: int = 120) -> bool:
@@ -946,7 +948,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 continue
             for ch in dests:
                 try:
-                    _say(ch, msg, now, log)
+                    _say(ch, msg, now, log, office=key)
                 except Exception as e:  # noqa: BLE001
                     log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
         if not text and not receipt:
@@ -987,7 +989,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         if send:
             for ch in dests:
                 try:
-                    _say(ch, praise, now, log)
+                    _say(ch, praise, now, log, office=key)
                 except Exception as e:  # noqa: BLE001
                     log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
     # ANSWER BACK, last: a rep who replied "snitch" or "liar" under a recent
@@ -1087,7 +1089,10 @@ def answer_back(now: dt.datetime, *, send: bool, log=print, channels=None, clien
     if channels is None:
         channels = sorted({c.id for k, cs in approved_all.items()
                            if cs and O.is_enrolled(k) for c in cs})
-    # Which campaign a room belongs to, for the wording (doors vs. storefronts).
+    # Which office a room belongs to: its workspace token (Trang, 2026-10-21)
+    # and the campaign for the wording (doors vs. storefronts).
+    from automations.icd_alerts import office_slack as _OS
+    room_office: Dict[str, str] = {c.id: k for k, cs in approved_all.items() for c in (cs or [])}
     room_campaign: Dict[str, str] = {}
     for k, cs in approved_all.items():
         office = O.get(k)
@@ -1099,7 +1104,8 @@ def answer_back(now: dt.datetime, *, send: bool, log=print, channels=None, clien
     oldest = str((now - dt.timedelta(minutes=ANSWER_BACK_LOOKBACK_MIN)).timestamp())
     for ch in channels:
         try:
-            res = client.conversations_history(channel=ch, oldest=oldest, limit=40) or {}
+            rc = _OS.client_for(room_office.get(ch)) if _OS.is_cross_workspace(room_office.get(ch)) else client
+            res = rc.conversations_history(channel=ch, oldest=oldest, limit=40) or {}
         except Exception as e:  # noqa: BLE001
             log("answer_back: cannot read %s (%s)" % (ch, type(e).__name__))
             continue
@@ -1111,7 +1117,7 @@ def answer_back(now: dt.datetime, *, send: bool, log=print, channels=None, clien
             if tkey in answered:
                 continue
             try:
-                rep = client.conversations_replies(channel=ch, ts=ts, limit=30) or {}
+                rep = rc.conversations_replies(channel=ch, ts=ts, limit=30) or {}
             except Exception as e:  # noqa: BLE001
                 log("answer_back: cannot read thread %s (%s)" % (tkey, type(e).__name__))
                 continue
@@ -1131,7 +1137,7 @@ def answer_back(now: dt.datetime, *, send: bool, log=print, channels=None, clien
             said.append(answer)
             if send:
                 try:
-                    P._slack(ch, answer, thread_ts=ts)
+                    P._slack(ch, answer, thread_ts=ts, **_OS.post_kwargs(room_office.get(ch)))
                     answered[tkey] = now.isoformat(timespec="seconds")
                 except Exception as e:  # noqa: BLE001
                     log("answer_back: FAILED to reply in %s (%s)" % (tkey, type(e).__name__))

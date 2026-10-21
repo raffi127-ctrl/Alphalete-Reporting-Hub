@@ -1522,7 +1522,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 # retry would re-announce everything to the rooms that DID get
                 # it. Say which room failed and carry on.
                 try:
-                    _slack(channel.id, text)
+                    from automations.icd_alerts import office_slack as _OS
+                    _slack(channel.id, text, **_OS.post_kwargs(key))
                     posted += len(lines)
                     _record_gifs(day, key, gifs_used)
                     gifs_used = 0        # one room's worth, not one per room
@@ -3632,7 +3633,8 @@ def assert_posting_as_lucy(log=print) -> None:
 
 
 def _slack(channel_id: str, text: str,
-           thread_ts: Optional[str] = None) -> Optional[str]:
+           thread_ts: Optional[str] = None,
+           office: Optional[str] = None) -> Optional[str]:
     """Post, optionally into a thread, and return the message ts.
 
     The ts is what lets the NEXT nudge for an office land under the same
@@ -3652,8 +3654,12 @@ def _slack(channel_id: str, text: str,
         kw["text"], kw["blocks"] = fallback, blocks
     if thread_ts:
         kw["thread_ts"] = thread_ts
+    # THE OFFICE'S OWN TOKEN when its room is in another workspace (Trang,
+    # 2026-10-21); every OPS post leaves `office` unset and stays on Lucy's.
+    from automations.icd_alerts import office_slack as _OS
+    client = _OS.client_for(office)
     try:
-        return (smp._client().chat_postMessage(**kw) or {}).get("ts")
+        return (client.chat_postMessage(**kw) or {}).get("ts")
     except Exception:  # noqa: BLE001
         if not blocks:
             raise
@@ -3662,7 +3668,7 @@ def _slack(channel_id: str, text: str,
         # link) exactly as before.
         kw.pop("blocks", None)
         kw["text"] = text
-        return (smp._client().chat_postMessage(**kw) or {}).get("ts")
+        return (client.chat_postMessage(**kw) or {}).get("ts")
 
 
 _AS_LUCY: Optional[bool] = None

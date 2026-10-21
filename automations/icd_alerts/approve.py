@@ -68,9 +68,17 @@ def _missing_people(members: List[str], me: str) -> List[str]:
 LUCY_REPORTING = "U0BCG8F9B5Z"
 
 
-def _client():
-    from automations.shared import slack_metrics_post as smp
-    return smp._client()
+def _client(office_key: Optional[str] = None):
+    """The office's own workspace token when it has one (Trang / FRESH
+    SUCCESS, 2026-10-21), else the machine's default. The token lives only
+    on the Lucy that posts, so run this there (queue: approve_office)."""
+    from automations.icd_alerts import office_slack as _OS
+    return _OS.client_for(office_key)
+
+
+def _lucy_id(office_key: Optional[str] = None) -> str:
+    from automations.icd_alerts import office_slack as _OS
+    return _OS.lucy_id_for(office_key)
 
 
 def _looks_like_an_id(s: str) -> bool:
@@ -113,11 +121,11 @@ def _known_channel_ids() -> Dict[str, str]:
     return out
 
 
-def find_channel(name: str) -> Optional[Dict]:
+def find_channel(name: str, office_key: Optional[str] = None) -> Optional[Dict]:
     """Resolve a channel from an id, a name we already know, or Slack itself."""
     raw = name.strip()
     want = raw.lstrip("#").lower()
-    client = _client()
+    client = _client(office_key)
 
     if _looks_like_an_id(raw):
         try:
@@ -156,11 +164,11 @@ def find_channel(name: str) -> Optional[Dict]:
             return None
 
 
-def members_of(channel_id: str) -> List[str]:
+def members_of(channel_id: str, office_key: Optional[str] = None) -> List[str]:
     out, cursor = [], None
     while True:
-        resp = _client().conversations_members(channel=channel_id, limit=200,
-                                               cursor=cursor)
+        resp = _client(office_key).conversations_members(channel=channel_id, limit=200,
+                                                         cursor=cursor)
         out.extend(resp.get("members", []))
         cursor = (resp.get("response_metadata") or {}).get("next_cursor")
         if not cursor:
@@ -209,19 +217,19 @@ def cmd_knocks(office_key: str) -> int:
         name = str(dest.get("channel") or "").strip()
         cadence = dest.get("cadence_min")
         print("looking up %s ..." % name)
-        ch = find_channel(name)
+        ch = find_channel(name, office_key)
         if not ch:
             problems.append("%s — no such channel (if it is private, Lucy has "
                             "to be invited before she can even see it)" % name)
             continue
         cid = ch["id"]
         try:
-            members = members_of(cid)
+            members = members_of(cid, office_key)
         except Exception as e:  # noqa: BLE001
             problems.append("%s — could not read the member list (%s)" % (name, e))
             continue
-        if LUCY_REPORTING not in members:
-            problems.append("%s — Lucy Reporting is not in it" % name)
+        if _lucy_id(office_key) not in members:
+            problems.append("%s — Lucy (%s) is not in it" % (name, _lucy_id(office_key)))
             continue
         gone = _missing_people(members, me)
         print("  #%s (%s) every %s min%s"
@@ -445,19 +453,19 @@ def cmd_approve(office_key: str, channel: Optional[str]) -> int:
     resolved, problems = [], []
     for name in wanted:
         print("looking up %s ..." % name)
-        ch = find_channel(name)
+        ch = find_channel(name, office_key)
         if not ch:
             problems.append("%s — no such channel (if it is private, Lucy has "
                             "to be invited before she can even see it)" % name)
             continue
         cid = ch["id"]
         try:
-            members = members_of(cid)
+            members = members_of(cid, office_key)
         except Exception as e:  # noqa: BLE001
             problems.append("%s — could not read the member list (%s)" % (name, e))
             continue
-        if LUCY_REPORTING not in members:
-            problems.append("%s — Lucy Reporting is not in it" % name)
+        if _lucy_id(office_key) not in members:
+            problems.append("%s — Lucy (%s) is not in it" % (name, _lucy_id(office_key)))
             continue
         gone = _missing_people(members, me)
         print("  #%s (%s)%s%s"
