@@ -371,6 +371,24 @@ def first_read_board(merged_sales: Dict, campaign=None, show=None) -> List[str]:
     return ["_Today so far:_\n" + board] if board else []
 
 
+def catchup_lines(board: str) -> str:
+    """The Slack half of a catch-up: ONLY the reps who sold while the machine
+    was dark, one line each with their day's count -- no standings, no
+    INT/Upgrades/NL's/TOTALS block.
+
+    Megan 2026-10-21, seeing the full board land in #takeoff-b2b: "I don't
+    think the scorecard is supposed to post here." Same rule as the first
+    read (above): the standings are the TEXT GROUP's board; Slack gets the
+    per-sale lines. Every board shape puts its rep lines first, a blank
+    line, then the totals, and marks who moved with the flame -- so the trim
+    is the same for AT&T, NDS and Box. Empty when the board is empty.
+    """
+    from automations.alphalete_sales_board import notify as N
+    reps = (board or "").split("\n\n", 1)[0].splitlines()
+    moved = [l for l in reps if N.FIRE in l]
+    return "\n".join(moved or reps)
+
+
 def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
                     show=None) -> str:
     """The day's standings for an office's TEXT GROUP -- Raf's partner-chat
@@ -1432,7 +1450,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             board = scoreboard_text(merged_sales, sold, office.campaign, show)
             hype_lines = [
                 "_Catching up — sales made while the office computer was "
-                "offline:_\n" + (board or ", ".join(
+                "offline:_\n" + (catchup_lines(board) or ", ".join(
                     (show(r) if show else r) for r in sold))]
         elif sold:
             from automations.shared import sale_hype as H
