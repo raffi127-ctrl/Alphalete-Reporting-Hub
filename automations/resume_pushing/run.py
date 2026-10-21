@@ -1847,6 +1847,24 @@ def _cdp_warm(force_fresh: bool = True) -> int:
 # can only be run-tested on Lucy 2). DEDUPE once the merged flow is validated there:
 # point _cdp_run at warm_appstream_cdp_page + run_batch_stage and delete its inline
 # preamble. Keep the two in sync until then.
+def _clear_stale_running_loop() -> None:
+    """Drop an asyncio "loop is running" marker a dead Playwright left behind.
+
+    2026-10-21 07:15, Lucy 4, office 11280: the office switch raised, the
+    teardown's ``pw.stop()`` failed half-way (its loop never shut down), and the
+    thread kept that loop flagged as RUNNING. ``_run_stage``'s retry then called
+    ``sync_playwright().start()``, which refuses to start while any loop is
+    running in the thread ("using Playwright Sync API inside the asyncio loop")
+    — so every in-process session retry died on arrival. This code is all
+    synchronous: a running-loop marker seen here can only be such a leftover,
+    never a loop we are actually inside, so it is safe to clear."""
+    import asyncio
+    if asyncio._get_running_loop() is not None:
+        _log("[cdp] cleared a stale asyncio loop left by the last session's "
+             "failed stop — starting Playwright fresh")
+        asyncio._set_running_loop(None)
+
+
 @contextlib.contextmanager
 def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag"):
     """Open ONE warm, logged-in, real-Chrome-over-CDP AppStream page on office 11580
@@ -1922,6 +1940,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
     # Anything that raises between here and the end of the caller's work means the
     # browser is NOT safe to hand on — see _should_kill_on_exit.
     _hard_stop = False
+    _clear_stale_running_loop()
     pw = sync_playwright().start()
     try:
         browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
@@ -2038,8 +2057,10 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
     finally:
         try:
             pw.stop()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            _log(f"[cdp] playwright stop failed ({type(e).__name__}: "
+                 f"{str(e)[:120]}) — clearing its leftover loop so a retry can start")
+            _clear_stale_running_loop()
         _why_kill = _BROWSER_SUSPECT
         if _should_kill_on_exit(_hard_stop):
             if _why_kill and not _hard_stop:
