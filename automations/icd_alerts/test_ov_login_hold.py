@@ -165,7 +165,9 @@ class OvPasswordBoxTest(unittest.TestCase):
         import inspect
         from automations.icd_alerts import run as R
         src = inspect.getsource(R.cmd_set_ownerville_login)
-        self.assertLess(src.index('held_on_lock()'), src.index("Try again?"))
+        # the lock check comes BEFORE the hand-off to the sign-in window
+        # (2026-10-21: the retype loop became the window)
+        self.assertLess(src.index('held_on_lock()'), src.index("ov_signin"))
 
 
 if __name__ == "__main__":
