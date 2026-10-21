@@ -288,7 +288,7 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
     # inline, so moving NDS onto SaraPlus in config.py would have left this
     # still skipping it -- the office asked for a login, saved it, and the
     # sweep quietly never used it.
-    att = next((r for r in C.enrollments()
+    att = next((r for r in C.active_enrollments()
                 if str(r.get("campaign") or "att").strip().lower()
                 not in C.NO_SARAPLUS), None)
     if att is None and C.enrollments():
@@ -456,7 +456,7 @@ def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
     """
     if not C.uses_servicecloud():
         return 0
-    boxes = [r for r in C.enrollments()
+    boxes = [r for r in C.active_enrollments()
              if str(r.get("campaign") or "att").strip().lower()
              in C.SERVICECLOUD_CAMPAIGNS]
     if not boxes:
@@ -572,7 +572,10 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
     except (OSError, ValueError):
         pass
 
-    rows_of = C.enrollments() or [{}]
+    if C.enrollments() and not C.active_enrollments():
+        _log("every campaign on this machine is paused -- no knocks read")
+        return 0
+    rows_of = C.active_enrollments() or [{}]
     worst = 0
     for rec in rows_of:
         key = str(rec.get("office_key") or "")

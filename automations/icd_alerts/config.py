@@ -152,6 +152,7 @@ def uses_servicecloud() -> bool:
     rows = enrollments()
     if not rows:
         return campaign() in SERVICECLOUD_CAMPAIGNS
+    rows = active_enrollments()
     return any(str(r.get("campaign") or "att").strip().lower()
                in SERVICECLOUD_CAMPAIGNS for r in rows)
 
@@ -329,6 +330,27 @@ def _install_raw() -> Dict:
         return json.loads(INSTALL_PATH.read_text())
     except (OSError, ValueError):
         return {}
+
+
+# KEYS PAUSED FROM OUR SIDE. The enrollment stays on their disk (so turning
+# it back on is deleting a line here + a release), but the sweep skips it:
+# no sign-in, no read, no window popping up asking for a login. Ships with
+# the self-update, so it reaches a machine we cannot touch.
+#   jamis10 -- Jamis's Box key. He has not launched Box yet and Lucy kept
+#              trying to sign into his My Service Cloud (Jamis to Megan,
+#              2026-10-20). His AT&T key `jamis` keeps running.
+PAUSED_KEYS = frozenset({"jamis10"})
+
+
+def active_enrollments() -> "List[Dict]":
+    """enrollments() minus PAUSED_KEYS -- what the sweep should walk.
+
+    A SEPARATE CALL, not a filter inside enrollments(): save/drop rewrite the
+    install file from enrollments(), and a filtered list there would delete a
+    paused key from their disk for good.
+    """
+    return [r for r in enrollments()
+            if str(r.get("office_key", "")).strip().lower() not in PAUSED_KEYS]
 
 
 def enrollments() -> "List[Dict]":
