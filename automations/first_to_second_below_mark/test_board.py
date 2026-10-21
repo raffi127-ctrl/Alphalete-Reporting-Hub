@@ -470,6 +470,36 @@ class NewColumns(unittest.TestCase):
         self.assertEqual(tot[c["qualified_ret_goal"]], 0.75)
         self.assertEqual(tot[c["answer_ret_goal"]], 0.8)
 
+
+    def test_qualified_goal_and_push(self):
+        # Rafael's example, 2026-10-21: Andre Burton, 59 showed up, 75% -> 44; 32 qualified -> 12.
+        self.assertEqual(b.qualify_target(59, 32, 0.75), (44, 12))
+        self.assertEqual(b.qualify_target(59, 50, 0.75), (44, 0))
+        self.assertEqual(b.qualify_target(59, "", 0.75), (44, None))
+        self.assertEqual(b.qualify_target("", 32, 0.75), (None, None))
+
+    def test_qualified_goal_columns_sit_between_qualified_and_disqualified(self):
+        i = H2.index("Disqualified")
+        h3 = H2[:i] + ["Qualified\nGoal", "How many to push\nfor qualify goal"] + H2[i:]
+        c = b.cols.resolve(h3)
+        self.assertEqual(h3[c["qualified"]], "Qualified")
+        self.assertEqual([c["qualified"] + 1, c["qualified"] + 2],
+                         [c["qualified_goal"], c["qualify_push"]])
+
+        def r(shown, q):
+            x = [""] * len(h3)
+            x[c["owner"]], x[c["goal"]] = "Andre Burton", 0.6
+            x[c["first_showed"]], x[c["qualified"]] = shown, q
+            return x
+        tot = b.week_total([r(30, 20), r(29, 12)], h3)
+        self.assertEqual(tot[c["qualified_goal"]], 44)
+        self.assertEqual(tot[c["qualify_push"]], 12)
+
+    def test_template_plan_adds_the_two_after_qualified(self):
+        from automations.first_to_second_below_mark import template_columns as tc
+        self.assertEqual([w[1] for w in tc.plan(H2)],
+                         ["Qualified\nGoal", "How many to push\nfor qualify goal"])
+
     def test_answer_retention_is_coloured_like_booked(self):
         plan = dict(rep.cf_plan(H2, 5))
         c = b.cols.resolve(H2)

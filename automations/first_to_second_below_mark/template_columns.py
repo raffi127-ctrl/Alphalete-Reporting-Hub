@@ -8,6 +8,8 @@ found by the header it follows (no column letters):
     Qualified (ANSWERED) -> + Answered                   (looks like that Qualified)
     Not Contacted        -> + Answer Retention           (looks like 'Booked Retention')
     Answer Retention     -> + Answer Retention Goal      (looks like 'Goal')
+    Qualified            -> + Qualified Goal             (looks like that Qualified)
+    Qualified Goal       -> + How many to push for qualify goal   (Rafael, 2026-10-21)
 
 Inserted inside each group, so the QUALIFIED / ANSWERED banners stretch over
 them. A column already there is skipped -- safe to run twice.
@@ -47,7 +49,9 @@ def plan(headers: List[str]) -> List[tuple]:
     want = [("qualified_ret", "Qualified Retention\nGoal", "goal"),
             ("ab_qualified", "Answered", "ab_qualified"),
             ("not_contacted", "Answer\nRetention", "booked_ret"),
-            ("answer_ret", "Answer Retention\nGoal", "goal")]
+            ("answer_ret", "Answer Retention\nGoal", "goal"),
+            ("qualified", "Qualified\nGoal", "qualified"),
+            ("qualified_goal", "How many to push\nfor qualify goal", "qualified")]
     have = {cols.norm(h) for h in headers}
     return [w for w in want if cols.norm(w[1]) not in have]
 

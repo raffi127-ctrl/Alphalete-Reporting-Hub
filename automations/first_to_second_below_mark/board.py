@@ -166,6 +166,27 @@ class WeekResult:
 
 
 # ----------------------------------------------------------------- the pull
+def qualify_target(first_showed, qualified, qualified_ret_goal
+                   ) -> Tuple[Optional[int], Optional[int]]:
+    """(Qualified Goal, how many to push) -- Rafael, 2026-10-21.
+
+    The goal is the 1st interviews that showed up times the Qualified
+    Retention Goal %, to the nearest whole person: Andre Burton, 59 showed up
+    at 75% -> 44. The push is what is still missing: 44 - 32 qualified = 12.
+    Already at or past the goal -> 0, never a negative."""
+    shown, goal_pct = _n(first_showed), _n(qualified_ret_goal)
+    if shown is None or goal_pct is None:
+        return None, None
+    goal = int(shown * goal_pct + 0.5)
+    q = _n(qualified)
+    return goal, (None if q is None else max(goal - int(q), 0))
+
+
+# Counts the board works out (never summed across days: the week's are worked
+# out again from the week's own totals).
+DERIVED_COUNTS = ("qualified_goal", "qualify_push")
+
+
 def _assemble(owner: src.Owner, headers: List[str], as_row: Optional[dict],
               day_data: Optional[ars.OwnerDay]) -> list:
     col = cols.resolve(headers)
@@ -187,6 +208,10 @@ def _assemble(owner: src.Owner, headers: List[str], as_row: Optional[dict],
                     "declined_ret", "ab_qualified", "answered", "booked", "not_contacted",
                     "answer_ret", "booked_ret", "not_contacted_ret"):
             put(fld, getattr(day_data, fld))
+    goal, push = qualify_target(*(row[col[f]] if f in col else None
+                                  for f in ("first_showed", "qualified", "qualified_ret_goal")))
+    put("qualified_goal", goal)
+    put("qualify_push", push)
     return row
 
 
@@ -357,6 +382,10 @@ def week_total(rows: List[list], headers: List[str]) -> list:
     put("answer_ret", ratio(sums.get("answered"), sums.get("ab_qualified")))
     put("booked_ret", ratio(sums.get("booked"), sums.get("ab_qualified")))
     put("not_contacted_ret", ratio(sums.get("not_contacted"), sums.get("ab_qualified")))
+    goal, push = qualify_target(sums.get("first_showed"), sums.get("qualified"),
+                                rep.qualify_goal(_n(goal)))
+    put("qualified_goal", goal)
+    put("qualify_push", push)
     return out
 
 
@@ -826,7 +855,7 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
     # Number formats by field, on office rows only.
     for r, c0 in layout.data_rows:
         for fields_, pattern, kind in ((rep.PERCENT_FIELDS, "0%", "PERCENT"),
-                                       (rep.COUNT_FIELDS, "0", "NUMBER")):
+                                       (rep.COUNT_FIELDS + DERIVED_COUNTS, "0", "NUMBER")):
             for f in fields_:
                 i = col.get(f)
                 if i is None:

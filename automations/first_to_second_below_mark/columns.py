@@ -6,6 +6,7 @@ lookup would put the second group's numbers in the first group's column. Every
 field is therefore anchored on a header that appears exactly once:
 
     'Disqualified' is unique -> Qualified is one column left, Declined one right
+                                (on the board: Qualified sits left of 'Qualified Goal')
     'Booked'       is unique -> Qualified is one column left, Not Contacted one right
 
 Nothing here hardcodes a column letter: add a column to the tab and the rest
@@ -39,17 +40,22 @@ DIRECT = {
     "answered": "Answered",
     "answer_ret": "Answer Retention",
     "answer_ret_goal": "Answer Retention Goal",
+    # Rafael (2026-10-21), between Qualified and Disqualified: how many
+    # Qualified the 1st interviews that showed up call for, and how many short.
+    "qualified_goal": "Qualified Goal",
+    "qualify_push": "How many to push for qualify goal",
 }
 
 # Columns only the two-week board's TEMPLATE has; the single-day tab never did,
 # so their absence is not a gap.
-BOARD_ONLY = ("qualified_ret_goal", "answered", "answer_ret", "answer_ret_goal")
+BOARD_ONLY = ("qualified_ret_goal", "answered", "answer_ret", "answer_ret_goal",
+              "qualified_goal", "qualify_push")
 
 # field -> [(anchor field, offset), ...], first anchor present wins. Resolved
 # after DIRECT. The ANSWERED group's 'Qualified' sits left of 'Answered' when
 # the tab has that column (the board, since 2026-10-08), else left of 'Booked'.
 RELATIVE = {
-    "qualified": [("disqualified", -1)],                       # QUALIFIED RETENTION's
+    "qualified": [("qualified_goal", -1), ("disqualified", -1)],  # QUALIFIED RETENTION's
     "ab_qualified": [("answered", -1), ("booked", -1)],        # ANSWERED / BOOKED's
 }
 
