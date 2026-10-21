@@ -185,6 +185,24 @@ def _service_cloud(log) -> str:
     return "done" if box_signin.run(log=log) == 0 else "still needs signing in"
 
 
+def _ownerville(log) -> str:
+    """Only when the last OwnerVille sign-in failed: open the window so the
+    person signs in once by hand (ov_signin). A lock is not a sign-in problem
+    and gets its own message; a clean record needs nothing."""
+    try:
+        from automations.icd_alerts import ov_read, ov_signin
+        if ov_read.held_on_lock():
+            return "account LOCKED by OwnerVille -- email onboarding@ownerville.com to unlock it; nothing to type"
+        if not ov_read.ov_hold_message():
+            return "nothing to do"
+    except Exception:  # noqa: BLE001
+        return "not available yet"
+    log("")
+    log("  The last OwnerVille sign-in did not stick. Lucy's browser opens on")
+    log("  OwnerVille: sign in there by hand once.")
+    return "done" if ov_signin.run(log=log) == 0 else "still needs signing in"
+
+
 def _resume_push(log) -> str:
     """Resume pushing from this computer (Carlos 2026-10-05). Asked ONCE per
     machine; a NO is remembered, a YES gets its login and sign-in checked
@@ -301,6 +319,7 @@ def run(log=print, skip_box: bool = False) -> int:
                    ("SaraPlus sign-in", _saraplus),
                    ("Box sales sign-in",
                     _service_cloud_deferred if skip_box else _service_cloud),
+                   ("OwnerVille sign-in", _ownerville),
                    ("Resume pushing", _resume_push)]
     results = []
     for name, fn in steps:

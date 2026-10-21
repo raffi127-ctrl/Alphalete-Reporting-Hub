@@ -197,18 +197,31 @@ def cmd_set_ownerville_login() -> int:
             return 1
         if attempt == 2:
             break
+        # THE PASSWORD IS SAVED; RETYPING IT IS NOT THE FIX. Steve McElwee
+        # (2026-10-21) typed his three times into this box and each proof
+        # landed back on the login page with no session -- a first-login
+        # prompt, a security check, a username that is not the email: the
+        # agent cannot tell, a person at the window can. So the second
+        # chance is the window, not the box (same as SaraPlus / Service
+        # Cloud): sign in by hand once in Lucy's browser and the session
+        # lives there; the sweep never types the password again.
         try:
-            again = ask.choose(
-                "OwnerVille did not take that.\n\n%s\n\nTry again?" % why[:300],
-                ["Yes, let me retype it", "No, I'll sort it out later"])
+            ask.message(
+                "OwnerVille did not open a session with that, but the login "
+                "is saved.\n\nNext, Lucy's own browser will open on "
+                "OwnerVille: sign in there by hand once, the same way you do "
+                "anywhere else. That is all she needs.")
         except ask.Cancelled:
             return 1
-        if not again.startswith("Yes"):
-            return 1
-
-    ask.message("That did not work either, so Lucy has stopped trying (more "
-                "tries can lock your account).\n\nPlease DM Megan & Eve.",
-                error=True)
+        from automations.icd_alerts import ov_signin
+        if ov_signin.run(log=_log) == 0:
+            ask.message("That worked -- your knocks board will start again "
+                        "within a few minutes.\n\nNothing else to do.")
+            return 0
+        ask.message("Nobody signed in, so nothing has changed. Run this again "
+                    "when you have a minute at the computer, or DM Megan & "
+                    "Eve.", error=True)
+        return 1
     return 1
 
 
@@ -608,7 +621,11 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
             try:
                 if ov_read.needs_password_box():
                     from automations.icd_alerts import autoprompt
-                    autoprompt.offer("ownerville_password", log=_log)
+                    # The WINDOW, not the box: a saved password that does
+                    # not open a session is fixed by a person signing in
+                    # once in Lucy's browser (Steve, 2026-10-21).
+                    if ov_read.held_on_lock() or not autoprompt.offer("ownerville", log=_log):
+                        autoprompt.offer("ownerville_password", log=_log)
             except Exception:  # noqa: BLE001 — never cost the fault report
                 pass
             worst = 1
@@ -643,6 +660,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="ICD credit-check alerts agent")
     ap.add_argument("--set-login", action="store_true",
                     help="change the saved SaraPlus password, and check it")
+    ap.add_argument("--ownerville-signin", action="store_true",
+                    help="open OwnerVille in Lucy's browser so you sign in by "
+                         "hand once; the session then lives in that profile")
     ap.add_argument("--set-ownerville-login", action="store_true",
                     help="change the saved OwnerVille login, and check it")
     ap.add_argument("--check", action="store_true",
@@ -675,6 +695,9 @@ def main(argv=None) -> int:
 
     if args.set_login:
         return cmd_set_login(headless)
+    if args.ownerville_signin:
+        from automations.icd_alerts import ov_signin
+        return ov_signin.run(log=_log)
     if args.set_ownerville_login:
         return cmd_set_ownerville_login()
     if args.check:

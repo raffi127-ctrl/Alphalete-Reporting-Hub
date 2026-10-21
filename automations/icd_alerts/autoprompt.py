@@ -64,6 +64,13 @@ SYSTEMS = {
     # sign-ins in a day, a "locked" page on her screen every few minutes, and
     # a message telling her to "open Lucy Reports" -- which is not a thing
     # she can open. Offered only once ov_read has stopped trying.
+    # The OwnerVille WINDOW (ov_signin): sign in by hand once in Lucy's
+    # profile. Offered ahead of the password box since 2026-10-21 (Steve).
+    "ownerville": {
+        "module": "automations.icd_alerts.ov_signin",
+        "stamp": "ov-autoprompt.txt",
+        "name": "OwnerVille",
+    },
     "ownerville_password": {
         "module": "automations.icd_alerts.run",
         "args": ["--set-ownerville-login"],
