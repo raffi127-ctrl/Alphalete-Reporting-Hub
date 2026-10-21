@@ -65,14 +65,34 @@ class BoardTest(unittest.TestCase):
         text = {(r, c): v for (r, c), (v, _) in g.cells.items()
                 if top <= r <= bottom}
         row = next(r for (r, c), v in text.items() if v == "vs Prior Week")
-        self.assertAlmostEqual(text[(row, 2)], 0.0)       # Mon 4 vs 4
-        self.assertEqual(text[(row, 4)], "")             # Wednesday: no 0%
-        self.assertAlmostEqual(text[(row, 9)], (5 - 5) / 5)   # Mon+Tue vs Mon+Tue
+        this, last = row, row + 3                        # 1-based rows of
+        self.assertEqual(text[(row, 2)],                 # This Week / Last Week
+                         '=IF(OR(C%d="",N(C%d)=0),"",C%d/C%d-1)'
+                         % (this, last, this, last))
+        self.assertEqual(text[(row, 9)], '=IF(N(J%d)=0,"",J%d/J%d-1)'
+                         % (last, this, last))
+        self.assertEqual(text[(row + 2, 9)],             # last week: same days
+                         '=SUMPRODUCT(--(C%d:I%d<>""),C%d:I%d)'
+                         % (this, this, last, last))
         ps = next(r for (r, c), v in text.items() if v == "Fiber - New Internet")
-        self.assertEqual(text[(ps, 4)], "")              # Wednesday still ahead
-        self.assertEqual(text[(ps, 9)], 5)
+        self.assertEqual(text[(row - 1, 4)], "=E%d" % (ps + 1))
+        tot = next(r for (r, c), v in text.items() if v == "Totals" and c == 0)
+        self.assertLess(tot, ps)                         # sales tables on top
+        # Product Summary reads the daily board's Totals row
+        self.assertEqual(text[(ps, 4)], "=E%d" % (tot + 1))
+        self.assertEqual(text[(tot, 4)],
+                         '=IF(COUNT(E%d:E%d)=0,"",SUM(E%d:E%d))'
+                         % (tot - 1, tot, tot - 1, tot))
+        self.assertEqual(text[(tot - 2, 9)], "=SUM(C%d:I%d)" % (tot - 1, tot - 1))
+        # the daily cells themselves stay numbers: blank ahead, values so far
+        self.assertEqual(text[(tot - 2, 4)], "")         # Wednesday still ahead
+        self.assertEqual(text[(tot - 2, 2)], 3)          # Amy, Monday
         dash = [v for v in text.values() if v == "–"]
         self.assertTrue(dash)                            # missing weeks = dash
+        # red/green ride on rules over the two % rows, not painted once
+        rules = [r for r in g.rules if top <= r[0] <= bottom]
+        self.assertEqual(len(rules), 4)
+        self.assertEqual((rules[0][0], rules[0][1]), (row, row + 2))
 
 
 if __name__ == "__main__":

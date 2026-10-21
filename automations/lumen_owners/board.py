@@ -224,6 +224,8 @@ class Grid:
         self.cells: Dict[Tuple[int, int], Tuple[object, dict]] = {}
         self.merges: List[Tuple[int, int, int, int]] = []   # r0, r1, c0, c1 (excl)
         self.heights: Dict[int, int] = {}
+        # conditional colours: (r0, r1, c0, c1 excl, custom formula, format)
+        self.rules: List[Tuple[int, int, int, int, str, dict]] = []
         self.row = 0
 
     def put(self, r: int, c: int, value, fmt: dict):
@@ -256,6 +258,82 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
     merged_title(team_title, _fmt(TEAM_BG, p["team_fg"], DISPLAY, 20), 34)
     g.skip()
 
+    team = n["team_days"]
+
+    # Sales tables first (Eve, 2026-10-21), the summaries under them.
+    # CAPTAIN TEAM — one column per week ending, newest first.
+    g.put(g.row, 0, "LUMEN TEAM", _fmt(TEAM_BG, p["team_fg"], DISPLAY, 20))
+    g.merge(g.row, 0, 2)
+    g.heights[g.row] = 34
+    for k, we in enumerate(n["wes"]):
+        g.put(g.row, 2 + k, "WE %02d.%02d" % (we.month, we.day),
+              _fmt(WE_BG, WHITE, SERIF, 11, True))
+    g.skip()
+    g.put(g.row, 0, units_label, _fmt(p["units"], WHITE, SERIF, 12, True))
+    g.merge(g.row, 0, 2)
+    for k in range(WEEK_COLS):
+        g.put(g.row, 2 + k, "", _fmt(p["units"]))
+    g.skip()
+    team_first = g.row
+    for i, (name, totals, _days) in enumerate(n["owners"]):
+        bg = WHITE if i % 2 == 0 else ZEBRA
+        g.put(g.row, 0, i + 1, _fmt(WHITE, BLACK, "Arial", 10))
+        g.put(g.row, 1, pretty_name(name), _fmt(p["name"], BLACK, SERIF, 12, True))
+        for k, we in enumerate(n["wes"]):
+            v = totals[we]
+            g.put(g.row, 2 + k, "–" if v is None else v,
+                  _fmt(bg, BLACK, SERIF, 12, True))
+        g.skip()
+    team_tot = g.row
+    g.put(g.row, 0, "TOTALS", _fmt(BLACK, WHITE, SERIF, 14, True))
+    g.merge(g.row, 0, 2)
+    for k, we in enumerate(n["wes"]):
+        vals = [t[we] for _, t, _ in n["owners"]]
+        tot = "–" if any(v is None for v in vals) else sum(vals)
+        g.put(g.row, 2 + k, tot, _fmt(BLACK, WHITE, SERIF, 14, True))
+    g.skip(2)
+
+    # Daily board — owner x Mon-Sun + this week / last week / the week before.
+    g.put(g.row, 0, units_label,
+          _fmt(p["units"], p["units_fg"], DISPLAY, 14, wrap=True))
+    g.merge(g.row, 0, 2, rows=2)
+    for i, d in enumerate(DAY_NAMES):
+        g.put(g.row, 2 + i, d, _fmt(BLACK, WHITE, SERIF, 8, True))
+        g.put(g.row + 1, 2 + i, n["days"][i].day, _fmt(BLACK, WHITE, SERIF, 8, True))
+    for c, (label, bg, fg) in zip((9, 10, 11), (
+            ("RUNNING WEEK TOTALS", WE_BG, WHITE),
+            ("LAST WEEK'S TOTALS", HDR_LAST_BG, WHITE),
+            ("PREVIOUS WEEK'S TOTALS", HDR_PREV_BG, BLACK))):
+        g.put(g.row, c, label, _fmt(bg, fg, SERIF, 7, True, wrap=True))
+        g.merge(g.row, c, c + 1, rows=2)
+    g.skip(2)
+    wes = n["wes"]
+    day_first = g.row
+    for i, (name, totals, days) in enumerate(n["owners"]):
+        g.put(g.row, 0, i + 1, _fmt(WHITE, BLACK, "Arial", 10))
+        g.put(g.row, 1, pretty_name(name), _fmt(p["name"], BLACK, SERIF, 12, True))
+        for k, d in enumerate(n["days"]):
+            g.put(g.row, 2 + k, days.get(d, 0) if shown[k] else "",
+                  _fmt(p["day"], BLACK, SERIF, 12, True))
+        for c, we, bg, size in ((9, wes[0], p["run"], 14), (10, wes[1], p["last"], 12),
+                                (11, wes[2], p["prev"], 12)):
+            v = totals[we]
+            g.put(g.row, c, "–" if v is None else v,
+                  _fmt(bg, BLACK, SERIF, size, True))
+        g.skip()
+    g.put(g.row, 0, "Totals", _fmt(BLACK, p["totals_fg"], SERIF, 12, True))
+    g.merge(g.row, 0, 2)
+    for k in range(7):
+        g.put(g.row, 2 + k, team[k] if shown[k] else "",
+              _fmt(BLACK, WHITE, SERIF, 14, True))
+    for c, we, bg, size in ((9, wes[0], p["run_tot"], 14), (10, wes[1], p["last_tot"], 12),
+                            (11, wes[2], p["prev_tot"], 12)):
+        vals = [t[we] for _, t, _ in n["owners"]]
+        tot = "–" if any(v is None for v in vals) else sum(vals)
+        g.put(g.row, c, tot, _fmt(bg, WHITE, SERIF, size, True))
+    day_tot = g.row
+    g.skip(3)
+
     def header(first: str, first_size: int):
         g.put(g.row, 1, first, _fmt(HEAD_BG, BLACK, SERIF, first_size, True))
         for i, d in enumerate(DAY_NAMES):
@@ -267,8 +345,8 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
     merged_title("Product Summary - This Week",
                  _fmt(p["section"], WHITE, SERIF, 14, True))
     header("Product Type", 12)
-    team = n["team_days"]
     wtd = sum(v for v, s in zip(team, shown) if s)
+    ps_row = g.row
     g.put(g.row, 1, ps_label, _fmt())
     for i in range(7):
         g.put(g.row, 2 + i, team[i] if shown[i] else "", _fmt())
@@ -297,94 +375,81 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
         ("Sales (Last Week)", SHADE, last, wtd_of(last), False),
         ("Sales ( 4 Week AVG)", WHITE, avg, wtd_of(avg), False),
     ]
+    cvp = g.row                 # rows cvp..cvp+4 = the five lines below
     for label, bg, vals, gt, is_pct in lines:
         g.put(g.row, 1, label, _fmt(bg))
         for i, v in enumerate(vals):
-            if is_pct and v is not None:
-                cell_bg = NEG_BG if v < 0 else POS_BG
-                g.put(g.row, 2 + i, v, _fmt(cell_bg, pct=True))
-            else:
-                g.put(g.row, 2 + i, "" if v is None else v, _fmt(bg))
+            g.put(g.row, 2 + i, "" if v is None else v, _fmt(bg, pct=is_pct))
         if is_pct:
-            fg = WHITE if gt is None else (NEG_GT_FG if gt < 0 else POS_GT_FG)
             g.put(g.row, 9, "" if gt is None else gt,
-                  _fmt(GT_BG, fg, SERIF, 12, True, pct=True))
+                  _fmt(GT_BG, WHITE, SERIF, 12, True, pct=True))
         else:
             g.put(g.row, 9, "" if gt is None else gt,
                   _fmt(GT_BG, WHITE, SERIF, 12, True))
         g.skip()
     g.skip()
 
-    # CAPTAIN TEAM — one column per week ending, newest first.
-    g.put(g.row, 0, "LUMEN TEAM", _fmt(TEAM_BG, p["team_fg"], DISPLAY, 20))
-    g.merge(g.row, 0, 2)
-    g.heights[g.row] = 34
-    for k, we in enumerate(n["wes"]):
-        g.put(g.row, 2 + k, "WE %02d.%02d" % (we.month, we.day),
-              _fmt(WE_BG, WHITE, SERIF, 11, True))
-    g.skip()
-    g.put(g.row, 0, units_label, _fmt(p["units"], WHITE, SERIF, 12, True))
-    g.merge(g.row, 0, 2)
-    for k in range(WEEK_COLS):
-        g.put(g.row, 2 + k, "", _fmt(p["units"]))
-    g.skip()
-    for i, (name, totals, _days) in enumerate(n["owners"]):
-        bg = WHITE if i % 2 == 0 else ZEBRA
-        g.put(g.row, 0, i + 1, _fmt(WHITE, BLACK, "Arial", 10))
-        g.put(g.row, 1, pretty_name(name), _fmt(p["name"], BLACK, SERIF, 12, True))
-        for k, we in enumerate(n["wes"]):
-            v = totals[we]
-            g.put(g.row, 2 + k, "–" if v is None else v,
-                  _fmt(bg, BLACK, SERIF, 12, True))
-        g.skip()
-    g.put(g.row, 0, "TOTALS", _fmt(BLACK, WHITE, SERIF, 14, True))
-    g.merge(g.row, 0, 2)
-    for k, we in enumerate(n["wes"]):
-        vals = [t[we] for _, t, _ in n["owners"]]
-        tot = "–" if any(v is None for v in vals) else sum(vals)
-        g.put(g.row, 2 + k, tot, _fmt(BLACK, WHITE, SERIF, 14, True))
-    g.skip(2)
-
-    # Daily board — owner x Mon-Sun + this week / last week / the week before.
-    g.put(g.row, 0, units_label,
-          _fmt(p["units"], p["units_fg"], DISPLAY, 14, wrap=True))
-    g.merge(g.row, 0, 2, rows=2)
-    for i, d in enumerate(DAY_NAMES):
-        g.put(g.row, 2 + i, d, _fmt(BLACK, WHITE, SERIF, 8, True))
-        g.put(g.row + 1, 2 + i, n["days"][i].day, _fmt(BLACK, WHITE, SERIF, 8, True))
-    for c, (label, bg, fg) in zip((9, 10, 11), (
-            ("RUNNING WEEK TOTALS", WE_BG, WHITE),
-            ("LAST WEEK'S TOTALS", HDR_LAST_BG, WHITE),
-            ("PREVIOUS WEEK'S TOTALS", HDR_PREV_BG, BLACK))):
-        g.put(g.row, c, label, _fmt(bg, fg, SERIF, 7, True, wrap=True))
-        g.merge(g.row, c, c + 1, rows=2)
-    g.skip(2)
-    wes = n["wes"]
-    for i, (name, totals, days) in enumerate(n["owners"]):
-        g.put(g.row, 0, i + 1, _fmt(WHITE, BLACK, "Arial", 10))
-        g.put(g.row, 1, pretty_name(name), _fmt(p["name"], BLACK, SERIF, 12, True))
-        for k, d in enumerate(n["days"]):
-            g.put(g.row, 2 + k, days.get(d, 0) if shown[k] else "",
-                  _fmt(p["day"], BLACK, SERIF, 12, True))
-        for c, we, bg, size in ((9, wes[0], p["run"], 14), (10, wes[1], p["last"], 12),
-                                (11, wes[2], p["prev"], 12)):
-            v = totals[we]
-            g.put(g.row, c, "–" if v is None else v,
-                  _fmt(bg, BLACK, SERIF, size, True))
-        g.skip()
-    g.put(g.row, 0, "Totals", _fmt(BLACK, p["totals_fg"], SERIF, 12, True))
-    g.merge(g.row, 0, 2)
-    for k in range(7):
-        g.put(g.row, 2 + k, team[k] if shown[k] else "",
-              _fmt(BLACK, WHITE, SERIF, 14, True))
-    for c, we, bg, size in ((9, wes[0], p["run_tot"], 14), (10, wes[1], p["last_tot"], 12),
-                            (11, wes[2], p["prev_tot"], 12)):
-        vals = [t[we] for _, t, _ in n["owners"]]
-        tot = "–" if any(v is None for v in vals) else sum(vals)
-        g.put(g.row, c, tot, _fmt(bg, WHITE, SERIF, size, True))
-    bottom = g.row
+    bottom = g.row - 2
+    _wire_formulas(g, ps_row, cvp, team_first, team_tot, day_first, day_tot)
     g.skip(3)
     return top, bottom
+
+
+def _col(c: int) -> str:
+    return chr(ord("A") + c)
+
+
+def _wire_formulas(g: Grid, ps: int, cvp: int, team_first: int, team_tot: int,
+                   day_first: int, day_tot: int):
+    """Swap the this-week numbers for formulas that read the daily board, so
+    they follow it as each new day's sales land there (Eve, 2026-10-21):
+    daily Totals -> Product Summary -> Sales This Week -> the % rows. The
+    values put in first stay as the cell formats; only the value changes.
+    Rows are 0-based in; formulas are 1-based."""
+    def put(r, c, formula):
+        g.cells[(r, c)] = (formula, g.cells[(r, c)][1])
+
+    n_owners = day_tot - day_first
+    if n_owners <= 0:
+        return
+    a, b = day_first + 1, day_tot              # owner rows of the daily board
+    tot, ps1 = day_tot + 1, ps + 1
+    this, prior, avg4, last, avg = (cvp + k + 1 for k in range(5))
+    days = "C%d:I%d"
+    for k in range(7):
+        x = _col(2 + k)
+        put(day_tot, 2 + k,
+            '=IF(COUNT(%s%d:%s%d)=0,"",SUM(%s%d:%s%d))' % (x, a, x, b, x, a, x, b))
+        put(ps, 2 + k, "=%s%d" % (x, tot))
+        put(cvp, 2 + k, "=%s%d" % (x, ps1))
+        for row, base in ((prior - 1, last), (avg4 - 1, avg)):
+            put(row, 2 + k, '=IF(OR(%s%d="",N(%s%d)=0),"",%s%d/%s%d-1)'
+                % (x, this, x, base, x, this, x, base))
+    for r in range(day_first, day_tot):          # RUNNING WEEK TOTALS
+        put(r, 9, "=SUM(%s)" % (days % (r + 1, r + 1)))
+    put(day_tot, 9, "=SUM(J%d:J%d)" % (a, b))
+    put(ps, 9, "=SUM(%s)" % (days % (tot, tot)))
+    put(cvp, 9, "=J%d" % ps1)
+    for row in (last - 1, avg - 1):              # same days only (week to date)
+        put(row, 9, '=SUMPRODUCT(--(%s<>""),%s)'
+            % (days % (this, this), days % (row + 1, row + 1)))
+    for row, base in ((prior - 1, last), (avg4 - 1, avg)):
+        put(row, 9, '=IF(N(J%d)=0,"",J%d/J%d-1)' % (base, this, base))
+    for i in range(n_owners):                    # LUMEN TEAM, this week's column
+        put(team_first + i, 2, "=J%d" % (day_first + i + 1))
+    put(team_tot, 2, "=SUM(C%d:C%d)" % (team_first + 1, team_first + n_owners))
+
+    # red / green follow the numbers instead of being painted once
+    g.rules += [
+        (prior - 1, avg4, 2, 9, "=AND(ISNUMBER(C%d),C%d<0)" % (prior, prior),
+         {"backgroundColor": _color(NEG_BG)}),
+        (prior - 1, avg4, 2, 9, "=AND(ISNUMBER(C%d),C%d>=0)" % (prior, prior),
+         {"backgroundColor": _color(POS_BG)}),
+        (prior - 1, avg4, 9, 10, "=AND(ISNUMBER(J%d),J%d<0)" % (prior, prior),
+         {"textFormat": {"foregroundColor": _color(NEG_GT_FG)}}),
+        (prior - 1, avg4, 9, 10, "=AND(ISNUMBER(J%d),J%d>=0)" % (prior, prior),
+         {"textFormat": {"foregroundColor": _color(POS_GT_FG)}}),
+    ]
 
 
 def build_grid(owners: Sequence[str], weeks: Dict[dt.date, Dict[str, dict]],
@@ -411,6 +476,8 @@ def _cell_data(value, fmt: dict) -> dict:
         uev = {"stringValue": str(value)}
     elif isinstance(value, (int, float)):
         uev = {"numberValue": value}
+    elif isinstance(value, str) and value.startswith("="):
+        uev = {"formulaValue": value}
     else:
         uev = {"stringValue": str(value)}
     out = {"userEnteredFormat": fmt}
@@ -501,6 +568,20 @@ def write_tab(g: Grid, sh=None):
         reqs.append({"mergeCells": {"mergeType": "MERGE_ALL", "range": {
             "sheetId": sid, "startRowIndex": r0, "endRowIndex": r1,
             "startColumnIndex": c0, "endColumnIndex": c1}}})
+    # conditional colours: drop last run's rules, then add this run's
+    meta = sh.fetch_sheet_metadata(
+        {"fields": "sheets(properties.sheetId,conditionalFormats)"})
+    old = next((len(s.get("conditionalFormats") or []) for s in meta["sheets"]
+                if s["properties"]["sheetId"] == sid), 0)
+    reqs += [{"deleteConditionalFormatRule": {"sheetId": sid, "index": 0}}] * old
+    for i, (r0, r1, c0, c1, formula, fmt) in enumerate(g.rules):
+        reqs.append({"addConditionalFormatRule": {"index": i, "rule": {
+            "ranges": [{"sheetId": sid, "startRowIndex": r0, "endRowIndex": r1,
+                        "startColumnIndex": c0, "endColumnIndex": c1}],
+            "booleanRule": {
+                "condition": {"type": "CUSTOM_FORMULA",
+                              "values": [{"userEnteredValue": formula}]},
+                "format": fmt}}}})
     sh.batch_update({"requests": reqs})
     return ws
 
