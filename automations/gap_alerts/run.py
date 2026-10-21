@@ -85,6 +85,7 @@ FAIL_STREAK = 3
 ALERT_COOLDOWN_HOURS = 2
 FAIL_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_fails.json"
 CORRECTIONS_CHANNEL = "C0BK5PRG259"  # #claudecorrections-and-requests
+INCIDENT_KEY = "standalone-gap_alerts"  # what --working/--resolve-report gap_alerts find
 
 
 def _log(msg: str) -> None:
@@ -786,18 +787,39 @@ def _record_failure(err: str, *, dry_run: bool) -> None:
 
     if should_alert and not dry_run:
         try:
-            # One emoji-free line in the channel, the detail in the thread —
-            # the house format for #claudecorrections.
-            from automations.shared import slack_metrics_post as smp
-            client = smp._client()
-            resp = client.chat_postMessage(
-                channel=CORRECTIONS_CHANNEL,
-                text=("Rep Gap Alerts has failed %d ticks in a row — the "
-                      "Knocking chat is not getting gap cards." % streak))
-            client.chat_postMessage(
-                channel=CORRECTIONS_CHANNEL, thread_ts=resp["ts"],
-                text=("```\n%s\n```\nRe-run once the cause is clear:\n"
-                      "`lucy rerun gap_alerts`" % err[:1500]))
+            # Through the incident system, like every other report (2026-10-21:
+            # the hand-rolled post this replaced had no incident key, so nothing
+            # could mark it :pending: and it never got its ✅ — the 10/20 post
+            # sat open after the room was getting cards again). The marker line
+            # lets `incident_thread --working/--resolve-report gap_alerts` find
+            # it, and _clear_failures closes it on the first clean tick.
+            title = ("Rep Gap Alerts has failed %d ticks in a row — the "
+                     "Knocking chat is not getting gap cards." % streak)
+            posted = None
+            try:
+                from automations.shared import incident_thread as inc
+                posted = inc.open_or_followup(
+                    key=INCIDENT_KEY, title=title,
+                    body=["*What it means:* no gap cards are reaching the "
+                          "Knocking chat until this clears."],
+                    details=["```\n%s\n```" % err[:1500],
+                             "Re-run once the cause is clear: "
+                             "`lucy rerun gap_alerts`"],
+                    followup=[title], label="*Rep Gap Alerts*",
+                    channel=CORRECTIONS_CHANNEL)
+            except Exception as e:  # noqa: BLE001
+                _log("incident post failed (%s) — posting plain" % type(e).__name__)
+            if posted is None:
+                # One emoji-free line in the channel, the detail in the thread —
+                # the house format for #claudecorrections.
+                from automations.shared import slack_metrics_post as smp
+                client = smp._client()
+                resp = client.chat_postMessage(
+                    channel=CORRECTIONS_CHANNEL, text=title)
+                client.chat_postMessage(
+                    channel=CORRECTIONS_CHANNEL, thread_ts=resp["ts"],
+                    text=("```\n%s\n```\nRe-run once the cause is clear:\n"
+                          "`lucy rerun gap_alerts`" % err[:1500]))
             data["alerted_at"] = dt.datetime.now().isoformat(timespec="seconds")
         except Exception as e:  # noqa: BLE001 — an alert must never crash a tick
             _log("alert failed: %s: %s" % (type(e).__name__, str(e)[:120]))
@@ -805,12 +827,20 @@ def _record_failure(err: str, *, dry_run: bool) -> None:
     _write_fails(data)
 
 
-def _clear_failures() -> None:
+def _clear_failures(*, dry_run: bool = False) -> None:
     data = _fails()
     if data.get("streak"):
         _log("recovered after %d failed tick(s)" % data["streak"])
         _write_fails({"streak": 0,
                       "recovered_at": dt.datetime.now().isoformat(timespec="seconds")})
+    # Free when nothing is open (a local index read), so safe on every tick.
+    try:
+        from automations.shared import incident_thread as inc
+        inc.resolve_if_open(INCIDENT_KEY,
+                            what="*Rep Gap Alerts* is sending gap cards again",
+                            channel=CORRECTIONS_CHANNEL, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001 — closing an alert must never break a tick
+        _log("incident close failed: %s: %s" % (type(e).__name__, str(e)[:120]))
 
 
 # --- the pull ----------------------------------------------------------------
@@ -2656,7 +2686,7 @@ def main(argv=None) -> int:
         _log("=== done (%d failure(s)) ===" % len(failures))
         return 1
 
-    _clear_failures()
+    _clear_failures(dry_run=not send)
     if send:
         _publish_hub_once(day)
     _log("=== done ===")
