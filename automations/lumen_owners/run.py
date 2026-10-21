@@ -459,8 +459,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     rows = build_rows(lumen, fiber, aliases, past, mix)
     monday = _wk.reporting_monday(today)
     att_week = "week of %s" % monday.strftime("%m/%d")
-    body = (table_html(rows, weeks, att_week)
-            + sales_board_html(rows, _wk.reporting_week(today), today, att_week))
+    body = table_html(rows, weeks, att_week)
     for r in rows:
         print("ROW | %-28s | %-16s | AT&T %3d (NI %3d) | Lumen %s"
               % (r["owner"], r["status"], r["att_units"], r["att_ni"],
@@ -480,6 +479,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             blocks = B.render_boxes(ws, spans, OUT / today.isoformat())
         except Exception as e:  # noqa: BLE001 — see above
             print("[lumen] Lumen Owners tab FAILED: %s: %s" % (type(e).__name__, e))
+            blocks = []
+    # The burgundy/plum boxes go first and carry the day-by-day numbers, so the
+    # old daily table is dropped (Eve, 2026-10-21); the owner table follows as
+    # a note. Without the boxes the daily table comes back so Raf loses nothing.
+    if blocks:
+        blocks = list(blocks) + [("<br>" + body, None, None, "note")]
+        body = ""
+    else:
+        body += sales_board_html(rows, _wk.reporting_week(today), today, att_week)
+        if sh is not None:
             body += ('<p style="color:#b35900;font-size:12px">The New Internet / '
                      "All Units performance boxes could not be built this run."
                      "</p>")
