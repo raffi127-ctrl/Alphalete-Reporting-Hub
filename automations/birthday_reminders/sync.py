@@ -49,6 +49,54 @@ def _is_rank(value) -> bool:
         return False
 
 
+def name_variants(name: str) -> list:
+    """Other spellings someone may have signed their Blue Ink packet with.
+
+    Ortencia Denice Martinez (10/21) is on the board under all three names;
+    her packet is very likely 'Denice Martinez', which the first-name|surname
+    match never tries. So: each middle name + surname, and a nickname in
+    parentheses + surname ('Amjad (MJ) Malhas' -> 'MJ Malhas').
+    """
+    s = clean_name(name)
+    nick = re.findall(r"\(([^)]*)\)", s)
+    plain = " ".join(re.sub(r"\([^)]*\)", " ", s).replace("-", " ").split())
+    parts = plain.split()
+    out = []
+    if len(parts) >= 2:
+        last = parts[-1]
+        out += ["%s %s" % (p, last) for p in parts[1:-1]]
+        out += ["%s %s" % (n.strip(), last) for n in nick if n.strip()]
+        if len(parts) > 2:
+            out.append("%s %s" % (parts[0], last))
+    seen, uniq = {s.lower()}, []
+    for v in out:
+        if v.lower() not in seen:
+            seen.add(v.lower())
+            uniq.append(v)
+    return uniq
+
+
+def _retry_birthdays(gaps, *, logfn=print) -> dict:
+    """{sheet row: 'MM/DD'} for the people we can now find, trying their own
+    name first and then every variant. Blue Ink failures -> {} (logged)."""
+    from automations.birthday_reminders import backfill as BF
+    asks = {}
+    for e in gaps:
+        for n in [clean_name(e.name)] + name_variants(e.name):
+            asks.setdefault(n, e.row)
+    try:
+        hits = BF.gather(list(asks), logfn=lambda *a: None)
+    except Exception as ex:  # noqa: BLE001
+        logfn("  sync: ⚠ Blue Ink retry failed (%s)" % str(ex)[:120])
+        return {}
+    out = {}
+    for h in hits:
+        row = asks.get(h.name)
+        if row and h.mmdd and row not in out:
+            out[row] = h.mmdd
+    return out
+
+
 def board_people(today: dt.date, *, logfn=print) -> dict:
     """{name as on the board: start date or None} for everyone WORKING this
     week -- unmarked rows only, the same 'still here' test liveness uses."""
@@ -120,7 +168,21 @@ def run(today: dt.date, *, dry_run: bool = True, logfn=print) -> dict:
         if why != "already on the tab":
             logfn("  sync: --   %s -- %s" % (n, why))
 
-    # 2. blank start dates on rows we already had
+    # 2. blank birthdays on rows we already had, for reps still on the board --
+    # retried every run, under every spelling they might have signed with.
+    working_keys = {base_name(n) for n in people}
+    gaps = [e for e in entries if not e.mmdd.strip() and not e.is_staff
+            and e.key in working_keys]
+    if gaps:
+        found = _retry_birthdays(gaps, logfn=logfn)
+        wrote_b = S.fill_blank(C.COL_MMDD, found, dry_run=dry_run)
+        for e in gaps:
+            if e.row in wrote_b:
+                logfn("  sync: %s %s's birthday -- %s"
+                      % ("filled" if not dry_run else "would fill", e.name,
+                         found[e.row]))
+
+    # 3. blank start dates on rows we already had
     fills = {e.row: _md_y(start_by_key[e.key]) for e in entries
              if not e.start.strip() and not e.is_staff and e.key in start_by_key}
     wrote = S.fill_blank(C.COL_START, fills, dry_run=dry_run)

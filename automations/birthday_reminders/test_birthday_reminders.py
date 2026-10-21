@@ -634,6 +634,21 @@ class SyncNames(unittest.TestCase):
         self.assertEqual(SY.clean_name("Ann Lee (Wk 3)"), "Ann Lee")
         self.assertEqual(SY._md_y(dt.date(2025, 1, 5)), "1/5/2025")
 
+    def test_name_variants_try_middle_names_and_nicknames(self):
+        """Ortencia Denice Martinez likely signed Blue Ink as Denice Martinez."""
+        from automations.birthday_reminders import sync as SY
+        self.assertIn("Denice Martinez", SY.name_variants("Ortencia Denice Martinez"))
+        self.assertIn("Ortencia Martinez", SY.name_variants("Ortencia Denice Martinez"))
+        self.assertIn("MJ Malhas", SY.name_variants("Amjad (MJ) Malhas"))
+        self.assertEqual(SY.name_variants("Andrew Sanborn"), [])
+
+    def test_retry_maps_a_variant_hit_back_to_the_row(self):
+        from automations.birthday_reminders import sync as SY
+        gap = S.Entry(name="Ortencia Denice Martinez", mmdd="", row=42)
+        hit = S.Entry(name="Denice Martinez", mmdd="05/02")
+        with mock.patch.object(BF, "gather", lambda names, **k: [hit]):
+            self.assertEqual(SY._retry_birthdays([gap]), {42: "05/02"})
+
     def test_only_ranked_rows_are_reps(self):
         """10/21: 77 board labels ('WE 1/12 - 1/18', 'Se7en Sins') were looked
         up in Blue Ink as people. Real reps have a rank number beside them."""
