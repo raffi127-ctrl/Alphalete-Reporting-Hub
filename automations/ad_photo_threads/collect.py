@@ -148,6 +148,24 @@ def find_thread(cl, thread_re, day: dt.date) -> Optional[dict]:
     return min(hits, key=lambda m: float(m["ts"])) if hits else None
 
 
+def _print_day_posts(cl, day: dt.date) -> None:
+    """Samuel 10/21: "no thread found" for days, and only Lucy (the mini) can
+    read his channel -- so say what WAS posted that day, to see the new wording."""
+    lo, hi = _day_bounds(day)
+    for ch in source_channels():
+        try:
+            msgs = cl.conversations_history(channel=ch, oldest=str(lo), latest=str(hi),
+                                            limit=50).get("messages", [])
+        except Exception as e:                   # noqa: BLE001 — diagnostics only
+            print(f"  !! {ch}: {type(e).__name__}: {str(e)[-80:]}")
+            continue
+        print(f"  !! {ch} on {day}: {len(msgs)} post(s); the pattern looks for "
+              f"{[s['thread_re'].pattern for s in config.SOURCES]}")
+        for m in msgs[:12]:
+            text = " ".join((m.get("text") or "").split())[:90]
+            print(f"  !!   {m.get('reply_count', 0)} replies | {text}")
+
+
 def _replies(cl, ts: str, channel: Optional[str] = None) -> List[dict]:
     channel = channel or source_channels()[0]
     out, cursor = [], None
@@ -361,6 +379,7 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
         if not parent:
             if todays:
                 rep.missing_threads.append(src["label"])
+                _print_day_posts(cl, day)
             continue
 
         msgs = _replies(cl, parent["ts"], parent.get("_channel"))
