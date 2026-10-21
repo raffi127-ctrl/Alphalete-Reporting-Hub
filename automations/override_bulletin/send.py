@@ -226,7 +226,10 @@ def build_email(png_paths, week_label, to_addrs, subject=None, title=None,
     return msg
 
 
-def send_email(msg):
+def send_email(msg, *, report_id: str = ""):
+    """Mail it -- and note the delivery, so a clean send can close its own
+    corrections ticket (2026-10-20: RCs & NCs went out at 4:37pm and its
+    ticket stayed open; this private SMTP path never reached the ledger)."""
     from automations.scheduled_6_days_out.email_send import (
         FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password)
     try:
@@ -237,6 +240,13 @@ def send_email(msg):
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
         s.login(FROM_ADDR, app_password())
         s.send_message(msg)
+    try:
+        from automations.shared import delivery_ledger
+        delivery_ledger.record("email", str(msg.get("To", "")),
+                               report_id=report_id or None,
+                               detail=str(msg.get("Subject", "")))
+    except Exception:  # noqa: BLE001 — never break a send
+        pass
 
 
 def post_slack(png_paths, caption, filenames, channels=None):
@@ -502,7 +512,7 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
 
     send_email(build_email(png_paths, week_label, to_addrs, subject=subject,
                            title="Alphalete Org Bulletin",
-                           note=dd_one_off_note(week_label)))
+                           note=dd_one_off_note(week_label)), report_id="dd_bulletin")
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
     if do_send and not to:                 # a custom `to` is a one-off — don't
         mark_sent(week_label, state_path)  # burn the week's send-state on it
@@ -595,7 +605,7 @@ def send_rcs_ncs(*, do_send=False, preview=False, test=False, force=False,
         return {"published": False, "reason": "already sent", "week": week_label}
 
     send_email(build_email(str(png), week_label, to_addrs, subject=subject,
-                           title="Alphalete Up and Coming RCs and NCs"))
+                           title="Alphalete Up and Coming RCs and NCs"), report_id="rcs_ncs")
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
     if do_send and not to:
         mark_sent(week_label, state)
@@ -742,7 +752,7 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
     else:
         print("\n(email only — no Slack)")
 
-    send_email(build_email(png_path, week_label, to_addrs))
+    send_email(build_email(png_path, week_label, to_addrs), report_id="override_bulletin")
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
     # FLAG GAPS (Megan 2026-07-30 "send fast, flag gaps"): we send with whatever's
     # in — like the VA — but post a heads-up to #claudecorrections-and-requests
