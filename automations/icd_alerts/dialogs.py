@@ -31,8 +31,21 @@ IS_WINDOWS = platform.system() == "Windows"
 TITLE = "Lucy Reports"
 
 
+def _front(script: str) -> str:
+    """Run a dialog where the person can SEE it.
+
+    A dialog from a bare `osascript` belongs to no app, so macOS is free to
+    open it behind the Terminal window -- and does. Hasani's install sat ten
+    minutes on "Is that you?" on 2026-10-21 with Megan relaying "there's no
+    popup". Inside System Events, after `activate`, the box comes to the
+    front. `result`, `text returned` and the Cancel error (-128) behave the
+    same inside the block.
+    """
+    return 'tell application "System Events"\nactivate\n%s\nend tell' % script
+
+
 def _osascript(script: str) -> str:
-    proc = subprocess.run(["osascript", "-e", script],
+    proc = subprocess.run(["osascript", "-e", _front(script)],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.decode("utf-8", "replace").strip())
