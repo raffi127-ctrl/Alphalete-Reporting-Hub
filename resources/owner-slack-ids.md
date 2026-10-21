@@ -57,3 +57,5 @@ detail in the thread. [[feedback_short_header_posts]]
 - `automations/icd_alerts/offices.py`: `slack_user_id` per ECO office.
 - The "ICD Signup" rows in the Lucy Access App: owner IDs for relay offices.
 - `automations/override_bulletin/review_gate.py` `APPROVERS`: Eve.
+
+- **Al (Algemar) Kennel** — `U09MXMU76MB` (confirmed 2026-10-21 via users.list; 1-year anniversary + birthday post in #alphalete-sales)
