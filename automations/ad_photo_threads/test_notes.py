@@ -57,3 +57,18 @@ class NoteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CandidateBlockTests(unittest.TestCase):
+    """Khalil 10/21: the name alone on its line, the ad on the next one."""
+
+    def test_reads_down_to_the_next_bullet(self):
+        from automations.ad_photo_threads.collect import candidate_block
+        text = ("3:45\n• Guadalupe Flores\nMarketing coordinator. Event Marketing and Sales "
+                "Assistant (Spanish required), Euless, TX.\n\n• Maria Cristina\nSales. "
+                "AT&T Retail Associate - Sales (Spanish Required), McKinney, TX.:x:")
+        got = candidate_block(text, "Guadalupe Flores")
+        self.assertIn("Event Marketing", got)
+        self.assertNotIn("McKinney", got)
+        self.assertIn("McKinney", candidate_block(text, "Maria Cristina"))
+        self.assertEqual(candidate_block(text, "Nobody Here"), "")

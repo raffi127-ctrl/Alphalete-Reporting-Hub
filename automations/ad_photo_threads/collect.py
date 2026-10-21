@@ -231,6 +231,23 @@ def _slack_plain(text: str) -> str:
     return re.sub(r"[*_~`]", "", t)
 
 
+def candidate_block(text: str, name: str) -> str:
+    """The candidate's part of a Slack reply: the line with their name and
+    the lines under it, up to the next "•" bullet. Khalil 10/21: the name sits
+    alone on its line ("• Guadalupe Flores") and the ad is on the next one, so
+    the name line alone found no ad for a blank sheet title."""
+    lines = text.splitlines()
+    i = next((i for i, ln in enumerate(lines) if _fold(name) in _fold(ln)), None)
+    if i is None:
+        return ""
+    out = [lines[i]]
+    for ln in lines[i + 1:]:
+        if ln.lstrip().startswith("•"):
+            break
+        out.append(ln)
+    return "\n".join(out)
+
+
 def candidate_line(text: str, c: Candidate) -> str:
     """The line of a reply that is about `c` (sheet spelling or the one Slack
     used), "" if none."""
@@ -357,9 +374,7 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
                 _add_note(c, msg.get("text", ""), book)
             for c in named:
                 if c.ad is None:     # blank/unclear sheet title: try the Slack line
-                    line = next((ln for ln in (msg.get("text") or "").splitlines()
-                                 if _fold(c.name) in _fold(ln)), "")
-                    c.ad = book.find_in_text(line)
+                    c.ad = book.find_in_text(candidate_block(msg.get("text") or "", c.name))
             if not imgs:
                 continue
             if len(named) == 1:
