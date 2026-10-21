@@ -302,8 +302,10 @@
     "per_office_views": {},
     "machine": "Lucy 1",
     "campaign": "fiber_d2d",
-    "notes": "",
-    "email_to": [],
+    "notes": " | 2026-10-20: destination corrected to Slack #logan-legacy-sales (C0CA93VPTUP), email_to cleared \u2014 the 651e0ca hand edit had moved him to Slack in the JSON only, so every nightly apply re-added the email and the office table refused to run (Lucy 4 19:04).",
+    "email_to": [
+      "joseph@loganlegacygroup.com"
+    ],
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
