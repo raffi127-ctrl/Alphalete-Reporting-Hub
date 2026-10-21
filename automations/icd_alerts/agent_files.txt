@@ -12,6 +12,7 @@ automations/icd_alerts/sara_read.py
 automations/icd_alerts/box_read.py
 automations/icd_alerts/box_signin.py
 automations/icd_alerts/sara_signin.py
+automations/icd_alerts/ov_signin.py
 automations/icd_alerts/as_signin.py
 automations/icd_alerts/resume_push.py
 automations/oat_processing/__init__.py
