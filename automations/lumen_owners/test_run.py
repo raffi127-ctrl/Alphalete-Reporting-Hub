@@ -99,6 +99,31 @@ class LumenOwnersTest(unittest.TestCase):
         other = next(r for r in rows if r["owner"] == "Somebody Else")
         self.assertEqual(other["att_past"]["NewInternet"], [0, None])
 
+    def test_status_words(self):
+        self.assertEqual(R.status_for(0, 0, 0), R.NOT_YET)
+        self.assertEqual(R.status_for(5, 3, 2), R.INT_WIRELESS)
+        self.assertEqual(R.status_for(5, 5, 0), R.INT)
+        self.assertEqual(R.status_for(4, 0, 4), R.WIRELESS_ONLY)
+        self.assertEqual(R.status_for(2, 0, 0), R.ON_ATT)       # video only
+
+    def test_rows_use_product_mix(self):
+        weeks = R.lumen_weeks(GRID, TODAY)
+        lumen = R.lumen_by_owner(GRID, weeks)
+        fiber = {"nigel marshall": {"Total": {TODAY: 6}, "NewInternet": {}}}
+        mix = {"nigel marshall": {"Wireless": {TODAY: 6}}}
+        with mock.patch("automations.org_sales_board.captainship."
+                        "_candidates_for_name", _cands):
+            rows = R.build_rows(lumen, fiber, {}, None, mix)
+        self.assertEqual(rows[0]["owner"], "Nigel Marshall")   # sellers first
+        self.assertEqual(rows[0]["status"], R.WIRELESS_ONLY)
+
+    def test_weeks_to_pull(self):
+        tue = dt.date(2026, 10, 20)                  # week ends 10/25
+        self.assertEqual(R.weeks_to_pull({}, tue), list(range(1, 10)))
+        have = {dt.date(2026, 10, 25) - dt.timedelta(days=7 * i): {}
+                for i in range(10)}
+        self.assertEqual(R.weeks_to_pull(have, tue), [1, 2])
+
     def test_week_ok(self):
         ref = dt.date(2026, 10, 13)                 # week 10/12-10/18
         self.assertTrue(R._week_ok({"x": {"Total": {dt.date(2026, 10, 14): 1}}}, ref))

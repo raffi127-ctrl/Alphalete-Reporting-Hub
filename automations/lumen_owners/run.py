@@ -33,6 +33,19 @@ Eve 2026-10-20: two more columns per box, the Org Sales Board's own pair —
 "Last Week Total" (the week before this one) and "Prior Week Total" (two
 weeks back) — pulled from the same crosstab pinned to those weeks.
 
+THE LUMEN OWNERS TAB (Raf, 2026-10-21, a screenshot of his own captainship
+box: "can we add this type of reporting as well please?"). Product Summary,
+Current vs Prior Weeks, the week-by-week history and the daily board need
+weeks of history, so they live on a tab of the Org Sales Board workbook
+(board.py) and the mail carries a picture of each box under the table.
+Every run re-pulls this week + the two before (they still move) and pulls any
+older week the hidden history tab does not have yet — the first run backfills
+9 weeks, later runs one at most.
+
+STATUS words (Raf, same mail: "guys like Nigel Marshal are only selling
+wireless ... can we put 'INT' or 'INT + Wireless' or 'wireless only'"): read
+from this week's product rows of the same crosstab.
+
 Its own module on purpose: the Org Sales Board is shared and its captainship
 boxes feed every other captain's email; this touches none of it.
 """
@@ -61,8 +74,16 @@ TITLE = "Lumen Owners"
 # off. Empty = everybody on the tracker.
 EXCLUDE: Tuple[str, ...] = ()
 
-ON_ATT = "On AT&T"
+ON_ATT = "On AT&T"            # sells AT&T, but neither internet nor wireless
 NOT_YET = "Not on AT&T yet"
+INT = "INT"
+INT_WIRELESS = "INT + Wireless"
+WIRELESS_ONLY = "Wireless only"
+
+# Product rows of the fiber crosstab that count as internet / wireless for the
+# Status column. AIR = AT&T Internet Air.
+INTERNET_PRODUCTS = ("NEW INTERNET", "INTERNET", "UPGRADE INTERNET", "AIR")
+WIRELESS_PRODUCTS = ("WIRELESS",)
 
 
 def _fold(s: str) -> str:
@@ -127,13 +148,28 @@ def att_for(owner: str, fiber: Dict[str, dict], aliases) -> Tuple[int, int]:
             sum((m.get("NewInternet") or {}).values()))
 
 
+def status_for(units: int, internet: int, wireless: int) -> str:
+    """Raf's Status words. Pure."""
+    if units <= 0:
+        return NOT_YET
+    if internet > 0 and wireless > 0:
+        return INT_WIRELESS
+    if internet > 0:
+        return INT
+    if wireless > 0:
+        return WIRELESS_ONLY
+    return ON_ATT
+
+
 def build_rows(lumen: Dict[str, dict], fiber: Dict[str, dict], aliases,
-               past: Optional[List[Optional[Dict[str, dict]]]] = None
-               ) -> List[dict]:
+               past: Optional[List[Optional[Dict[str, dict]]]] = None,
+               mix: Optional[Dict[str, dict]] = None) -> List[dict]:
     """One row per Lumen owner, On AT&T first (most AT&T units first), then
     Not on AT&T yet (most Lumen sales first). `past` = the fiber pulls of the
     earlier weeks, newest first; None for a week whose pull failed, so its
-    cell prints a dash instead of a 0 that looks real. Pure given its inputs."""
+    cell prints a dash instead of a 0 that looks real. `mix` = this week's
+{owner: {'Internet': {..}, 'Wireless': {..}}} for the Status words; without
+it every seller reads "On AT&T". Pure given its inputs."""
     rows = []
     for key, L in lumen.items():
         m = att_metrics(L["owner"], fiber, aliases)
@@ -145,20 +181,23 @@ def build_rows(lumen: Dict[str, dict], fiber: Dict[str, dict], aliases,
                 for f in (past or [])]
         units = sum((m.get("Total") or {}).values())
         ni = sum((m.get("NewInternet") or {}).values())
+        mx = att_metrics(L["owner"], mix or {}, aliases)
+        internet = sum((mx.get("Internet") or {}).values())
+        wireless = sum((mx.get("Wireless") or {}).values())
         rows.append({"owner": L["owner"], "office": L["office"],
                      "att_units": units, "att_ni": ni,
                      "att_days": {"Total": dict(m.get("Total") or {}),
                                   "NewInternet": dict(m.get("NewInternet") or {})},
                      "att_past": prev,
                      "lumen": L["weeks"],
-                     "status": ON_ATT if units > 0 else NOT_YET})
+                     "status": status_for(units, internet, wireless)})
 
     def _lumen_last(r):
         vals = [v for v in r["lumen"].values() if v is not None]
         return vals[0] if vals else 0
 
-    rows.sort(key=lambda r: (r["status"] != ON_ATT,
-                             -r["att_units"] if r["status"] == ON_ATT
+    rows.sort(key=lambda r: (r["status"] == NOT_YET,
+                             -r["att_units"] if r["status"] != NOT_YET
                              else -_lumen_last(r),
                              r["owner"].casefold()))
     return rows
@@ -181,7 +220,7 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
                "".join("<th %s>%s</th>" % (th, w) for w in wk)))
     body = []
     for r in rows:
-        on = r["status"] == ON_ATT
+        on = r["status"] != NOT_YET
         badge = ('<span style="color:%s;font-weight:bold">%s</span>'
                  % ("#1a7f37" if on else "#b35900", html.escape(r["status"])))
         who = html.escape(r["owner"]) + (
@@ -192,7 +231,7 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
             % (tdl, who, td, badge, td, r["att_units"], td, r["att_ni"],
                "".join("<td %s>%s</td>" % (td, _cell(r["lumen"].get(w)))
                        for w in weeks)))
-    on = sum(1 for r in rows if r["status"] == ON_ATT)
+    on = sum(1 for r in rows if r["status"] != NOT_YET)
     summary = ("<p style=\"font-size:14px\"><b>%d</b> Lumen owner(s) &middot; "
                "<b style=\"color:#1a7f37\">%d on AT&amp;T</b> &middot; "
                "<b style=\"color:#b35900\">%d not on AT&amp;T yet</b></p>"
@@ -201,7 +240,8 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
             + "".join(body) + "</table>"
             + '<p style="color:#777;font-size:11px">AT&amp;T = all units except '
               "Voice, week to date (ATTTRACKER2_1-D2D &rarr; PRODUCTSALESSUMMARY4WK "
-              "&rarr; AllproductsALLTEAMS). Lumen = fiber sales per week "
+              "&rarr; AllproductsALLTEAMS). Status: INT = any internet "
+              "(New, Upgrade, Air), Wireless = wireless lines, this week. Lumen = fiber sales per week "
               "(AT&amp;T Quantum Fiber Sales Tracker &rarr; RES-Quantum Fiber ICD "
               "Week Ending Sales).</p>")
 
@@ -281,10 +321,43 @@ def _week_ok(fiber: Dict[str, dict], ref: dt.date) -> bool:
     return got <= want
 
 
-def _pull(today: dt.date):
-    """(quantum grid, fiber {owner: metrics}, failed, past) in ONE Tableau
-    session. `past` = [last week's fiber, the week before's], None where that
-    pull failed or came back on the wrong week."""
+def _product_mix(csv: Path, today: dt.date) -> Dict[str, dict]:
+    """{owner: {'Internet': {date: n}, 'Wireless': {date: n}}} from the fiber
+    crosstab already on disk — no extra download."""
+    from automations.org_sales_board import section_pull as sp
+    from automations.org_sales_board.captainship import PROGRAMS, TYPES
+    fp = TYPES["fiber"]["parse"]
+    out: Dict[str, dict] = {}
+    for metric, products in (("Internet", INTERNET_PRODUCTS),
+                             ("Wireless", WIRELESS_PRODUCTS)):
+        spec = sp.ScrapeSpec(
+            section_label="PROG_fiber", metric=metric,
+            view_url=PROGRAMS["fiber"], owner_col=fp["owner_col"],
+            value_col="", day_col="", method=sp.CROSSTAB,
+            crosstab_sheet=fp["crosstab_sheet"], include_products=products,
+            skip_owners=("Grand Total", "Sales Total"), week_pin=True,
+            out_name=csv.name)
+        for owner, metrics in sp.parse_byday(spec, csv, today).items():
+            out.setdefault(owner, {}).update(metrics)
+    return out
+
+
+def weeks_to_pull(have: Dict[dt.date, dict], today: dt.date) -> List[int]:
+    """How many weeks back to pull this run: always 1 and 2 (still moving),
+    plus any older LUMEN TEAM week the history does not have. Pure."""
+    from automations.lumen_owners import board as B
+    from automations.org_sales_board import week as _wk
+    cur = _wk.reporting_sunday(today)
+    return [i for i in range(1, B.WEEK_COLS)
+            if i <= len(PAST_LABELS)
+            or (cur - dt.timedelta(days=7 * i)) not in have]
+
+
+def _pull(today: dt.date, history: Dict[dt.date, dict]):
+    """(quantum grid, fiber {owner: metrics}, failed, weeks, mix) in ONE
+    Tableau session. `weeks` = `history` with every week pulled clean this
+    run laid over it ({week_ending: fiber}); a week whose pull failed or came
+    back on the wrong week keeps what history had, or stays missing."""
     os.environ["ALPHALETE_SKIP_FRESHNESS"] = "1"
     OUT.mkdir(parents=True, exist_ok=True)
     from automations.shared.tableau_patchright import (
@@ -293,13 +366,22 @@ def _pull(today: dt.date):
     from automations.recruiting_report.quantum_fallback import (
         SALES_SHEET, SALES_VIEW)
     from automations.org_sales_board.captainship import pull_programs
+    from automations.org_sales_board import week as _wk
 
+    weeks = dict(history)
     with tableau_session(verbose=False, profile_dir=OUT / ".profile") as page:
         prog, failed = pull_programs(page, today, programs=["fiber"],
                                      out_dir=OUT, out_prefix="lumen_owners_")
-        past = []
-        for i in range(1, len(PAST_LABELS) + 1):
+        mix = {}
+        if not failed:
+            weeks[_wk.reporting_sunday(today)] = prog.get("fiber", {})
+            try:
+                mix = _product_mix(OUT / "lumen_owners_PROG_fiber.csv", today)
+            except Exception as e:  # noqa: BLE001 — Status falls back, mail goes
+                print("[lumen] product mix unreadable: %s" % e)
+        for i in weeks_to_pull(history, today):
             ref = today - dt.timedelta(days=7 * i)
+            we = _wk.reporting_sunday(ref)
             try:
                 p, f = pull_programs(page, ref, programs=["fiber"], out_dir=OUT,
                                      out_prefix="lumen_owners_wk%d_" % i)
@@ -307,10 +389,11 @@ def _pull(today: dt.date):
                 print("[lumen] week -%d pull crashed: %s" % (i, e))
                 p, f = {}, ["fiber"]
             fib = p.get("fiber", {})
-            ok = not f and _week_ok(fib, ref)
-            if not ok:
-                print("[lumen] week -%d pull unusable (failed=%s) — dashes" % (i, f))
-            past.append(fib if ok else None)
+            if not f and _week_ok(fib, ref):
+                weeks[we] = fib
+            else:
+                print("[lumen] week -%d pull unusable (failed=%s) — %s"
+                      % (i, f, "kept history" if we in weeks else "dashes"))
         page.goto(PQ.BASE + "/#/site/sci/workbooks", wait_until="domcontentloaded")
         page.wait_for_timeout(12_000)
         _, data = PQ._call(page, "getWorkbooks", {
@@ -330,7 +413,7 @@ def _pull(today: dt.date):
         download_crosstab_patchright(urls[SALES_VIEW], SALES_SHEET, out,
                                      verbose=False, page=page)
         grid = PQ._read_grid(out)
-    return grid, prog.get("fiber", {}), failed, past
+    return grid, prog.get("fiber", {}), failed, weeks, mix
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -339,14 +422,19 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="mail it to Raf (default: dry run, preview file only)")
     ap.add_argument("--to", default="",
                     help="mail it to THIS address instead (preview); implies a send")
+    ap.add_argument("--no-sheet", action="store_true",
+                    help="skip the Lumen Owners tab (and its pictures in the mail)")
     args = ap.parse_args(argv)
 
     from automations.focus_office_att.aliases import load_aliases
     from automations.org_sales_board import week as _wk
     from automations.shared import report_email as _mail
+    from automations.lumen_owners import board as B
 
     today = dt.date.today()
-    grid, fiber, failed, past = _pull(today)
+    sh = None if args.no_sheet else B._open()
+    history = B.read_history(sh) if sh else {}
+    grid, fiber, failed, weeks, mix = _pull(today, history)
     if failed:
         # An empty fiber pull would mark EVERY owner "Not on AT&T yet" — a
         # wrong answer that looks like a real one. Refuse instead.
@@ -357,7 +445,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not lumen:
         print("[lumen] Quantum view returned no owners — not sending")
         return 1
-    rows = build_rows(lumen, fiber, load_aliases(), past)
+    aliases = load_aliases()
+    cur = _wk.reporting_sunday(today)
+    past = [weeks.get(cur - dt.timedelta(days=7 * i))
+            for i in range(1, len(PAST_LABELS) + 1)]
+    rows = build_rows(lumen, fiber, aliases, past, mix)
     monday = _wk.reporting_monday(today)
     att_week = "week of %s" % monday.strftime("%m/%d")
     body = (table_html(rows, weeks, att_week)
@@ -367,11 +459,29 @@ def main(argv: Optional[List[str]] = None) -> int:
               % (r["owner"], r["status"], r["att_units"], r["att_ni"],
                  [r["lumen"].get(w) for w in weeks]))
 
+    # The tab + its pictures. A Sheets hiccup here must not cost Raf the
+    # table he already gets — the mail goes without the pictures and says so.
+    blocks = []
+    if sh is not None:
+        try:
+            n = B.write_history(weeks, today, sh)
+            g, spans = B.build_grid([r["owner"] for r in rows], weeks,
+                                    _wk.reporting_week(today), today, aliases)
+            ws = B.write_tab(g, sh)
+            print("[lumen] tab '%s' written (%d rows); history %d lines"
+                  % (B.TAB, g.row, n))
+            blocks = B.render_boxes(ws, spans, OUT / today.isoformat())
+        except Exception as e:  # noqa: BLE001 — see above
+            print("[lumen] Lumen Owners tab FAILED: %s: %s" % (type(e).__name__, e))
+            body += ('<p style="color:#b35900;font-size:12px">The New Internet / '
+                     "All Units performance boxes could not be built this run."
+                     "</p>")
+
     to = [a.strip() for a in args.to.split(",") if a.strip()] or [RAF]
     send = bool(args.send or args.to)
     res = _mail.send_boards(
         subject="%s — %s" % (TITLE, today.strftime("%m/%d/%Y")),
-        to=to, title=TITLE, blocks=[], intro_html=body,
+        to=to, title=TITLE, blocks=blocks, intro_html=body,
         dry_run=not send, preview_dir=OUT / today.isoformat())
     print("[lumen] %s → %s · %s" % ("SENT" if send else "DRY RUN (preview only)",
                                     ", ".join(to), res))

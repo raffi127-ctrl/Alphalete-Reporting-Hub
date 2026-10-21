@@ -1228,7 +1228,7 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": null,
-   "timeout_minutes": 30,
+   "timeout_minutes": 60,
    "order": 37.7
   },
   "mobrium_list": {
