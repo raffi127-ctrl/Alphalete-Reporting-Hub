@@ -12,10 +12,10 @@
   {"name": "Kash/Cy (Palace)", "sheet_id": "1WJLw5WpSJfvvDsVQlNwu5yyof1WRom8yK87MQCCyC_0", "week_end": true, "apply": true},
   {"name": "Cyrus Wade", "sheet_id": "1boVLrvhqKVFHgUdGeQWTSFywlLSAoHh0X8b-MT1ZCrA", "apply": true},
   {"name": "Aya Alkhafaji", "sheet_id": "1t8dCKc5NX6zkBPzRFzD5hWFL3d8ll27XoMgY2PoRALE", "apply": false},
-  {"name": "Haytham Nagi", "sheet_id": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y", "apply": false},
+  {"name": "Haytham Nagi", "sheet_id": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y", "apply": true},
   {"name": "Salik/Hammad", "sheet_id": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U", "apply": true},
   {"name": "Colten/Jairo (Miami)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["COLTEN", "Line Up NDS", "JAIRO", "Line Up NDS JAIRO"], "apply": true},
   {"name": "Eveliz Wright (Miami B2B)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["Sales Board Miami B2B", "Car Rides B2B"], "apply": true},
-  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": false}
+  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": true}
  ]
 }
