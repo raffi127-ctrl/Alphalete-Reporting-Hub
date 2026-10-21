@@ -302,7 +302,9 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     else:
         counts = post.publish(rep, channel)
     print("\nPosted:", counts)
-    if config.unthreaded_on(o["key"]):
+    # Not on a backfill (`--nightly --date`, 10/21: Khalil's 10/18 load
+    # @channel'd an old week) -- only the evening tick says it.
+    if config.unthreaded_on(o["key"]) and not explicit_date:
         try:
             from automations.ad_photo_threads import unthreaded
             got = unthreaded.check(day, channel, title_only=bool(o.get("title_only")),
