@@ -634,6 +634,16 @@ class SyncNames(unittest.TestCase):
         self.assertEqual(SY.clean_name("Ann Lee (Wk 3)"), "Ann Lee")
         self.assertEqual(SY._md_y(dt.date(2025, 1, 5)), "1/5/2025")
 
+    def test_only_ranked_rows_are_reps(self):
+        """10/21: 77 board labels ('WE 1/12 - 1/18', 'Se7en Sins') were looked
+        up in Blue Ink as people. Real reps have a rank number beside them."""
+        from automations.birthday_reminders import sync as SY
+        self.assertTrue(SY._is_rank(1))
+        self.assertTrue(SY._is_rank("12"))
+        self.assertFalse(SY._is_rank(""))
+        self.assertFalse(SY._is_rank(None))
+        self.assertFalse(SY._is_rank("Teams"))
+
 
 if __name__ == "__main__":
     unittest.main()

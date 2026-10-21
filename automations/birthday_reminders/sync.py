@@ -41,6 +41,14 @@ def _md_y(d: dt.date) -> str:
     return "%d/%d/%d" % (d.month, d.day, d.year)
 
 
+def _is_rank(value) -> bool:
+    """1, 2.0, '3' -> True; '', 'Teams', None -> False."""
+    try:
+        return float(str(value).strip()) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def board_people(today: dt.date, *, logfn=print) -> dict:
     """{name as on the board: start date or None} for everyone WORKING this
     week -- unmarked rows only, the same 'still here' test liveness uses."""
@@ -56,6 +64,12 @@ def board_people(today: dt.date, *, logfn=print) -> dict:
     for r in lay.roster_rows:
         raw = str(B._cell(grid, r, lay.name_col) or "").strip()
         name = clean_name(raw)
+        # A real rep carries a rank number in the '#' column just left of the
+        # names. The labels further down ('WE 1/12 - 1/18', 'Se7en Sins',
+        # 'App per Rep AVG') don't -- and is_person() alone let 77 of them
+        # through on 10/21, each looked up in Blue Ink as if it were a person.
+        if not _is_rank(B._cell(grid, r, lay.name_col - 1)):
+            continue
         if not BF.is_person(name) or B.base_name(raw) not in working:
             continue
         out[name] = B.to_date(B._cell(grid, r, lay.start_col))
