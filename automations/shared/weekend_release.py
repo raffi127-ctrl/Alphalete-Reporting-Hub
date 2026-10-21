@@ -235,14 +235,22 @@ def dependency_closure(report_ids: Sequence[str]) -> List[str]:
 
     seen: Set[str] = set()
     out: List[str] = []
-    stack = [resolve(r) for r in report_ids]
+    asked = {resolve(r) for r in report_ids}
+    stack = list(asked)
     while stack:
         rid = resolve(stack.pop())
         if rid in seen:
             continue
         seen.add(rid)
-        out.append(rid)
         entry = reports.get(rid) or {}
+        # `gate_soft`: un paso que MEJORA el correo pero sin el cual el correo
+        # sale igual de bien (captainship_board_topoff: sin el, salen los
+        # numeros de las 05:20). No entra en la cadena que juzga el gate, pero
+        # lo que ESE paso necesita si. Sin esto, un top-off caido freno a todos
+        # los capitanes el 2026-10-21: no deja manifest, asi que no se podia
+        # acotar a nadie.
+        if not (entry.get("gate_soft") and rid not in asked):
+            out.append(rid)
         stack.extend(entry.get("depends_on") or [])
         stack.extend(entry.get("after") or [])
     return out

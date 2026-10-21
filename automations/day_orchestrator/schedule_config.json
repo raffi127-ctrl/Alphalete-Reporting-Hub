@@ -5670,6 +5670,8 @@
    "report_id": "captainship-knocks"
   },
   "captainship_board_topoff": {
+   "gate_soft": true,
+   "_gate_soft_note": "Eve 2026-10-21: a failed top-off NEVER holds a captainship email. It leaves no manifest, so the review gate could not scope the failure and held every captain still unsent (Rafael + Wayne that day). weekend_release.dependency_closure skips gate_soft jobs; without it the mail just carries the 05:20 numbers.",
    "order": 1.05,
    "machine": "Lucy 3",
    "on_scheduler": true,

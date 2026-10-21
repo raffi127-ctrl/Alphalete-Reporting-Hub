@@ -349,5 +349,58 @@ class TheHeldNoteSaysTheDayOnce(Base):
         self.assertIn("pero la sesión de AppStream se murió", note)
 
 
+class ASoftStepNeverHoldsTheGate(unittest.TestCase):
+    """Wed 2026-10-21: captainship_board_topoff failed on Lucy 3 and Rafael +
+    Wayne were held ("could not verify this morning's report chain"). The
+    top-off only raises late sales; without it the mail carries the 05:20
+    numbers. It leaves no manifest, so the gate could not scope it to anyone
+    and froze everyone still unsent. `gate_soft` takes it out of the chain."""
+
+    RAW = {"reports": {
+        "captainship_drafts_review": {"after": ["captainship_drafts"]},
+        "captainship_drafts": {"after": ["captainship_knocks",
+                                         "captainship_board_topoff"]},
+        "captainship_board_topoff": {"gate_soft": True,
+                                     "after": ["captainship_knocks"]},
+        "captainship_knocks": {},
+    }}
+
+    def setUp(self):
+        from automations.day_orchestrator import registry as reg
+        self.reg, self._load = reg, reg.load_config
+        reg.load_config = lambda: type("C", (), {"raw": self.RAW})()
+        self._state, self._due = wr._state, wr._scheduled_today
+
+    def tearDown(self):
+        self.reg.load_config = self._load
+        wr._state, wr._scheduled_today = self._state, self._due
+
+    def test_the_soft_step_is_not_in_the_chain(self):
+        chain = wr.dependency_closure(["captainship_drafts_review"])
+        self.assertNotIn("captainship_board_topoff", chain)
+        self.assertIn("captainship_knocks", chain)
+
+    def test_a_failed_topoff_blocks_nobody(self):
+        wr._state = lambda today: {"reports": {
+            "captainship_drafts_review": {"status": "DONE"},
+            "captainship_drafts": {"status": "DONE"},
+            "captainship_knocks": {"status": "DONE"},
+            "captainship_board_topoff": {"status": "FAILED"},
+        }, "failure_alerts_sent": ["captainship_board_topoff"]}
+        wr._scheduled_today = lambda today: {"captainship_board_topoff"}
+        self.assertEqual(wr.blocking_reports(
+            ["captainship_drafts_review"], MON, own_ids=OWN), [])
+
+    def test_asked_by_name_it_still_counts(self):
+        """Only the gates are relaxed: a job asking about itself is judged."""
+        self.assertIn("captainship_board_topoff",
+                      wr.dependency_closure(["captainship_board_topoff"]))
+
+    def test_the_real_config_marks_the_topoff_soft(self):
+        self.reg.load_config = self._load
+        raw = self._load().raw["reports"]["captainship_board_topoff"]
+        self.assertTrue(raw.get("gate_soft"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
