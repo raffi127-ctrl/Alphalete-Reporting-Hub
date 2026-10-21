@@ -2684,9 +2684,11 @@ def _action_peer_probe(args: str) -> tuple[bool, str]:
     network access" on). Read-only otherwise; nothing on the peer is changed."""
     import re as _re
     import socket
-    parts = shlex.split(args or "")
-    wake = any(p.lower() == "wake" for p in parts)
-    name = " ".join(p for p in parts if p.lower() != "wake") or "Lucy 1"
+    # The queue hands args back with its own quoting around them, so match the
+    # machine by pattern rather than trusting shlex to unwrap it.
+    wake = bool(_re.search(r"\bwake\b", args or "", _re.I))
+    m_name = _re.search(r"lucy\s*(\d+)", args or "", _re.I)
+    name = f"Lucy {m_name.group(1)}" if m_name else "Lucy 1"
     from automations.shared import fleet as _fleet
     hosts = _fleet.HOSTNAMES.get(name)
     if not hosts:
