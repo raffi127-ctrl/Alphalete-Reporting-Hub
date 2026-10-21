@@ -14780,6 +14780,45 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for hasani (Hasani Lynch, Covenant United, Inc., OwnerVille 23701). Wired by hand 2026-10-20 (Megan: enrolling in Lucy ECO today; metrics + trackers + weather; dry run first). AT&T D2D like tre/jenny, all 11 boards. SWITCHED ON 2026-10-20 ~16:50 CT: the Lucy 4 dry run (rerun-2026-10-20-134757) showed data on all 11 boards (34 reps) and his ECO sign-up named #office-sales-covenant (C0CAM3RUEH1)."
+  },
+  "steve_metrics": {
+   "order": 26.95,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Steve's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "steve",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "steve_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for steve (Steve McElwee, Luxe Global Consulting, Inc., OwnerVille 23160). Wired by hand 2026-10-20 (Megan: enrolling in Lucy ECO 10/21 with Eve; dry run first). AT&T D2D like hasani/tre, all 11 boards. OFF until `lucy rerun steve_metrics --dry-run` on Lucy 4 shows data on every board and his ECO sign-up names the channel -- never a blank first post."
   }
  },
  "read_only_standalone": {

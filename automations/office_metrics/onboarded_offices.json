@@ -871,5 +871,57 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "steve",
+    "report_id": "steve_metrics",
+    "label": "Steve's Local Office",
+    "owner": "Steve McElwee",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (hold until the ECO sign-up names the channel)",
+    "sheet_id": "1NcL9PkgXcaXCtXyirDeNlnF77zRPTu4Cg7MEciqxmTY",
+    "knocks_office": "Steve McElwee",
+    "ov_account": "23160",
+    "owner_office": "",
+    "business_name": "Luxe Global Consulting, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-10-20 (Megan: Steve McElwee enrolling in Lucy ECO 10/21 with Eve; dry run metrics/weather/trackers now). AT&T D2D like hasani/tre (ATT Program Focus Report tab 'Steve McElwee', OwnerVille/AppStream 23160, Luxe Global Consulting, Inc.), all 11 D2D boards; Tableau name Steve McElwee. Channel held on Megan's DM until his ECO sign-up names it; city/timezone from the OwnerVille address harvest. Sheet 'Steve McElwee - Lucy Metrics' copied from the Master Metrics Templates. Schedule off until the Lucy 4 dry run shows data on every board.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

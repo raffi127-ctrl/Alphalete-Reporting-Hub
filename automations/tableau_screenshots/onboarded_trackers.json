@@ -406,5 +406,23 @@
       "vzftr"
     ],
     "notes": "wired by hand 2026-10-20; all 9 trackers like tre/jenny; channel #office-sales-covenant from his Lucy ECO sign-up 2026-10-20."
+  },
+  {
+    "key": "steve",
+    "label": "Steve's Local Office (channel from ECO sign-up)",
+    "owner": "Steve McElwee",
+    "channel_ids": [],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-10-20; all 9 trackers like hasani/tre; channel_ids filled once his Lucy ECO sign-up names the room."
   }
 ]
