@@ -626,9 +626,20 @@ def _run_report_once(page, base_url: str, day: dt.date, service: str,
 def agent_rows(rows: List[List[str]], marker: str) -> List[List[str]]:
     """The rep rows -- the ones whose row-type column holds `marker`. Group and
     territory rows share the grid and would double-count every sale."""
+    # THE NUMBER IS THE DEPTH, THE WORD IS THE KIND. "5_Agent" / "6_Agent" are
+    # rep rows at one depth of one org tree; an office that sits one level
+    # shallower or deeper in SaraPlus marks the same rep rows "4_Agent" or
+    # "7_Agent", and an exact match reads the whole office as nobody (Steve
+    # McElwee, 2026-10-21: 19 units sold on 10/20, 0 credit checks parsed).
+    # Group / territory / location rows end in their own words, never Agent,
+    # so matching on the word cannot double-count.
     out = []
+    kind = marker.split("_", 1)[-1] if "_" in marker else marker
     for r in rows:
-        if len(r) > COL_ROWTYPE and r[COL_ROWTYPE].strip() == marker:
+        if len(r) <= COL_ROWTYPE:
+            continue
+        cell = r[COL_ROWTYPE].strip()
+        if cell == marker or cell.split("_", 1)[-1] == kind:
             out.append(r)
     return out
 

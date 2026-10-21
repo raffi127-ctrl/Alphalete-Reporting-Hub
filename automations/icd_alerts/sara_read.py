@@ -779,6 +779,15 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                 _raw = S._run_report(page, base, day, C.SERVICE_INTERNET,
                                      S.GRID_INTERNET, log=log)
                 records = S.parse_records(_raw)
+                if not records and len(_raw) <= 1:
+                    # ASKED TWICE BEFORE IT IS BELIEVED, same as the sales
+                    # grid: a grid with no rows at all is usually a page that
+                    # had not finished rendering on a slow machine (Steve's
+                    # reads run 36-46s), not an office with nobody on it.
+                    log("credit-check grid came back with no rows -- reading it again")
+                    _raw = S._run_report(page, base, day, C.SERVICE_INTERNET,
+                                         S.GRID_INTERNET, log=log)
+                    records = S.parse_records(_raw)
             except Exception:
                 # A READ THAT FAILS NEVER KEEPS ITS SESSION. Whatever went
                 # wrong, the next sweep types the password instead of
