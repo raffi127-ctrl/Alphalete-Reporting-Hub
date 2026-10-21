@@ -1559,6 +1559,16 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
             continue
         if rs.status == state.FAILED:
             pass
+        elif rs.status == state.INCOMPLETE and _healed_out_of_band(
+                rs, todays_by_id.get(rs.report_id)):
+            ds.set(rs.report_id, state.DONE,
+                   reason="healed outside the flow (a manual/queued re-run "
+                          "rewrote its manifest clean) — was: "
+                          f"{rs.last_reason or 'n/a'}")
+            _log(f"  {rs.report_id}: manifest now clean — healed by a re-run "
+                 "outside this loop; no failure alert")
+            state.save(ds)
+            continue
         elif rs.status == state.INCOMPLETE and not _retryable_incomplete(
                 rs, todays_by_id.get(rs.report_id)):
             # By MANIFEST id, not the scheduler key — see _manifest_id.
@@ -1572,6 +1582,34 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
         else:
             continue
         _maybe_failure_alert(cfg, ds, rs, channel, dry_run)
+
+
+def _healed_out_of_band(rs, r) -> bool:
+    """Did a re-run OUTSIDE this loop (`lucy rerun`, the Hub button) already
+    fix this INCOMPLETE report? (2026-10-21)
+
+    A manifest-verified report only goes INCOMPLETE because its manifest listed
+    failed parts. The fixing re-run rewrites that manifest clean — which also
+    drops its retry_args, so _retryable_incomplete reads "no retry left" and the
+    sweep alerted on the orchestrator's STALE 4:54 status. daily_focus 10/21:
+    queued retry filled German Lopez + JR Young and closed its ticket at 07:35;
+    at 07:37 this posted a brand-new "3 didn't fill" ticket for the same three.
+
+    Healed = manifest-verified, manifest now ok with nothing failed, and written
+    AFTER our last attempt started (an old clean file proves nothing). Any read
+    problem answers False — the alert fires as before."""
+    try:
+        if not r or (getattr(r, "verify", None) or {}).get("type") != "manifest":
+            return False
+        from automations.shared import run_manifest as _rm
+        m = _rm.read_manifest(_manifest_id(rs, r)) or {}
+        if not m.get("ok") or m.get("failed"):
+            return False
+        ran = m.get("run_ts") or ""
+        return bool(ran and rs.last_attempt_ts
+                    and ran[:19] > (rs.last_attempt_ts or "")[:19])
+    except Exception:  # noqa: BLE001 — never let this gate crash the sweep
+        return False
 
 
 def _alert_on_hold(report_id: str) -> bool:
