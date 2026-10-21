@@ -87,7 +87,7 @@ def marks_on(key: str) -> bool:
 # indeed-photos channel naming the 1st rounds that landed on no thread
 # (blank Ad Title, or an ad not on a title-only list) -- see unthreaded.py.
 # Empty = off; "all" = every live office; a set of keys = just those.
-UNTHREADED_OFFICES: object = set()
+UNTHREADED_OFFICES: object = "all"          # Eve 10/21: on, every live office
 
 
 def unthreaded_on(key: str) -> bool:
