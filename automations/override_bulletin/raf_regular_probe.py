@@ -56,7 +56,10 @@ def main(argv=None) -> int:
     from automations.recruiting_report.opt_phase import list_crosstab_sheets
     from automations.override_bulletin import pulls as P
     from automations.recruiting_report import fill as _fill
-    periods = [a for a in (argv or []) if a.strip()] or DEFAULT_PERIODS
+    args = [a for a in (argv or []) if a.strip()]
+    if "--views" in args:
+        return _views_mode([a for a in args if a != "--views"])
+    periods = args or DEFAULT_PERIODS
     OUT.mkdir(parents=True, exist_ok=True)
     dump = []
 
@@ -115,6 +118,95 @@ def main(argv=None) -> int:
         print(f"\ncouldn't write {DUMP_TAB}: {type(e).__name__}: {e}", flush=True)
         return 1
     print("probe done.", flush=True)
+    return 0
+
+
+WORKBOOK_REPO = "overridesicdview"
+VIEWS_CHUNK = 6          # a tableau_session dies after ~8 downloads
+VIEWS_MAX_DOWNLOADS = 24
+VIEWS_KEEP_HITS = 40
+
+
+def _views_mode(args) -> int:
+    """`--views [period]`: list EVERY view of the OverridesICDView workbook and
+    its crosstab sheets, download each sheet with the Period filter, and keep
+    the header rows + Rafael's rows. Finds where (if anywhere) his regular
+    override is broken out by the downline owner who generated it."""
+    import os
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.recruiting_report.opt_phase import list_crosstab_sheets
+    from automations.recruiting_report.probe_quantum_views import _call, _views, BASE
+    from automations.override_bulletin import pulls as P
+    from automations.recruiting_report import fill as _fill
+    period = args[0] if args else DEFAULT_PERIODS[-1]
+    os.environ["ALPHALETE_SKIP_FRESHNESS"] = "1"
+    OUT.mkdir(parents=True, exist_ok=True)
+    dump, todo = [_pad(["VIEWS MODE", period])], []
+
+    with tableau_session(headless=True, verbose=True) as page:
+        page.goto(BASE + "/#/site/sci/workbooks", wait_until="domcontentloaded")
+        page.wait_for_timeout(12_000)
+        st, data = _call(page, "getWorkbooks", {
+            "filter": {"operator": "and", "clauses": []},
+            "order": [{"field": "name", "ascending": True}],
+            "page": {"startIndex": 0, "maxItems": 500}})
+        wbs = (data.get("result") or {}).get("workbooks") or []
+        wb = next((w for w in wbs
+                   if (w.get("repositoryUrl") or "").casefold() == WORKBOOK_REPO), None)
+        if not wb:
+            print(f"OverridesICDView NOT found among {len(wbs)} workbooks (HTTP {st})")
+            dump.append(_pad(["WORKBOOK NOT FOUND", str(len(wbs))]))
+        else:
+            for name, url in _views(page, wb):
+                try:
+                    sheets = list_crosstab_sheets(
+                        P._with_filter(url, "Period", period), page=page)
+                except Exception as e:  # noqa: BLE001
+                    sheets = []
+                    print(f"V|{name}|LIST FAILED {type(e).__name__}", flush=True)
+                print(f"V|{name}|{sheets}", flush=True)
+                dump.append(_pad([f"VIEW {name}", url, str(sheets)]))
+                todo += [(name, url, s) for s in sheets]
+
+    todo = todo[:VIEWS_MAX_DOWNLOADS]
+    for i in range(0, len(todo), VIEWS_CHUNK):
+        try:
+            with tableau_session(headless=True, verbose=False) as page:
+                for j, (name, url, sheet) in enumerate(todo[i:i + VIEWS_CHUNK], start=i):
+                    out = OUT / f"view_{j:02d}.csv"
+                    tag = f"{name} | {sheet}"
+                    try:
+                        rows, used = P._download_first_nonempty(
+                            url, sheet, out, P.period_candidates(period),
+                            page=page, verbose=False,
+                            accept=lambda rs: rs if len(rs) > 1 else None)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"S|{tag}|FAILED {type(e).__name__}", flush=True)
+                        dump.append(_pad([f"== {tag} FAILED", type(e).__name__]))
+                        continue
+                    rows = rows or []
+                    hits = [r for r in rows[HEADER_ROWS:]
+                            if NEEDLE in " ".join(str(c) for c in r).casefold()]
+                    print(f"S|{tag}|rows={len(rows)}|raf={len(hits)}", flush=True)
+                    dump.append(_pad([f"== {tag}", f"{len(rows)}rows",
+                                      f"raf={len(hits)}", f"used={used}"]))
+                    for r in rows[:HEADER_ROWS] + hits[:VIEWS_KEEP_HITS]:
+                        dump.append(_pad(list(r)))
+                    dump.append(_pad([""]))
+        except Exception as e:  # noqa: BLE001
+            print(f"batch {i // VIEWS_CHUNK} died: {type(e).__name__}", flush=True)
+
+    wb_out = _fill._client().open_by_key(WORKBOOK_ID)
+    try:
+        ws = wb_out.worksheet(DUMP_TAB)
+        ws.clear()
+    except Exception:  # noqa: BLE001
+        ws = wb_out.add_worksheet(title=DUMP_TAB, rows=max(200, len(dump) + 10),
+                                  cols=DUMP_W)
+    if ws.row_count < len(dump) + 10:
+        ws.resize(rows=len(dump) + 10, cols=DUMP_W)
+    ws.update(dump, "A1", value_input_option="RAW")
+    print(f"\nwrote {len(dump)} rows to {DUMP_TAB!r}", flush=True)
     return 0
 
 
