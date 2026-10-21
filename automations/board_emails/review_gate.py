@@ -471,6 +471,11 @@ def main(argv=None) -> int:
                     help="the board was corrected AFTER the link went out: "
                          "rebuild and overwrite the PDF in Drive so the link "
                          "already posted shows the new version. Posts nothing.")
+    ap.add_argument("--resend", action="store_true",
+                    help="the day ALREADY went out wrong and the board is now "
+                         "fixed: rebuild from the Sheet (same link), re-check "
+                         "the totals, mail it again, say so in the thread. "
+                         "Only when Eve asks for it.")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the preview + PDF and stop (no Drive, no Slack).")
     ap.add_argument("--channel", default=None,
@@ -512,6 +517,30 @@ def main(argv=None) -> int:
         if who:
             print(f"  ⚠ this day was ALREADY approved by {who[1]} — that "
                   f"checkmark was put on the PREVIOUS PDF. Tell Eve.", flush=True)
+        return 0
+    # Before --post for the same reason as --refresh: `lucy rerun
+    # country_sales_board_email --resend` arrives as "--post ... --resend".
+    # Eve 2026-10-21: the Country email went out with the delta box short a rep
+    # (2165 vs 2206) and she asked for the corrected one to go again. There was
+    # no path for that — the thread's "Sent" mark locks the day by design.
+    if args.resend:
+        link = upload_pdf(build_pdf(board, run_day, build_preview(board, run_day)),
+                          folder_name=board.drive_folder)
+        print(f"✓ rebuilt in place: {link}", flush=True)
+        target = A.TARGETS.get(board.key)
+        issues = target.totals(run_day) if target is not None else []
+        if issues:
+            print("✗ NOT re-sent — the rebuilt board still doesn't add up:",
+                  flush=True)
+            for i in issues:
+                print(f"  • {i}", flush=True)
+            return 1
+        rc = send_reviewed(board, run_day)
+        if rc:
+            print(f"✗ re-send failed (exit {rc})", flush=True)
+            return rc
+        confirm_sent(board, run_day, "Eve — corrected version, re-sent",
+                     to_note=B.who(board), channel=args.channel)
         return 0
     if args.post:
         if _auto(board, run_day, args):

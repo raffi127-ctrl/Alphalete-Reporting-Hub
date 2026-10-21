@@ -208,10 +208,81 @@ def _country_grid() -> List[List[str]]:
     return sp._find_ws(open_by_key(SHEET_ID), sp.TARGET_TAB).get_all_values()
 
 
+def _num(v) -> Optional[int]:
+    try:
+        return int(float(str(v).replace(",", "").strip()))
+    except ValueError:
+        return None
+
+
+def country_totals_issues(g: Sequence[Sequence[str]]) -> List[str]:
+    """Every box on the Country board must show the same week total.
+    2026-10-21 the delta box went out at 2165 against 2206 everywhere else: its
+    totals row summed from one row below the first rep (Aaron Nimako, added at
+    the top), and its 'Last week' cells were frozen literals (2610 vs 2427). The
+    visual check passed it — a wrong total looks exactly like a right one.
+
+    Found by labels, never by index: the Product Summary grand total, the
+    leaderboard 'TOTALS' row (col C = the live week), the daily breakdown
+    'Totals' row under 'RUNNING WEEK TOTALS', and the delta box's totals row
+    ('Total this week' / 'Last week', the latter against 'Sales (Last Week)')."""
+    from automations.org_sales_board import screenshot_email as se
+    from automations.org_sales_board import rollover as org_ro
+
+    def cell(r, c):
+        return str(g[r][c]).strip() if r < len(g) and c < len(g[r]) else ""
+
+    summary = se.grand_total(g, "Fiber - All Units")
+    if summary is None:
+        return ["could not read the Product Summary grand total — can't check "
+                "that the boxes below match it"]
+    got: List[Tuple[str, Optional[int]]] = []
+
+    lb = next((r for r in range(len(g)) if cell(r, 0).upper() == "TOTALS"), None)
+    got.append(("leaderboard TOTALS", _num(cell(lb, 2)) if lb is not None else None))
+
+    daily = None
+    for r in range(len(g)):
+        rc = next((c for c in range(len(g[r]))
+                   if cell(r, c).upper() == "RUNNING WEEK TOTALS"), None)
+        if rc is None:
+            continue
+        tr = next((x for x in range(r + 1, len(g))
+                   if cell(x, 0).lower() == "totals"), None)
+        daily = _num(cell(tr, rc)) if tr is not None else None
+        break
+    got.append(("daily breakdown Totals", daily))
+
+    tables = org_ro.find_delta_tables([list(map(str, row)) for row in g])
+    tot = tables[0]["data_rows"][-1] if tables and tables[0]["data_rows"] else None
+    # data_rows are 1-based, so the last rep's number is the totals row's index
+    got.append(("delta box total", _num(cell(tot, 2)) if tot else None))
+
+    out = []
+    for name, v in got:
+        if v is None:
+            out.append(f"could not read the {name} — can't check it matches "
+                       f"the Product Summary ({summary})")
+        elif v != summary:
+            out.append(f"{name} ({v}) doesn't match the Product Summary "
+                       f"grand total ({summary})")
+
+    last = se.grand_total(g, "Sales (Last Week)")
+    lw = _num(cell(tot, 3)) if tot else None
+    if last is not None and lw is not None and lw != last:
+        out.append(f"delta box 'Last week' total ({lw}) doesn't match Sales "
+                   f"(Last Week) ({last})")
+    return out
+
+
+def _country_totals(run_day: dt.date) -> List[str]:
+    return country_totals_issues(_country_grid())
+
+
 ORG = Target("org", "Org Sales Board", "org_sales_board_email",
              _org_images, _org_grid, _org_totals)
 COUNTRY = Target("country", "Country Sales Board", "country-sales-board-email",
-                 _country_images, _country_grid)
+                 _country_images, _country_grid, _country_totals)
 TARGETS = {t.key: t for t in (ORG, COUNTRY)}
 
 

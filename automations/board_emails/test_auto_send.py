@@ -364,6 +364,40 @@ class PureTest(unittest.TestCase):
             else:
                 self.assertTrue(out and want in out[0], (got, out))
 
+    def _country(self, delta_total="2206", delta_last="2427"):
+        return [
+            ["", "Product Summary - This Week"],
+            ["", "Product Type", "Monday", "Grand Total"],
+            ["", "Fiber - All Units", "1013", "2206"],
+            ["", "Sales (Last Week)", "1276", "2427"],
+            ["TOTALS", "", "2206", "4779"],
+            ["Fiber - All Units", "", "Monday", "RUNNING WEEK TOTALS"],
+            ["1", "Chan Park", "1013", "2206"],
+            ["Totals", "", "1013", "2206"],
+            ["", "AT&T FIBER TEAM", "Total for week"],
+            ["", "", "Total this week", "Last week", "Delta",
+             "This week", "Last week", "Delta"],
+            ["", "Aaron Nimako", "41", "38", "", "20", "25", ""],
+            ["", "Chan Park", "2165", "2389", "", "993", "1251", ""],
+            ["", "", delta_total, delta_last, "", "1013", "1276", ""],
+        ]
+
+    def test_country_totals_agree(self):
+        self.assertEqual(A.country_totals_issues(self._country()), [])
+
+    def test_country_delta_box_short_a_rep_holds(self):
+        # 2026-10-21: the delta totals row skipped its first rep.
+        out = A.country_totals_issues(self._country("2165", "2610"))
+        self.assertEqual(len(out), 2, out)
+        self.assertIn("delta box total (2165)", out[0])
+        self.assertIn("2206", out[0])
+        self.assertIn("'Last week' total (2610)", out[1])
+
+    def test_country_totals_unreadable_holds(self):
+        g = self._country()
+        g[2][3] = ""
+        self.assertIn("could not read", A.country_totals_issues(g)[0])
+
     def test_off_before_the_start_date(self):
         self.assertFalse(A.is_on(dt.date(2026, 10, 7)))
         self.assertTrue(A.is_on(THU))
