@@ -711,13 +711,34 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
             out.append("agent rows: %d" % len(list(S.agent_rows(rows, S.AGENT_ROW_INTERNET))))
         except Exception as e:  # noqa: BLE001
             out.append("agent rows: ? (%s)" % type(e).__name__)
-        for i, r in enumerate(rows[:4]):
-            out.append("row %d: %s" % (i, " | ".join(str(c)[:30] for c in r[:8])))
+        # THE WHOLE GRID, not a sample (Steve 2026-10-21: four rows showed
+        # day-history lines and nothing else, and whether rep rows sat
+        # further down was exactly the question).
+        for i, r in enumerate(rows[:40]):
+            out.append("row %d: %s" % (i, " | ".join(str(c)[:40] for c in r[:12])))
+        if len(rows) > 40:
+            out.append("... %d more row(s)" % (len(rows) - 40))
     except Exception as e:  # noqa: BLE001
         out.append("rows: ? (%s)" % type(e).__name__)
     try:
         out.append("page url: %s" % page.url)
         out.append("page title: %s" % page.title())
+        # Every table on the page with its id and row count, and what the
+        # filters actually hold -- the report we read is picked by id, and a
+        # grid that renders under a different id reads as empty.
+        try:
+            out.append("tables on page: " + page.evaluate(
+                """() => Array.from(document.querySelectorAll('table[id]'))
+                     .map(t => t.id + ':' + t.querySelectorAll('tbody tr').length)
+                     .join(', ')""")[:1200])
+            out.append("filters: " + page.evaluate(
+                """() => ['%s', '%s', '%s'].map(id => {
+                     const el = document.getElementById(id);
+                     return id.split('_').pop() + '=' + (el ? el.value : '?');
+                   }).join(' ')""" % (S.FIELD_START, S.FIELD_END,
+                                      S.COMBO_INPUT.lstrip("#"))))
+        except Exception as e:  # noqa: BLE001
+            out.append("tables: ? (%s)" % type(e).__name__)
         body = page.inner_text("body", timeout=5000)
         out.append("page text: " + " ".join(body.split())[:700])
     except Exception as e:  # noqa: BLE001

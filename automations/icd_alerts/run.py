@@ -281,18 +281,33 @@ CATCHUP_DEFERRED = 3
 _EMPTY_READ_STAMP = C.APP_DIR / "sweep-empty-reported.txt"
 
 
-def _empty_read_due() -> bool:
-    """Once an hour: the fault folds on its summary anyway, this just keeps
-    the evidence from being re-sent every sweep."""
+def _applied_release() -> str:
     try:
-        last = dt.datetime.fromisoformat(_EMPTY_READ_STAMP.read_text().strip())
-        if dt.datetime.now() - last < dt.timedelta(hours=1):
+        from automations.icd_alerts import selfupdate
+        return selfupdate.applied_release()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _empty_read_due() -> bool:
+    """Once an hour -- or right away on a new release: the fault folds on
+    its summary anyway, this just keeps the evidence from being re-sent
+    every sweep. A release that changes WHAT the evidence says must not
+    wait out the hour (Steve 2026-10-21: the fuller grid dump was the
+    whole point of the update)."""
+    release = _applied_release()
+    try:
+        stamp, _, seen = _EMPTY_READ_STAMP.read_text().strip().partition("|")
+        last = dt.datetime.fromisoformat(stamp)
+        if (dt.datetime.now() - last < dt.timedelta(hours=1)
+                and seen == release):
             return False
     except (OSError, ValueError):
         pass
     try:
         _EMPTY_READ_STAMP.parent.mkdir(parents=True, exist_ok=True)
-        _EMPTY_READ_STAMP.write_text(dt.datetime.now().isoformat(timespec="seconds"))
+        _EMPTY_READ_STAMP.write_text(
+            dt.datetime.now().isoformat(timespec="seconds") + "|" + release)
     except OSError:
         pass
     return True
