@@ -14937,17 +14937,27 @@
    "machine": "Lucy 2"
   },
   "nds_metrics": {
-   "on_scheduler": false,
-   "_note": "The NDS Metrics thread (Carlos 2026-10-21) \u2014 the B2B Metrics thread's replacement for his crew on his own office 11580 / RES AT&T OOF. fiber_metrics retargeted: Tableau leg = NDS-SN ORDERLOG owner Carlos (measure rows collapsed, crew-filtered); SaraPlus leg = HIS OWN login on this machine (sp_order_log.pull_csv, crew rows = NDS by construction); pricing = ATT-D2D-OOF SOW base comp (Tier 3-3). `--dm U...` previews; `--post` opens/extends the daily 'NDS Metrics' thread in #alphalete-gp-sales. Scheduling goes on once Carlos blesses the first live thread.",
+   "on_scheduler": true,
+   "_note": "SCHEDULED 2026-10-21 (Carlos: '730 works'): daily 7:30 Mon-Sat, the 'NDS Metrics' thread in #alphalete-gp-sales. The NDS Metrics thread (Carlos 2026-10-21) \u2014 the B2B Metrics thread's replacement for his crew on his own office 11580 / RES AT&T OOF. fiber_metrics retargeted: Tableau leg = NDS-SN ORDERLOG owner Carlos (measure rows collapsed, crew-filtered); SaraPlus leg = HIS OWN login on this machine (sp_order_log.pull_csv, crew rows = NDS by construction); pricing = ATT-D2D-OOF SOW base comp (Tier 3-3). `--dm U...` previews; `--post` opens/extends the daily 'NDS Metrics' thread in #alphalete-gp-sales. Scheduling goes on once Carlos blesses the first live thread.",
    "display_name": "NDS Metrics (Carlos's crew)",
    "source_type": "local",
    "data_sources": [],
    "command": [
     "automations.nds_metrics.run"
    ],
-   "base_args": [],
+   "base_args": [
+    "--post"
+   ],
    "cadence": {
-    "weekdays": []
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "not_before": "07:30"
    },
    "priority": "P3",
    "freshness_target": null,
