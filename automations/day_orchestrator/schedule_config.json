@@ -14953,6 +14953,45 @@
    "verify": null,
    "timeout_minutes": 30,
    "machine": "Lucy 2"
+  },
+  "samuel_metrics": {
+   "order": 26.85,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Samuel's Daily Metrics (channel pending)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "samuel",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "samuel_metrics"
+   },
+   "_note": "Office metrics for samuel (Samuel Acay, Dynasty Growth Group, Inc; South Shore org; OwnerVille 23751). Wired by hand 2026-10-21. NDS/wireless (campaign nds_d2d), same five boards as frank/jairo; knocks held until his relay shows knock rows. OFF until `lucy rerun samuel_metrics --dry-run` on Lucy 4 shows data on every board and #dynasty-growth-sales resolves to a channel id -- never a blank first post.",
+   "_onboarded": true
   }
  },
  "read_only_standalone": {

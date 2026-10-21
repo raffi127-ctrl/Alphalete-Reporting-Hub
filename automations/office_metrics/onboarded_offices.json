@@ -920,5 +920,45 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "samuel",
+    "report_id": "samuel_metrics",
+    "label": "Samuel's Local Office",
+    "owner": "Samuel Acay",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (hold until #dynasty-growth-sales resolves)",
+    "sheet_id": "1sNy4BOrDXxUEyzzG5r02GxjMQ11zbXi5CvyMPq85k3c",
+    "knocks_office": "Samuel Acay",
+    "ov_account": "23751",
+    "owner_office": "",
+    "business_name": "Dynasty Growth Group, Inc",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-10-21 (Megan: Samuel Acay enrolled, is he good to go). NDS wireless like frank/jairo (South Shore org; NDS Program Focus Report tab 'Samuel Acay - NDS', OwnerVille/AppStream 23751, Dynasty Growth Group, Inc), same 5 boards, knocks held until his ECO relay shows knock rows. ECO sign-up 2026-10-21 16:45 UTC named '#dynasty-growth-sales' by NAME (not an id) and Megan's Slack cannot see it; held on Megan's DM until it resolves. Eastern 13:30-21:30, Sat 11:30-20:30. Sheet 'Samuel Acay - Lucy Metrics' from the Master Metrics Templates. Schedule off until the Lucy 4 dry run shows data on every board."
   }
 ]

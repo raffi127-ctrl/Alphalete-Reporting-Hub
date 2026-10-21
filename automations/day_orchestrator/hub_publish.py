@@ -284,6 +284,7 @@ _HUB_CARD = {
     "frank_metrics": "office-metrics",     # 2026-10-09, Frank Matos, same card
     "hasani_metrics": "office-metrics",    # 2026-10-20, Hasani Lynch, same card
     "steve_metrics": "office-metrics",     # 2026-10-20, Steve McElwee, same card
+    "samuel_metrics": "office-metrics",    # 2026-10-21, Samuel Acay, same card
     # nii + trang had self-registered their own Report Library cards; folded
     # onto the one card 2026-09-28 (Megan: "consolidate"). Their library rows
     # were deleted.
