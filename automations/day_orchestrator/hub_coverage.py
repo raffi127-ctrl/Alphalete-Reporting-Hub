@@ -107,6 +107,7 @@ _NOT_A_REPORT = frozenset({
     # Office Expenses has no report card to sit behind (2026-10-20): its
     # failures reach the alert channel like any scheduled job
     "office_expenses_fixer", "office-expenses-fixer",
+    "pnl_fixer", "pnl-fixer",
     # Local Office 1on1s knock backfill (2026-09-29): scheduled Sun+Mon only
     # because local_1on1s_fill depends_on it. It fills a cache, nothing a
     # person reads; its runs belong to the 1on1s fill, not a card of its own.

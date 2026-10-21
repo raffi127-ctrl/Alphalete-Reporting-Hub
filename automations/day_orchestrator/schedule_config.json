@@ -1871,6 +1871,32 @@
    "verify": null,
    "close_on": "exit_zero"
   },
+  "pnl_fixer": {
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "Lucy PNL Fixer (Rafael's list #7; Eve 2026-10-20: on, mondays). Mondays in the 4am batch: the 'PNL <year>' tab of the 12 owners' All-in-One books in automations/pnl_fixer/books.json. Fixes only: a rep's Profit/Loss formula lost in a week that has money in it, a lost weekly total / date that the other weeks agree on, a weekly total whose range leaves out rep rows that carry money (stretched, never shrunk). The Expenses row is never touched; typed numbers and formulas that differ are only reported in output/pnl_fixer. Backup before writing, a hover note on each touched cell, nothing written past 150 fixes on one tab. No Hub card of its own (hub_coverage._NOT_A_REPORT): a red exit means a book it could not write. Pure Sheets API, no browser.",
+   "order": 65,
+   "display_name": "Lucy PNL Fixer",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.pnl_fixer.run"
+   ],
+   "base_args": [
+    "--apply"
+   ],
+   "cadence": {
+    "weekdays": [
+     0
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
   "office_expenses_fixer": {
    "on_scheduler": true,
    "machine": "Lucy 4",
