@@ -1481,7 +1481,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             # (and under its labelled thread when a channel is shared).
             smp.CHANNEL_ID = chan
             smp.HEADER_LABEL = hdr
-            if not args.only:
+            # METRICS_FORCE_HEADER=1: an --only run that is the day's FIRST post
+            # (a recovery posting the quick boards before the slow ones) must
+            # still open the thread -- otherwise every board fails on "couldn't
+            # find today's header" (2026-10-21). ensure_metrics_thread is
+            # idempotent, so an existing header is just reused.
+            if not args.only or os.environ.get("METRICS_FORCE_HEADER") == "1":
                 os.environ["METRICS_CHANNEL_ID"] = chan
                 if hdr:
                     os.environ["METRICS_HEADER_LABEL"] = hdr
