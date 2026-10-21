@@ -8,7 +8,9 @@ Pins the decisions, not the Slack wording:
     holds (fail closed);
   * a dirty chain holds, and once it clears the email is rebuilt once before
     it goes;
-  * not built yet = wait quietly; already sent = do nothing.
+  * not built yet = wait quietly; already sent = do nothing;
+  * Tableau behind = wait quietly (no link, no tag); when it loads, rebuild and
+    send; still behind at 12:00 CT, rebuild once and send anyway.
 
     python -m unittest automations.board_emails.test_auto_send
 """
@@ -233,13 +235,60 @@ class AutoSendTest(unittest.TestCase):
         self.assertEqual(self.run_once(f, THU), 0)
         self.assertIn("send", f.kinds())
 
-    def test_stale_tableau_holds(self):
+    def _at(self, day, hour):
+        return mock.patch.object(
+            A, "_ct_now", lambda: dt.datetime.combine(day, dt.time(hour)))
+
+    def test_stale_tableau_waits_quietly(self):
         f = Fake(self.tmp, SAT)
         self.seed_roster(f)
-        rc = self.run_once(f, SAT, tableau=["D2D1-PAGERV4 (data only through "
-                                            "2026-10-08)"])
+        with self._at(SAT, 9):
+            rc = self.run_once(f, SAT, tableau=["D2D1-PAGERV4 (data only "
+                                                "through 2026-10-08)"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(f.calls, [])           # no link, no tag, no send
+        self.assertFalse(self.alert.called)
+
+    def test_tableau_loads_later_rebuilds_and_sends(self):
+        """Eve 2026-10-21: the JE view held these four days running."""
+        f = Fake(self.tmp, THU)
+        self.seed_roster(f)
+        with self._at(THU, 9):
+            self.run_once(f, THU, tableau=["JE Daily Sales by ICD"])
+        with self._at(THU, 10):
+            self.assertEqual(self.run_once(f, THU), 1)
+            self.assertEqual(f.kinds(), ["rebuild"])
+            f.calls.clear()
+            self.assertEqual(self.run_once(f, THU), 0)
+        self.assertEqual(f.kinds(), ["record", "send"])
+        self.assertFalse(self.alert.called)
+
+    def test_still_behind_at_noon_rebuilds_once_and_sends(self):
+        f = Fake(self.tmp, THU)
+        self.seed_roster(f)
+        late = ["JE Daily Sales by ICD"]
+        with self._at(THU, 12):
+            self.assertEqual(self.run_once(f, THU, tableau=late), 1)
+            self.assertEqual(f.kinds(), ["rebuild"])
+            f.calls.clear()
+            self.assertEqual(self.run_once(f, THU, tableau=late), 0)
+        self.assertEqual(f.kinds(), ["record", "send"])
+        self.assertFalse(self.alert.called)
+        st = A.load_state(f.target, THU)
+        self.assertEqual(st.get("rebuilds", 0), 0)  # the real rebuild is intact
+
+    def test_a_real_problem_still_holds_after_the_noon_rebuild(self):
+        f = Fake(self.tmp, THU)
+        self.seed_roster(f)
+        late = ["JE Daily Sales by ICD"]
+        with self._at(THU, 12):
+            self.run_once(f, THU, tableau=late)               # noon rebuild
+            self.run_once(f, THU, tableau=late, visual=bad_visual)  # rebuild
+            f.calls.clear()
+            rc = self.run_once(f, THU, tableau=late, visual=bad_visual)
         self.assertEqual(rc, 1)
         self.assertNotIn("send", f.kinds())
+        self.assertTrue(self.alert.called)
 
     # ---- waiting / errors ---------------------------------------------------
     def test_not_built_yet_waits_quietly(self):

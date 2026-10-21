@@ -20,8 +20,10 @@ THE CHECKS, in order (each one that fails says why, in the thread):
   1. the day's chain — wr.day_is_clean: a FAILED/INCOMPLETE job or a failure
      alert anywhere upstream of this email holds it.
   2. Tableau — a source that `shared/tableau_freshness` flagged stale today and
-     that one of this email's jobs pulled holds it. Nothing to re-run until the
-     extract loads.
+     that one of this email's jobs pulled does NOT hold it (Eve 2026-10-21,
+     same rule as the captainships): before TABLEAU_DEADLINE it waits quietly;
+     once the extract loads it is rebuilt from the board and goes; still behind
+     at the cutoff, it is rebuilt once with what the board has and goes anyway.
   3. the images — every image in the day's manifest exists, is not empty, and
      was built today. Fixable: rebuilt once.
   4. the visual check (claude, same model as captainship) — latest day column,
@@ -118,6 +120,25 @@ NEW_OWNER_MARK = "New on the board"
 REBUILT_MARK = "rebuilt automatically"
 UPSTREAM_CLEARED = ("what held it earlier cleared — rebuilding the email from "
                     "the board as it is now")
+
+# LATE TABLEAU WAITS, IT DOES NOT HOLD (Eve 2026-10-21: "no que me frenes todo y
+# me hagas revisar manualmente"). The Just Energy "Daily Sales by ICD" view
+# held these emails four days running (10/15-10/18), each one ending in a ✅ by
+# hand. Copied from captainship_drafts.auto_send, not imported (see MODEL).
+TABLEAU_DEADLINE = dt.time(12, 0)       # Central
+TABLEAU_DEADLINE_REBUILD = ("Tableau still behind at 12:00 — rebuilt with the "
+                            "latest numbers it had")
+
+
+def _ct_now() -> dt.datetime:
+    return dt.datetime.now(wr.CENTRAL).replace(tzinfo=None)
+
+
+def past_tableau_deadline(day: dt.date) -> bool:
+    """An older day (a rerun) is past the cutoff; today, from 12:00 CT."""
+    now = _ct_now()
+    return day < now.date() or (day == now.date()
+                                and now.time() >= TABLEAU_DEADLINE)
 
 _OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 STATE_DIR = _OUTPUT_DIR / "state" / "board_autosend"
@@ -450,7 +471,7 @@ class Verdict:
     blocked: List[str] = field(default_factory=list)
     minor: List[str] = field(default_factory=list)
     new: List[str] = field(default_factory=list)
-    waiting: bool = False            # not built yet — nothing to judge
+    waiting: bool = False            # not built yet / Tableau still loading
 
     @property
     def send(self) -> bool:
@@ -483,8 +504,7 @@ def judge(t: Target, day: dt.date, state: dict, *,
     ok, why = clean()
     if not ok:
         v.blocked.append(f"the day's run is not clean: {why}")
-    for s in tableau():
-        v.blocked.append(f"Tableau not updated: {s}")
+    late = [f"Tableau not updated: {s}" for s in tableau()]
 
     try:
         v.new = new_owners(t, day, names())
@@ -494,7 +514,22 @@ def judge(t: Target, day: dt.date, state: dict, *,
     if v.blocked:
         state["held_upstream"] = True
         return _log(t, v, verbose)
-    if state.get("held_upstream") and not state.get("upstream_rebuilt"):
+    if late:
+        # Waits instead of holding: no link, no tag. `held_upstream` makes the
+        # pass after Tableau loads rebuild from the fresh board (below).
+        state["held_upstream"] = True
+        if not past_tableau_deadline(day):
+            v.waiting = True
+            if verbose:
+                print(f"  auto-check {t.key}: waiting for Tableau (until "
+                      f"{TABLEAU_DEADLINE:%H:%M} CT) — {'; '.join(late)}",
+                      flush=True)
+            return v
+        if not state.get("upstream_rebuilt"):
+            v.fixable.append(TABLEAU_DEADLINE_REBUILD)
+            return _log(t, v, verbose)
+        # rebuilt at the cutoff with the latest: judged as it is from here
+    elif state.get("held_upstream") and not state.get("upstream_rebuilt"):
         # Held earlier for the chain or Tableau, clear now: the email was built
         # from the board as it was THEN. Rebuild it once from today's board.
         v.fixable.append(UPSTREAM_CLEARED)
@@ -581,7 +616,7 @@ def run(t: Target, day: dt.date, hooks: Hooks, *, send: bool = True,
     if v.fixable and not v.blocked:
         if not send:
             return 1
-        if v.fixable == [UPSTREAM_CLEARED]:
+        if set(v.fixable) <= {UPSTREAM_CLEARED, TABLEAU_DEADLINE_REBUILD}:
             state["upstream_rebuilt"] = True     # its own one rebuild
         else:
             state["rebuilds"] = state.get("rebuilds", 0) + 1
