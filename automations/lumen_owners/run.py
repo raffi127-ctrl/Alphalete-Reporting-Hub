@@ -434,7 +434,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     today = dt.date.today()
     sh = None if args.no_sheet else B._open()
     history = B.read_history(sh) if sh else {}
-    grid, fiber, failed, weeks, mix = _pull(today, history)
+    grid, fiber, failed, att_weeks, mix = _pull(today, history)
     if failed:
         # An empty fiber pull would mark EVERY owner "Not on AT&T yet" — a
         # wrong answer that looks like a real one. Refuse instead.
@@ -447,7 +447,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
     aliases = load_aliases()
     cur = _wk.reporting_sunday(today)
-    past = [weeks.get(cur - dt.timedelta(days=7 * i))
+    past = [att_weeks.get(cur - dt.timedelta(days=7 * i))
             for i in range(1, len(PAST_LABELS) + 1)]
     rows = build_rows(lumen, fiber, aliases, past, mix)
     monday = _wk.reporting_monday(today)
@@ -464,8 +464,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     blocks = []
     if sh is not None:
         try:
-            n = B.write_history(weeks, today, sh)
-            g, spans = B.build_grid([r["owner"] for r in rows], weeks,
+            n = B.write_history(att_weeks, today, sh)
+            g, spans = B.build_grid([r["owner"] for r in rows], att_weeks,
                                     _wk.reporting_week(today), today, aliases)
             ws = B.write_tab(g, sh)
             print("[lumen] tab '%s' written (%d rows); history %d lines"
