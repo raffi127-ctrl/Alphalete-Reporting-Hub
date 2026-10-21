@@ -585,7 +585,22 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
 
     # Navigate to the impersonated portal and read the new rqst token (the
     # server hands back a fresh one for the impersonated session).
-    page.goto(f"https://v2.ownerville.com/{result['redirect']}", wait_until="domcontentloaded", timeout=20000)
+    # RETRIED (2026-10-21): this was the one ownerville load in the flow with a
+    # single 20s try. The impersonated Welcome page stalled for Sahil and
+    # Colten in the same 5:31 captainship run and both daily boards went
+    # yellow, though the switch itself had already succeeded — a reload is
+    # all it needed. Raises after the last try, same as before.
+    url = f"https://v2.ownerville.com/{result['redirect']}"
+    for attempt in range(1, 4):
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            break
+        except Exception as e:  # noqa: BLE001 — patchright TimeoutError et al.
+            print(f"  ⚠ impersonated Welcome load stalled (try {attempt}/3): "
+                  f"{type(e).__name__}")
+            if attempt == 3:
+                raise
+            page.wait_for_timeout(3000)
     new_rqst = page_rqst(page)
     return new_rqst, "ok"
 
