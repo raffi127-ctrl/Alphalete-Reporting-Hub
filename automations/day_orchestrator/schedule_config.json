@@ -4298,6 +4298,27 @@
    "timeout_minutes": 5,
    "machine": "Lucy 1"
   },
+  "office_wrap_ups": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Reps-didn't-send-wrap-ups across Raf's captainship offices (automations/office_wrap_ups), off the ORG-WIDE Tableau Order Log (disconnects.pull.fetch_crosstab) — NO per-office SaraPlus logins. Runs on LUCY 4, the box that already pulls the Order Log for every per-office metrics runner and holds the Slack tokens + roster. on_scheduler:false while rolling out. base_args EMPTY = DRY RUN, so `lucy rerun office_wrap_ups --office aya --machine \"Lucy 4\"` previews ONE office and posts nothing; add `--live` (and `--office <key>`) to post for real. Per office it posts to that office's channel (office_metrics.OFFICES); one shared Dylan RingCentral line (rc_autoread) is the texted check for all. Trang is a different Slack workspace and is skipped until its token is wired. ARMING later: base_args --live + a LaunchAgent (or on_scheduler) once a per-office preview is approved.",
+   "display_name": "Office Wrap-Up Check (captainship)",
+   "machine": "Lucy 4",
+   "source_type": "tableau",
+   "_source_note": "Pulls the ALLREPS Order Log crosstab via patchright (same as disconnects); 'tableau' gets the stray-Chrome guard.",
+   "data_sources": [],
+   "command": [
+    "automations.office_wrap_ups.run"
+   ],
+   "base_args": [],
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": {
+    "type": "manifest",
+    "report_id": "office_wrap_ups"
+   }
+  },
   "install_raf_guest_orders_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_raf_guest_orders_agent --machine \"Lucy 1\"` can install the STANDALONE com.alphalete.raf-guest-orders LaunchAgent on LUCY 1 (03:45/04:15/06:30/12:45, deploy/raf_guest_orders.sh, --pull). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
