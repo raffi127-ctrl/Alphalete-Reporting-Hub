@@ -90,6 +90,12 @@ CHANNELS: Dict[str, str] = {
     "Nii Tagoe": "C0AVA8LSGLQ",               # #23275-next-horizon-group-inc-nii-tagoe (Eve, 2026-10-08)
     # Camila 2026-10-19 (ZOOM 7, Kalkan Marketing)
     "Omar Mohammad": "C0C6HKZ63EK",           # #omars-mohammad-office-recruiting-24153-rafael-hidalgo
+    # Eve 2026-10-21 (no script of their own yet -> graded on Rafael's)
+    "Luke Baldwin": "C0AUUSV77TK",            # #20958-takeoff-enterprises-inc-2nd-luke-baldwin
+    "Mercy Ohiokhai": "C0BLZTZKDDE",          # #23888-mercel-management-inc-mercy-ohiokhai
+    "Jennifer Figueroa": "C0AU0G3M2NT",       # #23132-figspire-management-inc-jennifer-figueroa
+    "Miguel Zaragoza": "C0C74FUGXP0",         # #24145-nobilis-marketing-group-inc-miguel-zaragoza
+    "Joshua Ghorbani": "C0C6AMLDQBY",         # #joshua-ghorbani-office
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",

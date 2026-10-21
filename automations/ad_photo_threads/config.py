@@ -345,6 +345,24 @@ _MORE = [
     # by Eve 10/19 (Lucy Reporting invited).
     ("cody", "Cody Cannon", ARS_A_TO_C, "Cody Cannon", "21151", "Aeon Specialized Consulting, Inc",
      "C0ATYN2L73R", "C0CAFPXAFB4", r"aeon\s*-.*1st\s*round"),
+    # Eve 2026-10-21: five more. Daily threads (Slack, 10/21):
+    #   Luke     ":top:*FIRST ROUND THREAD- Takeoff Enterprises -  10/21*:top:"
+    #            (his "Recordings 1st round" thread doesn't match)
+    #   Mercy    ":carousel_horse:*MERCEL MANAGEMENT - 1ST ROUNDS - OCTOBER 21th*"
+    #   Jennifer ":melon:*FIGSPIRE MANAGEMENT - 1ST ROUNDS - OCTOBER 21th*:melon:"
+    #   Miguel, Joshua  "FIRST ROUND THREAD: 10/20"
+    # Their "EOD - INTERVIEWER'S REPORT" recaps don't match. Miguel's tab has
+    # no Ad Title yet (first rows 10/21), so his threads start once it does.
+    ("luke", "Luke Baldwin", ARS_J_TO_L, "Luke Baldwin", "20958", "Takeoff Enterprises",
+     "C0AUUSV77TK", "C0CAXGDTJ67", r"first\s*round\s*thread\W*takeoff"),
+    ("mercy", "Mercy Ohiokhai", ARS_M_TO_Q, "Mercy Ohiokhai", "23888", "Mercel Management",
+     "C0BLZTZKDDE", "C0CBY4RSE2U", r"mercel\s*management.*1st\s*round"),
+    ("jennifer", "Jennifer Figueroa", ARS_J_TO_L, "Jennifer Figueroa", "23132", "Figspire Management",
+     "C0AU0G3M2NT", "C0CAXGF4B43", r"figspire\s*management.*1st\s*round"),
+    ("miguel", "Miguel Zaragoza", ARS_M_TO_Q, "Miguel Zaragoza", "24145", "Nobilis Marketing Group",
+     "C0C74FUGXP0", "C0CB7E7TRJ8", r"first\s*round\s*thread"),
+    ("joshua", "Joshua Ghorbani", ARS_J_TO_L, "Joshua Ghorbani", "24119", "First Harvest Sales Group",
+     "C0C6AMLDQBY", "C0CB5L73R17", r"first\s*round\s*thread"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -360,6 +378,7 @@ _TZ = {
     "jairo": "America/New_York",       # ads: Miami / Kendall Lakes, FL
     "george": "America/New_York",      # ads: Fort Myers / Lehigh Acres, FL
     "omar": "America/Detroit",         # ads: Dearborn, MI (slots in EST)
+    "luke": "America/Los_Angeles",     # ads: Palo Alto / Santa Clara / Sunnyvale, CA
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
