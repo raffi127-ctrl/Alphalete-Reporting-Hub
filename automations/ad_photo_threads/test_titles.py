@@ -223,13 +223,30 @@ class TitleOnlyTests(unittest.TestCase):
         for t in ("Wireless Associate (Spanish Required), Garland, TX",
                   "T&T Wireless Associate (Spanish Required), Garland, TX."):
             self.assertEqual(d(book.resolve(t)), "AT&T Wireless Associate (Spanish)")
-        self.assertIsNone(book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX"))
+        self.assertEqual(d(book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX")),
+                         "AT&T Wireless Associate (Bilingual Spanish Required)")
         self.assertEqual(d(book.resolve("Wireless Service Associate (Spanish Needed)")),
                          "Wireless Service Associate (Spanish Needed)")
 
-    def test_off_list_title_gets_no_thread(self):
-        self.assertIsNone(self.book.resolve("AT&T Account Representative, Carrollton, TX"))
-        self.assertIsNone(self.book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX"))
+    def test_off_list_title_gets_its_own_thread(self):
+        # Eve 10/21: a new ad never waits for someone to add it to the list.
+        keys = {self.book.resolve(t) for t in (
+            "AT&T Account Representative, Carrollton, TX",
+            "AT&T Account Representative ? Sherman TX",
+            "AT&T Account Representative? Dallas TX.",
+            "AT&T Acount Representative, Dallas, TX")}          # typo
+        self.assertEqual(len(keys), 1)
+        self.assertEqual(self.book.display(keys.pop()), "AT&T Account Representative")
+        euless = self.book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX")
+        self.assertNotEqual(euless, self.book.resolve(self.G))
+        self.assertEqual(self.book.display(euless), "AT&T Wireless Associate (Bilingual Spanish Required)")
+
+    def test_new_ad_is_not_a_listed_ad_by_prefix(self):
+        self.assertNotEqual(self.book.resolve("Entry Level Sales, Denton, TX"),
+                            self.book.resolve("Entry Level Sales Manager, Denton, TX"))
+
+    def test_blank_title_still_no_thread(self):
+        self.assertIsNone(self.book.resolve("   "))
 
     def test_outside_sales_is_not_att_sales(self):
         self.assertNotEqual(self.book.resolve("Outside Sales Representative (Spanish Required), Dallas, TX"),
@@ -249,6 +266,45 @@ class TitleOnlyTests(unittest.TestCase):
         self.assertEqual(self.book.display(self.book.find_in_text(
             "Ana Ruiz :white_check_mark: 3 :star: Entry Level Sales Manager ? Denton TX")),
             "Entry Level Sales Manager")
+
+
+class NewAdEveryOfficeTests(unittest.TestCase):
+    """Eve 10/21: in every office a new ad gets its thread from its first
+    interview, not after MIN_SEEN; a cut-off or near-typo stays unthreaded."""
+
+    def setUp(self):
+        self.book = TitleBook(["AT&T Wireless Associate (Spanish), Frisco, TX"] * 5
+                              + ["AT&T Wireless Associate (Spanish), 2 locations"] * 5
+                              + ["AT&T Sales Agent, Arlington, TX"] * 5)
+
+    def test_brand_new_ad_once(self):
+        k = self.book.resolve("AT&T Retail Representative, Dallas, TX")
+        self.assertEqual(k, norm("AT&T Retail Representative, Dallas, TX"))
+        self.assertEqual(self.book.display(k), "AT&T Retail Representative, Dallas, TX")
+
+    def test_new_city_of_a_running_ad_is_its_own_ad(self):
+        self.assertNotEqual(self.book.resolve("AT&T Sales Agent, McKinney, TX"),
+                            self.book.resolve("AT&T Sales Agent, Arlington, TX"))
+        self.assertIsNotNone(self.book.resolve("AT&T Sales Agent, McKinney, TX"))
+
+    def test_new_ad_cut_short_joins_it_either_order(self):
+        fl, f = "Bilingual AT&T Representative ? Orlando FL", "Bilingual AT&T Representative ? Orlando F"
+        self.assertEqual(self.book.resolve(f), self.book.resolve(fl))
+        other = TitleBook(["AT&T Sales Agent, Arlington, TX"] * 5)
+        self.assertEqual(other.resolve(fl), other.resolve(f))
+
+    def test_note_after_title_is_cut_and_sentence_is_no_ad(self):
+        k = self.book.resolve("AT&T Sales Representative, Wylie TX. Overqualified")
+        self.assertEqual(self.book.display(k), "AT&T Sales Representative, Wylie TX")
+        self.assertIsNone(self.book.resolve(
+            "The position he applied for is not specified in the calendar notes."))
+
+    def test_cut_off_of_two_ads_still_none(self):
+        self.assertIsNone(self.book.resolve("AT&T Wireless Associate (Spanish)"))
+
+    def test_near_typo_not_a_new_thread(self):
+        for t in ("AT&T Sales Agnt, Arlngton, TX", "AT&T Sles Agnt, Arlngtn, TX"):
+            self.assertIn(self.book.resolve(t), (None, norm("AT&T Sales Agent, Arlington, TX")), t)
 
 
 class UnbracketTests(unittest.TestCase):

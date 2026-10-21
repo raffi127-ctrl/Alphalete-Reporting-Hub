@@ -114,6 +114,18 @@ def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", norm(text).replace("(", " ").replace(")", " ")).strip()
 
 
+# Where the location starts in a typed title: ", Dallas, TX", " ? Frisco TX"
+# (ApplicantStream's "–" mangled), "? Dallas TX.", " – 3 locations". A plain
+# hyphen is NOT one: "Account Representative - AT&T (Spanish Required)".
+_LOCATION_CUT = re.compile(r"\s*\?\s*|\s+[–—]\s+|\s*,\s*")
+
+
+def title_without_place(title: str) -> str:
+    """The ad's title with the city/company tail cut off, as typed."""
+    t = _LEAD_JUNK.sub("", (title or "").replace("&amp;", "&")).strip()
+    return _LOCATION_CUT.split(t, maxsplit=1)[0].strip(" .")
+
+
 def _other_city(a: str, b: str) -> bool:
     """Same title, same state, a DIFFERENT city: two ads, not a typo. 9/25
     Isaiah: "... irving tx" vs "... garland tx" scored 0.93 and the merge
@@ -143,10 +155,14 @@ class TitleBook:
         # An office's own list of ads, {title shown: [phrases]} (config
         # TITLE_ONLY; Carlos 10/2 for Khalil: "a thread ... just based on the
         # title and not taking into account the location"). A row belongs to
-        # the ad whose phrase it contains, whatever city/company is around it;
-        # a row on no listed ad gets no thread.
+        # the ad whose phrase it contains, whatever city/company is around it.
+        # A row on no listed ad is a NEW ad and gets its own thread, titled
+        # without the city (Eve 10/21: Khalil's Dallas/Frisco and Denton ads
+        # sat two weeks with no thread because nobody had added them here).
         self._only = [(norm(shown), shown, [_flat(p) for p in phrases])
                       for shown, phrases in (only or {}).items()]
+        self._new: Dict[str, str] = {}      # {key: title shown} of those new ads
+        self._new_full_keys: Dict[str, str] = {}   # same, other offices: {spelling key: ad key}
         raw = [t for t in titles if norm(t)]
         self.counts: Counter = Counter(self.aliases.get(norm(t), norm(t)) for t in raw)
         # Most common raw spelling per key — that is what gets displayed.
@@ -218,14 +234,70 @@ class TitleBook:
             key = self._resolve_ad(title)
             if key is None and unbracket(title) != (title or "").strip():
                 key = self._resolve_ad(unbracket(title))
-            return key
+            return key or self._new_full(title)
         # The phrase in the row itself; else the ad its spelling folds onto
         # (a typo, an alias) -- and that ad's phrase.
         hit = self._only_hit(title)
         if hit or not norm(title):
             return hit
         ad = self._resolve_ad(title)
-        return self._only_hit(ad) if ad else None
+        hit = self._only_hit(ad) if ad else None
+        return hit or self._new_ad(title)
+
+    # Below TYPO_RATIO but this close to a running ad: probably that ad typed
+    # badly, not a new one -- left unthreaded (the channel note asks).
+    UNSURE_RATIO = 0.85
+    MAX_AD_WORDS = 12
+
+    def _new_full(self, title: str) -> Optional[str]:
+        """Every other office (Eve 10/21, after Khalil): a title that is no
+        running ad is a NEW ad -- its own thread from its first interview,
+        instead of waiting to be seen MIN_SEEN times. Not when it reads as a
+        cut-off or near-typo of a running ad ("AT&T Wireless Associate
+        (Spanish)" cut short of two ads): guessing there makes a junk thread."""
+        # A note typed after the title ("..., Wylie TX. Overqualified") is cut.
+        typed = re.split(r"\.\s+(?=[A-Z])", unbracket(title).strip(), maxsplit=1)[0]
+        key = norm(typed)
+        # A sentence, not an ad ("The position he applied for is not
+        # specified in the calendar notes."): no thread.
+        if not key or len(key.split()) >= self.MAX_AD_WORDS:
+            return None
+        if any(a.startswith(key) or a.endswith(" " + key) for a in self.ads):
+            return None
+        if any(difflib.SequenceMatcher(None, key, a).ratio() >= self.UNSURE_RATIO
+               and not _other_city(key, a) for a in self.ads):
+            return None
+        # New ads fold among themselves: "... Orlando F" cut short is the
+        # "... Orlando FL" new ad, whichever row comes first.
+        for k in list(self._new_full_keys):
+            if k.startswith(key) or (difflib.SequenceMatcher(None, key, k).ratio() >= TYPO_RATIO
+                                     and not _other_city(key, k)):
+                return k
+            if key.startswith(k):
+                self._new_full_keys[key] = k      # the longer spelling joins it
+                return k
+        self._new_full_keys[key] = key
+        self._spelling.setdefault(key, typed.strip(" ,"))
+        return key
+
+    def _new_ad(self, title: str) -> Optional[str]:
+        """An ad not on the office's list: its title minus the place. A typo
+        of a listed or already-new ad folds onto it -- by spelling only, never
+        by prefix ("AT&T Retail Associate" is not the "... Sales (Spanish
+        Required)" ad)."""
+        shown = title_without_place(title)
+        key = norm(shown)
+        if not key:
+            return None
+        known = [k for k, _, _ in self._only] + list(self._new)
+        if key in known:
+            return key
+        close = sorted(((difflib.SequenceMatcher(None, key, k).ratio(), k) for k in known),
+                       reverse=True)
+        if close and close[0][0] >= TYPO_RATIO:
+            return close[0][1]
+        self._new[key] = shown
+        return key
 
     def _resolve_ad(self, title: str) -> Optional[str]:
         key = norm(title)
@@ -249,7 +321,7 @@ class TitleBook:
         return max(hits, key=len) if hits else None
 
     def display(self, key: str) -> str:
-        shown = next((s for k, s, _ in self._only if k == key), None)
+        shown = next((s for k, s, _ in self._only if k == key), None) or self._new.get(key)
         if shown:
             return shown
         return pretty(self._spelling.get(key, key))

@@ -55,8 +55,8 @@ def message(missing: List[Tuple[dt.date, "collect.Candidate"]], title_only: bool
         lines.append(f"• *No Ad Title in the sheet:* {who}. Please fill in their Ad Title.")
     if typed:
         ask = ("Is this a new ad? Reply here and it gets its own thread."
-               if title_only else "Please check the spelling in the sheet (a brand-new ad "
-               "gets its thread once it has 3 interviews).")
+               if title_only else "It reads like a cut-off or misspelling of a running "
+               "ad, so it wasn't guessed. Please check the spelling in the sheet.")
         for t, k in typed.most_common():
             lines.append(f"• *Ad not recognized:* \"{t}\" ({k}). {ask}")
     return "\n".join(lines)

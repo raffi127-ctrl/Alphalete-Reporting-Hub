@@ -599,6 +599,8 @@ class UnmergeTests(PublishTests):
 
     def test_deletes_nothing_while_the_ad_still_folds(self):
         rep, cl, i, g = self._setup(fixed=False)
+        # Another city is a new ad now (Eve 10/21), so make it fold for real.
+        rep.book.resolve = lambda t: norm(g)
         got = post.unmerge("C1", i, ["12.0"], build=lambda d: rep, cl=cl)
         self.assertIn("error", got)
         self.assertEqual(cl.gone, [])
