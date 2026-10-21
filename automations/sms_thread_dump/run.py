@@ -395,8 +395,16 @@ def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=Fal
             try:
                 if not _open_history(page, row):
                     raise RuntimeError("history link not found")
-                page.wait_for_selector("text=Applicant History for >> visible=true",
-                                       timeout=15000)
+                try:
+                    page.wait_for_selector("text=Applicant History for >> visible=true",
+                                           timeout=15000)
+                except Exception:
+                    # A slow AppStream opens the dialog AFTER the 15s wait
+                    # (Kayla Dixon, 22524, 2026-10-20: the failure dump showed
+                    # her dialog open). One longer second chance before the row
+                    # counts as unread and holds the ticket open.
+                    page.wait_for_selector("text=Applicant History for >> visible=true",
+                                           timeout=30000)
                 thread = _scrape_thread(page)
                 rec["thread"] = thread or []
                 if not thread:

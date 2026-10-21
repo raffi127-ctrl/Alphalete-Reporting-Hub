@@ -111,7 +111,8 @@ def _scrape(page, day):
         r"""(wanted) => {
              const tbl = [...document.querySelectorAll('table')].find(
                t => t.offsetParent !== null && /Time of Activity/.test(t.innerText));
-             if (!tbl) return {error: 'no grid'};
+             if (!tbl) return {error: 'no grid · page says: ' +
+               (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160)};
              const trs = [...tbl.querySelectorAll('tr')];
              const head = trs.find(tr => /Time of Activity/.test(tr.innerText));
              if (!head) return {error: 'no header row'};
@@ -154,6 +155,26 @@ def _submit(page):
         except Exception:
             continue
     raise RuntimeError("no Get Report button on the Activity Report")
+
+
+def _pull_day(page, tok, day, tries=2):
+    """One day, submitted fresh. 2026-10-20 on Lucy 2: 16 of 35 office-days
+    came back 'no grid' and the run closed FAILED. A second submission
+    catches a page that loaded slow; if it still has no grid, the error now
+    carries what the page DID show, so the next look tells an empty day from
+    a broken page."""
+    for attempt in range(1, tries + 1):
+        page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p=704"
+                  .format(tok), wait_until="domcontentloaded", timeout=30000)
+        time.sleep(2.0)
+        _set_day(page, day)
+        _submit(page)
+        try:
+            return _scrape(page, day)
+        except RuntimeError as e:
+            if attempt == tries or "no grid" not in str(e):
+                raise
+            time.sleep(3.0)
 
 
 def _write_tab(records, meta, office):
@@ -219,16 +240,11 @@ def main(argv=None):
             records = []
             for day in days:
                 try:
-                    page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p=704"
-                              .format(tok), wait_until="domcontentloaded", timeout=30000)
-                    time.sleep(2.0)
-                    _set_day(page, day)
-                    _submit(page)
-                    got = _scrape(page, day)
+                    got = _pull_day(page, tok, day)
                 except Exception as e:  # noqa: BLE001 — one day must not kill the week
                     print("[activity] {} {}: FAILED {}: {}".format(
                         office, day, type(e).__name__,
-                        str(e).splitlines()[0][:140]), flush=True)
+                        str(e).splitlines()[0][:300]), flush=True)
                     rc = 1
                     continue
                 print("[activity] {} {}: {} rows".format(office, day, len(got)),
