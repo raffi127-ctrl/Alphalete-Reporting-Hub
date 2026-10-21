@@ -338,9 +338,8 @@ def _dd_value(tab_name: str, program_summary: Dict[str, dict],
 # Program Overview has every number we need as a single per-owner total:
 #   Lead Count                       -> Total Leads
 #   Total Sales                      -> Penetration Rate = Total Sales / Lead Count
-#   Assigned Fiber Lead Penetration  -> goal (e.g. 0.02); Expected Fiber Sales
-#                                       (120 days, 17wks) = round(Lead Count * goal)
-#   Expected Fiber Sales Weekly      = round(Expected / 17)
+#   Expected Fiber Sales (120 days, 17wks) = Lead Count * 2% (FIBER_PENETRATION_GOAL)
+#   Expected Fiber Sales Weekly      = Lead Count * 2% / 17, rounded half-up
 # The Program Overview box sits near the top-center of the dashboard.
 FIBER_OVERVIEW_XY = (0.45, 0.45)
 FIBER_VIEW_URL = (
@@ -362,6 +361,36 @@ FIBER_BULK_VIEW_URL = (
 )
 FIBER_BULK_CROSSTAB_SHEET = "Office New Fiber Lead Penetration By Zip"
 FIBER_PATH = WORKSPACE / "output" / "opt_fiber.csv"
+# Expected Fiber Sales (120 days, 17wks) = Total Leads x this goal — the same
+# math the Tableau analysts use. The bulk crosstab's "Fiber Sales (Fixed)" is
+# ACTUAL sales, not expected; writing it here made every tab's Expected /
+# Weekly wrong (Loom 2026-10-20: 143,250 x 2% / 17 = 169, Sheet had less).
+FIBER_PENETRATION_GOAL = 0.02
+FIBER_GOAL_WEEKS = 17
+
+
+def _round_half_up(x: float) -> int:
+    """168.5 -> 169 (Python's round() gives 168 — banker's rounding)."""
+    return int(x + 0.5) if x >= 0 else -int(-x + 0.5)
+
+
+def _leads_num(leads) -> Optional[float]:
+    # _to_num(0) is None (it reads `s or ""`) — a real 0 leads must stay 0.
+    return float(leads) if isinstance(leads, (int, float)) else _to_num(leads)
+
+
+def _fiber_expected(leads) -> Optional[int]:
+    """Total Leads -> Expected Fiber Sales (120 days, 17wks)."""
+    n = _leads_num(leads)
+    return None if n is None else _round_half_up(n * FIBER_PENETRATION_GOAL)
+
+
+def _fiber_weekly(leads) -> Optional[int]:
+    """Total Leads -> Expected Fiber Sales Weekly (goal spread over 17 wks).
+    Uses the unrounded expected so 2,865 / 17 = 168.5 -> 169."""
+    n = _leads_num(leads)
+    return (None if n is None
+            else _round_half_up(n * FIBER_PENETRATION_GOAL / FIBER_GOAL_WEEKS))
 # Sentinel value written when an ICD has no row in Tableau's Fiber data
 # (e.g. Khalil Mansour 2026-05-26 — neither the AUTOMATIONPULL-NICHURNVIEW
 # crosstab nor the bare workbook's owner-filtered scrape returned any
@@ -2172,7 +2201,7 @@ def fill_opt_for_tab(
 
     # --- Fiber Lead (Office Metrics section) — keyed by tab name ---
     # All from the Fiber view's Program Overview box: Penetration Rate, Total
-    # Leads, Expected Fiber Sales (120 days/17wks), and Weekly = Expected / 17.
+    # Leads; Expected Fiber Sales (120 days/17wks) = Leads x 2%, Weekly = that / 17.
     fiber_row = fiber_by_owner.get(_norm(tab_name))
     if fiber_row:
         pen = fiber_row.get("penetration") or ""
@@ -2193,10 +2222,13 @@ def fill_opt_for_tab(
             lead_n = _to_num(fiber_row.get("lead_count", ""))
             if lead_n is not None:
                 _queue(om_rows, "Total Leads", int(lead_n))
-            exp_n = _to_num(fiber_row.get("expected", ""))
-            if exp_n is not None:
-                _queue(om_rows, "Expected Fiber Sales (120 days, 17wks)", int(exp_n))
-                _queue(om_rows, "Expected Fiber Sales Weekly", round(exp_n / 17))
+            # Expected / Weekly come from Total Leads x 2% — NOT the pulled
+            # 'expected' column (the bulk crosstab fills it with actual sales).
+            if lead_n is not None:
+                _queue(om_rows, "Expected Fiber Sales (120 days, 17wks)",
+                       _fiber_expected(lead_n))
+                _queue(om_rows, "Expected Fiber Sales Weekly",
+                       _fiber_weekly(lead_n))
             # Fill-but-flag (Megan 2026-05-25): an impossible penetration
             # (>100% = more sales than leads, e.g. a brand-new ICD whose
             # Fiber isn't set up) is still written, but the whole Fiber
