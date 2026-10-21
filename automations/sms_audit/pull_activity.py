@@ -112,6 +112,10 @@ def _scrape(page, day):
              const tbl = [...document.querySelectorAll('table')].find(
                t => t.offsetParent !== null && /Time of Activity/.test(t.innerText));
              if (!tbl) {
+               // A day nobody touched shows this line instead of a grid
+               // (22524 Sat 10-10-2026, checked 10/21) — 0 rows, not a failure.
+               if (/No Activity Found for this day/i.test(document.body.innerText || ''))
+                 return {rows: [], columns: []};
                // The top 160 chars of the body are the nav bar (10/21), so
                // read from the report's own button on, and say whether the
                // grid exists but is hidden.
