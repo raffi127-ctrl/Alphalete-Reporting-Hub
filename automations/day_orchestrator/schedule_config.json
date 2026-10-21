@@ -14556,9 +14556,16 @@
    "_note": "MANUAL HANDLE (2026-10-20). Lucy 1's Mini Control queue went silent while the box kept running; this runs on Lucy 3 (same LAN) and kickstarts Lucy 1's mini-control + mini-control-read over SSH. Fails fast if Lucy 3 has no key for Lucy 1.",
    "source_type": "local",
    "data_sources": [],
-   "command": ["automations.day_orchestrator.kick_peer_queue"],
-   "base_args": ["--target", "lucy1"],
-   "cadence": {"weekdays": []},
+   "command": [
+    "automations.day_orchestrator.kick_peer_queue"
+   ],
+   "base_args": [
+    "--target",
+    "lucy1"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
@@ -14885,6 +14892,26 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": null
+  },
+  "nds_metrics_probe": {
+   "on_scheduler": false,
+   "_note": "READ-ONLY probe (Carlos 2026-10-21: turn the Fiber Metrics thread into an NDS Metrics thread \u2014 the crew moved to his own office 11580 / RES AT&T OOF on 10/19, Raf's login retired). Proves the two retargeted legs before any board moves: NDS-SN ORDERLOG owner=Carlos (rows/measures/crew/status vocab) and his OWN SaraPlus SOH (do the crew's RES orders appear; which column splits them from B2B). Prints only.",
+   "display_name": "NDS Metrics probe (phase 0)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.nds_metrics.probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30,
+   "machine": "Lucy 2"
   }
  },
  "read_only_standalone": {
