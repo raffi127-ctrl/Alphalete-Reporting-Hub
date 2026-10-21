@@ -409,9 +409,9 @@
   },
   {
     "key": "steve",
-    "label": "Steve's Local Office (channel from ECO sign-up)",
+    "label": "Steve's Local Office",
     "owner": "Steve McElwee",
-    "channel_ids": [],
+    "channel_ids": ["C0CAWSVQN1H"],
     "trackers": [
       "att_country",
       "att_country_internet_only",

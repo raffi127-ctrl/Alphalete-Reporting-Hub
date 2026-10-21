@@ -14857,8 +14857,8 @@
   "steve_metrics": {
    "order": 26.95,
    "machine": "Lucy 4",
-   "on_scheduler": false,
-   "display_name": "Steve's Daily Metrics (channel from ECO sign-up)",
+   "on_scheduler": true,
+   "display_name": "Steve's Daily Metrics",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"

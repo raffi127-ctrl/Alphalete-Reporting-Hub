@@ -132,7 +132,7 @@ METRICS_CITY = {
     "jairo": "miami",           # Profits Management, Miami (305)
     "frank": "deerfield_beach", # Peak Management, Deerfield Beach FL (Megan 2026-10-09); ECO key frank
     "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
-    "steve": "abilene",         # Luxe Global Consulting, Abilene TX (OwnerVille office address, harvested 2026-10-20); Central
+    "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
     "joseph": "grandville",     # Logan Legacy Group, Grandville MI (OwnerVille office address, harvested 2026-10-20); #logan-legacy-sales
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
     "tre": "houston",           # Mission III Management, Houston -- #mission-iii-sales (2026-10-07)
