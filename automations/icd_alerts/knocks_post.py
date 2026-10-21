@@ -83,7 +83,7 @@ SLOT_GRACE_MIN = 40
 # custom 3 times") is the form's 2:00/5:15/9:00, but here rather than
 # cadence 0 on the sheet: her day ends 6:30 PM, and a sheet slot more than
 # RECAP_AFTER_MIN past the bell never posts, so 9:00 would silently vanish.
-# Her LEADERS text stays on its own every-30.
+# Her LEADERS text follows the same 3 times since 2026-10-21.
 SET_TIMES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     "carlos": {
         "slack": {"weekday": ["12:00", "14:00", "16:00", "18:00"],
@@ -93,6 +93,11 @@ SET_TIMES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     "valeria": {
         "slack": {"weekday": ["14:00", "17:15", "21:00"],
                   "sat": ["14:00", "17:15"]},
+        # Her LEADERS text on the SAME 3 times (2026-10-21, her ask via Raf:
+        # "still getting the dispos and knocks every 15 minutes" -- the 10/12
+        # change covered Slack only and left the text every-30).
+        "text": {"weekday": ["14:00", "17:15", "21:00"],
+                 "sat": ["14:00", "17:15"]},
     },
 }
 # Offices whose board is NOT texted at all. Slack is untouched.

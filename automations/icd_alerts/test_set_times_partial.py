@@ -1,7 +1,7 @@
 """SET_TIMES for one kind leaves the other kind on its own cadence.
 
-Valeria asked for her knocks board on the 3 set times (2026-10-12) but her
-LEADERS text is every 30. Before this, an office in SET_TIMES with no "text"
+Valeria asked for her knocks board on the 3 set times (2026-10-12); since
+2026-10-21 her LEADERS text follows the same 3 times. Before this, an office in SET_TIMES with no "text"
 entry got `times: []` on its text -- due at no time, so the texts stopped
 with nothing saying so.
 
@@ -27,11 +27,13 @@ class SetTimesPartial(unittest.TestCase):
         slack = next(d for d in out if not P.is_text_dest(d["channel_id"]))
         self.assertEqual(slack["times"], ["14:00", "17:15", "21:00"])
 
-    def test_valeria_text_keeps_its_cadence(self):
+    def test_valeria_text_on_the_same_three_times(self):
+        """2026-10-21: her LEADERS text matches her Slack, not every-30."""
         out = KP._apply_set_times("valeria", [dict(SLACK), dict(TEXT)], TUE)
         text = next(d for d in out if P.is_text_dest(d["channel_id"]))
-        self.assertNotIn("times", text)
-        self.assertEqual(text["cadence_min"], 30)
+        self.assertEqual(text["times"], ["14:00", "17:15", "21:00"])
+        self.assertFalse(KP.is_due(text, None, TUE.replace(hour=12, minute=30)))
+        self.assertTrue(KP.is_due(text, None, TUE.replace(hour=14, minute=5)))
 
     def test_nine_pm_is_due_after_her_bell(self):
         out = KP._apply_set_times("valeria", [dict(SLACK)], TUE)
