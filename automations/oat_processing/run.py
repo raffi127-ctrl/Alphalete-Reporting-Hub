@@ -713,6 +713,8 @@ def _try_overwrite_send(page) -> bool:
     sendable and 16 of those needed exactly this button — i.e. this one mismatch
     was the difference between a person reaching the call list and being written
     off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
+    # Carlos 2026-10-20: the send boxes are off before ANY send click.
+    untick_send_boxes(page, live=True)
     # WAIT for the control by scanning ELEMENTS, never body text. The control is
     # a <button> in some offices but an <input> in others (Haytham's, found
     # 2026-08-29 via a full control dump) — and an input's label lives in its
@@ -803,12 +805,97 @@ def _flag_retext(a: Applicant, days) -> None:
                          days if days is not None else ""])
 
 
+# THE TWO "SEND" BOXES ON THE PANEL (Carlos, 2026-10-20). Next to Call Status
+# the One App at a time panel has a Send Email and a Send SMS checkbox. The
+# office setting that should keep them off does not save, so they come up
+# ticked, and Carlos wants them OFF on every applicant before Send to AI:
+# "those two boxes need to get unchecked and then it needs to do everything
+# else". Found by field name OR by the words beside them, in every frame --
+# the panel's DOM differs office to office (README ledger, 8/29). A box we
+# cannot find is logged, not fatal: unticking changes nothing else.
+_SEND_BOX_NAMES = ("sendEmail", "sendSMS")
+_SEND_BOX_LABEL = r"send\s*(e-?mail|sms|text)"
+_SEND_BOX_JS = r"""(arg) => {
+  const re = new RegExp(arg.label, 'i');
+  const out = [];
+  // The label is the text of the SMALLEST box around this checkbox that holds
+  // no other checkbox -- its own row/cell -- never the whole panel, or every
+  // checkbox on the panel would read as "Send Email".
+  const near = el => {
+    let n = el.parentElement;
+    for (let i = 0; i < 4 && n; i++, n = n.parentElement) {
+      if (n.querySelectorAll("input[type=checkbox]").length > 1) break;
+      const t = (n.innerText || n.textContent || '').replace(/\s+/g, ' ');
+      if (t.length < 80 && re.test(t)) return t.trim().slice(0, 40);
+    }
+    const id = el.id && document.querySelector(`label[for='${el.id}']`);
+    return id && re.test(id.innerText || '') ? id.innerText.trim() : '';
+  };
+  document.querySelectorAll("input[type=checkbox]").forEach((el, i) => {
+    const byName = arg.names.includes(el.name || '') || arg.names.includes(el.id || '');
+    const label = near(el);
+    if (!byName && !label) return;
+    if (!el.dataset.lucySendBox) el.dataset.lucySendBox = 'b' + i;
+    out.push({key: el.dataset.lucySendBox, name: el.name || el.id || '',
+              label: label, checked: !!el.checked});
+  });
+  return out;
+}"""
+
+
+def untick_send_boxes(page, live: bool) -> str:
+    """Untick the panel's Send Email / Send SMS boxes. Returns a short note
+    for the log ('unticked email+sms', 'already off', 'not found').
+
+    A REAL CLICK, not `checked = false`: the panel's own handlers have to see
+    the change, or the box looks off and the form still sends as ticked."""
+    found, changed = [], []
+    try:
+        frames = list(page.frames)
+    except Exception:  # noqa: BLE001 -- never the reason a send is skipped
+        frames = []
+    for fr in frames:
+        try:
+            boxes = fr.evaluate(_SEND_BOX_JS, {"names": list(_SEND_BOX_NAMES),
+                                               "label": _SEND_BOX_LABEL})
+        except Exception:  # noqa: BLE001 -- a cross-origin frame
+            continue
+        for b in boxes or []:
+            tag = b.get("name") or b.get("label") or "?"
+            found.append(tag)
+            if not b.get("checked"):
+                continue
+            if not live:
+                changed.append(tag + " (would untick)")
+                continue
+            loc = fr.locator("[data-lucy-send-box='%s']" % b["key"])
+            try:
+                loc.first.uncheck(timeout=4000)
+                changed.append(tag)
+            except Exception as e:  # noqa: BLE001
+                try:
+                    loc.first.click(timeout=3000)
+                    changed.append(tag)
+                except Exception:  # noqa: BLE001
+                    _log(f"    [send boxes] could not untick {tag!r}: "
+                         f"{type(e).__name__}")
+    if not found:
+        note = "send boxes not found on the panel"
+    elif changed:
+        note = "unticked " + ", ".join(changed)
+    else:
+        note = "send boxes already off (%s)" % ", ".join(found)
+    _log("    [send boxes] " + note)
+    return note
+
+
 def do_send_ai(page, a: Applicant, live: bool) -> str:
     """GOAL = get to AI. Attempt Send, then handle the ATS's post-click reveal:
     SEND > overwrite+SEND > (>1wk) flag re-text > auto-remove. Returns an outcome
     tag for the run summary."""
     _would(live, "click 'Send to AI'")
     if not live:
+        untick_send_boxes(page, live=False)
         return "dry"
     guard = read_current_applicant(page)
     if _has_dup_signal(guard):
@@ -816,6 +903,7 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         return _handle_visible_dup(page, guard, live)
     if not _guard_office_now(page, "Send to AI"):
         return _office_guard_outcome()
+    untick_send_boxes(page, live=True)
     if not _click_first(page, ["Send to AI", "Send To AI"]):
         _log("    'Send to AI' button not found — skipped")
         return "no_button"
@@ -1518,6 +1606,7 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
             if not _guard_office_now(page, "Send to AI"):
                 _flag_retext(a, days)
                 return "flag_retext"
+            untick_send_boxes(page, live=True)
             _click_first(page, ["Send to AI", "Send To AI"], timeout=6000)
             # Wait for a DEFINITE outcome — refusal panel, or the applicant gone
             # from the slot. One 2.5s snapshot saw neither and produced both
