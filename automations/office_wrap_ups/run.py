@@ -36,34 +36,80 @@ from automations.rc_contact_sync_raf.run import (
 REPORT_ID = "office_wrap_ups"
 
 
+def _crossws_client(token_file: str):
+    """A slack_sdk client for an office in a different Slack workspace, built
+    from its bot token at ~/.config/recruiting-report/<token_file> — the same
+    file office_metrics.runner uses for trang. None if the token isn't here."""
+    from pathlib import Path
+    tok_path = Path.home() / ".config" / "recruiting-report" / token_file
+    if not tok_path.exists():
+        return None
+    import ssl
+    import certifi
+    from slack_sdk import WebClient
+    tok = tok_path.read_text(encoding="utf-8-sig").strip()
+    return WebClient(token=tok,
+                     ssl=ssl.create_default_context(cafile=certifi.where()))
+
+
+def _header_text(title: str, day: dt.date) -> str:
+    """The bolded, dated header, matching slack_metrics_post.ensure_named_thread."""
+    try:
+        from automations.shared.slack_metrics_post import _ordinal
+        daynum = _ordinal(day.day)
+    except Exception:                                      # noqa: BLE001
+        daynum = str(day.day)
+    return "*%s — %s %s %d*" % (title, day.strftime("%B"), daynum, day.year)
+
+
 def post_office(profile: Dict[str, str], day: dt.date,
                 missing: List[Dict[str, str]], total: int,
                 *, dry_run: bool, log=print) -> str:
-    """Header + threaded reply to one office's channel. Returns a status word."""
+    """Header + threaded reply to one office's channel. Returns a status word.
+    Same-workspace offices go through slack_metrics_post (default AO token); an
+    office in another workspace (Trang → FRESH SUCCESS) posts with its own bot
+    token, the same file office_metrics uses."""
     from automations.shared import slack_metrics_post as smp
 
     title = C.SLACK_HEADER
     body = missing_names_reply(missing, total)
     chan = profile.get("channel_id") or ""
     label = profile.get("channel_name") or profile["key"]
+    token_file = profile.get("slack_token_file") or ""
 
-    if profile.get("slack_token_file"):
-        # Trang's #freshsuccess-all-leaders is a different Slack workspace and
-        # needs that workspace's bot token. Not wired yet — skip loudly rather
-        # than fail or post to the wrong place.
-        log("  [%s] cross-workspace channel (%s, token %s) — not wired yet, "
-            "skipped" % (profile["key"], label, profile["slack_token_file"]))
-        return "skipped-crossws"
     if not chan:
         log("  [%s] no channel_id in the roster — skipped" % profile["key"])
         return "no-channel"
 
     if dry_run:
         pretty = "\n".join("      " + ln for ln in body.split("\n"))
-        log("  [dry-run] %s would post to %s:\n    header: %s — %s\n    reply:\n%s"
-            % (profile["key"], label, title, day, pretty))
+        log("  [dry-run] %s would post to %s%s:\n    header: %s — %s\n    reply:\n%s"
+            % (profile["key"], label, " (cross-ws)" if token_file else "",
+               title, day, pretty))
         return "dry-run"
+
     try:
+        # --- cross-workspace office (its own bot token) ---
+        if token_file:
+            client = _crossws_client(token_file)
+            if client is None:
+                log("  [%s] cross-ws token %s not on this machine — skipped"
+                    % (profile["key"], token_file))
+                return "no-token"
+            ts = C.saved_thread_ts(day, chan)
+            if not ts:
+                head = client.chat_postMessage(channel=chan,
+                                               text=_header_text(title, day))
+                ts = head.get("ts")
+                if not ts:
+                    raise RuntimeError("no ts from cross-ws header: %s" % head)
+                C.save_thread_ts(day, chan, ts)
+            res = client.chat_postMessage(channel=chan, thread_ts=ts, text=body)
+            log("  posted %s -> %s (cross-ws, reply ts=%s)"
+                % (profile["key"], label, res.get("ts")))
+            return "ok"
+
+        # --- same-workspace office (default AO token via smp) ---
         ts = C.saved_thread_ts(day, chan)
         if not ts:
             head = smp.ensure_named_thread(title, day, channel_id=chan)
