@@ -297,7 +297,9 @@ READONLY_ACTIONS = {"push_appstream_fleet",
                     "focus_dm_check",
                     # Messages lookups: they read the chat list and send nothing.
                     "find_group", "group_members", "text_resolve",
-                    "text_replies", "logdump"}
+                    "text_replies", "logdump",
+                    # Looks at a peer over the LAN; only sends a WoL packet.
+                    "peer_probe"}
 
 # --- lanes --------------------------------------------------------------------
 # The queue is ONE serial worker, so a 2-second read waits behind whatever report
@@ -2667,6 +2669,86 @@ def _action_ping(args: str) -> tuple[bool, str]:
     queue. No side effects; used to verify the deploy."""
     import socket
     return True, f"pong from {socket.gethostname()} @ {_now()}"
+
+
+def _action_peer_probe(args: str) -> tuple[bool, str]:
+    """From THIS box, look at another Lucy over the office LAN: is it there?
+
+    `peer_probe "Lucy 1" [wake]`. Built 2026-10-20 when Lucy 1 went dark at
+    17:56 with nobody in the office and Megan off the LAN: every Lucy-1 tool
+    rides Lucy 1's own queue, so a dark Lucy 1 can only be seen from a peer.
+    Reports name resolution, ping, SSH port, and the ARP (MAC) entry — which
+    together separate asleep (ARP/Bonjour, no ping) from off/unplugged
+    (nothing) from up-but-no-internet (ping + :22 answer). `wake` also sends a
+    Wake-on-LAN magic packet to the MAC (Mac minis honour it with "Wake for
+    network access" on). Read-only otherwise; nothing on the peer is changed."""
+    import re as _re
+    import socket
+    parts = shlex.split(args or "")
+    wake = any(p.lower() == "wake" for p in parts)
+    name = " ".join(p for p in parts if p.lower() != "wake") or "Lucy 1"
+    from automations.shared import fleet as _fleet
+    hosts = _fleet.HOSTNAMES.get(name)
+    if not hosts:
+        return False, f"unknown machine {name!r} — one of {', '.join(_fleet.RUNNERS)}"
+    host = hosts[0]
+    out = [f"{name} ({host}) as seen from {socket.gethostname()} @ {_now()}:"]
+    ip = None
+    try:
+        ip = socket.gethostbyname(host)
+        out.append(f"  resolves → {ip}")
+    except OSError as e:
+        out.append(f"  does NOT resolve ({e}) — no Bonjour answer on this LAN")
+    ping_ok = port_ok = False
+    if ip:
+        r = subprocess.run(["ping", "-c", "3", "-t", "6", ip],
+                           capture_output=True, text=True)
+        ping_ok = r.returncode == 0
+        tail = (r.stdout.strip().splitlines() or [""])[-2:]
+        out.append(f"  ping: {'ANSWERS' if ping_ok else 'no answer'} · {' / '.join(tail)}")
+        try:
+            with socket.create_connection((ip, 22), timeout=5):
+                port_ok = True
+        except OSError as e:
+            out.append(f"  ssh port 22: closed/unreachable ({type(e).__name__})")
+        else:
+            out.append("  ssh port 22: OPEN (macOS is awake)")
+    mac = None
+    r = subprocess.run(["arp", "-a"], capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        if (ip and f"({ip})" in line) or host.split(".")[0].lower() in line.lower():
+            m = _re.search(r" at ([0-9a-f:]{11,17}) ", line, _re.I)
+            if m and "incomplete" not in line:
+                mac = m.group(1)
+                out.append(f"  arp: {line.strip()}")
+                break
+    if not mac:
+        out.append("  arp: no MAC cached for it")
+    if ping_ok and port_ok:
+        out.append("VERDICT: machine is UP on the LAN — its jobs are dead or it "
+                   "has no internet (Sheets/Slack unreachable).")
+    elif ip or mac:
+        out.append("VERDICT: on the network but not answering — most likely ASLEEP.")
+    else:
+        out.append("VERDICT: invisible on the LAN — powered off, unplugged, or "
+                   "off the network (or this box is on a different LAN).")
+    if wake:
+        if not mac:
+            out.append("wake: skipped — no MAC address known to aim the packet at")
+        else:
+            try:
+                mac_hex = "".join(x.zfill(2) for x in mac.split(":"))
+                pkt = b"\xff" * 6 + bytes.fromhex(mac_hex) * 16
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                    for port in (9, 7):
+                        s.sendto(pkt, ("255.255.255.255", port))
+                        if ip:
+                            s.sendto(pkt, (ip, port))
+                out.append(f"wake: magic packet sent to {mac_hex} — re-probe in ~1 min")
+            except OSError as e:
+                out.append(f"wake: send failed ({e})")
+    return True, "\n".join(out)
 
 
 def _osascript(script: str, timeout: int = 60) -> tuple[bool, str]:
@@ -8939,6 +9021,7 @@ def _action_set_autorun_cap(args: str) -> tuple[bool, str]:
 
 ACTIONS = {
     "ping": _action_ping,
+    "peer_probe": _action_peer_probe,
     "set_autorun_cap": _action_set_autorun_cap,
     "messages_diag": _action_messages_diag,
     "find_group": _action_find_group,
@@ -9734,6 +9817,9 @@ def print_help() -> None:
         "                            delete the leftover .ov_login_test profile\n"
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy diag                 machine health: sleep, agents, session, disk\n"
+        "  lucy peer_probe \"Lucy 1\" [wake]\n"
+        "                            from ANOTHER Lucy: is that machine asleep,\n"
+        "                            off, or up? `wake` sends a network wake-up\n"
         "  lucy set_sleep 1|0        prevent (1) / allow (0) sleep (needs NOPASSWD pmset)\n"
         "  lucy reseed_appstream     mint a fresh AppStream session (unattended)\n"
         "  lucy watch_test           send a test of the 6pm session-expiry Slack ping\n"
