@@ -33,9 +33,12 @@ every Indeed resume it reads. Left alone, that is the "takes up the screen" Carl
 Hidden, Chrome still runs timers at full speed and takes clicks (measured: 30
 of 30 ticks, click registered), because background throttling is switched off.
 
-TO WATCH IT, click Lucy's Chrome in the Dock / taskbar. The guard only acts
-right after Lucy herself opened something, so a person bringing it forward
-is left alone.
+IT STAYS HIDDEN FOR THE WHOLE WALK (Megan 2026-10-21: "we want it running in
+the background"). Every resume read brings a tab to the front, so the guard
+hides Lucy's Chrome all walk long, not only after she opens a tab -- which
+also means it cannot be watched mid-walk. The one exception: when Indeed's
+"Verify you are human" box walls the walk, the guard stands down so a person
+can click Lucy's Chrome in the Dock / taskbar and tick it.
 
 THE OFFICE'S OWN LUCY RESUME LOGIN (Megan, 2026-10-20), signed in by us with
 the 30s waits that clear the security box (resources/lucy-login-standard.md
@@ -340,13 +343,24 @@ def minimize(ctx, page) -> None:
 class _FocusGuard:
     """Mac only: give focus back when Lucy's Chrome takes it by itself.
 
-    ONLY right after Lucy opened something (expect()), so a person clicking
-    her Chrome in the Dock to watch is not fought. Polls only inside that
-    window, so it costs nothing the rest of the time.
+    Right after Lucy opened something (expect()), and for the WHOLE walk once
+    hold() is called. The 4-second windows alone let most of the walk through
+    (Carlos, 2026-10-21: "for sure takes up the computer"): every resume read
+    calls bring_to_front twice -- the Indeed tab forward, then the queue tab
+    back -- and each one pulls Chrome in front of whatever he was doing,
+    outside any window. So during a walk it hides her Chrome every time.
+
+    STANDS DOWN when a person is needed: once Indeed's "verify you are human"
+    box walls the walk (stand_down() turns true), Chrome is left alone so
+    somebody can bring it forward and tick the box.
     """
 
     WINDOW_SECONDS = 4.0
     POLL_SECONDS = 0.1
+    # Each poll spawns lsappinfo twice. Fine for 4 seconds; for a 15-minute
+    # held walk it is CPU the person feels, so a held guard polls slower --
+    # Chrome can show for up to a quarter second before it is hidden.
+    HELD_POLL_SECONDS = 0.25
 
     def __init__(self):
         import threading
@@ -354,6 +368,9 @@ class _FocusGuard:
         self._pids = set()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._held = False
+        self._stand_down = None
+        self.stood_down = False
         self.hidden = 0
 
     def start(self):
@@ -368,10 +385,26 @@ class _FocusGuard:
         self._pids = set(_lucy_pids())
         self._until = max(self._until, time.time() + seconds)
 
+    def hold(self, stand_down=None) -> None:
+        """Keep Chrome hidden until stop(), or until stand_down() is true."""
+        self._pids = set(_lucy_pids())
+        self._stand_down = stand_down
+        self._held = True
+
+    def _active(self) -> bool:
+        if self._held and self._stand_down is not None:
+            try:
+                if self._stand_down():
+                    self._held = False
+                    self.stood_down = True
+            except Exception:  # noqa: BLE001
+                pass
+        return self._held or time.time() < self._until
+
     def _loop(self):
         theirs = 0
         while not self._stop.is_set():
-            if time.time() < self._until:
+            if self._active():
                 pid = _front_pid()
                 if pid and (pid in self._pids or pid in _lucy_pids()):
                     # HIDE FIRST, THEN HAND BACK. Measured 2026-10-05:
@@ -386,7 +419,8 @@ class _FocusGuard:
                     self.hidden += 1
                 elif pid:
                     theirs = pid
-            self._stop.wait(self.POLL_SECONDS)
+            self._stop.wait(self.HELD_POLL_SECONDS if self._held
+                            else self.POLL_SECONDS)
 
 
 def _lucy_pids():
@@ -784,6 +818,38 @@ def _pin_office(seen: Optional[str], record: dict) -> "tuple[bool, str]":
     return True, ""
 
 
+def _keep_minimized(ctx):
+    """Windows: put Lucy's Chrome back in the taskbar every time the walk
+    brings a tab to the front (the Mac guard does the same job by hiding).
+    Patched on the Page class for THIS process only -- the office push is
+    the only thing running in it. Returns the undo."""
+    try:
+        from patchright.sync_api._generated import Page
+    except Exception:  # noqa: BLE001
+        return lambda: None
+    original = Page.bring_to_front
+
+    def bring_to_front(self, *a, **k):
+        out = original(self, *a, **k)
+        try:
+            from automations.oat_processing import run as OAT
+            if not OAT._cf_walled():     # a person may need it now
+                minimize(ctx, self)
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+    Page.bring_to_front = bring_to_front
+    return lambda: setattr(Page, "bring_to_front", original)
+
+
+def _walled() -> bool:
+    try:
+        from automations.oat_processing import run as OAT
+        return bool(OAT._cf_walled())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _walk(page, live: bool, record: dict) -> dict:
     """One walk of the office's One App at a time queue. Returns
     {'reached', 'office', 'rc', 'sent', 'walled', 'why'}."""
@@ -795,13 +861,34 @@ def _walk(page, live: bool, record: dict) -> dict:
     # around all day. So switch to THIS office first, with the Lucys' own
     # switch. An office-only login has no switcher (#searchMC) and skips this.
     # The banner check below still decides; the switch only makes it pass.
+    #
+    # BEST EFFORT, AND NEVER WHEN ALREADY THERE (Carlos's computer, 10/21
+    # 7:53-9:45am: five runs crashed in _switch_office waiting for "11580" in
+    # the office search list). A relay stays on ONE office, so after its first
+    # switch every run starts already on it, and the list does not offer it
+    # back. Lucy 2 never met this: she moves between offices every tick. So:
+    # skip the switch when the console title already names the office, and a
+    # switch that fails is logged, not fatal -- the Office ID banner on the
+    # One App at a time page (_pin_office, below) is what decides.
     listed = _listed(record)
     if listed and page.locator(CONSOLE).count() > 0:
-        from automations.recruiting_report import fetch_office as FO
-        if not FO._switch_office(page, listed[0], ""):
-            return {"reached": True, "office": None, "rc": 2,
-                    "why": "no Office ID: could not switch AppStream to "
-                           "office %s" % listed[0]}
+        try:
+            title = page.title() or ""
+        except Exception:  # noqa: BLE001
+            title = ""
+        if "(%s)" % listed[0] in title:
+            _log("already on office %s -- no switch needed" % listed[0])
+        else:
+            from automations.recruiting_report import fetch_office as FO
+            try:
+                ok = FO._switch_office(page, listed[0], "")
+            except Exception as e:  # noqa: BLE001
+                ok = False
+                _log("office switch raised %s -- the Office ID check decides"
+                     % type(e).__name__)
+            if not ok:
+                _log("could not switch to office %s; checking which office "
+                     "the queue shows" % listed[0])
     if not OAT.open_oat(page):
         return {"reached": False, "why": "could not open One App at a time"}
     page.wait_for_timeout(1500)
@@ -859,7 +946,19 @@ def push(live: bool, scheduled: bool = False) -> int:
                                      "machine; resumes are not being pushed",
                              LAST_SIGNIN_PAGE)
                 return 1
-            out = _walk(page, live, record)
+            # IN THE BACKGROUND FOR THE WHOLE WALK (Megan 2026-10-21: "we
+            # want it running in the background"), not only the moments
+            # after a new tab opens.
+            undo = lambda: None   # noqa: E731
+            if scheduled:
+                if guard:
+                    guard.hold(stand_down=_walled)
+                if IS_WINDOWS:
+                    undo = _keep_minimized(ctx)
+            try:
+                out = _walk(page, live, record)
+            finally:
+                undo()
             if not out.get("reached"):
                 result = "no_queue_page"
                 _report_once(result, "the resume push could not open One App "

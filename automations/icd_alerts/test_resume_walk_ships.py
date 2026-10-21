@@ -201,6 +201,7 @@ class AManyOfficeLoginSwitchesFirst(unittest.TestCase):
     def _page(self, has_switcher):
         page = mock.MagicMock()
         page.locator.return_value.count.return_value = 1 if has_switcher else 0
+        page.title.return_value = "Somebody Else (23467) -"
         return page
 
     def test_switches_to_the_stated_office(self):
@@ -211,16 +212,31 @@ class AManyOfficeLoginSwitchesFirst(unittest.TestCase):
             RP._walk(self._page(True), False, {"office_key": "carlos"})
         self.assertEqual(sw.call_args.args[1], "11580")
 
-    def test_a_failed_switch_reads_nobody(self):
+    def test_a_failed_switch_is_not_fatal_the_banner_decides(self):
+        # 10/21: the switch crashed five runs on Carlos's computer. Now a
+        # failed or raising switch goes on to the banner check -- which
+        # refuses unless the queue really is 11580.
         from automations.recruiting_report import fetch_office as FO
         from automations.oat_processing import run as OAT
-        with mock.patch.object(FO, "_switch_office", return_value=False), \
-             mock.patch.object(OAT, "open_oat") as oo, \
-             mock.patch.object(OAT, "run_walk") as rw:
-            out = RP._walk(self._page(True), True, {"office_key": "carlos"})
-        oo.assert_not_called()
-        rw.assert_not_called()
-        self.assertEqual(out["rc"], 2)
+        for outcome in (dict(return_value=False),
+                        dict(side_effect=TimeoutError("row never showed"))):
+            with mock.patch.object(FO, "_switch_office", **outcome), \
+                 mock.patch.object(OAT, "open_oat", return_value=True), \
+                 mock.patch.object(OAT, "office_on_page", return_value="23467"), \
+                 mock.patch.object(OAT, "run_walk") as rw:
+                out = RP._walk(self._page(True), True, {"office_key": "carlos"})
+            rw.assert_not_called()          # wrong office: nobody touched
+            self.assertEqual(out["rc"], 2)
+
+    def test_already_on_the_office_skips_the_switch(self):
+        from automations.recruiting_report import fetch_office as FO
+        from automations.oat_processing import run as OAT
+        page = self._page(True)
+        page.title.return_value = "Carlos Hidalgo Office (11580) -"
+        with mock.patch.object(FO, "_switch_office") as sw, \
+             mock.patch.object(OAT, "open_oat", return_value=False):
+            RP._walk(page, False, {"office_key": "carlos"})
+        sw.assert_not_called()
 
     def test_an_office_only_login_does_not_switch(self):
         from automations.recruiting_report import fetch_office as FO
@@ -233,6 +249,68 @@ class AManyOfficeLoginSwitchesFirst(unittest.TestCase):
     def test_the_switch_ships(self):
         self.assertIn("automations/recruiting_report/fetch_office.py",
                       package.AGENT_FILES)
+
+
+class ItStaysInTheBackground(unittest.TestCase):
+    """Megan 2026-10-21: "we want it running in the background". The walk
+    brings tabs to the front on every resume read; Lucy's Chrome must not
+    follow them onto the screen -- unless Indeed needs a person."""
+
+    def test_a_held_guard_is_active_the_whole_time(self):
+        g = RP._FocusGuard()
+        self.assertFalse(g._active())
+        g.hold()
+        self.assertTrue(g._active())
+
+    def test_it_stands_down_when_indeed_walls_the_walk(self):
+        g = RP._FocusGuard()
+        walled = {"now": False}
+        g.hold(stand_down=lambda: walled["now"])
+        self.assertTrue(g._active())
+        walled["now"] = True
+        self.assertFalse(g._active())
+        self.assertTrue(g.stood_down)
+
+    def test_windows_reminimizes_after_bring_to_front(self):
+        from patchright.sync_api._generated import Page
+        original = Page.bring_to_front
+        calls = []
+        with mock.patch.object(Page, "bring_to_front",
+                               lambda self, *a, **k: calls.append("front")), \
+             mock.patch.object(RP, "minimize",
+                               side_effect=lambda c, p: calls.append("min")), \
+             mock.patch.object(RP, "_walled", return_value=False):
+            undo = RP._keep_minimized(object())
+            Page.bring_to_front(object())
+            undo()
+        self.assertEqual(calls, ["front", "min"])
+        self.assertIsNot(Page.bring_to_front, None)
+        self.assertIs(Page.bring_to_front, original)
+
+    def test_a_scheduled_push_holds_the_guard_for_the_walk(self):
+        held = {}
+
+        class G:
+            hidden = 0
+            def start(self): return self
+            def stop(self): pass
+            def hold(self, stand_down=None): held["yes"] = stand_down
+        with mock.patch.object(RP.C, "appstream_creds",
+                               return_value={"username": "u", "password": "p"}), \
+             mock.patch.dict(RP.PUSH_OFFICES, {"drew": ("24680", "dry")}), \
+             mock.patch.object(RP, "push_record",
+                               return_value={"office_key": "drew"}), \
+             mock.patch.object(RP, "_FocusGuard", G), \
+             mock.patch.object(RP, "_connect",
+                               return_value=(None, mock.MagicMock(), object())), \
+             mock.patch.object(RP, "sign_in", return_value=True), \
+             mock.patch.object(RP, "_walk", return_value={
+                 "reached": True, "office": "24680", "rc": 0, "sent": 0}), \
+             mock.patch.object(RP, "_save_state"), \
+             mock.patch.object(RP, "LOCK_PATH", mock.MagicMock()), \
+             mock.patch("patchright.sync_api.sync_playwright"):
+            RP.push(live=False, scheduled=True)
+        self.assertIs(held.get("yes"), RP._walled)
 
 
 class ResumeHelperIsGone(unittest.TestCase):
