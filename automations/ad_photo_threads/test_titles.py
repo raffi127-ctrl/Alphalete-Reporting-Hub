@@ -249,3 +249,15 @@ class TitleOnlyTests(unittest.TestCase):
         self.assertEqual(self.book.display(self.book.find_in_text(
             "Ana Ruiz :white_check_mark: 3 :star: Entry Level Sales Manager ? Denton TX")),
             "Entry Level Sales Manager")
+
+
+class UnbracketTests(unittest.TestCase):
+    """Colten 10/21: brackets typed wrong still find the ad."""
+
+    def test_wrapped_stray_and_unclosed(self):
+        book = TitleBook(["AT&T Sales Agent", "Customer Associate (AT&T)"] * 3)
+        for t, want in (("(AT&T Sales Agent)", "AT&T Sales Agent"),
+                        ("AT&T Sales Agent)", "AT&T Sales Agent"),
+                        ("Customer Associate (AT&T", "Customer Associate (AT&T)"),
+                        ("(Customer Associate (AT&T) )", "Customer Associate (AT&T)")):
+            self.assertEqual(book.resolve(t), norm(want), t)

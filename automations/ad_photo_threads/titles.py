@@ -77,6 +77,37 @@ def pretty(title: str) -> str:
     return t
 
 
+def unbracket(title: str) -> str:
+    """Colten 10/21: brackets typed wrong -- "(AT&T Sales Agent)" wrapped
+    whole, "AT&T Sales Agent)" with a stray ")", "Customer Associate (AT&T"
+    never closed. Only a second try when the title as typed finds no ad, so
+    the keys of threads already open never change."""
+    t = (title or "").strip()
+    while t.startswith("("):
+        depth = 0
+        for i, ch in enumerate(t):
+            depth += {"(": 1, ")": -1}.get(ch, 0)
+            if depth == 0:
+                break
+        if depth == 0 and i == len(t) - 1:
+            t = t[1:-1].strip()
+        else:
+            break
+    out, opened = [], []
+    for ch in t:
+        if ch == ")" and not opened:
+            continue
+        if ch == "(":
+            opened.append(len(out))
+        elif ch == ")":
+            opened.pop()
+        out.append(ch)
+    if opened and opened[0] == 0:
+        out[0] = ""
+        opened = opened[1:]
+    return ("".join(out) + ")" * len(opened)).strip()
+
+
 def _flat(text: str) -> str:
     """`norm` without brackets, for the whole-word phrase match of an office's
     title list ("(Spanish required" cut short still reads as the phrase)."""
@@ -184,7 +215,10 @@ class TitleBook:
     def resolve(self, title: str) -> Optional[str]:
         """The ad key this title belongs to, or None if it can't be told."""
         if not self._only:
-            return self._resolve_ad(title)
+            key = self._resolve_ad(title)
+            if key is None and unbracket(title) != (title or "").strip():
+                key = self._resolve_ad(unbracket(title))
+            return key
         # The phrase in the row itself; else the ad its spelling folds onto
         # (a typo, an alias) -- and that ad's phrase.
         hit = self._only_hit(title)
