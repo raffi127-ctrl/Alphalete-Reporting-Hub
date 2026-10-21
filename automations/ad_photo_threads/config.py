@@ -519,11 +519,17 @@ _TITLE_ONLY = {
         "Outside Sales Representative (Spanish Required)": ["outside sales representative spanish required"],
         "Event Marketing and Sales Assistant (Spanish Required)": ["event marketing and sales assistant"],
         "Entry Level Assistant Manager (Spanish Required)": ["entry level assistant manager"],
-        "AT&T Wireless Associate (Spanish)": ["at&t wireless associate spanish"],
+        # 10/21: Garland also typed without "AT&T" (or as "T&T"). Not a bare
+        # "wireless associate": that would pull in the Bilingual Euless ad.
+        "AT&T Wireless Associate (Spanish)": ["at&t wireless associate spanish",
+                                              "wireless associate spanish"],
         "Entry Level Sales Manager": ["entry level sales manager"],
         "Entry Level Account Manager (Spanish Required)": ["entry level account manager"],
         # Maddie 10/21: the Dallas + Frisco ad (typed in the sheet since 10/7).
         "AT&T Retail Representative": ["at&t retail representative"],
+        # Carlos 10/21: the Denton ad (no "Spanish"), typed since 10/8; the
+        # "(Spanish Required)" rows keep their own thread (longest phrase wins).
+        "AT&T Sales Representative": ["at&t sales representative"],
     },
 }
 

@@ -209,6 +209,24 @@ class TitleOnlyTests(unittest.TestCase):
         self.assertEqual(len(keys), 1)
         self.assertEqual(book.display(keys.pop()), "AT&T Retail Representative")
 
+    def test_khalil_sales_rep_denton_apart_from_spanish_required(self):
+        # Carlos 10/21: Denton (no "Spanish") had no thread.
+        from automations.ad_photo_threads import config
+        book = TitleBook([], only=config._TITLE_ONLY["khalil"])
+        d = book.display
+        self.assertEqual(d(book.resolve("AT&T Sales Representative, Denton, TX.")),
+                         "AT&T Sales Representative")
+        self.assertEqual(d(book.resolve("AT&T Sales Representative ? Denton TX ? Everforward Management")),
+                         "AT&T Sales Representative")
+        self.assertEqual(d(book.resolve("AT&T sales representative (Spanish required)? Duncanville TX.")),
+                         "AT&T Sales Representative (Spanish Required)")
+        for t in ("Wireless Associate (Spanish Required), Garland, TX",
+                  "T&T Wireless Associate (Spanish Required), Garland, TX."):
+            self.assertEqual(d(book.resolve(t)), "AT&T Wireless Associate (Spanish)")
+        self.assertIsNone(book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX"))
+        self.assertEqual(d(book.resolve("Wireless Service Associate (Spanish Needed)")),
+                         "Wireless Service Associate (Spanish Needed)")
+
     def test_off_list_title_gets_no_thread(self):
         self.assertIsNone(self.book.resolve("AT&T Account Representative, Carrollton, TX"))
         self.assertIsNone(self.book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX"))
