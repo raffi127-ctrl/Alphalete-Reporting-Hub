@@ -104,10 +104,13 @@ def campaign_message(adds: List[dict], today: dt.date) -> str:
                           f"{'s' if a['units'] != 1 else ''} this week")
         if not a.get("org_head"):
             detail.append("no Org Head on the bank row — set it")
+        if a.get("headcount") in ("failed", "no_campaign"):
+            detail.append(":warning: NOT added to Org Active Headcount — add by hand")
         lines.append(f"• *{a['name']}* — {a['campaign']}"
                      + (f" ({' · '.join(detail)})" if detail else ""))
-    lines.append("_Daily breakdown + weekly total apps. They roll into the All "
-                 "Campaigns board on its next run._")
+    lines.append("_Daily breakdown + weekly total apps, plus a row on Org Active "
+                 "Headcount. They roll into the All Campaigns board on its next "
+                 "run._")
     return "\n".join(lines)
 
 

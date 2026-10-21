@@ -42,6 +42,14 @@ judged — its people keep waiting rather than being read as "no sales".
 Someone added to a campaign section this way is picked up by the **All Campaigns
 Org Sales Board** on its next run (its roster sync reads the campaign sections).
 
+The same run also gives them a row on **Org Active Headcount** (Eve 2026-10-20)
+— weekly, daily and delta blocks, with the delta box's Campaign / Org Head set so
+the daily run reads their tracker (`org_active_headcount/roster_add.py`). The day
+cells are left empty and the headcount daily run fills them. Retail Internet has
+no tracker on that tab, so it is skipped and the Slack bullet says "add by hand";
+so does any failure. By hand:
+`python -m automations.org_active_headcount.roster_add "Name" "ATT Fiber Team" "Rafael" --apply`.
+
 ## 2. Captainship side — no bank, but a ✅
 
 Source of truth is **Tableau**, not the VA's board. That board stopped being

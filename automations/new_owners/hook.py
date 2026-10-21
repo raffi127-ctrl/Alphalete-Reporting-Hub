@@ -46,6 +46,27 @@ def _units(pull: dict, metric: str, name: str, aliases, days: set) -> tuple:
     return total, first
 
 
+def _add_to_headcount(ss, name: str, label: str, org_head: str, *,
+                      dry_run: bool, logfn=print) -> dict:
+    """Same day, same person, on the 'Org Active Headcount' tab (Eve 2026-10-20:
+    every new owner goes onto the ORG board, the All Campaigns board AND the
+    Headcount). Advisory: the ORG board row already exists whatever happens
+    here, and a failure comes back as a status the notice spells out."""
+    try:
+        from automations.org_active_headcount import daily as hc_daily
+        from automations.org_active_headcount import roster_add
+        try:
+            hws = ss.get_worksheet_by_id(hc_daily.TAB_GID)
+        except Exception:                                      # noqa: BLE001
+            hws = ss.worksheet(hc_daily.TAB)
+        return roster_add.add_owner(hws, name, label, org_head or "",
+                                    dry_run=dry_run, logfn=logfn)
+    except Exception as e:  # noqa: BLE001 — never takes the board run down
+        logfn(f"  ⚠ headcount add for {name} failed ({type(e).__name__}: "
+              f"{str(e)[:100]}) — add them to 'Org Active Headcount' by hand")
+        return {"status": "failed"}
+
+
 def run(ws, pulls_by_label: Dict[str, tuple], *, today: Optional[dt.date] = None,
         dry_run: bool = False, aliases=None, logfn=print) -> dict:
     """Walk the bank against this run's pulls.
@@ -117,13 +138,20 @@ def run(ws, pulls_by_label: Dict[str, tuple], *, today: Optional[dt.date] = None
                 + f" · daily row {res.get('daily_row')}"
                 + (f", leaderboard row {res.get('leaderboard_row')}"
                    if res.get("leaderboard_row") else ""))
+        hc = _add_to_headcount(ss, r.name, label, r.org_head,
+                               dry_run=dry_run, logfn=logfn)
+        if hc.get("status") == "added":
+            note += f" · Headcount row {hc.get('daily_row')}"
+        elif hc.get("status") not in ("already", "would_add"):
+            note += " · NOT on the Headcount tab — add by hand"
         bank.mark(bws, cmap, r.row, status=bank.ADDED, activated_on=today,
                   notes=note, dry_run=dry_run, logfn=logfn)
         out["added"].append({"name": r.name, "campaign": label,
                              "units": units, "first_day": first,
                              "org_head": r.org_head,
                              "daily_row": res.get("daily_row"),
-                             "leaderboard_row": res.get("leaderboard_row")})
+                             "leaderboard_row": res.get("leaderboard_row"),
+                             "headcount": hc.get("status")})
         if label not in touched:
             touched.append(label)
         if not dry_run:
