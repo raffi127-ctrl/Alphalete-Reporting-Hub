@@ -409,9 +409,11 @@
   },
   {
     "key": "steve",
-    "label": "Steve's Local Office",
+    "label": "#luxe-chat",
     "owner": "Steve McElwee",
-    "channel_ids": ["C0CAWSVQN1H"],
+    "channel_ids": [
+      "C0CAWSVQN1H"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
@@ -423,7 +425,7 @@
       "quantum_fiber",
       "vzftr"
     ],
-    "notes": "wired by hand 2026-10-20; all 9 trackers like hasani/tre; channel_ids filled once his Lucy ECO sign-up names the room."
+    "notes": "wired by hand 2026-10-20; all 9 trackers like hasani/tre; channel #luxe-chat from his Lucy ECO sign-up 2026-10-21."
   },
   {
     "key": "samuel",

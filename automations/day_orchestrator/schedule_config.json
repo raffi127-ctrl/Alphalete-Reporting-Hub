@@ -4300,7 +4300,7 @@
   },
   "office_wrap_ups": {
    "on_scheduler": true,
-   "_note": "Reps-didn't-send-wrap-ups across Raf's captainship offices (automations/office_wrap_ups), off the ORG-WIDE Tableau Order Log (disconnects.pull.fetch_crosstab) — NO per-office SaraPlus logins. Runs on LUCY 4, the box that already pulls the Order Log for every per-office metrics runner and holds the Slack tokens + roster. ARMED --live 2026-10-21 (Dylan) after the aya dry-run verified real Order Log data (5 customers, all messaged). Posts each office's wrap-up status to its own channel (office_metrics.OFFICES) each morning; one shared Dylan RingCentral line (rc_autoread) is the texted check for all. `lucy rerun office_wrap_ups --machine \"Lucy 4\"` re-posts; add `--office <key>` for one office or `--dry-run` to preview. Trang (#freshsuccess-all-leaders) is a different Slack workspace and is skipped until slack-token-freshsuccess is wired into the poster.",
+   "_note": "Reps-didn't-send-wrap-ups across Raf's captainship offices (automations/office_wrap_ups), off the ORG-WIDE Tableau Order Log (disconnects.pull.fetch_crosstab) \u2014 NO per-office SaraPlus logins. Runs on LUCY 4, the box that already pulls the Order Log for every per-office metrics runner and holds the Slack tokens + roster. ARMED --live 2026-10-21 (Dylan) after the aya dry-run verified real Order Log data (5 customers, all messaged). Posts each office's wrap-up status to its own channel (office_metrics.OFFICES) each morning; one shared Dylan RingCentral line (rc_autoread) is the texted check for all. `lucy rerun office_wrap_ups --machine \"Lucy 4\"` re-posts; add `--office <key>` for one office or `--dry-run` to preview. Trang (#freshsuccess-all-leaders) is a different Slack workspace and is skipped until slack-token-freshsuccess is wired into the poster.",
    "display_name": "Office Wrap-Up Check (captainship)",
    "machine": "Lucy 4",
    "source_type": "tableau",
@@ -14860,7 +14860,7 @@
    "order": 26.95,
    "machine": "Lucy 4",
    "on_scheduler": true,
-   "display_name": "Steve's Daily Metrics",
+   "display_name": "Steve's Daily Metrics (luxe-chat)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"
@@ -14893,7 +14893,7 @@
     "report_id": "steve_metrics"
    },
    "_onboarded": true,
-   "_note": "Office metrics for steve (Steve McElwee, Luxe Global Consulting, Inc., OwnerVille 23160). Wired by hand 2026-10-20 (Megan: enrolling in Lucy ECO 10/21 with Eve; dry run first). AT&T D2D like hasani/tre, all 11 boards. OFF until `lucy rerun steve_metrics --dry-run` on Lucy 4 shows data on every board and his ECO sign-up names the channel -- never a blank first post."
+   "_note": "Office metrics for steve (Steve McElwee, Luxe Global Consulting, Inc., OwnerVille 23160). Wired by hand 2026-10-20 (Megan: enrolling in Lucy ECO 10/21 with Eve; dry run first). AT&T D2D like hasani/tre, all 11 boards. SWITCHED ON 2026-10-21: the Lucy 4 dry run (rerun-2026-10-20-191039) showed data on every board and his ECO sign-up named #luxe-chat (C0CAWSVQN1H)."
   },
   "install_wifi_selfheal_agent": {
    "hand_run_only": true,
