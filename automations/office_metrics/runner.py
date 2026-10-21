@@ -341,6 +341,15 @@ def metrics_for(o: Office) -> list[dict]:
     ]
 
 
+def _problems_for(office: str, problems: list) -> list:
+    """The validate() problems that involve `office`: ones it leads ("key: …")
+    or that name it as the other party ("… already used by 'key'")."""
+    k = (office or "").strip().lower()
+    return [p for p in problems
+            if p.lower().startswith(k + ":") or "'%s'" % k in p.lower()
+            or " %s)" % k in p.lower() or " %s," % k in p.lower()]
+
+
 def _metric_cmd(m: dict, *, live: bool) -> list[str]:
     cmd = [sys.executable, "-u", "-m", m["module"], *m["owner_args"]]
     flag = m.get("post_flag") if live else m.get("dry_flag")
@@ -1046,11 +1055,24 @@ def main(argv=None, *, office_key: str | None = None) -> int:
               + ", ".join(f"{o.channel_name} ({k})"
                           for k, o in _off.OFFICES.items()))
         return 0
+    # ONE BAD ROW MUST NOT STOP EVERY OFFICE (2026-10-21). The nightly
+    # enrollment apply re-added Joseph Logan's email beside his Slack channel;
+    # validate() flagged "joseph" and this refused EVERY office's run -- all 24
+    # offices' daily metrics failed for one row. A problem that names a
+    # DIFFERENT office is printed and skipped; only an office the problem
+    # names refuses (a shared channel/view names both offices, so both still
+    # refuse -- the cross-post guard is unchanged).
     if problems:
-        print("✗ REFUSING to run — office table is inconsistent:")
+        mine = _problems_for(args.office, problems) if args.office else problems
+        if mine:
+            print("✗ REFUSING to run — office table is inconsistent:")
+            for p in mine:
+                print(f"   - {p}")
+            return 2
+        print("⚠ office table has problems in OTHER offices (not blocking "
+              "%s):" % args.office)
         for p in problems:
             print(f"   - {p}")
-        return 2
 
     # --all: run every office, in registry order, continue-on-failure. Each
     # office is a FRESH main() call so it gets its own env/pull/manifest exactly
