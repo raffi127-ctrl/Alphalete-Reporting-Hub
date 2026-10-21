@@ -316,8 +316,10 @@ _MORE = [
     # already in the threads (redo_channel keeps them, --since 2026-09-28).
     ("drew", "Drew Tepper", SOUTH_SHORE, " Drew Tepper New", "22583", "Precision Management",
      "C0C532LA6JY", "C0C3XGN1W9G", r"(precision\s*management|drew|tepper).*1st\s*round"),
+    # Samuel 10/21: 1st rounds moved to #samuel-acay-recruiting after 10/16
+    # (#samuel-acays-office-recruiting-23751 C0BHAAAKASJ had 0 posts 10/20).
     ("samuel", "Samuel Acay", SOUTH_SHORE, "Samuel Acay", "23751", "Samuel Acay",
-     "C0BHAAAKASJ", "C0C3G96BU6B", r"first\s*round\s*thread"),
+     "C0C6YEBS550", "C0C3G96BU6B", r"first\s*round\s*thread"),
     ("jose", "Jose Velasquez", SOUTH_SHORE, "José Velasquez", "22434", "Jose Velasquez",
      "C0AU9JBCJGK", "C0C3ZJ7FNDP", r"first\s*round\s*thread"),
     ("colten", "Colten Wright", SOUTH_SHORE, "Colten Wright", "14733", "Colten Wright",
