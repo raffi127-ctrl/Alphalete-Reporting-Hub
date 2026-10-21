@@ -4299,8 +4299,8 @@
    "machine": "Lucy 1"
   },
   "office_wrap_ups": {
-   "on_scheduler": false,
-   "_off_scheduler_note": "Reps-didn't-send-wrap-ups across Raf's captainship offices (automations/office_wrap_ups), off the ORG-WIDE Tableau Order Log (disconnects.pull.fetch_crosstab) — NO per-office SaraPlus logins. Runs on LUCY 4, the box that already pulls the Order Log for every per-office metrics runner and holds the Slack tokens + roster. on_scheduler:false while rolling out. base_args EMPTY = DRY RUN, so `lucy rerun office_wrap_ups --office aya --machine \"Lucy 4\"` previews ONE office and posts nothing; add `--live` (and `--office <key>`) to post for real. Per office it posts to that office's channel (office_metrics.OFFICES); one shared Dylan RingCentral line (rc_autoread) is the texted check for all. Trang is a different Slack workspace and is skipped until its token is wired. ARMING later: base_args --live + a LaunchAgent (or on_scheduler) once a per-office preview is approved.",
+   "on_scheduler": true,
+   "_note": "Reps-didn't-send-wrap-ups across Raf's captainship offices (automations/office_wrap_ups), off the ORG-WIDE Tableau Order Log (disconnects.pull.fetch_crosstab) — NO per-office SaraPlus logins. Runs on LUCY 4, the box that already pulls the Order Log for every per-office metrics runner and holds the Slack tokens + roster. ARMED --live 2026-10-21 (Dylan) after the aya dry-run verified real Order Log data (5 customers, all messaged). Posts each office's wrap-up status to its own channel (office_metrics.OFFICES) each morning; one shared Dylan RingCentral line (rc_autoread) is the texted check for all. `lucy rerun office_wrap_ups --machine \"Lucy 4\"` re-posts; add `--office <key>` for one office or `--dry-run` to preview. Trang (#freshsuccess-all-leaders) is a different Slack workspace and is skipped until slack-token-freshsuccess is wired into the poster.",
    "display_name": "Office Wrap-Up Check (captainship)",
    "machine": "Lucy 4",
    "source_type": "tableau",
@@ -4309,7 +4309,9 @@
    "command": [
     "automations.office_wrap_ups.run"
    ],
-   "base_args": [],
+   "base_args": [
+    "--live"
+   ],
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
