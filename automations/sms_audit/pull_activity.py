@@ -111,8 +111,17 @@ def _scrape(page, day):
         r"""(wanted) => {
              const tbl = [...document.querySelectorAll('table')].find(
                t => t.offsetParent !== null && /Time of Activity/.test(t.innerText));
-             if (!tbl) return {error: 'no grid · page says: ' +
-               (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160)};
+             if (!tbl) {
+               // The top 160 chars of the body are the nav bar (10/21), so
+               // read from the report's own button on, and say whether the
+               // grid exists but is hidden.
+               const txt = (document.body.innerText || '').replace(/\s+/g, ' ');
+               const at = Math.max(0, txt.search(/Get Report/i));
+               const all = [...document.querySelectorAll('table')];
+               const hidden = all.filter(t => /Time of Activity/.test(t.textContent)).length;
+               return {error: 'no grid · tables=' + all.length + ' hidden grid=' +
+                 hidden + ' · after Get Report: ' + txt.slice(at, at + 200).trim()};
+             }
              const trs = [...tbl.querySelectorAll('tr')];
              const head = trs.find(tr => /Time of Activity/.test(tr.innerText));
              if (!head) return {error: 'no header row'};
