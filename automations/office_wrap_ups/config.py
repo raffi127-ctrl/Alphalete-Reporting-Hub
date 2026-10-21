@@ -26,6 +26,18 @@ rc_creds = RAF.rc_creds
 # Same wording as the Raf report (Dylan 2026-10-20).
 SLACK_HEADER = ":telephone_receiver: Reps that didn\'t send wrap ups"
 
+# Tag Dylan at the bottom of every reply so the morning post is readily visible
+# to him (Dylan 2026-10-21). A Slack mention only works with the user's id FROM
+# THAT WORKSPACE, so AO channels use his AO id and a different-workspace office
+# (Trang → FRESH SUCCESS) uses his id there, keyed by the office's token file.
+TAG_USER_ID = "U048V0YA5FC"  # Dylan Twaddle, AO workspace
+TAG_USER_ID_CROSSWS = {
+    # token file -> Dylan's user id in that workspace. He is in FRESH SUCCESS
+    # too (Dylan 2026-10-21) — fill his member id there to tag him in Trang's
+    # #freshsuccess-all-leaders.
+    # "slack-token-freshsuccess": "U_________",
+}
+
 # The offices this report covers, by office_metrics.OFFICES key. Every one is an
 # owner in Raf's captainship. Hammad + Salik share #elite-prime-sales.
 OFFICE_KEYS = ["haytham", "trang", "hammad", "jacob", "joseph", "kash",

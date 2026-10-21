@@ -77,6 +77,14 @@ def post_office(profile: Dict[str, str], day: dt.date,
     label = profile.get("channel_name") or profile["key"]
     token_file = profile.get("slack_token_file") or ""
 
+    # Tag Dylan so the morning post is readily visible to him — using his id
+    # from THIS office's workspace (AO by default, or the cross-ws id keyed by
+    # the token file). Dylan 2026-10-21.
+    tag_id = (C.TAG_USER_ID_CROSSWS.get(token_file) if token_file
+              else getattr(C, "TAG_USER_ID", ""))
+    if tag_id:
+        body = body + "\n\n<@%s>" % tag_id
+
     if not chan:
         log("  [%s] no channel_id in the roster — skipped" % profile["key"])
         return "no-channel"
