@@ -161,6 +161,13 @@ def status_for(units: int, internet: int, wireless: int) -> str:
     return ON_ATT
 
 
+def pretty_name(name: str) -> str:
+    """'NIGEL MARSHALL' -> 'Nigel Marshall' for what people read (Eve,
+    2026-10-21). Only ALL-CAPS words change, so a name already typed as
+    'McElwee' keeps its capitals. Matching still uses the raw name."""
+    return " ".join(w.title() if w.isupper() else w for w in name.split(" "))
+
+
 def build_rows(lumen: Dict[str, dict], fiber: Dict[str, dict], aliases,
                past: Optional[List[Optional[Dict[str, dict]]]] = None,
                mix: Optional[Dict[str, dict]] = None) -> List[dict]:
@@ -223,7 +230,7 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
         on = r["status"] != NOT_YET
         badge = ('<span style="color:%s;font-weight:bold">%s</span>'
                  % ("#1a7f37" if on else "#b35900", html.escape(r["status"])))
-        who = html.escape(r["owner"]) + (
+        who = html.escape(pretty_name(r["owner"])) + (
             '<br><span style="color:#777;font-size:11px">%s</span>'
             % html.escape(r["office"]) if r["office"] else "")
         body.append(
@@ -298,7 +305,7 @@ def sales_board_html(rows: List[dict], days: List[dt.date], today: dt.date,
             cells = "".join("<td %s>%s</td>" % (td, _v(r, d) if d <= today else "")
                             for d in days)
             body.append("<tr><td %s>%s</td>%s<td %s>%d</td>%s</tr>"
-                        % (tdl, html.escape(r["owner"]), cells, tdt,
+                        % (tdl, html.escape(pretty_name(r["owner"])), cells, tdt,
                            sum(_v(r, d) for d in days),
                            _pcells(td, [_p(r, i) for i in range(len(PAST_LABELS))])))
         tot = "".join("<td %s>%s</td>" % (tdt, sum(_v(r, d) for r in rows)

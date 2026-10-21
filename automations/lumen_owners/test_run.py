@@ -132,3 +132,11 @@ class LumenOwnersTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrettyNameTest(unittest.TestCase):
+    def test_caps_become_initial_caps(self):
+        from automations.lumen_owners.run import pretty_name
+        self.assertEqual(pretty_name("NIGEL MARSHALL"), "Nigel Marshall")
+        self.assertEqual(pretty_name("STEVE McElwee"), "Steve McElwee")
+        self.assertEqual(pretty_name("Aaron Nimako"), "Aaron Nimako")

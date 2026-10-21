@@ -35,7 +35,7 @@ KEEP_WEEKS = 14           # history lines older than this are dropped
 METRICS = ("NewInternet", "Total")
 BOXES = (
     # metric, title, product-summary label, units label
-    ("NewInternet", "\U0001F4F6 NEW INTERNET PERFORMANCE", "Fiber - New Internet",
+    ("NewInternet", "\U0001F4F6 NEW INTERNET ONLY PERFORMANCE", "Fiber - New Internet",
      "Fiber - New Internet Units"),
     ("Total", "\U0001F6DC ALL UNITS PERFORMANCE", "Fiber - All Units",
      "Fiber - All Units"),
@@ -45,25 +45,34 @@ DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
 NCOLS = 12                # A..L
 COL_WIDTHS = (24, 240, 96, 96, 96, 96, 96, 96, 96, 125, 93, 93)
 
-# Colours / faces copied from Raf's box on the Org Sales Board (read
-# 2026-10-21 through the API) so the two look like the same report.
+# Layout copied from Raf's box on the Org Sales Board, but in our own
+# colours so nobody mistakes it for his captainship (Eve, 2026-10-21):
+# New Internet = burgundy, All Units = plum, so the two boxes tell apart.
 WHITE, BLACK = "#ffffff", "#000000"
-TITLE_BG, TITLE_FG = "#6fa8dc", "#0b5394"
-TEAM_BG, TEAM_FG = "#cccccc", "#3d85c6"
-SECTION_BG = "#3d85c6"
 HEAD_BG, GT_BG = "#999999", "#666666"
 SHADE = "#f3f3f3"
 NEG_BG, POS_BG = "#e6b8af", "#b6d7a8"
 NEG_GT_FG, POS_GT_FG = "#dd7e6b", "#93c47d"
 WE_BG = "#434343"
-UNITS_BG = "#1a71bf"
-NAME_BG = "#6fa8dc"
 ZEBRA = "#efefef"
-DAY_BG = "#d0e0e3"
-RUN_BG, LAST_BG, PREV_BG = "#3570a5", "#468fd2", "#6fa8dc"
-RUN_TOT_BG, LAST_TOT_BG, PREV_TOT_BG = "#073763", "#1e5180", "#2871b3"
 HDR_LAST_BG, HDR_PREV_BG = "#999999", "#d9d9d9"
-TOTALS_FG = "#00ffff"
+TEAM_BG = "#e8e1e3"
+PALETTES = {
+    "NewInternet": dict(            # muted burgundy
+        title_bg="#c4919b", title_fg="#5e2230", team_fg="#8a3a4c",
+        section="#8a3a4c", units="#7a3343", units_fg="#f2d9de",
+        name="#d7b3ba", day="#f1e4e7",
+        run="#8a3a4c", last="#a65a6b", prev="#c4919b",
+        run_tot="#4a1a26", last_tot="#5e2230", prev_tot="#7a3343",
+        totals_fg="#f2b8c4"),
+    "Total": dict(                  # muted plum
+        title_bg="#a993b8", title_fg="#3f2a52", team_fg="#664a7d",
+        section="#664a7d", units="#57406b", units_fg="#e4d9ee",
+        name="#c8b8d4", day="#ece5f1",
+        run="#664a7d", last="#8569a0", prev="#a993b8",
+        run_tot="#2f1f3d", last_tot="#3f2a52", prev_tot="#57406b",
+        totals_fg="#d4bfe6"),
+}
 DISPLAY = "Alfa Slab One"
 SERIF = "Georgia"
 
@@ -231,6 +240,8 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
          units_label: str, team_title: str) -> Tuple[int, int]:
     """Lay one box (New Internet or All Units) out from g.row down. Returns
     its (first row, last row), 0-based, for the email picture."""
+    from automations.lumen_owners.run import pretty_name
+    p = PALETTES[metric]
     top = g.row
     shown = n["shown"]
 
@@ -241,8 +252,8 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
             g.heights[g.row] = height
         g.skip()
 
-    merged_title(title, _fmt(TITLE_BG, TITLE_FG, DISPLAY, 20), 38)
-    merged_title(team_title, _fmt(TEAM_BG, TEAM_FG, DISPLAY, 20), 34)
+    merged_title(title, _fmt(p["title_bg"], p["title_fg"], DISPLAY, 20), 38)
+    merged_title(team_title, _fmt(TEAM_BG, p["team_fg"], DISPLAY, 20), 34)
     g.skip()
 
     def header(first: str, first_size: int):
@@ -254,7 +265,7 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
 
     # Product Summary - This Week
     merged_title("Product Summary - This Week",
-                 _fmt(SECTION_BG, WHITE, SERIF, 14, True))
+                 _fmt(p["section"], WHITE, SERIF, 14, True))
     header("Product Type", 12)
     team = n["team_days"]
     wtd = sum(v for v, s in zip(team, shown) if s)
@@ -266,7 +277,7 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
 
     # Current vs Prior Weeks. The Grand Total column compares the SAME days
     # (week to date), so a Tuesday is never measured against a full week.
-    merged_title("Current vs Prior Weeks", _fmt(SECTION_BG, WHITE, SERIF, 14, True))
+    merged_title("Current vs Prior Weeks", _fmt(p["section"], WHITE, SERIF, 14, True))
     header("Mon-Sun", 10)
     last, avg = n["last_days"], n["avg_days"]
 
@@ -305,22 +316,22 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
     g.skip()
 
     # CAPTAIN TEAM — one column per week ending, newest first.
-    g.put(g.row, 0, "LUMEN TEAM", _fmt(TEAM_BG, TEAM_FG, DISPLAY, 20))
+    g.put(g.row, 0, "LUMEN TEAM", _fmt(TEAM_BG, p["team_fg"], DISPLAY, 20))
     g.merge(g.row, 0, 2)
     g.heights[g.row] = 34
     for k, we in enumerate(n["wes"]):
         g.put(g.row, 2 + k, "WE %02d.%02d" % (we.month, we.day),
               _fmt(WE_BG, WHITE, SERIF, 11, True))
     g.skip()
-    g.put(g.row, 0, units_label, _fmt(UNITS_BG, WHITE, SERIF, 12, True))
+    g.put(g.row, 0, units_label, _fmt(p["units"], WHITE, SERIF, 12, True))
     g.merge(g.row, 0, 2)
     for k in range(WEEK_COLS):
-        g.put(g.row, 2 + k, "", _fmt(UNITS_BG))
+        g.put(g.row, 2 + k, "", _fmt(p["units"]))
     g.skip()
     for i, (name, totals, _days) in enumerate(n["owners"]):
         bg = WHITE if i % 2 == 0 else ZEBRA
         g.put(g.row, 0, i + 1, _fmt(WHITE, BLACK, "Arial", 10))
-        g.put(g.row, 1, name, _fmt(NAME_BG, BLACK, SERIF, 12, True))
+        g.put(g.row, 1, pretty_name(name), _fmt(p["name"], BLACK, SERIF, 12, True))
         for k, we in enumerate(n["wes"]):
             v = totals[we]
             g.put(g.row, 2 + k, "–" if v is None else v,
@@ -336,7 +347,7 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
 
     # Daily board — owner x Mon-Sun + this week / last week / the week before.
     g.put(g.row, 0, units_label,
-          _fmt(UNITS_BG, "#c9daf8", DISPLAY, 14, wrap=True))
+          _fmt(p["units"], p["units_fg"], DISPLAY, 14, wrap=True))
     g.merge(g.row, 0, 2, rows=2)
     for i, d in enumerate(DAY_NAMES):
         g.put(g.row, 2 + i, d, _fmt(BLACK, WHITE, SERIF, 8, True))
@@ -351,23 +362,23 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
     wes = n["wes"]
     for i, (name, totals, days) in enumerate(n["owners"]):
         g.put(g.row, 0, i + 1, _fmt(WHITE, BLACK, "Arial", 10))
-        g.put(g.row, 1, name, _fmt(NAME_BG, BLACK, SERIF, 12, True))
+        g.put(g.row, 1, pretty_name(name), _fmt(p["name"], BLACK, SERIF, 12, True))
         for k, d in enumerate(n["days"]):
             g.put(g.row, 2 + k, days.get(d, 0) if shown[k] else "",
-                  _fmt(DAY_BG, BLACK, SERIF, 12, True))
-        for c, we, bg, size in ((9, wes[0], RUN_BG, 14), (10, wes[1], LAST_BG, 12),
-                                (11, wes[2], PREV_BG, 12)):
+                  _fmt(p["day"], BLACK, SERIF, 12, True))
+        for c, we, bg, size in ((9, wes[0], p["run"], 14), (10, wes[1], p["last"], 12),
+                                (11, wes[2], p["prev"], 12)):
             v = totals[we]
             g.put(g.row, c, "–" if v is None else v,
                   _fmt(bg, BLACK, SERIF, size, True))
         g.skip()
-    g.put(g.row, 0, "Totals", _fmt(BLACK, TOTALS_FG, SERIF, 12, True))
+    g.put(g.row, 0, "Totals", _fmt(BLACK, p["totals_fg"], SERIF, 12, True))
     g.merge(g.row, 0, 2)
     for k in range(7):
         g.put(g.row, 2 + k, team[k] if shown[k] else "",
               _fmt(BLACK, WHITE, SERIF, 14, True))
-    for c, we, bg, size in ((9, wes[0], RUN_TOT_BG, 14), (10, wes[1], LAST_TOT_BG, 12),
-                            (11, wes[2], PREV_TOT_BG, 12)):
+    for c, we, bg, size in ((9, wes[0], p["run_tot"], 14), (10, wes[1], p["last_tot"], 12),
+                            (11, wes[2], p["prev_tot"], 12)):
         vals = [t[we] for _, t, _ in n["owners"]]
         tot = "–" if any(v is None for v in vals) else sum(vals)
         g.put(g.row, c, tot, _fmt(bg, WHITE, SERIF, size, True))
@@ -500,7 +511,7 @@ def render_boxes(ws, spans: List[Tuple[str, int, int]], out_dir: Path
     captainship drafts' renderer — API token, no Google browser login)."""
     from automations.captainship_drafts import sheet_render as SR
     out = []
-    labels = {"NewInternet": "New Internet Performance",
+    labels = {"NewInternet": "New Internet Only Performance",
               "Total": "All Units Performance"}
     for metric, top, bottom in spans:
         a1 = "'%s'!A%d:L%d" % (ws.title, top + 1, bottom + 1)
