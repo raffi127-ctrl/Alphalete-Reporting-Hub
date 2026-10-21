@@ -1127,12 +1127,13 @@ def render(office: str, monday: dt.date, saturday: dt.date,
         header_before.add(_start)
     cell_bgs = {}
     # Raf's green / gray / red KPIs (2026-10-20) replace the green-only
-    # targets on a board that carries them. Same rows skipped as below.
-    if kpis:
-        _green = {}
-        cell_bgs = knock_kpis.cell_colors(
-            hdr, rows, kpis, WEEKLY_KPI_COLUMNS,
-            set(range(n_top)) | set(section_rows))
+    # targets on EVERY weekly board, whoever calls it (Eve 2026-10-21: "tiene
+    # que aplicar a TODOS los knocks reports"). Same rows skipped as below.
+    kpis = kpis or knock_kpis.load()
+    _green = {}
+    cell_bgs = knock_kpis.cell_colors(
+        hdr, rows, kpis, WEEKLY_KPI_COLUMNS,
+        set(range(n_top)) | set(section_rows))
     for _h, _hit in _green.items():
         if _h not in hdr:
             continue

@@ -1421,15 +1421,17 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
               (COL_FIRST_KNOCK,
                lambda v: (_hhmm_to_min(v) or 10 ** 6) <= _fk_goal)]
     # Raf's green / gray / red KPIs (2026-10-20) REPLACE the green-only
-    # targets on a board that carries them — two schemes on one cell would
-    # each overwrite the other's colour.
-    if kpis:
-        _green = []
-        _cell_bgs.update(knock_kpis.cell_colors(
-            cols, table, kpis,
-            DAILY_KPI_COLUMNS,
-            set(range(len(extra_rows) + 1)) | set(bands),
-            saturday=target.weekday() == 5))
+    # targets on EVERY knocks board — 9 PM, the 2:00 / 5:15 slots, the gap
+    # interval posts, /knocks, the captainship boards — whoever calls it (Eve
+    # 2026-10-21: "tiene que aplicar a TODOS los knocks reports"). Two schemes
+    # on one cell would each overwrite the other's colour.
+    kpis = kpis or knock_kpis.load()
+    _green = []
+    _cell_bgs.update(knock_kpis.cell_colors(
+        cols, table, kpis,
+        DAILY_KPI_COLUMNS,
+        set(range(len(extra_rows) + 1)) | set(bands),
+        saturday=target.weekday() == 5))
     for _col, _hit in _green:
         if _col not in cols:
             continue
@@ -2339,7 +2341,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
 
     `kpis` (optional): Raf's green / gray / red knocking KPIs
     (shared.knock_kpis.for_office), in place of the green-only targets. None
-    draws exactly as before.
+    reads the same scales itself — every board carries them.
     """
     shape = knocks_shape(rows)
     if shape == SHAPE_GAPS_ONLY:
