@@ -341,6 +341,26 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
             RP._note_wall(True)
         self.assertEqual(self.filed, [("signin-indeed", "carlos")])
 
+    def test_clearing_after_an_alert_files_the_proof(self):
+        for _ in range(RP.WALL_RUNS):
+            RP._note_wall(True)
+        RP._note_wall(False)
+        self.assertEqual(self.filed, [("signin-indeed", "carlos"),
+                                      ("probe-indeed-clear", "carlos")])
+
+    def test_clearing_without_an_alert_files_nothing(self):
+        RP._note_wall(True)
+        RP._note_wall(False)
+        self.assertEqual(self.filed, [])
+
+    def test_the_good_to_go_is_super_simple(self):
+        from automations.icd_alerts import post as P
+        spec = P.SYSTEMS["indeed"]
+        text = spec["good"] % ("Carlos's Local Office", spec["name"], "1:43 PM")
+        self.assertEqual(text, ":white_check_mark: *Carlos's Local Office* "
+                               "— good to go. Lucy is pushing again.")
+        self.assertEqual(P._SIGNIN_PROOF["indeed"], "probe-indeed-clear")
+
     def test_a_clean_run_resets_the_count(self):
         RP._note_wall(True)
         RP._note_wall(True)

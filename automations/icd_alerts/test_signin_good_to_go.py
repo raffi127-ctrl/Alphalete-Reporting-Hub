@@ -75,6 +75,30 @@ class GoodToGoTest(unittest.TestCase):
                           knocks_at="10/20/2026 13:40:00")
         self.assertIn("OwnerVille", self._run(book, system="ownerville")[1][0][1])
 
+    def _indeed_book(self, probe_at):
+        book = self._book(stage="signin-indeed", relay_at="10/20/2026 13:30:00")
+        faults = book.worksheet(P.FAULTS_TAB).get_all_values()
+        if probe_at:
+            faults.append(["cyrus", "2026-10-20", "probe-indeed-clear",
+                           "a push got past Indeed's check again", "", "1",
+                           probe_at, probe_at, "", "", "", "x"])
+        tabs = {P.FAULTS_TAB: faults,
+                P.RELAY_TAB: book.worksheet(P.RELAY_TAB).get_all_values(),
+                P.KNOCKS_TAB: book.worksheet(P.KNOCKS_TAB).get_all_values()}
+        book.worksheet.side_effect = lambda n: mock.Mock(
+            **{"get_all_values.return_value": tabs[n]})
+        return book
+
+    def test_indeed_needs_its_own_cleared_probe_not_sales(self):
+        # Sales relaying is no proof Indeed's box was ticked (Megan 10/21).
+        self.assertEqual(self._run(self._indeed_book(None),
+                                   system="indeed")[1], [])
+        dms = self._run(self._indeed_book("10/20/2026 13:40:00"),
+                        system="indeed")[1]
+        self.assertEqual(dms[0][1], ":white_check_mark: *Cyrus's Local "
+                                    "Office* — good to go. Lucy is pushing "
+                                    "again.")
+
     def test_dry_run_sends_nothing(self):
         self.assertEqual(self._run(self._book(), send=False)[1], [])
 

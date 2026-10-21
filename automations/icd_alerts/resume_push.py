@@ -922,9 +922,23 @@ WALL_RUNS = 3
 
 def _note_wall(walled: bool) -> None:
     st = _state()
-    streak = int(st.get("wall_streak") or 0) + 1 if walled else 0
+    before = int(st.get("wall_streak") or 0)
+    streak = before + 1 if walled else 0
     st["wall_streak"] = streak
     _save_state(st)
+    if not walled and before >= WALL_RUNS:
+        # CLEARED AFTER AN ALERT WENT OUT: the proof the poster needs for its
+        # "good to go" (Megan 2026-10-21). A probe- stage is filed and never
+        # posted (post.notify_faults), and post._SIGNIN_PROOF["indeed"] reads it.
+        try:
+            from automations.icd_alerts import relay as R
+            R.report_fault("probe-indeed-clear",
+                           "a push got past Indeed's check again",
+                           "", log=_log, office_key=str(
+                               push_record().get("office_key") or ""))
+        except Exception:  # noqa: BLE001
+            pass
+        return
     if streak != WALL_RUNS:
         return
     try:

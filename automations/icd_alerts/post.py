@@ -1695,6 +1695,9 @@ SYSTEMS = {
         "name": "Indeed",
         "what": "Resume pushing",
         "ask": INDEED_ASK,
+        # Same three slots as the default; super simple like the ask.
+        "good": ":white_check_mark: *%s* — good to go. Lucy is pushing "
+                "again.%.0s%.0s",
         "why": " Lucy's Chrome is showing Indeed's \"Verify you are human\" "
                "box.",
         "how": "At that computer: click Lucy's Chrome in the Dock (the "
@@ -2458,7 +2461,11 @@ SIGNIN_FIXED_PATH = (Path.home() / ".config" / "recruiting-report"
 # Which relay proves each sign-in is working again (see _RECOVERY_PROOF).
 _SIGNIN_PROOF = {"saraplus": "relay", "saraplus_password": "relay",
                  "servicecloud": "relay", "ownerville": "knocks",
-                 "ownerville_locked": "knocks"}
+                 "ownerville_locked": "knocks",
+                 # Resume pushing files no relay rows, so the office computer
+                 # files a quiet probe when a run gets past Indeed again after
+                 # the alert (resume_push._note_wall). Filed, never posted.
+                 "indeed": "probe-indeed-clear"}
 
 
 def confirm_signins_fixed(day: Optional[dt.date] = None, *, send: bool = False,
@@ -2536,18 +2543,31 @@ def confirm_signins_fixed(day: Optional[dt.date] = None, *, send: bool = False,
             when = _KP._received_at(r[F_LAST])
             if when and (last is None or when > last):
                 last = when
-        proof = (_latest(rrows, COL_RECEIVED, office_key)
-                 if _SIGNIN_PROOF[system] == "relay"
-                 else _latest(krows, _KP.KN_RECEIVED, office_key))
+        kind = _SIGNIN_PROOF[system]
+        if kind.startswith("probe-"):
+            proof = None
+            for r in frows[1:]:
+                if (len(r) <= F_LAST or r[F_STAGE] != kind
+                        or (r[F_OFFICE] or "").strip().lower() != office_key
+                        or _day_key(r[F_DAY]) != day.isoformat()):
+                    continue
+                when = _KP._received_at(r[F_LAST])
+                if when and (proof is None or when > proof):
+                    proof = when
+        elif kind == "relay":
+            proof = _latest(rrows, COL_RECEIVED, office_key)
+        else:
+            proof = _latest(krows, _KP.KN_RECEIVED, office_key)
         if not (last and proof and proof > last
                 and (now - last) >= dt.timedelta(minutes=RECOVERY_GRACE_MIN)):
             continue
         spec = SYSTEMS.get(system) or {}
         office = O.get(office_key)
         label = getattr(office, "label", None) or office_key
-        text = (":white_check_mark: *Good to go — %s.* Lucy is signed back "
-                "into %s and your numbers are updating again (since %s). "
-                "Thanks for fixing it!"
+        text = ((spec.get("good") or
+                 ":white_check_mark: *Good to go — %s.* Lucy is signed back "
+                 "into %s and your numbers are updating again (since %s). "
+                 "Thanks for fixing it!")
                 % (label, spec.get("name", system),
                    proof.strftime("%I:%M %p").lstrip("0")))   # no %-I: Windows
         log("SIGNED BACK IN: %-10s %s" % (office_key, system))
