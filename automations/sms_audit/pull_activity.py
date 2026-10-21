@@ -186,6 +186,61 @@ def _pull_day(page, tok, day, tries=2):
             time.sleep(3.0)
 
 
+def _page_dump(page, label):
+    """Lines describing what's on screen: url, date inputs, buttons, text."""
+    got = page.evaluate(
+        r"""() => ({
+             url: location.href,
+             title: document.title,
+             inputs: [...document.querySelectorAll('input, select')]
+                       .filter(i => i.type !== 'hidden' || /date/i.test(i.name))
+                       .map(i => (i.name || i.id || '?') + '=' + (i.value || ''))
+                       .slice(0, 40),
+             buttons: [...document.querySelectorAll('button, input[type=submit]')]
+                       .map(b => (b.innerText || b.value || '').trim()).filter(Boolean)
+                       .slice(0, 20),
+             tables: document.querySelectorAll('table').length,
+             text: (document.body.innerText || '').replace(/\s+/g, ' ').trim()
+           })""")
+    return ["== {} ==".format(label),
+            "url: " + got["url"], "title: " + got["title"],
+            "inputs: " + " | ".join(got["inputs"]),
+            "buttons: " + " | ".join(got["buttons"]),
+            "tables: {}".format(got["tables"]),
+            "text: " + got["text"][:3000]]
+
+
+def _probe(page, tok, office, days):
+    """--probe: one office, a few days, the page before and after Get Report.
+    Written to tab 'Activity Probe <office>' so it can be read off Lucy 2.
+    Always exits non-zero — a probe must never close the incident."""
+    rows = []
+    for day in days:
+        page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p=704"
+                  .format(tok), wait_until="domcontentloaded", timeout=30000)
+        time.sleep(2.0)
+        lines = _page_dump(page, "{} {} BEFORE submit".format(office, day))
+        try:
+            lines.append("set_day: " + str(_set_day(page, day)))
+            _submit(page)
+        except Exception as e:  # noqa: BLE001 — the dump is the point
+            lines.append("submit error: {}: {}".format(type(e).__name__, e))
+        lines += _page_dump(page, "{} {} AFTER submit".format(office, day))
+        for ln in lines:
+            print("[probe] " + ln[:400], flush=True)
+            rows.append([ln[:CELL_CAP]])
+    tab = "{} Probe {}".format(TAB_PREFIX, office)
+    sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+    try:
+        ws = sh.worksheet(tab)
+        ws.clear()
+    except Exception:  # noqa: BLE001
+        ws = sh.add_worksheet(tab, rows=max(len(rows) + 5, 50), cols=2)
+    ws.update(values=rows, range_name="A1", raw=True)
+    print("[probe] {} line(s) → tab '{}'".format(len(rows), tab), flush=True)
+    return 3
+
+
 def _write_tab(records, meta, office):
     tab = "{} {}".format(TAB_PREFIX, office)
     sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
@@ -214,6 +269,9 @@ def main(argv=None):
                     help="FROM,TO in MM-DD-YYYY; default the last Sat-Fri week")
     ap.add_argument("--week", type=int, nargs="?", const=1, default=0)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--probe", default="",
+                    help="MM-DD-YYYY[,..]: dump the page for these days, first "
+                         "office only; writes tab 'Activity Probe <office>'")
     a = ap.parse_args(argv)
 
     offices = [o.strip() for o in str(a.office).split(",") if o.strip()]
@@ -246,6 +304,9 @@ def main(argv=None):
             page.wait_for_load_state("networkidle")
             time.sleep(1.0)
             tok = _rqst(page) or tok
+            if a.probe:
+                return _probe(page, tok, office,
+                              [s.strip() for s in a.probe.split(",") if s.strip()])
             records = []
             for day in days:
                 try:
