@@ -131,13 +131,21 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
     return over, rows
 
 
+def board_kpis() -> Dict:
+    """Raf's KPI scales with THIS crew's First Knock (2:00 start, see config)."""
+    from automations.shared import knock_kpis
+    (gh, gm), (rh, rm) = C.FIRST_KNOCK_GREEN_AT, C.FIRST_KNOCK_RED_AT
+    return {**knock_kpis.load(logfn=_log),
+            "first_knock": knock_kpis.Scale(gh * 60 + gm, rh * 60 + rm)}
+
+
 def render_board(rows: List[Dict], today: dt.date, now: dt.datetime, out_dir: Path) -> List[Path]:
     from automations.total_knocks import render as knocks_render
     pngs, shape = knocks_render.render_knocks_boards(
         today, rows=rows, out_dir=out_dir,
         title_suffix="%s — Carlos" % C.TEAM,
         date_text="%s — %s" % (today.strftime("%a %m/%d"), _clock(now)),
-        rate_columns=True, sort_by="knocks")
+        rate_columns=True, sort_by="knocks", kpis=board_kpis())
     _log("board: %s (%s)" % (", ".join(p.name for p in pngs), shape))
     return list(pngs)
 

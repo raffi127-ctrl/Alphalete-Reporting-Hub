@@ -30,6 +30,12 @@ THREAD_GAPS = "%s 15 Min Gaps" % TEAM
 WEEKDAY_START, WEEKDAY_STOP = (14, 0), (21, 0)
 SATURDAY_START, SATURDAY_STOP = (10, 30), (17, 30)
 
+# First Knock colours on the board (Sebastian 2026-10-21, OK'd by Eve): this
+# crew starts at 2:00, not Raf's 1:30 -- green up to 2:00, gray 2:01-2:29, red
+# from 2:30. Every other KPI still reads Raf's "Knocking KPI's" tab.
+FIRST_KNOCK_GREEN_AT = (14, 0)
+FIRST_KNOCK_RED_AT = (14, 30)
+
 GAPS_EVERY_MIN = 15          # the typed list
 BOARD_EVERY_MIN = 60         # the picture
 CALLOUT_EVERY_MIN = 60       # "no dispo, no credit check" lines
