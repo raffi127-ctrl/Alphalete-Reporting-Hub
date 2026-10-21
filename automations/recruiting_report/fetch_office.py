@@ -310,9 +310,17 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "",
     # "Locator.click: Timeout 30000ms ... waiting for element to be visible".
     # Click with a short wait; if the row went stale, retype and click the
     # FRESH row for this exact office id (still never the first item).
+    #
+    # no_wait_after=True ON EVERY CLICK HERE (2026-10-21). Without it click()
+    # also waits for the navigation it starts, inside ITS OWN 8s — and the
+    # office switch IS a slow reload. 10/21 4am: "click action done — waiting
+    # for scheduled navigations to finish" → Timeout 8000ms, on clicks that had
+    # worked, dozens of times; German Lopez + JR Young lost last week's pull.
+    # The click budget is for landing the click; expect_navigation (30s) owns
+    # the reload wait.
     try:
         with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
-            target_item.click(timeout=8000)
+            target_item.click(timeout=8000, no_wait_after=True)
         return True
     except PWTimeout:
         print("[switch] office %s: dropdown row went stale before the click — "
@@ -324,7 +332,7 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "",
     try:
         fresh.wait_for(state="visible", timeout=8000)
         with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
-            fresh.click(timeout=8000)
+            fresh.click(timeout=8000, no_wait_after=True)
     except PWTimeout:
         raise PWTimeout("office %s: the switcher row would not take a click "
                         "after a retype — transient, retried by the caller"
@@ -465,10 +473,11 @@ def _set_week_and_submit(page: Page, week_start: dt.date,
     # left-open dropdown over the button) made click() wait its full 30s, office
     # after office. Short wait; on a miss, clear overlays, get back to the
     # report, redo the week + submit ONCE, then raise fast (callers retry).
+    # no_wait_after=True: same trap as the switch click — see _switch_office.
     try:
         with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
             page.locator('input[name="submit"][type="submit"]').first.click(
-                timeout=10000)
+                timeout=10000, no_wait_after=True)
     except PWTimeout:
         if _second_try:
             raise PWTimeout("week %s: Submit would not take a click after a "

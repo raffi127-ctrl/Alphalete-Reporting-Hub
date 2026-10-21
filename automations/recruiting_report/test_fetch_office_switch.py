@@ -49,6 +49,10 @@ class _Item:
         return self._text
 
     def click(self, **kw):
+        # A click that waits for its own navigation times out on AppStream's
+        # slow office reload (2026-10-21) — the fake refuses one.
+        if not kw.get("no_wait_after"):
+            raise PWTimeout("click waited for navigation inside its own timeout")
         if getattr(self, "stale", False):
             raise PWTimeout("Locator.click: Timeout 8000ms exceeded.")
         self._clicked.append(self._text)
@@ -154,6 +158,18 @@ def test_a_row_that_never_takes_a_click_is_transient():
         assert "would not take a click" in str(e)
     else:
         raise AssertionError("a stale row must raise (retryable)")
+
+
+def test_the_click_leaves_the_reload_wait_to_expect_navigation():
+    """2026-10-21: click(timeout=8000) also waited for the office reload it
+    started — "click action done, waiting for scheduled navigations" then
+    Timeout 8000ms, on clicks that worked. Both the first click and the
+    retyped one must pass no_wait_after=True."""
+    page = _FakePage(menu=["22434\nJose Velasquez\nLegacy Shore"])
+    assert _call(page, confirm_denial=True) is True
+    page = _FakePage(menu=["22434\nJose Velasquez\nLegacy Shore"])
+    page.stale_first = True
+    assert _call(page, confirm_denial=True) is True
 
 
 def _call(page, office_id="22434", **kw):

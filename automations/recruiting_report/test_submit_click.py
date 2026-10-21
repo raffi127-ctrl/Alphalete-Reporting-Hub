@@ -23,6 +23,7 @@ class _Loc:
         return "10-11-2026"           # last week -> the submit path runs
 
     def click(self, **kw):
+        assert kw.get("no_wait_after"), "Submit must leave the reload wait to expect_navigation (2026-10-21)"
         self.page.clicks += 1
         if self.page.clicks <= self.page.fail_n:
             raise PWTimeout("Locator.click: Timeout 10000ms exceeded.")
