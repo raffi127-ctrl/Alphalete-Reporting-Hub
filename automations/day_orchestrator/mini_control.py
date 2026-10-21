@@ -8247,9 +8247,13 @@ def _action_group_members(args: str) -> tuple[bool, str]:
     for c in chats:
         handles = c.get("handles") or []
         by_name = name.lower() in (c.get("name") or "").lower()
+        # ... OR BY ITS CHAT ID, so a pinned group can be checked by the very
+        # id on its destination row (Hasani's "A PLAYERS", 2026-10-21: five
+        # chats share that name and the answer did not fit the result cell).
+        by_id = len(name) >= 8 and name.lower() in (c.get("id") or "").lower()
         by_handle = bool(digits) and len(digits) >= 7 and any(
             digits in "".join(ch for ch in str(h) if ch.isdigit()) for h in handles)
-        if by_name or by_handle:
+        if by_name or by_handle or by_id:
             lines.append("%s || name=%s || %d handles: %s"
                          % (c["id"], c.get("name"), len(handles), ", ".join(handles)))
     return True, ("\n".join(lines) or "(no chat whose name or numbers contain %r)" % name)[-1800:]
