@@ -24,8 +24,20 @@ right after the ICD tabs are filled — so it is always as fresh as they are.
 It went straight to production (Eve 2026-10-20: a new report, no tab to
 protect; changes get made on the live tab).
 
+Rafael 2026-10-20 (Slack): "can we add it to this spreadsheet" — the Alphalete
+Org/Captainship Reports workbook — as two tabs:
+  Financial Bulletin - Our Org      only owners on the Org Tree, split into
+                                    Carlos's org / Colten's org / the rest of
+                                    Raf's org, so the two can be compared
+  Financial Bulletin - ATT Program  our org + the owners not in it
+Who is in which org comes from that workbook's own 'Org Tree' tab (the same
+tree the RC/NC board counts): an owner belongs to the Gen-1 line they sit
+under. Cody Cannon is on the tree twice and counts for Carlos, like there.
+The original 'Financial Bulletin' tab in Alphalete Org 1on1s was retired the
+same day (Eve: "la otra podes eliminarla") — these two replace it.
+
 Usage:
-  python -m automations.financial_bulletin.run            # the real tab
+  python -m automations.financial_bulletin.run            # the real tabs
   python -m automations.financial_bulletin.run --dry-run  # print, no writes
   python -m automations.financial_bulletin.run --sandbox  # a SANDBOX copy
 """
@@ -45,6 +57,20 @@ from automations.alphalete_org_report.opt_nds import ALPHALETE_ORG_SHEET_ID
 LIVE_TAB = "Financial Bulletin"
 SANDBOX_TAB = "Financial Bulletin SANDBOX"
 WEEKS_SHOWN = 8
+
+# Alphalete Org/Captainship Reports — the workbook that holds the Org Tree.
+CAPTAINSHIP_SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
+ORG_TAB = "Financial Bulletin - Our Org"
+ATT_TAB = "Financial Bulletin - ATT Program"
+
+CARLOS, COLTEN, REST, OUTSIDE = ("Carlos's Org", "Colten's Org",
+                                 "Rest of Raf's Org", "Not in our org")
+ORG_GROUPS = [CARLOS, COLTEN, REST]
+# The Gen-1 leader whose line makes the group; anyone else under Rafael = REST.
+_GROUP_HEAD = {"carlos hidalgo": CARLOS, "colten wright": COLTEN}
+# A focus tab whose financial block is someone else's (financial_report.fill
+# _TAB_FINANCIAL_OWNER): the Akib/MJ Retail tab's numbers are MJ Malhas's.
+_TREE_NAME = {"boaktear chowdhury (akib/mj)": "MJ Malhas"}
 
 # (row label on the focus tab, heading on the bulletin, kind)
 METRICS: List[Tuple[str, str, str]] = [
@@ -115,6 +141,63 @@ def _merge_duplicates(owners: Dict[str, dict]) -> Dict[str, dict]:
     return out
 
 
+def _owner_name(tab: str) -> str:
+    """The owner on a focus tab. Drops ' - NDS' style suffixes, but only a
+    spaced dash: 'Aya Al-Khafaji' is a surname, not a campaign."""
+    if not re.search(r"\s-\s", re.sub(r"^\s*x\s*-\s*", "", tab, flags=re.I)):
+        return tab.strip()
+    return ffill._tab_to_name(tab)
+
+
+def _name_parts(n: str) -> Tuple[str, str]:
+    t = re.sub(r"\(.*?\)", " ", n or "").lower().split()
+    return (t[0], t[-1]) if t else ("", "")
+
+
+def _same_person(a: str, b: str) -> bool:
+    """Tree spelling vs tab spelling: 'Max Aden'/'Maxamed Aden', 'Ron
+    Dawson'/'Ronald Dawson', 'Salik Malick'/'Salik Mallick', 'Atef
+    Choudhury'/'Atef Choudhry'. First names: one starts the other. Last names:
+    one starts the other or they're a letter or two apart."""
+    import difflib
+    (fa, la), (fb, lb) = _name_parts(a), _name_parts(b)
+    if not fa or not fb:
+        return False
+    first = fa.startswith(fb) or fb.startswith(fa)
+    last = (la.startswith(lb) or lb.startswith(la)
+            or difflib.SequenceMatcher(None, la, lb).ratio() >= 0.85)
+    return first and last
+
+
+def org_of(owners, tree_vals) -> Dict[str, str]:
+    """{owner: group} for every owner in `owners` — Carlos's / Colten's org,
+    the rest of Raf's org, or not in our org — off the Org Tree grid."""
+    from automations.override_bulletin import rcs_ncs_data as R
+    nodes = R._parse_tree(tree_vals)
+    group: Dict[str, str] = {}   # tree name (lower) -> group; first node wins (Cody → Carlos)
+    for n in nodes:
+        k, i = n["name"].lower(), nodes.index(n)
+        g = REST
+        while i is not None:
+            g = _GROUP_HEAD.get(nodes[i]["name"].lower(), g)
+            i = nodes[i]["parent"]
+        group.setdefault(k, g)
+    out: Dict[str, str] = {}
+    for o in owners:
+        name = _TREE_NAME.get(o.lower(), o)
+        hit = group.get(name.lower()) or next(
+            (g for t, g in group.items() if _same_person(name, t)), None)
+        out[o] = hit or OUTSIDE
+    return out
+
+
+def read_org_tree() -> List[list]:
+    from automations.override_bulletin import rcs_ncs_data as R
+    sh = rfill.open_by_key(CAPTAINSHIP_SHEET_ID, rfill._client())
+    ws = next(w for w in rfill._retry(sh.worksheets) if w.id == R.ORG_TREE_GID)
+    return rfill._retry(ws.get_all_values)
+
+
 def _avg(xs: List[Optional[float]]) -> Optional[float]:
     xs = [x for x in xs if x is not None]
     return sum(xs) / len(xs) if xs else None
@@ -151,7 +234,7 @@ def read_owners() -> Tuple[Dict[str, Dict[str, Dict[dt.date, float]]], Dict[str,
             section = {ffill._norm(col_b[j]): grid[j]
                        for j in range(a, min(a + ffill._SECTION_SPAN, len(grid)))
                        if col_b[j].strip()}
-            owner = ffill._tab_to_name(tab)
+            owner = _owner_name(tab)
             got = owners.setdefault(owner, {})
             for label, _h, kind in METRICS:
                 row = section.get(ffill._norm(label))
@@ -186,68 +269,111 @@ def pick_weeks(owners, n: int = WEEKS_SHOWN, today: Optional[dt.date] = None) ->
     return [last - dt.timedelta(weeks=i) for i in range(n - 1, -1, -1)]
 
 
-def build_grid(owners, weeks: List[dt.date]) -> Tuple[List[list], List[tuple]]:
+def build_grid(owners, weeks: List[dt.date], groups: Optional[Dict[str, str]] = None,
+               order: Optional[List[str]] = None, title: str = "FINANCIAL BULLETIN"
+               ) -> Tuple[List[list], List[tuple], Optional[tuple]]:
     """The bulletin as rows of values, plus (row index, ncols, style, metric
-    index) marks for the formatter. The metric index picks the block's color
-    (None = the navy summary)."""
+    index, column offset) marks for the formatter — the metric index picks the
+    block's color (None = the navy summary) — plus the (first row, end row,
+    ncols) the owner table's filter covers, if any.
+
+    `groups` ({owner: org}) + `order` split it by org: a BY ORG table up top,
+    an ORG column (with a filter) on the owner table, and each block's owners
+    under their org with that org's average. Without them: the plain bulletin."""
     # Owners with nothing in these weeks (no source yet, closed) stay off.
     names = sorted((o for o, m in owners.items()
-                    if any(s.get(d) is not None for s in m.values() for d in weeks)),
-                   key=lambda s: s.lower())
+                    if any(s.get(d) is not None for s in m.values() for d in weeks)
+                    and (groups is None or groups.get(o) in order)),
+                   key=lambda s: ((order.index(groups[s]) if groups else 0), s.lower()))
     wk_lbl = [d.strftime("%m/%d/%y") for d in weeks]
+    off = 1 if groups else 0
     rows: List[list] = []
     marks: List[tuple] = []
+    filt = None
 
-    def add(row, style=None, sec=None):
+    def add(row, style=None, sec=None, o=0):
         if style:
-            marks.append((len(rows), len(row), style, sec))
+            marks.append((len(rows), len(row), style, sec, o))
         rows.append(row)
 
     def series_avg(o, label):
         s = owners[o].get(label, {})
         return _avg([s.get(d) for d in weeks])
 
-    add([f"FINANCIAL BULLETIN — {len(names)} owners · last {len(weeks)} weeks "
+    def n_weeks(o):
+        return sum(1 for d in weeks
+                   if owners[o].get("Total Funds Available", {}).get(d) is not None)
+
+    avg_heads = [f"AVG {h.split(' (')[0]}" if k == "money" else "AVG OPERATING %"
+                 for _l, h, k in METRICS]
+    add([f"{title} — {len(names)} owners · last {len(weeks)} weeks "
          f"(WE {wk_lbl[0]} – {wk_lbl[-1]})"], "title")
     add([f"Updated {dt.date.today():%m/%d/%y}. Numbers come from each owner's "
-         f"Focus Report tab (financial section). Averages skip weeks with no data."],
+         f"Focus Report tab (financial section). Averages skip weeks with no data."
+         + (" Org = the line they sit under on the 'Org Tree' tab." if groups else "")],
         "subtitle")
     add([])
 
+    if groups:
+        # BY ORG: each org's owner averages, side by side.
+        add(["BY ORG"] + [""] * 5, "section")
+        add(["ORG"] + avg_heads + ["OWNERS"], "summary_head")
+        for i, g in enumerate(order):
+            who = [o for o in names if groups[o] == g]
+            if who:
+                add([g] + [_avg([series_avg(o, l) for o in who]) for l, _h, _k in METRICS]
+                    + [len(who)], "summary_odd" if i % 2 else "summary")
+        add(["ALL OWNERS AVERAGE"]
+            + [_avg([series_avg(o, l) for o in names]) for l, _h, _k in METRICS]
+            + [len(names)], "summary_avg")
+        add([])
+
     # Summary: one row per owner, Rafael's four columns.
-    add(["OWNER AVERAGES"], "section")
-    head = ["OWNER"] + [f"AVG {h.split(' (')[0]}" if k == "money" else "AVG OPERATING %"
-                        for _l, h, k in METRICS] + ["WEEKS WITH DATA"]
-    add(head, "summary_head")
+    add(["OWNER AVERAGES"] + [""] * (5 + off), "section")
+    first = len(rows)
+    add(["OWNER"] + (["ORG"] if groups else []) + avg_heads + ["WEEKS WITH DATA"],
+        "summary_head", o=off)
     for i, o in enumerate(names):
-        n = sum(1 for d in weeks
-                if owners[o].get("Total Funds Available", {}).get(d) is not None)
-        add([o] + [series_avg(o, l) for l, _h, _k in METRICS] + [n],
-            "summary_odd" if i % 2 else "summary")
-    add(["ALL OWNERS AVERAGE"]
+        add([o] + ([groups[o]] if groups else [])
+            + [series_avg(o, l) for l, _h, _k in METRICS] + [n_weeks(o)],
+            "summary_odd" if i % 2 else "summary", o=off)
+    if groups:
+        filt = (first, len(rows), 6 + off)
+    add(["ALL OWNERS AVERAGE"] + ([""] if groups else [])
         + [_avg([series_avg(o, l) for o in names]) for l, _h, _k in METRICS]
-        + [""], "summary_avg")
+        + [""], "summary_avg", o=off)
     add([])
 
     # One block per metric, like the old bulletin.
+    width = len(weeks) + 2
     for sec, (label, heading, kind) in enumerate(METRICS):
-        add([heading] + [""] * (len(weeks) + 1), "section", sec)
+        def val(o, d):
+            return owners[o].get(label, {}).get(d)
+
+        add([heading] + [""] * (width - 1), "section", sec)
         add(["OWNER"] + wk_lbl + [f"{len(weeks)}-WK AVERAGE"], "head", sec)
-        for i, o in enumerate(names):
-            s = owners[o].get(label, {})
-            vals = [s.get(d) for d in weeks]
-            add([o] + vals + [_avg(vals)], "row_odd" if i % 2 else "row", sec)
-        per_week = [[owners[o].get(label, {}).get(d) for o in names] for d in weeks]
+        for g in (order if groups else [None]):
+            who = [o for o in names if groups is None or groups[o] == g]
+            if not who:
+                continue
+            if g:
+                add([g.upper()] + [""] * (width - 1), "group", sec)
+            for i, o in enumerate(who):
+                vals = [val(o, d) for d in weeks]
+                add([o] + vals + [_avg(vals)], "row_odd" if i % 2 else "row", sec)
+            if g:
+                add([f"{g} average"] + [_avg([val(o, d) for o in who]) for d in weeks]
+                    + [_avg([series_avg(o, label) for o in who])], "group_avg", sec)
+        per_week = [[val(o, d) for o in names] for d in weeks]
         if kind == "money":
             add(["TOTAL"] + [sum(x for x in col if x is not None) if any(
                 x is not None for x in col) else None for col in per_week] + [""],
                 "total", sec)
         add(["AVERAGE PER OWNER"] + [_avg(col) for col in per_week]
-            + [_avg([_avg([owners[o].get(label, {}).get(d) for d in weeks]) for o in names])],
-            "total", sec)
+            + [_avg([series_avg(o, label) for o in names])], "total", sec)
         add([])
     rows = [[("" if v is None else v) for v in r] for r in rows]
-    return rows, marks
+    return rows, marks, filt
 
 
 def _rgb(hex_):
@@ -266,7 +392,7 @@ PALETTE = [
 ]
 
 
-def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int) -> List[dict]:
+def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int, filt=None) -> List[dict]:
     def rng(r, c0=0, c1=None):
         return {"sheetId": ws_id, "startRowIndex": r, "endRowIndex": r + 1,
                 "startColumnIndex": c0, "endColumnIndex": c1 or ncols}
@@ -288,6 +414,10 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int) -> List[dict]:
         {"updateSheetProperties": {"properties": {"sheetId": ws_id, "gridProperties": {
             "frozenColumnCount": 1, "hideGridlines": True}},
             "fields": "gridProperties(frozenColumnCount,hideGridlines)"}},
+        # rows move between runs: drop last run's tall title/section rows
+        {"updateDimensionProperties": {"range": {"sheetId": ws_id, "dimension": "ROWS",
+                                                 "startIndex": 0, "endIndex": nrows},
+                                       "properties": {"pixelSize": 21}, "fields": "pixelSize"}},
         {"updateDimensionProperties": {"range": {"sheetId": ws_id, "dimension": "COLUMNS",
                                                  "startIndex": 0, "endIndex": 1},
                                        "properties": {"pixelSize": 240}, "fields": "pixelSize"}},
@@ -295,7 +425,7 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int) -> List[dict]:
                                                  "startIndex": 1, "endIndex": ncols},
                                        "properties": {"pixelSize": 115}, "fields": "pixelSize"}},
     ]
-    for r, n, style, sec in marks:
+    for r, n, style, sec, off in marks:
         dark, mid, light = (PALETTE[sec] if sec is not None else NAVY)
         num = (pct if sec is not None and kinds[sec] == "pct" else money)
         if style == "title":
@@ -310,10 +440,9 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int) -> List[dict]:
             paint(r, 0, 1, {"textFormat": {"italic": True,
                                            "foregroundColor": _rgb("#5F6B7A")}})
         elif style == "section":
-            width = n if sec is not None else 6
-            paint(r, 0, width, {"backgroundColor": _rgb(dark), "verticalAlignment": "MIDDLE",
-                                "textFormat": {"bold": True, "fontSize": 12,
-                                               "foregroundColor": white}})
+            paint(r, 0, max(n, 6), {"backgroundColor": _rgb(dark), "verticalAlignment": "MIDDLE",
+                                    "textFormat": {"bold": True, "fontSize": 12,
+                                                   "foregroundColor": white}})
             reqs.append({"updateDimensionProperties": {
                 "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": r, "endIndex": r + 1},
                 "properties": {"pixelSize": 30}, "fields": "pixelSize"}})
@@ -324,20 +453,30 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int) -> List[dict]:
             # Each average column wears its block's color, so the summary
             # reads as a key for the blocks below.
             for i, (pdark, _m, _l) in enumerate(PALETTE):
-                paint(r, 1 + i, 2 + i, {"backgroundColor": _rgb(pdark),
-                                        "textFormat": {"bold": True, "foregroundColor": white}})
+                paint(r, 1 + off + i, 2 + off + i, {"backgroundColor": _rgb(pdark),
+                                                    "textFormat": {"bold": True, "foregroundColor": white}})
         elif style == "head":
             paint(r, 0, n, {"backgroundColor": _rgb(mid), "horizontalAlignment": "CENTER",
                             "textFormat": {"bold": True, "foregroundColor": _rgb(dark)}})
+        elif style == "group":
+            paint(r, 0, n, {"backgroundColor": white, "textFormat": {
+                "bold": True, "foregroundColor": _rgb(dark)},
+                "borders": {"top": {"style": "SOLID_MEDIUM", "color": _rgb(dark)}}})
+        elif style == "group_avg":
+            paint(r, 0, n, {"backgroundColor": _rgb(light), "textFormat": {
+                "bold": True, "italic": True, "foregroundColor": _rgb(dark)},
+                "borders": {"top": {"style": "SOLID", "color": _rgb(dark)}}})
+            paint(r, 1, n, {"numberFormat": num})
         elif style in ("summary", "summary_odd", "row", "row_odd"):
             bg = _rgb(light) if style.endswith("odd") else white
             paint(r, 0, n, {"backgroundColor": bg,
                             "borders": {"bottom": line}})
             if style.startswith("summary"):
                 for i, (pdark, _m, plight) in enumerate(PALETTE):
-                    paint(r, 1 + i, 2 + i, {"numberFormat": pct if kinds[i] == "pct" else money,
-                                            "backgroundColor": _rgb(plight) if style.endswith("odd") else white})
-                paint(r, 5, 6, {"horizontalAlignment": "CENTER"})
+                    paint(r, 1 + off + i, 2 + off + i,
+                          {"numberFormat": pct if kinds[i] == "pct" else money,
+                           "backgroundColor": _rgb(plight) if style.endswith("odd") else white})
+                paint(r, 5 + off, 6 + off, {"horizontalAlignment": "CENTER"})
             else:
                 paint(r, 1, n, {"numberFormat": num})
                 # the average column: bold on the block's tint
@@ -348,16 +487,24 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int) -> List[dict]:
                 "borders": {"top": {"style": "SOLID_MEDIUM", "color": _rgb(dark)}}})
             if style == "summary_avg":
                 for i in range(len(METRICS)):
-                    paint(r, 1 + i, 2 + i, {"numberFormat": pct if kinds[i] == "pct" else money})
+                    paint(r, 1 + off + i, 2 + off + i,
+                          {"numberFormat": pct if kinds[i] == "pct" else money})
+                paint(r, 5 + off, 6 + off, {"horizontalAlignment": "CENTER"})
             else:
                 paint(r, 1, n, {"numberFormat": num})
+    if filt:
+        # The ORG dropdown on the owner table — back to "show all" every run.
+        r0, r1, nc = filt
+        reqs.append({"setBasicFilter": {"filter": {"range": {
+            "sheetId": ws_id, "startRowIndex": r0, "endRowIndex": r1,
+            "startColumnIndex": 0, "endColumnIndex": nc}}}})
     return reqs
 
 
-def write(rows, marks, tab: str) -> str:
-    """Rewrite `tab` in the Org workbook — a tab this script owns. Creates it
-    on first run; never touches any other tab."""
-    sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, rfill._client())
+def write(rows, marks, tab: str, sheet_id: str = ALPHALETE_ORG_SHEET_ID, filt=None) -> str:
+    """Rewrite `tab` in `sheet_id` — a tab this script owns. Creates it on
+    first run; never touches any other tab."""
+    sh = rfill.open_by_key(sheet_id, rfill._client())
     ncols = max(len(r) for r in rows)
     nrows = len(rows)
     try:
@@ -366,33 +513,47 @@ def write(rows, marks, tab: str) -> str:
         ws = rfill._retry(sh.add_worksheet, title=tab, rows=nrows + 20, cols=ncols + 2)
     if ws.row_count < nrows or ws.col_count < ncols:
         rfill._retry(ws.resize, rows=max(ws.row_count, nrows + 20), cols=max(ws.col_count, ncols + 2))
+    # A filter left set from last run would hide rows of the new layout.
+    rfill._retry(sh.batch_update, {"requests": [{"clearBasicFilter": {"sheetId": ws.id}}]})
     rfill._retry(ws.clear)
     rfill._retry(ws.update, range_name="A1", values=rows, value_input_option="RAW")
-    rfill._retry(sh.batch_update, {"requests": _fmt_requests(ws.id, marks, ncols, nrows)})
-    return f"https://docs.google.com/spreadsheets/d/{ALPHALETE_ORG_SHEET_ID}/edit#gid={ws.id}"
+    rfill._retry(sh.batch_update, {"requests": _fmt_requests(ws.id, marks, ncols, nrows, filt)})
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={ws.id}"
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dry-run", action="store_true", help="print, write nothing")
     ap.add_argument("--sandbox", action="store_true",
-                    help=f"write '{SANDBOX_TAB}' instead of the real '{LIVE_TAB}' tab")
+                    help="write SANDBOX copies of the tabs instead of the real ones")
     ap.add_argument("--weeks", type=int, default=WEEKS_SHOWN)
     a = ap.parse_args(argv)
-    a.live = not a.sandbox
     owners, source = read_owners()
     weeks = pick_weeks(owners, a.weeks)
     if not weeks:
         print("financial bulletin: no week has financial data — nothing to build")
         return 1
-    rows, marks = build_grid(owners, weeks)
+    groups = org_of(owners, read_org_tree())
     print(f"financial bulletin: {len(owners)} owners, weeks {weeks[0]} → {weeks[-1]}")
+    for g in ORG_GROUPS + [OUTSIDE]:
+        print(f"  {g}: " + ", ".join(sorted(o for o, x in groups.items() if x == g)))
+    tag = " SANDBOX" if a.sandbox else ""
+    builds = [
+        (ORG_TAB + tag, CAPTAINSHIP_SHEET_ID,
+         build_grid(owners, weeks, groups, ORG_GROUPS, "FINANCIAL BULLETIN · OUR ORG")),
+        (ATT_TAB + tag, CAPTAINSHIP_SHEET_ID,
+         build_grid(owners, weeks, groups, ORG_GROUPS + [OUTSIDE],
+                    "FINANCIAL BULLETIN · ATT PROGRAM")),
+    ]
     if a.dry_run:
-        for r in rows[:len(owners) + 6]:
-            print("  ", r)
+        for tab, _sid, (rows, _m, _f) in builds:
+            print(f"--- {tab}: {len(rows)} rows")
+            for r in rows[:14]:
+                print("  ", r)
         return 0
-    url = write(rows, marks, LIVE_TAB if a.live else SANDBOX_TAB)
-    print(f"financial bulletin: wrote {'LIVE' if a.live else 'SANDBOX'} tab → {url}")
+    for tab, sid, (rows, marks, filt) in builds:
+        url = write(rows, marks, tab, sid, filt)
+        print(f"financial bulletin: wrote '{tab}' → {url}")
     return 0
 
 
