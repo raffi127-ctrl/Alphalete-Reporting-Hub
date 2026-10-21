@@ -197,6 +197,18 @@ class TitleOnlyTests(unittest.TestCase):
         self.assertEqual(len(keys), 1)
         self.assertEqual(self.book.display(keys.pop()), "Entry Level Sales Manager")
 
+    def test_khalil_retail_representative_dallas_and_frisco_one_thread(self):
+        # Maddie 10/21: the Dallas + Frisco ad had no thread (not on the list).
+        from automations.ad_photo_threads import config
+        only = config._TITLE_ONLY["khalil"]
+        book = TitleBook(["AT&T Retail Representative, Dallas, TX"] * 3, only=only)
+        keys = {book.resolve(t) for t in (
+            "AT&T Retail Representative, Dallas, TX.",
+            "AT&T Retail Representative ? Frisco TX",
+            "Available ASAP.AT&T Retail Representative, Dallas, TX")}
+        self.assertEqual(len(keys), 1)
+        self.assertEqual(book.display(keys.pop()), "AT&T Retail Representative")
+
     def test_off_list_title_gets_no_thread(self):
         self.assertIsNone(self.book.resolve("AT&T Account Representative, Carrollton, TX"))
         self.assertIsNone(self.book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX"))

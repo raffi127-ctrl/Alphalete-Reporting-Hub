@@ -522,6 +522,8 @@ _TITLE_ONLY = {
         "AT&T Wireless Associate (Spanish)": ["at&t wireless associate spanish"],
         "Entry Level Sales Manager": ["entry level sales manager"],
         "Entry Level Account Manager (Spanish Required)": ["entry level account manager"],
+        # Maddie 10/21: the Dallas + Frisco ad (typed in the sheet since 10/7).
+        "AT&T Retail Representative": ["at&t retail representative"],
     },
 }
 
