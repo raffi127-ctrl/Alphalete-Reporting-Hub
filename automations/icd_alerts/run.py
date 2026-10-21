@@ -278,6 +278,26 @@ def _is_code_wall(e: Exception) -> bool:
 CATCHUP_DEFERRED = 3
 
 
+_EMPTY_READ_STAMP = C.APP_DIR / "sweep-empty-reported.txt"
+
+
+def _empty_read_due() -> bool:
+    """Once an hour: the fault folds on its summary anyway, this just keeps
+    the evidence from being re-sent every sweep."""
+    try:
+        last = dt.datetime.fromisoformat(_EMPTY_READ_STAMP.read_text().strip())
+        if dt.datetime.now() - last < dt.timedelta(hours=1):
+            return False
+    except (OSError, ValueError):
+        pass
+    try:
+        _EMPTY_READ_STAMP.parent.mkdir(parents=True, exist_ok=True)
+        _EMPTY_READ_STAMP.write_text(dt.datetime.now().isoformat(timespec="seconds"))
+    except OSError:
+        pass
+    return True
+
+
 def cmd_once(headless: bool, dry_run: bool, day: dt.date,
              sales_only: bool = False, resume_only: bool = False) -> int:
     # FIRST, AND ONCE A DAY. Getting a fix onto an office's machine used to
@@ -330,6 +350,14 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
                                                   resume_only=resume_only),
                        log=_log, report=_report, office_key=att_key)
         current, sales = read["records"], read["sales"]
+        # AN EMPTY GRID DURING SELLING HOURS IS A FAULT WITH EVIDENCE, once an
+        # hour, not a quiet day of zeros (Steve McElwee 2026-10-21).
+        if (read.get("empty_evidence") and not sales_only
+                and C.in_selling_window() and _empty_read_due()):
+            _report("sweep-empty", RuntimeError(
+                "the credit-check read passed but came back with 0 reps while "
+                "the office is selling -- what the grid showed is in the detail"),
+                office_key=att_key, detail=read["empty_evidence"])
     except sara_read.SessionLost as e:
         # THE OVERNIGHT CATCH-UP FOUND NO SESSION. Not a fault and not a
         # login: a headless login now is the emailed-code wall at 2am with

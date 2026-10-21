@@ -699,6 +699,32 @@ def keep_session_alive(*, headless: bool = True, log=print,
     return "lost"
 
 
+def _empty_read_evidence(page, day, raw_rows) -> str:
+    """What the credit-check grid looked like when it parsed to nobody: row
+    counts, the header, a sample row, the page URL and the visible top of the
+    page (date filters, office name). Best effort, never raises."""
+    out = ["credit-check read for %s parsed to 0 reps" % day]
+    try:
+        rows = list(raw_rows or [])
+        out.append("raw grid rows: %d" % len(rows))
+        try:
+            out.append("agent rows: %d" % len(list(S.agent_rows(rows, S.AGENT_ROW_INTERNET))))
+        except Exception as e:  # noqa: BLE001
+            out.append("agent rows: ? (%s)" % type(e).__name__)
+        for i, r in enumerate(rows[:4]):
+            out.append("row %d: %s" % (i, " | ".join(str(c)[:30] for c in r[:8])))
+    except Exception as e:  # noqa: BLE001
+        out.append("rows: ? (%s)" % type(e).__name__)
+    try:
+        out.append("page url: %s" % page.url)
+        out.append("page title: %s" % page.title())
+        body = page.inner_text("body", timeout=5000)
+        out.append("page text: " + " ".join(body.split())[:700])
+    except Exception as e:  # noqa: BLE001
+        out.append("page: ? (%s)" % type(e).__name__)
+    return "\n".join(out)
+
+
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
              log=print, resume_only: bool = False) -> Dict:
     """{'records': {REP: credit checks}, 'sales': {REP: {Int, Int Up, DTV, NL}}}.
@@ -750,9 +776,9 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
         try:
 
             try:
-                records = S.parse_records(
-                    S._run_report(page, base, day, C.SERVICE_INTERNET,
-                                  S.GRID_INTERNET, log=log))
+                _raw = S._run_report(page, base, day, C.SERVICE_INTERNET,
+                                     S.GRID_INTERNET, log=log)
+                records = S.parse_records(_raw)
             except Exception:
                 # A READ THAT FAILS NEVER KEEPS ITS SESSION. Whatever went
                 # wrong, the next sweep types the password instead of
@@ -761,6 +787,14 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                 _forget_session()
                 raise
             log("credit-check pass: %d rep(s)" % len(records))
+            # A ZERO IS NOT EXPLAINED AWAY. Steve McElwee (2026-10-21): the
+            # read passed, the relay said 0 reps all afternoon while every
+            # other AT&T office relayed 5-54 checks, and nothing said what
+            # the grid actually held. Keep what it held, so the fault can.
+            empty_evidence = ""
+            if not records:
+                empty_evidence = _empty_read_evidence(page, day, _raw)
+                log("credit-check grid came back EMPTY -- " + empty_evidence[:300].replace("\n", " | "))
 
             sales = {}
             try:
@@ -820,7 +854,7 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     "Credit checks are still working."
                     % (type(e).__name__, str(e)[:160]), log=log)
 
-            return {"records": records, "sales": sales}
+            return {"empty_evidence": empty_evidence, "records": records, "sales": sales}
         finally:
             try:
                 ctx.close()
