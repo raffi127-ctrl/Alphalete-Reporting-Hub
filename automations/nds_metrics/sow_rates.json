@@ -1,0 +1,27 @@
+{
+  "_source": "ATT-D2D-OOF SOW Schedule A (eff 09.01.2026) + Change Notice eff 10.07.2026 (kzeller@thesmartcircle.com, 'ATT D2D OOF SOW-Eff.10.07.2026 (Sched A).pdf', extracted 2026-10-09). Carlos 2026-10-09: 'use the NDS SOW ... and assume base comp for now.'",
+  "_base_comp_note": "BASE COMP = Churn Tier 3-3 for both port charts — the AUTOMATIC tier when the ICD has 19 or fewer port (resp. BYOD) activations in the month, which is where the crew's volume sits. When volume clears 19/month the real 0-30 x 90-day churn tier applies and these two numbers must move (full Chart 2/4 grids are in the PDF in output/fiber_metrics).",
+  "assumed_tier": "3-3",
+  "wireless": {
+    "port_nonbyod": {"OOF": 213, "INFP": 193},
+    "port_byod": {"OOF": 188, "INFP": 168},
+    "new_line": 25,
+    "upgrade_voice": 30,
+    "tablet_wearable_nonbyod": 25
+  },
+  "addons": {
+    "next_up": 15,
+    "unlimited_premium": 15,
+    "unlimited_extra": 10,
+    "oof_bundle_with_internet_air": 25,
+    "protect_advantage_1": 15,
+    "protect_advantage_4": 50
+  },
+  "internet_air": {"activation": 93, "auto_bill_pay_bonus": 30,
+                   "_note": "the 10/07/2026 Change Notice re-declared Section 2(b)(ii)(a) — this $93 is the post-change amount"},
+  "exclusions": [
+    "VoIP-carrier ports (Bandwidth.com etc.) are not paid",
+    "non-smartphone devices pay as BYOD",
+    "activated-and-disconnected same week excluded from the DD"
+  ]
+}
