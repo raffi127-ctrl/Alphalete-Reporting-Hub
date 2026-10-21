@@ -380,10 +380,38 @@ def _main(a) -> int:
     return 0
 
 
+def _drop_past(found: list, values, stop: str) -> list:
+    """Font / number-format findings at or right of the `stop` header go.
+    Jairo's board (2026-10-21) keeps a rep-info section after SUN (Campaign,
+    Start Date, Termination Date, checklist): dates and $ there on purpose, and
+    with no banner after SUN its columns read as part of Sunday."""
+    if not stop or not K.is_board(values):
+        return found
+    row = values[K.layout(values).day_row - 1]
+    col = next((c for c, x in enumerate(row, start=1)
+                if " ".join(str(x).split()).lower() == stop.lower()), 0)
+    if not col:
+        return found
+    return [x for x in found if x.kind not in ("font", "number_format")
+            or _col_of(x.where) < col]
+
+
+def _col_of(a1: str) -> int:
+    n = 0
+    for ch in re.match(r"[A-Z]+", a1).group():
+        n = n * 26 + ord(ch) - 64
+    return n
+
+
 def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
-             tenure=None, kinds=None) -> dict:
+             tenure=None, kinds=None, max_fixes: int = MAX_FIXES,
+             format_stop: str = "") -> dict:
     """kinds: only these finding kinds get written, the rest is just reported
-    (owners' boards: OWNER_KINDS, no notes)."""
+    (owners' boards: OWNER_KINDS, no notes).
+    max_fixes: per-owner cap (owners.json 'max_fixes').
+    format_stop: header (day-banner row) where the board's own section ends --
+    font / number-format checks skip that column and everything right of it
+    (owners.json 'format_stop')."""
     results = {}
     owner = kinds is not None
     for title in titles:
@@ -405,7 +433,7 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
             if clear:
                 sh.batch_update({"requests": clear})
                 print("  notas viejas de Lucy borradas: %d" % len(clear))
-        found = audit(t, tenure, owner)
+        found = _drop_past(audit(t, tenure, owner), t["values"], format_stop)
         if owner:
             name_col = K.layout(t["values"]).name_col if K.is_board(t["values"]) else 0
             for x in found:
@@ -414,16 +442,17 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                     x.value = x.request = None                      # report only
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
-        if do_apply and n_fix > MAX_FIXES:
+        if do_apply and n_fix > max_fixes:
             # thousands of "fixes" means the tab was read wrong, not that it
             # is that broken -- never write on a misread
             print("  NO se escribe: %d arreglos es demasiado (tope %d), revisar a mano"
-                  % (n_fix, MAX_FIXES))
+                  % (n_fix, max_fixes))
         elif do_apply:
             print("  backup:", backup(t, stamp))
             done = apply(sh, t, found)
             print("  escritos: %d" % len(done))
-            left = [x for x in audit(load(sh, title), tenure, owner)
+            t2 = load(sh, title)
+            left = [x for x in _drop_past(audit(t2, tenure, owner), t2["values"], format_stop)
                     if kinds is None or x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
@@ -670,7 +699,9 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
         res = {}
         for attempt in (1, 2):
             try:
-                res = run_tabs(sh, tabs, stamp, on, label=o["name"] + " · ", kinds=OWNER_KINDS)
+                res = run_tabs(sh, tabs, stamp, on, label=o["name"] + " · ", kinds=OWNER_KINDS,
+                               max_fixes=o.get("max_fixes", MAX_FIXES),
+                               format_stop=o.get("format_stop", ""))
                 break
             except Exception as e:  # noqa: BLE001
                 if attempt == 1 and "429" in str(e):

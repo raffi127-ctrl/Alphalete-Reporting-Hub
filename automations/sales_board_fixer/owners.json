@@ -4,7 +4,7 @@
   {"name": "Rashad Reed", "sheet_id": "1MitP5ZgVlCQhH5tzjZ0ltfaqSW_l9zholzTz0AUSUl0", "apply": true},
   {"name": "Atef", "sheet_id": "1x4ZcpzuLc1AiiFC4rTKNr1GsyMAxAFWQ8w81aapdMCA", "apply": true},
   {"name": "Frank Matos", "sheet_id": "13rnV2lIA_vdtjx98cjAkPjmAM3-1bc0fKY5ceggSudo", "apply": true},
-  {"name": "Drew", "sheet_id": "1Dfpu32rR4fvLp88zUZPw5UeFCVQnp1XI7-pNprmvPag", "apply": true},
+  {"name": "Drew", "sheet_id": "1Dfpu32rR4fvLp88zUZPw5UeFCVQnp1XI7-pNprmvPag", "max_fixes": 500, "apply": true},
   {"name": "Ryan McSpadden", "sheet_id": "1jz3d9TRsTdxi-toq3bAhrkBRnBkBjNUhGmuq6bu-OzA", "apply": true},
   {"name": "Jacob Dover", "sheet_id": "10ISMTZxmg4fp96tehPGmAIm_VheFhDa_D4yc0Ojnbcs", "boards": 2, "apply": true},
   {"name": "Cody Cannon", "sheet_id": "1Emdb7DfQ40Xd262gVDZwAB1LAIi1rPicsr7nYmCnNRk", "apply": true},
@@ -14,7 +14,7 @@
   {"name": "Aya Alkhafaji", "sheet_id": "1D7Gf8E6eFEYj6Md8uRozdFKUSD4XGxUt85WuY9quEIE", "apply": true},
   {"name": "Haytham Nagi", "sheet_id": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y", "apply": true},
   {"name": "Salik/Hammad", "sheet_id": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U", "apply": true},
-  {"name": "Colten/Jairo (Miami)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["COLTEN", "Line Up NDS", "JAIRO", "Line Up NDS JAIRO"], "apply": true},
+  {"name": "Colten/Jairo (Miami)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["COLTEN", "Line Up NDS", "JAIRO", "Line Up NDS JAIRO"], "format_stop": "Campaign", "apply": true},
   {"name": "Eveliz Wright (Miami B2B)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["Sales Board Miami B2B", "Car Rides B2B"], "apply": true},
   {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": true}
  ]
