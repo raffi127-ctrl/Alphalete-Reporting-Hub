@@ -38,6 +38,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+from automations.shared import knock_kpis
 from automations.shared.report_week import week_ending
 from automations.total_knocks import guests as GUESTS
 from automations.total_knocks.pull import central_today
@@ -562,7 +563,9 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                            dispo_cols, gaps_only=gaps_only,
                            n_totals=n_totals,
                            n_compare_top=len(compare_rows),
-                           no_apps=bool(cfg.get("b2b")))
+                           no_apps=bool(cfg.get("b2b")),
+                           # Raf's green / gray / red KPIs (2026-10-20).
+                           kpis=knock_kpis.for_office(name))
             boards.append((cfg, png, extra))
             # The same week's OFFICE TOTALS, next to the PNG, for
             # weekly_knocks_focus — it writes them into the office's Focus

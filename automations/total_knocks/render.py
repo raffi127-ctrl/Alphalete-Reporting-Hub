@@ -27,6 +27,7 @@ from automations.total_knocks.aggregate import (
     hours_between,
     knock_time_key as _knock_time_key,
 )
+from automations.shared import knock_kpis
 from automations.total_knocks.fill import SHEET_ID, TAB_TEST, TAB_PROD, HEADER_ROW
 from automations.total_knocks.pull import (
     COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_GAPS, COL_TOTAL_GAPS,
@@ -245,6 +246,17 @@ KNOCKING_MIN_KNOCKS = 21
 # enough to find at a glance down a column of forty, dark enough that the
 # black number stays readable on it.
 GREEN_HIT = (74, 222, 128)
+
+# Daily board column -> Raf's knocking KPI (shared.knock_kpis, 2026-10-20).
+# Doors is the rep's Total Knocks: one rep, one day, so that IS doors per day.
+DAILY_KPI_COLUMNS = {
+    "Avg Knocks / Hr": "knocks_hr",
+    COL_TOTAL_KNOCKS: "doors",
+    COL_TOTAL_TALK_TO: "talk_tos",
+    "Avg Talk To's per App": "tt_per_app",
+    COL_FIRST_KNOCK: "first_knock",
+    COL_HRS_KNOCKING: "hours",
+}
 
 # ---- Rafael's targets (Loom, 2026-08-30) -----------------------------------
 # He states these as the numbers he manages his office to, and none of them
@@ -1190,7 +1202,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         sort_by: str = "knocks",
                         base_cols: "list | None" = None,
                         out_cols: "list | None" = None,
-                        teams=None) -> Path:
+                        teams=None,
+                        kpis: "dict | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -1407,6 +1420,16 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
               # EARLIER is better here, unlike the other two.
               (COL_FIRST_KNOCK,
                lambda v: (_hhmm_to_min(v) or 10 ** 6) <= _fk_goal)]
+    # Raf's green / gray / red KPIs (2026-10-20) REPLACE the green-only
+    # targets on a board that carries them — two schemes on one cell would
+    # each overwrite the other's colour.
+    if kpis:
+        _green = []
+        _cell_bgs.update(knock_kpis.cell_colors(
+            cols, table, kpis,
+            DAILY_KPI_COLUMNS,
+            set(range(len(extra_rows) + 1)) | set(bands),
+            saturday=target.weekday() == 5))
     for _col, _hit in _green:
         if _col not in cols:
             continue
@@ -2285,7 +2308,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          first_knock_green_at: "int | None" = None,
                          sort_by: str = "knocks",
                          apps: "dict | None" = None,
-                         teams=None
+                         teams=None,
+                         kpis: "dict | None" = None
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -2312,6 +2336,10 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
     shape an office with a sales board to read can be. None — every office but
     Raf's, since his is the only board in teams.SALES_BOARDS — draws exactly
     the board it drew before.
+
+    `kpis` (optional): Raf's green / gray / red knocking KPIs
+    (shared.knock_kpis.for_office), in place of the green-only targets. None
+    draws exactly as before.
     """
     shape = knocks_shape(rows)
     if shape == SHAPE_GAPS_ONLY:
@@ -2333,7 +2361,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=ENERGYWELL_KNOCKS_COLUMNS,
-            out_cols=ENERGYWELL_KNOCKS_HEADERS, teams=teams)], shape)
+            out_cols=ENERGYWELL_KNOCKS_HEADERS, teams=teams, kpis=kpis)], shape)
     elif shape in (SHAPE_B2B_ATT, SHAPE_B2B_BOX):
         # Through the SAME renderer as every other shape, for the reason the
         # Energy Wells and wireless shapes were moved here: the shape decides
@@ -2351,7 +2379,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             knocks_green_at=knocks_green_at,
             first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
-            base_cols=base, out_cols=out, teams=teams)], shape)
+            base_cols=base, out_cols=out, teams=teams, kpis=kpis)], shape)
     elif shape == SHAPE_WIRELESS:
         # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for
         # the reason the Energy Wells shape was moved here on 2026-08-30
@@ -2373,7 +2401,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=WIRELESS_KNOCKS_COLUMNS,
-            out_cols=WIRELESS_KNOCKS_HEADERS, teams=teams)], shape)
+            out_cols=WIRELESS_KNOCKS_HEADERS, teams=teams, kpis=kpis)], shape)
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
@@ -2383,7 +2411,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals,
-                                     teams=teams)], shape)
+                                     teams=teams, kpis=kpis)], shape)
     if not needs_time_gaps(shape):
         return ([first], shape)
     gaps = render_time_gaps(target, rows=rows, out_dir=out_dir,

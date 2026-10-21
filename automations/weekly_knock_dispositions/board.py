@@ -28,6 +28,7 @@ import datetime as dt
 import re
 from pathlib import Path
 
+from automations.shared import knock_kpis
 from automations.total_knocks import render as knocks_render
 from automations.total_knocks.pull import (
     COL_FIRST_KNOCK,
@@ -307,6 +308,19 @@ GAPS_ONLY_HEADERS = [COL_NUM, "Rep", "Mon\u2013Fri Avg First Knock",
 
 def is_gaps_only(ov_rows: list[dict]) -> bool:
     return bool(ov_rows) and not any(K_TALK_TO in r for r in ov_rows)
+
+
+# Weekly board column -> Raf's knocking KPI (shared.knock_kpis, 2026-10-20).
+# Only the Mon–Fri / Mon–Sat columns: "I don't want to even have Saturday
+# first knock time", and the Saturday-only columns have no KPI of their own.
+WEEKLY_KPI_COLUMNS = {
+    COL_KNOCKS_PER_HR: "knocks_hr",
+    COL_DOORS_PER_DAY: "doors",
+    "Mon–Sat Avg Talk To's / Day": "talk_tos",
+    "Mon–Sat Avg Talk To's per App": "tt_per_app",
+    "Mon–Fri Avg First Knock": "first_knock",
+    "Mon–Fri Avg Hrs Knocking / Day": "hours",
+}
 
 
 def headers_for(dispo_cols: list[str] | None,
@@ -1006,7 +1020,8 @@ def render(office: str, monday: dt.date, saturday: dt.date,
            rows: list[list[str]], out_dir: Path,
            dispo_cols: list[str] | None = None,
            gaps_only: bool = False, n_totals: int = 1,
-           n_compare_top: int = 0, no_apps: bool = False) -> Path:
+           n_compare_top: int = 0, no_apps: bool = False,
+           kpis: "dict | None" = None) -> Path:
     """`office` in the title ONLY when non-empty — an office posting in its
     own channel doesn't repeat its name (Megan 2026-08-23). `n_totals`:
     how many trailing rows draw as highlighted totals (host + appended
@@ -1111,6 +1126,13 @@ def render(office: str, monday: dt.date, saturday: dt.date,
             _start -= 1
         header_before.add(_start)
     cell_bgs = {}
+    # Raf's green / gray / red KPIs (2026-10-20) replace the green-only
+    # targets on a board that carries them. Same rows skipped as below.
+    if kpis:
+        _green = {}
+        cell_bgs = knock_kpis.cell_colors(
+            hdr, rows, kpis, WEEKLY_KPI_COLUMNS,
+            set(range(n_top)) | set(section_rows))
     for _h, _hit in _green.items():
         if _h not in hdr:
             continue

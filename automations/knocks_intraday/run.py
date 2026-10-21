@@ -56,6 +56,7 @@ except Exception:  # noqa: BLE001 — Windows console, best effort
     pass
 
 from automations.knocks_intraday import roster
+from automations.shared import knock_kpis
 from automations.weekly_knock_dispositions import teams as TEAMS
 
 OUT_DIR = Path("output") / "knocks_intraday"
@@ -278,7 +279,9 @@ def build(slot, jobs_in, *, logfn=print) -> List[dict]:
                 day, rows=rows, out_dir=OUT_DIR / _slug(o.knocks_office),
                 title_suffix=first_name(rec["label"]),
                 date_text=_date_text(day), extra_totals=extra,
-                teams=_teams)
+                teams=_teams,
+                # Raf's green / gray / red KPIs — every office (2026-10-21).
+                kpis=knock_kpis.for_office(o.knocks_office, logfn=logfn))
             rec["png"] = pngs[0]
             rec["shape"] = shape
             logfn(f"[knocks] {o.key}: {len(rows)} rep(s) -> {pngs[0].name}")
