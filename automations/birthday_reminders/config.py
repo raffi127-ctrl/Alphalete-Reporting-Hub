@@ -24,7 +24,18 @@ COL_SOURCE = "Source"
 COL_ADDED = "Added"
 COL_SKIP = "Skip"          # a person types anything here to opt out. Never ours.
 COL_NOTES = "Notes"
-HEADERS = [COL_NAME, COL_MMDD, COL_SOURCE, COL_ADDED, COL_SKIP, COL_NOTES]
+# Added 2026-10-21 (Algemar Kennel's birthday AND 1-year anniversary went by
+# with nothing from Lucy). Both optional: a tab without them still loads.
+#   Start Date  full M/D/YYYY -- the year IS needed here, it is the "N years".
+#               Filled from the sales board's own 'Start Date' column; typed by
+#               hand for staff, who are not on the board.
+#   Staff       anything typed = admin/leadership, not a rep. They never appear
+#               on the sales board, so the board check would always skip them;
+#               a person marking them Staff is the evidence instead.
+COL_START = "Start Date"
+COL_STAFF = "Staff"
+HEADERS = [COL_NAME, COL_MMDD, COL_SOURCE, COL_ADDED, COL_SKIP, COL_NOTES,
+           COL_START, COL_STAFF]
 
 # --- where the reminder goes ------------------------------------------------
 # The admin-staff iMessage group, as a NAME NEEDLE for text_post.resolve_group
@@ -54,6 +65,12 @@ CAKE = "\U0001F382"
 # TEXT only -- this report posts nothing to Slack itself, so this is a label a
 # person reads, not a channel id to resolve.
 SOCIAL_CHANNEL = "#alphaletesocialmedia"
+
+# --- the same-day Slack shout-out (Eve, 2026-10-21: "a y b") ------------------
+# Posted AS Lucy on the day itself, in #alphalete-sales (Eve's pick, same day)
+# -- the channel the Sales Board and Production posts already go to. Channel id,
+# not a name. Set BIRTHDAY_SLACK_CHANNEL="" to switch the post off.
+SLACK_CHANNEL = os.environ.get("BIRTHDAY_SLACK_CHANNEL", "C068PH3RFSM").strip()
 
 HUB_CARD = "Birthday Reminders"
 HUB_REPORT_ID = "birthday_reminders"

@@ -30,7 +30,7 @@ from dataclasses import dataclass
 
 from automations.birthday_reminders import config as C
 from automations.recruiting_report.fill import open_by_key
-from automations.terminated_reps.board import base_name, norm_name
+from automations.terminated_reps.board import base_name, norm_name, to_date
 
 
 class StoreError(RuntimeError):
@@ -83,6 +83,17 @@ class Entry:
     skip: str = ""
     notes: str = ""
     row: int = 0
+    start: str = ""
+    staff: str = ""
+
+    @property
+    def is_staff(self) -> bool:
+        """Typed by a person: not a rep, so the sales board can't vouch for them."""
+        return bool((self.staff or "").strip())
+
+    @property
+    def start_date(self):
+        return to_date(self.start)
 
     @property
     def opted_out(self) -> bool:
@@ -148,7 +159,9 @@ def load(sheet_id: str = C.STORE_SHEET_ID, tab: str = C.STORE_TAB) -> list[Entry
                          source=cell(row, C.COL_SOURCE),
                          added=cell(row, C.COL_ADDED),
                          skip=cell(row, C.COL_SKIP),
-                         notes=cell(row, C.COL_NOTES), row=n))
+                         notes=cell(row, C.COL_NOTES), row=n,
+                         start=cell(row, C.COL_START),
+                         staff=cell(row, C.COL_STAFF)))
     return out
 
 
@@ -156,6 +169,27 @@ def birthdays_on(entries, day_mmdd: str) -> list[Entry]:
     """Everyone whose stored MM/DD is `day_mmdd`, opt-outs already removed."""
     return [e for e in entries
             if e.mmdd.strip() == day_mmdd and not e.opted_out]
+
+
+def anniversaries_on(entries, day: dt.date) -> list:
+    """[(Entry, years)] for everyone who started on this month/day in an
+    EARLIER year. A start date of today is a first day, not an anniversary.
+    Feb 29 starters are celebrated Feb 28 in other years rather than skipped."""
+    out = []
+    for e in entries:
+        start = e.start_date
+        if e.opted_out or not start or start.year >= day.year:
+            continue
+        mo, da = start.month, start.day
+        if (mo, da) == (2, 29) and not _is_leap(day.year):
+            da = 28
+        if (mo, da) == (day.month, day.day):
+            out.append((e, day.year - start.year))
+    return out
+
+
+def _is_leap(y: int) -> bool:
+    return y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)
 
 
 def index(entries) -> dict:
@@ -179,7 +213,10 @@ def append(new: list, *, sheet_id: str = C.STORE_SHEET_ID,
     added, skipped, conflicts = [], [], []
     rows = []
     for e in new:
-        if not e.mmdd:
+        # A rep with no birthday on file still gets a row when we know their
+        # start date: the anniversary needs it, and the blank birthday cell is
+        # where a person types it in later.
+        if not e.mmdd and not e.start:
             skipped.append((e.name, "no usable birthday"))
             continue
         seen = have.get(base_name(e.name))
@@ -194,7 +231,8 @@ def append(new: list, *, sheet_id: str = C.STORE_SHEET_ID,
         row[cols[C.COL_NAME]] = e.name
         row[cols[C.COL_MMDD]] = e.mmdd
         for label, value in ((C.COL_SOURCE, e.source), (C.COL_ADDED, e.added),
-                             (C.COL_NOTES, e.notes)):
+                             (C.COL_NOTES, e.notes), (C.COL_START, e.start),
+                             (C.COL_STAFF, e.staff)):
             if label in cols:
                 row[cols[label]] = value
         rows.append(row)
@@ -208,6 +246,60 @@ def append(new: list, *, sheet_id: str = C.STORE_SHEET_ID,
         ws.append_rows(rows, value_input_option="USER_ENTERED")
     return {"added": added, "skipped": skipped, "conflicts": conflicts,
             "dry_run": dry_run, "wrote": len(rows) if not dry_run else 0}
+
+
+def _a1_col(i: int) -> str:
+    """0-based column index -> 'A', 'B', ... 'AA'."""
+    s, n = "", i + 1
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def ensure_columns(*, sheet_id: str = C.STORE_SHEET_ID, tab: str = C.STORE_TAB,
+                   dry_run: bool = True) -> list:
+    """Add any of our headers row 1 lacks, AFTER the last used column.
+
+    Only ever writes into empty header cells to the right of what is there --
+    never moves or renames a column somebody else relies on.
+    """
+    _sh, ws = _open(sheet_id, tab)
+    grid = ws.get_all_values()
+    header = grid[0] if grid else []
+    have = {str(h).strip().lower() for h in header}
+    missing = [h for h in C.HEADERS if h.strip().lower() not in have]
+    if missing and not dry_run:
+        last = max((i for i, h in enumerate(header) if str(h).strip()), default=-1)
+        start = last + 1
+        rng = "%s1:%s1" % (_a1_col(start), _a1_col(start + len(missing) - 1))
+        if ws.col_count < start + len(missing):
+            ws.add_cols(start + len(missing) - ws.col_count)
+        ws.update([missing], rng)
+    return missing
+
+
+def fill_blank(label: str, values: dict, *, sheet_id: str = C.STORE_SHEET_ID,
+               tab: str = C.STORE_TAB, dry_run: bool = True) -> list:
+    """{sheet row: value} -> written into `label`'s column ONLY where the cell
+    is empty now. A value already there -- typed by a person or by us -- wins.
+    Returns the rows actually (or, on a dry run, would-be) written."""
+    _sh, ws = _open(sheet_id, tab)
+    grid = ws.get_all_values()
+    cols = _columns(grid[0])
+    i = cols.get(label)
+    if i is None or not values:
+        return []
+    updates, wrote = [], []
+    for row, value in sorted(values.items()):
+        cur = grid[row - 1][i] if row - 1 < len(grid) and i < len(grid[row - 1]) else ""
+        if str(cur).strip() or not str(value).strip():
+            continue
+        updates.append({"range": "%s%d" % (_a1_col(i), row), "values": [[value]]})
+        wrote.append(row)
+    if updates and not dry_run:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return wrote
 
 
 def create_tab(*, sheet_id: str = C.STORE_SHEET_ID, tab: str = C.STORE_TAB,

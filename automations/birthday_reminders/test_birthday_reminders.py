@@ -533,5 +533,107 @@ class Sending(unittest.TestCase):
             self.assertEqual(self._run("Admin Staff"), 1)
 
 
+HEAD2 = HEAD + ["Start Date", "Staff"]
+
+
+def fake_store2(rows):
+    ws = FakeWS([HEAD2] + rows)
+    return mock.patch.object(S, "_open", lambda *a, **k: (None, ws)), ws
+
+
+class Anniversaries(unittest.TestCase):
+    """Algemar Kennel, 2026-10-21: birthday AND 1-year anniversary, nothing
+    from Lucy. He is staff -- never on the sales board."""
+
+    def _plan(self, rows, liveness, today=dt.date(2026, 10, 20), **kw):
+        patch, _ws = fake_store2(rows)
+        with patch, mock.patch.object(L, "read", lambda *a, **k: liveness):
+            return R.plan(today, logfn=lambda *a: None, **kw)
+
+    def test_staff_skip_the_board_check(self):
+        p = self._plan([["Algemar Kennel", "10/21", "", "", "", "", "10/21/2025", "yes"]],
+                       live(active=set()))
+        self.assertEqual([v.name for v in p["send"]], ["Algemar Kennel"])
+        self.assertEqual([(v.name, y) for v, y in p["anniv"]], [("Algemar Kennel", 1)])
+        self.assertIn("Birthday tomorrow", p["text"])
+        self.assertIn("Work anniversary tomorrow", p["text"])
+        self.assertIn("Algemar Kennel (1 year)", p["text"])
+
+    def test_staff_alone_never_reads_the_board(self):
+        patch, _ws = fake_store2([["Al K", "10/21", "", "", "", "", "", "x"]])
+        with patch, mock.patch.object(L, "read",
+                                      side_effect=AssertionError("read the board")):
+            p = R.plan(dt.date(2026, 10, 20), logfn=lambda *a: None)
+        self.assertEqual([v.name for v in p["send"]], ["Al K"])
+
+    def test_a_rep_anniversary_still_needs_the_board(self):
+        p = self._plan([["Ann Lee", "", "", "", "", "", "10/21/2024", ""]],
+                       live(active=set()))
+        self.assertEqual(p["anniv"], [])
+        self.assertIn("anniversary", p["skip"][0].why)
+
+    def test_the_first_day_is_not_an_anniversary(self):
+        p = self._plan([["Ann Lee", "", "", "", "", "", "10/21/2026", ""]],
+                       live(active={"ann lee"}))
+        self.assertEqual(p["anniv"], [])
+
+    def test_years_are_counted(self):
+        p = self._plan([["Ann Lee", "", "", "", "", "", "10/21/2023", ""]],
+                       live(active={"ann lee"}))
+        self.assertEqual([y for _v, y in p["anniv"]], [3])
+        self.assertIn("(3 years)", p["text"])
+
+    def test_same_day_plan_finds_today(self):
+        p = self._plan([["Algemar Kennel", "10/21", "", "", "", "", "10/21/2025", "yes"]],
+                       live(), today=dt.date(2026, 10, 21), days_ahead=0)
+        self.assertEqual([v.name for v in p["send"]], ["Algemar Kennel"])
+
+    def test_old_tab_without_the_new_columns_still_loads(self):
+        patch, _ws = fake_store([["Ann Lee", "09/14", "", "", "", ""]])
+        with patch:
+            e = S.load()[0]
+        self.assertEqual((e.start, e.staff, e.is_staff), ("", "", False))
+
+
+class SlackShoutOut(unittest.TestCase):
+    def test_wording(self):
+        got = R.compose_slack(["Algemar Kennel"], [("Algemar Kennel", 1)])
+        self.assertIn("Happy Birthday, Algemar Kennel!", got)
+        self.assertIn("Happy 1-year anniversary at Alphalete, Algemar Kennel!", got)
+
+    def test_no_channel_chosen_posts_nothing_and_is_not_a_failure(self):
+        patch, _ws = fake_store2([["Al K", "10/21", "", "", "", "", "", "x"]])
+        with patch, mock.patch.object(C, "SLACK_CHANNEL", ""):
+            got = R.slack_today(dt.date(2026, 10, 21), dry_run=False,
+                                logfn=lambda *a: None)
+        self.assertEqual(got, "")
+
+    def test_a_dry_run_never_posts(self):
+        patch, _ws = fake_store2([["Al K", "10/21", "", "", "", "", "", "x"]])
+        from automations.shared import slack_metrics_post as SM
+        with patch, mock.patch.object(C, "SLACK_CHANNEL", "C123"),              mock.patch.object(SM, "_client",
+                               side_effect=AssertionError("posted")):
+            got = R.slack_today(dt.date(2026, 10, 21), dry_run=True,
+                                logfn=lambda *a: None)
+        self.assertEqual(got, "")
+
+
+class AppendWithoutBirthday(unittest.TestCase):
+    def test_a_start_date_alone_is_enough_for_a_row(self):
+        patch, ws = fake_store2([])
+        with patch:
+            res = S.append([S.Entry(name="Bob Cruz", mmdd="", start="10/21/2025")],
+                           dry_run=False)
+        self.assertEqual(res["added"], ["Bob Cruz"])
+        self.assertEqual(ws.appended[0][6], "10/21/2025")
+
+
+class SyncNames(unittest.TestCase):
+    def test_week_tag_is_not_part_of_the_name(self):
+        from automations.birthday_reminders import sync as SY
+        self.assertEqual(SY.clean_name("Ann Lee (Wk 3)"), "Ann Lee")
+        self.assertEqual(SY._md_y(dt.date(2025, 1, 5)), "1/5/2025")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -46,47 +46,91 @@ def _mdy(d: dt.date) -> str:
     return "%d/%d" % (d.month, d.day)
 
 
-def compose(names: list, day: dt.date) -> str:
+PARTY = "\U0001F389"
+
+
+def _years(n: int) -> str:
+    return "1 year" if n == 1 else "%d years" % n
+
+
+def compose(names: list, day: dt.date, anniversaries: list = ()) -> str:
     """The text itself. Real emoji, not ':cake:' -- iMessage shows shortcodes
-    literally (same reason alphalete_sales_board/notify.py spells out FIRE)."""
+    literally (same reason alphalete_sales_board/notify.py spells out FIRE).
+
+    `anniversaries` is [(name, years)]; same photo ask, own line."""
     when = "%s %s" % (WEEKDAY[day.weekday()], _mdy(day))
+    lines = []
     if len(names) == 1:
-        who = names[0]
-        head = "%s Birthday tomorrow (%s): %s" % (C.CAKE, when, who)
-    else:
-        head = "%s Birthdays tomorrow (%s): %s" % (
-            C.CAKE, when, ", ".join(names))
+        lines.append("%s Birthday tomorrow (%s): %s" % (C.CAKE, when, names[0]))
+    elif names:
+        lines.append("%s Birthdays tomorrow (%s): %s" % (
+            C.CAKE, when, ", ".join(names)))
+    if anniversaries:
+        lines.append("%s Work anniversary tomorrow (%s): %s" % (
+            PARTY, when, ", ".join("%s (%s)" % (n, _years(y))
+                                   for n, y in anniversaries)))
     # Megan's wording, 2026-09-13: the ask is not just "get a photo" -- it has
     # to say WHERE it goes and to name the person, or the channel gets a
     # nameless picture nobody can caption.
-    whose = "their name" if len(names) == 1 else "their names"
-    return (head + "\n\nGrab a photo today and send it in the "
+    people = len(names) + len(anniversaries)
+    whose = "their name" if people == 1 else "their names"
+    return ("\n".join(lines) + "\n\nGrab a photo today and send it in the "
             + C.SOCIAL_CHANNEL + " Slack channel \u2014 make sure to include "
             + whose + "!")
 
 
-def plan(today: dt.date, *, logfn=print, source: str = "auto") -> dict:
-    """Who would be texted tomorrow, who wouldn't, and why. No sends, no writes."""
-    target = today + dt.timedelta(days=C.DAYS_AHEAD)
+def compose_slack(names: list, anniversaries: list = ()) -> str:
+    """The same-day shout-out, posted as Lucy. English -- it's a Slack channel."""
+    lines = ["%s Happy Birthday, %s! %s" % (C.CAKE, n, PARTY) for n in names]
+    lines += ["%s Happy %s at Alphalete, %s! Thank you for everything." % (
+        PARTY, _years(y).replace(" ", "-") + " anniversary", n)
+        for n, y in anniversaries]
+    return "\n".join(lines)
+
+
+def plan(today: dt.date, *, logfn=print, source: str = "auto",
+         days_ahead: int = C.DAYS_AHEAD, entries=None, live=None) -> dict:
+    """Who would be texted for `days_ahead` from today, who wouldn't, and why.
+    No sends, no writes. `entries`/`live` let one run reuse one read."""
+    target = today + dt.timedelta(days=days_ahead)
     want = S.today_mmdd(target)
-    entries = S.load()
+    entries = S.load() if entries is None else entries
     hits = S.birthdays_on(entries, want)
+    annivs = S.anniversaries_on(entries, target)
     opted = [e.name for e in entries if e.mmdd.strip() == want and e.opted_out]
 
     out = {"today": today, "target": target, "mmdd": want,
            "stored": len(entries), "opted_out": opted,
-           "send": [], "skip": [], "text": "", "degraded": ""}
-    if not hits:
+           "send": [], "skip": [], "anniv": [], "text": "", "degraded": "",
+           "live": live}
+    if not hits and not annivs:
         return out
 
-    live = L.read(today, logfn=logfn, source=source)
-    out["degraded"] = live.degraded
-    out["board_tab"] = live.tab
+    def verdict(e):
+        # Staff are never on the sales board; a person marking them Staff is
+        # the evidence. Opt-outs were already removed upstream.
+        if e.is_staff:
+            return L.Verdict(e.name, True, "staff (marked on the tab)")
+        if out["live"] is None:
+            out["live"] = L.read(today, logfn=logfn, source=source)
+        return out["live"].verdict(e.name)
+
     for e in hits:
-        v = live.verdict(e.name)
+        v = verdict(e)
         (out["send"] if v.allowed else out["skip"]).append(v)
-    if out["send"]:
-        out["text"] = compose([v.name for v in out["send"]], target)
+    for e, years in annivs:
+        v = verdict(e)
+        if v.allowed:
+            out["anniv"].append((v, years))
+        else:
+            out["skip"].append(L.Verdict(v.name, False,
+                                         "anniversary -- " + v.why))
+    if out["live"] is not None:
+        out["degraded"] = out["live"].degraded
+        out["board_tab"] = out["live"].tab
+    if out["send"] or out["anniv"]:
+        out["text"] = compose([v.name for v in out["send"]], target,
+                              [(v.name, y) for v, y in out["anniv"]])
     return out
 
 
@@ -97,21 +141,88 @@ def _report(p: dict, logfn=print) -> None:
         logfn("  board: %s" % p["board_tab"])
     for v in p["send"]:
         logfn("  SEND  %s -- %s" % (v.name, v.why))
+    for v, y in p.get("anniv", []):
+        logfn("  SEND  %s -- %s anniversary; %s" % (v.name, _years(y), v.why))
     for v in p["skip"]:
         logfn("  skip  %s -- %s" % (v.name, v.why))
     for name in p["opted_out"]:
         logfn("  skip  %s -- opted out by hand (Skip column)" % name)
-    if not p["send"] and not p["skip"] and not p["opted_out"]:
-        logfn("  nobody has a birthday tomorrow.")
+    if not p["send"] and not p.get("anniv") and not p["skip"] and not p["opted_out"]:
+        logfn("  nobody has a birthday or anniversary on that day.")
+
+
+def _slack_marker(day: dt.date):
+    """One shout-out per day per machine: a rerun must not post it twice."""
+    from pathlib import Path
+    return (Path(__file__).resolve().parents[2] / "output" / "logs"
+            / (".birthday-slack-posted-%s" % day.isoformat()))
+
+
+def slack_today(today: dt.date, *, dry_run: bool, logfn=print,
+                entries=None, live=None, source: str = "auto") -> str:
+    """Same-day 'Happy Birthday' in Slack. Returns '' or a problem sentence.
+
+    Not configured / nothing today / already posted -> '' (not a failure)."""
+    p = plan(today, logfn=logfn, source=source, days_ahead=0,
+             entries=entries, live=live)
+    names = [v.name for v in p["send"]]
+    annivs = [(v.name, y) for v, y in p["anniv"]]
+    logfn("\nToday (%s):" % _mdy(today))
+    for v in p["skip"]:
+        logfn("  skip  %s -- %s" % (v.name, v.why))
+    if not names and not annivs:
+        logfn("  no birthdays or anniversaries today.")
+        return ""
+    text = compose_slack(names, annivs)
+    logfn("--- the Slack post ---\n%s\n----------------------" % text)
+    if not C.SLACK_CHANNEL:
+        logfn("  (no Slack channel chosen yet -- config.SLACK_CHANNEL is empty; "
+              "nothing posted)")
+        return ""
+    marker = _slack_marker(today)
+    if marker.exists():
+        logfn("  already posted today -- not posting again.")
+        return ""
+    if dry_run:
+        logfn("  (dry run) would post to %s" % C.SLACK_CHANNEL)
+        return ""
+    try:
+        from automations.shared import slack_metrics_post as SM
+        # _client, not _bot_client: the same Lucy identity the Sales Board and
+        # Production posts in #alphalete-sales already use.
+        SM._client().chat_postMessage(channel=C.SLACK_CHANNEL, text=text)
+    except Exception as e:  # noqa: BLE001
+        logfn("⚠ couldn't post the birthday shout-out: %s" % str(e)[:200])
+        return "Slack post failed: %s" % str(e)[:150]
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        pass
+    logfn("✅ Posted to %s" % C.SLACK_CHANNEL)
+    return ""
 
 
 def run(*, today: dt.date | None = None, dry_run: bool = True,
-        logfn=print, source: str = "auto") -> int:
+        logfn=print, source: str = "auto", sync: bool = False) -> int:
     today = today or dt.date.today()
-    p = plan(today, logfn=logfn, source=source)
-    _report(p, logfn)
+    if sync:
+        try:
+            from automations.birthday_reminders import sync as SY
+            SY.run(today, dry_run=dry_run, logfn=logfn)
+        except Exception as e:  # noqa: BLE001
+            # Never costs a reminder for a birthday we already have.
+            logfn("⚠ couldn't refresh the birthday list (%s: %s) -- using it "
+                  "as it stands." % (type(e).__name__, str(e)[:150]))
 
-    if not p["send"]:
+    entries = S.load()
+    p = plan(today, logfn=logfn, source=source, entries=entries)
+    _report(p, logfn)
+    slack_problem = slack_today(today, dry_run=dry_run, logfn=logfn,
+                                entries=entries, live=p.get("live"),
+                                source=source)
+
+    if not p["send"] and not p["anniv"]:
         # NOT an error and NOT a failed run: most days nobody has a birthday.
         # [[findings are not failures]]
         #
@@ -125,6 +236,9 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
         note = ("no birthdays tomorrow" if not p["skip"]
                 else "%d skipped, none to send" % len(p["skip"]))
         _manifest_if_real(dry_run, [], note)
+        if slack_problem:
+            _publish_if_real(dry_run, "problem", slack_problem)
+            return 1
         _publish_if_real(dry_run, "success", note)
         return 0
 
@@ -157,12 +271,17 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
     # real machine (2026-09-13).
     logfn("%s %s to %r (%s participants)"
           % ("✅ Texted" if not dry_run else "(dry run) would text",
-             ", ".join(v.name for v in p["send"]),
+             ", ".join([v.name for v in p["send"]] + [v.name for v, _y in p["anniv"]]),
              res.get("resolved_name"), res.get("participants", "?")))
-    _manifest_if_real(dry_run, [v.name for v in p["send"]],
-                      "texted %d birthday(s) to %s"
-                      % (len(p["send"]), res.get("resolved_name")))
-    _publish_if_real(dry_run, "success", "texted %d birthday(s)" % len(p["send"]))
+    sent = [v.name for v in p["send"]] + [v.name for v, _y in p["anniv"]]
+    _manifest_if_real(dry_run, sent,
+                      "texted %d birthday(s), %d anniversary(ies) to %s"
+                      % (len(p["send"]), len(p["anniv"]), res.get("resolved_name")))
+    if slack_problem:
+        _publish_if_real(dry_run, "problem", slack_problem)
+        return 1
+    _publish_if_real(dry_run, "success", "texted %d birthday(s), %d anniversary(ies)"
+                     % (len(p["send"]), len(p["anniv"])))
     return 0
 
 
@@ -231,6 +350,8 @@ def main() -> int:
                     help="Create the 'DOB LUCY' tab with its headers, once.")
     ap.add_argument("--who", action="store_true",
                     help="Print who would be texted and why not, then stop.")
+    ap.add_argument("--no-sync", action="store_true",
+                    help="Skip adding new reps / start dates to the tab first.")
     ap.add_argument("--source", choices=("auto", "site", "sheet"), default="auto",
                     help="Where 'is this rep still here' comes from. 'auto' uses "
                          "the site roster once it actually records terminations, "
@@ -256,7 +377,8 @@ def main() -> int:
         _report(plan(today, source=args.source))
         return 0
 
-    return run(today=today, dry_run=not args.send, source=args.source)
+    return run(today=today, dry_run=not args.send, source=args.source,
+               sync=not args.no_sync)
 
 
 if __name__ == "__main__":
