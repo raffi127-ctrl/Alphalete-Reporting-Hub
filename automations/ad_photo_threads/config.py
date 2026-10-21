@@ -83,6 +83,16 @@ def marks_on(key: str) -> bool:
     """Does office `key` get the live/closed mark on its thread titles?"""
     return STATUS_MARK_OFFICES == "all" or key in STATUS_MARK_OFFICES
 
+# Eve 10/21: after the evening post, an @channel note in the office's
+# indeed-photos channel naming the 1st rounds that landed on no thread
+# (blank Ad Title, or an ad not on a title-only list) -- see unthreaded.py.
+# Empty = off; "all" = every live office; a set of keys = just those.
+UNTHREADED_OFFICES: object = set()
+
+
+def unthreaded_on(key: str) -> bool:
+    return UNTHREADED_OFFICES == "all" or key in UNTHREADED_OFFICES
+
 # Threads that stay UNPINNED for good, {channel: {thread_ts}} -- the nightly
 # pin pass never puts them back. Raf's funnels got their own channels
 # 2026-09-28: these 9 threads in his original channel hold ONLY 2nd-funnel

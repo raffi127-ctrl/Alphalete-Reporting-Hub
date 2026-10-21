@@ -302,6 +302,15 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     else:
         counts = post.publish(rep, channel)
     print("\nPosted:", counts)
+    if config.unthreaded_on(o["key"]):
+        try:
+            from automations.ad_photo_threads import unthreaded
+            got = unthreaded.check(day, channel, title_only=bool(o.get("title_only")),
+                                   cache=cache)
+            if got["posted"]:
+                print(f"No-thread note posted: {got['new']} interview(s)")
+        except Exception as e:                # noqa: BLE001 — never costs the post
+            print(f"no-thread note failed: {type(e).__name__}: {str(e)[:160]}")
     try:
         if post.send_pin_reminder(channel, day, counts):
             print("Pin reminder DM sent.")
