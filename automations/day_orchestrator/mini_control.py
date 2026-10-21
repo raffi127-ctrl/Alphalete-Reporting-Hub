@@ -2741,13 +2741,34 @@ def _action_peer_probe(args: str) -> tuple[bool, str]:
             try:
                 mac_hex = "".join(x.zfill(2) for x in mac.split(":"))
                 pkt = b"\xff" * 6 + bytes.fromhex(mac_hex) * 16
+                targets = ["255.255.255.255"] + ([ip] if ip else [])
+                if ip:  # the /24 broadcast — routers often drop 255.255.255.255
+                    targets.append(ip.rsplit(".", 1)[0] + ".255")
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                    for port in (9, 7):
-                        s.sendto(pkt, ("255.255.255.255", port))
-                        if ip:
-                            s.sendto(pkt, (ip, port))
-                out.append(f"wake: magic packet sent to {mac_hex} — re-probe in ~1 min")
+                    for _ in range(5):
+                        for t in targets:
+                            for port in (9, 7):
+                                try:
+                                    s.sendto(pkt, (t, port))
+                                except OSError:
+                                    pass
+                        time.sleep(0.5)
+                # A Mac asleep on Wi-Fi is woken by a Bonjour Sleep Proxy when
+                # something asks for one of its services — ask for its SSH and
+                # SMB records so the proxy (if it holds them) rings the doorbell.
+                for svc in ("_ssh._tcp", "_smb._tcp", "_sftp-ssh._tcp"):
+                    try:
+                        r2 = subprocess.run(
+                            ["/bin/sh", "-c",
+                             f"(dns-sd -L '{host.split('.')[0]}' {svc} local & "
+                             f"sleep 4; kill $! 2>/dev/null) 2>&1 | tail -3"],
+                            capture_output=True, text=True, timeout=10)
+                        line = " ".join(r2.stdout.split())[:160]
+                        out.append(f"  mdns {svc}: {line or 'no answer'}")
+                    except Exception as e:  # noqa: BLE001
+                        out.append(f"  mdns {svc}: {type(e).__name__}")
+                out.append(f"wake: magic packets x5 to {mac_hex} (bcast + /24 + direct) — re-probe in ~1 min")
             except OSError as e:
                 out.append(f"wake: send failed ({e})")
     return True, "\n".join(out)
