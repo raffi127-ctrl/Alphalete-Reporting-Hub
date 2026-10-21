@@ -356,10 +356,11 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
         text = spec["ask"] % ("Carlos's Local Office", spec["name"],
                               spec["what"], "1:07 PM", spec["why"],
                               spec["how"])
-        self.assertIn("Verify you are human", text)
-        self.assertIn("tick the box", text)
-        self.assertNotIn("password", text.lower())
-        self.assertNotIn("sign into", text.lower())
+        self.assertEqual(text, (
+            ":raising_hand: *Carlos's Local Office* — Lucy needs a human.\n"
+            "On the LucyECO computer: click Lucy's Chrome and tick "
+            "\u201cVerify you are human.\u201d"))
+        self.assertLessEqual(len(text.splitlines()), 2)   # SUPER SIMPLE
 
 
 class ResumeHelperIsGone(unittest.TestCase):

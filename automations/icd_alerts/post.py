@@ -1603,12 +1603,12 @@ SIGNIN_ASK = (
 # login ever"), so it gets its own words: a box to tick, not a password. Same
 # six slots as SIGNIN_ASK, so ask_office_to_sign_in fills either.
 INDEED_ASK = (
-    ":raising_hand: *%s — Indeed wants to check that Lucy is a human.*\n"
-    "%.0s%s is paused since %s — Lucy cannot read phone numbers off "
-    "resumes until the box is ticked. Nobody is removed; everyone stays in "
-    "the queue.\n\n"
-    "*This has to be done on the office computer running LucyECO.*%s\n\n"
-    "%s")
+    # SUPER SIMPLE (Megan 2026-10-21: "that message is too long"). Two lines:
+    # who, and the one thing to do. The other five slots are swallowed (%.0s)
+    # so ask_office_to_sign_in can fill it like SIGNIN_ASK.
+    ":raising_hand: *%s* — Lucy needs a human.%.0s%.0s%.0s%.0s%.0s\n"
+    "On the LucyECO computer: click Lucy's Chrome and tick "
+    "\u201cVerify you are human.\u201d")
 
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
                "Alphalete-Reporting-Hub/signin.html")
