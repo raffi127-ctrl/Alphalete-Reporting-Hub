@@ -171,6 +171,11 @@ def send_email(subject: str, html: str, text: str, png_path=None,
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
         s.login(FROM_ADDR, app_password())
         s.send_message(msg, to_addrs=envelope)
+        try:  # delivery ledger: lets a clean send close its own ticket (2026-10-20)
+            from automations.shared import delivery_ledger as _dl
+            _dl.record("email", str(msg.get("To", "")), detail=str(msg.get("Subject", "")))
+        except Exception:  # noqa: BLE001 — never break a send
+            pass
     print(f"[owner-showdown] sent '{subject}' to {len(to_list)} on the "
           f"list + {len(bcc)} bcc",
           flush=True)

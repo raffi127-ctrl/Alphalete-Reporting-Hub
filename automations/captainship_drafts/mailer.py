@@ -86,6 +86,11 @@ class Mailer:
         conn = self._conn or self._connect()
         try:
             conn.send_message(msg)
+            try:  # delivery ledger: lets a clean send close its own ticket (2026-10-20)
+                from automations.shared import delivery_ledger as _dl
+                _dl.record("email", str(msg.get("To", "")), detail=str(msg.get("Subject", "")))
+            except Exception:  # noqa: BLE001 — never break a send
+                pass
         except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError):
             # Reconnect once. Anything else (a refused recipient, an auth
             # failure) is the caller's to report per captain — retrying it would
@@ -93,6 +98,11 @@ class Mailer:
             self._logfn("  … SMTP connection dropped — reconnecting")
             self.close()
             self._connect().send_message(msg)
+            try:  # delivery ledger: lets a clean send close its own ticket (2026-10-20)
+                from automations.shared import delivery_ledger as _dl
+                _dl.record("email", str(msg.get("To", "")), detail=str(msg.get("Subject", "")))
+            except Exception:  # noqa: BLE001 — never break a send
+                pass
 
 
 def send_one(msg: Message, *, logfn=print) -> None:

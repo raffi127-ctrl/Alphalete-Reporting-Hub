@@ -239,6 +239,11 @@ def send(msg: EmailMessage, to_addrs: Sequence[str], *, logfn=print) -> str:
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=_ssl_context()) as conn:
         conn.login(FROM_ADDR, app_password())
         conn.send_message(msg, from_addr=FROM_ADDR, to_addrs=list(to_addrs))
+        try:  # delivery ledger: lets a clean send close its own ticket (2026-10-20)
+            from automations.shared import delivery_ledger as _dl
+            _dl.record("email", str(msg.get("To", "")), detail=str(msg.get("Subject", "")))
+        except Exception:  # noqa: BLE001 — never break a send
+            pass
     logfn("[night-knocks] sent %r to %s" % (msg["Subject"], ", ".join(to_addrs)))
     return msg["Message-ID"]
 

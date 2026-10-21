@@ -270,6 +270,11 @@ def send(team: str, png_path: Path, subject: str,
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
             s.login(FROM_ADDR, pw)
             s.send_message(msg)
+            try:  # delivery ledger: lets a clean send close its own ticket (2026-10-20)
+                from automations.shared import delivery_ledger as _dl
+                _dl.record("email", str(msg.get("To", "")), detail=str(msg.get("Subject", "")))
+            except Exception:  # noqa: BLE001 — never break a send
+                pass
     except smtplib.SMTPAuthenticationError as e:
         raise EmailSendError(
             "Gmail rejected the login. Check that the app password is correct "
