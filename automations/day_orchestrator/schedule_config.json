@@ -14836,6 +14836,27 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for steve (Steve McElwee, Luxe Global Consulting, Inc., OwnerVille 23160). Wired by hand 2026-10-20 (Megan: enrolling in Lucy ECO 10/21 with Eve; dry run first). AT&T D2D like hasani/tre, all 11 boards. OFF until `lucy rerun steve_metrics --dry-run` on Lucy 4 shows data on every board and his ECO sign-up names the channel -- never a blank first post."
+  },
+  "install_wifi_selfheal_agent": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "MANUAL-ONLY. `lucy rerun install_wifi_selfheal_agent --machine \"<machine>\"` installs com.alphalete.wifi-selfheal (user-level, NO root): every 2 min it checks the internet and, after ~6 min without it, turns Wi-Fi off and on. WHY: 2026-10-20 Lucy 1 sat joined to the office Wi-Fi with no internet 17:56-20:12 (no sales texts, dead queue) until Megan toggled its Wi-Fi at the machine. Leaves a wired box alone. Log: output/logs/wifi-selfheal.log.",
+   "display_name": "Install Wi-Fi self-heal agent",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "wifi-selfheal"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
   }
  },
  "read_only_standalone": {
