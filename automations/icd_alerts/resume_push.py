@@ -907,6 +907,39 @@ def _walk(page, live: bool, record: dict) -> dict:
             "why": "" if rc == 0 else "the walk stopped (rc=%s)" % rc}
 
 
+# INDEED'S HUMAN CHECK -> A DM TO THE PEOPLE WHO CAN TICK IT (Megan
+# 2026-10-21). Filed as stage "signin-indeed": the poster turns that into ONE
+# group DM to the owner, their helpers, Megan and Eve (post.SYSTEMS "indeed"),
+# once a day, never the corrections channel.
+#
+# NOT ON THE FIRST WALLED RUN. Indeed's box often clears by itself on the next
+# fresh session -- Carlos's came up at 1:07pm on 10/21 and he watched it push
+# again by 1:43 with nobody touching it. A DM for that is noise that teaches
+# people to ignore the one that matters, so it waits for WALL_RUNS in a row
+# (about half an hour at one run every 10 minutes).
+WALL_RUNS = 3
+
+
+def _note_wall(walled: bool) -> None:
+    st = _state()
+    streak = int(st.get("wall_streak") or 0) + 1 if walled else 0
+    st["wall_streak"] = streak
+    _save_state(st)
+    if streak != WALL_RUNS:
+        return
+    try:
+        from automations.icd_alerts import relay as R
+        R.report_fault(
+            "signin-indeed",
+            "Indeed is asking to verify a human on this office's computer "
+            "(%d runs in a row); no phone numbers are being read" % streak,
+            "Someone at that desk: click Lucy's Chrome in the Dock / taskbar "
+            "and tick the box once. Nobody is removed meanwhile.",
+            log=_log, office_key=str(push_record().get("office_key") or ""))
+    except Exception:  # noqa: BLE001 -- the telling, never the work
+        pass
+
+
 def push(live: bool, scheduled: bool = False) -> int:
     """One push. 0 = done (or nothing to do), 1 = failed."""
     if not C.appstream_creds():
@@ -972,14 +1005,9 @@ def push(live: bool, scheduled: bool = False) -> int:
                              "computer is showing another office: fix the "
                              "login, or the number in PUSH_OFFICES.")
                 return 1
+            _note_wall(bool(out.get("walled")))
             if out.get("walled"):
                 result = "walled"
-                _report_once(result, "Indeed is asking to verify a human on "
-                                     "this office's computer; no numbers are "
-                                     "being read",
-                             "Someone at that desk: click Lucy's Chrome in "
-                             "the Dock / taskbar and tick the box once. "
-                             "Nobody is removed meanwhile; they stay queued.")
             # LEAVE CHROME RUNNING, minimized. The next tick reuses it, so the
             # session and the security check it already passed carry over.
             _log("%s: office %s, %d sent to AI%s"

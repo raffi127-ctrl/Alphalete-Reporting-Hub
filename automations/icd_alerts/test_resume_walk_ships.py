@@ -313,6 +313,55 @@ class ItStaysInTheBackground(unittest.TestCase):
         self.assertIs(held.get("yes"), RP._walled)
 
 
+class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
+    """Megan 2026-10-21: DM the owner, Eve and Megan when the human check
+    needs doing -- but not for a wall that clears on the next run."""
+
+    def setUp(self):
+        self.state = {}
+        self.filed = []
+        ps = [mock.patch.object(RP, "_state", side_effect=lambda: dict(self.state)),
+              mock.patch.object(RP, "_save_state",
+                                side_effect=lambda st: self.state.update(st)),
+              mock.patch.object(RP, "push_record",
+                                return_value={"office_key": "carlos"}),
+              mock.patch("automations.icd_alerts.relay.report_fault",
+                         side_effect=lambda stage, *a, **k:
+                         self.filed.append((stage, k.get("office_key"))))]
+        for p in ps:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_one_walled_run_files_nothing(self):
+        RP._note_wall(True)
+        self.assertEqual(self.filed, [])
+
+    def test_three_in_a_row_files_one_signin_fault(self):
+        for _ in range(RP.WALL_RUNS + 2):
+            RP._note_wall(True)
+        self.assertEqual(self.filed, [("signin-indeed", "carlos")])
+
+    def test_a_clean_run_resets_the_count(self):
+        RP._note_wall(True)
+        RP._note_wall(True)
+        RP._note_wall(False)
+        RP._note_wall(True)
+        self.assertEqual(self.filed, [])
+
+    def test_the_poster_dms_it_and_keeps_it_out_of_the_channel(self):
+        from automations.icd_alerts import post as P
+        self.assertEqual(P._signin_system({"stage": "signin-indeed"}),
+                         "indeed")
+        spec = P.SYSTEMS["indeed"]
+        text = spec["ask"] % ("Carlos's Local Office", spec["name"],
+                              spec["what"], "1:07 PM", spec["why"],
+                              spec["how"])
+        self.assertIn("Verify you are human", text)
+        self.assertIn("tick the box", text)
+        self.assertNotIn("password", text.lower())
+        self.assertNotIn("sign into", text.lower())
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):

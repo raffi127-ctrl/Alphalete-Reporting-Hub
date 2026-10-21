@@ -1599,6 +1599,17 @@ SIGNIN_ASK = (
     "one you set up.%s\n\n"
     "%s")
 
+# INDEED'S HUMAN CHECK IS NOT A SIGN-IN (Megan 2026-08-05: "there's no indeed
+# login ever"), so it gets its own words: a box to tick, not a password. Same
+# six slots as SIGNIN_ASK, so ask_office_to_sign_in fills either.
+INDEED_ASK = (
+    ":raising_hand: *%s — Indeed wants to check that Lucy is a human.*\n"
+    "%.0s%s is paused since %s — Lucy cannot read phone numbers off "
+    "resumes until the box is ticked. Nobody is removed; everyone stays in "
+    "the queue.\n\n"
+    "*This has to be done on the office computer running LucyECO.*%s\n\n"
+    "%s")
+
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
                "Alphalete-Reporting-Hub/signin.html")
 INSTALL_PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
@@ -1675,6 +1686,21 @@ SYSTEMS = {
         "how": "On that computer, open this and follow the steps on the "
                "page (about 1 minute):\n" + SARA_PASSWORD_PAGE,
     },
+    # RESUME PUSHING FROM THE OFFICE'S OWN COMPUTER (Megan 2026-10-21: "set up
+    # a DM to the owner/Eve/myself ... when the human check needs to be
+    # done"). Filed as signin-indeed by icd_alerts/resume_push.py only after
+    # several walled runs in a row -- one walled run usually clears itself
+    # (Carlos's, 10/21 1:07pm, was pushing again by 1:43).
+    "indeed": {
+        "name": "Indeed",
+        "what": "Resume pushing",
+        "ask": INDEED_ASK,
+        "why": " Lucy's Chrome is showing Indeed's \"Verify you are human\" "
+               "box.",
+        "how": "At that computer: click Lucy's Chrome in the Dock (the "
+               "taskbar on Windows), tick the box once, then leave the "
+               "window alone. Lucy carries on by herself.",
+    },
     "ownerville_locked": {
         "name": "OwnerVille",
         "what": "Your knocks board",
@@ -1732,7 +1758,7 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
         return False
     office = O.get(office_key)
     label = getattr(office, "label", None) or office_key
-    text = SIGNIN_ASK % (label, spec["name"], spec["what"],
+    text = spec.get("ask", SIGNIN_ASK) % (label, spec["name"], spec["what"],
                          when or "the last check-in", spec["why"], spec["how"])
     log(text)
     if not send:
