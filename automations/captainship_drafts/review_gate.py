@@ -1144,7 +1144,7 @@ def auto_check(today: dt.date, blocks: Sequence["config.Block"],
         # `rebuild=False` (hay un armado corriendo): ni se re-arma ni se frena.
         A.save_state(today, state)
         ok = {k for k, v in verdicts.items() if v.send}
-        held = {k: ([DEFER_REBUILD] if k in fix else v.reasons())
+        held = {k: ([DEFER_REBUILD] if k in fix else v.held_reasons())
                 for k, v in verdicts.items() if not v.send}
         return ok, held, {}
     if fix and act:
@@ -1153,10 +1153,11 @@ def auto_check(today: dt.date, blocks: Sequence["config.Block"],
         tb = set(state.get("tableau_rebuilt") or [])
         for k in fix:
             fixed[k] = list(verdicts[k].fixable)
-            if [r for r in verdicts[k].fixable if r != A.TABLEAU_CAUGHT_UP]:
+            if [r for r in verdicts[k].fixable
+                    if r not in A.TABLEAU_REBUILDS]:
                 state.setdefault("rebuilds", {})[k] = \
                     state.get("rebuilds", {}).get(k, 0) + 1
-            if A.TABLEAU_CAUGHT_UP in verdicts[k].fixable:
+            if set(A.TABLEAU_REBUILDS) & set(verdicts[k].fixable):
                 tb.add(k)
         state["tableau_rebuilt"] = sorted(tb)
         A.save_state(today, state)
@@ -1164,7 +1165,7 @@ def auto_check(today: dt.date, blocks: Sequence["config.Block"],
                                 upstream_held=upstream, verbose=verbose))
     A.save_state(today, state)
     ok = {k for k, v in verdicts.items() if v.send}
-    held = {k: v.reasons() for k, v in verdicts.items() if not v.send}
+    held = {k: v.held_reasons() for k, v in verdicts.items() if not v.send}
     return ok, held, fixed
 
 
@@ -1259,6 +1260,17 @@ def auto_day(today: dt.date, blocks: Sequence["config.Block"],
             waiting.extend(config.block_of(k) for k in deferred)
             print(f"  auto-send: needs a rebuild once the build ends: "
                   f"{', '.join(sorted(deferred))}", flush=True)
+    # Tableau atrasado (antes de las 12:00 CT) no es un frenado: espera callado,
+    # sin link ni @ ni corrections, y el proximo chequeo lo vuelve a mirar
+    # (Eve 2026-10-21, ver auto_send.TABLEAU_DEADLINE).
+    tableau_wait = [k for k, why in held.items() if why == [A.TABLEAU_WAIT]]
+    for k in tableau_wait:
+        held.pop(k)
+    if tableau_wait:
+        waiting.extend(config.block_of(k) for k in tableau_wait)
+        print(f"  auto-send: waiting for Tableau (until "
+              f"{A.TABLEAU_DEADLINE:%H:%M} CT): "
+              f"{', '.join(sorted(tableau_wait))}", flush=True)
     print(f"  auto-send: {len(ok)} ready, {len(held)} held, "
           f"{len(fixed)} rebuilt", flush=True)
     if not act:

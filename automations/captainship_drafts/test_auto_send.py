@@ -3,7 +3,8 @@
 Fija las tres condiciones que puso Eve y la regla de qué se re-arma y qué frena:
   * una sección faltante (la nota amarilla, como Fiber Activations de Tony) no
     sale sola;
-  * un tracker de Tableau atrasado frena; uno que se puso al día re-arma;
+  * un tracker de Tableau atrasado ESPERA callado (sin ✅); si se pone al día
+    re-arma y sale; a las 12:00 CT re-arma con lo que haya y sale igual;
   * lo que ve la revisión visual se re-arma UNA vez y, si sigue, frena;
   * si la revisión visual no puede correr, NO sale (falla cerrado);
   * los avisos van una vez, y a corrections en un solo hilo por día.
@@ -47,6 +48,16 @@ def _clean_visual(_today, _key):
 
 def _no_tableau(_today=None):
     return {}, {}, []
+
+
+def _at(hour, minute=0):
+    """Fija la hora Central que ve auto_send (el corte de Tableau es 12:00)."""
+    return mock.patch.object(
+        A, "_ct_now", lambda: dt.datetime.combine(DAY, dt.time(hour, minute)))
+
+
+def _cant_look(_today, _key, prior=()):
+    raise RuntimeError("no API key")
 
 
 class Base(unittest.TestCase):
@@ -99,15 +110,44 @@ class TestJudge(Base):
         self.assertFalse(v.send)
         self.assertTrue(v.blocked and not v.fixable)
 
-    def test_stale_tracker_holds_only_that_flavor(self):
+    def test_stale_tracker_waits_only_that_flavor(self):
         _write_eml(self.tmp, self.fiber)
         _write_eml(self.tmp, self.b2b)
         tab = lambda _t: ({"tableau:tracker_att": "only through 10/4"}, {}, [])
-        out = A.judge(DAY, [self.fiber, self.b2b], state={},
-                      visual=_clean_visual, tableau=tab, verbose=False)
-        self.assertTrue(out[self.fiber].blocked)
-        self.assertIn("Tableau not updated", out[self.fiber].blocked[0])
+        with _at(9):
+            out = A.judge(DAY, [self.fiber, self.b2b], state={},
+                          visual=_clean_visual, tableau=tab, verbose=False)
+        v = out[self.fiber]
+        self.assertFalse(v.send)
+        self.assertEqual((v.blocked, v.fixable), ([], []))
+        self.assertIn("Tableau not updated", v.waiting[0])
+        self.assertEqual(v.held_reasons(), [A.TABLEAU_WAIT])
         self.assertTrue(out[self.b2b].send)
+
+    def test_still_stale_at_noon_rebuilds_once_then_sends(self):
+        """Eve 2026-10-21: no frenar por Tableau. Al corte se re-arma con lo
+        último que haya, y ese re-armado sale aunque siga atrasado."""
+        _write_eml(self.tmp, self.fiber)
+        tab = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
+        state = {}
+        with _at(12):
+            v = A.judge(DAY, [self.fiber], state=state, visual=_clean_visual,
+                        tableau=tab, verbose=False)[self.fiber]
+            self.assertEqual(v.fixable, [A.TABLEAU_DEADLINE_REBUILD])
+            self.assertEqual((v.blocked, v.waiting), ([], []))
+            state["tableau_rebuilt"] = [self.fiber]
+            v = A.judge(DAY, [self.fiber], state=state, visual=_clean_visual,
+                        tableau=tab, verbose=False)[self.fiber]
+        self.assertTrue(v.send)
+
+    def test_a_real_problem_still_holds_after_the_noon_rebuild(self):
+        _write_eml(self.tmp, self.fiber, pending="Fiber Activations PNG")
+        tab = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
+        state = {"tableau_rebuilt": [self.fiber], "rebuilds": {self.fiber: 1}}
+        with _at(13):
+            v = A.judge(DAY, [self.fiber], state=state, visual=_clean_visual,
+                        tableau=tab, verbose=False)[self.fiber]
+        self.assertTrue(v.blocked)
 
     def test_tracker_caught_up_rebuilds_once(self):
         _write_eml(self.tmp, self.fiber)
@@ -124,9 +164,12 @@ class TestJudge(Base):
     def test_frozen_source_hit_by_captainship_holds(self):
         _write_eml(self.tmp, self.b2b)
         tab = lambda _t: ({}, {}, ["OrderLog → Sheet (data only through 10/2)"])
-        v = A.judge(DAY, [self.b2b], state={}, visual=_clean_visual,
-                    tableau=tab, verbose=False)[self.b2b]
-        self.assertTrue(v.blocked)
+        with _at(9):
+            v = A.judge(DAY, [self.b2b], state={}, visual=_clean_visual,
+                        tableau=tab, verbose=False)[self.b2b]
+        self.assertFalse(v.send)
+        self.assertEqual(v.blocked, [])
+        self.assertIn("OrderLog", v.waiting[0])
 
     def test_visual_blocker_rebuilds_then_holds(self):
         _write_eml(self.tmp, self.b2b)
@@ -284,10 +327,10 @@ class TestGateFlow(Base):
         return [config.block_of(k) for k in keys]
 
     def _run(self, keys, tab=_no_tableau, rebuild=lambda *a, **kw: 0, act=True,
-             ticks=1, building_since=None):
+             ticks=1, building_since=None, visual=_clean_visual):
         with mock.patch.object(A, "rebuild", rebuild), \
                 mock.patch.dict(A.judge.__kwdefaults__,
-                                {"visual": _clean_visual, "tableau": tab}):
+                                {"visual": visual, "tableau": tab}):
             for _ in range(ticks):
                 rc = self.rg.auto_day(DAY, self._blocks(*keys), act=act,
                                       building_since=building_since)
@@ -338,8 +381,9 @@ class TestGateFlow(Base):
     def test_held_gets_link_note_and_one_alert(self):
         _write_eml(self.tmp, self.fiber)
         _write_eml(self.tmp, self.b2b)
-        tab = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
-        rc = self._run([self.fiber, self.b2b], tab=tab, ticks=2)
+        vis = lambda t, k, prior=(): (_cant_look(t, k) if k == self.fiber
+                                      else _clean_visual(t, k))
+        rc = self._run([self.fiber, self.b2b], visual=vis, ticks=2)
         self.assertEqual(rc, 1)
         self.assertEqual(self.sent, [self.b2b])
         self.assertEqual(self.links, [config.block_of(self.fiber).key])
@@ -353,8 +397,7 @@ class TestGateFlow(Base):
         b2bs = [c.key for c in config.CAPTAINS if c.flavor == "b2b"][:3]
         for k in b2bs:
             _write_eml(self.tmp, k)
-        tab = lambda _t: ({"tableau:tracker_b2b": "behind"}, {}, [])
-        self._run(b2bs, tab=tab, ticks=2)
+        self._run(b2bs, visual=_cant_look, ticks=2)
         self.assertEqual(sorted(self.links),
                          sorted(config.block_of(k).key for k in b2bs))
         notes = [t for t in self.posted if A.HELD_MARKER in t]
@@ -364,6 +407,38 @@ class TestGateFlow(Base):
             self.assertIn(f"{A.HELD_MARKER} {k}:", notes[0])
         self.assertEqual(len(self.alerts), 1)
         self.assertEqual(sorted(self.alerts[0]), sorted(b2bs))
+
+    def test_tableau_behind_waits_quietly_then_goes_when_it_catches_up(self):
+        """Eve 2026-10-21: nada de link, @ ni ✅ por un tracker atrasado."""
+        _write_eml(self.tmp, self.fiber)
+        behind = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
+        with _at(9, 30):
+            rc = self._run([self.fiber], tab=behind, ticks=2)
+        self.assertEqual(rc, 1)                       # sigue mirando
+        self.assertEqual((self.sent, self.posted, self.alerts), ([], [], []))
+        rebuilt = []
+        caught = lambda _t: ({}, {"tableau:tracker_att": "fresh"}, [])
+        with _at(10, 45):
+            rc = self._run([self.fiber], tab=caught,
+                           rebuild=lambda t, k, **kw: rebuilt.append(list(k)))
+        self.assertEqual(rc, 0)
+        self.assertEqual(rebuilt, [[self.fiber]])
+        self.assertEqual(self.sent, [self.fiber])
+        self.assertEqual(self.alerts, [])
+        self.assertEqual(A.load_state(DAY).get("rebuilds", {}), {})
+
+    def test_tableau_never_caught_up_goes_at_noon_with_the_latest(self):
+        _write_eml(self.tmp, self.fiber)
+        behind = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
+        rebuilt = []
+        with _at(12, 0):
+            rc = self._run([self.fiber], tab=behind, ticks=2,
+                           rebuild=lambda t, k, **kw: rebuilt.append(list(k)))
+        self.assertEqual(rc, 0)
+        self.assertEqual(rebuilt, [[self.fiber]])     # una sola vez
+        self.assertEqual(self.sent, [self.fiber])
+        self.assertEqual(self.alerts, [])
+        self.assertFalse(any(A.HELD_MARKER in t for t in self.posted))
 
     def test_upstream_reason_reaches_slack_in_english(self):
         _write_eml(self.tmp, self.fiber)
@@ -445,13 +520,14 @@ class TestWhileBuilding(TestGateFlow):
         self.assertEqual((rebuilt, self.sent, self.posted, self.alerts),
                          ([], [], [], []))
 
-    def test_tableau_behind_still_holds(self):
+    def test_tableau_behind_waits_without_a_note(self):
         _write_eml(self.tmp, self.fiber)
         _age(self.tmp, self.fiber, 600)
         tab = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
-        self._run([self.fiber], tab=tab, building_since=self.since)
-        self.assertEqual(self.sent, [])
-        self.assertEqual(list(self.alerts[0]), [self.fiber])
+        with _at(9):
+            rc = self._run([self.fiber], tab=tab, building_since=self.since)
+        self.assertEqual(rc, 1)
+        self.assertEqual((self.sent, self.posted, self.alerts), ([], [], []))
 
 
 class TestBuildStarted(unittest.TestCase):

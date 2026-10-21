@@ -85,6 +85,34 @@ REBUILT_MARKER = "CAPTAINSHIP-AUTO-REBUILT"
 TABLEAU_CAUGHT_UP = ("Tableau updated after the draft was built — rebuilding it "
                      "with the new data")
 
+# TABLEAU ATRASADO = ESPERAR, NO FRENAR (Eve 2026-10-21: "si los trackers fueron
+# actualizados luego de completar las capitanias, siempre recorras de nuevo y me
+# armes los emails con los ultimos numeros, pero no que me frenes todo y me hagas
+# revisar manualmente"). En dos semanas el tracker atrasado freno 9 dias y casi
+# siempre termino en un ✅ a mano a las 13:00-14:48 sobre el mismo draft viejo.
+# Ahora: mientras Tableau esta atrasado el capitan ESPERA en silencio (sin link,
+# sin @, sin corrections); si se pone al dia se re-arma y sale
+# (TABLEAU_CAUGHT_UP); si a TABLEAU_DEADLINE sigue atrasado, se re-arma UNA vez
+# con lo ultimo que haya y sale igual.
+TABLEAU_DEADLINE = dt.time(12, 0)       # hora Central
+TABLEAU_WAIT = "waiting for Tableau to update"
+TABLEAU_DEADLINE_REBUILD = ("Tableau still behind at 12:00 — rebuilt with the "
+                            "latest numbers it had")
+# Los motivos que son "re-armar por Tableau": no gastan el re-armado del dia.
+TABLEAU_REBUILDS = (TABLEAU_CAUGHT_UP, TABLEAU_DEADLINE_REBUILD)
+
+
+def _ct_now() -> dt.datetime:
+    from automations.shared.weekend_release import CENTRAL
+    return dt.datetime.now(CENTRAL).replace(tzinfo=None)
+
+
+def past_tableau_deadline(today: dt.date) -> bool:
+    """Un dia viejo (re-corrida) ya paso el corte; hoy, a las 12:00 CT."""
+    now = _ct_now()
+    return today < now.date() or (today == now.date()
+                                  and now.time() >= TABLEAU_DEADLINE)
+
 _OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 STATE_DIR = _OUTPUT_DIR / "state" / "captainship_autosend"
 
@@ -532,26 +560,32 @@ class Verdict:
     send     — sale solo.
     fixable  — algo que re-armar arregla (sección faltante, imagen rota, lo que
                vio la revisión visual, Tableau que se puso al día después).
-    blocked  — algo que re-armar NO arregla ahora (Tableau atrasado, no se pudo
-               revisar, sigue mal después de re-armar). Espera ✅ o el arreglo.
+    blocked  — algo que re-armar NO arregla ahora (no se pudo revisar, sigue
+               mal después de re-armar). Espera ✅ o el arreglo.
+    waiting  — Tableau atrasado antes de las 12:00 CT: espera callado, sin ✅.
     """
 
     def __init__(self, key: str):
         self.key = key
         self.fixable: List[str] = []
         self.blocked: List[str] = []
+        self.waiting: List[str] = []
         self.minor: List[str] = []
 
     @property
     def send(self) -> bool:
-        return not self.fixable and not self.blocked
+        return not self.fixable and not self.blocked and not self.waiting
+
+    def held_reasons(self) -> List[str]:
+        """Lo que va al gate: los motivos, o solo la espera de Tableau."""
+        return self.reasons() or ([TABLEAU_WAIT] if self.waiting else [])
 
     def reasons(self) -> List[str]:
         return self.blocked + self.fixable
 
     def __repr__(self):  # pragma: no cover — sólo para el log
         return (f"Verdict({self.key}, send={self.send}, fixable={self.fixable}, "
-                f"blocked={self.blocked})")
+                f"blocked={self.blocked}, waiting={self.waiting})")
 
 
 def judge(today: dt.date, keys: Sequence[str], *, state: dict,
@@ -564,6 +598,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
     chequeo corre cada 15 minutos y el mismo draft no se vuelve a mandar a la API.
     Un draft re-armado cambia de huella y se revisa de nuevo."""
     stale, recovered, sources = tableau(today)
+    deadline = past_tableau_deadline(today)
     vis_cache = state.setdefault("visual", {})
     rebuilt = state.setdefault("rebuilds", {})
     tableau_rebuilt = set(state.setdefault("tableau_rebuilt", []))
@@ -577,19 +612,23 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
         eid = TRACKER_FOR_FLAVOR.get(cap.flavor if cap else "", "")
 
         # --- Tableau -------------------------------------------------------
-        if eid in stale:
-            v.blocked.append(f"Tableau not updated: the "
-                             f"`{eid.split(':')[-1]}` tracker is still behind "
-                             f"({stale[eid][:120]})")
+        late = ([f"Tableau not updated: the `{eid.split(':')[-1]}` tracker is "
+                 f"still behind ({stale[eid][:120]})"] if eid in stale else [])
+        late += [f"Tableau not updated: {s}" for s in sources]
+        if late:
+            # Atrasado no frena (ver TABLEAU_DEADLINE): espera, y al corte se
+            # re-arma una vez con lo que haya. Ya re-armado al corte, sigue.
+            if not deadline:
+                v.waiting.extend(late)
+            elif key not in tableau_rebuilt:
+                v.fixable.append(TABLEAU_DEADLINE_REBUILD)
         elif eid in recovered and key not in tableau_rebuilt:
             # El tracker se puso al día DESPUÉS de la mañana: el draft se armó
             # con el dato viejo. Se re-arma una vez con el nuevo.
             v.fixable.append(TABLEAU_CAUGHT_UP)
-        for s in sources:
-            v.blocked.append(f"Tableau not updated: {s}")
         if upstream_held and key in upstream_held:
             v.blocked.append(upstream_held[key])
-        if v.blocked:
+        if v.blocked or v.waiting or TABLEAU_DEADLINE_REBUILD in v.fixable:
             continue          # no tiene sentido mirarlo: no puede salir igual
 
         # --- el .eml -------------------------------------------------------
@@ -648,7 +687,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
         for k, v in out.items():
             print(f"  auto-check {k}: "
                   + ("OK" if v.send else
-                     f"{'RE-ARMAR' if v.fixable and not v.blocked else 'FRENADO'}"
+                     f"{'ESPERA TABLEAU' if v.waiting and not v.blocked else 'RE-ARMAR' if v.fixable and not v.blocked else 'FRENADO'}"
                      f" — {'; '.join(v.reasons())}"), flush=True)
     return out
 
