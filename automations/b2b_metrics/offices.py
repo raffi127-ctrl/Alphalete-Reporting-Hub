@@ -621,7 +621,11 @@ _merge_onboarded()
 # luke (2026-10-06): wired by 581cea1b with its destination held to Megan's DM,
 # but left in --all -- the afternoon b2b_metrics rerun tried to upload into a
 # user id and failed the whole office (channel_id must be C/G/D/Z...).
-HELD_FROM_ALL: set = {"luke"}
+# carlos (2026-10-21): "every thing that gets posted on the b2b metrics
+# thread you can stop." He sells under Raf's codes now (Fiber) — his daily
+# thread ends; fiber_metrics is the replacement. `--office carlos` still
+# works by hand for a backfill. Atef/Jamis/Sabrina/Eveliz unaffected.
+HELD_FROM_ALL: set = {"luke", "carlos"}
 
 ORDER = [k for k in OFFICES if k not in HELD_FROM_ALL]
 

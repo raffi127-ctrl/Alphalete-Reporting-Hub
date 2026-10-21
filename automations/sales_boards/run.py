@@ -76,12 +76,16 @@ TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 # Base dropped — JE: Megan 2026-07-22; Base: Carlos 2026-08-06 (no longer runs
 # the base campaign, so ⚡ Base Sales Board should stop posting on both channels).
 # (render.PROGRAMS stays full: it also drives rep-row detection in render.py.)
-PROGRAMS = [p for p in R.PROGRAMS if p not in ("JE", "Base")]
+# "B2B" stopped 2026-10-21 (Carlos: "every thing that gets posted on the b2b
+# metrics thread you can stop") — its board only ever went into that thread,
+# which b2b_metrics no longer opens (offices.HELD_FROM_ALL).
+PROGRAMS = [p for p in R.PROGRAMS if p not in ("JE", "Base", "B2B")]
 # The boards the Zero Streak images read (zeros.render_zeros stacks one block
 # per tab). Verizon joined PROGRAMS on 2026-10-08 for its OWN thread; the
 # Zero Streak callout stays what the A-Players B2B thread has always carried
 # (NDS + BOX). Add "Verizon" here to stack its reps in as a third block.
-ZEROS_PROGRAMS = [p for p in PROGRAMS if p != "Verizon"]
+# Zero Streaks rode the B2B Metrics thread — stopped with it (2026-10-21).
+ZEROS_PROGRAMS: list = []
 # The VA's per-program emoji, kept so the thread reads the way the channel is
 # used to: ":briefcase: *B2B Sales Board 7.17*".
 PROGRAM_EMOJI = {"B2B": ":briefcase:", "Base": ":zap:",
@@ -947,7 +951,7 @@ def main(argv=None) -> int:
     # level (Carlos 7/23) survives the split; a later pass dedupes on the
     # caption. (Not on a rolled board: zeros read the live gold cell, which
     # has moved on. The 5:10 pass posts them before the roll anyway.)
-    zrs = {} if (args.corrected or snap) else \
+    zrs = {} if (args.corrected or snap or not ZEROS_PROGRAMS) else \
         Z.render_zeros(sh, [board_ws(sh, t)
                             for t in dict.fromkeys(tab_for(p)
                                                    for p in ZEROS_PROGRAMS)],
