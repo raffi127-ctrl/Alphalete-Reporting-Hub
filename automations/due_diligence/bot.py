@@ -193,6 +193,21 @@ def _handler(client, req):
         print(f"[event] etype={ev.get('type')} ch={ev.get('channel_type')} "
               f"sub={ev.get('subtype')} bot={bool(ev.get('bot_id'))} "
               f"user={ev.get('user')} text={(ev.get('text') or '')[:40]!r}", flush=True)
+        # Applicant info (a screenshot, or text with a phone/email) -> reception's
+        # Contacts (automations/applicant_contacts, Raf 2026-10-22). Checked
+        # BEFORE the branch below because that one drops subtyped messages, and
+        # a DM with a picture is subtype "file_share". A DD name reply or
+        # "knocks …" carries no phone/email/picture, so it never lands here.
+        try:
+            from automations.applicant_contacts import dm as applicant
+            if applicant.wants(ev):
+                threading.Thread(target=applicant.handle,
+                                 args=(client.web_client, ev),
+                                 daemon=True).start()
+                return
+        except Exception as e:                # noqa: BLE001 — never crash the listener
+            print(f"[applicant] dispatch failed {type(e).__name__}: {e}",
+                  flush=True)
         if (ev.get("type") == "message" and ev.get("channel_type") == "im"
                 and not ev.get("bot_id") and not ev.get("subtype")):
             user = ev.get("user")

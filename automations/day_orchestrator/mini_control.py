@@ -5147,6 +5147,15 @@ _CRED_FILES = {
     "contacts-rw-token-alphaletegp":
         lambda: Path.home() / ".config" / "recruiting-report"
                 / "contacts-rw-token-alphaletegp.json",
+    # READ-WRITE Google Contacts for alphaletereception@, so Jiraiya can ADD
+    # the applicants Raf DMs it (automations/applicant_contacts). Separate from
+    # the read-only contacts-token-alphaletereception above, which New-Start
+    # still uses. Authorized by someone signed in as reception
+    # (fiber_owners_distro.contacts_write --authorize --account
+    # alphaletereception@gmail.com), then pushed to the box running Jiraiya.
+    "contacts-rw-token-alphaletereception":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "contacts-rw-token-alphaletereception.json",
 }
 
 # Of those, the file-keys that are a BAG OF INDEPENDENT CREDENTIALS: one flat
