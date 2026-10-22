@@ -37,6 +37,10 @@ TAG_USER_ID_CROSSWS = {
     "slack-token-freshsuccess": "U0BHD2UK0TA",  # Dylan in FRESH SUCCESS (Trang)
 }
 
+# The bold+italic standing instruction at the very bottom of every reply — one
+# source, shared with the Raf report (Dylan 2026-10-21).
+FOOTER = RAF.FOOTER
+
 # The offices this report covers, by office_metrics.OFFICES key. Every one is an
 # owner in Raf's captainship. Hammad + Salik share #elite-prime-sales.
 OFFICE_KEYS = ["haytham", "trang", "hammad", "jacob", "joseph", "kash",

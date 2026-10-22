@@ -75,6 +75,14 @@ SLACK_HEADER = ":telephone_receiver: Reps that didn\'t send wrap ups"
 # to him (Dylan 2026-10-21). #alphalete-sales is the AO workspace, so his AO id.
 TAG_USER_ID = "U048V0YA5FC"  # Dylan Twaddle
 
+# Standing instruction at the very bottom of every reply (Dylan 2026-10-21),
+# bold + italic. Tells reps how to avoid being flagged: the wrap-up must go to a
+# group chat that has BOTH the order's customer number and Dylan's line. Shared
+# by office_wrap_ups too.
+FOOTER = ("*_TO NOT GET TAGGED HERE YOU MUST ALWAYS INCLUDE THE NUMBER USED FOR "
+          "THE ORDER IN SARA AND DYLAN'S WRAP UP NUMBER 214-845-6450 IN THE "
+          "GROUP CHATS_*")
+
 # --- state -------------------------------------------------------------------
 # Header already posted per "day|channel" -> thread_ts, so a same-day rerun
 # replies under the morning's header instead of opening a second one. Its own

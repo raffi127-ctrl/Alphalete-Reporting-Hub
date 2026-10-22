@@ -84,6 +84,9 @@ def post_office(profile: Dict[str, str], day: dt.date,
               else getattr(C, "TAG_USER_ID", ""))
     if tag_id:
         body = body + "\n\n<@%s>" % tag_id
+    # Standing instruction at the very bottom (bold + italic).
+    if getattr(C, "FOOTER", ""):
+        body = body + "\n\n" + C.FOOTER
 
     if not chan:
         log("  [%s] no channel_id in the roster — skipped" % profile["key"])
