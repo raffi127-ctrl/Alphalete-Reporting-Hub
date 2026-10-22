@@ -65,21 +65,37 @@ def pull(today: dt.date, log=print) -> Path:
     start = today - dt.timedelta(days=LOOKBACK_DAYS)
     out = OUT_DIR / f"nds_orderlog_{today.isoformat()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
-    if out.exists() and out.stat().st_size > 500:
+
+    def _looks_like_csv(b: bytes) -> bool:
+        """2026-10-22, the first scheduled morning: Tableau returned an
+        HTML page that PASSED the old status+size check, got cached, and
+        read_crosstab died on it ('field larger than field limit') on every
+        retry. A real export's head has no '<html' and carries a Rep
+        column."""
+        head = b[:4000].decode("utf-8-sig", errors="replace").lower()
+        return "<html" not in head and "<!doctype" not in head \
+            and "rep" in head
+    if out.exists() and out.stat().st_size > 500 \
+            and _looks_like_csv(out.read_bytes()):
         log(f"[nds] reusing today's pull ({out.stat().st_size:,} bytes)")
         return out
+    if out.exists():
+        out.unlink()                      # a cached bad download must die
     url = NO._orderlog_url(start, today)
     last = ""
     for attempt in (1, 2, 3):
         with tableau_session(verbose=False) as page:
             r = page.context.request.get(url, timeout=300_000)
             body = r.body() or b""
+            ok = r.status == 200 and len(body) >= 500 \
+                and _looks_like_csv(body)
             log(f"[nds] OL csv status={r.status} bytes={len(body):,} "
-                f"(try {attempt}/3)")
-            if r.status == 200 and len(body) >= 500:
+                f"valid={ok} (try {attempt}/3)")
+            if ok:
                 out.write_bytes(body)
                 return out
-            last = f"status={r.status} bytes={len(body)}"
+            last = (f"status={r.status} bytes={len(body)} "
+                    f"csv-like={_looks_like_csv(body)}")
     raise RuntimeError(f"NDS ORDERLOG export failed after 3 tries: {last}")
 
 
