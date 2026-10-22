@@ -72,9 +72,13 @@ def pull(today: dt.date, log=print) -> Path:
         read_crosstab died on it ('field larger than field limit') on every
         retry. A real export's head has no '<html' and carries a Rep
         column."""
-        head = b[:4000].decode("utf-8-sig", errors="replace").lower()
-        return "<html" not in head and "<!doctype" not in head \
-            and "rep" in head
+        head = b[:4000].decode("utf-8-sig", errors="replace")
+        low = head.lower()
+        first = head.splitlines()[0] if head else ""
+        # 'rep in head' was useless — every Tableau HTML page says 'report'.
+        # A real export's FIRST LINE is a comma-separated header.
+        return ("<html" not in low and "<!doctype" not in low
+                and first.count(",") >= 5)
     if out.exists() and out.stat().st_size > 500 \
             and _looks_like_csv(out.read_bytes()):
         log(f"[nds] reusing today's pull ({out.stat().st_size:,} bytes)")
@@ -96,6 +100,9 @@ def pull(today: dt.date, log=print) -> Path:
                 return out
             last = (f"status={r.status} bytes={len(body)} "
                     f"csv-like={_looks_like_csv(body)}")
+            log("[nds] body head: "
+                + body[:150].decode("utf-8-sig", "replace")
+                      .replace("\n", " ")[:150])
     raise RuntimeError(f"NDS ORDERLOG export failed after 3 tries: {last}")
 
 
@@ -131,6 +138,8 @@ def load_crew(path: Path, log=print):
     long-format measure rows collapsed to one per line (every count doubled
     on the NDS-SN export — probed on Khalil's board 2026-10-05), then the
     crew roster as a safety filter against stragglers on his owner."""
+    import csv as _csvmod
+    _csvmod.field_size_limit(10_000_000)   # a giant Notes-ish cell must not
     from automations.commission_sheet.sources import read_crosstab
     from automations.total_knocks import guests
     rows = read_crosstab(path)
