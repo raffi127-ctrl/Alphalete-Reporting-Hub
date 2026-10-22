@@ -21,7 +21,7 @@ mass-text the applicants there was no time to ring. So a single text may be
 the LAST step of a worked applicant, not the only contact they ever had.
 Nothing in p=336 can tell those apart; the status on the call list can.
 
-  lucy rerun sms_call_list --office 11280 --machine "Lucy 2"
+  lucy rerun sms_call_list --office 11280   # no --machine: goes to the emptiest of Lucy 2/1/3
   ... pull_call_list.py --office 11280 --dry-run
 
 READ-ONLY. Writes tab "Call List <office>" + output/call_list_<office>.json.

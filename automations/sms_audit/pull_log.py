@@ -14,7 +14,7 @@ does not:
   * **Status** — Delivered / Error, so a text that never arrived stops counting
     as one we sent.
 
-  lucy rerun sms_log --office 11280,23965,24065 --machine "Lucy 2"
+  lucy rerun sms_log --office 11280,23965,24065   # no --machine: goes to the emptiest of Lucy 2/1/3
   ... pull_log.py --office 11280 --week 2       # the week before last
   ... pull_log.py --office 11280 --dates 09-19-2026,09-25-2026
   ... pull_log.py --dry-run                     # scrape, print counts, no write

@@ -531,7 +531,8 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 120,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "can_run_on": ["Lucy 1", "Lucy 3"]
   },
   "late_join_probe": {
    "on_scheduler": false,
@@ -642,7 +643,8 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 60,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "can_run_on": ["Lucy 1", "Lucy 3"]
   },
   "sms_audit_weekly": {
    "on_scheduler": true,
@@ -686,7 +688,8 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 120,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "can_run_on": ["Lucy 1", "Lucy 3"]
   },
   "sms_call_list": {
    "on_scheduler": false,
@@ -706,7 +709,8 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 45,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "can_run_on": ["Lucy 1", "Lucy 3"]
   },
   "sms_ai_settings": {
    "on_scheduler": false,
@@ -726,7 +730,8 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 20,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "stay_home": true
   },
   "sms_crosscheck": {
    "hand_run_only": true,
@@ -747,7 +752,8 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 45,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "stay_home": true
   },
   "probe_calls": {
    "on_scheduler": false,
@@ -787,7 +793,8 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 60,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "can_run_on": ["Lucy 1", "Lucy 3"]
   },
   "recruiter_stats": {
    "on_scheduler": true,

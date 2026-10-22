@@ -19,7 +19,7 @@ individual action:
 makes an answer-rate-by-hour possible at all. `User Name` separates the
 automation from a person, and `Phone` joins to the SMS log and the calendar.
 
-  lucy rerun sms_activity --office 11280 --machine "Lucy 2"
+  lucy rerun sms_activity --office 11280   # no --machine: goes to the emptiest of Lucy 2/1/3
   ... pull_activity.py --office 11280 --dates 09-19-2026,09-25-2026
   ... pull_activity.py --office 11280 --dry-run   # scrape, count, no write
 

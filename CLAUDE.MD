@@ -86,6 +86,16 @@ fluff. I need clear visuals and concise communications.
   `--resolve-report <report_id> --note "..."`. Desde Windows el comando
   NO postea: encola el trabajo en la mini, porque todo lo que aparece en
   ese canal sale como Lucy. No lo saltees posteando a mano.
+- **Build/fix runs go to the least-loaded Lucy, not Lucy 1/2.** When
+  we're building or fixing (probes, backfills, test pulls), queue
+  `lucy rerun <id>` with NO `--machine`. It goes to the least-loaded
+  Lucy that has the logins it needs (`automations/day_orchestrator/routing.py`).
+  Scheduled reports never move: anything on the 4am run, or with its own
+  timer in `deploy/`. Neither do install/remove jobs or `stay_home`
+  entries. It never lands on a Lucy whose 4am run is still going, and
+  nothing moves 3–5am. A NEW build entry: leave `machine` out unless it
+  truly needs one box. Pinning it to Lucy 1 is what piles everything
+  there (Megan, 2026-10-21).
 - **Cite the full source path** when telling me where a number comes
   from: workbook → view → worksheet → filter → row/col. I forget once
   I send the metric to you, so spell it out.

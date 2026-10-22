@@ -11,7 +11,7 @@ Columns: App Id | Applicant Name | Email Sent To | Phone | Email Type |
 Email Name | Status | Date Sent | Date Opened | Time To Open | Delivery.
 Phone is what joins it to the SMS log.
 
-  lucy rerun sms_email_tracking --office 11280 --machine "Lucy 2"
+  lucy rerun sms_email_tracking --office 11280   # no --machine: goes to the emptiest of Lucy 2/1/3
   ... pull_email_tracking.py --office 11280 --dates 09-15-2026,09-25-2026
 
 READ-ONLY. Writes tab "Email Tracking <office>" + output/email_tracking_

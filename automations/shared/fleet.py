@@ -53,12 +53,12 @@ class Machine:
     __slots__ = ("name", "badge", "ownerville_account", "owner_display_name",
                  "hostnames", "holds_appstream", "runs_appstream",
                  "morning_clock_since", "office_onboarding_choice", "can_text",
-                 "note")
+                 "google_account", "note")
 
     def __init__(self, name, badge, ownerville_account, owner_display_name="",
                  hostnames=(), holds_appstream=False, runs_appstream=False,
                  morning_clock_since=None, office_onboarding_choice=False,
-                 can_text=False, note=""):
+                 can_text=False, google_account="", note=""):
         self.name = name
         self.badge = badge
         #: The PERSON whose OwnerVille login this box uses, spelled as people
@@ -103,6 +103,12 @@ class Machine:
         #: purpose: letting someone pin an office to a machine that cannot run
         #: its campaign produces a silently blank board.
         self.office_onboarding_choice = office_onboarding_choice
+        #: The Google account this box's Sheets token belongs to. Decides which
+        #: sheets it can open: Lucy 1 is raffi127@ (owner of most sheets), the
+        #: rest alphaletereporting@ — Jacob's sheet 403'd on Lucy 4 on 9/30
+        #: because it was shared with raffi127 only. routing.py treats two boxes
+        #: on the same account as sheet-equivalent.
+        self.google_account = google_account
         self.note = note
 
     def __repr__(self):  # pragma: no cover - debugging aid
@@ -123,6 +129,7 @@ MACHINES: Tuple[Machine, ...] = (
         hostnames=("Alphaletes-Mac-mini.local",),
         holds_appstream=True, runs_appstream=True, can_text=True,
         morning_clock_since="2026-08-29", office_onboarding_choice=True,
+        google_account="raffi127@gmail.com",
         note="the original mini; D2D / Raf's org. Reachable by SSH.",
     ),
     Machine(
@@ -146,6 +153,7 @@ MACHINES: Tuple[Machine, ...] = (
         hostnames=("Lucys-MacBook-Neo.local", "Carloss-Mac-mini-2"),
         holds_appstream=True, runs_appstream=True, can_text=False,
         morning_clock_since="2026-08-29", office_onboarding_choice=True,
+        google_account="alphaletereporting@gmail.com",
         note="Carlos's org / B2B — the DATA it works, not who holds it. A "
              "LAPTOP: caffeinate does not survive a shut lid. SSH (lucy2@) "
              "since 2026-09-19, same network as the rest.",
@@ -156,6 +164,7 @@ MACHINES: Tuple[Machine, ...] = (
         hostnames=("Lucys-Mac-mini.local",),
         holds_appstream=True, runs_appstream=True, can_text=True,
         morning_clock_since="2026-08-29", office_onboarding_choice=False,
+        google_account="alphaletereporting@gmail.com",
         note="rerun/overflow box on Raf's accounts. SSH (lucy3@) since 2026-09-19.",
     ),
     Machine(
@@ -180,6 +189,7 @@ MACHINES: Tuple[Machine, ...] = (
         # day, so 9/30 is its first 4am batch — watched from that first morning.
         holds_appstream=False, runs_appstream=False, can_text=True,
         morning_clock_since="2026-09-30", office_onboarding_choice=False,
+        google_account="alphaletereporting@gmail.com",
         note="provisioned 2026-09-17; workflows/lucy4-provisioning.md. "
              "Capabilities flip at go-live, one at a time.",
     ),

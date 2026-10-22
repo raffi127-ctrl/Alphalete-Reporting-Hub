@@ -387,7 +387,10 @@ def read_beats() -> Dict[str, dict]:
             continue
         out[jid] = {"last_seen": seen,
                     "machine": str(r.get("Machine") or ""),
-                    "status": str(r.get("Status") or "").strip().lower()}
+                    "status": str(r.get("Status") or "").strip().lower(),
+                    # mini_control's pulse carries "batch=running|idle@<utc>"
+                    # here, which routing.py reads (2026-10-21).
+                    "note": str(r.get("Note") or "").strip()}
     return out
 
 

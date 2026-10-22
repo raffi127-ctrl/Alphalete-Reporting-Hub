@@ -126,6 +126,7 @@ import gspread
 
 from automations.recruiting_report import fill as _fill
 from automations.day_orchestrator import registry
+from automations.day_orchestrator import routing
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # The control tab lives on the same workbook as Hub Activity (the orchestrator's
@@ -9244,7 +9245,7 @@ ACTIONS = {
 # Enqueue + poll
 # ---------------------------------------------------------------------------
 
-def _rerun_home(args: str) -> str | None:
+def _rerun_home(args: str, by: str = "") -> str | None:
     """The runner that owns the report a `rerun` row names, or None for Lucy 1.
 
     A rerun with no --machine used to land on Lucy 1 whatever the report was.
@@ -9260,10 +9261,40 @@ def _rerun_home(args: str) -> str | None:
     if not parts:
         return None
     try:
-        r = registry.resolve_report(registry.load_config(), parts[0])
+        cfg = registry.load_config()
+        r = registry.resolve_report(cfg, parts[0])
     except Exception:  # noqa: BLE001 — routing must never sink the rerun
         return None
     home = (getattr(r, "machine", None) or "").strip() if r else ""
+    # 2026-10-21 (Megan): a hand-queued rerun goes to the emptiest Lucy that can
+    # really run it — never onto a box mid-4am-batch. All the rules live in
+    # routing.py; any error leaves the job at home, exactly as before.
+    raw_r = ((getattr(cfg, "raw", None) or {}).get("reports", {})
+             .get(parts[0]) if r else None)
+    if raw_r is not None and not str(by).startswith(AUTO_BY_PREFIX):
+        try:
+            sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+            history = {}
+            for m in _fleet.RUNNERS:
+                try:
+                    history[m] = sh.worksheet(
+                        _control_tab_for(m)).get_all_values()[1:]
+                except Exception:  # noqa: BLE001 — that box just isn't a target
+                    pass
+            from automations.shared import silent_job_watch as _sjw
+            picked = routing.pick(
+                raw_r, parts[0], by,
+                history, _sjw.read_beats(), _parse_ts,
+                beat_id=lambda m: _sjw.job_id_for_machine("mini_control", m))
+        except Exception as e:  # noqa: BLE001 — fall back to home
+            print("[mini_control] couldn't compare queues ({}) — using "
+                  "home".format(e), flush=True)
+            picked = None
+        if picked:
+            print("[mini_control] {} → {} (least loaded right now; its usual "
+                  "box {} is busier)".format(parts[0], picked,
+                                            home or DEFAULT_MACHINE), flush=True)
+            return picked
     if not home or home == DEFAULT_MACHINE:
         return None
     print("[mini_control] {} lives on {} — queuing it there".format(
@@ -9285,7 +9316,7 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     if auto and not str(by).startswith(AUTO_BY_PREFIX):
         by = "{}{}".format(AUTO_BY_PREFIX, by)
     if action == "rerun" and machine is None:
-        machine = _rerun_home(args)
+        machine = _rerun_home(args, by)
     # NOTE _tab_is_live (module level) is what "a runner reads this tab" means.
     # An EXPLICIT --machine target whose tab doesn't exist is a typo, not a new
     # machine: _open would silently create a tab no poller reads and the row
@@ -9732,6 +9763,25 @@ _PULSE_EVERY_S = 600
 _last_pulse = 0.0
 
 
+def _batch_running() -> bool | None:
+    """True while this machine's day-orchestrator holds a day lock with a live
+    pid (the whole 4am batch, circle-backs included), False when it doesn't,
+    None when we can't tell. Checks yesterday too: a batch resumed after
+    midnight still holds the previous day's lock."""
+    try:
+        from automations.day_orchestrator import state as _state
+        today = dt.date.today()
+        for d in (today, today - dt.timedelta(days=1)):
+            lp = _state._lock_path(d.isoformat())
+            if lp.exists():
+                pid = int((lp.read_text().strip() or "0"))
+                if pid and _state._pid_alive(pid):
+                    return True
+        return False
+    except Exception:  # noqa: BLE001 — unknown, and routing treats it as busy
+        return None
+
+
 def _maybe_pulse(mach: str) -> None:
     """Best-effort and never raises — a heartbeat must not stall polling."""
     global _last_pulse
@@ -9741,7 +9791,10 @@ def _maybe_pulse(mach: str) -> None:
     _last_pulse = now
     try:
         from automations.shared import silent_job_watch as _sjw
-        _sjw.beat(_sjw.job_id_for_machine("mini_control", mach))
+        # The note tells routing.py whether this box's 4am batch is still
+        # going, so a hand-queued rerun never spills onto a mid-batch Lucy.
+        _sjw.beat(_sjw.job_id_for_machine("mini_control", mach),
+                  note=routing.batch_note(_batch_running()))
         _sjw.watch_peers(mach)
     except Exception as e:  # noqa: BLE001
         print(f"[mini_control] pulse error (continuing): {type(e).__name__}: {str(e)[:160]}")
