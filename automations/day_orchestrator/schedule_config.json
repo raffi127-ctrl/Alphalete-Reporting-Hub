@@ -11179,7 +11179,10 @@
    },
    "priority": "P3",
    "freshness_target": null,
-   "depends_on": [],
+   "depends_on": [
+    "dd_week_roll"
+   ],
+   "_depends_note": "2026-10-22: --fetch picks its week from the DD tab's leftmost column (current_week), so it must run AFTER dd_week_roll opens the new week. On 10/22 it ran at 07:44, the roll at 07:45: it downloaded LAST week's folder (2026-10-17), dd_populate found no 2026-10-24 file, and the bulletin went out without Jahvid's/Abel's Credico DD.",
    "verify": {
     "type": "manifest",
     "report_id": "credico_fetch",
