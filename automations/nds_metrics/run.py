@@ -1107,7 +1107,7 @@ def _state_path(today: dt.date) -> Path:
     return OUT_DIR / f"thread_{today.isoformat()}.json"
 
 
-def post_thread(artifacts, today, log=print) -> None:
+def post_thread(artifacts, today, log=print, force: bool = False) -> None:
     from automations.shared.slack_metrics_post import _client
     client = _client()
     sp = _state_path(today)
@@ -1126,7 +1126,7 @@ def post_thread(artifacts, today, log=print) -> None:
         pin_message(client, CHANNEL[1], ts, log=log)
     for (sid, emoji, title, _fn) in SECTIONS:
         path = artifacts.get(sid)
-        if not path or sid in state["posted"]:
+        if not path or (sid in state["posted"] and not force):
             continue
         paths = list(path) if isinstance(path, (list, tuple)) else [path]
         client.files_upload_v2(
@@ -1134,7 +1134,8 @@ def post_thread(artifacts, today, log=print) -> None:
             initial_comment=f"{emoji} *{title}*",
             file_uploads=[{"file": str(pp), "filename": Path(pp).name}
                           for pp in paths])
-        state["posted"].append(sid)
+        if sid not in state["posted"]:
+            state["posted"].append(sid)
         sp.write_text(json.dumps(state))
         log(f"[nds] posted {sid}")
 
@@ -1162,6 +1163,9 @@ def main(argv=None) -> int:
                     help="DM previews to this user; never touches the channel")
     ap.add_argument("--post", action="store_true",
                     help="post the live NDS Metrics thread")
+    ap.add_argument("--force", action="store_true",
+                    help="re-post sections already in today's thread state "
+                         "(replace a bad one); pair with --only")
     a = ap.parse_args(argv)
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1184,7 +1188,7 @@ def main(argv=None) -> int:
     if a.dm:
         dm_previews(artifacts, a.dm)
     if a.post:
-        post_thread(artifacts, today)
+        post_thread(artifacts, today, force=a.force)
     if not a.dm and not a.post:
         print("[nds] dry-run — --dm for previews, --post for the thread")
     print("=== done ===", flush=True)
