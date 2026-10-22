@@ -42,8 +42,9 @@ def main(argv=None) -> int:
                          "tablets and wearables -- this shows which columns "
                          "SaraPlus really has to split them.")
     ap.add_argument("--rows", metavar="SERVICE",
-                    help="with --columns: only that Service, and print each rep "
-                         "row's NON-ZERO cells by header label.")
+                    help="with --columns: only the Services whose name contains "
+                         "this (case-insensitive, e.g. 'internet' or 'AT&T'), and "
+                         "print each rep row's NON-ZERO cells by header label.")
     args = ap.parse_args(argv)
     from patchright.sync_api import sync_playwright
     from automations.shared import saraplus as S
@@ -126,7 +127,11 @@ def _dump_columns(page, base: str, day_s: str, only: str = None) -> None:
     services = list(dict.fromkeys(page.evaluate(_SERVICES_JS)))
     page.keyboard.press("Escape")
     print("SERVICES: %s" % " | ".join(services))
-    for svc in ([only] if only else services):
+    # A PIECE OF THE NAME, not the exact label: the mini queue splits a
+    # sara_probe row on spaces, so "AT&T Internet" can't arrive whole.
+    # `--rows internet` finds it; `--rows AT&T` takes every AT&T service.
+    want = (only or "").lower()
+    for svc in ([s for s in services if want in s.lower()] if only else services):
         try:
             page.goto(base + S.HUB_PATH, wait_until="domcontentloaded",
                       timeout=S.NAV_TIMEOUT_MS)
