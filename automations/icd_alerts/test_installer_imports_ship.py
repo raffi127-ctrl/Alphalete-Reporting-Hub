@@ -99,6 +99,8 @@ class TheInstallerOnlyImportsWhatItShips(unittest.TestCase):
                 missing.append("%s is in agent_files.txt but is not here"
                                % rel)
                 continue
+            if not rel.endswith(".py"):     # ocr_screen.js ships as data
+                continue
             try:
                 tree = ast.parse(path.read_text())
             except SyntaxError as e:

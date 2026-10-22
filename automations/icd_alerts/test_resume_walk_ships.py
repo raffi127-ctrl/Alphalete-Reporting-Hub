@@ -449,6 +449,69 @@ class TheAgentReportsThePushsHealth(unittest.TestCase):
             self.assertFalse(RP._heartbeat())
 
 
+class PictureResumesAreReadOnTheMac(unittest.TestCase):
+    """10/22: Jorge Banos's number was on his resume in plain sight and the
+    office push called him "no phone" -- Indeed drew it as a picture, and the
+    Claude vision fallback needs a key no office computer has."""
+
+    def test_the_reader_ships(self):
+        self.assertIn("automations/oat_processing/bin/ocr_screen.js",
+                      package.AGENT_FILES)
+
+    def test_vision_failing_falls_back_to_the_mac(self):
+        from automations.oat_processing import run as OAT
+        with mock.patch.object(OAT, "_local_screen_text", return_value=(
+                "Jorge Banos's Resume\nView candidate\nJORGE\nBANOS\n"
+                "Dallas, TX\njbanos400@gmail.com\n9454023077\n"
+                "2504 Bentley Ave 75211")):
+            phone, email = OAT._ocr_phone(mock.MagicMock())
+        self.assertEqual((phone, email), ("9454023077", "jbanos400@gmail.com"))
+
+    def test_no_text_is_no_phone(self):
+        from automations.oat_processing import run as OAT
+        with mock.patch.object(OAT, "_local_screen_text", return_value=""):
+            self.assertEqual(OAT._ocr_phone(mock.MagicMock()), (None, ""))
+
+    def test_the_written_off_are_reread_once_per_fix(self):
+        state, resets = {}, []
+        oat = mock.Mock(reset_nophone_cache=lambda: resets.append(1) or 2)
+        with mock.patch.object(RP, "_state", side_effect=lambda: dict(state)), \
+             mock.patch.object(RP, "_save_state",
+                               side_effect=lambda st: state.update(st)):
+            RP._recheck_once_per_fix(oat)
+            RP._recheck_once_per_fix(oat)
+        self.assertEqual(resets, [1])
+        self.assertEqual(state["recheck_for"], RP.READ_FIX)
+
+
+class TheMacReaderReallyReads(unittest.TestCase):
+    """The real thing, on a real image: macOS only, skipped elsewhere."""
+
+    def test_reads_a_number_off_an_image(self):
+        import platform
+        import subprocess
+        import tempfile
+        if platform.system() != "Darwin":
+            self.skipTest("macOS only")
+        js = REPO / "automations/oat_processing/bin/ocr_screen.js"
+        png = tempfile.mktemp(suffix=".png")
+        html = ("<html><body style='font:40px Arial;padding:40px'>"
+                "Jorge Banos<br>9454023077</body></html>")
+        try:
+            from patchright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                b = p.chromium.launch(headless=True)
+                pg = b.new_page()
+                pg.set_content(html)
+                pg.screenshot(path=png)
+                b.close()
+        except Exception as e:  # noqa: BLE001
+            self.skipTest("no browser: %s" % e)
+        out = subprocess.run(["osascript", "-l", "JavaScript", str(js), png],
+                             capture_output=True, timeout=60).stdout.decode()
+        self.assertIn("9454023077", out.replace(" ", ""))
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):

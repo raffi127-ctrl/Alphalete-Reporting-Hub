@@ -2479,6 +2479,55 @@ def _shot(pg, tag) -> None:
             _log("    [shot] DM failed: %s: %s" % (type(e).__name__, str(e)[:80]))
 
 
+def _local_screen_text(pg) -> str:
+    """The resume tab's text, read off a screenshot by the Mac itself (Vision
+    via osascript -- automations/oat_processing/bin/ocr_screen.js). No key, no
+    install, about a second. "" on Windows or on any failure. Never raises."""
+    import platform as _pf
+    import subprocess as _sp
+    import tempfile as _tf
+    if _pf.system() != "Darwin":
+        return ""
+    js = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin",
+                      "ocr_screen.js")
+    if not os.path.exists(js):
+        return ""
+    fd, png = _tf.mkstemp(prefix="oat_screen_", suffix=".png")
+    os.close(fd)
+    try:
+        pg.screenshot(path=png, full_page=False)
+        r = _sp.run(["osascript", "-l", "JavaScript", js, png],
+                    capture_output=True, timeout=60)
+        return (r.stdout or b"").decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return ""
+    finally:
+        try:
+            os.unlink(png)
+        except OSError:
+            pass
+
+
+def _local_ocr_phone(pg) -> tuple:
+    """(phone, email) off the screen with the Mac's own text recognition --
+    the fallback when Claude vision cannot run (an office computer has no key)
+    or finds nothing. Top-down, same filters as the downloaded-file reader, so
+    the resume header's number wins over a former employer's."""
+    text = _local_screen_text(pg)
+    if not text.strip():
+        return None, ""
+    rd = _rd_mod()
+    raw = rd.phone_from_text(text)
+    if not raw:
+        return None, ""
+    phone = re.sub(r"\D", "", raw)
+    if len(phone) == 11 and phone.startswith("1"):
+        phone = phone[1:]
+    i = text.find(raw)
+    near = text[max(0, i - 300):i + len(raw) + 300] if i >= 0 else ""
+    return phone, rd.email_from_text(near)
+
+
 def _ocr_phone(pg, who="") -> tuple:
     """(phone, email) read OFF THE SCREEN with Claude vision (Carlos 2026-09-24:
     "if you cant download you can still read the screen"). The viewer/panel can
@@ -2513,11 +2562,19 @@ def _ocr_phone(pg, who="") -> tuple:
             phone = phone[1:]
         if phone and len(phone) != 10:
             phone = ""
-        return (phone or None), (em.group(1) if em else "")
+        if phone and len(phone) == 10:
+            return phone, (em.group(1) if em else "")
     except Exception as e:  # noqa: BLE001
         _log("    [ocr] screen read failed: %s: %s"
              % (type(e).__name__, str(e)[:80]))
-        return None, ""
+    # THE MAC READS IT ITSELF (2026-10-22). An office's own computer has no
+    # Claude key, so the read above always fails there -- and every resume
+    # Indeed draws as a picture (Jorge Banos's, 10/22) came out "no phone".
+    ph, em2 = _local_ocr_phone(pg)
+    if ph:
+        _log("    [ocr] read by the Mac itself: %s" % ph)
+        return ph, em2
+    return None, ""
 
 
 def _probe_attachment(page, a) -> None:

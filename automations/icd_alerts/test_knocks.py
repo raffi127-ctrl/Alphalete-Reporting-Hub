@@ -504,6 +504,8 @@ class ShippedClosureTests(unittest.TestCase):
 
         missing = []
         for rel in AGENT_FILES:
+            if not rel.endswith(".py"):     # ocr_screen.js ships as data
+                continue
             tree = ast.parse((repo / rel).read_text())
             for node, fn in nodes_with_function(tree):
                 # Named, guarded Hub-only extras: test_resume_walk_ships.

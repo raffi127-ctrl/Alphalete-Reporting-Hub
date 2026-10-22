@@ -84,6 +84,9 @@ AGENT_FILES = [
     "automations/oat_processing/classify.py",
     "automations/oat_processing/resume_download.py",
     "automations/oat_processing/run.py",
+    # The Mac's own text recognition for resumes Indeed draws as a picture
+    # (no Claude key ships to an office; 2026-10-22, Jorge Banos).
+    "automations/oat_processing/bin/ocr_screen.js",
     # The Lucys' own office switch (stdlib + patchright only), for an office
     # computer holding a login that sees more than one office.
     "automations/recruiting_report/__init__.py",

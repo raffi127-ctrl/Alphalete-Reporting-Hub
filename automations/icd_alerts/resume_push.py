@@ -922,6 +922,27 @@ def _walled() -> bool:
         return False
 
 
+# A READ FIX MEANS THE "NO NUMBER" LIST IS WRONG. Bump this when a change lets
+# the walk read numbers it could not before, and the next walk on every office
+# computer re-reads everyone it had written off -- once, not every run (the
+# list exists so dead-end resumes are not reopened every ten minutes).
+#   2026-10-22-mac-ocr: the Mac reads picture resumes itself (Jorge Banos).
+READ_FIX = "2026-10-22-mac-ocr"
+
+
+def _recheck_once_per_fix(OAT) -> None:
+    st = _state()
+    if st.get("recheck_for") == READ_FIX:
+        return
+    try:
+        OAT.reset_nophone_cache()   # renames to .bak, never deletes
+    except Exception as e:  # noqa: BLE001
+        _log("could not clear the no-number list: %s" % type(e).__name__)
+        return
+    st["recheck_for"] = READ_FIX
+    _save_state(st)
+
+
 def _walk(page, live: bool, record: dict) -> dict:
     """One walk of the office's One App at a time queue. Returns
     {'reached', 'office', 'rc', 'sent', 'walled', 'why'}."""
@@ -969,6 +990,7 @@ def _walk(page, live: bool, record: dict) -> dict:
     if not ok:
         return {"reached": True, "office": seen, "rc": 2, "why": why}
     _point_walk_here(seen, record)
+    _recheck_once_per_fix(OAT)
     before = len(OAT._ACTIVITY_ROWS)
     OAT.LAST_WALK = {}
     rc = OAT.run_walk(page, live=live)
