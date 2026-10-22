@@ -140,9 +140,13 @@ def load_crew(path: Path, log=print):
     crew roster as a safety filter against stragglers on his owner."""
     import csv as _csvmod
     _csvmod.field_size_limit(10_000_000)   # a giant Notes-ish cell must not
-    from automations.commission_sheet.sources import read_crosstab
+    # kill the parse (2026-10-22). Parse with nds_orderlog's own comma
+    # reader — the commission crosstab reader SNIFFS the delimiter and a
+    # tab inside that giant cell flipped it to tab, turning every row into
+    # one cell ('Rep' header unfindable, StopIteration).
+    from automations.office_metrics import nds_orderlog as NO
     from automations.total_knocks import guests
-    rows = read_crosstab(path)
+    rows = NO._read_csv(path)
     hdr_i = next(i for i, r in enumerate(rows)
                  if any(str(c).strip().lower() == "rep" for c in r))
     cols = Cols(rows[hdr_i])
