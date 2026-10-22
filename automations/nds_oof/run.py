@@ -91,6 +91,22 @@ def _due(state: Dict, key: str, every_min: int, now: dt.datetime) -> bool:
     return (now - last_at) >= dt.timedelta(minutes=every_min - 1)
 
 
+def _board_due(state: Dict, now: dt.datetime) -> bool:
+    """ONE BOARD PER CLOCK HOUR, not one per 60 elapsed minutes. The first
+    board on 2026-10-21 went at 2:02, every later one at :02, and the 9:00
+    pass saw '58 minutes since the last board' and skipped -- 9:15 was past
+    the window, so the day's last board was 8:02 (Carlos: 'this is the last
+    one i got texted'). Keyed on the hour, the 9:00 pass always draws."""
+    last = state.get("board_at")
+    if not last:
+        return True
+    try:
+        last_at = dt.datetime.fromisoformat(last)
+    except ValueError:
+        return True
+    return (last_at.date(), last_at.hour) != (now.date(), now.hour)
+
+
 # --- text --------------------------------------------------------------------
 def gaps_text(over: List[Dict], now: dt.datetime) -> str:
     """'NDS 15 min gaps — 3:15 PM' + 'Name - N min', longest first."""
@@ -233,7 +249,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True) -> int:
         _log("outside the window (%s) -- nothing to do" % now.strftime("%a %H:%M"))
         return 0
     state = _state()
-    want_board = board or force or _due(state, "board_at", C.BOARD_EVERY_MIN, now)
+    want_board = board or force or _board_due(state, now)
     want_gaps = force or _due(state, "gaps_at", C.GAPS_EVERY_MIN, now)
     if not want_board and not want_gaps:
         _log("nothing due at %s" % _clock(now))
