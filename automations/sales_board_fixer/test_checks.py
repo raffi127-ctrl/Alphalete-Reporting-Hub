@@ -243,24 +243,58 @@ class OwnerTabs(unittest.TestCase):
 
 
 class LineupNames(unittest.TestCase):
-    BOARDS = {"Sales Board WE 10.25": (3, 63)}
+    BOARDS = {"Sales Board WE 10.25": (3, 4, 63)}
+
+    def fix(self, f, boards=None, home=None, keep=()):
+        return [(y.where, y.kind, y.value) for y in
+                K.check_lineup_names("t", f, boards or self.BOARDS, home, keep)]
 
     def test_short_range_is_stretched_to_the_row_above_totals(self):
         f = [["", ""], ["", "={'Sales Board WE 10.25'!$C4:$C51}"]]
-        x = K.check_lineup_names("Line Up WE 10.25", f, self.BOARDS)
-        self.assertEqual([(y.where, y.value) for y in x],
-                         [("B2", "={'Sales Board WE 10.25'!$C4:$C63}")])
+        self.assertEqual(self.fix(f), [("B2", "lineup_short",
+                                        "={'Sales Board WE 10.25'!$C4:$C63}")])
 
     def test_long_range_is_cut_back_so_totals_stays_out(self):
         f = [["={'Sales Board WE 10.25'!$C4:$C70}"]]
-        x = K.check_lineup_names("t", f, self.BOARDS)
-        self.assertEqual(x[0].value, "={'Sales Board WE 10.25'!$C4:$C63}")
+        self.assertEqual(self.fix(f)[0][2], "={'Sales Board WE 10.25'!$C4:$C63}")
 
-    def test_right_range_other_column_or_other_tab_left_alone(self):
+    def test_right_range_sums_and_other_columns_left_alone(self):
         f = [["={'Sales Board WE 10.25'!$C4:$C63}",
-              "=SUM('Sales Board WE 10.25'!$F4:$F51)",
-              "={'Sales Board WE 10.18'!$C4:$C51}"]]
-        self.assertEqual(K.check_lineup_names("t", f, self.BOARDS), [])
+              "=SUM('Sales Board WE 10.25'!$C4:$C51)",
+              "={'Sales Board WE 10.25'!$F4:$F51}"]]
+        self.assertEqual(self.fix(f), [])
+
+    def test_a_teams_slice_is_not_every_rep(self):
+        # Kash's Territory Line Up: B4:B13, B14:B23... per team, starts mid-board
+        f = [["={'Sales Board WE 10.25'!C13:C23}", "={'Sales Board WE 10.25'!C24:C33}"]]
+        self.assertEqual(self.fix(f), [])
+
+    def test_old_week_moves_to_the_board_in_use(self):
+        # Cyrus 2026-10-22: Line Up read '5.18' (rows 4-104), board in use '10.20'
+        boards = {"5.18": (2, 4, 104), "10.20": (2, 4, 28)}
+        f = [["={'5.18'!$B4:$B104}"]]
+        self.assertEqual(self.fix(f, boards, home="10.20", keep={"10.20"}),
+                         [("A1", "lineup_old_week", "={'10.20'!$B4:$B28}")])
+
+    def test_a_board_of_this_run_never_moves(self):
+        # Jacob: two boards in use, the Line Up reads the first
+        boards = {"NEW Sales Board": (2, 4, 138), "w.e 10/12/26": (2, 4, 90)}
+        f = [["={'NEW Sales Board'!B4:B138}"]]
+        self.assertEqual(self.fix(f, boards, home="w.e 10/12/26",
+                                  keep={"NEW Sales Board", "w.e 10/12/26"}), [])
+
+    def test_split_list_only_the_lowest_piece_ends_above_totals(self):
+        # Miami JAIRO 2026-10-22: four columns, the last one ran to 131 (TOTALS 114)
+        boards = {"JAIRO": (2, 4, 113)}
+        f = [["={JAIRO!B4:B38}", "={JAIRO!B39:B73}", "={JAIRO!B73:B113}", "={JAIRO!B93:B131}"]]
+        self.assertEqual(self.fix(f, boards, home="JAIRO", keep={"JAIRO"}),
+                         [("D1", "lineup_short", "={JAIRO!B93:B113}")])
+        f = [["={COLTEN!B4:B38}", "={COLTEN!B39:B72}", "={COLTEN!B73:B107}"]]
+        self.assertEqual(self.fix(f, {"COLTEN": (2, 4, 107)}), [])
+
+    def test_gone_tab_left_alone(self):
+        f = [["={'Sales Board'!B4:B13}"]]
+        self.assertEqual(self.fix(f), [])
 
 
 class OwnerRepeats(unittest.TestCase):

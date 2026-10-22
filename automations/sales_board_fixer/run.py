@@ -87,7 +87,8 @@ def _tabs(sh) -> dict:
     return {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
 
 
-def load(sh, title: str) -> dict:
+def load(sh, title: str, titles=()) -> dict:
+    """titles: the whole run, so a Line Up knows its board in use (_home_board)."""
     ws = sh.worksheet(title)
     values = ws.get_all_values()
     formulas = ws.get_all_values(value_render_option="FORMULA")
@@ -116,21 +117,35 @@ def load(sh, title: str) -> dict:
     if LANE_NAME.search(title):
         t.update(load_lanes(sh, t))
     elif LINEUP_NAME.search(title):
-        t["boards"] = lineup_boards(sh, formulas)
+        t["home"], t["run_boards"] = _home_board(titles, title)
+        t["boards"] = lineup_boards(sh, formulas, t["home"])
     return t
 
 
-def lineup_boards(sh, formulas) -> dict:
-    """{board tab: (name column, last rep row)} for every sales board the
-    Line Up's formulas read -- what check_lineup_names stretches to."""
-    names = {m.group(1) for row in formulas for f in row if isinstance(f, str)
-             for m in K._BOARD_REF.finditer(f)}
+def lineup_boards(sh, formulas, home: str = None) -> dict:
+    """{board tab: (name column, first rep row, last rep row)} for every sales
+    board the Line Up's name lists read, plus `home` -- what
+    check_lineup_names stretches to or moves to."""
+    names = {K.ref_tab(m) for row in formulas for f in row for m in [K._name_list(f)] if m}
+    if home:
+        names.add(home)
     out = {}
     for name in sorted(names & set(_tabs(sh))):
         v = sh.worksheet(name).get_all_values()
         if K.is_board(v):
-            out[name] = (K.layout(v).name_col, K.block_rows(v)[1])
+            out[name] = (K.layout(v).name_col,) + K.block_rows(v)
     return out
+
+
+def _home_board(titles, title: str):
+    """(home, run boards): the board a Line Up belongs to is the last board
+    listed before it ('COLTEN', 'Line Up NDS', 'JAIRO', 'Line Up NDS JAIRO').
+    A list already reading one of this run's boards keeps it (Jacob has two)."""
+    titles = list(titles)
+    boards = [x for x in titles
+              if not (LINEUP_NAME.search(x) or LANE_NAME.search(x) or "station" in x.lower())]
+    before = [x for x in titles[:titles.index(title)] if x in boards] if title in titles else []
+    return (before[-1] if before else None), set(boards)
 
 
 def _lanes_key(sh, title: str) -> str:
@@ -234,7 +249,8 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
         found = K.check_errors(title, v, f)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
         if t.get("boards"):
-            found += K.check_lineup_names(title, f, t["boards"])
+            found += K.check_lineup_names(title, f, t["boards"], t.get("home"),
+                                          keep=t.get("run_boards", ()))
     return found
 
 
@@ -433,7 +449,7 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
     results = {}
     owner = kinds is not None
     for title in titles:
-        t = load(sh, title)
+        t = load(sh, title, titles)
         widened = []
         if do_apply and tenure:
             # Widening the filter re-sorts the rows, so it goes first, alone,
@@ -443,7 +459,7 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                 print("  backup:", backup(t, stamp + "_prefilter"))
                 sh.batch_update({"requests": [x.request for x in widened]})
                 print("  filtro ampliado: %s -> %s" % (widened[0].before, widened[0].after))
-                t = load(sh, title)
+                t = load(sh, title, titles)
         if do_apply:
             # last week's 'Lucy fixed this' notes come along when a week tab
             # is copied: take Lucy's old ones off first, so today's go on clean
@@ -469,7 +485,7 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
             print("  backup:", backup(t, stamp))
             done = apply(sh, t, found)
             print("  escritos: %d" % len(done))
-            t2 = load(sh, title)
+            t2 = load(sh, title, titles)
             left = [x for x in _drop_past(audit(t2, tenure, owner), t2["values"], format_stop)
                     if kinds is None or x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
@@ -608,7 +624,7 @@ def lane_tabs(sh, only_for=None) -> list:
 # Roll Call carries the same status, so the formula shows the X again (_x_kept).
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate",
-               "lineup_short",
+               "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
 

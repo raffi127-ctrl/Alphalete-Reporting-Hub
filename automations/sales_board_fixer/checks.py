@@ -55,6 +55,7 @@ KIND_LABEL = {
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
     "lineup_short": "Line Up: la lista de nombres no termina en la fila arriba de TOTALS del Sales Board",
+    "lineup_old_week": "Line Up: la lista de nombres lee una semana vieja, no el board en uso",
     "start_date_moved": "Start Date de otro rep (quedó atrás al ordenar)",
     "days_formula": "# Days Worked sin fórmula o apuntando a otra fila",
     "lane_formula_lost": "Lanes: fórmula de un carril borrada o rota",
@@ -359,35 +360,81 @@ def check_errors(tab: str, values, formulas) -> List[Finding]:
 
 # --- line up name list -----------------------------------------------------
 
-# 'Sales Board WE 10.25'!$C4:$C51 -- tab, then start col/row, end col/row
-_BOARD_REF = re.compile(r"'([^']+)'!(\$?[A-Z]+\$?)(\d+):(\$?)([A-Z]+)(\$?)(\d+)")
+# 'Sales Board WE 10.25'!$C4:$C51 or COLTEN!B4:B38 -- tab, start col/row, end col/row
+_BOARD_REF = re.compile(r"(?:'((?:[^']|'')+)'|([A-Za-z0-9_.]+))!"
+                        r"(\$?)([A-Z]+)(\$?)(\d+):(\$?)([A-Z]+)(\$?)(\d+)")
 
 
-def check_lineup_names(tab: str, formulas, boards: Dict[str, Tuple[int, int]]) -> List[Finding]:
+def ref_tab(m) -> str:
+    return m.group(1).replace("''", "'") if m.group(1) is not None else m.group(2)
+
+
+def _name_list(f):
+    """The match when the whole formula is a name list: ={'Board'!$C4:$C63}."""
+    if not (isinstance(f, str) and f.replace(" ", "").startswith("={")
+            and f.rstrip().endswith("}")):
+        return None
+    return _BOARD_REF.fullmatch(f.strip()[1:].strip()[1:-1].strip())
+
+
+def check_lineup_names(tab: str, formulas, boards: Dict[str, Tuple[int, int, int]],
+                       home: Optional[str] = None, keep=()) -> List[Finding]:
     """The Line Up's dropdowns read their names from a formula like
     ={'Sales Board WE 10.25'!$C4:$C51}. The board grows during the week; when
     that range stops above the last rep, whoever is below it drops out of the
     dropdown and shows the red "invalid" mark (Maud, 2026-10-22: it stopped
-    at 51, the reps went to 63). Eve, same day: the range ALWAYS ends on the
-    row right above TOTALS -- shorter drops reps, longer drops in 'TOTALS'.
-    boards: {board tab title: (name column, last rep row)}."""
-    out = []
+    at 51, the reps went to 63). Eve, same day: the range ALWAYS covers every
+    rep -- it ends on the row right above TOTALS, and that goes for every
+    owner with a Line Up.
+
+    Owners' shapes (2026-10-22): one list (Atef, Cyrus, Salik, Jacob) or the
+    list split over several columns (Miami: B4:B38, B39:B72, B73:B107) -- the
+    piece that reaches lowest is the one that ends above TOTALS. And a list
+    still reading an OLD week (Atef 'WE 10.11', Cyrus '5.18', Salik '10/5'
+    while the board in use is another tab) moves to `home`, the board in use.
+
+    Left alone: a list that doesn't start on the first rep (a team's slice,
+    not "every rep"), one off the board's name column, and one reading a tab
+    that is gone or isn't a board.
+    boards: {board tab: (name column, first rep row, last rep row)}.
+    keep: boards in use this run -- a list reading one of them never moves."""
+    lists: Dict[str, list] = collections.defaultdict(list)
     for r, row in enumerate(formulas, start=1):
         for c, f in enumerate(row, start=1):
-            if not (isinstance(f, str) and f.startswith("=") and "!" in f):
+            m = _name_list(f)
+            if m:
+                lists[ref_tab(m)].append((r, c, f, m))
+    out = []
+    for src, items in lists.items():
+        if src not in boards:
+            continue
+        col, first, _ = boards[src]
+        if (min(int(m.group(6)) for *_, m in items) != first
+                or any(col_index(m.group(4)) != col or col_index(m.group(8)) != col
+                       for *_, m in items)):
+            continue
+        dest = home if home and home in boards and src not in keep else src
+        dcol, _, last = boards[dest]
+        low = max(items, key=lambda x: int(x[3].group(10)))
+        if any(int(m.group(6)) > last or (x is not low and int(m.group(10)) > last)
+               for x in items for m in [x[3]]):
+            continue                      # the pieces don't fit the board in use
+        for x in items:
+            r, c, f, m = x
+            name = ("'%s'" % dest.replace("'", "''")) if dest != src or m.group(1) is not None \
+                else m.group(2)
+            letters = col_letter(dcol)
+            end = last if x is low else int(m.group(10))
+            new = "={%s!%s%s%s%s:%s%s%s%d}" % (name, m.group(3), letters, m.group(5), m.group(6),
+                                               m.group(7), letters, m.group(9), end)
+            if new == f.strip():
                 continue
-            def stretch(m):
-                board = boards.get(m.group(1))
-                if (not board or col_index(m.group(5)) != board[0]
-                        or col_index(m.group(2).replace("$", "")) != board[0]
-                        or int(m.group(7)) == board[1]):
-                    return m.group(0)
-                return m.group(0)[:m.start(7) - m.start(0)] + str(board[1])
-            new = _BOARD_REF.sub(stretch, f)
-            if new != f:
-                out.append(Finding("lineup_short", tab, a1(r, c),
-                                   "%s: %s" % (KIND_LABEL["lineup_short"], f),
-                                   before=f, after=new, value=new))
+            kind = "lineup_old_week" if dest != src else "lineup_short"
+            why = ("lee '%s', el board en uso es '%s'" % (src, dest) if dest != src
+                   else "termina en la fila %s, el último rep está en la %d"
+                   % (m.group(10), last))
+            out.append(Finding(kind, tab, a1(r, c), "%s: %s" % (KIND_LABEL[kind], why),
+                               before=f, after=new, value=new))
     return out
 
 
@@ -484,6 +531,7 @@ NOTE_LABEL = {
     "lane_col_moved": "a Sales Board column this lane reads had moved",
     "lane_extra_lost": "this formula had been deleted or broken",
     "lineup_short": "the name list didn't end on the last rep row of the Sales Board (right above TOTALS)",
+    "lineup_old_week": "the name list was reading an old week's board",
 }
 
 
