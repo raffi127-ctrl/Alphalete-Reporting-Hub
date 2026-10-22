@@ -658,6 +658,21 @@ def _strip_lead_emoji(text: str) -> str:
     return s
 
 
+def pin_message(client, channel: str, ts, log=print) -> None:
+    """Best-effort pin (Carlos 2026-10-22: the morning NDS / Box / Weather /
+    Country Trackers / Verizon parents get pinned). Pinning works with the
+    current scopes; UNPINNING yesterday's still needs `pins:read` on the app
+    (the long-standing gap), so old pins accumulate until that lands."""
+    if not ts:
+        return
+    try:
+        client.pins_add(channel=channel, timestamp=ts)
+        log(f"  pinned {ts} in {channel}")
+    except Exception as e:  # noqa: BLE001 — a pin must never sink a post
+        if "already_pinned" not in str(e):
+            log(f"  pin failed in {channel}: {str(e)[:120]}")
+
+
 def ensure_named_thread(title: str, today: dt.date | None = None,
                         *, lines: list | None = None, dry_run: bool = False,
                         channel_id: str | None = None) -> dict:

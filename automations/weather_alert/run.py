@@ -371,8 +371,11 @@ def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None) -> i
                 if room_client is None:
                     print(f"[weather] {key} -> {ch} skipped: no {token_file} on this machine", flush=True)
                     continue
-                room_client.chat_postMessage(channel=ch, text=msg)
+                _resp = room_client.chat_postMessage(channel=ch, text=msg)
                 print(f"[weather] posted {label} to {ch} ({key}) ✓", flush=True)
+                if ch == "C07J46MQNUX":   # Carlos 2026-10-22: pin his morning set
+                    from automations.shared.slack_metrics_post import pin_message
+                    pin_message(room_client, ch, _resp.get("ts"), log=print)
                 sent += 1
             except Exception as e:  # noqa: BLE001
                 print(f"[weather] {key} -> {ch} failed: {type(e).__name__}: {e}", flush=True)

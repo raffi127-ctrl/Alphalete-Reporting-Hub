@@ -446,6 +446,8 @@ def open_verizon_metrics_thread(client, chan: str, today) -> str:
         ts = client.chat_postMessage(channel=chan,
                                      text=_verizon_header(today)).get("ts")
         print(f"    opened Verizon Metrics thread in {chan} ts={ts}")
+        from automations.shared.slack_metrics_post import pin_message
+        pin_message(client, chan, ts, log=print)
     if state.get("thread_ts") != ts:
         _save_verizon_state(today, chan, ts, list(state.get("posted") or []))
     return ts
@@ -549,7 +551,14 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
                 if kind == "box":
                     ts_cache[kind] = box_thread_ts(client, cid, day)
                 elif kind == "verizon":
-                    ts_cache[kind] = open_verizon_metrics_thread(client, cid, day)
+                    # Verizon posts AFTER Lucy's 6am weather report (Carlos
+                    # 2026-10-22) — before 6:10 this pass holds it and a
+                    # later floor pass posts it.
+                    if dt.datetime.now().time() < dt.time(6, 10):
+                        ts_cache[kind] = None
+                    else:
+                        ts_cache[kind] = open_verizon_metrics_thread(
+                            client, cid, day)
                 else:
                     ts_cache[kind] = open_b2b_metrics_thread(client, cid, day)
             return ts_cache[kind]

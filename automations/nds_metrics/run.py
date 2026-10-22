@@ -1111,6 +1111,8 @@ def post_thread(artifacts, today, log=print) -> None:
                                 text="In this thread:\n" + contents)
         state = {"ts": ts, "posted": []}
         log(f"[nds] opened thread {ts} in {CHANNEL[0]}")
+        from automations.shared.slack_metrics_post import pin_message
+        pin_message(client, CHANNEL[1], ts, log=log)
     for (sid, emoji, title, _fn) in SECTIONS:
         path = artifacts.get(sid)
         if not path or sid in state["posted"]:

@@ -168,6 +168,21 @@ def render_board(rows: List[Dict], today: dt.date, now: dt.datetime, out_dir: Pa
 
 # --- post --------------------------------------------------------------------
 def _thread_ts(title: str, today: dt.date) -> Optional[str]:
+    """The day's NDS METRICS thread first (Carlos 2026-10-22: 'remove the
+    NDS knocks board and NDS 15 min gaps thread and just post that stuff
+    into the NDS metrics thread' — the Box pattern). nds_metrics runs on
+    THIS machine, so its state file is the authority; the old named thread
+    is the fallback when the metrics thread hasn't opened yet (pre-7:30)."""
+    import json
+    from pathlib import Path
+    state = (Path(__file__).resolve().parents[2] / "output" / "nds_metrics"
+             / f"thread_{today.isoformat()}.json")
+    try:
+        ts = json.loads(state.read_text()).get("ts")
+        if ts:
+            return ts
+    except Exception:  # noqa: BLE001 — no metrics thread yet
+        pass
     from automations.shared import slack_metrics_post as smp
     return smp.ensure_named_thread(title, today, channel_id=C.SLACK_CHANNEL).get("thread_ts")
 

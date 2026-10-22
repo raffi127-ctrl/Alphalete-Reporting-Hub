@@ -87,6 +87,9 @@ THREAD_HOURLY = "Box Today's Activity"   # was "Hourly Activity" (Carlos 2026-10
 # titles below are only the FALLBACK parents, opened if that thread is not
 # in the room yet. Set False to go back to one thread per report.
 USE_BOX_METRICS_THREAD = True
+# Carlos 2026-10-22: the NDS board + gaps reply into the morning "NDS
+# Metrics" thread (same pattern); their own threads are fallbacks only.
+USE_NDS_METRICS_THREAD = True
 BOX_METRICS_TITLE = "Box Metrics —"
 
 # Renamed "B2B Dispositions" -> "Territory Stats" (Carlos 2026-09-29), and

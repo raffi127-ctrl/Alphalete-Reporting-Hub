@@ -181,6 +181,8 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                                                       "pending", "tier_bonus",
                                                       "rep_lvl"}
     ts = client.chat_postMessage(channel=channel, text=text)["ts"]
+    from automations.shared.slack_metrics_post import pin_message
+    pin_message(client, channel, ts, log=print)   # Carlos 2026-10-22
     if contents:
         try:
             client.chat_postMessage(channel=channel, thread_ts=ts,

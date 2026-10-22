@@ -788,6 +788,9 @@ def ensure_thread(client, channel: str, pages: list, today: dt.date,
     parent, contents = _split_header(channel, pages, today, pending_late,
                                      note, updated)
     resp = client.chat_postMessage(channel=channel, text=parent)
+    if channel in SHORT_HEADER_CHANNELS:   # Carlos 2026-10-22: pin his morning set
+        from automations.shared.slack_metrics_post import pin_message
+        pin_message(client, channel, resp.get("ts"), log=print)
     if contents:
         # Short-header channel: the tracker list is the thread's first reply.
         try:

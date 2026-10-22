@@ -67,7 +67,8 @@ BOX_BOARD_THREAD = "Box Knocks Board"
 ORDER = ([] if cfg.USE_BOX_METRICS_THREAD else
          [("named", BOX_BOARD_THREAD), ("day", cfg.THREAD_DISPOSITIONS),
           ("day", cfg.THREAD_HOURLY), ("day", cfg.THREAD_GAPS)]) + \
-        [("named", "NDS Knocks Board"), ("named", "NDS 15 Min Gaps")]
+        ([] if getattr(cfg, "USE_NDS_METRICS_THREAD", False) else
+         [("named", "NDS Knocks Board"), ("named", "NDS 15 Min Gaps")])
 ALL_PREFIXES = DAY_THREADS + NAMED_THREADS + list(RENAMED)
 
 
