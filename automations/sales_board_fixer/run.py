@@ -269,7 +269,9 @@ def tenure_history(sh, today: dt.date):
 
 def backup(t: dict, stamp: str) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    p = OUT_DIR / ("backup_%s_%s.json" % (stamp, _slug(t["title"])))
+    # the sheet id too: owners share tab names ('Line Up ' on Cyrus AND Salik),
+    # and one run's stamp is the same for all of them (2026-10-22, one backup ate the other)
+    p = OUT_DIR / ("backup_%s_%s_%s.json" % (stamp, t["ws"].spreadsheet.id[:8], _slug(t["title"])))
     p.write_text(json.dumps({"title": t["title"], "values": t["values"],
                              "formulas": t["formulas"], "rules": t["rules"],
                              "basic_filter": t.get("basic_filter")},
