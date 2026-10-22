@@ -428,6 +428,7 @@ _LIVE = {
     "jamis",                           # 10/6: 9/14-10/5 loaded, 15 threads pinned, 0 loose
     "jairo",                           # 10/8: 10/5-10/8 loaded, 24 threads pinned, 0 loose, Eastern
     "george",                          # 10/8: 10/7-10/8 loaded, 6 threads pinned, 0 loose, Eastern
+    "valeria",                         # 10/22: 10/15-10/22 loaded from Slack rows, 5 threads, 29 photos, Eastern
     "omar",                            # 10/19: 10/7-10/19 loaded from Lucy 1, 9 threads, Eastern
 }
 
