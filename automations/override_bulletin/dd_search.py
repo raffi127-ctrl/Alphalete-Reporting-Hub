@@ -559,12 +559,12 @@ def _col_letter(idx0):
 
 
 def roll_week(ws, due_label=None, dry_run=True, verbose=True):
-    """Insert the new week-ending column at the leftmost week position, so nobody
-    has to hand-roll the tab (Megan 2026-07-30). The Avg DD / Active Owners rows
-    reference the leftmost week column by RELATIVE ref, so a bare insert would
-    leave them pointing at the OLD week — we copy those formula cells into the new
-    column (PASTE_FORMULA adjusts the ref to the new column), and blank the owner
-    DATA rows for the populate to fill. Idempotent: no-op if the leftmost week is
+    """Open the new week-ending column as the leftmost week, so nobody has to
+    hand-roll the tab (Megan 2026-07-30). Done the way the VA does it by hand:
+    insert a column just RIGHT of the leftmost week (inside every Total DD 2026
+    range, so the ranges grow instead of sliding), move the last week into it,
+    then blank the leftmost column's owner DATA rows for the populate to fill —
+    its Avg DD / Active Owners formulas stay put. Idempotent: no-op if the leftmost week is
     already the due week. DRY-RUN unless dry_run=False. Run on `_dd_sandbox` first."""
     from automations.override_bulletin import dd_data as D
     vals = ws.get_all_values()
@@ -598,20 +598,25 @@ def roll_week(ws, due_label=None, dry_run=True, verbose=True):
                 "data_rows": len(data_rows)}
 
     gid = ws.id
-    # 1) insert a blank column at the leftmost-week position
+    # 1) insert the blank column to the RIGHT of the leftmost week, never at it
+    #    (Eve 2026-10-22). Inserting AT the leftmost week pushed the start of
+    #    every `Total DD 2026` =SUM(F:AU) one column right each roll — after two
+    #    rolls it was =SUM(H:AU) and every owner + Total - Raf was two weeks
+    #    short. An insert INSIDE the range only widens it (F:AU -> F:AV).
     ws.spreadsheet.batch_update({"requests": [{"insertDimension": {
         "range": {"sheetId": gid, "dimension": "COLUMNS",
-                  "startIndex": wcol0, "endIndex": wcol0 + 1},
-        "inheritFromBefore": False}}]})
-    # 2) copy the OLD week column (now shifted to wcol0+1) into the new one,
-    #    PASTE_FORMULA so relative refs adjust to the new column
+                  "startIndex": wcol0 + 1, "endIndex": wcol0 + 2},
+        "inheritFromBefore": True}}]})
+    # 2) move the last week into the new column — values, formulas and format
+    #    (relative refs follow to the new column) — so the leftmost column is
+    #    free for the new week. Its formulas stay where they are.
     ws.spreadsheet.batch_update({"requests": [{"copyPaste": {
         "source": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": nrows,
-                   "startColumnIndex": wcol0 + 1, "endColumnIndex": wcol0 + 2},
+                   "startColumnIndex": wcol0, "endColumnIndex": wcol0 + 1},
         "destination": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": nrows,
-                        "startColumnIndex": wcol0, "endColumnIndex": wcol0 + 1},
-        "pasteType": "PASTE_FORMULA"}}]})
-    # 3) header + blank the data rows in the new column
+                        "startColumnIndex": wcol0 + 1, "endColumnIndex": wcol0 + 2},
+        "pasteType": "PASTE_NORMAL"}}]})
+    # 3) header + blank the data rows in the (now new-week) leftmost column
     ws.update_cell(1, wcol0 + 1, due)
     blanks = [{"range": f"{col}{i}", "values": [[""]]} for i, _ in data_rows]
     if blanks:
