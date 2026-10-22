@@ -3301,6 +3301,62 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "office-wrap-ups",
+        "name": "Office Wrap-Up Check (all offices)",
+        "creator": "Dylan",
+        "emoji": "📞",
+        "color": "#60A5FA",
+        "category": "📊 Metrics",
+        "description": "For every office in Raf's captainship, posts the reps who didn't send a wrap-up text to that office's Slack channel each morning — checked against Dylan's RingCentral line, off the org-wide Tableau Order Log (no per-office SaraPlus logins).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "The multi-office version of the Raf Wrap-Up Check. One pull of the "
+            "org-wide Order Log, filtered per office by Owner Name; for each of "
+            "yesterday's customers it asks whether they were EVER messaged on "
+            "Dylan's RingCentral line, and posts the un-texted ones — grouped "
+            "by rep, with each customer's phone + products (Internet / TV / "
+            "Wireless) and the reps @tagged — to that office's own channel.\n\n"
+            "OFFICES (12)\n"
+            "Haytham, Trang, Hammad, Jacob, Joseph, Kash, Rashad, Aya, Cyrus, "
+            "Nii, Cody, Salik. Channels from office_metrics.OFFICES (Hammad + "
+            "Salik share #elite-prime-sales; Trang is the FRESH SUCCESS "
+            "workspace).\n\n"
+            "WHEN IT RUNS\n"
+            "Every morning on Lucy 4. A bare run is a DRY RUN and posts nothing."
+        ),
+        "assignees": ["Lucy 4"],
+        "run_machine": "Lucy 4",
+        "schedule": {
+            "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "time": "4 AM flow (when data's ready)",
+            "estimated_minutes": 15,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Posted each office's wrap-up status to its channel.",
+            "message_failed": "❌ Something didn't land — the log names it (usually the Tableau Order Log being behind, or the RingCentral token). Re-run when the Order Log is fresh.",
+        },
+        "actions": [
+            {
+                "label": "Run Now (all offices)",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls the Order Log and posts each office's un-texted customers to its channel.",
+                "module": "automations.office_wrap_ups.run",
+                "args_fn": lambda: ["--live"],
+            },
+            {
+                "label": "Preview (posts nothing)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Shows exactly what each office would post, without posting.",
+                "module": "automations.office_wrap_ups.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "energy-crossref",
         "name": "Energy Cross-reference (webform check)",
         "creator": "Eve",
