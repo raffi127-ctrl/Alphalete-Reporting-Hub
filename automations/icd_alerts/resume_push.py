@@ -222,10 +222,82 @@ def due(now: Optional[dt.datetime] = None) -> bool:
     return (now - then) >= dt.timedelta(minutes=EVERY_MINUTES)
 
 
+HEALTH_STAGE = "probe-push-health"
+HEALTH_EVERY_MINUTES = 15
+
+
+def _log_tail(n: int = 15) -> list:
+    try:
+        lines = LOG_PATH.read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+    return [l[:200] for l in lines[-n:]]
+
+
+def _heartbeat(log=print, now: Optional[dt.datetime] = None) -> bool:
+    """WHAT THE PUSH IS DOING, FROM THE AGENT'S OWN LOOP (Megan 2026-10-21:
+    "We need to know it's working!"). The stats row only comes from a run
+    that FINISHED a walk -- so a push that never starts, hangs holding the
+    lock, or dies at sign-in says nothing at all, and that silence is exactly
+    what we could not see through on 10/21 evening. This runs in the agent's
+    tick, outside the push process, every HEALTH_EVERY_MINUTES: the release
+    this computer is on, whether the push is switched on here, the lock, the
+    last start / end / result, and the tail of the push log. Filed as a quiet
+    probe (never posted) -- read off the ICD Faults tab. Never raises."""
+    now = now or dt.datetime.now()
+    rec = push_record()
+    if not rec:
+        return False
+    st = _state()
+    try:
+        last = dt.datetime.fromisoformat(st.get("health_at") or "")
+        if (now - last) < dt.timedelta(minutes=HEALTH_EVERY_MINUTES):
+            return False
+    except ValueError:
+        pass
+    try:
+        from automations.icd_alerts import selfupdate as SU
+        release = SU.applied_release()
+    except Exception:  # noqa: BLE001
+        release = "?"
+    try:
+        lock_min = round((time.time() - float(LOCK_PATH.read_text().strip()
+                                              or 0)) / 60, 1)
+    except (OSError, ValueError):
+        lock_min = None
+    body = {
+        "release": release, "listed": _listed(rec) is not None,
+        "armed": armed(rec), "creds": bool(C.appstream_creds()),
+        "in_window": in_window(now), "lock_min": lock_min,
+        "due": None, "last_start": st.get("last_start"),
+        "last_end": st.get("last_end"), "last_result": st.get("last_result"),
+        "last_live": st.get("last_live"), "wall_streak": st.get("wall_streak"),
+        "sent_today": (st.get("sent_by_day") or {}).get(now.date().isoformat()),
+        "log_tail": _log_tail(),
+    }
+    try:
+        body["due"] = due(now)
+    except Exception:  # noqa: BLE001
+        pass
+    st["health_at"] = now.isoformat(timespec="seconds")
+    _save_state(st)
+    try:
+        from automations.icd_alerts import relay as R
+        return bool(R.report_fault(HEALTH_STAGE, "push health",
+                                   json.dumps(body), log=log,
+                                   office_key=str(rec.get("office_key") or "")))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def maybe_kick(log=print) -> bool:
     """Called from every agent tick. Starts a push in its OWN process when one
     is due, and returns at once -- a push can take many minutes and must never
     hold up a credit-check sweep."""
+    try:
+        _heartbeat(log=log)
+    except Exception:  # noqa: BLE001 -- the telling, never the work
+        pass
     if not enabled() or not due():
         return False
     root = Path(__file__).resolve().parents[2]

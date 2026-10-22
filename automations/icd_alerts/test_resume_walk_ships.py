@@ -18,6 +18,7 @@ Nothing here opens Chrome, signs in, or posts anywhere.
 from __future__ import annotations
 
 import ast
+import datetime as dt
 import pathlib
 import unittest
 from unittest import mock
@@ -412,6 +413,40 @@ class EveryRunSaysWhatItDid(unittest.TestCase):
     def test_the_walk_hands_back_its_queue(self):
         from automations.oat_processing import run as OAT
         self.assertIsInstance(OAT.LAST_WALK, dict)
+
+
+class TheAgentReportsThePushsHealth(unittest.TestCase):
+    """10/21 evening: no stats row, and nothing to tell a hung push from one
+    that never started. The agent's own tick now says which."""
+
+    def test_heartbeat_files_release_lock_and_log(self):
+        import json
+        filed, state = [], {"last_start": "2026-10-21T19:50:00",
+                            "last_result": "ok"}
+        with mock.patch.object(RP, "push_record",
+                               return_value={"office_key": "carlos"}), \
+             mock.patch.object(RP, "_state", side_effect=lambda: dict(state)), \
+             mock.patch.object(RP, "_save_state",
+                               side_effect=lambda st: state.update(st)), \
+             mock.patch.object(RP, "_log_tail", return_value=["x LIVE: office 11580"]), \
+             mock.patch.object(RP.C, "appstream_creds", return_value={"u": 1}), \
+             mock.patch("automations.icd_alerts.relay.report_fault",
+                        side_effect=lambda st_, su, d="", **k:
+                        filed.append((st_, json.loads(d))) or True):
+            now = dt.datetime(2026, 10, 21, 20, 0)
+            self.assertTrue(RP._heartbeat(now=now))
+            self.assertFalse(RP._heartbeat(now=now + dt.timedelta(minutes=5)))
+            self.assertTrue(RP._heartbeat(now=now + dt.timedelta(minutes=16)))
+        stage, body = filed[0]
+        self.assertEqual(stage, "probe-push-health")
+        for k in ("release", "listed", "lock_min", "last_start",
+                  "last_result", "log_tail"):
+            self.assertIn(k, body)
+        self.assertEqual(body["log_tail"], ["x LIVE: office 11580"])
+
+    def test_no_push_here_no_heartbeat(self):
+        with mock.patch.object(RP, "push_record", return_value={}):
+            self.assertFalse(RP._heartbeat())
 
 
 class ResumeHelperIsGone(unittest.TestCase):
