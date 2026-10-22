@@ -1211,6 +1211,9 @@ def main(argv=None) -> int:
                     help="DM previews to this user; never touches the channel")
     ap.add_argument("--post", action="store_true",
                     help="post the live NDS Metrics thread")
+    ap.add_argument("--repull", action="store_true",
+                    help="delete today's SOH + order-log caches first (test "
+                         "a fresh pull, e.g. a new dealer login)")
     ap.add_argument("--force", action="store_true",
                     help="re-post sections already in today's thread state "
                          "(replace a bad one); pair with --only")
@@ -1218,6 +1221,10 @@ def main(argv=None) -> int:
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    if a.repull:
+        for f in OUT_DIR.glob(f"*_{today.isoformat()}.csv"):
+            f.unlink()
+            print(f"[nds] --repull: dropped {f.name}")
     path = pull(today)
     cols, crew = load_crew(path)
     only = set(a.only.split(",")) if a.only else None
