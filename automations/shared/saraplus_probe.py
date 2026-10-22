@@ -33,6 +33,17 @@ def main(argv=None) -> int:
                          "in -- the question behind Kash's 'Only one login at a time' "
                          "(2026-09-30): the ICD reader signs in with the password on "
                          "every 2-minute sweep. Read-only.")
+    ap.add_argument("--columns", metavar="YYYY-MM-DD",
+                    help="after the login, run the Order Dashboard for that ONE "
+                         "day under each Service and print every grid's HEADER "
+                         "labels, plus the Service options. Read-only. Built "
+                         "2026-10-22 for Carlos: the credit-check alert counts "
+                         "Records (got on the tablet), and NL counts upgrades, "
+                         "tablets and wearables -- this shows which columns "
+                         "SaraPlus really has to split them.")
+    ap.add_argument("--rows", metavar="SERVICE",
+                    help="with --columns: only that Service, and print each rep "
+                         "row's NON-ZERO cells by header label.")
     args = ap.parse_args(argv)
     from patchright.sync_api import sync_playwright
     from automations.shared import saraplus as S
@@ -58,6 +69,9 @@ def main(argv=None) -> int:
                     print("RESULT: %s: %s" % (type(e).__name__, str(e)[:700]))
                 print("final url: %s" % page.url)
                 landed = page.url
+                if args.columns and "DealerPages/" in landed:
+                    _dump_columns(page, landed.split("DealerPages/")[0] + "DealerPages/",
+                                  args.columns, args.rows)
             finally:
                 ctx.close()
             if args.reuse:
@@ -83,6 +97,67 @@ def main(argv=None) -> int:
     finally:
         shutil.rmtree(prof, ignore_errors=True)
     return 0
+
+
+# Every RadGrid master table on the page, with its header labels and body rows.
+# BY LABEL, not by the fixed COL_* indices: the point is to see what is there.
+_GRIDS_JS = """() => Array.from(document.querySelectorAll('table.rgMasterTable')).map(t => ({
+    id: t.id || '',
+    headers: Array.from(t.querySelectorAll('thead th')).map(th => (th.innerText || '').trim()),
+    rows: Array.from(t.querySelectorAll('tbody tr')).map(tr =>
+        Array.from(tr.querySelectorAll('td')).map(td => (td.innerText || '').trim())),
+}))"""
+
+_SERVICES_JS = """() => Array.from(document.querySelectorAll('.rcbList li, [class*="rcbItem"]'))
+    .map(el => (el.textContent || '').trim()).filter(Boolean)"""
+
+
+def _dump_columns(page, base: str, day_s: str, only: str = None) -> None:
+    """Print, per Service, each grid's header labels (and, with `only`, each
+    rep row's non-zero cells). Output is kept short: the mini queue keeps
+    only the tail of what a probe prints."""
+    import datetime as dt
+    from automations.shared import saraplus as S
+    day = dt.date.fromisoformat(day_s)
+    page.goto(base + S.HUB_PATH, wait_until="domcontentloaded", timeout=S.NAV_TIMEOUT_MS)
+    page.wait_for_timeout(2500)
+    page.click(S.COMBO_INPUT)
+    page.wait_for_timeout(800)
+    services = list(dict.fromkeys(page.evaluate(_SERVICES_JS)))
+    page.keyboard.press("Escape")
+    print("SERVICES: %s" % " | ".join(services))
+    for svc in ([only] if only else services):
+        try:
+            page.goto(base + S.HUB_PATH, wait_until="domcontentloaded",
+                      timeout=S.NAV_TIMEOUT_MS)
+            page.wait_for_timeout(2000)
+            S._set_telerik_date(page, S.FIELD_START, day)
+            S._set_telerik_date(page, S.FIELD_END, day)
+            S._select_service(page, svc)
+            page.click(S.SUBMIT)
+            page.wait_for_timeout(8000)
+            grids = page.evaluate(_GRIDS_JS)
+        except Exception as e:  # noqa: BLE001
+            print("[%s] %s: %s" % (svc, type(e).__name__, str(e)[:120]))
+            continue
+        for g in grids:
+            if not g["rows"]:
+                continue
+            print("[%s] %s (%d rows): %s" % (svc, g["id"].split("rgOrderDash")[-1],
+                                             len(g["rows"]), " | ".join(g["headers"])))
+            if not only:
+                continue
+            # Body rows carry one more leading cell than headers on some grids;
+            # align from the RIGHT, where the measure columns are.
+            hs = g["headers"]
+            for r in g["rows"]:
+                if len(r) <= 2 or not r[1].strip().endswith("_Agent"):
+                    continue
+                off = len(r) - len(hs)
+                vals = ["%s=%s" % (hs[i], r[i + off]) for i in range(len(hs))
+                        if 0 <= i + off < len(r) and r[i + off] not in ("", "0", "0.00", "$0.00")
+                        and i + off > 2]
+                print("  %s: %s" % (r[2], ", ".join(vals)))
 
 
 if __name__ == "__main__":
