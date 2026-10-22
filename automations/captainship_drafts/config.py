@@ -1167,6 +1167,23 @@ EXTRA_KNOCK_OWNERS: Dict[str, Tuple[str, ...]] = {
     "chan": ("Shealey Miller",),
 }
 
+# Knock boards for ANOTHER campaign than the owner's normal pin, captain ->
+# ((owner, campaign id, board tag), ...). Rafael 2026-10-20 (mail "ANOTHER
+# FAVOR:)" de Chan): "We can attach the knocking report to Chan's captainship
+# email, he's helping both these guys out" — sus knocks de QUANTUM FIBER
+# (campaña 7, RES-ATT-Quantum Fiber) en el mail de Chan. Los tres venden AT&T
+# tambien, asi que su pin global (knocks_pull.CAMPAIGN_OVERRIDES) queda en 3:
+# esto es una tabla APARTE, etiquetada "<owner> (Quantum Fiber)", sin columna
+# de apps (las apps de la PSS son de AT&T) y fuera del resumen de Chan (no se
+# suman knocks de dos campañas). No va en EXTRA_KNOCK_OWNERS a proposito: esa
+# lista tambien arma el mail de las 9 PM y el knocks_access_watch.
+EXTRA_CAMPAIGN_KNOCK_OWNERS: Dict[str, Tuple[Tuple[str, str, str], ...]] = {
+    # 2026-10-21: solo David (oficina 23565) tiene Office Access; probe_knocks
+    # campaign=7 del 10/20 trajo sus reps. Myles Neal y Angel Padilla vuelven
+    # cuando den acceso (Angel: 2 oficinas, 22400 Azul / 23858 — chequear).
+    "chan": (("David Pancoast", "7", "Quantum Fiber"),),
+}
+
 BLOCKS: List[Block] = _BLOCKS + (
     [Block("unassigned", "Unassigned (add them to config.BLOCKS)", _UNBLOCKED)]
     if _UNBLOCKED else [])

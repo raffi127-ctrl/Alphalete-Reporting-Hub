@@ -635,6 +635,38 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
     return out
 
 
+def extra_campaign_pairs(captain_key: str, aliases_raw, *,
+                         is_terminated=None, logfn=print
+                         ) -> List[Tuple[str, dict]]:
+    """[(label, cfg), …] for config.EXTRA_CAMPAIGN_KNOCK_OWNERS[captain_key] —
+    an owner's knocks in ANOTHER campaign than their normal pin, as a board of
+    its own (Chan's Quantum Fiber boards, Rafael 2026-10-20).
+
+    The label "<owner> (<tag>)" is also the cfg "key": every per-owner thing
+    hangs off the display name (PNG dir, rows sidecar, errors, done sets) or
+    the week-cache key, so it keeps this board apart from the same owner's
+    normal one. cfg "name" stays the bare canonical — that is what ownerville
+    impersonation searches. apps_source "none": the PSS apps are the normal
+    campaign's, they don't belong on this board. Terminated owners drop on
+    their bare name. Pure but for the terminated lookup — offline-testable."""
+    from automations.captainship_drafts import config as _cfg
+    specs = (getattr(_cfg, "EXTRA_CAMPAIGN_KNOCK_OWNERS", {}) or {}
+             ).get(captain_key, ())
+    if not specs:
+        return []
+    alive = set(drop_terminated([s[0] for s in specs], is_terminated, logfn))
+    out: List[Tuple[str, dict]] = []
+    for name, campaign, tag in specs:
+        if name not in alive:
+            continue
+        label = f"{name} ({tag})"
+        (_d, cfg), = owner_cfgs([name], aliases_raw)
+        cfg.update({"campaign_id": str(campaign), "key": label,
+                    "apps_source": "none"})
+        out.append((label, cfg))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # daily_knocks — YESTERDAY's boards (Raf's Slack ask, 2026-08-23 evening)
 # ---------------------------------------------------------------------------
@@ -658,7 +690,11 @@ def _daily_rows_for_owner(page, cfg: dict, aliases_raw, target: dt.date
         # Was inline here; now knocks_pull.pull_master_on_page, so the
         # on-demand /knocks path runs the identical master scrape.
         return KP.pull_master_on_page(page, target)
-    _t, rows = KP.pull_office_on_page(page, cfg["name"], aliases_raw, target)
+    # Only an extra-campaign board (cfg "key", extra_campaign_pairs) forces its
+    # campaign; everyone else keeps knocks_pull's own pin, exactly as before.
+    _t, rows = KP.pull_office_on_page(
+        page, cfg["name"], aliases_raw, target,
+        campaign=cfg.get("campaign_id") if cfg.get("key") else None)
     return rows
 
 
@@ -1305,7 +1341,7 @@ def _save_manifest(render_dir, captain_key: str, target: dt.date,
 
 
 def _load_manifest(render_dir, captain_key: str, target: dt.date,
-                   saturday: dt.date, wanted):
+                   saturday: dt.date, wanted, require_labels=()):
     """Today's capture for this captain, or None to pull it fresh.
 
     Refuses the manifest unless it covers EVERY kind this run wants (a
@@ -1331,6 +1367,14 @@ def _load_manifest(render_dir, captain_key: str, target: dt.date,
                     return None
                 pairs.append((lab, png))
             items[kind] = pairs
+        # A board added to the roster after this capture ran (an
+        # extra-campaign owner, 2026-10-20) would otherwise never be pulled
+        # today. Labels may carry an "— ⚠ INCOMPLETE" suffix.
+        have = [lab for ps in items.values() for lab, _p in ps]
+        for need in require_labels or ():
+            if not any(lab == need or lab.startswith(need + " —")
+                       for lab in have):
+                return None
         return {"items": items, "errors": data.get("errors") or {}}
     except Exception:  # noqa: BLE001 — an unreadable manifest = pull fresh
         return None
@@ -1384,8 +1428,23 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # for the same rows again — knocks_audit needs exactly this list to spot an
     # owner who came back as neither a board nor a note, and a second read per
     # captain is how section 1 lost its Sheets quota once already.
+    # Extra-campaign boards (Chan's Quantum Fiber, 2026-10-20) ride the same
+    # roster under their own label. Aliases load here only when there are any.
+    extra_aliases = None
+    extra_pairs: List[Tuple[str, dict]] = []
+    from automations.captainship_drafts import config as _xcfg
+    if (getattr(_xcfg, "EXTRA_CAMPAIGN_KNOCK_OWNERS", {}) or {}).get(captain.key):
+        from automations.focus_office_att.aliases import load_aliases as _la
+        extra_aliases = _la()
+        extra_pairs = extra_campaign_pairs(captain.key, extra_aliases,
+                                           logfn=logfn)
+        if extra_pairs:
+            logfn(f"    + {len(extra_pairs)} extra-campaign board(s): "
+                  f"{', '.join(l for l, _c in extra_pairs)}")
+    extra_labels = {l for l, _c in extra_pairs}
     if roster_out is not None:
         roster_out.extend(names)
+        roster_out.extend(l for l, _c in extra_pairs)
 
     # Already captured today? Then this whole function is a no-op. THE reason
     # this exists (Eve 2026-08-24): the pull is ~2h — one ownerville session,
@@ -1411,7 +1470,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # the rest of the day — the exact symptom the flag exists to cure (the
     # "DAILY TOTAL KNOCKS" title). Same-day only: the filenames carry the
     # date, so tomorrow's run redraws regardless.
-    cached = (_load_manifest(render_dir, captain.key, target, saturday, wanted)
+    cached = (_load_manifest(render_dir, captain.key, target, saturday, wanted,
+                             require_labels=extra_labels)
               if reuse else None)
     if not reuse:
         logfn("    (--fresh-knocks) re-pulling; today's capture not reused")
@@ -1424,7 +1484,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         return out
 
     from automations.focus_office_att.aliases import load_aliases
-    aliases_raw = load_aliases()
+    aliases_raw = extra_aliases if extra_aliases is not None else load_aliases()
     try:
         aliases_map = dict(aliases_raw)
     except Exception:  # noqa: BLE001
@@ -1436,6 +1496,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # Chan is fiber, and his totals over a B2B grid compare nothing.
     no_apps = bool(pairs) and all(c.get("apps_source") == "none"
                                   for _d, c in pairs)
+    # After no_apps on purpose: these boards carry no apps, the captain's do.
+    pairs = pairs + extra_pairs
 
     # §1's login-free Sales Board renderer holds a LIVE sync playwright in this
     # thread, and a second sync start in the same thread dies with "you are
@@ -1696,7 +1758,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             # be told which — including when only ONE of an
                             # NDS owner's two apps sources came down.
                             out_daily.append((display if ((apps_by_rep is not None
-                                                           or no_apps)
+                                                           or no_apps
+                                                           or cfg.get("apps_source")
+                                                           == "none")
                                                           and apps_complete)
                                               else f"{display} — ⚠ INCOMPLETE: "
                                                    "apps unavailable", png))
@@ -1776,12 +1840,16 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         else:
                             ov_rows, dispo_cols = P.pull_office_week(
                                 page, cfg, aliases_raw, monday, saturday)
-                            KWC.put(cfg["name"], saturday, ov_rows,
-                                    dispo_cols, aliases=aliases_raw)
+                            # cfg "key": an extra-campaign board
+                            # (extra_campaign_pairs) must not overwrite the
+                            # same owner's normal-campaign week.
+                            KWC.put(cfg.get("key") or cfg["name"], saturday,
+                                    ov_rows, dispo_cols, aliases=aliases_raw)
                         office_apps = (
                             A.rep_apps_for_owner(pss_path, cfg["pss_owner"],
                                                  aliases_map)
-                            if pss_path is not None else None)
+                            if pss_path is not None
+                            and cfg.get("apps_source") != "none" else None)
                         week_apps_complete = (pss_path is not None
                                               or cfg.get("apps_source")
                                               == "none")
@@ -1898,6 +1966,16 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # no row here (their pending note below says why).
     wsummary_png = (weekly_root / "summary"
                     / f"knock_dispo_summary_{saturday.isoformat()}.png")
+    # Extra-campaign boards stay OUT of the captainship summaries: another
+    # campaign's knocks don't add into this one's totals or ICD count.
+    if extra_labels:
+        captured_daily = [c for c in captured_daily if c[0] not in extra_labels]
+        captured_weekly = [c for c in captured_weekly
+                           if c[0] not in extra_labels]
+        answered_daily = {d for d in answered_daily if d not in extra_labels}
+        answered_weekly = {d for d in answered_weekly
+                           if d not in extra_labels}
+        pairs = [p for p in pairs if p[0] not in extra_labels]
     if not captured_weekly and want_weekly and wsummary_png.exists():
         # Same reasoning as the daily summary above: reuse the board
         # the earlier run drew instead of showing none.

@@ -1245,12 +1245,18 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
 
 
 def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
-                        *, verbose: bool = True) -> tuple[dt.date, list[dict]]:
+                        *, verbose: bool = True,
+                        campaign: "str | None" = None
+                        ) -> tuple[dt.date, list[dict]]:
     """ONE day for one office on an already-open page — the original
     single-date entry point, now a thin wrapper over the multi-day loop so both
-    paths impersonate, pin and scrape through identical code."""
+    paths impersonate, pin and scrape through identical code.
+
+    `campaign` None = the office's own pin (campaign_for_office); a captainship
+    board for another campaign (config.EXTRA_CAMPAIGN_KNOCK_OWNERS, Chan's
+    Quantum Fiber boards 2026-10-20) passes its id here."""
     days = pull_office_days_on_page(page, canonical, aliases_raw, [target],
-                                    verbose=verbose)
+                                    verbose=verbose, campaign=campaign)
     return target, days.get(target, [])
 
 
