@@ -340,15 +340,18 @@ def due(now: dt.datetime) -> bool:
 
 
 def build(day: dt.date, *, do_grade: bool, skip=(),
-          with_sheet: bool = fathom.SHEET_KEYS_LIVE) -> Dict[str, List]:
+          with_sheet: bool = fathom.SHEET_KEYS_LIVE, owners=()) -> Dict[str, List]:
     """{interviewer: [(meeting, result or None, skipped reason)]}, oldest first.
     Recordings in `skip` (already posted) are left out, so a retry after a
-    failed post doesn't pay to grade them again."""
+    failed post doesn't pay to grade them again. `owners` = only those
+    owners' recordings (a Zoom whose key came late, back-filled alone)."""
     from concurrent.futures import ThreadPoolExecutor
     meetings = [m for m in fathom.meetings_on(day, with_sheet=with_sheet)
                 if str(m.get("recording_id")) not in skip]
     for m in meetings:
         m["owner"] = zooms.owner(m, fathom.start_ct(m))
+    if owners:
+        meetings = [m for m in meetings if m["owner"] in owners]
     with ThreadPoolExecutor(max_workers=GRADE_WORKERS) as pool:
         rows = list(pool.map(lambda m: _grade_one(m, do_grade), meetings))
     out: Dict[str, List] = {}
@@ -515,10 +518,15 @@ def main(argv=None) -> int:
                          "replies + docs in place (same links, no new post)")
     ap.add_argument("--docs-only", action="store_true",
                     help="with --post: write the audit docs only, no Slack (a past day)")
+    ap.add_argument("--owner", action="append", default=[],
+                    help="with --docs-only: only this owner's recordings (repeatable) -- "
+                         "a Zoom whose Fathom key came late (Jennifer/Mercy, Eve 10/22)")
     ap.add_argument("--no-grade", action="store_true", help="list the recordings only, no AI")
     ap.add_argument("--due", action="store_true",
                     help="scheduled tick: only on a weekday after 6 PM CT, once a day")
     args = ap.parse_args(argv)
+    if args.owner and args.post and not args.docs_only:
+        ap.error("--owner is for --docs-only: a live post must never leave interviews out")
     now = dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT)
     if args.due and not due(now):
         return 0
@@ -538,7 +546,7 @@ def main(argv=None) -> int:
     # channel while fathom.SHEET_KEYS_LIVE is on
     graded = build(day, do_grade=not args.no_grade,
                    skip=set(_ledger()) if live and not args.refresh else (),
-                   with_sheet=fathom.SHEET_KEYS_LIVE or not live)
+                   with_sheet=fathom.SHEET_KEYS_LIVE or not live, owners=set(args.owner))
     if not graded:
         print("no 1st round to post (none recorded, or all already posted)")
         if live:
