@@ -339,7 +339,10 @@ def _install_raw() -> Dict:
 #   jamis10 -- Jamis's Box key. He has not launched Box yet and Lucy kept
 #              trying to sign into his My Service Cloud (Jamis to Megan,
 #              2026-10-20). His AT&T key `jamis` keeps running.
-PAUSED_KEYS = frozenset({"jamis10"})
+#   carlos  -- Carlos's Box key. He is done selling Box (Megan, 2026-10-22)
+#              and his machine kept asking for the My Service Cloud login.
+#              His AT&T B2B key `carlos-b2batt` keeps running.
+PAUSED_KEYS = frozenset({"jamis10", "carlos"})
 
 
 def active_enrollments() -> "List[Dict]":
