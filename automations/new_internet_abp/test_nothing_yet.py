@@ -29,6 +29,19 @@ class NothingYet(unittest.TestCase):
     def test_no_reps_still_fails(self):
         self.assertFalse(N(True, TUE, 0))
 
+    def test_wednesday_proven_zero_is_nothing_to_fill(self):
+        """Salik 10/21: 8 reps in the view, New Internet Count 0 each."""
+        self.assertTrue(N(True, WED, 8, {"Darious": 0, "Mariam": 0, "Robert": None}))
+
+    def test_wednesday_with_sales_but_no_pct_still_fails(self):
+        self.assertFalse(N(True, WED, 8, {"Darious": 0, "Mariam": 3}))
+
+    def test_wednesday_all_blank_counts_still_fails(self):
+        self.assertFalse(N(True, WED, 8, {"Darious": None, "Mariam": None}))
+
+    def test_proven_zero_needs_the_owner_in_view(self):
+        self.assertFalse(N(False, WED, 8, {"Darious": 0}))
+
 
 if __name__ == "__main__":
     unittest.main()

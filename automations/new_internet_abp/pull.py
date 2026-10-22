@@ -115,6 +115,9 @@ def parse(csv_path: Path, owner: Optional[str] = None) -> dict:
 
     office_total: dict = {}
     reps: dict = {}
+    # New Internet Count per rep, kept even when the ABP % is blank: it is the
+    # proof that a blank ABP means "sold none yet", not a broken pull.
+    counts: dict = {}
 
     for r in rows[1:]:
         if len(r) <= max(oi, ri, ci, pi):
@@ -138,8 +141,10 @@ def parse(csv_path: Path, owner: Optional[str] = None) -> dict:
         if not rep:
             continue
         reps[rep] = _slot(pct, denom)
+        counts[rep] = denom
 
-    return {"office_total": office_total, "reps": reps}
+    return {"office_total": office_total, "reps": reps,
+            "new_internet_counts": counts}
 
 
 def _slot(pct: str, denom: Optional[int]) -> dict:

@@ -28,15 +28,28 @@ except Exception:
     pass
 
 
-def nothing_yet_this_week(in_view: bool, today, n_roster: int) -> bool:
-    """An office early in the week with no new internet sales YET, not a
-    broken pull (2026-10-20). The view is 'This Week', so on a Tuesday morning
-    it holds only Monday: Cyrus and Salik had their 22 reps in it with no ABP %
-    because nobody sold new internet Monday -- and the metric failed, on 10/06
-    and 10/20, both Tuesdays. Only Mon/Tue, and only when the owner IS in the
-    view with reps: an office missing from the view, or an empty week by
-    Wednesday, still fails loudly."""
-    return bool(in_view and n_roster > 0 and today.weekday() in (0, 1))
+def proven_zero(counts) -> bool:
+    """Every rep in the view shows a New Internet Count of 0 -- the data itself
+    says nobody has sold new internet this week, so a blank ABP % is the true
+    answer (Salik, Wed 10/21: 8 reps, count 0 each, checked by Megan). Needs at
+    least one real 0; a view of blanks proves nothing."""
+    vals = list((counts or {}).values())
+    return (bool(vals) and all(v in (0, None) for v in vals)
+            and any(v == 0 for v in vals))
+
+
+def nothing_yet_this_week(in_view: bool, today, n_roster: int,
+                          counts=None) -> bool:
+    """An office with no new internet sales YET, not a broken pull (2026-10-20).
+    The view is 'This Week', so on a Tuesday morning it holds only Monday:
+    Cyrus and Salik had their 22 reps in it with no ABP % because nobody sold
+    new internet Monday -- and the metric failed, on 10/06 and 10/20, both
+    Tuesdays. Mon/Tue: the owner in the view with reps is enough. Any other
+    day it needs PROOF: every rep's New Internet Count is 0 (2026-10-21).
+    An office missing from the view, or blank counts, still fails loudly."""
+    if not (in_view and n_roster > 0):
+        return False
+    return today.weekday() in (0, 1) or proven_zero(counts)
 
 
 def main(argv=None) -> int:
@@ -122,7 +135,8 @@ def main(argv=None) -> int:
           f"({pull.fmt_units(office) or '-'}); {n_data} reps with ABP data "
           f"({len(reps)} in roster).")
     if not office and n_data == 0:
-        if nothing_yet_this_week(in_view, today, len(reps)):
+        if nothing_yet_this_week(in_view, today, len(reps),
+                                 parsed.get("new_internet_counts")):
             print("  ↪ %s is in the view with %d reps but no new internet "
                   "sales yet this week — nothing to fill today (tab left as "
                   "is, nothing posted)" % (pull.OWNER, len(reps)))
