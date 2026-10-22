@@ -93,6 +93,21 @@ UNTHREADED_OFFICES: object = "all"          # Eve 10/21: on, every live office
 def unthreaded_on(key: str) -> bool:
     return UNTHREADED_OFFICES == "all" or key in UNTHREADED_OFFICES
 
+# 1st Round Audit (Rafael 10/22, email "1st rds - Aya"): every weekday evening,
+# after AUDIT_AFTER on the office's clock, check that day's interviewers report
+# (Qualify / Answer Call / Ad Title) and 1st-rounds thread (screenshot + ad
+# title per candidate); say only what's missing -- see audit.py. Started with
+# Aya, whose admin takes her 1st rounds over 10/23. A set of keys or "all".
+AUDIT_OFFICES: object = {"aya"}
+AUDIT_AFTER = (18, 0)
+# Where it goes: "preview" = Eve's DM (with an all-clear too), or a channel id.
+AUDIT_TO = "preview"
+AUDIT_TAG: list = []          # user ids @-tagged on a channel post
+
+
+def audit_on(key: str) -> bool:
+    return AUDIT_OFFICES == "all" or key in AUDIT_OFFICES
+
 # Threads that stay UNPINNED for good, {channel: {thread_ts}} -- the nightly
 # pin pass never puts them back. Raf's funnels got their own channels
 # 2026-09-28: these 9 threads in his original channel hold ONLY 2nd-funnel

@@ -41,6 +41,9 @@
     # Raf 10/9: the ad scorecard (week + month, one row per ad). No --dm /
     # --channel = just the PNG in output/ad_photo_threads + the text:
     python -m automations.ad_photo_threads.run --office rafael --scorecard --dm U088E2KJEV8
+    # 1st Round Audit (Raf 10/22): what is missing in the sheet / 1st-rounds thread
+    python -m automations.ad_photo_threads.run --office aya --audit --date 2026-10-22
+    python -m automations.ad_photo_threads.run --office aya --audit --dm U088E2KJEV8   # Eve preview
     # + write it into a tab of his All in One (the nightly does 'Ad Scorecard'):
     python -m automations.ad_photo_threads.run --office rafael --scorecard --sheet-tab "Ad Scorecard"
 
@@ -157,6 +160,13 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
         except Exception as e:                # noqa: BLE001 — next office still runs
             failed.append(o["key"])
             print(f"[{o['key']}] FAILED: {type(e).__name__}: {str(e)[:300]}")
+        if not explicit_date:
+            try:
+                from automations.ad_photo_threads import audit
+                audit.if_due(o, dt.datetime.now(ZoneInfo(config.office_zone(o))))
+            except Exception as e:            # noqa: BLE001 — retried next tick
+                failed.append(f"{o['key']}-audit")
+                print(f"[{o['key']}] audit FAILED: {type(e).__name__}: {str(e)[:300]}")
     return 1 if failed else 0
 
 
@@ -460,6 +470,9 @@ def main(argv=None) -> int:
     ap.add_argument("--sheet-tab", metavar="TAB",
                     help="With --scorecard: also write it into this tab of the "
                          "office's scorecard_book (e.g. 'Ad Scorecard').")
+    mode.add_argument("--audit", action="store_true",
+                      help="1st Round Audit for --office on --date (default today): "
+                           "prints what's missing; with --dm / --channel posts it.")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -518,6 +531,15 @@ def main(argv=None) -> int:
     config.use(config.office(a.office or "rafael"))
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
+    if a.audit:
+        from automations.ad_photo_threads import audit
+        o = config.office(a.office or "rafael")
+        if a.dm or a.channel:
+            to = a.channel or "preview"
+            print("Posted to:", audit.if_due(o, dt.datetime.now(), force_day=day, to=to))
+        else:
+            print(audit.run(o, day)["text"] or "All done.")
+        return 0
     if a.scorecard:
         from automations.ad_photo_threads import scorecard
         owner = config.office(a.office or "rafael")["owner"]
