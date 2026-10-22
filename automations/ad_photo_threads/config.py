@@ -270,6 +270,7 @@ ARS_J_TO_L = "1sq_0VY-y1kzcQ8SAOmqs4VLE_2bPSJpCLTFufcUtQW4"
 ARS_M_TO_Q = "12zye9tduziss1w-EdZKkPJ2DE-dg-xB0aqvC2H3cLao"
 ARS_R_TO_Z = SHEET_ID
 SOUTH_SHORE = "13a1ACbG_F_r1g5D9Zny7fSixuolobwyEL1YQXu1WgJk"
+SOUTH_SHORE_CLOSED = "1r4hjaI8T42cT9j7DGDjtmoX8dffGWVstllqUSqVLETM"
 
 _MORE = [
     ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Mallick", "21328", "Elite Prime Group",
@@ -375,6 +376,14 @@ _MORE = [
      "C0C74FUGXP0", "C0CB7E7TRJ8", r"first\s*round\s*thread"),
     ("joshua", "Joshua Ghorbani", ARS_J_TO_L, "Joshua Ghorbani", "24119", "First Harvest Sales Group",
      "C0C6AMLDQBY", "C0CB5L73R17", r"first\s*round\s*thread"),
+    # Valeria Tristan (Colten 10/22), Altura Marketing, Tampa. Her tab lives in
+    # SOUTH SHORE | PROFITS - Report (Closed) -- still filled daily despite the
+    # name -- but has NO Ad Title column; Ana (in-house) types the ad in each
+    # Slack line ("Devin Hyatt – AT&T Team Member – YES – 1:15 – ..."), from
+    # 10/15 on. So her people come from Slack (_ROWS_FROM_SLACK). Channel
+    # renamed altura-recruiting -> valeria-recruiting 10/19.
+    ("valeria", "Valeria Tristan", SOUTH_SHORE_CLOSED, "VALERIA TRISTAN", "22850", "Altura Marketing",
+     "C0C70G1ENPK", "C0CBCMWCDL6", r"first\s*round\s*thread"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -391,6 +400,7 @@ _TZ = {
     "george": "America/New_York",      # ads: Fort Myers / Lehigh Acres, FL
     "omar": "America/Detroit",         # ads: Dearborn, MI (slots in EST)
     "luke": "America/Los_Angeles",     # ads: Palo Alto / Santa Clara / Sunnyvale, CA
+    "valeria": "America/New_York",     # Altura Marketing, Tampa FL
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
@@ -551,6 +561,12 @@ _TITLE_ONLY = {
 # land it above September.
 _PAUSED_BEFORE = {"khalil": "2026-10-03"}
 
+# Offices whose 1st rounds are read off the Slack thread alone, not the sheet
+# (collect.slack_rows): one reply per candidate, "Name – Ad – YES – 1:15 –
+# :star:x4". Valeria 10/22: her tab has no Ad Title and its dates don't line
+# up with the threads (Cathrin Farag: Slack 10/12, sheet 10/15).
+_ROWS_FROM_SLACK = {"valeria"}
+
 # Colten 10/10 asked for the Ad Scorecard for his funnel and Eveliz's; Raf
 # 10/11: "put it in his all in one". One tab each in Maud's "All In One -
 # Colten/Eveliz", rewritten every weekday night. Eve 10/11: the Friday post
@@ -599,6 +615,7 @@ OFFICES += [
         "title_only": _TITLE_ONLY.get(key, {}),
         "sheet_id": book, "source_channel": src, "live_channel": live,
         "paused_before": _PAUSED_BEFORE.get(key, ""),
+        "rows_from_slack": key in _ROWS_FROM_SLACK,
         "sources": [{"office_id": oid, "stream": company, "label": company,
                      "tab": tab, "thread_re": re.compile(rx, re.I)}],
         **_SCORECARD_TABS.get(key, {}),
@@ -625,6 +642,7 @@ def office_zone(o: dict) -> str:
 
 TITLE_ALIASES: dict = {}
 TITLE_ONLY: dict = {}
+ROWS_FROM_SLACK = False     # set by use(); 1st rounds from the Slack thread, not the sheet
 SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 SCORECARD_SECONDS_FROM_SHEET = False   # set by use()
 SCORECARD_TAG = ""            # set by use(); Slack user tagged on the post
@@ -657,7 +675,7 @@ def use(o: dict) -> None:
     """Point this module's globals at office `o` for the rest of the pass."""
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
     global TITLE_ALIASES, TITLE_ONLY, SECOND_ROUNDS_OWNER, SCORECARD_SECONDS_FROM_SHEET
-    global SCORECARD_TAG, SCORECARD_CITIES, SCORECARD_REPLACED
+    global SCORECARD_TAG, SCORECARD_CITIES, SCORECARD_REPLACED, ROWS_FROM_SLACK
     SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     SCORECARD_SECONDS_FROM_SHEET = bool(o.get("scorecard_seconds_from_sheet"))
     SCORECARD_TAG = o.get("scorecard_tag") or ""
@@ -665,6 +683,7 @@ def use(o: dict) -> None:
     SCORECARD_REPLACED = o.get("scorecard_replaced") or {}
     TITLE_ALIASES = o.get("title_aliases") or {}
     TITLE_ONLY = o.get("title_only") or {}
+    ROWS_FROM_SLACK = bool(o.get("rows_from_slack"))
     SHEET_ID = o["sheet_id"]
     SOURCE_CHANNEL_ID = o["source_channel"]
     LIVE_CHANNEL_ID = o["live_channel"]

@@ -322,6 +322,65 @@ def _add_note(c: Candidate, text: str, book: Optional[TitleBook] = None) -> None
         c.notes.append(n)
 
 
+# ---- rows off Slack (config.ROWS_FROM_SLACK) ---------------------------------
+# Ana's reply in Valeria's thread (10/21), one per candidate:
+#   "Devin Hyatt – AT&amp;T Team Member – YES – 1:15 – :star::star::star::star:☆ (4/5)"
+# then the description. Before 10/15 there was no ad: "*Leeann Rolon – YES –
+# 1:15 PM –* :star:..." -- that row has a blank title.
+_DASH = re.compile(r"\s+[–—-]\s+")
+_SLACK_ROWS: Dict[tuple, List[Dict[str, str]]] = {}
+
+
+def slack_row(text: str, day: dt.date) -> Optional[Dict[str, str]]:
+    """The sheet-shaped row for one candidate's reply, None if no line reads
+    "Name – YES/NO – ..." or "Name – Ad – ..."."""
+    for ln in (text or "").replace("&amp;", "&").replace("*", "").splitlines():
+        parts = [p.strip() for p in _DASH.split(ln.strip(" •_"))]
+        if len(parts) < 2 or not _fold(parts[0]):
+            continue
+        verdict = next((p for p in parts[1:] if _fold(p) in ("yes", "no")), "")
+        title = parts[1] if _fold(parts[1]) not in ("yes", "no") else ""
+        # Ivonne Zarate 10/20: "Name – Ad – 4:15 – :star:x3", the YES/NO left out.
+        if not verdict and not (len(parts) >= 3 and re.match(r"[A-Za-z]", title)):
+            continue
+        out_of = re.search(r"\((\d)\s*/\s*5\)", ln)
+        stars = out_of.group(1) if out_of else str(ln.count(":star:") or "")
+        return {config.COL_DATE: day.strftime("%m/%d/%Y"), config.COL_NAME: parts[0],
+                config.COL_TITLE: title, config.COL_INTERVIEWER: "",
+                config.COL_QUALIFY: {"yes": "Qualify", "no": "Disqualify"}.get(_fold(verdict), ""),
+                config.COL_STARS: stars}
+    return None
+
+
+def slack_rows(cl=None) -> List[Dict[str, str]]:
+    """Every candidate in the office's daily threads since THREADS_SINCE, as
+    sheet rows. Read once per process per office."""
+    memo = (tuple(source_channels()), tuple(s["thread_re"].pattern for s in config.SOURCES))
+    if memo in _SLACK_ROWS:
+        return _SLACK_ROWS[memo]
+    cl = cl or _client()
+    since = dt.datetime.combine(dt.date.fromisoformat(config.THREADS_SINCE), dt.time(0), CENTRAL)
+    rows: List[Dict[str, str]] = []
+    for ch in source_channels():
+        cursor = None
+        while True:
+            resp = cl.conversations_history(channel=ch, oldest=str(since.timestamp()),
+                                            limit=200, cursor=cursor)
+            for m in resp.get("messages", []):
+                if not any(s["thread_re"].search(m.get("text", "") or "") for s in config.SOURCES):
+                    continue
+                day = dt.datetime.fromtimestamp(float(m["ts"]), CENTRAL).date()
+                for reply in _replies(cl, m["ts"], ch):
+                    row = slack_row(reply.get("text") or "", day)
+                    if row:
+                        rows.append(row)
+            cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+            if not cursor:
+                break
+    _SLACK_ROWS[memo] = rows
+    return rows
+
+
 # ---- the day -----------------------------------------------------------------
 def read_tabs(sh, cache: Optional[dict] = None) -> Dict[str, List[Dict[str, str]]]:
     """The office's source tabs that exist, {tab: rows}. With `cache` (a dict
@@ -329,6 +388,11 @@ def read_tabs(sh, cache: Optional[dict] = None) -> Dict[str, List[Dict[str, str]
     the weekly layout builds Monday..today every evening (Sheets quota)."""
     if cache is not None and "_tabs" in cache:
         return cache["_tabs"]
+    if config.ROWS_FROM_SLACK:
+        tabs = {s["tab"]: slack_rows() for s in config.SOURCES}
+        if cache is not None:
+            cache["_tabs"] = tabs
+        return tabs
     have = {w.title for w in sh.worksheets()}
     tabs = {s["tab"]: _read_tab(sh, s["tab"]) for s in config.SOURCES if s["tab"] in have}
     if cache is not None:
