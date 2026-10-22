@@ -57,6 +57,7 @@ SANDBOX_PREFIX = "SANDBOX — "     # a test copy of a tab, checked like the rea
 # Lanes tabs on owners' sheets: 'Exit Lanes' (Frank, Drew), 'Lanes' (Cyrus),
 # 'Lanes JAIRO' (Miami) -- Eve 2026-10-19: "deben ser todos"
 LANE_NAME = re.compile(r"\blanes?\b", re.I)
+LINEUP_NAME = re.compile(r"\bline ?up\b", re.I)   # 'Line Up WE 10.25', 'Line Up NDS'
 MAX_FIXES = 300                   # more than this on one tab = misread, don't write
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "sales_board_fixer"
@@ -114,7 +115,22 @@ def load(sh, title: str) -> dict:
          "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
     if LANE_NAME.search(title):
         t.update(load_lanes(sh, t))
+    elif LINEUP_NAME.search(title):
+        t["boards"] = lineup_boards(sh, formulas)
     return t
+
+
+def lineup_boards(sh, formulas) -> dict:
+    """{board tab: (name column, last rep row)} for every sales board the
+    Line Up's formulas read -- what check_lineup_names stretches to."""
+    names = {m.group(1) for row in formulas for f in row if isinstance(f, str)
+             for m in K._BOARD_REF.finditer(f)}
+    out = {}
+    for name in sorted(names & set(_tabs(sh))):
+        v = sh.worksheet(name).get_all_values()
+        if K.is_board(v):
+            out[name] = (K.layout(v).name_col, K.block_rows(v)[1])
+    return out
 
 
 def _lanes_key(sh, title: str) -> str:
@@ -217,6 +233,8 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
     else:
         found = K.check_errors(title, v, f)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
+        if t.get("boards"):
+            found += K.check_lineup_names(title, f, t["boards"])
     return found
 
 
@@ -590,6 +608,7 @@ def lane_tabs(sh, only_for=None) -> list:
 # Roll Call carries the same status, so the formula shows the X again (_x_kept).
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate",
+               "lineup_short",
                "font", "number_format", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
 

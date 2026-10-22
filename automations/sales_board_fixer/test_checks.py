@@ -242,6 +242,27 @@ class OwnerTabs(unittest.TestCase):
                                         week_end=True), "10.25")
 
 
+class LineupNames(unittest.TestCase):
+    BOARDS = {"Sales Board WE 10.25": (3, 63)}
+
+    def test_short_range_is_stretched_to_the_row_above_totals(self):
+        f = [["", ""], ["", "={'Sales Board WE 10.25'!$C4:$C51}"]]
+        x = K.check_lineup_names("Line Up WE 10.25", f, self.BOARDS)
+        self.assertEqual([(y.where, y.value) for y in x],
+                         [("B2", "={'Sales Board WE 10.25'!$C4:$C63}")])
+
+    def test_long_range_is_cut_back_so_totals_stays_out(self):
+        f = [["={'Sales Board WE 10.25'!$C4:$C70}"]]
+        x = K.check_lineup_names("t", f, self.BOARDS)
+        self.assertEqual(x[0].value, "={'Sales Board WE 10.25'!$C4:$C63}")
+
+    def test_right_range_other_column_or_other_tab_left_alone(self):
+        f = [["={'Sales Board WE 10.25'!$C4:$C63}",
+              "=SUM('Sales Board WE 10.25'!$F4:$F51)",
+              "={'Sales Board WE 10.18'!$C4:$C51}"]]
+        self.assertEqual(K.check_lineup_names("t", f, self.BOARDS), [])
+
+
 class OwnerRepeats(unittest.TestCase):
     def test_eve_hears_on_the_third_day_in_a_row_only(self):
         import datetime as dt

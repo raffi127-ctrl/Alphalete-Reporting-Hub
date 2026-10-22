@@ -54,6 +54,7 @@ KIND_LABEL = {
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
+    "lineup_short": "Line Up: la lista de nombres no termina en la fila arriba de TOTALS del Sales Board",
     "start_date_moved": "Start Date de otro rep (quedó atrás al ordenar)",
     "days_formula": "# Days Worked sin fórmula o apuntando a otra fila",
     "lane_formula_lost": "Lanes: fórmula de un carril borrada o rota",
@@ -356,6 +357,40 @@ def check_errors(tab: str, values, formulas) -> List[Finding]:
     return out
 
 
+# --- line up name list -----------------------------------------------------
+
+# 'Sales Board WE 10.25'!$C4:$C51 -- tab, then start col/row, end col/row
+_BOARD_REF = re.compile(r"'([^']+)'!(\$?[A-Z]+\$?)(\d+):(\$?)([A-Z]+)(\$?)(\d+)")
+
+
+def check_lineup_names(tab: str, formulas, boards: Dict[str, Tuple[int, int]]) -> List[Finding]:
+    """The Line Up's dropdowns read their names from a formula like
+    ={'Sales Board WE 10.25'!$C4:$C51}. The board grows during the week; when
+    that range stops above the last rep, whoever is below it drops out of the
+    dropdown and shows the red "invalid" mark (Maud, 2026-10-22: it stopped
+    at 51, the reps went to 63). Eve, same day: the range ALWAYS ends on the
+    row right above TOTALS -- shorter drops reps, longer drops in 'TOTALS'.
+    boards: {board tab title: (name column, last rep row)}."""
+    out = []
+    for r, row in enumerate(formulas, start=1):
+        for c, f in enumerate(row, start=1):
+            if not (isinstance(f, str) and f.startswith("=") and "!" in f):
+                continue
+            def stretch(m):
+                board = boards.get(m.group(1))
+                if (not board or col_index(m.group(5)) != board[0]
+                        or col_index(m.group(2).replace("$", "")) != board[0]
+                        or int(m.group(7)) == board[1]):
+                    return m.group(0)
+                return m.group(0)[:m.start(7) - m.start(0)] + str(board[1])
+            new = _BOARD_REF.sub(stretch, f)
+            if new != f:
+                out.append(Finding("lineup_short", tab, a1(r, c),
+                                   "%s: %s" % (KIND_LABEL["lineup_short"], f),
+                                   before=f, after=new, value=new))
+    return out
+
+
 # --- fonts -----------------------------------------------------------------
 
 def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
@@ -448,6 +483,7 @@ NOTE_LABEL = {
     "lane_formula_lost": "this lane's formula had been deleted or broken",
     "lane_col_moved": "a Sales Board column this lane reads had moved",
     "lane_extra_lost": "this formula had been deleted or broken",
+    "lineup_short": "the name list didn't end on the last rep row of the Sales Board (right above TOTALS)",
 }
 
 
