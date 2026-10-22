@@ -603,6 +603,21 @@ def main(argv=None) -> int:
                         office_post.post_summary(board.LAST_ROWS, day, sample=False)
                     except Exception as exc:  # noqa: BLE001
                         print(f"OFFICE POSTS FAILED {type(exc).__name__}: {exc}")
+    if live and rc == 0 and not args.date:
+        # Lucy's audit checker (Eve 10/22): a Zoom that silently stopped being
+        # audited -> a thread tagging Camila; never holds the post
+        from automations.first_round_scorecards import checker
+        if checker.LIVE:
+            done = _ledger()
+            missed: Dict[str, int] = {}
+            for rows in graded.values():
+                for m, _, _ in rows:
+                    if str(m.get("recording_id")) not in done and m.get("owner"):
+                        missed[m["owner"]] = missed.get(m["owner"], 0) + 1
+            try:
+                checker.run(day, post=True, preview=False, missed=missed)
+            except Exception as exc:  # noqa: BLE001
+                print(f"AUDIT CHECKER FAILED {type(exc).__name__}: {exc}")
     return rc
 
 

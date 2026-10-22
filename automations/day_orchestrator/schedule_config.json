@@ -14498,6 +14498,29 @@
    "timeout_minutes": 30,
    "verify": null
   },
+  "first_round_audit_checker_preview": {
+   "hand_run_only": true,
+   "on_scheduler": false,
+   "_note": "Lucy's 1st round audit checker (Eve 2026-10-22): Zooms in ZOOMS INFO with no / rejected Fathom key, recordings left out of the post, offices that lost their Zoom. This handle posts the check to Eve's DM (no tag, state not saved). Live it runs inside first_round_scorecards after the 6 PM post once checker.LIVE = True.",
+   "display_name": "1st Round Audit Checker — preview to Eve",
+   "source_type": "api",
+   "command": [
+    "automations.first_round_scorecards.checker"
+   ],
+   "base_args": [
+    "--preview-to-eve",
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 15,
+   "verify": null
+  },
   "first_round_office_scorecards": {
    "hand_run_only": true,
    "on_scheduler": false,
