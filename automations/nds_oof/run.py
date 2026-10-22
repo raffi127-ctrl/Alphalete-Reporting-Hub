@@ -239,7 +239,8 @@ def _callout(over: List[Dict], today: dt.date, now: dt.datetime, *, send: bool) 
 
 
 # --- tick --------------------------------------------------------------------
-def tick(*, send: bool, force: bool, board: bool, headless: bool = True) -> int:
+def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
+         no_gaps: bool = False) -> int:
     now = dt.datetime.now()
     today = now.date()
     if C.CAMPAIGN_ID == "__FILL__":
@@ -250,7 +251,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True) -> int:
         return 0
     state = _state()
     want_board = board or force or _board_due(state, now)
-    want_gaps = force or _due(state, "gaps_at", C.GAPS_EVERY_MIN, now)
+    want_gaps = (not no_gaps) and (force or _due(state, "gaps_at", C.GAPS_EVERY_MIN, now))
     if not want_board and not want_gaps:
         _log("nothing due at %s" % _clock(now))
         return 0
@@ -262,7 +263,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True) -> int:
     pngs = render_board(rows, today, now, out_dir) if (want_board and rows) else []
     if want_board and not rows:
         _log("board: no rows on the grid -- not drawn (never post blank)")
-    callout = _callout(over, today, now, send=send)
+    callout = "" if no_gaps else _callout(over, today, now, send=send)
 
     if not send:
         _log("DRY RUN -- would post:")
@@ -295,9 +296,12 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true", help="post to Slack and queue the texts")
     ap.add_argument("--force", action="store_true", help="ignore the window and the cadences")
     ap.add_argument("--board", action="store_true", help="draw the board this tick")
+    ap.add_argument("--no-gaps", action="store_true",
+                    help="board only: no gap list, no call-out (a hand run after hours)")
     ap.add_argument("--headed", action="store_true")
     args = ap.parse_args(argv)
-    return tick(send=args.send, force=args.force, board=args.board, headless=not args.headed)
+    return tick(send=args.send, force=args.force, board=args.board,
+                headless=not args.headed, no_gaps=args.no_gaps)
 
 
 if __name__ == "__main__":
