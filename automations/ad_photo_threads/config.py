@@ -101,8 +101,10 @@ def unthreaded_on(key: str) -> bool:
 AUDIT_OFFICES: object = {"aya"}
 AUDIT_AFTER = (18, 0)
 # Where it goes: "preview" = Eve's DM (with an all-clear too), or a channel id.
-AUDIT_TO = "preview"
-AUDIT_TAG: list = []          # user ids @-tagged on a channel post
+# Eve 10/22: live in #ars-recruiting-numbers (where the Late Join Audit goes),
+# tagging Raf + Camila.
+AUDIT_TO = "C0C42793AKS"
+AUDIT_TAG: list = ["U045Z8N0ZQC", "U07FWSYP3NV"]   # Rafael Hidalgo, Camila Hornos
 
 
 def audit_on(key: str) -> bool:
