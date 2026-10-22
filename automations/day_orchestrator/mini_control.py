@@ -5009,6 +5009,11 @@ _CRED_FILES = {
     # is PUBLIC), so `lucy update` will never carry it.
     "saraplus-creds":
         lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds.json",
+    # The NDS dealer's SaraPlus login (alphaletegp -- Carlos 2026-10-22: the
+    # crew's NDS orders live on this dealer now; nds_metrics pulls it on
+    # Lucy 2). Its own file + Chrome profile, never the b2b or Raf dealers'.
+    "saraplus-creds-nds":
+        lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds-nds.json",
     # Fathom API key(s) -- one per Zoom account that records 1st rounds -- for
     # the 1st Round Scorecards post (first_round_scorecards.fathom). Lives in
     # ~/.config, outside the repo, so `lucy update` never carries it.

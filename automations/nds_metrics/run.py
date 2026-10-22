@@ -194,9 +194,58 @@ def _c(cols: Cols, r, i: Optional[int]) -> str:
 
 # ---------------------------------------------------------------- boards --
 
+NDS_SARA_CREDS = (Path.home() / ".config" / "recruiting-report"
+                  / "saraplus-creds-nds.json")
+NDS_SARA_PROFILE = (REPO_ROOT / "automations" / "uploaded"
+                    / ".saraplus_nds_profile")
+
+
+def _pull_nds_soh(start: dt.date, end: dt.date, log=print) -> bytes:
+    """Sales Order History off the NDS DEALER's SaraPlus (alphaletegp —
+    Carlos 2026-10-22: 'you should have the new saraplus info'; the crew's
+    orders re-homed there and the b2batt export went to zero overnight).
+    Own creds file + own Chrome profile under automations/uploaded so
+    chrome_guard protects it; the b2b and Raf dealers' profiles are never
+    touched. Panel found by TEXT (fiber sara_pull's dealer-agnostic
+    opener), not the b2b dealer's captured tab index."""
+    import json as _json
+    from patchright.sync_api import sync_playwright
+    from automations.fiber_metrics.sara_pull import _open_soh_panel
+    from automations.rc_contact_sync import config as RC
+    from automations.rc_contact_sync import sara
+    from automations.rc_contact_sync.status_probe import _export_csv
+    from automations.shared import saraplus as _sp
+    cr = _json.loads(NDS_SARA_CREDS.read_text())
+    NDS_SARA_PROFILE.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx, page, base = _sp.login_healing(
+            p, NDS_SARA_PROFILE, cr["email"], cr["password"],
+            headless=True, creds_hint=str(NDS_SARA_CREDS), log=log)
+        try:
+            log(f"[nds] saraplus (nds dealer): logged in as {cr['email']}")
+            page.goto(base + RC.HUB_PATH, wait_until="networkidle",
+                      timeout=RC.NAV_TIMEOUT_MS)
+            _open_soh_panel(page, log=log)
+            sara._set_telerik_date(page, RC.FIELD_START, start)
+            sara._set_telerik_date(page, RC.FIELD_END, end)
+            try:
+                sara._set_customer_type(page, RC.CUSTOMER_TYPE_BOTH, log=log)
+                sara._set_telerik_date(page, RC.FIELD_START, start)
+                sara._set_telerik_date(page, RC.FIELD_END, end)
+            except Exception as e:  # noqa: BLE001 — dealer may lack it
+                log(f"[nds] no Customer Type control ({e}) — dealer default")
+            sara._submit(page, log=log)
+            data = _export_csv(page, log)
+            if not data or len(data) < 200:
+                raise RuntimeError("NDS SOH export came back empty")
+            return data
+        finally:
+            ctx.close()
+
+
 def load_soh(log=print):
-    """Carlos's OWN SaraPlus Sales Order History (his login on THIS machine
-    — sp_order_log.pull_csv, Customer Type Both), crew-filtered. The crew's
+    """The NDS DEALER's SaraPlus Sales Order History (_pull_nds_soh),
+    crew-filtered. The crew's
     rows here ARE the NDS orders: before 10/19 they sold under Raf, so his
     own SOH carries only their NDS work. One pull a day, cached. -> (ix,
     crew_orders, pulled_at) or None (a failed pull skips the SaraPlus
@@ -208,8 +257,7 @@ def load_soh(log=print):
     cache = OUT_DIR / f"nds_soh_{today.isoformat()}.csv"
     try:
         if not (cache.exists() and cache.stat().st_size > 500):
-            from automations.sp_order_log.run import pull_csv
-            data, _wl = pull_csv(today - dt.timedelta(days=31), today,
+            data = _pull_nds_soh(today - dt.timedelta(days=31), today,
                                  log=log)
             cache.parent.mkdir(parents=True, exist_ok=True)
             cache.write_bytes(data)
