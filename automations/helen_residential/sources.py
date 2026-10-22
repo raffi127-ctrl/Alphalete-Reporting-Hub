@@ -64,16 +64,22 @@ def to_sheet_sunday(d: dt.date) -> Optional[dt.date]:
 # (middle), "B2B" (right) — and their rows are concatenated on one text line.
 # Anchoring on her name + company is what keeps a neighbouring table's numbers
 # from being read as hers.
-_TRACKER_ROW = re.compile(
-    r"Helen Assefaw\s+Edge Concepts\s+[A-Z]{2}\s+[A-Za-z .'-]+?\s+"
-    r"([\d,]+)\s+([\d,]+)\b")
+def _tracker_row(owner: str, company: str):
+    return re.compile(
+        re.escape(owner) + r"\s+" + re.escape(company) + r"\s+[A-Z]{2}\s+[A-Za-z .'-]+?\s+([\d,]+)\s+([\d,]+)\b")
+
+
+_TRACKER_ROW = _tracker_row("Helen Assefaw", "Edge Concepts")
 # 'W.E. 9.12' and 'WE_9_19' -- see TRACKER_GLOBS.
 _TRACKER_WEEK = re.compile(r"W\.?E\.?[\s_]+(\d{1,2})[._](\d{1,2})", re.I)
 _BYDAY = re.compile(r"Campaign[\s_]+Totals", re.I)
 
 
-def parse_tracker(paths: List[Path], year_hint: int) -> Dict[dt.date, dict]:
+def parse_tracker(paths: List[Path], year_hint: int,
+                  row_re=None) -> Dict[dt.date, dict]:
     """{sheet WE-Sunday: {'units': n, 'source': str}} from the Wireless table.
+
+    `row_re` is the owner's row (see `_tracker_row`); default is Helen's.
 
     Each PDF also prints the PREVIOUS week's number, which is used to fill a
     week whose own edition never arrived (there was no W.E. 6.20 or 8.8 send).
@@ -123,7 +129,7 @@ def parse_tracker(paths: List[Path], year_hint: int) -> Dict[dt.date, dict]:
                 txt = "\n".join(p.extract_text() or "" for p in pdf.pages)
         except Exception:
             continue
-        hit = _TRACKER_ROW.search(txt)
+        hit = (row_re or _TRACKER_ROW).search(txt)
         if not hit:
             continue
         cur, prior = (int(x.replace(",", "")) for x in hit.groups())
@@ -142,10 +148,12 @@ def parse_tracker(paths: List[Path], year_hint: int) -> Dict[dt.date, dict]:
 _REPCOUNT_WEEK = re.compile(r"WE (\d{4}-\d{2}-\d{2})")
 
 
-def parse_rep_counts(paths: List[Path]) -> Dict[dt.date, dict]:
+def parse_rep_counts(paths: List[Path],
+                     owner: str = OWNER) -> Dict[dt.date, dict]:
     """{sheet WE-Sunday: {'Headcount': n, 'Existing': n, 'source': str}}."""
     import openpyxl
 
+    owner_l = owner.lower()
     out: Dict[dt.date, dict] = {}
     for f in sorted(paths):
         m = _REPCOUNT_WEEK.search(f.name)
@@ -180,7 +188,7 @@ def parse_rep_counts(paths: List[Path]) -> Dict[dt.date, dict]:
                 # own 48 / 56.
                 if name_col is None or name_col >= len(cells):
                     continue
-                if cells[name_col].lower() != _OWNER_L:
+                if cells[name_col].lower() != owner_l:
                     continue
                 pairs = {h: v for h, v in zip(hdr, cells) if h}
                 rec = {"source": f.name}

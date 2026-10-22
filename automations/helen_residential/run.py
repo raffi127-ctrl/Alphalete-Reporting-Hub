@@ -1,5 +1,8 @@
 """Fill Helen Assefaw's tab on the ATT Program - Focus Report. Runs MONDAYS.
 
+Since 2026-10-22 it also fills `Joshua Ghorbani (Vz)` (see OWNERS): same
+tracker + rep count, no recruiting mail. `--only "<owner>"` runs one of them.
+
 Why this exists as its own report
 ---------------------------------
 Helen is a RESIDENTIAL Verizon Wireless ICD (Edge Concepts, Falls Church VA).
@@ -74,6 +77,26 @@ DEFAULT_DAYS = 75          # wide enough to catch a tracker edition that is
 # the end of every good run and would erase this notice.
 SOURCE_MANIFEST_ID = "helen_residential_sources"
 
+# Every Verizon-residential tab this fills. Helen came first (2026-08-17);
+# Joshua Ghorbani (First Harvest Sales Group, Gretna LA, AppStream 24119) was
+# added 2026-10-22 on Raf's "1on1 for Joshua Ghorbani" mail. He is on the same
+# RANKED tracker (middle table) and Rep Count `ICD Owner Snapshot`, but NOT on
+# Madilyn's recruiting mail -- his funnel rows come from AppStream through
+# att_focus_raf, like Helen's do since 2026-08-18.
+#   company  : as the tracker PDF prints it (anchors the row regex)
+#   start    : first WE-Sunday with his/her numbers. Nothing earlier is written
+#              (the tracker's "previous week" column would put a 0 there) and
+#              no hole earlier than it is pinged.
+OWNERS = {
+    "Helen Assefaw": {
+        "company": "Edge Concepts", "tab": TAB, "start": None,
+        "recruiting_mail": True, "manifest": SOURCE_MANIFEST_ID},
+    "Joshua Ghorbani": {
+        "company": "First Harvest Sales Group", "tab": "Joshua Ghorbani",
+        "start": dt.date(2026, 10, 11),
+        "recruiting_mail": False, "manifest": "joshua_ghorbani_vz_sources"},
+}
+
 # The rows this module owns -> (the mail that feeds it, how many CLOSED weeks
 # of lag are NORMAL before an empty cell counts as overdue).
 #   tracker  : runs 8-15 days behind its Saturday and sometimes skips an
@@ -124,7 +147,7 @@ def _rows_by_label(grid):
     return out
 
 
-def _overdue_holes(grid, cols, rows, written, days, today):
+def _overdue_holes(grid, cols, rows, written, days, today, start=None):
     """{label: [WE-Sunday, ...]} -- cells this module owns that are STILL empty
     and are already past their source's normal lag.
 
@@ -133,6 +156,8 @@ def _overdue_holes(grid, cols, rows, written, days, today):
     reach and re-flagging it every Monday would be noise, not a signal."""
     last_closed = today - dt.timedelta(days=(today.weekday() + 1) % 7)
     floor = today - dt.timedelta(days=days)
+    if start and start > floor:
+        floor = start
     holes = {}
     for label, (_src, lag) in OWNED_ROWS.items():
         r = rows.get(label.lower())
@@ -157,7 +182,9 @@ def _fmt_weeks(weeks) -> str:
     return ", ".join(f"{w.month}/{w.day}" for w in weeks)
 
 
-def _source_manifest(holes: dict, log=print) -> None:
+def _source_manifest(holes: dict, log=print, owner: str = "Helen Assefaw",
+                     manifest_id: str = SOURCE_MANIFEST_ID,
+                     tab: str = "Helen Assefaw (Vz)") -> None:
     """Ping (or clear) the notice for her weekly mail sources.
 
     Not a failure: the rest of the tab filled, so the Hub card stays GREEN and
@@ -171,7 +198,7 @@ def _source_manifest(holes: dict, log=print) -> None:
         return
     try:
         if not holes:
-            _rm.mark_clean(SOURCE_MANIFEST_ID, kind="source")
+            _rm.mark_clean(manifest_id, kind="source")
             return
         why = [f"{lab} - no edition covering {_fmt_weeks(wks)} "
                f"({OWNED_ROWS[lab][0]})"
@@ -180,14 +207,14 @@ def _source_manifest(holes: dict, log=print) -> None:
             f"{OWNED_ROWS[lab][0].split(' (')[0]} for week(s) ending "
             f"{_fmt_weeks(wks)}" for lab, wks in sorted(holes.items()))
         _rm.write_manifest(
-            SOURCE_MANIFEST_ID, failed=sorted(holes), retry_args=[],
+            manifest_id, failed=sorted(holes), retry_args=[],
             kind="source",
-            note=("Helen Assefaw (Vz) - " + "; ".join(why) + ". The rest of "
-                  "her tab is filled; only these cells are missing."),
+            note=(f"{tab} - " + "; ".join(why) + ". The rest of "
+                  "the tab is filled; only these cells are missing."),
             remediation=_rm.make_remediation(
                 reason="The weekly mail behind those rows never arrived for "
-                       "those weeks, or arrived without her row on it. She is "
-                       "residential Verizon, so there is no Tableau or "
+                       "those weeks, or arrived without " + owner + "'s row on "
+                       "it. This is residential Verizon, so there is no Tableau or "
                        "AppStream fallback -- the mail IS the source.",
                 fix="Ask the sender for the missing edition. When it lands, "
                     "re-run `python -m automations.helen_residential.run` (or "
@@ -207,10 +234,15 @@ def main(argv=None) -> int:
                     help="Parse and report, write nothing.")
     ap.add_argument("--days", type=int, default=DEFAULT_DAYS,
                     help=f"Email window in days (default {DEFAULT_DAYS}).")
-    ap.add_argument("--tab", default=TAB)
+    ap.add_argument("--only", choices=sorted(OWNERS),
+                    help="Fill one owner's tab (default: all of them).")
+    ap.add_argument("--tab", help="Override the tab name (needs --only).")
     args = ap.parse_args(argv)
     dry = args.dry_run
     today = dt.date.today()
+    owners = [args.only] if args.only else list(OWNERS)
+    if args.tab and not args.only:
+        ap.error("--tab needs --only")
 
     workdir = Path(tempfile.mkdtemp(prefix="helen-residential-"))
     print(f"[helen] window {args.days}d, workdir {workdir}", flush=True)
@@ -233,9 +265,6 @@ def main(argv=None) -> int:
         print(f"[helen] rep-count fetch failed ({type(e).__name__}: {e})")
         rc_files = []
 
-    units = S.parse_tracker(list(tr_files), today.year)
-    heads = S.parse_rep_counts(list(rc_files))
-
     recruiting = {}
     try:
         M = email_ingest._connect()
@@ -253,18 +282,43 @@ def main(argv=None) -> int:
     except Exception as e:                                  # noqa: BLE001
         print(f"[helen] recruiting fetch failed ({type(e).__name__}: {e})")
 
-    print(f"[helen] sources: {len(tr_files)} tracker pdf(s) -> {len(units)} "
-          f"sales week(s); {len(rc_files)} rep count(s) -> {len(heads)} "
-          f"headcount week(s); {len(recruiting)} recruiting week(s)")
+    print(f"[helen] sources: {len(tr_files)} tracker pdf(s), {len(rc_files)} "
+          f"rep count(s), {len(recruiting)} recruiting week(s)")
 
-    # ---- write ------------------------------------------------------------
+    # ---- write, one tab per owner -------------------------------------------
+    # The mails are fetched once above; one owner's broken tab must not cost
+    # the other theirs.
     sh = fill.open_sheet()
-    ws = _resolve_tab(sh, args.tab)
+    rc = 0
+    for owner in owners:
+        try:
+            rc |= _fill_owner(sh, owner, OWNERS[owner], tr_files, rc_files,
+                              recruiting, dry, today, args.days, args.tab)
+        except Exception as e:                              # noqa: BLE001
+            print(f"[helen] {owner} FAILED ({type(e).__name__}: {e})")
+            rc = 1
+    return rc
+
+
+def _fill_owner(sh, owner, cfg, tr_files, rc_files, recruiting, dry, today,
+                days, tab=None) -> int:
+    """Write one owner's still-empty cells; ping (or clear) their holes."""
+    tag = f"[{owner.split()[0].lower()}]"
+    start = cfg.get("start")
+    units = S.parse_tracker(list(tr_files), today.year,
+                            row_re=S._tracker_row(owner, cfg["company"]))
+    heads = S.parse_rep_counts(list(rc_files), owner=owner)
+    if not cfg.get("recruiting_mail"):
+        recruiting = {}
+    print(f"{tag} {owner}: {len(units)} sales week(s), {len(heads)} "
+          f"headcount week(s), {len(recruiting)} recruiting week(s)")
+
+    ws = _resolve_tab(sh, tab or cfg["tab"])
     grid = fill._retry(ws.get_all_values)
     cols = fill.find_sunday_columns(grid, header_row_idx=0)
     rows = _rows_by_label(grid)
     if not cols:
-        print(f"[helen] {ws.title}: no date headers on row 1 — is C1 a SUNDAY?")
+        print(f"{tag} {ws.title}: no date headers on row 1 — is C1 a SUNDAY?")
         return 1
 
     plan = {}      # week -> [(label, value, source)]
@@ -287,6 +341,9 @@ def main(argv=None) -> int:
     updates, filled, kept, nocol, norow = [], [], 0, [], set()
     written = set()                # (row, col) this run is about to fill
     for wk in sorted(plan):
+        if start and wk < start:
+            continue        # before they started: the tracker's "previous
+                            # week" column prints a 0 that is not a real week
         col = cols.get(wk)
         if col is None:
             nocol.append(str(wk))
@@ -311,29 +368,30 @@ def main(argv=None) -> int:
     for line in filled:
         print(line)
     if nocol:
-        print(f"[helen] {len(nocol)} week(s) with no column on the tab: "
+        print(f"{tag} {len(nocol)} week(s) with no column on the tab: "
               f"{nocol[:4]}{' …' if len(nocol) > 4 else ''}")
     if norow:
-        print(f"[helen] label(s) not on the tab: {sorted(norow)}")
-    print(f"[helen] {len(updates)} cell(s) to fill, {kept} already filled (kept)")
+        print(f"{tag} label(s) not on the tab: {sorted(norow)}")
+    print(f"{tag} {len(updates)} cell(s) to fill, {kept} already filled (kept)")
 
     if dry:
-        print("[helen] DRY RUN — nothing written")
+        print(f"{tag} DRY RUN — nothing written")
     elif updates:
         fill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
-        print(f"[helen] wrote {len(updates)} cell(s)")
+        print(f"{tag} wrote {len(updates)} cell(s)")
     else:
-        print("[helen] nothing new — every week the sources cover is already "
+        print(f"{tag} nothing new — every week the sources cover is already "
               "on the tab")
 
     # What is STILL missing after this run. This runs on the nothing-to-write
     # path too — that is precisely the run where a source has gone quiet.
     # Never alerts on a dry-run: a rehearsal must not ping anyone.
-    holes = _overdue_holes(grid, cols, rows, written, args.days, today)
+    holes = _overdue_holes(grid, cols, rows, written, days, today, start)
     for lab, wks in sorted(holes.items()):
-        print(f"[helen] STILL EMPTY  {lab}: {_fmt_weeks(wks)}")
+        print(f"{tag} STILL EMPTY  {lab}: {_fmt_weeks(wks)}")
     if not dry:
-        _source_manifest(holes)
+        _source_manifest(holes, owner=owner, manifest_id=cfg["manifest"],
+                         tab=ws.title)
     return 0
 
 
