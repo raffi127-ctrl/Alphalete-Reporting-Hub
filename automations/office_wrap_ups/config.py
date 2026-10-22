@@ -32,10 +32,9 @@ SLACK_HEADER = ":telephone_receiver: Reps that didn\'t send wrap ups"
 # (Trang → FRESH SUCCESS) uses his id there, keyed by the office's token file.
 TAG_USER_ID = "U048V0YA5FC"  # Dylan Twaddle, AO workspace
 TAG_USER_ID_CROSSWS = {
-    # token file -> Dylan's user id in that workspace. He is in FRESH SUCCESS
-    # too (Dylan 2026-10-21) — fill his member id there to tag him in Trang's
-    # #freshsuccess-all-leaders.
-    # "slack-token-freshsuccess": "U_________",
+    # token file -> Dylan's user id in that workspace. A mention only works with
+    # the id from that workspace.
+    "slack-token-freshsuccess": "U0BHD2UK0TA",  # Dylan in FRESH SUCCESS (Trang)
 }
 
 # The offices this report covers, by office_metrics.OFFICES key. Every one is an

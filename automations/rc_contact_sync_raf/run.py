@@ -138,6 +138,9 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
     body = missing_names_reply(missing, total)
     if prefix:
         body = prefix + "\n" + body
+    # Tag Dylan so the morning post is readily visible to him (Dylan 2026-10-21).
+    if getattr(C, "TAG_USER_ID", ""):
+        body = body + "\n\n<@%s>" % C.TAG_USER_ID
     failed: List[str] = []
     for chan in C.CHANNELS:
         label = C.CHANNEL_LABEL.get(chan, chan)

@@ -71,6 +71,10 @@ CHANNEL_LABEL = {"C068PH3RFSM": "#alphalete-sales"}
 # and appends the date, so markup here would double the stars.
 SLACK_HEADER = ":telephone_receiver: Reps that didn\'t send wrap ups"
 
+# Tag Dylan at the bottom of every reply so the morning post is readily visible
+# to him (Dylan 2026-10-21). #alphalete-sales is the AO workspace, so his AO id.
+TAG_USER_ID = "U048V0YA5FC"  # Dylan Twaddle
+
 # --- state -------------------------------------------------------------------
 # Header already posted per "day|channel" -> thread_ts, so a same-day rerun
 # replies under the morning's header instead of opening a second one. Its own
