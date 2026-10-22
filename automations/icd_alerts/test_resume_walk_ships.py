@@ -533,6 +533,72 @@ class TheHealthRowNamesPeople(unittest.TestCase):
         self.assertTrue(all(len(l) <= 110 for l in tail))
 
 
+class DownloadedPdfsAreReadOnTheMac(unittest.TestCase):
+    """10/22 evening: Jorge Banos STILL not sent. Indeed hands his resume over
+    as a PDF, and an office computer has no PDF library."""
+
+    def test_the_reader_ships(self):
+        self.assertIn("automations/oat_processing/bin/read_file.js",
+                      package.AGENT_FILES)
+
+    def _real(self):
+        import platform
+        if platform.system() != "Darwin":
+            self.skipTest("macOS only")
+
+    def _pdf(self, html):
+        import tempfile
+        path = tempfile.mktemp(suffix=".pdf")
+        try:
+            from patchright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                b = p.chromium.launch(headless=True)
+                pg = b.new_page()
+                pg.set_content(html)
+                pg.pdf(path=path)
+                b.close()
+        except Exception as e:  # noqa: BLE001
+            self.skipTest("no browser: %s" % e)
+        return path
+
+    def test_a_text_pdf_without_any_pdf_library(self):
+        self._real()
+        from automations.oat_processing import resume_download as RD
+        path = self._pdf("<h1>Jorge Banos</h1><p>jbanos400@gmail.com</p>"
+                         "<p>9454023077</p>")
+        import builtins
+        real_import = builtins.__import__
+
+        def no_pdf_libs(name, *a, **k):
+            if name in ("fitz", "pdfminer.high_level"):
+                raise ImportError(name)
+            return real_import(name, *a, **k)
+        with mock.patch("builtins.__import__", no_pdf_libs):
+            self.assertEqual(RD.phone_from_file(path), "9454023077")
+        self.assertEqual(RD.LAST_EMAIL, "jbanos400@gmail.com")
+
+    def test_a_picture_pdf_without_swift(self):
+        self._real()
+        import subprocess
+        import tempfile
+        from automations.oat_processing import resume_download as RD
+        text_pdf = self._pdf("<div style='font:40px Arial'>Jorge Banos"
+                             "<br>9454023077</div>")
+        # Flatten it to a picture-only PDF: no text layer at all.
+        png = tempfile.mktemp(suffix=".png")
+        flat = tempfile.mktemp(suffix=".pdf")
+        subprocess.run(["sips", "-s", "format", "png", text_pdf, "--out",
+                        png], capture_output=True)
+        subprocess.run(["sips", "-s", "format", "pdf", png, "--out", flat],
+                       capture_output=True)
+        with mock.patch.object(RD, "_swift_usable", return_value=False), \
+             mock.patch.object(RD, "_text_from_pdf", return_value=""):
+            self.assertEqual(RD.phone_from_file(flat), "9454023077")
+
+    def test_the_written_off_are_reread_for_this_fix(self):
+        self.assertEqual(RP.READ_FIX, "2026-10-22-mac-pdf")
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):

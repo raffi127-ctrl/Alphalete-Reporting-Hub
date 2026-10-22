@@ -938,7 +938,9 @@ def _walled() -> bool:
 # computer re-reads everyone it had written off -- once, not every run (the
 # list exists so dead-end resumes are not reopened every ten minutes).
 #   2026-10-22-mac-ocr: the Mac reads picture resumes itself (Jorge Banos).
-READ_FIX = "2026-10-22-mac-ocr"
+#   2026-10-22-mac-pdf: the Mac reads downloaded PDF resumes itself -- office
+#     computers have no PDF library, so every PDF read as "no phone".
+READ_FIX = "2026-10-22-mac-pdf"
 
 
 def _recheck_once_per_fix(OAT) -> None:

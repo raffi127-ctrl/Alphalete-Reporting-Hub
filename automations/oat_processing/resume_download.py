@@ -90,6 +90,44 @@ def phone_from_text(text: str):
 # --------------------------------------------------------------------------- #
 # Per-format text extraction
 # --------------------------------------------------------------------------- #
+def _mac_read(path: str, mode: str) -> str:
+    """A resume file read by macOS itself (bin/read_file.js: PDFKit for a PDF's
+    text, Vision for pictures). "" off a Mac or on any failure.
+
+    WHY (2026-10-22). An office's own computer (LucyECO) gets only patchright
+    -- no PyMuPDF, no pdfminer, no swift developer tools -- so EVERY resume
+    that came down as a PDF read as "no phone in it", and Jorge Banos sat in
+    Carlos's queue with his number in plain sight. osascript ships with every
+    Mac: nothing to install, and no "install developer tools" window popping
+    up on an owner's screen the way calling swift would."""
+    import platform
+    if platform.system() != "Darwin":
+        return ""
+    js = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin",
+                      "read_file.js")
+    if not os.path.exists(js):
+        return ""
+    try:
+        r = subprocess.run(["osascript", "-l", "JavaScript", js, mode, path],
+                           capture_output=True, timeout=90)
+        return (r.stdout or b"").decode("utf-8", "replace")
+    except Exception:                   # noqa: BLE001
+        return ""
+
+
+def _swift_usable() -> bool:
+    """Is swift really there? On a Mac without Apple's developer tools the
+    /usr/bin/swift shim pops an install window instead of running."""
+    import shutil
+    if not shutil.which("swift"):
+        return False
+    try:
+        return subprocess.run(["xcode-select", "-p"], capture_output=True,
+                              timeout=10).returncode == 0
+    except Exception:                   # noqa: BLE001
+        return False
+
+
 def _text_from_pdf(path: str) -> str:
     try:
         import fitz                     # PyMuPDF
@@ -101,7 +139,8 @@ def _text_from_pdf(path: str) -> str:
         from pdfminer.high_level import extract_text
         return extract_text(path) or ""
     except Exception:                   # noqa: BLE001
-        return ""
+        pass
+    return _mac_read(path, "text")
 
 
 def _text_from_ocr(path: str) -> str:
@@ -120,8 +159,10 @@ def _text_from_ocr(path: str) -> str:
     for a phone number and keeps a multi-page resume quick)."""
     here = os.path.dirname(os.path.abspath(__file__))
     swift_src = os.path.join(here, "bin", "ocr_image.swift")
-    if not os.path.exists(swift_src):
-        return ""
+    if not os.path.exists(swift_src) or not _swift_usable():
+        # The office's own computer: same Vision, through osascript. Reads
+        # images AND the pages of a picture-only PDF, no PyMuPDF needed.
+        return _mac_read(path, "ocr")
 
     def _ocr(img_path: str) -> str:
         try:
