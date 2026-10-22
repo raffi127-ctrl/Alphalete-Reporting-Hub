@@ -898,11 +898,14 @@ def _walk(page, live: bool, record: dict) -> dict:
         return {"reached": True, "office": seen, "rc": 2, "why": why}
     _point_walk_here(seen, record)
     before = len(OAT._ACTIVITY_ROWS)
+    OAT.LAST_WALK = {}
     rc = OAT.run_walk(page, live=live)
+    walk = dict(OAT.LAST_WALK or {})
     rows = OAT._ACTIVITY_ROWS[before:] if live else []
     sent = sum(1 for r in rows if len(r) > 5
                and str(r[5]).startswith("sent"))
     return {"reached": True, "office": seen, "rc": rc, "sent": sent,
+            "queue_start": walk.get("start"), "queue_end": walk.get("end"),
             "walled": bool(OAT._cf_walled()),
             "why": "" if rc == 0 else "the walk stopped (rc=%s)" % rc}
 
@@ -949,6 +952,30 @@ def _note_wall(walled: bool) -> None:
             "(%d runs in a row); no phone numbers are being read" % streak,
             "Someone at that desk: click Lucy's Chrome in the Dock / taskbar "
             "and tick the box once. Nobody is removed meanwhile.",
+            log=_log, office_key=str(push_record().get("office_key") or ""))
+    except Exception:  # noqa: BLE001 -- the telling, never the work
+        pass
+
+
+# EVERY RUN SAYS WHAT IT DID (Megan 2026-10-21: "you should be able to know
+# if it's running based on the number of apps. We need to know it's
+# working!"). One quiet probe row per office per day on the relay -- the
+# relay upserts on (office, day, stage, summary), so the summary is constant:
+# Count = runs today, Last At = the last run, Detail = the newest numbers.
+# Read by automations/push_report/run.py for the hourly push report. A
+# probe- stage is filed, never posted (post.notify_faults).
+STATS_STAGE = "probe-push-stats"
+
+
+def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
+    try:
+        from automations.icd_alerts import relay as R
+        R.report_fault(STATS_STAGE, "push stats", json.dumps({
+            "office": out.get("office"), "live": bool(live),
+            "start": out.get("queue_start"), "end": out.get("queue_end"),
+            "sent_run": int(out.get("sent") or 0), "sent_today": sent_today,
+            "walled": bool(out.get("walled")), "result": result,
+            "at": dt.datetime.now().strftime("%H:%M")}),
             log=_log, office_key=str(push_record().get("office_key") or ""))
     except Exception:  # noqa: BLE001 -- the telling, never the work
         pass
@@ -1052,6 +1079,8 @@ def push(live: bool, scheduled: bool = False) -> int:
             sent[day] = int(sent.get(day, 0)) + int(out.get("sent", 0))
             st["sent_by_day"] = sent
             st["office"] = out.get("office")
+            if out.get("reached") and out.get("office"):
+                _file_stats(out, live, int(sent[day]), result)
         if result == "ok":
             st.pop("reported", None)    # the next fault is news again
         _save_state(st)

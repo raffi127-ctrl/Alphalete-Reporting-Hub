@@ -383,6 +383,37 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
         self.assertLessEqual(len(text.splitlines()), 2)   # SUPER SIMPLE
 
 
+class EveryRunSaysWhatItDid(unittest.TestCase):
+    """Megan 2026-10-21: "We need to know it's working!" Each run relays its
+    queue numbers; the push report reads them (push_report.run)."""
+
+    def test_a_run_files_its_numbers(self):
+        import json
+        filed = []
+        with mock.patch("automations.icd_alerts.relay.report_fault",
+                        side_effect=lambda stage, summary, detail="", **k:
+                        filed.append((stage, summary, json.loads(detail),
+                                      k.get("office_key")))), \
+             mock.patch.object(RP, "push_record",
+                               return_value={"office_key": "carlos"}):
+            RP._file_stats({"office": "11580", "queue_start": 54,
+                            "queue_end": 50, "sent": 4, "walled": False},
+                           True, 19, "ok")
+        stage, summary, d, key = filed[0]
+        self.assertEqual((stage, summary, key),
+                         ("probe-push-stats", "push stats", "carlos"))
+        self.assertEqual((d["start"], d["end"], d["sent_run"],
+                          d["sent_today"], d["live"]), (54, 50, 4, 19, True))
+
+    def test_the_stage_is_one_the_report_reads(self):
+        from automations.push_report import run as PR
+        self.assertEqual(RP.STATS_STAGE, PR.RELAY_STATS_STAGE)
+
+    def test_the_walk_hands_back_its_queue(self):
+        from automations.oat_processing import run as OAT
+        self.assertIsInstance(OAT.LAST_WALK, dict)
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):

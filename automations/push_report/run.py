@@ -49,7 +49,9 @@ GROUP = (CARLOS, EVE, MEGAN)
 # (diag tab, label, machine). The UNSUFFIXED tab is Carlos's 11580 — his office
 # is the default (FILE_SUFFIX "") so its diag tab carries no office id.
 OFFICES = [
-    ("OAT Walk Diag",       "Carlos 11580",          "Lucy 2"),
+    # 11580 pushes from CARLOS'S OWN COMPUTER since 2026-10-20, which cannot
+    # write the diag tab -- it relays its numbers instead (RELAY_SOURCE below).
+    ("relay:carlos:11580",  "Carlos 11580",          "Carlos's computer"),
     ("OAT Walk Diag 23467", "Atef 23467",            "Lucy 2"),
     ("OAT Walk Diag 11901", "Khalil 11901",          "Lucy 2"),
     ("OAT Walk Diag 11280", "Raf main 11280",        "Lucy 4"),
@@ -58,6 +60,18 @@ OFFICES = [
 ]
 
 STALE_AFTER_MIN = 120
+
+# AN OFFICE'S OWN COMPUTER (LucyECO) relays one quiet stats row per office per
+# day to the ICD relay workbook: stage probe-push-stats, Detail = the newest
+# run's numbers as JSON, Last At = when it last ran. Written by
+# automations/icd_alerts/resume_push.py (_file_stats). Read with the same
+# Google account as the diag tabs (Lucy 2 and Lucy 4 share it).
+RELAY_BOOK = "1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg"
+RELAY_FAULTS_TAB = "ICD Faults"
+RELAY_STATS_STAGE = "probe-push-stats"
+# It runs every 10 minutes, so 45 quiet minutes means it is not running --
+# Megan 2026-10-21: "We need to know it's working!"
+RELAY_STALE_AFTER_MIN = 45
 WINDOW = (7, 22)  # push window, hours local
 BACKLOG_FLAG_OVER = 10  # more than this many left -> red X on the line
 
@@ -75,8 +89,10 @@ def _hm12(text: str) -> str:
 
 
 def _office_id(tab: str) -> str:
-    """'OAT Walk Diag 23965' -> '23965'. The UNSUFFIXED tab is Carlos's 11580
-    (FILE_SUFFIX ""), same convention OFFICES documents above."""
+    """'OAT Walk Diag 23965' -> '23965'; 'relay:carlos:11580' -> '11580'. The
+    UNSUFFIXED tab is Carlos's 11580 (FILE_SUFFIX ""), the old convention."""
+    if tab.startswith("relay:"):
+        return tab.split(":")[2]
     tail = tab[len("OAT Walk Diag"):].strip()
     return tail or "11580"
 
@@ -112,6 +128,49 @@ def _paused_offices() -> set:
     return out
 
 
+def _relay_stats(book, office_key: str, today: str):
+    """(numbers dict, last-run datetime) from the office computer's newest
+    stats row today, or (None, None). Never raises."""
+    import json
+    try:
+        rows = book.worksheet(RELAY_FAULTS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return None, None
+    best = None
+    for r in rows[1:]:
+        if len(r) < 8 or r[2] != RELAY_STATS_STAGE:
+            continue
+        if (r[0] or "").strip().lower() != office_key:
+            continue
+        day = str(r[1]).strip()
+        if day != today and not day.startswith(today):
+            continue
+        try:
+            last = dt.datetime.strptime(r[7].strip(), "%m/%d/%Y %H:%M:%S")
+        except Exception:  # noqa: BLE001
+            last = None
+        try:
+            stats = json.loads(r[4] or "{}")
+        except Exception:  # noqa: BLE001
+            stats = {}
+        if best is None or (last and (best[1] is None or last > best[1])):
+            best = (stats, last)
+    return best if best else (None, None)
+
+
+def _relay_line(label: str, stats: dict, last) -> str:
+    """'Carlos 11580 (his computer): 12 pushed · 4 left @ 3:40 PM'."""
+    end = stats.get("end")
+    left = str(end) if isinstance(end, int) else "?"
+    flag = ":x: " if isinstance(end, int) and end > BACKLOG_FLAG_OVER else ""
+    pushed = ("%d pushed" % int(stats.get("sent_today") or 0)
+              if stats.get("live") else "test run, nothing sent")
+    at = _hm12(last.strftime("%H:%M")) if last else _hm12(stats.get("at", ""))
+    extra = " · Indeed check up" if stats.get("walled") else ""
+    return "%s%s (his computer): %s · %s left @ %s%s" % (
+        flag, label, pushed, left, at, extra)
+
+
 def build_report(unreadable=None) -> str:
     """The DM text. `unreadable`, when given, collects the offices whose diag
     tab could not be read — their line says so, but the numbers are missing."""
@@ -122,7 +181,28 @@ def build_report(unreadable=None) -> str:
     lines = []
     paused = _paused_offices()
     machine_last: dict[str, dt.datetime] = {}
+    relay_book = None
     for tab, label, machine in OFFICES:
+        if tab.startswith("relay:"):
+            if relay_book is None:
+                try:
+                    relay_book = _fill._client().open_by_key(RELAY_BOOK)
+                except Exception as e:  # noqa: BLE001
+                    relay_book = False
+                    print("relay workbook unreadable: %s" % type(e).__name__)
+            stats, last = (_relay_stats(relay_book, tab.split(":")[1], today)
+                           if relay_book else (None, None))
+            if stats is None:
+                if relay_book is False and unreadable is not None:
+                    unreadable.append(label)
+                lines.append("%s (his computer): %s" % (
+                    label, "relay unreadable" if relay_book is False
+                    else "no runs yet today"))
+                continue
+            lines.append(_relay_line(label, stats, last))
+            if last:
+                machine_last[machine] = last
+            continue
         try:
             vals = sh.worksheet(tab).get_all_values()
         except Exception as e:  # noqa: BLE001
@@ -170,8 +250,11 @@ def build_report(unreadable=None) -> str:
         except Exception:  # noqa: BLE001
             pass
     if WINDOW[0] <= now.hour < WINDOW[1]:
+        relay_machines = {m for t, _l, m in OFFICES if t.startswith("relay:")}
         for machine, last in sorted(machine_last.items()):
-            if (now - last).total_seconds() / 60 > STALE_AFTER_MIN:
+            stale = (RELAY_STALE_AFTER_MIN if machine in relay_machines
+                     else STALE_AFTER_MIN)
+            if (now - last).total_seconds() / 60 > stale:
                 lines.append(":warning: %s has posted nothing since %s — the "
                              "walk may be down"
                              % (machine, _hm12(last.strftime("%H:%M"))))

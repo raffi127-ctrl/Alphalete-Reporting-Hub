@@ -3590,6 +3590,11 @@ def assert_on_expected_office(page, tries: int = 3) -> bool:
     return False
 
 
+# What the last run_walk() in this process saw: queue at start/end, how many
+# applicants it read, outcome counts. {} until a walk reaches its end.
+LAST_WALK: dict = {}
+
+
 def run_walk(page, live: bool = False, limit: int = None,
              max_actions: int = None, today=None) -> int:
     """Walk the One-App-at-a-time queue on an ALREADY-OPEN, logged-in, office-11580
@@ -3897,6 +3902,13 @@ def run_walk(page, live: bool = False, limit: int = None,
     # "no number" and 90 applicants were written off).
     _pending = _blocked_pending_count()
     _cache_col = len(_load_nophone_checked())
+    # THE SAME NUMBERS, HANDED BACK TO THE CALLER (2026-10-21). An office's
+    # own computer cannot write the diag tab below (no Hub Sheets there), so
+    # icd_alerts/resume_push.py reads these and relays them instead -- that
+    # is how the push report knows Carlos's computer is working.
+    global LAST_WALK
+    LAST_WALK = {"start": _start_total, "end": _end_total,
+                 "processed": processed, "counts": dict(counts)}
     _write_walk_diag(_start_total, _end_total,
                      f"{_cache_col} (+{_pending} blocked)" if _pending else _cache_col,
                      _NOPHONE_SKIPS, counts)

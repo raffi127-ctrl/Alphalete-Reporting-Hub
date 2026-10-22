@@ -80,6 +80,19 @@ class TheLine(unittest.TestCase):
                 self.tab = tab
 
             def get_all_values(self):
+                if self.tab == pr.RELAY_FAULTS_TAB:
+                    # Carlos's 11580 pushes from his own computer since
+                    # 2026-10-20 and relays one stats row (resume_push).
+                    if "relay" in skip_rows:
+                        return [["Office"]]
+                    import json
+                    return [["Office"], [
+                        "carlos", stamp, pr.RELAY_STATS_STAGE, "push stats",
+                        json.dumps({"office": "11580", "live": True,
+                                    "start": 120, "end": 7, "sent_run": 3,
+                                    "sent_today": 30, "walled": False,
+                                    "at": "20:33"}),
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:33:00"]]
                 if self.tab in skip_rows:
                     return []
                 at, queue, sent = rows[self.tab]
@@ -118,7 +131,7 @@ class TheLine(unittest.TestCase):
         got = self._render(dt.datetime(2026, 9, 24, 20, 37))
         self.assertEqual(got, "\n".join([
             "*Push report 8:37 PM*",
-            "Carlos 11580: 30 pushed · 7 left @ 8:33 PM",
+            "Carlos 11580 (his computer): 30 pushed · 7 left @ 8:33 PM",
             "Atef 23467: 27 pushed · 2 left @ 8:36 PM",
             "Khalil 11901: 109 pushed · 2 left @ 8:29 PM",
             ":x: Raf main 11280: 34 pushed · 114 left @ 8:21 PM",
@@ -148,12 +161,39 @@ class BacklogFlag(unittest.TestCase):
 
     def test_ten_or_under_does_not(self):
         got = TheLine()._render(dt.datetime(2026, 9, 24, 20, 37))
-        for name in ("Carlos 11580", "Atef 23467", "Khalil 11901"):
+        for name in ("Carlos 11580 (his computer)", "Atef 23467",
+                     "Khalil 11901"):
             self.assertIn("\n%s:" % name, got)
             self.assertNotIn(":x: %s" % name, got)
 
     def test_threshold_is_strictly_over_ten(self):
         self.assertEqual(pr.BACKLOG_FLAG_OVER, 10)
+
+
+class CarlosComputer(unittest.TestCase):
+    """Megan 2026-10-21: "We need to know it's working!" His line comes from
+    the stats row his computer relays, and goes red when it goes quiet."""
+
+    def test_quiet_for_45_minutes_is_flagged(self):
+        got = TheLine()._render(dt.datetime(2026, 9, 24, 21, 30))
+        self.assertIn(":warning: Carlos's computer has posted nothing since "
+                      "8:33 PM", got)
+
+    def test_lucys_keep_their_two_hours(self):
+        got = TheLine()._render(dt.datetime(2026, 9, 24, 21, 30))
+        self.assertNotIn(":warning: Lucy 2", got)
+
+    def test_no_row_today_says_so(self):
+        got = TheLine()._render(dt.datetime(2026, 9, 24, 20, 37),
+                                skip_rows=("relay",))
+        self.assertIn("Carlos 11580 (his computer): no runs yet today", got)
+        self.assertIn(":warning: Carlos's computer has posted NO runs today",
+                      got)
+
+    def test_a_test_run_never_reads_as_pushes(self):
+        line = pr._relay_line("Carlos 11580", {"live": False, "end": 4,
+                                               "sent_today": 0}, None)
+        self.assertIn("test run, nothing sent", line)
 
 
 class TheWindowsGate(unittest.TestCase):
@@ -188,7 +228,8 @@ class PausedOffices(unittest.TestCase):
     def test_live_offices_untouched(self):
         got = TheLine()._render(dt.datetime(2026, 9, 25, 9, 20),
                                 paused={"23965", "24065"})
-        self.assertIn("Carlos 11580: 30 pushed · 7 left @ 8:33 PM", got)
+        self.assertIn("Carlos 11580 (his computer): 30 pushed · 7 left @ "
+                      "8:33 PM", got)
         self.assertIn("Raf main 11280: 34 pushed · 114 left @ 8:21 PM", got)
 
     def test_paused_and_nothing_logged_is_not_a_worry_line(self):
