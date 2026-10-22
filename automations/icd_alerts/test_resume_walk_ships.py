@@ -512,6 +512,27 @@ class TheMacReaderReallyReads(unittest.TestCase):
         self.assertIn("9454023077", out.replace(" ", ""))
 
 
+class TheHealthRowNamesPeople(unittest.TestCase):
+
+    def test_only_the_lines_about_people_and_short(self):
+        import tempfile, pathlib
+        log = pathlib.Path(tempfile.mktemp())
+        log.write_text("\n".join([
+            "    [attachment] no attachment on the panel (waited 4.0s)",
+            "    [cf] first resume read of this session -- waiting 150s",
+            "[2] FLAG_NO_PHONE -- Jorge Banos: no phone or cell on file",
+            "    [ocr] read by the Mac itself: 9454023077",
+            "    \u2705 SENT to AI: Jorge Banos " + "x" * 200,
+        ]))
+        with mock.patch.object(RP, "LOG_PATH", log):
+            tail = RP._log_tail()
+        self.assertEqual(len(tail), 3)
+        self.assertIn("Jorge Banos", tail[0])
+        self.assertIn("Mac itself", tail[1])
+        self.assertTrue(tail[2].startswith("\u2705 SENT to AI: Jorge Banos"))
+        self.assertTrue(all(len(l) <= 110 for l in tail))
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):

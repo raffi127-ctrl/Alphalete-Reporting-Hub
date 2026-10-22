@@ -226,12 +226,23 @@ HEALTH_STAGE = "probe-push-health"
 HEALTH_EVERY_MINUTES = 15
 
 
-def _log_tail(n: int = 15) -> list:
+# The lines that say what happened to a PERSON. The relay keeps ~1,500
+# characters of a row, and a raw tail filled that with attachment and Cloudflare
+# chatter -- on 10/22 the row cut off right at "Jorge Banos" and nobody could
+# tell whether he went through. These, newest last, short.
+_KEY_LINES = ("SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
+              "read by the Mac itself", "phone read OFF THE SCREEN",
+              "resume phone", "resume read BLOCKED", "QUEUE at", "removed",
+              "Traceback", "Error", "OFFICE GUARD")
+
+
+def _log_tail(n: int = 10) -> list:
     try:
-        lines = LOG_PATH.read_text(errors="replace").splitlines()
+        lines = LOG_PATH.read_text(errors="replace").splitlines()[-400:]
     except OSError:
         return []
-    return [l[:200] for l in lines[-n:]]
+    keep = [l.strip() for l in lines if any(k in l for k in _KEY_LINES)]
+    return [l[:110] for l in keep[-n:]]
 
 
 def _heartbeat(log=print, now: Optional[dt.datetime] = None) -> bool:
