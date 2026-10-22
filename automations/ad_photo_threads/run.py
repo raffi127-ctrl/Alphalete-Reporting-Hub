@@ -558,6 +558,10 @@ def main(argv=None) -> int:
         print("Redo weekly:", {k: v for k, v in got.items() if k != "untouched"})
         for t in got["untouched"]:
             print(f"  untouched (old layout kept): {t}")
+        # Eve 10/22: a freshly loaded channel got its threads with no ✅/❌ —
+        # the mark only came from the nightly, which skips offices not live yet.
+        if config.marks_on(a.office or "rafael"):
+            return mark_all(day, True, a.channel or config.LIVE_CHANNEL_ID)
         return 0
     if a.mark_status:
         return mark_all(day, a.apply, a.channel or config.LIVE_CHANNEL_ID)
