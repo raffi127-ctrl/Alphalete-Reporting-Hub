@@ -127,7 +127,7 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
                 goal: Optional[int] = None,
                 flag_missing: bool = True,
                 teams=None,
-                field: Optional[int] = None) -> str:
+                stats=()) -> str:
     """The scoreboard both chats get.
 
     OUR layout -- full names, the breakdown always shown, the weekly goal --
@@ -179,7 +179,7 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     lines.append("%s TOTALS: %d" % (TROPHY, sum(totals[k] for k in COUNTED)))
     if teams is not None:
         lines.extend(team_lines(counted, teams))
-    lines.extend(headcount_lines(counted, field))
+    lines.extend(headcount_lines(stats))
     # NO GOAL LINE (Megan 2026-08-26, twice). There is no maintained source for
     # one. The brief's example said 80; the board has a cell literally labelled
     # "Goal" = 350, which is what I switched to -- and it is an annotation at
@@ -197,22 +197,20 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     return "\n".join(lines)
 
 
-def headcount_lines(counted, field: Optional[int]) -> List[str]:
-    """Raf 2026-10-21: "active reps in the field, active reps on the board,
-    percentage of reps sold". `field` = reps on today's OwnerVille knock board
-    (shared/field_reps, None before the first knock pull of the day); "on the
-    board" = reps who have SOLD today, the field's sense of the phrase -- not
-    the sales board's roster. No field count yet = the % line drops out."""
-    sold = sum(1 for _r, m in counted if rep_total(m) > 0)
-    if not field and not sold:
+def headcount_lines(stats) -> List[str]:
+    """The sales board's own headcount block, copied as it reads (Raf
+    2026-10-21: "the data is on the sales board, just want it transported to
+    the text chat all the time"). `stats` = fill.board_stats(); empty = no
+    block. Only the first label is shortened -- "Total Reps in the Field /
+    Board / Zero" is a column header, not a sentence."""
+    if not stats:
         return []
-    lines = [""]
-    if field:
-        lines.append("Reps in the field: %d" % field)
-    lines.append("Reps on the board: %d" % sold)
-    if field:
-        lines.append("%% sold: %d%%" % round(100.0 * sold / field))
-    return lines
+    out = [""]
+    for label, value in stats:
+        if label.lower().startswith("total reps in the field"):
+            label = "Total Reps in the Field"
+        out.append("%s: %s" % (label, value or "-"))
+    return out
 
 
 def team_lines(counted, teams) -> List[str]:

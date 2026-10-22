@@ -1977,16 +1977,6 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                  % (cfg["key"], type(pull_err).__name__, str(pull_err)[:200]))
             continue
 
-        # Reps in the field, for the sales scoreboard's headcount lines (Raf
-        # 2026-10-21) -- see shared/field_reps. Never fails the tick.
-        if rows and day == dt.date.today():
-            try:
-                from automations.shared import field_reps as _FR
-                _FR.save(cfg["key"], day, rows)
-            except Exception as e:  # noqa: BLE001
-                _log("  field count not saved: %s: %s"
-                     % (type(e).__name__, str(e)[:160]))
-
         if not pngs:
             # Visible absence, never a blank board — the standing rule. Before
             # the field is out there are simply no rows, and that is not news.

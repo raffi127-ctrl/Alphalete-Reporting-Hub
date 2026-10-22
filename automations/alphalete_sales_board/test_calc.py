@@ -260,29 +260,29 @@ def test_leaderboard_team_totals():
     assert "Hashiras" not in N.leaderboard(today, [])   # no book, no block
 
 
-def test_leaderboard_headcount_lines():
-    """Raf 2026-10-21: reps in the field, reps on the board (= sold today),
-    % sold over the field. No field count yet = no field or % line."""
-    today = {"Jane Doe": {"Int": 2, "Int Up": 0, "DTV": 0, "NL": 0},
-             "Bo Lee": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
-             "Cy Dee": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 0}}
-    text = N.leaderboard(today, [], field=8)
-    assert text.endswith("Reps in the field: 8\nReps on the board: 2\n"
-                         "% sold: 25%"), text
-    early = N.leaderboard(today, [])
-    assert early.endswith("TOTALS: 3\n\nReps on the board: 2"), early
-    assert "field" not in early and "% sold" not in early
-
-
-def test_field_reps_today_only(tmp=None):
-    import tempfile
-    from pathlib import Path
-    from automations.shared import field_reps as FR
-    with tempfile.TemporaryDirectory() as d:
-        p = Path(d) / "field.json"
-        day = dt.date(2026, 10, 21)
-        assert FR.load("rafael", day, p) is None            # no file
-        FR.save("rafael", day, [{"Rep": "Ana"}, {"Rep": "Bo"}, {"Rep": ""}], p)
-        assert FR.load("rafael", day, p) == 2
-        assert FR.load("rafael", day + dt.timedelta(days=1), p) is None
-        assert FR.load("calvin", day, p) is None
+def test_leaderboard_board_stats_block():
+    """Raf 2026-10-21: the board's own headcount block, copied under the
+    team lines, today's column, labels as the board writes them."""
+    from automations.alphalete_sales_board import fill
+    grid = [["", "", "", "WED", ""],
+            ["", "", "", "", ""],
+            ["", "", "Rep", "Apps", "Int"],
+            ["", "", "Ana", "2", "2"],
+            ["", "", "TOTALS", "2", "2"],
+            ["", "", "", "", ""],
+            ["", "", "Total Reps in the Field / \nBoard / Zero", "36", ""],
+            ["", "", "Reps that got on the Board", "17", ""],
+            ["", "", "% of Reps on the Board", "47%", ""],
+            ["", "", "", "", ""],
+            ["", "", "WE 10/11 - 10/18", "232", ""]]
+    stats = fill.board_stats(None, grid, dt.date(2026, 10, 21))
+    assert stats == [("Total Reps in the Field / Board / Zero", "36"),
+                     ("Reps that got on the Board", "17"),
+                     ("% of Reps on the Board", "47%")], stats
+    assert fill.board_stats(None, grid, dt.date(2026, 10, 22)) == []  # no THU
+    today = {"Ana": {"Int": 2, "Int Up": 0, "DTV": 0, "NL": 0}}
+    text = N.leaderboard(today, [], stats=stats)
+    assert text.endswith("TOTALS: 2\n\nTotal Reps in the Field: 36\n"
+                         "Reps that got on the Board: 17\n"
+                         "% of Reps on the Board: 47%"), text
+    assert "Field" not in N.leaderboard(today, [])

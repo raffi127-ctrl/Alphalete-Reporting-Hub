@@ -98,6 +98,49 @@ def board_names(grid) -> List[str]:
     return out
 
 
+# THE BOARD'S OWN HEADCOUNT BLOCK, under TOTALS (Raf 2026-10-21: "the data is
+# on the sales board, just want it transported to the text chat"):
+#   Total Reps in the Field / Board / Zero | Reps that got on the Board |
+#   Reps that rolled a Zero | % of Reps on the Board | New INT per Rep AVG |
+#   App per Rep AVG
+# All formulas, one column per day under the day's banner (col D = the week).
+# Found by the col-C label of its first row; the block runs to the next blank.
+STATS_FIRST_LABEL = "total reps in the field"
+
+
+def stats_cells(grid, day: dt.date):
+    """(col, [(row, label)]) of today's headcount block, or (None, [])."""
+    want = day.strftime("%A")
+    col = next((c for c in range(1, len(grid[0]) + 1 if grid else 1)
+                if B.DAY_LABELS.get(B.cell(grid, B.DAY_ROW, c).strip().upper())
+                == want), None)
+    first = next((r for r in range(B.last_rep_row(grid) + 1, len(grid) + 1)
+                  if " ".join(B.cell(grid, r, B.NAME_COL).split()).lower()
+                  .startswith(STATS_FIRST_LABEL)), None)
+    if col is None or first is None:
+        return None, []
+    out, r = [], first
+    while r <= len(grid) and B.cell(grid, r, B.NAME_COL).strip():
+        out.append((r, " ".join(B.cell(grid, r, B.NAME_COL).split())))
+        r += 1
+    return col, out
+
+
+def board_stats(ws, grid, day: dt.date, fresh: bool = False):
+    """[(label, value)] of today's headcount block. `fresh` re-reads just that
+    column after this sweep's writes, so the counts agree with the sales listed
+    in the same text -- the grid in hand predates them."""
+    col, rows = stats_cells(grid, day)
+    if not rows:
+        return []
+    vals = [B.cell(grid, r, col).strip() for r, _l in rows]
+    if fresh:
+        got = ws.get("%s:%s" % (_a1(rows[0][0], col), _a1(rows[-1][0], col)))
+        vals = [(got[i][0] if i < len(got) and got[i] else "").strip()
+                for i in range(len(rows))]
+    return [(label, v) for (_r, label), v in zip(rows, vals)]
+
+
 def _a1(row: int, col: int) -> str:
     letters = ""
     c = col

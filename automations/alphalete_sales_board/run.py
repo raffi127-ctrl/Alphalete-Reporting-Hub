@@ -534,21 +534,20 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
         team_book = None
         _log("team totals skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
 
-    # HEADCOUNT under the team lines (Raf 2026-10-21): reps in the field off
-    # the knock pull gap_alerts saves on this same box. Failing just drops
-    # the field and % lines; "on the board" (reps who sold) always shows.
+    # THE BOARD'S HEADCOUNT BLOCK under the team lines (Raf 2026-10-21) --
+    # reps in the field / on the board / zeros / % / averages, read off the
+    # board itself (fill.board_stats). Failing drops the block, never the text.
     try:
-        from automations.shared import field_reps as FR
-        field = FR.load(C.FIELD_KEY, day)
+        stats = fill.board_stats(ws, grid, day, fresh=apply_writes and bool(updates))
     except Exception as e:  # noqa: BLE001
-        field = None
-        _log("field count skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
-    _log("headcount: %s rep(s) in the field" % field)
+        stats = []
+        _log("board stats skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
+    _log("board stats: %s" % "; ".join("%s=%s" % kv for kv in stats))
 
     if gained or rec_gained or missing:
         wtd = week_to_date(grid, day) if apply_writes else None
         body = N.leaderboard(today, [] if baseline else list(gained), wtd, missing,
-                             goal=fill.board_goal(grid), teams=team_book, field=field)
+                             goal=fill.board_goal(grid), teams=team_book, stats=stats)
         if gained or (baseline and today):
             for group in C.LIVE_GROUPS:
                 N.text_group(group, body, dry_run=not send, log=_log)
@@ -590,7 +589,7 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
         # flag_missing=False: the players see the sales, not the paperwork.
         body = N.leaderboard(today, [], week_to_date(grid, day), missing,
                              goal=fill.board_goal(grid), flag_missing=False,
-                             teams=team_book, field=field)
+                             teams=team_book, stats=stats)
         for group in C.END_OF_DAY_GROUPS:
             try:
                 N.text_group(group, body, dry_run=not send, log=_log)

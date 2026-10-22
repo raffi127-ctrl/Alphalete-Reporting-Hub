@@ -124,9 +124,6 @@ GROUP_KNOCKING = "Knocking Chat A-Players"
 #     deploy/sales_text_read_chat.py) reads and answers in the same room --
 #     Raf's "all of it" (2026-09-28) includes the paperwork.
 LIVE_GROUPS = [GROUP_KNOCKING]
-# Whose knock board counts as "reps in the field" in the scoreboard text --
-# gap_alerts' office key for Raf (shared/field_reps; Raf 2026-10-21).
-FIELD_KEY = "rafael"
 # Raf 2026-09-29: "Can we stop all post on this channel, it doesn't get used"
 # (with a screenshot of the Lvl 1's iMessage room) -- so the end-of-day
 # scoreboard no longer texts the Lvl 1's. GROUP_LVL1 stays defined only so the
