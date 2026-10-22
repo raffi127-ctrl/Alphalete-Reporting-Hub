@@ -13,7 +13,8 @@ From `~/recruiting-report`: `python -m automations.rc_bank_totals.run <cmd>` wit
 
 **Carlos:** `run tiller --who carlos` writes every bank/card row from his Tiller sheet (no bank logins).
  Rows it flags MISSING or stale → check in that bank.
-**Both:** `run tableau` adds Business Security (Hub's Tableau session) to both JSONs and lists Raf's security payouts for the week — confirm the Payout toward CC number by hand (past sheet values don't equal a single ledger line).
+**Both:** `run tableau` adds Business Security (Hub's Tableau session) to both JSONs .
+**Raf payout:** `run payout` sums the "Payout toward CC" table (Q45 down, same tab) for last Mon–Sun → `Payout toward CC` (0 if nothing paid).
 **Raf:** no Tiller yet, so his bank rows still come from the bank sites (the table below).
 
 | Row (Carlos) | Source |
@@ -32,7 +33,7 @@ From `~/recruiting-report`: `python -m automations.rc_bank_totals.run <cmd>` wit
 | Row (Raf) | Source |
 |---|---|
 | Business Security | Tableau Security Ledger (Raf's balance) |
-| Payout toward CC | Tableau ledger — security payout dated last week only, else 0 |
+| Payout toward CC | Payout toward CC table (Q:S) — payments dated last Mon–Sun, else 0 |
 | Local Office | Chase "Local Office" …1096 |
 | LTD / Personal / Personal Savings | Chase |
 | STR Carrollton | Chase |

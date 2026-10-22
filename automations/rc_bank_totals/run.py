@@ -4,13 +4,15 @@ Mirrors the Loom steps:
   1. add  -> insert a fresh column B (copy of last week: formats + total formulas), set the WE header,
              clear the typed numbers but keep the formula rows and the carried rows (Raf Debt, etc.)
   tiller -> pull bank/card balances from Tiller into <who>_<date>.json (Carlos today; Raf once he has Tiller)
-  tableau -> Business Security for both (Hub's Tableau session) + Raf's payout candidate
+  tableau -> Business Security for both (Hub's Tableau session)
+  payout  -> Raf's Payout toward CC = his CC payments table (Q:S) summed for the Mon–Sun week
   2. fill -> write balances by ROW LABEL from a JSON file  {"Personal": 7458.42, ...}
   3. shot -> export the header + last 4 weeks as a PNG for Slack
 
   python -m automations.rc_bank_totals.run add  --who carlos [--we 2026-10-25] [--dry-run]
   python -m automations.rc_bank_totals.run tiller --who carlos
   python -m automations.rc_bank_totals.run tableau
+  python -m automations.rc_bank_totals.run payout [--we 2026-10-25]
   python -m automations.rc_bank_totals.run fill --who carlos --values output/rc_bank_totals/carlos_<date>.json [--dry-run]
   python -m automations.rc_bank_totals.run shot --who carlos
 Outputs land in output/rc_bank_totals/. See RUNBOOK.md.
@@ -157,19 +159,25 @@ LEDGER_VIEW = "https://us-east-1.online.tableau.com/#/site/sci/views/OverridesIC
 OWNERS = {"carlos": "carlos hidalgo", "raf": "rafael hidalgo"}
 
 
-def tableau(we: dt.date) -> None:
-    """Hub's Tableau session -> Business Security (SFDC Total Balance) for both, merged into <who>_<date>.json.
-    Also lists Raf's security payouts in the week ending `we` as the CANDIDATE for "Payout toward CC"
-    (the sheet's past values don't match a single ledger line, so that one is checked by hand)."""
+def merge_json(who: str, label: str, amt: float) -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    out = OUT / f"{who}_{dt.date.today().isoformat()}.json"
+    values = json.loads(out.read_text()) if out.exists() else {}
+    values[label] = amt
+    out.write_text(json.dumps(values, indent=2))
+    print(f"  {who:<7} {label:<18} {amt:>12,.2f}  -> {out.name}")
+
+
+def tableau() -> None:
+    """Hub's Tableau session -> Business Security (SFDC Total Balance) for both, merged into <who>_<date>.json."""
     sys.path.insert(0, str(REPO))
     import os
     from automations.shared.tableau_patchright import download_crosstab_patchright
     from automations.override_bulletin.pulls import read_crosstab
     os.environ["ALPHALETE_SKIP_FRESHNESS"] = "1"
     OUT.mkdir(parents=True, exist_ok=True)
-    bal, det = OUT / "_sfdc_balance.csv", OUT / "_ledger_details.csv"
+    bal = OUT / "_sfdc_balance.csv"
     download_crosstab_patchright(LEDGER_VIEW, "SFDC Total Balance", bal, verbose=False)
-    download_crosstab_patchright(LEDGER_VIEW, "Transaction Details", det, verbose=False)
 
     def money(v) -> float:
         t = str(v).replace("$", "").replace(",", "").strip()
@@ -177,27 +185,31 @@ def tableau(we: dt.date) -> None:
 
     for who, owner in OWNERS.items():
         amt = next((money(r[2]) for r in read_crosstab(bal)[1:] if len(r) > 2 and owner in str(r[1]).lower()), None)
-        out = OUT / f"{who}_{dt.date.today().isoformat()}.json"
-        values = json.loads(out.read_text()) if out.exists() else {}
         if amt is None:
             print(f"  {who}: no SFDC Total Balance row for {owner!r}")
             continue
-        values["Business Security"] = amt
-        out.write_text(json.dumps(values, indent=2))
-        print(f"  {who:<7} Business Security {amt:>12,.2f}  -> {out.name}")
+        merge_json(who, "Business Security", amt)
 
-    start = we - dt.timedelta(days=6)
-    print(f"  Raf security payouts {start:%m/%d}–{we:%m/%d} (candidate for 'Payout toward CC' — confirm before adding):")
-    hit = False
-    for r in read_crosstab(det)[1:]:
-        if "rafael hidalgo" not in r[0].lower() or r[1] == "Total":
-            continue
-        d = dt.datetime.strptime(r[1], "%m/%d/%Y").date()
-        if start <= d <= we and "payment" in r[6].lower():
-            print(f"    {d:%m/%d}  {r[4].strip()[:45]:<45} {r[10]}")
-            hit = True
-    if not hit:
-        print("    none -> Payout toward CC = 0")
+
+def payout(we: dt.date) -> float:
+    """Raf's 'Payout toward CC' = sum of the CC payments table (Q:S, under the 'CC#' header on the same tab)
+    dated Mon–Sun of the week ending `we`. Blank dates belong to the date above (merged cells)."""
+    p, s = PEOPLE["raf"], sheets()
+    rows = s.values().get(spreadsheetId=p["sheet"], range=f"'{TAB}'!Q1:S600",
+                          valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    head = next(i for i, r in enumerate(rows) if r and str(r[0]).strip() == "CC#")
+    start, total, cur = we - dt.timedelta(days=6), 0.0, None
+    print(f"  Raf CC payments {start:%m/%d}–{we:%m/%d}:")
+    for i, r in enumerate(rows[head + 1:], start=head + 2):
+        r = (r + ["", "", ""])[:3]
+        if isinstance(r[1], (int, float)):
+            cur = dt.date(1899, 12, 30) + dt.timedelta(days=int(r[1]))
+        if cur and start <= cur <= we and isinstance(r[2], (int, float)):
+            total += r[2]
+            print(f"    row {i:<4} {cur:%m/%d}  {str(r[0]):<11} {r[2]:>12,.2f}")
+    total = round(total, 2)
+    merge_json("raf", "Payout toward CC", total)
+    return total
 
 
 def fill(who: str, values: dict, dry: bool) -> None:
@@ -249,19 +261,21 @@ def shot(who: str) -> Path:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["add", "tiller", "tableau", "fill", "shot"])
-    ap.add_argument("--who", choices=list(PEOPLE), help="required except for 'tableau' (does both)")
+    ap.add_argument("cmd", choices=["add", "tiller", "tableau", "payout", "fill", "shot"])
+    ap.add_argument("--who", choices=list(PEOPLE), help="required except for tableau (both) and payout (Raf)")
     ap.add_argument("--we", help="week-ending Sunday, YYYY-MM-DD (default: most recent Sunday)")
     ap.add_argument("--values", help="JSON file of {row label: amount}")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    if a.cmd != "tableau" and not a.who:
+    if a.cmd not in ("tableau", "payout") and not a.who:
         ap.error("--who is required")
     we = dt.date.fromisoformat(a.we) if a.we else last_sunday(dt.date.today())
     if a.cmd == "add":
         add(a.who, we, a.dry_run)
     elif a.cmd == "tableau":
-        tableau(we)
+        tableau()
+    elif a.cmd == "payout":
+        payout(we)
     elif a.cmd == "tiller":
         tiller(a.who)
     elif a.cmd == "fill":
