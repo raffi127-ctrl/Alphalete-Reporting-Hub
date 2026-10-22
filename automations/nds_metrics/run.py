@@ -214,13 +214,19 @@ def _pull_nds_soh(start: dt.date, end: dt.date, log=print) -> bytes:
     from automations.rc_contact_sync import config as RC
     from automations.rc_contact_sync import sara
     from automations.rc_contact_sync.status_probe import _export_csv
-    from automations.shared import saraplus as _sp
     cr = _json.loads(NDS_SARA_CREDS.read_text())
     NDS_SARA_PROFILE.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        ctx, page, base = _sp.login_healing(
-            p, NDS_SARA_PROFILE, cr["email"], cr["password"],
-            headless=True, creds_hint=str(NDS_SARA_CREDS), log=log)
+        # rc sara.login, not login_healing: it CLEARS the emailed-passcode
+        # wall (first login hit SaraPasscodeWall 2026-10-22) by reading the
+        # code from the reporting inbox — which works once alphaletegp
+        # auto-forwards security.info@saraplus.com there, the same forward
+        # the B2B account has (verify_code's own documented path).
+        ctx = p.chromium.launch_persistent_context(
+            str(NDS_SARA_PROFILE), headless=True, args=["--disable-sync"],
+            viewport={"width": 1600, "height": 1000})
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        base = sara.login(page, cr["email"], cr["password"], log=log)
         try:
             log(f"[nds] saraplus (nds dealer): logged in as {cr['email']}")
             page.goto(base + RC.HUB_PATH, wait_until="networkidle",
@@ -257,8 +263,15 @@ def load_soh(log=print):
     cache = OUT_DIR / f"nds_soh_{today.isoformat()}.csv"
     try:
         if not (cache.exists() and cache.stat().st_size > 500):
-            data = _pull_nds_soh(today - dt.timedelta(days=31), today,
-                                 log=log)
+            try:
+                data = _pull_nds_soh(today - dt.timedelta(days=31), today,
+                                     log=log)
+            except Exception as e:  # noqa: BLE001 — passcode wall etc.
+                log(f"[nds] nds-dealer pull blocked ({type(e).__name__}) — "
+                    "b2batt fallback until its emailed-code forward is set")
+                from automations.sp_order_log.run import pull_csv
+                data, _wl = pull_csv(today - dt.timedelta(days=31), today,
+                                     log=log)
             cache.parent.mkdir(parents=True, exist_ok=True)
             cache.write_bytes(data)
         pulled_at = dt.datetime.fromtimestamp(cache.stat().st_mtime)
