@@ -239,6 +239,17 @@ def load_soh(log=print):
             and _is_crew(r[ix["User Name"]].strip())]
     log(f"[nds] SOH: {len(rows) - 1} orders, crew {len(crew)}, pulled "
         f"{pulled_at:%m/%d %H:%M}")
+    if not crew:
+        # 2026-10-22: the b2batt export came back with ZERO orders and the
+        # Order Log + Revenue Board posted EMPTY into the thread. An empty
+        # SaraPlus read is never boardable — skip (Tableau fallback where
+        # one exists, honest skip where not) and leave the bad cache so the
+        # next pass re-pulls... actually kill it so it does.
+        try:
+            cache.unlink()
+        except OSError:
+            pass
+        return None
     return ix, crew, pulled_at
 
 
