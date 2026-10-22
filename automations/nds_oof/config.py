@@ -36,6 +36,10 @@ SATURDAY_START, SATURDAY_STOP = (10, 30), (17, 30)
 FIRST_KNOCK_GREEN_AT = (14, 0)
 FIRST_KNOCK_RED_AT = (14, 30)
 
+# Extra board slots on top of the hourly ones (Carlos 2026-10-22: "send the
+# knock board at 2:30 as well and then have it continue its regular
+# schedule"). Weekday clock; each is a (hour, minute) half-hour slot.
+EXTRA_BOARD_SLOTS = [(14, 30)]
 GAPS_EVERY_MIN = 15          # the typed list
 BOARD_EVERY_MIN = 60         # the picture
 CALLOUT_EVERY_MIN = 60       # "no dispo, no credit check" lines

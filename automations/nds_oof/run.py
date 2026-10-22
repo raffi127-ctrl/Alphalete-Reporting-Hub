@@ -104,7 +104,15 @@ def _board_due(state: Dict, now: dt.datetime) -> bool:
         last_at = dt.datetime.fromisoformat(last)
     except ValueError:
         return True
-    return (last_at.date(), last_at.hour) != (now.date(), now.hour)
+    return _board_slot(last_at) != _board_slot(now)
+
+
+def _board_slot(t: dt.datetime):
+    """The board slot `t` falls in: the clock hour, split in two where an
+    EXTRA_BOARD_SLOTS half-hour exists (2:30 -> its own slot on weekdays)."""
+    half = 1 if ((t.hour, 30) in C.EXTRA_BOARD_SLOTS and t.minute >= 30
+                 and _wd(t) != 5) else 0
+    return (t.date(), t.hour, half)
 
 
 # --- text --------------------------------------------------------------------
