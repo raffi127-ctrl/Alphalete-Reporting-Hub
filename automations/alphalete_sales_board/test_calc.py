@@ -254,6 +254,35 @@ def test_leaderboard_team_totals():
              "Cy Dee": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
              "New Guy": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}}
     tail = N.leaderboard(today, [], teams=book).split("\U0001F3C6 TOTALS: 6")[1]
-    assert tail.strip().splitlines() == [
+    # the team block ends at the blank line before the headcount lines
+    assert tail.strip().split("\n\n")[0].splitlines() == [
         "Hashiras: 4 \U0001F947", "Ceaseless: 1", "Se7en Sins: 0", "Unassigned: 1"]
     assert "Hashiras" not in N.leaderboard(today, [])   # no book, no block
+
+
+def test_leaderboard_headcount_lines():
+    """Raf 2026-10-21: reps in the field, reps on the board (= sold today),
+    % sold over the field. No field count yet = no field or % line."""
+    today = {"Jane Doe": {"Int": 2, "Int Up": 0, "DTV": 0, "NL": 0},
+             "Bo Lee": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
+             "Cy Dee": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 0}}
+    text = N.leaderboard(today, [], field=8)
+    assert text.endswith("Reps in the field: 8\nReps on the board: 2\n"
+                         "% sold: 25%"), text
+    early = N.leaderboard(today, [])
+    assert early.endswith("TOTALS: 3\n\nReps on the board: 2"), early
+    assert "field" not in early and "% sold" not in early
+
+
+def test_field_reps_today_only(tmp=None):
+    import tempfile
+    from pathlib import Path
+    from automations.shared import field_reps as FR
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "field.json"
+        day = dt.date(2026, 10, 21)
+        assert FR.load("rafael", day, p) is None            # no file
+        FR.save("rafael", day, [{"Rep": "Ana"}, {"Rep": "Bo"}, {"Rep": ""}], p)
+        assert FR.load("rafael", day, p) == 2
+        assert FR.load("rafael", day + dt.timedelta(days=1), p) is None
+        assert FR.load("calvin", day, p) is None
