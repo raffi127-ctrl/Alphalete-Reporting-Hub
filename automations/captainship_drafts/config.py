@@ -604,6 +604,9 @@ RECIPIENTS: dict = {
     "chan": [
         "carissang46@gmail.com", "parkwchan19@gmail.com",
         "coel.g.reif@gmail.com", "dylanjtwaddle@gmail.com",
+        # David Pancoast agregado el 2026-10-22 (Eve): su board de knocks
+        # de Quantum Fiber va en el mail de Chan (b92ffce9).
+        "pancoast10xbusiness@gmail.com",
         # Eric Martinez (ericdmartinez222@gmail.com) sacado el 2026-09-10:
         # su oficina 20721 (Spartan Capital, Inc) cerró (Megan, "is shut
         # down"). Mismo caso que Kimberly Rodríguez el 2026-09-09 — tiene
