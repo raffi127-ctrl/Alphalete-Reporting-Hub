@@ -48,6 +48,11 @@ COMPANY_TO_OWNER = {
     "abyl acquisitions": "Abel Draper",
     "phoenix acquisition": "Jahvid Thompson",
     "phoenix acquisitions": "Jahvid Thompson",
+    # Nicolas Murrugarra's office — only visible from HIS Credico login
+    # (session.ACCOUNTS["murrugarra"]), not Carlos's (Eve 2026-10-22)
+    "high value acquisitions inc": "Nicolas Murrugarra",
+    "high value": "Nicolas Murrugarra",
+    "high value acquisitions": "Nicolas Murrugarra",
 }
 
 # Credico's own ids, so a selector can target by value instead of visible text.

@@ -364,7 +364,37 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
     return rows
 
 
-def fetch_week(week_label="7.19.26", page=None, verbose=True):
+def fetch_all(week_label, verbose=True):
+    """Download the week from EVERY Credico login (session.ACCOUNTS) — Carlos's
+    sees Abel and Jahvid, Nicolas Murrugarra's only his own office (Eve
+    2026-10-22). Office files land in the same folder, so `pull` adds them up
+    without knowing which login brought them; the same office seen from two
+    logins lands on the same file name and is never counted twice.
+
+    One manifest for the whole run. A login that can't be replayed is a MISS on
+    that manifest and fails the run — that is somebody's DD not coming home —
+    but only after the other logins have downloaded theirs."""
+    from automations.credico.session import ACCOUNTS
+    results, got, errors = {}, [], []
+    saturday = credico_saturday(week_label)
+    for key, acct in ACCOUNTS.items():
+        if verbose:
+            print(f"\n=== Credico: {acct['label']} ===", flush=True)
+        try:
+            got += fetch_week(week_label, verbose=verbose, account=key,
+                              results=results, manifest=False)
+        except Exception as e:  # noqa: BLE001
+            results[f"({acct['label']})"] = f"login failed ({type(e).__name__})"
+            errors.append(f"{acct['label']}: {e}")
+            print(f"✗ {acct['label']}: {e}", flush=True)
+    _write_fetch_manifest(week_label, f"{saturday:%Y-%m-%d}", results)
+    if errors:
+        raise RuntimeError("\n\n".join(errors))
+    return got
+
+
+def fetch_week(week_label="7.19.26", page=None, verbose=True,
+               account="carlos", results=None, manifest=True):
     """Download the Fee Report file(s) for a week. Megan approved 2026-07-24.
 
     Path (mapped in DD_SOURCES.md): Reports → Fee Reports → the Saturday → the
@@ -379,9 +409,11 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
     OUT.mkdir(parents=True, exist_ok=True)
     rows = [["WHAT", "DETAIL", "VALUE"]]
     got = []
-    results = {}          # office node text -> "ok" | why it did not land
+    # office node text -> "ok" | why it did not land; fetch_all shares one
+    # across every login so the manifest covers the whole run
+    results = {} if results is None else results
     own = page is None
-    ctx = credico_session(headless=True) if own else None
+    ctx = credico_session(headless=True, account=account) if own else None
     page = ctx.__enter__() if own else page
     try:
         calls = []
@@ -521,7 +553,8 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
         print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab; {len(got)} file(s) in {OUT}")
     except Exception as e:  # noqa: BLE001
         print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e})")
-    _write_fetch_manifest(week_label, f"{saturday:%Y-%m-%d}", results)
+    if manifest:
+        _write_fetch_manifest(week_label, f"{saturday:%Y-%m-%d}", results)
     return got
 
 
@@ -876,7 +909,11 @@ def main(argv=None):
         inspect()
         return 0
     if a.fetch:
-        fetch_week(a.week or current_week())
+        try:
+            fetch_all(a.week or current_week())
+        except RuntimeError as e:
+            print(f"✗ {e}")
+            return 1
         return 0
     if a.deep:
         discover_deep(a.week or current_week())

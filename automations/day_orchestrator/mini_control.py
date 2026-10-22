@@ -5786,6 +5786,14 @@ def _action_set_credico_state(args: str) -> tuple[bool, str]:
     # while enqueue() writes the cell verbatim. Try the raw text FIRST — shlex
     # on raw JSON eats the quotes — then fall back to un-shlexing.
     raw = (args or "").strip()
+    # `--account murrugarra <json>` installs a second Credico login (Nicolas
+    # Murrugarra's, 2026-10-22); no prefix is Carlos's, as it always was.
+    account = "carlos"
+    if raw.startswith("--account"):
+        parts = raw.split(None, 2)
+        if len(parts) < 3:
+            return False, "set_credico_state --account needs <key> <json>"
+        account, raw = parts[1], parts[2].strip()
     parsed = None
     for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
         cand = (cand or "").strip()
@@ -5812,7 +5820,11 @@ def _action_set_credico_state(args: str) -> tuple[bool, str]:
                        "Re-run --login and wait for the dashboard to be fully "
                        "on screen before closing it.")
 
-    from automations.credico.session import STATE as path
+    from automations.credico.session import ACCOUNTS
+    if account not in ACCOUNTS:
+        return False, (f"unknown Credico account {account!r} — one of "
+                       f"{', '.join(ACCOUNTS)}")
+    path = ACCOUNTS[account]["state"]
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except Exception as e:  # noqa: BLE001
@@ -5831,7 +5843,7 @@ def _action_set_credico_state(args: str) -> tuple[bool, str]:
     # Verify through the SAME loader every Credico report uses — proof the
     # replayed session authenticates FROM THIS MACHINE, not just from Eve's.
     ok, res = _run_cmd([sys.executable, "-m", "automations.credico.session",
-                        "--check"],
+                        "--check", "--account", account],
                        timeout_s=5 * 60, log_name="credico-set-state.log")
     head = f"{n_c} cookie(s) + {n_ls} localStorage item(s) installed · "
     if ok:

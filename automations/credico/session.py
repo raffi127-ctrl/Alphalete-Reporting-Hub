@@ -39,6 +39,32 @@ DASHBOARD = f"{BASE}/#/dashboard/sales-management"
 STATE = Path(__file__).resolve().parents[1] / "shared" / ".credico_storage_state.json"
 PROFILE_DIR = Path(__file__).resolve().parents[2] / "output" / "_credico_profile"
 
+# ONE SAVED LOGIN PER CREDICO ACCOUNT. Carlos's login sees Abel's and Jahvid's
+# offices; Nicolas Murrugarra's office is only visible from his OWN login (Eve,
+# 2026-10-22), so the DD bulletin pulls both. Each account keeps its own state
+# file (same gitignored name + a suffix) and its own browser profile, and each
+# needs its own human `--login --account <key>`. "carlos" keeps the original
+# file names so the session already on Lucy 1 keeps working.
+ACCOUNTS = {
+    "carlos": {"label": "Carlos's login", "state": STATE, "profile": PROFILE_DIR},
+    "murrugarra": {"label": "Nicolas Murrugarra's login",
+                   "state": STATE.with_name(STATE.name + ".murrugarra"),
+                   "profile": PROFILE_DIR.with_name(PROFILE_DIR.name + "_murrugarra")},
+}
+DEFAULT_ACCOUNT = "carlos"
+
+
+def _account(key):
+    if key not in ACCOUNTS:
+        raise ValueError(f"unknown Credico account {key!r} — one of "
+                         f"{', '.join(ACCOUNTS)}")
+    acct = dict(ACCOUNTS[key])
+    if key == DEFAULT_ACCOUNT:
+        # Read the module globals at call time, so anything that repoints
+        # STATE (the expiry tests do) still reaches Carlos's account.
+        acct.update(state=STATE, profile=PROFILE_DIR)
+    return acct
+
 # The localStorage item that actually holds the login. Everything in `cookies`
 # is Google Analytics (_ga / _gid / _gat / _ga_*), which is why a cookie count
 # says nothing at all about whether the session works.
@@ -54,12 +80,21 @@ RELOGIN_STEPS = (
     "A RE-RUN CANNOT FIX THIS — every run replays the same saved file. It needs "
     "a headed login by a human (no password lives in this repo, so nothing can "
     "do it unattended):\n"
-    "    python -m automations.credico.session --login\n"
+    "    python -m automations.credico.session --login [--account murrugarra]\n"
     "Any machine will do: the state is plain JSON (localStorage, no OS key) and "
     "replays anywhere — it is not pinned to Lucy 1 nor to its IP. Then ship it "
     "to Lucy 1, which is where credico_fetch runs:\n"
     "    mini_control.enqueue('set_credico_state', <contents of the state file>)"
 )
+
+
+def relogin_steps(account=DEFAULT_ACCOUNT):
+    """RELOGIN_STEPS for one account — names whose login died and the exact
+    command, so nobody re-logs Carlos when it was Nicolas's that expired."""
+    if account == DEFAULT_ACCOUNT:
+        return RELOGIN_STEPS
+    return (f"This is {_account(account)['label']} (account '{account}').\n"
+            + RELOGIN_STEPS.replace("[--account murrugarra]", f"--account {account}"))
 
 
 def _auth_blob(state):
@@ -113,11 +148,11 @@ def _days_left(exp):
     return (exp - datetime.now(timezone.utc)).total_seconds() / 86400.0
 
 
-def session_expiry(path=None):
+def session_expiry(path=None, account=DEFAULT_ACCOUNT):
     """(expiry, days_left) for the saved state — (None, None) if unreadable.
 
     Public so a preflight elsewhere can ask without launching a browser."""
-    path = Path(path) if path else STATE
+    path = Path(path) if path else _account(account)["state"]
     if not path.exists():
         return None, None
     try:
@@ -175,18 +210,21 @@ def _looks_logged_in(page, verbose=True):
         return False
 
 
-def save_login(timeout_min: int = 10, verbose: bool = True) -> Path:
+def save_login(timeout_min: int = 10, verbose: bool = True,
+               account: str = DEFAULT_ACCOUNT) -> Path:
     """Open a HEADED browser for a human to log into Credico, then save cookies.
 
     Interactive and one-time. Waits until the login screen is gone (or the
     timeout), then writes the storage state. Nothing is typed by the automation —
     the person at the keyboard enters the credentials."""
     from patchright.sync_api import sync_playwright
+    acct = _account(account)
+    STATE, PROFILE_DIR = acct["state"], acct["profile"]  # noqa: N806
     STATE.parent.mkdir(parents=True, exist_ok=True)
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     print("\n=== Credico one-time login ===")
     print("A browser window will open at arc.credico.com.")
-    print("Log in BY HAND (Carlos's login). Do not share the password with the")
+    print(f"Log in BY HAND ({acct['label']}). Do not share the password with the")
     print("automation — it only needs the session cookies afterwards.")
     print(f"Waiting up to {timeout_min} min for the dashboard to appear...\n",
           flush=True)
@@ -248,16 +286,20 @@ def save_login(timeout_min: int = 10, verbose: bool = True) -> Path:
         # next login on a calendar.
         print(f"  good until: {_expiry_note(exp)}  — Credico tokens last 14 days "
               f"and do not refresh")
-        print("  Verify with:  python -m automations.credico.session --check")
+        print("  Verify with:  python -m automations.credico.session --check"
+              + ("" if account == DEFAULT_ACCOUNT else f" --account {account}"))
     return STATE
 
 
 @contextmanager
-def credico_session(headless: bool = True, verbose: bool = True):
+def credico_session(headless: bool = True, verbose: bool = True,
+                    account: str = DEFAULT_ACCOUNT):
     """Yield a logged-in Credico page by replaying the saved cookies.
 
     Fails fast with instructions when the state file is missing or stale — it
     never attempts an unattended login (that would need the password)."""
+    STATE = _account(account)["state"]  # noqa: N806
+    RELOGIN_STEPS = relogin_steps(account)  # noqa: N806
     # Every cheap check runs BEFORE patchright is even imported: a dead token
     # costs no browser launch, no page load, and no 45-minute job slot.
     if not STATE.exists():
@@ -333,29 +375,38 @@ def main(argv=None):
     ap.add_argument("--expiry", action="store_true",
                     help="print when the saved login dies — no browser, no network")
     ap.add_argument("--minutes", type=int, default=10)
+    ap.add_argument("--account", choices=sorted(ACCOUNTS),
+                    help="which Credico login (default: --login/--check use "
+                         f"'{DEFAULT_ACCOUNT}', --expiry checks every account)")
     a = ap.parse_args(argv)
     if a.login:
-        save_login(timeout_min=a.minutes)
+        save_login(timeout_min=a.minutes, account=a.account or DEFAULT_ACCOUNT)
         return 0
     if a.expiry:
         # Cheap enough to run anywhere, including from a preflight or by hand on
         # a machine with no browser: it only reads the JSON.
-        exp, days = session_expiry()
-        if exp is None:
-            print(f"[FAIL] no readable Credico token in {STATE.name}")
-            return 1
-        print(f"Credico login good until {_expiry_note(exp, days)}")
-        if days <= 0:
-            print(RELOGIN_STEPS)
-            return 1
-        if days < WARN_DAYS:
-            print(f"[!] under {WARN_DAYS} days — the next weekly credico_fetch "
-                  f"will fail.\n{RELOGIN_STEPS}")
-        return 0
+        rc = 0
+        for key in ([a.account] if a.account else list(ACCOUNTS)):
+            label = ACCOUNTS[key]["label"]
+            exp, days = session_expiry(account=key)
+            if exp is None:
+                print(f"[FAIL] {label}: no readable Credico token in "
+                      f"{ACCOUNTS[key]['state'].name}\n{relogin_steps(key)}")
+                rc = 1
+                continue
+            print(f"{label}: Credico login good until {_expiry_note(exp, days)}")
+            if days <= 0:
+                print(relogin_steps(key))
+                rc = 1
+            elif days < WARN_DAYS:
+                print(f"[!] under {WARN_DAYS} days — the next weekly credico_fetch "
+                      f"will fail.\n{relogin_steps(key)}")
+        return rc
     if a.check or True:
+        key = a.account or DEFAULT_ACCOUNT
         try:
-            with credico_session(headless=True) as page:
-                print(f"[OK] Credico session OK — {page.url}")
+            with credico_session(headless=True, account=key) as page:
+                print(f"[OK] Credico session OK ({ACCOUNTS[key]['label']}) — {page.url}")
             return 0
         except RuntimeError as e:
             print(f"[FAIL] {e}")
