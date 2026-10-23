@@ -50,6 +50,7 @@ _OTP_RE = re.compile(r"(?<!\d)\d{6}(?!\d)")
 # 10 min, so a slow mail is worth waiting out rather than failing the run.
 _OTP_WAIT_S = 180
 _OTP_POLL_S = 5
+_OTP_SETTLE_S = 10
 
 
 def _otp_mails() -> list:
@@ -126,6 +127,11 @@ def _await_otp(after, *, verbose: bool = True) -> str:
                 break            # sorted — everything older follows
             m = _OTP_RE.search(body)
             if m:
+                # Double Entry sometimes mails TWO codes a second apart and only the
+                # newest is valid — settle, then take whatever is newest by then.
+                time.sleep(_OTP_SETTLE_S)
+                sent, body = _otp_mails()[-1]
+                m = _OTP_RE.search(body) or m
                 if verbose:
                     print(f"-> doubleentry: OTP received ({sent:%H:%M:%S})",
                           flush=True)
