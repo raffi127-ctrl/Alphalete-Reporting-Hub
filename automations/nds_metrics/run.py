@@ -264,6 +264,9 @@ def _pull_nds_soh(start: dt.date, end: dt.date, log=print) -> bytes:
             ctx.close()
 
 
+_SOH_MEMO: list = []
+
+
 def load_soh(log=print):
     """The NDS DEALER's SaraPlus Sales Order History (_pull_nds_soh),
     crew-filtered. The crew's
@@ -271,6 +274,8 @@ def load_soh(log=print):
     own SOH carries only their NDS work. One pull a day, cached. -> (ix,
     crew_orders, pulled_at) or None (a failed pull skips the SaraPlus
     boards honestly rather than faking them from Tableau)."""
+    if _SOH_MEMO:
+        return _SOH_MEMO[0]
     import csv as _csv
     import io
     from automations.total_knocks import guests
@@ -335,6 +340,7 @@ def load_soh(log=print):
             cache.read_bytes().decode("utf-8-sig", errors="replace"))))
     except Exception as e:  # noqa: BLE001
         log(f"[nds] SaraPlus pull unavailable ({type(e).__name__}: {e})")
+        _SOH_MEMO.append(None)
         return None
     hdr = [str(h).strip() for h in rows[0]]
     ix = {h: i for i, h in enumerate(hdr)}
@@ -343,6 +349,7 @@ def load_soh(log=print):
                  "Wireless Line Count"):
         if need not in ix:
             log(f"[nds] SOH missing column {need!r}")
+            _SOH_MEMO.append(None)
             return None
     crew_names = guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
     toks = [guests._tokens(n) for n in crew_names]
@@ -391,14 +398,20 @@ def load_soh(log=print):
         # 2026-10-22: the b2batt export came back with ZERO orders and the
         # Order Log + Revenue Board posted EMPTY into the thread. An empty
         # SaraPlus read is never boardable — skip (Tableau fallback where
-        # one exists, honest skip where not) and leave the bad cache so the
-        # next pass re-pulls... actually kill it so it does.
-        try:
-            cache.unlink()
-        except OSError:
-            pass
+        # one exists, honest skip where not). Kill the cache ONLY when the
+        # export itself was empty (bad pull); when the NDS_SINCE floor is
+        # what emptied it, the pull was fine — keep the cache or every
+        # section re-pulls both dealers (2026-10-23: 30-min timeout).
+        if len(rows) <= 1:
+            try:
+                cache.unlink()
+            except OSError:
+                pass
+        _SOH_MEMO.append(None)
         return None
-    return ix, crew, pulled_at
+    res = (ix, crew, pulled_at)
+    _SOH_MEMO.append(res)
+    return res
 
 
 def _soh_cell(ix, r, col):
@@ -569,9 +582,12 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     i_rep = cols.need("rep", "rep")
     i_od = cols.need("order date", "sp.order date")
     i_st = cols.find("dtr status", "spe.status")
-    rows = sorted(crew, key=lambda r: (_c(cols, r, i_rep),
-                                       _parse_date(_c(cols, r, i_od))
-                                       or dt.date.min))
+    rows = sorted((r for r in crew
+                   if (_parse_date(_c(cols, r, i_od)) or dt.date.min)
+                   >= NDS_SINCE),
+                  key=lambda r: (_c(cols, r, i_rep),
+                                 _parse_date(_c(cols, r, i_od))
+                                 or dt.date.min))
     for r in rows:
         ws.append([_c(cols, r, i) for _, i in ix])
         st = _c(cols, r, i_st).lower()
@@ -682,7 +698,7 @@ def build_pending_png(cols, crew, today, log=print):
     rows = []
     for r in crew:
         od = _parse_date(_c(cols, r, i_od))
-        if od is None or (today - od).days > 31:
+        if od is None or (today - od).days > 31 or od < NDS_SINCE:
             continue
         st = _c(cols, r, i_st)
         sl = st.lower()
