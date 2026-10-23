@@ -105,14 +105,19 @@ def alert_dead(exc: BaseException, *, what_failed: str,
                 _STAKES_SEND if send_at_risk else _STAKES_SWEEP,
             ],
             details=[
-                "Fix it at *%s* — it needs a human, the account is Google SSO "
-                "and nothing here types a password:" % machine,
+                # From ANY machine, not "go to Lucy 2 and type this": the
+                # blueink_login queue action pops the sign-in on that box's
+                # screen (Megan, 2026-10-23). The sign-in itself still needs a
+                # person at the screen -- Google SSO, nothing types a password.
+                "Run this from any computer — it opens the Blue Ink sign-in "
+                "on %s's screen:" % machine,
                 "```",
-                "cd ~/recruiting-report && .venv/bin/python -m "
-                "automations.blueink_docs.session --login",
+                'lucy blueink_login --machine "%s"' % machine,
                 "```",
-                "Sign in as alphaletemarketing@gmail.com. The next sweep then "
-                "catches everyone up on its own.",
+                "Then, at %s, sign in with Google as "
+                "alphaletemarketing@gmail.com within 10 minutes (after that "
+                "the window closes — just run it again). The next sweep "
+                "catches everyone up on its own." % machine,
             ],
             label="Blue Ink New Start Docs",
             dry_run=dry_run)

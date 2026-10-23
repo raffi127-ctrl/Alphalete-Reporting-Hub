@@ -6662,7 +6662,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "\u2705 Packets sent, Blue Ink cells marked blue, and the status summary posted to #rafs-office-recruiting-11280.",
-            "message_failed": "\u274C Run failed. Usually the Blue Ink session on Lucy 2 has expired \u2014 someone at that machine runs `python -m automations.blueink_docs.session --login`. Nothing was sent.",
+            "message_failed": "\u274C Run failed. Usually the Blue Ink session on Lucy 2 has expired \u2014 run `lucy blueink_login --machine \"Lucy 2\"` from any computer, then sign in on Lucy 2's screen as alphaletemarketing@gmail.com. Nothing was sent.",
         },
         "actions": [
             {

@@ -98,8 +98,9 @@ def open_dashboard(page, *, timeout_ms: int = 45_000) -> None:
     # Out of time. NOW the URL is worth believing.
     if "/login" in (page.url or "") or "/auth" in (page.url or ""):
         raise RuntimeError(
-            "The Blue Ink session on this machine has expired. At the keyboard "
-            "here run: python -m automations.blueink_docs.session --login")
+            "The Blue Ink session on this machine has expired. Queue "
+            "`lucy blueink_login` for this machine from anywhere, then sign "
+            "in on its screen.")
     raise RuntimeError(
         "Blue Ink loaded but never showed its list in %ds (url=%s). The app's "
         "layout may have changed -- rerun --probe-sent." % (
