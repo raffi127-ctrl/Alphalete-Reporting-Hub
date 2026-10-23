@@ -1013,33 +1013,43 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
 
 
 def build_revenue_board(cols, crew, today, log=print) -> Path:
-    """#1 Revenue Board — the SAME styled dark board as Carlos's B2B one
-    (Carlos 2026-10-09: "the fiber board looks ugly tho. make it look like
-    the b2b one"), in its base-comp mode (tiered=False — the D2D SOW has no
-    volume tiers): per-day crew $ by SALE date, growing day columns, crew
-    day totals in the footer. SaraPlus orders at SOW base comp."""
+    """#1 Revenue Board — styled like the B2B one, base-comp mode, but
+    priced from the TABLEAU NDS log, not SaraPlus. 2026-10-23: both
+    SaraPlus dealers combined held ONE order from the last 7 days (crew
+    data ends 10/19 — the switchover day); OOF orders route through the
+    call center and reach SaraPlus days late, while the NDS-SN log carries
+    this week's sales. Per line: port when 'Ported From' is set (else new),
+    BYOD read from the Package string; SOW base-comp OOF rates."""
     from automations.vantura_revenue_board.run import (build_rows, render,
                                                        week_of)
-    soh = load_soh(log=log)
-    if not soh:
-        raise RuntimeError("revenue board needs the SaraPlus relay")
-    ix, orders, pulled_at = soh
+    sw = sow_rates()["wireless"]
+    i_od = cols.need("order date", "sp.order date")
+    i_rep = cols.need("rep", "rep")
+    i_port = cols.find("ported from", "port")
+    i_pkg = cols.find("package")
+    i_tn = cols.find("spe.tn type", "tn type")
     monday = week_of(today)
     per_rep: Dict[str, dict] = {}
-    for r in orders:
-        od = _parse_date(_soh_cell(ix, r, "Order Date"))
-        rep = _soh_cell(ix, r, "User Name")
+    for r in crew:
+        od = _parse_date(_c(cols, r, i_od))
+        rep = _c(cols, r, i_rep)
         if not rep or od is None or not (monday <= od <= today):
             continue
+        tn = _c(cols, r, i_tn).lower()
+        ported = bool(_c(cols, r, i_port)) or tn == "port"
+        byod = "BYOD" in _c(cols, r, i_pkg).upper()
+        if ported:
+            amt = (sw["port_byod"] if byod else sw["port_nonbyod"])["OOF"]
+        else:
+            amt = sw["new_line"]
         rec = per_rep.setdefault(rep, {"days": {}, "elig": 0, "payable": 0})
-        rec["days"][od] = rec["days"].get(od, 0.0) + price_order(ix, r)
+        rec["days"][od] = rec["days"].get(od, 0.0) + amt
     rows, office = build_rows(per_rep, monday, today, tiered=False)
     out = render(rows, office, monday, today,
                  OUT_DIR / "nds_revenue_board.png",
                  board_name="NDS Revenue Board", tiered=False)
-    log(f"[nds] revenue board (styled, SARAPLUS {pulled_at:%H:%M}): "
-        f"{len(rows)} rep(s), crew "
-        f"${sum(r['total'] for r in rows):,.0f}")
+    log(f"[nds] revenue board (styled, TABLEAU lines): {len(rows)} rep(s), "
+        f"crew ${sum(r['total'] for r in rows):,.0f}")
     return out
 
 
