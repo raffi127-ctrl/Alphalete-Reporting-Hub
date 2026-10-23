@@ -25,7 +25,7 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | Total CC Debt | −(Business CC 44K + Business CC 2 + Personal CC + Amex + BOFA + Capital) from Carlos's Tiller |
 | Money in the Bank | Alphalete Marketing + Personal + Personal Savings (Tiller) |
 | Money in Security | Tableau SFDC Total Balance |
-| Personal Pay, NPA, Nico/Sebastian/Cinthya/Maud bonus | **Apex** — kept from last week, check |
+| Personal Pay, NPA - Owner's Draw, Nico's / Sebastian's / Cinthya's Bonus | Apex, via the Thursday `carlos_payroll_pull` → Carlos Business & Personal P&L (`1ngQt…`) tab **Apex Net Pay Detail**, pay period ending one week before the WE: Personal Pay = −(owner gross × 1.12), NPA = −(owner net-pay additions), bonus = −(Nicolas Murrugarra / Sebastian Avellaneda / Cinthya Reyes net-pay addition). No Apex login (Apex forces a 2FA setup screen). Maud's Bonus kept. |
 | Indeed Charges, Outside Deals, ARS (−850), Rent, Food, Travel, Investment into local office | Carlos's month tab (e.g. "September 2026"), the week one back: Indeed/Food/Travel from the summary block, Outside Deal + CARLOS ONLY Weekly from the bottom table; Investment = −(Carlos-only − travel − indeed − 850 − rent); Rent = Carlos-only "Online ACH Payment" ≥ $5k that week (flagged to confirm). If that week isn't finished in the month tab, last week's placeholders stay + a NOTE |
 
 | Raf row | Source |

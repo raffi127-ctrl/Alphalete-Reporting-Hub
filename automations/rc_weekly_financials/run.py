@@ -61,10 +61,7 @@ MANUAL = {
 # Rows kept as copied from last week but worth a look.
 CHECK = {
     "carlos": {
-        "Personal Pay": "Apex payroll entry (ESP + 12%)",
-        "NPA - Owner's Draw": "Apex net pay addition (negative)",
-        "Nico's Bonus": "Apex additions", "Sebastian's Bonus": "Apex additions",
-        "Cinthya's Bonus": "Apex additions", "Maud's Bonus": "Apex additions",
+        "Maud's Bonus": "not in Apex — kept",
         "Indeed Charges … Investment into local office": "from his month tab one week back — see NOTES if it wasn't finished",
     },
     "raf": {
@@ -164,6 +161,35 @@ def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
         return out, notes
     notes.append(f"Carlos red rows: no month tab has {want} yet — kept last week's placeholders")
     return {}, notes
+
+
+CARLOS_PNL = "1ngQtKRNeuGV_FDBp-d9boZmxp6cO3T4IKa7k2NdiLq0"   # Carlos Business & Personal P&L (carlos_payroll_pull writes Apex here Thursdays)
+APEX_BONUS = {"Nico's Bonus": "nicolas murrugarra", "Sebastian's Bonus": "sebastian avellaneda", "Cinthya's Bonus": "cinthya reyes"}
+
+
+def carlos_apex(we: dt.date) -> tuple[dict, list]:
+    """Carlos's Apex rows from the Thursday payroll pull: the pay period ending one week before the WE.
+    Personal Pay = -(owner gross x 1.12); NPA = -(owner net-pay additions); bonuses = -(that rep's net-pay addition)."""
+    end = we - dt.timedelta(days=7)
+    s = bank.sheets()
+    v = s.values().get(spreadsheetId=CARLOS_PNL, range="'Apex Net Pay Detail'!A1:J400",
+                       valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    hdr_ = [_n(h) for h in v[0]]
+    ie, isec, iname, igross, iadd = (hdr_.index(k) for k in ("period end (sun)", "section", "name", "gross pay", "net pay addition"))
+    as_date = lambda x: EPOCH + dt.timedelta(days=int(x)) if isinstance(x, (int, float)) else dt.datetime.strptime(str(x).strip(), "%b %d, %Y").date()  # noqa: E731
+    rows = [r for r in v[1:] if len(r) > iadd and str(r[ie]).strip() and as_date(r[ie]) == end]
+    if not rows:
+        summ = s.values().get(spreadsheetId=CARLOS_PNL, range="'Payroll (Apex)'!B2:B3").execute().get("values", [])
+        return {}, [f"carlos Apex: no period ending {end} in 'Apex Net Pay Detail' yet (newest: {summ[0][0] if summ else '?'}) — Apex rows kept from last week"]
+    out = {label: 0 for label in APEX_BONUS}
+    owner = [r for r in rows if _n(r[isec]) == "owner"]
+    if owner:
+        out["Personal Pay"] = -round((_num(owner[0][igross]) or 0) * 1.12, 2)
+        out["NPA - Owner's Draw"] = -round(sum(_num(r[iadd]) or 0 for r in owner), 2)
+    for label, name in APEX_BONUS.items():
+        out[label] = -round(sum(_num(r[iadd]) or 0 for r in rows if _n(r[iname]) == name), 2)
+    print(f"  Apex period ending {end}: {out}")
+    return out, []
 
 
 def raf_indeed(we: dt.date) -> tuple[dict, dict, list]:
@@ -342,6 +368,9 @@ def pull(we: dt.date) -> Path:
     c.update(banks("carlos"))
     red, notes = carlos_red_rows(prior)
     c.update(red)
+    apex, n1 = carlos_apex(we)
+    c.update(apex)
+    notes += n1
     r.update(ars(we))
     r.update(raf_local_office(prior))
     r.update(loans())
