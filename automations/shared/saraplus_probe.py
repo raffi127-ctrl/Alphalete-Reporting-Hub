@@ -45,6 +45,12 @@ def main(argv=None) -> int:
                     help="with --columns: only the Services whose name contains "
                          "this (case-insensitive, e.g. 'internet' or 'AT&T'), and "
                          "print each rep row's NON-ZERO cells by header label.")
+    ap.add_argument("--credit", metavar="YYYY-MM-DD",
+                    help="after the login, run the PRODUCTION Wireless pass "
+                         "(saraplus.GRID_WIRELESS + grid_headers + parse_credit) "
+                         "for that day and print what an office's laptop would "
+                         "relay. Read-only. Built 2026-10-23 to prove the grid "
+                         "selector before any laptop gets the three alerts.")
     args = ap.parse_args(argv)
     from patchright.sync_api import sync_playwright
     from automations.shared import saraplus as S
@@ -75,6 +81,9 @@ def main(argv=None) -> int:
                 # the page can sit on .../e/(S(..)) with no DealerPages/ in it
                 # (all four --columns runs on 2026-10-22 skipped the dump that
                 # way), and the Reporting Hub is a SIBLING of DealerPages/.
+                if args.credit and base:
+                    _credit_pass(page, base if base.endswith("/") else base + "/",
+                                 args.credit)
                 if args.columns and base:
                     _dump_columns(page, base if base.endswith("/") else base + "/",
                                   args.columns, args.rows)
@@ -103,6 +112,19 @@ def main(argv=None) -> int:
     finally:
         shutil.rmtree(prof, ignore_errors=True)
     return 0
+
+
+def _credit_pass(page, base: str, day_s: str) -> None:
+    import datetime as dt
+    from automations.shared import saraplus as S
+    rows = S._run_report(page, base, dt.date.fromisoformat(day_s),
+                         S.SERVICE_WIRELESS, S.GRID_WIRELESS, log=print)
+    headers = S.grid_headers(page, S.GRID_WIRELESS)
+    got = S.parse_credit(headers, rows)
+    print("CREDIT rows=%d labels=%s" % (len(rows), "ok" if got is not None else
+                                       "MISSING: %s" % " | ".join(headers)[:300]))
+    for rep, m in sorted((got or {}).items()):
+        print("  %s: checked=%d passed=%d" % (rep, m["Credit Checked"], m["Credit Passed"]))
 
 
 # Every RadGrid master table on the page, with its header labels and body rows.

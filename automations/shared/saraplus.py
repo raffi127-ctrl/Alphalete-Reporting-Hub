@@ -38,6 +38,14 @@ SUBMIT = "#MainContent_rbOrderDashSubmit"
 GRID_ATT = "#ctl00_MainContent_rgOrderDashboard_ATT_ctl00"
 GRID_ALL = "#ctl00_MainContent_rgOrderDashboard_ctl00"
 GRID_INTERNET = "#ctl00_MainContent_rgOrderDash_ATT_Internet_ctl00"
+# THE ONLY GRID WITH REAL CREDIT CHECKS. The 'AT&T Internet' Records above
+# count everyone put on the tablet; 'Wireless' splits that into Credit Checked
+# and Credit Passed (probe 2026-10-23, Carlos's three alerts). Its labels sit
+# in a separate frozen-header table, '<grid>_Header'.
+SERVICE_WIRELESS = "Wireless"
+GRID_WIRELESS = "#ctl00_MainContent_rgOrderDashboard_Wireless_ctl00"
+# Found BY LABEL, and these exact words are also the keys they travel under.
+CREDIT_LABELS = ("Credit Checked", "Credit Passed")
 
 # 0-based column indices, per grid.
 COL_ROWTYPE = 1
@@ -744,6 +752,46 @@ def parse_records(rows: List[List[str]]) -> Dict[str, int]:
         if key:
             out[key] = out.get(key, 0) + _int(r[COL_INTERNET["records"]])
     return out
+
+
+def parse_credit(headers: List[str], rows: List[List[str]]) -> Optional[Dict[str, Dict[str, int]]]:
+    """{UPPERCASE NAME: {'Credit Checked': n, 'Credit Passed': n}}, reps with
+    at least one credit check only.
+
+    BY LABEL, read off the '<grid>_Header' table: this grid is new to us and
+    we have one day of it, so a fixed index would be a guess. Body rows can
+    carry a different number of leading cells than the header, so the two are
+    aligned from the RIGHT, where the measure columns are. A grid whose labels
+    are missing returns None, NOT {}: {} would say 'nobody ran a credit check'
+    when the truth is that we could not read the grid."""
+    want = {lbl: i for i, h in enumerate(headers or [])
+            for lbl in CREDIT_LABELS if str(h).strip() == lbl}
+    if len(want) < len(CREDIT_LABELS):
+        return None
+    out: Dict[str, Dict[str, int]] = {}
+    for r in agent_rows(rows, AGENT_ROW):
+        off = len(r) - len(headers)
+        idx = {lbl: i + off for lbl, i in want.items()}
+        if len(r) <= 2 or any(not (2 < j < len(r)) for j in idx.values()):
+            continue
+        key = strip_office(r[2])
+        if not key:
+            continue
+        got = out.setdefault(key, {lbl: 0 for lbl in CREDIT_LABELS})
+        for lbl, j in idx.items():
+            got[lbl] += _int(r[j])
+    return {k: v for k, v in out.items() if v["Credit Checked"] or v["Credit Passed"]}
+
+
+def grid_headers(page, grid: str) -> List[str]:
+    """The labels of a grid whose header is frozen into its own table."""
+    return page.evaluate(
+        """(sel) => {
+             const h = document.querySelector(sel + '_Header') || document.querySelector(sel);
+             if (!h) return [];
+             return Array.from(h.querySelectorAll('thead th')).map(
+               th => (th.innerText || '').trim());
+           }""", grid)
 
 
 def merge_dtv(agents: List[Dict], dtv: Dict[str, int]) -> List[Dict]:
