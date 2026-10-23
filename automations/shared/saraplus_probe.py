@@ -174,7 +174,11 @@ def _dump_columns(page, base: str, day_s: str, only: str = None) -> None:
                 continue
             # Body rows carry one more leading cell than headers on some grids;
             # align from the RIGHT, where the measure columns are.
-            hs = g["headers"]
+            # A FROZEN HEADER lives in its own '<grid id>_Header' table (10/23:
+            # every body grid came back with blank labels, so each rep printed
+            # as "=0.0%"), so borrow its labels when the body has none.
+            hs = g["headers"] if any(g["headers"]) else next(
+                (h["headers"] for h in grids if h["id"] == g["id"] + "_Header"), [])
             for r in g["rows"]:
                 if len(r) <= 2 or not r[1].strip().endswith("_Agent"):
                     continue
