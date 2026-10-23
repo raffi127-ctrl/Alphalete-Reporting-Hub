@@ -426,6 +426,112 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
                          teams=None)
 
 
+def _rep_key(name: str) -> str:
+    """'first last', lowered, letters only -- so OwnerVille's 'Chloe A.
+    Johnson' and SaraPlus's 'CHLOE JOHNSON' are one person."""
+    import unicodedata
+    plain = unicodedata.normalize("NFKD", name or "").encode(
+        "ascii", "ignore").decode().lower()
+    parts = re.sub(r"[^a-z ]", " ", plain).split()
+    return " ".join([parts[0], parts[-1]]) if parts else ""
+
+
+def _same_rep(key: str, knocked) -> str:
+    """The knocker `key` is, or "". Exact first, then a short first name on
+    the same last name -- 'max allen' is 'maximilian allen' on OwnerVille
+    (Ryan's office, 2026-10-22), and counting him twice reads as a zero."""
+    if key in knocked:
+        return key
+    first, _, last = key.partition(" ")
+    hits = [k for k in knocked if k.partition(" ")[2] == last
+            and (k.startswith(first) or first.startswith(k.partition(" ")[0]))]
+    return hits[0] if len(hits) == 1 else ""
+
+
+def _apps(m: Dict, campaign=None) -> int:
+    """What 'got on the board' counts: APPS, never an upgrade on its own
+    (Raf's rule on his own board -- see icd_sales_board/site.py)."""
+    m = m or {}
+    names = tuple(H_SHAPE(campaign).metrics)
+    if names == ("Sales", "Volume", "Big", "Huge"):
+        return int(m.get("Sales", 0) or 0)
+    if str(campaign or "").strip().lower() == "nds":
+        return int(m.get("Air", 0) or 0) + int(m.get("NL", 0) or 0)
+    return sum(int(m.get(k, 0) or 0) for k in ("Int", "DTV", "NL"))
+
+
+def eco_headcount(sales: Dict, knock_rows: List[Dict], campaign=None,
+                  show=None) -> List[Tuple[str, str]]:
+    """Raf's headcount block for an ECO office, worked out from its own
+    relays (Megan 2026-10-22: "Was this applied to all those on Lucy Eco as
+    well?"). Raf's comes off his sales board's formulas; an ECO office has no
+    such sheet, so:
+
+      in the field  = everyone who knocked today, plus anyone who sold
+      on the board  = reps with an app (an upgrade alone is not an app)
+      rolled a zero = in the field minus on the board
+
+    Same labels as Raf's sheet, so notify.headcount_lines prints both the
+    same way. [] when the office relayed no knocks today -- with sellers only,
+    every day would read 100% on the board.
+    """
+    from automations.total_knocks import pull as TP
+    knocked = {_rep_key(r.get(TP.COL_REP, "")) for r in knock_rows or []
+               if int(r.get(TP.COL_TOTAL_KNOCKS, 0) or 0) > 0}
+    knocked.discard("")
+    if not knocked:
+        return []
+    field, board = set(knocked), set()
+    apps = ints = 0
+    for rep, m in (sales or {}).items():
+        m = m or {}
+        if not any(int(v or 0) for v in m.values() if isinstance(v, (int, float))):
+            continue
+        keys = {_rep_key(rep), _rep_key(show(rep) if show else rep)} - {""}
+        # One person, whichever spelling the knocks used.
+        k = next((h for h in map(lambda k: _same_rep(k, knocked), sorted(keys))
+                  if h), min(keys) if keys else "")
+        if not k:
+            continue
+        field.add(k)
+        a = _apps(m, campaign)
+        if a:
+            board.add(k)
+        apps += a
+        ints += int(m.get("Int", 0) or 0)
+    n = len(field)
+    out = [("Total Reps in the Field / Board / Zero", str(n)),
+           ("Reps that got on the Board", str(len(board))),
+           ("Reps that rolled a Zero", str(n - len(board))),
+           ("% of Reps on the Board", "%d%%" % round(100.0 * len(board) / n))]
+    if tuple(H_SHAPE(campaign).metrics) == ("Int", "Int Up", "DTV", "NL"):
+        out.append(("New INT per Rep AVG", "%.1f" % (ints / n)))
+    out.append(("App per Rep AVG", "%.1f" % (apps / n)))
+    return out
+
+
+def _knocks_today(book, day: dt.date) -> Dict[str, List[Dict]]:
+    """{office key: today's relayed knock rows}, ONE read of 'ICD Knocks'
+    for the whole tick. {} if the tab is missing or unreadable -- the block
+    decorates the text, it never stops it."""
+    from automations.icd_alerts import knocks_map as KM, knocks_post as KP
+    try:
+        values = book.worksheet(KP.KNOCKS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for row in values[1:]:
+        row = list(row) + [""] * (KP.KN_ROWS + 1 - len(row))
+        if _day_key(row[KP.KN_DAY]) != day.isoformat():
+            continue
+        try:
+            raw = json.loads(row[KP.KN_ROWS] or "[]")
+        except ValueError:
+            continue
+        out[(row[KP.KN_OFFICE] or "").strip().lower()] = KM.to_rows(raw)
+    return out
+
+
 BACKSLIDE_PATH = (Path.home() / ".config" / "recruiting-report"
                   / "icd_backslides.json")
 
@@ -1385,6 +1491,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         return {"offices": 0, "posted": 0}
 
     posted = considered = 0
+    knocks_today = None
     seen = _load_seen()
     quiet_today = _warned().get(day.isoformat()) or {}
     if not isinstance(quiet_today, dict):   # the oldest once-a-day shape
@@ -1499,6 +1606,17 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         if (sold or (sales_baseline and merged_sales)) and texts.get(key):
             board = scoreboard_text(merged_sales, [] if sales_baseline else sold,
                                     office.campaign, show)
+            if board:
+                # RAF'S HEADCOUNT BLOCK under the totals, same as his partner
+                # chat (Megan 2026-10-22). Knocks read once, on first need.
+                if knocks_today is None:
+                    knocks_today = _knocks_today(tab.spreadsheet, day)
+                from automations.alphalete_sales_board import notify as N
+                hc = N.headcount_lines(eco_headcount(
+                    merged_sales, knocks_today.get(key), office.campaign,
+                    show))
+                if hc:
+                    board += "\n" + "\n".join(hc)
             if board and not can_text:
                 log("%-10s standings text skipped -- this machine cannot "
                     "send iMessage" % key)
