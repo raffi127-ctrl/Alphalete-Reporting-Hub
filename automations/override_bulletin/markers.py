@@ -162,16 +162,20 @@ def set_marker(ws, kind, period, col, *, dry_run=True):
 def ledger_needles(kind, period):
     """Explanation substrings that identify this period's ledger rows.
 
-    Special carries the period verbatim ('P6-2026 Special Override'). Credico is
-    MONTH-labelled ('June 2026 Standard Overrides - Credico'), so we map P<n> to
-    month n and require BOTH the month-year and 'credico' — never just 'credico',
-    which matches every period at once."""
+    Special carries the period verbatim ('P6-2026 Special Override'), and it must
+    ALSO say 'special override': the period label alone matches any other P<n>
+    line on the ledger. On 2026-10-16 that placed $7,890.63 on Carlos as his
+    P10-2026 Special while the real P10 Special wasn't even in Tableau yet (his
+    Specials run $270-$420). Same test `_periods_in_ledger` already uses.
+    Credico is MONTH-labelled ('June 2026 Standard Overrides - Credico'), so we
+    map P<n> to month n and require BOTH the month-year and 'credico' — never
+    just 'credico', which matches every period at once."""
     m = _PERIOD.match(period)
     if not m:
         return []
     n, year = int(m.group(1)), m.group(2)
     if kind == SPECIAL:
-        return [[period]]
+        return [[period, "special override"]]
     month = _MONTHS[n - 1] if 1 <= n <= 12 else None
     cands = [[period]]                                  # in case it's period-labelled
     if month:

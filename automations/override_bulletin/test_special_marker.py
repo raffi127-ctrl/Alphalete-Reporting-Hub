@@ -50,5 +50,28 @@ class SetMarkerColumn(unittest.TestCase):
         self.assertIn("week_col", src[src.index("M.set_marker(ws, M.SPECIAL"):][:200])
 
 
+class SpecialLedgerMatchTest(unittest.TestCase):
+    """2026-10-16: a P10-2026 ledger line that was NOT a Special was placed as
+    Carlos' Special ($7,890.63) before the real one existed. Only lines that
+    say 'Special Override' count."""
+
+    HDR = ["ICD Owner Name and OFFICE NAME", "NS_Explanation__c", "Transaction Amount"]
+
+    def _amounts(self, rows):
+        return M.amounts_for([self.HDR] + rows, M.SPECIAL, "P10-2026",
+                             owner_col=self.HDR[0], expl_col=self.HDR[1],
+                             amt_col=self.HDR[2])
+
+    def test_other_p10_line_is_not_a_special(self):
+        self.assertIsNone(self._amounts(
+            [["Carlos Hidalgo", "P10-2026 Captain Override", "7890.63"]]))
+
+    def test_special_line_still_counts(self):
+        self.assertEqual(self._amounts(
+            [["Carlos Hidalgo", "P10-2026 Captain Override", "7890.63"],
+             ["Carlos Hidalgo", "P10-2026 Special Override", "300.10"]]),
+            {M._norm_name("Carlos Hidalgo"): 300.10})
+
+
 if __name__ == "__main__":
     unittest.main()
