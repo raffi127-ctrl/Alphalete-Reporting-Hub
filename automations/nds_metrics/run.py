@@ -39,6 +39,12 @@ OUT_DIR = REPO_ROOT / "output" / "nds_metrics"
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 CARLOS = "U046G04P5LG"
 LOOKBACK_DAYS = 60
+# The crew's NDS SaraPlus logins began Monday 2026-10-20 (Carlos: "we got
+# nds logins this monday" — the dealers also carry their migrated pre-NDS
+# history back to 9/22, which is not NDS production). Every SaraPlus board
+# floors at this date; the Tableau rate/churn boards keep their lookback
+# (banding needs it).
+NDS_SINCE = dt.date(2026, 10, 20)
 BUCKETS = ("0-30 Day", "31-60 Day")
 _BAND_KEY = {"0-30 Day": "0-30", "31-60 Day": "31-60"}
 POSTED = ("posted",)
@@ -348,6 +354,14 @@ def load_soh(log=print):
 
     crew = [r for r in rows[1:] if len(r) > ix["User Name"]
             and _is_crew(r[ix["User Name"]].strip())]
+    pre = len(crew)
+    crew = [r for r in crew
+            if (lambda d: d is not None and d >= NDS_SINCE)(
+                _parse_date(r[ix["Order Date"]])
+                if len(r) > ix["Order Date"] else None)]
+    if pre != len(crew):
+        log(f"[nds] SOH: floored at NDS start {NDS_SINCE} "
+            f"({pre} -> {len(crew)} crew order(s))")
     # Who entered the RECENT orders — when this week's sales exist but the
     # crew filter misses them, the names here say why (2026-10-23: the
     # revenue board stuck at one rep while Tableau showed 36 crew lines).
