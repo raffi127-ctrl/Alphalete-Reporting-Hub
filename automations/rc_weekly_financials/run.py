@@ -392,6 +392,11 @@ def pull(we: dt.date) -> Path:
         c["Money in Security"] = tab["security"]["carlos"]
     if tab["security"].get("raf") is not None:
         r["Money in Security"] = tab["security"]["raf"]
+    for back in range(1, 6):   # ARS PNL gets corrected after the fact — refresh the 5 prior weeks too
+        wk = we - dt.timedelta(days=7 * back)
+        got = ars(wk)
+        if got:
+            data["prior"]["raf"].setdefault(hdr(wk), {}).update(got)
     for wk in (prior, before):
         k = wk.isoformat()
         if k in tab["org"]["carlos"]:
@@ -456,8 +461,9 @@ def fill(who: str, we: dt.date, tab: str | None, values: dict, prior: dict, dry:
     newest = str(v[first - 1][col]).strip()
     label_row = {_n(r[0]): i for i, r in enumerate(v, 1) if first < i <= last and r and str(r[0]).strip()}
     print(f"{who} / {tab!r}: block rows {first}-{last}, newest column {_col(col)} = {newest!r}")
-    if newest == hdr(we):
-        print(f"  {hdr(we)} is already there — refreshing it in place (no new column)")
+    fresh = newest != hdr(we)   # only a brand-new column gets its manual rows cleared
+    if not fresh:
+        print(f"  {hdr(we)} is already there — refreshing it in place (no new column, hand-filled rows left alone)")
     elif dry:
         print(f"  would insert cells at {_col(col)}{first}:{_col(col)}{last} (shift right) and copy {newest!r} into it")
     else:
@@ -479,7 +485,8 @@ def fill(who: str, we: dt.date, tab: str | None, values: dict, prior: dict, dry:
     for label in MANUAL[who]:
         i = label_row.get(_n(label))
         if i and _n(label) not in {_n(k) for k in values}:
-            data.append({"range": f"'{tab}'!{L}{i}", "values": [[""]]})
+            if fresh:
+                data.append({"range": f"'{tab}'!{L}{i}", "values": [[""]]})
             todo.append(f"{label} — {MANUAL[who][label]}")
     for label, val in values.items():
         i = label_row.get(_n(label))
@@ -506,6 +513,8 @@ def fill(who: str, we: dt.date, tab: str | None, values: dict, prior: dict, dry:
             if i is None:
                 continue
             old = (v[i - 1] + [""] * (j + 1))[j]
+            if _num(old) is not None and val is not None and abs(_num(old) - val) < 0.005:
+                continue   # unchanged
             data.append({"range": f"'{tab}'!{_col(j)}{i}", "values": [[val]]})
             print(f"  {_col(j)}{i:<4} {label} ({wk_hdr}): {old} -> {val:,.2f}")
     if not dry:

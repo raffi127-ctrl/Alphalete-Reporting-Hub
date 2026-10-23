@@ -34,13 +34,13 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | Indeed | Double Entry (financial_report web_source) — new WE S = DE week ending Sat S−8, last week's column = S−15. Needs `doubleentry_username/password` in the gitignored `ownerville-creds.json` + the OTP inbox on this Mac; otherwise **manual** from the Tue email (`--set` / `--prior`) |
 | Recruiting Bonuses (Aisha) | **manual** (Apex) |
 | Zach's Pay (overrides / true up) | **manual** (Slack Raf↔Zach) |
-| ARS (PNL Shows) | All in One - ARS → ARS PNL → Gross Profit, SAME week |
+| ARS (PNL Shows) | All in One - ARS → ARS PNL → Gross Profit, SAME week; the 5 prior weeks are re-checked and updated if the ARS PNL changed |
 | Captainship | Tableau ORG DD Detail → Captain Bonus (Raf), DD week = Saturday before the WE (Maud confirmed 2026-10-22) |
 | Local Office Gross Profits | All in One Raf → RAF PNL 2026 (NEW) → "Raf's Net Profit from Local Office", week back |
 | NC over rides | 0 new week; Tableau ORG Override Summary (Raf) fills last week + refreshes the week before |
 | ATT Program over ride | 0 new week; Tableau Raf Override Bonus ("Raf Payout Total") fills last week + the week before |
 | Bas Overrides | 0 (one lands every 4 weeks — check) |
-| Money Given for Interviewers | −ARS PNL "Raf covers", same week |
+| Money Given for Interviewers | −ARS PNL "Raf covers", same week; 5 prior weeks re-checked too |
 | Total CC Debt | −(5 Chase CCs + BOFA - LTD + AMEX - Local Office CC) from Raf's Tiller |
 | Money in the Bank | Chase total minus ARS = Local Office + LTD + Personal + Personal Savings + STR Carrollton |
 | Money in Security | Tableau SFDC Total Balance |
