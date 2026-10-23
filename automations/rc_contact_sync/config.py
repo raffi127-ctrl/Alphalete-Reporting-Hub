@@ -42,7 +42,7 @@ PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".saraplus_b2b_profile"
 # mention SaraPlus all day. A broad text search would eventually read six
 # digits out of one of those and type it in as a passcode.
 VERIFY_QUERY = "from:security.info@saraplus.com newer_than:1d"
-VERIFY_TIMEOUT_S = 180
+VERIFY_TIMEOUT_S = 420  # 7 min — the alphaletegp forward delivered a code AFTER the old window once (2026-10-23, CodeNotFound); Gmail forwarding adds minutes some days
 # SaraPlus can issue TWO codes a second apart (the Email radio's autopostback
 # and the Get Code press both reaching the server). Settling before the inbox
 # is read means both have landed, so "newest wins" picks the real newest
