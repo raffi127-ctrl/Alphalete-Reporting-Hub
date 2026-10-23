@@ -124,6 +124,12 @@ REMOVALS: dict = {
         # limpio (lo detecto `run --distro-check`). Sale tambien de
         # "ATT Fiber Owners" y "Aug Owner Showdown", sus otros dos grupos.
         ("Eric Martinez", "ericdmartinez222@gmail.com"),
+        # 2026-10-23 (Eve): Ja Mosley, oficina 23882 (Envision Collective)
+        # cerrada — 0 ventas WE 10.11 / 10.18 y se fue el Office Access de
+        # ownerville. Sus filas salieron del board el mismo dia (roster_remove)
+        # y su mail de config.RECIPIENTS["chan"]. Sale tambien de
+        # "ATT Fiber Owners" + fiber_owners_distro/excludes.json.
+        ("Ja Mosley", "jamosleybiz@gmail.com"),
     ],
     # 2026-09-14 (Eve): Eric Martinez, ver "Chan's Captainship". Su segunda
     # tarjeta (sin nombre, la misma direccion) no esta en ningun grupo.
@@ -180,6 +186,8 @@ REMOVALS: dict = {
         ("Eric Martinez", "ericdmartinez222@gmail.com"),
         # 2026-09-14 (Eve): Kimberly Rodriguez, idem (tarjeta "Kim Rodriguez").
         ("Kimberly Rodriguez", "kimberlyatt458@gmail.com"),
+        # 2026-10-23 (Eve): Ja Mosley, oficina cerrada — ver "Chan's Captainship".
+        ("Ja Mosley", "jamosleybiz@gmail.com"),
     ],
     # 2026-08-24 (Eve): Lizette Ruiz comes off Eveliz's captainship only — same
     # shape as Milan Godbolt below. Her address also left

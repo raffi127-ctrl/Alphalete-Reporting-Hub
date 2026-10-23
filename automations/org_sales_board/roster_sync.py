@@ -87,5 +87,8 @@ EXCLUDE = (
     "Kimberly Rodriguez",   # Chan's captainship — Fiber New Internet + All Units
     # --- two-week zero rule, 2026-10-06 (Eve). Cero en WE 10.04 y WE 09.27.
     "Brandon Stallkamp",    # ALPHALETE ORG — Retail JE
+    # --- oficina cerrada, 2026-10-23 (Eve). Oficina 23882; cero en WE 10.18 y
+    # WE 10.11, ult. venta WE 10.04.
+    "Ja Mosley",            # Chan's captainship — Fiber New Internet + All Units
 )
 

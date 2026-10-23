@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 58,
+  "confirmed_count": 57,
   "needs_review_count": 0,
-  "skip_count": 34,
+  "skip_count": 35,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -347,14 +347,6 @@
       "auto_onboarded": true
     },
     {
-      "sheet_tab": "Ja Mosley",
-      "office_id": "23882",
-      "as_owner": "Ja Mosley",
-      "as_company": "Envision Collective",
-      "confidence": 1.0,
-      "note": "Own office since 2026-09-08. Was TEMPORARILY pointed at Francisco Castillo's 22532 (Eve 2026-07-27) because Ja had no AppStream office of his own; that made his whole recruiting funnel Francisco's, cell for cell, which is what Chan Park reported twice (2026-08-31 and 2026-09-08). 23882 confirmed reachable from the fleet's `Lucy Reports` account on 2026-09-08 (`appstream_whoami --offices 23882` \u2192 `OK Ja Mosley`); office number from Eve 2026-09-01 (his ownerville office, same id space). The `temporary_shared_office` / `owner_lookup_shared` flags go away with the shared office \u2014 they only ever existed to stop the FINANCIAL and FIBER lookups from inheriting Francisco's as_owner, and there is no borrowed as_owner left to guard."
-    },
-    {
       "sheet_tab": "Mercy Ohiokhai",
       "office_id": "23888",
       "as_owner": "Mercy Ohiokhai",
@@ -594,6 +586,12 @@
     {
       "sheet_tab": "OLD-Daily Focus Report",
       "reason": "old/deprecated tab"
+    },
+    {
+      "sheet_tab": "Ja Mosley",
+      "office_id": "23882",
+      "reason": "oficina cerrada \u2014 0 ventas WE 10/11, 10/18 y la semana en curso (\u00faltima WE 10/4: 12 NI / 32 All Units), y el Office Access de ownerville a la 23882 desapareci\u00f3 el 2026-10-23. Tab borrada (backup output/focus_report_deleted_tabs_2026-10-23) (Eve, 2026-10-23)",
+      "retired": "2026-10-23"
     }
   ],
   "sales_only": [

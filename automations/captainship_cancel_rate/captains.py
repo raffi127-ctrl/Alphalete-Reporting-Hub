@@ -127,6 +127,12 @@ INACTIVE_ICDS: dict[str, str] = {
     # nothing left to sell into the window.
     "kimberly rodriguez": "office 23576 closed 2026-09-09, in Terminated ICDs "
                           "(Eve)",
+    # Chan's (adopted from "Unassigned"). Office 23882 (Envision Collective)
+    # CLOSED — Eve 2026-10-23: 0 sales WE 10.11 / 10.18, ownerville Office
+    # Access gone the same day. Off the board (captain_gate.EXCLUDE["Chan"]) and
+    # off shared/captainship_pins.ADOPTED, so his rows stop filling. Rows stay
+    # for the history.
+    "ja mosley": "office 23882 closed 2026-10-23, off Chan's captainship (Eve)",
     # Tony's Team. Sells wireless only, so his New Internet rates ran out on
     # their own: 0-30 "No Data" 2026-09-11, then out of the Metrics view from
     # 9/12. He was kept OFF this list on purpose while he was still Tony's

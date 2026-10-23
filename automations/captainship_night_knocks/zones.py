@@ -81,7 +81,7 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Carissa Ng":       "America/New_York",              # Dayton, OH
     "Chan Park":        "America/Chicago",               # Metairie, LA
     "Coel Reif":        "America/Chicago",               # Huntsville, AL
-    "Ja Mosley":        "America/Denver",                # El Paso, TX
+    # Ja Mosley (El Paso, TX) OUT 2026-10-23: office 23882 closed (Eve).
     "Marcial Rodriguez": "America/Chicago",              # Wichita, KS (split state; Wichita is Central)
     "Nicholas Weldon":  "America/Chicago",               # Birmingham, AL
     "Sam Park":         "America/New_York",              # Morrisville, NC

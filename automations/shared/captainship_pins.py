@@ -339,6 +339,9 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
 # 10/8). Every one of his Chan rows went blank that morning on Cancel AND
 # Activation. Source re-pointed to "Unassigned"; the rest still holds.
 #
+# 2026-10-23 (Eve): his office 23882 CLOSED — entry removed. Off the board
+# (captain_gate.EXCLUDE["Chan"]) and in captainship_cancel_rate INACTIVE_ICDS.
+#
 # WHAT THIS CANNOT FIX — the same limit NOT_ON_TEAM has, in reverse: the
 # "Captainship Avg" / office-total row on each tab is Tableau's OWN per-team
 # roll-up, so it still EXCLUDES an adopted rep (and still includes him in his
@@ -375,7 +378,6 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
 #
 # team the report is BUILDING -> {rep: the team Tableau currently files them under}
 ADOPTED: Dict[str, Dict[str, str]] = {
-    "Chan": {"Ja Mosley": "Unassigned"},
     "Pat": {"Alex Touati": "Tony's Team"},
 }
 

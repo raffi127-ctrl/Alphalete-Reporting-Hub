@@ -52,7 +52,7 @@ OWNER_EMAILS: Dict[str, str] = {
     "Carissa Ng":          "carissang46@gmail.com",
     "Chan Park":           "parkwchan19@gmail.com",
     "Coel Reif":           "coel.g.reif@gmail.com",
-    "Ja Mosley":           "jamosleybiz@gmail.com",
+    # Ja Mosley (jamosleybiz@gmail.com) OUT 2026-10-23: office 23882 closed (Eve).
     "Marcial Rodriguez":   "marcial.enrique@yahoo.com",
     "Nicholas Weldon":     "nweldon0130@gmail.com",
     "Sam Park":            "samjpark1497@gmail.com",

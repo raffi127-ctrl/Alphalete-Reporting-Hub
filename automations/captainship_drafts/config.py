@@ -623,11 +623,10 @@ RECIPIENTS: dict = {
         "marcial.enrique@yahoo.com", "maudmiller4@gmail.com",
         "nweldon0130@gmail.com", "raffi127@gmail.com",
         "samjpark1497@gmail.com",
-        # Jay ("Ja") Mosley joined Chan's captainship 2026-09-01 (Eve). Added to
-        # the "Chan's Captainship" contact group the same day; this line only
-        # keeps the fallback in sync so he isn't dropped if Contacts is
-        # unreachable at send time.
-        "jamosleybiz@gmail.com",
+        # Jay ("Ja") Mosley (jamosleybiz@gmail.com) sacado el 2026-10-23: su
+        # oficina 23882 (Envision Collective) cerró (Eve) — 0 ventas WE 10.11 /
+        # 10.18 y se fue el Office Access de ownerville. Sale también del
+        # board y del grupo de Contactos; acá para que seed_groups no lo reponga.
         # IN 2026-09-24 (Rafael, mail "daily knocks"; Eve lo confirmo):
         # Shealey Miller (maneja la 23858 de Angel Padilla) y Angel reciben
         # este reporte, donde van los knocks de Shealey (EXTRA_KNOCK_OWNERS).
