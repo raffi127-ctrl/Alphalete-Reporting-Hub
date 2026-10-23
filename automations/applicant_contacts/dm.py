@@ -72,6 +72,11 @@ def _download(web, f: dict) -> Tuple[bytes, str]:
         raise RuntimeError("Slack gave no download link for the picture.")
     r = requests.get(url, headers={"Authorization": "Bearer " + web.token},
                      timeout=60)
+    if r.status_code == 403 or "redir=" in r.url:
+        # Same missing scope, other shape: Slack bounces to the workspace
+        # sign-in page (?redir=...) and that page answers 403.
+        raise RuntimeError("Jiraiya can't open pictures yet (Slack app needs "
+                           "the files:read permission).")
     r.raise_for_status()
     data = r.content
     if data[:200].lstrip().lower().startswith((b"<!doctype html", b"<html")):
