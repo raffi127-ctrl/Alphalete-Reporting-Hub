@@ -272,15 +272,56 @@ def load_soh(log=print):
     cache = OUT_DIR / f"nds_soh_{today.isoformat()}.csv"
     try:
         if not (cache.exists() and cache.stat().st_size > 500):
+            # BOTH dealers, merged (Carlos 2026-10-23: the new alphaletegp
+            # dealer held only September crew orders + one current one — the
+            # transition is mid-flight and current orders still land on the
+            # b2batt account the callouts' credit checks read). Dedupe by
+            # Order ID; either pull failing alone never empties the board.
+            import csv as _mcsv
+            import io as _mio
+            start = today - dt.timedelta(days=31)
+            parts = []
             try:
-                data = _pull_nds_soh(today - dt.timedelta(days=31), today,
-                                     log=log)
-            except Exception as e:  # noqa: BLE001 — passcode wall etc.
-                log(f"[nds] nds-dealer pull blocked ({type(e).__name__}) — "
-                    "b2batt fallback until its emailed-code forward is set")
+                parts.append(("nds", _pull_nds_soh(start, today, log=log)))
+            except Exception as e:  # noqa: BLE001
+                log(f"[nds] nds-dealer pull blocked ({type(e).__name__})")
+            try:
                 from automations.sp_order_log.run import pull_csv
-                data, _wl = pull_csv(today - dt.timedelta(days=31), today,
-                                     log=log)
+                b2b, _wl = pull_csv(start, today, log=log)
+                parts.append(("b2batt", b2b))
+            except Exception as e:  # noqa: BLE001
+                log(f"[nds] b2batt pull blocked ({type(e).__name__})")
+            if not parts:
+                raise RuntimeError("both dealers' SOH pulls failed")
+            merged, seen, hdr_row = [], set(), None
+            for name, blob in parts:
+                rws = list(_mcsv.reader(_mio.StringIO(
+                    blob.decode("utf-8-sig", errors="replace"))))
+                if not rws:
+                    continue
+                h = [str(c).strip() for c in rws[0]]
+                if hdr_row is None:
+                    hdr_row = h
+                    merged.append(h)
+                hmap = {c: i for i, c in enumerate(h)}
+                i_oid = hmap.get("Order ID")
+                n_new = 0
+                for r in rws[1:]:
+                    oid = (str(r[i_oid]).strip()
+                           if i_oid is not None and len(r) > i_oid else "")
+                    if oid and oid in seen:
+                        continue
+                    if oid:
+                        seen.add(oid)
+                    # re-project onto the first header's column order
+                    merged.append([r[hmap[c]] if c in hmap
+                                   and len(r) > hmap[c] else ""
+                                   for c in hdr_row])
+                    n_new += 1
+                log(f"[nds] SOH merge: {name} contributed {n_new} order(s)")
+            out_txt = _mio.StringIO()
+            _mcsv.writer(out_txt).writerows(merged)
+            data = out_txt.getvalue().encode("utf-8")
             cache.parent.mkdir(parents=True, exist_ok=True)
             cache.write_bytes(data)
         pulled_at = dt.datetime.fromtimestamp(cache.stat().st_mtime)
@@ -310,10 +351,14 @@ def load_soh(log=print):
     log(f"[nds] SOH: {len(rows) - 1} orders, crew {len(crew)}, pulled "
         f"{pulled_at:%m/%d %H:%M}")
     if crew:
-        _samp = [(r[ix["Order Date"]], _parse_date(r[ix["Order Date"]]))
-                 for r in crew[:4] if len(r) > ix["Order Date"]]
-        log("[nds] SOH date samples: "
-            + " ; ".join(f"{a!r}->{b}" for a, b in _samp))
+        _ds = sorted(d for d in (_parse_date(r[ix["Order Date"]])
+                                 for r in crew if len(r) > ix["Order Date"])
+                     if d)
+        if _ds:
+            _wk = sum(1 for d in _ds
+                      if (dt.date.today() - d).days <= 6)
+            log(f"[nds] SOH crew dates: {_ds[0]}..{_ds[-1]}, "
+                f"{_wk} in the last 7 days")
     if not crew:
         # 2026-10-22: the b2batt export came back with ZERO orders and the
         # Order Log + Revenue Board posted EMPTY into the thread. An empty
