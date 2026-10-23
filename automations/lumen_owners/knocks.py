@@ -47,6 +47,15 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print) -> list:
     out_dir = Path(out_dir) / "knocks"
     out_dir.mkdir(parents=True, exist_ok=True)
     blocks, failed = [], []
+    # The box pictures (board.render_boxes) leave sheet_render's shared sync
+    # playwright running, and a second sync playwright in the same thread dies
+    # with "using Playwright Sync API inside the asyncio loop" — the first
+    # test send, 2026-10-23. Same medicine as the captainship knocks.
+    try:
+        from automations.captainship_drafts import sheet_render
+        sheet_render.close_renderer()
+    except Exception:  # noqa: BLE001
+        pass
     try:
         with ownerville_session(verbose=False, profile_dir=K.PROFILE_DIR) as page:
             for label, cfg in pairs:
