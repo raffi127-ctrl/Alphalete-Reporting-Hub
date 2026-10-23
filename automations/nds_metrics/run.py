@@ -48,12 +48,21 @@ DEAD = ("canceled", "cancelled", "disconnected")
 # ---------------------------------------------------------------- load ----
 
 def _parse_date(v) -> Optional[dt.date]:
+    """Date, tolerating an attached TIME — the alphaletegp dealer's export
+    writes 'M/D/YYYY H:MM AM' where the b2b/Raf ones wrote bare dates, and
+    the strict parse silently dropped nearly every sale out of the Revenue
+    Board's week window (Carlos 2026-10-23: 'only showing one sale on
+    monday')."""
     s = str(v or "").strip()
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
-        try:
-            return dt.datetime.strptime(s, fmt).date()
-        except ValueError:
-            continue
+    if not s:
+        return None
+    head = s.split()[0].split("T")[0]
+    for cand in (s, head):
+        for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+            try:
+                return dt.datetime.strptime(cand, fmt).date()
+            except ValueError:
+                continue
     return None
 
 
