@@ -130,6 +130,29 @@ class LumenOwnersTest(unittest.TestCase):
         self.assertFalse(R._week_ok({"x": {"Total": {dt.date(2026, 10, 20): 1}}}, ref))
 
 
+
+class RecipientsTest(unittest.TestCase):
+    def test_to_flag_wins(self):
+        self.assertEqual(R.recipients("a@x.com, b@x.com", expand=lambda g: 1 / 0),
+                         ["a@x.com", "b@x.com"])
+
+    def test_send_goes_to_the_group(self):
+        seen = []
+        def exp(groups):
+            seen.append(groups)
+            return ["chan@x.com", "raf@x.com"], []
+        self.assertEqual(R.recipients("", expand=exp), ["chan@x.com", "raf@x.com"])
+        self.assertEqual(seen, [["Lumen Owners"]])
+
+    def test_unreadable_or_missing_group_falls_back(self):
+        def boom(groups):
+            raise RuntimeError("no token")
+        self.assertEqual(R.recipients("", expand=boom), R.FALLBACK_TO)
+        self.assertEqual(R.recipients("", expand=lambda g: ([], ["Lumen Owners"])),
+                         R.FALLBACK_TO)
+        self.assertIn(R.RAF, R.FALLBACK_TO)
+
+
 if __name__ == "__main__":
     unittest.main()
 

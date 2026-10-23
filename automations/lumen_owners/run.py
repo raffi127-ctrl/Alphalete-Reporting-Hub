@@ -3,7 +3,7 @@
 
     lucy rerun lumen_owners                         # dry run: writes the preview, sends nothing
     lucy rerun lumen_owners --to eve@alphaletemarketing.com   # preview by mail
-    lucy rerun lumen_owners --send                  # the real one, to Raf
+    lucy rerun lumen_owners --send                  # the real one, to the distro
 
 WHY (Raf, 2026-10-08, email "Metrics reporting"): "Similar to the captainship
 report, can we make a captainship report for the Lumen owners only that only
@@ -68,6 +68,17 @@ REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "output" / "lumen_owners"
 
 RAF = "raffi127@gmail.com"
+
+# WHO GETS --send (Eve, 2026-10-23): the "Lumen Owners" Contacts group of
+# alphaletereporting — Chan, Myles Neal, David Pancoast, Raf, Eve. Raf had
+# asked Chan for a "quantum sales board ... the captainship email but for the
+# quantum guys only" and confirmed this mail IS that board. Everybody gets the
+# full mail, other owners included. Edit the group, not the code; FALLBACK_TO
+# is only used when the group can't be read (same rule as the captainships).
+DISTRO_GROUP = "Lumen Owners"
+FALLBACK_TO = ["parkwchan19@gmail.com", "mylesnealbusiness@gmail.com",
+               "pancoast10xbusiness@gmail.com", RAF,
+               "eve@alphaletemarketing.com"]
 TITLE = "Lumen Owners"
 
 # Owner names (as the Quantum view prints them, any case) Raf asked to leave
@@ -361,7 +372,7 @@ def weeks_to_pull(have: Dict[dt.date, dict], today: dt.date) -> List[int]:
 
 
 def _pull(today: dt.date, history: Dict[dt.date, dict]):
-    """(quantum grid, fiber {owner: metrics}, failed, weeks, mix) in ONE
+    """(quantum grid, fiber {owner: metrics}, failed, weeks, mix, 30-day grid) in ONE
     Tableau session. `weeks` = `history` with every week pulled clean this
     run laid over it ({week_ending: fiber}); a week whose pull failed or came
     back on the wrong week keeps what history had, or stays missing."""
@@ -420,17 +431,51 @@ def _pull(today: dt.date, history: Dict[dt.date, dict]):
         download_crosstab_patchright(urls[SALES_VIEW], SALES_SHEET, out,
                                      verbose=False, page=page)
         grid = PQ._read_grid(out)
-    return grid, prog.get("fiber", {}), failed, weeks, mix
+        # Last-30-days activation/cancel table (Eve, 2026-10-23). Optional:
+        # a miss leaves the table off, never the mail.
+        grid30 = []
+        from automations.lumen_owners import metrics30 as M30
+        try:
+            if M30.VIEW not in urls:
+                raise RuntimeError("view %r not found" % M30.VIEW)
+            out30 = OUT / "quantum_30day_icd_metrics.csv"
+            download_crosstab_patchright(urls[M30.VIEW], M30.SHEET, out30,
+                                         verbose=False, page=page)
+            grid30 = PQ._read_grid(out30)
+        except Exception as e:  # noqa: BLE001 — see above
+            print("[lumen] 30-day metrics FAILED: %s: %s" % (type(e).__name__, e))
+    return grid, prog.get("fiber", {}), failed, weeks, mix, grid30
+
+
+def recipients(to_arg: str, expand=None) -> List[str]:
+    """--to wins; otherwise the Lumen Owners group, or FALLBACK_TO when the
+    group is unreadable or empty (with a warning in the log)."""
+    to = [a.strip() for a in (to_arg or "").split(",") if a.strip()]
+    if to:
+        return to
+    try:
+        if expand is None:
+            from automations.shared.contacts_auth import expand_groups as expand
+        got, missing = expand([DISTRO_GROUP])
+    except Exception as e:  # noqa: BLE001 — an unreadable group must not cost the mail
+        got, missing = [], ["%s (%s: %s)" % (DISTRO_GROUP, type(e).__name__, e)]
+    if got and not missing:
+        return list(got)
+    print("[lumen] ⚠ group %r unreadable (%s) — using FALLBACK_TO"
+          % (DISTRO_GROUP, missing or "empty"))
+    return list(FALLBACK_TO)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--send", action="store_true",
-                    help="mail it to Raf (default: dry run, preview file only)")
+                    help="mail it to the Lumen Owners group (default: dry run, preview file only)")
     ap.add_argument("--to", default="",
                     help="mail it to THIS address instead (preview); implies a send")
     ap.add_argument("--no-sheet", action="store_true",
                     help="skip the Lumen Owners tab (and its pictures in the mail)")
+    ap.add_argument("--no-knocks", action="store_true",
+                    help="skip yesterday's Quantum knock boards (OwnerVille)")
     args = ap.parse_args(argv)
 
     from automations.focus_office_att.aliases import load_aliases
@@ -441,7 +486,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     today = dt.date.today()
     sh = None if args.no_sheet else B._open()
     history = B.read_history(sh) if sh else {}
-    grid, fiber, failed, att_weeks, mix = _pull(today, history)
+    grid, fiber, failed, att_weeks, mix, grid30 = _pull(today, history)
     if failed:
         # An empty fiber pull would mark EVERY owner "Not on AT&T yet" — a
         # wrong answer that looks like a real one. Refuse instead.
@@ -460,6 +505,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     monday = _wk.reporting_monday(today)
     att_week = "week of %s" % monday.strftime("%m/%d")
     body = table_html(rows, weeks, att_week)
+    from automations.lumen_owners import metrics30 as M30
+    m30 = M30.by_owner(grid30)
+    print("[lumen] 30-day metrics: %d owner(s) in the view" % len(m30))
+    body += M30.table_html(rows, m30)
     for r in rows:
         print("ROW | %-28s | %-16s | AT&T %3d (NI %3d) | Lumen %s"
               % (r["owner"], r["status"], r["att_units"], r["att_ni"],
@@ -493,8 +542,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                      "All Units performance boxes could not be built this run."
                      "</p>")
 
-    to = [a.strip() for a in args.to.split(",") if a.strip()] or [RAF]
+    # Yesterday's Quantum knock boards (Eve, 2026-10-23), after the boxes and
+    # before the owner table. OwnerVille runs once the Tableau session above
+    # is closed — they share the machine's session lock.
+    if not args.no_knocks:
+        from automations.lumen_owners import knocks as KN
+        kb = KN.build(today, OUT / today.isoformat(), aliases)
+        if kb:
+            notes = [b for b in blocks if len(b) > 3 and b[3] == "note"]
+            blocks = [b for b in blocks if b not in notes] + kb + notes
+
     send = bool(args.send or args.to)
+    to = recipients(args.to) if send else [DISTRO_GROUP]
     res = _mail.send_boards(
         subject="%s — %s" % (TITLE, today.strftime("%m/%d/%Y")),
         to=to, title=TITLE, blocks=blocks, intro_html=body,
