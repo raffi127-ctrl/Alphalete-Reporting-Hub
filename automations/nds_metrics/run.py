@@ -309,6 +309,11 @@ def load_soh(log=print):
             and _is_crew(r[ix["User Name"]].strip())]
     log(f"[nds] SOH: {len(rows) - 1} orders, crew {len(crew)}, pulled "
         f"{pulled_at:%m/%d %H:%M}")
+    if crew:
+        _samp = [(r[ix["Order Date"]], _parse_date(r[ix["Order Date"]]))
+                 for r in crew[:4] if len(r) > ix["Order Date"]]
+        log("[nds] SOH date samples: "
+            + " ; ".join(f"{a!r}->{b}" for a, b in _samp))
     if not crew:
         # 2026-10-22: the b2batt export came back with ZERO orders and the
         # Order Log + Revenue Board posted EMPTY into the thread. An empty
@@ -1100,53 +1105,6 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
         bpng.COLS[:] = saved
     log("[nds] activation revenue (SARAPLUS + SOW base comp)")
     return out
-
-
-def build_revenue_board(cols, crew, today, log=print) -> Path:
-    """#1 Revenue Board — per-day crew $ this week by SALE date (days grow
-    as the week does, Carlos's B2B rule), SOW base comp."""
-    from automations.b2b_metrics.rep_boards import render_table_png
-    soh = load_soh(log=log)
-    if not soh:
-        raise RuntimeError("revenue board needs the SaraPlus relay")
-    ix, orders, pulled_at = soh
-    start = today - dt.timedelta(days=(today.weekday() + 1) % 7)  # Sunday
-    days = [start + dt.timedelta(days=i)
-            for i in range((today - start).days + 1)]
-    cols_lbl = [d.strftime("%a %-m/%-d") for d in days] + ["Week Total"]
-    per: Dict[str, dict] = {}
-    for r in orders:
-        od = _parse_date(_soh_cell(ix, r, "Order Date"))
-        rep = _soh_cell(ix, r, "User Name")
-        if not rep or od is None or not (start <= od <= today):
-            continue
-        amt = price_order(ix, r)
-        d = per.setdefault(rep, {})
-        d[od] = d.get(od, 0.0) + amt
-
-    def _cells(d):
-        cells = {}
-        tot = 0.0
-        for day, lbl in zip(days, cols_lbl):
-            v = d.get(day, 0.0)
-            tot += v
-            cells[lbl] = {"rate": f"${v:,.0f}"} if v else {}
-        cells["Week Total"] = {"rate": f"${tot:,.0f}", "color": ""}
-        return cells
-
-    rows = [("Crew Total", "", True,
-             _cells({day: sum(d.get(day, 0.0) for d in per.values())
-                     for day in days}))]
-    for rep in sorted(per, key=lambda k: -sum(per[k].values())):
-        rows.append((rep, "", False, _cells(per[rep])))
-    log(f"[nds] revenue board: {len(per)} rep(s), {len(days)} day(s)")
-    return render_table_png(
-        "NDS — REVENUE BOARD",
-        f"Carlos's crew on his own NDS code — week of {start:%-m/%-d} through "
-        f"{today:%-m/%-d} by SALE date, ATT-D2D-OOF SOW at base comp "
-        f"(Tier 3-3, OOF; add-ons not in the export). SaraPlus "
-        f"{pulled_at:%H:%M}.",
-        cols_lbl, rows, OUT_DIR / "nds_revenue_board.png")
 
 
 SECTIONS = [
