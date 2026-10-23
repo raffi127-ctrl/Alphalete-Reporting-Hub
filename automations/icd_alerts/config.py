@@ -368,6 +368,13 @@ def credit_tiers_here() -> bool:
                for r in active_enrollments())
 
 
+def nds_here() -> bool:
+    """Does this machine relay an NDS office? Those count their lines off the
+    Wireless grid (Carlos 2026-10-22)."""
+    return any(str(r.get("campaign") or "").strip().lower() == "nds"
+               for r in active_enrollments())
+
+
 def active_enrollments() -> "List[Dict]":
     """enrollments() minus PAUSED_KEYS -- what the sweep should walk.
 

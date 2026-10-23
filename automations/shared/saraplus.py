@@ -46,6 +46,9 @@ SERVICE_WIRELESS = "Wireless"
 GRID_WIRELESS = "#ctl00_MainContent_rgOrderDashboard_Wireless_ctl00"
 # Found BY LABEL, and these exact words are also the keys they travel under.
 CREDIT_LABELS = ("Credit Checked", "Credit Passed")
+# What an NDS line is made of (Carlos 2026-10-22: upgrades, tablets and
+# wearables "shouldn't be counted as the sales that we made").
+LINE_LABELS = ("New Lines", "Port Lines", "Upgrade Lines", "Tablets", "Wearables")
 
 # 0-based column indices, per grid.
 COL_ROWTYPE = 1
@@ -764,9 +767,20 @@ def parse_credit(headers: List[str], rows: List[List[str]]) -> Optional[Dict[str
     aligned from the RIGHT, where the measure columns are. A grid whose labels
     are missing returns None, NOT {}: {} would say 'nobody ran a credit check'
     when the truth is that we could not read the grid."""
+    return _by_label(headers, rows, CREDIT_LABELS)
+
+
+def parse_lines(headers: List[str], rows: List[List[str]]) -> Optional[Dict[str, Dict[str, int]]]:
+    """{UPPERCASE NAME: {'New Lines': n, 'Port Lines': n, 'Upgrade Lines': n,
+    'Tablets': n, 'Wearables': n}}, reps with any of them only. Same rules as
+    parse_credit: by label, None when the labels are not there."""
+    return _by_label(headers, rows, LINE_LABELS)
+
+
+def _by_label(headers, rows, labels) -> Optional[Dict[str, Dict[str, int]]]:
     want = {lbl: i for i, h in enumerate(headers or [])
-            for lbl in CREDIT_LABELS if str(h).strip() == lbl}
-    if len(want) < len(CREDIT_LABELS):
+            for lbl in labels if str(h).strip() == lbl}
+    if len(want) < len(labels):
         return None
     out: Dict[str, Dict[str, int]] = {}
     for r in agent_rows(rows, AGENT_ROW):
@@ -777,10 +791,10 @@ def parse_credit(headers: List[str], rows: List[List[str]]) -> Optional[Dict[str
         key = strip_office(r[2])
         if not key:
             continue
-        got = out.setdefault(key, {lbl: 0 for lbl in CREDIT_LABELS})
+        got = out.setdefault(key, {lbl: 0 for lbl in labels})
         for lbl, j in idx.items():
             got[lbl] += _int(r[j])
-    return {k: v for k, v in out.items() if v["Credit Checked"] or v["Credit Passed"]}
+    return {k: v for k, v in out.items() if any(v.values())}
 
 
 def grid_headers(page, grid: str) -> List[str]:

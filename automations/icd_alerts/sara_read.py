@@ -889,25 +889,34 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
             # in it; everybody else's sweep stays three passes long. Its
             # failure costs only itself: None means "not read this time",
             # which sends nothing rather than a day of zeros.
-            credit = None
-            if C.credit_tiers_here():
+            # NDS offices read it too, for their line counts.
+            credit = lines = None
+            if C.credit_tiers_here() or C.nds_here():
                 try:
                     w_rows = S._run_report(page, base, day, S.SERVICE_WIRELESS,
                                            S.GRID_WIRELESS, log=log)
-                    credit = S.parse_credit(S.grid_headers(page, S.GRID_WIRELESS),
-                                            w_rows)
-                    if credit is None:
-                        log("Wireless grid has no Credit Checked / Credit "
-                            "Passed labels -- not sending credit checks")
-                    else:
-                        log("Wireless pass: credit checks for %d rep(s)"
-                            % len(credit))
+                    w_head = S.grid_headers(page, S.GRID_WIRELESS)
+                    if C.credit_tiers_here():
+                        credit = S.parse_credit(w_head, w_rows)
+                        if credit is None:
+                            log("Wireless grid has no Credit Checked / Credit "
+                                "Passed labels -- not sending credit checks")
+                        else:
+                            log("Wireless pass: credit checks for %d rep(s)"
+                                % len(credit))
+                    if C.nds_here():
+                        lines = S.parse_lines(w_head, w_rows)
+                        if lines is None:
+                            log("Wireless grid has no New/Port/Upgrade Lines, "
+                                "Tablets, Wearables labels -- NL left as read")
+                        else:
+                            log("Wireless pass: lines for %d rep(s)" % len(lines))
                 except Exception as e:  # noqa: BLE001 — the rest still stands
                     log("Wireless pass failed (%s) — tablet + sales unaffected"
                         % type(e).__name__)
 
             return {"empty_evidence": empty_evidence, "records": records,
-                    "sales": sales, "credit": credit}
+                    "sales": sales, "credit": credit, "lines": lines}
         finally:
             try:
                 ctx.close()

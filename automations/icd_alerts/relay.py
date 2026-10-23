@@ -70,6 +70,32 @@ def _with_credit(sales: Dict, credit: Optional[Dict], rec: Optional[Dict]) -> Di
     return out
 
 
+def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
+    """NDS lines off the Wireless grid instead of SaraPlus's line count
+    (Carlos 2026-10-22: "Jacob at 11 lines. Seven of those are ported, four
+    of those are upgrade lines" ... tablets and wearables "shouldn't be
+    counted as the sales that we made, at least for NDS").
+
+        NL     = New Lines + Port Lines - Tablets - Wearables
+        Int Up += Upgrade Lines   (the board's Upgrades section, outside TOTALS)
+
+    Line Count is New + Port + Upgrade, and Phones + Tablets + Wearables is the
+    same lines split by device, so taking the devices off New + Port assumes a
+    tablet or watch is never an upgrade. A rep missing from the grid sold no
+    lines. None (not read) leaves the AT&T grid's count as it was.
+    """
+    if lines is None or str((rec or {}).get("campaign") or "").strip().lower() != "nds":
+        return sales
+    out = {k: dict(v) for k, v in (sales or {}).items()}
+    for rep in set(out) | set(lines):
+        got = lines.get(rep) or {}
+        row = out.setdefault(str(rep), {m: 0 for m in _sale_metrics(rec)})
+        row["NL"] = max(int(got.get("New Lines", 0)) + int(got.get("Port Lines", 0))
+                        - int(got.get("Tablets", 0)) - int(got.get("Wearables", 0)), 0)
+        row["Int Up"] = int(row.get("Int Up", 0) or 0) + int(got.get("Upgrade Lines", 0))
+    return out
+
+
 def _sale_metrics(rec: Optional[Dict] = None):
     """The metric names this enrollment's sales come in."""
     from automations.shared import sale_hype as H
@@ -378,8 +404,9 @@ def machine_label() -> str:
 
 def payload(records: Dict[str, int], day: dt.date,
             rec: Optional[Dict] = None, sales: Optional[Dict] = None,
-            credit: Optional[Dict] = None) -> Dict:
+            credit: Optional[Dict] = None, lines: Optional[Dict] = None) -> Dict:
     rec = rec or _endpoint()
+    sales = _nds_lines(sales or {}, lines, rec)
     body = {
         "office_key": rec["office_key"],
         "key": rec["relay_key"],
@@ -720,12 +747,13 @@ def report_fault(stage: str, summary: str, detail: str = "",
 
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          sales: Optional[Dict] = None, dry_run: bool = False,
-         office_key: str = "", log=print, credit: Optional[Dict] = None) -> Dict:
+         office_key: str = "", log=print, credit: Optional[Dict] = None,
+         lines: Optional[Dict] = None) -> Dict:
     """POST one sweep's totals. Returns the decoded reply, or raises RelayError
     with something an owner can act on."""
     day = day or C.today()
     rec = _endpoint(office_key)
-    body = payload(records, day, rec, sales=sales, credit=credit)
+    body = payload(records, day, rec, sales=sales, credit=credit, lines=lines)
 
     if dry_run:
         log("dry run -- would send %d rep(s) with credit checks and %d with "

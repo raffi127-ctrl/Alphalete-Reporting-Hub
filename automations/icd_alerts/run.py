@@ -368,6 +368,8 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # Wireless credit checks, offices on the three alerts only; None when
         # this office is not one of them or the pass was not read.
         credit = read.get("credit")
+        # NDS line counts off the same grid; None leaves NL as read.
+        lines = read.get("lines")
         # AN EMPTY GRID DURING SELLING HOURS IS A FAULT WITH EVIDENCE, once an
         # hour, not a quiet day of zeros (Steve McElwee 2026-10-21).
         if (read.get("empty_evidence") and not sales_only
@@ -451,7 +453,7 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         current = dict(data.get(day.isoformat()) or {})
         try:
             R.send(current, day, sales=sales, dry_run=dry_run,
-                   office_key=att_key, log=_log, credit=credit)
+                   office_key=att_key, log=_log, credit=credit, lines=lines)
         except R.RelayError as e:
             _log("could not send this time: %s" % e)
             return 1
@@ -472,7 +474,7 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
     # The real work. Totals go over; what gets SAID is decided on our side.
     try:
         R.send(current, day, sales=sales, dry_run=dry_run,
-               office_key=att_key, log=_log, credit=credit)
+               office_key=att_key, log=_log, credit=credit, lines=lines)
     except R.RelayError as e:
         # Not fatal and not the owner's problem to solve: SaraPlus is
         # cumulative, so the next run hands over the whole day again.
