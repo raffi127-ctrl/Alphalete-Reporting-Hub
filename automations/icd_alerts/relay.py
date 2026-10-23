@@ -47,6 +47,29 @@ AGENT_VERSION = "icd_alerts/5"   # 2 = sales, 3 = names its machine,
 SALE_METRICS = ("Int", "Int Up", "DTV", "NL")
 
 
+def _with_credit(sales: Dict, credit: Optional[Dict], rec: Optional[Dict]) -> Dict:
+    """Ride the Wireless credit checks INSIDE each rep's sales.
+
+    WHY THERE AND NOT A FIELD OF THEIR OWN: the relay script stores the sales
+    JSON as it arrives, so this needs no redeploy of the Apps Script, and
+    every reader of that JSON picks the metrics it knows by name (the sale
+    alerts, the board, gap call-outs, reconcile) -- two extra keys change no
+    number anywhere. Only offices on the three alerts (CREDIT_TIER_KEYS), and
+    only when the pass was actually read: None adds nothing at all, so the
+    poster never mistakes "not read" for "no credit checks".
+    """
+    from automations.icd_alerts import config as C
+    from automations.shared import saraplus as S
+    if credit is None or not C.credit_tiers_wanted((rec or {}).get("office_key")):
+        return sales
+    out = {k: dict(v) for k, v in sales.items()}
+    for rep, got in sorted(credit.items()):
+        row = out.setdefault(str(rep), {m: 0 for m in _sale_metrics(rec)})
+        for lbl in S.CREDIT_LABELS:
+            row[lbl] = int((got or {}).get(lbl, 0) or 0)
+    return out
+
+
 def _sale_metrics(rec: Optional[Dict] = None):
     """The metric names this enrollment's sales come in."""
     from automations.shared import sale_hype as H
@@ -354,7 +377,8 @@ def machine_label() -> str:
 
 
 def payload(records: Dict[str, int], day: dt.date,
-            rec: Optional[Dict] = None, sales: Optional[Dict] = None) -> Dict:
+            rec: Optional[Dict] = None, sales: Optional[Dict] = None,
+            credit: Optional[Dict] = None) -> Dict:
     rec = rec or _endpoint()
     body = {
         "office_key": rec["office_key"],
@@ -369,8 +393,9 @@ def payload(records: Dict[str, int], day: dt.date,
         #
         # Sent as the totals so far today, like the credit checks: what is NEW
         # is worked out on our side, where the last-posted state lives.
-        "sales": {str(k): {m: int(v.get(m, 0) or 0) for m in _sale_metrics(rec)}
-                  for k, v in sorted((sales or {}).items())},
+        "sales": _with_credit(
+            {str(k): {m: int(v.get(m, 0) or 0) for m in _sale_metrics(rec)}
+             for k, v in sorted((sales or {}).items())}, credit, rec),
         "agent": AGENT_VERSION,
         # WHICH computer this came from. An older relay ignores the key, so an
         # office that has not updated simply stays as one unnamed machine.
@@ -695,12 +720,12 @@ def report_fault(stage: str, summary: str, detail: str = "",
 
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          sales: Optional[Dict] = None, dry_run: bool = False,
-         office_key: str = "", log=print) -> Dict:
+         office_key: str = "", log=print, credit: Optional[Dict] = None) -> Dict:
     """POST one sweep's totals. Returns the decoded reply, or raises RelayError
     with something an owner can act on."""
     day = day or C.today()
     rec = _endpoint(office_key)
-    body = payload(records, day, rec, sales=sales)
+    body = payload(records, day, rec, sales=sales, credit=credit)
 
     if dry_run:
         log("dry run -- would send %d rep(s) with credit checks and %d with "

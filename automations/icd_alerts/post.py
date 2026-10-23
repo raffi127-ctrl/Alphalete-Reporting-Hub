@@ -31,7 +31,8 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from automations.icd_alerts import offices as O
-from automations.shared.credit_check_line import records_line
+from automations.shared.credit_check_line import (credit_line, passed_line,
+                                                  records_line, tablet_line)
 from automations.shared.sale_hype import shape as H_SHAPE
 from automations.icd_alerts import rep_names as RN
 
@@ -163,7 +164,8 @@ class RelayNotConfigured(RuntimeError):
 # --- the pure part (unit-tested offline) ------------------------------------
 def decide(records: Dict[str, int],
            last_posted: Optional[Dict[str, int]],
-           name_for: Optional[Callable[[str], str]] = None
+           name_for: Optional[Callable[[str], str]] = None,
+           line: Callable[[str, int, int], str] = records_line
            ) -> Tuple[List[str], Dict[str, int], bool]:
     """(lines to post, what to record as posted, was this a baseline).
 
@@ -191,9 +193,68 @@ def decide(records: Dict[str, int],
     for rep, n in sorted(records.items()):
         was = prev.get(rep, 0)
         if n > was:
-            lines.append(records_line(show(rep), n, n - was))
+            lines.append(line(show(rep), n, n - was))
             merged[rep] = n
     return lines, merged, False
+
+
+# The Wireless credit checks ride inside each rep's sales under these keys
+# (relay._with_credit). Their "last posted" lives in the same place.
+CREDIT_KEYS = ("Credit Checked", "Credit Passed")
+
+
+def _credit_of(sales: Optional[Dict]) -> Dict[str, Dict[str, int]]:
+    out = {}
+    for rep, m in (sales or {}).items():
+        if isinstance(m, dict) and any(k in m for k in CREDIT_KEYS):
+            out[str(rep)] = {k: int(m.get(k, 0) or 0) for k in CREDIT_KEYS}
+    return out
+
+
+def decide_credit(sales: Optional[Dict], last_sales: Optional[Dict],
+                  name_for: Optional[Callable[[str], str]] = None
+                  ) -> Tuple[List[str], Dict[str, Dict[str, int]], bool]:
+    """(credit-check + passed lines, what to record, was this a baseline).
+
+    THE SAME TWO RULES AS EVERYTHING ELSE HERE. BASELINE: the first time an
+    office's credit checks are seen today they are recorded, not announced --
+    that is the first relay of the day, and it is also the sweep right after
+    the office's machine updates to the agent that reads them, which would
+    otherwise declare the whole morning at once. A single rep moving from
+    nothing still announces: that is a genuine first check, not a backlog.
+    ONLY UP: a short grid reads low, and believing it re-announces later.
+
+    A FAILED CHECK NEVER POSTS: it is a 'Credit Checked' with no 'Credit
+    Passed' after it, so it gets the second line and simply never the third.
+    """
+    show = name_for or (lambda n: n)
+    now = _credit_of(sales)
+    prev = _credit_of(last_sales)
+    if last_sales is None or (not prev and len(
+            [r for r, m in now.items() if any(m.values())]) > 1):
+        return [], now, True
+    merged = {r: dict(m) for r, m in prev.items()}
+    lines = []
+    for rep, m in sorted(now.items()):
+        was = prev.get(rep, {k: 0 for k in CREDIT_KEYS})
+        rec = merged.setdefault(rep, {k: 0 for k in CREDIT_KEYS})
+        for key, line in (("Credit Checked", credit_line),
+                          ("Credit Passed", passed_line)):
+            n, w = m[key], was.get(key, 0)
+            if n > w:
+                lines.append(line(show(rep), n, n - w))
+                rec[key] = n
+    return lines, merged, False
+
+
+def with_credit_state(merged_sales: Dict, credit: Dict[str, Dict[str, int]]) -> Dict:
+    """The sales state to write back, carrying the credit counts posted so far."""
+    if not credit:
+        return merged_sales
+    out = {k: dict(v) for k, v in (merged_sales or {}).items()}
+    for rep, m in credit.items():
+        out.setdefault(rep, {}).update(m)
+    return out
 
 
 def decide_sales(sales: Dict, last_posted: Optional[Dict],
@@ -1519,7 +1580,21 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         records = _loads(row[COL_RECORDS]) or {}
         last = _loads(row[COL_LAST_POSTED] if len(row) > COL_LAST_POSTED else "")
         show = RN.resolver(name_fixes, key)
-        lines, merged, baseline = decide(records, last, show)
+        # THE THREE ALERTS for the offices that opted in (Carlos 2026-10-22):
+        # the Records count says "on the tablet", and the Wireless credit
+        # checks riding in the sales add "got a credit check" / "got a passed
+        # credit check". Everyone else keeps today's single line.
+        from automations.icd_alerts import config as _CFG
+        tiers = _CFG.credit_tiers_wanted(key)
+        lines, merged, baseline = decide(
+            records, last, show, line=tablet_line if tiers else records_line)
+        credit_state = {}
+        if tiers:
+            c_lines, credit_state, _ = decide_credit(
+                _loads(row[COL_SALES] if len(row) > COL_SALES else "") or {},
+                _loads(row[COL_LAST_POSTED_SALES]
+                       if len(row) > COL_LAST_POSTED_SALES else ""), show)
+            lines += c_lines
         # DOES THE PRE-SALE STEP COUNT ANYTHING REAL FOR THIS CAMPAIGN? On
         # Box it does not: one deal can leave several draft contracts behind
         # it, so the number would be wrong every time (Ryan McSpadden,
@@ -1669,7 +1744,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         if lines or hype_lines or baseline or sales_baseline or catching_up:
             tab.update_cell(rownum, COL_LAST_POSTED + 1, json.dumps(merged))
             tab.update_cell(rownum, COL_LAST_POSTED_SALES + 1,
-                            json.dumps(merged_sales))
+                            json.dumps(with_credit_state(merged_sales,
+                                                         credit_state)))
             tab.update_cell(rownum, COL_POSTED_AT + 1,
                             dt.datetime.now().isoformat(timespec="seconds"))
 

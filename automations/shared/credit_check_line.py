@@ -26,3 +26,29 @@ def records_line(rep: str, total: int, gained: int) -> str:
     # turns McClain into Mcclain. [[feedback_report_formatting_standard]]
     return (":mag: %s just ran %s credit check%s (%d today)."
             % (titlecase_name(rep), gained, "" if gained == 1 else "s", total))
+
+
+# THE THREE ALERTS (Carlos 2026-10-22, option A), for the offices that said YES
+# (icd_alerts.config.CREDIT_TIER_KEYS). records_line above called someone on
+# the tablet a credit check; these keep the three steps apart, and a credit
+# check that FAILS is never posted -- it only never reaches the third line.
+def tablet_line(rep: str, total: int, gained: int) -> str:
+    """Someone went on the tablet -- the 'AT&T Internet' Records count."""
+    who = "someone" if gained == 1 else "%d people" % gained
+    return (":mag: %s got %s on the tablet (%d today)."
+            % (titlecase_name(rep), who, total))
+
+
+def credit_line(rep: str, total: int, gained: int) -> str:
+    """A credit check was actually run -- Wireless 'Credit Checked'."""
+    what = "a credit check" if gained == 1 else "%d credit checks" % gained
+    return (":credit_card: %s got %s (%d today)."
+            % (titlecase_name(rep), what, total))
+
+
+def passed_line(rep: str, total: int, gained: int) -> str:
+    """A credit check passed -- Wireless 'Credit Passed'."""
+    what = ("a passed credit check" if gained == 1
+            else "%d passed credit checks" % gained)
+    return (":white_check_mark: %s got %s (%d today)."
+            % (titlecase_name(rep), what, total))

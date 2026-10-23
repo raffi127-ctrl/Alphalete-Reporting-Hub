@@ -344,6 +344,29 @@ def _install_raw() -> Dict:
 #              His AT&T B2B key `carlos-b2batt` keeps running.
 PAUSED_KEYS = frozenset({"jamis10", "carlos"})
 
+# OFFICES ON THE THREE CREDIT-CHECK ALERTS (Carlos 2026-10-22, option A):
+# "got someone on the tablet" / "got a credit check" / "got a passed credit
+# check", failed checks never posted. OPT-IN: each owner answered YES to
+# Lucy's DM; an office that did not answer keeps today's single line. ONE
+# list for both halves -- the laptop reads the extra 'Wireless' pass only for
+# these (every other office's sweep stays as fast as it was), and the poster
+# switches the wording only for these.
+CREDIT_TIER_KEYS = frozenset({
+    "carlos-b2batt", "jairo15", "drew", "jacob", "tre", "jamis", "eveliz",
+    "valeria", "colten",                        # YES 2026-10-22
+    "maxamad", "kash",                          # YES 2026-10-23
+})
+
+
+def credit_tiers_wanted(office_key: str) -> bool:
+    return str(office_key or "").strip().lower() in CREDIT_TIER_KEYS
+
+
+def credit_tiers_here() -> bool:
+    """Does any office this machine relays for want the three alerts?"""
+    return any(credit_tiers_wanted(r.get("office_key"))
+               for r in active_enrollments())
+
 
 def active_enrollments() -> "List[Dict]":
     """enrollments() minus PAUSED_KEYS -- what the sweep should walk.
