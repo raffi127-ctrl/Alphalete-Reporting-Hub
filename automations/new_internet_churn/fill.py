@@ -351,7 +351,14 @@ def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
     drop out of the pull once she's let go (Selena Powers 2026-07-06). Flagging
     her as dark would block the run's retry and hold the Hub card red forever.
     Her stale row is surfaced separately (advisory) by the report's
-    ti.alert_terminated() hook, not here."""
+    ti.alert_terminated() hook, not here.
+
+    A rep who was filling ONLY in the longest bucket is AGING OUT, not dark
+    (Kiarri McBroom 2026-10-23, Captainship Wireless 90-day: 0/3 → 0/2 → gone,
+    every shorter bucket blank). No activation inside the shorter windows means
+    her last ones are about to leave the longest one too — dropping out of the
+    pull is the expected end, not a filter change. A rep pulled from a view's
+    filter still has recent numbers in the shorter buckets, so she still flags."""
     reps = parsed.get("reps", {})
     present_lc = {nm.lower() for nm, pd in reps.items()
                   if isinstance(pd, dict)
@@ -366,6 +373,18 @@ def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
         _is_terminated = _ti.terminated_lookup()
     except Exception:  # noqa: BLE001 — advisory cross-check must never break fill
         _is_terminated = lambda _n: False
+
+    def _days(period) -> int:
+        digits = str(period).split("-")[-1]
+        return int(digits) if digits.isdigit() else 0
+
+    longest = max(sections, key=_days) if sections else None
+
+    def _aging_out(name_lc: str) -> bool:
+        return not any(recent_active(values, s["rep_rows"][name_lc])
+                       for p, s in sections.items()
+                       if p != longest and name_lc in s["rep_rows"])
+
     out: dict = {}
     for period, sect in sections.items():
         dark = []
@@ -375,6 +394,8 @@ def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
             disp = (values[row - 1][0].strip()
                     if len(values) >= row and values[row - 1] else name_lc)
             if _is_terminated(disp):
+                continue
+            if period == longest and _aging_out(name_lc):
                 continue
             if recent_active(values, row):
                 dark.append(disp)
