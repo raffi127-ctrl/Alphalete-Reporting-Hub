@@ -209,8 +209,23 @@ def build(slot, jobs_in, *, logfn=print) -> List[dict]:
     jobs = [(o.knocks_office, [days[o.key]]) for o in offices]
     if compare and _norm(compare) not in {_norm(o.knocks_office) for o in offices}:
         jobs.append((compare, compare_days))
-    pulled = {name: (by_day, err) for name, by_day, err in
-              pull_offices_days(jobs, verbose=True, profile_dir=PROFILE_DIR)}
+    # A SESSION THAT DIES TAKES EVERY OFFICE WITH IT — AS FAILURES, NOT A CRASH
+    # (2026-10-21). pull_offices_days raises outright when ownerville's login
+    # is dead ("session expired or missing, and the unattended login ... did not
+    # reach a live session either"). That escaped build(), so the slot never
+    # printed its "eod: posted= skipped= failed=" line; knocks_intraday.sh reads
+    # that line to decide whether a pass did any work, saw none, and published
+    # NOTHING — no red card, no #claudecorrections alert. Cody, Haytham and Raf
+    # had no 9 PM board and Haytham was the one who noticed. Charging the error
+    # to each office lands it on the per-office failure path below, which is
+    # already loud.
+    try:
+        pulled = {name: (by_day, err) for name, by_day, err in
+                  pull_offices_days(jobs, verbose=True, profile_dir=PROFILE_DIR)}
+    except Exception as e:  # noqa: BLE001 — a dead session fails every office
+        logfn(f"[knocks] ❌ ownerville pull died for the whole slot: "
+              f"{type(e).__name__}: {str(e)[:200]}")
+        pulled = {name: ({}, e) for name, _days in jobs}
 
     # A failed comparison costs one line, never the board.
     chan_by_day, chan_err = pulled.get(compare, ({}, None))

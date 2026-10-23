@@ -64,6 +64,16 @@ SLOT_LINE=$(printf '%s\n' "$PASS_LINES" | grep -vE 'failed=0$' | tail -1)
 if [ -n "$SLOT_LINE" ]; then
     WORKED=1
     SLOT=$(printf '%s' "$SLOT_LINE" | sed -E 's/^\[knocks\] ([a-z0-9]+):.*$/\1/')
+elif [ "$rc" -ne 0 ]; then
+    # A CRASH IS NOT A QUIET TICK (2026-10-21). A run that dies before any slot
+    # prints its summary leaves no "posted=" line, and that used to read as
+    # "nothing due" — rc=1, no publish, no alert, Haytham's 9 PM board just gone.
+    # Name the slot from the "<slot> due:" line when there is one, so the red
+    # lands on the right phase.
+    WORKED=1
+    SLOT=$(tail -n +"$((START + 1))" "$LOG" 2>/dev/null \
+        | grep -oE '\[knocks\] (first|money|eod|h[0-9]{2}) due:' | tail -1 \
+        | sed -E 's/^\[knocks\] ([a-z0-9]+) due:$/\1/')
 fi
 
 # EACH SLOT IS ITS OWN PHASE ON THE HUB CARD (Megan 2026-08-25: "this should

@@ -308,8 +308,44 @@ def _handler(client, req):
     client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
 
 
+class _Stamped:
+    """A stream that starts every line with the time it was written.
+
+    WHY (2026-10-22): `/knocks` answered "the app did not respond" from about
+    6:12 PM on, and the listener's log could not say when it went deaf — 32,915
+    lines with no clock on any of them, so "was this line before or after the
+    failure?" had no answer. Wraps stdout AND stderr, so tracebacks from the
+    feature threads are stamped too."""
+
+    def __init__(self, stream):
+        self._s = stream
+        self._lock = threading.Lock()
+        self._bol = True    # at the beginning of a line
+
+    def write(self, text: str) -> int:
+        import datetime as _dt
+        with self._lock:
+            out = []
+            for part in text.splitlines(keepends=True):
+                if self._bol:
+                    out.append(_dt.datetime.now().strftime("[%Y-%m-%d %H:%M:%S] "))
+                out.append(part)
+                self._bol = part.endswith("\n")
+            self._s.write("".join(out))
+        return len(text)
+
+    def flush(self) -> None:
+        self._s.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._s, name)
+
+
 def run() -> None:
+    import sys
     from slack_sdk.socket_mode.builtin import SocketModeClient
+    sys.stdout = _Stamped(sys.stdout)
+    sys.stderr = _Stamped(sys.stderr)
     web = _web()
     client = SocketModeClient(app_token=_app_token(), web_client=web)
     client.socket_mode_request_listeners.append(_handler)
