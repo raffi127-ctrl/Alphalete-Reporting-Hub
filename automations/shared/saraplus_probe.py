@@ -62,6 +62,7 @@ def main(argv=None) -> int:
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 print("ua: %s" % page.evaluate("() => navigator.userAgent"))
+                base = None
                 try:
                     base = S._login(page, cr["email"], cr["password"],
                                     creds_hint="the sales board login", log=print)
@@ -70,8 +71,12 @@ def main(argv=None) -> int:
                     print("RESULT: %s: %s" % (type(e).__name__, str(e)[:700]))
                 print("final url: %s" % page.url)
                 landed = page.url
-                if args.columns and "DealerPages/" in landed:
-                    _dump_columns(page, landed.split("DealerPages/")[0] + "DealerPages/",
+                # _login's return value, NOT page.url: by the time it returns
+                # the page can sit on .../e/(S(..)) with no DealerPages/ in it
+                # (all four --columns runs on 2026-10-22 skipped the dump that
+                # way), and the Reporting Hub is a SIBLING of DealerPages/.
+                if args.columns and base:
+                    _dump_columns(page, base if base.endswith("/") else base + "/",
                                   args.columns, args.rows)
             finally:
                 ctx.close()
