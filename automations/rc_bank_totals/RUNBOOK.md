@@ -15,7 +15,8 @@ From `~/recruiting-report`: `python -m automations.rc_bank_totals.run <cmd>` wit
  Rows it flags MISSING or stale → check in that bank.
 **Both:** `run tableau` adds Business Security (Hub's Tableau session) to both JSONs .
 **Raf payout:** `run payout` sums the "Payout toward CC" table (Q45 down, same tab) for last Mon–Sun → `Payout toward CC` (0 if nothing paid).
-**Raf:** no Tiller yet, so his bank rows still come from the bank sites (the table below).
+**Raf:** `run tiller --who raf` writes all 13 of his bank/card rows from his Tiller sheet (Direct Fills, no logins).
+The tables below are the fallback if Tiller flags an account MISSING or stale.
 
 | Row (Carlos) | Source |
 |---|---|

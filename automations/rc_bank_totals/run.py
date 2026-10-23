@@ -3,7 +3,7 @@
 Mirrors the Loom steps:
   1. add  -> insert a fresh column B (copy of last week: formats + total formulas), set the WE header,
              clear the typed numbers but keep the formula rows and the carried rows (Raf Debt, etc.)
-  tiller -> pull bank/card balances from Tiller into <who>_<date>.json (Carlos today; Raf once he has Tiller)
+  tiller -> pull bank/card balances from Tiller into <who>_<date>.json (both have Tiller)
   tableau -> Business Security for both (Hub's Tableau session)
   payout  -> Raf's Payout toward CC = his CC payments table (Q:S) summed for the Mon–Sun week
   2. fill -> write balances by ROW LABEL from a JSON file  {"Personal": 7458.42, ...}
@@ -51,10 +51,14 @@ PEOPLE = {
         "sheet": "1M2Vy2qo3N1AND1tVuKugtT_FizYw_6lBD3t2tcRLFYg", "gid": 1018067572, "last_row": 26,
         "header": lambda d: float(f"{d.month}.{d.day}"),   # sheet stores 10/4 as the number 10.4
         "carry": ["CareCredit (July 26)", "AMEX - Dropship"],
-        "tiller": None,   # Raf has no Tiller yet — fill these account #s in once his sheet exists
+        # Raf's Tiller sheet (Direct Fills, set up 2026-10-22) — Accounts tab, keyed by account #
+        "tiller": "10J8XiLg3HOEPuvd788wopPf-1fJlFCFkCo9B6CXck1Q",
         "tiller_rows": {
-            "1096": "Local Office", "5289": "Shared LO CC - 5289 - (53.2k)", "1909": "Local Office CC - 1909 - (90k)",
+            "1096": "Local Office", "5180": "LTD", "0339": "Personal", "1101": "Personal Savings",
+            "3227": "STR Carrollton", "3966": "ARS",
+            "5289": "Shared LO CC - 5289 - (53.2k)", "1909": "Local Office CC - 1909 - (90k)",
             "5719": "Org CC - 5719 - (24k)", "0586": "Lifestyle CC - 0586 - (60k)", "6468": "Personal CC - 6468 - (10k)",
+            "0049": "BOFA - LTD (20K)", "1009": "AMEX - Local Office CC",
         },
     },
 }
