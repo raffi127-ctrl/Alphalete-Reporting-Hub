@@ -72,7 +72,15 @@ def stale_blocks(col_ab: List[List[str]], today: dt.date) -> List[str]:
     a box/section header; B is always the NEWEST day on these tabs. A header
     must be today, and the rows under it (up to the next header) must hold at
     least one number in B. A tab with no date header at all says nothing
-    about today and is not held on."""
+    about today and is not held on.
+
+    A box that is empty today AND in the day(s) before it (C:D) has no data
+    yet — nothing late is coming, so it is not held on. Atef's NDS churn,
+    2026-10-22/23: he moved to NDS ~10/14, so his 30/60/90-day boxes have been
+    blank since the tab was made while 0-30 fills daily, and the build alerted
+    'column is empty' every morning for a fill that does not exist. A fill that
+    inserted today's column but has not written it still has yesterday's
+    numbers in C:D, so it still holds."""
     heads = []
     for i, row in enumerate(col_ab):
         b = row[1] if len(row) > 1 else ""
@@ -86,8 +94,10 @@ def stale_blocks(col_ab: List[List[str]], today: dt.date) -> List[str]:
             problems.append(f"{name}: newest day {d.month}/{d.day}")
             continue
         end = heads[n + 1][0] if n + 1 < len(heads) else len(col_ab)
-        if not any(_HAS_DIGIT.search(r[1] if len(r) > 1 else "")
-                   for r in col_ab[i + 1:end]):
+        rows = col_ab[i + 1:end]
+        if not any(_HAS_DIGIT.search(r[1] if len(r) > 1 else "") for r in rows):
+            if not any(_HAS_DIGIT.search(c) for r in rows for c in r[2:4]):
+                continue   # never had numbers — no data yet, nothing late
             problems.append(f"{name}: {d.month}/{d.day} column is empty")
     return problems
 
@@ -128,7 +138,7 @@ def check(books, today: dt.date, logfn=print) -> Dict[str, List[str]]:
     """{'<tab>': [problems]} for every tab not ready yet ({} = all fresh)."""
     out: Dict[str, List[str]] = {}
     for sh, titles in books.values():
-        ranges = [f"'{t}'!A1:B400" for t in titles]
+        ranges = [f"'{t}'!A1:D400" for t in titles]
         try:
             res = sh.values_batch_get(ranges)
         except Exception as e:  # noqa: BLE001

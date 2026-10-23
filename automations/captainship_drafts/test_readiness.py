@@ -39,8 +39,16 @@ class StaleBlocks(unittest.TestCase):
         # The fill inserts the dated column BEFORE writing it; a header alone
         # must not read as filled. The '%' label under Rep is not a number.
         g = _tab(("ABP", "Mon 9/21/26", ["", ""]))
+        g[1] += ["", "41%"]            # yesterday's number, now in D
         self.assertEqual(R.stale_blocks(g, TODAY),
                          ["ABP: 9/21 column is empty"])
+
+    def test_box_that_never_had_numbers_is_not_held_on(self):
+        # Atef's NDS churn 2026-10-23: 0-30 fills, 30/60/90 have been blank
+        # since the tab was made — no data yet, not a late fill.
+        g = _tab(("NDS CHURN 0-30", "Mon 9/21/26", ["6.76%", "6.80%"]),
+                 ("NDS CHURN 30", "Mon 9/21/26", ["", ""]))
+        self.assertEqual(R.stale_blocks(g, TODAY), [])
 
     def test_one_stale_box_among_fresh(self):
         g = _tab(("CANCEL 0-30", "Mon 9/21/26", ["12%"]),
