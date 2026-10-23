@@ -14498,6 +14498,28 @@
    "timeout_minutes": 30,
    "verify": null
   },
+  "first_round_audit_checker": {
+   "hand_run_only": true,
+   "on_scheduler": false,
+   "_note": "Lucy's 1st round audit checker, LIVE: a thread in #ars-recruiting-numbers tagging Camila with what's new / fixed. It already runs inside first_round_scorecards after the 6 PM post; this is the hand-run handle (saves the 'already told' state).",
+   "display_name": "1st Round Audit Checker",
+   "source_type": "api",
+   "command": [
+    "automations.first_round_scorecards.checker"
+   ],
+   "base_args": [
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 15,
+   "verify": null
+  },
   "first_round_audit_checker_preview": {
    "hand_run_only": true,
    "on_scheduler": false,

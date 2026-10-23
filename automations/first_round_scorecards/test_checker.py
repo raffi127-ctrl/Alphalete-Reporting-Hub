@@ -35,6 +35,11 @@ class Problems(unittest.TestCase):
         self.assertIn("gone:Steve McElwee", got)
         self.assertNotIn("gone:Khalil Mansour", got)
 
+    def test_an_office_not_audited_on_purpose(self):
+        acc = {"josh@x.com": {"zoom": "ZOOM JOSH", "morning": "Joshua Ghorbani",
+                              "afternoon": "Joshua Ghorbani", "key": ""}}
+        self.assertEqual(ck.problems(acc, set(), set(), {}, None), {})
+
     def test_recordings_left_out_of_the_post(self):
         got = ck.problems({}, set(), set(), {"Jennifer Figueroa": 3, "Mercy Ohiokhai": 0}, None)
         self.assertEqual(list(got), ["missed:Jennifer Figueroa"])

@@ -35,11 +35,14 @@ except Exception:  # noqa: BLE001
     pass
 
 # run.py calls this after the live post only once Eve OKs the sample in her DM.
-LIVE = False
+LIVE = True                         # Eve 10/22: sample OK, to the channel
 CAMILA = "U07FWSYP3NV"              # Camila Hornos Kraschinsky
 STATE = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards" / "checker.json"
 SEEN_DAYS = 7                       # a login seen under any key this far back = covered
 _NO_OFFICE = {"", "LOST"}
+# Offices whose 1st rounds aren't audited on purpose: never flagged.
+# Joshua interviews on his own Zoom (Camila 10/21: not needed).
+NOT_AUDITED = {"Joshua Ghorbani"}
 
 
 def offices(z: Dict[str, str]) -> List[str]:
@@ -47,7 +50,7 @@ def offices(z: Dict[str, str]) -> List[str]:
     out = []
     for o in (z.get("morning", ""), z.get("afternoon", "")):
         o = " ".join(o.split())
-        if o.upper() not in _NO_OFFICE and o not in out:
+        if o.upper() not in _NO_OFFICE and o not in NOT_AUDITED and o not in out:
             out.append(o)
     return out
 
