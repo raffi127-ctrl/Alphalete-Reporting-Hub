@@ -348,6 +348,20 @@ def load_soh(log=print):
 
     crew = [r for r in rows[1:] if len(r) > ix["User Name"]
             and _is_crew(r[ix["User Name"]].strip())]
+    # Who entered the RECENT orders — when this week's sales exist but the
+    # crew filter misses them, the names here say why (2026-10-23: the
+    # revenue board stuck at one rep while Tableau showed 36 crew lines).
+    import collections as _coll
+    _recent = _coll.Counter()
+    for r in rows[1:]:
+        d = (_parse_date(r[ix["Order Date"]])
+             if len(r) > ix["Order Date"] else None)
+        if d and (dt.date.today() - d).days <= 6 \
+                and len(r) > ix["User Name"]:
+            _recent[r[ix["User Name"]].strip() or "(blank)"] += 1
+    log("[nds] SOH last-7d orders by entry name: "
+        + (", ".join(f"{k}={v}" for k, v in _recent.most_common(10))
+           or "NONE"))
     log(f"[nds] SOH: {len(rows) - 1} orders, crew {len(crew)}, pulled "
         f"{pulled_at:%m/%d %H:%M}")
     if crew:
