@@ -33,6 +33,7 @@ from automations.rc_bank_totals import run as bank  # noqa: E402  (sheets(), cre
 
 OUT = REPO / "output" / "rc_weekly_financials"   # git-ignored: money never goes in the repo
 EPOCH = dt.date(1899, 12, 30)
+BAS_ANCHOR = dt.date(2026, 8, 2)   # a week with a Bas override; they repeat every 28 days
 
 VANTURA = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"     # Vantura Master Sales Board, tab P&L 2026
 AIO_RAF = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"     # All in One - local office Raf, tab RAF PNL 2026 (NEW)
@@ -56,6 +57,7 @@ MANUAL = {
         "Recruiting Bonuses (Aisha)": "Apex",
         "Zach's Pay (overrides)": "you fill it",
         "Zach's Pay (true up + taxes) - 22/24": "Slack DM Raf ↔ Zach, last one sent",
+        "Profit Share": "left blank for now (Maud 2026-10-23)",
     },
 }
 # Rows kept as copied from last week but worth a look.
@@ -66,7 +68,7 @@ CHECK = {
     },
     "raf": {
         "Office Space": "Loom says it changes — confirm",
-        "Bas Overrides": "set to 0 — one lands every 4 weeks",
+        "Bas Overrides": "0, except every 4th week (8.2, 8.30, 9.27, 10.25, …) it's left blank for you",
     },
 }
 
@@ -312,8 +314,9 @@ def tableau(weeks: list[dt.date]) -> dict:
                     wk = dt.date(2000 + int(y), int(m), int(d))
                     o = P.parse_override_summary(rows, f"{m}/{d}/20{y}")
                     for who, owner in bank.OWNERS.items():
-                        if owner in o:
-                            res["org"][who][wk.isoformat()] = o[owner]
+                        if owner in o:   # a week on a period edge shows in BOTH periods — the real number is the sum
+                            k = wk.isoformat()
+                            res["org"][who][k] = round(res["org"][who].get(k, 0) + o[owner], 2)
             except Exception as e:  # noqa: BLE001
                 print(f"  ORG override summary {lab}: {str(e)[:120]}")
             f = OUT / f"_raf_bonus_P{n}.csv"
@@ -359,7 +362,8 @@ def raf_bonus_weeks(rows) -> dict:
 def pull(we: dt.date) -> Path:
     prior, before = we - dt.timedelta(days=7), we - dt.timedelta(days=14)
     print(f"WE {we} (week prior {prior}, update {before})")
-    tab = tableau([prior, before])
+    nc_weeks = [we - dt.timedelta(days=7 * k) for k in range(1, 5)]   # NC overrides: re-check the 4 prior weeks
+    tab = tableau(nc_weeks)
     data = {"we": we.isoformat(), "carlos": {}, "raf": {}, "prior": {"carlos": {}, "raf": {}}}
     c, r = data["carlos"], data["raf"]
     c["Maud"] = 0
@@ -382,12 +386,16 @@ def pull(we: dt.date) -> Path:
         data["prior"]["raf"].setdefault(hdr(prior), {}).update(ind_prev)
     r["NC over rides"] = 0
     r["ATT Program over ride"] = 0
-    r["Bas Overrides"] = 0
-    dd_week = (we - dt.timedelta(days=1)).isoformat()   # the DD week showing on Friday = Saturday before the WE
+    # a Bas override lands every 4 weeks (8.2, 8.30, 9.27, 10.25 …): leave that week blank for Maud, else 0
+    r["Bas Overrides"] = "" if (we - BAS_ANCHOR).days % 28 == 0 else 0
+    # Captainship = DD Detail Captain Bonus for the DD week ending the Saturday 8 days before the WE
+    # (Maud 2026-10-23: WE 10.25 = DD week 10/17 = 18,806.50)
+    dd_week = (we - dt.timedelta(days=8)).isoformat()
     if dd_week in tab["captain"]:
         r["Captainship"] = tab["captain"][dd_week]
     else:
-        print(f"  Raf captain: no DD week {dd_week} yet (have {sorted(tab['captain'])}) — row kept from last week")
+        r["Captainship"] = ""
+        notes.append(f"raf Captainship: DD Detail has no DD week {dd_week} (has {sorted(tab['captain'])}) — left blank")
     if tab["security"].get("carlos") is not None:
         c["Money in Security"] = tab["security"]["carlos"]
     if tab["security"].get("raf") is not None:
@@ -397,12 +405,14 @@ def pull(we: dt.date) -> Path:
         got = ars(wk)
         if got:
             data["prior"]["raf"].setdefault(hdr(wk), {}).update(got)
-    for wk in (prior, before):
+    for wk in nc_weeks:
         k = wk.isoformat()
-        if k in tab["org"]["carlos"]:
-            data["prior"]["carlos"].setdefault(hdr(wk), {})["Overrides"] = tab["org"]["carlos"][k]
         if k in tab["org"]["raf"]:
             data["prior"]["raf"].setdefault(hdr(wk), {})["NC over rides"] = tab["org"]["raf"][k]
+        if k in tab["org"]["carlos"]:
+            data["prior"]["carlos"].setdefault(hdr(wk), {})["Overrides"] = tab["org"]["carlos"][k]
+    for wk in (prior, before):
+        k = wk.isoformat()
         if k in tab["att"]:
             data["prior"]["raf"].setdefault(hdr(wk), {})["ATT Program over ride"] = tab["att"][k]
     data["tableau_raw"] = tab
@@ -496,6 +506,10 @@ def fill(who: str, we: dt.date, tab: str | None, values: dict, prior: dict, dry:
         if val is None:
             todo.append(f"{label} — source had no number")
             continue
+        if val == "":   # deliberately blank this week (shows turquoise)
+            data.append({"range": f"'{tab}'!{L}{i}", "values": [[""]]})
+            todo.append(f"{label} — left blank this week")
+            continue
         cur = (v[i - 1] + [""] * (col + 1))[col]
         if str(cur).startswith("="):
             print(f"  skip {label!r} (formula row)")
@@ -520,12 +534,41 @@ def fill(who: str, we: dt.date, tab: str | None, values: dict, prior: dict, dry:
     if not dry:
         s.values().batchUpdate(spreadsheetId=p["sheet"], body={"valueInputOption": "USER_ENTERED", "data": data}).execute()
         print(f"  wrote {len(data)} cells")
+        if who == "raf":
+            highlight_empty(s, p, tab)
     print("  FOR YOU TO FILL:" if todo else "  nothing left blank")
     for t in todo:
         print(f"    - {t}")
     print("  CHECK (kept from last week):")
     for k, why in CHECK[who].items():
         print(f"    - {k} — {why}")
+
+
+TURQUOISE = {"red": 0.50, "green": 0.86, "blue": 0.90}   # light blue-turquoise
+
+
+def highlight_empty(s, p: dict, tab: str) -> None:
+    """Conditional format on the 4 newest weeks: an empty cell on a labelled row turns turquoise and goes back
+    to normal as soon as something is typed. Re-applied every run (the column insert shifts the old rule)."""
+    meta = s.get(spreadsheetId=p["sheet"], fields="sheets(properties(sheetId,title),conditionalFormats)").execute()
+    sh = next(x for x in meta["sheets"] if x["properties"]["title"] == tab)
+    gid = sh["properties"]["sheetId"]
+    _, first, last, col = _block(s, p, tab)
+    def _ours(rule) -> bool:   # identified by our formula, not the colour (the API rounds colours)
+        vals = rule.get("booleanRule", {}).get("condition", {}).get("values", [])
+        f = vals[0].get("userEnteredValue", "") if vals else ""
+        return f.startswith("=AND($A") and "<>\"\",LEN(" in f
+    mine = [i for i, r in enumerate(sh.get("conditionalFormats", [])) if _ours(r)]
+    reqs = [{"deleteConditionalFormatRule": {"sheetId": gid, "index": i}} for i in sorted(mine, reverse=True)]
+    top = first + 1
+    reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
+        "ranges": [{"sheetId": gid, "startRowIndex": top - 1, "endRowIndex": last,
+                    "startColumnIndex": col, "endColumnIndex": col + 4}],
+        "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
+                                      "values": [{"userEnteredValue": f'=AND($A{top}<>"",LEN({_col(col)}{top})=0)'}]},
+                        "format": {"backgroundColor": TURQUOISE}}}}})
+    s.batchUpdate(spreadsheetId=p["sheet"], body={"requests": reqs}).execute()
+    print(f"  turquoise-when-empty on {_col(col)}{top}:{_col(col + 3)}{last}")
 
 
 def shot(who: str, tab: str | None) -> Path:

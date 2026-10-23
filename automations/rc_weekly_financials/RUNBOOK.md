@@ -21,7 +21,7 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | Maud | 0 from now on |
 | Local Office Profits (week prior) | Vantura Master Sales Board → P&L 2026 → "Total Gross Profit (no captain)", WE one week back |
 | Captainship (week prior) | same tab → "Captainship Bonus", WE one week back |
-| Overrides | 0 for the new week; Tableau ORG Override Summary (Carlos) fills last week + refreshes the week before |
+| Overrides | 0 for the new week; Tableau ORG Override Summary (Carlos) re-checks the 4 prior weeks (period-edge weeks summed across both periods) |
 | Total CC Debt | −(Business CC 44K + Business CC 2 + Personal CC + Amex + BOFA + Capital) from Carlos's Tiller |
 | Money in the Bank | Alphalete Marketing + Personal + Personal Savings (Tiller) |
 | Money in Security | Tableau SFDC Total Balance |
@@ -35,11 +35,12 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | Recruiting Bonuses (Aisha) | **manual** (Apex) |
 | Zach's Pay (overrides / true up) | **manual** (Slack Raf↔Zach) |
 | ARS (PNL Shows) | All in One - ARS → ARS PNL → Gross Profit, SAME week; the 5 prior weeks are re-checked and updated if the ARS PNL changed |
-| Captainship | Tableau ORG DD Detail → Captain Bonus (Raf), DD week = Saturday before the WE (Maud confirmed 2026-10-22) |
+| Captainship | Tableau ORG DD Detail → Captain Bonus (Raf), DD week ending the Saturday 8 days before the WE (WE 10.25 = DD wk 10/17 = 18,806.50, Maud 2026-10-23); blank if that DD week isn't there |
 | Local Office Gross Profits | All in One Raf → RAF PNL 2026 (NEW) → "Raf's Net Profit from Local Office", week back |
-| NC over rides | 0 new week; Tableau ORG Override Summary (Raf) fills last week + refreshes the week before |
+| NC over rides | 0 new week; Tableau ORG Override Summary (Raf) re-checks the 4 prior weeks. A week on a period edge shows in both periods — the number is the SUM (WE 10.11 = 14,588.59 + 74.70) |
 | ATT Program over ride | 0 new week; Tableau Raf Override Bonus ("Raf Payout Total") fills last week + the week before |
-| Bas Overrides | 0 (one lands every 4 weeks — check) |
+| Bas Overrides | 0, except every 4th week (8.2, 8.30, 9.27, 10.25 …) left blank for Maud |
+| Profit Share | left blank (Maud 2026-10-23) |
 | Money Given for Interviewers | −ARS PNL "Raf covers", same week; 5 prior weeks re-checked too |
 | Total CC Debt | −(5 Chase CCs + BOFA - LTD + AMEX - Local Office CC) from Raf's Tiller |
 | Money in the Bank | Chase total minus ARS = Local Office + LTD + Personal + Personal Savings + STR Carrollton |
@@ -50,3 +51,5 @@ Re-running fill for a week that already has its column refreshes it in place (no
 - Raf's PNG → **Maud first** to double-check; Maud sends to Raf + Megan.
 - Carlos's PNG → Carlos + Raf.
 Confirm before sending.
+
+Raf's tab: empty cells on labelled rows in the 4 newest weeks turn turquoise (conditional format, re-applied each run) and go back to normal once something is typed.
