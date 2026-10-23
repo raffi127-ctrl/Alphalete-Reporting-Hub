@@ -1201,6 +1201,37 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         log(f"[nds] posted {sid}")
 
 
+def delete_today(today, log=print) -> None:
+    """Delete today's NDS Metrics thread — the parent and every reply LUCY
+    posted in it (Carlos 2026-10-23: 'delete the NDS metrics thread posted
+    today and repost everything with the correct info'). Only Lucy's own
+    messages; state cleared so the next --post opens a fresh thread."""
+    from automations.shared.slack_metrics_post import _client
+    client = _client()
+    sp = _state_path(today)
+    if not sp.exists():
+        log("[nds] no thread state for today — nothing to delete")
+        return
+    ts = json.loads(sp.read_text()).get("ts")
+    if ts:
+        try:
+            replies = client.conversations_replies(channel=CHANNEL[1],
+                                                   ts=ts, limit=200)
+            msgs = replies.get("messages", [])
+        except Exception as e:  # noqa: BLE001
+            log(f"[nds] couldn't list the thread ({e}) — deleting parent only")
+            msgs = [{"ts": ts}]
+        # children first, parent last
+        for m in sorted(msgs, key=lambda m: m.get("ts", ""), reverse=True):
+            try:
+                client.chat_delete(channel=CHANNEL[1], ts=m["ts"])
+            except Exception as e:  # noqa: BLE001
+                if "message_not_found" not in str(e):
+                    log(f"[nds] delete {m.get('ts')} failed: {str(e)[:100]}")
+        log(f"[nds] deleted today's thread ({len(msgs)} message(s))")
+    sp.unlink()
+
+
 def dm_previews(artifacts, user, log=print) -> None:
     from automations.shared import slack_metrics_post as smp
     for sid, emoji, title, _fn in SECTIONS:
@@ -1224,6 +1255,10 @@ def main(argv=None) -> int:
                     help="DM previews to this user; never touches the channel")
     ap.add_argument("--post", action="store_true",
                     help="post the live NDS Metrics thread")
+    ap.add_argument("--delete-today", action="store_true",
+                    help="delete today's NDS Metrics thread (Lucy's own "
+                         "posts) and clear its state; pair with --repull "
+                         "--post to repost fresh")
     ap.add_argument("--repull", action="store_true",
                     help="delete today's SOH + order-log caches first (test "
                          "a fresh pull, e.g. a new dealer login)")
@@ -1234,6 +1269,8 @@ def main(argv=None) -> int:
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    if a.delete_today:
+        delete_today(today)
     if a.repull:
         for f in OUT_DIR.glob(f"*_{today.isoformat()}.csv"):
             f.unlink()
