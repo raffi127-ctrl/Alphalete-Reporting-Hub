@@ -114,8 +114,14 @@ _GRIDS_JS = """() => Array.from(document.querySelectorAll('table.rgMasterTable')
         Array.from(tr.querySelectorAll('td')).map(td => (td.innerText || '').trim())),
 }))"""
 
-_SERVICES_JS = """() => Array.from(document.querySelectorAll('.rcbList li, [class*="rcbItem"]'))
-    .map(el => (el.textContent || '').trim()).filter(Boolean)"""
+# THE SERVICE COMBO'S OWN LIST. The page has a second RadComboBox (every rep in
+# the account), and '.rcbList li' alone read all ~2,000 names as "services":
+# the 10/23 all-services run walked them one by one and hit the 6-minute cap.
+_SERVICES_JS = """() => {
+    let items = document.querySelectorAll('[id$="rcbOrderDashOptions_DropDown"] li');
+    if (!items.length) items = document.querySelectorAll('.rcbList li, [class*="rcbItem"]');
+    return Array.from(items).map(el => (el.textContent || '').trim()).filter(Boolean);
+}"""
 
 
 def _dump_columns(page, base: str, day_s: str, only: str = None) -> None:
@@ -145,17 +151,26 @@ def _dump_columns(page, base: str, day_s: str, only: str = None) -> None:
             S._set_telerik_date(page, S.FIELD_END, day)
             S._select_service(page, svc)
             page.click(S.SUBMIT)
-            page.wait_for_timeout(8000)
+            # Wait for a grid ROW, as _run_report_once waits for its grid: a
+            # flat 8s returned before the 10/23 'AT&T Internet' grid filled,
+            # and the run printed nothing at all.
+            try:
+                page.wait_for_selector("table.rgMasterTable tbody tr",
+                                       timeout=min(S.GRID_TIMEOUT_MS, 40_000))
+            except Exception:  # noqa: BLE001 -- an empty day is an answer too
+                pass
+            page.wait_for_timeout(2000)
             grids = page.evaluate(_GRIDS_JS)
         except Exception as e:  # noqa: BLE001
             print("[%s] %s: %s" % (svc, type(e).__name__, str(e)[:120]))
             continue
+        if not grids:
+            print("[%s] no grids on the page (%s)" % (svc, page.url))
         for g in grids:
-            if not g["rows"]:
-                continue
+            # Empty grids print too: their HEADERS are the answer we're after.
             print("[%s] %s (%d rows): %s" % (svc, g["id"].split("rgOrderDash")[-1],
                                              len(g["rows"]), " | ".join(g["headers"])))
-            if not only:
+            if not only or not g["rows"]:
                 continue
             # Body rows carry one more leading cell than headers on some grids;
             # align from the RIGHT, where the measure columns are.
