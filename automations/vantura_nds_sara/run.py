@@ -17,11 +17,11 @@ WHAT IS NOT:
     Int Up   = Internet Upgrades + AIA + Upgrade Lines   -- upgrades, never a unit
     Tablets, Wearables                                    -- already taken out of NL
     DTV                                                   -- not counted; shown per rep
-    Air                                                   -- inside Int Up; shown per rep
+    Air                                                   -- COUNTED (Carlos 2026-10-23: Internet Air is a new internet sale, not an upgrade)
 
 So upgrades, tablets and wearables cannot reach the board by construction:
 they are not inside either number that gets added up. (UNIT_KEYS is the one
-place to change if Carlos ever wants Air or DTV counted.)
+place to change if Carlos ever wants DTV counted.)
 
 WHERE THE NUMBERS COME FROM. Carlos's office Mac mini runs the icd_alerts
 agent against his NDS SaraPlus and relays every rep's totals-so-far-today,
@@ -93,7 +93,7 @@ CAMPAIGN = "B2B"
 RELAY_CAMPAIGN = "nds"
 OFFICE_KEY_PREFIX = "carlos"
 # What is added up. Everything else in the relay JSON is shown, never summed.
-UNIT_KEYS = ("Int", "NL")
+UNIT_KEYS = ("Int", "NL", "Air")   # 2026-10-23: AT&T Internet Air is a new internet sale under NDS, not an upgrade - it counts
 SHOWN_KEYS = ("Int", "NL", "Int Up", "Air", "DTV")
 # 75 = EX_TEMPFAIL, the hold code every Vantura fill uses: nothing written,
 # the next pass retries, the wrapper publishes `partial` (amber), not failed.

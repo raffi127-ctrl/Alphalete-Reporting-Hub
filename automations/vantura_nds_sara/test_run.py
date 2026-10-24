@@ -70,17 +70,19 @@ def lookup(key):
 
 
 class UnitsRuleTest(unittest.TestCase):
-    def test_units_are_int_plus_nl_only(self):
+    def test_units_are_int_plus_nl_plus_air(self):
         # Jacob at 11 lines on SaraPlus: 7 ported count, 4 upgrade lines do
-        # not -- the relay already moved those into Int Up. One fiber too.
+        # not -- the relay already moved those into Int Up. One fiber and one
+        # Internet Air count too (Carlos 2026-10-23: Air is a new internet
+        # sale under NDS, not an upgrade).
         got = run.units_for({"JACOB ISAIAH ORTEGA": nds(int_=1, nl=7, up=4, dtv=2, air=1)})
-        self.assertEqual(got["JACOB ISAIAH ORTEGA"]["units"], 8)
+        self.assertEqual(got["JACOB ISAIAH ORTEGA"]["units"], 9)
 
-    def test_int_up_dtv_and_air_never_add(self):
+    def test_int_up_and_dtv_never_add(self):
         got = run.units_for({"ANA": nds(up=5, dtv=3, air=2)})
-        self.assertEqual(got["ANA"]["units"], 0)
+        self.assertEqual(got["ANA"]["units"], 2)        # only the Air
         self.assertEqual((got["ANA"]["Int Up"], got["ANA"]["DTV"], got["ANA"]["Air"]),
-                         (5, 3, 2))                    # shown, not counted
+                         (5, 3, 2))                    # upgrades + DTV shown, not counted
 
     def test_garbage_and_negatives_read_as_zero(self):
         got = run.units_for({"X": {"Int": "-2", "NL": "abc", "DTV": None}})
