@@ -15,6 +15,13 @@ JSON'), totalled per rep with the campaign's own rule (sale_hype.rep_total:
 AT&T Int+Up+DTV+NL, Box Sales, NDS adds Air), then summed per OWNER — an owner
 with two campaigns (Carlos: B2B AT&T + Box) is one line.
 
+ONLY OUR ORG (Raf 2026-10-24, "remove people that aren't in our org"): an owner
+is listed only if they sit in one of the Org Sales Board's TOP boxes — the daily
+per-campaign sections (ATT Fiber Team, ATT NDS Team, B2B, BOX, Retail ...)
+above the first captainship block. Captains' downline owners (Trang, Jennifer,
+Hasani ...) relay sales too but are not on those boxes, so they are left off.
+Names match case-insensitively and through the ICD Aliases sheet.
+
 Usage
   # dry-run (DEFAULT): print the text, resolve the chat on a Mac, send nothing
   python -m automations.owner_sales_hourly.run
@@ -73,6 +80,67 @@ def owner_totals(relay: Dict, offices: Dict, day: dt.date) -> Dict[str, int]:
     return out
 
 
+def _norm(name: str) -> str:
+    return " ".join((name or "").split()).casefold()
+
+
+def org_owners(grid: List[List[str]], aliases: Optional[Dict] = None) -> set:
+    """Normalized names in the board's top per-campaign boxes.
+
+    A top box is a daily section — a row carrying a 'RUNNING WEEK TOTALS'
+    header — ABOVE the first '<NAME> CAPTAIN(SHIP) TEAM' band; its owners are
+    the col-B names down to its 'Totals' row. Found by label, never by row
+    number, so a campaign box added or moved on the tab is picked up as is.
+    `aliases` ({canonical: [alias, ...]}) widens each hit to its other
+    spellings."""
+    from automations.org_sales_board import captainship as cap
+    from automations.org_sales_board import fill_section as fs
+
+    names = set()
+    for i, row in enumerate(grid):
+        if cap.block_title(grid, i):
+            break
+        if not any((c or "").strip().lower() == fs.RUNNING_TOTAL_HDR
+                   for c in row):
+            continue
+        for r in range(i + 2, len(grid)):
+            if fs._cell(grid, r, 0).lower() == fs.TOTALS_ROW_LABEL:
+                break
+            if cap.block_title(grid, r):
+                break
+            b = fs._cell(grid, r, 1)
+            if b:
+                names.add(_norm(b))
+    for canonical, alts in (aliases or {}).items():
+        group = {_norm(canonical)} | {_norm(a) for a in alts or []}
+        if group & names:
+            names |= group
+    return names
+
+
+def only_org(totals: Dict[str, int], org: set) -> Tuple[Dict[str, int], List[str]]:
+    """(kept, dropped names) — kept = owners on the board's top boxes."""
+    kept = {n: v for n, v in totals.items() if _norm(n) in org}
+    dropped = sorted(n for n in totals if n not in kept)
+    return kept, dropped
+
+
+def read_org_owners() -> set:
+    from automations.focus_office_att.aliases import load_aliases
+    from automations.org_sales_board.grid import read_grid
+    from automations.org_sales_board.run import SHEET_ID
+    from automations.org_sales_board.tabs import BOARD_TAB
+    from automations.recruiting_report.fill import open_by_key
+
+    ws = open_by_key(SHEET_ID).worksheet(BOARD_TAB)
+    try:
+        aliases = load_aliases()
+    except Exception as e:  # noqa: BLE001 — exact names still match
+        print("aliases unreadable (%s) — matching exact names only" % e)
+        aliases = {}
+    return org_owners(read_grid(ws, unformatted=False), aliases)
+
+
 def _clock(now: dt.datetime) -> str:
     """'5:50 PM' without %-I (Windows strftime has no '-')."""
     h = now.hour % 12 or 12
@@ -122,6 +190,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     from automations.icd_sales_board import relay_read as R
 
     totals = owner_totals(R.read_all(), O.all_offices(), day)
+    if totals:
+        # No board = no way to tell who is ours; texting everyone is exactly
+        # what Raf asked us to stop, so fail loud and try again next hour.
+        org = read_org_owners()
+        if not org:
+            print("Org Sales Board top boxes read empty — not texting")
+            return 1
+        totals, dropped = only_org(totals, org)
+        if dropped:
+            print("not on the Org board's top boxes (left off): %s"
+                  % ", ".join(dropped))
     if not totals:
         # Before the first office relays (or a dead relay) — a list with no
         # owners on it would read as everybody at zero.

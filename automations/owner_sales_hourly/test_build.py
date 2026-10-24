@@ -39,6 +39,36 @@ class OwnerTotals(unittest.TestCase):
                          {"Rafael Hidalgo": 2})
 
 
+def _grid():
+    hdr = ["", "", "Monday", "Tuesday", "RUNNING WEEK TOTALS"]
+    return [
+        ["ATT Fiber Team"] + hdr[1:],
+        ["", "", "19", "20", ""],
+        ["", "Jacob Dover", "1", "2", "3"],
+        ["", "Ryan Mcspadden", "0", "1", "1"],
+        ["Totals", "", "1", "3", "4"],
+        [""],
+        ["", "RAFAEL HIDALGO CAPTAINSHIP TEAM"],
+        ["Fiber - All Units"] + hdr[1:],
+        ["", "", "19", "20", ""],
+        ["", "Trang Canavan", "1", "1", "2"],
+        ["Totals", "", "1", "1", "2"],
+    ]
+
+
+class OnlyOrg(unittest.TestCase):
+    def test_top_boxes_only_not_captainship_blocks(self):
+        org = run.org_owners(_grid())
+        self.assertEqual(org, {"jacob dover", "ryan mcspadden"})
+
+    def test_case_and_alias_match_and_outsiders_dropped(self):
+        org = run.org_owners(_grid(), {"Jacob Dover": ["Jake Dover"]})
+        kept, dropped = run.only_org(
+            {"Jake Dover": 4, "Ryan McSpadden": 2, "Trang Canavan": 9}, org)
+        self.assertEqual(kept, {"Jake Dover": 4, "Ryan McSpadden": 2})
+        self.assertEqual(dropped, ["Trang Canavan"])
+
+
 class Text(unittest.TestCase):
     def test_sorted_desc_with_total(self):
         now = dt.datetime(2026, 10, 24, 17, 50)

@@ -29,6 +29,13 @@ Per rep, the campaign's own total (`shared.sale_hype.rep_total`: AT&T
 Int+Up+DTV+NL, Box Sales, NDS +Air), then summed per owner (Carlos's B2B AT&T +
 Box = one line). Owner names come from `icd_alerts.offices`.
 
+**Only our org** (Raf 2026-10-24): an owner is listed only if they are in one
+of the **Alphalete ORG Sales Board**'s top per-campaign boxes (ATT Fiber Team,
+ATT NDS Team, B2B, BOX, Retail …, everything above the first captainship
+block). Captains' downline owners are left off; the run log names who. Name
+matching ignores case and follows the ICD Aliases sheet. If the board can't be
+read, nothing is texted that hour.
+
 **Only owners whose laptop runs Lucy ECO and has relayed a sale today are on
 the list.** No relay row = no line (not a 0).
 
