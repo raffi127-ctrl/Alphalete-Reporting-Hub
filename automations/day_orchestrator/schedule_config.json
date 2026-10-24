@@ -1211,15 +1211,18 @@
    "order": 37.6
   },
   "lumen_owners": {
-   "on_scheduler": false,
-   "_off_scheduler_note": "MANUAL until Eve approves the preview. Raf 2026-10-08 (email 'Metrics reporting'): a captainship-style report for the Lumen owners only, to Raf only, listing every owner and saying 'Not on AT&T yet' + their Lumen sales for the ones not selling AT&T. Members = every ICD owner on the Quantum tracker's week-ending sales view (no roster to keep). base_args [] = DRY RUN (preview file in output/lumen_owners/<date>/, sends nothing). Preview by mail: `lucy rerun lumen_owners --to eve@alphaletemarketing.com`. Going live = on_scheduler true + base_args ['--send'] (To: raffi127@gmail.com only).",
-   "display_name": "Lumen Owners (Raf only)",
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "LIVE 2026-10-24 (Eve): every day, after the captainship emails. Raf 2026-10-08 (email 'Metrics reporting') asked for a captainship-style report on the Lumen (Quantum Fiber) owners; on 10/23 he confirmed it is the 'quantum sales board' he told Chan about. --send mails the 'Lumen Owners' Contacts group of alphaletereporting (Chan, Myles Neal, David Pancoast, Raf, Eve) — edit the group, not the code; it falls back to those five if the group can't be read. The mail: the NI / All Units boxes of the Lumen Owners tab (Org Sales Board workbook), the owner table, a last-30-days Quantum table (RES-Quantum Fiber 30-Day ICD Metrics) and yesterday's Quantum knock boards (OwnerVille campaign 7, same owners as Chan's captainship) as one attached PDF. Lucy 4 because it is the least loaded box with the rhidalgo OwnerVille login (David's office access lives on that account). not_before 08:30 is a clock fence, not a dependency: the captainship emails go from Lucy 3 (~07:45-08:15), which this box cannot see. Test by mail: `lucy rerun lumen_owners --to eve@alphaletemarketing.com`.",
+   "display_name": "Lumen Owners",
    "source_type": "tableau",
    "data_sources": [],
    "command": [
     "automations.lumen_owners.run"
    ],
-   "base_args": [],
+   "base_args": [
+    "--send"
+   ],
    "cadence": {
     "weekdays": [
      0,
@@ -1227,9 +1230,10 @@
      2,
      3,
      4,
-     5
+     5,
+     6
     ],
-    "not_before": "07:30"
+    "not_before": "08:30"
    },
    "priority": "P3",
    "freshness_target": null,
