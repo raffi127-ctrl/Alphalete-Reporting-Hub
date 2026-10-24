@@ -428,7 +428,7 @@ def read_sara(day: dt.date, creds: Dict[str, str], *, profile_dir=None,
     """
     from patchright.sync_api import sync_playwright
 
-    profile_dir = profile_dir or CFG.profile_dir()
+    profile_dir = profile_dir or CFG.ensure_profile_seeded(_log)
     try:
         SP.reset_pass_timings()
     except Exception:  # noqa: BLE001 -- instrumentation must never cost a read
@@ -531,7 +531,7 @@ def preflight(log=_log) -> int:
     else:
         ok = False
         log("creds: MISSING -- %s" % why)
-    prof = CFG.profile_dir()
+    prof = CFG.ensure_profile_seeded(_log)
     log("profile dir: %s (%s)" % (prof, "exists" if prof.exists()
                                   else "not yet -- created on the first login"))
     log("PREFLIGHT %s" % ("OK" if ok else "FAILED"))
@@ -913,6 +913,7 @@ def main(argv=None) -> int:
     _log(_summary_line(source, cr_why if source == "sara" else "", day, per_rep))
     if a.probe:
         _column_dump(g, board_rows, col, day)
+        _log(_summary_line(source, cr_why if source == "sara" else "", day, per_rep))
         _log("PROBE -- nothing written")
         return 0
 
@@ -946,6 +947,7 @@ def main(argv=None) -> int:
         from automations.recruiting_report.fill import _retry
         _retry(ws.batch_update, batch_values(plan_rows))
         _log("wrote %d cell(s)" % len(plan_rows))
+    _log(_summary_line(source, cr_why if source == "sara" else "", day, per_rep))
     else:
         _log("board already matches SaraPlus -- nothing to write")
     return 0
