@@ -490,6 +490,8 @@ def main(argv=None) -> int:
     ap.add_argument("--names", help="With --appstream-ads: only these sheet names (comma-separated).")
     ap.add_argument("--limit", type=int, help="With --appstream-ads: look up at most N.")
     ap.add_argument("--lookback", type=int, help="With --appstream-ads: days back (default 7).")
+    ap.add_argument("--dump", action="store_true",
+                    help="With --appstream-ads: print every field and line of each record (probe).")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -542,6 +544,7 @@ def main(argv=None) -> int:
         from automations.ad_photo_threads import appstream_ads
         day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
         names = [n for n in (a.names or "").split(",") if n.strip()] or None
+        appstream_ads.DUMP = a.dump
         print(appstream_ads.run(a.office or "rafael", day, names=names, apply=a.apply,
                                 limit=a.limit, lookback=a.lookback))
         return 0

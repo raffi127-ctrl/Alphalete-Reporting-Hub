@@ -104,6 +104,28 @@ def _page_text(page) -> str:
     return "\n".join(out)
 
 
+DUMP = False     # --dump: every field + text line of each record opened (probe)
+
+
+def _dump(page) -> None:
+    for i, fr in enumerate(page.frames):
+        try:
+            got = fr.evaluate("""() => ({
+                fields: [...document.querySelectorAll('input,select,textarea')]
+                    .filter(e => e.type !== 'hidden' || (e.value || '').length > 3)
+                    .map(e => (e.name || e.id || e.tagName) + '=' + (e.tagName === 'SELECT'
+                        ? (e.options[e.selectedIndex] || {}).text || '' : (e.value || ''))),
+                text: (document.body ? document.body.innerText : '')})""")
+        except Exception:  # noqa: BLE001
+            continue
+        print(f"        --- frame {i} {fr.url[:80]}")
+        for f in got["fields"][:120]:
+            if f.split("=", 1)[1].strip():
+                print(f"        F {f[:150]}")
+        for ln in [x.strip() for x in got["text"].splitlines() if x.strip()][:150]:
+            print(f"        T {ln[:150]}")
+
+
 def lookup(page, home_url: str, name: str, max_open: int = 3,
            debug: bool = False) -> Tuple[List[str], str]:
     """(ads found, how) for one candidate in the office already selected.
@@ -160,6 +182,8 @@ def lookup(page, home_url: str, name: str, max_open: int = 3,
             print(f"      record {n + 1}: ads={found} | {page.url[:70]}")
             for ln in near:
                 print(f"        > {ln}")
+            if DUMP:
+                _dump(page)
         ads += [a for a in found if a not in ads]
     return ads, f"{len(hits)} record(s)"
 
