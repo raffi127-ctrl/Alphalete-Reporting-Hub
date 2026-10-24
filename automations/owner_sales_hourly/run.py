@@ -22,6 +22,9 @@ above the first captainship block. Captains' downline owners (Trang, Jennifer,
 Hasani ...) relay sales too but are not on those boxes, so they are left off.
 Names match case-insensitively and through the ICD Aliases sheet.
 
+SOUTH SHORE TOO (Colten 2026-10-24): a second text, only the South Shore owners
+(funnel_board.roster.SOUTH_SHORE_NAMES), into his "SOUTHSHORE ORG" chat.
+
 Usage
   # dry-run (DEFAULT): print the text, resolve the chat on a Mac, send nothing
   python -m automations.owner_sales_hourly.run
@@ -30,6 +33,7 @@ Usage
   python -m automations.owner_sales_hourly.run --send
 
   --force   ignore the time window and the "nothing changed" skip
+  --only owners|sso   text just that one chat
 
 --send is the ONLY thing that texts anyone. Python 3.9-safe (Lucy runtime).
 """
@@ -125,20 +129,35 @@ def only_org(totals: Dict[str, int], org: set) -> Tuple[Dict[str, int], List[str
     return kept, dropped
 
 
-def read_org_owners() -> set:
+def south_shore_owners(aliases: Optional[Dict] = None) -> set:
+    """Normalized South Shore owner names (+ their ICD Aliases spellings)."""
+    from automations.funnel_board.roster import SOUTH_SHORE_NAMES
+
+    names = {_norm(n) for n in SOUTH_SHORE_NAMES}
+    for canonical, alts in (aliases or {}).items():
+        group = {_norm(canonical)} | {_norm(a) for a in alts or []}
+        if group & names:
+            names |= group
+    return names
+
+
+def _load_aliases() -> Dict:
     from automations.focus_office_att.aliases import load_aliases
+    try:
+        return load_aliases()
+    except Exception as e:  # noqa: BLE001 — exact names still match
+        print("aliases unreadable (%s) — matching exact names only" % e)
+        return {}
+
+
+def read_org_owners() -> set:
     from automations.org_sales_board.grid import read_grid
     from automations.org_sales_board.run import SHEET_ID
     from automations.org_sales_board.tabs import BOARD_TAB
     from automations.recruiting_report.fill import open_by_key
 
     ws = open_by_key(SHEET_ID).worksheet(BOARD_TAB)
-    try:
-        aliases = load_aliases()
-    except Exception as e:  # noqa: BLE001 — exact names still match
-        print("aliases unreadable (%s) — matching exact names only" % e)
-        aliases = {}
-    return org_owners(read_grid(ws, unformatted=False), aliases)
+    return org_owners(read_grid(ws, unformatted=False), _load_aliases())
 
 
 def _clock(now: dt.datetime) -> str:
@@ -162,8 +181,8 @@ def in_window(now: dt.datetime) -> bool:
     return bool(span) and span[0] <= now.hour <= span[1]
 
 
-def _last_path(day: dt.date):
-    return cfg.OUT_DIR / day.isoformat() / "last_sent.txt"
+def _last_path(day: dt.date, key: str = "last_sent"):
+    return cfg.OUT_DIR / day.isoformat() / ("%s.txt" % key)
 
 
 def _numbers(text: str) -> str:
@@ -177,6 +196,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="actually text the owners chat (default: dry run)")
     ap.add_argument("--force", action="store_true",
                     help="ignore the time window and the unchanged-numbers skip")
+    ap.add_argument("--only", choices=("owners", "sso"),
+                    help="text just one chat (e.g. a catch-up send to SSO)")
     args = ap.parse_args(argv)
 
     now = _now()
@@ -189,29 +210,48 @@ def main(argv: Optional[List[str]] = None) -> int:
     from automations.icd_alerts import offices as O
     from automations.icd_sales_board import relay_read as R
 
-    totals = owner_totals(R.read_all(), O.all_offices(), day)
-    if totals:
-        # No board = no way to tell who is ours; texting everyone is exactly
-        # what Raf asked us to stop, so fail loud and try again next hour.
-        org = read_org_owners()
-        if not org:
-            print("Org Sales Board top boxes read empty — not texting")
-            return 1
-        totals, dropped = only_org(totals, org)
-        if dropped:
-            print("not on the Org board's top boxes (left off): %s"
-                  % ", ".join(dropped))
-    if not totals:
+    everyone = owner_totals(R.read_all(), O.all_offices(), day)
+    if not everyone:
         # Before the first office relays (or a dead relay) — a list with no
         # owners on it would read as everybody at zero.
         print("no office has relayed sales for %s yet — not texting" % day)
+        return 0
+
+    # No board = no way to tell who is ours; texting everyone is exactly
+    # what Raf asked us to stop, so fail loud and try again next hour.
+    org = read_org_owners()
+    if not org:
+        print("Org Sales Board top boxes read empty — not texting")
+        return 1
+    totals, dropped = only_org(everyone, org)
+    if dropped:
+        print("not on the Org board's top boxes (left off): %s"
+              % ", ".join(dropped))
+    sso, _ = only_org(everyone, south_shore_owners(_load_aliases()))
+
+    rc = 0
+    for name, group, key, chat_totals in (
+            ("owners", cfg.TEXT_GROUP, "last_sent", totals),
+            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso)):
+        if args.only and args.only != name:
+            continue
+        print("=== %s ===" % (group if isinstance(group, str)
+                               else group.get("group")))
+        rc = max(rc, _send_one(group, key, chat_totals, now, day, args))
+    return rc
+
+
+def _send_one(group, key: str, totals: Dict[str, int], now: dt.datetime,
+              day: dt.date, args) -> int:
+    if not totals:
+        print("nobody on this chat's list has relayed sales yet — not texting")
         return 0
 
     text = build_text(totals, now)
     print(text)
     print()
 
-    last = _last_path(day)
+    last = _last_path(day, key)
     if (not args.force and last.exists()
             and _numbers(last.read_text(encoding="utf-8")) == _numbers(text)):
         print("same numbers as the last text — skipped")
@@ -226,7 +266,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     from automations.b2b_dispositions import text_post as T
-    res = T.send_text_to_group(cfg.TEXT_GROUP, text, dry_run=dry)
+    try:
+        res = T.send_text_to_group(group, text, dry_run=dry)
+    except Exception as e:  # noqa: BLE001 — one bad chat must not stop the other
+        print("text failed: %s" % e)
+        return 1
     print("%s -> %s (%d people)" % ("[dry-run] would text" if dry else "texted",
                                     res.get("resolved_name"),
                                     len(res.get("participants") or [])))
@@ -234,7 +278,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         last.parent.mkdir(parents=True, exist_ok=True)
         last.write_text(text, encoding="utf-8")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

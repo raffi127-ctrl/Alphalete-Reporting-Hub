@@ -21,6 +21,15 @@ from pathlib import Path
 # raises on 0 or 2+ hits, so a renamed chat fails loud instead of texting the
 # wrong room.
 from automations.owner_chat_texts.config import GROUP_OWNERS_REAL as TEXT_GROUP
+from automations.owner_chat_texts.config import GROUP_SOUTHSHORE_ORG
+
+# Colten Wright 2026-10-24 (Slack): the same list in his "SOUTHSHORE ORG" chat
+# too, "we could just do SSO owners". Lucy 1 already texts that chat the board
+# every morning. Its owners = the South Shore group on the Recruiting
+# Dashboard (funnel_board.roster.SOUTH_SHORE_NAMES) — one list, so a South
+# Shore add there lands here too. Each chat keeps its own "nothing changed"
+# skip (`key` = the last-sent file name).
+SSO_GROUP = GROUP_SOUTHSHORE_ORG
 
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.

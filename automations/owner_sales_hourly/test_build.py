@@ -83,5 +83,19 @@ class Text(unittest.TestCase):
         self.assertFalse(run.in_window(dt.datetime(2026, 10, 25, 15, 50)))
 
 
+class SouthShore(unittest.TestCase):
+    def test_only_south_shore_owners_kept(self):
+        totals = {"Jairo Ruiz": 35, "Colten Wright": 31, "Jacob Dover": 23,
+                  "Drew Tepper": 22, "Eveliz Wright": 9}
+        kept, _ = run.only_org(totals, run.south_shore_owners())
+        self.assertEqual(kept, {"Jairo Ruiz": 35, "Colten Wright": 31,
+                                "Drew Tepper": 22, "Eveliz Wright": 9})
+
+    def test_alias_spelling_matches(self):
+        sso = run.south_shore_owners({"Lizette Ruiz": ["Lizette Ruiz-Conejo"]})
+        kept, _ = run.only_org({"Lizette Ruiz-Conejo": 4}, sso)
+        self.assertEqual(kept, {"Lizette Ruiz-Conejo": 4})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,10 @@ Owner Sales Today - 5:50 PM CT
 🏆 TOTAL: 261
 ```
 
+**Also into SOUTHSHORE ORG** (Colten, 2026-10-24): same text, only the South
+Shore owners (`funnel_board.roster.SOUTH_SHORE_NAMES`: Colten, Jairo, Drew,
+Eveliz ...), own total, own "nothing changed" skip.
+
 - :50 every hour, Mon–Sat, 12 PM–9 PM Central.
 - Skipped when no number moved since the last text.
 - Not sent before any office has relayed a sale that day.
