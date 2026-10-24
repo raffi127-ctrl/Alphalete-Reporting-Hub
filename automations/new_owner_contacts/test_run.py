@@ -25,6 +25,31 @@ class SubjectTest(unittest.TestCase):
         self.assertIsNone(R.parse_subject("Residential Rep Counts WE 10/17"))
 
 
+class ParticipantsTest(unittest.TestCase):
+    # Shape of Nelrose's weekly "RES ATT Participants October 12-16, 2026".
+    HTML = ('<table><tr><td><span>DATE:&nbsp; October 12-16, 2026</span></td>'
+            '<td>Market</td><td>ICD OWNER</td><td>ICD COMPANY</td><td>EMAIL</td>'
+            '<td>NUMBER</td></tr>'
+            '<tr><td><span>RES-ATT:&nbsp;</span></td><td>Southfield, MI</td>'
+            '<td>\r\nOmar Mohamad</td><td>Kalkan Marketing, Inc.</td>'
+            '<td>OOmohamad98@gmail.com</td><td>313-502-9415</td></tr>'
+            '<tr><td>&nbsp;</td><td>Portland, OR</td><td>Alex Roberts</td>'
+            '<td>Precision Solutions, Inc.</td><td>robertsalexc14@gmail.com</td>'
+            '<td>2405736635</td></tr></table>'
+            '<table><tr><td>Nelros Lizada | Compliance Support</td></tr></table>')
+
+    def test_rows(self):
+        rows = R.parse_participants(self.HTML)
+        self.assertEqual([r["owner"] for r in rows], ["Omar Mohamad", "Alex Roberts"])
+        self.assertEqual(rows[0]["email"], "oomohamad98@gmail.com")
+        self.assertEqual(rows[0]["phone"], "(313) 502-9415")
+        self.assertEqual(rows[1]["phone"], "(240) 573-6635")
+        self.assertEqual(rows[1]["company"], "Precision Solutions, Inc.")
+
+    def test_no_table(self):
+        self.assertEqual(R.parse_participants("<p>0</p>"), [])
+
+
 class PhoneTest(unittest.TestCase):
     def test_formats(self):
         self.assertEqual(R.clean_phone("5551234567.0"), "(555) 123-4567")

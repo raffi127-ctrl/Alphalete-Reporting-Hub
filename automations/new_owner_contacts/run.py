@@ -21,6 +21,8 @@ fiber_owners_distro):
       "AT&T NDS | Important Campaign Info (ICD Owner: X, ICD Company: Y)"
       -> name, company, campaign; the owner is the FIRST To address (the rest
       are their upline). NO phone in it.
+  Nelrose's weekly "RES ATT Participants <dates>" (Fiber), one mail a week:
+      a table ICD OWNER | ICD COMPANY | EMAIL | NUMBER -> name, email AND phone.
   Kelly Pavone's Friday "AT&T ICD Owner Roster" xlsx, every tab
       -> name, email, PHONE. So a phone can lag the onboarding by up to a week:
       the contact is saved without it and the phone is filled in the run after
@@ -50,6 +52,7 @@ import json
 import platform
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -68,6 +71,10 @@ RAF_ACCOUNT = "raffi127@gmail.com"
 
 ONBOARD_SENDER = "nlizada@thesmartcircle.com"
 ONBOARD_SUBJECT = "Important Campaign Info"
+# Fiber has no per-owner mail: Nelrose sends ONE weekly "RES ATT Participants
+# <dates>" to alphaletereporting + raffi127 + Maud, a table of that week's
+# onboardings WITH phone (Eve 2026-10-24).
+WEEKLY_SUBJECT = "Participants"
 LOOKBACK_DAYS = 45      # how far back to read onboarding mails each pass
 ORG_RECHECK_DAYS = 30   # an onboarding not on New Owners is re-checked this long (Eve may add the row late)
 SALES_WINDOW_DAYS = 14  # order-log window read for first sales
@@ -100,6 +107,59 @@ def parse_subject(subject: str) -> Optional[Dict[str, str]]:
             "program": "NDS" if re.search(r"\bNDS\b", camp, re.I) else "Fiber",
             "owner": " ".join(m.group("owner").split()),
             "company": " ".join(m.group("co").split())}
+
+
+class _Tables(HTMLParser):
+    """Every <table> in an HTML mail as rows of cell text."""
+    def __init__(self):
+        super().__init__()
+        self.tables: List[List[List[str]]] = []
+        self._cell: Optional[List[str]] = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self.tables.append([])
+        elif tag == "tr" and self.tables:
+            self.tables[-1].append([])
+        elif tag in ("td", "th"):
+            self._cell = []
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th") and self._cell is not None:
+            if self.tables and self.tables[-1]:
+                self.tables[-1][-1].append(" ".join("".join(self._cell).split()))
+            self._cell = None
+
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell.append(data.replace("\xa0", " "))
+
+
+def parse_participants(html: str) -> List[Dict[str, str]]:
+    """The weekly 'RES ATT Participants' table -> [{owner, company, email,
+    phone}]. Columns found by header label (ICD OWNER / ICD COMPANY / EMAIL /
+    NUMBER), never by position."""
+    p = _Tables()
+    p.feed(html or "")
+    out = []
+    for rows in p.tables:
+        hdr_i = next((i for i, r in enumerate(rows)
+                      if any(c.strip().upper() == "ICD OWNER" for c in r)), None)
+        if hdr_i is None:
+            continue
+        col = {c.strip().upper(): j for j, c in enumerate(rows[hdr_i])}
+
+        def g(r, label):
+            j = col.get(label)
+            return r[j].strip() if j is not None and j < len(r) else ""
+        for r in rows[hdr_i + 1:]:
+            owner = " ".join(g(r, "ICD OWNER").split())
+            if not owner:
+                continue
+            out.append({"owner": owner, "company": g(r, "ICD COMPANY"),
+                        "email": g(r, "EMAIL").lower(),
+                        "phone": clean_phone(g(r, "NUMBER"))})
+    return out
 
 
 def clean_phone(raw) -> str:
@@ -241,6 +301,27 @@ def fetch_onboardings(days: int = LOOKBACK_DAYS) -> List[dict]:
             except Exception:  # noqa: BLE001
                 info["date"] = dt.date.today().isoformat()
             out.append(info)
+        _typ, data = M.search(None, f'(FROM "{ONBOARD_SENDER}" '
+                                    f'SUBJECT "{WEEKLY_SUBJECT}" SINCE {since})')
+        for mid in (data[0] or b"").split():
+            _t, md = M.fetch(mid, "(BODY.PEEK[])")
+            msg = email.message_from_bytes(md[0][1])
+            subject = R._decode(msg.get("Subject", ""))
+            if re.match(r"^(re|fw|fwd)\s*:", subject.strip(), re.I):
+                continue
+            html = next((part.get_payload(decode=True).decode(
+                            part.get_content_charset() or "utf-8", "replace")
+                         for part in msg.walk()
+                         if part.get_content_type() == "text/html"), "")
+            try:
+                day = email.utils.parsedate_to_datetime(msg.get("Date")).date().isoformat()
+            except Exception:  # noqa: BLE001
+                day = dt.date.today().isoformat()
+            nds = bool(re.search(r"\bNDS\b", subject, re.I))
+            for row in parse_participants(html):
+                out.append({**row, "date": day,
+                            "campaign": "AT&T NDS" if nds else "RES ATT",
+                            "program": "NDS" if nds else "Fiber"})
     finally:
         M.logout()
     return out
@@ -442,14 +523,14 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
             phones.setdefault(canonical(o.email), ph)
             phones.setdefault(norm_name(o.name), ph)
 
-    def phone_for(email_: str, name: str) -> str:
-        return phones.get(canonical(email_)) or phones.get(norm_name(name)) or ""
+    def phone_for(email_: str, name: str, own: str = "") -> str:
+        return own or phones.get(canonical(email_)) or phones.get(norm_name(name)) or ""
 
     # 1) everyone -> alphaletemarketing
     people = [{"name": o.name or o.email, "email": o.email, "company": o.company,
                "phone": clean_phone(o.phone)} for o in owners]
     people += [{"name": ob["owner"], "email": ob["email"], "company": ob["company"],
-                "phone": phone_for(ob["email"], ob["owner"])}
+                "phone": phone_for(ob["email"], ob["owner"], ob.get("phone", ""))}
                for ob in onboard if ob["email"]]
     upsert_contacts(MARKETING_ACCOUNT, people, apply=apply)
 
@@ -465,13 +546,13 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
     for ob in onboard:
         key = canonical(ob["email"]) or norm_name(ob["owner"])
         if key in watch:
-            watch[key]["phone"] = watch[key].get("phone") or phone_for(ob["email"], ob["owner"])
+            watch[key]["phone"] = watch[key].get("phone") or phone_for(ob["email"], ob["owner"], ob.get("phone", ""))
             continue
         if in_org(ob["owner"], tree, aliases):
             watch[key] = {"name": ob["owner"], "email": ob["email"],
                           "company": ob["company"], "program": ob["program"],
                           "onboarded": ob["date"], "added": today.isoformat(),
-                          "phone": phone_for(ob["email"], ob["owner"]),
+                          "phone": phone_for(ob["email"], ob["owner"], ob.get("phone", "")),
                           "seeded": first_run}
             pending.pop(key, None)
             print(f"  watching {ob['owner']} ({ob['program']}, onboarded {ob['date']})")
