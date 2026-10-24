@@ -75,10 +75,18 @@ RAF = "raffi127@gmail.com"
 # quantum guys only" and confirmed this mail IS that board. Everybody gets the
 # full mail, other owners included. Edit the group, not the code; FALLBACK_TO
 # is only used when the group can't be read (same rule as the captainships).
+# Raf, 2026-10-24: "add all the lumen owners to this email and Pat Thompson"
+# — the 13 owners on the Quantum tracker that day + Pat joined the group.
 DISTRO_GROUP = "Lumen Owners"
 FALLBACK_TO = ["parkwchan19@gmail.com", "mylesnealbusiness@gmail.com",
                "pancoast10xbusiness@gmail.com", RAF,
-               "eve@alphaletemarketing.com"]
+               "eve@alphaletemarketing.com",
+               "resoundinc@gmail.com", "aaron.nimako@gmail.com",
+               "lajahnikv@gmail.com", "padilla10x2001@gmail.com",
+               "partnersmarketing.co@gmail.com", "osterhousevaughn@gmail.com",
+               "nigelmarshall002@gmail.com", "isaiahkellum07@gmail.com",
+               "batde3y@gmail.com", "krisnatvhuoth@gmail.com",
+               "ecebuyukozerbusiness@gmail.com", "pthomp2133@gmail.com"]
 TITLE = "Lumen Owners"
 
 # Owner names (as the Quantum view prints them, any case) Raf asked to leave
