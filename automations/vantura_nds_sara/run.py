@@ -1,0 +1,523 @@
+"""NDS Sales Board fill from Carlos's NDS SaraPlus, through the ICD relay.
+
+THE RULE, IN CARLOS'S WORDS (2026-10-23): "use sara plus [to fill the NDS Sales
+Board] but look at the way that Lucy uses sara plus for the order log to make
+sure you include the correct sales. upgrades, tablets, and wearables shouldn't
+get added." -- "We just started selling under my NDS SaraPlus this Monday
+[10/19]."
+
+WHAT A REP'S DAY IS:            units = Int + NL
+
+    Int   = Internet Sales - Internet Upgrades - AIA        (shared/sale_hype.metrics_for)
+    NL    = New Lines + Port Lines - Tablets - Wearables    (icd_alerts/relay._nds_lines,
+            read off the Wireless grid -- the way Lucy already reads an NDS
+            office for the sale alerts and the text scoreboard)
+
+WHAT IS NOT:
+    Int Up   = Internet Upgrades + AIA + Upgrade Lines   -- upgrades, never a unit
+    Tablets, Wearables                                    -- already taken out of NL
+    DTV                                                   -- not counted; shown per rep
+    Air                                                   -- inside Int Up; shown per rep
+
+So upgrades, tablets and wearables cannot reach the board by construction:
+they are not inside either number that gets added up. (UNIT_KEYS is the one
+place to change if Carlos ever wants Air or DTV counted.)
+
+WHERE THE NUMBERS COME FROM. Carlos's office Mac mini runs the icd_alerts
+agent against his NDS SaraPlus and relays every rep's totals-so-far-today,
+every few minutes, to the 'ICD Relay' tab of the Lucy Access App workbook
+(icd_alerts/post.RELAY_SPREADSHEET_ID / RELAY_TAB). The Apps Script keeps ONE
+ROW PER OFFICE PER DAY, updated in place, so the row's 'Received At' is when
+the office last relayed and its 'Sales JSON' is the latest snapshot. Should a
+day ever hold more than one row for the office, the newest 'Received At'
+wins. The 2am catch-up on the mini re-reads yesterday whole, so the 5am pass
+here closes the day out on final numbers.
+
+WHO. The office is found among the day's relay rows: a key starting with
+"carlos" whose enrolment (icd_alerts/offices.py + the ICD Signup tab) says
+campaign "nds". Any other campaign is ignored -- an "att" enrolment's NL still
+carries the tablets and the upgrade lines, which is exactly what Carlos does
+not want on the board. `--office KEY` pins it when more than one qualifies.
+
+HOW IT WRITES -- Megan's SaraPlus-is-the-truth design (2026-07-26,
+vantura_slack_sales/sara.plan_overwrite, reused, not copied):
+  * a matched rep is SET to SaraPlus's count, up OR down;
+  * a board rep absent from SaraPlus is LEFT as-is, flagged;
+  * a SaraPlus rep with no board row is flagged, never guessed, never written.
+Plus the board's own conventions, the BOX order-log fill's exact rule
+(vantura_orderlog_sales.fill_plan): a hand-typed marker (T / X / F / any
+non-number) is kept unless SaraPlus shows sales; a count of 0 writes a BLANK
+(the board's convention: blank = none).
+
+NAMES. SaraPlus writes legal names in caps ("JACOB ISAIAH ORTEGA"); the board
+writes the name the rep goes by ("Jacob Ortega"). ALIASES below first, then
+vantura_slack_sales.run.match_rep (exact, then first + last token), then the
+order-log fill's legal-first-name map (NICOLAS -> nico). Nothing guesses:
+a name that reaches no row is flagged with its count and left for a person.
+
+WHEN. Same clock as the Slack fill: before 10am (OFFICE_DAY_START) the run
+closes out YESTERDAY, after it it fills TODAY; --date overrides. Holds, all
+exit 75 and nothing written: no relay row for the day ("the office mini may
+be off"), the board's gold WE cell on another week, no column for the day.
+
+  python -m automations.vantura_nds_sara.run --probe        # what relayed + the board column, no writes
+  python -m automations.vantura_nds_sara.run                # dry report
+  python -m automations.vantura_nds_sara.run --fill         # plan the write
+  python -m automations.vantura_nds_sara.run --fill --yes   # write
+  python -m automations.vantura_nds_sara.run --date 2026-10-22 --probe
+  python -m automations.vantura_nds_sara.run --office carlos-b2batt --probe
+
+--probe and --dry win over --fill --yes (so `lucy rerun vantura_nds_sara
+--probe` is safe: the registry's base_args are --fill --yes).
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import sys
+from typing import Callable, Dict, List, Optional, Tuple
+
+from automations.icd_alerts import post as P
+from automations.vantura_orderlog_sales.run import FIRST_NAME_ALIASES
+from automations.vantura_slack_sales import run as R
+from automations.vantura_slack_sales import sara as S
+from automations.vantura_slack_sales.parse import TZ
+
+REPORT_ID = "vantura_nds_sara"                  # schedule_config id
+# The board's campaign key. Still "B2B" inside the Lucy modules; vantura_boards
+# .tab_for("B2B") lands on the "NDS Sales Board" tab (NDS on the sheet since
+# 2026-10-03), and campaign_rows reads the rows that say NDS (or legacy B2B).
+CAMPAIGN = "B2B"
+# The enrolment campaign the relay must carry. relay._nds_lines only takes
+# tablets / wearables / upgrade lines out of NL for THIS campaign.
+RELAY_CAMPAIGN = "nds"
+OFFICE_KEY_PREFIX = "carlos"
+# What is added up. Everything else in the relay JSON is shown, never summed.
+UNIT_KEYS = ("Int", "NL")
+SHOWN_KEYS = ("Int", "NL", "Int Up", "Air", "DTV")
+# 75 = EX_TEMPFAIL, the hold code every Vantura fill uses: nothing written,
+# the next pass retries, the wrapper publishes `partial` (amber), not failed.
+EXIT_HOLD = 75
+
+# SaraPlus spelling (UPPER, as the relay keys it) -> the board's REP cell.
+# Only what match_rep's exact / first + last rule and the legal-first-name map
+# cannot reach. Justified off the live NDS board roster (read 2026-10-23, WE
+# 10.25): every other row -- "JACOB ISAIAH ORTEGA" -> "Jacob Ortega", "DIEGO
+# JAVIER DEL POZO BORRES" -> "Diego Borres", "AARON DE LA TORRE" vs "ANDREW
+# DE LA TORRE", "JOSE MANUEL PIMENTEL LUGO", "BRAYAN VAZQUEZ ESPINOZA" --
+# resolves on first + last token by itself.
+ALIASES = {
+    "NICHOLAS SMEDRA": "Nick Smedra",        # board row 7, 27th Wk
+    "NICOLAS MURRUGARRA": "Nico Murrugarra",  # runs the office; sells one now and then
+}
+
+
+def _log(msg: str) -> None:
+    R._log(msg)
+
+
+def _n(v) -> int:
+    """A relay metric as a count: ints and numeric strings, floored at 0
+    (metrics_for already floors; a revised-down SaraPlus number has no board
+    representation), anything unreadable is 0."""
+    try:
+        return max(int(float(str(v).strip() or 0)), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+# ----------------------------------------------------------------- units --
+def units_for(sales: Optional[Dict]) -> Dict[str, Dict[str, int]]:
+    """{SaraPlus name: {units, Int, NL, Int Up, Air, DTV[, Credit Checked,
+    Credit Passed]}} off one relay 'Sales JSON' blob.
+
+    units = Int + NL, nothing else (see the module docstring). The other
+    metrics ride along so the log can say what was NOT counted and why a rep
+    with activity shows 0 units.
+    """
+    out: Dict[str, Dict[str, int]] = {}
+    for rep, m in sorted((sales or {}).items()):
+        m = m if isinstance(m, dict) else {}
+        row = {k: _n(m.get(k, 0)) for k in SHOWN_KEYS}
+        for k in P.CREDIT_KEYS:
+            if k in m:
+                row[k] = _n(m.get(k))
+        row["units"] = sum(row[k] for k in UNIT_KEYS)
+        name = str(rep).strip()
+        if name:
+            out[name] = row
+    return out
+
+
+# ----------------------------------------------------------------- relay --
+def office_of(row: List[str]) -> str:
+    return (row[P.COL_OFFICE] if len(row) > P.COL_OFFICE else "").strip().lower()
+
+
+def snapshot_of(rownum: int, row: List[str]) -> Dict:
+    """One relay row, by the column positions post.py reads."""
+    def col(i: int) -> str:
+        return (row[i] if len(row) > i else "").strip()
+    return {
+        "rownum": rownum,
+        "office": office_of(row),
+        "received_raw": col(P.COL_RECEIVED),
+        "received": P._parse_received(col(P.COL_RECEIVED)),
+        "local_time": col(P.COL_LOCAL_TIME),
+        "agent": col(P.COL_AGENT),
+        "sales": P._loads(col(P.COL_SALES)) or {},
+        "records": P._loads(col(P.COL_RECORDS)) or {},
+    }
+
+
+def _order(snap: Dict) -> tuple:
+    # An unparseable 'Received At' sorts before any parsed one; a tie (two
+    # rows stamped alike) goes to the lower row -- the one the Apps Script
+    # upsert actually updates.
+    return (snap["received"] or dt.datetime.min, -snap["rownum"])
+
+
+def latest_snapshot(rows: List[Tuple[int, List[str]]],
+                    office_key: str) -> Optional[Dict]:
+    """The newest relay row of `office_key` among `rows` (post._rows_for's
+    (rownum, row) pairs for one day), or None when the office has none."""
+    key = (office_key or "").strip().lower()
+    best = None
+    for rownum, row in rows:
+        if office_of(row) != key:
+            continue
+        snap = snapshot_of(rownum, row)
+        if best is None or _order(snap) > _order(best):
+            best = snap
+    return best
+
+
+def office_campaign(key: str) -> Optional[str]:
+    """The enrolment campaign of an office that exists AND is switched on
+    (icd_alerts/offices.py + the ICD Signup tab); None for anything else, the
+    same offices post.run ignores."""
+    from automations.icd_alerts import offices as O
+    o = O.get(key)
+    return str(o.campaign or "").strip().lower() if (o and o.active) else None
+
+
+def pick_office(rows: List[Tuple[int, List[str]]], office_key: str = "",
+                lookup: Callable[[str], Optional[str]] = office_campaign
+                ) -> Tuple[Optional[str], str, Dict[str, Optional[str]]]:
+    """(office key, why-not, {relayed key: campaign}).
+
+    With `office_key` the pick is pinned but still has to be the NDS campaign.
+    Without it: the one key starting with OFFICE_KEY_PREFIX whose enrolment
+    says RELAY_CAMPAIGN. None with a reason when there is no such office or
+    more than one -- never a guess.
+    """
+    seen: Dict[str, Optional[str]] = {}
+    for _rownum, row in rows:
+        k = office_of(row)
+        if k and k not in seen:
+            seen[k] = lookup(k)
+    if office_key:
+        k = office_key.strip().lower()
+        if k not in seen:
+            return None, "%s has not relayed for this day" % k, seen
+        camp = seen[k]
+        if (camp or "") != RELAY_CAMPAIGN:
+            return None, ("%s relays as campaign %r, not %r -- its NL would "
+                          "still carry tablets and upgrade lines; fix the "
+                          "enrolment before filling from it"
+                          % (k, camp or "unknown / not enrolled",
+                             RELAY_CAMPAIGN)), seen
+        return k, "", seen
+    cands = sorted(k for k, c in seen.items()
+                   if k.startswith(OFFICE_KEY_PREFIX) and (c or "") == RELAY_CAMPAIGN)
+    if len(cands) == 1:
+        return cands[0], "", seen
+    ours = ", ".join("%s (%s)" % (k, c or "not enrolled")
+                     for k, c in sorted(seen.items())
+                     if k.startswith(OFFICE_KEY_PREFIX))
+    if not cands:
+        return None, ("no %s* office enrolled as %r relayed for this day%s"
+                      % (OFFICE_KEY_PREFIX, RELAY_CAMPAIGN,
+                         " -- relayed: " + ours if ours else "")), seen
+    return None, ("%d %s* offices relay as %r (%s) -- pass --office"
+                  % (len(cands), OFFICE_KEY_PREFIX, RELAY_CAMPAIGN,
+                     ", ".join(cands))), seen
+
+
+def relay_rows(day: dt.date) -> List[Tuple[int, List[str]]]:
+    """Every relay row of `day`, through post.py's own reader (one read of
+    the tab, retried like every other Sheets read)."""
+    from automations.recruiting_report.fill import _retry
+    tab = P._relay_tab()
+    return _retry(P._rows_for, day, tab)
+
+
+# ----------------------------------------------------------------- names --
+def _legal_first(name: str) -> str:
+    """'NICOLAS MURRUGARRA' -> 'nico murrugarra': the order-log fill's map of
+    legal first names to the ones the board uses (william/nicholas/nicolas/
+    jeffrey), applied to the normalised name."""
+    parts = R._norm(name).split()
+    if parts and parts[0] in FIRST_NAME_ALIASES:
+        parts[0] = FIRST_NAME_ALIASES[parts[0]]
+    return " ".join(parts)
+
+
+def candidates(sara_name: str) -> List[str]:
+    """The spellings to try on the board, in order: the alias, the SaraPlus
+    name itself, the name with its legal first name swapped."""
+    name = str(sara_name or "").strip()
+    out = []
+    alias = ALIASES.get(name.upper())
+    if alias:
+        out.append(alias)
+    out.append(name)
+    legal = _legal_first(name)
+    if legal and legal != R._norm(name):
+        out.append(legal)
+    return out
+
+
+def board_key(sara_name: str, rows: Dict[str, int]) -> Optional[str]:
+    """SaraPlus name -> campaign_rows key, or None (flagged by the caller)."""
+    for cand in candidates(sara_name):
+        key = R.match_rep(cand, rows)
+        if key:
+            return key
+    return None
+
+
+# ------------------------------------------------------------------ plan --
+def board_rules(writes: List[tuple]) -> List[tuple]:
+    """plan_overwrite's (name, a1, old, new) writes, through the board's own
+    conventions -- the BOX order-log fill's exact rule: a hand-typed marker
+    (T / X / F / anything non-numeric) is kept unless SaraPlus shows sales;
+    a count of 0 writes a BLANK (the board's convention: blank = none).
+    Returns (name, a1, current, new, note) like every other Vantura fill."""
+    plan = []
+    for name, a1, old, new in writes:
+        cur = "" if str(old) == "(blank)" else str(old).strip()
+        new = int(new)
+        note = ""
+        if cur.isdigit():
+            if new == int(cur):
+                continue
+            if new < int(cur):
+                note = ("  (LOWERED to SaraPlus)" if new
+                        else "  (cleared -- SaraPlus shows 0 units)")
+        elif cur:
+            if not new:
+                continue                      # keep the marker (T/X/F...)
+            note = "  (replaces marker %r)" % cur
+        elif not new:
+            continue                          # blank -> blank
+        plan.append((name, a1, cur or "(blank)",
+                     str(new) if new else "(blank)", note))
+    return plan
+
+
+def plan(g, col: int, rows: Dict[str, int],
+         per_rep: Dict[str, Dict[str, int]]) -> Tuple[List[tuple], List[str]]:
+    """(plan, flags) for setting the day column from the relay snapshot.
+
+    The overwrite itself is sara.plan_overwrite -- matched rep SET up or
+    down, board rep absent from SaraPlus LEFT as-is and flagged, SaraPlus rep
+    on no row flagged. Here: the names are resolved first (ALIASES, match_rep,
+    legal first name) and matched reps are keyed by the board's own REP cell,
+    so two SaraPlus spellings landing on one row are summed, not raced; a rep
+    with 0 units and no row is nothing to flag; then board_rules.
+    """
+    counts: Dict[str, int] = {}
+    flags: List[str] = []
+    by_row: Dict[str, List[str]] = {}
+    for sara_name, m in sorted(per_rep.items()):
+        key = board_key(sara_name, rows)
+        if key is None:
+            if m["units"]:
+                counts[sara_name] = counts.get(sara_name, 0) + int(m["units"])
+            continue
+        disp = R._cell(g, rows[key], R.NAME_COL).strip() or key
+        by_row.setdefault(disp, []).append(sara_name)
+        counts[disp] = counts.get(disp, 0) + int(m["units"])
+    for disp, names in sorted(by_row.items()):
+        if len(names) > 1:
+            flags.append("%s is %d SaraPlus names (%s) -- their units are "
+                         "summed on the one row" % (disp, len(names),
+                                                     ", ".join(names)))
+    writes, oflags = S.plan_overwrite(g, col, rows, counts)
+    return board_rules(writes), flags + oflags
+
+
+def batch_values(plan_rows: List[tuple]) -> List[Dict]:
+    """The batch_update payload: a number, or "" for a cleared cell."""
+    return [{"range": a1,
+             "values": [[int(new) if new != "(blank)" else ""]]}
+            for _name, a1, _cur, new, _note in plan_rows]
+
+
+# ------------------------------------------------------------------- day --
+def target_day(now: Optional[dt.datetime] = None) -> dt.date:
+    """Before OFFICE_DAY_START the run is closing out YESTERDAY; after it,
+    filling TODAY (the Slack fill's rule, same constant)."""
+    now = now or dt.datetime.now(TZ)
+    if now.hour >= R.OFFICE_DAY_START:
+        return now.date()
+    return now.date() - dt.timedelta(days=1)
+
+
+# ---------------------------------------------------------------- report --
+def load_board():
+    """(worksheet, grid) of the NDS board -- the Slack fill's own reader."""
+    return R.board_grid(CAMPAIGN)
+
+
+def describe(snap: Dict, per_rep: Dict[str, Dict[str, int]], g,
+             rows: Dict[str, int], col: Optional[int], log=_log) -> None:
+    """The relay snapshot next to the board, rep by rep -- what every mode
+    prints before deciding anything."""
+    when = snap["received"].strftime("%m/%d %H:%M:%S") if snap["received"] \
+        else (snap["received_raw"] or "?")
+    log("relay row %d: %s relayed at %s (agent %s, mini clock %s) -- "
+        "%d rep(s) with sales, %d with credit checks"
+        % (snap["rownum"], snap["office"], when, snap["agent"] or "?",
+           snap["local_time"] or "?", len(snap["sales"]),
+           len(snap["records"])))
+    log("  %-30s %5s   %s   %s   %s" % ("SaraPlus rep", "units", "counted",
+                                        "not counted", "board"))
+    matched = set()
+    for name, m in sorted(per_rep.items(), key=lambda kv: (-kv[1]["units"], kv[0])):
+        key = board_key(name, rows)
+        if key:
+            matched.add(key)
+            on = str(R._cell(g, rows[key], col)).strip() if col else "?"
+            where = "%s = %s" % (R._cell(g, rows[key], R.NAME_COL).strip(),
+                                 on or "(blank)")
+        elif m["units"]:
+            where = "! NO ROW on the NDS board"
+        else:
+            where = "(0 units, not on the board)"
+        cc = ""
+        if "Credit Checked" in m or "Credit Passed" in m:
+            cc = "  cc %d/%d" % (m.get("Credit Checked", 0),
+                                 m.get("Credit Passed", 0))
+        log("  %-30s %5d   Int %d + NL %d   Up %d Air %d DTV %d%s   -> %s"
+            % (name, m["units"], m["Int"], m["NL"], m["Int Up"], m["Air"],
+               m["DTV"], cc, where))
+    log("  %-30s %5d" % ("TOTAL", sum(m["units"] for m in per_rep.values())))
+    if col:
+        rest = [(R._cell(g, r, R.NAME_COL).strip(), str(R._cell(g, r, col)).strip())
+                for key, r in sorted(rows.items(), key=lambda kv: kv[1])
+                if key not in matched]
+        if rest:
+            log("  on the board, not in SaraPlus today (left as-is): "
+                + ", ".join("%s = %s" % (n, v or "(blank)") for n, v in rest))
+
+
+def _column_dump(g, rows: Dict[str, int], col: Optional[int], day: dt.date,
+                 log=_log) -> None:
+    log("board column for %s: %s" % (R._md(day), "none" if not col else
+                                     "col %d" % col))
+    if col:
+        for key, r in sorted(rows.items(), key=lambda kv: kv[1]):
+            log("  %-30s %s" % (R._cell(g, r, R.NAME_COL).strip(),
+                                str(R._cell(g, r, col)).strip() or "(blank)"))
+
+
+# ------------------------------------------------------------------ main --
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--date", help="sales day (YYYY-MM-DD); default from the "
+                                   "clock (before 10am = yesterday)")
+    ap.add_argument("--office", default="",
+                    help="relay office key to read (default: the one carlos* "
+                         "office enrolled as nds)")
+    ap.add_argument("--probe", action="store_true",
+                    help="print the latest relay snapshot and the board's "
+                         "current column; never writes, never holds")
+    ap.add_argument("--fill", action="store_true",
+                    help="plan the board write (dry-run without --yes)")
+    ap.add_argument("--yes", action="store_true", help="actually write")
+    ap.add_argument("--dry", "--dry-run", dest="dry", action="store_true",
+                    help="never write, whatever else is passed")
+    a = ap.parse_args(argv)
+
+    now = dt.datetime.now(TZ)
+    if a.date:
+        day = dt.date.fromisoformat(a.date)
+    else:
+        day = target_day(now)
+        _log("no --date given; at %s that means %s" % (now.strftime("%H:%M"),
+                                                       R._md(day)))
+    write = bool(a.fill and a.yes and not a.probe and not a.dry)
+    mode = ("PROBE" if a.probe else "WRITE" if write
+            else "PLAN (dry)" if a.fill else "DRY REPORT")
+    _log("NDS Sales Board <- SaraPlus relay, %s, %s" % (R._md(day), mode))
+
+    rows = relay_rows(day)
+    key, why, seen = pick_office(rows, a.office, lookup=office_campaign)
+    if a.probe:
+        _log("offices that relayed for %s: %s" % (
+            day.isoformat(),
+            ", ".join("%s (%s)" % (k, c or "not enrolled")
+                      for k, c in sorted(seen.items())) or "none"))
+    snap = latest_snapshot(rows, key) if key else None
+    if snap is None:
+        _log("no relay for %s -- the office mini may be off (%s)"
+             % (day.isoformat(), why or "no row for %s" % key))
+        if not a.probe:
+            _log("HOLDING -- nothing written; the next pass retries")
+            return EXIT_HOLD
+    per_rep = units_for(snap["sales"]) if snap else {}
+
+    ws, g = load_board()
+    board_rows = R.campaign_rows(g, CAMPAIGN)
+    col = R.day_column(g, day)
+    ok, shown, want = R.week_ok(g, day)
+    _log("board %r: WE cell reads %r, %s needs %r -> %s; %d NDS row(s)"
+         % (ws.title, shown, R._md(day), want,
+            "ok" if ok else "WRONG WEEK", len(board_rows)))
+    if snap:
+        describe(snap, per_rep, g, board_rows, col)
+    if a.probe:
+        _column_dump(g, board_rows, col, day)
+        _log("PROBE -- nothing written")
+        return 0
+
+    if not a.fill:
+        _log("DRY REPORT -- add --fill to plan the write, --fill --yes to write")
+        return 0
+
+    if not ok:
+        _log("WRONG WEEK -- holding. The gold WE cell reads %r but %s's "
+             "sales belong to week %r. Roll the board (lucy rerun "
+             "vantura_week_roll --apply --machine \"Lucy 2\") and re-run; "
+             "writing now would land on the previous week's column."
+             % (shown, R._md(day), want))
+        _log("HELD DAY: %s" % day.isoformat())
+        return EXIT_HOLD
+    if col is None:
+        _log("no column for %s on the board -- holding." % day.strftime("%A"))
+        return EXIT_HOLD
+
+    plan_rows, flags = plan(g, col, board_rows, per_rep)
+    for f in flags:
+        _log("  ! %s" % f)
+    _log("%d cell(s) would change on %r (SaraPlus overwrites, up or down):"
+         % (len(plan_rows), ws.title))
+    for name, a1, cur, new, note in plan_rows:
+        _log("  %s  %-28s %s -> %s%s" % (a1, name, cur, new, note))
+    if not write:
+        _log("DRY RUN -- re-run with --fill --yes to write")
+        return 0
+    if plan_rows:
+        from automations.recruiting_report.fill import _retry
+        _retry(ws.batch_update, batch_values(plan_rows))
+        _log("wrote %d cell(s)" % len(plan_rows))
+    else:
+        _log("board already matches SaraPlus -- nothing to write")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

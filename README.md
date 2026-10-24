@@ -33,7 +33,8 @@ this README is the map and the scar tissue.
 ## The report ecosystem (major groups)
 
 - **Vantura Master Sales Board** (`1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY`):
-  filled by `rep_sales_fill` (4:00) + `vantura_orderlog_sales` (all morning),
+  filled by `rep_sales_fill` (4:00) + `vantura_orderlog_sales` (all morning)
+  + `vantura_nds_sara` (NDS board from Carlos's NDS SaraPlus relay, 4-9pm + 5am),
   audited by `vantura_board_audit` (4:01, see Roll Call below), rolled onto the
   new week Mondays 11:30 by `sales_boards.week_roll`. `sales_boards` posts the
   board images into the day's threads from 5:10.
