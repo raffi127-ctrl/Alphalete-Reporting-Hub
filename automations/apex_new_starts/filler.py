@@ -123,7 +123,18 @@ _JS = r"""
    return;
  }
  var I=0; try{ I=parseInt(localStorage.getItem(KEY)||'0',10)||0; }catch(e){}
- if(I>=D.length){ alert('All '+D.length+' done for %(week)s.\nTo start again, click this and choose Reset.'); }
+ /* The saved position also moves past people who FAILED, so it reaching the
+    end does not mean anybody is done -- it said "All done" over a week where
+    nobody had gone in (Megan, 2026-10-23). Pull it back to the first person
+    not actually finished; the done list is the truth. */
+ (function(){
+   var dm={}; try{ dm=JSON.parse(localStorage.getItem(KEY+'.done')||'{}'); }catch(e){}
+   var k;
+   for(k=0;k<D.length;k++){
+     if(!dm[norm(D[k].name)]){ if(I>k){ I=k; try{ localStorage.setItem(KEY,String(I)); }catch(e){} } return; }
+   }
+   alert('All '+D.length+' done for %(week)s.\nTo start again, click this and choose Reset.');
+ })();
  function norm(t){ return (t||'').replace(/\*/g,'').replace(/\s+/g,' ').trim().toLowerCase(); }
  function kw(el){
    /* Apex's dropdowns are Kendo UI widgets on AngularJS, not <select>s. The
@@ -1562,8 +1573,8 @@ _JS = r"""
    var f=filterBoxes();
    if(!f){
      if(!(await goSpa('/roster'))) return null;
-     await sleep(1000);
-     f=filterBoxes();
+     /* Wait for the list to actually draw. A fixed second was a guess. */
+     for(var w8=0;w8<40&&!f;w8++){ await sleep(250); f=filterBoxes(); }
    }
    var row=f? (await lookupRow(f,p)) : rowFor(p);
    if(!row) return null;
@@ -2126,7 +2137,7 @@ _JS = r"""
      /* Read the picker while the form is still HERE -- it was being read
         after the form had been removed, so it always fell back to the top
         of the list. */
-     var from=I, stop=D.length;
+     var from=0, stop=D.length;
      if(onlyOne){
        var pk=document.getElementById('anspick');
        from=pk? +pk.value : I;

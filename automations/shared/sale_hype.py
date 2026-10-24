@@ -74,7 +74,6 @@ HYPE_REGULAR = (
     "Closer!! {first} is on the board :fire:",
     "WINNER!! {first} is on the board :money_with_wings:",
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
-    "{first} on the board. No complacency :eyes:",
     "That's {first} on the board :100:",
     "{first} came to play :hot_pepper:",
     "{first} is a DAWGGGG :dog:",
@@ -105,11 +104,12 @@ HYPE_LARGE = (
     "{first}, TELL US!! :fire::moneybag::fire:",
     "Heck YEAH {first}!! :hot_pepper::fire:",
     "{first} FOUND THE MONEY!! :moneybag::moneybag:",
+    "{first} found a whale!! :whale::moneybag:",
+    "Whale spotted :whale: {first} reeled it in :fishing_pole_and_fish::fire:",
     "Snicklepop!! {first} is rolling :zap::dollar:",
     "CLOSER!! {first} :fire::money_with_wings:",
     "WINNER!! {first} :paw_prints::fire:",
     "{first}!! Who's next :eyes::eyes::eyes:",
-    "{first}!! No complacency :fire::heavy_dollar_sign:",
     "BIG DAWG {first} on the board!! :dog::fire:",
     "{first} is NOT playing today :hot_pepper::fire:",
     "{first} again?? Give somebody else a turn :money_with_wings::money_with_wings:",
@@ -140,6 +140,8 @@ HYPE_SUPER = (
     "{first} IS NOT HUMAN!! WOOF WOOF :dog::fire:",
     "SOMEBODY STOP {first} :money_with_wings::money_with_wings::money_with_wings:",
     "{first} BROKE THE BOARD :boom:",
+    "{first} FOUND A WHALE!!! :whale::whale::moneybag:",
+    "WHALE ALERT :rotating_light::whale: {first} just landed the big one :fire:",
     "WHAT IS {first} DOING?!? :hot_pepper::fire:",
     "{first} ATE. Everybody else picking crumbs :fire:",
     "REST OF Y'ALL SEEING THIS?? {first} :money_with_wings::money_with_wings:",
@@ -564,7 +566,6 @@ class _Box(Shape):
         "Closer!! {first} closed one :fire:",
         "WINNER!! {first} closed one :money_with_wings:",
         "{first} closed one! Who's next :eyes::eyes::eyes:",
-        "{first} closed one. No complacency :eyes:",
         "That's another for {first} :100:",
         "{first} came to play :hot_pepper:",
         "{first} is a DAWGGGG :dog:",
@@ -812,6 +813,9 @@ LINE_FAMILIES = (
     ("keeps-going", ("keeps going",)),
     ("is-on-it", ("is on it",)),
     ("hundred", (":100:",)),
+    # Two whale lines in one post is the same joke twice (Megan 2026-10-23:
+    # "add something about finding whales").
+    ("whale", ("whale",)),
     # Last, and on purpose: nearly every line says this, so it is only the
     # subject when nothing more specific fits.
     ("on-the-board", ("on the board",)),

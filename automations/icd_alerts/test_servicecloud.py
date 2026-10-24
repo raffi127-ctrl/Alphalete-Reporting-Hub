@@ -2010,20 +2010,6 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
                 hits = sum(1 for l in pool if ":paw_prints:" in l)
                 self.assertLess(hits, len(pool), "paws everywhere")
 
-    def test_the_ribbing_lands_on_ordinary_days_only(self):
-        """Megan 2026-09-16: "joke about not getting complacent".
-
-        It is funny after one sale and sour after somebody's best day of the
-        month -- so the top tier stays pure celebration and the joke sits
-        where the day is ordinary.
-        """
-        for campaign in ("att", "b2b_box"):
-            regular, _large, super_ = self._pools(campaign)
-            ribbed = [l for l in regular if "complacen" in l.lower()]
-            self.assertTrue(ribbed, campaign)
-            for line in super_:
-                self.assertNotIn("complacen", line.lower())
-
     def test_closer_is_singular(self):
         """Megan was explicit (2026-09-16). The line is about the one rep who
         just sold, not the room -- the plural reads like a greeting to
@@ -2034,15 +2020,27 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
             self.assertNotIn("closers", joined.lower())
             self.assertNotIn("CLOSERS", joined)
 
-    def test_the_word_is_complacent_not_a_synonym(self):
-        """Megan was specific (2026-09-16). It is the word the offices
-        actually use, and a near-synonym in a line meant to sound like them
-        is the whole difference between borrowed and invented."""
+    def test_complacency_is_retired(self):
+        """Megan 2026-10-23: "'No complacency' - remove that one". The
+        2026-09-16 ask for a complacency joke is withdrawn; neither the word
+        nor a near-synonym comes back."""
         for campaign in ("att", "b2b_box"):
             joined = " ".join(sum(self._pools(campaign), ())).lower()
-            self.assertIn("complacen", joined)
+            self.assertNotIn("complacen", joined)
             for near in ("comfortable", "comfy", "coasting"):
                 self.assertNotIn(near, joined, near)
+
+    def test_whales_are_a_big_sale_thing(self):
+        """Megan 2026-10-23: "add something about finding whales". A whale
+        is a big sale, so the lines sit in the loud tiers and never in the
+        ordinary one; the family table keeps two whales out of one post."""
+        from automations.shared import sale_hype as H
+        for campaign in ("att", "b2b_box"):
+            regular, large, super_ = self._pools(campaign)
+            self.assertFalse([l for l in regular if "whale" in l.lower()])
+            self.assertTrue([l for l in large if "whale" in l.lower()])
+            self.assertTrue([l for l in super_ if "whale" in l.lower()])
+        self.assertIn("whale", [f[0] for f in H.LINE_FAMILIES])
 
     def test_no_phrase_is_used_twice_in_one_pool(self):
         """THE BUG THIS EXISTS FOR. Three of the seven loudest lines said

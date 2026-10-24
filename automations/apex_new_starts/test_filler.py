@@ -2869,6 +2869,33 @@ def test_one_bad_record_does_not_stop_the_week(page, tmp_path):
         assert name in out, f"{name} is accounted for"
 
 
+def test_a_run_where_everybody_failed_does_not_end_the_week(page, tmp_path):
+    """The saved place in the list moved past people who FAILED, not just
+    people who were done. A run where everybody read "not on the Pending
+    list" left it at the end, and "Run the whole week" then did nothing --
+    one person went in through Try one, the full run would not (Megan,
+    2026-10-23)."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("""() => { localStorage.clear();
+        localStorage.setItem('apexNewStarts.WE 10.25', '3'); }""")
+    people = [{"name": "Dylan Poston", "find": "Poston", "pages": {}},
+              {"name": "Jessica Mora", "find": "Mora", "pages": {}},
+              {"name": "Noe Rocha", "find": "Rocha", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 10.25")[len("javascript:"):])
+
+    page.locator("#ansrun").click()
+    page.locator("#ansgo").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('run \\u00b7')",
+        timeout=25000)
+
+    out = page.locator("#ansout").inner_text()
+    assert "3 of 3 run" in out, "it started from the top, not the stale end"
+    for name in ("Dylan Poston", "Jessica Mora", "Noe Rocha"):
+        assert name in out, f"{name} got a turn"
+
 def test_a_combobox_row_is_selected_not_just_valued(page, tmp_path):
     """On a Kendo ComboBox, value() accepts free text and leaves dataItem()
     null -- the box shows the words, nothing is selected, and Apex copies the
