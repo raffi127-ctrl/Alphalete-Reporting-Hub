@@ -1101,10 +1101,31 @@ _JS = r"""
    return out;
  }
  function setBox(el,v){
+   /* Write the value INTO the page's own model, not just onto the screen.
+      Setting .value and firing 'input' only paints the box; when Apex's
+      model never hears it, the next repaint wipes the box and Apply Filters
+      searches with nothing -- the filters went blank before every search and
+      everybody read "not on the Pending list" while sitting right there
+      (Megan, 2026-10-23). So: focus, type, blur like a person, then hand the
+      value to ngModel directly when the page has one. */
    if(!el) return;
-   el.value=v||'';
+   v=v||'';
+   try{ el.focus(); }catch(e){}
+   el.value=v;
    el.dispatchEvent(new Event('input',{bubbles:true}));
+   el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'a'}));
    el.dispatchEvent(new Event('change',{bubbles:true}));
+   if(window.angular){
+     try{
+       var ctl=angular.element(el).controller('ngModel');
+       if(ctl){
+         ctl.$setViewValue(v);
+         if(ctl.$commitViewValue) ctl.$commitViewValue();
+         ctl.$render();
+       }
+     }catch(e){}
+   }
+   el.dispatchEvent(new Event('blur'));
    ngApply(el);
  }
  async function settleFilter(f,given,surname){
@@ -1149,6 +1170,15 @@ _JS = r"""
  }
  async function filterTo(f,given,surname){
    setBox(f.first,given); setBox(f.last,surname);
+   await sleep(150);
+   /* Check the boxes still say what was typed before searching. If the page
+      wiped them, type again -- a search on blank boxes shows page one of
+      everybody and calls the rest missing. */
+   if(norm(f.last.value)!==norm(surname)||
+      (f.first&&norm(f.first.value)!==norm(given))){
+     setBox(f.first,given); setBox(f.last,surname);
+     await sleep(300);
+   }
    applyFilters();
    await settleFilter(f,given,surname);
  }
