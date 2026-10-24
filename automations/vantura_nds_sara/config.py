@@ -63,6 +63,48 @@ def seed_profile_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "automations" / "uploaded" / ".saraplus_nds_profile"
 
 
+# WHERE SARAPLUS MAILS THE PASSCODE (read off the live picker from the laptop,
+# 2026-10-24): the alphaletegp login's new-browser code can go to a mobile
+# number or to one of two addresses both shown as 'alph...@gmail.com' -- the
+# login's own alphaletegp@gmail.com. NOT the reporting inbox, and not Carlos's
+# own Gmail either (that is where the B2B dealer's codes go: its picker says
+# 'Carl...@gmail.com'). So the code reaches rc_contact_sync.verify_code's
+# default inbox only through a Gmail forward alphaletegp -> alphaletereporting
+# -- which is slow some days (rc config VERIFY_TIMEOUT_S) and silent when the
+# mail is spam-foldered first. The direct route: an app password for
+# alphaletegp@gmail.com saved on the laptop at ~/.config/recruiting-report/
+# gmail-app-password-alphaletegp and pushed with `lucy push_cred_file
+# gmail-app-password-alphaletegp "Lucy 2"` (whitelisted in
+# mini_control._CRED_FILES). When that file is on the machine the login reads
+# the code straight from alphaletegp's inbox; otherwise the reporting inbox,
+# verify_code's default, and the forward has to carry it.
+CODE_INBOX_ACCOUNT = "alphaletegp@gmail.com"
+CODE_INBOX_KEY = "gmail-app-password-alphaletegp"
+PUSH_CODE_INBOX_CMD = 'lucy push_cred_file %s "Lucy 2"' % CODE_INBOX_KEY
+
+
+def code_inbox_path() -> Path:
+    return config_dir() / CODE_INBOX_KEY
+
+
+def code_inbox() -> Optional[Tuple[str, Path]]:
+    """verify_code's inbox= for the passcode: (alphaletegp's address, its app
+    password file) when the file is on this machine, else None -- the
+    reporting inbox, verify_code's default, fed by the Gmail forward."""
+    p = code_inbox_path()
+    return (CODE_INBOX_ACCOUNT, p) if p.exists() else None
+
+
+def code_inbox_status() -> str:
+    """One line for --preflight / the login log: where the code is read."""
+    ib = code_inbox()
+    if ib:
+        return "passcode inbox: %s directly (app password at %s)" % (ib[0], ib[1])
+    return ("passcode inbox: the reporting inbox, via the Gmail forward from %s "
+            "(no %s here -- to read that inbox directly: %s)"
+            % (CODE_INBOX_ACCOUNT, code_inbox_path(), PUSH_CODE_INBOX_CMD))
+
+
 def creds_path() -> Path:
     own = config_dir() / (CRED_KEY + ".json")
     if own.exists():

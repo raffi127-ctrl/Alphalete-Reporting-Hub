@@ -341,7 +341,13 @@ def _submit_code(page, field: str, code: str) -> None:
     _settle(page)
 
 
-def _verify_browser(page, attempts: int = 3, log=print) -> None:
+def _inbox_name(code_inbox) -> str:
+    """The address a code is read from: the caller's inbox= or the
+    reporting account verify_code reads by default."""
+    return code_inbox[0] if code_inbox else VC._ing.ACCOUNT
+
+
+def _verify_browser(page, attempts: int = 3, log=print, code_inbox=None) -> None:
     """Clear SaraPlus's "new location or browser" challenge, RETRYING.
 
     A single pass is not enough, and the reason is worth writing down.
@@ -387,7 +393,7 @@ def _verify_browser(page, attempts: int = 3, log=print) -> None:
                 "%s | %s" % (code_page_text(page), page_state(page)))
         code = VC.wait_for_code(since, timeout_s=C.VERIFY_TIMEOUT_S,
                                 poll_s=C.VERIFY_POLL_S, query=C.VERIFY_QUERY,
-                                log=log)
+                                inbox=code_inbox, log=log)
         _submit_code(page, field_id, code)
         # Judged on the URL, not on the page's words: the Reporting Hub we
         # land on afterwards carries enough of the same vocabulary to read as
@@ -402,12 +408,16 @@ def _verify_browser(page, attempts: int = 3, log=print) -> None:
         "SaraPlus would not accept a verification code after %d attempts. "
         "Each one was read from %s and was newer than its own request, so "
         "this is not a stale-code problem -- the challenge itself is not "
-        "clearing. %s" % (attempts, VC._ing.ACCOUNT, last_state))
+        "clearing. %s" % (attempts, _inbox_name(code_inbox), last_state))
 
 
-def login(page, email: str, password: str, log=print) -> str:
+def login(page, email: str, password: str, log=print, *, code_inbox=None) -> str:
     """Sign in -- password, then the emailed verification code if asked --
     and return the DealerPages base url.
+
+    `code_inbox` is verify_code's inbox= -- (address, app-password file) --
+    for a login whose passcode SaraPlus mails somewhere other than the
+    reporting inbox. None keeps the default.
 
     A silent bounce back to the login page is how a whole day of runs reads
     as 'no orders' instead of 'not logged in', so landing anywhere other than
@@ -438,9 +448,9 @@ def login(page, email: str, password: str, log=print) -> str:
 
     if _needs_code(page):
         log("  SaraPlus asked to verify this browser — reading %s"
-            % VC._ing.ACCOUNT)
+            % _inbox_name(code_inbox))
         log("  code page says: %s" % (code_page_text(page) or "(no text)"))
-        _verify_browser(page, log=log)
+        _verify_browser(page, log=log, code_inbox=code_inbox)
 
     url = page.url
     if "login" in url.lower():

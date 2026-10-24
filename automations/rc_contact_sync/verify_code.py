@@ -195,7 +195,7 @@ def wait_for_code(since: dt.datetime, *, timeout_s: int = 180,
                 "inbox, or it arrives from a sender/wording the search misses "
                 "-- open the mailbox, find the real email and set "
                 "config.VERIFY_QUERY. Nothing was typed in."
-                % (_ing.ACCOUNT, timeout_s, query,
+                % (inbox[0] if inbox else _ing.ACCOUNT, timeout_s, query,
                    since.strftime("%H:%M:%S")))
         log("  waiting for the verification code... (%ds left)"
             % int(deadline - time.time()))

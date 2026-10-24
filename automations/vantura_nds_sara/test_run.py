@@ -833,7 +833,8 @@ class PreflightTest(unittest.TestCase):
         rc, out = self.preflight(home=home)
         self.assertEqual(rc, 0)
         lines = [l for l in out.splitlines() if l.strip()]
-        self.assertEqual(len(lines), 4)                              # and nothing else
+        self.assertEqual(len(lines), 5)                              # and nothing else
+        self.assertTrue(any("passcode inbox:" in l for l in lines))   # where the code is read (10/24)
         self.assertIn("patchright: ok (1.55.0)", out)
         self.assertIn("creds: ok -- creds file %s for nds@example.com" % (cdir / "saraplus-nds-creds.json"), out)
         self.assertIn("profile dir: %s (exists)" % (cdir / "saraplus-nds-profile"), out)

@@ -396,6 +396,11 @@ def _login(playwright, profile_dir, creds: Dict[str, str], *, headless: bool = T
     # does every morning (rc_contact_sync.sara.login on
     # automations/uploaded/.saraplus_nds_profile). The two never run at the
     # same time (nds_metrics ~7am, this fill 4-9pm + 5am).
+    # 2026-10-24: SaraPlus mails THIS login's passcode to alphaletegp's own
+    # inbox (config.CODE_INBOX_ACCOUNT) -- read there directly when its app
+    # password is on this box, else from the reporting inbox the forward feeds.
+    inbox = CFG.code_inbox()
+    log(CFG.code_inbox_status())
     seed = CFG.seed_profile_dir()
     if (seed / "Default").exists():
         from automations.rc_contact_sync import sara as RC
@@ -404,7 +409,8 @@ def _login(playwright, profile_dir, creds: Dict[str, str], *, headless: bool = T
             viewport={"width": 1600, "height": 1000})
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = RC.login(page, creds["email"], creds["password"], log=log)
+            base = RC.login(page, creds["email"], creds["password"], log=log,
+                            code_inbox=inbox)
         except Exception as e:  # noqa: BLE001 -- say which profile, then fall through to ours
             try:
                 ctx.close()
@@ -421,12 +427,14 @@ def _login(playwright, profile_dir, creds: Dict[str, str], *, headless: bool = T
                                 creds_hint=str(CFG.creds_path()), log=log)
     except SP.SaraPasscodeWall as wall:
         log("SaraPlus wants an emailed passcode for this browser -- answering "
-            "it from the reporting inbox (rc_contact_sync.sara.login), once")
+            "it from %s (rc_contact_sync.sara.login), once"
+            % (inbox[0] if inbox else "the reporting inbox"))
         from automations.rc_contact_sync import sara as RC
         ctx = SP.open_context(playwright, profile_dir, headless=headless)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = RC.login(page, creds["email"], creds["password"], log=log)
+            base = RC.login(page, creds["email"], creds["password"], log=log,
+                            code_inbox=inbox)
         except Exception as e:  # noqa: BLE001 -- the wall stands; say both
             try:
                 ctx.close()
@@ -559,8 +567,68 @@ def preflight(log=_log) -> int:
     prof = CFG.ensure_profile_seeded(_log)
     log("profile dir: %s (%s)" % (prof, "exists" if prof.exists()
                                   else "not yet -- created on the first login"))
+    log(CFG.code_inbox_status())
     log("PREFLIGHT %s" % ("OK" if ok else "FAILED"))
     return 0 if ok else 1
+
+
+def passcode_mail(log=_log, days: int = 3, limit: int = 12) -> int:
+    """WHERE THE CODES ARE LANDING. The last `limit` SaraPlus passcode mails
+    in the inbox the login reads (config.code_inbox() or the reporting inbox):
+    when SaraPlus sent each (its Date header), the address it was sent TO
+    (which SaraPlus account it belongs to) and when it ARRIVED in this inbox
+    (IMAP INTERNALDATE) -- the gap is the forward's delay. Never the code
+    itself. 0 when the inbox could be read, 1 when it could not."""
+    import email as _email
+    import imaplib
+    import time as _time
+    from email.utils import parsedate_to_datetime
+    from automations.rc_contact_sync import verify_code as VC
+    log(CFG.code_inbox_status())
+    try:
+        account, password = VC._inbox(CFG.code_inbox())
+    except Exception as e:  # noqa: BLE001 -- no password here, or no file
+        log("passcode inbox unreadable: %s" % str(e)[:300])
+        return EXIT_FAIL
+    M = imaplib.IMAP4_SSL(VC._ing.IMAP_HOST)
+    try:
+        M.login(account, password)
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        typ, data = M.search(None, "X-GM-RAW",
+                             '"from:security.info@saraplus.com newer_than:%dd"' % days)
+        uids = (data[0] or b"").split() if typ == "OK" else []
+        log("SaraPlus passcode mail in %s, last %d day(s): %d" % (account, days, len(uids)))
+        for uid in list(reversed(uids))[:limit]:
+            typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE TO SUBJECT)])")
+            if typ != "OK" or not d or not d[0]:
+                continue
+            meta = d[0][0] if isinstance(d[0][0], bytes) else b""
+            msg = _email.message_from_bytes(d[0][1])
+            arrived = None
+            try:
+                tup = imaplib.Internaldate2tuple(meta)
+                if tup:
+                    arrived = dt.datetime.fromtimestamp(_time.mktime(tup))
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                sent = parsedate_to_datetime(msg.get("Date"))
+                sent_local = sent.astimezone().replace(tzinfo=None) if sent.tzinfo else sent
+            except Exception:  # noqa: BLE001
+                sent_local = None
+            gap = ("%+ds" % (arrived - sent_local).total_seconds()
+                   if arrived and sent_local else "?")
+            log("  sent %s  to %s  arrived here %s  (%s)  %s"
+                % (sent_local.strftime("%m/%d %H:%M:%S") if sent_local else "?",
+                   (msg.get("To") or "?").strip()[:60],
+                   arrived.strftime("%m/%d %H:%M:%S") if arrived else "?",
+                   gap, (msg.get("Subject") or "").strip()[:40]))
+    finally:
+        try:
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    return 0
 
 
 # ----------------------------------------------------------------- names --
@@ -821,6 +889,10 @@ def main(argv=None) -> int:
                     help="explicit NDS SaraPlus login JSON {email,password}; "
                          "overrides the standard file (probe which dealer "
                          "shows the crew before trusting a login)")
+    ap.add_argument("--passcode-mail", action="store_true",
+                    help="list where SaraPlus's recent passcode mails landed in the "
+                         "inbox the login reads (sent / to / arrived; never the code) "
+                         "-- nothing else touched")
     ap.add_argument("--preflight", action="store_true",
                     help="report patchright, the creds file (never the "
                          "password) and the profile dir, then exit 0/1 -- "
@@ -836,6 +908,8 @@ def main(argv=None) -> int:
                     help="never write, whatever else is passed")
     a = ap.parse_args(argv)
 
+    if a.passcode_mail:
+        return passcode_mail()
     if a.preflight:
         return preflight()
 

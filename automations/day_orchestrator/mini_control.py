@@ -5004,6 +5004,14 @@ _CRED_FILES = {
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password",
     "gmail-app-password-raffi127":
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-raffi127",
+    # alphaletegp@gmail.com's Gmail app password. SaraPlus mails the NDS
+    # dealer's new-browser passcode to that inbox, so the NDS Sales Board fill
+    # on Lucy 2 reads the code there when this file is present
+    # (vantura_nds_sara.config.code_inbox, 2026-10-24) instead of waiting on
+    # the alphaletegp -> alphaletereporting forward. Lives in ~/.config,
+    # outside the repo, so `lucy update` never carries it.
+    "gmail-app-password-alphaletegp":
+        lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-alphaletegp",
     "ownerville-creds":
         lambda: REPO_ROOT / "ownerville-creds.json",
     # SaraPlus portal login for the Alphalete Sales Board sweep
