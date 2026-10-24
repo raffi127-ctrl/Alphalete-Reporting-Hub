@@ -83,10 +83,27 @@ def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
     same lines split by device, so taking the devices off New + Port assumes a
     tablet or watch is never an upgrade. A rep missing from the grid sold no
     lines. None (not read) leaves the AT&T grid's count as it was.
+
+    B2B AT&T TOO (Sebastian Avellaneda 2026-10-23), plus one more move: an
+    Internet Air is an INTERNET sale there, not an upgrade -- Jorge Hernandez's
+    "1 Up" on the A Players text was an Air. So off the B2B AT&T board Air
+    leaves Int Up for Int. NDS keeps Air inside Int Up: its board shows Air
+    as its own section and takes it back out (post._nds_scoreboard).
     """
-    if lines is None or str((rec or {}).get("campaign") or "").strip().lower() != "nds":
+    from automations.icd_alerts import config as C
+    if not C.wireless_lines_wanted(rec):
         return sales
+    nds = str((rec or {}).get("campaign") or "").strip().lower() == "nds"
     out = {k: dict(v) for k, v in (sales or {}).items()}
+    if not nds:
+        # Even on a sweep whose Wireless pass failed: Air comes off the AT&T
+        # grid, not this one.
+        for row in out.values():
+            air = min(int(row.get("Air", 0) or 0), int(row.get("Int Up", 0) or 0))
+            row["Int"] = int(row.get("Int", 0) or 0) + air
+            row["Int Up"] = int(row.get("Int Up", 0) or 0) - air
+    if lines is None:
+        return out
     for rep in set(out) | set(lines):
         got = lines.get(rep) or {}
         row = out.setdefault(str(rep), {m: 0 for m in _sale_metrics(rec)})
