@@ -51,7 +51,8 @@ class BoardTest(unittest.TestCase):
                           "NewInternet", {})
         self.assertEqual([o for o, _, _ in n["owners"]], ["Amy", "Bob"])
         self.assertEqual(n["team_days"][:2], [4, 1])
-        self.assertEqual(n["shown"], [True, True] + [False] * 5)
+        # today (WEEK[1]) is not loaded in Tableau yet -> blank, not 0
+        self.assertEqual(n["shown"], [True] + [False] * 6)
         self.assertEqual(n["last_days"][0], 4)
         self.assertEqual(n["avg_days"][0], 2)           # (4+2+2+0)/4
         amy = n["owners"][0][1]

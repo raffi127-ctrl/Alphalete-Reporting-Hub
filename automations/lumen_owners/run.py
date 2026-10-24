@@ -313,14 +313,14 @@ def sales_board_html(rows: List[dict], days: List[dt.date], today: dt.date,
                                              r["owner"].casefold()))
         body = []
         for r in ranked:
-            cells = "".join("<td %s>%s</td>" % (td, _v(r, d) if d <= today else "")
+            cells = "".join("<td %s>%s</td>" % (td, _v(r, d) if d < today else "")
                             for d in days)
             body.append("<tr><td %s>%s</td>%s<td %s>%d</td>%s</tr>"
                         % (tdl, html.escape(pretty_name(r["owner"])), cells, tdt,
                            sum(_v(r, d) for d in days),
                            _pcells(td, [_p(r, i) for i in range(len(PAST_LABELS))])))
         tot = "".join("<td %s>%s</td>" % (tdt, sum(_v(r, d) for r in rows)
-                                          if d <= today else "") for d in days)
+                                          if d < today else "") for d in days)
         body.append("<tr><td %s>TEAM TOTAL</td>%s<td %s>%d</td>%s</tr>"
                     % (tdtl, tot, tdt, sum(_v(r, d) for r in rows for d in days),
                        _pcells(tdt, [_ptot(i) for i in range(len(PAST_LABELS))])))
