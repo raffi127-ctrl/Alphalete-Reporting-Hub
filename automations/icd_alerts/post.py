@@ -2481,6 +2481,7 @@ def open_faults(day: Optional[dt.date] = None, book=None) -> List[Dict]:
 
 # STAGES THAT RUN EVERY TICK, and so get a second chance within minutes.
 PER_TICK_STAGES = ("sweep", "knocks", "box", "crash")
+_UNREAD = object()   # notify_faults: knock sales not fetched yet
 
 
 def waits_for_a_repeat(fault: Dict) -> bool:
@@ -2510,6 +2511,58 @@ def waits_for_a_repeat(fault: Dict) -> bool:
         return int(str(fault.get("count") or "0").strip() or 0) < 2
     except ValueError:
         return False
+
+
+def knock_sales_today(day: dt.date, *, book=None, rows=None) -> Optional[Dict[str, int]]:
+    """Sales each office's reps logged at the door today, off 'ICD Knocks'.
+
+    None = the tab could not be read, which a caller must not confuse with
+    "nobody sold". Keyed on the office key the laptop relays under.
+    """
+    if rows is None:
+        try:
+            rows = book.worksheet(KNOCKS_TAB).get_all_values()
+        except Exception:  # noqa: BLE001
+            return None
+    from automations.icd_alerts import knocks_post as _KP
+    out: Dict[str, int] = {}
+    for r in rows[1:]:
+        if len(r) <= _KP.KN_ROWS or _day_key(r[_KP.KN_DAY]) != day.isoformat():
+            continue
+        try:
+            reps = json.loads(r[_KP.KN_ROWS] or "[]")
+        except ValueError:
+            continue
+        n = 0
+        for rep in reps if isinstance(reps, list) else []:
+            sale = str((rep or {}).get("sale") or "").strip()
+            n += int(sale) if sale.isdigit() else 0
+        key = (r[_KP.KN_OFFICE] or "").strip().lower()
+        if key:
+            out[key] = max(out.get(key, 0), n)
+    return out
+
+
+def empty_read_is_a_quiet_day(fault: Dict, sales: Optional[Dict[str, int]]) -> bool:
+    """An empty credit-check list with no sale at the door is a slow day.
+
+    2026-10-22/23: 17-18 offices a day landed in the hiccups thread as
+    "a hiccup reading SaraPlus", and the grid they sent showed every past day
+    and nothing for today -- they simply had not run a credit check yet. The
+    "selling" in the laptop's check is the clock, not a sale (Eve: alarm only
+    when the office SOLD today and the list still comes back empty).
+
+    Held unposted, like waits_for_a_repeat: still on the Faults tab, and the
+    first tick after a sale shows up posts it. Unreadable knocks = post, so
+    a broken tab never silences a real empty read.
+    """
+    if str(fault.get("stage") or "") != "sweep-empty" or sales is None:
+        return False
+    office = str(fault.get("office") or "").strip().lower()
+    # khalil / khalil-nds: the knocks key and the SaraPlus key can differ.
+    sold = [n for k, n in sales.items()
+            if k == office or k.startswith(office) or office.startswith(k)]
+    return not any(sold)
 
 
 # --- the tick after a fault clears -----------------------------------------
@@ -2846,6 +2899,8 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
     key_for = lambda f: "%s|%s" % (day.isoformat(), f["office"])   # noqa: E731
     tab = book.worksheet(FAULTS_TAB)
     stamp = dt.datetime.now().isoformat(timespec="seconds")
+    # Read once, and only when an empty credit-check read needs it.
+    sales_today = _UNREAD
 
     for f in faults:
         # A LOST SESSION IS NOT A LAPTOP FAULT. It is the one failure here
@@ -2896,6 +2951,15 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                 log("HOLDING %s %s -- once so far, posting only if it repeats"
                     % (f["office"], f["stage"]))
             continue
+
+        if f["stage"] == "sweep-empty":
+            if sales_today is _UNREAD:
+                sales_today = knock_sales_today(day, book=book)
+            if empty_read_is_a_quiet_day(f, sales_today):
+                if (f.get("office"), f.get("stage"), f.get("count")) in fresh:
+                    log("HOLDING %s sweep-empty -- no sale at the door today, "
+                        "an empty list is a slow day" % f["office"])
+                continue
 
         office = O.get(f["office"])
         label = office.label if office else f["office"]
