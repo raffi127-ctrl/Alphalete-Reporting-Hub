@@ -147,6 +147,9 @@ ICD_TIMEZONES: Dict[str, str] = {
     # jairo — the rest of his roster is waiting on Office Access. Maitland is
     # Orange County, next to Orlando: peninsula, Eastern (same check as Doral).
     "Drew Tepper":      "America/New_York",              # Maitland, FL
+    # solo (run.SOLO_OFFICES, no captainship). Office Access granted
+    # 2026-10-24; harvest_zones --icd "Aaron Nimako" on Lucy 3 read the office.
+    "Aaron Nimako":     "America/New_York",              # Philadelphia, PA
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a
