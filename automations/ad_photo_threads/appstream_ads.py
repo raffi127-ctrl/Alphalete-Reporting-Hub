@@ -70,6 +70,8 @@ _RESULTS_JS = """(args) => {
 
 
 def _search(page, last: str) -> None:
+    if page.locator("input[name='globalSrchFor']").count() == 0:
+        raise RuntimeError(f"no search box on {page.url[:90]}")
     page.fill("input[name='globalSrchFor']", last, timeout=8000)
     for sel in ("#glblSrchSbmt", "input[name='glblSrchSbmt']",
                 "xpath=//input[@value='Go']"):
@@ -100,23 +102,40 @@ def lookup(page, home_url: str, name: str, max_open: int = 3,
     first, last = split_name(name)
     if not last:
         return [], "one-word name, not searched"
-    page.goto(home_url, timeout=60000)
-    page.wait_for_load_state("domcontentloaded")
-    page.wait_for_timeout(1500)
-    _search(page, last)
-    hits = page.evaluate(_RESULTS_JS, [first, last])
+
+    def results():
+        """Search from a fresh console; [(frame, link index)] naming them.
+        The results page is a POST, so each record opens off a new search."""
+        page.goto(home_url, timeout=60000)
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_timeout(1500)
+        _search(page, last)
+        out = []
+        for fr in list(page.frames):
+            try:
+                out += [(fr, i) for i in fr.evaluate(_RESULTS_JS, [first, last])]
+            except Exception:  # noqa: BLE001
+                continue
+        return out
+
+    hits = results()
     if debug:
         print(f"    [{name}] search '{last}': {len(hits)} result link(s) with both names "
-              f"| page: {page.url[:90]}")
+              f"| page: {page.url[:90]} | frames: {len(page.frames)}")
+        if not hits:
+            near = [ln.strip()[:100] for ln in _page_text(page).splitlines()
+                    if last in _fold(ln)][:6]
+            print(f"      lines with '{last}': {near or 'none'}")
     if not hits:
         return [], "no search result"
-    results_url = page.url
     ads: List[str] = []
-    for n, idx in enumerate(hits[:max_open]):
+    for n in range(min(len(hits), max_open)):
         if n:
-            page.goto(results_url, timeout=60000)
-            page.wait_for_timeout(2500)
-        page.locator("a").nth(idx).click(timeout=8000, no_wait_after=True)
+            hits = results()
+            if n >= len(hits):
+                break
+        fr, idx = hits[n]
+        fr.locator("a").nth(idx).click(timeout=8000, no_wait_after=True)
         page.wait_for_timeout(3000)
         text = _page_text(page)
         found = ads_in_text(text)
@@ -130,7 +149,7 @@ def lookup(page, home_url: str, name: str, max_open: int = 3,
 
 def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
         apply: bool = False, limit: Optional[int] = None, debug: bool = True,
-        lookback: Optional[int] = None) -> Dict[str, object]:
+        lookback: Optional[int] = None, cache: Optional[dict] = None) -> Dict[str, object]:
     """Look up the office's interviews still on no thread (unthreaded.find).
     Prints what it finds; with `apply` keeps it in the state file."""
     from automations.ad_photo_threads import collect, config, post, unthreaded
@@ -141,7 +160,7 @@ def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
     config.use(o)
     if lookback:
         unthreaded.LOOKBACK_DAYS = lookback
-    cache: dict = {}
+    cache = {} if cache is None else cache
     todo = [(d, c) for d, c in unthreaded.find(day, cache=cache)
             if collect.blank_title(c.title_raw)]
     if names:

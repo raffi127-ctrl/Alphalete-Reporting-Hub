@@ -30,5 +30,22 @@ class AdsInTextTests(unittest.TestCase):
         self.assertEqual(aa.key(dt.date(2026, 10, 22), " Carlo Palacio "), "2026-10-22|carlo palacio")
 
 
+class CollectUsesItTests(unittest.TestCase):
+    """What a lookup kept puts the candidate on the ad's thread."""
+
+    def test_found_ad_resolves(self):
+        from automations.ad_photo_threads import collect
+        from automations.ad_photo_threads.titles import TitleBook
+        book = TitleBook(["AT&T Sales Agent, McKinney, TX"] * 3)
+        c = collect.Candidate(name="Carlo Palacio", title_raw="", interviewer="", qualify="",
+                              stars="", source="")
+        d = dt.date(2026, 10, 22)
+        found = {"2026-10-22|carlo palacio": "AT&T Sales Agent, McKinney, TX"}
+        self.assertEqual(collect.appstream_ad(c, d, book, found=found),
+                         book.resolve("AT&T Sales Agent, McKinney, TX"))
+        self.assertIsNone(collect.appstream_ad(c, d, book, found={"2026-10-22|carlo palacio": ""}))
+        self.assertIsNone(collect.appstream_ad(c, dt.date(2026, 10, 21), book, found=found))
+
+
 if __name__ == "__main__":
     unittest.main()

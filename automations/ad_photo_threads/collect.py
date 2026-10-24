@@ -543,4 +543,20 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
                     print(f"  ad from the Call List: {c.name} -> {c.ad}")
         except Exception as e:                # noqa: BLE001 -- never costs the post
             print(f"  call list ad lookup failed: {type(e).__name__}: {str(e)[:160]}")
+        for c in blank:
+            if c.ad is None:
+                c.ad = appstream_ad(c, day, book)
     return rep
+
+
+def appstream_ad(c: Candidate, day: dt.date, book: TitleBook,
+                 found: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """The ad appstream_ads.py read off `c`'s AppStream record (kept in the
+    state file), as an ad key. One ad per record, straight from Indeed's mail,
+    so unlike the Call List it may start the ad's thread if it has none."""
+    from automations.ad_photo_threads import appstream_ads
+    if found is None:
+        from automations.ad_photo_threads import post
+        found = (post._load_state().get(config.LIVE_CHANNEL_ID) or {}).get("appstream_ads") or {}
+    ad = found.get(appstream_ads.key(day, c.name))
+    return book.resolve(ad) if ad else None

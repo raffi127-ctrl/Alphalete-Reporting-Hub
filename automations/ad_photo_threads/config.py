@@ -93,6 +93,15 @@ UNTHREADED_OFFICES: object = "all"          # Eve 10/21: on, every live office
 def unthreaded_on(key: str) -> bool:
     return UNTHREADED_OFFICES == "all" or key in UNTHREADED_OFFICES
 
+# Eve 10/24: before that note, the nightly reads the ad off AppStream for the
+# blank Ad Titles nothing else could fill (appstream_ads.py) -- once per
+# candidate. Empty = off; "all" = every live office; a set of keys = just those.
+APPSTREAM_ADS_OFFICES: object = set()
+
+
+def appstream_ads_on(key: str) -> bool:
+    return APPSTREAM_ADS_OFFICES == "all" or key in APPSTREAM_ADS_OFFICES
+
 # 1st Round Audit (Rafael 10/22, email "1st rds - Aya"): every weekday evening,
 # after AUDIT_AFTER on the office's clock, check that day's interviewers report
 # (Qualify / Answer Call / Ad Title) and 1st-rounds thread (screenshot + ad

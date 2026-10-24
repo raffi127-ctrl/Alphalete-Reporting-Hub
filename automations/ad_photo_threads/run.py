@@ -302,6 +302,16 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     from automations.ad_photo_threads import weekly
     weekly_layout = weekly.is_weekly(channel)
     cache: dict = {}                          # weekly: the sheet read once
+    # Eve 10/24: blank Ad Titles the sheet, Slack and the Call List left
+    # unknown are read off AppStream before the post, so they land on their
+    # thread instead of in the channel note. Once per candidate (state).
+    if config.appstream_ads_on(o["key"]) and not explicit_date:
+        try:
+            from automations.ad_photo_threads import appstream_ads
+            print("AppStream ads:", appstream_ads.run(o["key"], day, apply=True,
+                                                      debug=False, cache=cache))
+        except Exception as e:                # noqa: BLE001 — never costs the post
+            print(f"appstream ad lookup failed: {type(e).__name__}: {str(e)[:160]}")
     rep = collect.build(day, cache=cache)
     print(f"[{now:%Y-%m-%d %H:%M} {now.tzname()}] nightly — {o['owner']}"
           + (" (weekly)" if weekly_layout else ""))
