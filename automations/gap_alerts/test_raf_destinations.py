@@ -44,9 +44,18 @@ class RafsDestinations(unittest.TestCase):
 
     def test_the_lvl1_slack_channel_is_every_30_not_hourly(self):
         slack = [d for d in _dests("rafael") if d[0] == "slack"]
-        self.assertEqual(len(slack), 1, slack)
         self.assertEqual(slack[0][1], C.SLACK_HOURLY_CHANNEL)
         self.assertEqual(slack[0][2], 30, "was 60; Raf asked for 30")
+
+    def test_alphalete_sales_is_every_30_too(self):
+        """Raf 2026-10-24: "Can we get my knocking report posted on Alphalete
+        Sales every 30minutes please?" -- loose posts, no thread (Eve)."""
+        cfg = next(c for c in C.OFFICES if c["key"] == "rafael")
+        sales = [d for d in C.destinations(cfg)
+                 if C.dest_channel(d) == "C068PH3RFSM"]
+        self.assertEqual(len(sales), 1, sales)
+        self.assertEqual(sales[0]["cadence_min"], 30)
+        self.assertFalse(sales[0].get("thread_daily"))
 
     def test_the_needle_cannot_hit_carlos_new_a_players(self):
         """resolve_group is a case-insensitive substring match. Carlos's
@@ -84,7 +93,8 @@ class NobodyElseMoved(unittest.TestCase):
         self.assertEqual(
             _dests("rafael"),
             [("imessage", "Knocking Chat A-Players", 30),
-             ("slack", C.SLACK_HOURLY_CHANNEL, 30)])
+             ("slack", C.SLACK_HOURLY_CHANNEL, 30),
+             ("slack", "#alphalete-sales", 30)])
 
     def test_no_other_office_posts_to_rafs_slack_channel(self):
         """SLACK_HOURLY_CHANNEL is Raf's org's room; another office's numbers

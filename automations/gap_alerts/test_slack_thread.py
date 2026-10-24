@@ -178,7 +178,9 @@ class CaptionTests(unittest.TestCase):
 class RafDestinationTests(unittest.TestCase):
     def test_rafs_slack_channel_threads_and_the_imessage_rooms_do_not(self):
         dests = C.destinations(C.RAF)
-        slack = [d for d in dests if d["kind"] == "slack"]
+        slack = [d for d in dests
+                 if d["kind"] == "slack"
+                 and C.dest_channel(d) == C.SLACK_HOURLY_CHANNEL]
         self.assertEqual(len(slack), 1)
         self.assertTrue(slack[0].get("thread_daily"))
         for d in dests:

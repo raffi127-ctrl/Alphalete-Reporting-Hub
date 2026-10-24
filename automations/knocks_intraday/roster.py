@@ -281,9 +281,15 @@ def enrolled(slot_key: str) -> List[Office]:
         # OFFICES so nothing else in the codebase inherits him. See RAF_OFFICE.
         # HOURLY offices are excluded — their 9 PM hourly tick IS their eod board,
         # so riding this slot too would double-post (Megan 2026-09-16).
+        # Raf is NOT run through _drop_enrolled (2026-10-24): his dispositions
+        # board now posts every 30 in #alphalete-sales too (gap_alerts RAF,
+        # "Can we get my knocking report posted on Alphalete Sales every
+        # 30minutes"), which puts that channel in disposition_channels and
+        # would silently cost him this Total Knocks board. He asked to ADD a
+        # board, not swap one, and it is a different picture.
         return _drop_enrolled(_has_channel(_wants_knocks(
             [OFFICES[k] for k in OFFICES if k not in BLOCKED and k not in HOURLY]
-            + [RAF_OFFICE])))
+            ))) + [RAF_OFFICE]
     elif slot_key in ("first", "money"):
         keys = [k for k in INTRADAY_KEYS if k not in HOURLY]
     elif slot_key.startswith("h"):
