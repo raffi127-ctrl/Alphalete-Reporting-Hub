@@ -75,6 +75,41 @@ class AHangIsAbandonedTest(unittest.TestCase):
                     report=lambda *_a, **_k: 1 / 0, seconds=1)
 
 
+class TheCutOffIsNotRetriedTest(unittest.TestCase):
+    """2026-10-23: saraplus._run_report retries ANY failure, so a RuntimeError
+    cut-off was retried three times and the run ran on to the 20-minute hard
+    stop (Jairo, 18:15 then 18:30)."""
+
+    def test_a_retry_loop_does_not_swallow_it(self):
+        from automations.shared import saraplus as S
+        calls = []
+
+        def once(*_a, **_k):
+            calls.append(1)
+            time.sleep(4)
+
+        orig = S._run_report_once
+        S._run_report_once = once
+        try:
+            with self.assertRaises(W.SweepTimeout):
+                W.timed("sweep",
+                        lambda: S._run_report(None, "", None, "AT&T", "#g",
+                                              log=lambda *_: None),
+                        log=lambda *_: None, seconds=1)
+        finally:
+            S._run_report_once = orig
+        self.assertEqual(len(calls), 1)
+
+    def test_except_exception_lets_it_through(self):
+        def swallow_everything():
+            try:
+                time.sleep(4)
+            except Exception:  # noqa: BLE001 -- the shape of every pass
+                return "swallowed"
+        with self.assertRaises(W.SweepTimeout):
+            W.timed("sweep", swallow_everything, log=lambda *_: None, seconds=1)
+
+
 class ARealFailureStillSurfacesTest(unittest.TestCase):
     def test_the_original_error_is_not_swallowed(self):
         class Boom(RuntimeError):

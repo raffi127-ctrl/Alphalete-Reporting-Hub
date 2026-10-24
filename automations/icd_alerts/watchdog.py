@@ -52,8 +52,17 @@ SLOW_SECONDS = 180
 DEADLINE_SECONDS = 300
 
 
-class SweepTimeout(RuntimeError):
-    """This run was abandoned, so the next one can start clean."""
+class SweepTimeout(BaseException):
+    """This run was abandoned, so the next one can start clean.
+
+    BASEEXCEPTION, NOT RUNTIMEERROR (2026-10-23). SIGALRM raises this inside
+    whatever the main thread is doing, and on a SaraPlus read that is nearly
+    always a `try: ... except Exception:` -- _run_report retries ANY failure,
+    and each pass in read_day swallows its own. So the 300-second cut-off was
+    caught and retried as if SaraPlus had been slow: Jairo's 18:15 fault reads
+    "the 'AT&T' report failed 3 times; last error SweepTimeout", and the run
+    went on to the 20-minute hard stop. Like KeyboardInterrupt, it now passes
+    every `except Exception` and stops only where it is named."""
 
 
 class _Deadline:

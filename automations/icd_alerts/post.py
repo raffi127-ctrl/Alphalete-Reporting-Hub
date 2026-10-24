@@ -2319,6 +2319,8 @@ FAULT_STAGE_LABEL = {
     "login": "signing in",
     # watchdog.arm_hard_ceiling: the whole run, not one read.
     "run": "its regular check",
+    # run.main: a crash nothing else caught -- a bug of ours, not the office's.
+    "crash": "its regular check (a bug on our side)",
 }
 
 
@@ -2478,7 +2480,7 @@ def open_faults(day: Optional[dt.date] = None, book=None) -> List[Dict]:
 
 
 # STAGES THAT RUN EVERY TICK, and so get a second chance within minutes.
-PER_TICK_STAGES = ("sweep", "knocks", "box")
+PER_TICK_STAGES = ("sweep", "knocks", "box", "crash")
 
 
 def waits_for_a_repeat(fault: Dict) -> bool:
@@ -2529,7 +2531,10 @@ _RECOVERY_PROOF = {"sweep": "relay", "box": "relay", "knocks": "knocks",
                    # install verify failed at 14:47 and his 14:59 sweep read
                    # SaraPlus fine, and the thread sat open with nothing to
                    # close it.
-                   "install": "relay"}
+                   "install": "relay",
+                   # run.main's catch-all: the run reaching the relay again
+                   # is the proof it no longer dies.
+                   "crash": "relay"}
 
 
 def recovered_stages(faults: List[Dict], proof_at: Dict[str, Optional[dt.datetime]],

@@ -135,3 +135,28 @@ class SweepHandsTheCountsToSendTests(unittest.TestCase):
                                side_effect=lambda *a, **k: sent.update(k)):
             self.assertEqual(RUN.cmd_once(True, False, C.today()), 0)
         self.assertEqual(sent["lines"], counts)
+
+
+class ACrashIsReportedTests(unittest.TestCase):
+    """The 10/23 send crash filed nothing; the offices looked switched off."""
+
+    def test_an_uncaught_crash_files_a_fault_then_still_fails(self):
+        from automations.icd_alerts import run as RUN
+        filed = []
+        with mock.patch.object(RUN, "_main", side_effect=TypeError("boom")), \
+             mock.patch.object(RUN, "_report",
+                               side_effect=lambda s, e, **k: filed.append(s)), \
+             mock.patch.object(RUN, "_log"):
+            with self.assertRaises(TypeError):
+                RUN.main(["--once"])
+        self.assertEqual(filed, ["crash"])
+
+    def test_a_timeout_is_not_filed_twice(self):
+        from automations.icd_alerts import run as RUN
+        filed = []
+        with mock.patch.object(RUN, "_main", side_effect=RUN.W.SweepTimeout("x")), \
+             mock.patch.object(RUN, "_report",
+                               side_effect=lambda s, e, **k: filed.append(s)):
+            with self.assertRaises(RUN.W.SweepTimeout):
+                RUN.main(["--once"])
+        self.assertEqual(filed, [])

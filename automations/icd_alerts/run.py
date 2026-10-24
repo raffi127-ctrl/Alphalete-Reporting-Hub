@@ -708,6 +708,28 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
 
 
 def main(argv=None) -> int:
+    """_main, with a crash that nothing below caught REPORTED before it ends.
+
+    2026-10-23: a TypeError at the send killed every NDS office's run from
+    11:38 to 20:30 -- no relay, no fault, nothing but a traceback in a log on
+    a laptop nobody can reach. The offices looked switched off; the owners
+    were told to wake computers that were awake. A scheduled run that dies
+    now says so first.
+    """
+    try:
+        return _main(argv)
+    except W.SweepTimeout:
+        raise                           # already reported where it fired
+    except Exception as e:  # noqa: BLE001 — reported, then re-raised
+        _log("unexpected failure: %s" % traceback.format_exc())
+        try:
+            _report("crash", e)
+        except Exception:  # noqa: BLE001 — reporting must not mask the crash
+            pass
+        raise
+
+
+def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="ICD credit-check alerts agent")
     ap.add_argument("--set-login", action="store_true",
                     help="change the saved SaraPlus password, and check it")
