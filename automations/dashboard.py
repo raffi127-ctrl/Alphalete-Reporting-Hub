@@ -3619,19 +3619,56 @@ def _render_batch_picker(report: dict) -> None:
         else:
             skip.add(name)
     st.session_state[skey] = sorted(skip)
-    if skip:
-        if st.button(f"📋 Copy the {len(people) - len(skip)} ticked",
-                     key=f"batch_copy_{report['id']}",
-                     type="primary", use_container_width=True):
-            from automations.apex_new_starts import run as _run
-            text = _batch.setup_for(skip)
-            if text and _run._to_clipboard(text):
-                st.success(f"✅ Copied {len(people) - len(skip)} — "
-                           f"leaving out {', '.join(sorted(skip))}. "
-                           "Now click your Fill Apex bookmark.")
-            else:
-                st.error("Could not put it on the clipboard. Press Get this "
-                         "week's setup again.")
+    text = _batch.setup_for(skip)
+    if not text:
+        st.error("Nobody is ticked. Tick at least one person.")
+        return
+    # The copy happens IN THE BROWSER, on the computer you are looking at.
+    # The run's own pbcopy lands on the clipboard of whatever machine runs
+    # the Hub process -- read back fine there, and the bookmark on the Apex
+    # computer still found nothing: "That is not the setup" after all three
+    # steps done right (Megan, 2026-10-23: "this was all built we shouldn't
+    # be having this issue"). A click in this page cannot miss.
+    _n = len(people) - len(skip)
+    _label = (f"📋 Copy this week's setup ({_n})" if not skip
+              else f"📋 Copy the {_n} ticked")
+    _payload = json.dumps(text).replace("</", "<\\/")
+    _components.html(
+        f"""
+        <button id="b" style="width:100%;padding:12px;font:600 16px
+          -apple-system,Segoe UI,Helvetica,sans-serif;background:#0F766E;
+          color:#fff;border:0;border-radius:8px;cursor:pointer">{_label}</button>
+        <div id="m" style="font:14px -apple-system,Segoe UI,Helvetica,
+          sans-serif;margin-top:6px;color:#0F766E"></div>
+        <script>
+        var TEXT = {_payload};
+        function ok(){{
+          document.getElementById('m').textContent =
+            '\u2705 Copied. Now open Apex and click your Fill Apex bookmark.';
+        }}
+        function bad(){{
+          var m = document.getElementById('m');
+          m.style.color = '#b00';
+          m.textContent = 'Could not copy. Click the button again.';
+        }}
+        function legacy(){{
+          var t = document.createElement('textarea');
+          t.value = TEXT; t.style.position = 'fixed'; t.style.left = '-9999px';
+          document.body.appendChild(t); t.select();
+          var done = false;
+          try {{ done = document.execCommand('copy'); }} catch (e) {{}}
+          t.remove();
+          done ? ok() : bad();
+        }}
+        document.getElementById('b').onclick = function(){{
+          if (navigator.clipboard && navigator.clipboard.writeText) {{
+            navigator.clipboard.writeText(TEXT).then(ok, legacy);
+          }} else {{ legacy(); }}
+        }};
+        </script>
+        """,
+        height=90,
+    )
 
 
 def _render_report_screenshot(report: dict) -> None:
