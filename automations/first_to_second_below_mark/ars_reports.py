@@ -384,6 +384,7 @@ class OwnerDay:
     disqualified: Optional[float] = None    #                        Di
     declined: Optional[float] = None        #                        De
     qualified_ret: Optional[float] = None   #                        QR
+    disqualified_ret: Optional[float] = None  #                      DiR
     declined_ret: Optional[float] = None    #                        DR
     ab_qualified: Optional[float] = None    # ANSWERED / BOOKED    -> Q
     answered: Optional[float] = None        #                        A  (not in SOUTH SHORE)
@@ -445,21 +446,24 @@ def _owner_day_from_boxes(boxes, q_col, q_end, q_box, a_col, a_end, a_box, *,
     # The percentages are the box's own, taken straight rather than recomputed,
     # so the report agrees cell-for-cell with the tab HR already reads. With two
     # live interviewers they cannot simply be added, so we re-derive that case.
+    shown = (out.qualified or 0) + (out.disqualified or 0) + (out.declined or 0)
     if len(src_rows) == 1:
         out.qualified_ret = _as_number(src_rows[0].get("qr"))
-        dr = _as_number(src_rows[0].get("dr"))
         # Since 2026-10-12 (Rafael via Camila) a tab can carry DiR next to DR:
-        # DR then holds Declined ONLY and DiR the Disqualified share. Our
-        # 'Declined Retention' stays (Di+De)/total, so add the two back up.
+        # DR then holds Declined ONLY and DiR the Disqualified share -- the
+        # board's own split since 2026-10-24 (Rafael: "include disqualified
+        # retention as well"). An older tab's DR is Di+De together, so there
+        # the two are worked out from the counts.
         if "dir" in src_rows[0].cells:
-            dir_ = _as_number(src_rows[0].get("dir"))
-            dr = None if dr is None and dir_ is None else (dr or 0) + (dir_ or 0)
-        out.declined_ret = dr
-    else:
-        shown = (out.qualified or 0) + (out.disqualified or 0) + (out.declined or 0)
-        if shown:
-            out.qualified_ret = (out.qualified or 0) / shown
-            out.declined_ret = ((out.disqualified or 0) + (out.declined or 0)) / shown
+            out.disqualified_ret = _as_number(src_rows[0].get("dir"))
+            out.declined_ret = _as_number(src_rows[0].get("dr"))
+        elif shown:
+            out.disqualified_ret = (out.disqualified or 0) / shown
+            out.declined_ret = (out.declined or 0) / shown
+    elif shown:
+        out.qualified_ret = (out.qualified or 0) / shown
+        out.disqualified_ret = (out.disqualified or 0) / shown
+        out.declined_ret = (out.declined or 0) / shown
 
     if a_box is not None and len(boxes) > 1:
         a_win = Window(boxes[1], row0=a_box, col0=a_col)

@@ -205,7 +205,7 @@ def _assemble(owner: src.Owner, headers: List[str], as_row: Optional[dict],
     if day_data is not None:
         put("interviewer", day_data.interviewer_label or None)
         for fld in ("qualified", "disqualified", "declined", "qualified_ret",
-                    "declined_ret", "ab_qualified", "answered", "booked", "not_contacted",
+                    "disqualified_ret", "declined_ret", "ab_qualified", "answered", "booked", "not_contacted",
                     "answer_ret", "booked_ret", "not_contacted_ret"):
             put(fld, getattr(day_data, fld))
     goal, push = qualify_target(*(row[col[f]] if f in col else None
@@ -336,7 +336,8 @@ def week_total(rows: List[list], headers: List[str]) -> list:
     60% day with ten. The same ratios the boxes use:
         retention        1st showed up booked 2nd / 1st interviews showed up
         qualified %      qualified / (qualified + disqualified + declined)
-        declined %       (disqualified + declined) / the same
+        disqualified %   disqualified / the same
+        declined %       declined / the same
         answered %       answered / qualified (answered block)
         booked %         booked / qualified (answered block)
         not contacted %  not contacted / qualified (answered block)"""
@@ -377,8 +378,8 @@ def week_total(rows: List[list], headers: List[str]) -> list:
     if sums.get("qualified") is not None:
         put("qualified_ret", ratio(sums["qualified"], screened))
     if sums.get("disqualified") is not None or sums.get("declined") is not None:
-        put("declined_ret", ratio((sums.get("disqualified") or 0) + (sums.get("declined") or 0),
-                                  screened))
+        put("disqualified_ret", ratio(sums.get("disqualified") or 0, screened))
+        put("declined_ret", ratio(sums.get("declined") or 0, screened))
     put("answer_ret", ratio(sums.get("answered"), sums.get("ab_qualified")))
     put("booked_ret", ratio(sums.get("booked"), sums.get("ab_qualified")))
     put("not_contacted_ret", ratio(sums.get("not_contacted"), sums.get("ab_qualified")))
@@ -844,7 +845,8 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
     # so a blank cell read as a good number. Every real value gets its colour
     # from the conditional rules instead -- each band has a red catch-all, so
     # nothing with a number can stay white.
-    cf_cols = [col[f] for f in ("retention", "qualified_ret", "declined_ret", "answer_ret",
+    cf_cols = [col[f] for f in ("retention", "qualified_ret", "disqualified_ret",
+                                "declined_ret", "answer_ret",
                                 "booked_ret", "not_contacted_ret") if f in col]
     for r, c0 in layout.data_rows:
         for i in cf_cols:

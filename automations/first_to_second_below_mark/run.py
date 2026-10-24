@@ -124,7 +124,7 @@ THRESHOLD = 0.40
 
 # Which columns are percentages and which are counts, by FIELD name so the
 # formats follow a column if the tab is ever reordered.
-PERCENT_FIELDS = ("retention", "goal", "qualified_ret", "declined_ret",
+PERCENT_FIELDS = ("retention", "goal", "qualified_ret", "disqualified_ret", "declined_ret",
                   "booked_ret", "not_contacted_ret", "qualified_ret_goal",
                   "answer_ret", "answer_ret_goal")
 COUNT_FIELDS = ("first_showed", "booked_2nd", "qualified", "disqualified",
@@ -331,6 +331,7 @@ def build_rows(week: src.Week, day: str, headers: List[str], *,
         put("disqualified", day_data.disqualified)
         put("declined", day_data.declined)
         put("qualified_ret", day_data.qualified_ret)
+        put("disqualified_ret", day_data.disqualified_ret)
         put("declined_ret", day_data.declined_ret)
         put("ab_qualified", day_data.ab_qualified)
         put("booked", day_data.booked)
@@ -519,13 +520,15 @@ def _fmt_requests(sid: int, headers: List[str], n_rows: int, week_labels: List[s
 #     grey                        55 - 59.9%      60 - 64.9%
 #     red                         <=54.9%         <=59.9%
 #
-#   Answer/book ratio (cols O, P) green 80%+, grey 75-79.9%, red <=74.9%
+#   Answer/book ratio (col O)     green 80%+, grey 75-79.9%, red <=74.9%
 #
-# Column P (Not Contacted Retention) gets that same band because Rafael's own
-# ARS REPORT (5) workbook already applies it to the matching NCR columns -- the
-# rule there spans BG:BN, which covers AR, BR and NCR (Eve, 2026-09-17). Note
-# what that means in practice: every office sits at 0% Not Contacted today, and
-# 0% is below 74.9%, so P reads red across the board.
+#   Not Contacted Retention (P)   green at 0%, red above it (Rafael, 2026-10-24:
+#                                 "it's 0% that's good"). It used to wear the
+#                                 answer/book band, which read every 0% red.
+#
+# Disqualified and Declined Retention are not coloured: since 2026-10-24 each is
+# its own share, and Declined used to be judged as 1 - Qualified %, which only
+# held while it carried Disqualified too.
 #
 # No red on the HIGH end any more (Rafael, 2026-09-29): qualifying too many used
 # to turn red (>70% / >80%); he dropped that ceiling from the KPI sheet, so a high
@@ -568,6 +571,13 @@ def _answer_book_rules(cell: str) -> List[tuple]:
             (f'=AND({cell}<>"",{cell}<0.75)', CF_RED, CF_RED_FG)]
 
 
+def _not_contacted_rules(cell: str) -> List[tuple]:
+    """Not Contacted Retention: nobody left uncontacted is the goal. 0% green,
+    anything above it red."""
+    return [(f'=AND({cell}<>"",{cell}<=0)', CF_GREEN, CF_DARK_FG),
+            (f'=AND({cell}<>"",{cell}>0)', CF_RED, CF_RED_FG)]
+
+
 def _alert_rules(cell: str) -> List[tuple]:
     """The retention column: <=40% red, >=40% yellow. Red is listed first, so a
     cell sitting exactly on 40% takes the red -- the 'below the mark' side."""
@@ -590,22 +600,14 @@ def cf_plan(headers: List[str], first_data_row: int) -> List[tuple]:
     plan = []
     for field, build in (("retention", _alert_rules),
                          ("qualified_ret", None),
-                         ("declined_ret", None),
                          ("answer_ret", _answer_book_rules),
                          ("booked_ret", _answer_book_rules),
-                         ("not_contacted_ret", _answer_book_rules)):
+                         ("not_contacted_ret", _not_contacted_rules)):
         i, cell = at(field)
         if i is None:
             continue
         if field == "qualified_ret":
             plan.append((i, _qualify_rules(cell, goal)))
-        elif field == "declined_ret":
-            # Declined Retention is exactly 1 - Qualified Retention (the three
-            # counts behind them add up to the day's interviews), so it is
-            # judged on the same band, read through its complement. Colouring it
-            # on its own numbers would need a second set of thresholds nobody
-            # has written down.
-            plan.append((i, _qualify_rules(f"(1-{cell})", goal, present=cell)))
         else:
             plan.append((i, build(cell)))
     return plan

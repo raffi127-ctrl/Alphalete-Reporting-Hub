@@ -186,19 +186,23 @@ class ArsGeometry(unittest.TestCase):
             self.assertEqual(row.get("NC"), "0")
             self.assertEqual(row.get("BR"), "100%")
 
-    def test_declined_retention_stays_di_plus_de_once_a_tab_splits_dr(self):
-        """Since 10/12 a tab can read Q|Di|De|QR|DiR|DR with DR = Declined only.
-        The board's Declined Retention must still be (Di+De)/total."""
-        def declined_ret(per_day, cells):
+    def test_disqualified_and_declined_retention_split_on_either_tab(self):
+        """Since 10/12 a tab can read Q|Di|De|QR|DiR|DR with DR = Declined only;
+        an older one reads Q|Di|De|QR|DR with DR = Di+De. Either way the board
+        gets Disqualified and Declined apart (Rafael, 2026-10-24)."""
+        def rets(per_day, cells):
             win = _ars_box("9/20", {"Monday": [("Angela", cells)]}, per_day=per_day)
-            return ars._owner_day_from_boxes(
+            d = ars._owner_day_from_boxes(
                 [win.values], 14, None, 45, None, None, None, owner="o",
-                workbook="w", tab="t", week_label="9/20", day="Monday").declined_ret
-        old = declined_ret(("Q", "Di", "De", "QR", "DR"), ["9", "2", "1", "75%", "25%"])
-        new = declined_ret(("Q", "Di", "De", "QR", "DiR", "DR"),
-                           ["9", "2", "1", "75%", "17%", "8%"])
-        self.assertAlmostEqual(old, 0.25)
-        self.assertAlmostEqual(new, 0.25)
+                workbook="w", tab="t", week_label="9/20", day="Monday")
+            return d.disqualified_ret, d.declined_ret
+        old = rets(("Q", "Di", "De", "QR", "DR"), ["9", "2", "1", "75%", "25%"])
+        new = rets(("Q", "Di", "De", "QR", "DiR", "DR"),
+                   ["9", "2", "1", "75%", "17%", "8%"])
+        self.assertAlmostEqual(old[0], 2 / 12)
+        self.assertAlmostEqual(old[1], 1 / 12)
+        self.assertAlmostEqual(new[0], 0.17)
+        self.assertAlmostEqual(new[1], 0.08)
 
     def test_an_extra_owner_row_is_read_not_cut_off(self):
         win = _ars_box("9/20", {"Monday": [("Gabriela", ["10", "2", "4", "63%", "38%"]),
@@ -332,7 +336,7 @@ class ColourRule(unittest.TestCase):
 
     def test_every_coloured_column_is_covered(self):
         got = sorted(self.plan())
-        self.assertEqual(got, [4, 9, 10, 14, 15])   # E, J, K, O, P
+        self.assertEqual(got, [4, 9, 14, 15])   # E, J, O, P -- K (Declined) is not coloured
 
     def test_exactly_forty_percent_reads_red(self):
         red, yellow = self.plan()[4]
@@ -358,23 +362,24 @@ class ColourRule(unittest.TestCase):
         self.assertTrue(red[0].startswith('=AND(J4<>"",NOT('))
         self.assertEqual(red[1], rep.CF_RED)
 
-    def test_declined_retention_is_judged_through_its_complement(self):
-        green, _, red = self.plan()[10]
-        self.assertIn("(1-K4)", green[0])
-        # but emptiness is tested on the cell itself: (1-K4) is 1 on a blank row
-        self.assertTrue(red[0].startswith('=AND(K4<>""'))
+    def test_the_answer_book_band_covers_o(self):
+        green, grey, red = self.plan()[14]
+        for formula, _, _ in (green, grey, red):
+            self.assertNotIn("$F", formula)     # no goal dependency
+            self.assertIn("O", formula)
+        self.assertIn(">=0.8", green[0])
+        self.assertIn(">=0.75", grey[0])
+        self.assertIn("<0.75", red[0])
 
-    def test_the_answer_book_band_covers_both_o_and_p(self):
-        # P uses the same band because Rafael's own ARS workbook applies it to
-        # the matching NCR columns.
-        for column, letter in ((14, "O"), (15, "P")):
-            green, grey, red = self.plan()[column]
-            for formula, _, _ in (green, grey, red):
-                self.assertNotIn("$F", formula)     # no goal dependency
-                self.assertIn(letter, formula)
-            self.assertIn(">=0.8", green[0])
-            self.assertIn(">=0.75", grey[0])
-            self.assertIn("<0.75", red[0])
+    def test_not_contacted_is_green_at_zero_red_above(self):
+        # Rafael 2026-10-24: "red only if it's over 0%. If it's 0% that's good".
+        green, red = self.plan()[15]
+        self.assertEqual(green[1], rep.CF_GREEN)
+        self.assertIn("P4<=0", green[0])
+        self.assertEqual(red[1], rep.CF_RED)
+        self.assertIn("P4>0", red[0])
+        for formula, _, _ in (green, red):
+            self.assertIn('P4<>""', formula)    # a blank row stays white
 
     def test_column_e_keeps_the_flat_forty_percent_floor(self):
         # The goal-dependent bands are for J/K/O/P; E is the headline alert.

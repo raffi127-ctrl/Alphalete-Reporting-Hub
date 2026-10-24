@@ -10,6 +10,10 @@ found by the header it follows (no column letters):
     Answer Retention     -> + Answer Retention Goal      (looks like 'Goal')
     Qualified            -> + Qualified Goal             (looks like that Qualified)
     Qualified Goal       -> + How many to push for qualify goal   (Rafael, 2026-10-21)
+    Qualified Retention Goal -> + Disqualified Retention (looks like 'Declined Retention';
+                                                          Rafael, 2026-10-24)
+
+Every added column's header is set to wrap, so all its words fit in the box.
 
 Inserted inside each group, so the QUALIFIED / ANSWERED banners stretch over
 them. A column already there is skipped -- safe to run twice.
@@ -51,7 +55,8 @@ def plan(headers: List[str]) -> List[tuple]:
             ("not_contacted", "Answer\nRetention", "booked_ret"),
             ("answer_ret", "Answer Retention\nGoal", "goal"),
             ("qualified", "Qualified\nGoal", "qualified"),
-            ("qualified_goal", "How many to push\nfor qualify goal", "qualified")]
+            ("qualified_goal", "How many to push\nfor qualify goal", "qualified"),
+            ("qualified_ret_goal", "Disqualified\nRetention", "declined_ret")]
     have = {cols.norm(h) for h in headers}
     return [w for w in want if cols.norm(w[1]) not in have]
 
@@ -90,7 +95,26 @@ def add_columns(sh, tab: str, logfn=print) -> int:
         ]})
         logfn(f"  {tab!r}: + {label!r} at column {at + 1}")
         added += 1
+    wrap_headers(sh, ws, logfn)
     return added
+
+
+def wrap_headers(sh, ws, logfn=print) -> None:
+    """Wrap the added columns' headers. Some copied the look of a column whose
+    header is one short word and never wraps, so a long one was clipped
+    (Rafael, 2026-10-24: 'How many to push for qualify goal')."""
+    hrow, headers = _headers(ws)
+    col = cols.resolve(headers)
+    reqs = [{"repeatCell": {
+        "range": b._rng(ws.id, hrow - 1, hrow, col[f], col[f] + 1),
+        "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP",
+                                       "verticalAlignment": "MIDDLE",
+                                       "horizontalAlignment": "CENTER"}},
+        "fields": "userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)"}}
+        for f in cols.BOARD_ONLY if f in col]
+    if reqs:
+        sh.batch_update({"requests": reqs})
+        logfn(f"  {ws.title!r}: {len(reqs)} added header(s) set to wrap")
 
 
 def main(argv=None) -> int:

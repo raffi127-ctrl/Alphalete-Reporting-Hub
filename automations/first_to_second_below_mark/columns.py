@@ -44,12 +44,14 @@ DIRECT = {
     # Qualified the 1st interviews that showed up call for, and how many short.
     "qualified_goal": "Qualified Goal",
     "qualify_push": "How many to push for qualify goal",
+    # Rafael (2026-10-24): the Disqualified share on its own, next to Declined.
+    "disqualified_ret": "Disqualified Retention",
 }
 
 # Columns only the two-week board's TEMPLATE has; the single-day tab never did,
 # so their absence is not a gap.
 BOARD_ONLY = ("qualified_ret_goal", "answered", "answer_ret", "answer_ret_goal",
-              "qualified_goal", "qualify_push")
+              "qualified_goal", "qualify_push", "disqualified_ret")
 
 # field -> [(anchor field, offset), ...], first anchor present wins. Resolved
 # after DIRECT. The ANSWERED group's 'Qualified' sits left of 'Answered' when

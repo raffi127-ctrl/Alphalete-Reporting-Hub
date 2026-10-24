@@ -498,7 +498,25 @@ class NewColumns(unittest.TestCase):
     def test_template_plan_adds_the_two_after_qualified(self):
         from automations.first_to_second_below_mark import template_columns as tc
         self.assertEqual([w[1] for w in tc.plan(H2)],
-                         ["Qualified\nGoal", "How many to push\nfor qualify goal"])
+                         ["Qualified\nGoal", "How many to push\nfor qualify goal",
+                          "Disqualified\nRetention"])
+
+    def test_disqualified_and_declined_retention_are_split(self):
+        # Rafael 2026-10-24: Disqualified Retention on its own, next to Declined.
+        i = H2.index("Declined Retention")
+        h3 = H2[:i] + ["Disqualified\nRetention"] + H2[i:]
+        c = b.cols.resolve(h3)
+        self.assertEqual(c["disqualified_ret"] + 1, c["declined_ret"])
+
+        def r(q, di, de):
+            x = [""] * len(h3)
+            x[c["owner"]], x[c["goal"]] = "Ann", 0.6
+            x[c["qualified"]], x[c["disqualified"]], x[c["declined"]] = q, di, de
+            return x
+        tot = b.week_total([r(6, 2, 2), r(6, 2, 2)], h3)
+        self.assertAlmostEqual(tot[c["qualified_ret"]], 0.6)
+        self.assertAlmostEqual(tot[c["disqualified_ret"]], 0.2)
+        self.assertAlmostEqual(tot[c["declined_ret"]], 0.2)
 
     def test_answer_retention_is_coloured_like_booked(self):
         plan = dict(rep.cf_plan(H2, 5))
