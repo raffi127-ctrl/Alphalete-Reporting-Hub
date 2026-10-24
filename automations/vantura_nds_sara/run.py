@@ -1,4 +1,5 @@
-"""NDS Sales Board fill from Carlos's NDS SaraPlus, through the ICD relay.
+"""NDS Sales Board fill from Carlos's NDS SaraPlus -- the ICD relay when it
+carries an NDS read, else a direct SaraPlus read from this machine.
 
 THE RULE, IN CARLOS'S WORDS (2026-10-23): "use sara plus [to fill the NDS Sales
 Board] but look at the way that Lucy uses sara plus for the order log to make
@@ -6,38 +7,67 @@ sure you include the correct sales. upgrades, tablets, and wearables shouldn't
 get added." -- "We just started selling under my NDS SaraPlus this Monday
 [10/19]."
 
-WHAT A REP'S DAY IS:            units = Int + NL
+WHAT A REP'S DAY IS:            units = Int + NL + Air
 
     Int   = Internet Sales - Internet Upgrades - AIA        (shared/sale_hype.metrics_for)
     NL    = New Lines + Port Lines - Tablets - Wearables    (icd_alerts/relay._nds_lines,
             read off the Wireless grid -- the way Lucy already reads an NDS
             office for the sale alerts and the text scoreboard)
+    Air   = AIA                                             (Carlos 2026-10-23: Internet
+            Air is a new internet sale under NDS, not an upgrade)
 
 WHAT IS NOT:
     Int Up   = Internet Upgrades + AIA + Upgrade Lines   -- upgrades, never a unit
     Tablets, Wearables                                    -- already taken out of NL
     DTV                                                   -- not counted; shown per rep
-    Air                                                   -- COUNTED (Carlos 2026-10-23: Internet Air is a new internet sale, not an upgrade)
 
 So upgrades, tablets and wearables cannot reach the board by construction:
-they are not inside either number that gets added up. (UNIT_KEYS is the one
+they are not inside any number that gets added up. (UNIT_KEYS is the one
 place to change if Carlos ever wants DTV counted.)
 
-WHERE THE NUMBERS COME FROM. Carlos's office Mac mini runs the icd_alerts
-agent against his NDS SaraPlus and relays every rep's totals-so-far-today,
-every few minutes, to the 'ICD Relay' tab of the Lucy Access App workbook
-(icd_alerts/post.RELAY_SPREADSHEET_ID / RELAY_TAB). The Apps Script keeps ONE
-ROW PER OFFICE PER DAY, updated in place, so the row's 'Received At' is when
-the office last relayed and its 'Sales JSON' is the latest snapshot. Should a
-day ever hold more than one row for the office, the newest 'Received At'
-wins. The 2am catch-up on the mini re-reads yesterday whole, so the 5am pass
-here closes the day out on final numbers.
+TWO SOURCES, ONE SET OF NUMBERS (--source auto | relay | sara, default auto):
 
-WHO. The office is found among the day's relay rows: a key starting with
-"carlos" whose enrolment (icd_alerts/offices.py + the ICD Signup tab) says
-campaign "nds". Any other campaign is ignored -- an "att" enrolment's NL still
-carries the tablets and the upgrade lines, which is exactly what Carlos does
-not want on the board. `--office KEY` pins it when more than one qualifies.
+  relay  Carlos's office Mac mini runs the icd_alerts agent against his
+         SaraPlus and relays every rep's totals-so-far-today, every few
+         minutes, to the 'ICD Relay' tab of the Lucy Access App workbook
+         (icd_alerts/post.RELAY_SPREADSHEET_ID / RELAY_TAB). ONE ROW PER
+         OFFICE PER DAY, updated in place; the newest 'Received At' wins.
+         Only an office enrolled as campaign "nds" counts (key starting with
+         "carlos"; `--office KEY` pins it): relay._nds_lines takes tablets,
+         wearables and upgrade lines out of NL for THAT campaign only, so an
+         "att" / "b2b_att" enrolment's NL still carries them -- exactly what
+         Carlos does not want on the board. The 2am catch-up on the mini
+         re-reads yesterday whole, so the 5am pass closes the day on final
+         numbers.
+
+  sara   This machine logs into the NDS SaraPlus itself (shared/saraplus,
+         patchright, headless, the login_healing pattern alphalete_sales_board
+         uses) and makes the SAME two reads the relay's agent makes for an
+         NDS office, for the one day:
+           'AT&T'    -> GRID_ATT     -> parse_att   -> Int / Int Up / Air per rep
+           'Wireless'-> GRID_WIRELESS-> parse_lines -> New / Port / Upgrade Lines,
+                                                       Tablets, Wearables per rep
+         and derives the identical per-rep dict (metrics_from_grids): Int,
+         Int Up, DTV (0 -- the 'All' pass is not made; DTV is not counted),
+         NL, Air. A rep only on the Wireless grid has Int / Air 0; a rep only
+         on the AT&T grid has NL 0 -- never SaraPlus's raw line count, which
+         includes the tablets. If the Wireless grid's labels are not found
+         (parse_lines None), the run HOLDS: falling back to the raw count
+         would re-include the very things Carlos excluded. A sales grid that
+         is drawn but has no agent rows is re-read once and then HELD too
+         (shared.saraplus.att_shape_problem) -- an unparseable grid must not
+         read as a quiet day under a rule that SETS reps down.
+         Login: ~/.config/recruiting-report/saraplus-nds-creds.json
+         ({"email", "password"}; or SARAPLUS_NDS_EMAIL / SARAPLUS_NDS_PASSWORD),
+         profile ~/.config/recruiting-report/saraplus-nds-profile -- see
+         config.py for why neither is shared with any other SaraPlus reader.
+         On the laptop: python -m automations.vantura_nds_sara.set_credentials
+         --push "Lucy 2".
+
+  auto   relay when an nds enrolment relayed for the day; else sara when the
+         login exists; else HOLD naming both ("no nds relay ...; no creds
+         file at ..."). The registry's base_args stay --fill --yes; the module
+         decides the source, so the launchd wrapper never changed.
 
 HOW IT WRITES -- Megan's SaraPlus-is-the-truth design (2026-07-26,
 vantura_slack_sales/sara.plan_overwrite, reused, not copied):
@@ -57,18 +87,28 @@ a name that reaches no row is flagged with its count and left for a person.
 
 WHEN. Same clock as the Slack fill: before 10am (OFFICE_DAY_START) the run
 closes out YESTERDAY, after it it fills TODAY; --date overrides. Holds, all
-exit 75 and nothing written: no relay row for the day ("the office mini may
-be off"), the board's gold WE cell on another week, no column for the day.
+exit 75 and nothing written: no source for the day (no nds relay and no
+login; "the office mini may be off"), the Wireless labels not found, the
+sales grid unreadable twice, the board's gold WE cell on another week, no
+column for the day. A SaraPlus login / read that FAILS outright (SaraError:
+bounced login, passcode wall, site down) exits 1 -- red, not amber -- with
+the site's own words, nothing written.
 
-  python -m automations.vantura_nds_sara.run --probe        # what relayed + the board column, no writes
+  python -m automations.vantura_nds_sara.run --preflight    # patchright? creds file? profile dir? exit 0/1 -- nothing else touched
+  python -m automations.vantura_nds_sara.run --probe        # which source, the raw numbers, the board column; no writes
+  python -m automations.vantura_nds_sara.run --probe --source sara   # force the direct read for the probe
   python -m automations.vantura_nds_sara.run                # dry report
   python -m automations.vantura_nds_sara.run --fill         # plan the write
   python -m automations.vantura_nds_sara.run --fill --yes   # write
   python -m automations.vantura_nds_sara.run --date 2026-10-22 --probe
   python -m automations.vantura_nds_sara.run --office carlos-b2batt --probe
 
---probe and --dry win over --fill --yes (so `lucy rerun vantura_nds_sara
---probe` is safe: the registry's base_args are --fill --yes).
+  lucy rerun vantura_nds_sara --preflight
+  lucy rerun vantura_nds_sara --probe --date 2026-10-23
+  lucy rerun vantura_nds_sara --probe --source sara --date 2026-10-23
+
+--preflight, --probe and --dry win over --fill --yes (so `lucy rerun
+vantura_nds_sara --probe` is safe: the registry's base_args are --fill --yes).
 """
 from __future__ import annotations
 
@@ -78,6 +118,9 @@ import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
 from automations.icd_alerts import post as P
+from automations.shared import sale_hype as H
+from automations.shared import saraplus as SP
+from automations.vantura_nds_sara import config as CFG
 from automations.vantura_orderlog_sales.run import FIRST_NAME_ALIASES
 from automations.vantura_slack_sales import run as R
 from automations.vantura_slack_sales import sara as S
@@ -98,6 +141,12 @@ SHOWN_KEYS = ("Int", "NL", "Int Up", "Air", "DTV")
 # 75 = EX_TEMPFAIL, the hold code every Vantura fill uses: nothing written,
 # the next pass retries, the wrapper publishes `partial` (amber), not failed.
 EXIT_HOLD = 75
+# A SaraPlus login or read that failed outright: nothing written, and the
+# wrapper publishes `failed` (red) -- somebody has to look, waiting will not fix it.
+EXIT_FAIL = 1
+SOURCES = ("auto", "relay", "sara")
+# The two reads the direct source makes, by the shared module's own names.
+SERVICE_ATT = "AT&T"
 
 # SaraPlus spelling (UPPER, as the relay keys it) -> the board's REP cell.
 # Only what match_rep's exact / first + last rule and the legal-first-name map
@@ -252,6 +301,243 @@ def relay_rows(day: dt.date) -> List[Tuple[int, List[str]]]:
     return _retry(P._rows_for, day, tab)
 
 
+# -------------------------------------------------------- direct SaraPlus --
+def metrics_from_grids(att: List[Dict], lines: Optional[Dict[str, Dict[str, int]]]
+                       ) -> Dict[str, Dict[str, int]]:
+    """{UPPER NAME: {Int, Int Up, DTV, NL, Air}} off the two grids -- the dict
+    the relay's agent would have sent for an NDS office, built the same way:
+
+        AT&T grid row  -> sale_hype.metrics_for   (Int / Int Up / Air; floored)
+        Wireless row   -> relay._nds_lines' rule  NL = New + Port - Tablets - Wearables
+                                                  (floored), Int Up += Upgrade Lines
+
+    The AT&T grid's own 'Wireless Lines Sold' is NEVER used for NL: that count
+    is the one with the tablets and the upgrade lines in it. A rep on the
+    Wireless grid only has Int / Air 0; a rep on the AT&T grid only has NL 0.
+    DTV is 0 -- the 'All' pass is not made (not counted; shown).
+
+    `lines` None means the Wireless grid could not be read by label, and
+    there is no honest number to put in NL -- so it is refused here, not
+    papered over: the caller holds (sara_problem) before ever getting here.
+    Names go through strip_office (upper, office code off) on both sides, the
+    way sara_read keys the relay. A name on two AT&T rows (a rep under two
+    campaign nodes) is summed, like every other shared parser does.
+    """
+    if lines is None:
+        raise ValueError("the Wireless grid was not read by label -- no NL to derive")
+    out: Dict[str, Dict[str, int]] = {}
+
+    def row_for(name: str) -> Optional[Dict[str, int]]:
+        key = SP.strip_office(name)
+        if not key:
+            return None
+        return out.setdefault(key, {k: 0 for k in SHOWN_KEYS})
+
+    for a in att or []:
+        row = row_for(str(a.get("name") or ""))
+        if row is None:
+            continue
+        m = H.metrics_for(a)
+        row["Int"] += m["Int"]
+        row["Int Up"] += m["Int Up"]
+        row["Air"] += m["Air"]
+        # m["NL"] is wireless_lines_sold: deliberately dropped (see above).
+        # m["DTV"] is 0 off the AT&T grid (parse_att sets it so).
+    for name, got in sorted((lines or {}).items()):
+        row = row_for(str(name))
+        if row is None:
+            continue
+        got = got or {}
+        row["NL"] += max(_n(got.get("New Lines", 0)) + _n(got.get("Port Lines", 0))
+                         - _n(got.get("Tablets", 0)) - _n(got.get("Wearables", 0)), 0)
+        row["Int Up"] += _n(got.get("Upgrade Lines", 0))
+    return out
+
+
+def sara_problem(read: Dict) -> str:
+    """Why a direct read must NOT be turned into a board write. "" when it may.
+
+    Both are holds, not failures: the site answered, but not in a shape the
+    numbers can be trusted from, and the next pass may well read it fine."""
+    if read.get("shape_problem"):
+        return ("the AT&T sales grid could not be read as rep rows, twice (%s) "
+                "-- not treating that as a day with no sales"
+                % str(read["shape_problem"])[:200])
+    if read.get("lines") is None:
+        return ("the Wireless grid has no %s labels (headers read: %s) -- "
+                "NL cannot be derived without them, and SaraPlus's raw line "
+                "count would put the tablets, wearables and upgrade lines back "
+                "in, so nothing is written"
+                % (" / ".join(SP.LINE_LABELS),
+                   ", ".join(h for h in (read.get("wireless_headers") or []) if h) or "none"))
+    return ""
+
+
+def _login(playwright, profile_dir, creds: Dict[str, str], *, headless: bool = True,
+           log=_log):
+    """(ctx, page, base) -- shared.saraplus.login_healing on this module's
+    own profile, exactly the way alphalete_sales_board signs in (a stuck
+    profile heals itself there). The caller owns ctx.
+
+    ONE EXTRA STEP, for the day the profile is brand new. SaraPlus challenges
+    a browser it has never seen with an emailed passcode -- SaraPasscodeWall;
+    Khalil's laptop 2026-09-18, nds_metrics' first Lucy 2 login 2026-10-22 --
+    and the shared login cannot answer it (its own docstring: a person has to
+    type the code). rc_contact_sync.sara.login CAN, by reading the code from
+    the reporting inbox, which is how nds_metrics got through. So the wall is
+    handed to it once, on the same profile; after that the profile is trusted
+    and the shared login carries on alone. If the code never reaches that
+    inbox (no forward on this account), rc's own clear error comes back
+    inside the wall's, and nothing was read.
+    """
+    try:
+        return SP.login_healing(playwright, profile_dir, creds["email"],
+                                creds["password"], headless=headless,
+                                creds_hint=str(CFG.creds_path()), log=log)
+    except SP.SaraPasscodeWall as wall:
+        log("SaraPlus wants an emailed passcode for this browser -- answering "
+            "it from the reporting inbox (rc_contact_sync.sara.login), once")
+        from automations.rc_contact_sync import sara as RC
+        ctx = SP.open_context(playwright, profile_dir, headless=headless)
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            base = RC.login(page, creds["email"], creds["password"], log=log)
+        except Exception as e:  # noqa: BLE001 -- the wall stands; say both
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+            raise SP.SaraPasscodeWall(
+                "%s -- and the reporting-inbox route could not clear it either "
+                "(%s: %s)" % (wall, type(e).__name__, str(e)[:300])) from e
+        log("  passcode cleared -- this profile is trusted from here on")
+        return ctx, page, base
+
+
+def read_sara(day: dt.date, creds: Dict[str, str], *, profile_dir=None,
+              headless: bool = True, log=_log) -> Dict:
+    """One browser session, two passes, for ONE day:
+
+        {'att': parse_att rows, 'lines': parse_lines dict or None,
+         'wireless_headers': [...], 'att_rows': n, 'wireless_rows': n,
+         'shape_problem': '', 'read_at': datetime, 'timings': '...'}
+
+    Raises SaraError (login bounced, passcode wall, a pass that failed every
+    retry). The mechanics -- Telerik date blob, service combo, grid waits,
+    retries -- are all shared.saraplus's; nothing here re-derives a selector.
+    """
+    from patchright.sync_api import sync_playwright
+
+    profile_dir = profile_dir or CFG.profile_dir()
+    try:
+        SP.reset_pass_timings()
+    except Exception:  # noqa: BLE001 -- instrumentation must never cost a read
+        pass
+    out: Dict = {"att": [], "lines": None, "wireless_headers": [], "att_rows": 0,
+                 "wireless_rows": 0, "shape_problem": "", "read_at": None,
+                 "timings": ""}
+    with sync_playwright() as p:
+        ctx, page, base = _login(p, profile_dir, creds, headless=headless, log=log)
+        try:
+            log("logged in: %s" % base)
+            att_rows = SP._run_report(page, base, day, SERVICE_ATT, SP.GRID_ATT, log=log)
+            # ASKED TWICE BEFORE IT IS BELIEVED (sara_read's rule): a grid of
+            # history rows with no agent rows is usually a page caught
+            # mid-render, and SaraPlus is slow enough for that to be common.
+            problem = SP.att_shape_problem(att_rows)
+            if problem:
+                log("sales grid looks wrong (%s) -- reading it again" % problem[:60])
+                att_rows = SP._run_report(page, base, day, SERVICE_ATT, SP.GRID_ATT, log=log)
+                problem = SP.att_shape_problem(att_rows)
+                if not problem:
+                    log("second read was fine -- the first was still rendering")
+            out["shape_problem"] = problem
+            out["att_rows"] = len(att_rows)
+            out["att"] = SP.parse_att(att_rows)
+            log("AT&T pass: %d row(s), %d rep(s)" % (len(att_rows), len(out["att"])))
+
+            w_rows = SP._run_report(page, base, day, SP.SERVICE_WIRELESS,
+                                    SP.GRID_WIRELESS, log=log)
+            out["wireless_headers"] = SP.grid_headers(page, SP.GRID_WIRELESS) or []
+            out["wireless_rows"] = len(w_rows)
+            out["lines"] = SP.parse_lines(out["wireless_headers"], w_rows)
+            if out["lines"] is None:
+                log("Wireless pass: %d row(s) but the %s labels were NOT found"
+                    % (len(w_rows), " / ".join(SP.LINE_LABELS)))
+            else:
+                log("Wireless pass: %d row(s), lines for %d rep(s)"
+                    % (len(w_rows), len(out["lines"])))
+        finally:
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+    out["read_at"] = dt.datetime.now(TZ)
+    try:
+        out["timings"] = SP.pass_timings_summary()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def choose_source(source: str, relay_key: Optional[str], relay_why: str,
+                  have_creds: bool, creds_why: str) -> Tuple[Optional[str], str]:
+    """('relay' | 'sara' | None, why-not).
+
+    auto: the relay when an nds enrolment relayed for the day, else the direct
+    read when the login exists, else nothing -- and the reason names BOTH, so
+    the log says what to fix. A pinned source never touches the other one.
+    """
+    no_relay = "no nds relay for the day (%s)" % (relay_why or "nothing relayed")
+    if source == "relay":
+        if relay_key:
+            return "relay", ""
+        return None, no_relay + " -- --source relay never reads SaraPlus directly"
+    if source == "sara":
+        if have_creds:
+            return "sara", ""
+        return None, creds_why + " -- --source sara never reads the relay"
+    if relay_key:
+        return "relay", ""
+    if have_creds:
+        return "sara", ""
+    return None, "%s; %s" % (no_relay, creds_why)
+
+
+def _patchright_status() -> Tuple[bool, str]:
+    try:
+        import patchright
+        from patchright.sync_api import sync_playwright  # noqa: F401
+    except Exception as e:  # noqa: BLE001
+        return False, "%s: %s" % (type(e).__name__, str(e)[:120])
+    return True, getattr(patchright, "__version__", None) or "version unknown"
+
+
+def preflight(log=_log) -> int:
+    """Can the direct read run HERE? patchright importable, the login present
+    (never the password), the profile dir -- and nothing else: no Sheets, no
+    relay, no browser, no network. 0 when it can, 1 when it cannot."""
+    ok = True
+    good, detail = _patchright_status()
+    if good:
+        log("patchright: ok (%s)" % detail)
+    else:
+        ok = False
+        log("patchright: MISSING (%s) -- the direct SaraPlus read cannot run on "
+            "this machine" % detail)
+    cr, why, _exists = CFG.creds_status()
+    if cr:
+        log("creds: ok -- %s" % why)
+    else:
+        ok = False
+        log("creds: MISSING -- %s" % why)
+    prof = CFG.profile_dir()
+    log("profile dir: %s (%s)" % (prof, "exists" if prof.exists()
+                                  else "not yet -- created on the first login"))
+    log("PREFLIGHT %s" % ("OK" if ok else "FAILED"))
+    return 0 if ok else 1
+
+
 # ----------------------------------------------------------------- names --
 def _legal_first(name: str) -> str:
     """'NICOLAS MURRUGARRA' -> 'nico murrugarra': the order-log fill's map of
@@ -371,10 +657,8 @@ def load_board():
     return R.board_grid(CAMPAIGN)
 
 
-def describe(snap: Dict, per_rep: Dict[str, Dict[str, int]], g,
-             rows: Dict[str, int], col: Optional[int], log=_log) -> None:
-    """The relay snapshot next to the board, rep by rep -- what every mode
-    prints before deciding anything."""
+def describe_relay(snap: Dict, log=_log) -> None:
+    """Where the relay numbers came from: the row, the office, the stamp."""
     when = snap["received"].strftime("%m/%d %H:%M:%S") if snap["received"] \
         else (snap["received_raw"] or "?")
     log("relay row %d: %s relayed at %s (agent %s, mini clock %s) -- "
@@ -382,6 +666,58 @@ def describe(snap: Dict, per_rep: Dict[str, Dict[str, int]], g,
         % (snap["rownum"], snap["office"], when, snap["agent"] or "?",
            snap["local_time"] or "?", len(snap["sales"]),
            len(snap["records"])))
+
+
+def describe_sara(read: Dict, day: dt.date, log=_log) -> None:
+    """The direct read, RAW, both grids, rep by rep -- what --probe shows so
+    the derived numbers can be checked against the dashboard by eye."""
+    when = read["read_at"].strftime("%m/%d %H:%M:%S") if read.get("read_at") else "?"
+    log("SaraPlus direct read for %s at %s: AT&T grid %d row(s) / %d rep row(s); "
+        "Wireless grid %d row(s) / %s"
+        % (R._md(day), when, read.get("att_rows", 0), len(read.get("att") or []),
+           read.get("wireless_rows", 0),
+           "labels NOT found" if read.get("lines") is None
+           else "%d rep(s) with lines" % len(read["lines"])))
+    if read.get("shape_problem"):
+        log("  ! %s" % read["shape_problem"])
+    log("  %-30s %8s %8s %6s %10s" % ("AT&T grid (raw)", "IntSales", "IntUpgr",
+                                      "AIA", "LinesSold*"))
+    for a in sorted(read.get("att") or [], key=lambda a: str(a.get("name") or "")):
+        log("  %-30s %8d %8d %6d %10d"
+            % (str(a.get("name") or "")[:30], _n(a.get("internet_sales")),
+               _n(a.get("internet_upgrades")), _n(a.get("aia_sales")),
+               _n(a.get("wireless_lines_sold"))))
+    log("  (* LinesSold is SaraPlus's own line count -- tablets, wearables and "
+        "upgrade lines included -- shown, never used)")
+    if read.get("lines") is None:
+        log("  Wireless grid (raw): the %s labels were not found; headers read: %s"
+            % (" / ".join(SP.LINE_LABELS),
+               ", ".join(h for h in (read.get("wireless_headers") or []) if h) or "none"))
+    else:
+        log("  %-30s %5s %5s %5s %8s %9s" % ("Wireless grid (raw)", "New", "Port",
+                                             "Upgr", "Tablets", "Wearables"))
+        for name, got in sorted(read["lines"].items()):
+            got = got or {}
+            log("  %-30s %5d %5d %5d %8d %9d"
+                % (str(name)[:30], _n(got.get("New Lines")), _n(got.get("Port Lines")),
+                   _n(got.get("Upgrade Lines")), _n(got.get("Tablets")),
+                   _n(got.get("Wearables"))))
+    if read.get("timings"):
+        log("  passes: %s" % read["timings"])
+
+
+def describe(snap: Dict, per_rep: Dict[str, Dict[str, int]], g,
+             rows: Dict[str, int], col: Optional[int], log=_log) -> None:
+    """The relay snapshot next to the board, rep by rep -- what every mode
+    prints before deciding anything."""
+    describe_relay(snap, log=log)
+    describe_reps(per_rep, g, rows, col, log=log)
+
+
+def describe_reps(per_rep: Dict[str, Dict[str, int]], g, rows: Dict[str, int],
+                  col: Optional[int], log=_log) -> None:
+    """The derived per-rep numbers next to the board, whichever source they
+    came from: units, what counted, what did not, where it lands."""
     log("  %-30s %5s   %s   %s   %s" % ("SaraPlus rep", "units", "counted",
                                         "not counted", "board"))
     matched = set()
@@ -432,15 +768,28 @@ def main(argv=None) -> int:
     ap.add_argument("--office", default="",
                     help="relay office key to read (default: the one carlos* "
                          "office enrolled as nds)")
+    ap.add_argument("--source", choices=SOURCES, default="auto",
+                    help="auto (default): the nds relay when it relayed for "
+                         "the day, else the direct SaraPlus read when the "
+                         "login exists, else hold; relay / sara pin one and "
+                         "never touch the other")
+    ap.add_argument("--preflight", action="store_true",
+                    help="report patchright, the creds file (never the "
+                         "password) and the profile dir, then exit 0/1 -- "
+                         "touches nothing else; wins over every other flag")
     ap.add_argument("--probe", action="store_true",
-                    help="print the latest relay snapshot and the board's "
-                         "current column; never writes, never holds")
+                    help="print which source, its raw numbers, the derived "
+                         "metrics and the board's current column; never "
+                         "writes, never holds")
     ap.add_argument("--fill", action="store_true",
                     help="plan the board write (dry-run without --yes)")
     ap.add_argument("--yes", action="store_true", help="actually write")
     ap.add_argument("--dry", "--dry-run", dest="dry", action="store_true",
                     help="never write, whatever else is passed")
     a = ap.parse_args(argv)
+
+    if a.preflight:
+        return preflight()
 
     now = dt.datetime.now(TZ)
     if a.date:
@@ -452,23 +801,69 @@ def main(argv=None) -> int:
     write = bool(a.fill and a.yes and not a.probe and not a.dry)
     mode = ("PROBE" if a.probe else "WRITE" if write
             else "PLAN (dry)" if a.fill else "DRY REPORT")
-    _log("NDS Sales Board <- SaraPlus relay, %s, %s" % (R._md(day), mode))
+    _log("NDS Sales Board <- SaraPlus (source %s), %s, %s" % (a.source, R._md(day), mode))
 
-    rows = relay_rows(day)
-    key, why, seen = pick_office(rows, a.office, lookup=office_campaign)
-    if a.probe:
-        _log("offices that relayed for %s: %s" % (
-            day.isoformat(),
-            ", ".join("%s (%s)" % (k, c or "not enrolled")
-                      for k, c in sorted(seen.items())) or "none"))
-    snap = latest_snapshot(rows, key) if key else None
-    if snap is None:
-        _log("no relay for %s -- the office mini may be off (%s)"
-             % (day.isoformat(), why or "no row for %s" % key))
+    # --- the relay, unless the source is pinned away from it ----------------
+    key, why, snap = None, "", None
+    if a.source in ("auto", "relay"):
+        rows = relay_rows(day)
+        key, why, seen = pick_office(rows, a.office, lookup=office_campaign)
+        if a.probe:
+            _log("offices that relayed for %s: %s" % (
+                day.isoformat(),
+                ", ".join("%s (%s)" % (k, c or "not enrolled")
+                          for k, c in sorted(seen.items())) or "none"))
+        snap = latest_snapshot(rows, key) if key else None
+        if snap is None:
+            why = why or "no row for %s" % key
+            key = None
+            _log("no relay for %s -- the office mini may be off (%s)"
+                 % (day.isoformat(), why))
+    else:
+        why = "--source sara: the relay was not read"
+
+    # --- the login, unless the source is pinned away from it ----------------
+    cr, cr_why, cr_exists = (None, "--source relay: the login was not looked for", False)
+    if a.source in ("auto", "sara"):
+        cr, cr_why, cr_exists = CFG.creds_status()
+        if cr is None and cr_exists:
+            # A file that is there but unreadable is a fault to fix, not a
+            # wait: a hold would sit amber on every pass until somebody read
+            # the log.
+            _log("the NDS SaraPlus login file is unusable: %s" % cr_why)
+            if not a.probe:
+                _log("nothing written")
+                return EXIT_FAIL
+
+    source, why_not = choose_source(a.source, key, why, cr is not None, cr_why)
+    per_rep: Dict[str, Dict[str, int]] = {}
+    show_reps = False                 # per_rep came from a usable read
+    if source is None:
+        _log("no source for %s: %s" % (day.isoformat(), why_not))
         if not a.probe:
             _log("HOLDING -- nothing written; the next pass retries")
             return EXIT_HOLD
-    per_rep = units_for(snap["sales"]) if snap else {}
+    elif source == "relay":
+        _log("source: relay -- %s relayed as %r" % (key, RELAY_CAMPAIGN))
+        per_rep, show_reps = units_for(snap["sales"]), True
+    else:
+        _log("source: direct SaraPlus read -- %s" % cr_why)
+        try:
+            read = read_sara(day, cr)
+        except SP.SaraError as e:
+            _log("SaraPlus read FAILED -- %s" % e)
+            _log("nothing written")
+            return EXIT_FAIL
+        describe_sara(read, day)
+        problem = sara_problem(read)
+        if problem:
+            _log("HOLDING -- %s" % problem)
+            if not a.probe:
+                _log("nothing written; the next pass retries")
+                return EXIT_HOLD
+        else:
+            per_rep = units_for(metrics_from_grids(read["att"], read["lines"]))
+            show_reps = True
 
     ws, g = load_board()
     board_rows = R.campaign_rows(g, CAMPAIGN)
@@ -477,8 +872,10 @@ def main(argv=None) -> int:
     _log("board %r: WE cell reads %r, %s needs %r -> %s; %d NDS row(s)"
          % (ws.title, shown, R._md(day), want,
             "ok" if ok else "WRONG WEEK", len(board_rows)))
-    if snap:
+    if source == "relay":
         describe(snap, per_rep, g, board_rows, col)
+    elif show_reps:
+        describe_reps(per_rep, g, board_rows, col)
     if a.probe:
         _column_dump(g, board_rows, col, day)
         _log("PROBE -- nothing written")

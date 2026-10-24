@@ -5015,6 +5015,20 @@ _CRED_FILES = {
     # Lucy 2). Its own file + Chrome profile, never the b2b or Raf dealers'.
     "saraplus-creds-nds":
         lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds-nds.json",
+    # The NDS SaraPlus login the NDS SALES BOARD FILL reads DIRECTLY on Lucy 2
+    # (vantura_nds_sara.config -- its second source when Carlos's office mini
+    # has not relayed as an nds enrolment, 2026-10-23). Written and pushed by
+    # `python -m automations.vantura_nds_sara.set_credentials --push "Lucy 2"`.
+    # Its OWN key, deliberately: not saraplus-creds (alphaletemarketing), not
+    # saraplus-creds-b2b (rc_contact_sync), not saraplus-creds-nds above
+    # (nds_metrics' order-history pull) -- one key per account AND per reader,
+    # so a rotation on one never hands another report the wrong dealer. Whole
+    # file, two keys, never merged (like saraplus-creds-b2b). Lives in
+    # ~/.config, outside the repo, so `lucy update` never carries it. The
+    # receiving set_cred_file checks THIS dict, so a runner accepts the key
+    # only once it runs this code.
+    "saraplus-nds-creds":
+        lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-nds-creds.json",
     # Fathom API key(s) -- one per Zoom account that records 1st rounds -- for
     # the 1st Round Scorecards post (first_round_scorecards.fathom). Lives in
     # ~/.config, outside the repo, so `lucy update` never carries it.
