@@ -4,29 +4,34 @@ import unittest
 from automations.ad_photo_threads import appstream_ads as aa
 
 
-class AdsInTextTests(unittest.TestCase):
-    """Eve 10/24: the ad off the Indeed mail kept on the AppStream record."""
+class ReportRowsTests(unittest.TestCase):
+    """Eve 10/24: the ad off AppStream's "Sent to Call List" detail rows
+    (First, Last, Email, Phone, Rating, Job Board, Date and Time, Ad)."""
 
-    def test_reads_the_ad_after_the_wrapper(self):
-        page = "Subject: [Action required] New application for AT&T Sales Agent, McKinney, TX\nFrom: Indeed"
-        self.assertEqual(aa.ads_in_text(page), ["AT&T Sales Agent, McKinney, TX"])
+    def row(self, first, last, ad):
+        return [first, last, "x@y.com", "555", "", "Indeed", "10/13/2026 6:19 AM", ad]
 
-    def test_cuts_the_date_after_the_subject(self):
-        page = "New application for Entry Level Assistant Manager, Irving, TX   10/21/2026 3:14 PM"
-        self.assertEqual(aa.ads_in_text(page), ["Entry Level Assistant Manager, Irving, TX"])
+    def test_one_ad_for_the_name(self):
+        rows = [self.row("Antoinette", "Proveaux", "AT&T Sales Agent, McKinney, TX"),
+                self.row("Bob", "Proveaux", "Customer Sales Associate, Plano, TX")]
+        self.assertEqual(aa.ad_of(rows, "Antoinette Proveaux"), ["AT&T Sales Agent, McKinney, TX"])
 
-    def test_same_ad_twice_is_one_two_ads_are_two(self):
-        page = ("New application for AT&T Team Member, Frisco, TX\n"
-                "New application for AT&T Team Member, Frisco, TX\n"
-                "New application for Customer Sales Associate, Plano, TX")
-        self.assertEqual(len(aa.ads_in_text(page)), 2)
+    def test_wrapper_comes_off_and_repeats_fold(self):
+        rows = [self.row("Carlo", "Palacio", "[Action required] New application for AT&T Team Member, Frisco, TX"),
+                self.row("Carlo", "Palacio", "AT&T Team Member, Frisco, TX")]
+        self.assertEqual(aa.ad_of(rows, "Carlo Palacio"), ["AT&T Team Member, Frisco, TX"])
 
-    def test_nothing_on_the_page(self):
-        self.assertEqual(aa.ads_in_text("Applicant Info\nPhone"), [])
+    def test_two_ads_and_middle_names_and_accents(self):
+        rows = [self.row("José Luis", "De la Cruz", "A, Dallas, TX"),
+                self.row("Jose", "Cruz", "B, Irving, TX")]
+        self.assertEqual(aa.ad_of(rows, "Jose Cruz"), ["A, Dallas, TX", "B, Irving, TX"])
 
-    def test_names_and_keys(self):
-        self.assertEqual(aa.split_name("José  De la Cruz"), ("jose", "cruz"))
-        self.assertEqual(aa.split_name("Krystal"), ("krystal", ""))
+    def test_one_word_name_or_short_row_is_nothing(self):
+        self.assertEqual(aa.ad_of([self.row("Krystal", "Lee", "A")], "Krystal"), [])
+        self.assertEqual(aa.ad_of([["Ana", "Lee"]], "Ana Lee"), [])
+
+    def test_header_and_key(self):
+        self.assertEqual(aa.header(dt.date(2026, 10, 3)), "Oct 3, 2026")
         self.assertEqual(aa.key(dt.date(2026, 10, 22), " Carlo Palacio "), "2026-10-22|carlo palacio")
 
 

@@ -1,17 +1,20 @@
-"""The ad a 1st-round candidate applied to, read off their AppStream record.
+"""The ad a 1st-round candidate applied to, read off AppStream.
 
 Eve 10/24 ("si"): the offices applicant_tracker doesn't import (Drew, Jairo,
 Valeria, Colten, George...) had ~70 interviews in a week with a blank Ad Title
-in the sheet and in Slack, and nobody answered the channel notes. The ad is
-still on each applicant's record: AppStream keeps the Indeed mail it came in
-on, "[Action required] New application for <ad>, <City>, <ST>" (the same text
-oat_processing's read_posting_title reads).
+in the sheet and in Slack, and nobody answered the channel notes.
 
-READ-ONLY on AppStream: the console's global search by last name, open the
-match, read the page, go back. Nothing on the record is touched.
+Where the ad is: AppStream's retention report (p=701) links each day's "Sent
+to Call List" count to a detail table -- First, Last, Email, Phone, Rating,
+Job Board, Date and Time, Ad -- the same table applicant_tracker imports into
+the Call List tab for its 16 offices. Here it is read for the office that's
+missing, over the days before the interview, READ-ONLY (nothing is written to
+AppStream or to any sheet). Opening a record from the global search was tried
+first (10/24) and is a dead end: its row link opens the applicant's history
+popup, which has no ad.
 
-What a lookup found is kept in the state file (state[channel]["appstream_ads"],
-{"YYYY-MM-DD|name": ad text or ""}) so collect.build can use it on every later
+What it found is kept in the state file (state[channel]["appstream_ads"],
+{"YYYY-MM-DD|name": ad text or ""}) so collect.build uses it on every later
 pass without opening AppStream again; "" = looked, nothing usable (not asked
 twice).
 """
@@ -22,9 +25,11 @@ import re
 import unicodedata
 from typing import Dict, List, Optional, Tuple
 
-_APPLIED = re.compile(r"new application for\s*[:\-]?\s*(.+)", re.I)
-# Where the mail subject ends on the record ("... Frisco, TX  10/21/2026 ...").
-_TAIL = re.compile(r"\s{2,}|\s+\d{1,2}/\d{1,2}/\d{2,4}\b.*$")
+# An applicant is sent to the call list before the 1st round: 10/24 Antoinette
+# Proveaux went 10/13 -> interview 10/22. Three weeks back covers the slow ones.
+SENT_DAYS_BACK = 21
+L_CALL_LIST = "Sent to Call List"      # the report row (applicant_tracker's label)
+N_CALL_COLS = 8                        # First .. Ad, as applicant_tracker reads it
 
 
 def _fold(s: str) -> str:
@@ -36,166 +41,57 @@ def key(day: dt.date, name: str) -> str:
     return f"{day.isoformat()}|{name.strip().lower()}"
 
 
-def ads_in_text(text: str) -> List[str]:
-    """Every "New application for <ad>" on a record page, the ad text only."""
+def header(d: dt.date) -> str:
+    """The report's column header for a day, "Oct 13, 2026" (no %-d: Windows)."""
+    return f"{d:%b} {d.day}, {d.year}"
+
+
+def ad_of(rows: List[List[str]], name: str) -> List[str]:
+    """The distinct ads the detail rows have for `name` (first + last, as the
+    sheet spells them; a middle name on either side still matches)."""
+    from automations.ad_sales_board.names import strip_wrapper
+    parts = _fold(name).split()
+    if len(parts) < 2:
+        return []
     out = []
-    for line in (text or "").splitlines():
-        m = _APPLIED.search(" ".join(line.split()))
-        if not m:
+    for r in rows:
+        if len(r) < N_CALL_COLS:
             continue
-        ad = _TAIL.sub("", m.group(1)).strip(" .,-")
-        if len(ad) > 3 and ad not in out:
-            out.append(ad)
+        first, last = _fold(r[0]).split(), _fold(r[1]).split()
+        if not first or not last:
+            continue
+        if first[0] == parts[0] and last[-1] == parts[-1]:
+            ad = strip_wrapper(r[N_CALL_COLS - 1]).strip()
+            if ad and ad not in out:
+                out.append(ad)
     return out
 
 
-def split_name(name: str) -> Tuple[str, str]:
-    parts = _fold(name).split()
-    if not parts:
-        return "", ""
-    return parts[0], parts[-1] if len(parts) > 1 else ""
-
-
-# The results grid (seen 10/24): one <tr> per applicant, First and Last in
-# separate cells ("Antoinette | Proveaux | phone | | email | Floyd Rude | Elite
-# Strategic Solutions, Inc | 10-..."), searched across every office the login
-# sees. A row is theirs when its cells hold both names; its first link opens it.
-_RESULTS_JS = """(args) => {
-    const [f, l] = args;
-    const fold = s => (s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-        .toLowerCase().replace(/[^a-z ]+/g, ' ').replace(/ +/g, ' ').trim();
-    const links = [...document.querySelectorAll('a')];
-    const out = [];
-    document.querySelectorAll('tr').forEach(tr => {
-        if (tr.querySelector('tr')) return;              // a row of rows: skip
-        const cells = [...tr.children].map(td => fold(td.innerText));
-        if (!cells.some(c => c === l || c.endsWith(' ' + l))
-            || (f && !cells.some(c => c === f || c.split(' ')[0] === f)))
-            return;
-        const a = tr.querySelector('a');
-        out.push({link: a ? links.indexOf(a) : -1,
-                  cells: [...tr.children].map(td => (td.innerText || '').trim().slice(0, 60))});
-    });
-    return out; }"""
-
-
-def _search(page, last: str) -> None:
-    if page.locator("input[name='globalSrchFor']").count() == 0:
-        raise RuntimeError(f"no search box on {page.url[:90]}")
-    page.fill("input[name='globalSrchFor']", last, timeout=8000)
-    for sel in ("#glblSrchSbmt", "input[name='glblSrchSbmt']",
-                "xpath=//input[@value='Go']"):
-        b = page.locator(sel).first
-        if b.count() > 0:
-            b.click(timeout=5000, no_wait_after=True)
-            break
-    else:
-        page.press("input[name='globalSrchFor']", "Enter")
-    page.wait_for_timeout(3500)
-
-
-def _page_text(page) -> str:
-    out = []
-    for fr in list(page.frames):
-        try:
-            out.append(fr.evaluate("() => document.body ? document.body.innerText : ''") or "")
-        except Exception:  # noqa: BLE001
-            continue
-    return "\n".join(out)
-
-
-DUMP = False     # --dump: every field + text line of each record opened (probe)
-
-
-def _dump(page) -> None:
-    for i, fr in enumerate(page.frames):
-        try:
-            got = fr.evaluate("""() => ({
-                fields: [...document.querySelectorAll('input,select,textarea')]
-                    .filter(e => e.type !== 'hidden' || (e.value || '').length > 3)
-                    .map(e => (e.name || e.id || e.tagName) + '=' + (e.tagName === 'SELECT'
-                        ? (e.options[e.selectedIndex] || {}).text || '' : (e.value || ''))),
-                text: (document.body ? document.body.innerText : '')})""")
-        except Exception:  # noqa: BLE001
-            continue
-        print(f"        --- frame {i} {fr.url[:80]}")
-        for f in got["fields"][:120]:
-            if f.split("=", 1)[1].strip():
-                print(f"        F {f[:150]}")
-        for ln in [x.strip() for x in got["text"].splitlines() if x.strip()][:150]:
-            print(f"        T {ln[:150]}")
-
-
-def lookup(page, home_url: str, name: str, max_open: int = 3,
-           debug: bool = False) -> Tuple[List[str], str]:
-    """(ads found, how) for one candidate in the office already selected.
-    `home_url` = the console page with the search box, reloaded before each
-    search so one bad page can't leak into the next name."""
-    first, last = split_name(name)
-    if not last:
-        return [], "one-word name, not searched"
-
-    def results():
-        """Search from a fresh console; [(frame, link index)] naming them.
-        The results page is a POST, so each record opens off a new search."""
-        page.goto(home_url, timeout=60000)
-        page.wait_for_load_state("domcontentloaded")
-        page.wait_for_timeout(1500)
-        _search(page, last)
-        out = []
-        for fr in list(page.frames):
-            try:
-                out += [(fr, r) for r in fr.evaluate(_RESULTS_JS, [first, last])]
-            except Exception:  # noqa: BLE001
-                continue
-        return out
-
-    hits = results()
+def sent_rows(app, office_id: str, days: List[dt.date], debug: bool = False) -> List[List[str]]:
+    """Every "Sent to Call List" detail row of `office_id` on `days`."""
+    app.select_office(office_id)
+    app.open_retention_details()
+    hrefs = [(d, app.detail_href(L_CALL_LIST, header(d))) for d in days]
     if debug:
-        print(f"    [{name}] search '{last}': {len(hits)} row(s) with both names")
-        for _, r in hits[:3]:
-            print(f"      row (link {r['link']}):")
-            for i, cell in enumerate(r["cells"]):
-                print(f"        {i}: {cell}")
-        if not hits:
-            near = [ln.strip()[:100] for ln in _page_text(page).splitlines()
-                    if last in _fold(ln)][:6]
-            print(f"      lines with '{last}': {near or 'none'}")
-    if not hits:
-        return [], "no search result"
-    ads: List[str] = []
-    for n in range(min(len(hits), max_open)):
-        if n:
-            hits = results()
-            if n >= len(hits):
-                break
-        fr, row = hits[n]
-        if row["link"] < 0:
-            continue
-        fr.locator("a").nth(row["link"]).click(timeout=8000, no_wait_after=True)
-        page.wait_for_timeout(3000)
-        text = _page_text(page)
-        found = ads_in_text(text)
-        if debug:
-            near = [ln.strip()[:110] for ln in text.splitlines()
-                    if re.search(r"application|position|applied|job|subject", ln, re.I)][:8]
-            print(f"      record {n + 1}: ads={found} | {page.url[:70]}")
-            for ln in near:
-                print(f"        > {ln}")
-            if DUMP:
-                _dump(page)
-        ads += [a for a in found if a not in ads]
-    return ads, f"{len(hits)} record(s)"
+        print(f"  report columns found: {sum(1 for _, h in hrefs if h)} of {len(days)} days"
+              f" ({', '.join(f'{d:%m/%d}' for d, h in hrefs if h) or 'none'})")
+    rows: List[List[str]] = []
+    for d, h in hrefs:
+        if h:
+            got = app.scrape_at(h, N_CALL_COLS)
+            if debug:
+                print(f"    {d:%m/%d}: {len(got)} sent to call list")
+            rows += got
+    return rows
 
 
 def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
         apply: bool = False, limit: Optional[int] = None, debug: bool = True,
         lookback: Optional[int] = None, cache: Optional[dict] = None) -> Dict[str, object]:
-    """Look up the office's interviews still on no thread (unthreaded.find).
-    Prints what it finds; with `apply` keeps it in the state file."""
+    """Look up the office's blank-title interviews still on no thread
+    (unthreaded.find). Prints what it finds; with `apply` keeps it."""
     from automations.ad_photo_threads import collect, config, post, unthreaded
-    from automations.indeed_source_report import fetch
-    from automations.shared.tableau_patchright import appstream_direct_session
+    from automations.applicant_tracker.applicantstream import session
 
     o = config.office(office_key)
     config.use(o)
@@ -208,8 +104,7 @@ def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
         want = {n.strip().lower() for n in names}
         todo = [(d, c) for d, c in todo if c.name.strip().lower() in want]
     channel = o["live_channel"]
-    state = post._load_state()
-    done = (state.get(channel) or {}).get("appstream_ads") or {}
+    done = (post._load_state().get(channel) or {}).get("appstream_ads") or {}
     todo = [(d, c) for d, c in todo if key(d, c.name) not in done]
     if limit:
         todo = todo[:limit]
@@ -217,26 +112,19 @@ def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
           + ("" if apply else " (dry run: nothing saved)"))
     if not todo:
         return {"looked": 0, "found": 0}
+    first = min(d for d, _ in todo) - dt.timedelta(days=SENT_DAYS_BACK)
+    days = [first + dt.timedelta(days=n) for n in range((day - first).days + 1)]
     oids = [s["office_id"] for s in config.SOURCES if s.get("office_id")]
+    rows: List[List[str]] = []
+    with session() as app:
+        for oid in oids:
+            rows += sent_rows(app, oid, days, debug=debug)
     got: Dict[str, str] = {}
-    with appstream_direct_session(headless=True, verbose=False) as page:
-        tok = fetch.token(page)
-        fetch.select_office(page, tok, oids[0])
-        home = page.url
-        if debug:
-            box = page.locator("input[name='globalSrchFor']").count() > 0
-            print(f"  office {oids[0]} selected, owner={fetch.owner_name(page)!r}, "
-                  f"search box: {box}")
-        for d, c in todo:
-            try:
-                ads, how = lookup(page, home, c.name, debug=debug)
-            except Exception as e:  # noqa: BLE001 -- one name never stops the rest
-                print(f"  {c.name} ({d:%m/%d}): lookup failed: {type(e).__name__}: {str(e)[:120]}")
-                continue
-            one = ads[0] if len(ads) == 1 else ""
-            got[key(d, c.name)] = one
-            print(f"  {c.name} ({d:%m/%d}): {ads or '-'}  [{how}]"
-                  + ("" if one or not ads else "  -> 2+ ads, left for the channel"))
+    for d, c in todo:
+        ads = ad_of(rows, c.name)
+        got[key(d, c.name)] = ads[0] if len(ads) == 1 else ""
+        print(f"  {c.name} ({d:%m/%d}): {ads or '-'}"
+              + ("  -> 2+ ads, left for the channel" if len(ads) > 1 else ""))
     if apply and got:
         state = post._load_state()
         state.setdefault(channel, {}).setdefault("appstream_ads", {}).update(got)
