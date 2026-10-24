@@ -76,6 +76,10 @@ HYPE_REGULAR = (
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
     "That's {first} on the board :100:",
     "{first} came to play :hot_pepper:",
+    # ARABIC PHRASES THE SAME WAY AS SPANISH (Megan 2026-10-24: "they use
+    # 'Yalla' a lot", habibi): English lines with a word or two the reps say.
+    "Yalla!! {first} is on the board :fire:",
+    "Mashallah habibi :dollar: {first} is on the board",
     "{first} is a DAWGGGG :dog:",
     "Another one for {first} :fire:",
     "{first} keeps going :chart_with_upwards_trend:",
@@ -105,6 +109,7 @@ HYPE_LARGE = (
     "Heck YEAH {first}!! :hot_pepper::fire:",
     "{first} FOUND THE MONEY!! :moneybag::moneybag:",
     "{first} found a whale!! :whale::moneybag:",
+    "YALLA {first}!! Habibi is cooking :fire::moneybag:",
     "Whale spotted :whale: {first} reeled it in :fishing_pole_and_fish::fire:",
     "Snicklepop!! {first} is rolling :zap::dollar:",
     "CLOSER!! {first} :fire::money_with_wings:",
@@ -141,6 +146,7 @@ HYPE_SUPER = (
     "SOMEBODY STOP {first} :money_with_wings::money_with_wings::money_with_wings:",
     "{first} BROKE THE BOARD :boom:",
     "{first} FOUND A WHALE!!! :whale::whale::moneybag:",
+    "YALLA YALLA {first}!!! Mashallah :fire::moneybag::fire:",
     "WHALE ALERT :rotating_light::whale: {first} just landed the big one :fire:",
     "WHAT IS {first} DOING?!? :hot_pepper::fire:",
     "{first} ATE. Everybody else picking crumbs :fire:",
@@ -568,6 +574,8 @@ class _Box(Shape):
         "{first} closed one! Who's next :eyes::eyes::eyes:",
         "That's another for {first} :100:",
         "{first} came to play :hot_pepper:",
+        "Yalla!! {first} closed one :fire:",
+        "Mashallah habibi :moneybag: {first} closed one",
         "{first} is a DAWGGGG :dog:",
         "Another contract for {first} :fire:",
         "{first} keeps going :chart_with_upwards_trend:",
@@ -816,6 +824,7 @@ LINE_FAMILIES = (
     # Two whale lines in one post is the same joke twice (Megan 2026-10-23:
     # "add something about finding whales").
     ("whale", ("whale",)),
+    ("yalla", ("yalla", "habibi", "mashallah")),
     # Last, and on purpose: nearly every line says this, so it is only the
     # subject when nothing more specific fits.
     ("on-the-board", ("on the board",)),
@@ -961,6 +970,7 @@ FIRST_SALE_LINES = (
     "{first} is OTB 💰 That's my ninja way. Who's next? 🥷",
     "{first} is OTB 💰 It's not bragging if it's true. Who's next? 👀",
     "{first} is OTB 💰 Honoring the partnership 🤝 Who's next?",
+    "{first} is OTB 💰 Yalla habibi, let's go — the day's open 🔥",
 )
 # BACK TO BACK: the same rep again inside BACK_TO_BACK_MIN of their last one.
 BACK_TO_BACK_MIN = 30
@@ -975,6 +985,7 @@ BACK_TO_BACK_LINES = (
     "{first} is evolving 🔥 Two in {n} min",
     "Two in {n} min 🥷 Shadow clone jutsu? Believe it! {first}",
     "Two in {n} min 🔥 {first} is not leaving",
+    "Two in {n} min 🔥 Mashallah {first}, yalla keep it rolling",
 )
 SALE_TIMES_PATH = (Path.home() / ".config" / "recruiting-report"
                    / "icd_sale_times.json")

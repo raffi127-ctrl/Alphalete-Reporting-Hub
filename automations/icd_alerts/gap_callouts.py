@@ -145,6 +145,9 @@ LINES = (
     "⏱️ {m}+ minutes and not a single dispo from {names}. Lucy's watching, ¿eh? 👀",
     "{names} — {m}+ min quiet 🤫 If you're cooking up a sale 🍳 take your time. If not… ¡a trabajar! 👀",
     "Ojo 👁️ {names}: {m}+ min without a door. Working a sale 💰 or finger poppin'? 🤌",
+    # ARABIC THE SAME WAY (Megan 2026-10-24: "they use 'Yalla' a lot").
+    "Yalla habibi 🚪 {names} — {m}+ min off the doors. The doors miss you",
+    "{names}: {m}+ min. Khalas with the break 😌 Yalla, knock 🚪",
 )
 
 # B2B / BOX TALK (Ryan McSpadden 2026-09-30: "Can we change these to more B2B
@@ -190,6 +193,7 @@ B2B_LINES = (
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
     "⏱️ {m}+ minutes and not a single dispo from {names}. Lucy's watching, ¿eh? 👀",
     "{names} — {m}+ min quiet 🤫 If you're in with the owner 💼 take your time. If not… ¡a trabajar! 👀",
+    "Yalla habibi 🏢 {names} — {m}+ min, no walk-ins. Walk in",
 )
 
 
@@ -332,6 +336,7 @@ RECEIPT_LINES = (
     "{names} had a credit check behind the quiet. Doesn't play the odds, plays the door 🫡",
     "{names} had a credit check behind the quiet. Honoring the partnership 🤝🫡",
     "{names} showed up on the board. 100% attendance 🫡",
+    "Mashallah {names} 🧾 Credit check behind the quiet. Yalla, go close it 💰",
 )
 # The same idea for a business office: no credit checks on Box, so what moves
 # is a sale.
@@ -351,6 +356,7 @@ B2B_RECEIPT_LINES = (
     "{names} had a deal behind the quiet. Doesn't play the odds, plays the room 🫡",
     "{names} had a deal behind the quiet. Honoring the partnership 🤝🫡",
     "{names} showed up on the board. 100% attendance 🫡",
+    "Mashallah {names} 🧾 Deal behind the quiet. Yalla, go get the next one 💼",
 )
 
 
@@ -487,6 +493,7 @@ PACE_LINES = (
     "{names} at {avg} {unit}/hr. No nobility in poverty — plenty in {avg} an hour 🔥",
     "{names} at {avg} {unit}/hr. Reaching up constantly 🔥",
     "{names} — {avg} {unit}/hr. Running the place already 🔥",
+    "{names} at {avg} {unit}/hr 🏃💨 Mashallah habibi, that's work 🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -514,6 +521,7 @@ B2B_PACE_LINES = (
     "{names} at {avg} {unit}/hr. No nobility in poverty — plenty in {avg} an hour 🔥",
     "{names} at {avg} {unit}/hr. Reaching up constantly 🔥",
     "{names} — {avg} {unit}/hr. Running the place already 🔥",
+    "{names} at {avg} {unit}/hr 🏃💨 Mashallah habibi, that's work 🔥",
 )
 
 
