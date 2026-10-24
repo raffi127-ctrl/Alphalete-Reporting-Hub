@@ -364,7 +364,11 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
                   # on the queuer blanking the cell by hand, so a token stayed
                   # readable in the Sheet for anyone with the link — noticed
                   # while re-pushing it after the 2026-08-13 password rotation.
-                  "set_gmail_token"}
+                  "set_gmail_token",
+                  # Google Contacts refresh tokens + client secret. Relied on
+                  # hand-redaction, and enqueue echoed the whole JSON to the
+                  # console (alphaletemarketing push, 2026-10-24).
+                  "set_contacts_token", "set_contacts_ro_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
