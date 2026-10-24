@@ -122,6 +122,9 @@ OWNER_EMAILS: Dict[str, str] = {
     "Justin Fermin":       "ferminjustin71@gmail.com",
     "Isaac Amissah":       "amissolutions7@gmail.com",
     "Abdallah Ghousheh":   "Ghoushehbusiness@gmail.com",
+    # no captainship (run.SOLO_OFFICES). Rafael 2026-10-24, mail "Aaron Nimako
+    # - knocking report" — Aaron answered on that thread from this address.
+    "Aaron Nimako":        "aaron.nimako@gmail.com",
 }
 
 

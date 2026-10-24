@@ -100,6 +100,29 @@ def default_captains() -> List[str]:
 # NDS numbers; his offices' zones and owner addresses are not loaded either.
 HELD_OUT = {"atef"}
 
+# Offices that get THEIR OWN 9 PM board with no captainship around them — not
+# on any captainship block of the Org Sales Board, so no roster brings them in.
+# Rafael 2026-10-24 (mail "Aaron Nimako - knocking report"): "Aaron is an owner
+# that was on Lumen and transferred over to Fiber. Can we get him a knocking
+# report email to him every night? Just a knocking report, please." On purpose
+# NOT config.EXTRA_KNOCK_OWNERS: that would also put him in a captain's morning
+# report and in knocks_access_watch. Each name still needs a zone (zones.py) and
+# an address (owners.py) like any other office.
+SOLO_KEY = "solo"
+SOLO_OFFICES: Tuple[str, ...] = ("Aaron Nimako",)
+
+
+def _with_solo(rosters: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """The captainship rosters plus the SOLO_OFFICES, always — also off a cache
+    written before a name was added. An office already on a captainship roster
+    is not listed twice (it would be mailed once anyway: state.office_sent)."""
+    out = {k: list(v) for k, v in rosters.items() if k != SOLO_KEY}
+    on_board = {Z.normalize(i) for v in out.values() for i in v}
+    solo = [i for i in SOLO_OFFICES if Z.normalize(i) not in on_board]
+    if solo:
+        out[SOLO_KEY] = solo
+    return out
+
 OUT_DIR = Path("output") / "night_knocks"
 # Our OWN Chrome profile: one browser per profile dir, and this runs in the
 # same evening as the intraday boards and the captainship gate.
@@ -173,7 +196,7 @@ def rosters_for(captain_keys: Sequence[str], *, night: Optional[dt.date] = None,
         import json
         cached = json.loads(cache.read_text(encoding="utf-8"))
         if all(k in cached for k in captain_keys):
-            return {k: list(v) for k, v in cached.items()}
+            return _with_solo(cached)
     except Exception:  # noqa: BLE001 — first tick of the night
         cached = {}
 
@@ -197,7 +220,7 @@ def rosters_for(captain_keys: Sequence[str], *, night: Optional[dt.date] = None,
                              encoding="utf-8")
         except Exception:  # noqa: BLE001 — a cache that won't write is not a failure
             pass
-    return out
+    return _with_solo(out)
 
 
 def any_zone_in_window(now_utc: dt.datetime) -> bool:
@@ -212,6 +235,8 @@ def any_zone_in_window(now_utc: dt.datetime) -> bool:
 
 def captain_display(key: str) -> str:
     """'Raf's Captainship' — what the subject line calls this captainship."""
+    if key == SOLO_KEY:
+        return "Offices without a captainship"
     try:
         from automations.captainship_drafts import config
         from automations.captainship_drafts import knock_dispo_images as KD

@@ -306,6 +306,33 @@ class ImmediateAlert(unittest.TestCase):
         self.assertEqual(n, 0)
 
 
+class SoloOffices(unittest.TestCase):
+    """Rafael 2026-10-24: Aaron Nimako gets his own night board with no
+    captainship — he is on no roster, so the tick has to add him itself."""
+
+    def test_added_to_the_board_rosters(self):
+        from automations.captainship_night_knocks import run as R
+        got = R._with_solo({"rafael": ["Kash Rai"]})
+        self.assertEqual(got["rafael"], ["Kash Rai"])
+        self.assertEqual(got[R.SOLO_KEY], list(R.SOLO_OFFICES))
+
+    def test_not_listed_twice_once_a_captainship_has_him(self):
+        from automations.captainship_night_knocks import run as R
+        name = R.SOLO_OFFICES[0]
+        got = R._with_solo({"chan": [name.upper()]})
+        self.assertNotIn(R.SOLO_KEY, got)
+
+    def test_every_solo_office_has_an_owner_address(self):
+        from automations.captainship_night_knocks import owners as O
+        from automations.captainship_night_knocks import run as R
+        for name in R.SOLO_OFFICES:
+            self.assertTrue(O.owner_email(name), name)
+
+    def test_no_captainship_in_the_alert_name(self):
+        from automations.captainship_night_knocks import run as R
+        self.assertNotIn("Solo", R.captain_display(R.SOLO_KEY))
+
+
 class OfficeRecipients(unittest.TestCase):
     """Raf 2026-09-15: each office's night mail goes only to that office's
     owner — plus Eve (Eve, same day). Nobody else, and no captainship distro."""
