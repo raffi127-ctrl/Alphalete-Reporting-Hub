@@ -70,6 +70,16 @@ class OrgTest(unittest.TestCase):
         self.assertFalse(R.in_org("Carl Foss", tree))       # Eve's Skip
         self.assertFalse(R.in_org("Isaiah Kellum", tree))
 
+    def test_tab_rows_watched_without_mail(self):
+        from types import SimpleNamespace as Row
+        rows = [Row(name="Hasan  Salame", campaign="ATT Fiber Team", status="Waiting"),
+                Row(name="Jevon Wiley", campaign="ATT NDS Team", status=""),
+                Row(name="Nicolas Murrugarra", campaign="B2B", status="Waiting"),
+                Row(name="Andrew Meraz", campaign="Retail JE", status="Waiting"),
+                Row(name="Carl Foss", campaign="ATT NDS Team", status="Skip")]
+        self.assertEqual(R.tab_watch_rows(rows),
+                         [("Hasan Salame", "Fiber"), ("Jevon Wiley", "NDS")])
+
 
 class OrdersTest(unittest.TestCase):
     def test_fiber_owner_name(self):

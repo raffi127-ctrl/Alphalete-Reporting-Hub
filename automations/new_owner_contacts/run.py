@@ -190,6 +190,30 @@ def new_owner_names(rows) -> set:
             if r.name and r.status.strip().lower() != SKIP.lower()}
 
 
+def tab_program(campaign: str) -> Optional[str]:
+    """New Owners 'Campaign' -> the order log to watch. Only Fiber and NDS have
+    one (Raf asked for those two); B2B / Retail JE rows -> None."""
+    c = (campaign or "").lower()
+    if "nds" in c:
+        return "NDS"
+    if "fiber" in c:
+        return "Fiber"
+    return None
+
+
+def tab_watch_rows(rows) -> List[Tuple[str, str]]:
+    """(name, program) for every Fiber/NDS row on the tab, minus Skip. These are
+    watched even with NO Nelrose mail — Hasan Salame, Algemar Kennel and Vincent
+    Dodson never had one (Eve 2026-10-24)."""
+    from automations.new_owners.bank import SKIP
+    out = []
+    for r in rows:
+        prog = tab_program(r.campaign)
+        if r.name and prog and r.status.strip().lower() != SKIP.lower():
+            out.append((" ".join(r.name.split()), prog))
+    return out
+
+
 def in_org(name: str, tree: set, aliases: Optional[dict] = None) -> bool:
     if norm_name(name) in tree:
         return True
@@ -344,10 +368,10 @@ def roster_owners() -> Tuple[List, str]:
     return owners, edate.date().isoformat()
 
 
-def read_new_owners() -> set:
+def read_new_owners() -> list:
     from automations.new_owners import bank as B
     _cmap, rows = B.read(B.open_bank(create=False))
-    return new_owner_names(rows)
+    return rows
 
 
 def pull_first_orders(programs: set, days: int = SALES_WINDOW_DAYS) -> Dict[str, Dict[str, dt.date]]:
@@ -516,8 +540,10 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
     print(f"onboarding mails (Nelrose, last {LOOKBACK_DAYS}d): {len(onboard)}")
     owners, roster_date = roster_owners()
     print(f"Kelly's roster {roster_date}: {len(owners)} owner rows")
-    phones = {}
+    phones, emails = {}, {}
     for o in owners:
+        if o.email:
+            emails.setdefault(norm_name(o.name), o.email.strip().lower())
         ph = clean_phone(o.phone)
         if ph:
             phones.setdefault(canonical(o.email), ph)
@@ -535,7 +561,8 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
     upsert_contacts(MARKETING_ACCOUNT, people, apply=apply)
 
     # 2) ours -> watch list (+ raffi127 below)
-    tree = read_new_owners()
+    tab_rows = read_new_owners()
+    tree = new_owner_names(tab_rows)
     try:
         from automations.focus_office_att.aliases import load_aliases
         aliases = load_aliases()
@@ -543,8 +570,18 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
         print(f"  (aliases unavailable: {e})")
         aliases = None
     print(f"New Owners tab: {len(tree)} names")
+    def watched_as(name: str) -> Optional[str]:
+        n = norm_name(name)
+        return next((k for k, w in watch.items() if norm_name(w["name"]) == n), None)
+
     for ob in onboard:
         key = canonical(ob["email"]) or norm_name(ob["owner"])
+        old = watched_as(ob["owner"])
+        if key not in watch and old is not None:
+            # Watched off the tab first; the mail brings the email -> re-key.
+            watch[key] = watch.pop(old)
+            watch[key]["email"] = watch[key].get("email") or ob["email"]
+            watch[key]["company"] = watch[key].get("company") or ob["company"]
         if key in watch:
             watch[key]["phone"] = watch[key].get("phone") or phone_for(ob["email"], ob["owner"], ob.get("phone", ""))
             continue
@@ -562,6 +599,20 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
                 pending[key] = {"name": ob["owner"], "date": ob["date"]}
             else:
                 pending.pop(key, None)
+    # Every Fiber/NDS row on the tab is watched too, mail or no mail. Always
+    # seeded: an owner already selling when the watch starts (Algemar was
+    # active in September) must not read as a 'first' sale.
+    for name, prog in tab_watch_rows(tab_rows):
+        if watched_as(name) is not None:
+            continue
+        email_ = emails.get(norm_name(name), "")
+        key = canonical(email_) if email_ else "name:" + norm_name(name)
+        if key in watch:
+            continue
+        watch[key] = {"name": name, "email": email_, "company": "",
+                      "program": prog, "onboarded": "", "added": today.isoformat(),
+                      "phone": phone_for(email_, name), "seeded": True}
+        print(f"  watching {name} ({prog}, from the New Owners tab)")
     if pending:
         print(f"  not ours (not on New Owners): "
               f"{', '.join(sorted(v['name'] for v in pending.values()))}")
