@@ -15,12 +15,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from automations.ad_photo_threads import collect, config, post
 
 LOOKBACK_DAYS = 7
-# Typed as a placeholder, not an ad or a name (Aya's "-", George's "N/A").
-_PLACEHOLDER = {"", "-", "--", "n/a", "na", "none", "?", "."}
-
-
-def _blank(s: str) -> bool:
-    return s.strip().lower() in _PLACEHOLDER
+_blank = collect.blank_title     # a blank title the Call List couldn't fill either
 
 
 def find(day: dt.date, *, build: Optional[Callable] = None, cl=None,

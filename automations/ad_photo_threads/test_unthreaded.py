@@ -75,3 +75,42 @@ class CheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CallListTests(unittest.TestCase):
+    """Eve 10/24: a blank Ad Title is looked up on the Call List before the
+    channel is asked -- only when it's one ad the office already runs."""
+    D = dt.date(2026, 10, 22)
+
+    def setUp(self):
+        from automations.ad_photo_threads.titles import TitleBook
+        self.book = TitleBook(["AT&T Sales Agent, McKinney, TX"] * 3
+                              + ["AT&T Team Member, Frisco, TX"] * 3)
+
+    def ad(self, seen, name="Carlo Palacio", oids=("22583",)):
+        from automations.ad_photo_threads import collect
+        return collect.call_list_ad(cand(name, ""), self.D, set(oids), self.book, seen=seen)
+
+    def test_one_running_ad_fills_it(self):
+        seen = {("22583", "carlo palacio"): [(dt.date(2026, 10, 20), "AT&T Sales Agent, McKinney, TX")]}
+        self.assertEqual(self.ad(seen), self.book.resolve("AT&T Sales Agent, McKinney, TX"))
+
+    def test_two_ads_stay_asked(self):
+        seen = {("22583", "carlo palacio"): [(dt.date(2026, 10, 20), "AT&T Sales Agent, McKinney, TX"),
+                                             (dt.date(2026, 10, 21), "AT&T Team Member, Frisco, TX")]}
+        self.assertIsNone(self.ad(seen))
+
+    def test_an_ad_with_no_thread_is_not_started(self):
+        seen = {("22583", "carlo palacio"): [(dt.date(2026, 10, 20), "Verizon Retail Associate, Plano, TX")]}
+        self.assertIsNone(self.ad(seen))
+
+    def test_other_office_or_too_old_or_later_does_not_count(self):
+        ad = "AT&T Sales Agent, McKinney, TX"
+        self.assertIsNone(self.ad({("11280", "carlo palacio"): [(dt.date(2026, 10, 20), ad)]}))
+        self.assertIsNone(self.ad({("22583", "carlo palacio"): [(dt.date(2026, 7, 1), ad)]}))
+        self.assertIsNone(self.ad({("22583", "carlo palacio"): [(dt.date(2026, 10, 23), ad)]}))
+
+    def test_placeholders_are_blank(self):
+        from automations.ad_photo_threads import collect
+        self.assertTrue(all(collect.blank_title(s) for s in ["", " ", "-", "N/A", "none"]))
+        self.assertFalse(collect.blank_title("AT&T Sales Agent"))

@@ -410,6 +410,61 @@ def make_book(tabs: Dict[str, List[Dict[str, str]]], day: dt.date) -> TitleBook:
         only=getattr(config, "TITLE_ONLY", None))
 
 
+# ---- the ad AppStream saw ----------------------------------------------------
+# Eve 10/24 ("no podes resolver vos antes de mandarlos?"): a blank Ad Title the
+# Slack line didn't fill either is looked up on the Call List tab --
+# applicant_tracker's morning import of AppStream, with the ad each applicant
+# answered. Used only when it's ONE ad the office already has a thread for:
+# checked against 10 offices' typed titles (10/24) it agreed 93-97% (Isaiah
+# 72%: city-less vs city ads), and most misses were people who applied to two
+# ads -- those stay in the channel note. Org offices only (applicant_tracker's
+# OFFICE_IDS); Drew, Mercy, Jennifer... aren't imported, so they still get it.
+CALL_LIST_DAYS = 60
+# Typed as a placeholder, not an ad or a name (Aya's "-", George's "N/A").
+_PLACEHOLDER = {"", "-", "--", "n/a", "na", "none", "?", "."}
+_CALL_LIST: Optional[Dict[tuple, List[tuple]]] = None
+
+
+def blank_title(s: str) -> bool:
+    return (s or "").strip().lower() in _PLACEHOLDER
+
+
+def _call_list() -> Dict[tuple, List[tuple]]:
+    """{(office id, folded full name): [(date, ad)]}. Read once per process."""
+    global _CALL_LIST
+    if _CALL_LIST is None:
+        from automations.ad_sales_board import names
+        from automations.funnel_board.roster import CAPTAINSHIP, ORG
+        from automations.recruiting_report.fill import _retry, open_by_key
+        oid: Dict[str, str] = {}
+        for name, office_id, owner in list(ORG) + list(CAPTAINSHIP):
+            oid[names._key(owner)] = oid[names._key(name)] = office_id
+        for drift, name in names._ALIASES.items():
+            oid[drift] = oid.get(names._key(name), "")
+        ws = open_by_key(names.TRACKER_ID).worksheet("Call List")
+        rows = _retry(lambda: ws.get("A2:I", value_render_option="UNFORMATTED_VALUE"))
+        out: Dict[tuple, List[tuple]] = {}
+        for r in rows:
+            r = list(r) + [""] * (9 - len(r))
+            d, o = names._serial_date(r[7]), oid.get(names._key(r[0]))
+            if d and o:
+                out.setdefault((o, _fold(f"{r[1]} {r[2]}")), []).append(
+                    (d, names.strip_wrapper(str(r[8]))))
+        _CALL_LIST = out
+    return _CALL_LIST
+
+
+def call_list_ad(c: Candidate, day: dt.date, office_ids, book: TitleBook,
+                 seen: Optional[Dict[tuple, List[tuple]]] = None) -> Optional[str]:
+    """The one running ad AppStream has `c` applying to by `day`, else None."""
+    seen = _call_list() if seen is None else seen
+    since = day - dt.timedelta(days=CALL_LIST_DAYS)
+    keys = {book.resolve(ad) for o in office_ids
+            for d, ad in seen.get((o, _fold(c.name)), []) if since <= d <= day}
+    keys = {k for k in keys if k and book.running(k)}
+    return keys.pop() if len(keys) == 1 else None
+
+
 def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> DayReport:
     from automations.recruiting_report.fill import open_by_key
     if cache is not None and "_tabs" in cache:
@@ -477,4 +532,15 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
                                      "names": [c.name for c in named],
                                      "images": imgs, "ts": msg["ts"],
                                      "text": msg.get("text", "")})
+
+    blank = [c for c in rep.candidates if c.ad is None and blank_title(c.title_raw)]
+    if blank:
+        oids = {s["office_id"] for s in sources if s.get("office_id")}
+        try:
+            for c in blank:
+                c.ad = call_list_ad(c, day, oids, book)
+                if c.ad:
+                    print(f"  ad from the Call List: {c.name} -> {c.ad}")
+        except Exception as e:                # noqa: BLE001 -- never costs the post
+            print(f"  call list ad lookup failed: {type(e).__name__}: {str(e)[:160]}")
     return rep

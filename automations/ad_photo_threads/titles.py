@@ -228,6 +228,13 @@ class TitleBook:
                 if p and f" {p} " in blob]
         return max(hits)[1] if hits else None
 
+    def running(self, key: Optional[str]) -> bool:
+        """Is `key` an ad the office already has (on its list, or typed in the
+        sheet) -- not a new one resolve() would start a thread for?"""
+        if self._only:
+            return any(k == key for k, _, _ in self._only)
+        return key in self.ads
+
     def resolve(self, title: str) -> Optional[str]:
         """The ad key this title belongs to, or None if it can't be told."""
         if not self._only:
