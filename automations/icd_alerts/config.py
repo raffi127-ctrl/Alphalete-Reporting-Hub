@@ -522,11 +522,32 @@ SALES_END_HHMM = (23, 59)
 SALES_CATCHUP_AFTER_HHMM = (2, 0)
 
 
+# PER-OFFICE EARLIER STARTS, by Python weekday (Mon=0 .. Sun=6). Carlos
+# 2026-10-24: "sales alerts can start at 10:30 for NDS" on Saturdays -- his
+# AT&T (NDS) office key. Read off this machine's enrollments, so only the
+# office that asked is affected; everyone else keeps noon.
+SALES_START_OVERRIDES = {"carlos-b2batt": {5: (10, 30)}}
+
+
+def _sales_start(now: dt.datetime):
+    start = SALES_START_HHMM
+    try:
+        for r in enrollments():
+            key = str(r.get("office_key") or "").strip().lower()
+            ov = (SALES_START_OVERRIDES.get(key) or {}).get(now.weekday())
+            if ov and ov < start:
+                start = ov
+    except Exception:  # noqa: BLE001 -- an unreadable install.json keeps noon
+        pass
+    return start
+
+
 def in_sales_window(now: Optional[dt.datetime] = None) -> bool:
-    """Noon to midnight, every day of the week."""
+    """Noon to midnight, every day of the week (earlier where an office asked
+    -- SALES_START_OVERRIDES)."""
     now = now or dt.datetime.now()
-    start = now.replace(hour=SALES_START_HHMM[0], minute=SALES_START_HHMM[1],
-                        second=0, microsecond=0)
+    sh, sm = _sales_start(now)
+    start = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
     end = now.replace(hour=SALES_END_HHMM[0], minute=SALES_END_HHMM[1],
                       second=59, microsecond=999999)
     return start <= now <= end

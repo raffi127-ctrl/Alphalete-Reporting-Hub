@@ -28,7 +28,7 @@ THREAD_GAPS = "%s 15 Min Gaps" % TEAM
 # Hours, on this machine's clock (Lucy 2 = Central). Sunday off unless
 # shared/day_override says that date is a Saturday.
 WEEKDAY_START, WEEKDAY_STOP = (14, 0), (21, 0)
-SATURDAY_START, SATURDAY_STOP = (10, 30), (17, 30)
+SATURDAY_START, SATURDAY_STOP = (10, 15), (17, 30)   # 10:15 since 2026-10-24
 
 # First Knock colours on the board (Sebastian 2026-10-21, OK'd by Eve): this
 # crew starts at 2:00, not Raf's 1:30 -- green up to 2:00, gray 2:01-2:29, red
@@ -40,6 +40,10 @@ FIRST_KNOCK_RED_AT = (14, 30)
 # knock board at 2:30 as well and then have it continue its regular
 # schedule"). Weekday clock; each is a (hour, minute) half-hour slot.
 EXTRA_BOARD_SLOTS = [(14, 30)]
+# Saturday (Carlos 2026-10-24: "board + gaps at 10:15, 10:30, 10:45, 11 and
+# then continue on the regular schedule"): three extra board slots inside the
+# 10 o'clock hour; 11:00 onward is the hourly rule.
+SAT_EXTRA_BOARD_SLOTS = [(10, 15), (10, 30), (10, 45)]
 GAPS_EVERY_MIN = 15          # the typed list
 BOARD_EVERY_MIN = 60         # the picture
 CALLOUT_EVERY_MIN = 60       # "no dispo, no credit check" lines
