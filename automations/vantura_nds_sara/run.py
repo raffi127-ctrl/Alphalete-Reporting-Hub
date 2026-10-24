@@ -572,13 +572,18 @@ def preflight(log=_log) -> int:
     return 0 if ok else 1
 
 
-def passcode_mail(log=_log, days: int = 3, limit: int = 12) -> int:
+def passcode_mail(log=_log, days: int = 3, limit: int = 12,
+                  query: Optional[str] = None) -> int:
     """WHERE THE CODES ARE LANDING. The last `limit` SaraPlus passcode mails
     in the inbox the login reads (config.code_inbox() or the reporting inbox):
     when SaraPlus sent each (its Date header), the address it was sent TO
     (which SaraPlus account it belongs to) and when it ARRIVED in this inbox
     (IMAP INTERNALDATE) -- the gap is the forward's delay. Never the code
-    itself. 0 when the inbox could be read, 1 when it could not."""
+    itself. 0 when the inbox could be read, 1 when it could not.
+
+    `query` swaps the Gmail search (--mail-query) -- e.g. the forwarding
+    confirmation Google sends the reporting inbox when a forward to it is
+    set up elsewhere and still unconfirmed. Headers only, never bodies."""
     import email as _email
     import imaplib
     import time as _time
@@ -594,10 +599,10 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12) -> int:
     try:
         M.login(account, password)
         M.select('"[Gmail]/All Mail"', readonly=True)
-        typ, data = M.search(None, "X-GM-RAW",
-                             '"from:security.info@saraplus.com newer_than:%dd"' % days)
+        q = query or ("from:security.info@saraplus.com newer_than:%dd" % days)
+        typ, data = M.search(None, "X-GM-RAW", '"%s"' % q.replace('"', "'"))
         uids = (data[0] or b"").split() if typ == "OK" else []
-        log("SaraPlus passcode mail in %s, last %d day(s): %d" % (account, days, len(uids)))
+        log("mail in %s matching %r: %d" % (account, q, len(uids)))
         for uid in list(reversed(uids))[:limit]:
             typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE TO SUBJECT)])")
             if typ != "OK" or not d or not d[0]:
@@ -893,6 +898,9 @@ def main(argv=None) -> int:
                     help="list where SaraPlus's recent passcode mails landed in the "
                          "inbox the login reads (sent / to / arrived; never the code) "
                          "-- nothing else touched")
+    ap.add_argument("--mail-query", metavar="GMAIL_SEARCH",
+                    help="like --passcode-mail but for this Gmail search in the "
+                         "inbox the login reads (headers only)")
     ap.add_argument("--preflight", action="store_true",
                     help="report patchright, the creds file (never the "
                          "password) and the profile dir, then exit 0/1 -- "
@@ -908,8 +916,8 @@ def main(argv=None) -> int:
                     help="never write, whatever else is passed")
     a = ap.parse_args(argv)
 
-    if a.passcode_mail:
-        return passcode_mail()
+    if a.passcode_mail or a.mail_query:
+        return passcode_mail(query=a.mail_query)
     if a.preflight:
         return preflight()
 
