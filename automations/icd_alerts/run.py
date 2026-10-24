@@ -466,9 +466,12 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
              "Nothing is announced for a day we have not seen before."
              % len(current))
     else:
-        lines = _alert_lines(gained, current)
-        _log("new since the last run: %d rep(s)" % len(lines))
-        for line in lines:
+        # NOT `lines`: that name is the NDS line counts going to R.send below.
+        # Reusing it handed the relay this list of strings, and every NDS
+        # office crashed on its send -- silently -- from 2026-10-23 11:38.
+        said = _alert_lines(gained, current)
+        _log("new since the last run: %d rep(s)" % len(said))
+        for line in said:
             print("  %s" % line)
 
     # The real work. Totals go over; what gets SAID is decided on our side.

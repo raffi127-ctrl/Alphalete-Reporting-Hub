@@ -109,3 +109,29 @@ class NdsHereTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SweepHandsTheCountsToSendTests(unittest.TestCase):
+    """2026-10-23: `lines` was reused for the alert strings, so every NDS
+    office's send crashed on a list from 11:38 on -- silently, no fault."""
+
+    def test_a_later_sweep_sends_the_line_counts_not_the_alert_text(self):
+        from automations.icd_alerts import run as RUN
+        counts = {"JACOB SMITH": {"New Lines": 0, "Port Lines": 7,
+                                  "Upgrade Lines": 4, "Tablets": 0, "Wearables": 0}}
+        read = {"records": {"JACOB SMITH": 2}, "sales": {}, "credit": None,
+                "lines": counts, "empty_evidence": None}
+        sent = {}
+        from automations.icd_alerts import selfupdate
+        with mock.patch.object(selfupdate, "run", return_value=False), \
+             mock.patch.object(RUN.C, "active_enrollments", return_value=[NDS]), \
+             mock.patch.object(RUN.sara_read, "sara_held_until", return_value=None), \
+             mock.patch.object(RUN.W, "timed", return_value=read), \
+             mock.patch.object(RUN.St, "load", return_value={}), \
+             mock.patch.object(RUN.St, "is_baseline", return_value=False), \
+             mock.patch.object(RUN.St, "deltas", return_value={"JACOB SMITH": 1}), \
+             mock.patch.object(RUN.St, "save"), \
+             mock.patch.object(RUN.R, "send",
+                               side_effect=lambda *a, **k: sent.update(k)):
+            self.assertEqual(RUN.cmd_once(True, False, C.today()), 0)
+        self.assertEqual(sent["lines"], counts)
