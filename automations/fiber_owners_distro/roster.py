@@ -37,7 +37,14 @@ FIBER_TABS = ("Fiber", "Hybrid")
 # Other names a tab has shipped under. Kelly's 10.9.26 roster renamed Fiber →
 # 'RES ATT' (next to 'RES ATT OOF' = NDS, 'Quantum Fiber', 'Kinetic Cross Sell',
 # 'SBS Owners') and the missing 'Fiber' tab killed the whole sync on 10/10.
+# 10.23.26 shipped it as 'RES-ATT' (hyphen), so tab names are compared with
+# spaces/hyphens/punctuation stripped — see _tab_key.
 TAB_ALIASES = {"Fiber": ("RES ATT",)}
+
+
+def _tab_key(name: str) -> str:
+    """'RES-ATT', 'RES ATT', 'res_att ' all → 'resatt'."""
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
 
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 # A single Email cell can hold several addresses ("a@x.com; b@y.com") and stray
@@ -155,9 +162,9 @@ def parse_tab(xlsx_path: Path, tab: str) -> List[Owner]:
     wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
     # Match by label, not exact string: Kelly's 9.18.26 roster shipped the tab
     # as 'Hybrid ' (trailing space) and the exact lookup killed the whole sync.
-    wanted = [t.strip().lower() for t in (tab,) + TAB_ALIASES.get(tab, ())]
+    wanted = [_tab_key(t) for t in (tab,) + TAB_ALIASES.get(tab, ())]
     actual = next((n for w in wanted for n in wb.sheetnames
-                   if n.strip().lower() == w), None)
+                   if _tab_key(n) == w), None)
     if actual is None:
         raise RuntimeError(f"Tab {tab!r} not in roster (tabs: {wb.sheetnames}).")
     ws = wb[actual]
