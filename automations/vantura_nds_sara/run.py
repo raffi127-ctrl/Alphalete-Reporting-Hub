@@ -390,6 +390,31 @@ def _login(playwright, profile_dir, creds: Dict[str, str], *, headless: bool = T
     inbox (no forward on this account), rc's own clear error comes back
     inside the wall's, and nothing was read.
     """
+    # 2026-10-23: a COPY of nds_metrics' profile did not carry SaraPlus's
+    # browser trust (the passcode wall came back on the copy). So when that
+    # trusted profile exists on this box, sign in ON IT, the way nds_metrics
+    # does every morning (rc_contact_sync.sara.login on
+    # automations/uploaded/.saraplus_nds_profile). The two never run at the
+    # same time (nds_metrics ~7am, this fill 4-9pm + 5am).
+    seed = CFG.seed_profile_dir()
+    if (seed / "Default").exists():
+        from automations.rc_contact_sync import sara as RC
+        ctx = playwright.chromium.launch_persistent_context(
+            str(seed), headless=headless, args=["--disable-sync"],
+            viewport={"width": 1600, "height": 1000})
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            base = RC.login(page, creds["email"], creds["password"], log=log)
+        except Exception as e:  # noqa: BLE001 -- say which profile, then fall through to ours
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+            log("login on nds_metrics' trusted profile failed (%s: %s) -- trying this module's own profile"
+                % (type(e).__name__, str(e)[:200]))
+        else:
+            log("logged in on nds_metrics' trusted profile %s" % seed)
+            return ctx, page, base
     try:
         return SP.login_healing(playwright, profile_dir, creds["email"],
                                 creds["password"], headless=headless,
