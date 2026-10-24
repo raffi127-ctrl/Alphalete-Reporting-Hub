@@ -947,9 +947,9 @@ def main(argv=None) -> int:
         from automations.recruiting_report.fill import _retry
         _retry(ws.batch_update, batch_values(plan_rows))
         _log("wrote %d cell(s)" % len(plan_rows))
-    _log(_summary_line(source, cr_why if source == "sara" else "", day, per_rep))
     else:
         _log("board already matches SaraPlus -- nothing to write")
+    _log(_summary_line(source, cr_why if source == "sara" else "", day, per_rep))
     return 0
 
 

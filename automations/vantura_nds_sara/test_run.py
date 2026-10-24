@@ -890,7 +890,11 @@ class LoginTest(unittest.TestCase):
         self.assertEqual(got, (ctx, page, "https://b/"))
         self.assertEqual(lh.call_args.args, ("pw", "/prof", "nds@example.com", "s3cret-Pw-9"))
         self.assertEqual(lh.call_args.kwargs["headless"], True)
-        self.assertIn("saraplus-nds-creds.json", lh.call_args.kwargs["creds_hint"])
+        # the hint names the login file actually used: our own, or the verified
+        # fallback (saraplus-creds-nds.json) when ours is absent on this box
+        self.assertTrue(any(n in lh.call_args.kwargs["creds_hint"]
+                            for n in ("saraplus-nds-creds.json", "saraplus-creds-nds.json")),
+                        lh.call_args.kwargs["creds_hint"])
 
     def test_passcode_wall_is_answered_from_the_inbox_once(self):
         from automations.rc_contact_sync import sara as RC
