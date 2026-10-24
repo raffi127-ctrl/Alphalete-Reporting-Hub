@@ -202,6 +202,33 @@ def _match(rep_filter: str, s: dict) -> bool:
     return f == s["rep_id"] or f in s["rep"].lower()
 
 
+def _session_busy() -> str:
+    """Who holds Lucy 3's one ownerville session, or "" when it is free."""
+    try:
+        from automations.shared.tableau_patchright import ownerville_session_holder
+        return ownerville_session_holder()
+    except Exception:  # noqa: BLE001 — can't tell → don't skip, let the pull wait
+        return ""
+
+
+def _can_wait_a_tick(state: dict, as_of: dt.datetime) -> bool:
+    """A busy session (the evening knocks jobs hold it ~10-20 min) is not a
+    failure while a later tick can still catch up: 10/23 logged three FAILED
+    incidents (5:19, 6:16, 7:15 PM) that the next tick fixed every time.
+    Stop skipping — wait and fail loud — once no hour has landed for 2+ hours,
+    or on the 9 PM hour's last tick, when nothing comes after."""
+    if as_of.hour == C.LAST_HOUR and as_of.minute >= 50:
+        return False
+    last = state.get("last_hour") or ""
+    if not last.startswith(as_of.date().isoformat()):
+        return as_of.hour <= C.FIRST_HOUR + 1     # nothing landed yet today
+    try:
+        landed = dt.datetime.strptime(last, "%Y-%m-%dT%H")
+    except ValueError:
+        return False
+    return as_of.replace(minute=0, second=0, microsecond=0) - landed <= dt.timedelta(hours=2)
+
+
 def _slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")
 
@@ -237,6 +264,12 @@ def main(argv=None) -> int:
     state = load_state()
     if a.tick and a.send and state.get("last_hour") == hour_key:
         return 0          # this hour already went out; the agent ticks every 10 min
+    if a.tick and a.send:
+        who = _session_busy()
+        if who and _can_wait_a_tick(state, as_of):
+            print(f"[rep_knocks] {as_of:%H:%M} CT: ownerville session busy ({who}) "
+                  "— skipping this tick, the next one (10 min) retries")
+            return 0
     mode = "SEND" if a.send else "DRY-RUN"
     print(f"[rep_knocks] {mode} as of {as_of:%Y-%m-%d %H:%M} CT → {C.CHANNEL_NAME}")
 

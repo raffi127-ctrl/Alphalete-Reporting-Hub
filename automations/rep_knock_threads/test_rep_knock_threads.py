@@ -168,6 +168,17 @@ class Run(unittest.TestCase):
         RUN.clear_thread(c, "1.0", "LUCY", keep_parent=True)
         self.assertEqual(c.deleted, ["1.1"])
 
+    def test_busy_session_skips_only_while_a_later_tick_can_catch_up(self):
+        t = lambda h, m=0: dt.datetime(2026, 10, 23, h, m)
+        ok = lambda last, now: RUN._can_wait_a_tick({"last_hour": last}, now)
+        self.assertTrue(ok("2026-10-23T18", t(19, 5)))     # 10/23 7 PM: skip
+        self.assertTrue(ok("2026-10-23T17", t(19, 40)))    # 2h behind: still skip
+        self.assertFalse(ok("2026-10-23T16", t(19, 5)))    # 3h behind: fail loud
+        self.assertFalse(ok("2026-10-23T20", t(21, 50)))   # last tick of the day
+        self.assertTrue(ok("2026-10-22T21", t(10, 20)))    # morning, yesterday's key
+        self.assertFalse(ok("2026-10-22T21", t(12, 0)))    # nothing today by noon
+        self.assertFalse(ok(None, t(13, 0)))
+
     def test_hours_window(self):
         at = lambda h: dt.datetime(2026, 10, 14, h, 0)
         self.assertFalse(RUN.in_window(at(9)))
