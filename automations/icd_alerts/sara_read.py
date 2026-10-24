@@ -164,6 +164,7 @@ def _sign_in_raw(page, log=print) -> str:
         base = S.resume_session(page, remembered, log=log)
         if base:
             return base
+        note_trust("session-lost", page, log=log)
         _forget_session()
     if _RESUME_ONLY["on"]:
         raise SessionLost(
@@ -182,6 +183,7 @@ def _sign_in_raw(page, log=print) -> str:
         raise
     _clear_login_timeouts()
     _remember_session(base)
+    note_trust("fresh-login-ok", page, log=log)
     return base
 
 
@@ -383,7 +385,10 @@ def _heal_and_login(p, headless: bool, log=print):
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             return ctx, page, _sign_in_raw(page, log=log)
-        except Exception:
+        except Exception as e:
+            pw = getattr(S, "SaraPasscodeWall", None)
+            if pw is not None and isinstance(e, pw):
+                note_trust("code-wall", ctx, log=log)
             try:
                 ctx.close()
             except Exception:  # noqa: BLE001
@@ -637,6 +642,133 @@ def session_evidence(now: Optional[dt.datetime] = None) -> str:
     return "\n".join(out)
 
 
+# WHY SOME MACHINES ARE NEVER REMEMBERED (Megan 2026-10-24, Tre). Tre,
+# Rashad, carlos-b2batt, Luke, Eveliz and Cyrus get the emailed-code wall on
+# every fresh login; the other offices never do. Every sign-in window that
+# cleared the code left only .ASPXAUTH and a session-only SARAPlus cookie --
+# no lasting "trusted" mark -- and nobody can say whether SaraPlus keys its
+# trust on the network ("new location") or the browser. So at each moment
+# that matters -- a fresh login that got in, a wall, a session SaraPlus
+# stopped honouring -- the machine files what it looked like: its SaraPlus
+# cookies (names and expiry dates, NEVER values) and a hash of its public
+# IP, which shows a changed network without sending the address itself.
+# A probe- stage: filed on the ICD Faults tab, never posted.
+TRUST_STAGE = "probe-sara-trust"
+TRUST_IP_LOG_PATH = C.APP_DIR / "sara-ip-history.json"
+TRUST_IP_LOG_KEEP = 12
+IP_LOOKUP_URL = "https://api.ipify.org"
+_IP_CACHE: Dict = {}
+
+
+def _ip_hash(now: dt.datetime) -> str:
+    """A short hash of this machine's public IP, cached 10 minutes. '?' when
+    the lookup fails -- never raises, never takes more than a few seconds."""
+    got = _IP_CACHE.get("v")
+    if got and (now - _IP_CACHE["at"]) < dt.timedelta(minutes=10):
+        return got
+    try:
+        import hashlib
+        import urllib.request
+        from automations.icd_alerts import relay as R
+        with urllib.request.urlopen(IP_LOOKUP_URL, timeout=4,
+                                    context=R._ssl_context()) as r:
+            ip = r.read(64).decode("ascii", "replace").strip()
+        if not ip:
+            return "?"
+        got = hashlib.sha256(("lucy-sara|" + ip).encode()).hexdigest()[:10]
+    except Exception:  # noqa: BLE001
+        return "?"
+    _IP_CACHE.update(v=got, at=now)
+    return got
+
+
+def _ip_history(h: str, now: dt.datetime) -> list:
+    """This machine's IP hashes over time, newest last; a new row only when it
+    changed. Kept on the machine, sent inside each trust probe."""
+    import json
+    try:
+        rows = json.loads(TRUST_IP_LOG_PATH.read_text())
+        if not isinstance(rows, list):
+            rows = []
+    except (OSError, ValueError):
+        rows = []
+    if h != "?" and (not rows or rows[-1].get("ip") != h):
+        rows.append({"t": now.isoformat(timespec="minutes"), "ip": h})
+        rows = rows[-TRUST_IP_LOG_KEEP:]
+        try:
+            TRUST_IP_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            TRUST_IP_LOG_PATH.write_text(json.dumps(rows))
+        except OSError:
+            pass
+    return rows
+
+
+def _cookie_lines(ctx, now: dt.datetime) -> list:
+    """Every saraplus cookie: name, domain, and when it dies. No values."""
+    out = []
+    for c in ctx.cookies():
+        dom = c.get("domain") or ""
+        if "saraplus" not in dom:
+            continue
+        exp = c.get("expires", -1)
+        if exp in (-1, None, 0):
+            when = "session-only"
+        else:
+            try:
+                left = dt.datetime.fromtimestamp(exp) - now
+                when = "expires %s (in %dd)" % (
+                    dt.datetime.fromtimestamp(exp).strftime("%Y-%m-%d"), left.days)
+            except (OverflowError, OSError, ValueError):
+                when = "expires ?"
+        out.append("  %s @ %s: %s" % (c.get("name"), dom, when))
+    return out or ["  (no saraplus cookies)"]
+
+
+def trust_snapshot(event: str, ctx, now: Optional[dt.datetime] = None) -> str:
+    """The detail text for one trust probe. Best effort, never raises."""
+    now = now or dt.datetime.now()
+    out = ["event: %s at %s" % (event, now.isoformat(timespec="seconds"))]
+    try:
+        h = _ip_hash(now)
+        out.append("ip hash now: %s" % h)
+        out.append("ip history: " + (", ".join(
+            "%s %s" % (r.get("t", "")[5:16], r.get("ip")) for r in _ip_history(h, now))
+            or "none yet"))
+    except Exception as e:  # noqa: BLE001
+        out.append("ip: ? (%s)" % type(e).__name__)
+    out.append("browser id pinned: %s" % ("yes" if browser_id() else "no"))
+    try:
+        out.append("cookies:")
+        out.extend(_cookie_lines(ctx, now))
+    except Exception as e:  # noqa: BLE001
+        out.append("cookies: ? (%s)" % type(e).__name__)
+    out.append(session_evidence(now))
+    return "\n".join(out)
+
+
+def note_trust(event: str, ctx, log=print) -> None:
+    """File one trust probe. NEVER raises and never costs the read.
+
+    `ctx` may be a browser context or a page (its context is used)."""
+    try:
+        ctx = getattr(ctx, "context", None) or ctx
+        from automations.icd_alerts import relay as R
+        try:
+            from automations.icd_alerts import selfupdate as SU
+            release = SU.applied_release() or "?"
+        except Exception:  # noqa: BLE001
+            release = "?"
+        now = dt.datetime.now()
+        # STAMPED: the relay folds same-summary rows and keeps the FIRST
+        # detail, so an unstamped second event would vanish into the first.
+        R.report_fault(TRUST_STAGE,
+                       "SaraPlus trust %s %s (release %s)"
+                       % (event, now.strftime("%H:%M"), release),
+                       detail=trust_snapshot(event, ctx, now), log=None)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def keep_session_alive(*, headless: bool = True, log=print,
                        now: Optional[dt.datetime] = None) -> str:
     """Overnight, touch the remembered session so it never goes idle.
@@ -681,6 +813,8 @@ def keep_session_alive(*, headless: bool = True, log=print,
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 base = S.resume_session(page, remembered, log=log)
+                if not base:
+                    note_trust("session-lost-overnight", ctx, log=log)
             finally:
                 try:
                     ctx.close()
