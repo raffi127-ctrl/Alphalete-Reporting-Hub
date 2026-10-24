@@ -96,7 +96,7 @@ def unthreaded_on(key: str) -> bool:
 # Eve 10/24: before that note, the nightly reads the ad off AppStream for the
 # blank Ad Titles nothing else could fill (appstream_ads.py) -- once per
 # candidate. Empty = off; "all" = every live office; a set of keys = just those.
-APPSTREAM_ADS_OFFICES: object = set()
+APPSTREAM_ADS_OFFICES: object = "all"     # Eve 10/24: on, every live office (verified on Drew 10/24)
 
 
 def appstream_ads_on(key: str) -> bool:
