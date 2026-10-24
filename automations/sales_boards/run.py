@@ -296,6 +296,12 @@ def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool,
             plain += " (corrected)"
         out.append((plain, f"{PROGRAM_EMOJI.get(p, '')} *{plain}*".strip(),
                     [(parts[k], f"{plain} ({k}).png") for k in ("a", "b") if k in parts]))
+        if "pct" in parts and not corrected:
+            # Carlos 2026-10-24: the board tab's "% on the Board" block rides
+            # along every morning (its own reply, so it dedupes on its own).
+            pplain = f"{p} % On Board {tag}"
+            out.append((pplain, f"\U0001F4CA *{pplain}*",
+                        [(parts["pct"], f"{pplain}.png")]))
     if want_zeros:
         for n in sorted(zeros or {}):
             info = zeros[n]
@@ -994,6 +1000,17 @@ def main(argv=None) -> int:
                 sh.del_worksheet(tmp)
                 print(f"temp tab removed ({tab})")
 
+    # Verizon's "% on the Board" block (Carlos 2026-10-24) — straight off the
+    # live tab, after the boards render. Best-effort: a failed block never
+    # holds the boards back. Skipped on --corrected (the block doesn't change
+    # with an order-log correction) and on a rewound snapshot.
+    if "Verizon" in imgs and imgs["Verizon"] and not args.corrected and not snap:
+        try:
+            from automations.sales_boards.pct_block import render_pct_block
+            imgs["Verizon"]["pct"] = render_pct_block(
+                tab_for("Verizon"), OUT_DIR / "Verizon % On Board.png")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ! Verizon % On Board block failed: {e}")
     made = sum(len(v) for v in imgs.values()) + len(zrs)
     if not args.post:
         print(f"dry-run: {made} image(s) in {OUT_DIR}. Not posting.")

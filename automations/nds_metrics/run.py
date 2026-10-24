@@ -1206,9 +1206,25 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
     return out
 
 
+def build_pct_on_board(cols, crew, today, log=print) -> Path:
+    """The NDS Sales Board tab's "% on the Board" block (Carlos 2026-10-24).
+    Ignores the Tableau pull — it shoots the live Sheet. On Monday before the
+    ~8:20 week roll the board still shows the week that just closed, so the
+    7:30 shot is that week's final read; from Tuesday it is the live week."""
+    from automations.sales_boards.pct_block import render_pct_block
+    return render_pct_block(
+        "NDS Sales Board",
+        OUT_DIR / f"nds_pct_on_board_{today.isoformat()}.png", log=log)
+
+
 SECTIONS = [
     ("revenue_board", "\U0001F4B0", "NDS Revenue Board",
      build_revenue_board),
+    # Carlos 2026-10-24: the Sales Board tab's "% on the Board" block, every
+    # morning once the board is filled (vantura_slack_sales fills it at 5:00,
+    # this thread posts 7:30). Verizon's copy rides the 5:10 sales_boards run.
+    ("pct_on_board", "\U0001F4CA", "NDS % On Board",
+     build_pct_on_board),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
