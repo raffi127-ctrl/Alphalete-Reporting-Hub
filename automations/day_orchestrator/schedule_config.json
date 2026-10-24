@@ -14031,6 +14031,51 @@
     "type": "not_configured"
    }
   },
+  "owner_sales_hourly": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "standalone_weekdays": [0, 1, 2, 3, 4, 5],
+   "_note": "Raf 2026-10-24 (Slack, to Megan + Eve + Carlos): once an hour, how many sales each owner is at, in the 'Alphalete Owners' iMessage chat. Source = Lucy ECO relay ('Lucy Access App' -> 'ICD Relay' -> 'Sales JSON', today's row per office), per-rep totals by campaign (sale_hype.rep_total), summed per owner. Real schedule = com.alphalete.owner-sales-hourly on LUCY 1 (texting machine): :50 Mon-Sat 12-21 CT. Dry-runs by default; --send texts. Skips a send whose numbers did not change since the last one.",
+   "display_name": "Owner Sales Hourly (relay -> owners iMessage)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.owner_sales_hourly.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "12:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
+  "install_owner_sales_hourly_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Install/refresh com.alphalete.owner-sales-hourly on LUCY 1 (owners' sales-so-far text, hourly :50). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 1",
+   "display_name": "Install Owner Sales Hourly agent (:50, 12-9pm Mon-Sat)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "owner-sales-hourly"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_b2b_dispositions_gaps_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "Install/refresh com.alphalete.b2b-dispositions-gaps on LUCY 2: Carlos's BOX-3, the Box 15-min gaps card (2026-09-29) to the 'Box 15 Min Gaps' Slack thread + the Box B2B text at Mon-Fri 12/2/4pm and Sat 12/2pm. The 6pm (Sat 4pm) gaps run rides the -hourly agent's --which all. install_agent only rewrites and reloads the plist.",
