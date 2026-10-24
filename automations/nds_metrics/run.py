@@ -241,7 +241,17 @@ def _pull_nds_soh(start: dt.date, end: dt.date, log=print) -> bytes:
             str(NDS_SARA_PROFILE), headless=True, args=["--disable-sync"],
             viewport={"width": 1600, "height": 1000})
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        base = sara.login(page, cr["email"], cr["password"], log=log)
+        # 2026-10-24: SaraPlus mails this login's passcode to alphaletegp's
+        # OWN inbox (picker: 'alph...@gmail.com'), and no forward to the
+        # reporting inbox exists -- every pull since 10/22 died here
+        # (CodeNotFound). vantura_nds_sara.config.code_inbox() is that
+        # inbox once its app password is on this box
+        # (gmail-app-password-alphaletegp); None keeps the default.
+        from automations.vantura_nds_sara import config as _NDS_CFG
+        _inbox = _NDS_CFG.code_inbox()
+        log("[nds] " + _NDS_CFG.code_inbox_status())
+        base = sara.login(page, cr["email"], cr["password"], log=log,
+                          code_inbox=_inbox)
         try:
             log(f"[nds] saraplus (nds dealer): logged in as {cr['email']}")
             page.goto(base + RC.HUB_PATH, wait_until="networkidle",
