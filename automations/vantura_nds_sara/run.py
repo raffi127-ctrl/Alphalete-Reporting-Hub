@@ -760,6 +760,25 @@ def _column_dump(g, rows: Dict[str, int], col: Optional[int], day: dt.date,
 
 
 # ------------------------------------------------------------------ main --
+def _summary_line(source, note, day, per_rep) -> str:
+    """One line with everything that matters, because the Mini Control queue
+    shows only a log's LAST few lines: the source, the login file, and every
+    rep with units as name=units(int/nl/air upN); zero reps are counted."""
+    parts, zeros = [], 0
+    for name in sorted(per_rep or {}):
+        m = per_rep[name]
+        if int(m.get("units", 0) or 0) > 0 or int(m.get("Int Up", 0) or 0) > 0:
+            parts.append("%s=%d(%d/%d/%d up%d)" % (
+                name.title()[:22], int(m.get("units", 0) or 0), int(m.get("Int", 0) or 0),
+                int(m.get("NL", 0) or 0), int(m.get("Air", 0) or 0), int(m.get("Int Up", 0) or 0)))
+        else:
+            zeros += 1
+    line = "SUMMARY %s%s %s: %s; %d rep(s) at 0" % (
+        source or "none", (" [%s]" % note) if note else "", day.isoformat(),
+        " | ".join(parts) or "nobody with units", zeros)
+    return line[:900]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -773,6 +792,10 @@ def main(argv=None) -> int:
                          "the day, else the direct SaraPlus read when the "
                          "login exists, else hold; relay / sara pin one and "
                          "never touch the other")
+    ap.add_argument("--creds-file", default="",
+                    help="explicit NDS SaraPlus login JSON {email,password}; "
+                         "overrides the standard file (probe which dealer "
+                         "shows the crew before trusting a login)")
     ap.add_argument("--preflight", action="store_true",
                     help="report patchright, the creds file (never the "
                          "password) and the profile dir, then exit 0/1 -- "
@@ -826,6 +849,17 @@ def main(argv=None) -> int:
     cr, cr_why, cr_exists = (None, "--source relay: the login was not looked for", False)
     if a.source in ("auto", "sara"):
         cr, cr_why, cr_exists = CFG.creds_status()
+        if a.creds_file:
+            import json as _json
+            from pathlib import Path as _Path
+            _cp = _Path(a.creds_file).expanduser()
+            try:
+                _d = _json.loads(_cp.read_text())
+                cr = {"email": str(_d["email"]), "password": str(_d["password"])}
+                cr_why, cr_exists = "login from --creds-file %s" % _cp.name, True
+            except Exception as _e:  # noqa: BLE001 -- a bad explicit file is a fault
+                _log("--creds-file %s is unusable (%s)" % (_cp, type(_e).__name__))
+                return EXIT_FAIL
         if cr is None and cr_exists:
             # A file that is there but unreadable is a fault to fix, not a
             # wait: a hold would sit amber on every pass until somebody read
@@ -876,6 +910,7 @@ def main(argv=None) -> int:
         describe(snap, per_rep, g, board_rows, col)
     elif show_reps:
         describe_reps(per_rep, g, board_rows, col)
+    _log(_summary_line(source, cr_why if source == "sara" else "", day, per_rep))
     if a.probe:
         _column_dump(g, board_rows, col, day)
         _log("PROBE -- nothing written")
