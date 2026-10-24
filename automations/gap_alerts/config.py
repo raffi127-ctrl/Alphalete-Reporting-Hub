@@ -109,6 +109,13 @@ RAF = {
     # leaders into its own room. The sign-up form never emits the key, so no
     # onboarded office can turn it on by accident.
     "leader_tags": True,
+    # SATURDAY FIRST KNOCK 9:15 (Raf, 2026-10-24, #l10-alphalete "1st knock
+    # Saturday local office"): "moving forward, can we change first knock to
+    # be 9:15". HIS OFFICE ONLY -- every other office keeps the org 10:45.
+    # This is the start of his Saturday window, so it moves BOTH the first
+    # board of the day AND the time first knock reads green against
+    # (run._first_knock_goal). One-off dates live in RAF_DATE_STARTS.
+    "sat_start": "09:15",
     # UNDER-125 TEXT (Raf, 2026-10-19, #claudecorrections thread "Local office
     # - Text Message of 125 doors knocked or less"): "in my A players chat at
     # 9:00 CEN can I get a text broken down by each team, of every rep that
@@ -1143,13 +1150,28 @@ RAF_OPEN_SUNDAYS = {
 }
 
 
+# ONE-DAY START TIMES FOR RAF (start only; the day's normal end stands).
+# 2026-10-24 (Raf, #l10-alphalete): "For today, can we change first knock for
+# Saturday to 9:45" -- then 9:15 from RAF["sat_start"] on. A passed date does
+# nothing; delete old ones.
+RAF_DATE_STARTS = {
+    "2026-10-24": (9, 45),
+}
+
+
 def office_window_on(cfg: Dict, day: "dt.date"):
-    """office_window, but by DATE: Raf's open Sundays are the one case where
-    the weekday alone does not decide."""
-    if day.weekday() == 6 and (cfg.get("key") or "") == RAF["key"]:
-        win = RAF_OPEN_SUNDAYS.get(day.isoformat())
-        if win:
-            return win
+    """office_window, but by DATE: Raf's open Sundays and his one-day start
+    times are the cases where the weekday alone does not decide."""
+    if (cfg.get("key") or "") == RAF["key"]:
+        if day.weekday() == 6:
+            win = RAF_OPEN_SUNDAYS.get(day.isoformat())
+            if win:
+                return win
+        start = RAF_DATE_STARTS.get(day.isoformat())
+        win = office_window(cfg, day.weekday())
+        if start and win:
+            return start, win[1]
+        return win
     return office_window(cfg, day.weekday())
 
 

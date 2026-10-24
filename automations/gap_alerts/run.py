@@ -1384,13 +1384,16 @@ def _drop_duplicate_offices(out: Dict, plan: List) -> Dict:
     return out
 
 
-def _first_knock_goal(day: dt.date) -> "int | None":
+def _first_knock_goal(day: dt.date, cfg: Optional[Dict] = None) -> "int | None":
     """Minutes since midnight that first knock must beat to read green.
 
     None on a day with no window (Sunday), which leaves the renderer on its
     own flat default rather than inventing a target for a day nobody works.
+    With `cfg`, the OFFICE'S own window for that date (Raf's Saturday is
+    9:15, not the org 10:45 -- Raf 2026-10-24).
     """
-    window = C.window_for(day.weekday())
+    window = (C.office_window_on(cfg, day) if cfg
+              else C.window_for(day.weekday()))
     if not window:
         return None
     (h, m), _end = window
@@ -1426,7 +1429,7 @@ def _render_board(cfg: Dict, rows: List, extra: List, day: dt.date,
         # Saturday first-knock came out green and the column said nothing.
         # The window is already kept here for the capture, so the board and
         # the schedule cannot disagree.
-        first_knock_green_at=_first_knock_goal(day),
+        first_knock_green_at=_first_knock_goal(day, cfg),
         sort_by="knocks")
     _log("  %s: %d rep(s) -> %s (%s)"
          % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))

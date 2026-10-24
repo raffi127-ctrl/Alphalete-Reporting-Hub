@@ -598,6 +598,28 @@ class RafsBoardUnchangedTests(unittest.TestCase):
         self.assertEqual(_first_knock_goal(dt.date(2026, 9, 11)), 13 * 60 + 30)
         self.assertEqual(_first_knock_goal(dt.date(2026, 9, 12)), 10 * 60 + 45)
 
+    def test_rafs_saturday_first_knock_is_915_and_945_today(self):
+        """Raf 2026-10-24: 9:45 that day, 9:15 every Saturday after. His
+        office only -- the org Saturday (and every other office) stays."""
+        import datetime as dt
+        from automations.gap_alerts import config as C
+        from automations.gap_alerts.run import _first_knock_goal
+        self.assertEqual(_first_knock_goal(dt.date(2026, 10, 24), C.RAF),
+                         9 * 60 + 45)
+        self.assertEqual(_first_knock_goal(dt.date(2026, 10, 31), C.RAF),
+                         9 * 60 + 15)
+        self.assertEqual(_first_knock_goal(dt.date(2026, 10, 30), C.RAF),
+                         13 * 60 + 30)
+        self.assertEqual(_first_knock_goal(dt.date(2026, 10, 31)),
+                         10 * 60 + 45)
+        self.assertEqual(C.office_window_on(C.RAF, dt.date(2026, 10, 24)),
+                         ((9, 45), C.SATURDAY_END_HHMM))
+        self.assertEqual(C.office_window_on(C.RAF, dt.date(2026, 10, 31)),
+                         ((9, 15), C.SATURDAY_END_HHMM))
+        other = {"key": "someone-else"}
+        self.assertEqual(C.office_window_on(other, dt.date(2026, 10, 24)),
+                         ((10, 45), C.SATURDAY_END_HHMM))
+
     def test_a_day_with_no_window_invents_no_target(self):
         import datetime as dt
         from automations.gap_alerts.run import _first_knock_goal
