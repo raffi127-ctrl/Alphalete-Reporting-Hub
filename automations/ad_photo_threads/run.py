@@ -473,6 +473,13 @@ def main(argv=None) -> int:
     mode.add_argument("--audit", action="store_true",
                       help="1st Round Audit for --office on --date (default today): "
                            "prints what's missing; with --dm / --channel posts it.")
+    mode.add_argument("--appstream-ads", action="store_true",
+                      help="Look up, on AppStream, the ad each blank-title 1st round "
+                           "of --office applied to (appstream_ads.py). Prints only; "
+                           "--apply keeps what it found for the threads.")
+    ap.add_argument("--names", help="With --appstream-ads: only these sheet names (comma-separated).")
+    ap.add_argument("--limit", type=int, help="With --appstream-ads: look up at most N.")
+    ap.add_argument("--lookback", type=int, help="With --appstream-ads: days back (default 7).")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -521,6 +528,13 @@ def main(argv=None) -> int:
     if a.nightly:
         day = dt.date.fromisoformat(a.date) if a.date else None
         return nightly(day, explicit_date=bool(a.date), only=a.office)
+    if a.appstream_ads:
+        from automations.ad_photo_threads import appstream_ads
+        day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
+        names = [n for n in (a.names or "").split(",") if n.strip()] or None
+        print(appstream_ads.run(a.office or "rafael", day, names=names, apply=a.apply,
+                                limit=a.limit, lookback=a.lookback))
+        return 0
     if a.redo_weekly and a.office == "all":
         return redo_all(dt.date.fromisoformat(a.date) if a.date else collect.central_today(),
                         crop=not a.no_crop)

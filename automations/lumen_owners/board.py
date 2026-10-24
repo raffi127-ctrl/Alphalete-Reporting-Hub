@@ -182,7 +182,9 @@ def box_numbers(owners: Sequence[str], weeks: Dict[dt.date, Dict[str, dict]],
         vals = [v for v in (team_day(wes[k], i) for k in range(1, 5))
                 if v is not None]
         avg.append(round(sum(vals) / len(vals)) if vals else None)
-    return {"days": list(this_week), "shown": [d <= today for d in this_week],
+    # Tableau loads a day only the NEXT day, so today is blank, never a 0
+    # that reads as "nobody sold" (Eve, 2026-10-24).
+    return {"days": list(this_week), "shown": [d < today for d in this_week],
             "wes": wes, "owners": rows, "team_days": team,
             "last_days": last, "avg_days": avg}
 

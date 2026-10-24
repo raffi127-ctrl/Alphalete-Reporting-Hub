@@ -7387,6 +7387,41 @@
    "verify": null,
    "report_id": "atef-nds-watch"
   },
+  "new_owner_contacts": {
+   "close_on": "exit_zero",
+   "order": 62.5,
+   "on_scheduler": false,
+   "_off_scheduler_note": "APAGADO hasta que exista contacts-rw-token-alphaletemarketing.json en Lucy 1 (Eve lo autoriza y se sube con mini_control set_contacts_token) y una corrida --dry-run en Lucy 1 se vea bien. Despues: on_scheduler true.",
+   "machine": "Lucy 1",
+   "display_name": "New owner contacts + first-sale DM to Raf",
+   "_note": "AVISO, NO ES UN REPORTE (Raf 10/22, Eve 10/24). Lee los mails de Nelrose (nlizada, 'Important Campaign Info (ICD Owner: X, ...)') y el roster de Kelly en raffi127 por IMAP. TODO owner del programa -> contacto en alphaletemarketing (con telefono del roster). Owner que esta en el tab Org Tree del workbook DD -> tambien contacto con telefono en raffi127 y queda vigilado; el dia que su Order Log (Fiber ALLREPS 'Owner Name' / NDS ORDERLOG 'Owner & Office') muestra su primera orden, Lucy le manda DM a Raf. Estado: output/new_owner_contacts/state.json. Por eso Lucy 1: ahi viven el app password y el token rw de raffi127.",
+   "command": [
+    "automations.new_owner_contacts.run"
+   ],
+   "base_args": [
+    "--apply"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "new-owner-contacts"
+  },
   "daily_rep_breakdown": {
    "machine": "Lucy 3",
    "_machine_note": "Moved to Lucy 3 2026-08-22 (Megan) \u2014 heaviest report comes off Lucy 1's tail. cadence.not_before 05:00 keeps it clear of Lucy 1's 4:00-4:45 ownerville window (SAME rhidalgo account; concurrent logins can kick sessions). Runs ~5:00-6:00 vs the old 7:50-9:25.",
