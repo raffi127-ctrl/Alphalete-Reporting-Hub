@@ -34,14 +34,16 @@ class PhoneTest(unittest.TestCase):
 
 
 class OrgTest(unittest.TestCase):
-    def test_tree_membership(self):
-        grid = [["Generation", "1", "2"], ["Rafael Hidalgo", "", ""],
-                ["", "Omar Mohamad", ""], ["", "", "Hasan Salame"]]
-        tree = R.org_tree_names(grid)
+    def test_new_owners_membership(self):
+        from types import SimpleNamespace as Row
+        rows = [Row(name="Omar Mohamad", status="Waiting"),
+                Row(name="Hasan Salame", status=""),
+                Row(name="Carl Foss", status="Skip")]
+        tree = R.new_owner_names(rows)
         self.assertTrue(R.in_org("OMAR  MOHAMAD", tree))
         self.assertTrue(R.in_org("Hasan Salame", tree))
+        self.assertFalse(R.in_org("Carl Foss", tree))       # Eve's Skip
         self.assertFalse(R.in_org("Isaiah Kellum", tree))
-        self.assertNotIn("generation", tree)
 
 
 class OrdersTest(unittest.TestCase):

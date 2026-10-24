@@ -8,11 +8,12 @@ split it in two:
 
   * ANY owner on Kelly's roster / in Nelrose's onboarding mails (the whole AT&T
     program, not just us) -> a contact in alphaletemarketing ONLY.
-  * an owner of OUR org (on the DD workbook's "Org Tree" tab — Eve adds them
-    there as soon as Maud says they're coming) -> also a contact WITH PHONE in
-    raffi127, and a DM from Lucy to Raf the day their codes log a first sale.
-    Kelly's roster carries the whole program, so "on the roster" never means
-    "ours" — the Org Tree is the filter.
+  * an owner of OUR org (on the Org workbook's "New Owners" tab, gid
+    1674280247 — Eve's list) -> also a contact WITH PHONE in raffi127, and a DM
+    from Lucy to Raf the day their codes log a first sale. Kelly's roster
+    carries the whole program, so "on the roster" never means "ours" — the
+    New Owners tab is the filter (Eve 2026-10-24: it was the Org Tree first).
+    A row Eve marked Skip does not count.
 
 WHERE THE DATA COMES FROM (both land in raffi127, read over IMAP like
 fiber_owners_distro):
@@ -68,7 +69,7 @@ RAF_ACCOUNT = "raffi127@gmail.com"
 ONBOARD_SENDER = "nlizada@thesmartcircle.com"
 ONBOARD_SUBJECT = "Important Campaign Info"
 LOOKBACK_DAYS = 45      # how far back to read onboarding mails each pass
-ORG_RECHECK_DAYS = 30   # an onboarding not on the Org Tree yet is re-checked this long
+ORG_RECHECK_DAYS = 30   # an onboarding not on New Owners is re-checked this long (Eve may add the row late)
 SALES_WINDOW_DAYS = 14  # order-log window read for first sales
 
 _SUBJECT = re.compile(
@@ -122,10 +123,11 @@ def split_name(full: str) -> Tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
-def org_tree_names(grid: List[List[str]]) -> set:
-    """Every person on the Org Tree tab, normalized."""
-    from automations.override_bulletin.rcs_ncs_data import _parse_tree
-    return {norm_name(n["name"]) for n in _parse_tree(grid) if n["name"]}
+def new_owner_names(rows) -> set:
+    """Every name on Eve's New Owners tab, normalized — minus her Skip rows."""
+    from automations.new_owners.bank import SKIP
+    return {norm_name(r.name) for r in rows
+            if r.name and r.status.strip().lower() != SKIP.lower()}
 
 
 def in_org(name: str, tree: set, aliases: Optional[dict] = None) -> bool:
@@ -261,13 +263,10 @@ def roster_owners() -> Tuple[List, str]:
     return owners, edate.date().isoformat()
 
 
-def read_org_tree() -> set:
-    from automations.override_bulletin import dd_data as D
-    from automations.override_bulletin.rcs_ncs_data import ORG_TREE_GID
-    from automations.recruiting_report import fill as _fill
-    sh = _fill._client().open_by_key(D.WORKBOOK_ID)
-    ws = next(w for w in sh.worksheets() if w.id == ORG_TREE_GID)
-    return org_tree_names(ws.get_all_values())
+def read_new_owners() -> set:
+    from automations.new_owners import bank as B
+    _cmap, rows = B.read(B.open_bank(create=False))
+    return new_owner_names(rows)
 
 
 def pull_first_orders(programs: set, days: int = SALES_WINDOW_DAYS) -> Dict[str, Dict[str, dt.date]]:
@@ -455,14 +454,14 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
     upsert_contacts(MARKETING_ACCOUNT, people, apply=apply)
 
     # 2) ours -> watch list (+ raffi127 below)
-    tree = read_org_tree()
+    tree = read_new_owners()
     try:
         from automations.focus_office_att.aliases import load_aliases
         aliases = load_aliases()
     except Exception as e:  # noqa: BLE001 — the tree alone still works
         print(f"  (aliases unavailable: {e})")
         aliases = None
-    print(f"Org Tree: {len(tree)} names")
+    print(f"New Owners tab: {len(tree)} names")
     for ob in onboard:
         key = canonical(ob["email"]) or norm_name(ob["owner"])
         if key in watch:
@@ -483,7 +482,7 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
             else:
                 pending.pop(key, None)
     if pending:
-        print(f"  not on the Org Tree (yet): "
+        print(f"  not ours (not on New Owners): "
               f"{', '.join(sorted(v['name'] for v in pending.values()))}")
 
     open_watch = {k: w for k, w in watch.items() if not w.get("first_sale")}
