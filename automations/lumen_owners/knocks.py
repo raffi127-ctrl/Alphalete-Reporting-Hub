@@ -7,7 +7,9 @@ the SAME boards Chan's captainship draft draws for his Quantum owners
 EXTRA_CAMPAIGN_KNOCK_OWNERS["chan"], so when Myles Neal / Angel Padilla give
 Office Access and get uncommented there, both mails pick them up — one list.
 
-A board that can't be pulled becomes a note line; it never stops the mail.
+The boards go as ONE PDF attached to the mail, not as pictures in the body
+(Eve, 2026-10-24) — the body only says it's attached. A board that can't be
+pulled becomes a note line; it never stops the mail.
 """
 from __future__ import annotations
 
@@ -34,15 +36,20 @@ def note_html(failed: List[Tuple[str, str]]) -> str:
         for label, why in failed)
 
 
-def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print) -> list:
-    """Email blocks: a DAILY TOTAL KNOCKS board per owner for yesterday, then a
-    note for any that failed. [] when nobody is configured."""
+PDF_LABEL = "Daily Knocks — Quantum Fiber"
+
+
+def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
+          ) -> Tuple[list, list]:
+    """(email blocks, files to attach). One DAILY TOTAL KNOCKS board per owner
+    for yesterday, all in one PDF; the body gets an "attached" line plus a
+    note for any board that failed. ([], []) when nobody is configured."""
     from automations.captainship_drafts import knock_dispo_images as K
     from automations.shared.tableau_patchright import ownerville_session
 
     pairs = owner_boards(aliases_raw, logfn=logfn)
     if not pairs:
-        return []
+        return [], []
     target = K.daily_target(today)
     out_dir = Path(out_dir) / "knocks"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -67,7 +74,7 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print) -> list:
                         continue
                     png = K.render_owner_daily_board(target, rows, rows,
                                                      out_dir, label)
-                    blocks.append(("Daily Knocks — %s" % label, png))
+                    blocks.append((label, png))
                     logfn("[lumen] knocks %s: %d rep(s)" % (label, len(rows)))
                 except Exception as e:  # noqa: BLE001 — one owner, not the mail
                     failed.append((label, type(e).__name__))
@@ -77,6 +84,16 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print) -> list:
         logfn("[lumen] OwnerVille session FAILED: %s: %s" % (type(e).__name__, e))
         failed = [(l, "OwnerVille login failed") for l, _c in pairs]
         blocks = []
+    files, out = [], []
+    if blocks:
+        from automations.captainship_drafts.pdf_pages import compose
+        try:
+            pdf = compose(blocks, out_dir / ("knocks-%s.pdf" % target.isoformat()))
+            files = [(PDF_LABEL, pdf)]
+            out = [(PDF_LABEL, None, None, "attached")]
+        except Exception as e:  # noqa: BLE001 — a note, not a dead mail
+            logfn("[lumen] knocks PDF FAILED: %s: %s" % (type(e).__name__, e))
+            failed += [(l, "PDF failed") for l, _p in blocks]
     if failed:
-        blocks.append((note_html(failed), None, None, "note"))
-    return blocks
+        out.append((note_html(failed), None, None, "note"))
+    return out, files

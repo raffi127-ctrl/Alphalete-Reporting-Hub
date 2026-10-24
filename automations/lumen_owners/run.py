@@ -545,9 +545,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Yesterday's Quantum knock boards (Eve, 2026-10-23), after the boxes and
     # before the owner table. OwnerVille runs once the Tableau session above
     # is closed — they share the machine's session lock.
+    files = []
     if not args.no_knocks:
         from automations.lumen_owners import knocks as KN
-        kb = KN.build(today, OUT / today.isoformat(), aliases)
+        kb, files = KN.build(today, OUT / today.isoformat(), aliases)
         if kb:
             notes = [b for b in blocks if len(b) > 3 and b[3] == "note"]
             blocks = [b for b in blocks if b not in notes] + kb + notes
@@ -556,7 +557,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     to = recipients(args.to) if send else [DISTRO_GROUP]
     res = _mail.send_boards(
         subject="%s — %s" % (TITLE, today.strftime("%m/%d/%Y")),
-        to=to, title=TITLE, blocks=blocks, intro_html=body,
+        to=to, title=TITLE, blocks=blocks, intro_html=body, files=files,
         dry_run=not send, preview_dir=OUT / today.isoformat())
     print("[lumen] %s → %s · %s" % ("SENT" if send else "DRY RUN (preview only)",
                                     ", ".join(to), res))
