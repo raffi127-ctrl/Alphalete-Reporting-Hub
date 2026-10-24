@@ -697,8 +697,10 @@ class ASaraPlusLayoutChangeMustNotReadAsAQuietDay(unittest.TestCase):
         self.assertIn("no sales", said, "it must name the consequence")
 
     def test_a_differently_marked_grid_is_also_caught(self):
-        """The AT&T Internet grid already proves a grid can mark its reps
-        another way -- 6_Agent, not 5_Agent.
+        """A grid whose rep rows carry a different WORD ("5_Rep") is a
+        changed layout. A different DEPTH ("6_Agent", "7_Agent") is not:
+        since 2026-10-21 agent_rows reads `_Agent` at any depth, because an
+        office one level deeper in SaraPlus's tree is the same layout.
 
         WITH THE HIERARCHY PRESENT, which is what makes it evidence. A lone
         marker row and nothing above it is a half-read page, not a changed
@@ -708,12 +710,19 @@ class ASaraPlusLayoutChangeMustNotReadAsAQuietDay(unittest.TestCase):
         from automations.shared import saraplus as S
         rows = [["", "1_Company", "ACME"] + ["0"] * 15,
                 ["", "4_Campaign", "Internal"] + ["0"] * 15,
-                ["", "6_Agent", "A Rep"] + ["0"] * 15]
+                ["", "5_Rep", "A Rep"] + ["0"] * 15]
         self.assertTrue(S.att_shape_problem(rows))
+
+    def test_a_deeper_agent_marker_is_read_not_alarmed(self):
+        from automations.shared import saraplus as S
+        rows = [["", "1_Company", "ACME"] + ["0"] * 15,
+                ["", "6_Agent", "A Rep"] + ["0"] * 15]
+        self.assertEqual(S.att_shape_problem(rows), "")
+        self.assertEqual([r["name"] for r in S.parse_att(rows)], ["A Rep"])
 
     def test_a_lone_marker_row_with_no_hierarchy_is_not(self):
         from automations.shared import saraplus as S
-        self.assertEqual(S.att_shape_problem([["", "6_Agent", "A Rep"]]), "")
+        self.assertEqual(S.att_shape_problem([["", "5_Rep", "A Rep"]]), "")
 
     def test_a_normal_grid_says_nothing(self):
         from automations.shared import saraplus as S
@@ -2357,7 +2366,7 @@ class AChannelSeesAtMostThreeGifsADay(unittest.TestCase):
         preview would silence the real thing."""
         import inspect
         src = inspect.getsource(self.P.run)
-        self.assertLess(src.index("_slack(channel.id, text)"),
+        self.assertLess(src.index("_slack(channel.id, text, **_OS.post_kwargs(key))"),
                         src.index("_record_gifs(day, key, gifs_used)"))
 
     def test_two_rooms_for_one_office_spend_one_allowance(self):
