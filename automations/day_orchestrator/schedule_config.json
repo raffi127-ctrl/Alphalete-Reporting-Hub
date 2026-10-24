@@ -7394,8 +7394,8 @@
   "new_owner_contacts": {
    "close_on": "exit_zero",
    "order": 62.5,
-   "on_scheduler": false,
-   "_off_scheduler_note": "APAGADO hasta que exista contacts-rw-token-alphaletemarketing.json en Lucy 1 (Eve lo autoriza y se sube con mini_control set_contacts_token) y una corrida --dry-run en Lucy 1 se vea bien. Despues: on_scheduler true.",
+   "on_scheduler": true,
+   "_schedule_note": "15:00 CT (Eve 2026-10-24): afternoon, when Lucy 1 is free. Stays on Lucy 1: raffi127 app password + both contacts tokens live there.",
    "machine": "Lucy 1",
    "display_name": "New owner contacts + first-sale DM to Raf",
    "_note": "AVISO, NO ES UN REPORTE (Raf 10/22, Eve 10/24). Lee los mails de Nelrose (nlizada, 'Important Campaign Info (ICD Owner: X, ...)') y el roster de Kelly en raffi127 por IMAP. TODO owner del programa -> contacto en alphaletemarketing (con telefono del roster). Owner que esta en el tab New Owners del workbook ORG (gid 1674280247, menos filas Skip; Eve 10/24) -> tambien contacto con telefono en raffi127 y queda vigilado; el dia que su Order Log (Fiber ALLREPS 'Owner Name' / NDS ORDERLOG 'Owner & Office') muestra su primera orden, Lucy le manda DM a Raf. Estado: output/new_owner_contacts/state.json. Por eso Lucy 1: ahi viven el app password y el token rw de raffi127.",
@@ -7406,6 +7406,7 @@
     "--apply"
    ],
    "cadence": {
+    "not_before": "15:00",
     "weekdays": [
      0,
      1,
