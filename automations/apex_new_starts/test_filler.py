@@ -1570,6 +1570,45 @@ def test_a_different_name_in_apex_is_reported_not_guessed(page, tmp_path):
     assert "Terrance Dandy" in page.locator("#ansout").inner_text()
 
 
+
+def test_an_autofilled_box_in_another_column_is_cleared(page, tmp_path):
+    """Chrome autofilled a saved email into another filter box on the Pending
+    list. Apex ANDs every box, so nobody matched and everyone read "not on
+    the Pending list" with their row right there (Megan, 2026-10-23: "We
+    need to make sure we're clearing out all fields before searching")."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_NO_LINKS.replace(
+        '<td><input placeholder="Filter"></td>',
+        '<td><input placeholder="Filter" id="uf"></td>'))
+    page.goto(f.as_uri())
+    page.evaluate("""() => {
+      const names = [["Andres", "Aguilar", "7300"]];
+      window.__render = () => {
+        const l = document.getElementById('lf').value.toLowerCase();
+        const fi = document.getElementById('ffirst').value.toLowerCase();
+        const u = document.getElementById('uf').value.toLowerCase();
+        const shown = names.filter(r => (!l || r[1].toLowerCase().includes(l)) &&
+          (!fi || r[0].toLowerCase().includes(fi)) && (!u || 'x'.includes(u)));
+        document.getElementById('rows').innerHTML = shown
+          .map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>x</td>
+            <td><button class="ed" data-id="${r[2]}">Edit</button></td></tr>`).join('');
+        document.querySelectorAll('.ed').forEach(b =>
+          b.addEventListener('click', () => { window.__clicked = b.dataset.id; }));
+      };
+      document.getElementById('apply').addEventListener('click', window.__render);
+      document.getElementById('uf').value = 'someone@gmail.com';
+      localStorage.clear();
+      window.__render();
+    }""")
+    _already_placed(page, "WE 10.25", ["andres aguilar"])
+    people = [{"name": "Andres Aguilar", "find": "Aguilar", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 10.25")[len("javascript:"):])
+    page.evaluate("""async () => await window.__ansOpen(
+        {name:'Andres Aguilar', find:'Aguilar'})""")
+
+    assert page.input_value("#uf") == "", "the autofilled email was cleared"
+    assert page.evaluate("() => window.__clicked") == "7300", "and he was found"
+
 # ---------------------------------------------------------------------------
 # The loader. Megan, 2026-09-10: "can't you just give me a link to click each
 # time so I don't have to keep resaving this over and over". The bookmark is

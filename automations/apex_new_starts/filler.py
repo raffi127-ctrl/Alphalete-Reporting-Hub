@@ -1086,7 +1086,8 @@ _JS = r"""
      if(!inp) continue;
      return {last: inp, lastIdx: idx, firstIdx: first,
              first: (first>=0&&cells.length>first)
-                    ? cells[first].querySelector('input') : null};
+                    ? cells[first].querySelector('input') : null,
+             all: rows[r].querySelectorAll('input')};
    }
    return null;
  }
@@ -1168,12 +1169,29 @@ _JS = r"""
    }
    return out;
  }
+ function clearOtherFilters(f){
+   /* Every filter box that is not First or Last goes blank before a search.
+      Chrome autofilled a saved email into the Status filter, Apex ANDed it
+      with the name, and nobody matched -- everyone read "not on the Pending
+      list" with the row sitting right there (Megan, 2026-10-23). autocomplete
+      off so Chrome stops putting it back. */
+   var i, el;
+   for(i=0;f.all&&i<f.all.length;i++){
+     el=f.all[i];
+     if(el===f.first||el===f.last) continue;
+     if(el.type==='checkbox'||el.type==='radio'||el.type==='hidden') continue;
+     try{ el.setAttribute('autocomplete','off'); }catch(e){}
+     if(el.value) setBox(el,'');
+   }
+ }
  async function filterTo(f,given,surname){
+   clearOtherFilters(f);
    setBox(f.first,given); setBox(f.last,surname);
    await sleep(150);
    /* Check the boxes still say what was typed before searching. If the page
       wiped them, type again -- a search on blank boxes shows page one of
       everybody and calls the rest missing. */
+   clearOtherFilters(f);
    if(norm(f.last.value)!==norm(surname)||
       (f.first&&norm(f.first.value)!==norm(given))){
      setBox(f.first,given); setBox(f.last,surname);
