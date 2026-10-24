@@ -203,13 +203,21 @@ def _page_dump(page, label):
              buttons: [...document.querySelectorAll('button, input[type=submit]')]
                        .map(b => (b.innerText || b.value || '').trim()).filter(Boolean)
                        .slice(0, 20),
+             selects: [...document.querySelectorAll('select')].map(
+                       s => (s.name || s.id || '?') + ' :: ' +
+                            [...s.options].map(o => (o.text || '').trim())
+                              .filter(Boolean).join(' / ')).slice(0, 12),
              tables: document.querySelectorAll('table').length,
              text: (document.body.innerText || '').replace(/\s+/g, ' ').trim()
            })""")
+    # The Activity and Source dropdowns decide what the grid returns at all:
+    # the first pull took the default and got Calendar rows only, so every
+    # 'at' was an interview SLOT rather than the moment somebody clicked.
     return ["== {} ==".format(label),
             "url: " + got["url"], "title: " + got["title"],
-            "inputs: " + " | ".join(got["inputs"]),
-            "buttons: " + " | ".join(got["buttons"]),
+            "inputs: " + " | ".join(got["inputs"])] + \
+           ["select: " + s for s in got.get("selects", [])] + \
+           ["buttons: " + " | ".join(got["buttons"]),
             "tables: {}".format(got["tables"]),
             "text: " + got["text"][:3000]]
 
