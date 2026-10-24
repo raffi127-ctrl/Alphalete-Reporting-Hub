@@ -56,15 +56,25 @@ def split_name(name: str) -> Tuple[str, str]:
     return parts[0], parts[-1] if len(parts) > 1 else ""
 
 
+# The results grid (seen 10/24): one <tr> per applicant, First and Last in
+# separate cells ("Antoinette | Proveaux | phone | | email | Floyd Rude | Elite
+# Strategic Solutions, Inc | 10-..."), searched across every office the login
+# sees. A row is theirs when its cells hold both names; its first link opens it.
 _RESULTS_JS = """(args) => {
     const [f, l] = args;
     const fold = s => (s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-        .toLowerCase().replace(/[^a-z ]+/g, ' ');
+        .toLowerCase().replace(/[^a-z ]+/g, ' ').replace(/ +/g, ' ').trim();
+    const links = [...document.querySelectorAll('a')];
     const out = [];
-    document.querySelectorAll('a').forEach((e, i) => {
-        const t = fold(e.innerText);
-        if (t.length < 80 && t.includes(l) && (!f || t.includes(f)))
-            out.push(i);
+    document.querySelectorAll('tr').forEach(tr => {
+        if (tr.querySelector('tr')) return;              // a row of rows: skip
+        const cells = [...tr.children].map(td => fold(td.innerText));
+        if (!cells.some(c => c === l || c.endsWith(' ' + l))
+            || (f && !cells.some(c => c === f || c.split(' ')[0] === f)))
+            return;
+        const a = tr.querySelector('a');
+        out.push({link: a ? links.indexOf(a) : -1,
+                  cells: [...tr.children].map(td => (td.innerText || '').trim().slice(0, 60))});
     });
     return out; }"""
 
@@ -113,15 +123,18 @@ def lookup(page, home_url: str, name: str, max_open: int = 3,
         out = []
         for fr in list(page.frames):
             try:
-                out += [(fr, i) for i in fr.evaluate(_RESULTS_JS, [first, last])]
+                out += [(fr, r) for r in fr.evaluate(_RESULTS_JS, [first, last])]
             except Exception:  # noqa: BLE001
                 continue
         return out
 
     hits = results()
     if debug:
-        print(f"    [{name}] search '{last}': {len(hits)} result link(s) with both names "
-              f"| page: {page.url[:90]} | frames: {len(page.frames)}")
+        print(f"    [{name}] search '{last}': {len(hits)} row(s) with both names")
+        for _, r in hits[:3]:
+            print(f"      row (link {r['link']}):")
+            for i, cell in enumerate(r["cells"]):
+                print(f"        {i}: {cell}")
         if not hits:
             near = [ln.strip()[:100] for ln in _page_text(page).splitlines()
                     if last in _fold(ln)][:6]
@@ -134,15 +147,19 @@ def lookup(page, home_url: str, name: str, max_open: int = 3,
             hits = results()
             if n >= len(hits):
                 break
-        fr, idx = hits[n]
-        fr.locator("a").nth(idx).click(timeout=8000, no_wait_after=True)
+        fr, row = hits[n]
+        if row["link"] < 0:
+            continue
+        fr.locator("a").nth(row["link"]).click(timeout=8000, no_wait_after=True)
         page.wait_for_timeout(3000)
         text = _page_text(page)
         found = ads_in_text(text)
         if debug:
-            near = [ln.strip() for ln in text.splitlines()
-                    if re.search(r"application|position|applied|job", ln, re.I)][:6]
-            print(f"      record {n + 1}: ads={found} | lines: {near}")
+            near = [ln.strip()[:110] for ln in text.splitlines()
+                    if re.search(r"application|position|applied|job|subject", ln, re.I)][:8]
+            print(f"      record {n + 1}: ads={found} | {page.url[:70]}")
+            for ln in near:
+                print(f"        > {ln}")
         ads += [a for a in found if a not in ads]
     return ads, f"{len(hits)} record(s)"
 
