@@ -930,6 +930,87 @@ def plan_record(V) -> List[Tuple[str, object]]:
     return [(f"{A(k)}{r}", v) for r, v in want if _c(V, r, k) != str(v)]
 
 
+# ------------------------------------------------------- first 20+ heads --
+
+# Rafael 2026-10-24: "Can we have the name of the owner the first time that
+# have 20+ active heads on tableau get highlighted please?" — and Megan: only
+# THAT week. A conditional-format rule on the Ongoing block's name column, not
+# a painted cell, for three reasons:
+#   • the names carry Eve's own fill; a rule sits on top of it and nothing has
+#     to be restored when the week is over,
+#   • it is relative per ROW, so the daily sortRange can move the names under
+#     it and each row still asks about its own numbers,
+#   • it clears itself: on Monday's roll the milestone week moves from C into
+#     the history, which now holds a 20+, so the rule turns false.
+# The rule is rewritten every run with the block's current rows, so an owner
+# added to the roster is covered the next morning.
+MILESTONE_HEADS = 20
+MILESTONE_TAG = "first 20+ heads"          # marks OUR rule among Eve's
+MILESTONE_FILL = {"red": 1.0, "green": 0.851, "blue": 0.4}     # gold #FFD966
+
+
+def milestone_formula(og: dict, heads: int = MILESTONE_HEADS) -> str:
+    """The rule's formula, written for the block's first name cell.
+
+    True when this week (the first WE column) is `heads`+ AND no earlier WE
+    column of the row is. Earlier = every column right of this week whose
+    header reads 'WE …' — the App Avg columns between them are left out by
+    that header test (Samuel Acay's App Avg reads 21.1). Open-ended to the
+    right (`D22:22`) because the block gains a week every Monday.
+    `N("…")=0` is a no-op that tags the rule so the next run can find it."""
+    this_c = og["wcols"][0][0]
+    hist = A(this_c + 1)
+    r0, hdr = og["rows"][0], og["hdr"]
+    return (f'=AND(N("{MILESTONE_TAG}")=0,'
+            f'${A(this_c)}{r0}>={heads},'
+            f'COUNTIFS(${hist}${hdr}:${hdr},"WE *",${hist}{r0}:{r0},">={heads}")=0)')
+
+
+def milestone_requests(sheet_id: int, g, existing: List[dict],
+                       heads: int = MILESTONE_HEADS) -> List[dict]:
+    """batchUpdate requests that leave exactly one first-20+ rule on the tab,
+    over the Ongoing block's names. `existing` = the sheet's conditionalFormats
+    in API order. [] when the one rule there is already the right one."""
+    og = find_ongoing(g)
+    rng = {"sheetId": sheet_id,
+           "startRowIndex": og["rows"][0] - 1, "endRowIndex": og["rows"][-1],
+           "startColumnIndex": 1, "endColumnIndex": 2}          # col B, the names
+    rule = {"ranges": [rng], "booleanRule": {
+        "condition": {"type": "CUSTOM_FORMULA",
+                      "values": [{"userEnteredValue": milestone_formula(og, heads)}]},
+        "format": {"backgroundColor": MILESTONE_FILL,
+                   "textFormat": {"bold": True}}}}
+
+    def ours(cf):
+        vals = cf.get("booleanRule", {}).get("condition", {}).get("values", [])
+        return any(MILESTONE_TAG in str(v.get("userEnteredValue", "")) for v in vals)
+
+    mine = [i for i, cf in enumerate(existing) if ours(cf)]
+    if len(mine) == 1:
+        cf = existing[mine[0]]
+        same_formula = (cf["booleanRule"]["condition"]["values"][0]["userEnteredValue"]
+                        == rule["booleanRule"]["condition"]["values"][0]["userEnteredValue"])
+        if same_formula and cf.get("ranges") == [rng]:
+            return []
+    # delete from the bottom up so the indexes above stay valid
+    out = [{"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": i}}
+           for i in sorted(mine, reverse=True)]
+    out.append({"addConditionalFormatRule": {"rule": rule, "index": 0}})
+    return out
+
+
+def first_time_owners(g, heads: int = MILESTONE_HEADS) -> List[str]:
+    """Who the rule lights up — the same test in Python, for the run log."""
+    og = find_ongoing(g)
+    out = []
+    for r in og["rows"]:
+        nums = [_num(_c(g, r, k)) for k, _ in og["wcols"]]
+        if nums and nums[0] is not None and nums[0] >= heads \
+                and not any(n is not None and n >= heads for n in nums[1:]):
+            out.append(_c(g, r, 2))
+    return out
+
+
 def _num_f(s) -> float:
     return float(str(s).replace(",", "").replace("%", "").strip())
 
@@ -1092,6 +1173,25 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
           "by this week, descending")
     if apply_changes and reqs:
         _retry(ws.spreadsheet.batch_update, {"requests": reqs})
+
+    # First week at 20+ heads -> the owner's name goes gold (that week only)
+    try:
+        if apply_changes:
+            V = ws.get_all_values()
+        firsts = first_time_owners(V)
+        logfn(f"first time at {MILESTONE_HEADS}+ heads this week: "
+              f"{', '.join(firsts) if firsts else 'nobody'}")
+        md = ws.spreadsheet.fetch_sheet_metadata(
+            {"fields": "sheets(properties(sheetId),conditionalFormats)"})
+        existing = next((s.get("conditionalFormats", []) for s in md["sheets"]
+                         if s["properties"]["sheetId"] == ws.id), [])
+        mreqs = milestone_requests(ws.id, V, existing)
+        logfn(f"  highlight rule: {'up to date' if not mreqs else ('rewriting' if apply_changes else 'would rewrite')}")
+        if apply_changes and mreqs:
+            _retry(ws.spreadsheet.batch_update, {"requests": mreqs})
+    except Exception as e:                                         # noqa: BLE001
+        # cosmetic: never hold the fill or the email over it, but say so
+        logfn(f"  ⚠ first-20+ highlight NOT set -- {type(e).__name__}: {e}")
     # A day that could not be READ is a failure, not a quiet day (2026-09-24:
     # the tracker reader got "credit balance is too low" from the Anthropic API,
     # Wednesday stayed empty, the run exited 0 and nobody was told). Failing

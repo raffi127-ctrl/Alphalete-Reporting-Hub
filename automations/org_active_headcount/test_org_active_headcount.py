@@ -704,3 +704,45 @@ class SortsEveryBoxByThisWeek(unittest.TestCase):
         delta = self._reqs(g)[-1]
         self.assertEqual(delta["range"]["startRowIndex"], hdr + 1)
         self.assertGreaterEqual(delta["range"]["endColumnIndex"], 27)
+
+
+class FirstTwentyHeadsHighlight(unittest.TestCase):
+    """Rafael 2026-10-24: an owner's name goes gold the first week at 20+."""
+
+    def _g(self):
+        from automations.org_active_headcount import daily as d
+        hdr = ["All Campaings Ongoing Headcount", "", "WE 10.25", "App Avg",
+               "WE 10.18", "App Avg", "WE 10.11", "App Avg"]
+        rows = [
+            ["1", "New High", "21", "4.0", "18", "21.1", "15", "3.0"],   # avg 21.1 must not count
+            ["2", "Old Hand", "25", "5.0", "19", "5.0", "22", "5.0"],
+            ["3", "Under", "19", "5.0", "12", "5.0", "10", "5.0"],
+            ["4", "Brand New", "20", "", "", "", "", ""],
+        ]
+        return d, [[], hdr, [], *rows, ["TOTALS", "", "85"]]
+
+    def test_only_first_crossings_light_up(self):
+        d, g = self._g()
+        self.assertEqual(d.first_time_owners(g), ["New High", "Brand New"])
+
+    def test_formula_targets_names_and_skips_app_avg(self):
+        d, g = self._g()
+        f = d.milestone_formula(d.find_ongoing(g))
+        self.assertEqual(f, '=AND(N("first 20+ heads")=0,$C4>=20,'
+                            'COUNTIFS($D$2:$2,"WE *",$D4:4,">=20")=0)')
+
+    def test_rule_is_replaced_not_stacked(self):
+        d, g = self._g()
+        add = d.milestone_requests(7, g, [])
+        self.assertEqual(len(add), 1)
+        rule = add[0]["addConditionalFormatRule"]["rule"]
+        self.assertEqual(rule["ranges"][0]["startColumnIndex"], 1)
+        self.assertEqual((rule["ranges"][0]["startRowIndex"], rule["ranges"][0]["endRowIndex"]), (3, 7))
+        eve = {"booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0%"}]}}}
+        # already there and identical -> nothing to do
+        self.assertEqual(d.milestone_requests(7, g, [eve, rule]), [])
+        # stale copy (roster grew) -> delete ours only, then add
+        stale = {"ranges": [dict(rule["ranges"][0], endRowIndex=5)], "booleanRule": rule["booleanRule"]}
+        reqs = d.milestone_requests(7, g, [eve, stale])
+        self.assertEqual(reqs[0], {"deleteConditionalFormatRule": {"sheetId": 7, "index": 1}})
+        self.assertIn("addConditionalFormatRule", reqs[1])
