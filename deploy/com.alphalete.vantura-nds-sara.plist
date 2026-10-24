@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.vantura-nds-sara</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path (lucy rerun install_vantura_nds_sara_agent).
+         Runs on LUCY 2 — the Vantura board is Carlos's, and Lucy 2 is the
+         machine with access to the ICD relay workbook his office mini writes. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/vantura_nds_sara.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends, the same clock as com.alphalete.vantura-slack-sales:
+           16:00-21:00 hourly — set the day IN PROGRESS from the mini's latest
+                                relay, so the board tracks SaraPlus through the
+                                selling evening.
+           05:00        — close out the PREVIOUS day. The mini's 2am catch-up
+                          re-reads yesterday whole, so this pass lands on final
+                          numbers, and it MUST stay before com.alphalete.sales-
+                          boards' 05:10 first pass, which renders the board.
+         The run picks its own target day from the clock (before 10am =
+         yesterday), so every entry runs the same command. TIME KNOB: edit these
+         entries (Hour/Minute are machine LOCAL time; Lucy 2 is Central). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-nds-sara.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-nds-sara.launchd.err.log</string>
+</dict>
+</plist>
