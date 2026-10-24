@@ -79,7 +79,7 @@ class NdsLinesTests(unittest.TestCase):
     def test_not_read_or_not_nds_is_untouched(self):
         sales = {"JACOB SMITH": {"NL": 11}}
         self.assertEqual(R._nds_lines(sales, None, NDS), sales)
-        att = {"office_key": "carlos-b2batt", "campaign": "att"}
+        att = {"office_key": "kash", "campaign": "att"}
         self.assertEqual(R._nds_lines(sales, {"JACOB SMITH": {"Port Lines": 7}}, att), sales)
 
     def test_payload_carries_it(self):
@@ -97,10 +97,68 @@ class NdsLinesTests(unittest.TestCase):
         self.assertEqual(body["sales"]["JACOB SMITH"]["NL"], 7)
 
 
+B2B = {"office_key": "carlos-b2batt", "campaign": "b2b_att"}
+
+
+class B2bAttLinesTests(unittest.TestCase):
+    """Sebastian Avellaneda 2026-10-23, the A Players text vs Carlos's
+    SaraPlus Wireless grid for the same day."""
+
+    def lines(self, *rows):
+        return S.parse_lines(HEADERS, list(rows))
+
+    def day(self):
+        # What the AT&T grid relayed: Jorge's Air sat in Int Up, and NL was
+        # the whole Line Count.
+        sales = {
+            "JORGE JOSE HERNANDEZ MOLINA": {"Int": 0, "Int Up": 1, "DTV": 0, "NL": 5, "Air": 1},
+            "DIEGO JAVIER DEL POZO BORRES": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 4, "Air": 0},
+            "ANDREW DE LA TORRE": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 2, "Air": 0},
+            "RODOLFO BAZAN": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 2, "Air": 0},
+        }
+        lines = self.lines(
+            row("JORGE JOSE HERNANDEZ MOLINA", 5, 0, 5, 0, 5, 5, 0, 0),
+            row("DIEGO JAVIER DEL POZO BORRES", 4, 0, 4, 0, 3, 4, 0, 0),
+            row("ANDREW DE LA TORRE", 2, 0, 2, 0, 1, 2, 0, 0),
+            row("RODOLFO BAZAN", 2, 0, 1, 1, 1, 2, 0, 0))
+        return R._nds_lines(sales, lines, B2B)
+
+    def test_upgrade_line_is_an_upgrade(self):
+        self.assertEqual(self.day()["RODOLFO BAZAN"]["NL"], 1)
+        self.assertEqual(self.day()["RODOLFO BAZAN"]["Int Up"], 1)
+
+    def test_air_is_internet_not_an_upgrade(self):
+        jorge = self.day()["JORGE JOSE HERNANDEZ MOLINA"]
+        self.assertEqual((jorge["Int"], jorge["Int Up"], jorge["NL"]), (1, 0, 5))
+
+    def test_the_text(self):
+        board = P.scoreboard_text(self.day(), [], "b2b_att")
+        self.assertIn("Jorge Jose Hernandez Molina 6 (1 Int, 5 NL)", board)
+        self.assertIn("Rodolfo Bazan 2 (1 Up, 1 NL)", board)
+        for word in ("INT: 1", "Upgrades: 1", "NL's: 12", "TOTALS: 14"):
+            self.assertIn(word, board)
+
+    def test_air_moves_even_when_the_wireless_pass_failed(self):
+        sales = {"JORGE": {"Int": 0, "Int Up": 1, "DTV": 0, "NL": 5, "Air": 1}}
+        self.assertEqual(R._nds_lines(sales, None, B2B)["JORGE"]["Int"], 1)
+
+    def test_the_office_key_alone_is_enough(self):
+        rec = {"office_key": "carlos-b2batt", "campaign": "att"}
+        out = R._nds_lines({}, self.lines(row("RODOLFO BAZAN", 2, 0, 1, 1, 1, 2, 0, 0)), rec)
+        self.assertEqual(out["RODOLFO BAZAN"]["NL"], 1)
+
+    def test_wireless_pass_runs_for_b2b_att(self):
+        with mock.patch.object(C, "active_enrollments", return_value=[B2B]):
+            self.assertTrue(C.wireless_lines_here())
+        with mock.patch.object(C, "active_enrollments",
+                               return_value=[{"office_key": "kash", "campaign": "att"}]):
+            self.assertFalse(C.wireless_lines_here())
+
+
 class NdsHereTests(unittest.TestCase):
     def test_follows_the_enrollments(self):
         with mock.patch.object(C, "active_enrollments",
-                               return_value=[{"office_key": "carlos-b2batt", "campaign": "att"}]):
+                               return_value=[{"office_key": "kash", "campaign": "att"}]):
             self.assertFalse(C.nds_here())
         with mock.patch.object(C, "active_enrollments",
                                return_value=[{"office_key": "jacob", "campaign": "NDS"}]):

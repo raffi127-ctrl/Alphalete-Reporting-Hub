@@ -376,6 +376,26 @@ def nds_here() -> bool:
                for r in active_enrollments())
 
 
+# WHO COUNTS LINES OFF THE WIRELESS GRID. NDS first (Carlos 2026-10-22); B2B
+# AT&T joined 2026-10-23 (Sebastian Avellaneda: Rodolfo Bazan's "2 NL" was 1
+# port + 1 upgrade, and Jorge Hernandez's "1 Up" was an Internet Air). The
+# office key backs up the campaign: carlos-b2batt is the room that asked, and
+# it must not depend on what his install form wrote in the campaign field.
+WIRELESS_LINE_CAMPAIGNS = ("nds", "b2b_att")
+WIRELESS_LINE_KEYS = frozenset({"carlos-b2batt"})
+
+
+def wireless_lines_wanted(rec: Optional[Dict]) -> bool:
+    rec = rec or {}
+    return (str(rec.get("campaign") or "").strip().lower() in WIRELESS_LINE_CAMPAIGNS
+            or str(rec.get("office_key") or "").strip().lower() in WIRELESS_LINE_KEYS)
+
+
+def wireless_lines_here() -> bool:
+    """Does any office this machine relays for count lines off Wireless?"""
+    return any(wireless_lines_wanted(r) for r in active_enrollments())
+
+
 def active_enrollments() -> "List[Dict]":
     """enrollments() minus PAUSED_KEYS -- what the sweep should walk.
 

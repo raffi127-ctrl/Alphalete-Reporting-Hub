@@ -889,9 +889,9 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
             # in it; everybody else's sweep stays three passes long. Its
             # failure costs only itself: None means "not read this time",
             # which sends nothing rather than a day of zeros.
-            # NDS offices read it too, for their line counts.
+            # NDS and B2B AT&T offices read it too, for their line counts.
             credit = lines = None
-            if C.credit_tiers_here() or C.nds_here():
+            if C.credit_tiers_here() or C.wireless_lines_here():
                 try:
                     w_rows = S._run_report(page, base, day, S.SERVICE_WIRELESS,
                                            S.GRID_WIRELESS, log=log)
@@ -904,7 +904,7 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                         else:
                             log("Wireless pass: credit checks for %d rep(s)"
                                 % len(credit))
-                    if C.nds_here():
+                    if C.wireless_lines_here():
                         lines = S.parse_lines(w_head, w_rows)
                         if lines is None:
                             log("Wireless grid has no New/Port/Upgrade Lines, "
