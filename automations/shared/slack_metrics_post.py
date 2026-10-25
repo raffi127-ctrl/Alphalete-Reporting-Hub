@@ -208,10 +208,29 @@ def _recording_client_class():
 _RECORDING_CLIENT = None
 
 
+def _refuse_real_client_under_test(which: str) -> None:
+    """No unit test gets a REAL Slack client — the door every post, edit,
+    ✅ and incident close walks through.
+
+    2026-10-25: `test_tableau_freshness` marked a real view label fresh,
+    clear_stale reached incident_thread.resolve_report for real, and three live
+    Box threads got "✅ RESOLVED" (with a fixture date) while the feed was still
+    stuck. live_effects guarded a few call sites; the client is the one place
+    they all share. A test that wants Slack behaviour passes its own fake
+    client or patches `_client` — both bypass this, as they should."""
+    from automations.shared import live_effects
+    if live_effects.driven_by_a_test():
+        raise SlackPostError(
+            "refusing to build a real Slack {} client — a unit test is driving "
+            "this call (stub it or pass a fake client; "
+            "automations.shared.live_effects)".format(which))
+
+
 def _client(token: Optional[str] = None):
     """The posting client. `token` overrides the machine's default -- an
     office whose Slack lives in another workspace posts with its own bot
     (icd_alerts.office_slack.client_for)."""
+    _refuse_real_client_under_test("posting")
     import certifi
     ctx = ssl.create_default_context(cafile=certifi.where())
     return _recording_client_class()(token=token or _load_token(), ssl=ctx,
@@ -234,6 +253,7 @@ def _load_bot_token() -> str:
 
 
 def _bot_client():
+    _refuse_real_client_under_test("bot")
     import certifi
     ctx = ssl.create_default_context(cafile=certifi.where())
     return _recording_client_class()(token=_load_bot_token(), ssl=ctx,

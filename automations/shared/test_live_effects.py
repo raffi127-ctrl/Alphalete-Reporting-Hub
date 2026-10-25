@@ -100,5 +100,37 @@ class NoPhantomHubCardFromATest(unittest.TestCase):
                 hub_coverage.resolve_card("r", "R", _existing=set()), "r")
 
 
+
+class NoRealSlackClientUnderATest(unittest.TestCase):
+    """2026-10-25: test_tableau_freshness reached incident_thread.resolve_report
+    for real and posted RESOLVED under three live Box threads. The guards above
+    sit on individual call sites; the Slack CLIENT is the one door they all
+    share, so it refuses to be built while a test is driving."""
+
+    def test_the_posting_client_refuses(self):
+        from automations.shared import slack_metrics_post as smp
+        with self.assertRaises(smp.SlackPostError):
+            smp._client()
+
+    def test_the_bot_client_refuses(self):
+        from automations.shared import slack_metrics_post as smp
+        with self.assertRaises(smp.SlackPostError):
+            smp._bot_client()
+
+    def test_the_incident_thread_client_refuses_too(self):
+        """incident_thread borrows smp's client — the path that did the damage."""
+        from automations.shared import incident_thread as inc
+        from automations.shared import slack_metrics_post as smp
+        with self.assertRaises(smp.SlackPostError):
+            inc._client()
+
+    def test_a_resolve_with_no_fake_client_closes_nothing(self):
+        """The 10/25 call, end to end: it must come back False, not post."""
+        from automations.shared import incident_thread as inc
+        got = inc.resolve_report("tableau-stale-some-test-view",
+                                 what="*x*", note="n")
+        self.assertFalse(got)
+
+
 if __name__ == "__main__":
     unittest.main()

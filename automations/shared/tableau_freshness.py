@@ -337,6 +337,114 @@ def _view_label(view_url: str, sheet: str = "") -> str:
     return "{} → {}".format(label, sheet) if sheet else label
 
 
+# --- ONE THREAD PER WORKBOOK -------------------------------------------------
+# A frozen workbook is ONE problem. Box's extract stopped at Thu 10/22 and by Sun
+# 10/25 the channel held nine separate threads for it — Order Log three times
+# over, Daily Tracker Sales, Daily Tracker Metrics, Bulletin, Sales Metrics,
+# Drops — every one saying the same thing: "B2BBOXEnergyTracker hasn't refreshed"
+# (Megan 2026-10-25, "this alert keeps happening"). So every view of a workbook
+# files under one id; the first view to go stale opens the thread and each later
+# view is named on its status line ("Also dropped since: …").
+#
+# Closing has to respect that one thread now speaks for several views. A view
+# may close it only if THAT view was behind, and only once every view this
+# machine saw go behind has caught up — otherwise any fresh pull of a view that
+# was never stale would wave the all-clear over the ones still stuck. The set
+# lives in `open-<workbook>.json`, per machine like the rest of this state.
+_OPEN_VIEW_TTL_DAYS = 1   # a view not seen behind since yesterday stops holding it
+
+
+def _workbook(view_label: str) -> str:
+    """'B2BBOXEnergyTracker/BoxOrderLog → Order Log' → 'B2BBOXEnergyTracker'.
+    Empty when the label carries no workbook/view path to split."""
+    head = (view_label or "").split(" → ")[0]
+    if "/" not in head:
+        return ""
+    return head.split("/")[0].strip()
+
+
+def _incident_id(source_key: str, view_label: str) -> str:
+    """The thread a stale view files under: its workbook's, or — for a label with
+    no workbook in it — its own, exactly as before."""
+    wb = _workbook(view_label)
+    if wb:
+        return "tableau-stale-{}".format(_slug(wb + " workbook"))
+    return "tableau-stale-{}".format(_slug(source_key))
+
+
+def _short_view(view_label: str) -> str:
+    """The view without its workbook — what a workbook thread names per line."""
+    head, sep, sheet = (view_label or "").partition(" → ")
+    rest = head.split("/", 1)[1] if "/" in head else head
+    return "{}{}{}".format(rest, sep, sheet)
+
+
+def _open_path(view_label: str) -> Path:
+    return STATE_DIR / "open-{}.json".format(_slug(_workbook(view_label)))
+
+
+def _load_open(view_label: str) -> dict:
+    try:
+        d = json.loads(_open_path(view_label).read_text("utf-8"))
+        return dict(d.get("views") or {})
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_open(view_label: str, views: dict) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        _open_path(view_label).write_text(
+            json.dumps({"views": views}, indent=1), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _mark_open(source_key: str, view_label: str, today: dt.date) -> None:
+    """Record that this view is behind, so it holds its workbook's thread open."""
+    if not _workbook(view_label):
+        return
+    views = _load_open(view_label)
+    views[source_key] = today.isoformat()
+    _save_open(view_label, views)
+
+
+def _close_view(source_key: str, view_label: str, today: dt.date,
+                dry_run: bool = False) -> Tuple[bool, bool]:
+    """This view caught up. Returns (was_open, none_left): whether it was one of
+    the views holding the workbook thread open, and whether any still are."""
+    views = _load_open(view_label)
+    was_open = source_key in views
+    views.pop(source_key, None)
+    cutoff = today - dt.timedelta(days=_OPEN_VIEW_TTL_DAYS)
+    for k, seen in list(views.items()):
+        try:
+            if dt.date.fromisoformat(seen) < cutoff:
+                views.pop(k)
+        except Exception:  # noqa: BLE001 — an unreadable entry holds nothing
+            views.pop(k)
+    if was_open and not dry_run:
+        _save_open(view_label, views)
+    return was_open, not views
+
+
+def _note_workbook(view_label: str, today: dt.date, reports) -> None:
+    """Keep the workbook's day state beside the per-view ones, so incident_triage
+    — which finds a thread's state file by the slug in its key — reads the
+    reports that hit ANY of the workbook's views."""
+    wb = _workbook(view_label)
+    if not wb:
+        return
+    key = wb + " workbook"
+    st = _load_state(key, today)
+    merged = list(st.get("reports") or [])
+    for r in reports or []:
+        if r and r not in merged:
+            merged.append(r)
+    _save_state(key, today, dict(st, alerted=True, reports=merged,
+                                 view=wb))
+
+
 def _say(msg: str) -> None:
     """print() that cannot take an alert down with it.
 
@@ -377,6 +485,8 @@ def alert_stale(source_key: str, view_label: str, newest: Optional[dt.date],
         first_time = not state.get("alerted")
         if report and report not in reports:
             reports.append(report)
+        _mark_open(source_key, view_label, today)
+        _note_workbook(view_label, today, reports)
         if not first_time:
             # ONE message per stale source per day. Every later report that hits
             # the same frozen view is recorded in the state file but stays quiet:
@@ -403,10 +513,14 @@ def alert_stale(source_key: str, view_label: str, newest: Optional[dt.date],
         from automations.shared import section_drop_alert as sda
         # report_id is the SOURCE, not the report: fifty offices pulling one
         # frozen view is one problem with one thread, and the reports that hit
-        # it ride inside the line. A different stale view gets its own thread.
-        _rid = "tableau-stale-{}".format(_slug(source_key))
+        # it ride inside the line. Every view of one workbook shares that thread
+        # — see _incident_id.
+        _rid = _incident_id(source_key, view_label)
         sda.alert(report_id=_rid, failed=[line], kind="stale_source", day=today,
-                  remediation=_already_sent_remediation(reports, _rid))
+                  remediation=_already_sent_remediation(reports, _rid),
+                  subjects=["{} (newest {})".format(
+                      _short_view(view_label),
+                      newest.isoformat() if newest else "none")])
         state.update({"alerted": True, "reports": reports,
                       "newest": newest.isoformat() if newest else None,
                       "view": view_label})
@@ -435,15 +549,30 @@ def clear_stale(source_key: str, view_label: str, newest: Optional[dt.date],
     post."""
     try:
         from automations.shared import incident_thread as _inc
-        return bool(_inc.resolve_report(
+        note = (("Serving current data again — newest is now {}.".format(
+                     newest.isoformat()) if newest else
+                 "Moving again — its contents changed on this pull.")
+                + " The pulls that hit it while it was behind understated "
+                  "reality; anything built on them is worth re-reading.")
+        # The per-VIEW id first: threads opened before alerts were grouped by
+        # workbook (2026-10-25) still close the way they always did.
+        closed = bool(_inc.resolve_report(
             "tableau-stale-{}".format(_slug(source_key)),
-            what="*{}*".format(view_label),
-            note=(("Serving current data again — newest is now {}.".format(
-                       newest.isoformat()) if newest else
-                   "Moving again — its contents changed on this pull.")
-                  + " The pulls that hit it while it was behind understated "
-                    "reality; anything built on them is worth re-reading."),
+            what="*{}*".format(view_label), note=note,
             day=today, dry_run=dry_run))
+        wb = _workbook(view_label)
+        if not wb:
+            return closed
+        # The WORKBOOK thread speaks for every view of it, so one view catching
+        # up closes it only if that view was behind and none other still is.
+        was_open, none_left = _close_view(source_key, view_label, today,
+                                          dry_run=dry_run)
+        if not (was_open and none_left):
+            return closed
+        return bool(_inc.resolve_report(
+            _incident_id(source_key, view_label),
+            what="*{}*".format(wb), note=note,
+            day=today, dry_run=dry_run)) or closed
     except Exception:  # noqa: BLE001 — an all-clear must never sink a good run
         return False
 
@@ -866,6 +995,41 @@ def is_week_pinned_source(label: str) -> bool:
     return any(m in low for m in WEEK_PINNED_MARKERS)
 
 
+# --- A pull pinned to a period that has already CLOSED ------------------------
+# Not the same as WEEK_PINNED_MARKERS, which names one view. This is any pull
+# whose URL pins it to dates that are all in the past — and its trap is sharing
+# a history key with the SAME view pulled for the current week.
+#
+# org_campaign_metrics pulls BoxSalesMetrics twice a run: `Selected
+# Weekending=<this Sunday>` and `=<last Sunday>`. `_view_label` strips the query
+# string, so both landed on one fingerprint key holding one value per day — the
+# last pull's. The closed week never changes, so it read FROZEN and opened a
+# thread; the current week's pull then compared against that closed week's
+# bytes, read "moving", and closed the thread again. A ✅ on 10/24 and again on
+# 10/25 while the whole workbook sat at 10/22 (Megan 2026-10-25).
+#
+# So a closed-period pull keeps its own history, judged by the weekly bar: it is
+# EXPECTED to repeat until its window rolls, and only a roll that never comes is
+# a frozen feed. The current-period pull keeps the plain key, and its own clean
+# day-over-day history.
+_ISO_IN_QUERY = re.compile(r"(?<![0-9])(\d{4}-\d{2}-\d{2})(?![0-9])")
+
+
+def is_closed_period_pull(view_url: str, today: dt.date) -> bool:
+    """Does this URL pin the view to dates that have all already passed?"""
+    parts = (view_url or "").split("?", 1)
+    if len(parts) < 2:
+        return False
+    from urllib.parse import unquote
+    dates = []
+    for m in _ISO_IN_QUERY.findall(unquote(parts[1])):
+        try:
+            dates.append(dt.date.fromisoformat(m))
+        except ValueError:
+            pass
+    return bool(dates) and all(d < today for d in dates)
+
+
 def _fingerprint(path) -> Optional[str]:
     """A stable digest of the export's DATA (header excluded — a column rename
     isn't new data, and a stable header is what makes runs comparable)."""
@@ -958,6 +1122,8 @@ def alert_frozen(source_key: str, view_label: str, days_same: int,
         reports = list(state.get("reports") or [])
         if report and report not in reports:
             reports.append(report)
+        _mark_open(source_key, view_label, today)
+        _note_workbook(view_label, today, reports)
         if state.get("alerted"):
             _save_state(key, today, dict(state, reports=reports))
             return False
@@ -968,9 +1134,11 @@ def alert_frozen(source_key: str, view_label: str, days_same: int,
         if reports:
             line += " · hit by: {}".format(", ".join(sorted(reports)))
         from automations.shared import section_drop_alert as sda
-        _rid = "tableau-stale-{}".format(_slug(source_key))
+        _rid = _incident_id(source_key, view_label)
         sda.alert(report_id=_rid, failed=[line], kind="stale_source", day=today,
-                  remediation=_already_sent_remediation(reports, _rid))
+                  remediation=_already_sent_remediation(reports, _rid),
+                  subjects=["{} (identical {} days)".format(
+                      _short_view(view_label), days_same)])
         _save_state(key, today, {"alerted": True, "reports": reports,
                                  "view": view_label, "kind": "frozen"})
         return True
@@ -1052,11 +1220,17 @@ def check_export(path,
             # No event date to judge — fall back to watching whether the CONTENT
             # still moves. This is the 88% of our exports (aggregate crosstabs)
             # that had no staleness cover at all until 2026-08-18.
-            unchanged = check_unchanged(p, source_key=label, view_label=label,
+            closed = is_closed_period_pull(view_url, today)
+            out["closed_period"] = closed
+            unchanged = check_unchanged(p,
+                                        source_key=(label + " [closed period]"
+                                                    if closed else label),
+                                        view_label=label,
                                         today=today,
                                         report=report or _current_report(),
                                         frozen_after=(WEEKLY_FROZEN_AFTER_DAYS
                                                       if weekly or week_pinned
+                                                      or closed
                                                       else FROZEN_AFTER_DAYS))
             out["verdict"] = {"frozen": "stale"}.get(
                 unchanged["verdict"], "unknown")

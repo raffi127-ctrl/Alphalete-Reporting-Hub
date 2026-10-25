@@ -689,7 +689,8 @@ def resolved(report_id: str, *, dry_run: bool = False) -> bool:
 def alert(*, report_id: str, failed: Sequence[str],
           remediation: Optional[dict] = None, note: str = "",
           day: Optional[dt.date] = None, dry_run: bool = False,
-          kind: str = "section") -> bool:
+          kind: str = "section",
+          subjects: Optional[Sequence[str]] = None) -> bool:
     """Post a loud dropped-section ping. One post per (report, day, failed-set).
     Returns True if posted (or already posted today for this exact drop).
     `kind` picks the wording: 'section' (a thread that didn't post), 'day' (a
@@ -744,7 +745,11 @@ def alert(*, report_id: str, failed: Sequence[str],
                                            # b2b_metrics reported jamis and
                                            # never atef or sabrina, two days
                                            # running).
-                                           subjects=failed,
+                                           # A caller whose failed lines are
+                                           # long prose can name them shorter
+                                           # (tableau_freshness: one view per
+                                           # subject on a workbook's thread).
+                                           subjects=subjects or failed,
                                            day=day, client=client)
         except Exception as e:  # noqa: BLE001
             print("  ⚠ incident thread unavailable ({}: {}) — posting "

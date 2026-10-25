@@ -44,6 +44,41 @@ JE_ICD_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
               "WeeklyMetricsbyICD?:iid=1")
 
 
+def setUpModule():
+    """NOTHING in this file may reach Slack. The fresh path of check_export calls
+    clear_stale → incident_thread.resolve_report, and a test that marks a real
+    view's label "fresh" closed that view's REAL open thread: on 2026-10-25 a
+    test run posted RESOLVED under three live Box threads while the feed was
+    still stuck at 10/22. Stub both doors for the whole module; a class that
+    needs to see the calls patches over these stubs and restores them."""
+    from automations.shared import incident_thread as inc
+    from automations.shared import section_drop_alert as sda
+    global _REAL_RESOLVE, _REAL_ALERT
+    _REAL_RESOLVE, _REAL_ALERT = inc.resolve_report, sda.alert
+    inc.resolve_report = lambda *a, **kw: False
+    sda.alert = lambda *a, **kw: False
+    # Belt and braces: anything that still finds a way to a Slack client fails.
+    from automations.shared import slack_metrics_post as smp
+    global _REAL_SMP_CLIENT, _REAL_INC_CLIENT, _REAL_STATE_DIR
+    _REAL_SMP_CLIENT, _REAL_INC_CLIENT = smp._client, inc._client
+
+    def _no_slack(*a, **kw):
+        raise RuntimeError("test_tableau_freshness must not reach Slack")
+    smp._client = inc._client = _no_slack
+    # …and this machine's real freshness state stays untouched.
+    _REAL_STATE_DIR = tf.STATE_DIR
+    tf.STATE_DIR = Path(tempfile.mkdtemp())
+
+
+def tearDownModule():
+    from automations.shared import incident_thread as inc
+    from automations.shared import section_drop_alert as sda
+    from automations.shared import slack_metrics_post as smp
+    inc.resolve_report, sda.alert = _REAL_RESOLVE, _REAL_ALERT
+    smp._client, inc._client = _REAL_SMP_CLIENT, _REAL_INC_CLIENT
+    tf.STATE_DIR = _REAL_STATE_DIR
+
+
 class _Cp1252Stdout:
     """A console that chokes on anything outside cp1252, like Windows'."""
 
@@ -650,3 +685,127 @@ class OrgOverrideSummaryIsAPeriodScan(unittest.TestCase):
         # re-pulls set the day's fingerprint.
         self.assertTrue(tf.is_period_scan_source(
             "ResATTSpecialDealOverride-Raf/RafOverrideBonus → Payout- Raf wow"))
+
+
+class OneFrozenWorkbookIsOneThread(unittest.TestCase):
+    """2026-10-25: Box's extract sat at Thu 10/22 and the channel held NINE
+    threads for it — one per view. Every view of a workbook now files under one
+    id; the thread closes only once every view that went behind has caught up.
+    And the BoxSalesMetrics flap: a ✅ two mornings running while still frozen,
+    because the closed prior-week pull shared a fingerprint key with the
+    current-week one."""
+
+    ORDER = "B2BBOXEnergyTracker/BoxOrderLog → Order Log"
+    DROPS = "B2BBOXEnergyTracker/DropsTracker → Drops Pull"
+    DAILY = "B2BBOXEnergyTracker/BoxDailyTracker → Daily Tracker Metrics"
+    TODAY = dt.date(2026, 10, 25)
+
+    def setUp(self):
+        from automations.shared import section_drop_alert as sda
+        from automations.shared import incident_thread as inc
+        self.tmp = Path(tempfile.mkdtemp())
+        self._real_dir = tf.STATE_DIR
+        tf.STATE_DIR = self.tmp
+        self.addCleanup(setattr, tf, "STATE_DIR", self._real_dir)
+        self.alerts, self.resolved = [], []
+        real_alert, real_resolve = sda.alert, inc.resolve_report
+        sda.alert = lambda **kw: (self.alerts.append(kw), True)[1]
+        inc.resolve_report = lambda rid, **kw: (self.resolved.append(rid), True)[1]
+        self.addCleanup(setattr, sda, "alert", real_alert)
+        self.addCleanup(setattr, inc, "resolve_report", real_resolve)
+
+    def _stale(self, label, report="org_campaign_metrics"):
+        return tf.alert_stale(label, label, dt.date(2026, 10, 22),
+                              dt.date(2026, 10, 24), self.TODAY, report)
+
+    def test_every_view_of_a_workbook_files_under_one_id(self):
+        self._stale(self.ORDER, "box_order_log")
+        self._stale(self.DROPS)
+        tf.alert_frozen(self.DAILY, self.DAILY, 3, self.TODAY,
+                        "org_campaign_metrics")
+        ids = {a["report_id"] for a in self.alerts}
+        self.assertEqual(ids, {"tableau-stale-b2bboxenergytracker-workbook"})
+        self.assertEqual(len(self.alerts), 3)   # incident_thread folds 2 and 3
+
+    def test_each_view_is_named_short_on_the_status_line(self):
+        self._stale(self.DROPS)
+        self.assertEqual(self.alerts[0]["subjects"],
+                         ["DropsTracker → Drops Pull (newest 2026-10-22)"])
+
+    def test_different_workbooks_still_get_different_threads(self):
+        self._stale(self.ORDER)
+        self._stale("ATTTRACKER2_1-D2D/FiberLeadPerformance → X")
+        self.assertEqual(len({a["report_id"] for a in self.alerts}), 2)
+
+    def test_triage_finds_the_reports_under_the_workbook_key(self):
+        """incident_triage reads <slug-from-key>-<day>.json; the workbook thread
+        has to have one, carrying every report that hit any of its views."""
+        self._stale(self.ORDER, "box_order_log")
+        self._stale(self.DROPS, "org_campaign_metrics")
+        st = tf._load_state("B2BBOXEnergyTracker workbook", self.TODAY)
+        self.assertEqual(sorted(st["reports"]),
+                         ["box_order_log", "org_campaign_metrics"])
+
+    def test_a_view_that_was_never_behind_cannot_close_it(self):
+        self._stale(self.ORDER)
+        tf.clear_stale(self.DROPS, self.DROPS, self.TODAY, self.TODAY)
+        self.assertNotIn("tableau-stale-b2bboxenergytracker-workbook",
+                         self.resolved)
+
+    def test_it_closes_only_when_the_last_stuck_view_catches_up(self):
+        self._stale(self.ORDER)
+        self._stale(self.DROPS)
+        tf.clear_stale(self.ORDER, self.ORDER, self.TODAY, self.TODAY)
+        self.assertNotIn("tableau-stale-b2bboxenergytracker-workbook",
+                         self.resolved)
+        tf.clear_stale(self.DROPS, self.DROPS, self.TODAY, self.TODAY)
+        self.assertIn("tableau-stale-b2bboxenergytracker-workbook",
+                      self.resolved)
+
+    def test_old_per_view_threads_still_close(self):
+        tf.clear_stale(self.ORDER, self.ORDER, self.TODAY, self.TODAY)
+        self.assertIn("tableau-stale-" + tf._slug(self.ORDER), self.resolved)
+
+    def test_a_view_last_seen_behind_days_ago_stops_holding_it(self):
+        tf.alert_stale(self.DROPS, self.DROPS, dt.date(2026, 10, 20),
+                       dt.date(2026, 10, 21), dt.date(2026, 10, 22), "x")
+        self._stale(self.ORDER)
+        tf.clear_stale(self.ORDER, self.ORDER, self.TODAY, self.TODAY)
+        self.assertIn("tableau-stale-b2bboxenergytracker-workbook",
+                      self.resolved)
+
+    # --- the BoxSalesMetrics flap ------------------------------------------
+    CUR = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+           "B2BBOXEnergyTracker/BoxSalesMetrics?Selected%20Weekending="
+           "{}&:refresh=yes")
+
+    def test_a_pull_pinned_to_last_week_is_a_closed_period(self):
+        self.assertTrue(tf.is_closed_period_pull(self.CUR.format("2026-10-18"),
+                                                 self.TODAY))
+        self.assertFalse(tf.is_closed_period_pull(self.CUR.format("2026-10-25"),
+                                                  self.TODAY))
+        self.assertFalse(tf.is_closed_period_pull(
+            "https://x/#/site/sci/views/W/V?:iid=1", self.TODAY))
+
+    def _pull(self, tmp, week, body, today):
+        p = tmp / "sm-{}-{}.csv".format(week, today)
+        p.write_text("Owner,Complete Sales\n" + body, encoding="utf-8")
+        return tf.check_export(p, view_url=self.CUR.format(week),
+                               sheet="Sales Metrics", today=today)
+
+    def test_the_closed_week_pull_no_longer_clears_a_frozen_current_week(self):
+        """Exactly the 10/24-10/25 sequence: current week frozen at 10/22's
+        numbers, prior week pulled right after it every run."""
+        tmp = Path(tempfile.mkdtemp())
+        days = [dt.date(2026, 10, d) for d in range(18, 26)]
+        for i, d in enumerate(days):
+            # current week moves until 10/22, then the feed freezes
+            cur_body = "Carlos,{}\n".format(min(i, 4) + 10)
+            self._pull(tmp, "2026-10-25", cur_body, d)
+            self._pull(tmp, "2026-10-18", "Carlos,99\n", d)
+        wb = "tableau-stale-b2bboxenergytracker-workbook"
+        self.assertTrue(any(a["report_id"] == wb for a in self.alerts))
+        self.assertNotIn(wb, self.resolved)
+        # …and the closed week repeating all week is not itself an alert
+        self.assertFalse(any("(identical" in s and "closed" in s
+                             for a in self.alerts for s in a["subjects"]))

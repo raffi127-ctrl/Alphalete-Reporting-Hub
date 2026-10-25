@@ -298,7 +298,11 @@ class TrackerEmailOrgs(unittest.TestCase):
         NOT a miss. Otherwise an explicit --orgs run alarms about a mail that went
         out fine."""
         from automations.tableau_screenshots import reconcile_posted as rp
-        rep = rp.reconcile(orgs=["joseph"], day=dt.date(2026, 9, 13))
+        # A stand-in client: the default one is a REAL Slack client, which a
+        # test may not build (live_effects; 2026-10-25). An email org never
+        # reads a channel, so this one is never called.
+        rep = rp.reconcile(orgs=["joseph"], day=dt.date(2026, 9, 13),
+                           client=object())
         (res,) = rep.orgs
         self.assertTrue(res.unreadable)
         self.assertFalse(res.thread_missing)
