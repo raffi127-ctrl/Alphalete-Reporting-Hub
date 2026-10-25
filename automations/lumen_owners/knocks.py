@@ -6,6 +6,7 @@ the SAME boards Chan's captainship draft draws for his Quantum owners
 (OwnerVille campaign 7): the owner list is captainship_drafts.config.
 EXTRA_CAMPAIGN_KNOCK_OWNERS["chan"], so when Myles Neal / Angel Padilla give
 Office Access and get uncommented there, both mails pick them up — one list.
+LUMEN_EXTRA adds the Lumen owners who aren't Chan's (Christian, Lala).
 
 The boards go as ONE PDF attached to the mail, not as pictures in the body
 (Eve, 2026-10-24) — the body only says it's attached. A board that can't be
@@ -20,12 +21,29 @@ from typing import List, Tuple
 
 CAPTAIN_KEY = "chan"
 
+# Lumen owners with Quantum knocks who are NOT Chan's (Raf, 2026-10-25: "I
+# thought we already had Christian, Lala & Nigel?"). Both already have
+# OwnerVille access on campaign 7: Christian's picker (knocks_pull
+# CAMPAIGN_OVERRIDES), Lala's nightly Quantum dispositions (gap_alerts
+# LALA_QF). Nigel Marshall has no Office Access yet — add him here when he does.
+LUMEN_EXTRA = (
+    ("Christian Esposito", "7", "Quantum Fiber"),
+    ("Lajahnik Valentine", "7", "Quantum Fiber"),
+)
+
 
 def owner_boards(aliases_raw, logfn=print) -> List[Tuple[str, dict]]:
-    """[(label, cfg)] — one per Quantum owner with OwnerVille access."""
+    """[(label, cfg)] — one per Quantum owner with OwnerVille access: Chan's
+    list first, then LUMEN_EXTRA."""
+    from automations.captainship_drafts import config as _cfg
     from automations.captainship_drafts.knock_dispo_images import (
         extra_campaign_pairs)
-    return extra_campaign_pairs(CAPTAIN_KEY, aliases_raw, logfn=logfn)
+    chan = tuple((getattr(_cfg, "EXTRA_CAMPAIGN_KNOCK_OWNERS", {}) or {}
+                  ).get(CAPTAIN_KEY, ()))
+    seen = {s[0] for s in chan}
+    specs = chan + tuple(s for s in LUMEN_EXTRA if s[0] not in seen)
+    return extra_campaign_pairs(CAPTAIN_KEY, aliases_raw, logfn=logfn,
+                                specs=specs)
 
 
 def note_html(failed: List[Tuple[str, str]]) -> str:

@@ -636,7 +636,7 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
 
 
 def extra_campaign_pairs(captain_key: str, aliases_raw, *,
-                         is_terminated=None, logfn=print
+                         is_terminated=None, logfn=print, specs=None
                          ) -> List[Tuple[str, dict]]:
     """[(label, cfg), …] for config.EXTRA_CAMPAIGN_KNOCK_OWNERS[captain_key] —
     an owner's knocks in ANOTHER campaign than their normal pin, as a board of
@@ -648,10 +648,13 @@ def extra_campaign_pairs(captain_key: str, aliases_raw, *,
     normal one. cfg "name" stays the bare canonical — that is what ownerville
     impersonation searches. apps_source "none": the PSS apps are the normal
     campaign's, they don't belong on this board. Terminated owners drop on
-    their bare name. Pure but for the terminated lookup — offline-testable."""
+    their bare name. Pure but for the terminated lookup — offline-testable.
+    `specs` overrides the config lookup (the Lumen Owners mail adds owners
+    that are not Chan's, 2026-10-25)."""
     from automations.captainship_drafts import config as _cfg
-    specs = (getattr(_cfg, "EXTRA_CAMPAIGN_KNOCK_OWNERS", {}) or {}
-             ).get(captain_key, ())
+    if specs is None:
+        specs = (getattr(_cfg, "EXTRA_CAMPAIGN_KNOCK_OWNERS", {}) or {}
+                 ).get(captain_key, ())
     if not specs:
         return []
     alive = set(drop_terminated([s[0] for s in specs], is_terminated, logfn))

@@ -12,6 +12,11 @@ class KnocksTest(unittest.TestCase):
             pairs = KN.owner_boards({}, logfn=lambda *a: None)
         self.assertIn("David Pancoast (Quantum Fiber)", [l for l, _c in pairs])
         self.assertTrue(all(c["campaign_id"] == "7" for _l, c in pairs))
+        # Raf 2026-10-25: Christian + Lala too, not only Chan's owners.
+        labels = [l for l, _c in pairs]
+        self.assertIn("Christian Esposito (Quantum Fiber)", labels)
+        self.assertIn("Lajahnik Valentine (Quantum Fiber)", labels)
+        self.assertEqual(len(labels), len(set(labels)))
 
     def test_nobody_configured_means_no_blocks_and_no_login(self):
         with mock.patch.object(KN, "owner_boards", return_value=[]):
