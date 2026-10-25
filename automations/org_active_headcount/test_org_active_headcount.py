@@ -746,3 +746,75 @@ class FirstTwentyHeadsHighlight(unittest.TestCase):
         reqs = d.milestone_requests(7, g, [eve, stale])
         self.assertEqual(reqs[0], {"deleteConditionalFormatRule": {"sheetId": 7, "index": 1}})
         self.assertIn("addConditionalFormatRule", reqs[1])
+
+
+class OrgSplit(unittest.TestCase):
+    """Rafael 2026-10-25: the summary per org (Raf w/out Carlos & Colten,
+    Carlos, Colten), split by the delta box's 'Org Head' column."""
+
+    def _grid(self, raf_tag="Raf", jairo_tag="Colten"):
+        g = _hc_grid(week_cols=False)
+        sub = next(i for i, r in enumerate(g) if "Total this week" in r)
+        g[sub] += ["Campaign", "Org Head"]
+        for i, (tag, last) in ((sub + 1, (raf_tag, 7)), (sub + 2, (jairo_tag, 4))):
+            row = g[i][:2] + [""] * 24
+            for day in range(7):
+                row[6 + 3 * day] = str(last)       # 'Last week' of each day
+            g[i] = row + ["Fiber", tag]
+        return g
+
+    def test_splits_by_org_head_and_adds_up(self):
+        from automations.org_active_headcount.org_split import org_numbers
+        n = org_numbers(self._grid())
+        self.assertEqual(n["raf"]["this"], [10, 20, 30, None, None, None, None])
+        self.assertEqual(n["colten"]["this"], [5, 12, 20, None, None, None, None])
+        self.assertEqual(n["carlos"]["this"], [0, 0, 0, None, None, None, None])
+        self.assertEqual(n["raf"]["last"], [7] * 7)
+        self.assertEqual(n["colten"]["last"], [4] * 7)
+
+    def test_unknown_org_head_stops_the_mail(self):
+        from automations.org_active_headcount.org_split import org_numbers
+        with self.assertRaises(ValueError):
+            org_numbers(self._grid(raf_tag="Ben"))
+
+
+class OrgHistory(unittest.TestCase):
+    """The per-owner week the roll keeps, and the per-org averages built on it."""
+
+    def _wk(self, org_hc):
+        # {owner: (org, hc for every day, app for every day)}
+        return {n: {"org": o, "hc": [h] * 7, "app": [a] * 7}
+                for n, (o, h, a) in org_hc.items()}
+
+    def test_week_rows_round_trip(self):
+        import datetime as dt
+        from automations.org_active_headcount import org_history as oh
+        g = OrgSplit()._grid()
+        rows = oh.week_rows(g, dt.date(2026, 9, 20))
+        back = oh.parse([oh.HEADER] + rows)
+        wk = back[dt.date(2026, 9, 20)]
+        self.assertEqual(wk["Rafael Hidalgo"]["org"], "Raf")
+        self.assertEqual(wk["Jairo Ruiz"]["hc"][:3], [5, 12, 20])
+
+    def test_one_week_gives_last_week_only(self):
+        import datetime as dt
+        from automations.org_active_headcount.org_split import add_history
+        nums = {t: {"this": [1] * 7, "last": [1] * 7, "app": [1.0] * 7}
+                for t in ("raf", "carlos", "colten")}
+        sun = dt.date(2026, 10, 25)
+        add_history(nums, {sun - dt.timedelta(days=7):
+                           self._wk({"A": ("Raf", 10, 2.0), "B": ("Raf", 30, 4.0)})}, sun)
+        self.assertEqual(nums["raf"]["app_last"], [3.5] * 7)     # weighted by heads
+        self.assertEqual(nums["raf"]["avg_weeks"], 0)            # 1 week is not an average
+
+    def test_average_uses_up_to_four_prior_weeks_and_says_how_many(self):
+        import datetime as dt
+        from automations.org_active_headcount.org_split import add_history
+        nums = {t: {"this": [1] * 7, "last": [1] * 7, "app": [1.0] * 7}
+                for t in ("raf", "carlos", "colten")}
+        sun = dt.date(2026, 10, 25)
+        hist = {sun - dt.timedelta(days=7 * k): self._wk({"A": ("Carlos", 10 * k, 1.0)})
+                for k in range(0, 6)}           # k=0 is THIS week: must be ignored
+        add_history(nums, hist, sun)
+        self.assertEqual(nums["carlos"]["avg_weeks"], 4)
+        self.assertEqual(nums["carlos"]["hc_avg"], [25] * 7)    # weeks 1..4 -> 10,20,30,40

@@ -136,6 +136,12 @@ def build_pngs(today: Optional[dt.date] = None,
         p = OUT_DIR / f"org_active_headcount_{name}.png"
         _export_png(ws.id, rng, p, token, spreadsheet_id=d.SHEET_ID)
         out.append((p, rng))
+    # Rafael 2026-10-25: the same summary per org (RAF w/out Carlos & Colten,
+    # CARLOS, COLTEN) closes the mail, like the Org Sales Board's closing trio.
+    # Drawn from the tab's own cells (org_split), not a Sheets range.
+    from automations.org_active_headcount import org_split
+    for name, p, title in org_split.build(g, OUT_DIR, today):
+        out.append((p, f"{name} ({title})"))
     return out
 
 
@@ -158,7 +164,8 @@ def _record_delivery(to: List[str], subject: str) -> None:
               "— the mail went out, but a failure ticket won't close itself")
 
 
-def build_parts(today: Optional[dt.date] = None) -> Tuple[List[Tuple[str, Path, int]], str]:
+def build_parts(today: Optional[dt.date] = None,
+                sandbox: bool = False) -> Tuple[List[Tuple[str, Path, int]], str]:
     """The same two pictures in the shape the review gate wants
     (board_emails.boards): [(name, png, sheet_px)] + the ranges, for logging.
 
@@ -167,11 +174,18 @@ def build_parts(today: Optional[dt.date] = None) -> Tuple[List[Tuple[str, Path, 
     totals check above still stops a picture whose numbers disagree."""
     from automations.recruiting_report.fill import open_by_key
     from automations.org_sales_board.screenshot_email import column_pixels, _range_width_px
-    shots = build_pngs(today)
-    ws = d.open_tab(False)
+    from automations.org_active_headcount import org_split
+    shots = build_pngs(today, sandbox=sandbox)
+    ws = d.open_tab(sandbox)
+    g = ws.get_all_values()
     colpx = column_pixels(open_by_key(d.SHEET_ID), ws.id)
     parts = [(f"headcount_{name}", p, _range_width_px(colpx, rng))
-             for name, (p, rng) in zip(("board", "delta"), shots)]
+             for name, (p, rng) in zip(("board", "delta"), shots[:2])]
+    # The per-org summaries: sized like the whole-org summary they mirror
+    # (columns A..Sunday of the top table), so one row reads the same size.
+    sum_px = _range_width_px(colpx, f"A1:{d.A(d.find_summary(g, d.find_daily(g)['hdr'])['days'][-1])}1")
+    for (p, _lbl), key in zip(shots[2:], [t for t, _ in org_split.ORGS]):
+        parts.append((f"headcount_org_{key}", p, sum_px))
     return parts, " + ".join(rng for _p, rng in shots)
 
 
@@ -194,16 +208,21 @@ def main(argv=None) -> int:
     if not to:
         print("  NOT SENT — no recipients (see the distro message above)")
         return 2
-    shots = build_pngs(today, sandbox=a.sandbox)
-    for p, rng in shots:
-        print(f"screenshot {rng} -> {p} ({p.stat().st_size // 1024} KB)")
+    # WITH each block's sheet width (build_parts), like the gate's mail. The
+    # 10/25 UPDATE went out without them, so every picture filled the column
+    # and the narrow org tables came out "really zoomed in" (Rafael).
+    from automations.org_active_headcount import org_split
+    parts, _rng = build_parts(today, sandbox=a.sandbox)
+    for name, p, px in parts:
+        print(f"screenshot {name} -> {p} ({p.stat().st_size // 1024} KB, {px} sheet px)")
+    labels = ["Headcount", "Delta vs last week"] + [t for _k, t in org_split.ORGS]
     yday = today - dt.timedelta(days=1)
     subject = f"{'UPDATE — ' if a.update else ''}{TITLE} — through {yday:%a %m/%d}"
     try:
         resp = report_email.send_boards(
             subject=subject,
             to=to, title=TITLE.upper(),
-            blocks=[("Headcount", shots[0][0]), ("Delta vs last week", shots[1][0])],
+            blocks=[(lbl, p, px) for lbl, (_n, p, px) in zip(labels, parts)],
             dry_run=not a.post)
     except Exception as e:                                         # noqa: BLE001
         # A failed send must fail the run, so the orchestrator alerts instead of

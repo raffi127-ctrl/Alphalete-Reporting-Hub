@@ -453,6 +453,18 @@ def apply_roll(ws, V, F, closed, new_sunday, logfn=print) -> None:
     _retry(bws.update, range_name="A1", values=[r + [""] * (width - len(r)) for r in V],
            value_input_option="RAW")
     logfn(f"  roll 0/5 snapshot -> {BACKUP_TAB!r}")
+    # Each owner's closing Mon..Sun, kept for the per-org averages (org_history;
+    # Rafael 2026-10-25). Before the clear, which is what erases it. A failure
+    # does not stop the roll: the snapshot above still holds the week until
+    # next Tuesday, and the log names the one command that recovers it.
+    try:
+        from automations.org_active_headcount import org_history
+        org_history.save_week(sh, V, closed, sandbox=ws.title.strip() == SANDBOX_TAB,
+                              logfn=logfn)
+    except Exception as e:                                         # noqa: BLE001
+        logfn(f"  ⚠ owner history NOT saved for WE {closed:%m/%d} "
+              f"({type(e).__name__}: {e}). Recover before next Tuesday: "
+              "python -m automations.org_active_headcount.org_history --from-backup --apply")
     _retry(ws.batch_update, [{"range": a, "values": [[v]]} for a, v in p["values"]],
            value_input_option="USER_ENTERED")
     logfn(f"  roll 1-3/5 ongoing WE columns, K/L freeze, delta 'Last week': {len(p['values'])} cell(s)")
