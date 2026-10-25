@@ -404,6 +404,114 @@ class PureTest(unittest.TestCase):
         self.assertFalse(A.is_on(THU, enabled=False))
 
 
+SUN = dt.date(2026, 10, 25)
+BOX_LATE = ("B2BBOXEnergyTracker/BoxDailyTracker → Daily Tracker Sales (data "
+            "only through 2026-10-22) [board section: BOX]")
+
+
+def box_blank_visual(new, prior):
+    """What the visual check said on 10/25."""
+    return {"ok": False, "issues": [{
+        "image": 1, "section": "BOX",
+        "problem": "Saturday 10/24 column blank for every owner; Friday all "
+                   "zeros too", "severity": "blocker"}]}
+
+
+class LateBoxTest(unittest.TestCase):
+    """2026-10-25: the Org email for 10/24 was HELD because SCI's Box extract
+    stopped at Thu 10/22. Late Tableau never holds (Eve 2026-10-21) — and
+    after the noon rebuild the visual check must not hold it for Box either."""
+
+    # AutoSendTest's fixtures, without re-running its tests.
+    setUp = AutoSendTest.setUp
+    run_once = AutoSendTest.run_once
+    seed_roster = AutoSendTest.seed_roster
+    _at = AutoSendTest._at
+
+    def test_box_behind_waits_then_sends_at_noon(self):
+        f = Fake(self.tmp, SUN)
+        self.seed_roster(f)
+        with self._at(SUN, 8):
+            self.assertEqual(self.run_once(f, SUN, tableau=[BOX_LATE],
+                                           visual=box_blank_visual), 1)
+            self.assertEqual(f.calls, [])           # quiet wait
+        with self._at(SUN, 12):
+            self.assertEqual(self.run_once(f, SUN, tableau=[BOX_LATE],
+                                           visual=box_blank_visual), 1)
+            self.assertEqual(f.kinds(), ["rebuild"])
+            f.calls.clear()
+            rc = self.run_once(f, SUN, tableau=[BOX_LATE],
+                               visual=box_blank_visual)
+        self.assertEqual(rc, 0)
+        self.assertIn("send", f.kinds())
+        self.assertNotIn("reply", f.kinds())         # no hold, no ✅ request
+        self.assertFalse(self.alert.called)
+
+    def test_other_faults_in_a_late_section_still_hold(self):
+        f = Fake(self.tmp, SUN)
+        self.seed_roster(f)
+
+        def style(new, prior):
+            return {"ok": False, "issues": [{
+                "image": 1, "section": "BOX", "problem": "#REF! in Grand Total",
+                "severity": "blocker"}]}
+        with self._at(SUN, 12):
+            self.run_once(f, SUN, tableau=[BOX_LATE], visual=style)  # noon
+            self.run_once(f, SUN, tableau=[BOX_LATE], visual=style)  # rebuild
+            f.calls.clear()
+            rc = self.run_once(f, SUN, tableau=[BOX_LATE], visual=style)
+        self.assertEqual(rc, 1)
+        self.assertNotIn("send", f.kinds())
+
+    def test_excuse_is_only_for_the_late_section(self):
+        issues = [
+            {"image": 1, "section": "BOX", "problem": "Sat column blank",
+             "severity": "blocker"},
+            {"image": 2, "section": "ATT Fiber Team",
+             "problem": "Sat column blank", "severity": "blocker"},
+            {"image": 1, "section": "BOX", "problem": "font differs",
+             "severity": "blocker"}]
+        out = A.excuse_late(issues, ["BOX"])
+        self.assertEqual([i["severity"] for i in out],
+                         ["minor", "blocker", "blocker"])
+        self.assertEqual(A.excuse_late(issues, []), issues)
+
+    def test_visual_prompt_names_the_late_section(self):
+        f = Fake(self.tmp, SUN)
+        txt = A._visual_content(f.target, SUN, [], [BOX_LATE])[0]["text"]
+        self.assertIn("LATE_SOURCES: BOX", txt)
+        txt = A._visual_content(f.target, SUN, [])[0]["text"]
+        self.assertIn("LATE_SOURCES: (none today)", txt)
+        self.assertIn("LATE_SOURCES", A._SYSTEM)
+
+
+class StaleSourcesSectionTest(unittest.TestCase):
+    """stale_sources reads the BOX state the org board pull writes, tags its
+    section, and leaves it out of an email that doesn't show that section."""
+
+    def test_box_state_reaches_org_not_country(self):
+        import json
+        from automations.shared import tableau_freshness as tf
+        with tempfile.TemporaryDirectory() as d:
+            sd = Path(d)
+            (sd / f"box-org-board-days-{SUN.isoformat()}.json").write_text(
+                json.dumps({"alerted": True, "reports": ["org_sales_board"],
+                            "newest": "2026-10-22", "section": "BOX",
+                            "view": "B2BBOXEnergyTracker/BoxDailyTracker → "
+                                    "Daily Tracker Sales"}),
+                encoding="utf-8")
+            with mock.patch.object(tf, "STATE_DIR", sd), \
+                    mock.patch.object(A.wr, "dependency_closure",
+                                      lambda ids: list(ids) + [
+                                          "org_sales_board"]):
+                org = A.stale_sources(A.ORG, SUN)
+                country = A.stale_sources(A.COUNTRY, SUN)
+        self.assertEqual(len(org), 1)
+        self.assertIn("2026-10-22", org[0])
+        self.assertEqual(A.late_sections(org), ["BOX"])
+        self.assertEqual(country, [])
+
+
 class CloseOlderHolds(unittest.TestCase):
     """A clean send closes EARLIER days' held threads too (Megan 2026-10-19:
     10/17 + 10/18 sat open after the 10/19 email went out clean)."""

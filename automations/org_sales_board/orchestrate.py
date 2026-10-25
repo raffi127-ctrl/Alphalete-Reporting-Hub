@@ -246,6 +246,13 @@ def _make_section_adapter(spec_key: str):
             except Exception as e:   # noqa: BLE001
                 ctx.logfn(f"  board check: SKIPPED ({type(e).__name__}: {e})")
         parsed = section_pull.parse_byday(spec, csv_path, today)
+        # A day-behind source (BOX) that is behind even for a day-behind source
+        # says so where the board emails' late-Tableau rule can read it — its
+        # crosstab has no date column, so the shared freshness check can't
+        # (2026-10-25: Org email for 10/24 held for a Box extract stuck at
+        # Thu 10/22). Live pulls only: an offline CSV is somebody's old file.
+        if spec.day_behind and not ctx.from_csv:
+            section_pull.note_lag(spec, parsed, today, logfn=ctx.logfn)
         # BOX, B2B AND NDS TOO. This job already pulls those campaigns'
         # workbooks;
         # storing their office totals lets the LucyECO boards for those

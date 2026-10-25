@@ -461,6 +461,87 @@ def empty_week_expected(spec: ScrapeSpec, today: Optional[dt.date] = None,
     return now.strftime("%H:%M") < CATCHUP_HHMM
 
 
+# --------------------------------------------------- is a day-behind pull LATE?
+# WHY (2026-10-25): the Org Sales Board email for Sat 10/24 was HELD with
+# "BOX: Saturday 10/24 column blank for every owner; Friday all zeros too". The
+# board was fine — SCI's Box extract simply stopped at Thu 10/22. The late-
+# Tableau rule (board_emails.auto_send, Eve 2026-10-21: late Tableau never holds
+# an email, it waits until 12:00 CT and then goes) never saw it, because that
+# rule reads shared/tableau_freshness, and this crosstab can't be judged there:
+# its days are COLUMN headers ("Mon (10-19)"), there is no event-date column,
+# so the shared check calls it "unknown" and only notices after three
+# byte-identical days. The pull itself knows the newest day it got, so it says
+# so, in the same state file the email gate already reads.
+BOARD_REPORT_ID = "org_sales_board"
+
+
+def newest_day(parsed, metric: str) -> Optional[dt.date]:
+    """The newest date any owner has a value for in a parsed by-day pull."""
+    days = [d for m in (parsed or {}).values()
+            for d in ((m or {}).get(metric) or {})]
+    return max(days) if days else None
+
+
+def lag_needs(spec: ScrapeSpec, today: dt.date) -> Optional[dt.date]:
+    """The oldest newest-day a `day_behind` pull may carry and still be on
+    time — or None when the pinned week cannot show that day (Tuesday: the
+    week just rolled and its only completed day is not out yet; that wait is
+    empty_week_expected's, not a lag).
+
+    Day-behind = yesterday may be missing, the day before may not. A Sunday-
+    quiet source (BOX sells to businesses) skips Sundays in that count, the
+    same bar tableau_freshness.business_needs gives its dated Box views."""
+    if not spec.day_behind:
+        return None
+    from automations.org_sales_board import week as _wk
+    from automations.shared import tableau_freshness as tf
+    label = tf._view_label(spec.view_url, spec.crosstab_sheet)
+    if tf.is_sunday_quiet_source(label):
+        needs = tf.business_needs(today, 2)
+    else:
+        needs = today - dt.timedelta(days=2)
+    if needs < _wk.reporting_monday(today):
+        return None
+    return needs
+
+
+def note_lag(spec: ScrapeSpec, parsed, today: dt.date, logfn=print,
+             report: str = BOARD_REPORT_ID) -> Optional[dict]:
+    """Record whether a `day_behind` pull came back short of lag_needs().
+
+    Behind -> tableau_freshness.record_stale (state file naming this board's
+    report + the board section, so the Org/Country email waits for Tableau
+    instead of being held). On time -> record_caught_up, so a pull that
+    catches up releases the email. Returns {'newest','needs','late'} or None
+    when there is nothing to judge. Never raises: the fill is the real work."""
+    try:
+        needs = lag_needs(spec, today)
+        if needs is None:
+            return None
+        from automations.shared import tableau_freshness as tf
+        label = tf._view_label(spec.view_url, spec.crosstab_sheet)
+        key = label + " [org board days]"
+        newest = newest_day(parsed, spec.metric)
+        late = newest is None or newest < needs
+        if late:
+            logfn(f"  ⚠ {spec.section_label}: Tableau is behind — newest "
+                  f"day in the pull is {newest or 'none'}, needs {needs}. "
+                  f"The board emails wait for it until the noon cutoff.")
+            tf.record_stale(key, label, newest, needs, today, report,
+                            section=spec.section_label,
+                            detail=f"org board {spec.section_label} section")
+        else:
+            tf.record_caught_up(key, label, newest, today)
+        return {"newest": newest, "needs": needs, "late": late}
+    except Exception as e:  # noqa: BLE001
+        try:
+            logfn(f"  ({spec.section_label} lag check skipped: "
+                  f"{type(e).__name__}: {e})")
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
 def pull_section_byday(
     spec: ScrapeSpec,
     out_dir: Path,

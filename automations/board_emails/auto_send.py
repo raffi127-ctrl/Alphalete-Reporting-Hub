@@ -24,6 +24,10 @@ THE CHECKS, in order (each one that fails says why, in the thread):
      same rule as the captainships): before TABLEAU_DEADLINE it waits quietly;
      once the extract loads it is rebuilt from the board and goes; still behind
      at the cutoff, it is rebuilt once with what the board has and goes anyway.
+     A pull whose export carries no date column judges itself instead — the
+     org board's BOX crosstab (section_pull.note_lag, 2026-10-25) — and names
+     its board section, so the visual check is told that section is late and
+     its blank/zero days are never a blocker (excuse_late).
   3. the images — every image in the day's manifest exists, is not empty, and
      was built today. Fixable: rebuilt once.
   4. the visual check (claude, same model as captainship) — latest day column,
@@ -160,6 +164,11 @@ class Target:
     grid: Callable[[], List[List[str]]]                   # the live board tab
     # numbers in the captured images that must agree; [] = nothing to compare
     totals: Callable[[dt.date], List[str]] = lambda day: []
+    # Org-board SECTIONS this email shows, for a late-source state that names
+    # one (section_pull.note_lag: "BOX"). None = all of them (the Org email,
+    # board + All Units); () = none — the Country board is Fiber only, so a
+    # late Box must not keep it waiting until noon (2026-10-25).
+    sections: Optional[Tuple[str, ...]] = None
 
 
 def _org_images(run_day: dt.date) -> List[Tuple[str, Path]]:
@@ -282,7 +291,8 @@ def _country_totals(run_day: dt.date) -> List[str]:
 ORG = Target("org", "Org Sales Board", "org_sales_board_email",
              _org_images, _org_grid, _org_totals)
 COUNTRY = Target("country", "Country Sales Board", "country-sales-board-email",
-                 _country_images, _country_grid, _country_totals)
+                 _country_images, _country_grid, _country_totals,
+                 sections=())
 TARGETS = {t.key: t for t in (ORG, COUNTRY)}
 
 
@@ -374,6 +384,50 @@ def _stale_why(st: dict) -> str:
     return "flagged stale"
 
 
+_SECTION_TAG = "[board section: "
+
+
+def late_sections(late: Sequence[str]) -> List[str]:
+    """The board sections named by stale_sources() lines ('BOX')."""
+    out: List[str] = []
+    for s in late:
+        for m in re.finditer(re.escape(_SECTION_TAG) + r"([^\]]+)\]", s):
+            name = m.group(1).strip()
+            if name and name not in out:
+                out.append(name)
+    return out
+
+
+# A blank / zero / missing-day finding — the shape a late source leaves.
+_LATE_SHAPE = re.compile(
+    r"blank|empty|zero|\b0s?\b|missing|no (?:data|numbers|values|sales)|"
+    r"behind|not (?:filled|updated)", re.I)
+
+
+def excuse_late(issues: Sequence[dict], sections: Sequence[str]) -> list:
+    """Blockers that are only a LATE source's blank/zero days become minors.
+
+    Eve 2026-10-21: late Tableau never holds an email. The prompt says so too
+    (LATE_SOURCES), but the 10/25 hold was exactly this finding — "BOX:
+    Saturday 10/24 column blank for every owner; Friday all zeros too" — so
+    the rule does not rest on the model reading it. Only for a section named
+    late today and only for a blank/zero/missing-day finding: anything else in
+    that table (style, #REF!, a cut-off crop) still blocks."""
+    if not sections:
+        return list(issues)
+    pats = [re.compile(r"\b" + re.escape(s) + r"\b", re.I) for s in sections]
+    out = []
+    for i in issues:
+        txt = f"{i.get('section', '')} {i.get('problem', '')}"
+        if (i.get("severity") == "blocker" and _LATE_SHAPE.search(txt)
+                and any(p.search(txt) for p in pats)):
+            i = dict(i, severity="minor",
+                     problem=f"{i.get('problem', '')} (Tableau behind — "
+                             f"sent anyway)")
+        out.append(i)
+    return out
+
+
 def stale_sources(t: Target, day: dt.date) -> List[str]:
     """Tableau sources flagged stale today that one of THIS email's jobs read."""
     chain = set(wr.dependency_closure([t.report_id]))
@@ -389,8 +443,18 @@ def stale_sources(t: Target, day: dt.date) -> List[str]:
             if not st.get("alerted"):
                 continue
             used = {str(r).replace("-", "_") for r in st.get("reports") or []}
+            sec_name = str(st.get("section") or "")
+            if sec_name and t.sections is not None and sec_name.lower() not in {
+                    x.lower() for x in t.sections}:
+                continue          # a section this email doesn't show
             if used & want:
-                out.append(f"{st.get('view') or p.stem} ({_stale_why(st)})")
+                # `section` = the board section a pull that judged itself
+                # (org_sales_board.section_pull.note_lag — BOX) says is short;
+                # judge() reads it back for the visual check (2026-10-25).
+                sec = (f" {_SECTION_TAG}{st['section']}]"
+                       if st.get("section") else "")
+                out.append(f"{st.get('view') or p.stem} ({_stale_why(st)})"
+                           f"{sec}")
     except Exception as e:  # noqa: BLE001
         print(f"  (Tableau sources: could not read the state — "
               f"{type(e).__name__}: {e})", flush=True)
@@ -448,7 +512,10 @@ being blank or zero is normal (the week is not over). Weekly / leaderboard \
 tables (one column per week, "WE m.d") do not need a day column.
 KNOWN EXCEPTIONS, never blockers: a Retail JE table one day behind (it \
 publishes a day late); on a Sunday REPORT_DAY a quiet, all-zero day; on a \
-Monday REPORT_DAY a new week whose only filled column is Monday.
+Monday REPORT_DAY a new week whose only filled column is Monday; a table for \
+a section listed under LATE_SOURCES below — its Tableau source is behind \
+today, so its newest day columns being blank or all zero is expected (a minor \
+at most).
 
 3. NUMBER FORMAT (blocker): inside one column the numbers share one format. \
 Flag raw long decimals (0.4285714) where the rest show %, date serials \
@@ -481,12 +548,15 @@ fault are ONE issue."""
 PROMPT_ID = hashlib.sha256(_SYSTEM.encode("utf-8")).hexdigest()[:8]
 
 
-def _visual_content(t: Target, day: dt.date, new: Sequence[str]) -> list:
+def _visual_content(t: Target, day: dt.date, new: Sequence[str],
+                    late: Sequence[str] = ()) -> list:
     rd = day - dt.timedelta(days=1)
+    secs = late_sections(late)
     content: list = [{"type": "text", "text": (
         f"REPORT_DAY: {rd:%A} {rd.month}/{rd.day}/{rd:%Y}\n"
         f"Board: {t.name}\n"
-        f"NEW_OWNERS: {', '.join(new) if new else '(none today)'}")}]
+        f"NEW_OWNERS: {', '.join(new) if new else '(none today)'}\n"
+        f"LATE_SOURCES: {', '.join(secs) if secs else '(none today)'}")}]
     for i, (name, p) in enumerate(t.images(day), 1):
         ctype, data = _shrink("image/png", p.read_bytes())
         content.append({"type": "text", "text": f"IMAGE {i} ({name}):"})
@@ -497,7 +567,8 @@ def _visual_content(t: Target, day: dt.date, new: Sequence[str]) -> list:
 
 
 def visual_review(t: Target, day: dt.date, new: Sequence[str] = (), *,
-                  prior: Sequence[str] = (), client=None) -> dict:
+                  prior: Sequence[str] = (), late: Sequence[str] = (),
+                  client=None) -> dict:
     """{'ok': bool, 'issues': [...]} — or raises when it could not run."""
     if client is None:
         anthropic, client = _api_client()
@@ -505,7 +576,7 @@ def visual_review(t: Target, day: dt.date, new: Sequence[str] = (), *,
         anthropic = None
     body = {"output_config": {"effort": "high", "format": {
         "type": "json_schema", "schema": _SCHEMA}}}
-    content = _visual_content(t, day, new)
+    content = _visual_content(t, day, new, late)
     if prior:
         content.insert(1, {"type": "text", "text": (
             "AN EARLIER REVIEW OF THIS EMAIL TODAY FOUND THESE BLOCKERS. It was "
@@ -558,8 +629,10 @@ def judge(t: Target, day: dt.date, state: dict, *,
     clean = clean or (lambda: wr.day_is_clean([t.report_id], day))
     tableau = tableau or (lambda: stale_sources(t, day))
     names = names or (lambda: owner_names(t.grid()))
+    late: List[str] = []    # filled below; the default visual reads it then
     visual = visual or (lambda new, prior: visual_review(t, day, new,
-                                                         prior=prior))
+                                                         prior=prior,
+                                                         late=late))
     v = Verdict()
     rebuilds = state.get("rebuilds", 0)
 
@@ -575,7 +648,7 @@ def judge(t: Target, day: dt.date, state: dict, *,
     ok, why = clean()
     if not ok:
         v.blocked.append(f"the day's run is not clean: {why}")
-    late = [f"Tableau not updated: {s}" for s in tableau()]
+    late[:] = [f"Tableau not updated: {s}" for s in tableau()]
 
     try:
         v.new = new_owners(t, day, names())
@@ -619,7 +692,10 @@ def judge(t: Target, day: dt.date, state: dict, *,
 
     sha = images_sha(t, day)
     cache = state.get("visual") or {}
+    secs = late_sections(late)
     key = f"{sha}:{PROMPT_ID}:{','.join(v.new)}"
+    if secs:   # told a section is late = a different question: ask again
+        key += f":late={','.join(secs)}"
     res = cache.get("result") if cache.get("key") == key else None
     if res is None:
         try:
@@ -631,7 +707,8 @@ def judge(t: Target, day: dt.date, state: dict, *,
             v.blocked.append(f"could not run the visual check "
                              f"({type(e).__name__}: {str(e)[:120]})")
             return _log(t, v, verbose)
-    issues = res.get("issues") or []
+    # 2026-10-25: a late section's blank/zero days are never a blocker.
+    issues = excuse_late(res.get("issues") or [], secs)
     v.minor = [_issue_line(i) for i in issues if i.get("severity") != "blocker"]
     bad = [_issue_line(i) for i in issues if i.get("severity") == "blocker"]
     if bad:

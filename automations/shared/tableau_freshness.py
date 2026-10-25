@@ -577,6 +577,97 @@ def clear_stale(source_key: str, view_label: str, newest: Optional[dt.date],
         return False
 
 
+# --- a pull that judges ITSELF -----------------------------------------------
+# Some exports can't be judged here at all: the org board's BOX crosstab has
+# its days as COLUMN headers ("Mon (10-19)"), no event-date column, so
+# check_export calls it "unknown" and only the 3-day frozen bar ever fires. The
+# caller knows the newest day it parsed, so it reports it through these two.
+# The board emails' gate (board_emails.auto_send.stale_sources) reads the same
+# state file and follows the late-Tableau rule for it (2026-10-25: the Org
+# board email for 10/24 was HELD for a Box extract that stopped at Thu 10/22).
+def _workbook_alerted(view_label: str, today: dt.date) -> bool:
+    wb = _workbook(view_label)
+    return bool(wb) and bool(_load_state(wb + " workbook", today).get("alerted"))
+
+
+def record_stale(source_key: str, view_label: str, newest: Optional[dt.date],
+                 needs: dt.date, today: dt.date, report: str,
+                 section: str = "", detail: str = "") -> bool:
+    """A caller-judged source is behind: write today's state for it.
+
+    Posts through alert_stale only when nothing about this source's WORKBOOK
+    was posted today — a Box extract that stopped already has its workbook
+    thread (Order Log, the frozen bar, …), and the same fact twice is noise.
+    Either way the state file carries `alerted`, `reports`, `newest` and
+    `section`, which is what the email gates read. True if a message went out.
+    Never raises."""
+    try:
+        state = _load_state(source_key, today)
+        posted = False
+        if not state.get("alerted") and not _workbook_alerted(view_label,
+                                                               today):
+            posted = alert_stale(source_key, view_label, newest, needs, today,
+                                 report, detail=detail)
+            state = _load_state(source_key, today)
+        reports = list(state.get("reports") or [])
+        if report and report not in reports:
+            reports.append(report)
+        if not posted:
+            _mark_open(source_key, view_label, today)
+        state.update({"alerted": True, "reports": reports,
+                      "newest": newest.isoformat() if newest else None,
+                      "needs": needs.isoformat(), "view": view_label,
+                      "section": section})
+        state.pop("caught_up", None)
+        _save_state(source_key, today, state)
+        return posted
+    except Exception:  # noqa: BLE001 — an alert must never sink a run
+        return False
+
+
+def record_caught_up(source_key: str, view_label: str,
+                     newest: Optional[dt.date], today: dt.date) -> bool:
+    """A caller-judged source is current again: release what record_stale set.
+
+    Flips today's state to not-alerted (so the email gates stop waiting) and
+    closes the thread the way check_export does for a dated source. True if
+    there was something to release. Never raises."""
+    try:
+        state = _load_state(source_key, today)
+        if not state.get("alerted"):
+            return False
+        mine = [str(r) for r in state.get("reports") or []]
+        state.update({"alerted": False,
+                      "caught_up": newest.isoformat() if newest else None})
+        _save_state(source_key, today, state)
+        # alert_stale also listed these reports on the WORKBOOK's day state;
+        # leave them there only if another of today's alerts still names them.
+        wb = _workbook(view_label)
+        if wb and mine:
+            key = wb + " workbook"
+            own = {_state_path(key, today).name, _state_path(source_key,
+                                                             today).name}
+            still = set()
+            for p in STATE_DIR.glob("*-{}.json".format(today.isoformat())):
+                if p.name in own:
+                    continue
+                try:
+                    st = json.loads(p.read_text("utf-8"))
+                except Exception:  # noqa: BLE001
+                    continue
+                if st.get("alerted") and _workbook(str(st.get("view") or "")) == wb:
+                    still.update(str(r) for r in st.get("reports") or [])
+            wst = _load_state(key, today)
+            if wst:
+                wst["reports"] = [r for r in wst.get("reports") or []
+                                  if r not in mine or r in still]
+                _save_state(key, today, wst)
+        clear_stale(source_key, view_label, newest, today)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def alert_unconfirmed_filter(source_key: str, view_label: str,
                              problems: Sequence[str], today: dt.date,
                              report: str = "") -> bool:
