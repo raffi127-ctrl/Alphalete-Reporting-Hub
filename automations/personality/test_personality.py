@@ -158,17 +158,39 @@ class ShareTest(unittest.TestCase):
             "type": "view_submission",
             "view": {"callback_id": B.SHARE_FORM}})))
 
-    def test_share_sends_to_picked_people_not_self(self):
+    def _web(self, can_group):
         sent = []
 
         class Web:
+            def conversations_open(self, users):
+                if not can_group:
+                    raise RuntimeError("missing_scope")
+                return {"channel": {"id": "G_" + users.replace(",", "_")}}
+
             def chat_postMessage(self, **kw):
                 sent.append(kw)
-        val = json.dumps({"s": [11, 4, 10, 15], "n": "Jo", "o": "Raf"})
-        B._share(Web(), "U_ME", val, ["U_LEAD", "U_ME"])
-        self.assertEqual([m["channel"] for m in sent], ["U_LEAD", "U_ME"])
+        return Web(), sent
+
+    VAL = json.dumps({"s": [11, 4, 10, 15], "n": "Jo", "o": "Raf"})
+
+    def test_share_opens_a_group_dm_per_person(self):
+        web, sent = self._web(True)
+        B._share(web, "U_ME", self.VAL, ["U_LEAD", "U_ME", "U_OWN"])
+        self.assertEqual([m["channel"] for m in sent],
+                         ["G_U_ME_U_LEAD", "G_U_ME_U_OWN"])
         self.assertIn("Jo is a Peaceful Phlegmatic!", sent[0]["text"])
-        self.assertIn("<@U_LEAD>", sent[1]["text"])
+        self.assertIn("with <@U_LEAD>", sent[0]["text"])
+
+    def test_no_group_scope_falls_back_to_app_dm_and_says_where(self):
+        web, sent = self._web(False)
+        B._share(web, "U_ME", self.VAL, ["U_LEAD"])
+        self.assertEqual([m["channel"] for m in sent], ["U_LEAD", "U_ME"])
+        self.assertIn("Apps", sent[1]["text"])
+
+    def test_only_self_picked(self):
+        web, sent = self._web(True)
+        B._share(web, "U_ME", self.VAL, ["U_ME"])
+        self.assertIn("Nobody to send to", sent[0]["text"])
 
 
 class SheetRowTest(unittest.TestCase):

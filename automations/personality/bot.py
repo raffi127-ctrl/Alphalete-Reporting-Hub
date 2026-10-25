@@ -358,26 +358,59 @@ def share_modal(value) -> dict:
 
 
 def _share(web, from_id, value, to_ids):
+    """Megan 2026-10-24: a share landed in Raf's Jiraiya app chat, where
+    nobody looks. So each person picked gets a GROUP DM -- the sharer, that
+    person, and Jiraiya -- which shows up as a new conversation with the
+    sharer's name on it. One group per person, so two uplines never see
+    each other's thread. Needs the bot scope mpim:write; without it (or any
+    other open failure) that person gets the app DM instead, so a share
+    never silently goes nowhere."""
     v = json.loads(value)
     scores = dict(zip(TYPES, v["s"]))
     data = load()
     name = v.get("n") or "<@{}>".format(from_id)
-    head = ":outbox_tray: <@{}> shared their personality result with you{}".format(
-        from_id, " (ICD owner: {})".format(v["o"]) if v.get("o") else "")
+    owner = " (ICD owner: {})".format(v["o"]) if v.get("o") else ""
     text = result_text(data, scores, name)
-    sent = []
+    grouped, direct = [], []
     for uid in to_ids:
         if uid == from_id:
             continue
+        try:
+            ch = web.conversations_open(
+                users="{},{}".format(from_id, uid))["channel"]["id"]
+            head = ":outbox_tray: <@{}> shared their personality result " \
+                   "with <@{}>{}".format(from_id, uid, owner)
+            out = grouped
+        except Exception as e:  # noqa: BLE001 — fall back, don't drop it
+            print("[personality] group DM failed for {}: {}".format(uid, e),
+                  flush=True)
+            ch = uid
+            head = ":outbox_tray: <@{}> shared their personality result " \
+                   "with you{}".format(from_id, owner)
+            out = direct
         web.chat_postMessage(
-            channel=uid, text=head + "\n\n" + text,
+            channel=ch, text=head + "\n\n" + text,
             blocks=[{"type": "section", "text": {"type": "mrkdwn",
                                                  "text": head}}]
             + result_blocks(data, scores, {}, share=False, name=name))
-        sent.append("<@{}>".format(uid))
-    web.chat_postMessage(channel=from_id, text=(
-        "Sent your result to {} :white_check_mark:".format(", ".join(sent))
-        if sent else "Nobody to send to -- pick someone other than you."))
+        out.append("<@{}>".format(uid))
+    msg = []
+    if grouped:
+        msg.append("Sent your result to {} -- it's in a group chat with "
+                   "you both :white_check_mark:".format(", ".join(grouped)))
+    if direct:
+        msg.append("Sent your result to {} -- they'll find it under Apps → "
+                   "Jiraiya in Slack :white_check_mark:".format(
+                       ", ".join(direct)))
+    if grouped or direct:
+        # the group chat already shows the sharer the result; only say
+        # where it went when some of it went somewhere they can't see
+        if direct:
+            web.chat_postMessage(channel=from_id, text="\n".join(msg))
+        return
+    web.chat_postMessage(channel=from_id,
+                         text="Nobody to send to -- pick someone other than "
+                              "you.")
 
 
 def log(user_id, who, answers, scores, path=RESULTS):
