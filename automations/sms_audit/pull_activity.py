@@ -155,6 +155,29 @@ def _scrape(page, day):
     return got["rows"]
 
 
+FULL_DETAIL = False   # set by --full
+
+
+def _set_detail(page):
+    """Turn the Summary Version off so the grid lists every ACTION.
+
+    The report ships with `summaryVersion=1`, and in that mode the grid only
+    ever returns 'First Interview Date' and 'Second Interview Date' off the
+    Calendar — 212 rows for 11280 on 10-22-2026, none of them an action
+    somebody took. Cole Bollman's 'Send to Call List' and 'Assign First
+    Interview' are both on the page's own Applicant History for that day, so
+    the rows exist; the summary just hides them. Checked 2026-10-24."""
+    return page.evaluate(
+        r"""() => {
+             const el = document.querySelector("input[name='summaryVersion']");
+             if (!el) return 'no summaryVersion field';
+             if (el.type === 'checkbox') { el.checked = false; }
+             el.value = '0';
+             el.dispatchEvent(new Event('change', {bubbles: true}));
+             return 'summaryVersion=0';
+           }""")
+
+
 def _submit(page):
     for how in (lambda: page.get_by_role("button", name=re.compile("Get Report", re.I))
                              .first.click(timeout=6000),
@@ -181,6 +204,8 @@ def _pull_day(page, tok, day, tries=2):
                   .format(tok), wait_until="domcontentloaded", timeout=30000)
         time.sleep(2.0)
         _set_day(page, day)
+        if FULL_DETAIL:
+            print("  [detail] {}".format(_set_detail(page)), flush=True)
         _submit(page)
         try:
             return _scrape(page, day)
@@ -281,10 +306,15 @@ def main(argv=None):
                     help="FROM,TO in MM-DD-YYYY; default the last Sat-Fri week")
     ap.add_argument("--week", type=int, nargs="?", const=1, default=0)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--full", action="store_true",
+                    help="turn the Summary Version off: every ACTION row, not "
+                         "just the Calendar interview dates")
     ap.add_argument("--probe", default="",
                     help="MM-DD-YYYY[,..]: dump the page for these days, first "
                          "office only; writes tab 'Activity Probe <office>'")
     a = ap.parse_args(argv)
+    global FULL_DETAIL
+    FULL_DETAIL = bool(a.full)
 
     offices = [o.strip() for o in str(a.office).split(",") if o.strip()]
     if a.dates:
