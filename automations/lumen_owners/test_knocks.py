@@ -17,6 +17,7 @@ class KnocksTest(unittest.TestCase):
         self.assertIn("Christian Esposito (Quantum Fiber)", labels)
         self.assertIn("Lajahnik Valentine (Quantum Fiber)", labels)
         self.assertIn("Nigel Marshall (Quantum Fiber)", labels)
+        self.assertIn("Aaron Nimako (Quantum Fiber)", labels)
         self.assertEqual(len(labels), len(set(labels)))
 
     def test_nobody_configured_means_no_blocks_and_no_login(self):

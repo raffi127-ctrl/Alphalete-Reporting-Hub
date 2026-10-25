@@ -31,6 +31,9 @@ LUMEN_EXTRA = (
     ("Christian Esposito", "7", "Quantum Fiber"),
     ("Lajahnik Valentine", "7", "Quantum Fiber"),
     ("Nigel Marshall", "7", "Quantum Fiber"),
+    # Office 12737; probe_knocks campaign=7 for 10/24 came back with reps
+    # (Eve, 2026-10-25: "agregalo si tenemos acceso").
+    ("Aaron Nimako", "7", "Quantum Fiber"),
 )
 
 
