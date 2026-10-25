@@ -263,10 +263,12 @@ def result_parts(data, scores, name=None):
         bars.append("Secondary: *{}*\n".format(names(tiers[1])))
     for t in sorted(TYPES, key=lambda k: -scores[k]):
         filled = round(10 * scores[t] / total)
-        bars.append("{}{}  {} *{}*".format(
+        # score BEFORE the name (Megan 10/24: "Peaceful Phlegmatic 12"
+        # wrapped and left the 12 alone on the next line)
+        bars.append("{}{}  *{}*  {}".format(
             types[t].get("square", ":black_large_square:") * filled,
-            ":white_large_square:" * (10 - filled), types[t]["name"],
-            scores[t]))
+            ":white_large_square:" * (10 - filled), scores[t],
+            types[t]["name"]))
     paras.append("\n".join(bars))
     for t in top:
         lines = ["*{} {}*".format(types[t]["emoji"], types[t]["name"])]
