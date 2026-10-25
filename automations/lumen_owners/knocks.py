@@ -6,7 +6,7 @@ the SAME boards Chan's captainship draft draws for his Quantum owners
 (OwnerVille campaign 7): the owner list is captainship_drafts.config.
 EXTRA_CAMPAIGN_KNOCK_OWNERS["chan"], so when Myles Neal / Angel Padilla give
 Office Access and get uncommented there, both mails pick them up — one list.
-LUMEN_EXTRA adds the Lumen owners who aren't Chan's (Christian, Lala).
+LUMEN_EXTRA adds the Lumen owners who aren't Chan's (Christian, Lala, Nigel).
 
 The boards go as ONE PDF attached to the mail, not as pictures in the body
 (Eve, 2026-10-24) — the body only says it's attached. A board that can't be
@@ -25,10 +25,11 @@ CAPTAIN_KEY = "chan"
 # thought we already had Christian, Lala & Nigel?"). Both already have
 # OwnerVille access on campaign 7: Christian's picker (knocks_pull
 # CAMPAIGN_OVERRIDES), Lala's nightly Quantum dispositions (gap_alerts
-# LALA_QF). Nigel Marshall has no Office Access yet — add him here when he does.
+# LALA_QF). Nigel Marshall gave Office Access 2026-10-25 (office 20034, Eve).
 LUMEN_EXTRA = (
     ("Christian Esposito", "7", "Quantum Fiber"),
     ("Lajahnik Valentine", "7", "Quantum Fiber"),
+    ("Nigel Marshall", "7", "Quantum Fiber"),
 )
 
 
