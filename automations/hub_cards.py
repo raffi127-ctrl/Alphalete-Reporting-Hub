@@ -1302,13 +1302,26 @@ AUTOMATED_REPORTS = [
             "board, not two.\n"
             "**•** An office we have no Ownerville access to says so plainly — "
             "that one is a permissions gap, not a spelling mistake.\n\n"
+            "ALSO: /personality\n"
+            "**•** Type **/personality** → a popup shows four words and "
+            "**1/40** on top → tap the one that fits you best and the next "
+            "four pop up (a **Back** button fixes a mis-tap). It asks your "
+            "name and ICD owner first.\n"
+            "**•** Jiraiya DMs back your type (Popular Sanguine, Powerful "
+            "Choleric, Perfect Melancholy or Peaceful Phlegmatic), your "
+            "second type, a score bar for all four, and what your type means.\n"
+            "**•** A **Share with your upline** button under the result sends "
+            "it to anyone in Slack. Every result is also logged to the **Lucy Personality** "
+            "tab of AUTOMATION MASTER (name, ICD owner, primary, secondary).\n"
+            "**•** Based on Florence Littauer's Personality Plus test. The "
+            "words and write-ups live in automations/personality/questions.json.\n\n"
             "WHEN IT RUNS\n"
             "**Continuously, 24/7** on Lucy 1 (its own LaunchAgent, separate from "
             "the 4 AM orchestrator). A nightly **3 AM** pre-harvest caches the data "
             "so requests come back in seconds. A quiet card is the normal, healthy "
             "state."
         ),
-        "assignee_note": "Runs 24/7 on Lucy 1 (the mini) as its own Socket Mode service, independent of the 4 AM orchestrator. Triggered by /dd or /knocks in Slack — nothing to run from here.",
+        "assignee_note": "Runs 24/7 on Lucy 1 (the mini) as its own Socket Mode service, independent of the 4 AM orchestrator. Triggered by /dd, /knocks or /personality in Slack — nothing to run from here.",
         # Continuous service: keep it out of the 4am batch + time/DUE pills.
         "self_scheduled": True,
         "hide_schedule": True,

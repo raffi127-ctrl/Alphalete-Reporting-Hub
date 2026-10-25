@@ -1,0 +1,649 @@
+{
+ "_how_to_fill": "Each row = one question; each word sits under the type it scores for (from the Personality Scoring Sheet Megan sent 2026-10-24). The taker sees the 4 words shuffled, so the order here never gives the answer away. 'means' = the plain-English meaning shown under each word (Megan 2026-10-24: our audience is young).",
+ "title": "Personality Test",
+ "intro": "Pick the ONE that sounds most like you. Go with your gut, there are no wrong answers.",
+ "types": {
+  "popular": {
+   "name": "Popular Sanguine",
+   "emoji": ":tada:",
+   "about": "*In the field:* You make a friend in 10 seconds, whether it's a homeowner or a business owner. People open up to you, and your energy keeps the whole team hyped.\n*Level up:* Ask for the sale sooner, keep a simple checklist for your day, and let a teammate help keep you on schedule.",
+   "strengths": [
+    "Builds rapport with anyone, fast",
+    "Keeps energy up all day, even on the last stop",
+    "Great first impression -- people want to keep talking to you",
+    "Bounces back from a no quickly"
+   ],
+   "weaknesses": [
+    "Talks past the close instead of asking for the sale",
+    "Shows up late or loses track of time in the field",
+    "Forgets follow-ups, callbacks, and paperwork",
+    "Gets bored with a slow area and loses focus",
+    "Can chase the fun over the numbers"
+   ],
+   "classic": "Impulsive and fun-loving. Sociable and emotional -- loves social gatherings and making new friends. Creative, often daydreams, talkative and not shy. Can struggle to follow tasks all the way through, and loses interest once something stops being fun.",
+   "team_strengths": [
+    "Hypes up the team in the huddle and the group chat",
+    "Recruits easily -- people want to be on your team because you make it fun",
+    "Keeps new reps excited and coming back in their first weeks"
+   ],
+   "team_weaknesses": [
+    "Brings people in but forgets to train them, so they don't stick",
+    "Skips the boring parts of leading: check-ins, numbers, accountability"
+   ],
+   "overall": "You're the life of the party. You're fun, outgoing, and full of energy, and people like you fast. You love being around people, you talk easily, and you make everything more exciting. You do your best when things feel fun and new -- and you can lose interest when they get boring or repetitive.",
+   "square": ":large_yellow_square:"
+  },
+  "powerful": {
+   "name": "Powerful Choleric",
+   "emoji": ":fire:",
+   "about": "*In the field:* You're confident, you don't take a no personally, and you push through a tough day. You set the pace for the team.\n*Level up:* Listen before you pitch. Lead by lifting people up, not pushing them.",
+   "strengths": [
+    "Confident close -- you ask for the sale every time",
+    "Doesn't take a no personally, keeps going",
+    "Sets the pace and wants to top the sales board",
+    "Handles pushback and objections head-on"
+   ],
+   "weaknesses": [
+    "Can come on too strong and push a customer away",
+    "Skips steps to go faster, then has to fix orders",
+    "Hard to tell you anything once your mind is made up"
+   ],
+   "classic": "Ambitious and leader-like. Lots of energy and passion, and tries to put it in others. Likes to be in charge of everything.",
+   "team_strengths": [
+    "Takes charge of an area or a team without being asked",
+    "Builds a team fast and pushes them to big numbers",
+    "Spots who's hungry and gives them a shot to lead"
+   ],
+   "team_weaknesses": [
+    "Gets impatient with new reps who learn slower",
+    "Bosses teammates instead of coaching them",
+    "Burns new reps out by expecting your speed on day one",
+    "Does it all yourself instead of building leaders under you"
+   ],
+   "overall": "You're a born leader. You're driven, confident, and you love to win. You like being in charge, you make decisions fast, and you get things done. You push yourself hard and expect the same from everyone around you -- which can make you come off strong.",
+   "square": ":large_red_square:"
+  },
+  "perfect": {
+   "name": "Perfect Melancholy",
+   "emoji": ":brain:",
+   "about": "*In the field:* You know the product inside and out, your orders are clean, and customers trust you because you're honest and prepared.\n*Level up:* Set a daily goal and hit it, perfect or not. One no doesn't mean you did it wrong.",
+   "strengths": [
+    "Knows the product and the plans better than anyone",
+    "Clean, correct orders -- fewer cancels and fix-ups",
+    "Customers trust you because you're honest and prepared",
+    "Tracks your own numbers and spots what's working",
+    "Plans your area and your day ahead of time"
+   ],
+   "weaknesses": [
+    "Overthinks the pitch instead of going to the next customer",
+    "Takes a no personally and replays it all day",
+    "Waits for the perfect moment that never comes",
+    "Slows down when things get messy or change last minute"
+   ],
+   "classic": "Introverted and thoughtful. Considerate, and worries about being on time. Creative, often a perfectionist, self-reliant and independent -- can get so locked in on the work that you forget to think of others.",
+   "team_strengths": [
+    "Trains new reps the right way, step by step, so they last",
+    "Builds simple systems your team can copy"
+   ],
+   "team_weaknesses": [
+    "Can be hard on yourself and on teammates",
+    "Slow to recruit -- waits for the 'perfect' person",
+    "Can make new reps feel like nothing they do is good enough"
+   ],
+   "overall": "You're a thinker. You're careful, organized, and you care about doing things the right way. You notice details other people miss, you plan ahead, and you hold yourself to a high standard. You feel things deeply -- and you can be hard on yourself when things don't go perfectly.",
+   "square": ":large_blue_square:"
+  },
+  "peaceful": {
+   "name": "Peaceful Phlegmatic",
+   "emoji": ":relieved:",
+   "about": "*In the field:* Customers feel zero pressure with you. You're a great listener, steady every single day, and a teammate everyone can count on.\n*Level up:* Practice a confident close until it feels normal, and set small daily goals to keep your energy up.",
+   "strengths": [
+    "Customers feel zero pressure -- they trust you",
+    "Great listener, hears what the customer really needs",
+    "Steady every day, no big ups and downs",
+    "Stays calm with an upset customer"
+   ],
+   "weaknesses": [
+    "Holds back from asking for the sale",
+    "Moves slow, fewer customers talked to than you could",
+    "Avoids hard conversations with customers and teammates",
+    "Needs a push to get started in the morning"
+   ],
+   "classic": "Relaxed and quiet. Content, very kind, accepting and warm. Likes stability more than change. Consistent, calm, curious and observant -- but can be passive-aggressive.",
+   "team_strengths": [
+    "The teammate everyone can count on",
+    "Builds a loyal team that stays -- people feel safe with you",
+    "Patient with new reps and great at answering their questions"
+   ],
+   "team_weaknesses": [
+    "Goes along with the group even when you have a better idea",
+    "Doesn't ask enough people to join, so the team grows slow",
+    "Avoids holding your team accountable when numbers drop"
+   ],
+   "overall": "You're the calm one. You're easygoing, kind, and steady, and people feel relaxed around you. You're a great listener, you keep the peace, and you're the same person every day. You like things stable and simple -- and sometimes you hold back when you should speak up.",
+   "square": ":large_green_square:"
+  }
+ },
+ "rows": [
+  {
+   "section": "Strengths",
+   "popular": "Animated",
+   "powerful": "Adventurous",
+   "perfect": "Analytical",
+   "peaceful": "Adaptable",
+   "means": {
+    "popular": "full of energy",
+    "powerful": "loves trying new, exciting things",
+    "perfect": "likes to figure out how things work",
+    "peaceful": "goes with the flow when plans change"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Playful",
+   "powerful": "Persuasive",
+   "perfect": "Persistent",
+   "peaceful": "Peaceful",
+   "means": {
+    "popular": "loves to joke around and have fun",
+    "powerful": "good at getting people to agree with you",
+    "perfect": "keeps going until it's done",
+    "peaceful": "calm, hates drama"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Sociable",
+   "powerful": "Strong willed",
+   "perfect": "Self sacrificing",
+   "peaceful": "Submissive",
+   "means": {
+    "popular": "loves being around people",
+    "powerful": "doesn't back down",
+    "perfect": "puts others first, even if it costs you",
+    "peaceful": "goes along with what others want"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Convincing",
+   "powerful": "Competitive",
+   "perfect": "Considerate",
+   "peaceful": "Controlled",
+   "means": {
+    "popular": "can talk people into things",
+    "powerful": "loves to win",
+    "perfect": "thinks about how others feel",
+    "peaceful": "stays in control of your feelings"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Refreshing",
+   "powerful": "Resourceful",
+   "perfect": "Respectful",
+   "peaceful": "Reserved",
+   "means": {
+    "popular": "brings new energy to a room",
+    "powerful": "finds a way to get it done with what you have",
+    "perfect": "polite, shows respect",
+    "peaceful": "quiet, keeps to yourself"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Spirited",
+   "powerful": "Self reliant",
+   "perfect": "Sensitive",
+   "peaceful": "Satisfied",
+   "means": {
+    "popular": "full of life and excitement",
+    "powerful": "handles things on your own",
+    "perfect": "feels things deeply",
+    "peaceful": "happy with what you have"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Promoter",
+   "powerful": "Positive",
+   "perfect": "Planner",
+   "peaceful": "Patient",
+   "means": {
+    "popular": "hypes things up and gets people excited",
+    "powerful": "sees the good side, expects to win",
+    "perfect": "plans everything ahead",
+    "peaceful": "can wait without getting upset"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Spontaneous",
+   "powerful": "Sure",
+   "perfect": "Scheduled",
+   "peaceful": "Shy",
+   "means": {
+    "popular": "does things in the moment, no plan",
+    "powerful": "confident you're right",
+    "perfect": "likes a set schedule",
+    "peaceful": "quiet around new people"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Optimistic",
+   "powerful": "Outspoken",
+   "perfect": "Orderly",
+   "peaceful": "Obliging",
+   "means": {
+    "popular": "always expects things to work out",
+    "powerful": "says what you think, out loud",
+    "perfect": "likes things neat and in order",
+    "peaceful": "happy to help when asked"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Funny",
+   "powerful": "Forceful",
+   "perfect": "Faithful",
+   "peaceful": "Friendly",
+   "means": {
+    "popular": "makes people laugh",
+    "powerful": "pushes hard to get your way",
+    "perfect": "loyal, you stick with people",
+    "peaceful": "easy to get along with"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Delightful",
+   "powerful": "Daring",
+   "perfect": "Detailed",
+   "peaceful": "Diplomatic",
+   "means": {
+    "popular": "fun to be around",
+    "powerful": "takes risks, not scared",
+    "perfect": "notices the little things",
+    "peaceful": "good at keeping the peace"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Cheerful",
+   "powerful": "Confident",
+   "perfect": "Cultured",
+   "peaceful": "Consistent",
+   "means": {
+    "popular": "happy and upbeat",
+    "powerful": "believes in yourself",
+    "perfect": "into art, music, and the finer things",
+    "peaceful": "the same every day, reliable"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Inspiring",
+   "powerful": "Independent",
+   "perfect": "Idealistic",
+   "peaceful": "Inoffensive",
+   "means": {
+    "popular": "gets others pumped up",
+    "powerful": "doesn't need help from anyone",
+    "perfect": "dreams about how things should be",
+    "peaceful": "never offends anyone"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Demonstrative",
+   "powerful": "Decisive",
+   "perfect": "Deep",
+   "peaceful": "Dry humor",
+   "means": {
+    "popular": "shows your feelings openly",
+    "powerful": "makes choices fast",
+    "perfect": "thinks about things on a deep level",
+    "peaceful": "funny in a quiet, sarcastic way"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Mixes easily",
+   "powerful": "Mover",
+   "perfect": "Musical",
+   "peaceful": "Mediator",
+   "means": {
+    "popular": "makes friends anywhere",
+    "powerful": "always on the move, gets things going",
+    "perfect": "loves music",
+    "peaceful": "helps people settle arguments"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Talker",
+   "powerful": "Tenacious",
+   "perfect": "Thoughtful",
+   "peaceful": "Tolerant",
+   "means": {
+    "popular": "loves to talk",
+    "powerful": "never gives up",
+    "perfect": "thinks before you act",
+    "peaceful": "accepts people as they are"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Lively",
+   "powerful": "Leader",
+   "perfect": "Loyal",
+   "peaceful": "Listener",
+   "means": {
+    "popular": "lots of energy",
+    "powerful": "takes charge",
+    "perfect": "sticks by your people no matter what",
+    "peaceful": "good at listening"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Cute",
+   "powerful": "Chief",
+   "perfect": "Chart maker",
+   "peaceful": "Contented",
+   "means": {
+    "popular": "charming, people find you adorable",
+    "powerful": "the boss, likes to be in charge",
+    "perfect": "loves lists, charts, and tracking things",
+    "peaceful": "content, not stressed"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Popular",
+   "powerful": "Productive",
+   "perfect": "Perfectionist",
+   "peaceful": "Pleasant",
+   "means": {
+    "popular": "well-liked by lots of people",
+    "powerful": "gets a lot done",
+    "perfect": "wants everything done exactly right",
+    "peaceful": "nice to be around"
+   }
+  },
+  {
+   "section": "Strengths",
+   "popular": "Bouncy",
+   "powerful": "Bold",
+   "perfect": "Behaved",
+   "peaceful": "Balanced",
+   "means": {
+    "popular": "bubbly and bouncing around",
+    "powerful": "fearless, speaks up",
+    "perfect": "follows the rules",
+    "peaceful": "steady, keeps a good balance"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Brassy",
+   "powerful": "Bossy",
+   "perfect": "Bashful",
+   "peaceful": "Blank",
+   "means": {
+    "popular": "loud and a bit too much",
+    "powerful": "tells others what to do",
+    "perfect": "shy, easily embarrassed",
+    "peaceful": "zones out, face shows nothing"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Undisciplined",
+   "powerful": "Unsympathetic",
+   "perfect": "Unforgiving",
+   "peaceful": "Unenthusiastic",
+   "means": {
+    "popular": "hard time sticking to rules or routines",
+    "powerful": "doesn't really feel for others' problems",
+    "perfect": "holds grudges",
+    "peaceful": "not excited about much"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Repetitious",
+   "powerful": "Resistant",
+   "perfect": "Resentful",
+   "peaceful": "Reticent",
+   "means": {
+    "popular": "tells the same stories over and over",
+    "powerful": "pushes back on change or being told what to do",
+    "perfect": "stays mad about things people did",
+    "peaceful": "holds back, doesn't share much"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Forgetful",
+   "powerful": "Frank",
+   "perfect": "Fussy",
+   "peaceful": "Fearful",
+   "means": {
+    "popular": "forgets things a lot",
+    "powerful": "blunt, maybe too honest",
+    "perfect": "picky about details",
+    "peaceful": "gets scared or worried easily"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Interrupts",
+   "powerful": "Impatient",
+   "perfect": "Insecure",
+   "peaceful": "Indecisive",
+   "means": {
+    "popular": "cuts people off when they talk",
+    "powerful": "hates waiting",
+    "perfect": "unsure of yourself",
+    "peaceful": "hard time making up your mind"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Unpredictable",
+   "powerful": "Unaffectionate",
+   "perfect": "Unpopular",
+   "peaceful": "Uninvolved",
+   "means": {
+    "popular": "never know what you'll do next",
+    "powerful": "doesn't show love or affection much",
+    "perfect": "not well-liked",
+    "peaceful": "doesn't get involved"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Haphazard",
+   "powerful": "Headstrong",
+   "perfect": "Hard to please",
+   "peaceful": "Hesitant",
+   "means": {
+    "popular": "all over the place, no system",
+    "powerful": "does it your way no matter what",
+    "perfect": "nothing is ever good enough",
+    "peaceful": "waits too long before acting"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Permissive",
+   "powerful": "Proud",
+   "perfect": "Pessimistic",
+   "peaceful": "Plain",
+   "means": {
+    "popular": "lets people get away with things",
+    "powerful": "thinks you're better than others",
+    "perfect": "expects the worst",
+    "peaceful": "plain, not flashy"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Angered easily",
+   "powerful": "Argumentative",
+   "perfect": "Alienated",
+   "peaceful": "Aimless",
+   "means": {
+    "popular": "gets mad fast",
+    "powerful": "loves to argue",
+    "perfect": "feels left out or alone",
+    "peaceful": "no real direction or goal"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Naive",
+   "powerful": "Nervy",
+   "perfect": "Negative attitude",
+   "peaceful": "Nonchalant",
+   "means": {
+    "popular": "trusts too easily",
+    "powerful": "bold, maybe too bold",
+    "perfect": "thinks negative",
+    "peaceful": "acts like you don't care"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Wants credit",
+   "powerful": "Workaholic",
+   "perfect": "Withdrawn",
+   "peaceful": "Worrier",
+   "means": {
+    "popular": "wants to be noticed for what you did",
+    "powerful": "works too much",
+    "perfect": "pulls away from people",
+    "peaceful": "worries a lot"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Talkative",
+   "powerful": "Tactless",
+   "perfect": "Too sensitive",
+   "peaceful": "Timid",
+   "means": {
+    "popular": "talks a LOT",
+    "powerful": "says things that hurt without meaning to",
+    "perfect": "feelings get hurt easily",
+    "peaceful": "scared to speak up"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Disorganized",
+   "powerful": "Domineering",
+   "perfect": "Depressed",
+   "peaceful": "Doubtful",
+   "means": {
+    "popular": "messy, can't keep things in order",
+    "powerful": "bosses people around",
+    "perfect": "feels down or sad a lot",
+    "peaceful": "not sure about things"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Inconsistent",
+   "powerful": "Intolerant",
+   "perfect": "Introvert",
+   "peaceful": "Indifferent",
+   "means": {
+    "popular": "not the same day to day",
+    "powerful": "no patience for others' ways",
+    "perfect": "would rather be alone",
+    "peaceful": "doesn't care either way"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Messy",
+   "powerful": "Manipulative",
+   "perfect": "Moody",
+   "peaceful": "Mumbles",
+   "means": {
+    "popular": "cluttered, things everywhere",
+    "powerful": "uses people to get what you want",
+    "perfect": "mood changes a lot",
+    "peaceful": "talks quietly, hard to hear"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Show-off",
+   "powerful": "Stubborn",
+   "perfect": "Skeptical",
+   "peaceful": "Slow",
+   "means": {
+    "popular": "loves showing off",
+    "powerful": "won't change your mind",
+    "perfect": "doesn't believe things easily",
+    "peaceful": "takes your time"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Loud",
+   "powerful": "Lord over others",
+   "perfect": "Loner",
+   "peaceful": "Lazy",
+   "means": {
+    "popular": "loud",
+    "powerful": "acts like you're above others",
+    "perfect": "keeps to yourself",
+    "peaceful": "doesn't feel like doing much"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Scatterbrained",
+   "powerful": "Short tempered",
+   "perfect": "Suspicious",
+   "peaceful": "Sluggish",
+   "means": {
+    "popular": "forgets things, all over the place",
+    "powerful": "quick to snap",
+    "perfect": "doesn't trust people easily",
+    "peaceful": "low energy, moves slow"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Restless",
+   "powerful": "Rash",
+   "perfect": "Revengeful",
+   "peaceful": "Reluctant",
+   "means": {
+    "popular": "can't sit still",
+    "powerful": "acts before thinking",
+    "perfect": "wants to get even",
+    "peaceful": "doesn't want to do things"
+   }
+  },
+  {
+   "section": "Weaknesses",
+   "popular": "Changeable",
+   "powerful": "Crafty",
+   "perfect": "Critical",
+   "peaceful": "Compromising",
+   "means": {
+    "popular": "changes your mind a lot",
+    "powerful": "sneaky, finds clever ways around things",
+    "perfect": "quick to point out what's wrong",
+    "peaceful": "gives in to keep the peace"
+   }
+  }
+ ]
+}

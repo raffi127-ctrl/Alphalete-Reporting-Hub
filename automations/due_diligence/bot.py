@@ -166,6 +166,21 @@ def _handler(client, req):
         print(f"[aca] FAILED {type(e).__name__}: {e}", flush=True)
         return
 
+    # /personality — the word-pick personality test
+    # (automations.personality.bot). Same rule as /aca: ask, ack, wrap.
+    try:
+        from automations.personality import bot as _personality
+        if _personality.wants(req):
+            # its name/owner screen moves to row 1 IN the ack (Slack's
+            # response_action), so the payload comes from the feature
+            client.send_socket_mode_response(SocketModeResponse(
+                envelope_id=req.envelope_id, payload=_personality.ack(req)))
+            _personality.handle(client, req)
+            return
+    except Exception as e:                    # noqa: BLE001
+        print(f"[personality] FAILED {type(e).__name__}: {e}", flush=True)
+        return
+
     if req.type == "slash_commands" and req.payload.get("command") == "/dd":
         client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         try:
