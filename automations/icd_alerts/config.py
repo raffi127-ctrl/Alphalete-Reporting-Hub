@@ -553,10 +553,15 @@ def in_sales_window(now: Optional[dt.datetime] = None) -> bool:
     return start <= now <= end
 
 
-# PER-OFFICE LATER ENDS for the credit-check (selling) window, by weekday.
-# Carlos 2026-10-24: "have credit checks and sales check until 11pm on
-# saturdays" -- his AT&T (NDS) office; everyone else keeps 5pm Saturday.
-SELLING_END_OVERRIDES = {"carlos-b2batt": {5: (23, 0)}}
+# PER-OFFICE LATER ENDS for the credit-check (selling) window, by Python
+# weekday. Read off this machine's enrollments like the earlier starts above,
+# so only the office that asked is affected; everyone else keeps 5pm Saturday.
+#   carlos-b2batt -- Carlos 2026-10-24: "have credit checks and sales check
+#                    until 11pm on saturdays" (his AT&T / NDS office).
+#   steve         -- Steve McElwee, #luxe-chat 2026-10-24: "extend Lucy until
+#                    8:30 pm on Saturdays as well".
+SELLING_END_OVERRIDES = {"carlos-b2batt": {5: (23, 0)},
+                         "steve": {5: (20, 30)}}
 
 
 def _selling_end(now: dt.datetime):

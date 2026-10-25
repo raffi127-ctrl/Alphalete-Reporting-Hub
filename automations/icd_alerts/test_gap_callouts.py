@@ -339,10 +339,22 @@ class WeekdaysStopAtEightThirty(unittest.TestCase):
             self.assertTrue(G.callouts_allowed(self._at(self.MON, 21, 0), "cyrus"))
             self.assertFalse(G.callouts_allowed(self._at(self.MON, 21, 15), "cyrus"))
 
-    def test_an_override_never_moves_saturday(self):
+    def test_a_weekday_override_never_moves_saturday(self):
         from unittest import mock
         with mock.patch.dict(G.CALLOUT_CUTOFF_OVERRIDES, {"cyrus": "21:15"}):
             self.assertFalse(G.callouts_allowed(dt.datetime(2026, 10, 3, 17, 30), "cyrus"))
+
+    def test_a_saturday_override_moves_only_that_office(self):
+        """Steve 2026-10-24: "extend Lucy until 8:30 pm on Saturdays". His
+        Saturday runs to 20:30; everyone else keeps Raf's 5pm."""
+        from unittest import mock
+        sat = dt.datetime(2026, 10, 24, 18, 30)
+        with mock.patch.dict(G.SATURDAY_CUTOFF_OVERRIDES, {"steve": "20:30"}, clear=True):
+            self.assertTrue(G.callouts_allowed(sat, "steve"))
+            self.assertTrue(G.callouts_allowed(sat.replace(hour=20, minute=29), "steve"))
+            self.assertFalse(G.callouts_allowed(sat.replace(hour=20, minute=30), "steve"))
+            self.assertFalse(G.callouts_allowed(sat, "cyrus"))
+            self.assertFalse(G.callouts_allowed(sat))
 
     def test_run_skips_an_office_past_its_cutoff(self):
         """The run() gate reads the office's OWN clock: an Eastern office at

@@ -644,13 +644,19 @@ WEEKDAY_CUTOFF = "20:30"
 # guest rooms' boards and lists, and it still applies). The keys are the ECO
 # office keys, plus gap_alerts' host key ("rafael") for Raf's own reps.
 CALLOUT_CUTOFF_OVERRIDES: Dict[str, str] = {}
+# ... and the SATURDAY wall, for an office that asked for its own. Raf's 5pm
+# stays the default for everyone; a weekday override never touches Saturday
+# (see the test). Steve McElwee, #luxe-chat 2026-10-24: "Can we extend Lucy
+# until 8:30 pm on Saturdays as well".
+SATURDAY_CUTOFF_OVERRIDES: Dict[str, str] = {"steve": "20:30"}
 
 
 def callout_cutoff(now: dt.datetime, office_key: Optional[str] = None):
     """(hour, minute) past which no call-out leaves today, on the office's own
     clock -- or None when there is no wall (Sunday)."""
     if now.weekday() == SATURDAY:
-        return (SATURDAY_CUTOFF_H, 0)
+        text = SATURDAY_CUTOFF_OVERRIDES.get(str(office_key or "").strip().lower())
+        return O._hm(text) if text else (SATURDAY_CUTOFF_H, 0)
     if now.weekday() == 6:
         return None
     text = CALLOUT_CUTOFF_OVERRIDES.get(str(office_key or "").strip().lower()) or WEEKDAY_CUTOFF
