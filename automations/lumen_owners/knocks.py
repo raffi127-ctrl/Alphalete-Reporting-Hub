@@ -90,11 +90,56 @@ def owner_dir(out_dir: Path, label: str) -> Path:
     return d
 
 
+WEEKLY_LABEL = "Weekly Knocks — Quantum Fiber"
+# Kept under output/, not the day's folder: last week's PDF rides every day
+# until next Sunday, and only the first run of the week pays the pull.
+WEEKLY_DIR = (Path(__file__).resolve().parents[2] / "output" / "lumen_owners"
+              / "weekly")
+
+
+def weekly_window(today: dt.date) -> Tuple[dt.date, dt.date]:
+    """(monday, saturday) of the week the last Sunday covered — the week a
+    captainship mail's Weekly Knock Dispositions PDF carries every day
+    (weekly_pdf.last_report_saturday). Pure."""
+    from automations.captainship_drafts.weekly_pdf import last_report_saturday
+    sat = last_report_saturday(today)
+    return sat - dt.timedelta(days=5), sat
+
+
+def weekly_pdf_path(saturday: dt.date) -> Path:
+    return WEEKLY_DIR / ("lumen_weekly_knocks_%s.pdf" % saturday.isoformat())
+
+
+def weekly_attachment_label(saturday: dt.date) -> str:
+    """'Weekly Knock Dispositions - Lumen Owners - Oct 19-24, 2026'. Pure."""
+    from automations.captainship_drafts.weekly_pdf import attachment_name
+    return attachment_name(TITLE, saturday)[:-len(".pdf")]
+
+
+def _weekly_board(page, label, cfg, aliases_raw, monday, saturday, out_dir):
+    """One owner's Mon–Sat Knock Dispositions board (the captainship weekly
+    board, no apps column). None when the week has no knocks."""
+    from automations.weekly_knock_dispositions import board as B
+    from automations.weekly_knock_dispositions import pull as P
+    ov_rows, dispo_cols = P.pull_office_week(page, cfg, aliases_raw, monday,
+                                             saturday, verbose=False)
+    if not ov_rows:
+        return None
+    rows = B.compute_rows(ov_rows, None, dispo_cols)
+    return B.render(label, monday, saturday, rows,
+                    owner_dir(out_dir, label), dispo_cols,
+                    gaps_only=B.is_gaps_only(ov_rows), n_totals=1,
+                    no_apps=True)
+
+
 def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
           ) -> Tuple[list, list]:
     """(email blocks, files to attach). One DAILY TOTAL KNOCKS board per owner
-    for yesterday, all in one PDF; the body gets an "attached" line plus a
-    note for any board that failed. ([], []) when nobody is configured."""
+    for yesterday (one PDF with all + one per owner), then last week's Knock
+    Dispositions as one PDF (Eve, 2026-10-25: "armemos también un weekly
+    knocks report") — pulled once a week, then reused from WEEKLY_DIR. The
+    body gets an "attached" line per kind plus a note for any board that
+    failed. ([], []) when nobody is configured."""
     from automations.captainship_drafts import knock_dispo_images as K
     from automations.shared.tableau_patchright import ownerville_session
 
@@ -105,6 +150,10 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
     out_dir = Path(out_dir) / "knocks"
     out_dir.mkdir(parents=True, exist_ok=True)
     blocks, failed = [], []
+    monday, saturday = weekly_window(today)
+    kept = weekly_pdf_path(saturday)
+    have_weekly = kept.exists() and kept.stat().st_size > 0
+    weekly, weekly_failed = [], []
     # The box pictures (board.render_boxes) leave sheet_render's shared sync
     # playwright running, and a second sync playwright in the same thread dies
     # with "using Playwright Sync API inside the asyncio loop" — the first
@@ -134,10 +183,25 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
                     failed.append((label, type(e).__name__))
                     logfn("[lumen] knocks %s FAILED: %s: %s"
                           % (label, type(e).__name__, e))
+            if not have_weekly:
+                for label, cfg in pairs:
+                    try:
+                        png = _weekly_board(page, label, cfg, aliases_raw,
+                                            monday, saturday,
+                                            out_dir / "weekly")
+                        if png is None:
+                            logfn("[lumen] weekly %s: no knocks" % label)
+                            continue
+                        weekly.append((label, png))
+                        logfn("[lumen] weekly %s: ok" % label)
+                    except Exception as e:  # noqa: BLE001 — one owner
+                        weekly_failed.append((label, type(e).__name__))
+                        logfn("[lumen] weekly %s FAILED: %s: %s"
+                              % (label, type(e).__name__, e))
     except Exception as e:  # noqa: BLE001 — no OwnerVille, still a mail
         logfn("[lumen] OwnerVille session FAILED: %s: %s" % (type(e).__name__, e))
         failed = [(l, "OwnerVille login failed") for l, _c in pairs]
-        blocks = []
+        blocks, weekly = [], []
     files, out = [], []
     if blocks:
         try:
@@ -146,6 +210,23 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
         except Exception as e:  # noqa: BLE001 — a note, not a dead mail
             logfn("[lumen] knocks PDF FAILED: %s: %s" % (type(e).__name__, e))
             failed += [(l, "PDF failed") for l, _p in blocks]
+    weekly_pdf = kept if have_weekly else None
+    if weekly:
+        from automations.captainship_drafts.pdf_pages import compose
+        try:
+            # Kept for the rest of the week only when every owner came
+            # through; a short one is mailed today and pulled again tomorrow.
+            dest = kept if not weekly_failed else out_dir / "weekly" / kept.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            weekly_pdf = compose(weekly, dest)
+        except Exception as e:  # noqa: BLE001 — a note, not a dead mail
+            logfn("[lumen] weekly PDF FAILED: %s: %s" % (type(e).__name__, e))
+    if weekly_pdf is not None:
+        files.append((weekly_attachment_label(saturday), weekly_pdf))
+        out.append((WEEKLY_LABEL, None, None, "attached"))
     if failed:
         out.append((note_html(failed), None, None, "note"))
+    if weekly_failed:
+        out.append((note_html([(l + " — last week", w)
+                               for l, w in weekly_failed]), None, None, "note"))
     return out, files

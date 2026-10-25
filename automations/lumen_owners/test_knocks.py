@@ -51,6 +51,17 @@ class KnocksTest(unittest.TestCase):
             "Nigel Marshall - Daily Knocks disposition - Oct 24, 2026"])
         self.assertEqual(len({str(p) for _l, p in files}), 3)
 
+    def test_weekly_is_the_last_sunday_week(self):
+        # Sunday 10/25 and Friday 10/30 both carry Mon 10/19 - Sat 10/24.
+        for d in (dt.date(2026, 10, 25), dt.date(2026, 10, 30)):
+            self.assertEqual(KN.weekly_window(d),
+                             (dt.date(2026, 10, 19), dt.date(2026, 10, 24)))
+        self.assertEqual(KN.weekly_window(dt.date(2026, 11, 1))[1],
+                         dt.date(2026, 10, 31))
+        self.assertEqual(
+            KN.weekly_attachment_label(dt.date(2026, 10, 24)),
+            "Weekly Knock Dispositions - Lumen Owners - Oct 19-24, 2026")
+
     def test_failed_board_is_a_note(self):
         s = KN.note_html([("David Pancoast (Quantum Fiber)", "no knocks")])
         self.assertIn("David Pancoast (Quantum Fiber)", s)
