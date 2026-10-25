@@ -387,7 +387,10 @@ def _close_dialog(page) -> bool:
 def _write_tab(records, meta: str, office: str):
     """One tab per office — "SMS Dump 11280" — so dumping a second office does
     not clear the first one's rows (the whole point of the comparison)."""
-    tab = "{} {}".format(TAB_PREFIX, office)
+    # --actions writes somewhere else on purpose: the rows are a different
+    # shape, and "SMS Dump <office>" is cleared on every write, so sharing it
+    # would throw away the chat dump the audit write-up reads.
+    tab = "{} {}".format("Action Dump" if ACTIONS else TAB_PREFIX, office)
     gc = _fill._client()
     sh = gc.open_by_key(CONTROL_SHEET_ID)
     try:
@@ -395,6 +398,20 @@ def _write_tab(records, meta: str, office: str):
         ws.clear()
     except Exception:
         ws = sh.add_worksheet(tab, rows=4000, cols=10)
+    if ACTIONS:
+        # One row per ACTION, not per applicant: that is the shape every
+        # question about timing needs, and it needs no un-chunking to read.
+        rows = [[meta, "", "", "", "", ""],
+                ["name", "phone", "action", "source", "at", "by"]]
+        for r in records:
+            if r.get("error"):
+                rows.append([r["name"], r["phone"], "ERROR", "", "",
+                             str(r["error"])[:CELL_CAP]])
+            for a_row in (r.get("actions") or []):
+                rows.append([r["name"], r["phone"]] +
+                            [str(c)[:CELL_CAP] for c in a_row[:4]])
+        ws.update(values=rows, range_name="A1", raw=True)
+        return tab, len(rows)
     rows = [[meta, "", "", "", "", "", "", "", ""],
             ["date", "time", "name", "phone", "board", "booked_by", "status",
              "part", "thread_json"]]
