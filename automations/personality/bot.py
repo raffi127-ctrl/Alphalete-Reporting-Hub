@@ -453,7 +453,38 @@ def _sheet_ws():
         _retry(ws.update, values=[SHEET_HEADER], range_name="A1")
         _retry(ws.format, "1:1", {"textFormat": {"bold": True}})
         _retry(ws.freeze, rows=1)
+        _retry(sh.batch_update, {"requests": highlight_rules(ws.id)})
         return ws, _retry
+
+
+GREEN = {"red": 0.851, "green": 0.918, "blue": 0.827}   # primary
+BLUE = {"red": 0.812, "green": 0.886, "blue": 0.953}    # secondary
+
+
+def highlight_rules(sheet_id) -> list:
+    """Megan 2026-10-24: "highlight green their primary and blue their
+    secondary". Conditional formatting, so every future row colors itself:
+    Primary + the top score(s) green, Secondary + the next score(s) blue.
+    Ties color every tied score, the same way the result calls a tie."""
+    def rng(c0, c1):
+        return {"sheetId": sheet_id, "startRowIndex": 1,
+                "startColumnIndex": c0, "endColumnIndex": c1}
+
+    def rule(r, formula, color):
+        return {"addConditionalFormatRule": {"index": 0, "rule": {
+            "ranges": [r], "booleanRule": {
+                "condition": {"type": "CUSTOM_FORMULA",
+                              "values": [{"userEnteredValue": formula}]},
+                "format": {"backgroundColor": color}}}}}
+    f, i = SHEET_HEADER.index("Popular"), SHEET_HEADER.index("Peaceful")
+    d, e = SHEET_HEADER.index("Primary"), SHEET_HEADER.index("Secondary")
+    return [
+        rule(rng(f, i + 1), "=AND(F2<>\"\",F2=MAX($F2:$I2))", GREEN),
+        rule(rng(f, i + 1), "=AND(F2<>\"\",F2>0,F2<MAX($F2:$I2),"
+             "F2=MAXIFS($F2:$I2,$F2:$I2,\"<\"&MAX($F2:$I2)))", BLUE),
+        rule(rng(d, d + 1), "=D2<>\"\"", GREEN),
+        rule(rng(e, e + 1), "=E2<>\"\"", BLUE),
+    ]
 
 
 def save_to_sheet(row) -> None:
