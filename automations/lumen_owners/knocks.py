@@ -109,8 +109,14 @@ def weekly_window(today: dt.date) -> Tuple[dt.date, dt.date]:
     return sat - dt.timedelta(days=5), sat
 
 
-def weekly_pdf_path(saturday: dt.date) -> Path:
-    return WEEKLY_DIR / ("lumen_weekly_knocks_%s.pdf" % saturday.isoformat())
+def weekly_pdf_path(saturday: dt.date, labels=()) -> Path:
+    """The kept PDF for one week AND one owner list: an owner added mid-week
+    (Aaron, 2026-10-25) gets a new file, so the week is pulled again with
+    them instead of reusing the PDF that left them out. Pure."""
+    import hashlib
+    tag = hashlib.sha1("|".join(sorted(labels)).encode("utf-8")).hexdigest()[:8]
+    return WEEKLY_DIR / ("lumen_weekly_knocks_%s_%s.pdf"
+                         % (saturday.isoformat(), tag))
 
 
 def weekly_attachment_label(saturday: dt.date) -> str:
@@ -154,7 +160,7 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
     out_dir.mkdir(parents=True, exist_ok=True)
     blocks, failed = [], []
     monday, saturday = weekly_window(today)
-    kept = weekly_pdf_path(saturday)
+    kept = weekly_pdf_path(saturday, [l for l, _c in pairs])
     have_weekly = kept.exists() and kept.stat().st_size > 0
     weekly, weekly_failed = [], []
     # The box pictures (board.render_boxes) leave sheet_render's shared sync

@@ -6,6 +6,13 @@ from automations.lumen_owners import knocks as KN
 
 
 class KnocksTest(unittest.TestCase):
+    def test_new_owner_means_a_new_weekly_file(self):
+        sat = dt.date(2026, 10, 24)
+        a = KN.weekly_pdf_path(sat, ["David", "Nigel"])
+        self.assertEqual(a, KN.weekly_pdf_path(sat, ["Nigel", "David"]))
+        self.assertNotEqual(a, KN.weekly_pdf_path(sat, ["David", "Nigel",
+                                                        "Aaron"]))
+
     def test_same_owner_list_as_chans_captainship(self):
         with mock.patch("automations.shared.terminated_icds.terminated_lookup",
                         return_value=lambda n: False):
