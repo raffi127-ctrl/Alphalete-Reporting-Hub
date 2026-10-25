@@ -484,6 +484,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="skip the Lumen Owners tab (and its pictures in the mail)")
     ap.add_argument("--no-knocks", action="store_true",
                     help="skip yesterday's Quantum knock boards (OwnerVille)")
+    ap.add_argument("--subject-suffix", default="",
+                    help="added to the subject, so a resend starts its own "
+                         "Gmail thread instead of landing in today's")
     args = ap.parse_args(argv)
 
     from automations.focus_office_att.aliases import load_aliases
@@ -564,7 +567,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     send = bool(args.send or args.to)
     to = recipients(args.to) if send else [DISTRO_GROUP]
     res = _mail.send_boards(
-        subject="%s — %s" % (TITLE, today.strftime("%m/%d/%Y")),
+        subject="%s — %s%s" % (TITLE, today.strftime("%m/%d/%Y"),
+                               (" " + args.subject_suffix.strip())
+                               if args.subject_suffix.strip() else ""),
         to=to, title=TITLE, blocks=blocks, intro_html=body, files=files,
         dry_run=not send, preview_dir=OUT / today.isoformat())
     print("[lumen] %s → %s · %s" % ("SENT" if send else "DRY RUN (preview only)",
