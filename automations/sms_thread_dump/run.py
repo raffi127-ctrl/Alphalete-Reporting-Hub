@@ -282,6 +282,47 @@ def _scrape_thread(page):
            }""")
 
 
+ACTIONS = False   # set by --actions
+
+
+def _scrape_actions(page):
+    """In the open dialog: click Action History, scrape [Action, Source, At, By].
+
+    This tab is where AppStream records what somebody DID and when — the two
+    rows the push-speed question needs are 'Send to Call List' (Source: Enter
+    Applicants) and 'Assign First Interview' (Source: Call List), each with
+    the name of the person who did it. Cole Bollman, 11280, 10-22-2026: both
+    at 01:26 PM by Derek Kinder.
+
+    It is NOT on the Activity Report. p=704 carries the right columns but
+    returns only 'First Interview Date' / 'Second Interview Date' off the
+    Calendar — 212 rows for that same office-day, no action rows at all, and
+    its Activity/Source filters come back with no options. Checked
+    2026-10-24, including with summaryVersion forced to 0. This dialog is the
+    only surface that has them."""
+    page.locator("text=Action History >> visible=true").first.click()
+    page.wait_for_selector("text=Source >> visible=true", timeout=15000)
+    time.sleep(0.6)
+    return page.evaluate(
+        """() => {
+             const tbl = [...document.querySelectorAll('table')].find(
+               t => t.offsetParent !== null
+                    && /Action/.test(t.innerText)
+                    && /Source/.test(t.innerText)
+                    && /\bBy\b/.test(t.innerText));
+             if (!tbl) return null;
+             const out = [];
+             [...tbl.querySelectorAll('tr')].forEach(tr => {
+               const tds = [...tr.querySelectorAll('td')];
+               if (tds.length >= 4) {
+                 const c = tds.slice(0, 4).map(td => (td.innerText || '').trim());
+                 if (c[0] && !/^Action$/i.test(c[0])) out.push(c);
+               }
+             });
+             return out;
+           }""")
+
+
 def _visible_dialogs(page) -> int:
     return page.evaluate(
         """() => [...document.querySelectorAll('.ui-dialog, [role=dialog]')]
@@ -405,10 +446,17 @@ def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=Fal
                     # counts as unread and holds the ticket open.
                     page.wait_for_selector("text=Applicant History for >> visible=true",
                                            timeout=30000)
-                thread = _scrape_thread(page)
-                rec["thread"] = thread or []
-                if not thread:
-                    rec["error"] = "no chat table"
+                if ACTIONS:
+                    acts = _scrape_actions(page)
+                    rec["actions"] = acts or []
+                    rec["thread"] = []
+                    if not acts:
+                        rec["error"] = "no action table"
+                else:
+                    thread = _scrape_thread(page)
+                    rec["thread"] = thread or []
+                    if not thread:
+                        rec["error"] = "no chat table"
             except Exception as e:  # noqa: BLE001 — one bad row must not kill the run
                 state = ""
                 try:
@@ -499,8 +547,17 @@ def main(argv=None):
                          "booking row (who booked, by whom, phone, outcome). "
                          "Seconds per day instead of minutes — use it when the "
                          "messages come from the p=336 log instead")
+    ap.add_argument("--actions", action="store_true",
+                    help="read the Action History tab (what was done, when, "
+                         "by whom) instead of the SMS chat")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
+    global ACTIONS
+    ACTIONS = bool(a.actions)
+    if ACTIONS:
+        # --bookings-only skips the dialog, which is the only place the
+        # action rows live, so the two cannot both be on.
+        a.bookings_only = False
 
     offices = [o.strip() for o in str(a.office).split(",") if o.strip()]
     if a.dates:
