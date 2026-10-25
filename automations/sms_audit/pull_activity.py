@@ -228,6 +228,12 @@ def _page_dump(page, label):
              buttons: [...document.querySelectorAll('button, input[type=submit]')]
                        .map(b => (b.innerText || b.value || '').trim()).filter(Boolean)
                        .slice(0, 20),
+             links: [...document.querySelectorAll('a, [onclick]')]
+                     .map(a => ((a.innerText || a.value || '').trim() + ' -> ' +
+                                (a.getAttribute('href') || '') + ' | ' +
+                                (a.getAttribute('onclick') || '')).slice(0, 170))
+                     .filter(t => /summary|detail|csv|version|filter/i.test(t))
+                     .slice(0, 15),
              selects: [...document.querySelectorAll('select')].map(
                        s => (s.name || s.id || '?') + ' :: ' +
                             [...s.options].map(o => (o.text || '').trim())
@@ -241,6 +247,7 @@ def _page_dump(page, label):
     return ["== {} ==".format(label),
             "url: " + got["url"], "title: " + got["title"],
             "inputs: " + " | ".join(got["inputs"])] + \
+           ["link: " + l for l in got.get("links", [])] + \
            ["select: " + s for s in got.get("selects", [])] + \
            ["buttons: " + " | ".join(got["buttons"]),
             "tables: {}".format(got["tables"]),
