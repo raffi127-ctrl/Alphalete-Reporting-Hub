@@ -286,7 +286,7 @@ ACTIONS = False   # set by --actions
 
 
 def _scrape_actions(page):
-    """In the open dialog: click Action History, scrape [Action, Source, At, By].
+    """In the open dialog: read Action History as [Action, Source, At, By].
 
     This tab is where AppStream records what somebody DID and when — the two
     rows the push-speed question needs are 'Send to Call List' (Source: Enter
@@ -298,29 +298,56 @@ def _scrape_actions(page):
     returns only 'First Interview Date' / 'Second Interview Date' off the
     Calendar — 212 rows for that same office-day, no action rows at all, and
     its Activity/Source filters come back with no options. Checked
-    2026-10-24, including with summaryVersion forced to 0. This dialog is the
-    only surface that has them."""
-    page.locator("text=Action History >> visible=true").first.click()
-    page.wait_for_selector("text=Source >> visible=true", timeout=15000)
-    time.sleep(0.6)
-    return page.evaluate(
-        """() => {
-             const tbl = [...document.querySelectorAll('table')].find(
-               t => t.offsetParent !== null
-                    && /Action/.test(t.innerText)
-                    && /Source/.test(t.innerText)
-                    && /\bBy\b/.test(t.innerText));
-             if (!tbl) return null;
-             const out = [];
-             [...tbl.querySelectorAll('tr')].forEach(tr => {
-               const tds = [...tr.querySelectorAll('td')];
-               if (tds.length >= 4) {
-                 const c = tds.slice(0, 4).map(td => (td.innerText || '').trim());
-                 if (c[0] && !/^Action$/i.test(c[0])) out.push(c);
-               }
-             });
-             return out;
+    2026-10-24, including with summaryVersion forced to 0.
+
+    Action History is the dialog's DEFAULT tab, so the click is best-effort:
+    a first attempt that clicked it and then waited on the word "Source"
+    read 0 rows for all 8 applicants. On failure this returns the dialog's
+    own text rather than None, so the log says what was on screen."""
+    for sel in ("a:has-text('Action History') >> visible=true",
+                "text=Action History >> visible=true"):
+        try:
+            page.locator(sel).first.click(timeout=4000)
+            break
+        except Exception:
+            continue
+    time.sleep(1.0)
+    got = page.evaluate(
+        r"""() => {
+             const dlgs = [...document.querySelectorAll('.ui-dialog, [role=dialog]')]
+                           .filter(d => d.offsetParent !== null);
+             const root = dlgs[0] || document;
+             const tbls = [...root.querySelectorAll('table')]
+                           .filter(t => t.offsetParent !== null);
+             for (const t of tbls) {
+               const heads = [...t.querySelectorAll('th, thead td')]
+                              .map(c => (c.innerText || '').trim().toLowerCase());
+               if (!heads.length) continue;
+               const iA = heads.findIndex(h => h === 'action');
+               const iS = heads.findIndex(h => h === 'source');
+               const iT = heads.findIndex(h => h === 'at');
+               const iB = heads.findIndex(h => h === 'by');
+               if (iA < 0 || iT < 0) continue;
+               const out = [];
+               [...t.querySelectorAll('tbody tr, tr')].forEach(tr => {
+                 const tds = [...tr.querySelectorAll('td')];
+                 if (tds.length < 2) return;
+                 const v = i => (i >= 0 && tds[i]
+                                 ? (tds[i].innerText || '').replace(/\s+/g,' ').trim() : '');
+                 const row = [v(iA), v(iS), v(iT), v(iB)];
+                 if (row[0] && row[0].toLowerCase() !== 'action') out.push(row);
+               });
+               if (out.length) return {rows: out};
+             }
+             return {why: 'dialogs=' + dlgs.length + ' tables=' + tbls.length +
+                          ' heads=' + tbls.map(t => [...t.querySelectorAll('th')]
+                               .map(c => (c.innerText||'').trim()).join(',')).join(' // ')
+                               .slice(0, 300) +
+                          ' text=' + (root.innerText || '').replace(/\s+/g,' ').slice(0, 260)};
            }""")
+    if got and got.get("rows"):
+        return got["rows"]
+    raise RuntimeError("no action table · " + (got or {}).get("why", "?"))
 
 
 def _visible_dialogs(page) -> int:
