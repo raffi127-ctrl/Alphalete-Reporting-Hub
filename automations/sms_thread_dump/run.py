@@ -596,6 +596,22 @@ def main(argv=None):
         meta = ("sms_thread_dump {:%Y-%m-%d %H:%M} office={} dates={} applicants={} "
                 "with_sms={}".format(dt.datetime.now(), office, ",".join(date_strs),
                                      len(records), with_thread))
+        if ACTIONS:
+            # with_sms counts chat rows and is always 0 under --actions, so a
+            # dry run could not say whether the Action History tab parsed.
+            with_acts = sum(1 for r in records if r.get("actions"))
+            meta += " with_actions={}".format(with_acts)
+            seen = {}
+            for r in records:
+                for a_row in (r.get("actions") or []):
+                    seen[a_row[0]] = seen.get(a_row[0], 0) + 1
+            meta += " kinds=" + ("; ".join(
+                "{} x{}".format(k, n) for k, n in
+                sorted(seen.items(), key=lambda kv: -kv[1])[:12]) or "none")
+            for r in records[:2]:
+                for a_row in (r.get("actions") or [])[:12]:
+                    print("[sms_dump]   {} | {}".format(
+                        r.get("name", "?"), " | ".join(a_row)), flush=True)
         if a.dry_run:
             print("[sms_dump] DRY RUN — no sheet write. " + meta, flush=True)
             continue
