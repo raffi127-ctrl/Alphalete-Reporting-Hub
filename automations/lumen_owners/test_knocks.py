@@ -33,6 +33,24 @@ class KnocksTest(unittest.TestCase):
         self.assertNotEqual(a, b)
         self.assertTrue(a.is_dir() and b.is_dir())
 
+    def test_one_pdf_for_all_plus_one_per_owner(self):
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        tmp = Path(tempfile.mkdtemp())
+        blocks = []
+        for i, lab in enumerate(["David Pancoast (Quantum Fiber)",
+                                 "Nigel Marshall (Quantum Fiber)"]):
+            png = KN.owner_dir(tmp, lab) / "total_knocks_2026-10-24.png"
+            Image.new("RGB", (40, 20), "white").save(png)
+            blocks.append((lab, png))
+        files = KN.pdf_files(blocks, dt.date(2026, 10, 24), tmp)
+        self.assertEqual([l for l, _p in files], [
+            "Lumen Owners - Daily Knocks disposition - Oct 24, 2026",
+            "David Pancoast - Daily Knocks disposition - Oct 24, 2026",
+            "Nigel Marshall - Daily Knocks disposition - Oct 24, 2026"])
+        self.assertEqual(len({str(p) for _l, p in files}), 3)
+
     def test_failed_board_is_a_note(self):
         s = KN.note_html([("David Pancoast (Quantum Fiber)", "no knocks")])
         self.assertIn("David Pancoast (Quantum Fiber)", s)

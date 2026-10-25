@@ -8,8 +8,9 @@ EXTRA_CAMPAIGN_KNOCK_OWNERS["chan"], so when Myles Neal / Angel Padilla give
 Office Access and get uncommented there, both mails pick them up — one list.
 LUMEN_EXTRA adds the Lumen owners who aren't Chan's (Christian, Lala, Nigel).
 
-The boards go as ONE PDF attached to the mail, not as pictures in the body
-(Eve, 2026-10-24) — the body only says it's attached. A board that can't be
+The boards go as PDFs attached to the mail, not as pictures in the body
+(Eve, 2026-10-24) — the body only says they're attached. Like a captainship
+mail: one PDF with every board + one per owner (Eve, 2026-10-25). A board that can't be
 pulled becomes a note line; it never stops the mail.
 """
 from __future__ import annotations
@@ -56,6 +57,30 @@ def note_html(failed: List[Tuple[str, str]]) -> str:
 
 
 PDF_LABEL = "Daily Knocks — Quantum Fiber"
+TITLE = "Lumen Owners"
+
+
+def owner_name(label: str) -> str:
+    """'Nigel Marshall (Quantum Fiber)' -> 'Nigel Marshall'. Pure."""
+    return label.split(" (", 1)[0].strip()
+
+
+def pdf_files(blocks, day: dt.date, out_dir: Path) -> list:
+    """[(attachment label, pdf)] the captainship way (Eve, 2026-10-25): one
+    PDF with every board, then one PDF per owner, named owner-first
+    ('Nigel Marshall - Daily Knocks disposition - Oct 24, 2026') so each
+    owner can pick out their own on a phone."""
+    from automations.captainship_drafts.daily_pdf import attachment_name
+    from automations.captainship_drafts.pdf_pages import compose
+    label = lambda who: attachment_name(who, day)[:-len(".pdf")]
+    out_dir = Path(out_dir)
+    files = [(label(TITLE), compose(
+        blocks, out_dir / ("knocks-%s.pdf" % day.isoformat())))]
+    for lab, png in blocks:
+        who = owner_name(lab)
+        files.append((label(who), compose(
+            [(who, png)], owner_dir(out_dir, lab) / "knocks.pdf")))
+    return files
 
 
 def owner_dir(out_dir: Path, label: str) -> Path:
@@ -115,10 +140,8 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
         blocks = []
     files, out = [], []
     if blocks:
-        from automations.captainship_drafts.pdf_pages import compose
         try:
-            pdf = compose(blocks, out_dir / ("knocks-%s.pdf" % target.isoformat()))
-            files = [(PDF_LABEL, pdf)]
+            files = pdf_files(blocks, target, out_dir)
             out = [(PDF_LABEL, None, None, "attached")]
         except Exception as e:  # noqa: BLE001 — a note, not a dead mail
             logfn("[lumen] knocks PDF FAILED: %s: %s" % (type(e).__name__, e))
