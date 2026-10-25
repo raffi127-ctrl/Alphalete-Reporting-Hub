@@ -1,5 +1,5 @@
 {
- "_note": "Owners' sales boards the Salesboard Fixer checks (python -m automations.sales_board_fixer.run --owners). It picks the leftmost visible sales board that has reps on it ('boards': how many, default 1) plus the visible Line Up / Stations tabs. 'apply': true switches writing on for that owner -- Eve approved 2026-10-13 for the 8 with a live board: only broken formulas + broken color rules, no notes (run.py OWNER_KINDS).",
+ "_note": "Owners' sales boards the Salesboard Fixer checks (python -m automations.sales_board_fixer.run --owners). It picks the leftmost visible sales board that has reps on it ('boards': how many, default 1) plus the visible Line Up / Stations tabs. 'apply': true switches writing on for that owner -- Eve approved 2026-10-13 for the 8 with a live board: only broken formulas + broken color rules, no notes (run.py OWNER_KINDS). 'newest_right': the owner adds each new week tab on the right. 'lanes_roll': the Lanes tab reads one dated tab per week and Lucy moves it onto the new week (Tuesday on; Monday keeps the two closed weeks) -- run.roll_lanes.",
  "owners": [
   {"name": "Rashad Reed", "sheet_id": "1MitP5ZgVlCQhH5tzjZ0ltfaqSW_l9zholzTz0AUSUl0", "apply": true},
   {"name": "Atef", "sheet_id": "1x4ZcpzuLc1AiiFC4rTKNr1GsyMAxAFWQ8w81aapdMCA", "apply": true},
@@ -16,6 +16,7 @@
   {"name": "Salik/Hammad", "sheet_id": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U", "apply": true},
   {"name": "Colten/Jairo (Miami)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["COLTEN", "Line Up NDS", "JAIRO", "Line Up NDS JAIRO"], "format_stop": "Campaign", "apply": true},
   {"name": "Eveliz Wright (Miami B2B)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["Sales Board Miami B2B", "Car Rides B2B"], "apply": true},
-  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": true}
+  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": true},
+  {"name": "Omar Mohammad", "sheet_id": "18rMGg6ZbUC6Dh5-sn4jRWsclaGK1Oj5S8AIaftq16OQ", "week_end": true, "newest_right": true, "lanes_roll": true, "apply": true}
  ]
 }

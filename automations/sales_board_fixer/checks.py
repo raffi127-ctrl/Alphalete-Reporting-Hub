@@ -61,6 +61,7 @@ KIND_LABEL = {
     "lane_formula_lost": "Lanes: fórmula de un carril borrada o rota",
     "lane_col_moved": "Lanes: el Sales Board movió una columna que el carril lee",
     "lane_range": "Lanes: carril leyendo otra semana o cortando antes de TOTALS",
+    "lane_week": "Lanes: pasó a la semana nueva",
     "lane_extra_lost": "Lanes: fórmula de la fila de carriles borrada (col M)",
     "lane_spill_blocked": "Lanes: algo escrito debajo de un carril (lo deja en blanco)",
     "lane_threshold": "Lanes: el corte de la fórmula no es el del título",

@@ -210,3 +210,71 @@ class OwnerLanes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RollTest(unittest.TestCase):
+    """Omar's board (2026-10-25): one tab per week named by Sunday, names in
+    col B, Apps in col C, TOTALS in col B."""
+
+    @staticmethod
+    def owner_tab(cur, last):
+        def f(t, cond):
+            return '=iferror(FILTER(\'%s\'!B4:B138, \'%s\'!C4:C138%s),"")' % (t, t, cond)
+        vals = [["Current Week", "", "", "Last week", "", "", ""],
+                ["Super Saiyan Lane 10+ Apps", "Exit Lane 0 - 3", "",
+                 "Super Saiyan Lane 10+ Apps", "Exit Lane 0 - 3", "", "2wks in a Row"],
+                ["Jon", "Ann", "", "Jon", "Bo", "", "x"]]
+        forms = [vals[0], vals[1], [f(cur, ">=10"), f(cur, "<4"), "", f(last, ">=10"),
+                                    f(last, "<4"), "", "=FILTER(B3:B, B3:B<>\"\")"]]
+        return forms, vals
+
+    @staticmethod
+    def board(totals_row):
+        g = [[""] * 3 for _ in range(totals_row)]
+        g[totals_row - 1][1] = "TOTALS"
+        return g
+
+    def test_moves_both_blocks_to_new_weeks(self):
+        forms, vals = self.owner_tab("10/25", "10/19")
+        boards = {"11/1": self.board(141), "10/25": self.board(139)}
+        found = LC.roll(forms, vals, boards, {"current": "11/1", "last": "10/25"}, tab="Lanes")
+        by = {x.where: x.value for x in found}
+        self.assertEqual(sorted(by), ["A3", "B3", "D3", "E3"])
+        self.assertEqual(by["A3"], '=iferror(FILTER(\'11/1\'!B4:B140, \'11/1\'!C4:C140>=10),"")')
+        self.assertEqual(by["E3"], '=iferror(FILTER(\'10/25\'!B4:B138, \'10/25\'!C4:C138<4),"")')
+        self.assertTrue(all(x.kind == "lane_week" and x.fixable for x in found))
+
+    def test_already_on_the_week_writes_nothing(self):
+        forms, vals = self.owner_tab("10/25", "10/19")
+        boards = {"10/25": self.board(139), "10/19": self.board(139)}
+        self.assertEqual(LC.roll(forms, vals, boards, {"current": "10/25", "last": "10/19"}), [])
+
+    def test_lost_formula_and_missing_board_left_alone(self):
+        forms, vals = self.owner_tab("10/25", "10/19")
+        forms[2][0] = ""                                   # check() puts it back
+        found = LC.roll(forms, vals, {"11/1": self.board(141)},
+                        {"current": "11/1", "last": "10/25"})
+        self.assertEqual([x.where for x in found], ["B3"])  # last week's board not loaded
+
+
+class LaneWeeksTest(unittest.TestCase):
+    def test_sunday_named_tabs_roll_tuesday(self):
+        import datetime as dt
+        from automations.sales_board_fixer.run import lane_weeks, this_weeks_tab
+        visible = ["10/19", "10/25", "11/1", "Stations", "Lanes"]
+        sun, mon, tue = dt.date(2026, 10, 25), dt.date(2026, 10, 26), dt.date(2026, 10, 27)
+        self.assertEqual(lane_weeks(visible[:2], sun, True), {"current": "10/25", "last": "10/19"})
+        # Monday: 11/1 already built, the lanes keep the two closed weeks
+        self.assertEqual(lane_weeks(visible, mon, True), {"current": "10/25", "last": "10/19"})
+        self.assertEqual(lane_weeks(visible, tue, True), {"current": "11/1", "last": "10/25"})
+        # Tuesday and the new tab still isn't there: keep what the lanes show
+        self.assertIsNone(lane_weeks(visible[:2], tue + dt.timedelta(days=7), True))
+        # the board audit finds this week's tab even with new weeks on the right
+        self.assertEqual(this_weeks_tab(visible[:2], sun, True, newest_right=True), "10/25")
+        self.assertEqual(this_weeks_tab(visible, tue, True, newest_right=True), "11/1")
+
+    def test_year_wrap(self):
+        import datetime as dt
+        from automations.sales_board_fixer.run import lane_weeks
+        self.assertEqual(lane_weeks(["12/27", "1/3"], dt.date(2027, 1, 2), True),
+                         {"current": "1/3", "last": "12/27"})

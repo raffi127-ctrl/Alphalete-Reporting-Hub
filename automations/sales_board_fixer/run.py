@@ -533,16 +533,18 @@ WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}[./]\d{1,2})\b")
 DATED_TAB = re.compile(r"^\s*(\d{1,2})[./](\d{1,2})\s*$")
 
 
-def this_weeks_tab(visible, today: dt.date, week_end: bool = False):
+def this_weeks_tab(visible, today: dt.date, week_end: bool = False,
+                   newest_right: bool = False):
     """The bare-date tab ('10/12') dated in the last 7 days, newest wins.
     Salik/Hammad keep a dead 'Fiber Sales Board' (WE 8/24) leftmost, so
     leftmost-with-reps alone would pick the wrong board.
     week_end: the tab is named by the week's Sunday, not its Monday (Kash's
     Palace board, '10.18' = 10/12-10/18).
     Owners add each new week on the LEFT, so a tab dated later than one left
-    of it is last year's (Palace keeps a year of '10.19'-style tabs, 2026-10-19)."""
+    of it is last year's (Palace keeps a year of '10.19'-style tabs, 2026-10-19).
+    newest_right: this owner adds each new week on the RIGHT (Omar, 2026-10-25)."""
     best, left = None, None
-    for t in visible:
+    for t in (list(reversed(visible)) if newest_right else visible):
         m = DATED_TAB.match(t)
         if not m:
             continue
@@ -579,7 +581,8 @@ def side_tabs(visible, picked) -> list:
     return out
 
 
-def owner_tabs(sh, boards: int = 1, week_end: bool = False) -> list:
+def owner_tabs(sh, boards: int = 1, week_end: bool = False,
+               newest_right: bool = False) -> list:
     """The tabs to check in an owner's All-in-One: the leftmost visible sales
     board(s) with reps on it -- owners keep the current week first, and name
     it anything ('Sales Board', 'NEW Sales Board', 'Sales Board W.E 10.11') --
@@ -589,7 +592,7 @@ def owner_tabs(sh, boards: int = 1, week_end: bool = False) -> list:
     visible = [s["properties"]["title"] for s in meta["sheets"]
                if not s["properties"].get("hidden")]
     picked = []
-    dated = this_weeks_tab(visible, dt.date.today(), week_end)
+    dated = this_weeks_tab(visible, dt.date.today(), week_end, newest_right)
     for title in ([dated] if dated else []) + [t for t in visible if t != dated]:
         if len(picked) >= boards:
             break
@@ -599,6 +602,60 @@ def owner_tabs(sh, boards: int = 1, week_end: bool = False) -> list:
             if K.is_board(v) and any(K.name_at(v, r) for r in range(first, last + 1)):
                 picked.append(title)
     return picked + side_tabs(visible, picked)
+
+
+def lane_weeks(visible, today: dt.date, week_end: bool = False):
+    """{'current': title, 'last': title} -- the two newest dated week tabs
+    ('10/25', '10/19') the Lanes of a "lanes_roll" owner should read, or None
+    when this week's tab isn't there yet (keep what the lanes show).
+    Monday counts as the Sunday before, same as ours (lanes.lanes_week): the
+    A-players meeting looks at the two closed weeks, the roll happens Tuesday."""
+    from automations.alphalete_sales_board import lanes as L
+    anchor = L.lanes_week(today)
+    weeks = []
+    for t in visible:
+        m = DATED_TAB.match(t)
+        if not m:
+            continue
+        try:
+            d = dt.date(anchor.year, int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            continue
+        if week_end:
+            d -= dt.timedelta(days=6)         # the week's Monday
+        if d > anchor + dt.timedelta(days=6):  # a December tab read in January
+            d = d.replace(year=anchor.year - 1)
+        if d <= anchor:                        # next week's tab can exist early
+            weeks.append((d, t))
+    weeks.sort(reverse=True)
+    if len(weeks) < 2 or (anchor - weeks[0][0]).days > 6:
+        return None
+    return {"current": weeks[0][1], "last": weeks[1][1]}
+
+
+def roll_lanes(sh, title: str, o: dict, on: bool, stamp: str) -> list:
+    """Owners whose Lanes read one dated tab per week ("lanes_roll" in
+    owners.json): put each block on its week before the audit, so the check
+    and the healthy copy it saves see this week's lanes."""
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(title,hidden))"})
+    visible = [x["properties"]["title"] for x in meta["sheets"]
+               if not x["properties"].get("hidden")]
+    targets = lane_weeks(visible, dt.date.today(), o.get("week_end", False))
+    if not targets:
+        print("  %s: la tab de esta semana no está todavía -- Lanes queda como está" % title)
+        return []
+    t = load(sh, title)
+    boards = {w: sh.worksheet(w).get_all_values() for w in set(targets.values())}
+    try:
+        found = LC.roll(t["formulas"], t["values"], boards, targets, tab=title)
+    except RuntimeError:                       # not a lanes tab
+        return []
+    for x in found:
+        print("  %s %s: %s" % (title, x.where, x.detail))
+    if on and found:
+        print("  backup:", backup(t, stamp + "_roll"))
+        apply(sh, t, found)
+    return found
 
 
 def lane_tabs(sh, only_for=None) -> list:
@@ -722,14 +779,22 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
             # one book shared by several owners names its tabs by owner
             # ('COLTEN', 'JAIRO'): list them in owners.json (2026-10-14)
             tabs = ([t for t in o["tabs"] if t in _tabs(sh)] if o.get("tabs")
-                    else owner_tabs(sh, o.get("boards", 1), o.get("week_end", False)))
-            tabs += [t for t in lane_tabs(sh, o.get("tabs")) if t not in tabs]
+                    else owner_tabs(sh, o.get("boards", 1), o.get("week_end", False),
+                                    o.get("newest_right", False)))
+            lanes = lane_tabs(sh, o.get("tabs"))
+            tabs += [t for t in lanes if t not in tabs]
         except Exception as e:  # noqa: BLE001 -- one owner's sheet never stops the rest
             print("== %s: NO se pudo abrir (%s)" % (o["name"], type(e).__name__))
             continue
         print("== %s: %s" % (o["name"], tabs or "sin board en uso"))
         # writing on an owner's sheet is switched on owner by owner, in owners.json
         on = do_apply and o.get("apply", False)
+        rolled = []
+        try:
+            for title in (lanes if o.get("lanes_roll") else []):
+                rolled += roll_lanes(sh, title, o, on, stamp)
+        except Exception as e:  # noqa: BLE001
+            print("== %s: Lanes no se pudo pasar de semana (%s)" % (o["name"], type(e).__name__))
         # Miami's big book (2026-10-14) ran the read quota out mid-owner: wait
         # out the minute and redo that owner (a fix already written re-audits
         # clean). Anything else skips the owner, never the rest of the run.
@@ -746,6 +811,8 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
                     time.sleep(70)
                     continue
                 print("== %s: se cortó (%s)" % (o["name"], type(e).__name__))
+        if rolled:
+            res.setdefault(o["name"] + " · lanes week", []).extend(rolled)
         results.update(res)
         if on:
             for tab, found in res.items():

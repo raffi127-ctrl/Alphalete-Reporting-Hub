@@ -309,3 +309,36 @@ def restore_lost(lanes_formulas, lanes_values, good: Optional[dict]) -> Dict[int
             if _healthy(src):
                 out[c] = src
     return out
+
+
+def roll(lanes_formulas, lanes_values, boards: Dict[str, list],
+         targets: Dict[str, str], tab: str = TAB) -> List[Finding]:
+    """An owner whose board is one dated tab per week ('10/25') and whose
+    Lanes read those tabs (owners.json "lanes_roll", Omar 2026-10-25): each
+    block onto its week's tab -- targets = {'current': title, 'last': title}
+    -- every range ending on the row above that tab's TOTALS. Only the tab
+    name and the end row change; the owner's conditions stay as they are."""
+    row0, blocks = L.find_blocks(lanes_values)
+    frow = lanes_formulas[row0] if row0 < len(lanes_formulas) else []
+    out: List[Finding] = []
+    for key, cols in blocks.items():
+        want = targets.get(key)
+        grid = boards.get(want)
+        if grid is None:
+            continue
+        for c in cols:
+            old = _cell([frow], 0, c)
+            rs = ranges(old)
+            if not _healthy(old) or not rs:
+                continue                      # lost formulas are check()'s job
+            end = totals_end(grid, rs[0][1])
+            if not end:
+                continue
+            new = RANGE_RE.sub(lambda m: _ref(want, m.group(3), int(m.group(4)),
+                                              m.group(5), end), old)
+            if new != old:
+                out.append(Finding("lane_week", tab, col_letter(c + 1) + str(row0 + 1),
+                                   "%s now reads '%s' (rows %d-%d)"
+                                   % (key, want, rs[0][2], end),
+                                   before=old, after=new, value=new))
+    return out
