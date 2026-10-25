@@ -34,6 +34,30 @@ PROFILE_DIR = ROOT / "automations" / "uploaded" / config.BROWSER_PROFILE_DIRNAME
 LOG_DIR = ROOT / "output" / "obcl_ov_sweep"
 
 
+SEARCHED_FILE = LOG_DIR / "last_searched.json"
+
+
+def search_order(missing, last: dict) -> list:
+    """Never-searched first, then oldest search first — so a run cut off by
+    config.SEARCH_BUDGET_S hands the next run the people it didn't reach."""
+    return sorted(missing, key=lambda p: last.get(p.name, ""))
+
+
+def _load_searched() -> dict:
+    try:
+        return json.loads(SEARCHED_FILE.read_text())
+    except Exception:                                       # noqa: BLE001
+        return {}
+
+
+def _save_searched(last: dict) -> None:
+    try:
+        SEARCHED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SEARCHED_FILE.write_text(json.dumps(last, indent=1, sort_keys=True))
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
 def _open_tab(tab_name: str = ""):
     from automations.blueink_docs import roster as bir
     from automations.recruiting_report.fill import open_by_key
@@ -232,16 +256,29 @@ def main(argv=None) -> int:
         matched, missing = match(todo, reps)
         if missing:
             # Page 1 is all the browser ever gets (server-side table); ask the
-            # search about each person still missing, one at a time.
+            # search about each person still missing, one at a time — within
+            # config.SEARCH_BUDGET_S, least recently searched first (see there).
             t1 = time.monotonic()
-            for p in list(missing):
+            last = _load_searched()
+            queue = search_order(missing, last)
+            searched = 0
+            for p in queue:
+                if time.monotonic() - t1 >= config.SEARCH_BUDGET_S:
+                    break
                 try:
                     ov_table.lookup_person(page, p.name, heads, reps)
                 except Exception as e:                      # noqa: BLE001
                     print(f"  {p.name}: search failed ({type(e).__name__})")
+                last[p.name] = dt.datetime.now().isoformat(timespec="seconds")
+                searched += 1
+            _save_searched(last)
             matched, missing = match(todo, reps)
-            print(f"  searched one by one in {time.monotonic() - t1:.0f}s — "
-                  f"{len(missing)} still not found", flush=True)
+            left = len(queue) - searched
+            print(f"  searched {searched} one by one in "
+                  f"{time.monotonic() - t1:.0f}s — {len(missing)} still not "
+                  f"found" + (f" ({left} not searched this run: time budget "
+                              f"{config.SEARCH_BUDGET_S}s, next run picks them "
+                              f"up first)" if left else ""), flush=True)
         # Everyone not on page 1 was searched for directly, so the page-1
         # shortfall no longer leaves anyone unread.
         complete = True

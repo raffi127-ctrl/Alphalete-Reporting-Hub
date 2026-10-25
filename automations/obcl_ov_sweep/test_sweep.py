@@ -540,3 +540,22 @@ class UnTickingStaleBoxes(unittest.TestCase):
         untick gate on"). Owner Submit stays out of it whatever this says."""
         self.assertTrue(config.UNTICK_STALE_LIVE)
         self.assertEqual(config.NEVER_UNTICK, ("Owner Submit",))
+
+
+class SearchBudgetTest(unittest.TestCase):
+    """2026-10-24: 57 people OwnerVille didn't have yet were searched every
+    hour (33 min on the one session) and knocks_intraday timed out behind it.
+    A capped run must hand the next run the people it didn't reach."""
+
+    def test_never_searched_first_then_oldest(self):
+        from types import SimpleNamespace as P
+        from automations.obcl_ov_sweep.run import search_order
+        people = [P(name="Old"), P(name="New"), P(name="Older")]
+        last = {"Old": "2026-10-24T15:00:00", "Older": "2026-10-24T14:00:00"}
+        self.assertEqual([p.name for p in search_order(people, last)],
+                         ["New", "Older", "Old"])
+
+    def test_budget_frees_the_session_well_inside_knocks_wait(self):
+        # knocks_intraday waits 30 min for the session; one more ~35s miss
+        # can land after the budget check.
+        self.assertLessEqual(config.SEARCH_BUDGET_S + 60, 15 * 60)

@@ -60,6 +60,16 @@ NEVER_UNTICK = ("Owner Submit",)
 # back to False while that is sorted.
 UNTICK_STALE_LIVE = True
 
+# HOW LONG ONE RUN MAY SPEND SEARCHING FOR PEOPLE OFF PAGE 1, in seconds
+# (2026-10-24). A miss costs ~35s (three probes, 8s of polling each). On Fri
+# 10/23 ~57 new starts went onto the OBCL before OwnerVille had them, and every
+# hourly sweep searched all 57: 33 minutes holding Lucy 3's ONE ownerville
+# session, every hour 2-7 PM. knocks_intraday waits 30 min for that session, so
+# every knocks slot in those hours failed (First Knocks 2 PM Central, Trang's
+# hourly boards). Past the budget the rest wait for the next run, least
+# recently searched first, so everyone still gets looked up in rotation.
+SEARCH_BUDGET_S = 480
+
 # Final Status words that mean this person is not going through onboarding —
 # no point spending an OwnerVille lookup on them. "Owner submitted" is skipped
 # too, but separately (sweep.owner_submitted) — it's finished, not gone.
