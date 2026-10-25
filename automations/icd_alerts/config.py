@@ -553,13 +553,32 @@ def in_sales_window(now: Optional[dt.datetime] = None) -> bool:
     return start <= now <= end
 
 
+# PER-OFFICE LATER ENDS for the credit-check (selling) window, by weekday.
+# Carlos 2026-10-24: "have credit checks and sales check until 11pm on
+# saturdays" -- his AT&T (NDS) office; everyone else keeps 5pm Saturday.
+SELLING_END_OVERRIDES = {"carlos-b2batt": {5: (23, 0)}}
+
+
+def _selling_end(now: dt.datetime):
+    end = SATURDAY_END_HHMM if now.weekday() == 5 else DAY_END_HHMM
+    try:
+        for r in enrollments():
+            key = str(r.get("office_key") or "").strip().lower()
+            ov = (SELLING_END_OVERRIDES.get(key) or {}).get(now.weekday())
+            if ov and ov > end:
+                end = ov
+    except Exception:  # noqa: BLE001 -- an unreadable install.json keeps the default
+        pass
+    return end
+
+
 def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if now.weekday() not in SELLING_DAYS:
         return False
     start = now.replace(hour=DAY_START_HHMM[0], minute=DAY_START_HHMM[1],
                         second=0, microsecond=0)
-    end_h, end_m = (SATURDAY_END_HHMM if now.weekday() == 5 else DAY_END_HHMM)
+    end_h, end_m = _selling_end(now)
     end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
     return start <= now <= end
 
