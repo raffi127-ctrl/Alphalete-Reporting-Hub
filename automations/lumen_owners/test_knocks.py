@@ -23,6 +23,16 @@ class KnocksTest(unittest.TestCase):
         with mock.patch.object(KN, "owner_boards", return_value=[]):
             self.assertEqual(KN.build(dt.date(2026, 10, 23), "x", {}), ([], []))
 
+    def test_each_owner_gets_its_own_folder(self):
+        # The board file is named by date only; a shared folder made every
+        # PDF page the last owner's board (2026-10-25).
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        a = KN.owner_dir(tmp, "Christian Esposito (Quantum Fiber)")
+        b = KN.owner_dir(tmp, "Nigel Marshall (Quantum Fiber)")
+        self.assertNotEqual(a, b)
+        self.assertTrue(a.is_dir() and b.is_dir())
+
     def test_failed_board_is_a_note(self):
         s = KN.note_html([("David Pancoast (Quantum Fiber)", "no knocks")])
         self.assertIn("David Pancoast (Quantum Fiber)", s)

@@ -58,6 +58,13 @@ def note_html(failed: List[Tuple[str, str]]) -> str:
 PDF_LABEL = "Daily Knocks — Quantum Fiber"
 
 
+def owner_dir(out_dir: Path, label: str) -> Path:
+    """out_dir/<label as a folder name>, created. Pure but for the mkdir."""
+    d = Path(out_dir) / "".join(c if c.isalnum() else "_" for c in label)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
           ) -> Tuple[list, list]:
     """(email blocks, files to attach). One DAILY TOTAL KNOCKS board per owner
@@ -91,8 +98,11 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print
                         failed.append((label, "no knocks in OwnerVille for %s"
                                        % target.strftime("%m/%d")))
                         continue
-                    png = K.render_owner_daily_board(target, rows, rows,
-                                                     out_dir, label)
+                    # One folder per owner: the board's file name is only
+                    # the date, so a shared folder left every page the LAST
+                    # owner's board (4x Nigel, 2026-10-25).
+                    png = K.render_owner_daily_board(
+                        target, rows, rows, owner_dir(out_dir, label), label)
                     blocks.append((label, png))
                     logfn("[lumen] knocks %s: %d rep(s)" % (label, len(rows)))
                 except Exception as e:  # noqa: BLE001 — one owner, not the mail
