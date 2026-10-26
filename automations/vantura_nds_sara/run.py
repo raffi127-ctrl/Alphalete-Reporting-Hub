@@ -598,36 +598,43 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
     M = imaplib.IMAP4_SSL(VC._ing.IMAP_HOST)
     try:
         M.login(account, password)
-        M.select('"[Gmail]/All Mail"', readonly=True)
         q = query or ("from:security.info@saraplus.com newer_than:%dd" % days)
-        typ, data = M.search(None, "X-GM-RAW", '"%s"' % q.replace('"', "'"))
-        uids = (data[0] or b"").split() if typ == "OK" else []
-        log("mail in %s matching %r: %d" % (account, q, len(uids)))
-        for uid in list(reversed(uids))[:limit]:
-            typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE TO SUBJECT)])")
-            if typ != "OK" or not d or not d[0]:
+        # All Mail leaves out Spam and Trash -- and a filter that trashes or a
+        # spam verdict is exactly how a forwarded code goes missing (10/26).
+        for folder in ("[Gmail]/All Mail", "[Gmail]/Spam", "[Gmail]/Trash"):
+            try:
+                M.select('"%s"' % folder, readonly=True)
+                typ, data = M.search(None, "X-GM-RAW", '"%s"' % q.replace('"', "'"))
+            except Exception as e:  # noqa: BLE001 -- a folder this account lacks
+                log("mail in %s [%s]: unreadable (%s)" % (account, folder, type(e).__name__))
                 continue
-            meta = d[0][0] if isinstance(d[0][0], bytes) else b""
-            msg = _email.message_from_bytes(d[0][1])
-            arrived = None
-            try:
-                tup = imaplib.Internaldate2tuple(meta)
-                if tup:
-                    arrived = dt.datetime.fromtimestamp(_time.mktime(tup))
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                sent = parsedate_to_datetime(msg.get("Date"))
-                sent_local = sent.astimezone().replace(tzinfo=None) if sent.tzinfo else sent
-            except Exception:  # noqa: BLE001
-                sent_local = None
-            gap = ("%+ds" % (arrived - sent_local).total_seconds()
-                   if arrived and sent_local else "?")
-            log("  sent %s  to %s  arrived here %s  (%s)  %s"
-                % (sent_local.strftime("%m/%d %H:%M:%S") if sent_local else "?",
-                   (msg.get("To") or "?").strip()[:60],
-                   arrived.strftime("%m/%d %H:%M:%S") if arrived else "?",
-                   gap, (msg.get("Subject") or "").strip()[:40]))
+            uids = (data[0] or b"").split() if typ == "OK" else []
+            log("mail in %s [%s] matching %r: %d" % (account, folder, q, len(uids)))
+            for uid in list(reversed(uids))[:limit]:
+                typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE TO SUBJECT)])")
+                if typ != "OK" or not d or not d[0]:
+                    continue
+                meta = d[0][0] if isinstance(d[0][0], bytes) else b""
+                msg = _email.message_from_bytes(d[0][1])
+                arrived = None
+                try:
+                    tup = imaplib.Internaldate2tuple(meta)
+                    if tup:
+                        arrived = dt.datetime.fromtimestamp(_time.mktime(tup))
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    sent = parsedate_to_datetime(msg.get("Date"))
+                    sent_local = sent.astimezone().replace(tzinfo=None) if sent.tzinfo else sent
+                except Exception:  # noqa: BLE001
+                    sent_local = None
+                gap = ("%+ds" % (arrived - sent_local).total_seconds()
+                       if arrived and sent_local else "?")
+                log("  [%s] sent %s  to %s  arrived %s  (%s)  %s"
+                    % (folder.split("/")[-1], sent_local.strftime("%m/%d %H:%M:%S") if sent_local else "?",
+                       (msg.get("To") or "?").strip()[:60],
+                       arrived.strftime("%m/%d %H:%M:%S") if arrived else "?",
+                       gap, (msg.get("Subject") or "").strip()[:40]))
     finally:
         try:
             M.logout()
