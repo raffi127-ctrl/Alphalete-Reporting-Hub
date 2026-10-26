@@ -51,6 +51,7 @@ KIND_LABEL = {
     "cf_broken": "regla de formato condicional rota (#REF!)",
     "cf_foreign": "regla de formato condicional que apunta fuera de la tab",
     "cf_duplicate": "regla de formato condicional repetida",
+    "cf_self": "regla de 'ya está puesto' que se cuenta a sí misma (tacha a cualquiera)",
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
@@ -804,6 +805,9 @@ def check_conditional(tab: str, sheet_id: int, rules: List[dict], ncols: int,
                          % (ncols, text)))
         elif key in seen:
             dead.append((i, "cf_duplicate", "igual a la regla %d: %s" % (seen[key], text)))
+        elif _counts_itself(rule, rules):
+            dead.append((i, "cf_self", "%s: %s en %s" % (KIND_LABEL["cf_self"], text,
+                                                         _ranges_a1(rule))))
         else:
             seen[key] = i
 
@@ -856,6 +860,52 @@ def _short_and_fragmented(tab, rules, block, dead) -> List[Finding]:
                 "la misma regla está copiada %d veces en pedazos: %s" % (len(idx), key[0]),
                 before="%d copias" % len(idx), after="1 regla"))
     return out
+
+
+# =COUNTIF($B$3:$F$38, C6)>0 -- a fixed range, a relative cell, "more than 0"
+COUNTIF_ANY = re.compile(
+    r"^=\s*COUNTIF\(\s*\$([A-Z]{1,3})\$(\d+)\s*:\s*\$([A-Z]{1,3})\$(\d+)\s*,"
+    r"\s*([A-Z]{1,3})(\d+)\s*\)\s*(>\s*0|>=\s*1)\s*$", re.I)
+COUNTIF_DUP = re.compile(r"^=\s*COUNTIF\(.*\)\s*>\s*1\s*$", re.I)
+
+
+def _cells(rule: dict):
+    for rg in rule.get("ranges", []):
+        for r in range(rg.get("startRowIndex", 0) + 1, rg.get("endRowIndex", 0) + 1):
+            for c in range(rg.get("startColumnIndex", 0) + 1, rg.get("endColumnIndex", 0) + 1):
+                yield r, c
+
+
+def _counts_itself(rule: dict, rules: List[dict]) -> bool:
+    """A "this name is already placed" rule (COUNTIF(range, cell)>0) whose
+    own cells sit inside the range it counts: every name matches itself, so
+    whoever lands in those cells shows struck through. Raf, 2026-10-26: Joseph
+    struck in Stations C6 -- a pasted fragment on C6:D6 counted $B$3:$F$38.
+
+    Only when the same cells also have a real duplicate rule (COUNTIF ... >1):
+    then the sheet's intent there is "twice = repeated" and the >0 copy is a
+    stray. Without one, a self-count can be on purpose -- Stations' OFF /
+    Terminated columns (F44:J157) strike every name typed in them."""
+    br = rule.get("booleanRule") or {}
+    cond = br.get("condition") or {}
+    vals = cond.get("values") or [{}]
+    m = COUNTIF_ANY.match(vals[0].get("userEnteredValue", "")) \
+        if cond.get("type") == "CUSTOM_FORMULA" else None
+    first = (rule.get("ranges") or [{}])[0]
+    if not m or col_index(m.group(5)) != first.get("startColumnIndex", 0) + 1 \
+            or int(m.group(6)) != first.get("startRowIndex", 0) + 1:
+        return False
+    c1, r1, c2, r2 = col_index(m.group(1)), int(m.group(2)), col_index(m.group(3)), int(m.group(4))
+    mine = set(_cells(rule))
+    if not mine or not all(r1 <= r <= r2 and c1 <= c <= c2 for r, c in mine):
+        return False
+    dup = set()
+    for other in rules:
+        oc = ((other.get("booleanRule") or {}).get("condition") or {})
+        if other is not rule and COUNTIF_DUP.match(
+                ((oc.get("values") or [{}])[0]).get("userEnteredValue", "")):
+            dup.update(_cells(other))
+    return mine <= dup
 
 
 def _points_outside(text: str, ncols: int) -> bool:

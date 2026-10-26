@@ -118,6 +118,16 @@ class Conditional(unittest.TestCase):
                          [3, 2, 1])
         self.assertEqual([y.kind for y in found], ["cf_duplicate", "cf_foreign", "cf_broken"])
 
+    def test_stray_self_count_deleted_on_purpose_one_kept(self):
+        # Stations 10/26: C6:D6 counted $B$3:$F$38 (itself) -> Joseph struck
+        grid = self.rule("=COUNTIF($B$4:$S$37, B4)>1", rows=(3, 37), cols=(1, 10))
+        stray = self.rule("=COUNTIF($B$3:$F$38, C6) > 0", rows=(5, 6), cols=(2, 4), color=0.8)
+        off = self.rule("=COUNTIF($B$44:$J$157, F44)>0", rows=(43, 157), cols=(5, 10), color=0.5)
+        placed = self.rule("=COUNTIF($F$44:$J$157, B4)>0", rows=(3, 37), cols=(1, 10), color=0.3)
+        found = K.check_conditional("t", 7, [grid, stray, off, placed], ncols=34)
+        self.assertEqual([(y.kind, y.request["deleteConditionalFormatRule"]["index"])
+                          for y in found], [("cf_self", 1)])
+
     def test_literal_text_is_not_a_column(self):
         self.assertFalse(K.check_conditional("t", 7, [self.rule('=$B4="ZZZ1"')], ncols=10))
 
