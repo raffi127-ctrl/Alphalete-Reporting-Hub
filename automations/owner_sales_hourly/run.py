@@ -240,17 +240,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     nds, _ = only_org(owner_totals(relay, offices, day, cfg.JAIRO_CAMPAIGN), org)
 
     rc = 0
-<<<<<<< Updated upstream
-    for name, group, key, chat_totals in (
-            ("owners", cfg.TEXT_GROUP, "last_sent", totals),
-            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso),
-            ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", sso)):
-=======
     for name, group, key, chat_totals, title in (
             ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today"),
             ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, "Owner Sales Today"),
             ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today")):
->>>>>>> Stashed changes
         if args.only and args.only != name:
             continue
         print("=== %s ===" % (group if isinstance(group, str)

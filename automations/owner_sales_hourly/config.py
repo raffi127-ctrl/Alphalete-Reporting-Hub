@@ -31,21 +31,14 @@ from automations.owner_chat_texts.config import GROUP_SOUTHSHORE_ORG
 # skip (`key` = the last-sent file name).
 SSO_GROUP = GROUP_SOUTHSHORE_ORG
 
-<<<<<<< Updated upstream
-# Jairo Ruiz 2026-10-26 (Slack DM with Megan): the same South Shore list in his
-# own "A PLAYERSSS" chat. Lucy 1 is a member (find_group 2026-10-26: exactly one
-# chat, 16 people). The full name, not "A PLAYERS": that needle hits 6 chats.
-JAIRO_GROUP = "A PLAYERSSS"
-=======
-# Jairo Ruiz 2026-10-26 (Slack): the lines in his "A PLAYERSSS" chat too --
-# only A-Players and AMs are in it. Eve: the owners on Jairo's campaign, NDS,
-# so this chat gets NDS offices' sales for the owners on our Org board (not the
-# South Shore list). Same name his ICD standings already go
-# to (ICD Relay -> 'Office Channels' -> row `jairo15` -> 'Texts Approved JSON');
-# resolve_group raises on 0 or 2+ hits, so a renamed chat fails loud.
+# Jairo Ruiz 2026-10-26 (Slack DM with Megan): the lines in his own
+# "A PLAYERSSS" chat -- only A-Players and AMs are in it. Lucy 1 is a member
+# (find_group 2026-10-26: exactly one chat, 16 people). The full name, not
+# "A PLAYERS": that needle hits 6 chats. Eve the same day: the owners on
+# Jairo's campaign, NDS -- so this chat gets NDS offices' sales for the owners
+# on our Org board, not the South Shore list.
 JAIRO_GROUP = "A PLAYERSSS"
 JAIRO_CAMPAIGN = "nds"
->>>>>>> Stashed changes
 
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.
