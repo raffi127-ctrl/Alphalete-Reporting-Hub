@@ -1983,6 +1983,54 @@
     "type": "not_configured"
    }
   },
+  "owner_week_tab": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "New week tab on the owners' sales boards (Raf 2026-10-25, Omar: \"a new one every Monday at 1 am\"). For every owner with \"new_week_tab\" in automations/sales_board_fixer/owners.json: copies the newest dated week tab ('11/01', named by its Sunday), names the copy by the new Sunday and puts it LEFT of the old one; on the copy the typed day cells (Int..Cx, Roll Call) go blank, LAST WEEK'S TOTALS = the old RUNNING WEEK TOTALS, PRIOR = the old LAST, and the MON date + 'WE m/d-m/d' label move. Week dated on the owner's clock (\"tz\"). This week's tab already there = nothing to do; a week missing = refuses and DMs Eve. Lanes / Line Up still move with sales_board_fixer_owners. weekdays [] + hand_run_only because the real clock is deploy/com.alphalete.owner-week-tab.plist, Mondays 00:00 CT = 1 AM Eastern (install: `lucy rerun install_owner_week_tab_agent`); this entry is the `lucy rerun owner_week_tab` handle. Pure Sheets API, no browser.",
+   "order": 63.5,
+   "display_name": "Owners' new week tab",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.sales_board_fixer.week_tab"
+   ],
+   "base_args": [
+    "--apply"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
+  "install_owner_week_tab_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.owner-week-tab LaunchAgent on Lucy 4: Mondays 00:00 machine-local (1 AM Eastern) it runs deploy/owner_week_tab.sh --apply (owners' new week tab, automations/sales_board_fixer/week_tab.py). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 4",
+   "display_name": "Install Owners' new week tab agent (Mon 00:00 CT)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "owner-week-tab"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_vantura_payroll_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_payroll_agent` can install/refresh the STANDALONE com.alphalete.vantura-payroll-wed LaunchAgent on Lucy 2, which runs the Vantura payroll PREP (automations.vantura_payroll.run) Wednesday 11:00am machine-local time via deploy/vantura_payroll_wed.sh. The wrapper passes --live (LIVE since 2026-07-15 \u2014 it writes the board), and now also publishes to the vantura-payroll Hub card. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",

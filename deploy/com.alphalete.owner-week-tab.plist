@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.owner-week-tab</string>
+
+    <!-- New week tab on the owners' sales boards ("new_week_tab" in
+         automations/sales_board_fixer/owners.json): Raf 2026-10-25, Omar
+         "a new one every Monday at 1 am". LUCY 4. Its own agent because a
+         midnight start can't sit in the 4am batch. Path is the laptop
+         placeholder; install_agent.py rewrites it:
+         python -m automations.day_orchestrator.install_agent owner-week-tab -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/owner_week_tab.sh</string>
+        <string>--apply</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Machine LOCAL time (Lucy 4 runs on Central): Monday 00:00 CT = 1 AM in
+         Dearborn (Omar, Eastern). The code dates the week on the OWNER's clock
+         ("tz" in owners.json), so it is already Monday there. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key><integer>1</integer>
+        <key>Hour</key><integer>0</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.owner-week-tab.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.owner-week-tab.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
