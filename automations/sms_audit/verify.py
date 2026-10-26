@@ -120,12 +120,12 @@ LINEAGE = {
  "Too recent to judge (texted in the last 3 days)":
    "LOG Sent At — first texted within 3 days of the window's end, so next "
    "week's calendar may still book them; held out of every bucket above",
- "People on the blast": "LOG Source = 'Mass SMS' — distinct Recipient Phone",
- "% of blast people who replied": "those people, with an In row",
- "% of blast people who booked": "those people, joined to a CAL booking",
- "People not on the cold list": "LOG — everyone else texted",
- "% of normal applicants who replied": "those people, with an In row",
- "% of normal applicants who booked": "those people, joined to a CAL booking",
+ "People we texted in bulk": "LOG Source = 'Mass SMS' — distinct Recipient Phone",
+ "% of bulk people who replied": "those people, with an In row",
+ "% of bulk people who booked": "those people, joined to a CAL booking",
+ "People we texted one by one": "LOG — everyone else texted",
+ "% of one-by-one people who replied": "those people, with an In row",
+ "% of one-by-one people who booked": "those people, joined to a CAL booking",
  "Average texts before they book":
    "LOG Out rows before the booking-confirmation template; people already "
    "booked when the week opened are excluded, not counted as zero",
@@ -254,7 +254,7 @@ def identities(res, office, recs, rows, convos, rep):
                              fun["drop"].get("never reached them", 0)))
 
     lanes = fun["lanes"]
-    _check(res, "cold list + everyone else = contacted",
+    _check(res, "bulk + one-by-one = contacted",
            lanes["cold"]["people"] + lanes["live"]["people"] == n,
            "{}+{} vs {}".format(lanes["cold"]["people"], lanes["live"]["people"], n))
 
@@ -311,11 +311,12 @@ def provenance(res, office, recs, rows, convos, rep):
            abs(shown - fun["shown"]) <= fun["join_misses"] + 1,
            "{} calendar vs {} counted".format(shown, fun["shown"]))
 
-    # the cold list is the log's Source column and nothing else
+    # the bulk lane is the log's Source column and nothing else: it says how
+    # the text was SENT, never anything about the applicant (Megan 2026-10-26)
     raw_cold = {A.phone10(r.get("recipient_phone")) for r in raw_out
                 if (r.get("source") or "") == A.MASS_SOURCE}
     raw_cold.discard("")
-    _check(res, "cold list = recipients of a Mass SMS",
+    _check(res, "bulk lane = recipients of a Mass SMS",
            abs(len(raw_cold) - fun["lanes"]["cold"]["people"]) <= 1,
            "{} raw vs {} counted".format(len(raw_cold),
                                          fun["lanes"]["cold"]["people"]))
