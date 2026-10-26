@@ -9533,6 +9533,15 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
         proven = [t for t in cands if _tab_is_live(sh, t)]
         if len(cands) == 1:
             if not proven:
+                if _tab_liveness(sh, cands[0]) is None:
+                    # UNREADABLE is not ORPHANED (2026-10-26). Sheets timed out all
+                    # afternoon and Lucy 4 — 681 rows drained, one that same evening
+                    # — was reported as a tab "NO runner has ever drained". Still
+                    # refuse to queue (fail-safe), but say what actually happened.
+                    print("[mini_control] couldn't read {} — Google Sheets isn't "
+                          "answering. Nothing queued for '{}'; try again in a few "
+                          "minutes.".format(cands[0], machine))
+                    return
                 print("[mini_control] machine '{}' has a tab ({}) but NO runner "
                       "has ever drained it — nothing queued, it would sit "
                       "'queued' forever. Known machines: {}".format(
@@ -9573,19 +9582,35 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
 _RUNNER_STATUSES = ("done", "failed")
 
 
+#: Seconds to wait before each re-read of a control tab that failed to read.
+_LIVENESS_RETRY_S = (3, 10)
+
+
+def _tab_liveness(sh, title: str):
+    """True = a runner has drained this tab, False = none ever has, None = the
+    tab could not be read (after retrying — a slow Sheets read is not proof of
+    an orphan; 2026-10-26 Lucy 4)."""
+    for wait in (0,) + tuple(_LIVENESS_RETRY_S):
+        if wait:
+            time.sleep(wait)
+        try:
+            vals = sh.worksheet(title).get_all_values()
+        except Exception:  # noqa: BLE001
+            continue
+        return any(len(r) > 4 and str(r[4]).strip().lower() in _RUNNER_STATUSES
+                   for r in vals[1:])
+    return None
+
+
 def _tab_is_live(sh, title: str) -> bool:
     """Has a runner ever drained this control tab?
 
     Fail-SAFE on a read error: answers False, so an unreadable tab is treated as
     an orphan and the caller refuses to queue rather than dropping the row into
     something that may never be read. The cost of a false 'no' is a clear error
-    message; the cost of a false 'yes' is silence for five days."""
-    try:
-        vals = sh.worksheet(title).get_all_values()
-    except Exception:  # noqa: BLE001
-        return False
-    return any(len(r) > 4 and str(r[4]).strip().lower() in _RUNNER_STATUSES
-               for r in vals[1:])
+    message; the cost of a false 'yes' is silence for five days. (The caller
+    tells "unreadable" apart from "orphaned" with _tab_liveness.)"""
+    return _tab_liveness(sh, title) is True
 
 
 def _set(ws, rownum: int, status: str, result: str = "", finished: bool = False) -> None:
