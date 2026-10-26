@@ -169,13 +169,31 @@ case " $* " in
     if [ "$_PUB" = "failed" ]; then
       touch "$FAIL_STAMP"
       "$VENV_PY" -c "from automations.shared.run_manifest import write_manifest; write_manifest('icd_alerts_poster', failed=['poster tick exit $rc'], alert=False)" >> "$LOG_FILE" 2>&1 || true
+      "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('icd_alerts_poster','ICD Credit-Check Alerts','failed')" >> "$LOG_FILE" 2>&1 || true
     elif [ "$_PUB" = "success" ]; then
-      "$VENV_PY" -c "from automations.shared.run_manifest import write_manifest; write_manifest('icd_alerts_poster', note='poster tick exit 0', alert=False)" >> "$LOG_FILE" 2>&1 || true
+      # THE HUB UPDATE MUST NEVER HOLD UP THE NEXT ALERT (Eveliz, 2026-10-26).
+      # publish_done reads Hub Activity and checks the failure ticket, which
+      # takes minutes, and launchd will not start the next tick until this one
+      # exits. On a busy afternoon nearly every tick posts, so the offices got
+      # one pass every 9-14 minutes instead of every minute: Heylen's sale
+      # reached #south-shore-b2b-sales 16 minutes late. So it runs DETACHED, in
+      # its own session (launchd kills the job's process group on exit, so a
+      # plain `&` would die with the tick), and only one at a time -- a busy
+      # afternoon must not stack a publish per minute. A lock older than 15
+      # minutes is a crashed publish and is cleared. A failed tick above stays
+      # in line: it is rare, and its alert must not be skipped.
+      PUB_LOCK="$LOG_DIR/.icd-alerts-publish.lock"
+      find "$PUB_LOCK" -maxdepth 0 -mmin +15 -exec rmdir {} \; 2>/dev/null
+      if mkdir "$PUB_LOCK" 2>/dev/null; then
+        rm -f "$FAIL_STAMP"
+        "$VENV_PY" -c "import subprocess, sys; subprocess.Popen(sys.argv[1:], start_new_session=True, stdin=subprocess.DEVNULL, stdout=open(sys.argv[-1], 'a'), stderr=subprocess.STDOUT)" \
+          /bin/bash -c '
+            "$1" -c "from automations.shared.run_manifest import write_manifest; write_manifest(\"icd_alerts_poster\", note=\"poster tick exit 0\", alert=False)" || true
+            "$1" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done(\"icd_alerts_poster\",\"ICD Credit-Check Alerts\",\"success\")" || true
+            rmdir "$2"
+          ' _ "$VENV_PY" "$PUB_LOCK" "$LOG_FILE" >> "$LOG_FILE" 2>&1 || rmdir "$PUB_LOCK"
+      fi
     fi
-    if [ -n "$_PUB" ]; then
-      "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('icd_alerts_poster','ICD Credit-Check Alerts','$_PUB')" >> "$LOG_FILE" 2>&1 || true
-    fi
-    [ "$_PUB" = "success" ] && rm -f "$FAIL_STAMP"
     ;;
 esac
 
