@@ -64,6 +64,10 @@ BOARDS = {
     # days by Order Date, plus an office total. Carlos's formula ("how many are
     # activated out of all sales made"), off this same NDS ORDER LOG.
     "activation_rate": ("📈 Activation Rate by Rep", "chart_with_upwards_trend"),
+    # Pending Orders (Colten 2026-10-26): the lines behind Rep Activations'
+    # Pending column, with the customer's name + number, so the rep can chase
+    # them. Posted / canceled / disconnected left out ("Dont need the posted").
+    "pending_orders": ("⏳ Pending Orders", "hourglass_flowing_sand"),
 }
 # Board -> the status keyword its rows must contain (order status values seen live:
 # Canceled / Confirmed / Disconnected / Posted / Shipped). 6+ days out was dropped:
@@ -476,6 +480,103 @@ def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, 
             len(lines))
 
 
+# Row fill per line status on the Pending Orders board. Red = the rep has to
+# act (same two as the red font on Rep Activations); green = phone is in the
+# customer's hands, so it should activate any day; yellow = on its way.
+_PENDING_FILLS = {"pending valid payment": "F8D7DA", "porting issue": "F8D7DA",
+                  "delivered": "D9EAD3", "shipped": "FFF2CC"}
+# Past this many lines a board splits into parts (whole reps per part), so
+# each image still reads on a phone. A busy office has 140+ pending lines.
+_PENDING_ROWS_PER_IMAGE = 40
+
+
+def _pending_rows(header, rows, target):
+    """One entry per PENDING line — the same lines Rep Activations counts as
+    Pending (not Posted / Canceled / Disconnected), one row per line item."""
+    rep_i = _find(header, "rep")
+    st_i = _find(header, "dtr status", "order status", "status")
+    spe_i = _find(header, "spe.status")
+    cust_i = _find(header, "customer name")
+    tn_i = _find(header, "spe.tn", "customer phone")   # same # the Order Log shows
+    pkg_i = _find(header, "package")
+    wt_i = _find(header, "spe.wireless type", "wireless type")
+    pt_i = _find(header, "product type (broken out)", "product type")
+    odate_i = _find(header, "sp.order date", "order date")
+    spm_i = _find(header, "sp.spm number", "spm number", "spm")
+    out = []
+    for r in _one_row_per_line(header, rows):
+        if _house_status(_cell(r, st_i)) in ("active", "canceled", "disconnected"):
+            continue
+        od = _parse_date(_cell(r, odate_i))
+        wt = _cell(r, wt_i)
+        out.append({
+            "rep": _cell(r, rep_i) or "(no rep)",
+            "customer": _cell(r, cust_i),
+            "phone": _cell(r, tn_i),
+            "package": _cell(r, pkg_i),
+            "device": _cell(r, pt_i) if (not wt or wt.lower() == "unknown") else wt,
+            "status": _cell(r, spe_i) or _cell(r, st_i) or "Pending",
+            "order_date": od,
+            "days": (target - od).days if od else None,
+            "spm": _cell(r, spm_i),
+        })
+    return out
+
+
+def _render_pending_orders(owner, header, rows, target, out_dir):
+    """Pending wireless lines grouped by rep, drawn by the same renderer as
+    Carlos's Pending Orders (box_order_log.pending_png). Returns
+    ([png, ...], line_count) — more than one png past _PENDING_ROWS_PER_IMAGE."""
+    from automations.box_order_log import pending_png
+    from automations.box_order_log import pending as bp
+    cols = ("Customer Name", "Phone", "Package", "Device", "Status",
+            "Order Date", "Days Waiting", "SPM #")
+
+    class _Row:                       # the shape pending_png / by_rep read
+        def __init__(self, d):
+            od = d["order_date"]
+            self.cells = (d["customer"], d["phone"], d["package"], d["device"],
+                          d["status"], od.strftime("%m/%d/%Y") if od else "",
+                          "" if d["days"] is None else str(d["days"]), d["spm"])
+            self.status = d["status"].lower()
+            self.history = ()
+            self.rep, self.sale_date = d["rep"], od
+            self.fields = {"Rep Name": d["rep"], "Business Name": d["customer"]}
+
+    lines = [_Row(d) for d in _pending_rows(header, rows, target)]
+    n = len(lines)
+    reps = bp.by_rep(lines)
+    parts, cur, cur_n = [], [], 0     # whole reps per part, never split a rep
+    for rep, rr in reps:
+        if cur and cur_n + len(rr) > _PENDING_ROWS_PER_IMAGE:
+            parts.append(cur)
+            cur, cur_n = [], 0
+        cur.append((rep, rr))
+        cur_n += len(rr)
+    parts.append(cur)
+    sub = ("{} pending wireless line{} as of {} — posted and canceled left "
+           "out. Red = Pending Valid Payment / Porting Issue (rep must act), "
+           "green = Delivered, yellow = Shipped."
+           .format(n, bp.plural(n), f"{target:%B} {target.day}, {target.year}"))
+    slug = "_".join(owner.lower().split())
+    outs = []
+    for i, part in enumerate(parts, 1):
+        prows = [x for _rep, rr in part for x in rr]
+        tag = f" ({i} of {len(parts)})" if len(parts) > 1 else ""
+        work = {"today": target, "count": len(prows), "columns": cols,
+                "title": f"{owner} — Pending Orders{tag}",
+                "subtitle": sub,
+                "color_fn": lambda st, _h: _PENDING_FILLS.get(st, ""),
+                "sections": [{"key": "p", "title": None, "rows": prows,
+                              "reps": part,
+                              "empty_note": "Nothing pending — every line is "
+                                            "posted or closed."}]}
+        suffix = f"_{i}" if len(parts) > 1 else ""
+        out = out_dir / f"nds_pending_orders_{slug}_{target.isoformat()}{suffix}.png"
+        outs.append(pending_png.render(work, out))
+    return outs, n
+
+
 # Activation bands — the SAME floors Carlos's B2B board uses
 # (vantura_churn.fill.BANDS), so the colors mean the same thing in both offices.
 _ACT_WINDOWS = (("0-30 Day", 0, 30), ("31-60 Day", 31, 60))
@@ -653,10 +754,16 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
     elif board == "order_log":
         img, count = _render_order_log(owner, header, rows, target, out_dir)
         is_file = True
+    elif board == "pending_orders":
+        imgs, count = _render_pending_orders(owner, header, rows, target, out_dir)
+        img = imgs[0]
     else:  # cancels or disconnects — status-keyword filtered order lists
         img, count = _render_status_orders(owner, header, rows, target, out_dir,
                                            _STATUS_KEYWORD[board], label, board)
-    print(f"[nds_orderlog:{board}] rendered {count} row(s) -> {img}", flush=True)
+    extra_imgs = imgs[1:] if board == "pending_orders" else []
+    print(f"[nds_orderlog:{board}] rendered {count} row(s) -> {img}"
+          + (f" (+{len(extra_imgs)} more part(s))" if extra_imgs else ""),
+          flush=True)
 
     # No rows on Cancels / Disconnects: post a "No new ... orders" one-liner (like
     # every other metric's no-data notice), NOT a blank image and NOT skipped —
@@ -693,7 +800,16 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
         resp = post_reply_with_file(Path(img), comment=comment, react_emoji=emoji)
     else:
         from automations.shared.slack_metrics_post import post_reply_with_image
-        resp = post_reply_with_image(Path(img), comment=comment, react_emoji=emoji)
+        n_parts = 1 + len(extra_imgs)
+        part = f" (1 of {n_parts})" if extra_imgs else ""
+        resp = post_reply_with_image(Path(img), comment=comment + part,
+                                     react_emoji=emoji)
+        # Pending Orders past one image: the rest follow as their own replies.
+        for i, more in enumerate(extra_imgs, 2):
+            if not resp.get("ok"):
+                break
+            resp = post_reply_with_image(Path(more),
+                                         comment=f"{comment} ({i} of {n_parts})")
     print(f"[nds_orderlog:{board}] {'✅ Posted' if resp.get('ok') else '⚠ '+str(resp)}",
           flush=True)
     return 0
