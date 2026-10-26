@@ -132,5 +132,64 @@ class WhyItDidNotLand(unittest.TestCase):
         self.assertIn("no message at all", logged[0])
 
 
+class FormerReps(unittest.TestCase):
+    """Megan 2026-10-26: a former rep who reapplies more than 9 months later
+    is pushed through (Keren Ospina, Brought On Board (Retired) 11/13/2025)."""
+
+    TODAY = __import__("datetime").date(2026, 10, 26)
+
+    def rows(self, *pairs):
+        return [{"status": s, "entered": d} for s, d in pairs]
+
+    def test_keren_is_pushed(self):
+        self.assertTrue(OAT.former_rep_ok(self.rows(
+            ("Brought On Board (Retired)", "November 13, 2025"),
+            ("Brought On Board (Retired)", "November 13, 2025")), self.TODAY))
+
+    def test_under_nine_months_is_not(self):
+        self.assertFalse(OAT.former_rep_ok(self.rows(
+            ("Brought On Board (Retired)", "March 1, 2026")), self.TODAY))
+
+    def test_exactly_the_cutoff_day_is_not_yet(self):
+        self.assertFalse(OAT.former_rep_ok(self.rows(
+            ("Brought On Board (Retired)", "January 26, 2026")), self.TODAY))
+        self.assertTrue(OAT.former_rep_ok(self.rows(
+            ("Brought On Board (Retired)", "January 25, 2026")), self.TODAY))
+
+    def test_any_other_status_leaves_it_for_a_person(self):
+        self.assertFalse(OAT.former_rep_ok(self.rows(
+            ("Brought On Board (Retired)", "November 13, 2025"),
+            ("Second Round Showed Up", "November 13, 2025")), self.TODAY))
+
+    def test_an_unreadable_date_leaves_it_for_a_person(self):
+        self.assertFalse(OAT.former_rep_ok(self.rows(
+            ("Brought On Board (Retired)", "")), self.TODAY))
+
+    def test_no_table_is_not_a_former_rep(self):
+        self.assertFalse(OAT.former_rep_ok([], self.TODAY))
+
+    def test_the_send_overwrites_a_former_rep(self):
+        a = mock.Mock(first_name="Keren", last_name="Ospina")
+        ps = [mock.patch.object(OAT, "read_current_applicant",
+                                return_value=mock.Mock()),
+              mock.patch.object(OAT, "_has_dup_signal", return_value=False),
+              mock.patch.object(OAT, "_guard_office_now", return_value=True),
+              mock.patch.object(OAT, "untick_send_boxes"),
+              mock.patch.object(OAT, "_queue_total", return_value=5),
+              mock.patch.object(OAT, "_click_first", return_value=True),
+              mock.patch.object(OAT, "_send_landed", return_value="unknown"),
+              mock.patch.object(OAT, "read_dup_rows", return_value=self.rows(
+                  ("Brought On Board (Retired)", "November 13, 2025"))),
+              mock.patch.object(OAT, "former_rep_ok", return_value=True),
+              mock.patch.object(OAT, "_try_overwrite_send", return_value=True)]
+        for p in ps:
+            p.start()
+        try:
+            self.assertEqual(OAT.do_send_ai(_Page(), a, True), "sent_override")
+        finally:
+            for p in ps:
+                p.stop()
+
+
 if __name__ == "__main__":
     unittest.main()
