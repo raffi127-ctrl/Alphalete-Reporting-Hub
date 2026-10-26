@@ -3287,6 +3287,27 @@
    "verify": null,
    "timeout_minutes": 45
   },
+  "nds_ps_week_probe": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "READ-ONLY probe (Eve 2026-10-26, JC Lopez sales WE 9/20 + 9/27). Downloads NDS ProductSalesSummaryRep .csv with a few date-pin variants and prints which weeks come back + the owner's WIRELESS/AIR per week. Writes no Sheet. `lucy rerun nds_ps_week_probe --owner \"JC LOPEZ\" --since 2026-09-14 --until 2026-10-04`. Lucy 3 because that is where the NDS Tableau session lives.",
+   "display_name": "NDS Product Sales week probe",
+   "machine": "Lucy 3",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.alphalete_org_report.nds_ps_week_probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20
+  },
   "nds_mirror_to_att": {
    "on_scheduler": true,
    "order": 41.1,
