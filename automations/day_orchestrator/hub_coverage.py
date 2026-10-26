@@ -107,6 +107,8 @@ _NOT_A_REPORT = frozenset({
     # Owners' new week tab (2026-10-25): makes a tab on the owner's board, a
     # step of their board like the fixer; a failed Monday DMs Eve itself
     "owner_week_tab", "owner-week-tab",
+    # Our own board's Monday tab (2026-10-26): same kind of step, DMs Eve
+    "alphalete_sales_board_week_roll", "alphalete-sales-board-week-roll",
     # Office Expenses has no report card to sit behind (2026-10-20): its
     # failures reach the alert channel like any scheduled job
     "office_expenses_fixer", "office-expenses-fixer",
