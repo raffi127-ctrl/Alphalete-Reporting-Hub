@@ -658,6 +658,12 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
                         log("    forwarding confirmation body unreadable (%s)" % type(e).__name__)
         if query and "forwarding-noreply" in query:
             log("FORWARD LINKS: %s" % (" | ".join(found_links) if found_links else "none found"))
+            # the queue shows a log line up to ~200 chars; a Google link is ~400,
+            # so it also goes out in 100-char pieces to be joined back in order
+            for n, lk in enumerate(found_links[:2], 1):
+                parts = [lk[i:i + 100] for i in range(0, len(lk), 100)]
+                for j, part in enumerate(parts, 1):
+                    log("LINKPART %d.%d/%d %s" % (n, j, len(parts), part))
     finally:
         try:
             M.logout()
