@@ -272,9 +272,9 @@ def _send_one(group, key: str, totals: Dict[str, int], now: dt.datetime,
     except Exception as e:  # noqa: BLE001 — one bad chat must not stop the other
         print("text failed: %s" % e)
         return 1
-    print("%s -> %s (%d people)" % ("[dry-run] would text" if dry else "texted",
+    print("%s -> %s (%s people)" % ("[dry-run] would text" if dry else "texted",
                                     res.get("resolved_name"),
-                                    len(res.get("participants") or [])))
+                                    res.get("participants") or "?"))
     if not dry:
         last.parent.mkdir(parents=True, exist_ok=True)
         last.write_text(text, encoding="utf-8")
