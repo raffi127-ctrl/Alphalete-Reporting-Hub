@@ -317,6 +317,7 @@
       "sheet_tab": "JC Lopez - NDS",
       "as_owner": "JC Lopez",
       "promote_when_visible": true,
+      "promote_office_id": "24035",
       "reason": "2026-10-26: Rafael asked eStream for JC Lopez's AppStream on 10/25 and Jovanna confirmed 'All set' the same day. Moved out of skip so the next AppStream pull promotes him by itself. If the name does not match, backfill_new_icds prints every office sharing his last name -> pin it with promote_office_id. Mirrored onto the ATT Program as 'JC Lopez (NDS)' (mirror_nds_tab)."
     }
   ]
