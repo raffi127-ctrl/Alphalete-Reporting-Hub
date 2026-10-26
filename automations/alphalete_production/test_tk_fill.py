@@ -421,3 +421,27 @@ class TotalsRowGetsATotal(unittest.TestCase):
         self.assertIsNone(T.ensure_tk_total(ws, g, apps_c, tk_c, 79, 4, 78,
                                             apply=True))
         self.assertEqual(ws.written, {})
+
+
+
+class IcdAliases(unittest.TestCase):
+    """10/26: 'ortensia martinez' and "Tay'sja Jackson" knocked and stayed off
+    TK -- the board spells them 'Ortencia Denice Martinez' / 'Taysja Jackson
+    (Wk 2)'. An ICD Aliases row fixes it; the board's names are never touched."""
+
+    ROWS = {4: "Ortencia Denice Martinez", 5: "Taysja Jackson (Wk 2)"}
+    ALIASES = {"Ortencia Denice Martinez": ["ortensia martinez"],
+               "Taysja Jackson": ["Tay'sja Jackson"]}
+
+    def test_without_aliases_they_miss(self):
+        m, un, _a = T.match_rows({"ortensia martinez": 41,
+                                  "Tay'sja Jackson": 27}, self.ROWS)
+        self.assertEqual(m, {})
+        self.assertEqual(len(un), 2)
+
+    def test_an_alias_row_finds_the_board_spelling(self):
+        m, un, amb = T.match_rows({"ortensia martinez": 41,
+                                   "Tay'sja Jackson": 27}, self.ROWS,
+                                  self.ALIASES)
+        self.assertEqual(m, {4: 41, 5: 27})
+        self.assertEqual((un, amb), ([], []))

@@ -294,5 +294,20 @@ class NoBoard(unittest.TestCase):
                                  verbose=False))
 
 
+
+class AliasLookup(unittest.TestCase):
+    """A spelling no pass can see goes through ICD Aliases (10/26)."""
+
+    def test_alias_places_the_rep(self):
+        book = _book([("Ortencia Denice Martinez", "Alphaletes"),
+                      ("Taysja Jackson (Wk 2)", "Ceaseless")])
+        self.assertEqual(book.team_for("ortensia martinez"), "")
+        book.aliases = {"Ortencia Denice Martinez": ["ortensia martinez"],
+                        "Taysja Jackson": ["Tay'sja Jackson"]}
+        self.assertEqual(book.team_for("ortensia martinez"), "Alphaletes")
+        self.assertEqual(book.team_for("Tay'sja Jackson"), "Ceaseless")
+        self.assertEqual(book.team_for("Nobody Here"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

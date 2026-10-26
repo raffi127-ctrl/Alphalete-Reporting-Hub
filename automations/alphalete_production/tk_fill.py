@@ -310,7 +310,7 @@ def _ends(name: str) -> str:
     return f"{parts[0]} {parts[-1]}" if len(parts) > 1 else _ov_norm(name)
 
 
-def match_rows(knocks: dict, rows: dict):
+def match_rows(knocks: dict, rows: dict, aliases: dict = None):
     """Ownerville rep -> board row. Returns (matched, unmatched_ov, ambiguous).
 
     Matched on the normalised full name first; a nickname in parentheses
@@ -328,6 +328,13 @@ def match_rows(knocks: dict, rows: dict):
     the same way the Energy fill leaves the doubt blank. That is also why the
     fallback is a second pass and not a looser first pass -- an exact full-name
     hit must never be lost to a first+last collision.
+    
+    A SPELLING NEITHER PASS CAN SEE ('ortensia martinez' vs the board's
+    'Ortencia Denice Martinez', 'Tay'sja' vs 'Taysja') goes to the ICD Aliases
+    sheet: `aliases` = focus_office_att.aliases.load_aliases(), consulted only
+    for a name that missed, and the board's spelling is then matched the same
+    two ways. Never a rename on the board -- Line Up and Stations read those
+    names (Eve, 2026-10-26).
     """
     by_norm: dict = {}
     by_ends: dict = {}
@@ -342,6 +349,12 @@ def match_rows(knocks: dict, rows: dict):
         hits = by_norm.get(_ov_norm(ov_name), [])
         if not hits:
             hits = by_ends.get(_ends(ov_name), [])
+        if not hits and aliases:
+            from automations.focus_office_att.aliases import alias_to_canonical
+            canon = alias_to_canonical(ov_name, aliases)
+            if canon != ov_name:
+                hits = (by_norm.get(_ov_norm(canon), [])
+                        or by_ends.get(_ends(canon), []))
         if len(hits) == 1:
             matched[hits[0]] = max(matched.get(hits[0], 0), count)
         elif not hits:
@@ -514,6 +527,15 @@ def fill_tab(ws, day, knocks: dict, talks: dict, *, apply: bool, retry) -> int:
              "that column was EN).")
         return 75
     matched, unmatched, ambiguous = match_rows(knocks, rows)
+    aliases = None
+    if unmatched:
+        # Only a miss pays the Sheets read.
+        try:
+            from automations.focus_office_att.aliases import load_aliases
+            aliases = load_aliases()
+            matched, unmatched, ambiguous = match_rows(knocks, rows, aliases)
+        except Exception as e:  # noqa: BLE001 -- aliases never cost the fill
+            _log(f"ICD Aliases not read ({type(e).__name__}: {str(e)[:120]})")
     tt_c = tt_col(g, day)
     _log(f"board roster: {len(rows)} rep(s) - matched {len(matched)} - "
          f"TK column {col}"
@@ -526,7 +548,7 @@ def fill_tab(ws, day, knocks: dict, talks: dict, *, apply: bool, retry) -> int:
     # ownerville does not list stays BLANK rather than being zeroed.
     tt_plan, tt_protected = ([], [])
     if tt_c:
-        tt_matched, _u, _a = match_rows(talks, rows)
+        tt_matched, _u, _a = match_rows(talks, rows, aliases)
         tt_plan, tt_protected = build_plan(g, tt_c, tt_matched, rows)
     if not plan and not tt_plan:
         _log("nothing to write -- the board already holds today's numbers")
