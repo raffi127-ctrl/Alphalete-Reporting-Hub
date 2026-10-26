@@ -319,3 +319,52 @@ class OwnerRepeats(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OutsideBlock(unittest.TestCase):
+    """Eve, 2026-10-26: the whole tab, not just the rep rows."""
+
+    def teams(self, mindset="=SUM($E%(r)d:$G%(r)d)"):
+        v, f = board([("Rep %d" % i, GOOD, "1", "Here") for i in range(8)])
+        for team in ("Sins", "Alphaletes", "Hashiras", "Mindset", "Ceaseless"):
+            r = len(f) + 1
+            cell = (mindset if team == "Mindset" else "=SUM($E%(r)d:$G%(r)d)") % {"r": r}
+            v.append(["", "", team, "0", "0", "0", ""])
+            f.append(["", "", team, cell, "0", "0", ""])
+        return v, f
+
+    def test_typed_number_in_teams_block_gets_formula_back(self):
+        v, f = self.teams(mindset="75")
+        found = K.check_outside_block("t", v, f)
+        self.assertEqual([(x.where, x.value, x.name) for x in found],
+                         [("D16", "=SUM($E16:$G16)", "Mindset")])
+
+    def test_healthy_teams_block_is_quiet(self):
+        v, f = self.teams()
+        self.assertEqual(K.check_outside_block("t", v, f), [])
+
+    def test_totals_row_is_not_a_rep_row(self):
+        v, f = board([("Rep %d" % i, GOOD, "1", "Here") for i in range(8)])
+        f[-1][3] = "12"           # TOTALS typed: rep formulas above don't count
+        self.assertEqual(K.check_outside_block("t", v, f), [])
+
+    def test_typed_between_dragged_row_formulas(self):
+        v, f = board([("Rep %d" % i, GOOD, "1", "Here") for i in range(8)])
+        f[-1][3:6] = ["=SUM(D4:D11)", "40", "=SUM(F4:F11)"]
+        found = K.check_outside_block("t", v, f)
+        self.assertEqual([(x.where, x.value) for x in found], [("E12", "=SUM(E4:E11)")])
+
+    def test_typed_history_column_left_alone(self):
+        v, f = board([("Rep %d" % i, GOOD, "1", "Here") for i in range(8)])
+        for n in (232, 499, 355):
+            v.append(["", "", "WE", str(n), "", "", ""])
+            f.append(["", "", "WE", n, "", "", ""])
+        self.assertEqual(K.check_outside_block("t", v, f), [])
+
+    def test_whole_run_typed_over_is_fixed_in_one_pass(self):
+        v, f = self.teams()
+        for r in (13, 14, 15):              # Sins, Alphaletes, Hashiras frozen
+            f[r - 1][3] = "205"
+        found = K.check_outside_block("t", v, f)
+        self.assertEqual([x.where for x in found], ["D13", "D14", "D15"])
+        self.assertEqual(found[0].value, "=SUM($E13:$G13)")

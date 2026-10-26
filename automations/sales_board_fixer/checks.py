@@ -326,6 +326,95 @@ def check_formulas(tab: str, values, formulas) -> List[Finding]:
     return _group_added_rows(out)
 
 
+def normalize_cols(formula: str, col: int) -> str:
+    """'=SUMIF($DQ$4:$DQ$73,"<>RT",D4:D73)' in col D -> relative columns as
+    offsets ('[+0]4'), rows kept: the same formula dragged along a row."""
+    def sub(m):
+        d1, letters, d2, num = m.groups()
+        if d1:
+            return m.group(0)
+        return "[%+d]%s%s" % (col_index(letters) - col, d2, num)
+    return "".join(t if lit else REF.sub(sub, t) for lit, t in _split_quotes(formula))
+
+
+def denormalize_cols(pattern: str, col: int) -> str:
+    return re.sub(r"\[([+-]\d+)\]", lambda m: col_letter(col + int(m.group(1))), pattern)
+
+
+def _typed_number(raw) -> bool:
+    s = str(raw if raw is not None else "").strip().replace(",", "").lstrip("$").rstrip("%")
+    if not s or s.startswith("="):
+        return False
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
+def check_outside_block(tab: str, values, formulas) -> List[Finding]:
+    """The rest of the tab -- TOTALS, the stats under it, the Teams block
+    (Eve, 2026-10-26: Mindset Engine 'Total Units' was a typed 75 for weeks;
+    "Lucy fixer debe revisar toda la tab"). No column majority there: a typed
+    number is put back only when the cells on BOTH sides (or two in a row on
+    one side), above/below or left/right, carry the same formula. Neighbours
+    in the rep block don't count -- TOTALS is not one more rep row."""
+    first, last = block_rows(values)
+    out: List[Finding] = []
+
+    def vert(r, c):
+        if first <= r <= last or r < 1:
+            return None
+        f = str(_g(formulas, r, c))
+        return normalize(f, r) if f.startswith("=") else None
+
+    def horiz(r, c):
+        if c < 1:
+            return None
+        f = str(_g(formulas, r, c))
+        return normalize_cols(f, c) if f.startswith("=") else None
+
+    def side(get, r, c, dr, dc):
+        """The first two formula patterns past any typed numbers that way --
+        a whole run typed over (Teams 'LAST WEEK', 5 rows frozen for weeks)
+        is fixed in one pass, not one cell per morning."""
+        while 1 <= r <= len(formulas) and _typed_number(_g(formulas, r, c)):
+            if first <= r <= last:
+                return None, None
+            r, c = r + dr, c + dc
+        return get(r, c), get(r + dr, c + dc)
+
+    def agree(get, r, c, dr, dc):
+        a, a2 = side(get, r - dr, c - dc, -dr, -dc)
+        b, b2 = side(get, r + dr, c + dc, dr, dc)
+        for p, q in ((a, b), (a, a2), (b, b2)):
+            if p and p == q:
+                return p
+        return None
+
+    for r in range(1, len(formulas) + 1):
+        if first <= r <= last:
+            continue
+        for c in range(1, len(formulas[r - 1]) + 1):
+            raw = _g(formulas, r, c)
+            if not _typed_number(raw):
+                continue
+            pat = agree(vert, r, c, 1, 0)
+            fix = denormalize(pat, r) if pat else None
+            if not fix:
+                pat = agree(horiz, r, c, 0, 1)
+                fix = denormalize_cols(pat, c) if pat else None
+            if not fix:
+                continue
+            label = " ".join(str(_g(values, r, layout(values).name_col)).split()) \
+                or " ".join(str(_g(values, r, layout(values).name_col - 1)).split())
+            out.append(Finding(
+                "typed_over_formula", tab, a1(r, c),
+                "%s, fila %s" % (KIND_LABEL["typed_over_formula"], label or r),
+                row=r, name=label, before=str(raw)[:120], after=fix[:120], value=fix))
+    return out
+
+
 def _inside(pattern: str, row: int, first: int, last: int) -> bool:
     """False when the column's formula, put on `row`, would point at a row
     outside the rep block -- the first rank cell is a typed 1 because

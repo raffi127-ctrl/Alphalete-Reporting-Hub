@@ -235,7 +235,8 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
         found = lanes_findings(t)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
     elif K.is_board(v):
-        found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v, learn=owner)
+        found = (K.check_formulas(title, v, f) + K.check_outside_block(title, v, f)
+                 + K.check_roll_call(title, v, learn=owner)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"]))
         first, last = K.block_rows(v)
