@@ -178,13 +178,15 @@ class FormerReps(unittest.TestCase):
               mock.patch.object(OAT, "_queue_total", return_value=5),
               mock.patch.object(OAT, "_click_first", return_value=True),
               mock.patch.object(OAT, "_send_landed", return_value="unknown"),
-              mock.patch.object(OAT, "read_dup_rows", return_value=self.rows(
-                  ("Brought On Board (Retired)", "November 13, 2025"))),
+              mock.patch.object(OAT, "read_dup_rows", side_effect=[self.rows(
+                  ("Brought On Board (Retired)", "November 13, 2025")), []]),
               mock.patch.object(OAT, "former_rep_ok", return_value=True),
               mock.patch.object(OAT, "_try_overwrite_send", return_value=True)]
         for p in ps:
             p.start()
         try:
+            # Keren 10/26: the table is on screen at load, gone after the
+            # click (second read returns []) -- the load read still counts.
             self.assertEqual(OAT.do_send_ai(_Page(), a, True), "sent_override")
         finally:
             for p in ps:

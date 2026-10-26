@@ -1064,6 +1064,13 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     untick_send_boxes(page, live=True)
     _who = f"{a.first_name} {a.last_name}".strip()
     _before = _queue_total(page)
+    # The duplicate table shows when the record OPENS and can be gone once
+    # Send is clicked (Keren Ospina 10/26: table on screen at load, "no
+    # message at all" after the click), so read it now as well.
+    try:
+        _dups_at_load = read_dup_rows(page)
+    except Exception:  # noqa: BLE001
+        _dups_at_load = []
     if not _click_first(page, ["Send to AI", "Send To AI"]):
         _log("    'Send to AI' button not found — skipped")
         return "no_button"
@@ -1073,7 +1080,7 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         # re-applicant with its duplicate table instead of the cannot-send
         # panel, so the click "does nothing" -- Keren Ospina, Brought On Board
         # (Retired) 11/13/2025. Past the window, overwrite and send.
-        _dups = read_dup_rows(page)
+        _dups = read_dup_rows(page) or _dups_at_load
         if _dups:
             _seen = "; ".join("%s (%s)" % (d.get("status", "")[:40],
                                            d.get("entered", "")) for d in _dups[:4])
