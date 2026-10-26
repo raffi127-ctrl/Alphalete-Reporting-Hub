@@ -127,128 +127,26 @@ def stats_cells(grid, day: dt.date):
 
 
 def board_stats(ws, grid, day: dt.date, fresh: bool = False):
-    """[(label, value)] of today's headcount block. `fresh` re-reads just that
-    column after this sweep's writes, so the counts agree with the sales listed
-    in the same text -- the grid in hand predates them."""
+    """[(label, value)] of today's headcount block, copied as the board reads.
+    `fresh` re-reads just that column after this sweep's writes, so the counts
+    agree with the sales listed in the same text -- the grid in hand predates
+    them.
+
+    "In the field" is the BOARD'S formula: reps with knocks in the day's TK
+    column, or a sale (Megan 2026-10-26: the text said 44 off roll call while
+    the knock board had 37 knocking). It used to count roll call, which is why
+    Sunday and unmarked days had their own fallback here; with knocks it needs
+    none, and Zero / % / both averages follow it on the board itself.
+    """
     col, rows = stats_cells(grid, day)
     if not rows:
         return []
-    tot = B.last_rep_row(grid) + 1
-    int_col = B.day_blocks(grid).get(day.strftime("%A"), {}).get("Int")
     vals = [B.cell(grid, r, col).strip() for r, _l in rows]
-    apps = B.cell(grid, tot, col).strip()
-    ints = B.cell(grid, tot, int_col).strip() if int_col else ""
     if fresh:
         got = ws.get("%s:%s" % (_a1(rows[0][0], col), _a1(rows[-1][0], col)))
         vals = [(got[i][0] if i < len(got) and got[i] else "").strip()
                 for i in range(len(rows))]
-    from automations.alphalete_sales_board import knock_field
-    knocked = knock_field.load(day)
-    sold_only = day.weekday() == 6 or not roll_call_taken(grid, col)
-    if fresh and (sold_only or knocked):
-        apps = (ws.acell(_a1(tot, col)).value or "").strip()
-        ints = (ws.acell(_a1(tot, int_col)).value or "").strip() if int_col else ""
-    stats = [(label, v) for (_r, label), v in zip(rows, vals)]
-    if knocked:
-        return knock_stats(stats, apps, ints, knocked)
-    return sunday_stats(stats, apps, ints) if sold_only else stats
-
-
-def roll_call_taken(grid, col: int) -> bool:
-    """Did anybody mark today's roll call? Any letter but 'T' in the day's
-    block (an X in a sales cell, HERE/LATE/OFF in Roll Call) says yes.
-
-    'T' doesn't count: a terminated rep carries it all week. WE 10.25 had
-    14-30 X's every weekday and zero roll-call letters on no day but Sunday,
-    so this only fires when a day was left untouched -- and then the board's
-    formula would count the whole roster, exactly the 10/25 Sunday bug
-    (Eve, 2026-10-26: same fallback as Sunday on any day nobody took it).
-    """
-    width = max(len(r) for r in grid[:B.SUB_ROW]) if grid else 0
-    end = next((c - 1 for c in range(col + 1, width + 1)
-                if B.cell(grid, B.DAY_ROW, c).strip().upper() in B.DAY_LABELS),
-               width)
-    for r in range(B.SUB_ROW + 1, B.last_rep_row(grid) + 1):
-        for c in range(col, end + 1):
-            v = B.cell(grid, r, c).strip().upper()
-            if v and v != "T" and not _is_number(v):
-                return True
-    return False
-
-
-def _is_number(s: str) -> bool:
-    try:
-        float(s.replace(",", ""))
-        return True
-    except ValueError:
-        return False
-
-
-def _num(s) -> float:
-    try:
-        return float(str(s).replace(",", "").strip() or 0)
-    except ValueError:
-        return 0.0
-
-
-def sunday_stats(stats, apps, ints):
-    """Sunday's block (or any day with no roll call), with "in the field" =
-    reps who got on the board.
-
-    The board's field formula counts every row NOT marked X/T/RT/... in roll
-    call, and nobody takes roll call on Sunday -- so 10/25 read 42 in the field
-    with ~5 actually out (voice note to Eve, 2026-10-26: "we needed to just
-    count number of people actively knocking that day"). There is no knock
-    pull on Sunday either (gap_alerts is off), so the reps who sold are the
-    only ones we can see out there. Zero and % lines go: with no knock count
-    they would always read 0 and 100%. Averages are re-divided by that field.
-    """
-    get = dict((l.lower(), v) for l, v in stats)
-    board = int(_num(get.get("reps that got on the board", 0)))
-    if not board:
-        return []
-    out = []
-    for label, v in stats:
-        low = label.lower()
-        if low.startswith("total reps in the field"):
-            v = str(board)
-        elif low.startswith("reps that rolled a zero") or low.startswith("% of reps"):
-            continue
-        elif low.startswith("new int per rep"):
-            v = "%.1f" % (_num(ints) / board)
-        elif low.startswith("app per rep"):
-            v = "%.1f" % (_num(apps) / board)
-        out.append((label, v))
-    return out
-
-
-def knock_stats(stats, apps, ints, knocked: int):
-    """The block with "in the field" = reps who knocked today (knock_field).
-
-    The board's formula counts the roster minus whoever roll call marked out,
-    so 10/26 read 44 in the field while the knock board had 37 reps knocking
-    (Megan, 2026-10-26). A rep who sold without a knock still worked, so the
-    field is never smaller than the reps on the board. Zero, % and both
-    averages are re-done off that field.
-    """
-    get = dict((l.lower(), v) for l, v in stats)
-    board = int(_num(get.get("reps that got on the board", 0)))
-    field = max(int(knocked), board)
-    out = []
-    for label, v in stats:
-        low = label.lower()
-        if low.startswith("total reps in the field"):
-            v = str(field)
-        elif low.startswith("reps that rolled a zero"):
-            v = str(field - board)
-        elif low.startswith("% of reps"):
-            v = "%d%%" % round(100.0 * board / field)
-        elif low.startswith("new int per rep"):
-            v = "%.1f" % (_num(ints) / field)
-        elif low.startswith("app per rep"):
-            v = "%.1f" % (_num(apps) / field)
-        out.append((label, v))
-    return out
+    return [(label, v) for (_r, label), v in zip(rows, vals)]
 
 
 def _a1(row: int, col: int) -> str:
