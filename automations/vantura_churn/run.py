@@ -317,6 +317,13 @@ def _reconcile_stale_window(who: str, summary: dict, dash: dict, log,
             f"today's numbers ({summary['disc_total']}/{summary['base_total']}"
             f" = {rate:.2%}); the dashboard is the stale side.")
         return []
+    # Say what the shifted windows came to. Without it a failed rescue is a
+    # black box: on 2026-10-26 CARLOS's dashboard (10/107) matched YESTERDAY's
+    # run (10/106) and the D-1 rescue still refused, with no way to see why.
+    for label, s in (("D-1", prev_summary), ("D-2", prev2_summary)):
+        if s is not None:
+            log(f"    ↳ {who}: {label} window = {s['disc_total']}/"
+                f"{s['base_total']} vs dashboard base={dash['base']}")
     if prev2_summary is not None and not _compare(who, prev2_summary, dash,
                                                   lambda *a: None):
         problems.append(
