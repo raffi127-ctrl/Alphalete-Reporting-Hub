@@ -792,6 +792,8 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": null,
+   "close_on": "exit_zero",
+   "_close_on_note": "2026-10-26: a hand-run pull with no fixed office/week to check, so a clean exit IS the evidence. Without this the 10/24 21:18 clean re-run left failure-sms_activity open for 2 days ('nothing can confirm it DELIVERED').",
    "timeout_minutes": 60,
    "machine": "Lucy 2",
    "can_run_on": ["Lucy 1", "Lucy 3"]
@@ -7580,7 +7582,9 @@
    "depends_on": [],
    "verify": {
     "type": "not_configured"
-   }
+   },
+   "close_on": "exit_zero",
+   "_close_on_note": "2026-10-26: the deliverable is the local Brand Health Card in output/, so a clean exit IS the delivery. Without this, standalone-brand-health-audit (missed noon 10/24) stayed open through every clean run after it."
   },
   "att_focus_raf": {
    "order": 37,

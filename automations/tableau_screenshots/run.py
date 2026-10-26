@@ -669,10 +669,16 @@ def _queue_tracker_texts(captured_ids: set, posted_somewhere: bool,
               f"{', '.join(to_text)} on Lucy 2)", flush=True)
         return
     from automations.day_orchestrator import mini_control as mc
+    from automations.shared import sheets_retry
     for tid in to_text:
         try:
-            mc.enqueue("text_tracker", tid, by="tableau_screenshots",
-                       machine="Lucy 2")
+            # Retried through the per-minute Sheets quota: on 2026-10-25 one 429
+            # on the Control Sheet read cost the NDS leaders their whole day's
+            # text. Safe to repeat — the poller's per-(id, day) `.sent` marker
+            # keeps a duplicate row from double-texting.
+            sheets_retry.call(mc.enqueue, "text_tracker", tid,
+                              by="tableau_screenshots", machine="Lucy 2",
+                              tries=7)
             print(f"  → queued text_tracker {tid} on Lucy 2 "
                   f"(→ {', '.join(tt_cfg.route_for(tid))})", flush=True)
         except Exception as e:                            # noqa: BLE001

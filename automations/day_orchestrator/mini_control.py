@@ -682,7 +682,12 @@ def _running_pids(module: str) -> list:
 # Flags that mean "this run deliberately delivered NOTHING". A rerun carrying one
 # still publishes to the Hub, but it must not close an incident: exiting 0 proves
 # the code runs, not that the report is fixed. See _probe_reason.
-_PROBE_FLAGS = ("--dry-run", "--dry", "--check", "--inspect")
+_PROBE_FLAGS = ("--dry-run", "--dry", "--check", "--inspect", "--preflight")
+# Whole FAMILIES of read-only flags: --probe, --probe-filters, --dump-rep-grid…
+# They all exit 0 having delivered nothing. Missing from the list above, the
+# --probe-filters run that drop-box-order-log's own Fix line recommends would
+# have ✅'d a ticket whose feed was still 4 days behind (2026-10-26).
+_PROBE_PREFIXES = ("--probe", "--dump")
 
 
 def _probe_reason(raw_report: dict, extra: list) -> str:
@@ -702,7 +707,7 @@ def _probe_reason(raw_report: dict, extra: list) -> str:
     thread that was still missing its image.
     """
     for f in extra:
-        if f in _PROBE_FLAGS:
+        if f in _PROBE_FLAGS or f.startswith(_PROBE_PREFIXES):
             return f
     gate = (raw_report or {}).get("delivers_only_with", "")
     if gate and gate not in extra:

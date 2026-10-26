@@ -31,7 +31,9 @@ class ProbeReason(unittest.TestCase):
         self.assertEqual(_probe_reason(gate, ["--post"]), "")
 
     def test_explicit_probe_flags(self):
-        for flag in ("--dry-run", "--dry", "--check", "--inspect"):
+        for flag in ("--dry-run", "--dry", "--check", "--inspect",
+                     "--preflight", "--probe", "--probe-filters",
+                     "--dump-rep-grid"):
             self.assertEqual(_probe_reason({}, [flag]), flag)
 
     def test_an_ordinary_rerun_is_unchanged(self):

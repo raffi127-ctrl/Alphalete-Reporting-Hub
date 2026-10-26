@@ -95,6 +95,17 @@ def _report(report_id: str) -> dict:
     for rid, rec in _reports().items():
         if rid.replace("_", "-").lower() == want and isinstance(rec, dict):
             return rec
+    # The Hub CARD id, when it isn't a respelling of the config id: the watcher
+    # opens `standalone-brand-health-audit` for config `brand_audit`, and without
+    # this its close_on was never read (2026-10-26). Only an unambiguous card —
+    # office-metrics alone stands for a dozen configs.
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+        owners = [cid for cid, card in _HUB_CARD.items() if card == report_id]
+    except Exception:  # noqa: BLE001 — a lookup aid, never a reason to fail
+        owners = []
+    if len(owners) == 1 and isinstance(_reports().get(owners[0]), dict):
+        return _reports()[owners[0]]
     return {}
 
 
