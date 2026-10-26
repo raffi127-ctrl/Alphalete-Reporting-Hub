@@ -759,6 +759,8 @@ _INFRA_AGENTS = {
     # reason mini-control is here: it is the channel reports are run THROUGH,
     # not a report, and it publishes nothing a card could show.
     "mini-control-read",
+    # The text lane: third process of the same poller (iMessage sends only).
+    "mini-control-text",
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",

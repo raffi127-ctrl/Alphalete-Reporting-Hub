@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from automations.b2b_dispositions import config as cfg
+from automations.shared import messages_lock
 
 
 class GroupTextError(RuntimeError):
@@ -369,18 +370,22 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
                    '  %s\n'
                    'end tell' % (cid, action), timeout=timeout)
 
-    if text:
-        safe = text.replace("\\", "\\\\").replace('"', '\\"')
-        _to_chat('send "%s" to theChat' % safe)
-        result["sent_text"] = True
+    # One sender at a time per machine: the Mini Control text lane and a
+    # report on the main lane can both text, and Messages drops images when
+    # crowded. Held across the text AND its images so one post stays together.
+    with messages_lock.held("send_to_group %s" % name):
+        if text:
+            safe = text.replace("\\", "\\\\").replace('"', '\\"')
+            _to_chat('send "%s" to theChat' % safe)
+            result["sent_text"] = True
 
-    for img in images:
-        staged = _stage_for_messages(img)
-        ip = str(staged).replace("\\", "\\\\").replace('"', '\\"')
-        _to_chat('send (POSIX file "%s") to theChat' % ip)
-        # Messages uploads asynchronously; crowding it drops images silently.
-        time.sleep(cfg.IMAGE_SEND_DELAY_S)
-        result["sent_images"].append(str(img))
+        for img in images:
+            staged = _stage_for_messages(img)
+            ip = str(staged).replace("\\", "\\\\").replace('"', '\\"')
+            _to_chat('send (POSIX file "%s") to theChat' % ip)
+            # Messages uploads asynchronously; crowding it drops images silently.
+            time.sleep(cfg.IMAGE_SEND_DELAY_S)
+            result["sent_images"].append(str(img))
 
     result["ok"] = True
     _record_delivery(name, text)
@@ -417,10 +422,11 @@ def send_text_to_group(name: str, text: str, *, dry_run: bool = True,
     # compile error.
     safe = (text.replace("\\", "\\\\").replace('"', '\\"')
             .replace("\n", "\\n"))
-    _osascript('tell application "Messages"\n'
-               '  set theChat to a reference to chat id "%s"\n'
-               '  send "%s" to theChat\n'
-               'end tell' % (cid, safe))
+    with messages_lock.held("send_text_to_group %s" % name):
+        _osascript('tell application "Messages"\n'
+                   '  set theChat to a reference to chat id "%s"\n'
+                   '  send "%s" to theChat\n'
+                   'end tell' % (cid, safe))
     result["ok"] = True
     _record_delivery(name, text)
     return result
@@ -537,17 +543,26 @@ def send_manifest(path, *, dry_run: bool = True) -> Dict:
     if not p.exists():
         raise GroupTextError("no manifest at %s" % p)
     marker = p.with_suffix(".sent")
-    if marker.exists() and not dry_run:
-        return {"skipped": "already sent at %s" % marker.read_text().strip()[:40],
-                "ok": True, "sent": [], "errors": [], "skipped_routes": []}
-    data = json.loads(p.read_text(encoding="utf-8"))
-    spec = {"kind": data.get("kind"), "title": data.get("title"),
-            "text": data.get("text") or "",
-            "by_campaign": data.get("by_campaign") or {}}
-    res = send_specs([spec], dry_run=dry_run)
-    if res.get("ok") and not dry_run:
-        import datetime as _dt
-        marker.write_text(_dt.datetime.now().isoformat(timespec="seconds"))
+
+    def _spec() -> Dict:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return {"kind": data.get("kind"), "title": data.get("title"),
+                "text": data.get("text") or "",
+                "by_campaign": data.get("by_campaign") or {}}
+
+    if dry_run:
+        return send_specs([_spec()], dry_run=True)
+    # Marker check, send and marker write under ONE lock: two drainers (the
+    # text lane and a main lane covering for it, or an old poller mid-rollout)
+    # handed the same manifest must text it once, not twice.
+    with messages_lock.held("send_manifest %s" % p.name):
+        if marker.exists():
+            return {"skipped": "already sent at %s" % marker.read_text().strip()[:40],
+                    "ok": True, "sent": [], "errors": [], "skipped_routes": []}
+        res = send_specs([_spec()], dry_run=False)
+        if res.get("ok"):
+            import datetime as _dt
+            marker.write_text(_dt.datetime.now().isoformat(timespec="seconds"))
     return res
 
 

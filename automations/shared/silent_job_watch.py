@@ -296,6 +296,7 @@ for _mc_machine in _fleet.RUNNERS:
         "fix": ("someone at %s: check it is on and online, then in Terminal: "
                 "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control "
                 "&& launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-read"
+                " && launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-text"
                 % _mc_machine),
     }
 del _mc_machine

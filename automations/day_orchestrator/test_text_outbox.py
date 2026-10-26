@@ -48,3 +48,24 @@ def test_drain_is_oldest_first_and_survives_exceptions(tmp_path, monkeypatch):
         return True, "ok"
     sent, left = tob.drain(send, log=lambda s: None)
     assert seen == ["a.json", "b.json"] and (sent, left) == (1, 1)
+
+
+def test_second_drainer_steps_aside(tmp_path, monkeypatch):
+    """Text lane + main covering for it (or an old poller mid-rollout) must
+    never drain at once: the one that finds the drain lock held sends nothing."""
+    import fcntl
+    import os
+    monkeypatch.setattr(tob, "OUTBOX_DIR", tmp_path / "outbox")
+    tob.drop(_manifest(tmp_path), by="nds_oof")
+    fd = os.open(str(tob.OUTBOX_DIR / tob.DRAIN_LOCK_NAME), os.O_CREAT | os.O_RDWR)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)     # "the other poller"
+    try:
+        calls = []
+        sent, left = tob.drain(lambda a: (calls.append(a), (True, "ok"))[1],
+                               log=lambda s: None)
+        assert calls == [] and (sent, left) == (0, 1)
+    finally:
+        os.close(fd)
+    sent, left = tob.drain(lambda a: (True, "ok"), log=lambda s: None)
+    assert (sent, left) == (1, 0)
+    assert not (tob.OUTBOX_DIR / tob.DRAIN_LOCK_NAME).name.endswith(".json")

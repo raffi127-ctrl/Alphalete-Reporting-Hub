@@ -16,13 +16,21 @@ so a retry after a crash can't double-text.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Callable, List, Tuple
 
 OUTBOX_DIR = Path.home() / ".config" / "recruiting-report" / "text_outbox"
+#: Held for a whole drain. The Mini Control TEXT lane drains this; the main lane
+#: drains it only while the text lane is down (mini_control._text_lane_live).
+#: Two drainers would both send the oldest ticket — the manifest's .sent marker
+#: (checked under the Messages lock) already stops a double text, and this
+#: makes the second drainer step aside instead of even trying.
+DRAIN_LOCK_NAME = "drain.lock"           # inside OUTBOX_DIR (not *.json)
 MAX_ATTEMPTS = 30          # ~1h of 2-min polls before a ticket is parked
 _Send = Callable[[str], Tuple[bool, str]]
 
@@ -47,8 +55,44 @@ def pending() -> List[Path]:
     return sorted(p for p in OUTBOX_DIR.glob("*.json") if p.is_file())
 
 
+@contextlib.contextmanager
+def _drain_lock():
+    """Yields True if this process may drain now, False if another one is."""
+    try:
+        import fcntl
+    except ImportError:          # Windows: no flock, and no Messages to race
+        yield True
+        return
+    try:
+        OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(OUTBOX_DIR / DRAIN_LOCK_NAME),
+                     os.O_CREAT | os.O_RDWR, 0o644)
+    except Exception:  # noqa: BLE001 — a lock problem must not stop texts
+        yield True
+        return
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        yield True
+    finally:
+        os.close(fd)             # closing releases the flock
+
+
 def drain(send: _Send, *, log: Callable[[str], None] = print,
           max_attempts: int = MAX_ATTEMPTS) -> Tuple[int, int]:
+    with _drain_lock() as mine:
+        if not mine:
+            n = len(pending())
+            log("[outbox] another poller is draining — leaving %d ticket(s) to it" % n)
+            return 0, n
+        return _drain(send, log=log, max_attempts=max_attempts)
+
+
+def _drain(send: _Send, *, log: Callable[[str], None] = print,
+           max_attempts: int = MAX_ATTEMPTS) -> Tuple[int, int]:
     """Send every pending ticket, oldest first. Returns (sent, still_pending).
 
     `send` is the poller's text_dispositions action: it takes "<manifest> <day>"
