@@ -600,6 +600,7 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
     try:
         M.login(account, password)
         q = query or ("from:security.info@saraplus.com newer_than:%dd" % days)
+        found_links = []   # Google forwarding-confirmation links, echoed LAST (the queue shows a log's tail)
         # All Mail leaves out Spam and Trash -- and a filter that trashes or a
         # spam verdict is exactly how a forwarded code goes missing (10/26).
         for folder in ("[Gmail]/All Mail", "[Gmail]/Spam", "[Gmail]/Trash"):
@@ -650,10 +651,13 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
                             % ((full.get("Subject") or "").strip()[:120], codes[:3] or "none in body"))
                         for lk in links[:2]:
                             log("    FORWARDING LINK %s" % lk.rstrip(".,)>]"))
+                            found_links.append(lk.rstrip(".,)>]"))
                         if not codes and not links:
                             log("    body excerpt: %s" % re.sub(r"\s+", " ", body)[:600])
                     except Exception as e:  # noqa: BLE001
                         log("    forwarding confirmation body unreadable (%s)" % type(e).__name__)
+        if query and "forwarding-noreply" in query:
+            log("FORWARD LINKS: %s" % (" | ".join(found_links) if found_links else "none found"))
     finally:
         try:
             M.logout()
