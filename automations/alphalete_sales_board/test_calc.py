@@ -345,3 +345,53 @@ def test_weekday_without_roll_call_falls_back_to_reps_on_the_board():
     grid[4][4] = "X"
     assert fill.board_stats(None, grid, mon)[0] == (
         "Total Reps in the Field / Board / Zero", "42")
+
+
+def test_field_is_reps_who_knocked_when_the_knock_board_has_a_count():
+    """Megan 10/26: the text said 44 in the field, the knock board had 37
+    reps knocking. Today's knock count wins over the roll-call formula, and
+    zero / % / averages follow it."""
+    from unittest import mock
+    from automations.alphalete_sales_board import fill, knock_field
+    grid = [["", "", "", "MON", "", ""],
+            ["", "", "", "", "", ""],
+            ["", "", "Rep", "Apps", "Int", "Roll Call"],
+            ["", "", "Ana", "1", "1", ""],
+            ["", "", "Bo", "X", "", "X"],
+            ["", "", "TOTALS", "1", "1", ""],
+            ["", "", "", "", "", ""],
+            ["", "", "Total Reps in the Field / Board / Zero", "44", ""],
+            ["", "", "Reps that got on the Board", "1", ""],
+            ["", "", "Reps that rolled a Zero", "43", ""],
+            ["", "", "% of Reps on the Board", "2%", ""],
+            ["", "", "New INT per Rep AVG", "0.0", ""],
+            ["", "", "App per Rep AVG", "0.0", ""]]
+    day = dt.date(2026, 10, 26)
+    with mock.patch.object(knock_field, "load", lambda d: 37):
+        stats = fill.board_stats(None, grid, day)
+    assert stats == [("Total Reps in the Field / Board / Zero", "37"),
+                     ("Reps that got on the Board", "1"),
+                     ("Reps that rolled a Zero", "36"),
+                     ("% of Reps on the Board", "3%"),
+                     ("New INT per Rep AVG", "0.0"),
+                     ("App per Rep AVG", "0.0")], stats
+    # never fewer in the field than on the board
+    with mock.patch.object(knock_field, "load", lambda d: 0 or 1):
+        grid[8][3] = "3"
+        assert fill.board_stats(None, grid, day)[0][1] == "3"
+    # no count today -> the board's own numbers, as before
+    with mock.patch.object(knock_field, "load", lambda d: None):
+        assert fill.board_stats(None, grid, day)[0][1] == "44"
+
+
+def test_knock_field_file_is_today_only(tmp_path=None):
+    import tempfile
+    from pathlib import Path
+    from automations.alphalete_sales_board import knock_field
+    p = Path(tempfile.mkdtemp()) / "kf.json"
+    rows = [{"Total Knocks": "28"}, {"Total Knocks": "1"}, {"Total Knocks": ""}]
+    day = dt.date(2026, 10, 26)
+    assert knock_field.save(day, rows, path=p) == 2
+    assert knock_field.load(day, path=p) == 2
+    assert knock_field.load(day + dt.timedelta(days=1), path=p) is None
+    assert knock_field.load(day, path=p.with_name("nope.json")) is None

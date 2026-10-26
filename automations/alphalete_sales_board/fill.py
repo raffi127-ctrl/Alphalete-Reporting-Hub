@@ -142,11 +142,15 @@ def board_stats(ws, grid, day: dt.date, fresh: bool = False):
         got = ws.get("%s:%s" % (_a1(rows[0][0], col), _a1(rows[-1][0], col)))
         vals = [(got[i][0] if i < len(got) and got[i] else "").strip()
                 for i in range(len(rows))]
+    from automations.alphalete_sales_board import knock_field
+    knocked = knock_field.load(day)
     sold_only = day.weekday() == 6 or not roll_call_taken(grid, col)
-    if fresh and sold_only:
+    if fresh and (sold_only or knocked):
         apps = (ws.acell(_a1(tot, col)).value or "").strip()
         ints = (ws.acell(_a1(tot, int_col)).value or "").strip() if int_col else ""
     stats = [(label, v) for (_r, label), v in zip(rows, vals)]
+    if knocked:
+        return knock_stats(stats, apps, ints, knocked)
     return sunday_stats(stats, apps, ints) if sold_only else stats
 
 
@@ -214,6 +218,35 @@ def sunday_stats(stats, apps, ints):
             v = "%.1f" % (_num(ints) / board)
         elif low.startswith("app per rep"):
             v = "%.1f" % (_num(apps) / board)
+        out.append((label, v))
+    return out
+
+
+def knock_stats(stats, apps, ints, knocked: int):
+    """The block with "in the field" = reps who knocked today (knock_field).
+
+    The board's formula counts the roster minus whoever roll call marked out,
+    so 10/26 read 44 in the field while the knock board had 37 reps knocking
+    (Megan, 2026-10-26). A rep who sold without a knock still worked, so the
+    field is never smaller than the reps on the board. Zero, % and both
+    averages are re-done off that field.
+    """
+    get = dict((l.lower(), v) for l, v in stats)
+    board = int(_num(get.get("reps that got on the board", 0)))
+    field = max(int(knocked), board)
+    out = []
+    for label, v in stats:
+        low = label.lower()
+        if low.startswith("total reps in the field"):
+            v = str(field)
+        elif low.startswith("reps that rolled a zero"):
+            v = str(field - board)
+        elif low.startswith("% of reps"):
+            v = "%d%%" % round(100.0 * board / field)
+        elif low.startswith("new int per rep"):
+            v = "%.1f" % (_num(ints) / field)
+        elif low.startswith("app per rep"):
+            v = "%.1f" % (_num(apps) / field)
         out.append((label, v))
     return out
 

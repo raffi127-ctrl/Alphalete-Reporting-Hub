@@ -2016,6 +2016,17 @@ def tick(day: dt.date, *, send: bool, only: str = "",
 
         seen_names += [str(r.get("Rep") or r.get("rep") or "").strip()
                        for r in rows]
+        # RAF'S REPS KNOCKING TODAY -> the sales board text's "Total Reps in
+        # the Field" (Megan 2026-10-26: board said 44, 37 had knocked). Never
+        # costs the board.
+        if cfg["key"] == C.RAF["key"] and rows and day == dt.date.today():
+            try:
+                from automations.alphalete_sales_board import knock_field as _KF
+                _log("  knock field for the sales board text: %d rep(s)"
+                     % _KF.save(day, rows))
+            except Exception as e:  # noqa: BLE001
+                _log("  knock field not saved: %s: %s"
+                     % (type(e).__name__, str(e)[:160]))
         # A failed gap pull costs the section, never the board — the board is
         # the thing Raf asked for and it is already in hand.
         # A BACKDATED RUN GETS NO GAP LIST. "minutesSinceLastKnock" is measured
