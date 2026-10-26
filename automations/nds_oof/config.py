@@ -39,13 +39,13 @@ FIRST_KNOCK_RED_AT = (14, 30)
 # Extra board slots on top of the hourly ones (Carlos 2026-10-22: "send the
 # knock board at 2:30 as well and then have it continue its regular
 # schedule"). Weekday clock; each is a (hour, minute) half-hour slot.
-EXTRA_BOARD_SLOTS = [(14, 30)]
+EXTRA_BOARD_SLOTS: list = []       # 2:30 is covered by the half-hour rule now
 # Saturday (Carlos 2026-10-24: "board + gaps at 10:15, 10:30, 10:45, 11 and
 # then continue on the regular schedule"): three extra board slots inside the
 # 10 o'clock hour; 11:00 onward is the hourly rule.
 SAT_EXTRA_BOARD_SLOTS = [(10, 15), (10, 30), (10, 45)]
 GAPS_EVERY_MIN = 15          # the typed list
-BOARD_EVERY_MIN = 60         # the picture
+BOARD_EVERY_MIN = 30         # the picture (hourly until 2026-10-26: "send every 30 minutes instead of every hour")
 CALLOUT_EVERY_MIN = 60       # "no dispo, no credit check" lines
 GAP_THRESHOLD_MIN = 15
 

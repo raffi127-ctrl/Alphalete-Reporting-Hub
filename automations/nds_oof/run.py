@@ -108,10 +108,15 @@ def _board_due(state: Dict, now: dt.datetime) -> bool:
 
 
 def _board_slot(t: dt.datetime):
-    """The board slot `t` falls in: the clock hour, split in two where an
-    EXTRA_BOARD_SLOTS half-hour exists (2:30 -> its own slot on weekdays)."""
-    extras = C.SAT_EXTRA_BOARD_SLOTS if _wd(t) == 5 else C.EXTRA_BOARD_SLOTS
-    sub = sum(1 for (h, m) in extras if h == t.hour and t.minute >= m)
+    """The board slot `t` falls in: every BOARD_EVERY_MIN of the clock (:00
+    and :30), or the named slots of an hour that has them (Saturday 10:15 /
+    10:30 / 10:45). One board per slot, however late the tick runs."""
+    extras = [m for (h, m) in (C.SAT_EXTRA_BOARD_SLOTS if _wd(t) == 5
+                               else C.EXTRA_BOARD_SLOTS) if h == t.hour]
+    if extras:                       # an hour with its own named slots
+        sub = sum(1 for m in extras if t.minute >= m)
+    else:                            # otherwise one board per BOARD_EVERY_MIN
+        sub = t.minute // C.BOARD_EVERY_MIN
     return (t.date(), t.hour, sub)
 
 
