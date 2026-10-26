@@ -415,14 +415,21 @@ def _compare(who: str, summary: dict, dash: dict, log) -> list[str]:
                 "independently")
     if dash["rate"] is not None:
         gap = abs(rate - dash["rate"])
-        if gap > RATE_TOL_PP:
+        # Never tighter than ONE disconnect. On a small base a single account
+        # moves the rate by more than 0.5pp: CARLOS on 2026-10-26 (B2B wound
+        # down, base ~106) was 9/106 on our D-1 window vs the stale dashboard's
+        # 10/107 — the right rescue, refused over one account. On a ~400 base
+        # 1/base is 0.25pp, so the big offices keep the 0.5pp band unchanged.
+        tol = max(RATE_TOL_PP,
+                  1 / summary["base_total"] if summary["base_total"] else 0)
+        if gap > tol:
             problems.append(
                 f"{who}: churn {rate:.2%} vs dashboard {dash['rate']:.2%} "
                 f"— off by {gap * 100:.2f}pp (tolerance "
-                f"{RATE_TOL_PP * 100:.2f}pp)")
+                f"{tol * 100:.2f}pp)")
         elif gap:
             log(f"    ↳ churn drift {gap * 100:.2f}pp within tolerance "
-                f"{RATE_TOL_PP * 100:.2f}pp")
+                f"{tol * 100:.2f}pp")
     return problems
 
 

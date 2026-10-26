@@ -51,6 +51,19 @@ def test_stale_dashboard_passes_and_today_is_what_stands():
                          prev2_summary=_s(27, 395)) == []
 
 
+def test_one_account_on_a_small_base_does_not_block_the_rescue():
+    """2026-10-26, CARLOS after B2B wound down: today 6/93, stale dashboard
+    10/107, our D-1 window 9/106 — one account apart, which on a ~100 base is
+    0.86pp. The 0.5pp band refused it; one disconnect is now the floor."""
+    dash = {"base": 107, "rate": 10 / 107, "raw": {}}
+    assert vc._compare("CARLOS", _s(6, 93), dash, _quiet)
+    assert vc._reconcile("CARLOS", _s(6, 93), dash, _quiet,
+                         prev_summary=_s(9, 106),
+                         prev2_summary=_s(9, 134)) == []
+    # Two accounts off on the same base is still a mismatch.
+    assert vc._compare("CARLOS", _s(8, 106), dash, _quiet)
+
+
 def test_atef_and_jamis_still_pass_on_their_own():
     """The two offices that reconciled that morning must not need the rescue."""
     assert vc._reconcile("ATEF", _s(21, 791),
