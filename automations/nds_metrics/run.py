@@ -45,6 +45,11 @@ LOOKBACK_DAYS = 60
 # floors at this date; the Tableau rate/churn boards keep their lookback
 # (banding needs it).
 NDS_SINCE = dt.date(2026, 10, 20)
+# SaraPlus only drives boards once it holds this many NDS-era crew orders.
+# 2026-10-26: the FIRST call-center entry landed and the Order Log flipped to
+# SaraPlus showing that one order while Tableau had the crew's full 17 lines.
+# Below this floor every board stays on Tableau (or skips, for the overviews).
+SOH_MIN_ORDERS = 5
 BUCKETS = ("0-30 Day", "31-60 Day")
 _BAND_KEY = {"0-30 Day": "0-30", "31-60 Day": "31-60"}
 POSTED = ("posted",)
@@ -425,6 +430,11 @@ def load_soh(log=print):
                 cache.unlink()
             except OSError:
                 pass
+        _SOH_MEMO.append(None)
+        return None
+    if len(crew) < SOH_MIN_ORDERS:
+        log(f"[nds] SOH has {len(crew)} NDS-era order(s) — below the trust "
+            f"floor of {SOH_MIN_ORDERS}; boards stay on Tableau")
         _SOH_MEMO.append(None)
         return None
     res = (ix, crew, pulled_at)
