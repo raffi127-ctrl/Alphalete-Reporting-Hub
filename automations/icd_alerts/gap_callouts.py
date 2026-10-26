@@ -1067,8 +1067,6 @@ CURSE_TRIGGER = re.compile(
 CURSE_REPLIES = (
     "Language, habibi 🧼 The board's still waiting 📋",
     "Swear jar's open 🫙 One door per word 🚪",
-    "I'd blush if I could 💅 Knock something and we're even 🚪",
-    "Big words 👀 Bigger board? 📋",
     "Spicy 🌶️ Save that energy for the doors 🚪",
     "Lucy hears you 👂 Lucy also hears zero knocks 🚪",
     "¡Tranquilo! Keep it PG and keep it moving 🚪😌",
@@ -1077,7 +1075,6 @@ CURSE_REPLIES = (
 )
 CURSE_REPLIES_B2B = tuple(
     t.replace("One door per word 🚪", "One walk-in per word 🏢")
-     .replace("Knock something and we're even 🚪", "Walk in somewhere and we're even 🏢")
      .replace("Save that energy for the doors 🚪", "Save that energy for the owners 🏢")
      .replace("Lucy also hears zero knocks 🚪", "Lucy also hears zero walk-ins 🏢")
      .replace("keep it moving 🚪😌", "keep it moving 🏢😌")
