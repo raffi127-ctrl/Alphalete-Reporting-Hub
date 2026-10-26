@@ -95,6 +95,9 @@ class Notes(unittest.TestCase):
         self.assertEqual(len(reqs), 2)
         _, kept = K.old_note_requests(7, [["Lucy fixed this (12/29):"]], dt.date(2027, 1, 6))
         self.assertEqual(kept, [[""]])                      # last year's, before Monday
+        reqs, kept = K.old_note_requests(7, notes, dt.date(2026, 10, 21), every=True)
+        self.assertEqual(kept, [["Raf: call him", "", ""]])  # our board: all of Lucy's go
+        self.assertEqual(len(reqs), 3)
 
     def test_rule_deletes_get_no_note(self):
         rule = Conditional.rule(None, "=COUNTIF(#REF!,A4)>0")

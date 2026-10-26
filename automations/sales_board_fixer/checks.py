@@ -656,14 +656,16 @@ def note_requests(found: List[Finding], sheet_id: int, notes, when: str) -> List
 LUCY_NOTE = re.compile(r"^Lucy (?:fixed this )?\((\d{1,2})/(\d{1,2})\)")
 
 
-def old_note_requests(sheet_id: int, notes, today) -> Tuple[List[dict], list]:
+def old_note_requests(sheet_id: int, notes, today, every: bool = False) -> Tuple[List[dict], list]:
     """(requests, notes as they stay) -- Lucy's notes from before this week's
     Monday taken off. A new week's tab is a copy of the last one, notes and
     all, and a board kept in one tab forever would pile them up (Eve
     2026-10-20). Only Lucy's paragraphs go; whatever a person wrote in the
-    same note stays."""
+    same note stays.
+    every: ALL of Lucy's notes go, whatever the date -- our own board
+    gets no notes at all (Eve 2026-10-26: too many corners)."""
     import datetime as dt
-    monday = today - dt.timedelta(days=today.weekday())
+    monday = today + dt.timedelta(days=400) if every else today - dt.timedelta(days=today.weekday())
     out, kept = [], []
     for r, row in enumerate(notes or [], 1):
         new_row = []

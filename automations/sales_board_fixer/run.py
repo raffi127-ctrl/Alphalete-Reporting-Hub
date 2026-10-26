@@ -466,7 +466,9 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
         if do_apply:
             # last week's 'Lucy fixed this' notes come along when a week tab
             # is copied: take Lucy's old ones off first, so today's go on clean
-            clear, t["notes"] = K.old_note_requests(t["sheet_id"], t.get("notes"), dt.date.today())
+            # our own board gets none at all (Eve 2026-10-26: too many corners)
+            clear, t["notes"] = K.old_note_requests(t["sheet_id"], t.get("notes"), dt.date.today(),
+                                                    every=not owner)
             if clear:
                 sh.batch_update({"requests": clear})
                 print("  notas viejas de Lucy borradas: %d" % len(clear))
@@ -486,7 +488,7 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                   % (n_fix, max_fixes))
         elif do_apply:
             print("  backup:", backup(t, stamp))
-            done = apply(sh, t, found)
+            done = apply(sh, t, found, notes=owner)
             print("  escritos: %d" % len(done))
             t2 = load(sh, title, titles)
             left = [x for x in _drop_past(audit(t2, tenure, owner), t2["values"], format_stop)
