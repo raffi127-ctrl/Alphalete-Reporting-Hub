@@ -124,7 +124,7 @@ def test_a_missing_rep_is_named_in_the_text_and_counted():
     assert rows == [] and len(missing) == 1, (rows, missing)
     text = N.leaderboard({"Jane Doe": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}},
                          [], None, missing)
-    assert "ANTONIO DAVIS 3 (1 Int, 2 NL)" in text, text
+    assert "Antonio Davis 3 (1 Int, 2 NL)" in text, text   # caps -> Name Case
     assert "TOTALS: 4" in text, text                   # 1 + (1 Int + 2 NL)
     assert "no row on this week's board" in text, text
 
@@ -152,7 +152,7 @@ def test_players_chats_see_the_sales_not_the_paperwork():
     assert "wasn't on the board" in partners, partners
     assert "no row on this week's board" in partners, partners
     assert "board" not in players.lower(), players
-    assert "HANK TRAN 3 (3 Int)" in players, players       # present, unmarked
+    assert "Hank Tran 3 (3 Int)" in players, players       # present, unmarked
     for text in (partners, players):
         assert "TOTALS: 5" in text, text                   # identical totals
 
