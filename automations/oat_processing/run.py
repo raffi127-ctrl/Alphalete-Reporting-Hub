@@ -537,6 +537,71 @@ _DUP_STATUS_JS = """() => { const out=[]; const norm=s=>(s||'').replace(/\\s+/g,
   return out; }"""
 
 
+_DUP_ROWS_JS = """() => { const out=[]; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();
+  for (const t of document.querySelectorAll('table')) {
+    const h=[...(t.rows[0]||{cells:[]}).cells].map(c=>norm(c.innerText).toLowerCase());
+    const si=h.findIndex(x=>x.indexOf('status')>=0);
+    const di=h.findIndex(x=>x.indexOf('date entered')>=0);
+    if (si<0 || di<0) continue;
+    for (const r of [...t.rows].slice(1)) {
+      const st=norm((r.cells[si]||{}).innerText), de=norm((r.cells[di]||{}).innerText);
+      if (st || de) out.push({status: st, entered: de}); } }
+  return out; }"""
+
+
+def read_dup_rows(page) -> list:
+    """[{status, entered}] from the 'Following Applicants found with the same
+    email address or phone number' table, in every frame. [] when none."""
+    out = []
+    for fr in ([page] + list(getattr(page, "frames", []) or [])):
+        try:
+            rows = fr.evaluate(_DUP_ROWS_JS) or []
+        except Exception:  # noqa: BLE001
+            continue
+        for r in rows:
+            if r not in out:
+                out.append(r)
+        if out:
+            break
+    return out
+
+
+def _parse_entered(text: str):
+    """'November 13, 2025' / '11/13/2025' -> date, else None."""
+    t = (text or "").strip()
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(t, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _months_before(day: dt.date, months: int) -> dt.date:
+    y, m = divmod(day.month - 1 - months, 12)
+    y, m = day.year + y, m + 1
+    import calendar
+    return dt.date(y, m, min(day.day, calendar.monthrange(y, m)[1]))
+
+
+def former_rep_ok(rows: list, today: dt.date = None) -> bool:
+    """May this re-applicant be pushed again? Only when EVERY duplicate row is
+    a former rep ("Brought On Board ...") entered more than
+    config.FORMER_REP_REPUSH_MONTHS months ago (Megan 2026-10-26). A row we
+    cannot read, any other status, or a newer date -> False: a person decides."""
+    if not rows:
+        return False
+    cutoff = _months_before(today or dt.date.today(),
+                            int(getattr(config, "FORMER_REP_REPUSH_MONTHS", 9)))
+    for r in rows:
+        if "brought on board" not in (r.get("status") or "").lower():
+            return False
+        d = _parse_entered(r.get("entered"))
+        if d is None or d >= cutoff:
+            return False
+    return True
+
+
 def read_dup_statuses(page):
     """Status cells from the 'Following Applicants found with the same email
     address or phone number' box — the interview history a recruiter reads before
@@ -734,6 +799,50 @@ def _send_landed(page, name: str, before_total, timeout_ms: int = 15000) -> str:
                 return "sent"
         page.wait_for_timeout(800)
     return "unknown"
+
+
+_DIALOG_TEXT_JS = r"""() => {
+  const vis = e => { const r = e.getBoundingClientRect();
+    const st = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && st.visibility !== 'hidden'
+           && st.display !== 'none'; };
+  const out = [];
+  document.querySelectorAll(
+    "[role=dialog], .modal.show, .modal.in, .ui-dialog, .swal2-popup, " +
+    ".alert, .alert-danger, .alert-warning, .text-danger, .error, .bootbox"
+  ).forEach(e => { if (vis(e)) {
+      const t = (e.innerText || '').replace(/\s+/g, ' ').trim();
+      if (t && !out.includes(t)) out.push(t.slice(0, 220)); } });
+  return out.slice(0, 4);
+}"""
+
+
+def _why_not_landed(page, who: str) -> None:
+    """When a send does not stick, write down WHAT AppStream is showing -- the
+    red lines, any pop-up, and a screenshot -- so the reason is in the log
+    instead of a guess (Keren Ospina, 10/26: number read right, filled right,
+    clicked twice, never left the queue). Read-only. Never raises."""
+    seen = []
+    try:
+        seen += _red_messages(page)
+    except Exception:  # noqa: BLE001
+        pass
+    for fr in list(getattr(page, "frames", []) or []):
+        try:
+            for t in (fr.evaluate(_DIALOG_TEXT_JS) or []):
+                if t not in seen:
+                    seen.append(t)
+        except Exception:  # noqa: BLE001
+            continue
+    if seen:
+        for t in seen[:5]:
+            _log(f"    [why not sent] {who}: {t}")
+    else:
+        _log(f"    [why not sent] {who}: AppStream showed no message at all")
+    try:
+        _shot(page, "send-did-not-stick")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _try_overwrite_send(page) -> bool:
@@ -960,6 +1069,27 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         return "no_button"
     _landed = _send_landed(page, _who, _before)
     if _landed == "unknown":
+        # A FORMER REP, LONG ENOUGH AGO (Megan 2026-10-26). AppStream answers a
+        # re-applicant with its duplicate table instead of the cannot-send
+        # panel, so the click "does nothing" -- Keren Ospina, Brought On Board
+        # (Retired) 11/13/2025. Past the window, overwrite and send.
+        _dups = read_dup_rows(page)
+        if _dups:
+            _seen = "; ".join("%s (%s)" % (d.get("status", "")[:40],
+                                           d.get("entered", "")) for d in _dups[:4])
+            if former_rep_ok(_dups):
+                _log(f"    former rep, last on file more than "
+                     f"{config.FORMER_REP_REPUSH_MONTHS} months ago — "
+                     f"overwriting and sending: {_who} [{_seen}]")
+                if _try_overwrite_send(page):
+                    _log(f"    ✅ SENT via overwrite (former rep): {_who}")
+                    return "sent_override"
+                _log(f"    former rep overwrite did not go through: {_who}")
+            else:
+                _log(f"    duplicate on file, not a former rep past "
+                     f"{config.FORMER_REP_REPUSH_MONTHS} months — left for a "
+                     f"person: {_who} [{_seen}]")
+    if _landed == "unknown":
         # ONE MORE TRY, then the truth. The click went through but AppStream
         # neither refused nor moved on -- the 10/14-10/19 silent non-save.
         _log(f"    ⚠ send did not stick (still in the slot) — trying once more: "
@@ -974,6 +1104,7 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if _landed == "unknown":
         # NOT counted as pushed, NOT removed: they stay in the queue and the
         # next run tries again. Counted on its own so the push report shows it.
+        _why_not_landed(page, _who)
         _log(f"    ⚠ SEND DID NOT STICK: {_who} — left in the queue for the "
              f"next run")
         return "send_unconfirmed"

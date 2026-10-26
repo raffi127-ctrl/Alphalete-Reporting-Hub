@@ -228,6 +228,21 @@ CARLOS_B2B = [
      "also_channels": [CARLOS_SALES_ROOM], "report_id": CARLOS_REPORT_ID,
      "hub_card": "b2b_dispositions",
      "slack_token_file": ""},
+    # NDS (RES AT&T OOF, id 1) — Carlos 2026-10-26: "saturdays ... with the
+    # last knocks board sent can we also get one that combines everyday of
+    # the week". Run by nds_oof on Saturday after the 5:30 board (key_only:
+    # the Sunday `--office "Carlos Hidalgo"` run must NOT pick it up).
+    # Posts into Saturday's "NDS Knocks Board" thread in #alphalete-gp-sales;
+    # nds_oof texts the same picture to his two chats.
+    {"key": "Carlos Hidalgo (NDS)", "name": "Carlos Hidalgo",
+     "ov": "impersonate", "campaign_id": "1", "pss_owner": None, "b2b": True,
+     "board_title": "NDS Knocks Board — Mon–Sat", "own_run": True,
+     "key_only": True,
+     "channel_id": CARLOS_SALES_ROOM, "channel_name": "#alphalete-gp-sales",
+     "thread_title": "NDS Knocks Board", "header_label": "",
+     "also_channels": [], "report_id": CARLOS_REPORT_ID,
+     "hub_card": "nds_oof",
+     "slack_token_file": ""},
 ]
 
 
@@ -276,7 +291,8 @@ def enabled(only: list[str] | None = None) -> list[dict]:
     by_name: dict[str, list[dict]] = {}
     for r in rows:
         by_name.setdefault(key_of(r).lower(), []).append(r)
-        if r.get("own_run") and r["name"].lower() != key_of(r).lower():
+        if (r.get("own_run") and r["name"].lower() != key_of(r).lower()
+                and not r.get("key_only")):
             by_name.setdefault(r["name"].lower(), []).append(r)
     out, unknown = [], []
     for w in only:

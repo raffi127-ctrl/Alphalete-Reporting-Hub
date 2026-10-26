@@ -206,6 +206,14 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.office_metrics.nds_orderlog",
              owner_args=["--owner", o.owner, "--board", "rep_summary"], env={},
              dry_flag="--dry-run", post_flag="--live"),
+        # ⏳ Pending Orders — every pending wireless line in the Rep
+        # Activations window (posted/canceled/disconnected left out) with the
+        # customer's name + number, grouped by rep, so the rep can chase it
+        # (Colten 2026-10-26; Megan: "everyone in NDS").
+        dict(slug="pending_orders", label="⏳ Pending Orders",
+             module="automations.office_metrics.nds_orderlog",
+             owner_args=["--owner", o.owner, "--board", "pending_orders"], env={},
+             dry_flag="--dry-run", post_flag="--live"),
         # 📈 Activation Rate by Rep — per rep, wireless lines activated / sold,
         # 0-30 and 31-60 days, off a 60-day NDS ORDER LOG pull (Khalil asked
         # 2026-10-05 after seeing Carlos's B2B board; Megan: "add it to all NDS

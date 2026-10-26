@@ -204,3 +204,10 @@ ALLOW_RETEXT = os.environ.get("OAT_ALLOW_RETEXT", "0") == "1"
 # instead of leaving them to linger. OFF for Carlos's and Atef's offices, whose
 # rule stays "our failure must never cost an applicant their record".
 REMOVE_BLOCKED_READ = os.environ.get("OAT_REMOVE_BLOCKED_READ", "0") == "1"
+
+# A FORMER REP who reapplies is pushed again once enough time has passed
+# (Megan 2026-10-26: "more than 9 months later they can be pushed through").
+# Applies when EVERY matching duplicate is "Brought On Board" and entered more
+# than this many months ago; the walk then uses "Overwrite Old Applicants
+# (Send to AI)". Newer, or any other status, is left for a person.
+FORMER_REP_REPUSH_MONTHS = int(os.environ.get("OAT_FORMER_REP_REPUSH_MONTHS", "9"))

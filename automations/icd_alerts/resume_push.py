@@ -247,6 +247,7 @@ HEALTH_EVERY_MINUTES = 15
 # chatter -- on 10/22 the row cut off right at "Jorge Banos" and nobody could
 # tell whether he went through. These, newest last, short.
 _KEY_LINES = ("SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
+              "DID NOT STICK", "why not sent",
               "read by the Mac itself", "phone read OFF THE SCREEN",
               "resume phone", "resume read BLOCKED", "QUEUE at", "removed",
               "Traceback", "Error", "OFFICE GUARD")
