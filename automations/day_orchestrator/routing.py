@@ -82,6 +82,48 @@ _BUSY = ("queued", "running")
 
 
 # ---------------------------------------------------------------- heartbeat
+#: A box whose batch only has clock-gated reports left counts as free unless
+#: the earliest of them starts within this many minutes.
+CLOCK_WAIT_MARGIN_MIN = 30
+_CLOCK_WAIT = re.compile(r"clock < (\d{1,2}):(\d{2})")
+_TERMINAL = {"DONE", "INCOMPLETE", "FAILED", "MISSED_NOT_READY",
+             "BLOCKED_SESSION", "HALTED_FOR_FIX", "MANUAL_PENDING_UPLOAD",
+             "SKIPPED"}
+
+
+def batch_busy(reports: Dict[str, dict], now: _dt.datetime,
+               child_running: Optional[bool]) -> bool:
+    """Is a batch whose day lock is held actually BUSY right now?
+
+    WHY (2026-10-23 check, Megan "yes, make the Lucy 3 fix"): Lucy 3's batch
+    holds its lock until the 2:45pm tableau_screenshots_audit slot, so its note
+    said `running` all day and routing never used it — three overflow boxes,
+    not four. The lock alone over-reports. Busy when ANY of:
+      * the orchestrator has a child process (a report is running now), or we
+        can't tell;
+      * a non-terminal report is waiting on anything but the clock (data,
+        deps, a retry loop) — it could start any minute;
+      * the earliest clock-gated report starts within CLOCK_WAIT_MARGIN_MIN.
+    Free only when nothing runs and every report left is parked behind a
+    start time comfortably later. `reports` is the day_state JSON's
+    "reports" map ({id: {"status", "waiting_on", ...}})."""
+    if child_running is None or child_running:
+        return True
+    soonest = None
+    for rs in reports.values():
+        if str(rs.get("status", "")).upper() in _TERMINAL:
+            continue
+        m = _CLOCK_WAIT.match(str(rs.get("waiting_on") or ""))
+        if not m:
+            return True
+        start = now.replace(hour=int(m.group(1)), minute=int(m.group(2)),
+                            second=0, microsecond=0)
+        soonest = start if soonest is None else min(soonest, start)
+    if soonest is None:
+        return False                      # all terminal: the batch is wrapping up
+    return (soonest - now).total_seconds() < CLOCK_WAIT_MARGIN_MIN * 60
+
+
 def batch_note(running: Optional[bool], now_utc: Optional[_dt.datetime] = None) -> str:
     """The heartbeat note a Lucy publishes: 'batch=running@<utc iso>'."""
     state = {True: "running", False: "idle"}.get(running, "unknown")

@@ -9798,20 +9798,46 @@ _PULSE_EVERY_S = 600
 _last_pulse = 0.0
 
 
+def _orchestrator_has_child(pid: int) -> bool | None:
+    """Does the orchestrator have a child process (= a report running now)?
+    None when we can't tell (no pgrep, e.g. Windows) — routing reads busy."""
+    try:
+        r = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True,
+                           text=True, timeout=10)
+    except Exception:  # noqa: BLE001
+        return None
+    if r.returncode == 0:
+        return True
+    return False if r.returncode == 1 else None
+
+
 def _batch_running() -> bool | None:
-    """True while this machine's day-orchestrator holds a day lock with a live
-    pid (the whole 4am batch, circle-backs included), False when it doesn't,
+    """True while this machine's 4am batch is actually BUSY, False when it isn't,
     None when we can't tell. Checks yesterday too: a batch resumed after
-    midnight still holds the previous day's lock."""
+    midnight still holds the previous day's lock.
+
+    Holding the day lock is not enough on its own (2026-10-23): Lucy 3 keeps it
+    until its 2:45pm screenshot slot, so it read busy all day. While the lock
+    is held, routing.batch_busy decides from the day_state file — busy if a
+    report is running now, waiting on anything but the clock, or due within
+    30 min; free if everything left is parked behind a later start time."""
     try:
         from automations.day_orchestrator import state as _state
         today = dt.date.today()
         for d in (today, today - dt.timedelta(days=1)):
             lp = _state._lock_path(d.isoformat())
-            if lp.exists():
-                pid = int((lp.read_text().strip() or "0"))
-                if pid and _state._pid_alive(pid):
-                    return True
+            if not lp.exists():
+                continue
+            pid = int((lp.read_text().strip() or "0"))
+            if not (pid and _state._pid_alive(pid)):
+                continue
+            try:
+                raw = json.loads(_state._state_path(d.isoformat()).read_text())
+                reports = raw.get("reports") or {}
+            except Exception:  # noqa: BLE001 — no readable state: busy
+                return True
+            return routing.batch_busy(reports, dt.datetime.now(),
+                                      _orchestrator_has_child(pid))
         return False
     except Exception:  # noqa: BLE001 — unknown, and routing treats it as busy
         return None

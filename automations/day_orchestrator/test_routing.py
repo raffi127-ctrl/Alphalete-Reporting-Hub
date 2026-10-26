@@ -64,6 +64,46 @@ class Heartbeat(unittest.TestCase):
                                               AFTERNOON))
 
 
+class BatchBusy(unittest.TestCase):
+    """A held day lock is not 'busy' when all that's left waits for a clock
+    (Lucy 3 read busy until its 2:45pm slot, 2026-10-23)."""
+    NOW = dt.datetime(2026, 10, 23, 10, 15)
+
+    def _r(self, status="PENDING", waiting_on=None):
+        return {"status": status, "waiting_on": waiting_on}
+
+    def test_only_later_clock_slots_left_is_free(self):
+        reps = {"a": self._r("DONE"),
+                "audit": self._r(waiting_on="clock < 14:45"),
+                "settle": self._r(waiting_on="clock < 11:00")}
+        self.assertFalse(routing.batch_busy(reps, self.NOW, child_running=False))
+
+    def test_slot_starting_soon_is_busy(self):
+        reps = {"settle": self._r(waiting_on="clock < 10:30")}
+        self.assertTrue(routing.batch_busy(reps, self.NOW, child_running=False))
+
+    def test_a_running_report_is_busy(self):
+        reps = {"audit": self._r(waiting_on="clock < 14:45")}
+        self.assertTrue(routing.batch_busy(reps, self.NOW, child_running=True))
+        self.assertTrue(routing.batch_busy(reps, self.NOW, child_running=None))
+
+    def test_waiting_on_data_or_retrying_is_busy(self):
+        for w in ("tableau:metrics", None, "dep:captainship_knocks"):
+            with self.subTest(waiting_on=w):
+                reps = {"x": self._r("STILL_TRYING", w),
+                        "audit": self._r(waiting_on="clock < 14:45")}
+                self.assertTrue(routing.batch_busy(reps, self.NOW, child_running=False))
+
+    def test_clock_already_passed_is_busy(self):
+        """'clock < 09:00' still recorded at 10:15 = due on the next pass."""
+        reps = {"x": self._r(waiting_on="clock < 09:00")}
+        self.assertTrue(routing.batch_busy(reps, self.NOW, child_running=False))
+
+    def test_everything_finished_is_free(self):
+        reps = {"a": self._r("DONE"), "b": self._r("FAILED")}
+        self.assertFalse(routing.batch_busy(reps, self.NOW, child_running=False))
+
+
 class Choose(unittest.TestCase):
     def test_moves_off_a_backed_up_home(self):
         self.assertEqual(routing.choose(["Lucy 2", "Lucy 1", "Lucy 3"],
