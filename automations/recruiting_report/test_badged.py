@@ -30,6 +30,18 @@ class ParseTest(unittest.TestCase):
             {"wk": "2026-09-27", "badged": 5.0}, {"wk": "2026-10-04", "badged": None}]}})
         self.assertEqual(got, {dt.date(2026, 9, 27): 5, dt.date(2026, 10, 4): 0})
 
+    def test_showed_is_the_same_tables_ns_showed(self):
+        got = badged.parse_showed({"data": {"weeks": [
+            {"wk": "2026-09-27", "bobShowed": 8, "badged": 5}, {"wk": "2026-10-04", "badged": 1}]}})
+        self.assertEqual(got, {dt.date(2026, 9, 27): 8, dt.date(2026, 10, 4): 0})
+
+    def test_no_showed_field_leaves_the_formula(self):
+        self.assertIsNone(badged.parse_showed({"data": {"weeks": [{"wk": "2026-09-27", "badged": 5}]}}))
+
+    def test_pct(self):
+        self.assertEqual(badged.badged_pct(5, 8), 0.625)
+        self.assertEqual(badged.badged_pct(2, 0), "")
+
     def test_no_weeks_is_no_data_not_zeros(self):
         self.assertIsNone(badged.parse_weeks({"data": {"success": True, "weeks": []}}))
         self.assertIsNone(badged.parse_weeks({"error": 403}))

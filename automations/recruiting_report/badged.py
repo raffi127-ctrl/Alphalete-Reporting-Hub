@@ -4,8 +4,11 @@ WHAT RAF ASKED. Two rows in every ICD tab's OPT section, right under
 "New Start Retention" -- the same two rows he added to the owners' All-in-One
 template:
   * Badged Reps  -- how many new starts got badged that week.
-  * Badged %     -- Badged Reps / New Starts Showed, goal 50%. A formula, so it
-                    follows whatever the recruiting run puts in New Starts Showed.
+  * Badged %     -- Badged Reps / NS SHOWED, goal 50%. BOTH from the same OV
+                    table, written as a value. It used to be a formula over the
+                    tab's New Starts Showed row, but that row is AppStream's
+                    count -- a different set of people -- so it read 900% (1
+                    showed, 9 badged) or 0% with badges (Raf, 2026-10-26).
 On the All-in-One the owner types Badged Reps by hand; HERE nobody does, we pull it.
 
 WHERE THE NUMBER COMES FROM. OwnerVille -> CEO Dashboard (p=9197) -> Recruiting
@@ -92,6 +95,27 @@ def parse_weeks(payload: dict) -> Optional[Dict[dt.date, int]]:
         except (KeyError, ValueError, TypeError):
             continue
     return out
+
+
+def parse_showed(payload: dict) -> Optional[Dict[dt.date, int]]:
+    """{week start Sunday: NS SHOWED} -- the Badged % denominator. None = OV
+    didn't send the field, so the caller leaves the old formula alone."""
+    weeks = ((payload or {}).get("data") or {}).get("weeks") or []
+    if not any("bobShowed" in w for w in weeks):
+        return None
+    out: Dict[dt.date, int] = {}
+    for w in weeks:
+        try:
+            out[dt.date.fromisoformat(str(w["wk"])[:10])] = int(float(w.get("bobShowed") or 0))
+        except (KeyError, ValueError, TypeError):
+            continue
+    return out
+
+
+def badged_pct(badged: int, showed: int):
+    """Badged / NS Showed, both from the same OV table. No shows = blank: a % of
+    nobody isn't 0%, and badged-with-no-shows can't happen in one population."""
+    return round(badged / showed, 4) if showed else ""
 
 
 def fetch_live(office_ids: List[str], *, headless: bool = True) -> Dict[str, dict]:
@@ -262,6 +286,7 @@ def main(argv=None) -> int:
             continue
         oid = tab_offices[tab][0]
         by_week = parse_weeks(raw.get(oid) or {})
+        showed = parse_showed(raw.get(oid) or {})
         if by_week is None:
             result.append((tab, f"SKIPPED: no OwnerVille data for office {oid}"))
             continue
@@ -289,11 +314,20 @@ def main(argv=None) -> int:
                 continue
             v = by_week.get(w, 0)
             data.append({"range": f"{_col_letter(col)}{rows['badged']}", "values": [[v]]})
-            shown.append(f"{w.strftime('%m/%d')}={v}")
+            if showed is None:
+                shown.append(f"{w.strftime('%m/%d')}={v}")
+                continue
+            s = showed.get(w, 0)
+            data.append({"range": f"{_col_letter(col)}{rows['badged_pct']}",
+                         "values": [[badged_pct(v, s)]]})
+            shown.append(f"{w.strftime('%m/%d')}={v}/{s}")
         if data and not args.dry_run:
             fill._retry(ws.batch_update, data, value_input_option="USER_ENTERED")
         verb = "would write" if args.dry_run else "wrote"
-        result.append((tab, f"{note}; {verb} Badged (office {oid}) {' '.join(shown)}"))
+        what = "Badged" if showed is None else "Badged/OV showed"
+        if showed is None:
+            what += " (no OV showed -- % formula left as is)"
+        result.append((tab, f"{note}; {verb} {what} (office {oid}) {' '.join(shown)}"))
 
     # the template too, so a tab duplicated from it is born with the two rows
     if not args.only:
