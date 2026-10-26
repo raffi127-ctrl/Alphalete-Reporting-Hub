@@ -384,6 +384,27 @@ def ask_for_ownerville(replace=False, required=False):
                     replace=replace)
 
 
+# A LOGIN CHECK THAT CANNOT FINISH MUST NOT HOLD THE INSTALL. Omar's install
+# (2026-10-26) sat on "checking the OwnerVille login" for twenty minutes:
+# Lucy's browser opened a page that never rendered on his Mac, and the check
+# waited on it forever, so the office never got to steps 7-10. Four minutes
+# is twice the slow case; past that the check is reported as "could not
+# finish" and setup carries on -- the login can be verified later with the
+# one-command sign-in window.
+CHECK_TIMEOUT_S = 240
+
+
+def _checked_run(cmd, title):
+    try:
+        return subprocess.run(cmd, cwd=str(APP_DIR), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=CHECK_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        say("      the %s check could not finish in %d minutes -- skipped for "
+            "now. Setup carries on; the reporting team will verify %s with "
+            "you afterwards." % (title, CHECK_TIMEOUT_S // 60, title))
+        return None
+
+
 def check_ownerville() -> bool:
     """Sign in to OwnerVille for real, the same way the knocks read will.
 
@@ -413,10 +434,11 @@ def check_ownerville() -> bool:
             pass
         return True                      # they skipped it; nothing to verify
     say("      checking the OwnerVille login (this one takes a minute)...")
-    proc = subprocess.run(
+    proc = _checked_run(
         [str(venv_python()), "-m", "automations.icd_alerts.run", "--knocks",
-         "--dry-run"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+         "--dry-run"], "OwnerVille")
+    if proc is None:
+        return False
     if proc.returncode == 0:
         say("      OwnerVille login works.")
         return True
@@ -505,9 +527,10 @@ def check_appstream() -> bool:
     if not (CONFIG_DIR / "appstream-creds.json").exists():
         return False
     say("      checking the AppStream login (this one takes a minute)...")
-    proc = subprocess.run(
-        [str(venv_python()), "-m", "automations.icd_alerts.as_signin"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = _checked_run(
+        [str(venv_python()), "-m", "automations.icd_alerts.as_signin"], "AppStream")
+    if proc is None:
+        return False
     if proc.returncode == 0:
         say("      AppStream login works.")
         return True
