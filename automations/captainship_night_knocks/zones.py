@@ -148,8 +148,11 @@ ICD_TIMEZONES: Dict[str, str] = {
     # Orange County, next to Orlando: peninsula, Eastern (same check as Doral).
     "Drew Tepper":      "America/New_York",              # Maitland, FL
     # solo (run.SOLO_OFFICES, no captainship). Office Access granted
-    # 2026-10-24; harvest_zones --icd "Aaron Nimako" on Lucy 3 read the office.
-    "Aaron Nimako":     "America/New_York",              # Philadelphia, PA
+    # 2026-10-24. The office address on ownerville is Philadelphia, but his
+    # team knocks on the West Coast: his reply to the first mail (Sat 10/24)
+    # was "Its only 356 PST my guys will knock a lot longer". The wave follows
+    # where the doors are, not the office address.
+    "Aaron Nimako":     "America/Los_Angeles",           # team knocks Pacific
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a
