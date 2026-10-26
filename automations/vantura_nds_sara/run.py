@@ -114,6 +114,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -611,7 +612,7 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
             uids = (data[0] or b"").split() if typ == "OK" else []
             log("mail in %s [%s] matching %r: %d" % (account, folder, q, len(uids)))
             for uid in list(reversed(uids))[:limit]:
-                typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE TO SUBJECT)])")
+                typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE FROM TO SUBJECT)])")
                 if typ != "OK" or not d or not d[0]:
                     continue
                 meta = d[0][0] if isinstance(d[0][0], bytes) else b""
@@ -635,6 +636,19 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
                        (msg.get("To") or "?").strip()[:60],
                        arrived.strftime("%m/%d %H:%M:%S") if arrived else "?",
                        gap, (msg.get("Subject") or "").strip()[:40]))
+                # Google's forwarding confirmation: the 9-10 digit code the OTHER
+                # account has to type under Settings > Forwarding (10/26). Only
+                # that sender, only the code -- never a passcode body.
+                if "forwarding-noreply@google.com" in (msg.get("From") or "").lower():
+                    try:
+                        t2, d2 = M.fetch(uid, "(RFC822)")
+                        full = _email.message_from_bytes(d2[0][1])
+                        body = VC._body_text(full)
+                        codes = re.findall(r"\b\d{9,10}\b", body)
+                        log("    FORWARDING CONFIRMATION subject=%r code(s)=%s"
+                            % ((full.get("Subject") or "").strip()[:120], codes[:3] or "none in body"))
+                    except Exception as e:  # noqa: BLE001
+                        log("    forwarding confirmation body unreadable (%s)" % type(e).__name__)
     finally:
         try:
             M.logout()
