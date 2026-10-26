@@ -618,6 +618,16 @@ class ChannelThread(unittest.TestCase):
         _, intro = self._post(existed=True)
         intro.assert_not_called()
 
+    def test_picture_tags_camila(self):
+        import unittest.mock as um
+        from pathlib import Path
+        from automations.first_to_second_below_mark import slack_post as sp
+        with um.patch.object(sp.smp, "ensure_named_thread",
+                             return_value={"ok": True, "thread_ts": "1.2", "existed": True}),              um.patch.object(sp.smp, "post_reply_with_image",
+                             return_value={"ok": True}) as rep_:
+            sp.post_to_thread(Path("x.png"), "h", dry=False, today=dt.date(2026, 10, 26))
+        self.assertIn("<@U07FWSYP3NV>", rep_.call_args.kwargs["comment"])
+
     def test_board_without_only_never_dms(self):
         import unittest.mock as um
         from pathlib import Path

@@ -14,6 +14,7 @@ When you confirm a new ID, add it here in the same commit.
 | Evelyn (Eve) Sobrino | Approver: review gates, bulletins | U088E2KJEV8 |
 | Rafael (Raf) Hidalgo | Owner | U045Z8N0ZQC |
 | Maud Miller | | U045USN7NCD |
+| Camila Hornos Kraschinsky | Recruiting (ARS reports); tagged on 1st to 2nd Below the Mark | U07FWSYP3NV |
 | Lucy Reporting | The bot account all reports post as | U0BCG8F9B5Z |
 
 ## ICD / office owners

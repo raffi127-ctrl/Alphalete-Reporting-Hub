@@ -62,6 +62,11 @@ THREAD_LINES = [
     "Every time zone in one post, at 11:00 AM and 6:30 PM Pacific — every office "
     "re-checked each time, every update lands in this thread.",
 ]
+# Tagged on every picture in the thread, so each wave pings them the moment it
+# lands (Camila, 2026-10-23: "can we make it tag me once it's uploaded").
+TAG_ON_POST = [
+    "U07FWSYP3NV",   # Camila Hornos Kraschinsky
+]
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "below_the_mark"
 # Stops at P on purpose: column Q ("Office to Fill out report for (MUST MATCH
 # APP STREAM NAME)") is a working column nobody reading the DM needs, and it is
@@ -137,6 +142,8 @@ def post_to_thread(png: Path, headline: str, *, dry: bool,
     the day), then this wave's picture as a reply in it."""
     import datetime as dt
     today = today or dt.datetime.now(dt.timezone.utc).astimezone(rep.CT).date()
+    if TAG_ON_POST:
+        headline = f"{headline} {' '.join(f'<@{u}>' for u in TAG_ON_POST)}"
     print(f"{'DRY-RUN (no post)' if dry else 'POSTING'} to channel {CHANNEL_ID}, "
           f"thread '{TITLE} — {today:%b %d}'")
     print(f"  comment: {headline}")
