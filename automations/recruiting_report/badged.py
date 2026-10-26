@@ -139,6 +139,44 @@ def fetch_live(office_ids: List[str], *, headless: bool = True) -> Dict[str, dic
     return raw
 
 
+def probe(office_ids: List[str], *, headless: bool = True) -> None:
+    """READ-ONLY. Why does OV show more BADGED than NS SHOWED in one week
+    (Chan Park 9/6: 2 showed, 8 badged)? Prints every field the weekly JSON
+    carries, then every prototypes.cfc method the CEO Dashboard calls, so the
+    per-person badged list can be found. Lines start with PROBE for logtail."""
+    import re
+    from automations.b2b_dispositions.capture import capture_rqst
+    from automations.shared.tableau_patchright import ownerville_session
+
+    with ownerville_session(headless=headless) as page:
+        rqst = capture_rqst(page)
+        for oid in office_ids:
+            p = page.evaluate(
+                "async (u) => { const r = await fetch(u, {credentials: 'include'});"
+                " return r.ok ? await r.json() : {error: r.status}; }",
+                ENDPOINT.format(office=oid, rqst=rqst))
+            weeks = ((p or {}).get("data") or {}).get("weeks") or []
+            print(f"PROBE {oid} top keys={sorted((p or {}).keys())} "
+                  f"data keys={sorted(((p or {}).get('data') or {}).keys())}", flush=True)
+            for w in weeks[-8:]:
+                print(f"PROBE {oid} {json.dumps(w, separators=(',', ':'))}", flush=True)
+
+        methods: Dict[str, str] = {}
+        page.on("request", lambda r: methods.setdefault(
+            (re.search(r"method=(\w+)", r.url) or [None, r.url[:80]])[1], r.url[:200])
+            if "prototypes" in r.url or ".cfc" in r.url else None)
+        page.goto(f"https://v2.ownerville.com/index.cfm?p=9197&rqst={rqst}",
+                  wait_until="networkidle", timeout=60000)
+        page.wait_for_timeout(8000)
+        html = page.content()
+        for m in sorted(set(re.findall(r"method=(\w+)", html))):
+            methods.setdefault(m, "(in page source)")
+        for m, u in sorted(methods.items()):
+            print(f"PROBE method {m} {re.sub(r'rqst=[^&]+', 'rqst=…', u)}", flush=True)
+        for hit in sorted(set(re.findall(r"[\w.]*[Bb]adge\w*", html)))[:40]:
+            print(f"PROBE badge-word {hit}", flush=True)
+
+
 # --- sheet layout -----------------------------------------------------------
 
 def _norm(s: str) -> str:
@@ -254,7 +292,15 @@ def main(argv=None) -> int:
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--all-weeks", action="store_true",
                     help="write every closed week OV has, not just the last 4")
+    ap.add_argument("--probe", action="append", metavar="TAB",
+                    help="READ-ONLY: dump OV's raw weekly rows + the dashboard's methods for this tab")
     args = ap.parse_args(argv)
+
+    if args.probe:
+        tabs = tabs_to_offices(fill.load_mapping())
+        want = {_norm(t) for t in args.probe}
+        probe([o[0] for t, o in tabs.items() if _norm(t) in want], headless=not args.headed)
+        return 0
 
     today = dt.date.fromisoformat(args.today) if args.today else None
     weeks = weeks_to_write(today)
