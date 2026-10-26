@@ -697,6 +697,45 @@ def _wait_send_outcome(page, a, timeout_ms: int = 15000) -> str:
     return "unknown"
 
 
+def _queue_total(page):
+    """AppStream's own '<page> of <N> Emails' count, or None."""
+    try:
+        return getattr(read_current_applicant(page), "_total", None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _send_landed(page, name: str, before_total, timeout_ms: int = 15000) -> str:
+    """DID THE SEND REALLY GO? 'sent' only when AppStream proves it: the
+    applicant left the slot (a different name is loaded) OR the queue total
+    dropped. 'refused' when the cannot-send panel renders. 'unknown' otherwise.
+
+    WHY (Megan 2026-10-25, "we want ALL apps being pushed"). The walk used to
+    call a click "sent" when no error showed 2.5s later. On 10/14, 10/18 and
+    10/19 Atef's queue sat at 45 / 86 / 75 all evening while every run reported
+    40-55 "sent" -- the same people, clicked again every run, never saved. Nobody
+    saw it for a week because the log said SENT. The queue total covers the
+    last applicant in the queue, whose slot goes blank instead of showing a
+    new name."""
+    deadline = time.time() + timeout_ms / 1000.0
+    target = (name or "").strip().lower()
+    while time.time() < deadline:
+        if "cannot send to ai" in _body(page):
+            return "refused"
+        try:
+            cur = read_current_name(page).strip().lower()
+        except Exception:  # noqa: BLE001
+            cur = ""
+        if cur and target and cur != target:
+            return "sent"
+        if before_total is not None:
+            now_total = _queue_total(page)
+            if now_total is not None and now_total < before_total:
+                return "sent"
+        page.wait_for_timeout(800)
+    return "unknown"
+
+
 def _try_overwrite_send(page) -> bool:
     """Push to AI via the override control when the ATS allows it (control
     present, no 'Cannot override'). The ATS still blocks a recent contact, so
@@ -715,6 +754,13 @@ def _try_overwrite_send(page) -> bool:
     off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
     # Carlos 2026-10-20: the send boxes are off before ANY send click.
     untick_send_boxes(page, live=True)
+    # Who is in the slot, and how big the queue is, BEFORE the click -- so a
+    # "success" below has to be proven by AppStream, not assumed (10/25).
+    try:
+        _who = read_current_name(page)
+    except Exception:  # noqa: BLE001
+        _who = ""
+    _before = _queue_total(page)
     # WAIT for the control by scanning ELEMENTS, never body text. The control is
     # a <button> in some offices but an <input> in others (Haytham's, found
     # 2026-08-29 via a full control dump) — and an input's label lives in its
@@ -780,14 +826,17 @@ def _try_overwrite_send(page) -> bool:
         return False
     _log(f"    [override] clicked {clicked!r}")
     page.wait_for_timeout(2500)
-    if "cannot send to ai" not in _body(page):
+    # PROVEN, NOT ASSUMED (10/25): the override counts only when AppStream
+    # shows the applicant gone. "No refusal panel" alone is also what a bare
+    # Overwrite that only cleared the duplicates looks like.
+    if ("cannot send to ai" not in _body(page)
+            and _send_landed(page, _who, _before, timeout_ms=8000) == "sent"):
         return True
     # A bare "Overwrite…" (no AI suffix) only cleared the duplicates; the send is
     # the NEXT click. Try it before calling this blocked.
     if (_guard_office_now(page, "Send to AI (post-overwrite)")
             and _click_first(page, ["Send to AI", "Send To AI"], timeout=6000)):
-        page.wait_for_timeout(2500)
-        if "cannot send to ai" not in _body(page):
+        if _send_landed(page, _who, _before) == "sent":
             _log("    [override] send succeeded after the overwrite cleared the dups")
             return True
     return False
@@ -904,13 +953,30 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if not _guard_office_now(page, "Send to AI"):
         return _office_guard_outcome()
     untick_send_boxes(page, live=True)
+    _who = f"{a.first_name} {a.last_name}".strip()
+    _before = _queue_total(page)
     if not _click_first(page, ["Send to AI", "Send To AI"]):
         _log("    'Send to AI' button not found — skipped")
         return "no_button"
-    page.wait_for_timeout(2500)
-    if "cannot send to ai" not in _body(page):
-        _log(f"    ✅ SENT to AI: {a.first_name} {a.last_name}")
+    _landed = _send_landed(page, _who, _before)
+    if _landed == "unknown":
+        # ONE MORE TRY, then the truth. The click went through but AppStream
+        # neither refused nor moved on -- the 10/14-10/19 silent non-save.
+        _log(f"    ⚠ send did not stick (still in the slot) — trying once more: "
+             f"{_who}")
+        if _guard_office_now(page, "Send to AI (retry)"):
+            untick_send_boxes(page, live=True)
+            if _click_first(page, ["Send to AI", "Send To AI"]):
+                _landed = _send_landed(page, _who, _before)
+    if _landed == "sent":
+        _log(f"    ✅ SENT to AI: {_who}")
         return "sent"
+    if _landed == "unknown":
+        # NOT counted as pushed, NOT removed: they stay in the queue and the
+        # next run tries again. Counted on its own so the push report shows it.
+        _log(f"    ⚠ SEND DID NOT STICK: {_who} — left in the queue for the "
+             f"next run")
+        return "send_unconfirmed"
     # blocked by prior correspondence — first try to send anyway via overwrite.
     if _try_overwrite_send(page):
         _log(f"    ✅ SENT via overwrite: {a.first_name} {a.last_name}")

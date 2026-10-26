@@ -35,10 +35,23 @@ class _FakePage:
         self._body = self._body.replace("cannot send to ai", "sent")
 
 
+def _landed(result):
+    """Stand-in for AppStream proving (or not) that the applicant left the
+    slot. Since 2026-10-25 an override counts only on that proof -- the fake
+    page has no queue to leave, so each test says which way it went."""
+    real = oat._send_landed
+    oat._send_landed = lambda *a, **k: result
+    return real
+
+
 def _run(label):
     p = _FakePage([label, "Save Applicant"],
                   f"cannot send to ai as correspondence ... {label}".lower())
-    ok = oat._try_overwrite_send(p)
+    real = _landed("sent")
+    try:
+        ok = oat._try_overwrite_send(p)
+    finally:
+        oat._send_landed = real
     return ok, p.clicked
 
 
@@ -66,7 +79,27 @@ def test_cannot_override_message_does_NOT_veto():
     not. Vetoing on that wording is what stranded sendable applicants."""
     p = _FakePage(["Override and Send to AI"],
                   "cannot override this applicant. override and send to ai")
-    assert oat._try_overwrite_send(p) is True
+    real = _landed("sent")
+    try:
+        assert oat._try_overwrite_send(p) is True
+    finally:
+        oat._send_landed = real
+
+
+def test_an_override_that_never_lands_is_not_a_send():
+    """Megan 2026-10-25: the click is not the send. No refusal panel and no
+    applicant leaving the slot = not sent (the 10/14-10/19 silent non-save)."""
+    p = _FakePage(["Override and Send to AI"],
+                  "cannot send to ai as correspondence ... override and send to ai")
+    p.locator = None   # the post-overwrite "Send to AI" click finds nothing
+    real = _landed("unknown")
+    real_click = oat._click_first
+    oat._click_first = lambda *a, **k: False
+    try:
+        assert oat._try_overwrite_send(p) is False
+    finally:
+        oat._send_landed = real
+        oat._click_first = real_click
 
 
 
@@ -130,9 +163,10 @@ if __name__ == "__main__":
     for fn in (test_overwrite_wording, test_override_wording,
                test_no_control_means_no_send, test_cannot_override_message_does_NOT_veto,
                test_default_reason_is_duplicate, test_no_contact_reason_is_not_duplicate,
-               test_missing_reason_fails_safe):
+               test_missing_reason_fails_safe,
+               test_an_override_that_never_lands_is_not_a_send):
         fn(); print(f"  ok  {fn.__name__}")
-    print("7/7 passed")
+    print("8/8 passed")
 
 
 def test_cannot_override_message_does_not_stop_the_click():
@@ -144,7 +178,11 @@ def test_cannot_override_message_does_not_stop_the_click():
     p = _FakePage(["Overwrite old Applicants", "Send to AI"],
                   "cannot send to ai ... cannot override this applicant. "
                   "overwrite old applicants")
-    assert oat._try_overwrite_send(p) is True
+    real = _landed("sent")
+    try:
+        assert oat._try_overwrite_send(p) is True
+    finally:
+        oat._send_landed = real
     assert p.clicked == "Overwrite old Applicants", p.clicked
 
 
@@ -153,5 +191,9 @@ def test_bare_overwrite_label_without_ai_suffix_is_matched():
     # checks the page for an override affordance before looking for the control.
     p = _FakePage(["Overwrite old Applicants"],
                   "cannot send to ai as correspondence ... overwrite old applicants")
-    ok, clicked = oat._try_overwrite_send(p), p.clicked
+    real = _landed("sent")
+    try:
+        ok, clicked = oat._try_overwrite_send(p), p.clicked
+    finally:
+        oat._send_landed = real
     assert ok and clicked == "Overwrite old Applicants", clicked

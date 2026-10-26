@@ -167,6 +167,8 @@ def _relay_line(label: str, stats: dict, last) -> str:
               if stats.get("live") else "test run, nothing sent")
     at = _hm12(last.strftime("%H:%M")) if last else _hm12(stats.get("at", ""))
     extra = " · Indeed check up" if stats.get("walled") else ""
+    if int(stats.get("unconfirmed") or 0):
+        extra += " · :warning: %d didn't stick" % int(stats["unconfirmed"])
     return "%s%s (his computer): %s · %s left @ %s%s" % (
         flag, label, pushed, left, at, extra)
 
@@ -212,10 +214,18 @@ def build_report(unreadable=None) -> str:
             continue
         rows = [r for r in vals if r and r[0].startswith(today)]
         sent = 0
+        stuck = 0
         for r in rows:
             m = re.search(r"\bsent=(\d+)", r[4] if len(r) > 4 else "")
             if m:
                 sent += int(m.group(1))
+        # A click AppStream never saved (10/25: Atef's 45 / 86 / 75 queues sat
+        # still while every run said "sent"). The LATEST run's count: the same
+        # person retries every run, so a day's sum would repeat them.
+        m3 = re.search(r"\bsend_unconfirmed=(\d+)",
+                       rows[-1][4] if rows and len(rows[-1]) > 4 else "")
+        if m3:
+            stuck = int(m3.group(1))
         is_paused = _office_id(tab) in paused
         if not rows:
             # "no runs yet today" is a WORRY line — it means the walk should have
@@ -239,10 +249,11 @@ def build_report(unreadable=None) -> str:
         # still waiting, so the backed-up queues jump out of the list. Paused
         # offices get it too — their queue keeps growing while nobody works it.
         flag = ":x: " if left.isdigit() and int(left) > BACKLOG_FLAG_OVER else ""
-        lines.append("%s%s: %s · %s left @ %s"
+        lines.append("%s%s: %s · %s left @ %s%s"
                      % (flag, label,
                         "paused" if is_paused else "%d pushed" % sent,
-                        left, at))
+                        left, at,
+                        (" · :warning: %d didn't stick" % stuck) if stuck else ""))
         try:
             ts = dt.datetime.strptime(rows[-1][0], "%Y-%m-%d %H:%M:%S")
             if machine not in machine_last or ts > machine_last[machine]:

@@ -1055,6 +1055,8 @@ def _walk(page, live: bool, record: dict) -> dict:
                and str(r[5]).startswith("sent"))
     return {"reached": True, "office": seen, "rc": rc, "sent": sent,
             "queue_start": walk.get("start"), "queue_end": walk.get("end"),
+            "unconfirmed": int((walk.get("counts") or {}).get(
+                "send_unconfirmed", 0)),
             "walled": bool(OAT._cf_walled()),
             "why": "" if rc == 0 else "the walk stopped (rc=%s)" % rc}
 
@@ -1123,6 +1125,7 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             "office": out.get("office"), "live": bool(live),
             "start": out.get("queue_start"), "end": out.get("queue_end"),
             "sent_run": int(out.get("sent") or 0), "sent_today": sent_today,
+            "unconfirmed": int(out.get("unconfirmed") or 0),
             "walled": bool(out.get("walled")), "result": result,
             "at": dt.datetime.now().strftime("%H:%M")}),
             log=_log, office_key=str(push_record().get("office_key") or ""))
