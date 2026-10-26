@@ -5005,6 +5005,13 @@ def _creds_cache_bust() -> None:
 
 
 _CRED_FILES = {
+    # The headshot bot's admin key for the LucyEco relay (Script Property
+    # LUCY_ADMIN_KEY on the 'Lucy Ecosystem' Apps Script). Lucy 3 queues
+    # headshots for office computers and reads their answers with it
+    # (automations/headshots/eco.py, 2026-10-26). Outside the repo -- the repo
+    # is public.
+    "headshots-relay-admin-key":
+        lambda: Path.home() / ".config" / "headshots" / "relay-admin-key",
     "gmail-app-password":
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password",
     "gmail-app-password-raffi127":
