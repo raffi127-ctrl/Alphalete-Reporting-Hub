@@ -9873,6 +9873,26 @@ def _maybe_pulse(mach: str) -> None:
         print(f"[mini_control] pulse error (continuing): {type(e).__name__}: {str(e)[:160]}")
 
 
+def _drain_text_outbox(*, dry_run: bool, sandbox: bool, lane: str) -> None:
+    """Send whatever the capture jobs dropped in the local text outbox. Main
+    lane only — that is the process holding the macOS Messages grant — and
+    never in dry-run/sandbox. Never raises: a text problem must not stop the
+    queue."""
+    if dry_run or sandbox or lane != LANE_MAIN:
+        return
+    try:
+        from automations.day_orchestrator import text_outbox as tob
+        if not tob.pending():
+            return
+        sent, left = tob.drain(_action_text_dispositions,
+                               log=lambda m: print(m, flush=True))
+        print(f"[mini_control] text outbox: {sent} sent, {left} still pending",
+              flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[mini_control] text outbox error (continuing): "
+              f"{type(e).__name__}: {str(e)[:160]}", flush=True)
+
+
 def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False,
               machine: str | None = None, lane: str = LANE_MAIN) -> None:
     mach = _machine_profile(machine)
@@ -9900,10 +9920,15 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
             if dry_run:
                 argv.append("--dry-run")
             os.execv(sys.executable, argv)
+        # Texts first: the local outbox never waits on the sheet (see
+        # text_outbox.py). Drained again after the poll so a slow sheet costs
+        # a text at most one poll_once, never a loop.
+        _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
         try:
             poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach, lane=lane)
         except Exception as e:
             print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
+        _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
         # Drift-immune daily schedule reconcile (no-op except the first poll in the
         # 1-2am window). Kept OUT of the try above so its own guard applies, but it
         # never raises anyway.

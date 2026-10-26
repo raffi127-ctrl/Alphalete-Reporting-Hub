@@ -222,11 +222,11 @@ def _post_gaps(body: str, today: dt.date) -> None:
 def _queue_text(kind: str, title: str, today: dt.date, now: dt.datetime, *,
                 paths: List[Path] = (), text: str = "") -> None:
     """Hand the text to the poller through the b2b_dispositions manifest path
-    (the identity with Messages consent). TEXT_ROUTES in b2b config route
-    (CAMPAIGN_LABEL, kind) to Carlos's two groups."""
+    (the identity with Messages consent) via the local text outbox. TEXT_ROUTES
+    in b2b config route (CAMPAIGN_LABEL, kind) to Carlos's two groups."""
     from automations.b2b_dispositions import text_post as tp
     from automations.b2b_dispositions import run as bd_run
-    from automations.day_orchestrator import mini_control as mc
+    from automations.day_orchestrator import text_outbox as tob
     spec = {"kind": kind, "title": title, "text": text,
             "by_campaign": {C.CAMPAIGN_LABEL: [str(p) for p in paths]}}
     if not tp.spec_has_routes(spec):
@@ -234,8 +234,11 @@ def _queue_text(kind: str, title: str, today: dt.date, now: dt.datetime, *,
         return
     out_dir = bd_run.OUTPUT_DIR / today.strftime("%Y-%m-%d")
     mp = tp.write_manifest(spec, out_dir, "%s-%s" % (kind, _clock(now)))
-    mc.enqueue("text_dispositions", mp.name, by="nds_oof")
-    _log("text: queued %s" % mp.name)
+    # Local outbox, NOT the Mini Control sheet: on 2026-10-26 the sheet stopped
+    # answering and each enqueue hung ~9 min, so the boards posted 20-40 min
+    # late and the texts never left. The poller drains the outbox every loop.
+    tob.drop(mp, by="nds_oof", day=today.isoformat())
+    _log("text: outbox %s" % mp.name)
 
 
 def _callout(over: List[Dict], today: dt.date, now: dt.datetime, *, send: bool) -> str:
