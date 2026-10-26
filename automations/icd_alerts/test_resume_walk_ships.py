@@ -606,6 +606,41 @@ class DownloadedPdfsAreReadOnTheMac(unittest.TestCase):
         self.assertEqual(RP.READ_FIX, "2026-10-22-mac-pdf")
 
 
+class AnOfficeOnlyLoginCountsAsSignedIn(unittest.TestCase):
+    """10/25 test run: Jennifer's and Rashad's computers reached their own
+    office page and were called "sign-in failed" -- an office-only login has
+    no office switcher."""
+
+    def _page(self, switcher, title):
+        page = mock.MagicMock()
+        page.locator.return_value.count.return_value = 1 if switcher else 0
+        page.title.return_value = title
+        return page
+
+    def _ctx(self, token):
+        ctx = mock.MagicMock()
+        ctx.cookies.return_value = ([{"name": "rqst_ABC"}] if token else [])
+        return ctx
+
+    def test_the_office_page_with_a_session_is_signed_in(self):
+        self.assertTrue(RP._signed_in_here(
+            self._page(False, "Figspire Management, Inc. (23132) -"),
+            self._ctx(True)))
+
+    def test_the_switcher_still_counts(self):
+        self.assertTrue(RP._signed_in_here(self._page(True, "x"),
+                                           self._ctx(False)))
+
+    def test_the_login_page_does_not(self):
+        self.assertFalse(RP._signed_in_here(self._page(False, "Login"),
+                                            self._ctx(True)))
+
+    def test_no_session_token_does_not(self):
+        self.assertFalse(RP._signed_in_here(
+            self._page(False, "Figspire Management, Inc. (23132) -"),
+            self._ctx(False)))
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):

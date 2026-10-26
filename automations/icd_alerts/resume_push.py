@@ -67,6 +67,7 @@ import datetime as dt
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -588,22 +589,48 @@ def _rqst_tokens(ctx):
             if c.get("name", "").startswith("rqst_")]
 
 
-def _on_console(page, ctx) -> bool:
-    """On the office console, or one token hop from it. A page that rendered
-    is not proof -- a wrong username renders one too."""
+_OFFICE_TITLE = re.compile(r"\((\d{3,6})\)\s*-?\s*$")
+
+
+def _signed_in_here(page, ctx) -> bool:
+    """On the office console -- by the office switcher (#searchMC), OR, for a
+    login that sees ONE office, by the office page itself.
+
+    AN OFFICE-ONLY LOGIN HAS NO SWITCHER (10/25 test run): Jennifer's and
+    Rashad's computers landed on "Figspire Management, Inc. (23132) -" and
+    "Elevate Specialized Acquisitions, Inc (23411) -" and were reported as
+    "sign-in failed", because the proof was #searchMC and only an account that
+    sees many offices has one -- the exact office-only login Megan wants every
+    office on. So the office page counts too: a live session token (rqst_
+    cookie) AND a title naming an office id. Which office it is gets decided
+    later by the Office ID banner on the queue (_pin_office), never here."""
     try:
         if page.locator(CONSOLE).count() > 0:
             return True
     except Exception:  # noqa: BLE001
         pass
+    try:
+        title = page.title() or ""
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(_OFFICE_TITLE.search(title)) and bool(_rqst_tokens(ctx))
+
+
+def _on_console(page, ctx) -> bool:
+    """On the office console, or one token hop from it. A page that rendered
+    is not proof -- a wrong username renders one too."""
+    if _signed_in_here(page, ctx):
+        return True
     for tok in _rqst_tokens(ctx):
         try:
             page.goto("%s?rqst=%s&p=701" % (AS_BASE, tok),
                       wait_until="domcontentloaded", timeout=25_000)
-            page.wait_for_selector(CONSOLE, timeout=10_000)
-            return True
         except Exception:  # noqa: BLE001
             continue
+        for _ in range(10):
+            if _signed_in_here(page, ctx):
+                return True
+            page.wait_for_timeout(1000)
     return False
 
 
