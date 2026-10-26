@@ -105,16 +105,23 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
         for m in offices.RELAY_MACHINES:
             self.assertNotIn("lucy", m.lower().replace("lucy reports", ""))
 
+    def test_the_test_run_offices_are_dry(self):
+        # 10/25: nine offices switched on to TEST (Megan). Going live is a
+        # deliberate per-office commit, never a side effect.
+        for key in ("drew", "hasani", "jamis10", "jennifer-att", "rashad",
+                    "steve", "trang", "tre", "valeria"):
+            self.assertEqual(RP.PUSH_OFFICES[key][1], "dry", key)
+
     def test_every_listed_office_states_its_number_and_mode(self):
         for key, (office, mode) in RP.PUSH_OFFICES.items():
             self.assertTrue(office.isdigit(), key)
             self.assertIn(mode, ("dry", "live"), key)
 
     def test_an_unlisted_office_does_nothing(self):
-        self.assertFalse(RP.armed({"office_key": "drew"}))
+        self.assertFalse(RP.armed({"office_key": "not-an-office"}))
         self.assertFalse(RP.armed({}))
         with mock.patch.object(RP, "push_record",
-                               return_value={"office_key": "drew"}), \
+                               return_value={"office_key": "not-an-office"}), \
              mock.patch.object(RP.C, "appstream_creds",
                                return_value={"username": "u", "password": "p"}):
             self.assertFalse(RP.enabled())

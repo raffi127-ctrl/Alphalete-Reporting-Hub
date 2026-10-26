@@ -126,6 +126,21 @@ PUSH_OFFICES = {
     # (ROTATION_BY_MACHINE "Carlos's office computer (relay)").
     "carlos": ("11580", "live"),
     "carlos-b2batt": ("11580", "live"),
+    # TEST RUN, the next nine (Megan 2026-10-25: "who else is ready to roll
+    # out that we can test?"). Each said yes to pushing at setup, has a login
+    # saved and reports health; none is pushed by a Lucy. Office numbers from
+    # automations/recruiting_report/office-mapping*.json / all-offices.json.
+    # "dry" = walks and reports numbers, sends nobody. A wrong number is
+    # refused at the Office ID check and filed, never pushed.
+    "drew": ("22583", "dry"),        # Drew Tepper, Precision Management Team
+    "hasani": ("23701", "dry"),      # Hasani Lynch, Covenant United
+    "jamis10": ("19592", "dry"),     # Jamis Garay, MIDSPIRE INC
+    "jennifer-att": ("23132", "dry"),  # Jennifer Figueroa, Figspire
+    "rashad": ("23411", "dry"),      # Rashad Reed, Elevate Specialized Acq.
+    "steve": ("23160", "dry"),       # Steve McElwee, Luxe Global Consulting
+    "trang": ("6564", "dry"),        # Trang Canavan, Fresh Success Marketing
+    "tre": ("21182", "dry"),         # Lamar "Tre" Mitchell III, Mission III
+    "valeria": ("22850", "dry"),     # Valeria Tristan, Altura Marketing
 }
 LOGIN_POLL_SECONDS = 90
 
