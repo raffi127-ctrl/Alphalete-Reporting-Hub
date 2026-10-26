@@ -1,7 +1,7 @@
 {
   "confirmed_count": 57,
   "needs_review_count": 0,
-  "skip_count": 35,
+  "skip_count": 36,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -474,6 +474,11 @@
       "sheet_tab": "Calvin Ribero (B2B)",
       "reason": "duplicate of 'Calvin Ribera (BOX)' \u2014 that tab is the live one (renamed 2026-08-31 when he moved off the B2B template to BOX); this copy keeps its data and is hidden",
       "retired": "2026-08-31"
+    },
+    {
+      "sheet_tab": "JC Lopez (NDS)",
+      "reason": "2026-10-26 (Raf's mail 10/25): JC Lopez sells NDS. This tab is a MIRROR of 'JC Lopez - NDS' on the NDS Program - Focus Report, copied every Monday by nds_mirror_to_att (mirror_nds_tab.py). Neither this pull nor Raf's OPT may write it: its recruiting comes from the NDS Program mapping, its OPT from opt_nds.",
+      "opt_source": "nds"
     },
     {
       "sheet_tab": "Edgar Muniz II",

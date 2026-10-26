@@ -150,6 +150,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         for p in promoted:
             print(f"[promoted] {p['sheet_tab']} -> office {p['office_id']} "
                   f"({p['as_owner']}); sales_only -> confirmed")
+        # A pending tab that did NOT promote is usually a spelling gap (the
+        # tab says 'JC Lopez', AppStream says 'Jean Lopez'). Name every office
+        # sharing its last name, so the fix is one promote_office_id away
+        # instead of another session just to read the office list.
+        done = {p["sheet_tab"] for p in promoted}
+        offices = [o for os_ in fill._load_office_index().values() for o in os_]
+        for e in mapping.get("sales_only", []):
+            if not e.get("promote_when_visible") or e["sheet_tab"] in done:
+                continue
+            name = (e.get("as_owner") or e["sheet_tab"]).split(" - ")[0]
+            last = name.split()[-1].lower() if name.split() else ""
+            near = [o for o in offices if last and last in o.get("owner", "").lower()]
+            print(f"[not promoted] {e['sheet_tab']} — no office named {name!r}. "
+                  f"Offices with '{last}': "
+                  + (", ".join(f"{o['office_id']} {o.get('owner')} ({o.get('company', '')})"
+                               for o in near) or "none"))
 
         by_tab = {c["sheet_tab"]: c for c in mapping["confirmed"]}
         if wanted is None:

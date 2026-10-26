@@ -1,7 +1,7 @@
 {
   "confirmed_count": 25,
   "needs_review_count": 0,
-  "skip_count": 27,
+  "skip_count": 26,
   "confirmed": [
     {
       "sheet_tab": "Alex Guzman Benitez - NDS",
@@ -307,12 +307,17 @@
       "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
     },
     {
-      "sheet_tab": "JC Lopez - NDS",
-      "reason": "2026-10-12: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
-    },
-    {
       "sheet_tab": "Justin Clowdus - NDS",
       "reason": "2026-10-12: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    }
+  ],
+  "sales_only_count": 1,
+  "sales_only": [
+    {
+      "sheet_tab": "JC Lopez - NDS",
+      "as_owner": "JC Lopez",
+      "promote_when_visible": true,
+      "reason": "2026-10-26: Rafael asked eStream for JC Lopez's AppStream on 10/25 and Jovanna confirmed 'All set' the same day. Moved out of skip so the next AppStream pull promotes him by itself. If the name does not match, backfill_new_icds prints every office sharing his last name -> pin it with promote_office_id. Mirrored onto the ATT Program as 'JC Lopez (NDS)' (mirror_nds_tab)."
     }
   ]
 }
