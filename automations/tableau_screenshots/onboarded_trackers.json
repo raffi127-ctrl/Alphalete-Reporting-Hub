@@ -444,5 +444,23 @@
       "vzftr"
     ],
     "notes": "wired by hand 2026-10-21; all 9 trackers like frank/jairo; channel_ids filled once #dynasty-growth-sales resolves to an id Lucy is in."
+  },
+  {
+    "key": "omar",
+    "label": "Omar's Local Office (channel from ECO sign-up)",
+    "owner": "Omar Mohamad",
+    "channel_ids": [],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-10-26 (his Lucy ECO Zoom); all 9 trackers like steve/hasani; channel_ids filled once his ECO sign-up names the room."
   }
 ]

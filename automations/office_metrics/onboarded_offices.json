@@ -934,7 +934,7 @@
     "owner_office": "",
     "business_name": "Dynasty Growth Group, Inc",
     "website": "",
-    "header_label": "",
+    "header_label": "Samuel Acay",
     "thresholds": {
       "green": 85,
       "yellow": 75
@@ -960,5 +960,57 @@
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
     "notes": "wired by hand 2026-10-21 (Megan: Samuel Acay enrolled, is he good to go). NDS wireless like frank/jairo (South Shore org; NDS Program Focus Report tab 'Samuel Acay - NDS', OwnerVille/AppStream 23751, Dynasty Growth Group, Inc), same 5 boards, knocks held until his ECO relay shows knock rows. ECO sign-up 2026-10-21 16:45 UTC named '#dynasty-growth-sales' by NAME (not an id) and Megan's Slack cannot see it; held on Megan's DM until it resolves. Eastern 13:30-21:30, Sat 11:30-20:30. Sheet 'Samuel Acay - Lucy Metrics' from the Master Metrics Templates. Schedule off until the Lucy 4 dry run shows data on every board."
+  },
+  {
+    "key": "omar",
+    "report_id": "omar_metrics",
+    "label": "Omar's Local Office",
+    "owner": "Omar Mohamad",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (hold until the ECO sign-up names the channel)",
+    "sheet_id": "1iGHWPuAfHcBTeZtx6YctGpZTtSi3_68y9hxMOQK5GT8",
+    "knocks_office": "Omar Mohammad",
+    "ov_account": "24153",
+    "owner_office": "",
+    "business_name": "Kalkan Marketing",
+    "website": "",
+    "header_label": "Omar Mohamad",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-10-26 during his Lucy ECO enrollment Zoom (Eve). AT&T D2D like steve/hasani (OwnerVille/AppStream 24153, Kalkan Marketing, Dearborn MI -- Eastern; Tableau/AppStream name Omar Mohammad), all 11 D2D boards. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Omar Mohamad - Lucy Metrics' copied from the Master Metrics Templates, shared Editor with alphaletereporting@ (Lucy 4). Schedule off until the Lucy 4 dry run shows data on every board.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

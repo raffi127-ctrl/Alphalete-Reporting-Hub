@@ -458,6 +458,7 @@ OFFICE_TIMEZONES: dict = {
     "frank":   "America/New_York",             # Peak Management, South Shore org (FL) — EASTERN; confirm on his ECO sign-up
     "hasani":  "America/Chicago",              # Covenant United, Austin TX — CENTRAL (OwnerVille address, harvested 2026-10-20)
     "steve":   "America/Chicago",              # Luxe Global Consulting, Abilene TX — CENTRAL (OwnerVille address, harvested 2026-10-20)
+    "omar":    "America/Detroit",              # Kalkan Marketing, Dearborn MI — EASTERN (ad photo threads config, 2026-10-19)
     "samuel":  "America/New_York",             # Dynasty Growth Group, South Shore org — EASTERN (ECO sign-up 2026-10-21)
     "lajahnik": "America/Denver",              # Aventis Consulting, Utah — MOUNTAIN (customer 801/385 numbers on her order log, 2026-10-09)
     "joseph":  "America/Detroit",              # Logan Legacy Group, Grandville, MI — EASTERN
