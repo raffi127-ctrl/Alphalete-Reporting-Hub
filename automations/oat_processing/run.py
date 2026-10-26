@@ -736,6 +736,50 @@ def _send_landed(page, name: str, before_total, timeout_ms: int = 15000) -> str:
     return "unknown"
 
 
+_DIALOG_TEXT_JS = r"""() => {
+  const vis = e => { const r = e.getBoundingClientRect();
+    const st = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && st.visibility !== 'hidden'
+           && st.display !== 'none'; };
+  const out = [];
+  document.querySelectorAll(
+    "[role=dialog], .modal.show, .modal.in, .ui-dialog, .swal2-popup, " +
+    ".alert, .alert-danger, .alert-warning, .text-danger, .error, .bootbox"
+  ).forEach(e => { if (vis(e)) {
+      const t = (e.innerText || '').replace(/\s+/g, ' ').trim();
+      if (t && !out.includes(t)) out.push(t.slice(0, 220)); } });
+  return out.slice(0, 4);
+}"""
+
+
+def _why_not_landed(page, who: str) -> None:
+    """When a send does not stick, write down WHAT AppStream is showing -- the
+    red lines, any pop-up, and a screenshot -- so the reason is in the log
+    instead of a guess (Keren Ospina, 10/26: number read right, filled right,
+    clicked twice, never left the queue). Read-only. Never raises."""
+    seen = []
+    try:
+        seen += _red_messages(page)
+    except Exception:  # noqa: BLE001
+        pass
+    for fr in list(getattr(page, "frames", []) or []):
+        try:
+            for t in (fr.evaluate(_DIALOG_TEXT_JS) or []):
+                if t not in seen:
+                    seen.append(t)
+        except Exception:  # noqa: BLE001
+            continue
+    if seen:
+        for t in seen[:5]:
+            _log(f"    [why not sent] {who}: {t}")
+    else:
+        _log(f"    [why not sent] {who}: AppStream showed no message at all")
+    try:
+        _shot(page, "send-did-not-stick")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _try_overwrite_send(page) -> bool:
     """Push to AI via the override control when the ATS allows it (control
     present, no 'Cannot override'). The ATS still blocks a recent contact, so
@@ -974,6 +1018,7 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if _landed == "unknown":
         # NOT counted as pushed, NOT removed: they stay in the queue and the
         # next run tries again. Counted on its own so the push report shows it.
+        _why_not_landed(page, _who)
         _log(f"    ⚠ SEND DID NOT STICK: {_who} — left in the queue for the "
              f"next run")
         return "send_unconfirmed"

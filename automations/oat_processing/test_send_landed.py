@@ -106,5 +106,31 @@ class DoSendAi(unittest.TestCase):
                          ("sent", "sent_override", "removed"))
 
 
+class WhyItDidNotLand(unittest.TestCase):
+
+    def test_the_message_on_screen_is_logged(self):
+        logged = []
+        page = mock.Mock()
+        fr = mock.Mock()
+        fr.evaluate.return_value = ["Duplicate applicant found - already on "
+                                    "the call list"]
+        page.frames = [fr]
+        with mock.patch.object(OAT, "_red_messages", return_value=[]), \
+             mock.patch.object(OAT, "_shot"), \
+             mock.patch.object(OAT, "_log", side_effect=logged.append):
+            OAT._why_not_landed(page, "Keren Ospina")
+        self.assertIn("Duplicate applicant found", logged[0])
+        self.assertIn("Keren Ospina", logged[0])
+
+    def test_nothing_on_screen_says_so(self):
+        logged = []
+        page = mock.Mock(frames=[])
+        with mock.patch.object(OAT, "_red_messages", return_value=[]), \
+             mock.patch.object(OAT, "_shot"), \
+             mock.patch.object(OAT, "_log", side_effect=logged.append):
+            OAT._why_not_landed(page, "Keren Ospina")
+        self.assertIn("no message at all", logged[0])
+
+
 if __name__ == "__main__":
     unittest.main()
