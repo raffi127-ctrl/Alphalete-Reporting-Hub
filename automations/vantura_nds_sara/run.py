@@ -595,7 +595,7 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
     except Exception as e:  # noqa: BLE001 -- no password here, or no file
         log("passcode inbox unreadable: %s" % str(e)[:300])
         return EXIT_FAIL
-    M = imaplib.IMAP4_SSL(VC._ing.IMAP_HOST)
+    M = imaplib.IMAP4_SSL(VC._ing.IMAP_HOST, timeout=60)   # a dead socket must not hang the queue (shikamaru 8/5 lesson)
     try:
         M.login(account, password)
         q = query or ("from:security.info@saraplus.com newer_than:%dd" % days)
