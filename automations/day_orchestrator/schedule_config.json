@@ -2147,6 +2147,17 @@
    ],
    "base_args": []
   },
+  "omar_daily_update": {
+   "on_scheduler": false,
+   "_note": "Omar's Daily Update (Raf, Slack 2026-10-26). AppStream office 24153 (Kalkan Marketing) -> the 'Daily Update' tab of 'All In One - Omar' (1eYIs-FV...), same pull as raf_daily_update.harvest; covers YESTERDAY, skips anyone already on the tab. The '2nd Rds' tab reads it by formula. BUILD PHASE: dry by default; --write --sandbox writes Eve's copy. Schedule (12 PM Eastern) comes after Eve's OK.",
+   "display_name": "Omar Daily Update (TEST)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.omar_daily_update.run"
+   ],
+   "base_args": []
+  },
   "install_raf_daily_update_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_raf_daily_update_agent` can install the STANDALONE com.alphalete.raf-daily-update LaunchAgent on LUCY 2 (Mon-Sat 17:00, deploy/raf_daily_update.sh). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",

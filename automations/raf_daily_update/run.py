@@ -221,10 +221,11 @@ def calendar_result(r: dict) -> dict:
     return {"outcome": res, "bob_date": bob_date}
 
 
-def harvest(day: dt.date) -> List[dict]:
+def harvest(day: dt.date, office: str = OFFICE_ID) -> List[dict]:
     """The day's 2nd-round candidates from ApplicantStream (Retention Details
     → the day's 2nd-round detail pages), plus the calendar's BOB-call result
-    when the day is today."""
+    when the day is today. `office` lets another owner's Daily Update reuse
+    it (omar_daily_update, office 24153)."""
     from automations.applicant_tracker.applicantstream import session
     from automations.applicant_tracker.run import (
         L_2ND_ROSTER, L_2ND_SHOWED, L_OFFERED, L_BOB, N_2R_COLS,
@@ -235,7 +236,7 @@ def harvest(day: dt.date) -> List[dict]:
         return {L._norm(f"{r[0]} {r[1]}") for r in rows if len(r) >= 2}
 
     with session() as app:
-        log(f"  office {OFFICE_ID}: {app.select_office(OFFICE_ID)}")
+        log(f"  office {office}: {app.select_office(office)}")
         app.open_retention_details()
         if not ensure_week(app, pick_sunday(day)):
             raise RuntimeError(f"Retention Details would not open week of {day}")
@@ -300,7 +301,7 @@ def harvest(day: dt.date) -> List[dict]:
             add(r, "", "", r[7].strip())
     if any(c["bob_status"] == L.BOB and c["orientation"] for c in cands):
         with session() as app:
-            app.select_office(OFFICE_ID)
+            app.select_office(office)
             add_start_times(app, cands, day)
     return cands
 
