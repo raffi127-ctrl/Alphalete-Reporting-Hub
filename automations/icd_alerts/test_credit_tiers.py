@@ -146,9 +146,9 @@ class WordingTests(unittest.TestCase):
 
 class OptInListTests(unittest.TestCase):
     def test_the_yes_offices(self):
-        for k in ("carlos-b2batt", "colten", "kash", "maxamad", "Jamis"):
+        for k in ("carlos-b2batt", "colten", "kash", "maxamad", "Jamis", "aya"):
             self.assertTrue(C.credit_tiers_wanted(k), k)
-        for k in ("rashad", "isaiah", "aya", ""):
+        for k in ("rashad", "isaiah", ""):
             self.assertFalse(C.credit_tiers_wanted(k), k)
 
     def test_the_laptop_pass_follows_its_enrollments(self):

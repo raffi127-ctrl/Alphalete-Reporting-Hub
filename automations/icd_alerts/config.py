@@ -356,6 +356,7 @@ CREDIT_TIER_KEYS = frozenset({
     "valeria", "colten",                        # YES 2026-10-22
     "maxamad", "kash",                          # YES 2026-10-23
     "jennifer", "jennifer-att",                 # YES 2026-10-23 (her form minted both keys)
+    "aya",                                      # YES 2026-10-26
 })
 
 
