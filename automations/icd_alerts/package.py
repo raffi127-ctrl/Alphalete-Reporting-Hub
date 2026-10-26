@@ -120,6 +120,11 @@ AGENT_FILES = [
     "automations/shared/credit_check_line.py",
     "automations/shared/sale_hype.py",
     "automations/shared/browser_banner.py",
+    # Headshots: the office's computer uploads its new starts' photos into its
+    # own OwnerVille with the SAME uploader Raf's bot uses (Megan 2026-10-26).
+    "automations/icd_alerts/headshot_jobs.py",
+    "automations/headshots/__init__.py",
+    "automations/headshots/ov_upload.py",
 ]
 
 # HUB-ONLY IMPORTS THAT SHIP ON PURPOSE, each inside a function, never at
@@ -149,9 +154,20 @@ HUB_ONLY_IMPORTS = {
      "run"),
     ("automations/oat_processing/run.py", "automations.recruiting_report",
      "run"),
+    # The headshot uploader: an office machine calls upload_on_page with its
+    # own rqst, so find_rep never reaches the b2b reader; upload() and
+    # announce() are Lucy 3's entry points only.
+    ("automations/headshots/ov_upload.py", "automations.b2b_dispositions.capture",
+     "_lucy_rqst"),
+    ("automations/headshots/ov_upload.py", "automations.shared.tableau_patchright",
+     "upload"),
+    ("automations/headshots/ov_upload.py", "automations.headshots",
+     "announce"),
 }
 # The functions in that list the office push must never reach.
-HUB_ONLY_ENTRY_POINTS = {"_nophone_ws", "run"}
+HUB_ONLY_ENTRY_POINTS = {"_nophone_ws", "run",
+                         # Lucy 3's side of the headshot uploader
+                         "_lucy_rqst", "upload", "announce"}
 
 # The repo's automations/__init__.py installs the Hub's auto-publish hook. That
 # is Hub machinery and has no business on an ICD's laptop, so the bundle gets

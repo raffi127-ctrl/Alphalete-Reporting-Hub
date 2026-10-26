@@ -42,3 +42,6 @@ automations/shared/name_case.py
 automations/shared/credit_check_line.py
 automations/shared/sale_hype.py
 automations/shared/browser_banner.py
+automations/icd_alerts/headshot_jobs.py
+automations/headshots/__init__.py
+automations/headshots/ov_upload.py

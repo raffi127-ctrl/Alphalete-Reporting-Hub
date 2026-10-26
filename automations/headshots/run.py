@@ -337,7 +337,7 @@ def _name_key_of(s: str) -> str:
 
 
 def redo(name: str, *, dry_run: bool = True,
-         channel: str | None = None) -> dict:
+         channel: str | None = None, office: str = "raf") -> dict:
     """Re-make ONE person's headshot from their ORIGINAL submitted photo.
 
     Megan 2026-09-28, after the bun bug cut Jordan Jones off at the eyes:
@@ -348,8 +348,17 @@ def redo(name: str, *, dry_run: bool = True,
 
     Replacing is the point, so this is a named-person command only and is
     never part of the tick.
+
+    `office` (2026-10-26) picks the row in config.OFFICES. For a LucyEco
+    office the new headshot goes to the office's OWN computer as a REPLACE
+    job -- the only job that may upload over a photo already on file -- and
+    its answer comes back into the thread like any other.
     """
-    channel = channel or config.CHANNEL_ID
+    off = config.OFFICES.get((office or "raf").strip().lower())
+    if off is None:
+        return {"status": "unknown_office", "name": name,
+                "reason": f"no office {office!r} in headshots config.OFFICES"}
+    channel = channel or off.channel
     cl = _client()
     me = None
     try:
@@ -384,7 +393,24 @@ def redo(name: str, *, dry_run: bool = True,
                 "file": str(out_p)}
 
     act: dict = {}
-    ov = _ov_upload_note(got, out_p, act, replace=True)
+    if off.uploader == "lucy":
+        ov = _ov_upload_note(got, out_p, act, replace=True)
+    elif not off.eco_key:
+        from automations.headshots import eco
+        act["eco"] = {"status": "manual"}
+        ov = eco.manual_line(replace=True)
+    else:
+        from automations.headshots import eco
+        try:
+            job = eco.enqueue(off.eco_key, got, out_p, mode=off.mode,
+                              channel=channel, thread_ts=anchor["ts"],
+                              replace=True)
+            act["eco"] = {"status": "queued", "job": job, "replace": True}
+            ov = eco.queued_line(off.mode, replace=True)
+        except Exception as e:  # noqa: BLE001 -- the new photo still posts
+            act["eco"] = {"status": "error", "error": str(e)[:200]}
+            ov = ("\n⚠ OwnerVille: couldn't hand this to your office "
+                  "computer — please replace the photo by hand")
     with open(out_p, "rb") as fh:
         cl.files_upload_v2(
             channel=channel, thread_ts=anchor["ts"], file=fh,
@@ -395,10 +421,19 @@ def redo(name: str, *, dry_run: bool = True,
 
 
 def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
-    channel = channel or config.CHANNEL_ID
-    if not channel:
+    """One tick over every LIVE office's threads (config.OFFICES).
+
+    `channel` (the old --channel flag) watches just that channel the way Raf's
+    is watched -- Lucy 3 uploads, OBCL sheet ticked."""
+    if channel:
+        offices = [config.Office(key="raf", owner="Rafael Hidalgo",
+                                 channel=channel, uploader="lucy",
+                                 mode="live", sheet_log=True)]
+    else:
+        offices = config.live_offices()
+    if not offices:
         raise HeadshotError(
-            "No channel to watch. Set config.CHANNEL_ID (or pass --channel / "
+            "No channel to watch. Set config.OFFICES (or pass --channel / "
             "HEADSHOTS_CHANNEL_ID).")
 
     cl = _client()
@@ -408,14 +443,37 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
     except Exception:
         pass
 
-    anchors = _week_anchors(cl, channel)
-    if not anchors:
-        print("No Monday headshot thread up yet (weekly_thread posts it).")
-        return []
-
     state = _load_state()
     actions: list[dict] = []
-    asked_this_run = 0
+    run = {"asked": 0}
+    for off in offices:
+        try:
+            _scan_office(cl, me, off, state, actions, run, dry_run=dry_run)
+        except Exception as e:  # noqa: BLE001 -- one office never stops the rest
+            print(f"  ⚠ {off.key}: {type(e).__name__}: {str(e)[:150]}")
+            actions.append({"ts": "", "action": "office_failed",
+                            "office": off.key, "error": str(e)[:200]})
+
+    # LucyEco offices: their computers' answers go back into their threads.
+    if any(o.uploader == "eco" and o.eco_key for o in offices):
+        from automations.headshots import eco
+        eco.post_results(cl, dry_run=dry_run)
+    return actions
+
+
+def _state_key(off, ts: str) -> str:
+    # Raf's keys stay bare ts -- the state file already holds months of them.
+    return ts if off.key == "raf" else f"{off.key}:{ts}"
+
+
+def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
+                 dry_run: bool) -> None:
+    channel = off.channel
+    anchors = _week_anchors(cl, channel)
+    if not anchors:
+        print(f"No Monday headshot thread up yet in {off.key}'s channel "
+              "(weekly_thread posts it).")
+        return
 
     for anchor in anchors:
         replies = cl.conversations_replies(
@@ -429,7 +487,8 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
             if not imgs:
                 continue
             ts = m["ts"]
-            st = state.get(ts, {})
+            sk = _state_key(off, ts)
+            st = state.get(sk, {})
             if st.get("done"):
                 continue
 
@@ -437,14 +496,14 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
             if not name:
                 # Hard cap: however wrong we are about WHAT needs a name, a
                 # single run can never storm the thread again (2026-08-25).
-                if asked_this_run >= _MAX_ASKS_PER_RUN:
+                if run["asked"] >= _MAX_ASKS_PER_RUN:
                     print(f"  ask cap reached ({_MAX_ASKS_PER_RUN}) — "
                           f"skipping the rest this run")
                     continue
                 # Ask once; the reply retries every tick, so an edited reply
                 # gets picked up without re-asking.
                 if not st.get("asked"):
-                    asked_this_run += 1
+                    run["asked"] += 1
                     actions.append({"ts": ts, "action": "ask_name"})
                     if not dry_run:
                         try:
@@ -455,7 +514,7 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
                                       "Edit your reply to include the "
                                       "person's *First Last* name and I'll "
                                       "make the headshot."))
-                            state.setdefault(ts, {})["asked"] = True
+                            state.setdefault(sk, {})["asked"] = True
                             _save_state(state)
                         except Exception:
                             pass
@@ -471,7 +530,7 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
 
             out_p = process_one(data, name)
             act = {"ts": ts, "action": "processed", "name": name,
-                   "file": str(out_p)}
+                   "file": str(out_p), "office": off.key}
 
             if dry_run:
                 act["dry_run"] = True
@@ -481,7 +540,11 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
             # Phase 2: push the clean headshot onto the rep's OwnerVille
             # profile. Best-effort — the thread post below goes out either
             # way, carrying the OV outcome so a miss gets handled by hand.
-            ov_note = _ov_upload_note(name, out_p, act)
+            if off.uploader == "lucy":
+                ov_note = _ov_upload_note(name, out_p, act)
+            else:
+                ov_note = _eco_handoff_note(off, name, out_p, anchor["ts"],
+                                            state, sk, act)
 
             # Post the finished image into the week's thread + ✅ the reply.
             with open(out_p, "rb") as fh:
@@ -489,8 +552,8 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
                     channel=channel, thread_ts=anchor["ts"], file=fh,
                     filename=out_p.name,
                     initial_comment=f"*{name}* — headshot ready ⤵{ov_note}")
-            state.setdefault(ts, {})["done"] = True
-            state[ts]["name"] = name
+            state.setdefault(sk, {})["done"] = True
+            state[sk]["name"] = name
             _save_state(state)
             try:
                 cl.reactions_add(channel=channel, timestamp=ts,
@@ -505,7 +568,32 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
             act["posted"] = True
             actions.append(act)
 
-    return actions
+
+def _eco_handoff_note(off, name: str, photo, thread_ts: str, state: dict,
+                      sk: str, act: dict) -> str:
+    """Hand the headshot to the office's own computer (LucyEco) and return the
+    line for the thread post. Never raises -- the photo post goes out either
+    way. Queued at most once per reply: the job id is saved BEFORE the post,
+    so a post that fails and retries next tick cannot queue it twice."""
+    from automations.headshots import eco
+    if not off.eco_key:
+        # Live before the office's computer is enrolled: nothing to hand to.
+        act["eco"] = {"status": "manual"}
+        return eco.manual_line()
+    job = (state.get(sk) or {}).get("job")
+    if not job:
+        try:
+            job = eco.enqueue(off.eco_key, name, photo, mode=off.mode,
+                              channel=off.channel, thread_ts=thread_ts)
+        except Exception as e:  # noqa: BLE001
+            act["eco"] = {"status": "error", "error": str(e)[:200]}
+            print(f"  ⚠ could not queue {name} for {off.key}'s computer: {e}")
+            return ("\n⚠ OwnerVille: couldn't hand this to your office "
+                    "computer — please upload it by hand")
+        state.setdefault(sk, {})["job"] = job
+        _save_state(state)
+    act["eco"] = {"status": "queued", "job": job}
+    return eco.queued_line(off.mode)
 
 
 def diag(channel: str | None = None) -> int:
@@ -565,6 +653,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="process ONE local photo instead of polling Slack")
     ap.add_argument("--name", default=None,
                     help="the person's name (with --file)")
+    ap.add_argument("--office", default="raf",
+                    help="with --redo: whose thread (a key in headshots "
+                         "config.OFFICES, e.g. omar). Default raf.")
     ap.add_argument("--redo", default=None, metavar="FIRST LAST",
                     help="re-make ONE person's headshot from the photo they "
                          "posted and REPLACE it on their OwnerVille profile "
@@ -575,7 +666,8 @@ def main(argv: list[str] | None = None) -> int:
         return diag(channel=args.channel)
 
     if args.redo:
-        res = redo(args.redo, dry_run=args.dry_run, channel=args.channel)
+        res = redo(args.redo, dry_run=args.dry_run, channel=args.channel,
+                   office=args.office)
         print(res)
         return 0 if res["status"] in ("redone", "would_redo") else 1
 
@@ -603,11 +695,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  needs a name (reply text wasn't one): ts={a['ts']}")
         elif a["action"] == "download_failed":
             print(f"  download failed: ts={a['ts']}")
+        elif a["action"] == "office_failed":
+            print(f"  office {a['office']} failed: {a['error']}")
         elif a.get("dry_run"):
             print(f"  WOULD post: {a['name']}  [{a['file']}]")
         else:
             print(f"  POSTED: {a['name']}")
-    if any(a["action"] == "download_failed" for a in actions):
+    if any(a["action"] in ("download_failed", "office_failed")
+           for a in actions):
         return 1
     return 0
 

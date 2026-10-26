@@ -817,6 +817,15 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("resume push skipped: %s" % type(e).__name__)
 
+        # HEADSHOTS, for an office Lucy 3 has queued any for. Ahead of the
+        # gate for the same reason as the push: they keep office hours, not
+        # selling hours. Asks the relay at most every 10 minutes.
+        try:
+            from automations.icd_alerts import headshot_jobs
+            headshot_jobs.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("headshots skipped: %s" % type(e).__name__)
+
         alerting = C.in_selling_window()
         # Sales read noon to midnight every day; alerts keep their own hours.
         # Outside BOTH, nothing to do.

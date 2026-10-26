@@ -143,15 +143,33 @@ def main(argv=None) -> int:
                     help="print the exact post, send nothing")
     ap.add_argument("--force", action="store_true",
                     help="post even if today isn't Monday")
-    ap.add_argument("--channel", default=CHANNEL_ID)
+    ap.add_argument("--channel", default=None,
+                    help="post in just this channel (default: every LIVE "
+                         "office in headshots config.OFFICES)")
     args = ap.parse_args(argv)
     started_at = dt.datetime.now()
     ts, ok = None, False
     try:
-        ts = post_prompt(dry_run=args.dry_run, channel=args.channel,
-                         force=args.force)
-        ok = True
-        return 0
+        # Every live office gets the same thread, same wording, in its own
+        # channel (Megan 2026-10-26: roll it out to the ICDs). One office
+        # failing to post never stops the others.
+        if args.channel:
+            channels = [args.channel]
+        else:
+            from automations.headshots import config as _cfg
+            channels = [o.channel for o in _cfg.live_offices()]
+        failed = []
+        for ch in channels:
+            try:
+                got = post_prompt(dry_run=args.dry_run, channel=ch,
+                                  force=args.force)
+                ts = ts or got
+            except Exception as e:  # noqa: BLE001
+                print("could not post in {}: {}: {}".format(
+                    ch, type(e).__name__, e))
+                failed.append(ch)
+        ok = not failed
+        return 0 if ok else 1
     finally:
         # Log only a run that actually settled the week's thread — `ts` is set
         # whether we posted it or found it already up. A --dry-run posts

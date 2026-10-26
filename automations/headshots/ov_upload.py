@@ -316,7 +316,15 @@ def _search_probes(name: str):
     return out
 
 
-def find_rep(page, name: str, *, verbose: bool = True, campaigns=None):
+def _lucy_rqst(page) -> str:
+    """The session token, the way a Lucy reads it. An office's computer
+    passes its own rqst instead and never calls this."""
+    from automations.b2b_dispositions.capture import capture_rqst
+    return capture_rqst(page)
+
+
+def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
+             rqst: str | None = None):
     """Locate the rep across campaigns/filters, tolerating typos.
 
     Returns (row, campaign, matched_name) or (None, tried_campaigns, None).
@@ -335,9 +343,12 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None):
     a 5-minute tick, or — the real risk — match a DIFFERENT rep who shares a
     surname on a campaign this report has no business touching, and generate
     that person's bundle. Generating is sending; there is no unsend. Narrowing
-    the search is what makes "not found" mean "not found where they belong"."""
-    from automations.b2b_dispositions.capture import capture_rqst
-    rqst = capture_rqst(page)
+    the search is what makes "not found" mean "not found where they belong".
+
+    `rqst` is for a caller that already holds the session token -- an ICD's
+    own computer (automations/icd_alerts/headshot_jobs.py), which signs in
+    with its own login and does not ship the b2b_dispositions reader."""
+    rqst = rqst or _lucy_rqst(page)
     # View Progress renders a huge DataTable (every rep + a pill per column)
     # — the default 30s goto timed out on the mini (2026-08-23 probe). Give
     # it 90s and one retry; the second load is usually warm.
@@ -476,72 +487,85 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
     from automations.shared.tableau_patchright import ownerville_session
     with ownerville_session(headless=headless, verbose=verbose,
                             profile_dir=PROFILE_DIR) as page:
-        row, campaign, matched = find_rep(page, name, verbose=verbose)
-        if row is None:
-            return {"status": "not_found", "name": name, "tried": campaign}
-        # What OV calls them, when a typo was forgiven — surfaced so the
-        # Slack thread always shows WHO the photo actually went to.
-        extra = {"matched_as": matched} if matched and matched != name else {}
+        return upload_on_page(page, name, photo, dry_run=dry_run,
+                              verbose=verbose, replace=replace)
 
-        pill = _photo_pill(row)
-        if dry_run:
-            dump_pill(page, row, name)      # diagnostic on read-only runs
-            return {"status": "already_uploaded" if pill == "uploaded"
-                    else "dry_run_found", "name": name,
-                    "campaign": campaign, "pill": pill, **extra}
-        if pill == "uploaded" and not replace:
-            return {"status": "already_uploaded", "name": name,
-                    "campaign": campaign, **extra}
-        if pill == "uploaded" and verbose:
-            print(f"  {name}: a photo is already on file — REPLACING it")
-        if photo is None or not Path(photo).exists():
-            raise OVUploadError(f"photo file missing: {photo}")
 
-        # Edit -> Set Status modal.
-        _click_any(row, "Edit", page=page)
-        modal = page.locator(".modal:visible, [role='dialog']:visible").filter(
-            has_text="Set Status").first
-        modal.wait_for(state="visible", timeout=20000)
+def upload_on_page(page, name: str, photo: Path | None, *,
+                   dry_run: bool = True, verbose: bool = True,
+                   replace: bool = False, rqst: str | None = None) -> dict:
+    """upload(), on a page that is already signed in to OwnerVille.
 
-        # UPLOAD DOCUMENTS section — expand if collapsed (the Photo row's
-        # Upload link is hidden until the section opens).
-        photo_row = modal.locator("tr").filter(
-            has_text=re.compile(r"\bPhoto\b", re.I)).first
-        if not photo_row.is_visible():
-            _click_any(modal, "UPLOAD DOCUMENTS", page=page)
-            photo_row.wait_for(state="visible", timeout=15000)
+    Split out so an ICD's own computer can run the SAME click-path with its
+    own login (icd_alerts/headshot_jobs.py) -- one uploader, not a copy: a
+    fix here reaches every office machine on its next self-update."""
+    row, campaign, matched = find_rep(page, name, verbose=verbose,
+                                      rqst=rqst)
+    if row is None:
+        return {"status": "not_found", "name": name, "tried": campaign}
+    # What OV calls them, when a typo was forgiven — surfaced so the
+    # Slack thread always shows WHO the photo actually went to.
+    extra = {"matched_as": matched} if matched and matched != name else {}
 
-        # Upload via the file chooser — never the OS dialog. An <input
-        # type=file> in the row is the most direct path; fall back to the
-        # chooser event when the input is script-driven.
-        file_input = photo_row.locator("input[type='file']")
-        if file_input.count():
-            file_input.first.set_input_files(str(photo))
-        else:
-            with page.expect_file_chooser(timeout=20000) as fc:
-                _click_any(photo_row, "Upload", page=page)
-            fc.value.set_files(str(photo))
+    pill = _photo_pill(row)
+    if dry_run:
+        dump_pill(page, row, name)      # diagnostic on read-only runs
+        return {"status": "already_uploaded" if pill == "uploaded"
+                else "dry_run_found", "name": name,
+                "campaign": campaign, "pill": pill, **extra}
+    if pill == "uploaded" and not replace:
+        return {"status": "already_uploaded", "name": name,
+                "campaign": campaign, **extra}
+    if pill == "uploaded" and verbose:
+        print(f"  {name}: a photo is already on file — REPLACING it")
+    if photo is None or not Path(photo).exists():
+        raise OVUploadError(f"photo file missing: {photo}")
 
-        # Success = the Action cell flips to "Uploaded" (Megan's screenshot).
-        photo_row.get_by_text("Uploaded", exact=False).first.wait_for(
-            timeout=90000)
-        if verbose:
-            print(f"  {name}: photo uploaded — saving")
+    # Edit -> Set Status modal.
+    _click_any(row, "Edit", page=page)
+    modal = page.locator(".modal:visible, [role='dialog']:visible").filter(
+        has_text="Set Status").first
+    modal.wait_for(state="visible", timeout=20000)
 
-        _click_any(modal, "Save Changes", page=page)
-        try:
-            page.wait_for_load_state("networkidle", timeout=60000)
-        except Exception:
-            pass
-        time.sleep(2)
+    # UPLOAD DOCUMENTS section — expand if collapsed (the Photo row's
+    # Upload link is hidden until the section opens).
+    photo_row = modal.locator("tr").filter(
+        has_text=re.compile(r"\bPhoto\b", re.I)).first
+    if not photo_row.is_visible():
+        _click_any(modal, "UPLOAD DOCUMENTS", page=page)
+        photo_row.wait_for(state="visible", timeout=15000)
 
-        # Verify: back on the table, the pill should now be green.
-        row2, _, _ = find_rep(page, name, verbose=False)
-        verified = row2 is not None and _photo_pill(row2) == "uploaded"
-        return {"status": "uploaded", "name": name, "campaign": campaign,
-                "verified": verified, "replaced": bool(replace and
-                                                       pill == "uploaded"),
-                **extra}
+    # Upload via the file chooser — never the OS dialog. An <input
+    # type=file> in the row is the most direct path; fall back to the
+    # chooser event when the input is script-driven.
+    file_input = photo_row.locator("input[type='file']")
+    if file_input.count():
+        file_input.first.set_input_files(str(photo))
+    else:
+        with page.expect_file_chooser(timeout=20000) as fc:
+            _click_any(photo_row, "Upload", page=page)
+        fc.value.set_files(str(photo))
+
+    # Success = the Action cell flips to "Uploaded" (Megan's screenshot).
+    photo_row.get_by_text("Uploaded", exact=False).first.wait_for(
+        timeout=90000)
+    if verbose:
+        print(f"  {name}: photo uploaded — saving")
+
+    _click_any(modal, "Save Changes", page=page)
+    try:
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:
+        pass
+    time.sleep(2)
+
+    # Verify: back on the table, the pill should now be green.
+    row2, _, _ = find_rep(page, name, verbose=False)
+    verified = row2 is not None and _photo_pill(row2) == "uploaded"
+    return {"status": "uploaded", "name": name, "campaign": campaign,
+            "verified": verified, "replaced": bool(replace and
+                                                   pill == "uploaded"),
+            **extra}
 
 
 def archived_headshot(name: str) -> Path | None:

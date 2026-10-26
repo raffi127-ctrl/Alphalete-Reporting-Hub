@@ -22,7 +22,8 @@
  * the failure that follows looks like a bad key rather than a missing
  * spreadsheet.
  *
- * FIVE TABS:
+ * TABS (plus 'Headshot Jobs', documented with the headshot calls at the
+ * bottom):
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At |
@@ -65,6 +66,7 @@ var CHANNELS_TAB = 'Office Channels';
 var KNOCKS_TAB = 'ICD Knocks';
 var FAULTS_TAB = 'ICD Faults';
 var SIGNUP_TAB = 'ICD Signup';
+var HEADSHOT_TAB = 'Headshot Jobs';
 
 function _book() {
   return SpreadsheetApp.openById(SHEET_ID);
@@ -91,10 +93,18 @@ function _dayKey(v) {
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
+    // LUCY'S OWN CALLS (headshots) come with the admin key, not an office
+    // key, and are answered before the office check below.
+    if (body.admin_key !== undefined) return _reply(_adminCall(body));
     var office = String(body.office_key || '').trim().toLowerCase();
     var key = String(body.key || '').trim();
     if (!office || !key) return _reply({ok: false, error: 'missing office or key'});
     if (!_keyIsGood(office, key)) return _reply({ok: false, error: 'not authorised'});
+
+    // HEADSHOTS, handed to the office's own computer to upload into its own
+    // OwnerVille. Before the day check: neither call carries a day.
+    if (body.headshot_jobs) return _reply(_headshotJobsFor(office));
+    if (body.headshot_result) return _reply(_headshotResult(office, body.headshot_result));
 
     // FAULTS ARE HANDLED BEFORE THE DAY CHECK, because they carry their own
     // day and deliberately send no top-level one -- that is what makes a
@@ -645,4 +655,206 @@ function _mergeMachine(sh, rowNum, machine, machineName, desktop, osName, facts)
 function _reply(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
       .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// --- HEADSHOTS -------------------------------------------------------------
+// Lucy 3 makes the white-background headshot from the office's Slack thread;
+// the office's OWN computer uploads it into the office's OWN OwnerVille (an
+// ICD login sees only its own reps). This tab is the hand-over between them:
+//
+//   'Headshot Jobs'  Job ID | Office | Name | File ID | Mode | Queued At |
+//                    Status | Offered At | Result JSON | Result At |
+//                    Channel | Thread TS | Posted At | Replace
+//
+// REPLACE = TRUE only for a redo a person asked for by name (run.py --redo):
+// the one job allowed to upload over a photo already on a profile.
+//
+// THE PHOTO LIVES IN THIS SCRIPT'S OWN DRIVE ('Lucy Headshot Jobs' folder),
+// put there by the enqueue call. So Lucy 3 needs no Drive access and nothing
+// has to be shared; the file is trashed once the result has been posted.
+//
+// AN OFFICE ONLY EVER SEES ITS OWN JOBS. The office key already proves which
+// office is asking, and both office calls filter on it: a machine cannot read
+// another office's photos or answer another office's job.
+//
+// Lucy's calls carry the admin key, kept in Script Properties as
+// LUCY_ADMIN_KEY (Project Settings > Script properties). No property set =
+// every admin call is refused.
+var HS = {ID: 0, OFFICE: 1, NAME: 2, FILE: 3, MODE: 4, QUEUED: 5, STATUS: 6,
+          OFFERED: 7, RESULT: 8, RESULT_AT: 9, CHANNEL: 10, THREAD: 11,
+          POSTED: 12, REPLACE: 13};
+var HS_HEAD = ['Job ID', 'Office', 'Name', 'File ID', 'Mode', 'Queued At',
+               'Status', 'Offered At', 'Result JSON', 'Result At', 'Channel',
+               'Thread TS', 'Posted At', 'Replace'];
+// A job handed out and never answered (laptop shut mid-upload) is offered
+// again after this long. Uploading twice is safe: the uploader skips a
+// profile that already has a photo.
+var HS_REOFFER_MINUTES = 30;
+var HS_MAX_PER_CALL = 3;
+
+function _hsSheet() {
+  var sh = _book().getSheetByName(HEADSHOT_TAB);
+  if (!sh) {
+    sh = _book().insertSheet(HEADSHOT_TAB);
+    sh.appendRow(HS_HEAD);
+  }
+  return sh;
+}
+
+function _hsFolder() {
+  var it = DriveApp.getFoldersByName('Lucy Headshot Jobs');
+  return it.hasNext() ? it.next() : DriveApp.createFolder('Lucy Headshot Jobs');
+}
+
+function _adminCall(body) {
+  var want = PropertiesService.getScriptProperties().getProperty('LUCY_ADMIN_KEY');
+  if (!want || String(body.admin_key) !== want) return {ok: false, error: 'not authorised'};
+  if (body.headshot_enqueue) return _headshotEnqueue(body.headshot_enqueue);
+  if (body.headshot_results) return _headshotResults();
+  if (body.headshot_posted) return _headshotPosted(body.headshot_posted);
+  return {ok: false, error: 'unknown admin call'};
+}
+
+function _headshotEnqueue(j) {
+  var office = String(j.office || '').trim().toLowerCase();
+  var name = String(j.name || '').trim();
+  var mode = String(j.mode || 'dry') === 'live' ? 'live' : 'dry';
+  if (!office || !name || !j.png_b64) return {ok: false, error: 'missing office, name or photo'};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var blob = Utilities.newBlob(Utilities.base64Decode(String(j.png_b64)),
+                                 'image/png', name + ' - Headshot.png');
+    var file = _hsFolder().createFile(blob);
+    var id = Utilities.getUuid();
+    var sh = _hsSheet();
+    sh.appendRow([id, office, name, file.getId(), mode, new Date(), 'queued',
+                  '', '', '', String(j.channel || ''), '', '',
+                  j.replace === true ? 'TRUE' : '']);
+    // Text, or Sheets turns a Slack ts like 1729951234.123456 into a number
+    // and loses the digits that make it a ts.
+    sh.getRange(sh.getLastRow(), HS.THREAD + 1).setNumberFormat('@')
+      .setValue(String(j.thread_ts || ''));
+    return {ok: true, job_id: id};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _headshotJobsFor(office) {
+  // NOTHING WAITING = NO LOCK. Every enrolled computer asks every 10 minutes,
+  // and almost always the answer is "none" -- taking the script lock for that
+  // would make every real knocks and fault write queue behind it.
+  var sh0 = _book().getSheetByName(HEADSHOT_TAB);
+  if (!sh0) return {ok: true, jobs: []};
+  var any = sh0.getDataRange().getValues().some(function (r, i) {
+    return i > 0 && String(r[HS.OFFICE]).trim().toLowerCase() === office &&
+        !r[HS.RESULT_AT];
+  });
+  if (!any) return {ok: true, jobs: []};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _hsSheet();
+    var rows = sh.getDataRange().getValues();
+    var now = new Date();
+    var out = [];
+    for (var i = 1; i < rows.length && out.length < HS_MAX_PER_CALL; i++) {
+      var r = rows[i];
+      if (String(r[HS.OFFICE]).trim().toLowerCase() !== office) continue;
+      if (r[HS.RESULT_AT]) continue;
+      var st = String(r[HS.STATUS]);
+      var stale = st === 'offered' && r[HS.OFFERED] instanceof Date &&
+          (now - r[HS.OFFERED]) > HS_REOFFER_MINUTES * 60000;
+      if (st !== 'queued' && !stale) continue;
+      var b64;
+      try {
+        b64 = Utilities.base64Encode(DriveApp.getFileById(String(r[HS.FILE])).getBlob().getBytes());
+      } catch (err) {
+        sh.getRange(i + 1, HS.STATUS + 1, 1, 1).setValue('photo missing');
+        sh.getRange(i + 1, HS.RESULT + 1, 1, 2).setValues([[
+            JSON.stringify({status: 'error', error: 'photo file missing on our side'}), now]]);
+        continue;
+      }
+      sh.getRange(i + 1, HS.STATUS + 1, 1, 2).setValues([['offered', now]]);
+      out.push({job_id: String(r[HS.ID]), name: String(r[HS.NAME]),
+                mode: String(r[HS.MODE]),
+                replace: String(r[HS.REPLACE]).toUpperCase() === 'TRUE',
+                png_b64: b64});
+    }
+    return {ok: true, jobs: out};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _headshotResult(office, res) {
+  var id = String(res.job_id || '');
+  var status = String(res.status || '');
+  if (!id || !status) return {ok: false, error: 'missing job or status'};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _hsSheet();
+    var rows = sh.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][HS.ID]) !== id) continue;
+      // Its own office's job only -- a key for one office cannot answer for
+      // another.
+      if (String(rows[i][HS.OFFICE]).trim().toLowerCase() !== office) {
+        return {ok: false, error: 'not your job'};
+      }
+      // "Try later" (OwnerVille not signed in right now) puts it back in the
+      // queue instead of recording an answer.
+      if (status === 'deferred') {
+        sh.getRange(i + 1, HS.STATUS + 1, 1, 2).setValues([['queued', '']]);
+        return {ok: true, job: 'requeued'};
+      }
+      sh.getRange(i + 1, HS.STATUS + 1).setValue(status);
+      sh.getRange(i + 1, HS.RESULT + 1, 1, 2).setValues([[JSON.stringify(res), new Date()]]);
+      return {ok: true, job: 'recorded'};
+    }
+    return {ok: false, error: 'no such job'};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _headshotResults() {
+  var rows = _hsSheet().getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r[HS.RESULT_AT] || r[HS.POSTED]) continue;
+    var res = {};
+    try { res = JSON.parse(String(r[HS.RESULT] || '{}')); } catch (err) {}
+    out.push({job_id: String(r[HS.ID]), office: String(r[HS.OFFICE]),
+              name: String(r[HS.NAME]), mode: String(r[HS.MODE]),
+              channel: String(r[HS.CHANNEL]), thread_ts: String(r[HS.THREAD]),
+              result: res});
+  }
+  return {ok: true, results: out};
+}
+
+function _headshotPosted(ids) {
+  var want = {};
+  (ids || []).forEach(function (x) { want[String(x)] = true; });
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _hsSheet();
+    var rows = sh.getDataRange().getValues();
+    var n = 0;
+    for (var i = 1; i < rows.length; i++) {
+      if (!want[String(rows[i][HS.ID])]) continue;
+      sh.getRange(i + 1, HS.POSTED + 1).setValue(new Date());
+      // Done with the photo: trashed (recoverable from the bin), not deleted.
+      try { DriveApp.getFileById(String(rows[i][HS.FILE])).setTrashed(true); } catch (err) {}
+      n++;
+    }
+    return {ok: true, marked: n};
+  } finally {
+    lock.releaseLock();
+  }
 }
