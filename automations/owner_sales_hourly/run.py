@@ -24,6 +24,9 @@ Names match case-insensitively and through the ICD Aliases sheet.
 
 SOUTH SHORE TOO (Colten 2026-10-24): a second text, only the South Shore owners
 (funnel_board.roster.SOUTH_SHORE_NAMES), into his "SOUTHSHORE ORG" chat.
+NDS TOO (Jairo 2026-10-26, Eve: "the ones on the same campaign as Jairo"): a
+third text into his "A PLAYERSSS" chat -- only sales from NDS offices, only
+owners on our Org board, titled "NDS Sales Today".
 
 Usage
   # dry-run (DEFAULT): print the text, resolve the chat on a Mac, send nothing
@@ -33,7 +36,7 @@ Usage
   python -m automations.owner_sales_hourly.run --send
 
   --force   ignore the time window and the "nothing changed" skip
-  --only owners|sso   text just that one chat
+  --only owners|sso|jairo   text just that one chat
 
 --send is the ONLY thing that texts anyone. Python 3.9-safe (Lucy runtime).
 """
@@ -66,10 +69,12 @@ def owner_name(key: str, office) -> str:
     return key.replace("_", " ").replace("-", " ").title()
 
 
-def owner_totals(relay: Dict, offices: Dict, day: dt.date) -> Dict[str, int]:
+def owner_totals(relay: Dict, offices: Dict, day: dt.date,
+                 campaign: Optional[str] = None) -> Dict[str, int]:
     """{owner: sales today}. Only offices that relayed a reading for `day` —
     no row is "agent did not run", not "zero sales", so it is left off rather
-    than printed as a 0."""
+    than printed as a 0. `campaign` keeps only that campaign's offices, so an
+    owner on two campaigns (Atef: NDS + B2B) counts just the one asked for."""
     from automations.shared import sale_hype as H
 
     out: Dict[str, int] = {}
@@ -77,8 +82,10 @@ def owner_totals(relay: Dict, offices: Dict, day: dt.date) -> Dict[str, int]:
         if day not in days:
             continue
         office = offices.get(key)
-        campaign = getattr(office, "campaign", None)
-        total = sum(H.rep_total(m, campaign) for m in days[day].values())
+        office_campaign = getattr(office, "campaign", None)
+        if campaign and office_campaign != campaign:
+            continue
+        total = sum(H.rep_total(m, office_campaign) for m in days[day].values())
         name = owner_name(key, office)
         out[name] = out.get(name, 0) + total
     return out
@@ -166,10 +173,11 @@ def _clock(now: dt.datetime) -> str:
     return "%d:%02d %s" % (h, now.minute, "AM" if now.hour < 12 else "PM")
 
 
-def build_text(totals: Dict[str, int], now: dt.datetime) -> str:
+def build_text(totals: Dict[str, int], now: dt.datetime,
+               title: str = "Owner Sales Today") -> str:
     rows: List[Tuple[str, int]] = sorted(totals.items(),
                                          key=lambda kv: (-kv[1], kv[0]))
-    lines = ["Owner Sales Today - %s CT" % _clock(now), ""]
+    lines = ["%s - %s CT" % (title, _clock(now)), ""]
     for i, (name, n) in enumerate(rows, 1):
         lines.append("%d. %s %d" % (i, name, n))
     lines += ["", "🏆 TOTAL: %d" % sum(totals.values())]
@@ -210,7 +218,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     from automations.icd_alerts import offices as O
     from automations.icd_sales_board import relay_read as R
 
-    everyone = owner_totals(R.read_all(), O.all_offices(), day)
+    relay, offices = R.read_all(), O.all_offices()
+    everyone = owner_totals(relay, offices, day)
     if not everyone:
         # Before the first office relays (or a dead relay) — a list with no
         # owners on it would read as everybody at zero.
@@ -228,27 +237,35 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("not on the Org board's top boxes (left off): %s"
               % ", ".join(dropped))
     sso, _ = only_org(everyone, south_shore_owners(_load_aliases()))
+    nds, _ = only_org(owner_totals(relay, offices, day, cfg.JAIRO_CAMPAIGN), org)
 
     rc = 0
+<<<<<<< Updated upstream
     for name, group, key, chat_totals in (
             ("owners", cfg.TEXT_GROUP, "last_sent", totals),
             ("sso", cfg.SSO_GROUP, "last_sent_sso", sso),
             ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", sso)):
+=======
+    for name, group, key, chat_totals, title in (
+            ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today"),
+            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, "Owner Sales Today"),
+            ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today")):
+>>>>>>> Stashed changes
         if args.only and args.only != name:
             continue
         print("=== %s ===" % (group if isinstance(group, str)
                                else group.get("group")))
-        rc = max(rc, _send_one(group, key, chat_totals, now, day, args))
+        rc = max(rc, _send_one(group, key, chat_totals, now, day, args, title))
     return rc
 
 
 def _send_one(group, key: str, totals: Dict[str, int], now: dt.datetime,
-              day: dt.date, args) -> int:
+              day: dt.date, args, title: str = "Owner Sales Today") -> int:
     if not totals:
         print("nobody on this chat's list has relayed sales yet — not texting")
         return 0
 
-    text = build_text(totals, now)
+    text = build_text(totals, now, title)
     print(text)
     print()
 

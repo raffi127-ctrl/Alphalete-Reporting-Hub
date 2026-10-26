@@ -25,6 +25,16 @@ class OwnerTotals(unittest.TestCase):
         self.assertEqual(run.owner_totals(relay, offices, DAY),
                          {"Carlos Hidalgo": 6})
 
+    def test_campaign_keeps_only_that_campaigns_offices(self):
+        relay = {
+            "atef": {DAY: {"A": {"NL": 2}}},
+            "atef-b2b": {DAY: {"B": {"Int": 5}}},
+        }
+        offices = {"atef": _office("Atef Choudhury", "nds"),
+                   "atef-b2b": _office("Atef Choudhury", "b2b_att")}
+        self.assertEqual(run.owner_totals(relay, offices, DAY, "nds"),
+                         {"Atef Choudhury": 2})
+
     def test_office_with_no_reading_today_is_left_off_not_zero(self):
         relay = {"rashad": {DAY - dt.timedelta(days=9): {"A": {"Int": 4}}},
                  "steve": {DAY: {}}}
@@ -76,6 +86,11 @@ class Text(unittest.TestCase):
         self.assertEqual(text.splitlines(), [
             "Owner Sales Today - 5:50 PM CT", "",
             "1. C 9", "2. A 5", "3. B 5", "", "🏆 TOTAL: 19"])
+
+    def test_custom_title(self):
+        now = dt.datetime(2026, 10, 24, 17, 50)
+        text = run.build_text({"A": 1}, now, "NDS Sales Today")
+        self.assertEqual(text.splitlines()[0], "NDS Sales Today - 5:50 PM CT")
 
     def test_window(self):
         self.assertTrue(run.in_window(dt.datetime(2026, 10, 24, 21, 50)))
