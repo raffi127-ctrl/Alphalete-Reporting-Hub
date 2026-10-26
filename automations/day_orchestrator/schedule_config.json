@@ -2181,6 +2181,20 @@
    },
    "machine": "Lucy 2"
   },
+  "daily_update_offices": {
+   "on_scheduler": false,
+   "_note": "Daily Update for ICD offices beyond Raf (Raf, 2026-10-26: roll his Daily Update out to other ICDs). Same report as raf_daily_update, one office per run: `lucy rerun daily_update_offices --office <key or AppStream office id>` (offices in automations/raf_daily_update/offices.py). Dry preview by default; --write --test-sheet / --post only once an office has its sheet link + channel. NO machine and no timer on purpose: build/fix reruns go to the least-loaded Lucy with AppStream (routing.py). Raf's own 5pm Lucy 2 run stays on raf_daily_update. Reads AppStream with the shared 'Lucy Reports' login, not LucyEco.",
+   "display_name": "Daily Update - ICD offices (BUILD)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.raf_daily_update.offices_run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   }
+  },
   "org_campaign_metrics": {
    "on_scheduler": false,
    "machine": "Lucy 2",

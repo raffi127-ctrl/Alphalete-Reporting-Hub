@@ -30,6 +30,11 @@ real sheet + #rafs-office-recruiting-11280 wait for Raf's go.
 
 --seed-from-real reads the day's rows off the real sheet (read-only) instead
 of ApplicantStream. Needs the warm 'Lucy Reports' AppStream session.
+
+OTHER ICDs (Raf, 2026-10-26): `--office <key or office id>` runs the same
+report for any office in offices.py (default raf). Offices other than Raf's
+run through offices_run.py / schedule id daily_update_offices, which goes to
+the least-loaded Lucy.
 """
 from __future__ import annotations
 
@@ -43,6 +48,7 @@ from typing import Dict, List
 from zoneinfo import ZoneInfo
 
 from automations.raf_daily_update import layout as L
+from automations.raf_daily_update import offices as OFF
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -50,17 +56,27 @@ except Exception:  # noqa: BLE001
     pass
 
 CENTRAL = ZoneInfo("America/Chicago")
-OFFICE_ID = "11280"                                       # Rafael Hidalgo
-REAL_SHEET = "1hMdhHAFjFX9QJnXkFzH216Ti6aPbrmiO8DjUU1gaTnw"   # Raf's Daily Update
+# Every office's ids live in offices.py (rollout to other ICDs, 2026-10-26).
+# These names stay for Raf's own run and anything that imported them.
+RAF = OFF.OFFICES["raf"]
+OFFICE_ID = RAF.office_id                                 # Rafael Hidalgo
+REAL_SHEET = RAF.sheet                                    # Raf's Daily Update
 # Raf's test copy, "Daily Update 2026 - LUCY" (Megan 2026-10-14). Raf wants
 # a TEST first — the card writes this and posts in #org-indeed-accounts.
-TEST_SHEET = "1qFChT5PX2AU8Yu-0QmpZswV6zfhhi4u_72BWyiMPcZY"
-TEST_CHANNEL = "C0BH637AM8F"                    # #org-indeed-accounts
-CHANNEL = "C0AUAS88FGW"                       # #rafs-office-recruiting-11280
+TEST_SHEET = RAF.test_sheet
+TEST_CHANNEL = RAF.test_channel                 # #org-indeed-accounts
+CHANNEL = RAF.channel                         # #rafs-office-recruiting-11280
 # Who gets asked to tag a leader Lucy can't (Megan 2026-10-14).
-TAG_HELPERS = {"Aisha Ceron": "U083X5ZJWSH", "Rafael Hidalgo": "U045Z8N0ZQC"}
+TAG_HELPERS = RAF.tag_helpers
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "raf_daily_update"
 STATE = OUT_DIR / "state.json"        # posted threads + names awaiting a tag
+
+
+def state_path(office: OFF.Office) -> Path:
+    """Raf keeps state.json (his posted threads are already in it); every
+    other office gets its own file, so one office's 'already posted' or
+    pending tags never block another's."""
+    return STATE if office.key == "raf" else OUT_DIR / f"state-{office.key}.json"
 
 
 def log(msg: str) -> None:
@@ -347,10 +363,11 @@ def _open(sheet_id: str):
     return _retry(lambda: open_by_key(sheet_id))
 
 
-def read_tab(sheet_id: str, day: dt.date):
-    """(worksheet, layout, grid) for the month tab holding `day`."""
+def read_tab(sheet_id: str, day: dt.date, tab: str = ""):
+    """(worksheet, layout, grid) for the month tab holding `day`, or the
+    office's one fixed tab when it names one."""
     sh = _open(sheet_id)
-    title = L.month_tab([w.title for w in sh.worksheets()], day)
+    title = tab or L.month_tab([w.title for w in sh.worksheets()], day)
     if not title:
         raise RuntimeError(f"No month tab for {day:%B %Y} in {sh.title!r}")
     ws = sh.worksheet(title)
@@ -374,10 +391,11 @@ def sheet_rows(grid, lay, day: dt.date) -> List[dict]:
     return out
 
 
-def seed_from_real(day: dt.date) -> List[dict]:
+def seed_from_real(day: dt.date, sheet_id: str = REAL_SHEET,
+                   tab: str = "") -> List[dict]:
     """Real sheet rows → candidate dicts shaped like harvest_office's, so the
     rest of the run can't tell the difference."""
-    _ws, lay, grid = read_tab(REAL_SHEET, day)
+    _ws, lay, grid = read_tab(sheet_id, day, tab)
     cands = []
     for r in sheet_rows(grid, lay, day):
         st = r["status"]
@@ -390,7 +408,7 @@ def seed_from_real(day: dt.date) -> List[dict]:
         orient = f"{r.get('bob_date', '')} {r.get('time', '')}".strip()
         cands.append({
             "day": day, "name": f"{r['first']} {r['last']}".strip(),
-            "first": r["first"], "last": r["last"], "email": r["email"],
+            "first": r["first"], "last": r["last"], "email": r.get("email", ""),
             "phone": r["phone"], "first_round": r["int1"],
             "second_round": r["int2"], "ad": r.get("ad", ""), "show": show,
             "offered": offered, "bob_status": bob, "orientation": orient})
@@ -399,10 +417,11 @@ def seed_from_real(day: dt.date) -> List[dict]:
 
 # --------------------------------------------------------------- comparison
 
-def compare(rows: List[dict], day: dt.date) -> int:
+def compare(rows: List[dict], day: dt.date,
+            sheet_id: str = REAL_SHEET, tab: str = "") -> int:
     """Grade the automation against what the recruiters typed on the REAL
     sheet for `day`. Read-only. Returns the number of mismatches."""
-    _ws, lay, grid = read_tab(REAL_SHEET, day)
+    _ws, lay, grid = read_tab(sheet_id, day, tab)
     typed = {L.person_key(day, r["first"], r["last"]): r
              for r in sheet_rows(grid, lay, day)}
     ours = {L.person_key(day, r["first"], r["last"]): r for r in rows}
@@ -434,7 +453,7 @@ def compare(rows: List[dict], day: dt.date) -> int:
             diffs.append(f"2nd rd {o['int2']!r} vs {t['int2']!r}")
         if L._norm(o["int1"]) != L._norm(t["int1"]) and t["int1"]:
             diffs.append(f"1st rd {o['int1']!r} vs {t['int1']!r}")
-        if L._norm(o["email"]) != L._norm(t["email"]) and t["email"]:
+        if L._norm(o["email"]) != L._norm(t.get("email", "")) and t.get("email"):
             diffs.append(f"email {o['email']!r} vs {t['email']!r}")
         if diffs:
             bad += 1
@@ -446,11 +465,12 @@ def compare(rows: List[dict], day: dt.date) -> int:
 # -------------------------------------------------------------------- write
 
 def write_sheet(rows: List[dict], day: dt.date, write: bool,
-                sheet_id: str = REAL_SHEET) -> int:
+                sheet_id: str = REAL_SHEET, test: bool = None,
+                tab: str = "") -> int:
     """Append the day's rows nobody has typed yet, below the tab's last row.
     Only the mapped cells are written — the MONTHLY TOTALS block right of
     the table and every existing row are never touched."""
-    ws, lay, grid = read_tab(sheet_id, day)
+    ws, lay, grid = read_tab(sheet_id, day, tab)
     cols = sorted(lay.values())
     have = []
     last = 1
@@ -462,7 +482,9 @@ def write_sheet(rows: List[dict], day: dt.date, write: bool,
         if d:
             have.append(L.person_key(d, raw[lay["first"]], raw[lay["last"]]))
     add = L.new_rows(rows, have)
-    which = "test sheet" if sheet_id == TEST_SHEET else "sheet"
+    if test is None:
+        test = sheet_id == TEST_SHEET
+    which = "test sheet" if test else "sheet"
     log(f"  {which} tab {ws.title!r}: {len(rows)} for {day}, "
         f"{len(rows) - len(add)} already there, appending {len(add)} "
         f"at row {last + 1}" + ("" if write else "  (dry-run)"))
@@ -485,16 +507,16 @@ def write_sheet(rows: List[dict], day: dt.date, write: bool,
 
 # -------------------------------------------------------------------- slack
 
-def _load_state() -> dict:
+def _load_state(path: Path = STATE) -> dict:
     try:
-        return json.loads(STATE.read_text())
+        return json.loads(path.read_text())
     except Exception:  # noqa: BLE001
         return {"posted": {}, "pending": []}
 
 
-def _save_state(st: dict) -> None:
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(st, indent=1))
+def _save_state(st: dict, path: Path = STATE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(st, indent=1))
 
 
 def learn_pending(client, st: dict) -> None:
@@ -586,16 +608,17 @@ def _existing_parent(client, channel: str, day: dt.date) -> str:
 
 
 def post(rows: List[dict], day: dt.date, image: Path, channel: str,
-         live: bool) -> None:
+         live: bool, office: OFF.Office = RAF) -> None:
     from automations.shared import slack_metrics_post as smp
     client = smp._client() if live else None
-    st = _load_state()
+    spath = state_path(office)
+    st = _load_state(spath)
     if client is not None:
         learn_pending(client, st)
-        _save_state(st)
+        _save_state(st, spath)
     ids = slack_ids(rows, client)
     missing = [n for n in L.hires_by_leader(rows) if L._norm(n) not in ids]
-    tag = L.tag_text(rows, ids, helpers=list(TAG_HELPERS.values()))
+    tag = L.tag_text(rows, ids, helpers=list(office.tag_helpers.values()))
     replies = [L.CONGRATS_ASK, L.CONGRATS_HOW, L.CONGRATS_TEXT]
     log(f"  slack -> {channel}" + ("" if live else "  (dry-run, not sent)"))
     log(f"    parent: {L.parent_text(day)}")
@@ -626,7 +649,7 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
                                   channel_id=channel, today=day, mirror=False,
                                   wait_visible=True)
     st.setdefault("posted", {})[day.isoformat()] = ts
-    _save_state(st)
+    _save_state(st, spath)
     if tag:
         ask_ts = client.chat_postMessage(channel=channel, thread_ts=ts,
                                          text=tag)["ts"]
@@ -634,8 +657,9 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
             st.setdefault("pending", []).append(
                 {"day": day.isoformat(), "channel": channel, "thread_ts": ts,
                  "ask_ts": ask_ts, "names": missing})
-            _save_state(st)
-            log(f"  asked Aisha/Raf to tag: {', '.join(missing)}")
+            _save_state(st, spath)
+            who = " / ".join(n.split()[0] for n in office.tag_helpers) or "nobody"
+            log(f"  asked {who} to tag: {', '.join(missing)}")
     log(f"  posted thread {ts}")
 
 
@@ -643,15 +667,18 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--office", default="raf",
+                    help="office key from offices.py, or an ApplicantStream "
+                         "office id to preview (default raf)")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today)")
     ap.add_argument("--write", action="store_true",
-                    help="append the day's rows to Raf's Daily Update sheet")
+                    help="append the day's rows to the office's Daily Update sheet")
     ap.add_argument("--test-sheet", action="store_true",
                     help="write the TEST copy instead of the real sheet")
     ap.add_argument("--post", action="store_true",
                     help="post the Slack thread")
-    ap.add_argument("--channel", default=CHANNEL,
-                    help="Slack channel id (default #rafs-office-recruiting-11280)")
+    ap.add_argument("--channel", default=None,
+                    help="Slack channel id (default: the office's own channel)")
     ap.add_argument("--compare-real", action="store_true",
                     help="grade against the recruiters' rows on the real sheet")
     ap.add_argument("--seed-from-real", action="store_true",
@@ -659,40 +686,61 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="write and post nothing (the default without flags)")
     args = ap.parse_args(argv)
+    try:
+        office = OFF.get(args.office)
+    except KeyError as e:
+        ap.error(str(e))
     if args.dry_run:
         args.write = args.post = False
     if args.seed_from_real and (args.write or args.post):
         ap.error("--seed-from-real is for testing; it can't write or post")
+    sheet = office.test_sheet if args.test_sheet else office.sheet
+    channel = args.channel or office.channel
+    if args.write and not sheet:
+        ap.error(f"no {'test ' if args.test_sheet else ''}Daily Update sheet "
+                 f"for office {office.key} yet — add its link in offices.py")
+    if args.post and not channel:
+        ap.error(f"no Slack channel for office {office.key} yet — add it in "
+                 "offices.py or pass --channel")
+    if (args.compare_real or args.seed_from_real) and not office.sheet:
+        ap.error(f"office {office.key} has no real sheet to compare/seed from")
 
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(CENTRAL).date())
-    log(f"=== raf daily update | {day} | office {OFFICE_ID} | "
+    log(f"=== daily update | {office.owner or office.key} | {day} | "
+        f"office {office.office_id} | "
         f"{'WRITE' if args.write else 'DRY-RUN'}"
         f"{' + POST' if args.post else ''} ===")
     if day.weekday() == 6 and not args.date:
         log("  Sunday — no 2nd rounds, nothing to do")
         return 0
 
-    cands = seed_from_real(day) if args.seed_from_real else harvest(day)
+    cands = (seed_from_real(day, office.sheet, office.tab) if args.seed_from_real
+             else harvest(day, office.office_id))
     rows = L.build_rows(cands)
     log(f"  {L.summary_line(rows)}")
     for r in rows:
         log(f"    {r['status'] or 'to call':<16} {r['first']} {r['last']:<22} "
             f"2nd: {r['int2']:<22} {r['bob_date']} {r['time']}")
-    bad = compare(rows, day) if args.compare_real else 0
+    bad = compare(rows, day, office.sheet, office.tab) if args.compare_real else 0
 
     if not rows:
         log("  no 2nd rounds for this day — nothing to write or post")
         return 0
-    write_sheet(rows, day, args.write,
-                TEST_SHEET if args.test_sheet else REAL_SHEET)
+    if sheet:
+        write_sheet(rows, day, args.write, sheet, test=args.test_sheet,
+                    tab=office.tab)
+    else:
+        log(f"  no Daily Update sheet for office {office.key} yet — sheet step skipped")
 
     from automations.raf_daily_update.render import render
-    image = render(rows, OUT_DIR / f"daily_update_{day.isoformat()}.png",
+    stem = (f"daily_update_{day.isoformat()}" if office.key == "raf"
+            else f"daily_update_{office.key}_{day.isoformat()}")
+    image = render(rows, OUT_DIR / f"{stem}.png",
                    f"Daily Update {day.month}/{day.day}")
     log(f"  picture: {image}")
     if any(r["status"] != L.NO_SHOW for r in rows):
-        post(rows, day, image, args.channel, args.post)
+        post(rows, day, image, channel or "(no channel yet)", args.post, office)
     else:
         log("  nobody showed — no Slack post (never post blank)")
     return 1 if bad and args.compare_real and not args.seed_from_real else 0
