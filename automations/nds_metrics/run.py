@@ -182,7 +182,11 @@ def load_crew(path: Path, log=print):
     mine = [r for r in data if len(r) > i_owner
             and "CARLOS" in str(r[i_owner]).upper()
             and "HIDALGO" in str(r[i_owner]).upper()]
-    crew_names = guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
+    # Carlos sells too (2026-10-26: "i dont see my sale in the order log" —
+    # the guest roster is the reps UNDER him and leaves him out, so his own
+    # lines were filtered off every board).
+    crew_names = (guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
+                  + ["Carlos Hidalgo"])
     crew_toks = [guests._tokens(n) for n in crew_names]
 
     def _is_crew(name: str) -> bool:
@@ -361,7 +365,11 @@ def load_soh(log=print):
             log(f"[nds] SOH missing column {need!r}")
             _SOH_MEMO.append(None)
             return None
-    crew_names = guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
+    # Carlos sells too (2026-10-26: "i dont see my sale in the order log" —
+    # the guest roster is the reps UNDER him and leaves him out, so his own
+    # lines were filtered off every board).
+    crew_names = (guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
+                  + ["Carlos Hidalgo"])
     toks = [guests._tokens(n) for n in crew_names]
 
     def _is_crew(n):
