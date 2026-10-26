@@ -3178,6 +3178,10 @@ def _action_textgroup(args: str) -> tuple[bool, str]:
     if "::" not in args:
         return False, "textgroup needs '<group name> :: <message>'"
     group, text = [x.strip() for x in args.split("::", 1)]
+    # A queue row is one line, so a multi-line message arrives with the two
+    # characters backslash-n — on 2026-10-26 Carlos's gaps list landed in the
+    # chat as "...\n\nJacob Isaiah Ortega - 49 min\n...". Turn them back into breaks.
+    text = text.replace("\\n", "\n").strip()
     if not group or not text:
         return False, "textgroup needs both a group name and a message"
     try:
