@@ -268,13 +268,19 @@ def _week_due(state: Dict, now: dt.datetime) -> bool:
     return state.get("week_at") != now.date().isoformat()
 
 
-def weekly_board(saturday: dt.date, *, send: bool) -> int:
+def weekly_board(saturday: dt.date, *, send: bool,
+                 thread_prefix: str = "") -> int:
     """Run weekly_knock_dispositions for the NDS row (it posts the picture
     into Saturday's "NDS Knocks Board" thread), then text the same picture to
-    the two chats. Dry by default: renders, posts nothing."""
+    the two chats. Dry by default: renders, posts nothing.
+
+    `thread_prefix` (a hand run, Carlos 2026-10-26: "have last weeks totals
+    post on the nds metrics tab. just today"): render only, then put the
+    picture as a reply under TODAY's thread whose text starts with that
+    prefix (e.g. "NDS Metrics —"). No texts."""
     from automations.weekly_knock_dispositions import run as W
     argv = ["--office", C.WEEK_ROW_KEY, saturday.isoformat()]
-    argv += ["--live"] if send else ["--dry-run"]
+    argv += ["--live"] if (send and not thread_prefix) else ["--dry-run"]
     _log("weekly board: weekly_knock_dispositions %s" % " ".join(argv))
     rc = W.main(argv)
     if rc:
@@ -288,6 +294,24 @@ def weekly_board(saturday: dt.date, *, send: bool) -> int:
     monday = saturday - dt.timedelta(days=5)
     title = "%s Knocks Board — Mon–Sat %s–%s" % (
         C.TEAM, monday.strftime("%-m/%-d"), saturday.strftime("%-m/%-d"))
+    if thread_prefix:
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+        today = dt.date.today()
+        oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+        hist = client.conversations_history(channel=C.SLACK_CHANNEL, oldest=str(oldest), limit=300)
+        ts = next((m.get("thread_ts") or m.get("ts") for m in hist.get("messages", [])
+                   if (m.get("text") or "").replace("*", "").startswith(thread_prefix)), None)
+        if not ts:
+            _log("no thread today starting with %r" % thread_prefix)
+            return 1
+        if not send:
+            _log("DRY RUN -- would post %s into thread %s (%r)" % (png, ts, thread_prefix))
+            return 0
+        client.files_upload_v2(channel=C.SLACK_CHANNEL, file=str(png), filename=png.name,
+                               initial_comment="*%s*" % title, thread_ts=ts)
+        _log("posted %s into today's %r thread" % (title, thread_prefix))
+        return 0
     if send:
         _queue_text(C.KIND_WEEK, title, saturday, dt.datetime.now(), paths=[png])
     else:
@@ -364,12 +388,16 @@ def main(argv=None) -> int:
     ap.add_argument("--week", metavar="SATURDAY",
                     help="run the Mon–Sat combined board for that Saturday "
                          "(YYYY-MM-DD) and exit; --send posts and texts it")
+    ap.add_argument("--week-thread", metavar="PREFIX", default="",
+                    help="with --week: post the picture into TODAY's thread whose "
+                         "text starts with PREFIX, Slack only (no texts)")
     ap.add_argument("--no-gaps", action="store_true",
                     help="board only: no gap list, no call-out (a hand run after hours)")
     ap.add_argument("--headed", action="store_true")
     args = ap.parse_args(argv)
     if args.week:
-        return weekly_board(dt.date.fromisoformat(args.week), send=args.send)
+        return weekly_board(dt.date.fromisoformat(args.week), send=args.send,
+                            thread_prefix=args.week_thread)
     return tick(send=args.send, force=args.force, board=args.board,
                 headless=not args.headed, no_gaps=args.no_gaps)
 
