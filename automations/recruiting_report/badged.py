@@ -298,7 +298,7 @@ def main(argv=None) -> int:
 
     if args.probe:
         tabs = tabs_to_offices(fill.load_mapping())
-        want = {_norm(t) for t in args.probe}
+        want = {_norm(t.strip("\"'")) for t in args.probe}  # queued args may keep their quotes
         probe([o[0] for t, o in tabs.items() if _norm(t) in want], headless=not args.headed)
         return 0
 
