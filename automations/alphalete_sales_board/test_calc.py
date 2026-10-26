@@ -286,3 +286,28 @@ def test_leaderboard_board_stats_block():
                          "Reps that got on the Board: 17\n"
                          "% of Reps on the Board: 47%"), text
     assert "Field" not in N.leaderboard(today, [])
+
+
+def test_sunday_field_is_reps_on_the_board():
+    """No roll call on Sunday: the board's formula said 42 in the field on
+    10/25 with ~5 out. Sunday counts the reps who sold, drops zero/%."""
+    from automations.alphalete_sales_board import fill
+    grid = [["", "", "", "SUN", "", "", ""],
+            ["", "", "", "", "", "", ""],
+            ["", "", "Rep", "Apps", "Int", "Int Up", "DTV"],
+            ["", "", "Ana", "6", "2", "0", "0"],
+            ["", "", "TOTALS", "8", "3", "0", "0"],
+            ["", "", "", "", "", "", ""],
+            ["", "", "Total Reps in the Field / Board / Zero", "42", ""],
+            ["", "", "Reps that got on the Board", "6", ""],
+            ["", "", "Reps that rolled a Zero", "36", ""],
+            ["", "", "% of Reps on the Board", "14%", ""],
+            ["", "", "New INT per Rep AVG", "0.1", ""],
+            ["", "", "App per Rep AVG", "0.2", ""]]
+    stats = fill.board_stats(None, grid, dt.date(2026, 10, 25))
+    assert stats == [("Total Reps in the Field / Board / Zero", "6"),
+                     ("Reps that got on the Board", "6"),
+                     ("New INT per Rep AVG", "0.5"),
+                     ("App per Rep AVG", "1.3")], stats
+    grid[7][3] = "0"
+    assert fill.board_stats(None, grid, dt.date(2026, 10, 25)) == []

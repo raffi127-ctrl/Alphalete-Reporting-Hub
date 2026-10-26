@@ -133,12 +133,57 @@ def board_stats(ws, grid, day: dt.date, fresh: bool = False):
     col, rows = stats_cells(grid, day)
     if not rows:
         return []
+    tot = B.last_rep_row(grid) + 1
+    int_col = B.day_blocks(grid).get(day.strftime("%A"), {}).get("Int")
     vals = [B.cell(grid, r, col).strip() for r, _l in rows]
+    apps = B.cell(grid, tot, col).strip()
+    ints = B.cell(grid, tot, int_col).strip() if int_col else ""
     if fresh:
         got = ws.get("%s:%s" % (_a1(rows[0][0], col), _a1(rows[-1][0], col)))
         vals = [(got[i][0] if i < len(got) and got[i] else "").strip()
                 for i in range(len(rows))]
-    return [(label, v) for (_r, label), v in zip(rows, vals)]
+        if day.weekday() == 6:
+            apps = (ws.acell(_a1(tot, col)).value or "").strip()
+            ints = (ws.acell(_a1(tot, int_col)).value or "").strip() if int_col else ""
+    stats = [(label, v) for (_r, label), v in zip(rows, vals)]
+    return sunday_stats(stats, apps, ints) if day.weekday() == 6 else stats
+
+
+def _num(s) -> float:
+    try:
+        return float(str(s).replace(",", "").strip() or 0)
+    except ValueError:
+        return 0.0
+
+
+def sunday_stats(stats, apps, ints):
+    """Sunday's block, with "in the field" = reps who got on the board.
+
+    The board's field formula counts every row NOT marked X/T/RT/... in roll
+    call, and nobody takes roll call on Sunday -- so 10/25 read 42 in the field
+    with ~5 actually out (voice note to Eve, 2026-10-26: "we needed to just
+    count number of people actively knocking that day"). There is no knock
+    pull on Sunday either (gap_alerts is off), so the reps who sold are the
+    only ones we can see out there. Zero and % lines go: with no knock count
+    they would always read 0 and 100%. Averages are re-divided by that field.
+    """
+    get = dict((l.lower(), v) for l, v in stats)
+    board = int(_num(get.get("reps that got on the board", 0)))
+    if not board:
+        return []
+    out = []
+    for label, v in stats:
+        low = label.lower()
+        if low.startswith("total reps in the field"):
+            v = str(board)
+        elif low.startswith("reps that rolled a zero") or low.startswith("% of reps"):
+            continue
+        elif low.startswith("new int per rep"):
+            v = "%.1f" % (_num(ints) / board)
+        elif low.startswith("app per rep"):
+            v = "%.1f" % (_num(apps) / board)
+        out.append((label, v))
+    return out
 
 
 def _a1(row: int, col: int) -> str:
