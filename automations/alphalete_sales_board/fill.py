@@ -142,11 +142,42 @@ def board_stats(ws, grid, day: dt.date, fresh: bool = False):
         got = ws.get("%s:%s" % (_a1(rows[0][0], col), _a1(rows[-1][0], col)))
         vals = [(got[i][0] if i < len(got) and got[i] else "").strip()
                 for i in range(len(rows))]
-        if day.weekday() == 6:
-            apps = (ws.acell(_a1(tot, col)).value or "").strip()
-            ints = (ws.acell(_a1(tot, int_col)).value or "").strip() if int_col else ""
+    sold_only = day.weekday() == 6 or not roll_call_taken(grid, col)
+    if fresh and sold_only:
+        apps = (ws.acell(_a1(tot, col)).value or "").strip()
+        ints = (ws.acell(_a1(tot, int_col)).value or "").strip() if int_col else ""
     stats = [(label, v) for (_r, label), v in zip(rows, vals)]
-    return sunday_stats(stats, apps, ints) if day.weekday() == 6 else stats
+    return sunday_stats(stats, apps, ints) if sold_only else stats
+
+
+def roll_call_taken(grid, col: int) -> bool:
+    """Did anybody mark today's roll call? Any letter but 'T' in the day's
+    block (an X in a sales cell, HERE/LATE/OFF in Roll Call) says yes.
+
+    'T' doesn't count: a terminated rep carries it all week. WE 10.25 had
+    14-30 X's every weekday and zero roll-call letters on no day but Sunday,
+    so this only fires when a day was left untouched -- and then the board's
+    formula would count the whole roster, exactly the 10/25 Sunday bug
+    (Eve, 2026-10-26: same fallback as Sunday on any day nobody took it).
+    """
+    width = max(len(r) for r in grid[:B.SUB_ROW]) if grid else 0
+    end = next((c - 1 for c in range(col + 1, width + 1)
+                if B.cell(grid, B.DAY_ROW, c).strip().upper() in B.DAY_LABELS),
+               width)
+    for r in range(B.SUB_ROW + 1, B.last_rep_row(grid) + 1):
+        for c in range(col, end + 1):
+            v = B.cell(grid, r, c).strip().upper()
+            if v and v != "T" and not _is_number(v):
+                return True
+    return False
+
+
+def _is_number(s: str) -> bool:
+    try:
+        float(s.replace(",", ""))
+        return True
+    except ValueError:
+        return False
 
 
 def _num(s) -> float:
@@ -157,7 +188,8 @@ def _num(s) -> float:
 
 
 def sunday_stats(stats, apps, ints):
-    """Sunday's block, with "in the field" = reps who got on the board.
+    """Sunday's block (or any day with no roll call), with "in the field" =
+    reps who got on the board.
 
     The board's field formula counts every row NOT marked X/T/RT/... in roll
     call, and nobody takes roll call on Sunday -- so 10/25 read 42 in the field

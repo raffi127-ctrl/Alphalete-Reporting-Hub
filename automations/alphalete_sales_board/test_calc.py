@@ -268,6 +268,7 @@ def test_leaderboard_board_stats_block():
             ["", "", "", "", ""],
             ["", "", "Rep", "Apps", "Int"],
             ["", "", "Ana", "2", "2"],
+            ["", "", "Bo", "X", ""],          # roll call taken: board's numbers
             ["", "", "TOTALS", "2", "2"],
             ["", "", "", "", ""],
             ["", "", "Total Reps in the Field / \nBoard / Zero", "36", ""],
@@ -311,3 +312,36 @@ def test_sunday_field_is_reps_on_the_board():
                      ("App per Rep AVG", "1.3")], stats
     grid[7][3] = "0"
     assert fill.board_stats(None, grid, dt.date(2026, 10, 25)) == []
+
+
+def test_weekday_without_roll_call_falls_back_to_reps_on_the_board():
+    """A weekday nobody marked (no X, no HERE/LATE...) would count the whole
+    roster like Sunday 10/25 did; it gets Sunday's block. One letter = keep
+    the board's own numbers. A 'T' alone is not a roll call."""
+    from automations.alphalete_sales_board import fill
+    grid = [["", "", "", "MON", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "Rep", "Apps", "Int", "Int Up", "DTV", "Roll Call"],
+            ["", "", "Ana", "6", "2", "0", "0", ""],
+            ["", "", "Bo", "T", "", "", "", "T"],
+            ["", "", "TOTALS", "8", "3", "0", "0", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "Total Reps in the Field / Board / Zero", "42", ""],
+            ["", "", "Reps that got on the Board", "6", ""],
+            ["", "", "Reps that rolled a Zero", "36", ""],
+            ["", "", "% of Reps on the Board", "14%", ""],
+            ["", "", "New INT per Rep AVG", "0.1", ""],
+            ["", "", "App per Rep AVG", "0.2", ""]]
+    mon = dt.date(2026, 10, 19)
+    assert fill.board_stats(None, grid, mon) == [
+        ("Total Reps in the Field / Board / Zero", "6"),
+        ("Reps that got on the Board", "6"),
+        ("New INT per Rep AVG", "0.5"),
+        ("App per Rep AVG", "1.3")]
+    grid[3][7] = "HERE"
+    assert fill.board_stats(None, grid, mon)[0] == (
+        "Total Reps in the Field / Board / Zero", "42")
+    grid[3][7] = ""
+    grid[4][4] = "X"
+    assert fill.board_stats(None, grid, mon)[0] == (
+        "Total Reps in the Field / Board / Zero", "42")
