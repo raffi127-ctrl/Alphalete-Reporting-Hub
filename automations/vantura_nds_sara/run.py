@@ -644,9 +644,14 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
                         t2, d2 = M.fetch(uid, "(RFC822)")
                         full = _email.message_from_bytes(d2[0][1])
                         body = VC._body_text(full)
-                        codes = re.findall(r"\b\d{9,10}\b", body)
+                        codes = re.findall(r"\b\d{6,12}\b", body)
+                        links = re.findall(r"https://mail-settings\.google\.com/\S+", body)
                         log("    FORWARDING CONFIRMATION subject=%r code(s)=%s"
                             % ((full.get("Subject") or "").strip()[:120], codes[:3] or "none in body"))
+                        for lk in links[:2]:
+                            log("    FORWARDING LINK %s" % lk.rstrip(".,)>]"))
+                        if not codes and not links:
+                            log("    body excerpt: %s" % re.sub(r"\s+", " ", body)[:600])
                     except Exception as e:  # noqa: BLE001
                         log("    forwarding confirmation body unreadable (%s)" % type(e).__name__)
     finally:
