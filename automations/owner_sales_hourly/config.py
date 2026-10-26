@@ -31,6 +31,11 @@ from automations.owner_chat_texts.config import GROUP_SOUTHSHORE_ORG
 # skip (`key` = the last-sent file name).
 SSO_GROUP = GROUP_SOUTHSHORE_ORG
 
+# Jairo Ruiz 2026-10-26 (Slack DM with Megan): the same South Shore list in his
+# own "A PLAYERSSS" chat. Lucy 1 is a member (find_group 2026-10-26: exactly one
+# chat, 16 people). The full name, not "A PLAYERS": that needle hits 6 chats.
+JAIRO_GROUP = "A PLAYERSSS"
+
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.
 OWNER_FALLBACK = {

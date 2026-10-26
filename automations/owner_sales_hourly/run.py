@@ -196,7 +196,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="actually text the owners chat (default: dry run)")
     ap.add_argument("--force", action="store_true",
                     help="ignore the time window and the unchanged-numbers skip")
-    ap.add_argument("--only", choices=("owners", "sso"),
+    ap.add_argument("--only", choices=("owners", "sso", "jairo"),
                     help="text just one chat (e.g. a catch-up send to SSO)")
     args = ap.parse_args(argv)
 
@@ -232,7 +232,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     rc = 0
     for name, group, key, chat_totals in (
             ("owners", cfg.TEXT_GROUP, "last_sent", totals),
-            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso)):
+            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso),
+            ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", sso)):
         if args.only and args.only != name:
             continue
         print("=== %s ===" % (group if isinstance(group, str)

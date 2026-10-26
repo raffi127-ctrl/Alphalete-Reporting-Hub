@@ -21,6 +21,9 @@ Owner Sales Today - 5:50 PM CT
 Shore owners (`funnel_board.roster.SOUTH_SHORE_NAMES`: Colten, Jairo, Drew,
 Eveliz ...), own total, own "nothing changed" skip.
 
+**And into Jairo's A PLAYERSSS** (Jairo, 2026-10-26): the same South Shore
+text as SOUTHSHORE ORG, with its own "nothing changed" skip.
+
 - :50 every hour, Mon–Sat, 12 PM–9 PM Central.
 - Skipped when no number moved since the last text.
 - Not sent before any office has relayed a sale that day.
