@@ -182,6 +182,7 @@ TEXT_ROUTES = {
     # text handoff, so the routes live here.
     ("RES AT&T OOF", "nds_board"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
     ("RES AT&T OOF", "nds_gaps"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
+    ("RES AT&T OOF", "nds_week"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

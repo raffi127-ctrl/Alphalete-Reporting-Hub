@@ -52,6 +52,11 @@ GAP_THRESHOLD_MIN = 15
 # Post kinds, as the b2b_dispositions text handoff keys them.
 KIND_BOARD = "nds_board"
 KIND_GAPS = "nds_gaps"
+KIND_WEEK = "nds_week"
+# The Mon–Sat combined board (weekly_knock_dispositions, row key below) on
+# Saturday, right after the last board of the day (Carlos 2026-10-26).
+WEEK_ROW_KEY = "Carlos Hidalgo (NDS)"
+WEEK_AFTER = SATURDAY_STOP
 
 # Credit checks for the call-outs come from Carlos's own SaraPlus, relayed by
 # his office Mac mini under this ICD office key (icd_alerts).

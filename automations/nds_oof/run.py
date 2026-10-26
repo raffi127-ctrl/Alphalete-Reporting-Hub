@@ -261,18 +261,60 @@ def _callout(over: List[Dict], today: dt.date, now: dt.datetime, *, send: bool) 
     return text
 
 
+# --- the Saturday Mon–Sat board ---------------------------------------------
+def _week_due(state: Dict, now: dt.datetime) -> bool:
+    if _wd(now) != 5 or (now.hour, now.minute) < C.WEEK_AFTER:
+        return False
+    return state.get("week_at") != now.date().isoformat()
+
+
+def weekly_board(saturday: dt.date, *, send: bool) -> int:
+    """Run weekly_knock_dispositions for the NDS row (it posts the picture
+    into Saturday's "NDS Knocks Board" thread), then text the same picture to
+    the two chats. Dry by default: renders, posts nothing."""
+    from automations.weekly_knock_dispositions import run as W
+    argv = ["--office", C.WEEK_ROW_KEY, saturday.isoformat()]
+    argv += ["--live"] if send else ["--dry-run"]
+    _log("weekly board: weekly_knock_dispositions %s" % " ".join(argv))
+    rc = W.main(argv)
+    if rc:
+        _log("weekly board: module returned %s" % rc)
+        return rc
+    png = (Path(W.OUT_DIR) / W._slug(C.WEEK_ROW_KEY)
+           / ("weekly_knock_dispositions_%s.png" % saturday.isoformat()))
+    if not png.exists():
+        _log("weekly board: no picture at %s" % png)
+        return 1
+    monday = saturday - dt.timedelta(days=5)
+    title = "%s Knocks Board — Mon–Sat %s–%s" % (
+        C.TEAM, monday.strftime("%-m/%-d"), saturday.strftime("%-m/%-d"))
+    if send:
+        _queue_text(C.KIND_WEEK, title, saturday, dt.datetime.now(), paths=[png])
+    else:
+        _log("DRY RUN -- would text %s: %s" % (title, png))
+    return 0
+
+
 # --- tick --------------------------------------------------------------------
 def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
          no_gaps: bool = False) -> int:
     now = dt.datetime.now()
     today = now.date()
+    state = _state()
+    if _week_due(state, now):
+        # After the 5:30 board on a Saturday: the Mon–Sat combined board. Done
+        # here, before the window check, so a missed 5:30 tick still gets it
+        # on the next one. Marked only on a real send.
+        rc = weekly_board(today, send=send)
+        if send and rc == 0:
+            state["week_at"] = today.isoformat()
+            _save(state)
     if C.CAMPAIGN_ID == "__FILL__":
         _log("CAMPAIGN_ID not set -- run `rerun b2b_dispositions --probe-campaigns` and fill config.py")
         return 1
     if not force and not in_window(now):
         _log("outside the window (%s) -- nothing to do" % now.strftime("%a %H:%M"))
         return 0
-    state = _state()
     want_board = board or force or _board_due(state, now)
     want_gaps = (not no_gaps) and (force or _due(state, "gaps_at", C.GAPS_EVERY_MIN, now))
     if not want_board and not want_gaps:
@@ -319,10 +361,15 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true", help="post to Slack and queue the texts")
     ap.add_argument("--force", action="store_true", help="ignore the window and the cadences")
     ap.add_argument("--board", action="store_true", help="draw the board this tick")
+    ap.add_argument("--week", metavar="SATURDAY",
+                    help="run the Mon–Sat combined board for that Saturday "
+                         "(YYYY-MM-DD) and exit; --send posts and texts it")
     ap.add_argument("--no-gaps", action="store_true",
                     help="board only: no gap list, no call-out (a hand run after hours)")
     ap.add_argument("--headed", action="store_true")
     args = ap.parse_args(argv)
+    if args.week:
+        return weekly_board(dt.date.fromisoformat(args.week), send=args.send)
     return tick(send=args.send, force=args.force, board=args.board,
                 headless=not args.headed, no_gaps=args.no_gaps)
 
