@@ -775,6 +775,59 @@ class AnswerBackTest(unittest.TestCase):
         self.assertIn(posted[0][2], G.SNITCH_REPLIES)
 
 
+class CursingEarnsAWittyAnswer(unittest.TestCase):
+    """Megan 2026-10-26: "If someone curses at lucy - we should reply with
+    something witty - I don't want to encourage cursing"."""
+
+    def test_a_curse_gets_the_clean_answer(self):
+        for text in ("Fk Lucy", "Lucy..Fk off", "fuck lucy", "lucy stfu", "wtf lucy", "lucy that's bullshit"):
+            self.assertIn(G.answer_for(text, "s1"), G.CURSE_REPLIES, text)
+
+    def test_the_answer_never_repeats_the_word_or_scolds(self):
+        for a in G.CURSE_REPLIES + G.CURSE_REPLIES_B2B:
+            self.assertFalse(G.CURSE_TRIGGER.search(a), a)
+            self.assertNotIn("don't", a.lower(), a)
+            self.assertNotIn("stop", a.lower(), a)
+
+    def test_a_curse_wins_over_snitch_and_liar(self):
+        self.assertIn(G.answer_for("lucy u a snitch fk off", "s1"), G.CURSE_REPLIES)
+        self.assertIn(G.answer_for("lying ass bitch lucy", "s1"), G.CURSE_REPLIES)
+
+    def test_mild_words_earn_nothing(self):
+        for text in ("Lucy messy", "Chill Lucy, chill", "Nah not Lucy", "Lucy be on one", "lucy is the best"):
+            self.assertEqual(G.answer_for(text, "s1"), "", text)
+
+    def test_business_rooms_hear_walk_ins_not_doors(self):
+        for h in range(40):
+            a = G.answer_for("fk lucy", "seed%d" % h, campaign="b2b_box")
+            self.assertIn(a, G.CURSE_REPLIES_B2B)
+            self.assertNotIn("knock", a.lower(), a)
+            self.assertNotIn("door", a.lower(), a)
+
+    def test_a_curse_in_the_channel_itself_is_answered_in_its_thread_once(self):
+        class Client:
+            def auth_test(self):
+                return {"user_id": "ULUCY"}
+            def conversations_history(self, channel, oldest, limit):
+                return {"messages": [
+                    {"ts": "5.0", "user": "UREP", "reply_count": 0, "text": "Fk Lucy"},
+                    {"ts": "6.0", "user": "UREP", "reply_count": 0, "text": "fk this heat"},      # not at her
+                    {"ts": "7.0", "user": "UREP", "reply_count": 1, "text": "lucy stfu"},          # already answered
+                    {"ts": "8.0", "user": "UREP", "reply_count": 0, "text": "Lucy you a liar"},   # liar, top-level
+                ]}
+            def conversations_replies(self, channel, ts, limit):
+                return {"messages": [{"ts": "7.0", "user": "UREP"}, {"ts": "7.1", "user": "ULUCY", "text": "Language"}]}
+        posted = []
+        with mock.patch.object(G, "_state", return_value={}), \
+             mock.patch.object(G, "_remember", lambda k, v: None), \
+             mock.patch.object(G.P, "_slack", lambda ch, text, thread_ts=None: posted.append((ch, thread_ts, text))):
+            said = G.answer_back(NOW, send=True, log=lambda m: None, channels=["C1"], client=Client())
+        self.assertEqual([p[1] for p in posted], ["5.0", "8.0"])
+        self.assertIn(posted[0][2], G.CURSE_REPLIES)
+        self.assertIn(posted[1][2], G.LIAR_REPLIES)
+        self.assertEqual(len(said), 2)
+
+
 class AnswerBackB2BTest(unittest.TestCase):
     def test_a_business_room_never_hears_about_doors(self):
         for h in range(40):
