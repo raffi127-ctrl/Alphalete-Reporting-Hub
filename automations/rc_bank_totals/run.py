@@ -122,27 +122,32 @@ def last_sunday(today: dt.date) -> dt.date:
     return today - dt.timedelta(days=(today.weekday() + 1) % 7)
 
 
-def read_ab(s, p) -> list[list]:
-    rng = f"'{TAB}'!A1:B{p['last_row']}"
+def read_ab(s, p, last_col: str = "B") -> list[list]:
+    rng = f"'{TAB}'!A1:{last_col}{p['last_row']}"
     return s.values().get(spreadsheetId=p["sheet"], range=rng, valueRenderOption="FORMULA").execute().get("values", [])
 
 
 def add(who: str, we: dt.date, dry: bool) -> None:
     p, s = PEOPLE[who], sheets()
-    rows = read_ab(s, p)
+    rows = read_ab(s, p, "C")
     hdr = p["header"](we)
     if len(rows[0]) > 1 and rows[0][1] == hdr:
         sys.exit(f"{who}: column B is already {hdr!r} — nothing to add")
-    clear, keep = [], []
+    clear, keep, refill = [], [], []
     for i, r in enumerate(rows[1:], start=2):
-        label, val = (r + ["", ""])[:2]
-        if str(val).startswith("=") or label in p["carry"] or val == "":
+        label, val, prev = (r + ["", "", ""])[:3]
+        if not str(val).startswith("=") and str(prev).startswith("="):
+            refill.append(i)        # last week's total was typed over — take the formula from the week before
+            keep.append(label)
+        elif str(val).startswith("=") or label in p["carry"] or val == "":
             keep.append(label or f"row {i}")
         else:
             clear.append(i)
     print(f"{who}: new column B = {hdr!r} (last week was {rows[0][1]!r})")
     print(f"  keep (formula / carried): {', '.join(k for k in keep if not k.startswith('row'))}")
     print(f"  cleared for new numbers: {', '.join(rows[i - 1][0] for i in clear)}")
+    for i in refill:
+        print(f"  NOTE {rows[i - 1][0]}: last week's cell is a typed number, not a formula — new column uses the formula")
     if dry:
         return
     g, n = p["gid"], p["last_row"]
@@ -152,6 +157,11 @@ def add(who: str, we: dt.date, dry: bool) -> None:
         {"copyPaste": {"source": {"sheetId": g, "startRowIndex": 0, "endRowIndex": n, "startColumnIndex": 2, "endColumnIndex": 3},
                        "destination": {"sheetId": g, "startRowIndex": 0, "endRowIndex": n, "startColumnIndex": 1, "endColumnIndex": 2},
                        "pasteType": "PASTE_NORMAL"}},
+    ] + [
+        {"copyPaste": {"source": {"sheetId": g, "startRowIndex": i - 1, "endRowIndex": i, "startColumnIndex": 3, "endColumnIndex": 4},
+                       "destination": {"sheetId": g, "startRowIndex": i - 1, "endRowIndex": i, "startColumnIndex": 1, "endColumnIndex": 2},
+                       "pasteType": "PASTE_FORMULA"}}
+        for i in refill
     ]
     s.batchUpdate(spreadsheetId=p["sheet"], body={"requests": reqs}).execute()
     data = [{"range": f"'{TAB}'!B1", "values": [[hdr]]}] + [{"range": f"'{TAB}'!B{i}", "values": [[""]]} for i in clear]
