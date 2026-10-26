@@ -322,6 +322,24 @@ def harvest(day: dt.date, office: str = OFFICE_ID) -> List[dict]:
     return cands
 
 
+def _harvest_with_retry(day: dt.date, office_id: str) -> List[dict]:
+    """harvest, once more after a minute if an AppStream page timed out.
+    10/26 5pm: Retention Details (p=701) missed its 30s load once, Raf's run
+    died before writing or posting, and Omar's run three minutes later on the
+    same console loaded fine. A slow page is worth one retry; anything else
+    (or a second timeout) still fails the run and raises the alert."""
+    try:
+        return harvest(day, office_id)
+    except Exception as e:  # noqa: BLE001
+        if "Timeout" not in type(e).__name__:
+            raise
+        log(f"  !! AppStream page timed out ({e.__class__.__name__}) — "
+            "retrying once in 60s")
+        import time
+        time.sleep(60)
+        return harvest(day, office_id)
+
+
 def _find_earlier_interviews(app, day, wanted, ensure_week, pick_sunday,
                              date_header_for, roster_label, n_cols,
                              lookback: int = 7) -> Dict[str, tuple]:
@@ -620,13 +638,15 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
     missing = [n for n in L.hires_by_leader(rows) if L._norm(n) not in ids]
     tag = L.tag_text(rows, ids, helpers=list(office.tag_helpers.values()))
     replies = [L.CONGRATS_ASK, L.CONGRATS_HOW, L.CONGRATS_TEXT]
-    # Another office posting outside its own channel (the shared test channel,
-    # where Raf's thread for the same day also lands): name the owner in the
-    # parent, and don't go looking for a recruiter's post there — Raf's
-    # 'Daily Update M/D' would match and Omar's tags would land in Raf's
-    # thread. Raf's own posts are unchanged.
-    away = office.key != "raf" and channel != office.channel
-    parent = L.parent_text(day) + (f" \u2014 {office.owner}" if away else "")
+    # Posting outside the office's own channel (the shared test channel,
+    # where every office's thread for the day lands): don't go looking for a
+    # recruiter's post there — recruiters only post in their own channel, and
+    # another office's 'Daily Update M/D' would match (10/26: Raf's rerun
+    # would have put his tags in Omar's thread). Other offices also name the
+    # owner in the parent; Raf's parent wording is unchanged.
+    away = channel != office.channel
+    parent = L.parent_text(day) + (
+        f" \u2014 {office.owner}" if away and office.key != "raf" else "")
     # Posted-today marker per channel for other offices, so a test post never
     # blocks the first post in their own channel.
     mark = day.isoformat() if office.key == "raf" else f"{day.isoformat()}@{channel}"
@@ -725,7 +745,7 @@ def main(argv=None) -> int:
         return 0
 
     cands = (seed_from_real(day, office.sheet, office.tab) if args.seed_from_real
-             else harvest(day, office.office_id))
+             else _harvest_with_retry(day, office.office_id))
     rows = L.build_rows(cands)
     log(f"  {L.summary_line(rows)}")
     for r in rows:
