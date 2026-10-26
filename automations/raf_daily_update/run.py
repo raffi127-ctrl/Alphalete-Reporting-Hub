@@ -620,8 +620,18 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
     missing = [n for n in L.hires_by_leader(rows) if L._norm(n) not in ids]
     tag = L.tag_text(rows, ids, helpers=list(office.tag_helpers.values()))
     replies = [L.CONGRATS_ASK, L.CONGRATS_HOW, L.CONGRATS_TEXT]
+    # Another office posting outside its own channel (the shared test channel,
+    # where Raf's thread for the same day also lands): name the owner in the
+    # parent, and don't go looking for a recruiter's post there — Raf's
+    # 'Daily Update M/D' would match and Omar's tags would land in Raf's
+    # thread. Raf's own posts are unchanged.
+    away = office.key != "raf" and channel != office.channel
+    parent = L.parent_text(day) + (f" \u2014 {office.owner}" if away else "")
+    # Posted-today marker per channel for other offices, so a test post never
+    # blocks the first post in their own channel.
+    mark = day.isoformat() if office.key == "raf" else f"{day.isoformat()}@{channel}"
     log(f"  slack -> {channel}" + ("" if live else "  (dry-run, not sent)"))
-    log(f"    parent: {L.parent_text(day)}")
+    log(f"    parent: {parent}")
     for t in replies:
         log(f"    reply : {t}")
     log(f"    image : {image}")
@@ -629,11 +639,11 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
         log(f"    tags  : {line}")
     if not live:
         return
-    if st.get("posted", {}).get(day.isoformat()):
-        log(f"  already posted {day} (thread {st['posted'][day.isoformat()]})"
+    if st.get("posted", {}).get(mark):
+        log(f"  already posted {day} (thread {st['posted'][mark]})"
             " — not posting again")
         return
-    theirs = _existing_parent(client, channel, day)
+    theirs = "" if away else _existing_parent(client, channel, day)
     if theirs:
         # A recruiter beat us to it: don't post a second Daily Update — add
         # only the leader tags (the part they don't post) to THEIR thread.
@@ -641,14 +651,13 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
             f"({theirs}) — adding only the tags to their thread")
         ts = theirs
     else:
-        ts = client.chat_postMessage(channel=channel,
-                                     text=L.parent_text(day))["ts"]
+        ts = client.chat_postMessage(channel=channel, text=parent)["ts"]
         for t in replies:
             client.chat_postMessage(channel=channel, thread_ts=ts, text=t)
         smp.post_reply_with_image(image, comment="", thread_ts=ts,
                                   channel_id=channel, today=day, mirror=False,
                                   wait_visible=True)
-    st.setdefault("posted", {})[day.isoformat()] = ts
+    st.setdefault("posted", {})[mark] = ts
     _save_state(st, spath)
     if tag:
         ask_ts = client.chat_postMessage(channel=channel, thread_ts=ts,
@@ -697,8 +706,8 @@ def main(argv=None) -> int:
     sheet = office.test_sheet if args.test_sheet else office.sheet
     channel = args.channel or office.channel
     if args.write and not sheet:
-        ap.error(f"no {'test ' if args.test_sheet else ''}Daily Update sheet "
-                 f"for office {office.key} yet — add its link in offices.py")
+        ap.error(f"office {office.key} has no {'test ' if args.test_sheet else ''}"
+                 "sheet in offices.py — it is Slack post only (or add its link)")
     if args.post and not channel:
         ap.error(f"no Slack channel for office {office.key} yet — add it in "
                  "offices.py or pass --channel")
@@ -731,7 +740,7 @@ def main(argv=None) -> int:
         write_sheet(rows, day, args.write, sheet, test=args.test_sheet,
                     tab=office.tab)
     else:
-        log(f"  no Daily Update sheet for office {office.key} yet — sheet step skipped")
+        log(f"  office {office.key} has no sheet here — Slack post only")
 
     from automations.raf_daily_update.render import render
     stem = (f"daily_update_{day.isoformat()}" if office.key == "raf"

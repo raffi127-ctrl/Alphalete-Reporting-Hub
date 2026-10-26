@@ -381,6 +381,11 @@ _HUB_CARD = {
     "owner_chat_texts_trackers": "owner-chat-texts",
     "owner_chat_texts_board": "owner-chat-texts",
     "owner_chat_texts": "owner-chat-texts",
+    # 2nd Round Daily Update Post: ONE card for every office (Megan 2026-10-26).
+    # Each office's 5pm run lands here under its own Report Name; phase_runs
+    # counts them, so the pill is green only when every office posted.
+    "raf_daily_update": "2nd-round-daily-update-post",
+    "daily_update_omar": "2nd-round-daily-update-post",
     # Colten's org board: the 7am send and the Run button's dry run are one card.
     "southshore_org_board": "southshore-org-board",
     "southshore_org_board_dry": "southshore-org-board",

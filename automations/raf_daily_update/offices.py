@@ -53,8 +53,14 @@ OFFICES: Dict[str, Office] = {
         test_sheet="1qFChT5PX2AU8Yu-0QmpZswV6zfhhi4u_72BWyiMPcZY",
         tag_helpers={"Aisha Ceron": "U083X5ZJWSH",
                      "Rafael Hidalgo": "U045Z8N0ZQC"}),
-    # Omar (24153) is NOT here: automations/omar_daily_update (Eve,
-    # 2026-10-26) fills his All In One at noon. One writer per sheet.
+    # SLACK POST ONLY (Megan 2026-10-26). His sheet is filled by
+    # automations/omar_daily_update (Eve) — one writer per sheet — so no
+    # `sheet` here: this entry only posts the Daily Update thread (picture +
+    # leader tags) in his recruiting channel.
+    "omar": Office(
+        key="omar", office_id="24153", owner="Omar Mohamad",
+        channel="C0C6HKZ63EK",   # #omars-mohammad-office-recruiting-24153-rafael-hidalgo
+        tag_helpers={"Omar Mohamad": "U0C144X8SBD"}),   # not look-alike U0A0J2T9XKL
 }
 
 

@@ -682,6 +682,83 @@ def _icd_relay_roster() -> str:
     return "\n".join(out)
 
 
+def _second_round_post_card() -> dict:
+    """ONE card for the 2nd Round Daily Update Post, every office it is on for
+    (Megan 2026-10-26: "one hub card ... and then list the offices"). The
+    office list and the pass count come from raf_daily_update/offices.py, so
+    turning an office on there is the whole card change. Each office's run
+    publishes to this card under its own Report Name; phase_runs counts
+    DISTINCT names, so the pill goes green only when every office posted."""
+    from automations.raf_daily_update import offices as _off
+    offs = list(_off.OFFICES.values())
+
+    def _line(o) -> str:
+        what = ("sheet + Slack post" if o.sheet else
+                "Slack post only — the sheet is filled by Omar Daily Update")
+        return (f"• **{o.owner}** (office {o.office_id}) — {what}; posts in "
+                f"#org-indeed-accounts while TESTING (own channel waits for the go)")
+
+    return {
+        "id": "2nd-round-daily-update-post",
+        "name": "2nd Round Daily Update Post",
+        "creator": "Megan & Claude",
+        "emoji": "\U0001F91D",
+        "color": "#1C3A63",
+        "category": "\U0001F3AF Recruiting",
+        "self_scheduled": True,
+        "description": (
+            "End of day, Lucy posts each office's 2nd round outcomes for the "
+            "day: who showed, who was BOB'd (with start date), and a tag for "
+            "every leader who hired so they text their new start. On for: "
+            + ", ".join(o.owner for o in offs) + "."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "At **5:00 PM CT, Mon–Sat**, Lucy 2 posts a **Daily Update M/D** "
+            "thread per office: the congrats ask, the pre-made text, a picture "
+            "of the day's showed rows (NO SHOWs left out), and one line per "
+            "leader who hired — tagged, so they text the new start and reply "
+            "\u201csent\u201d. A leader Lucy can't tag is named for the office's "
+            "helper to tag by hand; that tag is remembered next time. If a "
+            "recruiter already posted the day's Daily Update, Lucy only adds "
+            "the tags to THEIR thread.\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "ApplicantStream (Lucy Reports login) → pick the office → Reports → "
+            "**Retention Details New** → the day's column → the 2nd Round "
+            "roster / Showed / Offered / Brought on Board detail pages. The "
+            "BOB-call result (LM, Declined, Letting me know, Leader said no) "
+            "and the BOB date come from the **Calendar** row's Follow-Up "
+            "dropdown; the start time from the start day's \u201cFirst Day of "
+            "Training\u201d row.\n\n"
+            "OFFICES IT'S ON FOR\n"
+            + "\n".join(_line(o) for o in offs) + "\n"
+            "Add an office: one entry in `automations/raf_daily_update/"
+            "offices.py` + its line in `deploy/raf_daily_update.sh`.\n\n"
+            "SAFETY\n"
+            "Posts once a day per office and channel, never a blank board "
+            "(nobody showed = no post). Offices run one after the other on "
+            "Lucy 2's one AppStream console. A failed office posts its own "
+            "alert to **#claudecorrections-and-requests**. The pill is green "
+            "only when EVERY office posted. The **Run** button is a DRY RUN "
+            "of Raf's — it pulls and draws but posts nothing."
+        ),
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        # Registry entry WITHOUT --post: the button can never post.
+        "run_rerun_id": "raf_daily_update",
+        "daily_runs": max(1, len(offs)),
+        "phase_runs": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0, 1, 2, 3, 4, 5],   # Mon–Sat (Mon=0)
+            "time": "5:00 PM",
+            "time_label": "5:00 PM CT, Mon–Sat",
+            "estimated_minutes": 20,
+        },
+        "checklist": [],
+    }
+
+
 AUTOMATED_REPORTS = [
     # 1st to 2nd Below the Mark — the HR alert. Its own LaunchAgent
     # (com.alphalete.below-the-mark) at each office's own 11:00 AM and 6:30 PM
@@ -2835,6 +2912,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
     },
+    _second_round_post_card(),
     {
         "id": "southshore-org-board",
         "name": "Southshore Org Sales Board → SOUTHSHORE ORG text",
