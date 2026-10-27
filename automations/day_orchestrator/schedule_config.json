@@ -11271,6 +11271,25 @@
    "close_on": "exit_zero",
    "_note": "ADDED 2026-10-14 (Rafael, #l10 thread + video): 'In our A-players chat, can we get an automated message from Lucy on what the direct deposit is not counting the captainship money.' Texts the iMessage room 'Knocking Chat A-Players' Raf's DD for the week that just ended: Total $ to ICD, minus the Captain Bonus rows, = DD without captainship. Source Tableau DirectDepositICDVIEWVersion2_0 > DDDETAILORG > 'ORG DD Detail' (matches DD BY REP's Grand Total to ICD). Wed AND Thu because the DD posts Tue night: the run sends nothing while Tableau still shows last week, and a lock file (~/.config/recruiting-report/dd_no_captain_sent.json) keeps it to ONE text per DD week. More owners = OWNERS in run.py."
   },
+  "owner_pnl_dd_probe": {
+   "on_scheduler": false,
+   "display_name": "Owner PNL — DD by rep probe (read-only)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:dd_detail"
+   ],
+   "command": [
+    "automations.owner_pnl.probe_dd"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "timeout_minutes": 20,
+   "verify": null,
+   "close_on": "exit_zero",
+   "_note": "ADDED 2026-10-27 (Eve, Jairo Ruiz PNL request + Carlos Loom). READ-ONLY: downloads ORG DD Detail and prints Total $ to ICD per rep for the owner's newest DD weeks (default Jairo Ruiz; --owner to change). Writes nothing, sends nothing. Build probe for automations/owner_pnl."
+  },
   "dd_populate_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "DRY probe of the populate \u2014 prints every cell it WOULD change against the tab and writes NOTHING. Exists because dd_populate carries --write in its base_args, so `lucy rerun dd_populate --source X` is still a live write; there was no way to ask for a rehearsal (learned the hard way 2026-08-10, when a source swap overwrote the whole 8.2.26 column with 7.26.26 money). Default source here is PROGRAM SUMMARY / DOWNLINE, the view Eve builds Org. Bulletin.xlsx from: run this and compare the deltas against her file. Delta ~0 across the 37 owners = the week anchor is right, and only then flip the default in dd_search.accumulate/accumulate_all back to 'program-summary'. Pass `--source dd-detail` to rehearse the current live source instead. LUCY 1.",
