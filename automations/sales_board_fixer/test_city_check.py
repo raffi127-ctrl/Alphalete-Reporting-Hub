@@ -64,3 +64,27 @@ def test_dm_lists_only_reps_still_blank():
     assert "2 reps" in text and "Samajai Hoy (Wk 2)" in text
     assert "- Geovany Torres (no signed Blue Ink packet)" in text
     assert CC.dm_text("Sales Board WE 10.25", [], {}) == ""
+
+
+def test_near_name_finds_ortensia_but_not_a_different_martinez():
+    # WE 11.1: board 'Ortencia', paperwork 'Ortensia'
+    from automations.apex_new_starts import blueink_data as BID
+    assert BID.near_key("Ortencia Denice Martinez", "Ortensia Martinez")
+    assert BID.near_key("Ortencia Denice Martinez", "Denice Martinez")
+    assert BID.near_key("Samajai Hoy (Wk 2)", "Samajay Hoy")
+    assert not BID.near_key("Ortencia Denice Martinez", "Jazmine Martinez")
+    assert not BID.near_key("Ortencia Denice Martinez", "Ortensia Moreno")
+
+
+def test_near_search_needs_exactly_one_close_person(monkeypatch):
+    from automations.apex_new_starts import blueink_data as BID
+
+    def bundle(i, name):
+        return {"id": i, "status": "co", "packets": [{"status": "co", "name": name}]}
+
+    hits = [bundle(1, "Jazmine Martinez"), bundle(2, "Ortensia Martinez")]
+    monkeypatch.setattr(BID, "search_bundles", lambda term, limit=20: hits)
+    assert BID._search_for("Ortencia Denice Martinez") is None      # exact only
+    assert BID._search_for("Ortencia Denice Martinez", near=True)["id"] == 2
+    hits.append(bundle(3, "Ortenzia Martinez"))
+    assert BID._search_for("Ortencia Denice Martinez", near=True) is None

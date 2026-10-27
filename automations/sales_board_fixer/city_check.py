@@ -134,7 +134,8 @@ def blueink_cities(names: List[str]) -> Dict[str, Dict[str, str]]:
     '(Wk 3)' / '(NC)' come off before matching; Blue Ink has the bare name."""
     from automations.apex_new_starts import blueink_data as BID
     bare = {n: base_name(n).strip() for n in names}
-    found = BID.for_people(sorted(set(bare.values())))
+    # near: 'Ortencia' on the board signed as 'Ortensia' (WE 11.1)
+    found = BID.for_people(sorted(set(bare.values())), near=True)
     out = {}
     for n, b in bare.items():
         hire = found.get(b)
