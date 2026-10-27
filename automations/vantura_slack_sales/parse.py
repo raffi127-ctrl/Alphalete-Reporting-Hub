@@ -118,6 +118,11 @@ _CX_EVID = r"\bcx\b|\bcx(?=\s*#?\s*\d)"
 # TOKENS, not the numbers around them (the numbers are line indexes).
 _NL_TOKEN = re.compile(r"\bnl\b|\bnl(?=\d)", re.I)
 _FIBER_TOKEN = re.compile(r"\bfiber\b", re.I)
+# AT&T Internet Air is a unit of its own (the order-log rule: units = Internet +
+# New Lines + Air). On its own line -- "AIR 3" (Yahir Lopez 2026-10-24, his 3rd
+# unit) -- it is the line item; on a line that already carries an NL it is the
+# device ("NL 1 inseego air") and the NL has counted it.
+_AIR_TOKEN = re.compile(r"\bair\b", re.I)
 _INSEEGO_TOKEN = re.compile(r"\binseego\b", re.I)
 # BYOD ("bring your own device") is a NEW LINE, exactly like an NL. Jacob Ortega
 # posted four apps on 2026-08-07 as "NL 1 / BOYD 2 / BYOD 3 / BYOD 4" and only
@@ -149,7 +154,7 @@ def count_att(text: str) -> int:
     for line in text.splitlines():
         if _NL_TOKEN.search(line) or _FIBER_TOKEN.search(line):
             continue                      # the NL/Fiber already counted it
-        if _INSEEGO_TOKEN.search(line) or _BYOD_TOKEN.search(line):
+        if _INSEEGO_TOKEN.search(line) or _BYOD_TOKEN.search(line) or _AIR_TOKEN.search(line):
             n += 1
     return n
 

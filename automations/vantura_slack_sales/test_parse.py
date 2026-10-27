@@ -250,6 +250,12 @@ CASES = [
     ("at&t d2d is not verizon (Rodolfo Bazan 10/7)",
      "AT&T D2D \n\nAuto pay :white_check_mark:/ <@U09PTHQJ481|Taylor Miller>"
      ":white_check_mark:\n\nAT&T\n\n\nNL 1 \n", "B2B", 1),
+    # An "AIR n" line of its own is a unit (Internet Air), like a standalone BYOD.
+    ("air line is a unit (Yahir Lopez 10/24)",
+     "AT&T D2D \n\nAuto pay :white_check_mark:\n\nAT&T\n\nCx1\n\nNL 1 \n\nNL 2 \n\nAIR 3",
+     "B2B", 3),
+    ("air on an NL line is the device, not a second unit",
+     "AT&T\n\nNL 1 inseego air\n\nNL 2", "B2B", 2),
     ("box post is still box (Joelle Barajas 10/7)",
      "B2B :package::zap:\n\nS/O The team :pink_heart::revolving_hearts:  "
      "<@U0BCBF73GRF|Nathaly Benitez>\n\nBF 4\n24 months\n35,892 kwh \nBox #1\n"
