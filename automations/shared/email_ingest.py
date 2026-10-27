@@ -111,11 +111,17 @@ def _connect() -> imaplib.IMAP4_SSL:
 
 
 def _search(M, sender: str, subject: Optional[str], since_days: int) -> List[bytes]:
-    crit = f'(FROM "{sender}"'
+    # An empty `sender` matches by subject alone — for a report that reaches the
+    # inbox FORWARDED by a person (Carlos's Verizon Wireless scorecard), so the
+    # From line is whoever forwarded it, not the original sender.
+    parts = []
+    if sender:
+        parts.append(f'FROM "{sender}"')
     if subject:
-        crit += f' SUBJECT "{subject}"'
+        parts.append(f'SUBJECT "{subject}"')
     since = (dt.date.today() - dt.timedelta(days=since_days)).strftime("%d-%b-%Y")
-    crit += f' SINCE {since})'
+    parts.append(f'SINCE {since}')
+    crit = "(" + " ".join(parts) + ")"
     typ, data = M.search(None, crit)
     return (data[0] or b"").split()
 

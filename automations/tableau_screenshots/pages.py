@@ -158,6 +158,18 @@ PAGES = [
         "source": "email",
     },
     {
+        # EMAIL-SOURCED: Credico's "Verizon Wireless - Daily Sales Scorecard
+        # (SCI) - Wireless Only" PDF (Carlos 2026-10-27) — wireless-only offices,
+        # which VZ+FTR above doesn't cover (Nico Murrugarra, Helen Assefaw, Joshua
+        # Ghorbani). Arrives ~9:31am via Carlos's forward, so like vzftr the
+        # morning post shows the PRIOR day's edition (sales through two days ago).
+        "id": "vzw_wireless",
+        "title": "Verizon Wireless Daily Scorecard (SCI)",
+        "emoji": "\U0001F4F1",                     # iphone
+        "react": "iphone",
+        "source": "email",
+    },
+    {
         # OPT-IN ONLY: posts ONLY to channels that name it in
         # slack_post.ORG_TRACKERS (today just #domin8-b2b-sales). It's still
         # captured with the rest each morning — `opt_in_only` gates POSTING, not

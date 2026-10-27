@@ -285,7 +285,7 @@ def _gate_email_sources(selected: list) -> tuple:
             continue
         from automations.tableau_screenshots import email_tracker as et
         try:
-            ready, detail = et.source_ready()
+            ready, detail = et.source_ready(spec["id"])
         except Exception as e:                        # noqa: BLE001 — fail open
             ready, detail = True, f"probe error ({type(e).__name__})"
         if ready:

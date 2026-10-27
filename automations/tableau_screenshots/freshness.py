@@ -49,6 +49,7 @@ such sheet; nothing uses it today.
 NOT GATED, on purpose:
   b2b_box        already gated — `tableau:box_daily` on the ~7am catch-up.
   vzftr          email-sourced (an .xlsx), gated by run.py's _gate_email_sources.
+  vzw_wireless   email-sourced (a .pdf), same gate.
 
 Run `--discover <board_id>` to list a view's real crosstab sheet names before
 assuming a board can't be gated — that is how all four above were found.
@@ -225,6 +226,7 @@ EXTRACTS = {
 UNGATED = {
     "b2b_box": "already gated by tableau:box_daily on the ~7am catch-up",
     "vzftr": "email-sourced .xlsx — gated by run.py's _gate_email_sources",
+    "vzw_wireless": "email-sourced .pdf — gated by run.py's _gate_email_sources",
 }
 
 
