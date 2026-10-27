@@ -15468,7 +15468,7 @@
   "atef_metrics": {
    "order": 26.8,
    "machine": "Lucy 4",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Atef's Daily Metrics (peakmanagement-att-sales)",
    "source_type": "tableau",
    "data_sources": [
@@ -15501,7 +15501,7 @@
     "type": "manifest",
     "report_id": "frank_metrics"
    },
-   "_note": "Office metrics for atef -> #domin8-nds-sales (C0B395PUUCW). Wired by hand 2026-10-27; NDS office (5 boards). OFF until the Lucy 4 dry run shows data on every board; his b2b_metrics thread stops (HELD_FROM_ALL) when this goes on.",
+   "_note": "Office metrics for atef -> #domin8-nds-sales (C0B395PUUCW). Wired by hand 2026-10-27; NDS office (5 boards). SWITCHED ON 2026-10-27 after the Lucy 4 dry run (rerun-2026-10-27-100243): 386 wireless order rows, order log 193 rows, rep activations + activation rate rendered; churn had 0 sections (Tableau churn crosstab lags his NDS move) and the churn runner skips empty sections rather than posting blank. His b2b_metrics thread is held (HELD_FROM_ALL) from the same day.",
    "_onboarded": true
   }
  },
