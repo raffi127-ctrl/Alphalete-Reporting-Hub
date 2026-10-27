@@ -1272,7 +1272,23 @@ def build_pct_on_board(cols, crew, today, log=print) -> Path:
         OUT_DIR / f"nds_pct_on_board_{today.isoformat()}.png", log=log)
 
 
+def build_day_board(cols, crew, today, log=print) -> Path:
+    """Yesterday's board cut (Carlos 2026-10-28) — see board_shots."""
+    from automations.nds_metrics import board_shots
+    return board_shots.render(today, OUT_DIR, log=log)["day"]
+
+
+def build_week_board(cols, crew, today, log=print) -> Path:
+    """Week-to-date board cut (Carlos 2026-10-28) — see board_shots."""
+    from automations.nds_metrics import board_shots
+    return board_shots.render(today, OUT_DIR, log=log)["week"]
+
+
 SECTIONS = [
+    ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
+     build_day_board),
+    ("week_board", "\U0001F4C5", "NDS Sales Board — Week to Date",
+     build_week_board),
     ("revenue_board", "\U0001F4B0", "NDS Revenue Board",
      build_revenue_board),
     # Carlos 2026-10-24: the Sales Board tab's "% on the Board" block, every
