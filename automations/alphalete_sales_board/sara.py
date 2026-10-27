@@ -79,15 +79,16 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
                 _run_report(page, base, day, "AT&T Internet", GRID_INTERNET, log=log))
             log("AT&T Internet pass: records for %d reps" % len(records))
 
-            # Tablets and watches are not sales (Megan 2026-10-26); only the
-            # Wireless grid says which lines were which. A failed pass leaves
+            # Lines off the Wireless grid: tablets, watches and wireless
+            # upgrades are not sales (Megan 2026-10-26, Raf 2026-10-27), and
+            # only this grid says which lines were which. A failed pass leaves
             # the line counts as read rather than losing the sweep.
             lines = None
             try:
                 w_rows = _run_report(page, base, day, _sp.SERVICE_WIRELESS,
                                      _sp.GRID_WIRELESS, log=log)
                 lines = _sp.parse_lines(_sp.grid_headers(page, _sp.GRID_WIRELESS), w_rows)
-                log("Wireless pass: devices for %d reps" % len(lines or {})
+                log("Wireless pass: lines for %d reps" % len(lines or {})
                     if lines is not None else
                     "Wireless grid has no Tablets/Wearables labels -- NL left as read")
             except Exception as e:  # noqa: BLE001 — the sales still stand
@@ -95,7 +96,7 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
         finally:
             ctx.close()
 
-    return {"agents": _sp.drop_devices(merge_dtv(att, dtv), lines),
+    return {"agents": _sp.lines_sold(merge_dtv(att, dtv), lines),
             "records": records, "day": day}
 
 

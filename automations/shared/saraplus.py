@@ -832,16 +832,20 @@ def merge_dtv(agents: List[Dict], dtv: Dict[str, int]) -> List[Dict]:
     return agents
 
 
-def drop_devices(agents: List[Dict], lines: Optional[Dict[str, Dict[str, int]]]) -> List[Dict]:
-    """Take tablets and watches out of each rep's wireless lines (Megan
-    2026-10-26: no scorecard counts watches or tablets as sales). `lines` is
-    parse_lines() off the Wireless grid; None (not read) leaves every count as
-    the AT&T grid had it."""
+def lines_sold(agents: List[Dict], lines: Optional[Dict[str, Dict[str, int]]]) -> List[Dict]:
+    """Each rep's wireless lines off the Wireless grid: New + Port - Tablets -
+    Wearables. Tablets and watches are not sales (Megan 2026-10-26), and
+    neither is a wireless upgrade (Raf 2026-10-27) -- an INTERNET upgrade
+    still is, and stays in internet_upgrades. `lines` is parse_lines(); None
+    (not read) leaves every count as the AT&T grid had it, and a rep missing
+    from the grid sold no lines."""
+    if lines is None:
+        return agents
     for a in agents:
-        got = (lines or {}).get(strip_office(a["name"])) or {}
-        devices = int(got.get("Tablets", 0)) + int(got.get("Wearables", 0))
-        if devices:
-            a["wireless_lines_sold"] = max(int(a.get("wireless_lines_sold", 0) or 0) - devices, 0)
+        got = lines.get(strip_office(a["name"])) or {}
+        a["wireless_lines_sold"] = max(
+            int(got.get("New Lines", 0)) + int(got.get("Port Lines", 0))
+            - int(got.get("Tablets", 0)) - int(got.get("Wearables", 0)), 0)
     return agents
 
 

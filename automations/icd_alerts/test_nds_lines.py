@@ -76,33 +76,41 @@ class NdsLinesTests(unittest.TestCase):
         self.assertEqual(out["BILL HIRWA"]["NL"], 0)
         self.assertEqual(out["BILL HIRWA"]["Air"], 1)
 
-    def test_not_read_or_not_nds_is_untouched(self):
+    def test_not_read_is_untouched(self):
         sales = {"JACOB SMITH": {"NL": 11}}
         self.assertEqual(R._nds_lines(sales, None, NDS), sales)
         att = {"office_key": "kash", "campaign": "att"}
-        self.assertEqual(R._nds_lines(sales, {"JACOB SMITH": {"Port Lines": 7}}, att), sales)
         self.assertEqual(R._nds_lines(sales, None, att), sales)
 
-    def test_every_att_office_drops_tablets_and_watches(self):
-        """Megan 2026-10-26: no scorecard counts watches or tablets. Upgrades
-        stay in NL off a plain AT&T office -- only the devices come out."""
+    def test_every_att_office_counts_new_and_port_only(self):
+        """Megan 2026-10-26: no watches or tablets. Raf 2026-10-27: a
+        wireless upgrade is not a sale, an internet upgrade is -- so the
+        upgrade LINES are dropped and Int Up (internet) is left alone."""
         att = {"office_key": "kash", "campaign": "att"}
-        sales = {"JACOB SMITH": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 6},
-                 "ANA GRIFFIN": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 2}}
-        lines = self.lines(row("JACOB SMITH", 6, 3, 1, 2, 0, 3, 1, 2))
+        sales = {"JACOB SMITH": {"Int": 1, "Int Up": 1, "DTV": 0, "NL": 9},
+                 "ANA GRIFFIN": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 2}}
+        # 9 lines: 5 new + 2 port + 2 upgrade; 1 tablet + 1 watch among them
+        lines = self.lines(row("JACOB SMITH", 9, 5, 2, 2, 0, 7, 1, 1))
         out = R._nds_lines(sales, lines, att)
-        self.assertEqual(out["JACOB SMITH"]["NL"], 3)
+        self.assertEqual(out["JACOB SMITH"]["NL"], 5)
+        self.assertEqual(out["JACOB SMITH"]["Int Up"], 1)
         self.assertEqual(out["JACOB SMITH"]["Int"], 1)
-        self.assertEqual(out["ANA GRIFFIN"]["NL"], 2)
-        self.assertEqual(sales["JACOB SMITH"]["NL"], 6)   # input not mutated
+        self.assertEqual(out["ANA GRIFFIN"]["NL"], 0)      # no wireless lines
+        self.assertEqual(out["ANA GRIFFIN"]["Int"], 1)
+        self.assertEqual(sales["JACOB SMITH"]["NL"], 9)    # input not mutated
 
-    def test_raf_sweep_drops_tablets_and_watches(self):
-        agents = [{"name": "JACOB SMITH", "wireless_lines_sold": 6},
+    def test_b2b_upgrade_lines_are_not_a_sale(self):
+        b2b = {"office_key": "carlos-b2batt", "campaign": "b2b_att"}
+        sales = {"RODOLFO BAZAN": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 2, "Air": 0}}
+        out = R._nds_lines(sales, self.lines(row("RODOLFO BAZAN", 2, 0, 1, 1, 0, 2, 0, 0)), b2b)
+        self.assertEqual((out["RODOLFO BAZAN"]["NL"], out["RODOLFO BAZAN"]["Int Up"]), (1, 0))
+
+    def test_raf_sweep_counts_new_and_port_only(self):
+        agents = [{"name": "JACOB SMITH", "wireless_lines_sold": 9},
                   {"name": "ANA GRIFFIN", "wireless_lines_sold": 2}]
-        lines = self.lines(row("JACOB SMITH", 6, 3, 1, 2, 0, 3, 1, 2))
-        S.drop_devices(agents, lines)
-        self.assertEqual([a["wireless_lines_sold"] for a in agents], [3, 2])
-        self.assertEqual(S.drop_devices([{"name": "X", "wireless_lines_sold": 4}], None)[0]
+        S.lines_sold(agents, self.lines(row("JACOB SMITH", 9, 5, 2, 2, 0, 7, 1, 1)))
+        self.assertEqual([a["wireless_lines_sold"] for a in agents], [5, 0])
+        self.assertEqual(S.lines_sold([{"name": "X", "wireless_lines_sold": 4}], None)[0]
                          ["wireless_lines_sold"], 4)
 
     def test_payload_carries_it(self):
@@ -146,9 +154,11 @@ class B2bAttLinesTests(unittest.TestCase):
             row("RODOLFO BAZAN", 2, 0, 1, 1, 1, 2, 0, 0))
         return R._nds_lines(sales, lines, B2B)
 
-    def test_upgrade_line_is_an_upgrade(self):
+    def test_upgrade_line_is_not_a_sale(self):
+        # Raf 2026-10-27: a wireless upgrade is not a sale. It was moved into
+        # Int Up here until then, which made it one.
         self.assertEqual(self.day()["RODOLFO BAZAN"]["NL"], 1)
-        self.assertEqual(self.day()["RODOLFO BAZAN"]["Int Up"], 1)
+        self.assertEqual(self.day()["RODOLFO BAZAN"]["Int Up"], 0)
 
     def test_air_is_internet_not_an_upgrade(self):
         jorge = self.day()["JORGE JOSE HERNANDEZ MOLINA"]
@@ -157,8 +167,8 @@ class B2bAttLinesTests(unittest.TestCase):
     def test_the_text(self):
         board = P.scoreboard_text(self.day(), [], "b2b_att")
         self.assertIn("Jorge Jose Hernandez Molina 6 (1 Int, 5 NL)", board)
-        self.assertIn("Rodolfo Bazan 2 (1 Up, 1 NL)", board)
-        for word in ("INT: 1", "Upgrades: 1", "NL's: 12", "TOTALS: 14"):
+        self.assertIn("Rodolfo Bazan 1 (1 NL)", board)
+        for word in ("INT: 1", "Upgrades: 0", "NL's: 12", "TOTALS: 13"):
             self.assertIn(word, board)
 
     def test_air_moves_even_when_the_wireless_pass_failed(self):

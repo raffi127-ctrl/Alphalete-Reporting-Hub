@@ -71,31 +71,36 @@ def _with_credit(sales: Dict, credit: Optional[Dict], rec: Optional[Dict]) -> Di
 
 
 def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
-    """NDS lines off the Wireless grid instead of SaraPlus's line count
-    (Carlos 2026-10-22: "Jacob at 11 lines. Seven of those are ported, four
-    of those are upgrade lines" ... tablets and wearables "shouldn't be
-    counted as the sales that we made, at least for NDS").
+    """Every SaraPlus office's lines off the Wireless grid, not SaraPlus's
+    line count. NDS first (Carlos 2026-10-22: "Jacob at 11 lines. Seven of
+    those are ported, four of those are upgrade lines" ... tablets and
+    wearables "shouldn't be counted as the sales that we made"), then every
+    AT&T office (Megan 2026-10-26: no scorecard counts watches or tablets;
+    Raf 2026-10-27: "Att wireless upgrade does not count as a sale. Att fiber
+    internet upgrade does count as a sale").
 
         NL     = New Lines + Port Lines - Tablets - Wearables
-        Int Up += Upgrade Lines   (the board's Upgrades section, outside TOTALS)
+        NDS:   Int Up += Upgrade Lines   (its board's Upgrades section,
+                                          outside TOTALS -- _Nds.total)
+        else:  Upgrade Lines are dropped. "Int Up" there is INTERNET
+               upgrades, which do count, so a wireless upgrade put in it
+               would be counted as a sale.
 
     Line Count is New + Port + Upgrade, and Phones + Tablets + Wearables is the
     same lines split by device, so taking the devices off New + Port assumes a
     tablet or watch is never an upgrade. A rep missing from the grid sold no
     lines. None (not read) leaves the AT&T grid's count as it was.
 
-    B2B AT&T TOO (Sebastian Avellaneda 2026-10-23), plus one more move: an
-    Internet Air is an INTERNET sale there, not an upgrade -- Jorge Hernandez's
-    "1 Up" on the A Players text was an Air. So off the B2B AT&T board Air
-    leaves Int Up for Int. NDS keeps Air inside Int Up: its board shows Air
-    as its own section and takes it back out (post._nds_scoreboard).
+    B2B AT&T, one more move (Sebastian Avellaneda 2026-10-23): an Internet Air
+    is an INTERNET sale there, not an upgrade -- Jorge Hernandez's "1 Up" on
+    the A Players text was an Air. So off the B2B AT&T board Air leaves Int Up
+    for Int. NDS keeps Air inside Int Up: its board shows Air as its own
+    section and takes it back out (post._nds_scoreboard).
     """
     from automations.icd_alerts import config as C
-    if not C.wireless_lines_wanted(rec):
-        return _drop_devices(sales, lines)
     nds = str((rec or {}).get("campaign") or "").strip().lower() == "nds"
     out = {k: dict(v) for k, v in (sales or {}).items()}
-    if not nds:
+    if C.wireless_lines_wanted(rec) and not nds:
         # Even on a sweep whose Wireless pass failed: Air comes off the AT&T
         # grid, not this one.
         for row in out.values():
@@ -109,24 +114,8 @@ def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
         row = out.setdefault(str(rep), {m: 0 for m in _sale_metrics(rec)})
         row["NL"] = max(int(got.get("New Lines", 0)) + int(got.get("Port Lines", 0))
                         - int(got.get("Tablets", 0)) - int(got.get("Wearables", 0)), 0)
-        row["Int Up"] = int(row.get("Int Up", 0) or 0) + int(got.get("Upgrade Lines", 0))
-    return out
-
-
-def _drop_devices(sales: Dict, lines: Optional[Dict]) -> Dict:
-    """Every other AT&T office: NL less its tablets and watches (Megan
-    2026-10-26, "for the sales counting on all the text scorecards we DO NOT
-    want to count watches ... or tablets"). Upgrades stay where they were --
-    only NDS and B2B AT&T moved those. None (Wireless not read) leaves NL as
-    read; a rep with no devices is untouched."""
-    if not lines:
-        return sales
-    out = {k: dict(v) for k, v in (sales or {}).items()}
-    for rep, row in out.items():
-        got = lines.get(str(rep).strip().upper()) or {}
-        devices = int(got.get("Tablets", 0)) + int(got.get("Wearables", 0))
-        if devices and "NL" in row:
-            row["NL"] = max(int(row.get("NL", 0) or 0) - devices, 0)
+        if nds:
+            row["Int Up"] = int(row.get("Int Up", 0) or 0) + int(got.get("Upgrade Lines", 0))
     return out
 
 
