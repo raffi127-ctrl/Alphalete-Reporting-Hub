@@ -1,5 +1,9 @@
-"""Customers Carlos's reps sold under RAF'S SaraPlus code -> the same
-contacts-and-wrap-up-text pipeline.
+"""Customers for the contacts-and-wrap-up-text pipeline.
+
+SINCE 2026-10-27 (Carlos: "instead of rafs sara plus can you start using my
+nds sara plus"): sourced from the NDS merged SaraPlus pull (alphaletegp +
+b2batt dealers, nds_metrics' cache), crew-filtered, from 2026-10-20 on. The
+Raf-era notes below are history: the envelope path is retired.
 
 Carlos 2026-10-08: "My guys started selling under Rafael's code last Tuesday
 [2026-09-29], so go ahead and check everything as of last Tuesday. Let us
@@ -24,7 +28,6 @@ visibility we want, not a silent drop here.
 """
 from __future__ import annotations
 
-import base64
 import csv
 import datetime as dt
 import io
@@ -92,28 +95,43 @@ def guest_customers(since: dt.date, until: dt.date,
     exactly like sara.scrape()'s rows (day = the ORDER date, so the state
     key and the Slack grouping date the customer by their sale).
 
-    Raises when the envelope is missing or stale — for the DAILY run the
-    caller wraps this (a lost Lucy 1 pull must not sink Carlos's own
-    customers), for the backfill a loud failure IS the right answer."""
-    from automations.sp_order_log import raf_guest
+    SOURCE SWITCH (Carlos 2026-10-27: "instead of rafs sara plus can you
+    start using my nds sara plus"): rows now come from the NDS merged
+    SaraPlus pull (alphaletegp + b2batt, nds_metrics' daily cache — a fresh
+    pull when today's cache is missing), filtered to the crew (roster +
+    Carlos) from the NDS start, 2026-10-20. Raf's envelope is retired here.
 
-    env = raf_guest.fetch(log=log)
-    if not env:
+    Raises when the pull is unavailable — for the DAILY run the caller
+    wraps this, for the backfill a loud failure IS the right answer."""
+    from automations.nds_metrics import run as NM
+    from automations.total_knocks import guests as gst
+
+    cache = NM.OUT_DIR / ("nds_soh_%s.csv" % dt.date.today().isoformat())
+    if not cache.exists():
+        NM.load_soh(log=log)       # writes the cache; its crew/trust-floor
+        # verdict is nds_metrics' concern, not ours — we re-read the raw rows
+    if not cache.exists():
         raise RuntimeError(
-            "no Raf guest pull on the control sheet (tab %r) — run "
-            "`lucy rerun raf_guest_orders --machine \"Lucy 1\"` first"
-            % raf_guest.TAB)
-    age = raf_guest._age_hours(env)
-    if age is None or age > raf_guest.MAX_AGE_H:
-        raise RuntimeError(
-            "the Raf guest pull is STALE (%s, %sh old) — re-run "
-            "raf_guest_orders on Lucy 1 before trusting it"
-            % (env.get("pulled"), "?" if age is None else round(age, 1)))
-    data = base64.b64decode(env.get("csv", "") or "")
+            "no NDS SaraPlus pull today and the fresh pull failed — "
+            "see the nds_metrics log")
+    data = cache.read_bytes()
+    pulled = dt.datetime.fromtimestamp(
+        cache.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
     reader = csv.DictReader(io.StringIO(
         data.decode("utf-8-sig", errors="replace")))
     rows = list(reader)
     cols = _header_map(list(reader.fieldnames or []), log=log)
+
+    crew_names = (gst.roster("Rafael Hidalgo", "Carlos Hidalgo")
+                  + ["Carlos Hidalgo"])
+    toks = [gst._tokens(n) for n in crew_names]
+
+    def _is_crew(n):
+        t = gst._tokens(n)
+        return any(gst._subseq(ct, t) or gst._subseq(t, ct) for ct in toks)
+
+    rows = [r for r in rows if _is_crew(_norm(r.get(cols["rep"], "")))]
+    since = max(since, NM.NDS_SINCE)
 
     out: List[Dict[str, str]] = []
     skipped_dates = 0
@@ -138,15 +156,17 @@ def guest_customers(since: dt.date, until: dt.date,
             # the texted() widening (Carlos 2026-10-08: reps don't always
             # use the primary number): every other number the pull knows
             # for this customer, and the order's own long digit strings.
-            "alt_phones": list((env.get("phones") or {}).get(oid, [])),
+            # the Raf envelope carried harvested alt numbers; the NDS pull
+            # has only the order's own phone column.
+            "alt_phones": [],
             "wireless_order": _norm(r.get("Wireless Order #", "")),
             "ban": _norm(r.get("Wireless Acct #", "")),
         })
     if skipped_dates:
         log("guest rows: %d row(s) had an unreadable Order Date — left out"
             % skipped_dates)
-    log("guest rows (Raf's code): %d order(s) %s..%s, pull from %s"
-        % (len(out), since, until, env.get("pulled")))
+    log("crew rows (NDS SaraPlus): %d order(s) %s..%s, pull from %s"
+        % (len(out), since, until, pulled))
     for c in out:
         log("  %-10s %-14s %-26s %-24s %s"
             % (c["day"], c["order_id"], (c["business"] or "(no business)")[:26],
