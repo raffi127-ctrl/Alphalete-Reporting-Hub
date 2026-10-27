@@ -180,8 +180,8 @@ class Board:
         self.campaigns = {}
         while r <= len(grid):
             name = self.cell(r, self.c_name)
-            if not name or name.upper() == "TOTAL":
-                break
+            if not name or name.upper() in ("TOTAL", "LAST WEEK"):
+                break      # 'Last Week' (10/27) is a formula row, never a 'Last Wk' target
             row = self.read_row(r)
             self.campaigns[campaign or row["campaign"] or name] = row
             r += 1

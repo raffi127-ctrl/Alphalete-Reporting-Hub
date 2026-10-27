@@ -696,7 +696,7 @@ def rewind_writes(grid, snap, tab: str = "") -> tuple:
     by_name = {}
     for r in range(hdr_row + 1, len(grid) + 1):
         name = cell(r, c_name)
-        if name.upper() == "TOTAL":
+        if name.upper() in ("TOTAL", "LAST WEEK"):
             break            # the stats block below repeats campaign names
         if name:
             by_name.setdefault(name, r)

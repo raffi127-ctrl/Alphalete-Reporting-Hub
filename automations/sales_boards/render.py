@@ -59,6 +59,9 @@ FIRST_DAY_COL, LAST_DAY_COL = 5, 11    # cols E..K
 # "BOX" / "Verizon" on the others.
 TOTALS_TOPS = tuple(sorted(STAT_LABELS - {"total"}))
 TOTALS_TOP, TOTALS_BOTTOM = SUBTOTAL_LABELS[MAIN_CAMPAIGN], "TOTAL"
+# 2026-10-27 (Carlos): the duplicate TOTAL row under the subtotal is now 'Last
+# Week' -- the same weekday's sales a week earlier. Either label closes the block.
+TOTALS_BOTTOMS = ("TOTAL", "LAST WEEK")
 PROGRAMS = ["B2B", "Base", "JE", "BOX", "Verizon"]
 # The col-L spellings those programs match (B2B -> NDS on the sheet). Also
 # what rep_region accepts as a rep row — before Verizon joined this list the
@@ -82,9 +85,9 @@ def totals_range(g):
         b = cell(g, r, NAME_COL).strip()
         if b.lower() in TOTALS_TOPS and top is None:
             top = r
-        if b.upper() == TOTALS_BOTTOM and top is not None:
+        if b.upper() in TOTALS_BOTTOMS and top is not None:
             return top, r
-    raise SystemExit("totals block (%s … TOTAL) not found"
+    raise SystemExit("totals block (%s … TOTAL / Last Week) not found"
                      % " / ".join(SUBTOTAL_LABELS.values()))
 
 

@@ -62,7 +62,7 @@ SUBTOTAL_LABELS = {"NDS": "AT&T NDS", "BOX": "BOX", "Verizon": "Verizon"}
 LEGACY_SUBTOTAL_LABELS = {"NDS": ("AT&T (B2B)",)}
 STAT_LABELS = ({v.lower() for v in SUBTOTAL_LABELS.values()}
                | {v.lower() for vs in LEGACY_SUBTOTAL_LABELS.values() for v in vs}
-               | {"total"})
+               | {"total", "last week"})   # 2026-10-27: the TOTAL row became 'Last Week' (last week's sales per day)
 # Belt and braces: if a board ever loses its subtotal row, the '% on the
 # Board' block is the next thing in col B and must never read as a rep.
 _END_LABELS = STAT_LABELS | {"% on the board"}
