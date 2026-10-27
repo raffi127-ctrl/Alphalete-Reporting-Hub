@@ -1018,36 +1018,36 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     "Credit checks are still working."
                     % (type(e).__name__, str(e)[:160]), log=log)
 
-            # THE FOURTH PASS, ONLY FOR OFFICES ON THE THREE ALERTS (Carlos
-            # 2026-10-22). 'Wireless' is the one grid with real credit checks
-            # in it; everybody else's sweep stays three passes long. Its
-            # failure costs only itself: None means "not read this time",
-            # which sends nothing rather than a day of zeros.
-            # NDS and B2B AT&T offices read it too, for their line counts.
+            # THE FOURTH PASS, 'Wireless'. First only for offices on the three
+            # credit alerts (Carlos 2026-10-22) -- the one grid with real
+            # credit checks -- then NDS / B2B AT&T for their line counts, and
+            # since 2026-10-26 EVERY office: it is the only grid that says
+            # which lines were tablets or watches, and those no longer count as
+            # sales on any scorecard (Megan). Its failure costs only itself:
+            # None means "not read this time" and leaves NL as the AT&T grid
+            # had it, rather than a day of zeros.
             credit = lines = None
-            if C.credit_tiers_here() or C.wireless_lines_here():
-                try:
-                    w_rows = S._run_report(page, base, day, S.SERVICE_WIRELESS,
-                                           S.GRID_WIRELESS, log=log)
-                    w_head = S.grid_headers(page, S.GRID_WIRELESS)
-                    if C.credit_tiers_here():
-                        credit = S.parse_credit(w_head, w_rows)
-                        if credit is None:
-                            log("Wireless grid has no Credit Checked / Credit "
-                                "Passed labels -- not sending credit checks")
-                        else:
-                            log("Wireless pass: credit checks for %d rep(s)"
-                                % len(credit))
-                    if C.wireless_lines_here():
-                        lines = S.parse_lines(w_head, w_rows)
-                        if lines is None:
-                            log("Wireless grid has no New/Port/Upgrade Lines, "
-                                "Tablets, Wearables labels -- NL left as read")
-                        else:
-                            log("Wireless pass: lines for %d rep(s)" % len(lines))
-                except Exception as e:  # noqa: BLE001 — the rest still stands
-                    log("Wireless pass failed (%s) — tablet + sales unaffected"
-                        % type(e).__name__)
+            try:
+                w_rows = S._run_report(page, base, day, S.SERVICE_WIRELESS,
+                                       S.GRID_WIRELESS, log=log)
+                w_head = S.grid_headers(page, S.GRID_WIRELESS)
+                if C.credit_tiers_here():
+                    credit = S.parse_credit(w_head, w_rows)
+                    if credit is None:
+                        log("Wireless grid has no Credit Checked / Credit "
+                            "Passed labels -- not sending credit checks")
+                    else:
+                        log("Wireless pass: credit checks for %d rep(s)"
+                            % len(credit))
+                lines = S.parse_lines(w_head, w_rows)
+                if lines is None:
+                    log("Wireless grid has no New/Port/Upgrade Lines, "
+                        "Tablets, Wearables labels -- NL left as read")
+                else:
+                    log("Wireless pass: lines for %d rep(s)" % len(lines))
+            except Exception as e:  # noqa: BLE001 — the rest still stands
+                log("Wireless pass failed (%s) — tablet + sales unaffected"
+                    % type(e).__name__)
 
             return {"empty_evidence": empty_evidence, "records": records,
                     "sales": sales, "credit": credit, "lines": lines}

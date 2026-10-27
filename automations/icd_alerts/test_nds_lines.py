@@ -81,6 +81,29 @@ class NdsLinesTests(unittest.TestCase):
         self.assertEqual(R._nds_lines(sales, None, NDS), sales)
         att = {"office_key": "kash", "campaign": "att"}
         self.assertEqual(R._nds_lines(sales, {"JACOB SMITH": {"Port Lines": 7}}, att), sales)
+        self.assertEqual(R._nds_lines(sales, None, att), sales)
+
+    def test_every_att_office_drops_tablets_and_watches(self):
+        """Megan 2026-10-26: no scorecard counts watches or tablets. Upgrades
+        stay in NL off a plain AT&T office -- only the devices come out."""
+        att = {"office_key": "kash", "campaign": "att"}
+        sales = {"JACOB SMITH": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 6},
+                 "ANA GRIFFIN": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 2}}
+        lines = self.lines(row("JACOB SMITH", 6, 3, 1, 2, 0, 3, 1, 2))
+        out = R._nds_lines(sales, lines, att)
+        self.assertEqual(out["JACOB SMITH"]["NL"], 3)
+        self.assertEqual(out["JACOB SMITH"]["Int"], 1)
+        self.assertEqual(out["ANA GRIFFIN"]["NL"], 2)
+        self.assertEqual(sales["JACOB SMITH"]["NL"], 6)   # input not mutated
+
+    def test_raf_sweep_drops_tablets_and_watches(self):
+        agents = [{"name": "JACOB SMITH", "wireless_lines_sold": 6},
+                  {"name": "ANA GRIFFIN", "wireless_lines_sold": 2}]
+        lines = self.lines(row("JACOB SMITH", 6, 3, 1, 2, 0, 3, 1, 2))
+        S.drop_devices(agents, lines)
+        self.assertEqual([a["wireless_lines_sold"] for a in agents], [3, 2])
+        self.assertEqual(S.drop_devices([{"name": "X", "wireless_lines_sold": 4}], None)[0]
+                         ["wireless_lines_sold"], 4)
 
     def test_payload_carries_it(self):
         lines = self.lines(row("JACOB SMITH", 11, 0, 7, 4, 0, 11, 0, 0))

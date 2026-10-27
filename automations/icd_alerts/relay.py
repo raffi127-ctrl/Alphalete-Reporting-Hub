@@ -92,7 +92,7 @@ def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
     """
     from automations.icd_alerts import config as C
     if not C.wireless_lines_wanted(rec):
-        return sales
+        return _drop_devices(sales, lines)
     nds = str((rec or {}).get("campaign") or "").strip().lower() == "nds"
     out = {k: dict(v) for k, v in (sales or {}).items()}
     if not nds:
@@ -110,6 +110,23 @@ def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
         row["NL"] = max(int(got.get("New Lines", 0)) + int(got.get("Port Lines", 0))
                         - int(got.get("Tablets", 0)) - int(got.get("Wearables", 0)), 0)
         row["Int Up"] = int(row.get("Int Up", 0) or 0) + int(got.get("Upgrade Lines", 0))
+    return out
+
+
+def _drop_devices(sales: Dict, lines: Optional[Dict]) -> Dict:
+    """Every other AT&T office: NL less its tablets and watches (Megan
+    2026-10-26, "for the sales counting on all the text scorecards we DO NOT
+    want to count watches ... or tablets"). Upgrades stay where they were --
+    only NDS and B2B AT&T moved those. None (Wireless not read) leaves NL as
+    read; a rep with no devices is untouched."""
+    if not lines:
+        return sales
+    out = {k: dict(v) for k, v in (sales or {}).items()}
+    for rep, row in out.items():
+        got = lines.get(str(rep).strip().upper()) or {}
+        devices = int(got.get("Tablets", 0)) + int(got.get("Wearables", 0))
+        if devices and "NL" in row:
+            row["NL"] = max(int(row.get("NL", 0) or 0) - devices, 0)
     return out
 
 
