@@ -128,6 +128,17 @@ DAILY_SOURCES: List[Source] = [
               "STALENESS-GUARDED: at a week's start JE runs a day behind, so "
               "if the latest posted week != the current week the fill SKIPS + "
               "flags (never writes last week's numbers into this week)."),
+    Source(
+        label="Verizon", metric="Lines",
+        method=SCRAPE, date_mode=RELATIVE, shared_key="verizon",
+        column_verified=True,
+        notes="ADDED 2026-10-27 (Carlos asked, Maud confirmed), on the rows "
+              "Frontier used to hold. 1 ICD (Nicolas Murrugarra). Pulled from "
+              "the emailed Credico 'Verizon Wireless - Daily Sales Scorecard "
+              "(SCI) - Wireless Only' PDF via verizon_pull (adapter "
+              "_adapter_verizon) — NOT Tableau; Carlos forwards it ~9:31am. "
+              "Mon-Sun like the rest: every PDF day carries its date. Two days "
+              "behind at the morning fill, hence data_gate.LAGGING_SECTIONS."),
 ]
 
 # RETIRED — not filled any more, kept verbatim so putting a campaign back is
