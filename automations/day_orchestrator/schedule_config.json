@@ -1916,7 +1916,7 @@
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
-   "timeout_minutes": 30,
+   "timeout_minutes": 60,
    "verify": null,
    "close_on": "exit_zero"
   },
