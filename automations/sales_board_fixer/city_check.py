@@ -229,7 +229,11 @@ def main(argv=None) -> int:
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
     ap.add_argument("--no-dm", action="store_true",
                     help="no mandar el DM a Alisson + Evelyn")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="solo mirar, aunque venga --apply (lucy rerun lo trae siempre)")
     a = ap.parse_args(argv)
+    if a.dry_run:
+        a.apply = False
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     title = R.week_tabs(today)[0]
 

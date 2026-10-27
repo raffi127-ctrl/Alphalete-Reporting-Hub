@@ -66,6 +66,27 @@ def test_dm_lists_only_reps_still_blank():
     assert CC.dm_text("Sales Board WE 10.25", [], {}) == ""
 
 
+def test_dry_run_beats_apply(monkeypatch):
+    seen = {}
+
+    def stop(sheet_id):
+        raise SystemExit(0)
+    monkeypatch.setattr(CC.R, "_book", stop)
+    import argparse
+    real = argparse.ArgumentParser.parse_args
+
+    def spy(self, *a, **k):
+        ns = real(self, *a, **k)
+        seen["ns"] = ns
+        return ns
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", spy)
+    try:
+        CC.main(["--apply", "--dry-run"])
+    except SystemExit:
+        pass
+    assert seen["ns"].apply is False
+
+
 def test_near_name_finds_ortensia_but_not_a_different_martinez():
     # WE 11.1: board 'Ortencia', paperwork 'Ortensia'
     from automations.apex_new_starts import blueink_data as BID
