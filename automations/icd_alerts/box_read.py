@@ -106,6 +106,9 @@ def initiated_on(value: str) -> Optional[dt.date]:
 
 
 COL_ACCOUNTS = "Accounts"      # how many accounts (meters/ESIIDs) the contract covers
+# True when a Requires TPV Review contract's history says TPV passed at some
+# point -- set by prove_tpv_from_history(), read by tally_window().
+COL_TPV_PASSED = "TPV Passed In History"
 
 
 def _accounts(row: Dict) -> int:
@@ -166,7 +169,7 @@ def tally_window(rows: List[Dict], days: List[dt.date]) -> Dict:
         each = _accounts(row)
         if SC.is_logged(status):
             bucket["records"][rep] = bucket["records"].get(rep, 0) + each
-        if SC.is_completed(status):
+        if SC.is_completed(status) or row.get(COL_TPV_PASSED):
             got = bucket["sales"].setdefault(
                 rep, {"Sales": 0, "Volume": 0, "Big": 0, "Huge": 0})
             got["Sales"] += each
@@ -556,6 +559,41 @@ def _keys(obj, depth: int = 0) -> str:
 
 
 
+def prove_tpv_from_history(page, rows: List[Dict], days: List[dt.date],
+                           borrowed=None, log=print) -> int:
+    """Mark each Requires TPV Review contract in the window whose history
+    says TPV passed. Returns how many were marked. NEVER raises.
+
+    A lookup that fails leaves the contract uncounted -- exactly what it was
+    before this existed -- so a history hiccup can cost a sale or two, never
+    the day.
+    """
+    wanted = set(days)
+    todo = [r for r in rows or []
+            if SC.needs_tpv_history(r.get(SC.COL_SUBSTATUS))
+            and initiated_on(r.get(SC.COL_INITIATED)) in wanted
+            and str(r.get(SC.COL_CONTRACT_ID) or "").strip()]
+    if not todo:
+        return 0
+    passed, failed = 0, 0
+    for r in todo:
+        try:
+            payload = _gql(page, SC.history_body(r.get(SC.COL_CONTRACT_ID)),
+                           borrowed)
+            if payload.get("errors") or not isinstance(payload.get("data"), dict):
+                failed += 1
+                continue
+            edges = ((payload["data"].get("history") or {}).get("edges")) or []
+            if SC.history_says_tpv_passed(edges):
+                r[COL_TPV_PASSED] = True
+                passed += 1
+        except Exception:  # noqa: BLE001 -- one lookup must never cost the read
+            failed += 1
+    log("requires TPV review: %d checked, %d passed TPV in history%s"
+        % (len(todo), passed, (", %d lookup(s) failed" % failed) if failed else ""))
+    return passed
+
+
 def account_count_report(rows: List[Dict]) -> str:
     """'42 rows: blank=3, 1=35, 2=3, 4=1' -- what the live read carries."""
     tally: Dict[str, int] = {}
@@ -676,6 +714,7 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     " on the session cookies alone")
             rows = fetch_rows(page, days, log=log, borrowed=borrowed)
             log("contracts fetched: %d row(s) across the window" % len(rows))
+            prove_tpv_from_history(page, rows, days, borrowed, log=log)
             # After the real read, never before it: the answer is wanted,
             # the day's numbers are needed.
             probe_accounts_schema(page, borrowed, log=log, rows=rows)
