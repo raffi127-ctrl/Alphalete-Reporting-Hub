@@ -108,6 +108,28 @@ def main(argv=None) -> int:
                   + ", ".join(f"{k}={v}" for k, v in c.most_common(6)))
         per2 = collections.Counter(str(r[i_un]).strip() for r in crew_rows)
         print(f"[ndsm] SOH crew reps: {dict(per2)}")
+        # Carlos 2026-10-27: "show me the recent sales on carhi1816" —
+        # every crew order of the last 10 days on THIS dealer, one line each.
+        def _d(v):
+            for f in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+                try:
+                    return dt.datetime.strptime(
+                        str(v).strip().split()[0], f).date()
+                except (ValueError, IndexError):
+                    continue
+            return None
+        i_od, i_cn = ix.get("Order Date"), ix.get("Customer Name")
+        i_ws, i_lc = ix.get("Wireless Status"), ix.get("Wireless Line Count")
+        for r in sorted(crew_rows,
+                        key=lambda r: _d(r[i_od]) or dt.date.min,
+                        reverse=True):
+            d = _d(r[i_od]) if i_od is not None and len(r) > i_od else None
+            if d is None or (today - d).days > 10:
+                continue
+            def g(i):
+                return str(r[i]).strip() if i is not None and len(r) > i                     else ""
+            print(f"B2BATT {d} | {g(i_un)[:24]:24} | {g(i_cn)[:24]:24} | "
+                  f"{g(i_ws) or '?':12} | {g(i_lc) or '?'} line(s)")
     except Exception as e:  # noqa: BLE001 — leg 2 failing must not hide leg 1
         print(f"[ndsm] SaraPlus leg FAILED: {type(e).__name__}: {e}")
     print("=== done ===", flush=True)
