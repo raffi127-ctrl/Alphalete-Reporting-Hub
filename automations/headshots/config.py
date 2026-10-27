@@ -60,12 +60,11 @@ OFFICES = {
     "raf": Office(key="raf", owner="Rafael Hidalgo", channel=CHANNEL_ID,
                   uploader="lucy", mode="live", sheet_log=True),
     # Omar Mohamad, Kalkan Marketing (24153), in his recruiting room (Slack
-    # Connect, Lucy Reporting is in it). Enrolling on LucyEco 2026-10-26
-    # 5:30pm; Megan the same day: "we can just wait on his enrollment" -- so
-    # nothing posts until then. Once enrolled: fill eco_key from 'Relay
-    # Keys', run a --test-job, then flip to "live".
+    # Connect, Lucy Reporting is in it). Enrolled on LucyEco 2026-10-26
+    # evening as `omar` (Omars-iMac). Dry until a --test-job finds a real
+    # new start in his OwnerVille, then "live".
     "omar": Office(key="omar", owner="Omar Mohamad", channel="C0C6HKZ63EK",
-                   uploader="eco", eco_key="", mode="dry"),
+                   uploader="eco", eco_key="omar", mode="dry"),
 }
 
 
