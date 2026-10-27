@@ -60,10 +60,27 @@ def ad_of(rows: List[List[str]], name: str) -> List[str]:
         first, last = _fold(r[0]).split(), _fold(r[1]).split()
         if not first or not last:
             continue
-        if first[0] == parts[0] and last[-1] == parts[-1]:
+        # Valeria 10/27: "Carmelo Alduen Arias" -- a second last name on
+        # either side (sheet or AppStream) still matches.
+        if first[0] == parts[0] and (last[-1] == parts[-1] or last[-1] in parts[1:]
+                                     or parts[-1] in last):
             ad = strip_wrapper(r[N_CALL_COLS - 1]).strip()
             if ad and ad not in out:
                 out.append(ad)
+    return out
+
+
+def near(rows: List[List[str]], name: str) -> List[str]:
+    """"First Last" of the rows sharing the first OR the last name -- printed
+    when nothing matched, to see how AppStream spells the person."""
+    parts = _fold(name).split()
+    out = []
+    for r in rows:
+        first, last = (_fold(r[0]).split(), _fold(r[1]).split()) if len(r) >= 2 else ([], [])
+        if parts and (first[:1] == parts[:1] or last[-1:] == parts[-1:]):
+            who = f"{r[0]} {r[1]}".strip()
+            if who not in out:
+                out.append(who)
     return out
 
 
@@ -87,9 +104,11 @@ def sent_rows(app, office_id: str, days: List[dt.date], debug: bool = False) -> 
 
 def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
         apply: bool = False, limit: Optional[int] = None, debug: bool = True,
-        lookback: Optional[int] = None, cache: Optional[dict] = None) -> Dict[str, object]:
+        lookback: Optional[int] = None, cache: Optional[dict] = None,
+        redo: bool = False) -> Dict[str, object]:
     """Look up the office's blank-title interviews still on no thread
-    (unthreaded.find). Prints what it finds; with `apply` keeps it."""
+    (unthreaded.find). Prints what it finds; with `apply` keeps it. `redo`
+    looks again at the ones kept as "" (looked, nothing found)."""
     from automations.ad_photo_threads import collect, config, post, unthreaded
     from automations.applicant_tracker.applicantstream import session
 
@@ -105,7 +124,8 @@ def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
         todo = [(d, c) for d, c in todo if c.name.strip().lower() in want]
     channel = o["live_channel"]
     done = (post._load_state().get(channel) or {}).get("appstream_ads") or {}
-    todo = [(d, c) for d, c in todo if key(d, c.name) not in done]
+    todo = [(d, c) for d, c in todo
+            if key(d, c.name) not in done or (redo and not done[key(d, c.name)])]
     if limit:
         todo = todo[:limit]
     print(f"[appstream ads] {office_key}: {len(todo)} candidate(s) to look up"
@@ -119,12 +139,16 @@ def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
     with session() as app:
         for oid in oids:
             rows += sent_rows(app, oid, days, debug=debug)
+    if debug:
+        print(f"  {len(rows)} sent-to-call-list row(s) over {days[0]:%m/%d}-{days[-1]:%m/%d}")
     got: Dict[str, str] = {}
     for d, c in todo:
         ads = ad_of(rows, c.name)
         got[key(d, c.name)] = ads[0] if len(ads) == 1 else ""
         print(f"  {c.name} ({d:%m/%d}): {ads or '-'}"
               + ("  -> 2+ ads, left for the channel" if len(ads) > 1 else ""))
+        if not ads and debug:
+            print(f"    near: {near(rows, c.name)[:8] or 'nobody with that first or last name'}")
     if apply and got:
         state = post._load_state()
         state.setdefault(channel, {}).setdefault("appstream_ads", {}).update(got)

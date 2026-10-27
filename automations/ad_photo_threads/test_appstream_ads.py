@@ -26,6 +26,18 @@ class ReportRowsTests(unittest.TestCase):
                 self.row("Jose", "Cruz", "B, Irving, TX")]
         self.assertEqual(aa.ad_of(rows, "Jose Cruz"), ["A, Dallas, TX", "B, Irving, TX"])
 
+    def test_two_last_names_either_side(self):
+        rows = [self.row("Carmelo", "Alduen", "AT&T Assistant, Tampa, FL"),
+                self.row("Yanuleidy", "Acuna Perez", "AT&T Team Member, Brandon, FL")]
+        self.assertEqual(aa.ad_of(rows, "Carmelo Alduen Arias"), ["AT&T Assistant, Tampa, FL"])
+        self.assertEqual(aa.ad_of(rows, "Yanuleidy Acuna"), ["AT&T Team Member, Brandon, FL"])
+        self.assertEqual(aa.ad_of(rows, "Carmelo Arias"), [])
+
+    def test_near_names(self):
+        rows = [self.row("Howard", "Barbour", "A"), self.row("Jim", "Barber", "B"),
+                self.row("Ann", "Lee", "C")]
+        self.assertEqual(aa.near(rows, "Howard Barber"), ["Howard Barbour", "Jim Barber"])
+
     def test_one_word_name_or_short_row_is_nothing(self):
         self.assertEqual(aa.ad_of([self.row("Krystal", "Lee", "A")], "Krystal"), [])
         self.assertEqual(aa.ad_of([["Ana", "Lee"]], "Ana Lee"), [])
