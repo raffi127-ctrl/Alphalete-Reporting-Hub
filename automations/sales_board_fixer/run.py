@@ -96,24 +96,27 @@ def load(sh, title: str, titles=()) -> dict:
         "fields": "sheets(properties(sheetId,title,gridProperties),conditionalFormats,basicFilter)"})
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
-    fonts, numfmts, notes = [], [], []
+    fonts, numfmts, styles, notes = [], [], [], []
     if K.is_board(values):
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
         grid = sh.fetch_sheet_metadata({
             "includeGridData": True, "ranges": [rng],
             "fields": "sheets(data(rowData(values(effectiveFormat("
-                      "textFormat(fontFamily,fontSize),numberFormat),note))))"})
+                      "textFormat(fontFamily,fontSize,bold),numberFormat,"
+                      "horizontalAlignment),note))))"})
         rows = grid["sheets"][0]["data"][0].get("rowData", [])
         for rd in rows:
             vs = rd.get("values", [])
             fonts.append([_font(v) for v in vs])
             numfmts.append([_numfmt(v) for v in vs])
+            styles.append([_style(v) for v in vs])
             notes.append([(v or {}).get("note", "") for v in vs])
     t = {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
          "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
          "basic_filter": sheet.get("basicFilter"),
-         "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
+         "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "styles": styles,
+         "notes": notes}
     if LANE_NAME.search(title):
         t.update(load_lanes(sh, t))
     elif LINEUP_NAME.search(title):
@@ -220,6 +223,12 @@ def _font(v: dict):
     return (tf["fontFamily"], tf.get("fontSize"))
 
 
+def _style(v: dict):
+    ef = (v or {}).get("effectiveFormat") or {}
+    return (bool((ef.get("textFormat") or {}).get("bold")),
+            ef.get("horizontalAlignment"))
+
+
 def _numfmt(v: dict):
     nf = ((v or {}).get("effectiveFormat") or {}).get("numberFormat") or {}
     kind, pat = nf.get("type", ""), nf.get("pattern", "")
@@ -238,7 +247,8 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
         found = (K.check_formulas(title, v, f) + K.check_outside_block(title, v, f)
                  + K.check_roll_call(title, v, learn=owner)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
-                 + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"]))
+                 + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"])
+                 + K.check_styles(title, t["sheet_id"], v, t["styles"]))
         first, last = K.block_rows(v)
         fixed_cells = {x.where for x in found if x.value is not None}
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
@@ -371,6 +381,8 @@ def main(argv=None) -> int:
                     help="tab a revisar (repetible). Default: Sales Board + Line Up de esta semana y Stations")
     ap.add_argument("--apply", action="store_true", help="arreglar (backup antes de escribir)")
     ap.add_argument("--sheet-id", default=SHEET_ID)
+    ap.add_argument("--max-fixes", type=int, default=MAX_FIXES,
+                    help="tope de arreglos por tab (a mano, tras mirar el preview)")
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
     ap.add_argument("--owners", nargs="?", const="", default=None, metavar="NOMBRE",
                     help="revisar los All-in-One de los dueños (owners.json); "
@@ -412,7 +424,8 @@ def _main(a) -> int:
     for title in [t for t in titles if t not in have]:
         print("  no existe %r todavía -- salteada" % title)
     titles = [t for t in titles if t in have]
-    results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today))
+    results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today),
+                       max_fixes=a.max_fixes)
     print("reporte:", report(results, stamp, a.apply))
     return 0
 
@@ -429,7 +442,7 @@ def _drop_past(found: list, values, stop: str) -> list:
                 if " ".join(str(x).split()).lower() == stop.lower()), 0)
     if not col:
         return found
-    return [x for x in found if x.kind not in ("font", "number_format")
+    return [x for x in found if x.kind not in ("font", "number_format", "style")
             or _col_of(x.where) < col]
 
 
@@ -687,7 +700,7 @@ def lane_tabs(sh, only_for=None) -> list:
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
                "lineup_short", "lineup_old_week",
-               "font", "number_format", "roll_call_blank", "x_over_formula",
+               "font", "number_format", "style", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
 
 

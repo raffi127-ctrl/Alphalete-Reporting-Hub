@@ -47,6 +47,7 @@ KIND_LABEL = {
     "error_value": "celda con error",
     "font": "fuente / tamaño de letra distinto",
     "number_format": "formato de número distinto (%, decimales)",
+    "style": "negrita / centrado distinto",
     "roll_call_blank": "X/T en Int con la Roll Call vacía",
     "cf_broken": "regla de formato condicional rota (#REF!)",
     "cf_foreign": "regla de formato condicional que apunta fuera de la tab",
@@ -546,6 +547,19 @@ def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
         "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize")
 
 
+def check_styles(tab: str, sheet_id: int, values, styles) -> List[Finding]:
+    """styles[r-1][c-1] = (bold, horizontal). A row pasted values-only or
+    re-added by hand keeps Georgia 12 but loses bold and centering -- the
+    numbers sit thin in the cell's corner (Eve 2026-10-27: Basil, Baylen).
+    Vertical alignment is left out: top/middle/bottom mixes all over the board
+    and doesn't show at this row height. Same majority rule as fonts."""
+    return _column_format(
+        tab, sheet_id, values, styles, "style", lambda f: bool(f[1]),
+        lambda f: "%s%s" % ("negrita " if f[0] else "", (f[1] or "-").lower()),
+        lambda f: {"textFormat": {"bold": f[0]}, "horizontalAlignment": f[1]},
+        "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment")
+
+
 def check_number_formats(tab: str, sheet_id: int, values, numfmts) -> List[Finding]:
     """numfmts[r-1][c-1] = (type, pattern). A formula put back into a cell
     that was formatted as % shows '5.6%' where its column shows '0.1' -- the
@@ -615,6 +629,7 @@ NOTE_LABEL = {
     "row_added_wrong": "this row was added without its formulas",
     "font": "font/size didn't match the column",
     "number_format": "number format didn't match the column",
+    "style": "bold/centering didn't match the column",
     "roll_call_blank": "Int had the status but the Roll Call was blank",
     "start_date_moved": "this was another rep's start date (left behind by a sort)",
     "days_formula": "# Days Worked was missing or pointed at another row",

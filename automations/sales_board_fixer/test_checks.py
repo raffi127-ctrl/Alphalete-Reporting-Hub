@@ -70,6 +70,19 @@ class Fonts(unittest.TestCase):
         self.assertIn("updateCells", found[0].request)
 
 
+    def test_row_that_lost_bold_and_centering_gets_it_back(self):
+        v, _ = board([("Rep %d" % i, GOOD, "1", "Here") for i in range(8)])
+        styles = [[None] * 7 for _ in range(3)]
+        for i in range(8):
+            styles.append([(False, None)] + [(True, "CENTER")] * 6)
+        styles[3 + 4][4] = (False, "RIGHT")
+        found = K.check_styles("t", 7, v, styles)
+        self.assertEqual([y.where for y in found], ["E8"])
+        fmt = found[0].request["updateCells"]["rows"][0]["values"][0]["userEnteredFormat"]
+        self.assertEqual(fmt["horizontalAlignment"], "CENTER")
+        self.assertTrue(fmt["textFormat"]["bold"])
+
+
 class Notes(unittest.TestCase):
     def test_note_says_what_changed_and_keeps_an_existing_note(self):
         rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(6)]
