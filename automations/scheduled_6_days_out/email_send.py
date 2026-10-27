@@ -89,6 +89,9 @@ RECIPIENTS: dict[str, List[str]] = {
         "Zenithzenith2099@gmail.com", "niitagoe4@gmail.com",
         "raffi127@gmail.com",
         "rashadreed715@gmail.com", "salikmallick6@gmail.com",
+        # IN 2026-10-27 (Eve): Omar Mohamad (Kalkan, 24153, promoted out of
+        # Salik/Hammad) joins Raf's captainship. Live group updated same day.
+        "oomohamad98@gmail.com",
         # OUT 2026-08-20 (Eve): Steve McElwee — not in Rafael's captainship.
         # Same removal as captainship_drafts.config.RECIPIENTS and the live
         # "Raf's Captain Team" group.

@@ -550,6 +550,9 @@ RECIPIENTS: dict = {
         "maudmiller4@gmail.com", "Zenithzenith2099@gmail.com",
         "niitagoe4@gmail.com", "raffi127@gmail.com",
         "rashadreed715@gmail.com", "salikmallick6@gmail.com",
+        # IN 2026-10-27 (Eve): Omar Mohamad (Kalkan, 24153, promoted out of
+        # Salik/Hammad) joins Raf's captainship. Live group updated same day.
+        "oomohamad98@gmail.com",
         # OUT 2026-08-20 (Eve): Steve McElwee (mcelwee.steve95@gmail.com) is not
         # in Rafael's captainship. Off the board, off his six metrics tabs and
         # off the live "Raf's Captain Team" group the same day — and since that

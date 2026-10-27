@@ -73,6 +73,7 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Kash Rai":         "America/Chicago",               # Fort Worth, TX
     "Muhammad Haque":   "America/Detroit",               # Southfield, MI
     "Nii Tagoe":        "America/New_York",              # PA
+    "Omar Mohamad":     "America/Detroit",               # Dearborn, MI (2026-10-27)
     "Salik Mallick":    "America/Detroit",               # Southfield, MI
     "Trang Canavan":    "America/Chicago",               # San Antonio, TX
     # FIBER CAPTAINSHIPS (Eve 2026-09-14: the night mail goes to every fiber

@@ -42,6 +42,7 @@ OWNER_EMAILS: Dict[str, str] = {
     "Muhammad Haque":      "m.hammad.malikk@gmail.com",   # Contacts: "Hammad Malik"
     "Nii Tagoe":           "niitagoe4@gmail.com",         # Contacts: "Nii Teiko - Tagoe"
     "Nuri Burgos":         "nuri@22select.com",
+    "Omar Mohamad":        "oomohamad98@gmail.com",      # IN 2026-10-27 (Eve)
     "Rashad Reed":         "rashadreed715@gmail.com",
     "Salik Mallick":       "salikmallick6@gmail.com",
     "Trang Canavan":       "trang.lecanavan@gmail.com",
