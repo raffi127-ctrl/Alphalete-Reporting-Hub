@@ -358,7 +358,9 @@ def main(argv=None) -> int:
         # would be a made-up number.
         tab_weeks = weeks
         if args.all_weeks or note.startswith("inserted"):
-            tab_weeks = sorted(w for w in (ov_weeks or by_week) if w <= weeks[-1])
+            known = ov_weeks or {first_start + dt.timedelta(days=7 * k): 0
+                                 for k in range((weeks[-1] - first_start).days // 7 + 1)}
+            tab_weeks = sorted(w for w in known if w <= weeks[-1])
         for w in tab_weeks:
             col = sheet_col(cols, w)
             if col is None or w < first_start:
