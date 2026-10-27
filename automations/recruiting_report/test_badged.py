@@ -38,6 +38,20 @@ class ParseTest(unittest.TestCase):
     def test_no_showed_field_leaves_the_formula(self):
         self.assertIsNone(badged.parse_showed({"data": {"weeks": [{"wk": "2026-09-27", "badged": 5}]}}))
 
+    def test_badged_counts_in_the_start_week_not_the_badge_week(self):
+        # Hammad 10/27: started Wed 10/8, badged Mon 10/13 -> the 10/4 week
+        got = badged.parse_badged_by_start({"data": {"programs": [{"starts30": 41}], "rows": [
+            {"startDate": "2026-10-08", "badgedAt": "2026-10-13 09:00"},
+            {"startDate": "2026-10-12", "badgedAt": "2026-10-14 09:00"},
+            {"startDate": "2026-09-28", "badgedAt": ""},
+            {"startDate": "", "badgedAt": "2026-10-12 09:00"}]}})
+        self.assertEqual(got, ({dt.date(2026, 10, 4): 1, dt.date(2026, 10, 11): 1},
+                               dt.date(2026, 9, 27)))
+
+    def test_no_rep_list_is_no_data(self):
+        self.assertIsNone(badged.parse_badged_by_start({"error": 403}))
+        self.assertIsNone(badged.parse_badged_by_start({"data": {"rows": []}}))
+
     def test_pct(self):
         self.assertEqual(badged.badged_pct(5, 8), 0.625)
         self.assertEqual(badged.badged_pct(2, 0), "")
