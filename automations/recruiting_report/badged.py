@@ -304,7 +304,7 @@ def main(argv=None) -> int:
     weeks = weeks_to_write(today)
     tab_offices = tabs_to_offices(fill.load_mapping())
     if args.only:
-        want = {_norm(t) for t in args.only}
+        want = {_norm(t.strip("\"'")) for t in args.only}  # queued args may keep their quotes
         tab_offices = {t: o for t, o in tab_offices.items() if _norm(t) in want}
         missing = want - {_norm(t) for t in tab_offices}
         if missing:
