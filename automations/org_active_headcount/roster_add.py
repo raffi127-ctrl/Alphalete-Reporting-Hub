@@ -62,6 +62,7 @@ CAMPAIGN_TAG = {
     "box": "BOX",
     "retail je": "JE",
     "retail nl": "Retail NL",
+    "verizon": "Verizon",
 }
 # Bank 'Org Head' -> the tab's 'Org Head' spelling. Anything else keeps its
 # first word ('Carlos', 'Colten').

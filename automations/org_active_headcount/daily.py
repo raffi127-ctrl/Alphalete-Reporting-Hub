@@ -115,7 +115,8 @@ WE_ANY = re.compile(r"^WE\s+(\d{1,2})\.(\d{1,2})$", re.I)
 
 # daily block 'Campaign' value -> source
 CAMPAIGN_SOURCE = {"fiber": "att_country", "nds": "nds", "b2b": "b2b_att_country",
-                   "box": "b2b_box", "je": "je", "retail nl": "retail"}
+                   "box": "b2b_box", "je": "je", "retail nl": "retail",
+                   "verizon": "vzw"}
 # ICDs that run on TWO campaigns and are ONE row on the daily block
 DUAL = {"carlos hidalgo": ("b2b_att_country", "b2b_box")}
 
@@ -662,7 +663,24 @@ STAND_IN = "STAND-IN"
 TRACKER_LABEL = {"att_country": "Fiber", "nds": "NDS", "b2b_att_country": "B2B",
                  "b2b_box": "BOX"}
 # Every source that can be late, not only the trackers (Mon 10/19: SARA).
-SOURCE_LABEL = dict(TRACKER_LABEL, retail="Retail NL (SARA)", je="JE")
+SOURCE_LABEL = dict(TRACKER_LABEL, retail="Retail NL (SARA)", je="JE",
+                    vzw="Verizon Wireless scorecard")
+
+
+def vzw_values(day: dt.date, names: List[str], logfn=print) -> Optional[Dict[str, int]]:
+    """Verizon (Eve 2026-10-27, Nicolas Murrugarra): the 'Scoring HC' of
+    Credico's emailed Wireless Only scorecard — reps who scored this week, the
+    same week-to-date count the Country Trackers print as Rep Count. Like a
+    tracker, the edition mailed on D+1 shows D. Credico's week runs Sun-Sat, so
+    a Sunday would read Sunday alone; Sunday takes the edition through Saturday
+    instead (it can only miss a rep whose first sale was that Sunday). None =
+    that edition has not reached the inbox (Carlos forwards it ~9:31am)."""
+    from automations.org_sales_board import verizon_pull as vp
+    pdf = vp.edition(day if day.weekday() == 6 else day + dt.timedelta(days=1))
+    if not pdf:
+        logfn(f"  Verizon scorecard for {day} not in the inbox yet")
+        return None
+    return {n: vp.scoring_hc(pdf, n) for n in names}
 
 
 def stand_in_note(value, trackers: List[str]) -> str:
@@ -755,6 +773,8 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     if je is None and "je" in need:
         je = (je_values(today, [n for _, n, c in empty if CAMPAIGN_SOURCE.get(c) == "je"], logfn)
               if day == today - dt.timedelta(days=1) else {})
+    vzw = (vzw_values(day, [n for _, n, c in empty if CAMPAIGN_SOURCE.get(c) == "vzw"], logfn)
+           if "vzw" in need else None)
     for r, name, camp in empty:
         prev = _num(_c(V, r, dl["days"][day.weekday() - 1])) if day.weekday() else None
         srcs = DUAL.get(name.lower()) or (CAMPAIGN_SOURCE.get(camp),)
@@ -766,6 +786,8 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
                 return (retail or {}).get(name)
             if s == "je":
                 return (je or {}).get(name, "-") if day == today - dt.timedelta(days=1) else "-"
+            if s == "vzw":
+                return None if vzw is None else (vzw.get(name) if vzw.get(name) is not None else "-")
             return None
         a1 = f"{A(col)}{r}"
         parts = pick_dual(pick, srcs, prev) if len(srcs) > 1 else [pick(srcs[0], prev)]

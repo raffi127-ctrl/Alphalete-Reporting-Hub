@@ -126,3 +126,42 @@ def week_totals(days: Dict[dt.date, int]) -> Dict[dt.date, Dict[dt.date, int]]:
         we_sun = d + dt.timedelta(days=(6 - d.weekday()))
         out.setdefault(we_sun, {})[d] = v
     return out
+
+
+def edition(report_date: dt.date, dest_dir: Optional[Path] = None) -> Optional[Path]:
+    """The edition mailed ON `report_date` (sales through the day before), or
+    None if it never reached the inbox."""
+    from automations.shared import email_ingest
+    from automations.tableau_screenshots import email_tracker as et
+    dest = (Path(dest_dir) if dest_dir else Path("output")) / "verizon_scorecard"
+    glob = f"Daily Sales - Verizon Wireless*Wireless Only*{report_date:%Y%m%d}.pdf"
+    got = email_ingest.fetch_by_globs("", [glob], dest, subject=et.VZW_SUBJECT,
+                                      since_days=max(3, (dt.date.today() - report_date).days + 3),
+                                      verbose=False)
+    return got.get(glob)
+
+
+def scoring_hc(pdf_path: Path, owner: str = ICD) -> Optional[int]:
+    """The owner's 'Scoring HC' on page 1 (the current Credico week, Sun-Sat, to
+    date) — reps who scored at least one line. 0 when the owner is not listed
+    (the same 'not in the tracker = 0' rule the headcount tab uses), None when
+    the column can't be found."""
+    import fitz
+    doc = fitz.open(str(pdf_path))
+    try:
+        page = doc[0]
+        words = page.get_text("words")
+        hc = next((w for w in words if w[4] == "HC"), None)
+        if hc is None:
+            return None
+        x = (hc[0] + hc[2]) / 2
+        last = owner.split()[-1].lower()
+        hit = next((w for w in words if w[4].lower() == last), None)
+        if hit is None:
+            return 0
+        y = (hit[1] + hit[3]) / 2
+        near = [w for w in words if abs((w[1] + w[3]) / 2 - y) < 3
+                and re.fullmatch(r"\d+", w[4]) and abs((w[0] + w[2]) / 2 - x) < 12]
+        return int(min(near, key=lambda w: abs((w[0] + w[2]) / 2 - x))[4]) if near else None
+    finally:
+        doc.close()
