@@ -697,10 +697,13 @@ def lane_tabs(sh, only_for=None) -> list:
 # column majority of that board, the Roll Call word that board writes
 # (checks.roll_call_words). An X typed over a formula is put back only when the
 # Roll Call carries the same status, so the formula shows the X again (_x_kept).
+# 'style' (bold/centering, 2026-10-27) is ours only for now: on owners' boards
+# bold is often a per-rep highlight, and Eveliz alone went 214 -> 360 fixes,
+# past the cap, which would have stopped every fix on her board.
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
                "lineup_short", "lineup_old_week",
-               "font", "number_format", "style", "roll_call_blank", "x_over_formula",
+               "font", "number_format", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
 
 
