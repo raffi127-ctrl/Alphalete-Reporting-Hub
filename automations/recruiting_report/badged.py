@@ -150,6 +150,43 @@ def probe(office_ids: List[str], *, headless: bool = True) -> None:
 
     with ownerville_session(headless=headless) as page:
         rqst = capture_rqst(page)
+        # Per-rep rows (getAgentOnboardingStatus): is a week's BADGED counted by
+        # the week they STARTED or the week the badge was issued?
+        for oid in office_ids:
+            url = ENDPOINT.replace("getRecruitOnboardingWeekly", "getAgentOnboardingStatus").format(
+                office=oid, rqst=rqst)
+            p = page.evaluate(
+                "async (u) => { const r = await fetch(u, {credentials: 'include'});"
+                " return r.ok ? await r.text() : 'HTTP ' + r.status; }", url)
+            try:
+                d = json.loads(p)
+            except ValueError:
+                print(f"PROBE P {oid} not json: {p[:200]}", flush=True)
+                continue
+            data = d.get("data")
+            if isinstance(data, list):
+                rows = data
+            elif isinstance(data, dict):
+                rows = next((v for v in data.values() if isinstance(v, list)), [])
+            else:
+                rows = []
+            rows = [r for r in rows if isinstance(r, dict)]
+            print(f"PROBE P {oid} top={sorted(d)} rows={len(rows or [])} "
+                  f"keys={','.join(sorted(rows[0]))[:300] if rows else ''}", flush=True)
+            # badged reps: start week vs badge week, compact
+            def wk(s):
+                try:
+                    x = dt.date.fromisoformat(str(s)[:10])
+                    return x - dt.timedelta(days=(x.weekday() + 1) % 7)
+                except ValueError:
+                    return None
+            pairs = []
+            for r in rows or []:
+                b = next((r[k] for k in r if k.lower() in ("badgedat", "badgedate", "badged_at") and r[k]), None)
+                s = next((r[k] for k in r if k.lower() in ("startdate", "start_date", "startiso") and r[k]), None)
+                if b and wk(b) and wk(b) >= dt.date(2026, 9, 27):
+                    pairs.append(f"{wk(s).strftime('%m%d') if s and wk(s) else '?'}>{wk(b).strftime('%m%d')}")
+            print(f"PROBE B {oid} start>badgeWk {' '.join(sorted(pairs))[:400]}", flush=True)
         for oid in office_ids:
             p = page.evaluate(
                 "async (u) => { const r = await fetch(u, {credentials: 'include'});"
