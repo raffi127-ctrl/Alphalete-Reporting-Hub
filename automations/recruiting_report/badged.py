@@ -106,27 +106,31 @@ def _week_of(s) -> Optional[dt.date]:
 
 
 def parse_badged_by_start(payload: dict) -> Optional[Tuple[Dict[dt.date, int], dt.date]]:
-    """({start week Sunday: reps badged}, earliest start week the list covers)
+    """({start week Sunday: reps badged}, first week the list fully covers)
     from getAgentOnboardingStatus. A rep badged late counts in the week they
     STARTED (Raf: someone from 9/19 who badges today raises 9/19). None = no
-    rep list (no access / unknown id) -- the caller writes nothing for the tab."""
+    rep list (no access / unknown id) -- the caller writes nothing for the tab.
+
+    The list only keeps RECENT badges (Trang Canavan 10/27: starts back to July,
+    every July/Aug start unbadged). So a week counts only from the week of the
+    oldest badge it holds: anyone who started then or later badged after it, so
+    they're all in the list. Older weeks would read as a made-up 0."""
     rows = ((payload or {}).get("data") or {}).get("rows")
     if not isinstance(rows, list):
         return None
     out: Dict[dt.date, int] = {}
-    starts = []
+    badge_weeks = []
     for r in rows:
-        if not isinstance(r, dict):
+        if not isinstance(r, dict) or not r.get("badgedAt"):
             continue
-        wk = _week_of(r.get("startDate"))
-        if wk is None:
+        wk, bwk = _week_of(r.get("startDate")), _week_of(r.get("badgedAt"))
+        if wk is None or bwk is None:
             continue
-        starts.append(wk)
-        if r.get("badgedAt"):
-            out[wk] = out.get(wk, 0) + 1
-    if not starts:
+        badge_weeks.append(bwk)
+        out[wk] = out.get(wk, 0) + 1
+    if not badge_weeks:
         return None
-    return out, min(starts)
+    return out, min(badge_weeks)
 
 
 def parse_showed(payload: dict) -> Optional[Dict[dt.date, int]]:
