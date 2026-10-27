@@ -179,10 +179,14 @@ def probe(office_ids: List[str], *, headless: bool = True) -> None:
         # method / field it names so the badged list can be called next.
         for u in [h for h in hits if ".js" in h]:
             src = page.evaluate("async (u) => { const r = await fetch(u); return r.ok ? await r.text() : ''; }", u)
-            names = sorted(set(re.findall(r"method[=:]\s*['\"]?(\w+)", src)))
-            print(f"PROBE J {u.rsplit('/', 1)[-1][:40]} {len(src)}b methods: {','.join(names)}", flush=True)
-            fields = sorted(set(re.findall(r"\b(\w*(?:[Bb]adg|[Ss]tart|[Dd]ate)\w*)\b", src)))
-            print(f"PROBE F {','.join(fields)[:400]}", flush=True)
+            name = u.rsplit('/', 1)[-1][:12]
+            names = sorted(set(re.findall(r"['\"]((?:get|load|fetch)[A-Z]\w+)['\"]", src)))
+            print(f"PROBE J {name} {','.join(names)[:420]}", flush=True)
+            # how the weekly BADGED bucket is built, and how the log is called
+            for word in ("onBoardPersonBadgeLog", "badgedWk", "getRecruitOnboardingWeekly"):
+                for m in list(re.finditer(word, src))[:2]:
+                    snip = re.sub(r"\s+", " ", src[max(0, m.start() - 160):m.end() + 200])
+                    print(f"PROBE S {name} {snip}", flush=True)
 
 
 # --- sheet layout -----------------------------------------------------------
