@@ -738,7 +738,16 @@ def _publish_hub_once(day: dt.date) -> None:
         return
     try:
         from automations.shared import hub_activity
-        hub_activity.log_completed(HUB_CARD_ID, HUB_CARD_NAME, status="success")
+        # ONLY A ROW THAT LANDED COUNTS (2026-10-26). log_completed swallows
+        # every error and answers False, and this used to mark the day done
+        # regardless — one Sheets blip on the first good tick meant no Hub row
+        # all day, and the didn't-run watcher posted "Knocks & Dispositions —
+        # didn't run today" over 100+ clean ticks. A False now leaves the day
+        # unmarked, so the next good tick tries again.
+        if not hub_activity.log_completed(HUB_CARD_ID, HUB_CARD_NAME,
+                                          status="success"):
+            _log("hub publish did not land — next good tick retries")
+            return
         data.setdefault("_hub", {})[key] = True
         _save_state(data)
     except Exception as e:  # noqa: BLE001 — the Hub row must never fail a tick

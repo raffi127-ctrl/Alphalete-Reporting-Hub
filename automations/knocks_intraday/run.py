@@ -317,6 +317,13 @@ def token_path(rec: dict) -> Optional[Path]:
     return Path.home() / ".config" / "recruiting-report" / tf
 
 
+def access_pending(rec: dict) -> bool:
+    """The pull failed ONLY because ownerville still shows our access request
+    as "Request Sent" (run_all_owners' 'ov access request pending' reason)."""
+    err = rec.get("error")
+    return err is not None and "access request pending" in str(err)
+
+
 def post(results: List[dict], slot, *, dry_run: bool = True,
          logfn=print) -> int:
     """Post each office's board to its own channel. Returns an exit code.
@@ -376,6 +383,20 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
     for rec in results:
         day = rec["day"]
         cap = _caption(rec["label"], day, slot, rec["abbr"])
+        if access_pending(rec):
+            # WAITING ON THE OWNER, NOT BROKEN (2026-10-26). The Office Access
+            # row still reads "Request Sent": the owner has not accepted our
+            # access request, so there is no board to make and nothing in
+            # this code to fix. Omar's first nights went red in
+            # #claudecorrections for exactly this, a ticket nobody here can
+            # close. Same reading disposition_signup.resolve_office gives it
+            # (PENDING = a retry, not a failure). Not a marker either, so the
+            # first tick after he accepts posts the board.
+            skipped += 1
+            rec["waiting"] = True
+            logfn(f"[knocks] ⏳ {rec['key']}: ownerville access request still "
+                  "pending — the owner has to accept it; no board until then")
+            continue
         if rec["error"] is not None:
             # A BROKEN PULL IS A FAILURE, NOT A SKIP (2026-08-30). This used to
             # share the `skipped` branch with a verified-empty office, on the
@@ -562,6 +583,8 @@ def record_delivery(slot, results, *, logfn=print) -> None:
         good, bad = set(), set()
         for rec in results:
             part = f"{rec['key']}:{slot.key}"
+            if access_pending(rec):
+                continue        # neither delivered nor broken — waiting on the owner
             if rec.get("posted") or (rec.get("png") is None
                                      and rec.get("error") is None):
                 good.add(part)
