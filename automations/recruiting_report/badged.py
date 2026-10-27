@@ -332,8 +332,11 @@ def main(argv=None) -> int:
         ov_weeks = parse_weeks(raw.get(oid) or {})
         showed = parse_showed(raw.get(oid) or {})
         started = parse_badged_by_start(raw.get(f"reps:{oid}") or {})
-        if ov_weeks is None or started is None:
-            # never fall back to the weekly table's `badged` -- it's by badge week
+        # The weekly table can say "Not authorized" while the rep list answers
+        # (Calvin Ribera 22162, 10/27): then the % divides by the tab's own New
+        # Starts Showed, which is the same attendance. Without the rep list there
+        # is nothing to write -- never the weekly table's `badged` (by badge week).
+        if started is None:
             result.append((tab, f"SKIPPED: no OwnerVille data for office {oid}"))
             continue
         by_week, first_start = started
@@ -355,7 +358,7 @@ def main(argv=None) -> int:
         # would be a made-up number.
         tab_weeks = weeks
         if args.all_weeks or note.startswith("inserted"):
-            tab_weeks = sorted(w for w in ov_weeks if w <= weeks[-1])
+            tab_weeks = sorted(w for w in (ov_weeks or by_week) if w <= weeks[-1])
         for w in tab_weeks:
             col = sheet_col(cols, w)
             if col is None or w < first_start:
@@ -363,6 +366,9 @@ def main(argv=None) -> int:
             v = by_week.get(w, 0)
             data.append({"range": f"{_col_letter(col)}{rows['badged']}", "values": [[v]]})
             if showed is None:
+                L, b, ns = _col_letter(col), rows["badged"], rows["ns_showed"]
+                data.append({"range": f"{L}{rows['badged_pct']}",
+                             "values": [[f'=IF({L}{b}="","",IFERROR({L}{b}/{L}{ns},""))']]})
                 shown.append(f"{w.strftime('%m/%d')}={v}")
                 continue
             s = showed.get(w, 0)
@@ -374,7 +380,7 @@ def main(argv=None) -> int:
         verb = "would write" if args.dry_run else "wrote"
         what = "Badged by start week" if showed is None else "Badged by start week/OV showed"
         if showed is None:
-            what += " (no OV showed -- % formula left as is)"
+            what += " (no OV weekly table -- % over the tab's New Starts Showed)"
         result.append((tab, f"{note}; {verb} {what} (office {oid}) {' '.join(shown)}"))
 
     # the template too, so a tab duplicated from it is born with the two rows
