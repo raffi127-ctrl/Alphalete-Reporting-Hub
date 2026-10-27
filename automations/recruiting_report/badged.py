@@ -156,10 +156,12 @@ def probe(office_ids: List[str], *, headless: bool = True) -> None:
                 " return r.ok ? await r.json() : {error: r.status}; }",
                 ENDPOINT.format(office=oid, rqst=rqst))
             weeks = ((p or {}).get("data") or {}).get("weeks") or []
-            print(f"PROBE {oid} top keys={sorted((p or {}).keys())} "
-                  f"data keys={sorted(((p or {}).get('data') or {}).keys())}", flush=True)
-            for w in weeks[-8:]:
-                print(f"PROBE {oid} {json.dumps(w, separators=(',', ':'))}", flush=True)
+            # logtail shows ~470 chars, so: the keys once, then values only
+            keys = sorted({k for w in weeks for k in w})
+            print(f"PROBE K {oid} {','.join(keys)} | data:{','.join(sorted(((p or {}).get('data') or {}).keys()))}",
+                  flush=True)
+            for w in weeks[-6:]:
+                print(f"PROBE W {oid} " + ",".join(str(w.get(k, "")) for k in keys), flush=True)
 
         methods: Dict[str, str] = {}
         page.on("request", lambda r: methods.setdefault(
@@ -171,10 +173,8 @@ def probe(office_ids: List[str], *, headless: bool = True) -> None:
         html = page.content()
         for m in sorted(set(re.findall(r"method=(\w+)", html))):
             methods.setdefault(m, "(in page source)")
-        for m, u in sorted(methods.items()):
-            print(f"PROBE method {m} {re.sub(r'rqst=[^&]+', 'rqst=…', u)}", flush=True)
-        for hit in sorted(set(re.findall(r"[\w.]*[Bb]adge\w*", html)))[:40]:
-            print(f"PROBE badge-word {hit}", flush=True)
+        hits = [m for m in sorted(methods) if re.search(r"recruit|onboard|badg|bob|newstart", m, re.I)]
+        print(f"PROBE M {len(methods)} methods; recruiting ones: {','.join(hits) or 'none'}", flush=True)
 
 
 # --- sheet layout -----------------------------------------------------------
