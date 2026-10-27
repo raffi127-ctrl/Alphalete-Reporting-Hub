@@ -449,7 +449,9 @@
     "key": "omar",
     "label": "Omar's Local Office (channel from ECO sign-up)",
     "owner": "Omar Mohamad",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CANA1JG3D"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
