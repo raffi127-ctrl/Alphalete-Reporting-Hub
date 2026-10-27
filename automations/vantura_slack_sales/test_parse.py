@@ -236,19 +236,20 @@ CASES = [
      "Verizon", 1),
 
     # --- NOT Verizon: the AT&T program sells door to door too --------------
-    # "D2D" alone never makes a post Verizon. These AT&T posts read exactly as
-    # they did before the Verizon rule (an AT&T post with D2D is excluded).
+    # "D2D" alone never makes a post Verizon. Since 2026-10-27 an AT&T post with
+    # D2D is AT&T (the NDS program is door to door; the old exclusion zeroed the
+    # whole board every day).
     ("d2d at&t is not verizon (Nicholas Smedra 10/7)",
      "D2D AT&T\n\nWrap Text sent W/ <@U09PTHQJ481|Taylor Miller> :white_check_mark:"
      "\n\nAuto Pay on :white_check_mark:\n\nAT&T\n\nNL 1 \n\nNL 2 \n\nNL 3 \n\nNL 4",
-     None, 0),
+     "B2B", 4),
     ("bare d2d is not verizon (Diego Borres 10/7)",
      "D2D \n\nAuto pay :white_check_mark:/ <@U09PTHQJ481|Taylor Miller>"
      ":white_check_mark:\n\nAT&T\n\nNL 1 \n\nNL 2\n\nNL 3\n\nNL 4\n\nNL 5 \n",
-     None, 0),
+     "B2B", 5),
     ("at&t d2d is not verizon (Rodolfo Bazan 10/7)",
      "AT&T D2D \n\nAuto pay :white_check_mark:/ <@U09PTHQJ481|Taylor Miller>"
-     ":white_check_mark:\n\nAT&T\n\n\nNL 1 \n", None, 0),
+     ":white_check_mark:\n\nAT&T\n\n\nNL 1 \n", "B2B", 1),
     ("box post is still box (Joelle Barajas 10/7)",
      "B2B :package::zap:\n\nS/O The team :pink_heart::revolving_hearts:  "
      "<@U0BCBF73GRF|Nathaly Benitez>\n\nBF 4\n24 months\n35,892 kwh \nBox #1\n"

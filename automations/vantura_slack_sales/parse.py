@@ -312,7 +312,14 @@ CAMPAIGNS = [
         # "verizon": a Verizon post carries the same NL / Auto Pay words, and
         # one without a D2D header used to land here (Jayden Willingham
         # 2026-10-06, "VERIZON … NL 1..NL5", read as 5 AT&T sales).
-        exclude=re.compile(r"\bd2d\b|\bbox\s*#?\s*\d|\bbill submitted\b"
+        # "d2d" is NOT excluded any more (2026-10-27): the NDS program IS door
+        # to door and every rep heads their post "D2D AT&T" / "AT&T D2D" --
+        # excluding it wrote 0 for the whole NDS board every day (Saturday
+        # 10/24: 9 posted sales, board 0). A Verizon post still goes to
+        # Verizon through its override, and a stray bare-"D2D" post from a
+        # Verizon rep cannot land on the NDS board: the fill only writes
+        # names that have an NDS board row.
+        exclude=re.compile(r"\bbox\s*#?\s*\d|\bbill submitted\b"
                            r"|\bverizon\b", re.I),
         override=None,
         mode="units",
