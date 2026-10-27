@@ -4370,7 +4370,7 @@
      4,
      5
     ],
-    "not_before": "07:45"
+    "not_before": "06:45"
    },
    "_cadence_note": "Mon-Sat. Sunday is not a selling day for B2B, so a Sunday run would read an empty Saturday-night grid and post 'all texted' about nobody.",
    "priority": "P2",
@@ -15398,7 +15398,7 @@
      4,
      5
     ],
-    "not_before": "07:30"
+    "not_before": "06:30"
    },
    "priority": "P3",
    "freshness_target": null,

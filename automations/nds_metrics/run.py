@@ -1254,10 +1254,19 @@ def build_team_tree(cols, crew, today, log=print) -> Path:
     stale file is an honest skip."""
     import datetime as _dt
     png = OUT_DIR.parent / "team_tree" / "team_tree.png"
-    if not png.exists():
-        raise RuntimeError("no team tree render on this machine")
-    if _dt.date.fromtimestamp(png.stat().st_mtime) != today:
-        raise RuntimeError("team tree render is not from today — skipped")
+    if (not png.exists()
+            or _dt.date.fromtimestamp(png.stat().st_mtime) != today):
+        # The 6:30 tree agent may not have fired yet (both start 6:30,
+        # Carlos 2026-10-28: "lets start everything at 630am") — render
+        # our own copy rather than wait or skip.
+        from automations.team_tree import run as TT
+        week, reps, roots, scheduled = TT.build(today)
+        html = TT.OUT_DIR / "team_tree.html"
+        TT.OUT_DIR.mkdir(parents=True, exist_ok=True)
+        html.write_text(TT.render_html(week, reps, roots, scheduled),
+                        encoding="utf-8")
+        TT.render_png(html, png)
+        log(f"[nds] team tree rendered inline ({png.stat().st_size:,}b)")
     return png
 
 
