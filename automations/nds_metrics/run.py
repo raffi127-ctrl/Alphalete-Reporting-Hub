@@ -323,10 +323,24 @@ def load_soh(log=print):
                 log(f"[nds] b2batt pull blocked ({type(e).__name__})")
             if not parts:
                 raise RuntimeError("both dealers' SOH pulls failed")
+            # The dealers' SOH grids are configured differently: the
+            # alphaletegp export has no Customer Name / Wireless Order # /
+            # Wireless Acct # columns at all (seen 2026-10-27, 100 cols),
+            # while b2batt's carries them. The merge projects onto the
+            # RICHEST header — the one with Customer Name — so the wrap-up
+            # pipeline's fields survive; rows from the thinner export just
+            # leave those cells blank.
+            def _rows_of(blob):
+                return list(_mcsv.reader(_mio.StringIO(
+                    blob.decode("utf-8-sig", errors="replace"))))
+            parts = sorted(
+                parts,
+                key=lambda nb: ("Customer Name" not in
+                                [str(c).strip() for c in
+                                 (_rows_of(nb[1])[:1] or [[]])[0]]))
             merged, seen, hdr_row = [], set(), None
             for name, blob in parts:
-                rws = list(_mcsv.reader(_mio.StringIO(
-                    blob.decode("utf-8-sig", errors="replace"))))
+                rws = _rows_of(blob)
                 if not rws:
                     continue
                 h = [str(c).strip() for c in rws[0]]
