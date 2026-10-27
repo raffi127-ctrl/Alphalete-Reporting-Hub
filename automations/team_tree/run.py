@@ -54,7 +54,9 @@ CHANNEL = ("#a-players-b2b", "C0AJQA8P716")
 CARLOS_SLACK_ID = "U046G04P5LG"
 
 # Office runners — never tree nodes, never counted (Carlos 2026-08-30).
-EXCLUDED = {"nico murrugarra", "sebastian avellaneda"}
+# Sebastian back on (Carlos 2026-10-28: "i don't see sebastians name") —
+# he trains most of the NDS crew, so his branch anchors that tree.
+EXCLUDED = {"nico murrugarra"}
 
 # Free-typed name -> Sales Board name, for pairs token matching can't bridge.
 ALIASES = {
