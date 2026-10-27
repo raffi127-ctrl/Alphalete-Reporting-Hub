@@ -58,7 +58,7 @@ SANDBOX_PREFIX = "SANDBOX — "     # a test copy of a tab, checked like the rea
 # 'Lanes JAIRO' (Miami) -- Eve 2026-10-19: "deben ser todos"
 LANE_NAME = re.compile(r"\blanes?\b", re.I)
 LINEUP_NAME = re.compile(r"\bline ?up\b", re.I)   # 'Line Up WE 10.25', 'Line Up NDS'
-MAX_FIXES = 300                   # more than this on one tab = misread, don't write
+MAX_FIXES = 300                   # more than this on one tab = flagged in the log, still written
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "sales_board_fixer"
 LANES_GOOD_FILE = OUT_DIR / "lanes_good.json"   # last healthy Lanes formulas + headers
@@ -382,7 +382,7 @@ def main(argv=None) -> int:
     ap.add_argument("--apply", action="store_true", help="arreglar (backup antes de escribir)")
     ap.add_argument("--sheet-id", default=SHEET_ID)
     ap.add_argument("--max-fixes", type=int, default=MAX_FIXES,
-                    help="tope de arreglos por tab (a mano, tras mirar el preview)")
+                    help="arriba de esto por tab, avisa en el log (escribe igual)")
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
     ap.add_argument("--owners", nargs="?", const="", default=None, metavar="NOMBRE",
                     help="revisar los All-in-One de los dueños (owners.json); "
@@ -495,11 +495,12 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
         if do_apply and n_fix > max_fixes:
-            # thousands of "fixes" means the tab was read wrong, not that it
-            # is that broken -- never write on a misread
-            print("  NO se escribe: %d arreglos es demasiado (tope %d), revisar a mano"
+            # Eve 2026-10-27: a big week (15 new reps in the wrong font) is
+            # real, and skipping it left the board broken for days -- write
+            # anyway; the backup below is the way back if it was a misread
+            print("  OJO: %d arreglos, más que el tope %d -- escribo igual (backup)"
                   % (n_fix, max_fixes))
-        elif do_apply:
+        if do_apply:
             print("  backup:", backup(t, stamp))
             done = apply(sh, t, found, notes=owner)
             print("  escritos: %d" % len(done))
