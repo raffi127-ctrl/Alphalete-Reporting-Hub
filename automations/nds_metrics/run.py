@@ -375,13 +375,19 @@ def load_soh(log=print):
         return None
     hdr = [str(h).strip() for h in rows[0]]
     ix = {h: i for i, h in enumerate(hdr)}
-    for need in ("User Name", "Order Date", "Customer Name",
-                 "Wireless Status", "Wireless Active Date",
-                 "Wireless Line Count"):
+    for need in ("User Name", "Order Date", "Wireless Status",
+                 "Wireless Active Date", "Wireless Line Count"):
         if need not in ix:
             log(f"[nds] SOH missing column {need!r}")
             _SOH_MEMO.append(None)
             return None
+    # Customer Name is DISPLAY-only here (the aggregate boards don't need
+    # it) and the alphaletegp grid doesn't export it yet (2026-10-28) —
+    # warn, don't refuse. The wrap-up texter still requires it and stays
+    # held until the column is added in the SaraPlus portal.
+    if "Customer Name" not in ix:
+        log("[nds] SOH has no Customer Name column — order log shows "
+            "blank customers until the alphaletegp grid gains it")
     # Carlos sells too (2026-10-26: "i dont see my sale in the order log" —
     # the guest roster is the reps UNDER him and leaves him out, so his own
     # lines were filtered off every board).
