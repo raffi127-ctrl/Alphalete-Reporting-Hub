@@ -424,10 +424,24 @@ def _main(a) -> int:
     for title in [t for t in titles if t not in have]:
         print("  no existe %r todavía -- salteada" % title)
     titles = [t for t in titles if t in have]
+    _spare_rows(sh, [t for t in titles if t.lower().startswith("sales board")], "",
+                a.apply, stamp)
     results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today),
                        max_fixes=a.max_fixes)
     print("reporte:", report(results, stamp, a.apply))
     return 0
+
+
+def _spare_rows(sh, titles, label: str, do_apply: bool, stamp: str) -> None:
+    """Raf 2026-10-27: at least 10 spare rows at the bottom of every board,
+    TOTALS reaching all of them (extra_rows.py). Before the audit, so the
+    audit sees the board as it is left. Never stops the fixer."""
+    from automations.sales_board_fixer import extra_rows
+    for title in titles:
+        try:
+            extra_rows.do_tab(sh, title, label, do_apply, stamp + "_extra")
+        except Exception as e:  # noqa: BLE001
+            print("%s%s: filas libres no se pudo (%s)" % (label, title, type(e).__name__))
 
 
 def _drop_past(found: list, values, stop: str) -> list:
@@ -815,6 +829,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
                 rolled += roll_lanes(sh, title, o, on, stamp)
         except Exception as e:  # noqa: BLE001
             print("== %s: Lanes no se pudo pasar de semana (%s)" % (o["name"], type(e).__name__))
+        _spare_rows(sh, [t for t in tabs if t not in lanes], o["name"] + " · ", on, stamp)
         # Miami's big book (2026-10-14) ran the read quota out mid-owner: wait
         # out the minute and redo that owner (a fix already written re-audits
         # clean). Anything else skips the owner, never the rest of the run.
