@@ -175,6 +175,14 @@ def probe(office_ids: List[str], *, headless: bool = True) -> None:
             methods.setdefault(m, "(in page source)")
         hits = [m for m in sorted(methods) if re.search(r"recruit|onboard|badg|bob|newstart", m, re.I)]
         print(f"PROBE M {len(methods)} methods; recruiting ones: {','.join(hits) or 'none'}", flush=True)
+        # The per-person drill-down lives in the onboarding JS: list every
+        # method / field it names so the badged list can be called next.
+        for u in [h for h in hits if ".js" in h]:
+            src = page.evaluate("async (u) => { const r = await fetch(u); return r.ok ? await r.text() : ''; }", u)
+            names = sorted(set(re.findall(r"method[=:]\s*['\"]?(\w+)", src)))
+            print(f"PROBE J {u.rsplit('/', 1)[-1][:40]} {len(src)}b methods: {','.join(names)}", flush=True)
+            fields = sorted(set(re.findall(r"\b(\w*(?:[Bb]adg|[Ss]tart|[Dd]ate)\w*)\b", src)))
+            print(f"PROBE F {','.join(fields)[:400]}", flush=True)
 
 
 # --- sheet layout -----------------------------------------------------------
