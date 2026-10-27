@@ -505,6 +505,13 @@ class _Nds(_Att):
     def above_top(self, metrics):
         return int(metrics.get("NL", 0) or 0) >= self.LEGEND_TOTAL
 
+    def total(self, metrics):
+        """Air + lines -- the NDS board's TOTALS (post._nds_scoreboard).
+        Upgrades are not a sale here (Megan 2026-09-22, Carlos 2026-10-22),
+        but "Int Up" carries them, so the plain sum put them back on every
+        owner text: Jairo's 103 on 2026-10-26 had 4 in it."""
+        return int(metrics.get("Air", 0) or 0) + int(metrics.get("NL", 0) or 0)
+
     def tier(self, metrics):
         lines = int(metrics.get("NL", 0) or 0)
         if lines >= 5:
