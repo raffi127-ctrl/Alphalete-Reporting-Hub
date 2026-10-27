@@ -623,6 +623,24 @@ def _run_report_once(page, base_url: str, day: dt.date, service: str,
     page.click(SUBMIT)
     page.wait_for_selector(grid, timeout=GRID_TIMEOUT_MS)
     page.wait_for_timeout(2000)
+    rows = _grid_rows(page, grid)
+    # "CLICK TO LOAD RECORDS." Omar's account (2026-10-26) renders the grid
+    # with one placeholder row and loads the rows only when that text is
+    # clicked -- every other account loads them on submit. Read as-is, that
+    # is a day of zero checks for an office that is selling. Click it once,
+    # wait for the grid to re-render, read again.
+    if len(rows) == 1 and "load records" in " ".join(rows[0]).lower():
+        try:
+            page.locator("%s >> text=/load records/i" % grid).first.click(timeout=10_000)
+            page.wait_for_timeout(2500)
+            page.wait_for_selector(grid, timeout=GRID_TIMEOUT_MS)
+            rows = _grid_rows(page, grid)
+        except Exception as e:  # noqa: BLE001 -- the placeholder is reported as evidence
+            pass
+    return rows
+
+
+def _grid_rows(page, grid: str) -> List[List[str]]:
     return page.evaluate(
         """(sel) => {
              const g = document.querySelector(sel);
