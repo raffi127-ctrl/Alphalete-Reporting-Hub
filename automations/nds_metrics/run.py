@@ -1246,6 +1246,21 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
     return out
 
 
+def build_team_tree(cols, crew, today, log=print) -> Path:
+    """The 6am NDS team tree rides the 7:30 thread (Carlos 2026-10-28:
+    post it "in the NDS metrics thread every morning instead of just on
+    the Aplayers" — the A-Players 6am post stays). The team_tree agent
+    renders on this same machine; only TODAY's render is ever posted, a
+    stale file is an honest skip."""
+    import datetime as _dt
+    png = OUT_DIR.parent / "team_tree" / "team_tree.png"
+    if not png.exists():
+        raise RuntimeError("no team tree render on this machine")
+    if _dt.date.fromtimestamp(png.stat().st_mtime) != today:
+        raise RuntimeError("team tree render is not from today — skipped")
+    return png
+
+
 def build_pct_on_board(cols, crew, today, log=print) -> Path:
     """The NDS Sales Board tab's "% on the Board" block (Carlos 2026-10-24).
     Ignores the Tableau pull — it shoots the live Sheet. On Monday before the
@@ -1265,6 +1280,8 @@ SECTIONS = [
     # this thread posts 7:30). Verizon's copy rides the 5:10 sales_boards run.
     ("pct_on_board", "\U0001F4CA", "NDS % On Board",
      build_pct_on_board),
+    ("team_tree", "\U0001F333", "NDS Team Tree",
+     build_team_tree),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
