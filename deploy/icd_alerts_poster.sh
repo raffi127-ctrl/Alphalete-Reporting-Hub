@@ -112,27 +112,35 @@ START_BYTES=0
 [ -f "$LOG_FILE" ] && START_BYTES=$(wc -c < "$LOG_FILE")
 
 echo "[$(date)] poster starting (args: ${*:-none})" >> "$LOG_FILE"
+t0=$(date +%s)
 "$VENV_PY" -m automations.icd_alerts.post "$@" >> "$LOG_FILE" 2>&1
 # GRAB $? FIRST. A $(date) in the same echo runs before $? is expanded and
 # command substitution RESETS it, so this would log the status of `date`
 # (always 0) and a crashed run would read green.
 rc=$?
+t1=$(date +%s)
 
-# The knocks boards, on the same tick but as a SEPARATE run. Their cadence is
-# per destination and decided inside knocks_post, so this only has to ask
-# often enough; and a credit-check failure must not cost an office its board,
-# nor the reverse. --watch belongs only to the alerts leg, so it is dropped.
+# The knocks boards and LUCY'S HOURLY CALL-OUTS (Carlos 2026-09-26), each a
+# SEPARATE run so a credit-check failure never costs an office its board, nor
+# the reverse. --watch belongs only to the alerts leg, so it is dropped.
+#
+# DETACHED, NOT IN LINE (Eveliz, 2026-10-26): the next tick -- and so the next
+# sale alert -- cannot start until this script exits, and these two made a
+# pass take up to 4+ minutes on a busy afternoon. deploy/icd_alerts_side_legs.sh
+# runs them in their own session (launchd kills the job's process group on
+# exit, so a plain `&` would die with the tick), one copy at a time behind
+# SIDE_LOCK; a lock older than 20 minutes is a crashed run and is cleared.
 KNOCK_ARGS=""
 case " $* " in *" --send "*) KNOCK_ARGS="--send" ;; esac
-"$VENV_PY" -m automations.icd_alerts.knocks_post $KNOCK_ARGS >> "$LOG_FILE" 2>&1
-# LUCY'S HOURLY CALL-OUTS (Carlos 2026-09-26): reps 15+ min off the doors with
-# no fresh credit check, once an hour per opted-in office. Decides its own
-# hour inside; a quiet hour says nothing.
-"$VENV_PY" -m automations.icd_alerts.gap_callouts $KNOCK_ARGS >> "$LOG_FILE" 2>&1
-rk=$?
-[ "$rc" -eq 0 ] && rc=$rk
+SIDE_LOCK="$LOG_DIR/.icd-alerts-side.lock"
+find "$SIDE_LOCK" -maxdepth 0 -mmin +20 -exec rmdir {} \; 2>/dev/null
+if mkdir "$SIDE_LOCK" 2>/dev/null; then
+  "$VENV_PY" -c "import subprocess, sys; subprocess.Popen(sys.argv[1:], start_new_session=True, stdin=subprocess.DEVNULL, stdout=open(sys.argv[4], 'a'), stderr=subprocess.STDOUT)" \
+    /bin/bash deploy/icd_alerts_side_legs.sh "$VENV_PY" "$LOG_FILE" "$SIDE_LOCK" $KNOCK_ARGS \
+    >> "$LOG_FILE" 2>&1 || rmdir "$SIDE_LOCK"
+fi
 
-echo "[$(date)] poster done (exit $rc)" >> "$LOG_FILE"
+echo "[$(date)] poster done (exit $rc, alerts $((t1 - t0))s)" >> "$LOG_FILE"
 
 # Report to the Hub so the card's pill reflects a REAL run -- the orchestrator
 # never sees a standalone LaunchAgent, and without this a clean run and a
