@@ -609,7 +609,17 @@
       "as_owner": "Austin Eldredge",
       "reason": "tab added 2026-09-02 (Pat's captainship, fiber; Supreme Impact Inc dba Eclipse California). No AppStream office yet, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Austin Eldredge', so the OPT + metrics half fills.",
       "promote_when_visible": true
+    },
+    {
+      "sheet_tab": "Miguel Zaragoza",
+      "office_id": "24145",
+      "as_owner": "Miguel Zaragoza",
+      "as_company": "Nobilis Marketing Group",
+      "confidence": 1.0,
+      "promote_when_visible": true,
+      "promote_office_id": "24145",
+      "was_sales_only_reason": "tab added 2026-10-26 (Maud's mail: add Miguel Zaragoza to next week's 1on1s, Starr asked). New owner, office 24145 Nobilis Marketing Group, came off Starr Rodenhurst's team (was 'Miguel Zaragoza Carranza' as a rep). OPT fills now; recruiting promotes itself (with backfill) the day AppStream sees 24145."
     }
   ],
-  "sales_only_count": 2
+  "sales_only_count": 3
 }
