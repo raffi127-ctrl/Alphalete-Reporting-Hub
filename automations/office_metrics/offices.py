@@ -444,6 +444,7 @@ OFFICE_TIMEZONES: dict = {
     "salik":   "America/Detroit",              # Southfield, MI — EASTERN
     "cody":    "America/Chicago",              # Corpus Christi, TX
     "haytham": "America/Chicago",              # Austin, TX
+    "atef":    "America/Denver",               # Domin8 Acquisitions, Denver CO — Mountain
     "trang":   "America/Chicago",              # San Antonio, TX
     "isaiah":  "America/Chicago",              # Dallas, TX
     "nii":     "America/New_York",             # Wilkes-Barre, PA — EASTERN

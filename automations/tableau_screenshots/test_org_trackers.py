@@ -54,8 +54,7 @@ class OrgTrackerSelectionTest(unittest.TestCase):
         # 4th board (b2b_d2d_consolidated) added on Cesar's ask, 2026-08-19.
         self.assertEqual(
             _reply_ids(self._plan("domin8")),
-            ["b2b_att_country", "b2b_att_country_cru",
-             "b2b_d2d_consolidated", "order_tiered_bonus"])
+            ["nds", "order_tiered_bonus"])   # Cesar 2026-10-26: the office sells NDS now
 
     def test_domin8_has_no_late_note(self):
         # Box isn't in its selection, so nothing is "still coming".

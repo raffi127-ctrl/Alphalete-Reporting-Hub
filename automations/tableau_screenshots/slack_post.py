@@ -47,7 +47,7 @@ ORG_CHANNELS = {
     "carlos_gp":   ["C07J46MQNUX"],       # #alphalete-gp-sales (private, Carlos)
     "ambient_1":   ["C0B1DHEFVLH"],       # #ambient-sales-1 (private, Cy Wade)
     "aeon":        ["C0849EPM4LD"],       # #aeon-sales (private, Cody Cannon)
-    "domin8":      ["C0B395PUUCW"],       # #domin8-b2b-sales (private) — Lucy
+    "domin8":      ["C0B395PUUCW"],       # #domin8-nds-sales (was -b2b-; private) — Lucy
                                           # (U0BCFGCR5PV) must be a MEMBER or
                                           # files_upload_v2 → not_in_channel.
     "a_players":   ["C0AJQA8P716"],       # #a-players-b2b (private, Carlos) —
@@ -66,7 +66,7 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org + #alph
              "carlos_gp": "#alphalete-gp-sales",
              "ambient_1": "#ambient-sales-1",
              "aeon": "#aeon-sales",
-             "domin8": "#domin8-b2b-sales",
+             "domin8": "#domin8-nds-sales",
              "a_players": "#a-players-b2b"}
 
 # Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
@@ -102,9 +102,12 @@ ORG_ORDER: dict[str, list[str]] = {
 # Cesar/Domin8 2026-07-23: #domin8-b2b-sales wants just B2B AT&T ("National
 # Tracker"), B2B AT&T CRU ("National CRU"), and the Order Tiered Bonus ranking.
 # Cesar 2026-08-19 (thread on the day's tracker post): add B2B D2D Consolidated.
+# Cesar 2026-10-26, in the renamed #domin8-nds-sales ("Lineup!"): the office
+# sells NDS now -- "NDS TRACKER" and "ORDER TIERED BONUS" (his third item,
+# "Total Production for the Week", has no tracker board yet). Megan 10/27:
+# set Atef's trackers up for his ECO enrollment.
 ORG_TRACKERS: dict[str, list[str]] = {
-    "domin8": ["b2b_att_country", "b2b_att_country_cru",
-               "b2b_d2d_consolidated", "order_tiered_bonus"],
+    "domin8": ["nds", "order_tiered_bonus"],
 }
 
 

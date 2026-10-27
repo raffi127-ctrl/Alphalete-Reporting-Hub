@@ -357,7 +357,7 @@ class TestExpectedSetTracksTheRealDeclarations(unittest.TestCase):
     def test_subset_org_is_only_owed_its_subset(self):
         want = set(rp.expected_for("domin8", DAY, now=LATE_ENOUGH))
         self.assertEqual(want, set(sp.ORG_TRACKERS["domin8"]))
-        self.assertNotIn("nds", want)
+        self.assertNotIn("att_country", want)   # domin8 = nds + order_tiered_bonus since 2026-10-26
 
     def test_default_org_is_owed_every_non_opt_in_board(self):
         want = set(rp.expected_for("elevate", DAY, now=LATE_ENOUGH))

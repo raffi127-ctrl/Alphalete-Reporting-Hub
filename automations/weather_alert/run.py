@@ -67,6 +67,7 @@ CITIES = {
     "southfield": ("Southfield / Detroit, MI", 42.4734, -83.2219, "America/Detroit"),
     "corpus_christi": ("Corpus Christi, TX", 27.8006, -97.3964, "America/Chicago"),
     "austin": ("Austin, TX", 30.2672, -97.7431, "America/Chicago"),
+    "denver": ("Denver, CO", 39.7392, -104.9903, "America/Denver"),
     "abilene": ("Abilene, TX", 32.4487, -99.7331, "America/Chicago"),
     "grandville": ("Grandville / Grand Rapids, MI", 42.9095, -85.7631, "America/Detroit"),
     "wilkes_barre": ("Wilkes-Barre, PA", 41.2459, -75.8813, "America/New_York"),
@@ -126,6 +127,7 @@ OFFICE_CITY = {
 # test_offices fails for a metrics office with neither. Email-only offices
 # (Joseph, Christian) have no channel and are skipped.
 METRICS_CITY = {
+    "atef": "denver",
     "rashad": "lubbock", "hammad": "southfield", "salik": "southfield",
     "cody": "corpus_christi", "haytham": "austin", "trang": "san_antonio",
     "nii": "wilkes_barre", "jacob": "memphis",
@@ -134,6 +136,7 @@ METRICS_CITY = {
     "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
+    "atef": "denver",           # Domin8 Acquisitions, Denver CO (reps: "whole denver office"); Mountain
     "samuel": "orlando",        # Dynasty Growth Group: 590 of 846 NDS orders (8/31-10/4) installed in Kissimmee/Orlando; OV access to 23751 pending for the street address
     "joseph": "grandville",     # Logan Legacy Group, Grandville MI (OwnerVille office address, harvested 2026-10-20); #logan-legacy-sales
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
