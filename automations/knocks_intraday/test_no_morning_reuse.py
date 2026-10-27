@@ -439,7 +439,12 @@ class TheRoster(unittest.TestCase):
         taken = roster.disposition_channels()
         already_served = {k for k, o in OFFICES.items()
                           if (o.channel_id or "").strip() in taken}
-        eligible = set(OFFICES) - set(roster.BLOCKED) - no_channel
+        # Onboarded offices that left "knocks" off their form (roster.
+        # _wants_knocks, 2026-09-29 — Jairo, Samuel): not owed a board.
+        opted_out = {k for k, extra in roster.ONBOARDED_EXTRA.items()
+                     if k in OFFICES
+                     and "knocks" not in (extra.get("enrolled_reports") or [])}
+        eligible = set(OFFICES) - set(roster.BLOCKED) - no_channel - opted_out
         excused = set(roster.HOURLY) | already_served
 
         self.assertEqual({o.key for o in roster.enrolled("eod")},
