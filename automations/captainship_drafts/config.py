@@ -1010,18 +1010,11 @@ CAPTAINS: List[Captain] = [
     Captain("jairo", "Jairo", "nds", title_bg="#FBBC04", to=_to("jairo"), churn=[
         ChurnSource(_own.open_ws_nds_jairo, _ni_render, "New Internet Churn"),
     ]),
-    # Atef DE VUELTA como NDS 2026-10-19 (Eve: "los numeros de el ya pertenecen
-    # a NDS, sino se va a quedar sin su reporte diario de ventas"). Sin esperar
-    # a "Atef's Team" en NDS: §2 y el churn leen las vistas NDS de todos los
-    # equipos cortadas a su caja del Org Sales Board, asi que hoy muestran solo
-    # a Atef y suman a Sabrina/Dhyey el dia que Tableau los pase a NDS.
-    # Sin knocks (Eve 2026-10-19): el login de Raf no tiene Office Access a las
-    # oficinas de Atef/Dhey/Sabrina (Atef 23467 en "Request Sent" sin aceptar)
-    # y nadie lo pidio; asi el mail no muestra un hueco que parece un error.
-    # Cuando haya acceso y lo pidan, sacar skip_kinds.
-    Captain("atef", "Atef", "nds", title_bg="#00695C", to=_to("atef"), churn=[
-        ChurnSource(_own.open_ws_nds_atef, _ni_render, "New Internet Churn"),
-    ], skip_kinds=frozenset({"daily_knocks", "knock_dispo"})),
+    # Atef RETIRADO 2026-10-27: Carlos respondió al mail del 10/26 "Atef is
+    # no longer a captain we can end this report". (Había vuelto como NDS el
+    # 10/19, sin knocks.) Para volver a mandarlo, reponer su Captain("atef",
+    # "Atef", "nds", ... churn open_ws_nds_atef, skip_kinds knocks) y "atef"
+    # en la fila NDS de _GROUPS.
 ]
 
 BY_KEY = {c.key: c for c in CAPTAINS}
@@ -1087,7 +1080,7 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Fiber 3", ("tony", "chan", "sahil")),
     ("Fiber 4", ("pat", "jess")),
     ("B2B", ("eveliz", "luis", "luke")),
-    ("NDS", ("khalil", "colten", "jairo", "atef")),
+    ("NDS", ("khalil", "colten", "jairo")),
 )
 _PER_CAPTAIN = [
     Block(k, f"{wave} — {BY_KEY[k].display_name}", (k,))

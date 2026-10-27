@@ -221,6 +221,9 @@ _NOT_A_REPORT = frozenset({
 # A name here is a promise that the report DOES NOT RUN — keep it in step with
 # on_scheduler:false + cadence weekdays [] in schedule_config, both doors.
 _RETIRED: frozenset = frozenset({
+    # Atef NDS watch. Only existed to DM Eve when Atef's captainship landed in
+    # NDS; Carlos 2026-10-27: Atef is no longer a captain. Both spellings.
+    "atef-nds-watch", "atef_nds_watch",
     # B2B Ongoing Cancels. Its only source, ATTTRACKER-B2B/B2BCancelRates, was
     # removed from Tableau; Carlos, 2026-08-30: "yes it got removed. we can
     # remove this automation we werent looking at it". Both doors are shut —
