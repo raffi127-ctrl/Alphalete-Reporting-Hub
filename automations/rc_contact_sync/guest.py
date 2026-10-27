@@ -66,7 +66,10 @@ def _header_map(fieldnames: List[str], log=print) -> Dict[str, str]:
         # chunked, so the full header survives the queue's result-cell cap
         fl = [str(f) for f in (fieldnames or [])]
         for i in range(0, len(fl), 6):
-            log("GHDR%d: %s" % (i // 6, " | ".join(fl[i:i + 6])))
+            # print, not log: wrapup silences the loader's log and this
+            # dump must reach the run log regardless
+            print("GHDR%d: %s" % (i // 6, " | ".join(fl[i:i + 6])),
+                  flush=True)
         raise RuntimeError(
             "NDS SOH export is missing column(s) %s — GHDR lines above "
             "carry the full header" % (missing,))

@@ -1464,7 +1464,8 @@ def _invalidate_cdp_profile() -> None:
 # before the profile's extensions finish booting, and the batch stage needs the
 # Resume Helper service worker alive. Four seconds is the observed gap; the old
 # code hid it inside the 22.
-CDP_STARTUP_CAP_S = 22
+import os as _os_cap
+CDP_STARTUP_CAP_S = int(_os_cap.environ.get("RP_CDP_STARTUP_CAP_S", "22"))
 CDP_STARTUP_SETTLE_S = 4
 
 
@@ -1617,6 +1618,34 @@ def _should_kill_on_exit(hard_stop: bool, keep_warm: bool = None,
     return not (KEEP_WARM_BROWSER if keep_warm is None else keep_warm)
 
 
+def _offices_with_live_push() -> set:
+    """Office ids with an applicant_push walk running on this machine RIGHT NOW.
+    2026-10-08: the reaper judged staleness by the .rp_lastuse marker alone, which
+    a walk only stamps at session close — so a hand-run for 11580 starting
+    4 minutes into a hand-run for 11901 saw 11901's warm Chrome as idle (>960min)
+    and pkill'd it mid-resume (TargetClosedError, walk dead). A live process on
+    that office is proof the browser is in use, marker or not."""
+    import re as _re
+    import subprocess
+    live = set()
+    try:
+        out = subprocess.run(["pgrep", "-fl", r"automations\.applicant_push\.run"],
+                             capture_output=True, text=True).stdout
+    except Exception:  # noqa: BLE001
+        return live
+    try:
+        from automations.applicant_push import offices as _offices
+        default = getattr(_offices, "DEFAULT_OFFICE", "")
+    except Exception:  # noqa: BLE001
+        default = ""
+    for line in out.splitlines():
+        if "applicant_push.run" not in line:
+            continue
+        m = _re.search(r"--office[= ]+(\d+)", line)
+        live.add(m.group(1) if m else default)
+    return live
+
+
 def reap_stale_warm_browsers() -> int:
     """Kill warm browsers nobody has used lately, across every office this
     machine knows about. Called at session open, so the rotation cleans up after
@@ -1637,6 +1666,8 @@ def reap_stale_warm_browsers() -> int:
             continue
         if profile == CDP_PROFILE or not _cdp_port_alive(port):
             continue        # this office's own browser, or nothing running
+        if row.get("office_id") in _offices_with_live_push():
+            continue        # a walk is IN this browser right now (2026-10-08)
         last, cleared = _read_lastuse(profile)
         if _is_stale(last, now, cleared=cleared):
             subprocess.run(["pkill", "-f", pat], capture_output=True)

@@ -477,30 +477,12 @@ def _orderlog_attrs(log=print) -> dict:
     return out
 
 
-def build_revenue_png(lines, today: dt.date, log=print,
-                      out_path: Optional[Path] = None) -> Path:
-    """The Activation Overview's REVENUE TWIN (Carlos 2026-09-14: copy what
-    the Box thread just got — 'Box now has a version where it shows the
-    revenue that got activated' — for AT&T B2B off the SaraPlus
-    activations). Same two week tables, same renderer, money=True: every
-    unit priced on the office comp (vantura_payout_estimate.price — the
-    pricer the Vantura revenue board uses) and the weekly Tiered Volume
-    bonus rolled into each rep's activated $.
-
-    Deliberately a LOCAL money variant rather than a money_fn bolted onto
-    att_order_log.payout.build_week_tables — that builder feeds every
-    office's Tableau path (see README playbook: change one layer, watch
-    another break).
-
-    PRICING ASSUMPTIONS (SaraPlus doesn't carry these fields; stated in the
-    image subtitle so the number reads as what it is): CRU/IRU unknown ->
-    priced as CRU and every eligible unit counts toward the tier bonus; no
-    ABP/OOF flags -> those bumps aren't added (conservative); BYOD read
-    from the device string; TABLET units unpriced ($0)."""
-    from automations.att_order_log import payout as ap
-    from automations.box_order_log import png as bpng
+def make_line_pricer(log=print):
+    """(amount_fn, eligible_fn, matched, periods) — the pricing of ONE
+    SaraPlus line (order-log enrichment + comp-sheet price() + SOW tier
+    adjust). Shared by build_revenue_png and recon.py so the overview and
+    the DD reconciliation can never price a line differently."""
     from automations.vantura_payout_estimate.run import price
-    from automations.vantura_revenue_board.run import tier_for
     from automations.sp_order_log.wireless_lines import norm_tn
 
     # Cross-reference the ORDER LOG for the fields SaraPlus doesn't carry
@@ -595,6 +577,36 @@ def build_revenue_png(lines, today: dt.date, log=print,
             return False
         # vantura rule: IRU Air is not payable toward the tier bonus.
         return not (prod == "AIR/AWB" and ln.get("_cru") == "IRU")
+
+    return _amount, _eligible, matched, periods
+
+
+def build_revenue_png(lines, today: dt.date, log=print,
+                      out_path: Optional[Path] = None) -> Path:
+    """The Activation Overview's REVENUE TWIN (Carlos 2026-09-14: copy what
+    the Box thread just got — 'Box now has a version where it shows the
+    revenue that got activated' — for AT&T B2B off the SaraPlus
+    activations). Same two week tables, same renderer, money=True: every
+    unit priced on the office comp (vantura_payout_estimate.price — the
+    pricer the Vantura revenue board uses) and the weekly Tiered Volume
+    bonus rolled into each rep's activated $.
+
+    Deliberately a LOCAL money variant rather than a money_fn bolted onto
+    att_order_log.payout.build_week_tables — that builder feeds every
+    office's Tableau path (see README playbook: change one layer, watch
+    another break).
+
+    PRICING ASSUMPTIONS (SaraPlus doesn't carry these fields; stated in the
+    image subtitle so the number reads as what it is): CRU/IRU unknown ->
+    priced as CRU and every eligible unit counts toward the tier bonus; no
+    ABP/OOF flags -> those bumps aren't added (conservative); BYOD read
+    from the device string; TABLET units unpriced ($0)."""
+    from automations.att_order_log import payout as ap
+    from automations.box_order_log import png as bpng
+    from automations.vantura_revenue_board.run import tier_for
+
+    _amount, _eligible, matched, periods = make_line_pricer(log=log)
+
 
     ls, le, ts, te = ap.week_bounds(today)
     reps: dict = {}

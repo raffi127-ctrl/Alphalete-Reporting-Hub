@@ -433,6 +433,50 @@ def jump_to_last(page) -> bool:
         return False
 
 
+def jump_to_number(page, n: int) -> bool:
+    """Jump the OAT pager to applicant n. The pager is a <select> of numbers
+    sitting right before "of <N> Emails" (seen live 2026-10-04); set it and fire
+    change. Fallback: the pager links carry start=<n> in their query, so rewrite
+    the URL the same way. (Carlos: "you can pick the resume you start on.")"""
+    try:
+        ok = False
+        for fr in page.frames:
+            try:
+                ok = fr.evaluate(
+                    """(n) => {
+                       const sels=[...document.querySelectorAll('select')];
+                       const el=sels.find(s => {
+                         const ctx=((s.parentElement||{}).innerText||'');
+                         return /of\s+\d+\s*Emails?/i.test(ctx); });
+                       if(!el) return false;
+                       const has=[...el.options].some(o=>o.value==String(n));
+                       if(!has) return false;
+                       el.value=String(n);
+                       el.dispatchEvent(new Event('change',{bubbles:true}));
+                       return true; }""", int(n))
+            except Exception:  # noqa: BLE001
+                continue
+            if ok:
+                break
+        if not ok:
+            import re as _re
+            m = _re.search(r"rqst=([A-F0-9-]+)", page.url or "", _re.I)
+            if m:
+                page.goto("https://applicantstream.com/index.cfm?p=604&rqst=%s"
+                          "&start=%d" % (m.group(1), int(n)),
+                          wait_until="domcontentloaded")
+                ok = True
+        if ok:
+            page.wait_for_timeout(2500)
+            _log("[oat] pager jump -> applicant %d" % int(n))
+        else:
+            _log("[oat] pager jump: control not found — starting at 1")
+        return bool(ok)
+    except Exception as e:  # noqa: BLE001
+        _log("[oat] pager jump failed: %s" % type(e).__name__)
+        return False
+
+
 def advance_to_next(page) -> bool:
     """Advance the OAT pager ("<page> of <N> Emails", top-right of the dup area)
     to the next applicant. Returns False when there's no next control (end of
@@ -3877,6 +3921,9 @@ def run_walk(page, live: bool = False, limit: int = None,
         _log("[oat] FATAL: could not open the One-App-at-a-time page")
         return 2
     _select_indeed_job_board(page)
+    _start_at = os.environ.get("OAT_START_AT", "")
+    if _start_at.isdigit() and int(_start_at) > 1:
+        jump_to_number(page, int(_start_at))
 
     # WHOSE queue is this? Checked BEFORE a single applicant is read, because
     # everything past this point sends, removes or texts a real person.
