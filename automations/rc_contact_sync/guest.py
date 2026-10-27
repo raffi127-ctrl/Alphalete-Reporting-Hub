@@ -63,9 +63,13 @@ def _header_map(fieldnames: List[str], log=print) -> Dict[str, str]:
     missing = [k for k in _COLS if k not in out and k not in ("phone",
                                                              "business")]
     if missing:
+        # chunked, so the full header survives the queue's result-cell cap
+        fl = [str(f) for f in (fieldnames or [])]
+        for i in range(0, len(fl), 6):
+            log("GHDR%d: %s" % (i // 6, " | ".join(fl[i:i + 6])))
         raise RuntimeError(
-            "Raf guest export is missing column(s) %s — header was: %r"
-            % (missing, (fieldnames or [])[:20]))
+            "NDS SOH export is missing column(s) %s — GHDR lines above "
+            "carry the full header" % (missing,))
     if "phone" not in out:
         log("guest rows: NO phone column found (tried %s) — every guest "
             "customer will be skipped as phoneless; fix guest._COLS"
