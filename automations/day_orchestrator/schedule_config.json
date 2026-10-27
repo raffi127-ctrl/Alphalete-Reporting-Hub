@@ -532,7 +532,10 @@
    "verify": null,
    "timeout_minutes": 120,
    "machine": "Lucy 2",
-   "can_run_on": ["Lucy 1", "Lucy 3"]
+   "can_run_on": [
+    "Lucy 1",
+    "Lucy 3"
+   ]
   },
   "late_join_probe": {
    "on_scheduler": false,
@@ -644,7 +647,10 @@
    "verify": null,
    "timeout_minutes": 60,
    "machine": "Lucy 2",
-   "can_run_on": ["Lucy 1", "Lucy 3"]
+   "can_run_on": [
+    "Lucy 1",
+    "Lucy 3"
+   ]
   },
   "sms_audit_weekly": {
    "on_scheduler": true,
@@ -689,7 +695,10 @@
    "verify": null,
    "timeout_minutes": 120,
    "machine": "Lucy 2",
-   "can_run_on": ["Lucy 1", "Lucy 3"]
+   "can_run_on": [
+    "Lucy 1",
+    "Lucy 3"
+   ]
   },
   "sms_call_list": {
    "on_scheduler": false,
@@ -710,7 +719,10 @@
    "verify": null,
    "timeout_minutes": 45,
    "machine": "Lucy 2",
-   "can_run_on": ["Lucy 1", "Lucy 3"]
+   "can_run_on": [
+    "Lucy 1",
+    "Lucy 3"
+   ]
   },
   "sms_ai_settings": {
    "on_scheduler": false,
@@ -796,7 +808,10 @@
    "_close_on_note": "2026-10-26: a hand-run pull with no fixed office/week to check, so a clean exit IS the evidence. Without this the 10/24 21:18 clean re-run left failure-sms_activity open for 2 days ('nothing can confirm it DELIVERED').",
    "timeout_minutes": 60,
    "machine": "Lucy 2",
-   "can_run_on": ["Lucy 1", "Lucy 3"]
+   "can_run_on": [
+    "Lucy 1",
+    "Lucy 3"
+   ]
   },
   "recruiter_stats": {
    "on_scheduler": true,
@@ -1236,7 +1251,7 @@
   "lumen_owners": {
    "on_scheduler": true,
    "machine": "Lucy 4",
-   "_note": "LIVE 2026-10-24 (Eve): every day, after the captainship emails. Raf 2026-10-08 (email 'Metrics reporting') asked for a captainship-style report on the Lumen (Quantum Fiber) owners; on 10/23 he confirmed it is the 'quantum sales board' he told Chan about. --send mails the 'Lumen Owners' Contacts group of alphaletereporting (Chan, Myles Neal, David Pancoast, Raf, Eve) — edit the group, not the code; it falls back to those five if the group can't be read. The mail: the NI / All Units boxes of the Lumen Owners tab (Org Sales Board workbook), the owner table, a last-30-days Quantum table (RES-Quantum Fiber 30-Day ICD Metrics) and yesterday's Quantum knock boards (OwnerVille campaign 7, same owners as Chan's captainship) as one attached PDF. Lucy 4 because it is the least loaded box with the rhidalgo OwnerVille login (David's office access lives on that account). not_before 08:30 is a clock fence, not a dependency: the captainship emails go from Lucy 3 (~07:45-08:15), which this box cannot see. Test by mail: `lucy rerun lumen_owners --to eve@alphaletemarketing.com`.",
+   "_note": "LIVE 2026-10-24 (Eve): every day, after the captainship emails. Raf 2026-10-08 (email 'Metrics reporting') asked for a captainship-style report on the Lumen (Quantum Fiber) owners; on 10/23 he confirmed it is the 'quantum sales board' he told Chan about. --send mails the 'Lumen Owners' Contacts group of alphaletereporting (Chan, Myles Neal, David Pancoast, Raf, Eve) \u2014 edit the group, not the code; it falls back to those five if the group can't be read. The mail: the NI / All Units boxes of the Lumen Owners tab (Org Sales Board workbook), the owner table, a last-30-days Quantum table (RES-Quantum Fiber 30-Day ICD Metrics) and yesterday's Quantum knock boards (OwnerVille campaign 7, same owners as Chan's captainship) as one attached PDF. Lucy 4 because it is the least loaded box with the rhidalgo OwnerVille login (David's office access lives on that account). not_before 08:30 is a clock fence, not a dependency: the captainship emails go from Lucy 3 (~07:45-08:15), which this box cannot see. Test by mail: `lucy rerun lumen_owners --to eve@alphaletemarketing.com`.",
    "display_name": "Lumen Owners",
    "source_type": "tableau",
    "data_sources": [],
@@ -3333,7 +3348,7 @@
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Added 2026-10-26 for JC Lopez (NDS Program) after eStream granted his AppStream. Refreshes the office list LIVE, promotes every sales_only tab flagged promote_when_visible that AppStream now sees, and backfills each one's recruiting history over one session. Pass the captainship: `lucy rerun recruiting_backfill_new_icds --captainship NDS-Program` (add --dry-run to probe). A pending tab that does not promote prints every office sharing its last name, so a spelling gap is one promote_office_id away. No machine on purpose: build/fix runs go to the least-loaded Lucy with the AppStream login.",
-   "display_name": "Recruiting backfill — newly visible ICDs",
+   "display_name": "Recruiting backfill \u2014 newly visible ICDs",
    "source_type": "appstream",
    "data_sources": [],
    "command": [
@@ -14247,7 +14262,14 @@
   "owner_sales_hourly": {
    "on_scheduler": false,
    "machine": "Lucy 1",
-   "standalone_weekdays": [0, 1, 2, 3, 4, 5],
+   "standalone_weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
    "_note": "Raf 2026-10-24 (Slack, to Megan + Eve + Carlos): once an hour, how many sales each owner is at, in the 'Alphalete Owners' iMessage chat. Source = Lucy ECO relay ('Lucy Access App' -> 'ICD Relay' -> 'Sales JSON', today's row per office), per-rep totals by campaign (sale_hype.rep_total), summed per owner. Real schedule = com.alphalete.owner-sales-hourly on LUCY 1 (texting machine): :50 Mon-Sat 12-21 CT. Dry-runs by default; --send texts. Skips a send whose numbers did not change since the last one.",
    "display_name": "Owner Sales Hourly (relay -> owners iMessage)",
    "source_type": "api",
@@ -14868,7 +14890,7 @@
    "hand_run_only": true,
    "on_scheduler": false,
    "_note": "Lucy's 1st round audit checker (Eve 2026-10-22): Zooms in ZOOMS INFO with no / rejected Fathom key, recordings left out of the post, offices that lost their Zoom. This handle posts the check to Eve's DM (no tag, state not saved). Live it runs inside first_round_scorecards after the 6 PM post once checker.LIVE = True.",
-   "display_name": "1st Round Audit Checker — preview to Eve",
+   "display_name": "1st Round Audit Checker \u2014 preview to Eve",
    "source_type": "api",
    "command": [
     "automations.first_round_scorecards.checker"
@@ -15442,6 +15464,45 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for omar (Omar Mohamad, Kalkan Marketing, OwnerVille 24153, Dearborn MI). Wired by hand 2026-10-26 during his Lucy ECO enrollment Zoom (Eve). AT&T D2D like steve/hasani, all 11 boards. OFF until `lucy rerun omar_metrics --dry-run` on Lucy 4 shows data on every board and his ECO sign-up names the channel -- never a blank first post."
+  },
+  "atef_metrics": {
+   "order": 26.8,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Atef's Daily Metrics (peakmanagement-att-sales)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "atef",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "frank_metrics"
+   },
+   "_note": "Office metrics for atef -> #domin8-nds-sales (C0B395PUUCW). Wired by hand 2026-10-27; NDS office (5 boards). OFF until the Lucy 4 dry run shows data on every board; his b2b_metrics thread stops (HELD_FROM_ALL) when this goes on.",
+   "_onboarded": true
   }
  },
  "read_only_standalone": {
