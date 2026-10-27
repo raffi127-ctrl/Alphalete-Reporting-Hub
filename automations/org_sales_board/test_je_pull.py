@@ -446,8 +446,39 @@ class UnpostedWeekFetchTest(unittest.TestCase):
 
         with mock.patch.object(je_pull, "download_crosstab_patchright",
                                fake_download),              mock.patch.object(je_pull, "_week_label", return_value=TARGET),              mock.patch.object(je_pull, "_check_one_week") as check:
-            je_pull.fetch(page=object())
+            with self.assertRaises(je_pull.WeekNotPosted):
+                je_pull.fetch(page=object())
         check.assert_not_called()
+
+    def test_box_not_found_is_not_reported_as_unposted(self):
+        # WE 10.18: no week box at all is a broken pull, not JE's wait.
+        hook = je_pull._drive_week_selection(TARGET)
+        hook.left_view_week = True
+        self.assertFalse(hook.week_not_posted)
+
+
+class UnpostedWeekAdapterTest(unittest.TestCase):
+    """Tue 2026-10-27: JE hadn't posted WE 11/1, the view showed its saved
+    7/5/2026 week, and the WE 10.18 stuck-filter check dropped Retail JE —
+    holding the Org Sales Board email. Unposted early in the week = a wait."""
+
+    def _run(self, today):
+        import datetime as dt
+        from unittest import mock
+        from automations.org_sales_board import orchestrate
+        ctx = mock.Mock(from_csv=None, page=object(), today=today)
+        with mock.patch.object(je_pull, "fetch",
+                               side_effect=je_pull.WeekNotPosted("x")):
+            return orchestrate._adapter_je_retail(ctx)
+
+    def test_tuesday_unposted_week_waits(self):
+        import datetime as dt
+        self.assertEqual(self._run(dt.date(2026, 10, 27)), {})
+
+    def test_thursday_unposted_week_fails_loud(self):
+        import datetime as dt
+        with self.assertRaises(je_pull.WeekNotPosted):
+            self._run(dt.date(2026, 10, 29))
 
 
 class EmptyWeekDialogTest(unittest.TestCase):

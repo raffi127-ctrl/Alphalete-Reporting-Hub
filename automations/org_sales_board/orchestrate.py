@@ -119,6 +119,16 @@ def _adapter_je_retail(ctx: AdapterContext) -> PullDict:
     else:
         try:
             csv_path = je_pull.fetch(page=ctx.page, today=ctx.today, verbose=True)
+        except je_pull.WeekNotPosted as e:
+            # The dropdown itself says JE hasn't posted the week. Early in the
+            # week that is JE's day-behind wait (same window as the stale-week
+            # check below); later it is JE frozen — fail loud.
+            from automations.org_sales_board import week as _wk
+            if len(_wk.completed_days(ctx.today or dt.date.today())) >= 3:
+                raise
+            ctx.logfn(f"  ⚠ {e} — a day behind; skipping JE fill. Self-heals "
+                      f"on the next run once JE posts the week.")
+            return {}
         except Exception as e:  # noqa: BLE001 — re-raised unless it's the empty week
             if not je_pull.empty_week_dialog(e, ctx.today):
                 raise

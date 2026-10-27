@@ -340,6 +340,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
 
     def pre_export(page, viz):
         pre_export.left_view_week = False   # reset: the download retry re-runs us
+        pre_export.week_not_posted = False
         tbox, cur = _find_box(page, viz)
         if tbox is None:
             if verbose:
@@ -376,6 +377,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
                       "(JE hasn't posted it) — leaving selection unchanged")
             _close_dropdown(page, viz)
             pre_export.left_view_week = True
+            pre_export.week_not_posted = True
             return
 
         _only(page, viz, label)    # fast path; the loop below verifies it
@@ -435,7 +437,17 @@ def _drive_week_selection(label: str, verbose: bool = False):
                 f"(of {len(weeks)} week option(s))")
 
     pre_export.left_view_week = False
+    pre_export.week_not_posted = False
     return pre_export
+
+
+class WeekNotPosted(RuntimeError):
+    """JE's dropdown has no option for the current week yet — JE simply has
+    not posted it (every Tuesday morning: Monday lands ~13:53). The crosstab
+    then shows the saved view's OWN week (7/5/2026), which is not last week, so
+    the adapter's stuck-filter check (WE 10.18) read it as a broken pull and
+    dropped Retail JE every Tuesday (2026-10-27). Raised so the caller can tell
+    'not posted' apart from 'filter never driven'."""
 
 
 # The only sheet JE's view still renders when the pinned week has no rows.
@@ -481,6 +493,9 @@ def fetch(out_path: Optional[Path] = None, verbose: bool = False, page=None,
     # to show another week: parse() flags it not-current and the adapter fills
     # nothing. Checking it here raised instead and dropped Retail JE on
     # Tue 2026-09-29 ("shows week(s) 7/5/2026, expected only 10/4/2026").
+    if hook.week_not_posted:
+        raise WeekNotPosted(f"JE hasn't posted week {label} yet (not in the "
+                            f"'Sales Week Ending' dropdown)")
     if not hook.left_view_week:
         _check_one_week(out_path, label)
     return out_path
