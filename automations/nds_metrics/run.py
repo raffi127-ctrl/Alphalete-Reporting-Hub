@@ -311,18 +311,16 @@ def load_soh(log=print):
             import io as _mio
             start = today - dt.timedelta(days=31)
             parts = []
+            # Carlos 2026-10-27: "carhi1816 is my b2b logins. we don't
+            # need to use it for anything anymore" — the b2batt leg is
+            # RETIRED. alphaletegp is the only NDS dealer (probe that day:
+            # its one recent crew order was 10/19, pre-NDS).
             try:
                 parts.append(("nds", _pull_nds_soh(start, today, log=log)))
             except Exception as e:  # noqa: BLE001
                 log(f"[nds] nds-dealer pull blocked ({type(e).__name__})")
-            try:
-                from automations.sp_order_log.run import pull_csv
-                b2b, _wl = pull_csv(start, today, log=log)
-                parts.append(("b2batt", b2b))
-            except Exception as e:  # noqa: BLE001
-                log(f"[nds] b2batt pull blocked ({type(e).__name__})")
             if not parts:
-                raise RuntimeError("both dealers' SOH pulls failed")
+                raise RuntimeError("the NDS dealer SOH pull failed")
             # The dealers' SOH grids are configured differently: the
             # alphaletegp export has no Customer Name / Wireless Order # /
             # Wireless Acct # columns at all (seen 2026-10-27, 100 cols),
