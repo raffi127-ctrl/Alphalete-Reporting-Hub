@@ -43,6 +43,9 @@ class Office:
     tab: str = ""
     # Who Lucy asks to tag a leader she can't: {name: Slack id}
     tag_helpers: Dict[str, str] = field(default_factory=dict)
+    # Where the 5pm run posts (deploy/raf_daily_update.sh), shown on the Hub
+    # card: True = the office's own `channel`, False = `test_channel`.
+    posts_in_own_channel: bool = False
 
 
 OFFICES: Dict[str, Office] = {
@@ -60,6 +63,7 @@ OFFICES: Dict[str, Office] = {
     "omar": Office(
         key="omar", office_id="24153", owner="Omar Mohamad",
         channel="C0C6HKZ63EK",   # #omars-mohammad-office-recruiting-24153-rafael-hidalgo
+        posts_in_own_channel=True,   # Megan 2026-10-26: post in his channel
         tag_helpers={"Omar Mohamad": "U0C144X8SBD"}),   # not look-alike U0A0J2T9XKL
 }
 

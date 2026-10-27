@@ -695,8 +695,9 @@ def _second_round_post_card() -> dict:
     def _line(o) -> str:
         what = ("sheet + Slack post" if o.sheet else
                 "Slack post only — the sheet is filled by Omar Daily Update")
-        return (f"• **{o.owner}** (office {o.office_id}) — {what}; posts in "
-                f"#org-indeed-accounts while TESTING (own channel waits for the go)")
+        where = ("its own recruiting channel" if o.posts_in_own_channel
+                 else "#org-indeed-accounts")
+        return f"• **{o.owner}** (office {o.office_id}) — {what}; posts in {where}"
 
     return {
         "id": "2nd-round-daily-update-post",

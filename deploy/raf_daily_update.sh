@@ -6,8 +6,9 @@
 # logged "WOULD run raf_daily_update [dry-run]" and nothing ran.
 #
 # THEN Omar's (office 24153), same EOD outcome thread, SLACK POST ONLY
-# (Megan 2026-10-26) — his sheet is filled by omar_daily_update. Same TEST
-# PHASE: posts in #org-indeed-accounts until his own channel gets the go.
+# (Megan 2026-10-26) — his sheet is filled by omar_daily_update. Posts in HIS
+# channel (offices.py: #omars-mohammad-office-recruiting-24153-rafael-hidalgo,
+# Megan 2026-10-26). Raf's stays in #org-indeed-accounts — it does not move.
 # One after the other, never together: both drive Lucy 2's one AppStream
 # console. Each has its own Hub status and its own failure alert.
 set -u
@@ -56,6 +57,6 @@ run_one raf_daily_update "Raf Daily Update" raf-daily-update \
     --write --test-sheet --post --channel C0BH637AM8F
 ST_RAF=$?
 run_one daily_update_omar "Omar Daily Update Post" omar-daily-update-post \
-    --office omar --post --channel C0BH637AM8F
+    --office omar --post
 ST_OMAR=$?
 [ $ST_RAF -eq 0 ] && [ $ST_OMAR -eq 0 ]

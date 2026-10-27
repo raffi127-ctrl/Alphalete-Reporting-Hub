@@ -2228,7 +2228,7 @@
     5
    ],
    "_standalone_weekdays_note": "Python weekday(): Mon-Sat. The REAL schedule is Raf's com.alphalete.raf-daily-update LaunchAgent on Lucy 2 (5:00 PM CT): deploy/raf_daily_update.sh runs Raf's Daily Update, then this one right after (one AppStream console, never both at once).",
-   "_note": "Omar's EOD Daily Update thread (Megan 2026-10-26: 'running EOD to update the ICD of the outcome of the 2nd rounds for that day - just like the raf test'). AppStream office 24153 -> the day's 2nd rounds + BOB-call outcomes -> 'Daily Update M/D' thread (congrats ask, pre-made text, picture, a tag per hiring leader; leaders Lucy can't tag go to Omar U0C144X8SBD and are learned). SLACK POST ONLY: his sheet is filled by omar_daily_update (Eve) - one writer per sheet. TEST PHASE: the wrapper posts in #org-indeed-accounts (C0BH637AM8F); his channel C0C6HKZ63EK waits for the go. `lucy rerun daily_update_omar --machine \"Lucy 2\"` = dry preview (posts nothing).",
+   "_note": "Omar's EOD Daily Update thread (Megan 2026-10-26: 'running EOD to update the ICD of the outcome of the 2nd rounds for that day - just like the raf test'). AppStream office 24153 -> the day's 2nd rounds + BOB-call outcomes -> 'Daily Update M/D' thread (congrats ask, pre-made text, picture, a tag per hiring leader; leaders Lucy can't tag go to Omar U0C144X8SBD and are learned). SLACK POST ONLY: his sheet is filled by omar_daily_update (Eve) - one writer per sheet. Posts in HIS channel C0C6HKZ63EK (Megan 2026-10-26); Raf's stays in #org-indeed-accounts. `lucy rerun daily_update_omar --machine \"Lucy 2\"` = dry preview (posts nothing).",
    "display_name": "Omar Daily Update Post (TEST)",
    "source_type": "appstream",
    "data_sources": [],
