@@ -132,6 +132,31 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
                                                  for ln in body.split("\n"))))
             continue
         try:
+            # Carlos 2026-10-27: "starting tomorrow lets post inside of the
+            # NDS metrics thread instead of making a separate thread." In
+            # gp-sales the day's NDS Metrics thread (state file written by
+            # nds_metrics at 7:30) takes the post as ONE reply — title +
+            # names together, since Slack has no thread inside a thread.
+            # No NDS thread that day (Sunday, or pre-7:30) and the named
+            # header below still happens; #a-players-b2b is unchanged
+            # (it has no NDS Metrics thread).
+            nds_ts = None
+            if chan == "C07J46MQNUX":
+                try:
+                    import json as _j
+                    from automations.nds_metrics.run import _state_path
+                    _sp = _state_path(day)
+                    if _sp.exists():
+                        nds_ts = _j.loads(_sp.read_text()).get("ts")
+                except Exception:                          # noqa: BLE001
+                    nds_ts = None
+            if nds_ts:
+                res = smp.post_reply_text_only(
+                    "*%s*\n%s" % (title, body), thread_ts=nds_ts,
+                    channel_id=chan)
+                log("  posted to %s (inside the NDS Metrics thread, "
+                    "reply ts=%s)" % (label, res.get("ts")))
+                continue
             ts = _saved_thread_ts(day, chan)
             if ts:
                 head = {"thread_ts": ts, "existed": True}
