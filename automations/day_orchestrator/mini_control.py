@@ -4404,17 +4404,29 @@ def _action_update(args: str) -> tuple[bool, str]:
             capture_output=True, text=True, timeout=30).stdout.strip()
     except Exception:  # noqa: BLE001 — the probe must never mask the pull result
         unmerged = ""
+    # SELF-HEAL IT (2026-10-28). Saying so was not enough: the mini and Lucy 3
+    # both sat with `UU office-mapping*.json` (an onboard_apply edit vs. an
+    # incoming commit) — reports reading the mapping broke, and every later
+    # `update` died at `checkout main` with "resolve your current index first",
+    # so the fleet stopped taking deploys until a person ran git_recover. The
+    # pull itself succeeded, so HEAD is the new origin code: put exactly those
+    # files back to HEAD. The local edit is still in the stash (git keeps it
+    # when the pop conflicts), so nothing is discarded.
     if unmerged:
-        files = ", ".join(unmerged.split("\n")[:6])
+        paths = [p for p in unmerged.split("\n") if p.strip()]
+        healed, _h = _g("checkout", "HEAD", "--", *paths)
+        files = ", ".join(paths[:6])
+        if healed:
+            return ok, (
+                f"pulled · ⚠ the machine's own edit to {files} clashed with the "
+                "new code, so those file(s) now hold the NEW version and the "
+                "machine's edit is parked in `git stash list` (re-run "
+                f"onboard_apply if it was an enrollment). · {out}")
         return False, (
             "PULLED, but the autostash pop CONFLICTED and left the tree "
-            f"unmerged: {files}. This runner is now on new code with a broken "
-            "working copy — anything reading those files will fail (a broken "
-            "schedule_config.json takes out the whole 4am batch). Your local "
-            "edit is NOT lost, it is in the stash: `git checkout --theirs <f> "
-            "&& git add <f>` to take origin's version, or `lucy git_recover "
-            "<f>` to restore it from origin/main; `git stash list` still has "
-            f"the edit. · {out}")
+            f"unmerged: {files}, and restoring them failed ({_h[:120]}). "
+            "Anything reading those files will fail until `lucy git_recover`. "
+            f"The local edit is in `git stash list`. · {out}")
     return ok, out
 
 
@@ -4454,14 +4466,24 @@ def _action_git_status(args: str) -> tuple[bool, str]:
     inc_set = {l.strip() for l in inc}
     blockers = [m for m in mod
                 if m[3:].strip() in inc_set and not m.startswith("??")]
+    # A HALF-MERGED file blocks EVERYTHING, overlap or not (2026-10-28): the
+    # mini and Lucy 3 each had one `UU` file, `update` died at `checkout main`
+    # with "resolve your current index first", and this said "nothing
+    # blocking a pull" because the file wasn't in the incoming list.
+    unmerged = [m for m in mod if m[:2] in ("UU", "AA", "DD", "AU", "UA",
+                                             "DU", "UD")]
 
     lines = [f"branch {branch} · HEAD {head}",
              f"behind origin/main by {behind} commit(s)",
              f"locally modified: {len(mod)} · incoming files: {len(inc)}"]
+    if unmerged:
+        lines.append("⚠ HALF-MERGED — blocks every update and breaks anything "
+                     "reading it; fix with `lucy git_recover`:")
+        lines += [f"    {u}" for u in unmerged]
     if blockers:
         lines.append("⚠ BLOCKS THE PULL (modified AND incoming):")
         lines += [f"    {b}" for b in blockers]
-    elif mod:
+    elif mod and not unmerged:
         lines.append("no pull blockers — local edits don't overlap incoming")
     lines.append("--- git status --short ---")
     lines += mod or ["(clean)"]
