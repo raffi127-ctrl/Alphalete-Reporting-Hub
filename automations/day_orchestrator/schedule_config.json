@@ -12284,6 +12284,25 @@
    "_onboarded": true,
    "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
   },
+  "admin_pull": {
+   "on_scheduler": false,
+   "_note": "BUILD/ONE-OFF (Carlos 2026-10-27): pull AppStream Retention - Details (new) (p=783, the Focus Report source) for ONE office with the admin breakdown ON, every Sun-Sat report week in --start..--end, and leave the raw table (each metric row + its per-admin rows) as JSON: output/admin_pull_<office>.json on the runner and, with --tab, 45k-char chunks down column A of that tab on the control workbook so a laptop can read it back. Feeds the standalone per-owner Focus Report's 'who did it' groupings (first use: Justin Wood 22192 -> sheet 1IDTvA7p...). No machine on purpose: any Lucy signed in as Lucy Reports can run it (routing picks the least-loaded). `lucy rerun admin_pull --office 22192 --owner \"Justin Wood\" --start 2026-04-26 --end 2026-11-01 --tab \"JW Admin Data\"`.",
+   "display_name": "Admin breakdown pull (one office)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.funnel_board.admin_pull"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 40
+  },
   "funnel_board": {
    "on_scheduler": true,
    "machine": "Lucy 2",
