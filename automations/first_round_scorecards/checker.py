@@ -8,6 +8,10 @@ rounds for 2 weeks with no key, nobody noticed):
     bad key     Fathom rejects the key (401)
     not audited a recording today that never made it into the post
     gone        an office that had a Zoom slot yesterday and has none today
+    quiet       a Zoom that serves an office, key fine, but Fathom recorded
+                nothing on it for QUIET_WEEKDAYS weekdays (Megan, 2026-10-27 --
+                Khalil's Zoom recorded nothing 9/15-10/26 with a working key:
+                no 'no key', no 'bad key', so nobody heard)
 
 Only what's NEW (or just fixed) is posted, as one thread in
 #ars-recruiting-numbers that tags Camila -- an open problem isn't repeated
@@ -39,6 +43,7 @@ LIVE = True                         # Eve 10/22: sample OK, to the channel
 CAMILA = "U07FWSYP3NV"              # Camila Hornos Kraschinsky
 STATE = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards" / "checker.json"
 SEEN_DAYS = 7                       # a login seen under any key this far back = covered
+QUIET_WEEKDAYS = 2                  # nothing recorded on the last N weekdays = 'quiet'
 _NO_OFFICE = {"", "LOST"}
 # Offices whose 1st rounds aren't audited on purpose: never flagged.
 # Joshua interviews on his own Zoom (Camila 10/21: not needed).
@@ -60,8 +65,21 @@ def _label(z: Dict[str, str]) -> str:
     return f"*{z.get('zoom') or 'a Zoom'}*" + (f" ({who})" if who else "")
 
 
+def quiet_since(day: dt.date) -> dt.date:
+    """The first of the last QUIET_WEEKDAYS weekdays up to `day` (Monday -> Friday)."""
+    d, n = day, 0
+    while True:
+        if d.weekday() < 5:
+            n += 1
+            if n == QUIET_WEEKDAYS:
+                return d
+        d -= dt.timedelta(days=1)
+
+
 def problems(accounts: Dict[str, Dict[str, str]], seen: Set[str], rejected: Set[str],
-             missed: Dict[str, int], owners_before: Optional[List[str]]) -> Dict[str, str]:
+             missed: Dict[str, int], owners_before: Optional[List[str]],
+             last: Optional[Dict[str, dt.date]] = None,
+             day: Optional[dt.date] = None) -> Dict[str, str]:
     """{problem key: one line} from what was read.
 
     accounts       zooms.accounts() -- {login: {zoom, morning, afternoon, key}}
@@ -69,10 +87,26 @@ def problems(accounts: Dict[str, Dict[str, str]], seen: Set[str], rejected: Set[
     rejected       logins whose key Fathom refused
     missed         {owner: recordings today that the post left out}
     owners_before  the offices with a Zoom at the last check (None = first run)
+    last, day      {login: newest recording date} and the day checked; a Zoom
+                   with an office whose newest recording is older than the
+                   last QUIET_WEEKDAYS weekdays is 'quiet' (None = not checked)
     """
     out: Dict[str, str] = {}
     for login, z in accounts.items():
-        if not offices(z) or login in seen:
+        if not offices(z):
+            continue
+        if last is not None and day is not None and (login in seen or (z.get("key") and login not in rejected)):
+            newest = last.get(login)
+            if newest and newest < day - dt.timedelta(days=SEEN_DAYS):
+                newest = None       # an odd old one Fathom hands back (a 2021 date, 10/27)
+            if newest is None or newest < quiet_since(day):
+                when = (f"since {newest:%a} {newest.month}/{newest.day}" if newest
+                        else f"in the last {SEEN_DAYS} days")
+                out[f"quiet:{login}"] = (f"{_label(z)}: the key works, but Fathom hasn't recorded "
+                                         f"a single 1st round on it {when}. Is Fathom on and "
+                                         "auto-recording every meeting, and are the interviews "
+                                         "on this Zoom?")
+        if login in seen:
             continue
         if not z.get("key"):
             out[f"nokey:{login}"] = (f"{_label(z)}: no Fathom API key in ZOOMS INFO, "
@@ -125,6 +159,9 @@ def texts(day: dt.date, d: Dict[str, Dict[str, str]], tag: bool = True):
     if d["new"]:
         lines.append("_API keys: Fathom → Settings → API Access, pasted in the Zoom's column "
                      "in ZOOMS INFO._")
+        if any(k.startswith("quiet:") for k in d["new"]):
+            lines.append("_Recording nothing: sign in to Fathom as that Zoom's login and set it to "
+                         "auto-record every meeting, impromptu ones too._")
     return parent, "\n".join(lines).strip()
 
 
@@ -141,11 +178,13 @@ def _save(data: Dict) -> None:
 
 
 def read_fathom(day: dt.date, keys: List[str]):
-    """(logins seen in the last SEEN_DAYS under any key, rejected key tails)."""
+    """(logins seen in the last SEEN_DAYS under any key, rejected key tails,
+    {login: its newest recording's date (CT)}). A recording counts for its
+    recorder's login AND for 'key:<tail>' (a Zoom with no login in the sheet)."""
     from automations.first_round_scorecards import fathom
     start = dt.datetime.combine(day - dt.timedelta(days=SEEN_DAYS), dt.time(0), fathom.CT)
     end = dt.datetime.combine(day + dt.timedelta(days=1), dt.time(6), fathom.CT)
-    seen, rejected = set(), set()
+    seen, rejected, last = set(), set(), {}
     for key in keys:
         cursor = None
         while True:
@@ -163,10 +202,15 @@ def read_fathom(day: dt.date, keys: List[str]):
             for m in page.get("items") or []:
                 email = ((m.get("recorded_by") or {}).get("email") or "").lower()
                 seen.add(email or "key:" + key[-12:])
+                began = m.get("recording_start_time") or m.get("created_at")
+                if began:
+                    d = fathom._utc(began).astimezone(fathom.CT).date()
+                    for who in filter(None, (email, "key:" + key[-12:])):
+                        last[who] = max(last.get(who, d), d)
             cursor = page.get("next_cursor")
             if not cursor:
                 break
-    return seen, rejected
+    return seen, rejected, last
 
 
 def check(day: dt.date, missed: Optional[Dict[str, int]] = None):
@@ -174,10 +218,10 @@ def check(day: dt.date, missed: Optional[Dict[str, int]] = None):
     from automations.first_round_scorecards import fathom, zooms
     acc = zooms.accounts()
     keys = list(dict.fromkeys(fathom._file_keys() + [z["key"] for z in acc.values() if z.get("key")]))
-    seen, bad_tails = read_fathom(day, keys)
+    seen, bad_tails, last = read_fathom(day, keys)
     rejected = {login for login, z in acc.items() if z.get("key") and z["key"][-12:] in bad_tails}
     st = _state()
-    found = problems(acc, seen, rejected, missed or {}, st.get("owners"))
+    found = problems(acc, seen, rejected, missed or {}, st.get("owners"), last=last, day=day)
     return found, diff(found, st.get("open") or {}), sorted({o for z in acc.values() for o in offices(z)})
 
 

@@ -45,6 +45,46 @@ class Problems(unittest.TestCase):
         self.assertEqual(list(got), ["missed:Jennifer Figueroa"])
 
 
+class Quiet(unittest.TestCase):
+    """Megan 2026-10-27: Khalil's Zoom, key fine, recorded nothing for weeks."""
+    ACC = {"k@x.com": {"zoom": "Khalil's Zoom", "morning": "Khalil Mansour",
+                       "afternoon": "Khalil Mansour", "key": "k" * 20}}
+    TUE = dt.date(2026, 10, 27)
+
+    def quiet(self, last, day=TUE, seen=frozenset(), rejected=frozenset()):
+        return ck.problems(self.ACC, set(seen), set(rejected), {}, None, last=last, day=day)
+
+    def test_a_working_key_that_recorded_nothing(self):
+        got = self.quiet({})
+        self.assertIn("quiet:k@x.com", got)
+        self.assertIn("in the last 7 days", got["quiet:k@x.com"])
+
+    def test_recorded_on_one_of_the_last_two_weekdays_is_fine(self):
+        self.assertEqual(self.quiet({"k@x.com": dt.date(2026, 10, 26)}, seen={"k@x.com"}), {})
+        # Monday looks back to Friday, not over the weekend
+        self.assertEqual(self.quiet({"k@x.com": dt.date(2026, 10, 23)}, day=dt.date(2026, 10, 26),
+                                    seen={"k@x.com"}), {})
+
+    def test_older_than_two_weekdays_says_since_when(self):
+        got = self.quiet({"k@x.com": dt.date(2026, 10, 22)}, seen={"k@x.com"})
+        self.assertIn("since Thu 10/22", got["quiet:k@x.com"])
+
+    def test_an_ancient_date_reads_as_none(self):
+        got = self.quiet({"k@x.com": dt.date(2021, 9, 16)}, seen={"k@x.com"})
+        self.assertIn("in the last 7 days", got["quiet:k@x.com"])
+
+    def test_bad_key_is_flagged_as_bad_key_not_quiet(self):
+        got = self.quiet({}, rejected={"k@x.com"})
+        self.assertEqual(list(got), ["badkey:k@x.com"])
+
+    def test_not_checked_without_dates(self):
+        self.assertEqual(ck.problems(self.ACC, set(), set(), {}, None), {})
+
+    def test_fixed_once_it_records_again(self):
+        d = ck.diff(self.quiet({"k@x.com": self.TUE}, seen={"k@x.com"}), {"quiet:k@x.com": "Q"})
+        self.assertEqual(list(d["fixed"]), ["quiet:k@x.com"])
+
+
 class News(unittest.TestCase):
     DAY = dt.date(2026, 10, 22)
 
