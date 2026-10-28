@@ -263,7 +263,9 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # an irreversible send; keep them in step.
 # 2026-09-27 (Carlos): Raf's 2nd + 3rd funnels un-paused ("good to go ahead
 # and start pushing for [Raf]'s second and third funnel") — all six live.
-PUSH_ALLOWED = {"23467", "11901", "11580", "11280", "23965", "24065"}
+# 2026-10-28 (Carlos): "stop pushing resumes for me" — 11580 OFF everywhere,
+# including LucyECO on his own computer (this gate is what it runs through).
+PUSH_ALLOWED = {"23467", "11901", "11280", "23965", "24065"}
 
 
 def _dm_shots(shots_dir, office) -> None:
