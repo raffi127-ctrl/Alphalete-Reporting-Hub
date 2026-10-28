@@ -641,6 +641,39 @@ class AnOfficeOnlyLoginCountsAsSignedIn(unittest.TestCase):
             self._ctx(False)))
 
 
+class TheAwaitTextIsRetunedOnLivePushesOnly(unittest.TestCase):
+    """Megan 2026-10-28: every office's Await text carries the right times --
+    on the office computer too, where 11580 actually pushes. Test runs edit
+    nothing."""
+
+    def _walk(self, live):
+        from automations.oat_processing import run as OAT
+        from automations.oat_processing import await_template as AT
+        page = mock.MagicMock()
+        page.locator.return_value.count.return_value = 0
+        with mock.patch.object(OAT, "attach_dialog_accept"), \
+             mock.patch.object(OAT, "open_oat", return_value=True), \
+             mock.patch.object(OAT, "office_on_page", return_value="11580"), \
+             mock.patch.object(OAT, "run_walk", return_value=0), \
+             mock.patch.object(RP, "_recheck_once_per_fix"), \
+             mock.patch.object(AT, "ensure_await_template") as ens:
+            RP._walk(page, live, {"office_key": "carlos"})
+        return ens
+
+    def test_live_retunes_for_the_pinned_office(self):
+        ens = self._walk(True)
+        ens.assert_called_once()
+        self.assertEqual(ens.call_args.args[1], "11580")
+
+    def test_a_test_run_edits_nothing(self):
+        self._walk(False).assert_not_called()
+
+    def test_the_two_files_ship(self):
+        for rel in ("automations/oat_processing/await_window.py",
+                    "automations/oat_processing/await_template.py"):
+            self.assertIn(rel, package.AGENT_FILES)
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):

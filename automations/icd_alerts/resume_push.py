@@ -1050,6 +1050,16 @@ def _walk(page, live: bool, record: dict) -> dict:
         return {"reached": True, "office": seen, "rc": 2, "why": why}
     _point_walk_here(seen, record)
     _recheck_once_per_fix(OAT)
+    if live:
+        # The Await text's interview times follow the clock (Carlos 10/28;
+        # Megan: every office that pushes). Only offices with their windows on
+        # file are touched; a failed edit is logged and never stops the push.
+        try:
+            from automations.oat_processing import await_template as AT
+            AT.set_logger(_log)
+            AT.ensure_await_template(page, seen, apply=True)
+        except Exception as e:  # noqa: BLE001
+            _log("await template step skipped: %s" % type(e).__name__)
     before = len(OAT._ACTIVITY_ROWS)
     OAT.LAST_WALK = {}
     rc = OAT.run_walk(page, live=live)

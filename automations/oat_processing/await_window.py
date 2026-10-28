@@ -15,8 +15,20 @@ Carlos's rules, his corrections applied:
 
 import datetime as dt
 
-# (start, end) of each interview window, minutes-from-midnight.
-WINDOWS = [(8 * 60 + 15, 10 * 60 + 45), (12 * 60 + 15, 15 * 60 + 45)]
+# EACH OFFICE'S OWN interview windows, (start, end) minutes-from-midnight
+# (Megan 2026-10-28: "build this in to all resume pushing going forward so
+# we're sending out the correct times"). A per-office fact -- an office with no
+# row here is NEVER given someone else's times; its template is left alone.
+def _w(h1, m1, h2, m2):
+    return (h1 * 60 + m1, h2 * 60 + m2)
+
+
+WINDOWS_BY_OFFICE = {
+    # Carlos, 2026-10-28: 8:15-10:45 and 12:15-3:45, every 30 minutes.
+    "11580": [_w(8, 15, 10, 45), _w(12, 15, 15, 45)],
+}
+# Kept for callers that predate the table: Carlos's.
+WINDOWS = WINDOWS_BY_OFFICE["11580"]
 SLOT_STEP_MIN = 30
 LEAD_MIN = 30          # a slot this close or closer is skipped
 
@@ -29,34 +41,28 @@ def _fmt(minutes: int) -> str:
     return "%d:%02d%s" % (h % 12 or 12, m, "am" if h < 12 else "pm")
 
 
-def _full_day_clause(day_word: str) -> str:
-    w1, w2 = WINDOWS
-    return "available %s between %s-%s or %s-%s" % (
-        day_word, _fmt(w1[0]), _fmt(w1[1]), _fmt(w2[0]), _fmt(w2[1]))
+def _span(a: int, b: int) -> str:
+    return "%s-%s" % (_fmt(a), _fmt(b))
 
 
-def await_clause(now: dt.datetime) -> str:
-    """The 'available …?' clause the template should carry at `now`.
+def await_clause(now: dt.datetime, windows=None) -> str:
+    """The 'available …?' clause the template should carry at `now`, for an
+    office's `windows` (default: Carlos's). Always starts with 'available', so
+    the template editor can splice it over the old clause with one regex.
 
-    Always ends with '?', always starts with 'available', so the template
-    editor can splice it over the old clause with one regex.
-    """
+    The first slot more than LEAD_MIN away is offered ("between <slot>-<end of
+    its window>", or "at <slot>" when it is that window's last), followed by any
+    later windows today. None left -> every window, TOMORROW."""
+    windows = list(windows or WINDOWS)
     mins = now.hour * 60 + now.minute
-    for wi, (start, end) in enumerate(WINDOWS):
+    for wi, (start, end) in enumerate(windows):
         slot = start
         while slot <= end:
             if slot - mins > LEAD_MIN:
-                if wi == 0:
-                    # Morning offer still shows the afternoon window too.
-                    w2 = WINDOWS[1]
-                    first = ("at %s" % _fmt(slot) if slot == WINDOWS[0][1]
-                             else "between %s-%s"
-                             % (_fmt(slot), _fmt(WINDOWS[0][1])))
-                    return ("available TODAY %s or %s-%s"
-                            % (first, _fmt(w2[0]), _fmt(w2[1])))
-                if slot == end:
-                    return "available TODAY at %s" % _fmt(slot)
-                return ("available TODAY between %s-%s"
-                        % (_fmt(slot), _fmt(end)))
+                first = ("at %s" % _fmt(slot) if slot == end
+                         else "between %s" % _span(slot, end))
+                rest = [_span(a, b) for a, b in windows[wi + 1:]]
+                return "available TODAY " + " or ".join([first] + rest)
             slot += SLOT_STEP_MIN
-    return _full_day_clause("TOMORROW")
+    return "available TOMORROW between " + " or ".join(
+        _span(a, b) for a, b in windows)

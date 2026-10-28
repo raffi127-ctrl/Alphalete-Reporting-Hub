@@ -84,6 +84,10 @@ AGENT_FILES = [
     "automations/oat_processing/classify.py",
     "automations/oat_processing/resume_download.py",
     "automations/oat_processing/run.py",
+    # The Await text's interview times, retuned to the clock before each live
+    # push (Carlos/Megan 2026-10-28).
+    "automations/oat_processing/await_window.py",
+    "automations/oat_processing/await_template.py",
     # The Mac's own text recognition for resumes Indeed draws as a picture
     # (no Claude key ships to an office; 2026-10-22, Jorge Banos).
     "automations/oat_processing/bin/ocr_screen.js",

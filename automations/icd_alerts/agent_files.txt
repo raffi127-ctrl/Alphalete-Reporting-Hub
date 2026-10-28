@@ -20,6 +20,8 @@ automations/oat_processing/config.py
 automations/oat_processing/classify.py
 automations/oat_processing/resume_download.py
 automations/oat_processing/run.py
+automations/oat_processing/await_window.py
+automations/oat_processing/await_template.py
 automations/oat_processing/bin/ocr_screen.js
 automations/oat_processing/bin/read_file.js
 automations/recruiting_report/__init__.py

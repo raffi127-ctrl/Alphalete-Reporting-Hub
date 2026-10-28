@@ -13,7 +13,8 @@ ensure_await_template(page) before walking; failures are logged, never raised
 import datetime as dt
 import re
 
-from automations.oat_processing.await_window import await_clause
+from automations.oat_processing.await_window import (WINDOWS_BY_OFFICE,
+                                                     await_clause)
 
 _T = r"[0-9]{1,2}:[0-9]{2}\s*(?:am|pm)?"
 CLAUSE_RE = re.compile(
@@ -21,8 +22,10 @@ CLAUSE_RE = re.compile(
     r"(?:\s*[-\u2013]\s*" + _T + r")?"
     r"(?:\s*(?:,?\s*or)\s+" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
     re.I)
-# Only this office has the time-window Await text (Carlos's).
-OFFICES = {"11580"}
+# Every office whose interview windows are on file (await_window.WINDOWS_BY_
+# OFFICE). Megan 2026-10-28: all resume pushing, not only Carlos's.
+OFFICES = set(WINDOWS_BY_OFFICE)
+_SAID_NO_WINDOWS: set = set()
 
 _log = print
 
@@ -172,10 +175,15 @@ def probe(page) -> None:
 def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
     """Make the Await template's clause match the clock. True = verified
     correct (updated, or already right). Never raises."""
-    if office_id not in OFFICES:
+    if office_id not in WINDOWS_BY_OFFICE:
+        if office_id and office_id not in _SAID_NO_WINDOWS:
+            _SAID_NO_WINDOWS.add(office_id)
+            _log("[await] no interview windows on file for office %s — "
+                 "template left as-is (add them to await_window."
+                 "WINDOWS_BY_OFFICE)" % office_id)
         return True
     try:
-        want = await_clause(dt.datetime.now())
+        want = await_clause(dt.datetime.now(), WINDOWS_BY_OFFICE[office_id])
         if not _goto_templates(page):
             _log("[await] SMS Templates page not reached — leaving template")
             return False
