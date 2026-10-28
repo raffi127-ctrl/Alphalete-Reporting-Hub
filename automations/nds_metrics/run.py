@@ -1276,21 +1276,19 @@ def build_team_tree(cols, crew, today, log=print) -> Path:
     the Aplayers" — the A-Players 6am post stays). The team_tree agent
     renders on this same machine; only TODAY's render is ever posted, a
     stale file is an honest skip."""
-    import datetime as _dt
-    png = OUT_DIR.parent / "team_tree" / "team_tree.png"
-    if (not png.exists()
-            or _dt.date.fromtimestamp(png.stat().st_mtime) != today):
-        # The 6:30 tree agent may not have fired yet (both start 6:30,
-        # Carlos 2026-10-28: "lets start everything at 630am") — render
-        # our own copy rather than wait or skip.
-        from automations.team_tree import run as TT
-        week, reps, roots, scheduled = TT.build(today)
-        html = TT.OUT_DIR / "team_tree.html"
-        TT.OUT_DIR.mkdir(parents=True, exist_ok=True)
-        html.write_text(TT.render_html(week, reps, roots, scheduled),
-                        encoding="utf-8")
-        TT.render_png(html, png)
-        log(f"[nds] team tree rendered inline ({png.stat().st_size:,}b)")
+    # ALWAYS render our own copy into our own file. Sharing the agent's
+    # team_tree.png is what posted the VERIZON tree here on 2026-10-28
+    # (the agent's second leg overwrote it) — a file nobody else writes
+    # can't go stale or get swapped.
+    from automations.team_tree import run as TT
+    week, reps, roots, scheduled = TT.build(today)
+    html = OUT_DIR / "nds_team_tree.html"
+    png = OUT_DIR / f"nds_team_tree_{today.isoformat()}.png"
+    html.write_text(TT.render_html(week, reps, roots, scheduled),
+                    encoding="utf-8")
+    TT.render_png(html, png)
+    log(f"[nds] team tree rendered fresh: week {week!r}, {len(reps)} reps, "
+        f"{png.stat().st_size:,}b")
     return png
 
 
