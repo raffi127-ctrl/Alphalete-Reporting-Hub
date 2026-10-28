@@ -62,31 +62,44 @@ def orphan_sweep(client, days: int, live: bool) -> None:
     import collections
     oldest = int((dt.datetime.now() - dt.timedelta(days=days)).timestamp())
     threads = collections.defaultdict(set)
-    # files.list can't see this room's shares (tried channel-filtered:
-    # zero files; user-filtered: 23k files, `shares` omitted from the list
-    # payload). SEARCH sees what actually survives in the room: every
-    # remaining Lucy post with a file, with the thread in its permalink.
-    import re as _re
+    # search.messages is closed to this token type and the files.list
+    # payload omits `shares` — but it DOES carry the rooms each file
+    # lives in (channels/groups/ims). Filter Lucy's uploads to this room
+    # (survivors only: a deleted post unshares its file), then ask
+    # files.info for just those to learn each one's thread.
     me = client.auth_test().get("user_id")
-    since = (dt.date.today() - dt.timedelta(days=days)).isoformat()
-    query = f"in:<#{CHANNEL}> from:<@{me}> has:file after:{since}"
+    oldest = int((dt.datetime.now() - dt.timedelta(days=days)).timestamp())
+    here = []
     page = 1
     while True:
-        resp = client.search_messages(query=query, count=100, page=page,
-                                      sort="timestamp")
-        msgs = (resp.get("messages") or {})
-        for m in msgs.get("matches", []):
-            if (m.get("channel") or {}).get("id") != CHANNEL:
-                continue
-            link = m.get("permalink") or ""
-            tm = _re.search(r"thread_ts=(\d+\.\d+)", link)
-            if tm:
-                threads[tm.group(1)].add(m.get("ts"))
-        paging = msgs.get("paging") or {}
+        resp = client.files_list(user=me, ts_from=str(oldest),
+                                 count=100, page=page)
+        for f in resp.get("files", []):
+            rooms = ((f.get("channels") or []) + (f.get("groups") or [])
+                     + (f.get("ims") or []))
+            if CHANNEL in rooms:
+                here.append(f["id"])
+        paging = resp.get("paging") or {}
         if page >= int(paging.get("pages") or 1):
             break
         page += 1
-        time.sleep(1)
+        time.sleep(0.5)
+    print(f"[orphans] {len(here)} surviving Lucy file(s) in the room")
+    for fid in here:
+        try:
+            info = client.files_info(file=fid).get("file") or {}
+        except Exception as e:  # noqa: BLE001
+            print(f"  ! files.info {fid}: {str(e)[:80]}")
+            continue
+        for shares in (info.get("shares") or {}).values():
+            for ch, posts in shares.items():
+                if ch != CHANNEL:
+                    continue
+                for pmeta in posts:
+                    tts = pmeta.get("thread_ts")
+                    if tts:
+                        threads[tts].add(pmeta.get("ts"))
+        time.sleep(0.6)
     print(f"[orphans] {len(threads)} surviving thread(s) with Lucy "
           "files in the room")
     deleted = failed = orphaned = 0
