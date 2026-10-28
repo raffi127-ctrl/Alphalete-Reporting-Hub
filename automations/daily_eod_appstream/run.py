@@ -70,6 +70,7 @@ OUT_DIR = REPO_ROOT / "output" / "daily_eod_appstream"
 ARS_MGMT_SHEET = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Management 2.0
 
 PROD_TO = ["camilahornosk@gmail.com",
+           "perlafalabella@gmail.com",        # Perli (Camila, 2026-10-28)
            "eve@alphaletemarketing.com"]      # Eve copied to watch it go out
 TEST_TO = ["eve@alphaletemarketing.com"]   # hand runs without --production
 
@@ -355,7 +356,12 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
     # separados"): weekly-total reds on top (Camila 10/12), the day's reds, the
     # table, then the scorecards board link (Eve 10/19).
     RED = "#b00000"
-    table = table_html(blocks) + gaps_html(gaps)
+    # Said in the mail itself (Eve 10/28): Camila read Tuesday's mail as
+    # 'only Monday' -- it is a dia vencido, and earlier days refresh each run.
+    table = ('<p style="font-size:12px;margin:0 0 8px">One day behind: this mail covers '
+             f'Monday through {day:%A} {day.month}/{day.day}. Every mail re-pulls the whole week, '
+             'so anything entered late on an earlier day shows up corrected here.</p>'
+             + table_html(blocks) + gaps_html(gaps))
     if link:
         table += (f'<p style="font-size:12px;margin-top:12px">Every week, in the Sheet: '
                   f'<a href="{link}">ARS Management 2.0 → Daily EOD AppStream</a></p>')
