@@ -10883,6 +10883,30 @@
    },
    "machine": "Lucy 2"
   },
+  "remove_box_order_log_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "display_name": "Remove BOX Order Log agent (Carlos — Box OFF 2026-10-28)",
+   "_note": "Carlos 2026-10-28: 'the whole thing can go'. Unloads com.alphalete.box-order-log on Lucy 2: the 7:00/8:30 BoxOrderLog Tableau pull, the Box Metrics Slack thread (#alphalete-gp-sales + #a-players-b2b) and the 'Lucy Box Order Log' tab write on the Vantura board all stop. The org-wide Box Tier Bonus board rode this thread, so it stops too; other owners' email runs (box-order-log-owners / per-office) are untouched. `lucy rerun install_box_order_log_agent` puts it back.",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "box-order-log",
+    "--remove"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_box_order_log_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_box_order_log_agent` can install/refresh the STANDALONE com.alphalete.box-order-log LaunchAgent on LUCY 2 (7:00am + 8:30am CST, deploy/box_order_log.sh). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
