@@ -96,6 +96,9 @@ CHANNELS: Dict[str, str] = {
     "Jennifer Figueroa": "C0AU0G3M2NT",       # #23132-figspire-management-inc-jennifer-figueroa
     "Miguel Zaragoza": "C0C74FUGXP0",         # #24145-nobilis-marketing-group-inc-miguel-zaragoza
     "Joshua Ghorbani": "C0C6AMLDQBY",         # #joshua-ghorbani-office
+    # Megan 2026-10-27: his Zoom was audited all along, the office post skipped
+    # him for want of this line. Same channel as his applicant-push to-dos.
+    "Khalil Mansour": "C0AUKHN120L",          # #11901-alphalete-management-group-inc-khalil-mansour
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",
