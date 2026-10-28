@@ -362,12 +362,20 @@ def beat(job_id: str, *, ok: bool = True, note: str = "") -> bool:
         return False
 
 
-def read_beats() -> Dict[str, dict]:
-    """{job_id: {'last_seen': datetime|None, 'machine': str, 'status': str}}."""
+def read_beats(strict: bool = False) -> Dict[str, dict]:
+    """{job_id: {'last_seen': datetime|None, 'machine': str, 'status': str}}.
+
+    `strict=True` raises when the tab cannot be read instead of returning {}.
+    watch_peers needs that: on 2026-10-28 a failed read on Lucy 3 turned into
+    "Mini Control queue (Lucy 1) — no sign of life since never" while Lucy 1
+    was up, because {} reads as "no row at all". A row that is really missing
+    still comes back absent and still alerts."""
     out: Dict[str, dict] = {}
     try:
         recs = _ws().get_all_records()
     except Exception:  # noqa: BLE001
+        if strict:
+            raise
         # No tab yet, or the sheet is unreachable. Returning {} means every job
         # reads as "never checked in", which `overdue()` reports as overdue past
         # its deadline — loud, and correct: we genuinely cannot tell whether
@@ -497,7 +505,15 @@ def watch_peers(me: str, *, now: Optional[dt.datetime] = None,
         if not ch:
             return 0
         now = now or dt.datetime.now()
-        beats = read_beats() if beats is None else beats
+        if beats is None:
+            try:
+                beats = read_beats(strict=True)
+            except Exception as e:  # noqa: BLE001
+                # Could not read the sheet — that says nothing about the peer.
+                # Skip this round; the next pulse (10 min) checks again.
+                print("watch_peers(%s): heartbeat sheet unreadable, skipping "
+                      "this check: %s: %s" % (me, type(e).__name__, str(e)[:120]))
+                return 0
         open_now = set(inc.open_keys())
         opened = 0
         for job in overdue(now, beats, watcher=me):
