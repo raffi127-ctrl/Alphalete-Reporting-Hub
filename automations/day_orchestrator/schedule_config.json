@@ -7655,6 +7655,43 @@
    "verify": null,
    "report_id": "new-owner-contacts"
   },
+  "linkedin_2nd_round_contacts": {
+   "close_on": "exit_zero",
+   "order": 62.6,
+   "on_scheduler": true,
+   "_on_scheduler_note": "Armed 2026-10-28 after a full dry run from Eve's Windows (real AppStream + real reception contacts; 24226 = 0 that week, 11280 test = 79 read / 17 new). Hand reruns can't reach Lucy 1's queue, so the first Lucy 1 pass is the scheduled one: check its log 10/29 after 15:30.",
+   "_schedule_note": "15:30 CT daily (the scheduler caps not_before at 16:00): every run re-reads the whole week, so anyone booked after 15:30 goes in the next day. Lucy 1: AppStream + the alphaletereception contacts token (Jiraiya's) live there.",
+   "machine": "Lucy 1",
+   "display_name": "LinkedIn Test 2nd rounds -> reception contacts",
+   "_note": "AVISO, NO ES UN REPORTE (Maud para Raf, Slack 2026-10-28). AppStream oficina 24226 'Linkedin Test' -> Retention Details -> 'Second Interviews Booked' + 'Total Second Interviews', cada dia de esta semana hasta hoy (domingo tambien lee el sabado). Cada persona (nombre, telefono, email) -> contacto en alphaletereception (lista general, Eve/Maud 10/28). Ya existe = mismo telefono o email -> no se duplica (applicant_contacts.contacts). El modulo es DRY por defecto; el wrapper pasa --write.",
+   "command": [
+    "automations.linkedin_2nd_round_contacts.run"
+   ],
+   "base_args": [
+    "--write"
+   ],
+   "cadence": {
+    "not_before": "15:30",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "linkedin-2nd-round-contacts"
+  },
   "daily_rep_breakdown": {
    "machine": "Lucy 3",
    "_machine_note": "Moved to Lucy 3 2026-08-22 (Megan) — heaviest report comes off Lucy 1's tail. cadence.not_before 05:00 keeps it clear of Lucy 1's 4:00-4:45 ownerville window (SAME rhidalgo account; concurrent logins can kick sessions). Runs ~5:00-6:00 vs the old 7:50-9:25.",
