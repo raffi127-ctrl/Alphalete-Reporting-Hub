@@ -51,19 +51,19 @@ class TheSweetSpot(unittest.TestCase):
     def test_three_to_six_hours_out_first(self):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-28 09:30"),
                                                  S23965, 15),
-                         "available TODAY between 12:30pm-3:30pm")
+                         "available TODAY, Wednesday between 12:30pm-3:30pm")
 
     def test_none_that_far_today_remaining_anyway(self):
         # Megan: "Today's remaining slots anyway ... under 3 hours, but same-day"
         self.assertEqual(AW.clause_from_schedule(at("2026-10-28 13:30"),
                                                  S23965, 15),
-                         "available TODAY between 2:15pm-3:30pm")
+                         "available TODAY, Wednesday between 2:15pm-3:30pm")
 
     def test_nothing_left_today_the_next_day(self):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-28 15:20"),
                                                  S24065, 30),
-                         "available TOMORROW between 8:15am-10:45am or "
-                         "12:45pm-3:15pm")
+                         "available TOMORROW, Thursday between 8:15am-10:45am "
+                         "or 12:45pm-3:15pm")
 
     def test_friday_evening_is_monday(self):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-30 16:00"),
@@ -78,11 +78,28 @@ class TheSweetSpot(unittest.TestCase):
     def test_24065_friday_is_afternoon_only(self):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-30 07:30"),
                                                  S24065, 30),
-                         "available TODAY between 12:45pm-1:15pm")
+                         "available TODAY, Friday between 12:45pm-1:15pm")
 
     def test_carlos_gets_the_sweet_spot_too(self):
         self.assertEqual(AW.await_clause(at("2026-10-28 09:30")),
-                         "available TODAY between 12:45pm-3:15pm")
+                         "available TODAY, Wednesday between 12:45pm-3:15pm")
+
+
+class TheDayReadsTodayWednesday(unittest.TestCase):
+    """Megan 10/28: 'this should say "TODAY, Wednesday"'."""
+
+    def test_labels(self):
+        self.assertEqual(AW.day_label(at("2026-10-28 09:00"), 0), "TODAY, Wednesday")
+        self.assertEqual(AW.day_label(at("2026-10-28 09:00"), 1), "TOMORROW, Thursday")
+        self.assertEqual(AW.day_label(at("2026-10-30 16:00"), 3), "MONDAY")
+
+    def test_24065_fits_its_160_character_box(self):
+        worst = 0
+        for day in ("2026-10-28", "2026-10-30", "2026-10-31"):
+            for h in range(6, 23):
+                c = AW.clause_from_schedule(at("%s %02d:10" % (day, h)), S24065, 30)
+                worst = max(worst, len(AT.CLAUSE_RE.sub(c, T24065, count=1)))
+        self.assertLessEqual(worst, 160)
 
 
 class TheRealTemplates(unittest.TestCase):
@@ -90,15 +107,16 @@ class TheRealTemplates(unittest.TestCase):
     def test_24065_keeps_its_sentence_day_and_times_swapped(self):
         c = AW.clause_from_schedule(at("2026-10-28 09:30"), S24065, 30)
         self.assertEqual(AT.CLAUSE_RE.sub(c, T24065, count=1),
-                         "Are you available TODAY between 12:45pm-3:15pm for "
-                         "a quick ZOOM to go over the position?")
+                         "Are you available TODAY, Wednesday between "
+                         "12:45pm-3:15pm for a quick ZOOM to go over the "
+                         "position?")
 
     def test_23965_gets_times_on_its_question(self):
         self.assertIsNone(AT.CLAUSE_RE.search(T23965))
         c = AW.clause_from_schedule(at("2026-10-28 09:30"), S23965, 15)
         new = AT.BARE_ASK_RE.sub("Are you %s?" % c, T23965, count=1)
         self.assertTrue(new.endswith("Zoom Interview. Are you available "
-                                     "TODAY between 12:30pm-3:30pm?"))
+                                     "TODAY, Wednesday between 12:30pm-3:30pm?"))
         # ...and from then on the normal update finds it.
         self.assertIsNotNone(AT.CLAUSE_RE.search(new))
 

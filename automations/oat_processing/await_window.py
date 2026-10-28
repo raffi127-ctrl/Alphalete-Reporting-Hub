@@ -117,12 +117,28 @@ def phrase(day_label: str, starts, step: int) -> str:
     return "available %s %s%s" % (day_label, lead, " or ".join(parts))
 
 
+def _wday(day: dt.date) -> str:
+    return DAYS[(day.weekday() + 1) % 7]
+
+
+def day_label(now: dt.datetime, ahead: int) -> str:
+    """Megan 2026-10-28: 'this should say "TODAY, Wednesday"'.
+    0 -> 'TODAY, Wednesday'; 1 -> 'TOMORROW, Thursday'; more -> 'MONDAY'."""
+    d = (now + dt.timedelta(days=ahead)).date()
+    if ahead == 0:
+        return "TODAY, %s" % _wday(d)
+    if ahead == 1:
+        return "TOMORROW, %s" % _wday(d)
+    return _wday(d).upper()
+
+
 def clause_for(now: dt.datetime, today_starts, step: int,
-               next_label: str = "TOMORROW", next_starts=None) -> str:
+               next_label: str = None, next_starts=None) -> str:
     mins = now.hour * 60 + now.minute
     picked = pick_starts(mins, today_starts or [])
     if picked:
-        return phrase("TODAY", picked, step)
+        return phrase(day_label(now, 0), picked, step)
+    next_label = next_label or day_label(now, 1)
     if next_starts:
         return phrase(next_label, next_starts, step)
     return ""
@@ -132,7 +148,7 @@ def await_clause(now: dt.datetime, windows=None, step: int = None) -> str:
     """Carlos-style given windows (default 11580's), same rules."""
     step = int(step or SLOT_STEP_MIN)
     starts = starts_from_windows(list(windows or WINDOWS), step)
-    return clause_for(now, starts, step, "TOMORROW", starts)
+    return clause_for(now, starts, step, day_label(now, 1), starts)
 
 
 def clause_from_schedule(now: dt.datetime, schedule: dict, step: int) -> str:
@@ -141,11 +157,10 @@ def clause_from_schedule(now: dt.datetime, schedule: dict, step: int) -> str:
     day itself ('MONDAY' on a Friday evening)."""
     wd = (now.weekday() + 1) % 7            # Python Mon=0 -> DAYS index
     today = starts_from_spans(schedule.get(DAYS[wd], []), step)
-    nxt_label, nxt = "TOMORROW", None
+    nxt_label, nxt = None, None
     for k in range(1, 8):
         s = starts_from_spans(schedule.get(DAYS[(wd + k) % 7], []), step)
         if s:
-            nxt_label = "TOMORROW" if k == 1 else DAYS[(wd + k) % 7].upper()
-            nxt = s
+            nxt_label, nxt = day_label(now, k), s
             break
     return clause_for(now, today, step, nxt_label, nxt)

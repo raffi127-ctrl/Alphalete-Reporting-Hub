@@ -19,13 +19,15 @@ from automations.oat_processing.await_window import (DAYS, WINDOWS_BY_OFFICE,
                                                      parse_span)
 
 _T = r"[0-9]{1,2}:[0-9]{2}\s*(?:am|pm)?"
+# "TODAY, Wednesday" (Megan 10/28) -- and the bare weekday for 2+ days out.
+_WD = r"(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)"
 # The day word: what we write (TODAY / TOMORROW / a weekday) or AppStream's own
 # fill-in "currentInterviewDay" (24065: "Are you available currentInterviewDay
 # 12:45 pm - 3:45 pm for a quick ZOOM…"). "at/between" optional for the same
 # reason.
 CLAUSE_RE = re.compile(
-    r"available\s+(?:today|tomorrow|sunday|monday|tuesday|wednesday|thursday"
-    r"|friday|saturday|currentInterviewDay)\s+(?:(?:at|between)\s+)?" + _T +
+    r"available\s+(?:(?:today|tomorrow)(?:\s*,?\s*" + _WD + r")?|" + _WD +
+    r"|currentInterviewDay)\s+(?:(?:at|between)\s+)?" + _T +
     r"(?:\s*[-\u2013]\s*" + _T + r")?"
     r"(?:\s*(?:,?\s*or)\s+" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
     re.I)
