@@ -100,10 +100,16 @@ CHANNELS: Dict[str, str] = {
     # Megan 2026-10-27: his Zoom was audited all along, the office post skipped
     # him for want of this line. Same channel as his applicant-push to-dos.
     "Khalil Mansour": "C0AUKHN120L",          # #11901-alphalete-management-group-inc-khalil-mansour
+    # Eve 2026-10-28: audited, no office post. Same channels as their ad photo
+    # threads (ad_photo_threads/config.py), so Lucy is already in them.
+    "Kash Rai": "C08U6GCS7SB",                # #kash-rai-office-recruiting-22177
+    "Atef Choudhury": "C0B85KRS5FU",          # #atef-choudhury-office-recruiting-23467
+    "José Velazquez": "C0AU9JBCJGK",          # #jose-velasquez-office-recruiting-22434
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",
                "Raf Hidalgo 3rd funnel": "Rafael Hidalgo",
+               "Rafael Hidalgo 2nd Funnel": "Rafael Hidalgo",   # RAF 2nd/3rd FUNNEL columns (10/28)
                "Geoge Delgado": "George Delgado"}
 LEDGER = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards" / "posted.json"
 # ~30 threads + ~40 replies in one go: the first v2 sample (10/8) hit Slack's
