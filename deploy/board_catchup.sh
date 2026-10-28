@@ -233,9 +233,12 @@ else
   # fill with captainships, it IS the day's board run, and it is the last pass
   # before Tuesday's rollover freezes the closed week. It also has its own
   # catchup_alert(), which never depended on the manifest.
+  #
+  # VERIZON joined 2026-10-28: its PDF lands ~9:31. The email waits for it
+  # until 9:45 (org_sales_board/verizon_wait.py); a later PDF lands here.
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
     --no-manifest \
-    --sections "Retail NL,Retail Internet,Retail JE,BOX" "$@" >> "$LOG_FILE" 2>&1
+    --sections "Retail NL,Retail Internet,Retail JE,BOX,Verizon" "$@" >> "$LOG_FILE" 2>&1
   ST=$?
 
   # All Campaigns AFTER the top-up, Tue-Sun too (Eve 2026-08-27). The Monday

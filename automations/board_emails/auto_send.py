@@ -169,6 +169,9 @@ class Target:
     # board + All Units); () = none — the Country board is Fiber only, so a
     # late Box must not keep it waiting until noon (2026-10-25).
     sections: Optional[Tuple[str, ...]] = None
+    # A source worth waiting for before judging: returns why it is still
+    # waiting, or None. Org = Verizon until 9:45 CT (Eve 2026-10-28).
+    wait_for: Optional[Callable[[dt.date], Optional[str]]] = None
 
 
 def _org_images(run_day: dt.date) -> List[Tuple[str, Path]]:
@@ -288,8 +291,13 @@ def _country_totals(run_day: dt.date) -> List[str]:
     return country_totals_issues(_country_grid())
 
 
+def _org_wait(run_day: dt.date) -> Optional[str]:
+    from automations.org_sales_board import verizon_wait
+    return verizon_wait.pending(run_day)
+
+
 ORG = Target("org", "Org Sales Board", "org_sales_board_email",
-             _org_images, _org_grid, _org_totals)
+             _org_images, _org_grid, _org_totals, wait_for=_org_wait)
 COUNTRY = Target("country", "Country Sales Board", "country-sales-board-email",
                  _country_images, _country_grid, _country_totals,
                  sections=())
@@ -382,6 +390,16 @@ def _stale_why(st: dict) -> str:
     if kind == "unconfirmed-filter":
         return "a filter on the view could not be confirmed"
     return "flagged stale"
+
+
+def day_behind_sections() -> List[str]:
+    """Sections whose source publishes a day late (Retail JE, BOX, Verizon).
+    The visual check has to know them too: 2026-10-28 it held the org email on
+    Nico's blank Verizon Tuesday, a column the 9:31am PDF had not filled yet.
+    ONE list, data_gate's, so a new lagging section can't be missed here."""
+    from automations.org_sales_board.data_gate import LAGGING_SECTIONS
+    return [" ".join(w.upper() if len(w) <= 3 else w.title() for w in s.split())
+            for s in LAGGING_SECTIONS]
 
 
 _SECTION_TAG = "[board section: "
@@ -510,8 +528,10 @@ have numbers in the REPORT_DAY column. A REPORT_DAY column whose cells are ALL \
 blank while the earlier days have numbers is a blocker. Days AFTER REPORT_DAY \
 being blank or zero is normal (the week is not over). Weekly / leaderboard \
 tables (one column per week, "WE m.d") do not need a day column.
-KNOWN EXCEPTIONS, never blockers: a Retail JE table one day behind (it \
-publishes a day late); on a Sunday REPORT_DAY a quiet, all-zero day; on a \
+KNOWN EXCEPTIONS, never blockers: a table for a section listed under \
+DAY_BEHIND below, one day behind (its source publishes a day late, so its \
+REPORT_DAY column is blank or zero, for every owner, new owners included); \
+on a Sunday REPORT_DAY a quiet, all-zero day; on a \
 Monday REPORT_DAY a new week whose only filled column is Monday; a table for \
 a section listed under LATE_SOURCES below — its Tableau source is behind \
 today, so its newest day columns being blank or all zero is expected (a minor \
@@ -531,7 +551,8 @@ figures cell for cell where they measure different things.
 6. NEW OWNERS (blocker): NEW_OWNERS below lists people added to the board \
 today. For each, find their row in every table that lists owners and check it \
 is complete: the name is not cut off, every day column up to REPORT_DAY has a \
-value (0 counts as a value), the week total and the LAST WEEK cells are filled \
+value (0 counts as a value; in a DAY_BEHIND table only up to the day before \
+REPORT_DAY), the week total and the LAST WEEK cells are filled \
 (a new person's last week must read 0 or a number, never blank), and their row \
 is inside the crop — not sliced at the bottom edge, not left outside the image \
 while the Totals row is in it. Name each person in the problem you report.
@@ -556,7 +577,8 @@ def _visual_content(t: Target, day: dt.date, new: Sequence[str],
         f"REPORT_DAY: {rd:%A} {rd.month}/{rd.day}/{rd:%Y}\n"
         f"Board: {t.name}\n"
         f"NEW_OWNERS: {', '.join(new) if new else '(none today)'}\n"
-        f"LATE_SOURCES: {', '.join(secs) if secs else '(none today)'}")}]
+        f"LATE_SOURCES: {', '.join(secs) if secs else '(none today)'}\n"
+        f"DAY_BEHIND: {', '.join(day_behind_sections())}")}]
     for i, (name, p) in enumerate(t.images(day), 1):
         ctype, data = _shrink("image/png", p.read_bytes())
         content.append({"type": "text", "text": f"IMAGE {i} ({name}):"})
@@ -658,6 +680,15 @@ def judge(t: Target, day: dt.date, state: dict, *,
     if v.blocked:
         state["held_upstream"] = True
         return _log(t, v, verbose)
+    why_wait = t.wait_for(day) if t.wait_for else None
+    if why_wait:
+        # Same as a late Tableau: wait quietly, then rebuild once from the
+        # board once it is in (held_upstream -> UPSTREAM_CLEARED below).
+        state["held_upstream"] = True
+        v.waiting = True
+        if verbose:
+            print(f"  auto-check {t.key}: waiting — {why_wait}", flush=True)
+        return v
     if late:
         # Waits instead of holding: no link, no tag. `held_upstream` makes the
         # pass after Tableau loads rebuild from the fresh board (below).

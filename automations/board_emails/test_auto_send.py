@@ -263,6 +263,22 @@ class AutoSendTest(unittest.TestCase):
         self.assertEqual(f.kinds(), ["record", "send"])
         self.assertFalse(self.alert.called)
 
+    def test_waits_for_verizon_then_rebuilds_and_sends(self):
+        """Eve 2026-10-28: wait for Verizon (~9:31), then go."""
+        f = Fake(self.tmp, THU)
+        self.seed_roster(f)
+        waiting = ["Verizon scorecard not in yet"]
+        f.target.wait_for = lambda day: waiting[0] if waiting else None
+        self.assertEqual(self.run_once(f, THU), 1)
+        self.assertEqual(f.calls, [])           # quiet: no link, no tag
+        waiting.clear()
+        self.assertEqual(self.run_once(f, THU), 1)
+        self.assertEqual(f.kinds(), ["rebuild"])
+        f.calls.clear()
+        self.assertEqual(self.run_once(f, THU), 0)
+        self.assertEqual(f.kinds(), ["record", "send"])
+        self.assertFalse(self.alert.called)
+
     def test_still_behind_at_noon_rebuilds_once_and_sends(self):
         f = Fake(self.tmp, THU)
         self.seed_roster(f)
@@ -483,6 +499,9 @@ class LateBoxTest(unittest.TestCase):
         txt = A._visual_content(f.target, SUN, [])[0]["text"]
         self.assertIn("LATE_SOURCES: (none today)", txt)
         self.assertIn("LATE_SOURCES", A._SYSTEM)
+        # 2026-10-28: Nico's blank Verizon Tuesday held the org email
+        self.assertIn("Verizon", A._visual_content(f.target, SUN, [])[0]["text"].split("DAY_BEHIND:")[1])
+        self.assertIn("DAY_BEHIND", A._SYSTEM)
 
 
 class StaleSourcesSectionTest(unittest.TestCase):
