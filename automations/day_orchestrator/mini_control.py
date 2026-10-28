@@ -544,17 +544,31 @@ def _parse_ts(s: str) -> dt.datetime | None:
         return None
 
 
+#: Opened control tabs, by tab name: (opened_at, Worksheet). Opening costs TWO
+#: Sheets reads (workbook metadata, then the tab lookup) before the one read
+#: that matters. 2026-10-28: every poll re-opened, so 4 Lucys x 3 lanes spent
+#: ~60 reads/min — the whole per-user cap all the Lucys share — just sitting
+#: idle, and every heartbeat, rerun and report on top of that got 429s. The
+#: handle stays valid; every row read still goes to the network.
+_WS_CACHE: dict = {}
+_WS_TTL_S = 1800
+
+
 def _open(sandbox: bool = False, machine: str | None = None):
     """Open (creating if needed) the control worksheet for THIS machine — or the
     shared TEST tab when sandbox."""
     tab = SANDBOX_TAB if sandbox else _control_tab_for(_machine_profile(machine))
+    hit = _WS_CACHE.get(tab)
+    if hit and time.time() - hit[0] < _WS_TTL_S:
+        return hit[1]
     sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
     try:
-        return sh.worksheet(tab)
+        ws = sh.worksheet(tab)
     except gspread.WorksheetNotFound:
         ws = sh.add_worksheet(title=tab, rows=300, cols=len(HEADERS))
         ws.update([HEADERS], "A1")
-        return ws
+    _WS_CACHE[tab] = (time.time(), ws)
+    return ws
 
 
 # ---------------------------------------------------------------------------
@@ -10119,6 +10133,14 @@ def _drain_text_outbox(*, dry_run: bool, sandbox: bool, lane: str) -> None:
               f"{type(e).__name__}: {str(e)[:160]}", flush=True)
 
 
+#: Least seconds between two reads of the queue SHEET, per lane. The launchd
+#: plists wake read every 20s and text every 30s; reading the sheet that often
+#: on 4 Lucys is most of the 60 reads/min the shared Google login gets (see
+#: _WS_CACHE). Read-lane answers now take up to 45s, queued text actions up to
+#: 60s; the local text outbox still drains on every wake. Main keeps its 120s.
+_SHEET_POLL_MIN_S = {LANE_READ: 45, LANE_TEXT: 60}
+
+
 def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False,
               machine: str | None = None, lane: str = LANE_MAIN) -> None:
     mach = _machine_profile(machine)
@@ -10129,6 +10151,9 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
     startup_head = _git_head()
     if lane == LANE_TEXT and not (dry_run or sandbox):
         _start_text_lane_heartbeat()
+    sheet_gap = _SHEET_POLL_MIN_S.get(lane, 0)
+    last_poll = None
+    force_poll = False
     while True:
         # Self-reload: if `lucy update` advanced the repo, re-exec with the FRESH
         # code at this safe boundary (between polls, nothing in flight) so a
@@ -10152,11 +10177,18 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         # text_outbox.py). Drained again after the poll so a slow sheet costs
         # a text at most one poll_once, never a loop.
         _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
-        try:
-            poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach, lane=lane)
-        except Exception as e:
-            print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
-        _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
+        # The loop still wakes every interval_s (the text outbox is local and
+        # free); the SHEET is read at most every _SHEET_POLL_MIN_S for the lane.
+        if (force_poll or last_poll is None
+                or time.monotonic() - last_poll >= sheet_gap):
+            force_poll = False
+            last_poll = time.monotonic()
+            try:
+                poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach, lane=lane)
+            except Exception as e:
+                _WS_CACHE.clear()     # a renamed/re-made tab: open fresh next time
+                print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
+            _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
         # Drift-immune daily schedule reconcile (no-op except the first poll in the
         # 1-2am window). Kept OUT of the try above so its own guard applies, but it
         # never raises anyway.
@@ -10171,6 +10203,7 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         global _REPOLL_NOW
         if _REPOLL_NOW:
             _REPOLL_NOW = False
+            force_poll = True
             continue      # plumbing is waiting — straight to the next poll
         time.sleep(interval_s)
 
