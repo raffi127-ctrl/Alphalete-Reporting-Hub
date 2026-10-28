@@ -284,7 +284,9 @@ def _sched_path(office_id: str):
     root = os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))))
     os.makedirs(os.path.join(root, "output"), exist_ok=True)
-    return os.path.join(root, "output", "await-schedule-%s-%s.json"
+    # "-v2": the 10/28 afternoon reader (ExtJS 1st Interview tab). A copy
+    # saved by the first reader may hold the wrong grid, so it is not reused.
+    return os.path.join(root, "output", "await-schedule-v2-%s-%s.json"
                         % (office_id, dt.date.today().isoformat()))
 
 
