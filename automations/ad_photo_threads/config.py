@@ -107,7 +107,8 @@ def appstream_ads_on(key: str) -> bool:
 # (Qualify / Answer Call / Ad Title) and 1st-rounds thread (screenshot + ad
 # title per candidate); say only what's missing -- see audit.py. Started with
 # Aya, whose admin takes her 1st rounds over 10/23. A set of keys or "all".
-AUDIT_OFFICES: object = {"aya"}
+# Aya OFF 10/28 (Camila: "we dont work with Aya anymore") -- no office on it.
+AUDIT_OFFICES: object = set()
 AUDIT_AFTER = (18, 0)
 # Where it goes: "preview" = Eve's DM (with an all-clear too), or a channel id.
 # Eve 10/22: live in #ars-recruiting-numbers (where the Late Join Audit goes),

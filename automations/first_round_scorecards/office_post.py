@@ -55,7 +55,7 @@ SAMPLE_TO = ("U045Z8N0ZQC",       # Rafael Hidalgo
 # must be IN the channel: they're private, a post without her = channel_not_found.
 # A new office = one line here + invite Lucy.
 CHANNELS: Dict[str, str] = {
-    "Aya Al-Khafaji": "C0AU7GN2TJ7",          # #aya-al-khafaji-office-recruiting-22992
+    # Aya Al-Khafaji OFF 10/28 (Camila: "we dont work with Aya anymore")
     "Carlos Hidalgo": "C09L1S3MQ1E",          # #carlos-hidalgo-office-recruiting-11580
     "Colten Wright": "C0AUAPMEF37",           # #colten-wrights-office-recruiting-14733
     "Cyrus Wade": "C0AUC4PAF2A",              # #cyrus-wade-office-recruiting-22815
