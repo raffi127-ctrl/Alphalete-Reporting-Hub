@@ -25,11 +25,13 @@ _WD = r"(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)"
 # fill-in "currentInterviewDay" (24065: "Are you available currentInterviewDay
 # 12:45 pm - 3:45 pm for a quick ZOOM…"). "at/between" optional for the same
 # reason.
+_PREP = r"(?:(?:at|between|from)\s+)?"
 CLAUSE_RE = re.compile(
-    r"available\s+(?:(?:today|tomorrow)(?:\s*,?\s*" + _WD + r")?|" + _WD +
-    r"|currentInterviewDay)\s+(?:(?:at|between)\s+)?" + _T +
+    r"available\s+(?:(?:today|tomorrow)(?:\s*,?\s*(?:" + _WD +
+    r"|currentInterviewDay|nextInterviewDay))?|" + _WD +
+    r"|currentInterviewDay|nextInterviewDay),?\s+" + _PREP + _T +
     r"(?:\s*[-\u2013]\s*" + _T + r")?"
-    r"(?:\s*(?:,?\s*or|/)\s*" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
+    r"(?:\s*(?:,?\s*or|/)\s*" + _PREP + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
     re.I)
 # A template that asks with no time at all (23965 10/28: "…a quick 20-minute
 # Zoom Interview. Are you available?"). For the chosen offices the clause goes
@@ -38,13 +40,14 @@ BARE_ASK_RE = re.compile(r"Are you available\?")
 # THE STANDARD TEXT for Raf's 23965 + 24065 (Megan 2026-10-28: "we want it to
 # mimic this" -- Jacob's 23607 Await Call AI, sent 132x). Both boxes are set to
 # it; only the day + times in box 2 change from run to run. The one change from
-# Jacob's: a space after "applicantFirstName,".
+# Jacob's: a space after "applicantFirstName,", and "jobBoard" for "Indeed"
+# (Megan 10/28: "indeed should be jobBoard").
 STANDARD_OFFICES = {"23965", "24065"}
-STANDARD_BODY1 = ("Hi applicantFirstName, We reviewed your application for the "
-                  "adPostingTitle role on Indeed / Full time and On site and "
-                  "would like to schedule a brief 20 minute Zoom interview to "
+STANDARD_BODY1 = ("Hi applicantFirstName, we reviewed your application for the "
+                  "full-time, on-site adPostingTitle role on jobBoard and would "
+                  "like to schedule a brief 20-minute Zoom interview to "
                   "discuss your experience and the position.")
-STANDARD_BODY2 = "Are you %s for a quick ZOOM to go over the position?"
+STANDARD_BODY2 = "Are you %s for a quick Zoom call to go over the position?"
 # WHICH OFFICES' Await text is retuned. Only these -- every other office's
 # template is never opened (Megan 2026-10-28: "just apply it to accounts 24065
 # and 23965 for raf"; Raf's main 11280, Atef and Khalil stay as they are).

@@ -105,18 +105,21 @@ def _groups(starts, step: int):
 
 
 def phrase(day_label: str, starts, step: int) -> str:
-    """'available TODAY between 1:15pm-3:15pm', 'available MONDAY between
-    8:15am-10:45am / 12:45pm-3:15pm', 'available TODAY at 3:15pm'. At most
-    two runs, so the template's own regex always swallows the whole clause."""
+    """'available TODAY, currentInterviewDay, from 1:15pm-3:15pm',
+    'available nextInterviewDay from 8:15am-10:45am or 12:45pm-3:15pm',
+    'available TODAY, currentInterviewDay, at 3:15pm'. At most two runs, so
+    the template's own regex always swallows the whole clause. Plain hyphens
+    only: one fancy dash turns the whole SMS into the costlier encoding.
+    Megan 10/28: "make sure grammar is correct" -- so "from X-Y or X-Y", not
+    Jacob's "between X -Y / X-Y"."""
     parts = []
     for g in _groups(starts, step)[:2]:
-        parts.append(_fmt(g[0]) if len(g) == 1
-                     else "%s-%s" % (_fmt(g[0]), _fmt(g[-1])))
-    first = _groups(starts, step)[0]
-    lead = "at " if len(first) == 1 else "between "
-    # " / " between the runs, the way Jacob's 23607 text reads (Megan 10/28:
-    # "we want it to mimic this": "between 8:15am -10:45am / 12:45pm-3:45 pm").
-    return "available %s %s%s" % (day_label, lead, " / ".join(parts))
+        parts.append("at " + _fmt(g[0]) if len(g) == 1
+                     else "from %s-%s" % (_fmt(g[0]), _fmt(g[-1])))
+    if len(parts) == 2 and all(x.startswith("from ") for x in parts):
+        parts[1] = parts[1][5:]        # "from A-B or C-D", not "or from"
+    day = day_label + ("," if "," in day_label else "")
+    return "available %s %s" % (day, " or ".join(parts))
 
 
 def _wday(day: dt.date) -> str:
@@ -124,14 +127,16 @@ def _wday(day: dt.date) -> str:
 
 
 def day_label(now: dt.datetime, ahead: int) -> str:
-    """Megan 2026-10-28: 'this should say "TODAY, Wednesday"'.
-    0 -> 'TODAY, Wednesday'; 1 -> 'TOMORROW, Thursday'; more -> 'MONDAY'."""
-    d = (now + dt.timedelta(days=ahead)).date()
+    """Megan 2026-10-28: 'this should say "TODAY, Wednesday"' -- with the
+    weekday as AppStream's own shortcode, so it is right on the day the text
+    goes out ("you didn't use the shortcodes"). 0 -> 'TODAY,
+    currentInterviewDay'; 1 -> 'TOMORROW, nextInterviewDay'; more ->
+    'nextInterviewDay'."""
     if ahead == 0:
-        return "TODAY, %s" % _wday(d)
+        return "TODAY, currentInterviewDay"
     if ahead == 1:
-        return "TOMORROW, %s" % _wday(d)
-    return _wday(d).upper()
+        return "TOMORROW, nextInterviewDay"
+    return "nextInterviewDay"
 
 
 def clause_for(now: dt.datetime, today_starts, step: int,
