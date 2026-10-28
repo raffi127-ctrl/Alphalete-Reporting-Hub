@@ -44,14 +44,92 @@ def _matches(text: str) -> str | None:
     return None
 
 
+def _is_gone(parent_msg) -> bool:
+    """A deleted parent shows up as a tombstone (or not at all)."""
+    if not parent_msg:
+        return True
+    return (parent_msg.get("subtype") == "tombstone"
+            or (parent_msg.get("text") or "") == "This message was deleted.")
+
+
+def orphan_sweep(client, days: int, live: bool) -> None:
+    """Threads whose PARENT Carlos deleted by hand still hold Lucy's
+    screenshots (2026-10-28: "look for some threads where i deleted the
+    begining of it but the post are still there"). History never shows
+    those replies, but files.list shows the uploads — walk Lucy's files
+    in the room, group by thread, and clear the threads whose parent is
+    a tombstone."""
+    import collections
+    oldest = int((dt.datetime.now() - dt.timedelta(days=days)).timestamp())
+    threads = collections.defaultdict(set)
+    page = 1
+    while True:
+        resp = client.files_list(channel=CHANNEL, ts_from=str(oldest),
+                                 count=100, page=page)
+        for f in resp.get("files", []):
+            for shares in (f.get("shares") or {}).values():
+                for ch, posts in shares.items():
+                    if ch != CHANNEL:
+                        continue
+                    for pmeta in posts:
+                        tts = pmeta.get("thread_ts")
+                        if tts:
+                            threads[tts].add(pmeta.get("ts"))
+        paging = resp.get("paging") or {}
+        if page >= int(paging.get("pages") or 1):
+            break
+        page += 1
+        time.sleep(1)
+    print(f"[orphans] {len(threads)} thread(s) carry Lucy's files")
+    deleted = failed = orphaned = 0
+    for tts in sorted(threads):
+        try:
+            msgs = client.conversations_replies(
+                channel=CHANNEL, ts=tts, limit=200).get("messages", [])
+        except Exception as e:  # noqa: BLE001
+            if "thread_not_found" in str(e):
+                msgs = []
+            else:
+                print(f"  ! couldn't list {tts}: {str(e)[:100]}")
+                continue
+        parent = next((m for m in msgs if m.get("ts") == tts), None)
+        if not _is_gone(parent):
+            continue
+        orphaned += 1
+        when = dt.datetime.fromtimestamp(float(tts))
+        kill = [m for m in msgs if m.get("ts") != tts]
+        print(f"  [orphan] {when:%m/%d %H:%M} parent gone — "
+              f"{len(kill)} leftover msg(s)")
+        if not live:
+            continue
+        for m in sorted(kill, key=lambda m: m.get("ts", ""), reverse=True):
+            try:
+                client.chat_delete(channel=CHANNEL, ts=m["ts"])
+                deleted += 1
+            except Exception as e:  # noqa: BLE001
+                if "message_not_found" not in str(e):
+                    print(f"    ✗ {m['ts']}: {str(e)[:90]}")
+                    failed += 1
+            time.sleep(1.1)
+    print(f"[orphans] {orphaned} orphaned thread(s); "
+          + (f"deleted {deleted}, {failed} failure(s)" if live
+             else "dry run — add --live to delete"))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="aplayers_cleanup")
     ap.add_argument("--days", type=int, default=15)
     ap.add_argument("--live", action="store_true",
                     help="actually delete (default: preview only)")
+    ap.add_argument("--orphans", action="store_true",
+                    help="sweep threads whose parent was deleted by hand")
     a = ap.parse_args(argv)
     from automations.shared.slack_metrics_post import _client
     client = _client()
+    if a.orphans:
+        orphan_sweep(client, a.days, a.live)
+        print("=== done ===", flush=True)
+        return 0
     oldest = (dt.datetime.now() - dt.timedelta(days=a.days)).timestamp()
 
     parents, cursor = [], None
