@@ -1058,15 +1058,15 @@
     "report_id": "jose_metrics",
     "label": "Jose's Local Office",
     "owner": "Jose Velasquez",
-    "channel_id": "U04G5HJBGFN",
-    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "channel_id": "C0CCVTKTQFP",
+    "channel_name": "westwavesales",
     "sheet_id": "1fAVDgIilZA-LEAhfPqzQiA9cqs1glqrkecpEAeDgyOw",
     "knocks_office": "Jose Velasquez",
     "ov_account": "22434",
     "owner_office": "",
     "business_name": "Legacy Shore Marketing, Inc.",
     "website": "",
-    "header_label": "Jose Velasquez",
+    "header_label": "",
     "thresholds": {
       "green": 85,
       "yellow": 75
@@ -1093,6 +1093,6 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
-    "notes": "wired by hand 2026-10-28 (Megan: 'we're enrolling jose velasquez - start his dry run for metrics/trackers/weather'). Legacy Shore Marketing, Inc. (dba Legacy Shore Specialized Marketing), NDS wireless in Colten's South Shore org; Tableau NDS-SN owner 'JOSE VELASQUEZ[legacy shore marketing, inc.]' (wireless reps present in _repsearch); OwnerVille/AppStream 22434 (OV spelling 'José Velasquez'). Six NDS boards like colten. City ASSUMED Miami/Eastern (Jose Antonio Velasquez sells on Colten's Miami SaraPlus) -- confirm. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Jose Velasquez - Lucy Metrics' copied from the Master Metrics Templates, Editor alphaletereporting@ (Lucy 4). Scheduler OFF until the Lucy 4 dry run shows data on every board."
+    "notes": "wired by hand 2026-10-28 (Megan: 'we're enrolling jose velasquez - start his dry run for metrics/trackers/weather'). Legacy Shore Marketing, Inc. (dba Legacy Shore Specialized Marketing), NDS wireless in Colten's South Shore org; Tableau NDS-SN owner 'JOSE VELASQUEZ[legacy shore marketing, inc.]' (wireless reps present in _repsearch); OwnerVille/AppStream 22434 (OV spelling 'José Velasquez'). Six NDS boards like colten. City ASSUMED Miami/Eastern (Jose Antonio Velasquez sells on Colten's Miami SaraPlus) -- confirm. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Jose Velasquez - Lucy Metrics' copied from the Master Metrics Templates, Editor alphaletereporting@ (Lucy 4). Scheduler OFF until the Lucy 4 dry run shows data on every board. | 2026-10-28 18:30 CT: ECO sign-up named #westwavesales (C0CCVTKTQFP; Lucy, Megan, Eve, Jose, Colten in it). Lucy 4 dry run rerun-2026-10-28-172321 green 8/8: knocks 14 reps (OV 22434 impersonation until his ECO relays), wireless churn 21 reps, 232 wireless order rows, pending 67, activation rate 18 reps, order log 116 rows / 13 rep tabs, cancels + disconnects proven zero. Channel set, scheduler ON. Sign-up form says America/Los_Angeles; Ray (super A) is 305 -- timezone/city still to confirm with Megan."
   }
 ]
