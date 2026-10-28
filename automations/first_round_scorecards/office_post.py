@@ -20,6 +20,7 @@ board and the docs say, names already merged ('Same person?' tab).
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --sample   # group DM Raf+Camila+Eve
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --post     # the office channels
     python -m automations.first_round_scorecards.office_post --date 2026-10-08 --restyle carlos  # re-format a posted thread (or: all)
+    python -m automations.first_round_scorecards.office_post --date 2026-10-20 --only khalil --post  # one office's thread only (backfill)
 
 run.py posts the day by itself once LIVE is on (after Eve's OK to the sample).
 An office with no channel here is left out (printed), it still has
@@ -247,13 +248,13 @@ def _save(data: Dict) -> None:
     LEDGER.write_text(json.dumps(data, indent=1), encoding="utf-8")
 
 
-def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
+def post_day(rows: List[Dict], day: dt.date, *, sample: bool, only: str = "") -> int:
     """Each office's thread in its channel (or every office's in the sample
     group DM). The thread and each reply are kept in the ledger, so a re-run
     after a failure finishes the same thread and never posts one twice.
     Returns 1 if any post failed."""
     client = _client()
-    todo = posts(rows, day)
+    todo = [p for p in posts(rows, day) if not only or p[0] == only]
     if not todo:
         print("OFFICE POSTS: no audited interview with an office that day")
         return 0
@@ -500,6 +501,9 @@ def main(argv=None) -> int:
     ap.add_argument("--restyle", metavar="OFFICE",
                     help="edit that office's already-posted thread for --date into today's "
                          "format (e.g. carlos, or all); posts nothing new")
+    ap.add_argument("--only", metavar="OFFICE",
+                    help="post just that office's thread, no summary (a backfill: e.g. "
+                         "khalil, for an office added to CHANNELS after its days went by)")
     args = ap.parse_args(argv)
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
@@ -511,6 +515,23 @@ def main(argv=None) -> int:
     if args.clear_sample:
         clear_sample()
     rows = day_rows(day)
+    if args.only:
+        hits = [o for o in by_office(rows, day) if _squash(o).startswith(_squash(args.only))]
+        only = hits[0] if len(hits) == 1 else ""
+        if len(hits) > 1:
+            raise SystemExit(f"--only {args.only!r}: matches {hits}")
+        if not only:
+            print(f"ONLY {args.only}: no audited interview that day")
+            return 0
+        for office, channel, head, replies in posts(rows, day):
+            if office == only:
+                print(f"\n=== {office} -> {channel or 'NO CHANNEL'} ===\n{head}")
+                for _, text in replies:
+                    print(f"  ↳ {text}")
+        if not (args.sample or args.post):
+            print("\nDRY-RUN: nothing posted")
+            return 0
+        return post_day(rows, day, sample=args.sample, only=only)
     print(summary_text(rows, day))
     if args.summary_only:
         if not (args.sample or args.post):
