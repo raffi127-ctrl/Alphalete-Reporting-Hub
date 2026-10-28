@@ -1088,6 +1088,24 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
     return out
 
 
+def build_knocks_final(cols, crew, today, log=print) -> Path:
+    """Yesterday's LAST knocks board (Carlos 2026-10-28: "the last nds
+    knocks board from the day prior should also be posted every morning
+    in the NDS thread"). nds_oof renders all day into
+    output/nds_oof/<date>/total_knocks_*.png on this machine — the newest
+    one by mtime IS the day's final board. No render of its own: a day
+    with no knocks run is an honest skip."""
+    from automations.nds_oof.run import OUTPUT_DIR as _NOOF
+    yday = today - dt.timedelta(days=1)
+    cands = sorted((_NOOF / yday.isoformat()).glob("*knocks*.png"),
+                   key=lambda q: q.stat().st_mtime)
+    if not cands:
+        raise RuntimeError(f"no knocks boards rendered for {yday}")
+    log(f"[nds] knocks final: {cands[-1].name} "
+        f"({dt.datetime.fromtimestamp(cands[-1].stat().st_mtime):%H:%M})")
+    return cands[-1]
+
+
 def build_revenue_board(cols, crew, today, log=print) -> Path:
     """#1 Revenue Board — styled like the B2B one, base-comp mode, but
     priced from the TABLEAU NDS log, not SaraPlus. 2026-10-23: both
@@ -1304,6 +1322,8 @@ SECTIONS = [
      build_day_board),
     ("week_board", "\U0001F4C5", "NDS Sales Board — Week to Date",
      build_week_board),
+    ("knocks_final", "\U0001F6AA", "NDS Knocks Board — Day Prior",
+     build_knocks_final),
     ("revenue_board", "\U0001F4B0", "NDS Revenue Board",
      build_revenue_board),
     # Carlos 2026-10-24: the Sales Board tab's "% on the Board" block, every
