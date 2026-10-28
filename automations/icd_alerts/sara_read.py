@@ -997,6 +997,14 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                             "rendering, not a fault")
                 agents = S.parse_att(att_rows)
                 log("AT&T pass: %d rep(s)" % len(agents))
+                if not agents:
+                    # THE SALES GRID TOO (Omar 2026-10-28: two sales posted in
+                    # his room by 2pm, his relay said 0 reps, and only the
+                    # credit-check grid had left any evidence behind).
+                    _ev = _empty_read_evidence(page, day, att_rows)
+                    _ev = "SALES grid (AT&T) parsed to 0 reps\n" + _ev.split("\n", 1)[-1]
+                    empty_evidence = (empty_evidence + "\n\n" + _ev) if empty_evidence else _ev
+                    log("sales grid came back EMPTY -- " + _ev[:300].replace("\n", " | "))
                 dtv = S.parse_dtv(
                     S._run_report(page, base, day, "All", S.GRID_ALL, log=log))
                 log("All pass: DTV for %d rep(s)" % len(dtv))
