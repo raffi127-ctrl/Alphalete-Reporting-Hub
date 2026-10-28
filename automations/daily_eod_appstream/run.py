@@ -26,10 +26,12 @@ WHICH OFFICES: the owners in the newest weekly block of
 'Interviewers Retention (Interviewer)' (ARS Management 2.0) — the same roster
 the Below the Mark board uses — and the same owner -> office id lookup.
 
-A DIA VENCIDO (Camila, same day): the mail reports YESTERDAY, and the columns
-accumulate -- Monday .. yesterday, one 8-col group per day, then WEEKLY TOTALS
-(the sum of the days shown). Monday's mail reports Saturday, i.e. last week
-complete. Every run re-pulls the whole week, so a late AppStream edit to an
+SAME DAY (Camila, 2026-10-28: "que los martes me llegue lunes y martes ... sino
+va muy atrasado"): the 6 PM CT mail reports THAT day, and the columns
+accumulate -- Monday .. today, one 8-col group per day, then WEEKLY TOTALS
+(the sum of the days shown). Until 10/28 it was a dia vencido (yesterday;
+Monday reported Saturday). Today's column can still be short at 6 PM --
+Camila's call. Every run re-pulls the whole week, so a late AppStream edit to an
 earlier day shows up in the next mail. Nothing is stored between runs.
 
 THE RED LIST is the report day's 2nd round % under 50%, alphabetical, the way
@@ -122,10 +124,9 @@ def day_row(raw: Dict[str, Dict[str, Optional[float]]], day: str) -> Dict[str, i
 
 
 def report_day_for(today: dt.date) -> dt.date:
-    """The day the mail reports on: yesterday ("a dia vencido", Camila 10/7).
-    Sunday is skipped -- nobody interviews -- so Monday reports Saturday."""
-    d = today - dt.timedelta(days=1)
-    return d - dt.timedelta(days=1) if d.weekday() == 6 else d
+    """The day the mail reports on: the send day itself (Camila 10/28).
+    Sunday has no mail; a hand run on Sunday reports Saturday."""
+    return today - dt.timedelta(days=1) if today.weekday() == 6 else today
 
 
 def shown_days(report_day: dt.date) -> List[dt.date]:
@@ -308,7 +309,7 @@ def pull(owners: List[str], week_start: dt.date, *, logfn=print
 def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
                    from_cache: Optional[Path] = None, email: bool = True,
                    tab: Optional[str] = None, logfn=print) -> int:
-    """`day` = the REPORT day (yesterday, by default), not the send day."""
+    """`day` = the REPORT day (today, by default), not the send day."""
     from automations.shared import report_email
 
     week_start = day - dt.timedelta(days=(day.weekday() + 1) % 7)
@@ -356,11 +357,11 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
     # separados"): weekly-total reds on top (Camila 10/12), the day's reds, the
     # table, then the scorecards board link (Eve 10/19).
     RED = "#b00000"
-    # Said in the mail itself (Eve 10/28): Camila read Tuesday's mail as
-    # 'only Monday' -- it is a dia vencido, and earlier days refresh each run.
-    table = ('<p style="font-size:12px;margin:0 0 8px">One day behind: this mail covers '
+    # Said in the mail itself (Eve 10/28): which days it covers, and that
+    # earlier days (and today's late entries) refresh each run.
+    table = ('<p style="font-size:12px;margin:0 0 8px">This mail covers '
              f'Monday through {day:%A} {day.month}/{day.day}. Every mail re-pulls the whole week, '
-             'so anything entered late on an earlier day shows up corrected here.</p>'
+             'so anything entered late shows up corrected in the next one.</p>'
              + table_html(blocks) + gaps_html(gaps))
     if link:
         table += (f'<p style="font-size:12px;margin-top:12px">Every week, in the Sheet: '
@@ -396,7 +397,7 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--date", help="REPORT day YYYY-MM-DD (default: yesterday CT; Monday -> Saturday)")
+    ap.add_argument("--date", help="REPORT day YYYY-MM-DD (default: today CT)")
     ap.add_argument("--dry-run", action="store_true", help="build the preview, send nothing")
     ap.add_argument("--production", action="store_true", help="send to Camila")
     ap.add_argument("--from-cache", help="reuse a raw_<date>.json instead of pulling")

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Daily EOD AppStream -- Camila's 2nd round retention email, 6 PM CENTRAL
-# (20:00 Argentina now, 21:00 after Nov 1), Monday to Saturday, a dia vencido
+# (20:00 Argentina now, 21:00 after Nov 1), Monday to Saturday, same day
 # (Camila / Eve, 2026-10-07). LIVE: goes to Camila (+ Eve copied).
 #
 # launchd fires at 16:00-19:00 on this machine's LOCAL clock; the module's

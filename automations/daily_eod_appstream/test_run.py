@@ -23,10 +23,10 @@ class Math(unittest.TestCase):
         self.assertEqual(run.whole_pct(run.pct(r["b2nd"], r["s1"])), 14)
         self.assertEqual(run.whole_pct(run.pct(r["s2"], r["b2"])), 63)
 
-    def test_report_day_is_yesterday_and_monday_reports_saturday(self):
-        self.assertEqual(run.report_day_for(dt.date(2026, 10, 7)), dt.date(2026, 10, 6))
-        self.assertEqual(run.report_day_for(dt.date(2026, 10, 12)), dt.date(2026, 10, 10))
-        self.assertEqual(run.report_day_for(dt.date(2026, 10, 6)), dt.date(2026, 10, 5))
+    def test_report_day_is_the_send_day(self):
+        self.assertEqual(run.report_day_for(dt.date(2026, 10, 27)), dt.date(2026, 10, 27))  # Tue
+        self.assertEqual(run.report_day_for(dt.date(2026, 10, 26)), dt.date(2026, 10, 26))  # Mon
+        self.assertEqual(run.report_day_for(dt.date(2026, 10, 25)), dt.date(2026, 10, 24))  # Sun -> Sat
 
     def test_days_accumulate_monday_to_report_day(self):
         self.assertEqual(run.shown_days(dt.date(2026, 10, 5)), [dt.date(2026, 10, 5)])

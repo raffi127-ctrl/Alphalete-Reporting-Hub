@@ -12,7 +12,7 @@ Shape copies Perli's tab: one block per week, NEWEST ON TOP, each block
     one row per office, alphabetical
     TOTAL
     (spacer)
-Saturday is a column because Monday's email reports it (Perli's stops at Friday).
+Saturday is a column because Saturday's email reports it (Perli's stops at Friday).
 Days not reached yet are blank, never #DIV/0!.
 
 Every run REWRITES the current week's block (found by its label in col A, never
