@@ -1440,9 +1440,14 @@ def prune_sections(sids, today, log=print) -> None:
     replies = client.conversations_replies(channel=CHANNEL[1], ts=ts,
                                            limit=200).get("messages", [])
     for m in replies:
+        # a files_upload_v2 reply often has EMPTY text (the caption lives
+        # on the file), so match the upload's FILENAME too — that's what
+        # made the first prune delete nothing (2026-10-28)
         txt = (m.get("text") or "").strip()
+        fnames = " ".join((f.get("name") or "")
+                          for f in (m.get("files") or []))
         for sid, needle in titles.items():
-            if txt.startswith(needle) or needle in txt:
+            if needle in txt or sid in fnames:
                 try:
                     client.chat_delete(channel=CHANNEL[1], ts=m["ts"])
                     log(f"[nds] pruned {sid} reply {m['ts']}")
