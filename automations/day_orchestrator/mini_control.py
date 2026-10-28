@@ -4590,6 +4590,33 @@ def _action_set_machine_profile(args: str) -> tuple[bool, str]:
                       f"{type(e).__name__})")
 
 
+def _action_icd_correct_sales(args: str) -> tuple[bool, str]:
+    """Lower (or set) ONE rep's pinned sale count on the ICD relay row.
+
+      icd_correct_sales <office> "<rep>" <METRIC>=<n> [YYYY-MM-DD]
+      e.g. icd_correct_sales carlos-b2batt "Andrew De La Torre" NL=4
+
+    WHY (Carlos 2026-10-27): SaraPlus glitched a rep to 8 NL and came back to
+    4; the poster's ONLY-UP rule kept the 8 all day and every standings text
+    repeated it. Only the box running the ICD poster can reach that workbook,
+    so this is the way to fix it from anywhere. See icd_alerts/correct_sales.py."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if len(parts) < 3:
+        return False, ('usage: icd_correct_sales <office> "<rep>" <METRIC>=<n> '
+                       '[YYYY-MM-DD]  e.g. icd_correct_sales carlos-b2batt '
+                       '"Andrew De La Torre" NL=4')
+    office, rep, setting = parts[0], parts[1], parts[2]
+    cmd = [sys.executable, "-m", "automations.icd_alerts.correct_sales",
+           "--office", office, "--rep", rep, "--set", setting, "--send"]
+    if len(parts) > 3:
+        cmd += ["--day", parts[3]]
+    return _run_cmd(cmd, timeout_s=300)
+
+
 def _action_icd_board(args: str) -> tuple[bool, str]:
     """Post ONE office's knocks board right now, outside its field hours.
 
@@ -9313,6 +9340,7 @@ ACTIONS = {
     "cherry_pick": _action_cherry_pick,
     "set_machine_profile": _action_set_machine_profile,
     "icd_board": _action_icd_board,
+    "icd_correct_sales": _action_icd_correct_sales,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
