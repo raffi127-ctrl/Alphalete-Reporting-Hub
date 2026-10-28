@@ -197,8 +197,15 @@ def quiet_now(now: Optional[dt.datetime] = None) -> bool:
     return quiet_window(now or dt.datetime.now())
 
 
+# Carlos, 10/28 ~5 PM: "stop pushing resumes for me" + "start pushing resumes
+# at 5:30am tomorrow". One hold, self-expiring — delete after 10/29.
+RESUME_NOT_BEFORE = dt.datetime(2026, 10, 29, 5, 30)
+
+
 def in_window(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
+    if now < RESUME_NOT_BEFORE:
+        return False
     hm = (now.hour, now.minute)
     return DAY_START <= hm < DAY_END
 
