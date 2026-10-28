@@ -434,6 +434,52 @@ class TotalsOnly(unittest.TestCase):
         self.assertEqual(blocks[1]["body"], f"A{r}:{b.ars.a1col(W)}{r + 1}")
 
 
+class TodayThenWeek(unittest.TestCase):
+    """Camila (2026-10-28): the picture is today on its own, the week's
+    total under it, no last week (except Monday)."""
+
+    def setUp(self):
+        from automations.first_to_second_below_mark import board_shot as bs
+        from automations.first_to_second_below_mark import source as src
+        self.bs, self.src = bs, src
+
+    def _grid(self, today):
+        rows = {("9/20", "Monday", "Ann"): row("Ann", 10, 0.3),
+                ("9/20", "Monday", "Bob"): row("Bob", 10, 0.5),
+                ("9/20", "Tuesday", "Ann"): row("Ann", 10, 0.5),
+                ("9/20", "Tuesday", "Bob"): row("Bob", 10, 0.2),
+                ("9/13", "Friday", "Dee"): row("Dee", 10, 0.1)}
+        weeks = [self.src.Week(label="9/20", header_row=0,
+                               owners=[self.src.Owner(name="Ann"), self.src.Owner(name="Bob")]),
+                 self.src.Week(label="9/13", header_row=0, owners=[self.src.Owner(name="Dee")])]
+        res = b.build_results(weeks, [dt.date(2026, 9, 20), dt.date(2026, 9, 13)], H, rows,
+                              today=today)
+        day = b.picture_day(today)
+        b.today_only(res[0], day, H, False)
+        grid = b.lay_out(res, H, "s", {}, False, days=[day]).values
+        grid[2][0] = grid[2][W + 1] = "Owner Name"
+        return grid
+
+    def test_today_lists_only_who_is_under_today(self):
+        grid = self._grid(dt.date(2026, 9, 22))
+        hit = self.bs.find_day(grid, "Tuesday", 0)
+        names = [grid[r - 1][0] for r in range(hit[0] + 1, hit[1] + 1)]
+        self.assertEqual(names, ["Bob"])
+
+    def test_picture_is_today_then_this_week(self):
+        blocks = self.bs.plan(self._grid(dt.date(2026, 9, 22)), dt.date(2026, 9, 22))
+        self.assertEqual([k["caption"] for k in blocks],
+                         ["TODAY  ·  TUE 9/22",
+                          "THIS WEEK SO FAR  ·  TOTAL FOR THE WEEK  ·  MON 9/21 – TUE 9/22"])
+        self.assertTrue(blocks[1]["body"].startswith("A"))
+
+    def test_monday_closes_with_last_weeks_final(self):
+        blocks = self.bs.plan(self._grid(dt.date(2026, 9, 21)), dt.date(2026, 9, 21))
+        self.assertEqual(blocks[0]["caption"], "TODAY  ·  MON 9/21")
+        self.assertTrue(blocks[1]["caption"].startswith("LAST WEEK"))
+        self.assertTrue(blocks[1]["caption"].endswith("FINAL"))
+
+
 class NewColumns(unittest.TestCase):
     def test_answered_does_not_take_the_answered_groups_qualified(self):
         c = b.cols.resolve(H2)

@@ -142,8 +142,11 @@ def plan(values: List[List], today: dt.date) -> List[dict]:
     if right is None:
         raise SystemExit("cannot find the second week's 'Owner Name' header")
     width = right - b.GAP_COLS
-    if find_day(values, "Monday", 0) is not None:
+    day_bands = [(d, h) for d in b.WEEK_DAYS for h in [find_day(values, d, 0)] if h]
+    if len(day_bands) > 1:
         return _plan_days(values, today, right, width)
+    if day_bands:
+        return _plan_today(values, day_bands[0], right, width)
     blocks = []
     for c0, label, bg in ((right, "LAST WEEK", CAPTION_BG), (0, "THIS WEEK", TODAY_BG)):
         tot = find_day(values, b.TOTAL_BAND, c0)
@@ -162,6 +165,35 @@ def plan(values: List[List], today: dt.date) -> List[dict]:
             "header": f"{first_col}{b.BANNER_ROW}:{last_col}{b.HEADER_ROW}",
             "body": f"{first_col}{tot[0]}:{last_col}{tot[1]}",
             "days": [(b.TOTAL_BAND, tot[2])]})
+    return blocks
+
+
+def _plan_today(values: List[List], hit: Tuple[str, Tuple[int, int, str]],
+                right: int, width: int) -> List[dict]:
+    """Since 2026-10-28 (Camila: "uno solo diario, y el acumulado de la semana
+    abajo"): TODAY on top, only the offices under the mark today; under it this
+    week's total so far. Monday's total would be Monday again, so Monday gets
+    last week's final total instead -- Friday's callbacks are in by then."""
+    day, (r0, r1, text) = hit
+    blocks = [{
+        "caption": f"TODAY  ·  {_date_of(text)}", "bg": TODAY_BG,
+        "header": f"A{b.BANNER_ROW}:{ars.a1col(width)}{b.HEADER_ROW}",
+        "body": f"A{r0}:{ars.a1col(width)}{r1}", "days": [(day, text)]}]
+    c0, label, bg = ((right, "LAST WEEK", CAPTION_BG) if day == b.WEEK_DAYS[0]
+                     else (0, "THIS WEEK SO FAR", TOTAL_BG))
+    tot = find_day(values, b.TOTAL_BAND, c0)
+    if tot is None:
+        raise SystemExit(f"no {b.TOTAL_BAND} band in the {label.lower()} block")
+    parts = tot[2].split("  ·  ")
+    span = (parts[1] if len(parts) > 1 else "").replace(" combined", "").upper()
+    if label == "LAST WEEK":
+        span += "  ·  FINAL"
+    first_col, last_col = ars.a1col(c0 + 1), ars.a1col(c0 + width)
+    blocks.append({
+        "caption": f"{label}  ·  {b.TOTAL_BAND}  ·  {span}", "bg": bg,
+        "header": f"{first_col}{b.BANNER_ROW}:{last_col}{b.HEADER_ROW}",
+        "body": f"{first_col}{tot[0]}:{last_col}{tot[1]}",
+        "days": [(b.TOTAL_BAND, tot[2])]})
     return blocks
 
 

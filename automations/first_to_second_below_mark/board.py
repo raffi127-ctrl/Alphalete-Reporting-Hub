@@ -116,6 +116,21 @@ HEADER_ROW_PX = 48          # only if the template's own height cannot be read
 # draws the day-by-day board.
 SHOW_DAYS = False
 
+
+def picture_day(today: dt.date) -> Optional[str]:
+    """The day the picture shows on its own (Camila, 2026-10-28: "uno solo
+    diario, y el acumulado de la semana abajo"). None on a weekend."""
+    return WEEK_DAYS[today.weekday()] if today.weekday() < len(WEEK_DAYS) else None
+
+
+def today_only(wr: "WeekResult", day: str, headers: List[str], show_all: bool) -> None:
+    """The picture's day lists only the offices at or under the mark THAT day,
+    worst first -- not everybody who slipped some day of the week."""
+    dr = wr.days.get(day)
+    if dr is not None and not dr.future:
+        keep = dr.all_rows if show_all else rep.below_the_mark(dr.all_rows, headers)
+        dr.rows = rep.worst_first(keep, headers)
+
 DAY_BG = {"red": 0.263, "green": 0.263, "blue": 0.263}
 WEEK_BG = {"red": 0.4, "green": 0.4, "blue": 0.4}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
@@ -663,7 +678,9 @@ class Layout:
 
 def lay_out(results: List[WeekResult], headers: List[str], status: str,
             notes: Dict[Tuple[str, str, str], Tuple[str, str]],
-            show_all: bool, days: bool = SHOW_DAYS) -> Layout:
+            show_all: bool, days=SHOW_DAYS) -> Layout:
+    """`days`: True draws Monday..Friday, False only the totals, or a list of
+    the day names to draw (the picture: just today)."""
     width = len(headers)
     total = width * len(results) + GAP_COLS * (len(results) - 1)
     col = cols.resolve(headers)
@@ -690,7 +707,7 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
     grid.append(blank())                 # headers: pasted from the template
 
     bands, data, msgs, cell_notes = [], [], [], []
-    for day in (WEEK_DAYS if days else []):
+    for day in (WEEK_DAYS if days is True else (days or [])):
         band = blank()
         for k, wr in enumerate(results):
             moved = [note for (wk, d, _), (_, note) in notes.items()
@@ -1151,8 +1168,12 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
         wr.missing = why
     pic_moved = {k: v for k, v in compare(pic_results, prior, headers).items()
                  if in_pass is None or k[2] in in_pass}
+    day = picture_day(today)
+    if day:
+        today_only(pic_results[0], day, headers, show_all)
     picture = lay_out(pic_results, headers,
-                      f"{scope}  ·  {what}  ·  checked {stamp} CT", pic_moved, show_all)
+                      f"{scope}  ·  {what}  ·  checked {stamp} CT", pic_moved, show_all,
+                      days=[day] if day else False)
 
     if dry_run:
         logfn(f"  DRY RUN - nothing written ({layout.last_row} rows would be)")
