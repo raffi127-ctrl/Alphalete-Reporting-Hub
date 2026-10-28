@@ -839,6 +839,11 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
     page (date filters, office name). Best effort, never raises."""
     out = ["credit-check read for %s parsed to 0 reps" % day]
     try:
+        if S.LAST_LOAD_CLICK.get("note"):
+            out.append("load-records click: " + S.LAST_LOAD_CLICK["note"][:300])
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         rows = list(raw_rows or [])
         out.append("raw grid rows: %d" % len(rows))
         try:

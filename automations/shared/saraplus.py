@@ -627,16 +627,49 @@ def _run_report_once(page, base_url: str, day: dt.date, service: str,
     # "CLICK TO LOAD RECORDS." Omar's account (2026-10-26) renders the grid
     # with one placeholder row and loads the rows only when that text is
     # clicked -- every other account loads them on submit. Read as-is, that
-    # is a day of zero checks for an office that is selling. Click it once,
-    # wait for the grid to re-render, read again.
-    if len(rows) == 1 and "load records" in " ".join(rows[0]).lower():
+    # is a day of zero checks for an office that is selling. Click it, wait
+    # for the grid to change, read again -- and SAY what happened, because
+    # the first version of this clicked in silence and his sales grid still
+    # read as the placeholder two days later (2026-10-28).
+    if needs_load_click(rows):
+        rows = _click_load_records(page, grid, rows)
+    return rows
+
+
+def needs_load_click(rows: List[List[str]]) -> bool:
+    return len(rows) == 1 and "load records" in " ".join(rows[0]).lower()
+
+
+# What the last load-records click did, for the empty-read evidence.
+LAST_LOAD_CLICK = {"note": ""}
+
+
+def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str]]:
+    note = []
+    targets = ("%s >> text=/load records/i" % grid,
+               "text=/click\\s*to\\s*load records/i",
+               "%s tbody tr" % grid)
+    for sel in targets:
         try:
-            page.locator("%s >> text=/load records/i" % grid).first.click(timeout=10_000)
-            page.wait_for_timeout(2500)
-            page.wait_for_selector(grid, timeout=GRID_TIMEOUT_MS)
-            rows = _grid_rows(page, grid)
-        except Exception as e:  # noqa: BLE001 -- the placeholder is reported as evidence
-            pass
+            loc = page.locator(sel).first
+            loc.click(timeout=8_000)
+            note.append("clicked %r" % sel)
+        except Exception as e:  # noqa: BLE001
+            note.append("no click via %r (%s)" % (sel, type(e).__name__))
+            continue
+        # The rows arrive on a postback; poll instead of a fixed pause.
+        for _ in range(12):
+            page.wait_for_timeout(1500)
+            try:
+                rows = _grid_rows(page, grid)
+            except Exception:  # noqa: BLE001
+                rows = rows
+            if not needs_load_click(rows):
+                note.append("rows after click: %d" % len(rows))
+                LAST_LOAD_CLICK["note"] = "; ".join(note)
+                return rows
+        note.append("still the placeholder 18s after the click")
+    LAST_LOAD_CLICK["note"] = "; ".join(note)
     return rows
 
 
