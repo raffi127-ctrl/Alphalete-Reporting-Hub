@@ -133,10 +133,19 @@ def copy_app():
 def make_venv():
     if venv_python().exists():
         return
-    if run([sys.executable, "-m", "venv", str(VENV_DIR)]) != 0:
+    # A FOLDER WITH NO PYTHON IN IT IS A BROKEN FOLDER, NOT A SAVED STEP.
+    # Omar 2026-10-28: a macOS update replaced the system Python the venv was
+    # built on; `python -m venv` over the leftover folder produced a Python
+    # with "No module named pip" and the install died at step 3. Start clean.
+    if VENV_DIR.exists():
+        import shutil
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
+    if run([sys.executable, "-m", "venv", "--clear", str(VENV_DIR)]) != 0:
         raise SystemExit(
             "Could not set up the program's private Python folder. Please send "
             "the reporting team a photo of this window.")
+    if run([venv_python(), "-m", "pip", "--version"]) != 0:
+        run([venv_python(), "-m", "ensurepip", "--upgrade"])
 
 
 def install_deps():
