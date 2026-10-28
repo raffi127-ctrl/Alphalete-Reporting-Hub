@@ -41,6 +41,21 @@ class HistoricalExpected(unittest.TestCase):
         self.assertNotIn("applicant-push",
                          _historical_expected(rows, target, daily_min_days=99))
 
+    def test_a_report_moved_onto_a_shared_card_is_expected_under_the_card(self):
+        """Tue 2026-10-27: Raf's Daily Update logged `raf_daily_update` through
+        10/24, then the shared `2nd-round-daily-update-post` card from 10/26.
+        Read raw, history still expected the old id, so a run that posted and
+        logged `done` at 17:07 under the card became "didn't run today"."""
+        target = dt.date(2026, 10, 27)
+        old = [d for d in _span(target, 3, 21) if d.weekday() != 6]
+        rows = (_rows("raf_daily_update", old, hour=17, name="Raf Daily Update")
+                + _rows("2nd-round-daily-update-post", [target - dt.timedelta(days=1)],
+                        hour=17, name="Raf Daily Update"))
+        exp = _historical_expected(rows, target)
+        self.assertNotIn("raf_daily_update", exp)
+        self.assertIn("2nd-round-daily-update-post", exp)
+        self.assertEqual(exp["2nd-round-daily-update-post"]["start_hour"], 17)
+
     def test_weekday_only_report_is_not_expected_on_the_weekend(self):
         """A Mon-Fri report also clears 5-of-7 density, so density alone would
         post 'didn't run today' every Saturday. The same-weekday proof stops it."""

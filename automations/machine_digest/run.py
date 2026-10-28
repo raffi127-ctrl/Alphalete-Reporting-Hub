@@ -902,6 +902,22 @@ def _declared_start_hours(cfg, target_date) -> dict:
     return out
 
 
+def _current_card(cid: str) -> str:
+    """The card id a report publishes under TODAY. A report that moved onto a
+    shared card keeps its OLD id on every row it wrote before the move, so
+    history read raw expects a card that will never get another row. Raf's
+    Daily Update wrote `raf_daily_update` through 10/24, then (10/26, one card
+    for every office) `2nd-round-daily-update-post` — and on Tue 10/27 the
+    watcher posted "didn't run today on Lucy 2" over a run that had posted at
+    17:07 and logged `done` under the new card. Folding the old id into its
+    card makes the old history count for the card that actually runs."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001 — no map, read rows as written
+        return cid
+    return _HUB_CARD.get(cid, cid)
+
+
 def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2,
                          daily_window: int = 7, daily_min_days: int = 5):
     """Which reports NORMALLY run on this weekday — the baseline for 'didn't run at
@@ -932,7 +948,7 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         d = started[:10]
         if d not in dates:
             continue
-        cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
+        cid = _current_card(str(r.get("Report ID") or r.get("Report Name") or "").strip())
         if not cid:
             continue
         rec = seen.setdefault(cid, {"days": set(), "hour_by_day": {}, "machine": "", "name": cid})
@@ -996,7 +1012,7 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         d = started[:10]
         if d not in daily_dates:
             continue
-        cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
+        cid = _current_card(str(r.get("Report ID") or r.get("Report Name") or "").strip())
         if not cid:
             continue
         rec = dseen.setdefault(cid, {"days": set(), "hour_by_day": {},
