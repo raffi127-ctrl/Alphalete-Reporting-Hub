@@ -635,6 +635,10 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
         learn_pending(client, st)
         _save_state(st, spath)
     ids = slack_ids(rows, client)
+    # A helper who also runs 2nd rounds (Omar) is already known by id —
+    # 10/28 the thread asked Omar to tag himself.
+    for name, sid in office.tag_helpers.items():
+        ids.setdefault(L._norm(name), sid)
     missing = [n for n in L.hires_by_leader(rows) if L._norm(n) not in ids]
     tag = L.tag_text(rows, ids, helpers=list(office.tag_helpers.values()))
     replies = [L.CONGRATS_ASK, L.CONGRATS_HOW, L.CONGRATS_TEXT]
