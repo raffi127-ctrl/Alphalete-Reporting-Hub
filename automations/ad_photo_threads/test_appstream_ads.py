@@ -42,6 +42,11 @@ class ReportRowsTests(unittest.TestCase):
         self.assertEqual(aa.ad_of([self.row("Krystal", "Lee", "A")], "Krystal"), [])
         self.assertEqual(aa.ad_of([["Ana", "Lee"]], "Ana Lee"), [])
 
+    def test_report_week_starts_sunday(self):
+        self.assertEqual(aa.sunday_of(dt.date(2026, 10, 27)), dt.date(2026, 10, 25))
+        self.assertEqual(aa.sunday_of(dt.date(2026, 10, 25)), dt.date(2026, 10, 25))
+        self.assertEqual(aa.sunday_of(dt.date(2026, 10, 24)), dt.date(2026, 10, 18))
+
     def test_header_and_key(self):
         self.assertEqual(aa.header(dt.date(2026, 10, 3)), "Oct 3, 2026")
         self.assertEqual(aa.key(dt.date(2026, 10, 22), " Carlo Palacio "), "2026-10-22|carlo palacio")

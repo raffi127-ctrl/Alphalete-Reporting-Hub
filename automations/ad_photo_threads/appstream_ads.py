@@ -84,11 +84,51 @@ def near(rows: List[List[str]], name: str) -> List[str]:
     return out
 
 
+def sunday_of(d: dt.date) -> dt.date:
+    """The Sunday that starts the report's Sun-Sat week holding `d`."""
+    return d - dt.timedelta(days=(d.weekday() + 1) % 7)
+
+
+def open_week(app, sunday: dt.date) -> None:
+    """Load the retention report (p=701) on the week starting `sunday`.
+
+    Eve 10/27: the report opens on the CURRENT week only, so every lookup saw
+    3 of ~28 days (10/25-10/27) and found nobody -- people are sent to the call
+    list days or weeks before their 1st round. The week is picked the way
+    find_ad.py / funnel_board do it: the hidden startDate2 (MM/DD/YYYY) is
+    what selects it, and the form's "submit" input shadows form.submit()."""
+    page = app.page
+    m = re.search(r"rqst=([A-Za-z0-9\-]+)", page.url)
+    if not m:                         # land on a page that carries it first
+        app.open_retention_details()
+        m = re.search(r"rqst=([A-Za-z0-9\-]+)", page.url)
+    if not m:
+        raise RuntimeError("no rqst token in %s" % page.url[:80])
+    page.goto("https://applicantstream.com/index.cfm?rqst=%s&p=701" % m.group(1),
+              wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_selector("form[name=frmRR] input[name=weekStart]", timeout=30000)
+    page.evaluate("""([slash, dash]) => { const f = document.forms['frmRR'];
+        f.startDate2.value = slash; f.weekStart.removeAttribute('readonly');
+        f.weekStart.value = dash; HTMLFormElement.prototype.submit.call(f); }""",
+                  [sunday.strftime("%m/%d/%Y"), sunday.strftime("%m-%d-%Y")])
+    page.wait_for_load_state("domcontentloaded")
+    # The grid renders slowly on big offices (find_ad: poll for the row).
+    want = header(sunday).lower()
+    for _ in range(60):
+        page.wait_for_timeout(2000)
+        if page.evaluate("(w) => document.body.innerText.toLowerCase().includes(w)", want):
+            return
+
+
 def sent_rows(app, office_id: str, days: List[dt.date], debug: bool = False) -> List[List[str]]:
-    """Every "Sent to Call List" detail row of `office_id` on `days`."""
+    """Every "Sent to Call List" detail row of `office_id` on `days`, one
+    report week at a time."""
     app.select_office(office_id)
-    app.open_retention_details()
-    hrefs = [(d, app.detail_href(L_CALL_LIST, header(d))) for d in days]
+    hrefs = []
+    for sunday in sorted({sunday_of(d) for d in days}):
+        open_week(app, sunday)
+        hrefs += [(d, app.detail_href(L_CALL_LIST, header(d)))
+                  for d in days if sunday_of(d) == sunday]
     if debug:
         print(f"  report columns found: {sum(1 for _, h in hrefs if h)} of {len(days)} days"
               f" ({', '.join(f'{d:%m/%d}' for d, h in hrefs if h) or 'none'})")
