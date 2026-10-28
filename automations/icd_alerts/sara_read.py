@@ -1005,6 +1005,18 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     _ev = "SALES grid (AT&T) parsed to 0 reps\n" + _ev.split("\n", 1)[-1]
                     empty_evidence = (empty_evidence + "\n\n" + _ev) if empty_evidence else _ev
                     log("sales grid came back EMPTY -- " + _ev[:300].replace("\n", " | "))
+                elif empty_evidence:
+                    # And when the credit-check grid was empty but this one
+                    # was not, say so in the same fault -- "the reps ARE in
+                    # his SaraPlus, nobody has sold or run a check yet" is
+                    # the answer that stops a chase (Omar, same afternoon).
+                    _names = ", ".join(sorted(a.get("name", "") for a in agents)[:12])
+                    empty_evidence += ("\n\nSALES grid (AT&T): %d rep row(s) present, %d with a sale today -- %s"
+                                       % (len(agents),
+                                          sum(1 for a in agents if int(a.get("internet_sales", 0) or 0)
+                                              + int(a.get("internet_upgrades", 0) or 0)
+                                              + int(a.get("wireless_lines_sold", 0) or 0) > 0),
+                                          _names))
                 dtv = S.parse_dtv(
                     S._run_report(page, base, day, "All", S.GRID_ALL, log=log))
                 log("All pass: DTV for %d rep(s)" % len(dtv))
