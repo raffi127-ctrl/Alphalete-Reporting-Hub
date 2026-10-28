@@ -2366,6 +2366,12 @@ def what_to_do(label: str, summary: str) -> str:
             "No ✅ within an hour? Paste it to Claude.")
 
 
+def office_must_act(summary: str) -> bool:
+    """True for the "send this to <office>" faults -- the ones only the
+    office can fix, which go to their group DM instead of the channel."""
+    return what_to_do("", summary).startswith(":point_right:")
+
+
 def fixes_itself(label: str, summary: str) -> bool:
     """True for the green "Nothing to do" faults -- the ones that go in the
     day's shared thread instead of getting a post of their own."""
@@ -2924,11 +2930,29 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                 log("could not mark the probe row: %s" % type(e).__name__)
             continue
 
+        office = O.get(f["office"])
+        label = office.label if office else f["office"]
         system = _signin_system(f)
-        # A "signin-" stage is DM-only (Megan 2026-09-15). The refused
-        # password / locked page get the DM AND keep their channel post below
-        # (Eve 2026-10-13: "que lleguen al canal y a dm").
-        dm_only = str(f["stage"] or "").startswith("signin-")
+        # ONLY THE OFFICE CAN FIX IT -> THEIR GROUP DM, NEVER THE CHANNEL
+        # (Megan 2026-10-28: "this alert should be going to the ICD dm with
+        # Eve and I not in the alerts channel since we can't do anything
+        # about it"). Covers the "signin-" stages (DM-only since 2026-09-15),
+        # the refused password / locked page -- which Eve had sent to both
+        # on 2026-10-13 -- and anything else what_to_do hands to the office.
+        dm_only = (str(f["stage"] or "").startswith("signin-")
+                   or bool(system) or office_must_act(f["summary"]))
+        if dm_only and not system:
+            # No sign-in remedy to quote: send the fault itself to the DM.
+            dm_office_people(f["office"], "\n".join(
+                [fault_headline(label, f["stage"]), "> %s" % f["summary"],
+                 "Only the office can fix this, on their office computer."]),
+                log=log)
+            try:
+                tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+            except Exception as e:  # noqa: BLE001
+                log("DM'd the fault but could not mark it: %s"
+                    % type(e).__name__)
+            continue
         if system:
             try:
                 ask_office_to_sign_in(f["office"], f.get("first") or "",
@@ -2960,9 +2984,6 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                     log("HOLDING %s sweep-empty -- no sale at the door today, "
                         "an empty list is a slow day" % f["office"])
                 continue
-
-        office = O.get(f["office"])
-        label = office.label if office else f["office"]
 
         if fixes_itself(label, f["summary"]):
             try:
