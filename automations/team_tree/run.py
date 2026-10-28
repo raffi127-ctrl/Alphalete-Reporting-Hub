@@ -508,8 +508,13 @@ def main(argv=None) -> int:
           f"{len(roots)} branches, {len(scheduled)} scheduled orientations")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    html_path = OUT_DIR / "team_tree.html"
-    png_path = OUT_DIR / "team_tree.png"
+    # The Verizon leg gets its OWN files: both legs sharing team_tree.png
+    # let the later Verizon render overwrite the NDS one, and the NDS
+    # Metrics thread picked it up (Carlos 2026-10-28: "you only posted the
+    # verizon tree on the nds thread").
+    stem = "team_tree_verizon" if args.verizon else "team_tree"
+    html_path = OUT_DIR / f"{stem}.html"
+    png_path = OUT_DIR / f"{stem}.png"
     campaigns = ((("B2B", "Alphalete VERIZON"),) if args.verizon else None)
     if args.verizon:
         TREE_LABEL["B2B"] = "Verizon"     # leader-card tags in this one-off
