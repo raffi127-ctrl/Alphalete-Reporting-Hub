@@ -63,7 +63,7 @@ class TheSweetSpot(unittest.TestCase):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-28 15:20"),
                                                  S24065, 30),
                          "available TOMORROW, Thursday between 8:15am-10:45am "
-                         "or 12:45pm-3:15pm")
+                         "/ 12:45pm-3:15pm")
 
     def test_friday_evening_is_monday(self):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-30 16:00"),
@@ -100,6 +100,58 @@ class TheDayReadsTodayWednesday(unittest.TestCase):
                 c = AW.clause_from_schedule(at("%s %02d:10" % (day, h)), S24065, 30)
                 worst = max(worst, len(AT.CLAUSE_RE.sub(c, T24065, count=1)))
         self.assertLessEqual(worst, 160)
+
+
+class MimicsJacobs23607(unittest.TestCase):
+    """Megan 10/28: 'we want it to mimic this'."""
+
+    def _page(self, b1, b2):
+        vals = {"smsBody": b1, "smsBody2": b2}
+        filled = {}
+
+        def field(page, name):
+            if vals.get(name) is None:
+                return None
+            el = mock.Mock()
+            el.input_value.return_value = vals[name]
+            el.fill.side_effect = lambda v, n=name: filled.__setitem__(n, v)
+            return el
+        return field, filled
+
+    def test_both_boxes_set_to_the_standard(self):
+        field, filled = self._page(T23965, "")
+        with mock.patch.object(AT, "_named_field", side_effect=field), \
+             mock.patch.object(AT, "_click_text", return_value=True):
+            self.assertTrue(AT._set_standard(mock.Mock(), "23965",
+                                             "available TODAY, Wednesday between "
+                                             "12:30pm-3:30pm", True))
+        self.assertEqual(filled["smsBody"], AT.STANDARD_BODY1)
+        self.assertEqual(filled["smsBody2"],
+                         "Are you available TODAY, Wednesday between "
+                         "12:30pm-3:30pm for a quick ZOOM to go over the "
+                         "position?")
+
+    def test_already_current_saves_nothing(self):
+        want = "available TODAY, Wednesday between 12:45pm-3:15pm"
+        field, filled = self._page(AT.STANDARD_BODY1, AT.STANDARD_BODY2 % want)
+        with mock.patch.object(AT, "_named_field", side_effect=field), \
+             mock.patch.object(AT, "_click_text") as click:
+            self.assertTrue(AT._set_standard(mock.Mock(), "24065", want, True))
+        click.assert_not_called()
+        self.assertEqual(filled, {})
+
+    def test_every_version_fits_160(self):
+        for sched, step in ((S24065, 30), (S23965, 15)):
+            for day in ("2026-10-28", "2026-10-30", "2026-10-31"):
+                for h in range(6, 23):
+                    c = AW.clause_from_schedule(at("%s %02d:10" % (day, h)),
+                                                sched, step)
+                    self.assertLessEqual(len(AT.STANDARD_BODY2 % c), 160, c)
+
+    def test_jacobs_own_box_two_still_matches(self):
+        self.assertIsNotNone(AT.CLAUSE_RE.search(
+            "Are you available TODAY between 8:15am -10:45am / 12:45pm-3:45 pm "
+            "for a quick ZOOM to go over the position?"))
 
 
 class TheRealTemplates(unittest.TestCase):

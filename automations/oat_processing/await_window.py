@@ -106,7 +106,7 @@ def _groups(starts, step: int):
 
 def phrase(day_label: str, starts, step: int) -> str:
     """'available TODAY between 1:15pm-3:15pm', 'available MONDAY between
-    8:15am-10:45am or 12:45pm-3:15pm', 'available TODAY at 3:15pm'. At most
+    8:15am-10:45am / 12:45pm-3:15pm', 'available TODAY at 3:15pm'. At most
     two runs, so the template's own regex always swallows the whole clause."""
     parts = []
     for g in _groups(starts, step)[:2]:
@@ -114,7 +114,9 @@ def phrase(day_label: str, starts, step: int) -> str:
                      else "%s-%s" % (_fmt(g[0]), _fmt(g[-1])))
     first = _groups(starts, step)[0]
     lead = "at " if len(first) == 1 else "between "
-    return "available %s %s%s" % (day_label, lead, " or ".join(parts))
+    # " / " between the runs, the way Jacob's 23607 text reads (Megan 10/28:
+    # "we want it to mimic this": "between 8:15am -10:45am / 12:45pm-3:45 pm").
+    return "available %s %s%s" % (day_label, lead, " / ".join(parts))
 
 
 def _wday(day: dt.date) -> str:

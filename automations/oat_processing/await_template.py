@@ -29,12 +29,22 @@ CLAUSE_RE = re.compile(
     r"available\s+(?:(?:today|tomorrow)(?:\s*,?\s*" + _WD + r")?|" + _WD +
     r"|currentInterviewDay)\s+(?:(?:at|between)\s+)?" + _T +
     r"(?:\s*[-\u2013]\s*" + _T + r")?"
-    r"(?:\s*(?:,?\s*or)\s+" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
+    r"(?:\s*(?:,?\s*or|/)\s*" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
     re.I)
 # A template that asks with no time at all (23965 10/28: "…a quick 20-minute
 # Zoom Interview. Are you available?"). For the chosen offices the clause goes
 # in right there, and from then on CLAUSE_RE finds and updates it.
 BARE_ASK_RE = re.compile(r"Are you available\?")
+# THE STANDARD TEXT for Raf's 23965 + 24065 (Megan 2026-10-28: "we want it to
+# mimic this" -- Jacob's 23607 Await Call AI, sent 132x). Both boxes are set to
+# it; only the day + times in box 2 change from run to run. The one change from
+# Jacob's: a space after "applicantFirstName,".
+STANDARD_OFFICES = {"23965", "24065"}
+STANDARD_BODY1 = ("Hi applicantFirstName, We reviewed your application for the "
+                  "adPostingTitle role on Indeed / Full time and On site and "
+                  "would like to schedule a brief 20 minute Zoom interview to "
+                  "discuss your experience and the position.")
+STANDARD_BODY2 = "Are you %s for a quick ZOOM to go over the position?"
 # WHICH OFFICES' Await text is retuned. Only these -- every other office's
 # template is never opened (Megan 2026-10-28: "just apply it to accounts 24065
 # and 23965 for raf"; Raf's main 11280, Atef and Khalil stay as they are).
@@ -329,6 +339,52 @@ def read_office_schedule(page, office_id: str):
     return slots, step
 
 
+def _named_field(page, name: str):
+    for fr in page.frames:
+        try:
+            loc = fr.locator("textarea[name='%s'], input[name='%s']"
+                             % (name, name)).first
+            if loc.count():
+                return loc
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
+    """Both boxes to the standard text (box 1 fixed, box 2 with `want`)."""
+    b1, b2 = _named_field(page, "smsBody"), _named_field(page, "smsBody2")
+    if b1 is None or b2 is None:
+        _log("[await] office %s: the two message boxes (smsBody/smsBody2) "
+             "were not found — template left as-is" % office_id)
+        return False
+    new2 = STANDARD_BODY2 % want
+    if len(new2) > 160:
+        _log("[await] office %s: %d characters is over the 160 box -- left "
+             "as-is: %r" % (office_id, len(new2), new2))
+        return False
+    try:
+        cur1, cur2 = b1.input_value(timeout=1500), b2.input_value(timeout=1500)
+    except Exception:  # noqa: BLE001
+        cur1 = cur2 = None
+    if cur1 == STANDARD_BODY1 and cur2 == new2:
+        _log("[await] office %s: already current: %s" % (office_id, want))
+        return True
+    if not apply:
+        _log("[await] office %s WOULD set: %r | %r"
+             % (office_id, STANDARD_BODY1[:60], new2))
+        return True
+    b1.fill(STANDARD_BODY1)
+    b2.fill(new2)
+    page.wait_for_timeout(400)
+    saved = (_click_text(page, r"^Save and Activate SMS Message$")
+             or _click_text(page, r"^Save SMS Message$"))
+    page.wait_for_timeout(2000)
+    _log("[await] office %s set -> %s (save clicked: %s)"
+         % (office_id, new2, saved))
+    return saved
+
+
 def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
     """Make the Await template's clause match the clock. True = verified
     correct (updated, or already right). Never raises."""
@@ -354,6 +410,8 @@ def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
         if not _open_await_edit(page):
             _log("[await] Await edit form not reached — leaving template")
             return False
+        if office_id in STANDARD_OFFICES:
+            return _set_standard(page, office_id, want, apply)
         hit = None
         fields = _fields(page)
         for fr, el, v in fields:
