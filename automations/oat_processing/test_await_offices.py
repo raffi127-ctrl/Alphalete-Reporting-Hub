@@ -11,6 +11,21 @@ from automations.oat_processing import await_template as AT
 from automations.oat_processing import await_window as AW
 
 
+class OnlyTheChosenOffices(unittest.TestCase):
+    """Megan 2026-10-28: 11580 + Raf's 23965 and 24065 only."""
+
+    def test_the_list(self):
+        self.assertEqual(AT.OFFICES, {"11580", "23965", "24065"})
+
+    def test_rafs_main_office_is_never_opened(self):
+        for office in ("11280", "23467", "11901"):
+            with mock.patch.object(AT, "_goto_templates") as go, \
+                 mock.patch.object(AT, "read_office_schedule") as rs:
+                self.assertTrue(AT.ensure_await_template(mock.Mock(), office))
+            go.assert_not_called()
+            rs.assert_not_called()
+
+
 class PerOfficeWindows(unittest.TestCase):
 
     def test_carlos_text_is_unchanged(self):
@@ -40,7 +55,8 @@ class PerOfficeWindows(unittest.TestCase):
              mock.patch.object(AT, "office_now",
                                return_value=dt.datetime(2026, 10, 28, 9)), \
              mock.patch.object(AT, "_goto_templates") as go:
-            self.assertFalse(AT.ensure_await_template(page, "99999"))
+            with mock.patch.object(AT, "OFFICES", {"99999"}):
+                self.assertFalse(AT.ensure_await_template(page, "99999"))
         go.assert_not_called()       # never opened, never edited
 
     def test_the_regex_still_matches_every_shape_it_writes(self):

@@ -25,9 +25,12 @@ CLAUSE_RE = re.compile(
     r"(?:\s*[-\u2013]\s*" + _T + r")?"
     r"(?:\s*(?:,?\s*or)\s+" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
     re.I)
-# Every office whose interview windows are on file (await_window.WINDOWS_BY_
-# OFFICE). Megan 2026-10-28: all resume pushing, not only Carlos's.
-OFFICES = set(WINDOWS_BY_OFFICE)
+# WHICH OFFICES' Await text is retuned. Only these -- every other office's
+# template is never opened (Megan 2026-10-28: "just apply it to accounts 24065
+# and 23965 for raf"; Raf's main 11280, Atef and Khalil stay as they are).
+# 11580 uses Carlos's stated windows; the rest read their own AppStream
+# schedule (Settings > Office Level Settings).
+OFFICES = {"11580", "23965", "24065"}
 _SAID_NO_WINDOWS: set = set()
 
 _log = print
@@ -293,6 +296,8 @@ def read_office_schedule(page, office_id: str):
 def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
     """Make the Await template's clause match the clock. True = verified
     correct (updated, or already right). Never raises."""
+    if office_id not in OFFICES:
+        return True
     try:
         if office_id in WINDOWS_BY_OFFICE:
             # Carlos's own stated windows (10/28) win for his office.
