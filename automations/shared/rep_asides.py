@@ -21,7 +21,18 @@ from typing import Dict, Optional
 ASIDES: Dict[str, Dict[str, dict]] = {
     # room -> rep (lowercase full name) -> rule
     "ao-board": {                       # #alphalete-sales sale lines (Raf's board)
-        "pranish shrestha": {"every": 3, "tag": "YN", "aside": "Don't Tell Megan 🤫"},
+        # THE ASIDE IS LUCY GETTING AWAY WITH SOMETHING (Megan 2026-10-27:
+        # "it's about profanity so we need to make it funny - like Lucy is
+        # pulling one over on me"). Rotates, so the joke doesn't go stale.
+        "pranish shrestha": {"every": 3, "tag": "YN", "aside": (
+            "Don't tell Megan I said that 🤫",
+            "That one stays between us. Megan thinks I'm PG 😇",
+            "If Megan asks, YN stands for Young Professional 🤫",
+            "Shhh 👀 Megan reads these. Act normal.",
+            "Delete this before Megan logs on 🫣",
+            "Megan said keep it clean. Megan is not in this thread 😌",
+            "Language, habibi 🧼 ...is what I'd say if Megan were watching 🤫",
+        )},
     },
     "rafael-gaps": {                    # Raf's typed "15 min of gaps" list (texts)
         "pranish shrestha": {"every": 3, "tag": "YN", "aside": ""},
@@ -66,7 +77,14 @@ def due(room: str, rep: str, *, remember: bool = True) -> Optional[dict]:
     if remember:
         data[key] = n
         _save(data)
-    return rule if n % max(int(rule.get("every", 1)), 1) == 0 else None
+    every = max(int(rule.get("every", 1)), 1)
+    if n % every:
+        return None
+    # A pool of asides rotates in order, one per firing, so the joke moves.
+    aside = rule.get("aside") or ""
+    if isinstance(aside, (list, tuple)):
+        aside = aside[((n // every) - 1) % len(aside)] if aside else ""
+    return {**rule, "aside": aside}
 
 
 def tag_name(text: str, name: str, tag: str) -> str:

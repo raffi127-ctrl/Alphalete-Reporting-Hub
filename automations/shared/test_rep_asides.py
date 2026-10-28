@@ -37,7 +37,18 @@ class EveryThirdMention(unittest.TestCase):
         RA.due("ao-board", "pranish shrestha"); RA.due("ao-board", "pranish shrestha")
         rule = RA.due("ao-board", "pranish shrestha")
         self.assertEqual(rule["tag"], "YN")
-        self.assertEqual(rule["aside"], "Don't Tell Megan 🤫")
+        self.assertEqual(rule["aside"], "Don't tell Megan I said that 🤫")
+
+    def test_the_aside_rotates_each_time_it_fires(self):
+        seen = []
+        for _ in range(21):
+            r = RA.due("ao-board", "pranish shrestha")
+            if r:
+                seen.append(r["aside"])
+        self.assertEqual(len(seen), 7)
+        self.assertEqual(len(set(seen)), 7)              # seven firings, seven different lines
+        for a in seen:
+            self.assertIn("Megan", a)                    # every one is Lucy getting away with it
 
 
 class TheTagFollowsTheName(unittest.TestCase):
