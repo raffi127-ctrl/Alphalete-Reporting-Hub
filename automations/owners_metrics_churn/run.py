@@ -195,22 +195,13 @@ REPORTS = [
     ("luis", "Luis Salazar (B2B)",
      pull.fetch_b2b_luis, fill.open_ws_b2b_luis,
      "owners_b2b_luis.csv", pull.parse_b2b, pull.B2B_PERIODS),
-    # Atef got his OWN Tableau view on 2026-09-03, so he reads it like the other
-    # three. Until then he had none (not in the captain dropdown) and rode the
-    # ALL-TEAMS pull narrowed to his three reps by
-    # pull.make_b2b_captainship_parser, with the Captainship Avg recomputed from
-    # them because that file's Grand Total is the whole B2B org. His view now
-    # carries its own Grand Total, so plain parse_b2b is correct and the roster
-    # is no longer hardcoded here — a rep added to his captainship in Tableau
-    # flows through on his own.
-    #
-    # 2026-10-13: "Atef's Team" is gone from that filter too (his move to NDS),
-    # so back to the all-teams view — cut to his Org Sales Board block this
-    # time instead of a typed roster.
-    ("atef", "Atef Choudhury (B2B)",
-     pull.fetch_b2b_atef, fill.open_ws_b2b_atef,
-     "owners_b2b_atef.csv", pull.make_b2b_board_roster_parser("Atef"),
-     pull.B2B_PERIODS),
+    # Atef RETIRED 2026-10-28: no longer a captain (Carlos by mail, 10/27 —
+    # see captainship_drafts 845acefe). His tab stays as it was. To bring him
+    # back: restore this entry —
+    # ("atef", "Atef Choudhury (B2B)", pull.fetch_b2b_atef,
+    #  fill.open_ws_b2b_atef, "owners_b2b_atef.csv",
+    #  pull.make_b2b_board_roster_parser("Atef"), pull.B2B_PERIODS) —
+    # and the 'atef-nds' entry below.
     # Luke Baldwin (2026-10-01): no own view yet, so the all-teams wireless view
     # cut to the owners on his Org Sales Board block. No block yet → this tab
     # is skipped and flagged; the others fill as usual.
@@ -228,13 +219,10 @@ REPORTS = [
     ("jairo", "Jairo Ruiz (NDS)",
      pull.fetch_nds_jairo, fill.open_ws_nds_jairo,
      "owners_nds_jairo.csv", pull.parse_nds, pull.NDS_PERIODS),
-    # Atef (2026-10-19): his captainship is NDS now, but there is no "Atef's
-    # Team" in NDS yet, so the all-teams view cut to his Org Sales Board block.
-    # Slug 'atef-nds' because 'atef' is still his B2B tab.
-    ("atef-nds", "Atef Choudhury (NDS)",
-     pull.fetch_nds_atef, fill.open_ws_nds_atef,
-     "owners_nds_atef.csv", pull.make_nds_board_roster_parser("Atef"),
-     pull.NDS_PERIODS),
+    # Atef's NDS tab RETIRED 2026-10-28 with his B2B one (see above). To bring
+    # it back: ("atef-nds", "Atef Choudhury (NDS)", pull.fetch_nds_atef,
+    #  fill.open_ws_nds_atef, "owners_nds_atef.csv",
+    #  pull.make_nds_board_roster_parser("Atef"), pull.NDS_PERIODS).
 ]
 
 
@@ -539,8 +527,8 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
 ONLY_GROUPS = {
     "wireless": ["wayne-wl", "starr-wl", "chan-wl", "tony-wl", "sahil-wl"],
     "fiber":    ["wayne", "starr", "chan", "tony", "sahil"],
-    "b2b":      ["eveliz", "luis", "atef", "luke"],
-    "nds":      ["khalil", "colten", "jairo", "atef-nds"],
+    "b2b":      ["eveliz", "luis", "luke"],
+    "nds":      ["khalil", "colten", "jairo"],
 }
 
 
