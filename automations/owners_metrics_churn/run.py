@@ -670,6 +670,9 @@ def main(argv=None) -> int:
     all_reps: set = set()
     went_dark_all: dict = {}      # {tab label: {period: [rep names]}}
     went_dark_program: dict = {}  # {tab label: program} — for the manifest remediation
+    # One cached read of the 'Terminated ICDs' tab; always-False if it won't open.
+    from automations.shared import terminated_icds as _ti
+    _is_terminated = _ti.terminated_lookup()
     for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
         if slug not in parsed_by_slug or slug in wireless_mix:
             continue   # failed/skipped above — already flagged
@@ -710,6 +713,15 @@ def main(argv=None) -> int:
         parsed["reps"] = _pins.drop_reps(parsed.get("reps", {}),
                                          slug.split("-")[0], logfn=print,
                                          where=label)
+        # Terminated ICDs come out here too, for the same reason: the alert
+        # below said "remove them", but a row deleted by hand grows straight
+        # back while Tableau still lists the owner (Eric Martinez, Kimberly
+        # Rodriguez, Melik El Jaiez, 2026-10-28).
+        _gone = sorted(n for n in parsed.get("reps", {}) if _is_terminated(n))
+        if _gone:
+            print(f"  skipping terminated ICD(s) on {label}: {', '.join(_gone)}")
+            parsed["reps"] = {n: v for n, v in parsed["reps"].items()
+                              if n not in _gone}
         _prog = _program_of(parse_fn)
         _wd = _run_fill_phase(label, open_ws_fn, parsed, periods, today, args,
                               program=_prog, aliases=aliases, slug=slug)
