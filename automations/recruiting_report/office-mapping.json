@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 57,
+  "confirmed_count": 56,
   "needs_review_count": 0,
   "skip_count": 36,
   "confirmed": [
@@ -395,16 +395,6 @@
       "confidence": 1.0
     },
     {
-      "sheet_tab": "Calvin Ribera (BOX)",
-      "office_id": "22162",
-      "as_owner": "Calvin Ribera",
-      "as_company": "Vernon, Inc.",
-      "confidence": 1.0,
-      "promoted_from_sales_only": true,
-      "was_sales_only_reason": "B2B ICD (Vernon, Inc., ownerville office 22162) \u2014 tab added 2026-08-30 from Carlos's 'B2B Template'; the '(B2B)' suffix is Eve's, so it doesn't read as one more fiber ICD, not 'Template Fiber'. No AppStream office under Raf's login yet, so the recruiting funnel (rows 2-20) stays blank until access lands; promote_when_visible flips him to confirmed the run after it does. opt_source=b2b keeps Raf's OPT phase off the tab \u2014 his OPT block is filled by alphalete_org_report.opt_b2b. as_owner is ownerville's spelling ('Ribera'); the tab is Eve's ('Ribero').",
-      "opt_source": "b2b"
-    },
-    {
       "sheet_tab": "Angel Padilla",
       "office_id": "22400",
       "as_owner": "Angel Padilla",
@@ -619,7 +609,14 @@
       "promote_when_visible": true,
       "promote_office_id": "24145",
       "was_sales_only_reason": "tab added 2026-10-26 (Maud's mail: add Miguel Zaragoza to next week's 1on1s, Starr asked). New owner, office 24145 Nobilis Marketing Group, came off Starr Rodenhurst's team (was 'Miguel Zaragoza Carranza' as a rep). OPT fills now; recruiting promotes itself (with backfill) the day AppStream sees 24145."
+    },
+    {
+      "sheet_tab": "Calvin Ribera (BOX)",
+      "as_owner": "Calvin Ribera",
+      "office_id_was": "22162",
+      "reason": "2026-10-28: Camila (ARS) 'cerr\u00f3' \u2014 Eve: turn recruiting OFF for now, keep sales. Moved confirmed -> sales_only WITHOUT promote_when_visible, so AppStream seeing the office never flips it back. Recruiting rows keep their history, stop updating.",
+      "opt_source": "b2b"
     }
   ],
-  "sales_only_count": 3
+  "sales_only_count": 4
 }

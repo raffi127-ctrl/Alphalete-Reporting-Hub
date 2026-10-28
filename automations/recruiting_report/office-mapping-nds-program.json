@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 25,
+  "confirmed_count": 24,
   "needs_review_count": 0,
   "skip_count": 26,
   "confirmed": [
@@ -112,14 +112,6 @@
       "office_id": "6871",
       "as_owner": "Juan Ignacio Lucio",
       "as_company": "Lucio Marketing, Inc.",
-      "confidence": 1.0,
-      "campaign": "NDS"
-    },
-    {
-      "sheet_tab": "Justin Fermin - NDS",
-      "office_id": "23425",
-      "as_owner": "Justin Fermin",
-      "as_company": "Code Marketing Executives, Inc.",
       "confidence": 1.0,
       "campaign": "NDS"
     },
@@ -311,7 +303,7 @@
       "reason": "2026-10-12: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
     }
   ],
-  "sales_only_count": 1,
+  "sales_only_count": 2,
   "sales_only": [
     {
       "sheet_tab": "JC Lopez - NDS",
@@ -319,6 +311,13 @@
       "promote_when_visible": true,
       "promote_office_id": "24035",
       "reason": "2026-10-26: Rafael asked eStream for JC Lopez's AppStream on 10/25 and Jovanna confirmed 'All set' the same day. Moved out of skip so the next AppStream pull promotes him by itself. If the name does not match, backfill_new_icds prints every office sharing his last name -> pin it with promote_office_id. Mirrored onto the ATT Program as 'JC Lopez (NDS)' (mirror_nds_tab)."
+    },
+    {
+      "sheet_tab": "Justin Fermin - NDS",
+      "as_owner": "Justin Fermin",
+      "office_id_was": "23425",
+      "reason": "2026-10-28: Camila (ARS) 'cerr\u00f3' \u2014 Eve: turn recruiting OFF for now, keep sales. Moved confirmed -> sales_only WITHOUT promote_when_visible, so AppStream seeing the office never flips it back. Recruiting rows keep their history, stop updating.",
+      "campaign": "NDS"
     }
   ]
 }
