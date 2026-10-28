@@ -13,12 +13,15 @@ ensure_await_template(page) before walking; failures are logged, never raised
 import datetime as dt
 import re
 
-from automations.oat_processing.await_window import (WINDOWS_BY_OFFICE,
-                                                     await_clause)
+from automations.oat_processing.await_window import (DAYS, WINDOWS_BY_OFFICE,
+                                                     await_clause,
+                                                     clause_from_schedule,
+                                                     parse_span)
 
 _T = r"[0-9]{1,2}:[0-9]{2}\s*(?:am|pm)?"
 CLAUSE_RE = re.compile(
-    r"available\s+(?:today|tomorrow)\s+(?:at|between)\s+" + _T +
+    r"available\s+(?:today|tomorrow|sunday|monday|tuesday|wednesday|thursday"
+    r"|friday|saturday)\s+(?:at|between)\s+" + _T +
     r"(?:\s*[-\u2013]\s*" + _T + r")?"
     r"(?:\s*(?:,?\s*or)\s+" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
     re.I)
@@ -172,18 +175,138 @@ def probe(page) -> None:
             continue
 
 
+# --- the office's own schedule (Megan 2026-10-28) ---------------------------
+# Settings > Office Level Settings: "Current Active Interview Slots" (a row per
+# slot, a column per weekday, "8:00 AM - 4:00 PM") and "Calendar Time
+# Increment". Read once a day per office and kept, so a push pass does not
+# reopen Settings every 10 minutes.
+_SCHED_JS = r"""() => {
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const out = {slots: {}, step: null};
+  for (const t of document.querySelectorAll('table')) {
+    const rows = [...t.rows];
+    const hi = rows.findIndex(r => [...r.cells].some(c => norm(c.innerText) === 'Sunday')
+                                 && [...r.cells].some(c => norm(c.innerText) === 'Monday'));
+    if (hi < 0) continue;
+    const head = [...rows[hi].cells].map(c => norm(c.innerText));
+    for (const r of rows.slice(hi + 1)) {
+      [...r.cells].forEach((c, i) => {
+        const d = head[i]; const v = norm(c.innerText);
+        if (days.includes(d) && v) (out.slots[d] = out.slots[d] || []).push(v);
+      });
+    }
+    break;
+  }
+  for (const e of document.querySelectorAll('input[type=radio]:checked')) {
+    const txt = norm((e.nextSibling && e.nextSibling.textContent) || '') + ' ' +
+                norm((e.parentElement && e.parentElement.innerText) || '');
+    const m = txt.match(/(\d+)\s*Mins/i);
+    if (m) { out.step = parseInt(m[1]); break; }
+  }
+  return out;
+}"""
+_HDR_TIME = re.compile(r"Time:\s*([A-Za-z]{3,9}),?\s*(\d{1,2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)", re.I)
+
+
+def office_now(page):
+    """The office's own clock off AppStream's header ('Time: Oct, 28 02:16 PM
+    - Central …'), so an office in another time zone gets its own hours.
+    Falls back to this computer's clock."""
+    now = dt.datetime.now()
+    for fr in page.frames:
+        try:
+            m = _HDR_TIME.search(fr.inner_text("body", timeout=2000) or "")
+        except Exception:  # noqa: BLE001
+            continue
+        if m:
+            try:
+                mon = dt.datetime.strptime(m.group(1)[:3], "%b").month
+                h = int(m.group(3)) % 12 + (12 if m.group(5).upper() == "PM" else 0)
+                year = now.year + (1 if (mon == 1 and now.month == 12) else 0)
+                return dt.datetime(year, mon, int(m.group(2)), h, int(m.group(4)))
+            except Exception:  # noqa: BLE001
+                pass
+    return now
+
+
+def _sched_path(office_id: str):
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    os.makedirs(os.path.join(root, "output"), exist_ok=True)
+    return os.path.join(root, "output", "await-schedule-%s-%s.json"
+                        % (office_id, dt.date.today().isoformat()))
+
+
+def read_office_schedule(page, office_id: str):
+    """({weekday: [(start, end)]}, step) from Settings > Office Level
+    Settings, or (None, None). Cached for the day."""
+    import json
+    import os
+    path = _sched_path(office_id)
+    if os.path.exists(path):
+        try:
+            d = json.load(open(path))
+            return ({k: [tuple(x) for x in v] for k, v in d["slots"].items()},
+                    d["step"])
+        except Exception:  # noqa: BLE001
+            pass
+    got = None
+    for label in (r"^Office Level Settings$", r"^Self-Schedule Setup$"):
+        _click_text(page, label, hover_first="Settings")
+        for fr in page.frames:
+            try:
+                raw = fr.evaluate(_SCHED_JS) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            if raw.get("slots"):
+                got = raw
+                break
+        if got:
+            break
+    if not got:
+        _log("[await] office %s: no 'Current Active Interview Slots' found "
+             "in Settings" % office_id)
+        return None, None
+    slots = {}
+    for d, cells in got["slots"].items():
+        spans = [sp for sp in (parse_span(c) for c in cells) if sp]
+        if spans:
+            slots[d] = spans
+    step = int(got.get("step") or 0) or None
+    if not slots or not step:
+        _log("[await] office %s: schedule unreadable (slots=%s step=%s)"
+             % (office_id, bool(slots), step))
+        return None, None
+    try:
+        json.dump({"slots": slots, "step": step}, open(path, "w"))
+    except Exception:  # noqa: BLE001
+        pass
+    _log("[await] office %s schedule: %s, every %d min" % (
+        office_id, "; ".join("%s %s" % (d[:3], ",".join(
+            "%d:%02d-%d:%02d" % (a // 60, a % 60, b // 60, b % 60) for a, b in slots[d]))
+            for d in DAYS if d in slots), step))
+    return slots, step
+
+
 def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
     """Make the Await template's clause match the clock. True = verified
     correct (updated, or already right). Never raises."""
-    if office_id not in WINDOWS_BY_OFFICE:
-        if office_id and office_id not in _SAID_NO_WINDOWS:
-            _SAID_NO_WINDOWS.add(office_id)
-            _log("[await] no interview windows on file for office %s — "
-                 "template left as-is (add them to await_window."
-                 "WINDOWS_BY_OFFICE)" % office_id)
-        return True
     try:
-        want = await_clause(dt.datetime.now(), WINDOWS_BY_OFFICE[office_id])
+        if office_id in WINDOWS_BY_OFFICE:
+            # Carlos's own stated windows (10/28) win for his office.
+            want = await_clause(office_now(page), WINDOWS_BY_OFFICE[office_id])
+        else:
+            # Everyone else: their own AppStream schedule (Megan 10/28).
+            slots, step = read_office_schedule(page, office_id)
+            if not slots:
+                return False
+            want = clause_from_schedule(office_now(page), slots, step)
+            if not want:
+                _log("[await] office %s: no interview slots any day — "
+                     "template left as-is" % office_id)
+                return False
         if not _goto_templates(page):
             _log("[await] SMS Templates page not reached — leaving template")
             return False
@@ -196,8 +319,17 @@ def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
                 hit = (fr, el, v)
                 break
         if hit is None:
-            _log("[await] no field carries an 'available … ?' clause — "
-                 "nothing edited (probe the form)")
+            # A different wording (Raf's 11280 lists each time: "Available
+            # Zoom times are today at 8:15, 8:45 …"). Applicant-facing copy is
+            # not rewritten into a new shape without Megan's OK -- say what
+            # it says, once a day, and leave it.
+            if office_id not in _SAID_NO_WINDOWS:
+                _SAID_NO_WINDOWS.add(office_id)
+                texts = [v for _f, _e, v in _fields(page)
+                         if re.search(r"\d{1,2}:\d{2}", v)]
+                _log("[await] office %s: wording not recognized, left as-is "
+                     "(would set %r). Current text: %r"
+                     % (office_id, want, (texts[0] if texts else "")[:220]))
             return False
         fr, el, v = hit
         new = CLAUSE_RE.sub(want, v, count=1)
