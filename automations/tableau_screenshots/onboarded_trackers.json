@@ -464,5 +464,23 @@
       "vzftr"
     ],
     "notes": "wired by hand 2026-10-26 (his Lucy ECO Zoom); all 9 trackers like steve/hasani; channel_ids filled once his ECO sign-up names the room."
+  },
+  {
+    "key": "jose",
+    "label": "Jose's Local Office (channel from ECO sign-up)",
+    "owner": "Jose Velasquez",
+    "channel_ids": [],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-10-28 (his Lucy ECO enrollment); all 9 trackers like colten; channel_ids filled once his ECO sign-up names the room."
   }
 ]

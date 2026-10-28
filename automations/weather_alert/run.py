@@ -135,6 +135,7 @@ METRICS_CITY = {
     "frank": "deerfield_beach", # Peak Management, Deerfield Beach FL (Megan 2026-10-09); ECO key frank
     "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
+    "jose": "miami",            # Legacy Shore Marketing (Colten's South Shore org); city ASSUMED Miami/Eastern 2026-10-28 -- confirm
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
     "atef": "denver",           # Domin8 Acquisitions, Denver CO (reps: "whole denver office"); Mountain
     "samuel": "orlando",        # Dynasty Growth Group: 590 of 846 NDS orders (8/31-10/4) installed in Kissimmee/Orlando; OV access to 23751 pending for the street address

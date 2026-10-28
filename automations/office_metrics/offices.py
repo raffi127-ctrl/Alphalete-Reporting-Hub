@@ -444,6 +444,7 @@ OFFICE_TIMEZONES: dict = {
     "salik":   "America/Detroit",              # Southfield, MI — EASTERN
     "cody":    "America/Chicago",              # Corpus Christi, TX
     "haytham": "America/Chicago",              # Austin, TX
+    "jose":    "America/New_York",             # Legacy Shore Marketing (South Shore org) -- ASSUMED Miami/Eastern 2026-10-28
     "atef":    "America/Denver",               # Domin8 Acquisitions, Denver CO — Mountain
     "trang":   "America/Chicago",              # San Antonio, TX
     "isaiah":  "America/Chicago",              # Dallas, TX
