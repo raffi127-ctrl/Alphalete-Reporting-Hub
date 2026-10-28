@@ -263,9 +263,13 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # an irreversible send; keep them in step.
 # 2026-09-27 (Carlos): Raf's 2nd + 3rd funnels un-paused ("good to go ahead
 # and start pushing for [Raf]'s second and third funnel") — all six live.
-# 2026-10-28 (Carlos): "stop pushing resumes for me" — 11580 OFF everywhere,
-# including LucyECO on his own computer (this gate is what it runs through).
+# 2026-10-28 evening (Carlos): 11580 back ON, but not until TOMORROW 5:30 AM
+# ("start pushing resumes at 5:30am tomorrow... for me") — the gate below
+# keeps tonight quiet and self-opens at the mark, no second deploy needed.
 PUSH_ALLOWED = {"23467", "11901", "11280", "23965", "24065"}
+import datetime as _dt_gate
+if _dt_gate.datetime.now() >= _dt_gate.datetime(2026, 10, 29, 5, 30):
+    PUSH_ALLOWED = PUSH_ALLOWED | {"11580"}
 
 
 def _dm_shots(shots_dir, office) -> None:

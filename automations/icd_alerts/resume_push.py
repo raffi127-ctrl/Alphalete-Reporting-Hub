@@ -97,7 +97,8 @@ LOCK_PATH = C.APP_DIR / "resume-push.lock"
 # interview times to the clock (oat_processing/await_template), so passes are
 # a touch longer and 15 keeps them from stacking.
 EVERY_MINUTES = 15
-DAY_START = (7, 0)
+# 5:30 since 2026-10-28 (Carlos: "start pushing resumes at 5:30am tomorrow").
+DAY_START = (5, 30)
 DAY_END = (22, 0)
 # A push that has held the lock this long has died without cleaning up.
 LOCK_STALE_MINUTES = 60
