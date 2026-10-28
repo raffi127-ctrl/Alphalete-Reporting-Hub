@@ -615,9 +615,14 @@ def login_until_it_works(attempts=3):
         verdict = check_account_verdict()
         if verdict == "ok":
             return True
-        if verdict == "wall":
+        if verdict in ("wall", "stuck"):
             # NOT a typo, so no "type it again". The code has to be typed in
             # Lucy's browser; do that here, now, with the person present.
+            # "stuck" (the hidden check never finished) takes the same door:
+            # the window shows what it was waiting on.
+            if verdict == "stuck":
+                say("      the hidden SaraPlus check could not finish -- opening")
+                say("      Lucy's SaraPlus window so you can see what it needs.")
             if clear_passcode_wall():
                 return True
             say("      Not confirmed yet. Finish it any time with the setup")
@@ -975,9 +980,14 @@ def check_account_verdict() -> str:
     worked. The agent's own message is the signal; read it.
     """
     say("      signing in to SaraPlus to make sure it works...")
-    proc = subprocess.run(
-        [str(venv_python()), "-m", "automations.icd_alerts.run", "--check"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = _checked_run(
+        [str(venv_python()), "-m", "automations.icd_alerts.run", "--check"], "SaraPlus")
+    if proc is None:
+        # Omar 2026-10-28: "it just keeps saying checking your saraplus
+        # signin and then not doing anything else". A hidden check that
+        # cannot finish gets the VISIBLE window instead, where whatever it is
+        # waiting on (a security box, a code) can actually be dealt with.
+        return "stuck"
     out = proc.stdout.decode("utf-8", "replace")
     for line in out.splitlines():
         if line.strip() and not line.startswith("[icd_alerts]"):
