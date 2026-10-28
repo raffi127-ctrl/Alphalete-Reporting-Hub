@@ -1402,6 +1402,38 @@ def delete_today(today, log=print) -> None:
     sp.unlink()
 
 
+def prune_sections(sids, today, log=print) -> None:
+    """Delete ONE section's reply(ies) from today's thread and clear it
+    from state, so --post can replace just that board (Carlos 2026-10-28:
+    the Verizon tree landed in the NDS thread and only that message
+    should go)."""
+    from automations.shared.slack_metrics_post import _client
+    client = _client()
+    sp = _state_path(today)
+    if not sp.exists():
+        log("[nds] no thread state — nothing to prune")
+        return
+    state = json.loads(sp.read_text())
+    ts = state.get("ts")
+    titles = {sid: f"{emoji} *{title}*"
+              for sid, emoji, title, _fn in SECTIONS if sid in sids}
+    if not ts or not titles:
+        return
+    replies = client.conversations_replies(channel=CHANNEL[1], ts=ts,
+                                           limit=200).get("messages", [])
+    for m in replies:
+        txt = (m.get("text") or "").strip()
+        for sid, needle in titles.items():
+            if txt.startswith(needle) or needle in txt:
+                try:
+                    client.chat_delete(channel=CHANNEL[1], ts=m["ts"])
+                    log(f"[nds] pruned {sid} reply {m['ts']}")
+                except Exception as e:  # noqa: BLE001
+                    log(f"[nds] prune {m['ts']} failed: {str(e)[:120]}")
+    state["posted"] = [x for x in state.get("posted", []) if x not in sids]
+    sp.write_text(json.dumps(state))
+
+
 def dm_previews(artifacts, user, log=print) -> None:
     from automations.shared import slack_metrics_post as smp
     for sid, emoji, title, _fn in SECTIONS:
@@ -1429,6 +1461,10 @@ def main(argv=None) -> int:
                     help="delete today's NDS Metrics thread (Lucy's own "
                          "posts) and clear its state; pair with --repull "
                          "--post to repost fresh")
+    ap.add_argument("--prune", default=None,
+                    help="comma-separated section ids: delete just their "
+                         "replies from today's thread (then usually --only "
+                         "<same> --post to replace them)")
     ap.add_argument("--repull", action="store_true",
                     help="delete today's SOH + order-log caches first (test "
                          "a fresh pull, e.g. a new dealer login)")
@@ -1441,6 +1477,8 @@ def main(argv=None) -> int:
 
     if a.delete_today:
         delete_today(today)
+    if a.prune:
+        prune_sections(set(a.prune.split(",")), today)
     if a.repull:
         for f in OUT_DIR.glob(f"*_{today.isoformat()}.csv"):
             f.unlink()
