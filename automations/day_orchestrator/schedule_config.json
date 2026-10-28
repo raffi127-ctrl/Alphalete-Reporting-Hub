@@ -15676,6 +15676,26 @@
    },
    "_note": "Office metrics for atef -> #domin8-nds-sales (C0B395PUUCW). Wired by hand 2026-10-27; NDS office (5 boards). SWITCHED ON 2026-10-27 after the Lucy 4 dry run (rerun-2026-10-27-100243): 386 wireless order rows, order log 193 rows, rep activations + activation rate rendered; churn had 0 sections (Tableau churn crosstab lags his NDS move) and the churn runner skips empty sections rather than posting blank. His b2b_metrics thread is held (HELD_FROM_ALL) from the same day.",
    "_onboarded": true
+  },
+  "aplayers_cleanup": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "MANUAL-ONLY room cleanup (Carlos 2026-10-28, after stopping every scheduled A-Players post): delete Lucy's Box Metrics / Verizon Metrics / Country Tracker / wrap-up-text / Knocks and Dispositions threads from #a-players-b2b, last 15 days. DRY RUN by default; `lucy rerun aplayers_cleanup --live` deletes (own messages only, ~1.1s per delete for the rate limit).",
+   "display_name": "A-Players room cleanup (manual)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.aplayers_cleanup"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 90,
+   "machine": "Lucy 2"
   }
  },
  "read_only_standalone": {
