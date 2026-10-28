@@ -62,32 +62,33 @@ def orphan_sweep(client, days: int, live: bool) -> None:
     import collections
     oldest = int((dt.datetime.now() - dt.timedelta(days=days)).timestamp())
     threads = collections.defaultdict(set)
-    # files.list's channel filter returns nothing for this private room —
-    # list LUCY's uploads instead and match the room from each file's
-    # shares (seen 2026-10-28: channel-filtered call came back empty).
+    # files.list can't see this room's shares (tried channel-filtered:
+    # zero files; user-filtered: 23k files, `shares` omitted from the list
+    # payload). SEARCH sees what actually survives in the room: every
+    # remaining Lucy post with a file, with the thread in its permalink.
+    import re as _re
     me = client.auth_test().get("user_id")
+    since = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    query = f"in:<#{CHANNEL}> from:<@{me}> has:file after:{since}"
     page = 1
-    total = 0
     while True:
-        resp = client.files_list(user=me, ts_from=str(oldest),
-                                 count=100, page=page)
-        total += len(resp.get("files", []))
-        for f in resp.get("files", []):
-            for shares in (f.get("shares") or {}).values():
-                for ch, posts in shares.items():
-                    if ch != CHANNEL:
-                        continue
-                    for pmeta in posts:
-                        tts = pmeta.get("thread_ts")
-                        if tts:
-                            threads[tts].add(pmeta.get("ts"))
-        paging = resp.get("paging") or {}
+        resp = client.search_messages(query=query, count=100, page=page,
+                                      sort="timestamp")
+        msgs = (resp.get("messages") or {})
+        for m in msgs.get("matches", []):
+            if (m.get("channel") or {}).get("id") != CHANNEL:
+                continue
+            link = m.get("permalink") or ""
+            tm = _re.search(r"thread_ts=(\d+\.\d+)", link)
+            if tm:
+                threads[tm.group(1)].add(m.get("ts"))
+        paging = msgs.get("paging") or {}
         if page >= int(paging.get("pages") or 1):
             break
         page += 1
         time.sleep(1)
-    print(f"[orphans] {total} file(s) by Lucy in the window; "
-          f"{len(threads)} thread(s) of them in this room")
+    print(f"[orphans] {len(threads)} surviving thread(s) with Lucy "
+          "files in the room")
     deleted = failed = orphaned = 0
     for tts in sorted(threads):
         try:
