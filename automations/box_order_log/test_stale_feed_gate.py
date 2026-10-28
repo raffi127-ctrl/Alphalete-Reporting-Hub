@@ -214,3 +214,34 @@ class HighWaterMark(_Tmp):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AQuietTeamOnAFreshFeed(_Tmp):
+    """2026-10-28: Carlos's newest sale was Sat 10/24, the view's footer read
+    "Latest Sales Data Update: 10/27", and filtering it to 10/25+ came back
+    empty — his team didn't sell Sun-Tue. "4 days behind = capped" held his
+    thread all day anyway. Other owners selling on Tue 10/27 is the proof."""
+
+    WED = D(2026, 10, 28)
+    SAT = D(2026, 10, 24)
+
+    def test_org_sold_the_latest_day_so_it_sends(self):
+        self.assertEqual(W.should_block_send(self.SAT, today=self.WED,
+                                             org_sold_on=lambda d: True), "")
+
+    def test_without_the_tracker_it_still_blocks(self):
+        self.assertTrue(W.should_block_send(self.SAT, today=self.WED))
+
+    def test_nobody_sold_the_latest_day_still_blocks(self):
+        self.assertTrue(W.should_block_send(self.SAT, today=self.WED,
+                                            org_sold_on=lambda d: False))
+
+    def test_a_whole_week_dark_still_blocks(self):
+        self.assertTrue(W.should_block_send(D(2026, 10, 19), today=self.WED,
+                                            org_sold_on=lambda d: True))
+
+    def test_a_tracker_crash_still_blocks(self):
+        def boom(day):
+            raise RuntimeError("tableau down")
+        self.assertTrue(W.should_block_send(self.SAT, today=self.WED,
+                                            org_sold_on=boom))
