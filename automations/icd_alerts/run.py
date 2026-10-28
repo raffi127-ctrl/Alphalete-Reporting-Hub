@@ -625,6 +625,18 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
                 "no OwnerVille login is saved on this computer, and this "
                 "office has no SaraPlus — so nothing can be read or reported "
                 "at all. The install needs to be run again."))
+        else:
+            # NOT SILENT EITHER (Omar 2026-10-28): his OwnerVille login was
+            # cleared to get past a stuck check, the sign-in window said
+            # "Signed in", and every sweep after it skipped knocks with only
+            # this log line to show for it -- an hour of "did it relay yet?"
+            # that one fault row would have answered. De-duplicated by its
+            # summary, so it is one row however many sweeps run.
+            _report("knocks", RuntimeError(
+                "no OwnerVille login is saved on this computer, so the knocks "
+                "board cannot run (credit-check and sales alerts still do). "
+                "Save it with: python -m automations.icd_alerts.run "
+                "--set-ownerville-login"))
         return 0
 
     try:
