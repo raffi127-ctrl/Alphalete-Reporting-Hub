@@ -114,10 +114,15 @@ def open_week(app, sunday: dt.date) -> None:
     page.wait_for_load_state("domcontentloaded")
     # The grid renders slowly on big offices (find_ad: poll for the row).
     want = header(sunday).lower()
+    # No body yet while the submit is still navigating (Valeria 10/27).
     for _ in range(60):
         page.wait_for_timeout(2000)
-        if page.evaluate("(w) => document.body.innerText.toLowerCase().includes(w)", want):
-            return
+        try:
+            if page.evaluate("(w) => !!document.body && "
+                             "document.body.innerText.toLowerCase().includes(w)", want):
+                return
+        except Exception:                     # noqa: BLE001 -- mid-navigation; poll again
+            pass
 
 
 def sent_rows(app, office_id: str, days: List[dt.date], debug: bool = False) -> List[List[str]]:
