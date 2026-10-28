@@ -93,7 +93,10 @@ LOG_PATH = C.APP_DIR / "resume-push.log"
 LOCK_PATH = C.APP_DIR / "resume-push.lock"
 
 # Lucy 2's cadence and hours: every 10 minutes, 7am-10pm, every day.
-EVERY_MINUTES = 10
+# 15 since 2026-10-28 (Carlos): each pass now first retunes the Await text's
+# interview times to the clock (oat_processing/await_template), so passes are
+# a touch longer and 15 keeps them from stacking.
+EVERY_MINUTES = 15
 DAY_START = (7, 0)
 DAY_END = (22, 0)
 # A push that has held the lock this long has died without cleaning up.

@@ -139,7 +139,8 @@ def _run_stage(name: str, work):
 def run(live: bool = False, limit: int = None, max_actions: int = None,
         batch_only: bool = False, oat_only: bool = False,
         batch_limit: int = 0, office: str = None,
-        recheck_nophone: bool = False) -> int:
+        recheck_nophone: bool = False,
+        await_probe: bool = False, await_apply: bool = False) -> int:
     """Run the unified pipeline: LEFTOVERS (OAT) then BATCH (Resume Pushing), each in
     its OWN fresh warm CDP session (see _run_stage for why — batch needs a clean
     console→v2 start, not a mid-run hop).
@@ -168,6 +169,19 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 
         def _oat_work(page, ctx, net):
             oat.attach_dialog_accept(page)
+            from automations.oat_processing import await_template as _at
+            _at.set_logger(rp._log)
+            if await_probe:
+                _at.probe(page)
+                return 0
+            if await_apply:
+                _at.ensure_await_template(page, office or "", apply=True)
+                return 0
+            if live:
+                # Keep the Await text's interview times matched to the clock
+                # (Carlos 2026-10-28). Best-effort: a failed template edit is
+                # logged and must never stop the push itself.
+                _at.ensure_await_template(page, office or "", apply=True)
             try:
                 _rc = oat.run_walk(page, live=live, limit=limit,
                                    max_actions=max_actions)
@@ -311,6 +325,12 @@ def main(argv=None) -> int:
                    help="explicit acknowledgement that this live push targets an "
                         "office OUTSIDE the hard-coded PUSH_ALLOWED allowlist — "
                         "for supervised audit runs only")
+    p.add_argument("--await-probe", action="store_true",
+                   help="Diag (2026-10-28): open SMS Templates -> Await Call AI "
+                        "edit form and DUMP its fields. No edits, no push.")
+    p.add_argument("--await-apply", action="store_true",
+                   help="Update the Await template's time clause once, then "
+                        "stop. No push.")
     p.add_argument("--attachment-probe", action="store_true",
                    help="READ-ONLY diagnostic: for every applicant the walk "
                         "flags as having no number, log what resume surfaces "
@@ -382,7 +402,9 @@ def main(argv=None) -> int:
     if args.batch_only and args.oat_only:
         print("[push] --batch-only and --oat-only are mutually exclusive", flush=True)
         return 2
-    return run(live=live, limit=args.limit, max_actions=args.max_actions,
+    return run(await_probe=getattr(args, "await_probe", False),
+               await_apply=getattr(args, "await_apply", False),
+               live=live, limit=args.limit, max_actions=args.max_actions,
                batch_only=args.batch_only, oat_only=args.oat_only,
                batch_limit=args.batch_limit, office=args.office,
                recheck_nophone=args.recheck_nophone)
