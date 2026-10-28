@@ -287,23 +287,91 @@ def _already_sent_remediation(reports, report_id: str) -> Optional[dict]:
 
     Returns None when nothing has pulled yet, so that case keeps the calm
     original wording and never goes loud.
+
+    PULLED, NOT SENT (2026-10-28). This fires from inside the pull, before the
+    report has decided anything, so the names here are reports that DOWNLOADED
+    the feed — not reports that delivered it. box_order_log pulled at 7:00,
+    held its post on its own stale gate, and this alert told the channel it
+    "already ran and SENT"; triage under it then said "Nothing to do". Two
+    contradicting lines, and the true one was the second. So this says what is
+    known at this moment (who pulled), and a report that holds says so in the
+    thread itself (record_held).
     """
     named = sorted(str(r) for r in (reports or []) if r)
     if not named:
         return None
     joined = ", ".join("`{}`".format(r) for r in named)
     return {
-        "tail_headline": ("the report{} that pulled it already ran and SENT, "
-                          "so what went out carries the old numbers.".format(
-                              "s" if len(named) != 1 else "")),
+        "tail_headline": ("pulled by {} — anything that posts off this pull "
+                          "carries the old numbers.".format(joined)),
         "fix": ("open the view in Tableau and see whether the day or week it's "
-                "missing is actually there. Then decide what to RE-SEND: {} "
-                "already delivered off this pull, and the feed catching up does "
-                "NOT repair what already went out. Do not re-run `{}` — that id "
-                "is the SOURCE, not a report.".format(joined, report_id)),
-        "tail": ("Already delivered off this pull: {}. Re-send what matters "
-                 "once the feed is current.".format(joined)),
+                "missing is actually there. Then check what {} did with it: a "
+                "report that held its post says so in this thread; one that "
+                "posted needs a RE-SEND once the feed is current, because the "
+                "feed catching up does NOT repair what already went out. Do not "
+                "re-run `{}` — that id is the SOURCE, not a report.".format(
+                    joined, report_id)),
+        "tail": ("Pulled off this feed: {}. Anything that posted from it needs "
+                 "a re-send once the feed is current.".format(joined)),
     }
+
+
+def record_held(report: str = "", today: Optional[dt.date] = None,
+                why: str = "", dry_run: bool = False) -> List[str]:
+    """`report` pulled a stale feed and then HELD its post — nothing went out.
+
+    Marks it `held` on every one of today's stale states that lists it (so
+    incident_triage stops counting it as delivered), and says so ONCE in each
+    workbook thread whose alert named it. Returns the incident ids it touched.
+    Never raises: a hold that can't be announced is still a hold."""
+    touched: List[str] = []
+    try:
+        today = today or dt.date.today()
+        report = report or _current_report()
+        if not report or not STATE_DIR.exists():
+            return touched
+        for path in sorted(STATE_DIR.glob("*-{}.json".format(today.isoformat()))):
+            try:
+                st = json.loads(path.read_text("utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(st, dict) or report not in (st.get("reports") or []):
+                continue
+            held = list(st.get("held") or [])
+            if report in held:
+                continue
+            held.append(report)
+            st["held"] = held
+            if not dry_run:
+                path.write_text(json.dumps(st, indent=1), encoding="utf-8")
+            # Only the workbook-level state stands for a thread; per-view states
+            # share it, so announcing from them would post twice.
+            if not path.name.endswith("-workbook-{}.json".format(
+                    today.isoformat())):
+                continue
+            rid = "tableau-stale-{}".format(
+                path.name[:-len("-{}.json".format(today.isoformat()))])
+            touched.append(rid)
+            if not dry_run:
+                _say_held_in_thread(rid, report, why)
+    except Exception:  # noqa: BLE001 — never sink the run that is holding
+        pass
+    return touched
+
+
+def _say_held_in_thread(rid: str, report: str, why: str = "") -> None:
+    from automations.shared import incident_thread as it
+    inc = it.find_live("drop-{}".format(rid))
+    if not inc or not inc.get("ts"):
+        return
+    text = ("⏸️ `{}` HELD its post — nothing went out off this pull, so there "
+            "is nothing to re-send for it. It posts on its own once the feed "
+            "catches up.".format(report))
+    if why:
+        text += " ({})".format(why)
+    client = it._client()
+    it._post(client, inc.get("channel") or it.CHANNEL, text,
+             thread_ts=inc["ts"])
 
 
 def _state_path(source_key: str, day: dt.date) -> Path:

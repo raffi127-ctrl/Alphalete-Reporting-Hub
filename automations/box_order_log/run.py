@@ -450,6 +450,20 @@ def _file_marker_manifest(today, note: str) -> None:
         pass
     _file_manifest(["today's thread (posted by an earlier pass)"], note=note)
 
+def _say_held(why: str = "") -> None:
+    """Tell the stale-feed thread this run HELD — nothing went out.
+
+    The stale alert fires from inside the pull, before either gate below has
+    decided, so on its own it can only say who PULLED. 2026-10-28 it read
+    "already ran and SENT" for a run that held at 7:00 and every pass after.
+    Best-effort: a hold that can't be announced is still a hold."""
+    try:
+        from automations.shared import tableau_freshness as tfresh
+        tfresh.record_held(why=why)
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
 def main(argv: Optional[list] = None) -> int:
     from . import tier_bonus          # names the default owner in --help
     ap = argparse.ArgumentParser(description="BOX Order Log -> #alphalete-gp-sales")
@@ -836,6 +850,8 @@ def main(argv: Optional[list] = None) -> int:
             # though the 8:30 pass posted normally. Reported BEFORE the sheet
             # merge on purpose: this pass writes nothing either way.
             _report_to_hub(started_at, verbose)
+            if not args.dm:
+                _say_held("waiting for {}".format(expected))
             return 3
 
     # ---- 3. roll to the last N weeks ------------------------------------
@@ -1205,6 +1221,8 @@ def main(argv: Optional[list] = None) -> int:
                       kind="capped", day=today)
         except Exception:
             pass
+        if args.post and not args.dm:
+            _say_held()
         return 3
 
     try:

@@ -1480,3 +1480,38 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
         "org": org,
         "channels": channel_results,
     }
+
+
+def already_delivered(pages: list, selected_ids, orgs, today: dt.date) -> bool:
+    """True only when EVERY org already has every selected board it posts today.
+
+    Read-only, and it never guesses: any channel it can't read, any org on
+    another workspace's token, any board missing anywhere -> False, and the run
+    captures as before. Lets the Box catch-up skip the browser entirely once a
+    settle pass has already put Box everywhere (2026-10-28: it queued behind
+    that pass for the shared tracker profile and was killed at 45m, raising a
+    ❌ for a board every channel already had)."""
+    try:
+        from automations.office_metrics.offices import CROSS_WS_TOKEN_FILES
+    except Exception:                                 # noqa: BLE001
+        CROSS_WS_TOKEN_FILES = {}
+    sel = set(selected_ids)
+    try:
+        client = smp._client()
+        for org in orgs:
+            if org in CROSS_WS_TOKEN_FILES:
+                return False
+            owed = sel & set(tracker_ids_for(org, pages))
+            if not owed:
+                continue
+            if is_email_org(org):
+                if not owed <= _emailed_today(org, today):
+                    return False
+                continue
+            for ch in channels_for(org):
+                ts, _legacy = find_thread_ts(client, ch, today)
+                if not ts or not owed <= posted_ids(client, ch, ts, pages, today):
+                    return False
+        return True
+    except BaseException:                             # noqa: BLE001 — incl. SystemExit
+        return False

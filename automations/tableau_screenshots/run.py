@@ -1200,6 +1200,29 @@ def main(argv=None) -> int:
         selected = withhold_still_behind(selected, still_behind)
         _alert_not_sent(today, still_behind, dry_run=args.dry_run)
 
+    # ALREADY IN EVERY CHANNEL -> no browser at all (2026-10-28). The Box
+    # catch-up and the half-hourly settle passes share PROFILE_DIR; once a settle
+    # pass has posted Box everywhere, this run used to open Chrome anyway, wait
+    # on the profile, and get killed at 45m — a ❌ for a board nobody was
+    # missing. Read Slack first; any doubt falls through to the normal capture.
+    if (args.late_only and not args.settle and not args.dry_run
+            and not (args.replace or args.fresh or args.full or args.only
+                     or args.new_thread)
+            and selected and not still_behind):
+        if sp.already_delivered(pages_mod.PAGES, [s["id"] for s in selected],
+                                orgs, today):
+            print("↷ every channel already has today's "
+                  f"{', '.join(s['id'] for s in selected)} — nothing to "
+                  "capture or post", flush=True)
+            run_manifest.write_manifest(
+                report_id, ok=True, failed=[], kind="channel",
+                succeeded=[sp.ORG_LABEL[o] for o in orgs if set(
+                    sp.tracker_ids_for(o, pages_mod.PAGES))
+                    & {s["id"] for s in selected}],
+                note="already posted earlier today (settle pass); no capture",
+                dry_run=False)
+            return 0
+
     # Reuse today's images when another org already captured them — no browser, no
     # Tableau session at all, so elevate/indelible finish in seconds. --fresh (and
     # --full, which changes how the boards are captured) always re-captures.
