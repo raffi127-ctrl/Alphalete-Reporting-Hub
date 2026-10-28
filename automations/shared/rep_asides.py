@@ -27,7 +27,7 @@ ASIDES: Dict[str, Dict[str, dict]] = {
         "pranish shrestha": {"every": 3, "tag": "YN", "aside": (
             "Don't tell Megan I said that 🤫",
             "That one stays between us. Megan thinks I'm PG 😇",
-            "If Megan asks, YN stands for Young Professional 🤫",
+            "If Megan asks, YN stands for Young Ninja 🥷🤫",
             "Shhh 👀 Megan reads these. Act normal.",
             "Delete this before Megan logs on 🫣",
             "Megan said keep it clean. Megan is not in this thread 😌",
