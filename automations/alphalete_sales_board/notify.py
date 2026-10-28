@@ -252,11 +252,13 @@ def text_group(group: str, body: str, *, dry_run: bool = True, log=print) -> Dic
     return text_post.send_text_to_group(group, body, dry_run=dry_run)
 
 
-def slack(text: str, *, dry_run: bool = True, log=print) -> None:
+def slack(text: str, *, dry_run: bool = True, log=print) -> Optional[str]:
+    """Post one line to #alphalete-sales. Returns the message ts (None on a
+    dry run), so a follow-up can land in that post's thread."""
     log("%s -> #alphalete-sales: %s" % ("PREVIEW" if dry_run else "SLACK",
                                         text.replace("\n", " / ")[:120]))
     if dry_run:
-        return
+        return None
     from automations.shared import slack_metrics_post as smp
     # SAME HELPER AS THE ICD POSTER, so the two cannot drift apart again --
     # batching reached one of them and not the other on 2026-09-18.
@@ -265,10 +267,24 @@ def slack(text: str, *, dry_run: bool = True, log=print) -> None:
     if blocks:
         kw["blocks"] = blocks
     try:
-        smp._client().chat_postMessage(**kw)
+        resp = smp._client().chat_postMessage(**kw)
     except Exception:  # noqa: BLE001
         if not blocks:
             raise
         # A gif Slack cannot fetch rejects the whole post -- never let it cost
         # the sale line. Send it as it always went.
-        smp._client().chat_postMessage(channel=C.SLACK_CHANNEL, text=text)
+        resp = smp._client().chat_postMessage(channel=C.SLACK_CHANNEL, text=text)
+    try:
+        return str((resp or {}).get("ts") or "") or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def slack_reply(ts: str, text: str, *, dry_run: bool = True, log=print) -> None:
+    """One line under an earlier post (the rep aside, see shared.rep_asides)."""
+    log("%s -> #alphalete-sales (thread %s): %s"
+        % ("PREVIEW" if dry_run else "SLACK", ts or "-", text))
+    if dry_run or not ts:
+        return
+    from automations.shared import slack_metrics_post as smp
+    smp._client().chat_postMessage(channel=C.SLACK_CHANNEL, text=text, thread_ts=ts)

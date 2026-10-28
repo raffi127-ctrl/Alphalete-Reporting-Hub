@@ -263,7 +263,7 @@ def _own_reps_only(cfg: Dict, gaps: List[Dict], rows: List[Dict]) -> List[Dict]:
 
 
 def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
-             header: str = ""):
+             header: str = "", room: str = "", remember: bool = True):
     """The message Raf asked for, and the set of names on it.
 
     LONGEST GAP FIRST (Megan, 2026-08-28). Raf's Loom listed his mock-up
@@ -288,7 +288,16 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
         mark = (" " + C.GAP_NEW_EMOJI) if new else ""
         # "min", not "minutes" (Megan 2026-08-31: "so it's shorter on the
         # text") — twenty of these stack up on a phone.
-        lines.append("%s - %d min%s" % (name, mins, mark))
+        shown = name
+        if room:
+            # ONE REP'S RUNNING JOKE, every Nth time this list names him
+            # (Megan 2026-10-27, shared.rep_asides). The name stays; the tag
+            # follows it. Only the rooms in that table ever change.
+            from automations.shared import rep_asides as _RA
+            _rule = _RA.due(room, name, remember=remember)
+            if _rule:
+                shown = _RA.tag_name(name, name, _rule["tag"])
+        lines.append("%s - %d min%s" % (shown, mins, mark))
     if not lines:
         return "", []
     return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
@@ -2087,7 +2096,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             _log("  %s: call-out skipped: %s" % (cfg["key"], type(_e).__name__))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
         body, gap_names = gap_text(gaps, previous, first_of_day,
-                                   header=gap_header(cfg))
+                                   header=gap_header(cfg),
+                                   room="%s-gaps" % cfg["key"], remember=send)
         newly = ([] if first_of_day
                  else [n for n in gap_names if n not in previous])
         # NAME THE OFFICE. Without it the tick log read perfectly while the
