@@ -50,7 +50,8 @@ ORG_CHANNELS = {
     "domin8":      ["C0B395PUUCW"],       # #domin8-nds-sales (was -b2b-; private) — Lucy
                                           # (U0BCFGCR5PV) must be a MEMBER or
                                           # files_upload_v2 → not_in_channel.
-    "a_players":   ["C0AJQA8P716"],       # #a-players-b2b (private, Carlos) —
+    "a_players":   [],                    # #a-players-b2b STOPPED (Carlos
+                                          # 2026-10-28) — was C0AJQA8P716 —
                                           # mirrors #alphalete-gp-sales exactly
                                           # (same boards, same B2B-first order).
 }

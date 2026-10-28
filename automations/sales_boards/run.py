@@ -100,7 +100,10 @@ CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 #   (name, channel_id, include_zeros?)
 TARGETS = [
     ("#alphalete-gp-sales", "C07J46MQNUX", False),
-    ("#a-players-b2b", "C0AJQA8P716", True),
+    # A-PLAYERS STOPPED (Carlos 2026-10-28: "on the a players slack lets stop all of these")
+    # — the boards and the Zero Streaks there are retired (the streaks
+    # lived only in that room, so they stop entirely). The Box Revenue
+    # Board imports this list too, so its A-Players leg stops with it.
 ]
 
 # The second daily thread in the same channel — the three ATTTRACKER-B2B Tableau

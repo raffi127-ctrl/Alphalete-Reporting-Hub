@@ -52,7 +52,7 @@ CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 # what he wants, not what he assumed he already had.
 TARGETS = [
     ("#alphalete-gp-sales", "C07J46MQNUX"),
-    ("#a-players-b2b", "C0AJQA8P716"),
+    # A-PLAYERS STOPPED (Carlos 2026-10-28: "on the a players slack lets stop all of these")
 ]
 
 # The parent message lists what's in the thread, one emoji-led line per

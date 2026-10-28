@@ -1264,6 +1264,10 @@ def _upload(channel_id: str, boards, comment: str, office: Optional[str] = None)
     other room is a channel post, because a board people have to open a thread
     to see is a board they stop looking at.
     """
+    # A-PLAYERS STOPPED (Carlos 2026-10-28: "on the a players slack lets stop all of these")
+    if channel_id == "C0AJQA8P716":
+        print("  skipping #a-players-b2b (stopped 2026-10-28)")
+        return
     from automations.shared import slack_metrics_post as smp
     from automations.icd_alerts import office_slack as _OS
     client = _OS.client_for(office) if _OS.is_cross_workspace(office) else smp._client()

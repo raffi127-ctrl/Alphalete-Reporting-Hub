@@ -20,6 +20,12 @@ LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/team-tree-daily-$(date +%Y-%m-%d-%H%M%S).log"
 
+# A-PLAYERS STOPPED (Carlos 2026-10-28: "on the a players slack lets stop
+# all of these") — the NDS tree lives in the NDS Metrics thread (nds_metrics
+# renders its own copy at 6:30); the Verizon tree is retired with this room.
+echo "[$(date)] team-tree agent retired 2026-10-28 — no A-Players posts" >> "$LOG_FILE"
+exit 0
+
 if [ "${1:-}" = "--dry" ]; then
     echo "[$(date)] team-tree DRY-RUN (no post)" > "$LOG_FILE"
     "$VENV_PY" -u -m automations.team_tree.run --dry-run >> "$LOG_FILE" 2>&1
