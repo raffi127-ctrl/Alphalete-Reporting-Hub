@@ -19,12 +19,20 @@ from automations.oat_processing.await_window import (DAYS, WINDOWS_BY_OFFICE,
                                                      parse_span)
 
 _T = r"[0-9]{1,2}:[0-9]{2}\s*(?:am|pm)?"
+# The day word: what we write (TODAY / TOMORROW / a weekday) or AppStream's own
+# fill-in "currentInterviewDay" (24065: "Are you available currentInterviewDay
+# 12:45 pm - 3:45 pm for a quick ZOOM…"). "at/between" optional for the same
+# reason.
 CLAUSE_RE = re.compile(
     r"available\s+(?:today|tomorrow|sunday|monday|tuesday|wednesday|thursday"
-    r"|friday|saturday)\s+(?:at|between)\s+" + _T +
+    r"|friday|saturday|currentInterviewDay)\s+(?:(?:at|between)\s+)?" + _T +
     r"(?:\s*[-\u2013]\s*" + _T + r")?"
     r"(?:\s*(?:,?\s*or)\s+" + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
     re.I)
+# A template that asks with no time at all (23965 10/28: "…a quick 20-minute
+# Zoom Interview. Are you available?"). For the chosen offices the clause goes
+# in right there, and from then on CLAUSE_RE finds and updates it.
+BARE_ASK_RE = re.compile(r"Are you available\?")
 # WHICH OFFICES' Await text is retuned. Only these -- every other office's
 # template is never opened (Megan 2026-10-28: "just apply it to accounts 24065
 # and 23965 for raf"; Raf's main 11280, Atef and Khalil stay as they are).
@@ -186,7 +194,32 @@ def probe(page) -> None:
 _SCHED_JS = r"""() => {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const out = {slots: {}, step: null};
+  const out = {slots: {}, step: null, source: ''};
+  // 1) The ExtJS page (seen live 10/28 on 23965 + 24065): tabs "1st Interview",
+  //    "2nd Interview", "3rd Interview", "FDOT / BOB", one grid + one
+  //    increment radio set per tab. The Await text is the 1st-round invite.
+  const tabs = [...document.querySelectorAll('.x-tab-strip-text')].map(t => norm(t.textContent));
+  const panels = [...document.querySelectorAll('.x-tab-panel-body > .x-panel')];
+  let pi = tabs.findIndex(t => /^1st\s*Interview$/i.test(t));
+  if (pi < 0 && panels.length) pi = 0;
+  if (pi >= 0 && panels[pi]) {
+    const p = panels[pi];
+    const g = p.querySelector('.x-grid3');
+    if (g) {
+      const heads = [...g.querySelectorAll('.x-grid3-header td.x-grid3-hd')].map(td => norm(td.innerText));
+      for (const r of g.querySelectorAll('.x-grid3-body .x-grid3-row')) {
+        [...r.querySelectorAll('td.x-grid3-cell')].forEach((td, i) => {
+          const d = heads[i], v = norm(td.innerText);
+          if (days.includes(d) && v) (out.slots[d] = out.slots[d] || []).push(v);
+        });
+      }
+      const rad = [...p.querySelectorAll('input[type=radio]')].find(e => e.checked);
+      if (rad && /^\d+$/.test(rad.value || '')) out.step = parseInt(rad.value);
+      out.source = 'tab:' + (tabs[pi] || '?');
+    }
+  }
+  if (Object.keys(out.slots).length && out.step) return out;
+  // 2) A plain HTML table, as a fallback.
   for (const t of document.querySelectorAll('table')) {
     const rows = [...t.rows];
     const hi = rows.findIndex(r => [...r.cells].some(c => norm(c.innerText) === 'Sunday')
@@ -199,16 +232,17 @@ _SCHED_JS = r"""() => {
         if (days.includes(d) && v) (out.slots[d] = out.slots[d] || []).push(v);
       });
     }
+    out.source = 'table';
     break;
   }
-  for (const e of document.querySelectorAll('input[type=radio]:checked')) {
-    const txt = norm((e.nextSibling && e.nextSibling.textContent) || '') + ' ' +
-                norm((e.parentElement && e.parentElement.innerText) || '');
-    const m = txt.match(/(\d+)\s*Mins/i);
-    if (m) { out.step = parseInt(m[1]); break; }
+  if (!out.step) {
+    for (const e of document.querySelectorAll('input[type=radio]:checked')) {
+      if (/^\d+$/.test(e.value || '')) { out.step = parseInt(e.value); break; }
+    }
   }
   return out;
 }"""
+
 _HDR_TIME = re.compile(r"Time:\s*([A-Za-z]{3,9}),?\s*(\d{1,2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)", re.I)
 
 
@@ -319,10 +353,31 @@ def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
             _log("[await] Await edit form not reached — leaving template")
             return False
         hit = None
-        for fr, el, v in _fields(page):
+        fields = _fields(page)
+        for fr, el, v in fields:
             if CLAUSE_RE.search(v):
                 hit = (fr, el, v)
                 break
+        bare = None
+        if hit is None:
+            for fr, el, v in fields:
+                if BARE_ASK_RE.search(v):
+                    bare = (fr, el, v)
+                    break
+        if hit is None and bare is not None:
+            fr, el, v = bare
+            new = BARE_ASK_RE.sub("Are you %s?" % want, v, count=1)
+            if not apply:
+                _log("[await] WOULD set: %r" % new[:220])
+                return True
+            el.fill(new)
+            page.wait_for_timeout(400)
+            saved = (_click_text(page, r"^Save and Activate SMS Message$")
+                     or _click_text(page, r"^Save SMS Message$"))
+            page.wait_for_timeout(2000)
+            _log("[await] office %s: times added to 'Are you available?' -> "
+                 "%s (save clicked: %s)" % (office_id, want, saved))
+            return saved
         if hit is None:
             # A different wording (Raf's 11280 lists each time: "Available
             # Zoom times are today at 8:15, 8:45 …"). Applicant-facing copy is
