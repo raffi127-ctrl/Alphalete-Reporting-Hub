@@ -85,6 +85,55 @@ class Quiet(unittest.TestCase):
         self.assertEqual(list(d["fixed"]), ["quiet:k@x.com"])
 
 
+class OfficeAlerts(unittest.TestCase):
+    """Megan 2026-10-27: a quiet Zoom also goes to that office's recruiting channel."""
+    DAY = dt.date(2026, 10, 27)
+    ACC = {"hr@precision.com": {"zoom": "Drew's Zoom", "morning": "Drew Tepper",
+                                "afternoon": "Drew Tepper", "key": "d" * 20},
+           "zoom9@x.com": {"zoom": "ZOOM 9", "morning": "Nobody Channel",
+                           "afternoon": "Nobody Channel", "key": "n" * 20}}
+
+    class Client:
+        def __init__(self):
+            self.sent = []
+
+        def chat_postMessage(self, **kw):
+            self.sent.append(kw)
+            return {"ok": True, "ts": f"1.{len(self.sent)}"}
+
+    def test_new_quiet_zoom_goes_to_its_office_channel(self):
+        d = ck.diff({"quiet:hr@precision.com": "q", "quiet:zoom9@x.com": "q"}, {})
+        got = ck.office_alerts(self.DAY, d, self.ACC, {"hr@precision.com": dt.date(2026, 10, 22)})
+        self.assertEqual([(k, ch) for k, ch, _, _ in got], [("quiet:hr@precision.com", "C0C532LA6JY")])
+        _, _, parent, reply = got[0]
+        self.assertIn("Drew's Zoom", parent)
+        self.assertIn("since Thu 10/22", reply)
+        self.assertIn("hr@precision.com", reply)
+        self.assertTrue(reply.startswith(f"<@{ck.CAMILA}>"))       # Megan 10/28: tag Camila
+
+    def test_an_open_problem_is_not_reposted(self):
+        d = ck.diff({"quiet:hr@precision.com": "q"}, {"quiet:hr@precision.com": "q"})
+        self.assertEqual(ck.office_alerts(self.DAY, d, self.ACC, {}), [])
+
+    def test_posted_then_fixed_in_the_same_thread(self):
+        c = self.Client()
+        d = ck.diff({"quiet:hr@precision.com": "q"}, {})
+        threads = ck.post_office_alerts(c, self.DAY, d, self.ACC, {}, {})
+        self.assertEqual(threads, {"quiet:hr@precision.com|C0C532LA6JY": ["C0C532LA6JY", "1.1"]})
+        self.assertEqual(c.sent[1]["thread_ts"], "1.1")
+        d = ck.diff({}, {"quiet:hr@precision.com": "q"})
+        threads = ck.post_office_alerts(c, self.DAY, d, self.ACC, {}, threads)
+        self.assertEqual(threads, {})
+        self.assertEqual((c.sent[-1]["channel"], c.sent[-1]["thread_ts"]), ("C0C532LA6JY", "1.1"))
+        self.assertIn("✅", c.sent[-1]["text"])
+
+    def test_preview_goes_to_the_dm_and_keeps_no_thread(self):
+        c = self.Client()
+        d = ck.diff({"quiet:hr@precision.com": "q"}, {})
+        self.assertEqual(ck.post_office_alerts(c, self.DAY, d, self.ACC, {}, {}, preview_channel="D1"), {})
+        self.assertEqual({m["channel"] for m in c.sent}, {"D1"})
+
+
 class News(unittest.TestCase):
     DAY = dt.date(2026, 10, 22)
 

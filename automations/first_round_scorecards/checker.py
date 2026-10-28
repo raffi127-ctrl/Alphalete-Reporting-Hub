@@ -222,15 +222,91 @@ def check(day: dt.date, missed: Optional[Dict[str, int]] = None):
     rejected = {login for login, z in acc.items() if z.get("key") and z["key"][-12:] in bad_tails}
     st = _state()
     found = problems(acc, seen, rejected, missed or {}, st.get("owners"), last=last, day=day)
-    return found, diff(found, st.get("open") or {}), sorted({o for z in acc.values() for o in offices(z)})
+    return (found, diff(found, st.get("open") or {}),
+            sorted({o for z in acc.values() for o in offices(z)}), acc, last)
+
+
+def office_alerts(day: dt.date, d: Dict[str, Dict[str, str]], acc: Dict[str, Dict[str, str]],
+                  last: Dict[str, dt.date]) -> List[tuple]:
+    """Megan, 2026-10-27: a 'quiet' Zoom also goes to the recruiting channel of
+    the office it serves, where the interviewers are. [(problem key, channel,
+    parent, reply)] for each NEW quiet Zoom x office channel (title-only
+    parent, detail in the thread). An office with no channel in
+    office_post.CHANNELS is left to Camila's thread."""
+    from automations.first_round_scorecards import office_post
+    out = []
+    for key in d["new"]:
+        if not key.startswith("quiet:"):
+            continue
+        login = key.split(":", 1)[1]
+        z = acc.get(login) or {}
+        newest = last.get(login)
+        if newest and newest < day - dt.timedelta(days=SEEN_DAYS):
+            newest = None
+        when = (f"since {newest:%a} {newest.month}/{newest.day}" if newest
+                else f"in the last {SEEN_DAYS} days")
+        zoom = z.get("zoom") or "this office's Zoom"
+        acct = f" ({login})" if "@" in login else ""
+        channels = {}
+        for o in offices(z):
+            ch = office_post.CHANNELS.get(office_post.office_name(o)) or office_post.CHANNELS.get(o)
+            if ch:
+                channels.setdefault(ch, o)
+        for ch in channels:
+            parent = f"⚠️ *1st Rounds not being recorded — {zoom}*"
+            reply = (f"<@{CAMILA}> Fathom hasn't recorded a single 1st round on *{zoom}*{acct} {when}, so "
+                     "none of this office's interviews are being scored.\n\n"
+                     "To fix:\n"
+                     f"• Run every 1st round on {zoom}\n"
+                     "• Make sure Fathom on that Zoom auto-records every meeting, impromptu "
+                     "ones too")
+            out.append((key, ch, parent, reply))
+    return out
+
+
+def post_office_alerts(client, day: dt.date, d: Dict, acc: Dict, last: Dict,
+                       threads: Dict[str, List[str]], preview_channel: str = "") -> Dict[str, List[str]]:
+    """Post the new quiet alerts in the office channels, and a ✅ in the same
+    thread when one is fixed. Returns the threads still open {key|channel: [channel, ts]}."""
+    threads = dict(threads)
+    for key, ch, parent, reply in office_alerts(day, d, acc, last):
+        where = preview_channel or ch
+        try:
+            ts = client.chat_postMessage(channel=where, text=parent)["ts"]
+            client.chat_postMessage(channel=where, thread_ts=ts, text=reply)
+            print(f"office alert: {key} -> {where}")
+            if not preview_channel:
+                threads[f"{key}|{ch}"] = [ch, ts]
+        except Exception as exc:  # noqa: BLE001
+            print(f"office alert FAILED {key} -> {where}: {type(exc).__name__}: {exc}")
+    for tkey, (ch, ts) in list(threads.items()):
+        if tkey.split("|")[0] in d["fixed"]:
+            if not preview_channel:
+                try:
+                    client.chat_postMessage(channel=ch, thread_ts=ts,
+                                            text="✅ Recording again — 1st rounds are being scored.")
+                    print(f"office alert fixed: {tkey}")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"office alert ✅ FAILED {tkey}: {type(exc).__name__}: {exc}")
+            threads.pop(tkey)
+    return threads
 
 
 def run(day: dt.date, *, post: bool, preview: bool, missed: Optional[Dict[str, int]] = None) -> int:
-    found, d, owners = check(day, missed)
+    found, d, owners, acc, last = check(day, missed)
     got = texts(day, d, tag=not preview)
     for k in ("new", "open", "fixed"):
         for v in d[k].values():
             print(f"[{k}] {v}")
+    threads = _state().get("office_threads") or {}
+    for key, ch, parent, reply in office_alerts(day, d, acc, last):
+        print(f"[office] {ch}: {parent}\n  ↳ {reply}")
+    if post:
+        from automations.shared import slack_metrics_post as smp
+        from automations.first_round_scorecards import run as r
+        oc = smp._client()
+        threads = post_office_alerts(oc, day, d, acc, last, threads,
+                                     preview_channel=r._dm_channel(oc) if preview else "")
     if not got:
         print("no news -- nothing to post")
     elif post:
@@ -245,7 +321,7 @@ def run(day: dt.date, *, post: bool, preview: bool, missed: Optional[Dict[str, i
         print("DRY-RUN -- would post:\n" + got[0] + "\n---\n" + got[1])
     if post and not preview:     # only a real post moves the 'already told' line
         _save({"open": {k: v for k, v in found.items() if not k.startswith(("missed:", "gone:"))},
-               "owners": owners, "checked": day.isoformat()})
+               "owners": owners, "checked": day.isoformat(), "office_threads": threads})
     return 0
 
 
