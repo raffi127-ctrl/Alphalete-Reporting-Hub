@@ -1251,6 +1251,16 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
 
     tables = {"last": _table(ls, le, "posted_last", "can_last"),
               "this": _table(ts, te, "posted_this", "can_this")}
+    # DD reconciliation visibility (Carlos 2026-10-28): the log carries the
+    # same numbers the board shows.
+    for key in ("last", "this"):
+        t = tables[key]
+        log(f"[nds] act-rev {t['label']}: posted ${t['totals']['posted']:,}"
+            f" / open ${t['totals']['pending']:,}"
+            f" / cancelled ${t['totals']['canceled']:,}")
+        for row in t["rows"]:
+            if row["posted"]:
+                log(f"[nds]   {key} {row['rep'][:26]}: ${row['posted']:,}")
     out = OUT_DIR / "nds_activation_revenue.png"
     saved = list(bpng.COLS)
     bpng.COLS[:] = [("Rep Name", "rep", "left"),
