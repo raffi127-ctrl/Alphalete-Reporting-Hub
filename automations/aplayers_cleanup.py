@@ -62,10 +62,16 @@ def orphan_sweep(client, days: int, live: bool) -> None:
     import collections
     oldest = int((dt.datetime.now() - dt.timedelta(days=days)).timestamp())
     threads = collections.defaultdict(set)
+    # files.list's channel filter returns nothing for this private room —
+    # list LUCY's uploads instead and match the room from each file's
+    # shares (seen 2026-10-28: channel-filtered call came back empty).
+    me = client.auth_test().get("user_id")
     page = 1
+    total = 0
     while True:
-        resp = client.files_list(channel=CHANNEL, ts_from=str(oldest),
+        resp = client.files_list(user=me, ts_from=str(oldest),
                                  count=100, page=page)
+        total += len(resp.get("files", []))
         for f in resp.get("files", []):
             for shares in (f.get("shares") or {}).values():
                 for ch, posts in shares.items():
@@ -80,7 +86,8 @@ def orphan_sweep(client, days: int, live: bool) -> None:
             break
         page += 1
         time.sleep(1)
-    print(f"[orphans] {len(threads)} thread(s) carry Lucy's files")
+    print(f"[orphans] {total} file(s) by Lucy in the window; "
+          f"{len(threads)} thread(s) of them in this room")
     deleted = failed = orphaned = 0
     for tts in sorted(threads):
         try:
