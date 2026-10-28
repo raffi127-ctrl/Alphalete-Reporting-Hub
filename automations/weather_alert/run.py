@@ -81,6 +81,7 @@ CITIES = {
     # (takeoffenterprise.com) and its CA filing, 2026-10-06. OwnerVille could
     # not find him under Raf's login (not on the Office Access list).
     "santa_clara": ("Santa Clara, CA", 37.3541, -121.9552, "America/Los_Angeles"),
+    "sacramento": ("Sacramento, CA", 38.5816, -121.4944, "America/Los_Angeles"),
     # valeria / Altura Marketing: Tampa, FL -- the company's own site
     # (alturamarketinginc.com, 410 S Ware Blvd), 2026-10-08.
     "tampa": ("Tampa, FL", 27.9506, -82.4572, "America/New_York"),
@@ -135,7 +136,7 @@ METRICS_CITY = {
     "frank": "deerfield_beach", # Peak Management, Deerfield Beach FL (Megan 2026-10-09); ECO key frank
     "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
-    "jose": "santa_clara",      # Legacy Shore Marketing, California (Megan 2026-10-28 "he's in cali"; reps 408/916, sign-up tz Pacific); #westwavesales
+    "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
     "atef": "denver",           # Domin8 Acquisitions, Denver CO (reps: "whole denver office"); Mountain
     "samuel": "orlando",        # Dynasty Growth Group: 590 of 846 NDS orders (8/31-10/4) installed in Kissimmee/Orlando; OV access to 23751 pending for the street address
