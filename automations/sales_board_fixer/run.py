@@ -317,10 +317,12 @@ def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     if notes:
         fmt += K.note_requests(todo, t["sheet_id"], t.get("notes") or [],
                                dt.date.today().strftime("%m/%d"))
-    # rule deletes last, highest index first (checks.py already sorted them)
+    # rule edits by index before any delete moves the indices; deletes last,
+    # highest index first (checks.py already sorted them)
+    ups = [x.request for x in todo if x.request and "updateConditionalFormatRule" in x.request]
     dels = [x.request for x in todo if x.request and "deleteConditionalFormatRule" in x.request]
-    if fmt or dels:
-        sh.batch_update({"requests": fmt + dels})
+    if fmt or ups or dels:
+        sh.batch_update({"requests": fmt + ups + dels})
     return todo
 
 
@@ -559,7 +561,7 @@ OWNERS_FILE = Path(__file__).with_name("owners.json")
 # tabs per week, '10.12' + '10.12 Linep' + '10.12 Stations' (2026-10-13);
 # Salik/Hammad one tab per Monday, '10/12', '10/5'... (2026-10-14)
 BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b|^\s*\d{1,2}[./]\d{1,2}\s*$", re.I)
-SIDE_NAME = re.compile(r"line\s*u?p|stations", re.I)
+SIDE_NAME = re.compile(r"line\s*u?p|stations|car\s*rides?", re.I)   # Eveliz: 'Car Rides B2B'
 WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}[./]\d{1,2})\b")
 DATED_TAB = re.compile(r"^\s*(\d{1,2})[./](\d{1,2})\s*$")
 
@@ -717,7 +719,7 @@ def lane_tabs(sh, only_for=None) -> list:
 # past the cap, which would have stopped every fix on her board.
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
-               "lineup_short", "lineup_old_week",
+               "cf_strike_stray", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
 

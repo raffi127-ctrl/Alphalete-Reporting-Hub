@@ -53,6 +53,7 @@ KIND_LABEL = {
     "cf_foreign": "regla de formato condicional que apunta fuera de la tab",
     "cf_duplicate": "regla de formato condicional repetida",
     "cf_self": "regla de 'ya está puesto' que se cuenta a sí misma (tacha a cualquiera)",
+    "cf_strike_stray": "tachado de Car Rides pegado sobre los autos (tacha nombres ya puestos)",
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
@@ -828,6 +829,21 @@ def check_conditional(tab: str, sheet_id: int, rules: List[dict], ncols: int,
         else:
             seen[key] = i
 
+    dead_idx = {d[0] for d in dead}
+    for i, rule in enumerate(rules):
+        fix = None if i in dead_idx else _strike_strays(rule)
+        if fix:
+            keep, text = fix
+            new = dict(rule, ranges=keep)
+            new["booleanRule"] = dict(rule["booleanRule"], condition=dict(
+                rule["booleanRule"]["condition"], values=[{"userEnteredValue": text}]))
+            out.append(Finding(
+                "cf_strike_stray", tab, "regla %d" % i,
+                "%s: %s" % (KIND_LABEL["cf_strike_stray"], _rule_text(rule)),
+                before=_ranges_a1(rule), after=_ranges_a1(new),
+                request={"updateConditionalFormatRule":
+                         {"sheetId": sheet_id, "index": i, "rule": new}}))
+
     for i, kind, why in sorted(dead, reverse=True):
         out.append(Finding(kind, tab, "regla %d" % i, why,
                            before=_ranges_a1(rules[i]), after="(borrada)",
@@ -923,6 +939,44 @@ def _counts_itself(rule: dict, rules: List[dict]) -> bool:
                 ((oc.get("values") or [{}])[0]).get("userEnteredValue", "")):
             dup.update(_cells(other))
     return mine <= dup
+
+
+def _strike_strays(rule: dict):
+    """(kept ranges, new formula) for a Car Ride "already placed" rule with
+    pieces pasted onto the car rides themselves, else None.
+
+    The Line Up's pool under the car rides ('REPS NAMES from Sales Board')
+    strikes a name once it sits in that day's car rides: =COUNTIF($D$3:$G$46,
+    D50)>0 on D50:G84. Colten, 2026-10-28: "the dash through the names" -- the
+    same rule had also been pasted onto E17:E21 / U9:U13 / AU7 (inside the car
+    rides), so whoever is put there shows struck, every day. A piece on the
+    rows the rule counts is never the pool: it goes, the pool stays, and the
+    formula is re-anchored on the first piece left. Only when a pool piece
+    exists, below the counted rows -- a rule living only on the car rides
+    is cf_self's business."""
+    br = rule.get("booleanRule") or {}
+    cond = br.get("condition") or {}
+    if not ((br.get("format") or {}).get("textFormat") or {}).get("strikethrough") \
+            or cond.get("type") != "CUSTOM_FORMULA":
+        return None
+    text = ((cond.get("values") or [{}])[0]).get("userEnteredValue", "")
+    m = COUNTIF_ANY.match(text)
+    ranges = rule.get("ranges") or []
+    if not m or not ranges or col_index(m.group(5)) != ranges[0].get("startColumnIndex", 0) + 1 \
+            or int(m.group(6)) != ranges[0].get("startRowIndex", 0) + 1:
+        return None
+    r1, r2 = int(m.group(2)), int(m.group(4))
+    def on_counted_rows(rg):
+        return rg.get("startRowIndex", 0) + 1 <= r2 and rg.get("endRowIndex", 0) >= r1
+    keep = [rg for rg in ranges if not on_counted_rows(rg)]
+    # the pool sits BELOW what it counts; anything else (ours: Stations M5
+    # struck when on the OFF list further down) is a different rule -- leave it
+    if not keep or len(keep) == len(ranges) \
+            or any(rg.get("startRowIndex", 0) + 1 <= r2 for rg in keep):
+        return None
+    anchor = "%s%d" % (col_letter(keep[0].get("startColumnIndex", 0) + 1),
+                       keep[0].get("startRowIndex", 0) + 1)
+    return keep, text[:m.start(5)] + anchor + text[m.end(6):]
 
 
 def _points_outside(text: str, ncols: int) -> bool:

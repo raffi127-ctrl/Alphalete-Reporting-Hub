@@ -144,6 +144,35 @@ class Conditional(unittest.TestCase):
         self.assertEqual([(y.kind, y.request["deleteConditionalFormatRule"]["index"])
                           for y in found], [("cf_self", 1)])
 
+    def test_car_ride_strike_pasted_on_the_car_rides_goes(self):
+        # Colten 10/28: Monday's pool rule also sat on E17:E21 -> names struck
+        def piece(r0, r1, c0, c1):
+            return {"sheetId": 7, "startRowIndex": r0, "endRowIndex": r1,
+                    "startColumnIndex": c0, "endColumnIndex": c1}
+        strike = {"textFormat": {"strikethrough": True}}
+        mon = self.rule("=COUNTIF($D$3:$G$46, E17) > 0")
+        mon["ranges"] = [piece(16, 21, 4, 5), piece(49, 84, 3, 7)]
+        mon["booleanRule"]["format"] = strike
+        tue = self.rule("=COUNTIF($L$3:$O$46, L50) > 0", rows=(49, 84), cols=(11, 15))
+        tue["booleanRule"]["format"] = strike
+        found = K.check_conditional("t", 7, [mon, tue], ncols=52)
+        self.assertEqual([(y.kind, y.where, y.after) for y in found],
+                         [("cf_strike_stray", "regla 0", "D50:G84")])
+        new = found[0].request["updateConditionalFormatRule"]["rule"]
+        self.assertEqual(new["booleanRule"]["condition"]["values"][0]["userEnteredValue"],
+                         "=COUNTIF($D$3:$G$46, D50) > 0")
+        self.assertEqual(new["booleanRule"]["format"], strike)
+
+    def test_off_list_strike_above_its_list_stays(self):
+        # ours, Stations: M5 struck when on the OFF list below -- not a pool
+        off = self.rule("=COUNTIF($F$44:$H$157, M5)>0")
+        off["ranges"] = [{"sheetId": 7, "startRowIndex": 4, "endRowIndex": 5,
+                          "startColumnIndex": 12, "endColumnIndex": 13},
+                         {"sheetId": 7, "startRowIndex": 43, "endRowIndex": 157,
+                          "startColumnIndex": 1, "endColumnIndex": 10}]
+        off["booleanRule"]["format"] = {"textFormat": {"strikethrough": True}}
+        self.assertFalse(K.check_conditional("t", 7, [off], ncols=34))
+
     def test_literal_text_is_not_a_column(self):
         self.assertFalse(K.check_conditional("t", 7, [self.rule('=$B4="ZZZ1"')], ncols=10))
 
