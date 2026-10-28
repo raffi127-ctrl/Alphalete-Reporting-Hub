@@ -1107,10 +1107,22 @@ def first_run() -> None:
     Never fatal: everything is installed and scheduled by this point, and a
     first sweep that fails costs a wait, not a setup.
     """
-    say("      saying hello to the reporting team...")
-    proc = subprocess.run(
-        [str(venv_python()), "-m", "automations.icd_alerts.run", "--once"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    say("      saying hello to the reporting team (a full first sweep -- this")
+    say("      one can take ten minutes; the schedule above is already live)...")
+    # NOT FOREVER (Haytham 2026-10-28, "stuck" on this line): the first sweep
+    # also reads yesterday for the catch-up, so it is the slowest sweep of
+    # all. Past the limit it is reported as still running, which is what it
+    # is -- the schedule installed at step 9 keeps going without this window.
+    try:
+        proc = subprocess.run(
+            [str(venv_python()), "-m", "automations.icd_alerts.run", "--once"],
+            cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=15 * 60)
+    except subprocess.TimeoutExpired:
+        say("      the first sweep is still running after 15 minutes. That is")
+        say("      fine -- it finishes on its own, and the next one starts on")
+        say("      schedule. Your office is enrolled.")
+        return
     out = proc.stdout.decode("utf-8", "replace")
     if proc.returncode == 0:
         say("      done — your office is enrolled.")
