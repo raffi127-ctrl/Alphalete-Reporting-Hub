@@ -651,10 +651,19 @@ LAST_COMPANY = {"note": ""}
 
 def _pick_company_if_asked(page) -> None:
     try:
+        # By id, OR by what it shows: Omar's combo is not named "company"
+        # anywhere in its id (release .25 found "none on page" while the
+        # page read "Select Company"), so the text it shows when unset --
+        # its value, or the emptyMessage in its Telerik client state -- is
+        # the match.
         combos = page.evaluate(
-            """() => Array.from(document.querySelectorAll('input.rcbInput'))
-                 .filter(i => /compan/i.test(i.id || i.name || ''))
-                 .map(i => ({id: i.id, value: (i.value || '').trim()}))""")
+            """() => Array.from(document.querySelectorAll('input.rcbInput')).map(i => {
+                 const st = document.getElementById(i.id + '_ClientState');
+                 let empty = '';
+                 try { empty = (JSON.parse((st && st.value) || '{}').emptyMessage || ''); } catch (e) {}
+                 return {id: i.id, value: (i.value || '').trim(), empty: empty};
+               }).filter(c => /compan/i.test(c.id) || /compan/i.test(c.value) || /compan/i.test(c.empty))"""
+        )
     except Exception as e:  # noqa: BLE001
         LAST_COMPANY["note"] = "company combo: ? (%s)" % type(e).__name__
         return
@@ -665,6 +674,7 @@ def _pick_company_if_asked(page) -> None:
     if c["value"] and not re.search(r"select", c["value"], re.I):
         LAST_COMPANY["note"] = "company combo %s already %r" % (c["id"], c["value"])
         return
+    LAST_COMPANY["note"] = "company combo %s found (value %r, empty-message %r)" % (c["id"], c["value"], c.get("empty"))
     try:
         page.click("#" + c["id"])
         page.wait_for_timeout(800)

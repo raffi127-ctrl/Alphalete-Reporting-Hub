@@ -876,8 +876,12 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
         pass
     try:
         out.append("combos: " + page.evaluate(
-            """() => Array.from(document.querySelectorAll('input.rcbInput, input[id*=Company], input[id*=Service], input[id*=Input]'))
-                 .map(i => (i.id || i.name) + '=' + String(i.value || '').slice(0, 60)).join(', ')""")[:600])
+            """() => Array.from(document.querySelectorAll('input.rcbInput')).map(i => {
+                 const st = document.getElementById(i.id + '_ClientState');
+                 let empty = '';
+                 try { empty = (JSON.parse((st && st.value) || '{}').emptyMessage || ''); } catch (e) {}
+                 return i.id.replace('ctl00_MainContent_', '') + '=' + String(i.value || '').slice(0, 40) + (empty ? ' (empty: ' + empty + ')' : '');
+               }).join(', ')""")[:1500])
     except Exception as e:  # noqa: BLE001
         out.append("combos: ? (%s)" % type(e).__name__)
     try:
