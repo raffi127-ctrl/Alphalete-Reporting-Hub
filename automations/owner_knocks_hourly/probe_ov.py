@@ -71,11 +71,19 @@ def main(argv=None) -> int:
     print("days: %s .. %s" % (days[0], days[-1]))
     pulled = pull_offices_days(jobs, verbose=False, priority="normal")
     sellers = _omar_sellers(days)
+    summary = []
     for (label, name, cname), (_n, by_day, err) in zip(labels, pulled):
         print("\n=== %s (%s) — campaign %s ===" % (label, name, cname))
+        short = "%s %s" % (label.split()[0], cname.replace("RES ", ""))
         if err is not None:
             print("  PULL FAILED: %s: %s" % (type(err).__name__, str(err)[:300]))
+            summary.append("%s FAIL(%s)" % (short, "no access" if "access"
+                                             in str(err) else type(err).__name__))
             continue
+        all_rows = [r for d in days for r in ((by_day or {}).get(d) or [])]
+        summary.append("%s %dd/%dk" % (
+            short, sum(1 for d in days if (by_day or {}).get(d)),
+            _knocks(all_rows)))
         for d in days:
             rows = (by_day or {}).get(d) or []
             reps = [r.get("Rep") for r in rows if r.get("Rep")]
@@ -91,6 +99,11 @@ def main(argv=None) -> int:
                           in sellers})
             print("  Omar's selling reps knocking HERE: %s"
                   % (", ".join(hit) or "none"))
+            if hit:
+                summary.append("Omar-sellers@Salik:%s" % ",".join(hit))
+    # ONE LINE, LAST: the queue's status cell only shows the tail of a log.
+    # "Nd/Mk" = days with any rep on the grid / knocks over the window.
+    print("SUMMARY %d days: %s" % (len(days), " | ".join(summary)))
     return 0
 
 
