@@ -38,7 +38,7 @@ SUMMARY_LABELS = {
     "captain": "Captain",
 }
 REV_TITLE = "Revenue by Campaign"
-CAMPAIGNS = ("B2B", "BOX", "Base")
+CAMPAIGNS = ("B2B", "BOX", "Base", "NDS")
 REP_FIRST = 3          # working-tab roster rows; last is found by scanning
 ACTIVE_LOOKBACK = 2    # weeks of no revenue before a rep drops off
 
