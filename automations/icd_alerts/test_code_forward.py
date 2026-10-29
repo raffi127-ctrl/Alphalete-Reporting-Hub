@@ -53,6 +53,10 @@ class OnTheMac(unittest.TestCase):
         p = mock.patch.object(CF.C, "creds", return_value={"email": "owner@gmail.com"})
         p.start()
         self.addCleanup(p.stop)
+        self.opened = []
+        p = mock.patch.object(CF, "_open", side_effect=lambda u, s=None: self.opened.append(u))
+        p.start()
+        self.addCleanup(p.stop)
         self.sent = []
         p = mock.patch.object(R, "report_forward",
                               side_effect=lambda a, **k: self.sent.append(a) or True)
@@ -68,6 +72,13 @@ class OnTheMac(unittest.TestCase):
         self.assertEqual(self.sent, ["owner@gmail.com"])
         self.assertIn("alphaletereporting@gmail.com", ask.shown[0])
         self.assertTrue(CF.already_set_up())
+
+    def test_gmail_opens_on_forwarding_and_the_filter_can_follow(self):
+        ask = FakeAsk(CF.YES)
+        picks = iter([CF.YES, CF.FILTER_NOW])
+        ask.choose = lambda prompt, options: next(picks)
+        self.assertEqual(self._go(ask), "done")
+        self.assertEqual(self.opened, [CF.FORWARDING_URL, CF.FILTER_URL])
 
     def test_a_different_address_is_typed(self):
         self.assertEqual(self._go(FakeAsk(CF.OTHER, "codes@office.com")), "done")
@@ -157,7 +168,7 @@ class TheTerminalLine(unittest.TestCase):
         with mock.patch.object(CF, "walk_through",
                                side_effect=lambda a, s: CF._mark("o@gmail.com") or "done"),              mock.patch("automations.icd_alerts.dialogs.message"),              mock.patch("builtins.print"):
             self.assertEqual(CF.main(), 0)
-            self.assertEqual(self.opened, [CF.FORWARDING_URL])
+            self.assertEqual(self.opened, [], "walk_through opens Gmail itself")
             self.assertEqual(CF.main(), 0)
         self.assertEqual(self.opened[-1], CF.FILTER_URL)
 

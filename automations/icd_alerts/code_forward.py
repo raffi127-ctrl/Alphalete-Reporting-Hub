@@ -30,14 +30,14 @@ MARK_PATH = C.APP_DIR / "sara-code-forward.txt"
 
 STEPS = (
     "So nobody has to type SaraPlus codes for Lucy again, forward SaraPlus's "
-    "code emails (from %s) to %s.\n\n"
-    "1. Gmail gear -> See all settings -> Forwarding and POP/IMAP -> Add a "
-    "forwarding address -> %s. The reporting team confirms it on their side.\n"
-    "2. Then search from:%s -> sliders icon -> Create filter -> Forward it to "
-    "that address." % (SARAPLUS_SENDER, REPORTING_INBOX, REPORTING_INBOX,
-                       SARAPLUS_SENDER))
+    "code emails to %s.\n\n"
+    "Gmail just opened on its forwarding settings: click Add a forwarding "
+    "address -> type %s -> Next -> Proceed. The reporting team confirms it "
+    "on their side." % (REPORTING_INBOX, REPORTING_INBOX))
 
 YES = "Yes, that one"
+FILTER_NOW = "Open the filter step"
+FILTER_LATER = "Later"
 OTHER = "No, a different address"
 LATER = "Skip for now"
 
@@ -70,6 +70,10 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
     """
     from automations.icd_alerts import relay as R
 
+    # GMAIL OPENS ON THE RIGHT SCREEN FIRST (Megan 2026-10-29: "the other
+    # option here too") -- the same thing the sara-forward line does, so the
+    # Zoom and the link are one flow, not two sets of directions.
+    _open(FORWARDING_URL, say)
     try:
         ask.message(STEPS)
         login = _login_email()
@@ -95,6 +99,16 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
         return "address not sent"
     _mark(address)
     say("      Thanks -- the reporting team will confirm the forward.")
+    # ON THE ZOOM WE CONFIRM WHILE THEY WAIT, so the filter can be done right
+    # here instead of on a second run of the sara-forward line.
+    try:
+        if ask.choose("When the reporting team says it is confirmed:",
+                      [FILTER_NOW, FILTER_LATER]) == FILTER_NOW:
+            open_filter(ask, say)
+            return "done"
+    except Exception:  # noqa: BLE001 -- the sara-forward line does it later
+        pass
+    say("      The filter is left -- run the sara-forward line once confirmed.")
     return "done"
 
 
@@ -122,6 +136,14 @@ def _open(url: str, say=print) -> None:
         say("      open %s" % url)
 
 
+def open_filter(ask, say=print) -> None:
+    _open(FILTER_URL, say)
+    try:
+        ask.message(FILTER_STEPS)
+    except Exception:  # noqa: BLE001
+        say("  " + FILTER_STEPS)
+
+
 def main(argv=None) -> int:
     from automations.icd_alerts import dialogs as ask
 
@@ -129,21 +151,16 @@ def main(argv=None) -> int:
         print(m, flush=True)
 
     if not already_set_up():
-        _open(FORWARDING_URL, say)
         said = walk_through(ask, say)
         if said != "done":
             say("")
             say("  NOT YET -- run this same line again when you are ready.")
             return 1
         say("")
-        say("  STEP 1 DONE. The reporting team confirms it on their side and")
-        say("  tells you -- then run this same line once more for the filter.")
+        say("  STEP 1 DONE. If the filter is not saved yet: once the reporting")
+        say("  team confirms, run this same line once more.")
         return 0
-    _open(FILTER_URL, say)
-    try:
-        ask.message(FILTER_STEPS)
-    except Exception:  # noqa: BLE001
-        say("  " + FILTER_STEPS)
+    open_filter(ask, say)
     say("")
     say("  ALL SET once that filter is saved. Lucy enters SaraPlus's codes")
     say("  herself from now on.")
