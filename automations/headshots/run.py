@@ -485,6 +485,10 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
                 continue
             imgs = _image_files(m)
             if not imgs:
+                # A text reply can be a "redo First Last" ask (Megan
+                # 2026-10-29: leaders ask in the thread, nobody gets tagged).
+                _maybe_redo_reply(cl, off, m, anchor, state, actions, run,
+                                  dry_run=dry_run)
                 continue
             ts = m["ts"]
             sk = _state_key(off, ts)
@@ -492,7 +496,13 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             if st.get("done"):
                 continue
 
-            name = name_from_caption(m.get("text", ""))
+            # "redo First Last" + a NEW photo = replace that person's
+            # headshot (Megan 2026-10-29). Strip the word first, or "Redo"
+            # reads as part of the name.
+            text = m.get("text", "") or ""
+            rm = _REDO_RE.match(text)
+            is_redo = bool(rm)
+            name = name_from_caption(rm.group(1) if rm else text)
             if not name:
                 # Hard cap: however wrong we are about WHAT needs a name, a
                 # single run can never storm the thread again (2026-08-25).
@@ -541,17 +551,18 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             # profile. Best-effort — the thread post below goes out either
             # way, carrying the OV outcome so a miss gets handled by hand.
             if off.uploader == "lucy":
-                ov_note = _ov_upload_note(name, out_p, act)
+                ov_note = _ov_upload_note(name, out_p, act, replace=is_redo)
             else:
                 ov_note = _eco_handoff_note(off, name, out_p, anchor["ts"],
-                                            state, sk, act)
+                                            state, sk, act, replace=is_redo)
+            what = "headshot redone" if is_redo else "headshot ready"
 
             # Post the finished image into the week's thread + ✅ the reply.
             with open(out_p, "rb") as fh:
                 cl.files_upload_v2(
                     channel=channel, thread_ts=anchor["ts"], file=fh,
                     filename=out_p.name,
-                    initial_comment=f"*{name}* — headshot ready ⤵{ov_note}")
+                    initial_comment=f"*{name}* — {what} ⤵{ov_note}")
             state.setdefault(sk, {})["done"] = True
             state[sk]["name"] = name
             _save_state(state)
@@ -569,8 +580,45 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             actions.append(act)
 
 
+# "redo First Last" (also "Redo: First Last", "redo - First Last").
+_REDO_RE = re.compile(r"^\s*redo\b[\s:,\-]*(.+)$", re.I | re.S)
+_MAX_REDOS_PER_RUN = 3
+
+
+def _maybe_redo_reply(cl, off, m: dict, anchor: dict, state: dict,
+                      actions: list, run: dict, *, dry_run: bool) -> None:
+    """A "redo First Last" reply with NO photo. Re-making the headshot from
+    the same photo gives the same crop, so a redo needs a NEW photo: say so,
+    once per reply (Megan 2026-10-29). The photo + "redo First Last" reply is
+    handled in the main loop and REPLACES the profile photo. (`run.py --redo`
+    stays for re-running an original photo after a code fix.)"""
+    mt = _REDO_RE.match(m.get("text") or "")
+    if not mt:
+        return
+    ts = m["ts"]
+    sk = _state_key(off, ts)
+    if state.get(sk, {}).get("done"):
+        return
+    if run.get("redos", 0) >= _MAX_REDOS_PER_RUN:
+        return
+    run["redos"] = run.get("redos", 0) + 1
+    name = name_from_caption(mt.group(1)) or "them"
+    actions.append({"ts": ts, "action": "redo_needs_photo", "name": name})
+    if dry_run:
+        return
+    try:
+        cl.chat_postMessage(
+            channel=off.channel, thread_ts=anchor["ts"],
+            text=(f"<@{m.get('user', '')}> to redo *{name}*, reply with a NEW "
+                  f"photo and write *redo {name}* in the same reply."))
+    except Exception:  # noqa: BLE001 -- asked again next tick
+        return
+    state.setdefault(sk, {})["done"] = True
+    _save_state(state)
+
+
 def _eco_handoff_note(off, name: str, photo, thread_ts: str, state: dict,
-                      sk: str, act: dict) -> str:
+                      sk: str, act: dict, replace: bool = False) -> str:
     """Hand the headshot to the office's own computer (LucyEco) and return the
     line for the thread post. Never raises -- the photo post goes out either
     way. Queued at most once per reply: the job id is saved BEFORE the post,
@@ -579,12 +627,13 @@ def _eco_handoff_note(off, name: str, photo, thread_ts: str, state: dict,
     if not off.eco_key:
         # Live before the office's computer is enrolled: nothing to hand to.
         act["eco"] = {"status": "manual"}
-        return eco.manual_line()
+        return eco.manual_line(replace=replace)
     job = (state.get(sk) or {}).get("job")
     if not job:
         try:
             job = eco.enqueue(off.eco_key, name, photo, mode=off.mode,
-                              channel=off.channel, thread_ts=thread_ts)
+                              channel=off.channel, thread_ts=thread_ts,
+                              replace=replace)
         except Exception as e:  # noqa: BLE001
             act["eco"] = {"status": "error", "error": str(e)[:200]}
             print(f"  ⚠ could not queue {name} for {off.key}'s computer: {e}")
@@ -592,8 +641,8 @@ def _eco_handoff_note(off, name: str, photo, thread_ts: str, state: dict,
                     "computer — please upload it by hand")
         state.setdefault(sk, {})["job"] = job
         _save_state(state)
-    act["eco"] = {"status": "queued", "job": job}
-    return eco.queued_line(off.mode)
+    act["eco"] = {"status": "queued", "job": job, "replace": replace}
+    return eco.queued_line(off.mode, replace=replace)
 
 
 def diag(channel: str | None = None) -> int:
@@ -695,6 +744,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  needs a name (reply text wasn't one): ts={a['ts']}")
         elif a["action"] == "download_failed":
             print(f"  download failed: ts={a['ts']}")
+        elif a["action"] == "redo_needs_photo":
+            print(f"  redo asked without a photo: {a['name']}")
         elif a["action"] == "office_failed":
             print(f"  office {a['office']} failed: {a['error']}")
         elif a.get("dry_run"):

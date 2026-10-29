@@ -202,3 +202,38 @@ class ARedoForAnEcoOfficeReplacesOnItsComputer(unittest.TestCase):
         line = eco.result_line({"name": "X", "result": {
             "status": "uploaded", "verified": True, "replaced": True}})
         self.assertIn("replaced", line)
+
+
+class ALeaderCanAskForARedoInTheThread(unittest.TestCase):
+
+    def test_a_new_photo_with_redo_replaces_and_is_not_a_new_person(self):
+        cl, state = FakeSlack([{"ts": "100"}, dict(REPLY, text="redo John Smith")]), {}
+        enq = mock.Mock(return_value="job-r")
+        with mock.patch.object(R, "process_one",
+                               return_value=Path(__file__)) as po:
+            _run_scan(cl, state, enq)
+        self.assertEqual(enq.call_args.args[1], "John Smith")
+        self.assertTrue(enq.call_args.kwargs["replace"])
+        self.assertIn("headshot redone", cl.files[0]["initial_comment"])
+
+    def test_a_plain_photo_never_replaces(self):
+        cl, state = FakeSlack([{"ts": "100"}, REPLY]), {}
+        enq = mock.Mock(return_value="job-1")
+        _run_scan(cl, state, enq)
+        self.assertFalse(enq.call_args.kwargs["replace"])
+
+    def test_redo_without_a_photo_asks_for_one_once(self):
+        state = {}
+        msgs = [{"ts": "100"}, {"ts": "105", "user": "ULEAD",
+                                "text": "Redo: Jane Doe"}]
+        cl = FakeSlack(msgs)
+        _run_scan(cl, state, mock.Mock())
+        self.assertIn("NEW photo", cl.posts[-1]["text"])
+        cl2 = FakeSlack(msgs)
+        _run_scan(cl2, state, mock.Mock())
+        self.assertEqual(cl2.posts, [])
+
+    def test_ordinary_chatter_is_not_a_redo(self):
+        cl = FakeSlack([{"ts": "100"}, {"ts": "105", "text": "thanks Lucy!"}])
+        _run_scan(cl, {}, mock.Mock())
+        self.assertEqual(cl.posts, [])
