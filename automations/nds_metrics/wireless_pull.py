@@ -51,7 +51,22 @@ def pull(start: dt.date, end: dt.date, log=print) -> bytes:
             _dump_tab_strip(page, log)   # mismatched strip shows itself
             data = _wireless_panel_dump(page, start, end, log)
             if not data:
-                raise RuntimeError("wireless export came back empty")
+                # This dealer's panel has no Excel button (click timed out
+                # 2026-10-29) but the grid itself renders the same rows —
+                # its outerHTML walks in document order, so parse()'s
+                # order-then-lines association still holds.
+                log("[ndsw] no export control — scraping the grid")
+                html = page.evaluate(
+                    """() => {
+                         const el = document.querySelector(
+                           "div[id*='WirelessDash'], table[id*='WirelessDash']");
+                         return el ? el.outerHTML : '';
+                       }""")
+                if html and len(html) > 2000:
+                    log(f"[ndsw] grid scraped ({len(html):,} chars)")
+                    data = html.encode("utf-8")
+            if not data:
+                raise RuntimeError("wireless export AND grid scrape empty")
             return data
         finally:
             ctx.close()
