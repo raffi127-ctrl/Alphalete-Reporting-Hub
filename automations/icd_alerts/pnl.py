@@ -121,11 +121,24 @@ def dd_by_rep(text: str, owner: str) -> Tuple[Dict[dt.date, Dict[str, float]], D
         return {}, seen
     hdr = rows[0]
     oc, wc, tc = _col(hdr, COL_OWNER), _col(hdr, COL_WEEK), _col(hdr, COL_TOTAL)
-    if tc is None:
+    # LONG FORMAT. DDDETAIL.csv has no money column at all: one row per
+    # order PER MEASURE, 'Measure Names' saying which and 'Measure Values'
+    # how much (Jairo's Mac, 2026-10-29 15:39). Keep only the ICD-total rows.
+    mc, measure = _col(hdr, ("Measure Names",)), None
+    if tc is None and mc is not None and _col(hdr, ("Measure Values",)) is not None:
+        names = sorted({str(r[mc]).strip() for r in rows[1:] if len(r) > mc})
+        seen["measures"] = names
+        low = {n.lower(): n for n in names}
+        measure = next((low[n.lower()] for n in COL_TOTAL if n.lower() in low), None)
+        if measure is None:
+            measure = next((n for hint in _TOTAL_HINTS for n in names
+                            if hint in n.lower()), None)
+        tc = _col(hdr, ("Measure Values",)) if measure else None
+    if tc is None and mc is None:
         low = [str(h or "").strip().lower() for h in hdr]
         tc = next((i for hint in _TOTAL_HINTS for i, h in enumerate(low)
                    if hint in h), None)
-    seen["total_col"] = hdr[tc] if tc is not None else ""
+    seen["total_col"] = measure or (hdr[tc] if tc is not None else "")
     rc = _col(hdr, COL_REP)
     seen["missing"] = [n for n, c in (("owner", oc), ("week", wc), ("total", tc),
                                       ("rep", rc)) if c is None]
@@ -135,7 +148,9 @@ def dd_by_rep(text: str, owner: str) -> Tuple[Dict[dt.date, Dict[str, float]], D
     owners = set()
     out: Dict[dt.date, Dict[str, float]] = {}
     for r in rows[1:]:
-        if len(r) <= max(c for c in (oc, wc, tc, rc) if c is not None):
+        if len(r) <= max(c for c in (oc, wc, tc, rc, mc) if c is not None):
+            continue
+        if measure and str(r[mc]).strip() != measure:
             continue
         if oc is not None:
             owners.add(_norm(r[oc]))
@@ -155,6 +170,9 @@ def check_line(weeks: Dict[dt.date, Dict[str, float]], seen: Dict) -> str:
     """One line for the Faults tab: enough to compare with what our Lucys see
     (WE 10/18 = 46 reps + no-rep, $86,838.91 for Jairo)."""
     if seen.get("missing"):
+        if seen.get("measures"):
+            return ("DD file has no money measure (measures: %s)"
+                    % " | ".join(seen["measures"])[:400])
         return ("DD file has no %s column (columns: %s)"
                 % ("/".join(seen["missing"]), " | ".join(seen["columns"])[:300]))
     if not weeks:
@@ -165,8 +183,11 @@ def check_line(weeks: Dict[dt.date, Dict[str, float]], seen: Dict) -> str:
         reps = weeks[wk]
         parts.append("WE %s: %d reps $%s" % (wk.isoformat(), len(reps),
                                              format(sum(reps.values()), ",.2f")))
-    return "DD OK (%d rows, %d owners in file, money from %r) -- %s" % (
+    line = "DD OK (%d rows, %d owners in file, money from %r) -- %s" % (
         seen["rows"], seen["owners"], seen.get("total_col", ""), "; ".join(parts))
+    if seen.get("measures"):
+        line += " (measures: %s)" % " | ".join(seen["measures"])[:200]
+    return line
 
 
 # --- the browser half (proven on the owner's Mac, not here) ------------------
@@ -271,9 +292,9 @@ def check_due(state: Dict, now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if not (HOURS[0] <= now.hour < HOURS[1]):
         return False
-    if state.get("dd_ok_v3"):
+    if state.get("dd_ok_v4"):
         return False
-    return (time.time() - float(state.get("dd_tried_v3") or 0)) >= RETRY_HOURS * 3600
+    return (time.time() - float(state.get("dd_tried_v4") or 0)) >= RETRY_HOURS * 3600
 
 
 def run_check(log=print) -> int:
@@ -288,9 +309,9 @@ def run_check(log=print) -> int:
         log("pnl: %s %s" % (rec["office_key"], line))
         if line.startswith("busy"):
             continue                       # knocks had the browser; next tick
-        state["dd_tried_v3"] = time.time()
+        state["dd_tried_v4"] = time.time()
         if ok:
-            state["dd_ok_v3"] = dt.date.today().isoformat()
+            state["dd_ok_v4"] = dt.date.today().isoformat()
         R.report_fault("probe-pnl-dd", "%s: %s" % (_owner_name(rec), line),
                        detail=cols, office_key=rec["office_key"], log=log)
         filed += 1

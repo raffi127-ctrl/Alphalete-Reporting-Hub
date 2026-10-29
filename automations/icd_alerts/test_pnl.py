@@ -44,7 +44,7 @@ class DdByRep(unittest.TestCase):
         noon = dt.datetime(2026, 10, 29, 12)
         self.assertTrue(P.check_due({}, noon))
         self.assertFalse(P.check_due({}, dt.datetime(2026, 10, 29, 3)))
-        self.assertFalse(P.check_due({"dd_ok_v3": "2026-10-29"}, noon))
+        self.assertFalse(P.check_due({"dd_ok_v4": "2026-10-29"}, noon))
 
 
     def test_check_takes_the_first_sheet_with_data(self):
@@ -64,6 +64,23 @@ class DdByRep(unittest.TestCase):
                 "10/18/2026,Jairo Ruiz,A B (1),10\n10/18/2026,Jairo Ruiz,A B (1),5\n")
         weeks, seen = P.dd_by_rep(text, "Jairo Ruiz")
         self.assertEqual(weeks, {dt.date(2026, 10, 18): {"A B": 15.0}})
+
+    def test_long_format_keeps_only_the_icd_total_measure(self):
+        text = ("cl.DD Week,cl.ICD Owner Name,cl.ICD Rep Name,Measure Names,Measure Values\n"
+                "10/18/2026,Jairo Ruiz,A B (1),Total $ to ICD,\"1,000\"\n"
+                "10/18/2026,Jairo Ruiz,A B (1),Units,3\n"
+                "10/18/2026,Jairo Ruiz,,Total $ to ICD,50\n")
+        weeks, seen = P.dd_by_rep(text, "Jairo Ruiz")
+        self.assertEqual(weeks, {dt.date(2026, 10, 18): {"A B": 1000.0, P.NO_REP: 50.0}})
+        self.assertEqual(seen["measures"], ["Total $ to ICD", "Units"])
+        self.assertIn("money from 'Total $ to ICD'", P.check_line(weeks, seen))
+
+    def test_long_format_without_a_money_measure_lists_them(self):
+        text = ("cl.DD Week,cl.ICD Rep Name,Measure Names,Measure Values\n"
+                "10/18/2026,A B,Units,3\n")
+        weeks, seen = P.dd_by_rep(text, "x")
+        self.assertEqual(P.check_line(weeks, seen),
+                         "DD file has no money measure (measures: Units)")
 
     def test_money_column_found_by_hint(self):
         text = "cl.DD Week,cl.ICD Rep Name,cl.Some $ To ICD Paid\n10/18/2026,A B,7\n"
