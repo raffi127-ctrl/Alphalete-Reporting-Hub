@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-10-29 15:13 CDT_
+_Last sync: 2026-10-29 15:24 CDT_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 

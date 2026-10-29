@@ -2,9 +2,11 @@
 # Daily README publisher (launchd: com.alphalete.readmes-sync, 7:30am + 8:00pm).
 #
 # Gathers every operational README on this Mac into ~/alphalete-readmes-hub,
-# builds an index README.md, commits, and pushes to the PRIVATE repo
-#   https://github.com/Vantura/carlos-readmes
+# builds an index README.md, commits, and pushes to the `readmes` branch of
+#   https://github.com/raffi127-ctrl/Alphalete-Reporting-Hub/tree/readmes
 # so every device can read them. Runs after the 7pm README-updater tasks.
+# `readmes` is an orphan branch: it never merges into main and never reaches
+# Lucy 2's deploy. The repo is public (Carlos's call, 2026-10-29).
 #
 # Pure copy job — never edits a source file. Sources that go missing are
 # skipped (and logged), not treated as errors.
@@ -14,8 +16,8 @@
 set -u
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 HUB="$HOME/alphalete-readmes-hub"
-REMOTE="git@github.com:Vantura/carlos-readmes.git"
-BRANCH="main"
+REMOTE="git@github.com:raffi127-ctrl/Alphalete-Reporting-Hub.git"
+BRANCH="readmes"
 LOG="$HOME/Library/Logs/alphalete-readmes-sync.log"
 mkdir -p "$(dirname "$LOG")"
 exec >> "$LOG" 2>&1
