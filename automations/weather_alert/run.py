@@ -351,13 +351,17 @@ def _workspace_client(token_file: str):
                      ssl=ssl.create_default_context(cafile=certifi.where()))
 
 
-def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None) -> int:
+def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None,
+                 only: str = "") -> int:
     """One forecast per city, one post per office channel. Never raises: a
     room that fails is logged and the rest still get theirs. Returns how
-    many posts went out (or would have)."""
+    many posts went out (or would have). `only` limits it to one office key
+    (a late add whose room missed the 6am post, Joseph Delgado 2026-10-29)."""
     summaries = {"dfw": dfw_summary} if dfw_summary else {}
     sent, seen = 0, set()
     for key, city, chans, *rest in office_posts():
+        if only and key != only:
+            continue
         token_file = rest[0] if rest else ""
         label, lat, lon, tz = CITIES[city]
         if city not in summaries:
@@ -401,6 +405,9 @@ def main() -> int:
     ap.add_argument("--offices-only", action="store_true",
                     help="Post to the ECO office rooms only -- not #alphalete-sales. "
                          "For a mid-day rollout after the 6am post already went.")
+    ap.add_argument("--office", default="",
+                    help="with --offices-only: post to this ONE office key's room "
+                         "(e.g. joseph-delgado), not every office room again.")
     args = ap.parse_args()
 
     try:
@@ -420,7 +427,8 @@ def main() -> int:
 
     if args.offices_only:
         from automations.shared import slack_metrics_post as smp
-        n = post_offices(smp._client(), dry_run=False, dfw_summary=s)
+        n = post_offices(smp._client(), dry_run=False, dfw_summary=s,
+                         only=args.office)
         print(f"[weather] offices only: {n} room(s) posted", flush=True)
         return 0
     try:
