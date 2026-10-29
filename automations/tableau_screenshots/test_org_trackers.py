@@ -82,6 +82,8 @@ class OrgTrackerSelectionTest(unittest.TestCase):
         self.assertIn("order_tiered_bonus",
                       [p["id"] for p in pg.PAGES])  # …but it DOES exist / gets captured
 
+    @unittest.skipIf("a_players" in getattr(sp, "PAUSED_ORGS", {}),
+                     "#a-players-b2b paused (Carlos 2026-10-28)")
     def test_a_players_mirrors_alphalete_gp_exactly(self):
         """Carlos asked for #a-players-b2b to match #alphalete-gp-sales (7/23).
         They share _B2B_FIRST, so this pins that they can't drift — same header,

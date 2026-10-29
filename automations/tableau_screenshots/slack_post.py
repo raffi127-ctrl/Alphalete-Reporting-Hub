@@ -222,6 +222,11 @@ for _xorg, _xcids in EXTRA_ORG_CHANNELS.items():
 # metrics thread is separate (office_metrics) and still goes to Legacy.
 PAUSED_ORGS: dict[str, str] = {
     "isaiah": "moved to #everforward-sales (khalil's thread) — Francia 2026-10-02",
+    # Carlos 2026-10-28 ("on the a players slack lets stop all of these").
+    # Emptying its ORG_CHANNELS list was not enough: the org stayed in ORGS, so
+    # every run counted #a-players-b2b as a channel that didn't land and
+    # drop-tableau-screenshots opened each morning (10/29).
+    "a_players": "stopped — Carlos 2026-10-28, all scheduled A-Players posts off",
 }
 for _paused_key in PAUSED_ORGS:
     ORG_CHANNELS.pop(_paused_key, None)
