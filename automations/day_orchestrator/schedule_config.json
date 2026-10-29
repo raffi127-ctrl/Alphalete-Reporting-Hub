@@ -15768,6 +15768,26 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for jose. wired by hand 2026-10-28 (Megan: 'we're enrolling jose velasquez - start his dry run for metrics/trackers/weather'). Legacy Shore Marketing, Inc. (dba Legacy Shore Specialized Marketing), NDS wireless in Colten's South Shore org; Tableau NDS-SN owner 'JOSE VELASQUEZ[legacy shore marketing, inc.]' (wireless reps present in _repsearch); OwnerVille/AppStream 22434 (OV spelling 'José Velasquez'). Six NDS boards like colten. City ASSUMED Miami/Eastern (Jose Antonio Velasquez sells on Colten's Miami SaraPlus) -- confirm. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Jose Velasquez - Lucy Metrics' copied from the Master Metrics Templates, Editor alphaletereporting@ (Lucy 4). Scheduler OFF until the Lucy 4 dry run shows data on every board. | 2026-10-28 18:30 CT: ECO sign-up named #westwavesales (C0CCVTKTQFP; Lucy, Megan, Eve, Jose, Colten in it). Lucy 4 dry run rerun-2026-10-28-172321 green 8/8: knocks 14 reps (OV 22434 impersonation until his ECO relays), wireless churn 21 reps, 232 wireless order rows, pending 67, activation rate 18 reps, order log 116 rows / 13 rep tabs, cancels + disconnects proven zero. Channel set, scheduler ON. Sign-up form says America/Los_Angeles; Ray (super A) is 305 -- timezone/city still to confirm with Megan."
+  },
+  "nds_wireless_pull": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "NDS Wireless Resolution Report pull (Carlos 2026-10-29: the per-LINE feed that matches the DD — line statuses, Line Type New/Port, Plan incl Unlimited add-ons, ship/delivered dates). alphaletegp login on the NDS profile via rc sara.login (passcode self-clearing), Reporting Hub Wireless Dashboard, the 2026-09-05 probe's export. Caches output/nds_metrics/nds_wireless_<date>.html. Manual while the boards are being re-sourced onto it; schedule it before 6:30 once they are.",
+   "display_name": "NDS wireless per-line pull",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.nds_metrics.wireless_pull"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30,
+   "machine": "Lucy 2"
   }
  },
  "read_only_standalone": {
