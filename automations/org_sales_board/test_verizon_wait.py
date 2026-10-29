@@ -12,7 +12,7 @@ def at(h, m=0):
     return dt.datetime.combine(DAY, dt.time(h, m))
 
 
-class PendingTest(unittest.TestCase):
+class _Base(unittest.TestCase):
     def use(self, patcher):          # enterContext is 3.11+; runners are 3.9
         out = patcher.start()
         self.addCleanup(patcher.stop)
@@ -26,6 +26,8 @@ class PendingTest(unittest.TestCase):
         self.use(mock.patch.object(W, "top_off", top))
         return top
 
+
+class PendingTest(_Base):
     def test_filled_goes(self):
         self.patch(blank=False, pdf=False)
         self.assertIsNone(W.pending(DAY, at(8)))
@@ -56,6 +58,28 @@ class PendingTest(unittest.TestCase):
         self.use(mock.patch.object(
             W, "_blank_yesterday", mock.Mock(side_effect=RuntimeError("x"))))
         self.assertIsNone(W.pending(DAY, at(8)))
+
+
+class WaitingTest(_Base):
+    """The Slack post's read-only check: waits on the same rule, never writes."""
+
+    def test_blank_waits_without_top_off(self):
+        top = self.patch(blank=True, pdf=True)
+        self.assertIn("not on the board", W.waiting(DAY, at(9, 30)))
+        top.assert_not_called()
+
+    def test_filled_posts(self):
+        self.patch(blank=False, pdf=False)
+        self.assertIsNone(W.waiting(DAY, at(7, 5)))
+
+    def test_past_deadline_posts_anyway(self):
+        self.patch(blank=True, pdf=False)
+        self.assertIsNone(W.waiting(DAY, at(9, 45)))
+
+    def test_read_error_posts(self):
+        self.use(mock.patch.object(
+            W, "_blank_yesterday", mock.Mock(side_effect=RuntimeError("x"))))
+        self.assertIsNone(W.waiting(DAY, at(8)))
 
 
 if __name__ == "__main__":

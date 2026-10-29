@@ -219,6 +219,19 @@ def main(argv=None) -> int:
     yday = today - dt.timedelta(days=1)
     day_key = today.isoformat()
 
+    # Wait for Verizon like the email does (Eve 2026-10-29): the 9:31am PDF is
+    # its only source, so a 07:05 post always showed Nico's yesterday blank and
+    # went out ~2.5h before the email that had it. Hold quietly until the
+    # email's check has topped Verizon off, or 9:45 CT; the 5-min slots in the
+    # plist then post it within minutes of the email. Checked BEFORE the JE
+    # refresh so a waiting pass costs no pull.
+    if args.post and not args.force and not _already_posted(day_key):
+        from automations.org_sales_board import verizon_wait
+        why = verizon_wait.waiting(today)
+        if why:
+            print(f"WAITING — {why}. (Next pass retries.)")
+            return 75
+
     # Refresh JUST Retail JE right before we build + post the image, so a
     # day-behind JE that published after the 4am fill isn't left blank in the
     # Slack post (Eve 2026-07-23). Only when we're actually going to post and

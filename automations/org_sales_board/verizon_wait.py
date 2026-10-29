@@ -81,6 +81,24 @@ def pending(day: dt.date, now: Optional[dt.datetime] = None) -> Optional[str]:
         return None
 
 
+def waiting(day: dt.date, now: Optional[dt.datetime] = None) -> Optional[str]:
+    """READ-ONLY twin of pending() for the Slack post (Eve 2026-10-29: "que
+    salgan juntas con verizon completo"). Same rule — yesterday's Verizon blank
+    and before DEADLINE means wait — but it never tops off: the email's 5-min
+    check (pending) is the one that writes, so the two never fill the section
+    at the same time. Once it has, the column is filled and this lets the post go."""
+    now = now or dt.datetime.now(_central()).replace(tzinfo=None)
+    if day != now.date() or now.time() >= DEADLINE:
+        return None
+    try:
+        if _blank_yesterday(day):
+            return (f"Verizon not on the board yet (posts anyway at "
+                    f"{DEADLINE:%H:%M} CT)")
+    except Exception as e:  # noqa: BLE001 — never cost the post over this
+        print(f"  verizon wait: skipped ({type(e).__name__}: {e})", flush=True)
+    return None
+
+
 def _central():
     from automations.shared import weekend_release as wr
     return wr.CENTRAL
