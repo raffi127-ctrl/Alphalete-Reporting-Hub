@@ -29,6 +29,62 @@ from pathlib import Path
 LOOKBACK_DAYS = 60
 
 
+def dd_join(log=print) -> int:
+    """Join the WE 10.25 DD (Scoutly RAW tab, NDS Wireless campaign) to the
+    SaraPlus SOH cache by customer — Carlos 2026-10-28: "check through sara
+    plus and figure it out. doesnt make sense that its this behind." Shows,
+    per PAID customer: present in SaraPlus at all? status? active date?"""
+    import collections
+    import csv as _csv
+    import io
+    from automations.nds_metrics.run import OUT_DIR, _parse_date
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key("1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY")
+    raw = next(w for w in sh.worksheets() if w.title.strip().lower() == "raw")
+    vals = raw.get_all_values()
+    ix = {h: i for i, h in enumerate(vals[0])}
+    dd = collections.defaultdict(float)
+    for r in vals[1:]:
+        if r and r[0].strip() == "10.25" and "NDS" in r[ix["Campaign"]].upper():
+            try:
+                amt = float(str(r[ix["Total $ to ICD"]]).replace("$", "")
+                            .replace(",", "") or 0)
+            except ValueError:
+                amt = 0.0
+            dd[(r[ix["Customer Name"]].strip().upper() or "(blank)",
+                r[ix["Rep Name"]].strip())] += amt
+    cache = sorted(OUT_DIR.glob("nds_soh_*.csv"))[-1]
+    rows = list(_csv.reader(io.StringIO(
+        cache.read_bytes().decode("utf-8-sig", errors="replace"))))
+    hx = {h.strip(): i for i, h in enumerate(rows[0])}
+    def cell(r, c):
+        i = hx.get(c)
+        return str(r[i]).strip() if i is not None and len(r) > i else ""
+    def toks(n):
+        return {t for t in n.upper().replace(",", " ").split() if len(t) > 1}
+    soh = [(toks(cell(r, "Customer Name")), r) for r in rows[1:]]
+    log(f"[ddjoin] {len(dd)} paid customer(s) on the 10.25 DD vs "
+        f"{len(soh)} SOH row(s) in {cache.name}")
+    found = missing = 0
+    for (cust, rep), amt in sorted(dd.items(), key=lambda x: -x[1]):
+        ct = toks(cust)
+        hit = next((r for t, r in soh
+                    if ct and (ct <= t or t <= ct)), None)
+        if hit is None:
+            missing += 1
+            log(f"DDJOIN MISSING  {cust[:24]:24} {rep[:20]:20} ${amt:>7,.0f}")
+        else:
+            found += 1
+            log(f"DDJOIN present  {cust[:24]:24} {rep[:20]:20} ${amt:>7,.0f}"
+                f" | status={cell(hit, 'Wireless Status') or '?':10}"
+                f" | act={cell(hit, 'Wireless Active Date') or '-':10}"
+                f" | ord={cell(hit, 'Order Date') or '-'}"
+                f" | lines={cell(hit, 'Wireless Line Count') or '?'}")
+    log(f"[ddjoin] present {found}, MISSING {missing}")
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     from automations.office_metrics import nds_orderlog as NO
     from automations.total_knocks import guests
@@ -136,5 +192,13 @@ def main(argv=None) -> int:
     return 0
 
 
+def _entry(argv=None):
+    import sys as _sys
+    args = list(argv if argv is not None else _sys.argv[1:])
+    if "--dd-join" in args:
+        return dd_join()
+    return main(argv)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(_entry())
