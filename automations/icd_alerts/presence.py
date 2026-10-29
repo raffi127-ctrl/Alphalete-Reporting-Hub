@@ -37,6 +37,8 @@ import platform
 import subprocess
 from typing import Optional
 
+from automations.icd_alerts import config as C
+
 CONSOLE = "/dev/console"
 
 
@@ -80,6 +82,42 @@ def screen_locked() -> bool:
 
 def somebody_is_there() -> bool:
     return bool(console_user()) and not screen_locked()
+
+
+def lucy_user() -> str:
+    """The Mac account Lucy runs as -- the one whose folder holds her profiles.
+
+    Read from who OWNS the app folder, not from who this process is: the boot
+    job may run as root, and root's answer would be "root".
+    """
+    try:
+        return C.APP_DIR.owner()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import getpass
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def owner_is_there() -> bool:
+    """Somebody is at the screen AND it is Lucy's own account.
+
+    THE GUEST ACCOUNT (Eve, 2026-10-29). Eveliz and Luke keep their own login
+    and a second one for their reps, and the Mac goes back and forth between
+    them. Lucy keeps running under the owner's account either way -- but a
+    sign-in window opened while a rep is on the other account lands on a
+    screen nobody is looking at, or in front of a rep who never gets the
+    emailed code. Luke 2026-10-28: six windows in a row, every one "closed or
+    not signed in". Their profile lives in the owner's folder, so only the
+    owner's own session can use it.
+    """
+    who = console_user()
+    if not who or screen_locked():
+        return False
+    mine = lucy_user()
+    return not mine or who == mine
 
 
 def user_id(user: Optional[str] = None) -> str:

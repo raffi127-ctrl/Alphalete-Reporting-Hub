@@ -112,7 +112,9 @@ def offer(system: str, log=print) -> bool:
     spec = SYSTEMS.get(system)
     if not spec:
         return False
-    if not PR.somebody_is_there():
+    if not PR.owner_is_there():
+        # Nobody there, or a rep on the other Mac account: a window now is one
+        # nobody who has the code will see. The DM still goes out.
         return False
     if recently_offered(system):
         return False
