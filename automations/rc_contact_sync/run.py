@@ -398,12 +398,13 @@ def main(argv=None) -> int:
                          "outbound wrap-up bodies sent to the guest "
                          "customers in the window")
     ap.add_argument("--since", default=None, metavar="YYYY-MM-DD",
-                    help="BACKFILL the guest reps' sales under Raf's code "
-                         "from this date through yesterday (or the "
-                         "positional date): contacts + one wrap-up-text "
-                         "post for the whole range. No SaraPlus login — "
-                         "reads the Lucy 1 'Raf Guest Orders' handoff, so "
-                         "run raf_guest_orders on Lucy 1 first.")
+                    help="BACKFILL the crew's NDS sales (Carlos's own "
+                         "SaraPlus code, since 2026-10-27) from this date "
+                         "through yesterday (or the positional date): "
+                         "contacts + one wrap-up-text post for the whole "
+                         "range. No SaraPlus login here — reads the NDS "
+                         "wireless per-line feed cached by nds_wireless_pull "
+                         "on Lucy 2, so that pull must have run first.")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser (debugging)")
     args = ap.parse_args(argv)
@@ -430,7 +431,7 @@ def main(argv=None) -> int:
             customers = customers[:args.limit]
         return run(until, dry_run=not args.live, skip_slack=args.no_slack,
                    customers=customers, sms_from=since,
-                   prefix="Sales under Raf's SaraPlus code, %d/%d – %d/%d:"
+                   prefix="NDS sales (Carlos's SaraPlus code), %d/%d – %d/%d:"
                           % (since.month, since.day, until.month, until.day))
     return run(day, dry_run=not args.live, limit=args.limit,
                headless=not args.headed, skip_slack=args.no_slack)
