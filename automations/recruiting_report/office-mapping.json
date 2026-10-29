@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 56,
+  "confirmed_count": 55,
   "needs_review_count": 0,
-  "skip_count": 36,
+  "skip_count": 37,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -176,13 +176,6 @@
       "office_id": "20490",
       "as_owner": "Sahil Multani",
       "as_company": "M Coast, Inc",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Brian Tran",
-      "office_id": "23082",
-      "as_owner": "Brian Tran",
-      "as_company": "Sky Nova, Inc.",
       "confidence": 1.0
     },
     {
@@ -431,6 +424,12 @@
   ],
   "needs_review": [],
   "skip": [
+    {
+      "sheet_tab": "Brian Tran",
+      "office_id": "23082",
+      "reason": "oficina cerrada — Sky Nova, Inc. shut down (Raf, Slack 2026-10-29: \"He shut down! Marcellus moved to Cleveland and is taking over.\"). AppStream la perdió el 10/28 a la tarde. Tab BORRADA 2026-10-29 por la regla de Rafael (9/14); backup en output/focus_report_deleted_tabs_2026-10-29/ (Eve, 2026-10-29)",
+      "retired": "2026-10-29"
+    },
     {
       "sheet_tab": "Kimberly Rodriguez",
       "office_id": "23576",

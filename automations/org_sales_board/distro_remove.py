@@ -188,6 +188,14 @@ REMOVALS: dict = {
         ("Kimberly Rodriguez", "kimberlyatt458@gmail.com"),
         # 2026-10-23 (Eve): Ja Mosley, oficina cerrada — ver "Chan's Captainship".
         ("Ja Mosley", "jamosleybiz@gmail.com"),
+        # 2026-10-29 (Raf): Brian Tran, oficina cerrada — ver "Sahil's Captainship".
+        ("Brian Tran", "ttran.brian@gmail.com"),
+    ],
+    # 2026-10-29 (Raf): Brian Tran, oficina 23082 (Sky Nova) cerrada — "He shut
+    # down! Marcellus moved to Cleveland and is taking over." Su mail tambien
+    # salio de captainship_drafts.config.RECIPIENTS["sahil"].
+    "Sahil's Captainship": [
+        ("Brian Tran", "ttran.brian@gmail.com"),
     ],
     # 2026-08-24 (Eve): Lizette Ruiz comes off Eveliz's captainship only — same
     # shape as Milan Godbolt below. Her address also left

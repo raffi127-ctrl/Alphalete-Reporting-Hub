@@ -110,6 +110,7 @@ EXCLUDE: set = {
     "kimberly rodriguez",   # 2026-09-29 (Chan) — oficina cerrada, two-week zero rule
     "brandon stallkamp",    # 2026-10-06 (ALPHALETE ORG Retail JE)
     "ja mosley",            # 2026-10-23 (Chan) — oficina cerrada, two-week zero rule
+    "brian tran",           # 2026-10-29 (Sahil) — oficina cerrada (Raf)
 }
 
 

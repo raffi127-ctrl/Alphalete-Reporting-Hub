@@ -133,6 +133,10 @@ INACTIVE_ICDS: dict[str, str] = {
     # off shared/captainship_pins.ADOPTED, so his rows stop filling. Rows stay
     # for the history.
     "ja mosley": "office 23882 closed 2026-10-23, off Chan's captainship (Eve)",
+    # Sahil's Team. Office 23082 (Sky Nova) CLOSED — Raf 2026-10-29: "He shut
+    # down! Marcellus moved to Cleveland and is taking over." Off the board
+    # (captain_gate.EXCLUDE["Sahil"]). Rows stay for the history.
+    "brian tran": "office 23082 closed 2026-10-29, off Sahil's captainship (Raf)",
     # Tony's Team. Sells wireless only, so his New Internet rates ran out on
     # their own: 0-30 "No Data" 2026-09-11, then out of the Metrics view from
     # 9/12. He was kept OFF this list on purpose while he was still Tony's

@@ -88,7 +88,10 @@ EXCLUDE: Dict[str, tuple] = {
     # ~June. Zero for WE 08.02 / 08.09 / 08.16, and on 2026-08-20 he dropped out
     # of the Metrics view entirely (confirmed live 8/21: Sahil's Team returns
     # only Andre Burton Jr., Brian Tran, Marcellus Butler, Sahil Multani).
-    "Sahil":  ("Jeremiah Minor",),           # 2026-08-21
+    # 2026-10-29 (Raf): Brian Tran, oficina 23082 (Sky Nova) cerrada —
+    # "He shut down! Marcellus moved to Cleveland and is taking over."
+    "Sahil":  ("Jeremiah Minor",             # 2026-08-21
+               "Brian Tran"),                # 2026-10-29
     # Alex Touati, 2026-09-03: he showed up in BOTH Tony's blocks and Pat's,
     # so the live week counted him twice. Eve settled it by seniority — the
     # pre-roll snapshot of 2026-09-01 has no row for him under Tony, Pat's

@@ -90,5 +90,8 @@ EXCLUDE = (
     # --- oficina cerrada, 2026-10-23 (Eve). Oficina 23882; cero en WE 10.18 y
     # WE 10.11, ult. venta WE 10.04.
     "Ja Mosley",            # Chan's captainship — Fiber New Internet + All Units
+    # --- oficina cerrada, 2026-10-29 (Raf). Oficina 23082 (Sky Nova); Marcellus
+    # Butler toma su gente.
+    "Brian Tran",           # Sahil's captainship
 )
 

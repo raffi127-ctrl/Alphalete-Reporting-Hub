@@ -73,7 +73,7 @@ OWNER_EMAILS: Dict[str, str] = {
     "Tony Chavez":         "tonycv1920@gmail.com",
     # sahil
     "Andre Burton":        "andre082702@gmail.com",
-    "Brian Tran":          "ttran.brian@gmail.com",
+    # Brian Tran (ttran.brian@gmail.com) OUT 2026-10-29: office 23082 closed (Raf).
     "Marcellus Butler":    "marcellusbutlerjr@gmail.com",
     "Sahil Multani":       "multani.business@gmail.com",
     # jess

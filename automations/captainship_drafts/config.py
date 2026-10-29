@@ -660,8 +660,13 @@ RECIPIENTS: dict = {
         # receiving the report; only this backup was behind. Synced FROM the
         # group, which is the safe direction — it can't revive anyone removed on
         # purpose (see Jeremiah above).
+        #
+        # Brian Tran (ttran.brian@gmail.com) sacado el 2026-10-29: su oficina
+        # 23082 (Sky Nova) cerro — Raf: "He shut down! Marcellus moved to
+        # Cleveland and is taking over." Sale tambien del grupo de Contactos;
+        # aca para que seed_groups no lo reponga.
         "andre082702@gmail.com",
-        "ttran.brian@gmail.com", "dylanjtwaddle@gmail.com",
+        "dylanjtwaddle@gmail.com",
         "marcellusbutlerjr@gmail.com",
         "maudmiller4@gmail.com", "raffi127@gmail.com",
         "multani.business@gmail.com",
