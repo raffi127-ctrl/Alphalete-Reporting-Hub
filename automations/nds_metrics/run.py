@@ -1633,9 +1633,19 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="re-post sections already in today's thread state "
                          "(replace a bad one); pair with --only")
+    ap.add_argument("--tab", action="store_true",
+                    help="refresh the 'NDS Order Log' tab on the Vantura board from "
+                         "today's wireless feed; alone = ONLY that, no pull, no post")
     a = ap.parse_args(argv)
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if a.tab and not (a.post or a.dm or a.only):
+        # The tab by itself (Carlos 2026-10-29): today's cached feed -> tab.
+        from automations.nds_metrics import order_log_tab
+        order_log_tab.refresh(today)
+        print("=== done ===", flush=True)
+        return 0
 
     if a.delete_today:
         delete_today(today)
@@ -1664,6 +1674,17 @@ def main(argv=None) -> int:
         dm_previews(artifacts, a.dm)
     if a.post:
         post_thread(artifacts, today, force=a.force)
+    if a.post or a.tab:
+        # Every morning after the thread (Carlos 2026-10-29): the same lines the
+        # order-log workbook carries, merged into the "NDS Order Log" tab on the
+        # Vantura Master Sales Board. Its own try: a tab problem never sinks
+        # the thread.
+        try:
+            from automations.nds_metrics import order_log_tab
+            order_log_tab.refresh(today)
+        except Exception as e:  # noqa: BLE001
+            print(f"[nds] NDS Order Log tab FAILED (thread unaffected): "
+                  f"{type(e).__name__}: {e}")
     if not a.dm and not a.post:
         print("[nds] dry-run — --dm for previews, --post for the thread")
     print("=== done ===", flush=True)
