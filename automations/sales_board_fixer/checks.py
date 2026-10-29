@@ -56,6 +56,7 @@ KIND_LABEL = {
     "cf_strike_stray": "tachado de Car Rides pegado sobre los autos (tacha nombres ya puestos)",
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
+    "cf_row_shift": "color de estado que pinta la fila de al lado, no la del rep",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
     "lineup_short": "Line Up: la lista de nombres no termina en la fila arriba de TOTALS del Sales Board",
     "lineup_old_week": "Line Up: la lista de nombres lee una semana vieja, no el board en uso",
@@ -851,7 +852,43 @@ def check_conditional(tab: str, sheet_id: int, rules: List[dict], ncols: int,
                                     {"sheetId": sheet_id, "index": i}}))
 
     if block:
+        out += _row_shifts(tab, sheet_id, rules, block[0], dead_idx)
         out += _short_and_fragmented(tab, rules, block, {d[0] for d in dead})
+    return out
+
+
+# =BL5="1st Wk" -- one cell (column may be $-fixed, row relative) against a word
+STATUS_EQ = re.compile(r'^=\s*(\$?)([A-Z]{1,3})(\d+)\s*=\s*("[^"]*")\s*$', re.I)
+
+
+def _row_shifts(tab, sheet_id, rules, first, dead) -> List[Finding]:
+    """A status color ("paint the name by Field Status") whose cell sits one
+    row off from where the rule starts: each rep is painted by the NEXT/previous
+    rep's status. Jairo, 2026-10-29: "every time I select a week it transfers
+    the color to the row above" -- B4:B142 read =BL5="1st Wk". Usually left by
+    a row inserted/deleted at the top of the block. Only rules that start on
+    the first rep row, so a rule meant to look one row away elsewhere stays."""
+    out = []
+    for i, rule in enumerate(rules):
+        cond = ((rule.get("booleanRule") or {}).get("condition") or {})
+        if i in dead or cond.get("type") != "CUSTOM_FORMULA":
+            continue
+        text = ((cond.get("values") or [{}])[0]).get("userEnteredValue", "")
+        m = STATUS_EQ.match(text)
+        rg = (rule.get("ranges") or [{}])[0]
+        start = rg.get("startRowIndex", 0) + 1
+        if not m or start != first or abs(int(m.group(3)) - start) != 1:
+            continue
+        fixed = "=%s%s%d=%s" % (m.group(1), m.group(2).upper(), start, m.group(4))
+        new = dict(rule)
+        new["booleanRule"] = dict(rule["booleanRule"], condition=dict(
+            cond, values=[{"userEnteredValue": fixed}]))
+        out.append(Finding(
+            "cf_row_shift", tab, "regla %d" % i,
+            "%s: %s en %s" % (KIND_LABEL["cf_row_shift"], text, _ranges_a1(rule)),
+            before=text, after=fixed,
+            request={"updateConditionalFormatRule":
+                     {"sheetId": sheet_id, "index": i, "rule": new}}))
     return out
 
 

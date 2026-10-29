@@ -176,6 +176,20 @@ class Conditional(unittest.TestCase):
     def test_literal_text_is_not_a_column(self):
         self.assertFalse(K.check_conditional("t", 7, [self.rule('=$B4="ZZZ1"')], ncols=10))
 
+    def test_status_color_one_row_off_is_reanchored(self):
+        # Jairo 10/29: names B4:B142 painted by =BL5="1st Wk" -> the row above
+        shifted = self.rule('=BL5="1st Wk"', rows=(3, 142), cols=(1, 2))
+        right = self.rule('=AZ4="2nd Wk"', rows=(3, 142), cols=(1, 2), color=0.5)
+        below = self.rule('=BL5="RT"', rows=(40, 60), cols=(1, 2), color=0.3)  # not on row 4
+        found = K.check_conditional("t", 7, [shifted, right, below], ncols=70, block=(4, 142))
+        self.assertEqual([(y.kind, y.where, y.after) for y in found],
+                         [("cf_row_shift", "regla 0", '=BL4="1st Wk"')])
+        new = found[0].request["updateConditionalFormatRule"]["rule"]
+        self.assertEqual(new["ranges"], shifted["ranges"])
+        self.assertEqual(new["booleanRule"]["format"], shifted["booleanRule"]["format"])
+        # without the rep block (Line Up / Stations) nothing is guessed
+        self.assertFalse(K.check_conditional("t", 7, [shifted], ncols=70))
+
 
 def owner_board(n_reps, blanks=6):
     """An owner's All-in-One board: names in col B, 'TUE' banner, 'TOTAL'

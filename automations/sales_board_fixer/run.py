@@ -736,7 +736,7 @@ def lane_tabs(sh, only_for=None) -> list:
 # past the cap, which would have stopped every fix on her board.
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
-               "cf_strike_stray", "lineup_short", "lineup_old_week",
+               "cf_strike_stray", "cf_row_shift", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
 
