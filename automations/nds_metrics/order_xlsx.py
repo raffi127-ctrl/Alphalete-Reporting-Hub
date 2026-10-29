@@ -21,20 +21,25 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-GREEN, RED, YELLOW = "C6EFCE", "FFC7CE", "FFF2CC"
-DEAD = {"disconnected", "cancelled", "canceled"}
+# Same palette + status logic as the Alphalete sales ATT log (Carlos
+# 2026-10-29: "we should make it like that one is made") — att_order_log
+# colors.py is the shared authority, so a status tweak lands in both.
+HEADER_BG, WEEK_BG = "434343", "2563EB"
+DEAD = {"disconnected", "cancelled", "canceled", "returned"}
 HDR = ["Rep", "Customer", "Order Date", "DSI #", "Wireless Order #",
        "BAN", "Line", "Type", "Device", "Plan", "Line Status",
        "Ship Date", "Delivered", "Port Status"]
 
 
 def _fill_for(status: str):
-    s = (status or "").lower()
+    from automations.att_order_log import colors as attc
+    s = (status or "").strip().lower()
     if s == "active":
-        return GREEN
-    if s in DEAD:
-        return RED
-    return YELLOW if s else None
+        return "C6EFCE"                       # his Posted green
+    hexfill = attc.fill_for(status or "")
+    if hexfill:
+        return hexfill.lstrip("#")
+    return "FFF2CC" if s else None            # unmapped in-flight = yellow
 
 
 def _nice(name: str) -> str:
@@ -52,26 +57,103 @@ def _row_of(l: dict):
             l.get("delivered", ""), l.get("port_status", "")]
 
 
-def _write_lines(sh, lines, drop_rep=False):
-    hdr = HDR[1:] if drop_rep else HDR
-    sh.append(hdr)
-    for c in sh[1]:
-        c.font = Font(bold=True)
-    for l in lines:
-        row = _row_of(l)
-        if drop_rep:
-            row = row[1:]
-        sh.append(row)
-        fill = _fill_for(l.get("line_status", ""))
+def _thin():
+    from openpyxl.styles import Border, Side
+    side = Side(style="thin", color="D9D9D9")
+    return Border(left=side, right=side, top=side, bottom=side)
+
+
+def _header_row(sh, row, labels):
+    for ci, label in enumerate(labels, start=1):
+        c = sh.cell(row=row, column=ci, value=label)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor=HEADER_BG)
+        c.border = _thin()
+
+
+def _banner(sh, row, text, span):
+    from openpyxl.utils import get_column_letter as gcl
+    sh.merge_cells(f"A{row}:{gcl(span)}{row}")
+    c = sh.cell(row=row, column=1, value=text)
+    c.font = Font(bold=True, color="FFFFFF")
+    c.fill = PatternFill("solid", fgColor=WEEK_BG)
+
+
+def _data_row(sh, row, l, labels, drop_rep):
+    vals = _row_of(l)
+    if drop_rep:
+        vals = vals[1:]
+    fill = _fill_for(l.get("line_status", ""))
+    for ci, v in enumerate(vals[:len(labels)], start=1):
+        c = sh.cell(row=row, column=ci, value=v)
+        c.border = _thin()
         if fill:
-            for cell in sh[sh.max_row]:
-                cell.fill = PatternFill("solid", fgColor=fill)
-    for ci, label in enumerate(hdr, start=1):
-        w = max([len(str(label))] +
+            c.fill = PatternFill("solid", fgColor=fill)
+
+
+def _act_week(l):
+    """Saturday-start week of the line's delivered date (the activation
+    proxy until the daily snapshots carry the real flip day); None =
+    not yet activated."""
+    if (l.get("line_status") or "").strip().lower() != "active":
+        return None
+    d = l.get("delivered") or ""
+    try:
+        dd = dt.datetime.strptime(d, "%m/%d/%Y").date()
+    except ValueError:
+        return None
+    return dd - dt.timedelta(days=(dd.weekday() - 5) % 7)
+
+
+def _autosize(sh, labels):
+    for ci in range(1, len(labels) + 1):
+        w = max([len(str(labels[ci - 1]))] +
                 [len(str(sh.cell(row=r, column=ci).value or ""))
-                 for r in range(2, sh.max_row + 1)])
+                 for r in range(1, sh.max_row + 1)
+                 if not isinstance(sh.cell(row=r, column=ci),
+                                   type(None))])
         sh.column_dimensions[get_column_letter(ci)].width = min(w + 2, 42)
+
+
+def _write_flat(sh, lines, drop_rep=False):
+    labels = HDR[1:] if drop_rep else HDR
+    _header_row(sh, 1, labels)
+    r = 2
+    for l in lines:
+        _data_row(sh, r, l, labels, drop_rep)
+        r += 1
+    _autosize(sh, labels)
     sh.freeze_panes = "A2"
+
+
+def _write_rep_tab(sh, lines):
+    """The ATT-log layout: a blue banner per activated week (newest
+    first), then Not Yet Activated, dark headers under each banner."""
+    labels = HDR[1:]
+    groups = collections.defaultdict(list)
+    for l in lines:
+        groups[_act_week(l)].append(l)
+    weeks = sorted((w for w in groups if w), reverse=True)
+    row = 1
+    for wk in weeks + ([None] if None in groups else []):
+        g = groups[wk]
+        if wk:
+            text = (f"Activated Week {wk.strftime('%m/%d')} - "
+                    f"{(wk + dt.timedelta(days=6)).strftime('%m/%d/%Y')}"
+                    f"  •  {len(g)} line{'' if len(g) == 1 else 's'}")
+        else:
+            text = (f"Not Yet Activated  •  {len(g)} "
+                    f"line{'' if len(g) == 1 else 's'}")
+        _banner(sh, row, text, len(labels))
+        row += 1
+        _header_row(sh, row, labels)
+        row += 1
+        for l in g:
+            _data_row(sh, row, l, labels, drop_rep=True)
+            row += 1
+        row += 2
+    _autosize(sh, labels)
+    sh.freeze_panes = "A3"
 
 
 def _safe_title(name, used):
@@ -143,26 +225,26 @@ def build(orders, lines, today: dt.date, out_dir: Path, log=print) -> Path:
     lines = sorted(lines, key=lambda l: (_nice(l.get("rep", "")),
                                          l.get("order_date", ""),
                                          l.get("dsi", "")))
-    # 1. All Reps
+    # 1. All Reps — flat, sorted by rep (Megan's rule on the ATT log)
     sh = wb.active
     sh.title = _safe_title("All Reps", used)
-    _write_lines(sh, lines)
-    # 2. Pending by Rep
+    _write_flat(sh, lines)
+    # 2. Pending by Rep — in-flight only
     pend = [l for l in lines
             if (l.get("line_status") or "").lower() not in
             ({"active"} | DEAD)]
-    _write_lines(wb.create_sheet(_safe_title("Pending by Rep", used)), pend)
+    _write_flat(wb.create_sheet(_safe_title("Pending by Rep", used)), pend)
     # 3. Paycheck by Week (from the DD)
     _paycheck_tab(wb, used, log)
-    # 4. one tab per rep
+    # 4. one tab per rep, week-banner layout like the ATT log
     by_rep = collections.defaultdict(list)
     for l in lines:
         r = _nice(l.get("rep", ""))
         if r:
             by_rep[r].append(l)
     for rep in sorted(by_rep):
-        _write_lines(wb.create_sheet(_safe_title(rep, used)),
-                     by_rep[rep], drop_rep=True)
+        _write_rep_tab(wb.create_sheet(_safe_title(rep, used)),
+                       by_rep[rep])
     wb.save(out)
     log(f"[ndsx] order log workbook: {len(lines)} line(s), "
         f"{len(by_rep)} rep tab(s), pending {len(pend)}")
