@@ -856,7 +856,7 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
                  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
                  let n;
                  while ((n = walk.nextNode())) {
-                   if (!/load\s*records/i.test(n.textContent || '')) continue;
+                   if (!/load\\s*records/i.test(n.textContent || '')) continue;
                    let el = n.parentElement, chain = [];
                    for (let d = 0; el && d < 5; d++, el = el.parentElement) {
                      const a = Array.from(el.attributes || []).filter(x => /^(id|class|href|onclick|onmousedown|data-|role)/i.test(x.name))
@@ -883,7 +883,7 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
                  if (!g) return '(no grid)';
                  const c = g.cloneNode(true);
                  c.querySelectorAll('script,style').forEach(x => x.remove());
-                 return c.outerHTML.replace(/\s+/g, ' ');
+                 return c.outerHTML.replace(/\\s+/g, ' ');
                }""")[:2200])
     except Exception as e:  # noqa: BLE001
         out.append("sales grid html: ? (%s)" % type(e).__name__)

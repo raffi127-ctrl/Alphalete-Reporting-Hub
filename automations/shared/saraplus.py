@@ -679,7 +679,7 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
              const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
              let n, did = 0;
              while ((n = walk.nextNode())) {
-               if (!/load\s*records/i.test(n.textContent || '')) continue;
+               if (!/load\\s*records/i.test(n.textContent || '')) continue;
                let el = n.parentElement;
                for (let d = 0; el && d < 4; d++, el = el.parentElement) { el.click(); did++; }
              }
