@@ -623,7 +623,12 @@ def login_until_it_works(attempts=3):
             if verdict == "stuck":
                 say("      the hidden SaraPlus check could not finish -- opening")
                 say("      Lucy's SaraPlus window so you can see what it needs.")
-            if clear_passcode_wall():
+            cleared = clear_passcode_wall()
+            if verdict == "wall":
+                # THE OWNER IS HERE NOW, which is the whole reason to ask now
+                # (Megan 2026-10-29). Done once, Lucy types every later code.
+                offer_code_forward()
+            if cleared:
                 return True
             say("      Not confirmed yet. Finish it any time with the setup")
             say("      link -- it opens the same window. Your password is saved.")
@@ -1015,6 +1020,19 @@ def clear_passcode_wall() -> bool:
         [str(venv_python()), "-m", "automations.icd_alerts.sara_signin"],
         cwd=str(APP_DIR))
     return proc.returncode == 0
+
+
+def offer_code_forward() -> None:
+    """SaraPlus wants a code from this account, so it will again every few
+    days. Walk the owner through forwarding those mails to us, so Lucy can
+    type them herself from now on (icd_alerts/code_forward). Never raises."""
+    try:
+        from automations.icd_alerts import code_forward
+        say("      Setting up SaraPlus code forwarding, so Lucy can enter")
+        say("      those codes herself from now on.")
+        say("      code forwarding: %s" % code_forward.walk_through(ask, say))
+    except Exception as e:  # noqa: BLE001 -- a courtesy on top of the install
+        say("      code forwarding skipped: %s" % type(e).__name__)
 
 
 # --- scheduling -------------------------------------------------------------

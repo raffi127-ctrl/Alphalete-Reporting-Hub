@@ -2929,7 +2929,7 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
             # A CODE REQUEST is closed by code_answer when it is answered or
             # runs out -- marking it here would hide it from the one step
             # that has to read it.
-            if f["stage"] == "probe-code-request":
+            if f["stage"] in ("probe-code-request", "probe-code-forward"):
                 continue
             log("PROBE  %-10s %s -- filed, not posted" % (f["office"], f["stage"]))
             try:
@@ -4108,6 +4108,7 @@ def main(argv=None) -> int:
                 try:
                     from automations.icd_alerts import code_answer
                     code_answer.answer_requests(send=args.send)
+                    code_answer.record_forwards(send=args.send)
                 except Exception as e:  # noqa: BLE001 — never cost the alerts
                     print("could not answer code requests: %s: %s"
                           % (type(e).__name__, str(e)[:100]))

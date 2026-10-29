@@ -805,6 +805,42 @@ def poll_code(since: dt.datetime, office_key: str = "") -> Dict[str, str]:
     status = str(out.get("status") or CODE_WAITING)
     return {"status": status, "code": str(out.get("code") or "")}
 
+
+def report_forward(address: str, office_key: str = "", log=None) -> bool:
+    """Send home the address SaraPlus mails this office's codes to.
+
+    NOT report_fault, ON PURPOSE: that scrubs every email address, and this
+    message is nothing but one -- typed by the owner during setup so Lucy 1
+    can match their forwarded codes (code_forward, code_answer). The fault
+    road is still the one used, so no relay redeploy is needed for it. Never
+    raises."""
+    from automations.icd_alerts import code_answer as CA
+    try:
+        rec = _endpoint(office_key)
+    except Exception:  # noqa: BLE001 -- not enrolled yet
+        return False
+    try:
+        body = {
+            "office_key": rec["office_key"],
+            "key": rec["relay_key"],
+            "fault": {
+                "day": C.today().isoformat(),
+                "stage": CA.FORWARD_STAGE,
+                "summary": CA.forward_summary(address),
+                "detail": "",
+                "agent": AGENT_VERSION,
+                "platform": "%s %s" % (platform.system(), platform.release()),
+                "python": platform.python_version(),
+            },
+            "local_time": dt.datetime.now().isoformat(timespec="seconds"),
+        }
+        raw = _post(rec["relay_url"], json.dumps(body).encode("utf-8"))
+        return bool(json.loads(raw).get("ok"))
+    except Exception as e:  # noqa: BLE001
+        if log:
+            log("could not send the code-forward address: %s" % type(e).__name__)
+        return False
+
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          sales: Optional[Dict] = None, dry_run: bool = False,
          office_key: str = "", log=print, credit: Optional[Dict] = None,

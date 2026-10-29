@@ -52,6 +52,11 @@ REQUEST_MAX_MIN = 12
 STATUS_READY = "ready"
 STATUS_NONE = "none"
 
+# Setup's half (code_forward): the address SaraPlus mails this office's codes
+# to, typed by the owner on the Zoom. Moved from ICD Faults onto MAIL_TAB here.
+FORWARD_STAGE = "probe-code-forward"
+FORWARD_PREFIX = "SaraPlus codes go to "
+
 
 def summary_for(since: dt.datetime) -> str:
     """The fault summary a request is filed under. The instant rides in it
@@ -71,6 +76,18 @@ def since_of(summary: str) -> Optional[dt.datetime]:
     except ValueError:
         return None
     return when if when.tzinfo else when.astimezone()
+
+
+def forward_summary(address: str) -> str:
+    return FORWARD_PREFIX + address.strip()
+
+
+def address_of(summary: str) -> str:
+    s = (summary or "").strip()
+    if not s.startswith(FORWARD_PREFIX):
+        return ""
+    word = s[len(FORWARD_PREFIX):].strip().split()
+    return word[0] if word and "@" in word[0] else ""
 
 
 def query_for(address: str) -> str:
@@ -195,4 +212,78 @@ def answer_requests(book=None, *, send: bool = False,
             continue
         _close(f, "answered")
         done.append({"office": office, "status": STATUS_READY})
+    return done
+
+
+def _tell_us(text: str) -> None:
+    """Megan + Eve, as Lucy: the one step left is ours."""
+    from automations.icd_alerts import offices as O
+    from automations.icd_alerts import post as P
+    P._group_dm(list(O.APPROVERS), text)
+
+
+def record_forwards(book=None, *, send: bool = False,
+                    now: Optional[dt.datetime] = None, tell=None,
+                    log=print) -> List[Dict]:
+    """Put each address setup sent home onto MAIL_TAB. Never raises.
+
+    ONE ROW PER OFFICE: a second setup run replaces the address rather than
+    adding a row the matcher would have to choose between. Then Megan + Eve
+    hear about it, because Gmail will not forward a thing until somebody
+    clicks its confirmation mail in the reporting inbox.
+    """
+    from automations.icd_alerts import post as P
+
+    tell = tell or _tell_us
+    now = now or dt.datetime.now().astimezone()
+    try:
+        if book is None:
+            from automations.recruiting_report.fill import open_by_key
+            book = open_by_key(P.RELAY_SPREADSHEET_ID)
+        faults = [f for f in P.open_faults(now.date(), book=book)
+                  if f["stage"] == FORWARD_STAGE]
+    except Exception as e:  # noqa: BLE001
+        log("code forwards: could not read faults: %s" % type(e).__name__)
+        return []
+    if not faults:
+        return []
+    done = []
+    try:
+        mail = _tab(book, MAIL_TAB, MAIL_HEADER) if send else None
+        faults_tab = book.worksheet(P.FAULTS_TAB) if send else None
+        rows = mail.get_all_values() if send else []
+    except Exception as e:  # noqa: BLE001
+        log("code forwards: could not open the tabs: %s" % type(e).__name__)
+        return []
+    stamp = now.isoformat(timespec="seconds")
+    for f in faults:
+        office, address = f["office"], address_of(f["summary"])
+        log("FWD    %-10s SaraPlus code forward from setup" % office)
+        if not send:
+            done.append({"office": office, "status": "dry-run"})
+            continue
+        try:
+            if address:
+                at = next((i for i, r in enumerate(rows[1:], start=2)
+                           if r and r[0].strip().lower() == office), None)
+                row = [office, address, stamp, "from setup"]
+                if at:
+                    mail.update("A%d:D%d" % (at, at), [row])
+                else:
+                    mail.append_row(row, value_input_option="RAW")
+                    rows.append(row)
+            faults_tab.update_cell(f["rownum"], P.F_POSTED + 1,
+                                   "%s %s" % (stamp, "recorded" if address else "no address"))
+        except Exception as e:  # noqa: BLE001
+            log("code forwards: could not record %s: %s" % (office, type(e).__name__))
+            continue
+        if address:
+            try:
+                tell("*%s* set up the SaraPlus code forward during setup "
+                     "(codes go to %s). Please confirm Gmail's forwarding "
+                     "email in the reporting inbox, then they add the filter."
+                     % (office, address))
+            except Exception as e:  # noqa: BLE001 -- the row is what matters
+                log("code forwards: could not tell Megan + Eve: %s" % type(e).__name__)
+        done.append({"office": office, "status": "recorded" if address else "no address"})
     return done

@@ -75,6 +75,8 @@ AGENT_FILES = [
     # that runs on Lucy 1 is imported late and never on a Mac.
     "automations/icd_alerts/sara_code.py",
     "automations/icd_alerts/code_answer.py",
+    # Setup asks for the code forward right there (Megan 2026-10-29).
+    "automations/icd_alerts/code_forward.py",
     "automations/icd_alerts/ov_signin.py",
     # Resume pushing on the office's own machine: the installer's AppStream
     # check runs it, so it has to be there when setup.py is.

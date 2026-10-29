@@ -14,6 +14,7 @@ automations/icd_alerts/box_signin.py
 automations/icd_alerts/sara_signin.py
 automations/icd_alerts/sara_code.py
 automations/icd_alerts/code_answer.py
+automations/icd_alerts/code_forward.py
 automations/icd_alerts/ov_signin.py
 automations/icd_alerts/as_signin.py
 automations/icd_alerts/resume_push.py

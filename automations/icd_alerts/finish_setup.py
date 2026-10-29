@@ -123,6 +123,7 @@ def _saraplus(log) -> str:
     try:
         got = sara_read.check_account(headless=True, log=lambda *_a: None)
         if got.get("ok"):
+            _code_forward(log)
             return "already working"
     except Exception as e:  # noqa: BLE001 — any failure means ASK
         log("  %s" % str(e)[:200])
@@ -133,7 +134,9 @@ def _saraplus(log) -> str:
             # password did not work either" -- for a password that worked.
             # The one thing that clears it is the window the code goes in.
             from automations.icd_alerts import sara_signin
-            return ("done" if sara_signin.run(log=log) == 0
+            ok = sara_signin.run(log=log) == 0
+            _code_forward(log, force=True)
+            return ("done" if ok
                     else "still needs the emailed code typed in the SaraPlus window")
 
     log("")
@@ -141,6 +144,24 @@ def _saraplus(log) -> str:
     log("  new password, enter it now and it will be checked for real.")
     return "done" if _run.cmd_set_login(headless=True) == 0 \
         else "still needs a working SaraPlus password"
+
+
+def _code_forward(log, force: bool = False) -> None:
+    """Offer the SaraPlus code forward (code_forward) to an account SaraPlus
+    asks for codes: now (`force`, the code screen was just hit) or since --
+    sara_code leaves its stamp the first time it has to clear one. Asked once:
+    a forward already set up is never asked about again."""
+    try:
+        from automations.icd_alerts import code_forward as CF
+        from automations.icd_alerts import sara_code as SC
+        if CF.already_set_up() or not (force or SC.STAMP_PATH.exists()):
+            return
+        from automations.icd_alerts import dialogs as ask
+        log("  SaraPlus asks this account for emailed codes -- setting up the")
+        log("  forward so Lucy can enter them herself.")
+        log("  code forwarding: %s" % CF.walk_through(ask, log))
+    except Exception as e:  # noqa: BLE001 -- never costs the sign-in step
+        log("  code forwarding skipped: %s" % type(e).__name__)
 
 
 def _never_sleeps(log) -> str:
