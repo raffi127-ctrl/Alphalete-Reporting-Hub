@@ -97,35 +97,58 @@ def parse(data: bytes, log=print):
     LINE_HDR = ["", "Line", "Line Type", "Device Type", "Line Number",
                 "Phone", "Plan", "Line Status", "Est. Shipping Range",
                 "Ship Date", "Delieverd Date", "Port Status"]
+    LINE_TYPES = {"new", "port", "upgrade", "resolve order", "byod",
+                  "tablet", "wearable", "aia"}
+    DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
     orders, lines = [], []
     cur = None
-    mode = None
     for tr in trs:
         c = cells(tr)
         if not any(c):
             continue
-        if [x.strip() for x in c[:13]] == ORDER_HDR[:len(c[:13])] and \
-                "Customer Name" in c:
-            mode = "order"
+        joined = " ".join(c)
+        if "Customer Name" in c or "Page size" in joined \
+                or "Data pager" in joined:
             continue
         if "Line Type" in c and "Line Status" in c:
-            mode = "line"
             continue
-        if mode == "order" and len(c) >= 13 and c[2]:
-            cur = {"customer": c[2], "phone": c[3], "dsi": c[4],
-                   "order_date": c[5], "wireless_order": c[6],
-                   "ban": c[7], "line_count": c[8], "rep": c[9],
-                   "order_status": c[12]}
-            orders.append(cur)
-        elif mode == "line" and len(c) >= 8 and c[1]:
+        # LINE row: its second cell is a line type word
+        if len(c) >= 8 and (c[1] or "").strip().lower() in LINE_TYPES:
             lines.append({**(cur or {}),
                           "line_no": c[0], "line_type": c[1],
-                          "device": c[2], "line_number": c[3],
-                          "line_phone": c[4], "plan": c[5],
-                          "line_status": c[6],
+                          "device": c[3] if len(c) > 3 else "",
+                          "line_number": c[2],
+                          "line_phone": c[4] if len(c) > 4 else "",
+                          "plan": c[5] if len(c) > 5 else "",
+                          "line_status": c[6] if len(c) > 6 else "",
                           "ship_date": c[8] if len(c) > 8 else "",
                           "delivered": c[9] if len(c) > 9 else "",
                           "port_status": c[10] if len(c) > 10 else ""})
+            continue
+        # ORDER row: wide, has a customer and an order date
+        if len(c) >= 13:
+            cand = c
+            # the grid may carry a leading expand cell — align on the
+            # first cell pair (customer, phone-ish) before a date cell
+            off = None
+            for k in range(0, min(4, len(cand) - 11)):
+                if cand[k + 2] and DATE_RE.match(cand[k + 5] or ""):
+                    off = k
+                    break
+            if off is None:
+                continue
+            cur = {"customer": cand[off + 2], "phone": cand[off + 3],
+                   "dsi": cand[off + 4], "order_date": cand[off + 5],
+                   "wireless_order": cand[off + 6], "ban": cand[off + 7],
+                   "line_count": cand[off + 8], "rep": cand[off + 9],
+                   "order_status": cand[off + 12]
+                   if len(cand) > off + 12 else ""}
+            orders.append(cur)
+    import collections as _coll
+    reps = _coll.Counter((l.get("rep") or "(none)") for l in lines)
+    log("[ndsw] lines by rep: "
+        + (", ".join(f"{k[:20]}={v}" for k, v in reps.most_common(12))
+           or "NONE"))
     log(f"[ndsw] parsed {len(orders)} order(s), {len(lines)} line(s)")
     return orders, lines
 
