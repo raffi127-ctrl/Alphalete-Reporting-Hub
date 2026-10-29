@@ -429,9 +429,11 @@
   },
   {
     "key": "samuel",
-    "label": "Samuel's Local Office (#dynasty-growth-sales once it resolves)",
+    "label": "#dynasty-growth-sales",
     "owner": "Samuel Acay",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0BV0K60QP8"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
@@ -443,7 +445,7 @@
       "quantum_fiber",
       "vzftr"
     ],
-    "notes": "wired by hand 2026-10-21; all 9 trackers like frank/jairo; channel_ids filled once #dynasty-growth-sales resolves to an id Lucy is in."
+    "notes": "wired by hand 2026-10-21; all 9 trackers like frank/jairo; channel_ids filled once #dynasty-growth-sales resolves to an id Lucy is in. | 2026-10-29: #dynasty-growth-sales = C0BV0K60QP8 (Megan)."
   },
   {
     "key": "omar",
