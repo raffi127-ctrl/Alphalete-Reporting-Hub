@@ -19,6 +19,7 @@ MUST POST FROM THE MINI: on Eve's Windows the Slack token is Evelyn's own.
     ... --date 2026-09-28                                             # another day
     ... --date 2026-09-29 --post --refresh     # re-grade a day already posted: EDITS
                                                # the same replies + docs, no new post
+    ... --date 2026-10-27 --post --refresh --owner "Andre Burton"   # just that office
 
 --refresh is for a change to the scorecard itself: the replies people already
 have open show the new version, instead of a second reply to pick between.
@@ -519,14 +520,16 @@ def main(argv=None) -> int:
     ap.add_argument("--docs-only", action="store_true",
                     help="with --post: write the audit docs only, no Slack (a past day)")
     ap.add_argument("--owner", action="append", default=[],
-                    help="with --docs-only: only this owner's recordings (repeatable) -- "
-                         "a Zoom whose Fathom key came late (Jennifer/Mercy, Eve 10/22)")
+                    help="with --docs-only or --refresh: only this owner's recordings "
+                         "(repeatable) -- a Zoom whose Fathom key came late (Jennifer/Mercy, "
+                         "Eve 10/22), an office graded on the wrong script (Andre, 10/29)")
     ap.add_argument("--no-grade", action="store_true", help="list the recordings only, no AI")
     ap.add_argument("--due", action="store_true",
                     help="scheduled tick: only on a weekday after 6 PM CT, once a day")
     args = ap.parse_args(argv)
-    if args.owner and args.post and not args.docs_only:
-        ap.error("--owner is for --docs-only: a live post must never leave interviews out")
+    if args.owner and args.post and not (args.docs_only or args.refresh):
+        ap.error("--owner is for --docs-only / --refresh: a live post must never leave "
+                 "interviews out")
     now = dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT)
     if args.due and not due(now):
         return 0
@@ -575,6 +578,21 @@ def main(argv=None) -> int:
         return docs_only(graded)
     where = "Eve's DM (preview)" if args.preview_to_eve else "#ars-recruiting-numbers"
     print(f"POSTING to {where}")
+    if args.owner and args.refresh and live:
+        # one office re-graded (Andre on his own script, 2026-10-29): EDIT the
+        # replies already in the threads + their docs, rebuild the board --
+        # nothing new posted, the day's other posts already went out
+        done = _ledger()
+        graded = {n: [r for r in rows if str(r[0].get("recording_id")) in done]
+                  for n, rows in graded.items()}
+        graded = {n: rows for n, rows in graded.items() if rows}
+        rc = post(day, graded, preview=False, refresh=True) if graded else 0
+        from automations.first_round_scorecards import board
+        try:
+            print(f"BOARD: {board.update(day)}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"BOARD FAILED {type(exc).__name__}: {exc}")
+        return 1 if rc or GRADE_FAILED else 0
     rc = post(day, graded, preview=args.preview_to_eve, refresh=args.refresh)
     if GRADE_FAILED:
         print(f"{len(GRADE_FAILED)} interview(s) not graded (AI error) - the next tick retries them")
