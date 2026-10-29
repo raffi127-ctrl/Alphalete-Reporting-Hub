@@ -234,8 +234,9 @@ else
   # before Tuesday's rollover freezes the closed week. It also has its own
   # catchup_alert(), which never depended on the manifest.
   #
-  # VERIZON joined 2026-10-28: its PDF lands ~9:31. The email waits for it
-  # until 9:45 (org_sales_board/verizon_wait.py); a later PDF lands here.
+  # VERIZON joined 2026-10-28: its PDF lands ~9:31, after the 07:05 post and
+  # the morning email, so like JE it runs a day behind there (Eve 2026-10-29)
+  # and the day fills in here.
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
     --no-manifest \
     --sections "Retail NL,Retail Internet,Retail JE,BOX,Verizon" "$@" >> "$LOG_FILE" 2>&1

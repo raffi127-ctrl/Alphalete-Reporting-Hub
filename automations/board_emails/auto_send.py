@@ -170,7 +170,9 @@ class Target:
     # late Box must not keep it waiting until noon (2026-10-25).
     sections: Optional[Tuple[str, ...]] = None
     # A source worth waiting for before judging: returns why it is still
-    # waiting, or None. Org = Verizon until 9:45 CT (Eve 2026-10-28).
+    # waiting, or None. Nobody uses it now: the Org email waited for Verizon
+    # until 9:45 on 10/28, then Eve 2026-10-29 chose a day-behind Verizon (like
+    # JE) over a late email — the 14:30 catch-up fills it in.
     wait_for: Optional[Callable[[dt.date], Optional[str]]] = None
 
 
@@ -291,13 +293,8 @@ def _country_totals(run_day: dt.date) -> List[str]:
     return country_totals_issues(_country_grid())
 
 
-def _org_wait(run_day: dt.date) -> Optional[str]:
-    from automations.org_sales_board import verizon_wait
-    return verizon_wait.pending(run_day)
-
-
 ORG = Target("org", "Org Sales Board", "org_sales_board_email",
-             _org_images, _org_grid, _org_totals, wait_for=_org_wait)
+             _org_images, _org_grid, _org_totals)
 COUNTRY = Target("country", "Country Sales Board", "country-sales-board-email",
                  _country_images, _country_grid, _country_totals,
                  sections=())
