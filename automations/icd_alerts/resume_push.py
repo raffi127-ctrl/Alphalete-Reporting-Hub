@@ -151,10 +151,10 @@ PUSH_OFFICES = {
     # resume (Indeed walled it 17 times that day), his own computer can. He
     # left Lucy 2 in the same change (ROTATION_BY_MACHINE).
     "atef": ("23467", "live"),       # Atef Choudhury, Domin8 Acquisitions
-    # Same first step for Khalil (Megan 2026-10-29: "start khalil's dry run").
-    # Francia ran finish_setup on his computer 10/29 (login saved 11:45).
-    # Lucy 2 keeps pushing 11901 LIVE until this says "live".
-    "khalil-nds": ("11901", "dry"),  # Khalil Mansour, Alphalete Management Group
+    # KHALIL, LIVE (Megan 2026-10-29: "it needs to run from HIS relay
+    # machine"). Francia ran finish_setup on it 10/29 (login saved 11:45);
+    # 11901 left Lucy 2 in the same change (ROTATION_BY_MACHINE).
+    "khalil-nds": ("11901", "live"),  # Khalil Mansour, Alphalete Management Group
 }
 LOGIN_POLL_SECONDS = 90
 

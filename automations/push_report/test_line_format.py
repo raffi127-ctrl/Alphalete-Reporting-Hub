@@ -99,7 +99,14 @@ class TheLine(unittest.TestCase):
                                     "start": 29, "end": 2, "sent_run": 2,
                                     "sent_today": 27, "walled": False,
                                     "at": "20:36"}),
-                        "9", "", now.strftime("%m/%d/%Y") + " 20:36:00"]]
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:36:00"], [
+                        # Khalil's 11901 from his own computer since 2026-10-29.
+                        "khalil-nds", stamp, pr.RELAY_STATS_STAGE, "push stats",
+                        json.dumps({"office": "11901", "live": True,
+                                    "start": 111, "end": 2, "sent_run": 3,
+                                    "sent_today": 109, "walled": False,
+                                    "at": "20:29"}),
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:29:00"]]
                 if self.tab in skip_rows:
                     return []
                 at, queue, sent = rows[self.tab]
@@ -140,7 +147,7 @@ class TheLine(unittest.TestCase):
             "*Push report 8:37 PM*",
             "Carlos 11580 (his computer): 30 pushed · 7 left @ 8:33 PM",
             "Atef 23467 (his computer): 27 pushed · 2 left @ 8:36 PM",
-            "Khalil 11901: 109 pushed · 2 left @ 8:29 PM",
+            "Khalil 11901 (his computer): 109 pushed · 2 left @ 8:29 PM",
             ":x: Raf main 11280: 34 pushed · 114 left @ 8:21 PM",
             ":x: Raf 2nd funnel 23965: 0 pushed · 33 left @ 8:28 PM",
             ":x: Raf 24065: 24 pushed · 36 left @ 8:34 PM",
@@ -169,7 +176,7 @@ class BacklogFlag(unittest.TestCase):
     def test_ten_or_under_does_not(self):
         got = TheLine()._render(dt.datetime(2026, 9, 24, 20, 37))
         for name in ("Carlos 11580 (his computer)", "Atef 23467 (his computer)",
-                     "Khalil 11901"):
+                     "Khalil 11901 (his computer)"):
             self.assertIn("\n%s:" % name, got)
             self.assertNotIn(":x: %s" % name, got)
 

@@ -593,9 +593,9 @@ ROTATION_BY_MACHINE = {
     # own computer.
     # 2026-10-29 (Megan, "yes take atef live on his computer"): 23467 left
     # Lucy 2 -- Indeed walled Lucy 2's resume reads all day (17 walls, 0 sent).
-    # 2026-10-29 (Megan: "I need khalil's resumes pushed"): 11901 left Lucy 2
-    # (Indeed walled its resume reads all day) for the Lucy user on Megan's
-    # laptop, beside Raf's three.
+    # 2026-10-29: 11901 left Lucy 2 (Indeed walled its resume reads all day)
+    # for KHALIL'S OWN COMPUTER (Megan: "it needs to run from HIS relay
+    # machine") -- see the relay entry below.
     "Lucy 2": [],
     # 2026-10-29 (Megan: "we can run it from this machine right now as long
     # as it's in the background"): Raf's three left Lucy 4 for Megan's laptop.
@@ -609,17 +609,19 @@ ROTATION_BY_MACHINE = {
     # macOS user ("lucyecoraf", setup /Users/Shared/lucy-push-setup.sh) whose
     # windows can never reach her screen. Same .machine-profile name.
     "Lucy 4": [],
-    "Megan's laptop": ["11280", "23965", "24065", "11901"],
+    "Megan's laptop": ["11280", "23965", "24065"],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
     # Listed here so "one office, one machine" stays checkable in one place;
     # rotation_for() never matches it, because no Lucy is named this.
     "Carlos's office computer (relay)": ["11580"],
     "Atef's office computer (relay)": ["23467"],
+    "Khalil's office computer (relay)": ["11901"],
 }
 # Machines in ROTATION_BY_MACHINE that are office relay computers, not Lucys.
 RELAY_MACHINES = {"Carlos's office computer (relay)",
-                  "Atef's office computer (relay)"}
+                  "Atef's office computer (relay)",
+                  "Khalil's office computer (relay)"}
 
 
 def rotation_for(machine: str = None) -> list:
