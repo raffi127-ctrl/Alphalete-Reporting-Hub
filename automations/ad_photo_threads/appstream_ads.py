@@ -15,8 +15,12 @@ popup, which has no ad.
 
 What it found is kept in the state file (state[channel]["appstream_ads"],
 {"YYYY-MM-DD|name": ad text or ""}) so collect.build uses it on every later
-pass without opening AppStream again; "" = looked, nothing usable (not asked
-twice).
+pass without opening AppStream again; "" = looked, nothing usable.
+
+Eve 10/29: a "" is looked at again on the next evenings, up to MAX_TRIES
+evenings in all (state[channel]["appstream_ads_tries"], {key: [ISO days
+tried]}) -- people are sometimes sent to the call list late. Only after that
+does unthreaded.py move them to the channel's pinned "no ad" thread.
 """
 from __future__ import annotations
 
@@ -30,6 +34,7 @@ from typing import Dict, List, Optional, Tuple
 SENT_DAYS_BACK = 21
 L_CALL_LIST = "Sent to Call List"      # the report row (applicant_tracker's label)
 N_CALL_COLS = 8                        # First .. Ad, as applicant_tracker reads it
+MAX_TRIES = 3                          # evenings a "" is looked up before giving up
 
 
 def _fold(s: str) -> str:
@@ -39,6 +44,19 @@ def _fold(s: str) -> str:
 
 def key(day: dt.date, name: str) -> str:
     return f"{day.isoformat()}|{name.strip().lower()}"
+
+
+def tries(ch_state: dict, k: str) -> int:
+    """Evenings `k` was looked up. A "" from before the count was kept
+    (10/29) counts as one."""
+    got = len((ch_state.get("appstream_ads_tries") or {}).get(k) or [])
+    return max(got, 1) if k in (ch_state.get("appstream_ads") or {}) else got
+
+
+def gave_up(ch_state: dict, k: str) -> bool:
+    """Looked up MAX_TRIES evenings and nothing found."""
+    found = (ch_state.get("appstream_ads") or {}).get(k)
+    return found == "" and tries(ch_state, k) >= MAX_TRIES
 
 
 def header(d: dt.date) -> str:
@@ -168,9 +186,19 @@ def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
         want = {n.strip().lower() for n in names}
         todo = [(d, c) for d, c in todo if c.name.strip().lower() in want]
     channel = o["live_channel"]
-    done = (post._load_state().get(channel) or {}).get("appstream_ads") or {}
-    todo = [(d, c) for d, c in todo
-            if key(d, c.name) not in done or (redo and not done[key(d, c.name)])]
+    ch_state = post._load_state().get(channel) or {}
+    done = ch_state.get("appstream_ads") or {}
+    tried = ch_state.get("appstream_ads_tries") or {}
+
+    def due(k: str) -> bool:
+        if k not in done:
+            return True
+        if done[k]:
+            return False
+        # Once per evening: the nightly ticks every 30 min until the day is done.
+        return redo or (tries(ch_state, k) < MAX_TRIES
+                        and day.isoformat() not in (tried.get(k) or []))
+    todo = [(d, c) for d, c in todo if due(key(d, c.name))]
     if limit:
         todo = todo[:limit]
     print(f"[appstream ads] {office_key}: {len(todo)} candidate(s) to look up"
@@ -196,6 +224,12 @@ def run(office_key: str, day: dt.date, *, names: Optional[List[str]] = None,
             print(f"    near: {near(rows, c.name)[:8] or 'nobody with that first or last name'}")
     if apply and got:
         state = post._load_state()
-        state.setdefault(channel, {}).setdefault("appstream_ads", {}).update(got)
+        ch = state.setdefault(channel, {})
+        old = dict(ch.get("appstream_ads") or {})
+        ch.setdefault("appstream_ads", {}).update(got)
+        log = ch.setdefault("appstream_ads_tries", {})
+        for k in got:
+            days = log.get(k) or (["?"] if k in old else [])   # the uncounted first try
+            log[k] = sorted(set(days) | {day.isoformat()})
         post._save_state(state)
     return {"looked": len(got), "found": sum(1 for v in got.values() if v)}

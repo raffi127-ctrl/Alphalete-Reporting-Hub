@@ -83,9 +83,10 @@ def marks_on(key: str) -> bool:
     """Does office `key` get the live/closed mark on its thread titles?"""
     return STATUS_MARK_OFFICES == "all" or key in STATUS_MARK_OFFICES
 
-# Eve 10/21: after the evening post, an @channel note in the office's
-# indeed-photos channel naming the 1st rounds that landed on no thread
-# (blank Ad Title, or an ad not on a title-only list) -- see unthreaded.py.
+# Eve 10/21: after the evening post, the 1st rounds that landed on no thread
+# (blank Ad Title, or an ad not on a title-only list) are said in the office's
+# indeed-photos channel. Since 10/29: in ONE pinned "no ad" thread, and a blank
+# title only after AppStream came up empty 3 evenings -- see unthreaded.py.
 # Empty = off; "all" = every live office; a set of keys = just those.
 UNTHREADED_OFFICES: object = "all"          # Eve 10/21: on, every live office
 

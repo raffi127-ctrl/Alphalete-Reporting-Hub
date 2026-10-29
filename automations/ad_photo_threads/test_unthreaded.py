@@ -12,32 +12,18 @@ def cand(name, title, ad=None):
                      stars="", source="", ad=ad)
 
 
-class MessageTests(unittest.TestCase):
-    """Eve 10/21: interviews with no thread, said in the office's channel."""
+class LineTests(unittest.TestCase):
+    """Eve 10/29: interviews with no ad go to one pinned thread, not @channel."""
     D = dt.date(2026, 10, 19)
 
-    def test_nothing_missing_says_nothing(self):
-        self.assertEqual(unthreaded.message([], True), "")
-
-    def test_blank_and_unlisted_tag_the_channel(self):
-        text = unthreaded.message([(self.D, cand("Jamar Gray", "")),
-                                   (self.D, cand("Ana", "AT&T Sales Representative, Denton, TX")),
-                                   (self.D, cand("Bo", "AT&T Sales Representative, Denton, TX"))],
-                                  title_only=True)
-        self.assertTrue(text.startswith("<!channel> 3 1st rounds"))
-        self.assertIn("Jamar Gray (10/19)", text)
-        self.assertIn('"AT&T Sales Representative, Denton, TX" (2)', text)
-        self.assertIn("new ad", text)
-
-    def test_office_without_a_list_asks_for_spelling(self):
-        text = unthreaded.message([(self.D, cand("Ana", "Sales ???"))], title_only=False)
-        self.assertIn("spelling", text)
-        self.assertNotIn("Reply here", text)
+    def test_blank_and_unlisted_say_why(self):
+        self.assertIn("Jamar Gray (10/19): no Ad Title",
+                      unthreaded.line(self.D, cand("Jamar Gray", ""), True))
+        self.assertIn("new ad", unthreaded.line(self.D, cand("Ana", "AT&T Denton"), True))
+        self.assertIn("misspelled", unthreaded.line(self.D, cand("Ana", "Sales ???"), False))
 
     def test_placeholders_count_as_blank(self):
-        text = unthreaded.message([(self.D, cand("Ana", "-")), (self.D, cand("Bo", "N/A"))], True)
-        self.assertIn("No Ad Title in the sheet:* Ana (10/19), Bo (10/19)", text)
-        self.assertNotIn("not recognized", text)
+        self.assertIn("no Ad Title", unthreaded.line(self.D, cand("Ana", "N/A"), True))
 
     def test_placeholder_name_is_not_a_person(self):
         build = lambda d, cl=None, cache=None: SimpleNamespace(  # noqa: E731
@@ -46,29 +32,66 @@ class MessageTests(unittest.TestCase):
 
 
 class CheckTests(unittest.TestCase):
-    def test_each_interview_is_said_once(self):
-        state = {}
-        day = dt.date(2026, 10, 21)
-        reps = {d: SimpleNamespace(candidates=[cand("Jamar Gray", "")] if d == dt.date(2026, 10, 19)
+    DAY = dt.date(2026, 10, 21)
+    MISS = dt.date(2026, 10, 19)
+
+    def run_check(self, state, people, cl, **kw):
+        reps = {d: SimpleNamespace(candidates=people if d == self.MISS
                                    else [cand("Ok", "x", ad="k")])
-                for d in (day - dt.timedelta(days=n) for n in range(1, 8))}
+                for d in (self.DAY - dt.timedelta(days=n) for n in range(1, 8))}
         build = lambda d, cl=None, cache=None: reps[d]   # noqa: E731
+        with mock.patch.object(unthreaded.post, "_load_state", lambda: state),                 mock.patch.object(unthreaded.post, "_save_state", lambda s: None),                 mock.patch.object(unthreaded.post, "_thread_alive", lambda *a: True):
+            return unthreaded.check(self.DAY, "C1", title_only=True, cl=cl, build=build, **kw)
+
+    def client(self):
         cl = mock.Mock()
-        with mock.patch.object(unthreaded.post, "_load_state", lambda: state), \
-                mock.patch.object(unthreaded.post, "_save_state", lambda s: None):
-            first = unthreaded.check(day, "C1", title_only=True, cl=cl, build=build)
-            again = unthreaded.check(day, "C1", title_only=True, cl=cl, build=build)
-        self.assertTrue(first["posted"])
-        self.assertFalse(again["posted"])
-        self.assertEqual(cl.chat_postMessage.call_count, 1)
+        n = iter(range(100, 200))
+        cl.chat_postMessage.side_effect = lambda **k: {"ts": f"{next(n)}.0"}
+        return cl
+
+    def test_one_pinned_thread_no_channel_tag(self):
+        state, cl = {}, self.client()
+        first = self.run_check(state, [cand("Jamar Gray", "")], cl)
+        again = self.run_check(state, [cand("Jamar Gray", ""), cand("Bo", "")], cl)
+        self.assertTrue(first["posted"] and again["posted"])
+        calls = cl.chat_postMessage.call_args_list
+        self.assertEqual(len(calls), 3)              # header + one reply per evening
+        self.assertNotIn("thread_ts", calls[0].kwargs)
+        self.assertEqual(calls[1].kwargs["thread_ts"], "100.0")
+        self.assertEqual(calls[2].kwargs["thread_ts"], "100.0")
+        self.assertNotIn("Jamar", calls[2].kwargs["text"])
+        self.assertTrue(all("<!channel>" not in c.kwargs["text"] for c in calls))
+        cl.pins_add.assert_called_once_with(channel="C1", timestamp="100.0")
+        self.assertIn("<@U07FWSYP3NV>", calls[1].kwargs["text"])   # Camila
+        self.assertIn("<@U07R68ZGHT6>", calls[1].kwargs["text"])   # Perla
+
+    def test_waits_while_appstream_still_looking(self):
+        k = "2026-10-19|jamar gray"
+        state = {"C1": {"appstream_ads": {k: ""}, "appstream_ads_tries": {k: ["a", "b"]}}}
+        cl = self.client()
+        got = self.run_check(state, [cand("Jamar Gray", "")], cl, lookup_on=True)
+        self.assertEqual((got["waiting"], got["posted"]), (1, False))
+        cl.chat_postMessage.assert_not_called()
+        state["C1"]["appstream_ads_tries"][k].append("c")
+        got = self.run_check(state, [cand("Jamar Gray", "")], cl, lookup_on=True)
+        self.assertTrue(got["posted"])
+
+    def test_typed_title_goes_in_right_away(self):
+        got = self.run_check({}, [cand("Ana", "Unknown ad")], self.client(), lookup_on=True)
+        self.assertTrue(got["posted"])
+
+    def test_placed_later_is_crossed_out(self):
+        state, cl = {}, self.client()
+        self.run_check(state, [cand("Jamar Gray", "")], cl)
+        got = self.run_check(state, [], cl)
+        self.assertEqual(got["placed"], 1)
+        text = cl.chat_update.call_args.kwargs["text"]
+        self.assertIn("~", text)
+        self.assertIn("placed", text)
 
     def test_dry_run_posts_nothing(self):
-        day = dt.date(2026, 10, 21)
-        build = lambda d, cl=None, cache=None: SimpleNamespace(  # noqa: E731
-            candidates=[cand("Jamar Gray", "")])
-        cl = mock.Mock()
-        with mock.patch.object(unthreaded.post, "_load_state", lambda: {}):
-            got = unthreaded.check(day, "C1", title_only=True, cl=cl, build=build, apply=False)
+        cl = self.client()
+        got = self.run_check({}, [cand("Jamar Gray", "")], cl, apply=False)
         self.assertIn("Jamar Gray", got["text"])
         cl.chat_postMessage.assert_not_called()
 

@@ -69,5 +69,23 @@ class CollectUsesItTests(unittest.TestCase):
         self.assertIsNone(collect.appstream_ad(c, dt.date(2026, 10, 21), book, found=found))
 
 
+
+class TriesTests(unittest.TestCase):
+    """Eve 10/29: a "" is looked up again, MAX_TRIES evenings in all."""
+    K = "2026-10-19|jamar gray"
+
+    def test_old_blank_counts_as_one_try(self):
+        self.assertEqual(aa.tries({"appstream_ads": {self.K: ""}}, self.K), 1)
+
+    def test_gives_up_after_max_tries(self):
+        st = {"appstream_ads": {self.K: ""}, "appstream_ads_tries": {self.K: ["a", "b"]}}
+        self.assertFalse(aa.gave_up(st, self.K))
+        st["appstream_ads_tries"][self.K].append("c")
+        self.assertTrue(aa.gave_up(st, self.K))
+
+    def test_found_is_never_given_up(self):
+        st = {"appstream_ads": {self.K: "Sales Rep"}, "appstream_ads_tries": {self.K: list("abc")}}
+        self.assertFalse(aa.gave_up(st, self.K))
+
 if __name__ == "__main__":
     unittest.main()
