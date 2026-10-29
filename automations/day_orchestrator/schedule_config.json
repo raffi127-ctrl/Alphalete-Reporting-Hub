@@ -15725,6 +15725,8 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": null,
+   "close_on": "exit_zero",
+   "_close_on_note": "Posts nothing, so there is no delivery to check: a clean exit IS the job done. The script exits 1 if any delete failed (2026-10-29, Megan: 'if this fixed itself then it should have green checked').",
    "timeout_minutes": 90,
    "machine": "Lucy 2"
   },

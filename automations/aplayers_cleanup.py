@@ -52,7 +52,7 @@ def _is_gone(parent_msg) -> bool:
             or (parent_msg.get("text") or "") == "This message was deleted.")
 
 
-def orphan_sweep(client, days: int, live: bool) -> None:
+def orphan_sweep(client, days: int, live: bool) -> int:
     """Threads whose PARENT Carlos deleted by hand still hold Lucy's
     screenshots (2026-10-28: "look for some threads where i deleted the
     begining of it but the post are still there"). History never shows
@@ -135,6 +135,7 @@ def orphan_sweep(client, days: int, live: bool) -> None:
     print(f"[orphans] {orphaned} orphaned thread(s); "
           + (f"deleted {deleted}, {failed} failure(s)" if live
              else "dry run — add --live to delete"))
+    return failed
 
 
 def main(argv=None) -> int:
@@ -148,9 +149,9 @@ def main(argv=None) -> int:
     from automations.shared.slack_metrics_post import _client
     client = _client()
     if a.orphans:
-        orphan_sweep(client, a.days, a.live)
+        failed = orphan_sweep(client, a.days, a.live)
         print("=== done ===", flush=True)
-        return 0
+        return 1 if failed else 0
     oldest = (dt.datetime.now() - dt.timedelta(days=a.days)).timestamp()
 
     parents, cursor = [], None
@@ -198,7 +199,9 @@ def main(argv=None) -> int:
           f"{failed} failure(s)" if a.live else
           f"[cleanup] dry run — add --live to delete")
     print("=== done ===", flush=True)
-    return 0
+    # exit 0 closes the ticket (close_on: exit_zero) — so a delete that
+    # failed has to fail the run, or a half-cleaned room reads as done.
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
