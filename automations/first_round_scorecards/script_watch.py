@@ -53,6 +53,9 @@ TELL = ("U088E2KJEV8",       # Eve (Evelyn)
         "U07FWSYP3NV")       # Camila Hornos Kraschinsky
 FOLDER = re.compile(r"script", re.I)
 FILE_ID = re.compile(r"\b(F[A-Z0-9]{8,})\b")
+# Offices whose script really IS Rafael's word for word (an empty OFFICES entry
+# on purpose): their first look is only remembered, never read
+ON_RAFAELS = {"Rafael Hidalgo", "Omar Mohammad"}
 READABLE = {"pdf", "docx", "txt", "text", "png", "jpg", "jpeg", "gif", "webp"}
 
 
@@ -369,7 +372,10 @@ def check(*, client=None, today: Optional[dt.date] = None) -> int:
         if was and was.get("file") == fid and was.get("stamp") == stamp:
             continue
         seen[ch] = {"file": fid, "stamp": stamp, "office": office, "title": b.get("title")}
-        if not was:              # first look: the code already grades on this one
+        # first look: the code already grades on this one -- unless the office
+        # has no script written in yet and sits on Rafael's (Andre, 2026-10-29)
+        if not was and (grade._HAND_OFFICES.get(office) or office in _load(grade.OVERRIDES)
+                         or office in ON_RAFAELS):
             print(f"script watch: {office}: remembered {b.get('title')!r}")
             continue
         try:

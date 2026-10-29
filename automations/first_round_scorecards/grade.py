@@ -110,6 +110,9 @@ OFFICES = {
     # 2026-10-19 (Camila): Omar's script (Kalkan Marketing, 24153) is Rafael's word
     # for word -- same pay, 40 hrs + Saturdays, call before 5pm, attire + notebook
     "Omar Mohammad": {},
+    # 2026-10-29 (Camila): Andre's own script is in his channel's folder; until
+    # script_watch reads it there, he's on Rafael's (so it reads it on first look)
+    "Andre Burton": {},
     # 2026-10-09: Tre's new script (Eve) -- no pay, 40 hrs + Saturdays, North Houston
     "Tre Mitchell": {"format": "tre"},
     # Scripts shaped differently from Rafael's -- see FORMATS below.
