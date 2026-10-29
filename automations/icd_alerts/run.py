@@ -852,6 +852,14 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("headshots skipped: %s" % type(e).__name__)
 
+        # THE OWNER'S PNL, for an office that asked for it. Office hours, its
+        # own state file; today only the one-time DD check (see pnl.py).
+        try:
+            from automations.icd_alerts import pnl
+            pnl.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("pnl skipped: %s" % type(e).__name__)
+
         alerting = C.in_selling_window()
         # Sales read noon to midnight every day; alerts keep their own hours.
         # Outside BOTH, nothing to do.

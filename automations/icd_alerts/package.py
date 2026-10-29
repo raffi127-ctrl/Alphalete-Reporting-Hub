@@ -137,6 +137,8 @@ AGENT_FILES = [
     "automations/icd_alerts/headshot_jobs.py",
     "automations/headshots/__init__.py",
     "automations/headshots/ov_upload.py",
+    # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
+    "automations/icd_alerts/pnl.py",
 ]
 
 # HUB-ONLY IMPORTS THAT SHIP ON PURPOSE, each inside a function, never at
