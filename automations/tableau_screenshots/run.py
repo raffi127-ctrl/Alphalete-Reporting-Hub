@@ -160,6 +160,116 @@ def _reusable(out_dir: Path, selected: list, today: dt.date) -> list | None:
     return out
 
 
+# --- Offices that joined after the morning run -------------------------------
+# WHY (Megan 2026-10-29): #goldenview-d2d-sales was wired at 9:18, after the
+# 4:30 run had already posted 7 boards everywhere else. The 9:37 settle pass
+# only carries the LATE boards, so the channel got Box + Quantum and nothing
+# else until a hand rerun. Every office wired mid-day (form or by hand) hits the
+# same gap. Fix: the morning set records which orgs it served; each catch-up
+# pass queues a rerun for any org it didn't serve, limited to boards ALREADY
+# CAPTURED TODAY (the stamp) — so the newcomer gets the same proven-fresh
+# images the rest of the fleet got, reused from disk, and nothing held. Boards
+# still owed (late / held) reach it through the settle passes like everyone else.
+SERVED_FILE = OUT_DIR / "_orgs_served.json"
+NEWCOMER_REQUEUE_MIN = 60     # settle passes are ~30 min apart; a rerun takes ~5
+
+
+def _read_served(out_dir: Path, today: dt.date) -> dict | None:
+    """Today's {served: [...], queued: {org: iso}} — None when the morning set
+    hasn't run on this box today (then there's no "after" to catch up from)."""
+    import json
+    try:
+        data = json.loads((out_dir / SERVED_FILE.name).read_text())
+    except Exception:
+        return None
+    if data.get("date") != today.isoformat():
+        return None
+    data.setdefault("served", [])
+    data.setdefault("queued", {})
+    return data
+
+
+def _write_served(out_dir: Path, data: dict, today: dt.date) -> None:
+    import json
+    data["date"] = today.isoformat()
+    try:
+        (out_dir / SERVED_FILE.name).write_text(json.dumps(data, indent=2))
+    except Exception:            # best-effort — worst case a newcomer waits a day
+        pass
+
+
+def _mark_served(out_dir: Path, orgs: list, today: dt.date) -> None:
+    """Record that a NON-late run posted the morning set to `orgs`."""
+    data = _read_served(out_dir, today) or {"served": [], "queued": {}}
+    for o in orgs:
+        if o not in data["served"]:
+            data["served"].append(o)
+    _write_served(out_dir, data, today)
+
+
+def newcomer_plan(served: dict | None, all_orgs: list, captured_ids: list,
+                  ids_for, now: dt.datetime) -> dict:
+    """{org: [board ids]} to catch up. Pure, so the rules are testable:
+      • no morning ledger today → nothing (the morning run serves everyone)
+      • an org the morning set already served → nothing
+      • queued within NEWCOMER_REQUEUE_MIN → nothing (its rerun is in flight)
+      • only boards captured today, in that org's own order; none → nothing."""
+    if served is None:
+        return {}
+    have = set(captured_ids)
+    plan = {}
+    for org in all_orgs:
+        if org in served.get("served", []):
+            continue
+        q = (served.get("queued") or {}).get(org)
+        if q:
+            try:
+                if now - dt.datetime.fromisoformat(q) < dt.timedelta(
+                        minutes=NEWCOMER_REQUEUE_MIN):
+                    continue
+            except ValueError:
+                pass
+        ids = [i for i in ids_for(org) if i in have]
+        if ids:
+            plan[org] = ids
+    return plan
+
+
+def _queue_newcomers(out_dir: Path, today: dt.date) -> None:
+    """Queue `rerun tableau_screenshots --orgs X --only <today's boards>` for
+    every org the morning set never reached. Best-effort: never sinks the pass."""
+    import json
+    import shlex
+    try:
+        captured = json.loads((out_dir / STAMP.name).read_text())
+        captured_ids = (captured.get("ids") or []
+                        if captured.get("date") == today.isoformat() else [])
+    except Exception:
+        captured_ids = []
+    served = _read_served(out_dir, today)
+    plan = newcomer_plan(served, list(sp.ORGS), captured_ids,
+                         lambda o: sp.tracker_ids_for(o, pages_mod.PAGES),
+                         dt.datetime.now())
+    if not plan:
+        return
+    from automations.day_orchestrator import mini_control as mc
+    for org, ids in plan.items():
+        args = (f"tableau_screenshots --orgs {shlex.quote(org)} "
+                f"--only {shlex.quote(','.join(ids))}")
+        try:
+            mc.enqueue("rerun", args, by="tracker newcomer catch-up", auto=True)
+        except Exception as e:                        # noqa: BLE001
+            print(f"  (newcomer catch-up for {org} not queued: "
+                  f"{type(e).__name__}: {str(e)[:120]} — next pass retries)",
+                  flush=True)
+            continue
+        served["queued"][org] = dt.datetime.now().isoformat(timespec="seconds")
+        print(f"  ＋ {sp.ORG_LABEL.get(org, org)} joined after the morning run — "
+              f"queued its {len(ids)} board(s) from today: {', '.join(ids)}",
+              flush=True)
+    _write_served(out_dir, served, today)
+
+
 @contextlib.contextmanager
 def _org_slack_token(org: str, label: str):
     """Act as the workspace that OWNS this org's channel, then restore.
@@ -797,6 +907,21 @@ def _capture_all(selected: list, page, out_dir: Path, force_crop):
 
 
 def main(argv=None) -> int:
+    rc = _main(argv)
+    # After the pass is done (not before), so the queued rerun can't collide
+    # with this run's Chrome profile — mini_control refuses a second copy.
+    a = list(sys.argv[1:] if argv is None else argv)
+    if (("--settle" in a or "--late-only" in a) and "--dry-run" not in a
+            and "--only" not in a and not any(x.startswith("--orgs") for x in a)):
+        try:
+            _queue_newcomers(OUT_DIR, dt.date.today())
+        except Exception as e:                        # noqa: BLE001
+            print(f"  (newcomer catch-up skipped: {type(e).__name__}: {e})",
+                  flush=True)
+    return rc
+
+
+def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true",
                     help="Capture PNGs to output/ but post NOTHING to Slack.")
@@ -1531,6 +1656,10 @@ def main(argv=None) -> int:
     # the run summary can name exactly what's missing, not just a count.
     omitted_boards = [(pages_mod.by_id(i) or {}).get("title") or i for i in gated_out]
     _write_status(out_dir, status_rows, today, status_file, omitted=omitted_boards)
+    # Only the morning SET counts as "served" — a late/settle pass carries just
+    # the late boards, so an org it reached can still be missing the rest.
+    if not args.late_only and not args.dry_run:
+        _mark_served(out_dir, orgs, today)
 
     # Count only the orgs this run actually OWED a post — a no-op org is neither a
     # success nor a failure, so it's out of both the numerator and denominator and
