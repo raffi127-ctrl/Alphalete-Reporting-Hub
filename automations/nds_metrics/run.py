@@ -597,6 +597,26 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     # The wireless per-line feed first (Carlos 2026-10-29: B2B-style
     # workbook — All Reps / Pending by Rep / Paycheck by Week / tab per
     # rep, with customer first+last names, which only this feed carries).
+    # THE house format (Carlos 2026-10-29, after the Activation/Pay Week
+    # screenshot): the SAME renderer Raf's #alphalete-sales log and every
+    # NDS office's log use — office_metrics.nds_orderlog through
+    # uploaded.order_log's column_profile. Pay Period tab first, per-rep
+    # tabs with "Week m/d to m/d • Paid Friday m/d" banners, the
+    # Pending / Disconnect / Cancel section, and the Activation/Pay Week
+    # calendar under every rep tab.
+    try:
+        from automations.office_metrics import nds_orderlog as NOL
+        path = pull(today)
+        header2, rows2 = NOL.load(path, "Carlos Hidalgo")
+        if rows2:
+            x, n = NOL._render_order_log("Carlos Hidalgo", header2, rows2,
+                                         today, OUT_DIR)
+            log(f"[nds] house order log: {n} line(s) -> {Path(x).name}")
+            return Path(x)
+        log("[nds] house order log: no rows for Carlos — falling back")
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] house order log failed ({type(e).__name__}: "
+            f"{str(e)[:140]}) — falling back")
     # IDENTICAL-format path (Carlos 2026-10-29): the same shape_lines +
     # att_order_log.xlsx builder his old log used — paycheck-week banners,
     # pay boxes, Pending by Rep, the shared colour map — fed by the NDS
