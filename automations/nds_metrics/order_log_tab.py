@@ -215,6 +215,18 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     return result
 
 
+def usable(orders: Sequence[dict], lines: Sequence[dict]) -> bool:
+    """A feed whose order HEADERS did not parse (2026-10-29: "parsed 0
+    order(s), 130 line(s)") yields lines with no customer, rep, date or
+    ids -- every one would key the same and land as a nameless row. Need
+    headers, and nearly every line attached to one."""
+    if not orders or not lines:
+        return False
+    named = sum(1 for l in lines if (l.get("customer") or "").strip()
+                and (l.get("rep") or "").strip())
+    return named >= 0.8 * len(lines)
+
+
 def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, object]]:
     """Today's cached wireless feed -> the tab. None (and a log line) when
     there is no feed today; the tab then keeps yesterday's rows."""
@@ -224,8 +236,13 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
     if not cache:
         log("[nds] NDS Order Log tab: no wireless feed cached for %s -- tab left as it was" % today)
         return None
-    _orders, lines = wireless_pull.parse(cache.read_bytes(), log=log)
+    orders, lines = wireless_pull.parse(cache.read_bytes(), log=log)
     if not lines:
         log("[nds] NDS Order Log tab: today's feed parsed to zero lines -- tab left as it was")
+        return None
+    if not usable(orders, lines):
+        log("[nds] NDS Order Log tab: feed parsed %d order header(s) for %d line(s) -- "
+            "lines without a customer/rep would be nameless rows; tab left as it was"
+            % (len(orders), len(lines)))
         return None
     return push(lines, today=today, log=log)

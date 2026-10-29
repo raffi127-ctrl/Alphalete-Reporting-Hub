@@ -30,6 +30,14 @@ class Rows(unittest.TestCase):
         self.assertEqual(T._key(T.line_row(line(wireless_order="", dsi=""), "x"))[0], "cust")
 
 
+class Usable(unittest.TestCase):
+    def test_headerless_feed_is_refused(self):
+        bare = [{"line_no": "1", "line_type": "New", "line_status": "Shipped"}] * 5
+        self.assertFalse(T.usable([], bare))
+        self.assertFalse(T.usable([{"customer": "X"}], bare))
+        self.assertTrue(T.usable([{"customer": "X"}], [line(), line(line_no="2")]))
+
+
 class Merge(unittest.TestCase):
     def test_new_changed_kept_aged_and_notes(self):
         first = T.merge([], [line(), line(line_no="2", line_status="Active")], today=TODAY)
