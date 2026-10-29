@@ -34,9 +34,12 @@ DAYS_KEPT = 60
 HEADERS = ("Week Ending", "Rep", "Customer", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Device", "Plan",
            "Line Status", "Ship Date", "Delivered", "Port Status",
-           "Last Updated", "Notes", "Being worked on")
-# Carlos's own columns: typed by hand, carried by line key through every rewrite.
-CARRIED = ("Notes", "Being worked on")
+           "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
+# Carlos's own columns: typed by hand (or, for column S, by rc_contact_sync.delivered),
+# carried by line key through every rewrite. "Delivered Message Sent" was on the live
+# tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
+# have dropped the column.
+CARRIED = ("Notes", "Being worked on", "Delivered Message Sent")
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
 # a change in any of these restamps Last Updated
@@ -83,7 +86,7 @@ def line_row(line: dict, stamp: str) -> List[str]:
     # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
     core = [html.unescape(str(x or "")).strip() for x in _row_of(line)]
     od = _parse_date(core[2])
-    return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp, "", ""]
+    return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp] + [""] * len(CARRIED)
 
 
 def _key(row: Sequence[str]) -> tuple:
@@ -180,15 +183,17 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
         reqs.append({"repeatCell": {"range": rng(1, max(n_rows, 1) + 1, c, c + 1),
                                     "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
                                     "fields": "userEnteredFormat.numberFormat"}})
-    # "Being worked on": a Yes / No dropdown on every data row
-    c_w = _COL["Being worked on"]
-    reqs.append({"setDataValidation": {"range": rng(1, 1000, c_w, c_w + 1), "rule": {
-        "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Yes"}, {"userEnteredValue": "No"}]},
-        "showCustomUi": True, "strict": False}}})
+    # "Being worked on" / "Delivered Message Sent": a Yes / No dropdown on every data row
+    for name in ("Being worked on", "Delivered Message Sent"):
+        c_w = _COL[name]
+        reqs.append({"setDataValidation": {"range": rng(1, 1000, c_w, c_w + 1), "rule": {
+            "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Yes"}, {"userEnteredValue": "No"}]},
+            "showCustomUi": True, "strict": False}}})
     # columns wide enough for full names (auto-fit, then a floor for the typed columns)
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
                                                          "startIndex": 0, "endIndex": n_cols}}})
-    for name, px in (("Notes", 220), ("Being worked on", 130), ("Customer", 190), ("Rep", 190)):
+    for name, px in (("Notes", 220), ("Being worked on", 130), ("Delivered Message Sent", 150),
+                     ("Customer", 190), ("Rep", 190)):
         c = _COL[name]
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})

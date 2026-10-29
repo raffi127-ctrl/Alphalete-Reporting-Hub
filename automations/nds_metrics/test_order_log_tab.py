@@ -24,6 +24,8 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Last Updated"]], "10/29/2026")
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
+        self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
+        self.assertEqual(T.HEADERS[18], "Delivered Message Sent")   # column S on the live tab
 
     def test_html_entities_are_unescaped(self):
         r = T.line_row(line(plan="AT&amp;T Premium", customer="O&#39;BRIEN"), "x")
@@ -51,6 +53,7 @@ class Merge(unittest.TestCase):
         rows = [list(r) for r in first["rows"]]
         rows[0][T._COL["Notes"]] = "called 10/28"            # Carlos types a note on the first row
         rows[0][T._COL["Being worked on"]] = "Yes"
+        rows[0][T._COL["Delivered Message Sent"]] = "Yes"      # rc_contact_sync.delivered marked it
         noted_key = T._key(rows[0])
         # next morning: line 1 activates, line 2 missing from the feed (kept), an old line ages out
         later = TODAY + dt.timedelta(days=1)
@@ -62,6 +65,7 @@ class Merge(unittest.TestCase):
         self.assertEqual(len(by_key), 2)                      # line 2 kept though absent today
         self.assertEqual(by_key[noted_key][T._COL["Notes"]], "called 10/28")
         self.assertEqual(by_key[noted_key][T._COL["Being worked on"]], "Yes")
+        self.assertEqual(by_key[noted_key][T._COL["Delivered Message Sent"]], "Yes")
         l1 = by_key[("wo", "wo555", "1")]
         self.assertEqual(l1[T._COL["Line Status"]], "Active")
         self.assertEqual(l1[T._COL["Last Updated"]], "10/30/2026")

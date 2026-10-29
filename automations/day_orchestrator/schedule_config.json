@@ -4404,6 +4404,44 @@
    },
    "_note": "Posts to #a-players-b2b ONLY (Carlos 2026-09-02, narrowing the Loom's 'the A players and the B2B chat'); no iMessage ('we dont need a text. slack works'). TWO messages: a HEADER post carrying Carlos's own sentence -- 'Customers who didn't receive wrap up text' -- and the names as a REPLY in that header's thread, grouped by rep (Megan 2026-09-03). The header is top-level, not a reply inside the day's Metrics thread: Slack has no thread inside a thread. THE CHECK IS 'was this customer EVER messaged on that line', not 'did a wrap-up go out' -- Carlos's sentence names the post, it does not narrow the test (Megan corrected that reading 2026-09-03). The message window opens on the sale day and runs to now, so a customer sold at 5:55pm and messaged next morning counts as contacted. Reps are bold text, never @mentions -- no rep -> Slack-id map exists and this workspace has duplicate first names. LOGIN: SaraPlus emails a verification code, filtered to alphaletereporting@gmail.com; the run reads it from that inbox (rc_contact_sync.verify_code) and only accepts mail that arrived AFTER the submit, so Lucy 2 also needs ~/.config/recruiting-report/gmail-app-password."
   },
+  "rc_delivered_text": {
+   "_note": "Carlos 2026-10-29: 'every morning, after you sync the contacts and you check to see who didn't send the wrap-up text message ... check for people that have had their phones delivered. If they have their phones delivered, I want you to send this message [Hello! I see that your device(s) have been delivered! ...]. You'll send this through Taylor's RingCentral account ... include the rep in the group message ... on the order log, in column S, where it says delivered message sent, mark yes ... only for the lines that have had it sent.' Reads the 'NDS Order Log' tab (Line Status = Delivered, column S != Yes), contact phone off the wireless feed, rep number via the wrap-up sender's resolvers, ONE group text per customer from Taylor's line, then column S = Yes on exactly those lines + rc-delivered-sent.json. Sits AFTER rc_contact_sync (order 11.6) so the morning reads: tab refreshed by nds_metrics (~6:30) -> contact sync + never-texted post (6:45) -> this.",
+   "_base_args_note": "The WRAPPER passes --live. The module is DRY RUN by default, so `lucy rerun rc_delivered_text` previews (and uploads the whole plan to the control sheet's 'Delivered Preview' tab) and sends nothing. First live pass was by hand on 2026-10-29 after Carlos read the preview.",
+   "order": 11.6,
+   "on_scheduler": true,
+   "display_name": "Delivered-phone text (Taylor's line, group with rep)",
+   "machine": "Lucy 2",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.rc_contact_sync.delivered"
+   ],
+   "base_args": [
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "not_before": "07:00"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "after": [
+    "rc_contact_sync"
+   ],
+   "timeout_minutes": 20,
+   "verify": {
+    "type": "manifest",
+    "report_id": "rc_delivered_text"
+   }
+  },
   "sp_order_log": {
    "hand_run_only": true,
    "on_scheduler": false,
