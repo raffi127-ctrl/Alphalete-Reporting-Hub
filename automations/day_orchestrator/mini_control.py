@@ -9644,7 +9644,8 @@ def _rerun_home(args: str, by: str = "") -> str | None:
 
 
 def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = False,
-            machine: str | None = None, auto: bool = False) -> None:
+            machine: str | None = None, auto: bool = False,
+            skip_if_waiting: bool = False) -> None:
     """Add a fix request to the queue (called by Eve / Megan / the orchestrator).
     Targets `machine`'s tab (default 'Lucy 1' → the original 'Mini Control').
 
@@ -9731,6 +9732,10 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
         ws = own if own is not None else _open(sandbox, machine, legacy=True)
     else:
         ws = _open(sandbox, machine, legacy=True)
+    if skip_if_waiting and _already_waiting(ws, action, args):
+        print(f"[mini_control] skipped: {action} {args} is already waiting on "
+              f"{_control_tab_for(_machine_profile(machine))}")
+        return
     ws.append_row([_now_tz(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
     # Don't echo a secret back at the person queueing it — their terminal
@@ -9740,6 +9745,26 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     home = " (own workbook)" if where and where != CONTROL_SHEET_ID else ""
     print(f"[mini_control] queued: {action} {shown} (by {by}) "
           f"→ {_control_tab_for(_machine_profile(machine))}{home}")
+
+
+def _already_waiting(ws, action: str, args: str) -> bool:
+    """Is the same job already queued or running on this tab?
+
+    WHY (Megan 2026-10-29). The new-start thread scan queues a rerun every 30
+    minutes whether or not the last one ran. While Lucy 1's queue was stuck it
+    stacked FIVE copies of `rerun new_start_thread_replies`, which would have
+    run back to back. A scheduled enqueuer passes skip_if_waiting so one waiting
+    copy is enough. A read error answers False — queueing a duplicate is safer
+    than dropping the job."""
+    try:
+        rows = ws.get_all_values()[1:]
+    except Exception:  # noqa: BLE001
+        return False
+    want = (str(action).strip().lower(), str(args or "").strip())
+    return any(len(r) > 4
+               and (str(r[1]).strip().lower(), str(r[2]).strip()) == want
+               and str(r[4]).strip().lower() in ("queued", "running")
+               for r in rows)
 
 
 #: Statuses only a RUNNER writes. A tab carrying one of these has been drained
@@ -10571,7 +10596,7 @@ def print_help() -> None:
 # control flags to the FRONT before parsing, wherever the user put them, while
 # everything else stays in the REMAINDER for the report.
 _VALUE_CONTROL_FLAGS = ("--machine", "--by")   # take a value
-_BOOL_CONTROL_FLAGS = ("--sandbox",)           # bare toggle
+_BOOL_CONTROL_FLAGS = ("--sandbox", "--skip-if-waiting")   # bare toggles
 
 
 def _hoist_control_flags(argv: List[str]) -> List[str]:
@@ -10627,6 +10652,8 @@ def main(argv=None) -> int:
                          "waits on a report.")
     ap.add_argument("--dry-run", action="store_true", help="poll but execute nothing")
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")
+    ap.add_argument("--skip-if-waiting", action="store_true",
+                    help="don't queue if the same job is already queued/running")
     ap.add_argument("--machine", default=None,
                     help="target machine profile, e.g. 'Lucy 2'. Enqueue side: "
                          "which runner's tab to queue to (default 'Lucy 1'). Loop "
@@ -10653,8 +10680,9 @@ def main(argv=None) -> int:
             from automations.shared import fleet
             targets = list(fleet.RUNNERS)
         for m in targets:
+            extra = {"skip_if_waiting": True} if a.skip_if_waiting else {}
             enqueue(a.enqueue[0], shlex.join(a.enqueue[1:]), by=a.by,
-                    sandbox=a.sandbox, machine=m)
+                    sandbox=a.sandbox, machine=m, **extra)
         return 0
     if a.loop:
         poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox,
