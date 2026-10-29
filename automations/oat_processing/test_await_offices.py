@@ -57,12 +57,20 @@ class AlwaysTheAppStreamSchedule(unittest.TestCase):
         rs.assert_called_once()
 
 
-class TheSweetSpot(unittest.TestCase):
+class NearestSlotFirst(unittest.TestCase):
+    """Megan 10/28: no 3-6 hour step -- every slot more than 30 min out."""
 
-    def test_three_to_six_hours_out_first(self):
+    def test_the_nearer_morning_slots_are_offered(self):
+        # Carlos 10/28: at 9:00 it must offer 9:45-10:45 too.
+        slots, step = AT.parse_ai_hours(_hours_page(CARLOS))
+        self.assertEqual(AW.clause_from_schedule(at("2026-10-28 09:00"), slots, step),
+                         "available TODAY, currentInterviewDay, from "
+                         "9:45am-10:45am or 12:15pm-3:45pm")
+
+    def test_rest_of_today_from_30_min_out(self):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-28 09:30"),
                                                  S23965, 15),
-                         "available TODAY, currentInterviewDay, from 12:30pm-3:30pm")
+                         "available TODAY, currentInterviewDay, from 10:15am-3:30pm")
 
     def test_none_that_far_today_remaining_anyway(self):
         # Megan: "Today's remaining slots anyway ... under 3 hours, but same-day"
@@ -89,11 +97,13 @@ class TheSweetSpot(unittest.TestCase):
     def test_24065_friday_is_afternoon_only(self):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-30 07:30"),
                                                  S24065, 30),
-                         "available TODAY, currentInterviewDay, from 12:45pm-1:15pm")
-
-    def test_carlos_gets_the_sweet_spot_too(self):
-        self.assertEqual(AW.await_clause(at("2026-10-28 09:30")),
                          "available TODAY, currentInterviewDay, from 12:45pm-3:15pm")
+
+    def test_a_slot_30_min_away_or_closer_is_skipped(self):
+        slots, step = AT.parse_ai_hours(_hours_page(CARLOS))
+        self.assertEqual(AW.clause_from_schedule(at("2026-10-28 09:15"), slots, step),
+                         "available TODAY, currentInterviewDay, from "
+                         "10:15am-10:45am or 12:15pm-3:45pm")
 
 
 class TheDayReadsTodayWednesday(unittest.TestCase):
@@ -195,15 +205,15 @@ class TheRealTemplates(unittest.TestCase):
         c = AW.clause_from_schedule(at("2026-10-28 09:30"), S24065, 30)
         self.assertEqual(AT.CLAUSE_RE.sub(c, T24065, count=1),
                          "Are you available TODAY, currentInterviewDay, from "
-                         "12:45pm-3:15pm for a quick ZOOM to go over the "
-                         "position?")
+                         "10:15am-10:45am or 12:45pm-3:15pm for a quick ZOOM "
+                         "to go over the position?")
 
     def test_23965_gets_times_on_its_question(self):
         self.assertIsNone(AT.CLAUSE_RE.search(T23965))
         c = AW.clause_from_schedule(at("2026-10-28 09:30"), S23965, 15)
         new = AT.BARE_ASK_RE.sub("Are you %s?" % c, T23965, count=1)
         self.assertTrue(new.endswith("Zoom Interview. Are you available "
-                                     "TODAY, currentInterviewDay, from 12:30pm-3:30pm?"))
+                                     "TODAY, currentInterviewDay, from 10:15am-3:30pm?"))
         # ...and from then on the normal update finds it.
         self.assertIsNotNone(AT.CLAUSE_RE.search(new))
 
@@ -315,7 +325,7 @@ class ReadsAISettingsHours(unittest.TestCase):
     def test_atef_midday_only(self):
         slots, step = AT.parse_ai_hours(_hours_page(ATEF))
         self.assertEqual(AW.clause_from_schedule(at("2026-10-28 08:00"), slots, step),
-                         "available TODAY, currentInterviewDay, from 11:45am-1:45pm")
+                         "available TODAY, currentInterviewDay, from 11:45am-2:45pm")
 
     def test_two_T_letters_are_tuesday_then_thursday(self):
         days = [("M", []), ("T", [(495, 495)]), ("W", []), ("T", [(600, 600)]),

@@ -87,9 +87,11 @@ def starts_from_spans(spans, step: int):
 
 # --- choosing and saying -------------------------------------------------------
 def pick_starts(now_min: int, starts):
-    sweet = [s for s in starts if SWEET_MIN <= s - now_min <= SWEET_MAX]
-    if sweet:
-        return sweet
+    """Every start more than LEAD_MIN away (Carlos's rule). The 3-6 hour
+    "sweet spot" step is gone (Megan 2026-10-28: "yes make that change for
+    all accounts"): the show-up audit has 1-4 hours best and every same-day
+    bucket close together (52-56%), so hiding the nearer slots cost bookings
+    for nothing. SWEET_MIN/SWEET_MAX are kept only so old imports still load."""
     return [s for s in starts if s - now_min > LEAD_MIN]
 
 
