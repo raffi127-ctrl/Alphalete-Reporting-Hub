@@ -289,13 +289,57 @@ def _sched_path(office_id: str):
     os.makedirs(os.path.join(root, "output"), exist_ok=True)
     # "-v2": the 10/28 afternoon reader (ExtJS 1st Interview tab). A copy
     # saved by the first reader may hold the wrong grid, so it is not reused.
-    return os.path.join(root, "output", "await-schedule-v2-%s-%s.json"
+    return os.path.join(root, "output", "await-schedule-v3-%s-%s.json"
                         % (office_id, dt.date.today().isoformat()))
 
 
+# AI > AI Settings > Hours (Megan 10/28: "for the schedule we need to look at
+# AI>ai settings>hours"). Its "Current Active Interview Time" list is the
+# schedule the AI books into -- one header letter per weekday (M T W T F S S,
+# a day with no slots still shows its letter), then one "08:15 AM - 08:45 AM"
+# line per slot with its capacity under it. The old Settings > Office Level
+# Settings grid disagrees with it on several offices, so it is not read.
+_AI_HOURS_MARK = "Current Active Interview Time"
+_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+         "Sunday"]
+_SLOT_RE = re.compile(r"^(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)$",
+                      re.I)
+
+
+def parse_ai_hours(text: str):
+    """({weekday: [(start, end)]}, slot minutes) from the Hours page text."""
+    i = (text or "").find(_AI_HOURS_MARK)
+    if i < 0:
+        return {}, None
+    lines = [x.strip() for x in text[i + len(_AI_HOURS_MARK):].splitlines()]
+    slots, day, idx, length = {}, None, -1, None
+    for x in lines:
+        if not x or x == "Video Tutorial" or x.isdigit():
+            continue
+        if x in ("M", "T", "W", "F", "S"):
+            j = idx + 1
+            while j < 7 and _WEEK[j][0] != x:
+                j += 1
+            if j >= 7:
+                break
+            idx, day = j, _WEEK[j]
+            continue
+        m = _SLOT_RE.match(x)
+        if m and day:
+            sp = parse_span("%s - %s" % (m.group(1), m.group(2)))
+            if sp:
+                slots.setdefault(day, []).append(sp)
+                length = length or (sp[1] - sp[0])
+            continue
+        if day:
+            break                      # the list is over
+    return slots, length
+
+
 def read_office_schedule(page, office_id: str):
-    """({weekday: [(start, end)]}, step) from Settings > Office Level
-    Settings, or (None, None). Cached for the day."""
+    """({weekday: [(start, end)]}, slot minutes) from AI > AI Settings >
+    Hours, or (None, None). Cached for the day. Goes back to the page it
+    started on, so the template steps after it carry on as before."""
     import json
     import os
     path = _sched_path(office_id)
@@ -306,41 +350,50 @@ def read_office_schedule(page, office_id: str):
                     d["step"])
         except Exception:  # noqa: BLE001
             pass
-    got = None
-    for label in (r"^Office Level Settings$", r"^Self-Schedule Setup$"):
-        _click_text(page, label, hover_first="Settings")
-        for fr in page.frames:
-            try:
-                raw = fr.evaluate(_SCHED_JS) or {}
-            except Exception:  # noqa: BLE001
-                continue
-            if raw.get("slots"):
-                got = raw
-                break
-        if got:
-            break
-    if not got:
-        _log("[await] office %s: no 'Current Active Interview Slots' found "
-             "in Settings" % office_id)
+    back = page.url
+    m = re.search(r"rqst=([^&#]+)", back or "")
+    tok = m.group(1) if m else page.evaluate(
+        "() => ((document.querySelector('a[href*=\"rqst=\"]') || {}).href"
+        " || '').replace(/.*rqst=([^&#]+).*/, '$1')")
+    if not tok:
+        _log("[await] office %s: no session token to open AI Settings > Hours"
+             % office_id)
         return None, None
-    slots = {}
-    for d, cells in got["slots"].items():
-        spans = [sp for sp in (parse_span(c) for c in cells) if sp]
-        if spans:
-            slots[d] = spans
-    step = int(got.get("step") or 0) or None
+    text = shown = ""
+    try:
+        page.goto("https://applicantstream.com/index.cfm?rqst=%s&p=1504"
+                  "&pane=hours" % tok, wait_until="domcontentloaded",
+                  timeout=45000)
+        for _ in range(30):
+            text = page.evaluate("() => document.body.innerText") or ""
+            if _AI_HOURS_MARK in text and re.search(
+                    r"\d{1,2}:\d{2}\s*[AP]M\s*-", text.split(_AI_HOURS_MARK, 1)[1]):
+                break
+            page.wait_for_timeout(500)
+        shown = page.evaluate(
+            "() => ((document.querySelector('select') || {}).selectedOptions"
+            " || [{}])[0].text || ''") or ""
+    finally:
+        try:
+            page.goto(back, wait_until="domcontentloaded", timeout=45000)
+        except Exception:  # noqa: BLE001
+            pass
+    if "#%s " % office_id not in shown + " ":
+        _log("[await] office %s: AI Settings > Hours showed another office "
+             "(%r) -- not used" % (office_id, shown[:60]))
+        return None, None
+    slots, step = parse_ai_hours(text)
     if not slots or not step:
-        _log("[await] office %s: schedule unreadable (slots=%s step=%s)"
-             % (office_id, bool(slots), step))
+        _log("[await] office %s: no interview times on AI Settings > Hours"
+             % office_id)
         return None, None
     try:
         json.dump({"slots": slots, "step": step}, open(path, "w"))
     except Exception:  # noqa: BLE001
         pass
-    _log("[await] office %s schedule: %s, every %d min" % (
-        office_id, "; ".join("%s %s" % (d[:3], ",".join(
-            "%d:%02d-%d:%02d" % (a // 60, a % 60, b // 60, b % 60) for a, b in slots[d]))
-            for d in DAYS if d in slots), step))
+    _log("[await] office %s schedule (AI Settings > Hours): %s, %d-min slots"
+         % (office_id, "; ".join("%s %d slots" % (d[:3], len(slots[d]))
+                                 for d in DAYS if d in slots), step))
     return slots, step
 
 

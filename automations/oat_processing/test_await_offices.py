@@ -252,3 +252,51 @@ class TheGridReader(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _hours_page(days):
+    """The AI Settings > Hours text, built the way the live page reads
+    (10/28): a letter per weekday, then 'HH:MM AM - HH:MM AM' + capacity."""
+    out = ["Interview Schedule", "Save Settings", "Current Active Interview Time",
+           "Video Tutorial"]
+    for letter, blocks in days:
+        out.append(letter)
+        for a, b in blocks:
+            t = dt.datetime(2026, 1, 1, a // 60, a % 60)
+            while t.hour * 60 + t.minute <= b:
+                e = t + dt.timedelta(minutes=30)
+                out += ["%s - %s" % (t.strftime("%I:%M %p"), e.strftime("%I:%M %p")), "7"]
+                t = e
+    out.append("Holiday Settings")
+    return "\n".join(out)
+
+
+CARLOS = [(L, [(495, 645), (735, 945)]) for L in "MTWTF"] + [("S", []), ("S", [])]
+ATEF = [(L, [(705, 885)]) for L in "MTWTF"] + [("S", []), ("S", [])]
+
+
+class ReadsAISettingsHours(unittest.TestCase):
+    """Megan 10/28: "for the schedule we need to look at AI>ai settings>hours"."""
+
+    def test_carlos_lunch_break_comes_through(self):
+        slots, step = AT.parse_ai_hours(_hours_page(CARLOS))
+        self.assertEqual(step, 30)
+        self.assertEqual(sorted(slots), sorted(["Monday", "Tuesday", "Wednesday",
+                                                "Thursday", "Friday"]))
+        self.assertEqual(AW.clause_from_schedule(at("2026-10-28 19:15"), slots, step),
+                         "available TOMORROW, nextInterviewDay, from "
+                         "8:15am-10:45am or 12:15pm-3:45pm")
+
+    def test_atef_midday_only(self):
+        slots, step = AT.parse_ai_hours(_hours_page(ATEF))
+        self.assertEqual(AW.clause_from_schedule(at("2026-10-28 08:00"), slots, step),
+                         "available TODAY, currentInterviewDay, from 11:45am-1:45pm")
+
+    def test_two_T_letters_are_tuesday_then_thursday(self):
+        days = [("M", []), ("T", [(495, 495)]), ("W", []), ("T", [(600, 600)]),
+                ("F", []), ("S", []), ("S", [])]
+        slots, _ = AT.parse_ai_hours(_hours_page(days))
+        self.assertEqual(slots, {"Tuesday": [(495, 525)], "Thursday": [(600, 630)]})
+
+    def test_no_list_no_schedule(self):
+        self.assertEqual(AT.parse_ai_hours("Hours\nSave Schedule"), ({}, None))
