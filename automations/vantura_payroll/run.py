@@ -854,7 +854,7 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
                 "the revenue-block rows")
     rev_campaigns = tuple((n, rev_title + off)
                           for n, off in (("B2B", 2), ("BOX", 8), ("Base", 14),
-                                         ("NDS", 20)))
+                                         ("NDS", 20), ("Fiber", 26)))
 
     s, e = raw_range
     E = f"RAW!$E${s}:$E${e}"
@@ -873,9 +873,11 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     base = f'(({J}="RES-BASE POWER-Energy")*(1-{_cap}))'
     lead = "0"
     non_b2b = f'(({J}="B2B-ATT-SBS")*(1-{_cap}))'
-    # NDS program's own campaigns (Carlos 10/28): the wireless ports funding
-    # into his DD + the fiber lines Raf's CSV adds (RES-ATT).
-    nds = f'(((({J}="NDS Wireless")+({J}="RES-ATT"))>0)*(1-{_cap}))'
+    # NDS and Fiber are SEPARATE programs on Tableau's PROGRAM SUMMARY
+    # (Carlos 10/28, after the first cut lumped them): NDS = the wireless ports
+    # funding into his DD; Fiber = the RES-ATT lines Raf's CSV adds.
+    nds = f'(({J}="NDS Wireless")*(1-{_cap}))'
+    fiber = f'(({J}="RES-ATT")*(1-{_cap}))'
     rep_c = f"$C{PNL_REP_FIRST}:$C{rep_last}"
     brought_rng = (f"{blk['brought']}{PNL_REP_FIRST}:"
                    f"{blk['brought']}{rep_last}")
@@ -902,7 +904,8 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     camp_mask = {"B2B": (non_b2b, non_b2b),
                  "BOX": (f"({box}+{lead})", f"({box})"),
                  "Base": (f"({base})", f"({base})"),
-                 "NDS": (nds, nds)}
+                 "NDS": (nds, nds),
+                 "Fiber": (fiber, fiber)}
     for name, hdr_row in rev_campaigns:
         labels[f"{blk['paid']}{hdr_row}"] = name
         for i, metric in enumerate(REV_METRICS, start=1):
@@ -913,10 +916,10 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         # Paid Out comes from the rep block, NOT RAW col I: RAW never sees the
         # Adjustments tab (bonuses / no-pay), so a RAW-sourced Paid Out
         # understates real payroll (2026-07-28).
-        # EXCEPT NDS: its reps are tagged B2B in col C (one tag per rep), so a
-        # rep-tag SUMIF would always be $0 — its Paid Out is the line-level
-        # commission (RAW col I) on NDS Wireless + RES-ATT rows instead.
-        if name == "NDS":
+        # EXCEPT NDS/Fiber: their reps are tagged B2B in col C (one tag per rep), so a
+        # rep-tag SUMIF would always be $0 — their Paid Out is the line-level
+        # commission (RAW col I) on those campaign rows instead.
+        if name in ("NDS", "Fiber"):
             formulas[f"{P}{r0+1}"] = f"=SUMPRODUCT({paid_m}*{I})"
         else:
             formulas[f"{P}{r0+1}"] = (
