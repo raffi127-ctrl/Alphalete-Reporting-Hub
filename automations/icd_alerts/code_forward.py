@@ -96,3 +96,60 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
     _mark(address)
     say("      Thanks -- the reporting team will confirm the forward.")
     return "done"
+
+
+# --- the one line an office pastes (docs/sara-forward.html) -----------------
+# Megan 2026-10-29: "a code they can just run in their terminal", like the
+# sara-signin page. Gmail will not let a script turn forwarding on for a
+# personal account, so this does everything around the two clicks that only
+# the owner can make: opens Gmail on the right screen, asks the address, sends
+# it home. The SAME line, run again after we confirm, opens the filter screen.
+FORWARDING_URL = "https://mail.google.com/mail/u/0/#settings/fwdandpop"
+FILTER_URL = ("https://mail.google.com/mail/u/0/#search/from%3A"
+              + SARAPLUS_SENDER.replace("@", "%40"))
+
+FILTER_STEPS = (
+    "Last step. Gmail is open on SaraPlus's code emails.\n\n"
+    "Click the sliders icon at the right of the search bar -> Create filter "
+    "-> check Forward it to -> pick %s -> Create filter." % REPORTING_INBOX)
+
+
+def _open(url: str, say=print) -> None:
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception:  # noqa: BLE001 -- the steps say where to go anyway
+        say("      open %s" % url)
+
+
+def main(argv=None) -> int:
+    from automations.icd_alerts import dialogs as ask
+
+    def say(m=""):
+        print(m, flush=True)
+
+    if not already_set_up():
+        _open(FORWARDING_URL, say)
+        said = walk_through(ask, say)
+        if said != "done":
+            say("")
+            say("  NOT YET -- run this same line again when you are ready.")
+            return 1
+        say("")
+        say("  STEP 1 DONE. The reporting team confirms it on their side and")
+        say("  tells you -- then run this same line once more for the filter.")
+        return 0
+    _open(FILTER_URL, say)
+    try:
+        ask.message(FILTER_STEPS)
+    except Exception:  # noqa: BLE001
+        say("  " + FILTER_STEPS)
+    say("")
+    say("  ALL SET once that filter is saved. Lucy enters SaraPlus's codes")
+    say("  herself from now on.")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

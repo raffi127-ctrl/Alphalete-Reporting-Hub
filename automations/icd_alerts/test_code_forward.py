@@ -139,5 +139,33 @@ class OnLucy1(unittest.TestCase):
         self.assertIn('"probe-code-forward"', inspect.getsource(P.notify_faults))
 
 
+class TheTerminalLine(unittest.TestCase):
+    """docs/sara-forward.html: the same line twice -- forwarding, then filter."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p = mock.patch.object(CF, "MARK_PATH", Path(tmp.name) / "fwd.txt")
+        p.start()
+        self.addCleanup(p.stop)
+        self.opened = []
+        p = mock.patch.object(CF, "_open", side_effect=lambda u, s=None: self.opened.append(u))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_first_run_opens_forwarding_then_second_opens_the_filter(self):
+        with mock.patch.object(CF, "walk_through",
+                               side_effect=lambda a, s: CF._mark("o@gmail.com") or "done"),              mock.patch("automations.icd_alerts.dialogs.message"),              mock.patch("builtins.print"):
+            self.assertEqual(CF.main(), 0)
+            self.assertEqual(self.opened, [CF.FORWARDING_URL])
+            self.assertEqual(CF.main(), 0)
+        self.assertEqual(self.opened[-1], CF.FILTER_URL)
+
+    def test_a_skip_says_not_yet(self):
+        with mock.patch.object(CF, "walk_through", return_value="skipped for now"),              mock.patch("builtins.print"):
+            self.assertEqual(CF.main(), 1)
+        self.assertFalse(CF.already_set_up())
+
+
 if __name__ == "__main__":
     unittest.main()
