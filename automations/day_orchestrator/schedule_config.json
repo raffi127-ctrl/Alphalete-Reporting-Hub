@@ -427,7 +427,8 @@
   },
   "second_round_retention": {
    "on_scheduler": false,
-   "_note": "BUILD (Eve, 2026-10-29): feed for Camila's 2nd-round-retention dashboard. Her Claude-cloud dashboard can't get past AppStream's Cloudflare, so a Lucy reads Retention - Details (new) per office (Total Second Interviews / Second Interviews Showed Up, Sun-Sat) and writes one row per office per day to the SANDBOX sheet 1JF1M-SYYbRnrp0dFr-IKxPiXMPdHPvGomyP6r4aSFZw (tab Datos; Info!B1 = last update). Writes with drive-full-reporting-token (alphaletereporting). Test: `lucy rerun second_round_retention -- --dry-run`. Hourly 8:07-20:07 ET once the numbers check out.",
+   "_note": "LIVE hourly since 2026-10-29 (Eve): real schedule = com.alphalete.second-round-retention-hourly on LUCY 1, :07 7am-7pm CT every day (= 8:07-20:07 ET). Feed for Camila's 2nd-round-retention dashboard. Her Claude-cloud dashboard can't get past AppStream's Cloudflare, so a Lucy reads Retention - Details (new) per office (Total Second Interviews / Second Interviews Showed Up, Sun-Sat) and writes one row per office per day to the SANDBOX sheet 1JF1M-SYYbRnrp0dFr-IKxPiXMPdHPvGomyP6r4aSFZw (tab Datos; Info!B1 = last update). Writes with drive-full-reporting-token (alphaletereporting). Test: `lucy rerun second_round_retention -- --dry-run`. Checked 10/29 against Camila's dashboard (Blue Mendoza, Drew Tepper, Jairo Ruiz, Luke Baldwin match). Sheet shared read-only with camilahornosk@gmail.com.",
+   "machine": "Lucy 1",
    "display_name": "2nd round retention por oficina (Camila)",
    "source_type": "appstream",
    "data_sources": [],
@@ -443,6 +444,29 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 60
+  },
+  "install_second_round_retention_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Install/refresh com.alphalete.second-round-retention-hourly on LUCY 1 (2nd round retention per office, hourly :07, 7am-7pm CT). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 1",
+   "display_name": "Install 2nd Round Retention hourly agent (:07, 7am-7pm CT)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "second-round-retention-hourly"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
   },
   "sales_board_mind_map": {
    "on_scheduler": false,
