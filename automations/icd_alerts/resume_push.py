@@ -146,6 +146,12 @@ PUSH_OFFICES = {
     "trang": ("6564", "dry"),        # Trang Canavan, Fresh Success Marketing
     "tre": ("21182", "dry"),         # Lamar "Tre" Mitchell III, Mission III
     "valeria": ("22850", "dry"),     # Valeria Tristan, Altura Marketing
+    # FIRST STEP OF MOVING ATEF OFF LUCY 2 (Megan 2026-10-28: "the goal is to
+    # get them all on their relay ECO machines" / "start atef's dry run").
+    # His office computer walks 23467's queue and reports numbers, sends
+    # nobody. Lucy 2 keeps pushing him LIVE until this says "live" -- then he
+    # leaves ROTATION_BY_MACHINE in the same release (one office, one machine).
+    "atef": ("23467", "dry"),        # Atef Choudhury, Domin8 Acquisitions
 }
 LOGIN_POLL_SECONDS = 90
 
