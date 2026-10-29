@@ -60,7 +60,7 @@ CHANNELS: Dict[str, str] = {
     "Colten Wright": "C0AUAPMEF37",           # #colten-wrights-office-recruiting-14733
     "Cyrus Wade": "C0AUC4PAF2A",              # #cyrus-wade-office-recruiting-22815
     "Drew Tepper": "C0C532LA6JY",             # #drew-tepper-recruiting-22583
-    "Eveliz Wright": "C0C5TPWLR2R",           # #eveliz-wright-office-recruiting-18404
+    "Eveliz Wright": "C0C8MSC33S6",           # #18404-south-shore-consulting-group-inc-eveliz-wright (Camila 10/29)
     "Geoge Delgado": "C0C81LUN0KS",           # #george-delgado-recruiting (ZOOMS INFO spells it Geoge)
     "George Delgado": "C0C81LUN0KS",
     "Haytham Nagi": "C0AUUSCSEV7",            # #haytham-nagi-office-recruiting-22524
