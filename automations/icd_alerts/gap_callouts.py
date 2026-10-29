@@ -279,16 +279,35 @@ def _is_spanish(template: str) -> bool:
     return any(mk in template for mk in _SPANISH_MARKERS)
 
 
-def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None) -> str:
+def _tagged_first(office_key: str, full_name: str, first: str, *, remember: bool) -> str:
+    """ONE REP'S RUNNING JOKE in the Slack call-out too (Megan 2026-10-27:
+    "every 3rd call-out/sale"). The sale lines and the typed gap list already
+    count his mentions; the Slack call-out named him six times in a week and
+    never did. Same table, same counter room ('<office>-gaps'); the tag
+    follows his first name. Never raises -- the joke must not cost a line."""
+    try:
+        from automations.shared import rep_asides as _RA
+        rule = _RA.due("%s-gaps" % office_key, full_name, remember=remember)
+        if rule:
+            return _RA.tag_name(first, first, rule["tag"])
+    except Exception:  # noqa: BLE001
+        pass
+    return first
+
+
+def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None,
+         *, remember: bool = True) -> str:
     """One sentence in the house voice, chosen by office + hour so a re-run
     repeats itself and neighbouring hours don't."""
     if not callouts:
         return ""
-    firsts = []
+    firsts, shown = [], {}
     for c in callouts:
         f = _first(c["name"])
         if f and f not in firsts:
             firsts.append(f)
+            shown[f] = _tagged_first(office_key, c["name"], f, remember=remember)
+    firsts = [shown.get(f, f) for f in firsts]
     m = min(c["mins"] for c in callouts)
     m = (m // 5) * 5                       # "40+", not "43+"
     seed = "callout|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
@@ -304,7 +323,8 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None)
     # name sits on its own bullet with its own minutes, longest gap first.
     crowd = ("%d de ustedes" if spanish else "%d of y'all") % len(firsts)
     head = template.format(names=crowd, m=m)
-    bullets = ["• %s — %d min" % (_first(c["name"]), c["mins"]) for c in callouts]
+    bullets = ["• %s — %d min" % (shown.get(_first(c["name"]), _first(c["name"])), c["mins"])
+               for c in callouts]
     return head + "\n" + "\n".join(bullets)
 
 
@@ -440,7 +460,7 @@ def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict
     if not due(st, now, CALLOUT_EVERY_OVERRIDES.get(key)):
         return ""
     prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records_now or {})
-    text = line(key, pick_from_gaps(gaps, records_now, prev), now)
+    text = line(key, pick_from_gaps(gaps, records_now, prev), now, remember=remember)
     if remember:
         _remember(key, {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
                         "records": dict(records_now or {})})
