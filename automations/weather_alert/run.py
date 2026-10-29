@@ -86,6 +86,10 @@ CITIES = {
     # (alturamarketinginc.com, 410 S Ware Blvd), 2026-10-08.
     "tampa": ("Tampa, FL", 27.9506, -82.4572, "America/New_York"),
     "deerfield_beach": ("Deerfield Beach, FL", 26.3184, -80.0998, "America/New_York"),
+    # joseph-delgado / Golden View Solutions: Fort Myers / Cape Coral -- 13 of
+    # his 20 NDS sale zips in Tableau's lead-penetration crosstab are 339xx,
+    # the rest Sarasota / North Port (342xx), 2026-10-29.
+    "fort_myers": ("Fort Myers, FL", 26.6406, -81.8723, "America/New_York"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -143,6 +147,7 @@ METRICS_CITY = {
     "joseph": "grandville",     # Logan Legacy Group, Grandville MI (OwnerVille office address, harvested 2026-10-20); #logan-legacy-sales
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
     "tre": "houston",           # Mission III Management, Houston -- #mission-iii-sales (2026-10-07)
+    "joseph-delgado": "fort_myers",  # Golden View Solutions (NDS), sales in Fort Myers/Cape Coral per Tableau zips; #goldenview-d2d-sales. NOT "joseph" (= Logan)
 }
 
 
