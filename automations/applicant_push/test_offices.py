@@ -171,13 +171,13 @@ check("every ROTATION office has a machine",
 # 2026-10-20: 11580 moved to Carlos's own computer (relay, see offices.py).
 # 2026-10-29: 23467 moved to Atef's own computer (relay).
 _LUCY2 = ["11901"]
-_LUCY4 = ["11280", "23965", "24065"]   # back from Megan's laptop 10/29
-_LAPTOP = []
+_LUCY4 = []   # 10/29: Raf's three run in the Lucy user on Megan's laptop
+_LAPTOP = ["11280", "23965", "24065"]
 check("Lucy 2 works Khalil", offices.rotation_for("Lucy 2"), _LUCY2)
 check("Atef is pushed from his own computer", offices.rotation_for("Atef's office computer (relay)"), ["23467"])
 check("Carlos is pushed from his own computer", offices.rotation_for("Carlos's office computer (relay)"), ["11580"])
-check("Lucy 4 works Raf's three streams", offices.rotation_for("Lucy 4"), _LUCY4)
-check("Megan's laptop works nothing", offices.rotation_for("Megan's laptop"), _LAPTOP)
+check("Lucy 4 works nothing now", offices.rotation_for("Lucy 4"), _LUCY4)
+check("Megan's laptop works Raf's three streams", offices.rotation_for("Megan's laptop"), _LAPTOP)
 check("Lucy 3 is assigned nothing", offices.rotation_for("Lucy 3"), [])
 check("a marker written in lower case still resolves",
       offices.rotation_for("lucy 2"), _LUCY2)

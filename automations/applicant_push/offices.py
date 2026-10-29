@@ -600,12 +600,13 @@ ROTATION_BY_MACHINE = {
     # laptop read them first try (Tyesha Parker, sent). Runs from the separate
     # clone ~/lucy-push-runner with APPLICANT_PUSH_BACKGROUND=1, so it never
     # touches her working folder and its Chrome stays out of her way.
-    # BACK ON LUCY 4 the same day (Megan 2026-10-29: "it still keeps taking
-    # over my screen"). Her laptop read the resumes fine, but a push on a
-    # computer she is using kept surfacing its Chrome. Lucy 4 until the
-    # background run is proven out of sight.
-    "Lucy 4": ["11280", "23965", "24065"],
-    "Megan's laptop": [],
+    # ON MEGAN'S LAPTOP, IN ITS OWN MAC USER (2026-10-29: "let's do the 2nd
+    # user"). Her laptop gets past Indeed (16 sent that afternoon); run from
+    # her own login it kept surfacing its Chrome, so it now runs in a separate
+    # macOS user ("lucyecoraf", setup /Users/Shared/lucy-push-setup.sh) whose
+    # windows can never reach her screen. Same .machine-profile name.
+    "Lucy 4": [],
+    "Megan's laptop": ["11280", "23965", "24065"],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
     # Listed here so "one office, one machine" stays checkable in one place;
