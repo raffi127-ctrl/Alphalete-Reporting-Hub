@@ -34,7 +34,9 @@ DAYS_KEPT = 60
 HEADERS = ("Week Ending", "Rep", "Customer", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Device", "Plan",
            "Line Status", "Ship Date", "Delivered", "Port Status",
-           "Last Updated", "Notes")
+           "Last Updated", "Notes", "Being worked on")
+# Carlos's own columns: typed by hand, carried by line key through every rewrite.
+CARRIED = ("Notes", "Being worked on")
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
 # a change in any of these restamps Last Updated
@@ -81,7 +83,7 @@ def line_row(line: dict, stamp: str) -> List[str]:
     # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
     core = [html.unescape(str(x or "")).strip() for x in _row_of(line)]
     od = _parse_date(core[2])
-    return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp, ""]
+    return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp, "", ""]
 
 
 def _key(row: Sequence[str]) -> tuple:
@@ -125,7 +127,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
                 fresh[_COL["Last Updated"]] = prior[_COL["Last Updated"]] or stamp
             else:
                 changed += 1
-            fresh[_COL["Notes"]] = prior[_COL["Notes"]]
+            for c in CARRIED:
+                fresh[_COL[c]] = prior[_COL[c]]
         merged[_key(fresh)] = fresh
     kept, aged = [], 0
     for row in merged.values():
@@ -157,6 +160,10 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
         return {"sheetId": sheet_id, "startRowIndex": r0, "endRowIndex": r1,
                 "startColumnIndex": c0, "endColumnIndex": c1}
     reqs = [
+        # everything centered (Carlos 2026-10-29)
+        {"repeatCell": {"range": rng(0, 1000, 0, n_cols), "cell": {"userEnteredFormat": {
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"}},
         {"repeatCell": {"range": rng(0, 1, 0, n_cols), "cell": {"userEnteredFormat": {
             "backgroundColor": {"red": 0.24, "green": 0.24, "blue": 0.24},
             "horizontalAlignment": "CENTER",
@@ -171,6 +178,18 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
         reqs.append({"repeatCell": {"range": rng(1, max(n_rows, 1) + 1, c, c + 1),
                                     "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
                                     "fields": "userEnteredFormat.numberFormat"}})
+    # "Being worked on": a Yes / No dropdown on every data row
+    c_w = _COL["Being worked on"]
+    reqs.append({"setDataValidation": {"range": rng(1, 1000, c_w, c_w + 1), "rule": {
+        "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Yes"}, {"userEnteredValue": "No"}]},
+        "showCustomUi": True, "strict": False}}})
+    # columns wide enough for full names (auto-fit, then a floor for the typed columns)
+    reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
+                                                         "startIndex": 0, "endIndex": n_cols}}})
+    for name, px in (("Notes", 220), ("Being worked on", 130), ("Customer", 190), ("Rep", 190)):
+        c = _COL[name]
+        reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
+                                                   "properties": {"pixelSize": px}, "fields": "pixelSize"}})
     # status colours like the thread's workbook: Active green, dead red, in-flight yellow
     for _ in range(existing_rules):
         reqs.append({"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}})
