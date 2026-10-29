@@ -48,6 +48,23 @@ _NO_OFFICE = {"", "LOST"}
 # Offices whose 1st rounds aren't audited on purpose: never flagged.
 # Joshua interviews on his own Zoom (Camila 10/21: not needed).
 NOT_AUDITED = {"Joshua Ghorbani"}
+# Offices whose Zoom is set up before they start interviewing: not 'quiet'
+# before this day, and the 2-weekday window counts from it. Camila 10/29:
+# Hasan launches 11/3, ZOOM 11 records nothing until then.
+LAUNCHES = {"Hasan Salame": dt.date(2026, 11, 3)}
+
+
+def launch(z: Dict[str, str]) -> Optional[dt.date]:
+    """The day a Zoom's offices start interviewing, when ALL of them are in
+    LAUNCHES (full name or first name in ZOOMS INFO); else None."""
+    days = []
+    for o in offices(z):
+        d = next((v for k, v in LAUNCHES.items()
+                  if o.lower() in (k.lower(), k.split()[0].lower())), None)
+        if d is None:
+            return None
+        days.append(d)
+    return max(days) if days else None
 
 
 def offices(z: Dict[str, str]) -> List[str]:
@@ -99,6 +116,9 @@ def problems(accounts: Dict[str, Dict[str, str]], seen: Set[str], rejected: Set[
             newest = last.get(login)
             if newest and newest < day - dt.timedelta(days=SEEN_DAYS):
                 newest = None       # an odd old one Fathom hands back (a 2021 date, 10/27)
+            starts = launch(z)
+            if starts and (newest is None or newest < starts):
+                newest = starts     # not interviewing yet: nothing to record
             if newest is None or newest < quiet_since(day):
                 when = (f"since {newest:%a} {newest.month}/{newest.day}" if newest
                         else f"in the last {SEEN_DAYS} days")
@@ -213,6 +233,13 @@ def read_fathom(day: dt.date, keys: List[str]):
     return seen, rejected, last
 
 
+def waiting(acc: Dict[str, Dict[str, str]], day: dt.date) -> Set[str]:
+    """Logins whose offices haven't started (or just started): a 'quiet' told
+    before LAUNCHES knew is dropped quietly, never reported 'fixed'."""
+    return {login for login, z in acc.items()
+            if (launch(z) or dt.date.min) >= day - dt.timedelta(days=SEEN_DAYS)}
+
+
 def check(day: dt.date, missed: Optional[Dict[str, int]] = None):
     """(found, diff) -- reads ZOOMS INFO + Fathom, doesn't save or post."""
     from automations.first_round_scorecards import fathom, zooms
@@ -222,7 +249,9 @@ def check(day: dt.date, missed: Optional[Dict[str, int]] = None):
     rejected = {login for login, z in acc.items() if z.get("key") and z["key"][-12:] in bad_tails}
     st = _state()
     found = problems(acc, seen, rejected, missed or {}, st.get("owners"), last=last, day=day)
-    return (found, diff(found, st.get("open") or {}),
+    before = {k: v for k, v in (st.get("open") or {}).items()
+              if k.split(":", 1)[-1] not in waiting(acc, day)}
+    return (found, diff(found, before),
             sorted({o for z in acc.values() for o in offices(z)}), acc, last)
 
 
@@ -298,7 +327,8 @@ def run(day: dt.date, *, post: bool, preview: bool, missed: Optional[Dict[str, i
     for k in ("new", "open", "fixed"):
         for v in d[k].values():
             print(f"[{k}] {v}")
-    threads = _state().get("office_threads") or {}
+    threads = {k: v for k, v in (_state().get("office_threads") or {}).items()
+               if k.split("|")[0].split(":", 1)[-1] not in waiting(acc, day)}
     for key, ch, parent, reply in office_alerts(day, d, acc, last):
         print(f"[office] {ch}: {parent}\n  ↳ {reply}")
     if post:

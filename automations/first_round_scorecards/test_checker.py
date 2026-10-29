@@ -85,6 +85,31 @@ class Quiet(unittest.TestCase):
         self.assertEqual(list(d["fixed"]), ["quiet:k@x.com"])
 
 
+class Launch(unittest.TestCase):
+    """Camila 2026-10-29: Hasan launches 11/3, ZOOM 11 records nothing until then."""
+    ACC = {"z11@x.com": {"zoom": "ZOOM 11", "morning": "Hasan", "afternoon": "Hasan Salame",
+                         "key": "h" * 20}}
+
+    def quiet(self, day, last=None):
+        return ck.problems(self.ACC, {"z11@x.com"}, set(), {}, None, last=last or {}, day=day)
+
+    def test_not_quiet_before_launch_or_its_first_two_weekdays(self):
+        old = {"z11@x.com": dt.date(2026, 10, 26)}
+        for d in (29, 30):
+            self.assertEqual(self.quiet(dt.date(2026, 10, d), old), {})
+        for d in (2, 3, 4):
+            self.assertEqual(self.quiet(dt.date(2026, 11, d), old), {})
+        self.assertIn("quiet:z11@x.com", self.quiet(dt.date(2026, 11, 5), old))
+
+    def test_a_zoom_shared_with_a_live_office_is_still_checked(self):
+        acc = {"z11@x.com": dict(self.ACC["z11@x.com"], morning="Khalil Mansour")}
+        self.assertIsNone(ck.launch(acc["z11@x.com"]))
+
+    def test_the_open_alert_is_dropped_not_reported_fixed(self):
+        self.assertIn("z11@x.com", ck.waiting(self.ACC, dt.date(2026, 10, 29)))
+        self.assertNotIn("z11@x.com", ck.waiting(self.ACC, dt.date(2026, 11, 11)))
+
+
 class OfficeAlerts(unittest.TestCase):
     """Megan 2026-10-27: a quiet Zoom also goes to that office's recruiting channel."""
     DAY = dt.date(2026, 10, 27)
