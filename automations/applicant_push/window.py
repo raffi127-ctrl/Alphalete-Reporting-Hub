@@ -73,6 +73,14 @@ def gate(office: str, stamp_path: str, now=None, batch_running=None):
     now = now or _dt.datetime.now()
     if not in_hours(now):
         return False, "outside 5:30AM-10PM CST window (h=%d)" % now.hour
+    try:
+        from automations.oat_processing import await_template as _at
+        stop = _at.stop_at_today(office, now)
+    except Exception:  # noqa: BLE001 -- never blocks a push on an error
+        stop = None
+    if stop and now >= stop:
+        return False, ("past today's stop for office %s: %s, 30 min before "
+                       "its last interview slot" % (office, stop.strftime("%H:%M")))
     if needs_batch_check(now):
         if batch_running is None:
             from automations.day_orchestrator.mini_control import _batch_running

@@ -325,3 +325,37 @@ class ReadsAISettingsHours(unittest.TestCase):
 
     def test_no_list_no_schedule(self):
         self.assertEqual(AT.parse_ai_hours("Hours\nSave Schedule"), ({}, None))
+
+
+class StopsThirtyBeforeTheLastSlot(unittest.TestCase):
+    """Carlos 10/28: stop pushing before the last 1st-interview slot;
+    Megan: "do 30 min"."""
+
+    def _saved(self, slots, step=30):
+        import json
+        import tempfile
+        path = tempfile.mktemp(suffix=".json")
+        json.dump({"slots": slots, "step": step}, open(path, "w"))
+        return mock.patch.object(AT, "_sched_path", return_value=path)
+
+    def test_carlos_stops_at_3_15(self):
+        slots, step = AT.parse_ai_hours(_hours_page(CARLOS))
+        with self._saved(slots, step):
+            self.assertEqual(AT.stop_at_today("11580", at("2026-10-29 09:00")).strftime("%H:%M"),
+                             "15:15")
+            self.assertFalse(AT.past_stop("11580", at("2026-10-29 15:14")))
+            self.assertTrue(AT.past_stop("11580", at("2026-10-29 15:15")))
+
+    def test_atef_stops_at_2_15(self):
+        slots, step = AT.parse_ai_hours(_hours_page(ATEF))
+        with self._saved(slots, step):
+            self.assertTrue(AT.past_stop("23467", at("2026-10-29 14:15")))
+            self.assertFalse(AT.past_stop("23467", at("2026-10-29 14:10")))
+
+    def test_no_saved_schedule_never_stops(self):
+        with mock.patch.object(AT, "_sched_path", return_value="/nonexistent/x.json"):
+            self.assertFalse(AT.past_stop("11580", at("2026-10-29 21:00")))
+
+    def test_a_day_with_no_slots_never_stops(self):
+        with self._saved({"Monday": [(495, 525)]}):
+            self.assertFalse(AT.past_stop("11580", at("2026-10-29 21:00")))  # Thursday

@@ -53,3 +53,16 @@ class CarlosSchedule(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LucyStopsThirtyBeforeLastSlot(unittest.TestCase):
+
+    def test_gate_says_past_stop(self):
+        from unittest import mock
+        from automations.oat_processing import await_template as AT
+        stamp = os.path.join(tempfile.mkdtemp(), "stamp")
+        with mock.patch.object(AT, "stop_at_today", return_value=at(15, 15)):
+            ok, why = W.gate("24065", stamp, at(15, 20))
+            self.assertFalse(ok)
+            self.assertIn("past today's stop", why)
+            self.assertTrue(W.gate("24065", stamp, at(15, 0))[0])

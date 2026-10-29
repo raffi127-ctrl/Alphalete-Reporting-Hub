@@ -235,9 +235,24 @@ def _lock_held(now: Optional[float] = None) -> bool:
     return ((now or time.time()) - started) < LOCK_STALE_MINUTES * 60
 
 
+def _past_stop(now: dt.datetime) -> bool:
+    """30 min before this office's last interview slot today (Megan 10/28).
+    Never stops a push on an error."""
+    try:
+        got = _listed()
+        if not got:
+            return False
+        from automations.oat_processing import await_template as AT
+        return AT.past_stop(got[0], now)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def due(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if not in_window(now) or _lock_held(now.timestamp()):
+        return False
+    if _past_stop(now):
         return False
     last = _state().get("last_start")
     if not last:

@@ -367,6 +367,45 @@ def parse_ai_hours(text: str):
     return slots, length
 
 
+# STOP PUSHING 30 MIN BEFORE THE LAST SLOT (Carlos 10/28: "Stop pushing 15
+# minutes prior to last 1st interview time slot"; Megan: "do 30 min"). 30 is
+# the same lead the text itself uses: from then on every text would offer
+# tomorrow, and an applicant pushed at 5:30 the next morning is offered that
+# same day instead -- the better show-up window. Per office, from the day's
+# saved AI Settings > Hours (the first push of the day saves it). No saved
+# schedule yet = no stop yet, so that first push still runs and reads it.
+STOP_BEFORE_LAST_MIN = 30
+
+
+def stop_at_today(office_id: str, now=None):
+    """Today's stop time for this office, or None (no schedule read yet
+    today, or no slots today)."""
+    import json
+    import os
+    from automations.oat_processing.await_window import starts_from_spans
+    now = now or dt.datetime.now()
+    path = _sched_path(office_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        d = json.load(open(path))
+        spans = [tuple(x) for x in d["slots"].get(DAYS[(now.weekday() + 1) % 7], [])]
+        starts = starts_from_spans(spans, int(d["step"]))
+    except Exception:  # noqa: BLE001 -- unreadable = no stop, never a crash
+        return None
+    if not starts:
+        return None
+    stop = max(starts) - STOP_BEFORE_LAST_MIN
+    return now.replace(hour=stop // 60, minute=stop % 60, second=0,
+                       microsecond=0)
+
+
+def past_stop(office_id: str, now=None) -> bool:
+    now = now or dt.datetime.now()
+    stop = stop_at_today(office_id, now)
+    return bool(stop) and now >= stop
+
+
 def read_office_schedule(page, office_id: str):
     """({weekday: [(start, end)]}, slot minutes) from AI > AI Settings >
     Hours, or (None, None). Cached for the day. Goes back to the page it
