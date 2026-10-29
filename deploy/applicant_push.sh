@@ -315,6 +315,17 @@ if [ -d .git ]; then
   # beats not running at all (the whole reason this pull is best-effort).
   _capped 90 "git pull" \
     sh -c 'git pull --ff-only --autostash --quiet origin main >/dev/null 2>&1' || true
+  # --autostash CAN LEAVE A FILE WITH CONFLICT MARKERS AND STILL EXIT 0 (see
+  # mini_control's update, 2026-08-27 + 10/28). If that file is THIS script,
+  # every later tick dies on its own syntax before writing a single log line --
+  # 2026-10-29: Lucy 2 + Lucy 4 pushed nothing all morning after a local edit
+  # to the window gate clashed with the new 5:30 gate. Put any unmerged file
+  # back to the pulled code; the machine's own edit stays in `git stash list`.
+  _um=$(git diff --name-only --diff-filter=U 2>/dev/null)
+  if [ -n "$_um" ]; then
+    echo "[$(date)] HEALED unmerged after pull (local edit parked in git stash): $_um" >> "$LOG_DIR/applicant-push-heal.log"
+    git checkout HEAD -- $_um >/dev/null 2>&1 || true
+  fi
 fi
 # -----------------------------------------------------------------------------
 
