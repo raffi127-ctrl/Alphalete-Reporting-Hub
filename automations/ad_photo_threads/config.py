@@ -642,6 +642,10 @@ _SCORECARD_TABS = {
                    "Sales Representative (AT&T)": "Miami, FL",
                    "AT&T Sales Associate": "Miami, FL",
                }},
+    # Colten 10/29: the same Friday post in Jairo's indeed-photos channel,
+    # plus the two Fridays before it. No All in One tab (none asked for).
+    "jairo": {"scorecard_seconds_from_sheet": True, "scorecard": True,
+              "scorecard_tag": "U04Q6T14M34"},
 }
 
 OFFICES += [
