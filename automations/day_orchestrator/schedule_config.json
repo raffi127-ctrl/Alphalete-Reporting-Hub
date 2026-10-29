@@ -15626,7 +15626,7 @@
   "samuel_metrics": {
    "order": 26.85,
    "machine": "Lucy 4",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Samuel's Daily Metrics (dynasty-growth-sales)",
    "source_type": "tableau",
    "data_sources": [
@@ -15659,7 +15659,7 @@
     "type": "manifest",
     "report_id": "samuel_metrics"
    },
-   "_note": "Office metrics for samuel (Samuel Acay, Dynasty Growth Group, Inc; South Shore org; OwnerVille 23751). Wired by hand 2026-10-21. NDS/wireless (campaign nds_d2d), same five boards as frank/jairo; knocks held until his relay shows knock rows. OFF until `lucy rerun samuel_metrics --dry-run` on Lucy 4 shows data on every board and #dynasty-growth-sales resolves to a channel id -- never a blank first post. | 2026-10-29 15:30 CT: ECO enrolled (Samuels-iMac relaying since 14:09 CT); Megan gave #dynasty-growth-sales = C0BV0K60QP8 (private; Lucy, Lucy Reporting, Megan, Eve in it). Channel set; scheduler stays OFF until the Lucy 4 dry run queued 15:1x CT is read.",
+   "_note": "Office metrics for samuel (Samuel Acay, Dynasty Growth Group, Inc; South Shore org; OwnerVille 23751). Wired by hand 2026-10-21. NDS/wireless (campaign nds_d2d), same five boards as frank/jairo; knocks held until his relay shows knock rows. OFF until `lucy rerun samuel_metrics --dry-run` on Lucy 4 shows data on every board and #dynasty-growth-sales resolves to a channel id -- never a blank first post. | 2026-10-29 15:30 CT: ECO enrolled (Samuels-iMac relaying since 14:09 CT); Megan gave #dynasty-growth-sales = C0BV0K60QP8 (private; Lucy, Lucy Reporting, Megan, Eve in it). Channel set; scheduler stays OFF until the Lucy 4 dry run queued 15:1x CT is read. | SWITCHED ON 2026-10-29 15:45 CT after the Lucy 4 dry run rerun-2026-10-29-141911: 7/7 green (934 wireless orders, order log 467 rows, pending 316, activation rate 24 reps, churn ok, cancels 1, disconnects 2).",
    "_onboarded": true
   },
   "omar_metrics": {
