@@ -30,7 +30,10 @@ GROUP_ALL = b2b.TEXT_GROUP_ALL      # "NEW A Players"
 #   those same two chains -> nds replaces b2b_att_country (Box unchanged).
 ROUTES = {
     "nds":             [GROUP_ATT, GROUP_ALL],
-    "b2b_box":         [GROUP_BOX, GROUP_ALL],
+    # Box OFF (Carlos 2026-10-29: "i saw some box stuff go out ... it was on the
+    # box text chain" — this was it). Empty = the B2B Box tracker is never texted;
+    # its Slack post in the Country Trackers thread is untouched.
+    "b2b_box":         [],
 }
 
 # The only tracker ids this report ever touches — used by the mini-side trigger to
