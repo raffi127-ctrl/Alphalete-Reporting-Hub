@@ -59,7 +59,7 @@ class Merge(unittest.TestCase):
         self.assertEqual(second["rows"][0][T._COL["Last Updated"]], "10/29/2026")
 
     def test_ages_out_by_order_date(self):
-        stale = T.line_row(line(order_date="08/01/2026"), "08/02/2026")
+        stale = T.line_row(line(order_date="08/01/2026", wireless_order="WOOLD"), "08/02/2026")
         res = T.merge([stale], [line()], today=TODAY)
         self.assertEqual(res["aged_out"], 1)
         self.assertEqual(len(res["rows"]), 1)
