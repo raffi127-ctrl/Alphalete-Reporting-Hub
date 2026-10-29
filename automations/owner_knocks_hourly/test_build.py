@@ -89,6 +89,19 @@ class RenderTests(unittest.TestCase):
                 cfg.OUT_DIR = old
             self.assertTrue(Path(png).exists())
 
+    def test_zone_totals_east_to_west_and_none_for_one_zone(self):
+        by_owner = {"Khalil Mansour": [_rep("A", 100)],
+                    "Colten Wright": [_rep("B", 50)],
+                    "Rafael Hidalgo": [_rep("C", 70)]}
+        zones = {"Khalil Mansour": "America/Chicago",
+                 "Colten Wright": "America/New_York"}
+        got = R.zone_totals(by_owner, zones)
+        # Raf has no office row -> Central with Khalil.
+        self.assertEqual([(n, len(rows)) for n, rows in got],
+                         [("EASTERN TOTAL", 1), ("CENTRAL TOTAL", 2)])
+        self.assertEqual(R.zone_totals({"Khalil Mansour": [_rep("A", 1)]},
+                                       zones), [])
+
 
 if __name__ == "__main__":
     unittest.main()

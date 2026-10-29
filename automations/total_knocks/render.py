@@ -71,6 +71,9 @@ THEME_BURGUNDY = {
     "header_bg": (64, 24, 32),
     "stripe": (248, 240, 241),
     "total_bg": (122, 38, 52),
+    # A time-zone subtotal over the ORG TOTAL: same family, lighter, so the
+    # org line still reads as the last word.
+    "subtotal_bg": (158, 84, 98),
 }
 TITLE_FG  = (255, 255, 255)
 HEADER_FG = (255, 255, 255)
@@ -1215,7 +1218,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         kpis: "dict | None" = None,
                         summary_only: bool = False,
                         total_label: str = OFFICE_TOTAL_LABEL,
-                        extra_label_suffix: str = " TOTAL") -> Path:
+                        extra_label_suffix: str = " TOTAL",
+                        summary_tail: int = 0) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -1292,6 +1296,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     The caller passes every owner as an extra_totals entry and the whole org
     as `rows`; summary_only leaves the rep rows off, so the board is just the
     owner lines over an "ORG TOTAL". Defaults keep every other board as is.
+    `summary_tail` = how many of the LAST extra_totals entries are subtotals
+    (Raf 2026-10-29: the org averages split by time zone), drawn as bands
+    just above the ORG TOTAL instead of as plain owner lines.
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -1509,7 +1516,10 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  # summary_only: the owner lines are plain alternating rows,
                  # only the ORG TOTAL (last) is a band.
                  highlight_first_row=0 if summary_only else _n_summary,
-                 highlight_last_row=1 if summary_only else False,
+                 highlight_last_row=1 + summary_tail if summary_only else False,
+                 total_row_bgs=([THEME_BURGUNDY["subtotal_bg"]] * summary_tail
+                                + [THEME_BURGUNDY["total_bg"]])
+                 if summary_only and summary_tail else None,
                  top_row_colors=None if summary_only else _colors, cell_bgs=_cell_bgs or None,
                  col_min_w=_min_w or None,
                  # ONE COLOUR PER TEAM (Megan 2026-09-13). The office's own

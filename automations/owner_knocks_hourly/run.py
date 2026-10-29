@@ -11,6 +11,8 @@ owner in the org.
     18 of 20 KASH RAI         ...
     15 of 16 HAYTHAM NAGI     ...
     ...
+    60 of 70 EASTERN TOTAL    ...   (one per time zone, Raf 2026-10-29)
+    100 of 120 CENTRAL TOTAL  ...
     160 of 190 ORG TOTAL      ...
 
 Numbers are each office's Lucy ECO knocks relay for today ('ICD Knocks'), the
@@ -91,19 +93,47 @@ def ranked(by_owner: Dict[str, List[Dict]]) -> List[Tuple[str, List[Dict]]]:
     return sorted(by_owner.items(), key=lambda kv: (-_knocks(kv[1]), kv[0]))
 
 
-def render(by_owner: Dict[str, List[Dict]], day: dt.date, now: dt.datetime):
-    """One PNG: a line per owner, ORG TOTAL under them."""
+def owner_zones(offices: Dict) -> Dict[str, str]:
+    """{owner name: IANA zone} from the offices' own settings."""
+    out: Dict[str, str] = {}
+    for key, office in offices.items():
+        tz = (getattr(office, "timezone", "") or "").strip()
+        if tz:
+            out.setdefault(OSH.owner_name(key, office), tz)
+    return out
+
+
+def zone_totals(by_owner: Dict[str, List[Dict]],
+                zones: Dict[str, str]) -> List[Tuple[str, List[Dict]]]:
+    """[(EASTERN TOTAL, their rows), ...] east to west; [] if one zone."""
+    known = dict(cfg.ZONE_LABELS)
+    pooled: Dict[str, List[Dict]] = {}
+    for name, rows in by_owner.items():
+        tz = zones.get(name) or cfg.DEFAULT_ZONE
+        if tz not in known:
+            tz = cfg.DEFAULT_ZONE
+        pooled.setdefault(tz, []).extend(rows)
+    if len(pooled) < 2:
+        return []
+    return [(label, pooled[tz]) for tz, label in cfg.ZONE_LABELS
+            if tz in pooled]
+
+
+def render(by_owner: Dict[str, List[Dict]], day: dt.date, now: dt.datetime,
+           zones: Optional[Dict[str, str]] = None):
+    """One PNG: a line per owner, a total per time zone, ORG TOTAL under."""
     from automations.total_knocks import render as R
 
     out_dir = cfg.OUT_DIR / day.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     everyone = [r for rows in by_owner.values() for r in rows]
+    subtotals = zone_totals(by_owner, zones or {})
     return R.render_total_knocks(
         day, rows=everyone, out_dir=out_dir,
         title_suffix=cfg.BOARD_TITLE,
-        extra_totals=ranked(by_owner),
+        extra_totals=ranked(by_owner) + subtotals,
         summary_only=True, total_label=cfg.TOTAL_LABEL,
-        extra_label_suffix="",
+        extra_label_suffix="", summary_tail=len(subtotals),
         date_text="%s · %s" % (day.strftime("%a %m/%d"), OSH._clock(now)))
 
 
@@ -143,7 +173,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     book = open_by_key(P.RELAY_SPREADSHEET_ID)
     values = book.worksheet(KP.KNOCKS_TAB).get_all_values()
-    everyone = owner_rows(values, O.all_offices(), day,
+    offices = O.all_offices()
+    everyone = owner_rows(values, offices, day,
                           skip_stale=not args.force and not args.day)
     # Offices a Lucy pulls (Raf's) -- only for owners ECO did not already
     # bring, so nobody is counted twice.
@@ -179,7 +210,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("same knocks as the last text — skipped")
         return 0
 
-    png = render(by_owner, day, now)
+    png = render(by_owner, day, now, owner_zones(offices))
     print("board: %s" % png)
 
     dry = not args.send

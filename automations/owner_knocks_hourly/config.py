@@ -45,5 +45,19 @@ LUCY_STALE_MINUTES = 45
 BOARD_TITLE = "ALPHALETE OWNERS"
 TOTAL_LABEL = "ORG TOTAL"
 
+# The org averages split by time zone (Raf 2026-10-29, approving the format:
+# "for the bottom where it shows org averages, can you have it separate based
+# off of time zone?"). An owner's zone is his office's (icd_alerts.offices);
+# one with no office there (Raf's own, pulled by Lucy 1) is Central. Drawn
+# east to west; a zone with no owner on the board is left off, and a board
+# that is all one zone gets no subtotals (it would just repeat the ORG TOTAL).
+DEFAULT_ZONE = "America/Chicago"
+ZONE_LABELS = (
+    ("America/New_York", "EASTERN TOTAL"),
+    ("America/Chicago", "CENTRAL TOTAL"),
+    ("America/Denver", "MOUNTAIN TOTAL"),
+    ("America/Los_Angeles", "PACIFIC TOTAL"),
+)
+
 # Last numbers sent per day — an hour where no owner's knocks moved is skipped.
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "owner_knocks_hourly"
