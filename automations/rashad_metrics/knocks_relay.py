@@ -245,6 +245,19 @@ def relayed_rows(office_key: str, office_name: str, day: dt.date,
         log("[knocks-relay] %s is not an active ECO office — scraping." % key)
         return None
 
+    # THE SAME KEY CAN NAME TWO PEOPLE. 'joseph' is Joseph Logan's metrics key
+    # and, since 2026-10-28, Joseph Delgado's ECO key (the sign-up form keys
+    # by first name). Both checks above pass -- the metrics row matches its
+    # own ownerville name, and the ECO office under that key is live -- and
+    # Logan's board would be drawn from Delgado's machine. So the ECO office's
+    # OWNER has to be the office we were asked for, or this is a scrape.
+    eco_owner = _norm_name(getattr(office, "owner", "") or "")
+    if eco_owner and eco_owner != _norm_name(office_name):
+        log("[knocks-relay] ⚠ the ECO office under key %r is %r, not %r — "
+            "scraping rather than draw this board from another office's "
+            "machine." % (key, getattr(office, "owner", ""), office_name))
+        return None
+
     if values is None:
         values = _knocks_values()
     if values is None:
