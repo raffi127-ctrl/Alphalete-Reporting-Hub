@@ -1819,8 +1819,12 @@ INDEED_ASK = (
     # SUPER SIMPLE (Megan 2026-10-21: "that message is too long"). Two lines:
     # who, and the one thing to do. The other five slots are swallowed (%.0s)
     # so ask_office_to_sign_in can fill it like SIGNIN_ASK.
-    ":raising_hand: *%s* — Lucy needs a human.%.0s%.0s%.0s%.0s%.0s\n"
-    "On the LucyECO computer: click Lucy's Chrome and tick "
+    # Says INDEED and PUSHING (Megan 2026-10-29: "this should say for indeed
+    # specifically for pushing applicants") -- the same DM thread also carries
+    # SaraPlus sign-in alerts, so "Lucy needs a human" alone was ambiguous.
+    ":raising_hand: *%s* — Lucy needs a human on *Indeed* to keep pushing "
+    "applicants.%.0s%.0s%.0s%.0s%.0s\n"
+    "On the LucyECO computer: click Lucy's Chrome (it shows Indeed) and tick "
     "\u201cVerify you are human.\u201d")
 
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
@@ -1909,8 +1913,8 @@ SYSTEMS = {
         "what": "Resume pushing",
         "ask": INDEED_ASK,
         # Same three slots as the default; super simple like the ask.
-        "good": ":white_check_mark: *%s* — good to go. Lucy is pushing "
-                "again.%.0s%.0s",
+        "good": ":white_check_mark: *%s* — good to go on Indeed. Lucy is "
+                "pushing applicants again.%.0s%.0s",
         "why": " Lucy's Chrome is showing Indeed's \"Verify you are human\" "
                "box.",
         "how": "At that computer: click Lucy's Chrome in the Dock (the "

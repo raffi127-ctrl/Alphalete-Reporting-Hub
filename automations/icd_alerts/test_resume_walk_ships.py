@@ -366,7 +366,7 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
         spec = P.SYSTEMS["indeed"]
         text = spec["good"] % ("Carlos's Local Office", spec["name"], "1:43 PM")
         self.assertEqual(text, ":white_check_mark: *Carlos's Local Office* "
-                               "— good to go. Lucy is pushing again.")
+                               "— good to go on Indeed. Lucy is pushing applicants again.")
         self.assertEqual(P._SIGNIN_PROOF["indeed"], "probe-indeed-clear")
 
     def test_a_clean_run_resets_the_count(self):
@@ -385,9 +385,10 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
                               spec["what"], "1:07 PM", spec["why"],
                               spec["how"])
         self.assertEqual(text, (
-            ":raising_hand: *Carlos's Local Office* — Lucy needs a human.\n"
-            "On the LucyECO computer: click Lucy's Chrome and tick "
-            "\u201cVerify you are human.\u201d"))
+            ":raising_hand: *Carlos's Local Office* — Lucy needs a human on "
+            "*Indeed* to keep pushing applicants.\n"
+            "On the LucyECO computer: click Lucy's Chrome (it shows Indeed) "
+            "and tick \u201cVerify you are human.\u201d"))
         self.assertLessEqual(len(text.splitlines()), 2)   # SUPER SIMPLE
 
 
