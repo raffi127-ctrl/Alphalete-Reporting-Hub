@@ -415,6 +415,13 @@ _MORE = [
     # renamed altura-recruiting -> valeria-recruiting 10/19.
     ("valeria", "Valeria Tristan", SOUTH_SHORE_CLOSED, "VALERIA TRISTAN", "22850", "Altura Marketing",
      "C0C70G1ENPK", "C0CBCMWCDL6", r"first\s*round\s*thread"),
+    # Frank Matos (Camila 10/29), Peak Management, Boca Raton / Tamarac FL.
+    # #frank-matos-recruiting posts "*Peak Management* - *First Round Thread*
+    # 10/16", then "FIRST ROUND THREAD: 10/19" from 10/19 on; the "EOD ...
+    # INTERVIEWERS' REPORT" recap doesn't match. South Shore tab "Frank Matos".
+    # Photos channel #indeed-photos-frank-matos-office created 10/29.
+    ("frank", "Frank Matos", SOUTH_SHORE, "Frank Matos", "23221", "Peak Management, Inc.",
+     "C0C6BT2CZT3", "C0CDEFEARRS", r"first\s*round\s*thread"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -432,6 +439,7 @@ _TZ = {
     "omar": "America/Detroit",         # ads: Dearborn, MI (slots in EST)
     "luke": "America/Los_Angeles",     # ads: Palo Alto / Santa Clara / Sunnyvale, CA
     "valeria": "America/New_York",     # Altura Marketing, Tampa FL
+    "frank": "America/New_York",       # ads: Boca Raton / Tamarac / Coral Springs, FL
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
