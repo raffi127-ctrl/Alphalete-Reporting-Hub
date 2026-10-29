@@ -320,7 +320,7 @@ def _sched_path(office_id: str):
     os.makedirs(os.path.join(root, "output"), exist_ok=True)
     # "-v2": the 10/28 afternoon reader (ExtJS 1st Interview tab). A copy
     # saved by the first reader may hold the wrong grid, so it is not reused.
-    return os.path.join(root, "output", "await-schedule-v3-%s-%s.json"
+    return os.path.join(root, "output", "await-schedule-v4-%s-%s.json"
                         % (office_id, dt.date.today().isoformat()))
 
 
@@ -389,15 +389,18 @@ def stop_at_today(office_id: str, now=None):
         return None
     try:
         d = json.load(open(path))
-        spans = [tuple(x) for x in d["slots"].get(DAYS[(now.weekday() + 1) % 7], [])]
+        shift = int(d.get("shift_min") or 0)       # office clock - this clock
+        office = now + dt.timedelta(minutes=shift)
+        spans = [tuple(x) for x in d["slots"].get(DAYS[(office.weekday() + 1) % 7], [])]
         starts = starts_from_spans(spans, int(d["step"]))
     except Exception:  # noqa: BLE001 -- unreadable = no stop, never a crash
         return None
     if not starts:
         return None
     stop = max(starts) - STOP_BEFORE_LAST_MIN
-    return now.replace(hour=stop // 60, minute=stop % 60, second=0,
-                       microsecond=0)
+    # The office's stop time, said on THIS computer's clock.
+    return office.replace(hour=stop // 60, minute=stop % 60, second=0,
+                          microsecond=0) - dt.timedelta(minutes=shift)
 
 
 def past_stop(office_id: str, now=None) -> bool:
@@ -421,6 +424,14 @@ def read_office_schedule(page, office_id: str):
         except Exception:  # noqa: BLE001
             pass
     back = page.url
+    # How far the OFFICE's clock is from this computer's, to the half hour
+    # (Atef 23467 is on Mountain time, Lucy 2 on Central, 10/29). The stop
+    # time below is the office's; the push gate compares it to this machine's.
+    try:
+        shift = int(round((office_now(page) - dt.datetime.now())
+                          .total_seconds() / 1800.0)) * 30
+    except Exception:  # noqa: BLE001
+        shift = 0
     m = re.search(r"rqst=([^&#]+)", back or "")
     tok = m.group(1) if m else page.evaluate(
         "() => ((document.querySelector('a[href*=\"rqst=\"]') || {}).href"
@@ -458,7 +469,8 @@ def read_office_schedule(page, office_id: str):
              % office_id)
         return None, None
     try:
-        json.dump({"slots": slots, "step": step}, open(path, "w"))
+        json.dump({"slots": slots, "step": step, "shift_min": shift},
+                  open(path, "w"))
     except Exception:  # noqa: BLE001
         pass
     _log("[await] office %s schedule (AI Settings > Hours): %s, %d-min slots"

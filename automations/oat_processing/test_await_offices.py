@@ -369,3 +369,20 @@ class StopsThirtyBeforeTheLastSlot(unittest.TestCase):
     def test_a_day_with_no_slots_never_stops(self):
         with self._saved({"Monday": [(495, 525)]}):
             self.assertFalse(AT.past_stop("11580", at("2026-10-29 21:00")))  # Thursday
+
+
+class StopUsesTheOfficeClock(unittest.TestCase):
+    """10/29: Atef 23467 is on Mountain time, pushed from Lucy 2 on Central."""
+
+    def test_atef_mountain_from_a_central_machine(self):
+        import json
+        import tempfile
+        slots, step = AT.parse_ai_hours(_hours_page(ATEF))
+        path = tempfile.mktemp(suffix=".json")
+        json.dump({"slots": slots, "step": step, "shift_min": -60}, open(path, "w"))
+        with mock.patch.object(AT, "_sched_path", return_value=path):
+            # 2:15 Mountain = 3:15 Central on Lucy 2's clock
+            self.assertEqual(AT.stop_at_today("23467", at("2026-10-29 10:00")).strftime("%H:%M"),
+                             "15:15")
+            self.assertFalse(AT.past_stop("23467", at("2026-10-29 15:10")))
+            self.assertTrue(AT.past_stop("23467", at("2026-10-29 15:15")))
