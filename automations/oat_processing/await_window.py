@@ -33,6 +33,10 @@ WINDOWS_BY_OFFICE = {
 WINDOWS = WINDOWS_BY_OFFICE["11580"]
 SLOT_STEP_MIN = 30
 LEAD_MIN = 30                 # a start this close or closer is never offered
+# Per-office override (Carlos 2026-10-29: "offer whatever time slot is next
+# available. If there's a time slot in 5 minutes, it'll offer that" — his
+# office only). 0 = any start still in the future is offered.
+LEAD_MIN_BY_OFFICE = {"11580": 0}
 SWEET_MIN, SWEET_MAX = 180, 360   # 3 to 6 hours out
 
 DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
@@ -86,13 +90,18 @@ def starts_from_spans(spans, step: int):
 
 
 # --- choosing and saying -------------------------------------------------------
-def pick_starts(now_min: int, starts):
+def lead_for(office_id: str = "") -> int:
+    return LEAD_MIN_BY_OFFICE.get(str(office_id or ""), LEAD_MIN)
+
+
+def pick_starts(now_min: int, starts, lead: int = None):
     """Every start more than LEAD_MIN away (Carlos's rule). The 3-6 hour
     "sweet spot" step is gone (Megan 2026-10-28: "yes make that change for
     all accounts"): the show-up audit has 1-4 hours best and every same-day
     bucket close together (52-56%), so hiding the nearer slots cost bookings
     for nothing. SWEET_MIN/SWEET_MAX are kept only so old imports still load."""
-    return [s for s in starts if s - now_min > LEAD_MIN]
+    lead = LEAD_MIN if lead is None else lead
+    return [s for s in starts if s - now_min > lead]
 
 
 def _groups(starts, step: int):
@@ -142,9 +151,10 @@ def day_label(now: dt.datetime, ahead: int) -> str:
 
 
 def clause_for(now: dt.datetime, today_starts, step: int,
-               next_label: str = None, next_starts=None) -> str:
+               next_label: str = None, next_starts=None,
+               lead: int = None) -> str:
     mins = now.hour * 60 + now.minute
-    picked = pick_starts(mins, today_starts or [])
+    picked = pick_starts(mins, today_starts or [], lead)
     if picked:
         return phrase(day_label(now, 0), picked, step)
     next_label = next_label or day_label(now, 1)
@@ -160,7 +170,8 @@ def await_clause(now: dt.datetime, windows=None, step: int = None) -> str:
     return clause_for(now, starts, step, day_label(now, 1), starts)
 
 
-def clause_from_schedule(now: dt.datetime, schedule: dict, step: int) -> str:
+def clause_from_schedule(now: dt.datetime, schedule: dict, step: int,
+                         office_id: str = "") -> str:
     """`schedule` = {weekday name: [(start, end), ...]} off the office's own
     AppStream 1st Interview tab. The next day is named: 'TOMORROW', or the
     day itself ('MONDAY' on a Friday evening)."""
@@ -172,4 +183,4 @@ def clause_from_schedule(now: dt.datetime, schedule: dict, step: int) -> str:
         if s:
             nxt_label, nxt = day_label(now, k), s
             break
-    return clause_for(now, today, step, nxt_label, nxt)
+    return clause_for(now, today, step, nxt_label, nxt, lead_for(office_id))

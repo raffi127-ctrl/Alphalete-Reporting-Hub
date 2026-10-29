@@ -526,7 +526,8 @@ def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
         slots, step = read_office_schedule(page, office_id)
         if not slots:
             return False
-        want = clause_from_schedule(office_now(page), slots, step)
+        want = clause_from_schedule(office_now(page), slots, step,
+                                    office_id=office_id)
         if not want:
             _log("[await] office %s: no interview slots any day — "
                  "template left as-is" % office_id)
