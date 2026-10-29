@@ -1203,7 +1203,10 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         base_cols: "list | None" = None,
                         out_cols: "list | None" = None,
                         teams=None,
-                        kpis: "dict | None" = None) -> Path:
+                        kpis: "dict | None" = None,
+                        summary_only: bool = False,
+                        total_label: str = OFFICE_TOTAL_LABEL,
+                        extra_label_suffix: str = " TOTAL") -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -1274,6 +1277,12 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     KNOCKS SUMMARY board above already shows per ICD, on the summary rows only,
     over the reps who knocked. Same argument, so the same boards that never
     asked for Total Apps still don't get either column.
+
+    `summary_only` / `total_label` / `extra_label_suffix` (Raf 2026-10-29,
+    owners' hourly knocks text): one line per OWNER instead of one per rep.
+    The caller passes every owner as an extra_totals entry and the whole org
+    as `rows`; summary_only leaves the rep rows off, so the board is just the
+    owner lines over an "ORG TOTAL". Defaults keep every other board as is.
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -1293,7 +1302,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     # wording the weekly board has carried since it shipped (board.py's
     # TOTALS_LABEL = "OFFICE TOTALS"), so the two boards in one thread say it
     # the same way. The office's NAME is already in the title above.
-    totals = _combined_totals(OFFICE_TOTAL_LABEL, sub, _out)
+    totals = _combined_totals(total_label, sub, _out)
+    # Its divisor and rate, while the rep rows exist (summary_only drops them).
+    own_rates = (len(sub), _mean_rate(sub)) if summary_only else None
 
     # Extra offices' totals rows ABOVE ours (Raf 2026-08-23: "add Chan's
     # totals above ours daily") — each is (office name, records keyed by
@@ -1315,7 +1326,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # a column it does not have blanks instead of failing the board.
         x_sub = _combined_sub(x_header, x_rows, where=f"extra office {name!r}",
                               base_cols=_base, out_cols=_out)
-        extra_rows.append(_combined_totals(f"{name.upper()} TOTAL", x_sub, _out))
+        extra_rows.append(_combined_totals(f"{name.upper()}{extra_label_suffix}",
+                                           x_sub, _out))
         extra_apps.append(sum(x_apps.values()) if x_apps else None)
         # Its Average App per Rep divisor, taken here while its rep rows still
         # exist — only its TOTAL line survives into the drawn table.
@@ -1343,6 +1355,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     rep_i = _out.index(COL_REP)
     display, bands, band_knockers, band_counts = _team_blocks(
         sub, _out, teams, offset=len(extra_rows) + 1)
+    if summary_only:
+        display, bands, band_knockers, band_counts = [], {}, {}, {}
 
     hrs_pos = _out.index(COL_HRS_KNOCKING)
     tg_pos = _out.index(COL_TOTAL_GAPS)
@@ -1363,6 +1377,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     cols = list(_out)
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in cols]
+    if summary_only:
+        # Every line is an owner (or the org), not a rep.
+        disp = ["Owner" if c == COL_REP else d for c, d in zip(cols, disp)]
     if hide_columns:
         # Drop by NAME, then take the same positions out of every row — the
         # totals and comparison rows included, so nothing shifts under a header.
@@ -1390,7 +1407,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # the apps column — so it lands correctly on a board that hid others.
         _insert_rate_columns(cols, disp, table, n_extra=len(extra_rows),
                              extra_listed=extra_listed,
-                             extra_rates=extra_rates, bands=bands)
+                             extra_rates=extra_rates, bands=bands,
+                             own=own_rates)
     # LAST, once every column exists (the rate columns above are inserted at
     # draw time, so no earlier point can see the whole board). Box only: the
     # order is keyed off this board carrying Ryan's column, so no other shape
@@ -1583,7 +1601,8 @@ def _mean_rate(sub: list) -> str:
 def _insert_rate_columns(cols: list, disp: list, table: list, *,
                          n_extra: int, extra_listed: "list | None" = None,
                          extra_rates: "list | None" = None,
-                         bands: "dict | None" = None) -> None:
+                         bands: "dict | None" = None,
+                         own: "tuple | None" = None) -> None:
     """Put "Avg Knocks / Hr" and "Avg Doors / Rep" in IN PLACE, after Total
     Knocks — the column both divide, so the board reads knocks → how fast →
     how many each.
@@ -1612,6 +1631,10 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
     same reason the office row doesn't (an averaged first/last knock makes the
     span meaningless). Bands are excluded from the office's own divisor and
     mean, or every rep would be counted twice. None = unchanged.
+
+    `own` ((reps listed, mean rep rate)) is this office's TOTAL figures taken
+    by the caller, for a summary-only board whose rep rows never reach this
+    table (the owners' hourly board's ORG TOTAL). None = from the rep rows.
     """
     bands = bands or {}
     at = (cols.index(COL_TOTAL_KNOCKS) + 1 if COL_TOTAL_KNOCKS in cols
@@ -1688,6 +1711,10 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
         _br = [float(per_hr[i]) for i in _reps if per_hr[i]]
         per_hr[_bi] = ("%.1f" % (sum(_br) / len(_br))) if _br else ""
     # (comparison rows above were filled from extra_rates and are left alone)
+    if own is not None:
+        per_rep[n_extra] = (f"{_n(table[n_extra][tk_at]) / own[0]:.1f}"
+                            if own[0] else "")
+        per_hr[n_extra] = own[1] or ""
     per_hr = ["" if v is None else v for v in per_hr]
 
     for name, vals in ((COL_DOORS_PER_REP, per_rep),
