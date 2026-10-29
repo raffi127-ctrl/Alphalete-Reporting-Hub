@@ -45,7 +45,7 @@ SAFETY RAILS, because this one texts CUSTOMERS:
 
     python -m automations.rc_contact_sync.delivered            # dry run
     python -m automations.rc_contact_sync.delivered --live --limit 1
-    lucy rerun rc_delivered_text                               # preview on Lucy 2
+    lucy rerun rc_delivered_text -- --dry-run     # preview on Lucy 2 (rerun carries --live)
 """
 from __future__ import annotations
 
@@ -346,13 +346,18 @@ def main(argv=None) -> int:
                     "and mark column S.")
     ap.add_argument("--live", action="store_true",
                     help="actually send + mark (default: print every message)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="preview even when --live is also given -- `lucy rerun "
+                         "rc_delivered_text -- --dry-run` is the safe rerun, since "
+                         "the registry's base_args carry --live")
     ap.add_argument("--limit", type=int, default=None,
                     help="only the first N customers (for a careful first --live)")
     ap.add_argument("--date", default=None, metavar="YYYY-MM-DD",
                     help="'today' for the age window (default: today)")
     args = ap.parse_args(argv)
     today = dt.date.fromisoformat(args.date) if args.date else None
-    return run(live=args.live, limit=args.limit, today=today)
+    live = bool(args.live and not args.dry_run)   # --dry-run always wins
+    return run(live=live, limit=args.limit, today=today)
 
 
 if __name__ == "__main__":
