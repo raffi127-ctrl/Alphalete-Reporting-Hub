@@ -135,11 +135,78 @@ def cached(today: dt.date):
     return f if f.exists() else None
 
 
+def recon(today: dt.date, log=print) -> int:
+    """Line the per-line feed up against the latest DD (Scoutly RAW tab):
+    per PAID NDS base line, find its customer's feed lines and show their
+    statuses/dates — this is what locks the pricing rules before any
+    board re-sources onto the feed."""
+    import collections
+    from automations.recruiting_report.fill import open_by_key
+    f = cached(today)
+    if not f:
+        raise RuntimeError("no wireless cache for today — run the pull")
+    orders, lines = parse(f.read_bytes(), log=log)
+    by_cust = collections.defaultdict(list)
+    for l in lines:
+        by_cust[(l.get("customer") or "").upper()].append(l)
+    sh = open_by_key("1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY")
+    raw = next(w for w in sh.worksheets()
+               if w.title.strip().lower() == "raw")
+    vals = raw.get_all_values()
+    hix = {h: k for k, h in enumerate(vals[0])}
+    weeks = [r[0].strip() for r in vals[1:] if r and r[0].strip()]
+    week = weeks[-1] if weeks else "?"
+
+    def money(v):
+        try:
+            return float(str(v).replace("$", "").replace(",", "") or 0)
+        except ValueError:
+            return 0.0
+
+    paid = [r for r in vals[1:]
+            if r and r[0].strip() == week
+            and r[hix["Campaign"]].strip() == "NDS Wireless"
+            and r[hix["Commission Type"]].strip() == "Base"]
+    log(f"[recon] DD week {week}: {len(paid)} base line(s)")
+    hit = miss = 0
+    for r in paid:
+        cust = r[hix["Customer Name"]].strip().upper()
+        amt = money(r[hix["Total $ to ICD"]])
+        prod = r[hix["Product"]].strip()
+        act = r[hix["Activation Date"]].strip()
+        fl = by_cust.get(cust, [])
+        if not fl:
+            # token-overlap fallback
+            ct = set(cust.split())
+            for k, v in by_cust.items():
+                if ct and (ct <= set(k.split()) or set(k.split()) <= ct):
+                    fl = v
+                    break
+        if fl:
+            hit += 1
+            sts = ", ".join(f"{l['line_type']}/{l['device'][:10]}/"
+                            f"{l['line_status']}/dlv:{l['delivered'] or '-'}"
+                            for l in fl[:6])
+            log(f"RECON paid {cust[:22]:22} ${amt:>6,.0f} {prod[:12]:12} "
+                f"act:{act:10} | feed: {sts[:150]}")
+        else:
+            miss += 1
+            log(f"RECON NOFEED {cust[:22]:22} ${amt:>6,.0f} {prod[:12]:12} "
+                f"act:{act}")
+    log(f"[recon] matched {hit}, no feed match {miss}")
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="nds_wireless_pull")
     ap.add_argument("--days", type=int, default=31)
+    ap.add_argument("--recon", action="store_true",
+                    help="join today's cache against the latest DD")
     a = ap.parse_args(argv)
     today = dt.date.today()
+    if a.recon:
+        return recon(today)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     data = pull(today - dt.timedelta(days=a.days), today)
     out = OUT_DIR / f"nds_wireless_{today.isoformat()}.html"
