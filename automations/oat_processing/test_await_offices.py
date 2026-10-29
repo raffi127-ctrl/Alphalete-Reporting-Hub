@@ -386,3 +386,18 @@ class StopUsesTheOfficeClock(unittest.TestCase):
                              "15:15")
             self.assertFalse(AT.past_stop("23467", at("2026-10-29 15:10")))
             self.assertTrue(AT.past_stop("23467", at("2026-10-29 15:15")))
+
+
+class EveryOfficeLikeCarlos(unittest.TestCase):
+    """Megan 10/29: "we should run them all like carlos has his set up" --
+    the next open slot, even minutes away, on every account."""
+
+    def test_all_six_offer_the_next_slot(self):
+        for office in ("11580", "23965", "24065", "11280", "23467", "11901"):
+            self.assertEqual(AW.lead_for(office), 0, office)
+
+    def test_a_slot_five_minutes_out_is_offered(self):
+        slots, step = AT.parse_ai_hours(_hours_page(CARLOS))
+        self.assertEqual(AW.clause_from_schedule(at("2026-10-29 12:10"), slots, step,
+                                                 office_id="11280"),
+                         "available TODAY, currentInterviewDay, from 12:15pm-3:45pm")

@@ -36,7 +36,11 @@ LEAD_MIN = 30                 # a start this close or closer is never offered
 # Per-office override (Carlos 2026-10-29: "offer whatever time slot is next
 # available. If there's a time slot in 5 minutes, it'll offer that" — his
 # office only). 0 = any start still in the future is offered.
-LEAD_MIN_BY_OFFICE = {"11580": 0}
+# Megan 2026-10-29: "we should run them all like carlos has his set up" --
+# every office now offers the next open slot. LEAD_MIN stays only as the
+# default for an office added later with no entry here.
+LEAD_MIN_BY_OFFICE = {o: 0 for o in ("11580", "23965", "24065", "11280",
+                                     "23467", "11901")}
 SWEET_MIN, SWEET_MAX = 180, 360   # 3 to 6 hours out
 
 DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
