@@ -6820,8 +6820,16 @@ def _action_signin_ask(args: str) -> tuple[bool, str]:
     parts = (args or "").split()
     if not parts:
         return False, "usage: signin_ask <office> [SaraPlus|ownerville|servicecloud]"
-    office, system = parts[0].strip().lower(), (parts[1] if len(parts) > 1 else "SaraPlus")
+    office = parts[0].strip().lower()
+    system = (parts[1] if len(parts) > 1 else "saraplus").strip().lower()
     from automations.icd_alerts import post as P
+    # The system is a SYSTEMS key ("saraplus", "ownerville", "servicecloud"),
+    # never free text: "SaraPlus" fell through to the Service Cloud wording
+    # and told Atef, who has no Box office, to fix My Service Cloud
+    # (2026-10-29 12:24). Refuse anything that is not a key.
+    known = set(getattr(P, "SYSTEMS", {}) or {})
+    if known and system not in known:
+        return False, "unknown system %r -- one of: %s" % (system, ", ".join(sorted(known)))
     lines: list = []
     ok = P.ask_office_to_sign_in(office, "", system=system, send=True,
                                  log=lines.append, force=True)
