@@ -849,6 +849,89 @@ def build_artifacts(out_dir: Optional[Path] = None,
             "pending": pending_path}
 
 
+def build_artifacts_nds(out_dir: Optional[Path] = None,
+                        today: Optional[dt.date] = None,
+                        log=print) -> Dict[str, Path]:
+    """build_artifacts for the NDS dealer (Carlos 2026-10-29: "i want the
+    format to be as identical as possible") — same shape_lines, same
+    tracker, same att_order_log.xlsx builder, fed by the alphaletegp SOH
+    + the NDS wireless per-line scrape. Differences from the B2B path:
+    no raf_guest merge, no Tableau seed (that view is the B2B tracker),
+    and blank SOH customer names (the NDS grid hides that column) are
+    backfilled from the wireless panel's order headers."""
+    from automations.nds_metrics import run as NM
+    from automations.nds_metrics import wireless_pull as NW
+    from automations.shared.name_case import titlecase_name
+    from automations.sp_order_log import wireless_lines as WL
+    today = today or dt.date.today()
+    _register_colors()
+    start = today - dt.timedelta(days=WINDOW_DAYS)
+    soh_cache = NM.OUT_DIR / f"nds_soh_{today.isoformat()}.csv"
+    if soh_cache.exists():
+        data = soh_cache.read_bytes()
+    else:
+        data = NM._pull_nds_soh(start, today, log=log)
+        soh_cache.parent.mkdir(parents=True, exist_ok=True)
+        soh_cache.write_bytes(data)
+    wc = NW.cached(today)
+    if wc is not None:
+        wl_bytes = wc.read_bytes()
+    else:
+        wl_bytes = NW.pull(start, today, log=log)
+        (NM.OUT_DIR / f"nds_wireless_{today.isoformat()}.html"
+         ).write_bytes(wl_bytes)
+
+    # tracker WITHOUT the Tableau seed (B2B workbook): adoption-day lines
+    # seed from the SOH order-level active date instead
+    wl_parsed = WL.parse_wireless_xls(wl_bytes)
+    log("wireless report: %d line(s) across %d order(s)"
+        % (len(wl_parsed), len({w["order_id"] for w in wl_parsed})))
+    state = WL.load_state()
+    soh_active: Dict[str, str] = {}
+    for row in csv.DictReader(io.StringIO(
+            data.decode("utf-8-sig", errors="replace"))):
+        oid, ad = _get(row, "Order ID"), _get(row, "Wireless Active Date")
+        d = _parse_us_date(ad)
+        if oid and d:
+            soh_active[oid] = d.isoformat()
+    act_dates = WL.update_state(state, wl_parsed, today, {}, soh_active,
+                                log=log)
+    WL.save_state(WL.prune_state(state, today))
+
+    lines = shape_lines(data, log=log, wl_lines=wl_parsed,
+                        act_dates=act_dates)
+    if not lines:
+        raise RuntimeError("no lines shaped from the NDS SaraPlus export")
+    cust_by_order = {w["order_id"]: w.get("customer", "")
+                     for w in wl_parsed if w.get("order_id")}
+    fixed = 0
+    for ln in lines:
+        if not (ln.get("Customer Name") or "").strip():
+            c = cust_by_order.get((ln.get("Order ID") or "").strip(), "")
+            if c:
+                ln["Customer Name"] = titlecase_name(c)
+                fixed += 1
+    if fixed:
+        log(f"customer names backfilled from the wireless panel: {fixed}")
+    dest = Path(out_dir) if out_dir else NM.OUT_DIR
+    dest.mkdir(parents=True, exist_ok=True)
+    xlsx_path = build_xlsx(
+        lines, today, log=log,
+        out_path=dest / "NDS Order Log {}.xlsx".format(
+            today.strftime("%m-%d-%Y")))
+    png_path = build_overview_png(
+        lines, today, log=log,
+        out_path=dest / "nds_activation_overview.png")
+    revenue_path = build_revenue_png(
+        lines, today, log=log,
+        out_path=dest / "nds_activation_revenue.png")
+    from automations.sp_order_log import pending as sp_pending
+    pending_path = sp_pending.build_png(
+        lines, today, log=log, out_path=dest / "nds_pending_orders.png")
+    return {"xlsx": xlsx_path, "png": png_path, "revenue": revenue_path,
+            "pending": pending_path}
+
+
 # --- main ---------------------------------------------------------------------
 
 def main(argv=None) -> int:

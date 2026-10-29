@@ -597,6 +597,17 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     # The wireless per-line feed first (Carlos 2026-10-29: B2B-style
     # workbook — All Reps / Pending by Rep / Paycheck by Week / tab per
     # rep, with customer first+last names, which only this feed carries).
+    # IDENTICAL-format path (Carlos 2026-10-29): the same shape_lines +
+    # att_order_log.xlsx builder his old log used — paycheck-week banners,
+    # pay boxes, Pending by Rep, the shared colour map — fed by the NDS
+    # SOH + wireless per-line scrape with the activation-day tracker.
+    try:
+        from automations.sp_order_log.run import build_artifacts_nds
+        return build_artifacts_nds(out_dir=OUT_DIR, today=today,
+                                   log=log)["xlsx"]
+    except Exception as e:  # noqa: BLE001 — fall through to the plainer
+        log(f"[nds] identical-format log failed ({type(e).__name__}: "
+            f"{str(e)[:140]}) — falling back")
     from automations.nds_metrics import order_xlsx, wireless_pull
     wcache = wireless_pull.cached(today)
     if wcache:
