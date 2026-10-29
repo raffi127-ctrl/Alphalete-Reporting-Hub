@@ -594,7 +594,14 @@ ROTATION_BY_MACHINE = {
     # 2026-10-29 (Megan, "yes take atef live on his computer"): 23467 left
     # Lucy 2 -- Indeed walled Lucy 2's resume reads all day (17 walls, 0 sent).
     "Lucy 2": ["11901"],
-    "Lucy 4": ["11280", "23965", "24065"],
+    # 2026-10-29 (Megan: "we can run it from this machine right now as long
+    # as it's in the background"): Raf's three left Lucy 4 for Megan's laptop.
+    # Indeed walled Lucy 4's resume reads (0 sent on 11280 for days); her
+    # laptop read them first try (Tyesha Parker, sent). Runs from the separate
+    # clone ~/lucy-push-runner with APPLICANT_PUSH_BACKGROUND=1, so it never
+    # touches her working folder and its Chrome stays out of her way.
+    "Lucy 4": [],
+    "Megan's laptop": ["11280", "23965", "24065"],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
     # Listed here so "one office, one machine" stays checkable in one place;
