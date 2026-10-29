@@ -389,7 +389,24 @@ def main(argv=None) -> int:
     ap.add_argument("--owners", nargs="?", const="", default=None, metavar="NOMBRE",
                     help="revisar los All-in-One de los dueños (owners.json); "
                          "sólo escribe en los que tienen \"apply\": true")
+    ap.add_argument("--restore", metavar="BACKUP",
+                    help="poner una tab como la vio un backup de output/sales_board_fixer/ "
+                         "(nombre del archivo); solo compara sin --restore-write")
+    ap.add_argument("--restore-write", action="store_true")
     a = ap.parse_args(argv)
+    if a.restore:
+        # through the owners job's rerun (it adds --owners --apply): those are
+        # ignored here, and the Hub card is never coloured by a restore
+        from automations.sales_board_fixer import restore
+        from automations.recruiting_report.fill import open_by_key
+        f = OUT_DIR / Path(a.restore).name
+        sid = a.sheet_id
+        if sid == SHEET_ID:   # owners' backups carry the first 8 of their sheet id
+            for o in json.loads((Path(__file__).parent / "owners.json")
+                                .read_text(encoding="utf-8"))["owners"]:
+                if o["sheet_id"][:8] in f.name:
+                    sid = o["sheet_id"]
+        return restore.run(open_by_key(sid), f, a.restore_write, OUT_DIR)
     # only the full scheduled pass colours the card; a --tab / one owner / a
     # read-only look doesn't
     if a.owners is not None:
