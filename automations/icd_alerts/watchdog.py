@@ -218,9 +218,26 @@ def arm_hard_ceiling(seconds: int = HARD_CEILING_SECONDS, *, log=print,
             log("HARD STOP: %s" % msg)
         except Exception:  # noqa: BLE001
             pass
+        # SAY WHERE IT WAS. Omar 2026-10-28: two runs in a row hit this stop
+        # with an empty detail, and nothing anywhere said which pass was still
+        # going or what the log showed -- the one question a hard stop raises.
+        # The pass timings so far plus the tail of this machine's own log.
+        detail = ""
+        try:
+            from automations.shared import saraplus as _S
+            detail = "Where it went so far: " + (_S.pass_timings_summary() or "(no pass finished)")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from automations.icd_alerts import config as _C
+            lines = _C.LOG_PATH.read_text(errors="replace").splitlines()[-60:]
+            detail += "\n\nlog tail:\n" + "\n".join(l[:200] for l in lines)
+        except Exception as e:  # noqa: BLE001
+            detail += "\n\nlog tail: ? (%s)" % type(e).__name__
+        detail = detail[:5500]
         if report:
             t = threading.Thread(
-                target=lambda: report("run-timeout", SweepTimeout(msg)),
+                target=lambda: report("run-timeout", SweepTimeout(msg), detail),
                 daemon=True)
             t.start()
             t.join(30)

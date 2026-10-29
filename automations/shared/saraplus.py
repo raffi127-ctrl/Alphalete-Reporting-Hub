@@ -659,11 +659,21 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
                "%s >> text=/load records/i" % grid,
                "text=/click\\s*to\\s*load records/i",
                "%s tbody tr" % grid)
+    button_clicked = False
     for sel in targets:
+        if button_clicked and "input" not in sel:
+            # The button WAS there and WAS pressed. The word / cell / row
+            # clicks below it are proven no-ops on this markup, and each one
+            # costs ~20s; three passes x three attempts of them is what pushed
+            # Omar's sweeps past the 20-minute stop (2026-10-28).
+            note.append("button pressed; skipping the text fallbacks")
+            break
         try:
             loc = page.locator(sel).first
             loc.click(timeout=8_000)
             note.append("clicked %r" % sel)
+            if "input" in sel:
+                button_clicked = True
         except Exception as e:  # noqa: BLE001
             note.append("no click via %r (%s)" % (sel, type(e).__name__))
             continue
@@ -684,6 +694,9 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
     # node does not (Omar 2026-10-28: three selector clicks, grid unchanged).
     # So: every element around the text gets a DOM click, then the grid's own
     # ASP.NET postback -- the thing a real click on a RadGrid ends up calling.
+    if button_clicked:
+        LAST_LOAD_CLICK["note"] = "; ".join(note)
+        return rows
     js_passes = (
         ("dom-click", """() => {
              const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
