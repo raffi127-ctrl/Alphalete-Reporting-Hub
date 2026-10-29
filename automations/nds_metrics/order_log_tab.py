@@ -261,6 +261,15 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
     if not lines:
         log("[nds] NDS Order Log tab: today's feed parsed to zero lines -- tab left as it was")
         return None
+    # A row the parser called a LINE but that has no line number is an order
+    # header in disguise ("Resolve Order" rows, 2026-10-29: the second order
+    # under a customer landed with its rep in Delivered and its dealer code in
+    # Port Status). Lines always carry a number; keep the tab to real lines.
+    headerish = [l for l in lines if not (l.get("line_no") or "").strip()]
+    if headerish:
+        log("[nds] NDS Order Log tab: skipped %d header-shaped row(s) with no line number"
+            % len(headerish))
+        lines = [l for l in lines if (l.get("line_no") or "").strip()]
     if not usable(orders, lines):
         log("[nds] NDS Order Log tab: feed parsed %d order header(s) for %d line(s) -- "
             "lines without a customer/rep would be nameless rows; tab left as it was"
