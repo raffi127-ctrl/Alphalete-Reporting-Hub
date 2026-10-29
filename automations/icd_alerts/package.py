@@ -139,6 +139,8 @@ AGENT_FILES = [
     "automations/headshots/ov_upload.py",
     # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
     "automations/icd_alerts/pnl.py",
+    # Whether this Mac can read the owner's SaraPlus code texts (Eve 2026-10-29).
+    "automations/icd_alerts/messages_probe.py",
 ]
 
 # HUB-ONLY IMPORTS THAT SHIP ON PURPOSE, each inside a function, never at

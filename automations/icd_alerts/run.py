@@ -860,6 +860,15 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("pnl skipped: %s" % type(e).__name__)
 
+        # CAN THIS MAC READ THE OWNER'S SARAPLUS TEXTS? Once a day, read-only,
+        # counts only -- for the offices whose codes come by SMS (Eveliz,
+        # 2026-10-29). See messages_probe.py.
+        try:
+            from automations.icd_alerts import messages_probe
+            messages_probe.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("messages check skipped: %s" % type(e).__name__)
+
         alerting = C.in_selling_window()
         # Sales read noon to midnight every day; alerts keep their own hours.
         # Outside BOTH, nothing to do.
