@@ -594,6 +594,15 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     """The crew's lines as a status-colored workbook. SaraPlus relay first
     (Carlos 2026-10-08: "lets make this come from sara plus instead"),
     Tableau when the relay is missing or stale."""
+    # The wireless per-line feed first (Carlos 2026-10-29: B2B-style
+    # workbook — All Reps / Pending by Rep / Paycheck by Week / tab per
+    # rep, with customer first+last names, which only this feed carries).
+    from automations.nds_metrics import order_xlsx, wireless_pull
+    wcache = wireless_pull.cached(today)
+    if wcache:
+        orders, wlines = wireless_pull.parse(wcache.read_bytes(), log=log)
+        if wlines:
+            return order_xlsx.build(orders, wlines, today, OUT_DIR, log=log)
     soh = load_soh(log=log)
     if soh:
         return build_order_log_soh(soh[0], soh[1], today, soh[2], log=log)
