@@ -1320,6 +1320,7 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path,
         from automations.total_knocks import guests as _guests
         rows, guested = _guests.split(cfg["name"], rows,
                                       logfn=lambda m: _log(m))
+        _keep_for_owner_board(cfg, day, rows)
         extra = [(compare, chan_rows)] if (chan_rows and C.compares(cfg)) else []
         # The guests' boards are drawn BEFORE the host's empty-day exit: a day
         # when only they knocked still owes them their board, and the host
@@ -1349,6 +1350,27 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path,
         except Exception as e:  # noqa: BLE001 — one board, not the pass
             out[cfg["key"]] = ([], rows, e)
     return _drop_duplicate_offices(out, plan)
+
+
+def _keep_for_owner_board(cfg: Dict, day: dt.date, rows: List) -> None:
+    """Leave this office's own rows where owner_knocks_hourly can read them.
+
+    Raf 2026-10-29: the owners' hourly knocks board is built off the Lucy ECO
+    relay, and Raf's office never relays -- its knocks are THIS pull, on Lucy
+    1, which is also where the owners' board runs. So the rows it already has
+    in hand are dropped in a file instead of being scraped a second time.
+    Never fatal: the board this pass posts matters more than that copy."""
+    try:
+        C.OWNER_ROWS_DIR.mkdir(parents=True, exist_ok=True)
+        path = C.OWNER_ROWS_DIR / ("%s.json" % cfg["key"])
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({
+            "day": day.isoformat(), "owner": cfg["name"],
+            "at": dt.datetime.now().isoformat(timespec="seconds"),
+            "rows": rows}, default=str))
+        tmp.replace(path)
+    except Exception as e:  # noqa: BLE001
+        _log("  (owner-board copy of %s not saved: %s)" % (cfg["key"], e))
 
 
 def _drop_duplicate_offices(out: Dict, plan: List) -> Dict:

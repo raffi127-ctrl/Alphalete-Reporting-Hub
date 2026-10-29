@@ -1053,6 +1053,9 @@ MIN_SEND_GAP_MINUTES = 5
 OWNERVILLE_SESSION_WAIT_S = 240
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
+# Each office's latest own-rep rows, one file per office key, for
+# owner_knocks_hourly (Raf's office does not relay through Lucy ECO).
+OWNER_ROWS_DIR = Path.home() / ".config" / "recruiting-report" / "owner_knocks_rows"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"
 
 # Its OWN browser profile. The shared .browser_profile is held by the 4am batch

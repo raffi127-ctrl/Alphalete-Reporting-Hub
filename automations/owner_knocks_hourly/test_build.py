@@ -48,6 +48,34 @@ class OwnerRowsTests(unittest.TestCase):
         self.assertEqual(R.signature(a), R.signature({"Kash Rai": [_rep("C", 120)]}))
 
 
+class LucyRowsTests(unittest.TestCase):
+    """Raf's office: rows gap_alerts left on Lucy 1, not the ECO relay."""
+
+    def _write(self, d, key, day, at, rows, owner="Rafael Hidalgo"):
+        (Path(d) / ("%s.json" % key)).write_text(json.dumps(
+            {"day": day, "owner": owner, "at": at, "rows": rows}))
+
+    def test_fresh_today_counts_stale_or_old_day_does_not(self):
+        from automations.gap_alerts import config as GC
+        now = dt.datetime.now()
+        with tempfile.TemporaryDirectory() as tmp:
+            old = GC.OWNER_ROWS_DIR
+            GC.OWNER_ROWS_DIR = Path(tmp)
+            try:
+                today = now.date()
+                self._write(tmp, "rafael", today.isoformat(),
+                            now.isoformat(timespec="seconds"), [_rep("R", 90)])
+                self._write(tmp, "calvin", today.isoformat(),
+                            (now - dt.timedelta(hours=2)).isoformat(),
+                            [_rep("C", 10)], owner="Calvin Ribera")
+                self._write(tmp, "jay_att", "2020-01-01",
+                            now.isoformat(), [_rep("J", 5)], owner="Jay Turnage")
+                got = R.lucy_rows(today, log=lambda *_: None)
+            finally:
+                GC.OWNER_ROWS_DIR = old
+        self.assertEqual(list(got), ["Rafael Hidalgo"])
+
+
 class RenderTests(unittest.TestCase):
     def test_board_is_owner_lines_over_an_org_total(self):
         from automations.owner_knocks_hourly import config as cfg

@@ -63,6 +63,15 @@ THEME_TEAL = {         # Time Gaps — distinct colour (🕐)
     "stripe": (234, 243, 246),
     "total_bg": (13, 110, 139),
 }
+# Owners' hourly board (Eve 2026-10-29): not all teal -- owner lines on the
+# white/stripe rows, title + header + ORG TOTAL in a muted burgundy, the way
+# the weekly board has its own plum.
+THEME_BURGUNDY = {
+    "title_bg": (122, 38, 52),
+    "header_bg": (64, 24, 32),
+    "stripe": (248, 240, 241),
+    "total_bg": (122, 38, 52),
+}
 TITLE_FG  = (255, 255, 255)
 HEADER_FG = (255, 255, 255)
 ROW_BG_A  = (255, 255, 255)
@@ -1494,11 +1503,14 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
-                 THEME_AMBER,
+                 THEME_BURGUNDY if summary_only else THEME_AMBER,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=1, wrap_headers=True,
-                 highlight_first_row=_n_summary,
-                 top_row_colors=_colors, cell_bgs=_cell_bgs or None,
+                 # summary_only: the owner lines are plain alternating rows,
+                 # only the ORG TOTAL (last) is a band.
+                 highlight_first_row=0 if summary_only else _n_summary,
+                 highlight_last_row=1 if summary_only else False,
+                 top_row_colors=None if summary_only else _colors, cell_bgs=_cell_bgs or None,
                  col_min_w=_min_w or None,
                  # ONE COLOUR PER TEAM (Megan 2026-09-13). The office's own
                  # TOTAL keeps the board's amber and the guest office keeps

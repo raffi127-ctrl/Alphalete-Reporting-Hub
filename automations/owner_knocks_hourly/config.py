@@ -10,7 +10,8 @@ SOURCE: the Lucy ECO knocks relay ('Lucy Access App' workbook -> 'ICD Knocks'
 tab, one row per office per day: the office's own TeleMapper grid). Nothing is
 scraped here, so it puts no load on any Lucy beyond one Sheet read and one
 picture. An owner whose Mac is not on Lucy ECO has no row and is not on the
-board.
+board -- except Raf, whose office gap_alerts already pulls on Lucy 1 every 30
+minutes for his own board; it leaves his rows for this one (Eve 2026-10-29).
 
 Python 3.9-safe (Lucy runtime).
 """
@@ -30,6 +31,10 @@ WINDOW = {
     0: (14, 21), 1: (14, 21), 2: (14, 21), 3: (14, 21), 4: (14, 21),
     5: (14, 21),
 }
+
+# Raf's office is pulled by gap_alerts on Lucy 1 every 30 minutes, not relayed;
+# older than this = that pull has stopped, left off like a stale relay.
+LUCY_STALE_MINUTES = 45
 
 BOARD_TITLE = "ALPHALETE OWNERS"
 TOTAL_LABEL = "ORG TOTAL"
