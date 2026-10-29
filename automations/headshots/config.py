@@ -63,9 +63,10 @@ OFFICES = {
     # Connect, Lucy Reporting is in it). Signed up on LucyEco 2026-10-26 as
     # `omar` (Omars-iMac); his OwnerVille login only landed 2026-10-28 (first
     # knocks row) -- 10/27's test jobs all came back "no OwnerVille login
-    # saved". Dry until a --test-job finds a real new start, then "live".
+    # saved". 10/29 test jobs found Calvin Kilgore, Martin Fleming and Pedro
+    # Guerrero in his View Progress (RES-AT&T) -> LIVE 2026-10-29 (Megan: yes).
     "omar": Office(key="omar", owner="Omar Mohamad", channel="C0C6HKZ63EK",
-                   uploader="eco", eco_key="omar", mode="dry"),
+                   uploader="eco", eco_key="omar", mode="live"),
 }
 
 
