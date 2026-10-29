@@ -32,3 +32,71 @@ def quiet_window(now) -> bool:
     # Sunday the window ends an hour later. Every other Sunday stays 1 PM.
     sunday_end = 14 if now.date().isoformat() == "2026-10-04" else 13
     return (wd == 4 and hr >= 13) or wd == 5 or (wd == 6 and hr < sunday_end)
+
+
+# ---- CARLOS'S SCHEDULE, ON THE LUCYS TOO (Megan 2026-10-28) -----------------
+# "make all of these accounts follow the schedule carlos set": his relay
+# computer pushes 5:30 AM - 10:00 PM, each pass 15 minutes apart
+# (icd_alerts/resume_push.py DAY_START / DAY_END / EVERY_MINUTES). The Lucys ran
+# 7:00 AM - 10:00 PM with each office every ~4-6 min. Before 7:00 a Lucy's own
+# 4am batch can still be running, and Megan chose "5:30, after 4am run": a push
+# never starts on a Lucy while its 4am reports are busy ("we CANNOT mess up the
+# 4am run", 2026-10-21).
+DAY_START = (5, 30)
+DAY_END = (22, 0)            # the 22:00 tick itself still runs, as before
+BATCH_FREE_FROM = (7, 0)     # from 7:00 the old schedule never checked the batch
+EVERY_MINUTES = 15
+
+
+def in_hours(now) -> bool:
+    hm = (now.hour, now.minute)
+    return DAY_START <= hm <= DAY_END
+
+
+def needs_batch_check(now) -> bool:
+    return (now.hour, now.minute) < BATCH_FREE_FROM
+
+
+def due(last_start_epoch, now_epoch: float) -> bool:
+    """15 minutes since this office's last pass started (or never ran)."""
+    if not last_start_epoch:
+        return True
+    return now_epoch - float(last_start_epoch) >= EVERY_MINUTES * 60
+
+
+def gate(office: str, stamp_path: str, now=None, batch_running=None):
+    """(go, reason) for one office's tick. batch_running is a callable
+    returning True / False / None (None = can't tell, treated as busy)."""
+    import datetime as _dt
+    import os
+    import time
+    now = now or _dt.datetime.now()
+    if not in_hours(now):
+        return False, "outside 5:30AM-10PM CST window (h=%d)" % now.hour
+    if needs_batch_check(now):
+        if batch_running is None:
+            from automations.day_orchestrator.mini_control import _batch_running
+            batch_running = _batch_running
+        busy = batch_running()
+        if busy is None or busy:
+            return False, ("before 7AM and this Lucy's 4am run is still going"
+                           if busy else "before 7AM and the 4am run state "
+                           "can't be read -- waiting")
+    try:
+        last = open(stamp_path).read().strip() if os.path.exists(stamp_path) else ""
+    except OSError:
+        last = ""
+    if not due(last, time.time()):
+        mins = (time.time() - float(last)) / 60
+        return False, "office %s ran %.0f min ago (every %d min)" % (
+            office, mins, EVERY_MINUTES)
+    return True, "ok"
+
+
+if __name__ == "__main__":
+    # bash deploy/applicant_push.sh: python -m automations.applicant_push.window
+    #   <office> <stamp file>  -> exit 0 = go, 75 = skip (reason on stdout)
+    import sys
+    ok, why = gate(sys.argv[1], sys.argv[2])
+    print(why)
+    sys.exit(0 if ok else QUIET_EXIT)

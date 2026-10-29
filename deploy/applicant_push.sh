@@ -277,14 +277,21 @@ case "$OFFICE" in
     ;;
 esac
 
+PUSH_STAMP="$LOG_DIR/.applicant-push-started${OFFICE_SLUG:--11580}"
 if [ "$DRYRUN" -eq 0 ]; then
-  # ---- WINDOW GATE: only run 7:00 AM–10:00 PM CST (last run at 22:00) ----
-  h=$((10#$(date +%H)))
-  m=$((10#$(date +%M)))
-  if ! { { [ "$h" -ge 7 ] && [ "$h" -le 21 ]; } || { [ "$h" -eq 22 ] && [ "$m" -eq 0 ]; }; }; then
-    echo "[$(date)] outside 7AM-10PM CST window (h=$h) — skipping $OFFICE_LABEL" >> "$LOG_FILE"
+  # ---- WINDOW GATE: Carlos's schedule (Megan 2026-10-28) -------------------
+  # 5:30 AM-10:00 PM CST, each office every 15 min, and before 7:00 only once
+  # THIS Lucy's 4am batch is done (automations/applicant_push/window.py gate).
+  # A skipped office advances the rotation so the others are not held up.
+  _why=$(PYTHONPATH="$(pwd)" "$VENV_PY" -m automations.applicant_push.window "$OFFICE" "$PUSH_STAMP" 2>/dev/null)
+  _gate=$?
+  if [ "$_gate" -ne 0 ]; then
+    [ -n "$_why" ] || _why="schedule gate could not run (exit $_gate)"
+    echo "[$(date)] ${_why} — skipping $OFFICE_LABEL" >> "$LOG_FILE"
+    [ -n "$OFFICE_ARG" ] && echo "$OFFICE" > "$ROTATE_MARK"
     exit 0
   fi
+  date +%s > "$PUSH_STAMP"
   # -------------------------------------------------------------------------
 fi
 
@@ -528,7 +535,7 @@ case " $* " in
       # FAILED row, no Sosumi. Before this code existed the refusal exited 1 and
       # three quiet ticks published FAILED for BOTH offices and opened
       # "Applicant Push failed" in #claudecorrections (2026-09-04, the afternoon
-      # the window shipped). Publishing nothing matches the 7AM-10PM gate above,
+      # the window shipped). Publishing nothing matches the schedule gate above,
       # which also just leaves the day alone. 75 is EX_TEMPFAIL = HELD, this
       # repo's existing word for it; NOT 3, which resume_pushing already uses for
       # an Indeed wedge that MUST keep counting toward the streak.
