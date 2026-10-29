@@ -725,7 +725,12 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
                "%s tbody tr" % grid)
     button_clicked = False
     for sel in targets:
-        if button_clicked and "input" not in sel:
+        if button_clicked:
+            # ONE press of the button is the test. The three button selectors
+            # name the same element, and after the first press failed the
+            # other two cost 45s each for the same answer -- on a page with
+            # three placeholder grids that alone ran a sweep past the
+            # 20-minute stop (Omar, 2026-10-28 23:06 ET).
             # The button WAS there and WAS pressed. The word / cell / row
             # clicks below it are proven no-ops on this markup, and each one
             # costs ~20s; three passes x three attempts of them is what pushed
