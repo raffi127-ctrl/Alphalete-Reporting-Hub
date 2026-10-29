@@ -68,19 +68,6 @@ PAUSED_REPORTS = {
         "deploy/texas_de_brazil_745.DISABLED — the wrapper and "
         "run_library_report both refuse to send while that file exists. "
         "Delete that file + this entry to restart it."),
-    # Box OFF (Carlos 2026-10-28, 67e3e6c): its Lucy 2 agents were removed, but
-    # the watcher still had weeks of history saying "runs daily ~7:00" and
-    # opened `standalone-b2b_dispositions` the next morning (10/29). AT&T was
-    # already out of HOURLY/DISPOSITION_CAMPAIGNS, so nothing live is left on
-    # this card. The weekly Carlos B2B board folds into the same card.
-    "b2b_dispositions": (
-        "Stood down 2026-10-28 (Carlos: 'all of these box automations you're "
-        "good to turn off') — the gaps/6pm/7:30 agents on Lucy 2 are removed. "
-        "`lucy rerun install_b2b_dispositions_<gaps|hourly|morning>_agent` "
-        "+ delete this entry to restart."),
-    "weekly_knock_dispositions_carlos_b2b": (
-        "Stood down 2026-10-28 (Carlos) — off the Sunday scheduler with the "
-        "rest of Box."),
 }
 
 

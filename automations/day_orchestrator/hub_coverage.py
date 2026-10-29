@@ -221,6 +221,19 @@ _NOT_A_REPORT = frozenset({
 # A name here is a promise that the report DOES NOT RUN — keep it in step with
 # on_scheduler:false + cadence weekdays [] in schedule_config, both doors.
 _RETIRED: frozenset = frozenset({
+    # B2B Dispositions. Box-only since AT&T left HOURLY/DISPOSITION_CAMPAIGNS,
+    # and every post went to Carlos (#alphalete-gp-sales + his "Box B2B" text
+    # group). Carlos 2026-10-28: "all of these box automations you're good to
+    # turn off" (67e3e6c removed the Lucy 2 agents). The watcher then called it
+    # missing on 10/29; Megan: retire it from the Hub. Both doors shut in
+    # schedule_config (on_scheduler false, weekdays [], standalone_weekdays []).
+    # Every spelling the card was ever filed under, plus the weekly Carlos B2B
+    # board that folded into it. Module stays on disk; revive = the
+    # install_b2b_dispositions_*_agent reruns + delete these lines.
+    "b2b_dispositions", "b2b-dispositions",
+    "b2b_dispositions_hourly", "b2b_dispositions_final",
+    "b2b_dispositions_gaps", "b2b_dispositions_morning",
+    "weekly_knock_dispositions_carlos_b2b",
     # Atef NDS watch. Only existed to DM Eve when Atef's captainship landed in
     # NDS; Carlos 2026-10-27: Atef is no longer a captain. Both spellings.
     "atef-nds-watch", "atef_nds_watch",
