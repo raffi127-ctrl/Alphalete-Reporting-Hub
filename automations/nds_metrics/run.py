@@ -1468,8 +1468,9 @@ SECTIONS = [
      build_pct_on_board),
     ("team_tree", "\U0001F333", "NDS Team Tree",
      build_team_tree),
-    ("override_board", "\U0001FA9C", "NDS Leader Overrides",
-     build_override_board),
+    # override_board: HELD from the thread (Carlos 2026-10-29: "dont send
+    # the override tree on the nds thread yet") — still buildable with
+    # --only override_board --dm for previews; re-add here when he says go.
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
