@@ -44,18 +44,31 @@ class DdByRep(unittest.TestCase):
         noon = dt.datetime(2026, 10, 29, 12)
         self.assertTrue(P.check_due({}, noon))
         self.assertFalse(P.check_due({}, dt.datetime(2026, 10, 29, 3)))
-        self.assertFalse(P.check_due({"dd_ok_v2": "2026-10-29"}, noon))
+        self.assertFalse(P.check_due({"dd_ok_v3": "2026-10-29"}, noon))
 
 
     def test_check_takes_the_first_sheet_with_data(self):
         import unittest.mock as m
-        found = [("ORGDDDetail", "ERROR 404"), ("DDDETAILORG", "ICD.Full Name\nX\n"),
+        found = [("DDDETAIL", "ERROR 404"), ("DDDETAILORG", "ICD.Full Name\nX\n"),
                  ("ICDddDetail", CSV)]
-        with m.patch.object(P, "fetch_dd_csvs", return_value=found),                 m.patch("automations.icd_alerts.ov_read._context") as ctx,                 m.patch("patchright.sync_api.sync_playwright"):
+        with m.patch.object(P, "fetch_dd_csvs", return_value=found), \
+                m.patch("automations.icd_alerts.ov_read._context") as ctx, \
+                m.patch("patchright.sync_api.sync_playwright"):
             ctx.return_value.pages = [object()]
-            ok, line = P.check({"owner": "Jairo Ruiz"})
+            ok, line, _ = P.check({"owner": "Jairo Ruiz"})
         self.assertTrue(ok)
         self.assertTrue(line.startswith("ICDddDetail DD OK"))
+
+    def test_owner_cut_line_by_line_with_icd_rep_name(self):
+        text = ("cl.DD Week,cl.ICD Owner Name,cl.ICD Rep Name,Total $ to ICD\n"
+                "10/18/2026,Jairo Ruiz,A B (1),10\n10/18/2026,Jairo Ruiz,A B (1),5\n")
+        weeks, seen = P.dd_by_rep(text, "Jairo Ruiz")
+        self.assertEqual(weeks, {dt.date(2026, 10, 18): {"A B": 15.0}})
+
+    def test_money_column_found_by_hint(self):
+        text = "cl.DD Week,cl.ICD Rep Name,cl.Some $ To ICD Paid\n10/18/2026,A B,7\n"
+        weeks, seen = P.dd_by_rep(text, "x")
+        self.assertEqual(seen["total_col"], "cl.Some $ To ICD Paid")
 
 
 if __name__ == "__main__":

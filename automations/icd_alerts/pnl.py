@@ -51,12 +51,17 @@ TABLEAU = "https://us-east-1.online.tableau.com"
 # our Lucys read), then the owner's own ICD cut; the first that carries
 # week + total wins, and if none does the line says what each one had.
 _DD_BASE = TABLEAU + "/t/sci/views/DirectDepositICDVIEWVersion2_0/"
-DD_CSVS = ("ORGDDDetail", "DDDETAILORG", "ICDddDetail", "DDDETAIL")
+DD_CSVS = ("DDDETAIL", "DDDETAILORG")   # ORGDDDetail/ICDddDetail: 404
 
 COL_OWNER = ("cl.ICD Owner Name", "ICD Owner Name")
 COL_WEEK = ("cl.DD Week", "DD Week")
-COL_REP = ("REP.Name", "Rep Name", "REP Name", "Rep")
-COL_TOTAL = ("Total $ to ICD",)
+# DDDETAIL.csv (the owner's own ICD cut) names the rep 'cl.ICD Rep Name' and
+# is line by line, one row per order (Jairo's Mac, 2026-10-29 14:34).
+COL_REP = ("REP.Name", "Rep Name", "REP Name", "Rep", "cl.ICD Rep Name",
+           "ICD Rep Name")
+COL_TOTAL = ("Total $ to ICD", "cl.Total $ to ICD", "SUM(Total $ to ICD)")
+# Failing an exact name, the first column that reads like the ICD's money.
+_TOTAL_HINTS = ("to icd", "total $", "dd amount", "amount")
 NO_REP = "(no rep)"
 
 # Office hours only: a browser on somebody's screen at 3am gets Lucy removed.
@@ -116,6 +121,11 @@ def dd_by_rep(text: str, owner: str) -> Tuple[Dict[dt.date, Dict[str, float]], D
         return {}, seen
     hdr = rows[0]
     oc, wc, tc = _col(hdr, COL_OWNER), _col(hdr, COL_WEEK), _col(hdr, COL_TOTAL)
+    if tc is None:
+        low = [str(h or "").strip().lower() for h in hdr]
+        tc = next((i for hint in _TOTAL_HINTS for i, h in enumerate(low)
+                   if hint in h), None)
+    seen["total_col"] = hdr[tc] if tc is not None else ""
     rc = _col(hdr, COL_REP)
     seen["missing"] = [n for n, c in (("owner", oc), ("week", wc), ("total", tc),
                                       ("rep", rc)) if c is None]
@@ -155,8 +165,8 @@ def check_line(weeks: Dict[dt.date, Dict[str, float]], seen: Dict) -> str:
         reps = weeks[wk]
         parts.append("WE %s: %d reps $%s" % (wk.isoformat(), len(reps),
                                              format(sum(reps.values()), ",.2f")))
-    return "DD OK (%d rows, %d owners in file) -- %s" % (
-        seen["rows"], seen["owners"], "; ".join(parts))
+    return "DD OK (%d rows, %d owners in file, money from %r) -- %s" % (
+        seen["rows"], seen["owners"], seen.get("total_col", ""), "; ".join(parts))
 
 
 # --- the browser half (proven on the owner's Mac, not here) ------------------
@@ -202,8 +212,9 @@ def _owner_name(rec: Dict) -> str:
     return str(rec.get("owner") or "").strip()
 
 
-def check(rec: Dict, log=print) -> Tuple[bool, str]:
-    """Read the DD once on this computer's OwnerVille browser."""
+def check(rec: Dict, log=print) -> Tuple[bool, str, str]:
+    """Read the DD once on this computer's OwnerVille browser. Returns
+    (worked, one line, every candidate's full column list)."""
     from patchright.sync_api import sync_playwright
     from automations.icd_alerts import ov_read
 
@@ -211,27 +222,29 @@ def check(rec: Dict, log=print) -> Tuple[bool, str]:
         try:
             ctx = ov_read._context(p, True)
         except Exception as e:  # noqa: BLE001 -- profile busy: knocks running
-            return False, "busy (%s)" % type(e).__name__
+            return False, "busy (%s)" % type(e).__name__, ""
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             found = fetch_dd_csvs(page)
         except Exception as e:  # noqa: BLE001
-            return False, "DD read failed: %s: %s" % (type(e).__name__, str(e)[:240])
+            return (False, "DD read failed: %s: %s"
+                    % (type(e).__name__, str(e)[:240]), "")
         finally:
             try:
                 ctx.close()
             except Exception:  # noqa: BLE001
                 pass
-    tried = []
+    tried, cols = [], []
     for name, text in found:
         if text.startswith("ERROR"):
             tried.append("%s: %s" % (name, text[6:]))
             continue
         weeks, seen = dd_by_rep(text, _owner_name(rec))
+        cols.append("%s: %s" % (name, " | ".join(seen["columns"])))
         if weeks:
-            return True, "%s %s" % (name, check_line(weeks, seen))
+            return True, "%s %s" % (name, check_line(weeks, seen)), "\n".join(cols)
         tried.append("%s: %s" % (name, check_line(weeks, seen)))
-    return False, " || ".join(tried)
+    return False, " || ".join(tried), "\n".join(cols)
 
 
 # --- when -------------------------------------------------------------------
@@ -258,9 +271,9 @@ def check_due(state: Dict, now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if not (HOURS[0] <= now.hour < HOURS[1]):
         return False
-    if state.get("dd_ok_v2"):
+    if state.get("dd_ok_v3"):
         return False
-    return (time.time() - float(state.get("dd_tried_v2") or 0)) >= RETRY_HOURS * 3600
+    return (time.time() - float(state.get("dd_tried_v3") or 0)) >= RETRY_HOURS * 3600
 
 
 def run_check(log=print) -> int:
@@ -271,15 +284,15 @@ def run_check(log=print) -> int:
     for rec in C.active_enrollments():
         if not wanted(rec):
             continue
-        ok, line = check(rec, log=log)
+        ok, line, cols = check(rec, log=log)
         log("pnl: %s %s" % (rec["office_key"], line))
         if line.startswith("busy"):
             continue                       # knocks had the browser; next tick
-        state["dd_tried_v2"] = time.time()
+        state["dd_tried_v3"] = time.time()
         if ok:
-            state["dd_ok_v2"] = dt.date.today().isoformat()
+            state["dd_ok_v3"] = dt.date.today().isoformat()
         R.report_fault("probe-pnl-dd", "%s: %s" % (_owner_name(rec), line),
-                       office_key=rec["office_key"], log=log)
+                       detail=cols, office_key=rec["office_key"], log=log)
         filed += 1
     _save(state)
     return filed
