@@ -170,10 +170,10 @@ check("every ROTATION office has a machine",
 # SPLIT 2026-09-19: Raf's three streams moved to Lucy 4 as a unit.
 # 2026-10-20: 11580 moved to Carlos's own computer (relay, see offices.py).
 # 2026-10-29: 23467 moved to Atef's own computer (relay).
-_LUCY2 = ["11901"]
+_LUCY2 = []   # 10/29: Khalil moved to the Lucy user on Megan's laptop
 _LUCY4 = []   # 10/29: Raf's three run in the Lucy user on Megan's laptop
-_LAPTOP = ["11280", "23965", "24065"]
-check("Lucy 2 works Khalil", offices.rotation_for("Lucy 2"), _LUCY2)
+_LAPTOP = ["11280", "23965", "24065", "11901"]
+check("Lucy 2 works nothing now", offices.rotation_for("Lucy 2"), _LUCY2)
 check("Atef is pushed from his own computer", offices.rotation_for("Atef's office computer (relay)"), ["23467"])
 check("Carlos is pushed from his own computer", offices.rotation_for("Carlos's office computer (relay)"), ["11580"])
 check("Lucy 4 works nothing now", offices.rotation_for("Lucy 4"), _LUCY4)

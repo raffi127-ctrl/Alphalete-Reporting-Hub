@@ -593,7 +593,10 @@ ROTATION_BY_MACHINE = {
     # own computer.
     # 2026-10-29 (Megan, "yes take atef live on his computer"): 23467 left
     # Lucy 2 -- Indeed walled Lucy 2's resume reads all day (17 walls, 0 sent).
-    "Lucy 2": ["11901"],
+    # 2026-10-29 (Megan: "I need khalil's resumes pushed"): 11901 left Lucy 2
+    # (Indeed walled its resume reads all day) for the Lucy user on Megan's
+    # laptop, beside Raf's three.
+    "Lucy 2": [],
     # 2026-10-29 (Megan: "we can run it from this machine right now as long
     # as it's in the background"): Raf's three left Lucy 4 for Megan's laptop.
     # Indeed walled Lucy 4's resume reads (0 sent on 11280 for days); her
@@ -606,7 +609,7 @@ ROTATION_BY_MACHINE = {
     # macOS user ("lucyecoraf", setup /Users/Shared/lucy-push-setup.sh) whose
     # windows can never reach her screen. Same .machine-profile name.
     "Lucy 4": [],
-    "Megan's laptop": ["11280", "23965", "24065"],
+    "Megan's laptop": ["11280", "23965", "24065", "11901"],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
     # Listed here so "one office, one machine" stays checkable in one place;

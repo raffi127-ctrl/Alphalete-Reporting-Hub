@@ -251,9 +251,9 @@ class PausedOffices(unittest.TestCase):
         """Lucy 4 sat with an EMPTY rotation for 4 minutes on 2026-09-25."""
         got = TheLine()._render(
             dt.datetime(2026, 9, 25, 9, 20),
-            paused={"11280", "23965", "24065"},
+            paused={"11280", "23965", "24065", "11901"},
             skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
-                       "OAT Walk Diag 24065"))
+                       "OAT Walk Diag 24065", "OAT Walk Diag 11901"))
         self.assertIn("Megan's laptop: all offices paused", got)
         self.assertNotIn(":warning: Megan's laptop has posted NO runs today", got)
 
@@ -262,7 +262,7 @@ class PausedOffices(unittest.TestCase):
         got = TheLine()._render(
             dt.datetime(2026, 9, 25, 9, 20), paused=set(),
             skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
-                       "OAT Walk Diag 24065"))
+                       "OAT Walk Diag 24065", "OAT Walk Diag 11901"))
         self.assertIn(":warning: Megan's laptop has posted NO runs today", got)
 
 

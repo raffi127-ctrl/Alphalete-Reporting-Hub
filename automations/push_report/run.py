@@ -55,7 +55,7 @@ OFFICES = [
     # 23467 left Lucy 2 for ATEF'S OWN COMPUTER 2026-10-29 (Megan: "yes take
     # atef live on his computer") -- relayed like Carlos's.
     ("relay:atef:23467",    "Atef 23467",            "Atef's computer"),
-    ("OAT Walk Diag 11901", "Khalil 11901",          "Lucy 2"),
+    ("OAT Walk Diag 11901", "Khalil 11901",          "Megan's laptop"),
     ("OAT Walk Diag 11280", "Raf main 11280",        "Megan's laptop"),
     ("OAT Walk Diag 23965", "Raf 2nd funnel 23965",  "Megan's laptop"),
     ("OAT Walk Diag 24065", "Raf 24065",             "Megan's laptop"),
