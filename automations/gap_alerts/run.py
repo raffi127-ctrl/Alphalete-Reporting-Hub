@@ -1353,24 +1353,16 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path,
 
 
 def _keep_for_owner_board(cfg: Dict, day: dt.date, rows: List) -> None:
-    """Leave this office's own rows where owner_knocks_hourly can read them.
+    """Share this office's own rows with owner_knocks_hourly, if it is one
+    the owners' board needs from us.
 
     Raf 2026-10-29: the owners' hourly knocks board is built off the Lucy ECO
-    relay, and Raf's office never relays -- its knocks are THIS pull, on Lucy
-    1, which is also where the owners' board runs. So the rows it already has
-    in hand are dropped in a file instead of being scraped a second time.
-    Never fatal: the board this pass posts matters more than that copy."""
-    try:
-        C.OWNER_ROWS_DIR.mkdir(parents=True, exist_ok=True)
-        path = C.OWNER_ROWS_DIR / ("%s.json" % cfg["key"])
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({
-            "day": day.isoformat(), "owner": cfg["name"],
-            "at": dt.datetime.now().isoformat(timespec="seconds"),
-            "rows": rows}, default=str))
-        tmp.replace(path)
-    except Exception as e:  # noqa: BLE001
-        _log("  (owner-board copy of %s not saved: %s)" % (cfg["key"], e))
+    relay, and Raf's office never relays -- its knocks are THIS pull. So the
+    rows it already has in hand are shared instead of scraped a second time.
+    share() never raises: the board this pass posts matters more."""
+    from automations.owner_knocks_hourly import config as OK, share
+    if cfg["key"] in OK.GAP_ALERTS_SHARED:
+        share.share(cfg["key"], cfg["name"], day, rows, log=_log)
 
 
 def _drop_duplicate_offices(out: Dict, plan: List) -> Dict:

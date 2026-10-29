@@ -10,8 +10,9 @@ SOURCE: the Lucy ECO knocks relay ('Lucy Access App' workbook -> 'ICD Knocks'
 tab, one row per office per day: the office's own TeleMapper grid). Nothing is
 scraped here, so it puts no load on any Lucy beyond one Sheet read and one
 picture. An owner whose Mac is not on Lucy ECO has no row and is not on the
-board -- except Raf, whose office gap_alerts already pulls on Lucy 1 every 30
-minutes for his own board; it leaves his rows for this one (Eve 2026-10-29).
+board -- except offices a Lucy already pulls for their own boards (Raf on
+Lucy 1, Carlos's NDS crew on Lucy 2), shared through share.py (Eve
+2026-10-29).
 
 Python 3.9-safe (Lucy runtime).
 """
@@ -32,8 +33,13 @@ WINDOW = {
     5: (14, 21),
 }
 
-# Raf's office is pulled by gap_alerts on Lucy 1 every 30 minutes, not relayed;
-# older than this = that pull has stopped, left off like a stale relay.
+# Offices one of OUR Lucys pulls instead of the owner's Mac -- shared on the
+# relay workbook's 'Lucy Knocks' tab (share.py). gap_alerts shares these keys
+# (Raf, Lucy 1, every 30 min); nds_oof shares Carlos's NDS crew (Lucy 2,
+# every 30 min). Older than LUCY_STALE_MINUTES = that pull stopped, left off.
+GAP_ALERTS_SHARED = {"rafael"}
+CARLOS_NDS_KEY = "carlos-nds"
+CARLOS_NAME = "Carlos Hidalgo"
 LUCY_STALE_MINUTES = 45
 
 BOARD_TITLE = "ALPHALETE OWNERS"

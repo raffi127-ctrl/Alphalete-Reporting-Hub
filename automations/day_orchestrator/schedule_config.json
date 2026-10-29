@@ -14410,6 +14410,25 @@
    "timeout_minutes": 10,
    "verify": null
   },
+  "owner_knocks_probe_ov": {
+   "on_scheduler": false,
+   "_note": "READ-ONLY (Eve 2026-10-29): do Jairo's, Drew's and Omar's reps log knocks in OwnerVille at all? Their Lucy ECO relays the grid empty almost every day. Impersonates each office (and Salik Mallick, Omar's old office) on a Lucy, reads the last 6 selling days under RES AT&T (3) and NDS (1), prints reps + knocks per day. No Sheet, no Slack, no text.",
+   "display_name": "Owner Knocks: OwnerVille check for Jairo/Drew/Omar (read-only)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.owner_knocks_hourly.probe_ov"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20
+  },
   "install_owner_knocks_hourly_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "Install/refresh com.alphalete.owner-knocks-hourly on LUCY 1 (owners' knocks board text, hourly :20). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",

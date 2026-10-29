@@ -48,32 +48,31 @@ class OwnerRowsTests(unittest.TestCase):
         self.assertEqual(R.signature(a), R.signature({"Kash Rai": [_rep("C", 120)]}))
 
 
-class LucyRowsTests(unittest.TestCase):
-    """Raf's office: rows gap_alerts left on Lucy 1, not the ECO relay."""
+class SharedTabTests(unittest.TestCase):
+    """Offices a Lucy pulls (Raf, Carlos NDS): the 'Lucy Knocks' tab."""
 
-    def _write(self, d, key, day, at, rows, owner="Rafael Hidalgo"):
-        (Path(d) / ("%s.json" % key)).write_text(json.dumps(
-            {"day": day, "owner": owner, "at": at, "rows": rows}))
+    def _book(self, values):
+        ws = SimpleNamespace(get_all_values=lambda: values)
+        return SimpleNamespace(worksheet=lambda name: ws)
 
     def test_fresh_today_counts_stale_or_old_day_does_not(self):
-        from automations.gap_alerts import config as GC
+        from automations.owner_knocks_hourly import share
         now = dt.datetime.now()
-        with tempfile.TemporaryDirectory() as tmp:
-            old = GC.OWNER_ROWS_DIR
-            GC.OWNER_ROWS_DIR = Path(tmp)
-            try:
-                today = now.date()
-                self._write(tmp, "rafael", today.isoformat(),
-                            now.isoformat(timespec="seconds"), [_rep("R", 90)])
-                self._write(tmp, "calvin", today.isoformat(),
-                            (now - dt.timedelta(hours=2)).isoformat(),
-                            [_rep("C", 10)], owner="Calvin Ribera")
-                self._write(tmp, "jay_att", "2020-01-01",
-                            now.isoformat(), [_rep("J", 5)], owner="Jay Turnage")
-                got = R.lucy_rows(today, log=lambda *_: None)
-            finally:
-                GC.OWNER_ROWS_DIR = old
+        today = now.date().isoformat()
+        values = [share.HEADER,
+                  ["rafael", "Rafael Hidalgo", today,
+                   now.isoformat(timespec="seconds"), json.dumps([_rep("R", 90)])],
+                  ["carlos-nds", "Carlos Hidalgo", today,
+                   (now - dt.timedelta(hours=2)).isoformat(timespec="seconds"),
+                   json.dumps([_rep("C", 10)])],
+                  ["x", "Jay Turnage", "2020-01-01",
+                   now.isoformat(timespec="seconds"), json.dumps([_rep("J", 5)])]]
+        got = share.read(self._book(values), now.date(), stale_minutes=45,
+                         log=lambda *_: None)
         self.assertEqual(list(got), ["Rafael Hidalgo"])
+        # A preview of a past day takes them all, whatever their age.
+        got = share.read(self._book(values), now.date(), log=lambda *_: None)
+        self.assertEqual(sorted(got), ["Carlos Hidalgo", "Rafael Hidalgo"])
 
 
 class RenderTests(unittest.TestCase):

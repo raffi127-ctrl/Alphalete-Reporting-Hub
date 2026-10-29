@@ -80,35 +80,6 @@ def owner_rows(values: List[List[str]], offices: Dict, day: dt.date, *,
     return out
 
 
-def lucy_rows(day: dt.date, *, skip_stale: bool = True,
-              log=print) -> Dict[str, List[Dict]]:
-    """{owner: today's rows} for offices whose knocks a LUCY pulls instead of
-    their own Mac -- Raf's, every 30 minutes on Lucy 1 for his own board
-    (gap_alerts leaves the rows in config.OWNER_ROWS_DIR). Same shape as
-    owner_rows; same stale rule, with room for that 30-minute beat."""
-    from automations.gap_alerts import config as GC
-
-    out: Dict[str, List[Dict]] = {}
-    for path in sorted(GC.OWNER_ROWS_DIR.glob("*.json")):
-        try:
-            data = json.loads(path.read_text())
-        except (OSError, ValueError):
-            continue
-        if data.get("day") != day.isoformat() or not data.get("rows"):
-            continue
-        try:
-            at = dt.datetime.fromisoformat(data.get("at") or "")
-        except ValueError:
-            at = None
-        if skip_stale and (at is None or dt.datetime.now() - at
-                           > dt.timedelta(minutes=cfg.LUCY_STALE_MINUTES)):
-            log("%-14s Lucy pull from %s — too old, left off"
-                % (path.stem, data.get("at") or "?"))
-            continue
-        out.setdefault(data.get("owner") or path.stem, []).extend(data["rows"])
-    return out
-
-
 def _knocks(rows: List[Dict]) -> int:
     from automations.icd_alerts import knocks_map as KM
     from automations.total_knocks import pull as TP
@@ -170,14 +141,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     from automations.icd_alerts import post as P
     from automations.recruiting_report.fill import open_by_key
 
-    values = open_by_key(P.RELAY_SPREADSHEET_ID).worksheet(
-        KP.KNOCKS_TAB).get_all_values()
+    book = open_by_key(P.RELAY_SPREADSHEET_ID)
+    values = book.worksheet(KP.KNOCKS_TAB).get_all_values()
     everyone = owner_rows(values, O.all_offices(), day,
                           skip_stale=not args.force and not args.day)
     # Offices a Lucy pulls (Raf's) -- only for owners ECO did not already
     # bring, so nobody is counted twice.
-    for name, rows in lucy_rows(day, skip_stale=not args.force
-                                and not args.day).items():
+    from automations.owner_knocks_hourly import share
+    fresh = not args.force and not args.day
+    for name, rows in share.read(
+            book, day, log=print,
+            stale_minutes=cfg.LUCY_STALE_MINUTES if fresh else 0).items():
         everyone.setdefault(name, rows)
     if not everyone:
         print("no office has relayed knocks for %s yet — not texting" % day)

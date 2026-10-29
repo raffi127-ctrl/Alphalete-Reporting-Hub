@@ -355,6 +355,11 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     out_dir = OUTPUT_DIR / today.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     over, rows = pull(today, want_board=want_board, headless=headless)
+    if send and want_board and rows:
+        # Carlos's NDS crew on the owners' hourly knocks board (Eve
+        # 2026-10-29) -- that board runs on Lucy 1 and cannot see this disk.
+        from automations.owner_knocks_hourly import config as OK, share
+        share.share(OK.CARLOS_NDS_KEY, OK.CARLOS_NAME, today, rows, log=_log)
 
     body = gaps_text(over, now) if want_gaps else ""
     pngs = render_board(rows, today, now, out_dir) if (want_board and rows) else []
