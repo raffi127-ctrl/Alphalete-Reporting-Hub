@@ -756,9 +756,14 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
         except Exception as e:  # noqa: BLE001
             note.append("no click via %r (%s)" % (sel, type(e).__name__))
             continue
-        # The rows arrive on a postback; poll instead of a fixed pause. The
-        # real button gets 45s: Omar's page answers a submit in 20-30s.
-        for _ in range(30 if "input" in sel else 12):
+        # The rows arrive on a postback; poll instead of a fixed pause.
+        # TEN SECONDS, NOT 45 (2026-10-29): "Click here to load records." is
+        # what ANY empty grid shows -- an NDS office's AT&T grid, a D2D office's
+        # Wireless grid -- so every office paid the long wait on every sweep
+        # (17 offices filed sweep-slow in one day, 190-270 s a read). A grid
+        # with rows answers the button in a few seconds; one that has none
+        # never will, and the sweep must not wait on it.
+        for _ in range(7):
             page.wait_for_timeout(1500)
             try:
                 rows = _grid_rows(page, grid)
@@ -768,7 +773,7 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
                 note.append("rows after click: %d" % len(rows))
                 LAST_LOAD_CLICK["note"] = "; ".join(note)
                 return rows
-        note.append("still the placeholder %ds after the click" % (45 if "input" in sel else 18))
+        note.append("still the placeholder 10s after the click")
     # Playwright's click lands on the text; the handler may sit on an ancestor
     # that the browser's own click() reaches and a pointer event at the text
     # node does not (Omar 2026-10-28: three selector clicks, grid unchanged).
@@ -805,7 +810,7 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
         except Exception as e:  # noqa: BLE001
             note.append("%s failed (%s)" % (name, type(e).__name__))
             continue
-        for _ in range(12):
+        for _ in range(7):
             page.wait_for_timeout(1500)
             try:
                 rows = _grid_rows(page, grid)
@@ -815,7 +820,7 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
                 note.append("rows after %s: %d" % (name, len(rows)))
                 LAST_LOAD_CLICK["note"] = "; ".join(note)
                 return rows
-        note.append("still the placeholder 18s after %s" % name)
+        note.append("still the placeholder 10s after %s" % name)
     LAST_LOAD_CLICK["note"] = "; ".join(note)
     return rows
 
