@@ -562,7 +562,11 @@ def in_sales_window(now: Optional[dt.datetime] = None) -> bool:
 #   steve         -- Steve McElwee, #luxe-chat 2026-10-24: "extend Lucy until
 #                    8:30 pm on Saturdays as well".
 SELLING_END_OVERRIDES = {"carlos-b2batt": {5: (23, 0)},
-                         "steve": {5: (20, 30)}}
+                         "steve": {5: (20, 30)},
+                         # Omar's reps were still closing at 22:20 ET on
+                         # 2026-10-28, an hour after the default end; Megan
+                         # was watching sales land with no alert. Mon-Sat.
+                         "omar": {d: (23, 0) for d in range(6)}}
 
 
 def _selling_end(now: dt.datetime):
