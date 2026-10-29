@@ -1979,6 +1979,14 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
     if not force and _once_a_day(SIGNIN_WARNED_PATH, "signin|%s|%s" % (office_key, system),
                    day):
         return False
+    try:
+        _fixed = json.loads(SIGNIN_FIXED_PATH.read_text())
+        _k = "%s|signin|%s|%s" % (day.isoformat(), office_key, system)
+        if _k in _fixed:
+            _fixed.pop(_k, None)
+            SIGNIN_FIXED_PATH.write_text(json.dumps(_fixed, indent=2, sort_keys=True))
+    except (OSError, ValueError):
+        pass
     office = O.get(office_key)
     label = getattr(office, "label", None) or office_key
     text = spec.get("ask", SIGNIN_ASK) % (label, spec["name"], spec["what"],
@@ -2860,10 +2868,20 @@ def confirm_signins_fixed(day: Optional[dt.date] = None, *, send: bool = False,
         dm_office_people(office_key, text, log=log)
         fixed[k] = now.isoformat(timespec="seconds")
         done.append(office_key)
+        # THE NEXT WALL IS A NEW OUTAGE. Rashad 2026-10-29: asked at 10:01,
+        # "Good to go" at 11:14, the code wall came back at 13:28 and nobody
+        # was told again all day because the ask is once a day -- the last
+        # thing he was sent said he was fine. Forgetting the ask once the fix
+        # is confirmed lets a later wall the same day ask again.
+        asked.pop(k, None)
     if done:
         fixed = {k: v for k, v in fixed.items() if k.startswith(day.isoformat())}
         SIGNIN_FIXED_PATH.parent.mkdir(parents=True, exist_ok=True)
         SIGNIN_FIXED_PATH.write_text(json.dumps(fixed, indent=2, sort_keys=True))
+        try:
+            SIGNIN_WARNED_PATH.write_text(json.dumps(asked, indent=2, sort_keys=True))
+        except OSError:
+            pass
     return done
 
 
