@@ -1348,6 +1348,18 @@ def _by_id_safe(page_id: str, pages: list) -> dict:
         (p for p in pages if p.get("id") == page_id), {"id": page_id})
 
 
+def run_lock(today: dt.date, note: str = ""):
+    """The cross-machine claim on today's tracker posts. ONE per run: run.py
+    holds it around its whole org loop, so each post_all inside nests
+    re-entrantly (zero Sheets calls) instead of claiming + releasing per org —
+    ~7 calls on the control workbook each, which under a 429 storm froze the
+    10/28 Box catch-up past its 45m cap with nothing left to post. post_all
+    still takes it itself so a direct caller is covered too."""
+    from automations.shared.cross_machine_lock import SharedLock
+    return SharedLock("tableau_screenshots|{}".format(today.isoformat()),
+                      note=note)
+
+
 def post_all(captures: list, pages: list, today: dt.date | None = None,
              *, dry_run: bool = False, replace: bool = False,
              org: str = DEFAULT_ORG, new_thread: bool = False,
@@ -1377,9 +1389,7 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
     # posts 15 orgs claims once. Best-effort — if the sheet is unreachable we log
     # it and post anyway (see cross_machine_lock: duplicates are cosmetic, a
     # report that never goes out is not).
-    from automations.shared.cross_machine_lock import SharedLock
-    _lock = SharedLock("tableau_screenshots|{}".format(today.isoformat()),
-                       note="posting trackers ({})".format(org))
+    _lock = run_lock(today, note="posting trackers ({})".format(org))
 
     # Filter + order to THIS org's tracker selection FIRST (a subset channel like
     # #domin8-b2b-sales, and the only route an opt_in_only board takes to a

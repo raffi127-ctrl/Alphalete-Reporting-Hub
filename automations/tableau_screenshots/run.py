@@ -1412,6 +1412,13 @@ def main(argv=None) -> int:
     # if it's genuinely absent from a channel.
     present_everywhere: set = set()
     present_seen = False
+    # ONE cross-machine claim for the whole posting loop (2026-10-28) — see
+    # slack_post.run_lock. Released right after the loop; a run killed mid-loop
+    # is covered by the lock's lease.
+    _post_lock = contextlib.ExitStack()
+    if not args.dry_run:
+        _post_lock.enter_context(sp.run_lock(today, note="posting trackers "
+                                             "({} org(s))".format(len(orgs))))
     for org in orgs:
         label = sp.ORG_LABEL[org]
         # Cross-workspace org (e.g. trang -> FRESH SUCCESS): its channel lives in
@@ -1518,6 +1525,7 @@ def main(argv=None) -> int:
                          for c in result.get("channels", [])],
             "error": result.get("error"),
         })
+    _post_lock.close()
     # Boards deliberately omitted this run because their source wasn't in yet
     # (an email tracker's .xlsx hasn't landed) — recorded by TITLE so the card and
     # the run summary can name exactly what's missing, not just a count.
