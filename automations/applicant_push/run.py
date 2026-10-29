@@ -217,6 +217,11 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
             try:
                 _rc = oat.run_walk(page, live=live, limit=limit,
                                    max_actions=max_actions)
+                # The day's LAST push: leave tomorrow morning's text in place
+                # (see await_template.ensure_await_template next_morning).
+                if live and _at.last_push_of_day(office or ""):
+                    _at.ensure_await_template(page, office or "", apply=True,
+                                              next_morning=True)
                 if oat._cf_walled():
                     # Indeed never let THIS browser through. Don't keep it warm —
                     # a cold one gets a fresh challenge it often passes.

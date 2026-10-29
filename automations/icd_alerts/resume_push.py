@@ -1096,6 +1096,16 @@ def _walk(page, live: bool, record: dict) -> dict:
     OAT.LAST_WALK = {}
     rc = OAT.run_walk(page, live=live)
     walk = dict(OAT.LAST_WALK or {})
+    # The day's LAST push leaves tomorrow morning's text in place, so anyone
+    # texted when the AI's hours open is offered that day's slots.
+    if live:
+        try:
+            from automations.oat_processing import await_template as AT
+            if AT.last_push_of_day(seen, EVERY_MINUTES):
+                AT.ensure_await_template(page, seen, apply=True,
+                                         next_morning=True)
+        except Exception as e:  # noqa: BLE001
+            _log("next-morning await step skipped: %s" % type(e).__name__)
     rows = OAT._ACTIVITY_ROWS[before:] if live else []
     sent = sum(1 for r in rows if len(r) > 5
                and str(r[5]).startswith("sent"))

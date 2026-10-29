@@ -526,9 +526,34 @@ def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
     return saved
 
 
-def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
+def _next_morning(now, slots):
+    """5:00 on the office's next interview day after today, or None."""
+    for ahead in range(1, 8):
+        d = now + dt.timedelta(days=ahead)
+        if slots.get(DAYS[(d.weekday() + 1) % 7]):
+            return d.replace(hour=5, minute=0, second=0, microsecond=0)
+    return None
+
+
+def last_push_of_day(office_id: str, every_minutes: int = 15, now=None) -> bool:
+    """True when the NEXT push would already be past today's stop."""
+    now = now or dt.datetime.now()
+    return past_stop(office_id, now + dt.timedelta(minutes=every_minutes))
+
+
+def ensure_await_template(page, office_id: str, apply: bool = True,
+                          next_morning: bool = False) -> bool:
     """Make the Await template's clause match the clock. True = verified
-    correct (updated, or already right). Never raises."""
+    correct (updated, or already right). Never raises.
+
+    next_morning=True: written AFTER the day's last walk (Megan 2026-10-29:
+    "at 7am today applicants were still told tomorrow's interview times").
+    Anyone pushed overnight is texted when the AI's hours open (7:00), with
+    whatever the template says then -- and "TOMORROW, nextInterviewDay" left
+    from the evening reads as the day AFTER by morning. So the day ends with
+    the NEXT interview day's hours worded for that morning: "TODAY,
+    currentInterviewDay, from 8:15am...". Right even if the morning's first
+    push never runs."""
     if office_id not in OFFICES:
         return True
     try:
@@ -538,7 +563,10 @@ def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
         slots, step = read_office_schedule(page, office_id)
         if not slots:
             return False
-        want = clause_from_schedule(office_now(page), slots, step,
+        when = office_now(page)
+        if next_morning:
+            when = _next_morning(when, slots) or when
+        want = clause_from_schedule(when, slots, step,
                                     office_id=office_id)
         if not want:
             _log("[await] office %s: no interview slots any day — "

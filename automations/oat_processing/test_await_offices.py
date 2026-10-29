@@ -401,3 +401,25 @@ class EveryOfficeLikeCarlos(unittest.TestCase):
         self.assertEqual(AW.clause_from_schedule(at("2026-10-29 12:10"), slots, step,
                                                  office_id="11280"),
                          "available TODAY, currentInterviewDay, from 12:15pm-3:45pm")
+
+
+class TheDayEndsWithTomorrowMorningsText(unittest.TestCase):
+    """Megan 10/29: "at 7am today applicants were still told tomorrow's
+    interview times" -- the evening's "TOMORROW, nextInterviewDay" reads as
+    the day after by the 7am send."""
+
+    def test_wednesday_evening_writes_thursday_as_today(self):
+        when = AT._next_morning(at("2026-10-28 16:00"), S24065)
+        self.assertEqual(when, at("2026-10-29 05:00"))
+        self.assertEqual(AW.clause_from_schedule(when, S24065, 30),
+                         "available TODAY, currentInterviewDay, from "
+                         "8:15am-10:45am or 12:45pm-3:15pm")
+
+    def test_friday_evening_skips_to_monday(self):
+        self.assertEqual(AT._next_morning(at("2026-10-30 16:00"), S24065),
+                         at("2026-11-02 05:00"))
+
+    def test_last_push_of_day(self):
+        with mock.patch.object(AT, "stop_at_today", return_value=at("2026-10-29 15:15")):
+            self.assertTrue(AT.last_push_of_day("11280", 15, at("2026-10-29 15:05")))
+            self.assertFalse(AT.last_push_of_day("11280", 15, at("2026-10-29 14:50")))
