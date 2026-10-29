@@ -49,7 +49,15 @@ def pull(start: dt.date, end: dt.date, log=print) -> bytes:
             page.goto(base + RC.HUB_PATH, wait_until="networkidle",
                       timeout=RC.NAV_TIMEOUT_MS)
             _dump_tab_strip(page, log)   # mismatched strip shows itself
-            data = _wireless_panel_dump(page, start, end, log)
+            try:
+                data = _wireless_panel_dump(page, start, end, log)
+            except Exception as e:  # noqa: BLE001 — a hung click on this
+                # dealer must not lose the grid that is already rendered
+                log(f"[ndsw] panel dump crashed mid-way "
+                    f"({type(e).__name__}: {str(e)[:140]}) — scraping "
+                    "whatever the panel shows")
+                data = None
+            log(f"[ndsw] page now at {page.url[:120]!r}")
             if not data:
                 # This dealer's panel has no Excel button (click timed out
                 # 2026-10-29) but the grid itself renders the same rows —
