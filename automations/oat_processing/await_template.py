@@ -396,19 +396,17 @@ def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
     if office_id not in OFFICES:
         return True
     try:
-        if office_id in WINDOWS_BY_OFFICE:
-            # Carlos's own stated windows (10/28) win for his office.
-            want = await_clause(office_now(page), WINDOWS_BY_OFFICE[office_id])
-        else:
-            # Everyone else: their own AppStream schedule (Megan 10/28).
-            slots, step = read_office_schedule(page, office_id)
-            if not slots:
-                return False
-            want = clause_from_schedule(office_now(page), slots, step)
-            if not want:
-                _log("[await] office %s: no interview slots any day — "
-                     "template left as-is" % office_id)
-                return False
+        # Every office, Carlos's included: the schedule set in AppStream
+        # (Megan 10/28: "we should always use the schedule set in app
+        # stream"). Hours typed into this code would drift from it.
+        slots, step = read_office_schedule(page, office_id)
+        if not slots:
+            return False
+        want = clause_from_schedule(office_now(page), slots, step)
+        if not want:
+            _log("[await] office %s: no interview slots any day — "
+                 "template left as-is" % office_id)
+            return False
         if not _goto_templates(page):
             _log("[await] SMS Templates page not reached — leaving template")
             return False

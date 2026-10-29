@@ -46,6 +46,16 @@ class OnlyTheChosenOffices(unittest.TestCase):
             rs.assert_not_called()
 
 
+class AlwaysTheAppStreamSchedule(unittest.TestCase):
+    """Megan 10/28: "we should always use the schedule set in app stream"."""
+
+    def test_carlos_reads_his_appstream_schedule_too(self):
+        with mock.patch.object(AT, "read_office_schedule",
+                               return_value=({}, 30)) as rs:
+            self.assertFalse(AT.ensure_await_template(mock.Mock(), "11580"))
+        rs.assert_called_once()
+
+
 class TheSweetSpot(unittest.TestCase):
 
     def test_three_to_six_hours_out_first(self):
