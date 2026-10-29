@@ -98,36 +98,28 @@ def _norm(v: str) -> str:
 
 def guest_customers(since: dt.date, until: dt.date,
                     log=print) -> List[Dict[str, str]]:
-    """The guest reps' orders with Order Date in [since, until], shaped
-    exactly like sara.scrape()'s rows (day = the ORDER date, so the state
-    key and the Slack grouping date the customer by their sale).
+    """The crew's NDS orders with Order Date in [since, until], shaped
+    like sara.scrape()'s rows.
 
-    SOURCE SWITCH (Carlos 2026-10-27: "instead of rafs sara plus can you
-    start using my nds sara plus"): rows now come from the NDS merged
-    SaraPlus pull (alphaletegp + b2batt, nds_metrics' daily cache — a fresh
-    pull when today's cache is missing), filtered to the crew (roster +
-    Carlos) from the NDS start, 2026-10-20. Raf's envelope is retired here.
-
-    Raises when the pull is unavailable — for the DAILY run the caller
-    wraps this, for the backfill a loud failure IS the right answer."""
+    SOURCE (2026-10-29, third switch): the WIRELESS PER-LINE FEED
+    (nds_metrics.wireless_pull), because the alphaletegp SOH export has
+    no Customer Name column at all and the 6:45 check died on it every
+    morning. The feed carries customer first+last, contact phone, DSI,
+    Wireless Order # and BAN — which also fills the wrap-up text's
+    blanks. The 6:10 daily pull writes the cache this reads; a missing
+    cache pulls fresh (browser, ~2 min)."""
     from automations.nds_metrics import run as NM
+    from automations.nds_metrics import wireless_pull as WP
     from automations.total_knocks import guests as gst
 
-    cache = NM.OUT_DIR / ("nds_soh_%s.csv" % dt.date.today().isoformat())
-    if not cache.exists():
-        NM.load_soh(log=log)       # writes the cache; its crew/trust-floor
-        # verdict is nds_metrics' concern, not ours — we re-read the raw rows
-    if not cache.exists():
-        raise RuntimeError(
-            "no NDS SaraPlus pull today and the fresh pull failed — "
-            "see the nds_metrics log")
-    data = cache.read_bytes()
-    pulled = dt.datetime.fromtimestamp(
-        cache.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-    reader = csv.DictReader(io.StringIO(
-        data.decode("utf-8-sig", errors="replace")))
-    rows = list(reader)
-    cols = _header_map(list(reader.fieldnames or []), log=log)
+    today = dt.date.today()
+    f = WP.cached(today)
+    if f is None:
+        log("guest rows: no wireless cache today — pulling fresh")
+        data = WP.pull(today - dt.timedelta(days=31), today, log=log)
+        f = NM.OUT_DIR / f"nds_wireless_{today.isoformat()}.html"
+        f.write_bytes(data)
+    orders, _lines = WP.parse(f.read_bytes(), log=lambda *a, **k: None)
 
     crew_names = (gst.roster("Rafael Hidalgo", "Carlos Hidalgo")
                   + ["Carlos Hidalgo"])
@@ -137,47 +129,32 @@ def guest_customers(since: dt.date, until: dt.date,
         t = gst._tokens(n)
         return any(gst._subseq(ct, t) or gst._subseq(t, ct) for ct in toks)
 
-    rows = [r for r in rows if _is_crew(_norm(r.get(cols["rep"], "")))]
     since = max(since, NM.NDS_SINCE)
-
     out: List[Dict[str, str]] = []
-    skipped_dates = 0
-    for r in rows:
-        d = _parse_us_date(r.get(cols["order_date"], ""))
-        if d is None:
-            skipped_dates += 1
+    for o in orders:
+        d = _parse_us_date(o.get("order_date", ""))
+        if d is None or not (since <= d <= until):
             continue
-        if not (since <= d <= until):
+        if not _is_crew(o.get("rep", "")):
             continue
-        oid = _norm(r.get(cols["order_id"], ""))
         out.append({
-            "order_id": oid,
+            "order_id": _norm(o.get("dsi", "")),
             "day": d.isoformat(),
-            "order_date": _norm(r.get(cols["order_date"], "")),
-            "rep": _norm(r.get(cols["rep"], "")),
-            "business": _norm(r.get(cols.get("business", ""), ""))
-            if cols.get("business") else "",
-            "customer_name": _norm(r.get(cols["customer_name"], "")),
-            "phone": _norm(r.get(cols.get("phone", ""), ""))
-            if cols.get("phone") else "",
-            # the texted() widening (Carlos 2026-10-08: reps don't always
-            # use the primary number): every other number the pull knows
-            # for this customer, and the order's own long digit strings.
-            # the Raf envelope carried harvested alt numbers; the NDS pull
-            # has only the order's own phone column.
+            "order_date": _norm(o.get("order_date", "")),
+            "rep": _norm(o.get("rep", "")),
+            "business": "",
+            "customer_name": _norm(o.get("customer", "")),
+            "phone": _norm(o.get("phone", "")),
             "alt_phones": [],
-            "wireless_order": _norm(r.get("Wireless Order #", "")),
-            "ban": _norm(r.get("Wireless Acct #", "")),
+            "wireless_order": _norm(o.get("wireless_order", "")),
+            "ban": _norm(o.get("ban", "")),
         })
-    if skipped_dates:
-        log("guest rows: %d row(s) had an unreadable Order Date — left out"
-            % skipped_dates)
-    log("crew rows (NDS SaraPlus): %d order(s) %s..%s, pull from %s"
-        % (len(out), since, until, pulled))
+    log("crew rows (NDS wireless feed): %d order(s) %s..%s"
+        % (len(out), since, until))
     for c in out:
-        log("  %-10s %-14s %-26s %-24s %s"
-            % (c["day"], c["order_id"], (c["business"] or "(no business)")[:26],
-               c["customer_name"][:24], c["phone"] or "NO PHONE"))
+        log("  %-10s %-14s %-24s %s"
+            % (c["day"], c["order_id"], c["customer_name"][:24],
+               c["phone"] or "NO PHONE"))
     return out
 
 
