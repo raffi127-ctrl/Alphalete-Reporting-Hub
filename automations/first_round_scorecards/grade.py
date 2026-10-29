@@ -113,6 +113,10 @@ OFFICES = {
     # 2026-10-29 (Camila): Andre's own script is in his channel's folder; until
     # script_watch reads it there, he's on Rafael's (so it reads it on first look)
     "Andre Burton": {},
+    # 2026-10-29 (Eve): same for the offices added to office_post 10/28
+    "Frank Matos": {},
+    "Nicolas Lujan": {},
+    "Hasan Salame": {},
     # 2026-10-09: Tre's new script (Eve) -- no pay, 40 hrs + Saturdays, North Houston
     "Tre Mitchell": {"format": "tre"},
     # Scripts shaped differently from Rafael's -- see FORMATS below.
