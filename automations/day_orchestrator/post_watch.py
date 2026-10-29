@@ -95,9 +95,10 @@ def rerun_hint_for(watch_id: str) -> Optional[str]:
 
 
 # --- the watch list (declarative; add a target here, nothing else changes) ----
-# box_order_log: deploy/box_order_log.sh touches
-#   output/logs/.box-order-log-posted-<date> ONLY after a clean --post (exit 0),
-#   at 7:00 or (fallback) 8:30. Last real chance 8:30 -> require it by 8:45.
+# box_order_log: NOT WATCHED since 2026-10-29. Carlos turned it off 10/28 ("the
+#   whole thing can go", a12de504 removed com.alphalete.box-order-log on Lucy 2),
+#   but this watch still wanted its posted-marker by 8:45 and opened
+#   failure-box_order_log__watch the next morning. Re-add it with the agent.
 # vantura_slack_sales: deploy/vantura_slack_sales.sh touches
 #   output/logs/.vantura-slack-sales-done-<date> on a clean fill (exit 0); the
 #   critical pass is 5:00 (it feeds the 5:10 Sales Boards post), so require it by
@@ -119,18 +120,6 @@ WATCH_TARGETS: List[WatchTarget] = [
                    "(sends once; refuses if it already went today)",
         wrapper="deploy/slack_skool_email.sh",
         agent="slack-skool-email",
-    ),
-    WatchTarget(
-        report_id="box_order_log",
-        display_name="BOX Order Log (post watch)",
-        machine="Lucy 2",
-        deadline="08:45",
-        marker_glob="output/logs/.box-order-log-posted-{date}",
-        note="no BOX Order Log post to #alphalete-gp-sales detected by 8:45 "
-             "(the 7:00 + 8:30 LaunchAgent passes both left no posted-marker)",
-        rerun_hint="on Lucy 2: bash deploy/box_order_log.sh   (re-posts once)",
-        wrapper="deploy/box_order_log.sh",
-        agent="box-order-log",
     ),
     WatchTarget(
         report_id="vantura_slack_sales",
