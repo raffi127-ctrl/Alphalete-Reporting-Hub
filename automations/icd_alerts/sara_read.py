@@ -840,9 +840,53 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
     out = ["credit-check read for %s parsed to 0 reps" % day]
     try:
         if S.LAST_LOAD_CLICK.get("note"):
-            out.append("load-records click: " + S.LAST_LOAD_CLICK["note"][:300])
+            out.append("load-records click: " + S.LAST_LOAD_CLICK["note"][:700])
     except Exception:  # noqa: BLE001
         pass
+    # WHAT THE PLACEHOLDER IS. Omar 2026-10-28: three different clicks on
+    # "Click to load records." left the sales grid as it was, and nothing in
+    # the evidence said what that text sits in -- a link, a row handler, a
+    # button elsewhere. The grid's own markup (scripts stripped) and every
+    # element around that text, with its handlers, so the next fix is read
+    # off the page instead of guessed.
+    try:
+        out.append("load-records elements: " + page.evaluate(
+            """() => {
+                 const hits = [];
+                 const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                 let n;
+                 while ((n = walk.nextNode())) {
+                   if (!/load\s*records/i.test(n.textContent || '')) continue;
+                   let el = n.parentElement, chain = [];
+                   for (let d = 0; el && d < 5; d++, el = el.parentElement) {
+                     const a = Array.from(el.attributes || []).filter(x => /^(id|class|href|onclick|onmousedown|data-|role)/i.test(x.name))
+                       .map(x => x.name + '=' + String(x.value).slice(0, 160)).join(' ');
+                     chain.push('<' + el.tagName.toLowerCase() + ' ' + a + '>');
+                   }
+                   hits.push(chain.join(' IN '));
+                 }
+                 return hits.slice(0, 4).join(' || ') || '(none)';
+               }""")[:1400])
+    except Exception as e:  # noqa: BLE001
+        out.append("load-records elements: ? (%s)" % type(e).__name__)
+    try:
+        out.append("selects: " + page.evaluate(
+            """() => Array.from(document.querySelectorAll('select')).map(s =>
+                 (s.id || s.name) + '=' + ((s.options[s.selectedIndex] || {}).text || '').trim()
+                 + '/' + s.options.length).join(', ')""")[:600])
+    except Exception as e:  # noqa: BLE001
+        out.append("selects: ? (%s)" % type(e).__name__)
+    try:
+        out.append("sales grid html: " + page.evaluate(
+            """() => {
+                 const g = document.getElementById('ctl00_MainContent_rgOrderDashboard_ATT_ctl00');
+                 if (!g) return '(no grid)';
+                 const c = g.cloneNode(true);
+                 c.querySelectorAll('script,style').forEach(x => x.remove());
+                 return c.outerHTML.replace(/\s+/g, ' ');
+               }""")[:2200])
+    except Exception as e:  # noqa: BLE001
+        out.append("sales grid html: ? (%s)" % type(e).__name__)
     try:
         rows = list(raw_rows or [])
         out.append("raw grid rows: %d" % len(rows))

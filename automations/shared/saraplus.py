@@ -669,6 +669,50 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
                 LAST_LOAD_CLICK["note"] = "; ".join(note)
                 return rows
         note.append("still the placeholder 18s after the click")
+    # Playwright's click lands on the text; the handler may sit on an ancestor
+    # that the browser's own click() reaches and a pointer event at the text
+    # node does not (Omar 2026-10-28: three selector clicks, grid unchanged).
+    # So: every element around the text gets a DOM click, then the grid's own
+    # ASP.NET postback -- the thing a real click on a RadGrid ends up calling.
+    js_passes = (
+        ("dom-click", """() => {
+             const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+             let n, did = 0;
+             while ((n = walk.nextNode())) {
+               if (!/load\s*records/i.test(n.textContent || '')) continue;
+               let el = n.parentElement;
+               for (let d = 0; el && d < 4; d++, el = el.parentElement) { el.click(); did++; }
+             }
+             return did;
+           }"""),
+        ("postback", """(sel) => {
+             const g = document.querySelector(sel);
+             if (!g || typeof __doPostBack !== 'function') return 0;
+             const uid = (g.id || '').replace(/_/g, '$');
+             __doPostBack(uid, 'Rebind');
+             return 1;
+           }"""),
+    )
+    for name, js in js_passes:
+        try:
+            did = page.evaluate(js, grid) if name == "postback" else page.evaluate(js)
+            note.append("%s: %s" % (name, did))
+            if not did:
+                continue
+        except Exception as e:  # noqa: BLE001
+            note.append("%s failed (%s)" % (name, type(e).__name__))
+            continue
+        for _ in range(12):
+            page.wait_for_timeout(1500)
+            try:
+                rows = _grid_rows(page, grid)
+            except Exception:  # noqa: BLE001
+                rows = rows
+            if not needs_load_click(rows):
+                note.append("rows after %s: %d" % (name, len(rows)))
+                LAST_LOAD_CLICK["note"] = "; ".join(note)
+                return rows
+        note.append("still the placeholder 18s after %s" % name)
     LAST_LOAD_CLICK["note"] = "; ".join(note)
     return rows
 

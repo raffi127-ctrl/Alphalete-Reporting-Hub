@@ -700,7 +700,10 @@ def _scrub(text: str, rec: Optional[Dict] = None) -> str:
     for k in _SECRET_KEYS:
         out = re.sub(r"(?i)\b%s\b(\s*[=:]\s*)(\S+)" % re.escape(k),
                      r"%s\1[removed]" % k, out)
-    return out[:1500]
+    # 6000, not 1500: Omar's sales grid (2026-10-28) needed the grid's own HTML
+    # to be seen before anyone could say why it never loaded, and 1500 cut
+    # the evidence off at the row list.
+    return out[:6000]
 
 
 FAULT_SUMMARY_MAX = 600
