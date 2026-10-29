@@ -61,6 +61,26 @@ from .classify import (Applicant, Action, Decision, classify,
                        verdict_for_history as classify_history)
 
 
+
+def _bring_front(pg) -> None:
+    """bring_to_front, EXCEPT on a computer a person is using.
+
+    APPLICANT_PUSH_BACKGROUND=1 (Megan's laptop, 2026-10-29: "it keeps taking
+    over my screen - it HAS TO RUN IN THE BACKGROUND"). bring_to_front raises
+    Chrome over whatever she is doing, on every resume read. There the tab is
+    marked focused for the page itself instead (CDP focus emulation), and the
+    window never moves; the launch flags already keep a hidden window running
+    at full speed. Everywhere else: unchanged."""
+    if os.environ.get("APPLICANT_PUSH_BACKGROUND") == "1":
+        try:
+            cdp = pg.context.new_cdp_session(pg)
+            cdp.send("Emulation.setFocusEmulationEnabled", {"enabled": True})
+            cdp.send("Page.setWebLifecycleState", {"state": "active"})
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    pg.bring_to_front()
+
 def _norm_name(s: str) -> str:
     """Fold a name for allowlist matching: lowercase, strip accents/punctuation,
     collapse whitespace. AppStream renders 'Willy Jean - Felix' and the removed
@@ -2937,7 +2957,7 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                  f"{a.first_name} {a.last_name} "
                  f"[panel email: {a.email or '(blank)'}]")
             try:
-                page.bring_to_front()
+                _bring_front(page)
             except Exception:  # noqa: BLE001
                 pass
             page.wait_for_timeout(1500)   # let AS settle after the phone change
@@ -3405,7 +3425,7 @@ def lookup_resume_phone(page):
         # Cloudflare's challenge JS only runs in a FOREGROUND tab (browsers throttle
         # background tabs), so bring the resume tab to front. OAT tab restored below.
         try:
-            newpg.bring_to_front()
+            _bring_front(newpg)
         except Exception:  # noqa: BLE001
             pass
         # employers.indeed.com throws a Cloudflare 'Just a moment…' interstitial;
@@ -3594,7 +3614,7 @@ def lookup_resume_phone(page):
         # Restore the OAT tab to the foreground — the new resume tab backgrounded
         # it, which left 'Send to AI' unclickable afterward.
         try:
-            page.bring_to_front()
+            _bring_front(page)
         except Exception:  # noqa: BLE001
             pass
 

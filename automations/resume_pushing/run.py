@@ -1725,6 +1725,12 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
                    "--disable-renderer-backgrounding",
                    "--disable-background-timer-throttling"]
     launch.append(url)
+    # HIDDEN LAUNCH on a person's Mac (background mode): `open -g -j` starts
+    # Chrome without bringing it forward and with its windows hidden, so a
+    # launch never lands on top of whatever she is doing.
+    if (_os_bg.environ.get("APPLICANT_PUSH_BACKGROUND") == "1"
+            and sys.platform == "darwin"):
+        launch = ["open", "-g", "-j", "-n", "-a", "Google Chrome", "--args"] + launch[1:]
     # start_new_session: give Chrome its OWN process group (2026-09-22). launchd
     # kills whatever is left in a job's process group when the job's main process
     # exits, so a Chrome launched as a child of the tick died the moment the tick
@@ -2761,7 +2767,7 @@ def _probe() -> int:
             page.wait_for_timeout(160000)
         L("pages after wait: " + str([(p.url or "")[:60] for p in ctx2.pages]))
         try:
-            page.bring_to_front()
+            (page.bring_to_front() if _os_env.environ.get("APPLICANT_PUSH_BACKGROUND") != "1" else None)
             page.reload(wait_until="domcontentloaded")
             page.wait_for_timeout(3000)
         except Exception:

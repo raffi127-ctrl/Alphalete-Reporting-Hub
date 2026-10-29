@@ -483,7 +483,7 @@ case " $* " in
           touch "$_GRP_MARK"
         else
           echo "[$(date)] GROUPED TO-DO POST FAILED for group '$POST_GROUP' ($_SLOT) — the walk ran fine, but the list did NOT reach Slack. Probe read-only with: lucy slack_channel <id>" >> "$LOG_FILE"
-          osascript -e "display notification \"$HUB_NAME: the $_SLOT grouped to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+          [ "${APPLICANT_PUSH_BACKGROUND:-0}" = 1 ] || osascript -e "display notification \"$HUB_NAME: the $_SLOT grouped to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
         fi
       fi
     elif [ -n "$_SLOT" ] && [ "$POST_TODO" -eq 1 ]; then
@@ -506,7 +506,7 @@ case " $* " in
           touch "$_POST_MARK"
         else
           echo "[$(date)] TO-DO POST FAILED for $OFFICE_LABEL ($_SLOT) — the walk ran fine, but the flagged-applicant list did NOT reach Slack. Probe the channel read-only with: lucy slack_channel <id>  (a private channel Lucy was removed from answers channel_not_found, not not_in_channel)" >> "$LOG_FILE"
-          osascript -e "display notification \"$HUB_NAME: the $_SLOT to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+          [ "${APPLICANT_PUSH_BACKGROUND:-0}" = 1 ] || osascript -e "display notification \"$HUB_NAME: the $_SLOT to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
         fi
       fi
     elif [ -n "$_SLOT" ]; then
@@ -606,6 +606,6 @@ case " $* " in
 esac
 
 if [ "$_NOTIFY" -eq 1 ]; then
-  osascript -e "display notification \"$HUB_NAME failed $FAIL_STREAK passes in a row (exit $ST) — the AppStream session for $OFFICE_LABEL may have expired, or Cloudflare needs a human clear on Lucy 2\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+  [ "${APPLICANT_PUSH_BACKGROUND:-0}" = 1 ] || osascript -e "display notification \"$HUB_NAME failed $FAIL_STREAK passes in a row (exit $ST) — the AppStream session for $OFFICE_LABEL may have expired, or Cloudflare needs a human clear on Lucy 2\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
 fi
 exit 0
