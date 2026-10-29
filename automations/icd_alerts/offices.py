@@ -515,6 +515,8 @@ def _one_per_key(rows: List[Dict]) -> Dict[str, AlertOffice]:
 HELPERS = {
     "khalil": ("U0543NQEWMD",),        # Francia Olivares
     "khalil-nds": ("U0543NQEWMD",),    # same machine, the live enrolment
+    "atef": ("U07GR1FUHKL",),          # Cesar Castillo (Megan 2026-10-29: the
+                                       # sign-in DM = Megan, Eve, Cesar, Atef)
 }
 
 

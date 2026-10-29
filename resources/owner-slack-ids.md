@@ -35,6 +35,8 @@ When you confirm a new ID, add it here in the same commit.
 | Luke Baldwin | Luke's Local Office (takeoff-b2b) | U0B7HR6TVEE | |
 | Maxamad Aden | Maximal (ECO `maxamad-nds`) | U09SDDHGWQH | ⚠ A second account, "Maxamad Aden" U0AHTR9V2MD, also exists. The alert system uses U09SDDHGWQH. |
 | Omar Mohamad | Kalkan Marketing (24153) | U0C144X8SBD | ⚠ look-alike U0A0J2T9XKL (oomohamad98@gmail.com) is NOT him — the real one is oomohamad012498@gmail.com and is in his recruiting channel. Megan 2026-10-26 |
+| Atef Choudhury | Domin8 Acquisitions (23467) | U06E0GV0RNH | atefchy98@gmail.com. ⚠ look-alike U0CCYL2JZ7G "Atef's Office Slack" (atefchoudhury349@gmail.com) is a second account. Megan 2026-10-29 (sign-in alert DM) |
+| Cesar Castillo | Domin8 — Atef's super A / helper | U07GR1FUHKL | spikemaxblue12358@gmail.com. Gets Atef's sign-in alert DM with Megan, Eve, Atef (Megan 2026-10-29) |
 | Rashad Reed | Rashad's Local Office | U08LSELFTDW | |
 | Roshan Amin Ahmad | Roshan's Local Office (ECO `roshan`) | U066B1ZUT4J | |
 | Tre Mitchell | Mission III (ECO `tre`, #mission-iii-sales) | U07TYS3V32A | ⚠ NOT "Tre" U09AASADF8E. Confirmed by Megan 2026-10-18 (tre.mitchell60@gmail.com, DM channel D0C7LM3SR5G) |
