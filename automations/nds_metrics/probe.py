@@ -44,6 +44,7 @@ def dd_join(log=print) -> int:
     vals = raw.get_all_values()
     ix = {h: i for i, h in enumerate(vals[0])}
     dd = collections.defaultdict(float)
+    dd_dates: dict = {}
     for r in vals[1:]:
         if r and r[0].strip() == "10.25" and "NDS" in r[ix["Campaign"]].upper():
             try:
@@ -51,8 +52,10 @@ def dd_join(log=print) -> int:
                             .replace(",", "") or 0)
             except ValueError:
                 amt = 0.0
-            dd[(r[ix["Customer Name"]].strip().upper() or "(blank)",
-                r[ix["Rep Name"]].strip())] += amt
+            key = (r[ix["Customer Name"]].strip().upper() or "(blank)",
+                   r[ix["Rep Name"]].strip())
+            dd[key] += amt
+            dd_dates.setdefault(key, r[ix["Sale Date"]].strip())
     cache = sorted(OUT_DIR.glob("nds_soh_*.csv"))[-1]
     rows = list(_csv.reader(io.StringIO(
         cache.read_bytes().decode("utf-8-sig", errors="replace"))))
@@ -62,14 +65,27 @@ def dd_join(log=print) -> int:
         return str(r[i]).strip() if i is not None and len(r) > i else ""
     def toks(n):
         return {t for t in n.upper().replace(",", " ").split() if len(t) > 1}
-    soh = [(toks(cell(r, "Customer Name")), r) for r in rows[1:]]
+    # The alphaletegp export has NO Customer Name column, so the join key
+    # is REP (token overlap) + DD Sale Date == SOH Order Date (±1 day).
+    soh = []
+    for r in rows[1:]:
+        soh.append((toks(cell(r, "User Name")),
+                    _parse_date(cell(r, "Order Date")), r))
     log(f"[ddjoin] {len(dd)} paid customer(s) on the 10.25 DD vs "
-        f"{len(soh)} SOH row(s) in {cache.name}")
+        f"{len(soh)} SOH row(s) in {cache.name} "
+        f"(join: rep + sale date; export has no customer column)")
     found = missing = 0
+    # dd keys now carry the sale date too
     for (cust, rep), amt in sorted(dd.items(), key=lambda x: -x[1]):
-        ct = toks(cust)
-        hit = next((r for t, r in soh
-                    if ct and (ct <= t or t <= ct)), None)
+        rt = toks(rep)
+        sd = _parse_date(dd_dates.get((cust, rep), ""))
+        def _ok(st, od):
+            if not (rt and st and (rt & st)):
+                return False
+            if sd is None or od is None:
+                return bool(rt & st)
+            return abs((od - sd).days) <= 1
+        hit = next((r for st, od, r in soh if _ok(st, od)), None)
         if hit is None:
             missing += 1
             log(f"DDJOIN MISSING  {cust[:24]:24} {rep[:20]:20} ${amt:>7,.0f}")
