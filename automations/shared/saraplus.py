@@ -646,7 +646,17 @@ LAST_LOAD_CLICK = {"note": ""}
 
 def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str]]:
     note = []
-    targets = ("%s >> text=/load records/i" % grid,
+    # THE PLACEHOLDER IS A BUTTON. Omar's evidence (2026-10-28, release .14):
+    # the rgNoRecords row reads "Click [here] to load records." where "here"
+    # is <input type=submit ... btnOrderDashEmptyRecordGetOrders
+    # class=pseudoHyperLink> -- a submit styled as a link. A click on the
+    # words around it, on the cell, the row or the table does nothing; only
+    # the button posts back. It goes first; the text clicks stay as fallbacks
+    # for a grid that words it differently.
+    targets = ("%s input[id$='btnOrderDashEmptyRecordGetOrders']" % grid,
+               "%s tr.rgNoRecords input[type='submit']" % grid,
+               "%s input.pseudoHyperLink" % grid,
+               "%s >> text=/load records/i" % grid,
                "text=/click\\s*to\\s*load records/i",
                "%s tbody tr" % grid)
     for sel in targets:

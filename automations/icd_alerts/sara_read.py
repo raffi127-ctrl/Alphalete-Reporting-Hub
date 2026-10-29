@@ -870,6 +870,12 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
     except Exception as e:  # noqa: BLE001
         out.append("load-records elements: ? (%s)" % type(e).__name__)
     try:
+        out.append("combos: " + page.evaluate(
+            """() => Array.from(document.querySelectorAll('input.rcbInput, input[id*=Company], input[id*=Service], input[id*=Input]'))
+                 .map(i => (i.id || i.name) + '=' + String(i.value || '').slice(0, 60)).join(', ')""")[:600])
+    except Exception as e:  # noqa: BLE001
+        out.append("combos: ? (%s)" % type(e).__name__)
+    try:
         out.append("selects: " + page.evaluate(
             """() => Array.from(document.querySelectorAll('select')).map(s =>
                  (s.id || s.name) + '=' + ((s.options[s.selectedIndex] || {}).text || '').trim()
