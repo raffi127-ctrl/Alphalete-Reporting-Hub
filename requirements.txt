@@ -36,3 +36,10 @@ PyMuPDF>=1.24
 # office_onboarding / tracker_onboarding / metric_request / metric_edit:
 # drag-and-drop ordering
 streamlit-sortables>=0.3.1
+
+# Used by the resume push (CDP to real Chrome) and the sheets/xlsx steps;
+# missing here, a fresh install (the Lucy Mac user, 10/29) could not run it.
+patchright==1.60.0
+playwright==1.60.0
+openpyxl==3.1.5
+requests==2.34.2

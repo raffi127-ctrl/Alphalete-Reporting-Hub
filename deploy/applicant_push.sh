@@ -277,6 +277,13 @@ case "$OFFICE" in
     ;;
 esac
 
+# The hour/minute the post-run steps read (the noon / 4pm to-do posts). They
+# came from the old 7AM-10PM gate; when that gate moved into window.py on
+# 10/28 these two went with it, and under `set -u` every tick then died at the
+# first `$h` after the walk -- no to-do posts, no Hub row, from 10/28 ~8pm to
+# 10/29 ~4:40pm.
+h=$((10#$(date +%H)))
+m=$((10#$(date +%M)))
 PUSH_STAMP="$LOG_DIR/.applicant-push-started${OFFICE_SLUG:--11580}"
 if [ "$DRYRUN" -eq 0 ]; then
   # ---- WINDOW GATE: Carlos's schedule (Megan 2026-10-28) -------------------
