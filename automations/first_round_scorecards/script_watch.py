@@ -56,6 +56,9 @@ FILE_ID = re.compile(r"\b(F[A-Z0-9]{8,})\b")
 # Offices whose script really IS Rafael's word for word (an empty OFFICES entry
 # on purpose): their first look is only remembered, never read
 ON_RAFAELS = {"Rafael Hidalgo", "Omar Mohammad"}
+# Offices whose FIRST own script the last check() read (they were on
+# Rafael's until now) -- run.py re-grades their past days on it
+FIRST_READ: List[str] = []
 READABLE = {"pdf", "docx", "txt", "text", "png", "jpg", "jpeg", "gif", "webp"}
 
 
@@ -358,6 +361,7 @@ def check(*, client=None, today: Optional[dt.date] = None) -> int:
     if seen.get("_checked") == today.isoformat():
         return 0
     n = 0
+    FIRST_READ.clear()
     for ch, office in channels().items():
         try:
             b = find(client, ch, office)
@@ -388,6 +392,8 @@ def check(*, client=None, today: Optional[dt.date] = None) -> int:
         print(f"script watch: {office}: {res['status']}")
         if res["status"] == "changed":
             n += 1
+            if not was:
+                FIRST_READ.append(office)
         if res["status"] == "failed":
             del seen[ch]
         if res["text"]:

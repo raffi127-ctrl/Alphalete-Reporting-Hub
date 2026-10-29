@@ -508,6 +508,42 @@ def docs_only(graded: Dict[str, List]) -> int:
     return 1 if failed else 0
 
 
+REGRADE_DAYS = 14
+
+
+def regrade_first_read(day: dt.date, offices: List[str]) -> None:
+    """An office that was on Rafael's script until today's check read its own
+    (Andre, Frank, Nicolas, Hasan -- Eve 2026-10-29): its interviews of the
+    last two weeks were graded on Rafael's pay, so re-grade them in place
+    (--refresh --owner: same replies + docs, nothing new posted) and DM Eve
+    what was fixed. Never holds the day's post."""
+    since = (day - dt.timedelta(days=REGRADE_DAYS)).isoformat()
+    days = sorted({v["date"] for v in _ledger().values()
+                   if isinstance(v, dict) and since <= v.get("date", "") < day.isoformat()})
+    lines = []
+    for office in offices:
+        bad = []
+        for d in days:
+            try:
+                if main(["--date", d, "--post", "--refresh", "--owner", office]) != 0:
+                    bad.append(d)
+            except Exception as exc:  # noqa: BLE001
+                print(f"REGRADE {office} {d} FAILED {type(exc).__name__}: {exc}")
+                bad.append(d)
+        lines.append(f"• {office}: auditorías del {since[5:]} al {day.isoformat()[5:]} "
+                     + ("corregidas con su script" if not bad else
+                        f"corregidas, menos {', '.join(bad)} (falló, revisar)"))
+    try:
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+        client.chat_postMessage(channel=_dm_channel(client), text=(
+            "✅ 1st rounds: estas oficinas ahora se auditan con SU script (antes con el "
+            "de Raf). Corregí las auditorías ya hechas, mismos mensajes y docs:\n"
+            + "\n".join(lines)))
+    except Exception as exc:  # noqa: BLE001
+        print(f"REGRADE DM FAILED {type(exc).__name__}: {exc}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="first_round_scorecards.run")
     ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
@@ -537,12 +573,14 @@ def main(argv=None) -> int:
     live = args.post and not args.preview_to_eve and not args.no_grade and not args.docs_only
 
     print(f"1st Round Scorecards for {day:%a %b %d, %Y}")
+    first_read: List[str] = []
     if live and not args.date:
         # a script Camila changed in Slack today is graded on today (Camila,
         # 2026-10-12); a failure here never holds the post
         from automations.first_round_scorecards import script_watch
         try:
             script_watch.check(today=day)
+            first_read = list(script_watch.FIRST_READ)
         except Exception as exc:  # noqa: BLE001
             print(f"SCRIPT WATCH FAILED {type(exc).__name__}: {exc}")
     # every Zoom in Camila's sheet: dry-runs + Eve's preview always, the
@@ -621,6 +659,8 @@ def main(argv=None) -> int:
                         office_post.post_summary(board.LAST_ROWS, day, sample=False)
                     except Exception as exc:  # noqa: BLE001
                         print(f"OFFICE POSTS FAILED {type(exc).__name__}: {exc}")
+    if first_read:
+        regrade_first_read(day, first_read)
     if live and rc == 0 and not args.date:
         # Lucy's audit checker (Eve 10/22): a Zoom that silently stopped being
         # audited -> a thread tagging Camila; never holds the post
