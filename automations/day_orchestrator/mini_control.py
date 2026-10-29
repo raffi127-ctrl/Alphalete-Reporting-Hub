@@ -251,7 +251,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_alphalete_app_password",
                     "set_appstream_state", "set_appstream_alt_state",
                     "appstream_promote_alt",
-                    "post_note",
+                    "post_note", "signin_ask",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     # Same reason as sheets_login: a human-cleared login is
                     # bounded and idempotent, and the day you need it is the
@@ -6776,6 +6776,22 @@ def _action_post_nsf_correction(args: str) -> tuple[bool, str]:
     return ok, (" · ".join(tail)[:300] or (out or "")[-200:])
 
 
+def _action_signin_ask(args: str) -> tuple[bool, str]:
+    """Send an office's "Lucy cannot sign into X" DM again TODAY, to the
+    people on file right now. `signin_ask atef SaraPlus`. The poster says it
+    once a day on its own; this is for when the DM's people changed after
+    it went out (Atef 2026-10-29: Cesar + Atef added mid-morning)."""
+    parts = (args or "").split()
+    if not parts:
+        return False, "usage: signin_ask <office> [SaraPlus|ownerville|servicecloud]"
+    office, system = parts[0].strip().lower(), (parts[1] if len(parts) > 1 else "SaraPlus")
+    from automations.icd_alerts import post as P
+    lines: list = []
+    ok = P.ask_office_to_sign_in(office, "", system=system, send=True,
+                                 log=lines.append, force=True)
+    return bool(ok), ("sent to the office DM" if ok else "not sent") + " | " + " / ".join(l[:160] for l in lines[-4:])
+
+
 def _action_post_note(args: str) -> tuple[bool, str]:
     """post_note <channel_id> [thread=<ts> | edit=<ts>] <text>: post a plain
     message to Slack from THIS machine's Slack identity. On a mini that identity
@@ -9429,6 +9445,7 @@ ACTIONS = {
     "set_raffi_app_password": _action_set_raffi_app_password,
     "set_alphalete_app_password": _action_set_alphalete_app_password,
     "post_note": _action_post_note,
+    "signin_ask": _action_signin_ask,
     "incident_resolve": _action_incident_resolve,
     "incident_working": _action_incident_working,
     "incident_waiting": _action_incident_waiting,

@@ -1952,7 +1952,8 @@ def _signin_system(fault: Dict) -> Optional[str]:
 
 def ask_office_to_sign_in(office_key: str, when: str = "", *,
                           system: str = "servicecloud",
-                          send: bool = False, book=None, log=print) -> bool:
+                          send: bool = False, book=None, log=print,
+                          force: bool = False) -> bool:
     """DM the owner, Megan and Eve that Lucy cannot sign into something.
 
     Ryan McSpadden on how often the authenticator is needed: "It saves
@@ -1969,7 +1970,9 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
     # whose Service Cloud then dropped has two different problems and two
     # different fixes; one telling the other to stay quiet would leave half
     # its numbers missing with nothing said.
-    if _once_a_day(SIGNIN_WARNED_PATH, "signin|%s|%s" % (office_key, system),
+    # force: say it again today -- the people on the DM changed (Atef
+    # 2026-10-29: Cesar and Atef added after the morning's ask went out).
+    if not force and _once_a_day(SIGNIN_WARNED_PATH, "signin|%s|%s" % (office_key, system),
                    day):
         return False
     office = O.get(office_key)
