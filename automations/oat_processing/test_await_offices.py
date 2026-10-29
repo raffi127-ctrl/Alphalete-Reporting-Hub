@@ -35,10 +35,11 @@ def at(s):
 class OnlyTheChosenOffices(unittest.TestCase):
 
     def test_the_list(self):
-        self.assertEqual(AT.OFFICES, {"11580", "23965", "24065"})
+        self.assertEqual(AT.OFFICES, {"11580", "23965", "24065", "11280",
+                                      "23467", "11901"})
 
     def test_others_are_never_opened(self):
-        for office in ("11280", "23467", "11901"):
+        for office in ("23607", "12345"):
             with mock.patch.object(AT, "_goto_templates") as go, \
                  mock.patch.object(AT, "read_office_schedule") as rs:
                 self.assertTrue(AT.ensure_await_template(mock.Mock(), office))
@@ -138,12 +139,13 @@ class MimicsJacobs23607(unittest.TestCase):
         self.assertEqual(filled["smsBody"], AT.STANDARD_BODY1)
         self.assertEqual(filled["smsBody2"],
                          "Are you available TODAY, currentInterviewDay, from "
-                         "12:30pm-3:30pm for a quick Zoom call to go over the "
+                         "12:30pm-3:30pm for a quick Zoom to go over the "
                          "position?")
 
     def test_already_current_saves_nothing(self):
         want = "available TODAY, currentInterviewDay, from 12:45pm-3:15pm"
-        field, filled = self._page(AT.STANDARD_BODY1, AT.STANDARD_BODY2 % want)
+        b1, b2 = AT.TEXTS["24065"]
+        field, filled = self._page(b1, b2 % want)
         with mock.patch.object(AT, "_named_field", side_effect=field), \
              mock.patch.object(AT, "_click_text") as click:
             self.assertTrue(AT._set_standard(mock.Mock(), "24065", want, True))
@@ -156,12 +158,35 @@ class MimicsJacobs23607(unittest.TestCase):
                 for h in range(6, 23):
                     c = AW.clause_from_schedule(at("%s %02d:10" % (day, h)),
                                                 sched, step)
-                    self.assertLessEqual(len(AT.STANDARD_BODY2 % c), 160, c)
+                    for office, (b1, b2) in AT.TEXTS.items():
+                        self.assertLessEqual(len(b2 % c), 160, (office, c))
 
     def test_jacobs_own_box_two_still_matches(self):
         self.assertIsNotNone(AT.CLAUSE_RE.search(
             "Are you available TODAY between 8:15am -10:45am or 12:45pm-3:45 pm "
             "for a quick Zoom call to go over the position?"))
+
+
+class TheApprovedTexts(unittest.TestCase):
+    """Megan 10/28: "approved, build it for all accounts"."""
+
+    def test_box_one_fits_and_is_plain(self):
+        for office, (b1, b2) in AT.TEXTS.items():
+            self.assertLessEqual(len(b1), 300, office)
+            self.assertTrue(all(ord(ch) < 128 for ch in b1 + b2), office)
+            self.assertIn("%s", b2)
+
+    def test_no_two_accounts_send_the_same_text(self):
+        seen = [b1 + b2 for b1, b2 in AT.TEXTS.values()]
+        self.assertEqual(len(seen), len(set(seen)))
+
+    def test_11280_reads_as_approved(self):
+        b1, b2 = AT.TEXTS["11280"]
+        self.assertEqual(b2 % "available TOMORROW, nextInterviewDay, from "
+                         "8:15am-10:15am or 12:15pm-3:15pm",
+                         "Would you be available TOMORROW, nextInterviewDay, "
+                         "from 8:15am-10:15am or 12:15pm-3:15pm for a quick "
+                         "Zoom to go over the role?")
 
 
 class TheRealTemplates(unittest.TestCase):

@@ -37,23 +37,54 @@ CLAUSE_RE = re.compile(
 # Zoom Interview. Are you available?"). For the chosen offices the clause goes
 # in right there, and from then on CLAUSE_RE finds and updates it.
 BARE_ASK_RE = re.compile(r"Are you available\?")
-# THE STANDARD TEXT for Raf's 23965 + 24065 (Megan 2026-10-28: "we want it to
-# mimic this" -- Jacob's 23607 Await Call AI, sent 132x). Both boxes are set to
-# it; only the day + times in box 2 change from run to run. The one change from
-# Jacob's: a space after "applicantFirstName,", and "jobBoard" for "Indeed"
-# (Megan 10/28: "indeed should be jobBoard").
-STANDARD_OFFICES = {"23965", "24065"}
-STANDARD_BODY1 = ("Hi applicantFirstName, we reviewed your application for the "
-                  "full-time, on-site adPostingTitle role on jobBoard and would "
-                  "like to schedule a brief 20-minute Zoom interview to "
-                  "discuss your experience and the position.")
-STANDARD_BODY2 = "Are you %s for a quick Zoom call to go over the position?"
-# WHICH OFFICES' Await text is retuned. Only these -- every other office's
-# template is never opened (Megan 2026-10-28: "just apply it to accounts 24065
-# and 23965 for raf"; Raf's main 11280, Atef and Khalil stay as they are).
-# 11580 uses Carlos's stated windows; the rest read their own AppStream
-# schedule (Settings > Office Level Settings).
-OFFICES = {"11580", "23965", "24065"}
+# EACH ACCOUNT'S TEXT (Megan 2026-10-28, approved on the "Await Text
+# Approvals" page: "approved, build it for all accounts"). All of them follow
+# Jacob's 23607 Await Call AI as closely as possible ("we want to be as close
+# to this as possible"), cleaned up -- shortcodes for the job board and the
+# weekday, "20-minute", "full-time, on-site". Raf, Carlos and Khalil recruit
+# near each other, so each changes a few words ("should all be just a bit
+# different"; Raf's accounts differ from each other too). Box 2's %s is the
+# day + times clause ("available TODAY, currentInterviewDay, from ..."),
+# rebuilt before every push from that office's AI Settings > Hours. Plain
+# characters only: one curly quote makes every text cost more credits.
+_JACOB_B1 = ("Hi applicantFirstName, we reviewed your application for the "
+             "full-time, on-site adPostingTitle role on jobBoard and would "
+             "like to schedule a brief 20-minute Zoom interview to discuss "
+             "your experience and the position.")
+TEXTS = {
+    "23965": (_JACOB_B1,
+              "Are you %s for a quick Zoom to go over the position?"),
+    "24065": ("Hi applicantFirstName, we received your application for the "
+              "full-time, on-site adPostingTitle role on jobBoard and would "
+              "like to set up a brief 20-minute Zoom interview to discuss "
+              "your experience and the position.",
+              "Are you %s for a quick Zoom to discuss the position?"),
+    "11280": ("Hello applicantFirstName, we reviewed your application for "
+              "the full-time, on-site adPostingTitle position on jobBoard and "
+              "would like to schedule a short 20-minute Zoom interview to "
+              "discuss your experience and the role.",
+              "Would you be %s for a quick Zoom to go over the role?"),
+    "11580": ("Hi applicantFirstName, thank you for applying for the "
+              "full-time, on-site adPostingTitle role on jobBoard. We would "
+              "like to schedule a brief 20-minute Zoom interview to discuss "
+              "your experience and the position.",
+              "Are you %s for a quick Zoom to review the position?"),
+    "11901": ("Hi applicantFirstName, we reviewed your application for the "
+              "full-time, on-site adPostingTitle role with Innovate Impact "
+              "Group on jobBoard and would like to schedule a brief "
+              "20-minute Zoom interview to discuss your experience and the "
+              "position.",
+              "Are you %s for a quick Zoom to talk through the position?"),
+    "23467": ("Hi applicantFirstName, this is Josh. We reviewed your "
+              "application for the full-time, on-site adPostingTitle role on "
+              "jobBoard and would like to schedule a brief 20-minute Zoom "
+              "interview to discuss your experience and the position.",
+              "Are you %s for a quick Zoom to go over the position?"),
+}
+STANDARD_BODY1, STANDARD_BODY2 = TEXTS["23965"]
+# WHICH OFFICES' Await text is set. Every other office's template is never
+# opened.
+OFFICES = set(TEXTS)
 _SAID_NO_WINDOWS: set = set()
 
 _log = print
@@ -410,13 +441,14 @@ def _named_field(page, name: str):
 
 
 def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
-    """Both boxes to the standard text (box 1 fixed, box 2 with `want`)."""
+    """Both boxes to this office's text (box 1 fixed, box 2 with `want`)."""
+    body1, body2 = TEXTS[office_id]
     b1, b2 = _named_field(page, "smsBody"), _named_field(page, "smsBody2")
     if b1 is None or b2 is None:
         _log("[await] office %s: the two message boxes (smsBody/smsBody2) "
              "were not found — template left as-is" % office_id)
         return False
-    new2 = STANDARD_BODY2 % want
+    new2 = body2 % want
     if len(new2) > 160:
         _log("[await] office %s: %d characters is over the 160 box -- left "
              "as-is: %r" % (office_id, len(new2), new2))
@@ -425,14 +457,14 @@ def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
         cur1, cur2 = b1.input_value(timeout=1500), b2.input_value(timeout=1500)
     except Exception:  # noqa: BLE001
         cur1 = cur2 = None
-    if cur1 == STANDARD_BODY1 and cur2 == new2:
+    if cur1 == body1 and cur2 == new2:
         _log("[await] office %s: already current: %s" % (office_id, want))
         return True
     if not apply:
         _log("[await] office %s WOULD set: %r | %r"
-             % (office_id, STANDARD_BODY1[:60], new2))
+             % (office_id, body1[:60], new2))
         return True
-    b1.fill(STANDARD_BODY1)
+    b1.fill(body1)
     b2.fill(new2)
     page.wait_for_timeout(400)
     saved = (_click_text(page, r"^Save and Activate SMS Message$")
@@ -466,65 +498,7 @@ def ensure_await_template(page, office_id: str, apply: bool = True) -> bool:
         if not _open_await_edit(page):
             _log("[await] Await edit form not reached — leaving template")
             return False
-        if office_id in STANDARD_OFFICES:
-            return _set_standard(page, office_id, want, apply)
-        hit = None
-        fields = _fields(page)
-        for fr, el, v in fields:
-            if CLAUSE_RE.search(v):
-                hit = (fr, el, v)
-                break
-        bare = None
-        if hit is None:
-            for fr, el, v in fields:
-                if BARE_ASK_RE.search(v):
-                    bare = (fr, el, v)
-                    break
-        if hit is None and bare is not None:
-            fr, el, v = bare
-            new = BARE_ASK_RE.sub("Are you %s?" % want, v, count=1)
-            if not apply:
-                _log("[await] WOULD set: %r" % new[:220])
-                return True
-            el.fill(new)
-            page.wait_for_timeout(400)
-            saved = (_click_text(page, r"^Save and Activate SMS Message$")
-                     or _click_text(page, r"^Save SMS Message$"))
-            page.wait_for_timeout(2000)
-            _log("[await] office %s: times added to 'Are you available?' -> "
-                 "%s (save clicked: %s)" % (office_id, want, saved))
-            return saved
-        if hit is None:
-            # A different wording (Raf's 11280 lists each time: "Available
-            # Zoom times are today at 8:15, 8:45 …"). Applicant-facing copy is
-            # not rewritten into a new shape without Megan's OK -- say what
-            # it says, once a day, and leave it.
-            if office_id not in _SAID_NO_WINDOWS:
-                _SAID_NO_WINDOWS.add(office_id)
-                texts = [v for _f, _e, v in _fields(page)
-                         if re.search(r"\d{1,2}:\d{2}", v)]
-                _log("[await] office %s: wording not recognized, left as-is "
-                     "(would set %r). Current text: %r"
-                     % (office_id, want, (texts[0] if texts else "")[:220]))
-            return False
-        fr, el, v = hit
-        new = CLAUSE_RE.sub(want, v, count=1)
-        if new == v:
-            _log("[await] clause already current: %s" % want)
-            return True
-        if not apply:
-            _log("[await] WOULD set: %r" % new[:200])
-            return True
-        el.fill(new)
-        page.wait_for_timeout(400)
-        # Carlos, live 2026-10-28: the button is "Save and Activate SMS
-        # Message" — it saves AND keeps the template activated.
-        saved = _click_text(page, r"^Save and Activate SMS Message$")
-        if not saved:
-            saved = _click_text(page, r"^Save SMS Message$")
-        page.wait_for_timeout(2000)
-        _log("[await] clause set -> %s (save clicked: %s)" % (want, saved))
-        return saved
+        return _set_standard(page, office_id, want, apply)
     except Exception as e:  # noqa: BLE001
         _log("[await] failed, leaving template as-is: %s: %s"
              % (type(e).__name__, str(e)[:120]))
