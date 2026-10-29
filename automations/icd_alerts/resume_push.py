@@ -1125,9 +1125,11 @@ def _walk(page, live: bool, record: dict) -> dict:
 # NOT ON THE FIRST WALLED RUN. Indeed's box often clears by itself on the next
 # fresh session -- Carlos's came up at 1:07pm on 10/21 and he watched it push
 # again by 1:43 with nobody touching it. A DM for that is noise that teaches
-# people to ignore the one that matters, so it waits for WALL_RUNS in a row
-# (about half an hour at one run every 10 minutes).
-WALL_RUNS = 3
+# people to ignore the one that matters, so it waits for WALL_RUNS in a row.
+# 2, down from 3 (Megan 2026-10-29: "I want to catch issues as early as
+# possible"): at one run every 15 minutes, 3 meant 30-45 minutes of no
+# pushing before anyone heard; 2 is 15-30, still past a one-off blip.
+WALL_RUNS = 2
 
 
 def _note_wall(walled: bool) -> None:
