@@ -1,0 +1,160 @@
+# Ad Sales Board — day-by-day names per ad, dressed as a sales board
+
+One tab on the **Alphalete Recruiting Dashboard**
+(`111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA`) that LOOKS like the AT&T
+sales boards (Carlos's spec, 2026-08-26: "it needs to look like a sales
+board... day by day i want to see how many names each ad is getting"): ads
+down the side, the ad-week's seven days across, and each cell = how many
+NAMES that ad produced that day. Weekly Pull (processed emails), the total
+names, Account/City and the week's name list ride alongside.
+
+* Visible tab **Ad Sales Board** — ONE STACKED SCROLL of every week for the
+  picked manager, newest first (Carlos 2026-08-27: "no dropdown i just have to
+  scroll down"): row 1 dark control strip (**B1 manager**, **D1
+  Org/Captainship** — the only pickers), row 2 navy banner, row 3 a scroll
+  hint, row 4 static navy header `# | Account | City | AD | Pull | Mon..Sun |
+  To Call List`, rows 5+ one FILTER spill at A5. The Mon..Sun cells are
+  **emails RECEIVED per ad per day** (data T..Z, accumulated from one-day
+  pulls — tracked from Aug 17, 2026; older weeks show only the weekly Pull);
+  To Call List (data H) is the source report's weekly sent-to-call-list count,
+  so it covers captainship offices too. Every week block opens with a blue
+  **WEEK ENDING m/d** band row (written into the data by the job), ads carry a
+  per-week rank (#), TOTAL closes the block grey, amber row = names that
+  matched no ad. Everything centered; the week name LIST and the
+  names-sent-per-day grid stay on the data tab (J, L..R), not shown.
+* Hidden tab **Ad Sales Data** — the only thing the job writes. Columns
+  A..Z: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
+  # Names, Names, Week Start (ISO — the freeze/sort key), L..R = names sent
+  to call list per day, S = the ad's rank in its week, T..Z = emails RECEIVED
+  per day (accumulated — a rewrite CARRIES them over by stable ad key: inbox +
+  base role [+ city unless city-agnostic]; they cannot be re-derived once the
+  day is gone). Each block's first row is the WEEK ENDING band (marker text in
+  the Ad Title column). The daily run also pulls YESTERDAY as a one-day window
+  per office to fill its T..Z slot; `--day mm-dd-yyyy` backfills days. TOTAL rows carry the label in the Ad Title column (the
+  board's first visible column). Blank counts mean "no name feed" (the
+  captainship-only offices); zeros mean "an ad that produced nobody".
+
+## The week
+
+**Monday → Sunday** (`weeks.py`) — Carlos's call the first evening ("weeks are
+monday - sunday"), matching the fleet's WE convention; the original Wed→Tue cut
+lived for a few hours and its rows were dropped with `run.py --reset` before
+the year was re-pulled on Monday anchors. There is no week picker any more —
+the board shows every week stacked, newest on top. The
+week LABEL ("Aug 24 – 30, 2026") is the join key across runs; never change its
+format OR anchor day without rewriting the data tab.
+
+## Where the numbers come from
+
+* **Pull** — AppStream Source Report (p=702) run per office for the week's
+  date range, through the SAME fetch/parse as the monthly Source Report -
+  Indeed job (variant merge, junk filter, city rule, Carlos/Jamis city-agnostic
+  merge — `CITY_AGNOSTIC` is imported from that job, one list, never two).
+* **Names** — the old org tracker's **Call List** tab (applicant_tracker's
+  morning import), matched to merged ad rows by base role + city. Honest
+  limits, also stated on the tab: org offices only (the 11 captainship-only
+  offices have no name feed — Pull fills, Names stay blank); names are the
+  sent-to-call-list applicants, so Pull normally exceeds the name count;
+  SATURDAY arrivals are never imported upstream (the morning phase reads
+  yesterday and skips Sunday); a name can land a day after the email its Pull
+  counted (edge-of-week skew). Names that match no ad row land on an amber
+  "(names with no matching ad row)" line rather than disappearing.
+
+## The wrapper subjects (found building this, 2026-08-26)
+
+Some real applications arrive as **"[Action required] New application for
+<ad title>"**. `parse.NOISE` matches "action required" (meant for Indeed's
+billing mail) and throws those rows away. This job strips the wrapper BEFORE
+parsing (`names.WRAPPER`), keeps the applicants, and prints how many it kept —
+**the monthly Source Report - Indeed tab still junk-filters them**, so its
+Applicants column undercounts by that much (37 of Carlos's 375 call-list names
+in the 8/19 week wore the wrapper). Fixing the monthly parser is a deliberate,
+separate decision because it shifts current-month numbers upward.
+
+## Why a day goes missing (the 2026-08-27 gaps)
+
+TWO mechanisms, and the second is the common one — I diagnosed the first and
+was wrong about which mattered, so both are written down here.
+
+**A. The join (dominant).** A day's counts are matched onto that week's merged
+ad rows by (inbox, base role). A ONE-DAY window merges fewer title variants
+than a SEVEN-DAY one, so `parse` can settle on a different shortest title —
+and therefore a different base role — for the same posting. Every piece for
+that office-day then fails to join and the day goes blank across every one of
+that office's ads, which is exactly the Jamis (Thu/Fri/Sat), Aya (Wed) and
+Jackie (Sun) shape. One backfill job alone dropped 48+102+62+48 counts across
+four office-weeks. The join now falls back to the inbox when that inbox runs
+exactly ONE ad that week (unambiguous), and otherwise still drops — guessing
+among several ads would put real numbers on the wrong row, and a silent wrong
+is worse than a visible gap — while naming the inbox and base in the log.
+
+**B. The empty day (real, but rarer).** AppStream sometimes answers a
+SINGLE-DAY Source Report with a valid table that `parse` then yields no ads, nothing raises, and the run exits
+0 — so a day that was never read looks exactly like a day nobody applied on. It
+hit about one office-day in thirty: Jamis lost Thu/Fri/Sat, Aya a Wednesday,
+Jackie a Sunday, each blank across every one of that office's ads. Nothing
+noticed, because nothing checked that a week's seven days add up to its weekly
+total.
+
+Three defences, and the third is the one that would have caught it on day one:
+
+1. `pull_day()` re-submits an empty day once before believing it. A day that
+   still will not read is left **blank, never zero** — blank means "not read",
+   zero would mean "read, nobody applied", and writing zeros would make the gap
+   permanent and invisible.
+2. **The heal pass.** Any week whose day counts fall short of its weekly total
+   gets exactly its missing days re-pulled next run (`--heal-days`, default
+   14). The reconciliation identity is what makes it terminate: a week that
+   already adds up is never re-pulled, so genuine zero-days cost nothing. The
+   board repairs itself instead of waiting to be noticed.
+3. Every run **reconciles each finished week it wrote** (day counts vs weekly
+   total) and prints what does not add up, plus any day it could not read.
+
+Do not "fix" a short week by hand — let the heal pass do it, and if it cannot,
+that is a real signal worth reading.
+
+## Running it
+
+    python -m automations.ad_sales_board.run              # current + previous ad-week
+    python -m automations.ad_sales_board.run --dry-run    # pull + report, write nothing
+    python -m automations.ad_sales_board.run --weeks 4    # backfill: current + 3 back
+    python -m automations.ad_sales_board.run --anchor 08-12-2026
+    python -m automations.ad_sales_board.run --office 11580
+
+Freeze rule: a run rewrites ONLY the (manager, week) pairs it pulled; weeks
+that fall out of the default two-week horizon stay frozen exactly as last
+written, same philosophy as the monthly job's months.
+
+## Schedule
+
+Lucy 2, **daily 7:50am** (`deploy/com.alphalete.ad-sales-board.plist`,
+installed via `lucy rerun install_ad_sales_board_agent`). 7:50 is deliberate:
+applicant_tracker's morning phase (Lucy 1, 6:45am Mon–Sat) must land
+yesterday's call-list names first, and the 4am AppStream cluster is long done.
+A full 28-office × 2-week pass is ~25 minutes. (History: every two hours
+07:50–21:50 from 2026-08-27 to 2026-10-20, then back to once daily — Carlos:
+"lets have the 17 org offices update only once a day and mine update every
+30 mins".)
+
+**Carlos fast lane** (2026-10-20): `com.alphalete.ad-sales-board-carlos`, same
+machine, every 30 minutes 07:05–21:35 (`deploy/ad_sales_board_carlos.sh`,
+installed via `lucy rerun install_ad_sales_board_carlos_agent`). It runs
+`--office 11580 --today --no-activity`: Carlos's office only (the freeze rule
+keeps the other 27 untouched), plus today's partial day report so the
+in-progress AC..AI cell shows live numbers between daily passes — each pass
+replaces it, and the next day's normal yesterday-pull writes the final count.
+No SCI pass; captainship refreshes once a day with the full agent. Its pgrep
+guard steps aside while any other ad_sales_board pass runs.
+
+## One-time setup
+
+`build_tab.py` creates/dresses both tabs (idempotent; `--force-view` redresses
+the visible one). The scheduled job never rebuilds layout — if the tabs are
+missing it aborts at the preflight probe with instructions.
+
+## Auth
+
+Same chain as indeed_source_report (its sheet module is imported directly):
+applicant_tracker service account first, Carlos's OAuth token as fallback. The
+Call List read uses the same session — the service account writes that tab
+daily, so it can always read it.

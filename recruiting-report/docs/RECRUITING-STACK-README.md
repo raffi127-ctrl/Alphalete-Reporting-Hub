@@ -1,0 +1,349 @@
+# Recruiting Stack README — how it all works, and what breaks when you change it
+
+Canonical copy: `docs/RECRUITING-STACK-README.md` in the Alphalete-Reporting-Hub repo
+(Desktop READMEs have vanished before — the repo copy is the one that survives).
+Auto-updated daily at 7:00 PM by a scheduled Claude task (see bottom).
+
+Last full rewrite: 2026-09-06 (Carlos asked for a single reference: how everything
+works + what typically breaks after a change, so the next change starts here).
+
+---
+
+## 1. The map
+
+| Piece | Where |
+| --- | --- |
+| The workbook | **Alphalete Recruiting Dashboard**, Sheets id `111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA` — org + South Shore ONLY since the 2026-10-02 split |
+| The captainship workbook | **SCI Recruiting Dashboard**, Sheets id `1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg` — the 15 captainship-only owners; same 8 report tabs, filled by an SCI pass inside every deploy wrapper (roster: `deploy/sci-roster.json`) |
+| The code | this repo (`raffi127-ctrl/Alphalete-Reporting-Hub`), checkout `~/recruiting-report` on the mini |
+| The runner | **Lucy 2** (MacBook). No SSH — driven only via the Google-Sheet queue (`1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw`, tab "Mini Control - Lucy 2") |
+| Bound Apps Script | "Goal Sync" project on the workbook — goal two-way mirror, Ad Plan format mirror (`adPlanMirror_`), campaign-zone logic |
+| The website | "Alphalete Recruiting Hub" Apps Script web app (standalone project, Carlos's account) serving 8 tabs read-only; allowlist in its Code.gs |
+| Logins | **Megan's Lucy Login Standard is authoritative.** AppStream = `Lucy Reports` everywhere + `Lucy Resume Pushing` (resume pusher only, Lucy 2). OwnerVille: Lucy 2 = Carlos, Lucy 1/3 = Raf. Cloudflare clears itself with the 30s pre-submit waits — nothing "needs a human". Check both logins with `lucy login_check --machine "Lucy 2"`. |
+
+## 2. The visible tabs and what feeds them
+
+| Tab | Fed by | When |
+| --- | --- | --- |
+| Recruiting Dashboard | `funnel_board` (AppStream Retention pulls, 28 offices) + AD BUDGET box ferried by `tracker_mirror` | 1:00 AM chain + 1:00 PM chain |
+| Goals | hand-edited + two-way mirror with Focus Report goal column (Apps Script "Goal Sync") | on edit |
+| Focus Report | `funnel_board` build (recruiting funnel) + `org_campaign_metrics` (campaign/sales blocks, rows 30–73 via hidden 'Campaign Log') | 1 AM / 1 PM; campaign stamper separate |
+| Source Report - Indeed | `indeed_source_report` — AppStream p=702 source report per office, current month | 1 AM + 1 PM chains |
+| Ad Plan | ONE tab mirroring per-manager hidden tabs (17 live IMPORTRANGE from personal trackers + 4 via the old workbook chain); B1 picker + `adPlanMirror_` re-dresses formats on flip | live (IMPORTRANGE) |
+| Ad Sales Board | `ad_sales_board` — stacked Mon→Sun weeks, names per ad per DAY from one-day p=702 pulls | daily in the chains |
+| Manager Matrix | funnel_board build (every manager × week, metric picker B1) | with funnel_board |
+| City Zip Code Research | hand/one-off research + hidden 'City Zip Data' | manual |
+| Leaders Retention | last surviving migrated captainship view (Sales Board / Roll Call / Stations / Daily Update were DELETED in the 2026-10-02 split; their week stamp is gone from captainship_boards too). Kept pending Carlos's call | static |
+
+Hidden load-bearing tabs: per-manager first-name tabs (Ad Plan sources), `Indeed Ad Data`,
+`Ad Sales Data`, `Campaign Log`, `Daily Log`, `WE`, `City Zip Data`, `Info Box`,
+`0Config` (`Mirror Config` / `SRC WD` / `SRC RCD` died with the mirror views in the
+2026-10-02 split). **Do not delete or "clean up" hidden tabs** — most
+formulas on the visible tabs point into them.
+
+## 3. The schedule (all times Lucy 2 local, CST)
+
+- **1:00 AM** — `recruiting_chain.sh full`: funnel_board → indeed_source_report → ad_sales_board (sequential; ~40–45 min total)
+- **1:00 PM** — `recruiting_chain.sh refresh`: indeed_source_report → ad_sales_board (~35 min)
+- **4:00 AM** — day orchestrator batch (captainship + everything else registered on the scheduler)
+- **6:30 AM** — captainship_boards (owner sales boards fill)
+- **7:00 AM (mornings)** — b2b_metrics per office; item #6 Customer Churn posts the new-comp rendered image for carlos + atef (falls back to plain screenshot on any error)
+- **7:50 AM** — ad sales board Slack post
+- **8:45 PM** — daily_update_fill (Vantura Daily Update pass)
+- **Resume pusher** — q5-10min, 8 AM–10 PM, skips Saturday, skips hour 13 (the 1 PM chain window)
+- **7:00 PM** — README auto-update (scheduled Claude task on the mini; this file)
+
+Deploy flow (never skip the verify): edit on the mini → commit → `git pull --rebase`
+→ push `HEAD:main` (Lucy 2 tracks **main**) → queue `update` → queue `rerun <id>` →
+**verify by reading the log** (`logtail`), never by a success message.
+
+## 4. THE GOTCHA LIST — what typically breaks when you change things
+
+These are all real incidents. Before any change, scan this list for the row that
+matches what you're about to touch.
+
+### Writing values to Sheets
+- **USER_ENTERED coerces.** "July 2026" becomes a date serial, "8.30" becomes 8.3 —
+  this silently killed the Source Report pickers and emptied the migrated Sales Board
+  week view. Fix pattern: TEXT ("@") format on the cell + write RAW + dual-match
+  formulas that accept both the string and the coerced form. Any new picker cell
+  gets this treatment from day one.
+- **Reading with FORMATTED_VALUE returns strings** — arithmetic downstream dies or
+  goes $0 (the Recruiting Dashboard AD BUDGET box). Always read with
+  `UNFORMATTED_VALUE` when numbers will be computed.
+- **60 writes/min/user quota** — batch writes; a per-cell loop will stall the run.
+- **Sheets "Table" objects block spill formulas and survive value clears** — if a
+  spill shows #REF after someone "made it a table", you need `deleteTable`, not a
+  bigger clear.
+- **Google Sheets SUMIFS silently ignores array/range criteria** (unlike
+  SUMIF) — no error, just 0/blank. The Manager Matrix OFFICE TOTAL row was
+  empty for 3 weeks because of this. Sum a roster with SUMPRODUCT +
+  ISNUMBER(MATCH(...)), never SUMIFS-with-a-range-criterion.
+- **A LET variable named `n` (or any function name) shadows that function** —
+  `LET(n, ... N(...) ...)` throws "Invalid call to non-function", and LET's
+  lazy evaluation means only the branches that USE the poisoned binding fail
+  (counts worked, percentages blanked). Don't name LET variables after
+  functions you call inside them.
+- **mergeCells across a frozen-column boundary 400s the whole batch** — and on
+  the built tabs that batch runs AFTER the wipe, so the dashboard stays BLANK
+  until the next good run (live outage 2026-09-12). Paint cells and let text
+  overflow instead of merging on any tab with frozen columns.
+- **Filter criteria stick.** Adding criteria to a basic filter hides rows for
+  EVERYONE and persists; sorting via filter menu breaks spill formulas (#REF).
+  Clear criteria, keep the filter buttons. This has bitten the Ad Plan tab twice.
+
+### Renaming / moving / restructuring tabs
+- Renaming a tab is safe for formulas ON the workbook (references follow), but
+  **anything external addressing the tab by name breaks**: Lucy jobs with hardcoded
+  tab strings, IMPORTRANGEs from other books, the web app's PAGES list, Apps Script
+  constants. Grep the repo for the old tab name before renaming.
+- **copyTo across workbooks breaks references (#REF).** The working migration
+  pattern: dump formulas first, copy, recreate referenced tabs, re-plant formulas
+  verbatim.
+- **IMPORTRANGE authorizes per destination FILE** — every new destination↔source
+  pair needs one human "Allow access" click. A migrated/duplicated tab shows #REF
+  until that click happens.
+- **Row/column inserts shift ranges used by jobs.** The funnel/board builders write
+  to fixed anchors; moving blocks around (like Goals rows 46–54) requires updating
+  build.py anchors in the same change.
+
+### Apps Script (Goal Sync project + web app)
+- **onEdit triggers fire only on HUMAN edits** — API/job writes never trigger the
+  goal mirror or adPlanMirror. Don't build logic that assumes a Lucy write will
+  fire a trigger.
+- **The editor saves silently fail**: verify "Saved to Drive" in the header before
+  closing, or the old code keeps running (lost an edit this way once). Dismiss the
+  "signed in as" popup first — it eats clicks.
+- **monaco applyEdits targets the visible editor's model** — when editing via
+  automation, resolve models by `uri.path` extension (`.js` vs `.json`); we once
+  overwrote Code.gs with the manifest because "file_1.js" WAS Code.gs.
+- Web app: raw REST to sheets.googleapis.com gets **403** (default GCP project) —
+  use the Advanced Sheets Service. Every code change needs Deploy → Manage
+  deployments → edit → **New version** to reach the /exec URL. Adding a user =
+  ALLOWED array + new version.
+- Very large tabs don't render as web pages — Ad Sales Board is capped at 240 rows
+  (700 rendered blank).
+
+### The queue / deploying to Lucy 2
+- Lucy 2 tracks **main**; push `HEAD:main` from the mini's working branch. The old
+  resume-pushing-v2 push rejection is harmless — ignore it.
+- `rerun <id> -- --flag` FAILS through raw queue rows — the `--` is a lucy-CLI
+  convention only. Args string: `indeed_source_report --office 11580`.
+- The poller is single-threaded: a long job blocks every queued row behind it.
+- A check run right after `update` may have executed on the OLD code (two lanes) —
+  wait for the update row to finish before the verify row.
+- The queue tab has a finite grid — extend (+3000 rows) when appends start failing.
+- `diag` only knows 4 hardcoded agents; **verify by log, never by diag or by a
+  "loaded/success" message**.
+- Scratchpad on the mini wipes between days — durable helpers belong in the repo,
+  not /tmp scratch.
+
+### schedule_config.json / registry
+- **Never `json.dump` the whole config with different formatting** — it rewrites
+  9,400 lines and buries your one-entry diff. Load, mutate, dump with `indent=2`
+  exactly, and check `git diff --stat` shows only your entry.
+- New off-scheduler report = entry with `on_scheduler: false` + `machine` +
+  `command`; test with `rerun <id>` before trusting any schedule.
+- Retired agents are `.disabled` plists, not deletions — re-enable via the
+  matching `install_<x>_agent` handle.
+
+### Data-loss patterns
+- **Daily Log has been wiped twice.** Version history may show it intact hours
+  earlier; recovery that worked was a batched multi-week re-scrape, not sheet
+  restore (the "Make a copy" dialog resists automation). Treat any build change
+  that touches Daily Log as high-risk; check row count before/after.
+- **Ad Sales Board day-cell history cannot be re-derived** — received-per-day
+  values are carried-over rewrites keyed by inbox+base(+city); once a day is gone
+  it's gone. Never "rebuild from scratch" that tab's history.
+- **Workout sheet rule (general Carlos rule): never repaste full ranges over
+  logged data — cell-level edits only.**
+- Edit scripts that assert AFTER writing lose earlier edits silently when the
+  assert throws — write-per-edit or single-purpose scripts.
+
+### Jobs / pulls
+- AppStream p=702 per-office schemas differ; office ids: Carlos 11580, Atef 23467
+  (see indeed_source_report/offices.py for the rest — two "Joshua Murphy" offices
+  exist, 21770 is the right one).
+- Tableau: URL week filters don't apply to B2BATTSalesMetrics — drive the dropdown.
+  Stale sessions heal headed with the 30s waits; CSV export needs timeout=240s.
+- captainship_boards breaks when a NEW captain's board isn't shared with
+  raffi127@gmail.com — first thing to check when one board stops filling.
+- The 503-with-no-retry pattern (org_campaign_metrics ensure_tab) silently killed
+  a week of campaign stamps — any new Sheets GET in a long job needs retry.
+- One office failing must never kill a multi-office run (existing loops already
+  try/except per office — keep that shape in new code).
+
+## 5. Adjustments made BECAUSE a change broke something (the history)
+
+- **Tab rename → "Source Report - Indeed"** (from Indeed Ad Performance): safe for
+  formulas, but pickers had already been killed by date-coercion — the rename change
+  bundled the TEXT-format + RAW + dual-match fix. Lesson: renames ride along fine;
+  coercion was the real bug.
+- **Pickers moved to column C** (B hidden): required re-pointing the validation and
+  the formulas that read the picker — moving a picker means grepping for its A1
+  address in build code, not just dragging the cell.
+- **Ad budget box $0** after tracker_mirror change → FORMATTED_VALUE reads; fixed to
+  UNFORMATTED + re-ferry.
+- **Captainship views merged into the org book** → every IMPORTRANGE pair needed a
+  fresh Allow click; week picker died to "8.30"→8.3 coercion → TEXT+RAW+daily stamp
+  added to captainship_boards so the view heals itself every morning.
+- **Goals rows moved (46–54)** → funnel build anchors updated in the same commit or
+  the next build would have rewritten the old layout.
+- **Ad Plan v3**: tab-switcher rejected → in-place mirror; then leftover Table
+  object + stuck filter criteria made it "empty" twice → deleteTable + clear
+  criteria; then row-2 filter added — criteria must stay clear, buttons only.
+- **Two-account AppStream refactor (Sep 2, Raf's side)** broke resume pushing for
+  Carlos + Atef: the new `Lucy Resume Pushing` session was never validly minted on
+  Lucy 2 and the whoami check can FALSE-FAIL on scoped accounts. Real test/seed:
+  `rerun applicant_push --dry-run` (real-Chrome path). Passwords come from
+  Carlos/Megan only.
+- **1am/1pm chain reschedule** → resume pusher gained the hour-13 skip so it never
+  collides with the heavy AppStream pulls; funnel_board removed from the 4am batch
+  (weekdays: []) so it doesn't double-run.
+- **[Action required] wrapper emails** were being dropped as noise → unwrapped and
+  counted since 8/27 (monthly undercount before that).
+- **Carlos full-month window (2026-09-05)**: his office (11580) pulls Sept 1→30
+  every run via FULL_MONTH_MANAGERS in indeed_source_report/run.py; everyone else
+  stays 1st→today. If his numbers ever look inflated vs others, check this first.
+
+## 5b. Reading the applicant texts (the SMS audit)
+
+Raf asked on 2026-09-26 for an audit of the applicant text stream; Carlos asked
+for his office beside it. Raf has **three** accounts — 11280, 23965, 24065.
+Everything is read-only on AppStream, runs on Lucy 2, and lands one tab per
+account.
+
+| Piece | Page | Writes |
+| --- | --- | --- |
+| `sms_audit.pull_log` | **p=336 SMS List Report** | tab `SMS Log <office>` + `output/sms_log_<office>.json` |
+| `sms_thread_dump --bookings-only` | p=105 Weekly Calendar | tab `SMS Dump <office>` + `output/sms_thread_dump_<office>.json` |
+| `as_templates_probe --all` | p=332 SMS Templates | tab `AS Templates <office>` |
+| `sms_audit.analyze` | *(reads the tabs)* | `output/sms-audit-<date>.md` |
+| `sms_audit.weekly_sheet` | *(reads the tabs)* | **Applicant Correspondence Audit (ACA)**, a column per week |
+| `sms_audit.templates` | *(reads the tabs)* | prints findings, exit 1 if any |
+
+```
+lucy rerun sms_thread_dump --office "11280,23965,24065,11580" --bookings-only --machine "Lucy 2"
+lucy rerun sms_log         --office "11280,23965,24065,11580" --machine "Lucy 2"
+python -m automations.sms_audit.weekly_sheet --office 11280,23965,24065,11580
+```
+
+**p=336 is the source, p=105 is the outcome.** The calendar walk only sees
+applicants who BOOKED — the people most likely to have been left on read are
+invisible to it — and its chat history has no sender column. The SMS List
+Report has every message for a date range with `Sent By` (AI Messaging vs a
+named recruiter) and delivery `Status`. `analyze` joins the two on phone
+number, which is the only way to say who out of everyone contacted ended up
+booked. `--bookings-only` exists because the dialog walk costs ~3s per
+applicant and Raf books ~830 a week: the full walk timed out at 45 minutes on
+one office, the fast one did four in nine.
+
+**Gotchas worth knowing before touching it** (the module README has the rest):
+the p=336 filter form has FOUR date fields and the server reads the two hidden
+ones; injected JS must be a raw Python string or a regex silently breaks; a
+week column can be a partial week, so every column states its own coverage;
+and blank is not zero — a bookings-only pull has no messages, so questions and
+flags are unmeasured, not absent.
+
+## 6. Standing rules
+
+- Vantura Master Sales Board is NEVER part of fleet/captainship changes unless
+  Carlos names it explicitly.
+- Never enter Carlos's passwords anywhere; credential installs go through the
+  SECRET queue actions and the values come from Carlos/Megan.
+- `ownerville-creds.json` is gitignored and never committed (repo is public).
+- Sends/deletes are irreversible: `--dry-run` / `--limit 1` first, log-verified.
+- Errors go to #claudecorrections-and-requests, never office channels.
+- If code and Megan's Lucy Login Standard disagree, the standard wins — update the
+  code (and login_check.py + test_login_policy.py with it).
+
+## 7. Change log (auto-appended daily at 7 PM)
+
+- **2026-09-06** — README created (Carlos). Covers state through today: web app
+  live (8 pages, Carlos-only allowlist), Carlos full-month source window live,
+  new-comp churn image live for carlos+atef mornings, resume-pusher outage being
+  worked by peer sessions (login seed on Lucy 2).
+
+- **2026-09-13 (catch-up entry — the 7pm auto-update task had not fired since
+  creation: scheduled tasks only run while the Claude app on the mini is open;
+  it was closed over 7pm since 9/8):**
+  - Manager Matrix OFFICE/CAPTAINSHIP TOTAL row (21) fixed twice: SUMIFS never
+    expands range criteria (blank since 8/21), then LET's `n` variable
+    shadowed the N() function (percent metrics still blank). Both in the
+    gotcha list now. Totals verified against per-name sums.
+  - Focus Report gained the per-manager Info Box (rows 87–96, RECRUITING /
+    SCHEDULE, violet B answers): data in hidden 'Info Box' tab keyed
+    manager|label; write-back branch added to goal_sync.gs (INFO_Z0=87 —
+    same hardcoded-row coupling as CAMP_Z0). First deploy caused a ~13-min
+    blank-dashboard outage via the frozen-column merge (see gotchas).
+  - Captainship roster: + Alexander Badawi (office 22662, 4-week history
+    backfilled) and + Nicolas Lujan (office not in AppStream yet — discovery
+    will pin + backfill + announce). No sales boards for either, by design.
+    Lujan (only) added to the campaign zone via pull_b2b.EXTRA_MANAGERS
+    ("NICOLAS LUJAN", computed from the order log without a board row).
+  - Dhyey Patel's ad-plan tab wired into the Ad Plan dropdown (AE28) + hidden.
+  - org_campaign_metrics registered as a rerunnable report so its 8:30 card
+    can fire (another session's commit 57658443).
+  - Duplicate 7pm README tasks exist: recruiting-readme-update (this file) and
+    another session's daily-readme-update (repo root README.md) — consolidate.
+
+- **2026-10-02 — THE CAPTAINSHIP SPLIT (Carlos).** The 15 captainship-only
+  owners moved off the Alphalete Recruiting Dashboard into their own workbook,
+  the **SCI Recruiting Dashboard** (`1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg`,
+  a pruned Drive copy: the 8 visible report tabs + their hidden stores,
+  scrubbed to the 15). Carlos and Atef were in both rosters and stay org-only
+  (rule: in both → org wins).
+  - `funnel_board/roster.py`: production `CAPTAINSHIP = []`; the 15 live in
+    `deploy/sci-roster.json` as the SCI book's ORG (office-id lore preserved
+    in the roster comment).
+  - `build.py ACTIVE_GROUPS`: group pickers only offer non-empty rosters;
+    preserved picks of a dead group coerce to Org; the Goals captainship box
+    is skipped when empty. Alphalete pickers = Org / South Shore now.
+  - Every deploy wrapper that feeds these tabs (`funnel_board_hourly.sh`,
+    `indeed_source_report.sh`, `ad_sales_board.sh`, `org_campaign_metrics.sh`)
+    runs an **SCI pass after the Alphalete pass** (env: `FUNNEL_SSID` /
+    `INDEED_SOURCE_SPREADSHEET_ID` / `ORG_CAMPAIGN_SSID` +
+    `RECRUITING_ROSTER_JSON=deploy/sci-roster.json`); exits OR'd. So the 1 AM /
+    1 PM chains and every intraday cadence cover BOTH books with no schedule
+    changes. Chain step cap bumped 2400s → 3600s for the double pass.
+  - Manual handle: `lucy rerun sci_recruiting` (`--steps funnel|indeed|adsales`)
+    — exists because `rerun` can't set env vars.
+  - `captainship_boards`: the Alphalete Sales Board/Roll Call week stamp is
+    REMOVED (tabs deleted with the split); `update_recruiting` reads BOTH
+    Daily Logs (Atef from Alphalete, the owners from SCI). Owner-board fleet
+    fill and everything Vantura: untouched.
+  - GOTCHA carried forward: the SCI book is a COPY, so the bound Goal Sync
+    script, Campaign Log, Info Box and all validations copied with it. Its
+    first funnel build coerces pickers to Org; its Daily Log guard stamp was
+    inherited from the copy, so the first SCI run pings one false "drift"
+    notice to #claudecorrections — expected, once.
+
+- **2026-10-03 — Owners groups + Luke Baldwin's captainship (SCI book), and
+  two Source-Report data repairs.**
+  - The Recruiting Dashboard GROUP picker is now CONFIG: `roster.BOARD_GROUPS`
+    (ordered label → members; first = default), overridable per book via the
+    roster JSON (`board_groups`, `org_label`). SCI shows **Owners** (everyone)
+    plus one group per captain — first: **Luke Baldwin** (Adrian Sarabia,
+    David Pisikian, Cruz Venegas; roster read from Tableau's
+    "B2B Captain's Teams (SFDC)" filter = Luke's Team — the old
+    "Captain's Bonus Teams v2" field name is DEAD, SmartCircle renamed it).
+    Alphalete renders unchanged (Org + South Shore). Park columns now AA..
+    one per group, blank-padded 4 spare columns so removed groups wipe.
+  - **GOTCHA (cost a day of wrong numbers): never compact a data tab by
+    rewriting a partial column slice.** The 10/2 split scrub rewrote
+    'Indeed Ad Data' A:H only — columns I:U kept their old row positions, so
+    every frozen month below the first dropped row showed the wrong funnel
+    numbers per ad (Carlos caught it on Jamis's September). Fix = re-pull the
+    frozen months (`indeed_source_report --month YYYY-MM` / the sci_recruiting
+    equivalent) + clear the orphaned tail. ALSO: August+September were garbled
+    on BOTH books independently of the scrub — written by pre-2026-08-27 code
+    before the '[Action required]' subject-unwrap fix; the month re-pull healed
+    that too (June–Sep re-pulled on Alphalete, Aug–Sep on SCI).
+  - SCI Focus Report history backfilled to 2025-12-29 (40-week funnel re-pull,
+    3 batches of 5 + 1 of 4). Luke's trio only reaches ~Sep 7 — AppStream has
+    nothing earlier for those offices (verified: the run targeted all 40
+    weeks). The ALPHALETE book still only reaches ~Aug 24 (pre-existing
+    truncation) — same backfill works there if Carlos asks.
+  - Cruz Venegas: office 22442 refuses the AppStream office switch from
+    LucyReports (2 attempts) — oid blanked in deploy/sci-roster.json so
+    switcher discovery resolves him by name; until then he reads zero.
