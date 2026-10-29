@@ -60,9 +60,10 @@ OFFICES = {
     "raf": Office(key="raf", owner="Rafael Hidalgo", channel=CHANNEL_ID,
                   uploader="lucy", mode="live", sheet_log=True),
     # Omar Mohamad, Kalkan Marketing (24153), in his recruiting room (Slack
-    # Connect, Lucy Reporting is in it). Enrolled on LucyEco 2026-10-26
-    # evening as `omar` (Omars-iMac). Dry until a --test-job finds a real
-    # new start in his OwnerVille, then "live".
+    # Connect, Lucy Reporting is in it). Signed up on LucyEco 2026-10-26 as
+    # `omar` (Omars-iMac); his OwnerVille login only landed 2026-10-28 (first
+    # knocks row) -- 10/27's test jobs all came back "no OwnerVille login
+    # saved". Dry until a --test-job finds a real new start, then "live".
     "omar": Office(key="omar", owner="Omar Mohamad", channel="C0C6HKZ63EK",
                    uploader="eco", eco_key="omar", mode="dry"),
 }
