@@ -235,10 +235,15 @@ def arm_hard_ceiling(seconds: int = HARD_CEILING_SECONDS, *, log=print,
         except Exception as e:  # noqa: BLE001
             detail += "\n\nlog tail: ? (%s)" % type(e).__name__
         detail = detail[:5500]
+        def _send():
+            try:
+                report("run-timeout", SweepTimeout(msg), detail)
+            except TypeError:
+                # an older two-argument reporter (and the test fakes)
+                report("run-timeout", SweepTimeout(msg))
+
         if report:
-            t = threading.Thread(
-                target=lambda: report("run-timeout", SweepTimeout(msg), detail),
-                daemon=True)
+            t = threading.Thread(target=_send, daemon=True)
             t.start()
             t.join(30)
         _kill_descendants()
