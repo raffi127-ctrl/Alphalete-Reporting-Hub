@@ -370,11 +370,16 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
         self.assertEqual(P._SIGNIN_PROOF["indeed"], "probe-indeed-clear")
 
     def test_a_clean_run_resets_the_count(self):
-        RP._note_wall(True)
-        RP._note_wall(True)
+        for _ in range(RP.WALL_RUNS - 1):
+            RP._note_wall(True)
         RP._note_wall(False)
-        RP._note_wall(True)
+        for _ in range(RP.WALL_RUNS - 1):
+            RP._note_wall(True)
         self.assertEqual(self.filed, [])
+
+    def test_two_walls_in_a_row_alert(self):
+        # Megan 2026-10-29: catch it early -- 2, not 3.
+        self.assertEqual(RP.WALL_RUNS, 2)
 
     def test_the_poster_dms_it_and_keeps_it_out_of_the_channel(self):
         from automations.icd_alerts import post as P
