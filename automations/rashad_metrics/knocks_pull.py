@@ -1003,7 +1003,18 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
               flush=True)
 
     # --- IMPERSONATE the target office --------------------------------
-    if not _navigate_to_office_access(page):
+    # THREE TRIES, not one (2026-10-28). A single slow ownerville load on the
+    # root/?p=901 hop killed Trang's 6 PM hourly board and opened a red ticket;
+    # the very next tick loaded fine and posted. One blip is not a dead office.
+    for attempt in range(3):
+        if _navigate_to_office_access(page):
+            break
+        if attempt < 2:
+            if verbose:
+                print(f"  ↻ Office Access didn't load — retry {attempt + 2}/3",
+                      flush=True)
+            page.wait_for_timeout(5000 * (attempt + 1))
+    else:
         raise RuntimeError(
             "Couldn't reach the ownerville Office Access page (?p=901) to "
             f"impersonate {canonical!r}.")
