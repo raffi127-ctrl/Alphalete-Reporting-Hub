@@ -52,8 +52,12 @@ class TheSheetIsReadLessOftenThanTheLoopWakes(unittest.TestCase):
                 raise _Stop
             clock["t"] += step_s
 
-        polls = []
-        with mock.patch.object(mc, "poll_once", side_effect=lambda **k: polls.append(clock["t"])), \
+        polls, self.legacy_polls = [], []
+
+        def fake_poll(**k):
+            (self.legacy_polls if k.get("legacy") else polls).append(clock["t"])
+
+        with mock.patch.object(mc, "poll_once", side_effect=fake_poll), \
              mock.patch.object(mc, "_drain_text_outbox"), \
              mock.patch.object(mc, "_git_head", return_value=None), \
              mock.patch.object(mc, "_start_text_lane_heartbeat"), \
@@ -75,6 +79,18 @@ class TheSheetIsReadLessOftenThanTheLoopWakes(unittest.TestCase):
     def test_main_lane_is_unchanged(self):
         polls = self._run(mc.LANE_MAIN, wakes=3, step_s=120)
         self.assertEqual(polls, [0, 120, 240])
+
+    def test_the_old_tab_is_drained_slowly(self):
+        """2026-10-29: own workbook every poll, AUTOMATION MASTER every 3 min —
+        still drained, so a row from old code is never stranded."""
+        self._run(mc.LANE_READ, wakes=13, step_s=20)          # 240s of loop
+        self.assertEqual(self.legacy_polls, [0, 180])
+
+    def test_no_own_workbook_means_no_second_poll(self):
+        with mock.patch.object(mc.control_books, "book_for", return_value=None):
+            polls = self._run(mc.LANE_MAIN, wakes=3, step_s=120)
+        self.assertEqual(polls, [0, 120, 240])
+        self.assertEqual(self.legacy_polls, [])
 
 
 class QueueingOnEveryLucyOpensTheWorkbookOnce(unittest.TestCase):
@@ -116,8 +132,10 @@ class QueueingOnEveryLucyOpensTheWorkbookOnce(unittest.TestCase):
         with mock.patch.object(mc._fill, "_client", return_value=client):
             for m in ms:
                 mc.enqueue("update", "", by="Megan", machine=m)
-        self.assertEqual(client.open_by_key.call_count, 1)
-        self.assertEqual(sh.worksheets.call_count, 1)
+        # Each workbook is opened ONCE: the old one + each Lucy's own.
+        keys = [c.args[0] for c in client.open_by_key.call_args_list]
+        self.assertEqual(sorted(keys), sorted(set(keys)))
+        self.assertEqual(len(keys), 1 + len(ms))
         for w in tabs:
             self.assertEqual(w.append_row.call_count, 1)
 

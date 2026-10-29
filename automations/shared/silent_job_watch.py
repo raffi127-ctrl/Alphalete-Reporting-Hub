@@ -68,7 +68,21 @@ from typing import Dict, List, Optional
 from automations.shared import fleet as _fleet
 from automations.applicant_push.window import quiet_window as _push_quiet_window
 
-SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # same book as Hub Activity
+# 2026-10-29: the beats moved to their own small workbook ("LUCY FLEET -
+# Heartbeats", see day_orchestrator/control_books.py). They used to share
+# AUTOMATION MASTER with every Lucy's queue and the Hub activity log, and when
+# Google slowed that one file down the beats froze with everything else.
+# LEGACY_SHEET_ID is the old home — mirrored while machines still run old code.
+LEGACY_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # AUTOMATION MASTER
+SHEET_ID = "1GpXR5jfIEoTijp8uv9HBJAg0Q4d_iR5bdH5CvumRcyk"          # LUCY FLEET - Heartbeats
+
+
+def _mirror() -> bool:
+    try:
+        from automations.day_orchestrator import control_books
+        return bool(control_books.MIRROR_LEGACY_BEATS)
+    except Exception:  # noqa: BLE001
+        return True
 TAB = "Job Heartbeats"
 HEADERS = ["Job ID", "Last Seen", "Machine", "Status", "Note"]
 
@@ -316,14 +330,14 @@ def job_id_for_machine(base: str, machine: Optional[str] = None) -> str:
 
 
 # ------------------------------------------------------------------ the sheet
-def _ws(create: bool = False):
+def _ws(create: bool = False, sheet_id: Optional[str] = None):
     """The heartbeat tab. `create=False` for every READ path: a checker that
     creates the thing it is checking would turn "this tab was never set up" into
     a silent pass, which is the failure mode this whole module exists to end.
     Only beat() — a job proving it ran — is allowed to bring the tab into being."""
     from automations.recruiting_report.fill import open_by_key
     import gspread as _gs
-    sh = open_by_key(SHEET_ID)
+    sh = open_by_key(sheet_id or SHEET_ID)
     try:
         return sh.worksheet(TAB)
     except _gs.WorksheetNotFound:
@@ -341,11 +355,18 @@ def beat(job_id: str, *, ok: bool = True, note: str = "") -> bool:
     Best-effort and silent by contract: a job must never fail, and must never
     change its exit code, because it could not reach the heartbeat sheet. The
     caller is a wrapper that already `exit 0`s unconditionally."""
+    row = [job_id, dt.datetime.now().isoformat(timespec="seconds"),
+           socket.gethostname(), "ok" if ok else "failed", note]
+    landed = _beat_into(SHEET_ID, job_id, row)
+    if _mirror():
+        _beat_into(LEGACY_SHEET_ID, job_id, row)
+    return landed
+
+
+def _beat_into(sheet_id: str, job_id: str, row: list) -> bool:
     try:
         from automations.recruiting_report.fill import _retry
-        ws = _ws(create=True)
-        row = [job_id, dt.datetime.now().isoformat(timespec="seconds"),
-               socket.gethostname(), "ok" if ok else "failed", note]
+        ws = _ws(create=True, sheet_id=sheet_id)
         # A find that FAILED (a 429, a blip) is not "no row yet": appending then
         # leaves a second row for the job, the beat keeps landing on the first,
         # and the stale copy sits there. 2026-10-19 ~19:00 that duplicated
@@ -374,8 +395,19 @@ def read_beats(strict: bool = False) -> Dict[str, dict]:
     try:
         recs = _ws().get_all_records()
     except Exception:  # noqa: BLE001
+        recs = None
+    if _mirror():
+        # Merge the old tab: a machine still on old code beats only there. The
+        # newest beat per job wins below, so a job beating in both reads once.
+        try:
+            old = _ws(sheet_id=LEGACY_SHEET_ID).get_all_records()
+        except Exception:  # noqa: BLE001
+            old = None
+        if old is not None:
+            recs = (recs or []) + old
+    if recs is None:
         if strict:
-            raise
+            raise RuntimeError("heartbeat tab unreadable")
         # No tab yet, or the sheet is unreachable. Returning {} means every job
         # reads as "never checked in", which `overdue()` reports as overdue past
         # its deadline — loud, and correct: we genuinely cannot tell whether

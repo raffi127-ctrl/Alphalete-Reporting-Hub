@@ -127,6 +127,7 @@ import gspread
 from automations.recruiting_report import fill as _fill
 from automations.day_orchestrator import registry
 from automations.day_orchestrator import routing
+from automations.day_orchestrator import control_books
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # The control tab lives on the same workbook as Hub Activity (the orchestrator's
@@ -544,7 +545,10 @@ def _parse_ts(s: str) -> dt.datetime | None:
         return None
 
 
-#: Opened control tabs, by tab name: (opened_at, Worksheet). Opening costs TWO
+#: How often a poller also drains its OLD tab in AUTOMATION MASTER.
+LEGACY_POLL_S = 180
+
+#: Opened control tabs, by (workbook, tab name): (opened_at, Worksheet). Opening costs TWO
 #: Sheets reads (workbook metadata, then the tab lookup) before the one read
 #: that matters. 2026-10-28: every poll re-opened, so 4 Lucys x 3 lanes spent
 #: ~60 reads/min — the whole per-user cap all the Lucys share — just sitting
@@ -554,21 +558,53 @@ _WS_CACHE: dict = {}
 _WS_TTL_S = 1800
 
 
-def _open(sandbox: bool = False, machine: str | None = None):
+def _open(sandbox: bool = False, machine: str | None = None, *,
+          legacy: bool = False, runner: bool = False):
     """Open (creating if needed) the control worksheet for THIS machine — or the
-    shared TEST tab when sandbox."""
-    tab = SANDBOX_TAB if sandbox else _control_tab_for(_machine_profile(machine))
-    hit = _WS_CACHE.get(tab)
+    shared TEST tab when sandbox.
+
+    The tab lives in the machine's OWN workbook (control_books, 2026-10-29);
+    `legacy=True` is her old tab in AUTOMATION MASTER, which pollers keep
+    draining for rows queued by code that predates the move. `runner=True` is
+    the poller itself: it alone may prove a tab live (see _prove_live), because
+    only a runner reading the tab makes queueing into it safe."""
+    mach = _machine_profile(machine)
+    tab = SANDBOX_TAB if sandbox else _control_tab_for(mach)
+    book = CONTROL_SHEET_ID
+    if not (sandbox or legacy):
+        book = control_books.book_for(mach) or CONTROL_SHEET_ID
+    key = (book, tab)
+    hit = _WS_CACHE.get(key)
     if hit and time.time() - hit[0] < _WS_TTL_S:
         return hit[1]
-    sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+    sh = _fill._client().open_by_key(book)
     try:
         ws = sh.worksheet(tab)
     except gspread.WorksheetNotFound:
         ws = sh.add_worksheet(title=tab, rows=300, cols=len(HEADERS))
         ws.update([HEADERS], "A1")
-    _WS_CACHE[tab] = (time.time(), ws)
+    if runner and book != CONTROL_SHEET_ID:
+        _prove_live(sh, ws, mach)
+    _WS_CACHE[key] = (time.time(), ws)
     return ws
+
+
+def _prove_live(sh, ws, machine: str) -> None:
+    """A poller's first look at its own workbook: if no runner has finished a
+    row there yet, write one finished `ping` so queue commands can see that this
+    tab IS read (they only queue into a tab a runner has drained — the guard
+    that ended the 'Mini Control - Mini' strandings). Best-effort: a failure
+    only means rows keep going to the old tab a little longer."""
+    try:
+        if _tab_liveness(sh, ws.title) is True:
+            return
+        now = _now_tz()
+        ws.append_row([now, "ping", "", "poller", "done",
+                       "{} reads this workbook".format(machine), now],
+                      value_input_option="RAW")
+        _memo_save(_memo_key(sh, ws.title))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -9536,12 +9572,13 @@ def _rerun_home(args: str, by: str = "") -> str | None:
              .get(parts[0]) if r else None)
     if raw_r is not None and not str(by).startswith(AUTO_BY_PREFIX):
         try:
-            sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+            sh, _ = _book()
             history = {}
             for m in _fleet.RUNNERS:
                 try:
-                    history[m] = sh.worksheet(
-                        _control_tab_for(m)).get_all_values()[1:]
+                    tab = _control_tab_for(m)
+                    ws = _own_live_tab(m, tab) or sh.worksheet(tab)
+                    history[m] = ws.get_all_values()[1:]
                 except Exception:  # noqa: BLE001 — that box just isn't a target
                     pass
             from automations.shared import silent_job_watch as _sjw
@@ -9647,16 +9684,21 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
         # The tab list already holds this tab's handle — _open would spend two
         # more reads (workbook + tab lookup) fetching the same object.
         for t in sheets:
-            if t.title == target and target not in _WS_CACHE:
-                _WS_CACHE[target] = (time.time(), t)
-    ws = _open(sandbox, machine)
+            if t.title == target and (CONTROL_SHEET_ID, target) not in _WS_CACHE:
+                _WS_CACHE[(CONTROL_SHEET_ID, target)] = (time.time(), t)
+        own = _own_live_tab(machine, target)
+        ws = own if own is not None else _open(sandbox, machine, legacy=True)
+    else:
+        ws = _open(sandbox, machine, legacy=True)
     ws.append_row([_now_tz(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
     # Don't echo a secret back at the person queueing it — their terminal
     # scrollback is one more place the password would sit.
     shown = "<redacted>" if action in SECRET_ACTIONS else args
+    where = getattr(getattr(ws, "spreadsheet", None), "id", None)
+    home = " (own workbook)" if where and where != CONTROL_SHEET_ID else ""
     print(f"[mini_control] queued: {action} {shown} (by {by}) "
-          f"→ {_control_tab_for(_machine_profile(machine))}")
+          f"→ {_control_tab_for(_machine_profile(machine))}{home}")
 
 
 #: Statuses only a RUNNER writes. A tab carrying one of these has been drained
@@ -9681,16 +9723,33 @@ _RUNNER_STATUSES = ("done", "failed")
 _BOOK_CACHE: dict = {}
 
 
-def _book():
-    """(Spreadsheet, [Worksheet]) for the control workbook — 2 reads the first
+def _book(key: str = CONTROL_SHEET_ID):
+    """(Spreadsheet, [Worksheet]) for a control workbook — 2 reads the first
     time in a process, none after."""
-    hit = _BOOK_CACHE.get("book")
+    hit = _BOOK_CACHE.get(key)
     if hit and time.time() - hit[0] < _WS_TTL_S:
         return hit[1], hit[2]
-    sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+    sh = _fill._client().open_by_key(key)
     sheets = sh.worksheets()
-    _BOOK_CACHE["book"] = (time.time(), sh, sheets)
+    _BOOK_CACHE[key] = (time.time(), sh, sheets)
     return sh, sheets
+
+
+def _own_live_tab(machine: str, tab: str):
+    """`machine`'s tab in her OWN workbook when a runner has proven it — else
+    None, and the row goes to the old tab. Any error is None: the old tab is
+    always drained, so falling back can never strand a row."""
+    key = control_books.book_for(machine)
+    if not key:
+        return None
+    try:
+        osh, osheets = _book(key)
+        ws = next((t for t in osheets if t.title == tab), None)
+        if ws is not None and _tab_is_live(osh, tab):
+            return ws
+    except Exception:  # noqa: BLE001
+        pass
+    return None
 
 
 #: Tabs a runner has drained, remembered on disk so a queue command doesn't
@@ -9939,14 +9998,15 @@ _REPOLL_NOW = False
 
 
 def poll_once(*, dry_run: bool = False, sandbox: bool = False,
-              machine: str | None = None, lane: str = LANE_MAIN) -> int:
+              machine: str | None = None, lane: str = LANE_MAIN,
+              legacy: bool = False) -> int:
     """One poll pass: run every 'queued' row's whitelisted action. Returns the
     number of rows acted on.
 
     Only rows belonging to `lane` are considered — see _lane_owns. The main lane
     leaves READONLY_ACTIONS to the read lane and TEXT_ACTIONS to the text lane
     — the latter only while the text lane is actually running here."""
-    ws = _open(sandbox, machine)
+    ws = _open(sandbox, machine, legacy=legacy, runner=True)
     rows = ws.get_all_records()           # list of dicts keyed by header
     text_live = _text_lane_live() if lane == LANE_MAIN else True
     # Close anything left 'running' by a previous pass before doing new work, so
@@ -10262,6 +10322,7 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         _start_text_lane_heartbeat()
     sheet_gap = _SHEET_POLL_MIN_S.get(lane, 0)
     last_poll = None
+    last_legacy = None
     force_poll = False
     while True:
         # Self-reload: if `lucy update` advanced the repo, re-exec with the FRESH
@@ -10298,6 +10359,20 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
                 _WS_CACHE.clear()     # a renamed/re-made tab: open fresh next time
                 _BOOK_CACHE.clear()
                 print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
+            # The OLD tab in AUTOMATION MASTER, for rows from code that predates
+            # the per-Lucy workbooks (a laptop not yet updated, the onboarding
+            # app's queue_enqueue). Slow on purpose: that workbook is the one
+            # that froze the fleet.
+            if (not sandbox and control_books.book_for(mach)
+                    and (last_legacy is None
+                         or time.monotonic() - last_legacy >= LEGACY_POLL_S)):
+                last_legacy = time.monotonic()
+                try:
+                    poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach,
+                              lane=lane, legacy=True)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[mini_control] old-tab poll error (continuing): "
+                          f"{type(e).__name__}: {str(e)[:160]}")
             _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
         # Drift-immune daily schedule reconcile (no-op except the first poll in the
         # 1-2am window). Kept OUT of the try above so its own guard applies, but it
@@ -10322,7 +10397,12 @@ def print_status(n: int = 10, *, sandbox: bool = False, machine: str | None = No
     """Print the last N queue rows + their results to the terminal, so you can
     check what the mini did WITHOUT opening the Sheet. Newest row last (right
     above your prompt)."""
-    ws = _open(sandbox, machine)
+    ws = None
+    if not sandbox:
+        mach = _machine_profile(machine)
+        ws = _own_live_tab(mach, _control_tab_for(mach))
+    if ws is None:
+        ws = _open(sandbox, machine, legacy=True)
     rows = ws.get_all_records()
     if not rows:
         print("(no commands on the Mini Control queue yet)")
