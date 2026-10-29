@@ -152,6 +152,10 @@ PUSH_OFFICES = {
     # nobody. Lucy 2 keeps pushing him LIVE until this says "live" -- then he
     # leaves ROTATION_BY_MACHINE in the same release (one office, one machine).
     "atef": ("23467", "dry"),        # Atef Choudhury, Domin8 Acquisitions
+    # Same first step for Khalil (Megan 2026-10-29: "start khalil's dry run").
+    # Francia ran finish_setup on his computer 10/29 (login saved 11:45).
+    # Lucy 2 keeps pushing 11901 LIVE until this says "live".
+    "khalil-nds": ("11901", "dry"),  # Khalil Mansour, Alphalete Management Group
 }
 LOGIN_POLL_SECONDS = 90
 

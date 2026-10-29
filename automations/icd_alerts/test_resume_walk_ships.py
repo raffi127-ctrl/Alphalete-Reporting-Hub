@@ -109,7 +109,8 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
         # 10/25: nine offices switched on to TEST (Megan). Going live is a
         # deliberate per-office commit, never a side effect.
         for key in ("drew", "hasani", "jamis10", "jennifer-att", "rashad",
-                    "steve", "trang", "tre", "valeria", "atef"):
+                    "steve", "trang", "tre", "valeria", "atef",
+                    "khalil-nds"):
             self.assertEqual(RP.PUSH_OFFICES[key][1], "dry", key)
 
     def test_every_listed_office_states_its_number_and_mode(self):
