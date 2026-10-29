@@ -15678,6 +15678,45 @@
    "_note": "Office metrics for atef -> #domin8-nds-sales (C0B395PUUCW). Wired by hand 2026-10-27; NDS office (5 boards). SWITCHED ON 2026-10-27 after the Lucy 4 dry run (rerun-2026-10-27-100243): 386 wireless order rows, order log 193 rows, rep activations + activation rate rendered; churn had 0 sections (Tableau churn crosstab lags his NDS move) and the churn runner skips empty sections rather than posting blank. His b2b_metrics thread is held (HELD_FROM_ALL) from the same day.",
    "_onboarded": true
   },
+  "joseph_delgado_metrics": {
+   "order": 26.85,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Joseph Delgado's Daily Metrics (goldenview-d2d-sales)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "joseph-delgado",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "joseph_delgado_metrics"
+   },
+   "_note": "Office metrics for Joseph Delgado (Golden View, OV 20788, NDS) -> #goldenview-d2d-sales (C0C7XP389RN). Wired by hand 2026-10-29: Colten asked that Joe's channel get the same reports his does. Key joseph-delgado, NOT joseph (= Joseph Logan). Five NDS boards like atef. on_scheduler false until the Lucy 4 dry run shows data on every board; machine Lucy 4 like atef (scheduled report, not a build run).",
+   "_onboarded": true
+  },
   "aplayers_cleanup": {
    "on_scheduler": false,
    "_off_scheduler_note": "MANUAL-ONLY room cleanup (Carlos 2026-10-28, after stopping every scheduled A-Players post): delete Lucy's Box Metrics / Verizon Metrics / Country Tracker / wrap-up-text / Knocks and Dispositions threads from #a-players-b2b, last 15 days. DRY RUN by default; `lucy rerun aplayers_cleanup --live` deletes (own messages only, ~1.1s per delete for the rate limit).",

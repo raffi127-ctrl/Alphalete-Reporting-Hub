@@ -1094,5 +1094,45 @@
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
     "notes": "wired by hand 2026-10-28 (Megan: 'we're enrolling jose velasquez - start his dry run for metrics/trackers/weather'). Legacy Shore Marketing, Inc. (dba Legacy Shore Specialized Marketing), NDS wireless in Colten's South Shore org; Tableau NDS-SN owner 'JOSE VELASQUEZ[legacy shore marketing, inc.]' (wireless reps present in _repsearch); OwnerVille/AppStream 22434 (OV spelling 'Jos\u00e9 Velasquez'). Six NDS boards like colten. City ASSUMED Miami/Eastern (Jose Antonio Velasquez sells on Colten's Miami SaraPlus) -- confirm. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Jose Velasquez - Lucy Metrics' copied from the Master Metrics Templates, Editor alphaletereporting@ (Lucy 4). Scheduler OFF until the Lucy 4 dry run shows data on every board. | 2026-10-28 18:30 CT: ECO sign-up named #westwavesales (C0CCVTKTQFP; Lucy, Megan, Eve, Jose, Colten in it). Lucy 4 dry run rerun-2026-10-28-172321 green 8/8: knocks 14 reps (OV 22434 impersonation until his ECO relays), wireless churn 21 reps, 232 wireless order rows, pending 67, activation rate 18 reps, order log 116 rows / 13 rep tabs, cancels + disconnects proven zero. Channel set, scheduler ON. Sign-up form says America/Los_Angeles; Ray (super A) is 305 -- timezone/city still to confirm with Megan."
+  },
+  {
+    "key": "joseph-delgado",
+    "report_id": "joseph_delgado_metrics",
+    "label": "Joseph's Local Office",
+    "owner": "Joseph Delgado",
+    "channel_id": "C0C7XP389RN",
+    "channel_name": "goldenview-d2d-sales",
+    "sheet_id": "19rVToh-CEmuK8pc5JONUh-xnXwpRaYHSFrXrBWXec04",
+    "knocks_office": "Joseph Delgado",
+    "ov_account": "20788",
+    "owner_office": "",
+    "business_name": "Golden View Solutions, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-10-29 (Colten: Joe's channel should get the same reports as his). NOT the 'joseph' key -- that one is Joseph Logan (#logan-legacy-sales). Same five NDS boards as atef; knocks left out because his Lucy Eco knock board already posts every 30 min in the same channel. Sheet 'Joseph Delgado - Lucy Metrics' copied from Master Metrics Templates (owner alphaletemarketing@, editor alphaletereporting@). Scheduler OFF until the Lucy 4 dry run shows data."
   }
 ]
