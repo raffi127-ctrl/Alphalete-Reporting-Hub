@@ -146,12 +146,11 @@ PUSH_OFFICES = {
     "trang": ("6564", "dry"),        # Trang Canavan, Fresh Success Marketing
     "tre": ("21182", "dry"),         # Lamar "Tre" Mitchell III, Mission III
     "valeria": ("22850", "dry"),     # Valeria Tristan, Altura Marketing
-    # FIRST STEP OF MOVING ATEF OFF LUCY 2 (Megan 2026-10-28: "the goal is to
-    # get them all on their relay ECO machines" / "start atef's dry run").
-    # His office computer walks 23467's queue and reports numbers, sends
-    # nobody. Lucy 2 keeps pushing him LIVE until this says "live" -- then he
-    # leaves ROTATION_BY_MACHINE in the same release (one office, one machine).
-    "atef": ("23467", "dry"),        # Atef Choudhury, Domin8 Acquisitions
+    # ATEF, LIVE (Megan 2026-10-29: "yes take atef live on his computer").
+    # Dry run 10/29 walked his queue clean; Lucy 2 could not read a single
+    # resume (Indeed walled it 17 times that day), his own computer can. He
+    # left Lucy 2 in the same change (ROTATION_BY_MACHINE).
+    "atef": ("23467", "live"),       # Atef Choudhury, Domin8 Acquisitions
     # Same first step for Khalil (Megan 2026-10-29: "start khalil's dry run").
     # Francia ran finish_setup on his computer 10/29 (login saved 11:45).
     # Lucy 2 keeps pushing 11901 LIVE until this says "live".
