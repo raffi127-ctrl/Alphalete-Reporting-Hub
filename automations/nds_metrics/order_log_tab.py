@@ -76,8 +76,10 @@ def _norm(s) -> str:
 
 def line_row(line: dict, stamp: str) -> List[str]:
     """One tab row from one wireless_pull line (the thread's own row shape)."""
+    import html
     from automations.nds_metrics.order_xlsx import _row_of
-    core = [str(x or "").strip() for x in _row_of(line)]
+    # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
+    core = [html.unescape(str(x or "")).strip() for x in _row_of(line)]
     od = _parse_date(core[2])
     return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp, ""]
 

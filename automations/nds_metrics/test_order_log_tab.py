@@ -24,6 +24,11 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Last Updated"]], "10/29/2026")
         self.assertEqual(r[T._COL["Notes"]], "")
 
+    def test_html_entities_are_unescaped(self):
+        r = T.line_row(line(plan="AT&amp;T Premium", customer="O&#39;BRIEN"), "x")
+        self.assertEqual(r[T._COL["Plan"]], "AT&T Premium")
+        self.assertEqual(r[T._COL["Customer"]], "O'Brien")
+
     def test_key_fallbacks(self):
         self.assertEqual(T._key(T.line_row(line(), "x"))[0], "wo")
         self.assertEqual(T._key(T.line_row(line(wireless_order=""), "x"))[0], "dsi")
