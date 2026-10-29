@@ -44,7 +44,14 @@ TABLEAU = "https://us-east-1.online.tableau.com"
 # The view our Lucys already read for DD by rep (override_bulletin.pulls
 # DD_DETAIL_VIEW). `.csv` on a view URL is Tableau's own data download --
 # no crosstab dialog to drive, which is a lot of browser not shipped here.
-DD_CSV = TABLEAU + "/t/sci/views/DirectDepositICDVIEWVersion2_0/DDDETAILORG.csv"
+#
+# BUT ON A DASHBOARD IT RETURNS THE FIRST SHEET, not the table: Jairo's Mac
+# got DDDETAILORG.csv back as one column, 'ICD.Full Name' (2026-10-29 13:14).
+# So the sheets themselves are tried by their URL names too, ORG first (what
+# our Lucys read), then the owner's own ICD cut; the first that carries
+# week + total wins, and if none does the line says what each one had.
+_DD_BASE = TABLEAU + "/t/sci/views/DirectDepositICDVIEWVersion2_0/"
+DD_CSVS = ("ORGDDDetail", "DDDETAILORG", "ICDddDetail", "DDDETAIL")
 
 COL_OWNER = ("cl.ICD Owner Name", "ICD Owner Name")
 COL_WEEK = ("cl.DD Week", "DD Week")
@@ -153,12 +160,13 @@ def check_line(weeks: Dict[dt.date, Dict[str, float]], seen: Dict) -> str:
 
 
 # --- the browser half (proven on the owner's Mac, not here) ------------------
-def fetch_dd_csv(page) -> str:
+def fetch_dd_csvs(page) -> List[Tuple[str, str]]:
     """Tableau's CSV of the DD view, through this computer's OwnerVille login.
 
     Same two hops our Lucys use: OwnerVille's rqst token, then its p=81 'Login
     to Tableau' link, after which the context holds a Tableau session and the
-    view's .csv comes back with the page's own cookies."""
+    view's .csv comes back with the page's own cookies. Returns
+    [(name, body or 'ERROR ...')] for every candidate in DD_CSVS."""
     from automations.shared import ownerville_knocks as K
 
     rqst = K.capture_rqst(page)
@@ -173,14 +181,21 @@ def fetch_dd_csv(page) -> str:
     if "tableau.com" not in (page.url or "").lower():
         raise RuntimeError("Tableau sign-in did not land (at %s)"
                            % (page.url or "")[:80])
-    resp = page.request.get(DD_CSV, timeout=180_000)
-    body = resp.text()
-    if not resp.ok:
-        raise RuntimeError("Tableau answered %s: %s" % (resp.status, body[:160]))
-    if body.lstrip().startswith("<"):
-        raise RuntimeError("Tableau sent a page, not data: %s"
-                           % re.sub(r"\s+", " ", body)[:160])
-    return body
+    out = []
+    for name in DD_CSVS:
+        try:
+            resp = page.request.get(_DD_BASE + name + ".csv", timeout=180_000)
+            body = resp.text()
+        except Exception as e:  # noqa: BLE001 -- one candidate, not all
+            out.append((name, "ERROR %s" % type(e).__name__))
+            continue
+        if not resp.ok:
+            out.append((name, "ERROR %s" % resp.status))
+        elif body.lstrip().startswith("<"):
+            out.append((name, "ERROR page not data"))
+        else:
+            out.append((name, body))
+    return out
 
 
 def _owner_name(rec: Dict) -> str:
@@ -199,7 +214,7 @@ def check(rec: Dict, log=print) -> Tuple[bool, str]:
             return False, "busy (%s)" % type(e).__name__
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            text = fetch_dd_csv(page)
+            found = fetch_dd_csvs(page)
         except Exception as e:  # noqa: BLE001
             return False, "DD read failed: %s: %s" % (type(e).__name__, str(e)[:240])
         finally:
@@ -207,8 +222,16 @@ def check(rec: Dict, log=print) -> Tuple[bool, str]:
                 ctx.close()
             except Exception:  # noqa: BLE001
                 pass
-    weeks, seen = dd_by_rep(text, _owner_name(rec))
-    return bool(weeks), check_line(weeks, seen)
+    tried = []
+    for name, text in found:
+        if text.startswith("ERROR"):
+            tried.append("%s: %s" % (name, text[6:]))
+            continue
+        weeks, seen = dd_by_rep(text, _owner_name(rec))
+        if weeks:
+            return True, "%s %s" % (name, check_line(weeks, seen))
+        tried.append("%s: %s" % (name, check_line(weeks, seen)))
+    return False, " || ".join(tried)
 
 
 # --- when -------------------------------------------------------------------
@@ -235,9 +258,9 @@ def check_due(state: Dict, now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if not (HOURS[0] <= now.hour < HOURS[1]):
         return False
-    if state.get("dd_ok"):
+    if state.get("dd_ok_v2"):
         return False
-    return (time.time() - float(state.get("dd_tried") or 0)) >= RETRY_HOURS * 3600
+    return (time.time() - float(state.get("dd_tried_v2") or 0)) >= RETRY_HOURS * 3600
 
 
 def run_check(log=print) -> int:
@@ -252,9 +275,9 @@ def run_check(log=print) -> int:
         log("pnl: %s %s" % (rec["office_key"], line))
         if line.startswith("busy"):
             continue                       # knocks had the browser; next tick
-        state["dd_tried"] = time.time()
+        state["dd_tried_v2"] = time.time()
         if ok:
-            state["dd_ok"] = dt.date.today().isoformat()
+            state["dd_ok_v2"] = dt.date.today().isoformat()
         R.report_fault("probe-pnl-dd", "%s: %s" % (_owner_name(rec), line),
                        office_key=rec["office_key"], log=log)
         filed += 1

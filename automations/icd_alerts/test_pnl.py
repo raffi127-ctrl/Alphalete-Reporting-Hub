@@ -44,7 +44,18 @@ class DdByRep(unittest.TestCase):
         noon = dt.datetime(2026, 10, 29, 12)
         self.assertTrue(P.check_due({}, noon))
         self.assertFalse(P.check_due({}, dt.datetime(2026, 10, 29, 3)))
-        self.assertFalse(P.check_due({"dd_ok": "2026-10-29"}, noon))
+        self.assertFalse(P.check_due({"dd_ok_v2": "2026-10-29"}, noon))
+
+
+    def test_check_takes_the_first_sheet_with_data(self):
+        import unittest.mock as m
+        found = [("ORGDDDetail", "ERROR 404"), ("DDDETAILORG", "ICD.Full Name\nX\n"),
+                 ("ICDddDetail", CSV)]
+        with m.patch.object(P, "fetch_dd_csvs", return_value=found),                 m.patch("automations.icd_alerts.ov_read._context") as ctx,                 m.patch("patchright.sync_api.sync_playwright"):
+            ctx.return_value.pages = [object()]
+            ok, line = P.check({"owner": "Jairo Ruiz"})
+        self.assertTrue(ok)
+        self.assertTrue(line.startswith("ICDddDetail DD OK"))
 
 
 if __name__ == "__main__":
