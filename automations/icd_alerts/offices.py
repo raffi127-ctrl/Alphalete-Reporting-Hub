@@ -513,8 +513,11 @@ def _one_per_key(rows: List[Dict]) -> Dict[str, AlertOffice]:
 #
 # ADDED TO the owner, never instead.
 HELPERS = {
-    "khalil": ("U0543NQEWMD",),        # Francia Olivares
-    "khalil-nds": ("U0543NQEWMD",),    # same machine, the live enrolment
+    # Khalil's sign-in / Indeed DMs go to his "Everforward Automations" group:
+    # Francia + the Everforward office account + Khalil + Megan + Eve
+    # (Megan 2026-10-29). Lucy opens that same set of people (plus herself).
+    "khalil": ("U0543NQEWMD", "U0ASETVB6BS"),        # Francia Olivares, Everforward
+    "khalil-nds": ("U0543NQEWMD", "U0ASETVB6BS"),    # same machine, the live enrolment
     "atef": ("U07GR1FUHKL",),          # Cesar Castillo (Megan 2026-10-29: the
                                        # sign-in DM = Megan, Eve, Cesar, Atef)
 }
