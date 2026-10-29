@@ -771,6 +771,40 @@ def report_fault(stage: str, summary: str, detail: str = "",
         return False
 
 
+
+# --- the SaraPlus code, from Lucy 1 (code_answer) ----------------------------
+# The ask rides the fault road, which every relay already takes; the answer
+# needs `code_poll`, which only a redeployed relay knows. An older one answers
+# "bad day" -- read as UNSUPPORTED, so the Mac falls back to the DM it always
+# sent instead of waiting nine minutes for nothing.
+CODE_READY, CODE_WAITING, CODE_NONE, CODE_UNSUPPORTED = (
+    "ready", "waiting", "none", "unsupported")
+
+
+def request_code(since: dt.datetime, office_key: str = "", log=None) -> bool:
+    """Tell Lucy 1 this Mac is on the code screen, asked at `since`."""
+    from automations.icd_alerts import code_answer as CA
+    return report_fault(CA.REQUEST_STAGE, CA.summary_for(since),
+                        log=log, office_key=office_key)
+
+
+def poll_code(since: dt.datetime, office_key: str = "") -> Dict[str, str]:
+    """{'status': ready|waiting|none|unsupported, 'code': ...}. Never raises:
+    a network blip is a 'waiting', and the caller's clock decides when to
+    stop."""
+    try:
+        rec = _endpoint(office_key)
+        body = {"office_key": rec["office_key"], "key": rec["relay_key"],
+                "code_poll": {"since": since.isoformat(timespec="seconds")}}
+        out = json.loads(_post(rec["relay_url"], json.dumps(body).encode("utf-8")))
+    except Exception:  # noqa: BLE001
+        return {"status": CODE_WAITING, "code": ""}
+    if not out.get("ok"):
+        return {"status": CODE_UNSUPPORTED, "code": "",
+                "error": str(out.get("error") or "")[:80]}
+    status = str(out.get("status") or CODE_WAITING)
+    return {"status": status, "code": str(out.get("code") or "")}
+
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          sales: Optional[Dict] = None, dry_run: bool = False,
          office_key: str = "", log=print, credit: Optional[Dict] = None,

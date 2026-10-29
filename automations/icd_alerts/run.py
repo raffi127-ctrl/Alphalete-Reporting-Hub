@@ -402,6 +402,20 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # never told (Eveliz, 2026-10-03..06). As signin-saraplus the poster
         # DMs the owner, their helpers, Megan & Eve, once a day.
         stage = "signin-saraplus" if _is_code_wall(e) else "sweep"
+        # THE CODE CAN COME FROM LUCY NOW (2026-10-29). Before anybody is
+        # told, a detached helper asks Lucy 1 for the emailed code and types
+        # it in itself; only if that cannot finish does it file this same
+        # fault and offer the window -- the old path, minutes later. Once per
+        # RETRY_AFTER_MINUTES, so an office with no forward set up costs one
+        # short detour, not one per sweep.
+        if stage == "signin-saraplus":
+            try:
+                from automations.icd_alerts import sara_code
+                if not sara_code.recently_tried() and sara_code.launch(att_key, log=_log):
+                    sara_read.hold_sara(log=_log)
+                    return 1
+            except Exception:  # noqa: BLE001 — never cost the fault report
+                pass
         # WITH THE NIGHT'S EVIDENCE: how old the session was and what the
         # keep-alive did, so the wall tells idle-expiry from a hard lifetime.
         # EVIDENCE FIRST: the relay keeps 1500 characters of detail and the

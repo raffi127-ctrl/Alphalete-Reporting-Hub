@@ -105,6 +105,10 @@ function doPost(e) {
     // OwnerVille. Before the day check: neither call carries a day.
     if (body.headshot_jobs) return _reply(_headshotJobsFor(office));
     if (body.headshot_result) return _reply(_headshotResult(office, body.headshot_result));
+    // THE SARAPLUS CODE, handed back to the Mac that asked for it
+    // (icd_alerts.code_answer, 2026-10-29). Keyed like every other call, so
+    // an office only ever sees an answer to its own request.
+    if (body.code_poll) return _reply(_codePoll(office, String(body.code_poll.since || '')));
 
     // FAULTS ARE HANDLED BEFORE THE DAY CHECK, because they carry their own
     // day and deliberately send no top-level one -- that is what makes a
@@ -650,6 +654,30 @@ function _mergeMachine(sh, rowNum, machine, machineName, desktop, osName, facts)
     }
   }
   cell.setValue(JSON.stringify(seen));
+}
+
+var CODES_TAB = 'Code Answers';
+
+// 'Code Answers' is written by Lucy 1: Office | Requested At | Code |
+// Written At | Taken At | Status. A code is handed out ONCE and then blanked,
+// so the sheet never keeps a usable one -- they expire in minutes anyway.
+function _codePoll(office, since) {
+  if (!since) return {ok: false, error: 'missing since'};
+  var sh = _book().getSheetByName(CODES_TAB);
+  if (!sh) return {ok: true, status: 'waiting'};
+  var rows = sh.getDataRange().getValues();
+  for (var i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][0]).trim().toLowerCase() !== office) continue;
+    if (String(rows[i][1]).trim() !== since) continue;
+    var status = String(rows[i][5] || '').trim();
+    if (status === 'none') return {ok: true, status: 'none'};
+    var code = String(rows[i][2] || '').trim();
+    if (!code || String(rows[i][4] || '').trim()) return {ok: true, status: 'taken'};
+    sh.getRange(i + 1, 3).setValue('');
+    sh.getRange(i + 1, 5).setValue(new Date().toISOString());
+    return {ok: true, status: 'ready', code: code};
+  }
+  return {ok: true, status: 'waiting'};
 }
 
 function _reply(obj) {

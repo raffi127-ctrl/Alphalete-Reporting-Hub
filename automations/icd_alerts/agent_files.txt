@@ -12,6 +12,8 @@ automations/icd_alerts/sara_read.py
 automations/icd_alerts/box_read.py
 automations/icd_alerts/box_signin.py
 automations/icd_alerts/sara_signin.py
+automations/icd_alerts/sara_code.py
+automations/icd_alerts/code_answer.py
 automations/icd_alerts/ov_signin.py
 automations/icd_alerts/as_signin.py
 automations/icd_alerts/resume_push.py
@@ -39,6 +41,7 @@ automations/icd_alerts/dialogs.py
 automations/icd_alerts/ov_read.py
 automations/shared/ownerville_knocks.py
 automations/shared/saraplus.py
+automations/shared/sara_passcode.py
 automations/shared/servicecloud.py
 automations/shared/name_case.py
 automations/shared/credit_check_line.py

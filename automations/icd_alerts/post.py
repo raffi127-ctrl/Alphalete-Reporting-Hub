@@ -2926,6 +2926,11 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
         # because it is the only road home. Marked as handled, never posted:
         # the answer is read off the ICD Faults tab by whoever asked.
         if str(f["stage"] or "").startswith("probe-"):
+            # A CODE REQUEST is closed by code_answer when it is answered or
+            # runs out -- marking it here would hide it from the one step
+            # that has to read it.
+            if f["stage"] == "probe-code-request":
+                continue
             log("PROBE  %-10s %s -- filed, not posted" % (f["office"], f["stage"]))
             try:
                 tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
@@ -4098,6 +4103,14 @@ def main(argv=None) -> int:
                 run_requested_approvals(send=args.send)
                 notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
+                # BEFORE the faults: a Mac waiting on a SaraPlus code is
+                # waiting on THIS, and every tick it waits is a tick dark.
+                try:
+                    from automations.icd_alerts import code_answer
+                    code_answer.answer_requests(send=args.send)
+                except Exception as e:  # noqa: BLE001 — never cost the alerts
+                    print("could not answer code requests: %s: %s"
+                          % (type(e).__name__, str(e)[:100]))
                 notify_faults(day, send=args.send)
                 close_recovered_faults(day, send=args.send)
                 try:

@@ -70,6 +70,11 @@ AGENT_FILES = [
     # (2026-09-15).
     "automations/icd_alerts/box_signin.py",
     "automations/icd_alerts/sara_signin.py",
+    # The code screen cleared by itself, with the code from Lucy 1
+    # (2026-10-29). code_answer only for its request wording -- the half
+    # that runs on Lucy 1 is imported late and never on a Mac.
+    "automations/icd_alerts/sara_code.py",
+    "automations/icd_alerts/code_answer.py",
     "automations/icd_alerts/ov_signin.py",
     # Resume pushing on the office's own machine: the installer's AppStream
     # check runs it, so it has to be there when setup.py is.
@@ -116,6 +121,7 @@ AGENT_FILES = [
     "automations/icd_alerts/ov_read.py",
     "automations/shared/ownerville_knocks.py",
     "automations/shared/saraplus.py",
+    "automations/shared/sara_passcode.py",
     # My Service Cloud: where a Box office's sales live. Ships for the same
     # reason saraplus.py does -- the read happens on the office's machine.
     "automations/shared/servicecloud.py",
