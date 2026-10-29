@@ -77,5 +77,73 @@ class TheSheetIsReadLessOftenThanTheLoopWakes(unittest.TestCase):
         self.assertEqual(polls, [0, 120, 240])
 
 
+class QueueingOnEveryLucyOpensTheWorkbookOnce(unittest.TestCase):
+    """2026-10-29: `lucy update` queued on 4 Lucys at ~6 reads each, all 429'd
+    on the shared cap, and the command sat 25 minutes queueing nothing."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        mc._WS_CACHE.clear()
+        mc._BOOK_CACHE.clear()
+        self.addCleanup(mc._WS_CACHE.clear)
+        self.addCleanup(mc._BOOK_CACHE.clear)
+        d = tempfile.mkdtemp()
+        p = mock.patch.object(mc, "_LIVE_MEMO", Path(d) / "live.json")
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _client(self, machines):
+        tabs = []
+        for m in machines:
+            w = mock.MagicMock()
+            w.title = mc._control_tab_for(m)
+            w.get_all_values.return_value = [
+                ["Queued At", "Action", "Args", "By", "Status"],
+                ["t", "ping", "", "Megan", "done"]]
+            tabs.append(w)
+        sh = mock.MagicMock()
+        sh.id = "BOOK"
+        sh.worksheets.return_value = tabs
+        sh.worksheet.side_effect = lambda t: next(w for w in tabs if w.title == t)
+        client = mock.MagicMock()
+        client.open_by_key.return_value = sh
+        return client, sh, tabs
+
+    def test_four_lucys_one_open(self):
+        ms = ["Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4"]
+        client, sh, tabs = self._client(ms)
+        with mock.patch.object(mc._fill, "_client", return_value=client):
+            for m in ms:
+                mc.enqueue("update", "", by="Megan", machine=m)
+        self.assertEqual(client.open_by_key.call_count, 1)
+        self.assertEqual(sh.worksheets.call_count, 1)
+        for w in tabs:
+            self.assertEqual(w.append_row.call_count, 1)
+
+    def test_a_proven_tab_is_not_reread_next_time(self):
+        client, sh, tabs = self._client(["Lucy 2"])
+        with mock.patch.object(mc._fill, "_client", return_value=client):
+            mc.enqueue("update", "", by="Megan", machine="Lucy 2")
+            mc._BOOK_CACHE.clear()
+            mc._WS_CACHE.clear()        # a NEW command, same day
+            mc.enqueue("update", "", by="Megan", machine="Lucy 2")
+        self.assertEqual(tabs[0].get_all_values.call_count, 1)
+        self.assertEqual(tabs[0].append_row.call_count, 2)
+
+    def test_an_orphan_is_never_remembered(self):
+        client, sh, tabs = self._client(["Lucy 2"])
+        tabs[0].get_all_values.return_value = [
+            ["Queued At", "Action", "Args", "By", "Status"],
+            ["t", "ping", "", "Megan", "canceled"]]
+        with mock.patch.object(mc._fill, "_client", return_value=client):
+            mc.enqueue("update", "", by="Megan", machine="Lucy 2")
+            first = tabs[0].get_all_values.call_count
+            mc.enqueue("update", "", by="Megan", machine="Lucy 2")
+        self.assertEqual(tabs[0].append_row.call_count, 0)
+        self.assertGreater(first, 0)
+        self.assertEqual(tabs[0].get_all_values.call_count, 2 * first)
+
+
 if __name__ == "__main__":
     unittest.main()

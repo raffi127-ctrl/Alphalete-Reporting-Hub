@@ -9589,9 +9589,9 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     # 'lucy2' still routes to 'Mini Control - Lucy 2'. A genuinely NEW machine
     # bootstraps its own tab the first time ITS poller runs — never from here.
     if machine is not None and not sandbox:
-        sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+        sh, sheets = _book()
         prefix = "{} - ".format(CONTROL_TAB)
-        tabs = {t.title for t in sh.worksheets()
+        tabs = {t.title for t in sheets
                 if t.title == CONTROL_TAB or t.title.startswith(prefix)}
         def _canon_m(s):
             return re.sub(r"[^a-z0-9]", "", s.lower())
@@ -9644,6 +9644,11 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
                 wanted if wanted in tabs else cands[0])
         machine = DEFAULT_MACHINE if target == CONTROL_TAB \
             else target[len(prefix):]
+        # The tab list already holds this tab's handle — _open would spend two
+        # more reads (workbook + tab lookup) fetching the same object.
+        for t in sheets:
+            if t.title == target and target not in _WS_CACHE:
+                _WS_CACHE[target] = (time.time(), t)
     ws = _open(sandbox, machine)
     ws.append_row([_now_tz(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
@@ -9667,6 +9672,65 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
 _RUNNER_STATUSES = ("done", "failed")
 
 
+#: The control workbook + its tab list, opened once per process (2026-10-29).
+#: `lucy update` queues on every Lucy, and each enqueue used to re-open the
+#: workbook, re-list its tabs and re-read the WHOLE tab for proof of life: ~6
+#: reads a Lucy, 24 for one update — on the per-user cap every Lucy shares.
+#: With the cap already full, each of those 24 got a 429, slept and retried, and
+#: `lucy update` sat 25 minutes queueing nothing. Same TTL as _WS_CACHE.
+_BOOK_CACHE: dict = {}
+
+
+def _book():
+    """(Spreadsheet, [Worksheet]) for the control workbook — 2 reads the first
+    time in a process, none after."""
+    hit = _BOOK_CACHE.get("book")
+    if hit and time.time() - hit[0] < _WS_TTL_S:
+        return hit[1], hit[2]
+    sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+    sheets = sh.worksheets()
+    _BOOK_CACHE["book"] = (time.time(), sh, sheets)
+    return sh, sheets
+
+
+#: Tabs a runner has drained, remembered on disk so a queue command doesn't
+#: re-read a whole control tab (hundreds of rows) to re-prove what it proved an
+#: hour ago. Only a YES is remembered: "never drained" and "unreadable" are
+#: always re-checked, so an orphan can never be waved through by the memo.
+_LIVE_MEMO = REPO_ROOT / "output" / ".mini_control_live_tabs.json"
+_LIVE_MEMO_TTL_S = 24 * 3600
+
+
+def _memo_key(sh, title: str):
+    sid = getattr(sh, "id", None)
+    return "{}|{}".format(sid, title) if isinstance(sid, str) else None
+
+
+def _memo_live(key) -> bool:
+    if not key:
+        return False
+    try:
+        seen = json.loads(_LIVE_MEMO.read_text(encoding="utf-8")).get(key)
+        return bool(seen) and time.time() - float(seen) < _LIVE_MEMO_TTL_S
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _memo_save(key) -> None:
+    if not key:
+        return
+    try:
+        try:
+            memo = json.loads(_LIVE_MEMO.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            memo = {}
+        memo[key] = time.time()
+        _LIVE_MEMO.parent.mkdir(parents=True, exist_ok=True)
+        _LIVE_MEMO.write_text(json.dumps(memo), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 #: Seconds to wait before each re-read of a control tab that failed to read.
 _LIVENESS_RETRY_S = (3, 10)
 
@@ -9675,6 +9739,9 @@ def _tab_liveness(sh, title: str):
     """True = a runner has drained this tab, False = none ever has, None = the
     tab could not be read (after retrying — a slow Sheets read is not proof of
     an orphan; 2026-10-26 Lucy 4)."""
+    key = _memo_key(sh, title)
+    if _memo_live(key):
+        return True
     for wait in (0,) + tuple(_LIVENESS_RETRY_S):
         if wait:
             time.sleep(wait)
@@ -9682,8 +9749,11 @@ def _tab_liveness(sh, title: str):
             vals = sh.worksheet(title).get_all_values()
         except Exception:  # noqa: BLE001
             continue
-        return any(len(r) > 4 and str(r[4]).strip().lower() in _RUNNER_STATUSES
+        live = any(len(r) > 4 and str(r[4]).strip().lower() in _RUNNER_STATUSES
                    for r in vals[1:])
+        if live:
+            _memo_save(key)
+        return live
     return None
 
 
@@ -10226,6 +10296,7 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
                 poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach, lane=lane)
             except Exception as e:
                 _WS_CACHE.clear()     # a renamed/re-made tab: open fresh next time
+                _BOOK_CACHE.clear()
                 print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
             _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
         # Drift-immune daily schedule reconcile (no-op except the first poll in the
