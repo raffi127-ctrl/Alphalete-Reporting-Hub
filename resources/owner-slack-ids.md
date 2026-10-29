@@ -29,7 +29,7 @@ When you confirm a new ID, add it here in the same commit.
 | Cyrus Wade | Cyrus's Local Office (ECO `cyrus`) | U06A1QA642X | |
 | Elena Camargo | | U0B1G4T0MUN | |
 | Eveliz Wright | Eveliz's Local Office | U048WU3EUFJ | |
-| Jairo Ruiz | Profits (ECO `jairo15`) | U04Q6T14M34 | |
+| Jairo Ruiz | Profits (ECO `jairo15`) | U0BVCKR63CK | ⚠ Eve 10/29: the right one (jairoruizpmg@gmail.com). Look-alike U04Q6T14M34 "JAIRO RUIZ" (ruizjairo389@gmail.com) is NOT him for tags |
 | Kash (Akashdeep) Rai | Kash's Local Office (ECO `kash`) | U046XBPN0G2 | |
 | Khalil Mansour | Khalil's Local Office (ECO `khalil`) | U045F9JCPJT | |
 | Luke Baldwin | Luke's Local Office (takeoff-b2b) | U0B7HR6TVEE | |
