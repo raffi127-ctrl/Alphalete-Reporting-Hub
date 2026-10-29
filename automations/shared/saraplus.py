@@ -22,6 +22,7 @@ which are not machines we set up.
 """
 from __future__ import annotations
 
+import re
 import datetime as dt
 import time
 from typing import Dict, List, Optional
@@ -620,6 +621,7 @@ def _run_report_once(page, base_url: str, day: dt.date, service: str,
     _set_telerik_date(page, FIELD_START, day)
     _set_telerik_date(page, FIELD_END, day)
     _select_service(page, service)
+    _pick_company_if_asked(page)
     page.click(SUBMIT)
     page.wait_for_selector(grid, timeout=GRID_TIMEOUT_MS)
     page.wait_for_timeout(2000)
@@ -634,6 +636,68 @@ def _run_report_once(page, base_url: str, day: dt.date, service: str,
     if needs_load_click(rows):
         rows = _click_load_records(page, grid, rows)
     return rows
+
+
+# "SELECT COMPANY". Omar's Reporting Hub (2026-10-28) carries a company combo
+# beside the Service one, and its dashboards stayed on "Click here to load
+# records." through every click on the words AND on the real button, while
+# the credit grid showed no reps on a day with four sales. A multi-company
+# (dealer / parent) login needs a company picked before a dashboard has
+# anything to load. Picked by preference words (the office's business name),
+# else the only choice, else the first real choice -- and SAID in the note.
+PREFERRED_COMPANY_WORDS: List[str] = []
+LAST_COMPANY = {"note": ""}
+
+
+def _pick_company_if_asked(page) -> None:
+    try:
+        combos = page.evaluate(
+            """() => Array.from(document.querySelectorAll('input.rcbInput'))
+                 .filter(i => /compan/i.test(i.id || i.name || ''))
+                 .map(i => ({id: i.id, value: (i.value || '').trim()}))""")
+    except Exception as e:  # noqa: BLE001
+        LAST_COMPANY["note"] = "company combo: ? (%s)" % type(e).__name__
+        return
+    if not combos:
+        LAST_COMPANY["note"] = "company combo: none on page"
+        return
+    c = combos[0]
+    if c["value"] and not re.search(r"select", c["value"], re.I):
+        LAST_COMPANY["note"] = "company combo %s already %r" % (c["id"], c["value"])
+        return
+    try:
+        page.click("#" + c["id"])
+        page.wait_for_timeout(800)
+        items = page.evaluate(
+            """() => Array.from(document.querySelectorAll('.rcbList li, [class*="rcbItem"]'))
+                 .map(el => (el.textContent || '').trim()).filter(t => t)""")
+    except Exception as e:  # noqa: BLE001
+        LAST_COMPANY["note"] = "company combo %s: could not open (%s)" % (c["id"], type(e).__name__)
+        return
+    real = [t for t in items if not re.search(r"select", t, re.I)]
+    want = None
+    for t in real:
+        if any(w in t.lower() for w in PREFERRED_COMPANY_WORDS):
+            want = t
+            break
+    if want is None and real:
+        want = real[0]
+    if want is None:
+        LAST_COMPANY["note"] = "company combo %s: no choices (%s)" % (c["id"], ", ".join(items)[:200])
+        return
+    try:
+        picked = page.evaluate(
+            """(want) => {
+                 for (const el of document.querySelectorAll('.rcbList li, [class*="rcbItem"]')) {
+                   if ((el.textContent || '').trim() === want) { el.click(); return true; }
+                 }
+                 return false;
+               }""", want)
+        page.wait_for_timeout(800)
+    except Exception as e:  # noqa: BLE001
+        picked = "error %s" % type(e).__name__
+    LAST_COMPANY["note"] = ("company combo %s was %r; choices [%s]; picked %r (%s)"
+                            % (c["id"], c["value"], ", ".join(real)[:300], want, picked))
 
 
 def needs_load_click(rows: List[List[str]]) -> bool:
@@ -677,8 +741,9 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
         except Exception as e:  # noqa: BLE001
             note.append("no click via %r (%s)" % (sel, type(e).__name__))
             continue
-        # The rows arrive on a postback; poll instead of a fixed pause.
-        for _ in range(12):
+        # The rows arrive on a postback; poll instead of a fixed pause. The
+        # real button gets 45s: Omar's page answers a submit in 20-30s.
+        for _ in range(30 if "input" in sel else 12):
             page.wait_for_timeout(1500)
             try:
                 rows = _grid_rows(page, grid)
@@ -688,7 +753,7 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
                 note.append("rows after click: %d" % len(rows))
                 LAST_LOAD_CLICK["note"] = "; ".join(note)
                 return rows
-        note.append("still the placeholder 18s after the click")
+        note.append("still the placeholder %ds after the click" % (45 if "input" in sel else 18))
     # Playwright's click lands on the text; the handler may sit on an ancestor
     # that the browser's own click() reaches and a pointer event at the text
     # node does not (Omar 2026-10-28: three selector clicks, grid unchanged).

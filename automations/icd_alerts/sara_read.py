@@ -19,6 +19,7 @@ the same, so a change to the site is a change in one file, for all 52 offices.
 """
 from __future__ import annotations
 
+import re
 import datetime as dt
 from typing import Dict, Optional
 
@@ -870,6 +871,10 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
     except Exception as e:  # noqa: BLE001
         out.append("load-records elements: ? (%s)" % type(e).__name__)
     try:
+        out.append(S.LAST_COMPANY.get("note") or "company combo: (not checked)")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         out.append("combos: " + page.evaluate(
             """() => Array.from(document.querySelectorAll('input.rcbInput, input[id*=Company], input[id*=Service], input[id*=Input]'))
                  .map(i => (i.id || i.name) + '=' + String(i.value || '').slice(0, 60)).join(', ')""")[:600])
@@ -953,6 +958,16 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
     # saraplus.pass_timings_summary).
     try:
         S.reset_pass_timings()
+        try:
+            words = []
+            for r in C.enrollments():
+                for f in ("business_name", "owner", "office_key"):
+                    for w in re.split(r"[^a-z0-9]+", str(r.get(f) or "").lower()):
+                        if len(w) > 3 and w not in ("marketing", "management", "group", "solutions"):
+                            words.append(w)
+            S.PREFERRED_COMPANY_WORDS = words
+        except Exception:  # noqa: BLE001
+            pass
     except Exception:  # noqa: BLE001 — instrumentation must never cost a read
         pass
     if signin_in_progress():
