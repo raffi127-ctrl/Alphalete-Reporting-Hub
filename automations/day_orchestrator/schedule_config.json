@@ -15681,7 +15681,7 @@
   "joseph_delgado_metrics": {
    "order": 26.85,
    "machine": "Lucy 4",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Joseph Delgado's Daily Metrics (goldenview-d2d-sales)",
    "source_type": "tableau",
    "data_sources": [
@@ -15714,7 +15714,7 @@
     "type": "manifest",
     "report_id": "joseph_delgado_metrics"
    },
-   "_note": "Office metrics for Joseph Delgado (Golden View, OV 20788, NDS) -> #goldenview-d2d-sales (C0C7XP389RN). Wired by hand 2026-10-29: Colten asked that Joe's channel get the same reports his does. Key joseph-delgado, NOT joseph (= Joseph Logan). Five NDS boards like atef. on_scheduler false until the Lucy 4 dry run shows data on every board; machine Lucy 4 like atef (scheduled report, not a build run).",
+   "_note": "Office metrics for Joseph Delgado (Golden View, OV 20788, NDS) -> #goldenview-d2d-sales (C0C7XP389RN). Wired by hand 2026-10-29: Colten asked that Joe's channel get the same reports his does. Key joseph-delgado, NOT joseph (= Joseph Logan). Five NDS boards like atef. SWITCHED ON 2026-10-29 after the Lucy 4 dry run (rerun-2026-10-29-080941, 7/7 ok): 438 wireless order rows, 146 pending, 8 cancels, 0 disconnects, 26 reps on activation rate, 65 reps on wireless churn (first live run inserts them into the sheet). Machine Lucy 4 like atef (scheduled report, not a build run).",
    "_onboarded": true
   },
   "aplayers_cleanup": {

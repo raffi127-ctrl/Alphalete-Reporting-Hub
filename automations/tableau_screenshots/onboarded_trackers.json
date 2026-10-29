@@ -484,5 +484,25 @@
       "vzftr"
     ],
     "notes": "wired by hand 2026-10-28 (his Lucy ECO enrollment); all 9 trackers like colten; channel_ids filled once his ECO sign-up names the room. | 2026-10-28: ECO sign-up named #westwavesales (C0CCVTKTQFP)."
+  },
+  {
+    "key": "joseph-delgado",
+    "label": "#goldenview-d2d-sales",
+    "owner": "Joseph Delgado",
+    "channel_ids": [
+      "C0C7XP389RN"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "_note": "2026-10-29: Colten asked that Joe's channel get the same reports his does, so this is Colten's exact tracker list. NOT the 'joseph' row (= Joseph Logan, by email)."
   }
 ]
