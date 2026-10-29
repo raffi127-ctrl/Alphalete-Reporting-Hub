@@ -197,5 +197,43 @@ class HeartbeatsHaveTheirOwnBook(unittest.TestCase):
         self.assertEqual(seen, [sjw.SHEET_ID])
 
 
+class AHungOldTabNeverFreezesTheLane(unittest.TestCase):
+    """2026-10-29, first cut-over: the old-tab poll ran inline and a hung
+    AUTOMATION MASTER left jobs 'queued' in Lucy 2's and Lucy 4's own books."""
+
+    def _ws(self, rows=None, hang=False):
+        import threading
+        w = mock.MagicMock()
+        if hang:
+            ev = threading.Event()
+            w.get_all_records.side_effect = lambda: ev.wait(5) or []
+        else:
+            w.get_all_records.return_value = rows or []
+        return w
+
+    def test_a_hung_read_gives_up_fast(self):
+        import time as _t
+        with mock.patch.object(mc, "_open", return_value=self._ws(hang=True)):
+            t0 = _t.monotonic()
+            self.assertFalse(mc._legacy_has_work("Lucy 2", mc.LANE_READ, wait_s=0.2))
+        self.assertLess(_t.monotonic() - t0, 2)
+
+    def test_a_queued_row_for_this_lane_is_work(self):
+        rows = [{"Action": "logtail", "Status": "queued"}]
+        with mock.patch.object(mc, "_open", return_value=self._ws(rows)):
+            self.assertTrue(mc._legacy_has_work("Lucy 2", mc.LANE_READ, wait_s=2))
+
+    def test_another_lanes_row_is_not(self):
+        rows = [{"Action": "update", "Status": "queued"},
+                {"Action": "logtail", "Status": "done"}]
+        with mock.patch.object(mc, "_open", return_value=self._ws(rows)):
+            self.assertFalse(mc._legacy_has_work("Lucy 2", mc.LANE_READ, wait_s=2))
+
+    def test_main_sees_its_update(self):
+        rows = [{"Action": "update", "Status": "queued"}]
+        with mock.patch.object(mc, "_open", return_value=self._ws(rows)):
+            self.assertTrue(mc._legacy_has_work("Lucy 2", mc.LANE_MAIN, wait_s=2))
+
+
 if __name__ == "__main__":
     unittest.main()

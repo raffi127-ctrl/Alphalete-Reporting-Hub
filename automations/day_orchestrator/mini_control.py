@@ -108,6 +108,7 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -547,6 +548,38 @@ def _parse_ts(s: str) -> dt.datetime | None:
 
 #: How often a poller also drains its OLD tab in AUTOMATION MASTER.
 LEGACY_POLL_S = 180
+#: How long a peek at the old tab may take before the lane gives up on it for
+#: this round. The first cut-over (2026-10-29) ran the old-tab poll inline, and
+#: AUTOMATION MASTER — the very file that froze the fleet — hung each lane for
+#: minutes at a time: jobs sat 'queued' in Lucy 2's and Lucy 4's OWN workbooks
+#: while their lanes waited on the old one.
+LEGACY_PEEK_S = 20
+
+
+def _legacy_has_work(machine: str, lane: str, wait_s: float | None = None) -> bool:
+    """Is a row for this lane queued on the OLD tab? Read in a side thread with
+    a hard wait, so a hung AUTOMATION MASTER skips a round instead of freezing
+    the lane. False on a timeout or error — the next round looks again, and
+    the lane's own workbook is never held up by the old one."""
+    box: dict = {}
+
+    def _peek():
+        try:
+            box["rows"] = _open(False, machine, legacy=True).get_all_records()
+        except Exception as e:  # noqa: BLE001
+            box["err"] = e
+    t = threading.Thread(target=_peek, daemon=True)
+    t.start()
+    t.join(LEGACY_PEEK_S if wait_s is None else wait_s)
+    rows = box.get("rows")
+    if rows is None:
+        print("[mini_control] old tab didn't answer in {}s — skipped this round"
+              .format(LEGACY_PEEK_S if wait_s is None else wait_s))
+        return False
+    return any(str(r.get("Status", "")).strip().lower() == "queued"
+               and _lane_owns(r.get("Action", ""), lane,
+                              text_live=(lane != LANE_MAIN))
+               for r in rows)
 
 #: Opened control tabs, by (workbook, tab name): (opened_at, Worksheet). Opening costs TWO
 #: Sheets reads (workbook metadata, then the tab lookup) before the one read
@@ -10376,8 +10409,9 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
                          or time.monotonic() - last_legacy >= LEGACY_POLL_S)):
                 last_legacy = time.monotonic()
                 try:
-                    poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach,
-                              lane=lane, legacy=True)
+                    if _legacy_has_work(mach, lane):
+                        poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach,
+                                  lane=lane, legacy=True)
                 except Exception as e:  # noqa: BLE001
                     print(f"[mini_control] old-tab poll error (continuing): "
                           f"{type(e).__name__}: {str(e)[:160]}")

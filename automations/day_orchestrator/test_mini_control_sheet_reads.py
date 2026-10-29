@@ -58,6 +58,7 @@ class TheSheetIsReadLessOftenThanTheLoopWakes(unittest.TestCase):
             (self.legacy_polls if k.get("legacy") else polls).append(clock["t"])
 
         with mock.patch.object(mc, "poll_once", side_effect=fake_poll), \
+             mock.patch.object(mc, "_legacy_has_work", return_value=True), \
              mock.patch.object(mc, "_drain_text_outbox"), \
              mock.patch.object(mc, "_git_head", return_value=None), \
              mock.patch.object(mc, "_start_text_lane_heartbeat"), \
