@@ -1088,6 +1088,94 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
     return out
 
 
+def build_override_board(cols, crew, today, log=print) -> Path:
+    """NDS Leader Overrides (Carlos 2026-10-29: "make a board that shows an
+    override structure for what a leader would get for people on their
+    team ... 2.5%, 5%, 7.5%, or 10% of all of the revenue that [the
+    trainee] brought in. You would only get an override off of the first
+    gens."). For every tree leader with first-gen trainees: the trainees'
+    activated $ (SaraPlus, SOW base comp, same weekly banding as the
+    Activation Revenue Overview) and the override at each rate."""
+    from automations.att_order_log import payout as ap
+    from automations.box_order_log import png as bpng
+    from automations.team_tree import run as TT
+    from automations.total_knocks import guests as gst
+    soh = load_soh(log=log)
+    if not soh:
+        raise RuntimeError("override board needs the SaraPlus relay")
+    ix, orders, pulled_at = soh
+    ls, le, ts, te = ap.week_bounds(today)
+    earned: Dict[str, dict] = {}
+    for r in orders:
+        rep = _soh_cell(ix, r, "User Name")
+        st = _soh_cell(ix, r, "Wireless Status").lower()
+        act = _parse_date(_soh_cell(ix, r, "Wireless Active Date"))
+        if not rep or act is None or "cancel" in st or "disconnect" in st:
+            continue
+        amt = price_order(ix, r)
+        e = earned.setdefault(rep, {"last": 0.0, "this": 0.0})
+        if ls <= act <= le:
+            e["last"] += amt
+        elif ts <= act <= te:
+            e["this"] += amt
+
+    week, reps, roots, scheduled = TT.build(today)
+
+    def trainee_earned(name, key):
+        t = gst._tokens(name)
+        for rep, e in earned.items():
+            rt = gst._tokens(rep)
+            if gst._subseq(t, rt) or gst._subseq(rt, t):
+                return e[key]
+        return 0.0
+
+    def _table(start, end, key):
+        rows = []
+        for leader in reps:
+            kids = list(leader.children)
+            if not kids:
+                continue
+            base = sum(trainee_earned(k.name, key) for k in kids)
+            rows.append({"rep": f"{leader.name}  ({len(kids)} 1st gen)",
+                         "base": round(base),
+                         "o25": round(base * 0.025),
+                         "o50": round(base * 0.05),
+                         "o75": round(base * 0.075),
+                         "o100": round(base * 0.10)})
+        rows.sort(key=lambda x: (-x["base"], x["rep"].lower()))
+        totals = {k: sum(x[k] for x in rows)
+                  for k in ("base", "o25", "o50", "o75", "o100")}
+        return {"label": ap.label(start, end), "rows": rows,
+                "totals": totals}
+
+    tables = {"last": _table(ls, le, "last"),
+              "this": _table(ts, te, "this")}
+    for key in ("last", "this"):
+        t = tables[key]
+        log(f"[nds] overrides {t['label']}: 1st-gen base "
+            f"${t['totals']['base']:,} -> 2.5% ${t['totals']['o25']:,} / "
+            f"5% ${t['totals']['o50']:,} / 7.5% ${t['totals']['o75']:,} / "
+            f"10% ${t['totals']['o100']:,}")
+    out = OUT_DIR / "nds_override_board.png"
+    saved = list(bpng.COLS)
+    bpng.COLS[:] = [("Leader", "rep", "left"),
+                    ("1st-Gen $", "base", "center"),
+                    ("2.5%", "o25", "center"),
+                    ("5%", "o50", "center"),
+                    ("7.5%", "o75", "center"),
+                    ("10%", "o100", "center")]
+    try:
+        bpng.render(tables, out, money=True,
+                    subtitle="NDS — leader override structure, FIRST-GEN "
+                             "trainees only (team tree), on activated $ by "
+                             "activation week (SaraPlus, SOW base comp). "
+                             f"SaraPlus pulled {pulled_at:%H:%M}.")
+    finally:
+        bpng.COLS[:] = saved
+    log("[nds] override board (tree first-gen x SaraPlus activations)")
+    return out
+
+
 def build_knocks_final(cols, crew, today, log=print) -> Path:
     """Yesterday's LAST knocks board (Carlos 2026-10-28: "the last nds
     knocks board from the day prior should also be posted every morning
@@ -1341,6 +1429,8 @@ SECTIONS = [
      build_pct_on_board),
     ("team_tree", "\U0001F333", "NDS Team Tree",
      build_team_tree),
+    ("override_board", "\U0001FA9C", "NDS Leader Overrides",
+     build_override_board),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
