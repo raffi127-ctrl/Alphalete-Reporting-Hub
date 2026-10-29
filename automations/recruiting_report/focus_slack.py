@@ -50,7 +50,7 @@ FOCUS_DM_RECIPIENTS = {
         "Valeria Zavala":   "U054BLVL94N",
     },
     "Jairo Ruiz": {
-        "Jairo Ruiz":       "U04Q6T14M34",
+        "Jairo Ruiz":       "U0BVCKR63CK",  # Eve 10/29: jairoruizpmg, not look-alike U04Q6T14M34
         "Colten Wright":    "U047M3AAN0G",
         "Analay Ruiz":      "U069URK7752",
     },
