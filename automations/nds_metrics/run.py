@@ -607,7 +607,15 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     try:
         from automations.office_metrics import nds_orderlog as NOL
         path = pull(today)
-        header2, rows2 = NOL.load(path, "Carlos Hidalgo")
+        # NOL.load wants an EXACT normalized owner; Carlos's cell carries
+        # the office suffix, so match the way load_crew does.
+        _all = NOL._read_csv(path)
+        header2 = _all[0] if _all else []
+        _oc = next((i for i, h in enumerate(header2)
+                    if NOL._norm_h(h).startswith("owner")), 0)
+        rows2 = [r for r in _all[1:]
+                 if len(r) > _oc and "CARLOS" in str(r[_oc]).upper()
+                 and "HIDALGO" in str(r[_oc]).upper()]
         if rows2:
             x, n = NOL._render_order_log("Carlos Hidalgo", header2, rows2,
                                          today, OUT_DIR)
