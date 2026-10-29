@@ -80,6 +80,12 @@ class Merge(unittest.TestCase):
         self.assertEqual(res["aged_out"], 1)
         self.assertEqual(len(res["rows"]), 1)
 
+    def test_existing_rows_without_a_line_number_are_dropped(self):
+        bad = T.line_row(line(line_no="", customer="Luis Martinez"), "10/29/2026")
+        res = T.merge([bad], [line()], today=TODAY)
+        self.assertEqual(len(res["rows"]), 1)
+        self.assertEqual(res["rows"][0][T._COL["Line"]], "1")
+
     def test_protected(self):
         self.assertNotIn(T.TAB, T.PROTECTED_TABS)
 

@@ -107,6 +107,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
     merged: "collections.OrderedDict[tuple, List[str]]" = collections.OrderedDict()
     for row in existing:
         row = list(row) + [""] * (len(HEADERS) - len(row))
+        if not str(row[_COL["Line"]]).strip():
+            continue          # a header-shaped row that slipped in earlier: never carried
         if (row[_COL["Customer"]] or row[_COL["Wireless Order #"]]
                 or row[_COL["DSI #"]]):
             merged[_key(row)] = row
