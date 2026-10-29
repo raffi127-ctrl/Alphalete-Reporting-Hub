@@ -23,7 +23,10 @@ import sys
 from typing import Dict, List
 
 OFFICES = [
+    # "Jairo J Ruiz Busquet" (office_metrics' knocks_office) is "name not
+    # found" in Office Access on 10/29 -- try the plain name too.
     ("Jairo", "Jairo J Ruiz Busquet"),
+    ("Jairo2", "Jairo Ruiz"),
     ("Drew", "Precision management Drew Tepper"),
     ("Omar", "Omar Mohamad"),
     ("Salik (Omar's old office)", "Salik Mallick"),
