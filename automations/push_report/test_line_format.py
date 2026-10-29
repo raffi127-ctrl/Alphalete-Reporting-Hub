@@ -92,7 +92,14 @@ class TheLine(unittest.TestCase):
                                     "start": 120, "end": 7, "sent_run": 3,
                                     "sent_today": 30, "walled": False,
                                     "at": "20:33"}),
-                        "9", "", now.strftime("%m/%d/%Y") + " 20:33:00"]]
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:33:00"], [
+                        # Atef's 23467 from his own computer since 2026-10-29.
+                        "atef", stamp, pr.RELAY_STATS_STAGE, "push stats",
+                        json.dumps({"office": "23467", "live": True,
+                                    "start": 29, "end": 2, "sent_run": 2,
+                                    "sent_today": 27, "walled": False,
+                                    "at": "20:36"}),
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:36:00"]]
                 if self.tab in skip_rows:
                     return []
                 at, queue, sent = rows[self.tab]
@@ -132,7 +139,7 @@ class TheLine(unittest.TestCase):
         self.assertEqual(got, "\n".join([
             "*Push report 8:37 PM*",
             "Carlos 11580 (his computer): 30 pushed · 7 left @ 8:33 PM",
-            "Atef 23467: 27 pushed · 2 left @ 8:36 PM",
+            "Atef 23467 (his computer): 27 pushed · 2 left @ 8:36 PM",
             "Khalil 11901: 109 pushed · 2 left @ 8:29 PM",
             ":x: Raf main 11280: 34 pushed · 114 left @ 8:21 PM",
             ":x: Raf 2nd funnel 23965: 0 pushed · 33 left @ 8:28 PM",
@@ -161,7 +168,7 @@ class BacklogFlag(unittest.TestCase):
 
     def test_ten_or_under_does_not(self):
         got = TheLine()._render(dt.datetime(2026, 9, 24, 20, 37))
-        for name in ("Carlos 11580 (his computer)", "Atef 23467",
+        for name in ("Carlos 11580 (his computer)", "Atef 23467 (his computer)",
                      "Khalil 11901"):
             self.assertIn("\n%s:" % name, got)
             self.assertNotIn(":x: %s" % name, got)
