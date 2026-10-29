@@ -1089,93 +1089,120 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
 
 
 def build_override_board(cols, crew, today, log=print) -> Path:
-    """NDS Leader Overrides (Carlos 2026-10-29: "make a board that shows an
-    override structure for what a leader would get for people on their
-    team ... 2.5%, 5%, 7.5%, or 10% of all of the revenue that [the
-    trainee] brought in. You would only get an override off of the first
-    gens."). For every tree leader with first-gen trainees: the trainees'
-    activated $ (SaraPlus, SOW base comp, same weekly banding as the
-    Activation Revenue Overview) and the override at each rate."""
-    from automations.att_order_log import payout as ap
-    from automations.box_order_log import png as bpng
+    """NDS Leader Overrides, SECTIONS layout (Carlos 2026-10-29): one
+    section per tree leader with first-gen trainees. Each trainee row =
+    what the DD actually PAID them for the latest settled week (the
+    Scoutly RAW tab, NDS Wireless campaign — SaraPlus statuses lag the
+    per-line payouts, so the deposit is the only source that matches
+    itself), then the leader's total with the override at 2.5/5/7.5/10%.
+    First generation only."""
+    import collections
+    from PIL import Image, ImageDraw
+    from automations.recruiting_report.fill import open_by_key
+    from automations.sales_boards.render import _title_font, title_bar
     from automations.team_tree import run as TT
     from automations.total_knocks import guests as gst
-    soh = load_soh(log=log)
-    if not soh:
-        raise RuntimeError("override board needs the SaraPlus relay")
-    ix, orders, pulled_at = soh
-    ls, le, ts, te = ap.week_bounds(today)
-    earned: Dict[str, dict] = {}
-    for r in orders:
-        rep = _soh_cell(ix, r, "User Name")
-        st = _soh_cell(ix, r, "Wireless Status").lower()
-        act = _parse_date(_soh_cell(ix, r, "Wireless Active Date"))
-        if not rep or act is None or "cancel" in st or "disconnect" in st:
-            continue
-        amt = price_order(ix, r)
-        e = earned.setdefault(rep, {"last": 0.0, "this": 0.0})
-        if ls <= act <= le:
-            e["last"] += amt
-        elif ts <= act <= te:
-            e["this"] += amt
 
-    week, reps, roots, scheduled = TT.build(today)
+    sh = open_by_key("1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY")
+    raw = next(w for w in sh.worksheets()
+               if w.title.strip().lower() == "raw")
+    vals = raw.get_all_values()
+    hix = {h: k for k, h in enumerate(vals[0])}
+    weeks = [r[0].strip() for r in vals[1:] if r and r[0].strip()]
+    week = weeks[-1] if weeks else "?"
 
-    def trainee_earned(name, key):
+    def money(v):
+        try:
+            return float(str(v).replace("$", "").replace(",", "") or 0)
+        except ValueError:
+            return 0.0
+
+    paid = collections.defaultdict(float)
+    for r in vals[1:]:
+        if (r and r[0].strip() == week
+                and r[hix["Campaign"]].strip() == "NDS Wireless"):
+            paid[r[hix["Rep Name"]].strip()] += money(
+                r[hix["Total $ to ICD"]])
+    log(f"[nds] overrides: DD week {week!r}, {len(paid)} paid rep(s), "
+        f"${sum(paid.values()):,.0f} NDS total")
+
+    _wk, reps, _roots, _sched = TT.build(today)
+
+    def paid_for(name):
         t = gst._tokens(name)
-        for rep, e in earned.items():
+        for rep, amt in paid.items():
             rt = gst._tokens(rep)
             if gst._subseq(t, rt) or gst._subseq(rt, t):
-                return e[key]
+                return amt
         return 0.0
 
-    def _table(start, end, key):
-        rows = []
-        for leader in reps:
-            kids = list(leader.children)
-            if not kids:
-                continue
-            base = sum(trainee_earned(k.name, key) for k in kids)
-            rows.append({"rep": f"{leader.name}  ({len(kids)} 1st gen)",
-                         # bpng's row banding reads r["posted"] no matter
-                         # what COLS say — feed it the base $
-                         "posted": round(base),
-                         "base": round(base),
-                         "o25": round(base * 0.025),
-                         "o50": round(base * 0.05),
-                         "o75": round(base * 0.075),
-                         "o100": round(base * 0.10)})
-        rows.sort(key=lambda x: (-x["base"], x["rep"].lower()))
-        totals = {k: sum(x[k] for x in rows)
-                  for k in ("base", "o25", "o50", "o75", "o100")}
-        return {"label": ap.label(start, end), "rows": rows,
-                "totals": totals}
+    sections = []
+    for leader in reps:
+        kids = list(leader.children)
+        if not kids:
+            continue
+        rows = [(k.name, paid_for(k.name)) for k in kids]
+        rows.sort(key=lambda x: -x[1])
+        total = sum(v for _n, v in rows)
+        sections.append((leader.name, rows, total))
+    sections.sort(key=lambda s: -s[2])
 
-    tables = {"last": _table(ls, le, "last"),
-              "this": _table(ts, te, "this")}
-    for key in ("last", "this"):
-        t = tables[key]
-        log(f"[nds] overrides {t['label']}: 1st-gen base "
-            f"${t['totals']['base']:,} -> 2.5% ${t['totals']['o25']:,} / "
-            f"5% ${t['totals']['o50']:,} / 7.5% ${t['totals']['o75']:,} / "
-            f"10% ${t['totals']['o100']:,}")
+    # ---------------- render: one table per leader, stacked ----------
+    S = 2
+    COLW = [230 * S, 95 * S, 80 * S, 80 * S, 80 * S, 80 * S]
+    W = sum(COLW)
+    ROW = 26 * S
+    f_head = _title_font(13 * S)
+    f_cell = _title_font(12 * S)
+    HEADS = ["First Gen", "Paid $", "2.5%", "5%", "7.5%", "10%"]
+    NAVY, LBLUE, GREY = (46, 84, 150), (178, 203, 233), (229, 229, 229)
+
+    def table_height(n_rows):
+        return ROW * (1 + n_rows + 1) + 14 * S
+
+    H = 60 * S + sum(table_height(len(rows)) + 16 * S
+                     for _l, rows, _t in sections)
+    img = Image.new("RGB", (W + 24 * S, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    y = 8 * S
+    d.text((12 * S, y),
+           f"NDS Leader Overrides — DD WE {week} (what the deposit paid "
+           "each first gen) x 2.5% / 5% / 7.5% / 10%",
+           font=f_cell, fill=(90, 90, 90))
+    y += 26 * S
+
+    def row_out(cells, y, bg, bold=False):
+        x = 12 * S
+        for (val, w) in zip(cells, COLW):
+            d.rectangle([x, y, x + w, y + ROW], fill=bg,
+                        outline=(120, 120, 120))
+            d.text((x + 6 * S, y + 5 * S), str(val),
+                   font=f_head if bold else f_cell, fill=(20, 20, 20))
+            x += w
+        return y + ROW
+
+    for leader, rows, total in sections:
+        d.rectangle([12 * S, y, 12 * S + W, y + ROW], fill=NAVY)
+        d.text((18 * S, y + 5 * S),
+               f"{leader}  —  {len(rows)} first gen", font=f_head,
+               fill=(255, 255, 255))
+        y += ROW
+        y = row_out(HEADS, y, LBLUE, bold=True)
+        for name, amt in rows:
+            y = row_out([name, f"${amt:,.0f}", f"${amt*.025:,.0f}",
+                         f"${amt*.05:,.0f}", f"${amt*.075:,.0f}",
+                         f"${amt*.10:,.0f}"], y, (255, 255, 255))
+        y = row_out([f"{leader.split()[0].upper()} TOTAL",
+                     f"${total:,.0f}", f"${total*.025:,.0f}",
+                     f"${total*.05:,.0f}", f"${total*.075:,.0f}",
+                     f"${total*.10:,.0f}"], y, GREY, bold=True)
+        y += 16 * S
     out = OUT_DIR / "nds_override_board.png"
-    saved = list(bpng.COLS)
-    bpng.COLS[:] = [("Leader", "rep", "left"),
-                    ("1st-Gen $", "base", "center"),
-                    ("2.5%", "o25", "center"),
-                    ("5%", "o50", "center"),
-                    ("7.5%", "o75", "center"),
-                    ("10%", "o100", "center")]
-    try:
-        bpng.render(tables, out, money=True,
-                    subtitle="NDS — leader override structure, FIRST-GEN "
-                             "trainees only (team tree), on activated $ by "
-                             "activation week (SaraPlus, SOW base comp). "
-                             f"SaraPlus pulled {pulled_at:%H:%M}.")
-    finally:
-        bpng.COLS[:] = saved
-    log("[nds] override board (tree first-gen x SaraPlus activations)")
+    img.crop((0, 0, img.width, min(img.height, y + 8 * S))).save(out)
+    for leader, rows, total in sections:
+        log(f"[nds] overrides {leader}: 1st-gen paid ${total:,.0f} -> "
+            f"2.5% ${total*.025:,.0f} / 5% ${total*.05:,.0f} / "
+            f"7.5% ${total*.075:,.0f} / 10% ${total*.10:,.0f}")
     return out
 
 
