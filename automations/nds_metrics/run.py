@@ -1137,6 +1137,9 @@ def build_override_board(cols, crew, today, log=print) -> Path:
                 continue
             base = sum(trainee_earned(k.name, key) for k in kids)
             rows.append({"rep": f"{leader.name}  ({len(kids)} 1st gen)",
+                         # bpng's row banding reads r["posted"] no matter
+                         # what COLS say — feed it the base $
+                         "posted": round(base),
                          "base": round(base),
                          "o25": round(base * 0.025),
                          "o50": round(base * 0.05),
