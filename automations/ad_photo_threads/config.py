@@ -358,9 +358,10 @@ _MORE = [
     # Romina, Lucia F. (ARS). Photos channel created by Eve 10/5.
     # Camila 10/29: the room moved to #18404-south-shore-consulting-group-inc-
     # eveliz-wright (C0C8MSC33S6) -- its FIRST ROUND THREADs start 10/27; the
-    # old C0C5TPWLR2R's last one is 10/26.
+    # old C0C5TPWLR2R's last one is 10/26. Both read (like Rashad), so the
+    # weekly re-post keeps the days still in the old room.
     ("eveliz", "Eveliz Wright", SOUTH_SHORE, "Eveliz Wright", "18404", "Eveliz Wright",
-     "C0C8MSC33S6", "C0C6VCLRAUS", r"first\s*round\s*thread"),
+     ["C0C8MSC33S6", "C0C5TPWLR2R"], "C0C6VCLRAUS", r"first\s*round\s*thread"),
     # Jamis Garay (Carlos 10/6). Naiara posts ":m:*MIDSPIRE - 1st ROUNDS -
     # 10/05*" in #jamis-office every day; the "*EOD REPORT - 10/05*" that
     # follows doesn't match. Photos channel created 10/6.
