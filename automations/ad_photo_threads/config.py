@@ -473,6 +473,7 @@ _LIVE = {
     "jennifer",                        # 10/22: 10/1-10/22 loaded, 16 threads, marks on
     "joshua",                          # 10/22: 10/1-10/22 loaded, 9 threads, 60 photos, marks on
     "omar",                            # 10/19: 10/7-10/19 loaded from Lucy 1, 9 threads, Eastern
+    "frank",                           # 10/29: 10/1-10/29 loaded from Lucy 1, Eastern (Eve: "dejalo corriendo diario")
 }
 
 # Spellings an office confirmed are one ad, {typed title: the ad's title}.
