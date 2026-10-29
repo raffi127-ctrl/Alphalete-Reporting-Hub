@@ -1714,7 +1714,17 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
     launch = [chrome, f"--user-data-dir={CDP_PROFILE}", "--profile-directory=Default",
               f"--remote-debugging-port={CDP_PORT}", "--no-first-run",
               "--no-default-browser-check", "--disable-sync", "--restore-last-session=false",
-              "--disable-session-crashed-bubble", "--disable-infobars", url]
+              "--disable-session-crashed-bubble", "--disable-infobars"]
+    # BACKGROUND MODE (Megan's laptop, 2026-10-29): off-screen, and not slowed
+    # down for being off-screen (the relay's flags). The applicant_push focus
+    # guard hides it whenever it still comes forward.
+    import os as _os_bg
+    if _os_bg.environ.get("APPLICANT_PUSH_BACKGROUND") == "1":
+        launch += ["--window-position=-3000,-3000", "--window-size=1400,900",
+                   "--disable-backgrounding-occluded-windows",
+                   "--disable-renderer-backgrounding",
+                   "--disable-background-timer-throttling"]
+    launch.append(url)
     # start_new_session: give Chrome its OWN process group (2026-09-22). launchd
     # kills whatever is left in a job's process group when the job's main process
     # exits, so a Chrome launched as a child of the tick died the moment the tick

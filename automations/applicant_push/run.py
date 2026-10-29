@@ -120,6 +120,38 @@ def _run_stage(name: str, work):
     applicant is touched, so a fresh-profile retry is safe and self-heals. Returns
     ``work``'s value, or None if the session never established after all retries
     (the other stage still runs — a batch session failure never blocks leftovers)."""
+    guard = _background_guard()
+    try:
+        return _run_stage_inner(name, work)
+    finally:
+        if guard is not None:
+            guard.stop()
+
+
+def _background_guard():
+    """APPLICANT_PUSH_BACKGROUND=1 -- a computer a PERSON is using (Megan's
+    laptop, 2026-10-29: "we can run it from this machine right now as long as
+    it's in the background"). Every resume read calls bring_to_front, which
+    pulls this Chrome in front of whatever she is doing; the relay agent's
+    focus guard hides it again the moment it does (Carlos's computer since
+    10/21). Only THIS push's Chrome is hidden, by its own profile path -- never
+    her own Chrome. Off everywhere else: the Lucys have nobody to disturb."""
+    if os.environ.get("APPLICANT_PUSH_BACKGROUND") != "1":
+        return None
+    try:
+        from automations.icd_alerts import resume_push as _relay
+        _relay.PROFILE_DIR = rp.CDP_PROFILE
+        g = _relay._FocusGuard().start()
+        g.hold()
+        rp._log("[push] background mode: this push's Chrome is kept out of "
+                "the way (%s)" % rp.CDP_PROFILE)
+        return g
+    except Exception as e:  # noqa: BLE001 -- a visible window is not a failure
+        rp._log("[push] background guard unavailable: %s" % e)
+        return None
+
+
+def _run_stage_inner(name: str, work):
     for attempt in range(1, MAX_SESSION_ATTEMPTS + 1):
         try:
             with rp.warm_appstream_cdp_page(diag_tab=DIAG_TAB) as (page, ctx, net):
