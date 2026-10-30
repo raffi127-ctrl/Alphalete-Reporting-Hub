@@ -139,6 +139,12 @@ AGENT_FILES = [
     "automations/headshots/ov_upload.py",
     # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
     "automations/icd_alerts/pnl.py",
+    # The PNL's Apex half: the owner's one sign-in window, and Carlos's
+    # export shipped whole (stdlib at the top; its Google writes are never
+    # called on an office Mac).
+    "automations/icd_alerts/apex_signin.py",
+    "automations/carlos_payroll_pull/__init__.py",
+    "automations/carlos_payroll_pull/run.py",
     # Whether this Mac can read the owner's SaraPlus code texts (Eve 2026-10-29).
     "automations/icd_alerts/messages_probe.py",
 ]

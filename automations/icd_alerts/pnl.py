@@ -19,10 +19,17 @@ STEP ONE IS THE CHECK, and it is all this file does today. Our Lucys reach the
 DD with Raf's login, which sees everybody; whether an OWNER's login sees its
 own rows in the same view was never tried. So on an office in PNL_KEYS this
 reads the view once, files what it saw as a `probe-pnl-dd` fault (filed in the
-Faults tab, never posted -- see post.notify_faults), and stops. Apex and the
-sheet come after that answer.
+Faults tab, never posted -- see post.notify_faults), and stops.
 
-    python -m automations.icd_alerts.pnl --check      # run the check now
+STEP TWO IS APEX (DD proven on Jairo's Mac 2026-10-29: $89,515.91, 49 reps,
+WE 10/25, same as Lucy 3). Once the owner signs into Apex in Lucy's window
+(apex_signin; autoprompt puts it up when he is at the Mac), the newest pay
+period is exported to this computer and matched to the DD by rep name; the
+`probe-pnl-apex` line says how many matched and who did not. The sheet comes
+after that.
+
+    python -m automations.icd_alerts.pnl --check      # run the DD check now
+    python -m automations.icd_alerts.pnl --apex       # run the Apex check now
 """
 from __future__ import annotations
 
@@ -236,6 +243,12 @@ def _owner_name(rec: Dict) -> str:
 def check(rec: Dict, log=print) -> Tuple[bool, str, str]:
     """Read the DD once on this computer's OwnerVille browser. Returns
     (worked, one line, every candidate's full column list)."""
+    ok, line, cols, _ = read_dd(rec, log=log)
+    return ok, line, cols
+
+
+def read_dd(rec: Dict, log=print):
+    """check(), plus the weeks themselves: (ok, line, cols, {week: {rep: $}})."""
     from patchright.sync_api import sync_playwright
     from automations.icd_alerts import ov_read
 
@@ -243,13 +256,13 @@ def check(rec: Dict, log=print) -> Tuple[bool, str, str]:
         try:
             ctx = ov_read._context(p, True)
         except Exception as e:  # noqa: BLE001 -- profile busy: knocks running
-            return False, "busy (%s)" % type(e).__name__, ""
+            return False, "busy (%s)" % type(e).__name__, "", {}
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             found = fetch_dd_csvs(page)
         except Exception as e:  # noqa: BLE001
             return (False, "DD read failed: %s: %s"
-                    % (type(e).__name__, str(e)[:240]), "")
+                    % (type(e).__name__, str(e)[:240]), "", {})
         finally:
             try:
                 ctx.close()
@@ -263,9 +276,135 @@ def check(rec: Dict, log=print) -> Tuple[bool, str, str]:
         weeks, seen = dd_by_rep(text, _owner_name(rec))
         cols.append("%s: %s" % (name, " | ".join(seen["columns"])))
         if weeks:
-            return True, "%s %s" % (name, check_line(weeks, seen)), "\n".join(cols)
+            return (True, "%s %s" % (name, check_line(weeks, seen)),
+                    "\n".join(cols), weeks)
         tried.append("%s: %s" % (name, check_line(weeks, seen)))
-    return False, " || ".join(tried), "\n".join(cols)
+    return False, " || ".join(tried), "\n".join(cols), {}
+
+
+# --- Apex: what each rep got paid (NEVER leaves this computer) --------------
+# The export is Carlos's (carlos_payroll_pull, shipped whole): same Payroll
+# Entry, same Export button, in Lucy's own Apex profile (apex_signin). It is
+# saved under PNL_DIR on this Mac and nowhere else. What the relay hears is
+# the pay period, how many people, and which DD reps were or were not found
+# by name -- never an amount.
+PNL_DIR = C.APP_DIR / "pnl"
+APEX_SECTIONS = ("Sales Reps", "Contractors")
+APEX_RETRY_MINUTES = 60   # signed out: ask again hourly, not every tick
+
+
+def apex_pay(text: str):
+    """((start, end), {name: gross pay}) for the Sales Reps and Contractors
+    sections of an Apex export."""
+    per, sec, hdr, out = None, None, None, {}
+    for line in text.lstrip("﻿").splitlines():
+        t = line.strip()
+        if t.startswith("Pay Period,"):
+            try:
+                a, b = t.split(",", 1)[1].split(" - ")
+                per = tuple(dt.datetime.strptime(x.strip().strip('"'),
+                                                 "%m/%d/%Y").date()
+                            for x in (a, b))
+            except ValueError:
+                pass
+        elif t in ("Owner", "Office Admins", "Sales Reps", "Contractors"):
+            sec, hdr = t, None
+        elif t.startswith("Total,") or t.startswith("Company Total"):
+            sec, hdr = None, None
+        elif sec and hdr is None and t.startswith("First Name"):
+            hdr = next(csv.reader([t]))
+        elif sec in APEX_SECTIONS and hdr and t:
+            d = dict(zip(hdr, next(csv.reader([t]))))
+            name = ("%s %s" % ((d.get("First Name") or "").strip(),
+                               (d.get("Last Name") or "").strip())).strip()
+            if name:
+                out[name.title()] = out.get(name.title(), 0.0) + _num(
+                    d.get("Gross Pay"))
+    return per, out
+
+
+def _first_last(name: str) -> str:
+    w = _norm(name).split()
+    return "%s %s" % (w[0], w[-1]) if len(w) > 1 else " ".join(w)
+
+
+def match_reps(dd_reps, apex_names) -> Tuple[List[str], List[str], List[str]]:
+    """(matched DD reps, DD reps not in Apex, Apex people not in the DD).
+    Full name first, then first + last (Tableau keeps middle names)."""
+    full = {_norm(n): n for n in apex_names}
+    fl = {_first_last(n): n for n in apex_names}
+    used, hit, miss = set(), [], []
+    for r in sorted(dd_reps):
+        if r == NO_REP:
+            continue
+        a = full.get(_norm(r)) or fl.get(_first_last(r))
+        if a:
+            hit.append(r)
+            used.add(a)
+        else:
+            miss.append(r)
+    return hit, miss, sorted(set(apex_names) - used)
+
+
+def apex_line(per, pay: Dict[str, float], weeks) -> str:
+    """Counts and names only -- no money (the payroll stays on this Mac)."""
+    span = ("%s-%s" % (per[0].strftime("%m/%d"), per[1].strftime("%m/%d"))
+            if per else "?")
+    line = "Apex OK: period %s, %d people paid" % (span, len(pay))
+    dd = weeks.get(per[1]) if (per and weeks) else None
+    if dd is None and weeks:
+        line += "; no DD week ending %s (DD has %s)" % (
+            per[1] if per else "?",
+            ", ".join(w.isoformat() for w in sorted(weeks, reverse=True)[:3]))
+    elif dd is not None:
+        hit, miss, extra = match_reps(dd, pay)
+        line += "; DD WE %s reps found in Apex %d/%d" % (
+            per[1].isoformat(), len(hit), len(hit) + len(miss))
+        if miss:
+            line += "; DD not in Apex: %s" % ", ".join(miss)[:300]
+        if extra:
+            line += "; Apex not in DD: %s" % ", ".join(extra)[:300]
+    return line
+
+
+def read_apex(log=print):
+    """Export the newest finished pay period in Lucy's Apex profile.
+    ('ok', path) / ('signed out', None) / ('busy ...', None) / ('failed ...', None)."""
+    from patchright.sync_api import sync_playwright
+    from automations.carlos_payroll_pull import run as AP
+    from automations.icd_alerts import apex_signin as AS
+
+    if AS.signin_open():
+        return "busy (sign-in window open)", None
+    if not AS.APEX_PROFILE_DIR.exists():
+        return "signed out", None
+    PNL_DIR.mkdir(parents=True, exist_ok=True)
+    AP.OUT_DIR = PNL_DIR            # Carlos's default is his own Mac's folder
+    with sync_playwright() as p:
+        try:
+            ctx = p.chromium.launch_persistent_context(
+                str(AS.APEX_PROFILE_DIR), headless=True, args=["--disable-sync"])
+        except Exception as e:  # noqa: BLE001 -- profile held
+            return "busy (%s)" % type(e).__name__, None
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                AP.goto_payroll_entry(page)
+            except SystemExit:      # its "session expired" -- the login form
+                return "signed out", None
+            today = dt.date.today()
+            done = [pp for pp in AP.list_periods(page) if pp[2] < today]
+            if not done:
+                return "failed: no finished pay period in the list", None
+            idx, _, end = done[0]
+            return "ok", AP.export_period(page, idx, end)
+        except Exception as e:  # noqa: BLE001
+            return "failed: %s: %s" % (type(e).__name__, str(e)[:200]), None
+        finally:
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # --- when -------------------------------------------------------------------
@@ -297,6 +436,57 @@ def check_due(state: Dict, now: Optional[dt.datetime] = None) -> bool:
     return (time.time() - float(state.get("dd_tried_v4") or 0)) >= RETRY_HOURS * 3600
 
 
+def apex_due(state: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Apex after the DD is proven; hourly while it is not signed in (each
+    try may put the sign-in window up, so never faster than that)."""
+    now = now or dt.datetime.now()
+    if not (HOURS[0] <= now.hour < HOURS[1]):
+        return False
+    if not state.get("dd_ok_v4") or state.get("apex_ok_v1"):
+        return False
+    return (time.time() - float(state.get("apex_tried_v1") or 0)
+            ) >= APEX_RETRY_MINUTES * 60
+
+
+def run_apex_check(log=print) -> int:
+    """Export the newest pay period, match it to the DD by name, and file
+    what was found as `probe-pnl-apex` -- counts and names, never money."""
+    from automations.icd_alerts import relay as R
+
+    state = _load()
+    filed = 0
+    for rec in C.active_enrollments():
+        if not wanted(rec):
+            continue
+        status, path = read_apex(log=log)
+        if status.startswith("busy"):
+            log("pnl: %s apex %s" % (rec["office_key"], status))
+            continue
+        state["apex_tried_v1"] = time.time()
+        if status == "signed out":
+            from automations.icd_alerts import autoprompt as AU
+            shown = AU.offer("apex", log=log)
+            line = ("Apex not signed in on this computer yet (sign-in window %s)"
+                    % ("opened" if shown else "not opened: nobody at the Mac"))
+        elif status != "ok":
+            line = "Apex " + status
+        else:
+            per, pay = apex_pay(path.read_text(encoding="utf-8-sig",
+                                               errors="replace"))
+            _, _, _, weeks = read_dd(rec, log=log)
+            line = apex_line(per, pay, weeks)
+            # Done only once the names were matched too: a DD read that lost
+            # the browser to knocks tries again within the hour.
+            if pay and weeks:
+                state["apex_ok_v1"] = dt.date.today().isoformat()
+        log("pnl: %s %s" % (rec["office_key"], line))
+        R.report_fault("probe-pnl-apex", "%s: %s" % (_owner_name(rec), line),
+                       office_key=rec["office_key"], log=log)
+        filed += 1
+    _save(state)
+    return filed
+
+
 def run_check(log=print) -> int:
     from automations.icd_alerts import relay as R
 
@@ -326,19 +516,28 @@ def maybe_run(log=print) -> bool:
         return False
     if not any(wanted(r) for r in C.active_enrollments()):
         return False
-    if not check_due(_load()):
-        return False
-    run_check(log=log)
-    return True
+    state = _load()
+    if check_due(state):
+        run_check(log=log)
+        return True
+    if apex_due(state):
+        run_apex_check(log=log)
+        return True
+    return False
 
 
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="run the DD check now")
+    ap.add_argument("--apex", action="store_true",
+                    help="run the Apex check now")
     a = ap.parse_args(argv)
     if a.check:
         print("filed %d check(s)" % run_check())
+        return 0
+    if a.apex:
+        print("filed %d check(s)" % run_apex_check())
         return 0
     ap.print_help()
     return 2

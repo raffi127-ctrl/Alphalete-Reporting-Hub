@@ -88,5 +88,55 @@ class DdByRep(unittest.TestCase):
         self.assertEqual(seen["total_col"], "cl.Some $ To ICD Paid")
 
 
+APEX = ("Pay Period,10/19/2026 - 10/25/2026\n"
+        "Owner\nFirst Name,Last Name,Gross Pay\nJAIRO,RUIZ,5000\nTotal,5000\n"
+        "Sales Reps\nFirst Name,Last Name,Gross Pay\n"
+        "DANNY,PEREZ,400\nYAMELY,FERNANDEZ,300\nNEW,GUY,50\nTotal,750\n"
+        "Company Total,5750\n")
+
+
+class ApexTests(unittest.TestCase):
+    def test_reps_only_never_the_owner(self):
+        per, pay = P.apex_pay(APEX)
+        self.assertEqual(per, (dt.date(2026, 10, 19), dt.date(2026, 10, 25)))
+        self.assertEqual(pay, {"Danny Perez": 400.0, "Yamely Fernandez": 300.0,
+                               "New Guy": 50.0})
+
+    def test_match_by_full_then_first_last(self):
+        hit, miss, extra = P.match_reps(
+            {"Danny Alexander Perez": 1, "Yamely Fernandez": 2, "Gone Rep": 3,
+             P.NO_REP: 4}, ["Danny Perez", "Yamely Fernandez", "New Guy"])
+        self.assertEqual(hit, ["Danny Alexander Perez", "Yamely Fernandez"])
+        self.assertEqual(miss, ["Gone Rep"])
+        self.assertEqual(extra, ["New Guy"])
+
+    def test_line_carries_no_money(self):
+        per, pay = P.apex_pay(APEX)
+        weeks = {dt.date(2026, 10, 25): {"Danny Perez": 900.0, "Gone Rep": 10}}
+        line = P.apex_line(per, pay, weeks)
+        self.assertEqual(line, "Apex OK: period 10/19-10/25, 3 people paid; "
+                         "DD WE 2026-10-25 reps found in Apex 1/2; "
+                         "DD not in Apex: Gone Rep; "
+                         "Apex not in DD: New Guy, Yamely Fernandez")
+        self.assertNotIn("$", line)
+        self.assertNotIn("400", line)
+
+    def test_apex_waits_for_the_dd_then_hourly(self):
+        import time
+        noon = dt.datetime(2026, 10, 29, 12)
+        self.assertFalse(P.apex_due({}, noon))
+        self.assertTrue(P.apex_due({"dd_ok_v4": "x"}, noon))
+        self.assertFalse(P.apex_due({"dd_ok_v4": "x", "apex_ok_v1": "y"}, noon))
+        self.assertFalse(P.apex_due({"dd_ok_v4": "x",
+                                     "apex_tried_v1": time.time()}, noon))
+        self.assertFalse(P.apex_due({"dd_ok_v4": "x"},
+                                    dt.datetime(2026, 10, 29, 22)))
+
+    def test_apex_window_is_offered(self):
+        from automations.icd_alerts import autoprompt as AU
+        self.assertEqual(AU.SYSTEMS["apex"]["module"],
+                         "automations.icd_alerts.apex_signin")
+
+
 if __name__ == "__main__":
     unittest.main()

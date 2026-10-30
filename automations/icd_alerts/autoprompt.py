@@ -71,6 +71,13 @@ SYSTEMS = {
         "stamp": "ov-autoprompt.txt",
         "name": "OwnerVille",
     },
+    # The owner's PNL (pnl.py): sign into Apex once in Lucy's own profile,
+    # so the payroll export runs on this Mac (Eve + Megan 2026-10-29).
+    "apex": {
+        "module": "automations.icd_alerts.apex_signin",
+        "stamp": "apex-autoprompt.txt",
+        "name": "Apex",
+    },
     "ownerville_password": {
         "module": "automations.icd_alerts.run",
         "args": ["--set-ownerville-login"],
