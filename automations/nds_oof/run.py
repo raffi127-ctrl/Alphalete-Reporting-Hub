@@ -49,7 +49,9 @@ def _window(now: dt.datetime):
     wd = _wd(now)
     if wd == 6:
         return None
-    return (C.SATURDAY_START, C.SATURDAY_STOP) if wd == 5 else (C.WEEKDAY_START, C.WEEKDAY_STOP)
+    start, stop = (C.SATURDAY_START, C.SATURDAY_STOP) if wd == 5 else (C.WEEKDAY_START, C.WEEKDAY_STOP)
+    start = getattr(C, "START_OVERRIDES", {}).get(now.date().isoformat(), start)
+    return start, stop
 
 
 def in_window(now: dt.datetime) -> bool:

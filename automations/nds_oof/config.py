@@ -29,6 +29,10 @@ THREAD_GAPS = "%s 15 Min Gaps" % TEAM
 # shared/day_override says that date is a Saturday.
 WEEKDAY_START, WEEKDAY_STOP = (14, 0), (21, 0)
 SATURDAY_START, SATURDAY_STOP = (10, 15), (17, 30)   # 10:15 since 2026-10-24
+# One-off earlier starts, by date (Carlos 2026-10-30: "the NDS knock board and
+# the NDS 15-minute gaps start 30 minutes early today"). Only the START moves;
+# stop and slots are unchanged. Safe to leave old dates here.
+START_OVERRIDES = {"2026-10-30": (13, 30)}
 
 # First Knock colours on the board (Sebastian 2026-10-21, OK'd by Eve): this
 # crew starts at 2:00, not Raf's 1:30 -- green up to 2:00, gray 2:01-2:29, red
