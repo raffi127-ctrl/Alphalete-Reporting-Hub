@@ -30,6 +30,24 @@ class LumenOwnersTest(unittest.TestCase):
         self.assertEqual(v["owner"], "VAUGHN OSTERHOUSE")
         self.assertEqual(v["weeks"], {w[0]: None})  # dash, not a fake 0
 
+    def test_this_week_column(self):
+        wk = R.lumen_this_week(GRID, TODAY)
+        self.assertEqual(wk, dt.date(2026, 10, 11))         # still running
+        self.assertIsNone(R.lumen_this_week(GRID, dt.date(2026, 10, 12)))
+        weeks = R.lumen_weeks(GRID, TODAY)
+        lumen = R.add_extra_owners(R.lumen_by_owner(GRID, weeks), weeks,
+                                   extra=(("Vaughn Osterhouse", "k"),))
+        R.add_this_week(lumen, GRID, wk)
+        with mock.patch("automations.org_sales_board.captainship."
+                        "_candidates_for_name", _cands):
+            rows = R.build_rows(lumen, {}, {})
+        now = {r["owner"]: r["lumen_now"] for r in rows}
+        self.assertEqual(now["Nigel Marshall"], 40)
+        self.assertIsNone(now["VAUGHN OSTERHOUSE"])          # dash, not 0
+        html = R.table_html(rows, weeks, "week of 10/05", wk)
+        self.assertIn("Lumen this week<br>(to date)", html)
+        self.assertNotIn("(to date)", R.table_html(rows, weeks, "w"))
+
     def test_split_sales_key(self):
         self.assertEqual(R.split_sales_key("Nigel Marshall [VP Executives, Inc.] (Nest)"),
                          ("Nigel Marshall", "VP Executives, Inc."))
