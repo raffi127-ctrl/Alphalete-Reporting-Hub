@@ -45,7 +45,7 @@ class LumenOwnersTest(unittest.TestCase):
         self.assertEqual(now["Nigel Marshall"], 40)
         self.assertIsNone(now["VAUGHN OSTERHOUSE"])          # dash, not 0
         html = R.table_html(rows, weeks, "week of 10/05", wk)
-        self.assertIn("Lumen this week<br>(to date)", html)
+        self.assertIn("Lumen sales<br>this week (to date)", html)
         self.assertNotIn("(to date)", R.table_html(rows, weeks, "w"))
 
     def test_split_sales_key(self):
@@ -76,7 +76,7 @@ class LumenOwnersTest(unittest.TestCase):
         self.assertIsNone(rows[2]["lumen"][dt.date(2026, 10, 4)])
         html = R.table_html(rows, weeks, "week of 10/05")
         self.assertIn("Not on AT&amp;T yet", html)
-        self.assertIn("Lumen WE 10/4", html)
+        self.assertIn("Lumen sales<br>WE 10/4", html)
 
     def test_sales_board_boxes(self):
         mon = dt.date(2026, 10, 19)
