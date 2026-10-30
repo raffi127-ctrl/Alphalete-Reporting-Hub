@@ -12,6 +12,8 @@
 #                    day's AC..AI cell shows live numbers instead of staying
 #                    blank; each pass replaces it, and the next day's normal
 #                    yesterday-pull writes the final count.
+#   --weeks 3        keep the two prior weeks' funnel columns refreshing too
+#                    (trainings book late; the daily full pass goes 5 back)
 #   --no-activity    skip the hub activity row — ~30 runs/day would drown the
 #                    activity log. Failure alerts still post, incident-threaded.
 #
@@ -54,7 +56,20 @@ LOG="$LOG_DIR/ad_sales_board_carlos_$(date +%Y%m%d).log"
 
 echo "[$(date)] ad-sales-board-carlos START $*" >> "$LOG"
 "$VENV_PY" -m automations.ad_sales_board.run \
-    --office 11580 --today --no-activity "$@" >> "$LOG" 2>&1
+    --office 11580 --weeks 3 --today --no-activity "$@" >> "$LOG" 2>&1
 rc=$?
 echo "[$(date)] ad-sales-board-carlos END rc=$rc" >> "$LOG"
+
+# ---- SINCE-LIVE FUNNEL (Carlos 2026-10-30) ----------------------------------
+# One Source Report window per ad [posting date -> today], so cross-week
+# funnel events (bookings, trainings, brought-on-board) stop vanishing from
+# the board's since-live columns. Twice daily on the first tick after 07:00
+# and 13:00; manual: lucy rerun since_live_funnel (machine: Lucy 2).
+H=$(date +%H); M=$(date +%M)
+if { [ "$H" = "07" ] || [ "$H" = "13" ]; } && [ "$M" -lt 30 ]; then
+    echo "[$(date)] since-live funnel START" >> "$LOG"
+    "$VENV_PY" -m automations.ad_sales_board.since_live >> "$LOG" 2>&1
+    echo "[$(date)] since-live funnel END rc=$?" >> "$LOG"
+fi
+# -----------------------------------------------------------------------------
 exit $rc
