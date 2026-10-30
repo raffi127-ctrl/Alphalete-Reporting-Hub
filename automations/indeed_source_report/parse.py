@@ -152,6 +152,25 @@ def account_name(inbox):
 def load_table(html, keep_multi=False):
     """Parse one Source Report table into per-ad records."""
     d = pd.read_html(io.StringIO(html))[0]
+
+    # Column fallbacks must prefer the name that CARRIES DATA, not merely the
+    # first name present. Carlos's office (2026-10-30): its report has a
+    # 'First Day of Sales Booked' column that is always empty — the office
+    # marks scheduled starts as 'Brought on Board' instead — so first-present
+    # resolution read every new-start count as 0 while 'Brought on Board' held
+    # the real counts. Resolved ONCE per table: the first candidate whose
+    # column sums above zero wins; when every candidate is empty the old
+    # first-present answer stands, so offices that genuinely populate the
+    # primary name see no change.
+    def best(*names):
+        present = [n for n in names if n in d.columns]
+        for n in present:
+            if sum(num(v) for v in d[n]) > 0:
+                return (n,)
+        return tuple(present[:1])
+
+    nb_src = best('First Day of Sales Booked', 'Brought on Board')
+    ns_src = best('First Day of Sales Showed Up', 'Brought on Board Showed Up')
     ads = []
     for _, r in d.iterrows():
         subj, inbox = r.get('Email Subject Line'), r.get('Email Inbox')
@@ -186,8 +205,8 @@ def load_table(html, keep_multi=False):
                    # and First Day of Sales, others only Brought on Board.
                    tb=col('First Day of Training Booked'),
                    ts=col('First Day of Training Showed Up'),
-                   nb=col('First Day of Sales Booked', 'Brought on Board'),
-                   ns=col('First Day of Sales Showed Up', 'Brought on Board Showed Up'))
+                   nb=col(*nb_src),
+                   ns=col(*ns_src))
         ads.append(dict(inbox=inbox.strip(), title=title, city=city,
                         base=base_role(title), rec=rec))
     return ads
