@@ -261,8 +261,8 @@ class PausedOffices(unittest.TestCase):
             paused={"11280", "23965", "24065", "11901"},
             skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
                        "OAT Walk Diag 24065", "OAT Walk Diag 11901"))
-        self.assertIn("Megan's laptop: all offices paused", got)
-        self.assertNotIn(":warning: Megan's laptop has posted NO runs today", got)
+        self.assertIn("Lucy 4: all offices paused", got)
+        self.assertNotIn(":warning: Lucy 4 has posted NO runs today", got)
 
     def test_a_genuinely_silent_machine_still_pages(self):
         """The guard must not swallow a real outage."""
@@ -270,7 +270,7 @@ class PausedOffices(unittest.TestCase):
             dt.datetime(2026, 9, 25, 9, 20), paused=set(),
             skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
                        "OAT Walk Diag 24065", "OAT Walk Diag 11901"))
-        self.assertIn(":warning: Megan's laptop has posted NO runs today", got)
+        self.assertIn(":warning: Lucy 4 has posted NO runs today", got)
 
 
 class PausedIsDerived(unittest.TestCase):

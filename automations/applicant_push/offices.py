@@ -611,12 +611,12 @@ ROTATION_BY_MACHINE = {
     # BACK ON LUCY 4, 10/30: Chrome would not stay up in the background Mac
     # user (froze, then exited, every tick; 0 sent). Lucy 4 sends everyone who
     # already has a phone until Raf has an office computer on the relay.
-    # 10/30 later (Megan: "do it on this mac on the lucy user"): Chrome is
-    # started once per office with the Lucy user ON SCREEN
-    # (/Users/Shared/lucy-start.sh), then the schedule reuses those warm
-    # browsers in the background.
-    "Lucy 4": [],
-    "Megan's laptop": ["11280", "23965", "24065"],
+    # BACK ON LUCY 4 (Megan 2026-10-30: "move to lucy 4"). The Lucy Mac user on
+    # her laptop never got a working push Chrome: it froze before answering,
+    # on screen or not (a plain Chrome there was fine; cause not found). Lucy 4
+    # sends whoever already has a phone; Indeed blocks its resume reads.
+    "Lucy 4": ["11280", "23965", "24065"],
+    "Megan's laptop": [],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
     # Listed here so "one office, one machine" stays checkable in one place;
