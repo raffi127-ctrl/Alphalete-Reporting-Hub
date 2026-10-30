@@ -108,12 +108,18 @@ REBUTTALS = [
 
     ("Group interview",
      r"\b(group interview|others|someone else be there|by myself)\b",
-     "Yes, this will be a small group interview. (Megan's wording, "
-     "2026-09-27 — lead with yes, soften it, do not clip it to "
-     "“It is a group interview”.) It looks like 2 other people also "
-     "applied to the same listing; depending on who shows up you may "
-     "interview by yourself or with someone else.",
-     r"(other people|also applied|by yourself|group)"),
+     "Name the format THIS office runs, then reassure. Megan 2026-10-26: "
+     "the format is a per-office setting — \"every office will operate "
+     "differently\" — and each ICD records it in their profile, per round. "
+     "A group office says \"Yes, this will be a small group interview\"; a "
+     "solo office says \"It's one-on-one, just you and the interviewer\". "
+     "Either is correct; which one depends on the office, so this check "
+     "cannot mark a format wrong on wording alone. What it still grades is "
+     "the SHAPE: answer plainly, then reassure — do not clip it to "
+     "“It is a group interview” (Megan 2026-09-27). Supersedes the "
+     "always-a-group ruling, which held while only Raf's offices ran this.",
+     r"(other people|also applied|by yourself|group|one.?on.?one|1.?on.?1|"
+     r"just you|individually|solo)"),
 
     ("Spam / scam likely",
      r"\b(spam|scam|robocall|fake|is this real|legit)\b",

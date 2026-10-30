@@ -92,10 +92,15 @@ QUESTION_BUCKETS = [
      r"expect(ing)? (the|your|a) call|timeframe of when|when (will|should) (you|i) "
      r"(call|hear)|(get|have) a phone call|speak to me|time to speak|"
      r"text me the details|good time to call)"),
+    # Narrowed 2026-10-26 (Megan). The 2026-09-26 widening added "pertaining
+    # to the email" and "(thru|through|via) indeed", which dragged three
+    # different intents into one bucket: someone who never got the email,
+    # someone checking we are real, and someone who does not believe they
+    # applied. One reply cannot serve all three, so the other two route to
+    # their own rows — Does Not Remember Applying, and the identity answer.
     ("I never got the email",
-     r"\b((haven'?t|not|never) (received|got|gotten|seen) (the|an|your|my) ?(email|link|"
-     r"message|invite)|where (was|did) it (sent|go)|check (my|your) spam|"
-     r"pertaining to the email|thru indeed|through indeed|via indeed)"),
+     r"\b((haven'?t|have not|not|never) (received|got|gotten|seen) (the|an|your|my) ?(email|link|"
+     r"message|invite)|where (was|did) it (sent|go)|check (my|your) spam)"),
     ("Hours, training, is it paid?",
      r"\b(what[^.?!]{0,14}the hours|how many hours|hours for this|schedule like|"
      r"full[- ]time|part[- ]time|training (work|paid|be)|is (the )?training|"
@@ -559,9 +564,68 @@ def applicant_words(body):
 
 
 def asks_something(body):
-    """Is the applicant asking us a question, in their own words?"""
+    """Is the applicant asking us for something, in their own words?
+
+    Not only interrogatives. "I haven't received the email yet. Kindly
+    resend it." has no question mark and does not open with a question
+    word, so it scored as not-a-question and never reached a bucket at
+    all — along with 36 other real requests in the week to 2026-09-25,
+    out of 61 (Megan 2026-10-26). An applicant telling us something did
+    not arrive is owed an answer exactly as much as one who asks, and the
+    unanswered counts are the whole point of this audit, so a plain
+    statement of need counts too.
+    """
     own = applicant_words(body)
-    return ("?" in own or bool(IS_QUESTION.match(own))), own
+    return ("?" in own or bool(IS_QUESTION.match(own))
+            or bool(NEEDS_SOMETHING.search(own))), own
+
+
+# Deliberately tight: explicit non-receipt, or an explicit ask to send.
+# Anything looser starts folding ordinary chat into the question counts.
+NEEDS_SOMETHING = re.compile(
+    r"\b((haven'?t|have not|never|still (haven'?t|have not|not)) "
+    r"(received|got|gotten|heard)"
+    r"|(please|kindly|can you|could you) (re)?send"
+    r"|resend|send it again|still waiting (on|for))", re.I)
+
+
+# The reschedule bucket is 42% of every question asked and holds five
+# different intents that need opposite replies (Megan, 2026-10-26: "one
+# response can't cover all of these"). Someone naming a time wants THAT
+# time answered; someone confirming a booking must never be offered a
+# reschedule.
+#
+# These are sub-intents INSIDE the bucket, not buckets of their own. Tried
+# as top-level buckets they matched any time-like string anywhere and
+# stole 131 messages from other buckets — "I'll be there at 9:30" is
+# running late, not a reschedule. Gating them behind the bucket keeps the
+# audit totals intact and still lets each intent have its own reply.
+RESCHEDULE_INTENTS = [
+    ("Is my time still right?",
+     r"\b(is it (still )?at|is (my|the) (interview|appointment|time)|still (on|set) for|"
+     r"that (is )?(not )?the correct time|for tomorrow correct|just (confirming|checking) (my|the))"),
+    ("Can we do this time?",
+     r"(\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(a\.?m|p\.?m)\b|\b(noon|midday)\b)"),
+    ("What times do you have?",
+     r"(what times|times available|time.{0,8}availab|any openings|openings (today|tomorrow)|"
+     r"what do you have|read me the times|what days? (are|do you|work)|availab|time slots?|"
+     r"what (day and time|slots)|slots do you|when would (you|work|be)|what time would)"),
+    ("Can we do this day?",
+     r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|next week)\b"
+     r"|\bon the \d{1,2}(st|nd|rd|th)\b"),
+]
+
+
+def reschedule_intent(body):
+    """Which of the five scheduling intents a reschedule-bucket message is.
+
+    Returns the sub-intent label, or "Can I reschedule?" as the general
+    case. Only meaningful for a message already in the reschedule bucket.
+    """
+    for label, pat in RESCHEDULE_INTENTS:
+        if re.search(pat, body or "", re.I):
+            return label
+    return "Can I reschedule?"
 
 
 def bucket_of(body):

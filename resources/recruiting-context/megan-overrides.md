@@ -101,12 +101,15 @@ A caution for anyone re-running this count: a message naming the job ad
 quoting the POSTING's location, not directing anyone there. Counting those
 turns 6 real errors into 42 imaginary ones.
 
-### 7. The first interview is always a group
+### 7. The interview format is per office
 
 | | |
 |---|---|
-| **Megan says** | "someone is responding with that it's not a group interview - I think that it always is" (2026-09-27). |
-| **Measured** | The rule holds and **nobody broke it**. All eight mentions of "one-on-one" in the six weeks to 2026-09-25 are correct in context. |
+| **Megan says** | **"Yes, update both to per office — every office will operate differently"** (2026-10-26). Each ICD records the format in their own profile, **per round**: group or solo, in person or Zoom, with the address or link for each. |
+| **Supersedes** | "someone is responding with that it's not a group interview - I think that it always is" (2026-09-27). That held while only Raf's offices ran this, and it is still the right default for 11280 / 23965 / 24065 — it is no longer an org-wide rule. |
+| **What is still fixed** | The **shape**, not the fact: answer plainly, then reassure. "It is a group interview" was rejected for being clipped, not for being wrong (ruling 3). That applies whichever format an office runs. |
+| **Measured** | Under the old rule nobody broke it: all eight mentions of "one-on-one" in the six weeks to 2026-09-25 are correct in context. |
+| **In code** | `rebuttals.py` no longer treats "group" as the required fact — its `must` accepts group **and** solo wording, so a solo office is not scored wrong. The check cannot judge the format from wording alone; it needs the office's own profile value. |
 
 I first reported Aisha Ceron (11280) as contradicting it, twice. That was
 wrong, and Megan caught it: the applicant had just been invited to a SECOND
