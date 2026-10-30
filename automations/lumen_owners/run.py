@@ -89,7 +89,7 @@ FALLBACK_TO = ["parkwchan19@gmail.com", "mylesnealbusiness@gmail.com",
                "ecebuyukozerbusiness@gmail.com", "pthomp2133@gmail.com",
                "aiye.afariogun.b@gmail.com",   # Chan, 10/29 thread
                "miller10xbusiness@gmail.com"]  # Shealey Miller, 24273
-TITLE = "Former Lumen Owners — Moving to AT&T"
+TITLE = "Lumen Owners"
 
 # Owner names (as the Quantum view prints them, any case) Raf asked to leave
 # off. Empty = everybody on the tracker.
@@ -295,7 +295,7 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str,
           'color:#fff;font-size:13px;text-align:center"')
     td = 'style="padding:6px 10px;border:1px solid #ccc;font-size:13px;text-align:center"'
     tdl = 'style="padding:6px 10px;border:1px solid #ccc;font-size:13px;text-align:left"'
-    wk = ["Lumen sales<br>WE %d/%d" % (w.month, w.day) for w in weeks]
+    wk = ["Lumen WE %d/%d" % (w.month, w.day) for w in weeks]
     if this_week:
         wk = ["Lumen sales<br>this week (to date)"] + wk
     head = ("<tr><th %s>Owner</th><th %s>Status</th><th %s>AT&amp;T units<br>%s</th>"

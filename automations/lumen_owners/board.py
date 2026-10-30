@@ -28,18 +28,16 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 TAB = "Lumen Owners"
 HISTORY_TAB = "_lumen_history"
-# The numbers are AT&T sales of owners moving over from Lumen; "Lumen" alone
-# read like Lumen sales (Eve, 2026-10-30).
-TEAM_TITLE = "Former Lumen Owners — Moving to AT&T"
+TEAM_TITLE = "Lumen Owners"
 
 WEEK_COLS = 10            # CAPTAIN TEAM: this week + 9 back (A..L, like the board)
 KEEP_WEEKS = 14           # history lines older than this are dropped
 METRICS = ("NewInternet", "Total")
 BOXES = (
     # metric, title, product-summary label, units label
-    ("NewInternet", "\U0001F4F6 AT&T SALES — INTERNET ONLY", "Fiber - New Internet",
+    ("NewInternet", "\U0001F4F6 NEW INTERNET ONLY PERFORMANCE", "Fiber - New Internet",
      "Fiber - New Internet Units"),
-    ("Total", "\U0001F6DC AT&T SALES — ALL UNITS", "Fiber - All Units",
+    ("Total", "\U0001F6DC ALL UNITS PERFORMANCE", "Fiber - All Units",
      "Fiber - All Units"),
 )
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
@@ -266,7 +264,7 @@ def _box(g: Grid, n: dict, metric: str, title: str, ps_label: str,
 
     # Sales tables first (Eve, 2026-10-21), the summaries under them.
     # CAPTAIN TEAM — one column per week ending, newest first.
-    g.put(g.row, 0, "FORMER LUMEN OWNERS", _fmt(TEAM_BG, p["team_fg"], DISPLAY, 14))
+    g.put(g.row, 0, "LUMEN TEAM", _fmt(TEAM_BG, p["team_fg"], DISPLAY, 20))
     g.merge(g.row, 0, 2)
     g.heights[g.row] = 34
     for k, we in enumerate(n["wes"]):
@@ -596,8 +594,8 @@ def render_boxes(ws, spans: List[Tuple[str, int, int]], out_dir: Path
     captainship drafts' renderer — API token, no Google browser login)."""
     from automations.captainship_drafts import sheet_render as SR
     out = []
-    labels = {"NewInternet": "AT&T Sales — Internet Only",
-              "Total": "AT&T Sales — All Units"}
+    labels = {"NewInternet": "New Internet Only Performance",
+              "Total": "All Units Performance"}
     for metric, top, bottom in spans:
         a1 = "'%s'!A%d:L%d" % (ws.title, top + 1, bottom + 1)
         meta = SR._retrying(lambda: ws.spreadsheet.fetch_sheet_metadata(
