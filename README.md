@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-10-29 15:24 CDT_
+_Last sync: 2026-10-29 20:00 CDT_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 
@@ -72,13 +72,10 @@ Source: `see table`
 
 | File | What it is | Last edited |
 |---|---|---|
-| [captainship-sales-boards-README.md](other/captainship-sales-boards-README.md) | Captainship Sales Boards — System README — `~/Desktop/Desktop - Carlos’s MacBook Air/captainship-sales-boards/README.md` | 2026-09-07 |
-| [carlos-pnl-rebuild-README.md](other/carlos-pnl-rebuild-README.md) | Business & Personal P&L (Weekly) — rebuild guide — `~/Desktop/Carlos PNL README/README.md` | 2026-10-21 |
-| [checkin-bot-README.md](other/checkin-bot-README.md) | Check-In Bot — `~/Desktop/Desktop - Carlos’s MacBook Air/checkin-bot/README.md` | 2026-07-26 |
 | [hv-commissions-README.txt](other/hv-commissions-README.txt) | usage: cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python ~/hv-commissions/build_hv.p — `~/hv-commissions/README.txt` | 2026-10-22 |
 | [shikamaru-README.md](other/shikamaru-README.md) | Manager Agent — `~/shikamaru/README.md` | 2026-07-16 |
 
-_50 files._
+_47 files._
 
 
 ## How this works
