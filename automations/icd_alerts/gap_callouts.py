@@ -944,7 +944,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             log("%-14s no fresh knocks relay" % key)
             continue
         try:
-            rows = M.to_rows(json.loads(krow[K.KN_ROWS] or "[]"), json.loads(krow[K.KN_TRACKER] or "[]"))
+            # ON THE OFFICE'S CLOCK (offices.OV_CLOCK): Omar's 5:54 PM call-out
+            # still read every rep an hour idle after the board was fixed,
+            # because this path read the relay straight (2026-10-30).
+            rows = M.to_rows(*K.shift_ov_clock(office, json.loads(krow[K.KN_ROWS] or "[]"),
+                                               json.loads(krow[K.KN_TRACKER] or "[]"), now))
         except ValueError:
             continue
         rrow = relay.get(key) or next((r for k, r in relay.items() if k.startswith(key) or key.startswith(k)), None)
@@ -1011,7 +1015,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         if not krow:
             continue
         try:
-            rows = M.to_rows(json.loads(krow[K.KN_ROWS] or "[]"), json.loads(krow[K.KN_TRACKER] or "[]"))
+            # ON THE OFFICE'S CLOCK (offices.OV_CLOCK): Omar's 5:54 PM call-out
+            # still read every rep an hour idle after the board was fixed,
+            # because this path read the relay straight (2026-10-30).
+            rows = M.to_rows(*K.shift_ov_clock(office, json.loads(krow[K.KN_ROWS] or "[]"),
+                                               json.loads(krow[K.KN_TRACKER] or "[]"), now))
         except ValueError:
             continue
         praise = pace_callout(key, rows, now, remember=send, campaign=getattr(office, "campaign", None))
