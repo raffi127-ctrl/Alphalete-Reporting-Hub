@@ -270,6 +270,16 @@ DAILY_KPI_COLUMNS = {
     COL_HRS_KNOCKING: "hours",
 }
 
+# The owners' board (summary_only): one line per OWNER, so each KPI reads off
+# the column that is still per rep. No apps column there, so no tt_per_app.
+SUMMARY_KPI_COLUMNS = {
+    "Avg Knocks / Hr": "knocks_hr",
+    "Avg Doors / Rep": "doors",
+    "Talk To's per Rep": "talk_tos",
+    COL_FIRST_KNOCK: "first_knock",
+    COL_HRS_KNOCKING: "hours",
+}
+
 # ---- Rafael's targets (Loom, 2026-08-30) -----------------------------------
 # He states these as the numbers he manages his office to, and none of them
 # were on any board — the boards showed actuals with no goal line, so a reader
@@ -1461,11 +1471,22 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     # on one cell would each overwrite the other's colour.
     kpis = kpis or knock_kpis.load()
     _green = []
-    _cell_bgs.update(knock_kpis.cell_colors(
-        cols, table, kpis,
-        DAILY_KPI_COLUMNS,
-        set(range(len(extra_rows) + 1)) | set(bands),
-        saturday=target.weekday() == 5))
+    if summary_only:
+        # Owners' board (Raf 2026-10-29: "Can we add the color coding format
+        # please? Red green grey"). Every line is an OWNER, so the scales go
+        # on his per-rep columns — Avg Doors / Rep is doors per rep, Talk To's
+        # per Rep is talk-tos per rep — not on his summed Total Knocks. The
+        # time-zone subtotals and ORG TOTAL keep their bands.
+        _cell_bgs.update(knock_kpis.cell_colors(
+            cols, table, kpis, SUMMARY_KPI_COLUMNS,
+            set(range(len(extra_rows) - summary_tail, len(table))),
+            saturday=target.weekday() == 5))
+    else:
+        _cell_bgs.update(knock_kpis.cell_colors(
+            cols, table, kpis,
+            DAILY_KPI_COLUMNS,
+            set(range(len(extra_rows) + 1)) | set(bands),
+            saturday=target.weekday() == 5))
     for _col, _hit in _green:
         if _col not in cols:
             continue
