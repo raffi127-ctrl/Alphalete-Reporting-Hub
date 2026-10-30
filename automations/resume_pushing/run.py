@@ -1730,7 +1730,24 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
     # launch never lands on top of whatever she is doing.
     if (_os_bg.environ.get("APPLICANT_PUSH_BACKGROUND") == "1"
             and sys.platform == "darwin"):
-        launch = ["open", "-g", "-j", "-n", "-a", "Google Chrome", "--args"] + launch[1:]
+        # A SECOND MAC USER, not the one at the screen (the Lucy user on
+        # Megan's laptop, 10/30): its windows can never reach her, so no hiding
+        # is needed -- and nobody can answer a keychain prompt there. 10/30
+        # Chrome accepted the debug port and then never answered it, 0% CPU,
+        # every tick. Direct launch, no keychain.
+        import pwd as _pwd
+        try:
+            _console = _pwd.getpwuid(_os_bg.stat("/dev/console").st_uid).pw_name
+            _me = _pwd.getpwuid(_os_bg.getuid()).pw_name
+        except Exception:  # noqa: BLE001
+            _console = _me = ""
+        if _console and _console != _me:
+            _log("[cdp] background user %s (screen belongs to %s): direct "
+                 "launch, mock keychain" % (_me, _console))
+            launch.insert(1, "--use-mock-keychain")
+        else:
+            launch = ["open", "-g", "-j", "-n", "-a", "Google Chrome",
+                      "--args"] + launch[1:]
     # start_new_session: give Chrome its OWN process group (2026-09-22). launchd
     # kills whatever is left in a job's process group when the job's main process
     # exits, so a Chrome launched as a child of the tick died the moment the tick
