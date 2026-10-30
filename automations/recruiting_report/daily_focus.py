@@ -753,6 +753,14 @@ def _load_overrides() -> dict:
             merged.update({str(k).lower().strip(): str(v) for k, v in data.items()})
         except Exception:
             continue
+    # ...except a COMMITTED __SKIP__, which always wins. A retirement is a
+    # deliberate repo decision (office shut down); a machine's local file can
+    # still hold the old office id from before (older _save_overrides copied
+    # the whole base into it), and local-wins kept pulling Brian Tran's closed
+    # office 23082 every morning after 9b06a399 skipped him (2026-10-30).
+    for k, v in _load_base_overrides().items():
+        if v == SKIP_SENTINEL:
+            merged[k] = SKIP_SENTINEL
     return merged
 
 
