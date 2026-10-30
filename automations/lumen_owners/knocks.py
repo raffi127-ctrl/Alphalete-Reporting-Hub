@@ -34,6 +34,10 @@ LUMEN_EXTRA = (
     # Office 12737; probe_knocks campaign=7 for 10/24 came back with reps
     # (Eve, 2026-10-25: "agregalo si tenemos acceso").
     ("Aaron Nimako", "7", "Quantum Fiber"),
+    # Replied to Chan's "reply with your ownerville code" on the 10/29 mail
+    # (Eve, 2026-10-30): Isaiah 23639, Vaughn 23769.
+    ("Isaiah Kellum", "7", "Quantum Fiber"),
+    ("Vaughn Osterhouse", "7", "Quantum Fiber"),
 )
 
 

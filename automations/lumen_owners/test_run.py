@@ -19,6 +19,17 @@ def _cands(name, aliases):
 
 
 class LumenOwnersTest(unittest.TestCase):
+    def test_extra_owner_added_once_with_dashes(self):
+        w = [dt.date(2026, 10, 25)]
+        lumen = {"ISAIAH KELLUM [showtime]": {
+            "owner": "ISAIAH KELLUM", "office": "showtime", "weeks": {w[0]: 77}}}
+        out = R.add_extra_owners(lumen, w, extra=(
+            ("Isaiah Kellum", "x"), ("Vaughn Osterhouse", "kingdom")))
+        self.assertEqual(len(out), 2)               # Isaiah not doubled
+        v = out["VAUGHN OSTERHOUSE [kingdom]"]
+        self.assertEqual(v["owner"], "VAUGHN OSTERHOUSE")
+        self.assertEqual(v["weeks"], {w[0]: None})  # dash, not a fake 0
+
     def test_split_sales_key(self):
         self.assertEqual(R.split_sales_key("Nigel Marshall [VP Executives, Inc.] (Nest)"),
                          ("Nigel Marshall", "VP Executives, Inc."))

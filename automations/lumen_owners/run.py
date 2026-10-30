@@ -86,12 +86,24 @@ FALLBACK_TO = ["parkwchan19@gmail.com", "mylesnealbusiness@gmail.com",
                "partnersmarketing.co@gmail.com", "osterhousevaughn@gmail.com",
                "nigelmarshall002@gmail.com", "isaiahkellum07@gmail.com",
                "batde3y@gmail.com", "krisnatvhuoth@gmail.com",
-               "ecebuyukozerbusiness@gmail.com", "pthomp2133@gmail.com"]
+               "ecebuyukozerbusiness@gmail.com", "pthomp2133@gmail.com",
+               "aiye.afariogun.b@gmail.com",   # Chan, 10/29 thread
+               "miller10xbusiness@gmail.com"]  # Shealey Miller, 24273
 TITLE = "Lumen Owners"
 
 # Owner names (as the Quantum view prints them, any case) Raf asked to leave
 # off. Empty = everybody on the tracker.
 EXCLUDE: Tuple[str, ...] = ()
+
+# Owners who get a row even when the Quantum view leaves them out (Eve,
+# 2026-10-30): the view only lists ICDs with recent Quantum sales, so Vaughn
+# (on it in September) dropped off and wrote "my stats are not included", and
+# Shealey (incorporated 10/2026) was never on it. (name, company). Their Lumen
+# columns print dashes; the AT&T columns come from the fiber crosstab as usual.
+EXTRA_OWNERS: Tuple[Tuple[str, str], ...] = (
+    ("Vaughn Osterhouse", "kingdom management group, inc."),
+    ("Shealey Miller", ""),
+)
 
 ON_ATT = "On AT&T"            # sells AT&T, but neither internet nor wireless
 NOT_YET = "Not on AT&T yet"
@@ -146,6 +158,21 @@ def lumen_by_owner(rows: List[List[str]], weeks: List[dt.date]
             continue
         out[key] = {"owner": owner, "office": office,
                     "weeks": {w: quantum_sales(rows, key, w) for w in weeks}}
+    return out
+
+
+def add_extra_owners(lumen: Dict[str, dict], weeks: List[dt.date],
+                     extra=None) -> Dict[str, dict]:
+    """`lumen` plus a dash-only entry for each EXTRA_OWNERS name the view
+    didn't list (matched on the folded owner name). Pure."""
+    have = {_fold(L["owner"]) for L in lumen.values()}
+    out = dict(lumen)
+    for name, office in (EXTRA_OWNERS if extra is None else extra):
+        if _fold(name) in have:
+            continue
+        out["%s [%s]" % (name.upper(), office)] = {
+            "owner": name.upper(), "office": office,
+            "weeks": {w: None for w in weeks}}
     return out
 
 
@@ -508,6 +535,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not lumen:
         print("[lumen] Quantum view returned no owners — not sending")
         return 1
+    lumen = add_extra_owners(lumen, weeks)
     aliases = load_aliases()
     cur = _wk.reporting_sunday(today)
     past = [att_weeks.get(cur - dt.timedelta(days=7 * i))
