@@ -14,6 +14,14 @@ Prints only; no Sheet, no Slack, no text.
 
     python -m automations.owner_knocks_hourly.probe_ov
     python -m automations.owner_knocks_hourly.probe_ov --days 3
+    python -m automations.owner_knocks_hourly.probe_ov --colten
+
+--colten (Raf 2026-10-30: "All of Jairo's reps are under Colten ... Leads are
+under Colten and they distribute the leads to the reps from Colten's
+Ownerville"): reads Colten's office instead, and names which of its knocking
+reps are on Jairo's sales board (Miami book, tab JAIRO). Colten's ECO relay
+showed only 5-10 reps a day of ~250 on the two boards -- this checks that
+against OwnerVille itself.
 """
 from __future__ import annotations
 
@@ -32,6 +40,10 @@ OFFICES = [
     ("Salik (Omar's old office)", "Salik Mallick"),
 ]
 CAMPAIGNS = [("RES AT&T", "3"), ("NDS", "1")]
+
+COLTEN_OFFICES = [("Colten", "Colten Wright")]
+MIAMI_BOOK = "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY"
+JAIRO_TAB = "JAIRO"
 
 
 def _days(n: int) -> List[dt.date]:
@@ -59,21 +71,52 @@ def _omar_sellers(days: List[dt.date]) -> set:
         return set()
 
 
+def _words(name) -> List[str]:
+    return "".join(c for c in str(name or "").lower()
+                   if c.isalpha() or c == " ").split()
+
+
+def _jairo_board() -> List[List[str]]:
+    """Column B of Jairo's board, as words ("Carlos Tucker PA" keeps its
+    team tag, so a rep matches on first name + a later name)."""
+    try:
+        from automations.recruiting_report.fill import open_by_key
+        col = open_by_key(MIAMI_BOOK).worksheet(JAIRO_TAB).col_values(2)
+    except Exception as e:  # noqa: BLE001
+        print("(Jairo's board unreadable: %s)" % e)
+        return []
+    return [w for w in (_words(n) for n in col[3:]) if len(w) >= 2]
+
+
+def _on_board(rep, board: List[List[str]]) -> bool:
+    a = _words(rep)
+    if len(a) < 2:
+        return False
+    return any(a[0] == b[0] and (a[1] == b[1] or a[-1] in b[1:])
+               for b in board)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--days", type=int, default=6)
+    ap.add_argument("--colten", action="store_true",
+                    help="read Colten's office; split out Jairo's reps")
     args = ap.parse_args(argv)
+    offices = COLTEN_OFFICES if args.colten else OFFICES
+    board = _jairo_board() if args.colten else []
+    if args.colten:
+        print("Jairo's board: %d names" % len(board))
     from automations.rashad_metrics.knocks_pull import pull_offices_days
 
     days = _days(args.days)
     jobs, labels = [], []
-    for label, name in OFFICES:
+    for label, name in offices:
         for cname, cid in CAMPAIGNS:
             jobs.append((name, days, cid))
             labels.append((label, name, cname))
     print("days: %s .. %s" % (days[0], days[-1]))
     pulled = pull_offices_days(jobs, verbose=False, priority="normal")
-    sellers = _omar_sellers(days)
+    sellers = set() if args.colten else _omar_sellers(days)
     summary = []
     for (label, name, cname), (_n, by_day, err) in zip(labels, pulled):
         print("\n=== %s (%s) — campaign %s ===" % (label, name, cname))
@@ -92,9 +135,16 @@ def main(argv=None) -> int:
             reps = [r.get("Rep") for r in rows if r.get("Rep")]
             line = "  %s %s: %d rep(s), %d knocks" % (
                 d.strftime("%a"), d, len(reps), _knocks(rows))
+            if board:
+                mine = [r for r in rows if _on_board(r.get("Rep"), board)]
+                line += " | Jairo's: %d rep(s), %d knocks" % (
+                    len(mine), _knocks(mine))
             if reps:
                 line += "  e.g. %s" % ", ".join(reps[:4])
             print(line)
+        if board:
+            mine = [r for r in all_rows if _on_board(r.get("Rep"), board)]
+            summary.append("Jairo's %dk" % _knocks(mine))
         if label.startswith("Salik") and sellers:
             hit = sorted({r.get("Rep") for d in days
                           for r in ((by_day or {}).get(d) or [])
