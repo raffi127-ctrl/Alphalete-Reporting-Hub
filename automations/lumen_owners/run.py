@@ -103,6 +103,8 @@ EXCLUDE: Tuple[str, ...] = ()
 EXTRA_OWNERS: Tuple[Tuple[str, str], ...] = (
     ("Vaughn Osterhouse", "kingdom management group, inc."),
     ("Shealey Miller", ""),
+    # Office 23639, gave Office Access 2026-10-30 (Eve).
+    ("Isaiah Kellum", "showtime solutions, inc."),
 )
 
 ON_ATT = "On AT&T"            # sells AT&T, but neither internet nor wireless
