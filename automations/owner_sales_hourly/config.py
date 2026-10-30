@@ -40,10 +40,17 @@ SSO_GROUP = GROUP_SOUTHSHORE_ORG
 JAIRO_GROUP = "A PLAYERSSS"
 JAIRO_CAMPAIGN = "nds"
 
+# South Shore owners who text into the SSO chat but are NOT on the Recruiting
+# Dashboard's South Shore group (no AppStream office there), so they can't ride
+# SOUTH_SHORE_NAMES. Colten 2026-10-30: "make sure Samuel is added to Southshore
+# org owners post ... moving forward".
+SSO_EXTRA = ["Samuel Acay"]
+
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.
 OWNER_FALLBACK = {
     "rafael_hidalgo": "Rafael Hidalgo",
+    "samuel": "Samuel Acay",
 }
 
 # The selling day, Central. The plist fires at :50 (after most offices' relay

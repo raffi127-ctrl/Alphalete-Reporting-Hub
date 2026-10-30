@@ -140,7 +140,7 @@ def south_shore_owners(aliases: Optional[Dict] = None) -> set:
     """Normalized South Shore owner names (+ their ICD Aliases spellings)."""
     from automations.funnel_board.roster import SOUTH_SHORE_NAMES
 
-    names = {_norm(n) for n in SOUTH_SHORE_NAMES}
+    names = {_norm(n) for n in list(SOUTH_SHORE_NAMES) + cfg.SSO_EXTRA}
     for canonical, alts in (aliases or {}).items():
         group = {_norm(canonical)} | {_norm(a) for a in alts or []}
         if group & names:
