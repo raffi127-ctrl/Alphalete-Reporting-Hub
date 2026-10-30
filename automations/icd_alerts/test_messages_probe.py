@@ -114,5 +114,51 @@ class RunCheckTest(unittest.TestCase):
             self.assertFalse(M.maybe_run(log=None))
 
 
+class _Ask:
+    def __init__(self, pick=M.SEE_YES):
+        self.pick, self.shown = pick, []
+
+    def choose(self, prompt, options):
+        if self.pick is None:
+            raise RuntimeError("cancelled")
+        return self.pick
+
+    def message(self, body, **_):
+        self.shown.append(body)
+
+
+class SetupTest(unittest.TestCase):
+    def _run(self, ask):
+        opened = []
+        with mock.patch.object(M.sys, "platform", "darwin"), \
+             mock.patch.object(M, "_open",
+                               side_effect=lambda t, reveal=False:
+                               opened.append((t, reveal))), \
+             mock.patch.object(M, "_save") as save, \
+             mock.patch.object(M.C, "active_enrollments",
+                               return_value=[{"office_key": "eveliz"}]), \
+             mock.patch("automations.icd_alerts.relay.report_fault",
+                        return_value=True) as rf:
+            rc = M.setup(ask, say=lambda *_: None)
+        return rc, opened, save, rf
+
+    def test_walks_all_three_and_makes_the_check_due(self):
+        ask = _Ask()
+        rc, opened, save, rf = self._run(ask)
+        self.assertEqual(rc, 0)
+        self.assertIn(M.FDA_URL, [t for t, _ in opened])
+        self.assertTrue(any(reveal for _, reveal in opened))
+        self.assertEqual(ask.shown, [M.IPHONE_STEPS, M.FDA_STEPS])
+        save.assert_called_once_with({})
+        self.assertEqual(rf.call_args[0][0], "probe-messages-setup")
+        self.assertIn(M.SEE_YES, rf.call_args[0][1])
+
+    def test_cancel_changes_nothing(self):
+        rc, opened, save, rf = self._run(_Ask(pick=None))
+        self.assertEqual(rc, 1)
+        save.assert_not_called()
+        rf.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

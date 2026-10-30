@@ -23,6 +23,7 @@ Filed as a `probe-messages` fault: kept in the Faults tab, never posted
 (see post.notify_faults).
 
     python -m automations.icd_alerts.messages_probe --check    # run it now
+    python -m automations.icd_alerts.messages_probe --setup    # the owner's line
 """
 from __future__ import annotations
 
@@ -162,6 +163,15 @@ def verdict(seen: Dict) -> List[str]:
     return out
 
 
+def _real_python() -> str:
+    """The binary Full Disk Access has to be given to: the venv's python is a
+    link, and macOS checks the file it points at."""
+    try:
+        return os.path.realpath(sys.executable)
+    except Exception:  # noqa: BLE001
+        return sys.executable or "?"
+
+
 def _load() -> Dict:
     try:
         return json.loads(_STATE.read_text(encoding="utf-8"))
@@ -205,7 +215,8 @@ def run_check(log=print) -> int:
         "last message: %s" % (seen["last"].isoformat(timespec="minutes")
                               if seen.get("last") else "none"),
         "saraplus sender: %s" % (", ".join(seen.get("sara_from") or []) or "?"),
-        "mac user: %s" % (os.environ.get("USER") or "?")])
+        "mac user: %s" % (os.environ.get("USER") or "?"),
+        "python: %s" % _real_python()])
     short = " | ".join(l.split(" -- ")[0] for l in lines)
     for rec in C.active_enrollments():
         if not wanted(rec):
@@ -235,11 +246,90 @@ def maybe_run(log=print) -> bool:
     return True
 
 
+# --- the one line the owner pastes (Eve 2026-10-29) -------------------------
+# macOS will not let a script give itself Full Disk Access, and the iPhone
+# switch is on the iPhone. So this does everything around those two clicks:
+# opens each screen, shows python3 in Finder ready to drag, files what the
+# owner answered, and makes the agent check again on its next tick -- the
+# AGENT's check is the one that counts, because a Terminal run tests
+# Terminal's permission, not Lucy's.
+FDA_URL = ("x-apple.systempreferences:"
+           "com.apple.preference.security?Privacy_AllFiles")
+SETUP_STAGE = "probe-messages-setup"
+SEE_YES = "Yes, I see my phone's texts"
+SEE_NO = "No, Messages is empty or asks me to sign in"
+SEE_UNSURE = "Not sure"
+
+IPHONE_STEPS = (
+    "On your iPhone:\n\n"
+    "Settings -> Apps -> Messages -> Text Message Forwarding -> "
+    "turn ON this Mac.\n\n"
+    "(Older iPhones: Settings -> Messages -> Text Message Forwarding.)\n\n"
+    "If you don't see Text Message Forwarding, click OK anyway and tell "
+    "the reporting team.")
+
+FDA_STEPS = (
+    "Last step, on this Mac.\n\n"
+    "Two windows just opened: Full Disk Access, and a Finder window with "
+    "python3 highlighted.\n\n"
+    "Drag python3 from Finder into the Full Disk Access list (or click + "
+    "and pick it), and make sure its switch is ON. Your Mac may ask for "
+    "your Mac password.")
+
+
+def _open(target: str, *, reveal: bool = False) -> None:
+    import subprocess
+    try:
+        subprocess.run(["open"] + (["-R"] if reveal else []) + [target],
+                       timeout=15, check=False)
+    except Exception:  # noqa: BLE001 -- the steps say where to go anyway
+        print("      open %s" % target)
+
+
+def setup(ask=None, say=print) -> int:
+    """Walk the owner through the three things. Never asks for a password."""
+    if ask is None:
+        from automations.icd_alerts import dialogs as ask
+    if sys.platform != "darwin":
+        say("  This one is for the office Mac.")
+        return 2
+    _open("/System/Applications/Messages.app")
+    try:
+        seen = ask.choose("Messages just opened. Do you see your iPhone's "
+                          "text messages there?", [SEE_YES, SEE_NO, SEE_UNSURE])
+    except Exception:  # noqa: BLE001 -- they pressed Cancel
+        say("  NOT YET -- run this same line again when you are ready.")
+        return 1
+    ask.message(IPHONE_STEPS)
+    py = _real_python()
+    _open(FDA_URL)
+    _open(py, reveal=True)
+    ask.message(FDA_STEPS)
+    # Due again now: the agent's next tick (15 minutes at most) re-checks
+    # with ITS permission and files the answer.
+    _save({})
+    from automations.icd_alerts import relay as R
+    for rec in C.active_enrollments():
+        R.report_fault(SETUP_STAGE,
+                       "Messages setup %s: owner says %s"
+                       % (dt.datetime.now().strftime("%m/%d %H:%M"), seen),
+                       detail="python: %s" % py, log=None,
+                       office_key=rec.get("office_key", ""))
+    say("")
+    say("  DONE. Lucy checks again within 15 minutes and tells the reporting")
+    say("  team if anything is still missing.")
+    return 0
+
+
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="run the check now")
+    ap.add_argument("--setup", action="store_true",
+                    help="walk the owner through the three steps")
     a = ap.parse_args(argv)
+    if a.setup:
+        return setup()
     if a.check:
         for l in verdict(look()):
             print(l)
