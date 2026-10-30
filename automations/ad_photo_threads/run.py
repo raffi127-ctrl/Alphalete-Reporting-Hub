@@ -551,6 +551,11 @@ def main(argv=None) -> int:
     ap.add_argument("--lookback", type=int, help="With --appstream-ads: days back (default 7).")
     ap.add_argument("--redo", action="store_true",
                     help="With --appstream-ads: look again at the ones already looked up and not found.")
+    mode.add_argument("--sweep-old-notes", action="store_true",
+                      help="Once (Eve 10/30): the old @channel no-ad notes of --office "
+                           "(or all): landed people into their thread, the rest into "
+                           "the pinned no-ad thread, then the notes deleted. Prints "
+                           "only; --apply does it. --since = first day (default 10/14).")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -613,6 +618,37 @@ def main(argv=None) -> int:
                                         limit=a.limit, lookback=a.lookback, redo=a.redo))
             except Exception as e:            # noqa: BLE001 -- one office never stops the rest
                 print(f"[appstream ads] {k}: failed: {type(e).__name__}: {str(e)[:200]}")
+        return 0
+    if a.sweep_old_notes:
+        from automations.ad_photo_threads import appstream_ads, config, unthreaded
+        day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
+        since = dt.date.fromisoformat(a.since or "2026-10-14")
+        keys = ([o["key"] for o in config.OFFICES if o.get("live")]
+                if a.office in (None, "all") else [a.office])
+        for k in keys:
+            o = config.office(k)
+            config.use(o)
+            print(f"\n=== {o['owner']} ({k})")
+            try:
+                cache: dict = {}
+                if a.apply and config.appstream_ads_on(k):
+                    print(appstream_ads.run(k, day, apply=True, debug=False,
+                                            lookback=(day - since).days,
+                                            redo=True, cache=cache))
+                    config.use(o)
+                got = unthreaded.sweep_old(day, o["live_channel"],
+                                           title_only=bool(o.get("title_only")),
+                                           since=since, apply=a.apply, cache=cache)
+                print(f"old notes: {got['notes']} | named in them: {got['named']}")
+                for who, what in got["placed"].items():
+                    print(f"  landed  {who}: {what}")
+                for who in got["no_ad"]:
+                    print(f"  no ad   {who}")
+                if a.apply:
+                    print(f"no-ad thread: {got['thread']['new']} added | "
+                          f"notes deleted: {got['deleted']}")
+            except Exception as e:            # noqa: BLE001 -- one office never stops the rest
+                print(f"  failed: {type(e).__name__}: {str(e)[:200]}")
         return 0
     if a.redo_weekly and a.office == "all":
         return redo_all(dt.date.fromisoformat(a.date) if a.date else collect.central_today(),

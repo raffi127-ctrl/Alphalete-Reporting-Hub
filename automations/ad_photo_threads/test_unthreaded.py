@@ -137,3 +137,49 @@ class CallListTests(unittest.TestCase):
         from automations.ad_photo_threads import collect
         self.assertTrue(all(collect.blank_title(s) for s in ["", " ", "-", "N/A", "none"]))
         self.assertFalse(collect.blank_title("AT&T Sales Agent"))
+
+
+class SweepOldNotesTests(unittest.TestCase):
+    """Eve 10/30: the old @channel notes come down; their people get placed."""
+    DAY = dt.date(2026, 10, 30)
+
+    def test_landed_placed_rest_threaded_notes_deleted(self):
+        d = dt.date(2026, 10, 27)
+        people = [cand("Ana Ruiz", "AT&T Agent", ad="k"), cand("Bo Lee", "")]
+        build = lambda day, cl=None, cache=None: SimpleNamespace(  # noqa: E731
+            candidates=people if day == d else [])
+        state = {"C1": {"unthreaded_said": ["2026-10-27|ana ruiz", "2026-10-27|bo lee",
+                                            "2026-10-01|old one"]}}
+        cl = mock.Mock()
+        cl.auth_test.return_value = {"user_id": "ULUCY"}
+        cl.conversations_history.return_value = {"messages": [
+            {"ts": "1793100000.1", "user": "ULUCY", "text": "<!channel> 2 1st rounds didn't land on any ad thread:"},
+            {"ts": "1793100000.2", "user": "UEVE", "text": "how can we fix this? didn't land on any ad thread"},
+            {"ts": "1793100000.3", "user": "ULUCY", "text": "something else"}]}
+        n = iter(range(100, 200))
+        cl.chat_postMessage.side_effect = lambda **k: {"ts": f"{next(n)}.0"}
+        added = {}
+        with mock.patch.object(unthreaded.post, "_load_state", lambda: state), \
+                mock.patch.object(unthreaded.post, "_save_state", lambda s: None), \
+                mock.patch.object(unthreaded.post, "_pin", lambda *a: None), \
+                mock.patch.object(unthreaded.post, "add_photos",
+                                  lambda rep, ch, names, cl=None: added.update(
+                                      {x: "added 1 photo(s)" for x in names}) or
+                                  {x: "added 1 photo(s)" for x in names}), \
+                mock.patch("automations.ad_photo_threads.weekly.is_weekly", lambda ch: False):
+            dry = unthreaded.sweep_old(self.DAY, "C1", title_only=False,
+                                       since=dt.date(2026, 10, 14), cl=cl, build=build)
+            self.assertEqual(dry["landed"], ["2026-10-27|ana ruiz"])
+            self.assertEqual(dry["no_ad"], ["2026-10-27 Bo Lee"])
+            cl.chat_delete.assert_not_called()
+            cl.chat_postMessage.assert_not_called()
+            got = unthreaded.sweep_old(self.DAY, "C1", title_only=False, apply=True,
+                                       since=dt.date(2026, 10, 14), cl=cl, build=build)
+        self.assertEqual(added, {"Ana Ruiz": "added 1 photo(s)"})
+        self.assertEqual(got["deleted"], 1)
+        cl.chat_delete.assert_called_once_with(channel="C1", ts="1793100000.1")
+        reply = cl.chat_postMessage.call_args_list[-1].kwargs["text"]
+        self.assertIn("Bo Lee (10/27)", reply)
+        for u in unthreaded.TAG_USERS:
+            self.assertIn(f"<@{u}>", reply)
+        self.assertNotIn("<!channel>", reply)

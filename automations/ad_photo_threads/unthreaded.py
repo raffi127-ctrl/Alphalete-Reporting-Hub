@@ -22,9 +22,11 @@ LOOKBACK_DAYS = 7
 _blank = collect.blank_title     # a blank title the Call List couldn't fill either
 
 # Eve 10/29: each new reply in the "no ad" thread tags the recruiting team.
+# Eve 10/30: and her.
 TAG_USERS = [
     "U07FWSYP3NV",   # Camila Hornos Kraschinsky
     "U07R68ZGHT6",   # Perla Falabella
+    "U088E2KJEV8",   # Evelyn (Eve) Sobrino
 ]
 
 HEADER = ("\U0001F4CC *1st rounds with no ad*\n"
@@ -35,12 +37,13 @@ HEADER = ("\U0001F4CC *1st rounds with no ad*\n"
 
 
 def find(day: dt.date, *, build: Optional[Callable] = None, cl=None,
-         cache: Optional[dict] = None) -> List[Tuple[dt.date, "collect.Candidate"]]:
+         cache: Optional[dict] = None,
+         lookback: Optional[int] = None) -> List[Tuple[dt.date, "collect.Candidate"]]:
     """(day, candidate) for every interview in the window with no ad."""
     build = build or collect.build
     cache = {} if cache is None else cache
     out = []
-    for n in range(LOOKBACK_DAYS, 0, -1):
+    for n in range(lookback or LOOKBACK_DAYS, 0, -1):
         d = day - dt.timedelta(days=n)
         if d.weekday() not in config.POST_WEEKDAYS:
             continue
@@ -99,11 +102,14 @@ def _thread(cl, channel: str, slot: dict) -> str:
 
 def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
           cache: Optional[dict] = None, apply: bool = True,
-          lookup_on: bool = False) -> Dict[str, object]:
+          lookup_on: bool = False, lookback: Optional[int] = None,
+          force: bool = False) -> Dict[str, object]:
     """Add the new no-ad interviews to the channel's pinned thread (only
-    with `apply`) and cross out the ones that have landed since."""
+    with `apply`) and cross out the ones that have landed since. `force`
+    (the old-notes sweep) says the ones AppStream is still trying too."""
     cl = cl or collect._client()
-    missing = find(day, build=build, cl=cl, cache=cache)
+    lookback = lookback or LOOKBACK_DAYS
+    missing = find(day, build=build, cl=cl, cache=cache, lookback=lookback)
     state = post._load_state()
     ch_state = state.get(channel, {})
     if lookup_on is None:
@@ -111,12 +117,13 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
             else bool(config.APPSTREAM_ADS_OFFICES)
     slot = ch_state.get("unplaced") or {}
     said = set(slot.get("said") or [])
-    waiting = {_key(d, c) for d, c in missing if still_trying(d, c, ch_state, lookup_on)}
+    waiting = {_key(d, c) for d, c in missing
+               if not force and still_trying(d, c, ch_state, lookup_on)}
     give_up = [(d, c) for d, c in missing if _key(d, c) not in waiting]
     new = [(d, c) for d, c in give_up if _key(d, c) not in said]
     lines = [line(d, c, title_only) for d, c in new]
     # Said, still in the window, no longer missing = it landed on its ad.
-    cutoff = (day - dt.timedelta(days=LOOKBACK_DAYS)).isoformat()
+    cutoff = (day - dt.timedelta(days=lookback)).isoformat()
     now_missing = {_key(d, c) for d, c in missing}
     placed = [k for k in said if k >= cutoff and k not in now_missing]
     text = reply_text(day, lines) if lines else ""
@@ -146,8 +153,88 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
         slot["said"] = sorted(set(slot.get("said") or []) | {_key(d, c) for d, c in new})
         out["posted"] = True
     # Keep the bookkeeping small: replies whose names are all out of the window.
-    old = (day - dt.timedelta(days=LOOKBACK_DAYS + 14)).isoformat()
+    old = (day - dt.timedelta(days=lookback + 14)).isoformat()
     slot["replies"] = {k: v for k, v in replies.items() if any(r[0] >= old for r in v)}
     slot["said"] = [k for k in slot.get("said") or [] if k >= old]
     post._save_state(state)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Eve 10/30: the @channel notes from before 10/29 come down. Once, per
+# channel: the people they named that have landed on an ad since go into
+# its thread (daily layout; the weekly layout re-posts its week by itself),
+# the ones still nowhere go to the pinned "no ad" thread (tagging
+# TAG_USERS), then Lucy's notes are deleted. A person's reply under a note
+# is left alone.
+NOTE_MARK = "didn't land on any ad thread"
+
+
+def old_notes(cl, channel: str, since: dt.date) -> List[str]:
+    """ts of Lucy's own @channel notes in `channel` since `since`."""
+    me = cl.auth_test()["user_id"]
+    # No `oldest=`: it has come back empty for two weeks (10/14); newest
+    # first, stop past `since`.
+    oldest = dt.datetime.combine(since, dt.time()).timestamp()
+    out, cursor = [], None
+    while True:
+        r = cl.conversations_history(channel=channel, limit=200, cursor=cursor)
+        msgs = r.get("messages", [])
+        out += [m["ts"] for m in msgs if float(m["ts"]) >= oldest
+                and m.get("user") == me and NOTE_MARK in (m.get("text") or "")]
+        cursor = (r.get("response_metadata") or {}).get("next_cursor")
+        if not cursor or not msgs or float(msgs[-1]["ts"]) < oldest:
+            return sorted(out)
+
+
+def sweep_old(day: dt.date, channel: str, *, title_only: bool, since: dt.date,
+              apply: bool = False, cl=None, build=None,
+              cache: Optional[dict] = None) -> Dict[str, object]:
+    """Place / list / delete, as above. Without `apply` only says what it would do."""
+    from automations.ad_photo_threads import weekly
+    cl = cl or collect._client()
+    build = build or collect.build
+    cache = {} if cache is None else cache
+    notes = old_notes(cl, channel, since)
+    lookback = (day - since).days
+    missing = find(day, build=build, cl=cl, cache=cache, lookback=lookback)
+    now_missing = {_key(d, c) for d, c in missing}
+    said = [k for k in post._load_state().get(channel, {}).get("unthreaded_said", [])
+            if since.isoformat() <= k[:10] < day.isoformat()]
+    landed = sorted(k for k in said if k not in now_missing)
+    out: Dict[str, object] = {
+        "notes": len(notes), "named": len(said), "landed": landed,
+        "no_ad": [f"{d.isoformat()} {c.name.strip()}" for d, c in missing],
+        "placed": {}}
+    is_weekly = weekly.is_weekly(channel)
+    by_day: Dict[str, List[str]] = {}
+    for k in landed:
+        by_day.setdefault(k[:10], []).append(k[11:])
+    for d, names in sorted(by_day.items()):
+        rep = build(dt.date.fromisoformat(d), cl=cl, cache=cache)
+        real = [c.name.strip() for c in rep.candidates
+                if c.name.strip().lower() in names]
+        if is_weekly:
+            for n in real:
+                out["placed"][f"{d} {n}"] = "weekly layout: the evening refresh posts its week"
+        elif not apply:
+            for n in real:
+                c = next(c for c in rep.candidates if c.name.strip() == n)
+                out["placed"][f"{d} {n}"] = f"would add to its ad thread ({c.ad})"
+        else:
+            for n, what in post.add_photos(rep, channel, real, cl=cl).items():
+                out["placed"][f"{d} {n}"] = what
+    if not apply:
+        return out
+    out["thread"] = check(day, channel, title_only=title_only, cl=cl, build=build,
+                          cache=cache, apply=True, lookback=lookback, force=True)
+    deleted = 0
+    for ts in notes:
+        try:
+            cl.chat_delete(channel=channel, ts=ts)
+            deleted += 1
+        except Exception as e:                    # noqa: BLE001 -- the rest still go
+            if "message_not_found" not in str(e):
+                print(f"  note {ts} not deleted: {type(e).__name__}: {str(e)[:120]}")
+    out["deleted"] = deleted
     return out
