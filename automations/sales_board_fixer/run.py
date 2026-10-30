@@ -48,6 +48,7 @@ except Exception:  # noqa: BLE001 -- Windows console, best effort
 
 from automations.sales_board_fixer import checks as K
 from automations.sales_board_fixer import lanes_check as LC
+from automations.sales_board_fixer import last_week as LW
 from automations.sales_board_fixer import tenure as T
 
 SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"   # Alphalete SALES BOARD 2025
@@ -117,12 +118,30 @@ def load(sh, title: str, titles=()) -> dict:
          "basic_filter": sheet.get("basicFilter"),
          "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "styles": styles,
          "notes": notes}
+    if ws.spreadsheet.id == SHEET_ID and LW.TAB.match(title) and K.is_board(values):
+        t.update(load_older(sh, title, ws))
     if LANE_NAME.search(title):
         t.update(load_lanes(sh, t))
     elif LINEUP_NAME.search(title):
         t["home"], t["run_boards"] = _home_board(titles, title)
         t["boards"] = lineup_boards(sh, formulas, t["home"])
     return t
+
+
+def load_older(sh, title: str, ws) -> dict:
+    """Our board's week tab: last week's and the week before's tabs, to keep
+    LAST/PRIOR WEEK'S TOTALS and the history in step with them (last_week.py)."""
+    today = dt.date.today()
+    sun = LW.week_sunday(title, today)
+    older = []
+    for (other, days, dest) in zip(LW.older_titles(title, list(_tabs(sh)), today), (7, 14),
+                                   (LW.WR.LAST, LW.WR.PRIOR)):
+        if not other:
+            continue
+        o = sh.worksheet(other)
+        older.append((other, sun - dt.timedelta(days=days), o.get_all_values(),
+                      o.get_all_values(value_render_option="UNFORMATTED_VALUE"), dest))
+    return {"raw": ws.get_all_values(value_render_option="UNFORMATTED_VALUE"), "older": older}
 
 
 def lineup_boards(sh, formulas, home: str = None) -> dict:
@@ -246,7 +265,7 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
     elif K.is_board(v):
         found = (K.check_formulas(title, v, f) + _one_per_cell(
                      K.check_day_rows(title, v, f) + K.check_outside_block(title, v, f)
-                     + K.check_day_stats(title, v, f))
+                     + K.check_day_stats(title, v, f) + K.check_status_words(title, v, f))
                  + K.check_roll_call(title, v, learn=owner)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"])
@@ -256,6 +275,8 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"],
                                      block=(first, last))
+        if not owner and t.get("older"):
+            found += LW.check(title, v, f, t["raw"], t["older"])
         if tenure and T.has_tenure(v):
             found += T.audit(title, t["sheet_id"], v, f, t.get("basic_filter"), *tenure)
     else:
@@ -316,8 +337,10 @@ def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     def still_there(x):
         if x.row is None or not x.name:
             return True
-        now = names_now[x.row - 1].strip() if x.row - 1 < len(names_now) else ""
-        return now == x.name
+        now = names_now[x.row - 1] if x.row - 1 < len(names_now) else ""
+        # labels under TOTALS wrap ('Total Reps in the Field / \nBoard / Zero')
+        # and the findings carry them on one line
+        return " ".join(now.split()) == " ".join(x.name.split())
     todo = [x for x in found if x.fixable and still_there(x)]
     skipped = [x for x in found if x.fixable and not still_there(x)]
     for x in skipped:

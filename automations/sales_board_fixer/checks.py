@@ -59,6 +59,8 @@ KIND_LABEL = {
     "cf_row_shift": "color de estado que pinta la fila de al lado, no la del rep",
     "day_stats_formula": "fila de resumen del día (en el campo / en el board) con otra fórmula que los demás días",
     "day_formula_differs": "un día con otra fórmula que los demás días en la misma fila",
+    "status_word": "la fórmula busca un estado que no existe en Field Status (nunca se cumple)",
+    "last_week_stale": "LAST/PRIOR WEEK o historial con números viejos (entraron ventas después de copiarlos)",
     "day_stats_wrong": "fila de resumen del día no cuenta a los reps que vendieron o golpearon",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
     "lineup_short": "Line Up: la lista de nombres no termina en la fila arriba de TOTALS del Sales Board",
@@ -498,6 +500,52 @@ def check_day_rows(tab: str, values, formulas) -> List[Finding]:
                 out.append(Finding(
                     kind, tab, a1(r, c), "%s, fila %s" % (KIND_LABEL[kind], label),
                     row=r, name=label, before=raw[:120], after=fix[:120], value=fix))
+    return out
+
+
+STATUS_HEADER = "field status"
+
+
+def check_status_words(tab: str, values, formulas) -> List[Finding]:
+    """A formula that tests Field Status against a word nobody uses: the week
+    column of our board said "<>1st Week" while the column says '1st Wk', so
+    week-one reps were never left out of the week's field count (Eve
+    2026-10-30). When the tab's other formulas test the same column with a
+    word that IS used and starts the same way ('1st'), that word goes in."""
+    col = next((c for c, x in enumerate(values[0] if values else [], 1)
+                if " ".join(str(x).split()).lower() == STATUS_HEADER), 0)
+    if not col:
+        return []
+    first, last = block_rows(values)
+    used = {" ".join(_g(values, r, col).split()).lower()
+            for r in range(first, last + 1) if _g(values, r, col).strip()}
+    letters = col_letter(col)
+    rx = re.compile(r'(\$?%s\$?\d+:\$?%s\$?\d+\s*(?:,\s*"<>|<>\s*"))([^"]*)(")' % (letters, letters))
+    said = collections.Counter()
+    for row in formulas:
+        for f in row:
+            if str(f).startswith("="):
+                for m in rx.finditer(str(f)):
+                    said[m.group(2)] += 1
+    good = [w for w in said if w.lower() in used]
+    out: List[Finding] = []
+    for r, row in enumerate(formulas, 1):
+        for c, f in enumerate(row, 1):
+            f = str(f)
+            if not f.startswith("=") or not rx.search(f):
+                continue
+            def swap(m):
+                w = m.group(2)
+                if not w or w.lower() in used:
+                    return m.group(0)
+                like = [g for g in good if g.split()[0].lower() == w.split()[0].lower()]
+                return m.group(1) + like[0] + m.group(3) if len(like) == 1 else m.group(0)
+            fixed = rx.sub(swap, f)
+            if fixed != f:
+                label = " ".join(str(_g(values, r, layout(values).name_col)).split()) or str(r)
+                out.append(Finding("status_word", tab, a1(r, c),
+                                   "%s, fila %s" % (KIND_LABEL["status_word"], label),
+                                   row=r, name=label, before=f[:120], after=fixed[:120], value=fixed))
     return out
 
 

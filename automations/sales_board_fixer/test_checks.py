@@ -528,3 +528,18 @@ class DayRows(unittest.TestCase):
         f[11][3] = "2"
         f[12][3] = "1"                                   # board count typed as well
         self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row in (12, 13)])
+
+
+class StatusWords(unittest.TestCase):
+    def test_week_count_testing_a_word_nobody_uses_gets_the_used_one(self):
+        v = [["", "", "", "Field Status"], [""] * 4, ["", "#", "Name", "Apps"]]
+        f = [list(r) for r in v]
+        for i, st in enumerate(["1st Wk", "2nd Wk", "RT"]):
+            v.append(["", i, "Rep %d" % i, st]); f.append(list(v[-1]))
+        v.append(["", "", "TOTALS", ""])
+        f.append(["", "", "TOTALS", '=COUNTIFS(D4:D6,"<>1st Week",$D4:$D6,"<>RT")'])
+        f.append(["", "", "x", '=SUMPRODUCT(($D4:$D6<>"1st Wk")*1)'])
+        v.append(["", "", "x", "2"])
+        found = K.check_status_words("t", v, f)
+        self.assertEqual([(x.where, x.value) for x in found],
+                         [("D7", '=COUNTIFS(D4:D6,"<>1st Wk",$D4:$D6,"<>RT")')])
