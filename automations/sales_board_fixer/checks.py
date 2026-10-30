@@ -445,6 +445,7 @@ def _no_rows(pattern: str) -> str:
     return re.sub(r"(\[[+-]\d+\]\$?)\d+", r"\1", pattern)
 
 
+REP_ROW = re.compile(r"\breps?\b", re.I)
 DAY_MAJORITY = 4         # days that must share a formula before an odd day is fixed
 
 
@@ -458,6 +459,8 @@ def check_day_rows(tab: str, values, formulas) -> List[Finding]:
     columns). A blank day is left alone -- some boards stop at Saturday."""
     first, last = block_rows(values)
     starts = sorted(min(cols.values()) for cols in day_blocks(values).values())
+    counts = set(_stat_rows(values).values())
+    broken = any(_overcounts(values, r, starts) for r in counts)
     if len(starts) < DAY_MAJORITY:
         return []
     width = min(b - a for a, b in zip(starts, starts[1:]))
@@ -467,6 +470,10 @@ def check_day_rows(tab: str, values, formulas) -> List[Finding]:
         if first <= r <= last:
             continue
         label = " ".join(str(_g(values, r, lay.name_col)).split()) or str(r)
+        # a rep count that overcounts means the days' own formulas are the broken
+        # ones: every 'Reps ...' row of that board is left as typed, reported only
+        if (r in counts or broken and REP_ROW.search(label)) and                 (broken or _overcounts(values, r, starts)):
+            continue
         for off in range(width):
             cells = [(c + off, str(_g(formulas, r, c + off))) for c in starts]
             pats = {c: normalize_cols(x, c) for c, x in cells if x.startswith("=")}
@@ -526,6 +533,16 @@ def _stat_rows(values) -> Dict[str, int]:
     return out
 
 
+def _overcounts(values, r: int, cols) -> bool:
+    """A rep count on row r that says more reps than the board has names --
+    Drew's 'Reps in the Field' (2026-10-30) counts the empty rows too: 108 every
+    day, so he types Monday's real 12 by hand. Copying that formula over his
+    number would put the 108 back."""
+    first, last = block_rows(values)
+    reps = sum(1 for x in range(first, last + 1) if name_at(values, x))
+    return any((_num(_g(values, r, c)) or 0) > reps for c in cols)
+
+
 def check_day_stats(tab: str, values, formulas) -> List[Finding]:
     """'Total Reps in the Field' / 'Reps that got on the Board', each day
     (Raf 2026-10-30: "the sales board isn't showing active reps selling").
@@ -561,7 +578,10 @@ def check_day_stats(tab: str, values, formulas) -> List[Finding]:
             active = sum(1 for x in reps if (_num(_g(values, x, c)) or 0) > 0
                          or (tk and (_num(_g(values, x, tk)) or 0) > 0))
             on_board = _num(_g(values, rows["board"], c)) if "board" in rows else None
-            if key == "field":
+            if shown > len(reps):
+                bad = True
+                said = "%s dice %d, más que los %d reps del board" % (day, shown, len(reps))
+            elif key == "field":
                 bad = (active and not shown) or (on_board is not None and shown < on_board)
                 said = "%s dice %d en el campo; %d reps vendieron o golpearon" % (day, shown, active)
             else:
@@ -571,7 +591,7 @@ def check_day_stats(tab: str, values, formulas) -> List[Finding]:
                 continue
             raw = _g(formulas, r, c)
             label = " ".join(str(_g(values, r, layout(values).name_col)).split())
-            if top and pats.get(c) != top:
+            if top and pats.get(c) != top and not _overcounts(values, r, [x[1] for x in days]):
                 fix = denormalize_cols(top, c)
                 out.append(Finding("day_stats_formula", tab, a1(r, c),
                                    "%s (%s)" % (KIND_LABEL["day_stats_formula"], said),

@@ -514,3 +514,17 @@ class DayRows(unittest.TestCase):
         v, f = stats_board((2, 0, 1, 0, 0, 0, 0), (1, 0, 1, 0, 0, 0, 0),
                            field_fx={1: '=COUNTIF(F3:F9,">0")+COUNTIF(G3:G9,">0")'})
         self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row == 12])
+
+    def test_typed_count_stays_when_the_days_formula_counts_empty_rows(self):
+        # Drew 2026-10-30: the formula says 108 every day, Monday's 12 is typed on purpose
+        v, f = stats_board((2, 50, 50, 50, 50, 50, 50), (1, 0, 1, 0, 0, 0, 0))
+        f[11][3] = "2"
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row == 12])
+        wrong = [y for y in K.check_day_stats("t", v, f) if y.row == 12]
+        self.assertTrue(wrong and all(not y.fixable for y in wrong))
+
+    def test_other_rep_rows_stay_too_when_the_field_count_is_broken(self):
+        v, f = stats_board((2, 50, 50, 50, 50, 50, 50), (1, 0, 1, 0, 0, 0, 0))
+        f[11][3] = "2"
+        f[12][3] = "1"                                   # board count typed as well
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row in (12, 13)])
