@@ -301,8 +301,14 @@ SOUTH_SHORE = "13a1ACbG_F_r1g5D9Zny7fSixuolobwyEL1YQXu1WgJk"
 SOUTH_SHORE_CLOSED = "1r4hjaI8T42cT9j7DGDjtmoX8dffGWVstllqUSqVLETM"
 
 _MORE = [
-    ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Mallick", "21328", "Elite Prime Group",
-     "C05BPNNJGE7", "C0C3RDDJ9MH", r"elite\s*prime\s*group.*1st\s*round"),
+    # Salik's 1st rounds moved to #salik-haque-office-recruiting-21328 from
+    # 9/28 (old C05BPNNJGE7 renamed "dont use" 10/9); there the thread is
+    # "Elite Prime Group - 28 of September - 1st rounds" through 10/19, then
+    # "FIRST ROUND THREAD: 10/23" from 10/23. Both channels read (like Rashad).
+    # ARS tab renamed "Salik Mallick" -> "Salik Malik".
+    ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Malik", "21328", "Elite Prime Group",
+     ["C0C1VT19BEX", "C05BPNNJGE7"], "C0C3RDDJ9MH",
+     r"elite\s*prime\s*group.*1st\s*round|^\W*first\s*round\s*thread"),
     ("kash", "Kash Rai", ARS_J_TO_L, "Kash Rai", "22177", "Palace Acquisitions Inc",
      "C08U6GCS7SB", "C0C3VMK0B1U", r"palace\s*acquisitions.*1st\s*round"),
     ("cyrus", "Cyrus Wade", ARS_A_TO_C, "Cyrus Wade", "22815", "Ambient Marketing",
