@@ -1741,8 +1741,11 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
             _me = _pwd.getpwuid(_os_bg.getuid()).pw_name
         except Exception:  # noqa: BLE001
             _console = _me = ""
-        if _console and _console != _me:
-            _log("[cdp] background user %s (screen belongs to %s): direct "
+        # The Lucy Mac user always launches directly, on screen or not: its own
+        # test on 10/30 answered at once started this way, and froze every time
+        # through `open -g -j`.
+        if (_console and _console != _me) or "lucy" in _me.lower():
+            _log("[cdp] separate Mac user %s (screen belongs to %s): direct "
                  "launch, mock keychain" % (_me, _console))
             launch.insert(1, "--use-mock-keychain")
         else:
