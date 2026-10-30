@@ -1491,6 +1491,11 @@ def build_week_board(cols, crew, today, log=print) -> Path:
     return board_shots.render(today, OUT_DIR, log=log)["week"]
 
 
+# Sections that BUILD (so --only/--dm previews work) but never post to the
+# thread (Carlos 2026-10-29: "dont send the override tree on the nds thread
+# yet") — move a sid out of here when he says go.
+HELD_FROM_THREAD = {"override_board"}
+
 SECTIONS = [
     ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
      build_day_board),
@@ -1507,9 +1512,8 @@ SECTIONS = [
      build_pct_on_board),
     ("team_tree", "\U0001F333", "NDS Team Tree",
      build_team_tree),
-    # override_board: HELD from the thread (Carlos 2026-10-29: "dont send
-    # the override tree on the nds thread yet") — still buildable with
-    # --only override_board --dm for previews; re-add here when he says go.
+    ("override_board", "\U0001FA9C", "NDS Leader Overrides",
+     build_override_board),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
@@ -1545,7 +1549,8 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         header = f"NDS Metrics — {today.strftime('%B %d, %Y')}"
         ts = client.chat_postMessage(channel=CHANNEL[1], text=header)["ts"]
         contents = "\n".join(f"{emoji} {title}"
-                             for _id, emoji, title, _fn in SECTIONS)
+                             for _id, emoji, title, _fn in SECTIONS
+                             if _id not in HELD_FROM_THREAD)
         client.chat_postMessage(channel=CHANNEL[1], thread_ts=ts,
                                 text="In this thread:\n" + contents)
         state = {"ts": ts, "posted": []}
@@ -1553,6 +1558,8 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         from automations.shared.slack_metrics_post import pin_message
         pin_message(client, CHANNEL[1], ts, log=log)
     for (sid, emoji, title, _fn) in SECTIONS:
+        if sid in HELD_FROM_THREAD:
+            continue
         path = artifacts.get(sid)
         if not path or (sid in state["posted"] and not force):
             continue
