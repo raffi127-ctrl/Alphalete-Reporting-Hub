@@ -523,6 +523,38 @@ HELPERS = {
 }
 
 
+# THE OWNERVILLE CLOCK IS THE LOGIN'S, NOT THE OFFICE'S. OwnerVille renders
+# every knock time in the logged-in user's profile timezone. Colten's profile
+# is Eastern and his board reads right; Omar's profile is Central, so on
+# 2026-10-30 his 3:25 PM Eastern board showed every last knock an hour ago
+# (2:22 PM) and the gap list judged his reps 60 minutes idle (Megan: "Omar's
+# knock boards need to be posting in eastern"). The permanent fix is the
+# profile; until then, name the clock here and the board shifts the times
+# into the office's own timezone. Remove the entry once the profile is fixed.
+OV_CLOCK = {
+    "omar": "America/Chicago",
+}
+
+
+def ov_clock_shift_minutes(office, when=None) -> int:
+    """Minutes to ADD to an OwnerVille time to read it on this office's clock.
+    0 when the login's clock is the office's (the default)."""
+    import datetime as _dt
+    key = (getattr(office, "key", "") or "").strip().lower()
+    clock = OV_CLOCK.get(key)
+    if not clock:
+        return 0
+    try:
+        from zoneinfo import ZoneInfo
+        when = when or _dt.datetime.now()
+        naive = when.replace(tzinfo=None)
+        off_office = ZoneInfo(office.timezone).utcoffset(naive) or _dt.timedelta(0)
+        off_clock = ZoneInfo(clock).utcoffset(naive) or _dt.timedelta(0)
+        return int((off_office - off_clock).total_seconds() // 60)
+    except Exception:  # noqa: BLE001 -- a bad zone name must not cost a board
+        return 0
+
+
 def helpers_for(key: str) -> tuple:
     """Extra Slack ids to tell alongside the owner. Never raises."""
     return tuple(HELPERS.get((key or "").strip().lower()) or ())

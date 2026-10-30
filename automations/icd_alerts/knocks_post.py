@@ -574,6 +574,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             tracker = json.loads(row[KN_TRACKER] or "[]")
         except ValueError:
             tracker = []
+        raw, tracker = shift_ov_clock(office, raw, tracker, now)
         rows_for_board = M.to_rows(raw, tracker)
         if not rows_for_board:
             log("%-10s relayed nothing to draw yet today" % key)
@@ -1128,6 +1129,50 @@ def _remember_gaps(key: str, day: dt.date, names, dest: str = "") -> None:
         _gaps_path().write_text(json.dumps(seen, indent=2, sort_keys=True))
     except Exception:  # noqa: BLE001
         pass
+
+
+def _shift_clock_text(text: str, minutes: int) -> str:
+    """'2:22 PM' + 60 -> '3:22 PM'. Unknown shapes come back untouched."""
+    for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
+        try:
+            t = dt.datetime.strptime(str(text).strip().upper(), fmt)
+        except ValueError:
+            continue
+        t = t + dt.timedelta(minutes=minutes)
+        return t.strftime("%I:%M %p").lstrip("0")
+    return text
+
+
+def _shift_iso(text: str, minutes: int) -> str:
+    try:
+        t = dt.datetime.fromisoformat(str(text))
+    except ValueError:
+        return text
+    return (t + dt.timedelta(minutes=minutes)).isoformat()
+
+
+def shift_ov_clock(office, raw: list, tracker: list, now=None):
+    """Read OwnerVille's times on the OFFICE's clock (offices.OV_CLOCK).
+
+    OwnerVille stamps every knock in the LOGIN's profile timezone; Omar's is
+    Central and his office is Eastern, so his 3:25 PM board showed last knocks
+    at 2:22 PM and the gap list called everyone an hour idle (2026-10-30).
+    Durations and counts are untouched -- only wall-clock fields move."""
+    minutes = O.ov_clock_shift_minutes(office, now)
+    if not minutes:
+        return raw, tracker
+    for r in raw or []:
+        for f in ("first knock", "last knock"):
+            if r.get(f):
+                r[f] = _shift_clock_text(r[f], minutes)
+    for t in tracker or []:
+        for f in ("firstKnockDate", "lastKnockDate"):
+            if t.get(f):
+                t[f] = _shift_clock_text(t[f], minutes)
+        for f in ("firstKnockTimestamp", "lastKnockTimestamp"):
+            if t.get(f):
+                t[f] = _shift_iso(t[f], minutes)
+    return raw, tracker
 
 
 def _minutes_since(last_knock: str, now: dt.datetime):
