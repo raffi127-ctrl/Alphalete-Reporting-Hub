@@ -44,7 +44,9 @@ SLACK_CHANNEL = "C068PH3RFSM"                  # #alphalete-sales
 PHOTO_GROUPS = ["Knocking Chat A-Players"]
 # The room Raf adds Lucy to in the Loom. Resolved by NAME on every send
 # (text_post.resolve_group raises on 0 or 2+ matches, never guesses).
-NAMES_GROUPS = ["Car Ride"]
+# Full name on Lucy 1 is "Car Ride Leaders" + two emojis (31 people,
+# find_group 2026-10-30); the match is "contains", so the emojis stay out.
+NAMES_GROUPS = ["Car Ride Leaders"]
 
 TAB_PREFIX = "Line Up WE"
 LAST_HEADER = "car ride #5"
@@ -60,6 +62,14 @@ def _ct_today() -> dt.date:
         return dt.datetime.now(ZoneInfo("America/Chicago")).date()
     except Exception:  # noqa: BLE001
         return dt.date.today()
+
+
+def _ct_hour() -> int:
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.datetime.now(ZoneInfo("America/Chicago")).hour
+    except Exception:  # noqa: BLE001
+        return dt.datetime.now().hour
 
 
 def tab_name(day: dt.date) -> str:
@@ -181,10 +191,16 @@ def main(argv=None) -> int:
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--photo", action="store_true", help="11:45 picture")
     g.add_argument("--names", action="store_true", help="8:45 PM names text")
+    # The LaunchAgent fires both slots with --auto: before 4pm CT is the
+    # picture, after is the names. One agent, one plist.
+    g.add_argument("--auto", action="store_true", help="--photo before 4pm CT, --names after")
     ap.add_argument("--send", action="store_true", help="really post (default: dry run)")
     ap.add_argument("--force", action="store_true", help="send even if already sent today")
     ap.add_argument("--tab", help="read this tab instead of this week's")
     a = ap.parse_args(argv)
+    if a.auto:
+        a.names = _ct_hour() >= 16
+        a.photo = not a.names
 
     day = _ct_today()
     slot = "photo" if a.photo else "names"

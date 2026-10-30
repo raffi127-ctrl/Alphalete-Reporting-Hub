@@ -14533,6 +14533,52 @@
     "type": "not_configured"
    }
   },
+  "lineup_post": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "standalone_weekdays": [0, 1, 2, 3, 4, 5],
+   "_note": "Raf 2026-10-22 (Loom): 11:45 CT picture of the Line Up box (Alphalete SALES BOARD 2025 -> 'Line Up WE <sunday>', '#' .. 'Car Ride #5') -> #alphalete-sales + 'Knocking Chat A-Players'; 20:45 CT the car-ride names (struck-out names dropped) -> the 'Car Ride Leaders' iMessage chat. Real schedule = com.alphalete.lineup-post on LUCY 1 (texting machine), Mon-Sat, --auto picks the slot by the CT hour. Dry-runs by default; --send posts. One send per slot per day (lock file).",
+   "display_name": "Line Up Post + Car Rides (Raf)",
+   "source_type": "sheet",
+   "data_sources": [],
+   "command": [
+    "automations.lineup_post.run"
+   ],
+   "base_args": [
+    "--auto"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
+  "install_lineup_post_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Install/refresh com.alphalete.lineup-post on LUCY 1 (Line Up picture 11:45 + Car Ride names 20:45, Mon-Sat CT). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 1",
+   "display_name": "Install Line Up Post agent (11:45 + 20:45 Mon-Sat)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lineup-post"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_owner_sales_hourly_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "Install/refresh com.alphalete.owner-sales-hourly on LUCY 1 (owners' sales-so-far text, hourly :50). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
