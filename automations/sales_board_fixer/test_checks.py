@@ -437,3 +437,80 @@ class OutsideBlock(unittest.TestCase):
         found = K.check_outside_block("t", v, f)
         self.assertEqual([x.where for x in found], ["D13", "D14", "D15"])
         self.assertEqual(found[0].value, "=SUM($E13:$G13)")
+
+
+def stats_board(field_shown, board_shown, field_fx=None, sold=(1, 0, 2, 0), tk=(50, 40, 0, 0)):
+    n = len(field_shown)
+    sold, tk = (tuple(sold) + (0,) * 7)[:n], (tuple(tk) + (0,) * 7)[:n]
+    """n days (MON..., one per shown value) of Apps | TK, 6 reps, TOTALS, a blank row, then
+    'Total Reps in the Field' and 'Reps that got on the Board' under each Apps."""
+    days = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")[:n]
+    w = 3 + 2 * n
+    hdr1 = ["", "", ""] + [x for d in days for x in (d, "")]
+    hdr3 = ["", "#", "Name"] + ["Apps", "TK"] * n
+    vals, fx = [hdr1, [""] * w, hdr3], [hdr1, [""] * w, hdr3]
+    for i in range(6):
+        row = ["", str(i + 1), "Rep %d" % i]
+        for d in range(n):
+            row += [str(sold[d]) if i == 0 else "0", str(tk[d]) if i < 2 else ""]
+        vals.append(row)
+        fx.append(row)
+    vals.append(["", "", "TOTALS"] + [""] * (w - 3))
+    fx.append(["", "", "TOTALS"] + [""] * (w - 3))
+    vals.append([""] * w)
+    fx.append([""] * w)
+    for label, shown, f in (("Total Reps in the Field", field_shown, field_fx),
+                            ("Reps that got on the Board", board_shown, None)):
+        v, x = ["", "", label], ["", "", label]
+        for d in range(n):
+            c = 4 + 2 * d
+            apps, tkc = K.col_letter(c), K.col_letter(c + 1)
+            good = "=COUNTIF(%s4:%s9,\">0\")+COUNTIF(%s4:%s9,\">0\")" % (apps, apps, tkc, tkc)
+            v.append(str(shown[d]))
+            x.append((f or {}).get(d, good))
+            v.append("")
+            x.append("")
+        vals.append(v)
+        fx.append(x)
+    return vals, fx
+
+
+class DayStats(unittest.TestCase):
+    def test_day_with_knocks_but_zero_in_field_gets_other_days_formula(self):
+        v, f = stats_board((2, 0, 1, 0), (1, 0, 1, 0), field_fx={1: "=0"})
+        found = K.check_day_stats("t", v, f)
+        self.assertEqual([(y.kind, y.where) for y in found], [("day_stats_formula", "F12")])
+        self.assertEqual(found[0].value, '=COUNTIF(F4:F9,">0")+COUNTIF(G4:G9,">0")')
+
+    def test_day_nobody_worked_yet_is_not_flagged(self):
+        v, f = stats_board((2, 2, 1, 0), (1, 0, 1, 0))
+        self.assertEqual(K.check_day_stats("t", v, f), [])
+
+    def test_fewer_in_field_than_on_board_with_no_formula_to_copy_is_reported(self):
+        bad = {d: "=1" for d in range(4)}
+        v, f = stats_board((1, 2, 1, 0), (1, 0, 2, 0), field_fx=bad)
+        found = K.check_day_stats("t", v, f)
+        self.assertEqual([(y.kind, y.where) for y in found], [("day_stats_wrong", "H12")])
+        self.assertFalse(found[0].fixable)
+
+    def test_board_without_summary_rows_is_skipped(self):
+        v, f = stats_board((2, 2, 1, 0), (1, 0, 1, 0))
+        self.assertEqual(K.check_day_stats("t", v[:10], f[:10]), [])
+
+
+class DayRows(unittest.TestCase):
+    def test_odd_day_formula_and_typed_day_get_the_days_formula(self):
+        v, f = stats_board((2, 0, 1, 0, 0, 0, 0), (1, 0, 1, 0, 0, 0, 0), field_fx={1: "=0"})
+        f[11][9] = "7"                                   # THU typed over
+        found = {y.where: (y.kind, y.value) for y in K.check_day_rows("t", v, f)}
+        self.assertEqual(found["F12"], ("day_formula_differs", '=COUNTIF(F4:F9,">0")+COUNTIF(G4:G9,">0")'))
+        self.assertEqual(found["J12"][0], "typed_over_formula")
+
+    def test_three_days_agreeing_is_not_enough(self):
+        v, f = stats_board((2, 0, 1, 0), (1, 0, 1, 0), field_fx={1: "=0", 3: "=1"})
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row == 12])
+
+    def test_sum_that_only_starts_on_another_row_is_left_alone(self):
+        v, f = stats_board((2, 0, 1, 0, 0, 0, 0), (1, 0, 1, 0, 0, 0, 0),
+                           field_fx={1: '=COUNTIF(F3:F9,">0")+COUNTIF(G3:G9,">0")'})
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row == 12])

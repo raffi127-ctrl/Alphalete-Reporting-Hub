@@ -244,7 +244,9 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
         found = lanes_findings(t)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
     elif K.is_board(v):
-        found = (K.check_formulas(title, v, f) + K.check_outside_block(title, v, f)
+        found = (K.check_formulas(title, v, f) + _one_per_cell(
+                     K.check_day_rows(title, v, f) + K.check_outside_block(title, v, f)
+                     + K.check_day_stats(title, v, f))
                  + K.check_roll_call(title, v, learn=owner)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"])
@@ -263,6 +265,19 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
             found += K.check_lineup_names(title, f, t["boards"], t.get("home"),
                                           keep=t.get("run_boards", ()))
     return found
+
+
+def _one_per_cell(found: list) -> list:
+    """Day-to-day, neighbour and summary-row checks can land on the same cell:
+    the first fix for a cell wins, a later one there is dropped."""
+    seen, out = set(), []
+    for x in found:
+        if x.fixable and x.where in seen:
+            continue
+        if x.fixable:
+            seen.add(x.where)
+        out.append(x)
+    return out
 
 
 def tenure_history(sh, today: dt.date):
@@ -736,7 +751,7 @@ def lane_tabs(sh, only_for=None) -> list:
 # past the cap, which would have stopped every fix on her board.
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
-               "cf_strike_stray", "cf_row_shift", "lineup_short", "lineup_old_week",
+               "cf_strike_stray", "cf_row_shift", "day_stats_formula", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
                *LC.REPAIRS}
 

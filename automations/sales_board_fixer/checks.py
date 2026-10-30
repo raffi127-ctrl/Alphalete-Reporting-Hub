@@ -57,6 +57,9 @@ KIND_LABEL = {
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "cf_row_shift": "color de estado que pinta la fila de al lado, no la del rep",
+    "day_stats_formula": "fila de resumen del día (en el campo / en el board) con otra fórmula que los demás días",
+    "day_formula_differs": "un día con otra fórmula que los demás días en la misma fila",
+    "day_stats_wrong": "fila de resumen del día no cuenta a los reps que vendieron o golpearon",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
     "lineup_short": "Line Up: la lista de nombres no termina en la fila arriba de TOTALS del Sales Board",
     "lineup_old_week": "Line Up: la lista de nombres lee una semana vieja, no el board en uso",
@@ -438,6 +441,149 @@ def _group_added_rows(found: List[Finding]) -> List[Finding]:
     return found
 
 
+def _no_rows(pattern: str) -> str:
+    return re.sub(r"(\[[+-]\d+\]\$?)\d+", r"\1", pattern)
+
+
+DAY_MAJORITY = 4         # days that must share a formula before an odd day is fixed
+
+
+def check_day_rows(tab: str, values, formulas) -> List[Finding]:
+    """Under the rep list every day block repeats the same row of formulas --
+    TOTALS, 'Rolled a Zero', '% on the Board', the Teams lines (Eve 2026-10-30:
+    'formulas pisadas con numeros' -- WE 10.25 Tuesday 'Rolled a Zero' counted
+    zeros while the other six days did field - board). Same cell in each day,
+    compared day to day: when 4+ days share one formula and are the majority,
+    a day with a typed number or another formula gets it back (its own
+    columns). A blank day is left alone -- some boards stop at Saturday."""
+    first, last = block_rows(values)
+    starts = sorted(min(cols.values()) for cols in day_blocks(values).values())
+    if len(starts) < DAY_MAJORITY:
+        return []
+    width = min(b - a for a, b in zip(starts, starts[1:]))
+    lay = layout(values)
+    out: List[Finding] = []
+    for r in range(lay.sub_row + 1, len(formulas) + 1):
+        if first <= r <= last:
+            continue
+        label = " ".join(str(_g(values, r, lay.name_col)).split()) or str(r)
+        for off in range(width):
+            cells = [(c + off, str(_g(formulas, r, c + off))) for c in starts]
+            pats = {c: normalize_cols(x, c) for c, x in cells if x.startswith("=")}
+            if not pats:
+                continue
+            top, hits = collections.Counter(pats.values()).most_common(1)[0]
+            if hits < max(DAY_MAJORITY, len(starts) // 2 + 1):
+                continue
+            for c, raw in cells:
+                if c in pats:
+                    # =SUM(U6:U113) vs =SUM(U4:U113): only where the range
+                    # starts -- same total, and moving it up could pull a
+                    # header date into the sum (Drew, 2026-10-30)
+                    if pats[c] == top or _no_rows(pats[c]) == _no_rows(top):
+                        continue
+                    kind = "day_formula_differs"
+                elif _typed_number(raw):
+                    kind = "typed_over_formula"
+                else:
+                    continue
+                fix = denormalize_cols(top, c)
+                out.append(Finding(
+                    kind, tab, a1(r, c), "%s, fila %s" % (KIND_LABEL[kind], label),
+                    row=r, name=label, before=raw[:120], after=fix[:120], value=fix))
+    return out
+
+
+# --- the per-day summary rows under TOTALS ------------------------------------
+
+STAT_ROWS = (("field", re.compile(r"in\s+the\s+field", re.I)),
+             ("board", re.compile(r"on\s+the\s+board", re.I)))
+
+
+def _num(x) -> Optional[float]:
+    s = str(x if x is not None else "").strip().replace(",", "").rstrip("%")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _stat_rows(values) -> Dict[str, int]:
+    """{'field': row, 'board': row} -- 'Total Reps in the Field' and 'Reps that
+    got on the Board', found by label under TOTALS. '% of Reps on the Board' is
+    a ratio, not a count: left out."""
+    lay = layout(values)
+    out: Dict[str, int] = {}
+    for r in range(lay.last + 2, len(values) + 1):
+        text = " ".join(" ".join(str(_g(values, r, c)).split())
+                        for c in range(1, lay.name_col + 2))
+        if "%" in text:
+            continue
+        for key, rx in STAT_ROWS:
+            if key not in out and rx.search(text):
+                out[key] = r
+                break
+    return out
+
+
+def check_day_stats(tab: str, values, formulas) -> List[Finding]:
+    """'Total Reps in the Field' / 'Reps that got on the Board', each day
+    (Raf 2026-10-30: "the sales board isn't showing active reps selling").
+    A day where reps sold or knocked but the row says 0 -- or says fewer in
+    the field than on the board -- has a broken count. When the other days
+    agree on one formula, the odd day gets it back (same formula, its own
+    columns); when they don't, it's only reported. A day nobody has worked yet
+    reads 0 on both sides and is never flagged."""
+    rows = _stat_rows(values)
+    if not rows:
+        return []
+    first, last = block_rows(values)
+    days = [(d, cols.get("apps") or cols.get("units"), cols.get("tk"))
+            for d, cols in day_blocks(values).items()]
+    days = [x for x in days if x[1]]
+    out: List[Finding] = []
+    for key, r in rows.items():
+        pats = {}
+        for _d, c, _tk in days:
+            f = str(_g(formulas, r, c))
+            if f.startswith("="):
+                pats[c] = normalize_cols(f, c)
+        top, hits = (collections.Counter(pats.values()).most_common(1)[0]
+                     if pats else (None, 0))
+        if hits < max(3, len(days) // 2 + 1):
+            top = None
+        for day, c, tk in days:
+            shown = _num(_g(values, r, c))
+            if shown is None:
+                continue
+            reps = [x for x in range(first, last + 1) if name_at(values, x)]
+            sold = sum(1 for x in reps if (_num(_g(values, x, c)) or 0) > 0)
+            active = sum(1 for x in reps if (_num(_g(values, x, c)) or 0) > 0
+                         or (tk and (_num(_g(values, x, tk)) or 0) > 0))
+            on_board = _num(_g(values, rows["board"], c)) if "board" in rows else None
+            if key == "field":
+                bad = (active and not shown) or (on_board is not None and shown < on_board)
+                said = "%s dice %d en el campo; %d reps vendieron o golpearon" % (day, shown, active)
+            else:
+                bad = sold and not shown
+                said = "%s dice %d en el board; %d reps vendieron" % (day, shown, sold)
+            if not bad:
+                continue
+            raw = _g(formulas, r, c)
+            label = " ".join(str(_g(values, r, layout(values).name_col)).split())
+            if top and pats.get(c) != top:
+                fix = denormalize_cols(top, c)
+                out.append(Finding("day_stats_formula", tab, a1(r, c),
+                                   "%s (%s)" % (KIND_LABEL["day_stats_formula"], said),
+                                   row=r, name=label, before=str(raw)[:120] or "(vacía)",
+                                   after=fix[:120], value=fix))
+            else:
+                out.append(Finding("day_stats_wrong", tab, a1(r, c),
+                                   "%s (%s)" % (KIND_LABEL["day_stats_wrong"], said),
+                                   row=r, name=label, before=str(raw)[:120] or "(vacía)"))
+    return out
+
+
 def check_errors(tab: str, values, formulas) -> List[Finding]:
     """Error values anywhere on the tab. Reported; the rep-block ones are
     fixed by check_formulas when the column has a healthy majority."""
@@ -632,6 +778,8 @@ NOTE_LABEL = {
     "font": "font/size didn't match the column",
     "number_format": "number format didn't match the column",
     "style": "bold/centering didn't match the column",
+    "day_formula_differs": "this day's formula didn't match the other days",
+    "day_stats_formula": "this day's count didn't use the same formula as the other days",
     "roll_call_blank": "Int had the status but the Roll Call was blank",
     "start_date_moved": "this was another rep's start date (left behind by a sort)",
     "days_formula": "# Days Worked was missing or pointed at another row",
