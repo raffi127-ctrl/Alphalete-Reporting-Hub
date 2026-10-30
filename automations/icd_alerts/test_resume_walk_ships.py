@@ -377,6 +377,17 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
             RP._note_wall(True)
         self.assertEqual(self.filed, [])
 
+    def test_a_block_that_lasts_overnight_alerts_again_next_morning(self):
+        # Atef, 10/30: alerted 10/29, count carried past the limit, no DM.
+        for _ in range(RP.WALL_RUNS + 3):
+            RP._note_wall(True)
+        self.assertEqual(len(self.filed), 1)        # once today
+        st = RP._state()
+        st["wall_alert_day"] = "2026-01-01"         # that was another day
+        RP._save_state(st)
+        RP._note_wall(True)
+        self.assertEqual(len(self.filed), 2)
+
     def test_two_walls_in_a_row_alert(self):
         # Megan 2026-10-29: catch it early -- 2, not 3.
         self.assertEqual(RP.WALL_RUNS, 2)

@@ -1151,8 +1151,17 @@ def _note_wall(walled: bool) -> None:
         except Exception:  # noqa: BLE001
             pass
         return
-    if streak != WALL_RUNS:
+    # ONCE PER DAY WHILE IT LASTS, not only the moment the count hits the limit
+    # (Megan 2026-10-30: "atef didn't get a dm alert"). His count carried over
+    # from 10/29 (alerted 3:47pm) and walked past the limit, so the next
+    # morning's block said nothing.
+    if streak < WALL_RUNS:
         return
+    today = dt.date.today().isoformat()
+    if st.get("wall_alert_day") == today:
+        return
+    st["wall_alert_day"] = today
+    _save_state(st)
     try:
         from automations.icd_alerts import relay as R
         R.report_fault(
