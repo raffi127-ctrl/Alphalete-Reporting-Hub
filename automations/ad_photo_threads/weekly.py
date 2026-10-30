@@ -336,7 +336,7 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
                  only_keys: Optional[List[str]] = None,
                  history: Optional[Dict[str, List[tuple]]] = None,
                  skip=None, before_first=None, title_header: bool = False,
-                 on_done=None, mark: str = "") -> Dict[str, object]:
+                 on_done=None, mark: str = "", on_fail=None) -> Dict[str, object]:
     """Post (or re-post) one week's block in each ad's thread.
 
     `history` = ad_history() for the "Total stats for this ad" lines; left
@@ -354,7 +354,10 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
     the header was deleted, rather than loose replies in the channel.
     `mark` goes before the title (LIVE: an ad posted tonight is running).
     `on_done(item, ts, new)` runs after each ad's block is up, so the caller
-    can save state ad by ad (a pass that dies halfway keeps what it did). Order inside the block: the list +
+    can save state ad by ad (a pass that dies halfway keeps what it did).
+    An ad that raises is skipped and listed in counts["failed"]; `on_fail(item,
+    ts)` runs when its thread had just been opened, so the retry reuses that
+    thread instead of opening a second one. Order inside the block: the list +
     photos, then the numbers -- each upload waits until it is visible in the
     thread so Slack can't shuffle them (project memory: upload order race)."""
     from automations.shared.slack_metrics_post import _uploaded_file_id, wait_for_share
@@ -372,7 +375,8 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
     if skip is not None:
         items = [i for i in items if not skip(i)]
     counts = {"threads_new": 0, "blocks": 0, "cleared": 0, "photos": 0,
-              "keys": [i["key"] for i in items], "new_keys": [], "items": items}
+              "keys": [i["key"] for i in items], "new_keys": [], "items": items,
+              "failed": []}
     if not items:
         return counts
     if history is None:
@@ -380,7 +384,7 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
                              dt.date.fromisoformat(config.THREADS_SINCE), through)
     seconds = load_seconds()
 
-    for item in items:
+    def one(item: dict) -> None:
         ts = threads.get(item["key"])
         if ts and title_header and not post._thread_alive(cl, channel, ts):
             print(f"  thread for {item['title']!r} is gone; opening a new one")
@@ -427,6 +431,21 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
         counts["blocks"] += 1
         if on_done is not None:
             on_done(item, ts, item["key"] in counts["new_keys"])
+
+    # Carlos 10/29: one ad's error ended the whole pass -- the ads after it
+    # (three brand-new ones among them) got no thread two nights running, and
+    # nobody knew. Now that ad is skipped and named in counts["failed"]; the
+    # rest still go up, and the next tick retries only what didn't.
+    for item in items:
+        try:
+            one(item)
+        except Exception as e:                   # noqa: BLE001 — the next ad still posts
+            why = f"{type(e).__name__}: {str(e)[:200]}"
+            print(f"  FAILED {item['title']!r}: {why}")
+            counts["failed"].append((item["title"], why))
+            ts = threads.get(item["key"])
+            if on_fail is not None and ts and item["key"] in counts["new_keys"]:
+                on_fail(item, ts)
     return counts
 
 
@@ -482,6 +501,27 @@ def _recorder(channel: str, monday: dt.date, cl, out: dict, pin: bool = True):
                 print(f"  pin failed for {item['title']!r}: {err}")
         post._save_state(state)
     return done
+
+
+def _opened_saver(channel: str):
+    """on_fail for publish_week: an ad whose block failed right after its
+    thread was opened keeps that thread in state (no days, no signature), so
+    the retry posts into it instead of opening a second header."""
+    def opened(item: dict, ts: str) -> None:
+        state = post._load_state()
+        ad = _forever(state, channel).setdefault(
+            item["key"], {"thread_ts": "", "days": [], "pinned": False})
+        ad.update(thread_ts=ts, title=item["title"])
+        post._save_state(state)
+    return opened
+
+
+def without_thread(items: List[dict], channel: str) -> List[str]:
+    """The ads this week's 1st rounds landed on that still have no thread in
+    the channel after the post (Carlos 10/29: Midlothian, Grapevine and North
+    Richland Hills had interviews two nights and no thread)."""
+    have = _threads(_forever(post._load_state(), channel))
+    return [i["title"] for i in items if i["key"] not in have]
 
 
 def mark_status(channel: str, today: dt.date, *, cl=None, dry_run: bool = False,
@@ -553,7 +593,8 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
     cl = cl or collect._client()
     monday = post.week_monday(day)
     out = {"threads_new": 0, "blocks": 0, "cleared": 0, "photos": 0,
-           "pin_errors": 0, "to_pin": [], "to_unpin": []}
+           "pin_errors": 0, "to_pin": [], "to_unpin": [], "failed": [],
+           "no_thread": []}
     days = week_days(monday, day)
     if not days:
         return out
@@ -574,9 +615,12 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
     got = publish_week(reports, channel, cl=cl, threads=threads, crop=crop,
                        history=history, skip=unchanged, title_header=True,
                        on_done=_recorder(channel, monday, cl, out),
+                       on_fail=_opened_saver(channel),
                        mark=LIVE if mark else "")
     for k in ("threads_new", "blocks", "cleared", "photos"):
         out[k] += got[k]
+    out["failed"] = got["failed"]
+    out["no_thread"] = without_thread(plan_week(reports), channel)
     seconds = load_seconds()
     if seconds is not None:
         try:

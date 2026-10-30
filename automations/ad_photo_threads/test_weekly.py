@@ -250,6 +250,44 @@ class LivePathTest(unittest.TestCase):
         self.assertIn(tue.isoformat(), ad["days"])              # reconcile_pins reads days
         self.assertEqual(ad["stats"][tue.isoformat()]["removed"], 1)
 
+    def test_one_ad_failing_does_not_stop_the_rest(self):
+        """Carlos 10/29: one ad's error ended the pass, and the ads after it
+        (three new ones) never got a thread. Now the bad ad is skipped and
+        named, the rest post, and a retry reuses the thread it had opened."""
+        cl = LiveSlack()
+        boom = {"on": True}
+        real = cl.files_upload_v2
+
+        def upload(**kw):
+            if boom["on"] and "Ana" in kw.get("initial_comment", ""):
+                raise RuntimeError("read timed out")
+            return real(**kw)
+        cl.files_upload_v2 = upload
+        by_day = {MON: [cand("Ana", ad="frisco"), cand("Ana2", ad="frisco"),
+                        cand("Bo", ad="dallas")]}
+        got = weekly.publish_nightly(MON, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual([t for t, _ in got["failed"]], ["ATT Sales Rep Frisco"])
+        self.assertIn("read timed out", got["failed"][0][1])
+        wk = post._load_state()["C1"]["weeks"]["forever"]
+        self.assertIn("2026-09-28", wk["dallas"]["days"])           # the next ad still posted
+        frisco_ts = wk["frisco"]["thread_ts"]                         # opened thread kept
+        self.assertTrue(frisco_ts)
+        self.assertEqual(got["no_thread"], [])
+        boom["on"] = False
+        got = weekly.publish_nightly(MON, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual(got["failed"], [])
+        self.assertEqual(got["threads_new"], 0)                      # no second header
+        self.assertEqual(post._load_state()["C1"]["weeks"]["forever"]["frisco"]["thread_ts"],
+                         frisco_ts)
+
+    def test_ad_with_interviews_but_no_thread_is_named(self):
+        cl = LiveSlack()
+        cl.chat_postMessage = mock.Mock(side_effect=RuntimeError("channel_not_found"))
+        by_day = {MON: [cand("Ana", ad="midlothian")]}
+        got = weekly.publish_nightly(MON, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual(got["no_thread"], ["midlothian"])
+        self.assertEqual(len(got["failed"]), 1)
+
     def test_live_closed_mark_on_the_title(self):
         """Maddie + Carlos 10/20: ✅ while the ad had a 1st round in the last
         7 days, ❌ after a week without one, ✅ again when it comes back."""

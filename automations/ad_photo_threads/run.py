@@ -160,6 +160,8 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
         except Exception as e:                # noqa: BLE001 — next office still runs
             failed.append(o["key"])
             print(f"[{o['key']}] FAILED: {type(e).__name__}: {str(e)[:300]}")
+            _alert(o, day or dt.date.today(),
+                   crash=f"{type(e).__name__}: {str(e)[:300]}")
         if not explicit_date:
             try:
                 from automations.ad_photo_threads import audit
@@ -171,6 +173,56 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
 
 
 REDO_BUDGET_MIN = 35
+
+
+def _alert_key(o: dict) -> str:
+    return f"ad_photo_threads:{o['key']}"
+
+
+def _alert(o: dict, day: dt.date, *, failed=(), no_thread=(),
+           crash: str = "") -> None:
+    """Carlos 10/29: the nightly died two nights running and only its log on
+    the mini knew -- he found the missing ads himself. Say it in
+    #claudecorrections-and-requests, one thread per office (repeats from the
+    30-minute ticks land in the same thread). Only Lucy posts there; from any
+    other machine (a Windows test) it's just printed. Never raises."""
+    who = f"{o['owner']}'s ad photo threads"
+    lines = []
+    if crash:
+        lines.append(f"The evening post stopped before posting anything: `{crash}`")
+    for title, why in failed:
+        lines.append(f"• *{title}* didn't post: `{why}`")
+    for title in no_thread:
+        lines.append(f"• *{title}* had 1st rounds this week but has *no thread*")
+    lines.append("Re-run (posts only what's missing):")
+    lines.append(f"```lucy rerun ad_photo_threads --nightly --office {o['key']} "
+                 f"--date {day.isoformat()}```")
+    print(f"[{o['key']}] ALERT: " + " | ".join(lines))
+    try:
+        from automations.shared import incident_thread
+        if not incident_thread.is_lucy():
+            print("  (not Lucy -- the alert is printed, not posted)")
+            return
+        incident_thread.open_or_followup(
+            key=_alert_key(o),
+            title=f"{who}: ads missing from the channel ({day:%a %m/%d})",
+            channel_line=f"*Ad photo threads* — {o['owner']}: ads missing",
+            body=lines, label=f"Ad Photo Threads — {o['owner']}",
+            subjects=[t for t, _ in failed] + list(no_thread))
+    except Exception as e:                    # noqa: BLE001
+        print(f"  couldn't post the alert ({type(e).__name__}: {str(e)[:120]})")
+
+
+def _all_clear(o: dict, day: dt.date) -> None:
+    """Every ad posted and has its thread: close this office's alert if one is
+    open (free when none is)."""
+    try:
+        from automations.shared import incident_thread
+        incident_thread.resolve_if_open(
+            _alert_key(o), what=f"*{o['owner']}'s ad photo threads*",
+            detail=f"Every ad with 1st rounds has its thread ({day:%m/%d}).")
+    except Exception as e:                    # noqa: BLE001
+        print(f"  couldn't close the alert ({type(e).__name__}: {str(e)[:120]})")
 
 
 def redo_all(through: dt.date, crop: bool = True) -> int:
@@ -339,9 +391,15 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
             print("Pin reminder DM sent.")
     except Exception as e:                    # noqa: BLE001 — never costs the post
         print(f"pin reminder DM failed: {type(e).__name__}: {str(e)[:160]}")
+    failed, no_thread = counts.get("failed") or [], counts.get("no_thread") or []
+    if failed or no_thread:
+        _alert(o, day, failed=failed, no_thread=no_thread)
+    else:
+        _all_clear(o, day)
     # Done only when the day actually had candidates; an empty sheet at 4:30 PM
-    # (interviewers late to log) gets re-read on the next tick.
-    if rep.candidates:
+    # (interviewers late to log) gets re-read on the next tick. Not when an ad
+    # failed either: the next tick retries just that one.
+    if rep.candidates and not failed:
         post.mark_day_done(channel, day)
         if not explicit_date:
             _scorecard_if_due(o, channel, day)

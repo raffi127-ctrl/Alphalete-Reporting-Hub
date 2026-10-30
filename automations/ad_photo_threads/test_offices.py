@@ -142,10 +142,30 @@ class OfficesTest(unittest.TestCase):
         with mock.patch.object(config, "OFFICES", [_office("a", "America/Chicago"),
                                                    _office("b", "America/Chicago")]), \
                 mock.patch.object(run.dt, "datetime", _Clock), \
-                mock.patch("automations.ad_photo_threads.post.day_done", side_effect=done):
+                mock.patch("automations.ad_photo_threads.post.day_done", side_effect=done),                 mock.patch.object(run, "_alert") as alert:
             rc = run.nightly()
         self.assertEqual(seen, ["LIVE-a", "LIVE-b"])
         self.assertEqual(rc, 1)
+        # Carlos 10/29: a crash is said in #claudecorrections, not only logged.
+        self.assertEqual(alert.call_count, 1)
+        self.assertEqual(alert.call_args[0][0]["key"], "a")
+        self.assertIn("boom", alert.call_args[1]["crash"])
+
+    def test_alert_from_a_machine_that_is_not_lucy_only_prints(self):
+        with mock.patch("automations.shared.incident_thread.is_lucy", return_value=False),                 mock.patch("automations.shared.incident_thread.open_or_followup") as op:
+            run._alert(_office("a", "America/Chicago"), dt.date(2026, 10, 29),
+                       failed=[("Midlothian", "Timeout")], no_thread=["Grapevine"])
+        op.assert_not_called()
+
+    def test_alert_names_each_missing_ad_and_the_rerun(self):
+        with mock.patch("automations.shared.incident_thread.is_lucy", return_value=True),                 mock.patch("automations.shared.incident_thread.open_or_followup") as op:
+            run._alert(_office("carlos", "America/Chicago"), dt.date(2026, 10, 29),
+                       failed=[("Midlothian", "Timeout")], no_thread=["Grapevine"])
+        body = "\n".join(op.call_args[1]["body"])
+        self.assertIn("Midlothian", body)
+        self.assertIn("Grapevine", body)
+        self.assertIn("--office carlos --date 2026-10-29", body)
+        self.assertEqual(op.call_args[1]["key"], "ad_photo_threads:carlos")
 
 
 if __name__ == "__main__":
