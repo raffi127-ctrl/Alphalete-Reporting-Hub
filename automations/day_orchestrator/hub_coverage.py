@@ -234,6 +234,15 @@ _RETIRED: frozenset = frozenset({
     "b2b_dispositions_hourly", "b2b_dispositions_final",
     "b2b_dispositions_gaps", "b2b_dispositions_morning",
     "weekly_knock_dispositions_carlos_b2b",
+    # BOX Order Log + the Vantura Revenue Board, same Carlos 10/28 turn-off.
+    # remove_box_order_log_agent unloaded the order log, and the watcher then
+    # called it missing on 10/29. The revenue board only ever posted the BOX
+    # board on a live pass (ATT is the B2B Metrics runner's), into that order
+    # log's thread; with the BOX board off too (vantura_boards.OFF_BOARDS,
+    # Eve 2026-10-30) it has nothing left to post. Revive = the install_*
+    # reruns + delete these lines.
+    "box_order_log", "box-order-log",
+    "vantura_revenue_board", "vantura-revenue-board",
     # Atef NDS watch. Only existed to DM Eve when Atef's captainship landed in
     # NDS; Carlos 2026-10-27: Atef is no longer a captain. Both spellings.
     "atef-nds-watch", "atef_nds_watch",

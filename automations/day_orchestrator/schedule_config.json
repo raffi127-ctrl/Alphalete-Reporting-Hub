@@ -10980,6 +10980,30 @@
     "type": "not_configured"
    }
   },
+  "remove_vantura_revenue_board_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "display_name": "Remove Vantura Revenue Board agent (Box OFF 2026-10-30)",
+   "_note": "Carlos 2026-10-28: 'all of these box automations you're good to turn off'; Eve 2026-10-30 switched the BOX board off. A live pass of the revenue board only posts the :package: Box Revenue Board (the ATT one is the B2B Metrics runner's), into the BOX Order Log thread that no longer goes out, so it has nothing left to do. Unloads com.alphalete.vantura-revenue-board on Lucy 2. `lucy rerun install_vantura_revenue_board_agent` puts it back.",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "vantura-revenue-board",
+    "--remove"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_box_order_log_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_box_order_log_agent` can install/refresh the STANDALONE com.alphalete.box-order-log LaunchAgent on LUCY 2 (7:00am + 8:30am CST, deploy/box_order_log.sh). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
