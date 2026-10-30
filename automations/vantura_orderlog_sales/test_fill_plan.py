@@ -54,6 +54,24 @@ class HomeCampaignTest(unittest.TestCase):
 
     GRIDS = {"B2B": "b2b-grid", "BOX": "box-grid"}
 
+    def setUp(self):
+        # these pin the logic with every board ON; the BOX board is switched
+        # off live since 2026-10-30 (test_off_board_is_no_home covers that)
+        p = unittest.mock.patch.object(run, "board_on", return_value=True)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_off_board_is_no_home(self):
+        """BOX switched off: Nico's fallback home goes with it, so his NDS
+        sales stay on the NDS pass instead of waiting for a BOX pass that
+        never comes."""
+        with unittest.mock.patch.object(run, "board_on",
+                                        side_effect=lambda c: c != "BOX"), \
+                unittest.mock.patch.object(run, "campaign_rows",
+                                           return_value={}):
+            self.assertNotIn("nico murrugarra",
+                             run.home_campaigns({"B2B": "b2b-grid"}))
+
     def test_row_label_wins(self):
         with unittest.mock.patch.object(run, "campaign_rows",
                                         side_effect=lambda g, c: (

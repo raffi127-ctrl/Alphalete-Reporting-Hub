@@ -805,7 +805,10 @@ def main(argv=None) -> int:
                            "MCOE/road trip not included)"))
 
     # ---------------- BOX ----------------
-    if a.only != "att":
+    from automations.vantura_boards import board_on
+    if a.only != "att" and not board_on("BOX"):
+        print("BOX: board switched off (vantura_boards.OFF_BOARDS) — skipped")
+    elif a.only != "att":
         box_csv = Path(a.box_csv) if a.box_csv else newest_box_csv()
         # BOX data only reaches this machine when box_order_log writes its csv
         # at 7:00 / 8:30 (same repo, same machine). Before 7:00 the newest file

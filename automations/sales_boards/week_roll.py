@@ -73,7 +73,7 @@ from pathlib import Path
 from automations.recruiting_report.fill import open_by_key, _retry
 from automations.sales_boards.run import SHEET_ID
 from automations.sales_boards.zeros import we_label
-from automations.vantura_boards import (BOARD_TABS, MAIN_TAB as BOARD,
+from automations.vantura_boards import (BOARD_TABS, MAIN_TAB as BOARD, board_on,
                                         READ_RANGE, board_ws, is_stat_label)
 
 WEEKDATA, STATIONS = "WeekData", "Stations"
@@ -224,6 +224,8 @@ def read_boards(sh) -> dict:
     weeks, so a missing tab stops the roll before anything is written."""
     out = {}
     for camp, tab in BOARD_TABS.items():
+        if not board_on(camp):
+            continue                     # switched off (vantura_boards.OFF_BOARDS)
         try:
             # today's title first, then the one the board had before the
             # 2026-10-03 rename (vantura_boards.LEGACY_TABS)

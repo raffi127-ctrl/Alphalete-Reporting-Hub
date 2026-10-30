@@ -59,7 +59,7 @@ from automations.recruiting_report.fill import open_by_key, _retry
 from automations.pnl_office.run import _token
 from automations.sales_boards import render as R
 from automations.sales_boards import zeros as Z
-from automations.vantura_boards import MAIN_TAB, board_ws, campaign_of, tab_for
+from automations.vantura_boards import MAIN_TAB, board_on, board_ws, campaign_of, tab_for
 
 SANDBOX_SHEET_ID = "15QzcyFqTzX9RYNJ2SvT_HOiyQsMU1v90wHjSUHA_cNc"   # re-copied 7/18
 PROD_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
@@ -891,6 +891,13 @@ def main(argv=None) -> int:
     # corrected re-post.
     programs = [args.program] if args.program else \
         [p for p in PROGRAMS if p != "BOX"]
+    off = [p for p in programs if not board_on(p)]
+    if off:
+        print(f"{', '.join(off)} board switched off "
+              "(vantura_boards.OFF_BOARDS) — not posted")
+        programs = [p for p in programs if board_on(p)]
+        if not programs:
+            return 0
 
     sh = open_by_key(SHEET_ID)
     # One tab per program (vantura_boards): B2B off "NDS Sales Board", BOX

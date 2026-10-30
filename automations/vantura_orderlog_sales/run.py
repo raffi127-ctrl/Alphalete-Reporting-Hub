@@ -58,7 +58,7 @@ from automations.vantura_slack_sales.run import (
     _cell, _log, _md, _norm,
     board_grid, campaign_rows, day_column, ensure_board_shape, week_ok,
 )
-from automations.vantura_boards import BOARD_TABS, board_ws, read_board
+from automations.vantura_boards import BOARD_TABS, board_on, board_ws, read_board
 
 REPORT_ID = "vantura_orderlog_sales"            # schedule_config id
 
@@ -130,7 +130,9 @@ def home_campaigns(grids) -> dict[str, str]:
     labelled with today. `grids` is {campaign: that campaign's board grid}
     (each campaign has its own tab now). A rep on no row keeps the fallback
     (and gets flagged by that pass, as before)."""
-    out = dict(HOME_CAMPAIGN)
+    # a home on a switched-off board is no home: the rep's sales stay with the
+    # campaign that sold them (else Nico's NDS sales vanished with BOX off)
+    out = {k: v for k, v in HOME_CAMPAIGN.items() if board_on(v)}
     for camp in CAMPAIGNS:
         g = (grids or {}).get(camp)
         if g is None:
@@ -479,7 +481,9 @@ def main(argv=None) -> int:
         campaigns = a.campaign            # explicit ask overrides the gates
     else:
         campaigns = ["B2B"]
-        if today < BOX_START:
+        if not board_on("BOX"):
+            _log("BOX board switched off (vantura_boards.OFF_BOARDS) — skipped")
+        elif today < BOX_START:
             _log(f"BOX stays on Slack until {BOX_START.isoformat()} — skipped "
                  "(pass --campaign BOX to force)")
         elif now_t < BOX_ATTEMPT_FROM:
@@ -494,7 +498,9 @@ def main(argv=None) -> int:
     # BOTH campaigns' boards, whatever this pass fills: the home-campaign
     # re-pointing (Nico) has to see every board to find his row. The week
     # gate reads the main board — the gold cell is typed there only.
-    boards = {c: board_grid(c) for c in CAMPAIGNS}          # c -> (ws, grid)
+    campaigns = [c for c in campaigns if board_on(c)]
+    boards = {c: board_grid(c) for c in CAMPAIGNS           # c -> (ws, grid)
+              if board_on(c)}
     grids = {c: cg for c, (_w, cg) in boards.items()}
     g = grids["B2B"]
 

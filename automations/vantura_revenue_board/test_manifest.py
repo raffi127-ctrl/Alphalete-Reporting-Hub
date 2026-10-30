@@ -26,6 +26,11 @@ class ManifestTest(unittest.TestCase):
         tmp.close()
         self.csv = tmp.name
         self.addCleanup(Path(self.csv).unlink)
+        # the BOX board is switched off live since 2026-10-30; these pin the
+        # manifest logic with it ON
+        p = mock.patch("automations.vantura_boards.board_on", return_value=True)
+        p.start()
+        self.addCleanup(p.stop)
 
     def _main(self, argv, *, post_rc=0, only="box"):
         per_box = {"rep": {"days": {DAY: 1}}}

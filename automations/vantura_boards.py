@@ -42,6 +42,14 @@ from __future__ import annotations
 
 BOARD_TABS = {"NDS": "NDS Sales Board", "BOX": "BOX Sales Board",
               "Verizon": "Verizon Sales Board"}
+# Boards switched OFF. The campaign stays in BOARD_TABS (labels, parsing, old
+# snapshots all still work), but no fill, roll, audit or post reaches for its
+# tab. Turning one back on = deleting its line here (the tab has to exist).
+# BOX OFF 2026-10-30 (Eve): Carlos sells NDS since 10/19, turned the BOX Order
+# Log off 10/28 ("the whole thing can go"), and the "BOX Sales Board" tab was
+# deleted from the sheet on 10/29 — every fill after that died on it and took
+# the NDS and Verizon days down with it.
+OFF_BOARDS = {"BOX": "2026-10-30"}
 MAIN_CAMPAIGN = "NDS"                       # the AT&T program
 MAIN_TAB = BOARD_TABS[MAIN_CAMPAIGN]        # the gold week cell lives here
 # Campaign labels a sheet may still carry for a program, -> today's label.
@@ -94,6 +102,11 @@ def canon_campaign(label) -> str:
     itself."""
     s = str(label or "").strip()
     return _CANON.get(s.lower(), s)
+
+
+def board_on(campaign) -> bool:
+    """False for a board in OFF_BOARDS ("B2B" reads as NDS, "Box" as BOX)."""
+    return canon_campaign(campaign) not in OFF_BOARDS
 
 
 def tab_for(campaign) -> str:

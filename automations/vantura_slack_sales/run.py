@@ -43,7 +43,7 @@ from pathlib import Path
 
 from automations.vantura_slack_sales import parse as P
 from automations.vantura_slack_sales.parse import TZ
-from automations.vantura_boards import (MAIN_CAMPAIGN, MAIN_TAB,
+from automations.vantura_boards import (MAIN_CAMPAIGN, MAIN_TAB, board_on,
                                         SUBTOTAL_LABELS, board_ws,
                                         canon_campaign, is_stat_label, tab_for)
 
@@ -789,6 +789,11 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     campaigns = a.campaign or [c.name for c in P.CAMPAIGNS]
+    off = [c for c in campaigns if not board_on(c)]
+    if off:
+        _log(f"{', '.join(off)} board switched off (vantura_boards.OFF_BOARDS) "
+             "— not filled")
+        campaigns = [c for c in campaigns if board_on(c)]
     now = dt.datetime.now(TZ)
     today = now.date()
     if a.date:
