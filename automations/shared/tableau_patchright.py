@@ -480,12 +480,16 @@ def _lock_holder(path) -> str:
     parts = []
     for pid in out[:3]:
         try:
-            cmd = subprocess.run(["ps", "-p", pid, "-o", "comm="],
+            cmd = subprocess.run(["ps", "-p", pid, "-o", "command="],
                                  capture_output=True, text=True,
                                  timeout=10).stdout.strip()
         except Exception:      # noqa: BLE001
             cmd = ""
-        parts.append(f"pid {pid}" + (f" ({Path(cmd).name})" if cmd else ""))
+        # The module name, not just "Python": on 2026-10-30 Lucy 3's knocks
+        # fill logged only "held by pid 39519" and nobody could say whose.
+        mod = re.search(r"-m\s+(automations\.[\w.]+)", cmd)
+        name = mod.group(1) if mod else (Path(cmd.split()[0]).name if cmd else "")
+        parts.append(f"pid {pid}" + (f" ({name})" if name else ""))
     return ", ".join(parts)
 
 

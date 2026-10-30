@@ -10074,6 +10074,9 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
     — the latter only while the text lane is actually running here."""
     ws = _open(sandbox, machine, legacy=legacy, runner=True)
     rows = ws.get_all_records()           # list of dicts keyed by header
+    if not (legacy or sandbox):
+        global _LAST_ROWS
+        _LAST_ROWS = rows                 # stall_watch reuses it: no extra read
     text_live = _text_lane_live() if lane == LANE_MAIN else True
     # Close anything left 'running' by a previous pass before doing new work, so
     # a stale pill never reads as live (see _reclaim_orphans).
@@ -10279,6 +10282,8 @@ def _maybe_reconcile_schedules() -> None:
 # watch_peers). Read lane only: main is serial and a long rerun would look like
 # a dead queue. 2026-10-19: Lucy 1 stopped polling at ~08:40 and nobody knew.
 _PULSE_EVERY_S = 600
+# This box's own queue as the last poll read it (stall_watch's queue check).
+_LAST_ROWS = None
 _last_pulse = 0.0
 
 
@@ -10341,6 +10346,10 @@ def _maybe_pulse(mach: str) -> None:
         _sjw.beat(_sjw.job_id_for_machine("mini_control", mach),
                   note=routing.batch_note(_batch_running()))
         _sjw.watch_peers(mach)
+        # Alive but stuck: ownerville held too long, or this box's queue not
+        # moving (2026-10-30, Lucy 3 skipped Raf's knocks for ~an hour).
+        from automations.day_orchestrator import stall_watch as _stall
+        _stall.check(mach, rows=_LAST_ROWS)
     except Exception as e:  # noqa: BLE001
         print(f"[mini_control] pulse error (continuing): {type(e).__name__}: {str(e)[:160]}")
 
