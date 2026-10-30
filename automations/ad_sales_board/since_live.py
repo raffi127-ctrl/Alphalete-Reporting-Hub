@@ -31,7 +31,7 @@ import datetime as dt
 import re
 import sys
 
-from automations.ad_sales_board import sheet
+from automations.ad_sales_board import names, sheet
 from automations.indeed_source_report import fetch, parse
 from automations.indeed_source_report.sheet import request as _request
 
@@ -134,7 +134,11 @@ def main(argv=None):
                       "another job owns the session or the switch failed. "
                       "Nothing written." % (d, owner, OWNER), flush=True)
                 return 3
-            groups = parse.ads_for_month(html, fold_cityless=False)
+            # Same prep as the board's weekly pull: unwrap the
+            # "[Action required] New application for" subjects first (they
+            # are real ads), and keep split cities (group-by-subject mode).
+            groups, _flags = parse.ads_for_month(names.WRAPPER.sub("", html),
+                                                 fold_cityless=False)
             by_key = {}
             for g in groups:
                 by_key.setdefault((g["title"], g["city"]), g["rec"])
