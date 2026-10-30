@@ -43,6 +43,12 @@ HEADERS = ["Ad Title", "City", "Posted", "Apps", "Removed", "Sent to CL",
            "FR Booked", "FR Showed", "SR Booked", "SR Showed",
            "Trn Booked", "Trn Showed", "Day1 Booked", "Day1 Showed", "Updated"]
 MAX_AGE_DAYS = 35      # bound the fetch count; the board hides older weeks anyway
+LOOKAHEAD_DAYS = 14    # window END runs into the future: the office books
+                       # trainings/starts with forward dates (2026-10-30:
+                       # "2 tomorrow, 10 Monday"), and a window ending today
+                       # would drop a marking dated next Monday. The weekly
+                       # pulls never had this hole — their windows run
+                       # through Sunday.
 
 
 def _sl_range(a1):
@@ -125,8 +131,9 @@ def main(argv=None):
                                   allow_form_login=False) as page:
         tok = fetch.token(page)
         fetch.select_office(page, tok, OFFICE_ID)
+        horizon = today + dt.timedelta(days=LOOKAHEAD_DAYS)
         for d in dates:
-            html, owner, _n = fetch.source_report(page, tok, fmt(d), fmt(today))
+            html, owner, _n = fetch.source_report(page, tok, fmt(d), fmt(horizon))
             got = {w for w in str(owner).lower().split() if w.isalpha()}
             want = {w for w in OWNER.lower().split()}
             if not (got & want):
