@@ -608,8 +608,11 @@ ROTATION_BY_MACHINE = {
     # her own login it kept surfacing its Chrome, so it now runs in a separate
     # macOS user ("lucyecoraf", setup /Users/Shared/lucy-push-setup.sh) whose
     # windows can never reach her screen. Same .machine-profile name.
-    "Lucy 4": [],
-    "Megan's laptop": ["11280", "23965", "24065"],
+    # BACK ON LUCY 4, 10/30: Chrome would not stay up in the background Mac
+    # user (froze, then exited, every tick; 0 sent). Lucy 4 sends everyone who
+    # already has a phone until Raf has an office computer on the relay.
+    "Lucy 4": ["11280", "23965", "24065"],
+    "Megan's laptop": [],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
     # Listed here so "one office, one machine" stays checkable in one place;
