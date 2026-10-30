@@ -317,3 +317,19 @@ class UnbracketTests(unittest.TestCase):
                         ("Customer Associate (AT&T", "Customer Associate (AT&T)"),
                         ("(Customer Associate (AT&T) )", "Customer Associate (AT&T)")):
             self.assertEqual(book.resolve(t), norm(want), t)
+
+
+class SlackPasteTests(unittest.TestCase):
+    """Eveliz 10/30: titles copied out of Slack carry "image.png" / "(edited)"."""
+
+    def test_slack_tail_dropped(self):
+        book = TitleBook(["AT&T Agent- Spanish/English Speaking",
+                          "AT&T Assistant (Immediate Hire)"] * 3)
+        for t, want in (("AT&T Agent- Spanish/English Speakingimage.png",
+                         "AT&T Agent- Spanish/English Speaking"),
+                        ("AT&T Assistant (Immediate Hire) (edited)",
+                         "AT&T Assistant (Immediate Hire)"),
+                        ("AT&T Assistant (Immediate Hire) image (2).png (edited)",
+                         "AT&T Assistant (Immediate Hire)")):
+            self.assertEqual(book.resolve(t), norm(want), t)
+            self.assertEqual(pretty(t), want, t)
