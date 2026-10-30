@@ -423,3 +423,33 @@ class TheDayEndsWithTomorrowMorningsText(unittest.TestCase):
         with mock.patch.object(AT, "stop_at_today", return_value=at("2026-10-29 15:15")):
             self.assertTrue(AT.last_push_of_day("11280", 15, at("2026-10-29 15:05")))
             self.assertFalse(AT.last_push_of_day("11280", 15, at("2026-10-29 14:50")))
+
+
+class TheUpdateIsReported(unittest.TestCase):
+    """Megan 10/30: see each relay computer's text update without signing in."""
+
+    def _field(self, value):
+        el = mock.Mock()
+        el.input_value.return_value = value
+        return el
+
+    def test_saved_and_already_current(self):
+        want = "available TODAY, currentInterviewDay, from 12:45pm-3:15pm"
+        b1, b2 = AT.TEXTS["11901"]
+        with mock.patch.object(AT, "_named_field",
+                               side_effect=lambda p, n: self._field(
+                                   b1 if n == "smsBody" else b2 % want)):
+            AT._set_standard(mock.Mock(), "11901", want, True)
+        self.assertEqual(AT.LAST_RESULT["result"], "already current")
+        self.assertEqual(AT.LAST_RESULT["text"], b2 % want)
+        with mock.patch.object(AT, "_named_field",
+                               side_effect=lambda p, n: self._field("old")), \
+             mock.patch.object(AT, "_click_text", return_value=True):
+            AT._set_standard(mock.Mock(), "11901", want, True)
+        self.assertEqual(AT.LAST_RESULT["result"], "saved")
+
+    def test_a_failure_says_failed(self):
+        with mock.patch.object(AT, "read_office_schedule",
+                               return_value=(None, None)):
+            AT.ensure_await_template(mock.Mock(), "11901")
+        self.assertEqual(AT.LAST_RESULT["result"], "failed")

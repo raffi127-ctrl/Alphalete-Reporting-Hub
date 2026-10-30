@@ -491,6 +491,18 @@ def _named_field(page, name: str):
     return None
 
 
+# WHAT THE LAST UPDATE DID, for the office computer's stats row (Megan
+# 2026-10-30: the text updates could not be seen on the relay computers without
+# someone signed in to AppStream). "failed" until an update proves otherwise.
+LAST_RESULT: dict = {}
+
+
+def _note_result(result: str, text: str = "") -> None:
+    LAST_RESULT.clear()
+    LAST_RESULT.update({"result": result, "text": text,
+                         "at": dt.datetime.now().strftime("%H:%M")})
+
+
 def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
     """Both boxes to this office's text (box 1 fixed, box 2 with `want`)."""
     body1, body2 = TEXTS[office_id]
@@ -510,6 +522,7 @@ def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
         cur1 = cur2 = None
     if cur1 == body1 and cur2 == new2:
         _log("[await] office %s: already current: %s" % (office_id, want))
+        _note_result("already current", new2)
         return True
     if not apply:
         _log("[await] office %s WOULD set: %r | %r"
@@ -523,6 +536,7 @@ def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
     page.wait_for_timeout(2000)
     _log("[await] office %s set -> %s (save clicked: %s)"
          % (office_id, new2, saved))
+    _note_result("saved" if saved else "save not clicked", new2)
     return saved
 
 
@@ -556,6 +570,7 @@ def ensure_await_template(page, office_id: str, apply: bool = True,
     push never runs."""
     if office_id not in OFFICES:
         return True
+    _note_result("failed")
     try:
         # Every office, Carlos's included: the schedule set in AppStream
         # (Megan 10/28: "we should always use the schedule set in app

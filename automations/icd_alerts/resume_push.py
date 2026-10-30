@@ -1188,7 +1188,13 @@ STATS_STAGE = "probe-push-stats"
 def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
     try:
         from automations.icd_alerts import relay as R
+        try:
+            from automations.oat_processing import await_template as AT
+            await_text = dict(AT.LAST_RESULT)
+        except Exception:  # noqa: BLE001
+            await_text = {}
         R.report_fault(STATS_STAGE, "push stats", json.dumps({
+            "await": await_text,
             "office": out.get("office"), "live": bool(live),
             "start": out.get("queue_start"), "end": out.get("queue_end"),
             "sent_run": int(out.get("sent") or 0), "sent_today": sent_today,
