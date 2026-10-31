@@ -187,8 +187,10 @@ def _choose_email_destination(page, log=print) -> bool:
     reads as a broken mail filter. Read off the live page 2026-09-03; matched
     on 'EmailRadio' / 'Email' inside the ids so a rename still resolves.
 
-    It has to be email: the other destination is a mobile number an
-    unattended run cannot read, and which would text a person at 4am."""
+    Email unless the caller knows better: the other destination is a mobile
+    number an unattended run usually cannot read. The exception is an office
+    Mac that reads its owner's texts (icd_alerts.sms_code, Eveliz 2026-10-31)
+    -- see _choose_mobile_destination."""
     radio = page.evaluate(
         """() => {
              const els = [...document.querySelectorAll('span,div,label')];
@@ -243,7 +245,38 @@ def _choose_email_destination(page, log=print) -> bool:
     return bool(radio)
 
 
-def _request_code(page, log=print, error=None) -> bool:
+def _choose_mobile_destination(page, log=print) -> bool:
+    """Tick the MOBILE PHONE radio. Same Telerik toggle as Email's, saved off
+    the live page (output/saraplus_otp_dom.json): a <span
+    id=ctl00_MainContent_rbMobileRadio> reading 'Mobile Phone: XXX-XXX-6610',
+    autoPostBack like its twin. There is ONE Get Code button for both
+    (MainContent_btnGetCodeEmail, despite the name): the radio decides.
+
+    Only for an office Mac that reads the owner's texts in Messages (Text
+    Message Forwarding on) -- icd_alerts.sms_code. Nothing else can read it."""
+    radio = page.evaluate(
+        """() => {
+             const els = [...document.querySelectorAll('span,div,label')];
+             const e = els.find(x => /mobileradio|phoneradio|smsradio|textradio/i.test(x.id || ''))
+                    || els.find(x => /rbToggle|RadButton/.test(x.className || '') &&
+                                     /^(mobile|phone|text|sms)/i.test((x.innerText || '').trim()));
+             if (!e) return '';
+             e.click();
+             return (e.id || 'mobile-toggle') + ' | ' + (e.innerText || '').trim().slice(0, 40);
+           }""")
+    if not radio:
+        return False
+    log("  ticked the Mobile Phone radio (%s)" % radio)
+    try:
+        page.wait_for_load_state("networkidle", timeout=NAV_TIMEOUT_MS)
+    except Exception:                                      # noqa: BLE001
+        pass
+    page.wait_for_timeout(1500)
+    return True
+
+
+def _request_code(page, log=print, error=None,
+                  destination: str = "email") -> bool:
     """Choose EMAIL, then press Get Code.
 
     The screen is a destination picker -- 'It appears that this is a new
@@ -252,7 +285,13 @@ def _request_code(page, log=print, error=None) -> bool:
     combo. Pressing Get Code without choosing sends nothing at all, silently:
     that is what the first two attempts did, and it read as a broken mail
     filter rather than an unpicked control."""
-    if not _choose_email_destination(page, log=log):
+    if destination == "mobile":
+        if not _choose_mobile_destination(page, log=log):
+            raise (error or PasscodeError)(
+                "SaraPlus wants a confirmation code but no MOBILE PHONE option "
+                "was found on the picker. Nothing was requested. Controls on "
+                "the page: %s" % (code_page_controls(page),))
+    elif not _choose_email_destination(page, log=log):
         raise (error or PasscodeError)(
             "SaraPlus wants a confirmation code for this browser but no EMAIL "
             "destination could be found on the picker -- and the only other "
@@ -315,14 +354,15 @@ def _submit_code(page, field: str, code: str) -> None:
 
 def verify_browser(page, get_code: Callable[[dt.datetime], str], *,
                    attempts: int = 3, settle_ms: int = SETTLE_MS,
-                   error=None, log=print) -> None:
+                   error=None, log=print, destination: str = "email") -> None:
     """Clear the code screen, RETRYING with a fresh code each time.
 
     The same loop as rc_contact_sync.sara._verify_browser -- read its
     docstring for why one pass is not enough -- with the one difference that
     matters: `get_code(since)` is the caller's, so the code can come from an
     inbox, the relay, or anywhere else. It must return a code that arrived
-    AFTER `since`, or raise.
+    AFTER `since`, or raise. `destination` is "email" (default) or "mobile"
+    (only for a caller that can read the owner's texts).
     """
     err = error or PasscodeError
     for attempt in range(1, attempts + 1):
@@ -334,7 +374,8 @@ def verify_browser(page, get_code: Callable[[dt.datetime], str], *,
         if not _on_passcode_page(page) and attempt > 1:
             log("  browser verified (attempt %d, page caught up)" % (attempt - 1))
             return
-        if not _request_code(page, log=log, error=err):
+        if not _request_code(page, log=log, error=err,
+                             destination=destination):
             log("  nothing to press for a code on attempt %d" % attempt)
         try:
             page.wait_for_load_state("networkidle", timeout=NAV_TIMEOUT_MS)

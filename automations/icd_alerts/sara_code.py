@@ -10,6 +10,9 @@ reporting inbox, and this does the typing:
   -> choose Email, Get Code -> ask Lucy 1 for it (relay.request_code)
   -> wait for the answer (relay.poll_code) -> type it -> signed in.
 
+  BY TEXT for offices in sms_code.TEXT_OFFICES (Eveliz, 2026-10-31): choose
+  Mobile Phone instead and read the code off this Mac's Messages.
+
 The hidden browser clearing the screen itself is the point: it is the browser
 the sweeps use, so the trust lands where it is needed -- the sign-in window's
 whole difficulty (a visible window trusted, the hidden read still asked) does
@@ -96,6 +99,24 @@ def code_from_relay(since: dt.datetime, *, office_key: str = "",
             raise NoCode("no code reached Lucy within %d minutes" % (wait_s // 60))
 
 
+def code_source(office_key: str = "", log=print, now=None):
+    """(get_code, destination) for this office. Offices whose codes come by
+    TEXT read them off this Mac's Messages (sms_code, Eveliz 2026-10-31);
+    everyone else asks Lucy 1 for the mailed one. Raises NoCode at night for
+    a texting office, before anything is requested: no 4am buzz."""
+    from automations.icd_alerts import sms_code as T
+    if T.wants_text(office_key):
+        if T.quiet_hours(now):
+            raise NoCode("night: not texting the owner's phone before %d:00 "
+                         "-- trying again after that" % T.TEXT_HOURS[0])
+        log("  SaraPlus wants its code -- asking for a TEXT and reading it "
+            "in Messages")
+        return (lambda since: T.code_from_messages(since, log=log)), "mobile"
+    log("  SaraPlus wants its emailed code -- getting it from Lucy")
+    return ((lambda since: code_from_relay(since, office_key=office_key, log=log)),
+            "email")
+
+
 def _attempt(office_key: str = "", log=print) -> str:
     """Sign in, clear the code screen, return the dealer root. Raises."""
     from patchright.sync_api import sync_playwright
@@ -114,10 +135,10 @@ def _attempt(office_key: str = "", log=print) -> str:
                                 creds_hint="the SaraPlus login saved on this computer",
                                 log=log)
             except S.SaraPasscodeWall:
-                log("  SaraPlus wants its emailed code -- getting it from Lucy")
-            SP.verify_browser(
-                page, lambda since: code_from_relay(since, office_key=office_key, log=log),
-                attempts=ATTEMPTS, log=log)
+                pass
+            get_code, destination = code_source(office_key, log=log)
+            SP.verify_browser(page, get_code, attempts=ATTEMPTS, log=log,
+                              destination=destination)
             url = page.url
             for marker in ("DealerPages/", "Reports/"):
                 if marker in url:

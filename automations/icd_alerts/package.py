@@ -147,6 +147,8 @@ AGENT_FILES = [
     "automations/carlos_payroll_pull/run.py",
     # Whether this Mac can read the owner's SaraPlus code texts (Eve 2026-10-29).
     "automations/icd_alerts/messages_probe.py",
+    # SaraPlus's code read off the owner's texts in Messages (Eve 2026-10-31).
+    "automations/icd_alerts/sms_code.py",
 ]
 
 # HUB-ONLY IMPORTS THAT SHIP ON PURPOSE, each inside a function, never at
