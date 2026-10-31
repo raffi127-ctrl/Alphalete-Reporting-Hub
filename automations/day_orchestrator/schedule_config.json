@@ -1632,6 +1632,25 @@
    "timeout_minutes": 15,
    "machine": "Lucy 3"
   },
+  "sale_transfer_order_lookup": {
+   "on_scheduler": false,
+   "_note": "READ-ONLY (Eve 2026-10-31): find a sale in the Tableau D2D ORDER LOG when a sale transfer and the Sales Board disagree on the day or the rep. `lucy rerun sale_transfer_order_lookup --start 2026-10-25 --end 2026-10-31 \"Hank Tran\" 280927557`. Prints the matching rows; writes nothing.",
+   "display_name": "Sale transfer — Tableau order lookup (read-only)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.alphalete_sales_board.order_lookup"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20
+  },
   "headshots_ov_probe": {
    "on_scheduler": false,
    "_note": "READ-ONLY probe for the headshot bot's OwnerVille uploader (Phase 2): find a rep on Onboard -> View Progress and report the Photo pill, changing NOTHING. Runs where the session holder keeps the OV login warm (the mini) — the laptop's storage_state goes stale. `lucy rerun headshots_ov_probe` (default probe rep: Ahna Vanmeter, from Megan's 8/23 walkthrough).",
