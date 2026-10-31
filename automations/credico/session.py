@@ -234,11 +234,16 @@ def save_login(timeout_min: int = 10, verbose: bool = True,
             viewport={"width": 1500, "height": 950})
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(DASHBOARD, wait_until="domcontentloaded")
-        if _auth_blob(ctx.storage_state()) is not None                 and not _token_is_live(ctx.storage_state()):
+        if _auth_blob(ctx.storage_state()) is not None:
             # Leftover token from the last login: drop it so Credico shows
-            # its login screen instead of a dashboard that only looks alive.
-            print("Old (expired) Credico token found in the browser profile — "
-                  "clearing it so you get the login screen.", flush=True)
+            # its login screen. EVEN A LIVE ONE (2026-10-31): the RENEW NOW
+            # warning fires with days still left, and keeping the live token
+            # went straight to the dashboard and re-saved the SAME expiry --
+            # Murrugarra's "renewal" that day still ran out 11/05. A 14-day
+            # token cannot be extended; --login exists to mint a new one.
+            print("Old Credico token found in the browser profile — clearing "
+                  "it so you get the login screen and a fresh 14 days.",
+                  flush=True)
             page.evaluate(f"localStorage.removeItem({json.dumps(AUTH_KEY)})")
             page.goto(DASHBOARD, wait_until="domcontentloaded")
             page.reload(wait_until="domcontentloaded")
