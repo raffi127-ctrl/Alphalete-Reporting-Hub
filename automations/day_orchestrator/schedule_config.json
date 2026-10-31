@@ -6710,6 +6710,8 @@
    "_standalone_weekdays_note": "Mon-Fri, added 2026-09-05. NOT a schedule change - the plist is untouched. This pins the missed-run watcher's guess, which is the only thing that reads it. Carlos's weekend quiet window (applicant_push.window.quiet_window: Fri 1PM -> Sun 1PM CST, shipped 2026-09-04) makes the module DECLINE with exit 75, and deploy/applicant_push.sh deliberately publishes NOTHING for a decline - so on the FIRST Saturday machine_digest saw no Activity row and posted 'didn't run today on Lucy 2' for both offices at 09:07. A correct skip read as a miss. Saturday never runs; Sunday cannot run before 1PM while _historical_expected has learned a ~7AM start, so both days come off the didn't-run GUESS only. FAILED / INCOMPLETE / STUCK stay watched every day, so a weekend run that actually breaks still alerts. Accepted cost: a genuinely absent Sunday-afternoon run is not flagged until Monday. Remove this if the quiet window is ever lifted."
   },
   "applicant_push_atef": {
+   "hand_run_only": true,
+   "_hand_run_only_note": "2026-10-31: office 23467 moved off Lucy 2 to Atef's own computer on 2026-10-29 (offices.py ROTATION_BY_MACHINE, icd_alerts/resume_push.py), which does not publish to this card, so the missed-run watcher must not expect a Lucy 2 run (it opened 'didn't run today on Lucy 2' on 10/30). Same as applicant_push for Carlos. Remove this flag if 23467 returns to a Lucy's rotation.",
    "close_on": "exit_zero",
    "on_scheduler": false,
    "machine": "Lucy 2",
@@ -14212,6 +14214,8 @@
    "_machine_note": "Lucy 4 since 2026-09-19, with Raf's three streams. The rollup reads each stream's flagged snapshot off the LOCAL disk, so it must run on the box that walks them."
   },
   "applicant_push_khalil": {
+   "hand_run_only": true,
+   "_hand_run_only_note": "2026-10-31: office 11901 moved off Lucy 2 to Khalil's own computer on 2026-10-29 (offices.py ROTATION_BY_MACHINE, icd_alerts/resume_push.py), which does not publish to this card, so the missed-run watcher must not expect a Lucy 2 run (it opened 'didn't run today on Lucy 2' on 10/30). Same as applicant_push for Carlos. Remove this flag if 11901 returns to a Lucy's rotation.",
    "close_on": "exit_zero",
    "on_scheduler": false,
    "machine": "Lucy 2",
