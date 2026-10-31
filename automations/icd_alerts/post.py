@@ -675,9 +675,10 @@ def record_backslides(office_key: str, found: List[Dict],
 # DIFFERENT laptop reads in a row are both below it -- one low read is still
 # a half-rendered grid and is ignored. What was ANNOUNCED does not move: the
 # 'Last Posted Sales JSON' high-water mark stays max(), so a dip and a
-# recovery never re-announce a sale. Opt-in per office until it has run a
-# couple of days (Eve 2026-10-31: Eveliz first, then everyone).
-SALES_FOLLOW_DROPS = frozenset({"eveliz"})
+# recovery never re-announce a sale. Eveliz first, then EVERY office the
+# same afternoon (Eve 2026-10-31: "prendelo para todas las oficinas").
+# SALES_FOLLOW_DROPS_OFF holds an office back if one ever needs it.
+SALES_FOLLOW_DROPS_OFF: frozenset = frozenset()
 
 PREV_READ_PATH = (Path.home() / ".config" / "recruiting-report"
                   / "icd_prev_sales_read.json")
@@ -1682,7 +1683,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                           day, log=log)
         # What the TEXT shows; merged_sales stays the announced high-water.
         board_sales = merged_sales
-        if key in SALES_FOLLOW_DROPS and not sales_baseline:
+        if key not in SALES_FOLLOW_DROPS_OFF and not sales_baseline:
             names = H_SHAPE(office.campaign).metrics
             now_norm = {str(k): {m: int((v or {}).get(m, 0) or 0) for m in names}
                         for k, v in sales.items()}
