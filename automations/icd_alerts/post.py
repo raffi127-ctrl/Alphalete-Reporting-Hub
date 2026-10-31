@@ -664,6 +664,69 @@ def record_backslides(office_key: str, found: List[Dict],
         pass
 
 
+# THE TEXT FOLLOWS SARAPLUS DOWN, ONCE IT HAS SAID SO TWICE (Eveliz's A
+# Players B2B text, 2026-10-31: "I have 2 lines on my Sara (not 3)" / "and i
+# did 1 not 2"). SaraPlus showed Gian-Carlo 3 and Zachary 2 on one read and
+# 2 and 1 a few minutes later; decide_sales' ONLY UP rule kept the 3 and the
+# 2 on the board for the rest of the day. Same on 10/29 (Yave 10 -> 5) and
+# 10/30 (Aleen 2 -> 1).
+#
+# The STANDINGS shown in the text now take the lower number once two
+# DIFFERENT laptop reads in a row are both below it -- one low read is still
+# a half-rendered grid and is ignored. What was ANNOUNCED does not move: the
+# 'Last Posted Sales JSON' high-water mark stays max(), so a dip and a
+# recovery never re-announce a sale. Opt-in per office until it has run a
+# couple of days (Eve 2026-10-31: Eveliz first, then everyone).
+SALES_FOLLOW_DROPS = frozenset({"eveliz"})
+
+PREV_READ_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "icd_prev_sales_read.json")
+
+
+def shown_sales(high: Dict, now: Dict, prev_read: Optional[Dict]) -> Dict:
+    """The day's standings for the text: the high-water mark, lowered to what
+    the last TWO reads both say (the higher of the two) when both are under
+    it. No previous read, or an empty read now, changes nothing."""
+    if not prev_read or not now:
+        return {k: dict(v) for k, v in (high or {}).items()}
+    out = {}
+    for rep, hm in (high or {}).items():
+        a = (now or {}).get(rep) or {}
+        b = (prev_read or {}).get(rep) or {}
+        out[rep] = {m: min(int(hv or 0),
+                           max(int(a.get(m, 0) or 0), int(b.get(m, 0) or 0)))
+                    for m, hv in hm.items()}
+    return out
+
+
+def prev_read(key: str, day: dt.date, received: str, sales: Dict,
+              save: bool = True, path: Optional[Path] = None) -> Optional[Dict]:
+    """The sales of the laptop read BEFORE this one (by 'Received At'), so
+    two reads in a row can be compared. The poster ticks every minute and the
+    laptop every ~2, so the same read is seen more than once: only a new
+    'Received At' moves the window."""
+    path = path or PREV_READ_PATH
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        data = {}
+    slot = "%s|%s" % (day.isoformat(), key)
+    got = data.get(slot) or {}
+    if got.get("at") == received:
+        return got.get("prev")
+    before = got.get("sales")
+    if save:
+        data = {k: v for k, v in data.items()
+                if k.split("|", 1)[0] >= (day - dt.timedelta(days=3)).isoformat()}
+        data[slot] = {"at": received, "sales": sales, "prev": before}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, sort_keys=True))
+        except OSError:
+            pass
+    return before
+
+
 def is_stale(received: Optional[dt.datetime], now: Optional[dt.datetime] = None,
              minutes: int = STALE_MINUTES) -> bool:
     if not received:
@@ -1617,6 +1680,22 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # here so a pattern is visible rather than one odd afternoon.
         record_backslides(key, backslid(sales, last_sales, office.campaign),
                           day, log=log)
+        # What the TEXT shows; merged_sales stays the announced high-water.
+        board_sales = merged_sales
+        if key in SALES_FOLLOW_DROPS and not sales_baseline:
+            names = H_SHAPE(office.campaign).metrics
+            now_norm = {str(k): {m: int((v or {}).get(m, 0) or 0) for m in names}
+                        for k, v in sales.items()}
+            board_sales = shown_sales(
+                merged_sales, now_norm,
+                prev_read(key, day, (row[COL_RECEIVED] or "").strip(),
+                          now_norm, save=send))
+            for rep in sorted(board_sales):
+                for m, n in board_sales[rep].items():
+                    if n < merged_sales[rep].get(m, 0):
+                        log("%-10s %s %s shown %d (SaraPlus corrected it "
+                            "from %d on 2 reads)" % (key, rep, m, n,
+                                                     merged_sales[rep][m]))
         if catching_up and (lines or sold):
             # ONE MESSAGE, NOT A SHOUTOUT PER SALE (Eve 2026-09-30): what sold
             # while the machine was dark still gets said, but as the day's
@@ -1629,7 +1708,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             lines = []
         hype_lines, gifs_used = [], 0
         if sold and catching_up:
-            board = scoreboard_text(merged_sales, sold, office.campaign, show)
+            board = scoreboard_text(board_sales, sold, office.campaign, show)
             hype_lines = [
                 "_Catching up — sales made while the office computer was "
                 "offline:_\n" + (catchup_lines(board) or ", ".join(
@@ -1679,7 +1758,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # cannot be resolved must not cost the channel its alert, and must
         # not stop 'Last Posted' being written (a retry would re-announce).
         if (sold or (sales_baseline and merged_sales)) and texts.get(key):
-            board = scoreboard_text(merged_sales, [] if sales_baseline else sold,
+            board = scoreboard_text(board_sales, [] if sales_baseline else sold,
                                     office.campaign, show)
             if board:
                 # RAF'S HEADCOUNT BLOCK under the totals, same as his partner
@@ -1688,7 +1767,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     knocks_today = _knocks_today(tab.spreadsheet, day)
                 from automations.alphalete_sales_board import notify as N
                 hc = N.headcount_lines(eco_headcount(
-                    merged_sales, knocks_today.get(key), office.campaign,
+                    board_sales, knocks_today.get(key), office.campaign,
                     show))
                 if hc:
                     board += "\n" + "\n".join(hc)
