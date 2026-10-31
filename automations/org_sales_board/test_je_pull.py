@@ -594,6 +594,52 @@ class OpenDropdownTest(unittest.TestCase):
         self.assertLessEqual(f.combo_clicks, 3)
 
 
+class _StuckGlass:
+    """A tab-glass that ignores clicks (a second glass sits on top of it)."""
+
+    def __init__(self, filt):
+        self.filt = filt
+
+    def click(self, **kw):
+        self.filt.glass_click_kwargs.append(kw)
+        if not kw.get("force"):
+            raise TimeoutError("<div class='tab-glass'> intercepts pointer events")
+
+    def evaluate(self, _js):
+        self.filt.glasses -= 1
+
+
+class _GlassFilter(FakeFilter):
+    def __init__(self, *a, glasses=2, **kw):
+        super().__init__(*a, **kw)
+        self.glasses = glasses
+        self.glass_click_kwargs = []
+
+    def locator(self, selector):
+        if "tab-glass" in selector:
+            return _Loc([_StuckGlass(self) for _ in range(self.glasses)])
+        return super().locator(selector)
+
+
+class LeftoverGlassTest(unittest.TestCase):
+    """Sat 2026-10-31: week set to 11/1, then Download timed out under a
+    'tab-glass clear-glass' cover and Retail JE dropped all day."""
+
+    def test_a_glass_that_wont_close_is_removed(self):
+        f = _GlassFilter(WEEKS, ["8/9/2026"], glasses=2)
+        _drive(f)
+        self.assertEqual(f.checked, {TARGET})
+        self.assertEqual(f.glasses, 0)
+
+    def test_glass_clicks_are_forced_and_bounded(self):
+        f = _GlassFilter(WEEKS, ["8/9/2026"], glasses=1)
+        _drive(f)
+        self.assertTrue(f.glass_click_kwargs)
+        for kw in f.glass_click_kwargs:
+            self.assertTrue(kw.get("force"))
+            self.assertLessEqual(kw.get("timeout", 30000), 3000)
+
+
 class StaleWeekAdapterTest(unittest.TestCase):
     """WE 10.18: the view sat on its saved 7/5/2026 week for six days and the
     adapter skipped quietly each time ("JE hasn't posted this week yet") while
