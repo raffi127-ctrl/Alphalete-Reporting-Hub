@@ -700,12 +700,18 @@ class MorningSourceCheck(unittest.TestCase):
 
     def test_only_offices_on_both_sides_are_checked(self):
         """An office with no metrics thread has no board for this to be
-        about, and one not on ECO has nothing to relay."""
+        about, and one not on ECO has nothing to relay. A key naming two
+        different people ('joseph': Delgado on ECO, Logan on metrics) is
+        neither -- the relay refuses it by design."""
         from automations.icd_alerts import offices as O
         from automations.office_metrics import offices as OM
-        metrics, eco = dict(OM.OFFICES), {o.key for o in O.active()}
+        from automations.rashad_metrics.knocks_relay import same_owner
+        metrics = dict(OM.OFFICES)
+        eco = {o.key: o for o in O.active()}
         expected = {k for k in metrics if k in eco
-                    and self.C.draws_knocks_board(k)}
+                    and self.C.draws_knocks_board(k)
+                    and same_owner(eco[k].owner,
+                                   getattr(metrics[k], "knocks_office", ""))}
         self.assertEqual({o.key for o, _ in self.C.offices_to_check()},
                          expected)
 
@@ -724,3 +730,18 @@ class MorningSourceCheck(unittest.TestCase):
 class _Metrics:
     knocks_office = "Akashdeep Rai"
     key = "kash"
+
+
+class SameOwnerTest(__import__("unittest").TestCase):
+    """Nicknames on the sign-up form vs legal names in ownerville (2026-10-31)."""
+
+    def test_nicknames_match_by_surname(self):
+        from automations.rashad_metrics.knocks_relay import same_owner
+        self.assertTrue(same_owner("Tre Mitchell", "Lamar Mitchell III"))
+        self.assertTrue(same_owner("Trang Canavan", "Trang Le Nguyen Canavan"))
+        self.assertTrue(same_owner("Kash Rai", "Akashdeep Rai"))
+        self.assertTrue(same_owner("Aya Al-Khafaji", "Aya Al-Khafaji"))
+
+    def test_two_people_under_one_key_still_refuse(self):
+        from automations.rashad_metrics.knocks_relay import same_owner
+        self.assertFalse(same_owner("Joseph Delgado", "Joseph Logan"))

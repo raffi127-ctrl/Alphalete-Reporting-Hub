@@ -190,9 +190,16 @@ def offices_to_check() -> List:
         from automations.office_metrics import offices as OM
     except Exception:  # noqa: BLE001
         return []
+    from automations.rashad_metrics import knocks_relay as KR
     metrics = dict(OM.OFFICES)
+    # ONE KEY, TWO PEOPLE IS NOT "BOTH SIDES" (2026-10-31). 'joseph' is Joseph
+    # Delgado's ECO office and Joseph Logan's metrics board: the relay refuses
+    # to draw Logan's board from Delgado's machine, by design, and that refusal
+    # read here as a FAULT every morning. There is no relay for that board.
     return [(o, metrics[o.key]) for o in O.active()
-            if o.key in metrics and draws_knocks_board(o.key)]
+            if o.key in metrics and draws_knocks_board(o.key)
+            and KR.same_owner(o.owner,
+                              getattr(metrics[o.key], "knocks_office", ""))]
 
 
 def check_office(eco, metrics_row, day: dt.date, values=None,

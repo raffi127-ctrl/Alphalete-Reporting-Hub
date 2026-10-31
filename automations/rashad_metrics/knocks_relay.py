@@ -96,6 +96,31 @@ def _norm_name(s) -> str:
     return " ".join(str(s or "").split()).strip().lower()
 
 
+_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
+def _surname(s) -> str:
+    """Last word of a name, suffixes (Jr, III...) and punctuation dropped."""
+    words = [w.strip(".,") for w in _norm_name(s).split()]
+    words = [w for w in words if w and w not in _SUFFIXES]
+    return words[-1] if words else ""
+
+
+def same_owner(eco_owner, office_name) -> bool:
+    """Is the ECO office's owner the person this ownerville office belongs to?
+
+    BY SURNAME, NOT THE WHOLE NAME (2026-10-31). The sign-up form stores what
+    the owner calls themself; ownerville stores the legal name. An exact match
+    refused three real offices from 10/29 on -- 'Tre Mitchell' / 'Lamar
+    Mitchell III', 'Trang Canavan' / 'Trang Le Nguyen Canavan', 'Kash Rai' /
+    'Akashdeep Rai' -- and their boards scraped every morning with the relay
+    sitting right there. The case the check exists for still refuses: 'joseph'
+    is Joseph Delgado's ECO key and Joseph Logan's ownerville office, and
+    Delgado is not Logan. A blank owner is not evidence against it."""
+    a, b = _surname(eco_owner), _surname(office_name)
+    return not a or not b or a == b
+
+
 def office_key_for(office_name: str) -> Optional[str]:
     """The office_metrics key whose ownerville name is `office_name`.
 
@@ -251,8 +276,7 @@ def relayed_rows(office_key: str, office_name: str, day: dt.date,
     # own ownerville name, and the ECO office under that key is live -- and
     # Logan's board would be drawn from Delgado's machine. So the ECO office's
     # OWNER has to be the office we were asked for, or this is a scrape.
-    eco_owner = _norm_name(getattr(office, "owner", "") or "")
-    if eco_owner and eco_owner != _norm_name(office_name):
+    if not same_owner(getattr(office, "owner", "") or "", office_name):
         log("[knocks-relay] ⚠ the ECO office under key %r is %r, not %r — "
             "scraping rather than draw this board from another office's "
             "machine." % (key, getattr(office, "owner", ""), office_name))
