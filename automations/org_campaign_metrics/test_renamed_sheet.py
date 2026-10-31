@@ -37,5 +37,20 @@ class RenamedSheet(unittest.TestCase):
             ["Low Metrics Owners"])))
 
 
+class TodaysSplit(unittest.TestCase):
+    """What the view actually showed on 2026-10-31."""
+    SEEN = ["Low Metrics Flags", "Low Metrics Last Week (BYOD Only)",
+            "Low Metrics Owner - All Time", "Low Metrics Owner - Last Week",
+            "zzz Last Refresh (4)"]
+
+    def test_the_sheet_asked_for_is_the_last_week_one(self):
+        from automations.org_campaign_metrics.pull_nds import LOWMETRICS_SHEET
+        self.assertIn(LOWMETRICS_SHEET, self.SEEN)
+        self.assertIn("last week", LOWMETRICS_SHEET.lower())
+
+    def test_old_name_against_the_split_does_not_guess(self):
+        self.assertIsNone(renamed_sheet("Low Metrics Owner", _err(self.SEEN)))
+
+
 if __name__ == "__main__":
     unittest.main()

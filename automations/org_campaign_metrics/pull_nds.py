@@ -68,6 +68,10 @@ CHURN_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
              "NDS-SNRES-ATT-OOFWorkbook/CHURNRATES/"
              "4fdc2f44-19b3-4941-a9c2-831e88172728/ChurnALlExp?:iid=1")
 CHURN_SHEET = "Churn Rates (ICD)"
+# 'Low Metrics Owner' split in two on 2026-10-31 -- '... - All Time' and
+# '... - Last Week'. This view is LowMetricsLastWeek and its numbers stamp
+# under the current week (see the header), so it is the Last Week one.
+LOWMETRICS_SHEET = "Low Metrics Owner - Last Week"
 
 TABLEAU_WB = "NDS-SNRES-ATT-OOFWorkbook"
 
@@ -137,7 +141,7 @@ def renamed_sheet(sheet, error_text):
     candidates with no 'owner' is a guess, so it returns None and the miss is
     reported as before. The parse still checks the header: a sheet without
     'Metric Flag Count' stamps nothing."""
-    if (sheet or "").strip().lower() != "low metrics owner":
+    if not (sheet or "").strip().lower().startswith("low metrics owner"):
         return None
     import ast
     m = re.search(r"thumb\(s\): (\[.*?\])", error_text or "")
@@ -149,7 +153,7 @@ def renamed_sheet(sheet, error_text):
         return None
     cands = [n for n in names
              if n.strip().lower().startswith("low metrics")
-             and n.strip().lower() not in ("low metrics owner",
+             and n.strip().lower() not in ((sheet or "").strip().lower(),
                                            "low metrics flags")]
     owner = [n for n in cands if "owner" in n.lower()]
     if len(owner) == 1:
@@ -444,7 +448,7 @@ def collect(page, today, log=print):
     nat_spr = _parse_rep_summary_spr(
         _crosstab(DAILY_URL, "Rep Summary", "nds_rep_summary.csv"))
     lmo = _parse_low_metrics(
-        _crosstab(LOWMETRICS_URL, "Low Metrics Owner", "nds_low_metrics.csv"))
+        _crosstab(LOWMETRICS_URL, LOWMETRICS_SHEET, "nds_low_metrics.csv"))
     nat_churn = _parse_national_churn(
         _crosstab(CHURN_URL, CHURN_SHEET, "nds_churn_all.csv"))
     wm = _parse_weekly_metrics_all(
