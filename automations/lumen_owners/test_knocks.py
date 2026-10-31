@@ -27,6 +27,75 @@ class KnocksTest(unittest.TestCase):
         self.assertIn("Aaron Nimako (Quantum Fiber)", labels)
         self.assertEqual(len(labels), len(set(labels)))
 
+    def test_att_boards_same_owners_on_campaign_3(self):
+        # Aaron Nimako, 2026-10-31: "can we have the at&t knocks attached too?"
+        with mock.patch("automations.shared.terminated_icds.terminated_lookup",
+                        return_value=lambda n: False):
+            q = KN.owner_boards({}, logfn=lambda *a: None, program=KN.QUANTUM)
+            a = KN.owner_boards({}, logfn=lambda *a: None, program=KN.ATT)
+        self.assertEqual([l.replace("(Quantum Fiber)", "(AT&T)") for l, _c in q],
+                         [l for l, _c in a])
+        self.assertTrue(all(c["campaign_id"] == "3" for _l, c in a))
+        self.assertEqual(KN.PROGRAMS, (KN.QUANTUM, KN.ATT))
+
+    def test_att_files_dont_collide_with_quantum(self):
+        sat = dt.date(2026, 10, 24)
+        self.assertEqual(
+            KN.weekly_attachment_label(sat, KN.ATT),
+            "Weekly Knock Dispositions - Lumen Owners ATT - Oct 19-24, 2026")
+        self.assertNotEqual(KN.program_dir("o", KN.ATT),
+                            KN.program_dir("o", KN.QUANTUM))
+        self.assertEqual(KN.daily_label(KN.ATT), "Daily Knocks — AT&T")
+        self.assertEqual(KN.daily_label(KN.QUANTUM), KN.PDF_LABEL)
+        self.assertEqual(KN.weekly_label(KN.QUANTUM), KN.WEEKLY_LABEL)
+
+    def test_att_daily_pdf_names(self):
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        tmp = Path(tempfile.mkdtemp())
+        lab = "Nigel Marshall (AT&T)"
+        png = KN.owner_dir(tmp, lab) / "total_knocks_2026-10-30.png"
+        Image.new("RGB", (40, 20), "white").save(png)
+        files = KN.pdf_files([(lab, png)], dt.date(2026, 10, 30), tmp, KN.ATT)
+        self.assertEqual([l for l, _p in files], [
+            "Lumen Owners ATT - Daily Knocks disposition - Oct 30, 2026",
+            "Nigel Marshall ATT - Daily Knocks disposition - Oct 30, 2026"])
+
+    def test_one_campaign_down_still_mails_the_other(self):
+        # Quantum pulls fine, AT&T owner fails: both "attached"/note lines,
+        # attached lines first, notes last.
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        tmp = Path(tempfile.mkdtemp())
+        png = tmp / "b.png"
+        Image.new("RGB", (40, 20), "white").save(png)
+
+        def fake_pull(page, pairs, aliases, target, mon, sat, have, d, logfn):
+            if "(AT&T)" in pairs[0][0]:
+                return [], [(pairs[0][0], "TimeoutError")], [], []
+            return [(pairs[0][0], png)], [], [], []
+
+        class Sess:
+            def __enter__(self): return object()
+            def __exit__(self, *a): return False
+
+        pairs = lambda aliases, logfn=None, program=KN.QUANTUM: [
+            ("Nigel Marshall (%s)" % program[1], {})]
+        with mock.patch.object(KN, "owner_boards", side_effect=pairs), \
+             mock.patch.object(KN, "_pull_program", side_effect=fake_pull), \
+             mock.patch.object(KN, "WEEKLY_DIR", tmp / "wk"), \
+             mock.patch("automations.shared.tableau_patchright."
+                        "ownerville_session", return_value=Sess()):
+            blocks, files = KN.build(dt.date(2026, 10, 31), tmp, {},
+                                     logfn=lambda *a: None)
+        kinds = [b[3] for b in blocks]
+        self.assertEqual(kinds, ["attached", "note"])
+        self.assertEqual(blocks[0][0], KN.PDF_LABEL)
+        self.assertIn("Nigel Marshall (AT&amp;T)", blocks[1][0])
+        self.assertEqual(len(files), 2)
+
     def test_nobody_configured_means_no_blocks_and_no_login(self):
         with mock.patch.object(KN, "owner_boards", return_value=[]):
             self.assertEqual(KN.build(dt.date(2026, 10, 23), "x", {}), ([], []))
