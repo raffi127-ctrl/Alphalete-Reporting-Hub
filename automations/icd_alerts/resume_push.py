@@ -199,22 +199,30 @@ def armed(record: Optional[dict] = None) -> bool:
     return bool(got) and got[1] == "live"
 
 
+# Offices whose SUNDAY start is later than the fleet's 1pm. Carlos, 10/31:
+# "for me lets move it to 3pm" — his office waits until Sunday 3:00 PM.
+SUNDAY_START_HOUR_BY_OFFICE = {"11580": 15}
+
+
 def quiet_now(now: Optional[dt.datetime] = None) -> bool:
     """The weekend quiet window: nothing pushes Friday 1pm -> Sunday 1pm
-    (Carlos, 9/4). The Lucys' own rule, imported, not retyped."""
+    (Carlos, 9/4). The Lucys' own rule, imported, not retyped. On top of it,
+    an office in SUNDAY_START_HOUR_BY_OFFICE stays quiet on Sundays until its
+    own later hour."""
+    now = now or dt.datetime.now()
     from automations.applicant_push.window import quiet_window
-    return quiet_window(now or dt.datetime.now())
-
-
-# Carlos, 10/28 ~5 PM: "stop pushing resumes for me" + "start pushing resumes
-# at 5:30am tomorrow". One hold, self-expiring — delete after 10/29.
-RESUME_NOT_BEFORE = dt.datetime(2026, 10, 29, 5, 30)
+    if quiet_window(now):
+        return True
+    got = _listed()
+    if got and now.weekday() == 6:
+        start_h = SUNDAY_START_HOUR_BY_OFFICE.get(str(got[0]))
+        if start_h and now.hour < start_h:
+            return True
+    return False
 
 
 def in_window(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
-    if now < RESUME_NOT_BEFORE:
-        return False
     hm = (now.hour, now.minute)
     return DAY_START <= hm < DAY_END
 
