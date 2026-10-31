@@ -50,6 +50,12 @@ QUANTUM = ("7", "Quantum Fiber", "")
 ATT = ("3", "AT&T", "ATT")   # 3 = RES AT&T, knocks_pull's default campaign
 PROGRAMS = (QUANTUM, ATT)
 
+# Not Lumen owners, but on the AT&T set only, after the Lumen owners (Isaiah
+# Kellum on the 10/31 mail: "Can we get Chan & rafs numbers as well please?"
+# — confirmed "just their knocks"). AT&T is what they knock; no Quantum.
+# Raf is the OwnerVille master row (no impersonation, owner_cfgs).
+ATT_ONLY = ("Chan Park", "Rafael Hidalgo")
+
 
 def owner_boards(aliases_raw, logfn=print, program=QUANTUM
                  ) -> List[Tuple[str, dict]]:
@@ -64,6 +70,8 @@ def owner_boards(aliases_raw, logfn=print, program=QUANTUM
     seen = {s[0] for s in chan}
     names = [s[0] for s in chan] + [s[0] for s in LUMEN_EXTRA
                                     if s[0] not in seen]
+    if program == ATT:
+        names += [n for n in ATT_ONLY if n not in names]
     specs = tuple((n, campaign, tag) for n in names)
     return extra_campaign_pairs(CAPTAIN_KEY, aliases_raw, logfn=logfn,
                                 specs=specs)

@@ -33,9 +33,14 @@ class KnocksTest(unittest.TestCase):
                         return_value=lambda n: False):
             q = KN.owner_boards({}, logfn=lambda *a: None, program=KN.QUANTUM)
             a = KN.owner_boards({}, logfn=lambda *a: None, program=KN.ATT)
-        self.assertEqual([l.replace("(Quantum Fiber)", "(AT&T)") for l, _c in q],
+        # Isaiah, 2026-10-31: Chan + Raf knocks too — AT&T only, at the end.
+        self.assertEqual([l.replace("(Quantum Fiber)", "(AT&T)") for l, _c in q]
+                         + ["Chan Park (AT&T)", "Rafael Hidalgo (AT&T)"],
                          [l for l, _c in a])
         self.assertTrue(all(c["campaign_id"] == "3" for _l, c in a))
+        cfg = dict(a)
+        self.assertEqual(cfg["Rafael Hidalgo (AT&T)"]["ov"], "master")
+        self.assertEqual(cfg["Chan Park (AT&T)"]["ov"], "impersonate")
         self.assertEqual(KN.PROGRAMS, (KN.QUANTUM, KN.ATT))
 
     def test_att_files_dont_collide_with_quantum(self):
