@@ -48,6 +48,7 @@ KIND_LABEL = {
     "error_value": "celda con error",
     "font": "fuente / tamaño de letra distinto",
     "number_format": "formato de número distinto (%, decimales)",
+    "borders": "bordes distintos al resto de la columna",
     "dropdown_missing": "columna con desplegable: esta fila tiene texto sin desplegable",
     "dropdown_different": "desplegable con otra lista que el resto de la columna",
     "dropdown_value_off": "el texto de la celda no está en la lista del desplegable de la columna",
@@ -781,6 +782,20 @@ def check_styles(tab: str, sheet_id: int, values, styles, fill_blank: bool = Fal
         "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment", fill_blank=fill_blank)
 
 
+def check_borders(tab: str, sheet_id: int, values, borders, fill_blank: bool = False) -> List[Finding]:
+    """borders[r-1][c-1] = ((side, style, color json), ...). A free row is what
+    the next new rep is made from, so it has to match the reps (Eve 2026-11-01:
+    the Extra rows she duplicates every Friday)."""
+    def fmt(f):
+        return {"borders": {side: dict({"style": style},
+                                       **({"color": json.loads(color)} if color else {}))
+                            for side, style, color in f}}
+    return _column_format(
+        tab, sheet_id, values, borders, "borders", lambda f: True,
+        lambda f: ", ".join("%s %s" % (side, style.lower()) for side, style, _ in f) or "sin bordes",
+        fmt, "userEnteredFormat.borders", fill_blank=fill_blank)
+
+
 def check_number_formats(tab: str, sheet_id: int, values, numfmts, fill_blank: bool = False) -> List[Finding]:
     """numfmts[r-1][c-1] = (type, pattern). A formula put back into a cell
     that was formatted as % shows '5.6%' where its column shows '0.1' -- the
@@ -806,9 +821,10 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,
     rows = named if len(named) >= MIN_ROWS else range(first, last + 1)
     lay = layout(values)
     out = []
+    def titled(c):
+        return bool(_g(values, lay.sub_row, c).strip() or _g(values, lay.day_row, c).strip())
     for c in range(1, width + 1):
-        if c <= lay.name_col or not (_g(values, lay.sub_row, c).strip()
-                                     or _g(values, lay.day_row, c).strip()):
+        if c <= lay.name_col or not (titled(c) or (c > 1 and titled(c - 1) and titled(c + 1))):
             continue          # A/B carry group labels and ranks, styled by hand
         col = {}
         for r in rows:
@@ -846,6 +862,7 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,
     return out
 
 
+_SPARE_NAME = re.compile(r"^(zz\s*extra|extra|xx)$", re.I)
 DROPDOWN_VOTERS = 0.50   # share of the reps that must have one for the column to count
 DROPDOWN_SAME = 0.90     # share of those that must agree before Lucy writes it
 
@@ -876,7 +893,8 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
     Written with updateCells: copyPaste skips rows the filter hides and lands on
     the next visible row, which on 2026-11-01 was TOTALS."""
     first, last = block_rows(values)
-    named = [r for r in range(first, last + 1) if name_at(values, r)]
+    named = [r for r in range(first, last + 1)
+             if name_at(values, r) and not _SPARE_NAME.match(name_at(values, r))]
     if len(named) < MIN_ROWS:
         return []
     lay = layout(values)
@@ -886,7 +904,8 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
         return row[c - 1] if c - 1 < len(row) else None
 
     width = max((len(rules[r - 1]) for r in named if r - 1 < len(rules)), default=0)
-    fix_rows = list(range(first, last + 1)) if fill_blank else named
+    fix_rows = (list(range(first, last + 1)) if fill_blank
+                else [r for r in range(first, last + 1) if name_at(values, r)])
     out = []
     for c in range(lay.name_col + 1, width + 1):
         have = {r: json.dumps(rule_at(r, c), sort_keys=True) for r in named if rule_at(r, c)}

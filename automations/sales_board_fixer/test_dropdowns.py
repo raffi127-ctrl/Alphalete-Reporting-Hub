@@ -76,7 +76,41 @@ class Dropdowns(unittest.TestCase):
         self.assertEqual(run(reps)[1], [])
 
 
+class SpareNames(unittest.TestCase):
+    def test_a_placeholder_doesnt_vote_but_gets_the_dropdown(self):
+        reps = [("Rep %d" % i, "2nd Wk", LIST) for i in range(6)]
+        reps += [("ZZ EXTRA", "", None) for _ in range(8)]
+        _, found = run(reps, free=0)
+        self.assertEqual({x.kind for x in found}, {"dropdown_missing"})
+        self.assertEqual(len(found), 8)
+
+
 class FreeRowsGetTheFormat(unittest.TestCase):
+    def test_borders_reach_the_free_rows(self):
+        rows, _ = tab(GOOD)
+        good = (("bottom", "SOLID", ""), ("top", "SOLID", ""))
+        bad = good + (("right", "SOLID_MEDIUM", ""),)
+        grid = [[], [], []] + [[None, None, None, None, good] for _ in GOOD]
+        grid.append([None, None, None, None, bad])
+        found = K.check_borders("Board", 7, rows, grid, fill_blank=True)
+        self.assertEqual([x.where for x in found], ["E10"])
+        write = found[0].request["updateCells"]
+        self.assertEqual(write["fields"], "userEnteredFormat.borders")
+        self.assertEqual(set(write["rows"][0]["values"][0]["userEnteredFormat"]["borders"]),
+                         {"bottom", "top"})
+
+    def test_a_column_with_no_title_between_two_titled_ones_counts(self):
+        rows = [["", "", "", "MON", "", "TUE"], [""] * 6, ["", "#", "Name", "Apps", " ", "Apps"]]
+        for i in range(6):
+            rows.append(["", "1", "Rep %d" % i, "0", "x", "0"])
+        rows.append(["", "", "", "0", "x", "0"])
+        rows.append(["", "", "TOTALS", "", "", ""])
+        good = ("Georgia", 10)
+        fonts = [[], [], []] + [[None, None, None, None, good, None] for _ in range(6)]
+        fonts.append([None, None, None, None, ("Arial", 10), None])
+        found = K.check_fonts("Board", 7, rows, fonts, fill_blank=True)
+        self.assertEqual([x.where for x in found], ["E10"])
+
     def test_fonts_reach_the_free_rows_only_on_request(self):
         rows, _ = tab(GOOD)
         fonts = [[], [], []] + [[None, None, None, None, ("Georgia", 12)] for _ in GOOD]

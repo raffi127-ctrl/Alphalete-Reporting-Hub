@@ -98,7 +98,7 @@ def load(sh, title: str, titles=()) -> dict:
         "fields": "sheets(properties(sheetId,title,gridProperties),conditionalFormats,basicFilter)"})
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
-    fonts, numfmts, styles, notes, dropdowns = [], [], [], [], []
+    fonts, numfmts, styles, notes, dropdowns, borders = [], [], [], [], [], []
     if K.is_board(values):
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
@@ -106,7 +106,7 @@ def load(sh, title: str, titles=()) -> dict:
             "includeGridData": True, "ranges": [rng],
             "fields": "sheets(data(rowData(values(effectiveFormat("
                       "textFormat(fontFamily,fontSize,bold),numberFormat,"
-                      "horizontalAlignment),note,dataValidation))))"})
+                      "horizontalAlignment,borders),note,dataValidation))))"})
         rows = grid["sheets"][0]["data"][0].get("rowData", [])
         for rd in rows:
             vs = rd.get("values", [])
@@ -115,11 +115,13 @@ def load(sh, title: str, titles=()) -> dict:
             styles.append([_style(v) for v in vs])
             notes.append([(v or {}).get("note", "") for v in vs])
             dropdowns.append([(v or {}).get("dataValidation") for v in vs])
+            borders.append([_borders(v) for v in vs])
     t = {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
          "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
          "basic_filter": sheet.get("basicFilter"),
          "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "styles": styles,
-         "notes": notes, "dropdowns": dropdowns}
+         "notes": notes, "dropdowns": dropdowns,
+         "borders": borders}
     if ws.spreadsheet.id == SHEET_ID and LW.TAB.match(title) and K.is_board(values):
         t.update(load_older(sh, title, ws))
     if LANE_NAME.search(title):
@@ -250,6 +252,12 @@ def _style(v: dict):
             ef.get("horizontalAlignment"))
 
 
+def _borders(v: dict):
+    b = ((v or {}).get("effectiveFormat") or {}).get("borders") or {}
+    return tuple(sorted((side, x.get("style", ""), json.dumps(x.get("color") or {}, sort_keys=True))
+                        for side, x in b.items()))
+
+
 def _numfmt(v: dict):
     nf = ((v or {}).get("effectiveFormat") or {}).get("numberFormat") or {}
     kind, pat = nf.get("type", ""), nf.get("pattern", "")
@@ -274,7 +282,10 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
                                           fill_blank=not owner)
                  + K.check_styles(title, t["sheet_id"], v, t["styles"], fill_blank=not owner)
                  + K.check_dropdowns(title, t["sheet_id"], v, t.get("dropdowns") or [],
-                                     fill_blank=not owner))
+                                     fill_blank=True))
+        if not owner:
+            found += K.check_borders(title, t["sheet_id"], v, t.get("borders") or [],
+                                     fill_blank=True)
         first, last = K.block_rows(v)
         fixed_cells = {x.where for x in found if x.value is not None}
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
@@ -782,6 +793,7 @@ OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
                "cf_strike_stray", "cf_row_shift", "day_stats_formula", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
+               "dropdown_missing",
                *LC.REPAIRS}
 
 
