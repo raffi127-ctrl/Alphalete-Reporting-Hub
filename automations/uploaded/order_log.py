@@ -2213,7 +2213,23 @@ async def _legacy_filter_download(owner_name: str, tmp_dir: Path,
         )
 
 
-def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]") -> bool:
+def too_big_for_phone(xlsx_path: Path) -> bool:
+    """An office's single file got too big for Slack's phone preview, so it
+    gets Raf's letter posts instead (Eve 2026-11-01). If the check itself
+    breaks, stay on the single file."""
+    from automations.uploaded import order_log_split as ols
+    try:
+        over, rows, tabs = ols.over_phone_limit(xlsx_path)
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠ Order Log size check failed ({e}) — keeping the single file")
+        return False
+    print(f"  Order Log size: {rows} rows, {tabs} rep tabs"
+          + (" — too big for the phone preview, switching to letter posts" if over else ""))
+    return over
+
+
+def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]",
+                         channel: str = "C068PH3RFSM") -> bool:
     """Raf's #alphalete-sales: the Order Log as THREE channel posts (reps
     A-F / G-M / N-Z), each thread = one reply per rep (name + their one-tab
     file) and a tap-your-name index as the FIRST reply. Lands right under the
@@ -2229,7 +2245,8 @@ def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]") -> bool:
     from automations.shared.slack_metrics_post import (
         _client, post_reply_text_only, mirror_channels, SlackPostError)
     try:
-        out_dir = REPO_ROOT / "output" / "order_log_split" / f"{today:%Y-%m-%d}"
+        # One folder per channel: several offices can split on the same day.
+        out_dir = REPO_ROOT / "output" / "order_log_split" / f"{today:%Y-%m-%d}" / channel
         parts = ols.split(xlsx_path, out_dir)
         if not parts:
             raise RuntimeError("split produced no files")
@@ -2245,7 +2262,7 @@ def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]") -> bool:
     except SlackPostError as e:
         failures.append(f"📋 Order Log pointer in the Metrics thread ({e})")
     client = _client()
-    for ch in ["C068PH3RFSM"] + mirror_channels("C068PH3RFSM"):
+    for ch in [channel] + mirror_channels(channel):
         try:
             ols.post_threads(client, ch, parts, out_dir, stamp)
             print(f"  ✓ Slack: Order Log letter posts in {ch}")
@@ -2307,6 +2324,9 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
     elif metrics_channel == DEFAULT_METRICS_CHANNEL and \
             _post_letter_threads(xlsx_path, today, failures):
         pass   # Raf's channel: A-F / G-M / N-Z posts with a name index
+    elif metrics_channel != DEFAULT_METRICS_CHANNEL and too_big_for_phone(xlsx_path) and             (dry or _post_letter_threads(xlsx_path, today, failures, metrics_channel)):
+        if dry:
+            print("  --dry-run — would post Order Log as letter posts in this office's channel")
     else:
         slack_filename = f"Order Log {today:%m-%d-%Y}.xlsx"
         if dry:

@@ -15,6 +15,7 @@ so the exact column names drive the render (never fixed indices).
 from __future__ import annotations
 
 import argparse
+import os
 import datetime as dt
 import sys
 import tempfile
@@ -726,6 +727,22 @@ def _render_activation_rate(owner, header, rows, target, out_dir):
     return out, len(table) - 1
 
 
+def _post_as_letters(xlsx: Path, target: dt.date) -> bool:
+    """Too big for Slack's phone preview -> Raf's letter posts in this office's
+    channel (Eve 2026-11-01). False = post the single file as usual. A letter
+    post that fails raises, so the run shows red instead of a false green."""
+    from automations.uploaded import order_log as _house
+    channel = os.environ.get("METRICS_CHANNEL_ID", "")
+    if not channel or not _house.too_big_for_phone(xlsx):
+        return False
+    failures: list = []
+    if not _house._post_letter_threads(xlsx, target, failures, channel):
+        return False
+    if failures:
+        raise RuntimeError("; ".join(failures))
+    return True
+
+
 def run(owner: str, board: str, *, target: dt.date | None = None,
         dry_run: bool = False, out_dir: Path | None = None,
         verbose: bool = False) -> int:
@@ -795,6 +812,9 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
     if empty_note:
         from automations.shared.slack_metrics_post import post_reply_text_only
         resp = post_reply_text_only(empty_note, react_emoji=emoji)
+    elif is_file and _post_as_letters(Path(img), target):
+        print(f"[nds_orderlog:{board}] ✅ Posted as letter posts", flush=True)
+        return 0
     elif is_file:      # Order Log — the house color-coded .xlsx, like every office
         from automations.shared.slack_metrics_post import post_reply_with_file
         resp = post_reply_with_file(Path(img), comment=comment, react_emoji=emoji)

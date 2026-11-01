@@ -38,6 +38,20 @@ GROUPS = [("A-F", "A", "F"), ("G-M", "G", "M"), ("N-Z", "N", "Z")]
 ROW_WARN, TAB_WARN = 950, 28
 
 
+def over_phone_limit(xlsx_path: Path) -> Tuple[bool, int, int]:
+    """(too big?, rows in the log, rep tabs). Same early margin as the warning
+    in split(): past this the phone preview can cut reps off the bottom."""
+    from openpyxl import load_workbook
+    wb = load_workbook(xlsx_path, read_only=True)
+    tabs = sum(1 for n in wb.sheetnames if n not in NON_REP_TABS)
+    rows = 0
+    if LOG_TAB in wb.sheetnames:
+        rows = sum(1 for r in wb[LOG_TAB].iter_rows(min_row=2, max_col=1, values_only=True)
+                   if r[0] not in (None, ""))
+    wb.close()
+    return (rows > ROW_WARN or tabs > TAB_WARN), rows, tabs
+
+
 def group_of(rep: str) -> str:
     first = (str(rep or "").strip()[:1] or "Z").upper()
     for label, lo, hi in GROUPS:

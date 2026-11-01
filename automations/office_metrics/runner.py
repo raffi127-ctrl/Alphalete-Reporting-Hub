@@ -39,6 +39,8 @@ except Exception:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PER_METRIC_TIMEOUT_S = 20 * 60
+# A too-big Order Log posts one file per rep, same allowance Raf's has.
+ORDER_LOG_TIMEOUT_S = 35 * 60
 
 # Per-office ✅/❌ results for TODAY, read by the ONE Hub card's checklist
 # (dashboard._channel_status). Mirrors the Tableau trackers' _posted_today.json:
@@ -687,9 +689,10 @@ def _mirror_gaps(client, primary_chan: str, mirror_ids: list, today: dt.date,
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
     print(f"\n{'='*70}\n▶  {label}\n   {' '.join(cmd)}\n{'='*70}", flush=True)
     started = time.monotonic()
+    timeout_s = ORDER_LOG_TIMEOUT_S if "Order Log" in label else PER_METRIC_TIMEOUT_S
     try:
         result = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env,
-                                timeout=PER_METRIC_TIMEOUT_S)
+                                timeout=timeout_s)
         elapsed = time.monotonic() - started
         if result.returncode == 0:
             return True, f"{elapsed:5.0f}s"
@@ -699,7 +702,7 @@ def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
             return False, f"⏳ HELD — Order Log data behind (exit 75 after {elapsed:.0f}s)"
         return False, f"exit {result.returncode} after {elapsed:.0f}s"
     except subprocess.TimeoutExpired:
-        return False, f"TIMED OUT after {PER_METRIC_TIMEOUT_S//60}m"
+        return False, f"TIMED OUT after {timeout_s//60}m"
     except Exception as e:                      # noqa: BLE001
         return False, f"launch error: {e}"
 
