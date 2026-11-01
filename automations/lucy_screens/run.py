@@ -1,8 +1,8 @@
 """What each Lucy's monitor shows, kept on it. One tick, every minute.
 
 Megan 2026-11-01: "I want the lucy screens to show different things and be on all
-the time." Lucy 1 = the live LucyEco page; Lucy 2 = every alert still needing a fix; Lucy 3 = every
-Lucy's reports today (each Lucy writes its line to a shared tab each tick).
+the time." Lucy 1 = the live LucyEco page; Lucy 3 = every Lucy's reports today (each Lucy writes its
+line to a shared tab each tick); Lucy 4 = every alert still needing a fix.
 
 Safari, not Chrome: chrome_guard closes a person's Chrome at 4am, and an open one
 adopts the reports' launches (reference_browser_profile_collisions).
@@ -29,8 +29,8 @@ STALE_AFTER = 300
 PAGES = {ALERTS: ALERTS_PAGE, RUNS: RUNS_PAGE}
 SCREENS = {
     "Lucy 1": "https://lucyeco.streamlit.app/lucyeco",
-    "Lucy 2": ALERTS,
     "Lucy 3": RUNS,
+    "Lucy 4": ALERTS,
 }
 HISTORY_DAYS = 14
 IDLE_BEFORE_FRONT = 300
