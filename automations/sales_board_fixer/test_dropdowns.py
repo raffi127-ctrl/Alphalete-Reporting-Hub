@@ -76,6 +76,16 @@ class Dropdowns(unittest.TestCase):
         self.assertEqual(run(reps)[1], [])
 
 
+class TooManyBlanks(unittest.TestCase):
+    def test_a_template_full_of_blank_rows_is_left_alone(self):
+        _, found = run(GOOD, free=K.DROPDOWN_FREE_ROWS + 1, fill_blank=True)
+        self.assertEqual(found, [])
+
+    def test_spare_rows_up_to_the_limit_get_it(self):
+        _, found = run(GOOD, free=K.DROPDOWN_FREE_ROWS, fill_blank=True)
+        self.assertEqual(len(found), K.DROPDOWN_FREE_ROWS)
+
+
 class SpareNames(unittest.TestCase):
     def test_a_placeholder_doesnt_vote_but_gets_the_dropdown(self):
         reps = [("Rep %d" % i, "2nd Wk", LIST) for i in range(6)]

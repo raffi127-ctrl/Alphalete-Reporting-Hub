@@ -580,6 +580,13 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                 if (x.kind not in kinds or _owners_rank_cell(x, name_col)
                         or (x.kind == "x_over_formula" and not _x_kept(x, t["values"], found))):
                     x.value = x.request = None                      # report only
+        if owner:
+            drops = [x for x in found if x.kind == "dropdown_missing" and x.fixable]
+            if len(drops) > K.DROPDOWN_BOARD_CAP:
+                print("  OJO: %d desplegables en una tab de dueño -- solo reporto, no escribo"
+                      % len(drops))
+                for x in drops:
+                    x.value = x.request = None
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
         if do_apply and n_fix > max_fixes:

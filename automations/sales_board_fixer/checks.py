@@ -863,6 +863,8 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,
 
 
 _SPARE_NAME = re.compile(r"^(zz\s*extra|extra|xx)$", re.I)
+DROPDOWN_FREE_ROWS = 30  # more blank rows than this is a template, not spare rows
+DROPDOWN_BOARD_CAP = 500 # more writes than this on one owner's board = misread: report
 DROPDOWN_VOTERS = 0.50   # share of the reps that must have one for the column to count
 DROPDOWN_SAME = 0.90     # share of those that must agree before Lucy writes it
 
@@ -904,8 +906,11 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
         return row[c - 1] if c - 1 < len(row) else None
 
     width = max((len(rules[r - 1]) for r in named if r - 1 < len(rules)), default=0)
-    fix_rows = (list(range(first, last + 1)) if fill_blank
-                else [r for r in range(first, last + 1) if name_at(values, r)])
+    # A dead tab can carry 100+ blank rows (Salik's 'Fiber Sales Board', WE 8/24:
+    # 2,725 writes in the 2026-11-01 preview). Those are not spare rows.
+    blank = [r for r in range(first, last + 1) if not name_at(values, r)]
+    fix_rows = [r for r in range(first, last + 1) if name_at(values, r)
+                or (fill_blank and len(blank) <= DROPDOWN_FREE_ROWS)]
     out = []
     for c in range(lay.name_col + 1, width + 1):
         have = {r: json.dumps(rule_at(r, c), sort_keys=True) for r in named if rule_at(r, c)}
