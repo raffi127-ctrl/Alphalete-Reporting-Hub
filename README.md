@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-10-31 20:00 CDT_
+_Last sync: 2026-11-01 07:30 CST_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 
@@ -21,9 +21,11 @@ Source: `~/alphalete-readmes/`
 | [LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md) | Local Office Sales Call Outs — session README (Sep 29 → Oct 19, 2026) | 2026-10-21 |
 | [ONE-ON-ONES-README.md](ops/ONE-ON-ONES-README.md) | ONE-ON-ONES README — Carlos's Monday 1:1 call | 2026-10-19 |
 | [RESUME-PUSHING-README.md](ops/RESUME-PUSHING-README.md) | Resume Pushing — How It Works | 2026-10-08 |
+| [SECOND-ROUND-CONTACTS-README.md](ops/SECOND-ROUND-CONTACTS-README.md) | Second-round contacts for new owners — how it works | 2026-10-31 |
 | [VANTURA-BOARD-README.md](ops/VANTURA-BOARD-README.md) | Vantura Master Sales Board — How It All Works | 2026-10-29 |
 | [VANTURA-PAYROLL-SESSION-README.md](ops/VANTURA-PAYROLL-SESSION-README.md) | Vantura Payroll — Session Handoff README | 2026-10-28 |
 | [VANTURA-PNL-COMMISSION-README.md](ops/VANTURA-PNL-COMMISSION-README.md) | Vantura P&L + Commission — How It All Works | 2026-09-06 |
+| [VANTURA-REPS-CONTACTS-README.md](ops/VANTURA-REPS-CONTACTS-README.md) | Vantura Reps → Google Contacts (alphaletegp) — how it works | 2026-10-31 |
 
 ## Alphalete-Reporting-Hub repo (code + Lucy 2 automations)
 
@@ -75,7 +77,7 @@ Source: `see table`
 | [hv-commissions-README.txt](other/hv-commissions-README.txt) | usage: cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python ~/hv-commissions/build_hv.p — `~/hv-commissions/README.txt` | 2026-10-22 |
 | [shikamaru-README.md](other/shikamaru-README.md) | Manager Agent — `~/shikamaru/README.md` | 2026-07-16 |
 
-_47 files._
+_49 files._
 
 
 ## How this works
