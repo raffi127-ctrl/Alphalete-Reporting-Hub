@@ -132,11 +132,10 @@ def board_stats(ws, grid, day: dt.date, fresh: bool = False):
     agree with the sales listed in the same text -- the grid in hand predates
     them.
 
-    "In the field" is the BOARD'S formula: reps with knocks in the day's TK
-    column, or a sale (Megan 2026-10-26: the text said 44 off roll call while
-    the knock board had 37 knocking). It used to count roll call, which is why
-    Sunday and unmarked days had their own fallback here; with knocks it needs
-    none, and Zero / % / both averages follow it on the board itself.
+    "In the field" is the BOARD'S formula: reps whose Apps cell for the day has
+    no X / T / CR / RT / STF / L (Raf 2026-11-01: back to roll call, knocks miss
+    reps walking together or working apartments). No fallback here: a day nobody
+    marked reads the whole roster, and Zero / % / both averages follow it.
     """
     col, rows = stats_cells(grid, day)
     if not rows:

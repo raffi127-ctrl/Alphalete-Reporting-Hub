@@ -291,8 +291,8 @@ def test_leaderboard_board_stats_block():
 
 
 def test_board_stats_copies_the_board_on_sunday_too():
-    """The board's field formula counts knocks now (10/26), so Sunday and a
-    day with no roll call are copied as-is -- no fallback rewrites them."""
+    """The text copies the board's block as-is on every day -- Sunday and a
+    day with no roll call included. No fallback rewrites them."""
     from automations.alphalete_sales_board import fill
     grid = [["", "", "", "SUN", ""],
             ["", "", "", "", ""],
