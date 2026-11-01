@@ -2216,7 +2216,7 @@ async def _legacy_filter_download(owner_name: str, tmp_dir: Path,
 def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]") -> bool:
     """Raf's #alphalete-sales: the Order Log as THREE channel posts (reps
     A-F / G-M / N-Z), each thread = one reply per rep (name + their one-tab
-    file) and a tap-your-name index as the LAST reply. Lands right under the
+    file) and a tap-your-name index as the FIRST reply. Lands right under the
     Metrics thread, before the Country Trackers (Raf + Eve 2026-10-31: the
     one-file log cut off at J in Slack's phone preview, and scrolling 69 tabs
     to find yourself was "too much friction").

@@ -159,10 +159,10 @@ def rep_files(letter_xlsx: Path, out_dir: Path) -> List[Tuple[str, Path]]:
 def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
                  out_dir: Path, today_label: str) -> List[dict]:
     """One parent post per letter. In its thread, per rep: a text reply with
-    their NAME, then their one-tab file right under it. The thread's LAST
+    their NAME, then their one-tab file right under it. The thread's FIRST
     reply is an INDEX: every name links to that rep's name message, so the
     phone jumps straight to it (Eve 2026-10-31: "queremos evitar que tengan
-    que hacer scroll"; opening a thread lands at the bottom, hence last).
+    que hacer scroll"), and the channel post links straight to the index.
 
     Why name messages and not file links: Slack hangs every linked FILE
     under the message as an attachment, unfurl flags or not, so a 24-name
@@ -214,6 +214,9 @@ def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
     for label, path in parts:
         title = f"📋 *Order Log {today_label} — reps {label.replace('-', '–')}*"
         ts = _text(None, f"{title}\nOpen the thread 👇 and tap your name")
+        # The index is the FIRST reply (Eve 2026-11-01). Its names link to messages
+        # that do not exist yet, so it goes up as a placeholder and is filled at the end.
+        index_ts = _text(ts, f"👉 *Tap your name:* (names loading...)")
         full_ts = _with_file(ts, f"*All reps {label.replace('-', '–')}* (one file)",
                              path, path.name)
         links = []
@@ -223,9 +226,24 @@ def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
             links.append((rep, _link(name_ts)))
             time.sleep(1)
         index = "\n".join(f"• <{url}|{rep}>" for rep, url in links)
-        _text(ts, f"👉 *Tap your name:*\n{index}\n\n"
-                  f"<{_link(full_ts)}|All reps {label} in one file>")
-        print(f"  ✓ posted thread {label} ({len(links)} reps, index = last reply)")
+        index_text = (f"👉 *Tap your name:*\n{index}\n\n"
+                      f"<{_link(full_ts)}|All reps {label} in one file>")
+        try:
+            client.chat_update(channel=channel, ts=index_ts, text=index_text)
+        except Exception as e:  # noqa: BLE001  (names still reach the thread)
+            print(f"  ⚠ could not fill the {label} index, posting it as a new reply: {e}")
+            index_ts = _text(ts, index_text)
+        # Point the channel post straight at the index. Slack opens a thread
+        # at a different spot depending on what's unread (Eve 2026-11-01:
+        # channel landed on the first reply, DM on the last), so "open the
+        # thread" can't promise the index is on screen; a link to the reply can.
+        # If this fails the post still says "open the thread", which works.
+        try:
+            client.chat_update(channel=channel, ts=ts,
+                               text=f"{title}\n👉 <{_link(index_ts)}|Find your name here>")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ could not link the {label} post to its index: {e}")
+        print(f"  ✓ posted thread {label} ({len(links)} reps, index = first reply)")
     (out_dir / f"posted_{channel}.json").write_text(json.dumps(created, indent=1),
                                          encoding="utf-8")
     return created
