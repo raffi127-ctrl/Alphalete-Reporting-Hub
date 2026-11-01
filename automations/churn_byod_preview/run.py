@@ -438,7 +438,9 @@ def render_office_png(sheet_id: str, tab: str, out_png: Path, *,
     if ws is not None:
         rows_of = lambda rng: ws.get(rng)  # noqa: E731
     data = collect(sheet_id, tab, rows_of=rows_of)
-    if not data["rows"] or not data["prods"]:
+    # No rows alone is fine: capture._assert_rolloff_has_data has already told a
+    # real zero (no wireless disconnects) from an unwritten board.
+    if not data["prods"]:
         raise ValueError(f"no churn data on {tab!r} (rows={len(data['rows'])})")
     html_txt = build_html(data, label=label, office_key=office_key,
                           show_decel=office_key in ("carlos", "atef"))
