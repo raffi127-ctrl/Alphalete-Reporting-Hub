@@ -263,11 +263,9 @@ def lanes_week(day: dt.date) -> dt.date:
 
 
 def _find_ws(book_ws, title: str):
-    want = title.strip().lower()
-    for ws in book_ws:
-        if ws.title.strip().lower() == want:
-            return ws
-    return None
+    from automations.alphalete_sales_board import tab_names as TN
+    real = TN.find([ws.title for ws in book_ws], title)
+    return next((ws for ws in book_ws if ws.title == real), None)
 
 
 def _heal_lost(formulas: List[List[str]], values: List[List[str]]) -> Dict[str, int]:

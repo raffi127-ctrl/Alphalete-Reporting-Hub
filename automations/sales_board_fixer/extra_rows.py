@@ -152,8 +152,8 @@ def _hidden(sh, title: str, row: int) -> bool:
 def board_tabs(sh, owner=None) -> list:
     if owner is None:
         have = R._tabs(sh)
-        return [t for t in R.week_tabs(dt.date.today())
-                if t in have and t.lower().startswith("sales board")][:1]
+        return [t for t in (R.TN.find(have, x) for x in R.week_tabs(dt.date.today()))
+                if t and t.lower().startswith("sales board")][:1]
     if owner.get("tabs"):
         return [t for t in owner["tabs"] if t in R._tabs(sh)]
     return R.owner_tabs(sh, owner.get("boards", 1), owner.get("week_end", False),

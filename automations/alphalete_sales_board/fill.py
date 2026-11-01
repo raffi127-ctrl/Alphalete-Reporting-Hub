@@ -36,6 +36,8 @@ from typing import Dict, List, Optional, Tuple
 from automations.alphalete_sales_board import config as C
 from automations.rep_sales_fill import board as B
 
+from automations.alphalete_sales_board import tab_names as TN
+
 TAB_PREFIX = "Sales Board WE"
 
 # The evaluation copy of a week's tab, filled with the same sales from the same
@@ -56,9 +58,10 @@ def open_tab(day: dt.date, client=None):
     from automations.recruiting_report.fill import _client
     gc = client or _client()
     book = gc.open_by_key(C.SPREADSHEET_ID)
-    want = tab_title(day).lower()
-    for ws in book.worksheets():
-        if ws.title.strip().lower() == want:
+    tabs = book.worksheets()
+    title = TN.find([ws.title for ws in tabs], tab_title(day))
+    for ws in tabs:
+        if ws.title == title:
             return ws
     raise RuntimeError(
         "no %r tab on the sales board -- the week's tab is usually rolled over "

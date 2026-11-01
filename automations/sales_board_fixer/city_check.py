@@ -238,6 +238,7 @@ def main(argv=None) -> int:
     title = R.week_tabs(today)[0]
 
     sh = R._book(a.sheet_id)
+    title = R.TN.find(R._tabs(sh), title) or title
     ws = sh.worksheet(title)
     grid = ws.get_all_values()
     col = location_col(grid)

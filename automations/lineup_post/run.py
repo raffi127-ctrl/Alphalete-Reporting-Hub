@@ -211,7 +211,8 @@ def main(argv=None) -> int:
 
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SPREADSHEET_ID)
-    tab = a.tab or tab_name(day)
+    from automations.alphalete_sales_board import tab_names as TN
+    tab = a.tab or TN.find([w.title for w in sh.worksheets()], tab_name(day)) or tab_name(day)
     ws = sh.worksheet(tab)
     grid = ws.get_values("A1:Z80")
     hdr, last_col, rows = find_box(grid)

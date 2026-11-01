@@ -46,6 +46,7 @@ try:
 except Exception:  # noqa: BLE001 -- Windows console, best effort
     pass
 
+from automations.alphalete_sales_board import tab_names as TN
 from automations.sales_board_fixer import checks as K
 from automations.sales_board_fixer import lanes_check as LC
 from automations.sales_board_fixer import last_week as LW
@@ -204,8 +205,8 @@ def load_lanes(sh, t: dict) -> dict:
     boards, targets = {}, ({} if ours else None)
     anchor = L.lanes_week(dt.date.today())
     for key, back in ((("current", 0), ("last", 7)) if ours else ()):
-        title = fill.tab_title(anchor - dt.timedelta(days=back))
-        if title not in have:
+        title = TN.find(have, fill.tab_title(anchor - dt.timedelta(days=back)))
+        if title is None:
             continue
         g = sh.worksheet(title).get_all_values()
         end = L.totals_row([r[2] if len(r) > 2 else "" for r in g])
@@ -478,6 +479,7 @@ def _main(a) -> int:
     # Monday 04:xx runs before the week roll makes this week's Sales Board:
     # skip it (tomorrow's run picks it up), don't crash
     have = _tabs(sh)
+    titles = [TN.find(have, t) or t for t in titles]
     for title in [t for t in titles if t not in have]:
         print("  no existe %r todavía -- salteada" % title)
     titles = [t for t in titles if t in have]

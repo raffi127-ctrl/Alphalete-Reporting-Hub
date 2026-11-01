@@ -28,9 +28,11 @@ from automations.new_starts_box.names import norm
 
 
 def open_tab(book, title: str, what: str):
-    want = title.strip().lower()
-    for ws in book.worksheets():
-        if ws.title.strip().lower() == want:
+    from automations.alphalete_sales_board import tab_names as TN
+    tabs = book.worksheets()
+    real = TN.find([ws.title for ws in tabs], title)
+    for ws in tabs:
+        if ws.title == real:
             return ws
     raise RuntimeError(
         "no %r tab (%s) in %r -- it is usually rolled over at the start of the "
