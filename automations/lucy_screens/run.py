@@ -1,7 +1,7 @@
 """What each Lucy's monitor shows, kept on it. One tick, every minute.
 
 Megan 2026-11-01: "I want the lucy screens to show different things and be on all
-the time." Lucy 1 = the live LucyEco page; Lucy 3 = every Lucy's reports today (each Lucy writes its
+the time." Lucy 1 = the live LucyEco page; Lucy 2 = Lucy's photo; Lucy 3 = every Lucy's reports today (each Lucy writes its
 line to a shared tab each tick); Lucy 4 = every alert still needing a fix.
 
 Safari, not Chrome: chrome_guard closes a person's Chrome at 4am, and an open one
@@ -26,9 +26,13 @@ RUNS = "runs"
 RUNS_PAGE = REPO / "output" / "lucy_screens" / "runs.html"
 STATUS_TAB = "Screen Status"
 STALE_AFTER = 300
-PAGES = {ALERTS: ALERTS_PAGE, RUNS: RUNS_PAGE}
+PHOTO = "photo"
+PHOTO_PAGE = REPO / "output" / "lucy_screens" / "photo.html"
+PAGES = {ALERTS: ALERTS_PAGE, RUNS: RUNS_PAGE, PHOTO: PHOTO_PAGE}
+OPENED = REPO / "output" / "lucy_screens" / "opened.txt"
 SCREENS = {
     "Lucy 1": "https://lucyeco.streamlit.app/lucyeco",
+    "Lucy 2": PHOTO,
     "Lucy 3": RUNS,
     "Lucy 4": ALERTS,
 }
@@ -309,15 +313,38 @@ def _idle_seconds() -> float:
     return int(hit.group(1)) / 1e9 if hit else 0
 
 
+def _needs_open(target: str, boot: str, opened: str) -> bool:
+    """Once per restart and per page. "Safari is running" can't stand in for this:
+    Safari was already open on Lucy 3, so her page never appeared (2026-11-01)."""
+    return opened != f"{boot} {target}"
+
+
+def write_photo() -> None:
+    img = (REPO / "resources" / "lucy-avatar.png").as_uri()
+    PHOTO_PAGE.parent.mkdir(parents=True, exist_ok=True)
+    PHOTO_PAGE.write_text(
+        '<!doctype html><html><head><meta charset="utf-8"><title>Lucy</title><style>'
+        "html,body{height:100%;margin:0;background:#faf6ea}"
+        "body{display:flex;align-items:center;justify-content:center}"
+        f'img{{height:80vh;border-radius:50%}}</style></head><body><img src="{img}">'
+        "</body></html>", encoding="utf-8")
+
+
 def keep_open(target: str) -> None:
     """Open it after a restart; otherwise bring it back in front once it has been
     covered. Megan 2026-11-01: Lucy 1 kept leaving the page as automations ran.
     Holds back while a report runs (a covered Chrome can stall its capture) and
     while a person is using the machine. Plain `open -a` so no new tab each tick."""
-    if subprocess.run(["pgrep", "-x", "Safari"],
-                      stdout=subprocess.DEVNULL).returncode != 0:
+    boot = subprocess.run(["sysctl", "-n", "kern.boottime"], stdout=subprocess.PIPE,
+                          text=True).stdout.strip()
+    opened = OPENED.read_text(encoding="utf-8") if OPENED.exists() else ""
+    running = subprocess.run(["pgrep", "-x", "Safari"],
+                             stdout=subprocess.DEVNULL).returncode == 0
+    if not running or _needs_open(target, boot, opened):
         url = PAGES[target].as_uri() if target in PAGES else target
         subprocess.run(["open", "-a", "Safari", url], check=False)
+        OPENED.parent.mkdir(parents=True, exist_ok=True)
+        OPENED.write_text(f"{boot} {target}", encoding="utf-8")
     elif not _report_running() and _idle_seconds() > IDLE_BEFORE_FRONT:
         subprocess.run(["open", "-a", "Safari"], check=False)
 
@@ -344,6 +371,8 @@ def main() -> int:
         write_alerts()
     elif target == RUNS:
         write_runs()
+    elif target == PHOTO:
+        write_photo()
     keep_open(target)
     return 0
 
