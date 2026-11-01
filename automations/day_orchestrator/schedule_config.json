@@ -3817,6 +3817,48 @@
    "depends_on": [],
    "verify": null
   },
+  "install_lucy_screens_lucy3": {
+   "on_scheduler": true,
+   "machine": "Lucy 3",
+   "_note": "MANUAL: `lucy rerun install_lucy_screens_lucy3` installs com.alphalete.lucy-screens: keeps this Lucy's monitor on its page and reports its runs to Lucy 3's screen (automations/lucy_screens/run.py).",
+   "display_name": "Install Lucy screen (Lucy 3)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lucy-screens"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
+  "install_lucy_screens_lucy4": {
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "MANUAL: `lucy rerun install_lucy_screens_lucy4` installs com.alphalete.lucy-screens: keeps this Lucy's monitor on its page and reports its runs to Lucy 3's screen (automations/lucy_screens/run.py).",
+   "display_name": "Install Lucy screen (Lucy 4)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lucy-screens"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
   "install_new_start_thread_scan_agent": {
    "on_scheduler": true,
    "_note": "MANUAL: `lucy rerun install_new_start_thread_scan_agent` installs com.alphalete.new-start-thread-replies (every day, every 30 min, 8am-8pm CST) on THIS machine. Each firing enqueues `rerun new_start_thread_replies` for the poller. Runs all week, not just the weekend: people ask Lucy things midweek. weekdays [] = manual only.",

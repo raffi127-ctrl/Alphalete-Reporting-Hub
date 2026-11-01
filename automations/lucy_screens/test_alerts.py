@@ -1,6 +1,6 @@
 import unittest
 
-from automations.lucy_screens.run import open_alerts, page
+from automations.lucy_screens.run import _column, _seconds, open_alerts, page, running_now
 
 
 def _m(ts, key, state="open 2026-11-01", marks=(), title="*Report X* — failed"):
@@ -34,6 +34,33 @@ class Alerts(unittest.TestCase):
 
     def test_titles_are_escaped(self):
         self.assertIn("&lt;b&gt;", page([{"title": "<b>", "ts": 0, "working": False}], 60))
+
+
+class Runs(unittest.TestCase):
+    def test_elapsed_formats(self):
+        self.assertEqual(_seconds("05:03"), 303)
+        self.assertEqual(_seconds("01:00:00"), 3600)
+        self.assertEqual(_seconds("1-00:00:10"), 86410)
+
+    def test_running_names_and_skips_itself(self):
+        ps = ("  10:00 Python -u -m automations.office_metrics.run --office joe\n"
+              "  00:05 Python -m automations.lucy_screens.run\n"
+              "  46:00 Python -m automations.day_orchestrator.run --x\n"
+              "  00:05 Python -m automations.day_orchestrator.mini_control --loop\n")
+        got = running_now(ps, {"automations.office_metrics.run":
+                               [(["--office", "joe"], "Joe"), (["--office", "al"], "Al")]})
+        self.assertEqual(got, [{"name": "Joe", "secs": 600}])
+
+    def test_silent_lucy_is_never_drawn_as_idle(self):
+        html = _column("Lucy 1", {"at": 0, "reports": [], "running": []}, 1000)
+        self.assertIn("No update", html)
+        self.assertNotIn("Nothing running", html)
+
+    def test_bar_counts_finished_not_only_done(self):
+        html = _column("Lucy 1", {"at": 0, "running": [], "reports": [
+            {"name": "a", "status": "DONE"}, {"name": "b", "status": "FAILED"},
+            {"name": "c", "status": "PENDING"}, {"name": "d", "status": "PENDING"}]}, 1)
+        self.assertIn("2 of 4", html)
 
 
 if __name__ == "__main__":
