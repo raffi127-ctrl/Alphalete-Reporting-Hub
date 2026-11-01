@@ -22,6 +22,7 @@ no "correct" to put back, so the fixer does not guess.
 from __future__ import annotations
 
 import collections
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -47,6 +48,10 @@ KIND_LABEL = {
     "error_value": "celda con error",
     "font": "fuente / tamaño de letra distinto",
     "number_format": "formato de número distinto (%, decimales)",
+    "dropdown_missing": "columna con desplegable: esta fila tiene texto sin desplegable",
+    "dropdown_different": "desplegable con otra lista que el resto de la columna",
+    "dropdown_value_off": "el texto de la celda no está en la lista del desplegable de la columna",
+    "dropdown_mixed": "columna con dos listas de desplegable distintas (hay que elegir una)",
     "style": "negrita / centrado distinto",
     "roll_call_blank": "X/T en Int con la Roll Call vacía",
     "cf_broken": "regla de formato condicional rota (#REF!)",
@@ -748,7 +753,7 @@ def check_lineup_names(tab: str, formulas, boards: Dict[str, Tuple[int, int, int
 
 # --- fonts -----------------------------------------------------------------
 
-def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
+def check_fonts(tab: str, sheet_id: int, values, fonts, fill_blank: bool = False) -> List[Finding]:
     """fonts[r-1][c-1] = (family, size) as the cell shows it. Per column of
     the rep block: the cells off the column's majority font get it back.
 
@@ -760,10 +765,10 @@ def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
         tab, sheet_id, values, fonts, "font", lambda f: bool(f[0]),
         lambda f: "%s %s" % f,
         lambda f: {"textFormat": {"fontFamily": f[0], "fontSize": f[1]}},
-        "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize")
+        "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize", fill_blank=fill_blank)
 
 
-def check_styles(tab: str, sheet_id: int, values, styles) -> List[Finding]:
+def check_styles(tab: str, sheet_id: int, values, styles, fill_blank: bool = False) -> List[Finding]:
     """styles[r-1][c-1] = (bold, horizontal). A row pasted values-only or
     re-added by hand keeps Georgia 12 but loses bold and centering -- the
     numbers sit thin in the cell's corner (Eve 2026-10-27: Basil, Baylen).
@@ -773,10 +778,10 @@ def check_styles(tab: str, sheet_id: int, values, styles) -> List[Finding]:
         tab, sheet_id, values, styles, "style", lambda f: bool(f[1]),
         lambda f: "%s%s" % ("negrita " if f[0] else "", (f[1] or "-").lower()),
         lambda f: {"textFormat": {"bold": f[0]}, "horizontalAlignment": f[1]},
-        "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment")
+        "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment", fill_blank=fill_blank)
 
 
-def check_number_formats(tab: str, sheet_id: int, values, numfmts) -> List[Finding]:
+def check_number_formats(tab: str, sheet_id: int, values, numfmts, fill_blank: bool = False) -> List[Finding]:
     """numfmts[r-1][c-1] = (type, pattern). A formula put back into a cell
     that was formatted as % shows '5.6%' where its column shows '0.1' -- the
     value is right and still reads wrong. Same majority rule as fonts."""
@@ -785,10 +790,11 @@ def check_number_formats(tab: str, sheet_id: int, values, numfmts) -> List[Findi
         lambda f: f[1] or f[0] or "automático",
         lambda f: {"numberFormat": {"type": f[0], "pattern": f[1]}} if f[0]
         else {"numberFormat": {}},
-        "userEnteredFormat.numberFormat")
+        "userEnteredFormat.numberFormat", fill_blank=fill_blank)
 
 
-def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields):
+def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,
+                   fill_blank=False):
     first, last = block_rows(values)
     n = last - first + 1
     if n < MIN_ROWS:
@@ -814,18 +820,107 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields)
         top, hits = collections.Counter(col.values()).most_common(1)[0]
         if hits < MAJORITY * len(col) or not usable(top):
             continue
-        for r, f in col.items():
+        # fill_blank: the free rows don't vote, but they do get the format, so
+        # a rep typed into one starts out looking like everybody else
+        # (Eve 2026-11-01).
+        todo = dict(col)
+        if fill_blank:
+            for r in range(first, last + 1):
+                if r in todo or name_at(values, r):
+                    continue
+                row = grid[r - 1] if r - 1 < len(grid) else []
+                cell = row[c - 1] if c - 1 < len(row) else None
+                todo[r] = tuple(cell) if cell is not None else None
+        for r, f in todo.items():
             if f == top:
                 continue
             out.append(Finding(
                 kind, tab, a1(r, c),
                 "%s, columna %s" % (KIND_LABEL[kind], header(values, c)),
                 row=r, name=name_at(values, r),
-                before=show(f), after=show(top),
+                before=show(f) if f is not None else "sin formato", after=show(top),
                 request={"updateCells": {
                     "range": _cell_range(sheet_id, r, c),
                     "rows": [{"values": [{"userEnteredFormat": fmt(top)}]}],
                     "fields": fields}}))
+    return out
+
+
+DROPDOWN_VOTERS = 0.50   # share of the reps that must have one for the column to count
+DROPDOWN_SAME = 0.90     # share of those that must agree before Lucy writes it
+
+
+def _dropdown_choices(rule: dict) -> Optional[set]:
+    """The words a list rule accepts; None when it isn't a typed list."""
+    cond = rule.get("condition") or {}
+    if cond.get("type") == "ONE_OF_LIST":
+        return {str(v.get("userEnteredValue", "")).strip() for v in cond.get("values", [])}
+    if cond.get("type") == "BOOLEAN" and not cond.get("values"):
+        return {"TRUE", "FALSE"}
+    return None
+
+
+def check_dropdowns(tab: str, sheet_id: int, values, rules,
+                    fill_blank: bool = False) -> List[Finding]:
+    """rules[r-1][c-1] = the cell's data validation, or None. A column where the
+    reps have a dropdown has it on EVERY row of the block; text pasted in is not
+    a dropdown (Raf + Eve 2026-11-01: rows added for new 1st weeks came without
+    them, and the free rows they go into had none either).
+
+    Only rows with a rep vote. A row's value is never changed: a word that is
+    not on the list is reported, because the dropdown would mark it invalid. A
+    column split between two lists is reported, not picked for: it may be the
+    list that is wrong (our 'A-Play Yes/No' mostly carries the Leadership list).
+    fill_blank: the free rows get the dropdown too.
+
+    Written with updateCells: copyPaste skips rows the filter hides and lands on
+    the next visible row, which on 2026-11-01 was TOTALS."""
+    first, last = block_rows(values)
+    named = [r for r in range(first, last + 1) if name_at(values, r)]
+    if len(named) < MIN_ROWS:
+        return []
+    lay = layout(values)
+
+    def rule_at(r, c):
+        row = rules[r - 1] if r - 1 < len(rules) else []
+        return row[c - 1] if c - 1 < len(row) else None
+
+    width = max((len(rules[r - 1]) for r in named if r - 1 < len(rules)), default=0)
+    fix_rows = list(range(first, last + 1)) if fill_blank else named
+    out = []
+    for c in range(lay.name_col + 1, width + 1):
+        have = {r: json.dumps(rule_at(r, c), sort_keys=True) for r in named if rule_at(r, c)}
+        if len(have) < max(MIN_ROWS, DROPDOWN_VOTERS * len(named)):
+            continue
+        top, hits = collections.Counter(have.values()).most_common(1)[0]
+        col = header(values, c)
+        if hits < DROPDOWN_SAME * len(have):
+            out.append(Finding(
+                "dropdown_mixed", tab, col_letter(c),
+                "%s, columna %s" % (KIND_LABEL["dropdown_mixed"], col),
+                before="%d filas con una lista, %d con otra" % (hits, len(have) - hits)))
+            continue
+        rule = json.loads(top)
+        choices = _dropdown_choices(rule)
+        for r in fix_rows:
+            cur = rule_at(r, c)
+            if cur and json.dumps(cur, sort_keys=True) == top:
+                continue
+            text = _g(values, r, c).strip()
+            kind = "dropdown_different" if cur else "dropdown_missing"
+            base = dict(where=a1(r, c), row=r, name=name_at(values, r),
+                        before=text or "vacía", after="desplegable")
+            if choices is not None and text and text not in choices:
+                out.append(Finding("dropdown_value_off", tab,
+                                   detail="%s, columna %s: %r"
+                                          % (KIND_LABEL["dropdown_value_off"], col, text), **base))
+                continue
+            out.append(Finding(
+                kind, tab, detail="%s, columna %s" % (KIND_LABEL[kind], col),
+                request={"updateCells": {
+                    "range": _cell_range(sheet_id, r, c),
+                    "rows": [{"values": [{"dataValidation": rule}]}],
+                    "fields": "dataValidation"}}, **base))
     return out
 
 
