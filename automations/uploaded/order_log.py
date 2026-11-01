@@ -2213,6 +2213,48 @@ async def _legacy_filter_download(owner_name: str, tmp_dir: Path,
         )
 
 
+def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]") -> bool:
+    """Raf's #alphalete-sales: the Order Log as THREE channel posts (reps
+    A-F / G-M / N-Z), each thread = one reply per rep (name + their one-tab
+    file) and a tap-your-name index as the LAST reply. Lands right under the
+    Metrics thread, before the Country Trackers (Raf + Eve 2026-10-31: the
+    one-file log cut off at J in Slack's phone preview, and scrolling 69 tabs
+    to find yourself was "too much friction").
+
+    A line in the Metrics thread points to the posts, so its 📋 checklist row
+    still gets a reply. Mirrors (#alphalete-lvl1-chat) get the same posts.
+    Returns False if the split itself failed -> caller posts the single file
+    the old way, so the log never goes missing."""
+    from automations.uploaded import order_log_split as ols
+    from automations.shared.slack_metrics_post import (
+        _client, post_reply_text_only, mirror_channels, SlackPostError)
+    try:
+        out_dir = REPO_ROOT / "output" / "order_log_split" / f"{today:%Y-%m-%d}"
+        parts = ols.split(xlsx_path, out_dir)
+        if not parts:
+            raise RuntimeError("split produced no files")
+    except Exception as e:  # noqa: BLE001 — fall back to the one-file post
+        print(f"  ⚠ Order Log letter split failed ({e}) — posting the single file")
+        return False
+    stamp = f"{today:%m-%d-%Y}"
+    labels = " / ".join(lab.replace("-", "–") for lab, _ in parts)
+    try:
+        post_reply_text_only(
+            f"📋 Order Log — posted in the channel as {labels} 👇 "
+            f"(open yours and tap your name)", react_emoji="clipboard")
+    except SlackPostError as e:
+        failures.append(f"📋 Order Log pointer in the Metrics thread ({e})")
+    client = _client()
+    for ch in ["C068PH3RFSM"] + mirror_channels("C068PH3RFSM"):
+        try:
+            ols.post_threads(client, ch, parts, out_dir, stamp)
+            print(f"  ✓ Slack: Order Log letter posts in {ch}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ Order Log letter posts failed in {ch}: {e}")
+            failures.append(f"📋 Order Log letter posts in {ch} ({e})")
+    return True
+
+
 def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
                     is_empty: bool, owner_name: str, today,
                     post_to_slack: bool) -> "list[str]":
@@ -2259,6 +2301,12 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
             except SlackPostError as e:
                 print(f"  ⚠ Slack post failed (Order Log note): {e}")
                 failures.append(f"Order Log 'No data' note ({e})")
+    elif metrics_channel == DEFAULT_METRICS_CHANNEL and dry:
+        print("  --dry-run — would post Order Log as A-F / G-M / N-Z channel "
+              "posts (one reply per rep + name index) + a pointer in the thread")
+    elif metrics_channel == DEFAULT_METRICS_CHANNEL and \
+            _post_letter_threads(xlsx_path, today, failures):
+        pass   # Raf's channel: A-F / G-M / N-Z posts with a name index
     else:
         slack_filename = f"Order Log {today:%m-%d-%Y}.xlsx"
         if dry:
