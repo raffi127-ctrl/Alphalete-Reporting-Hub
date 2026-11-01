@@ -12888,7 +12888,7 @@
   "since_live_funnel": {
    "on_scheduler": false,
    "machine": "Lucy 2",
-   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present so `lucy rerun since_live_funnel --machine \"Lucy 2\"` can refresh the SL Funnel tab on demand \u2014 the since-live funnel feed for Carlos's Ad Sales Board (automations/ad_sales_board/since_live.py). One Source Report window per ad [posting date \u2192 today] for office 11580, written to the hidden 'SL Funnel' tab of the Recruiting Dashboard; the board's far-right funnel columns read it. Scheduled twice daily from deploy/ad_sales_board_carlos.sh (first tick after 07:00 and 13:00). Added 2026-10-30 because week-sized Source Report windows only count funnel events whose apply AND event dates share the window \u2014 October had 65 trainings on the month window and 4 on the board.",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present so `lucy rerun since_live_funnel --machine \"Lucy 2\"` can refresh the SL Funnel tab on demand — the since-live funnel feed for Carlos's Ad Sales Board (automations/ad_sales_board/since_live.py). One Source Report window per ad [posting date → today] for office 11580, written to the hidden 'SL Funnel' tab of the Recruiting Dashboard; the board's far-right funnel columns read it. Scheduled twice daily from deploy/ad_sales_board_carlos.sh (first tick after 07:00 and 13:00). Added 2026-10-30 because week-sized Source Report windows only count funnel events whose apply AND event dates share the window — October had 65 trainings on the month window and 4 on the board.",
    "display_name": "Since-live funnel feed (Carlos board)",
    "source_type": "local",
    "data_sources": [],
@@ -14603,7 +14603,14 @@
   "lineup_post": {
    "on_scheduler": false,
    "machine": "Lucy 1",
-   "standalone_weekdays": [0, 1, 2, 3, 4, 5],
+   "standalone_weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
    "_note": "Raf 2026-10-22 (Loom): 11:45 CT picture of the Line Up box (Alphalete SALES BOARD 2025 -> 'Line Up WE <sunday>', '#' .. 'Car Ride #5') -> #alphalete-sales + 'Knocking Chat A-Players'; 20:45 CT the car-ride names (struck-out names dropped) -> the 'Car Ride Leaders' iMessage chat. Real schedule = com.alphalete.lineup-post on LUCY 1 (texting machine), Mon-Sat, --auto picks the slot by the CT hour. Dry-runs by default; --send posts. One send per slot per day (lock file).",
    "display_name": "Line Up Post + Car Rides (Raf)",
    "source_type": "sheet",
@@ -16061,6 +16068,112 @@
    "timeout_minutes": 30,
    "machine": "Lucy 2",
    "_off_scheduler_note": "NDS Wireless Resolution Report pull (Carlos 2026-10-29: the per-LINE feed that matches the DD — line statuses, Line Type New/Port, Plan incl Unlimited add-ons, ship/delivered dates). alphaletegp login on the NDS profile via rc sara.login (passcode self-clearing), Reporting Hub Wireless Dashboard, the 2026-09-05 probe's export. Caches output/nds_metrics/nds_wireless_<date>.html. Scheduled daily 06:10 (before the 6:30 boards) since 2026-10-29 — the recon matched 22/22 of the WE 10.25 DD base lines, 0 missing. Daily caches also give line-status history (a line flipping to Active between caches = its activation day)."
+  },
+  "second_round_contacts": {
+   "close_on": "exit_zero",
+   "order": 62.7,
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "2nd rounds -> owners' reception contacts (noon)",
+   "command": [
+    "automations.second_round_contacts.run"
+   ],
+   "base_args": [
+    "--write"
+   ],
+   "cadence": {
+    "not_before": "12:00",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "linkedin-2nd-round-contacts",
+   "_note": "Raf 2026-10-30 (#l10-alphalete 'Daily Update / Google Contacts / Lucy ECHO for New Owners'): every second round of a new owner's office lands in that owner's reception Gmail contacts (group '2nd Rounds', name 'First Last (2R m/d)'), from the '2R Contacts' tab on the Org workbook (Owner | AppStream office | reception email | Active). Carlos 2026-10-31: owners mark ApplicantStream late, so two passes a day; each re-reads the week. Dry by default; the card passes --write. Needs that account's contacts-rw-token-<local>.json on Lucy 1."
+  },
+  "second_round_contacts_pm": {
+   "close_on": "exit_zero",
+   "order": 62.8,
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "2nd rounds -> owners' reception contacts (3:30pm)",
+   "command": [
+    "automations.second_round_contacts.run"
+   ],
+   "base_args": [
+    "--write"
+   ],
+   "cadence": {
+    "not_before": "15:30",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "linkedin-2nd-round-contacts",
+   "_note": "Raf 2026-10-30 (#l10-alphalete 'Daily Update / Google Contacts / Lucy ECHO for New Owners'): every second round of a new owner's office lands in that owner's reception Gmail contacts (group '2nd Rounds', name 'First Last (2R m/d)'), from the '2R Contacts' tab on the Org workbook (Owner | AppStream office | reception email | Active). Carlos 2026-10-31: owners mark ApplicantStream late, so two passes a day; each re-reads the week. Dry by default; the card passes --write. Needs that account's contacts-rw-token-<local>.json on Lucy 1."
+  },
+  "second_round_contacts_audit": {
+   "close_on": "exit_zero",
+   "order": 62.9,
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "2nd-round contacts audit (Raf's removal rules)",
+   "command": [
+    "automations.second_round_contacts.run"
+   ],
+   "base_args": [
+    "--audit",
+    "--write"
+   ],
+   "cadence": {
+    "not_before": "06:00",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "linkedin-2nd-round-contacts",
+   "_note": "Raf's rules on what the two passes added: not hired / left as a message 7 days after the second round -> removed; new start scheduled but never showed, 3 weeks after -> removed; showed but OwnerVille View Progress under 100% 3 weeks after -> removed (Carlos 2026-10-31: Onboard -> View Progress -> campaign -> search -> Progress 100% = fully onboarded); showed + 100% -> kept for good, terminated later or not (Raf: rehires). State in output/second_round_contacts/state.json."
   }
  },
  "read_only_standalone": {

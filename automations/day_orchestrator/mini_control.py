@@ -5516,6 +5516,20 @@ _CRED_PUSH_FIELDS = {
 }
 
 
+def _cred_file_for(key: str):
+    """The whitelisted path for a cred-file key, or None. Besides the fixed
+    table, any `contacts-rw-token-<account>` key is accepted (2026-10-31):
+    one Google Contacts token per new owner's reception Gmail
+    (fiber_owners_distro.contacts_write.token_path), read by
+    second_round_contacts on Lucy 1."""
+    if key in _CRED_FILES:
+        return _CRED_FILES[key]()
+    import re as _re
+    if _re.fullmatch(r"contacts-rw-token-[a-z0-9_]{1,64}", key):
+        return Path.home() / ".config" / "recruiting-report" / f"{key}.json"
+    return None
+
+
 def _action_push_cred_file(args: str) -> tuple[bool, str]:
     """Push one whitelisted credential FILE from THIS machine to another
     runner (zero-touch, like push_slack_tokens — born 2026-08-21 when Lucy
@@ -5526,8 +5540,8 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
         return False, ("push_cred_file needs '<file-key> <target machine>' — "
                        f"known keys: {', '.join(sorted(_CRED_FILES))}")
     key, target = parts[0], parts[1].strip().strip("'\"").strip()
-    if key not in _CRED_FILES:
-        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
+    if _cred_file_for(key) is None:
+        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))} (or contacts-rw-token-<account>)"
     # Compare against this box's TRUE identity, not _machine_profile(), which
     # falls back to DEFAULT_MACHINE ("Lucy 1") when there is no .machine-profile
     # marker. Megan's laptop has no marker, so every `push_cred_file … "Lucy 1"`
@@ -5540,7 +5554,7 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
     # every bare `lucy rerun` to a tab no poller reads.
     if target.lower() == _this_box().strip().lower():
         return False, "target is THIS machine — nothing to push"
-    path = _CRED_FILES[key]()
+    path = _cred_file_for(key)
     try:
         content = path.read_text(encoding="utf-8-sig")
     except Exception as e:  # noqa: BLE001
@@ -5664,9 +5678,9 @@ def _action_set_cred_file(args: str) -> tuple[bool, str]:
         note = " (unwrapped shlex quoting)"
     else:
         note = ""
-    if key not in _CRED_FILES:
-        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
-    path = _CRED_FILES[key]()
+    if _cred_file_for(key) is None:
+        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))} (or contacts-rw-token-<account>)"
+    path = _cred_file_for(key)
     # A bag-of-credentials file MERGES: the sender only ever holds the logins it
     # needs, and the keys it doesn't carry belong to reports that run here and
     # not there (see _CRED_FILES_MERGE).
