@@ -211,6 +211,28 @@ def _state(today: dt.date) -> Optional[dict]:
         return None
 
 
+def _healed(rid: str, reports: dict) -> bool:
+    """A failed morning run that a later `lucy rerun` finished clean no longer
+    stops the mail. `lucy rerun` never touches day_state, so FAILED stays written
+    all day (2026-11-01: org_sales_board re-ran clean at 09:40 and the gate kept
+    reading FAILED). Only FAILED/INCOMPLETE: a person's stop or a dead session
+    stays a hold. Any read problem = not healed = still holds."""
+    rs = reports.get(rid) or {}
+    if rs.get("status") not in ("FAILED", "INCOMPLETE"):
+        return False
+    try:
+        from automations.day_orchestrator import registry as reg
+        from automations.shared import run_manifest as rm
+        r = reg.resolve_report(reg.load_config(), rid)
+        verify = (getattr(r, "verify", None) or {}) if r else {}
+        if verify.get("type") != "manifest":
+            return False
+        return rm.healed_since(verify.get("report_id") or rid,
+                               rs.get("last_attempt_ts"))
+    except Exception:  # noqa: BLE001 -- cannot tell: the hold stands
+        return False
+
+
 def dependency_closure(report_ids: Sequence[str]) -> List[str]:
     """Los ids dados MÁS todo lo que dependen, transitivamente.
 
@@ -332,10 +354,13 @@ def day_is_clean(report_ids: Sequence[str],
 
     # ---- 1. una falla de verdad, este donde este -----------------------------
     broken = sorted(f"{r} ({reports[r].get('status')})" for r in chain
-                    if (reports.get(r) or {}).get("status") in HARD_FAIL)
+                    if (reports.get(r) or {}).get("status") in HARD_FAIL
+                    and not _healed(r, reports))
     if broken:
         return False, f"fallo la corrida de: {', '.join(broken)}"
-    alerted = sorted(set(chain) & set(ds.get("failure_alerts_sent") or []))
+    alerted = sorted(r for r in set(chain) & set(ds.get("failure_alerts_sent")
+                                                  or [])
+                     if not _healed(r, reports))
     if alerted:
         return False, (f"hoy ya salio una alerta de falla por "
                        f"{', '.join(alerted)}")
@@ -350,7 +375,8 @@ def day_is_clean(report_ids: Sequence[str],
                        f"lo registra - sin rastro no hay limpieza que probar")
     pending_up = sorted(f"{r} ({reports[r].get('status')})" for r in upstream
                         if r in reports
-                        and reports[r].get("status") not in (DONE, SKIPPED))
+                        and reports[r].get("status") not in (DONE, SKIPPED)
+                        and not _healed(r, reports))
     if pending_up:
         return False, (f"le falta contenido: {', '.join(pending_up)} no llego a "
                        f"DONE y alimenta este correo")
@@ -402,15 +428,17 @@ def blocking_reports(report_ids: Sequence[str],
     out: List[str] = []
     for rid in chain:
         st = (reports.get(rid) or {}).get("status")
-        if st in HARD_FAIL:
+        if st in HARD_FAIL and not _healed(rid, reports):
             out.append(rid)
-    out.extend(set(chain) & set(ds.get("failure_alerts_sent") or []))
+    out.extend(r for r in set(chain) & set(ds.get("failure_alerts_sent") or [])
+               if not _healed(r, reports))
     for rid in upstream:
         if rid not in reports:
             if rid in due:
                 out.append(rid)
             continue
-        if reports[rid].get("status") not in (DONE, SKIPPED):
+        if (reports[rid].get("status") not in (DONE, SKIPPED)
+                and not _healed(rid, reports)):
             out.append(rid)
     # Orden estable y sin repetidos: un id puede caer por dos motivos a la vez
     # (FAILED y ademas con alerta) y es UN solo reporte que arreglar.

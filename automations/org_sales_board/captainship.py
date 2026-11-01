@@ -386,11 +386,12 @@ def _spec(label, view_url, parse, metric,
 # way; a standalone re-run pulled clean). Tunable.
 _PROG_PULL_TRIES = 3
 _PROG_PULL_BACKOFF_S = 8
+_PROG_PULL_MIN_LEFT_S = 10 * 60
 
 
 def pull_programs(page, today, *, programs=None, resolve_csv=None,
                   out_dir=None, out_prefix="org_sales_board_cap_",
-                  logfn=print):
+                  logfn=print, deadline=None):
     """Pull each PROGRAM's all-teams crosstab ONCE -> ({tkey: parsed}, failed).
 
     Lifted out of run_captainships (2026-09-07) because the daily fill is no
@@ -412,6 +413,12 @@ def pull_programs(page, today, *, programs=None, resolve_csv=None,
     dict for a program therefore means BOTH "nobody sold" and "the pull died",
     which is exactly why the failed list is returned alongside it: a caller
     that turns absence into a zero has to check it first.
+
+    `deadline` (a time.monotonic() value, optional): no new attempt starts with
+    under _PROG_PULL_MIN_LEFT_S to go; what is left over comes back in the
+    failed list. 2026-11-01: the last-week pull for one new rep spent the end of
+    both morning runs retrying b2b and nds until the 45m kill took out the steps
+    after it. No deadline = no limit, as before.
     """
     import time
     from pathlib import Path as _Path
@@ -463,7 +470,12 @@ def pull_programs(page, today, *, programs=None, resolve_csv=None,
         t = TYPES[tkey]
         logfn(f"  program pull: {tkey}")
         _last_exc = None
+        _out_of_time = False
         for _attempt in range(1, _PROG_PULL_TRIES + 1):
+            if (deadline is not None and
+                    deadline - time.monotonic() < _PROG_PULL_MIN_LEFT_S):
+                _out_of_time = True
+                break
             try:
                 prog[tkey] = (_pull_fiber_dual(view_url) if tkey == "fiber"
                               else _pull(f"PROG_{tkey}", view_url,
@@ -478,7 +490,12 @@ def pull_programs(page, today, *, programs=None, resolve_csv=None,
                       f"{str(e)[:80]})" + (" — retrying…" if _more else ""))
                 if _more:
                     time.sleep(_PROG_PULL_BACKOFF_S * _attempt)
-        if _last_exc is not None:
+        if _out_of_time:
+            logfn(f"  ⚠ program pull {tkey} stopped: under "
+                  f"{_PROG_PULL_MIN_LEFT_S // 60} min left in this run")
+            prog[tkey] = {}
+            failed_programs.append(tkey)
+        elif _last_exc is not None:
             logfn(f"  ⚠ program pull {tkey} FAILED after {_PROG_PULL_TRIES} "
                   f"tries ({type(_last_exc).__name__}) — skipping; {tkey} stays "
                   f"blank for all captainships this run. Re-run to retry.")

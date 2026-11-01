@@ -422,7 +422,8 @@ def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print,
 
     prog, failed = cap.pull_programs(
         page, ref, out_dir=out_dir,
-        out_prefix="org_sales_board_lastweek_", logfn=logfn)
+        out_prefix="org_sales_board_lastweek_", logfn=logfn,
+        deadline=deadline)
 
     # A pull that came back on a DIFFERENT week is not a pull of this week.
     for tk in list(prog):
