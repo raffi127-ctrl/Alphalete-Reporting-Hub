@@ -1,6 +1,6 @@
 import unittest
 
-from automations.lucy_screens.run import _column, _seconds, open_alerts, page, running_now
+from automations.lucy_screens.run import _column, _needs_open, _seconds, open_alerts, page, running_now
 
 
 def _m(ts, key, state="open 2026-11-01", marks=(), title="*Report X* — failed"):
@@ -34,6 +34,14 @@ class Alerts(unittest.TestCase):
 
     def test_titles_are_escaped(self):
         self.assertIn("&lt;b&gt;", page([{"title": "<b>", "ts": 0, "working": False}], 60))
+
+
+class OpensOnce(unittest.TestCase):
+    def test_new_restart_or_new_page_opens_same_one_does_not(self):
+        self.assertTrue(_needs_open("alerts", "boot1", ""))
+        self.assertTrue(_needs_open("alerts", "boot2", "boot1 alerts"))
+        self.assertTrue(_needs_open("runs", "boot1", "boot1 alerts"))
+        self.assertFalse(_needs_open("alerts", "boot1", "boot1 alerts"))
 
 
 class Runs(unittest.TestCase):
