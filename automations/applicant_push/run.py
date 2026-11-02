@@ -303,7 +303,7 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # 2026-10-28 evening (Carlos): 11580 back ON, but not until TOMORROW 5:30 AM
 # ("start pushing resumes at 5:30am tomorrow... for me") — the gate below
 # keeps tonight quiet and self-opens at the mark, no second deploy needed.
-PUSH_ALLOWED = {"23467", "11901", "11280", "23965", "24065"}
+PUSH_ALLOWED = {"23467", "11901", "11280", "23965", "24065", "14733"}
 import datetime as _dt_gate
 if _dt_gate.datetime.now() >= _dt_gate.datetime(2026, 10, 29, 5, 30):
     PUSH_ALLOWED = PUSH_ALLOWED | {"11580"}

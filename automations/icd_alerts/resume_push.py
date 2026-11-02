@@ -155,6 +155,11 @@ PUSH_OFFICES = {
     # machine"). Francia ran finish_setup on it 10/29 (login saved 11:45);
     # 11901 left Lucy 2 in the same change (ROTATION_BY_MACHINE).
     "khalil-nds": ("11901", "live"),  # Khalil Mansour, Alphalete Management Group
+    # COLTEN, LIVE from his own computer (Megan 2026-11-02: "Colten would like
+    # to get his machine pushing from Eco as well"). Nobody pushed 14733
+    # before. Nothing runs until his computer has said yes to pushing and
+    # holds his office's Lucy Resume login (finish_setup).
+    "colten": ("14733", "live"),      # Colten Wright, South Shore Specialized Marketing
 }
 LOGIN_POLL_SECONDS = 90
 

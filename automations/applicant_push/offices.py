@@ -331,6 +331,33 @@ OFFICES = {
     # applicant names never land in another office's channel), and the
     # non-Carlos removal policies (confirmed-uncontactable and never-opening
     # resumes are removed).
+    # COLTEN WRIGHT, SOUTH SHORE (2026-11-02, Megan: "Colten would like to get
+    # his machine pushing from Eco as well"). Pushed ONLY from his own office
+    # computer (relay key "colten"), never a Lucy. No Slack to-do posts: his
+    # Slack is SaraPlus alerts only (9/29). Non-texting, keep-on-no-number,
+    # like Khalil.
+    "14733": {
+        "office_id": "14733",
+        "account": "lucyresume",
+        "hint": "COLTEN WRIGHT",
+        "owner": "Colten Wright",
+        "label": "office 14733 · Colten Wright — SOUTH SHORE SPECIALIZED MARKETING, INC.",
+        "short": "office 14733, Colten",
+        "suffix": "-14733",
+        "cdp_profile": "/tmp/rp_cdp_14733",
+        "cdp_port": "9257",
+        "cdp_kill_pat": "rp_cdp_14733",
+        "walk_diag_tab": "OAT Walk Diag 14733",
+        "push_diag_tab": "Applicant Push Diag 14733",
+        "log_stem": "applicant-push-14733",
+        "hub_report_id": "applicant_push_colten",
+        "hub_display": "Applicant Push (Colten)",
+        "post_channel": "",
+        "post_todo": False,
+        "allow_retext": False,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
+    },
     "11901": {
         "office_id": "11901",
         "account": "lucyresume",
@@ -487,7 +514,7 @@ def group(name: str) -> dict:
 # risking the wrapper's hard time cap), and a bad tick for one office cannot
 # starve the other — which running both inside one tick would do, since the first
 # office's wedge burns the cap before the second ever opens a session.
-ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065"]
+ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065", "14733"]
 
 # WHICH MACHINE WORKS WHICH OFFICES (2026-09-13, Megan: "we can move Raf's push
 # to lucy 3 since she's not got a lot on her").
@@ -624,11 +651,13 @@ ROTATION_BY_MACHINE = {
     "Carlos's office computer (relay)": ["11580"],
     "Atef's office computer (relay)": ["23467"],
     "Khalil's office computer (relay)": ["11901"],
+    "Colten's office computer (relay)": ["14733"],
 }
 # Machines in ROTATION_BY_MACHINE that are office relay computers, not Lucys.
 RELAY_MACHINES = {"Carlos's office computer (relay)",
                   "Atef's office computer (relay)",
-                  "Khalil's office computer (relay)"}
+                  "Khalil's office computer (relay)",
+                  "Colten's office computer (relay)"}
 
 
 def rotation_for(machine: str = None) -> list:

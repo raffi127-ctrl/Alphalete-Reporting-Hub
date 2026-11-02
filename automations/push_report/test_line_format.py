@@ -106,7 +106,14 @@ class TheLine(unittest.TestCase):
                                     "start": 111, "end": 2, "sent_run": 3,
                                     "sent_today": 109, "walled": False,
                                     "at": "20:29"}),
-                        "9", "", now.strftime("%m/%d/%Y") + " 20:29:00"]]
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:29:00"], [
+                        # Colten's 14733 from his own computer since 2026-11-02.
+                        "colten", stamp, pr.RELAY_STATS_STAGE, "push stats",
+                        json.dumps({"office": "14733", "live": True,
+                                    "start": 9, "end": 1, "sent_run": 2,
+                                    "sent_today": 8, "walled": False,
+                                    "at": "20:31"}),
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:31:00"]]
                 if self.tab in skip_rows:
                     return []
                 at, queue, sent = rows[self.tab]
@@ -148,6 +155,7 @@ class TheLine(unittest.TestCase):
             "Carlos 11580 (his computer): 30 pushed · 7 left @ 8:33 PM",
             "Atef 23467 (his computer): 27 pushed · 2 left @ 8:36 PM",
             "Khalil 11901 (his computer): 109 pushed · 2 left @ 8:29 PM",
+            "Colten 14733 (his computer): 8 pushed · 1 left @ 8:31 PM",
             ":x: Raf main 11280: 34 pushed · 114 left @ 8:21 PM",
             ":x: Raf 2nd funnel 23965: 0 pushed · 33 left @ 8:28 PM",
             ":x: Raf 24065: 24 pushed · 36 left @ 8:34 PM",

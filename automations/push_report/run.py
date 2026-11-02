@@ -57,6 +57,8 @@ OFFICES = [
     ("relay:atef:23467",    "Atef 23467",            "Atef's computer"),
     # 11901 from KHALIL'S OWN COMPUTER since 2026-10-29, relayed like Carlos's.
     ("relay:khalil-nds:11901", "Khalil 11901",       "Khalil's computer"),
+    # 14733 from COLTEN'S OWN COMPUTER since 2026-11-02.
+    ("relay:colten:14733",  "Colten 14733",          "Colten's computer"),
     ("OAT Walk Diag 11280", "Raf main 11280",        "Lucy 4"),
     ("OAT Walk Diag 23965", "Raf 2nd funnel 23965",  "Lucy 4"),
     ("OAT Walk Diag 24065", "Raf 24065",             "Lucy 4"),

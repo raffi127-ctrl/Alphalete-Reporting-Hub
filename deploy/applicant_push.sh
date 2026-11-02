@@ -172,6 +172,15 @@ case "$OFFICE" in
     HUB_NAME="Applicant Push (Khalil)"
     POST_TODO=1
     ;;
+  14733)
+    # Colten -- pushed from his own computer (relay); this arm only keeps a
+    # stray tick on a Lucy from reading another office's names.
+    OFFICE_SLUG="-14733"
+    OFFICE_LABEL="office 14733 (Colten)"
+    HUB_ID="applicant_push_colten"
+    HUB_NAME="Applicant Push (Colten)"
+    POST_TODO=0
+    ;;
   23965)
     OFFICE_SLUG="-23965"
     OFFICE_LABEL="office 23965 (Raf 2nd funnel)"
@@ -243,6 +252,14 @@ case "$OFFICE" in
     # #11901-alphalete-management-group-inc-khalil-mansour (private; the Lucy
     # apps were added 2026-09-08). His to-do post goes HERE and nowhere else.
     export OAT_SCORECARD_CHANNEL="C0AUKHN120L"
+    ;;
+  14733)
+    export OAT_OFFICE_ID="14733"
+    export OAT_FILE_SUFFIX="-14733"
+    export OAT_WALK_DIAG_TAB="OAT Walk Diag 14733"
+    export OAT_OFFICE_LABEL="office 14733 · Colten Wright — South Shore Specialized Marketing"
+    export OAT_OFFICE_SHORT="office 14733, Colten"
+    export OAT_REMOVE_NO_PHONE="0"
     ;;
   23965)
     export OAT_OFFICE_ID="23965"
@@ -439,6 +456,7 @@ if kill -0 "$_RUN_PID" 2>/dev/null; then
     11580) pkill -f rp_cdp_profile >/dev/null 2>&1 ;;
     23467) pkill -f rp_cdp_23467   >/dev/null 2>&1 ;;
     11901) pkill -f rp_cdp_11901   >/dev/null 2>&1 ;;
+    14733) pkill -f rp_cdp_14733   >/dev/null 2>&1 ;;
     23965) pkill -f rp_cdp_23965   >/dev/null 2>&1 ;;
     11280) pkill -f rp_cdp_11280   >/dev/null 2>&1 ;;
     24065) pkill -f rp_cdp_24065   >/dev/null 2>&1 ;;
