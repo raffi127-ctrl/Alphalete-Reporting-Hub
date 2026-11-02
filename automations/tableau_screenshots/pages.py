@@ -177,12 +177,16 @@ PAGES = [
         # separate run. Cesar/Domin8 2026-07-23: their channel wants B2B AT&T,
         # B2B AT&T (CRU), and this ranking, nothing else. The AtefExp view URL is
         # the exact one Megan vetted for the ask.
+        # 2026-11-02: moved to the NDS workbook. Atef switched B2B -> NDS and the
+        # B2B AtefExp view came back BLANK (Owner Name = None); Cesar had to post
+        # the NDS page by hand. AtefTieredBonus = Megan's saved NDS view, Owner
+        # Name = Atef Choudhury.
         "id": "order_tiered_bonus",
         "title": "Order Tiered Bonus - Rep Ranking",
         "emoji": "\U0001F3C6",                     # trophy
         "react": "trophy",
-        "url": _BASE + ("ATTTRACKER-B2B/OrderTieredBonus-RepRanking/"
-                        "97e0ab43-51dd-44bf-92a3-8fe184089ad4/AtefExp?:iid=1"),
+        "url": _BASE + ("NDS-SNRES-ATT-OOFWorkbook/OrderTieredBonus-RepRanking/"
+                        "117f870e-daf1-4617-b779-9d11cd5f329e/AtefTieredBonus?:iid=1"),
         "crop": "canvas",
         "opt_in_only": True,
     },
