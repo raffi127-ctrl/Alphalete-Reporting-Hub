@@ -852,16 +852,32 @@ def check_borders(tab: str, sheet_id: int, values, borders, fill_blank: bool = F
         fmt, "userEnteredFormat.borders", fill_blank=fill_blank)
 
 
-def check_number_formats(tab: str, sheet_id: int, values, numfmts, fill_blank: bool = False) -> List[Finding]:
+def check_number_formats(tab: str, sheet_id: int, values, numfmts, fill_blank: bool = False,
+                         own_format=None) -> List[Finding]:
     """numfmts[r-1][c-1] = (type, pattern). A formula put back into a cell
     that was formatted as % shows '5.6%' where its column shows '0.1' -- the
-    value is right and still reads wrong. Same majority rule as fonts."""
-    return _column_format(
+    value is right and still reads wrong. Same majority rule as fonts.
+
+    own_format[r-1][c-1] = the cell has a number format of its own. Without one,
+    what it shows comes from its formula, so setting it back to automatic
+    changes nothing and the same "fix" came back every day (Ryan McSpadden AF4:AF7,
+    =UNIQUE names showing 0.00, 2026-11-02): those are not findings."""
+    found = _column_format(
         tab, sheet_id, values, numfmts, "number_format", lambda f: True,
         lambda f: f[1] or f[0] or "automático",
         lambda f: {"numberFormat": {"type": f[0], "pattern": f[1]}} if f[0]
         else {"numberFormat": {}},
         "userEnteredFormat.numberFormat", fill_blank=fill_blank)
+    if own_format is None:
+        return found
+
+    def already_automatic(x):
+        if x.after != "automático" or not x.row:
+            return False
+        row = own_format[x.row - 1] if x.row - 1 < len(own_format) else []
+        c = col_index(re.match(r"[A-Z]+", x.where).group(0)) - 1
+        return not (row[c] if c < len(row) else False)
+    return [x for x in found if not already_automatic(x)]
 
 
 def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,

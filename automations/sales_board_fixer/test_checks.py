@@ -74,6 +74,28 @@ class Campaign(unittest.TestCase):
         self.assertEqual(K.check_campaign("t", v), [])
 
 
+class NumberFormatFromAFormula(unittest.TestCase):
+    AUTO, COMMA = ("", ""), ("NUMBER", "0.00")
+
+    def run_it(self, own):
+        rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(8)]
+        v, _ = board(rows)
+        grid = [[self.AUTO] * 7 for _ in v]
+        grid[4][5] = self.COMMA          # F5 shows 0.00, the rest of F automatic
+        flags = [[False] * 7 for _ in v]
+        flags[4][5] = own
+        return [x for x in K.check_number_formats("t", 5, v, grid, own_format=flags)
+                if x.where == "F5"]
+
+    def test_format_that_comes_from_the_formula_is_not_a_finding(self):
+        self.assertEqual(self.run_it(own=False), [])
+
+    def test_a_format_set_on_the_cell_is_still_fixed(self):
+        found = self.run_it(own=True)
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].fixable)
+
+
 class DropdownsKeepTheirColors(unittest.TestCase):
     RULE = {"condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Here"}]}}
 

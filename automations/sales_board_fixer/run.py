@@ -100,6 +100,7 @@ def load(sh, title: str, titles=()) -> dict:
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
     fonts, numfmts, styles, notes, dropdowns, borders, bgs = [], [], [], [], [], [], []
     hidden_rows = set()
+    own_numfmts = []
     if K.is_board(values):
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
@@ -108,7 +109,7 @@ def load(sh, title: str, titles=()) -> dict:
             "fields": "sheets(data(rowData(values(effectiveFormat("
                       "textFormat(fontFamily,fontSize,bold),numberFormat,"
                       "horizontalAlignment,borders),"
-                      "userEnteredFormat(backgroundColor,textFormat(bold)),"
+                      "userEnteredFormat(backgroundColor,numberFormat,textFormat(bold)),"
                       "note,dataValidation)),rowMetadata(hiddenByFilter)))"})
         rows = grid["sheets"][0]["data"][0].get("rowData", [])
         hidden_rows = {i for i, m in enumerate(grid["sheets"][0]["data"][0].get("rowMetadata", []), 1)
@@ -117,6 +118,8 @@ def load(sh, title: str, titles=()) -> dict:
             vs = rd.get("values", [])
             fonts.append([_font(v) for v in vs])
             numfmts.append([_numfmt(v) for v in vs])
+            own_numfmts.append([bool(((v or {}).get("userEnteredFormat") or {}).get("numberFormat"))
+                                for v in vs])
             styles.append([_style(v) for v in vs])
             notes.append([(v or {}).get("note", "") for v in vs])
             dropdowns.append([(v or {}).get("dataValidation") for v in vs])
@@ -127,6 +130,7 @@ def load(sh, title: str, titles=()) -> dict:
          "basic_filter": sheet.get("basicFilter"),
          "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "styles": styles,
          "notes": notes, "dropdowns": dropdowns, "hidden_rows": hidden_rows,
+         "own_numfmts": own_numfmts,
          "borders": borders, "bgs": bgs}
     if ws.spreadsheet.id == SHEET_ID and LW.TAB.match(title) and K.is_board(values):
         t.update(load_older(sh, title, ws))
@@ -293,7 +297,7 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
                  + K.check_roll_call(title, v, learn=owner)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"], fill_blank=not owner)
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"],
-                                          fill_blank=not owner)
+                                          fill_blank=not owner, own_format=t.get("own_numfmts"))
                  + K.check_styles(title, t["sheet_id"], v, t["styles"], fill_blank=not owner)
                  + K.check_background_shift(title, t["sheet_id"], v, t.get("bgs") or [])
                  + K.check_dropdowns(title, t["sheet_id"], v, t.get("dropdowns") or [],
