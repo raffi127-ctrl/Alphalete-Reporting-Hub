@@ -323,6 +323,16 @@ def weekly_board(saturday: dt.date, *, send: bool,
         if not ts:
             _log("no thread today starting with %r" % thread_prefix)
             return 1
+        # Already there (a hand run and the Monday tick on the same day, or a
+        # rerun): one copy per thread, never two.
+        try:
+            reps = client.conversations_replies(channel=C.SLACK_CHANNEL, ts=ts, limit=200)
+            if any((m.get("text") or "").replace("*", "").startswith(title)
+                   for m in reps.get("messages", [])[1:]):
+                _log("%s is already in today's %r thread -- not posting again" % (title, thread_prefix))
+                return 0
+        except Exception as e:  # noqa: BLE001
+            _log("reply check failed (%s) -- posting anyway" % type(e).__name__)
         if not send:
             _log("DRY RUN -- would post %s into thread %s (%r)" % (png, ts, thread_prefix))
             return 0
