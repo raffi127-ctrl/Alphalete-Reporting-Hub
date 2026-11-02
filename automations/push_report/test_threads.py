@@ -101,3 +101,19 @@ class RafsAccountsEachTheirOwn(unittest.TestCase):
         self.assertEqual(ch["Raf 24065"], "C0CBEDBFXM2")
         self.assertEqual(ch["Colten 14733"], "C0AUAPMEF37")
         self.assertEqual(len(set(ch.values())), len(ch))
+
+
+class NoZeroHeaderBeforeAnOfficeEverPushes(unittest.TestCase):
+    def test_colten_not_set_up_yet(self):
+        text = "\n".join(["*Push report 5:00 PM*",
+                          "Colten 14733 (his computer): no runs yet today",
+                          ":warning: Colten's computer has posted NO runs today"])
+        with mock.patch.object(R, "channel_of_label", return_value=CH):
+            self.assertEqual(R.split_by_channel(text), {})
+
+    def test_a_stale_walk_warning_still_posts(self):
+        text = "\n".join(["*Push report 5:00 PM*",
+                          "Atef 23467 (his computer): 4 pushed · 3 left @ 9:50 AM",
+                          ":warning: Atef's computer has posted nothing since 9:50 AM — the walk may be down"])
+        with mock.patch.object(R, "channel_of_label", return_value=CH):
+            self.assertEqual(len(R.split_by_channel(text)["CA"][1]), 2)

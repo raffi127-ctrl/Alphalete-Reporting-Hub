@@ -373,7 +373,10 @@ def split_by_channel(text: str) -> dict:
                 entry[2] += int(m.group(1))
             if label and not re.search(r": (no runs yet today|paused)$", bare):
                 real[ch] = True
-            if not label:
+            # A "posted NO runs today" warning alone is not news for an office
+            # that has never pushed (Colten 11/2, before his setup: a "- 0"
+            # header). A warning still counts once the office has numbers.
+            if not label and "posted NO runs today" not in line:
                 real[ch] = True
     return {ch: tuple(v) for ch, v in out.items() if real.get(ch)}
 
