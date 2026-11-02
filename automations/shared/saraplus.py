@@ -734,6 +734,17 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
                "text=/click\\s*to\\s*load records/i",
                "%s tbody tr" % grid)
     button_clicked = False
+    # THE BUTTON IS A FULL POSTBACK. Mark the page before pressing it: when
+    # the mark is gone the page has reloaded and what the grid shows then is
+    # the answer -- rows, or the placeholder again (truly empty). Stop there.
+    # Keep waiting only while the reload has not happened yet, up to 45s, so
+    # an account whose grid takes 20-30s to come back (Omar, 2026-11-01:
+    # "he has sales since Friday on that account") is read, while an empty
+    # grid still costs only a few seconds.
+    try:
+        page.evaluate("window.__lucyLoadMark = 1")
+    except Exception:  # noqa: BLE001
+        pass
     for sel in targets:
         if button_clicked:
             # ONE press of the button is the test. The three button selectors
@@ -757,23 +768,32 @@ def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str
             note.append("no click via %r (%s)" % (sel, type(e).__name__))
             continue
         # The rows arrive on a postback; poll instead of a fixed pause.
-        # TEN SECONDS, NOT 45 (2026-10-29): "Click here to load records." is
-        # what ANY empty grid shows -- an NDS office's AT&T grid, a D2D office's
-        # Wireless grid -- so every office paid the long wait on every sweep
-        # (17 offices filed sweep-slow in one day, 190-270 s a read). A grid
-        # with rows answers the button in a few seconds; one that has none
-        # never will, and the sweep must not wait on it.
-        for _ in range(7):
+        # Reload-aware (2026-11-01): stop as soon as the page has come back
+        # from the postback (the mark set above is gone) and settled -- rows
+        # or not. Only an unanswered postback keeps us waiting, to 45s.
+        reloaded_polls = 0
+        for i in range(30 if "input" in sel else 7):
             page.wait_for_timeout(1500)
             try:
                 rows = _grid_rows(page, grid)
             except Exception:  # noqa: BLE001
                 rows = rows
             if not needs_load_click(rows):
-                note.append("rows after click: %d" % len(rows))
+                note.append("rows after click: %d (%.0fs)" % (len(rows), 1.5 * (i + 1)))
                 LAST_LOAD_CLICK["note"] = "; ".join(note)
                 return rows
-        note.append("still the placeholder 10s after the click")
+            if "input" in sel:
+                try:
+                    reloaded = page.evaluate(
+                        "!window.__lucyLoadMark && document.readyState === 'complete'")
+                except Exception:  # noqa: BLE001
+                    reloaded = False
+                reloaded_polls = reloaded_polls + 1 if reloaded else 0
+                if reloaded_polls >= 2:
+                    note.append("page came back from the postback still on the placeholder (%.0fs)" % (1.5 * (i + 1)))
+                    break
+        else:
+            note.append("still the placeholder %ds after the click" % (45 if "input" in sel else 10))
     # Playwright's click lands on the text; the handler may sit on an ancestor
     # that the browser's own click() reaches and a pointer event at the text
     # node does not (Omar 2026-10-28: three selector clicks, grid unchanged).
