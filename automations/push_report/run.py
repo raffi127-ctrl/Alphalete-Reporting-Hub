@@ -319,13 +319,22 @@ def header_text(day: dt.date, total: int) -> str:
         day.strftime("%A"), day.strftime("%b"), _ordinal(day.day), total)
 
 
+# Raf's accounts each have their OWN recruiting channel for this report
+# (Megan 2026-11-02: "Each of Raf's accounts has their own slack channel"),
+# while his to-do posts still share #rafs-office-recruiting-11280.
+#   23965 -> #raf-hidalgo-recruiting-23965-tiffani
+#   24065 -> #full-ai-test-rafael-hidalgo-25065-maria-q (the "25065" in the
+#            name is a typo; its "24065 Recruiters" tab is this office)
+REPORT_CHANNEL = {"23965": "C0CAV0P4RRS", "24065": "C0CBEDBFXM2"}
+
+
 def channel_of_label() -> dict:
     """{'Carlos 11580': 'C09L…', …} from each office's own post_channel."""
     from automations.applicant_push import offices as _o
     out = {}
     for tab, label, _m in OFFICES:
         oid = _office_id(tab)
-        ch = (_o.OFFICES.get(oid) or {}).get("post_channel") or ""
+        ch = REPORT_CHANNEL.get(oid) or (_o.OFFICES.get(oid) or {}).get("post_channel") or ""
         if ch:
             out[label] = ch
     return out
