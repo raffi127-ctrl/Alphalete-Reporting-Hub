@@ -187,12 +187,35 @@ class TestReplyTagging(unittest.TestCase):
         self.assertIn("<@U0B36GDTT6F>", out)
         self.assertLess(out.index("Yani Young"), out.index("<@U0B36GDTT6F>"))
 
-    def test_unresolved_rep_stays_bold_and_flagged(self):
+    def test_unresolved_rep_stays_bold_no_warning(self):
+        # Dylan 2026-11-02: an unresolved rep is just a bold name — NO public
+        # "couldn't tag" warning anymore.
         out = self._reply([self._cust("Alexis Renteria", "Jazmin Garcia")], 5,
                           {})   # nobody resolves
         self.assertIn("*Alexis Renteria*", out)
         self.assertNotIn("<@", out)
-        self.assertIn("No Slack match to tag: Alexis Renteria", out)
+        self.assertNotIn("No Slack match", out)
+        self.assertNotIn(":warning:", out)
+
+    def test_rep_stats_streak_and_week(self):
+        from automations.rc_contact_sync_raf import run as R
+        with mock.patch("automations.shared.slack_tag_learning.lookup",
+                        side_effect=lambda n: None):
+            out = R.missing_names_reply(
+                [self._cust("Jordan Ruiz", "Yani")], 5,
+                rep_stats={"Jordan Ruiz": (3, 4)})
+        self.assertIn("3 days in a row", out)
+        self.assertIn("4x this week", out)
+
+    def test_rep_stats_streak_hidden_when_one(self):
+        from automations.rc_contact_sync_raf import run as R
+        with mock.patch("automations.shared.slack_tag_learning.lookup",
+                        side_effect=lambda n: None):
+            out = R.missing_names_reply(
+                [self._cust("Jordan Ruiz", "Yani")], 5,
+                rep_stats={"Jordan Ruiz": (1, 1)})
+        self.assertNotIn("in a row", out)      # streak of 1 isn't shown
+        self.assertIn("1x this week", out)
 
     def test_line_has_phone_and_products(self):
         out = self._reply(
@@ -219,6 +242,56 @@ class TestConfigWiring(unittest.TestCase):
     def test_header_has_no_markdown_stars(self):
         # ensure_named_thread bolds + dates the title; stars here would double.
         self.assertNotIn("*", C.SLACK_HEADER)
+
+
+class TestHistory(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from automations.rc_contact_sync_raf import history as H
+        self.H = H
+        self._orig = H.STORE
+        H.STORE = Path(tempfile.mkdtemp()) / "hist.json"
+
+    def tearDown(self):
+        self.H.STORE = self._orig
+
+    def _go(self, day, reps):
+        return self.H.update_and_stats("C1", reps, day, persist=True)
+
+    def test_streak_counts_consecutive_run_days(self):
+        d = dt.date
+        self._go(d(2026, 11, 2), ["Rep X"])
+        self._go(d(2026, 11, 3), ["Rep X"])
+        s = self._go(d(2026, 11, 4), ["Rep X"])
+        self.assertEqual(s["Rep X"], (3, 3))   # 3 in a row, 3x this week
+
+    def test_clean_run_day_breaks_streak(self):
+        d = dt.date
+        self._go(d(2026, 11, 2), ["Rep Y"])
+        self._go(d(2026, 11, 3), ["Someone Else"])   # Rep Y clean this run
+        s = self._go(d(2026, 11, 4), ["Rep Y"])
+        self.assertEqual(s["Rep Y"], (1, 2))   # streak reset, but 2x this week
+
+    def test_non_run_day_does_not_break_streak(self):
+        d = dt.date
+        # Sat then Mon (no run on Sun) — still 2 in a row.
+        self._go(d(2026, 11, 7), ["Rep Z"])
+        s = self._go(d(2026, 11, 9), ["Rep Z"])
+        self.assertEqual(s["Rep Z"][0], 2)
+
+    def test_week_count_is_mon_to_sun(self):
+        d = dt.date
+        # 11/1 is a Sunday (prev week); 11/2 Mon starts the new week.
+        self._go(d(2026, 11, 1), ["Rep W"])
+        s = self._go(d(2026, 11, 2), ["Rep W"])
+        self.assertEqual(s["Rep W"][1], 1)   # only Monday counts this week
+
+    def test_rerun_same_day_is_idempotent(self):
+        d = dt.date
+        self._go(d(2026, 11, 2), ["Rep Q"])
+        s = self._go(d(2026, 11, 2), ["Rep Q"])   # same day again
+        self.assertEqual(s["Rep Q"], (1, 1))
 
 
 if __name__ == "__main__":

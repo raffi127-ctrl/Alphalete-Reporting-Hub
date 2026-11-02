@@ -72,10 +72,19 @@ def post_office(profile: Dict[str, str], day: dt.date,
     from automations.shared import slack_metrics_post as smp
 
     title = C.SLACK_HEADER
-    body = missing_names_reply(missing, total)
     chan = profile.get("channel_id") or ""
     label = profile.get("channel_name") or profile["key"]
     token_file = profile.get("slack_token_file") or ""
+
+    # Per-rep streak + weekly count (Dylan 2026-11-02), keyed by this office's
+    # channel. Record the run even on an all-messaged day so streaks break.
+    from automations.rc_contact_sync_raf import history
+    from automations.shared.name_case import titlecase_name
+    flagged = sorted({titlecase_name(m.get("rep", ""))
+                      for m in missing if titlecase_name(m.get("rep", ""))})
+    rep_stats = (history.update_and_stats(chan, flagged, day,
+                                          persist=not dry_run) if chan else {})
+    body = missing_names_reply(missing, total, rep_stats=rep_stats)
 
     # Tag Dylan so the morning post is readily visible to him — using his id
     # from THIS office's workspace (AO by default, or the cross-ws id keyed by
