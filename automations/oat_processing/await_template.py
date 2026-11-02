@@ -552,7 +552,13 @@ def _next_morning(now, slots):
 def last_push_of_day(office_id: str, every_minutes: int = 15, now=None) -> bool:
     """True when the NEXT push would already be past today's stop."""
     now = now or dt.datetime.now()
-    return past_stop(office_id, now + dt.timedelta(minutes=every_minutes))
+    later = now + dt.timedelta(minutes=every_minutes)
+    if stop_at_today(office_id, now) is None:
+        # No interview slots today (Sunday), so no stop time: pushing runs to
+        # 10pm, and Monday's 7:00 texts would read tonight's "TOMORROW,
+        # nextInterviewDay" as Tuesday.
+        return (later.hour, later.minute) >= (22, 0)
+    return past_stop(office_id, later)
 
 
 def ensure_await_template(page, office_id: str, apply: bool = True,

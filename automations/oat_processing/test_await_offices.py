@@ -453,3 +453,18 @@ class TheUpdateIsReported(unittest.TestCase):
                                return_value=(None, None)):
             AT.ensure_await_template(mock.Mock(), "11901")
         self.assertEqual(AT.LAST_RESULT["result"], "failed")
+
+
+class SundayNightSetsMondayMorning(unittest.TestCase):
+
+    def test_no_slots_today_the_10pm_end_counts(self):
+        with mock.patch.object(AT, "stop_at_today", return_value=None):
+            self.assertTrue(AT.last_push_of_day("11280", 15, at("2026-11-01 21:50")))
+            self.assertFalse(AT.last_push_of_day("11280", 15, at("2026-11-01 21:30")))
+
+    def test_sunday_night_writes_monday_as_today(self):
+        when = AT._next_morning(at("2026-11-01 21:50"), S24065)
+        self.assertEqual(when, at("2026-11-02 05:00"))
+        self.assertEqual(AW.clause_from_schedule(when, S24065, 30, office_id="24065"),
+                         "available TODAY, currentInterviewDay, from "
+                         "8:15am-10:45am or 12:45pm-3:15pm")
