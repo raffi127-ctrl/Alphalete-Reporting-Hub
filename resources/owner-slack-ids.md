@@ -32,6 +32,7 @@ When you confirm a new ID, add it here in the same commit.
 | Jairo Ruiz | Profits (ECO `jairo15`) | U0BVCKR63CK | ⚠ Eve 10/29: the right one (jairoruizpmg@gmail.com). Look-alike U04Q6T14M34 "JAIRO RUIZ" (ruizjairo389@gmail.com) is NOT him for tags |
 | Kash (Akashdeep) Rai | Kash's Local Office (ECO `kash`) | U046XBPN0G2 | |
 | Khalil Mansour | Khalil's Local Office (ECO `khalil`) | U045F9JCPJT | |
+| Trang Canavan | FRESH SUCCESS (ECO key trang) | U07JM5V0L1H | trang.lecanavan@gmail.com. Sign-in DMs = Trang, Michael Canavan U0C3J8MN99S (mdcanavan88@gmail.com), Amber U09S2LTUZ55 (amberjhester@gmail.com), Megan, Eve (Megan 2026-11-02) |
 | Luke Baldwin | Luke's Local Office (takeoff-b2b) | U0B7HR6TVEE | |
 | Maxamad Aden | Maximal (ECO `maxamad-nds`) | U09SDDHGWQH | ⚠ A second account, "Maxamad Aden" U0AHTR9V2MD, also exists. The alert system uses U09SDDHGWQH. |
 | Omar Mohamad | Kalkan Marketing (24153) | U0C144X8SBD | ⚠ look-alike U0A0J2T9XKL (oomohamad98@gmail.com) is NOT him — the real one is oomohamad012498@gmail.com and is in his recruiting channel. Megan 2026-10-26 |

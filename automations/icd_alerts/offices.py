@@ -520,6 +520,10 @@ HELPERS = {
     "khalil-nds": ("U0543NQEWMD", "U0ASETVB6BS"),    # same machine, the live enrolment
     "atef": ("U07GR1FUHKL",),          # Cesar Castillo (Megan 2026-10-29: the
                                        # sign-in DM = Megan, Eve, Cesar, Atef)
+    # Trang's sign-in DMs (Megan 2026-11-02): Megan, Eve, Trang, Michael Canavan,
+    # Amber. These three are AO-workspace users, so the DM goes on Lucy's AO
+    # token like every other office's; only her boards live in Fresh Success.
+    "trang": ("U0C3J8MN99S", "U09S2LTUZ55"),   # Michael Canavan, Amber (Hester)
 }
 
 
