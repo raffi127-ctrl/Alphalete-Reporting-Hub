@@ -141,15 +141,31 @@ def edition(report_date: dt.date, dest_dir: Optional[Path] = None) -> Optional[P
     return got.get(glob)
 
 
-def scoring_hc(pdf_path: Path, owner: str = ICD) -> Optional[int]:
-    """The owner's 'Scoring HC' on page 1 (the current Credico week, Sun-Sat, to
-    date) — reps who scored at least one line. 0 when the owner is not listed
+def _page_week_ending(page) -> Optional[dt.date]:
+    """The Saturday in a weekly page's 'Week Ending <date>' line; None on page 4."""
+    m = re.search(r"Week Ending (\w+ \d{1,2}, \d{4})", page.get_text())
+    return dt.datetime.strptime(m.group(1), "%B %d, %Y").date() if m else None
+
+
+def scoring_hc(pdf_path: Path, owner: str = ICD,
+               week_ending: Optional[dt.date] = None) -> Optional[int]:
+    """The owner's 'Scoring HC' for one Credico week (Sun-Sat, to date) -- reps
+    who scored at least one line. 0 when the owner is not on that week's page
     (the same 'not in the tracker = 0' rule the headcount tab uses), None when
-    the column can't be found."""
+    the page or the column can't be found.
+
+    `week_ending` = that week's Saturday; None = page 1, the edition's current
+    week. Sat 10/31 and Sun 11/1 read 0 for Nicolas Murrugarra (the real count
+    was 15) because the edition mailed on Sunday already opens on the NEW week,
+    empty, and the week that just closed moved to page 2."""
     import fitz
     doc = fitz.open(str(pdf_path))
     try:
         page = doc[0]
+        if week_ending is not None:
+            page = next((pg for pg in doc if _page_week_ending(pg) == week_ending), None)
+            if page is None:
+                return None
         words = page.get_text("words")
         hc = next((w for w in words if w[4] == "HC"), None)
         if hc is None:

@@ -667,6 +667,12 @@ SOURCE_LABEL = dict(TRACKER_LABEL, retail="Retail NL (SARA)", je="JE",
                     vzw="Verizon Wireless scorecard")
 
 
+def vzw_week_ending(day: dt.date) -> dt.date:
+    """The Saturday closing the Credico week this board day reads: its own week,
+    except the board's Sunday, which keeps the week through the day before."""
+    return day - dt.timedelta(days=1) if day.weekday() == 6 else day + dt.timedelta(days=5 - day.weekday())
+
+
 def vzw_values(day: dt.date, names: List[str], logfn=print) -> Optional[Dict[str, int]]:
     """Verizon (Eve 2026-10-27, Nicolas Murrugarra): the 'Scoring HC' of
     Credico's emailed Wireless Only scorecard — reps who scored this week, the
@@ -674,13 +680,16 @@ def vzw_values(day: dt.date, names: List[str], logfn=print) -> Optional[Dict[str
     tracker, the edition mailed on D+1 shows D. Credico's week runs Sun-Sat, so
     a Sunday would read Sunday alone; Sunday takes the edition through Saturday
     instead (it can only miss a rep whose first sale was that Sunday). None =
-    that edition has not reached the inbox (Carlos forwards it ~9:31am)."""
+    that edition has not reached the inbox (Carlos forwards it ~9:31am).
+
+    The week is asked for BY ITS DATE: Sunday's edition already opens on the new
+    week, so Saturday and Sunday read its page for the week that just closed."""
     from automations.org_sales_board import verizon_pull as vp
     pdf = vp.edition(day if day.weekday() == 6 else day + dt.timedelta(days=1))
     if not pdf:
         logfn(f"  Verizon scorecard for {day} not in the inbox yet")
         return None
-    return {n: vp.scoring_hc(pdf, n) for n in names}
+    return {n: vp.scoring_hc(pdf, n, week_ending=vzw_week_ending(day)) for n in names}
 
 
 def stand_in_note(value, trackers: List[str]) -> str:
