@@ -497,6 +497,77 @@ class EveryRunFilesItsOwnVerdict(unittest.TestCase):
         self.assertTrue(any("no session root" in l for l in X._LAST_VERDICT))
 
 
+class TheWindowWaitsForLucysOwnBrowserTest(unittest.TestCase):
+    """Valeria, 2026-11-02: her sign-in ran in the middle of Lucy's automatic
+    code try, on the same profile, and all she got was a wall of red text."""
+    BUSY = ("BrowserType.launch_persistent_context: Failed to create a "
+            "ProcessSingleton for your profile directory.")
+
+    def _open(self, chromium, seconds_per_sleep=5):
+        now = [0.0]
+
+        def sleep(_s):
+            now[0] += seconds_per_sleep
+        lines = []
+        with mock.patch.object(X, "_hold_lock") as hold, \
+                mock.patch.object(X, "_LAST_VERDICT", []):
+            try:
+                out = X._open_browser(chromium, {}, log=lines.append,
+                                      sleep=sleep, clock=lambda: now[0])
+            except X.ProfileStuck:
+                out = "stuck"
+        return out, lines, hold
+
+    def test_it_waits_and_opens_when_the_browser_lets_go(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = [
+            Exception(self.BUSY), Exception(self.BUSY), "window"]
+        with mock.patch.object(X, "_browsers_on_profile", return_value=[77]), \
+                mock.patch.object(X, "_free_profile") as free:
+            out, lines, hold = self._open(ch)
+        self.assertEqual(out, "window")
+        free.assert_not_called()
+        hold.assert_called_once()    # Lucy's code try removed the lock on exit
+        self.assertIn("Please wait", " ".join(lines))
+
+    def test_past_the_wait_it_closes_the_browser_for_them(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = (
+            [Exception(self.BUSY)] * 2 + ["window"])
+        with mock.patch.object(X, "_browsers_on_profile", return_value=[77]), \
+                mock.patch.object(X, "_free_profile") as free:
+            out, _, _ = self._open(ch, seconds_per_sleep=X.PROFILE_BUSY_WAIT_SECONDS)
+        self.assertEqual(out, "window")
+        free.assert_called_once()
+
+    def test_it_stops_when_closing_it_did_not_help(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = Exception(self.BUSY)
+        with mock.patch.object(X, "_browsers_on_profile", return_value=[]), \
+                mock.patch.object(X, "_free_profile"):
+            out, _, hold = self._open(ch, seconds_per_sleep=X.PROFILE_BUSY_WAIT_SECONDS)
+        self.assertEqual(out, "stuck")
+        hold.assert_not_called()
+
+    def test_a_different_error_is_not_waited_on(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = ValueError("no chrome here")
+        with self.assertRaises(ValueError):
+            self._open(ch)
+        self.assertEqual(ch.launch_persistent_context.call_count, 1)
+
+    def test_only_this_exact_profile_counts(self):
+        ps = "\n".join([
+            " 10 /x/Chrome --user-data-dir=/u/.config/lucy-reports/chrome-profile --foo",
+            " 11 /x/Chrome --user-data-dir=/u/.config/lucy-reports/chrome-profile-as --foo",
+            " 12 /x/Chrome --user-data-dir=/u/.config/lucy-reports/chrome-profile",
+            " 13 /x/Python -m automations.icd_alerts.sara_signin",
+        ])
+        self.assertEqual(
+            X._browsers_on_profile("/u/.config/lucy-reports/chrome-profile", ps),
+            [10, 12])
+
+
 class AfterTheHandSignInTheForwardIsOfferedTest(unittest.TestCase):
     """Only once it worked, and it can never turn a good sign-in into a bad one."""
 

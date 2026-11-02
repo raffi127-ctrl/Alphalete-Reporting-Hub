@@ -35,9 +35,13 @@ is how an office waits a day for numbers that were never coming.
 from __future__ import annotations
 
 import datetime as dt
+import os
+import re
+import signal
+import subprocess
 import sys
 import time
-from typing import Dict
+from typing import Dict, List, Optional
 
 from automations.icd_alerts import config as C
 from automations.shared import saraplus as S
@@ -45,6 +49,11 @@ from automations.shared import saraplus as S
 SETTLE_SECONDS = 10
 WAIT_SECONDS = 600          # the email is the slow part, not the typing
 POLL_SECONDS = 5
+# HOW LONG A PERSON WAITS FOR LUCY'S OWN HIDDEN BROWSER before it is closed for
+# them. It normally lets go by itself: her automatic code try took 82 seconds
+# on Valeria's Mac (2026-11-02).
+PROFILE_BUSY_WAIT_SECONDS = 120
+PROFILE_BUSY_POLL_SECONDS = 5
 
 
 def _signed_in(url: str) -> bool:
@@ -125,11 +134,7 @@ def run(log=print) -> int:
     log("")
 
     C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    C.SARA_SIGNIN_LOCK.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        C.SARA_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
-    except OSError:
-        pass          # not being able to say so must not stop them signing in
+    _hold_lock()
     try:
         rc = _window(log=log)
     finally:
@@ -138,7 +143,8 @@ def run(log=print) -> int:
         except OSError:
             pass
     if rc != 0:
-        _tell_upstream("window closed or not signed in (rc %d)" % rc, log=log)
+        _tell_upstream("window closed or not signed in (rc %d)" % rc,
+                       detail="\n".join(_LAST_VERDICT), log=log)
         return rc
     # THE WINDOW IS NOT THE THING THAT HAS TO WORK. Every sweep runs its own,
     # hidden browser, and on 2026-09-21 Khalil's visible window was trusted at
@@ -283,6 +289,113 @@ def _show_login_form(page, log=print) -> None:
         log("  If you see SaraPlus's home page, click LOGIN at the top right.")
 
 
+def _hold_lock() -> None:
+    """Tell the sweeps to stand back. Not being able to say so must not stop
+    anyone signing in."""
+    try:
+        C.SARA_SIGNIN_LOCK.parent.mkdir(parents=True, exist_ok=True)
+        C.SARA_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+    except OSError:
+        pass
+
+
+class ProfileStuck(RuntimeError):
+    """The profile would not come free, even after closing what held it."""
+
+
+def _profile_busy(error) -> bool:
+    """Chrome's words for "another browser has this profile"."""
+    text = str(error).lower()
+    return ("processsingleton" in text
+            or "existing browser session" in text
+            or "profile is already in use" in text)
+
+
+def _browsers_on_profile(profile_dir=None, ps_output: Optional[str] = None) -> List[int]:
+    """Chromes running on exactly this profile.
+
+    EXACTLY: chrome-profile is also the start of chrome-profile-as, -ov and
+    -sc, which are other logins and are none of this window's business."""
+    if ps_output is None:
+        try:
+            ps_output = subprocess.run(["ps", "-axo", "pid=,command="],
+                                       capture_output=True, text=True,
+                                       timeout=10).stdout
+        except Exception:  # noqa: BLE001 -- no ps (Windows): nothing to name
+            return []
+    flag = re.compile(r"--user-data-dir=%s(\s|$)"
+                      % re.escape(str(profile_dir or C.PROFILE_DIR)))
+    pids = []
+    for line in ps_output.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if pid.isdigit() and flag.search(command):
+            pids.append(int(pid))
+    return pids
+
+
+def _free_profile(sleep=time.sleep) -> None:
+    """Close Lucy's hidden browser, or clear the note a dead one left behind."""
+    pids = _browsers_on_profile()
+    for sig in (signal.SIGTERM, getattr(signal, "SIGKILL", signal.SIGTERM)):
+        if not pids:
+            break
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+        sleep(3)
+        pids = _browsers_on_profile()
+    if not pids:
+        # NOBODY HOLDS IT, so these are left over from a browser that died
+        # without cleaning up, a power cut being the obvious way.
+        for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            try:
+                (C.PROFILE_DIR / name).unlink()
+            except OSError:
+                pass
+
+
+def _open_browser(chromium, kw, log=print, sleep=time.sleep, clock=time.monotonic):
+    """Open the window, waiting out Lucy's own hidden browser if it is in there.
+
+    WHY (Valeria, 2026-11-02): the sweep hit the code screen at 16:26 and started
+    its automatic code try, in a hidden browser on this profile. She ran the
+    sign-in at 16:26:55. Chrome allows one browser per profile, so all she got
+    was a wall of red text with "profile is already in use" in it, and that
+    browser let go by itself under a minute later. The person always wins: wait
+    a moment, then close the hidden browser for them."""
+    started, said, freed = clock(), False, False
+    while True:
+        try:
+            ctx = chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
+        except Exception as e:  # noqa: BLE001 -- anything else is re-raised
+            if not _profile_busy(e):
+                raise
+            if freed:
+                raise ProfileStuck(str(e)[:300])
+            if not said:
+                said = True
+                log("  Lucy is using her browser for a moment. The SaraPlus")
+                log("  window opens as soon as she is done. Please wait here.")
+                _LAST_VERDICT.append("profile busy: %s"
+                                     % (_browsers_on_profile() or "no browser found"))
+            if clock() - started < PROFILE_BUSY_WAIT_SECONDS:
+                sleep(PROFILE_BUSY_POLL_SECONDS)
+                continue
+            freed = True
+            _LAST_VERDICT.append("closed what held the profile after %ds"
+                                 % PROFILE_BUSY_WAIT_SECONDS)
+            _free_profile(sleep=sleep)
+            continue
+        if said:
+            _LAST_VERDICT.append("profile came free after %ds" % (clock() - started))
+        # Lucy's code try removes the sign-in lock when it finishes, and this
+        # window may have been waiting on exactly that.
+        _hold_lock()
+        return ctx
+
+
 def _window(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
@@ -291,7 +404,15 @@ def _window(log=print) -> int:
         kw = {"headless": False, "args": ["--disable-sync"]}
         if _SR.browser_id():
             kw["user_agent"] = _SR.browser_id()
-        ctx = p.chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
+        try:
+            ctx = _open_browser(p.chromium, kw, log=log)
+        except ProfileStuck as e:
+            _LAST_VERDICT.append("profile stuck: %s" % e)
+            log("")
+            log("  The SaraPlus window could not open because something on this")
+            log("  computer is still holding Lucy's browser. Restart the computer")
+            log("  and run this again. If it does the same, tell Megan or Eve.")
+            return 1
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(S.LOGIN_URL, timeout=60000)
