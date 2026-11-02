@@ -168,6 +168,11 @@ def add(who: str, we: dt.date, dry: bool) -> None:
     s.batchUpdate(spreadsheetId=p["sheet"], body={"requests": reqs}).execute()
     data = [{"range": f"'{TAB}'!B1", "values": [[hdr]]}] + [{"range": f"'{TAB}'!B{i}", "values": [[""]]} for i in clear]
     s.values().batchUpdate(spreadsheetId=p["sheet"], body={"valueInputOption": "USER_ENTERED", "data": data}).execute()
+    if isinstance(hdr, float):   # copied format can be 0.00, which shows Nov 1 (11.1) as "11.10"
+        s.batchUpdate(spreadsheetId=p["sheet"], body={"requests": [{"repeatCell": {
+            "range": {"sheetId": g, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 2},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.0#"}}},
+            "fields": "userEnteredFormat.numberFormat"}}]}).execute()
     print("  done")
 
 
