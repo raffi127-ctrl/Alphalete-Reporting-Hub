@@ -11,7 +11,7 @@ found BY LABEL on the header row (the row whose col A is '#'). A car ride is a
 numbered row with at least one name; the empty numbered rows and the reference
 blocks underneath ('Rep names from Sales Board', notes) are left out.
 
-  --photo  (11:45)  picture of the box -> #alphalete-sales + Knocking Chat A-Players
+  --photo  (11:15, Raf moved it from 11:45 on 2026-11-02)  picture of the box -> #alphalete-sales + Knocking Chat A-Players
   --names  (20:45)  the names as text  -> the Car Ride iMessage chat
 
 WHY A TEMP TAB: the box has empty numbered rows in the middle (12-20 today).
@@ -189,7 +189,7 @@ def _mark(key: str) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--photo", action="store_true", help="11:45 picture")
+    g.add_argument("--photo", action="store_true", help="11:15 picture")
     g.add_argument("--names", action="store_true", help="8:45 PM names text")
     # The LaunchAgent fires both slots with --auto: before 4pm CT is the
     # picture, after is the names. One agent, one plist.
