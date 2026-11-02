@@ -10,8 +10,10 @@ for an address on the tab, and we hear if an address forwards anything else.
 from __future__ import annotations
 
 import datetime as dt
+import http.server
 import inspect
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -358,6 +360,49 @@ class PressingConfirm(unittest.TestCase):
         with self.assertRaises(ValueError):
             CA.accept_confirmation(self.LINK, "owner@gmail.com",
                                    fetch=lambda u, data=None: self.ASKS)
+
+
+class TheRealFetchActsLikeABrowser(unittest.TestCase):
+    """A small page that behaves like Gmail's: no cookie, no confirmation."""
+
+    def setUp(self):
+        seen = self.seen = []
+
+        class Page(http.server.BaseHTTPRequestHandler):
+            def _send(self, body, cookie=False):
+                self.send_response(200)
+                if cookie:
+                    self.send_header("Set-Cookie", "S=visit; Path=/")
+                self.end_headers()
+                self.wfile.write(body.encode())
+
+            def do_GET(self):
+                self._send("Please confirm forwarding mail of owner@gmail.com", cookie=True)
+
+            def do_POST(self):
+                seen.append(dict(self.headers))
+                ok = "S=visit" in self.headers.get("Cookie", "")
+                self._send("Confirmation Success!" if ok
+                           else "Please confirm forwarding mail of owner@gmail.com")
+
+            def log_message(self, *a):
+                pass
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), Page)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.url = "http://127.0.0.1:%d/mail/vf-X" % self.server.server_port
+
+    def test_the_press_carries_the_cookie_from_the_read(self):
+        fetch = CA._browser_fetch()
+        self.assertIn("please confirm", fetch(self.url).lower())
+        self.assertIn("Success", fetch(self.url, b""))
+        self.assertEqual(self.seen[0]["Referer"], self.url)
+
+    def test_two_visits_do_not_share_a_cookie(self):
+        CA._browser_fetch()(self.url)
+        self.assertIn("please confirm", CA._browser_fetch()(self.url, b"").lower())
 
 
 class WideForwardAlarm(unittest.TestCase):

@@ -44,8 +44,10 @@ from __future__ import annotations
 import datetime as dt
 import email
 import html
+import http.cookiejar
 import imaplib
 import re
+import urllib.parse
 import urllib.request
 from email.header import decode_header, make_header
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -367,10 +369,29 @@ def _page_text(raw: bytes) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text))).strip()
 
 
-def _fetch(url: str, data: Optional[bytes] = None) -> str:
-    req = urllib.request.Request(url, data=data, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return _page_text(r.read())
+def _browser_fetch():
+    """One visit to Gmail's page, the way a browser makes it.
+
+    The page sets a cookie when it opens and the Confirm button posts back to
+    the same address. Luke's forward, 2026-11-02: Lucy's bare post came back
+    still asking (ValueError), and the same link took a person's click in a
+    browser. The missing cookie is the likely difference, not a proven one; the
+    next owner's forward is the proof. So the read and the press share a cookie
+    jar, and the press says where it came from.
+    """
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+    def fetch(url: str, data: Optional[bytes] = None) -> str:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        if data is not None:
+            parts = urllib.parse.urlsplit(url)
+            headers["Referer"] = url
+            headers["Origin"] = "%s://%s" % (parts.scheme, parts.netloc)
+        req = urllib.request.Request(url, data=data, headers=headers)
+        with opener.open(req, timeout=30) as r:
+            return _page_text(r.read())
+    return fetch
 
 
 def accept_confirmation(link: str, requester: str, fetch=None) -> None:
@@ -380,7 +401,7 @@ def accept_confirmation(link: str, requester: str, fetch=None) -> None:
     (read off the real page 2026-11-02). That page names who is forwarding, so
     it is checked against the address we expected before anything is pressed.
     """
-    fetch = fetch or _fetch
+    fetch = fetch or _browser_fetch()
     if not link.startswith("https://mail-settings.google.com/"):
         raise ValueError("not Gmail's confirmation page")
     page = fetch(link).lower()
@@ -477,8 +498,8 @@ def confirm_forwards(book=None, *, send: bool = False,
                 log("FWD    %-10s could not confirm: %s" % (office, e))
                 _note(at, note, NOTE_FAILED)
                 _say("*%s*: Lucy could not confirm Gmail's SaraPlus forward "
-                     "(%s). Please click the confirmation email in the "
-                     "reporting inbox." % (office, type(e).__name__))
+                     "(%s: %s). Please click the confirmation email in the "
+                     "reporting inbox." % (office, type(e).__name__, str(e)[:120]))
                 done.append({"office": office, "status": "failed"})
                 continue
             log("FWD    %-10s Gmail forward confirmed" % office)
