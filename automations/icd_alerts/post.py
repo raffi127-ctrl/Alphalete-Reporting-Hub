@@ -1435,6 +1435,25 @@ def off_kinds(book=None) -> Dict[str, set]:
     return out
 
 
+def _key_is_off(key: str) -> bool:
+    """A sign-up that was DECLINED, or a key paused from our side. Its row on
+    the channels tab still reads like a request, so without this the ops room
+    was asked to approve luke-b2batt/luke2 (declined duplicates of `luke`) and
+    jamis10 (paused, Box not launched) every pass (2026-11-02)."""
+    key = (key or "").strip().lower()
+    if not key:
+        return False
+    try:
+        from automations.icd_alerts import config as C
+        from automations.icd_alerts import offices as O
+        if key in C.PAUSED_KEYS:
+            return True
+        o = O.sheet_offices().get(key)
+        return bool(o) and not o.active
+    except Exception:  # noqa: BLE001 — unsure = keep asking, never hide one
+        return False
+
+
 def pending_knocks(book=None) -> List[Dict]:
     """Offices that asked for a knocks board nobody has signed off yet."""
     if book is None:
@@ -1450,6 +1469,8 @@ def pending_knocks(book=None) -> List[Dict]:
         wanted = (row[CH_KN_WANTED] or "").strip()
         ok = (row[CH_KN_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
         if not wanted or wanted == "No knocks board" or ok or _off(row[CH_KN_APPROVED]):
+            continue
+        if _key_is_off(row[CH_OFFICE]):
             continue
         try:
             asked = json.loads(row[CH_KN_JSON] or "[]")
@@ -1477,6 +1498,8 @@ def pending_requests(book=None) -> List[Dict]:
             row = list(row) + [""] * (CH_APPROVED + 1 - len(row))
         approved = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
         if not (row[CH_ASKED] or "").strip() or approved or _off(row[CH_APPROVED]):
+            continue
+        if _key_is_off(row[CH_OFFICE]):
             continue
         try:
             asked = json.loads(row[CH_ASKED_JSON] or "[]")
