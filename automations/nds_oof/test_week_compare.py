@@ -50,3 +50,10 @@ def test_build_rows_totals_first_new_and_gone():
     tot = rows.index(rows[0])
     assert (tot, 1) not in bgs                      # unchanged → no colour
     assert bgs[(tot, 3)] == W.RED                   # first knock later = worse
+
+
+def test_all_blank_column_is_dropped():
+    prev = {"headers": ["#", "Rep", "Knocks", "Apps"], "rows": [["1", "Ana Lopez", "10", "—"]]}
+    last = {"headers": ["#", "Rep", "Knocks", "Apps"], "rows": [["1", "Ana Lopez", "12", ""]]}
+    header, rows, bgs, n_tot = W.build(prev, last)
+    assert header == ["Rep", "Knocks"] and rows[0] == ["Ana Lopez", "10 → 12  (+2)"]

@@ -85,6 +85,14 @@ def build(prev: Dict, last: Dict) -> Tuple[List[str], List[List[str]], Dict[Tupl
     rows_l, rows_p = last["rows"], prev["rows"]
     name_i = 1 if len(hdr_l) > 1 else 0
     stats = [(i, h) for i, h in enumerate(hdr_l) if i != name_i and i != 0 and h in hdr_p]
+
+    def _blank(v) -> bool:
+        return str(v or "").strip() in ("", "—", "-", "–", "n/a", "N/A")
+    # A column that is empty for everyone in BOTH weeks (Apps on an NDS board)
+    # is noise on a 20-column picture: dropped.
+    stats = [(i, h) for i, h in stats
+             if any(not _blank(r[i]) for r in rows_l if i < len(r))
+             or any(not _blank(r[hdr_p.index(h)]) for r in rows_p if hdr_p.index(h) < len(r))]
     pidx = {h: hdr_p.index(h) for _, h in stats}
 
     def key(r):
