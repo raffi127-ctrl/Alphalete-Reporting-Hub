@@ -41,14 +41,11 @@ REQUEST_MAX_MIN minutes.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import email
-import html
-import http.cookiejar
 import imaplib
 import re
-import urllib.parse
-import urllib.request
 from email.header import decode_header, make_header
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -312,6 +309,7 @@ _CONFIRM_LINK = re.compile(
     r"confirm the request:\s*(https://mail-settings\.google\.com/mail/\S+)", re.I)
 _REQUESTER = re.compile(r"Receive Mail from\s+([\w.+-]+@[\w.-]+\w)", re.I)
 _ASKS_CONFIRM = "please confirm forwarding"
+_SUCCEEDED = "confirmation success"
 
 
 def confirmation_link(body: str) -> str:
@@ -364,52 +362,42 @@ def _confirmation_mails() -> Dict[str, str]:
             pass
 
 
-def _page_text(raw: bytes) -> str:
-    text = re.sub(r"<(script|style)[\s\S]*?</\1>", " ", raw.decode("utf-8", "replace"))
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text))).strip()
+@contextlib.contextmanager
+def _chrome_page():
+    from patchright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            yield browser.new_page()
+        finally:
+            browser.close()
 
 
-def _browser_fetch():
-    """One visit to Gmail's page, the way a browser makes it.
-
-    The page sets a cookie when it opens and the Confirm button posts back to
-    the same address. Luke's forward, 2026-11-02: Lucy's bare post came back
-    still asking (ValueError), and the same link took a person's click in a
-    browser. The missing cookie is the likely difference, not a proven one; the
-    next owner's forward is the proof. So the read and the press share a cookie
-    jar, and the press says where it came from.
-    """
-    opener = urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-
-    def fetch(url: str, data: Optional[bytes] = None) -> str:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        if data is not None:
-            parts = urllib.parse.urlsplit(url)
-            headers["Referer"] = url
-            headers["Origin"] = "%s://%s" % (parts.scheme, parts.netloc)
-        req = urllib.request.Request(url, data=data, headers=headers)
-        with opener.open(req, timeout=30) as r:
-            return _page_text(r.read())
-    return fetch
-
-
-def accept_confirmation(link: str, requester: str, fetch=None) -> None:
+def accept_confirmation(link: str, requester: str, open_page=None) -> None:
     """Press Confirm on Gmail's page. Raises unless it clearly took.
 
     The link alone confirms nothing: it opens a page with one Confirm button
     (read off the real page 2026-11-02). That page names who is forwarding, so
     it is checked against the address we expected before anything is pressed.
+
+    A REAL CHROME, NOT A POST. Luke's and Valeria's forwards both came back
+    "still asking" from a plain post, even with the page's cookie and a browser's
+    headers. On 2026-11-02 the same link, pressed in hidden Chrome, answered
+    "Confirmation Success!" (tried on Valeria's forward, already confirmed by
+    hand, so the press changed nothing).
     """
-    fetch = fetch or _browser_fetch()
     if not link.startswith("https://mail-settings.google.com/"):
         raise ValueError("not Gmail's confirmation page")
-    page = fetch(link).lower()
-    if _ASKS_CONFIRM not in page or requester.lower() not in page:
-        raise ValueError("unexpected confirmation page: %s" % page[:120])
-    after = fetch(link, b"").lower()
-    if _ASKS_CONFIRM in after:
-        raise ValueError("still asking after Confirm: %s" % after[:120])
+    with (open_page or _chrome_page)() as page:
+        page.goto(link, timeout=30000)
+        before = page.inner_text("body").lower()
+        if _ASKS_CONFIRM not in before or requester.lower() not in before:
+            raise ValueError("unexpected confirmation page: %s" % before[:120])
+        with page.expect_navigation(timeout=20000):
+            page.click('input[type="submit"][value="Confirm"]')
+        after = page.inner_text("body").lower()
+    if _SUCCEEDED not in after:
+        raise ValueError("no success page after Confirm: %s" % after[:120])
 
 
 def _added_at(text: str) -> Optional[dt.datetime]:

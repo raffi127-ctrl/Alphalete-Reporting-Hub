@@ -9,11 +9,10 @@ for an address on the tab, and we hear if an address forwards anything else.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
-import http.server
 import inspect
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -368,82 +367,61 @@ class LucyAcceptsGmailsMail(unittest.TestCase):
         self.assertEqual((self.accepted, self.told, self.sheet.cells), ([], [], {}))
 
 
+class _FakeGmailPage:
+    def __init__(self, before, after):
+        self.text, self.after, self.clicks = before, after, []
+
+    def goto(self, url, timeout=None):
+        self.url = url
+
+    def inner_text(self, selector):
+        return self.text
+
+    @contextlib.contextmanager
+    def expect_navigation(self, timeout=None):
+        yield
+
+    def click(self, selector):
+        self.clicks.append(selector)
+        self.text = self.after
+
+
 class PressingConfirm(unittest.TestCase):
     LINK = "https://mail-settings.google.com/mail/vf-X"
     ASKS = "Confirmation Please confirm forwarding mail of owner@gmail.com to r@gmail.com ."
+    DONE = "Confirmation Success! owner@gmail.com may now forward mail to r@gmail.com."
 
-    def test_it_posts_after_reading_the_right_page(self):
-        calls = []
+    def _press(self, page, who="owner@gmail.com", link=None):
+        @contextlib.contextmanager
+        def open_page():
+            yield page
+        CA.accept_confirmation(link or self.LINK, who, open_page=open_page)
 
-        def fetch(url, data=None):
-            calls.append(data)
-            return self.ASKS if data is None else "Confirmation Success!"
-        CA.accept_confirmation(self.LINK, "owner@gmail.com", fetch=fetch)
-        self.assertEqual(calls, [None, b""])
+    def test_it_presses_after_reading_the_right_page(self):
+        page = _FakeGmailPage(self.ASKS, self.DONE)
+        self._press(page)
+        self.assertEqual(len(page.clicks), 1)
 
     def test_another_persons_page_is_never_pressed(self):
-        calls = []
-
-        def fetch(url, data=None):
-            calls.append(data)
-            return self.ASKS
+        page = _FakeGmailPage(self.ASKS, self.DONE)
         with self.assertRaises(ValueError):
-            CA.accept_confirmation(self.LINK, "other@gmail.com", fetch=fetch)
-        self.assertEqual(calls, [None])
+            self._press(page, who="other@gmail.com")
+        self.assertEqual(page.clicks, [])
 
     def test_a_foreign_host_is_never_opened(self):
-        fetch = mock.Mock()
+        opened = mock.Mock()
         with self.assertRaises(ValueError):
-            CA.accept_confirmation("https://evil.example/mail/vf", "o@gmail.com", fetch=fetch)
-        fetch.assert_not_called()
+            CA.accept_confirmation("https://evil.example/mail/vf", "o@gmail.com",
+                                   open_page=opened)
+        opened.assert_not_called()
 
     def test_still_asking_afterwards_is_a_failure(self):
         with self.assertRaises(ValueError):
-            CA.accept_confirmation(self.LINK, "owner@gmail.com",
-                                   fetch=lambda u, data=None: self.ASKS)
+            self._press(_FakeGmailPage(self.ASKS, self.ASKS))
 
-
-class TheRealFetchActsLikeABrowser(unittest.TestCase):
-    """A small page that behaves like Gmail's: no cookie, no confirmation."""
-
-    def setUp(self):
-        seen = self.seen = []
-
-        class Page(http.server.BaseHTTPRequestHandler):
-            def _send(self, body, cookie=False):
-                self.send_response(200)
-                if cookie:
-                    self.send_header("Set-Cookie", "S=visit; Path=/")
-                self.end_headers()
-                self.wfile.write(body.encode())
-
-            def do_GET(self):
-                self._send("Please confirm forwarding mail of owner@gmail.com", cookie=True)
-
-            def do_POST(self):
-                seen.append(dict(self.headers))
-                ok = "S=visit" in self.headers.get("Cookie", "")
-                self._send("Confirmation Success!" if ok
-                           else "Please confirm forwarding mail of owner@gmail.com")
-
-            def log_message(self, *a):
-                pass
-
-        self.server = http.server.HTTPServer(("127.0.0.1", 0), Page)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.addCleanup(self.server.server_close)
-        self.addCleanup(self.server.shutdown)
-        self.url = "http://127.0.0.1:%d/mail/vf-X" % self.server.server_port
-
-    def test_the_press_carries_the_cookie_from_the_read(self):
-        fetch = CA._browser_fetch()
-        self.assertIn("please confirm", fetch(self.url).lower())
-        self.assertIn("Success", fetch(self.url, b""))
-        self.assertEqual(self.seen[0]["Referer"], self.url)
-
-    def test_two_visits_do_not_share_a_cookie(self):
-        CA._browser_fetch()(self.url)
-        self.assertIn("please confirm", CA._browser_fetch()(self.url, b"").lower())
+    def test_only_the_success_page_counts(self):
+        with self.assertRaises(ValueError):
+            self._press(_FakeGmailPage(self.ASKS, "Something went wrong"))
 
 
 class WideForwardAlarm(unittest.TestCase):
