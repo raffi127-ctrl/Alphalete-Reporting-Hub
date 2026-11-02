@@ -78,7 +78,7 @@ from automations.vantura_boards import (BOARD_TABS, MAIN_TAB as BOARD, board_on,
 
 WEEKDATA, STATIONS = "WeekData", "Stations"
 WE_CELL = "B2"                  # gold week selector
-STATIONS_WE = "Q2"              # Stations' week label (S2 until the 9/3 re-layout dropped two columns)
+STATIONS_WE = "R2"              # Stations' week label (Q2 until the 2026-11-02 Notes column at B; S2 before the 9/3 re-layout)
 WD_DAY_COLS = "BCDEFGH"         # WeekData Mon..Sun, parallel to the board's E..K
 PICKER_ROWS = 11                # weeks kept in WeekData!J:K (and the dropdown)
 EPOCH = dt.date(1899, 12, 30)   # Sheets serial 0

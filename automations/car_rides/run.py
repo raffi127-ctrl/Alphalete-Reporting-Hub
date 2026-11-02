@@ -15,10 +15,12 @@ Reuses the existing Lucy 2 routes (do NOT rebuild these):
                        this run FLAGS it and stops (never touches the Turnstile).
 
 WHAT A RUN DOES:
-  1. Read the car-ride boxes — AT&T on "Stations" A5:E14, BOX on "BOX
-     Stations" A5:E15 (the renamed 'D2D Stations' tab, 2026-10-02) -> leader
-     -> [riders], locating the Leader / Rep #1-4 columns BY HEADER (not
-     position).
+  1. Read the car-ride boxes — AT&T on "Stations" A5:F14 (a NOTES column
+     sits at B since 2026-11-02; the box is read one column wider), BOX on
+     "BOX Stations" A5:E15 (the renamed 'D2D Stations' tab, 2026-10-02; the
+     tab was retired with BOX on 2026-10-28 — a missing tab skips that
+     campaign instead of failing the AT&T half) -> leader -> [riders],
+     locating the Leader / Rep #1-4 columns BY HEADER (not position).
   2. Open v2.ownerville.com Territory Assignment (index.cfm?p=158), campaign
      "B2B AT&T SBS" then "B2B-BOX-Energy".
   3. Enumerate every territory (all pages). Compute the reconciliation plan:
@@ -97,7 +99,7 @@ STATIONS_GID = 1999003555
 # tab by gid (title as the fallback).
 BOX_STATIONS_GID = 1984019054
 BOXES = {
-    "att": {"range": "A5:E14", "campaign": "B2B AT&T SBS",
+    "att": {"range": "A5:F14", "campaign": "B2B AT&T SBS",   # 2026-11-02: Notes column at B pushed Rep #3 to F
             "gid": STATIONS_GID, "tab": "Stations"},
     "box": {"range": "A5:E15", "campaign": "B2B-BOX-Energy",
             "gid": BOX_STATIONS_GID, "tab": "BOX Stations"},
@@ -210,7 +212,13 @@ def read_expected(log=_log) -> dict[str, dict[str, list[str]]]:
         # the fallback (a rename keeps the gid; a re-create keeps the title).
         ws = next((w for w in tabs if w.id == box["gid"]), None)
         if ws is None:
-            ws = sh.worksheet(box["tab"])
+            try:
+                ws = sh.worksheet(box["tab"])
+            except Exception as e:  # noqa: BLE001 — tab deleted (BOX retired
+                # 2026-10-28): skip this campaign, never fail the AT&T half.
+                log(f"{key.upper()} box: no {box['tab']!r} tab "
+                    f"({type(e).__name__}) — campaign skipped")
+                continue
         rows = ws.get(box["range"]) or []
         if not rows:
             raise RuntimeError(f"{ws.title} {box['range']} came back empty — "
@@ -1007,7 +1015,14 @@ def main(argv: list[str] | None = None) -> int:
                        tab_ok=True, changes=changes, reconciled=reconciled)
         return 4
 
-    keys = [args.campaign] if args.campaign else list(BOXES)
+    keys = [k for k in ([args.campaign] if args.campaign else list(BOXES))
+            if k in expected]          # a campaign whose tab is gone is skipped
+    if not keys:
+        _log("STOP: no car-ride box could be read")
+        _fail("no car-ride box could be read — nothing to reconcile")
+        _file_manifest(live=live, failures=failures, findings=findings,
+                       tab_ok=True, changes=changes, reconciled=reconciled)
+        return 4
 
     # 2) OwnerVille.
     from patchright.sync_api import sync_playwright
