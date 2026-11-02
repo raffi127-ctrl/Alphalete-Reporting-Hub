@@ -390,10 +390,11 @@ def board_icds() -> Dict[str, List[str]]:
     def c(r, k):
         row = g[r] if r < len(g) else []
         return row[k].strip() if k < len(row) else ""
-    # By its 'RUNNING WEEK TOTALS' header, not the col-A title: 'All Units' was
-    # renamed 'All Campaigns HC' on 2026-09-13 and this lookup died on it.
+    # By the 'Campaign' label itself: the column left the RUNNING WEEK TOTALS
+    # block for the Deltas block below it, and this lookup died on that
+    # (2026-11-02).
     hdr = next(i for i in range(len(g))
-               if any(str(x).strip().lower().startswith("running week") for x in g[i]))
+               if any(str(x).strip().lower() == "campaign" for x in g[i]))
     camp_col = next(k for k in range(len(g[hdr])) if c(hdr, k).lower() == "campaign")
     out: Dict[str, List[str]] = {}
     r = hdr + 1

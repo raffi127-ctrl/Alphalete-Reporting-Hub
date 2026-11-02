@@ -68,6 +68,17 @@ class TestLimit(unittest.TestCase):
         self.assertFalse(order_log.too_big_for_phone(self.dir / "missing.xlsx"))
 
 
+class TestEmailOffice(unittest.TestCase):
+    def test_email_office_keeps_the_single_file_however_big(self):
+        """Christian, 2026-11-02: letters need a channel; that office only has a mailbox."""
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.dict("os.environ", {"METRICS_EMAIL_DIR": d}):
+                with mock.patch.object(ols, "over_phone_limit",
+                                       return_value=(True, 656, 30)) as size:
+                    self.assertFalse(order_log.too_big_for_phone(Path(d) / "log.xlsx"))
+        size.assert_not_called()
+
+
 class TestThread(unittest.TestCase):
     def test_index_is_first_reply_and_post_links_to_it(self):
         with tempfile.TemporaryDirectory() as d:

@@ -67,6 +67,23 @@ class VerizonWeek(unittest.TestCase):
             self.assertEqual(daily.vzw_week_ending(day), dt.date(2026, 10, 31), day)
         self.assertEqual(daily.vzw_week_ending(dt.date(2026, 11, 2)), dt.date(2026, 11, 7))
 
+class TestBoardIcds(unittest.TestCase):
+    def test_campaign_column_is_found_in_whichever_block_has_it(self):
+        """It moved from RUNNING WEEK TOTALS to the Deltas block (2026-11-02)."""
+        from unittest import mock
+        from automations.org_active_headcount import tracker_readings as tr
+        grid = [["All Campaigns HC", "", "Monday", "RUNNING WEEK TOTALS"],
+                ["1", "Rafael Hidalgo", "22", "48"],
+                [""],
+                ["", "", "This week", "Campaign"],
+                ["1", "Rafael Hidalgo", "48", "Fiber"],
+                ["2", "Jairo Ruiz", "42", "NDS"],
+                [""]]
+        sheet = mock.Mock()
+        sheet.get_worksheet_by_id.return_value.get_all_values.return_value = grid
+        with mock.patch("automations.recruiting_report.fill.open_by_key", return_value=sheet):
+            self.assertEqual(tr.board_icds(), {"fiber": ["Rafael Hidalgo"], "nds": ["Jairo Ruiz"]})
+
 
 if __name__ == "__main__":
     unittest.main()

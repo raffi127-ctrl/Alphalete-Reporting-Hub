@@ -168,32 +168,9 @@ JOBS: Dict[str, dict] = {
     # no walks since Friday 12:52 and it read exactly like a dead agent — it was
     # the weekend hold, working. An alert that cannot tell those two apart is
     # worse than no alert, because it trains you to ignore the real one.
-    "applicant_push_lucy_2": {
-        "name": "Applicant Push (all offices)",
-        "machine": "Lucy 2",
-        "first_by": "07:30",       # window opens 07:00; first tick + grace
-        # A tick is ~6 min and the wedge guard kills a stuck walk at 20 min, so
-        # 45 tolerates a wedged pass plus the tick it swallows, and still catches
-        # a stopped agent inside an hour instead of two days.
-        "max_gap_min": 45,
-        "active_until": "22:00",
-        "weekdays": None,          # every day — the hold is a WINDOW, not a day
-        # The push's own gate, imported rather than restated: one definition of
-        # "held", pinned by automations/applicant_push/test_quiet_window.py.
-        "quiet": _push_quiet_window,          # every day — the hold is a WINDOW, not a day
-        # The push's own gate, imported rather than restated: one definition of
-        # "held", pinned by automations/applicant_push/test_quiet_window.py.
-        "quiet": _push_quiet_window,          # runs every day
-        # Grace: the beat ships in deploy/applicant_push.sh, which Lucy 2 has to
-        # pull. Armed the day after so the agent gets one clean day to prove it.
-        "watch_from": "2026-09-14",
-        "means": ("Atef (23467) and Khalil (11901) stop being "
-                  "pushed to the AI call list entirely — those two share this "
-                  "agent (Carlos's 11580 pushes from his own computer since "
-                  "10/20). The Hub cards keep showing this morning's green, so "
-                  "nothing else will tell you."),
-        "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 2\"",
-    },
+    # applicant_push_lucy_2 left 2026-11-02: ROTATION_BY_MACHINE["Lucy 2"] has been
+    # empty since 10/29, so the agent has nothing to beat for and this row
+    # posted "didn't run" every day. Put it back if an office returns to Lucy 2.
     # LUCY 4 JOINED 2026-09-19 with Raf's three streams (offices.py
     # ROTATION_BY_MACHINE). It needs its OWN row for the reason spelled out under
     # "ONE KEY PER MACHINE" below: beat() upserts one row per job_id, so a shared
@@ -217,9 +194,7 @@ JOBS: Dict[str, dict] = {
         # on 9/19.
         "watch_from": "2026-09-21",
         "means": ("Raf's three ApplicantStream streams (11280, 23965, 24065) "
-                  "stop being pushed to the AI call list. Lucy 2 keeps working "
-                  "its own three, so the fleet looks healthy from every other "
-                  "angle."),
+                  "stop being pushed to the AI call list."),
         "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 4\"",
     },
     # NO Lucy 3 ROW. Lucy 3 works no push offices (ROTATION_BY_MACHINE), and a

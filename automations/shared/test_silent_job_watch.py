@@ -166,8 +166,8 @@ class AJobThatIsHeldOnPurpose(unittest.TestCase):
     and read exactly like an outage. An alert that cannot tell those apart fires
     every weekend and trains you to ignore the one that matters."""
 
-    JID = "applicant_push_lucy_2"
-    MON = dt.date(2026, 9, 14)          # a Monday
+    JID = "applicant_push_lucy_4"
+    MON = dt.date(2026, 9, 21)          # a Monday, Lucy 4 watched from this day
 
     def _at(self, wd, h, m=0):
         return dt.datetime.combine(self.MON + dt.timedelta(days=wd), dt.time(h, m))

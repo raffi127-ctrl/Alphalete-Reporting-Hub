@@ -2217,7 +2217,13 @@ def too_big_for_phone(xlsx_path: Path) -> bool:
     """An office's single file got too big for Slack's phone preview, so it
     gets Raf's letter posts instead (Eve 2026-11-01). If the check itself
     breaks, stay on the single file."""
+    from automations.shared import metrics_email_capture
     from automations.uploaded import order_log_split as ols
+    # An email office has no channel to post letters in: the split died on
+    # channel_not_found and Christian's log never arrived (2026-11-02). The
+    # single file is attached to the mail, where the phone preview doesn't apply.
+    if metrics_email_capture.active():
+        return False
     try:
         over, rows, tabs = ols.over_phone_limit(xlsx_path)
     except Exception as e:  # noqa: BLE001
