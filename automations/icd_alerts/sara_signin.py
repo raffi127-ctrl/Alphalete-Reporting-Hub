@@ -261,6 +261,22 @@ def _live_urls(ctx) -> list:
     return out
 
 
+def _show_login_form(page, log=print) -> None:
+    """Take the person past SaraPlus's home page to the form they have to fill.
+
+    ui.saraplus.com is a marketing page: the username box is one LOGIN click
+    away. The hidden read makes that click (saraplus._open_login_form), this
+    window did not, so it opened on an advert and sat there waiting. Jamis,
+    2026-11-02: "nothing happens", and no code ever came, because SaraPlus only
+    sends one after the password goes in. If the click fails, say where the
+    button is: the window still works by hand, and must not be lost over this.
+    """
+    try:
+        S._open_login_form(page)
+    except Exception:  # noqa: BLE001 -- a person can still click it themselves
+        log("  If you see SaraPlus's home page, click LOGIN at the top right.")
+
+
 def _window(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
@@ -273,6 +289,7 @@ def _window(log=print) -> int:
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(S.LOGIN_URL, timeout=60000)
+            _show_login_form(page, log=log)
             if any(_signed_in(u) for u in _live_urls(ctx)):
                 # Only THIS window. The hidden read is checked next -- and it
                 # must present the identity this window was trusted as, so

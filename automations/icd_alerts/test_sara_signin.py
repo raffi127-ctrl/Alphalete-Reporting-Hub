@@ -101,6 +101,24 @@ class TheSweepStandsBackWhileSomebodyTypesTest(unittest.TestCase):
         self.assertNotEqual(C.SARA_SIGNIN_LOCK, C.SC_SIGNIN_LOCK)
 
 
+class ShowLoginFormTest(unittest.TestCase):
+    """Jamis 2026-11-02: the window sat on SaraPlus's marketing page."""
+
+    def test_clicks_through_to_the_form(self):
+        seen, said = [], []
+        with mock.patch.object(X.S, "_open_login_form", seen.append):
+            X._show_login_form("page", log=said.append)
+        self.assertEqual(seen, ["page"])
+        self.assertEqual(said, [])
+
+    def test_a_failed_click_tells_them_where_the_button_is(self):
+        said = []
+        with mock.patch.object(X.S, "_open_login_form",
+                               side_effect=RuntimeError("slow page")):
+            X._show_login_form("page", log=said.append)
+        self.assertIn("LOGIN", said[0])
+
+
 if __name__ == "__main__":
     unittest.main()
 
