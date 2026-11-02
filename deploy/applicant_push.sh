@@ -313,6 +313,18 @@ if [ "$DRYRUN" -eq 0 ]; then
     [ -n "$_why" ] || _why="schedule gate could not run (exit $_gate)"
     echo "[$(date)] ${_why} — skipping $OFFICE_LABEL" >> "$LOG_FILE"
     [ -n "$OFFICE_ARG" ] && echo "$OFFICE" > "$ROTATE_MARK"
+    # Past the office's daily stop the agent is ticking on purpose with nothing
+    # to do. Beat anyway: silent_job_watch can't read the stop (it's cached on
+    # this box only) and paged "didn't run today on Lucy 4" at 16:06 on
+    # 2026-11-02, an hour after the 15:15 stop.
+    case "$_why" in
+      *"past today's stop"*)
+        _capped 120 "heartbeat" \
+          "$VENV_PY" -m automations.shared.silent_job_watch \
+            --beat-machine applicant_push --exit 0 --note "$OFFICE_LABEL (past today's stop)" \
+          >> "$LOG_FILE" 2>&1 || true
+        ;;
+    esac
     exit 0
   fi
   date +%s > "$PUSH_STAMP"
