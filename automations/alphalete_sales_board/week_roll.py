@@ -25,12 +25,9 @@ does on the COPY what Eve did by hand:
     in it is checked against the board: one missing is DM'd to Eve, not added.
   * row 2 day numbers and the C3 'WE m/d - m/d' label move to the new week.
 
-Then 'Line Up WE <this Sunday>' is copied from last week's: the names list
-(B45) reads the new tab down to the row above TOTALS, the New Starts / OFF /
-O-NA / Terminated lists go blank, and a car-ride name that changed (Wk 2/3)
-is renamed so it doesn't get the red triangle (car-ride columns only; the
-blue Is Training box stays as it was). Stations' formulas are pointed
-at the new Line Up. Lanes rolls by itself on Tuesday (lanes.py).
+The Line Up is NOT made here: a person refreshes it by hand on Fridays (Eve,
+2026-11-02). Once this week's Line Up tab exists, Stations' formulas are pointed
+at it if they still read last week's. Lanes rolls by itself on Tuesday (lanes.py).
 
 Nothing on last week's tabs is touched. This week's tab already there =
 nothing to do (Eve made 11.1 by hand on 10/26); last week's missing = refuse
@@ -70,9 +67,6 @@ WE_LABEL = re.compile(r"^\s*WE\s*\d", re.I)
 NEW_STARTS = "NEW STARTS"            # 'New Starts/Raf'
 TERMINATED = "TERMINATED"
 ORDINAL = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th"}
-# the Line Up lists that start the week empty (Roadtrips is the office's)
-LINEUP_CLEAR = {"NEW STARTS", "OFF", "O-NA", "TERMINATED"}
-LINEUP_NAMES = "REP NAMES FROM"
 
 
 def tab_title(prefix: str, sunday: dt.date) -> str:
@@ -387,46 +381,26 @@ def _renumber(ws, first: int, last: int) -> None:
         ws.batch_update(fix, value_input_option="USER_ENTERED")
 
 
-def _renamed(v, renames: Dict[str, str]):
-    return renames.get(str(v).strip()) if str(v).strip() else None
+def stations_step(sh, old_lineup: Optional[str], new_lineup: Optional[str]) -> List[str]:
+    """Re-point Stations, and say so if it could not be done. Lines for the DM.
 
-
-def roll_lineup(sh, src: str, name: str, old_board: str, new_board: str,
-                new_last: int, old_last: int, renames: Dict[str, str], at: int) -> int:
-    """Copy last week's Line Up for the new week. Returns the cells written."""
-    old = _sheet_meta(sh, src)
-    sh.batch_update({"requests": [{"duplicateSheet": {
-        "sourceSheetId": old["properties"]["sheetId"], "insertSheetIndex": at,
-        "newSheetName": name}}]})
-    ws = sh.worksheet(name)
-    values = ws.get_all_values()
-    formulas = ws.get_all_values(value_render_option="FORMULA")
-    head = next((r for r in range(1, len(values) + 1)
-                 if _norm(_cell(values, r, 2)).startswith(LINEUP_NAMES)), 0)
-    out: Dict[str, object] = {}
-    rides = {c for row in values[:3] for c, h in enumerate(row, 1) if "CAR RIDE" in _norm(h)}
-    ref = re.compile(r"('?%s'?!\$?[A-Z]{1,3}\$?\d+:\$?[A-Z]{1,3}\$?)(\d+)" % re.escape(old_board))
-    for r, row in enumerate(formulas, 1):
-        for c, f in enumerate(row, 1):
-            f = str(f)
-            if f.startswith("=") and old_board in f:
-                g = ref.sub(lambda m: m.group(1) + (str(new_last) if int(m.group(2)) == old_last
-                                                    else m.group(2)), f)
-                out[K.col_letter(c) + str(r)] = g.replace("'%s'" % old_board, "'%s'" % new_board)
-            elif c in rides and not f.startswith("=") and (not head or r < head):
-                new = _renamed(f, renames)
-                if new:
-                    out[K.col_letter(c) + str(r)] = new
-    if head:
-        for c, h in enumerate(values[head - 1], 1):
-            if _norm(h) in LINEUP_CLEAR:
-                for r in range(head + 1, len(values) + 1):
-                    if str(_cell(values, r, c)).strip() and _typed(formulas, r, c):
-                        out[K.col_letter(c) + str(r)] = ""
-    if out:
-        ws.batch_update([{"range": a1, "values": [[v]]} for a1, v in out.items()],
-                        value_input_option="USER_ENTERED")
-    return len(out)
+    Only once this week's Line Up exists: a person makes that tab, not Lucy.
+    Stations is protected. On 2026-11-02 the runners' login (raffi127) was not
+    an editor, the write bounced after the tabs were made and the roll read as
+    failed. It is an editor now; if that ever changes, a refused write costs one
+    line to Eve instead of a finished roll's status."""
+    if not old_lineup or not new_lineup or old_lineup == new_lineup:
+        return []
+    try:
+        n = point_stations(sh, old_lineup, new_lineup)
+    except Exception as e:  # noqa: BLE001 -- the tabs are made; this is one step
+        if "protected" not in str(e).lower():
+            raise
+        print("  ! Stations is protected for this login -- still on '%s'" % old_lineup)
+        return ["Stations is still on '%s': this login can't edit it (protected). "
+                "Re-point it to '%s' by hand." % (old_lineup, new_lineup)]
+    print("  Stations: %d formulas -> '%s'" % (n, new_lineup))
+    return []
 
 
 def point_stations(sh, old_lineup: str, new_lineup: str) -> int:
@@ -455,64 +429,37 @@ def roll(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
     monday = sunday - dt.timedelta(days=6)
     board, lineup = find_tab(tabs, BOARD_PREFIX, sunday), find_tab(tabs, LINEUP_PREFIX, sunday)
     old_board, old_lineup = find_tab(tabs, BOARD_PREFIX, prev), find_tab(tabs, LINEUP_PREFIX, prev)
-    if board and lineup:
-        print("  '%s' and '%s' are already there -- nothing to do" % (board, lineup))
-        return 0, []
+    if board:
+        print("  '%s' is already there" % board)
+        return 0, stations_step(sh, old_lineup, lineup) if apply else []
     if not old_board:
         print("  no '%s' to copy from: a week is missing, not guessing" % tab_title(BOARD_PREFIX, prev))
         return 2, ["no '%s' tab to copy" % tab_title(BOARD_PREFIX, prev)]
     notes: List[str] = []
-    new_board = board or tab_title(BOARD_PREFIX, sunday)
-    renames, new_last = {}, None
+    new_board = tab_title(BOARD_PREFIX, sunday)
     ws = sh.worksheet(old_board)
     values = ws.get_all_values()
-    old_last = K.block_rows(values)[1]
-    if not board:
-        if not apply:
-            p = plan(values, ws.get_all_values(value_render_option="FORMULA"),
-                     ws.get_all_values(value_render_option="UNFORMATTED_VALUE"), monday)
-            print("  '%s' -> '%s': %d cells, history <- %s %s"
-                  % (old_board, new_board, len(p["cells"]), p["history_line"][0],
-                     p["history_line"][1:4]))
-            print("    terminated out (%d): %s" % (len(p["terminated"]), ", ".join(p["terminated"]) or "-"))
-            print("    renamed (%d): %s" % (len(p["renames"]), "; ".join(
-                "%s -> %s" % kv for kv in p["renames"].items()) or "-"))
-            print("    New Starts not on the board: %s" % (", ".join(p["missing"]) or "-"))
-            print("  PREVIEW -- nothing written (--apply writes)")
-            return 0, []
-        p = roll_board(sh, old_board, new_board, monday, tabs[old_board])
-        renames, new_last = p["renames"], p["new_last"]
-        print("  made '%s': %d terminated out, %d renamed, history <- %s"
-              % (new_board, len(p["terminated"]), len(renames), p["history_line"][0]))
-        if p["terminated"]:
-            print("    terminated: " + ", ".join(p["terminated"]))
-        if p["missing"]:
-            notes.append("New Starts not on the board (not added): " + ", ".join(p["missing"]))
-            print("    ! " + notes[-1])
-    elif not lineup:
-        # the board was made on a run that stopped before the Line Up: the
-        # same names change, read again off last week's tab
-        renames = plan(values, ws.get_all_values(value_render_option="FORMULA"),
-                       ws.get_all_values(value_render_option="UNFORMATTED_VALUE"),
-                       monday)["renames"]
-    if not lineup:
-        if not old_lineup:
-            print("  no '%s' to copy -- Line Up not made" % tab_title(LINEUP_PREFIX, prev))
-            notes.append("no '%s' tab: this week's Line Up was not made" % tab_title(LINEUP_PREFIX, prev))
-            return 2, notes
-        if new_last is None:
-            new_last = K.block_rows(sh.worksheet(new_board).get_all_values())[1]
-        new_lineup = tab_title(LINEUP_PREFIX, sunday)
-        if not apply:
-            print("  '%s' -> '%s' (names to row %d), Stations re-pointed -- PREVIEW"
-                  % (old_lineup, new_lineup, new_last))
-            return 0, notes
-        idx = {s["properties"]["title"]: s["properties"]["index"] for s in sh.fetch_sheet_metadata(
-            {"fields": "sheets(properties(title,index))"})["sheets"]}
-        n = roll_lineup(sh, old_lineup, new_lineup, old_board, new_board, new_last, old_last,
-                        renames, idx[new_board] + 1)
-        s = point_stations(sh, old_lineup, new_lineup)
-        print("  made '%s' (%d cells), Stations: %d formulas -> new Line Up" % (new_lineup, n, s))
+    if not apply:
+        p = plan(values, ws.get_all_values(value_render_option="FORMULA"),
+                 ws.get_all_values(value_render_option="UNFORMATTED_VALUE"), monday)
+        print("  '%s' -> '%s': %d cells, history <- %s %s"
+              % (old_board, new_board, len(p["cells"]), p["history_line"][0],
+                 p["history_line"][1:4]))
+        print("    terminated out (%d): %s" % (len(p["terminated"]), ", ".join(p["terminated"]) or "-"))
+        print("    renamed (%d): %s" % (len(p["renames"]), "; ".join(
+            "%s -> %s" % kv for kv in p["renames"].items()) or "-"))
+        print("    New Starts not on the board: %s" % (", ".join(p["missing"]) or "-"))
+        print("  PREVIEW -- nothing written (--apply writes)")
+        return 0, []
+    p = roll_board(sh, old_board, new_board, monday, tabs[old_board])
+    print("  made '%s': %d terminated out, %d renamed, history <- %s"
+          % (new_board, len(p["terminated"]), len(p["renames"]), p["history_line"][0]))
+    if p["terminated"]:
+        print("    terminated: " + ", ".join(p["terminated"]))
+    if p["missing"]:
+        notes.append("New Starts not on the board (not added): " + ", ".join(p["missing"]))
+        print("    ! " + notes[-1])
+    notes += stations_step(sh, old_lineup, lineup) if lineup else []
     return 0, notes
 
 
