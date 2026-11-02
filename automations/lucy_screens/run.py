@@ -8,6 +8,7 @@ Safari, not Chrome: chrome_guard closes a person's Chrome at 4am, and an open on
 adopts the reports' launches (reference_browser_profile_collisions).
 """
 import argparse
+import base64
 import datetime as dt
 import html
 import json
@@ -320,7 +321,10 @@ def _needs_open(target: str, boot: str, opened: str) -> bool:
 
 
 def write_photo() -> None:
-    img = (REPO / "resources" / "lucy-avatar.png").as_uri()
+    # Inside the page: Safari won't load a local image from another folder, so a
+    # file:// src drew nothing on Lucy 2 (2026-11-01).
+    raw = (REPO / "resources" / "lucy-avatar.png").read_bytes()
+    img = "data:image/png;base64," + base64.b64encode(raw).decode()
     PHOTO_PAGE.parent.mkdir(parents=True, exist_ok=True)
     PHOTO_PAGE.write_text(
         '<!doctype html><html><head><meta charset="utf-8"><title>Lucy</title><style>'
