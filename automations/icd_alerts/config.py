@@ -344,6 +344,18 @@ def _install_raw() -> Dict:
 #              His AT&T B2B key `carlos-b2batt` keeps running.
 PAUSED_KEYS = frozenset({"jamis10", "carlos"})
 
+# SARAPLUS ONLY, knocks stay. SaraPlus allows ONE login per account at a time,
+# and Tre (2026-11-02, Raf: "tell LUCY to log off of his sara moving forward")
+# needs his own login free to sell -- every Lucy sign-in bumps him. A key here
+# is never read, signed into, kept alive overnight or probed on SaraPlus; its
+# OwnerVille knocks board and texts carry on. Not PAUSED_KEYS: that would stop
+# his TeleMapper board too, which he asked to keep.
+SARA_PAUSED_KEYS = frozenset({"tre"})
+
+
+def sara_paused(key) -> bool:
+    return str(key or "").strip().lower() in SARA_PAUSED_KEYS
+
 # OFFICES ON THE THREE CREDIT-CHECK ALERTS (Carlos 2026-10-22, option A):
 # "got someone on the tablet" / "got a credit check" / "got a passed credit
 # check", failed checks never posted. OPT-IN: each owner answered YES to

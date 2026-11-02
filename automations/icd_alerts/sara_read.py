@@ -790,6 +790,17 @@ def keep_session_alive(*, headless: bool = True, log=print,
     Returns what it did, for the log: 'kept', 'lost', 'none', 'not-due',
     'busy' or 'error'.
     """
+    # SaraPlus paused for this machine's AT&T office (config.SARA_PAUSED_KEYS):
+    # keeping the session alive would be exactly the sign-in the owner asked
+    # us to stop. Said once per tick in the log, nothing touched.
+    try:
+        for r in C.enrollments():
+            if C.sara_paused(r.get("office_key")):
+                log("SaraPlus keep-alive skipped: paused for %s" % r.get("office_key"))
+                return "paused"
+    except Exception:  # noqa: BLE001
+        pass
+
     now = now or dt.datetime.now()
     remembered = _remembered_session()
     if not remembered:

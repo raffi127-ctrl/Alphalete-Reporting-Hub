@@ -343,6 +343,11 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         _log("no SaraPlus campaign on this machine — sales come from elsewhere")
         return 0
     att_key = str((att or {}).get("office_key") or "")
+    if C.sara_paused(att_key):
+        # NO SARAPLUS AT ALL FOR THIS OFFICE (config.SARA_PAUSED_KEYS): no
+        # sign-in, no read, no probe -- the owner is using the login himself.
+        _log("SaraPlus is paused for %s -- not signing in, nothing read" % att_key)
+        return 0
 
     held = sara_read.sara_held_until()
     if held is not None:
@@ -879,7 +884,10 @@ def _main(argv=None) -> int:
             # an expired one means a fresh login at the 2am close-out, and on
             # some accounts every fresh login is an emailed-code wall
             # (Eveliz, 2026-10-06). See sara_read.keep_session_alive.
-            if not args.dry_run and not sara_read.sara_held_until():
+            _att_keys = [str(r.get("office_key") or "") for r in C.active_enrollments()
+                         if str(r.get("campaign") or "att").strip().lower() not in C.NO_SARAPLUS]
+            if (not args.dry_run and not sara_read.sara_held_until()
+                    and not any(C.sara_paused(k) for k in _att_keys)):
                 try:
                     did = sara_read.keep_session_alive(headless=headless,
                                                        log=_log)
