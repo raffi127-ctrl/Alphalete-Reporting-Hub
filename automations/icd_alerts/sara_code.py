@@ -188,6 +188,12 @@ def _tell_upstream(verdict: str, office_key: str = "") -> None:
 
 def run(office_key: str = "", log=print, attempt=None) -> int:
     from automations.icd_alerts import sara_read as SR
+    # SARAPLUS PAUSED ON THIS MACHINE (config.SARA_PAUSED_KEYS): no window,
+    # no code, nothing that touches the owner's login -- even from a sweep
+    # that was still running the code from before the pause.
+    if C.sara_paused_here():
+        log("SaraPlus is paused for this office -- not opening SaraPlus")
+        return 0
 
     if SR.signin_in_progress():
         log("a SaraPlus sign-in is already going on this computer")
@@ -230,6 +236,10 @@ def _release_lock() -> None:
 def launch(office_key: str = "", log=print) -> bool:
     """Start run() detached, the way autoprompt starts its windows."""
     import subprocess
+
+    if C.sara_paused_here():
+        log("SaraPlus is paused for this office -- no code helper")
+        return False
 
     from automations.icd_alerts import boot_schedule as B
     root = B.app_root()

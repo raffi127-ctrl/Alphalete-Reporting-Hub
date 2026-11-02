@@ -99,6 +99,12 @@ def _hand_session_to_the_reader(urls, log=print) -> None:
 
 def run(log=print) -> int:
     from patchright.sync_api import sync_playwright
+    # SARAPLUS PAUSED ON THIS MACHINE (config.SARA_PAUSED_KEYS): no window,
+    # no code, nothing that touches the owner's login -- even from a sweep
+    # that was still running the code from before the pause.
+    if C.sara_paused_here():
+        log("SaraPlus is paused for this office -- not opening SaraPlus")
+        return 0
 
     try:
         cr = C.creds()

@@ -356,6 +356,15 @@ SARA_PAUSED_KEYS = frozenset({"tre"})
 def sara_paused(key) -> bool:
     return str(key or "").strip().lower() in SARA_PAUSED_KEYS
 
+
+def sara_paused_here() -> bool:
+    """True when ANY enrollment on this machine is in SARA_PAUSED_KEYS: the
+    SaraPlus login is one per machine, so one paused office pauses it all."""
+    try:
+        return any(sara_paused(r.get("office_key")) for r in enrollments())
+    except Exception:  # noqa: BLE001
+        return False
+
 # OFFICES ON THE THREE CREDIT-CHECK ALERTS (Carlos 2026-10-22, option A):
 # "got someone on the tablet" / "got a credit check" / "got a passed credit
 # check", failed checks never posted. OPT-IN: each owner answered YES to
