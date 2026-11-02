@@ -60,6 +60,8 @@ KIND_LABEL = {
     "cf_duplicate": "regla de formato condicional repetida",
     "cf_self": "regla de 'ya está puesto' que se cuenta a sí misma (tacha a cualquiera)",
     "cf_strike_stray": "tachado de Car Rides pegado sobre los autos (tacha nombres ya puestos)",
+    "cf_stray_cell": "regla de color pegada en una celda suelta (no la tiene el resto de la columna)",
+    "background_shift": "colores de fondo corridos una columna en esta fila",
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "cf_row_shift": "color de estado que pinta la fila de al lado, no la del rep",
@@ -779,7 +781,60 @@ def check_styles(tab: str, sheet_id: int, values, styles, fill_blank: bool = Fal
         tab, sheet_id, values, styles, "style", lambda f: bool(f[1]),
         lambda f: "%s%s" % ("negrita " if f[0] else "", (f[1] or "-").lower()),
         lambda f: {"textFormat": {"bold": f[0]}, "horizontalAlignment": f[1]},
-        "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment", fill_blank=fill_blank)
+        "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment", fill_blank=fill_blank,
+        vote_parts=True)
+
+
+BG_SHIFT_MIN = 3   # this many cells off in one run: not a cell someone painted
+
+
+def check_background_shift(tab: str, sheet_id: int, values, bgs) -> List[Finding]:
+    """bgs[r-1][c-1] = the background the cell was GIVEN (json, "" = none), never
+    the effective one: that one carries the conditional colors. A row whose cells
+    carry the color of the column next door got pasted one column over (Cesar
+    Flores 2026-11-01, BK:BT). A single painted cell is somebody's highlight, so
+    only a run counts."""
+    first, last = block_rows(values)
+    named = [r for r in range(first, last + 1) if name_at(values, r)]
+    if len(named) < MIN_ROWS:
+        return []
+
+    def at(r, c):
+        row = bgs[r - 1] if r - 1 < len(bgs) else []
+        return (row[c - 1] if c - 1 < len(row) else None) or ""
+    width = max((len(r) for r in bgs[first - 1:last]), default=0)
+    lay = layout(values)
+    top = {}
+    for c in range(lay.name_col + 1, width + 1):
+        best, hits = collections.Counter(at(r, c) for r in named).most_common(1)[0]
+        if hits >= MAJORITY * len(named):
+            top[c] = best
+    out = []
+    for r in range(first, last + 1):
+        done = set()
+        for step in (1, -1):
+            c = lay.name_col + 1
+            while c <= width:
+                run = []
+                while c in top and c + step in top and at(r, c) == top[c + step]:
+                    run.append(c)
+                    c += 1
+                off = [x for x in run if at(r, x) != top[x] and x not in done]
+                if len(off) >= BG_SHIFT_MIN:
+                    done.update(off)
+                    for x in off:
+                        out.append(Finding(
+                            "background_shift", tab, a1(r, x),
+                            "%s, columna %s" % (KIND_LABEL["background_shift"], header(values, x)),
+                            row=r, name=name_at(values, r),
+                            before=at(r, x) or "sin color", after=top[x] or "sin color",
+                            request={"updateCells": {
+                                "range": _cell_range(sheet_id, r, x),
+                                "rows": [{"values": [{"userEnteredFormat":
+                                    {"backgroundColor": json.loads(top[x])} if top[x] else {}}]}],
+                                "fields": "userEnteredFormat.backgroundColor"}}))
+                c += 1
+    return out
 
 
 def check_borders(tab: str, sheet_id: int, values, borders, fill_blank: bool = False) -> List[Finding]:
@@ -809,7 +864,7 @@ def check_number_formats(tab: str, sheet_id: int, values, numfmts, fill_blank: b
 
 
 def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,
-                   fill_blank=False):
+                   fill_blank=False, vote_parts=False):
     first, last = block_rows(values)
     n = last - first + 1
     if n < MIN_ROWS:
@@ -834,6 +889,13 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,
         if len(col) < MIN_ROWS:
             continue
         top, hits = collections.Counter(col.values()).most_common(1)[0]
+        if vote_parts and hits < MAJORITY * len(col):
+            # Email on 2026-11-01: 50 centered, 18 not, 9 centered in bold. No
+            # single look reaches the majority, but "centered" (59) and "not
+            # bold" (68) each do: vote each one on its own.
+            parts = [collections.Counter(f[i] for f in col.values()).most_common(1)[0]
+                     for i in range(len(top))]
+            top, hits = tuple(p[0] for p in parts), min(p[1] for p in parts)
         if hits < MAJORITY * len(col) or not usable(top):
             continue
         # fill_blank: the free rows don't vote, but they do get the format, so
@@ -1187,8 +1249,52 @@ def check_conditional(tab: str, sheet_id: int, rules: List[dict], ncols: int,
                                     {"sheetId": sheet_id, "index": i}}))
 
     if block:
+        busy = dead_idx | {int(x.where.split()[1]) for x in out}
+        out += _stray_cells(tab, sheet_id, rules, block, busy)
         out += _row_shifts(tab, sheet_id, rules, block[0], dead_idx)
         out += _short_and_fragmented(tab, rules, block, {d[0] for d in dead})
+    return out
+
+
+STRAY_MAX_ROWS = 3   # a rule on this few rows of a column doesn't belong to it
+
+
+def _stray_cells(tab, sheet_id, rules, block, skip) -> List[Finding]:
+    """A cell pasted from another column brings that column's rules along, just
+    for itself: AO60 and BK57 (2026-11-01) got Roll Call's "0 = bold red", so a 0
+    looked different from every other 0 in Apps. Taking the piece off the rule
+    changes only those cells. Formula rules stay out: their references hang off
+    the first range, and the Late rules are split on purpose ('cf_fragmented')."""
+    first, last = block
+    out = []
+    for i, rule in enumerate(rules):
+        cond = (rule.get("booleanRule") or {}).get("condition") or {}
+        ranges = rule.get("ranges") or []
+        if i in skip or len(ranges) < 2 or not cond or cond.get("type") == "CUSTOM_FORMULA":
+            continue
+        rows_in: Dict[int, set] = {}
+        for rg in ranges:
+            for c in range(rg.get("startColumnIndex", 0), rg.get("endColumnIndex", 0)):
+                rows_in.setdefault(c, set()).update(
+                    x for x in range(rg.get("startRowIndex", 0) + 1, rg.get("endRowIndex", 0) + 1)
+                    if first <= x <= last)
+
+        def stray(rg):
+            top, bottom = rg.get("startRowIndex", 0) + 1, rg.get("endRowIndex", 0)
+            cols = range(rg.get("startColumnIndex", 0), rg.get("endColumnIndex", 0))
+            return (top == bottom and first <= top <= last and len(cols) <= 2
+                    and all(len(rows_in[c]) <= STRAY_MAX_ROWS for c in cols))
+        keep = [rg for rg in ranges if not stray(rg)]
+        if not keep or len(keep) == len(ranges):
+            continue
+        new = dict(rule, ranges=keep)
+        out.append(Finding(
+            "cf_stray_cell", tab, "regla %d" % i,
+            "%s: %s" % (KIND_LABEL["cf_stray_cell"], _rule_text(rule)),
+            before=", ".join(_range_a1(rg) for rg in ranges if stray(rg)),
+            after="(sacada de esas celdas)",
+            request={"updateConditionalFormatRule":
+                     {"sheetId": sheet_id, "index": i, "rule": new}}))
     return out
 
 

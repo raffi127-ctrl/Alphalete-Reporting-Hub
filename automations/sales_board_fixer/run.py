@@ -98,7 +98,7 @@ def load(sh, title: str, titles=()) -> dict:
         "fields": "sheets(properties(sheetId,title,gridProperties),conditionalFormats,basicFilter)"})
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
-    fonts, numfmts, styles, notes, dropdowns, borders = [], [], [], [], [], []
+    fonts, numfmts, styles, notes, dropdowns, borders, bgs = [], [], [], [], [], [], []
     if K.is_board(values):
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
@@ -106,7 +106,9 @@ def load(sh, title: str, titles=()) -> dict:
             "includeGridData": True, "ranges": [rng],
             "fields": "sheets(data(rowData(values(effectiveFormat("
                       "textFormat(fontFamily,fontSize,bold),numberFormat,"
-                      "horizontalAlignment,borders),note,dataValidation))))"})
+                      "horizontalAlignment,borders),"
+                      "userEnteredFormat(backgroundColor,textFormat(bold)),"
+                      "note,dataValidation))))"})
         rows = grid["sheets"][0]["data"][0].get("rowData", [])
         for rd in rows:
             vs = rd.get("values", [])
@@ -116,12 +118,13 @@ def load(sh, title: str, titles=()) -> dict:
             notes.append([(v or {}).get("note", "") for v in vs])
             dropdowns.append([(v or {}).get("dataValidation") for v in vs])
             borders.append([_borders(v) for v in vs])
+            bgs.append([_given_bg(v) for v in vs])
     t = {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
          "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
          "basic_filter": sheet.get("basicFilter"),
          "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "styles": styles,
          "notes": notes, "dropdowns": dropdowns,
-         "borders": borders}
+         "borders": borders, "bgs": bgs}
     if ws.spreadsheet.id == SHEET_ID and LW.TAB.match(title) and K.is_board(values):
         t.update(load_older(sh, title, ws))
     if LANE_NAME.search(title):
@@ -247,9 +250,17 @@ def _font(v: dict):
 
 
 def _style(v: dict):
+    # bold as it was given: the effective one carries the conditional rules, and
+    # writing over those changes nothing (AO60, BK57 2026-11-01)
     ef = (v or {}).get("effectiveFormat") or {}
-    return (bool((ef.get("textFormat") or {}).get("bold")),
+    given = (v or {}).get("userEnteredFormat") or {}
+    return (bool((given.get("textFormat") or {}).get("bold")),
             ef.get("horizontalAlignment"))
+
+
+def _given_bg(v: dict) -> str:
+    bg = ((v or {}).get("userEnteredFormat") or {}).get("backgroundColor")
+    return json.dumps(bg, sort_keys=True) if bg else ""
 
 
 def _borders(v: dict):
@@ -281,6 +292,7 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"],
                                           fill_blank=not owner)
                  + K.check_styles(title, t["sheet_id"], v, t["styles"], fill_blank=not owner)
+                 + K.check_background_shift(title, t["sheet_id"], v, t.get("bgs") or [])
                  + K.check_dropdowns(title, t["sheet_id"], v, t.get("dropdowns") or [],
                                      fill_blank=True))
         if not owner:
