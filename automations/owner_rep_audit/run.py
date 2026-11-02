@@ -13,7 +13,9 @@ Each run, in order (state in output/owner_rep_audit/<YYYY-MM>.json):
              REMOVE -> deactivate in Slack, none -> done, else -> ask again).
   3. REMIND  once, on/after REMIND_DAY, to owners who haven't finished, plus
              one DM to Evelyn listing those owners (she writes them herself).
-  4. SUMMARY the thread's results reply, edited in place.
+  4. SUMMARY the thread's results reply, edited in place, plus a NEW reply
+             naming the owners who finished since the last run (an edit
+             doesn't notify anyone).
   5. CLOSE   once, on/after CLOSE_DAY: post the unfinished owners' lists in
              the thread tagging Evelyn.
 
@@ -203,6 +205,7 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
             o["last_seen_ts"] = o["dm_ts"]
         o["status"] = "sent"
     st["thread_ts"] = out.channel(M.thread_intro(st["month"]))
+    st["announced"] = _finished(st)    # they're all in the first summary
     return st
 
 
@@ -224,6 +227,9 @@ def remove(o: dict, names: List[str], out: Out) -> None:
 
 
 def poll(st: dict, out: Out, today: dt.date) -> None:
+    # A month opened before updates existed: whoever finished is already in its
+    # summary, so only owners who finish from here on get an update.
+    st.setdefault("announced", _finished(st))
     if out.mode == "dry":
         return
     from automations.owner_rep_audit import slack_ops as S
@@ -266,15 +272,32 @@ def _summary_rows(st: dict) -> List[dict]:
             if o.get("status") not in ("no_access",)]
 
 
+def _finished(st: dict) -> List[str]:
+    return [k for k, o in st["offices"].items() if o.get("status") == "done"]
+
+
 def summary(st: dict, out: Out) -> None:
     text = M.summary(_summary_rows(st))
-    if text == st.get("summary_text"):
+    if text != st.get("summary_text"):
+        if st.get("summary_ts"):
+            out.edit(st["summary_ts"], text)
+        else:
+            st["summary_ts"] = out.channel(text, thread_ts=st.get("thread_ts"))
+        st["summary_text"] = text
+    post_update(st, out)
+
+
+def post_update(st: dict, out: Out) -> None:
+    """A new reply in the thread for the owners who finished since the last
+    one. At most one per run, nothing when nobody new finished."""
+    announced = st.get("announced", [])
+    fresh = [k for k in _finished(st) if k not in announced]
+    if not fresh:
         return
-    if st.get("summary_ts"):
-        out.edit(st["summary_ts"], text)
-    else:
-        st["summary_ts"] = out.channel(text, thread_ts=st.get("thread_ts"))
-    st["summary_text"] = text
+    waiting = sum(1 for o in _summary_rows(st) if o["status"] != "done")
+    out.channel(M.update([st["offices"][k] for k in fresh], waiting),
+                thread_ts=st.get("thread_ts"))
+    st["announced"] = announced + fresh
 
 
 def close(st: dict, out: Out) -> None:

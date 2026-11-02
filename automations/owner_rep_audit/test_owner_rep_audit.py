@@ -132,6 +132,80 @@ class Posts(unittest.TestCase):
                          "AO Workspace: Terminations in other Offices - October 2026")
 
 
+class Updates(unittest.TestCase):
+    """More owners answer -> a new reply in the thread (Eve 11/2)."""
+
+    class FakeOut:
+        mode = "live"
+
+        def __init__(self):
+            self.posts, self.edits = [], []
+
+        def channel(self, text, thread_ts=None):
+            self.posts.append((text, thread_ts))
+            return "ts-new"
+
+        def edit(self, ts, text):
+            self.edits.append(ts)
+
+    def state(self):
+        def office(oid, owner, status, removed=()):
+            return {"office": oid, "owner": owner, "status": status,
+                    "removed": list(removed), "confirmed_on": "11/3"}
+        return {"thread_ts": "T1", "summary_ts": "S1", "offices": {
+            "1": office("1", "Clean Start", "done"),
+            "2": office("2", "Ann Owner", "sent"),
+            "3": office("3", "Bo Owner", "sent"),
+            "4": office("4", "No Access", "no_access")}}
+
+    def test_first_summary_is_not_an_update(self):
+        st, out = self.state(), self.FakeOut()
+        st["announced"] = run._finished(st)
+        st.pop("summary_ts")
+        run.summary(st, out)
+        self.assertEqual(len(out.posts), 1)
+        self.assertTrue(out.posts[0][0].startswith(C.SUMMARY_HEAD))
+
+    def test_new_answers_post_once_in_the_same_thread(self):
+        st, out = self.state(), self.FakeOut()
+        st["announced"] = run._finished(st)
+        st["offices"]["2"].update(status="done", removed=["Ann Rep"])
+        run.summary(st, out)
+        self.assertEqual(out.edits, ["S1"])
+        self.assertEqual(len(out.posts), 1)
+        text, thread = out.posts[0]
+        self.assertEqual(thread, "T1")
+        self.assertTrue(text.startswith(f"{C.UPDATE_HEAD}: 1 more owner answered"))
+        self.assertIn("*Ann Owner* (2)", text)
+        self.assertIn("> Ann Rep", text)
+        self.assertNotIn("Clean Start", text)
+        self.assertIn("Still no reply: 1 owner", text)
+        self.assertNotIn("No Access", text)
+        run.summary(st, out)            # next run, nobody new
+        self.assertEqual(len(out.posts), 1)
+
+    def test_owners_who_only_picked_names_are_not_news(self):
+        st, out = self.state(), self.FakeOut()
+        st["announced"] = run._finished(st)
+        st["offices"]["2"]["status"] = "selected"
+        run.summary(st, out)
+        self.assertEqual(out.posts, [])
+
+    def test_month_already_open_when_this_shipped(self):
+        st, out = self.state(), self.FakeOut()      # no "announced" in the file
+        run.poll(st, type("Dry", (), {"mode": "dry"})(), dt.date(2026, 11, 3))
+        self.assertEqual(st["announced"], ["1"])
+        run.summary(st, out)
+        self.assertEqual(out.posts, [])
+
+    def test_last_owner_closes_the_count(self):
+        text = M.update([{"owner": "A", "office": "1", "removed": []},
+                         {"owner": "B", "office": "2", "removed": []}], 0)
+        self.assertIn("2 more owners answered", text)
+        self.assertIn("✅ Nobody left: A (1), B (2)", text)
+        self.assertIn("Every owner has answered", text)
+
+
 class Matching(unittest.TestCase):
     users = [{"id": "U1", "name": "Kash Rai", "email": "k@x.com"},
              {"id": "U2", "name": "Ann Lee", "email": "ann@x.com"},

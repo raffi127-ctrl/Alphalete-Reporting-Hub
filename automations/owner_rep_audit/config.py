@@ -26,7 +26,8 @@ THE FLOW (Rafael 2026-09-19, design Eve 2026-10-01, cadence + escalation Eve
              ellos no respondan"). Monthly, not every Sunday (Eve 10/2).
 
 Replies that land after the close are still processed; the summary reply is
-edited in place.
+edited in place, and each owner who finishes also gets a short NEW reply in the
+thread, because an edit doesn't notify anyone (Eve 2026-11-02).
 """
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ CLOSE_DAY = 8
 THREAD_TITLE = "AO Workspace: Terminations in other Offices - {month}"
 SUMMARY_HEAD = "Monthly owner check"           # first line of the edited reply
 PENDING_HEAD = "Still waiting on these owners"  # first line of the Evelyn tag
+UPDATE_HEAD = "Update"                         # first line of a "more answered" reply
 
 # Offices never DMed. Raf's own office (11280) is the login itself -- his reps
 # are Eve's to clean, not an owner's to confirm.

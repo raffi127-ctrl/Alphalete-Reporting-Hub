@@ -107,6 +107,31 @@ def summary(offices: List[Dict]) -> str:
     return "\n".join(out)
 
 
+def update(new: List[Dict], waiting: int) -> str:
+    """A NEW reply in the month's thread when more owners finish (Eve 11/2): the
+    summary is edited in place, and an edit doesn't notify anyone. Only the
+    owners who just finished; the summary above keeps the whole list.
+
+    new: [{owner, office, removed:[names], confirmed_on}]"""
+    out = [f"{C.UPDATE_HEAD}: {len(new)} more owner"
+           f"{'' if len(new) == 1 else 's'} answered"]
+    for o in new:
+        if o["removed"]:
+            out.append(f"🏢 *{o['owner']}* ({o['office']}) · Owner confirmed "
+                       f"termination {o.get('confirmed_on', '')}".rstrip())
+            out += [f"> {name}" for name in o["removed"]]
+    clean = [o for o in new if not o["removed"]]
+    if clean:
+        out.append("✅ Nobody left: " + ", ".join(
+            f"{o['owner']} ({o['office']})" for o in clean))
+    if waiting:
+        out.append(f"⚠️ Still no reply: {waiting} owner"
+                   f"{'' if waiting == 1 else 's'}")
+    else:
+        out.append("✅ Every owner has answered.")
+    return "\n".join(out)
+
+
 def pending_for_evelyn(offices: List[Dict]) -> str:
     """Posted (not edited -- an edit doesn't notify) at the close: every owner
     who didn't finish, with the list they were sent, so Evelyn can call them.
