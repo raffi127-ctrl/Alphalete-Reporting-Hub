@@ -40,7 +40,7 @@ LEAD_MIN = 30                 # a start this close or closer is never offered
 # every office now offers the next open slot. LEAD_MIN stays only as the
 # default for an office added later with no entry here.
 LEAD_MIN_BY_OFFICE = {o: 0 for o in ("11580", "23965", "24065", "11280",
-                                     "23467", "11901")}
+                                     "23467", "11901", "14733")}
 SWEET_MIN, SWEET_MAX = 180, 360   # 3 to 6 hours out
 
 DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday",

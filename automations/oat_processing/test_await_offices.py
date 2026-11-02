@@ -36,7 +36,7 @@ class OnlyTheChosenOffices(unittest.TestCase):
 
     def test_the_list(self):
         self.assertEqual(AT.OFFICES, {"11580", "23965", "24065", "11280",
-                                      "23467", "11901"})
+                                      "23467", "11901", "14733"})
 
     def test_others_are_never_opened(self):
         for office in ("23607", "12345"):
@@ -393,7 +393,8 @@ class EveryOfficeLikeCarlos(unittest.TestCase):
     the next open slot, even minutes away, on every account."""
 
     def test_all_six_offer_the_next_slot(self):
-        for office in ("11580", "23965", "24065", "11280", "23467", "11901"):
+        for office in ("11580", "23965", "24065", "11280", "23467", "11901",
+                       "14733"):
             self.assertEqual(AW.lead_for(office), 0, office)
 
     def test_a_slot_five_minutes_out_is_offered(self):
@@ -468,3 +469,14 @@ class SundayNightSetsMondayMorning(unittest.TestCase):
         self.assertEqual(AW.clause_from_schedule(when, S24065, 30, office_id="24065"),
                          "available TODAY, currentInterviewDay, from "
                          "8:15am-10:45am or 12:45pm-3:15pm")
+
+
+class ColtenReadsAsApproved(unittest.TestCase):
+    def test_box_two(self):
+        b1, b2 = AT.TEXTS["14733"]
+        self.assertEqual(b2 % "available TODAY, currentInterviewDay, from "
+                         "8:15am-10:45am or 12:15pm-3:45pm",
+                         "Are you available TODAY, currentInterviewDay, from "
+                         "8:15am-10:45am or 12:15pm-3:45pm for a quick Zoom to "
+                         "learn more about the position?")
+        self.assertIn("would like to book a brief 20-minute Zoom", b1)

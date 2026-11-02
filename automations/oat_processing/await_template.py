@@ -81,6 +81,12 @@ TEXTS = {
               "interview to discuss your experience and the position.",
               "Are you %s for a quick Zoom to go over the position?"),
 }
+# Colten 14733, approved 2026-11-02 (Megan: "approve").
+TEXTS["14733"] = (
+    "Hi applicantFirstName, we reviewed your application for the full-time, "
+    "on-site adPostingTitle role on jobBoard and would like to book a brief "
+    "20-minute Zoom interview to go over your experience and the position.",
+    "Are you %s for a quick Zoom to learn more about the position?")
 STANDARD_BODY1, STANDARD_BODY2 = TEXTS["23965"]
 # WHICH OFFICES' Await text is set. Every other office's template is never
 # opened.
