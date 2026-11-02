@@ -21,6 +21,20 @@ from automations.icd_alerts import config as C
 from automations.icd_alerts import sara_read as R
 from automations.icd_alerts import sara_signin as X
 
+
+_NO_DIALOG = mock.patch("automations.icd_alerts.code_forward.offer_after_signin",
+                        lambda *a, **k: "not asked")
+
+
+def setUpModule():
+    """run() offers the code forward after ALL SET, in a real dialog that
+    waits for a person: left alone it hangs the suite on an open window."""
+    _NO_DIALOG.start()
+
+
+def tearDownModule():
+    _NO_DIALOG.stop()
+
 SESSION = "https://www.saraplus.com/e/(S(qvxtpep3hkijen2pmu1hwdge))"
 
 
@@ -463,3 +477,29 @@ class EveryRunFilesItsOwnVerdict(unittest.TestCase):
         X._LAST_VERDICT[:] = []
         X._hand_session_to_the_reader(["https://ui.saraplus.com/"], log=lambda *a: None)
         self.assertTrue(any("no session root" in l for l in X._LAST_VERDICT))
+
+
+class AfterTheHandSignInTheForwardIsOfferedTest(unittest.TestCase):
+    """Only once it worked, and it can never turn a good sign-in into a bad one."""
+
+    def _run(self, verified, offer):
+        with mock.patch.object(X, "_window", return_value=0), \
+                mock.patch.object(X, "verify_hidden_read", return_value=verified), \
+                mock.patch.object(X, "_tell_upstream"), \
+                mock.patch.object(R, "clear_sara_hold"), \
+                mock.patch.object(C, "creds", return_value={}), \
+                mock.patch("automations.icd_alerts.code_forward.offer_after_signin", offer):
+            return X.run(log=lambda *_: None)
+
+    def test_offered_after_all_set(self):
+        offer = mock.Mock()
+        self.assertEqual(self._run(0, offer), 0)
+        offer.assert_called_once()
+
+    def test_not_offered_when_not_yet(self):
+        offer = mock.Mock()
+        self.assertEqual(self._run(1, offer), 1)
+        offer.assert_not_called()
+
+    def test_a_crash_keeps_the_sign_in_good(self):
+        self.assertEqual(self._run(0, mock.Mock(side_effect=RuntimeError("x"))), 0)

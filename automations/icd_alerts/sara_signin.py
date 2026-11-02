@@ -156,6 +156,14 @@ def run(log=print) -> int:
             SR.clear_sara_hold()
         except Exception:  # noqa: BLE001 -- never turn "done" into a failure
             pass
+        # THE ONE MOMENT THE OWNER IS AT THIS COMPUTER, code in hand (Eve/Megan
+        # 2026-11-02). Eleven offices hit the wall in two weeks and only setup
+        # ever offered the forward, so offices already installed never saw it.
+        try:
+            from automations.icd_alerts import code_forward as CF
+            CF.offer_after_signin(say=log)
+        except Exception:  # noqa: BLE001 -- same rule
+            pass
     return rc
 
 

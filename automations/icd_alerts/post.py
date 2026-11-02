@@ -4209,8 +4209,14 @@ def main(argv=None) -> int:
                 # waiting on THIS, and every tick it waits is a tick dark.
                 try:
                     from automations.icd_alerts import code_answer
-                    code_answer.answer_requests(send=args.send)
-                    code_answer.record_forwards(send=args.send)
+                    from automations.recruiting_report.fill import open_by_key
+                    # ONE OPEN FOR ALL FOUR: this runs every minute, and each
+                    # open is a Sheets read of its own.
+                    book = open_by_key(RELAY_SPREADSHEET_ID)
+                    code_answer.answer_requests(book, send=args.send)
+                    code_answer.record_forwards(book, send=args.send)
+                    code_answer.confirm_forwards(book, send=args.send)
+                    code_answer.check_forward_scope(book, send=args.send)
                 except Exception as e:  # noqa: BLE001 — never cost the alerts
                     print("could not answer code requests: %s: %s"
                           % (type(e).__name__, str(e)[:100]))

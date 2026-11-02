@@ -10,7 +10,15 @@ there with us, so that is when it is asked.
 
 ONLY WHERE SARAPLUS WANTS A CODE. Most accounts sign in without one; they are
 never shown this. It is offered by setup when the check hits the code screen,
-and by finish_setup when this machine has hit it since.
+by finish_setup when this machine has hit it since, and at the end of the
+sara-signin line (offer_after_signin): the owner who just typed a code by hand
+is the one person sitting at this computer who wants this.
+
+ONLY SARAPLUS'S CODE MAILS, NEVER THE INBOX (Eve 2026-11-02). Gmail's forwarding
+screen has a second switch, "Forward a copy of incoming mail", that would send
+the owner's whole inbox to ours -- the steps say so in as many words, because
+adding the address is on that same screen. The filter is the only thing that
+forwards. code_answer.check_forward_scope watches for it going wrong anyway.
 
 THE ADDRESS GOES HOME DELIBERATELY. relay.report_fault scrubs every email
 address out of a fault, as it should. This is the one message whose whole point
@@ -32,8 +40,19 @@ STEPS = (
     "So nobody has to type SaraPlus codes for Lucy again, forward SaraPlus's "
     "code emails to %s.\n\n"
     "Gmail just opened on its forwarding settings: click Add a forwarding "
-    "address -> type %s -> Next -> Proceed. The reporting team confirms it "
-    "on their side." % (REPORTING_INBOX, REPORTING_INBOX))
+    "address -> type %s -> Next -> Proceed. Lucy confirms it on our side.\n\n"
+    "Then leave \"Disable forwarding\" selected. Do NOT pick \"Forward a copy "
+    "of incoming mail\": that sends your whole inbox. We only want SaraPlus's "
+    "code emails, and the next step's filter takes care of that."
+    % (REPORTING_INBOX, REPORTING_INBOX))
+
+OFFER = ("Want Lucy to enter SaraPlus's codes herself from now on? It takes "
+         "about 2 minutes, one time. Only SaraPlus's code emails get forwarded "
+         "to us, nothing else in your inbox.")
+OFFER_YES = "Yes, set it up"
+OFFER_NO = "Not now"
+FORWARD_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
+                "sara-forward.html")
 
 YES = "Yes, that one"
 FILTER_NOW = "Open the filter step"
@@ -98,18 +117,41 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
         say("      could not reach the reporting team -- tell them %s" % address)
         return "address not sent"
     _mark(address)
-    say("      Thanks -- the reporting team will confirm the forward.")
+    say("      Thanks -- Lucy will confirm the forward in about 2 minutes.")
     # ON THE ZOOM WE CONFIRM WHILE THEY WAIT, so the filter can be done right
     # here instead of on a second run of the sara-forward line.
     try:
-        if ask.choose("When the reporting team says it is confirmed:",
+        if ask.choose("Wait about 2 minutes while Lucy confirms it, then:",
                       [FILTER_NOW, FILTER_LATER]) == FILTER_NOW:
             open_filter(ask, say)
             return "done"
     except Exception:  # noqa: BLE001 -- the sara-forward line does it later
         pass
-    say("      The filter is left -- run the sara-forward line once confirmed.")
+    say("      The filter is left -- finish it here: %s" % FORWARD_PAGE)
     return "done"
+
+
+def offer_after_signin(ask=None, say=print) -> str:
+    """Offered once SaraPlus has let this computer in, by hand. Never raises:
+    the sign-in already worked, and nothing here may read as if it had not.
+
+    Not for an office whose codes come by text (sms_code): a mail forward does
+    nothing for those, and they have their own road. Asked again on the next
+    hand sign-in if they say not now -- that is exactly when it is wanted.
+    """
+    try:
+        from automations.icd_alerts import sms_code as T
+        office_key = str(C.install().get("office_key") or "")
+        if already_set_up() or T.wants_text(office_key):
+            return "not asked"
+        if ask is None:
+            from automations.icd_alerts import dialogs as ask
+        if ask.choose(OFFER, [OFFER_YES, OFFER_NO]) != OFFER_YES:
+            return "not now"
+        return walk_through(ask, say)
+    except Exception as e:  # noqa: BLE001 -- includes the dialog being cancelled
+        say("      code forwarding skipped: %s" % type(e).__name__)
+        return "skipped"
 
 
 # --- the one line an office pastes (docs/sara-forward.html) -----------------
@@ -125,7 +167,10 @@ FILTER_URL = ("https://mail.google.com/mail/u/0/#search/from%3A"
 FILTER_STEPS = (
     "Last step. Gmail is open on SaraPlus's code emails.\n\n"
     "Click the sliders icon at the right of the search bar -> Create filter "
-    "-> check Forward it to -> pick %s -> Create filter." % REPORTING_INBOX)
+    "-> leave From as %s -> check Forward it to -> pick %s -> Create filter.\n\n"
+    "Only emails from that address get forwarded. If our address is not in the "
+    "list yet, wait a minute and reload the page."
+    % (SARAPLUS_SENDER, REPORTING_INBOX))
 
 
 def _open(url: str, say=print) -> None:
@@ -157,8 +202,8 @@ def main(argv=None) -> int:
             say("  NOT YET -- run this same line again when you are ready.")
             return 1
         say("")
-        say("  STEP 1 DONE. If the filter is not saved yet: once the reporting")
-        say("  team confirms, run this same line once more.")
+        say("  STEP 1 DONE. If the filter is not saved yet: wait about 2 minutes")
+        say("  and run this same line once more.")
         return 0
     open_filter(ask, say)
     say("")

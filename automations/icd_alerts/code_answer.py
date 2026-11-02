@@ -28,6 +28,13 @@ owner sets the forward up -- NOT in the repo, which is public. An office with
 no row is answered "none" at once, so its Mac stops waiting and falls back to
 the DM it always got.
 
+THE GMAIL CONFIRMATION IS OURS TO CLICK, AND WE CLICK IT (Eve 2026-11-02).
+Gmail will not forward until the receiving inbox accepts, and that step waited
+on Megan or Eve. confirm_forwards accepts it, only for an address an office
+filed on MAIL_TAB. check_forward_scope tells us if an address starts sending
+more than SaraPlus's codes: the owner's filter is supposed to be the only
+forward, and alphaletegp's whole-inbox forward shows how that one goes.
+
 COST. Nothing at all while no Mac is asking -- one read of a tab the poster
 already reads. While one is asking, one IMAP search a minute, for at most
 REQUEST_MAX_MIN minutes.
@@ -35,7 +42,13 @@ REQUEST_MAX_MIN minutes.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Dict, List, Optional
+import email
+import html
+import imaplib
+import re
+import urllib.request
+from email.header import decode_header, make_header
+from typing import Dict, Iterable, List, Optional, Tuple
 
 REQUEST_STAGE = "probe-code-request"
 SUMMARY_PREFIX = "SaraPlus code request "
@@ -277,13 +290,282 @@ def record_forwards(book=None, *, send: bool = False,
         except Exception as e:  # noqa: BLE001
             log("code forwards: could not record %s: %s" % (office, type(e).__name__))
             continue
-        if address:
-            try:
-                tell("*%s* set up the SaraPlus code forward during setup "
-                     "(codes go to %s). Please confirm Gmail's forwarding "
-                     "email in the reporting inbox, then they add the filter."
-                     % (office, address))
-            except Exception as e:  # noqa: BLE001 -- the row is what matters
-                log("code forwards: could not tell Megan + Eve: %s" % type(e).__name__)
         done.append({"office": office, "status": "recorded" if address else "no address"})
     return done
+
+
+# --- accepting Gmail's confirmation -----------------------------------------
+CONFIRM_QUERY = "from:forwarding-noreply@google.com subject:forwarding newer_than:2d"
+NOTE_CONFIRMED = "gmail confirmed"
+NOTE_NO_MAIL = "no gmail mail yet"
+NOTE_FAILED = "gmail confirm failed"
+# An owner adds the address, then sends it home: the mail is normally there
+# already. Past this they most likely stopped before Add a forwarding address.
+CONFIRM_PATIENCE_MIN = 20
+# After this a row is left alone, so a forward nobody finished costs nothing.
+CONFIRM_WINDOW_DAYS = 2
+
+# THE FIRST LINK, BY ITS WORDING. The same mail's second link CANCELS.
+_CONFIRM_LINK = re.compile(
+    r"confirm the request:\s*(https://mail-settings\.google\.com/mail/\S+)", re.I)
+_REQUESTER = re.compile(r"Receive Mail from\s+([\w.+-]+@[\w.-]+\w)", re.I)
+_ASKS_CONFIRM = "please confirm forwarding"
+
+
+def confirmation_link(body: str) -> str:
+    m = _CONFIRM_LINK.search(body or "")
+    return m.group(1) if m else ""
+
+
+def requester_of(subject: str) -> str:
+    m = _REQUESTER.search(subject or "")
+    return m.group(1).lower() if m else ""
+
+
+def _imap():
+    from automations.shared import email_ingest as I
+    M = imaplib.IMAP4_SSL(I.IMAP_HOST)
+    M.login(I.ACCOUNT, I._app_password())
+    M.select('"[Gmail]/All Mail"', readonly=True)
+    return M
+
+
+def _search(M, query: str) -> List[bytes]:
+    typ, data = M.search(None, "X-GM-RAW", '"%s"' % query)
+    return (data[0] or b"").split() if typ == "OK" else []
+
+
+def _confirmation_mails() -> Dict[str, str]:
+    """requester address -> confirm link, newest mail winning. Read-only."""
+    M = _imap()
+    try:
+        out: Dict[str, str] = {}
+        for uid in _search(M, CONFIRM_QUERY):      # oldest first: newest overwrites
+            typ, data = M.fetch(uid, "(BODY.PEEK[])")
+            if typ != "OK" or not data or not data[0]:
+                continue
+            msg = email.message_from_bytes(data[0][1])
+            who = requester_of(str(make_header(decode_header(msg.get("Subject", "")))))
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    body = (part.get_payload(decode=True) or b"").decode(
+                        part.get_content_charset() or "utf-8", "replace")
+                    link = confirmation_link(body)
+                    if who and link:
+                        out[who] = link
+                    break
+        return out
+    finally:
+        try:
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _page_text(raw: bytes) -> str:
+    text = re.sub(r"<(script|style)[\s\S]*?</\1>", " ", raw.decode("utf-8", "replace"))
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text))).strip()
+
+
+def _fetch(url: str, data: Optional[bytes] = None) -> str:
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return _page_text(r.read())
+
+
+def accept_confirmation(link: str, requester: str, fetch=None) -> None:
+    """Press Confirm on Gmail's page. Raises unless it clearly took.
+
+    The link alone confirms nothing: it opens a page with one Confirm button
+    (read off the real page 2026-11-02). That page names who is forwarding, so
+    it is checked against the address we expected before anything is pressed.
+    """
+    fetch = fetch or _fetch
+    if not link.startswith("https://mail-settings.google.com/"):
+        raise ValueError("not Gmail's confirmation page")
+    page = fetch(link).lower()
+    if _ASKS_CONFIRM not in page or requester.lower() not in page:
+        raise ValueError("unexpected confirmation page: %s" % page[:120])
+    after = fetch(link, b"").lower()
+    if _ASKS_CONFIRM in after:
+        raise ValueError("still asking after Confirm: %s" % after[:120])
+
+
+def _added_at(text: str) -> Optional[dt.datetime]:
+    try:
+        when = dt.datetime.fromisoformat((text or "").strip())
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.astimezone()
+
+
+def confirm_forwards(book=None, *, send: bool = False,
+                     now: Optional[dt.datetime] = None, mails=None, accept=None,
+                     tell=None, log=print) -> List[Dict]:
+    """Accept Gmail's forwarding mail for offices on MAIL_TAB. Never raises.
+
+    ONLY FOR AN ADDRESS ON THE TAB: any other request to forward into this
+    inbox stays exactly as it was. One read of the tab per tick; the inbox is
+    only opened while a row is waiting.
+    """
+    from automations.icd_alerts import post as P
+
+    mails = mails or _confirmation_mails
+    accept = accept or accept_confirmation
+    tell = tell or _tell_us
+    now = now or dt.datetime.now().astimezone()
+    try:
+        if book is None:
+            from automations.recruiting_report.fill import open_by_key
+            book = open_by_key(P.RELAY_SPREADSHEET_ID)
+        sheet = book.worksheet(MAIL_TAB)
+        rows = sheet.get_all_values()
+    except Exception as e:  # noqa: BLE001 -- includes no tab yet
+        log("code forwards: could not read the mail tab: %s" % type(e).__name__)
+        return []
+    waiting = []
+    for at, r in enumerate(rows[1:], start=2):
+        r = list(r) + [""] * (len(MAIL_HEADER) - len(r))
+        added = _added_at(r[2])
+        if not (r[0].strip() and "@" in r[1] and added):
+            continue
+        if now - added > dt.timedelta(days=CONFIRM_WINDOW_DAYS):
+            continue
+        if NOTE_CONFIRMED in r[3] or NOTE_FAILED in r[3]:
+            continue
+        waiting.append((at, r[0].strip(), r[1].strip().lower(), added, r[3]))
+    if not waiting:
+        return []
+    try:
+        found = mails()
+    except Exception as e:  # noqa: BLE001 -- inbox down: next tick
+        log("code forwards: inbox not readable: %s" % type(e).__name__)
+        return []
+    done = []
+
+    def _note(at, old, word):
+        if send:
+            sheet.update_cell(at, 4, ("%s; %s" % (old, word)).strip("; "))
+
+    def _say(text):
+        if send:
+            try:
+                tell(text)
+            except Exception as e:  # noqa: BLE001 -- the note is what matters
+                log("code forwards: could not tell Megan + Eve: %s" % type(e).__name__)
+
+    for at, office, address, added, note in waiting:
+        link = found.get(address)
+        try:
+            if not link:
+                late = now - added > dt.timedelta(minutes=CONFIRM_PATIENCE_MIN)
+                if late and NOTE_NO_MAIL not in note:
+                    log("FWD    %-10s no Gmail confirmation mail" % office)
+                    _note(at, note, NOTE_NO_MAIL)
+                    _say("*%s* started the SaraPlus code forward, but Gmail's "
+                         "confirmation never reached the reporting inbox. They "
+                         "may have stopped before adding the address." % office)
+                done.append({"office": office, "status": "no mail"})
+                continue
+            if not send:
+                log("FWD    %-10s would confirm Gmail's forward" % office)
+                done.append({"office": office, "status": "dry-run"})
+                continue
+            try:
+                accept(link, address)
+            except Exception as e:  # noqa: BLE001 -- a person can still click it
+                log("FWD    %-10s could not confirm: %s" % (office, e))
+                _note(at, note, NOTE_FAILED)
+                _say("*%s*: Lucy could not confirm Gmail's SaraPlus forward "
+                     "(%s). Please click the confirmation email in the "
+                     "reporting inbox." % (office, type(e).__name__))
+                done.append({"office": office, "status": "failed"})
+                continue
+            log("FWD    %-10s Gmail forward confirmed" % office)
+            _note(at, note, NOTE_CONFIRMED)
+            _say("*%s*: Gmail's SaraPlus code forward is confirmed. It starts "
+                 "working once they save the filter." % office)
+            done.append({"office": office, "status": "confirmed"})
+        except Exception as e:  # noqa: BLE001 -- one row never costs the rest
+            log("code forwards: row %d: %s" % (at, type(e).__name__))
+    return done
+
+
+# --- nothing but SaraPlus's codes -------------------------------------------
+SCOPE_STAMP_NAME = "code-forward-scope.txt"
+SCOPE_EVERY_MIN = 60
+
+
+def scope_query(address: str) -> str:
+    return "deliveredto:%s -from:security.info@saraplus.com newer_than:1d" % address
+
+
+def _foreign_counts(addresses: Iterable[str]) -> Dict[str, int]:
+    """address -> mails it forwarded us that are not SaraPlus's. COUNTS ONLY:
+    nobody's mail is opened to find this out."""
+    M = _imap()
+    try:
+        return {a: len(_search(M, scope_query(a))) for a in addresses}
+    finally:
+        try:
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _scope_due(stamp_path, now: dt.datetime) -> bool:
+    try:
+        last = dt.datetime.fromisoformat(stamp_path.read_text().strip())
+    except (OSError, ValueError):
+        return True
+    return now - last >= dt.timedelta(minutes=SCOPE_EVERY_MIN)
+
+
+def check_forward_scope(book=None, *, send: bool = False,
+                        now: Optional[dt.datetime] = None, counts=None,
+                        stamp_path=None, tell=None, log=print) -> List[Tuple[str, int]]:
+    """Tell Megan + Eve if an office forwards more than SaraPlus's code mails.
+
+    Once an hour, once per office per day. Never raises.
+    """
+    from automations.icd_alerts import config as C
+    from automations.icd_alerts import post as P
+
+    now = now or dt.datetime.now().astimezone()
+    stamp_path = stamp_path or (C.APP_DIR / SCOPE_STAMP_NAME)
+    if not _scope_due(stamp_path, now):
+        return []
+    counts = counts or _foreign_counts
+    tell = tell or _tell_us
+    wide = []
+    try:
+        if book is None:
+            from automations.recruiting_report.fill import open_by_key
+            book = open_by_key(P.RELAY_SPREADSHEET_ID)
+        sheet = book.worksheet(MAIL_TAB)
+        rows = sheet.get_all_values()
+        where = {}
+        for at, r in enumerate(rows[1:], start=2):
+            r = list(r) + [""] * (len(MAIL_HEADER) - len(r))
+            if r[0].strip() and "@" in r[1]:
+                where[r[1].strip().lower()] = (at, r[0].strip(), r[3])
+        got = counts(list(where)) if where else {}
+        word = "wide forward %s" % now.date().isoformat()
+        for address, n in got.items():
+            if not n:
+                continue
+            at, office, note = where[address]
+            wide.append((office, n))
+            log("FWD    %-10s forwarded %d mails that are not SaraPlus's" % (office, n))
+            if send and word not in note:
+                sheet.update_cell(at, 4, ("%s; %s" % (note, word)).strip("; "))
+                tell("*%s* is forwarding more than SaraPlus's codes to the "
+                     "reporting inbox (%d other mails in the last day). They "
+                     "should pick \"Disable forwarding\" in Gmail and keep only "
+                     "the filter." % (office, n))
+        if send:
+            stamp_path.parent.mkdir(parents=True, exist_ok=True)
+            stamp_path.write_text(now.isoformat(timespec="seconds"))
+    except Exception as e:  # noqa: BLE001 -- never cost the poster its tick
+        log("code forwards: scope check: %s" % type(e).__name__)
+    return wide
