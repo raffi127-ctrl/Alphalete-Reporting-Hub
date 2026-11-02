@@ -61,6 +61,13 @@ KIND_WEEK = "nds_week"
 # Saturday, right after the last board of the day (Carlos 2026-10-26).
 WEEK_ROW_KEY = "Carlos Hidalgo (NDS)"
 WEEK_AFTER = SATURDAY_STOP
+# Monday morning: last week's Mon–Sat board again, as a reply in that day's
+# "NDS Metrics —" thread (Carlos 2026-11-02: "didn't we go over Monday morning
+# posting an NDS knocks board for the whole [week] in the NDS metrics thread").
+# Slack only (the Saturday one already texted it). First tick at/after this
+# clock on a Monday; the metrics thread is up by ~7:45.
+WEEK_MONDAY_AFTER = (10, 0)
+WEEK_MONDAY_THREAD = "NDS Metrics"
 
 # Credit checks for the call-outs come from Carlos's own SaraPlus, relayed by
 # his office Mac mini under this ICD office key (icd_alerts).

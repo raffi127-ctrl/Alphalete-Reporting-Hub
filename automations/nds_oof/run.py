@@ -278,6 +278,14 @@ def _week_due(state: Dict, now: dt.datetime) -> bool:
     return state.get("week_at") != now.date().isoformat()
 
 
+def _week_monday_due(state: Dict, now: dt.datetime) -> bool:
+    """Monday at/after WEEK_MONDAY_AFTER, once: last week's board into today's
+    NDS Metrics thread. Real Monday only (never a day_override Saturday)."""
+    if now.weekday() != 0 or (now.hour, now.minute) < C.WEEK_MONDAY_AFTER:
+        return False
+    return state.get("week_monday_at") != now.date().isoformat()
+
+
 def weekly_board(saturday: dt.date, *, send: bool,
                  thread_prefix: str = "") -> int:
     """Run weekly_knock_dispositions for the NDS row (it posts the picture
@@ -342,6 +350,14 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         rc = weekly_board(today, send=send)
         if send and rc == 0:
             state["week_at"] = today.isoformat()
+            _save(state)
+    if _week_monday_due(state, now):
+        # Monday morning: last week's Mon–Sat board as a reply in today's NDS
+        # Metrics thread (Carlos 2026-11-02). Slack only; marked on a real post.
+        last_sat = today - dt.timedelta(days=2)
+        rc = weekly_board(last_sat, send=send, thread_prefix=C.WEEK_MONDAY_THREAD)
+        if send and rc == 0:
+            state["week_monday_at"] = today.isoformat()
             _save(state)
     if C.CAMPAIGN_ID == "__FILL__":
         _log("CAMPAIGN_ID not set -- run `rerun b2b_dispositions --probe-campaigns` and fill config.py")
