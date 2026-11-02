@@ -21,6 +21,88 @@ def board(rows):
 GOOD = "=SUM(E%(r)d)"
 
 
+class Campaign(unittest.TestCase):
+    def tab(self, reps):
+        """reps: (name, int, int up, dtv, nl, campaign). Two days, Campaign in col N."""
+        h1 = ["", "", "", "MON", "", "", "", "", "TUE", "", "", "", "", "Campaign"]
+        h3 = ["", "#", "Name", "Apps", "Int", "Int Up", "DTV", "NL",
+              "Apps", "Int", "Int Up", "DTV", "NL", ""]
+        rows = [h1, [""] * 14, h3]
+        for name, i, u, d, n, camp in reps:
+            # Int on Monday (X = off), the rest on Tuesday, so days have to add up
+            rows.append(["", "", name, "", i, "", "", "", "", "", u, d, n, camp])
+        rows.append(["", "", "TOTALS"] + [""] * 11)
+        return rows
+
+    def run_it(self, reps):
+        return K.check_campaign("t", self.tab(reps))
+
+    def test_what_was_sold_picks_the_word(self):
+        cases = [("1", "", "", "2", "Fiber + Wireless"), ("3", "", "", "", "Fiber"),
+                 ("", "", "", "4", "Fiber + Wireless"), ("", "", "1", "", "Fiber"),
+                 ("", "2", "", "", "Fiber"), ("", "", "1", "1", "Fiber + Wireless"),
+                 ("", "1", "", "1", "Fiber + Wireless"), ("X", "", "", "2", "Fiber + Wireless")]
+        for i, u, d, n, want in cases:
+            found = self.run_it([("Rep", i, u, d, n, "")])
+            self.assertEqual([x.after for x in found], [want], (i, u, d, n))
+
+    def test_a_filled_cell_stays_whatever_was_sold(self):
+        self.assertEqual(self.run_it([("Rep", "", "", "", "4", "Fiber")]), [])
+
+    def test_nothing_sold_stays_blank(self):
+        self.assertEqual(self.run_it([("Rep", "0", "", "", "", ""), ("Spare", "X", "", "", "", "")]), [])
+
+    def test_only_the_value_is_written_never_the_dropdown(self):
+        x = self.run_it([("Rep", "1", "", "", "", "")])[0]
+        self.assertEqual(x.value, "Fiber")
+        self.assertIsNone(x.request)
+
+    def test_last_weeks_sales_count_on_a_new_week(self):
+        h1 = ["", "", "", "LAST WEEK'S TOTALS", "", "", "", "Other", "MON", "", "", "", "", "Campaign"]
+        h3 = ["", "#", "Name", "INT", "INT UP", "DTV", "NL", "x",
+              "Apps", "Int", "Int Up", "DTV", "NL", ""]
+        rep = lambda name, i, n: ["", "", name, i, "0", "0", n, "9", "", "", "", "", "", ""]
+        v = [h1, [""] * 14, h3, rep("Both", "1", "2"), rep("Lines", "0", "3"),
+             rep("Int", "4", "0"), rep("None", "0", "0"), ["", "", "TOTALS"] + [""] * 11]
+        found = K.check_campaign("t", v)
+        self.assertEqual([(x.name, x.after) for x in found],
+                         [("Both", "Fiber + Wireless"), ("Lines", "Fiber + Wireless"), ("Int", "Fiber")])
+
+    def test_no_campaign_column_nothing_happens(self):
+        v = self.tab([("A", "", "", "", "4", "")])
+        v[0][13] = ""
+        self.assertEqual(K.check_campaign("t", v), [])
+
+
+class DropdownsKeepTheirColors(unittest.TestCase):
+    RULE = {"condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Here"}]}}
+
+    def found(self, hidden=()):
+        rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(8)]
+        v, _ = board(rows)
+        rules = [[None] * 7 for _ in v]
+        for r in range(4, 12):            # column G of each rep, row 7 missing it
+            rules[r - 1][6] = None if r == 7 else self.RULE
+        return K.check_dropdowns("t", 5, v, rules, hidden=frozenset(hidden))
+
+    def test_missing_dropdown_is_copied_never_written(self):
+        x = [f for f in self.found() if f.where == "G7"][0]
+        paste = x.request["copyPaste"]
+        self.assertEqual(paste["pasteType"], "PASTE_DATA_VALIDATION")
+        self.assertEqual(paste["source"]["startRowIndex"], 3)      # row 4, a row that has it
+        self.assertEqual(paste["destination"]["startRowIndex"], 6)
+        self.assertNotIn("updateCells", x.request)
+
+    def test_a_hidden_source_row_is_not_copied_from(self):
+        x = [f for f in self.found(hidden=[4]) if f.where == "G7"][0]
+        self.assertEqual(x.request["copyPaste"]["source"]["startRowIndex"], 4)
+
+    def test_a_row_the_filter_hides_is_only_reported(self):
+        x = [f for f in self.found(hidden=[7]) if f.where == "G7"][0]
+        self.assertFalse(x.fixable)
+        self.assertIn("oculta", x.detail)
+
+
 class Formulas(unittest.TestCase):
     def test_x_typed_over_formula_gets_formula_back(self):
         rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(8)]

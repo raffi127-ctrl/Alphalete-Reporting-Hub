@@ -99,6 +99,7 @@ def load(sh, title: str, titles=()) -> dict:
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
     fonts, numfmts, styles, notes, dropdowns, borders, bgs = [], [], [], [], [], [], []
+    hidden_rows = set()
     if K.is_board(values):
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
@@ -108,8 +109,10 @@ def load(sh, title: str, titles=()) -> dict:
                       "textFormat(fontFamily,fontSize,bold),numberFormat,"
                       "horizontalAlignment,borders),"
                       "userEnteredFormat(backgroundColor,textFormat(bold)),"
-                      "note,dataValidation))))"})
+                      "note,dataValidation)),rowMetadata(hiddenByFilter)))"})
         rows = grid["sheets"][0]["data"][0].get("rowData", [])
+        hidden_rows = {i for i, m in enumerate(grid["sheets"][0]["data"][0].get("rowMetadata", []), 1)
+                       if m.get("hiddenByFilter")}
         for rd in rows:
             vs = rd.get("values", [])
             fonts.append([_font(v) for v in vs])
@@ -123,7 +126,7 @@ def load(sh, title: str, titles=()) -> dict:
          "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
          "basic_filter": sheet.get("basicFilter"),
          "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "styles": styles,
-         "notes": notes, "dropdowns": dropdowns,
+         "notes": notes, "dropdowns": dropdowns, "hidden_rows": hidden_rows,
          "borders": borders, "bgs": bgs}
     if ws.spreadsheet.id == SHEET_ID and LW.TAB.match(title) and K.is_board(values):
         t.update(load_older(sh, title, ws))
@@ -294,10 +297,11 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
                  + K.check_styles(title, t["sheet_id"], v, t["styles"], fill_blank=not owner)
                  + K.check_background_shift(title, t["sheet_id"], v, t.get("bgs") or [])
                  + K.check_dropdowns(title, t["sheet_id"], v, t.get("dropdowns") or [],
-                                     fill_blank=True))
+                                     fill_blank=True, hidden=t.get("hidden_rows") or ()))
         if not owner:
             found += K.check_borders(title, t["sheet_id"], v, t.get("borders") or [],
                                      fill_blank=True)
+            found += K.check_campaign(title, v)
         first, last = K.block_rows(v)
         fixed_cells = {x.where for x in found if x.value is not None}
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
@@ -378,7 +382,8 @@ def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     if cells:
         ws.batch_update([{"range": x.where, "values": [[x.value]]} for x in cells],
                         value_input_option="USER_ENTERED")
-    fmt = [x.request for x in todo if x.request and "updateCells" in x.request]
+    fmt = [x.request for x in todo if x.request
+           and ("updateCells" in x.request or "copyPaste" in x.request)]
     # a note on every touched cell, so a person can hover and see what changed
     if notes:
         fmt += K.note_requests(todo, t["sheet_id"], t.get("notes") or [],

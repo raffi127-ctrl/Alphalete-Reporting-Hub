@@ -40,6 +40,7 @@ ROLL_CALL_FOR = {"X": "Off", "T": "T"}
 ERRORS = ("#REF!", "#N/A", "#DIV/0!", "#VALUE!", "#NAME?", "#ERROR!", "#NUM!")
 
 KIND_LABEL = {
+    "campaign_blank": "Campaign vacía: puesta según lo vendido",
     "x_over_formula": "X/letra escrita encima de una fórmula",
     "typed_over_formula": "número escrito a mano encima de una fórmula",
     "missing_formula": "fórmula borrada",
@@ -942,7 +943,7 @@ def _dropdown_choices(rule: dict) -> Optional[set]:
 
 
 def check_dropdowns(tab: str, sheet_id: int, values, rules,
-                    fill_blank: bool = False) -> List[Finding]:
+                    fill_blank: bool = False, hidden=frozenset()) -> List[Finding]:
     """rules[r-1][c-1] = the cell's data validation, or None. A column where the
     reps have a dropdown has it on EVERY row of the block; text pasted in is not
     a dropdown (Raf + Eve 2026-11-01: rows added for new 1st weeks came without
@@ -954,8 +955,11 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
     list that is wrong (our 'A-Play Yes/No' mostly carries the Leadership list).
     fill_blank: the free rows get the dropdown too.
 
-    Written with updateCells: copyPaste skips rows the filter hides and lands on
-    the next visible row, which on 2026-11-01 was TOTALS."""
+    The dropdown is COPIED from a row that has it, never written: the API cannot
+    read or send a label's color, so a written rule comes out grey (Eve
+    2026-11-02). copyPaste keeps the colors, but a row the filter hides sends the
+    paste to the next visible row (TOTALS on 2026-11-01), so hidden: those rows
+    are only reported."""
     first, last = block_rows(values)
     named = [r for r in range(first, last + 1)
              if name_at(values, r) and not _SPARE_NAME.match(name_at(values, r))]
@@ -988,6 +992,7 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
             continue
         rule = json.loads(top)
         choices = _dropdown_choices(rule)
+        source = next((r for r in sorted(have) if have[r] == top and r not in hidden), None)
         for r in fix_rows:
             cur = rule_at(r, c)
             if cur and json.dumps(cur, sort_keys=True) == top:
@@ -1001,12 +1006,89 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
                                    detail="%s, columna %s: %r"
                                           % (KIND_LABEL["dropdown_value_off"], col, text), **base))
                 continue
+            can_copy = source is not None and r not in hidden
             out.append(Finding(
-                kind, tab, detail="%s, columna %s" % (KIND_LABEL[kind], col),
-                request={"updateCells": {
-                    "range": _cell_range(sheet_id, r, c),
-                    "rows": [{"values": [{"dataValidation": rule}]}],
-                    "fields": "dataValidation"}}, **base))
+                kind, tab, detail="%s, columna %s%s" % (KIND_LABEL[kind], col,
+                                                        "" if can_copy else " (fila oculta)"),
+                request={"copyPaste": {
+                    "source": _cell_range(sheet_id, source, c),
+                    "destination": _cell_range(sheet_id, r, c),
+                    "pasteType": "PASTE_DATA_VALIDATION"}} if can_copy else None, **base))
+    return out
+
+
+# The row-1 header, and what a rep's sales for the week say about it (Eve
+# 2026-11-02). A value already in the cell stays, whatever was sold.
+CAMPAIGN_HEADER = "campaign"
+CAMPAIGN_FIBER, CAMPAIGN_BOTH = "Fiber", "Fiber + Wireless"
+
+
+def campaign_for(sold: Dict[str, float]) -> str:
+    """Any NL = Fiber + Wireless: the list has no Wireless of its own (Eve: only
+    Fiber, Fiber + Wireless, Roadtrip). Int, DTV or Int Up without NL = Fiber.
+    Nothing sold = "" (nothing to say about that rep)."""
+    if sold.get("nl", 0) > 0:
+        return CAMPAIGN_BOTH
+    fiber = any(sold.get(h, 0) > 0 for h in ("int", "int up", "dtv"))
+    return CAMPAIGN_FIBER if fiber else ""
+
+
+LAST_WEEK_BANNER = "last week's totals"
+
+
+def _last_week_cols(values) -> Dict[str, int]:
+    """{header (lower case): column} under the LAST WEEK'S TOTALS banner, up to
+    the next banner. Empty on a tab without it."""
+    row = values[0]
+    start = next((c for c, x in enumerate(row, 1)
+                  if " ".join(str(x).split()).lower() == LAST_WEEK_BANNER), 0)
+    if not start:
+        return {}
+    end = next((c for c in range(start + 1, len(row) + 1) if _g(values, 1, c).strip()),
+               len(row) + 1)
+    lay = layout(values)
+    return {" ".join(_g(values, lay.sub_row, c).split()).lower(): c for c in range(start, end)}
+
+
+def _sold(values, r: int, blocks, last_week=None) -> Dict[str, float]:
+    """Sales on row r: this week's day blocks, plus last week's totals when given.
+    X / T count as 0."""
+    out: Dict[str, float] = collections.Counter()
+    for cols in list(blocks.values()) + ([last_week] if last_week else []):
+        for h in ("int", "int up", "dtv", "nl"):
+            if h in cols:
+                try:
+                    out[h] += float(_g(values, r, cols[h]).replace(",", "") or 0)
+                except ValueError:
+                    pass
+    return out
+
+
+def check_campaign(tab: str, values) -> List[Finding]:
+    """A rep with a blank Campaign gets it from what they sold last week and so
+    far this week (Eve 2026-11-02): the new week's tab starts with its reps blank.
+
+    Only the cell's value. NEVER write this column's dataValidation: the API
+    cannot read or send a dropdown's colors, so writing the rule turns every
+    label grey (2026-11-02, WE 11.01 + 11.08, put back by hand)."""
+    if not values:
+        return []
+    col = next((c for c, x in enumerate(values[0], 1)
+                if " ".join(str(x).split()).lower() == CAMPAIGN_HEADER), 0)
+    if not col:
+        return []
+    first, last = block_rows(values)
+    blocks = day_blocks(values)
+    last_week = _last_week_cols(values)
+    out: List[Finding] = []
+    for r in range(first, last + 1):
+        name = name_at(values, r)
+        if not name or _SPARE_NAME.match(name) or _g(values, r, col).strip():
+            continue
+        word = campaign_for(_sold(values, r, blocks, last_week))
+        if word:
+            out.append(Finding("campaign_blank", tab, a1(r, col), KIND_LABEL["campaign_blank"],
+                               row=r, name=name, before="vacía", after=word, value=word))
     return out
 
 

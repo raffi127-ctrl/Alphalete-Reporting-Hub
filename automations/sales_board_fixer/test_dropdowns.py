@@ -40,10 +40,10 @@ class Dropdowns(unittest.TestCase):
         self.assertEqual([(x.kind, x.where, x.name) for x in found],
                          [("dropdown_missing", "E10", "New Rep")])
         self.assertTrue(found[0].fixable)
-        write = found[0].request["updateCells"]
-        self.assertEqual(write["fields"], "dataValidation")
-        self.assertEqual(write["rows"][0]["values"][0]["dataValidation"], LIST)
-        self.assertEqual(write["range"]["startRowIndex"], 9)
+        paste = found[0].request["copyPaste"]
+        self.assertEqual(paste["pasteType"], "PASTE_DATA_VALIDATION")
+        self.assertEqual(paste["destination"]["startRowIndex"], 9)
+        self.assertEqual(paste["source"]["startRowIndex"], 3)
 
     def test_nothing_to_do_when_every_row_has_it(self):
         self.assertEqual(run(GOOD, free=0)[1], [])
