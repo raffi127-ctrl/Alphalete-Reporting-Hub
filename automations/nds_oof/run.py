@@ -432,10 +432,19 @@ def main(argv=None) -> int:
     ap.add_argument("--week-thread", metavar="PREFIX", default="",
                     help="with --week: post the picture into TODAY's thread whose "
                          "text starts with PREFIX, Slack only (no texts)")
+    ap.add_argument("--compare", metavar="SATURDAY",
+                    help="week-over-week board (that week vs the one before), "
+                         "every rep and stat, into today's --week-thread thread; "
+                         "--send posts it (Slack only)")
     ap.add_argument("--no-gaps", action="store_true",
                     help="board only: no gap list, no call-out (a hand run after hours)")
     ap.add_argument("--headed", action="store_true")
     args = ap.parse_args(argv)
+    if args.compare:
+        from automations.nds_oof import week_compare as WC
+        return WC.post(dt.date.fromisoformat(args.compare),
+                       thread_prefix=args.week_thread or C.WEEK_MONDAY_THREAD,
+                       send=args.send)
     if args.week:
         return weekly_board(dt.date.fromisoformat(args.week), send=args.send,
                             thread_prefix=args.week_thread)

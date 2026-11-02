@@ -583,6 +583,9 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     "totals": next((r for r in rows if len(r) > 1
                                     and r[1] == B.TOTALS_LABEL),
                                    rows[len(compare_rows)]),
+                    # Every row (reps + totals), for the NDS week-over-week
+                    # comparison (nds_oof/week_compare.py, Carlos 2026-11-02).
+                    "rows": [[str(c) for c in r] for r in rows],
                 }, ensure_ascii=False), encoding="utf-8")
             except Exception as e:  # noqa: BLE001
                 print(f"[wkd]   ⚠ totals json not saved for {name}: "
