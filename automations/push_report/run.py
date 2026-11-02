@@ -325,7 +325,10 @@ def header_text(day: dt.date, total: int) -> str:
 #   23965 -> #raf-hidalgo-recruiting-23965-tiffani
 #   24065 -> #full-ai-test-rafael-hidalgo-25065-maria-q (the "25065" in the
 #            name is a typo; its "24065 Recruiters" tab is this office)
-REPORT_CHANNEL = {"23965": "C0CAV0P4RRS", "24065": "C0CBEDBFXM2"}
+# Colten's 14733 -> #colten-wrights-office-recruiting-14733 (his existing
+# channel, shown by Megan 2026-11-02; Lucy is in it).
+REPORT_CHANNEL = {"23965": "C0CAV0P4RRS", "24065": "C0CBEDBFXM2",
+                  "14733": "C0AUAPMEF37"}
 
 
 def channel_of_label() -> dict:
