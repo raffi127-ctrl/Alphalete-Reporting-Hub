@@ -36,6 +36,7 @@ from typing import Optional
 
 from automations.new_internet_churn import pull
 from automations.recruiting_report.fill import open_by_key, _retry
+from automations.shared import sheets_retry
 
 SHEET_ID = os.environ.get("CHURN_SHEET_ID", "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8")
 # Tab override completes the env-driven set (CHURN_SHEET_ID / _VIEW_URL /
@@ -1542,7 +1543,10 @@ def hide_blanks_today(
         last_row = max(rep_rows.values())
         # One bulk read for the whole rep block of A:B (we only need col B today).
         rng = f"{ws.title}!A{first_row}:B{last_row}"
-        block = ws.spreadsheet.values_get(rng).get("values", [])
+        # Retried through 429s: 21 feeds back to back hit the 60-reads/min
+        # quota here and killed jamis_air three times on 2026-11-02.
+        block = sheets_retry.call(ws.spreadsheet.values_get, rng,
+                                  tries=7).get("values", [])
 
         for offset, row_data in enumerate(block):
             sheet_row = first_row + offset
