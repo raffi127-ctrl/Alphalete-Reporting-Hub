@@ -39,18 +39,21 @@ MARK_PATH = C.APP_DIR / "sara-code-forward.txt"
 STEPS = (
     "So nobody has to type SaraPlus codes for Lucy again, forward SaraPlus's "
     "code emails to %s.\n\n"
-    "Gmail just opened on its forwarding settings: click Add a forwarding "
-    "address -> type %s -> Next -> Proceed. Lucy confirms it on our side.\n\n"
+    "Our address is already copied, so don't type anything. Gmail just opened "
+    "on its forwarding settings: click Add a forwarding address -> in the box, "
+    "PASTE (hold Command and tap V) -> Next -> Proceed. Lucy confirms it on our "
+    "side.\n\n"
     "Then leave \"Disable forwarding\" selected. Do NOT pick \"Forward a copy "
     "of incoming mail\": that sends your whole inbox. We only want SaraPlus's "
-    "code emails, and the next step's filter takes care of that."
-    % (REPORTING_INBOX, REPORTING_INBOX))
+    "code emails, and the next step's filter takes care of that.\n\n"
+    "Click OK only after you have done this in Gmail."
+    % REPORTING_INBOX)
 
-OFFER = ("Want Lucy to enter SaraPlus's codes herself from now on? It takes "
-         "about 2 minutes, one time. Only SaraPlus's code emails get forwarded "
-         "to us, nothing else in your inbox.")
-OFFER_YES = "Yes, set it up"
-OFFER_NO = "Not now"
+OFFER = ("One last step, about 2 minutes, one time: this lets Lucy enter "
+         "SaraPlus's codes herself from now on. Only SaraPlus's code emails get "
+         "forwarded to us, nothing else in your inbox.")
+WAIT_FOR_CONFIRM = ("Lucy is confirming it now. Wait about 2 minutes, then click "
+                    "OK for the last step.")
 FORWARD_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
                 "sara-forward.html")
 
@@ -72,6 +75,19 @@ def _login_email() -> str:
         return ""
 
 
+def _copy(text: str, say=print) -> None:
+    """Put our address on the clipboard. THE DIALOG THAT SHOWS IT CLOSES ON OK,
+    and its text can't be relied on to copy, so an owner who reached Gmail's box
+    had to have memorized it (Eve 2026-11-02). Never raises: the steps name it."""
+    import subprocess
+    import sys
+    tool = "clip" if sys.platform == "win32" else "pbcopy"
+    try:
+        subprocess.run([tool], input=text.encode("utf-8"), timeout=5, check=True)
+    except Exception:  # noqa: BLE001
+        say("      our address is %s" % text)
+
+
 def _mark(address: str) -> None:
     try:
         MARK_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -81,24 +97,28 @@ def _mark(address: str) -> None:
         pass
 
 
-def walk_through(ask, say=print, office_key: str = "") -> str:
+def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) -> str:
     """Show the steps, ask which address SaraPlus mails, send it home.
 
     Returns a word for the setup summary. Never raises: this is a courtesy on
     top of a working install, not a condition of one.
+
+    can_skip=False takes the skip buttons away, for the owner who just typed a
+    code by hand (offer_after_signin).
     """
     from automations.icd_alerts import relay as R
 
     # GMAIL OPENS ON THE RIGHT SCREEN FIRST (Megan 2026-10-29: "the other
     # option here too") -- the same thing the sara-forward line does, so the
     # Zoom and the link are one flow, not two sets of directions.
+    _copy(REPORTING_INBOX, say)
     _open(FORWARDING_URL, say)
     try:
         ask.message(STEPS)
         login = _login_email()
         if login:
             pick = ask.choose("Are your SaraPlus codes emailed to %s?" % login,
-                              [YES, OTHER, LATER])
+                              [YES, OTHER] + ([LATER] if can_skip else []))
         else:
             pick = OTHER
         if pick == LATER:
@@ -120,6 +140,10 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
     say("      Thanks -- Lucy will confirm the forward in about 2 minutes.")
     # ON THE ZOOM WE CONFIRM WHILE THEY WAIT, so the filter can be done right
     # here instead of on a second run of the sara-forward line.
+    if not can_skip:
+        ask.message(WAIT_FOR_CONFIRM)
+        open_filter(ask, say)
+        return "done"
     try:
         if ask.choose("Wait about 2 minutes while Lucy confirms it, then:",
                       [FILTER_NOW, FILTER_LATER]) == FILTER_NOW:
@@ -136,8 +160,12 @@ def offer_after_signin(ask=None, say=print) -> str:
     the sign-in already worked, and nothing here may read as if it had not.
 
     Not for an office whose codes come by text (sms_code): a mail forward does
-    nothing for those, and they have their own road. Asked again on the next
-    hand sign-in if they say not now -- that is exactly when it is wanted.
+    nothing for those, and they have their own road.
+
+    NO "NOT NOW" (Eve 2026-11-02). Nobody finished the forward when it was
+    optional, and every office left out keeps getting asked for codes by hand.
+    The dialogs' own Cancel still exists; whoever uses it gets this again on
+    the next hand sign-in.
     """
     try:
         from automations.icd_alerts import sms_code as T
@@ -146,9 +174,8 @@ def offer_after_signin(ask=None, say=print) -> str:
             return "not asked"
         if ask is None:
             from automations.icd_alerts import dialogs as ask
-        if ask.choose(OFFER, [OFFER_YES, OFFER_NO]) != OFFER_YES:
-            return "not now"
-        return walk_through(ask, say)
+        ask.message(OFFER)
+        return walk_through(ask, say, can_skip=False)
     except Exception as e:  # noqa: BLE001 -- includes the dialog being cancelled
         say("      code forwarding skipped: %s" % type(e).__name__)
         return "skipped"
@@ -161,13 +188,14 @@ def offer_after_signin(ask=None, say=print) -> str:
 # the owner can make: opens Gmail on the right screen, asks the address, sends
 # it home. The SAME line, run again after we confirm, opens the filter screen.
 FORWARDING_URL = "https://mail.google.com/mail/u/0/#settings/fwdandpop"
-FILTER_URL = ("https://mail.google.com/mail/u/0/#search/from%3A"
+# #create-filter opens Gmail's filter box with SaraPlus's address already in it
+# (opened by hand on a real inbox, 2026-11-02), so nobody hunts for the icon.
+FILTER_URL = ("https://mail.google.com/mail/u/0/#create-filter/from="
               + SARAPLUS_SENDER.replace("@", "%40"))
 
 FILTER_STEPS = (
-    "Last step. Gmail is open on SaraPlus's code emails.\n\n"
-    "Click the sliders icon at the right of the search bar -> Create filter "
-    "-> leave From as %s -> check Forward it to -> pick %s -> Create filter.\n\n"
+    "Last step. Gmail just opened a box with %s already filled in.\n\n"
+    "Click Create filter -> check Forward it to -> pick %s -> Create filter.\n\n"
     "Only emails from that address get forwarded. If our address is not in the "
     "list yet, wait a minute and reload the page."
     % (SARAPLUS_SENDER, REPORTING_INBOX))

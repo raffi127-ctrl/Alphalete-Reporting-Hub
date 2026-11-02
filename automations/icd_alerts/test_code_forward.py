@@ -28,6 +28,13 @@ TZ = dt.timezone(dt.timedelta(hours=-4))
 NOW = dt.datetime(2026, 10, 29, 12, 30, 0, tzinfo=TZ)
 
 
+def setUpModule():
+    # Tests must never overwrite the real clipboard of whoever runs them.
+    p = mock.patch.object(CF, "_copy")
+    p.start()
+    unittest.addModuleCleanup(p.stop)
+
+
 class FakeAsk:
     class Cancelled(Exception):
         pass
@@ -227,35 +234,69 @@ class OfferedAfterTheHandSignIn(unittest.TestCase):
         self.walk = p.start()
         self.addCleanup(p.stop)
 
-    def _ask(self, pick):
-        ask = FakeAsk(pick)
-        ask.choose = mock.Mock(return_value=pick)
+    def _ask(self):
+        ask = mock.Mock()
+        ask.Cancelled = FakeAsk.Cancelled
         return ask
 
-    def test_yes_walks_them_through(self):
-        self.assertEqual(CF.offer_after_signin(self._ask(CF.OFFER_YES), say=lambda *_: None), "done")
-        self.walk.assert_called_once()
-
-    def test_not_now_opens_nothing(self):
-        self.assertEqual(CF.offer_after_signin(self._ask(CF.OFFER_NO), say=lambda *_: None), "not now")
-        self.walk.assert_not_called()
+    def test_goes_straight_to_the_steps_with_no_way_to_decline(self):
+        ask = self._ask()
+        self.assertEqual(CF.offer_after_signin(ask, say=lambda *_: None), "done")
+        ask.choose.assert_not_called()
+        ask.message.assert_called_once_with(CF.OFFER)
+        self.assertIs(self.walk.call_args.kwargs["can_skip"], False)
 
     def test_already_set_up_is_never_asked(self):
         CF.MARK_PATH.write_text("x")
-        ask = self._ask(CF.OFFER_YES)
+        ask = self._ask()
         self.assertEqual(CF.offer_after_signin(ask, say=lambda *_: None), "not asked")
-        ask.choose.assert_not_called()
+        ask.message.assert_not_called()
 
     def test_an_office_on_texts_is_never_asked(self):
-        ask = self._ask(CF.OFFER_YES)
+        ask = self._ask()
         with mock.patch.object(CF.C, "install", lambda: {"office_key": "eveliz"}):
             self.assertEqual(CF.offer_after_signin(ask, say=lambda *_: None), "not asked")
-        ask.choose.assert_not_called()
+        ask.message.assert_not_called()
 
     def test_a_broken_dialog_never_raises(self):
-        ask = self._ask(CF.OFFER_YES)
-        ask.choose = mock.Mock(side_effect=RuntimeError("no display"))
+        ask = self._ask()
+        ask.message.side_effect = RuntimeError("no display")
         self.assertEqual(CF.offer_after_signin(ask, say=lambda *_: None), "skipped")
+
+
+class NoSkipAfterTheHandSignIn(unittest.TestCase):
+    def _run(self, **kw):
+        ask = mock.Mock()
+        ask.Cancelled = FakeAsk.Cancelled
+        ask.choose.return_value = CF.YES
+        with mock.patch.object(CF, "_open"), \
+                mock.patch.object(CF, "_login_email", return_value="a@b.com"), \
+                mock.patch.object(CF, "_mark"), \
+                mock.patch("automations.icd_alerts.relay.report_forward", return_value=True):
+            got = CF.walk_through(ask, say=lambda *_: None, **kw)
+        return got, ask
+
+    def test_no_skip_button_and_the_filter_step_always_opens(self):
+        got, ask = self._run(can_skip=False)
+        self.assertEqual(got, "done")
+        ask.choose.assert_called_once()
+        self.assertEqual(ask.choose.call_args.args[1], [CF.YES, CF.OTHER])
+        ask.message.assert_any_call(CF.WAIT_FOR_CONFIRM)
+        ask.message.assert_any_call(CF.FILTER_STEPS)
+
+    def test_our_address_is_copied_and_named_before_gmail_opens(self):
+        self._run(can_skip=False)
+        CF._copy.assert_called_with(CF.REPORTING_INBOX, mock.ANY)
+        self.assertIn(CF.REPORTING_INBOX, CF.STEPS)
+        self.assertIn("PASTE", CF.STEPS)
+        self.assertIn(CF.REPORTING_INBOX, CF.FILTER_STEPS)
+
+    def test_the_filter_link_opens_the_filter_box(self):
+        self.assertIn("#create-filter/from=", CF.FILTER_URL)
+
+    def test_setup_keeps_its_skip_button(self):
+        _, ask = self._run()
+        self.assertIn(CF.LATER, ask.choose.call_args_list[0].args[1])
 
 
 class LucyAcceptsGmailsMail(unittest.TestCase):
