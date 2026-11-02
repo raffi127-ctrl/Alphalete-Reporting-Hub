@@ -12569,6 +12569,26 @@
    "verify": null,
    "timeout_minutes": 40
   },
+  "appstream_new_starts": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_note": "ONE-OFF READER (Carlos 2026-11-02, \"we have new starts on Friday\"): who is booked to start / showed / was BOB'd on each day of a date range for ONE office, from AppStream Retention Details (Total New Starts Scheduled / New Starts Showed Up / Brought on Board Booked). The Daily Update tab can't answer this (it never updates a start date once the row exists). Read-only; --tab drops the rows on a control-workbook tab so a laptop can read them back. `lucy rerun appstream_new_starts --office 11580 --start 2026-11-02 --end 2026-11-08 --tab \"New Starts 11580\"`.",
+   "display_name": "Upcoming new starts (one office)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.appstream_new_starts.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20
+  },
   "funnel_board": {
    "on_scheduler": true,
    "machine": "Lucy 2",
