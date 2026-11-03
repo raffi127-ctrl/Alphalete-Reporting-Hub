@@ -60,16 +60,18 @@ echo "[$(date)] ad-sales-board-carlos START $*" >> "$LOG"
 rc=$?
 echo "[$(date)] ad-sales-board-carlos END rc=$rc" >> "$LOG"
 
-# ---- SINCE-LIVE FUNNEL (Carlos 2026-10-30) ----------------------------------
-# One Source Report window per ad [posting date -> today], so cross-week
-# funnel events (bookings, trainings, brought-on-board) stop vanishing from
-# the board's since-live columns. Twice daily on the first tick after 07:00
-# and 13:00; manual: lucy rerun since_live_funnel (machine: Lucy 2).
-H=$(date +%H); M=$(date +%M)
-if { [ "$H" = "07" ] || [ "$H" = "13" ]; } && [ "$M" -lt 30 ]; then
-    echo "[$(date)] since-live funnel START" >> "$LOG"
-    "$VENV_PY" -m automations.ad_sales_board.since_live >> "$LOG" 2>&1
-    echo "[$(date)] since-live funnel END rc=$?" >> "$LOG"
-fi
+# ---- SINCE-LIVE FUNNEL (Carlos 2026-10-30; gate reworked 2026-11-02) --------
+# One Source Report window per ad family [first posting -> today+28], so
+# cross-week funnel events (bookings, trainings, brought-on-board) stop
+# vanishing from the board's since-live columns. EVERY tick calls it; the
+# module exits in one sheet read (no browser) while 'SL Funnel' is under 5
+# hours old. The first cut gated here on the wall clock (07/13h, minute<30)
+# measured AFTER the main pass — one slow pass or skipped tick lost the day's
+# shot with no retry, and the feed sat frozen 10/30->11/02. A failed attempt
+# now self-heals 30 minutes later. Manual: lucy rerun since_live_funnel
+# (machine: Lucy 2) — the rerun passes no flag, so it never skips.
+echo "[$(date)] since-live funnel START" >> "$LOG"
+"$VENV_PY" -m automations.ad_sales_board.since_live --max-age-hours 5 >> "$LOG" 2>&1
+echo "[$(date)] since-live funnel END rc=$?" >> "$LOG"
 # -----------------------------------------------------------------------------
 exit $rc

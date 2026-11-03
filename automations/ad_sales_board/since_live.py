@@ -9,19 +9,27 @@ the board. Week windows can never see cross-week events; a window that starts
 at the ad's POSTING DATE and ends today always contains both dates.
 
 WHAT IT DOES. Reads the ads on 'carlos' live ads' (title, city, posting date;
-deduped to the newest posting per title+city, capped at 35 days back), then
-pulls ONE Source Report per DISTINCT posting date — [posting date → today] for
-office 11580 — and writes each ad's funnel totals to the hidden 'SL Funnel'
+deduped to the OLDEST posting per title+city, capped at 35 days back — a
+closed-and-reposted ad is one family, and a window that starts at the newest
+repost would drop every old-version applicant's later bookings, which is
+exactly the hole this module exists to close), then pulls ONE Source Report
+per DISTINCT posting date — [posting date → today+LOOKAHEAD] for office
+11580 — and writes each ad family's funnel totals to the hidden 'SL Funnel'
 tab. The board's far-right funnel columns read that tab, so "since live"
 finally means since live. Pull/CPA stay on the intraday day-cell path; this
 feed only carries the two-date stages (bookings, showings, training/BOB).
 
-SCHEDULE: the Carlos fast-lane wrapper runs this after its main pass on the
-first tick after 07:00 and 13:00 (deploy/ad_sales_board_carlos.sh). Twice a
-day is plenty — these stages change a handful of times per day.
-MANUAL:   lucy rerun since_live_funnel   (machine: Lucy 2)
+SCHEDULE: the Carlos fast-lane wrapper calls this on EVERY 30-minute tick
+with --max-age-hours 5; the module skips in one sheet read (no browser) while
+'SL Funnel' is fresh. The first cut gated on the wrapper's clock instead —
+07/13h and minute<30, measured AFTER the main pass finished — so one slow
+pass or skipped tick lost the day's shot with no retry, and the feed sat
+frozen 10/30→11/02. Staleness retries itself 30 minutes later.
+MANUAL:   lucy rerun since_live_funnel   (machine: Lucy 2; no flag = no gate)
 
-Writes ONLY the 'SL Funnel' tab. Wrong-office pulls are refused the same way
+Writes the 'SL Funnel' tab, plus one daily snapshot of the same rows to
+hidden 'SL History' (first run of the day) — the raw material for week-over-
+week "scheduled this week" diffs. Wrong-office pulls are refused the same way
 run.py refuses them: the report's owner line must name Carlos.
 """
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
@@ -39,16 +47,17 @@ OFFICE_ID = "11580"
 OWNER = "CARLOS HIDALGO"
 LIVE_RANGE = "'carlos'' live ads'!A2:I100"
 SL_TAB = "SL Funnel"
+HIST_TAB = "SL History"
 HEADERS = ["Ad Title", "City", "Posted", "Apps", "Removed", "Sent to CL",
            "FR Booked", "FR Showed", "SR Booked", "SR Showed",
            "Trn Booked", "Trn Showed", "Day1 Booked", "Day1 Showed", "Updated"]
 MAX_AGE_DAYS = 35      # bound the fetch count; the board hides older weeks anyway
-LOOKAHEAD_DAYS = 14    # window END runs into the future: the office books
-                       # trainings/starts with forward dates (2026-10-30:
-                       # "2 tomorrow, 10 Monday"), and a window ending today
-                       # would drop a marking dated next Monday. The weekly
-                       # pulls never had this hole — their windows run
-                       # through Sunday.
+LOOKAHEAD_DAYS = 28    # window END runs into the future: funnel events carry
+                       # the APPOINTMENT date, not the booking date, so the
+                       # office's forward-dated trainings/starts (2026-10-30:
+                       # "2 tomorrow, 10 Monday") vanish past the horizon.
+                       # 14 was too tight — a first day of training set three
+                       # weeks out is routine; 28 covers it for pennies.
 
 
 def _sl_range(a1):
@@ -69,8 +78,13 @@ def _as_date(v):
 
 
 def _live_ads(sess, today):
-    """(title, city, posted) per ad family — newest posting wins, closed rows
-    included (the board keeps showing them until their weeks scroll off)."""
+    """(title, city, posted) per ad family — OLDEST posting wins, closed rows
+    included. Same title+city reposted (Magma/Ascendra/Fast Track pattern:
+    close the ad, repost it minutes later at a new budget) is ONE family to
+    the Source Report, and the window must start when the family first went
+    live or every old-version applicant's later trainings fall outside it.
+    Versions older than MAX_AGE_DAYS drop out of the cap individually, so a
+    long-running family degrades to its newer postings on its own."""
     best = {}
     for r in sheet.get_values(sess, LIVE_RANGE):
         r = list(r) + [""] * 9
@@ -82,37 +96,75 @@ def _live_ads(sess, today):
             continue
         city = re.sub(r"\s\d{5}$", "", str(loc)).strip()
         key = (str(title).strip(), city)
-        if key not in best or d > best[key]:
+        if key not in best or d < best[key]:
             best[key] = d
     return [(t, c, d) for (t, c), d in best.items()]
 
 
-def _ensure_tab(sess):
-    """Create the hidden SL Funnel tab if the workbook doesn't have it yet."""
+def _ensure_tab(sess, title, n_rows=200):
+    """Create a hidden tab if the workbook doesn't have it yet."""
     r = _request(sess, "get", "%s/%s" % (sheet.API, sheet.SPREADSHEET_ID),
                       params={"fields": "sheets.properties.title"})
     titles = [s["properties"]["title"] for s in r.json().get("sheets", [])]
-    if SL_TAB in titles:
+    if title in titles:
         return
     _request(sess, "post",
                   "%s/%s:batchUpdate" % (sheet.API, sheet.SPREADSHEET_ID),
                   json={"requests": [{"addSheet": {"properties": {
-                      "title": SL_TAB, "hidden": True,
-                      "gridProperties": {"rowCount": 200, "columnCount": 16}}}}]})
-    print("[since_live] created hidden tab %r" % SL_TAB, flush=True)
+                      "title": title, "hidden": True,
+                      "gridProperties": {"rowCount": n_rows, "columnCount": 16}}}}]})
+    print("[since_live] created hidden tab %r" % title, flush=True)
+
+
+def _append_history(sess, rows):
+    """One snapshot of the SL rows per calendar day into 'SL History' (the
+    day's first successful run wins). Weekly funnel diffs read this: events
+    carry appointment dates, so "2nd rounds / trainings / starts scheduled
+    this week" = latest snapshot this Monday minus latest snapshot last
+    Monday (Carlos 2026-11-02). Monday 07:05's snapshot is the prior week's
+    closing state."""
+    today_iso = dt.date.today().isoformat()
+    col = sheet.get_values(sess, "'%s'!A:A" % HIST_TAB)
+    if col and col[-1] and str(col[-1][0])[:10] == today_iso:
+        return
+    hist = [[today_iso] + r[:14] for r in rows]
+    _request(sess, "post",
+             "%s/%s/values/%s:append" % (sheet.API, sheet.SPREADSHEET_ID,
+                                         "'%s'!A1" % HIST_TAB),
+             params={"valueInputOption": "RAW",
+                     "insertDataOption": "INSERT_ROWS"},
+             json={"majorDimension": "ROWS", "values": hist})
+    print("[since_live] snapshot %s -> %r (%d rows)"
+          % (today_iso, HIST_TAB, len(hist)), flush=True)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--max-age-hours", type=float, default=0,
+                    help="skip (rc 0) while 'SL Funnel' is younger than this; "
+                         "0 = always run. The wrapper passes 5 on every tick.")
     a = ap.parse_args(argv)
     today = dt.date.today()
     fetch.GROUP_SUBJECT = True            # same split-cities pull as the board
 
     sess = sheet.session(verbose=True)
+    if a.max_age_hours and not a.dry_run:
+        try:
+            cell = sheet.get_values(sess, _sl_range("O2"))
+            age_h = ((dt.datetime.now()
+                      - dt.datetime.fromisoformat(str(cell[0][0])))
+                     .total_seconds() / 3600.0)
+        except Exception:
+            age_h = None                   # no tab / no rows / bad stamp → run
+        if age_h is not None and 0 <= age_h < a.max_age_hours:
+            print("[since_live] fresh (%.1fh old < %gh) — skipping"
+                  % (age_h, a.max_age_hours), flush=True)
+            return 0
     if not a.dry_run:
         sheet.probe_write(sess)
-        _ensure_tab(sess)
+        _ensure_tab(sess, SL_TAB)
+        _ensure_tab(sess, HIST_TAB, n_rows=2000)
 
     ads = _live_ads(sess, today)
     if not ads:
@@ -174,6 +226,7 @@ def main(argv=None):
     sheet.clear(sess, _sl_range("A1:P200"))
     sheet.put_values(sess, _sl_range("A1"), [HEADERS] + rows)
     print("[since_live] wrote %d rows to %r" % (len(rows), SL_TAB), flush=True)
+    _append_history(sess, rows)
     return 0
 
 
