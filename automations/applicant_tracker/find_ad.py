@@ -11,7 +11,15 @@ that have no Ad on the sheet and the report is the only place left to look.
         --names "Emily Garcia;Brianna Scott"
 
 Stops early once every name is found. `logtail applicant_find_ad FOUND` reads
-the answers back. Uses the shared rcaptain patchright session (headed — headless
+the answers back.
+
+Not sure how AppStream spelled someone? (11/2: Jeremiah Saintillien, no exact
+match anywhere.) List the rows instead of matching a name, as ROW lines:
+
+    lucy rerun applicant_find_ad --office 23221 --before 2026-10-31 --weeks 1         --label "Total First Interviews" --on 2026-10-27 --like "jerem;saintil"
+
+--on = every row of that day, --like = any row whose name has that piece of
+text. `logtail applicant_find_ad ROW` reads them back. Uses the shared rcaptain patchright session (headed — headless
 trips Cloudflare) exactly like funnel_board / indeed_source_report.
 """
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
@@ -69,10 +77,25 @@ def _abs(href):
     return href if href.startswith("http") else "https://applicantstream.com/" + href.lstrip("/")
 
 
+def _like_hit(full, likes):
+    """Does this (already _norm'ed) name hold any of the --like pieces?"""
+    return any(x in full for x in likes)
+
+
+def _on_day(stamp, day):
+    """Is the "10/27/2026 4:00 PM" of a detail row on `day`?"""
+    try:
+        return dt.datetime.strptime((stamp or "").split()[0], "%m/%d/%Y").date() == day
+    except (IndexError, ValueError):
+        return False
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", required=True)
-    ap.add_argument("--names", required=True, help="semicolon-separated 'First Last'")
+    ap.add_argument("--names", default="", help="semicolon-separated 'First Last'")
+    ap.add_argument("--like", default="", help="semicolon-separated name pieces: print a ROW line for any name holding one")
+    ap.add_argument("--on", default="", help="YYYY-MM-DD: print a ROW line for every row of that day")
     ap.add_argument("--before", default="2026-06-07", help="last Sunday to look at (YYYY-MM-DD)")
     ap.add_argument("--weeks", type=int, default=24)
     ap.add_argument("--label", default=LABEL)
@@ -82,6 +105,11 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     want = {_norm(n): n.strip() for n in a.names.split(";") if n.strip()}
+    likes = [_norm(x) for x in a.like.split(";") if x.strip()]
+    on_day = dt.datetime.strptime(a.on, "%Y-%m-%d").date() if a.on else None
+    if not (want or likes or on_day):
+        ap.error("give --names, --like or --on")
+    listed = set()   # the Weekly Total cell repeats each day's rows
     found = {}
     end = dt.datetime.strptime(a.before, "%Y-%m-%d").date()
     start = end - dt.timedelta(days=6)
@@ -136,10 +164,17 @@ def main(argv=None):
                 hi = {_norm(h): i for i, h in enumerate(t["head"])}
                 fi, li = hi.get("first name", 1), hi.get("last name", 2)
                 ai = hi.get("ad", len(t["head"]) - 2)
+                di = hi.get("date and time")
                 for r in t["rows"]:
                     if len(r) <= max(fi, li):
                         continue
                     full = _norm(r[fi] + " " + r[li])
+                    stamp = r[di] if di is not None and di < len(r) else ""
+                    if (full, stamp) not in listed and (
+                            _like_hit(full, likes) or (on_day and _on_day(stamp, on_day))):
+                        listed.add((full, stamp))
+                        print("ROW %s %s | %s | %s" % (
+                            r[fi], r[li], stamp, (r[ai] if ai < len(r) else "") or "(no ad)"), flush=True)
                     if a.fuzzy and full not in want:
                         for k, v in want.items():
                             kf, kl = k.split(" ", 1)[0], k.rsplit(" ", 1)[-1]
@@ -150,7 +185,7 @@ def main(argv=None):
                         found[want[full]] = {"week_of": str(wk), "ad": r[ai] if ai < len(r) else "?",
                                              "row": r[:ai + 1]}
                         print("FOUND %s | week of %s | %s" % (want[full], wk, found[want[full]]["ad"]), flush=True)
-            if len(found) == len(want):
+            if want and not likes and not on_day and len(found) == len(want):
                 break
     print("RESULT " + json.dumps(found), flush=True)
     print("MISSING " + json.dumps([n for n in want.values() if n not in found]), flush=True)
