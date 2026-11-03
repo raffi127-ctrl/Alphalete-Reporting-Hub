@@ -131,6 +131,14 @@ STAGED: set = set()
 # the drop alert fired daily. His churn tabs still fill.
 RATES_OFF = frozenset({"carlos", "atef"})
 
+# Offices whose CHURN tab is no longer filled at all (skipped by `--owner both`;
+# `--owner <key>` still runs one by hand). atef: fully NDS -- his last B2B order
+# is 10/7, so his 60-day B2B book only shrinks (444 lines 10/27 -> 243 on 11/3)
+# and on 11/3 it fell out of step with the day-late CHURN RATES dashboard and
+# the drop alert fired (Megan 2026-11-03: "turn it off now"). Sabrina rides her
+# own entry and is unaffected.
+CHURN_OFF = frozenset({"atef"})
+
 
 def _activation_cfg():
     """Per-office activation-rates source for E5/F5 + the AE:AF rep list.
@@ -643,7 +651,8 @@ def main(argv=None) -> int:
     # always runs it (that's how a STAGED office gets its verification run).
     owners = [o for o in OWNER_CFG
               if (o[0] == args.owner
-                  or (args.owner == "both" and o[0] not in STAGED))]
+                  or (args.owner == "both" and o[0] not in STAGED
+                      and o[0] not in CHURN_OFF))]
     staged_skipped = [o[0] for o in OWNER_CFG
                       if args.owner == "both" and o[0] in STAGED]
     if staged_skipped:
