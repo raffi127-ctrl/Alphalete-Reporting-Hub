@@ -189,6 +189,60 @@ def _weekly_board(page, label, cfg, aliases_raw, monday, saturday, out_dir):
                     no_apps=True)
 
 
+def menu_offers(link_texts, name: str):
+    """Does this office's campaign menu offer `name`? True / False, or None
+    when no campaign link was found at all (the read says nothing). Pure."""
+    texts = [" ".join(str(t or "").split()) for t in link_texts]
+    if not any(t == "RES AT&T" or t.startswith("RES-") for t in texts):
+        return None
+    return any(name.casefold() in t.casefold() for t in texts)
+
+
+def _office_offers_quantum(page, label, cfg, aliases_raw):
+    """Read the owner's campaign menu while impersonating them. Always leaves
+    the session back on the master."""
+    from automations.rashad_metrics import knocks_pull as KP
+    KP._exit_impersonation(page)
+    if not KP._navigate_to_office_access(page):
+        raise RuntimeError("Office Access did not load")
+    try:
+        rqst, reason = KP._find_owner_and_impersonate(page, cfg["name"],
+                                                      aliases_raw)
+        if not rqst:
+            raise RuntimeError(reason)
+        KP.assert_impersonating(page, rqst, cfg["name"], aliases_raw,
+                                verbose=False)
+        page.goto("https://v2.ownerville.com/index.cfm?p=88&rqst=%s" % rqst,
+                  wait_until="domcontentloaded", timeout=45000)
+        return menu_offers(page.eval_on_selector_all(
+            "a", "els => els.map(e => e.textContent)"), QUANTUM[1])
+    finally:
+        KP._exit_impersonation(page)
+
+
+def keep_quantum_offices(page, pairs, aliases_raw, logfn) -> list:
+    """`pairs` minus the offices OwnerVille offers no Quantum campaign.
+
+    WHY (Eve, 2026-11-03): an office without it ignores the campaign pin and
+    answers with RES AT&T, so Shealey, David, Christian and Vaughn had the same
+    reps under Quantum and AT&T. Read live, so an office that gets Quantum
+    comes back by itself. If the read fails the owner stays: a repeated board
+    is better than an owner missing from the mail."""
+    kept = []
+    for label, cfg in pairs:
+        try:
+            offered = _office_offers_quantum(page, label, cfg, aliases_raw)
+        except Exception as e:  # noqa: BLE001 — one owner, not the mail
+            logfn("[lumen] campaign menu %s unreadable: %s: %s"
+                  % (label, type(e).__name__, e))
+            offered = None
+        if offered is False:
+            logfn("[lumen] no Quantum campaign, AT&T only: %s" % label)
+            continue
+        kept.append((label, cfg))
+    return kept
+
+
 def _pull_program(page, pairs, aliases_raw, target, monday, saturday,
                   have_weekly, out_dir, logfn):
     """One campaign's boards on the open OwnerVille page: (daily blocks,
@@ -283,6 +337,13 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print,
         with scoped_pins(LUMEN_OFFICE_PINS), ownerville_session(
                 verbose=False, profile_dir=K.PROFILE_DIR) as page:
             for p in plan:
+                if p["program"] == QUANTUM:
+                    p["pairs"] = keep_quantum_offices(page, p["pairs"],
+                                                      aliases_raw, logfn)
+                    p["kept"] = weekly_pdf_path(
+                        saturday, [l for l, _c in p["pairs"]])
+                    p["have_weekly"] = (p["kept"].exists()
+                                        and p["kept"].stat().st_size > 0)
                 p["res"] = _pull_program(page, p["pairs"], aliases_raw, target,
                                          monday, saturday, p["have_weekly"],
                                          p["dir"], logfn)

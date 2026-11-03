@@ -127,6 +127,55 @@ class KnocksTest(unittest.TestCase):
         self.assertEqual(seen, ["24273", "24273"])
         self.assertEqual(pinned_office("Shealey Miller"), "23858")
 
+    def test_menu_offers_reads_the_campaign_links(self):
+        self.assertTrue(KN.menu_offers(
+            ["Home", "RES AT&T", "RES-ATT-Quantum Fiber"], "Quantum Fiber"))
+        self.assertFalse(KN.menu_offers(["Home", "RES AT&T"], "Quantum Fiber"))
+        self.assertIsNone(KN.menu_offers(["Home", "Sales"], "Quantum Fiber"))
+
+    def test_office_without_quantum_goes_to_att_only(self):
+        # Eve, 2026-11-03: their "Quantum" board was their AT&T board again.
+        answers = {"Shealey": False, "Aaron": True, "Nigel": None}
+        boom = lambda page, label, cfg, aliases: answers[cfg["name"]]
+        pairs = [("%s (Quantum Fiber)" % n, {"name": n}) for n in answers]
+        with mock.patch.object(KN, "_office_offers_quantum", boom):
+            kept = KN.keep_quantum_offices(None, pairs, {}, lambda *a: None)
+        self.assertEqual([c["name"] for _l, c in kept], ["Aaron", "Nigel"])
+
+    def test_unreadable_menu_keeps_the_owner(self):
+        def boom(*a):
+            raise RuntimeError("Office Access did not load")
+        pairs = [("Nigel (Quantum Fiber)", {"name": "Nigel"})]
+        with mock.patch.object(KN, "_office_offers_quantum", boom):
+            kept = KN.keep_quantum_offices(None, pairs, {}, lambda *a: None)
+        self.assertEqual(kept, pairs)
+
+    def test_only_quantum_asks_for_the_menu(self):
+        import tempfile
+
+        class Sess:
+            def __enter__(self): return object()
+            def __exit__(self, *a): return False
+
+        asked, pulled = [], {}
+
+        def keep(page, pairs, aliases, logfn):
+            asked.append([l for l, _c in pairs])
+            return []
+
+        def fake_pull(page, pairs, *a):
+            pulled[len(pulled)] = [l for l, _c in pairs]
+            return [], [], [], []
+
+        pairs = lambda aliases, logfn=None, program=KN.QUANTUM: [
+            ("Vaughn (%s)" % program[1], {"name": "Vaughn"})]
+        with mock.patch.object(KN, "owner_boards", pairs),                 mock.patch.object(KN, "keep_quantum_offices", keep),                 mock.patch.object(KN, "_pull_program", fake_pull),                 mock.patch("automations.shared.tableau_patchright."
+                           "ownerville_session", return_value=Sess()):
+            KN.build(dt.date(2026, 11, 3), tempfile.mkdtemp(), {},
+                     logfn=lambda *a: None)
+        self.assertEqual(asked, [["Vaughn (Quantum Fiber)"]])
+        self.assertEqual(pulled, {0: [], 1: ["Vaughn (AT&T)"]})
+
     def test_nobody_configured_means_no_blocks_and_no_login(self):
         with mock.patch.object(KN, "owner_boards", return_value=[]):
             self.assertEqual(KN.build(dt.date(2026, 10, 23), "x", {}), ([], []))
