@@ -455,6 +455,26 @@ def pull_dates_hub() -> tuple[str, str, list[list]]:
                 for _ in range(6):   # the card list fills in progressively
                     pg.mouse.wheel(0, 2000); pg.wait_for_timeout(1500)
                 links = pg.evaluate("""() => Array.from(document.querySelectorAll('a[href*="/views/"]')).map(a => [a.textContent.trim(), a.href])""") or []
+                if not links:   # cards are not plain links: ask vizportal for the workbook's views, and keep the page text as a clue
+                    wbid = wb.rsplit("/", 1)[1]
+                    raw = pg.evaluate("""async (wbid) => {
+                        const xsrf = (document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || '';
+                        const body = {method: 'getViews', params: {filter: {operator: 'and', clauses: [{operator: 'eq', field: 'workbookId', value: wbid}]},
+                                      order: [{field: 'name', ascending: true}], page: {startIndex: 0, maxItems: 200}}};
+                        const r = await fetch('/vizportal/api/web/v1/getViews', {method: 'POST', credentials: 'include',
+                                      headers: {'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf}, body: JSON.stringify(body)});
+                        return await r.text();
+                    }""", wbid)
+                    log(f"dates: vizportal views for workbook {wbid} -> {str(raw)[:2500]}")
+                    try:
+                        base = VIEW.split("#")[0] + "#/site/sci/views/"
+                        for v in json.loads(raw).get("result", {}).get("views") or []:
+                            slug = (v.get("repositoryUrl") or "").replace("/sheets/", "/")
+                            links.append([v.get("name", ""), base + slug if slug else ""])
+                    except Exception as e:  # noqa: BLE001
+                        log(f"dates: vizportal parse failed ({str(e)[:80]})")
+                    txt = pg.evaluate("() => document.body.innerText") or ""
+                    log(f"dates: views page text: {' | '.join(t.strip() for t in txt.splitlines() if t.strip())[:1500]}")
                 names = sorted({n for n, _ in links if n})
                 log(f"dates: workbook views ({len(names)}): {names[:60]}")
                 found = [(n, h.split("?")[0]) for n, h in links if n and "date" in n.lower()]
