@@ -314,7 +314,7 @@ OFFICES: Dict[str, AlertOffice] = {
         # #odysseyy, his own private room (Megan 2026-11-03). Enrolled by
         # command, so no installer request ever named it: until this line
         # his credit checks fell through to Megan's DM.
-        channels=("C0CFFFDKTAL",),
+        channels=("C0CES186PGC",),   # the second #odysseyy -- Megan 2026-11-03: "This should be his slack channel"
         timezone="America/Los_Angeles", active=True, platform="mac",
         slack_user_id="U07Q243HP7Z",
         # Hours are the ORG DEFAULT, not this owner's own -- nobody
