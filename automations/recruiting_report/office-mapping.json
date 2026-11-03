@@ -615,7 +615,17 @@
       "office_id_was": "22162",
       "reason": "2026-10-28: Camila (ARS) 'cerr\u00f3' \u2014 Eve: turn recruiting OFF for now, keep sales. Moved confirmed -> sales_only WITHOUT promote_when_visible, so AppStream seeing the office never flips it back. Recruiting rows keep their history, stop updating.",
       "opt_source": "b2b"
+    },
+    {
+      "sheet_tab": "Omar Mohamad",
+      "office_id": "24153",
+      "as_owner": "Omar Mohamad",
+      "as_company": "Kalkan Marketing",
+      "confidence": 1.0,
+      "promote_when_visible": true,
+      "promote_office_id": "24153",
+      "was_sales_only_reason": "tab added 2026-11-03 (Raf, Slack: Omar started selling in his own code). Office 24153 Kalkan Marketing, Dearborn MI; was a rep under Salik Mallick. OPT fills from Tableau; recruiting promotes itself with backfill when AppStream sees 24153."
     }
   ],
-  "sales_only_count": 4
+  "sales_only_count": 5
 }
