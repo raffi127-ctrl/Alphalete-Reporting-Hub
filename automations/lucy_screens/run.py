@@ -95,34 +95,50 @@ def _age(ts: float, now: float) -> str:
     return f"{mins // 60}h" if mins < 1440 else f"{mins // 1440}d"
 
 
+def _rows(items: List[dict], now: float) -> str:
+    if not items:
+        return '<div class="none">none</div>'
+    return "".join(
+        f'<div class="row"><span class="t">{html.escape(a["title"])}</span>'
+        f'<span class="age">{_age(a["ts"], now)}</span></div>' for a in items)
+
+
 def page(alerts: Optional[List[dict]], now: float) -> str:
-    """alerts=None means Slack could not be read: never drawn as all clear."""
+    """alerts=None means Slack could not be read: never drawn as all clear.
+
+    TWO SECTIONS (Megan 2026-11-03): the alerts nobody has picked up, then the
+    ones somebody is already on (the :pending: mark from incident_thread
+    --working). The headline counts only the first -- that is the number that
+    still needs a person."""
     stamp = dt.datetime.fromtimestamp(now).strftime("%I:%M %p").lstrip("0")
+    sections = ""
     if alerts is None:
-        big, cls, rows = "Can't read Slack right now", "bad", ""
-    elif not alerts:
-        big, cls, rows = "Nothing needs correcting", "good", ""
+        big, cls = "Can't read Slack right now", "bad"
     else:
-        n = len(alerts)
-        big, cls = f"{n} alert{'s' if n != 1 else ''} need correcting", "bad"
-        rows = "".join(
-            f'<div class="row"><span class="tag {"on" if a["working"] else ""}">'
-            f'{"Being worked" if a["working"] else "Needs someone"}</span>'
-            f'<span class="t">{html.escape(a["title"])}</span>'
-            f'<span class="age">{_age(a["ts"], now)}</span></div>' for a in alerts)
+        todo = [a for a in alerts if not a["working"]]
+        working = [a for a in alerts if a["working"]]
+        if not todo:
+            big, cls = "Nothing needs correcting", "good"
+        else:
+            n = len(todo)
+            big, cls = f"{n} alert{'s' if n != 1 else ''} need{'' if n != 1 else 's'} correcting", "bad"
+        if alerts:
+            sections = (
+                f'<h2 class="bad">Alerts ({len(todo)})</h2>{_rows(todo, now)}'
+                f'<h2 class="work">Being worked on ({len(working)})</h2>{_rows(working, now)}')
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="60"><title>Alerts</title><style>
 body{{margin:0;background:#faf6ea;color:#2b2415;font:bold 24px Georgia,serif;padding:28px 36px}}
-h1{{margin:0 0 4px;font-size:46px}} .good{{color:#2f7a3d}} .bad{{color:#a8281e}}
+h1{{margin:0 0 4px;font-size:46px}} .good{{color:#2f7a3d}} .bad{{color:#a8281e}} .work{{color:#7a5c0c}}
+h2{{font-size:28px;margin:26px 0 10px;padding-bottom:6px;border-bottom:2px solid #e3d6ad}}
 .sub{{color:#8a6d1f;font-size:20px;margin-bottom:20px}} .stale{{display:none;color:#a8281e}}
 .row{{display:flex;align-items:center;gap:18px;background:#fff;border:1px solid #e3d6ad;
 border-radius:10px;padding:12px 18px;margin-bottom:8px}}
 .t{{flex:1}} .age{{color:#8a6d1f;min-width:60px;text-align:right}}
-.tag{{font-size:16px;padding:5px 12px;border-radius:99px;background:#f6d9d4;color:#a8281e;
-white-space:nowrap;min-width:125px;text-align:center}} .tag.on{{background:#f3e6b8;color:#7a5c0c}}
+.none{{color:#8a6d1f;font-weight:normal;padding:4px 18px}}
 </style></head><body><h1 class="{cls}">{html.escape(big)}</h1>
 <div class="sub">#claudecorrections-and-requests &middot; updated {stamp}
-<span class="stale" id="s"> &middot; THIS SCREEN STOPPED UPDATING</span></div>{rows}
+<span class="stale" id="s"> &middot; THIS SCREEN STOPPED UPDATING</span></div>{sections}
 <script>if(Date.now()-{int(now * 1000)}>600000)document.getElementById("s").style.display="inline"</script>
 </body></html>"""
 

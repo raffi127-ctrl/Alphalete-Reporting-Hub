@@ -32,6 +32,17 @@ class Alerts(unittest.TestCase):
         self.assertNotIn("Nothing needs", page(None, 0))
         self.assertIn("Nothing needs", page([], 0))
 
+    def test_two_sections_and_headline_counts_only_unworked(self):
+        out = page([{"title": "a", "ts": 0, "working": False},
+                    {"title": "b", "ts": 0, "working": True}], 60)
+        self.assertIn("1 alert needs correcting", out)
+        self.assertIn("Alerts (1)", out)
+        self.assertIn("Being worked on (1)", out)
+        self.assertLess(out.index("Alerts (1)"), out.index("Being worked on (1)"))
+        out = page([{"title": "b", "ts": 0, "working": True}], 60)
+        self.assertIn("Nothing needs correcting", out)
+        self.assertIn("Being worked on (1)", out)
+
     def test_titles_are_escaped(self):
         self.assertIn("&lt;b&gt;", page([{"title": "<b>", "ts": 0, "working": False}], 60))
 
