@@ -2531,7 +2531,8 @@ AUTOMATED_REPORTS = [
                        "Revenue) into the Leader's Call tab. 7:30pm builds the "
                        "widescreen deck (campaigns + Revenue + the Leadership "
                        "Promotions finale) and posts it to #top-leaders-alphalete-org "
-                       "+ #alphalete-gp-sales as Lucy — finished before the 8pm call. "
+                       "+ #alphalete-gp-sales as Lucy, then counts down to the 9pm call "
+                       "(8:45, 8:55, 9:00). "
                        "(The Monday reminder emails are their own card now — Promo "
                        "Reminder Email.)",
         "breakdown": (
@@ -2551,8 +2552,10 @@ AUTOMATED_REPORTS = [
             "2. **7:30pm** — builds the widescreen deck (campaigns + Revenue + the "
             "Leadership Promotions finale, read from the recognition sheet with "
             "notes tidied up) and posts the PDF to **#top-leaders-alphalete-org** + "
-            "**#alphalete-gp-sales** as Lucy — finished before the 8pm call. The "
-            "tile goes **green** once the deck posts.\n\n"
+            "**#alphalete-gp-sales** as Lucy. The tile goes **green** once the deck "
+            "posts.\n"
+            "3. **8:45, 8:55 + 9:00pm** — reminder posts with the Zoom link in the "
+            "same two channels, for the 9pm call.\n\n"
             "The Monday reminder emails (11am / 4pm / 7:15pm) that nudge owners to "
             "fill the recognition sheet are their **own card now — Promo Reminder "
             "Email**."

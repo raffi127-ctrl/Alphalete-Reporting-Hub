@@ -1606,7 +1606,8 @@ FINAL_CHANNELS = [
     ("alphalete-gp-sales",        "C07J46MQNUX"),
 ]
 # The message posted above the deck (the "flyer") — call-to-join (Megan 2026-07-21).
-CALL_TIME = "8:45"
+# 9:00, not 8:45 (Carlos 2026-11-02; Raf opens it at 9 every Monday).
+CALL_TIME = "9:00"
 ZOOM_URL = "https://us02web.zoom.us/j/7567334591"
 
 

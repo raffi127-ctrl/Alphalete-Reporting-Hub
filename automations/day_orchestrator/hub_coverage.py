@@ -131,6 +131,7 @@ _NOT_A_REPORT = frozenset({
     "alphalete_sales_board_watchdog",
     # auto-registered sub-step / dupe stubs of a real card (never published)
     "applicant_morning", "applicant_evening", "appstream_morning", "leaders_call_mon",
+    "leaders_call_reminders",
     "weather_6am", "texas_de_brazil_745", "new_start_followup_sat",
     "override_bulletin_send_fri", "brand_audit_noon", "car_rides_cleanup",
     "harvest_prime",

@@ -3695,6 +3695,26 @@
    "depends_on": [],
    "verify": null
   },
+  "install_leaders_call_reminders_agent": {
+   "on_scheduler": true,
+   "_note": "MANUAL: `lucy rerun install_leaders_call_reminders_agent` installs com.alphalete.leaders-call-reminders (Mon 8:45, 8:55 + 9:00pm CT) on Lucy 1: the countdown posts for the 9pm Leader's Call. weekdays [] = manual only.",
+   "display_name": "Install Leader's Call reminders agent",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "leaders-call-reminders"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
   "install_owners_call_reminder_agent": {
    "on_scheduler": true,
    "_note": "MANUAL: `lucy rerun install_owners_call_reminder_agent` installs com.alphalete.owners-call-reminder (Mon 11:00am + 4:00pm + 7:15pm-final-call CST). EMAILS the owners/ICDs Maud's recognition reminder (Owner's/Leader's Call times + recognition sheet link) from the reporting Gmail. REQUIRES: OWNERS_CALL_EMAILS set to the comma-separated recipient list. weekdays [] = manual only.",
@@ -8641,6 +8661,27 @@
     "weekdays": []
    },
    "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
+  "leaders_call_reminders": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Run by the dedicated com.alphalete.leaders-call-reminders launchd job (Mon 8:45, 8:55 + 9:00pm CT, deploy/leaders_call_reminders.sh --send). Posts the 15-min, 5-min and starting-now reminders with the Zoom link to #top-leaders-alphalete-org + #alphalete-gp-sales as Lucy (Carlos 2026-11-02). `lucy rerun leaders_call_reminders` here = DRY-RUN of the 15-min message, posts nothing.",
+   "display_name": "Leader's Call reminders",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.leaders_call.reminders"
+   ],
+   "base_args": [
+    "--slot",
+    "15"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
    "verify": null
