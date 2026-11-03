@@ -294,6 +294,99 @@ class SterlingCodes(unittest.TestCase):
         self.assertIn("fadv", queries[0])
 
 
+class SterlingForward(unittest.TestCase):
+    """Each ICD's Sterling codes go to their OWN email; they forward them like
+    SaraPlus's (Megan 2026-11-03)."""
+    def test_address_summary_round_trips_per_service(self):
+        from automations.icd_alerts import code_answer as CA
+        s = CA.forward_summary("omar@gmail.com", CA.STERLING)
+        self.assertEqual((CA.forward_service_of(s), CA.address_of(s)), (CA.STERLING, "omar@gmail.com"))
+        s = CA.forward_summary("omar@gmail.com")
+        self.assertEqual((CA.forward_service_of(s), CA.address_of(s)), (CA.SARAPLUS, "omar@gmail.com"))
+
+    def _book(self, tabs):
+        book = mock.MagicMock()
+        made = {}
+
+        def ws(t):
+            if t not in tabs:
+                raise KeyError(t)
+            m = made.setdefault(t, mock.MagicMock())
+            m.get_all_values.side_effect = lambda: tabs[t]
+            m.append_row.side_effect = lambda row, **k: tabs[t].append(row)
+            return m
+        book.worksheet.side_effect = ws
+        book.add_worksheet.side_effect = lambda title, **k: tabs.setdefault(title, [list(["Office"])]) and ws(title)
+        return book
+
+    def test_sterling_address_lands_on_its_own_tab(self):
+        from automations.icd_alerts import code_answer as CA
+        tabs = {"ICD Faults": [], CA.MAIL_TAB: [["Office", "Forwards From", "Added", "Note"]],
+                CA.STERLING_MAIL_TAB: [["Office", "Forwards From", "Added", "Note"]]}
+        fault = {"office": "omar", "stage": CA.FORWARD_STAGE, "rownum": 3,
+                 "summary": CA.forward_summary("omar@gmail.com", CA.STERLING)}
+        with mock.patch("automations.icd_alerts.post.open_faults", return_value=[fault]):
+            CA.record_forwards(self._book(tabs), send=True, log=lambda *_: None)
+        self.assertEqual(tabs[CA.STERLING_MAIL_TAB][-1][:2], ["omar", "omar@gmail.com"])
+        self.assertEqual(len(tabs[CA.MAIL_TAB]), 1)          # SaraPlus tab untouched
+
+    def test_no_sterling_row_falls_back_to_the_saraplus_address(self):
+        from automations.icd_alerts import code_answer as CA
+        now = dt.datetime(2026, 11, 3, 10, 0, tzinfo=dt.timezone.utc)
+        fault = {"office": "omar", "stage": CA.REQUEST_STAGE, "rownum": 5,
+                 "summary": CA.summary_for(now - dt.timedelta(minutes=1), CA.STERLING)}
+        queries = []
+        tabs = {CA.MAIL_TAB: [["Office", "Forwards From"], ["omar", "omar@gmail.com"]]}
+        book = mock.MagicMock()
+        book.worksheet.side_effect = lambda t: mock.MagicMock(get_all_values=lambda: tabs[t]) if t in tabs else (_ for _ in ()).throw(KeyError(t))
+        with mock.patch("automations.icd_alerts.post.open_faults", return_value=[fault]):
+            CA.answer_requests(book, send=False, now=now, log=lambda *_: None,
+                               newest_code=lambda s, q: queries.append(q) or None)
+        self.assertEqual(len(queries), 1)
+        self.assertIn("fadv", queries[0])
+        self.assertIn("to:omar@gmail.com", queries[0])
+
+    def test_filter_link_carries_sender_and_subject(self):
+        from automations.icd_alerts import sterling_forward as SF
+        self.assertIn("from=noreply%40us.fadv.co", SF.FILTER_URL)
+        self.assertIn("subject=Authentication%20Request", SF.FILTER_URL)
+
+    def _ask(self, pick):
+        a = mock.MagicMock()
+        a.Cancelled = type("Cancelled", (Exception,), {})
+        a.choose.return_value = pick
+        return a
+
+    def test_walk_skips_gmail_forward_when_saraplus_already_did_it(self):
+        from automations.icd_alerts import code_forward as F, sterling_forward as SF
+        ask = self._ask(F.YES)
+        with mock.patch.object(F, "_login_email", return_value="omar@gmail.com"), \
+                mock.patch.object(F, "_open") as op, mock.patch.object(F, "_copy"), \
+                mock.patch("automations.icd_alerts.relay.report_forward", return_value=True) as rf, \
+                mock.patch("automations.icd_alerts.relay.forward_confirmed", return_value=True):
+            self.assertEqual(SF.walk_through(ask, say=lambda *_: None, office_key="omar"), "done")
+        rf.assert_called_once_with("omar@gmail.com", office_key="omar", service="sterling")
+        self.assertEqual([c.args[0] for c in op.call_args_list], [SF.FILTER_URL])   # filter only
+
+    def test_walk_adds_gmail_forward_when_missing(self):
+        from automations.icd_alerts import code_forward as F, sterling_forward as SF
+        ask = self._ask(F.YES)
+        with mock.patch.object(F, "_login_email", return_value="omar@gmail.com"), \
+                mock.patch.object(F, "_open") as op, mock.patch.object(F, "_copy"), \
+                mock.patch.object(F, "_wait_for_gmail", return_value=True), \
+                mock.patch("automations.icd_alerts.relay.report_forward", return_value=True), \
+                mock.patch("automations.icd_alerts.relay.forward_confirmed", return_value=False):
+            self.assertEqual(SF.walk_through(ask, say=lambda *_: None, office_key="omar"), "done")
+        self.assertEqual([c.args[0] for c in op.call_args_list], [F.FORWARDING_URL, SF.FILTER_URL])
+
+    def test_skip(self):
+        from automations.icd_alerts import code_forward as F, sterling_forward as SF
+        with mock.patch.object(F, "_login_email", return_value="omar@gmail.com"), \
+                mock.patch("automations.icd_alerts.relay.report_forward") as rf:
+            self.assertEqual(SF.walk_through(self._ask(F.LATER), say=lambda *_: None), "skipped for now")
+        rf.assert_not_called()
+
+
 class OfficeComputer(unittest.TestCase):
     def test_sterling_dry_sends_nothing(self):
         from automations.icd_alerts import sterling_send

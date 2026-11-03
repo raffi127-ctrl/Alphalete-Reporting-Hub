@@ -838,8 +838,10 @@ def _state_row(state: str, office_key: str = "") -> bool:
     return bool(out.get("ok")) and out.get("status") == "taken"
 
 
-def report_forward(address: str, office_key: str = "", log=None) -> bool:
-    """Send home the address SaraPlus mails this office's codes to.
+def report_forward(address: str, office_key: str = "", log=None,
+                   service: str = "saraplus") -> bool:
+    """Send home the address SaraPlus (or, with service="sterling", Sterling)
+    mails this office's codes to.
 
     NOT report_fault, ON PURPOSE: that scrubs every email address, and this
     message is nothing but one -- typed by the owner during setup so Lucy 1
@@ -858,7 +860,7 @@ def report_forward(address: str, office_key: str = "", log=None) -> bool:
             "fault": {
                 "day": C.today().isoformat(),
                 "stage": CA.FORWARD_STAGE,
-                "summary": CA.forward_summary(address),
+                "summary": CA.forward_summary(address, service),
                 "detail": "",
                 "agent": AGENT_VERSION,
                 "platform": "%s %s" % (platform.system(), platform.release()),

@@ -141,6 +141,7 @@ AGENT_FILES = [
     # this computer with this office's own logins.
     "automations/icd_alerts/office_jobs.py",
     "automations/icd_alerts/sterling_send.py",
+    "automations/icd_alerts/sterling_forward.py",
     # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
     "automations/icd_alerts/pnl.py",
     # The PNL's Apex half: the owner's one sign-in window, and Carlos's

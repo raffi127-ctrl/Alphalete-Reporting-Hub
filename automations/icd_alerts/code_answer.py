@@ -121,15 +121,30 @@ def since_of(summary: str) -> Optional[dt.datetime]:
     return when if when.tzinfo else when.astimezone()
 
 
-def forward_summary(address: str) -> str:
-    return FORWARD_PREFIX + address.strip()
+# Sterling's setup step (sterling_forward) sends its address home the same
+# way, under its own prefix, so it lands on the Sterling tab.
+STERLING_FORWARD_PREFIX = "Sterling codes go to "
+_FORWARD_PREFIXES = {SARAPLUS: FORWARD_PREFIX, STERLING: STERLING_FORWARD_PREFIX}
+
+
+def forward_summary(address: str, service: str = SARAPLUS) -> str:
+    return _FORWARD_PREFIXES[service] + address.strip()
+
+
+def forward_service_of(summary: str) -> str:
+    s = (summary or "").strip()
+    for svc, prefix in _FORWARD_PREFIXES.items():
+        if s.startswith(prefix):
+            return svc
+    return ""
 
 
 def address_of(summary: str) -> str:
     s = (summary or "").strip()
-    if not s.startswith(FORWARD_PREFIX):
+    svc = forward_service_of(s)
+    if not svc:
         return ""
-    word = s[len(FORWARD_PREFIX):].strip().split()
+    word = s[len(_FORWARD_PREFIXES[svc]):].strip().split()
     return word[0] if word and "@" in word[0] else ""
 
 
@@ -226,6 +241,10 @@ def answer_requests(book=None, *, send: bool = False,
             continue
         service = service_of(f["summary"])
         address = addresses.get(service, {}).get(office)
+        # Most owners get Sterling's codes at the same personal address as
+        # SaraPlus's, so an office with no Sterling row is looked up there.
+        if not address and service == STERLING:
+            address = addresses.get(SARAPLUS, {}).get(office)
         if not address:
             log("CODE   %-10s asked for a %s code; no forward set up -> none"
                 % (office, SERVICES[service]["name"]))
@@ -294,21 +313,29 @@ def record_forwards(book=None, *, send: bool = False,
         return []
     done = []
     try:
-        mail = _tab(book, MAIL_TAB, MAIL_HEADER) if send else None
         faults_tab = book.worksheet(P.FAULTS_TAB) if send else None
-        rows = mail.get_all_values() if send else []
     except Exception as e:  # noqa: BLE001
         log("code forwards: could not open the tabs: %s" % type(e).__name__)
         return []
+    # One tab per service, opened only when a row for it turns up.
+    opened: Dict[str, tuple] = {}
+
+    def _mail_tab(svc):
+        if svc not in opened:
+            t = _tab(book, SERVICES[svc]["tab"], MAIL_HEADER)
+            opened[svc] = (t, t.get_all_values())
+        return opened[svc]
     stamp = now.isoformat(timespec="seconds")
     for f in faults:
         office, address = f["office"], address_of(f["summary"])
-        log("FWD    %-10s SaraPlus code forward from setup" % office)
+        svc = forward_service_of(f["summary"]) or SARAPLUS
+        log("FWD    %-10s %s code forward from setup" % (office, SERVICES[svc]["name"]))
         if not send:
             done.append({"office": office, "status": "dry-run"})
             continue
         try:
             if address:
+                mail, rows = _mail_tab(svc)
                 at = next((i for i, r in enumerate(rows[1:], start=2)
                            if r and r[0].strip().lower() == office), None)
                 row = [office, address, stamp, "from setup"]
