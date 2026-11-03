@@ -1133,6 +1133,24 @@ PERIOD_SCAN_MARKERS = (
 )
 
 
+# CALENDARS, NOT FEEDS. A view whose rows are a published schedule of dates
+# (pay dates, period dates) has no "newest event": its last PAST date is just
+# the last payout. OverridesICDView "Dates to Remember" (Available for Payments
+# / Credico Dates / Period Dates, pulled by carlos_security_ledger) read as
+# "newest 10/23, 11 days behind" on 2026-11-03 -- 10/23 was the last override
+# payout and the next is 11/13. Matched on the VIEW, so every sheet of it is
+# skipped; the rest of OverridesICDView keeps being judged.
+CALENDAR_MARKERS = (
+    "datestoremember",
+)
+
+
+def is_calendar_source(label: str) -> bool:
+    """Is this view a fixed calendar of dates rather than a data feed?"""
+    low = (label or "").lower()
+    return any(m in low for m in CALENDAR_MARKERS)
+
+
 def is_period_scan_source(label: str) -> bool:
     """Is this view pulled once per period in a loop, so the day's fingerprint
     is a closed/future period and says nothing about the feed?"""
@@ -1334,6 +1352,11 @@ def check_export(path,
             # Its dates are ONE owner's sales days, not the feed's — nothing
             # here can say the feed is behind. See ONE_OWNER_MARKERS.
             out["column"] = "one owner's slice — not judged for feed freshness"
+            if verbose:
+                _say("  [freshness] {} — {}".format(label, out["column"]))
+            return out
+        if is_calendar_source(label):
+            out["column"] = "a calendar of dates, not a feed — not judged"
             if verbose:
                 _say("  [freshness] {} — {}".format(label, out["column"]))
             return out
