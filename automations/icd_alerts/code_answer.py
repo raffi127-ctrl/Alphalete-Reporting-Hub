@@ -578,3 +578,64 @@ def check_forward_scope(book=None, *, send: bool = False,
     except Exception as e:  # noqa: BLE001 -- never cost the poster its tick
         log("code forwards: scope check: %s" % type(e).__name__)
     return wide
+
+
+def register_forward(book, office: str, address: str, note: str = "by hand",
+                     now: Optional[dt.datetime] = None) -> str:
+    """Put ONE office's code address on MAIL_TAB without a setup run.
+
+    WHY (Carlos 2026-11-02). His office Mac hit the wall at 10:01, asked for
+    the code, and was answered "none": the alphaletegp -> alphaletereporting
+    forward had existed for weeks, but nothing had ever told this tab. The
+    setup path (code_forward) only runs on the office Mac, in front of the
+    owner; this is the same row, written from the queue:
+
+        lucy rerun icd_code_mail_register -- --register carlos-b2batt <address>
+
+    One row per office, same as record_forwards: an existing row is replaced.
+    Returns "added" or "replaced".
+    """
+    office = (office or "").strip().lower()
+    address = (address or "").strip()
+    if not office or "@" not in address:
+        raise ValueError("need an office key and an email address")
+    now = now or dt.datetime.now().astimezone()
+    mail = _tab(book, MAIL_TAB, MAIL_HEADER)
+    rows = mail.get_all_values()
+    row = [office, address, now.isoformat(timespec="seconds"), note]
+    at = next((i for i, r in enumerate(rows[1:], start=2)
+               if r and r[0].strip().lower() == office), None)
+    if at:
+        mail.update("A%d:D%d" % (at, at), [row])
+        return "replaced"
+    mail.append_row(row, value_input_option="RAW")
+    return "added"
+
+
+def _main(argv: Optional[List[str]] = None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--register", nargs=2, metavar=("OFFICE", "ADDRESS"),
+                    help="put this office's SaraPlus code address on the "
+                         "'%s' tab (replaces an existing row)" % MAIL_TAB)
+    ap.add_argument("--note", default="by hand (queue)")
+    ap.add_argument("--list", action="store_true",
+                    help="print the offices registered (addresses masked)")
+    a = ap.parse_args(argv)
+    from automations.icd_alerts import post as P
+    from automations.recruiting_report.fill import open_by_key
+    book = open_by_key(P.RELAY_SPREADSHEET_ID)
+    if a.register:
+        office, address = a.register
+        what = register_forward(book, office, address, note=a.note)
+        print("%s: %s row on '%s' -> codes mailed to %s***" % (
+            office.strip().lower(), what, MAIL_TAB, address.split("@")[0][:3]))
+    if a.list or not a.register:
+        for office, address in sorted(forwarding_addresses(book).items()):
+            print("%-14s %s***@%s" % (office, address.split("@")[0][:3],
+                                      address.split("@")[-1]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

@@ -16279,6 +16279,27 @@
    "verify": null,
    "report_id": "linkedin-2nd-round-contacts",
    "_note": "Raf's rules on what the two passes added: not hired / left as a message 7 days after the second round -> removed; new start scheduled but never showed, 3 weeks after -> removed; showed but OwnerVille View Progress under 100% 3 weeks after -> removed (Carlos 2026-10-31: Onboard -> View Progress -> campaign -> search -> Progress 100% = fully onboarded); showed + 100% -> kept for good, terminated later or not (Raf: rehires). State in output/second_round_contacts/state.json."
+  },
+  "icd_code_mail_register": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false -- a one-off a PERSON runs, never scheduled. Puts an office's SaraPlus code address on the private 'SaraPlus Code Mail' tab of the relay workbook (code_answer.register_forward) so Lucy 1 answers that office's code requests from the reporting inbox instead of 'no forward set up -> none'. `lucy rerun icd_code_mail_register -- --register <office-key> <address>` adds or replaces the office's row; with no args it lists the offices registered (addresses masked). Machine Lucy 1: it is the box that reads the reporting inbox and holds the relay workbook. The address lives on the sheet and in the Mini Control row, never in the repo (public). Added 2026-11-02 after Carlos's office hit the wall at 10:01 with its alphaletegp -> alphaletereporting forward long in place but unknown to the tab.",
+   "machine": "Lucy 1",
+   "display_name": "Register an office's SaraPlus code address (one-off)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.icd_alerts.code_answer"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
   }
  },
  "read_only_standalone": {

@@ -31,7 +31,11 @@ class Sheet:
         self.rows.append(list(row))
 
     def update(self, rng, vals):
-        self.rows[:1] = vals
+        import re
+        i = int(re.match(r"[A-Z]+(\d+)", rng).group(1)) - 1
+        while len(self.rows) <= i:
+            self.rows.append([])
+        self.rows[i] = list(vals[0])
 
 
 class Book:
@@ -166,3 +170,23 @@ class ThePosterLeavesRequestsOpen(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegisterByHand(unittest.TestCase):
+    def test_adds_then_replaces_one_row_per_office(self):
+        book = book_with([], mail=[["rashad", "old@x.com", "", ""]])
+        self.assertEqual(CA.register_forward(book, "Carlos-B2BATT", "gp@x.com", now=NOW), "added")
+        self.assertEqual(CA.forwarding_addresses(book),
+                         {"rashad": "old@x.com", "carlos-b2batt": "gp@x.com"})
+        self.assertEqual(CA.register_forward(book, "carlos-b2batt", "new@x.com", now=NOW), "replaced")
+        self.assertEqual(CA.forwarding_addresses(book)["carlos-b2batt"], "new@x.com")
+        self.assertEqual(len(book.worksheet(CA.MAIL_TAB).rows), 3)
+
+    def test_makes_the_tab_on_first_use(self):
+        book = book_with([])
+        CA.register_forward(book, "x", "a@b.c", now=NOW)
+        self.assertEqual(CA.forwarding_addresses(book), {"x": "a@b.c"})
+
+    def test_refuses_junk(self):
+        with self.assertRaises(ValueError):
+            CA.register_forward(book_with([]), "x", "no-at-sign")
