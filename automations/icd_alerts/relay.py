@@ -781,10 +781,12 @@ CODE_READY, CODE_WAITING, CODE_NONE, CODE_UNSUPPORTED = (
     "ready", "waiting", "none", "unsupported")
 
 
-def request_code(since: dt.datetime, office_key: str = "", log=None) -> bool:
-    """Tell Lucy 1 this Mac is on the code screen, asked at `since`."""
+def request_code(since: dt.datetime, office_key: str = "", log=None,
+                 service: str = "saraplus") -> bool:
+    """Tell Lucy 1 this Mac is on a code screen (SaraPlus or Sterling),
+    asked at `since`."""
     from automations.icd_alerts import code_answer as CA
-    return report_fault(CA.REQUEST_STAGE, CA.summary_for(since),
+    return report_fault(CA.REQUEST_STAGE, CA.summary_for(since, service),
                         log=log, office_key=office_key)
 
 

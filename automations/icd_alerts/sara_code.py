@@ -75,11 +75,13 @@ def _stamp() -> None:
 
 def code_from_relay(since: dt.datetime, *, office_key: str = "",
                     wait_s: int = CODE_WAIT_SECONDS, poll_s: int = POLL_SECONDS,
-                    sleep=time.sleep, clock=time.time, log=print) -> str:
-    """Ask Lucy 1 for the code mailed after `since`, and wait for it."""
+                    sleep=time.sleep, clock=time.time, log=print,
+                    service: str = "saraplus") -> str:
+    """Ask Lucy 1 for the code mailed after `since`, and wait for it.
+    `service` = "sterling" for the office admin page's Sterling sign-in."""
     from automations.icd_alerts import relay as R
 
-    if not R.request_code(since, office_key=office_key):
+    if not R.request_code(since, office_key=office_key, service=service):
         raise NoCode("could not file the code request with the relay")
     log("  asked Lucy for the code (requested %s)" % since.strftime("%H:%M:%S"))
     deadline = clock() + wait_s
@@ -91,7 +93,8 @@ def code_from_relay(since: dt.datetime, *, office_key: str = "",
             log("  code received")
             return got["code"]
         if status == R.CODE_NONE:
-            raise NoCode("no SaraPlus code forward is set up for this office")
+            raise NoCode("no %s code forward is set up for this office"
+                         % ("Sterling" if service == "sterling" else "SaraPlus"))
         if status == R.CODE_UNSUPPORTED:
             raise NoCode("the relay cannot hand out codes yet (%s)"
                          % (got.get("error") or "old relay"))

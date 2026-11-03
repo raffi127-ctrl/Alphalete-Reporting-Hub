@@ -22,8 +22,8 @@
  * the failure that follows looks like a bad key rather than a missing
  * spreadsheet.
  *
- * TABS (plus 'Headshot Jobs', documented with the headshot calls at the
- * bottom):
+ * TABS (plus 'Headshot Jobs' and 'Office Jobs', documented with their calls
+ * at the bottom):
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At |
@@ -105,6 +105,19 @@ function doPost(e) {
     // OwnerVille. Before the day check: neither call carries a day.
     if (body.headshot_jobs) return _reply(_headshotJobsFor(office));
     if (body.headshot_result) return _reply(_headshotResult(office, body.headshot_result));
+    // OFFICE JOBS (office admin page -- background checks, 2026-11-02): same
+    // hand-over shape as headshots, any kind. See OFFICE JOBS at the bottom.
+    if (body.office_jobs) return _reply(_officeJobsFor(office));
+    if (body.office_job_result) return _reply(_officeJobResult(office, body.office_job_result));
+    // The office ADMIN's computer (another location) queues work for its OWN
+    // office's computer and reads back how it went. Office key = own office
+    // only: it can never queue or read another office's job.
+    if (body.office_job_request) {
+      var rq = body.office_job_request;
+      return _reply(_officeJobEnqueue({office: office, kind: rq.kind,
+                                       mode: rq.mode, payload: rq.payload}));
+    }
+    if (body.office_job_status) return _reply(_officeJobStatus(office, String(body.office_job_status.job_id || '')));
     // THE SARAPLUS CODE, handed back to the Mac that asked for it
     // (icd_alerts.code_answer, 2026-10-29). Keyed like every other call, so
     // an office only ever sees an answer to its own request.
@@ -741,6 +754,9 @@ function _adminCall(body) {
   if (body.headshot_enqueue) return _headshotEnqueue(body.headshot_enqueue);
   if (body.headshot_results) return _headshotResults();
   if (body.headshot_posted) return _headshotPosted(body.headshot_posted);
+  if (body.office_job_enqueue) return _officeJobEnqueue(body.office_job_enqueue);
+  if (body.office_job_results) return _officeJobResults();
+  if (body.office_job_collected) return _officeJobCollected(body.office_job_collected);
   return {ok: false, error: 'unknown admin call'};
 }
 
@@ -885,4 +901,178 @@ function _headshotPosted(ids) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+// --- OFFICE JOBS -----------------------------------------------------------
+// Work an office ADMIN asked for on the office admin page, done on the
+// office's OWN computer with the office's OWN logins (first kind:
+// 'bgc_send', Sterling background-check invites). The admin's computer --
+// somewhere else -- queues it with the office key (office_job_request) and
+// reads it back (office_job_status); the office computer collects and
+// answers with the same key. Lucy can also queue with the admin key.
+//
+//   'Office Jobs'  Job ID | Office | Kind | Mode | Payload JSON | Queued At |
+//                  Status | Offered At | Result JSON | Result At |
+//                  Collected At
+//
+// HANDED OUT ONCE, NEVER RE-OFFERED. Unlike a headshot, doing a job twice is
+// not safe: a second run sends every applicant a second background-check
+// invite. A job the computer never answers stays 'offered'; Lucy 1 reports
+// it to the admin as unconfirmed ("check Sterling before pressing again").
+// The computer can hand one back untouched with status 'deferred' (e.g.
+// another browser had the profile) and only then is it queued again.
+//
+// AN OFFICE ONLY EVER SEES AND ANSWERS ITS OWN JOBS, as with headshots.
+var OFFICE_JOBS_TAB = 'Office Jobs';
+var OJ = {ID: 0, OFFICE: 1, KIND: 2, MODE: 3, PAYLOAD: 4, QUEUED: 5,
+          STATUS: 6, OFFERED: 7, RESULT: 8, RESULT_AT: 9, COLLECTED: 10};
+var OJ_HEAD = ['Job ID', 'Office', 'Kind', 'Mode', 'Payload JSON', 'Queued At',
+               'Status', 'Offered At', 'Result JSON', 'Result At',
+               'Collected At'];
+var OJ_KINDS = {bgc_send: true};
+var OJ_MAX_PER_CALL = 2;
+
+function _ojSheet() {
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  if (!sh) {
+    sh = _book().insertSheet(OFFICE_JOBS_TAB);
+    sh.appendRow(OJ_HEAD);
+  }
+  return sh;
+}
+
+function _officeJobEnqueue(j) {
+  var office = String(j.office || '').trim().toLowerCase();
+  var kind = String(j.kind || '').trim();
+  var mode = String(j.mode || 'dry') === 'live' ? 'live' : 'dry';
+  if (!office || !OJ_KINDS[kind]) return {ok: false, error: 'missing office or unknown kind'};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var id = Utilities.getUuid();
+    var sh = _ojSheet();
+    sh.appendRow([id, office, kind, mode, JSON.stringify(j.payload || {}),
+                  new Date(), 'queued', '', '', '', '']);
+    return {ok: true, job_id: id};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _officeJobsFor(office) {
+  // Nothing waiting = no lock (every enrolled computer asks often).
+  var sh0 = _book().getSheetByName(OFFICE_JOBS_TAB);
+  if (!sh0) return {ok: true, jobs: []};
+  var any = sh0.getDataRange().getValues().some(function (r, i) {
+    return i > 0 && String(r[OJ.OFFICE]).trim().toLowerCase() === office &&
+        String(r[OJ.STATUS]) === 'queued';
+  });
+  if (!any) return {ok: true, jobs: []};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _ojSheet();
+    var rows = sh.getDataRange().getValues();
+    var now = new Date();
+    var out = [];
+    for (var i = 1; i < rows.length && out.length < OJ_MAX_PER_CALL; i++) {
+      var r = rows[i];
+      if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office) continue;
+      if (String(r[OJ.STATUS]) !== 'queued') continue;
+      var payload = {};
+      try { payload = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+      sh.getRange(i + 1, OJ.STATUS + 1, 1, 2).setValues([['offered', now]]);
+      out.push({job_id: String(r[OJ.ID]), kind: String(r[OJ.KIND]),
+                mode: String(r[OJ.MODE]), payload: payload});
+    }
+    return {ok: true, jobs: out};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _officeJobResult(office, res) {
+  var id = String(res.job_id || '');
+  var status = String(res.status || '');
+  if (!id || !status) return {ok: false, error: 'missing job or status'};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _ojSheet();
+    var rows = sh.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][OJ.ID]) !== id) continue;
+      if (String(rows[i][OJ.OFFICE]).trim().toLowerCase() !== office) {
+        return {ok: false, error: 'not your job'};
+      }
+      if (rows[i][OJ.RESULT_AT]) return {ok: true, job: 'already recorded'};
+      if (status === 'deferred') {
+        sh.getRange(i + 1, OJ.STATUS + 1, 1, 2).setValues([['queued', '']]);
+        return {ok: true, job: 'requeued'};
+      }
+      sh.getRange(i + 1, OJ.STATUS + 1).setValue(status);
+      sh.getRange(i + 1, OJ.RESULT + 1, 1, 2).setValues([[JSON.stringify(res), new Date()]]);
+      return {ok: true, job: 'recorded'};
+    }
+    return {ok: false, error: 'no such job'};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _officeJobResults() {
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  if (!sh) return {ok: true, results: []};
+  var rows = sh.getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (r[OJ.COLLECTED]) continue;
+    var res = {};
+    try { res = JSON.parse(String(r[OJ.RESULT] || '{}')); } catch (err) {}
+    out.push({job_id: String(r[OJ.ID]), office: String(r[OJ.OFFICE]),
+              kind: String(r[OJ.KIND]), status: String(r[OJ.STATUS]),
+              offered_at: r[OJ.OFFERED] instanceof Date ? r[OJ.OFFERED].toISOString() : '',
+              answered: !!r[OJ.RESULT_AT], result: res});
+  }
+  return {ok: true, results: out};
+}
+
+function _officeJobCollected(ids) {
+  var want = {};
+  (ids || []).forEach(function (x) { want[String(x)] = true; });
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _ojSheet();
+    var rows = sh.getDataRange().getValues();
+    var n = 0;
+    for (var i = 1; i < rows.length; i++) {
+      if (!want[String(rows[i][OJ.ID])]) continue;
+      sh.getRange(i + 1, OJ.COLLECTED + 1).setValue(new Date());
+      n++;
+    }
+    return {ok: true, marked: n};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _officeJobStatus(office, id) {
+  if (!id) return {ok: false, error: 'missing job'};
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  if (!sh) return {ok: false, error: 'no such job'};
+  var rows = sh.getDataRange().getValues();
+  for (var i = rows.length - 1; i >= 1; i--) {
+    var r = rows[i];
+    if (String(r[OJ.ID]) !== id) continue;
+    if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office) return {ok: false, error: 'not your job'};
+    var res = {};
+    try { res = JSON.parse(String(r[OJ.RESULT] || '{}')); } catch (err) {}
+    return {ok: true, job_id: id, status: String(r[OJ.STATUS]),
+            offered_at: r[OJ.OFFERED] instanceof Date ? r[OJ.OFFERED].toISOString() : '',
+            answered: !!r[OJ.RESULT_AT], result: res};
+  }
+  return {ok: false, error: 'no such job'};
 }

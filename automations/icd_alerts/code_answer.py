@@ -70,19 +70,50 @@ FORWARD_STAGE = "probe-code-forward"
 FORWARD_PREFIX = "SaraPlus codes go to "
 
 
-def summary_for(since: dt.datetime) -> str:
+# STERLING TOO (Megan 2026-11-03). The office admin page's background checks
+# are sent from the office's own computer, signed in to the office's Sterling
+# account, and Sterling emails a code on every login -- the same problem
+# SaraPlus had, so the same three hops. Read off the real mail 2026-11-03:
+# noreply@us.fadv.co, subject "Authentication Request", body "Your
+# authentication code is 966828." That sender also mails every candidate's
+# RESULT, so the owner's filter forwards the code mails ONLY (subject), never
+# the results -- and the scope check below counts results as "too wide".
+SARAPLUS = "saraplus"
+STERLING = "sterling"
+SERVICES = {
+    SARAPLUS: {"prefix": SUMMARY_PREFIX, "tab": MAIL_TAB, "name": "SaraPlus",
+               "query": "from:security.info@saraplus.com to:%s newer_than:1d"},
+    STERLING: {"prefix": "Sterling code request ", "tab": "Sterling Code Mail",
+               "name": "Sterling",
+               "query": "from:noreply@us.fadv.co subject:authentication to:%s newer_than:1d"},
+}
+STERLING_MAIL_TAB = SERVICES[STERLING]["tab"]
+
+
+def summary_for(since: dt.datetime, service: str = SARAPLUS) -> str:
     """The fault summary a request is filed under. The instant rides in it
     because the relay folds same-summary rows into one -- two requests must
     never share a row."""
-    return SUMMARY_PREFIX + since.isoformat(timespec="seconds")
+    return SERVICES[service]["prefix"] + since.isoformat(timespec="seconds")
+
+
+def service_of(summary: str) -> str:
+    """Which service a request summary is for ('' if neither)."""
+    s = (summary or "").strip()
+    for svc, cfg in SERVICES.items():
+        if s.startswith(cfg["prefix"]):
+            return svc
+    return ""
 
 
 def since_of(summary: str) -> Optional[dt.datetime]:
     """The instant a request was made, back out of its summary."""
     s = (summary or "").strip()
-    if not s.startswith(SUMMARY_PREFIX):
+    svc = service_of(s)
+    if not svc:
         return None
-    word = s[len(SUMMARY_PREFIX):].split()[0] if s[len(SUMMARY_PREFIX):].strip() else ""
+    prefix = SERVICES[svc]["prefix"]
+    word = s[len(prefix):].split()[0] if s[len(prefix):].strip() else ""
     try:
         when = dt.datetime.fromisoformat(word)
     except ValueError:
@@ -102,9 +133,9 @@ def address_of(summary: str) -> str:
     return word[0] if word and "@" in word[0] else ""
 
 
-def query_for(address: str) -> str:
-    """Gmail search for SaraPlus codes mailed to ONE office's address."""
-    return "from:security.info@saraplus.com to:%s newer_than:1d" % address.strip()
+def query_for(address: str, service: str = SARAPLUS) -> str:
+    """Gmail search for one service's codes mailed to ONE office's address."""
+    return SERVICES[service]["query"] % address.strip()
 
 
 def _tab(book, title: str, header: List[str]):
@@ -116,10 +147,10 @@ def _tab(book, title: str, header: List[str]):
         return sh
 
 
-def forwarding_addresses(book) -> Dict[str, str]:
-    """office -> the address its SaraPlus codes are mailed to."""
+def forwarding_addresses(book, service: str = SARAPLUS) -> Dict[str, str]:
+    """office -> the address that service mails its codes to."""
     try:
-        rows = book.worksheet(MAIL_TAB).get_all_values()
+        rows = book.worksheet(SERVICES[service]["tab"]).get_all_values()
     except Exception:  # noqa: BLE001 -- no tab yet: nobody is set up
         return {}
     out = {}
@@ -158,7 +189,7 @@ def answer_requests(book=None, *, send: bool = False,
     if not faults:
         return []
 
-    addresses = forwarding_addresses(book)
+    addresses = {svc: forwarding_addresses(book, svc) for svc in SERVICES}
     done = []
     try:
         codes = _tab(book, CODES_TAB, CODES_HEADER) if send else None
@@ -193,9 +224,11 @@ def answer_requests(book=None, *, send: bool = False,
             _close(f, "expired")
             done.append({"office": office, "status": "expired"})
             continue
-        address = addresses.get(office)
+        service = service_of(f["summary"])
+        address = addresses.get(service, {}).get(office)
         if not address:
-            log("CODE   %-10s asked for a code; no forward set up -> none" % office)
+            log("CODE   %-10s asked for a %s code; no forward set up -> none"
+                % (office, SERVICES[service]["name"]))
             try:
                 _answer(office, since, "", STATUS_NONE)
             except Exception as e:  # noqa: BLE001
@@ -205,7 +238,7 @@ def answer_requests(book=None, *, send: bool = False,
             done.append({"office": office, "status": STATUS_NONE})
             continue
         try:
-            hit = newest_code(since, query_for(address))
+            hit = newest_code(since, query_for(address, service))
         except Exception as e:  # noqa: BLE001 -- inbox down: try again next tick
             log("CODE   %-10s inbox not readable: %s" % (office, type(e).__name__))
             done.append({"office": office, "status": "inbox-error"})
@@ -420,7 +453,7 @@ def _added_at(text: str) -> Optional[dt.datetime]:
 
 def confirm_forwards(book=None, *, send: bool = False,
                      now: Optional[dt.datetime] = None, mails=None, accept=None,
-                     tell=None, log=print) -> List[Dict]:
+                     tell=None, log=print, service: str = SARAPLUS) -> List[Dict]:
     """Accept Gmail's forwarding mail for offices on MAIL_TAB. Never raises.
 
     ONLY FOR AN ADDRESS ON THE TAB: any other request to forward into this
@@ -437,7 +470,8 @@ def confirm_forwards(book=None, *, send: bool = False,
         if book is None:
             from automations.recruiting_report.fill import open_by_key
             book = open_by_key(P.RELAY_SPREADSHEET_ID)
-        sheet = book.worksheet(MAIL_TAB)
+        sheet = book.worksheet(SERVICES[service]["tab"])
+        svc_name = SERVICES[service]["name"]
         rows = sheet.get_all_values()
     except Exception as e:  # noqa: BLE001 -- includes no tab yet
         log("code forwards: could not read the mail tab: %s" % type(e).__name__)
@@ -495,9 +529,9 @@ def confirm_forwards(book=None, *, send: bool = False,
                 if late and NOTE_NO_MAIL not in note:
                     log("FWD    %-10s no Gmail confirmation mail" % office)
                     _note(at, note, NOTE_NO_MAIL)
-                    _say("*%s* started the SaraPlus code forward, but Gmail's "
+                    _say("*%s* started the %s code forward, but Gmail's "
                          "confirmation never reached the reporting inbox. They "
-                         "may have stopped before adding the address." % office)
+                         "may have stopped before adding the address." % (office, svc_name))
                 done.append({"office": office, "status": "no mail"})
                 continue
             if not send:
@@ -509,15 +543,15 @@ def confirm_forwards(book=None, *, send: bool = False,
             except Exception as e:  # noqa: BLE001 -- a person can still click it
                 log("FWD    %-10s could not confirm: %s" % (office, e))
                 _note(at, note, NOTE_FAILED)
-                _say("*%s*: Lucy could not confirm Gmail's SaraPlus forward "
+                _say("*%s*: Lucy could not confirm Gmail's %s forward "
                      "(%s: %s). Please click the confirmation email in the "
-                     "reporting inbox." % (office, type(e).__name__, str(e)[:120]))
+                     "reporting inbox." % (office, svc_name, type(e).__name__, str(e)[:120]))
                 done.append({"office": office, "status": "failed"})
                 continue
             log("FWD    %-10s Gmail forward confirmed" % office)
             _note(at, note, NOTE_CONFIRMED)
-            _say("*%s*: Gmail's SaraPlus code forward is confirmed. It starts "
-                 "working once they save the filter." % office)
+            _say("*%s*: Gmail's %s code forward is confirmed. It starts "
+                 "working once they save the filter." % (office, svc_name))
             done.append({"office": office, "status": "confirmed"})
         except Exception as e:  # noqa: BLE001 -- one row never costs the rest
             log("code forwards: row %d: %s" % (at, type(e).__name__))
@@ -659,7 +693,11 @@ SCOPE_EVERY_MIN = 60
 
 
 def scope_query(address: str) -> str:
-    return "deliveredto:%s -from:security.info@saraplus.com newer_than:1d" % address
+    # Sterling's code mails are allowed too (same owner address may forward
+    # both); Sterling's RESULT mails are not -- they share the sender, so the
+    # exclusion is sender AND subject.
+    return ("deliveredto:%s -from:security.info@saraplus.com "
+            "-(from:noreply@us.fadv.co subject:authentication) newer_than:1d" % address)
 
 
 def _foreign_counts(addresses: Iterable[str]) -> Dict[str, int]:
@@ -685,7 +723,8 @@ def _scope_due(stamp_path, now: dt.datetime) -> bool:
 
 def check_forward_scope(book=None, *, send: bool = False,
                         now: Optional[dt.datetime] = None, counts=None,
-                        stamp_path=None, tell=None, log=print) -> List[Tuple[str, int]]:
+                        stamp_path=None, tell=None, log=print,
+                        service: str = SARAPLUS) -> List[Tuple[str, int]]:
     """Tell Megan + Eve if an office forwards more than SaraPlus's code mails.
 
     Once an hour, once per office per day. Never raises.
@@ -694,7 +733,8 @@ def check_forward_scope(book=None, *, send: bool = False,
     from automations.icd_alerts import post as P
 
     now = now or dt.datetime.now().astimezone()
-    stamp_path = stamp_path or (C.APP_DIR / SCOPE_STAMP_NAME)
+    stamp_path = stamp_path or (C.APP_DIR / (SCOPE_STAMP_NAME if service == SARAPLUS
+                                             else "%s-%s" % (service, SCOPE_STAMP_NAME)))
     if not _scope_due(stamp_path, now):
         return []
     counts = counts or _foreign_counts
@@ -704,7 +744,7 @@ def check_forward_scope(book=None, *, send: bool = False,
         if book is None:
             from automations.recruiting_report.fill import open_by_key
             book = open_by_key(P.RELAY_SPREADSHEET_ID)
-        sheet = book.worksheet(MAIL_TAB)
+        sheet = book.worksheet(SERVICES[service]["tab"])
         rows = sheet.get_all_values()
         where = {}
         for at, r in enumerate(rows[1:], start=2):
@@ -718,10 +758,10 @@ def check_forward_scope(book=None, *, send: bool = False,
                 continue
             at, office, note = where[address]
             wide.append((office, n))
-            log("FWD    %-10s forwarded %d mails that are not SaraPlus's" % (office, n))
+            log("FWD    %-10s forwarded %d mails that are not login codes" % (office, n))
             if send and word not in note:
                 sheet.update_cell(at, 4, ("%s; %s" % (note, word)).strip("; "))
-                tell("*%s* is forwarding more than SaraPlus's codes to the "
+                tell("*%s* is forwarding more than its login codes to the "
                      "reporting inbox (%d other mails in the last day). They "
                      "should pick \"Disable forwarding\" in Gmail and keep only "
                      "the filter." % (office, n))

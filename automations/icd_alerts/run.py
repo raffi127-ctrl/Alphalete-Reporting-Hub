@@ -857,6 +857,15 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("headshots skipped: %s" % type(e).__name__)
 
+        # OFFICE JOBS: what this office's admin pressed on the office admin
+        # page (first kind: Sterling background-check invites). Office
+        # hours, ahead of the gate like headshots.
+        try:
+            from automations.icd_alerts import office_jobs
+            office_jobs.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("office jobs skipped: %s" % type(e).__name__)
+
         # THE OWNER'S PNL, for an office that asked for it. Office hours, its
         # own state file; today only the one-time DD check (see pnl.py).
         try:

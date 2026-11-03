@@ -4253,6 +4253,11 @@ def main(argv=None) -> int:
                     code_answer.publish_confirmed(book, send=args.send)
                     code_answer.publish_working(book, send=args.send)
                     code_answer.check_forward_scope(book, send=args.send)
+                    # Sterling's codes (office admin page, 2026-11-03).
+                    code_answer.confirm_forwards(book, send=args.send,
+                                                 service=code_answer.STERLING)
+                    code_answer.check_forward_scope(book, send=args.send,
+                                                    service=code_answer.STERLING)
                 except Exception as e:  # noqa: BLE001 — never cost the alerts
                     print("could not answer code requests: %s: %s"
                           % (type(e).__name__, str(e)[:100]))
