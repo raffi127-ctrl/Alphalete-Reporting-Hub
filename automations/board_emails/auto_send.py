@@ -332,16 +332,31 @@ def _norm(name: str) -> str:
     return re.sub(r"\s+", " ", name).strip()
 
 
+_CAPTAIN_TITLE = re.compile(r"\bcaptain(?:ship)?\s+team\b", re.I)
+
+
 def owner_names(grid: Sequence[Sequence[str]]) -> Set[str]:
     """Every name on a RANKED row of the board: col A a rank number, col B a
     name. That is the leaderboard and the day tables on both boards; header,
     Totals and WE-history rows have no rank, so a relabelled header can't read
-    as a new person."""
+    as a new person.
+
+    Rows inside a captainship block or its delta chart do not count: those go
+    in the Captainship Reports, not on this email. Eve 2026-11-03, Blake Welle's
+    B2B box: "si blake no entra en la org, solo es capitan de b2b". A delta
+    chart opens with 'Total for week' in col C, labelled with its owner in col
+    A or B, so RAF SPECIAL TEAM and TRANG'S ORG below the boxes still count."""
     out = set()
+    in_captain_block = False
     for row in grid:
         a = (row[0] if len(row) > 0 else "").strip()
         b = (row[1] if len(row) > 1 else "").strip()
-        if a.isdigit() and b and not b.isdigit():
+        c = (row[2] if len(row) > 2 else "").strip().lower()
+        if _CAPTAIN_TITLE.search(a) or _CAPTAIN_TITLE.search(b):
+            in_captain_block = True
+        elif c == "total for week":
+            in_captain_block = "captain" in (a + " " + b).lower()
+        if not in_captain_block and a.isdigit() and b and not b.isdigit():
             out.add(_norm(b))
     return out
 

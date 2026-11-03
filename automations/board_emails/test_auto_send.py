@@ -556,5 +556,18 @@ class CloseOlderHolds(unittest.TestCase):
             self.assertEqual(left, ["2026-10-20.alerted"])
 
 
+class CaptainOnlyNames(unittest.TestCase):
+    def test_a_name_only_in_a_captain_box_is_not_a_new_owner(self):
+        grid = [["", "Owner"], ["1", "Chan Park"],
+                ["", "BLAKE'S CAPTAIN TEAM"], ["CAPTAIN TEAM", ""],
+                ["1", "Blake Welle"],
+                ["BLAKE CAPTAINSHIP", "", "Total for week"],
+                ["1", "Blake Welle"],
+                ["TRANG'S ORG", "", "Total for week"],
+                ["1", "Trang Canavan"]]
+        self.assertEqual(A.owner_names(grid),
+                         {A._norm("Chan Park"), A._norm("Trang Canavan")})
+
+
 if __name__ == "__main__":
     unittest.main()
