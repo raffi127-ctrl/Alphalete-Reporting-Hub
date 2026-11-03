@@ -3031,7 +3031,7 @@ AUTOMATED_REPORTS = [
         "category": "📊 Metrics",
         "self_scheduled": True,
         "description": "Lucy posts the office as a mind map every morning at "
-                       "7:00 — the sales board drawn as a tree by trainer, "
+                       "6:00 — the sales board drawn as a tree by trainer, "
                        "each name in its own week's colour off the board, new "
                        "starts tagged NEW and terminated reps removed. Goes to "
                        "#alphalete-lvl1-chat.",
@@ -3059,13 +3059,13 @@ AUTOMATED_REPORTS = [
             "starts for their whole tree) and a totals box per team plus the "
             "whole office.\n\n"
             "WHEN IT RUNS\n"
-            "Daily at 7:00 AM Central on Lucy 1, on its own job — no upload, "
+            "Daily at 6:00 AM Central on Lucy 1, on its own job — no upload, "
             "no trigger. Read-only: it writes nothing to any sheet."
         ),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "7:00 AM",
+            "time": "6:00 AM",
             "estimated_minutes": 2,
         },
         "checklist": [],

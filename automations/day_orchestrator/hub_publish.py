@@ -48,7 +48,7 @@ _HUB_CARD = {
     # the hand-built card is 'birthday-reminders'. Without this line the pill
     # greens on an auto-registered dupe and the real card sits white.
     "birthday_reminders": "birthday-reminders",
-    # Raf's 7am mind map — its own LaunchAgent, so the wrapper publishes and
+    # Raf's 6am mind map — its own LaunchAgent, so the wrapper publishes and
     # this line is what keeps the pill on the hand-built card.
     "sales_board_mind_map": "sales-board-mind-map",
     # Raf's local office — folded onto the shared card with the other offices
