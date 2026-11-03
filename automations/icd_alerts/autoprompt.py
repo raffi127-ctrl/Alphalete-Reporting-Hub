@@ -45,6 +45,9 @@ SYSTEMS = {
     },
     "saraplus": {
         "module": "automations.icd_alerts.sara_signin",
+        # Opened with nobody asking: never mail a code on the strength of an
+        # unlocked screen (sara_signin, LUCY TYPES THE LOGIN).
+        "args": ["--no-fill"],
         "stamp": "sara-autoprompt.txt",
         "name": "SaraPlus",
     },

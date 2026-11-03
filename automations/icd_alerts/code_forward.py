@@ -58,14 +58,13 @@ STEPS = (
     "Then leave \"Disable forwarding\" selected. Do NOT pick \"Forward a copy "
     "of incoming mail\": that sends your whole inbox. We only want SaraPlus's "
     "code emails, and the next step's filter takes care of that.\n\n"
-    "Click OK only after you have done this in Gmail.")
+    "Click OK only after you have done this in Gmail. Then leave this computer "
+    "open for up to 3 minutes: Lucy checks with Gmail, and the last step opens "
+    "by itself.")
 
 OFFER = ("One last step, about 2 minutes, one time: this lets Lucy enter "
          "SaraPlus's codes herself from now on. Only SaraPlus's code emails get "
-         "forwarded to us, nothing else in your inbox.")
-WAIT_FOR_CONFIRM = ("Click OK, then leave this computer open for up to 3 minutes. "
-                    "Lucy is checking with Gmail, and the last step opens by "
-                    "itself.")
+         "forwarded to us, nothing else in your inbox.\n\n")
 NOT_ARRIVED = (
     "Gmail has not told us about it yet, so it did not go through.\n\n"
     "Gmail just opened again. Check that:\n"
@@ -162,7 +161,10 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
     try:
         login = _login_email()
         if login:
-            pick = ask.choose("Are your SaraPlus codes emailed to %s?" % login,
+            # ONE BOX, NOT TWO: the owner who just signed in gets the reason and
+            # the question together (Eve 2026-11-03, fewer clicks).
+            pick = ask.choose(("" if can_skip else OFFER)
+                              + "Are your SaraPlus codes emailed to %s?" % login,
                               [YES, OTHER] + ([LATER] if can_skip else []))
         else:
             pick = OTHER
@@ -182,7 +184,6 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
         if not R.report_forward(address, office_key=office_key):
             say("      could not reach the reporting team -- tell them %s" % address)
             return "address not sent"
-        ask.message(WAIT_FOR_CONFIRM)
         for attempt in range(TRIES):
             if _wait_for_gmail(office_key, say):
                 return _finish(ask, say)
@@ -218,7 +219,6 @@ def offer_after_signin(ask=None, say=print) -> str:
             return "not asked"
         if ask is None:
             from automations.icd_alerts import dialogs as ask
-        ask.message(OFFER)
         return walk_through(ask, say, can_skip=False)
     except Exception as e:  # noqa: BLE001 -- includes the dialog being cancelled
         say("      code forwarding skipped: %s" % type(e).__name__)
@@ -239,7 +239,8 @@ FILTER_URL = ("https://mail.google.com/mail/u/0/#create-filter/from="
               + SARAPLUS_SENDER.replace("@", "%40"))
 
 FILTER_STEPS = (
-    "Last step. Gmail just opened a box with %s already filled in.\n\n"
+    "Last step, so Lucy can enter SaraPlus's codes herself. Gmail just opened a "
+    "box with %s already filled in.\n\n"
     "Click Create filter -> check Forward it to -> pick %s -> Create filter.\n\n"
     "Only emails from that address get forwarded. If our address is not in the "
     "list yet, wait a minute and reload the page."

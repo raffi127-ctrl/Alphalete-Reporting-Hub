@@ -101,6 +101,70 @@ class TheSweepStandsBackWhileSomebodyTypesTest(unittest.TestCase):
         self.assertNotEqual(C.SARA_SIGNIN_LOCK, C.SC_SIGNIN_LOCK)
 
 
+class LucyTypesTheLoginTest(unittest.TestCase):
+    """Eve 2026-11-03: the owner who ran the line only types the code."""
+
+    def setUp(self):
+        self.said = []
+        for target, attr, value in (
+                (X.C, "creds", lambda: {"email": "o@gmail.com", "password": "pw"}),
+                (X.C, "install", lambda: {"office_key": "isaiah"})):
+            p = mock.patch.object(target, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+        p = mock.patch("automations.shared.sara_passcode._request_code")
+        self.request = p.start()
+        self.addCleanup(p.stop)
+        p = mock.patch.object(X, "_show_login_form")
+        self.form = p.start()
+        self.addCleanup(p.stop)
+
+    def _go(self, login):
+        with mock.patch.object(X.S, "_login", login):
+            X._fill_for_the_owner("page", log=self.said.append)
+
+    def test_at_the_code_screen_it_asks_for_the_code(self):
+        self._go(mock.Mock(side_effect=X.S.SaraPasscodeWall("wall")))
+        self.request.assert_called_once()
+        self.assertEqual(self.request.call_args.kwargs["destination"], "email")
+        self.assertTrue(any("NEWEST" in l for l in self.said))
+
+    def test_an_office_on_texts_gets_a_text(self):
+        with mock.patch.object(X.C, "install", lambda: {"office_key": "eveliz"}):
+            self._go(mock.Mock(side_effect=X.S.SaraPasscodeWall("wall")))
+        self.assertEqual(self.request.call_args.kwargs["destination"], "mobile")
+
+    def test_no_code_wanted_asks_for_nothing(self):
+        self._go(mock.Mock(return_value="root"))
+        self.request.assert_not_called()
+
+    def test_a_refused_password_leaves_the_form_for_a_person(self):
+        self._go(mock.Mock(side_effect=X.S.SaraError("invalid")))
+        self.request.assert_not_called()
+        self.form.assert_called_once()
+        self.assertTrue(any("usual password" in l for l in self.said))
+
+    def test_no_saved_login_is_left_to_the_person(self):
+        login = mock.Mock()
+        with mock.patch.object(X.C, "creds", side_effect=RuntimeError("none")):
+            self._go(login)
+        login.assert_not_called()
+
+    def test_the_line_fills_and_the_window_autoprompt_opens_does_not(self):
+        from automations.icd_alerts import autoprompt as A
+        self.addCleanup(X._FILL.__setitem__, 0, False)
+        with mock.patch.object(X, "run", return_value=0):
+            X.main([])
+            self.assertTrue(X._FILL[0])
+            X.main(A.SYSTEMS["saraplus"]["args"])
+            self.assertFalse(X._FILL[0])
+
+    def test_the_window_fills_only_when_told(self):
+        import inspect
+        src = inspect.getsource(X._window)
+        self.assertIn("if _FILL[0]:\n                _fill_for_the_owner", src)
+
+
 class ShowLoginFormTest(unittest.TestCase):
     """Jamis 2026-11-02: the window sat on SaraPlus's marketing page."""
 

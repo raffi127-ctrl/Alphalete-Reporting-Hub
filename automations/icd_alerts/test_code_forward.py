@@ -322,7 +322,7 @@ class OfferedAfterTheHandSignIn(unittest.TestCase):
         ask = self._ask()
         self.assertEqual(CF.offer_after_signin(ask, say=lambda *_: None), "done")
         ask.choose.assert_not_called()
-        ask.message.assert_called_once_with(CF.OFFER)
+        ask.message.assert_not_called()
         self.assertIs(self.walk.call_args.kwargs["can_skip"], False)
 
     def test_already_set_up_is_never_asked(self):
@@ -338,9 +338,8 @@ class OfferedAfterTheHandSignIn(unittest.TestCase):
         ask.message.assert_not_called()
 
     def test_a_broken_dialog_never_raises(self):
-        ask = self._ask()
-        ask.message.side_effect = RuntimeError("no display")
-        self.assertEqual(CF.offer_after_signin(ask, say=lambda *_: None), "skipped")
+        self.walk.side_effect = RuntimeError("no display")
+        self.assertEqual(CF.offer_after_signin(self._ask(), say=lambda *_: None), "skipped")
 
 
 class NoSkipAfterTheHandSignIn(unittest.TestCase):
@@ -362,8 +361,9 @@ class NoSkipAfterTheHandSignIn(unittest.TestCase):
         self.assertEqual(got, "done")
         ask.choose.assert_called_once()
         self.assertEqual(ask.choose.call_args.args[1], [CF.YES, CF.OTHER])
-        ask.message.assert_any_call(CF.WAIT_FOR_CONFIRM)
+        self.assertIn(CF.OFFER, ask.choose.call_args.args[0], "reason + question, one box")
         ask.message.assert_any_call(CF.FILTER_STEPS)
+        self.assertEqual(ask.message.call_count, 2, "steps + filter: three clicks in all")
 
     def test_our_address_is_copied_and_named_before_gmail_opens(self):
         self._run(can_skip=False)

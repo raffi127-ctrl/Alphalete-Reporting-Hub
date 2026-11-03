@@ -24,8 +24,14 @@ challenge, and "the wall survived a new profile" then reads as proof the
 account expired. It is not proof. It is the heal feeding the wall.
 
 So this opens the profile the sweep really uses, in front of a person, and
-waits while they sign in and type the code SaraPlus emails them. One person,
-once per machine, and the trust cookie stays in the profile afterwards.
+waits while they type the code SaraPlus emails them. One person, once per
+machine, and the trust cookie stays in the profile afterwards.
+
+LUCY TYPES THE LOGIN (Eve 2026-11-03), because this computer already has it
+and the only thing that truly needs a person is the code. ONLY WHEN SOMEBODY
+RAN THE LINE. The window autoprompt opens by itself passes --no-fill: it opens
+on any unlocked screen, about every half hour, so filling it would mail the
+owner a code each time, at a desk nobody may be sitting at.
 
     python -m automations.icd_alerts.sara_signin
 
@@ -106,6 +112,43 @@ def _hand_session_to_the_reader(urls, log=print) -> None:
     _LAST_VERDICT.append("no session root in the window's urls: %s" % ", ".join(urls or [])[:300])
 
 
+# Set by main: did a person run this, or did autoprompt open it? See the top.
+_FILL = [False]
+
+
+def _fill_for_the_owner(page, log=print) -> None:
+    """Type the saved login and ask SaraPlus for the code. Never raises.
+
+    ANYTHING GOING WRONG LEAVES THE WINDOW WORKING BY HAND, as it always did: a
+    saved password that is out of date just puts the form in front of them."""
+    try:
+        cr = C.creds()
+    except Exception:  # noqa: BLE001 -- no login saved here
+        cr = {}
+    if not (cr.get("email") and cr.get("password")):
+        return
+    try:
+        from automations.icd_alerts import sms_code as T
+        from automations.shared import sara_passcode as SP
+        try:
+            S._login(page, cr["email"], cr["password"],
+                     creds_hint="the SaraPlus login saved on this computer", log=log)
+            return      # no code wanted: the wait in _window sees it signed in
+        except S.SaraPasscodeWall:
+            pass
+        text = T.wants_text(str(C.install().get("office_key") or ""))
+        SP._request_code(page, log=log, destination="mobile" if text else "email")
+        log("")
+        log("  Lucy filled in your login and asked for the code. Check your %s,"
+            % ("phone" if text else "email"))
+        log("  and type the NEWEST code into the SaraPlus window.")
+    except Exception as e:  # noqa: BLE001
+        _LAST_VERDICT.append("could not fill the login: %s" % type(e).__name__)
+        log("")
+        log("  Please sign in with your usual password in the SaraPlus window.")
+        _show_login_form(page, log=log)
+
+
 def run(log=print) -> int:
     from patchright.sync_api import sync_playwright
     # SARAPLUS PAUSED ON THIS MACHINE (config.SARA_PAUSED_KEYS): no window,
@@ -123,8 +166,11 @@ def run(log=print) -> int:
     log("")
     log("  Opening SaraPlus in Lucy's browser.")
     log("")
-    log("  Sign in there, then enter the code SaraPlus emails you. It has to")
-    log("  be THIS window -- signing in with your own browser does not reach")
+    if _FILL[0]:
+        log("  Lucy signs in for you. You only type the code SaraPlus sends you,")
+    else:
+        log("  Sign in there, then enter the code SaraPlus emails you. It has to")
+    log("  in THIS window -- signing in with your own browser does not reach")
     log("  Lucy, however many times you do it.")
     if cr.get("email"):
         log("")
@@ -429,6 +475,8 @@ def _window(log=print) -> int:
                 log("  This window is already signed in.")
                 _hand_session_to_the_reader(_live_urls(ctx), log=log)
                 return 0
+            if _FILL[0]:
+                _fill_for_the_owner(page, log=log)
 
             waited, said, url = 0, False, ""
             while waited < WAIT_SECONDS:
@@ -493,6 +541,7 @@ def _window(log=print) -> int:
 
 
 def main(argv=None) -> int:
+    _FILL[0] = "--no-fill" not in (sys.argv[1:] if argv is None else argv)
     return run()
 
 
