@@ -65,9 +65,45 @@ def open_alerts(messages: List[dict]) -> List[dict]:
         marks = [r.get("name") for r in m.get("reactions") or []]
         if "white_check_mark" in marks or "RESOLVED" in text:
             continue
+        who = []
+        for r in m.get("reactions") or []:
+            if r.get("name") == "pending":
+                who = [PEOPLE[u] for u in r.get("users") or [] if u in PEOPLE]
         out.append({"title": _title(text), "ts": float(m["ts"]),
-                    "working": "pending" in marks})
+                    "working": "pending" in marks, "who": ", ".join(who)})
     return out
+
+
+# Who may show up as "working on it": the two people who triage this channel.
+# Lucy's own id is left out on purpose -- her mark means a Claude session
+# placed it, and the person's name is in the thread note instead.
+PEOPLE = {"U04G5HJBGFN": "Megan", "U088E2KJEV8": "Eve"}
+_NOTE = re.compile(r"Working on it\s*[\u2014-]+\s*([A-Za-z][\w.'-]*)")
+
+
+def who_from_thread(client, ts: str) -> str:
+    """The name in the newest "Working on it -- X" reply, else ''. One
+    conversations.replies per worked ticket; there are rarely more than two."""
+    from automations.shared import incident_thread as I, slack_retry
+    try:
+        r = slack_retry.read(client.conversations_replies, channel=I.CHANNEL,
+                             ts="%.6f" % ts, limit=200)
+    except Exception:  # noqa: BLE001
+        return ""
+    for m in sorted(r.get("messages") or [], key=lambda x: float(x["ts"]), reverse=True):
+        hit = _NOTE.search(m.get("text") or "")
+        if hit:
+            return hit.group(1)
+    return ""
+
+
+def fill_who(alerts: List[dict]) -> None:
+    from automations.shared import incident_thread as I
+    client = None
+    for a in alerts:
+        if a["working"] and not a.get("who"):
+            client = client or I._client()
+            a["who"] = who_from_thread(client, a["ts"]) or "someone"
 
 
 def read_channel() -> List[dict]:
@@ -100,7 +136,8 @@ def _rows(items: List[dict], now: float) -> str:
         return '<div class="none">none</div>'
     return "".join(
         f'<div class="row"><span class="t">{html.escape(a["title"])}</span>'
-        f'<span class="age">{_age(a["ts"], now)}</span></div>' for a in items)
+        + (f'<span class="who">{html.escape(a["who"])}</span>' if a.get("who") else "")
+        + f'<span class="age">{_age(a["ts"], now)}</span></div>' for a in items)
 
 
 def page(alerts: Optional[List[dict]], now: float) -> str:
@@ -136,6 +173,7 @@ h2{{font-size:28px;margin:26px 0 10px;padding-bottom:6px;border-bottom:2px solid
 border-radius:10px;padding:12px 18px;margin-bottom:8px}}
 .t{{flex:1}} .age{{color:#8a6d1f;min-width:60px;text-align:right}}
 .none{{color:#8a6d1f;font-weight:normal;padding:4px 18px}}
+.who{{font-size:18px;padding:5px 14px;border-radius:99px;background:#f3e6b8;color:#7a5c0c;white-space:nowrap}}
 </style></head><body><h1 class="{cls}">{html.escape(big)}</h1>
 <div class="sub">#claudecorrections-and-requests &middot; updated {stamp}
 <span class="stale" id="s"> &middot; THIS SCREEN STOPPED UPDATING</span></div>{sections}
@@ -150,6 +188,7 @@ def write_alerts() -> None:
         if not msgs:  # this channel is never silent for 14 days: an empty read
             raise RuntimeError("Slack returned no messages")  # is not all clear
         alerts = open_alerts(msgs)
+        fill_who(alerts)
     except Exception as e:  # noqa: BLE001
         print(f"slack read failed: {type(e).__name__}: {str(e)[:120]}")
         if ALERTS_PAGE.exists():

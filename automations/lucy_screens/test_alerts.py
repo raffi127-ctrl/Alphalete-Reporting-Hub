@@ -1,5 +1,6 @@
 import unittest
 
+from automations.lucy_screens import run
 from automations.lucy_screens.run import _column, _needs_open, _seconds, open_alerts, page, running_now
 
 
@@ -42,6 +43,17 @@ class Alerts(unittest.TestCase):
         out = page([{"title": "b", "ts": 0, "working": True}], 60)
         self.assertIn("Nothing needs correcting", out)
         self.assertIn("Being worked on (1)", out)
+
+    def test_who_from_reaction_and_shown_on_row(self):
+        msgs = [{"ts": "1.0", "text": "_incident · k · open 2026-11-03_ boom",
+                 "reactions": [{"name": "pending", "users": ["U088E2KJEV8", "U0BCG8F9B5Z"]}]}]
+        got = open_alerts(msgs)
+        self.assertEqual(got[0]["who"], "Eve")
+        self.assertIn('class="who">Eve<', page(got, 60))
+
+    def test_who_note_regex(self):
+        self.assertEqual(run._NOTE.search("Working on it \u2014 Megan \u2014 sara").group(1), "Megan")
+        self.assertEqual(run._NOTE.search("Working on it - Eve").group(1), "Eve")
 
     def test_titles_are_escaped(self):
         self.assertIn("&lt;b&gt;", page([{"title": "<b>", "ts": 0, "working": False}], 60))
