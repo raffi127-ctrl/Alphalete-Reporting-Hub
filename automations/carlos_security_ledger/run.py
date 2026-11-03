@@ -439,13 +439,28 @@ def pull_dates_hub() -> tuple[str, str, list[list]]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / "Dates_to_Remember.csv"
     with tableau_session(headless=True, verbose=False) as pg:
-        for view in DATES_VIEWS:
+        # 1) ask Tableau's own search where "Dates to Remember" lives (the view slug is not guessable)
+        found = []
+        try:
+            pg.goto(VIEW.split("#")[0] + "#/site/sci/explore?search=Dates%20to%20Remember&type=view", wait_until="domcontentloaded")
+            pg.wait_for_timeout(15_000)
+            found = pg.evaluate("""() => Array.from(document.querySelectorAll('a[href*="/views/"]'))
+                .map(a => [a.textContent.trim(), a.href]).filter(x => /date/i.test(x[0]) || /date/i.test(x[1]))""") or []
+            log(f"dates: search found {found[:10]}")
+        except Exception as e:  # noqa: BLE001
+            log(f"dates: search page failed ({str(e)[:80]})")
+        candidates = [h for _, h in found] + DATES_VIEWS
+        seen = set()
+        for view in candidates:
+            if view in seen:
+                continue
+            seen.add(view)
             try:
                 sheets = list_crosstab_sheets(view, page=pg, verbose=False)
             except Exception as e:  # noqa: BLE001
-                log(f"dates: {view.rsplit('/', 1)[1]} -> no crosstab dialog ({str(e)[:80]})")
+                log(f"dates: {view.rsplit('/', 1)[1][:40]} -> no crosstab dialog ({str(e)[:60]})")
                 continue
-            log(f"dates: {view.rsplit('/', 1)[1]} offers sheets {sheets}")
+            log(f"dates: {view.rsplit('/', 1)[1][:40]} offers sheets {sheets}")
             pick = next((n for n in sheets if "date" in n.lower()), None) or (sheets[0] if len(sheets) == 1 else None)
             if not pick:
                 continue
