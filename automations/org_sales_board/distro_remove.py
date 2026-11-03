@@ -243,6 +243,9 @@ REMOVALS: dict = {
     # desde ahi. Este grupo NO es compartido con el mail del Org Sales Board.
     "Luis' Captainship": [
         ("Max Powell", "maxpowell145@gmail.com"),
+        # 2026-11-03 (Eve), regla de dos semanas: Roberto Rodriguez (B2B - All
+        # Units, cero en WE 11.01 y WE 10.25). Mismo caso que Max.
+        ("Roberto Rodriguez", "rob.diamondbiz@gmail.com"),
     ],
 }
 

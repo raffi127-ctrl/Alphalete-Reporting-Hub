@@ -111,6 +111,8 @@ EXCLUDE: set = {
     "brandon stallkamp",    # 2026-10-06 (ALPHALETE ORG Retail JE)
     "ja mosley",            # 2026-10-23 (Chan) — oficina cerrada, two-week zero rule
     "brian tran",           # 2026-10-29 (Sahil) — oficina cerrada (Raf)
+    "eric martinez",        # 2026-11-03 (Chan) — two-week zero rule
+    "roberto rodriguez",    # 2026-11-03 (Luis) — two-week zero rule
 }
 
 

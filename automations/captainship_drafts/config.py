@@ -723,7 +723,9 @@ RECIPIENTS: dict = {
         "harman100703@gmail.com", "lusalazar619@gmail.com",
         "maudmiller4@gmail.com",
         "mihir.vadlamani@gmail.com", "raffi127@gmail.com",
-        "rob.diamondbiz@gmail.com",
+        # OUT 2026-11-03 (Eve): rob.diamondbiz@ — Roberto Rodriguez, two-week zero
+        # rule (B2B - All Units en 0 WE 11.01 / 10.25). Salio del grupo vivo
+        # "Luis' Captainship" el mismo dia; si queda aca seed_groups lo repone.
     ],
     # FALLBACK ONLY — the live list is the "Atef's Captainship" Contacts group
     # (distro.GROUPS). Snapshot of that group on 2026-08-18, the day his

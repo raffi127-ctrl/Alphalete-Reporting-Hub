@@ -93,5 +93,8 @@ EXCLUDE = (
     # --- oficina cerrada, 2026-10-29 (Raf). Oficina 23082 (Sky Nova); Marcellus
     # Butler toma su gente.
     "Brian Tran",           # Sahil's captainship
+    # --- two-week zero rule, 2026-11-03 (Eve). Cero en WE 11.01 y WE 10.25.
+    "Eric Martinez",        # Chan's captainship — Fiber New Internet + All Units
+    "Roberto Rodriguez",    # Luis' captainship — B2B - All Units
 )
 

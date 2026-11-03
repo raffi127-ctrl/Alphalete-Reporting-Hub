@@ -124,14 +124,20 @@ EXCLUDE: Dict[str, tuple] = {
     # en ningun otro cuadro del board.
     # 2026-10-01 (Eve): Cruz Venegas pasa a la capitania nueva de LUKE BALDWIN.
     # Sale de las cajas de Luis; su historia en las columnas cerradas se queda.
+    # 2026-11-03 (Eve), two-week zero rule: Roberto Rodriguez, B2B - All Units,
+    # cero en WE 11.01 y WE 10.25, ult. venta WE 10.11.
     "Luis":   ("Max Powell",                             # 2026-09-15
-               "Cruz Venegas"),                          # 2026-10-01
+               "Cruz Venegas",                           # 2026-10-01
+               "Roberto Rodriguez"),                     # 2026-11-03
     # 2026-09-29 (Eve), two-week zero rule: oficina 23576 cerrada el 9/9,
     # cero en WE 09.27 y WE 09.20 en las dos cajas Fiber de Chan.
     # 2026-10-23 (Eve): Ja Mosley, oficina 23882 cerrada. Cero en WE 10.11,
     # WE 10.18 y la semana en curso; ese mismo dia se fue el Office Access.
+    # 2026-11-03 (Eve), two-week zero rule: Eric Martinez, oficina 20721 shut
+    # down 9/14; cero desde WE 10.04 en las dos cajas Fiber, ult. venta WE 09.27.
     "Chan":   ("Kimberly Rodriguez",                     # 2026-09-29
-               "Ja Mosley"),                             # 2026-10-23
+               "Ja Mosley",                              # 2026-10-23
+               "Eric Martinez"),                         # 2026-11-03
     # 2026-10-20 (Eve): Dhey Patel sale de la capitania de Atef. En Tableau ya
     # no esta bajo Atef: en B2B Captain's Teams (SFDC) figura en Blake's Team y
     # en NDS no hay "Atef's Team" ni aparece el. Las dos grafias: el board dice
