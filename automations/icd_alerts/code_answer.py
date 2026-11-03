@@ -563,6 +563,96 @@ def publish_confirmed(book=None, *, send: bool = False,
     return done
 
 
+# --- codes already reaching us ----------------------------------------------
+# THE ONE PROOF THE FORWARD WORKS (Eve 2026-11-03). We cannot see a filter in an
+# owner's Gmail, but a SaraPlus mail with their address in X-Forwarded-For can
+# only have got here through it. Whoever already has that is not sent back to
+# save a filter they have. HEADERS ONLY: nobody's code is opened to find this
+# out. No such mail proves nothing: maybe no code has been sent since, so those
+# offices simply get the step.
+NOTE_CODES_ARRIVE = "codes arriving"
+FORWARD_WORKING_STATE = "forward-working"
+WORKING_STAMP_NAME = "code-forward-working.txt"
+WORKING_QUERY = "from:security.info@saraplus.com newer_than:60d"
+# All Mail does not cover these, and the codes do land in Trash (Carlos, 11/2).
+WORKING_FOLDERS = ("[Gmail]/All Mail", "[Gmail]/Trash", "[Gmail]/Spam")
+_AN_ADDRESS = re.compile(r"[\w.+-]+@[\w.-]+\w")
+
+
+def _addresses_forwarding_codes() -> set:
+    M = _imap()
+    found = set()
+    try:
+        for folder in WORKING_FOLDERS:
+            if M.select('"%s"' % folder, readonly=True)[0] != "OK":
+                continue
+            ids = _search(M, WORKING_QUERY)
+            if not ids:
+                continue
+            _, got = M.fetch(b",".join(ids),
+                             "(BODY.PEEK[HEADER.FIELDS (X-FORWARDED-FOR)])")
+            for part in got or []:
+                if isinstance(part, tuple):
+                    found.update(a.lower() for a in _AN_ADDRESS.findall(
+                        part[1].decode("utf-8", "replace")))
+    finally:
+        try:
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    return found
+
+
+def publish_working(book=None, *, send: bool = False,
+                    now: Optional[dt.datetime] = None, addresses=None,
+                    stamp_path=None, log=print) -> List[str]:
+    """Let each Mac see that SaraPlus's codes already reach us. Never raises.
+
+    relay.forward_working reads the row this leaves on 'Code Answers'. Once an
+    hour, and the inbox is not opened at all once every row is stamped.
+    """
+    from automations.icd_alerts import config as C
+    from automations.icd_alerts import post as P
+
+    now = now or dt.datetime.now().astimezone()
+    stamp_path = stamp_path or (C.APP_DIR / WORKING_STAMP_NAME)
+    done = []
+    try:
+        if not _scope_due(stamp_path, now):
+            return []
+        if book is None:
+            from automations.recruiting_report.fill import open_by_key
+            book = open_by_key(P.RELAY_SPREADSHEET_ID)
+        sheet = book.worksheet(MAIL_TAB)
+        open_rows = []
+        for at, r in enumerate(sheet.get_all_values()[1:], start=2):
+            r = list(r) + [""] * (len(MAIL_HEADER) - len(r))
+            if r[0].strip() and "@" in r[1] and NOTE_CODES_ARRIVE not in r[3]:
+                open_rows.append((at, r[0].strip().lower(), r[1].strip().lower(), r[3]))
+        if not open_rows:
+            return []
+        got = (addresses or _addresses_forwarding_codes)()
+        codes = None
+        for at, office, address, note in open_rows:
+            if address not in got:
+                continue
+            done.append(office)
+            if not send:
+                continue
+            codes = codes or _tab(book, CODES_TAB, CODES_HEADER)
+            codes.append_row([office, FORWARD_WORKING_STATE, "",
+                              now.isoformat(timespec="seconds"), "", ""],
+                             value_input_option="RAW")
+            sheet.update_cell(at, 4, ("%s; %s" % (note, NOTE_CODES_ARRIVE)).strip("; "))
+            log("FWD    %-10s SaraPlus's codes already reach us" % office)
+        if send:
+            stamp_path.parent.mkdir(parents=True, exist_ok=True)
+            stamp_path.write_text(now.isoformat(timespec="seconds"))
+    except Exception as e:  # noqa: BLE001 -- never cost the poster its tick
+        log("code forwards: could not check for codes: %s" % type(e).__name__)
+    return done
+
+
 # --- nothing but SaraPlus's codes -------------------------------------------
 SCOPE_STAMP_NAME = "code-forward-scope.txt"
 SCOPE_EVERY_MIN = 60

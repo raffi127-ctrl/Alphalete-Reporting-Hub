@@ -815,10 +815,21 @@ def forward_confirmed(office_key: str = "") -> bool:
     raises: anything else means not confirmed, and the owner is just asked to
     check again."""
     from automations.icd_alerts import code_answer as CA
+    return _state_row(CA.FORWARD_STATE, office_key)
+
+
+def forward_working(office_key: str = "") -> bool:
+    """Have SaraPlus's codes already reached us from this office, so nothing is
+    left for the owner to do? Same road as forward_confirmed. Never raises."""
+    from automations.icd_alerts import code_answer as CA
+    return _state_row(CA.FORWARD_WORKING_STATE, office_key)
+
+
+def _state_row(state: str, office_key: str = "") -> bool:
     try:
         rec = _endpoint(office_key)
         body = {"office_key": rec["office_key"], "key": rec["relay_key"],
-                "code_poll": {"since": CA.FORWARD_STATE}}
+                "code_poll": {"since": state}}
         out = json.loads(_post(rec["relay_url"], json.dumps(body).encode("utf-8")))
     except Exception:  # noqa: BLE001
         return False

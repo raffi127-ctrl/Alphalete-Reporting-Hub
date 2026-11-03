@@ -32,6 +32,10 @@ def setUpModule():
     p = mock.patch.object(CF, "_copy")
     p.start()
     unittest.addModuleCleanup(p.stop)
+    # Nor reach the real relay. Tests about it patch this back.
+    p = mock.patch.object(R, "forward_working", return_value=False)
+    p.start()
+    unittest.addModuleCleanup(p.stop)
 
 
 class FakeAsk:
@@ -194,6 +198,103 @@ class RealForwardConfirmed(unittest.TestCase):
         self.assertFalse(self._ask('{"ok": true, "status": "waiting"}')[0])
         self.assertFalse(self._ask('{"ok": false, "error": "bad day"}')[0])
         self.assertFalse(self._ask(boom=OSError("down"))[0])
+
+
+class CodesAlreadyReachUs(unittest.TestCase):
+    """Eve 2026-11-03: whoever's codes already arrive saves no filter again."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.stamp = Path(tmp.name) / "stamp.txt"
+        p = mock.patch.object(CF, "MARK_PATH", Path(tmp.name) / "fwd.txt")
+        p.start()
+        self.addCleanup(p.stop)
+        self.opened = []
+        p = mock.patch.object(CF, "_open", side_effect=lambda u, s=None: self.opened.append(u))
+        p.start()
+        self.addCleanup(p.stop)
+        self.sheet = Sheet([CA.MAIL_HEADER,
+                            ["Carlos", "a@gmail.com", NOW.isoformat(), "from setup"],
+                            ["carlos-b2batt", "a@gmail.com", NOW.isoformat(), ""],
+                            ["Luke", "l@gmail.com", NOW.isoformat(), "gmail confirmed"]])
+        self.codes = Sheet([CA.CODES_HEADER])
+        self.book = Book({CA.MAIL_TAB: self.sheet, CA.CODES_TAB: self.codes})
+
+    def _publish(self, got, send=True, now=NOW):
+        asked = mock.Mock(return_value=got)
+        out = CA.publish_working(self.book, send=send, now=now, addresses=asked,
+                                 stamp_path=self.stamp, log=lambda *_: None)
+        return out, asked
+
+    def test_only_an_address_seen_forwarding_is_published_with_no_code(self):
+        out, _ = self._publish({"a@gmail.com"})
+        self.assertEqual(out, ["carlos", "carlos-b2batt"])
+        self.assertEqual(self.codes.rows[-1][:3], ["carlos-b2batt", CA.FORWARD_WORKING_STATE, ""])
+        self.assertIn(CA.NOTE_CODES_ARRIVE, self.sheet.cells[(2, 4)])
+        self.assertNotIn((4, 4), self.sheet.cells, "no mail proves nothing about Luke")
+
+    def test_a_dry_run_writes_nothing(self):
+        self.assertEqual(self._publish({"a@gmail.com"}, send=False)[0], ["carlos", "carlos-b2batt"])
+        self.assertEqual(self.codes.rows[1:], [])
+        self.assertFalse(self.stamp.exists())
+
+    def test_the_inbox_is_opened_once_an_hour(self):
+        self._publish(set())
+        self.assertEqual(self._publish(set(), now=NOW + dt.timedelta(minutes=5))[1].call_count, 0)
+        self.assertEqual(self._publish(set(), now=NOW + dt.timedelta(minutes=61))[1].call_count, 1)
+
+    def test_with_every_row_stamped_the_inbox_is_not_opened(self):
+        self.book = Book({CA.MAIL_TAB: Sheet([CA.MAIL_HEADER,
+                                              ["Carlos", "a@gmail.com", "", CA.NOTE_CODES_ARRIVE]])})
+        self.assertEqual(self._publish({"a@gmail.com"})[1].call_count, 0)
+
+    def test_a_broken_inbox_never_costs_the_poster_its_tick(self):
+        out = CA.publish_working(self.book, send=True, now=NOW, stamp_path=self.stamp,
+                                 addresses=mock.Mock(side_effect=OSError("down")),
+                                 log=lambda *_: None)
+        self.assertEqual(out, [])
+
+    def test_only_x_forwarded_for_counts_and_codes_are_never_opened(self):
+        M = mock.Mock()
+        M.select.return_value = ("OK", [b"1"])
+        M.search.return_value = ("OK", [b"1 2"])
+        M.fetch.return_value = ("OK", [(b"1", b"X-Forwarded-For: A@gmail.com reporting@x.com\r\n"),
+                                       b")"])
+        with mock.patch.object(CA, "_imap", return_value=M):
+            got = CA._addresses_forwarding_codes()
+        self.assertIn("a@gmail.com", got)
+        self.assertEqual(M.select.call_count, len(CA.WORKING_FOLDERS))
+        self.assertIn("HEADER.FIELDS (X-FORWARDED-FOR)", M.fetch.call_args.args[1])
+
+    def test_the_mac_asks_nothing_and_opens_nothing(self):
+        ask = FakeAsk(CF.YES)
+        with mock.patch.object(R, "forward_working", return_value=True), \
+                mock.patch.object(R, "forward_confirmed", return_value=True):
+            self.assertEqual(CF.walk_through(ask, say=lambda *_: None), "done")
+        self.assertEqual(ask.shown, [])
+        self.assertEqual(self.opened, [])
+        self.assertTrue(CF.already_set_up())
+
+    def test_the_terminal_line_says_all_set_without_the_filter(self):
+        said = []
+        with mock.patch.object(R, "forward_working", return_value=True), \
+                mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(a[0] if a else "")):
+            self.assertEqual(CF.main(), 0)
+        self.assertEqual(self.opened, [])
+        self.assertFalse(any("filter" in l for l in said))
+        self.assertTrue(any("ALL SET" in l for l in said))
+
+    def test_the_mac_reads_it_through_the_relay(self):
+        rec = {"office_key": "carlos", "relay_url": "u", "relay_key": "k"}
+        post = mock.Mock(return_value='{"ok": true, "status": "taken"}')
+        with mock.patch.object(R, "_endpoint", return_value=rec), \
+                mock.patch.object(R, "_post", post):
+            self.assertTrue(R._state_row(CA.FORWARD_WORKING_STATE))
+        self.assertIn(CA.FORWARD_WORKING_STATE, post.call_args.args[1].decode())
+
+    def test_the_poster_runs_it(self):
+        self.assertIn("code_answer.publish_working(book", inspect.getsource(P))
 
 
 class OnLucy1(unittest.TestCase):

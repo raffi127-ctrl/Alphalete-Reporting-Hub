@@ -140,6 +140,17 @@ def _finish(ask, say=print) -> str:
     return "done"
 
 
+def _already_working(office_key: str, say=print) -> bool:
+    """Lucy 1 has seen this office's codes arrive: nothing left to ask, and in
+    particular no filter to save a second time (Eve 2026-11-03)."""
+    from automations.icd_alerts import relay as R
+    if not R.forward_working(office_key):
+        return False
+    _mark(REPORTING_INBOX)
+    say("      SaraPlus's codes already reach Lucy. Nothing to do here.")
+    return True
+
+
 def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) -> str:
     """Ask which address SaraPlus mails, show the steps, send it home, and do
     not call it done until Gmail has confirmed it.
@@ -152,6 +163,8 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
     """
     from automations.icd_alerts import relay as R
 
+    if _already_working(office_key, say):
+        return "done"
     # ALREADY CONFIRMED (the address was added before, or one of us clicked the
     # mail): the only thing left is the filter, so nobody redoes step 1.
     if R.forward_confirmed(office_key):
@@ -273,6 +286,10 @@ def main(argv=None) -> int:
     def say(m=""):
         print(m, flush=True)
 
+    if _already_working("", say):
+        say("")
+        say("  ALL SET. From now on, Lucy types SaraPlus's codes for you.")
+        return 0
     if already_set_up():
         open_filter(ask, say)
         said = "done"
