@@ -56,6 +56,20 @@ def _dm(office: str, text: str, log=print) -> bool:
         return False
 
 
+def waiting_on_human(office: str, today: dt.date = None) -> bool:
+    """Is this office one walled push away from (or past) its Indeed DM today?
+    Then a walled push should leave Indeed's page up for the person the DM
+    asks, instead of closing it (Megan 2026-11-03: "there's nothing up on
+    lucy 4 to clear out")."""
+    today = (today or dt.date.today()).isoformat()
+    try:
+        st = json.loads(_path(office).read_text())
+    except Exception:  # noqa: BLE001
+        return False
+    return (st.get("alert_day") == today and bool(st.get("alerted"))) or \
+        int(st.get("streak") or 0) >= WALL_RUNS - 1
+
+
 def note(office: str, label: str, machine: str, walled: bool,
          cleared: bool = False, today: dt.date = None, log=print, send=_dm) -> str:
     """Record one push's Indeed outcome. Returns what it did: 'ask', 'good'

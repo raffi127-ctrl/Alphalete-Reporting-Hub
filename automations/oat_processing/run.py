@@ -2654,6 +2654,32 @@ _CF_CLEARED = False
 # each applicant's retries) on a gate that is closed for all of them.
 _CF_WALLED = False
 _CF_WALL_DETAIL = "cloudflare challenge never cleared"
+# Leave the walled Indeed tab OPEN for a human (Megan 2026-11-03: "there's
+# nothing up on lucy 4 to clear out"). The box only showed during the 150s
+# wait, then the tab closed -- whoever got the DM found nothing to tick. Set
+# by the caller once that office's Indeed DM is out (applicant_push.run).
+KEEP_WALL_TAB = False
+_WALL_TAB_KEPT = False
+
+
+_WALL_TAB_PAGE = None
+
+
+def wall_tab_kept() -> bool:
+    """A walled Indeed tab was left open this tick for a human to tick."""
+    return _WALL_TAB_KEPT
+
+
+def show_wall_tab() -> bool:
+    """End of the walk: put the kept Indeed page in front, so it is the first
+    thing the person the DM asks sees on Lucy's Chrome."""
+    if not (_WALL_TAB_KEPT and _WALL_TAB_PAGE):
+        return False
+    try:
+        _bring_front(_WALL_TAB_PAGE)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _cf_session_cleared() -> bool:
@@ -2685,8 +2711,9 @@ def _mark_cf_walled(detail: str) -> None:
 def reset_cf_session() -> None:
     """Forget the session's Cloudflare verdict. Called when a fresh browser session
     opens, so one tick's wall never silences the next tick's read."""
-    global _CF_CLEARED, _CF_WALLED
-    _CF_CLEARED, _CF_WALLED = False, False
+    global _CF_CLEARED, _CF_WALLED, _WALL_TAB_KEPT, _WALL_TAB_PAGE
+    _CF_CLEARED, _CF_WALLED, _WALL_TAB_KEPT = False, False, False
+    _WALL_TAB_PAGE = None
 
 
 def _rd_mod():
@@ -3341,7 +3368,7 @@ def lookup_resume_phone(page):
     CLICKING the 'View resume' link (real gesture + referer + in-session nav — the
     way Megan opens it), which gets past Cloudflare where a cold page.goto now hits
     the 'Just a moment…' block (2026-08-02). Falls back to loading the signed href."""
-    global _LAST_RESUME_EMAIL
+    global _LAST_RESUME_EMAIL, _WALL_TAB_KEPT, _WALL_TAB_PAGE
     _LAST_RESUME_EMAIL = ""
     # DOWNLOAD FIRST (Carlos, 2026-09-20/23: "what if you download the resume?
     # when you open it on the right there's a download option"). The AppStream
@@ -3562,6 +3589,10 @@ def lookup_resume_phone(page):
             # on 2026-09-22 that turned ONE closed gate into 162 "blocked" reads and
             # 57 people written off for the day in Raf's office alone.
             _mark_cf_walled(reason)
+            if KEEP_WALL_TAB:
+                _WALL_TAB_KEPT = True
+                _log("    [cf] leaving the Indeed page open on screen for a "
+                     "human to tick 'Verify you are human'")
         if reason:
             return None, f"{_BLOCKED_PREFIX}{reason} (title={newpg.title()[:40]!r})"
 
@@ -3606,6 +3637,10 @@ def lookup_resume_phone(page):
         # definition, so it's blocked (retryable), not a confirmed empty resume.
         return None, f"{_BLOCKED_PREFIX}resume open err: {type(e).__name__}"
     finally:
+        if newpg and _WALL_TAB_KEPT and _CF_WALLED:
+            # Left up for a human. The walk still needs its own tab in front
+            # until it ends; show_wall_tab() raises this one then.
+            _WALL_TAB_PAGE, newpg = newpg, None
         if newpg:
             try:
                 newpg.close()

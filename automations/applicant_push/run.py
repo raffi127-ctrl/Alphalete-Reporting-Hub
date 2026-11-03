@@ -210,6 +210,13 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
                 _at.ensure_await_template(page, office or "", apply=True)
                 return 0
             if live:
+                # Leave a walled Indeed page up for whoever the DM asks.
+                try:
+                    from automations.applicant_push import indeed_alert as _ia0
+                    oat.KEEP_WALL_TAB = _ia0.waiting_on_human(office or "")
+                except Exception:  # noqa: BLE001
+                    oat.KEEP_WALL_TAB = False
+            if live:
                 # Keep the Await text's interview times matched to the clock
                 # (Carlos 2026-10-28). Best-effort: a failed template edit is
                 # logged and must never stop the push itself.
@@ -234,7 +241,13 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
                                  log=rp._log)
                     except Exception as _e:  # noqa: BLE001
                         rp._log("[indeed-alert] skipped: %s" % type(_e).__name__)
-                if oat._cf_walled():
+                if oat._cf_walled() and oat.wall_tab_kept():
+                    # A person was asked to tick the box on THIS browser's open
+                    # Indeed page -- keep it, or the next tick kills what they
+                    # are about to click (Megan 2026-11-03).
+                    oat.show_wall_tab()
+                    rp._log("[cf] keeping this Chrome + its Indeed page for a human")
+                elif oat._cf_walled():
                     # Indeed never let THIS browser through. Don't keep it warm —
                     # a cold one gets a fresh challenge it often passes.
                     rp.mark_browser_suspect(
