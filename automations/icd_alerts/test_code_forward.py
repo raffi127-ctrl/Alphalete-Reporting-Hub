@@ -116,7 +116,7 @@ class OnTheMac(unittest.TestCase):
         self.assertFalse(CF.already_set_up())
         self.assertNotIn(CF.FILTER_URL, self.opened)
         self.assertEqual(ask.shown[-1], CF.LEFT_OPEN)
-        self.assertTrue(any("owner@gmail.com" in m and "has not told us" in m
+        self.assertTrue(any("owner@gmail.com" in m and "heard from Gmail" in m
                             for m in ask.shown), "says what to check, by account")
         self.assertEqual(self.sent, ["owner@gmail.com"], "sent home once")
 

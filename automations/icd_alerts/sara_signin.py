@@ -104,7 +104,7 @@ def _hand_session_to_the_reader(urls, log=print) -> None:
             try:
                 from automations.icd_alerts import sara_read as _SR
                 _SR._remember_session(root)
-                log("  Handing this signed-in session to the automatic reads.")
+                log("  Passing this sign-in over to Lucy.")
                 _LAST_VERDICT.append("session handed to the reader: %s" % root)
             except Exception as e:  # noqa: BLE001 -- never cost the person their sign-in
                 _LAST_VERDICT.append("could not hand the session over: %s" % type(e).__name__)
@@ -167,16 +167,15 @@ def run(log=print) -> int:
     log("  Opening SaraPlus in Lucy's browser.")
     log("")
     if _FILL[0]:
-        log("  Lucy signs in for you. You only type the code SaraPlus sends you,")
+        log("  Lucy signs in for you. You only type the code SaraPlus sends you.")
     else:
-        log("  Sign in there, then enter the code SaraPlus emails you. It has to")
-    log("  in THIS window -- signing in with your own browser does not reach")
-    log("  Lucy, however many times you do it.")
+        log("  Sign in there, then type the code SaraPlus sends you.")
+    log("  It has to be in THIS window: your own browser can't reach Lucy.")
     if cr.get("email"):
         log("")
         log("  The account is %s." % cr["email"])
     log("")
-    log("  Your password is NOT being changed and does not need to be.")
+    log("  Your password stays the same.")
     log("")
 
     C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -256,7 +255,7 @@ def verify_hidden_read(log=print) -> int:
     """One real scheduled-style SaraPlus sign-in, hidden, and a plain verdict."""
     from automations.icd_alerts import sara_read as SR
     log("")
-    log("  Now checking the automatic reads can get in too (about a minute)...")
+    log("  Now checking that Lucy can get in on her own (about a minute)...")
     said: list = []
     try:
         got = SR.check_account(headless=True,
@@ -265,7 +264,7 @@ def verify_hidden_read(log=print) -> int:
         _LAST_VERDICT.extend(["hidden log: " + l for l in said[-12:]])
         _LAST_VERDICT.extend([str(e)[:300]] + ["hidden: " + l for l in (getattr(e, "presented", None) or [])])
         log("")
-        log("  NOT YET. The automatic read was stopped:")
+        log("  NOT YET. Lucy was stopped here:")
         for line in str(e).splitlines()[:3]:
             if line.strip():
                 log("    " + line.strip())
@@ -284,8 +283,8 @@ def verify_hidden_read(log=print) -> int:
         return 1
     if got.get("ok"):
         log("")
-        log("  ALL SET. The automatic reads can get into SaraPlus, so sales")
-        log("  will start coming through on their own. Nothing else to do.")
+        log("  ALL SET. Lucy can get into SaraPlus on her own, so your")
+        log("  sales will start coming through.")
         return 0
     log("")
     log("  Signed in, but landed somewhere unexpected (%s). Please send the "
@@ -499,8 +498,8 @@ def _window(log=print) -> int:
                     except Exception:  # noqa: BLE001
                         pass
                     log("")
-                    log("  Signed in. This browser is trusted now, so the")
-                    log("  sweep can read sales again within a few minutes.")
+                    log("  Signed in. Lucy can read your sales again within a")
+                    log("  few minutes.")
                     _hand_session_to_the_reader(urls, log=log)
                     # LET SARAPLUS FINISH. The window used to close the
                     # instant the address changed -- before any "remember
@@ -521,8 +520,8 @@ def _window(log=print) -> int:
                 url = urls[0]
                 if any(_still_challenged(u) for u in urls) and not said:
                     said = True
-                    log("  SaraPlus is asking for the emailed code — that is")
-                    log("  this step, not a password problem. Enter it here.")
+                    log("  SaraPlus is asking for the code. That's this step, so")
+                    log("  nothing is wrong with your password. Type it there.")
         finally:
             try:
                 ctx.close()
@@ -536,7 +535,7 @@ def _window(log=print) -> int:
     else:
         log("")
         log("  Did not reach the SaraPlus Hub, so this is not done yet.")
-    log("  Run this again when you have the code to hand.")
+    log("  Paste the same line again when you have the code.")
     return 1
 
 

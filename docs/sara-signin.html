@@ -1,75 +1,136 @@
-<title>Clear the SaraPlus code check</title>
-<meta name="description" content="One line to clear SaraPlus's emailed-code check in Lucy's own browser.">
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Get Lucy back into SaraPlus</title>
+<meta name="description" content="Paste one line and type one code, and Lucy can read your sales again.">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Figtree:wght@400;600;700&display=swap">
 <style>
-  :root { color-scheme: light dark; --gold:#B4975A; --line:#8884; }
-  body { font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-         margin:0; padding:40px 22px; }
-  .wrap { max-width:36rem; margin:0 auto; }
-  h1 { font-size:1.5rem; margin:0 0 .3rem; }
-  .who { opacity:.75; margin:0 0 1.8rem; }
-  .step { display:flex; gap:14px; margin:0 0 1.6rem; }
-  .num { flex:0 0 auto; width:1.7rem; height:1.7rem; border-radius:50%;
-         background:var(--gold); color:#fff; font-weight:700; font-size:.85rem;
-         display:flex; align-items:center; justify-content:center; }
-  .cmd { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-         background:#8881; border:1px solid var(--line); border-radius:8px;
-         padding:12px 14px; overflow-x:auto; white-space:pre-wrap;
-         word-break:break-all; margin:.6rem 0; }
-  button { font:inherit; font-weight:600; padding:11px 20px; border:0;
-           border-radius:9px; background:var(--gold); color:#fff; cursor:pointer; }
-  button.done { background:#2e7d32; }
-  .note { border:1px solid var(--line); border-radius:10px; padding:14px 16px;
-          margin-top:1.8rem; font-size:.95rem; }
+/* Layout: one narrow column of numbered steps, each with a drawing of what they will see */
+:root{
+  --bg:#f8f6f1; --card:#ffffff; --fg:#23211c; --muted:#655f52; --line:#e2dccf;
+  --accent:#8a6a24; --on-accent:#ffffff; --soft:#f2e9d5; --ok:#2c7a43; --warn:#a33a2a;
+  --term:#1e1f24; --term-fg:#e9ebf0; --term-hi:#7ee787; --win:#eeebe4; --win-bar:#dcd7cb; --ring:#d98a1c;
+  --display:"Fraunces",Georgia,serif; --body:"Figtree",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#17160f; --card:#211f18; --fg:#eeeadf; --muted:#a9a292; --line:#373327;
+  --accent:#d9b86c; --on-accent:#221c0c; --soft:#332b18; --ok:#55bf77; --warn:#e8836f;
+  --term:#0d0e11; --win:#2a2820; --win-bar:#38352a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17160f; --card:#211f18; --fg:#eeeadf; --muted:#a9a292; --line:#373327;
+  --accent:#d9b86c; --on-accent:#221c0c; --soft:#332b18; --ok:#55bf77; --warn:#e8836f;
+  --term:#0d0e11; --win:#2a2820; --win-bar:#38352a; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 56px}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-family:var(--display);font-weight:600;font-size:2rem;line-height:1.15;margin:0;text-wrap:balance}
+p{margin:0}
+.lede{color:var(--muted);margin-top:8px}
+.step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.head{display:flex;gap:12px;align-items:center}
+.num{flex:none;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-weight:700;display:grid;place-items:center}
+.head h2{margin:0;font-size:1.15rem;line-height:1.25}
+.time{margin-left:auto;color:var(--muted);font-size:.85rem;white-space:nowrap}
+ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:4px}
+kbd{font-family:var(--mono);font-size:.85em;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:1px 7px}
+.note{font-size:.92rem;color:var(--muted)}
+.screen{border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--win);font-size:.85rem}
+.bar{background:var(--win-bar);padding:7px 10px;display:flex;gap:6px;align-items:center}
+.bar i{width:11px;height:11px;border-radius:50%;background:#ff5f57}.bar i+i{background:#febc2e}.bar i+i+i{background:#28c840}
+.bar span{margin-left:8px;color:var(--muted);font-size:.78rem}
+.term{background:var(--term);color:var(--term-fg);font-family:var(--mono);font-size:.76rem;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.term b{color:var(--term-hi);font-weight:600}
+.code{font-family:var(--mono);font-size:.74rem;background:var(--term);color:var(--term-fg);border-radius:8px;padding:10px;overflow-wrap:anywhere;display:block}
+button{font:inherit;font-weight:700;border:0;border-radius:9px;background:var(--accent);color:var(--on-accent);padding:11px 20px;cursor:pointer;align-self:flex-start}
+button:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
+button.done{background:var(--ok);color:#fff}
+.web{background:var(--card);padding:18px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.box{width:190px;max-width:100%;border:2px solid var(--ring);border-radius:7px;padding:7px;font-family:var(--mono);letter-spacing:.25em}
+.dialog{max-width:340px;margin:14px auto;background:var(--card);border-radius:12px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:8px;text-align:center}
+.dialog .q{font-weight:600}
+.opt{border:1px solid var(--line);border-radius:7px;padding:6px}
+.opt.pick{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.ok{border-color:var(--ok)}
+.ok .num{background:var(--ok);color:#fff}
+.help{background:var(--soft);border-radius:12px;padding:16px;font-size:.95rem}
 </style>
+
 <div class="wrap">
-  <h1>Clear the SaraPlus code check</h1>
-  <p class="who">Takes about a minute. You will need the inbox that receives SaraPlus's emailed code.</p>
+  <header>
+    <h1>Get Lucy back into SaraPlus</h1>
+    <p class="lede">SaraPlus just needs to see one code on Lucy's computer. It takes about 2 minutes: you paste one line and type one code, and Lucy does the rest. Your password stays the same.</p>
+  </header>
 
-  <div class="step"><div class="num">1</div><div>
-    <b>Do this on the office computer that runs LucyECO</b> — the one you set up.
-    Signing in on your phone, or in your own browser, will not reach her.
-  </div></div>
+  <section class="step">
+    <div class="head"><div class="num">1</div><h2>Open Terminal on Lucy's computer</h2><span class="time">10 sec</span></div>
+    <ul>
+      <li>Sit at the <b>office computer that runs Lucy</b>. Your phone or your own browser won't reach her.</li>
+      <li>Press <kbd>⌘ Cmd</kbd> + <kbd>Space</kbd>, type <b>Terminal</b>, and press <kbd>Return</kbd>.</li>
+    </ul>
+  </section>
 
-  <div class="step"><div class="num">2</div><div>
-    Open <b>Terminal</b>: hold <b>Command</b> and tap <b>Space</b>, type
-    <b>terminal</b>, press Return.
-  </div></div>
+  <section class="step">
+    <div class="head"><div class="num">2</div><h2>Paste this line</h2><span class="time">10 sec</span></div>
+    <ul>
+      <li>Click the button below.</li>
+      <li>Click in Terminal, press <kbd>⌘ Cmd</kbd> + <kbd>V</kbd>, then <kbd>Return</kbd>.</li>
+    </ul>
+    <button id="copy" type="button">Copy the line</button>
+    <code class="code" id="cmd">loading&#8230;</code>
+    <p class="note">You don't need to read it. It may sit for a few seconds while it updates, and that's normal.</p>
+  </section>
 
-  <div class="step"><div class="num">3</div><div>
-    Press the button, then paste into that window and press Return.
-    <div class="cmd" id="cmd">loading&#8230;</div>
-    <button id="copy">Copy the command</button>
-  </div></div>
+  <section class="step">
+    <div class="head"><div class="num">3</div><h2>Type the code</h2><span class="time">1 min</span></div>
+    <ul>
+      <li>A SaraPlus window opens and Lucy signs in for you.</li>
+      <li>SaraPlus sends you a code. Look in your email, or on your phone if your codes come by text.</li>
+      <li>Type the <b>newest</b> code into that window. It closes by itself.</li>
+    </ul>
+    <div class="screen" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span>SaraPlus</span></div>
+      <div class="web"><span>Enter your code</span><div class="box">123456</div></div>
+    </div>
+    <p class="note">The window may look a bit different. If it stops on the login form, sign in with your usual password and carry on.</p>
+  </section>
 
-  <div class="step"><div class="num">4</div><div>
-    <b>Your SaraPlus password is not being changed and does not need to
-    be.</b> Lucy already has it.
-  </div></div>
+  <section class="step">
+    <div class="head"><div class="num">4</div><h2>Wait for ALL SET</h2><span class="time">1 min</span></div>
+    <ul><li>Lucy checks that she can get in on her own. Terminal then shows this:</li></ul>
+    <div class="screen" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span>Terminal</span></div>
+      <div class="term"><b>ALL SET.</b> Lucy can get into SaraPlus on her own, so your
+sales will start coming through.</div>
+    </div>
+    <p class="note">If it says <b>NOT YET</b>, take a photo of the screen and send it to us on Slack. We'll take it from there.</p>
+  </section>
 
-  <div class="step"><div class="num">5</div><div>
-    A browser window opens on SaraPlus and Lucy signs in for you. Type the
-    code SaraPlus sends you into that window. It closes by itself. If it stops
-    on the login form, sign in with your usual password.
-  </div></div>
+  <section class="step">
+    <div class="head"><div class="num">5</div><h2>If a small window opens, follow it</h2><span class="time">2 min, once</span></div>
+    <p>This lets Lucy type SaraPlus's codes for you from now on, so you won't have to do this again. It only happens one time. If no window opens, skip to the end.</p>
+    <div class="screen" aria-hidden="true">
+      <div class="dialog">
+        <div class="q">Are your SaraPlus codes emailed to you@gmail.com?</div>
+        <div class="opt pick">Yes, that one</div>
+        <div class="opt">No, a different address</div>
+      </div>
+    </div>
+    <ul>
+      <li>Pick the email your codes go to. Gmail opens by itself.</li>
+      <li>Click <b>Add a forwarding address</b>, paste with <kbd>⌘ Cmd</kbd> + <kbd>V</kbd> (we already copied our address for you), then <b>Next</b>, <b>Proceed</b> and <b>OK</b>.</li>
+      <li>Click <b>OK</b> on the small window and wait up to 3 minutes.</li>
+      <li>Gmail opens once more. Click <b>Create filter</b>, check <b>Forward it to</b>, pick our address, and click <b>Create filter</b> again.</li>
+    </ul>
+    <p class="note">Only SaraPlus's code emails get forwarded. The rest of your inbox stays private. The small windows repeat each click, so you don't need to keep this page open.</p>
+  </section>
 
-  <div class="step"><div class="num">6</div><div>
-    Wait about a minute for the last line in Terminal. <b>ALL SET</b> means it
-    worked. <b>NOT YET</b> means send us a photo of the window.
-  </div></div>
+  <section class="step ok">
+    <div class="head"><div class="num">✓</div><h2>You're done</h2></div>
+    <p>You can close everything. Your sales start coming through again within a few minutes.</p>
+  </section>
 
-  <div class="step"><div class="num">7</div><div>
-    Follow the small windows that open next. This one-time, 2-minute step
-    forwards SaraPlus's codes to <b>alphaletereporting@gmail.com</b>, so Lucy
-    can enter them herself. If none open, you're done.
-  </div></div>
-
-  <div class="note">
-    <b>This is not a password problem.</b> SaraPlus accepted the password
-    and is checking the <i>browser</i> — it does that when it sees a new
-    computer. Changing the password does not clear it, and the code has to be
-    typed into the window this opens: signing in with your own browser, or on
-    your phone, does not reach Lucy.
-  </div>
+  <p class="help"><b>Stuck?</b> No worries. Message us on Slack and we'll do a quick screen share with you.</p>
 </div>
 <script>
   // The whole command, so nothing has to survive being selected out of a
@@ -103,11 +164,10 @@
   document.getElementById("cmd").textContent = CMD;
   var btn = document.getElementById("copy");
   btn.addEventListener("click", function () {
-    function ok() { btn.textContent = "Copied — paste it into Terminal"; btn.className = "done"; }
+    function ok() { btn.textContent = "Copied! Now paste it into Terminal"; btn.className = "done"; }
+    function bad() { btn.textContent = "Select the line below and copy it"; }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(CMD).then(ok, function () {
-        btn.textContent = "Select the line above and copy it";
-      });
-    } else { btn.textContent = "Select the line above and copy it"; }
+      navigator.clipboard.writeText(CMD).then(ok, bad);
+    } else { bad(); }
   });
 </script>

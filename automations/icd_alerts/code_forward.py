@@ -47,34 +47,32 @@ SARAPLUS_SENDER = "security.info@saraplus.com"
 MARK_PATH = C.APP_DIR / "sara-code-forward-done.txt"
 
 STEPS = (
-    "So nobody has to type SaraPlus codes for Lucy again, forward SaraPlus's "
-    "code emails to %s.\n\n"
-    "Gmail just opened. Check the account picture at the top right: it has to "
-    "be %s. If it is not, switch to that account first.\n\n"
-    "Our address is already copied, so don't type anything. On the forwarding "
-    "settings: click Add a forwarding address -> in the box, "
-    "PASTE (hold Command and tap V) -> Next -> Proceed. Lucy confirms it on our "
-    "side.\n\n"
-    "Then leave \"Disable forwarding\" selected. Do NOT pick \"Forward a copy "
-    "of incoming mail\": that sends your whole inbox. We only want SaraPlus's "
-    "code emails, and the next step's filter takes care of that.\n\n"
-    "Click OK only after you have done this in Gmail. Then leave this computer "
-    "open for up to 3 minutes: Lucy checks with Gmail, and the last step opens "
-    "by itself.")
+    "Almost done! Let's forward SaraPlus's code emails to %s.\n\n"
+    "Gmail just opened. Please make sure you're in the %s account: check the "
+    "picture at the top right, and switch if it's a different one.\n\n"
+    "1. Click Add a forwarding address.\n"
+    "2. PASTE into the box (hold Command and tap V). We already copied our "
+    "address for you.\n"
+    "3. Click Next, Proceed, then OK.\n\n"
+    "Please leave \"Disable forwarding\" selected. \"Forward a copy of incoming "
+    "mail\" would send your whole inbox, and we don't want that.\n\n"
+    "Click OK here when you're done. Then give Lucy up to 3 minutes to check. "
+    "The last step opens by itself.")
 
-OFFER = ("One last step, about 2 minutes, one time: this lets Lucy enter "
-         "SaraPlus's codes herself from now on. Only SaraPlus's code emails get "
-         "forwarded to us, nothing else in your inbox.\n\n")
+OFFER = ("One last thing, about 2 minutes, one time only.\n\n"
+         "This lets Lucy type SaraPlus's codes for you from now on. Only "
+         "SaraPlus's code emails get forwarded to us. The rest of your inbox "
+         "stays private.\n\n")
 NOT_ARRIVED = (
-    "Gmail has not told us about it yet, so it did not go through.\n\n"
-    "Gmail just opened again. Check that:\n"
+    "We haven't heard from Gmail yet, so let's try once more.\n\n"
+    "Gmail just opened again. Please check:\n"
     "1. The account at the top right is %s\n"
-    "2. Under Forwarding, you clicked Add a forwarding address, pasted %s, then "
-    "Next and Proceed.\n\n"
-    "Click OK when that is done.")
-LEFT_OPEN = ("Your sign-in worked and Lucy is running. This last step is not "
-             "finished yet, so you'll see it again the next time SaraPlus asks "
-             "for a code.")
+    "2. Under Forwarding, click Add a forwarding address, paste %s (we copied "
+    "it again for you), then Next, Proceed and OK.\n\n"
+    "Click OK here when that's done.")
+LEFT_OPEN = ("Your sign-in worked and Lucy is running, so nothing is broken.\n\n"
+             "This last step isn't finished yet. No problem: you'll see it "
+             "again the next time SaraPlus asks for a code.")
 FORWARD_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
                 "sara-forward.html")
 
@@ -239,11 +237,14 @@ FILTER_URL = ("https://mail.google.com/mail/u/0/#create-filter/from="
               + SARAPLUS_SENDER.replace("@", "%40"))
 
 FILTER_STEPS = (
-    "Last step, so Lucy can enter SaraPlus's codes herself. Gmail just opened a "
-    "box with %s already filled in.\n\n"
-    "Click Create filter -> check Forward it to -> pick %s -> Create filter.\n\n"
-    "Only emails from that address get forwarded. If our address is not in the "
-    "list yet, wait a minute and reload the page."
+    "Last step! Gmail just opened a box with %s already filled in.\n\n"
+    "1. Click Create filter.\n"
+    "2. Check Forward it to.\n"
+    "3. Pick %s.\n"
+    "4. Click Create filter again.\n\n"
+    "Only SaraPlus's emails get forwarded. If our address isn't in the list yet, "
+    "wait a minute and reload the page.\n\n"
+    "Click OK here when you're done."
     % (SARAPLUS_SENDER, REPORTING_INBOX))
 
 
@@ -281,8 +282,8 @@ def main(argv=None) -> int:
     if said != "done":
         say("  NOT YET -- run this same line again when you are ready.")
         return 1
-    say("  ALL SET once that filter is saved. Lucy enters SaraPlus's codes")
-    say("  herself from now on.")
+    say("  ALL SET once that filter is saved. From now on, Lucy types")
+    say("  SaraPlus's codes for you.")
     return 0
 
 
