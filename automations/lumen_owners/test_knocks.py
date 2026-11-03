@@ -101,6 +101,32 @@ class KnocksTest(unittest.TestCase):
         self.assertIn("Nigel Marshall (AT&amp;T)", blocks[1][0])
         self.assertEqual(len(files), 2)
 
+    def test_shealey_is_24273_in_this_mail_only(self):
+        # Eve, 2026-11-03: 24273 is the office she gave for Lumen. Her
+        # captainship boards and the 9 PM mail stay on 23858.
+        from automations.shared.ownerville_office_pins import pinned_office
+        seen = []
+
+        def fake_pull(page, pairs, *a):
+            seen.append(pinned_office("Shealey Miller"))
+            return [], [], [], []
+
+        class Sess:
+            def __enter__(self): return object()
+            def __exit__(self, *a): return False
+
+        import tempfile
+        from pathlib import Path
+        tmp = Path(tempfile.mkdtemp())
+        with mock.patch("automations.shared.terminated_icds.terminated_lookup",
+                        return_value=lambda n: False),              mock.patch.object(KN, "_pull_program", side_effect=fake_pull),              mock.patch.object(KN, "WEEKLY_DIR", tmp / "wk"),              mock.patch("automations.shared.tableau_patchright."
+                        "ownerville_session", return_value=Sess()):
+            labels = [l for l, _c in KN.owner_boards({}, logfn=lambda *a: None)]
+            KN.build(dt.date(2026, 11, 3), tmp, {}, logfn=lambda *a: None)
+        self.assertIn("Shealey Miller (Quantum Fiber)", labels)
+        self.assertEqual(seen, ["24273", "24273"])
+        self.assertEqual(pinned_office("Shealey Miller"), "23858")
+
     def test_nobody_configured_means_no_blocks_and_no_login(self):
         with mock.patch.object(KN, "owner_boards", return_value=[]):
             self.assertEqual(KN.build(dt.date(2026, 10, 23), "x", {}), ([], []))

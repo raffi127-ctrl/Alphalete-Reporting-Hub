@@ -38,7 +38,14 @@ LUMEN_EXTRA = (
     # (Eve, 2026-10-30): Isaiah 23639, Vaughn 23769.
     ("Isaiah Kellum", "7", "Quantum Fiber"),
     ("Vaughn Osterhouse", "7", "Quantum Fiber"),
+    # Gave Office Access on her own office 24273 (LUMEN_OFFICE_PINS below).
+    ("Shealey Miller", "7", "Quantum Fiber"),
 )
+
+# Office numbers for THIS mail only (Eve, 2026-11-03: 24273 is the number
+# Shealey gave for Lumen). OFFICE_PINS keeps her on 23858 for the captainship
+# boards and the 9 PM mail.
+LUMEN_OFFICE_PINS = {"Shealey Miller": "24273"}
 
 
 # One set of attachments per OwnerVille campaign, Quantum first (the
@@ -242,6 +249,7 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print,
     any board that failed. ([], []) when nobody is configured. One
     OwnerVille session for every campaign."""
     from automations.captainship_drafts import knock_dispo_images as K
+    from automations.shared.ownerville_office_pins import scoped_pins
     from automations.shared.tableau_patchright import ownerville_session
 
     work = []
@@ -272,7 +280,8 @@ def build(today: dt.date, out_dir: Path, aliases_raw, logfn=print,
     except Exception:  # noqa: BLE001
         pass
     try:
-        with ownerville_session(verbose=False, profile_dir=K.PROFILE_DIR) as page:
+        with scoped_pins(LUMEN_OFFICE_PINS), ownerville_session(
+                verbose=False, profile_dir=K.PROFILE_DIR) as page:
             for p in plan:
                 p["res"] = _pull_program(page, p["pairs"], aliases_raw, target,
                                          monday, saturday, p["have_weekly"],

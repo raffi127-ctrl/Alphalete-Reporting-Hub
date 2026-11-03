@@ -24,6 +24,7 @@ it). Matching is case- and spacing-insensitive.
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from typing import Dict, Optional
 
 # board name -> ownerville office number
@@ -39,9 +40,30 @@ def _key(name) -> str:
 _BY_KEY = {_key(k): v for k, v in OFFICE_PINS.items()}
 
 
+# Pins that hold only while one report runs (scoped_pins). Empty otherwise.
+_SCOPED: Dict[str, str] = {}
+
+
+@contextmanager
+def scoped_pins(pins: Dict[str, str]):
+    """Inside this block `pins` win over OFFICE_PINS, and everything goes back
+    afterwards. For a report that reads a person from a DIFFERENT office than
+    the other reports do: Shealey Miller gave 24273 (Sapphire Marketing) for
+    the Lumen Owners mail (Eve, 2026-11-03), while her captainship boards and
+    the 9 PM mail stay on 23858."""
+    saved = dict(_SCOPED)
+    _SCOPED.update({_key(k): v for k, v in pins.items()})
+    try:
+        yield
+    finally:
+        _SCOPED.clear()
+        _SCOPED.update(saved)
+
+
 def pinned_office(name) -> Optional[str]:
     """The office number `name` is pinned to, or None for a normal owner."""
-    return _BY_KEY.get(_key(name))
+    k = _key(name)
+    return _SCOPED.get(k) or _BY_KEY.get(k)
 
 
 # --- account-number FALLBACK for onboarded offices -------------------------
