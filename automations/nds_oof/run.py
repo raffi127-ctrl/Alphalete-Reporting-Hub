@@ -162,6 +162,66 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
     return over, rows
 
 
+def _shared_at(today: dt.date) -> Dict[str, dt.datetime]:
+    """{key: when it was shared} for today's 'Lucy Knocks' rows we borrow from."""
+    want = getattr(C, "BORROWED_ROWS", None) or {}
+    out: Dict[str, dt.datetime] = {}
+    if not want:
+        return out
+    from automations.owner_knocks_hourly import share as S
+    try:
+        ws = S._tab(S._book())
+        lines = ws.get_all_values()[1:] if ws is not None else []
+    except Exception:  # noqa: BLE001
+        return out
+    for r in lines:
+        r = list(r) + [""] * (len(S.HEADER) - len(r))
+        key = r[S.K_KEY].strip().lower()
+        if key in want and r[S.K_DAY].strip() == today.isoformat():
+            try:
+                out[key] = dt.datetime.fromisoformat(r[S.K_AT])
+            except ValueError:
+                pass
+    return out
+
+
+def wait_for_fresh_share(now: dt.datetime, *, shared_at, sleep=None,
+                         max_wait_min: Optional[int] = None) -> bool:
+    """Hold the board until every borrowed key has been shared since this
+    slot began (the :00/:30 boundary), or max_wait_min is up. `shared_at()`
+    returns {key: datetime}; `sleep(seconds)` is injectable for tests.
+    True = fresh, False = gave up (the board still draws)."""
+    import time as _time
+    want = getattr(C, "BORROWED_ROWS", None) or {}
+    if not want:
+        return True
+    max_wait = C.BORROWED_FRESH_WAIT_MIN if max_wait_min is None else max_wait_min
+    sleep = sleep or _time.sleep
+    slot_start = now.replace(minute=(now.minute // C.BOARD_EVERY_MIN) * C.BOARD_EVERY_MIN,
+                             second=0, microsecond=0)
+    deadline = now + dt.timedelta(minutes=max_wait)
+    waited = False
+    while True:
+        at = shared_at()
+        stale = [k for k in want if not at.get(k) or at[k] < slot_start]
+        if not stale:
+            if waited:
+                _log("borrowed: fresh share arrived (%s)" % ", ".join(
+                    "%s %s" % (k, at[k].strftime("%H:%M:%S")) for k in want))
+            return True
+        if dt.datetime.now() >= deadline:
+            _log("borrowed: no share since %s for %s after %d min -- drawing with what is there"
+                 % (slot_start.strftime("%H:%M"), ", ".join(stale), max_wait))
+            return False
+        if not waited:
+            _log("borrowed: waiting for %s's share (last %s, slot %s)"
+                 % (", ".join(stale),
+                    ", ".join((at[k].strftime("%H:%M:%S") if at.get(k) else "none") for k in stale),
+                    slot_start.strftime("%H:%M")))
+        waited = True
+        sleep(30)
+
+
 def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
     """Rows for C.BORROWED_ROWS off the 'Lucy Knocks' tab (today's row for each
     key), matched like total_knocks.guests. A name already on `own` is left
@@ -438,6 +498,10 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         return 0
     out_dir = OUTPUT_DIR / today.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
+    if want_board and not force:
+        # Raf's numbers for the borrowed reps land ~4 min into the slot; our
+        # own pull happens AFTER so both halves of the board are fresh.
+        wait_for_fresh_share(now, shared_at=lambda: _shared_at(today))
     over, rows = pull(today, want_board=want_board, headless=headless)
     # Cinthya + Nathaly, knocking on Raf's Ownerville (config.BORROWED_ROWS):
     # on OUR board picture only. `rows` (our own) is what goes to the owners'

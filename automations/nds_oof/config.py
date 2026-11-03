@@ -81,6 +81,12 @@ WEEK_MONDAY_THREAD = "NDS Metrics"
 # BOARD ONLY: not the gaps list, not the call-outs, not the owners' board
 # share (Raf's row there already carries them). Raf's own board is untouched.
 BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Nathaly Benitez"]}
+# Raf's rows are re-shared only when HIS board draws (~:04 and ~:34), so a
+# board drawn at :00/:30 carried numbers 26 minutes old (Carlos 2026-11-03
+# 2:30pm: "the numbers dont seem accurate"). Before pulling, a board tick
+# waits up to this many minutes for a share newer than the slot's start;
+# past that it draws with what is there and says so in the log.
+BORROWED_FRESH_WAIT_MIN = 9
 
 # Credit checks for the call-outs come from Carlos's own SaraPlus, relayed by
 # his office Mac mini under this ICD office key (icd_alerts).

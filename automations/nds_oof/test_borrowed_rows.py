@@ -66,3 +66,40 @@ class Borrowed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FreshWait(unittest.TestCase):
+    def _go(self, shares, now=dt.datetime(2026, 11, 3, 14, 30, 5)):
+        """`shares` = successive {key: at} answers; the clock is real, so the
+        deadline is kept out of reach (max_wait_min 60)."""
+        it = iter(shares)
+        last = {}
+        def shared_at():
+            nonlocal last
+            try:
+                last = next(it)
+            except StopIteration:
+                pass
+            return last
+        slept = []
+        with mock.patch.object(R, "_log"):
+            ok = R.wait_for_fresh_share(now, shared_at=shared_at, sleep=slept.append,
+                                        max_wait_min=60)
+        return ok, slept
+
+    def test_fresh_already_no_wait(self):
+        ok, slept = self._go([{"rafael": dt.datetime(2026, 11, 3, 14, 34, 32)}])
+        self.assertTrue(ok); self.assertEqual(slept, [])
+
+    def test_waits_until_a_share_newer_than_the_slot(self):
+        ok, slept = self._go([{"rafael": dt.datetime(2026, 11, 3, 14, 4, 32)},
+                              {"rafael": dt.datetime(2026, 11, 3, 14, 4, 32)},
+                              {"rafael": dt.datetime(2026, 11, 3, 14, 34, 40)}])
+        self.assertTrue(ok); self.assertEqual(slept, [30, 30])
+
+    def test_gives_up_at_the_deadline(self):
+        with mock.patch.object(R, "_log"):
+            ok = R.wait_for_fresh_share(dt.datetime(2026, 11, 3, 14, 30, 5),
+                                        shared_at=lambda: {}, sleep=lambda s: None,
+                                        max_wait_min=0)
+        self.assertFalse(ok)
