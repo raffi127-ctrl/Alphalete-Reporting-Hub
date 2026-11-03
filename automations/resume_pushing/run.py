@@ -1258,6 +1258,7 @@ def _cdp_test() -> int:
         L("policy read err: " + str(e)[:80])
     try:
         with sync_playwright() as p:
+            _reopen_window_if_none(port)  # windowless Chrome -> no connect
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
@@ -1566,6 +1567,46 @@ def _cdp_port_alive(port=None, timeout: float = 1.5) -> bool:
         return False
 
 
+def _cdp_page_count(port=None) -> int:
+    """Open tabs in the office's Chrome; -1 when it cannot be asked."""
+    import json as _json
+    import urllib.request as _u
+    try:
+        with _u.urlopen(f"http://127.0.0.1:{port or CDP_PORT}/json/list",
+                        timeout=5) as r:
+            return sum(1 for t in _json.loads(r.read().decode() or "[]")
+                       if t.get("type") == "page")
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+def _reopen_window_if_none(port=None, url: str = "about:blank") -> bool:
+    """A Chrome with NO window cannot be driven: closing its last window on a
+    Mac leaves Chrome running (the port still answers) but unloads the profile,
+    and connect_over_cdp dies with "Browser context management is not
+    supported." Lucy 4, 2026-11-03: someone closed the window after ticking
+    Indeed's box and every tick after died on connect. Same cure as the relay
+    agent (icd_alerts/resume_push._open_window): ask for a new window over
+    plain HTTP, which loads the profile again. True when a window was opened."""
+    import time as _t
+    import urllib.parse as _up
+    import urllib.request as _u
+    if _cdp_page_count(port) != 0:
+        return False
+    try:
+        req = _u.Request(f"http://127.0.0.1:{port or CDP_PORT}/json/new?"
+                         + _up.quote(url, safe=":/?=&"), method="PUT")
+        with _u.urlopen(req, timeout=10):
+            pass
+    except Exception:  # noqa: BLE001
+        return False
+    for _ in range(10):
+        if _cdp_page_count(port) > 0:
+            return True
+        _t.sleep(0.5)
+    return False
+
+
 def _should_reuse_browser(port_alive: bool, keep_warm: bool = None) -> bool:
     """Reuse the running Chrome only when keep-warm is on AND one is answering."""
     return bool(port_alive and (KEEP_WARM_BROWSER if keep_warm is None
@@ -1839,6 +1880,7 @@ def _cdp_warm(force_fresh: bool = True) -> int:
     rc = 2
     try:
         with sync_playwright() as p:
+            _reopen_window_if_none(CDP_PORT)  # windowless Chrome -> no connect
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
@@ -1982,6 +2024,8 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
              f"{', has been through Indeed check' if _was_cleared else ''})")
         if _was_cleared:
             mark_browser_cleared()
+        if _reopen_window_if_none():
+            _log("[cdp] the warm Chrome had no window open -- opened one")
     else:
         dst = _copy_default_profile()
         _log(f"[cdp] profile copy; plugin present: "
@@ -2010,6 +2054,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
     _clear_stale_running_loop()
     pw = sync_playwright().start()
     try:
+        _reopen_window_if_none(CDP_PORT)  # windowless Chrome -> no connect
         browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
@@ -2297,6 +2342,7 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
 
     try:
         with sync_playwright() as p:
+            _reopen_window_if_none(CDP_PORT)  # windowless Chrome -> no connect
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
@@ -2621,6 +2667,7 @@ def _plain_probe() -> int:
     _t.sleep(11)
     try:
         with sync_playwright() as p:
+            _reopen_window_if_none(port)  # windowless Chrome -> no connect
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
