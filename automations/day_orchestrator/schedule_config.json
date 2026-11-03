@@ -16334,6 +16334,45 @@
    "verify": {
     "type": "not_configured"
    }
+  },
+  "aiden_metrics": {
+   "order": 26.9,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Aiden's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "aiden",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "aiden_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for aiden. wired by hand 2026-11-03 (Megan: 'Aiden Atoori is enrolling today in ECO - he's NDS - let's dry run his metrics and wire up weather and trackers'). Atoori Management, Inc.; Tableau NDS-SN owner 'AIDEN ATOORI [atoori management, inc.]' (4,696 ORDER LOG measure rows in 45 days; the CSV carries a stray \\r inside the name, _norm_owner drops it). Referred by Jose Velasquez. Slack U07Q243HP7Z (aiden.originmgmt@gmail.com), Mac mini, Pacific. Sales zips 93535/93033/91350/91342/92336/91311 = Lancaster / Oxnard / Santa Clarita / Sylmar / Fontana: north LA county, weather city santa_clarita. Five NDS boards like joseph-delgado (no knocks board here: his ECO knock board will post in the same room). No Slack channel yet -- he is making one in the AO workspace; held on Megan's DM until then. Sheet 'Aiden Atoori - Lucy Metrics' 1LDgR5dYUc0TKnBcV23t8xN1UiQUzahu2oZ2naVu4Bwo copied from the Master Metrics Templates, writer alphaletereporting@. Scheduler OFF until the dry run shows data on every board."
   }
  },
  "read_only_standalone": {

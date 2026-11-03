@@ -289,6 +289,7 @@ _HUB_CARD = {
     "atef_metrics": "office-metrics",      # 2026-10-27, Atef Choudhury, same card
     "joseph_delgado_metrics": "office-metrics",  # 2026-10-29, Joseph Delgado, same card
     "jose_metrics": "office-metrics",      # 2026-10-28, Jose Velasquez, same card
+    "aiden_metrics": "office-metrics",     # 2026-11-03, Aiden Atoori, same card
     # nii + trang had self-registered their own Report Library cards; folded
     # onto the one card 2026-09-28 (Megan: "consolidate"). Their library rows
     # were deleted.

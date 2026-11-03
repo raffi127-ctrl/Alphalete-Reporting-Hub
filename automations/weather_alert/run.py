@@ -58,6 +58,9 @@ CITIES = {
     # drew / Precision Management: 800 Trafalgar Ct, Maitland FL 32751 (their
     # site's contact page, 2026-09-28) -- the Orlando area.
     "orlando": ("Maitland / Orlando, FL", 28.6275, -81.3631, "America/New_York"),
+    # aiden / Atoori Management: NDS sales zips 93535/93033/91350/91342 (Lancaster,
+    # Oxnard, Santa Clarita, Sylmar) -- north LA county, 2026-11-03.
+    "santa_clarita": ("Santa Clarita / North LA, CA", 34.3917, -118.5426, "America/Los_Angeles"),
     # maxamad / Maximal Management: San Antonio per his OwnerVille office
     # address (harvest_zones, 2026-09-28).
     "san_antonio": ("San Antonio, TX", 29.4241, -98.4936, "America/Chicago"),
@@ -141,6 +144,7 @@ METRICS_CITY = {
     "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
     "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
+    "aiden": "santa_clarita",   # Atoori Management (NDS), north LA county per Tableau zips 2026-11-03; Pacific; channel from ECO sign-up
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
     "atef": "denver",           # Domin8 Acquisitions, Denver CO (reps: "whole denver office"); Mountain
     "samuel": "orlando",        # Dynasty Growth Group: 590 of 846 NDS orders (8/31-10/4) installed in Kissimmee/Orlando; OV access to 23751 pending for the street address
