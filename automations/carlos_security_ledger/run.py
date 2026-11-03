@@ -439,33 +439,28 @@ def pull_dates_hub() -> tuple[str, str, list[list]]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / "Dates_to_Remember.csv"
     with tableau_session(headless=True, verbose=False) as pg:
-        # 1) ask Tableau's internal vizportal API (same session cookies) which views have "date" in the name
+        # 1) walk the workbook's own "Views" page (plain links, no API): view page -> workbook link -> /views list
         found = []
         try:
             pg.goto(VIEW, wait_until="domcontentloaded")
-            pg.wait_for_timeout(8_000)
-            raw = pg.evaluate("""async () => {
-                const xsrf = (document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || '';
-                const body = {method: 'getViews', params: {order: [{field: 'name', ascending: true}], page: {startIndex: 0, maxItems: 200},
-                              filter: {operator: 'and', clauses: [{operator: 'ilike', field: 'name', value: 'date'}]}}};
-                const r = await fetch('/vizportal/api/web/v1/getViews', {method: 'POST', credentials: 'include',
-                              headers: {'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf}, body: JSON.stringify(body)});
-                return await r.text();
-            }""")
-            log(f"dates: vizportal getViews -> {str(raw)[:1500]}")
-            data = json.loads(raw)
-            base = VIEW.split("#")[0] + "#/site/sci/views/"
-            for v in (data.get("result", {}).get("views") or []):
-                slug = v.get("repositoryUrl") or v.get("sheetId") or ""
-                if "/" in slug:
-                    wb, sheet = slug.split("/", 1)
-                    found.append((v.get("name"), base + wb + "/" + sheet.replace("sheets/", "")))
-                else:
-                    found.append((v.get("name"), ""))
-            log(f"dates: candidate views {found[:10]}")
-            found = [f for f in found if f[1]]
+            pg.wait_for_timeout(12_000)
+            wb_links = pg.evaluate("""() => Array.from(document.querySelectorAll('a[href*="/workbooks/"]')).map(a => a.href)""") or []
+            log(f"dates: workbook links {wb_links[:5]}")
+            wb = next((h for h in wb_links if "/workbooks/" in h), None)
+            if wb:
+                wb = wb.split("?")[0].rstrip("/")
+                wb = wb[: wb.index("/workbooks/") + len("/workbooks/")] + wb[wb.index("/workbooks/") + len("/workbooks/"):].split("/")[0]
+                pg.goto(wb + "/views", wait_until="domcontentloaded")
+                pg.wait_for_timeout(12_000)
+                for _ in range(6):   # the card list fills in progressively
+                    pg.mouse.wheel(0, 2000); pg.wait_for_timeout(1500)
+                links = pg.evaluate("""() => Array.from(document.querySelectorAll('a[href*="/views/"]')).map(a => [a.textContent.trim(), a.href])""") or []
+                names = sorted({n for n, _ in links if n})
+                log(f"dates: workbook views ({len(names)}): {names[:60]}")
+                found = [(n, h.split("?")[0]) for n, h in links if n and "date" in n.lower()]
+                log(f"dates: candidate views {found[:10]}")
         except Exception as e:  # noqa: BLE001
-            log(f"dates: vizportal lookup failed ({str(e)[:100]})")
+            log(f"dates: workbook walk failed ({str(e)[:120]})")
         candidates = [h for _, h in found] + DATES_VIEWS
         seen = set()
         for view in candidates:
