@@ -509,9 +509,11 @@
   },
   {
     "key": "aiden",
-    "label": "Aiden's Local Office (channel from ECO sign-up)",
+    "label": "#odysseyy",
     "owner": "Aiden Atoori",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CFFFDKTAL"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
@@ -523,6 +525,6 @@
       "quantum_fiber",
       "vzftr"
     ],
-    "notes": "wired by hand 2026-11-03 (his Lucy ECO enrollment); all 9 trackers like colten/jose; channel_ids filled once his ECO sign-up names the room."
+    "notes": "wired by hand 2026-11-03 (his Lucy ECO enrollment); all 9 trackers like colten/jose; channel_ids filled once his ECO sign-up names the room. | 2026-11-03: room is #odysseyy (C0CFFFDKTAL)."
   }
 ]
