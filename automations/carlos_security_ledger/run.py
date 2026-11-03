@@ -465,7 +465,11 @@ def pull_dates_hub() -> tuple[str, str, list[list]]:
                                       headers: {'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf}, body: JSON.stringify(body)});
                         return await r.text();
                     }""", wbid)
-                    log(f"dates: vizportal views for workbook {wbid} -> {str(raw)[:2500]}")
+                    try:
+                        _vs = json.loads(raw).get("result", {}).get("views") or []
+                        log("dates: workbook views: " + " ; ".join(f"{v.get('name')}={v.get('repositoryUrl') or v.get('sheetId') or '?'}" for v in _vs))
+                    except Exception:  # noqa: BLE001
+                        log(f"dates: vizportal views for workbook {wbid} -> {str(raw)[:600]}")
                     try:
                         base = VIEW.split("#")[0] + "#/site/sci/views/"
                         for v in json.loads(raw).get("result", {}).get("views") or []:
