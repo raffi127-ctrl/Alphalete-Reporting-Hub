@@ -170,6 +170,21 @@ def customer_phone(target: Dict, customers: Sequence[Dict[str, str]]) -> str:
     return ""
 
 
+def feed_orders(today: dt.date, log=print) -> List[Dict[str, str]]:
+    """Every order header in today's cached wireless feed, shaped for
+    customer_phone(): wireless_order, order_id (DSI), phone. [] when there
+    is no cache today (the caller then falls back to the guest pull)."""
+    from automations.nds_metrics import wireless_pull as WP
+    f = WP.cached(today)
+    if f is None:
+        log("no wireless feed cached for %s -- falling back to the guest pull" % today)
+        return []
+    orders, _lines = WP.parse(f.read_bytes(), log=lambda *a, **k: None)
+    return [{"wireless_order": str(o.get("wireless_order") or "").strip(),
+             "order_id": str(o.get("dsi") or "").strip(),
+             "phone": str(o.get("phone") or "").strip()} for o in orders]
+
+
 # --- state + sheet ---------------------------------------------------------------
 
 def _load_sent() -> Dict[str, dict]:
@@ -228,11 +243,17 @@ def run(*, live: bool = False, limit: Optional[int] = None,
         print("=== done ===", flush=True)
         return 0
 
-    # 2. contact phones off the feed (the tab has none)
-    customers = guest.guest_customers(today - dt.timedelta(days=MAX_ORDER_AGE_DAYS),
-                                      today, log=lambda *a, **k: None)
-    log("feed: %d crew order(s) with a contact phone in the last %d days"
-        % (sum(1 for c in customers if c.get("phone")), MAX_ORDER_AGE_DAYS))
+    # 2. contact phones off the feed (the tab has none). EVERY order header in
+    #    today's cached feed, NOT the crew-filtered guest list: the tab already
+    #    says who is in scope, and on 2026-11-02 the roster match dropped
+    #    Cinthya Reyes's and Yahir Uriel Lopez's customers (Bryan Hernandez,
+    #    Sri Krishna Vinay Majety) as "no contact phone" three mornings running.
+    customers = feed_orders(today, log=log)
+    if not customers:
+        customers = guest.guest_customers(today - dt.timedelta(days=MAX_ORDER_AGE_DAYS),
+                                          today, log=lambda *a, **k: None)
+    log("feed: %d order(s) with a contact phone"
+        % sum(1 for c in customers if c.get("phone")))
 
     # 3. RingCentral: who am I, and the reps' numbers
     creds = C.rc_creds()
