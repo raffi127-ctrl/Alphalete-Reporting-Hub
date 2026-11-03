@@ -311,9 +311,10 @@ OFFICES: Dict[str, AlertOffice] = {
     ),
     "aiden": AlertOffice(
         key="aiden", owner="Aiden Atoori", label="Aiden's Local Office",
-        # UNROUTED on purpose: the installer asks them where they want
-        # their alerts, and a human approves it. Nothing posts until then.
-        channels=(),
+        # #odysseyy, his own private room (Megan 2026-11-03). Enrolled by
+        # command, so no installer request ever named it: until this line
+        # his credit checks fell through to Megan's DM.
+        channels=("C0CFFFDKTAL",),
         timezone="America/Los_Angeles", active=True, platform="mac",
         slack_user_id="U07Q243HP7Z",
         # Hours are the ORG DEFAULT, not this owner's own -- nobody
