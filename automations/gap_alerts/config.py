@@ -165,31 +165,19 @@ RAF = {
     # Raf's boards; no room gets a text from here.
     "guest_teams": {"Carlos Hidalgo": "Fiber"},
     "guests": {"Carlos Hidalgo": []},
-    "destinations": [
-        {"kind": "imessage", "name": "Knocking Chat A-Players",
-         "cadence_min": 30},
-        # `thread_daily` — ONE post a day in the channel, every later board a
-        # reply inside it (Megan 2026-09-20: "versus the chat being filled
-        # up"). 30 minutes across a 1:30pm-10pm weekday is ~17 boards, and they
-        # were 17 separate messages. iMessage has no threads, so the
-        # iMessage room is untouched.
-        {"kind": "slack", "channel_id": SLACK_HOURLY_CHANNEL,
-         "cadence_min": 30, "thread_daily": True},
-        # #alphalete-sales too, every 30 (Raf 2026-10-24, #l10-alphalete
-        # "Knocking report for local office": "Can we get my knocking report
-        # posted on Alphalete Sales every 30minutes please?").
-        # NO THREAD, on purpose (Eve, same day): it is a busy channel, so a
-        # loose post every 30 does not bury anything; if it reads as spammy,
-        # flip `thread_daily` on like lvl1 above. No thread also means no
-        # leader tags here -- those ride the thread parent, so they stay
-        # once a day, in lvl1.
-        # No lvl1 copy: post_slack uploads straight to the channel and never
-        # goes through slack_metrics_post's #alphalete-sales -> lvl1 mirror.
-        # knocks_intraday.roster.enrolled("eod") exempts Raf from the
-        # dispositions dedupe, so his 9 PM "Total Knocks" board here stays.
-        {"kind": "slack", "channel_id": "C068PH3RFSM",
-         "name": "#alphalete-sales", "cadence_min": 30},
-    ],
+    # RAF'S BOARDS COME FROM HIS OWN MACHINE NOW (Lucy ECO, Megan 2026-11-03
+    # "do the switch so Raf's is now running on his own machine"). The three
+    # rooms below moved, unchanged, onto his Office Channels row: Knocking
+    # Chat A-Players every 30, #alphalete-lvl1-chat every 30 in one thread a
+    # day (knocks_post.THREAD_TITLES), #alphalete-sales every 30. Nothing here
+    # may post or the rooms get every board twice. The old list is kept as a
+    # comment so the cutover can be undone in one edit.
+    "destinations": [],
+    # "destinations": [
+    #     {"kind": "imessage", "name": "Knocking Chat A-Players", "cadence_min": 30},
+    #     {"kind": "slack", "channel_id": SLACK_HOURLY_CHANNEL, "cadence_min": 30, "thread_daily": True},
+    #     {"kind": "slack", "channel_id": "C068PH3RFSM", "name": "#alphalete-sales", "cadence_min": 30},
+    # ],
 }
 
 # RES-ENERGYWELL. Megan read it off the live URL 2026-08-29
