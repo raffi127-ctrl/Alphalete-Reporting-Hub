@@ -222,6 +222,11 @@ _NOT_A_REPORT = frozenset({
 # A name here is a promise that the report DOES NOT RUN — keep it in step with
 # on_scheduler:false + cadence weekdays [] in schedule_config, both doors.
 _RETIRED: frozenset = frozenset({
+    # Daily Update Fill. Carlos 2026-11-03: "good to be discontinued! i dont
+    # need it anymore". The 8:45 PM on its card never had a timer behind it, so
+    # the 11 owner boards stopped at 8/21-22. Module stays on disk: raf_daily_update
+    # imports ensure_week and pick_sunday from it. Revive = delete these lines.
+    "daily_update_fill", "daily-update-fill",
     # Owner Rep Audit PAUSED 2026-11-03 (Eve): staff on the owner's list got
     # deactivated (Kash 22177). Not retired for good: take it out of here and
     # set on_scheduler true once the protected-staff veto ships.
