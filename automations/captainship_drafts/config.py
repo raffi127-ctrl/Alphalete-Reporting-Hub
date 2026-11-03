@@ -994,10 +994,11 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_b2b_eveliz, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
     ]),
-    Captain("luis", "Luis", "b2b", title_bg="#B5ADFB", to=_to("luis"), churn=[
-        ChurnSource(_own.open_ws_b2b_luis, _ni_render, "Wireless Churn",
-                    title_prefix="WIRELESS CHURN"),
-    ]),
+    # Luis RETIRADO 2026-11-03: "Luis's Team" ya no está en B2B Captain's Teams
+    # (SFDC) y Luis Salazar figura en Blake's Team. Carlos a Maud y Eve: "if luis
+    # is no longer showing people under his captainship then yes hes no longer a
+    # captain and we can stop the report". Para volver a mandarlo, reponer esta
+    # entrada y "luis" en _GROUPS.
     # Atef RETIRADO de B2B 2026-10-19 (Eve): "Atef's Team" ya no está en B2B
     # Captain's Teams (SFDC) desde el 10/14. Volvió el mismo día como flavor
     # "nds" — ver su entrada en el bloque NDS de abajo.
@@ -1089,7 +1090,7 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Fiber 2", ("wayne", "starr")),
     ("Fiber 3", ("tony", "chan", "sahil")),
     ("Fiber 4", ("pat", "jess")),
-    ("B2B", ("eveliz", "luis", "luke")),
+    ("B2B", ("eveliz", "luke")),
     ("NDS", ("khalil", "colten", "jairo")),
 )
 _PER_CAPTAIN = [

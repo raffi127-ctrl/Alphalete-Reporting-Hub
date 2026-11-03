@@ -290,7 +290,7 @@ TYPES = {
 TYPE_HINTS = {
     "RAF": "fiber", "WAYNE": "fiber", "STARR": "fiber",
     "CHAN": "fiber", "TONY": "fiber", "SAHIL": "fiber",
-    "CARLOS": "b2b", "EVELIZ": "b2b", "LUIS": "b2b",
+    "CARLOS": "b2b", "EVELIZ": "b2b", "LUIS": "b2b", "BLAKE": "b2b",
     "KHALIL": "nds", "COLTEN": "nds", "JAIRO": "nds",
     # Atef moved to NDS (Rafael, 2026-10-12: "his numbers are not being
     # pulled"). B2B still carries a tail of his old sales (5 in WE 10/11 vs
