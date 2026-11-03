@@ -1119,6 +1119,7 @@ def _cell_range(sheet_id: int, r: int, c: int) -> dict:
 
 # What the note on a touched cell says. English: the owners read these.
 NOTE_LABEL = {
+    "date_wrong": "the week's date here was wrong",
     "x_over_formula": "an X/letter was typed over this formula",
     "typed_over_formula": "a number was typed over this formula",
     "missing_formula": "this formula had been deleted",

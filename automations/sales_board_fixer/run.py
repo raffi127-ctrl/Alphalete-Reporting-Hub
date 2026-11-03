@@ -606,7 +606,7 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                 sh.batch_update({"requests": clear})
                 print("  notas viejas de Lucy borradas: %d" % len(clear))
         found = _drop_past(audit(t, tenure, owner), t["values"], format_stop)
-        found += _wrong_dates(t["values"], title)
+        found += _wrong_dates(t["values"], title, t.get("formulas"))
         if owner:
             held = _hold_owner_cells(found, t["values"], kinds)
             if held:
@@ -862,6 +862,7 @@ OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
                "cf_strike_stray", "cf_row_shift", "day_stats_formula", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
+               "date_wrong",
                "dropdown_missing",
                *LC.REPAIRS}
 
@@ -980,12 +981,13 @@ def _warn_spaced(tabs: list, do_apply: bool) -> None:
         print("  DM a Eve no salió (%s)" % type(e).__name__)
 
 
-def _wrong_dates(values, title: str) -> list:
-    """Wrong day numbers / week label on a board tab. Never stops the fixer."""
+def _wrong_dates(values, title: str, formulas=None) -> list:
+    """Wrong day numbers / week label on a board tab: the ones Lucy can settle by
+    the tab's name get written, the rest warn. Never stops the fixer."""
     if not K.is_board(values) or SIDE_NAME.search(title) or LANE_NAME.search(title):
         return []
     try:
-        found = WD.findings(values, title, dt.date.today())
+        found = WD.findings(values, title, dt.date.today(), formulas)
     except Exception as e:  # noqa: BLE001
         print("  fechas: no se pudo mirar %r (%s)" % (title, type(e).__name__))
         return []
@@ -995,10 +997,11 @@ def _wrong_dates(values, title: str) -> list:
 
 
 def _dated_rows(who: str, sheet_id: str, results: dict) -> list:
-    """(who, sheet id, tab, line for the DM), one per tab with wrong dates."""
+    """(who, sheet id, tab, line for the DM), one per tab with wrong dates that
+    Lucy isn't writing herself."""
     rows = []
     for found in results.values():
-        wrong = [x for x in found if x.kind == "date_wrong"]
+        wrong = [x for x in found if x.kind == "date_wrong" and not x.fixable]
         if wrong:
             rows.append((who, sheet_id, wrong[0].tab, WD.warning_line(wrong)))
     return rows

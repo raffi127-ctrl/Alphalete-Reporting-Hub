@@ -1,10 +1,14 @@
-"""Warn when the current sales board shows the wrong dates.
+"""Wrong dates on the current sales board: fixed when the tab's name says the
+week, a warning when it doesn't.
 
 Eve, 2026-11-03: Omar's ' 11/08' showed Monday 26 and 'WE9/7-9/13' in the week
 of 11/2. Reps kept selling on it, nothing broke, and nobody saw it.
 
-WARNS ONLY -- never writes. The board is the owner's, and a stale date row may
-mean the owner reuses one tab; only the owner knows what week it is on.
+WRITES ONLY ON A TAB WITH A DATE IN ITS NAME (Eve 2026-11-03): the name settles
+the week, so a typed day number or label gets corrected. A tab with no date
+('Sales Board') only warns: a stale date row may mean the owner hasn't rolled
+the board yet, and new dates would put last week's sales under this week.
+A 'Copy of' tab and a date cell that is a formula only warn too.
 
 WHICH WEEK. A tab with a date in its name is that week, by the weekday of the
 date: Cy's '11.2' is a Monday, Omar's '11/08' a Sunday. Older than last week =
@@ -100,9 +104,38 @@ def _compare(numbers: dict, label: str, label_cell: str, title: str,
     return out
 
 
-def findings(values, title: str, today: dt.date) -> List[Finding]:
-    """Report-only findings for one board tab. Nothing at all for a tab that
-    isn't the current week's board."""
+def _is_typed(formulas, where: str) -> bool:
+    m = re.match(r"([A-Z]+)(\d+)$", where)
+    r, c = int(m.group(2)) - 1, K.col_index(m.group(1)) - 1
+    row = formulas[r] if r < len(formulas) else []
+    return not str(row[c] if c < len(row) else "").startswith("=")
+
+
+def _make_fixable(found: List[Finding], numbers: dict, label_cell: str, title: str,
+                  monday: dt.date, formulas) -> List[Finding]:
+    """Give the typed cells a value to write. Every typed wrong day gets one:
+    _compare says a row of seven typed numbers once, under its first day."""
+    by_cell = {x.where: x for x in found}
+    for i in sorted(numbers):
+        where, shown = numbers[i]
+        day = monday + dt.timedelta(days=i)
+        if shown in (day.day, monday.day + i) or not _is_typed(formulas, where):
+            continue
+        if where not in by_cell:
+            by_cell[where] = Finding("date_wrong", title, where,
+                                     "%s dice %d, debería ser %d" % (_DAYS[i], shown, day.day),
+                                     before=str(shown), after=str(day.day))
+            found.append(by_cell[where])
+        by_cell[where].value = str(day.day)
+    x = by_cell.get(label_cell)
+    if x is not None and _is_typed(formulas, label_cell):
+        x.value = x.after
+    return found
+
+
+def findings(values, title: str, today: dt.date, formulas=None) -> List[Finding]:
+    """Findings for one board tab, nothing at all for a tab that isn't the
+    current week's board. With formulas, the ones on a dated tab can be written."""
     # 'Copy of WE 11/1/26' is the new week's board: its name is last week's date
     named = None if title.strip().lower().startswith("copy of") else week_of(title, today)
     this_week = today - dt.timedelta(days=today.weekday())
@@ -122,6 +155,8 @@ def findings(values, title: str, today: dt.date) -> List[Finding]:
         if not out:
             return []
         first = first or out
+    if named and formulas is not None:
+        return _make_fixable(first, numbers, label_cell, title, named, formulas)
     return first
 
 
