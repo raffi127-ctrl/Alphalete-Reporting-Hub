@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 55,
+  "confirmed_count": 56,
   "needs_review_count": 0,
   "skip_count": 37,
   "confirmed": [
@@ -420,6 +420,14 @@
       ],
       "note": "two AppStream offices (Eve 2026-09-29): top box = 20034 (label A23), bottom box = 23515 'VP Executives, Inc 2nd' (anchor A25 above the box; A48 is Eve's footer label). Sales/headcount: Quantum Fiber until AT&T fiber starts, see quantum_fallback.",
       "was_sales_only_reason": "tab added 2026-09-28 (Raf's request: Nigel is coming from Lumen over to AT&T Fiber; VP Executives Inc.). AppStream access requested by Raf and approved by Nigel that day, but the live office list (253 offices, 2026-09-28) does not show his office yet, so rows 2-23 (recruiting) cannot fill until it appears. Promotes itself (with backfill) the day AppStream sees him."
+    },
+    {
+      "sheet_tab": "Omar Mohamad",
+      "office_id": "24153",
+      "as_owner": "Omar Mohamad",
+      "as_company": "Kalkan Marketing",
+      "confidence": 1.0,
+      "note": "tab added 2026-11-03 (Raf). as_owner is on purpose NOT what AppStream lists: it shows office 24153 under Rafael Hidalgo, and as_owner is a Tableau fallback name, so that spelling would pull Raf's numbers into this tab."
     }
   ],
   "needs_review": [],
@@ -615,17 +623,7 @@
       "office_id_was": "22162",
       "reason": "2026-10-28: Camila (ARS) 'cerr\u00f3' \u2014 Eve: turn recruiting OFF for now, keep sales. Moved confirmed -> sales_only WITHOUT promote_when_visible, so AppStream seeing the office never flips it back. Recruiting rows keep their history, stop updating.",
       "opt_source": "b2b"
-    },
-    {
-      "sheet_tab": "Omar Mohamad",
-      "office_id": "24153",
-      "as_owner": "Omar Mohamad",
-      "as_company": "Kalkan Marketing",
-      "confidence": 1.0,
-      "promote_when_visible": true,
-      "promote_office_id": "24153",
-      "was_sales_only_reason": "tab added 2026-11-03 (Raf, Slack: Omar started selling in his own code). Office 24153 Kalkan Marketing, Dearborn MI; was a rep under Salik Mallick. OPT fills from Tableau; recruiting promotes itself with backfill when AppStream sees 24153."
     }
   ],
-  "sales_only_count": 5
+  "sales_only_count": 4
 }
