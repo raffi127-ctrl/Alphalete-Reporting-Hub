@@ -248,7 +248,11 @@ def lanes_findings(t: dict) -> list:
         return LC.check(t["formulas"], t["values"], x["entered"], x["boards"], x["good"],
                         x["targets"], tab=t["title"])
     except RuntimeError:
-        return []
+        if not (x["good"] or {}).get("formulas"):
+            return []                  # never had lanes: not a lanes tab
+        return [K.Finding("lane_banners_gone", t["title"], "fila de títulos",
+                          "'Current Week' and 'Last week' are both gone; the lanes "
+                          "stop moving until someone puts them back")]
 
 
 def _font(v: dict):

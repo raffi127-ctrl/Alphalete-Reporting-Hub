@@ -22,6 +22,8 @@ one in the last healthy copy Lucy saved of that tab (lanes_good.json, keyed by
 sheet + tab). A hand-typed block (Frank) never had one, so it is never touched.
 
 WHAT GETS FIXED
+  lane_banner_lost    'Current Week' or 'Last week' typed over (A1 said 'v',
+                      JD 2026-11-03) -> title put back; lanes.py stops without it.
   lane_formula_lost   formula deleted / typed over / #REF! -> put back from
                       the healthy copy, or (ours only, where each block reads
                       its own week) from the same lane in the other block.
@@ -32,6 +34,8 @@ WHAT GETS FIXED
                       outside it and vanishes from every lane.
   lane_extra_lost     another formula on the lane row (col M '2wks in a Row').
 WHAT IS ONLY REPORTED -- someone may have done it on purpose
+  lane_banners_gone   both titles gone from a tab Lucy knows has lanes: nothing
+                      says which block is which, so a person has to look.
   lane_spill_blocked  something typed under a lane: when the list reaches it
                       the whole lane goes BLANK (iferror hides the error).
   lane_threshold      the cut-off doesn't match the header ('8+' filtering >=7).
@@ -54,7 +58,7 @@ RANGE_RE = re.compile(r"(?:'([^']+)'|(?<![\w'])([A-Za-z_][\w.]*))!"
 # a range compared with a number: ...!C4:C53>=10
 NUMBER_TAIL_RE = re.compile(r"\s*(>=|<)\s*(\d+)")
 TOTALS = "totals"
-REPAIRS = ("lane_formula_lost", "lane_col_moved", "lane_range", "lane_extra_lost")
+REPAIRS = ("lane_banner_lost", "lane_formula_lost", "lane_col_moved", "lane_range", "lane_extra_lost")
 
 
 def ranges(f: str):
@@ -182,11 +186,18 @@ def check(lanes_formulas, lanes_values, entered, boards: Dict[str, list],
       lanes.py computes them; None on an owner's sheet (fixed tabs).
     """
     good = good or {"formulas": {}, "headers": {}}
+    out: List[Finding] = []
+    fix = L.lost_banner(lanes_values)
+    if fix:
+        out.append(Finding("lane_banner_lost", tab, col_letter(fix[1] + 1) + str(fix[0] + 1),
+                           "the '%s' title was typed over; the lanes stop moving without it"
+                           % fix[2], before=_cell(lanes_values, fix[0], fix[1]),
+                           after=fix[2], value=fix[2]))
+        lanes_values = L.with_banner(lanes_values, fix)
     row0, blocks = L.find_blocks(lanes_values)
     r1 = row0 + 1                                    # the lane row, 1-based
     frow = list(lanes_formulas[row0]) if row0 < len(lanes_formulas) else []
     heads = lanes_values[row0 - 1] if row0 >= 1 else []
-    out: List[Finding] = []
     weekly = targets is not None
 
     def at(c):
