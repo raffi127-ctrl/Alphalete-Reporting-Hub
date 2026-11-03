@@ -41,6 +41,17 @@ SPLIT_CITIES = False
 # activity row per pass (~30/day). Failure alerts are unaffected.
 NO_ACTIVITY = False
 
+# Canonical ad registries, office id -> [(title, city)] from that office's
+# live-ads tab. Only Carlos (11580) has one. While the office loop is on an
+# office with a registry, CANON_ACTIVE holds it and ads_for_week folds parsed
+# groups into it (parse.fold_into_registry): Indeed's application emails for
+# one ad arrive under VARIANT subjects — with and without a "- AT&T"-style
+# suffix, with and without the city (Magma Irving 2026-11-03: 9 of 11 apps
+# cityless and suffixless) — and every key in this pipeline is (title, city).
+# The registry is window-independent, so a day pull and a week pull fold the
+# same way; the 2026-10-02 fold_cityless inconsistency cannot recur here.
+CANON_ACTIVE = []
+
 CARD_ID = "ad-sales-board"
 CARD_NAME = "Ad Sales Board (weekly Source Report)"
 # Same `standalone-` family prefix as the monthly job, for the same reason: the
@@ -84,8 +95,13 @@ def ads_for_week(html):
     the substitution here is belt-and-braces — it stays because `rescued_total`
     is counted off this same HTML, and because a plain text substitution on the
     HTML reaches the table cells the subjects live in."""
-    return parse.ads_for_month(names.WRAPPER.sub("", html),
-                               fold_cityless=not fetch.GROUP_SUBJECT)
+    m, flags = parse.ads_for_month(names.WRAPPER.sub("", html),
+                                   fold_cityless=not fetch.GROUP_SUBJECT)
+    if CANON_ACTIVE:
+        m, folded = parse.fold_into_registry(m, CANON_ACTIVE)
+        for line in folded:
+            print("  [canon] %s" % line, flush=True)
+    return m, flags
 
 
 def _owner_expect():
@@ -312,7 +328,7 @@ def main(argv=None):
     ap.add_argument("--no-group-subject", dest="group_subject",
                     action="store_false", help="legacy merged pull")
     a = ap.parse_args(argv)
-    global SPLIT_CITIES, NO_ACTIVITY
+    global SPLIT_CITIES, NO_ACTIVITY, CANON_ACTIVE
     NO_ACTIVITY = a.no_activity
     if a.group_subject:
         fetch.GROUP_SUBJECT = True
@@ -399,6 +415,21 @@ def main(argv=None):
     call_rows = names.load_call_list(sess, sheet.API)
     print("[ad_sales_board] call-list rows loaded: %d" % len(call_rows), flush=True)
 
+    # Canonical registry for offices that keep a live-ads tab (Carlos only).
+    # Best-effort: a failed read means this pass simply runs without folding,
+    # exactly like every pass before 2026-11-03 — never worth aborting over.
+    canon_by_office = {}
+    if any(str(o) == "11580" for o, _n in targets):
+        try:
+            from automations.ad_sales_board import since_live as _sl
+            canon_by_office["11580"] = [
+                (t, c) for t, c, _d in _sl._live_ads(sess, today)]
+            print("[ad_sales_board] canonical registry (11580): %d ads"
+                  % len(canon_by_office["11580"]), flush=True)
+        except Exception as e:  # noqa: BLE001
+            print("[ad_sales_board] registry read failed (%s) — folding off "
+                  "this pass" % str(e)[:120], flush=True)
+
     # Existing rows are read BEFORE the browser opens: rewriting a week must
     # CARRY OVER its accumulated received-per-day cells (AC..AI) — those came
     # from one-day pulls on days now gone, and cannot be re-derived. Rows are
@@ -442,6 +473,7 @@ def main(argv=None):
         queue, relogins = list(targets), 0
         while queue:
             oid, name = queue.pop(0)
+            CANON_ACTIVE = canon_by_office.get(str(oid), [])
             try:
                 fetch.select_office(page, tok, oid)
                 agnostic = name in CITY_AGNOSTIC and not SPLIT_CITIES

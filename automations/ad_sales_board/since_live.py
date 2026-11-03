@@ -198,14 +198,27 @@ def main(argv=None):
             # are real ads), and keep split cities (group-by-subject mode).
             groups, _flags = parse.ads_for_month(names.WRAPPER.sub("", html),
                                                  fold_cityless=False)
-            by_key = {}
+            # Claim each stream group for the ONE family it belongs to and sum
+            # — exact (title, city) lookups missed most of an ad whose emails
+            # arrive under variant subjects (Magma Irving 2026-11-03: 9 of 11
+            # apps came titled 'Sales Representative', no '- AT&T', no city,
+            # so the family row showed 1 app). Claims are judged against ALL
+            # families, not just this window's, so a variant that two ads
+            # could own stays unmatched instead of guessed.
+            fam_keys = [(ft, fc) for ft, fc, _pd in ads]
+            by_fam = {}
             for g in groups:
-                by_key.setdefault((g["title"], g["city"]), g["rec"])
+                fam = parse.claim_registry_ad(g["title"], g["city"], fam_keys)
+                if fam is None:
+                    continue
+                tot = by_fam.setdefault(fam, parse.blank())
+                for f in parse.FIELDS:
+                    tot[f] += g["rec"][f]
             stamp = dt.datetime.now().isoformat(timespec="seconds")
             for t, c, pd in ads:
                 if pd != d:
                     continue
-                rec = by_key.get((t, c))
+                rec = by_fam.get((t, c))
                 if rec is None:
                     misses.append("%s | %s | %s" % (t[:50], c, d))
                     continue

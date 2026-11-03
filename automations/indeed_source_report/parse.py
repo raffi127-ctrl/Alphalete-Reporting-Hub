@@ -298,6 +298,84 @@ def merge_across_cities(groups):
     return res
 
 
+def _canon_text(t):
+    """Comparison form for registry matching: dashes unified, case and
+    whitespace collapsed. Indeed mixes '-' and '–' in the same ad's subjects."""
+    t = str(t or '').replace('–', '-').replace('—', '-').lower()
+    return re.sub(r'\s+', ' ', t).strip()
+
+
+def _title_variant(a, b):
+    """True when one title is the other plus a trailing qualifier — 'Sales
+    Representative' vs 'Sales Representative - AT&T' (Magma Irving 2026-11-03:
+    Indeed's application emails carried BOTH, most of them without the suffix
+    and without any city). The prefix must end on a word boundary so 'Sales
+    Rep' can never claim 'Sales Representative'."""
+    a, b = _canon_text(a), _canon_text(b)
+    if a == b:
+        return True
+    s, l = (a, b) if len(a) < len(b) else (b, a)
+    return bool(s) and l.startswith(s) and not l[len(s)].isalnum()
+
+
+def claim_registry_ad(title, city, registry):
+    """The one registry ad (title, city) this stream group belongs to, or None.
+
+    `registry` is a list of canonical (title, city) pairs — Carlos's live-ads
+    tab, cities zip-stripped. A group that carries a city only matches that
+    city; a cityless group may match any city. Exact-title matches outrank
+    variant matches, and any ambiguity left after that (two registry ads could
+    claim the group) returns None: unmatched-but-honest beats guessed. This is
+    safe where apply_city_rule's window-local fold was not, because the
+    registry does not change between a one-day and a seven-day window."""
+    gt, gc = _canon_text(title), _canon_text(city)
+    exact, variant = [], []
+    for rt, rc in registry:
+        if gc and gc != _canon_text(rc):
+            continue
+        if _canon_text(rt) == gt:
+            exact.append((rt, rc))
+        elif _title_variant(gt, rt):
+            variant.append((rt, rc))
+    for cands in (exact, variant):
+        if len(cands) == 1:
+            return cands[0]
+        if cands:
+            return None
+    return None
+
+
+def fold_into_registry(groups, registry):
+    """Relabel each group to the registry ad that claims it and merge pieces
+    that land on the same ad; unclaimed groups pass through untouched. Returns
+    (groups, fold log lines). Every consumer that keys on (title, city) — the
+    board's since-live formulas, ad_key day carry, names.attach — then sees
+    one canonical row instead of a located sliver plus a cityless orphan."""
+    out, folded = OrderedDict(), []
+    for g in groups:
+        fam = claim_registry_ad(g['title'], g['city'], registry)
+        if fam is None:
+            out[('raw', id(g))] = g
+            continue
+        rt, rc = fam
+        if _canon_text(g['title']) != _canon_text(rt) or \
+                _canon_text(g['city']) != _canon_text(rc):
+            folded.append('%s | %r -> %s | %s (%d apps)' % (
+                g['title'][:48], g['city'], rt[:48], rc, g['rec']['apps']))
+        key = (_canon_text(rt), _canon_text(rc))
+        t = out.get(key)
+        if t is None:
+            out[key] = dict(g, title=rt, city=rc, base=base_role(rt))
+        else:
+            for f in FIELDS:
+                t['rec'][f] += g['rec'][f]
+            t['variants'] += g.get('variants', 1)
+            t['titles'].extend(g.get('titles', [g['title']]))
+    res = list(out.values())
+    res.sort(key=lambda g: -g['rec']['apps'])
+    return res, folded
+
+
 def ads_for_month(html, fold_cityless=True):
     """Merged, city-resolved ad rows for one office-month, plus any flags.
 
