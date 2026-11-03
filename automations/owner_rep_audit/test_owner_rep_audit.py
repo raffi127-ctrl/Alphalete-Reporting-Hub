@@ -206,6 +206,63 @@ class Updates(unittest.TestCase):
         self.assertIn("Every owner has answered", text)
 
 
+class ProtectedStaff(unittest.TestCase):
+    users = [{"id": "U1", "name": "Staff Person", "email": "s@x.com"},
+             {"id": "U2", "name": "Gone Rep", "email": "g@x.com"}]
+
+    def office(self):
+        return {"owner": "A", "reps": [{"name": "Staff Person", "email": "s@x.com"},
+                                       {"name": "Gone Rep", "email": "g@x.com"}],
+                "log": []}
+
+    def run_remove(self, protected, scim=None):
+        from unittest import mock
+        from automations.owner_rep_audit import slack_ops as S
+        scim = scim or mock.Mock(return_value="ok")
+        o, out = self.office(), mock.Mock(mode="live")
+        with mock.patch("automations.ao_cleanup.slack_read.all_users",
+                        return_value=self.users), \
+                mock.patch.object(S, "protected_ids", protected), \
+                mock.patch.object(S, "deactivate", scim):
+            run.remove(o, ["Staff Person", "Gone Rep"], out)
+        return o, scim
+
+    def test_staff_stays_even_after_the_owner_confirms(self):
+        from unittest import mock
+        o, scim = self.run_remove(mock.Mock(return_value={"U1"}))
+        scim.assert_called_once_with("U2")
+        self.assertEqual((o["removed"], o["kept"]), (["Gone Rep"], ["Staff Person"]))
+
+    def test_cant_read_channels_means_nobody_goes(self):
+        from unittest import mock
+        o, scim = self.run_remove(mock.Mock(side_effect=RuntimeError("no")))
+        scim.assert_not_called()
+        self.assertEqual(o["removed"], [])
+
+    def test_failed_scim_is_not_reported_as_removed(self):
+        from unittest import mock
+        o, _ = self.run_remove(mock.Mock(return_value=set()),
+                               mock.Mock(return_value="admin"))
+        self.assertEqual(o["removed"], [])
+
+    def test_channel_members_and_file_are_both_protected(self):
+        from unittest import mock
+        from automations.owner_rep_audit import slack_ops as S
+        cli = mock.Mock()
+        cli.conversations_list.return_value = {"channels": [
+            {"id": "C1", "name": "kash-rai-office-recruiting-22177"},
+            {"id": "C2", "name": "alphalete-sales"}]}
+        cli.conversations_members.return_value = {"members": ["U9"]}
+        ids = S.protected_ids(cli)
+        self.assertIn("U9", ids)
+        self.assertIn("U07R68ZGHT6", ids)      # Perla, from the file
+        self.assertEqual(cli.conversations_members.call_count, 1)
+
+    def test_owner_is_told_who_stayed(self):
+        self.assertIn("Staff Person", M.done(["Gone Rep"], ["Staff Person"]))
+        self.assertIn("Nobody was removed", M.done([], ["Staff Person"]))
+
+
 class Matching(unittest.TestCase):
     users = [{"id": "U1", "name": "Kash Rai", "email": "k@x.com"},
              {"id": "U2", "name": "Ann Lee", "email": "ann@x.com"},

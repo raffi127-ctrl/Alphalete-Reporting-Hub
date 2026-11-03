@@ -168,6 +168,8 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
               "owners can't be matched, so nobody gets a DM")
     from automations.owner_rep_audit.slack_ops import find_owner, in_slack
     from automations.owner_rep_audit.sellers import drop_sellers, recent_sellers
+    from automations.owner_rep_audit.slack_ops import protected_ids
+    protected = protected_ids()    # raises: no list goes out unfiltered
     sellers = recent_sellers(day)
     if sellers is not None:
         print(f"  {len(sellers)} reps sold in the last 30 days (Tableau order log)")
@@ -188,7 +190,8 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
                   "— add them to config.OWNER_SLACK")
             continue
         ov_count = len(o["reps"])
-        o["reps"] = in_slack(o["reps"], users, o["slack_id"])
+        o["reps"] = [r for r in in_slack(o["reps"], users, o["slack_id"])
+                     if r["slack_id"] not in protected]
         in_sl = len(o["reps"])
         o["reps"] = drop_sellers(o["reps"], sellers)
         print(f"  {o['office']} {o['owner']}: {ov_count} active in OwnerVille"
@@ -213,17 +216,31 @@ def remove(o: dict, names: List[str], out: Out) -> None:
     from automations.owner_rep_audit import slack_ops as S
     from automations.ao_cleanup.slack_read import all_users
     users = all_users()
-    for name in names:
+    try:
+        protected = S.protected_ids()
+    except Exception as e:  # noqa: BLE001
+        o["log"].append(f"nobody removed, staff check failed: {type(e).__name__}")
+        o["kept"] = list(dict.fromkeys(names))
+        o["removed"] = []
+        return
+    removed, kept = [], []
+    for name in dict.fromkeys(names):
         rep = next(r for r in o["reps"] if r["name"] == name)
         acct = S.find_rep(rep, users)
         if not acct:
             res = "not in Slack"
+        elif acct["id"] in protected:
+            res = f"kept, protected staff {acct['id']}"
+            kept.append(name)
         elif out.mode != "live":
             res = f"would deactivate {acct['id']}"
+            removed.append(name)
         else:
             res = S.deactivate(acct["id"])
+            if res == "ok":
+                removed.append(name)
         o["log"].append(f"{name}: slack {res}")
-    o["removed"] = names
+    o["removed"], o["kept"] = removed, kept
 
 
 def poll(st: dict, out: Out, today: dt.date) -> None:
@@ -246,6 +263,7 @@ def poll(st: dict, out: Out, today: dt.date) -> None:
             o["status"] = status
             if picked:
                 remove(o, picked, out)
+                answer = M.done(o["removed"], o.get("kept", []))
             out.reply_dm(o, answer)
 
 

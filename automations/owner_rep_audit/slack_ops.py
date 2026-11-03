@@ -10,8 +10,10 @@ Both live on Lucy 1, which is why this job runs there.
 """
 from __future__ import annotations
 
+import json
 import re
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 from automations.owner_rep_audit import config as C
 
@@ -93,6 +95,32 @@ def owner_messages(cli, channel: str, uid: str, after_ts: str) -> List[Dict]:
                     and float(r["ts"]) > float(after_ts)]
     uniq = {m["ts"]: m for m in out}
     return [uniq[k] for k in sorted(uniq, key=float)]
+
+
+# ------------------------------------------------------- protected staff
+
+# Recruiting and admin people sit in OwnerVille as reps, never sell, and their
+# owner doesn't know their names, so they land on the owner's list and get a
+# REMOVE (Kash 22177, 2026-11-03). Being in an office's recruiting channel, or
+# on protected_staff.json, means the owner's OK is not enough.
+STAFF_CHANNEL = re.compile(r"recruit|interview", re.I)
+PROTECTED_FILE = Path(__file__).with_name("protected_staff.json")
+
+
+def protected_ids(cli=None) -> Set[str]:
+    """Every Slack id Lucy must not deactivate. Raises if the channels can't
+    be read: no answer here has to mean nobody gets deactivated."""
+    from automations.ao_cleanup.slack_read import _paged, client
+    cli = cli or client()
+    ids = set(json.loads(PROTECTED_FILE.read_text(encoding="utf-8"))["slack_ids"])
+    chans = _paged(cli.conversations_list, "channels",
+                   types="public_channel,private_channel",
+                   exclude_archived=True)
+    for c in chans:
+        if STAFF_CHANNEL.search(c.get("name") or ""):
+            ids.update(_paged(cli.conversations_members, "members",
+                              channel=c["id"]))
+    return ids
 
 
 # ------------------------------------------------------------- removal (SCIM)

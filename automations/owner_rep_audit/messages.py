@@ -32,9 +32,18 @@ def confirm_prompt(names: List[str], bad: List[int]) -> str:
             "numbers again to change the list.")
 
 
-def done(names: List[str]) -> str:
-    return ("Done! Removed from Slack:\n" + "\n".join(f"• {n}" for n in names)
-            + "\nThanks for keeping things clean!")
+def done(names: List[str], kept: List[str] = ()) -> str:
+    text = ("Done! Removed from Slack:\n" + "\n".join(f"• {n}" for n in names)
+            if names else "Nobody was removed from Slack.")
+    if kept:
+        text += ("\n\nThese stay, they work on the recruiting team:\n"
+                 + "\n".join(f"• {n}" for n in kept))
+    return text + "\nThanks for keeping things clean!"
+
+
+def _kept_line(offices: List[Dict]) -> List[str]:
+    kept = [f"{n} ({o['owner']})" for o in offices for n in o.get("kept", [])]
+    return ["🛡️ Kept, recruiting team: " + ", ".join(kept)] if kept else []
 
 
 def none_ack() -> str:
@@ -96,6 +105,7 @@ def summary(offices: List[Dict]) -> str:
         out.append(f"🏢 *{o['owner']}* ({o['office']}) · Owner confirmed "
                    f"termination {o.get('confirmed_on', '')}".rstrip())
         out += [f"> {name}" for name in o["removed"]]
+    out += _kept_line(offices)
     clean = [o for o in offices if o["status"] == "done" and not o["removed"]]
     if clean:
         out.append("✅ Nobody left: " + ", ".join(
@@ -120,6 +130,7 @@ def update(new: List[Dict], waiting: int) -> str:
             out.append(f"🏢 *{o['owner']}* ({o['office']}) · Owner confirmed "
                        f"termination {o.get('confirmed_on', '')}".rstrip())
             out += [f"> {name}" for name in o["removed"]]
+    out += _kept_line(new)
     clean = [o for o in new if not o["removed"]]
     if clean:
         out.append("✅ Nobody left: " + ", ".join(
