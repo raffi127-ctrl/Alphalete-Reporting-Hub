@@ -236,6 +236,42 @@ def test_missing_and_behind_both_listed_as_failed():
     assert kw["failed"] == ["atef", "jamis"]
 
 
+def test_one_mismatch_costs_only_that_office():
+    isolated, blocking = vc._isolate_lone_mismatch({"atef": ["off"]}, 6)
+    assert isolated == {"atef": ["off"]} and blocking == {}
+
+
+def test_two_mismatches_still_block_everyone():
+    both = {"atef": ["off"], "luke": ["off"]}
+    assert vc._isolate_lone_mismatch(both, 5) == ({}, both)
+
+
+def test_a_mismatch_with_too_few_offices_still_blocks():
+    one = {"atef": ["off"]}
+    assert vc._isolate_lone_mismatch(one, 0) == ({}, one)
+    assert vc._isolate_lone_mismatch(one, 1) == ({}, one)
+
+
+def test_no_mismatch_blocks_nothing():
+    assert vc._isolate_lone_mismatch({}, 7) == ({}, {})
+
+
+def test_mismatch_office_pings_the_source_notice():
+    fake = _with_fake_manifest(lambda: vc._churn_source_manifest(
+        {}, log=_quiet, mismatch={"atef": "ATEF: off by 1.47pp"}))
+    assert not fake.cleaned
+    (rid, kw), = fake.written
+    assert rid == vc.CHURN_SOURCE_ID and kw["failed"] == ["atef"]
+    assert "does not match" in kw["note"]
+
+
+def test_behind_and_mismatch_both_listed_as_failed():
+    fake = _with_fake_manifest(lambda: vc._churn_source_manifest(
+        {}, log=_quiet, behind={"jamis": "behind"}, mismatch={"atef": "off"}))
+    (rid, kw), = fake.written
+    assert kw["failed"] == ["atef", "jamis"]
+
+
 def _main() -> int:
     fails = 0
     for name, fn in sorted(globals().items()):
