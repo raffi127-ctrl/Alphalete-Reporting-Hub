@@ -27,7 +27,9 @@ THREAD_GAPS = "%s 15 Min Gaps" % TEAM
 
 # Hours, on this machine's clock (Lucy 2 = Central). Sunday off unless
 # shared/day_override says that date is a Saturday.
-WEEKDAY_START, WEEKDAY_STOP = (14, 0), (21, 0)
+# 1:30 since 2026-11-03 (Carlos: "lets start our knocks board 30 mins earlier
+# moving forward"); was 2:00. Saturday unchanged.
+WEEKDAY_START, WEEKDAY_STOP = (13, 30), (21, 0)
 SATURDAY_START, SATURDAY_STOP = (10, 15), (17, 30)   # 10:15 since 2026-10-24
 # One-off earlier starts, by date (Carlos 2026-10-30: "the NDS knock board and
 # the NDS 15-minute gaps start 30 minutes early today"). Only the START moves;
@@ -68,6 +70,17 @@ WEEK_AFTER = SATURDAY_STOP
 # clock on a Monday; the metrics thread is up by ~7:45.
 WEEK_MONDAY_AFTER = (10, 0)
 WEEK_MONDAY_THREAD = "NDS Metrics"
+
+# Reps who knock on RAF's Ownerville but belong on THIS knocks board (Carlos
+# 2026-11-03: "theres two people whos knocks will be under rafs owner ville
+# (just for knocks not anywhere else) ... Cinthya reyes and nathaly benitez").
+# Their rows are lifted off the relay workbook's 'Lucy Knocks' tab, where
+# gap_alerts (Lucy 1) drops Raf's board rows every 30 min -- no second
+# Ownerville session, no impersonation. Keyed by that tab's Key column; names
+# matched the way total_knocks.guests matches (loose, unique hits only).
+# BOARD ONLY: not the gaps list, not the call-outs, not the owners' board
+# share (Raf's row there already carries them). Raf's own board is untouched.
+BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Nathaly Benitez"]}
 
 # Credit checks for the call-outs come from Carlos's own SaraPlus, relayed by
 # his office Mac mini under this ICD office key (icd_alerts).

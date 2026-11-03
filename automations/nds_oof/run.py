@@ -162,6 +162,54 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
     return over, rows
 
 
+def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
+    """Rows for C.BORROWED_ROWS off the 'Lucy Knocks' tab (today's row for each
+    key), matched like total_knocks.guests. A name already on `own` is left
+    off, a name with no row today is logged. Never raises: the board matters
+    more than the borrowed names."""
+    want = getattr(C, "BORROWED_ROWS", None) or {}
+    if not want:
+        return []
+    from automations.owner_knocks_hourly import share as S
+    from automations.total_knocks import guests as G
+    have = {G._norm(G._rep(r)) for r in own}
+    keep = set(own[0].keys()) if own else None
+    out: List[Dict] = []
+    try:
+        ws = S._tab(S._book())
+        lines = ws.get_all_values()[1:] if ws is not None else []
+    except Exception as e:  # noqa: BLE001
+        _log("borrowed: 'Lucy Knocks' tab unavailable (%s) -- board without them" % type(e).__name__)
+        return []
+    seen = set()
+    for r in lines:
+        r = list(r) + [""] * (len(S.HEADER) - len(r))
+        key = r[S.K_KEY].strip().lower()
+        if key not in want or r[S.K_DAY].strip() != today.isoformat():
+            continue
+        seen.add(key)
+        try:
+            src = json.loads(r[S.K_ROWS] or "[]")
+        except ValueError:
+            src = []
+        claimed, missing = G.match_rows(src, want[key])
+        for i, name in sorted(claimed.items()):
+            row = src[i]
+            if G._norm(G._rep(row)) in have:
+                _log("borrowed: %s is already on our own rows -- not doubled" % name)
+                continue
+            if keep:
+                row = {k: v for k, v in row.items() if k in keep}
+            out.append(row)
+            _log("borrowed: %s off %s (shared %s)" % (G._rep(src[i]), key, r[S.K_AT] or "?"))
+        for name in missing:
+            _log("borrowed: %s not on %s's rows today" % (name, key))
+    for key in want:
+        if key not in seen:
+            _log("borrowed: no 'Lucy Knocks' row for %s today" % key)
+    return out
+
+
 def board_kpis() -> Dict:
     """Raf's KPI scales with THIS crew's First Knock (2:00 start, see config)."""
     from automations.shared import knock_kpis
@@ -383,6 +431,10 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     out_dir = OUTPUT_DIR / today.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     over, rows = pull(today, want_board=want_board, headless=headless)
+    # Cinthya + Nathaly, knocking on Raf's Ownerville (config.BORROWED_ROWS):
+    # on OUR board picture only. `rows` (our own) is what goes to the owners'
+    # board share below -- Raf's row there already carries them.
+    board_rows = (rows + borrowed_rows(today, rows)) if want_board else rows
     if send and want_board and rows:
         # Carlos's NDS crew on the owners' hourly knocks board (Eve
         # 2026-10-29) -- that board runs on Lucy 1 and cannot see this disk.
@@ -390,8 +442,8 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         share.share(OK.CARLOS_NDS_KEY, OK.CARLOS_NAME, today, rows, log=_log)
 
     body = gaps_text(over, now) if want_gaps else ""
-    pngs = render_board(rows, today, now, out_dir) if (want_board and rows) else []
-    if want_board and not rows:
+    pngs = render_board(board_rows, today, now, out_dir) if (want_board and board_rows) else []
+    if want_board and not board_rows:
         _log("board: no rows on the grid -- not drawn (never post blank)")
     callout = "" if no_gaps else _callout(over, today, now, send=send)
 
