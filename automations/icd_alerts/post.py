@@ -4239,6 +4239,7 @@ def main(argv=None) -> int:
                     code_answer.answer_requests(book, send=args.send)
                     code_answer.record_forwards(book, send=args.send)
                     code_answer.confirm_forwards(book, send=args.send)
+                    code_answer.publish_confirmed(book, send=args.send)
                     code_answer.check_forward_scope(book, send=args.send)
                 except Exception as e:  # noqa: BLE001 — never cost the alerts
                     print("could not answer code requests: %s: %s"

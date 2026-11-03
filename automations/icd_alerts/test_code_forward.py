@@ -72,6 +72,11 @@ class OnTheMac(unittest.TestCase):
                               side_effect=lambda a, **k: self.sent.append(a) or True)
         p.start()
         self.addCleanup(p.stop)
+        # Not confirmed until the address has gone home, confirmed after.
+        p = mock.patch.object(R, "forward_confirmed",
+                              side_effect=lambda *a, **k: bool(self.sent))
+        self.confirmed = p.start()
+        self.addCleanup(p.stop)
 
     def _go(self, ask):
         return CF.walk_through(ask, say=lambda *_: None)
@@ -81,12 +86,11 @@ class OnTheMac(unittest.TestCase):
         self.assertEqual(self._go(ask), "done")
         self.assertEqual(self.sent, ["owner@gmail.com"])
         self.assertIn("alphaletereporting@gmail.com", ask.shown[0])
+        self.assertIn("owner@gmail.com", ask.shown[0], "names the account to be in")
         self.assertTrue(CF.already_set_up())
 
-    def test_gmail_opens_on_forwarding_and_the_filter_can_follow(self):
+    def test_gmail_opens_on_forwarding_and_the_filter_follows(self):
         ask = FakeAsk(CF.YES)
-        picks = iter([CF.YES, CF.FILTER_NOW])
-        ask.choose = lambda prompt, options: next(picks)
         self.assertEqual(self._go(ask), "done")
         self.assertEqual(self.opened, [CF.FORWARDING_URL, CF.FILTER_URL])
 
@@ -99,6 +103,54 @@ class OnTheMac(unittest.TestCase):
             self.assertEqual(self._go(ask), "skipped for now")
         self.assertEqual(self.sent, [])
         self.assertFalse(CF.already_set_up())
+
+    def _never_confirmed(self):
+        self.confirmed.side_effect = lambda *a, **k: False
+        return mock.patch.multiple(CF, CONFIRM_WAIT_S=0, CONFIRM_POLL_S=0)
+
+    def test_ok_without_gmail_is_not_done_and_it_comes_back(self):
+        # Isaiah, Jamis, Trang: OK pressed, no confirmation ever reached us.
+        ask = FakeAsk(CF.YES)
+        with self._never_confirmed():
+            self.assertEqual(self._go(ask), "not confirmed yet")
+        self.assertFalse(CF.already_set_up())
+        self.assertNotIn(CF.FILTER_URL, self.opened)
+        self.assertEqual(ask.shown[-1], CF.LEFT_OPEN)
+        self.assertTrue(any("owner@gmail.com" in m and "has not told us" in m
+                            for m in ask.shown), "says what to check, by account")
+        self.assertEqual(self.sent, ["owner@gmail.com"], "sent home once")
+
+    def test_a_second_try_that_works_goes_on_to_the_filter(self):
+        answers = iter([False, False, True])
+        self.confirmed.side_effect = lambda *a, **k: next(answers, True)
+        ask = FakeAsk(CF.YES)
+        with mock.patch.multiple(CF, CONFIRM_WAIT_S=0, CONFIRM_POLL_S=0):
+            # The check at the top and the first wait say no, the second yes.
+            self.assertEqual(self._go(ask), "done")
+        self.assertEqual(self.opened, [CF.FORWARDING_URL, CF.FORWARDING_URL, CF.FILTER_URL])
+        self.assertEqual(self.sent, ["owner@gmail.com"])
+
+    def test_already_confirmed_skips_straight_to_the_filter(self):
+        # Luke, Valeria, Carlos: the address is in, only the filter is left.
+        self.confirmed.side_effect = lambda *a, **k: True
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), "done")
+        self.assertEqual(self.sent, [])
+        self.assertEqual(self.opened, [CF.FILTER_URL])
+        self.assertTrue(CF.already_set_up())
+
+    def test_a_cancelled_filter_is_not_done(self):
+        self.confirmed.side_effect = lambda *a, **k: True
+        ask = FakeAsk(CF.YES)
+        ask.message = mock.Mock(side_effect=FakeAsk.Cancelled())
+        self.assertEqual(self._go(ask), "filter not shown")
+        self.assertFalse(CF.already_set_up())
+
+    def test_an_old_premature_mark_counts_for_nothing(self):
+        # What brings the offices that stopped halfway back, with no message.
+        self.assertNotEqual(CF.MARK_PATH.name, "sara-code-forward.txt")
+        real = inspect.getsource(CF).split('MARK_PATH = C.APP_DIR / "')[1].split('"')[0]
+        self.assertEqual(real, "sara-code-forward-done.txt")
 
 
 class RealReportForward(unittest.TestCase):
@@ -121,6 +173,27 @@ def fwd_row(office, address):
     row[P.F_OFFICE], row[P.F_DAY], row[P.F_STAGE] = office, "2026-10-29", CA.FORWARD_STAGE
     row[P.F_SUMMARY] = CA.forward_summary(address)
     return row
+
+
+class RealForwardConfirmed(unittest.TestCase):
+    """Reads what the relay's _codePoll really answers (resources/icd-alerts-relay.gs)."""
+
+    def _ask(self, reply=None, boom=None):
+        rec = {"office_key": "isaiah", "relay_url": "u", "relay_key": "k"}
+        post = mock.Mock(return_value=reply, side_effect=boom)
+        with mock.patch.object(R, "_endpoint", return_value=rec), \
+                mock.patch.object(R, "_post", post):
+            return R.forward_confirmed(), post
+
+    def test_a_row_with_no_code_reads_as_taken_is_confirmed(self):
+        got, post = self._ask('{"ok": true, "status": "taken"}')
+        self.assertTrue(got)
+        self.assertIn(CA.FORWARD_STATE, post.call_args.args[1].decode())
+
+    def test_no_row_old_relay_or_no_network_is_not_confirmed(self):
+        self.assertFalse(self._ask('{"ok": true, "status": "waiting"}')[0])
+        self.assertFalse(self._ask('{"ok": false, "error": "bad day"}')[0])
+        self.assertFalse(self._ask(boom=OSError("down"))[0])
 
 
 class OnLucy1(unittest.TestCase):
@@ -173,13 +246,20 @@ class TheTerminalLine(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    def test_first_run_opens_forwarding_then_second_opens_the_filter(self):
+    def test_finished_says_all_set_and_a_rerun_reopens_the_filter(self):
         with mock.patch.object(CF, "walk_through",
-                               side_effect=lambda a, s: CF._mark("o@gmail.com") or "done"),              mock.patch("automations.icd_alerts.dialogs.message"),              mock.patch("builtins.print"):
+                               side_effect=lambda a, s: CF._mark("o@gmail.com") or "done"), \
+                mock.patch("automations.icd_alerts.dialogs.message"):
             self.assertEqual(CF.main(), 0)
             self.assertEqual(self.opened, [], "walk_through opens Gmail itself")
             self.assertEqual(CF.main(), 0)
         self.assertEqual(self.opened[-1], CF.FILTER_URL)
+
+    def test_stopped_halfway_says_not_yet(self):
+        with mock.patch.object(CF, "walk_through", return_value="not confirmed yet"), \
+                mock.patch("automations.icd_alerts.dialogs.message"):
+            self.assertEqual(CF.main(), 1)
+        self.assertFalse(CF.already_set_up())
 
     def test_a_skip_says_not_yet(self):
         with mock.patch.object(CF, "walk_through", return_value="skipped for now"),              mock.patch("builtins.print"):
@@ -271,6 +351,8 @@ class NoSkipAfterTheHandSignIn(unittest.TestCase):
         with mock.patch.object(CF, "_open"), \
                 mock.patch.object(CF, "_login_email", return_value="a@b.com"), \
                 mock.patch.object(CF, "_mark"), \
+                mock.patch("automations.icd_alerts.relay.forward_confirmed",
+                           side_effect=[False, True]), \
                 mock.patch("automations.icd_alerts.relay.report_forward", return_value=True):
             got = CF.walk_through(ask, say=lambda *_: None, **kw)
         return got, ask
@@ -286,7 +368,7 @@ class NoSkipAfterTheHandSignIn(unittest.TestCase):
     def test_our_address_is_copied_and_named_before_gmail_opens(self):
         self._run(can_skip=False)
         CF._copy.assert_called_with(CF.REPORTING_INBOX, mock.ANY)
-        self.assertIn(CF.REPORTING_INBOX, CF.STEPS)
+        self.assertIn(CF.REPORTING_INBOX, CF.STEPS % (CF.REPORTING_INBOX, "a@b.com"))
         self.assertIn("PASTE", CF.STEPS)
         self.assertIn(CF.REPORTING_INBOX, CF.FILTER_STEPS)
 
@@ -341,9 +423,64 @@ class LucyAcceptsGmailsMail(unittest.TestCase):
 
     def test_an_old_row_costs_no_inbox_read(self):
         mails = mock.Mock(return_value={})
-        CA.confirm_forwards(self._book(added=NOW - dt.timedelta(days=3)), send=True,
-                            now=NOW, mails=mails, log=lambda *_: None)
+        CA.confirm_forwards(self._book(added=NOW - dt.timedelta(days=CA.CONFIRM_WINDOW_DAYS + 1)),
+                            send=True, now=NOW, mails=mails, log=lambda *_: None)
         mails.assert_not_called()
+
+    def test_coming_back_days_later_still_gets_confirmed(self):
+        got = self._go(self._book(added=NOW - dt.timedelta(days=5)),
+                       {"owner@gmail.com": "https://x/vf"})
+        self.assertEqual(got[0]["status"], "confirmed")
+
+    def test_a_row_past_its_first_hour_is_read_every_ten_minutes(self):
+        book = self._book(added=NOW - dt.timedelta(days=5))
+        mails = mock.Mock(return_value={})
+        at = NOW.replace(minute=33)
+        CA.confirm_forwards(book, send=True, now=at, mails=mails, log=lambda *_: None)
+        mails.assert_not_called()
+        CA.confirm_forwards(book, send=True, now=at.replace(minute=40), mails=mails,
+                            tell=self.told.append, log=lambda *_: None)
+        mails.assert_called_once()
+
+    def test_a_second_row_on_a_confirmed_address_is_confirmed_without_pressing(self):
+        added = (NOW - dt.timedelta(minutes=2)).isoformat()
+        sheet = Sheet([CA.MAIL_HEADER,
+                       ["carlos", "a@gmail.com", added, "from setup; gmail confirmed"],
+                       ["carlos-b2batt", "a@gmail.com", added, "from setup"]])
+        self._go(Book({CA.MAIL_TAB: sheet}), {"a@gmail.com": "https://x/vf"})
+        self.assertEqual(self.accepted, [])
+        self.assertEqual(self.told, [])
+        self.assertIn(CA.NOTE_CONFIRMED, sheet.cells[(3, 4)])
+
+    def test_an_office_on_texts_is_never_waited_on(self):
+        sheet = Sheet([CA.MAIL_HEADER,
+                       ["eveliz", "e@gmail.com",
+                        (NOW - dt.timedelta(hours=30)).isoformat(), "from setup"]])
+        self._go(Book({CA.MAIL_TAB: sheet}), {})
+        self.assertEqual(self.told, [])
+
+    def _publish(self, note, send=True):
+        self.sheet = Sheet([CA.MAIL_HEADER, ["Rashad", "o@gmail.com", NOW.isoformat(), note]])
+        self.codes = Sheet([CA.CODES_HEADER])
+        book = Book({CA.MAIL_TAB: self.sheet, CA.CODES_TAB: self.codes})
+        return CA.publish_confirmed(book, send=send, now=NOW, log=lambda *_: None)
+
+    def test_a_confirmed_row_is_published_once_with_no_code(self):
+        self.assertEqual(self._publish("from setup; gmail confirmed (by hand, Eve)"), ["rashad"])
+        row = self.codes.rows[-1]
+        self.assertEqual(row[:3], ["rashad", CA.FORWARD_STATE, ""])
+        self.assertEqual(row[5], "", "a status of none would read as no forward")
+        self.assertIn(CA.NOTE_MAC_TOLD, self.sheet.cells[(2, 4)])
+        self.assertEqual(self._publish("x; gmail confirmed; mac told"), [])
+
+    def test_an_unconfirmed_row_is_never_published(self):
+        self.assertEqual(self._publish("from setup; no gmail mail yet"), [])
+        self.assertEqual(self.codes.rows[1:], [])
+
+    def test_the_poster_publishes_after_confirming(self):
+        src = inspect.getsource(P)
+        self.assertLess(src.index("code_answer.confirm_forwards(book"),
+                        src.index("code_answer.publish_confirmed(book"))
 
     def test_no_mail_after_patience_tells_us_once(self):
         book = self._book(added=NOW - dt.timedelta(minutes=30))

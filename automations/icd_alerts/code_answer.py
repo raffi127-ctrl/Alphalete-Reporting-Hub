@@ -298,11 +298,21 @@ CONFIRM_QUERY = "from:forwarding-noreply@google.com subject:forwarding newer_tha
 NOTE_CONFIRMED = "gmail confirmed"
 NOTE_NO_MAIL = "no gmail mail yet"
 NOTE_FAILED = "gmail confirm failed"
+NOTE_MAC_TOLD = "mac told"
+# In 'Code Answers', in place of a request time: "this office's forward is
+# confirmed" (relay.forward_confirmed). Never handed out, the row has no code.
+FORWARD_STATE = "forward-confirmed"
 # An owner adds the address, then sends it home: the mail is normally there
 # already. Past this they most likely stopped before Add a forwarding address.
 CONFIRM_PATIENCE_MIN = 20
 # After this a row is left alone, so a forward nobody finished costs nothing.
-CONFIRM_WINDOW_DAYS = 2
+# It was 2 days, and an owner who came back on the third had nobody to confirm
+# them (Eve 2026-11-03).
+CONFIRM_WINDOW_DAYS = 30
+# Past the first hour nobody is sitting there waiting: open the inbox only every
+# 10 minutes instead of on each tick of the poster.
+CONFIRM_FAST_MIN = 60
+CONFIRM_SLOW_EVERY_MIN = 10
 
 # THE FIRST LINK, BY ITS WORDING. The same mail's second link CANCELS.
 _CONFIRM_LINK = re.compile(
@@ -432,18 +442,32 @@ def confirm_forwards(book=None, *, send: bool = False,
     except Exception as e:  # noqa: BLE001 -- includes no tab yet
         log("code forwards: could not read the mail tab: %s" % type(e).__name__)
         return []
+    from automations.icd_alerts import sms_code as T
     waiting = []
+    # ONE GMAIL ADDRESS, ONE CONFIRMATION, even on two rows (a Mac with two
+    # office keys, carlos + carlos-b2batt): Gmail never mails it a second time,
+    # and pressing an old link again would read as a failure.
+    confirmed = {r[1].strip().lower() for r in rows[1:]
+                 if len(r) >= 4 and NOTE_CONFIRMED in r[3]}
     for at, r in enumerate(rows[1:], start=2):
         r = list(r) + [""] * (len(MAIL_HEADER) - len(r))
         added = _added_at(r[2])
         if not (r[0].strip() and "@" in r[1] and added):
             continue
-        if now - added > dt.timedelta(days=CONFIRM_WINDOW_DAYS):
+        if NOTE_CONFIRMED in r[3]:
             continue
-        if NOTE_CONFIRMED in r[3] or NOTE_FAILED in r[3]:
+        if r[1].strip().lower() in confirmed:
+            if send:
+                sheet.update_cell(at, 4, ("%s; %s (same address)"
+                                          % (r[3], NOTE_CONFIRMED)).strip("; "))
+            continue
+        if now - added > dt.timedelta(days=CONFIRM_WINDOW_DAYS) or NOTE_FAILED in r[3]:
+            continue
+        if T.wants_text(r[0].strip().lower()):      # codes by text: no mail coming
             continue
         waiting.append((at, r[0].strip(), r[1].strip().lower(), added, r[3]))
-    if not waiting:
+    fresh = any(now - w[3] <= dt.timedelta(minutes=CONFIRM_FAST_MIN) for w in waiting)
+    if not waiting or not (fresh or now.minute % CONFIRM_SLOW_EVERY_MIN == 0):
         return []
     try:
         found = mails()
@@ -497,6 +521,45 @@ def confirm_forwards(book=None, *, send: bool = False,
             done.append({"office": office, "status": "confirmed"})
         except Exception as e:  # noqa: BLE001 -- one row never costs the rest
             log("code forwards: row %d: %s" % (at, type(e).__name__))
+    return done
+
+
+def publish_confirmed(book=None, *, send: bool = False,
+                      now: Optional[dt.datetime] = None, log=print) -> List[str]:
+    """Let each Mac see that its forward is confirmed. Never raises.
+
+    The note on MAIL_TAB is the truth, however it got there (Lucy pressed
+    Confirm, or one of us clicked the mail and wrote it down). relay.
+    forward_confirmed reads the row this leaves on 'Code Answers'. The note is
+    stamped so that a quiet tick costs one read of this tab and nothing else.
+    """
+    from automations.icd_alerts import post as P
+
+    now = now or dt.datetime.now().astimezone()
+    done = []
+    try:
+        if book is None:
+            from automations.recruiting_report.fill import open_by_key
+            book = open_by_key(P.RELAY_SPREADSHEET_ID)
+        sheet = book.worksheet(MAIL_TAB)
+        rows = sheet.get_all_values()
+        codes = None
+        for at, r in enumerate(rows[1:], start=2):
+            r = list(r) + [""] * (len(MAIL_HEADER) - len(r))
+            office = r[0].strip().lower()
+            if not office or NOTE_CONFIRMED not in r[3] or NOTE_MAC_TOLD in r[3]:
+                continue
+            done.append(office)
+            if not send:
+                continue
+            codes = codes or _tab(book, CODES_TAB, CODES_HEADER)
+            codes.append_row([office, FORWARD_STATE, "",
+                              now.isoformat(timespec="seconds"), "", ""],
+                             value_input_option="RAW")
+            sheet.update_cell(at, 4, "%s; %s" % (r[3], NOTE_MAC_TOLD))
+            log("FWD    %-10s Mac can now see the confirmation" % office)
+    except Exception as e:  # noqa: BLE001 -- never cost the poster its tick
+        log("code forwards: could not publish: %s" % type(e).__name__)
     return done
 
 

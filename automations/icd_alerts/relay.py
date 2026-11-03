@@ -806,6 +806,25 @@ def poll_code(since: dt.datetime, office_key: str = "") -> Dict[str, str]:
     return {"status": status, "code": str(out.get("code") or "")}
 
 
+def forward_confirmed(office_key: str = "") -> bool:
+    """Has Gmail's forward from this office been confirmed on our side?
+
+    USES THE code_poll THE RELAY ALREADY HAS, so no relay redeploy: Lucy 1 keeps
+    a 'Code Answers' row with this office, CA.FORWARD_STATE in place of a time,
+    and no code. code_poll reads that as "taken"; no row is "waiting". Never
+    raises: anything else means not confirmed, and the owner is just asked to
+    check again."""
+    from automations.icd_alerts import code_answer as CA
+    try:
+        rec = _endpoint(office_key)
+        body = {"office_key": rec["office_key"], "key": rec["relay_key"],
+                "code_poll": {"since": CA.FORWARD_STATE}}
+        out = json.loads(_post(rec["relay_url"], json.dumps(body).encode("utf-8")))
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(out.get("ok")) and out.get("status") == "taken"
+
+
 def report_forward(address: str, office_key: str = "", log=None) -> bool:
     """Send home the address SaraPlus mails this office's codes to.
 
