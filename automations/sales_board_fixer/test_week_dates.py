@@ -95,5 +95,27 @@ class Label(unittest.TestCase):
             self.assertEqual(self.check(label), [label], label)
 
 
+class NewestWeekTab(unittest.TestCase):
+    def pick(self, visible):
+        from automations.sales_board_fixer import run as R
+        return R.newest_week_tab(visible, TUE)
+
+    def test_dover(self):
+        self.assertEqual(self.pick(["NEW Sales Board", "w.e 10/12/26", "WE 10/18/26", "WE 10/25/26",
+                                    "WE 11/1/26 ", "Copy of WE 11/1/26 ", "Line Up "]), "WE 11/1/26 ")
+
+    def test_salik(self):
+        self.assertEqual(self.pick(["Fiber Sales Board", "10/26", "10/12", "Line Up "]), "10/26")
+
+    def test_isaiah_old_tab_without_a_year(self):
+        self.assertIsNone(self.pick(["NEW Sales Board", "WE 12.21.25 NEW", "Sales Board WE 11.03"]))
+
+    def test_next_weeks_tab_does_not_win(self):
+        self.assertEqual(self.pick(["11.9", "11.2"]), "11.2")
+
+    def test_archive_beside_a_board_with_no_date(self):
+        self.assertIsNone(self.pick(["NEW Sales Board", "WE 9/7/26", "WE 8/31/26"]))
+
+
 if __name__ == "__main__":
     unittest.main()

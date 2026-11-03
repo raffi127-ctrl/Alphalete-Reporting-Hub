@@ -669,6 +669,7 @@ OWNERS_FILE = Path(__file__).with_name("owners.json")
 # tabs per week, '10.12' + '10.12 Linep' + '10.12 Stations' (2026-10-13);
 # Salik/Hammad one tab per Monday, '10/12', '10/5'... (2026-10-14)
 BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b|^\s*\d{1,2}[./]\d{1,2}\s*$", re.I)
+NEWEST_TAB_DAYS = 21
 SIDE_NAME = re.compile(r"line\s*u?p|stations|car\s*rides?", re.I)   # Eveliz: 'Car Rides B2B'
 WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}[./]\d{1,2})\b")
 DATED_TAB = re.compile(r"^\s*(\d{1,2})[./](\d{1,2})\s*$")
@@ -722,6 +723,32 @@ def side_tabs(visible, picked) -> list:
     return out
 
 
+def newest_week_tab(visible, today: dt.date):
+    """The board tab with the newest week in its name, when this_weeks_tab finds
+    none: Dover's 'WE 11/1/26' isn't a bare date, and Salik's '10/26' is 8 days
+    old until he adds this week's. Eve, 2026-11-03: leftmost-with-reps had the
+    fixer on Salik's dead 'Fiber Sales Board' and Dover's 'w.e 10/12/26'.
+    Next week's tab can exist early, so it doesn't count. Past NEWEST_TAB_DAYS
+    the dates are an archive beside a board with no date (Frank, Drew).
+    A name with no year, right of an older tab, is last year's: Isaiah keeps
+    'Sales Board WE 11.03' from 2025 behind 'WE 12.21.25 NEW'."""
+    this_week = today - dt.timedelta(days=today.weekday())
+    best, oldest_left = None, None
+    for t in visible:
+        if not BOARD_NAME.search(t) or t.lower().startswith("copy of"):
+            continue
+        week = WD.week_of(t, today)
+        if week is None:
+            continue
+        stale = not ST.has_year(t) and oldest_left is not None and week > oldest_left
+        oldest_left = week if oldest_left is None else min(oldest_left, week)
+        if stale or week > this_week or (this_week - week).days > NEWEST_TAB_DAYS:
+            continue
+        if best is None or week > best[0]:
+            best = (week, t)
+    return best[1] if best else None
+
+
 def owner_tabs(sh, boards: int = 1, week_end: bool = False,
                newest_right: bool = False) -> list:
     """The tabs to check in an owner's All-in-One: the leftmost visible sales
@@ -733,7 +760,8 @@ def owner_tabs(sh, boards: int = 1, week_end: bool = False,
     visible = [s["properties"]["title"] for s in meta["sheets"]
                if not s["properties"].get("hidden")]
     picked = []
-    dated = this_weeks_tab(visible, dt.date.today(), week_end, newest_right)
+    today = dt.date.today()
+    dated = this_weeks_tab(visible, today, week_end, newest_right) or newest_week_tab(visible, today)
     for title in ([dated] if dated else []) + [t for t in visible if t != dated]:
         if len(picked) >= boards:
             break

@@ -31,6 +31,11 @@ def has_stray_space(title: str) -> bool:
     return title != " ".join(title.split())
 
 
+def has_year(title: str) -> bool:
+    m = _DATE.search(title)
+    return bool(m and m.group(3))
+
+
 def tab_date(title: str, today: dt.date) -> Optional[dt.date]:
     """The date in a tab name. No year written: the one closest to today, so a
     December tab read in January lands in last year."""
