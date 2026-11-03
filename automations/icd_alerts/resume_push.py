@@ -168,7 +168,10 @@ PUSH_OFFICES = {
     # computer takes turns through all three in ONE Chrome, so one tick of
     # Indeed's box covers every office. Dry until his computer has checked in
     # and the three have left Lucy 4 (ROTATION_BY_MACHINE) -- never both.
-    "raf": (("11280", "23965", "24065"), "dry"),  # Rafael Hidalgo
+    # LIVE (Megan 2026-11-03 17:55 CT: "yes take raf's push live on his
+    # machine"). His MacBook's dry walk at 17:44 ran clean with the login
+    # saved; the three left Lucy 4 in the same change (ROTATION_BY_MACHINE).
+    "raf": (("11280", "23965", "24065"), "live"),  # Rafael Hidalgo
 }
 LOGIN_POLL_SECONDS = 90
 

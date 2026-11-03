@@ -642,7 +642,12 @@ ROTATION_BY_MACHINE = {
     # her laptop never got a working push Chrome: it froze before answering,
     # on screen or not (a plain Chrome there was fine; cause not found). Lucy 4
     # sends whoever already has a phone; Indeed blocks its resume reads.
-    "Lucy 4": ["11280", "23965", "24065"],
+    # RAF'S THREE LEFT LUCY 4 FOR HIS OWN MACBOOK (Megan 2026-11-03: "yes
+    # take raf's push live on his machine"). One Chrome there takes turns
+    # through all three, so one clearing of Indeed's box covers every office
+    # -- Lucy 4 lost the pass within ~30 minutes every time. Lucy 4 pushes
+    # nobody now; the list stays so a rollback is one edit.
+    "Lucy 4": [],
     "Megan's laptop": [],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
@@ -652,12 +657,14 @@ ROTATION_BY_MACHINE = {
     "Atef's office computer (relay)": ["23467"],
     "Khalil's office computer (relay)": ["11901"],
     "Colten's office computer (relay)": ["14733"],
+    "Raf's office computer (relay)": ["11280", "23965", "24065"],
 }
 # Machines in ROTATION_BY_MACHINE that are office relay computers, not Lucys.
 RELAY_MACHINES = {"Carlos's office computer (relay)",
                   "Atef's office computer (relay)",
                   "Khalil's office computer (relay)",
-                  "Colten's office computer (relay)"}
+                  "Colten's office computer (relay)",
+                  "Raf's office computer (relay)"}
 
 
 def rotation_for(machine: str = None) -> list:
