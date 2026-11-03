@@ -787,6 +787,15 @@ def fetch_b2b_luke(out_path: Optional[Path] = None,
         verbose=verbose, page=page)
 
 
+def fetch_b2b_blake(out_path: Optional[Path] = None,
+                    verbose: bool = False, page=None) -> Path:
+    """Blake Welle, 2026-11-03: same as Luke, the all-teams wireless view cut to
+    his Org Sales Board block, to its own file."""
+    return fetch_b2b_allteams(
+        out_path or Path(tempfile.gettempdir()) / "owners_b2b_blake.csv",
+        verbose=verbose, page=page)
+
+
 # ----- NDS (Phase 3) -------------------------------------------------
 # Different Tableau workbook (NDS-SNRES-ATT-OOFWorkbook/CHURNRATES)
 # AND a different worksheet name in the Crosstab dialog

@@ -35,7 +35,7 @@ from automations.new_owners import bank, notify
 # Used for the notice text only ("the rest pick them up on their next run"), so
 # a captain missing here still gets announced — the list just reads generic.
 FIBER_CAPTAINS = {"wayne", "starr", "chan", "tony", "sahil", "raf", "rafael"}
-B2B_CAPTAINS = {"carlos", "eveliz", "luis"}
+B2B_CAPTAINS = {"carlos", "eveliz", "luis", "blake"}
 NDS_CAPTAINS = {"khalil", "colten", "jairo"}
 
 FAMILY_REPORTS = {

@@ -74,6 +74,8 @@ _TEAMSTATS: dict[str, Tuple[str, Optional[str], Optional[str]]] = {
     "carlos": (_B2B_VIEW, _B2B_FIELD, "Carlos's Team"),
     "eveliz": (_B2B_VIEW, _B2B_FIELD, "Eveliz's Team"),
     "luis":   (_B2B_VIEW, _B2B_FIELD, "Luis's Team"),
+    # Blake Welle, 2026-11-03: the filter value answers (15 owners).
+    "blake":  (_B2B_VIEW, _B2B_FIELD, "Blake's Team"),
     # Atef, unblocked 2026-09-03. His §2 had shown the 'Not available yet' note
     # since his captainship split off Carlos' on 2026-08-18: the filter value
     # "Atef's Team" did not exist in B2B Captain's Teams (SFDC), and only

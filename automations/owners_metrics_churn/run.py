@@ -211,6 +211,11 @@ REPORTS = [
      pull.fetch_b2b_luke, fill.open_ws_b2b_luke,
      "owners_b2b_luke.csv", pull.make_b2b_board_roster_parser("Luke"),
      pull.B2B_PERIODS),
+    # Blake Welle (2026-11-03, Rafael): same recipe as Luke.
+    ("blake", "Blake Welle (B2B)",
+     pull.fetch_b2b_blake, fill.open_ws_b2b_blake,
+     "owners_b2b_blake.csv", pull.make_b2b_board_roster_parser("Blake"),
+     pull.B2B_PERIODS),
     # ----- NDS (Phase 3) -----
     ("khalil", "Khalil Mansour (NDS)",
      pull.fetch_nds_khalil, fill.open_ws_nds_khalil,
@@ -529,7 +534,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
 ONLY_GROUPS = {
     "wireless": ["wayne-wl", "starr-wl", "chan-wl", "tony-wl", "sahil-wl"],
     "fiber":    ["wayne", "starr", "chan", "tony", "sahil"],
-    "b2b":      ["eveliz", "luke"],
+    "b2b":      ["eveliz", "luke", "blake"],
     "nds":      ["khalil", "colten", "jairo"],
 }
 

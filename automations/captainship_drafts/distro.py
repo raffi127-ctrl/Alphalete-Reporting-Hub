@@ -85,6 +85,8 @@ GROUPS: dict = {
     # 2026-10-01: Luke Baldwin (B2B). El grupo hay que crearlo en Contactos;
     # mientras no exista cae a config.RECIPIENTS["luke"].
     "luke":   "Luke's Captainship",
+    # 2026-11-03: Blake Welle. Mientras no exista cae a config.RECIPIENTS["blake"].
+    "blake":  "Blake's Captainship",
 }
 
 GROUP_PREFIX = "Captainship - "

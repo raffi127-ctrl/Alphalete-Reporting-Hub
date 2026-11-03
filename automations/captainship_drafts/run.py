@@ -698,7 +698,7 @@ def main(argv=None) -> int:
         email_build.NOTICE = args.note
     keys = ({k.strip() for k in args.only.split(",")} if args.only
             else {c.key for c in config.CAPTAINS})
-    unknown = keys - {c.key for c in config.CAPTAINS}
+    unknown = keys - set(config.BY_KEY)
     if unknown:
         print(f"Unknown captain key(s): {sorted(unknown)}. "
               f"Valid: {[c.key for c in config.CAPTAINS]}")
@@ -719,6 +719,8 @@ def main(argv=None) -> int:
     # makes "approve a block while the rest are still assembling" work — the
     # first link can only go up early if the first block is what finishes first.
     selected = [c for c in config.captains_in_order() if c.key in keys]
+    # Not live yet: only ever reached by naming them in --only.
+    selected += [c for c in config.PREVIEW_CAPTAINS if c.key in keys]
 
     if args.distro_check:
         print("=== Captainship recipients — contact group vs config.py ===")

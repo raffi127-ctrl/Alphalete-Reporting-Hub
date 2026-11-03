@@ -118,6 +118,7 @@ TAB_B2B_ATEF   = "Churn - Atef Choudhury (B2B)"
 # down to Luke's own row; the rest of his owners are inserted by the daily run
 # from the board block (pull.make_b2b_board_roster_parser).
 TAB_B2B_LUKE   = "Churn - Luke Baldwin (B2B)"
+TAB_B2B_BLAKE  = "Churn - Blake Welle (B2B)"
 
 
 def open_ws_b2b_carlos():
@@ -138,6 +139,10 @@ def open_ws_b2b_atef():
 
 def open_ws_b2b_luke():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_LUKE)
+
+
+def open_ws_b2b_blake():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_BLAKE)
 
 
 # ----- NDS tabs (Phase 3) --------------------------------------------
