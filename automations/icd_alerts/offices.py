@@ -294,6 +294,21 @@ OFFICES: Dict[str, AlertOffice] = {
         campaign="att",
     ),
 
+    "raf": AlertOffice(
+        key="raf", owner="Rafael Hidalgo", label="Rafael's Local Office",
+        # UNROUTED on purpose: the installer asks them where they want
+        # their alerts, and a human approves it. Nothing posts until then.
+        channels=(),
+        timezone="America/Chicago", active=True, platform="mac",
+        slack_user_id="U045Z8N0ZQC",
+        # Hours are the ORG DEFAULT, not this owner's own -- nobody
+        # has told us theirs yet. Correct them here when they do.
+        day_start="13:30", day_end="22:00",
+        sat_start="10:45", sat_end="20:00", saturday=True,
+        # AT&T fiber, which is also the default -- said plainly so the
+        # next person does not have to know what the default is.
+        campaign="att",
+    ),
 }
 
 
