@@ -152,6 +152,19 @@ def _other_city(a: str, b: str) -> bool:
     return bool(ca and cb) and difflib.SequenceMatcher(None, ca, cb).ratio() < 0.75
 
 
+def _city_of_role_ad(key: str, ad: str) -> bool:
+    """`key` is the "... role" ad's title with a real place instead of "role".
+    Kash's interviewers type "<title> role" when they don't know the place, so
+    that spelling turns into an ad. 11/2: "... (Spanish Needed) Benbrook TX",
+    confirmed on AppStream, scored 0.906 against it, read as a typo and got no
+    thread. "role" isn't a place, so _other_city couldn't tell them apart."""
+    if not ad.endswith(" role"):
+        return False
+    head = ad[:-len("role")]
+    words = key[len(head):].split() if key.startswith(head) else []
+    return len(words) >= 2 and len(words[-1]) == 2 and words[-1].isalpha()
+
+
 class TitleBook:
     """The running ads, learned from the sheet's own title column."""
 
@@ -283,7 +296,8 @@ class TitleBook:
         if any(a.startswith(key) or a.endswith(" " + key) for a in self.ads):
             return None
         if any(difflib.SequenceMatcher(None, key, a).ratio() >= self.UNSURE_RATIO
-               and not _other_city(key, a) for a in self.ads):
+               and not _other_city(key, a) and not _city_of_role_ad(key, a)
+               for a in self.ads):
             return None
         # New ads fold among themselves: "... Orlando F" cut short is the
         # "... Orlando FL" new ad, whichever row comes first.

@@ -105,6 +105,22 @@ class FirstNameFallbackTests(unittest.TestCase):
         self.assertEqual(collect.first_name_matches(self.msgs, two, self.book), {})
 
 
+class CityOfARoleAd(unittest.TestCase):
+    """Kash 11/2: a real city next to the same title's "... role" spelling."""
+    ROLE = "Entry Level AT&T Retail Associate (Spanish Needed) role"
+    BENBROOK = "Entry Level AT&T Retail Associate (Spanish Needed) ? Benbrook TX"
+
+    def setUp(self):
+        self.book = TitleBook([self.ROLE] * 13 + [self.BENBROOK] * 2)
+
+    def test_the_city_gets_its_own_ad(self):
+        self.assertEqual(self.book.resolve(self.BENBROOK), norm(self.BENBROOK))
+
+    def test_a_typo_of_the_role_ad_still_folds_onto_it(self):
+        self.assertEqual(self.book.resolve("Entry Level AT&T Retail Asociate (Spanish Needed) roles"),
+                         norm(self.ROLE))
+
+
 if __name__ == "__main__":
     unittest.main()
 
