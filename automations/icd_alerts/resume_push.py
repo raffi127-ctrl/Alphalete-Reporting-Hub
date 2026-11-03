@@ -160,6 +160,15 @@ PUSH_OFFICES = {
     # before. Nothing runs until his computer has said yes to pushing and
     # holds his office's Lucy Resume login (finish_setup).
     "colten": ("14733", "live"),      # Colten Wright, South Shore Specialized Marketing
+    # RAF, THREE OFFICES ON ONE COMPUTER (Megan 2026-11-03: "I keep having to
+    # clear it for Raf on lucy 4 - we need to make it so it holds the clear
+    # for days"). Lucy 4 lost Indeed's pass within ~30 min every time (23965
+    # cleared 9:54, walled again 10:28 in the same Chrome), while the office
+    # computers held it all day (Carlos 31 sent, Khalil 33, no wall). His
+    # computer takes turns through all three in ONE Chrome, so one tick of
+    # Indeed's box covers every office. Dry until his computer has checked in
+    # and the three have left Lucy 4 (ROTATION_BY_MACHINE) -- never both.
+    "raf": (("11280", "23965", "24065"), "dry"),  # Rafael Hidalgo
 }
 LOGIN_POLL_SECONDS = 90
 
@@ -186,10 +195,32 @@ def push_record() -> dict:
     return {}
 
 
-def _listed(record: Optional[dict] = None):
-    """(AppStream office ID, mode) for this machine's office, or None."""
+# The office THIS push is working, when the machine carries several (Raf's
+# three). Set by push() before anything reads _listed(); None = the first.
+_CURRENT_OFFICE: Optional[str] = None
+
+
+def office_ids(record: Optional[dict] = None) -> "tuple[str, ...]":
+    """Every AppStream office this machine pushes, in turn order."""
     rec = push_record() if record is None else record
-    return PUSH_OFFICES.get(str(rec.get("office_key") or ""))
+    got = PUSH_OFFICES.get(str(rec.get("office_key") or ""))
+    if not got:
+        return ()
+    ids = got[0]
+    return tuple(str(i) for i in ids) if isinstance(ids, (tuple, list)) \
+        else (str(ids),)
+
+
+def _listed(record: Optional[dict] = None):
+    """(AppStream office ID, mode) for the office being pushed, or None.
+    On a machine with several offices, the one push() picked this run."""
+    rec = push_record() if record is None else record
+    got = PUSH_OFFICES.get(str(rec.get("office_key") or ""))
+    if not got:
+        return None
+    ids = office_ids(rec)
+    oid = _CURRENT_OFFICE if _CURRENT_OFFICE in ids else ids[0]
+    return (oid, got[1])
 
 
 def enabled() -> bool:
@@ -257,33 +288,60 @@ def _lock_held(now: Optional[float] = None) -> bool:
     return ((now or time.time()) - started) < LOCK_STALE_MINUTES * 60
 
 
-def _past_stop(now: dt.datetime) -> bool:
+def _past_stop(now: dt.datetime, office: Optional[str] = None) -> bool:
     """30 min before this office's last interview slot today (Megan 10/28).
     Never stops a push on an error."""
     try:
-        got = _listed()
-        if not got:
-            return False
+        oid = office
+        if not oid:
+            got = _listed()
+            if not got:
+                return False
+            oid = got[0]
         from automations.oat_processing import await_template as AT
-        return AT.past_stop(got[0], now)
+        return AT.past_stop(oid, now)
     except Exception:  # noqa: BLE001
         return False
+
+
+def _since(last: Optional[str], now: dt.datetime) -> Optional[dt.timedelta]:
+    try:
+        return now - dt.datetime.fromisoformat(last or "")
+    except ValueError:
+        return None
+
+
+def _office_last_start(st: dict, oid: str, single: bool) -> Optional[str]:
+    if single:
+        return st.get("last_start")
+    return ((st.get("by_office") or {}).get(oid) or {}).get("last_start")
+
+
+def pick_office(now: Optional[dt.datetime] = None,
+                record: Optional[dict] = None) -> Optional[str]:
+    """The office to push now: due (EVERY_MINUTES since ITS last start) and
+    not past its own stop; the longest-waiting first. None = nobody is due."""
+    now = now or dt.datetime.now()
+    ids = office_ids(record)
+    st = _state()
+    best, best_wait = None, None
+    for oid in ids:
+        if _past_stop(now, oid):
+            continue
+        gap = _since(_office_last_start(st, oid, len(ids) == 1), now)
+        if gap is not None and gap < dt.timedelta(minutes=EVERY_MINUTES):
+            continue
+        wait = gap if gap is not None else dt.timedelta(days=999)
+        if best_wait is None or wait > best_wait:
+            best, best_wait = oid, wait
+    return best
 
 
 def due(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if not in_window(now) or _lock_held(now.timestamp()):
         return False
-    if _past_stop(now):
-        return False
-    last = _state().get("last_start")
-    if not last:
-        return True
-    try:
-        then = dt.datetime.fromisoformat(last)
-    except ValueError:
-        return True
-    return (now - then) >= dt.timedelta(minutes=EVERY_MINUTES)
+    return pick_office(now) is not None
 
 
 HEALTH_STAGE = "probe-push-health"
@@ -1198,6 +1256,16 @@ def _note_wall(walled: bool) -> None:
 STATS_STAGE = "probe-push-stats"
 
 
+def stats_key(record: dict, office: Optional[str]) -> str:
+    """The relay row's office key for one office's numbers. A machine with
+    several offices files each under "<key>-<office>" (raf-11280), so the
+    relay's upsert keeps three rows instead of overwriting one."""
+    key = str((record or {}).get("office_key") or "")
+    if len(office_ids(record)) > 1 and office:
+        return "%s-%s" % (key, office)
+    return key
+
+
 def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
     try:
         from automations.icd_alerts import relay as R
@@ -1214,7 +1282,7 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             "unconfirmed": int(out.get("unconfirmed") or 0),
             "walled": bool(out.get("walled")), "result": result,
             "at": dt.datetime.now().strftime("%H:%M")}),
-            log=_log, office_key=str(push_record().get("office_key") or ""))
+            log=_log, office_key=stats_key(push_record(), out.get("office")))
     except Exception:  # noqa: BLE001 -- the telling, never the work
         pass
 
@@ -1233,13 +1301,30 @@ def push(live: bool, scheduled: bool = False) -> int:
         _log("DRY RUN: office %r is switched on for reading only "
              "(PUSH_OFFICES) -- nothing is sent" % record.get("office_key"))
         live = False
+    global _CURRENT_OFFICE
+    ids = office_ids(record)
+    multi = len(ids) > 1
+    if multi:
+        pick = pick_office(record=record)
+        if pick is None and not scheduled:
+            pick = ids[0]            # a hand run always does something
+        if pick is None:
+            _log("none of offices %s is due -- nothing to do" % ", ".join(ids))
+            return 0
+        _CURRENT_OFFICE = pick
+        _log("this computer pushes %s; this run: office %s"
+             % (", ".join(ids), pick))
     if live and quiet_now():
         _log("weekend quiet window (Fri 1pm - Sun 1pm): nothing pushes")
         return 0
     C.APP_DIR.mkdir(parents=True, exist_ok=True)
     LOCK_PATH.write_text(str(time.time()))
     st = _state()
-    st["last_start"] = dt.datetime.now().isoformat(timespec="seconds")
+    now_iso = dt.datetime.now().isoformat(timespec="seconds")
+    st["last_start"] = now_iso
+    if multi:
+        bo = st.setdefault("by_office", {})
+        bo.setdefault(_CURRENT_OFFICE, {})["last_start"] = now_iso
     _save_state(st)
     result, out, guard = "ok", {}, None
     try:
@@ -1317,8 +1402,18 @@ def push(live: bool, scheduled: bool = False) -> int:
             sent[day] = int(sent.get(day, 0)) + int(out.get("sent", 0))
             st["sent_by_day"] = sent
             st["office"] = out.get("office")
+            sent_office_today = int(sent[day])
+            if multi and _CURRENT_OFFICE:
+                ob = st.setdefault("by_office", {}).setdefault(
+                    _CURRENT_OFFICE, {})
+                osent = {k: v for k, v in (ob.get("sent_by_day") or {}).items()
+                         if k >= (dt.date.today()
+                                  - dt.timedelta(days=14)).isoformat()}
+                osent[day] = int(osent.get(day, 0)) + int(out.get("sent", 0))
+                ob["sent_by_day"] = osent
+                sent_office_today = int(osent[day])
             if out.get("reached") and out.get("office"):
-                _file_stats(out, live, int(sent[day]), result)
+                _file_stats(out, live, sent_office_today, result)
         if result == "ok":
             st.pop("reported", None)    # the next fault is news again
         _save_state(st)

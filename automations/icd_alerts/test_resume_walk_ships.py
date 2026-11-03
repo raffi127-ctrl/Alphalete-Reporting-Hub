@@ -114,7 +114,9 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
 
     def test_every_listed_office_states_its_number_and_mode(self):
         for key, (office, mode) in RP.PUSH_OFFICES.items():
-            self.assertTrue(office.isdigit(), key)
+            # One number, or several for a computer that takes turns (Raf's).
+            for one in (office if isinstance(office, tuple) else (office,)):
+                self.assertTrue(one.isdigit(), key)
             self.assertIn(mode, ("dry", "live"), key)
 
     def test_an_unlisted_office_does_nothing(self):
