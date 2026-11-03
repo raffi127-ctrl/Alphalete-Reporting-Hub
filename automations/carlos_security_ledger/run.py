@@ -439,16 +439,33 @@ def pull_dates_hub() -> tuple[str, str, list[list]]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / "Dates_to_Remember.csv"
     with tableau_session(headless=True, verbose=False) as pg:
-        # 1) ask Tableau's own search where "Dates to Remember" lives (the view slug is not guessable)
+        # 1) ask Tableau's internal vizportal API (same session cookies) which views have "date" in the name
         found = []
         try:
-            pg.goto(VIEW.split("#")[0] + "#/site/sci/explore?search=Dates%20to%20Remember&type=view", wait_until="domcontentloaded")
-            pg.wait_for_timeout(15_000)
-            found = pg.evaluate("""() => Array.from(document.querySelectorAll('a[href*="/views/"]'))
-                .map(a => [a.textContent.trim(), a.href]).filter(x => /date/i.test(x[0]) || /date/i.test(x[1]))""") or []
-            log(f"dates: search found {found[:10]}")
+            pg.goto(VIEW, wait_until="domcontentloaded")
+            pg.wait_for_timeout(8_000)
+            raw = pg.evaluate("""async () => {
+                const xsrf = (document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || '';
+                const body = {method: 'getViews', params: {order: [{field: 'name', ascending: true}], page: {startIndex: 0, maxItems: 200},
+                              filter: {operator: 'and', clauses: [{operator: 'ilike', field: 'name', value: 'date'}]}}};
+                const r = await fetch('/vizportal/api/web/v1/getViews', {method: 'POST', credentials: 'include',
+                              headers: {'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf}, body: JSON.stringify(body)});
+                return await r.text();
+            }""")
+            log(f"dates: vizportal getViews -> {str(raw)[:1500]}")
+            data = json.loads(raw)
+            base = VIEW.split("#")[0] + "#/site/sci/views/"
+            for v in (data.get("result", {}).get("views") or []):
+                slug = v.get("repositoryUrl") or v.get("sheetId") or ""
+                if "/" in slug:
+                    wb, sheet = slug.split("/", 1)
+                    found.append((v.get("name"), base + wb + "/" + sheet.replace("sheets/", "")))
+                else:
+                    found.append((v.get("name"), ""))
+            log(f"dates: candidate views {found[:10]}")
+            found = [f for f in found if f[1]]
         except Exception as e:  # noqa: BLE001
-            log(f"dates: search page failed ({str(e)[:80]})")
+            log(f"dates: vizportal lookup failed ({str(e)[:100]})")
         candidates = [h for _, h in found] + DATES_VIEWS
         seen = set()
         for view in candidates:
