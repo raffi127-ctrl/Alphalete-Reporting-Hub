@@ -3572,6 +3572,8 @@ def warn_stale_machines(day: Optional[dt.date] = None, *, send: bool = False,
 LAPTOP_ACKNOWLEDGED = {
     "cyrus": "Megan, 2026-09-15 — the only office on a laptop; accepted "
              "knowing the lid closing takes his channel quiet.",
+    "raf": "Megan, 2026-11-03 — Raf's own MacBook, allowed on purpose "
+           "(dist/setup.py LAPTOP_OK lets the install through).",
 }
 
 

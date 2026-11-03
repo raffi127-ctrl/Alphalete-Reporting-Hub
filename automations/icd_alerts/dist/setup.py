@@ -1201,6 +1201,24 @@ def is_desktop() -> bool:
         return True
 
 
+# OFFICES ALLOWED ON A LAPTOP, by office key -- Megan's call, one at a time,
+# knowing a closed lid takes the channel quiet. The poster's
+# LAPTOP_ACKNOWLEDGED carries the same names so the daily nudge stays quiet.
+#   raf  -- Megan 2026-11-03: Raf's own MacBook ("but we're going to allow it").
+LAPTOP_OK = ("raf",)
+
+
+def _office_key_early() -> str:
+    """The office this code belongs to, from the install.json the installer
+    wrote beside setup.py (seed_install_json runs before the desktop check)."""
+    for p in (HERE / "install.json", CONFIG_DIR / "install.json"):
+        try:
+            return str(json.loads(p.read_text()).get("office_key") or "").strip().lower()
+        except Exception:  # noqa: BLE001 -- missing or half-written
+            continue
+    return ""
+
+
 def require_desktop() -> bool:
     """Stop a laptop install before anything is copied onto it.
 
@@ -1213,6 +1231,12 @@ def require_desktop() -> bool:
     refusal leaves nothing behind on their machine.
     """
     if is_desktop():
+        return True
+    if _office_key_early() in LAPTOP_OK:
+        say("")
+        say("  This is a laptop, and this office is allowed to run on one.")
+        say("  Keep it plugged in with the lid open -- a closed lid takes your")
+        say("  channel quiet.")
         return True
     say("")
     say("  %s%sThis needs to run on a desktop.%s" % (BOLD, RED, OFF))
