@@ -515,6 +515,14 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 print(f"financial bulletin: skipped "
                       f"({type(e).__name__}: {str(e)[:120]})")
+            # Raf + Maud's weekly email of the Our Org tab (Raf via Maud 2026-11-03).
+            # Outside the try above: if the rebuild failed, Eve still hears the
+            # mail didn't go instead of nothing at all.
+            try:
+                from automations.financial_bulletin import email_send as _fbe
+                _fbe.weekly_pass()
+            except Exception as e:  # noqa: BLE001
+                print(f"org finances: skipped ({type(e).__name__}: {str(e)[:120]})")
         print("done")
         return 0
     finally:

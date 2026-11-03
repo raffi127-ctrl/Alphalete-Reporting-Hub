@@ -237,7 +237,10 @@ def read_owners() -> Tuple[Dict[str, Dict[str, Dict[dt.date, float]]], Dict[str,
             owner = _owner_name(tab)
             got = owners.setdefault(owner, {})
             for label, _h, kind in METRICS:
-                row = section.get(ffill._norm(label))
+                # Labels can carry a note ("Total Funds Available (25k) / 11k").
+                key = ffill._norm(label)
+                row = section.get(key) or next(
+                    (r for k, r in section.items() if k.startswith(key)), None)
                 if row is None:
                     continue
                 series = got.setdefault(label, {})
@@ -450,6 +453,10 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int, filt=None) -> List[
             paint(r, 0, n, {"backgroundColor": _rgb(NAVY[1]), "horizontalAlignment": "CENTER",
                             "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
                             "textFormat": {"bold": True, "foregroundColor": _rgb(NAVY[0])}})
+            # Wrapped headers ("AVG OWNERS WITHDRAWAL / DIVIDEND" = 3 lines) get cut at the default height.
+            reqs.append({"updateDimensionProperties": {
+                "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": r, "endIndex": r + 1},
+                "properties": {"pixelSize": 63}, "fields": "pixelSize"}})
             # Each average column wears its block's color, so the summary
             # reads as a key for the blocks below.
             for i, (pdark, _m, _l) in enumerate(PALETTE):
