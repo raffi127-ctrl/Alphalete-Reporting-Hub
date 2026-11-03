@@ -138,6 +138,10 @@ EXTRA_RECIPIENTS: Dict[str, List[str]] = {
     # "can I get sent this sheet for Gabe's office please every night" —
     # office 22189, on Pat's captainship, so Starr's own mail never had it.
     "Gabe Perez": ["starr.novamanagement@gmail.com"],  # Starr Rodenhurst
+    # Rafael 2026-11-03 (mail "Knocking data of chat"): "can we give Blake the
+    # nightly knocking report of Chan Park?" Blake Welle, B2B captain, office
+    # 15623. Only Chan's own office mail, not the rest of Chan's captainship.
+    "Chan Park": ["blakew.mobility@gmail.com"],        # Blake Welle
 }
 
 
