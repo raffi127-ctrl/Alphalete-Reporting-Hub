@@ -1263,7 +1263,13 @@ THREAD_TITLE = "Knocks and Dispositions"
 # and every 2 hours post in there"); b2b_dispositions --morning opens that
 # thread at 7:30 with yesterday's final board, and pins it.
 THREAD_TITLES = {"C0AJQA8P716": THREAD_TITLE,          # #a-players-b2b
-                 "C07J46MQNUX": "Box Knocks Board"}    # #alphalete-gp-sales
+                 "C07J46MQNUX": "Box Knocks Board",    # #alphalete-gp-sales
+                 # #alphalete-lvl1-chat: Raf's boards from the Lucys already
+                 # collapse into one thread a day (gap_alerts thread_daily,
+                 # Megan 2026-09-20 "versus the chat being filled up"). His
+                 # own machine's boards have to look the same when they take
+                 # over (Megan 2026-11-03: "CHANGE NOTHING").
+                 "C09JG28CD27": THREAD_TITLE}
 THREADED_CHANNELS = set(THREAD_TITLES)
 # Rooms whose day-thread is the metrics job's morning parent, not ours.
 METRICS_THREAD_CHANNELS = {"C07J46MQNUX"}
