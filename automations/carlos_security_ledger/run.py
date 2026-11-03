@@ -430,7 +430,7 @@ def write_overrides(svc, via_hub: bool) -> str:
     return f"override weekly: {got} week-rows refreshed from periods {periods}; {len(keep)} on the tab"
 
 
-def pull_dates_hub() -> tuple[str, str, list[list]]:
+def pull_dates_hub() -> tuple[str, str, list]:
     """Find the 'Dates to Remember 2026' sheet in the Overrides ICD View workbook and return (view, sheet, rows).
     Tries the sheet as its own view first, then as a crosstab sheet of the security-ledger dashboard."""
     from automations.shared.tableau_patchright import download_crosstab_patchright, tableau_session
@@ -497,23 +497,33 @@ def pull_dates_hub() -> tuple[str, str, list[list]]:
                 log(f"dates: {view.rsplit('/', 1)[1][:40]} -> no crosstab dialog ({str(e)[:60]})")
                 continue
             log(f"dates: {view.rsplit('/', 1)[1][:40]} offers sheets {sheets}")
-            pick = next((n for n in sheets if "date" in n.lower()), None) or (sheets[0] if len(sheets) == 1 else None)
-            if not pick:
+            if not sheets:
                 continue
-            download_crosstab_patchright(view, pick, path, verbose=False, page=pg)
-            return view, pick, read_crosstab(path)
+            blocks = []
+            for sh in sheets:   # every sheet on the dates dashboard: 'Available for Payments', 'Credico Dates', 'Period Dates', …
+                out = OUT_DIR / f"Dates_{re.sub(r'[^A-Za-z0-9]+', '_', sh)}.csv"
+                try:
+                    download_crosstab_patchright(view, sh, out, verbose=False, page=pg)
+                    blocks.append((sh, read_crosstab(out)))
+                except Exception as e:  # noqa: BLE001
+                    log(f"dates: sheet {sh!r} failed ({str(e)[:80]})")
+            if blocks:
+                return view, " + ".join(sh for sh, _ in blocks), blocks
     return "", "", []
 
 
 def write_dates(svc) -> str:
-    view, sheet, rows = pull_dates_hub()
-    if not rows:
+    """One tab, one block per Tableau sheet: a title row, the crosstab rows, a blank row."""
+    view, label, blocks = pull_dates_hub()
+    if not blocks:
         return "dates: nothing found in Tableau — tab left as is"
-    rows = [[c for c in r] for r in rows if any(str(c).strip() for c in r)]
-    body = [["Pulled", dt.date.today().isoformat(), "View", view.rsplit("/", 1)[1], "Sheet", sheet], []] + rows
+    body = [["Pulled", dt.date.today().isoformat(), "View", view.rsplit("/", 1)[1], "Sheets", label], []]
+    for sh, rows in blocks:
+        rows = [list(r) for r in rows if any(str(c).strip() for c in r)]
+        body += [[f"## {sh}"]] + rows + [[]]
     svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{DATES_TAB}'!A1:Z2000").execute()
     svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{DATES_TAB}'!A1", valueInputOption="RAW", body={"values": body}).execute()
-    return f"dates: {len(rows)} rows from {sheet!r} -> '{DATES_TAB}'"
+    return f"dates: {', '.join(f'{sh} {len(r)} rows' for sh, r in blocks)} -> '{DATES_TAB}'"
 
 
 def write(rows: list[list], balance: float | None, via_hub: bool = False):
