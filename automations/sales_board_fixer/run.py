@@ -49,6 +49,7 @@ except Exception:  # noqa: BLE001 -- Windows console, best effort
 from automations.alphalete_sales_board import tab_names as TN
 from automations.sales_board_fixer import checks as K
 from automations.sales_board_fixer import lanes_check as LC
+from automations.sales_board_fixer import spaced_tabs as ST
 from automations.sales_board_fixer import last_week as LW
 from automations.sales_board_fixer import tenure as T
 
@@ -523,6 +524,10 @@ def _main(a) -> int:
                 a.apply, stamp)
     results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today),
                        max_fixes=a.max_fixes)
+    spaced = _spaced_tabs(sh, today)
+    if spaced:
+        results["nombres de tabs"] = spaced
+    _warn_spaced([("Alphalete", sh.id, x.tab) for x in spaced], a.apply)
     print("reporte:", report(results, stamp, a.apply))
     return 0
 
@@ -864,6 +869,7 @@ def _owners_rank_cell(x, name_col: int) -> bool:
 
 
 REPEATS_FILE = OUT_DIR / "owner_repeats.json"
+SPACED_FILE = OUT_DIR / "spaced_tabs_told.json"
 REPEAT_DAYS = 3                   # same fix N days in a row -> tell Eve
 EVE_USER_ID = "U088E2KJEV8"       # Evelyn Sobrino
 
@@ -887,7 +893,42 @@ def repeats(history: dict, written, today: dt.date) -> list:
             and days[REPEAT_DAYS] not in history[k]]
 
 
-def _tell_eve(lines) -> None:
+def _spaced_tabs(sh, today: dt.date) -> list:
+    """Recent week tabs with a stray space in the name. Never stops the fixer."""
+    try:
+        found = ST.findings(sh, today)
+    except Exception as e:  # noqa: BLE001
+        print("  nombres de tabs: no se pudo mirar (%s)" % type(e).__name__)
+        return []
+    for x in found:
+        print("  OJO: tab %s con un espacio de más en el nombre" % x.before)
+    return found
+
+
+def _warn_spaced(tabs: list, do_apply: bool) -> None:
+    """DM Eve once per tab, on real runs only. tabs: (who, sheet id, title).
+    A book shared by two owners lists its tab twice: one line is enough."""
+    if not do_apply or not tabs:
+        return
+    who_by_key = {}
+    for who, sheet_id, title in tabs:
+        who_by_key.setdefault("%s|%s" % (sheet_id, title), (who, title))
+    fresh = ST.new_ones(SPACED_FILE, list(who_by_key))
+    if not fresh:
+        return
+    lines = ["%s: %r" % who_by_key[k] for k in fresh]
+    text = ("Salesboard Fixer: these week tabs have a stray space in their name. A formula "
+            "that builds the name from the date won't find them (that's what broke Cy Wade's "
+            "Lanes). Nothing was renamed:\n") + "\n".join("• " + l for l in lines)
+    try:
+        if _dm_eve(text):
+            print("  DM a Eve: %d tabs con espacios" % len(lines))
+    except Exception as e:  # noqa: BLE001 -- a warning never stops the fixer
+        print("  DM a Eve no salió (%s)" % type(e).__name__)
+
+
+def _dm_eve(text: str) -> bool:
+    """DM Eve as Lucy. False when this machine posts as someone else."""
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     try:
@@ -896,18 +937,23 @@ def _tell_eve(lines) -> None:
         who = ""
     if who and "lucy" not in who.lower():
         print("! esta máquina postea como %s, no Lucy -- no mando el DM" % who)
-        return
+        return False
+    ch = client.conversations_open(users=EVE_USER_ID)["channel"]["id"]
+    client.chat_postMessage(channel=ch, text=text)
+    return True
+
+
+def _tell_eve(lines) -> None:
     text = ("Salesboard Fixer: Lucy fixed these %d days in a row -- someone keeps "
             "changing them back by hand. Ask the owner if they want it that way:\n"
             % REPEAT_DAYS) + "\n".join("• " + l for l in lines)
-    ch = client.conversations_open(users=EVE_USER_ID)["channel"]["id"]
-    client.chat_postMessage(channel=ch, text=text)
-    print("  DM a Eve: %d repetidos" % len(lines))
+    if _dm_eve(text):
+        print("  DM a Eve: %d repetidos" % len(lines))
 
 
 def run_owners(only, do_apply: bool, stamp: str) -> dict:
     owners = json.loads(OWNERS_FILE.read_text(encoding="utf-8"))["owners"]
-    results, written = {}, {}
+    results, written, spaced = {}, {}, []
     for o in owners:
         if only and only.lower() not in o["name"].lower():
             continue
@@ -952,6 +998,10 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
         if rolled:
             res.setdefault(o["name"] + " · lanes week", []).extend(rolled)
         results.update(res)
+        names = _spaced_tabs(sh, dt.date.today())
+        if names:
+            results[o["name"] + " · nombres de tabs"] = names
+        spaced += [(o["name"], o["sheet_id"], x.tab) for x in names]
         if on:
             for tab, found in res.items():
                 for x in found:
@@ -968,6 +1018,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
         REPEATS_FILE.write_text(json.dumps(history, indent=1), encoding="utf-8")
         if again:
             _tell_eve([written[k] for k in again])
+    _warn_spaced(spaced, do_apply)
     return results
 
 
