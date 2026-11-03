@@ -822,6 +822,24 @@ _DIDNT_RUN_GRACE_HOURS = 2   # how long past a report's usual start before "didn
 _STUCK_AFTER_MIN = 90
 
 
+def _digi_docs_nothing_due():
+    """True when no new start on the current OBCL tab is dated today, so Digi
+    Docs had nothing to send; False when someone is; None when we can't tell.
+
+    Megan 2026-11-03: on a no-start day the card read "didn't run today" like an
+    error, although all 13 ticks ran clean and found nobody to send. Same read
+    the run itself makes (roster.starting_today), off the shared Sheet, so it
+    works from whichever machine runs this watcher."""
+    try:
+        from automations.digi_docs import roster
+        from automations.digi_docs import run as dd
+        ws, values = dd._open_tab("")
+        due = roster.starting_today(roster.to_send(roster.candidates(values, ws.title)))
+        return len(due) == 0
+    except Exception:  # noqa: BLE001 — can't tell = alert as MISSED
+        return None
+
+
 def _bg_check_has_new_emails():
     """True/False if we can tell whether any background-check emails arrived in the
     last day; None if the source can't be reached (no Gmail app password on this
@@ -1567,6 +1585,9 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         if cid == "bg_check_sync" and _bg_check_has_new_emails() is False:
             kind = "NO_NEW"
             status = "no new emails"
+        elif cid == "digi-docs" and _digi_docs_nothing_due() is True:
+            kind = "NOTHING_DUE"
+            status = "no new starts dated today"
         # An APPROVAL PHASE with no run isn't a stall — it runs the moment a
         # human ✅'s the day's review post, and until then "didn't run today on
         # the mini" points people at a machine that is doing exactly what it
