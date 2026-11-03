@@ -489,6 +489,12 @@ _LIVE = {
 # Manager" runs in Doral AND Princeton (Valeria 9/24): the city-less copy can't
 # be told apart, so Eve 9/24 folded all three into ONE thread.
 _ALIASES = {
+    # Camila 11/3 read it off AppStream ("Indeed / AT&T Retail Associate
+    # (Bilingual/Spanish)", Daniel Williams 10/28): a real ad of its own, typed
+    # too few times to count and 0.90 like the "(Bilingual Spanish Required)" ad.
+    "haytham": {
+        "AT&T Retail Associate (Bilingual/Spanish)": "AT&T Retail Associate (Bilingual/Spanish)",
+    },
     # Eve 10/19: every Omar ad gets its thread, even one seen 1-2 times (an
     # alias target counts as a confirmed ad). Broken pastes shown fixed.
     "omar": {
