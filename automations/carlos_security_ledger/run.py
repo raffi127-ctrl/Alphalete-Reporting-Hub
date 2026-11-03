@@ -36,6 +36,8 @@ PNL_SHEET_ID = os.environ.get("CARLOS_PNL_SHEET_ID", "1ngQtKRNeuGV_FDBp-d9boZmxp
 TAB = "Security Ledger"
 CAP_TAB = "Captain Bonus (Tableau)"
 OVR_TAB = "Override Weekly (Tableau)"
+DATES_TAB = "Override Dates (Tableau)"
+DATES_VIEWS = [VIEW.rsplit("/", 1)[0] + "/" + v for v in ("DatestoRemember2026", "DatesToRemember2026", "Datestoremember2026")] + [VIEW]
 OVR_HEADER = ["Week (Sun)", "P&L week ending (Sat)", "Period", "Standard override", "Pulled", "Source"]
 OVR_SOURCE = "Tableau → Overrides ICD View → ORG Override Summary (Carlos Hidalgo, all campaign rows)"
 TILLER_ID = "1D2mjKSRNCM3fleq8e7uJyRuIotVqMfEW6baC7DV9fAE"
@@ -428,6 +430,41 @@ def write_overrides(svc, via_hub: bool) -> str:
     return f"override weekly: {got} week-rows refreshed from periods {periods}; {len(keep)} on the tab"
 
 
+def pull_dates_hub() -> tuple[str, str, list[list]]:
+    """Find the 'Dates to Remember 2026' sheet in the Overrides ICD View workbook and return (view, sheet, rows).
+    Tries the sheet as its own view first, then as a crosstab sheet of the security-ledger dashboard."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright, tableau_session
+    from automations.recruiting_report.opt_phase import list_crosstab_sheets
+    from automations.override_bulletin.pulls import read_crosstab
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / "Dates_to_Remember.csv"
+    with tableau_session(headless=True, verbose=False) as pg:
+        for view in DATES_VIEWS:
+            try:
+                sheets = list_crosstab_sheets(view, page=pg, verbose=False)
+            except Exception as e:  # noqa: BLE001
+                log(f"dates: {view.rsplit('/', 1)[1]} -> no crosstab dialog ({str(e)[:80]})")
+                continue
+            log(f"dates: {view.rsplit('/', 1)[1]} offers sheets {sheets}")
+            pick = next((n for n in sheets if "date" in n.lower()), None) or (sheets[0] if len(sheets) == 1 else None)
+            if not pick:
+                continue
+            download_crosstab_patchright(view, pick, path, verbose=False, page=pg)
+            return view, pick, read_crosstab(path)
+    return "", "", []
+
+
+def write_dates(svc) -> str:
+    view, sheet, rows = pull_dates_hub()
+    if not rows:
+        return "dates: nothing found in Tableau — tab left as is"
+    rows = [[c for c in r] for r in rows if any(str(c).strip() for c in r)]
+    body = [["Pulled", dt.date.today().isoformat(), "View", view.rsplit("/", 1)[1], "Sheet", sheet], []] + rows
+    svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{DATES_TAB}'!A1:Z2000").execute()
+    svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{DATES_TAB}'!A1", valueInputOption="RAW", body={"values": body}).execute()
+    return f"dates: {len(rows)} rows from {sheet!r} -> '{DATES_TAB}'"
+
+
 def write(rows: list[list], balance: float | None, via_hub: bool = False):
     from automations.carlos_finance.tiller_sync import _svc   # Sheets client that retries 429/5xx
     svc = _svc()
@@ -471,9 +508,18 @@ def main(argv=None) -> int:
     ap.add_argument("--from-files", action="store_true", help="skip Tableau; reuse the last downloaded CSVs")
     import getpass
     default_via = os.environ.get("CARLOS_TABLEAU_VIA") or ("hub" if getpass.getuser().lower().startswith("lucy") else "chrome")
+    ap.add_argument("--dates-only", action="store_true", help="only refresh the Dates to Remember tab (Lucy / hub session)")
     ap.add_argument("--via", choices=["chrome", "hub"], default=default_via, help="chrome = copy Carlos's Chrome Tableau session (his Mac); hub = the Hub's shared Tableau session (Lucy)")
     args = ap.parse_args(argv)
     log(f"tableau via: {args.via}")
+    if args.dates_only:
+        from automations.carlos_finance.tiller_sync import _svc
+        svc = _svc()
+        tabs = {sh["properties"]["title"] for sh in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"]}
+        if DATES_TAB not in tabs:
+            svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"addSheet": {"properties": {"title": DATES_TAB}}}]}).execute()
+        log(write_dates(svc))
+        return 0
     if args.from_files:
         from automations.override_bulletin.pulls import read_crosstab
         rows = read_crosstab(OUT_DIR / "Transaction_Details.csv")
