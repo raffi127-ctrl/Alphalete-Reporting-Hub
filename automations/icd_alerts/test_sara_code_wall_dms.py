@@ -33,11 +33,15 @@ class CodeWallIsASignIn(unittest.TestCase):
         self.assertFalse(RUN._is_code_wall(e))
 
     def test_the_dm_does_not_blame_the_password(self):
-        spec = P.SYSTEMS["saraplus"]
-        text = spec["why"] + spec["how"]
+        said = []
+        P.ask_office_to_sign_in("ryan", "4:12 PM", system="saraplus",
+                                send=False, force=True, log=said.append)
+        text = " ".join(said)
         self.assertNotIn("changed", text)
         self.assertNotIn("new password", text)
-        self.assertIn("code", text)
+        self.assertIn("Stop having to log in yourself", text)
+        self.assertIn("let us know when done", text)
+        self.assertIn("4:12 PM", text)
         self.assertIn(P.SARA_SIGNIN_PAGE, text)
 
 

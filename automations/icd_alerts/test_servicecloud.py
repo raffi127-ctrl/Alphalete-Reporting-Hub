@@ -477,10 +477,9 @@ class TheFixIsDifferentForEachSystem(unittest.TestCase):
     def test_saraplus_sends_them_to_the_code_window(self):
         # SINCE 2026-10-06 only the emailed-code wall is filed as
         # signin-saraplus; a changed password stays a sweep fault. So this
-        # one names the code and sara-signin.html (2026-10-18: setup.html
-        # never cleared the code check), and must not blame the password.
+        # one sends them to sara-signin.html (2026-10-18: setup.html never
+        # cleared the code check), and must not blame the password.
         m = self._msg("saraplus")
-        self.assertIn("code", m)
         self.assertIn(self.P.SARA_SIGNIN_PAGE, m)
         self.assertNotIn("new password", m)
         self.assertNotIn(self.P.SIGNIN_PAGE, m,

@@ -1930,6 +1930,18 @@ INDEED_ASK = (
     "On the LucyECO computer: click Lucy's Chrome (it shows Indeed) and tick "
     "\u201cVerify you are human.\u201d")
 
+# THE SARAPLUS CODE ASK LEADS WITH WHAT THEY GET (Megan 2026-11-03: "stop
+# having to login yourself- just run this and let us know when done!"). Owners
+# were not finishing the forward step, and they do not read. The steps, the
+# code and the password all live on the page. Same six slots as SIGNIN_ASK; the
+# "why" slot is swallowed (%.0s).
+SARA_CODE_ASK = (
+    ":lock: *%s — Lucy cannot sign into %s.*\n"
+    "%s stopped updating at %s. Nothing is lost.%.0s\n\n"
+    "*Stop having to log in yourself — on the office computer running "
+    "LucyECO, just run this and let us know when done!*\n"
+    "%s")
+
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
                "Alphalete-Reporting-Hub/signin.html")
 INSTALL_PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
@@ -1977,10 +1989,9 @@ SYSTEMS = {
     "saraplus": {
         "name": "SaraPlus",
         "what": "Credit checks and sales",
-        "why": " SaraPlus wants to confirm that computer with a code it "
-               "emails you. The password is fine — do NOT change it.",
-        "how": "On that computer, open this and follow the steps on the "
-               "page (about 1 minute):\n" + SARA_SIGNIN_PAGE,
+        "ask": SARA_CODE_ASK,
+        "why": "",
+        "how": SARA_SIGNIN_PAGE,
     },
     "ownerville": {
         "name": "OwnerVille",
