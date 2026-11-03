@@ -107,16 +107,26 @@ STAFF_CHANNEL = re.compile(r"recruit|interview", re.I)
 PROTECTED_FILE = Path(__file__).with_name("protected_staff.json")
 
 
+def visible_channels(cli) -> List[Dict]:
+    """Every channel this machine's token can see. Private ones it isn't in
+    don't show up, so what it protects depends on the token."""
+    from automations.ao_cleanup.slack_read import _paged
+    return _paged(cli.conversations_list, "channels",
+                  types="public_channel,private_channel",
+                  exclude_archived=True)
+
+
+def file_ids() -> Set[str]:
+    return set(json.loads(PROTECTED_FILE.read_text(encoding="utf-8"))["slack_ids"])
+
+
 def protected_ids(cli=None) -> Set[str]:
     """Every Slack id Lucy must not deactivate. Raises if the channels can't
     be read: no answer here has to mean nobody gets deactivated."""
     from automations.ao_cleanup.slack_read import _paged, client
     cli = cli or client()
-    ids = set(json.loads(PROTECTED_FILE.read_text(encoding="utf-8"))["slack_ids"])
-    chans = _paged(cli.conversations_list, "channels",
-                   types="public_channel,private_channel",
-                   exclude_archived=True)
-    for c in chans:
+    ids = file_ids()
+    for c in visible_channels(cli):
         if STAFF_CHANNEL.search(c.get("name") or ""):
             ids.update(_paged(cli.conversations_members, "members",
                               channel=c["id"]))

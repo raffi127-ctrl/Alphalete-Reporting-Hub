@@ -328,6 +328,23 @@ def close(st: dict, out: Out) -> None:
     st["closed"] = True
 
 
+def check_protected() -> int:
+    """READ-ONLY: who this machine's token protects. Reads Slack and prints;
+    no DMs, no replies read, no state, nobody deactivated."""
+    from automations.ao_cleanup.slack_read import client
+    from automations.owner_rep_audit import slack_ops as S
+    cli = client()
+    chans = S.visible_channels(cli)
+    staff = [c for c in chans if S.STAFF_CHANNEL.search(c.get("name") or "")]
+    ids, listed = S.protected_ids(cli), S.file_ids()
+    print(f"CHECK channels visible {len(chans)}, recruiting {len(staff)}")
+    print(f"CHECK protected {len(ids)}, from the file {len(listed)}, "
+          f"from channels only {len(ids - listed)}")
+    for c in sorted(staff, key=lambda x: x.get("name") or ""):
+        print(f"CHECK channel {c.get('name')}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -340,8 +357,12 @@ def main(argv=None) -> int:
                                       "reading OwnerVille")
     ap.add_argument("--only", nargs="*", help="limit to these office numbers")
     ap.add_argument("--show", action="store_true", help="print the state")
+    ap.add_argument("--check-protected", action="store_true",
+                    help="read-only: print who this machine protects, then stop")
     a = ap.parse_args(argv)
 
+    if a.check_protected:
+        return check_protected()
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     if a.show:
         print(json.dumps(load_state(today), indent=1)[:20000])

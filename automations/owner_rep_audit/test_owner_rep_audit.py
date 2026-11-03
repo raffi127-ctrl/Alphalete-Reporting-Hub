@@ -258,6 +258,22 @@ class ProtectedStaff(unittest.TestCase):
         self.assertIn("U07R68ZGHT6", ids)      # Perla, from the file
         self.assertEqual(cli.conversations_members.call_count, 1)
 
+    def test_check_protected_does_nothing_else_even_with_live(self):
+        # The scheduler entry's base_args carry --live, so a hand rerun of this
+        # check always arrives with it.
+        from unittest import mock
+        from automations.owner_rep_audit import slack_ops as S
+        with mock.patch("automations.ao_cleanup.slack_read.client"), \
+                mock.patch.object(S, "visible_channels", return_value=[]), \
+                mock.patch.object(S, "protected_ids", return_value=set()), \
+                mock.patch.object(S, "deactivate") as scim, \
+                mock.patch.object(run, "Out") as out, \
+                mock.patch.object(run, "save_state") as save, \
+                mock.patch.object(run, "load_state") as load:
+            self.assertEqual(run.main(["--live", "--check-protected"]), 0)
+        for never in (scim, out, save, load):
+            never.assert_not_called()
+
     def test_owner_is_told_who_stayed(self):
         self.assertIn("Staff Person", M.done(["Gone Rep"], ["Staff Person"]))
         self.assertIn("Nobody was removed", M.done([], ["Staff Person"]))
