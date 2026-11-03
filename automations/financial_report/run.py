@@ -3,7 +3,7 @@ spreadsheets.
 
 TWO SOURCES, and as of 2026-08 the run uses BOTH:
   --web    Double Entry (doubleentry.com org summary). The primary: no waiting
-           on a sender, and its PROFIT/LOSS carries a real sign. Covers the 37
+           on a sender, and its PROFIT/LOSS has a sign (flipped to read right in web_source). Covers the 37
            offices raffi127's account manages.
   --email  the FINANCIAL SUMMARY workbooks in the reporting inbox. Still the
            only source for the ~60 owners Double Entry doesn't expose to that
@@ -154,7 +154,7 @@ def merge_sources(primary, secondary, logfn=print):
     """Merge two (by_owner, weeks, problems) triples — `primary` wins.
 
     Used for the Double Entry + email hybrid. Double Entry is primary: it's
-    fresher (no waiting on a sender) and its PROFIT/LOSS carries a real sign,
+    fresher (no waiting on a sender) and its PROFIT/LOSS has a sign (flipped to read right in web_source),
     where the emailed template reports magnitude only. The emailed books then
     cover the ~60 owners Double Entry doesn't expose to this account.
 

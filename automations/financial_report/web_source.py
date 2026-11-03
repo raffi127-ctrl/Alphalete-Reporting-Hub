@@ -493,6 +493,7 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
                         ends[i]: _num(vals[i])
                         for i in range(min(len(ends), len(vals)))
                         if vals[i] not in (None, "")}
+                _sign_profit_loss(metrics)
                 if _needs_detail(metrics):
                     try:
                         detail: dict = {}
@@ -536,6 +537,16 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
         print(f"-> doubleentry: {n} office(s) for {len(by_owner)} owner(s); "
               f"weeks {[w.isoformat() for w in weeks]}", flush=True)
     return by_owner, weeks, problems
+
+
+def _sign_profit_loss(metrics: dict) -> None:
+    """Double Entry's PROFIT/LOSS is the funds move with the sign flipped: funds
+    down $27,275 reads +27,275 (217 of 217 week pairs, 2026-11-03). Flip it, so a
+    week the funds fell reads as a loss, the same as parse._resign_profit_loss."""
+    pl = metrics.get("PROFIT/LOSS")
+    if pl:
+        metrics["PROFIT/LOSS"] = {w: (-v if isinstance(v, (int, float)) else v)
+                                  for w, v in pl.items()}
 
 
 def _default_week_end() -> dt.date:
@@ -643,6 +654,8 @@ def fetch_office_history(owner_key: str, *, weeks_back: int = 52,
                       f"{'data' if hit_this_anchor else 'nothing'}", flush=True)
             anchor -= dt.timedelta(days=28)   # each anchor answers with 4 weeks
             walked += 4
+    for off in offices.values():
+        _sign_profit_loss(off["metrics"])
     if verbose:
         print(f"-> doubleentry history: {owner_key} — {len(offices)} office(s), "
               f"{len(weeks)} week(s)", flush=True)

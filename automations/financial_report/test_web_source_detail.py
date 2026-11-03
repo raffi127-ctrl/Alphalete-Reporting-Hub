@@ -121,5 +121,24 @@ class Payees(unittest.TestCase):
         self.assertEqual(m["INDEED"], {W1: 0.0, W2: 900.0})
 
 
+class SignProfitLoss(unittest.TestCase):
+    """Marcellus Butler, Double Entry October 2026: earned 7,291, spent 13,341.04,
+    funds fell 6,050.04, and Double Entry says +6,050.04."""
+
+    def test_a_loss_reads_negative_and_a_profit_positive(self):
+        m = {"PROFIT/LOSS": {"loss": 6050.04, "profit": -847.79, "flat": 0.0},
+             "TOTAL EXPENSES": {"loss": 13341.04}}
+        w._sign_profit_loss(m)
+        self.assertEqual(m["PROFIT/LOSS"]["loss"], -6050.04)
+        self.assertEqual(m["PROFIT/LOSS"]["profit"], 847.79)
+        self.assertEqual(m["PROFIT/LOSS"]["flat"], 0.0)
+        self.assertEqual(m["TOTAL EXPENSES"]["loss"], 13341.04)
+
+    def test_no_row_is_fine(self):
+        m = {"TOTAL EXPENSES": {"w": 1.0}}
+        w._sign_profit_loss(m)
+        self.assertEqual(m, {"TOTAL EXPENSES": {"w": 1.0}})
+
+
 if __name__ == "__main__":
     unittest.main()
