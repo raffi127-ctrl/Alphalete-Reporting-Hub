@@ -775,6 +775,25 @@ def fill_plan(g, result):
     return plan
 
 
+# Campaigns whose board SaraPlus owns outright: the Slack posts are read and
+# counted for the log, but never written. Carlos 2026-11-03: the NDS board
+# said 12 for Monday 11/2, SaraPlus said 10 ("we did 10") — the two extra
+# were Eduardo's "NL 1 / NL 2 BYOD" post, raised here by this fill at 9pm,
+# which SaraPlus never showed and vantura_nds_sara leaves alone (a rep absent
+# from Sara is LEFT as-is). So for NDS the board = SaraPlus, nothing else.
+# The campaign key for the NDS board is still "B2B" (vantura_boards.tab_for).
+SARA_OWNED = ("B2B",)
+
+
+def slack_fill_campaigns(campaigns, log=_log):
+    """`campaigns` minus the SaraPlus-owned ones, said in the log."""
+    owned = [c for c in campaigns if c in SARA_OWNED]
+    if owned:
+        log(f"{', '.join(owned)} board is filled from SaraPlus "
+            f"(vantura_nds_sara) — Slack posts counted, not written")
+    return [c for c in campaigns if c not in SARA_OWNED]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--date", help="sales day (YYYY-MM-DD); default yesterday")
@@ -794,6 +813,7 @@ def main(argv=None) -> int:
         _log(f"{', '.join(off)} board switched off (vantura_boards.OFF_BOARDS) "
              "— not filled")
         campaigns = [c for c in campaigns if board_on(c)]
+    campaigns = slack_fill_campaigns(campaigns, _log)
     now = dt.datetime.now(TZ)
     today = now.date()
     if a.date:
