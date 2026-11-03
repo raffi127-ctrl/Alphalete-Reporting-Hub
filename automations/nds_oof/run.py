@@ -203,7 +203,15 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
             out.append(row)
             _log("borrowed: %s off %s (shared %s)" % (G._rep(src[i]), key, r[S.K_AT] or "?"))
         for name in missing:
-            _log("borrowed: %s not on %s's rows today" % (name, key))
+            # Close spellings, so a roster typo is fixable from the log alone
+            # (Carlos: "i may have slight mispelling"): any row sharing a
+            # token (a last name, usually) with the wanted name.
+            toks = set(G._plain(name).split())
+            close = [G._rep(x) for x in src
+                     if toks & set(G._plain(G._rep(x)).split())]
+            _log("borrowed: %s not on %s's rows today%s"
+                 % (name, key, (" (close: %s)" % ", ".join(close)) if close else
+                    " (%d rows: %s)" % (len(src), ", ".join(G._rep(x) for x in src)[:400])))
     for key in want:
         if key not in seen:
             _log("borrowed: no 'Lucy Knocks' row for %s today" % key)
