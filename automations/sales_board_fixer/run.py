@@ -670,6 +670,7 @@ OWNERS_FILE = Path(__file__).with_name("owners.json")
 # Salik/Hammad one tab per Monday, '10/12', '10/5'... (2026-10-14)
 BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b|^\s*\d{1,2}[./]\d{1,2}\s*$", re.I)
 NEWEST_TAB_DAYS = 21
+COPY_PREFIX = re.compile(r"^\s*(?:copy of\s+)+", re.I)
 SIDE_NAME = re.compile(r"line\s*u?p|stations|car\s*rides?", re.I)   # Eveliz: 'Car Rides B2B'
 WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}[./]\d{1,2})\b")
 DATED_TAB = re.compile(r"^\s*(\d{1,2})[./](\d{1,2})\s*$")
@@ -723,7 +724,7 @@ def side_tabs(visible, picked) -> list:
     return out
 
 
-def newest_week_tab(visible, today: dt.date):
+def newest_week_tab(visible, today: dt.date, copies: bool = False):
     """The board tab with the newest week in its name, when this_weeks_tab finds
     none: Dover's 'WE 11/1/26' isn't a bare date, and Salik's '10/26' is 8 days
     old until he adds this week's. Eve, 2026-11-03: leftmost-with-reps had the
@@ -731,11 +732,15 @@ def newest_week_tab(visible, today: dt.date):
     Next week's tab can exist early, so it doesn't count. Past NEWEST_TAB_DAYS
     the dates are an archive beside a board with no date (Frank, Drew).
     A name with no year, right of an older tab, is last year's: Isaiah keeps
-    'Sales Board WE 11.03' from 2025 behind 'WE 12.21.25 NEW'."""
+    'Sales Board WE 11.03' from 2025 behind 'WE 12.21.25 NEW'.
+    copies: this owner starts each week by duplicating the last one and works
+    on 'Copy of ...' (Dover, Eve 2026-11-03), so a copy beats the tab it has the
+    same date as. Off for everyone else: a copy is usually a backup."""
     this_week = today - dt.timedelta(days=today.weekday())
     best, oldest_left = None, None
     for t in visible:
-        if not BOARD_NAME.search(t) or t.lower().startswith("copy of"):
+        is_copy = bool(COPY_PREFIX.match(t))
+        if not BOARD_NAME.search(COPY_PREFIX.sub("", t)) or (is_copy and not copies):
             continue
         week = WD.week_of(t, today)
         if week is None:
@@ -744,13 +749,13 @@ def newest_week_tab(visible, today: dt.date):
         oldest_left = week if oldest_left is None else min(oldest_left, week)
         if stale or week > this_week or (this_week - week).days > NEWEST_TAB_DAYS:
             continue
-        if best is None or week > best[0]:
+        if best is None or week > best[0] or (is_copy and week == best[0]):
             best = (week, t)
     return best[1] if best else None
 
 
 def owner_tabs(sh, boards: int = 1, week_end: bool = False,
-               newest_right: bool = False) -> list:
+               newest_right: bool = False, copies: bool = False) -> list:
     """The tabs to check in an owner's All-in-One: the leftmost visible sales
     board(s) with reps on it -- owners keep the current week first, and name
     it anything ('Sales Board', 'NEW Sales Board', 'Sales Board W.E 10.11') --
@@ -761,11 +766,11 @@ def owner_tabs(sh, boards: int = 1, week_end: bool = False,
                if not s["properties"].get("hidden")]
     picked = []
     today = dt.date.today()
-    dated = this_weeks_tab(visible, today, week_end, newest_right) or newest_week_tab(visible, today)
+    dated = this_weeks_tab(visible, today, week_end, newest_right) or newest_week_tab(visible, today, copies)
     for title in ([dated] if dated else []) + [t for t in visible if t != dated]:
         if len(picked) >= boards:
             break
-        if BOARD_NAME.search(title) and not title.lower().startswith("copy of"):
+        if title == dated or (BOARD_NAME.search(title) and not title.lower().startswith("copy of")):
             v = sh.worksheet(title).get_all_values()
             first, last = K.block_rows(v)
             if K.is_board(v) and any(K.name_at(v, r) for r in range(first, last + 1)):
@@ -1056,7 +1061,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
             # ('COLTEN', 'JAIRO'): list them in owners.json (2026-10-14)
             tabs = ([t for t in o["tabs"] if t in _tabs(sh)] if o.get("tabs")
                     else owner_tabs(sh, o.get("boards", 1), o.get("week_end", False),
-                                    o.get("newest_right", False)))
+                                    o.get("newest_right", False), o.get("copy_tabs", False)))
             lanes = lane_tabs(sh, o.get("tabs"))
             tabs += [t for t in lanes if t not in tabs]
         except Exception as e:  # noqa: BLE001 -- one owner's sheet never stops the rest

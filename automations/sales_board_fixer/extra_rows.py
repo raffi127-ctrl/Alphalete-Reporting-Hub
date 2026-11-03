@@ -157,7 +157,7 @@ def board_tabs(sh, owner=None) -> list:
     if owner.get("tabs"):
         return [t for t in owner["tabs"] if t in R._tabs(sh)]
     return R.owner_tabs(sh, owner.get("boards", 1), owner.get("week_end", False),
-                        owner.get("newest_right", False))
+                        owner.get("newest_right", False), owner.get("copy_tabs", False))
 
 
 def do_tab(sh, title: str, label: str, apply: bool, stamp: str) -> dict:

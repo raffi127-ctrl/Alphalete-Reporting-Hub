@@ -104,6 +104,16 @@ class NewestWeekTab(unittest.TestCase):
         self.assertEqual(self.pick(["NEW Sales Board", "w.e 10/12/26", "WE 10/18/26", "WE 10/25/26",
                                     "WE 11/1/26 ", "Copy of WE 11/1/26 ", "Line Up "]), "WE 11/1/26 ")
 
+    def test_dover_works_on_the_copy(self):
+        from automations.sales_board_fixer import run as R
+        tabs = ["NEW Sales Board", "WE 10/25/26", "WE 11/1/26 ", "Copy of WE 11/1/26 ", "Line Up "]
+        self.assertEqual(R.newest_week_tab(tabs, TUE, copies=True), "Copy of WE 11/1/26 ")
+
+    def test_a_newer_tab_beats_an_old_copy(self):
+        from automations.sales_board_fixer import run as R
+        tabs = ["WE 11/1/26", "Copy of WE 10/25/26"]
+        self.assertEqual(R.newest_week_tab(tabs, TUE, copies=True), "WE 11/1/26")
+
     def test_salik(self):
         self.assertEqual(self.pick(["Fiber Sales Board", "10/26", "10/12", "Line Up "]), "10/26")
 

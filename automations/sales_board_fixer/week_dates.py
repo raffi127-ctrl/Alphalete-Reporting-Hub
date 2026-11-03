@@ -103,7 +103,8 @@ def _compare(numbers: dict, label: str, label_cell: str, title: str,
 def findings(values, title: str, today: dt.date) -> List[Finding]:
     """Report-only findings for one board tab. Nothing at all for a tab that
     isn't the current week's board."""
-    named = week_of(title, today)
+    # 'Copy of WE 11/1/26' is the new week's board: its name is last week's date
+    named = None if title.strip().lower().startswith("copy of") else week_of(title, today)
     this_week = today - dt.timedelta(days=today.weekday())
     if named is not None and (this_week - named).days > 7:
         return []
