@@ -896,10 +896,14 @@ RECIPIENTS["jess"] = [
 # las capitanias B2B; los owners de su equipo entran cuando exista su caja en el
 # Org Sales Board.
 # Blake Welle, 2026-11-03 (Rafael por mail, "He's on the B2B program"). FALLBACK:
-# el vivo es el grupo "Blake's Captainship" (distro.GROUPS). Faltan Ellen Dent,
-# Elijah Golston y Alex Roberts: su mail no esta confirmado todavia.
+# el vivo es el grupo "Blake's Captainship" (distro.GROUPS). Elijah Golston va
+# por su empresa: "Pac North Best Marketing, Inc" en Gmail y en Tableau. Aaron,
+# Alex Censi, Derrick, Mamadou y Ben salen de la direccion, sin nombre al lado.
 RECIPIENTS["blake"] = [
     "blakew.mobility@gmail.com",        # Blake Welle
+    "elldeemusic@gmail.com",            # Ellen Dent
+    "pacnorthbestinc@gmail.com",        # Elijah Golston
+    "robertsalexc14@gmail.com",         # Alex Roberts
     "jamisgaray18@gmail.com",           # Jamis Garay
     "luna.leung@gmail.com",             # Luna Leung
     "amanip.business@gmail.com",        # Amani Pittman
@@ -1032,6 +1036,13 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_b2b_luke, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
     ]),
+    # Blake Welle, 2026-11-03 (Rafael; Eve: roll out). title_bg = the band of his
+    # box on the Org Sales Board. Knocks stay behind PREVIEW_KINDS like every
+    # other B2B captain.
+    Captain("blake", "Blake", "b2b", title_bg="#B4B3F8", to=_to("blake"), churn=[
+        ChurnSource(_own.open_ws_b2b_blake, _ni_render, "Wireless Churn",
+                    title_prefix="WIRELESS CHURN"),
+    ]),
     # ----- NDS -----
     Captain("khalil", "Khalil", "nds", title_bg="#EA4335", to=_to("khalil"), churn=[
         ChurnSource(_own.open_ws_nds_khalil, _ni_render, "New Internet Churn"),
@@ -1053,13 +1064,6 @@ CAPTAINS: List[Captain] = [
 # Only an explicit `--only <key>` reaches them, to mail a sample. Roll out = move
 # the entry up into CAPTAINS and add the key to its line in _GROUPS.
 PREVIEW_CAPTAINS: List[Captain] = [
-    # Blake Welle, 2026-11-03 (Rafael). Sample first, until Eve says roll out.
-    # title_bg = the band of his box on the Org Sales Board. Knocks stay behind
-    # PREVIEW_KINDS like every other B2B captain.
-    Captain("blake", "Blake", "b2b", title_bg="#B4B3F8", to=_to("blake"), churn=[
-        ChurnSource(_own.open_ws_b2b_blake, _ni_render, "Wireless Churn",
-                    title_prefix="WIRELESS CHURN"),
-    ]),
 ]
 
 BY_KEY = {c.key: c for c in CAPTAINS + PREVIEW_CAPTAINS}
@@ -1124,7 +1128,7 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Fiber 2", ("wayne", "starr")),
     ("Fiber 3", ("tony", "chan", "sahil")),
     ("Fiber 4", ("pat", "jess")),
-    ("B2B", ("eveliz", "luke")),
+    ("B2B", ("eveliz", "luke", "blake")),
     ("NDS", ("khalil", "colten", "jairo")),
 )
 _PER_CAPTAIN = [
