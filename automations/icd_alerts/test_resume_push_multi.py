@@ -35,9 +35,9 @@ class MultiOffice(unittest.TestCase):
             o: {"last_start": (NOW - dt.timedelta(minutes=m)).isoformat()}
             for o, m in mins_ago.items()}})
 
-    def test_raf_has_three_offices_and_is_dry(self):
+    def test_raf_has_three_offices_and_is_live(self):
         self.assertEqual(RP.office_ids(RAF), ("11280", "23965", "24065"))
-        self.assertFalse(RP.armed(RAF))
+        self.assertTrue(RP.armed(RAF), "live from his own MacBook since 2026-11-03")
         self.assertEqual(RP.office_ids(KHALIL), ("11901",))
 
     def test_never_run_goes_first_then_longest_waiting(self):
@@ -57,9 +57,9 @@ class MultiOffice(unittest.TestCase):
             self.assertEqual(RP.pick_office(NOW, RAF), "23965")
 
     def test_listed_follows_the_pick(self):
-        self.assertEqual(RP._listed(RAF), ("11280", "dry"))
+        self.assertEqual(RP._listed(RAF), ("11280", "live"))
         RP._CURRENT_OFFICE = "24065"
-        self.assertEqual(RP._listed(RAF), ("24065", "dry"))
+        self.assertEqual(RP._listed(RAF), ("24065", "live"))
         ok, _ = RP._pin_office("24065", RAF)
         self.assertTrue(ok)
         ok, why = RP._pin_office("11280", RAF)   # banner must match the pick
