@@ -248,7 +248,7 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
                           "existing": True}
             log("  – %s: %s already in the address book" % (label, cust["phone"]))
             continue
-        first, last = RC.split_name(cust["customer_name"])
+        first, last = (titlecase_name(x) for x in RC.split_name(cust["customer_name"]))
         notes = "Rep Name: %s" % titlecase_name(cust["rep"])
         if dry_run:
             log("  [dry-run] would create: company=%r name=%r phone=%s notes=%r"
@@ -285,7 +285,7 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
         extras = _guest.extra_line_contacts(cust)
         if not extras:
             continue
-        first, last = RC.split_name(cust["customer_name"])
+        first, last = (titlecase_name(x) for x in RC.split_name(cust["customer_name"]))
         who = titlecase_name(cust["customer_name"]) or cust["order_id"]
         for x in extras:
             lkey = "%s:%s:L%s" % (cust["day"], cust["order_id"], x["line"])
