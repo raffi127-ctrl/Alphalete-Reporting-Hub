@@ -298,7 +298,7 @@ OFFICES: Dict[str, AlertOffice] = {
         key="raf", owner="Rafael Hidalgo", label="Rafael's Local Office",
         # UNROUTED on purpose: the installer asks them where they want
         # their alerts, and a human approves it. Nothing posts until then.
-        channels=(),
+        channels=("C068PH3RFSM",),   # #alphalete-sales -- where his sales board sweep posts today (Megan 2026-11-03: "exactly as it is now")
         timezone="America/Chicago", active=True, platform="mac",
         slack_user_id="U045Z8N0ZQC",
         # Hours are the ORG DEFAULT, not this owner's own -- nobody
