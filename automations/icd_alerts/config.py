@@ -587,7 +587,11 @@ SELLING_END_OVERRIDES = {"carlos-b2batt": {5: (23, 0)},
                          # Omar's reps were still closing at 22:20 ET on
                          # 2026-10-28, an hour after the default end; Megan
                          # was watching sales land with no alert. Mon-Sat.
-                         "omar": {d: (23, 0) for d in range(6)}}
+                         "omar": {d: (23, 0) for d in range(6)},
+                         # Raf's own machine (enrolled 2026-11-03): his sales
+                         # board on Lucy 1 announced sales until midnight, and
+                         # Megan wants nothing to change for him on timing.
+                         "raf": {d: (23, 59) for d in range(6)}}
 
 
 def _selling_end(now: dt.datetime):
