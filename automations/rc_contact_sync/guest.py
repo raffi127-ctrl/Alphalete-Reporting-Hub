@@ -122,13 +122,7 @@ def guest_customers(since: dt.date, until: dt.date,
         f.write_bytes(data)
     orders, feed_lines = WP.parse(f.read_bytes(), log=lambda *a, **k: None)
 
-    crew_names = (gst.roster("Rafael Hidalgo", "Carlos Hidalgo")
-                  + ["Carlos Hidalgo"])
-    toks = [gst._tokens(n) for n in crew_names]
-
-    def _is_crew(n):
-        t = gst._tokens(n)
-        return any(gst._subseq(ct, t) or gst._subseq(t, ct) for ct in toks)
+    _is_crew = crew_matcher()
 
     since = max(since, NM.NDS_SINCE)
     out: List[Dict[str, str]] = []
@@ -158,6 +152,40 @@ def guest_customers(since: dt.date, until: dt.date,
             % (c["day"], c["order_id"], c["customer_name"][:24],
                c["phone"] or "NO PHONE"))
     return out
+
+
+# Reps on Carlos's NDS Order Log (Owner = Carlos Hidalgo) that the shared
+# total_knocks roster (frozen 2026-09-25, Raf-campaign era) does not carry.
+# Found 2026-11-02: their customers were silently outside the contact sync
+# and the never-texted check ("no contact phone" on the delivered text).
+# The roster module serves other boards, so the widening lives HERE.
+NDS_EXTRA_CREW = [
+    "Cinthya Reyes",
+    "Yahir Uriel Lopez",
+    "Annett Climaco",
+    "Brianna Belen Contreras",
+    "Esmeralda Gonzalez",
+    "Nathaly Elizabeth Molina Benitez",
+    "Jorge Jose Hernandez Molina",
+]
+
+
+def crew_names() -> List[str]:
+    from automations.total_knocks import guests as gst
+    return (gst.roster("Rafael Hidalgo", "Carlos Hidalgo")
+            + ["Carlos Hidalgo"] + list(NDS_EXTRA_CREW))
+
+
+def crew_matcher():
+    """name -> bool, the roster's own token-subsequence match ("Nicholas
+    Smedra" claims "Nicholas Paul Smedra", and the other way round)."""
+    from automations.total_knocks import guests as gst
+    toks = [gst._tokens(n) for n in crew_names()]
+
+    def _is_crew(n: str) -> bool:
+        t = gst._tokens(n)
+        return any(gst._subseq(ct, t) or gst._subseq(t, ct) for ct in toks)
+    return _is_crew
 
 
 _PHONE_RE = re.compile(r"^\D*(\d{3})\D*(\d{3})\D*(\d{4})\D*$")

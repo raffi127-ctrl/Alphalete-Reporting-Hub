@@ -52,5 +52,14 @@ class ExtraLineContacts(unittest.TestCase):
         self.assertEqual(G.extra_line_contacts({"phone": "1"}), [])
 
 
+class Crew(unittest.TestCase):
+    def test_nds_reps_outside_the_frozen_roster_are_crew(self):
+        is_crew = G.crew_matcher()
+        for n in ("Cinthya Reyes", "Yahir Uriel Lopez", "Yahir Lopez", "Nicholas Paul Smedra",
+                  "Jose Manuel Pimentel Lugo", "Carlos Hidalgo", "Annett Climaco"):
+            self.assertTrue(is_crew(n), n)
+        self.assertFalse(is_crew("Aaliyah Roberson"))
+
+
 if __name__ == "__main__":
     unittest.main()
