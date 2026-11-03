@@ -543,6 +543,11 @@ def write(rows: list[list], balance: float | None, via_hub: bool = False):
         log(write_overrides(svc, via_hub))
     except Exception as e:  # noqa: BLE001
         log(f"override weekly failed (rest of the run is fine): {str(e)[:160]}")
+    if via_hub:
+        try:
+            log(write_dates(svc))
+        except Exception as e:  # noqa: BLE001
+            log(f"dates refresh failed (rest of the run is fine): {str(e)[:160]}")
     return svc
 
 
