@@ -477,14 +477,14 @@ def pull_dates_hub() -> tuple[str, str, list[list]]:
                     log(f"dates: views page text: {' | '.join(t.strip() for t in txt.splitlines() if t.strip())[:1500]}")
                 names = sorted({n for n, _ in links if n})
                 log(f"dates: workbook views ({len(names)}): {names[:60]}")
-                found = [(n, h.split("?")[0]) for n, h in links if n and "date" in n.lower()]
+                found = [(n, h.split("?")[0]) for n, h in links if n and h and "date" in n.lower()]
                 log(f"dates: candidate views {found[:10]}")
         except Exception as e:  # noqa: BLE001
             log(f"dates: workbook walk failed ({str(e)[:120]})")
         candidates = [h for _, h in found] + DATES_VIEWS
         seen = set()
         for view in candidates:
-            if view in seen:
+            if not view or view in seen:
                 continue
             seen.add(view)
             try:
