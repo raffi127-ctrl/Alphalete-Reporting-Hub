@@ -222,6 +222,10 @@ _NOT_A_REPORT = frozenset({
 # A name here is a promise that the report DOES NOT RUN — keep it in step with
 # on_scheduler:false + cadence weekdays [] in schedule_config, both doors.
 _RETIRED: frozenset = frozenset({
+    # Owner Rep Audit PAUSED 2026-11-03 (Eve): staff on the owner's list got
+    # deactivated (Kash 22177). Not retired for good: take it out of here and
+    # set on_scheduler true once the protected-staff veto ships.
+    "owner-rep-audit", "owner_rep_audit",
     # B2B Dispositions. Box-only since AT&T left HOURLY/DISPOSITION_CAMPAIGNS,
     # and every post went to Carlos (#alphalete-gp-sales + his "Box B2B" text
     # group). Carlos 2026-10-28: "all of these box automations you're good to
