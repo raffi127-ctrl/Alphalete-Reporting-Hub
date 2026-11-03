@@ -317,10 +317,10 @@ OFFICES: Dict[str, AlertOffice] = {
         channels=("C0CES186PGC",),   # the second #odysseyy -- Megan 2026-11-03: "This should be his slack channel"
         timezone="America/Los_Angeles", active=True, platform="mac",
         slack_user_id="U07Q243HP7Z",
-        # Hours are the ORG DEFAULT, not this owner's own -- nobody
-        # has told us theirs yet. Correct them here when they do.
-        day_start="13:30", day_end="20:30",
-        sat_start="10:45", sat_end="17:00", saturday=True,
+        # His own hours, from his installer's knocks note (2026-11-03):
+        # "Mon-Fri 1PM to 9PM, Saturdays 10am to 6pm" (Pacific).
+        day_start="13:00", day_end="21:00",
+        sat_start="10:00", sat_end="18:00", saturday=True,
         campaign="nds",
     ),
 }
