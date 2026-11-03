@@ -222,6 +222,18 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
                 if live and _at.last_push_of_day(office or ""):
                     _at.ensure_await_template(page, office or "", apply=True,
                                               next_morning=True)
+                # Tell someone who can tick Indeed's box (Megan 2026-11-03).
+                if live:
+                    try:
+                        from automations.applicant_push import indeed_alert as _ia
+                        from automations.shared import hub_identity as _hi
+                        _ia.note(office or "", offices.get(office or "").get("short")
+                                 or ("office %s" % office), _hi.machine_name(),
+                                 walled=bool(oat._cf_walled()),
+                                 cleared=bool(oat._cf_session_cleared()),
+                                 log=rp._log)
+                    except Exception as _e:  # noqa: BLE001
+                        rp._log("[indeed-alert] skipped: %s" % type(_e).__name__)
                 if oat._cf_walled():
                     # Indeed never let THIS browser through. Don't keep it warm —
                     # a cold one gets a fresh challenge it often passes.
