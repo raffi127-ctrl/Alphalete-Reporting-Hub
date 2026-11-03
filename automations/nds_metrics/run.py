@@ -153,6 +153,41 @@ class Cols:
         return i
 
 
+def crew_names(log=print) -> list:
+    """Who counts as Carlos's crew on every NDS board: the hand-kept
+    GUEST_REPS roster (the fiber-era list), Carlos himself, AND every rep
+    on the Vantura 'NDS Sales Board'. Carlos 2026-11-03: "its only showing
+    two people on the board that makes no sense" -- the Revenue Board (and
+    every other crew-filtered section) had silently dropped each rep who
+    joined after the roster was written on 9/25 (Annett, Elisa, Nathaly,
+    Brianna, Esmeralda, Cinthya, Yahir, Eric, Valerie, Jorge Hernandez,
+    Ruby ...). The board is the roster Carlos actually keeps; when it
+    cannot be read the static list stands alone and the log says so."""
+    from automations.total_knocks import guests
+    names = list(guests.roster("Rafael Hidalgo", "Carlos Hidalgo")) + ["Carlos Hidalgo"]
+    try:
+        from automations.vantura_slack_sales.run import (NAME_COL, _cell,
+                                                         board_grid,
+                                                         campaign_rows)
+        _ws, g = board_grid("B2B")
+        board = [_cell(g, r, NAME_COL).strip()
+                 for r in campaign_rows(g, "B2B").values()]
+        board = [n for n in board if n]
+        log(f"[nds] crew = {len(names)} roster name(s) + {len(board)} rep(s) "
+            f"on the NDS Sales Board")
+        names += board
+    except Exception as e:  # noqa: BLE001 -- a board read never sinks the run
+        log(f"[nds] NDS Sales Board roster unreadable ({type(e).__name__}: "
+            f"{str(e)[:80]}) -- static roster only")
+    seen, out = set(), []
+    for n in names:
+        k = " ".join(guests._tokens(n))
+        if k and k not in seen:
+            seen.add(k)
+            out.append(n)
+    return out
+
+
 def load_crew(path: Path, log=print):
     """-> (Cols, crew rows). Owner & Office = CARLOS HIDALGO, the export's
     long-format measure rows collapsed to one per line (every count doubled
@@ -190,9 +225,7 @@ def load_crew(path: Path, log=print):
     # Carlos sells too (2026-10-26: "i dont see my sale in the order log" —
     # the guest roster is the reps UNDER him and leaves him out, so his own
     # lines were filtered off every board).
-    crew_names = (guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
-                  + ["Carlos Hidalgo"])
-    crew_toks = [guests._tokens(n) for n in crew_names]
+    crew_toks = [guests._tokens(n) for n in crew_names(log)]
 
     def _is_crew(name: str) -> bool:
         t = guests._tokens(name)
@@ -205,6 +238,13 @@ def load_crew(path: Path, log=print):
     log(f"[nds] {len(data)} line(s) -> carlos {len(mine)} -> crew "
         f"{len(crew)}" + (f" ({dropped} non-crew on his owner)" if dropped
                           else ""))
+    if dropped:
+        import collections as _coll2
+        gone = _coll2.Counter(str(r[i_rep]).strip() for r in mine
+                              if len(r) > i_rep
+                              and not _is_crew(str(r[i_rep]).strip()))
+        log("[nds] non-crew on his owner (dropped): "
+            + ", ".join(f"{k}={v}" for k, v in gone.most_common(15)))
     if not crew:
         raise RuntimeError("nds log: ZERO crew lines — check the window / "
                            "owner spelling before posting anything")
@@ -391,9 +431,7 @@ def load_soh(log=print):
     # Carlos sells too (2026-10-26: "i dont see my sale in the order log" —
     # the guest roster is the reps UNDER him and leaves him out, so his own
     # lines were filtered off every board).
-    crew_names = (guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
-                  + ["Carlos Hidalgo"])
-    toks = [guests._tokens(n) for n in crew_names]
+    toks = [guests._tokens(n) for n in crew_names(log)]
 
     def _is_crew(n):
         t = guests._tokens(n)
