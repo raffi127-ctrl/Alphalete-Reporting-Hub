@@ -34,6 +34,14 @@ screen that could not list our address. Now the mark is written only after Lucy 
 has confirmed the forward and the filter step has been shown. The mark has a NEW
 FILE NAME so that the old premature ones (sara-code-forward.txt) count for nothing,
 which is what brings those offices back at their next hand sign-in.
+
+THE FILTER IS ONLY DONE WHEN A CODE ARRIVES (Eve 2026-11-03). Gmail tells us when
+an address is confirmed, but nothing tells us a filter was saved, so OK on the
+filter box proved nothing: Luke's address was confirmed, his 11/3 code never came,
+and a press of OK would have stopped the asking for good. The mark is now written
+only once Lucy 1 has seen a forwarded code (_already_working). Until then every
+hand sign-in shows the filter step again. New file name again, so the marks
+written on an OK count for nothing.
 """
 from __future__ import annotations
 
@@ -44,7 +52,7 @@ from automations.icd_alerts import config as C
 
 REPORTING_INBOX = "alphaletereporting@gmail.com"
 SARAPLUS_SENDER = "security.info@saraplus.com"
-MARK_PATH = C.APP_DIR / "sara-code-forward-done.txt"
+MARK_PATH = C.APP_DIR / "sara-code-forward-working.txt"
 
 STEPS = (
     "Almost done! Let's forward SaraPlus's code emails to %s.\n\n"
@@ -133,10 +141,11 @@ def _wait_for_gmail(office_key: str, say=print, sleep=time.sleep,
 
 
 def _finish(ask, say=print) -> str:
-    """The forward is confirmed: the filter is all that is left."""
+    """The forward is confirmed: the filter is all that is left. No mark here:
+    OK on that box does not prove the filter was saved. _already_working marks
+    this computer once a code has really arrived."""
     if not open_filter(ask, say):
         return "filter not shown"
-    _mark(REPORTING_INBOX)
     return "done"
 
 
@@ -257,7 +266,7 @@ FILTER_STEPS = (
     "4. Click Create filter again.\n\n"
     "Only SaraPlus's emails get forwarded. If our address isn't in the list yet, "
     "wait a minute and reload the page.\n\n"
-    "Click OK here when you're done."
+    "Click OK here when you're done. Already saved it? Just click OK."
     % (SARAPLUS_SENDER, REPORTING_INBOX))
 
 
@@ -286,15 +295,11 @@ def main(argv=None) -> int:
     def say(m=""):
         print(m, flush=True)
 
-    if _already_working("", say):
+    if already_set_up() or _already_working("", say):
         say("")
         say("  ALL SET. From now on, Lucy types SaraPlus's codes for you.")
         return 0
-    if already_set_up():
-        open_filter(ask, say)
-        said = "done"
-    else:
-        said = walk_through(ask, say)
+    said = walk_through(ask, say)
     say("")
     if said != "done":
         say("  NOT YET -- run this same line again when you are ready.")

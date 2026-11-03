@@ -91,7 +91,7 @@ class OnTheMac(unittest.TestCase):
         self.assertEqual(self.sent, ["owner@gmail.com"])
         self.assertIn("alphaletereporting@gmail.com", ask.shown[0])
         self.assertIn("owner@gmail.com", ask.shown[0], "names the account to be in")
-        self.assertTrue(CF.already_set_up())
+        self.assertFalse(CF.already_set_up(), "OK on the filter box proves nothing")
 
     def test_gmail_opens_on_forwarding_and_the_filter_follows(self):
         ask = FakeAsk(CF.YES)
@@ -141,7 +141,28 @@ class OnTheMac(unittest.TestCase):
         self.assertEqual(self._go(ask), "done")
         self.assertEqual(self.sent, [])
         self.assertEqual(self.opened, [CF.FILTER_URL])
+        self.assertFalse(CF.already_set_up())
+
+    def test_ok_on_the_filter_without_a_code_comes_back(self):
+        # Luke: address confirmed, no code ever reached us. Each hand sign-in
+        # shows the filter again until one does.
+        self.confirmed.side_effect = lambda *a, **k: True
+        with mock.patch.object(CF.C, "install", return_value={"office_key": "luke"}):
+            for _ in range(2):
+                self.opened.clear()
+                CF.offer_after_signin(FakeAsk(CF.YES), say=lambda *_: None)
+                self.assertEqual(self.opened, [CF.FILTER_URL])
+
+    def test_a_code_that_arrived_ends_the_asking_for_good(self):
+        self.confirmed.side_effect = lambda *a, **k: True
+        with mock.patch.object(CF.C, "install", return_value={"office_key": "luke"}), \
+                mock.patch.object(R, "forward_working", return_value=True):
+            CF.offer_after_signin(FakeAsk(CF.YES), say=lambda *_: None)
+        self.assertEqual(self.opened, [])
         self.assertTrue(CF.already_set_up())
+        with mock.patch.object(CF.C, "install", return_value={"office_key": "luke"}):
+            self.assertEqual(CF.offer_after_signin(FakeAsk(CF.YES), say=lambda *_: None),
+                             "not asked")
 
     def test_a_cancelled_filter_is_not_done(self):
         self.confirmed.side_effect = lambda *a, **k: True
@@ -152,9 +173,9 @@ class OnTheMac(unittest.TestCase):
 
     def test_an_old_premature_mark_counts_for_nothing(self):
         # What brings the offices that stopped halfway back, with no message.
-        self.assertNotEqual(CF.MARK_PATH.name, "sara-code-forward.txt")
+        # Both older names were written on a press of OK.
         real = inspect.getsource(CF).split('MARK_PATH = C.APP_DIR / "')[1].split('"')[0]
-        self.assertEqual(real, "sara-code-forward-done.txt")
+        self.assertEqual(real, "sara-code-forward-working.txt")
 
 
 class RealReportForward(unittest.TestCase):
@@ -347,14 +368,22 @@ class TheTerminalLine(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    def test_finished_says_all_set_and_a_rerun_reopens_the_filter(self):
-        with mock.patch.object(CF, "walk_through",
-                               side_effect=lambda a, s: CF._mark("o@gmail.com") or "done"), \
+    def test_finished_says_all_set_and_a_rerun_walks_again(self):
+        # No code has arrived yet, so the line keeps offering the filter.
+        walk = mock.Mock(return_value="done")
+        with mock.patch.object(CF, "walk_through", walk), \
+                mock.patch.object(R, "forward_working", return_value=False), \
                 mock.patch("automations.icd_alerts.dialogs.message"):
             self.assertEqual(CF.main(), 0)
-            self.assertEqual(self.opened, [], "walk_through opens Gmail itself")
             self.assertEqual(CF.main(), 0)
-        self.assertEqual(self.opened[-1], CF.FILTER_URL)
+        self.assertEqual(walk.call_count, 2)
+
+    def test_a_computer_whose_codes_arrived_opens_nothing(self):
+        CF._mark("o@gmail.com")
+        with mock.patch.object(R, "forward_working", return_value=False), \
+                mock.patch("builtins.print"):
+            self.assertEqual(CF.main(), 0)
+        self.assertEqual(self.opened, [])
 
     def test_stopped_halfway_says_not_yet(self):
         with mock.patch.object(CF, "walk_through", return_value="not confirmed yet"), \

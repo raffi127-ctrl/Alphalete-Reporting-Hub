@@ -149,8 +149,8 @@ def _saraplus(log) -> str:
 def _code_forward(log, force: bool = False) -> None:
     """Offer the SaraPlus code forward (code_forward) to an account SaraPlus
     asks for codes: now (`force`, the code screen was just hit) or since --
-    sara_code leaves its stamp the first time it has to clear one. Asked once:
-    a forward already set up is never asked about again."""
+    sara_code leaves its stamp the first time it has to clear one. Not asked
+    again once a forwarded code has really reached us (code_forward)."""
     try:
         from automations.icd_alerts import code_forward as CF
         from automations.icd_alerts import sara_code as SC
