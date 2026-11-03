@@ -273,6 +273,50 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
         log("  + %s — %s (Rep: %s)" % (titlecase_name(cust["business"]) or first,
                                        RC.e164(cust["phone"]),
                                        titlecase_name(cust["rep"])))
+    # 3b. The order's OTHER lines, each its own contact named "<Customer> -
+    #     Line N" (Carlos 2026-11-02: "label them as the second line and
+    #     third line on the account, just in case those customers reach out
+    #     or we reach out to that phone number"). Runs for every customer,
+    #     including ones whose main contact was already there -- the lines
+    #     are what's new. Dedup by phone AND by state key, like the main one.
+    from automations.rc_contact_sync import guest as _guest
+    line_added = line_skipped = 0
+    for cust in customers:
+        extras = _guest.extra_line_contacts(cust)
+        if not extras:
+            continue
+        first, last = RC.split_name(cust["customer_name"])
+        who = titlecase_name(cust["customer_name"]) or cust["order_id"]
+        for x in extras:
+            lkey = "%s:%s:L%s" % (cust["day"], cust["order_id"], x["line"])
+            lphone = RC.norm_phone(x["phone"])
+            if lkey in state or lphone in by_phone:
+                line_skipped += 1
+                continue
+            lname_last = ("%s - %s" % (last, x["label"])).strip(" -")
+            notes = ("Rep Name: %s | %s of order %s (BAN %s) | main contact %s"
+                     % (titlecase_name(cust["rep"]), x["label"],
+                        cust.get("wireless_order") or cust["order_id"],
+                        cust.get("ban") or "?", RC.e164(cust["phone"]) if cust.get("phone") else "?"))
+            if dry_run:
+                log("  [dry-run] would create: name=%r phone=%s notes=%r"
+                    % (("%s %s" % (first, lname_last)).strip(), RC.e164(x["phone"]), notes))
+                line_added += 1
+                continue
+            try:
+                RC.create_contact(token, contacts_ext, first=first, last=lname_last,
+                                  company="", phone=x["phone"], notes=notes)
+            except RC.RCError as e:
+                log("  ✗ %s %s: %s" % (who, x["label"], str(e)[:200]))
+                failed_rows.append("%s %s" % (who, x["label"]))
+                continue
+            state[lkey] = {"day": cust["day"], "phone": lphone, "existing": False,
+                           "line": x["line"]}
+            C.save_state(state)
+            by_phone[lphone] = {"company": ""}
+            line_added += 1
+            log("  + %s - %s — %s" % (who, x["label"], RC.e164(x["phone"])))
+    log("extra lines: %d added, %d already there" % (line_added, line_skipped))
     if not dry_run:
         C.save_state(state)
     log("contacts: %d added, %d already there, %d could not be added"

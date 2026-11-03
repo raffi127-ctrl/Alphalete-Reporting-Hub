@@ -30,8 +30,9 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import re
 import io
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Sequence
 
 # (what we call it, the headers it may hide under -- checked in order,
 # spacing/case ignored)
@@ -119,7 +120,7 @@ def guest_customers(since: dt.date, until: dt.date,
         data = WP.pull(today - dt.timedelta(days=31), today, log=log)
         f = NM.OUT_DIR / f"nds_wireless_{today.isoformat()}.html"
         f.write_bytes(data)
-    orders, _lines = WP.parse(f.read_bytes(), log=lambda *a, **k: None)
+    orders, feed_lines = WP.parse(f.read_bytes(), log=lambda *a, **k: None)
 
     crew_names = (gst.roster("Rafael Hidalgo", "Carlos Hidalgo")
                   + ["Carlos Hidalgo"])
@@ -148,6 +149,7 @@ def guest_customers(since: dt.date, until: dt.date,
             "alt_phones": [],
             "wireless_order": _norm(o.get("wireless_order", "")),
             "ban": _norm(o.get("ban", "")),
+            "lines": order_lines(o, feed_lines),
         })
     log("crew rows (NDS wireless feed): %d order(s) %s..%s"
         % (len(out), since, until))
@@ -155,6 +157,66 @@ def guest_customers(since: dt.date, until: dt.date,
         log("  %-10s %-14s %-24s %s"
             % (c["day"], c["order_id"], c["customer_name"][:24],
                c["phone"] or "NO PHONE"))
+    return out
+
+
+_PHONE_RE = re.compile(r"^\D*(\d{3})\D*(\d{3})\D*(\d{4})\D*$")
+
+
+def line_phone(line: Dict[str, str]) -> str:
+    """The LINE's own phone number off a wireless_pull line dict. The feed
+    parser has two columns swapped on Port lines (README 10/29: the number
+    shows under 'device'), so take the first phone-shaped value among the
+    candidates rather than trusting one field name. '' when none."""
+    for k in ("device", "line_number", "line_phone"):
+        v = str(line.get(k) or "").strip()
+        if _PHONE_RE.match(v):
+            return v
+    return ""
+
+
+def order_lines(order: Dict[str, str], feed_lines: Sequence[Dict[str, str]]
+                ) -> List[Dict[str, str]]:
+    """The order's lines as [{line, phone, type, status}], matched on
+    Wireless Order # then DSI #, in line-number order."""
+    wo = _norm(order.get("wireless_order", ""))
+    dsi = _norm(order.get("dsi", ""))
+    out = []
+    for l in feed_lines:
+        same = (wo and _norm(l.get("wireless_order", "")) == wo) or \
+               (not wo and dsi and _norm(l.get("dsi", "")) == dsi)
+        if not same:
+            continue
+        n = _norm(l.get("line_no", ""))
+        if not n:
+            continue           # a header-shaped row the parser called a line
+        out.append({"line": n, "phone": line_phone(l),
+                    "type": _norm(l.get("line_type", "")),
+                    "status": _norm(l.get("line_status", ""))})
+    out.sort(key=lambda x: (int(x["line"]) if x["line"].isdigit() else 999, x["line"]))
+    return out
+
+
+def extra_line_contacts(cust: Dict) -> List[Dict[str, str]]:
+    """Carlos 2026-11-02: "add in the other lines on the account ... label
+    them as the second line and third line on the account, just in case
+    those customers reach out or we reach out to that phone number."
+
+    The lines whose number is NOT the order's main contact number, one
+    entry per distinct number: [{line, phone, label}] with label like
+    "Line 2". The main contact number is the customer's own contact and
+    already has its contact; a line that shares it gets nothing extra."""
+    from automations.rc_contact_sync.ringcentral import norm_phone
+    main = norm_phone(cust.get("phone", ""))
+    seen = {main} if main else set()
+    out = []
+    for l in cust.get("lines") or []:
+        ph = norm_phone(l.get("phone", ""))
+        if not ph or ph in seen:
+            continue
+        seen.add(ph)
+        out.append({"line": l["line"], "phone": l["phone"],
+                    "label": "Line %s" % l["line"]})
     return out
 
 
