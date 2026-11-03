@@ -173,6 +173,10 @@ RAF = {
     # may post or the rooms get every board twice. The old list is kept as a
     # comment so the cutover can be undone in one edit.
     "destinations": [],
+    # AND SWITCHED OFF OUTRIGHT: an empty list is not enough, destinations()
+    # falls back to `group` at the tick cadence, which would have kept
+    # texting the Knocking Chat every 15 minutes from here.
+    "enabled": False,
     # "destinations": [
     #     {"kind": "imessage", "name": "Knocking Chat A-Players", "cadence_min": 30},
     #     {"kind": "slack", "channel_id": SLACK_HOURLY_CHANNEL, "cadence_min": 30, "thread_daily": True},

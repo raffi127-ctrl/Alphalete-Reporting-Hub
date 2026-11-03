@@ -177,7 +177,14 @@ class CaptionTests(unittest.TestCase):
 
 class RafDestinationTests(unittest.TestCase):
     def test_rafs_slack_channel_threads_and_the_imessage_rooms_do_not(self):
-        dests = C.destinations(C.RAF)
+        # Raf's rooms moved to his own machine 2026-11-03 (RAF enabled=False,
+        # destinations=[]); the shape they had is what this test still pins.
+        raf = dict(C.RAF, enabled=True, destinations=[
+            {"kind": "imessage", "name": "Knocking Chat A-Players", "cadence_min": 30},
+            {"kind": "slack", "channel_id": C.SLACK_HOURLY_CHANNEL, "cadence_min": 30,
+             "thread_daily": True},
+            {"kind": "slack", "channel_id": "C068PH3RFSM", "cadence_min": 30}])
+        dests = C.destinations(raf)
         slack = [d for d in dests
                  if d["kind"] == "slack"
                  and C.dest_channel(d) == C.SLACK_HOURLY_CHANNEL]

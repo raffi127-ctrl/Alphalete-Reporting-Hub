@@ -18,11 +18,15 @@ from automations.gap_alerts import config as C
 
 
 class RafsDestinations(unittest.TestCase):
-    def test_lucy_1_posts_no_boards_for_raf(self):
-        cfg = next(c for c in C.OFFICES if c["key"] == "rafael")
-        self.assertEqual(C.destinations(cfg), [],
-                         "Raf's boards come from his own machine now; a "
-                         "destination here posts every board twice")
+    def test_lucy_1_runs_nothing_for_raf(self):
+        self.assertIs(C.RAF.get("enabled"), False,
+                      "Raf's boards come from his own machine now; enabled "
+                      "here posts every board twice")
+        self.assertEqual(C.RAF["destinations"], [])
+        live = [o["key"] for o in C.OFFICES if o.get("enabled", True)]
+        self.assertNotIn("rafael", live,
+                         "an empty destinations list still falls back to the "
+                         "group at the tick cadence; only enabled=False stops it")
 
     def test_the_old_rooms_are_kept_as_a_comment_for_the_undo(self):
         import inspect
