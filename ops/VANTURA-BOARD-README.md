@@ -83,10 +83,13 @@ Monday week roll: board → WeekData archive, day cells reset, week label flips 
   X = off, T = terminated, F = floater.
 - **Stations**: ride rows = leaders − 2 per campaign; ALL content must end
   at or above **row 52** (the script writes "MONDAY LINEUP" at fixed A53
-  daily — rows 53+ are hidden to bury it). Week label at **Q2** (week_roll
-  writes it). Any layout change must re-anchor: `car_rides` BOXES ranges,
-  the cross-off CF INDIRECT strings on Sales Board + Roll Call, CF ranges,
-  frames.
+  daily — rows 53+ are hidden to bury it). Week label at **R2** (week_roll
+  writes it; Q2 until the 2026-11-02 Notes column). **Column B is NOTES
+  (free text, Carlos 11/2)** — never a name source, never autocompleted,
+  grouped with A. Any layout change must re-anchor: `car_rides` BOXES
+  ranges, the cross-off CF INDIRECT strings (only the Verizon board's rule
+  still has one), CF ranges, the script's column constants and
+  `stationsHelperGuard` canon, week_roll's `STATIONS_WE`, frames.
 - **Tab names are load-bearing**: "Daily Update", "NDS Sales Board",
   "BOX Sales Board", "Verizon Sales Board", "Roll Call", "Stations",
   "BOX Stations", the Lucy* data tabs. Automations and the script's KEEP
@@ -131,31 +134,35 @@ name-clash checks, the Commission ACTIVE/NOT-ACTIVE panel builder.
   whitelist entry. The "Add New Starts to Roll Call" menu now finds the tab,
   and cleanupTabs now protects "Daily Update". Never rename the tab back.
 
-## Stations layout — CURRENT (restructured 2026-09-09)
+## Stations layout — CURRENT (restructured 2026-09-09; Notes column added 2026-11-02)
 
-Per campaign section: CAR RIDES (A:E), STATIONS below (A:E), REP LIST G:I,
-**MARK OFF at K** (single column, right beside the rep list — the old K "NEW STARTS" list and the old
-L "OFF — TODAY (auto)" list are GONE). Column I is now
-**"In Training / New Starts"**: board reps with Leadership "In Training"
-first, then ONE blank row, then the week's Roll Call new starts (from hidden
-helpers W5/X5). New starts inherit all rep-list coloring and are pickable in
-MARK OFF and the name type-ahead automatically.
+Per campaign section: **A Territory Status, B NOTES (free text, 2026-11-02),
+C:F car rides (Territory Leader, Rep #1-3)**, STATIONS below in the same
+columns, REP LIST H:J, **MARK OFF at L** (single column, right beside the
+rep list). Column J is **"In Training / New Starts"**: board reps with
+Leadership "In Training" first, then ONE blank row, then the week's Roll
+Call new starts (from hidden helpers X5/Y5). New starts inherit all rep-list
+coloring and are pickable in MARK OFF and the name type-ahead automatically.
+(Before 11/2 everything from B rightwards sat one column to the LEFT:
+rides B:F, rep list G:I, MARK OFF K, helpers R–Y, week label Q2 — read old
+notes below with that shift in mind.)
 
-Hidden helper columns (R–X, all load-bearing — NEVER clear or unhide-and-edit):
+Hidden helper columns (S–Z, all load-bearing — NEVER clear or unhide-and-edit):
 
 | Col | What |
 |---|---|
-| R5 | ATT mark-off dropdown source = TOCOL(G6:I24) |
-| S5 | BOX mark-off dropdown source = TOCOL(G31:I49) |
-| T5 | TERMINATED names (live-week roll T/Terminated + board P=Terminated) — drives red+strike CF everywhere |
-| U5/V5 | name type-ahead sources (ATT/BOX) = UNIQUE(TOCOL(G:I)) |
-| W5/X5 | NEW STARTS (ATT/BOX) roll-call filters — feed col I's second block + car-ride green CF |
+| S5 | NDS mark-off dropdown source = TOCOL(H6:J24) |
+| T5 | Verizon mark-off dropdown source = TOCOL(H31:J49) |
+| U5 | TERMINATED names (live-week roll T/Terminated + board P=Terminated) — drives red+strike CF everywhere |
+| V5/W5 | name type-ahead sources (NDS/Verizon) = UNIQUE(TOCOL(H:J)) |
+| X5/Y5 | NEW STARTS (NDS/Verizon) roll-call filters — feed col J's second block + car-ride green CF |
+| Z5 | union of V/W (runner dropdowns) |
 
 **THE TYPE-AHEAD RECIPE — DO NOT BREAK (Carlos: "the way it works now is
 great, lock it in").** Typing part of a name in any car-ride/station cell or
 MARK OFF cell pops matching full names. That behavior requires ALL of:
 1. data validation `ONE_OF_RANGE` pointing at a **single-column** helper
-   (R/S for MARK OFF, U/V for name cells);
+   (S/T for MARK OFF, V/W for name cells — one column left of that before 11/2);
 2. the helper being **blank-free and contiguous** (that's what
    `TOCOL(...,1)` guarantees — a plain multi-column or gappy range KILLS the
    suggestions);
@@ -168,8 +175,8 @@ then the four properties above.
 **Cleanup law (learned 9/9):** when wiping a zone, clear values, formats,
 validations, AND `note` fields — notes survive format wipes and leave black
 corner triangles. And keep validation / CF / script-clear RANGES in lockstep
-(K5:K18 + K30:K43 everywhere) or first-row picks silently do nothing.
-Q2 ("9.13") is the week label the Monday roll writes — never "clean" it.
+(L5:L18 + L30:L43 everywhere since 11/2; K before) or first-row picks silently do nothing.
+R2 (Q2 before 11/2) is the week label the Monday roll writes — never "clean" it.
 
 Cross-off / off flow: pick a name in MARK OFF (K) → CF strikes them red on
 rides/stations, gray on the rep list, and strike-through on the Sales Board
@@ -1511,3 +1518,75 @@ Carlos: "get an update on all of these customers every single day in a tab calle
   but that have no line number (a "Resolve Order" header misread as a line) are skipped and purged.
   Port Status values like "6P" are SaraPlus's own port-status codes; on Port lines the Device column
   currently shows the ported phone number (feed parser columns swapped — parser work in progress).
+
+## 2026-11-02 — attendance marks that "came back", Ruby, the Stations NOTES column, Friday's new starts
+
+**"I keep removing people's attendance status on the NDS board and it keeps bringing back what I removed."**
+Root cause, proven from the data: the roll's SATURDAY column (M) held literal Off/Here marks typed this
+morning (the 11.1 archive had Saturday blank), the board's Saturday cells (J) mirrored them as X/0, and
+`rollAttendanceSweep` — which runs on EVERY single-cell roll attendance edit through the installable
+`offSyncOnEdit` — copies every roll literal back into any EMPTY board cell. Clearing the board cell is
+supposed to clear the roll mark too, but that mirror lives in the SIMPLE `onEdit` (best-effort, skipped
+under load, and it only ever sees the top-left cell of a multi-cell delete), so for ten reps the roll
+literal survived and the next leader mark put the X back. Fixed two ways:
+- Data: Saturday on the NDS board (15 reps) and on the roll (10 live rows + Ruby) put back to the
+  WeekData / RollCallData formulas. Monday's 0s for Nick/Andrew/Jacob/Aaron were left — those are the
+  leaders' live "Here" marks (the 0 presence marker Carlos asked for 7/21). Eric (x all week), Sebastian
+  and Carlos (F) untouched, per Carlos.
+- Code (RollWeek.gs, HEAD only — the Monday webapp pin is unaffected): `offSyncOnEdit` now mirrors EVERY
+  emptied board day cell of the edited range to the roll (`_clearRollMark`: live rows only, literals
+  only, a history formula is left alone). A board clear now sticks, single or multi-cell.
+- Who typed the Saturday marks is not visible through the API; right-click a cell > Show edit history if
+  it matters.
+
+**Ruby Flores marked T but still "active" on Stations.** Her board row had T across the week but
+Leadership (P26) still said Level 1 and her roll row's week is 8.9, so neither half of the TERMINATED
+helper caught her (board P ≠ Terminated; roll week ≠ live week). The T-typed path normally sets P via
+`terminateWeek → markLeadTerminated`; it did not run for her (the 5am `refreshTerminatedLead` would have
+caught it tomorrow). Set P26 = Terminated (note `prevlead:Level 1`, what the script writes): she left the
+Leaders list (13 now) and is in the terminated helper (red+strike wherever she is placed). Monday's flip
+removes the row.
+
+**Stations NOTES column at B (Carlos: "a column grouped with column A, mainly for the car rides, call it
+Notes").** Inserted at B on the main Stations tab (API insert, everything from the old B shifts one
+column right: rides C:F, rep list H:J, MARK OFF L, helpers S:Z, week label R2). B is free text (wrap,
+left-aligned, no validation), header "Notes" in rows 5 and 30, 170px. Column B ALONE is a collapsible
+column group and the +/- toggle sits above column A (sheet property `columnGroupControlAfter` = false,
+i.e. "before the group"; Carlos's follow-up 11/2: "the grouping should only bring in and out column B, it
+should be above column A" — the first cut grouped A:B with the toggle after the group, above C). The
+toggle position is a per-sheet setting: adding another column group on Stations inherits "before".
+What had to move with it (all done 11/2, verified live):
+- Sheet: direct refs shifted themselves (helper formulas, rep-list FILTERs, dropdown ranges incl. chip
+  style, every Stations CF rule). The ONE cross-tab INDIRECT left anywhere — Verizon Sales Board CF rule
+  0, `'Stations'!$K$30:$K$43` — re-pointed to `$L$30:$L$43`. (NDS board / Roll Call CF no longer use
+  INDIRECT to Stations.)
+- Script (Code.gs + RollWeek.gs, pushed via the Apps Script API): `OFF_COL` 91→92, `TERM_COL` 48→49;
+  `onEdit` recolor zones, `_recolorRepListOn`, `_strikeStations`, `_recolorChecklists`,
+  `_recolorCarNewStartsOn`, `recolorOneBandRepList`, `stnBandRecolor`, `stnAutocomplete` (column B is
+  explicitly never autocompleted), `assignNewStartsToCarRides`, `resetOffList` (L5:L18 / L30:L43),
+  `checkNameClashes` diag cells; `offSyncOnEdit` MARK OFF column = L on the main tab (K on a BOX Stations
+  tab if it ever comes back); `stationsHelperGuard` canon now S5/T5/V5/W5/X5/Y5/Z5 with H:J lists.
+  Legacy one-time builders (`fixStationDropdownSources`, `colorStationRunners`, `addNewStartsToCarRides`,
+  `fillBaseCarRides`, `boxAudit`, `addDuplicateHighlight`) still carry old letters — do not run them.
+- Lucy (main, abbdf931): `car_rides` BOXES att range A5:F14 (columns found by header, so the Notes
+  column is skipped); `sales_boards/week_roll.py` `STATIONS_WE = "R2"` (next Monday's flip writes R2).
+  `vantura_board_audit` locates Stations cells by formula content — nothing to change.
+- Observed while here: the **BOX Sales Board and BOX Stations tabs are gone** (BOX retired 10/28). The
+  `car_rides` job opened "BOX Stations" by name and died before doing the AT&T half — now a missing tab
+  skips that campaign. The Car Rides Report tab's last entry is 2026-09-29, so that job has not been
+  delivering for a month either way — worth a look.
+
+**Friday's new starts → Stations "New Starts".** The Stations list fills itself from Roll Call rows with
+week = board B2, Status "New Start", campaign NDS/Verizon, Date Gone blank, not on the board (helpers
+X5/Y5). Kaleigh Jolie Stephenson + Isadora Bazan Puga were added through the menu this morning and
+show. The Daily Update tab cannot say who starts Friday (it never updates a start date once a row
+exists) and the laptop's AppStream login is timed out, so a new one-office reader was built:
+`lucy rerun appstream_new_starts --office 11580 --start 2026-11-02 --end 2026-11-08 --tab "New Starts
+11580"` (main, c1b312ae) — Total New Starts Scheduled / New Starts Showed Up / Brought on Board Booked
+per day, dropped on that control-workbook tab. Result 11/2: NOBODY booked for Friday; 13 booked for today's
+orientation + Ann Ali for Sat 11/7. Added the 8 whose Daily Update status was confirmed (Hired Today /
+Confirmed Classroom) as 11.8 New Start roll rows via the API (format + validation copied from the row below,
+like `_addRollRowIfNew`): NDS Angela Rizo, Roxanna Martinez, Viridiana Cura, Stefany Zaldivar, Zayra
+Finlinson; Verizon Jaime Castillo Ii, Sara Ronderos, Axel Soto. Left out (NA Classroom / Declined): Victoria
+Limon, Dayna Sifuentes, Melanie Espinoza, Roseanna Jurado, Richard Moye. A no-show needs a T on the roll
+before Monday 8:20 or the flip promotes them onto the board as In Training.
