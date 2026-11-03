@@ -604,18 +604,10 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
         found = _drop_past(audit(t, tenure, owner), t["values"], format_stop)
         found += _wrong_dates(t["values"], title)
         if owner:
-            name_col = K.layout(t["values"]).name_col if K.is_board(t["values"]) else 0
-            for x in found:
-                if (x.kind not in kinds or _owners_rank_cell(x, name_col)
-                        or (x.kind == "x_over_formula" and not _x_kept(x, t["values"], found))):
-                    x.value = x.request = None                      # report only
-        if owner:
-            drops = [x for x in found if x.kind == "dropdown_missing" and x.fixable]
-            if len(drops) > K.DROPDOWN_BOARD_CAP:
+            held = _hold_owner_cells(found, t["values"], kinds)
+            if held:
                 print("  OJO: %d desplegables en una tab de dueño -- solo reporto, no escribo"
-                      % len(drops))
-                for x in drops:
-                    x.value = x.request = None
+                      % held)
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
         if do_apply and n_fix > max_fixes:
@@ -629,8 +621,12 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
             done = apply(sh, t, found, notes=owner)
             print("  escritos: %d" % len(done))
             t2 = load(sh, title, titles)
-            left = [x for x in _drop_past(audit(t2, tenure, owner), t2["values"], format_stop)
-                    if kinds is None or x.kind in kinds]
+            left = _drop_past(audit(t2, tenure, owner), t2["values"], format_stop)
+            if owner:
+                # same rules as the first pass, or the '#' column an owner
+                # writes their own way reads as work left (Eve 2026-11-03)
+                _hold_owner_cells(left, t2["values"], kinds)
+                left = [x for x in left if x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
         if LANE_NAME.search(title) and not title.startswith(SANDBOX_PREFIX):
@@ -856,6 +852,22 @@ def _x_kept(x, values, found) -> bool:
         word = K.roll_call_words(values).get(status)
         return now.upper() == status or (word is not None and now == word)
     return False
+
+
+def _hold_owner_cells(found: list, values, kinds) -> int:
+    """Owners' boards: turn what Lucy must not write into report-only findings.
+    Returns how many dropdowns the board cap held back (0 = under the cap)."""
+    name_col = K.layout(values).name_col if K.is_board(values) else 0
+    for x in found:
+        if (x.kind not in kinds or _owners_rank_cell(x, name_col)
+                or (x.kind == "x_over_formula" and not _x_kept(x, values, found))):
+            x.value = x.request = None
+    drops = [x for x in found if x.kind == "dropdown_missing" and x.fixable]
+    if len(drops) <= K.DROPDOWN_BOARD_CAP:
+        return 0
+    for x in drops:
+        x.value = x.request = None
+    return len(drops)
 
 
 def _owners_rank_cell(x, name_col: int) -> bool:
