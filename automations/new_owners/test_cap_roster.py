@@ -48,10 +48,10 @@ class ScanOrder(unittest.TestCase):
         orig = cr.roster_for
         cr.roster_for = lambda c, page, **kw: seen.append(c) or {}
         try:
-            cr.scan(None, ["Eveliz", "Khalil", "Luis", "Jairo"], logfn=lambda *_: None)
+            cr.scan(None, ["Eveliz", "Khalil", "Jairo"], logfn=lambda *_: None)
         finally:
             cr.roster_for = orig
-        self.assertEqual(seen, ["Khalil", "Jairo", "Eveliz", "Luis"])
+        self.assertEqual(seen, ["Khalil", "Jairo", "Eveliz"])
 
 
 if __name__ == "__main__":

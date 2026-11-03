@@ -567,10 +567,13 @@ B2B_PERIODS = ("0-30", "30", "60", "90", "120")
 
 def fetch_b2b_luis(out_path: Optional[Path] = None,
                    verbose: bool = False, page=None) -> Path:
-    out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_luis.csv"
-    _dl(B2B_LUIS_URL, WORKSHEET, out_path,
-                                  verbose=verbose, page=page)
-    return out_path
+    """2026-11-03: "Luis's Team" stopped answering in Tableau the way Carlos's and
+    Atef's did on 10/14: his saved view lost 'ICD Churn', and CaptainsTeam returns
+    0 sheets for the team. He now reads the all-teams view cut to his Org Sales
+    Board block (make_b2b_board_roster_parser), to its own file."""
+    return fetch_b2b_allteams(
+        out_path or Path(tempfile.gettempdir()) / "owners_b2b_luis.csv",
+        verbose=verbose, page=page)
 
 
 def fetch_b2b_carlos(out_path: Optional[Path] = None,

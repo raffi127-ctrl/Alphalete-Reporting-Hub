@@ -141,7 +141,8 @@ def _filtered_url(base: str, field: Optional[str], value: Optional[str]) -> str:
 
 # Captains whose §2 filters on their Org Sales Board block (captain_key → board
 # captain name) instead of a team value Tableau no longer has. See _TEAMSTATS.
-_BOARD_ROSTER = {"carlos": "Carlos"}
+# Luis joined 2026-11-03: filtering on "Luis's Team" came back with headers only.
+_BOARD_ROSTER = {"carlos": "Carlos", "luis": "Luis"}
 # Every value of _B2B_FIELD as of 2026-10-14. The base view's saved team filter
 # leaves out Unassigned/Devin/Luke, so an Owner Name filter alone drops anyone
 # sitting there; listing all of them shows the board's "(Todo)". A team

@@ -194,7 +194,8 @@ REPORTS = [
      "owners_b2b_eveliz.csv", pull.parse_b2b, pull.B2B_PERIODS),
     ("luis", "Luis Salazar (B2B)",
      pull.fetch_b2b_luis, fill.open_ws_b2b_luis,
-     "owners_b2b_luis.csv", pull.parse_b2b, pull.B2B_PERIODS),
+     "owners_b2b_luis.csv", pull.make_b2b_board_roster_parser("Luis"),
+     pull.B2B_PERIODS),
     # Atef RETIRED 2026-10-28: no longer a captain (Carlos by mail, 10/27 —
     # see captainship_drafts 845acefe). His tab stays as it was. To bring him
     # back: restore this entry —
