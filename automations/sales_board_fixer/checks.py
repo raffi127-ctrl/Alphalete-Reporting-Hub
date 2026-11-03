@@ -85,6 +85,7 @@ KIND_LABEL = {
     "lane_threshold": "Lanes: el corte de la fórmula no es el del título",
     "lane_twin_differs": "Lanes: Current Week y Last week filtran distinto",
     "tab_name_space": "Nombre de tab con un espacio de más (una fórmula por fecha no la encuentra)",
+    "date_wrong": "Fechas de la semana mal en el board (días o título)",
 }
 
 

@@ -50,6 +50,7 @@ from automations.alphalete_sales_board import tab_names as TN
 from automations.sales_board_fixer import checks as K
 from automations.sales_board_fixer import lanes_check as LC
 from automations.sales_board_fixer import spaced_tabs as ST
+from automations.sales_board_fixer import week_dates as WD
 from automations.sales_board_fixer import last_week as LW
 from automations.sales_board_fixer import tenure as T
 
@@ -528,6 +529,7 @@ def _main(a) -> int:
     if spaced:
         results["nombres de tabs"] = spaced
     _warn_spaced([("Alphalete", sh.id, x.tab) for x in spaced], a.apply)
+    _warn_dates(_dated_rows("Alphalete", sh.id, results), a.apply)
     print("reporte:", report(results, stamp, a.apply))
     return 0
 
@@ -600,6 +602,7 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                 sh.batch_update({"requests": clear})
                 print("  notas viejas de Lucy borradas: %d" % len(clear))
         found = _drop_past(audit(t, tenure, owner), t["values"], format_stop)
+        found += _wrong_dates(t["values"], title)
         if owner:
             name_col = K.layout(t["values"]).name_col if K.is_board(t["values"]) else 0
             for x in found:
@@ -870,6 +873,7 @@ def _owners_rank_cell(x, name_col: int) -> bool:
 
 REPEATS_FILE = OUT_DIR / "owner_repeats.json"
 SPACED_FILE = OUT_DIR / "spaced_tabs_told.json"
+DATES_FILE = OUT_DIR / "week_dates_told.json"
 REPEAT_DAYS = 3                   # same fix N days in a row -> tell Eve
 EVE_USER_ID = "U088E2KJEV8"       # Evelyn Sobrino
 
@@ -927,6 +931,51 @@ def _warn_spaced(tabs: list, do_apply: bool) -> None:
         print("  DM a Eve no salió (%s)" % type(e).__name__)
 
 
+def _wrong_dates(values, title: str) -> list:
+    """Wrong day numbers / week label on a board tab. Never stops the fixer."""
+    if not K.is_board(values) or SIDE_NAME.search(title) or LANE_NAME.search(title):
+        return []
+    try:
+        found = WD.findings(values, title, dt.date.today())
+    except Exception as e:  # noqa: BLE001
+        print("  fechas: no se pudo mirar %r (%s)" % (title, type(e).__name__))
+        return []
+    for x in found:
+        print("  OJO fechas %r %s: %s" % (title, x.where, x.detail))
+    return found
+
+
+def _dated_rows(who: str, sheet_id: str, results: dict) -> list:
+    """(who, sheet id, tab, line for the DM), one per tab with wrong dates."""
+    rows = []
+    for found in results.values():
+        wrong = [x for x in found if x.kind == "date_wrong"]
+        if wrong:
+            rows.append((who, sheet_id, wrong[0].tab, WD.warning_line(wrong)))
+    return rows
+
+
+def _warn_dates(rows: list, do_apply: bool) -> None:
+    """DM Eve once per tab per week, on real runs only."""
+    if not do_apply or not rows:
+        return
+    today = dt.date.today()
+    monday = today - dt.timedelta(days=today.weekday())
+    by_key = {"%s|%s|%s" % (sheet_id, tab, monday): (who, tab, line)
+              for who, sheet_id, tab, line in rows}
+    fresh = ST.new_ones(DATES_FILE, list(by_key))
+    if not fresh:
+        return
+    text = ("Salesboard Fixer: these current boards show the wrong dates. "
+            "Nothing was changed:\n") + "\n".join(
+        "• %s: %r: %s" % by_key[k] for k in fresh)
+    try:
+        if _dm_eve(text):
+            print("  DM a Eve: %d boards con fechas mal" % len(fresh))
+    except Exception as e:  # noqa: BLE001
+        print("! no pude avisar las fechas a Eve (%s)" % type(e).__name__)
+
+
 def _dm_eve(text: str) -> bool:
     """DM Eve as Lucy. False when this machine posts as someone else."""
     from automations.shared import slack_metrics_post as smp
@@ -953,7 +1002,7 @@ def _tell_eve(lines) -> None:
 
 def run_owners(only, do_apply: bool, stamp: str) -> dict:
     owners = json.loads(OWNERS_FILE.read_text(encoding="utf-8"))["owners"]
-    results, written, spaced = {}, {}, []
+    results, written, spaced, wrong_dates = {}, {}, [], []
     for o in owners:
         if only and only.lower() not in o["name"].lower():
             continue
@@ -1002,6 +1051,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
         if names:
             results[o["name"] + " · nombres de tabs"] = names
         spaced += [(o["name"], o["sheet_id"], x.tab) for x in names]
+        wrong_dates += _dated_rows(o["name"], o["sheet_id"], res)
         if on:
             for tab, found in res.items():
                 for x in found:
@@ -1019,6 +1069,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
         if again:
             _tell_eve([written[k] for k in again])
     _warn_spaced(spaced, do_apply)
+    _warn_dates(wrong_dates, do_apply)
     return results
 
 
