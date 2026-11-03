@@ -245,6 +245,14 @@ def load_crew(path: Path, log=print):
                               and not _is_crew(str(r[i_rep]).strip()))
         log("[nds] non-crew on his owner (dropped): "
             + ", ".join(f"{k}={v}" for k, v in gone.most_common(15)))
+    # Every line on his owner, unfiltered -- the Revenue Board prices these
+    # (Carlos 2026-11-03: "if you ever see a sale from someone not on the
+    # list you still want to add it for the revenue board").
+    cols.owner_lines = list(mine)
+    if not crew and mine:
+        log(f"[nds] crew filter matched NOBODY -- using all {len(mine)} "
+            f"line(s) on his owner")
+        crew = list(mine)
     if not crew:
         raise RuntimeError("nds log: ZERO crew lines — check the window / "
                            "owner spelling before posting anything")
@@ -1327,8 +1335,17 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     i_pkg = cols.find("package")
     i_tn = cols.find("spe.tn type", "tn type")
     monday = week_of(today)
+    # Carlos 2026-11-03: "if you ever see a sale from someone not on the
+    # list you still want to add it for the revenue board" -- every line on
+    # his owner prices here; the crew roster never drops one.
+    lines = getattr(cols, "owner_lines", None) or crew
+    extra = sorted({_c(cols, r, i_rep) for r in lines}
+                   - {_c(cols, r, i_rep) for r in crew} - {""})
+    if extra:
+        log(f"[nds] revenue board: +{len(extra)} rep(s) off the roster, "
+            f"kept: {', '.join(extra)}")
     per_rep: Dict[str, dict] = {}
-    for r in crew:
+    for r in lines:
         od = _parse_date(_c(cols, r, i_od))
         rep = _c(cols, r, i_rep)
         if not rep or od is None or not (monday <= od <= today):
@@ -1346,7 +1363,7 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     out = render(rows, office, monday, today,
                  OUT_DIR / "nds_revenue_board.png",
                  board_name="NDS Revenue Board", tiered=False)
-    log(f"[nds] revenue board (styled, TABLEAU lines): {len(rows)} rep(s), "
+    log(f"[nds] revenue board (styled, ALL lines on his owner): {len(rows)} rep(s), "
         f"crew ${sum(r['total'] for r in rows):,.0f}")
     return out
 
