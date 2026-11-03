@@ -525,6 +525,10 @@ def main(argv=None) -> int:
                            "(Carlos 10/7): Lucy's daily replies out, one block per "
                            "week back in, same threads. --date = through, --since "
                            "= first day. The nightly goes weekly for that channel after.")
+    mode.add_argument("--add-to-week", metavar="NAMES",
+                      help="Comma-separated sheet names of --date, weekly layout: re-post "
+                           "just that week's block in the thread their ad already has. "
+                           "Never opens a thread. Lists only unless you add --apply.")
     mode.add_argument("--mark-status", action="store_true",
                       help="Put the live ✅ / closed ❌ mark on every ad title in "
                            "the office's weekly channel now, and pin only the ✅ "
@@ -699,6 +703,17 @@ def main(argv=None) -> int:
             mondays, channel, max_ads=a.max_ads or 3,
             crop=not a.no_crop, name=a.sample_name))
         return 0
+    if a.add_to_week:
+        from automations.ad_photo_threads import weekly
+        channel = a.channel or config.LIVE_CHANNEL_ID
+        if not weekly.is_weekly(channel):
+            print("This channel is not in the weekly layout: use --add-photo.")
+            return 1
+        names = [n.strip() for n in a.add_to_week.split(",") if n.strip()]
+        got = weekly.add_to_week(names, day, channel, apply=a.apply, crop=not a.no_crop)
+        for name, what in got.items():
+            print(f"{name}: {what}")
+        return 1 if any(w.startswith("FAILED") for w in got.values()) else 0
     if a.redo_weekly:
         from automations.ad_photo_threads import weekly
         print(f"Redo weekly — {config.office(a.office or 'rafael')['owner']} through {day}")

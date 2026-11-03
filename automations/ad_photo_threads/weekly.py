@@ -641,6 +641,63 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
     return out
 
 
+def add_to_week(names: List[str], day: dt.date, channel: str, *, apply: bool = False,
+                cl=None, build=None, crop: bool = True) -> Dict[str, str]:
+    """Eve 11/3: someone whose ad only became known after their week went out
+    (Daniel Williams, Jada Overton). The nightly only refreshes the current
+    week and --redo-weekly rewrites the whole channel, so this re-posts just
+    that past week's block, in the thread the ad ALREADY has.
+
+    Never opens a thread and never edits a header: no live thread for the ad
+    means that person is left out and it says so. Lists only unless `apply`.
+    {name: what happened}."""
+    build = build or collect.build
+    cl = cl or collect._client()
+    monday = post.week_monday(day)
+    days = week_days(monday, monday + dt.timedelta(days=6))
+    cache: dict = {}
+    reports = [build(d, cl=cl, cache=cache) for d in days]
+    rep = next((r for r in reports if r.day == day), None)
+    state = post._load_state()
+    threads = _threads(_forever(state, channel))
+    out: Dict[str, str] = {}
+    keys: List[str] = []
+    for name in names:
+        c = next((c for c in (rep.candidates if rep else [])
+                  if c.name.strip().lower() == name.strip().lower()), None)
+        if c is None:
+            out[name] = "not on the sheet that day"
+        elif not c.ad:
+            out[name] = "ad unknown"
+        elif c.ad not in threads:
+            out[name] = f"no thread for {c.ad!r}: left out, none opened"
+        elif not post._thread_alive(cl, channel, threads[c.ad]):
+            out[name] = f"the thread for {c.ad!r} is gone: left out, none opened"
+        else:
+            out[name] = f"{'added to' if apply else 'would go in'} {c.ad!r} ({len(c.images)} photo(s))"
+            if c.ad not in keys:
+                keys.append(c.ad)
+    for item in plan_week(reports):
+        if item["key"] in keys:
+            print(f"  {item['title']} (thread {threads[item['key']]}), block for {week_tag(monday)}:")
+            for c in item["cands"]:
+                print(f"    {c.name}: {len(c.images)} photo(s)")
+    if not apply or not keys:
+        return out
+    counts = {"pin_errors": 0, "to_pin": []}
+    since = dt.date.fromisoformat(state[channel].get("since") or config.THREADS_SINCE)
+    got = publish_week(reports, channel, cl=cl, threads=dict(threads), crop=crop,
+                       only_keys=keys, on_done=_recorder(channel, monday, cl, counts, pin=False),
+                       history=ad_history(reports[-1].book, since, days[-1], cache=cache))
+    for title, why in got["failed"]:
+        print(f"  FAILED {title}: {why}")
+    if got["failed"]:
+        for name in list(out):
+            if out[name].startswith("added to"):
+                out[name] = "FAILED, see the lines above: " + out[name]
+    return out
+
+
 def redo_channel(channel: str, through: dt.date, *, since: Optional[dt.date] = None,
                  cl=None, build=None, crop: bool = True) -> Dict[str, object]:
     """Carlos 10/7: "can we have lucy redo everyones so we view it like this".

@@ -233,6 +233,59 @@ class LivePathTest(unittest.TestCase):
         self.assertEqual(len(blocks), 2)
         self.assertIn(ts, cl.pins)                              # a new ad's thread is pinned
 
+    def _posted_week(self, cl):
+        head = cl._new(None, "*ATT Sales Rep Frisco*")
+        post._save_state({"C1": {"weekly": True, "since": "2026-09-21", "weeks": {
+            "forever": {"frisco": {"thread_ts": head, "days": [], "pinned": True,
+                                   "title": "ATT Sales Rep Frisco"}}}}})
+        weekly.publish_week([day(MON, [cand("Ana")])], "C1", cl=cl, threads={"frisco": head},
+                            crop=False, history={})
+        return head
+
+    def test_add_to_week_lists_only_without_apply(self):
+        cl = LiveSlack()
+        head = self._posted_week(cl)
+        n = len(cl.msgs)
+        got = weekly.add_to_week(["Bo"], MON, "C1", cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Ana"), cand("Bo")]}))
+        self.assertIn("would go in", got["Bo"])
+        self.assertEqual(len(cl.msgs), n)
+        self.assertIn("Ana", " ".join(cl.thread(head)))
+
+    def test_add_to_week_replaces_the_block_in_the_same_thread(self):
+        cl = LiveSlack()
+        head = self._posted_week(cl)
+        keep = cl._new(head, "*Monday - Friday · WE 9.27*\nOlder week stays")
+        got = weekly.add_to_week(["Bo"], MON, "C1", apply=True, cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Ana"), cand("Bo")]}))
+        self.assertIn("added to", got["Bo"])
+        blocks = [t for t in cl.thread(head) if "WE 10.4" in t and t.startswith("*Monday")]
+        self.assertEqual(len(blocks), 1)
+        self.assertIn("Ana", blocks[0])
+        self.assertIn("Bo", blocks[0])
+        self.assertTrue(any(m["ts"] == keep for m in cl.msgs))  # another week stays
+        self.assertEqual(cl.updates, {})                        # the header's mark stays
+        self.assertEqual(cl.pins, [])
+        self.assertEqual(sum(1 for m in cl.msgs if m["ts"] == m["thread_ts"]), 1)
+
+    def test_add_to_week_never_opens_a_thread(self):
+        cl = LiveSlack()
+        self._posted_week(cl)
+        n = len(cl.msgs)
+        got = weekly.add_to_week(["Bo"], MON, "C1", apply=True, cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Bo", ad="dallas")]}))
+        self.assertIn("none opened", got["Bo"])
+        self.assertEqual(len(cl.msgs), n)
+
+    def test_add_to_week_dead_thread_is_left_out(self):
+        cl = LiveSlack()
+        head = self._posted_week(cl)
+        cl.msgs = [m for m in cl.msgs if m["thread_ts"] != head]
+        got = weekly.add_to_week(["Bo"], MON, "C1", apply=True, cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Bo")]}))
+        self.assertIn("none opened", got["Bo"])
+        self.assertEqual(cl.msgs, [])
+
     def test_nightly_refreshes_only_what_changed(self):
         cl = LiveSlack()
         self._old_daily_thread(cl)
