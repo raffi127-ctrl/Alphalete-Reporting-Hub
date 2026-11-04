@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import time
 from typing import Dict, List, Optional
 
 from automations.first_round_scorecards import (appstream, board, doc, drive_auth, fathom,
@@ -30,6 +31,19 @@ _START_SLACK = re.compile(r"\*Started (\d{1,2}:\d{2} [AP]M) CT\*")
 _WARN_SLACK = re.compile(r"\n:warning: Started \d+ min before the scheduled time")
 
 
+def _retry(call):
+    """Drive drops the odd call (500s, timeouts: it failed this way twice on
+    11/4), and this reads every doc of the day."""
+    for attempt in range(6):
+        try:
+            return call()
+        except Exception as exc:  # noqa: BLE001
+            if attempt == 5:
+                raise
+            print(f"  retry {attempt + 1}: {type(exc).__name__}")
+            time.sleep(5 * (attempt + 1))
+
+
 def _clock(when: Optional[dt.datetime]) -> str:
     return when.strftime("%I:%M %p").lstrip("0") if when else "not on AppStream"
 
@@ -42,12 +56,13 @@ def _at(day: dt.date, clock: str) -> dt.datetime:
 def office_docs(svc, day: dt.date, office: str) -> List[Dict]:
     """Every audit doc of that office and day, wherever it's filed."""
     out = []
-    for person in board._kids(svc, drive_auth.AUDIT_FOLDER_ID, True):
-        for folder in board._kids(svc, person["id"], True):
+    for person in _retry(lambda: board._kids(svc, drive_auth.AUDIT_FOLDER_ID, True)):
+        for folder in _retry(lambda: board._kids(svc, person["id"], True)):
             if folder["name"] != day.isoformat():
                 continue
-            for d in board._kids(svc, folder["id"], False):
-                text = svc.files().export(fileId=d["id"], mimeType="text/plain").execute()
+            for d in _retry(lambda: board._kids(svc, folder["id"], False)):
+                text = _retry(lambda: svc.files().export(fileId=d["id"],
+                                                         mimeType="text/plain").execute())
                 text = text.decode("utf-8", "replace")
                 if board.parse_doc(text).get("office") != office:
                     continue
@@ -97,15 +112,15 @@ def fix_doc(docs_api, svc, d: Dict, name: str, day: dt.date, time: Dict, *, post
     if not post:
         return
     if pairs:
-        docs_api.documents().batchUpdate(documentId=d["id"], body={"requests": [
+        _retry(lambda: docs_api.documents().batchUpdate(documentId=d["id"], body={"requests": [
             {"replaceAllText": {"containsText": {"text": a, "matchCase": True},
-                                "replaceText": b}} for a, b in pairs]}).execute()
+                                "replaceText": b}} for a, b in pairs]}).execute())
     if d["person"] != name:
-        person = doc._folder(svc, name, drive_auth.AUDIT_FOLDER_ID)
-        target = doc._folder(svc, day.isoformat(), person)
-        svc.files().update(fileId=d["id"], addParents=target, removeParents=d["folder"],
-                           body={"name": d["title"].replace(d["person"], name, 1)},
-                           fields="id").execute()
+        person = _retry(lambda: doc._folder(svc, name, drive_auth.AUDIT_FOLDER_ID))
+        target = _retry(lambda: doc._folder(svc, day.isoformat(), person))
+        _retry(lambda: svc.files().update(
+            fileId=d["id"], addParents=target, removeParents=d["folder"],
+            body={"name": d["title"].replace(d["person"], name, 1)}, fields="id").execute())
 
 
 def fixed_reply(text: str, times: Dict[str, Dict]) -> Optional[str]:
