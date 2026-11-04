@@ -173,6 +173,45 @@ def _relay_stats(book, office_key: str, today: str, office: str = ""):
     return best if best else (None, None)
 
 
+# Order the reasons are listed in, most actionable first.
+_WHY_ORDER = ("indeed", "no_number", "retext", "unstuck", "refused", "time",
+              "unread")
+_WHY_WORDS = {
+    "no_number": "no phone number anywhere",
+    "indeed": "waiting on Indeed's check",
+    "time": "ran out of time this run",
+    "retext": "need a manual text",
+    "unstuck": "send didn't stick",
+    "refused": "AppStream wouldn't take the send",
+    "unread": "not read yet",
+    "unreached": "not reached yet",
+}
+
+
+def why_left_text(stats: dict) -> str:
+    """'4 no phone number anywhere, 2 waiting on Indeed's check, 1 not reached
+    yet' -- why the ones still in the queue were not pushed on the LAST run
+    (Megan 2026-11-04). Empty when the computer has not sent reasons yet."""
+    why = stats.get("why_left")
+    if not isinstance(why, dict):
+        return ""
+    why = {k: int(v) for k, v in why.items() if int(v or 0) > 0}
+    if "unstuck" in why:          # already its own ":warning: N didn't stick"
+        why.pop("unstuck")
+    end = stats.get("end")
+    if isinstance(end, int):
+        # The walk counts who it LOOKED AT; anyone in the queue past that is
+        # simply not reached yet. Never more than what is left.
+        listed = sum(why.values()) + int(stats.get("unconfirmed") or 0)
+        if end > listed:
+            why["unreached"] = end - listed
+    parts = ["%d %s" % (why[k], _WHY_WORDS.get(k, k))
+             for k in _WHY_ORDER + ("unreached",) if why.get(k)]
+    parts += ["%d %s" % (v, _WHY_WORDS.get(k, k)) for k, v in why.items()
+              if k not in _WHY_ORDER and k != "unreached"]
+    return ", ".join(parts)
+
+
 def _relay_line(label: str, stats: dict, last) -> str:
     """'Carlos 11580 (his computer): 12 pushed · 4 left @ 3:40 PM'."""
     end = stats.get("end")
@@ -184,6 +223,9 @@ def _relay_line(label: str, stats: dict, last) -> str:
     extra = " · Indeed check up" if stats.get("walled") else ""
     if int(stats.get("unconfirmed") or 0):
         extra += " · :warning: %d didn't stick" % int(stats["unconfirmed"])
+    why = why_left_text(stats) if isinstance(end, int) and end > 0 else ""
+    if why:
+        extra += " · why: " + why
     return "%s%s (his computer): %s · %s left @ %s%s" % (
         flag, label, pushed, left, at, extra)
 

@@ -2928,6 +2928,31 @@ def _probe_attachment(page, a) -> None:
         _log("    [probe] failed: %s: %s" % (type(e).__name__, str(e)[:80]))
 
 
+# WHY THE ONES LEFT IN THE QUEUE WERE NOT PUSHED (Megan 2026-11-04: "I want
+# these alerts to say why the remaining ones didn't get pushed"). One count per
+# applicant this walk left behind, by reason; reset each walk, handed back in
+# LAST_WALK["why_left"] for the push report. Keys -> words: WHY_LEFT_WORDS.
+LEFT_WHY: dict = {}
+WHY_LEFT_WORDS = {
+    "no_number": "no phone number anywhere",
+    "indeed": "waiting on Indeed's check",
+    "time": "ran out of time this run",
+    "retext": "need a manual text",
+    "unstuck": "send didn't stick",
+    "refused": "AppStream wouldn't take the send",
+    "unread": "not read yet",
+}
+# Walk outcomes that leave the applicant in the queue, and the reason they mean.
+_OUTCOME_LEFT = {"flag_retext": "retext", "send_unconfirmed": "unstuck",
+                 "refused": "refused", "left": "refused", "no_button": "refused",
+                 "fill_failed": "refused", "unknown": "refused",
+                 "error": "refused"}
+
+
+def _why_left(cat: str) -> None:
+    LEFT_WHY[cat] = LEFT_WHY.get(cat, 0) + 1
+
+
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
     """No phone on file → first try to pull the real number off the applicant's
     Indeed resume (Megan's 'View resume' method, 2026-07-28). If found, fill it in
@@ -2957,6 +2982,8 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                 else f"blocked, retrying in <{_BLOCKED_RETRY_AFTER_MIN}min")
         _log(f"    already checked today ({_why}) — skip re-read: "
              f"{a.first_name} {a.last_name}")
+    _cat = ("no_number" if already_checked
+            else "indeed" if cooling_off else "unread")
     if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
             and not already_checked and not cooling_off and _cf_walled()):
         # Indeed's check is closed for this whole browser session (the first read
@@ -2965,6 +2992,7 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         # tick opens a fresh browser that usually gets straight in.
         _log(f"    [cf] session is walled — flagging unread (no attempt spent): "
              f"{a.first_name} {a.last_name}")
+        _cat = "indeed"
     elif (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
             and not already_checked and not cooling_off
             and not _time_for_a_resume_read()):
@@ -2973,6 +3001,7 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         # them properly rather than skip them as settled.
         _log(f"    no time left in this tick for a resume read — flagging "
              f"unread (next tick retries): {a.first_name} {a.last_name}")
+        _cat = "time"
     elif (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
             and not already_checked and not cooling_off):
         # THE ATTACHMENT ON THIS VERY PAGE COMES FIRST (2026-09-18). Megan, on an
@@ -3041,7 +3070,9 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                          f"and the number is there for the manual text: "
                          f"{a.first_name} {a.last_name}")
             return _outcome
+        _cat = "no_number"
         if _is_blocked_detail(detail):
+            _cat = "indeed"
             n = _mark_nophone_blocked(key, detail[len(_BLOCKED_PREFIX):])
             if n >= _BLOCKED_MAX_ATTEMPTS:
                 # In the audit offices a resume page that will not open, even
@@ -3135,6 +3166,7 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         a.email, a.job_board, a.position,
     ])
     _log(f"    flagged no-phone -> {config.NO_PHONE_FLAG_CSV}")
+    _why_left(_cat)
     return "flag_no_phone"
 
 
@@ -4043,6 +4075,7 @@ def run_walk(page, live: bool = False, limit: int = None,
     touch_cap = max(limit, getattr(config, "MAX_TOUCH_PER_RUN", 300))
     global _SETTLED_SKIPS
     _SETTLED_SKIPS = 0
+    LEFT_WHY.clear()
     actions = 0                 # live mutations (sent/removed) this run
     MUTATIONS = ("sent", "sent_override", "removed")
     # Fresh browser, fresh Cloudflare verdict: this walk opens its own Chrome, so
@@ -4291,8 +4324,13 @@ def run_walk(page, live: bool = False, limit: int = None,
     # icd_alerts/resume_push.py reads these and relays them instead -- that
     # is how the push report knows Carlos's computer is working.
     global LAST_WALK
+    _why = dict(LEFT_WHY)
+    for _o, _c in _OUTCOME_LEFT.items():
+        if counts.get(_o):
+            _why[_c] = _why.get(_c, 0) + int(counts[_o])
     LAST_WALK = {"start": _start_total, "end": _end_total,
-                 "processed": processed, "counts": dict(counts)}
+                 "processed": processed, "counts": dict(counts),
+                 "why_left": _why}
     _write_walk_diag(_start_total, _end_total,
                      f"{_cache_col} (+{_pending} blocked)" if _pending else _cache_col,
                      _NOPHONE_SKIPS, counts)

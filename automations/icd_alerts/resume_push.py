@@ -1202,6 +1202,7 @@ def _walk(page, live: bool, record: dict) -> dict:
             "unconfirmed": int((walk.get("counts") or {}).get(
                 "send_unconfirmed", 0)),
             "walled": bool(OAT._cf_walled()),
+            "why_left": dict(walk.get("why_left") or {}),
             "why": "" if rc == 0 else "the walk stopped (rc=%s)" % rc}
 
 
@@ -1304,6 +1305,7 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             "sent_run": int(out.get("sent") or 0), "sent_today": sent_today,
             "unconfirmed": int(out.get("unconfirmed") or 0),
             "walled": bool(out.get("walled")), "result": result,
+            "why_left": out.get("why_left") or {},
             "at": dt.datetime.now().strftime("%H:%M")}),
             log=_log, office_key=str(rec.get("office_key") or ""))
     except Exception:  # noqa: BLE001 -- the telling, never the work
