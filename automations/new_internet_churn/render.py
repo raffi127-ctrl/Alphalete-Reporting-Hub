@@ -39,6 +39,10 @@ PCT_SUB_W  = 60
 UNIT_SUB_W = 60    # widened so units like '69/2,768' aren't clipped
                    # (esp. the last column, which hit the image edge)
 
+# Optional 'Nov Tier | $ per sale' column at the right edge (tiers.TierColumn).
+TIER_COL_W = 150
+TIER_SUB_W = 60
+
 # Palette — orange (New Internet)
 TITLE_BG       = (234, 144, 60)
 TITLE_FG       = (255, 255, 255)
@@ -227,6 +231,26 @@ def _draw_goal_band(d, x: int, y: int, width: int, goal: dict,
            font=f_chip)
 
 
+def _impact_color(impact: str) -> Tuple[int, int, int]:
+    """Red = this tier loses money per sale, green = makes money, gray = $0."""
+    v = (impact or "").strip()
+    if not re.search(r"\d", v):
+        return (255, 255, 255)
+    if v.startswith(("-", "(")):
+        return RED
+    return GREEN if re.search(r"[1-9]", v) else (217, 217, 217)
+
+
+def _draw_tier_cells(d, cx: int, y: int, cell, bg, f_reg, f_bold) -> None:
+    tier, impact = cell
+    d.rectangle([cx, y, cx + TIER_SUB_W, y + ROW_H], fill=bg)
+    d.rectangle([cx + TIER_SUB_W, y, cx + TIER_COL_W, y + ROW_H],
+                fill=_impact_color(impact) if impact else bg)
+    d.text((cx + 6, y + 4), tier or "-", fill=TEXT, font=f_reg)
+    if impact:
+        d.text((cx + TIER_SUB_W + 6, y + 4), impact, fill=TEXT, font=f_bold)
+
+
 def _read_section(ws, section: dict, n_weeks: int) -> dict:
     """Read the rep block + headers + office avg for the given section,
     spanning A through the last week-pair we care about."""
@@ -362,16 +386,20 @@ def render_multi_week(
     title_text=None,
     show_subtitle: bool = True,
     title_fg=None,
+    tier_column=None,
 ) -> Path:
     """Render one section as a multi-week PNG. `section` is one of the
-    dicts find_sections() returns. `period` is '0-30' / '30' / etc."""
+    dicts find_sections() returns. `period` is '0-30' / '30' / etc.
+    `tier_column` (tiers.TierColumn) adds each owner's churn tier and its $ per
+    sale at the right; None draws the image exactly as before."""
     data = _read_section(ws, section, n_weeks)
     dates = data["dates"]
     office_avg = data["office_avg"]
     goal = data.get("goal")
     reps = data["reps"]
 
-    total_w = NAME_COL_W + WEEK_COL_W * n_weeks + PAD * 2
+    total_w = (NAME_COL_W + WEEK_COL_W * n_weeks + PAD * 2
+               + (TIER_COL_W if tier_column else 0))
     # Shorter title bar when the subtitle is suppressed (captainship email
     # drafts drop it; the Slack post keeps it).
     title_h = TITLE_H if show_subtitle else 36
@@ -417,6 +445,10 @@ def render_multi_week(
         tw = d.textlength(short, font=f11b)
         d.text((cx + (WEEK_COL_W - tw) / 2, y + 4), short, fill=TEXT, font=f11b)
         cx += WEEK_COL_W
+    if tier_column:
+        tw = d.textlength(tier_column.header, font=f11b)
+        d.text((cx + (TIER_COL_W - tw) / 2, y + 4), tier_column.header,
+               fill=TEXT, font=f11b)
     y += ROW_H
 
     # 3. Office Avg row
@@ -448,6 +480,9 @@ def render_multi_week(
         d.text((cx + 4, y + 8), "%", fill=COL_HEADER_FG, font=f11b)
         d.text((cx + PCT_SUB_W + 4, y + 8), "units", fill=COL_HEADER_FG, font=f11b)
         cx += WEEK_COL_W
+    if tier_column:
+        d.text((cx + 6, y + 8), "Tier", fill=COL_HEADER_FG, font=f11b)
+        d.text((cx + TIER_SUB_W + 4, y + 8), "$ per sale", fill=COL_HEADER_FG, font=f11b)
     y += HEADER_BAR_H
 
     if not reps:
@@ -479,6 +514,8 @@ def render_multi_week(
             if units:
                 d.text((cx + PCT_SUB_W + 4, y + 4), units, fill=TEXT, font=f11)
             cx += WEEK_COL_W
+        if tier_column:
+            _draw_tier_cells(d, cx, y, tier_column.for_owner(name), bg, f11, f11b)
         y += ROW_H
 
     img.save(out_path)

@@ -55,6 +55,11 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
         # columns to the right of the data — Eve 2026-07-29: the image should
         # grow a column per daily run instead, and stop at 7.
         filled = _dated_weeks(ws, sections)
+        if getattr(src, "fiber_tiers", False):
+            from automations.new_internet_churn import tiers as _tiers
+            column = _tiers.build_column(ws, today, logfn=logfn)
+            if column:
+                kw["tier_column"] = column
         rendered = 0
         for period in BUCKET_ORDER:
             sect = sections.get(period)

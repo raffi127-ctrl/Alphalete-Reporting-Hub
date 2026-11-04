@@ -209,6 +209,25 @@
   }
  },
  "reports": {
+  "fiber_churn_tiers_pull": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Build run: pulls each owner's Fiber churn tier from the Internet Only tracker and prints it. on_scheduler:false, runs only through `lucy rerun`.",
+   "display_name": "Fiber churn tiers pull",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.new_internet_churn.tiers"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": null
+  },
   "carlos_security_ledger": {
    "on_scheduler": true,
    "machine": "Lucy 2",

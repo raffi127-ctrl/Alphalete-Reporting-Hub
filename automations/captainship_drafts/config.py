@@ -322,6 +322,9 @@ class ChurnSource:
                                # 2026-08-19 and must keep the owner-colored
                                # New Internet look (Eve). Empty = the render
                                # module's own title.
+    fiber_tiers: bool = False  # add each owner's Fiber churn tier + $ per sale
+                               # to the images. Rafael's captainship only (Raf's
+                               # Loom 2026-10-29).
 
 
 @dataclass(frozen=True)
