@@ -286,6 +286,33 @@ def _tell_us(text: str) -> None:
     P._group_dm(list(O.APPROVERS), text)
 
 
+def _filter_message(service: str, address: str) -> str:
+    """The filter step, ready to paste to the owner (Eve 2026-11-04).
+
+    Only the Terminal line opens the filter by itself. An owner who added the
+    address by hand (Trang's office, 11/4) hears nothing once Gmail confirms, so
+    this notice carries the step. The link names the account: /u/0 is whichever
+    one that browser calls its first. The URLs stay in the forward modules, the
+    one place that knows each service's filter.
+    """
+    from urllib.parse import quote
+
+    from automations.icd_alerts import code_forward as F
+    if service == STERLING:
+        from automations.icd_alerts import sterling_forward as S
+        url = S.FILTER_URL
+    else:
+        url = F.FILTER_URL
+    link = url.replace("/mail/u/0/#", "/mail/?authuser=%s#" % quote(address, safe="@"))
+    return ("If they ran Lucy's line, their computer opens this by itself. If they "
+            "did it by hand, send them:\n\n"
+            "Open this link: %s\n"
+            "1. Click *Create filter*\n"
+            "2. Check *Forward it to* and pick %s\n"
+            "3. Click *Create filter* again\n\n"
+            "Let us know when it's done" % (link, F.REPORTING_INBOX))
+
+
 def record_forwards(book=None, *, send: bool = False,
                     now: Optional[dt.datetime] = None, tell=None,
                     log=print) -> List[Dict]:
@@ -578,7 +605,8 @@ def confirm_forwards(book=None, *, send: bool = False,
             log("FWD    %-10s Gmail forward confirmed" % office)
             _note(at, note, NOTE_CONFIRMED)
             _say("*%s*: Gmail's %s code forward is confirmed. It starts "
-                 "working once they save the filter." % (office, svc_name))
+                 "working once they save the filter.\n%s"
+                 % (office, svc_name, _filter_message(service, address)))
             done.append({"office": office, "status": "confirmed"})
         except Exception as e:  # noqa: BLE001 -- one row never costs the rest
             log("code forwards: row %d: %s" % (at, type(e).__name__))

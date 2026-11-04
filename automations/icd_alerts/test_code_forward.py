@@ -541,6 +541,20 @@ class LucyAcceptsGmailsMail(unittest.TestCase):
         self.assertEqual(self.accepted, [("https://x/vf", "owner@gmail.com")])
         self.assertIn(CA.NOTE_CONFIRMED, self.sheet.cells[(2, 4)])
 
+    def test_the_confirmed_notice_carries_the_filter_link_for_that_account(self):
+        self._go(self._book(address="a+b@gmail.com"), {"a+b@gmail.com": "https://x/vf"})
+        self.assertEqual(len(self.told), 1)
+        self.assertIn("/mail/?authuser=a%2Bb@gmail.com#create-filter/from="
+                      "security.info%40saraplus.com", self.told[0])
+        self.assertNotIn("/u/0/", self.told[0])
+        self.assertIn("Forward it to", self.told[0])
+        self.assertIn(CF.REPORTING_INBOX, self.told[0])
+
+    def test_sterlings_link_keeps_the_subject_that_protects_results(self):
+        text = CA._filter_message(CA.STERLING, "owner@gmail.com")
+        self.assertIn("authuser=owner@gmail.com#create-filter/from=noreply%40us.fadv.co", text)
+        self.assertIn("&subject=Authentication%20Request", text)
+
     def test_anyone_else_asking_to_forward_is_left_alone(self):
         self._go(self._book(), {"stranger@gmail.com": "https://x/vf"})
         self.assertEqual(self.accepted, [])
