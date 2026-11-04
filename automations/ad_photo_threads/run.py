@@ -384,6 +384,9 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
                                    lookup_on=config.appstream_ads_on(o["key"]))
             print(f"No-ad thread: {got['new']} added, {got['placed']} crossed out, "
                   f"{got['waiting']} still being looked up")
+            if config.PLACE_ORPHANS_NIGHTLY:
+                for who, what in unthreaded.place_found(day, channel, apply=True, cache=cache).items():
+                    print(f"  orphan {who}: {what}")
         except Exception as e:                # noqa: BLE001 — never costs the post
             print(f"no-thread note failed: {type(e).__name__}: {str(e)[:160]}")
     try:
@@ -555,6 +558,10 @@ def main(argv=None) -> int:
     ap.add_argument("--lookback", type=int, help="With --appstream-ads: days back (default 7).")
     ap.add_argument("--redo", action="store_true",
                     help="With --appstream-ads: look again at the ones already looked up and not found.")
+    mode.add_argument("--place-orphans", action="store_true",
+                      help="Open names of the no-ad thread from a closed week whose ad is known "
+                           "now: list them (--apply: post them in their thread, cross them out). "
+                           "--office all = every live office.")
     mode.add_argument("--sweep-old-notes", action="store_true",
                       help="Once (Eve 10/30): the old @channel no-ad notes of --office "
                            "(or all): landed people into their thread, the rest into "
@@ -622,6 +629,21 @@ def main(argv=None) -> int:
                                         limit=a.limit, lookback=a.lookback, redo=a.redo))
             except Exception as e:            # noqa: BLE001 -- one office never stops the rest
                 print(f"[appstream ads] {k}: failed: {type(e).__name__}: {str(e)[:200]}")
+        return 0
+    if a.place_orphans:
+        from automations.ad_photo_threads import config, unthreaded
+        day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
+        keys = ([o["key"] for o in config.OFFICES if o.get("live")]
+                if a.office in (None, "all") else [a.office])
+        for k in keys:
+            o = config.office(k)
+            config.use(o)
+            try:
+                for who, what in unthreaded.place_found(day, o["live_channel"], apply=a.apply,
+                                                        crop=not a.no_crop).items():
+                    print(f"[{k}] {who}: {what}")
+            except Exception as e:            # noqa: BLE001 -- one office never stops the rest
+                print(f"[{k}] failed: {type(e).__name__}: {str(e)[:200]}")
         return 0
     if a.sweep_old_notes:
         from automations.ad_photo_threads import appstream_ads, config, unthreaded

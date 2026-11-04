@@ -54,6 +54,9 @@ class Candidate:
     stars: str
     source: str
     ad: Optional[str] = None          # TitleBook key; None = couldn't tell
+    # Eve 11/4: this person's OTHER sheet row already has an ad (Jodens Hyacinthe
+    # 10/27 + "Jodens Hyacinthie" 10/28): "date|ad" of that row. Not an orphan.
+    already: str = ""
     images: List[dict] = field(default_factory=list)
     shared: bool = False              # images are the slot's group call
     reply_ts: Optional[str] = None
@@ -426,7 +429,45 @@ _CALL_LIST: Optional[Dict[tuple, List[tuple]]] = None
 
 
 def blank_title(s: str) -> bool:
-    return (s or "").strip().lower() in _PLACEHOLDER
+    # Jairo 10/28: "-----" is a blank too. Nothing but punctuation is no ad,
+    # so it gets the Call List + AppStream lookups like any other blank.
+    t = (s or "").strip().lower()
+    return t in _PLACEHOLDER or not re.search(r"\w", t)
+
+
+def lookup_ok(c: "Candidate") -> bool:
+    """Worth looking up before saying it has no ad (Eve 11/4: cross everything
+    first, alert only after). A typed title that fits no ad counts too. A list
+    office's typed title is a known ad off its list, so only its blanks do."""
+    return blank_title(c.title_raw) or not getattr(config, "TITLE_ONLY", None)
+
+
+# Same person typed twice: this close, within SAME_PERSON_DAYS.
+SAME_PERSON_RATIO = 0.88
+SAME_PERSON_DAYS = 14
+
+
+def same_person_row(c: "Candidate", day: dt.date, tabs: Dict[str, List[Dict[str, str]]],
+                    book: TitleBook) -> str:
+    """ "date|ad" of another sheet row of this person that has an ad, else "". """
+    import difflib
+    me = _fold(c.name)
+    if len(me.split()) < 2:
+        return ""
+    for rows in tabs.values():
+        for r in rows:
+            other = _fold(r.get(config.COL_NAME, ""))
+            d = _parse_date(r.get(config.COL_DATE, ""))
+            if not other or not d or abs((d - day).days) > SAME_PERSON_DAYS:
+                continue
+            if d == day and other == me:
+                continue              # the row itself
+            if other[:1] != me[:1] or difflib.SequenceMatcher(None, me, other).ratio() < SAME_PERSON_RATIO:
+                continue
+            ad = book.resolve(r.get(config.COL_TITLE, ""))
+            if ad:
+                return f"{d.isoformat()}|{ad}"
+    return ""
 
 
 def _call_list() -> Dict[tuple, List[tuple]]:
@@ -533,7 +574,11 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
                                      "images": imgs, "ts": msg["ts"],
                                      "text": msg.get("text", "")})
 
-    blank = [c for c in rep.candidates if c.ad is None and blank_title(c.title_raw)]
+    for c in rep.candidates:
+        if c.ad is None:
+            c.already = same_person_row(c, day, tabs, book)
+    blank = [c for c in rep.candidates
+             if c.ad is None and not c.already and lookup_ok(c)]
     if blank:
         oids = {s["office_id"] for s in sources if s.get("office_id")}
         try:

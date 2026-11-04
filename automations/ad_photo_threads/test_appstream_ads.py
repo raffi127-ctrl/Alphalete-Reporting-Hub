@@ -33,6 +33,12 @@ class ReportRowsTests(unittest.TestCase):
         self.assertEqual(aa.ad_of(rows, "Yanuleidy Acuna"), ["AT&T Team Member, Brandon, FL"])
         self.assertEqual(aa.ad_of(rows, "Carmelo Arias"), [])
 
+    def test_close_spelling_only_one_part_off(self):
+        rows = [["Jodens", "Hyacinthe", "", "", "", "", "", "AT&T Team Member"]]
+        self.assertEqual(aa.ad_of(rows, "Jodens Hyacinthie"), [])
+        self.assertEqual(aa.ad_of_close(rows, "Jodens Hyacinthie"), ["AT&T Team Member"])
+        self.assertEqual(aa.ad_of_close(rows, "Jordan Hyacinthie"), [])
+
     def test_near_names(self):
         rows = [self.row("Howard", "Barbour", "A"), self.row("Jim", "Barber", "B"),
                 self.row("Ann", "Lee", "C")]

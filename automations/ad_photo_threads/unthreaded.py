@@ -19,6 +19,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from automations.ad_photo_threads import collect, config, post
 
 LOOKBACK_DAYS = 7
+PLACE_DAYS = 45    # how far back place_found picks up an open name
 _blank = collect.blank_title     # a blank title the Call List couldn't fill either
 
 # Eve 10/29: each new reply in the "no ad" thread tags the recruiting team.
@@ -48,7 +49,8 @@ def find(day: dt.date, *, build: Optional[Callable] = None, cl=None,
         if d.weekday() not in config.POST_WEEKDAYS:
             continue
         rep = build(d, cl=cl, cache=cache)
-        out += [(d, c) for c in rep.candidates if c.ad is None and not _blank(c.name)]
+        out += [(d, c) for c in rep.candidates
+                if c.ad is None and not c.already and not _blank(c.name)]
     return out
 
 
@@ -58,7 +60,7 @@ def _key(d: dt.date, c) -> str:
 
 def still_trying(d: dt.date, c, ch_state: dict, lookup_on: bool) -> bool:
     """A blank Ad Title AppStream hasn't given up on yet: not said yet."""
-    if not lookup_on or not _blank(c.title_raw):
+    if not lookup_on or not collect.lookup_ok(c):
         return False
     from automations.ad_photo_threads import appstream_ads
     return not appstream_ads.gave_up(ch_state, appstream_ads.key(d, c.name))
@@ -123,7 +125,9 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
     new = [(d, c) for d, c in give_up if _key(d, c) not in said]
     lines = [line(d, c, title_only) for d, c in new]
     # Said, still in the window, no longer missing = it landed on its ad.
-    cutoff = (day - dt.timedelta(days=lookback)).isoformat()
+    # Only this week's: the evening refresh posts this week by itself. A closed
+    # week's is crossed out by place_found, once it's really in its thread.
+    cutoff = max(day - dt.timedelta(days=lookback), post.week_monday(day)).isoformat()
     now_missing = {_key(d, c) for d, c in missing}
     placed = [k for k in said if k >= cutoff and k not in now_missing]
     text = reply_text(day, lines) if lines else ""
@@ -157,6 +161,78 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
     slot["replies"] = {k: v for k, v in replies.items() if any(r[0] >= old for r in v)}
     slot["said"] = [k for k in slot.get("said") or [] if k >= old]
     post._save_state(state)
+    return out
+
+
+def _strike(cl, channel: str, slot: dict, keys) -> None:
+    """Cross these keys out in the replies that named them."""
+    for rts, rows in (slot.get("replies") or {}).items():
+        hit = [r for r in rows if r[0] in keys and not r[1].startswith("~")]
+        if not hit:
+            continue
+        for r in hit:
+            r[1] = _struck(r[1])
+        cl.chat_update(channel=channel, ts=rts,
+                       text=reply_text(dt.date.fromisoformat(rows[0][2]), [r[1] for r in rows]))
+
+
+def place_found(day: dt.date, channel: str, *, apply: bool = False, cl=None, build=None,
+                cache: Optional[dict] = None, crop: bool = True) -> Dict[str, str]:
+    """Eve 11/4: an open name from a CLOSED week whose ad is known by now. The
+    nightly only posts the current week, so it goes into the thread its ad
+    already has (weekly.add_to_week: never opens one) and only then is crossed
+    out. Their other row already on an ad: just crossed out. Lists only unless
+    `apply`. {"date name": what happened}."""
+    from automations.ad_photo_threads import weekly
+    cl = cl or collect._client()
+    build = build or collect.build
+    cache = {} if cache is None else cache
+    slot = post._load_state().get(channel, {}).get("unplaced") or {}
+    monday = post.week_monday(day).isoformat()
+    since = (day - dt.timedelta(days=PLACE_DAYS)).isoformat()
+    by_day: Dict[str, List[str]] = {}
+    for rows in (slot.get("replies") or {}).values():
+        for r in rows:
+            if since <= r[0][:10] < monday and not r[1].startswith("~"):
+                by_day.setdefault(r[0][:10], []).append(r[0][11:])
+    out: Dict[str, str] = {}
+    done = set()
+    is_weekly = weekly.is_weekly(channel)
+    for d_iso, names in sorted(by_day.items()):
+        d = dt.date.fromisoformat(d_iso)
+        rep = build(d, cl=cl, cache=cache)
+        people = {c.name.strip().lower(): c for c in rep.candidates}
+        place = []
+        for n in names:
+            c = people.get(n)
+            if c is None:
+                out[f"{d_iso} {n}"] = "not on the sheet that day: stays open"
+            elif c.already and not c.ad:
+                out[f"{d_iso} {n}"] = f"already on its ad ({c.already}): only crossed out"
+                done.add(f"{d_iso}|{n}")
+            elif c.ad:
+                place.append(c.name.strip())
+            else:
+                out[f"{d_iso} {n}"] = "ad still unknown: stays open"
+        if not place:
+            continue
+        if is_weekly:
+            got = weekly.add_to_week(place, d, channel, apply=apply, cl=cl, crop=crop)
+        elif apply:
+            got = post.add_photos(rep, channel, place, cl=cl)
+        else:
+            got = {n: f"would add to its ad thread ({people[n.lower()].ad})" for n in place}
+        for n, what in got.items():
+            out[f"{d_iso} {n}"] = what
+            if apply and what.startswith(("added", "Added")):
+                done.add(f"{d_iso}|{n.strip().lower()}")
+    if apply and done:
+        state = post._load_state()
+        fresh = state.setdefault(channel, {}).setdefault("unplaced", {})
+        try:
+            _strike(cl, channel, fresh, done)
+        finally:
+            post._save_state(state)
     return out
 
 

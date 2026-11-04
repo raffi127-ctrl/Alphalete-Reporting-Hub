@@ -34,8 +34,9 @@ MIN_PREFIX = 12       # shorter cut-offs ("at&t role") say too little to fold
 
 # Colten's interviewers (10/11) paste Indeed's whole email subject:
 # "[Action required] New application for AT&T Sales Consultant - Kendall, FL".
+# Also with its first letter lost in the paste (Carlos 10/27: "ew application for ...").
 _LEAD_JUNK = re.compile(
-    r"^\s*(?:\[\s*action required\s*\]\s*)?(?:new application for|indeed\s*/)?\s*", re.I)
+    r"^\s*(?:\[\s*action required\s*\]\s*)?(?:n?ew application for|indeed\s*/)?\s*", re.I)
 
 
 # The company tacked on at the end (Carlos 9/23: "Event Marketing & Sales

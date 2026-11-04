@@ -261,6 +261,10 @@ class TitleOnlyTests(unittest.TestCase):
         self.assertNotEqual(self.book.resolve("Entry Level Sales, Denton, TX"),
                             self.book.resolve("Entry Level Sales Manager, Denton, TX"))
 
+    def test_new_application_with_its_first_letter_lost(self):
+        self.assertEqual(norm("ew application for AT&T Sales Agent, Arlington, TX"),
+                         norm("AT&T Sales Agent, Arlington, TX"))
+
     def test_blank_title_still_no_thread(self):
         self.assertIsNone(self.book.resolve("   "))
 

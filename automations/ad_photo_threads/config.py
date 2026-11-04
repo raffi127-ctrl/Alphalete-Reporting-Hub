@@ -100,6 +100,12 @@ def unthreaded_on(key: str) -> bool:
 APPSTREAM_ADS_OFFICES: object = "all"     # Eve 10/24: on, every live office (verified on Drew 10/24)
 
 
+# Eve 11/4: names from a closed week whose ad turned up go into their thread on
+# their own each evening (unthreaded.place_found). Off until Eve sees the first
+# batch; by hand meanwhile: --place-orphans [--apply].
+PLACE_ORPHANS_NIGHTLY = False
+
+
 def appstream_ads_on(key: str) -> bool:
     return APPSTREAM_ADS_OFFICES == "all" or key in APPSTREAM_ADS_OFFICES
 

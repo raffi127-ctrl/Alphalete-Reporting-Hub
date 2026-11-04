@@ -76,8 +76,15 @@ class CheckTests(unittest.TestCase):
         got = self.run_check(state, [cand("Jamar Gray", "")], cl, lookup_on=True)
         self.assertTrue(got["posted"])
 
-    def test_typed_title_goes_in_right_away(self):
+    def test_typed_title_waits_for_the_lookup(self):
         got = self.run_check({}, [cand("Ana", "Unknown ad")], self.client(), lookup_on=True)
+        self.assertFalse(got["posted"])
+        self.assertEqual(got["waiting"], 1)
+
+    def test_list_office_typed_title_goes_in_right_away(self):
+        from automations.ad_photo_threads import config
+        with mock.patch.object(config, "TITLE_ONLY", {"x": ["y"]}):
+            got = self.run_check({}, [cand("Ana", "Unknown ad")], self.client(), lookup_on=True)
         self.assertTrue(got["posted"])
 
     def test_placed_later_is_crossed_out(self):
@@ -98,6 +105,72 @@ class CheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrphanTests(unittest.TestCase):
+    """Eve 11/4: cross everything first; the alert only after."""
+    TODAY = dt.date(2026, 11, 4)         # Wednesday; 10/28 is a closed week
+    OLD = dt.date(2026, 10, 28)
+
+    def state(self):
+        rows = [[f"{self.OLD.isoformat()}|lux t", "• Lux T (10/28): x", self.OLD.isoformat()],
+                [f"{self.OLD.isoformat()}|jo h", "• Jo H (10/28): x", self.OLD.isoformat()],
+                [f"{self.OLD.isoformat()}|no one", "• No One (10/28): x", self.OLD.isoformat()]]
+        return {"C1": {"unplaced": {"ts": "1.0", "said": [r[0] for r in rows],
+                                    "replies": {"2.0": rows}}}}
+
+    def run_place(self, state, apply):
+        lux, jo, nobody = cand("Lux T", "-", ad="sales"), cand("Jo H", ""), cand("No One", "")
+        jo.already = "2026-10-27|team member"
+        rep = SimpleNamespace(candidates=[lux, jo, nobody])
+        cl = mock.Mock()
+        from automations.ad_photo_threads import weekly
+        add = mock.Mock(return_value={"Lux T": "added to 'sales' (1 photo(s))"})
+        with mock.patch.object(unthreaded.post, "_load_state", lambda: state), \
+                mock.patch.object(unthreaded.post, "_save_state", lambda s: None), \
+                mock.patch.object(weekly, "is_weekly", lambda c: True), \
+                mock.patch.object(weekly, "add_to_week", add):
+            got = unthreaded.place_found(self.TODAY, "C1", apply=apply, cl=cl,
+                                         build=lambda d, cl=None, cache=None: rep)
+        return got, cl, add
+
+    def test_only_found_ones_get_crossed_out(self):
+        state = self.state()
+        got, cl, add = self.run_place(state, True)
+        add.assert_called_once()
+        rows = state["C1"]["unplaced"]["replies"]["2.0"]
+        self.assertTrue(rows[0][1].startswith("~"))     # posted in its thread
+        self.assertTrue(rows[1][1].startswith("~"))     # already on an ad
+        self.assertFalse(rows[2][1].startswith("~"))    # still nobody knows
+        self.assertIn("stays open", got["2026-10-28 no one"])
+        cl.chat_update.assert_called_once()
+
+    def test_without_apply_nothing_changes(self):
+        state = self.state()
+        _, cl, _ = self.run_place(state, False)
+        cl.chat_update.assert_not_called()
+        self.assertFalse(state["C1"]["unplaced"]["replies"]["2.0"][0][1].startswith("~"))
+
+    def test_typed_title_waits_for_the_lookup_too(self):
+        self.assertTrue(unthreaded.still_trying(self.OLD, cand("Ana B", "Sales ???"), {}, True))
+
+    def test_already_placed_row_is_no_orphan(self):
+        c = cand("Jo H", "")
+        c.already = "2026-10-27|team member"
+        build = lambda d, cl=None, cache=None: SimpleNamespace(candidates=[c])  # noqa: E731
+        self.assertEqual(unthreaded.find(self.TODAY, build=build), [])
+
+
+class SamePersonTests(unittest.TestCase):
+    def test_other_spelling_nearby_with_an_ad(self):
+        from automations.ad_photo_threads import collect, config
+        rows = [{config.COL_NAME: "Jodens Hyacinthe", config.COL_DATE: "10/27/2026", config.COL_TITLE: "Team"},
+                {config.COL_NAME: "Jodens Hyacinthie", config.COL_DATE: "10/28/2026", config.COL_TITLE: ""}]
+        book = SimpleNamespace(resolve=lambda t: "team" if t else None)
+        c = cand("Jodens Hyacinthie", "")
+        self.assertEqual(collect.same_person_row(c, dt.date(2026, 10, 28), {"t": rows}, book),
+                         "2026-10-27|team")
+        self.assertEqual(collect.same_person_row(c, dt.date(2026, 12, 28), {"t": rows}, book), "")
 
 
 class CallListTests(unittest.TestCase):
@@ -137,6 +210,7 @@ class CallListTests(unittest.TestCase):
         from automations.ad_photo_threads import collect
         self.assertTrue(all(collect.blank_title(s) for s in ["", " ", "-", "N/A", "none"]))
         self.assertFalse(collect.blank_title("AT&T Sales Agent"))
+        self.assertTrue(collect.blank_title("-----"))
 
 
 class SweepOldNotesTests(unittest.TestCase):
