@@ -208,6 +208,19 @@ effect came from the human bookings (67.4% vs 30.8%, p=0.018), not the AI
 (54.5% vs 52.5%, p=0.83). **The AI did not show the same-day lift the
 booking-lead-time analysis predicted.** One dirty day — do not act on it.
 
+**This matches an independent finding.** The audit in
+[appstream-audit-findings.md](appstream-audit-findings.md) tested the related
+question — whether the AI *offering* a same-day slot lifts attendance — over
+501 AI offer messages across 11280 and 11580, 19–23 Oct: **47.4% same-day
+offered vs 47.0% next-day only, p=1.00.** Different week, different offices,
+different measure, same answer: no same-day lift from the AI. Two null results
+on one assumption is worth taking seriously, though both are single-week
+samples.
+
+Note what this does *not* overturn: the 180-minute offered buffer still keeps
+the AI out of the sub-3-hour band, and the 300-minute accepted buffer is
+justified on reply timing, not on show rate.
+
 **The question still unanswered:** retention when we book someone *the same day
 we first talk to them*. That needs first-contact date joined to booking and
 show-up; the calendar has no app-created column and the applicant list would not
