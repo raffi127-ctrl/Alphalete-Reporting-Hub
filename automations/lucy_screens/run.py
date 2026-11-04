@@ -32,7 +32,10 @@ PHOTO_PAGE = REPO / "output" / "lucy_screens" / "photo.html"
 PAGES = {ALERTS: ALERTS_PAGE, RUNS: RUNS_PAGE, PHOTO: PHOTO_PAGE}
 OPENED = REPO / "output" / "lucy_screens" / "opened.txt"
 SCREENS = {
-    "Lucy 1": "https://lucyeco.streamlit.app/lucyeco",
+    # TEST 2026-11-03 ~20:05 CT (Megan: "figure out what is hitting this so
+    # much"): Lucy 1 off the LucyEco page while the app's health is measured
+    # without it. Put the URL back once the result is in.
+    "Lucy 1": PHOTO,   # was "https://lucyeco.streamlit.app/lucyeco"
     "Lucy 2": PHOTO,
     "Lucy 3": RUNS,
     "Lucy 4": ALERTS,
