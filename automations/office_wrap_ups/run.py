@@ -195,7 +195,7 @@ def run(office_keys: Optional[List[str]] = None, day: Optional[dt.date] = None,
 
     # 2b. Per-rep ongoing cancel rate — ONE all-office pull covers every rep
     #     (fails open: {} just omits the cancel %).
-    from automations.office_wrap_ups import cancel_rates
+    from automations.rc_contact_sync_raf import cancel_rates
     cancel_map = cancel_rates.fetch_map(log=log)
 
     # 3. Each office: filter to the target day, check, post.

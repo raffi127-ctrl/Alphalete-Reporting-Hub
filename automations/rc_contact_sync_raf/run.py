@@ -155,12 +155,20 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
     title = C.SLACK_HEADER
     # Per-rep streak + weekly count (Dylan 2026-11-02). Record this run on the
     # report's channel (even on an all-messaged day, so streaks break right).
-    from automations.rc_contact_sync_raf import history
+    from automations.rc_contact_sync_raf import history, cancel_rates
     flagged = sorted({titlecase_name(m.get("rep", ""))
                       for m in missing if titlecase_name(m.get("rep", ""))})
     rep_stats = history.update_and_stats(C.CHANNELS[0], flagged, day,
                                          persist=not dry_run)
-    body = missing_names_reply(missing, total, rep_stats=rep_stats)
+    # Per-rep ongoing cancel rate (Dylan 2026-11-04 — Raf's office was missing
+    # it). Fails open: {} just omits the cancel %.
+    cancel_map = cancel_rates.fetch_map(log=log)
+    unmatched = [r for r in flagged if r not in cancel_map]
+    if flagged and cancel_map and unmatched:
+        log("  no cancel %% for: %s (name mismatch vs the cancel view?)"
+            % ", ".join(unmatched))
+    body = missing_names_reply(missing, total, rep_stats=rep_stats,
+                               cancel_map=cancel_map)
     if prefix:
         body = prefix + "\n" + body
     # Tag Dylan so the morning post is readily visible to him (Dylan 2026-10-21).
@@ -299,6 +307,13 @@ def probe(day: Optional[dt.date] = None, log=print) -> int:
                                          c.get("business", "")])]
         log("would flag %d of %d customer(s) as un-texted" %
             (len(missing), len(customers)))
+        # Verify the cancel-rate pull works here (Lucy 1) + the reps match.
+        from automations.rc_contact_sync_raf import cancel_rates
+        cmap = cancel_rates.fetch_map(log=log)
+        flagged = sorted({titlecase_name(c.get("rep", ""))
+                          for c in missing if titlecase_name(c.get("rep", ""))})
+        for rep in flagged:
+            log("   %-26s cancel=%s" % (rep, cmap.get(rep, "— (NO MATCH)")))
     print("=== done ===", flush=True)
     return 0
 
