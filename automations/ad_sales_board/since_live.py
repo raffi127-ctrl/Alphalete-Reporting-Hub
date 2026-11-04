@@ -95,10 +95,22 @@ def _live_ads(sess, today):
         if d is None or (today - d).days > MAX_AGE_DAYS:
             continue
         city = re.sub(r"\s\d{5}$", "", str(loc)).strip()
-        key = (str(title).strip(), city)
-        if key not in best or d < best[key]:
-            best[key] = d
-    return [(t, c, d) for (t, c), d in best.items()]
+        t = str(title).strip()
+        # Family key is the CANONICAL title+city, not the raw strings. The
+        # tab holds near-duplicate spellings of one family ('Verizon Retail
+        # Associate (Bilingual Spanish Required)' on Iron vs '...required)'
+        # on Pinnacle, same Dallas city, 2026-11-04): raw keys made them two
+        # registry entries that canon-compare equal, so claim_registry_ad saw
+        # two exact candidates for every one of that ad's groups and returned
+        # None — the family vanished from 'SL Funnel'. Display spelling stays
+        # first-seen (the tab is newest-week-first), the date stays oldest.
+        key = (parse._canon_text(t), parse._canon_text(city))
+        cur = best.get(key)
+        if cur is None:
+            best[key] = (t, city, d)
+        elif d < cur[2]:
+            best[key] = (cur[0], cur[1], d)
+    return list(best.values())
 
 
 def _ensure_tab(sess, title, n_rows=200):
