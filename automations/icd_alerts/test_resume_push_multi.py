@@ -66,8 +66,10 @@ class MultiOffice(unittest.TestCase):
         self.assertFalse(ok)
 
     def test_stats_rows_split_per_office(self):
-        self.assertEqual(RP.stats_key(RAF, "23965"), "raf-23965")
-        self.assertEqual(RP.stats_key(KHALIL, "11901"), "khalil-nds")
+        # The key stays the enrolled one (the relay refuses any other); the
+        # office number rides in the summary.
+        self.assertEqual(RP.stats_summary(RAF, "23965"), "push stats 23965")
+        self.assertEqual(RP.stats_summary(KHALIL, "11901"), "push stats")
 
     def test_single_office_machines_unchanged(self):
         with mock.patch.object(RP, "push_record", lambda: KHALIL):

@@ -59,9 +59,12 @@ OFFICES = [
     ("relay:khalil-nds:11901", "Khalil 11901",       "Khalil's computer"),
     # 14733 from COLTEN'S OWN COMPUTER since 2026-11-02.
     ("relay:colten:14733",  "Colten 14733",          "Colten's computer"),
-    ("OAT Walk Diag 11280", "Raf main 11280",        "Lucy 4"),
-    ("OAT Walk Diag 23965", "Raf 2nd funnel 23965",  "Lucy 4"),
-    ("OAT Walk Diag 24065", "Raf 24065",             "Lucy 4"),
+    # Raf's three from RAF'S OWN COMPUTER since 2026-11-03 (they left Lucy 4).
+    # One computer, three offices: each relays its own row, told apart by the
+    # office number in the summary (resume_push.stats_summary).
+    ("relay:raf:11280",     "Raf main 11280",        "Raf's computer"),
+    ("relay:raf:23965",     "Raf 2nd funnel 23965",  "Raf's computer"),
+    ("relay:raf:24065",     "Raf 24065",             "Raf's computer"),
 ]
 
 STALE_AFTER_MIN = 120
@@ -133,9 +136,11 @@ def _paused_offices() -> set:
     return out
 
 
-def _relay_stats(book, office_key: str, today: str):
+def _relay_stats(book, office_key: str, today: str, office: str = ""):
     """(numbers dict, last-run datetime) from the office computer's newest
-    stats row today, or (None, None). Never raises."""
+    stats row today, or (None, None). Never raises. A computer with several
+    offices (Raf's) files one row per office, "push stats <office>"; only
+    that office's row -- or a plain "push stats" row naming it -- counts."""
     import json
     try:
         rows = book.worksheet(RELAY_FAULTS_TAB).get_all_values()
@@ -146,6 +151,9 @@ def _relay_stats(book, office_key: str, today: str):
         if len(r) < 8 or r[2] != RELAY_STATS_STAGE:
             continue
         if (r[0] or "").strip().lower() != office_key:
+            continue
+        summ = (r[3] or "").strip()
+        if office and summ not in ("push stats", "push stats %s" % office):
             continue
         day = str(r[1]).strip()
         if day != today and not day.startswith(today):
@@ -158,6 +166,8 @@ def _relay_stats(book, office_key: str, today: str):
             stats = json.loads(r[4] or "{}")
         except Exception:  # noqa: BLE001
             stats = {}
+        if office and str(stats.get("office") or office) != office:
+            continue
         if best is None or (last and (best[1] is None or last > best[1])):
             best = (stats, last)
     return best if best else (None, None)
@@ -197,7 +207,8 @@ def build_report(unreadable=None) -> str:
                 except Exception as e:  # noqa: BLE001
                     relay_book = False
                     print("relay workbook unreadable: %s" % type(e).__name__)
-            stats, last = (_relay_stats(relay_book, tab.split(":")[1], today)
+            stats, last = (_relay_stats(relay_book, tab.split(":")[1], today,
+                                        _office_id(tab))
                            if relay_book else (None, None))
             if stats is None:
                 if relay_book is False and unreadable is not None:

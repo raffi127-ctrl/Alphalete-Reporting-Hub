@@ -142,11 +142,22 @@ class TheLine(unittest.TestCase):
         _fill._client = lambda: _Client()
         pr.dt = _DT
         pr._paused_offices = lambda: set(paused)
+        # Raf's three pushed from Lucy 4 when these were written; they left
+        # for his own computer 2026-11-03 (test_relay_multi covers that). The
+        # Lucy-side lines -- diag tabs, paused, the silent-machine page -- are
+        # pinned on that layout so they keep guarding the Lucy path.
+        real_offices = pr.OFFICES
+        pr.OFFICES = [o for o in real_offices if not o[0].startswith(
+            "relay:raf:")] + [
+            ("OAT Walk Diag 11280", "Raf main 11280",        "Lucy 4"),
+            ("OAT Walk Diag 23965", "Raf 2nd funnel 23965",  "Lucy 4"),
+            ("OAT Walk Diag 24065", "Raf 24065",             "Lucy 4")]
         try:
             return pr.build_report()
         finally:
             _fill._client, pr.dt = real_client, real_dt
             pr._paused_offices = real_paused
+            pr.OFFICES = real_offices
 
     def test_exact_message(self):
         got = self._render(dt.datetime(2026, 9, 24, 20, 37))

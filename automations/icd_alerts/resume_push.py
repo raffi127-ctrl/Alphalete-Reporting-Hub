@@ -1259,14 +1259,18 @@ def _note_wall(walled: bool) -> None:
 STATS_STAGE = "probe-push-stats"
 
 
-def stats_key(record: dict, office: Optional[str]) -> str:
-    """The relay row's office key for one office's numbers. A machine with
-    several offices files each under "<key>-<office>" (raf-11280), so the
-    relay's upsert keeps three rows instead of overwriting one."""
-    key = str((record or {}).get("office_key") or "")
+def stats_summary(record: dict, office: Optional[str]) -> str:
+    """The relay row's summary for one office's numbers. The relay upserts on
+    (office key, day, stage, summary), so a machine with several offices puts
+    the office number in the SUMMARY ("push stats 11280") and keeps three rows.
+
+    NOT in the office key: the relay only accepts a key that is enrolled, and
+    "raf-11280" is not -- every stats row from Raf's computer was refused "not
+    authorised" on 11/3 and the push report showed nothing (Megan: "check the
+    push report bug now")."""
     if len(office_ids(record)) > 1 and office:
-        return "%s-%s" % (key, office)
-    return key
+        return "push stats %s" % office
+    return "push stats"
 
 
 def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
@@ -1277,7 +1281,9 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             await_text = dict(AT.LAST_RESULT)
         except Exception:  # noqa: BLE001
             await_text = {}
-        R.report_fault(STATS_STAGE, "push stats", json.dumps({
+        rec = push_record()
+        R.report_fault(STATS_STAGE, stats_summary(rec, out.get("office")),
+                       json.dumps({
             "await": await_text,
             "office": out.get("office"), "live": bool(live),
             "start": out.get("queue_start"), "end": out.get("queue_end"),
@@ -1285,7 +1291,7 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             "unconfirmed": int(out.get("unconfirmed") or 0),
             "walled": bool(out.get("walled")), "result": result,
             "at": dt.datetime.now().strftime("%H:%M")}),
-            log=_log, office_key=stats_key(push_record(), out.get("office")))
+            log=_log, office_key=str(rec.get("office_key") or ""))
     except Exception:  # noqa: BLE001 -- the telling, never the work
         pass
 
