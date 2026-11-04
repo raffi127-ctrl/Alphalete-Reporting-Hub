@@ -1174,5 +1174,57 @@
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
     "notes": "wired by hand 2026-11-03 (Megan: 'Aiden Atoori is enrolling today in ECO - he's NDS - let's dry run his metrics and wire up weather and trackers'). Atoori Management, Inc.; Tableau NDS-SN owner 'AIDEN ATOORI [atoori management, inc.]' (4,696 ORDER LOG measure rows in 45 days; the CSV carries a stray \\r inside the name, _norm_owner drops it). Referred by Jose Velasquez. Slack U07Q243HP7Z (aiden.originmgmt@gmail.com), Mac mini, Pacific. Sales zips 93535/93033/91350/91342/92336/91311 = Lancaster / Oxnard / Santa Clarita / Sylmar / Fontana: north LA county, weather city santa_clarita. Five NDS boards like joseph-delgado (no knocks board here: his ECO knock board will post in the same room). No Slack channel yet -- he is making one in the AO workspace; held on Megan's DM until then. Sheet 'Aiden Atoori - Lucy Metrics' 1LDgR5dYUc0TKnBcV23t8xN1UiQUzahu2oZ2naVu4Bwo copied from the Master Metrics Templates, writer alphaletereporting@. Scheduler OFF until the dry run shows data on every board. | 2026-11-03 15:05 CT: Lucy 4 dry run rerun-2026-11-03-140756 green 7/7 (churn 108 reps, rep activations 946 rows, activation rate 77 reps, order log 946 rows / 45 rep tabs, cancels proven zero, disconnects 2). Megan: his room is #odysseyy (C0CFFFDKTAL, private, made by Aiden 11/03); iMessage group 'JDS meet Lucy'. Channel set, scheduler ON. | 2026-11-03 17:30 CT: Megan: his room is the SECOND #odysseyy, C0CES186PGC (C0CFFFDKTAL was the first one he made)."
+  },
+  {
+    "key": "sahil",
+    "report_id": "sahil_metrics",
+    "label": "Sahil's Local Office",
+    "owner": "Sahil Multani",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "sheet_id": "1F3pgU6-ITGh4Z5Vq9hcKyOGtCd5D6gejd2uk52jEzpI",
+    "knocks_office": "Sahil Multani",
+    "ov_account": "20490",
+    "owner_office": "",
+    "business_name": "M Coast, Inc",
+    "website": "",
+    "header_label": "Sahil Multani",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-11-04 (Eve: Sahil Multani joining Lucy ECO, dry run). AT&T D2D like steve/omar (OwnerVille/AppStream 20490, M Coast, Inc, Raleigh NC -- Eastern), all 11 D2D boards. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Sahil Multani - Lucy Metrics' copied from the Master Metrics Templates, shared Editor with alphaletereporting@ (Lucy 4). Schedule off until the Lucy 4 dry run shows data on every board.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

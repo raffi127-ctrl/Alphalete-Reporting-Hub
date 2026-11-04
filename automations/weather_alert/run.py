@@ -71,6 +71,8 @@ CITIES = {
     "austin": ("Austin, TX", 30.2672, -97.7431, "America/Chicago"),
     "denver": ("Denver, CO", 39.7392, -104.9903, "America/Denver"),
     "abilene": ("Abilene, TX", 32.4487, -99.7331, "America/Chicago"),
+    # sahil / M Coast: Raleigh NC (captainship_night_knocks.zones), 2026-11-04.
+    "raleigh": ("Raleigh, NC", 35.7796, -78.6382, "America/New_York"),
     "grandville": ("Grandville / Grand Rapids, MI", 42.9095, -85.7631, "America/Detroit"),
     "wilkes_barre": ("Wilkes-Barre, PA", 41.2459, -75.8813, "America/New_York"),
     "memphis": ("Memphis, TN", 35.1495, -90.0490, "America/Chicago"),
@@ -144,6 +146,7 @@ METRICS_CITY = {
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
     "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
     "aiden": "los_angeles",     # Atoori Management (NDS), Los Angeles (Megan 2026-11-03); Pacific; #odysseyy
+    "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
     "atef": "denver",           # Domin8 Acquisitions, Denver CO (reps: "whole denver office"); Mountain
     "samuel": "orlando",        # Dynasty Growth Group: 590 of 846 NDS orders (8/31-10/4) installed in Kissimmee/Orlando; OV access to 23751 pending for the street address
