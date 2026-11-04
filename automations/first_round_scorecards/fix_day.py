@@ -41,7 +41,7 @@ def _retry(call):
             if attempt == 5:
                 raise
             print(f"  retry {attempt + 1}: {type(exc).__name__}")
-            time.sleep(5 * (attempt + 1))
+            time.sleep(15 * (attempt + 1))
 
 
 def _clock(when: Optional[dt.datetime]) -> str:
@@ -115,12 +115,37 @@ def fix_doc(docs_api, svc, d: Dict, name: str, day: dt.date, time: Dict, *, post
         _retry(lambda: docs_api.documents().batchUpdate(documentId=d["id"], body={"requests": [
             {"replaceAllText": {"containsText": {"text": a, "matchCase": True},
                                 "replaceText": b}} for a, b in pairs]}).execute())
+    if time["early"] and not d["warn"]:
+        _add_warning(docs_api, d["id"],
+                     f"⚠️ Started {time['early']} min before the scheduled time.")
     if d["person"] != name:
         person = _retry(lambda: doc._folder(svc, name, drive_auth.AUDIT_FOLDER_ID))
         target = _retry(lambda: doc._folder(svc, day.isoformat(), person))
         _retry(lambda: svc.files().update(
             fileId=d["id"], addParents=target, removeParents=d["folder"],
             body={"name": d["title"].replace(d["person"], name, 1)}, fields="id").execute())
+
+
+def _add_warning(docs_api, doc_id: str, text: str) -> None:
+    """Put the 'started early' line back, red and bold like doc.py, on the empty
+    line a removed warning left (else above the Interviewer line)."""
+    body = _retry(lambda: docs_api.documents().get(documentId=doc_id).execute())["body"]["content"]
+    paras = [(e["startIndex"], "".join(r.get("textRun", {}).get("content", "")
+                                       for r in e["paragraph"]["elements"]))
+             for e in body if "paragraph" in e]
+    who = next((i for i, (_, t) in enumerate(paras) if t.startswith("Interviewer:")), None)
+    if who is None:
+        print(f"  doc {doc_id}: no Interviewer line - warning not added")
+        return
+    empty = next((i for i in range(1, who) if not paras[i][1].strip()), None)
+    at = paras[empty if empty is not None else who][0]
+    line = text if empty is not None else f"{text}\n"
+    _retry(lambda: docs_api.documents().batchUpdate(documentId=doc_id, body={"requests": [
+        {"insertText": {"location": {"index": at}, "text": line}},
+        {"updateTextStyle": {
+            "range": {"startIndex": at, "endIndex": at + len(text.encode("utf-16-le")) // 2},
+            "textStyle": {"bold": True, "foregroundColor": {"color": {"rgbColor": {"red": 0.8}}}},
+            "fields": "bold,foregroundColor"}}]}).execute())
 
 
 def fixed_reply(text: str, times: Dict[str, Dict]) -> Optional[str]:
@@ -242,7 +267,7 @@ def fix(day: dt.date, office: str, name: Optional[str], *, post: bool) -> int:
         fix_doc(docs_api, svc, d, name, day, times[d["start"]], post=post)
     client = office_post._client()
     fix_numbers_channel(client, day, office, name, times, wrong, post=post)
-    rows = office_post.day_rows(day)
+    rows = _retry(lambda: office_post.day_rows(day))     # Sheets 429s too (11/4)
     if not post:                    # Drive not moved yet: show what the posts will say
         rows = [{**r, "interviewer": name}
                 if r.get("office") == office and r.get("date") == day.isoformat() else r
@@ -255,5 +280,5 @@ def fix(day: dt.date, office: str, name: Optional[str], *, post: bool) -> int:
         print("DRY-RUN: nothing changed")
         return 0
     rc = office_post.restyle(rows, day, office, prune=True)
-    print(f"BOARD: {board.update(day)}")
+    print(f"BOARD: {_retry(lambda: board.update(day))}")
     return rc

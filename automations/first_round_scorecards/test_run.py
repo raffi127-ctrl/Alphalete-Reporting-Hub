@@ -285,6 +285,11 @@ class ScheduledTest(unittest.TestCase):
         slot = appstream.scheduled_for(["Destiny Other"], booked[:1], started, own=set())
         self.assertEqual(slot.strftime("%H:%M"), "15:15")   # full name: any calendar
 
+    def test_double_surname_still_matches(self):
+        self.assertTrue(appstream._same_person("Francisco Vargas-reyes", "Francisco Vargas"))
+        self.assertTrue(appstream._same_person("Luis Vazquez", "Luis Vazquez Garcia"))
+        self.assertFalse(appstream._same_person("Luis Vargas", "Luis Vazquez Garcia"))
+
     def test_hasan_calendar_is_read(self):
         self.assertIn("24279", appstream.other_offices())
         self.assertEqual(appstream.own_offices("Hasan Salame"), {"24279"})

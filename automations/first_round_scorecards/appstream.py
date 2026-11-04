@@ -116,7 +116,9 @@ def _same_person(said: str, booked_name: str, *, first_name_ok: bool = True) -> 
     close = lambda x, y: SequenceMatcher(None, x, y).ratio() >= NAME_MATCH
     if len(a) == 1:                        # only a first name was said
         return first_name_ok and close(a[0], b[0])
-    return close(a[0], b[0]) and close(a[-1], b[-1])
+    # any later word: a double surname on either side ("Francisco Vargas-reyes"
+    # booked as "Francisco Vargas", "Luis Vazquez" as "Luis Vazquez Garcia")
+    return close(a[0], b[0]) and any(close(x, y) for x in a[1:] for y in b[1:])
 
 
 def slot_time(clock: str) -> Optional[dt.time]:
