@@ -16398,6 +16398,74 @@
    "report_id": "linkedin-2nd-round-contacts",
    "_note": "Raf's rules on what the two passes added: not hired / left as a message 7 days after the second round -> removed; new start scheduled but never showed, 3 weeks after -> removed; showed but OwnerVille View Progress under 100% 3 weeks after -> removed (Carlos 2026-10-31: Onboard -> View Progress -> campaign -> search -> Progress 100% = fully onboarded); showed + 100% -> kept for good, terminated later or not (Raf: rehires). State in output/second_round_contacts/state.json."
   },
+  "bgc_not_sent_raf": {
+   "close_on": "exit_zero",
+   "order": 70.1,
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "display_name": "BG checks not sent yet — Raf (4:30 PM CT)",
+   "command": [
+    "automations.office_admin.bgc_alert"
+   ],
+   "base_args": [
+    "--office",
+    "raf",
+    "--post"
+   ],
+   "cadence": {
+    "not_before": "16:30",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 15,
+   "verify": null,
+   "_note": "Megan 2026-11-04: Mon-Fri, 30 min BEFORE the office's 2nd Round Daily Update (Lucy 2, 5:00 PM CT -- the Daily Update is what results from this). Today's calendar Offer Position = Yes minus who already has a background check (relay 'Office Jobs' live sends + Sterling mails where readable) -> header + names thread in the office's recruiting channel as Lucy. Nothing waiting = no post; unreadable calendar = exit 1. Lucy 2: it already holds the AppStream session for the 5pm Daily Update. OFF (on_scheduler false) until Megan OKs the Slack posts."
+  },
+  "bgc_not_sent_omar": {
+   "close_on": "exit_zero",
+   "order": 70.2,
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "display_name": "BG checks not sent yet — Omar (5:30 PM ET = 4:30 PM CT)",
+   "command": [
+    "automations.office_admin.bgc_alert"
+   ],
+   "base_args": [
+    "--office",
+    "omar",
+    "--post"
+   ],
+   "cadence": {
+    "not_before": "16:30",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 15,
+   "verify": null,
+   "_note": "Megan 2026-11-04: Mon-Fri, 30 min BEFORE the office's 2nd Round Daily Update (Lucy 2, 5:00 PM CT -- the Daily Update is what results from this). Today's calendar Offer Position = Yes minus who already has a background check (relay 'Office Jobs' live sends + Sterling mails where readable) -> header + names thread in the office's recruiting channel as Lucy. Nothing waiting = no post; unreadable calendar = exit 1. Lucy 2: it already holds the AppStream session for the 5pm Daily Update. OFF (on_scheduler false) until Megan OKs the Slack posts."
+  },
   "icd_code_mail_register": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false -- a one-off a PERSON runs, never scheduled. Puts an office's SaraPlus code address on the private 'SaraPlus Code Mail' tab of the relay workbook (code_answer.register_forward) so Lucy 1 answers that office's code requests from the reporting inbox instead of 'no forward set up -> none'. `lucy rerun icd_code_mail_register -- --register <office-key> <address>` adds or replaces the office's row; with no args it lists the offices registered (addresses masked). Machine Lucy 1: it is the box that reads the reporting inbox and holds the relay workbook. The address lives on the sheet and in the Mini Control row, never in the repo (public). Added 2026-11-02 after Carlos's office hit the wall at 10:01 with its alphaletegp -> alphaletereporting forward long in place but unknown to the tab.",

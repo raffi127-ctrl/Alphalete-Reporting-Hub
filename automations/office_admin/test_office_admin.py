@@ -1,4 +1,4 @@
-"""Office admin page: logins, request rows, worker decisions, office jobs.
+"""Office admin page: logins, request rows, send decisions, office jobs.
 
     python -m unittest automations.office_admin.test_office_admin
 
@@ -13,7 +13,7 @@ from unittest import mock
 from automations.office_admin import accounts as A
 from automations.office_admin import config as C
 from automations.office_admin import sheets as S
-from automations.office_admin import worker as W
+from automations.office_admin import actions as W
 
 
 class Passwords(unittest.TestCase):
@@ -413,6 +413,110 @@ class ClientHubLocation(unittest.TestCase):
     def test_every_page_state_has_a_code(self):
         from automations.icd_alerts import sterling_send as SS
         self.assertEqual(set(C.US_STATES), set(SS.STATE_CODES))
+
+
+class AlreadyDone(unittest.TestCase):
+    """Already-has-a-check marking (Megan 2026-11-04)."""
+    def test_names_out_of_sterling_subjects(self):
+        from automations.office_admin import already as AL
+        self.assertEqual(AL.name_from_subject("Background Check E-Invite for Williams, Myles Gregory is Complete"),
+                         "Williams, Myles Gregory")
+        self.assertEqual(AL.name_from_subject("Background Check for Defrain, Jarred Paul is complete"),
+                         "Defrain, Jarred Paul")
+        self.assertIsNone(AL.name_from_subject("Authentication Request"))
+
+    def test_marks_by_sterling_name_and_by_page_log(self):
+        from automations.office_admin import already as AL
+        sterling = AL.sterling_done([("Background Check E-Invite for Koch, Milandi , N/a is Complete", "11/4"),
+                                     ("Background Check E-Invite for Williams, Myles Gregory is Complete", "11/4")])
+        people = [{"first_name": "Milandi", "last_name": "Koch", "email": "m@x.com"},
+                  {"first_name": "Myles", "last_name": "Williams", "email": "w@x.com"},
+                  {"first_name": "Cedric", "last_name": "Ball", "email": "c@x.com"},
+                  {"first_name": "Ana", "last_name": "Lopez", "email": "a@x.com"}]
+        out = AL.mark(people, page_log={"a@x.com": "11/3"}, sterling=sterling)
+        self.assertEqual([bool(p["already"]) for p in out], [True, True, False, True])
+        self.assertIn("from here 11/3", out[3]["already"])
+
+    def test_page_log_ignores_test_runs_and_other_offices(self):
+        from automations.office_admin import already as AL
+        import json
+        def row(office, status, result):
+            return {"Office Key": office, "Action": C.SEND_BGC, "Status": status,
+                    "Requested At": "2026-11-04 10:00:00", "Result": json.dumps(result),
+                    "Details": json.dumps({"people": [{"email": "A@x.com"}]})}
+        reqs = [row("raf", C.DONE, {"status": "dry_run"}), row("omar", C.DONE, {"status": "sent"})]
+        self.assertEqual(AL.sent_from_page(reqs, "raf", today=dt.date(2026, 11, 4)), {})
+        self.assertEqual(AL.sent_from_page(reqs, "omar", today=dt.date(2026, 11, 4)), {"a@x.com": "11/4"})
+
+    def test_unreadable_inbox_is_not_an_error(self):
+        from automations.office_admin import already as AL
+        with mock.patch.object(AL, "sterling_subjects", side_effect=RuntimeError("no app password")):
+            out = AL.check([{"first_name": "A", "last_name": "B", "email": "a@x.com"}], [], "raf",
+                           log=lambda *_: None)
+        self.assertEqual(out[0]["already"], "")
+
+
+class NotSentAlert(unittest.TestCase):
+    """Afternoon alert: 30 min before the Daily Update, Mon-Fri (Megan 11/04)."""
+    def _office(self):
+        return C.office("raf")
+
+    def test_due_only_mon_fri_after_alert_time_office_local(self):
+        from automations.office_admin import bgc_alert as BA
+        from zoneinfo import ZoneInfo
+        ct = ZoneInfo("America/Chicago")
+        o = self._office()
+        self.assertTrue(BA.due(o, dt.datetime(2026, 11, 4, 16, 30, tzinfo=ct)))     # Wed 4:30
+        self.assertFalse(BA.due(o, dt.datetime(2026, 11, 4, 16, 29, tzinfo=ct)))
+        self.assertFalse(BA.due(o, dt.datetime(2026, 11, 7, 17, 0, tzinfo=ct)))     # Saturday
+        # Omar: 5:30 PM Eastern = 4:30 PM Central
+        self.assertTrue(BA.due(C.office("omar"), dt.datetime(2026, 11, 4, 16, 30, tzinfo=ct)))
+        self.assertFalse(BA.due(C.office("omar"), dt.datetime(2026, 11, 4, 16, 25, tzinfo=ct)))
+
+    def _run(self, offered, jobs, sterling=None, post=True):
+        from automations.office_admin import bgc_alert as BA
+        from zoneinfo import ZoneInfo
+        posted = []
+        rc = BA.run(self._office(), post=post, now=dt.datetime(2026, 11, 4, 16, 45, tzinfo=ZoneInfo("America/Chicago")),
+                    read=lambda o, d: offered, relay_log=lambda o, s: jobs,
+                    sterling=lambda: sterling or {}, poster=lambda o, p, r: posted.append((p, r)),
+                    log=lambda *_: None)
+        return rc, posted
+
+    def test_posts_only_who_is_still_waiting(self):
+        offered = [{"first_name": "Ana", "last_name": "Lopez", "email": "a@x.com"},
+                   {"first_name": "Bo", "last_name": "Kim", "email": "b@x.com"},
+                   {"first_name": "Myles", "last_name": "Williams", "email": "m@x.com"}]
+        jobs = [{"people": [{"email": "A@x.com"}], "result": {"status": "sent"}},
+                {"people": [{"email": "b@x.com"}], "result": {"status": "dry_run"}}]   # test run: NOT sent
+        rc, posted = self._run(offered, jobs, sterling={"myles|williams": "11/4"})
+        self.assertEqual(rc, 0)
+        parent, reply = posted[0]
+        self.assertIn("1 offered today", parent)
+        self.assertIn("Bo Kim", reply)
+        self.assertNotIn("Ana", reply)
+        self.assertNotIn("Myles", reply)
+
+    def test_never_posts_blank(self):
+        rc, posted = self._run([], [])
+        self.assertEqual((rc, posted), (0, []))
+        rc, posted = self._run([{"first_name": "A", "last_name": "B", "email": "a@x.com"}],
+                               [{"people": [{"email": "a@x.com"}], "result": {"status": "sent"}}])
+        self.assertEqual((rc, posted), (0, []))
+
+    def test_unreadable_calendar_is_a_failure_not_all_clear(self):
+        from automations.office_admin import bgc_alert as BA
+        from zoneinfo import ZoneInfo
+        def boom(o, d):
+            raise RuntimeError("AppStream session expired")
+        rc = BA.run(self._office(), post=True, now=dt.datetime(2026, 11, 4, 16, 45, tzinfo=ZoneInfo("America/Chicago")),
+                    read=boom, relay_log=lambda o, s: [], sterling=lambda: {},
+                    poster=lambda *a: self.fail("posted"), log=lambda *_: None)
+        self.assertEqual(rc, 1)
+
+    def test_dry_by_default_posts_nothing(self):
+        rc, posted = self._run([{"first_name": "A", "last_name": "B", "email": "a@x.com"}], [], post=False)
+        self.assertEqual((rc, posted), (0, []))
 
 
 class SterlingCodes(unittest.TestCase):

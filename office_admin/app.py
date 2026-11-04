@@ -1,10 +1,8 @@
-"""Office Admin -- one login per office admin, two buttons.
+"""Office Admin -- one login per office admin, one job: background checks.
 
   * Send background checks   today's 2nd interviews offered the position, on THIS
                              computer, sent from the office's ECO computer
                              (the one holding the Sterling login)
-  * Add 2nd round contacts   this week's 2nd rounds -> the office's contacts
-                             (done by Lucy 1)
 
 Runs ON THE ADMIN'S COMPUTER (Megan 2026-11-03), which is somewhere else than
 the office's ECO computer. See automations/office_admin/config.py.
@@ -175,7 +173,15 @@ def _bgc_section(admin, reqs, ws) -> None:
                     st.error(str(e).capitalize() + ".")
         return
     loc_cols = st.columns([4, 1])
-    loc_cols[0].caption("Office location: %s, %s" % (location["city"], location["state"]))
+    # Big and coloured (Megan 11/04: the grey caption was too easy to miss) --
+    # every invite goes out with this location, so it must be seen.
+    import html as _html
+    loc_cols[0].markdown(
+        '<div style="background:#E8F1FB;border-left:6px solid #1F6FB2;border-radius:6px;'
+        'padding:10px 14px;margin-bottom:10px;font-size:1.25rem;font-weight:600;color:#123E66;">'
+        '📍 Office location: %s, %s</div>'
+        % (_html.escape(location["city"]), _html.escape(location["state"])),
+        unsafe_allow_html=True)
     if loc_cols[1].button("Change", key="chg-loc"):
         st.session_state["edit_location"] = True
         st.rerun()
@@ -195,6 +201,8 @@ def _bgc_section(admin, reqs, ws) -> None:
                          % type(e).__name__)
                 people = None
         if people is not None:
+            from automations.office_admin import already
+            people = already.check(people, reqs, office.key)
             st.session_state["bob"] = {"people": people, "at": S.now_str()}
             try:
                 actions.log_find(ws, admin, people)
@@ -212,8 +220,11 @@ def _bgc_section(admin, reqs, ws) -> None:
             for i, p in enumerate(people):
                 name = "%s %s" % (p.get("first_name"), p.get("last_name"))
                 has_email = "@" in (p.get("email") or "")
-                label = name if has_email else "%s — no email in ApplicantStream" % name
-                if st.checkbox(label, value=has_email, disabled=not has_email,
+                done = p.get("already") or ""
+                label = ("%s — %s" % (name, done) if done else name) if has_email \
+                    else "%s — no email in ApplicantStream" % name
+                # Already done = shown, UNticked, still tickable (Megan 11/04).
+                if st.checkbox(label, value=has_email and not done, disabled=not has_email,
                                key="p-%s-%d" % (found["at"], i)):
                     picked.append(p)
             if st.button("📨 Send background checks (%d)" % len(picked), type="primary",
@@ -242,20 +253,6 @@ def _bgc_section(admin, reqs, ws) -> None:
             st.caption(res["error"])
 
 
-def _contacts_section(admin, reqs) -> None:
-    st.subheader("📇 2nd round contacts")
-    st.caption("Puts this week's 2nd rounds into your office's contacts.")
-    rows = _mine(reqs, admin["office"], C.ADD_CONTACTS)
-    last = rows[0] if rows else None
-    busy = bool(last and last.get("Status") in C.OPEN_STATUSES)
-    if st.button("➕ Add 2nd round contacts", use_container_width=True, disabled=busy):
-        _press(admin, C.ADD_CONTACTS)
-    if last:
-        _status_line(last)
-        if last.get("Status") == C.DONE and last.get("Result"):
-            st.caption(last["Result"])
-
-
 def main() -> None:
     _setup()
     if not _login():
@@ -275,8 +272,6 @@ def main() -> None:
     st.button("↻ Check again", on_click=lambda: None)
     st.divider()
     _bgc_section(admin, reqs, ws)
-    st.divider()
-    _contacts_section(admin, reqs)
 
 
 main()

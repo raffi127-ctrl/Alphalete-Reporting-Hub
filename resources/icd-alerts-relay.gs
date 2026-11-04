@@ -96,6 +96,9 @@ function doPost(e) {
     // LUCY'S OWN CALLS (headshots) come with the admin key, not an office
     // key, and are answered before the office check below.
     if (body.admin_key !== undefined) return _reply(_adminCall(body));
+    // THE OFFICE ADMIN BROWSER EXTENSION (2026-11-04): its own sign-in, no
+    // office key on the admin's computer. See OFFICE ADMINS at the bottom.
+    if (body.office_admin !== undefined) return _reply(_officeAdminCall(body.office_admin));
     var office = String(body.office_key || '').trim().toLowerCase();
     var key = String(body.key || '').trim();
     if (!office || !key) return _reply({ok: false, error: 'missing office or key'});
@@ -757,6 +760,7 @@ function _adminCall(body) {
   if (body.office_job_enqueue) return _officeJobEnqueue(body.office_job_enqueue);
   if (body.office_job_results) return _officeJobResults();
   if (body.office_job_collected) return _officeJobCollected(body.office_job_collected);
+  if (body.office_job_log) return _officeJobLog(body.office_job_log);
   return {ok: false, error: 'unknown admin call'};
 }
 
@@ -1075,4 +1079,196 @@ function _officeJobStatus(office, id) {
             answered: !!r[OJ.RESULT_AT], result: res};
   }
   return {ok: false, error: 'no such job'};
+}
+
+
+// --- OFFICE ADMINS (the browser extension) ----------------------------------
+// One login per office admin (Raf 2026-11-01), used by the Lucy Office Admin
+// Chrome extension on the admin's computer -- which holds NO office key and
+// no Google login, only a sign-in that lasts the working day.
+//
+//   'Office Admins'   Username | Office | Salt | Hash | Active | Mode | Name |
+//                     Last Login | AppStream   <- we fill it (office_admin.relay_admins)
+// AppStream = the office's ApplicantStream id: the extension refuses to send
+// from a calendar showing any other office.
+//   'Office Settings' Office | State | City | Updated By | Updated At
+//
+// Hash = SHA-256 hex of (salt + password); passwords are long, generated ones,
+// and sign-in is rate-limited, so a single round is enough here.
+// MODE (dry | live) is ours, on the admin's row: the extension never says.
+// A session is a random token in the script cache for 8 hours.
+var ADMINS_TAB = 'Office Admins';
+var ADM = {USER: 0, OFFICE: 1, SALT: 2, HASH: 3, ACTIVE: 4, MODE: 5, NAME: 6, LAST: 7, APPSTREAM: 8};
+var ADM_HEAD = ['Username', 'Office', 'Salt', 'Hash', 'Active', 'Mode', 'Name', 'Last Login', 'AppStream'];
+var SETTINGS_TAB = 'Office Settings';
+var SESSION_SECONDS = 8 * 3600;
+var MAX_TRIES = 5;
+
+function _admSheet(name, head) {
+  var sh = _book().getSheetByName(name);
+  if (!sh) { sh = _book().insertSheet(name); sh.appendRow(head); }
+  return sh;
+}
+
+function _sha256Hex(text) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text,
+                                      Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { var h = (b & 0xff).toString(16); return h.length < 2 ? '0' + h : h; }).join('');
+}
+
+function _admRow(username) {
+  var rows = _admSheet(ADMINS_TAB, ADM_HEAD).getDataRange().getValues();
+  var u = String(username || '').trim().toLowerCase();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][ADM.USER]).trim().toLowerCase() === u) return {i: i, r: rows[i]};
+  }
+  return null;
+}
+
+function _session(token) {
+  if (!token) return null;
+  var raw = CacheService.getScriptCache().get('adm:' + token);
+  return raw ? JSON.parse(raw) : null;
+}
+
+function _officeAdminCall(a) {
+  var what = String(a.call || '');
+  if (what === 'login') return _admLogin(a);
+  var sess = _session(String(a.token || ''));
+  if (!sess) return {ok: false, error: 'signed out', signed_out: true};
+  if (what === 'whoami') return _admWhoami(sess);
+  if (what === 'set_location') return _admSetLocation(sess, a);
+  if (what === 'send') return _admSend(sess, a);
+  if (what === 'status') return _officeJobStatus(sess.office, String(a.job_id || ''));
+  if (what === 'already') return _admAlready(sess);
+  return {ok: false, error: 'unknown call'};
+}
+
+function _admLogin(a) {
+  var cache = CacheService.getScriptCache();
+  var user = String(a.username || '').trim().toLowerCase();
+  var triesKey = 'admtries:' + user;
+  var tries = Number(cache.get(triesKey) || 0);
+  if (tries >= MAX_TRIES) return {ok: false, error: 'Too many tries. Wait 15 minutes.'};
+  var hit = _admRow(user);
+  var good = hit && String(hit.r[ADM.ACTIVE]).toUpperCase() === 'TRUE' &&
+      _sha256Hex(String(hit.r[ADM.SALT]) + String(a.password || '')) === String(hit.r[ADM.HASH]);
+  if (!good) {
+    cache.put(triesKey, String(tries + 1), 900);
+    return {ok: false, error: "That username and password don't match."};
+  }
+  cache.remove(triesKey);
+  var token = Utilities.getUuid();
+  var sess = {username: user, office: String(hit.r[ADM.OFFICE]).trim().toLowerCase(),
+              name: String(hit.r[ADM.NAME] || user),
+              appstream: String(hit.r[ADM.APPSTREAM] || '').replace(/\D/g, '')};
+  cache.put('adm:' + token, JSON.stringify(sess), SESSION_SECONDS);
+  _admSheet(ADMINS_TAB, ADM_HEAD).getRange(hit.i + 1, ADM.LAST + 1).setValue(new Date());
+  var who = _admWhoami(sess);
+  who.token = token;
+  return who;
+}
+
+function _admMode(sess) {
+  var hit = _admRow(sess.username);
+  return hit && String(hit.r[ADM.MODE]).trim().toLowerCase() === 'live' ? 'live' : 'dry';
+}
+
+function _admLocation(office) {
+  var rows = _admSheet(SETTINGS_TAB, ['Office', 'State', 'City', 'Updated By', 'Updated At'])
+      .getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim().toLowerCase() === office) {
+      return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || '')};
+    }
+  }
+  return {row: -1, state: '', city: ''};
+}
+
+function _admWhoami(sess) {
+  var loc = _admLocation(sess.office);
+  return {ok: true, office: sess.office, name: sess.name, username: sess.username,
+          appstream: sess.appstream, mode: _admMode(sess), state: loc.state, city: loc.city};
+}
+
+function _admSetLocation(sess, a) {
+  var state = String(a.state || '').trim(), city = String(a.city || '').trim().replace(/\s+/g, ' ');
+  if (!state || !city) return {ok: false, error: 'Pick the state and type the city.'};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _admSheet(SETTINGS_TAB, ['Office', 'State', 'City', 'Updated By', 'Updated At']);
+    var loc = _admLocation(sess.office);
+    var row = [sess.office, state, city, sess.username, new Date()];
+    if (loc.row > 0) sh.getRange(loc.row + 1, 1, 1, 5).setValues([row]);
+    else sh.appendRow(row);
+    return {ok: true, state: state, city: city};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _admSend(sess, a) {
+  var loc = _admLocation(sess.office);
+  if (!loc.state || !loc.city) return {ok: false, error: "Set your office's city and state first."};
+  var people = (a.people || []).filter(function (p) {
+    return p && String(p.first_name || '').trim() && String(p.last_name || '').trim() &&
+        String(p.email || '').indexOf('@') > 0;
+  }).map(function (p) {
+    return {first_name: String(p.first_name).trim(), last_name: String(p.last_name).trim(),
+            email: String(p.email).trim()};
+  });
+  if (!people.length) return {ok: false, error: 'Nobody with a name and email was picked.'};
+  return _officeJobEnqueue({office: sess.office, kind: 'bgc_send', mode: _admMode(sess),
+                            payload: {people: people, by: sess.username,
+                                      location: {country: 'United States', state: loc.state, city: loc.city}}});
+}
+
+function _admAlready(sess) {
+  // Who this office's computer already SENT (not test runs), last 14 days.
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  var out = {};
+  if (!sh) return {ok: true, sent: out};
+  var rows = sh.getDataRange().getValues();
+  var cutoff = new Date(Date.now() - 14 * 86400000);
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[OJ.OFFICE]).trim().toLowerCase() !== sess.office) continue;
+    if (!(r[OJ.RESULT_AT] instanceof Date) || r[OJ.RESULT_AT] < cutoff) continue;
+    var res = {};
+    try { res = JSON.parse(String(r[OJ.RESULT] || '{}')); } catch (err) {}
+    if (res.status !== 'sent') continue;
+    var payload = {};
+    try { payload = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+    var md = (r[OJ.RESULT_AT].getMonth() + 1) + '/' + r[OJ.RESULT_AT].getDate();
+    (payload.people || []).forEach(function (p) {
+      var e = String(p.email || '').trim().toLowerCase();
+      if (e) out[e] = md;
+    });
+  }
+  return {ok: true, sent: out};
+}
+
+
+// Lucy's read of one office's sends (the 6pm "not sent yet" alert,
+// office_admin.bgc_alert): every job for the office answered since `since`
+// (ISO), with who was in it and what came back. Read-only.
+function _officeJobLog(q) {
+  var office = String(q.office || '').trim().toLowerCase();
+  var since = q.since ? new Date(String(q.since)) : new Date(Date.now() - 86400000);
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  var out = [];
+  if (!office || !sh) return {ok: true, jobs: out};
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office) continue;
+    if (!(r[OJ.QUEUED] instanceof Date) || r[OJ.QUEUED] < since) continue;
+    var payload = {}, res = {};
+    try { payload = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+    try { res = JSON.parse(String(r[OJ.RESULT] || '{}')); } catch (err) {}
+    out.push({job_id: String(r[OJ.ID]), status: String(r[OJ.STATUS]), mode: String(r[OJ.MODE]),
+              queued_at: r[OJ.QUEUED].toISOString(), people: payload.people || [], result: res});
+  }
+  return {ok: true, jobs: out};
 }

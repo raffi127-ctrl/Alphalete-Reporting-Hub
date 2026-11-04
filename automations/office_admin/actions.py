@@ -20,6 +20,47 @@ from automations.office_admin import config as C
 from automations.office_admin import sheets as S
 
 
+def _age_min(stamp: str, now: dt.datetime) -> float:
+    try:
+        t = dt.datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return 0.0
+    return (now - t).total_seconds() / 60.0
+
+
+def valid_people(people) -> List[Dict]:
+    """The send list, cleaned: needs first, last and an email with an @."""
+    out = []
+    for p in people or []:
+        if not isinstance(p, dict):
+            continue
+        first, last = str(p.get("first_name") or "").strip(), str(p.get("last_name") or "").strip()
+        email = str(p.get("email") or "").strip()
+        if first and last and "@" in email:
+            out.append({"first_name": first, "last_name": last, "email": email,
+                        "phone": str(p.get("phone") or "").strip()})
+    return out
+
+
+def judge_job(job: Optional[Dict], age_min: float) -> Optional[Dict]:
+    """What a send_bgc row should become, given its relay job (or None if the
+    relay no longer lists it). None = leave it waiting."""
+    if job is None:
+        return {"Status": C.FAILED,
+                "Result": "Lost track of this request -- check Sterling before pressing Send again."}
+    if job.get("answered"):
+        res = job.get("result") or {}
+        ok = res.get("status") in ("sent", "dry_run")
+        return {"Status": C.DONE if ok else C.FAILED, "Result": json.dumps(res)}
+    if job.get("status") == "offered" and age_min >= C.STALE_MINUTES:
+        return {"Status": C.FAILED,
+                "Result": ("UNCONFIRMED: the office computer started this but never "
+                           "answered. Check Sterling for these invites before pressing "
+                           "Send again -- pressing again could send them twice.")}
+    return None
+
+
+
 def find_bob(office: C.Office, *, today: Optional[dt.date] = None, session=None) -> List[Dict]:
     """Today's second interviews marked "Offer Position? = Yes" on the
     office's ApplicantStream calendar (offered.py). Opens ApplicantStream on
@@ -47,7 +88,6 @@ def send_bgc(ws, admin: Dict, office: C.Office, people: List[Dict],
     then fails. `location` = the office's State/City (sheets.location_of) --
     Sterling's form will not go without it, so neither does this."""
     from automations.office_admin import relay_client
-    from automations.office_admin.worker import valid_people
     people = valid_people(people)
     if not people:
         raise ValueError("Nobody with a name and email was picked.")
@@ -75,7 +115,6 @@ def refresh_send(ws, req: Dict, *, now: Optional[dt.datetime] = None) -> Dict:
     """Ask the relay about one at-office send; write the verdict to its row
     when there is one. Returns the row's fields as they now stand."""
     from automations.office_admin import relay_client
-    from automations.office_admin.worker import _age_min, judge_job
     if req.get("Status") != C.AT_OFFICE or not req.get("Job ID"):
         return req
     now = now or dt.datetime.now()

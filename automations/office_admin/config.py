@@ -25,8 +25,8 @@ holds the Sterling login)
     emails a code; the office forwards those code mails to the reporting
     inbox and Lucy 1 hands the code back, exactly like SaraPlus codes
     (icd_alerts/code_answer.py) -- and sends the e-invites.
-  * "Add 2nd round contacts" -> Lucy 1 (it holds the Contacts tokens):
-    the page writes a row on 'Admin Requests', worker.py runs it.
+  (No "2nd round contacts" button: second_round_contacts already runs on
+   its own on Lucy 1 at 12:00 / 15:30 + the 06:00 audit -- Megan 2026-11-04.)
 
 Every press is a row on 'Admin Requests' -- the record of who sent what.
 """
@@ -70,8 +70,7 @@ US_STATES = (
 # Request actions -- one per button.
 FIND_BGC = "find_bgc"
 SEND_BGC = "send_bgc"
-ADD_CONTACTS = "add_contacts"
-ACTIONS = (FIND_BGC, SEND_BGC, ADD_CONTACTS)
+ACTIONS = (FIND_BGC, SEND_BGC)
 
 # Request statuses, in the order a row moves through them.
 QUEUED = "queued"
@@ -96,7 +95,12 @@ class Office:
     key: str              # LucyEco office key (relay) -- also the page's key
     owner: str            # as on the '2R Contacts' tab
     appstream_id: str     # ApplicantStream office id
-    channel: str = ""     # office recruiting channel (phase 2 accept message)
+    channel: str = ""     # office recruiting channel (the 6pm "not sent yet" alert)
+    tz: str = "America/Chicago"   # office local time
+    # The "not sent yet" alert, office-local HH:MM, Mon-Fri. 30 min BEFORE the
+    # office's 2nd Round Daily Update (Lucy 2, 5:00 PM CT -- Megan 11/04: the
+    # Daily Update is what results from this, so the alert goes first).
+    alert_at: str = "16:30"
     # "dry": the office computer signs in and reports who it WOULD invite,
     # sends nothing. "live": sends. Set here, never on the office computer.
     bgc_mode: str = "dry"
@@ -105,11 +109,13 @@ class Office:
 # Omar first (Raf: "Let's test in Omar's office").
 OFFICES: Dict[str, Office] = {
     "omar": Office(key="omar", owner="Omar Mohamad", appstream_id="24153",
-                   channel="C0C6HKZ63EK", bgc_mode="dry"),
+                   channel="C0C6HKZ63EK", bgc_mode="dry", tz="America/Detroit",
+                   alert_at="17:30"),   # = 4:30 PM CT
     # Raf's MacBook (ECO key raf, enrolled 11/03) is the FIRST test machine
     # (Megan 2026-11-04): his Sterling account is rahidalgo, codes to raffi127.
     "raf": Office(key="raf", owner="Rafael Hidalgo", appstream_id="11280",
-                  channel="C06881A7WLV", bgc_mode="dry"),
+                  channel="C06881A7WLV", bgc_mode="dry", tz="America/Chicago",
+                  alert_at="16:30"),
 }
 
 

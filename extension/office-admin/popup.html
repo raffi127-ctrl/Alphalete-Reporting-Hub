@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 320px; margin: 0; font: 14px/1.4 -apple-system, Segoe UI, Arial, sans-serif; color: #1d2330; }
+  header { background: #123E66; color: #fff; padding: 12px 16px; font-weight: 600; font-size: 16px; }
+  main { padding: 14px 16px 18px; }
+  label { display: block; font-size: 12px; color: #555; margin: 10px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #c9d3de; border-radius: 6px; font-size: 14px; }
+  button { width: 100%; margin-top: 14px; padding: 11px; border: 0; border-radius: 8px; background: #1F6FB2; color: #fff; font-weight: 600; font-size: 15px; cursor: pointer; }
+  button.link { background: none; color: #1F6FB2; width: auto; padding: 0; margin: 0; font-weight: 500; font-size: 13px; }
+  .loc { background: #E8F1FB; border-left: 6px solid #1F6FB2; border-radius: 6px; padding: 9px 12px; font-size: 17px; font-weight: 600; color: #123E66; margin: 10px 0 4px; }
+  .test { background: #FFF6DB; color: #7a5a00; border-radius: 6px; padding: 6px 10px; margin-top: 8px; }
+  .err { background: #FDECEA; color: #8a1c13; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+  .muted { color: #666; font-size: 13px; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>🗂️ Lucy Office Admin</header>
+<main>
+  <section id="signin" hidden>
+    <label>Username</label><input id="user" autocomplete="username">
+    <label>Password</label><input id="pass" type="password" autocomplete="current-password">
+    <button id="go">Sign in</button>
+  </section>
+  <section id="home" hidden>
+    <div class="row"><b id="name"></b><button class="link" id="out">Sign out</button></div>
+    <div id="test" class="test" hidden>Test mode: background checks are checked, not sent.</div>
+    <div id="locview" hidden>
+      <div class="loc" id="loc"></div>
+      <button class="link" id="chg">Change office location</button>
+    </div>
+    <div id="locedit" hidden>
+      <p><b>Where is your office?</b> (asked once)</p>
+      <label>State</label><select id="state"></select>
+      <label>City</label><input id="city">
+      <button id="save">Save</button>
+    </div>
+    <p class="muted">Open your ApplicantStream calendar and press <b>🛡️ Send background checks</b> at the bottom right.</p>
+    <div id="last" class="muted"></div>
+  </section>
+  <div id="msg" class="err" hidden></div>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

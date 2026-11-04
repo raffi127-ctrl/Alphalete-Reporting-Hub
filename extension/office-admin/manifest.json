@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Lucy Office Admin",
+  "version": "1.0.0",
+  "description": "Send today's background checks from your ApplicantStream calendar -- Lucy does the rest on your office computer.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*",
+    "https://applicantstream.com/*",
+    "https://*.applicantstream.com/*"
+  ],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_popup": "popup.html", "default_title": "Lucy Office Admin"},
+  "content_scripts": [{
+    "matches": ["https://applicantstream.com/*", "https://*.applicantstream.com/*"],
+    "js": ["offered.js", "content.js"],
+    "css": ["content.css"],
+    "run_at": "document_idle"
+  }]
+}
