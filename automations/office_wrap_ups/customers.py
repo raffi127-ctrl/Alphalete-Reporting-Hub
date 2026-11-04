@@ -112,12 +112,20 @@ def for_office(rows: List[Dict[str, str]], profile: Dict[str, str],
         if tag:
             c["_tags"].add(tag)
     out: List[Dict[str, str]] = []
+    skipped_air = 0
     for c in by_key.values():
         c["products"] = [t for t in ("Internet", "TV", "Wireless")
                          if t in c["_tags"]]
         c.pop("_tags", None)
+        # Internet Air (Order Log Product Type 'AIR') maps to no Internet/TV/
+        # Wireless tag, so an AIR-only customer has no products and used to post
+        # as "no product on file". Dylan 2026-11-03: don't list them. A customer
+        # who also bought internet/tv/wireless keeps those and stays.
+        if not c["products"]:
+            skipped_air += 1
+            continue
         out.append(c)
-    log("  %s (%s): %d customer(s) %s..%s (%d dead-order row(s) skipped)"
-        % (profile.get("key"), profile.get("owner"), len(out), since, until,
-           skipped_dead))
+    log("  %s (%s): %d customer(s) %s..%s (%d dead-order, %d air/no-product "
+        "skipped)" % (profile.get("key"), profile.get("owner"), len(out),
+                      since, until, skipped_dead, skipped_air))
     return out

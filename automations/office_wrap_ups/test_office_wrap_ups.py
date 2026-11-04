@@ -74,6 +74,22 @@ class TestForOffice(unittest.TestCase):
                      "", "Cody Cannon")]
         self.assertEqual(self._run(rows), [])
 
+    def test_internet_air_only_excluded(self):
+        # Internet Air => Product Type 'AIR' => no Internet/TV/Wireless tag =>
+        # customer not listed (Dylan 2026-11-03).
+        rows = [_row("R", "10/20/2026", "Air Cust", "AIR", "214-555-7777",
+                     "", "Aya Al-Khafaji")]
+        self.assertEqual(self._run(rows), [])
+
+    def test_air_plus_internet_keeps_internet(self):
+        rows = [_row("R", "10/20/2026", "Mixed", "AIR", "214-555-8888",
+                     "", "Aya Al-Khafaji"),
+                _row("R", "10/20/2026", "Mixed", "NEW INTERNET", "214-555-8888",
+                     "", "Aya Al-Khafaji")]
+        out = self._run(rows)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["products"], ["Internet"])
+
     def test_date_window(self):
         rows = [_row("R", "10/18/2026", "Old", "NEW INTERNET", "214-555-0008",
                      "", "Aya Al-Khafaji"),
