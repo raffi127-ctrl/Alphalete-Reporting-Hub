@@ -503,6 +503,11 @@ _LIVE = {
 # Manager" runs in Doral AND Princeton (Valeria 9/24): the city-less copy can't
 # be told apart, so Eve 9/24 folded all three into ONE thread.
 _ALIASES = {
+    # Eve 11/4: Jamea Robinson's AppStream ad has a city; Valeria's channel only
+    # has the city-less thread for it. It goes there, no thread of its own.
+    "valeria": {
+        "AT&T Representative, Brandon, FL": "AT&T Representative",
+    },
     # Eve 11/3: "(Bilingual/Spanish)" with no city (Daniel Williams 10/28, Jada
     # Overton 10/9; Camila named it too) goes in the existing city-less
     # "(Bilingual Spanish Required)" thread, never a thread of its own.
