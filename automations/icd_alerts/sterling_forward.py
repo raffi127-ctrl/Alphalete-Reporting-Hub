@@ -92,12 +92,12 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
         # by the SaraPlus forward.
         if not R.forward_confirmed(office_key):
             F._copy(F.REPORTING_INBOX, say)
-            F._open(F.FORWARDING_URL, say)
+            F._open(F.for_account(F.FORWARDING_URL, address), say)
             ask.message(ADD_FORWARD % (F.REPORTING_INBOX, address))
             if not F._wait_for_gmail(office_key, say):
                 ask.message(F.LEFT_OPEN)
                 return "not confirmed yet"
-        F._open(FILTER_URL, say)
+        F._open(F.for_account(FILTER_URL, address), say)
         ask.message(FILTER_STEPS)
         return "done"
     except ask.Cancelled:

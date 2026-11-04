@@ -140,11 +140,11 @@ def _wait_for_gmail(office_key: str, say=print, sleep=time.sleep,
         sleep(CONFIRM_POLL_S)
 
 
-def _finish(ask, say=print) -> str:
+def _finish(ask, say=print, address: str = "") -> str:
     """The forward is confirmed: the filter is all that is left. No mark here:
     OK on that box does not prove the filter was saved. _already_working marks
     this computer once a code has really arrived."""
-    if not open_filter(ask, say):
+    if not open_filter(ask, say, address):
         return "filter not shown"
     return "done"
 
@@ -177,7 +177,7 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
     # ALREADY CONFIRMED (the address was added before, or one of us clicked the
     # mail): the only thing left is the filter, so nobody redoes step 1.
     if R.forward_confirmed(office_key):
-        return _finish(ask, say)
+        return _finish(ask, say, _login_email())
     try:
         login = _login_email()
         if login:
@@ -199,17 +199,17 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
         # address, so the steps can name the account to be in: /u/0 is whichever
         # account this browser calls its first, not necessarily that one.
         _copy(REPORTING_INBOX, say)
-        _open(FORWARDING_URL, say)
+        _open(for_account(FORWARDING_URL, address), say)
         ask.message(STEPS % (REPORTING_INBOX, address))
         if not R.report_forward(address, office_key=office_key):
             say("      could not reach the reporting team -- tell them %s" % address)
             return "address not sent"
         for attempt in range(TRIES):
             if _wait_for_gmail(office_key, say):
-                return _finish(ask, say)
+                return _finish(ask, say, address)
             if attempt + 1 < TRIES:
                 _copy(REPORTING_INBOX, say)
-                _open(FORWARDING_URL, say)
+                _open(for_account(FORWARDING_URL, address), say)
                 ask.message(NOT_ARRIVED % (address, REPORTING_INBOX))
         ask.message(LEFT_OPEN)
         return "not confirmed yet"
@@ -270,6 +270,17 @@ FILTER_STEPS = (
     % (SARAPLUS_SENDER, REPORTING_INBOX))
 
 
+def for_account(url: str, address: str) -> str:
+    """The same Gmail screen, in THAT account. /u/0 is whichever account this
+    browser calls its first: on Trang's office Mac the steps went by with nothing
+    reaching us, and Eve's link naming the account worked the first time (2026-11-04,
+    the only evidence, the wrong account was never seen). No address: /u/0 as before."""
+    from urllib.parse import quote
+    if not address:
+        return url
+    return url.replace("/mail/u/0/#", "/mail/?authuser=%s#" % quote(address, safe="@"))
+
+
 def _open(url: str, say=print) -> None:
     try:
         import webbrowser
@@ -278,9 +289,9 @@ def _open(url: str, say=print) -> None:
         say("      open %s" % url)
 
 
-def open_filter(ask, say=print) -> bool:
+def open_filter(ask, say=print, address: str = "") -> bool:
     """True once the owner has been through the filter step's dialog."""
-    _open(FILTER_URL, say)
+    _open(for_account(FILTER_URL, address), say)
     try:
         ask.message(FILTER_STEPS)
         return True

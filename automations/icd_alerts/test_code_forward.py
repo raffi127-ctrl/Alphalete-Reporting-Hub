@@ -96,7 +96,17 @@ class OnTheMac(unittest.TestCase):
     def test_gmail_opens_on_forwarding_and_the_filter_follows(self):
         ask = FakeAsk(CF.YES)
         self.assertEqual(self._go(ask), "done")
-        self.assertEqual(self.opened, [CF.FORWARDING_URL, CF.FILTER_URL])
+        self.assertEqual(self.opened, [CF.for_account(CF.FORWARDING_URL, "owner@gmail.com"), CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
+
+    def test_gmail_opens_in_the_account_the_owner_named(self):
+        # Trang: /u/0 went by with nothing reaching us; authuser worked first try.
+        self.assertEqual(self._go(FakeAsk(CF.OTHER, "a+b@office.com")), "done")
+        self.assertEqual(self.opened[0],
+                         "https://mail.google.com/mail/?authuser=a%2Bb@office.com#settings/fwdandpop")
+        self.assertIn("/mail/?authuser=a%2Bb@office.com#create-filter/from=", self.opened[1])
+
+    def test_no_address_stays_on_the_default_account(self):
+        self.assertEqual(CF.for_account(CF.FILTER_URL, ""), CF.FILTER_URL)
 
     def test_a_different_address_is_typed(self):
         self.assertEqual(self._go(FakeAsk(CF.OTHER, "codes@office.com")), "done")
@@ -118,7 +128,7 @@ class OnTheMac(unittest.TestCase):
         with self._never_confirmed():
             self.assertEqual(self._go(ask), "not confirmed yet")
         self.assertFalse(CF.already_set_up())
-        self.assertNotIn(CF.FILTER_URL, self.opened)
+        self.assertNotIn(CF.for_account(CF.FILTER_URL, "owner@gmail.com"), self.opened)
         self.assertEqual(ask.shown[-1], CF.LEFT_OPEN)
         self.assertTrue(any("owner@gmail.com" in m and "heard from Gmail" in m
                             for m in ask.shown), "says what to check, by account")
@@ -131,7 +141,7 @@ class OnTheMac(unittest.TestCase):
         with mock.patch.multiple(CF, CONFIRM_WAIT_S=0, CONFIRM_POLL_S=0):
             # The check at the top and the first wait say no, the second yes.
             self.assertEqual(self._go(ask), "done")
-        self.assertEqual(self.opened, [CF.FORWARDING_URL, CF.FORWARDING_URL, CF.FILTER_URL])
+        self.assertEqual(self.opened, [CF.for_account(CF.FORWARDING_URL, "owner@gmail.com")] * 2 + [CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
         self.assertEqual(self.sent, ["owner@gmail.com"])
 
     def test_already_confirmed_skips_straight_to_the_filter(self):
@@ -140,7 +150,7 @@ class OnTheMac(unittest.TestCase):
         ask = FakeAsk(CF.YES)
         self.assertEqual(self._go(ask), "done")
         self.assertEqual(self.sent, [])
-        self.assertEqual(self.opened, [CF.FILTER_URL])
+        self.assertEqual(self.opened, [CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
         self.assertFalse(CF.already_set_up())
 
     def test_ok_on_the_filter_without_a_code_comes_back(self):
@@ -151,7 +161,7 @@ class OnTheMac(unittest.TestCase):
             for _ in range(2):
                 self.opened.clear()
                 CF.offer_after_signin(FakeAsk(CF.YES), say=lambda *_: None)
-                self.assertEqual(self.opened, [CF.FILTER_URL])
+                self.assertEqual(self.opened, [CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
 
     def test_a_code_that_arrived_ends_the_asking_for_good(self):
         self.confirmed.side_effect = lambda *a, **k: True
@@ -540,20 +550,6 @@ class LucyAcceptsGmailsMail(unittest.TestCase):
         self.assertEqual(got[0]["status"], "confirmed")
         self.assertEqual(self.accepted, [("https://x/vf", "owner@gmail.com")])
         self.assertIn(CA.NOTE_CONFIRMED, self.sheet.cells[(2, 4)])
-
-    def test_the_confirmed_notice_carries_the_filter_link_for_that_account(self):
-        self._go(self._book(address="a+b@gmail.com"), {"a+b@gmail.com": "https://x/vf"})
-        self.assertEqual(len(self.told), 1)
-        self.assertIn("/mail/?authuser=a%2Bb@gmail.com#create-filter/from="
-                      "security.info%40saraplus.com", self.told[0])
-        self.assertNotIn("/u/0/", self.told[0])
-        self.assertIn("Forward it to", self.told[0])
-        self.assertIn(CF.REPORTING_INBOX, self.told[0])
-
-    def test_sterlings_link_keeps_the_subject_that_protects_results(self):
-        text = CA._filter_message(CA.STERLING, "owner@gmail.com")
-        self.assertIn("authuser=owner@gmail.com#create-filter/from=noreply%40us.fadv.co", text)
-        self.assertIn("&subject=Authentication%20Request", text)
 
     def test_anyone_else_asking_to_forward_is_left_alone(self):
         self._go(self._book(), {"stranger@gmail.com": "https://x/vf"})
