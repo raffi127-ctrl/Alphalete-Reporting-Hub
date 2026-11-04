@@ -2362,12 +2362,33 @@ def _is_blocked_detail(detail: str) -> bool:
     return str(detail or "").startswith(_BLOCKED_PREFIX)
 
 
+def _hub_sheets_here() -> bool:
+    """True when the Hub's Sheets client (recruiting_report/fill.py) is on this
+    machine. The office bundle leaves it out on purpose (see
+    icd_alerts/package.py HUB_ONLY_IMPORTS); the Lucys and the Hub have it."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec(
+            "automations.recruiting_report.fill") is not None
+    except Exception:  # noqa: BLE001 -- a broken parent package reads as absent
+        return False
+
+
 def _write_walk_diag(start, end, cache_size, skips, counts) -> None:
     """Append a one-row proof of this walk to the 'OAT Walk Diag' Sheet tab so the
     walk's behaviour can be verified queue-independently (read the Sheet directly),
     since the mini-control poller can get jammed. Shows the queue delta, the
     no-number cache size + how many re-reads were SKIPPED (cache working), and the
     full outcome counts (incl. re-text sent/removed). Best-effort."""
+    if not _hub_sheets_here():
+        # An office's own computer ships without the Hub's Sheets client
+        # (recruiting_report/fill.py, gspread, the OAuth token): that is the
+        # design, not a fault -- its counts travel back through LAST_WALK and
+        # icd_alerts/resume_push.py relays them. Say so, rather than print an
+        # ImportError on every walk (Raf's push-health log, 2026-11-03).
+        _log("[oat] walk diag: not written here (Hub-only Sheets tab; this "
+             "machine relays its counts instead)")
+        return
     try:
         from automations.recruiting_report import fill as _fill
         sh = _fill._client().open_by_key(

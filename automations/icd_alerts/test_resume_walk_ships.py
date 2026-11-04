@@ -704,5 +704,53 @@ class ResumeHelperIsGone(unittest.TestCase):
         self.assertEqual(RP.main(["--setup"]), 0)
 
 
+class TheWalkDiagKnowsWhereItIs(unittest.TestCase):
+    """Raf's push-health log, 2026-11-03 17:49 CT: every office walk ended in
+    "[oat] walk diag write failed: ImportError: cannot import name 'fill'".
+    The tab is Hub-only by design (no fill.py, no gspread, no OAuth token on an
+    office machine; the counts relay through LAST_WALK instead), so the writer
+    says that plainly and skips -- it never tries the import there."""
+
+    def _run(self, here):
+        from automations.oat_processing import run as OAT
+        lines = []
+        with mock.patch.object(OAT, "_hub_sheets_here", return_value=here), \
+             mock.patch.object(OAT, "_log", side_effect=lines.append):
+            OAT._write_walk_diag(10, 8, 3, 1, {"sent": 2})
+        return lines
+
+    def test_an_office_machine_skips_and_says_so(self):
+        lines = self._run(here=False)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("not written here", lines[0])
+        self.assertNotIn("ImportError", lines[0])
+        self.assertNotIn("failed", lines[0])
+
+    def test_a_hub_machine_still_reports_a_real_write_failure(self):
+        # Stub the PACKAGE ATTRIBUTE: `from automations.recruiting_report
+        # import fill` reads it first, so a sys.modules entry is ignored and
+        # the real client runs -- which on the Hub appends a real row to the
+        # production diag tab (it did, 2026-11-03).
+        import automations.recruiting_report as pkg
+        fake = mock.MagicMock()
+        fake._client.side_effect = RuntimeError("no token")
+        with mock.patch.object(pkg, "fill", fake, create=True):
+            lines = self._run(here=True)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("walk diag write failed", lines[0])
+        self.assertIn("no token", lines[0])
+
+    def test_the_office_bundle_has_no_hub_sheets_client(self):
+        # The detector reads the bundle, not a flag: fill.py is left out of
+        # the office package on purpose, so an office machine answers False.
+        self.assertNotIn("automations/recruiting_report/fill.py",
+                         package.AGENT_FILES)
+        import importlib.util
+        from automations.oat_processing import run as OAT
+        with mock.patch.object(importlib.util, "find_spec", return_value=None):
+            self.assertFalse(OAT._hub_sheets_here())
+        self.assertTrue(OAT._hub_sheets_here())    # this repo has it
+
+
 if __name__ == "__main__":
     unittest.main()
