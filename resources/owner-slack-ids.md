@@ -44,6 +44,8 @@ When you confirm a new ID, add it here in the same commit.
 | Tre Mitchell | Mission III (ECO `tre`, #mission-iii-sales) | U07TYS3V32A | ⚠ NOT "Tre" U09AASADF8E. Confirmed by Megan 2026-10-18 (tre.mitchell60@gmail.com, DM channel D0C7LM3SR5G) |
 | Valeria Rodea | | U06JQ4S1MRA | |
 | Valeria Zavala | | U054BLVL94N | ⚠ two Valerias |
+| Valeria Tristan | Altura Marketing | U08A243AV9Q | valeriavtristan@gmail.com. Confirmed by Slack search + owner_rep_audit 2026-11-04 |
+| Jacob Dover | Rockstarworld (23607) | U08M5S3BVMF | ⚠ two accounts, both his: U08M5S3BVMF (jacobdover92@gmail.com, has posted) and U0C46UZJZKP (doverjacob94@gmail.com, the address our email lists use; no public posts). 2026-11-04 group DM went to both |
 
 ## Recruiting audit channels — one per AppStream account number
 
