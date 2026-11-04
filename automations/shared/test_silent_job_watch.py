@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import unittest
+from unittest import mock
 
 from automations.shared import silent_job_watch as sjw
 
@@ -166,8 +167,20 @@ class AJobThatIsHeldOnPurpose(unittest.TestCase):
     and read exactly like an outage. An alert that cannot tell those apart fires
     every weekend and trains you to ignore the one that matters."""
 
+    # No Lucy pushes today (11/4: every office is on its own computer), so this
+    # pins the hold rule on a stand-in row. Put back on a real one if that changes.
     JID = "applicant_push_lucy_4"
-    MON = dt.date(2026, 9, 21)          # a Monday, Lucy 4 watched from this day
+    MON = dt.date(2026, 9, 21)          # a Monday, watched from this day
+
+    def setUp(self):
+        from automations.applicant_push.window import quiet_window
+        patcher = mock.patch.dict(sjw.JOBS, {self.JID: {
+            "name": "Applicant Push", "machine": "Lucy 4", "first_by": "07:30",
+            "max_gap_min": 45, "active_until": "22:00", "weekdays": None,
+            "quiet": quiet_window, "watch_from": "2026-09-21",
+            "means": "stand-in", "fix": "stand-in"}})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _at(self, wd, h, m=0):
         return dt.datetime.combine(self.MON + dt.timedelta(days=wd), dt.time(h, m))
@@ -203,6 +216,15 @@ class AJobThatIsHeldOnPurpose(unittest.TestCase):
 
 
 class TheRegistryStaysHonest(unittest.TestCase):
+
+    def test_no_push_row_for_a_lucy_that_pushes_nobody(self):
+        """Lucy 2 (11/2) and Lucy 4 (11/4) each kept a row after their offices
+        left, and each posted a false "didn't run today" every morning."""
+        from automations.applicant_push.offices import ROTATION_BY_MACHINE
+        for jid, spec in sjw.JOBS.items():
+            if jid.startswith("applicant_push"):
+                with self.subTest(job=jid):
+                    self.assertTrue(ROTATION_BY_MACHINE.get(spec["machine"]))
 
     def test_every_job_declares_what_silence_means(self):
         for jid, spec in sjw.JOBS.items():

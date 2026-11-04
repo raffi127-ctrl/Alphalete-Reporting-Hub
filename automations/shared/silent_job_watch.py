@@ -63,10 +63,7 @@ import datetime as dt
 import socket
 from typing import Dict, List, Optional
 
-# window.py imports nothing but the stdlib on purpose, so this stays cheap and
-# cannot drag a browser stack into the watchdog.
 from automations.shared import fleet as _fleet
-from automations.applicant_push.window import quiet_window as _push_quiet_window
 
 # 2026-10-29: the beats moved to their own small workbook ("LUCY FLEET -
 # Heartbeats", see day_orchestrator/control_books.py). They used to share
@@ -171,32 +168,10 @@ JOBS: Dict[str, dict] = {
     # applicant_push_lucy_2 left 2026-11-02: ROTATION_BY_MACHINE["Lucy 2"] has been
     # empty since 10/29, so the agent has nothing to beat for and this row
     # posted "didn't run" every day. Put it back if an office returns to Lucy 2.
-    # LUCY 4 JOINED 2026-09-19 with Raf's three streams (offices.py
-    # ROTATION_BY_MACHINE). It needs its OWN row for the reason spelled out under
-    # "ONE KEY PER MACHINE" below: beat() upserts one row per job_id, so a shared
-    # id would let whichever box beat last light the tab green for both.
-    #
-    # Without this row the beat has nowhere to land — the wrapper's
-    # `--beat-machine applicant_push` derives applicant_push_lucy_4, and on
-    # 2026-09-20, Lucy 4's first live day, every tick ended
-    # "unknown job 'applicant_push_lucy_4'". A heartbeat that is refused is the
-    # same as no heartbeat: a stopped agent on that box would have been invisible.
-    "applicant_push_lucy_4": {
-        "name": "Applicant Push (Raf's three streams)",
-        "machine": "Lucy 4",
-        "first_by": "07:30",
-        "max_gap_min": 45,
-        "active_until": "22:00",
-        "weekdays": None,
-        "quiet": _push_quiet_window,
-        # One clean day before it can page, the same grace Lucy 2's row took:
-        # the beat ships in a wrapper Lucy 4 has to pull, and the box went live
-        # on 9/19.
-        "watch_from": "2026-09-21",
-        "means": ("Raf's three ApplicantStream streams (11280, 23965, 24065) "
-                  "stop being pushed to the AI call list."),
-        "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 4\"",
-    },
+    # applicant_push_lucy_4 left 2026-11-04, same reason as Lucy 2: Raf's three
+    # went to his own MacBook on 11/3 (ROTATION_BY_MACHINE["Lucy 4"] is empty), so
+    # the agent has nothing to beat for and this row alerted "didn't run" anyway.
+    # Put it back if an office returns to a Lucy; the row is in git history.
     # NO Lucy 3 ROW. Lucy 3 works no push offices (ROTATION_BY_MACHINE), and a
     # heartbeat for an agent nobody installed would page about the absence of a
     # thing that was never there. The row is in git history at bd7979f if a
