@@ -429,6 +429,12 @@ _MORE = [
     # Photos channel #indeed-photos-frank-matos-office created 10/29.
     ("frank", "Frank Matos", SOUTH_SHORE, "Frank Matos", "23221", "Peak Management, Inc.",
      "C0C6BT2CZT3", "C0CDEFEARRS", r"first\s*round\s*thread"),
+    # Hasan Salame (Camila 11/2), Ascend Elite Marketing, Waco TX. 1st rounds
+    # started 11/3; #24279-hasans-funnel posts "*Ascend Elite Marketing -
+    # November - 3rd 1st Round*" (the "EOD ... Interviewers Daily Report" recap
+    # does not match). Photos channel created by Eve 11/2.
+    ("hasan", "Hasan Salame", ARS_D_TO_I, "Hasan Salame", "24279", "Ascend Elite Marketing",
+     "C0CAZ17H5NF", "C0CF59TUGBA", r"ascend\s*elite.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -447,6 +453,7 @@ _TZ = {
     "luke": "America/Los_Angeles",     # ads: Palo Alto / Santa Clara / Sunnyvale, CA
     "valeria": "America/New_York",     # Altura Marketing, Tampa FL
     "frank": "America/New_York",       # ads: Boca Raton / Tamarac / Coral Springs, FL
+    "hasan": "America/Chicago",        # Waco, TX (OFFICES INFO GENERAL: CST)
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
