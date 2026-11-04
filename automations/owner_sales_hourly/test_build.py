@@ -48,6 +48,20 @@ class OwnerTotals(unittest.TestCase):
         self.assertEqual(run.owner_totals(relay, {}, DAY),
                          {"Rafael Hidalgo": 2})
 
+    def test_rafs_two_relay_keys_count_once(self):
+        """Lucy 1's sweep relays him as rafael_hidalgo, his own MacBook as raf
+        (2026-11-03): the 9:50 PM text showed 52 for a 26-sale day."""
+        relay = {"rafael_hidalgo": {DAY: {"A": {"Int": 2}}},
+                 "raf": {DAY: {"A": {"Int": 2}}}}
+        offices = {"raf": _office("Rafael Hidalgo")}
+        self.assertEqual(run.owner_totals(relay, offices, DAY),
+                         {"Rafael Hidalgo": 2})
+        # No reading from his machine today: the sweep's row still counts.
+        relay = {"rafael_hidalgo": {DAY: {"A": {"Int": 2}}},
+                 "raf": {dt.date(2026, 10, 23): {"A": {"Int": 9}}}}
+        self.assertEqual(run.owner_totals(relay, offices, DAY),
+                         {"Rafael Hidalgo": 2})
+
 
 def _grid():
     hdr = ["", "", "Monday", "Tuesday", "RUNNING WEEK TOTALS"]

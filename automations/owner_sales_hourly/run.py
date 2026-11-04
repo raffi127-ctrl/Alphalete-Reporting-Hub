@@ -81,6 +81,9 @@ def owner_totals(relay: Dict, offices: Dict, day: dt.date,
     for key, days in relay.items():
         if day not in days:
             continue
+        newer = cfg.SUPERSEDED_BY.get(key)
+        if newer and day in (relay.get(newer) or {}):
+            continue    # same office, counted under its newer key
         office = offices.get(key)
         office_campaign = getattr(office, "campaign", None)
         if campaign and office_campaign != campaign:

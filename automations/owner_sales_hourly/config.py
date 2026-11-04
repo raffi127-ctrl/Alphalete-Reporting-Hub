@@ -53,6 +53,13 @@ OWNER_FALLBACK = {
     "samuel": "Samuel Acay",
 }
 
+# ONE OFFICE RELAYING UNDER TWO KEYS. Since 2026-11-03 Raf's own MacBook (Lucy
+# ECO, key `raf`) relays the same SaraPlus his Lucy 1 sweep relays as
+# `rafael_hidalgo`; summed, the 9:50 PM text showed him at 52 for a 26-sale
+# day (Megan: "Raf's sales are being doubled"). The old key is skipped for any
+# day the new one has a reading; with no `raf` row the old row still counts.
+SUPERSEDED_BY = {"rafael_hidalgo": "raf"}
+
 # The selling day, Central. The plist fires at :50 (after most offices' relay
 # has caught the hour); this is the guard the code applies, so a stray hand run
 # at 9am texts nothing. weekday(): (first hour, last hour) inclusive.
