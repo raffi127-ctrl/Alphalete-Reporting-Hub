@@ -95,10 +95,13 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
         for key, (office, mode) in RP.PUSH_OFFICES.items():
             if mode != "live":
                 continue
-            homes = [m for m, offs in offices.ROTATION_BY_MACHINE.items()
-                     if office in offs]
-            self.assertEqual(len(homes), 1, (key, homes))
-            self.assertIn(homes[0], offices.RELAY_MACHINES, (key, homes))
+            # One number, or several for a computer that takes turns (Raf's
+            # three, 11/03): each one is checked on its own.
+            for one in (office if isinstance(office, tuple) else (office,)):
+                homes = [m for m, offs in offices.ROTATION_BY_MACHINE.items()
+                         if one in offs]
+                self.assertEqual(len(homes), 1, (key, one, homes))
+                self.assertIn(homes[0], offices.RELAY_MACHINES, (key, one, homes))
 
     def test_a_relay_entry_is_never_a_lucy(self):
         from automations.applicant_push import offices
