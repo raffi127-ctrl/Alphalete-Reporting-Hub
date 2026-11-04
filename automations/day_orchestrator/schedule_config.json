@@ -117,7 +117,7 @@
   },
   "sheet:owner_board_verizon": {
    "label": "Verizon numbers on the Org board for the NEW A Players text",
-   "_note": "Carlos 2026-11-04. readiness._probe_owner_board_verizon -> owner_chat_texts.run.verizon_status(): ready once yesterday's Verizon column is filled, today's Wireless Only PDF is in, or past config.VERIZON_SEND_ANYWAY_AFTER (10:30). Fails OPEN.",
+   "_note": "Carlos 2026-11-04. readiness._probe_owner_board_verizon -> owner_chat_texts.run.verizon_status(): ready once yesterday's Verizon column is filled or today's Wireless Only PDF is in. Fails OPEN.",
    "probe": {
     "type": "owner_board_verizon"
    }
@@ -1238,7 +1238,7 @@
     ],
     "not_before": "09:30"
    },
-   "_note": "Carlos 2026-11-04: the WOW delta chart in NEW A Players after the Verizon numbers land, so Nico is current. When today's PDF is in it fills the Verizon section + All Campaigns, then texts. Past 10:30 it sends anyway and the caption says Verizon is not in. Waits in readiness. No Hub card (the _send suffix); the 7:45 owner_chat_texts_board rooms are untouched.",
+   "_note": "Carlos 2026-11-04: the WOW delta chart in NEW A Players after the Verizon numbers land, so Nico is current. When today's PDF is in it fills the Verizon section + All Campaigns, then texts. Never sends without Verizon: not in by the noon backstop = no text, MISSED, alert. Waits in readiness. No Hub card (the _send suffix); the 7:45 owner_chat_texts_board rooms are untouched.",
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],

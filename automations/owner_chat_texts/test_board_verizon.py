@@ -9,7 +9,6 @@ from unittest import mock
 from automations.owner_chat_texts import config as cfg
 from automations.owner_chat_texts import run
 
-# A future day is never past the deadline, so only the mocks decide.
 DAY = dt.date.today() + dt.timedelta(days=2)
 
 
@@ -61,13 +60,10 @@ class BoardVerizon(unittest.TestCase):
         self._go([True, True, False], True, dry_run=True)
         self.top_off.assert_not_called()
 
-    def test_past_deadline_sends_and_caption_says_so(self):
-        past = dt.date.today() - dt.timedelta(days=1)
-        with mock.patch.object(run, "_verizon_blank", return_value=True), \
-                mock.patch.object(run, "_verizon_pdf_in", return_value=False):
-            res = run.run("board_verizon", day=past, dry_run=False)
-        self.assertTrue(res["ok"])
-        self.assertIn("Verizon not in yet", self.send.call_args[0][1])
+    def test_top_off_that_leaves_nico_blank_does_not_send(self):
+        res = self._go([True, True, True], True)
+        self.assertFalse(res["ok"])
+        self.send.assert_not_called()
 
     def test_already_sent_does_nothing(self):
         m = run._marker("wow_board_verizon", DAY)

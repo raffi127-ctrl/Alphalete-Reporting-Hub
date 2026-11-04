@@ -243,19 +243,14 @@ def _verizon_pdf_in(day: dt.date) -> bool:
 
 def verizon_status(day: dt.date) -> tuple:
     """(ready, reason) for the NEW A Players board. Ready when Nico's yesterday
-    is on the board, when today's PDF is in (the run tops it off), or past
-    VERIZON_SEND_ANYWAY_AFTER. Readiness asks this, so report and gate agree."""
-    now = dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()
-    hh, mm = (int(x) for x in cfg.VERIZON_SEND_ANYWAY_AFTER.split(":"))
-    if day < now.date() or (day == now.date() and now.time() >= dt.time(hh, mm)):
-        return True, "past %s — sending with what the board has" % (
-            cfg.VERIZON_SEND_ANYWAY_AFTER)
+    is on the board or today's PDF is in (the run tops it off). No send-anyway
+    time: Carlos asked for it to wait for the numbers. Readiness asks this, so
+    report and gate agree."""
     if not _verizon_blank(day):
         return True, "Verizon is on the board"
     if _verizon_pdf_in(day):
         return True, "today's Verizon PDF is in"
-    return False, "Verizon PDF not in yet (sends anyway at %s)" % (
-        cfg.VERIZON_SEND_ANYWAY_AFTER)
+    return False, "Verizon PDF not in yet"
 
 
 def _top_off_verizon() -> None:
@@ -293,13 +288,14 @@ def _run_board_verizon(day: dt.date, out_dir: Path, dry_run: bool, force: bool,
                 return
         if not dry_run and _verizon_blank(day) and _verizon_pdf_in(day):
             _top_off_verizon()
-        caption = cfg.board_caption(day)
-        if _verizon_blank(day):
-            caption += " (Verizon not in yet)"
+        if not dry_run and not force and _verizon_blank(day):
+            out["errors"].append("board_verizon: the PDF is in but Nico's "
+                                 "yesterday is still blank — not sending")
+            return
         from automations.owner_chat_texts.board_shot import capture_wow_board
         png = capture_wow_board(out_dir)
-        _send_item(key, caption, png, cfg.VERIZON_BOARD_GROUPS, day, dry_run,
-                   out, resend=resend)
+        _send_item(key, cfg.board_caption(day), png, cfg.VERIZON_BOARD_GROUPS,
+                   day, dry_run, out, resend=resend)
     except Exception as e:  # noqa: BLE001
         out["errors"].append("board_verizon: %s: %s" % (type(e).__name__,
                                                         str(e)[:240]))
