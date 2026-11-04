@@ -1095,6 +1095,64 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
     return {"summary": parts[0], "checks": checks}
 
 
+# ---------------------------------------------------------------------------
+# 'Vantura Commissions by Week' (Carlos 2026-11-04): a separate book with one
+# STATIC tab per week ending, so he can flip through weeks without the B1
+# dropdown + ~40s rebuild wait. The live Commission tab stays the engine and
+# the P&L chain is untouched; this freezes the finished render each Wednesday.
+# Rerun-safe: a tab with the same name is replaced, so re-snapping after a
+# hand-applied adjustment batch keeps the book current:
+#   PYTHONPATH=. .venv/bin/python -c "import datetime as dt; \
+#     from automations.vantura_payroll.run import _snapshot_commission, \
+#     SHEET_ID; _snapshot_commission(dt.date(2026,11,1), write=True, \
+#     sheet_id=SHEET_ID)"
+COMMISSIONS_BOOK_ID = "1jLiF63hKcV6X6j7DnTEKQr3Up6tnNwCuy9aUT7DxAoU"
+
+
+def _snapshot_commission(week: dt.date, *, write: bool, sheet_id: str,
+                         log=_log) -> str:
+    """Copy the Commission tab (styling and all) into the commissions book as
+    'WE m.d', then overwrite every cell with its computed value so the tab is
+    static — no RAW refs, no dropdown, instant to open."""
+    from automations.recruiting_report.fill import open_by_key
+    name = f"WE {week.month}.{week.day}"
+    if not write:
+        log(f"dry-run: would snapshot Commission -> {name}")
+        return ""
+    sh = open_by_key(sheet_id)
+    comm = sh.worksheet("Commission")
+    b1 = comm.acell("B1", value_render_option="UNFORMATTED_VALUE").value
+    if str(b1) != str(_week_num(week)):
+        raise RuntimeError(f"Commission!B1={b1!r} != {_week_num(week)} — "
+                           "won't snapshot another week's render")
+    dest = open_by_key(COMMISSIONS_BOOK_ID)
+    props = comm.copy_to(COMMISSIONS_BOOK_ID)
+    new_id = props["sheetId"]
+    for ws in dest.worksheets():
+        if ws.title == name and ws.id != new_id:
+            dest.del_worksheet(ws)
+    grid = comm._properties["gridProperties"]
+    dest.batch_update({"requests": [
+        {"updateSheetProperties": {"properties": {
+            "sheetId": new_id, "title": name, "index": 0, "hidden": False},
+            "fields": "title,index,hidden"}},
+        {"setDataValidation": {"range": {  # the copied B1 dropdown is dead
+            "sheetId": new_id, "startRowIndex": 0,
+            "endRowIndex": grid["rowCount"], "startColumnIndex": 0,
+            "endColumnIndex": grid["columnCount"]}}},
+    ]})
+    vals = comm.get(value_render_option="UNFORMATTED_VALUE")
+    width = max((len(r) for r in vals), default=1)
+    mat = [[("" if c is None else c)
+            for c in list(r) + [""] * (width - len(r))] for r in vals]
+    nws = dest.worksheet(name)
+    nws.update(mat, "A1", raw=True)
+    if grid["rowCount"] > len(mat):  # clear any stray formulas below
+        nws.batch_clear([f"A{len(mat) + 1}:{grid['rowCount']}"])
+    log(f"commissions book: snapped {name} ({len(mat)}x{width} cells)")
+    return name
+
+
 def payroll_holes(summary: str, checks: str, raf_note: str,
                   l2_err: str) -> list:
     """What this run left undone for Carlos — [] when the week is ready.
@@ -1928,6 +1986,13 @@ def main(argv: list[str] | None = None) -> int:
                 _log(f"clean P&L tab: {out}")
             except Exception as e:  # noqa: BLE001
                 _log(f"clean P&L tab SKIPPED ({e!r}) — payroll itself is fine")
+            # Freeze this week's finished Commission render into the
+            # 'Vantura Commissions by Week' book (one static tab per week).
+            try:
+                _snapshot_commission(week, write=write, sheet_id=sheet_id)
+            except Exception as e:  # noqa: BLE001
+                _log(f"commissions-book snapshot SKIPPED ({e!r}) — the book "
+                     "is stale for this week; snap it by hand")
         _kickoff_dm(week, raw_range, summary, checks, send=send)
         if send and sheet_id == SHEET_ID:
             _record_delivery(week, summary, checks, raf_note, l2_err)
