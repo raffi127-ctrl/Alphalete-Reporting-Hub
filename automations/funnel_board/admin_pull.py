@@ -177,6 +177,8 @@ def main(argv=None):
     ap.add_argument("--start", required=True, help="first report Sunday, YYYY-MM-DD")
     ap.add_argument("--end", required=True, help="last report Sunday, YYYY-MM-DD")
     ap.add_argument("--tab", default="", help="control-workbook tab to dump the JSON into")
+    ap.add_argument("--admins-tab", default="",
+                    help="also dump the office's Admins page (p=311) rows into this tab, to name the admin ids")
     ap.add_argument("--inspect-tab", default="",
                     help="also dump the raw DOM around 'First Interviews Booked' (last week pulled) into this tab")
     a = ap.parse_args(argv)
@@ -204,6 +206,21 @@ def main(argv=None):
                 log("   week %s FAILED: %s: %s" % (sun, type(e).__name__, str(e)[:160]))
                 payload["weeks"][sun.isoformat()] = {"error": "%s: %s" % (type(e).__name__, str(e)[:160])}
             out_path.write_text(json.dumps(payload))
+        if a.admins_tab:
+            try:
+                page.goto("https://applicantstream.com/index.cfm?rqst=%s&p=311" % rqst,
+                          wait_until="domcontentloaded", timeout=60000)
+                page.wait_for_timeout(2500)
+                adm = page.evaluate("""() => ({url: location.href,
+                    rows: [...document.querySelectorAll('table tr')].slice(0, 300).map(tr => ({
+                        cells: [...tr.cells].map(c => (c.innerText || '').replace(/\\s+/g, ' ').trim()).slice(0, 10),
+                        attrs: [...tr.attributes].map(x => x.name + '=' + x.value).join(' ').slice(0, 200),
+                        ids: [...tr.querySelectorAll('[href],[data-id],[data-admin-id],[value]')]
+                            .map(e => (e.getAttribute('href') || e.getAttribute('data-id') || e.getAttribute('data-admin-id') || e.getAttribute('value') || '').slice(0, 120)).slice(0, 6)}))})""")
+                adm["office"] = a.office
+                write_tab(a.admins_tab, adm)
+            except Exception as e:  # noqa: BLE001
+                log("   admins page FAILED: %s: %s" % (type(e).__name__, str(e)[:160]))
         if a.inspect_tab:
             try:
                 info = page.evaluate(_JS_INSPECT)
