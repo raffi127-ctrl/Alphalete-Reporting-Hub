@@ -99,6 +99,17 @@ def _loads(value) -> dict:
         return {}
 
 
+# ONE OFFICE, TWO RELAY KEYS -> ONE KEY FOR EVERY READER. Raf's board, its
+# saved roster (61 rows), the owner text and the birthday liveness check all
+# key on `rafael_hidalgo`, the key Lucy 1's sales-board sweep relayed him
+# under for two months. Since 2026-11-03 his own MacBook (Lucy ECO, key `raf`)
+# relays the same SaraPlus. Folding the new key into the old one here means
+# nothing downstream is re-keyed and nothing is counted twice: for a day both
+# relayed, the machine's reading wins (it is the one that keeps running once
+# the sweep's relay leg is switched off on 'Relay Keys').
+SAME_OFFICE = {"raf": "rafael_hidalgo"}
+
+
 def read_all() -> dict:
     """{office_key: {date: {REP: {Int, Int Up, DTV, NL}}}}.
 
@@ -118,6 +129,11 @@ def read_all() -> dict:
             str(name).strip(): _measures(vals)
             for name, vals in sales.items() if str(name).strip()
         }
+    for new, old_key in SAME_OFFICE.items():
+        if new in out:
+            merged = dict(out.get(old_key) or {})
+            merged.update(out.pop(new))          # the machine's day wins
+            out[old_key] = merged
     return dict(out)
 
 
