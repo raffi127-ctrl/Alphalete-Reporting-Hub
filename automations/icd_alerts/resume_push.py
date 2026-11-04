@@ -1203,6 +1203,7 @@ def _walk(page, live: bool, record: dict) -> dict:
                 "send_unconfirmed", 0)),
             "walled": bool(OAT._cf_walled()),
             "why_left": dict(walk.get("why_left") or {}),
+            "cf": dict(getattr(OAT, "CF_STATS", {}) or {}),
             "why": "" if rc == 0 else "the walk stopped (rc=%s)" % rc}
 
 
@@ -1288,6 +1289,36 @@ def stats_summary(record: dict, office: Optional[str]) -> str:
     return "push stats"
 
 
+def _etime_min(et: str) -> Optional[int]:
+    """ps etime '[[dd-]hh:]mm:ss' -> whole minutes (macOS and Linux)."""
+    try:
+        days, _, rest = et.strip().rpartition("-")
+        parts = [int(x) for x in rest.split(":")]
+        while len(parts) < 3:
+            parts.insert(0, 0)
+        h, m, _s = parts
+        return (int(days or 0) * 24 + h) * 60 + m
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _chrome_up_min() -> Optional[int]:
+    """Minutes Lucy's Chrome has been running (one Chrome, kept between runs),
+    or None. Part of the office-computer comparison (Megan 2026-11-04)."""
+    try:
+        if IS_WINDOWS:
+            return None
+        out = subprocess.run(["pgrep", "-of", "user-data-dir=%s" % PROFILE_DIR],
+                             capture_output=True, text=True).stdout.split()
+        if not out:
+            return None
+        et = subprocess.run(["ps", "-o", "etime=", "-p", out[0]],
+                            capture_output=True, text=True).stdout.strip()
+        return _etime_min(et)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
     try:
         from automations.icd_alerts import relay as R
@@ -1306,6 +1337,9 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             "unconfirmed": int(out.get("unconfirmed") or 0),
             "walled": bool(out.get("walled")), "result": result,
             "why_left": out.get("why_left") or {},
+            "cf": out.get("cf") or {},
+            "chrome": out.get("chrome") or "",
+            "chrome_up_min": out.get("chrome_up_min"),
             "at": dt.datetime.now().strftime("%H:%M")}),
             log=_log, office_key=str(rec.get("office_key") or ""))
     except Exception:  # noqa: BLE001 -- the telling, never the work
@@ -1381,6 +1415,11 @@ def push(live: bool, scheduled: bool = False) -> int:
                 out = _walk(page, live, record)
             finally:
                 undo()
+            try:
+                out["chrome"] = browser.version
+            except Exception:  # noqa: BLE001
+                pass
+            out["chrome_up_min"] = _chrome_up_min()
             if not out.get("reached"):
                 result = "no_queue_page"
                 _report_once(result, "the resume push could not open One App "

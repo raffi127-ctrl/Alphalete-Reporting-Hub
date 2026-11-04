@@ -2703,6 +2703,18 @@ def show_wall_tab() -> bool:
         return False
 
 
+# WHAT INDEED'S CHECK DID THIS WALK, for comparing office computers (Megan
+# 2026-11-04: "we need raf's apps pushing like carlos and khalil where the
+# check doesn't happen so often. we need to figure out what is being done
+# differently"). Reset each walk (reset_cf_session); read by resume_push.
+#   opens      Indeed resume tabs opened
+#   first      what the session's FIRST read met: "clean" (no check at all),
+#              "auto" (check shown, cleared by itself), "wall" (never cleared)
+#   auto_s     seconds the check took to clear itself, when it did
+#   checks     reads that met the check at all (first or later)
+CF_STATS: dict = {}
+
+
 def _cf_session_cleared() -> bool:
     return _CF_CLEARED
 
@@ -2735,6 +2747,7 @@ def reset_cf_session() -> None:
     global _CF_CLEARED, _CF_WALLED, _WALL_TAB_KEPT, _WALL_TAB_PAGE
     _CF_CLEARED, _CF_WALLED, _WALL_TAB_KEPT = False, False, False
     _WALL_TAB_PAGE = None
+    CF_STATS.clear()
 
 
 def _rd_mod():
@@ -3542,6 +3555,8 @@ def lookup_resume_phone(page):
         if _first_of_session:
             _log(f"    [cf] first resume read of this session — waiting up to "
                  f"{_polls}s for Indeed's check to clear itself")
+        CF_STATS["opens"] = CF_STATS.get("opens", 0) + 1
+        _met_check = False
         for _i in range(_polls):
             try:
                 title = (newpg.title() or "").lower()
@@ -3600,6 +3615,14 @@ def lookup_resume_phone(page):
                 title, body, texts = "", "", []
             challenged = ("just a moment" in title or "just a moment" in body.lower()
                           or "verify you are human" in body.lower())
+            if challenged and not _met_check:
+                _met_check = True
+                CF_STATS["checks"] = CF_STATS.get("checks", 0) + 1
+            if not challenged and body and _first_of_session \
+                    and "first" not in CF_STATS:
+                CF_STATS["first"] = "auto" if _met_check else "clean"
+                if _met_check:
+                    CF_STATS["auto_s"] = _i
             if not challenged and body:
                 # Past the gate. Remember it for the REST of this browser session:
                 # later reads need no long wait, and a later block is a real block
@@ -3636,6 +3659,8 @@ def lookup_resume_phone(page):
         reason = _blocked_reason(title, body)
         _shot(page, "applicant-panel")
         _shot(newpg, "viewer-" + ("blocked" if reason else "no-number"))
+        if reason and _first_of_session and "first" not in CF_STATS:
+            CF_STATS["first"] = "wall"
         if reason and _first_of_session:
             # The session never got in. Wall the tick (see _mark_cf_walled) rather
             # than letting every remaining applicant spend a retry on the same gate:
