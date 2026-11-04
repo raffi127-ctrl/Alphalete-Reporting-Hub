@@ -45,19 +45,26 @@ LUCY_STALE_MINUTES = 45
 BOARD_TITLE = "ALPHALETE OWNERS"
 TOTAL_LABEL = "ORG TOTAL"
 
-# The org averages split by time zone (Raf 2026-10-29, approving the format:
-# "for the bottom where it shows org averages, can you have it separate based
-# off of time zone?"). An owner's zone is his office's (icd_alerts.offices);
-# one with no office there (Raf's own, pulled by Lucy 1) is Central. Drawn
-# east to west; a zone with no owner on the board is left off, and a board
-# that is all one zone gets no subtotals (it would just repeat the ORG TOTAL).
-DEFAULT_ZONE = "America/Chicago"
-ZONE_LABELS = (
-    ("America/New_York", "EASTERN TOTAL"),
-    ("America/Chicago", "CENTRAL TOTAL"),
-    ("America/Denver", "MOUNTAIN TOTAL"),
-    ("America/Los_Angeles", "PACIFIC TOTAL"),
-)
+# D2D and B2B apart (Raf 2026-11-03: "distinguish between d2d and b2b guys ...
+# the averages at the bottom should be based off of d2d / b2b but different
+# time zones shouldn't negatively impact the avg knock times"). This replaces
+# the Eastern/Central totals of 10/29: every knock time is on its office's own
+# clock, so a 1:30 Eastern start and a 1:30 Central start average as the same
+# time and no zone total is needed. B2B = an office whose campaign starts
+# "b2b" (icd_alerts.offices); the shared Lucy offices are D2D. By OFFICE, not
+# by owner: an owner with both gets a line in each group.
+SEGMENT_FIELD = "_segment"
+D2D, B2B = "D2D", "B2B"
+SEGMENTS = (D2D, B2B)            # top to bottom
+
+# Chan's comparison line (Raf 2026-11-03: "add chans here for comparison").
+# Teal, on top, in no total: he is not in our org. This job pulls his rows
+# itself, on Lucy 1, right before it texts: gap_alerts used to have them in
+# hand under Raf's board, but Raf's board left Lucy 1 on 11/3, so nothing there
+# pulls him during the day any more. If the OwnerVille session is taken for
+# longer than this, the board goes out without his line rather than late.
+CHAN_NAME = "Chan Park"
+CHAN_SESSION_WAIT_S = 120
 
 # Last numbers sent per day — an hour where no owner's knocks moved is skipped.
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "owner_knocks_hourly"

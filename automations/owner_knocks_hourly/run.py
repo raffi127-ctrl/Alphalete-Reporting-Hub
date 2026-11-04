@@ -8,11 +8,13 @@ owner in the org.
 
     TOTAL KNOCKS — ALPHALETE OWNERS — Thu 10/29 · 5:20 PM
     # Reps | Rep            | Leads | Knocks | ... | Sale | ...
+    4 of 5 CHAN PARK          ...   (teal, comparison only, Raf 2026-11-03)
+    D2D OWNERS
     18 of 20 KASH RAI         ...
-    15 of 16 HAYTHAM NAGI     ...
-    ...
-    60 of 70 EASTERN TOTAL    ...   (one per time zone, Raf 2026-10-29)
-    100 of 120 CENTRAL TOTAL  ...
+    B2B OWNERS
+    15 of 16 RYAN MCSPADDEN   ...
+    100 of 120 D2D TOTAL      ...
+    60 of 70 B2B TOTAL        ...
     160 of 190 ORG TOTAL      ...
 
 Numbers are each office's Lucy ECO knocks relay for today ('ICD Knocks'), the
@@ -48,13 +50,22 @@ from automations.owner_knocks_hourly import config as cfg
 from automations.owner_sales_hourly import run as OSH
 
 
+def segment_of(office) -> str:
+    """D2D or B2B, off the office's campaign."""
+    campaign = (getattr(office, "campaign", "") or "").strip().lower()
+    return cfg.B2B if campaign.startswith("b2b") else cfg.D2D
+
+
 def owner_rows(values: List[List[str]], offices: Dict, day: dt.date, *,
                skip_stale: bool = True, log=print) -> Dict[str, List[Dict]]:
     """{owner: today's rep rows, every office of theirs pooled}.
 
     `values` is the 'ICD Knocks' tab as read. A row whose relay stopped (the
     office's Mac is off) is left off instead of drawn with frozen numbers —
-    the same rule the office's own board follows."""
+    the same rule the office's own board follows.
+
+    Every time is put on the office's own clock (OwnerVille stamps them in the
+    login's zone), and every row is tagged with its office's segment."""
     from automations.icd_alerts import knocks_map as KM, knocks_post as KP
     from automations.icd_alerts import post as P
 
@@ -74,12 +85,55 @@ def owner_rows(values: List[List[str]], offices: Dict, day: dt.date, *,
         except ValueError:
             log("%-14s knocks JSON unreadable — left off" % key)
             continue
+        office = offices.get(key)
+        raw, tracker = KP.shift_ov_clock(office, raw, tracker)
         rows = KM.to_rows(raw, tracker)
         if not rows:
             continue
-        name = OSH.owner_name(key, offices.get(key))
-        out.setdefault(name, []).extend(rows)
+        name = OSH.owner_name(key, office)
+        out.setdefault(name, []).extend(_tagged(rows, segment_of(office)))
     return out
+
+
+def _tagged(rows: List[Dict], segment: str) -> List[Dict]:
+    return [dict(r, **{cfg.SEGMENT_FIELD: segment}) for r in rows]
+
+
+def add_shared(everyone: Dict[str, List[Dict]],
+               shared: Dict[str, List[Dict]]) -> None:
+    """Offices a Lucy pulls (D2D) join the ECO rows. Skipped only for an owner
+    ECO already brought D2D rows for, so nobody is counted twice: Carlos's B2B
+    relay must not cost him his NDS crew."""
+    for name, rows in shared.items():
+        have = everyone.setdefault(name, [])
+        if not any(r.get(cfg.SEGMENT_FIELD) == cfg.D2D for r in have):
+            have.extend(_tagged(rows, cfg.D2D))
+
+
+def chan_rows(day: dt.date, log=print) -> Optional[List[Dict]]:
+    """Chan's rows for `day`, or None. No comparison is not a failed board, so
+    nothing here may stop the text. The campaign is pinned: it is a sticky
+    session setting and an unpinned pull can come back empty."""
+    from automations.gap_alerts import config as GA
+    from automations.knocks_intraday.run import compare_office
+    from automations.rashad_metrics.knocks_pull import (
+        campaign_for_office, pull_offices_days)
+    try:
+        who = compare_office()
+        pulled = pull_offices_days(
+            [(who, [day], campaign_for_office(who))], verbose=False,
+            profile_dir=str(GA.PROFILE_DIR),
+            session_wait_s=cfg.CHAN_SESSION_WAIT_S, priority="scheduled")
+        _name, days, err = pulled[0]
+        if err is not None:
+            raise err
+    except Exception as e:  # noqa: BLE001
+        log("Chan's line left off: %s: %s" % (type(e).__name__, str(e)[:200]))
+        return None
+    rows = (days or {}).get(day) or []
+    if not rows:
+        log("Chan's line left off: no rows for %s" % day)
+    return rows or None
 
 
 def _knocks(rows: List[Dict]) -> int:
@@ -93,47 +147,43 @@ def ranked(by_owner: Dict[str, List[Dict]]) -> List[Tuple[str, List[Dict]]]:
     return sorted(by_owner.items(), key=lambda kv: (-_knocks(kv[1]), kv[0]))
 
 
-def owner_zones(offices: Dict) -> Dict[str, str]:
-    """{owner name: IANA zone} from the offices' own settings."""
-    out: Dict[str, str] = {}
-    for key, office in offices.items():
-        tz = (getattr(office, "timezone", "") or "").strip()
-        if tz:
-            out.setdefault(OSH.owner_name(key, office), tz)
-    return out
-
-
-def zone_totals(by_owner: Dict[str, List[Dict]],
-                zones: Dict[str, str]) -> List[Tuple[str, List[Dict]]]:
-    """[(EASTERN TOTAL, their rows), ...] east to west; [] if one zone."""
-    known = dict(cfg.ZONE_LABELS)
-    pooled: Dict[str, List[Dict]] = {}
+def by_segment(by_owner: Dict[str, List[Dict]]
+               ) -> List[Tuple[str, Dict[str, List[Dict]]]]:
+    """[(D2D, {owner: rows}), (B2B, {owner: rows})], leaving off an empty one.
+    A row with no tag is D2D."""
+    out: Dict[str, Dict[str, List[Dict]]] = {}
     for name, rows in by_owner.items():
-        tz = zones.get(name) or cfg.DEFAULT_ZONE
-        if tz not in known:
-            tz = cfg.DEFAULT_ZONE
-        pooled.setdefault(tz, []).extend(rows)
-    if len(pooled) < 2:
-        return []
-    return [(label, pooled[tz]) for tz, label in cfg.ZONE_LABELS
-            if tz in pooled]
+        for r in rows:
+            seg = r.get(cfg.SEGMENT_FIELD) or cfg.D2D
+            out.setdefault(seg, {}).setdefault(name, []).append(r)
+    return [(seg, out[seg]) for seg in cfg.SEGMENTS if seg in out]
 
 
 def render(by_owner: Dict[str, List[Dict]], day: dt.date, now: dt.datetime,
-           zones: Optional[Dict[str, str]] = None):
-    """One PNG: a line per owner, a total per time zone, ORG TOTAL under."""
+           chan: Optional[List[Dict]] = None):
+    """One PNG: Chan's line, the D2D owners, the B2B owners, then a D2D TOTAL,
+    a B2B TOTAL and the ORG TOTAL."""
     from automations.total_knocks import render as R
 
     out_dir = cfg.OUT_DIR / day.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     everyone = [r for rows in by_owner.values() for r in rows]
-    subtotals = zone_totals(by_owner, zones or {})
+    segments = by_segment(by_owner)
+    compare = [(cfg.CHAN_NAME, chan)] if chan else []
+    lines = [line for _seg, owners in segments for line in ranked(owners)]
+    # Only one group on the board: its total would just repeat the ORG TOTAL.
+    subtotals = ([("%s TOTAL" % seg,
+                   [r for rows in owners.values() for r in rows])
+                  for seg, owners in segments] if len(segments) > 1 else [])
     return R.render_total_knocks(
         day, rows=everyone, out_dir=out_dir,
         title_suffix=cfg.BOARD_TITLE,
-        extra_totals=ranked(by_owner) + subtotals,
+        extra_totals=compare + lines + subtotals,
         summary_only=True, total_label=cfg.TOTAL_LABEL,
         extra_label_suffix="", summary_tail=len(subtotals),
+        summary_compare=len(compare),
+        summary_groups=[("%s OWNERS" % seg, len(owners))
+                        for seg, owners in segments],
         date_text="%s · %s" % (day.strftime("%a %m/%d"), OSH._clock(now)))
 
 
@@ -176,14 +226,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     offices = O.all_offices()
     everyone = owner_rows(values, offices, day,
                           skip_stale=not args.force and not args.day)
-    # Offices a Lucy pulls (Raf's) -- only for owners ECO did not already
-    # bring, so nobody is counted twice.
+    # Offices a Lucy pulls (Carlos's NDS crew).
     from automations.owner_knocks_hourly import share
     fresh = not args.force and not args.day
-    for name, rows in share.read(
-            book, day, log=print,
-            stale_minutes=cfg.LUCY_STALE_MINUTES if fresh else 0).items():
-        everyone.setdefault(name, rows)
+    add_shared(everyone, share.read(
+        book, day, log=print,
+        stale_minutes=cfg.LUCY_STALE_MINUTES if fresh else 0))
     if not everyone:
         print("no office has relayed knocks for %s yet — not texting" % day)
         return 0
@@ -210,7 +258,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("same knocks as the last text — skipped")
         return 0
 
-    png = render(by_owner, day, now, owner_zones(offices))
+    # Only on the Mac that texts: an OwnerVille login from anywhere else would
+    # knock Lucy 1's session off.
+    chan = chan_rows(day) if sys.platform == "darwin" else None
+    png = render(by_owner, day, now, chan)
     print("board: %s" % png)
 
     dry = not args.send

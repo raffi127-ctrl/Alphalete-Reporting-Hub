@@ -11,6 +11,11 @@ One picture into **Alphalete Owners 🔥 - Real** (the chat owner_sales_hourly
 already texts), from Lucy 1: Raf's Total Knocks board, same columns, but one
 line per owner (most knocks first) and an **ORG TOTAL** line under them.
 
+- Teal **CHAN PARK** line on top, for comparison (Raf 2026-11-03): in no total.
+- **D2D OWNERS**, then **B2B OWNERS** (B2B = an office whose campaign starts
+  `b2b`), then **D2D TOTAL**, **B2B TOTAL**, **ORG TOTAL** at the bottom.
+- Every knock time is on the office's own clock, so a time zone doesn't move
+  an average (a 1:30 Eastern start = a 1:30 Central start).
 - :20 every hour, Mon–Sat, 2 PM–9 PM Central.
 - Skipped when no owner's knocks moved since the last text.
 - An office whose relay stopped (>25 min old) is left off, not drawn frozen.
@@ -19,8 +24,11 @@ line per owner (most knocks first) and an **ORG TOTAL** line under them.
 
 Lucy ECO knocks relay: **Lucy Access App** workbook → **ICD Knocks** tab →
 today's row per office (the office's own TeleMapper grid), the same rows each
-office's own knocks board is drawn from. Pooled per owner (all their offices =
-one line). Owner names come from `icd_alerts.offices`.
+office's own knocks board is drawn from. Pooled per owner per group. Owner
+names and campaigns come from `icd_alerts.offices`. Carlos's NDS crew comes from
+the same workbook's **Lucy Knocks** tab (`share.py`). Chan is pulled live by this
+job on Lucy 1 (OwnerVille → TeleMapper, Chan Park, campaign 3), only when the
+board is about to go out; if the pull fails, the board goes without his line.
 
 **Only our org:** owners on the **Alphalete ORG Sales Board**'s top
 per-campaign boxes — the same filter as owner_sales_hourly. **Only owners on

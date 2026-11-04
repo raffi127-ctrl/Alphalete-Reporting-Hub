@@ -1229,7 +1229,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         summary_only: bool = False,
                         total_label: str = OFFICE_TOTAL_LABEL,
                         extra_label_suffix: str = " TOTAL",
-                        summary_tail: int = 0) -> Path:
+                        summary_tail: int = 0,
+                        summary_compare: int = 0,
+                        summary_groups: "list[tuple] | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -1306,9 +1308,13 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     The caller passes every owner as an extra_totals entry and the whole org
     as `rows`; summary_only leaves the rep rows off, so the board is just the
     owner lines over an "ORG TOTAL". Defaults keep every other board as is.
-    `summary_tail` = how many of the LAST extra_totals entries are subtotals
-    (Raf 2026-10-29: the org averages split by time zone), drawn as bands
-    just above the ORG TOTAL instead of as plain owner lines.
+    `summary_tail` = how many of the LAST extra_totals entries are subtotals,
+    drawn as bands just above the ORG TOTAL instead of as plain owner lines.
+    `summary_compare` = how many of the FIRST extra_totals entries are another
+    office's comparison line (Raf 2026-11-03, Chan), drawn teal like on every
+    other knocks board. `summary_groups` = [(label, owner lines under it)]
+    going down the board after the comparison lines: a labelled strip over each
+    group of owners (Raf 2026-11-03, D2D and B2B).
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -1479,7 +1485,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # time-zone subtotals and ORG TOTAL keep their bands.
         _cell_bgs.update(knock_kpis.cell_colors(
             cols, table, kpis, SUMMARY_KPI_COLUMNS,
-            set(range(len(extra_rows) - summary_tail, len(table))),
+            set(range(summary_compare))
+            | set(range(len(extra_rows) - summary_tail, len(table))),
             saturday=target.weekday() == 5))
     else:
         _cell_bgs.update(knock_kpis.cell_colors(
@@ -1520,6 +1527,26 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # index shifts one right. Done here rather than at record time so the
         # rule above reads against the columns it actually tested.
         _cell_bgs = {(r, c + 1): v for (r, c), v in _cell_bgs.items()}
+    _summary_bands: dict = {}
+    if summary_only:
+        # LAST, once nothing below indexes the table by owner: everything
+        # above counts rows without these strips.
+        _summary_bands = {i: THEME_TEAL["title_bg"]
+                          for i in range(summary_compare)}
+        _at = summary_compare
+        _strips = []
+        for _label, _n in (summary_groups or []):
+            _strips.append((_at, _label))
+            _at += _n
+        for _at, _label in reversed(_strips):
+            _strip = [""] * len(cols)
+            _strip[1] = _label
+            table.insert(_at, _strip)
+            _cell_bgs = {(r + 1 if r >= _at else r, c): v
+                         for (r, c), v in _cell_bgs.items()}
+        # Each insert above pushed the ones below it down by one.
+        for _i, (_at, _label) in enumerate(_strips):
+            _summary_bands[_at + _i] = THEME_BURGUNDY["header_bg"]
     # The "#" column's header names where its count comes from, and
     # "(TeleMapper)" is wider than two-digit counts will ever justify — so it
     # gets an explicit floor rather than hyphenating mid-word.
@@ -1549,8 +1576,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  # is the team bands below them that are colour-coded.
                  # [1] is the Rep column: number_rows put "#" at 0, which
                  # is also why _draw is told name_col=1 just above.
-                 section_rows={i: band_color(table[i][1])
-                               for i in bands} or None,
+                 section_rows=_summary_bands or {i: band_color(table[i][1])
+                                                 for i in bands} or None,
                  header_before=set(bands) or None)
 
 
