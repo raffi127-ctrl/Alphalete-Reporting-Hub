@@ -274,6 +274,38 @@ class ScheduledTest(unittest.TestCase):
         self.assertIsNone(appstream.scheduled_for(["Nakechia Johnson"], self.BOOKED,
                                                   self.STARTED))
 
+    def test_first_name_alone_only_counts_on_own_calendar(self):
+        booked = [{"office": "111", "time": "03:15 PM", "name": "Destiny Other"},
+                  {"office": "24279", "time": "02:15 PM", "name": "Destiny Caufield"}]
+        started = dt.datetime(2026, 11, 3, 14, 9, tzinfo=run.fathom.CT)
+        self.assertIsNone(appstream.scheduled_for(["Destiny"], booked[:1], started,
+                                                  own={"24279"}))
+        slot = appstream.scheduled_for(["Destiny"], booked, started, own={"24279"})
+        self.assertEqual(slot.strftime("%H:%M"), "14:15")
+        slot = appstream.scheduled_for(["Destiny Other"], booked[:1], started, own=set())
+        self.assertEqual(slot.strftime("%H:%M"), "15:15")   # full name: any calendar
+
+    def test_hasan_calendar_is_read(self):
+        self.assertIn("24279", appstream.other_offices())
+        self.assertEqual(appstream.own_offices("Hasan Salame"), {"24279"})
+
+    def test_one_interviewer_office_ignores_misheard_name(self):
+        m = dict(MEETING, owner="Hasan Salame")
+        self.assertEqual(run.interviewer(m, {"interviewer_name": "Gonzela"}), "Candela")
+
+    def test_fix_day_reply_time_and_warning(self):
+        from automations.first_round_scorecards import fix_day
+        old = ("*Hasan Salame's office* · *Started 2:09 PM CT* · scheduled 3:15 PM · 10 min · D\n"
+               ":warning: Started 65 min before the scheduled time\n*Score: 82/100*")
+        new = fix_day.fixed_reply(old, {"2:09 PM": {"slot": "2:15 PM", "early": 6}})
+        self.assertIn("scheduled 2:15 PM · 10 min", new)
+        self.assertIn(":warning: Started 6 min", new)
+        self.assertNotIn("65 min", new)
+        self.assertIn("*Score: 82/100*", new)
+        new = fix_day.fixed_reply(old, {"2:09 PM": {"slot": "2:15 PM", "early": 0}})
+        self.assertNotIn(":warning:", new)
+        self.assertIsNone(fix_day.fixed_reply(old, {"9:00 AM": {"slot": "x", "early": 0}}))
+
     def test_reply_shows_scheduled_and_started(self):
         m = dict(MEETING, scheduled_ct=self.STARTED.replace(minute=45, second=0))
         text = run.reply_text(m, result())

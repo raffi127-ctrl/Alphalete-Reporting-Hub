@@ -421,7 +421,8 @@ def _reply_name(text: str) -> str:
     return ""
 
 
-def restyle(rows: List[Dict], day: dt.date, office: str, *, channel: str = "") -> int:
+def restyle(rows: List[Dict], day: dt.date, office: str, *, channel: str = "",
+            prune: bool = False) -> int:
     """Re-write an office thread Lucy ALREADY posted in today's format: same
     thread, same link, edited in place, nothing new posted (Carlos Hidalgo,
     2026-10-09, wanted the 10/8 one spaced out too). Only Lucy's own messages;
@@ -461,6 +462,9 @@ def restyle(rows: List[Dict], day: dt.date, office: str, *, channel: str = "") -
         name = _reply_name(text)
         with_top = text.startswith(OVERVIEW_START) or (old_thread and i == 0 and name in new)
         if not with_top and name not in new:
+            if prune and name:      # a name that was really someone else's (fix_day)
+                _drop(client, channel, r["ts"])
+                print(f"  {office}: {name} removed")
             continue
         body = new.get(name, "")
         if with_top:
@@ -516,9 +520,16 @@ def main(argv=None) -> int:
     ap.add_argument("--only", metavar="OFFICE",
                     help="post just that office's thread, no summary (a backfill: e.g. "
                          "khalil, for an office added to CHANNELS after its days went by)")
+    ap.add_argument("--fix-office", metavar="OFFICE",
+                    help="one office's posted day: right interviewer name + AppStream "
+                         "times, no re-grading (see fix_day.py). Dry-run without --post")
+    ap.add_argument("--interviewer", help="with --fix-office: the right name")
     args = ap.parse_args(argv)
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
+    if args.fix_office:
+        from automations.first_round_scorecards import fix_day
+        return fix_day.fix(day, args.fix_office, args.interviewer, post=args.post)
     if args.restyle:
         rows = day_rows(day)
         if args.restyle.lower() == "all":

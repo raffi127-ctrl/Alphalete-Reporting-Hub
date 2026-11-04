@@ -62,6 +62,10 @@ BOARD_LOW_UNDER = 50
 # A new recording account = its key in fathom-creds.json + a line here; an
 # account missing here shows under its Zoom name until someone adds it.
 INTERVIEWERS: Dict[str, str] = {}
+# Offices with one interviewer, whose name Fathom mishears (Hasan's: Candela came
+# out as Gonzela / Camila / Candela in one day, Eve 2026-11-04). A second
+# interviewer in that office = take the line out.
+OFFICE_INTERVIEWER: Dict[str, str] = {"Hasan Salame": "Candela"}
 # Every Zoom in Camila's ZOOMS INFO tab is shared too: interviewers rotate
 # between them, the tab only says whose OFFICE each one serves (zooms.py).
 # Accounts SEVERAL interviewers share, one per slot (Rafael, 2026-09-29: the
@@ -102,6 +106,8 @@ def interviewer(m: Dict, result: Optional[Dict] = None) -> str:
     email = (rb.get("email") or "").lower()
     if email in INTERVIEWERS:
         return INTERVIEWERS[email]
+    if m.get("owner") in OFFICE_INTERVIEWER:
+        return OFFICE_INTERVIEWER[m["owner"]]
     said = " ".join((result or {}).get("interviewer_name", "").split()[:1]).strip(" .,")
     if said:
         return said.title()
@@ -404,7 +410,8 @@ def _add_scheduled(day: dt.date, graded: Dict[str, List]) -> None:
     print(f"AppStream: {len(bookings)} 1st rounds booked on {day}")
     for m, r in rows:
         m["scheduled_ct"] = appstream.scheduled_for(
-            r.get("applicants") or [], bookings, fathom.start_ct(m)) or ""
+            r.get("applicants") or [], bookings, fathom.start_ct(m),
+            own=appstream.own_offices(m.get("owner") or "") or None) or ""
     # not in Raf's three funnels (Carlos' office books in 11580): every other
     # office, read only when something is still unplaced
     if any(not m["scheduled_ct"] for m, _ in rows):
@@ -417,7 +424,8 @@ def _add_scheduled(day: dt.date, graded: Dict[str, List]) -> None:
         for m, r in rows:
             if not m["scheduled_ct"]:
                 m["scheduled_ct"] = appstream.scheduled_for(
-                    r.get("applicants") or [], bookings, fathom.start_ct(m)) or ""
+                    r.get("applicants") or [], bookings, fathom.start_ct(m),
+                    own=appstream.own_offices(m.get("owner") or "")) or ""
 
 
 def _dm_channel(client) -> str:
