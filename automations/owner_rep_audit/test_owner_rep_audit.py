@@ -347,6 +347,20 @@ class Matching(unittest.TestCase):
         self.assertFalse(granted(""))
 
 
+class AptelAccounts(unittest.TestCase):
+    """Aptel's people can't be picked for removal, by email or by name."""
+
+    def test_aptel_accounts_are_never_matched(self):
+        users = [{"id": "U1", "name": "Ana Paz", "email": "ana@aptel.com"},
+                 {"id": "U2", "name": "Bea Sol", "email": "bea@gmail.com",
+                  "external": True},
+                 {"id": "U3", "name": "Cruz Rey", "email": "cruz@gmail.com"}]
+        self.assertIsNone(find_rep({"name": "Ana Paz", "email": "ana@aptel.com"}, users))
+        self.assertIsNone(find_rep({"name": "Ana Paz", "email": ""}, users))
+        self.assertIsNone(find_rep({"name": "Bea Sol", "email": "bea@gmail.com"}, users))
+        self.assertEqual(find_rep({"name": "Cruz Rey", "email": ""}, users)["id"], "U3")
+
+
 if __name__ == "__main__":
     unittest.main()
 

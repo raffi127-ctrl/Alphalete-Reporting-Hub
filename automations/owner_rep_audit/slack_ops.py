@@ -24,9 +24,16 @@ def fold(name: str) -> str:
     return " ".join(re.sub(r"[^a-z ]+", " ", (name or "").lower()).split())
 
 
+# Aptel runs recruiting for the offices. Its people are never the owner's reps
+# to remove, whichever Slack they sit in (Eve 2026-11-04): accounts of Aptel's
+# own org are already `external`, and this catches the ones on AO's team.
+APTEL_DOMAIN = "@aptel.com"
+
+
 def _live(users: List[Dict]) -> List[Dict]:
     return [u for u in users
-            if not (u.get("deleted") or u.get("bot") or u.get("external"))]
+            if not (u.get("deleted") or u.get("bot") or u.get("external")
+                    or (u.get("email") or "").lower().endswith(APTEL_DOMAIN))]
 
 
 def find_owner(owner: str, users: List[Dict]) -> Optional[str]:
