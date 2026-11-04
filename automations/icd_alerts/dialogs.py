@@ -207,6 +207,25 @@ def choose(prompt: str, options):
             return options[int(raw) - 1]
 
 
+def hold(body: str, seconds: int) -> None:
+    """A box that closes by itself after `seconds`, for "please wait". Never raises.
+
+    It closes on a timer because that is the one way to close it. Inside System
+    Events (_front, without which it can open behind the Terminal) killing
+    osascript does not take the box away, and the next box must not open on top
+    of a leftover one. Mac only: every Lucy Eco is a Mac. Elsewhere it returns
+    at once and the caller just waits.
+    """
+    if not IS_MAC or seconds < 1:
+        return
+    try:
+        _osascript('display dialog "%s" with title "%s" buttons {"Please wait"} '
+                   'default button "Please wait" with icon note giving up after %d'
+                   % (_esc_applescript(body), TITLE, int(seconds)))
+    except Exception:  # noqa: BLE001 -- the Terminal line still says it
+        pass
+
+
 def message(body: str, *, error: bool = False) -> None:
     """Tell them something in a box they cannot miss. Never raises."""
     try:

@@ -67,7 +67,12 @@ STEPS = (
     "Click OK here when you're done. Then give Lucy up to 3 minutes to check. "
     "The last step opens by itself.")
 
-OFFER = ("One last thing, about 2 minutes, one time only.\n\n"
+# THE WAIT WAS WHERE IT LOOKED FINISHED (Eve 2026-11-04): up to 3 minutes with
+# no window and one Terminal line, right before the filter. Close it there and
+# the filter never opens.
+HOLD_ON = ("Almost done! Please don't close anything.\n\n"
+           "Lucy is checking with Gmail. The last step opens by itself.")
+OFFER = ("One last thing, about 5 minutes, one time only.\n\n"
          "This lets Lucy type SaraPlus's codes for you from now on. Only "
          "SaraPlus's code emails get forwarded to us. The rest of your inbox "
          "stays private.\n\n")
@@ -140,12 +145,40 @@ def _wait_for_gmail(office_key: str, say=print, sleep=time.sleep,
         sleep(CONFIRM_POLL_S)
 
 
-def _finish(ask, say=print, address: str = "") -> str:
+def holding(ask):
+    """What _wait_for_gmail sleeps with: the wait, with a box up the whole time.
+    Whoever clicks it away gets the rest of that pause without it."""
+    def pause(seconds):
+        started = time.time()
+        hold = getattr(ask, "hold", None)
+        if hold:
+            hold(HOLD_ON, seconds)
+        left = seconds - (time.time() - started)
+        if left > 0:
+            time.sleep(left)
+    return pause
+
+
+STEP_STAGE = "probe-code-forward-step"
+
+
+def _step(office_key: str, word: str) -> None:
+    """Where this owner got to, one row in ICD Faults per step. Until 2026-11-04
+    we could only guess where people stopped. Probes are filed, never posted."""
+    from automations.icd_alerts import relay as R
+    R.report_fault(STEP_STAGE, "Code forward %s: %s"
+                   % (dt.datetime.now().strftime("%H:%M"), word),
+                   office_key=office_key)
+
+
+def _finish(ask, say=print, address: str = "", office_key: str = "") -> str:
     """The forward is confirmed: the filter is all that is left. No mark here:
     OK on that box does not prove the filter was saved. _already_working marks
     this computer once a code has really arrived."""
     if not open_filter(ask, say, address):
+        _step(office_key, "filter not shown")
         return "filter not shown"
+    _step(office_key, "filter box closed with OK")
     return "done"
 
 
@@ -177,7 +210,7 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
     # ALREADY CONFIRMED (the address was added before, or one of us clicked the
     # mail): the only thing left is the filter, so nobody redoes step 1.
     if R.forward_confirmed(office_key):
-        return _finish(ask, say, _login_email())
+        return _finish(ask, say, _login_email(), office_key)
     try:
         login = _login_email()
         if login:
@@ -201,12 +234,15 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
         _copy(REPORTING_INBOX, say)
         _open(for_account(FORWARDING_URL, address), say)
         ask.message(STEPS % (REPORTING_INBOX, address))
+        _step(office_key, "gmail steps closed with OK")
         if not R.report_forward(address, office_key=office_key):
             say("      could not reach the reporting team -- tell them %s" % address)
             return "address not sent"
         for attempt in range(TRIES):
-            if _wait_for_gmail(office_key, say):
-                return _finish(ask, say, address)
+            if _wait_for_gmail(office_key, say, sleep=holding(ask)):
+                _step(office_key, "gmail confirmed, filter next")
+                return _finish(ask, say, address, office_key)
+            _step(office_key, "gmail did not confirm in time")
             if attempt + 1 < TRIES:
                 _copy(REPORTING_INBOX, say)
                 _open(for_account(FORWARDING_URL, address), say)
@@ -214,6 +250,7 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
         ask.message(LEFT_OPEN)
         return "not confirmed yet"
     except ask.Cancelled:
+        _step(office_key, "window cancelled")
         return "skipped for now"
     except Exception as e:  # noqa: BLE001
         say("      could not show the code-forward steps: %s" % type(e).__name__)

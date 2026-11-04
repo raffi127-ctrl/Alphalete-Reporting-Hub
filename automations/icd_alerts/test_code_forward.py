@@ -36,6 +36,9 @@ def setUpModule():
     p = mock.patch.object(R, "forward_working", return_value=False)
     p.start()
     unittest.addModuleCleanup(p.stop)
+    p = mock.patch.object(R, "report_fault", return_value=True)
+    p.start()
+    unittest.addModuleCleanup(p.stop)
 
 
 class FakeAsk:
@@ -186,6 +189,48 @@ class OnTheMac(unittest.TestCase):
         # Both older names were written on a press of OK.
         real = inspect.getsource(CF).split('MARK_PATH = C.APP_DIR / "')[1].split('"')[0]
         self.assertEqual(real, "sara-code-forward-working.txt")
+
+
+class TheWaitBeforeTheFilter(OnTheMac):
+    """Eve 2026-11-04: nothing on screen during the wait, ALL SET already read."""
+
+    def test_a_box_is_up_while_lucy_checks(self):
+        held = []
+        ask = FakeAsk(CF.YES)
+        ask.hold = lambda body, seconds: held.append((body, seconds))
+        self.confirmed.side_effect = [False, False, True]
+        with mock.patch.object(CF, "CONFIRM_POLL_S", 0):
+            self.assertEqual(self._go(ask), "done")
+        self.assertTrue(held)
+        self.assertIn("don't close anything", held[0][0])
+
+    def test_clicking_the_box_away_still_waits_the_whole_pause(self):
+        ask = FakeAsk(CF.YES)
+        ask.hold = lambda body, seconds: None
+        with mock.patch.object(CF.time, "sleep") as slept:
+            CF.holding(ask)(15)
+        self.assertGreater(slept.call_args.args[0], 14)
+
+    def test_a_box_that_runs_its_time_does_not_add_more(self):
+        clock = iter([100.0, 115.0])
+        ask = FakeAsk(CF.YES)
+        ask.hold = lambda body, seconds: None
+        with mock.patch.object(CF.time, "time", lambda: next(clock)), \
+             mock.patch.object(CF.time, "sleep") as slept:
+            CF.holding(ask)(15)
+        slept.assert_not_called()
+
+    def test_each_step_is_written_down(self):
+        R.report_fault.reset_mock()
+        self.assertEqual(self._go(FakeAsk(CF.YES)), "done")
+        said = [c.args[1] for c in R.report_fault.call_args_list]
+        for word in ("gmail steps closed", "gmail confirmed", "filter box closed"):
+            self.assertTrue(any(word in s for s in said), word)
+        self.assertEqual({c.args[0] for c in R.report_fault.call_args_list},
+                         {CF.STEP_STAGE})
+
+    def test_the_record_is_never_posted_to_anyone(self):
+        self.assertTrue(CF.STEP_STAGE.startswith("probe-"))
 
 
 class RealReportForward(unittest.TestCase):

@@ -221,6 +221,12 @@ def run(log=print) -> int:
             CF.offer_after_signin(say=log)
         except Exception:  # noqa: BLE001 -- same rule
             pass
+        # LAST, AFTER THE WINDOWS (Eve 2026-11-04). It used to print before the
+        # forward was offered, so an owner read ALL SET and closed everything
+        # with the filter still to do.
+        log("")
+        log("  ALL SET. Lucy can get into SaraPlus on her own, so your")
+        log("  sales will start coming through.")
     return rc
 
 
@@ -283,8 +289,7 @@ def verify_hidden_read(log=print) -> int:
         return 1
     if got.get("ok"):
         log("")
-        log("  ALL SET. Lucy can get into SaraPlus on her own, so your")
-        log("  sales will start coming through.")
+        log("  Lucy got in. Please don't close anything yet.")
         return 0
     log("")
     log("  Signed in, but landed somewhere unexpected (%s). Please send the "

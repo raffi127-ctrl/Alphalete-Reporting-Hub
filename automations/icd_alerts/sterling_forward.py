@@ -94,7 +94,7 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
             F._copy(F.REPORTING_INBOX, say)
             F._open(F.for_account(F.FORWARDING_URL, address), say)
             ask.message(ADD_FORWARD % (F.REPORTING_INBOX, address))
-            if not F._wait_for_gmail(office_key, say):
+            if not F._wait_for_gmail(office_key, say, sleep=F.holding(ask)):
                 ask.message(F.LEFT_OPEN)
                 return "not confirmed yet"
         F._open(F.for_account(FILTER_URL, address), say)

@@ -361,13 +361,50 @@ class SignInProvesTheAutomaticReadTest(unittest.TestCase):
     she can run now to make sure it's working before people actually hit the
     field today??" """
 
-    def test_a_good_hidden_read_says_all_set(self):
+    def test_a_good_hidden_read_does_not_say_all_set_yet(self):
+        """The forward windows still come after it (Eve 2026-11-04)."""
         from unittest import mock
         said = []
         with mock.patch.object(R, "check_account", return_value={"ok": True}):
             rc = X.verify_hidden_read(log=said.append)
         self.assertEqual(rc, 0)
+        self.assertFalse(any("ALL SET" in l for l in said))
+        self.assertTrue(any("don't close" in l for l in said))
+
+    def test_all_set_comes_after_the_forward_windows(self):
+        from unittest import mock
+        said = []
+        with mock.patch.object(X, "_window", side_effect=lambda **k: 0), \
+             mock.patch.object(X, "verify_hidden_read", side_effect=lambda **k: 0), \
+             mock.patch.object(X, "_tell_upstream"), \
+             mock.patch.object(X.C, "creds", return_value={}), \
+             mock.patch("automations.icd_alerts.code_forward.offer_after_signin",
+                        side_effect=lambda **k: said.append("WINDOWS")):
+            X.run(log=said.append)
+        self.assertLess(said.index("WINDOWS"),
+                        [i for i, l in enumerate(said) if "ALL SET" in l][0])
+
+    def test_all_set_still_prints_when_the_windows_blow_up(self):
+        from unittest import mock
+        said = []
+        with mock.patch.object(X, "_window", side_effect=lambda **k: 0), \
+             mock.patch.object(X, "verify_hidden_read", side_effect=lambda **k: 0), \
+             mock.patch.object(X, "_tell_upstream"), \
+             mock.patch.object(X.C, "creds", return_value={}), \
+             mock.patch("automations.icd_alerts.code_forward.offer_after_signin",
+                        side_effect=RuntimeError("boom")):
+            X.run(log=said.append)
         self.assertTrue(any("ALL SET" in l for l in said))
+
+    def test_no_all_set_when_the_hidden_read_fails(self):
+        from unittest import mock
+        said = []
+        with mock.patch.object(X, "_window", side_effect=lambda **k: 0), \
+             mock.patch.object(X, "verify_hidden_read", side_effect=lambda **k: 1), \
+             mock.patch.object(X, "_tell_upstream"), \
+             mock.patch.object(X.C, "creds", return_value={}):
+            X.run(log=said.append)
+        self.assertFalse(any("ALL SET" in l for l in said))
 
     def test_a_code_check_on_the_hidden_read_says_not_yet(self):
         from unittest import mock
