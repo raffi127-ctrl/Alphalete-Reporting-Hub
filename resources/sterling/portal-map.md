@@ -99,7 +99,8 @@ Section 4 (the old one-at-a-time form) is kept only as the fallback.
      assigned a task"**, "Dear <First>,", a **Get Started** link, note that mail may come from
      @fadv.co / @fadv.com / @sterlingcheck.com. (So recruiters' "check for the First Advantage
      email" line matches.) Not caught by the code-forward filter (subject differs) — stays private.
-   **Route fully mapped.** Unknown only: the real DOM selectors (screenshots so far).
+   **Route fully mapped AND driven by the bot 11/4** (try_here on Megan's Mac, stopped
+   before Send). See "Live-run findings" at the bottom.
 5. **Next** → **bulk upload**: the **CSV Template** is exactly `First,Last,Email` + CRLF (downloaded
    11/4, copy: `client-hub-template.csv` here — NOT "First Name…" as the video says) — fill it,
    upload, send to everyone at once (`sterling_send.build_csv`).
@@ -158,3 +159,28 @@ Test · COC/Site/Kit · App Notify · Action), "No Records Found."
 _Still to see:_ the bottom of the form (the submit button's label), the success page, and
 Sterling's "already invited" refusal (Sterling won't invite the same email twice — Megan).
 Per-office picks to learn: Job Position, Screening Package, Bill Code, State, City.
+
+## Live-run findings (bot dry run on Megan's Mac, 2026-11-04)
+
+Result: `{"status": "dry_run", "would_send": ["Megan Hidalgo"], "found": 1, "location": "Plano, TX, USA"}`.
+What the real pages needed, all now in `automations/icd_alerts/sterling_send.py`:
+
+- **"Multiple user alert"** after the code (`secure.sterlingdirect.com/oidc/idpresponse`):
+  "This username is already in use. Would you like to disconnect them so you can login?"
+  → **Yes** (Megan). ONE session per username: it signs out whoever else is in.
+- Login → code → portal: the address stays `auth.sterlingcheck.app/oauth2/login` through
+  password AND code (single-page) — don't judge progress by the URL there.
+- Client Hub can be opened directly (`#/start-order/?orderPage41=start-order`) once signed in —
+  the portal banner isn't needed (it swapped/closed the window once). Its dropdown lists load
+  a few seconds AFTER the page draws: wait, then click the box's input.
+- Dropdowns are react-select: wrapper `[data-testid="selectDropdown-<key>-wrapper"]`, input
+  `#<key>-input`, options `.list__option` (each name appears twice in the DOM — dedupe),
+  chosen value in hidden `input[name="<key>"]` (keys: position, screeningPackage, billingCode).
+- Location `#locationOfEmployment` only reacts to REAL keystrokes; suggestions are
+  `.locationSuggestion[role=option]` reading "**Plano** TX, USA" (no comma before the
+  state); after the click the box reads "Plano, TX, USA".
+- Osano cookie banner shows on Client Hub too (Deny Non-Essential).
+- The review page has TWO hidden file inputs: the first is an **"Attachments"** section — never
+  that one; the CSV goes in `input[type=file][accept*=".csv"]`. Then "Bulk candidates
+  uploaded: 1 found".
+- Still unseen working: pressing **Send Invites** (watch the first live job).

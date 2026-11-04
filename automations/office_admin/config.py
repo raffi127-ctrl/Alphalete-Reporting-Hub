@@ -106,6 +106,10 @@ class Office:
 OFFICES: Dict[str, Office] = {
     "omar": Office(key="omar", owner="Omar Mohamad", appstream_id="24153",
                    channel="C0C6HKZ63EK", bgc_mode="dry"),
+    # Raf's MacBook (ECO key raf, enrolled 11/03) is the FIRST test machine
+    # (Megan 2026-11-04): his Sterling account is rahidalgo, codes to raffi127.
+    "raf": Office(key="raf", owner="Rafael Hidalgo", appstream_id="11280",
+                  channel="C06881A7WLV", bgc_mode="dry"),
 }
 
 

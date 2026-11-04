@@ -54,6 +54,7 @@ automations/headshots/ov_upload.py
 automations/icd_alerts/office_jobs.py
 automations/icd_alerts/sterling_send.py
 automations/icd_alerts/sterling_forward.py
+automations/icd_alerts/sterling_setup.py
 automations/icd_alerts/pnl.py
 automations/icd_alerts/apex_signin.py
 automations/carlos_payroll_pull/__init__.py

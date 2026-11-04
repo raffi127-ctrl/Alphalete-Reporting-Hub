@@ -235,6 +235,9 @@ def _bgc_section(admin, reqs, ws) -> None:
             st.caption("Sent: %s" % ", ".join(res["sent"]))
         if res.get("failed"):
             st.warning("Not sent — please send by hand: %s" % ", ".join(res["failed"]))
+        if res.get("unconfirmed"):
+            st.warning("Not sure these went out — check Sterling before sending again: %s"
+                       % ", ".join(res["unconfirmed"]))
         if res.get("error") and last_send.get("Status") == C.FAILED:
             st.caption(res["error"])
 

@@ -35,6 +35,10 @@ SC_CREDS_PATH = APP_DIR / "servicecloud-creds.json"
 # computer (Carlos 2026-10-05). THEIR login, which sees only their own
 # office -- and a push can only reach what the account can see.
 AS_CREDS_PATH = APP_DIR / "appstream-creds.json"
+# Sterling (First Advantage): only for an office whose admin sends background
+# checks from the office admin page (Megan 2026-11-04). The ICD's OWN Sterling
+# login, typed once on this computer (sterling_setup) -- never sent anywhere.
+STERLING_CREDS_PATH = APP_DIR / "sterling-creds.json"
 # ITS OWN PROFILE, and one that must NEVER be rotated away automatically.
 # sara_read throws a wedged SaraPlus profile out and signs in again, because a
 # SaraPlus login needs only an email and a password. This profile IS the
@@ -77,6 +81,9 @@ OV_PROFILE_DIR = APP_DIR / "chrome-profile-ov"
 # Its own profile too: the resume push holds a browser open for minutes, and
 # it must never lock the profile a knocks read or a SaraPlus sweep needs.
 AS_PROFILE_DIR = APP_DIR / "chrome-profile-as"
+# Sterling's own profile: its "Remember me" lives here, so a remembered
+# computer is not asked for an emailed code on every run.
+STERLING_PROFILE_DIR = APP_DIR / "chrome-profile-sterling"
 LOG_PATH = APP_DIR / "agent.log"
 
 # The service filter and grid that carry credit checks. Imported rather than
@@ -313,6 +320,30 @@ def save_appstream_creds(username: str, password: str) -> Path:
     except OSError:
         pass
     return AS_CREDS_PATH
+
+
+def sterling_creds() -> Dict[str, str]:
+    """{'username', 'password'} for this office's Sterling login, or {}."""
+    if not STERLING_CREDS_PATH.exists():
+        return {}
+    try:
+        data = json.loads(STERLING_CREDS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+    if not (data.get("username") and data.get("password")):
+        return {}
+    return {"username": data["username"], "password": data["password"]}
+
+
+def save_sterling_creds(username: str, password: str) -> Path:
+    app_dir()
+    STERLING_CREDS_PATH.write_text(json.dumps({"username": username,
+                                               "password": password}))
+    try:
+        STERLING_CREDS_PATH.chmod(0o600)
+    except OSError:
+        pass
+    return STERLING_CREDS_PATH
 
 
 def install() -> Dict:

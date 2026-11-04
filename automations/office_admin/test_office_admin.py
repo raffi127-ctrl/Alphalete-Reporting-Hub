@@ -396,6 +396,11 @@ class ClientHubLocation(unittest.TestCase):
         self.assertTrue(SS.location_matches("Plano, TX, USA", loc))
         self.assertTrue(SS.location_matches("plano,tx", loc))
         self.assertFalse(SS.location_matches("Plano, IL, USA", loc))
+        # exactly as the live suggestion list reads (11/04)
+        self.assertTrue(SS.location_matches("Plano TX, USA", loc))
+        self.assertFalse(SS.location_matches("Plano IL, USA", loc))
+        self.assertEqual(SS.pick_location_suggestion(
+            ["Plano IL, USA", "Plano TX, USA", "Planoles Spain", "Plano IA, USA"], loc), "Plano TX, USA")
 
     def test_suggestion_list_picks_the_right_state(self):
         from automations.icd_alerts import sterling_send as SS
@@ -555,19 +560,37 @@ class SterlingForward(unittest.TestCase):
 
 
 class OfficeComputer(unittest.TestCase):
-    def test_sterling_dry_sends_nothing(self):
+    def test_no_saved_login_is_an_answer_not_a_browser(self):
         from automations.icd_alerts import sterling_send
-        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=False,
-                                       location={"state": "Texas", "city": "Plano"})
-        self.assertEqual(r["status"], "dry_run")
-        self.assertEqual(r["location"], "Plano, Texas")
-        self.assertEqual(r["would_send"], ["A B"])
-
-    def test_sterling_live_refuses_until_wired(self):
-        from automations.icd_alerts import sterling_send
-        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=True,
-                                       location={"state": "Texas", "city": "Plano"})
+        with mock.patch("automations.icd_alerts.config.sterling_creds", return_value={}):
+            r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}],
+                                           live=False, location={"state": "Texas", "city": "Plano"})
         self.assertEqual(r["status"], "error")
+        self.assertIn("no Sterling login", r["error"])
+
+    def test_dry_run_drives_the_route_but_never_presses_send(self):
+        from automations.icd_alerts import sterling_send as SS
+        page = mock.MagicMock()
+        with mock.patch.object(SS, "sign_in"), \
+                mock.patch.object(SS, "open_hub", return_value=page), \
+                mock.patch.object(SS, "fill_order"), \
+                mock.patch.object(SS, "upload", return_value=1), \
+                mock.patch.object(SS, "press_send") as send:
+            r = SS.run_route(page, PEOPLE, LOC, live=False, creds={"username": "u", "password": "p"})
+        send.assert_not_called()
+        self.assertEqual((r["status"], r["found"]), ("dry_run", 1))
+
+    def test_live_presses_send(self):
+        from automations.icd_alerts import sterling_send as SS
+        page = mock.MagicMock()
+        with mock.patch.object(SS, "sign_in"), \
+                mock.patch.object(SS, "open_hub", return_value=page), \
+                mock.patch.object(SS, "fill_order"), \
+                mock.patch.object(SS, "upload", return_value=1), \
+                mock.patch.object(SS, "press_send") as send:
+            r = SS.run_route(page, PEOPLE, LOC, live=True, creds={"username": "u", "password": "p"})
+        send.assert_called_once()
+        self.assertEqual(r["status"], "sent")
 
     def test_unknown_kind_is_an_answer_not_a_crash(self):
         from automations.icd_alerts import office_jobs

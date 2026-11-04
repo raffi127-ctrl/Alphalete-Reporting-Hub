@@ -1,0 +1,72 @@
+"""Set this computer up to send Sterling background checks. Run once, by the ICD.
+
+    python -m automations.icd_alerts.sterling_setup
+
+WHY (Megan 2026-11-04). The office admin presses "Send background checks"
+somewhere else; THIS computer signs in to the ICD's own Sterling account and
+sends them (sterling_send). Two things only the ICD can give it, both asked
+here, once:
+
+  1. their Sterling login (User ID + password) -- saved on THIS computer
+     only (config.save_sterling_creds), never sent to us or the relay;
+  2. the code forward -- Sterling emails a code on new logins, to the ICD's
+     own email, and the Gmail filter sends ONLY those code mails to us
+     (sterling_forward).
+
+Then one test sign-in (with the code, if Sterling asks) so the ICD knows it
+works while they're still sitting there.
+"""
+from __future__ import annotations
+
+from automations.icd_alerts import config as C
+
+ASK_USER = ("Lucy can send your office's background checks from this computer.\n\n"
+            "Your Sterling (First Advantage) User ID -- the one you sign in with "
+            "at sterlingcheck.app. It's often not an email:")
+ASK_PASSWORD = "Your Sterling password (saved on this computer only):"
+
+
+def ask_login(ask, say=print) -> str:
+    """Ask for and save the login. Returns a word for the summary."""
+    try:
+        user = ask.text(ASK_USER).strip()
+        if not user:
+            return "skipped -- no User ID"
+        pwd = ask.password(ASK_PASSWORD)
+    except ask.Cancelled:
+        return "skipped for now"
+    if not pwd:
+        return "skipped -- no password"
+    C.save_sterling_creds(user, pwd)
+    say("      Sterling login saved on this computer.")
+    return "saved"
+
+
+def main(argv=None) -> int:
+    from automations.icd_alerts import dialogs as ask
+    from automations.icd_alerts import sterling_forward, sterling_send
+
+    def say(m=""):
+        print(m, flush=True)
+
+    office_key = str(C.install().get("office_key") or "")
+    if not C.sterling_creds() or (argv and "--again" in argv):
+        if ask_login(ask, say) != "saved":
+            say("  NOT YET -- run this same line again when you're ready.")
+            return 1
+    fwd = sterling_forward.walk_through(ask, say, office_key=office_key)
+    say("      code forward: %s" % fwd)
+    say("")
+    say("  Testing the sign-in (about a minute)...")
+    res = sterling_send.check_login(office_key=office_key, log=say)
+    if res.get("ok"):
+        say("  ALL SET. Your admin can send background checks from now on.")
+        return 0
+    say("  The sign-in didn't finish: %s" % res.get("error"))
+    say("  Run this same line again, or tell the reporting team.")
+    return 1
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))
