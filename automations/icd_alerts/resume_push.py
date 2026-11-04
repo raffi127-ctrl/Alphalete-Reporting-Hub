@@ -1168,7 +1168,21 @@ def _walk(page, live: bool, record: dict) -> dict:
             _log("await template step skipped: %s" % type(e).__name__)
     before = len(OAT._ACTIVITY_ROWS)
     OAT.LAST_WALK = {}
+    # LEAVE INDEED'S BOX UP FOR THE PERSON THE DM ASKS (Megan 2026-11-04 on
+    # Raf's MacBook: "nothing is popped up to clear"). The box only existed
+    # during the walk's 150s wait, then the tab closed -- 40 walled runs and
+    # nothing for anyone to tick. From the run that sends the DM on, a walled
+    # read keeps its tab and puts it in front IN LUCY'S CHROME when the walk
+    # ends; it never pulls Chrome over what the person is doing.
+    try:
+        OAT.KEEP_WALL_TAB = (int(_state().get("wall_streak") or 0)
+                             >= WALL_RUNS - 1)
+    except Exception:  # noqa: BLE001
+        OAT.KEEP_WALL_TAB = False
     rc = OAT.run_walk(page, live=live)
+    if OAT.wall_tab_kept():
+        OAT.show_wall_tab()
+        _log("left Indeed's 'Verify you are human' page open in Lucy's Chrome")
     walk = dict(OAT.LAST_WALK or {})
     # The day's LAST push leaves tomorrow morning's text in place, so anyone
     # texted when the AI's hours open is offered that day's slots.
