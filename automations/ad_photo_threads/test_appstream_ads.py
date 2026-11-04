@@ -39,6 +39,12 @@ class ReportRowsTests(unittest.TestCase):
         self.assertEqual(aa.ad_of_close(rows, "Jodens Hyacinthie"), ["AT&T Team Member"])
         self.assertEqual(aa.ad_of_close(rows, "Jordan Hyacinthie"), [])
 
+    def test_interview_table_ad_column(self):
+        head = ["", "First Name", "Last Name", "Email", "Phone", "Rating", "Job Board",
+                "Date and Time", "Ad (Subject Line)", ""]
+        self.assertEqual(aa.interview_cols(head), (1, 2, 8))
+        self.assertIsNone(aa.interview_cols(["", "First Name", "Last Name", "Email"]))
+
     def test_near_names(self):
         rows = [self.row("Howard", "Barbour", "A"), self.row("Jim", "Barber", "B"),
                 self.row("Ann", "Lee", "C")]

@@ -196,6 +196,16 @@ def sent_rows(app, office_id: str, days: List[dt.date], debug: bool = False) -> 
     return rows
 
 
+def interview_cols(head: List[str]) -> Optional[Tuple[int, int, int]]:
+    """(first, last, ad) columns of an interview table. Its ad column is headed
+    "Ad (Subject Line)", not "Ad" (11/4: the first run read none of them)."""
+    names = [(x or "").strip().lower() for x in head]
+    ad = next((i for i, x in enumerate(names) if x == "ad" or x.startswith("ad (")), None)
+    if "first name" not in names or "last name" not in names or ad is None:
+        return None
+    return names.index("first name"), names.index("last name"), ad
+
+
 def interview_rows(app, office_id: str, days: List[dt.date]) -> List[List[str]]:
     """The "Total First Interviews" detail rows of `days`, shaped like
     sent_rows' (First, Last .. Ad). This table's columns are read by header."""
@@ -214,11 +224,11 @@ def interview_rows(app, office_id: str, days: List[dt.date]) -> List[List[str]]:
         except Exception:                     # noqa: BLE001 -- an empty page reads as no rows
             pass
         t = app.page.evaluate(JS_TABLE)
-        col = {(x or "").strip().lower(): i for i, x in enumerate(t["head"])}
-        fi, li, ai = col.get("first name"), col.get("last name"), col.get("ad")
-        if fi is None or li is None or ai is None:
+        cols = interview_cols(t["head"])
+        if cols is None:
             print(f"  interview table without the expected columns: {t['head']}")
             continue
+        fi, li, ai = cols
         for r in t["rows"]:
             if len(r) > max(fi, li, ai):
                 rows.append([r[fi], r[li], "", "", "", "", "", r[ai]])
