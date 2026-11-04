@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from automations.owner_rep_audit import config as C
 
@@ -127,17 +127,26 @@ def file_ids() -> Set[str]:
     return set(json.loads(PROTECTED_FILE.read_text(encoding="utf-8"))["slack_ids"])
 
 
-def protected_ids(cli=None) -> Set[str]:
-    """Every Slack id Lucy must not deactivate. Raises if the channels can't
+def protected_and_missing(cli=None, users=None) -> Tuple[Set[str], List[str]]:
+    """Every Slack id Lucy must not deactivate, and the people on Camila's list
+    with no Slack account to protect. Raises if the channels or her Excel can't
     be read: no answer here has to mean nobody gets deactivated."""
-    from automations.ao_cleanup.slack_read import _paged, client
+    from automations.ao_cleanup.slack_read import _paged, all_users, client
+    from automations.owner_rep_audit import staff_sheet
     cli = cli or client()
     ids = file_ids()
+    from_sheet, missing = staff_sheet.match(staff_sheet.read_people(),
+                                            users or all_users(cli))
+    ids.update(from_sheet)
     for c in visible_channels(cli):
         if STAFF_CHANNEL.search(c.get("name") or ""):
             ids.update(_paged(cli.conversations_members, "members",
                               channel=c["id"]))
-    return ids
+    return ids, missing
+
+
+def protected_ids(cli=None, users=None) -> Set[str]:
+    return protected_and_missing(cli, users)[0]
 
 
 # ------------------------------------------------------------- removal (SCIM)

@@ -46,7 +46,9 @@ def load_token():
 
 def client():
     from slack_sdk import WebClient
-    return WebClient(token=load_token(), ssl=ssl._create_unverified_context())
+    # 12,800+ accounts: a users.list page can take longer than the default 30s.
+    return WebClient(token=load_token(), ssl=ssl._create_unverified_context(),
+                     timeout=120)
 
 
 def _paged(fn, key, **kwargs):

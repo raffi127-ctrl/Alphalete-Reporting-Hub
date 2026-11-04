@@ -168,8 +168,12 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
               "owners can't be matched, so nobody gets a DM")
     from automations.owner_rep_audit.slack_ops import find_owner, in_slack
     from automations.owner_rep_audit.sellers import drop_sellers, recent_sellers
-    from automations.owner_rep_audit.slack_ops import protected_ids
-    protected = protected_ids()    # raises: no list goes out unfiltered
+    from automations.owner_rep_audit.slack_ops import protected_and_missing
+    # raises: no list goes out unfiltered
+    protected, no_account = protected_and_missing(users=users)
+    if no_account:
+        print(f"  ⚠ on Camila's list, no Slack account: {', '.join(no_account)}")
+        out.dm(C.EVELYN, M.staff_without_account(no_account), "Evelyn")
     sellers = recent_sellers(day)
     if sellers is not None:
         print(f"  {len(sellers)} reps sold in the last 30 days (Tableau order log)")
@@ -217,7 +221,7 @@ def remove(o: dict, names: List[str], out: Out) -> None:
     from automations.ao_cleanup.slack_read import all_users
     users = all_users()
     try:
-        protected = S.protected_ids()
+        protected = S.protected_ids(users=users)
     except Exception as e:  # noqa: BLE001
         o["log"].append(f"nobody removed, staff check failed: {type(e).__name__}")
         o["kept"] = list(dict.fromkeys(names))
@@ -331,15 +335,17 @@ def close(st: dict, out: Out) -> None:
 def check_protected() -> int:
     """READ-ONLY: who this machine's token protects. Reads Slack and prints;
     no DMs, no replies read, no state, nobody deactivated."""
-    from automations.ao_cleanup.slack_read import client
+    from automations.ao_cleanup.slack_read import all_users, client
     from automations.owner_rep_audit import slack_ops as S
     cli = client()
     chans = S.visible_channels(cli)
     staff = [c for c in chans if S.STAFF_CHANNEL.search(c.get("name") or "")]
-    ids, listed = S.protected_ids(cli), S.file_ids()
+    ids, no_account = S.protected_and_missing(cli, all_users(cli))
+    listed = S.file_ids()
     print(f"CHECK channels visible {len(chans)}, recruiting {len(staff)}")
     print(f"CHECK protected {len(ids)}, from the file {len(listed)}, "
-          f"from channels only {len(ids - listed)}")
+          f"from channels or Camila's list only {len(ids - listed)}")
+    print(f"CHECK on Camila's list with no Slack account: {no_account or 'nobody'}")
     for c in sorted(staff, key=lambda x: x.get("name") or ""):
         print(f"CHECK channel {c.get('name')}")
     return 0

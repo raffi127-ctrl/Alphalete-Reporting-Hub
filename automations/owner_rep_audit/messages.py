@@ -65,6 +65,14 @@ def reminder(owner: str) -> str:
             "above: reply with the numbers of anyone who left, or `none`.")
 
 
+def staff_without_account(names: List[str]) -> str:
+    """Camila's list says they're our recruiters, but no Slack account matches
+    their email or name, so the audit can't protect them."""
+    return ("These people are on Camila's recruiter list but I can't find their "
+            "Slack account, so they aren't protected from the owner rep audit. "
+            "Please check their email in the Excel: " + ", ".join(names))
+
+
 def heads_up_for_evelyn(offices: List[Dict]) -> str:
     """Day 4, a DM to Evelyn (Eve 10/12): the owners who haven't finished, so
     she can write to them personally before the close. Names only -- their rep

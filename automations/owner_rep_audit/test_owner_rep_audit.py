@@ -253,10 +253,94 @@ class ProtectedStaff(unittest.TestCase):
             {"id": "C1", "name": "kash-rai-office-recruiting-22177"},
             {"id": "C2", "name": "alphalete-sales"}]}
         cli.conversations_members.return_value = {"members": ["U9"]}
-        ids = S.protected_ids(cli)
+        from automations.owner_rep_audit import staff_sheet
+        with mock.patch.object(staff_sheet, "read_people", return_value=[
+                {"name": "New Recruiter", "slack": "New R", "email": "n@x.com"}]):
+            ids = S.protected_ids(cli, users=[
+                {"id": "U5", "name": "New R", "email": "n@x.com"}])
+        self.assertIn("U5", ids)               # from Camila's Excel
         self.assertIn("U9", ids)
         self.assertIn("U07R68ZGHT6", ids)      # Perla, from the file
         self.assertEqual(cli.conversations_members.call_count, 1)
+
+    def test_unreadable_excel_means_nobody_is_cleared(self):
+        from unittest import mock
+        from automations.owner_rep_audit import slack_ops as S, staff_sheet
+        with mock.patch.object(staff_sheet, "read_people",
+                               side_effect=staff_sheet.StaffSheetError("no tab")):
+            with self.assertRaises(staff_sheet.StaffSheetError):
+                S.protected_ids(mock.Mock(), users=[{"id": "U1", "name": "A"}])
+
+    def test_staff_match_email_then_name(self):
+        from automations.owner_rep_audit.staff_sheet import match
+        users = [
+            {"id": "U1", "name": "Agustina", "email": "agus@x.com"},
+            {"id": "U2", "name": "Belen Vazquez", "email": "other@x.com"},
+            {"id": "U3", "name": "Sofia Rodriguez", "email": ""},
+            {"id": "U4", "name": "Sofia Rodriguez", "email": ""},
+            {"id": "U6", "name": "Ghost", "email": "", "deleted": True},
+            {"id": "U7", "name": "Guest", "email": "", "external": True}]
+        ids, missing = match([
+            {"name": "Agustina Gomez", "slack": "Agustina Gomez", "email": "agus@x.com"},
+            {"name": "Belén Vazquez", "slack": "Belén Vazquez", "email": "typo@x.com"},
+            {"name": "Sofia Rodriguez", "slack": "Sofia Rodriguez", "email": ""},
+            {"name": "Ghost", "slack": "Ghost", "email": ""},
+            {"name": "Guest", "slack": "Guest", "email": ""},
+            {"name": "Pegged", "slack": "U0ABCDEFGHI", "email": ""}], users)
+        self.assertEqual(ids, {"U1", "U2", "U3", "U4", "U0ABCDEFGHI"})
+        self.assertEqual(missing, ["Ghost", "Guest"])
+
+    def _workbook(self, tab, rows):
+        import io
+        import openpyxl
+        wb = openpyxl.Workbook()
+        wb.active.title = tab
+        for r in rows:
+            wb.active.append(r)
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    def test_staff_parse_finds_columns_by_header(self):
+        from automations.owner_rep_audit.staff_sheet import parse
+        got = parse(self._workbook("mails", [
+            ["email", "#", "Slack ID", "OWNER"],
+            ["A@X.com", 1, "Ana C", "Ana Cricca"], [None, None, None, None]]))
+        self.assertEqual(got, [{"name": "Ana Cricca", "slack": "Ana C",
+                                "email": "a@x.com"}])
+
+    def test_staff_excel_is_only_downloaded(self):
+        from unittest import mock
+        from automations.first_round_scorecards import drive_auth
+        from automations.owner_rep_audit import staff_sheet
+        book = self._workbook("mails", [["OWNER", "Slack ID", "email"],
+                                        ["Ana", "Ana C", "a@x.com"]])
+        http = mock.Mock()
+        http.get.return_value = mock.Mock(status_code=200, content=book)
+        with mock.patch.dict("sys.modules", {"requests": http}), \
+                mock.patch.object(drive_auth, "load_credentials"):
+            self.assertEqual(len(staff_sheet.read_people()), 1)
+        self.assertEqual([c[0] for c in http.method_calls], ["get"])
+        self.assertEqual(http.get.call_args.kwargs["params"], {"alt": "media"})
+
+    def test_staff_sheet_source_has_no_way_to_write(self):
+        import re
+        from pathlib import Path
+        from automations.owner_rep_audit import staff_sheet
+        src = Path(staff_sheet.__file__).read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"requests\.(\w+)", src), ["get"])
+        for banned in ("googleapiclient", "files()", "drive_auth import service",
+                       ".save(", "open("):
+            self.assertNotIn(banned, src)
+
+    def test_staff_parse_refuses_a_broken_excel(self):
+        from automations.owner_rep_audit.staff_sheet import StaffSheetError, parse
+        heads = ["OWNER", "Slack ID", "email"]
+        for bad in (self._workbook("other", [heads]),
+                    self._workbook("mails", [["a", "b", "c"]]),
+                    self._workbook("mails", [heads])):
+            with self.assertRaises(StaffSheetError):
+                parse(bad)
 
     def test_check_protected_does_nothing_else_even_with_live(self):
         # The scheduler entry's base_args carry --live, so a hand rerun of this
@@ -264,8 +348,11 @@ class ProtectedStaff(unittest.TestCase):
         from unittest import mock
         from automations.owner_rep_audit import slack_ops as S
         with mock.patch("automations.ao_cleanup.slack_read.client"), \
+                mock.patch("automations.ao_cleanup.slack_read.all_users",
+                           return_value=[]), \
                 mock.patch.object(S, "visible_channels", return_value=[]), \
-                mock.patch.object(S, "protected_ids", return_value=set()), \
+                mock.patch.object(S, "protected_and_missing",
+                                  return_value=(set(), [])), \
                 mock.patch.object(S, "deactivate") as scim, \
                 mock.patch.object(run, "Out") as out, \
                 mock.patch.object(run, "save_state") as save, \
