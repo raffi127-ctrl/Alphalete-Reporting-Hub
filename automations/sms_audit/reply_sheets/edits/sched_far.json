@@ -1,0 +1,10 @@
+{
+  "edited": true,
+  "question": "They want a day past tomorrow",
+  "updatedAt": "2026-10-29T19:26:41.513Z",
+  "v1": "“Ah, {namedTime} is a tricky one — we're wrapping up interviews for this role. I can do {slotOffer} though. If neither works I'll put you in touch with the {escalationTitle} to see what we can accommodate. Which would you prefer?”",
+  "v2": "“I'm sorry, {namedTime} isn't on the schedule — we're finishing up interviews for this role. I do have {slotOffer}. If those don't suit, I can get the {escalationTitle} to look at other options. Would either of those work for you?”",
+  "v3": "“Unfortunately {namedTime} isn't available — we're closing out interviews for this role. The times I have are {slotOffer}. If neither fits, the {escalationTitle} can see what else we can do. Which suits you better?”",
+  "v4": "“I don't have {namedTime} open — we're wrapping up interviews for this role. I can offer {slotOffer} though! If neither works for you, I'll ask the {escalationTitle} what else we can do. Do either of those work?”",
+  "v5": "“Sorry, I can't book {namedTime} — we're finishing interviews for this role. I have {slotOffer} available. If those don't work I'll get the {escalationTitle} to reach out about other times. Can you do either of those?”"
+}

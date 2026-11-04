@@ -1,0 +1,10 @@
+{
+  "edited": true,
+  "question": "Can we do today or tomorrow?",
+  "updatedAt": "2026-10-29T19:26:43.605Z",
+  "v1": "“I can definitely do {namedDay}, {applicantFirstName}. We're wrapping up interviews for this role, so I have {slotOffer}. Which one can you commit to?”\nThat day won't work: “I don't have anything {namedDay}, but I've got {nextInterviewDay} — {slotTimes}. Would either work?”",
+  "v2": "“{namedDay} works — interviews for this role are wrapping up though, so it's down to {slotOffer}. Which can you lock in?”\nThat day won't work: “Nothing open {namedDay}, though I have {nextInterviewDay} at {slotTimes}. Which can you lock in?”",
+  "v3": "“I can get you in {namedDay}. We're near the end of interviews for this role, so I have {slotOffer}. Which can you make?”\nThat day won't work: “I can't do {namedDay}, but I can get you in {nextInterviewDay} — {slotTimes}. Which can you make?”",
+  "v4": "“Sure, I have some openings {namedDay}. We're finishing up interviews for this role, so I've got {slotTimes}. Which can you commit to?”\nThat day won't work: “{namedDay} isn't one I can do, but I have openings {nextInterviewDay} at {slotTimes}. Which can you commit to?”",
+  "v5": "“Yes — I can do {namedDay}! Interviews are wrapping up for this role, so I have {slotOffer}. Which works best for you?”\nThat day won't work: “I don't have {namedDay}, though I've got {nextInterviewDay} — {slotTimes}. Which works best for you?”"
+}

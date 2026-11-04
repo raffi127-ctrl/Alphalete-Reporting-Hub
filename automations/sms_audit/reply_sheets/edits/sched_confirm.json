@@ -1,0 +1,10 @@
+{
+  "edited": false,
+  "question": "Is my time still right?",
+  "updatedAt": "2026-10-29T19:26:44.322Z",
+  "v1": "“Yes — you're set for {bookedSlot}. {whereLine} See you then!”",
+  "v2": "“That's right, {applicantFirstName} — {bookedSlot}. {whereLine} Looking forward to it!”",
+  "v3": "“Yep, {bookedSlot} is correct. {whereLine} See you then!”",
+  "v4": "“That's correct — {bookedSlot}. {whereLine} Talk soon!”",
+  "v5": "“You're all set for {bookedSlot}. {whereLine} See you then!”"
+}

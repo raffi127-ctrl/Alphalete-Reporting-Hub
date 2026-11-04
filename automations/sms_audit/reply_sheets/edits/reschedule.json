@@ -1,0 +1,10 @@
+{
+  "edited": true,
+  "question": "Can I reschedule?",
+  "updatedAt": "2026-10-29T19:26:42.955Z",
+  "v1": "Offer:   “Of course I can move it, {applicantFirstName}. We're wrapping up interviews for this role, so I have {slotOffer}. Which one can you commit to?”\nConfirm: “Perfect — you're locked in for {chosenSlot}. See you then!”\nIf no:   “No problem — I'll have the {escalationTitle} reach out to see if we can find something that works.”",
+  "v2": "Offer:   “Sure — though interviews for this role are wrapping up, so I have {slotOffer}. Can you commit to one of those?”\nConfirm: “Locked in for {chosenSlot}. See you then!”\nIf no:   “Totally understand. I'll pass you to the {escalationTitle} to see if we can work out a time for you.”",
+  "v3": "Offer:   “I can do that. We're near the end of interviews for this role, so it's down to {slotOffer}. Which can you lock in?”\nConfirm: “You're all set for {chosenSlot}. Talk soon!”\nIf no:   “No worries at all — the {escalationTitle} will get in touch to see if we can find you a slot.”",
+  "v4": "Offer:   “Of course. Interviews for this role are wrapping up though — I have {slotOffer}. Which can you make?”\nConfirm: “Great — {chosenSlot} it is. Looking forward to it!”\nIf no:   “No problem. I'll let the {escalationTitle} know so they can see what else might work.”",
+  "v5": "Offer:   “I can move it. We're finishing interviews for this role, so I have {slotOffer}. Which can you commit to?”\nConfirm: “You're booked in for {chosenSlot}. Looking forward to it!”\nIf no:   “Got it — I'll have the {escalationTitle} contact you to see if we can find a better time.”"
+}

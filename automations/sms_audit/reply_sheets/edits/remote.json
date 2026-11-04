@@ -1,0 +1,10 @@
+{
+  "edited": true,
+  "question": "Is it remote or in person?",
+  "updatedAt": "2026-10-29T19:26:46.363Z",
+  "v1": "“You applied to our open {adPostingTitle} position, and it's in person — not remote. We're at {officeAddress}. Can you make that daily commute if offered a position?”",
+  "v2": "“That one's in person — you applied to our {adPostingTitle} role, and we're at {officeAddress}. Would that daily commute work if we offered you the role?”",
+  "v3": "“You applied to our {adPostingTitle} position. It's in person, at {officeAddress} — is that a daily drive you could make if offered a position?”",
+  "v4": "“It's in person rather than remote — you applied to our {adPostingTitle} role. We're at {officeAddress}. Could you make that daily commute if we brought you on?”",
+  "v5": "“You applied to our {adPostingTitle} role, which is in person — we're at {officeAddress}. Can you commit to that daily commute if offered the role?”"
+}

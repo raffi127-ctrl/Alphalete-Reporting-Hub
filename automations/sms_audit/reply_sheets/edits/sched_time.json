@@ -1,0 +1,10 @@
+{
+  "edited": true,
+  "question": "Can we do this time?",
+  "updatedAt": "2026-10-29T19:26:40.955Z",
+  "v1": "Open: “{namedTime} works — you’re locked in, see you then!”\n\nTaken: “Ah, {namedTime} is already taken — but I have {slotOffer}. Would either work?”",
+  "v2": "Open:  “Perfect, {namedTime} is open — you're all set. See you then!”\nTaken: “{namedTime} was just taken — I've got {slotOffer} open. Which would you prefer?”",
+  "v3": "Open:  “Yes, {namedTime} works. I've got you down — talk soon!”\nTaken: “{namedTime} isn't free, unfortunately — but I have {slotOffer}. Do either of those work for you?”",
+  "v4": "Open:  “{namedTime} it is — you're booked in. Looking forward to it!”\nTaken: “Someone just took {namedTime}. I can do {slotOffer} — does one of those work?”",
+  "v5": "Open:  “Great, {namedTime} is available — I've locked it in for you!”\nTaken: “{namedTime} is spoken for, but I have {slotOffer}. Can you commit to either?”"
+}

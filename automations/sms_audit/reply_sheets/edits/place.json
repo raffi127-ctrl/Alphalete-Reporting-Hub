@@ -1,0 +1,10 @@
+{
+  "edited": false,
+  "question": "Are you in [a specific place]?",
+  "updatedAt": "2026-10-29T19:26:53.093Z",
+  "v1": "If that IS us: “Yes! That's us — we're at {officeAddress}. Can you make that daily commute if offered a position?”\nIf it isn't:   “We're actually at {officeAddress} — hopefully that still works! Can you make that daily commute if offered a position?”",
+  "v2": "If that IS us: “Yes, that's our office! {officeAddress}. Would that daily commute work if we offered you the role?”\nIf it isn't:   “Not quite — we're at {officeAddress}. Would that daily commute work if we offered you the role?”",
+  "v3": "If that IS us: “We are! {officeAddress}. Is that a daily drive you could make if offered a position?”\nIf it isn't:   “We're actually over at {officeAddress}. Is that a daily drive you could make if offered a position?”",
+  "v4": "If that IS us: “Yes — our office is at {officeAddress}. Could you make that daily commute if we brought you on?”\nIf it isn't:   “We're based at {officeAddress} — hopefully that still works for you! Could you make that daily commute if we brought you on?”",
+  "v5": "If that IS us: “Yes, that's us! We're at {officeAddress}. Can you commit to that daily commute if offered the role?”\nIf it isn't:   “Our office is actually at {officeAddress} — hope that's still doable! Can you commit to that daily commute if offered the role?”"
+}

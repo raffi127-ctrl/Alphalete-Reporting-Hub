@@ -1,0 +1,10 @@
+{
+  "edited": false,
+  "question": "What's the address?",
+  "updatedAt": "2026-10-29T19:26:48.342Z",
+  "v1": "“{travelNote}We're at {officeAddress}. Can you make that daily commute if offered a position?”",
+  "v2": "“{travelNote}Our office is at {officeAddress}. Would that daily commute work for you if we offered you the role?”",
+  "v3": "“{travelNote}We're at {officeAddress} — is that a daily drive you could make if offered a position?”",
+  "v4": "“{travelNote}We're based at {officeAddress}. Could you make that daily commute if we brought you on?”",
+  "v5": "“{travelNote}Our office is at {officeAddress}. Can you commit to that daily commute if offered the role?”"
+}

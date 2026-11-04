@@ -1,0 +1,10 @@
+{
+  "edited": true,
+  "question": "What times do you have?",
+  "updatedAt": "2026-10-29T19:26:42.388Z",
+  "v1": "“Good timing — it looks like we're wrapping up interviews for this role, but we can do {slotOffer}{soonerLine}. Which would be best for your schedule?”",
+  "v2": "“We're finishing up interviews for this role, but I can offer {slotOffer}{soonerLine}. Which fits your schedule better?”",
+  "v3": "“We're closing out interviews for this role, though I can do {slotOffer}{soonerLine}. Which works best for you?”",
+  "v4": "“Interviews for this role are wrapping up, but I've still got {slotOffer}{soonerLine}. Which works for your schedule?”",
+  "v5": "“We're near the end of interviews for this role, but I still have {slotOffer}{soonerLine}. Which would work best for you?”"
+}
