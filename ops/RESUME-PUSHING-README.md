@@ -108,3 +108,15 @@ office's hand-run used to kill the first one's Chrome (the "idle browser"
 cleanup didn't know a walk was inside it). Fixed on the laptop 10/8 so a
 running push is never reaped; until that fix is deployed to the minis, run
 one office at a time there.
+
+## Removals can be turned off per run (added 11/1)
+
+On 11/1 a laptop hand-run for Raf wrongly removed two re-applicants (Joseph
+Villagomez, Ibeth Pompa) as duplicates; both were found and restored the same
+night. A new switch now exists: start a hand-run with removals OFF and Lucy
+flags would-be removals but takes nobody off the call list (log line says
+"[remove] SKIPPED"). The 11/1 re-run proved it: 80 worked, 36 sent, 0 removed.
+
+Under the hood: env var `OAT_NO_REMOVE=1` on the `applicant_push` command.
+Laptop-only for now — NOT shipped to the office (ECO) machines; Carlos
+decides if it becomes permanent. Just tell Lucy "push with removals off."

@@ -1590,3 +1590,61 @@ like `_addRollRowIfNew`): NDS Angela Rizo, Roxanna Martinez, Viridiana Cura, Ste
 Finlinson; Verizon Jaime Castillo Ii, Sara Ronderos, Axel Soto. Left out (NA Classroom / Declined): Victoria
 Limon, Dayna Sifuentes, Melanie Espinoza, Roseanna Jurado, Richard Moye. A no-show needs a T on the roll
 before Monday 8:20 or the flip promotes them onto the board as In Training.
+
+## 2026-11-03: how the NDS numbers really arrive + the Revenue Board's missing reps
+
+**Carlos asked "what's your process for getting the sales numbers on the NDS Sales Board".** What the
+logs show (Hub Activity + `logtail vantura-nds-sara source`):
+- The 4–9pm hourly + 5am `vantura_nds_sara` passes all run clean, BUT the relay leg is never used: the
+  office Mac mini relays Carlos's office as enrolment `carlos-b2batt (b2b_att)`, and the fill only
+  accepts an office enrolled as campaign `nds` (`no carlos* office enrolled as 'nds' relayed for this
+  day -- relayed: carlos-b2batt (b2b_att)`). So EVERY pass falls back to `source: direct SaraPlus read`
+  from Lucy 2 (creds `~/.config/recruiting-report/saraplus-creds-nds.json`, alphaletegp). That read has
+  been passing the passcode wall since at least 10/30 (the 10/24 blocker is moot for the fill; the
+  office mini's own wall is a separate thing, see LOCAL-OFFICE-SALES-CALLOUTS-README 11-02).
+- 5am 11/3: `0 cell(s) would change` for Monday 11/2 (board already = SaraPlus from the evening
+  passes). The Slack fill said the same (`B2B Monday 11/2 — 0 cell(s) would change`).
+- The order-log morning ladder still runs 5:02–9:30 but "Lucy At&t Data" has 3 rows since the move to
+  NDS SaraPlus (10/19) — it contributes nothing for NDS.
+- `[incident] vantura_nds_sara: delivery still unverified` in every log = an OPEN corrections ticket
+  that can't self-close because `verify` isn't wired for the card; cosmetic, a ✅ on the thread post
+  closes it.
+- To re-enable the relay leg (cheaper, no SaraPlus login from Lucy 2): enrol the office mini's
+  `carlos-b2batt` key as campaign `nds` in icd_alerts, or add an `nds` enrolment. Not done 11/3.
+
+**NDS Revenue Board showed two reps (Carlos: "that makes no sense").** `nds_metrics` prices the
+board off the Tableau NDS-SN ORDERLOG (owner CARLOS HIDALGO, Mon..today window), then filters the
+lines through `total_knocks.guests.GUEST_REPS` — the hand-kept 9/25 fiber-era roster (16 names + Carlos).
+Everyone who joined the NDS board after that (Annett, Elisa, Nathaly, Brianna, Esmeralda, Cinthya,
+Yahir, Eric, Valerie, Jorge Hernandez, Ruby) was dropped as "non-crew on his owner" — and the same
+filter sits under EVERY crew-based section of the NDS Metrics thread (% On Board, Order Log, Activation
+boards, Pending, Churn ...). Fix (main d94d28e0): `nds_metrics.run.crew_names()` = static roster +
+Carlos + every rep in column B of the live 'NDS Sales Board' (via vantura_slack_sales.board_grid /
+campaign_rows), de-duplicated, static-only fallback when the sheet can't be read; `load_crew` now logs
+the dropped names (`non-crew on his owner (dropped): name=n, ...`). The Tableau line itself still has
+to exist: OOF orders reach the NDS-SN log through the call center, so a Tuesday-morning board covers
+Monday only and lags late-entered orders. Lookout for the OTHER sections: a rep on the board under a
+spelling Tableau doesn't use (first token must match) still drops — read the dropped-names line in
+`logtail orch-<date>-nds_metrics non-crew`.
+**12 vs 10 on Monday 11/2 (Carlos: "its showing 12 sales on the sales board but we did 10").** SaraPlus
+had 10: Annett 3, Elisa 4 (NL 1-3 + Internet Air), Jose Manuel Pimentel 1, Fernando 2. The other 2 were
+Eduardo Alvarez's 8:24pm post ("D2D AT&T ... NL 1 / NL 2 BYOD"), which the SLACK fill raised onto the
+board at the 9pm pass; the SaraPlus pass one second later logged `! Eduardo Alvarez has 2 on the board
+but isn't in Sara — LEFT as-is` (Megan's rule: a board rep absent from Sara is never touched). So the two
+fills disagreed and the board kept the higher one. Fixes 11/3:
+- `vantura_slack_sales.run.SARA_OWNED = ("B2B",)` + `slack_fill_campaigns()` (main 2d55eef0): the Slack
+  fill still reads and counts NDS posts in its log but NEVER writes the NDS board; Verizon still fills
+  from Slack. The NDS board = SaraPlus and nothing else. Trade-off accepted: if the SaraPlus login breaks,
+  the NDS board stays empty until the next pass that logs in (the 4pm HOLD alert says so).
+- E12 (Eduardo, Monday) cleared by hand → NDS Monday 10, Current Week 10.
+- Still true: a rep absent from Sara is left as-is, so a HAND-typed number stays until someone clears it.
+Diagnose a mismatch: `logtail vantura-nds-sara SUMMARY 2` (per-rep units from Sara, truncated at ~200
+chars — use `logtail vantura-nds-sara <REP-UPPERCASE> 2` for one rep's `Int n + NL n  Up n Air n DTV n`
+line and the `!` flags).
+
+**Revenue Board rule (Carlos 11/3, main a92df54f): "if you ever see a sale from someone not on the list
+you still want to add it for the revenue board."** `load_crew` keeps every line on his owner on
+`cols.owner_lines`; `build_revenue_board` prices those (no crew filter at all) and logs
+`revenue board: +N rep(s) off the roster, kept: ...`. A crew filter that matches nobody now falls back to
+all owner lines instead of raising. Re-post of one section = `rerun nds_metrics --prune revenue_board
+--only revenue_board --post --force` (prune deletes the old reply from today's thread first).
