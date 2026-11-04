@@ -122,6 +122,33 @@ def report_week(page, rqst, start: dt.date):
     return data
 
 
+_JS_INSPECT = """() => {
+    const t = document.getElementById('totalsTable');
+    if (!t) return {error: 'no totalsTable'};
+    const classes = {};
+    for (const tr of t.querySelectorAll('tr')) {
+        const k = (tr.className || '(none)') + (tr.offsetParent === null ? ' [hidden]' : '');
+        classes[k] = (classes[k] || 0) + 1;
+    }
+    const fib = [...t.querySelectorAll('tr.mainRow')].find(
+        tr => /first interviews booked/i.test(tr.innerText || ''));
+    const html = [];
+    let tr = fib;
+    while (tr) {
+        html.push(tr.outerHTML.slice(0, 4000));
+        tr = tr.nextElementSibling;
+        if (!tr || tr.classList.contains('mainRow')) break;
+        if (html.length > 40) break;
+    }
+    const scripts = [...document.scripts].map(s => s.innerText || '')
+        .filter(x => /admin/i.test(x)).map(x => x.slice(0, 6000));
+    const toggles = [...document.querySelectorAll('a,button,input')]
+        .filter(e => /admin|breakdown/i.test((e.innerText||'') + ' ' + (e.value||'') + ' ' + (e.id||'') + ' ' + (e.name||'')))
+        .map(e => e.outerHTML.slice(0, 500));
+    return {classes, fib_block: html, scripts, toggles, url: location.href};
+}"""
+
+
 def write_tab(tab: str, payload: dict):
     from automations.recruiting_report import fill as _fill
     sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
@@ -143,6 +170,8 @@ def main(argv=None):
     ap.add_argument("--start", required=True, help="first report Sunday, YYYY-MM-DD")
     ap.add_argument("--end", required=True, help="last report Sunday, YYYY-MM-DD")
     ap.add_argument("--tab", default="", help="control-workbook tab to dump the JSON into")
+    ap.add_argument("--inspect-tab", default="",
+                    help="also dump the raw DOM around 'First Interviews Booked' (last week pulled) into this tab")
     a = ap.parse_args(argv)
     start, end = dt.date.fromisoformat(a.start), dt.date.fromisoformat(a.end)
     sundays = []
@@ -168,6 +197,13 @@ def main(argv=None):
                 log("   week %s FAILED: %s: %s" % (sun, type(e).__name__, str(e)[:160]))
                 payload["weeks"][sun.isoformat()] = {"error": "%s: %s" % (type(e).__name__, str(e)[:160])}
             out_path.write_text(json.dumps(payload))
+        if a.inspect_tab:
+            try:
+                info = page.evaluate(_JS_INSPECT)
+                info["office"] = a.office
+                write_tab(a.inspect_tab, info)
+            except Exception as e:  # noqa: BLE001
+                log("   inspect FAILED: %s: %s" % (type(e).__name__, str(e)[:160]))
     ok = sum(1 for w in payload["weeks"].values() if "rows" in w)
     log("pulled %d/%d weeks -> %s" % (ok, len(sundays), out_path))
     if a.tab:
