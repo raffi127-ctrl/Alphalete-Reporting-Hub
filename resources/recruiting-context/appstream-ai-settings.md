@@ -41,6 +41,11 @@ Two faults found here on 2026-10-01:
   75063" with no suite 9 times in one week, and applicants replied *"Is it
   suite 232 or 207"* and *"What suite it?"*. eStream has ticketed a suite
   field.
+  **Update 2026-10-30:** 11280's office record now reads **5217 Tennyson Pkwy
+  Suite 100, Plano TX 75024** with a clean State field, so the live bug is
+  gone and the Irving address above is historical. The gap is not: there is
+  still no Address Line 2 for SMS, so the suite has to ride inside Line 1.
+  See [appstream-ai-escalations.md](appstream-ai-escalations.md).
 - **The AI uppercases the company name and uses the wrong field.** Office
   Name is stored as "Alphalete Marketing, INC." and AI Recruiting Company
   Name as "Alphalete Marketing", yet 40 of 40 outbound mentions on 28–29 Sep

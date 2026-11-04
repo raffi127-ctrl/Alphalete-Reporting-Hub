@@ -21,6 +21,7 @@ it learn everything so that it gets context please?"*
 | [booking-call-rubric-DRAFT.md](booking-call-rubric-DRAFT.md) | **Proposal, not a standard.** The scorecard items for grading booking calls once Ringover transcripts land — built to mirror the 1st Round Scorecards post. Needs Raf's sign-off the way the interview items got one. |
 | [hiring-call-scripts.md](hiring-call-scripts.md) | The scripts at the END of the pipeline: the BOB (offer) call word for word, the new-start texts from BOB through Sunday night, and the three ways someone is let go. From Megan 2026-10-08. **A template every office uses** — the address, times, names and numbers in it are placeholders, not facts. |
 | [appstream-ai-settings.md](appstream-ai-settings.md) | **Current, not 2024.** What every field on AI tab → AI Settings does, from eStream's own walkthrough, plus the faults found auditing 11280 on 2026-10-01 — including the two timeslot buffers that decide whether an applicant can accept the time the AI offers. Megan checked several offices and none were set correctly. |
+| [appstream-ai-escalations.md](appstream-ai-escalations.md) | **The Escalations tab, 2026-11-03.** What the four routing modes really do (only Don't Escalate sends your words, and it raises no flag), the 32 approved replies as signed off 29-30 Oct, how 11280 and 24065 are configured now, the 30 Oct variable incident and why brackets are optional, the first performance read, and the UI mechanics that make this page editable at all. |
 
 ## Source of truth — re-pull before trusting this
 
