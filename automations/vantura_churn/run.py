@@ -131,6 +131,14 @@ STAGED: set = set()
 # the drop alert fired daily. His churn tabs still fill.
 RATES_OFF = frozenset({"carlos", "atef"})
 
+# Offices whose CHURN tab is no longer filled at all (skipped by `--owner both`;
+# `--owner <key>` still runs one by hand). atef: fully NDS -- his last B2B order
+# is 10/7, so his 60-day B2B book only shrinks (444 lines 10/27 -> 243 on 11/3)
+# and on 11/3 it fell out of step with the day-late CHURN RATES dashboard and
+# the drop alert fired (Megan 2026-11-03: "turn it off now"). Sabrina rides her
+# own entry and is unaffected.
+CHURN_OFF = frozenset({"atef"})
+
 
 def _activation_cfg():
     """Per-office activation-rates source for E5/F5 + the AE:AF rep list.
@@ -332,6 +340,21 @@ def _reconcile_stale_window(who: str, summary: dict, dash: dict, log,
             "problem, not an Order Log one. Not auto-tolerated: check the "
             "workbook's extract schedule before re-running.")
     return problems
+
+
+def _isolate_lone_mismatch(mismatches: dict, reconciled: int) -> tuple:
+    """(isolated, still_blocking): does ONE office's mismatch cost only that office?
+
+    Every office has its own Order Log download, so when one disagrees with
+    CHURNRATES and at least two others reconcile off the same run, the pull and
+    the dashboard are demonstrably fine and the problem belongs to that office.
+    2026-11-03: ATEF (26/243 vs the dashboard's 12.17%, shrinking since his move
+    to NDS) left CARLOS, JAMIS, SABRINA, EVELIZ, LUKE and VALERIA stale although
+    all six reconciled. Two or more mismatches, or too few offices to compare
+    against (a single `--owner` run), keep the all-or-nothing rule."""
+    if len(mismatches) == 1 and reconciled >= 2:
+        return dict(mismatches), {}
+    return {}, dict(mismatches)
 
 
 def _dashboard_behind(prev2_summary: dict | None, dash: dict) -> bool:
@@ -628,7 +651,8 @@ def main(argv=None) -> int:
     # always runs it (that's how a STAGED office gets its verification run).
     owners = [o for o in OWNER_CFG
               if (o[0] == args.owner
-                  or (args.owner == "both" and o[0] not in STAGED))]
+                  or (args.owner == "both" and o[0] not in STAGED
+                      and o[0] not in CHURN_OFF))]
     staged_skipped = [o[0] for o in OWNER_CFG
                       if args.owner == "both" and o[0] in STAGED]
     if staged_skipped:
@@ -736,6 +760,9 @@ def main(argv=None) -> int:
     # An office whose numbers match the dashboard only on our TWO-day-old
     # window: CHURNRATES is behind for that office, our pull is not wrong.
     churn_dash_behind: dict = {}
+    # Per-office mismatches, sorted out after the loop by _isolate_lone_mismatch.
+    office_mismatches: dict = {}
+    offices_reconciled = 0
     for key, prefix, _sid, tab, _has_act in owners:
         lines = compute.load_orderlog(files[key], prefix)
         summary = compute.churn_summary(lines, today)
@@ -784,14 +811,27 @@ def main(argv=None) -> int:
                 log(f"    {key} is skipped: its tabs keep yesterday's numbers "
                     "(stale, not wrong); the other offices still write.")
                 continue
-            problems += office_problems
+            if office_problems:
+                office_mismatches[key] = office_problems
+            else:
+                offices_reconciled += 1
+
+    isolated, blocking = _isolate_lone_mismatch(office_mismatches,
+                                                offices_reconciled)
+    for office_problems in blocking.values():
+        problems += office_problems
+    churn_mismatch = {k: "; ".join(v) for k, v in isolated.items()}
+    for key, why in churn_mismatch.items():
+        log(f"    {key} is skipped: {why}")
+        log(f"    {key}'s tabs keep yesterday's numbers; the "
+            f"{offices_reconciled} offices that reconciled still write.")
 
     if churn_dash_behind and problems:
         # Another office has a REAL mismatch, so the all-or-nothing rule holds
         # and nothing writes; keep the behind office's diagnosis in the alert.
         problems += sorted(churn_dash_behind.values())
         churn_dash_behind = {}
-    skipped = dict(churn_source_down, **churn_dash_behind)
+    skipped = dict(churn_source_down, **churn_dash_behind, **churn_mismatch)
     if skipped:
         owners = [o for o in owners if o[0] not in skipped]
         ar_paths = {k: v for k, v in ar_paths.items()
@@ -1009,7 +1049,8 @@ def main(argv=None) -> int:
     # closes it by itself and _ok_manifest() can't erase it.
     if not args.skip_reconcile and need_tableau and not args.dry_run:
         _churn_source_manifest(churn_source_down, log=log,
-                               behind=churn_dash_behind)
+                               behind=churn_dash_behind,
+                               mismatch=churn_mismatch)
 
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
@@ -1023,6 +1064,11 @@ def main(argv=None) -> int:
             + ", ".join(sorted(churn_dash_behind))
             + " — CHURNRATES is ≥2 days behind for them, so those tabs are "
               "stale, not wrong.")
+    if churn_mismatch:
+        log("  ⚠ churn NOT refreshed for: "
+            + ", ".join(sorted(churn_mismatch))
+            + " — it does not match the dashboard, so those tabs keep the "
+              "previous run's numbers.")
     if rate_source_down:
         log("  ⚠ activation rates NOT refreshed for: "
             + ", ".join(sorted(rate_source_down))
@@ -1173,7 +1219,8 @@ CHURN_SOURCE_ID = "vantura_churn_source"
 
 
 def _churn_source_manifest(down: dict, log=print,
-                           behind: dict | None = None) -> None:
+                           behind: dict | None = None,
+                           mismatch: dict | None = None) -> None:
     """Ping (or clear) the notice for an office the CHURNRATES export dropped.
 
     2026-09-03 is why this exists. CARLOS HIDALGO stopped appearing in
@@ -1186,15 +1233,19 @@ def _churn_source_manifest(down: dict, log=print,
     """
     try:
         from automations.shared import run_manifest as _rm
-        if not down and not behind:
+        if not down and not behind and not mismatch:
             _rm.mark_clean(CHURN_SOURCE_ID, kind="source")
             return
+        if not down and not behind:
+            _mismatch_manifest(_rm, mismatch)
+            return
         if not down:
-            _behind_manifest(_rm, behind)
+            _behind_manifest(_rm, behind, mismatch)
             return
         who = ", ".join(sorted(down))
         _rm.write_manifest(
-            CHURN_SOURCE_ID, failed=sorted(set(down) | set(behind or {})),
+            CHURN_SOURCE_ID,
+            failed=sorted(set(down) | set(behind or {}) | set(mismatch or {})),
             kind="source",
             note=("The Churn Rates dashboard carries no rows for: " + who
                   + ". Those offices were skipped — their churn tabs hold the "
@@ -1229,22 +1280,46 @@ def _churn_source_manifest(down: dict, log=print,
             f"({type(e).__name__}: {str(e)[:120]})")
 
 
-def _behind_manifest(_rm, behind: dict) -> None:
+def _mismatch_manifest(_rm, mismatch: dict) -> None:
+    """The source notice for one office whose numbers disagree with the dashboard
+    while the others reconciled. Same id, so a clean run closes it by itself."""
+    who = ", ".join(sorted(mismatch))
+    _rm.write_manifest(
+        CHURN_SOURCE_ID, failed=sorted(mismatch), kind="source",
+        note=("Churn for " + who + " does not match the Churn Rates dashboard, "
+              "so that office was skipped (its tab holds the previous run's "
+              "numbers). Every other office reconciled and wrote normally."),
+        remediation=_rm.make_remediation(
+            reason="; ".join(f"{k}: {v[:200]}"
+                             for k, v in sorted(mismatch.items())),
+            fix="The other offices reconciled, so the pull and the dashboard "
+                "are fine: compare this office's Order Log (owner filter, "
+                "60-day window) with its 0-30 row on ATTTRACKER-B2B / CHURN "
+                "RATES. A re-run closes this once the two agree.",
+            link="https://us-east-1.online.tableau.com/#/site/sci/views/"
+                 "ATTTRACKER-B2B/CHURNRATES",
+            message="Churn for " + who + " doesn't match the B2B Churn Rates "
+                    "dashboard, so that office's churn tab wasn't refreshed "
+                    "today. The other offices are current."))
+
+
+def _behind_manifest(_rm, behind: dict, mismatch: dict | None = None) -> None:
     """The source notice for offices CHURNRATES is ≥2 days behind on (and none
     missing outright). Same id as the missing-owner notice, so one clean run
     closes either; its own words, because the fix is the extract schedule, not
     the owner filter."""
     who = ", ".join(sorted(behind))
     _rm.write_manifest(
-        CHURN_SOURCE_ID, failed=sorted(behind), kind="source",
+        CHURN_SOURCE_ID, failed=sorted(set(behind) | set(mismatch or {})),
+        kind="source",
         note=("The Churn Rates dashboard is ≥2 days behind for: " + who
               + " — it matches our two-day-old window. Those offices were "
                 "skipped (their churn tabs hold the previous run's numbers: "
                 "stale, not wrong). Every other office reconciled and wrote "
                 "normally."),
         remediation=_rm.make_remediation(
-            reason="; ".join(f"{k}: {v[:200]}"
-                             for k, v in sorted(behind.items())),
+            reason="; ".join(f"{k}: {v[:200]}" for k, v in sorted(
+                dict(behind, **(mismatch or {})).items())),
             fix="Our Order Log pull is fine for this office — shifted two days "
                 "it matches the dashboard. The CHURNRATES side has not "
                 "refreshed for it: check the ATTTRACKER-B2B extract schedule "

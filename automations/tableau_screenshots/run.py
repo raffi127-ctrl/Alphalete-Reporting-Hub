@@ -160,6 +160,116 @@ def _reusable(out_dir: Path, selected: list, today: dt.date) -> list | None:
     return out
 
 
+# --- Offices that joined after the morning run -------------------------------
+# WHY (Megan 2026-10-29): #goldenview-d2d-sales was wired at 9:18, after the
+# 4:30 run had already posted 7 boards everywhere else. The 9:37 settle pass
+# only carries the LATE boards, so the channel got Box + Quantum and nothing
+# else until a hand rerun. Every office wired mid-day (form or by hand) hits the
+# same gap. Fix: the morning set records which orgs it served; each catch-up
+# pass queues a rerun for any org it didn't serve, limited to boards ALREADY
+# CAPTURED TODAY (the stamp) — so the newcomer gets the same proven-fresh
+# images the rest of the fleet got, reused from disk, and nothing held. Boards
+# still owed (late / held) reach it through the settle passes like everyone else.
+SERVED_FILE = OUT_DIR / "_orgs_served.json"
+NEWCOMER_REQUEUE_MIN = 60     # settle passes are ~30 min apart; a rerun takes ~5
+
+
+def _read_served(out_dir: Path, today: dt.date) -> dict | None:
+    """Today's {served: [...], queued: {org: iso}} — None when the morning set
+    hasn't run on this box today (then there's no "after" to catch up from)."""
+    import json
+    try:
+        data = json.loads((out_dir / SERVED_FILE.name).read_text())
+    except Exception:
+        return None
+    if data.get("date") != today.isoformat():
+        return None
+    data.setdefault("served", [])
+    data.setdefault("queued", {})
+    return data
+
+
+def _write_served(out_dir: Path, data: dict, today: dt.date) -> None:
+    import json
+    data["date"] = today.isoformat()
+    try:
+        (out_dir / SERVED_FILE.name).write_text(json.dumps(data, indent=2))
+    except Exception:            # best-effort — worst case a newcomer waits a day
+        pass
+
+
+def _mark_served(out_dir: Path, orgs: list, today: dt.date) -> None:
+    """Record that a NON-late run posted the morning set to `orgs`."""
+    data = _read_served(out_dir, today) or {"served": [], "queued": {}}
+    for o in orgs:
+        if o not in data["served"]:
+            data["served"].append(o)
+    _write_served(out_dir, data, today)
+
+
+def newcomer_plan(served: dict | None, all_orgs: list, captured_ids: list,
+                  ids_for, now: dt.datetime) -> dict:
+    """{org: [board ids]} to catch up. Pure, so the rules are testable:
+      • no morning ledger today → nothing (the morning run serves everyone)
+      • an org the morning set already served → nothing
+      • queued within NEWCOMER_REQUEUE_MIN → nothing (its rerun is in flight)
+      • only boards captured today, in that org's own order; none → nothing."""
+    if served is None:
+        return {}
+    have = set(captured_ids)
+    plan = {}
+    for org in all_orgs:
+        if org in served.get("served", []):
+            continue
+        q = (served.get("queued") or {}).get(org)
+        if q:
+            try:
+                if now - dt.datetime.fromisoformat(q) < dt.timedelta(
+                        minutes=NEWCOMER_REQUEUE_MIN):
+                    continue
+            except ValueError:
+                pass
+        ids = [i for i in ids_for(org) if i in have]
+        if ids:
+            plan[org] = ids
+    return plan
+
+
+def _queue_newcomers(out_dir: Path, today: dt.date) -> None:
+    """Queue `rerun tableau_screenshots --orgs X --only <today's boards>` for
+    every org the morning set never reached. Best-effort: never sinks the pass."""
+    import json
+    import shlex
+    try:
+        captured = json.loads((out_dir / STAMP.name).read_text())
+        captured_ids = (captured.get("ids") or []
+                        if captured.get("date") == today.isoformat() else [])
+    except Exception:
+        captured_ids = []
+    served = _read_served(out_dir, today)
+    plan = newcomer_plan(served, list(sp.ORGS), captured_ids,
+                         lambda o: sp.tracker_ids_for(o, pages_mod.PAGES),
+                         dt.datetime.now())
+    if not plan:
+        return
+    from automations.day_orchestrator import mini_control as mc
+    for org, ids in plan.items():
+        args = (f"tableau_screenshots --orgs {shlex.quote(org)} "
+                f"--only {shlex.quote(','.join(ids))}")
+        try:
+            mc.enqueue("rerun", args, by="tracker newcomer catch-up", auto=True)
+        except Exception as e:                        # noqa: BLE001
+            print(f"  (newcomer catch-up for {org} not queued: "
+                  f"{type(e).__name__}: {str(e)[:120]} — next pass retries)",
+                  flush=True)
+            continue
+        served["queued"][org] = dt.datetime.now().isoformat(timespec="seconds")
+        print(f"  ＋ {sp.ORG_LABEL.get(org, org)} joined after the morning run — "
+              f"queued its {len(ids)} board(s) from today: {', '.join(ids)}",
+              flush=True)
+    _write_served(out_dir, served, today)
+
+
 @contextlib.contextmanager
 def _org_slack_token(org: str, label: str):
     """Act as the workspace that OWNS this org's channel, then restore.
@@ -285,7 +395,7 @@ def _gate_email_sources(selected: list) -> tuple:
             continue
         from automations.tableau_screenshots import email_tracker as et
         try:
-            ready, detail = et.source_ready()
+            ready, detail = et.source_ready(spec["id"])
         except Exception as e:                        # noqa: BLE001 — fail open
             ready, detail = True, f"probe error ({type(e).__name__})"
         if ready:
@@ -797,6 +907,21 @@ def _capture_all(selected: list, page, out_dir: Path, force_crop):
 
 
 def main(argv=None) -> int:
+    rc = _main(argv)
+    # After the pass is done (not before), so the queued rerun can't collide
+    # with this run's Chrome profile — mini_control refuses a second copy.
+    a = list(sys.argv[1:] if argv is None else argv)
+    if (("--settle" in a or "--late-only" in a) and "--dry-run" not in a
+            and "--only" not in a and not any(x.startswith("--orgs") for x in a)):
+        try:
+            _queue_newcomers(OUT_DIR, dt.date.today())
+        except Exception as e:                        # noqa: BLE001
+            print(f"  (newcomer catch-up skipped: {type(e).__name__}: {e})",
+                  flush=True)
+    return rc
+
+
+def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true",
                     help="Capture PNGs to output/ but post NOTHING to Slack.")
@@ -1200,6 +1325,29 @@ def main(argv=None) -> int:
         selected = withhold_still_behind(selected, still_behind)
         _alert_not_sent(today, still_behind, dry_run=args.dry_run)
 
+    # ALREADY IN EVERY CHANNEL -> no browser at all (2026-10-28). The Box
+    # catch-up and the half-hourly settle passes share PROFILE_DIR; once a settle
+    # pass has posted Box everywhere, this run used to open Chrome anyway, wait
+    # on the profile, and get killed at 45m — a ❌ for a board nobody was
+    # missing. Read Slack first; any doubt falls through to the normal capture.
+    if (args.late_only and not args.settle and not args.dry_run
+            and not (args.replace or args.fresh or args.full or args.only
+                     or args.new_thread)
+            and selected and not still_behind):
+        if sp.already_delivered(pages_mod.PAGES, [s["id"] for s in selected],
+                                orgs, today):
+            print("↷ every channel already has today's "
+                  f"{', '.join(s['id'] for s in selected)} — nothing to "
+                  "capture or post", flush=True)
+            run_manifest.write_manifest(
+                report_id, ok=True, failed=[], kind="channel",
+                succeeded=[sp.ORG_LABEL[o] for o in orgs if set(
+                    sp.tracker_ids_for(o, pages_mod.PAGES))
+                    & {s["id"] for s in selected}],
+                note="already posted earlier today (settle pass); no capture",
+                dry_run=False)
+            return 0
+
     # Reuse today's images when another org already captured them — no browser, no
     # Tableau session at all, so elevate/indelible finish in seconds. --fresh (and
     # --full, which changes how the boards are captured) always re-captures.
@@ -1389,6 +1537,13 @@ def main(argv=None) -> int:
     # if it's genuinely absent from a channel.
     present_everywhere: set = set()
     present_seen = False
+    # ONE cross-machine claim for the whole posting loop (2026-10-28) — see
+    # slack_post.run_lock. Released right after the loop; a run killed mid-loop
+    # is covered by the lock's lease.
+    _post_lock = contextlib.ExitStack()
+    if not args.dry_run:
+        _post_lock.enter_context(sp.run_lock(today, note="posting trackers "
+                                             "({} org(s))".format(len(orgs))))
     for org in orgs:
         label = sp.ORG_LABEL[org]
         # Cross-workspace org (e.g. trang -> FRESH SUCCESS): its channel lives in
@@ -1495,11 +1650,16 @@ def main(argv=None) -> int:
                          for c in result.get("channels", [])],
             "error": result.get("error"),
         })
+    _post_lock.close()
     # Boards deliberately omitted this run because their source wasn't in yet
     # (an email tracker's .xlsx hasn't landed) — recorded by TITLE so the card and
     # the run summary can name exactly what's missing, not just a count.
     omitted_boards = [(pages_mod.by_id(i) or {}).get("title") or i for i in gated_out]
     _write_status(out_dir, status_rows, today, status_file, omitted=omitted_boards)
+    # Only the morning SET counts as "served" — a late/settle pass carries just
+    # the late boards, so an org it reached can still be missing the rest.
+    if not args.late_only and not args.dry_run:
+        _mark_served(out_dir, orgs, today)
 
     # Count only the orgs this run actually OWED a post — a no-op org is neither a
     # success nor a failure, so it's out of both the numerator and denominator and

@@ -19,6 +19,7 @@ the same, so a change to the site is a change in one file, for all 52 offices.
 """
 from __future__ import annotations
 
+import re
 import datetime as dt
 from typing import Dict, Optional
 
@@ -789,6 +790,17 @@ def keep_session_alive(*, headless: bool = True, log=print,
     Returns what it did, for the log: 'kept', 'lost', 'none', 'not-due',
     'busy' or 'error'.
     """
+    # SaraPlus paused for this machine's AT&T office (config.SARA_PAUSED_KEYS):
+    # keeping the session alive would be exactly the sign-in the owner asked
+    # us to stop. Said once per tick in the log, nothing touched.
+    try:
+        for r in C.enrollments():
+            if C.sara_paused(r.get("office_key")):
+                log("SaraPlus keep-alive skipped: paused for %s" % r.get("office_key"))
+                return "paused"
+    except Exception:  # noqa: BLE001
+        pass
+
     now = now or dt.datetime.now()
     remembered = _remembered_session()
     if not remembered:
@@ -838,6 +850,69 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
     counts, the header, a sample row, the page URL and the visible top of the
     page (date filters, office name). Best effort, never raises."""
     out = ["credit-check read for %s parsed to 0 reps" % day]
+    try:
+        if S.LAST_LOAD_CLICK.get("note"):
+            out.append("load-records click: " + S.LAST_LOAD_CLICK["note"][:700])
+    except Exception:  # noqa: BLE001
+        pass
+    # WHAT THE PLACEHOLDER IS. Omar 2026-10-28: three different clicks on
+    # "Click to load records." left the sales grid as it was, and nothing in
+    # the evidence said what that text sits in -- a link, a row handler, a
+    # button elsewhere. The grid's own markup (scripts stripped) and every
+    # element around that text, with its handlers, so the next fix is read
+    # off the page instead of guessed.
+    try:
+        out.append("load-records elements: " + page.evaluate(
+            """() => {
+                 const hits = [];
+                 const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                 let n;
+                 while ((n = walk.nextNode())) {
+                   if (!/load\\s*records/i.test(n.textContent || '')) continue;
+                   let el = n.parentElement, chain = [];
+                   for (let d = 0; el && d < 5; d++, el = el.parentElement) {
+                     const a = Array.from(el.attributes || []).filter(x => /^(id|class|href|onclick|onmousedown|data-|role)/i.test(x.name))
+                       .map(x => x.name + '=' + String(x.value).slice(0, 160)).join(' ');
+                     chain.push('<' + el.tagName.toLowerCase() + ' ' + a + '>');
+                   }
+                   hits.push(chain.join(' IN '));
+                 }
+                 return hits.slice(0, 4).join(' || ') || '(none)';
+               }""")[:1400])
+    except Exception as e:  # noqa: BLE001
+        out.append("load-records elements: ? (%s)" % type(e).__name__)
+    try:
+        out.append(S.LAST_COMPANY.get("note") or "company combo: (not checked)")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out.append("combos: " + page.evaluate(
+            """() => Array.from(document.querySelectorAll('input.rcbInput')).map(i => {
+                 const st = document.getElementById(i.id + '_ClientState');
+                 let empty = '';
+                 try { empty = (JSON.parse((st && st.value) || '{}').emptyMessage || ''); } catch (e) {}
+                 return i.id.replace('ctl00_MainContent_', '') + '=' + String(i.value || '').slice(0, 40) + (empty ? ' (empty: ' + empty + ')' : '');
+               }).join(', ')""")[:1500])
+    except Exception as e:  # noqa: BLE001
+        out.append("combos: ? (%s)" % type(e).__name__)
+    try:
+        out.append("selects: " + page.evaluate(
+            """() => Array.from(document.querySelectorAll('select')).map(s =>
+                 (s.id || s.name) + '=' + ((s.options[s.selectedIndex] || {}).text || '').trim()
+                 + '/' + s.options.length).join(', ')""")[:600])
+    except Exception as e:  # noqa: BLE001
+        out.append("selects: ? (%s)" % type(e).__name__)
+    try:
+        out.append("sales grid html: " + page.evaluate(
+            """() => {
+                 const g = document.getElementById('ctl00_MainContent_rgOrderDashboard_ATT_ctl00');
+                 if (!g) return '(no grid)';
+                 const c = g.cloneNode(true);
+                 c.querySelectorAll('script,style').forEach(x => x.remove());
+                 return c.outerHTML.replace(/\\s+/g, ' ');
+               }""")[:2200])
+    except Exception as e:  # noqa: BLE001
+        out.append("sales grid html: ? (%s)" % type(e).__name__)
     try:
         rows = list(raw_rows or [])
         out.append("raw grid rows: %d" % len(rows))
@@ -898,6 +973,16 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
     # saraplus.pass_timings_summary).
     try:
         S.reset_pass_timings()
+        try:
+            words = []
+            for r in C.enrollments():
+                for f in ("business_name", "owner", "office_key"):
+                    for w in re.split(r"[^a-z0-9]+", str(r.get(f) or "").lower()):
+                        if len(w) > 3 and w not in ("marketing", "management", "group", "solutions"):
+                            words.append(w)
+            S.PREFERRED_COMPANY_WORDS = words
+        except Exception:  # noqa: BLE001
+            pass
     except Exception:  # noqa: BLE001 — instrumentation must never cost a read
         pass
     if signin_in_progress():
@@ -997,6 +1082,29 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                             "rendering, not a fault")
                 agents = S.parse_att(att_rows)
                 log("AT&T pass: %d rep(s)" % len(agents))
+                if not agents:
+                    # THE SALES GRID TOO (Omar 2026-10-28: two sales posted in
+                    # his room by 2pm, his relay said 0 reps, and only the
+                    # credit-check grid had left any evidence behind).
+                    _ev = _empty_read_evidence(page, day, att_rows)
+                    _ev = "SALES grid (AT&T) parsed to 0 reps\n" + _ev.split("\n", 1)[-1]
+                    # SALES FIRST: the fault's detail cell is cut at 1500
+                    # characters and the credit-check dump alone fills it
+                    # (Omar 2026-10-28 -- the sales section never showed).
+                    empty_evidence = (_ev + "\n\n" + empty_evidence) if empty_evidence else _ev
+                    log("sales grid came back EMPTY -- " + _ev[:300].replace("\n", " | "))
+                elif empty_evidence:
+                    # And when the credit-check grid was empty but this one
+                    # was not, say so in the same fault -- "the reps ARE in
+                    # his SaraPlus, nobody has sold or run a check yet" is
+                    # the answer that stops a chase (Omar, same afternoon).
+                    _names = ", ".join(sorted(a.get("name", "") for a in agents)[:12])
+                    empty_evidence = ("SALES grid (AT&T): %d rep row(s) present, %d with a sale today -- %s\n\n"
+                                      % (len(agents),
+                                         sum(1 for a in agents if int(a.get("internet_sales", 0) or 0)
+                                             + int(a.get("internet_upgrades", 0) or 0)
+                                             + int(a.get("wireless_lines_sold", 0) or 0) > 0),
+                                         _names)) + empty_evidence
                 dtv = S.parse_dtv(
                     S._run_report(page, base, day, "All", S.GRID_ALL, log=log))
                 log("All pass: DTV for %d rep(s)" % len(dtv))
@@ -1018,36 +1126,36 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     "Credit checks are still working."
                     % (type(e).__name__, str(e)[:160]), log=log)
 
-            # THE FOURTH PASS, ONLY FOR OFFICES ON THE THREE ALERTS (Carlos
-            # 2026-10-22). 'Wireless' is the one grid with real credit checks
-            # in it; everybody else's sweep stays three passes long. Its
-            # failure costs only itself: None means "not read this time",
-            # which sends nothing rather than a day of zeros.
-            # NDS and B2B AT&T offices read it too, for their line counts.
+            # THE FOURTH PASS, 'Wireless'. First only for offices on the three
+            # credit alerts (Carlos 2026-10-22) -- the one grid with real
+            # credit checks -- then NDS / B2B AT&T for their line counts, and
+            # since 2026-10-26 EVERY office: it is the only grid that says
+            # which lines were tablets or watches, and those no longer count as
+            # sales on any scorecard (Megan). Its failure costs only itself:
+            # None means "not read this time" and leaves NL as the AT&T grid
+            # had it, rather than a day of zeros.
             credit = lines = None
-            if C.credit_tiers_here() or C.wireless_lines_here():
-                try:
-                    w_rows = S._run_report(page, base, day, S.SERVICE_WIRELESS,
-                                           S.GRID_WIRELESS, log=log)
-                    w_head = S.grid_headers(page, S.GRID_WIRELESS)
-                    if C.credit_tiers_here():
-                        credit = S.parse_credit(w_head, w_rows)
-                        if credit is None:
-                            log("Wireless grid has no Credit Checked / Credit "
-                                "Passed labels -- not sending credit checks")
-                        else:
-                            log("Wireless pass: credit checks for %d rep(s)"
-                                % len(credit))
-                    if C.wireless_lines_here():
-                        lines = S.parse_lines(w_head, w_rows)
-                        if lines is None:
-                            log("Wireless grid has no New/Port/Upgrade Lines, "
-                                "Tablets, Wearables labels -- NL left as read")
-                        else:
-                            log("Wireless pass: lines for %d rep(s)" % len(lines))
-                except Exception as e:  # noqa: BLE001 — the rest still stands
-                    log("Wireless pass failed (%s) — tablet + sales unaffected"
-                        % type(e).__name__)
+            try:
+                w_rows = S._run_report(page, base, day, S.SERVICE_WIRELESS,
+                                       S.GRID_WIRELESS, log=log)
+                w_head = S.grid_headers(page, S.GRID_WIRELESS)
+                if C.credit_tiers_here():
+                    credit = S.parse_credit(w_head, w_rows)
+                    if credit is None:
+                        log("Wireless grid has no Credit Checked / Credit "
+                            "Passed labels -- not sending credit checks")
+                    else:
+                        log("Wireless pass: credit checks for %d rep(s)"
+                            % len(credit))
+                lines = S.parse_lines(w_head, w_rows)
+                if lines is None:
+                    log("Wireless grid has no New/Port/Upgrade Lines, "
+                        "Tablets, Wearables labels -- NL left as read")
+                else:
+                    log("Wireless pass: lines for %d rep(s)" % len(lines))
+            except Exception as e:  # noqa: BLE001 — the rest still stands
+                log("Wireless pass failed (%s) — tablet + sales unaffected"
+                    % type(e).__name__)
 
             return {"empty_evidence": empty_evidence, "records": records,
                     "sales": sales, "credit": credit, "lines": lines}

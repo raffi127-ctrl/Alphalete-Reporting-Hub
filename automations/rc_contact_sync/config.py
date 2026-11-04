@@ -186,7 +186,8 @@ PHONE_LABEL = "mobile"
 # Lucy's token can't read #alphalete-gp-sales history (see
 # b2b_quality/run.py), so the header's ts is remembered in THREAD_STATE_PATH
 # and a same-day rerun replies under it instead of opening a second one.
-CHANNELS = ["C0AJQA8P716", "C07J46MQNUX"]
+# A-PLAYERS STOPPED (Carlos 2026-10-28: "on the a players slack lets stop all of these")
+CHANNELS = ["C07J46MQNUX"]
 CHANNEL_LABEL = {
     "C0AJQA8P716": "#a-players-b2b",
     "C07J46MQNUX": "#alphalete-gp-sales",

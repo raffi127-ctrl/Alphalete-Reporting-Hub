@@ -166,8 +166,8 @@ class AJobThatIsHeldOnPurpose(unittest.TestCase):
     and read exactly like an outage. An alert that cannot tell those apart fires
     every weekend and trains you to ignore the one that matters."""
 
-    JID = "applicant_push_lucy_2"
-    MON = dt.date(2026, 9, 14)          # a Monday
+    JID = "applicant_push_lucy_4"
+    MON = dt.date(2026, 9, 21)          # a Monday, Lucy 4 watched from this day
 
     def _at(self, wd, h, m=0):
         return dt.datetime.combine(self.MON + dt.timedelta(days=wd), dt.time(h, m))
@@ -290,6 +290,36 @@ class EachQueueIsWatchedOnce(unittest.TestCase):
 
     def test_a_machine_that_watches_nothing_does_nothing(self):
         self.assertEqual(sjw.watch_peers("Lucy 2", beats={}), 0)
+
+
+class AnUnreadableSheetIsNotADeadPeer(unittest.TestCase):
+    """2026-10-28: Lucy 3 posted "Mini Control queue (Lucy 1) — no sign of life
+    since never" with Lucy 1 up. A failed read of the heartbeat tab came back
+    as {} — "no row at all" — and the peer check alerted on it."""
+
+    def test_a_failed_read_raises_when_strict(self):
+        orig = sjw._ws
+        def boom(create=False):
+            raise RuntimeError("429 quota")
+        sjw._ws = boom
+        self.addCleanup(setattr, sjw, "_ws", orig)
+        self.assertEqual(sjw.read_beats(), {})
+        with self.assertRaises(RuntimeError):
+            sjw.read_beats(strict=True)
+
+    def test_watch_peers_posts_nothing_when_it_cannot_read(self):
+        from unittest import mock
+        from automations.day_orchestrator import notify
+        from automations.shared import incident_thread as inc
+        with mock.patch.object(sjw, "read_beats",
+                               side_effect=RuntimeError("429 quota")), \
+             mock.patch.object(notify, "_corrections_channel", return_value="C1"), \
+             mock.patch.object(notify, "_incident_post") as post, \
+             mock.patch.object(inc, "open_keys", return_value=[]), \
+             mock.patch.object(inc, "resolve_if_open") as resolve:
+            self.assertEqual(sjw.watch_peers("Lucy 3", now=_at("2026-10-28", "12:00")), 0)
+        post.assert_not_called()
+        resolve.assert_not_called()
 
 
 class _FakeWs:

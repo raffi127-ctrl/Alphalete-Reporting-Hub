@@ -934,6 +934,23 @@ def _behind_completed_day(newest: dt.date, today: dt.date,
             "unaffected either way.".format(newest, target, target))
 
 
+QUIET_STRETCH_MAX_DAYS = 7
+
+
+def _org_has_latest_day(today: dt.date,
+                        org_sold_on: Optional[DaySold]) -> bool:
+    """True only when someone in the org sold on the latest COMPLETED day —
+    proof the extract has it. Anything unknown is False (keeps the block)."""
+    if org_sold_on is None:
+        return False
+    try:
+        from automations.org_sales_board import week as _wk
+        completed = _wk.completed_days(today)
+        return bool(completed) and bool(org_sold_on(max(completed)))
+    except Exception:  # noqa: BLE001 — a failed probe never loosens the gate
+        return False
+
+
 def should_block_send(newest: Optional[dt.date],
                       today: Optional[dt.date] = None,
                       min_days_behind: int = BLOCK_SEND_MIN_DAYS_BEHIND,
@@ -979,6 +996,19 @@ def should_block_send(newest: Optional[dt.date],
     if stale:
         return stale
     if behind < min_days_behind:
+        return ""
+    # A QUIET TEAM ON A FRESH FEED IS A REAL ZERO (Megan 2026-10-28). Carlos's
+    # newest sale was Sat 10/24; the view's own footer read "Latest Sales Data
+    # Update: 10/27" and filtering it to 10/25+ returned nothing — his team
+    # simply didn't sell Sun-Tue. The count below said "4 days = capped" and
+    # held his thread all day, through every retry and a rerun. When the org
+    # tracker shows OTHER owners selling on the latest completed day, the
+    # extract has that day, and the ID filters were already confirmed (All)
+    # before the pull or it would have aborted (window.confirm). So a gap up
+    # to QUIET_STRETCH_MAX_DAYS is the team's, not the feed's. Longer than
+    # that still blocks: a team going a whole week dark is worth a look.
+    if behind <= QUIET_STRETCH_MAX_DAYS and _org_has_latest_day(today,
+                                                                 org_sold_on):
         return ""
     # The dates can't name the cause (Eve 2026-08-17): a Contract ID include list
     # frozen on day X starves every owner from day X on, which reads exactly like

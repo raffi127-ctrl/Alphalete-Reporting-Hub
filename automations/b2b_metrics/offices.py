@@ -625,7 +625,10 @@ _merge_onboarded()
 # thread you can stop." He sells under Raf's codes now (Fiber) — his daily
 # thread ends; fiber_metrics is the replacement. `--office carlos` still
 # works by hand for a backfill. Atef/Jamis/Sabrina/Eveliz unaffected.
-HELD_FROM_ALL: set = {"luke", "carlos"}
+# atef (2026-10-27): the office sells NDS now (#domin8-nds-sales); his daily
+# thread is the NDS office-metrics one (atef_metrics on Lucy 4). The B2B
+# thread ends here. `--office atef` still works by hand for a backfill.
+HELD_FROM_ALL: set = {"luke", "carlos", "atef"}
 
 ORDER = [k for k in OFFICES if k not in HELD_FROM_ALL]
 

@@ -73,6 +73,7 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Kash Rai":         "America/Chicago",               # Fort Worth, TX
     "Muhammad Haque":   "America/Detroit",               # Southfield, MI
     "Nii Tagoe":        "America/New_York",              # PA
+    "Omar Mohamad":     "America/Detroit",               # Dearborn, MI (2026-10-27)
     "Salik Mallick":    "America/Detroit",               # Southfield, MI
     "Trang Canavan":    "America/Chicago",               # San Antonio, TX
     # FIBER CAPTAINSHIPS (Eve 2026-09-14: the night mail goes to every fiber
@@ -102,7 +103,7 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Tony Chavez":      "America/Los_Angeles",           # San Diego, CA
     # sahil
     "Andre Burton":     "America/New_York",              # Charlotte, NC
-    "Brian Tran":       "America/New_York",              # Cleveland, OH
+    # Brian Tran (Cleveland, OH) OUT 2026-10-29: office 23082 closed (Raf).
     "Marcellus Butler": "America/New_York",              # Raleigh, NC
     "Sahil Multani":    "America/New_York",              # Raleigh, NC
     # jess (3 of 6 — the other three are waiting on Office Access)

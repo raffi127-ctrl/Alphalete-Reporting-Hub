@@ -54,8 +54,7 @@ class OrgTrackerSelectionTest(unittest.TestCase):
         # 4th board (b2b_d2d_consolidated) added on Cesar's ask, 2026-08-19.
         self.assertEqual(
             _reply_ids(self._plan("domin8")),
-            ["b2b_att_country", "b2b_att_country_cru",
-             "b2b_d2d_consolidated", "order_tiered_bonus"])
+            ["nds", "order_tiered_bonus"])   # Cesar 2026-10-26: the office sells NDS now
 
     def test_domin8_has_no_late_note(self):
         # Box isn't in its selection, so nothing is "still coming".
@@ -83,6 +82,8 @@ class OrgTrackerSelectionTest(unittest.TestCase):
         self.assertIn("order_tiered_bonus",
                       [p["id"] for p in pg.PAGES])  # …but it DOES exist / gets captured
 
+    @unittest.skipIf("a_players" in getattr(sp, "PAUSED_ORGS", {}),
+                     "#a-players-b2b paused (Carlos 2026-10-28)")
     def test_a_players_mirrors_alphalete_gp_exactly(self):
         """Carlos asked for #a-players-b2b to match #alphalete-gp-sales (7/23).
         They share _B2B_FIRST, so this pins that they can't drift — same header,

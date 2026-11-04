@@ -926,8 +926,8 @@
     "report_id": "samuel_metrics",
     "label": "Samuel's Local Office",
     "owner": "Samuel Acay",
-    "channel_id": "U04G5HJBGFN",
-    "channel_name": "megan-dm (hold until #dynasty-growth-sales resolves)",
+    "channel_id": "C0BV0K60QP8",
+    "channel_name": "dynasty-growth-sales",
     "sheet_id": "1sNy4BOrDXxUEyzzG5r02GxjMQ11zbXi5CvyMPq85k3c",
     "knocks_office": "Samuel Acay",
     "ov_account": "23751",
@@ -959,6 +959,220 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
-    "notes": "wired by hand 2026-10-21 (Megan: Samuel Acay enrolled, is he good to go). NDS wireless like frank/jairo (South Shore org; NDS Program Focus Report tab 'Samuel Acay - NDS', OwnerVille/AppStream 23751, Dynasty Growth Group, Inc), same 5 boards, knocks held until his ECO relay shows knock rows. ECO sign-up 2026-10-21 16:45 UTC named '#dynasty-growth-sales' by NAME (not an id) and Megan's Slack cannot see it; held on Megan's DM until it resolves. Eastern 13:30-21:30, Sat 11:30-20:30. Sheet 'Samuel Acay - Lucy Metrics' from the Master Metrics Templates. Schedule off until the Lucy 4 dry run shows data on every board."
+    "notes": "wired by hand 2026-10-21 (Megan: Samuel Acay enrolled, is he good to go). NDS wireless like frank/jairo (South Shore org; NDS Program Focus Report tab 'Samuel Acay - NDS', OwnerVille/AppStream 23751, Dynasty Growth Group, Inc), same 5 boards, knocks held until his ECO relay shows knock rows. ECO sign-up 2026-10-21 16:45 UTC named '#dynasty-growth-sales' by NAME (not an id) and Megan's Slack cannot see it; held on Megan's DM until it resolves. Eastern 13:30-21:30, Sat 11:30-20:30. Sheet 'Samuel Acay - Lucy Metrics' from the Master Metrics Templates. Schedule off until the Lucy 4 dry run shows data on every board. | 2026-10-29 15:30 CT: ECO enrolled (Samuels-iMac relaying since 14:09 CT); Megan gave #dynasty-growth-sales = C0BV0K60QP8 (private; Lucy, Lucy Reporting, Megan, Eve in it). Channel set; scheduler stays OFF until the Lucy 4 dry run queued 15:1x CT is read."
+  },
+  {
+    "key": "omar",
+    "report_id": "omar_metrics",
+    "label": "Omar's Local Office",
+    "owner": "Omar Mohamad",
+    "channel_id": "C0CANA1JG3D",
+    "channel_name": "kalkan-marketing",
+    "sheet_id": "1iGHWPuAfHcBTeZtx6YctGpZTtSi3_68y9hxMOQK5GT8",
+    "knocks_office": "Omar Mohamad",
+    "ov_account": "24153",
+    "owner_office": "",
+    "business_name": "Kalkan Marketing",
+    "website": "",
+    "header_label": "Omar Mohamad",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-10-26 during his Lucy ECO enrollment Zoom (Eve). AT&T D2D like steve/hasani (OwnerVille/AppStream 24153, Kalkan Marketing, Dearborn MI -- Eastern; OwnerVille name Omar Mohamad), all 11 D2D boards. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Omar Mohamad - Lucy Metrics' copied from the Master Metrics Templates, shared Editor with alphaletereporting@ (Lucy 4). Schedule off until the Lucy 4 dry run shows data on every board. | 2026-10-26: ECO sign-up named #kalkan-marketing (C0CANA1JG3D); channel set, scheduler on after the dry run.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "atef",
+    "report_id": "atef_metrics",
+    "label": "Atef's Local Office",
+    "owner": "Atef Choudhury",
+    "channel_id": "C0B395PUUCW",
+    "channel_name": "domin8-nds-sales",
+    "sheet_id": "1nH_u4-S4Jorx1uzj72ltSlwLrk2o2Ktg0nt-gaeyj2s",
+    "knocks_office": "Atef Choudhury",
+    "ov_account": "23467",
+    "owner_office": "",
+    "business_name": "Domin8 Acquisitions, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-10-27 (Megan: ECO enrollment 10/28; metrics/weather/trackers). NDS office since 10/26 -- channel renamed #domin8-nds-sales, reps post NDS, Cesar's lineup = NDS tracker + Order Tiered Bonus; Tableau NDS lists Atef from 10/27 (atef_nds_watch). Five NDS boards like jairo/frank. Sheet 'Atef Choudhury - Lucy Metrics' copied from Master Metrics Templates, Editor alphaletereporting@. His B2B Metrics thread (b2b_metrics --all) keeps posting until the NDS dry run is green, then atef joins HELD_FROM_ALL. Scheduler OFF until the Lucy 4 dry run shows data on every board. OV account 23467 from applicant_push_atef."
+  },
+  {
+    "key": "jose",
+    "report_id": "jose_metrics",
+    "label": "Jose's Local Office",
+    "owner": "Jose Velasquez",
+    "channel_id": "C0CCVTKTQFP",
+    "channel_name": "westwavesales",
+    "sheet_id": "1fAVDgIilZA-LEAhfPqzQiA9cqs1glqrkecpEAeDgyOw",
+    "knocks_office": "Jose Velasquez",
+    "ov_account": "22434",
+    "owner_office": "",
+    "business_name": "Legacy Shore Marketing, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "cancels": 3,
+      "disconnects": 4,
+      "churn_wl": 5,
+      "activations": 6
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-10-28 (Megan: 'we're enrolling jose velasquez - start his dry run for metrics/trackers/weather'). Legacy Shore Marketing, Inc. (dba Legacy Shore Specialized Marketing), NDS wireless in Colten's South Shore org; Tableau NDS-SN owner 'JOSE VELASQUEZ[legacy shore marketing, inc.]' (wireless reps present in _repsearch); OwnerVille/AppStream 22434 (OV spelling 'Jos\u00e9 Velasquez'). Six NDS boards like colten. City ASSUMED Miami/Eastern (Jose Antonio Velasquez sells on Colten's Miami SaraPlus) -- confirm. Channel held on Megan's DM until his ECO sign-up names it. Sheet 'Jose Velasquez - Lucy Metrics' copied from the Master Metrics Templates, Editor alphaletereporting@ (Lucy 4). Scheduler OFF until the Lucy 4 dry run shows data on every board. | 2026-10-28 18:30 CT: ECO sign-up named #westwavesales (C0CCVTKTQFP; Lucy, Megan, Eve, Jose, Colten in it). Lucy 4 dry run rerun-2026-10-28-172321 green 8/8: knocks 14 reps (OV 22434 impersonation until his ECO relays), wireless churn 21 reps, 232 wireless order rows, pending 67, activation rate 18 reps, order log 116 rows / 13 rep tabs, cancels + disconnects proven zero. Channel set, scheduler ON. Sign-up form says America/Los_Angeles; Ray (super A) is 305 -- timezone/city still to confirm with Megan."
+  },
+  {
+    "key": "joseph-delgado",
+    "report_id": "joseph_delgado_metrics",
+    "label": "Joseph's Local Office",
+    "owner": "Joseph Delgado",
+    "channel_id": "C0C7XP389RN",
+    "channel_name": "goldenview-d2d-sales",
+    "sheet_id": "19rVToh-CEmuK8pc5JONUh-xnXwpRaYHSFrXrBWXec04",
+    "knocks_office": "Joseph Delgado",
+    "ov_account": "20788",
+    "owner_office": "",
+    "business_name": "Golden View Solutions, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-10-29 (Colten: Joe's channel should get the same reports as his). NOT the 'joseph' key -- that one is Joseph Logan (#logan-legacy-sales). Same five NDS boards as atef; knocks left out because his Lucy Eco knock board already posts every 30 min in the same channel. Sheet 'Joseph Delgado - Lucy Metrics' copied from Master Metrics Templates (owner alphaletemarketing@, editor alphaletereporting@). Scheduler OFF until the Lucy 4 dry run shows data."
+  },
+  {
+    "key": "aiden",
+    "report_id": "aiden_metrics",
+    "label": "Aiden's Local Office",
+    "owner": "Aiden Atoori",
+    "channel_id": "C0CES186PGC",
+    "channel_name": "odysseyy",
+    "sheet_id": "1LDgR5dYUc0TKnBcV23t8xN1UiQUzahu2oZ2naVu4Bwo",
+    "knocks_office": "Aiden Atoori",
+    "ov_account": "",
+    "owner_office": "",
+    "business_name": "Atoori Management, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-11-03 (Megan: 'Aiden Atoori is enrolling today in ECO - he's NDS - let's dry run his metrics and wire up weather and trackers'). Atoori Management, Inc.; Tableau NDS-SN owner 'AIDEN ATOORI [atoori management, inc.]' (4,696 ORDER LOG measure rows in 45 days; the CSV carries a stray \\r inside the name, _norm_owner drops it). Referred by Jose Velasquez. Slack U07Q243HP7Z (aiden.originmgmt@gmail.com), Mac mini, Pacific. Sales zips 93535/93033/91350/91342/92336/91311 = Lancaster / Oxnard / Santa Clarita / Sylmar / Fontana: north LA county, weather city santa_clarita. Five NDS boards like joseph-delgado (no knocks board here: his ECO knock board will post in the same room). No Slack channel yet -- he is making one in the AO workspace; held on Megan's DM until then. Sheet 'Aiden Atoori - Lucy Metrics' 1LDgR5dYUc0TKnBcV23t8xN1UiQUzahu2oZ2naVu4Bwo copied from the Master Metrics Templates, writer alphaletereporting@. Scheduler OFF until the dry run shows data on every board. | 2026-11-03 15:05 CT: Lucy 4 dry run rerun-2026-11-03-140756 green 7/7 (churn 108 reps, rep activations 946 rows, activation rate 77 reps, order log 946 rows / 45 rep tabs, cancels proven zero, disconnects 2). Megan: his room is #odysseyy (C0CFFFDKTAL, private, made by Aiden 11/03); iMessage group 'JDS meet Lucy'. Channel set, scheduler ON. | 2026-11-03 17:30 CT: Megan: his room is the SECOND #odysseyy, C0CES186PGC (C0CFFFDKTAL was the first one he made)."
   }
 ]

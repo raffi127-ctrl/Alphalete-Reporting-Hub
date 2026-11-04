@@ -39,23 +39,41 @@ REPORT_ID = "rc_contact_sync_raf"
 NO_REP = "(no rep on the order)"
 
 
-def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
+def _rep_stat_suffix(stat) -> str:
+    """' _(🔥 3 days in a row · 4x this week)_' for a rep, from (streak, week).
+    The streak only shows when it is a real run (2+ days); the weekly count
+    always shows. Returns '' when there's nothing to show."""
+    if not stat:
+        return ""
+    streak, week = stat
+    bits = []
+    if streak and streak >= 2:
+        bits.append(":fire: %d days in a row" % streak)
+    if week and week >= 1:
+        bits.append("%dx this week" % week)
+    return "  _(%s)_" % " · ".join(bits) if bits else ""
+
+
+def missing_names_reply(missing: List[Dict[str, str]], total: int,
+                        rep_stats: dict = None) -> str:
     """The threaded reply: the un-texted customers, grouped by the rep who
     sold them, each with their phone and their product categories.
 
-    Based on rc_contact_sync.run.missing_names_reply (grouped by rep, bold
-    name headers), extended per Dylan 2026-10-20 to carry the customer's phone
-    + products (Internet / TV / Wireless) and, at the BOTTOM, to @MENTION every
-    rep in one line. The rep→Slack-id resolution is the universal shared store
-    (slack_tag_learning), which is spelling-safe: a rep not in the store is
-    simply not mentioned (never a guessed @mention — the whole reason Carlos's
-    B2B version tags nobody) and is listed so a human can add them once.
-    'Jordan Ruiz' never resolves to 'Analay Ruiz'."""
+    Grouped by rep (bold name headers), the customer's phone + products
+    (Internet / TV / Wireless), and at the BOTTOM every rep @MENTIONED in one
+    line. The rep→Slack-id resolution is the universal shared store
+    (slack_tag_learning), spelling-safe: a rep not in the store is simply not
+    mentioned (Dylan 2026-11-02: no public "couldn't tag" note anymore).
+
+    `rep_stats` (Dylan 2026-11-02) is {titlecased rep: (streak, week_count)} —
+    when present, each rep header shows a streak (days in a row on the list) and
+    their count for the week."""
     from automations.shared import slack_tag_learning as tags
 
     if not missing:
         return ("The 1 customer was messaged. :white_check_mark:" if total == 1
                 else "All %d customers were messaged. :white_check_mark:" % total)
+    rep_stats = rep_stats or {}
     by_rep: Dict[str, List[Dict[str, str]]] = {}
     for m in missing:
         by_rep.setdefault(titlecase_name(m.get("rep", "")) or NO_REP,
@@ -63,9 +81,8 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
     lines = ["%d of %d customer%s never got a message:"
              % (len(missing), total, "" if total == 1 else "s")]
     mentions: List[str] = []
-    untagged: List[str] = []
     for rep in sorted(by_rep):
-        lines.append("*%s*" % rep)   # original look: a bold name header
+        lines.append("*%s*%s" % (rep, _rep_stat_suffix(rep_stats.get(rep))))
         for m in by_rep[rep]:
             who = titlecase_name(m.get("business", "")) or \
                   titlecase_name(m.get("customer_name", "")) or "(no name)"
@@ -76,15 +93,12 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
             lines.append("  • %s%s — %s — %s" % (who, tail, phone, prods))
         if rep != NO_REP:
             sid = tags.lookup(rep)
-            (mentions.append("<@%s>" % sid) if sid else untagged.append(rep))
+            if sid:
+                mentions.append("<@%s>" % sid)
     # Everybody, tagged once, at the very bottom.
     if mentions:
         lines.append("")
         lines.append(" ".join(mentions))
-    if untagged:
-        lines.append(":warning: No Slack match to tag: %s — add them to "
-                     "automations/shared/slack_known_users.json and they'll "
-                     "tag next run." % ", ".join(untagged))
     return "\n".join(lines)
 
 
@@ -135,7 +149,14 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
     from automations.shared import slack_metrics_post as smp
 
     title = C.SLACK_HEADER
-    body = missing_names_reply(missing, total)
+    # Per-rep streak + weekly count (Dylan 2026-11-02). Record this run on the
+    # report's channel (even on an all-messaged day, so streaks break right).
+    from automations.rc_contact_sync_raf import history
+    flagged = sorted({titlecase_name(m.get("rep", ""))
+                      for m in missing if titlecase_name(m.get("rep", ""))})
+    rep_stats = history.update_and_stats(C.CHANNELS[0], flagged, day,
+                                         persist=not dry_run)
+    body = missing_names_reply(missing, total, rep_stats=rep_stats)
     if prefix:
         body = prefix + "\n" + body
     # Tag Dylan so the morning post is readily visible to him (Dylan 2026-10-21).

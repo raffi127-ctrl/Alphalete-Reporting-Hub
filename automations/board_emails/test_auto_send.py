@@ -263,6 +263,22 @@ class AutoSendTest(unittest.TestCase):
         self.assertEqual(f.kinds(), ["record", "send"])
         self.assertFalse(self.alert.called)
 
+    def test_waits_for_verizon_then_rebuilds_and_sends(self):
+        """Eve 2026-10-28: wait for Verizon (~9:31), then go."""
+        f = Fake(self.tmp, THU)
+        self.seed_roster(f)
+        waiting = ["Verizon scorecard not in yet"]
+        f.target.wait_for = lambda day: waiting[0] if waiting else None
+        self.assertEqual(self.run_once(f, THU), 1)
+        self.assertEqual(f.calls, [])           # quiet: no link, no tag
+        waiting.clear()
+        self.assertEqual(self.run_once(f, THU), 1)
+        self.assertEqual(f.kinds(), ["rebuild"])
+        f.calls.clear()
+        self.assertEqual(self.run_once(f, THU), 0)
+        self.assertEqual(f.kinds(), ["record", "send"])
+        self.assertFalse(self.alert.called)
+
     def test_still_behind_at_noon_rebuilds_once_and_sends(self):
         f = Fake(self.tmp, THU)
         self.seed_roster(f)
@@ -483,6 +499,9 @@ class LateBoxTest(unittest.TestCase):
         txt = A._visual_content(f.target, SUN, [])[0]["text"]
         self.assertIn("LATE_SOURCES: (none today)", txt)
         self.assertIn("LATE_SOURCES", A._SYSTEM)
+        # 2026-10-28: Nico's blank Verizon Tuesday held the org email
+        self.assertIn("Verizon", A._visual_content(f.target, SUN, [])[0]["text"].split("DAY_BEHIND:")[1])
+        self.assertIn("DAY_BEHIND", A._SYSTEM)
 
 
 class StaleSourcesSectionTest(unittest.TestCase):
@@ -535,6 +554,19 @@ class CloseOlderHolds(unittest.TestCase):
                                       "board-autosend-org-2026-10-19"])
             left = sorted(p.name for p in (root / "org").iterdir())
             self.assertEqual(left, ["2026-10-20.alerted"])
+
+
+class CaptainOnlyNames(unittest.TestCase):
+    def test_a_name_only_in_a_captain_box_is_not_a_new_owner(self):
+        grid = [["", "Owner"], ["1", "Chan Park"],
+                ["", "BLAKE'S CAPTAIN TEAM"], ["CAPTAIN TEAM", ""],
+                ["1", "Blake Welle"],
+                ["BLAKE CAPTAINSHIP", "", "Total for week"],
+                ["1", "Blake Welle"],
+                ["TRANG'S ORG", "", "Total for week"],
+                ["1", "Trang Canavan"]]
+        self.assertEqual(A.owner_names(grid),
+                         {A._norm("Chan Park"), A._norm("Trang Canavan")})
 
 
 if __name__ == "__main__":

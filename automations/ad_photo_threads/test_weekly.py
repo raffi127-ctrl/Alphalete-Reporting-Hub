@@ -233,6 +233,59 @@ class LivePathTest(unittest.TestCase):
         self.assertEqual(len(blocks), 2)
         self.assertIn(ts, cl.pins)                              # a new ad's thread is pinned
 
+    def _posted_week(self, cl):
+        head = cl._new(None, "*ATT Sales Rep Frisco*")
+        post._save_state({"C1": {"weekly": True, "since": "2026-09-21", "weeks": {
+            "forever": {"frisco": {"thread_ts": head, "days": [], "pinned": True,
+                                   "title": "ATT Sales Rep Frisco"}}}}})
+        weekly.publish_week([day(MON, [cand("Ana")])], "C1", cl=cl, threads={"frisco": head},
+                            crop=False, history={})
+        return head
+
+    def test_add_to_week_lists_only_without_apply(self):
+        cl = LiveSlack()
+        head = self._posted_week(cl)
+        n = len(cl.msgs)
+        got = weekly.add_to_week(["Bo"], MON, "C1", cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Ana"), cand("Bo")]}))
+        self.assertIn("would go in", got["Bo"])
+        self.assertEqual(len(cl.msgs), n)
+        self.assertIn("Ana", " ".join(cl.thread(head)))
+
+    def test_add_to_week_replaces_the_block_in_the_same_thread(self):
+        cl = LiveSlack()
+        head = self._posted_week(cl)
+        keep = cl._new(head, "*Monday - Friday · WE 9.27*\nOlder week stays")
+        got = weekly.add_to_week(["Bo"], MON, "C1", apply=True, cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Ana"), cand("Bo")]}))
+        self.assertIn("added to", got["Bo"])
+        blocks = [t for t in cl.thread(head) if "WE 10.4" in t and t.startswith("*Monday")]
+        self.assertEqual(len(blocks), 1)
+        self.assertIn("Ana", blocks[0])
+        self.assertIn("Bo", blocks[0])
+        self.assertTrue(any(m["ts"] == keep for m in cl.msgs))  # another week stays
+        self.assertEqual(cl.updates, {})                        # the header's mark stays
+        self.assertEqual(cl.pins, [])
+        self.assertEqual(sum(1 for m in cl.msgs if m["ts"] == m["thread_ts"]), 1)
+
+    def test_add_to_week_never_opens_a_thread(self):
+        cl = LiveSlack()
+        self._posted_week(cl)
+        n = len(cl.msgs)
+        got = weekly.add_to_week(["Bo"], MON, "C1", apply=True, cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Bo", ad="dallas")]}))
+        self.assertIn("none opened", got["Bo"])
+        self.assertEqual(len(cl.msgs), n)
+
+    def test_add_to_week_dead_thread_is_left_out(self):
+        cl = LiveSlack()
+        head = self._posted_week(cl)
+        cl.msgs = [m for m in cl.msgs if m["thread_ts"] != head]
+        got = weekly.add_to_week(["Bo"], MON, "C1", apply=True, cl=cl, crop=False,
+                                 build=week_of({MON: [cand("Bo")]}))
+        self.assertIn("none opened", got["Bo"])
+        self.assertEqual(cl.msgs, [])
+
     def test_nightly_refreshes_only_what_changed(self):
         cl = LiveSlack()
         self._old_daily_thread(cl)
@@ -249,6 +302,44 @@ class LivePathTest(unittest.TestCase):
         ad = post._load_state()["C1"]["weeks"]["forever"]["frisco"]
         self.assertIn(tue.isoformat(), ad["days"])              # reconcile_pins reads days
         self.assertEqual(ad["stats"][tue.isoformat()]["removed"], 1)
+
+    def test_one_ad_failing_does_not_stop_the_rest(self):
+        """Carlos 10/29: one ad's error ended the pass, and the ads after it
+        (three new ones) never got a thread. Now the bad ad is skipped and
+        named, the rest post, and a retry reuses the thread it had opened."""
+        cl = LiveSlack()
+        boom = {"on": True}
+        real = cl.files_upload_v2
+
+        def upload(**kw):
+            if boom["on"] and "Ana" in kw.get("initial_comment", ""):
+                raise RuntimeError("read timed out")
+            return real(**kw)
+        cl.files_upload_v2 = upload
+        by_day = {MON: [cand("Ana", ad="frisco"), cand("Ana2", ad="frisco"),
+                        cand("Bo", ad="dallas")]}
+        got = weekly.publish_nightly(MON, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual([t for t, _ in got["failed"]], ["ATT Sales Rep Frisco"])
+        self.assertIn("read timed out", got["failed"][0][1])
+        wk = post._load_state()["C1"]["weeks"]["forever"]
+        self.assertIn("2026-09-28", wk["dallas"]["days"])           # the next ad still posted
+        frisco_ts = wk["frisco"]["thread_ts"]                         # opened thread kept
+        self.assertTrue(frisco_ts)
+        self.assertEqual(got["no_thread"], [])
+        boom["on"] = False
+        got = weekly.publish_nightly(MON, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual(got["failed"], [])
+        self.assertEqual(got["threads_new"], 0)                      # no second header
+        self.assertEqual(post._load_state()["C1"]["weeks"]["forever"]["frisco"]["thread_ts"],
+                         frisco_ts)
+
+    def test_ad_with_interviews_but_no_thread_is_named(self):
+        cl = LiveSlack()
+        cl.chat_postMessage = mock.Mock(side_effect=RuntimeError("channel_not_found"))
+        by_day = {MON: [cand("Ana", ad="midlothian")]}
+        got = weekly.publish_nightly(MON, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual(got["no_thread"], ["midlothian"])
+        self.assertEqual(len(got["failed"]), 1)
 
     def test_live_closed_mark_on_the_title(self):
         """Maddie + Carlos 10/20: ✅ while the ad had a 1st round in the last

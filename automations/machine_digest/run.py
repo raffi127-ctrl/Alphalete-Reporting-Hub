@@ -822,6 +822,24 @@ _DIDNT_RUN_GRACE_HOURS = 2   # how long past a report's usual start before "didn
 _STUCK_AFTER_MIN = 90
 
 
+def _digi_docs_nothing_due():
+    """True when no new start on the current OBCL tab is dated today, so Digi
+    Docs had nothing to send; False when someone is; None when we can't tell.
+
+    Megan 2026-11-03: on a no-start day the card read "didn't run today" like an
+    error, although all 13 ticks ran clean and found nobody to send. Same read
+    the run itself makes (roster.starting_today), off the shared Sheet, so it
+    works from whichever machine runs this watcher."""
+    try:
+        from automations.digi_docs import roster
+        from automations.digi_docs import run as dd
+        ws, values = dd._open_tab("")
+        due = roster.starting_today(roster.to_send(roster.candidates(values, ws.title)))
+        return len(due) == 0
+    except Exception:  # noqa: BLE001 — can't tell = alert as MISSED
+        return None
+
+
 def _bg_check_has_new_emails():
     """True/False if we can tell whether any background-check emails arrived in the
     last day; None if the source can't be reached (no Gmail app password on this
@@ -902,6 +920,22 @@ def _declared_start_hours(cfg, target_date) -> dict:
     return out
 
 
+def _current_card(cid: str) -> str:
+    """The card id a report publishes under TODAY. A report that moved onto a
+    shared card keeps its OLD id on every row it wrote before the move, so
+    history read raw expects a card that will never get another row. Raf's
+    Daily Update wrote `raf_daily_update` through 10/24, then (10/26, one card
+    for every office) `2nd-round-daily-update-post` — and on Tue 10/27 the
+    watcher posted "didn't run today on Lucy 2" over a run that had posted at
+    17:07 and logged `done` under the new card. Folding the old id into its
+    card makes the old history count for the card that actually runs."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001 — no map, read rows as written
+        return cid
+    return _HUB_CARD.get(cid, cid)
+
+
 def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2,
                          daily_window: int = 7, daily_min_days: int = 5):
     """Which reports NORMALLY run on this weekday — the baseline for 'didn't run at
@@ -932,7 +966,7 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         d = started[:10]
         if d not in dates:
             continue
-        cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
+        cid = _current_card(str(r.get("Report ID") or r.get("Report Name") or "").strip())
         if not cid:
             continue
         rec = seen.setdefault(cid, {"days": set(), "hour_by_day": {}, "machine": "", "name": cid})
@@ -996,7 +1030,7 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         d = started[:10]
         if d not in daily_dates:
             continue
-        cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
+        cid = _current_card(str(r.get("Report ID") or r.get("Report Name") or "").strip())
         if not cid:
             continue
         rec = dseen.setdefault(cid, {"days": set(), "hour_by_day": {},
@@ -1551,6 +1585,9 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         if cid == "bg_check_sync" and _bg_check_has_new_emails() is False:
             kind = "NO_NEW"
             status = "no new emails"
+        elif cid == "digi-docs" and _digi_docs_nothing_due() is True:
+            kind = "NOTHING_DUE"
+            status = "no new starts dated today"
         # An APPROVAL PHASE with no run isn't a stall — it runs the moment a
         # human ✅'s the day's review post, and until then "didn't run today on
         # the mini" points people at a machine that is doing exactly what it

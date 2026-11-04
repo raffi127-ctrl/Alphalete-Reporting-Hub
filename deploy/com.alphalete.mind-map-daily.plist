@@ -12,12 +12,11 @@
          RUNS ON LUCY 1 — the mini — and stays there (Megan 2026-09-20, after
          asking whether her busiest box was the wrong one). Lucy 1 carries the
          most reports of any runner (289 registered, 157 in the 4am batch), but
-         that load is the 4AM BATCH and it is long finished by 7. At 7:00 her
-         agent list is EMPTY: the next one is 8:00 (slack-skool-email). The
-         6:15-7:30 cluster people think of is LUCY 2's. This job is ~100s, two
+         that load is the 4AM BATCH. The 6:15-7:30 cluster people think of is
+         LUCY 2's. This job is ~100s, two
          Sheets reads and a headless render, so it costs that slot almost
          nothing — and the mini is the box that is always awake, where a
-         laptop asleep at 7am would skip the day in silence. -->
+         laptop asleep at 6am would skip the day in silence. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -33,15 +32,16 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- DAILY 7:00am machine-local (Central) — the time Raf asked for, so the
-         map is waiting in the channel when the office reads the morning posts.
+    <!-- DAILY 6:00am machine-local (Central) — Raf moved it up from 7:00 (via
+         Maud, 2026-11-03), so the map is waiting in the channel when the office
+         reads the morning posts.
          It renders in headless Chrome under its OWN temp user-data-dir, so it
-         does not contend with the 7:00-7:20 jobs for the shared automation
+         does not contend with other morning jobs for the shared automation
          Chrome profile. [[reference_browser_profile_collisions]] -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>7</integer>
+        <integer>6</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>

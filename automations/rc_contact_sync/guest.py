@@ -1,5 +1,9 @@
-"""Customers Carlos's reps sold under RAF'S SaraPlus code -> the same
-contacts-and-wrap-up-text pipeline.
+"""Customers for the contacts-and-wrap-up-text pipeline.
+
+SINCE 2026-10-27 (Carlos: "instead of rafs sara plus can you start using my
+nds sara plus"): sourced from the NDS merged SaraPlus pull (alphaletegp +
+b2batt dealers, nds_metrics' cache), crew-filtered, from 2026-10-20 on. The
+Raf-era notes below are history: the envelope path is retired.
 
 Carlos 2026-10-08: "My guys started selling under Rafael's code last Tuesday
 [2026-09-29], so go ahead and check everything as of last Tuesday. Let us
@@ -24,11 +28,11 @@ visibility we want, not a silent drop here.
 """
 from __future__ import annotations
 
-import base64
 import csv
 import datetime as dt
+import re
 import io
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Sequence
 
 # (what we call it, the headers it may hide under -- checked in order,
 # spacing/case ignored)
@@ -60,9 +64,16 @@ def _header_map(fieldnames: List[str], log=print) -> Dict[str, str]:
     missing = [k for k in _COLS if k not in out and k not in ("phone",
                                                              "business")]
     if missing:
+        # chunked, so the full header survives the queue's result-cell cap
+        fl = [str(f) for f in (fieldnames or [])]
+        for i in range(0, len(fl), 6):
+            # print, not log: wrapup silences the loader's log and this
+            # dump must reach the run log regardless
+            print("GHDR%d: %s" % (i // 6, " | ".join(fl[i:i + 6])),
+                  flush=True)
         raise RuntimeError(
-            "Raf guest export is missing column(s) %s — header was: %r"
-            % (missing, (fieldnames or [])[:20]))
+            "NDS SOH export is missing column(s) %s — GHDR lines above "
+            "carry the full header" % (missing,))
     if "phone" not in out:
         log("guest rows: NO phone column found (tried %s) — every guest "
             "customer will be skipped as phoneless; fix guest._COLS"
@@ -88,69 +99,152 @@ def _norm(v: str) -> str:
 
 def guest_customers(since: dt.date, until: dt.date,
                     log=print) -> List[Dict[str, str]]:
-    """The guest reps' orders with Order Date in [since, until], shaped
-    exactly like sara.scrape()'s rows (day = the ORDER date, so the state
-    key and the Slack grouping date the customer by their sale).
+    """The crew's NDS orders with Order Date in [since, until], shaped
+    like sara.scrape()'s rows.
 
-    Raises when the envelope is missing or stale — for the DAILY run the
-    caller wraps this (a lost Lucy 1 pull must not sink Carlos's own
-    customers), for the backfill a loud failure IS the right answer."""
-    from automations.sp_order_log import raf_guest
+    SOURCE (2026-10-29, third switch): the WIRELESS PER-LINE FEED
+    (nds_metrics.wireless_pull), because the alphaletegp SOH export has
+    no Customer Name column at all and the 6:45 check died on it every
+    morning. The feed carries customer first+last, contact phone, DSI,
+    Wireless Order # and BAN — which also fills the wrap-up text's
+    blanks. The 6:10 daily pull writes the cache this reads; a missing
+    cache pulls fresh (browser, ~2 min)."""
+    from automations.nds_metrics import run as NM
+    from automations.nds_metrics import wireless_pull as WP
+    from automations.total_knocks import guests as gst
 
-    env = raf_guest.fetch(log=log)
-    if not env:
-        raise RuntimeError(
-            "no Raf guest pull on the control sheet (tab %r) — run "
-            "`lucy rerun raf_guest_orders --machine \"Lucy 1\"` first"
-            % raf_guest.TAB)
-    age = raf_guest._age_hours(env)
-    if age is None or age > raf_guest.MAX_AGE_H:
-        raise RuntimeError(
-            "the Raf guest pull is STALE (%s, %sh old) — re-run "
-            "raf_guest_orders on Lucy 1 before trusting it"
-            % (env.get("pulled"), "?" if age is None else round(age, 1)))
-    data = base64.b64decode(env.get("csv", "") or "")
-    reader = csv.DictReader(io.StringIO(
-        data.decode("utf-8-sig", errors="replace")))
-    rows = list(reader)
-    cols = _header_map(list(reader.fieldnames or []), log=log)
+    today = dt.date.today()
+    f = WP.cached(today)
+    if f is None:
+        log("guest rows: no wireless cache today — pulling fresh")
+        data = WP.pull(today - dt.timedelta(days=31), today, log=log)
+        f = NM.OUT_DIR / f"nds_wireless_{today.isoformat()}.html"
+        f.write_bytes(data)
+    orders, feed_lines = WP.parse(f.read_bytes(), log=lambda *a, **k: None)
 
+    _is_crew = crew_matcher()
+
+    since = max(since, NM.NDS_SINCE)
     out: List[Dict[str, str]] = []
-    skipped_dates = 0
-    for r in rows:
-        d = _parse_us_date(r.get(cols["order_date"], ""))
-        if d is None:
-            skipped_dates += 1
+    for o in orders:
+        d = _parse_us_date(o.get("order_date", ""))
+        if d is None or not (since <= d <= until):
             continue
-        if not (since <= d <= until):
+        if not _is_crew(o.get("rep", "")):
             continue
-        oid = _norm(r.get(cols["order_id"], ""))
         out.append({
-            "order_id": oid,
+            "order_id": _norm(o.get("dsi", "")),
             "day": d.isoformat(),
-            "order_date": _norm(r.get(cols["order_date"], "")),
-            "rep": _norm(r.get(cols["rep"], "")),
-            "business": _norm(r.get(cols.get("business", ""), ""))
-            if cols.get("business") else "",
-            "customer_name": _norm(r.get(cols["customer_name"], "")),
-            "phone": _norm(r.get(cols.get("phone", ""), ""))
-            if cols.get("phone") else "",
-            # the texted() widening (Carlos 2026-10-08: reps don't always
-            # use the primary number): every other number the pull knows
-            # for this customer, and the order's own long digit strings.
-            "alt_phones": list((env.get("phones") or {}).get(oid, [])),
-            "wireless_order": _norm(r.get("Wireless Order #", "")),
-            "ban": _norm(r.get("Wireless Acct #", "")),
+            "order_date": _norm(o.get("order_date", "")),
+            "rep": _norm(o.get("rep", "")),
+            "business": "",
+            "customer_name": _norm(o.get("customer", "")),
+            "phone": _norm(o.get("phone", "")),
+            "alt_phones": [],
+            "wireless_order": _norm(o.get("wireless_order", "")),
+            "ban": _norm(o.get("ban", "")),
+            "lines": order_lines(o, feed_lines),
         })
-    if skipped_dates:
-        log("guest rows: %d row(s) had an unreadable Order Date — left out"
-            % skipped_dates)
-    log("guest rows (Raf's code): %d order(s) %s..%s, pull from %s"
-        % (len(out), since, until, env.get("pulled")))
+    log("crew rows (NDS wireless feed): %d order(s) %s..%s"
+        % (len(out), since, until))
     for c in out:
-        log("  %-10s %-14s %-26s %-24s %s"
-            % (c["day"], c["order_id"], (c["business"] or "(no business)")[:26],
-               c["customer_name"][:24], c["phone"] or "NO PHONE"))
+        log("  %-10s %-14s %-24s %s"
+            % (c["day"], c["order_id"], c["customer_name"][:24],
+               c["phone"] or "NO PHONE"))
+    return out
+
+
+# Reps on Carlos's NDS Order Log (Owner = Carlos Hidalgo) that the shared
+# total_knocks roster (frozen 2026-09-25, Raf-campaign era) does not carry.
+# Found 2026-11-02: their customers were silently outside the contact sync
+# and the never-texted check ("no contact phone" on the delivered text).
+# The roster module serves other boards, so the widening lives HERE.
+NDS_EXTRA_CREW = [
+    "Cinthya Reyes",
+    "Yahir Uriel Lopez",
+    "Annett Climaco",
+    "Brianna Belen Contreras",
+    "Esmeralda Gonzalez",
+    "Nathaly Elizabeth Molina Benitez",
+    "Jorge Jose Hernandez Molina",
+]
+
+
+def crew_names() -> List[str]:
+    from automations.total_knocks import guests as gst
+    return (gst.roster("Rafael Hidalgo", "Carlos Hidalgo")
+            + ["Carlos Hidalgo"] + list(NDS_EXTRA_CREW))
+
+
+def crew_matcher():
+    """name -> bool, the roster's own token-subsequence match ("Nicholas
+    Smedra" claims "Nicholas Paul Smedra", and the other way round)."""
+    from automations.total_knocks import guests as gst
+    toks = [gst._tokens(n) for n in crew_names()]
+
+    def _is_crew(n: str) -> bool:
+        t = gst._tokens(n)
+        return any(gst._subseq(ct, t) or gst._subseq(t, ct) for ct in toks)
+    return _is_crew
+
+
+_PHONE_RE = re.compile(r"^\D*(\d{3})\D*(\d{3})\D*(\d{4})\D*$")
+
+
+def line_phone(line: Dict[str, str]) -> str:
+    """The LINE's own phone number off a wireless_pull line dict. The feed
+    parser has two columns swapped on Port lines (README 10/29: the number
+    shows under 'device'), so take the first phone-shaped value among the
+    candidates rather than trusting one field name. '' when none."""
+    for k in ("device", "line_number", "line_phone"):
+        v = str(line.get(k) or "").strip()
+        if _PHONE_RE.match(v):
+            return v
+    return ""
+
+
+def order_lines(order: Dict[str, str], feed_lines: Sequence[Dict[str, str]]
+                ) -> List[Dict[str, str]]:
+    """The order's lines as [{line, phone, type, status}], matched on
+    Wireless Order # then DSI #, in line-number order."""
+    wo = _norm(order.get("wireless_order", ""))
+    dsi = _norm(order.get("dsi", ""))
+    out = []
+    for l in feed_lines:
+        same = (wo and _norm(l.get("wireless_order", "")) == wo) or \
+               (not wo and dsi and _norm(l.get("dsi", "")) == dsi)
+        if not same:
+            continue
+        n = _norm(l.get("line_no", ""))
+        if not n:
+            continue           # a header-shaped row the parser called a line
+        out.append({"line": n, "phone": line_phone(l),
+                    "type": _norm(l.get("line_type", "")),
+                    "status": _norm(l.get("line_status", ""))})
+    out.sort(key=lambda x: (int(x["line"]) if x["line"].isdigit() else 999, x["line"]))
+    return out
+
+
+def extra_line_contacts(cust: Dict) -> List[Dict[str, str]]:
+    """Carlos 2026-11-02: "add in the other lines on the account ... label
+    them as the second line and third line on the account, just in case
+    those customers reach out or we reach out to that phone number."
+
+    The lines whose number is NOT the order's main contact number, one
+    entry per distinct number: [{line, phone, label}] with label like
+    "Line 2". The main contact number is the customer's own contact and
+    already has its contact; a line that shares it gets nothing extra."""
+    from automations.rc_contact_sync.ringcentral import norm_phone
+    main = norm_phone(cust.get("phone", ""))
+    seen = {main} if main else set()
+    out = []
+    for l in cust.get("lines") or []:
+        ph = norm_phone(l.get("phone", ""))
+        if not ph or ph in seen:
+            continue
+        seen.add(ph)
+        out.append({"line": l["line"], "phone": l["phone"],
+                    "label": "Line %s" % l["line"]})
     return out
 
 

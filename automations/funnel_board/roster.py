@@ -91,6 +91,7 @@ SOUTH_SHORE_NAMES = [
     "Karrington Moody",
     "Justin Fermin",
     "Jose Velasquez",
+    "Samuel Acay",        # Dynasty Growth Group; Lucy ECO 2026-10-29 (Megan: on the South Shore org, so on Colten's texted scorecard)
     "George Delgado",
     "Lizette Ruiz",
     "Valeria Tristan",

@@ -45,6 +45,11 @@ LOOKBACK_DAYS = 60
 # floors at this date; the Tableau rate/churn boards keep their lookback
 # (banding needs it).
 NDS_SINCE = dt.date(2026, 10, 20)
+# SaraPlus only drives boards once it holds this many NDS-era crew orders.
+# 2026-10-26: the FIRST call-center entry landed and the Order Log flipped to
+# SaraPlus showing that one order while Tableau had the crew's full 17 lines.
+# Below this floor every board stays on Tableau (or skips, for the overviews).
+SOH_MIN_ORDERS = 5
 BUCKETS = ("0-30 Day", "31-60 Day")
 _BAND_KEY = {"0-30 Day": "0-30", "31-60 Day": "31-60"}
 POSTED = ("posted",)
@@ -148,6 +153,41 @@ class Cols:
         return i
 
 
+def crew_names(log=print) -> list:
+    """Who counts as Carlos's crew on every NDS board: the hand-kept
+    GUEST_REPS roster (the fiber-era list), Carlos himself, AND every rep
+    on the Vantura 'NDS Sales Board'. Carlos 2026-11-03: "its only showing
+    two people on the board that makes no sense" -- the Revenue Board (and
+    every other crew-filtered section) had silently dropped each rep who
+    joined after the roster was written on 9/25 (Annett, Elisa, Nathaly,
+    Brianna, Esmeralda, Cinthya, Yahir, Eric, Valerie, Jorge Hernandez,
+    Ruby ...). The board is the roster Carlos actually keeps; when it
+    cannot be read the static list stands alone and the log says so."""
+    from automations.total_knocks import guests
+    names = list(guests.roster("Rafael Hidalgo", "Carlos Hidalgo")) + ["Carlos Hidalgo"]
+    try:
+        from automations.vantura_slack_sales.run import (NAME_COL, _cell,
+                                                         board_grid,
+                                                         campaign_rows)
+        _ws, g = board_grid("B2B")
+        board = [_cell(g, r, NAME_COL).strip()
+                 for r in campaign_rows(g, "B2B").values()]
+        board = [n for n in board if n]
+        log(f"[nds] crew = {len(names)} roster name(s) + {len(board)} rep(s) "
+            f"on the NDS Sales Board")
+        names += board
+    except Exception as e:  # noqa: BLE001 -- a board read never sinks the run
+        log(f"[nds] NDS Sales Board roster unreadable ({type(e).__name__}: "
+            f"{str(e)[:80]}) -- static roster only")
+    seen, out = set(), []
+    for n in names:
+        k = " ".join(guests._tokens(n))
+        if k and k not in seen:
+            seen.add(k)
+            out.append(n)
+    return out
+
+
 def load_crew(path: Path, log=print):
     """-> (Cols, crew rows). Owner & Office = CARLOS HIDALGO, the export's
     long-format measure rows collapsed to one per line (every count doubled
@@ -182,8 +222,10 @@ def load_crew(path: Path, log=print):
     mine = [r for r in data if len(r) > i_owner
             and "CARLOS" in str(r[i_owner]).upper()
             and "HIDALGO" in str(r[i_owner]).upper()]
-    crew_names = guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
-    crew_toks = [guests._tokens(n) for n in crew_names]
+    # Carlos sells too (2026-10-26: "i dont see my sale in the order log" —
+    # the guest roster is the reps UNDER him and leaves him out, so his own
+    # lines were filtered off every board).
+    crew_toks = [guests._tokens(n) for n in crew_names(log)]
 
     def _is_crew(name: str) -> bool:
         t = guests._tokens(name)
@@ -196,6 +238,21 @@ def load_crew(path: Path, log=print):
     log(f"[nds] {len(data)} line(s) -> carlos {len(mine)} -> crew "
         f"{len(crew)}" + (f" ({dropped} non-crew on his owner)" if dropped
                           else ""))
+    if dropped:
+        import collections as _coll2
+        gone = _coll2.Counter(str(r[i_rep]).strip() for r in mine
+                              if len(r) > i_rep
+                              and not _is_crew(str(r[i_rep]).strip()))
+        log("[nds] non-crew on his owner (dropped): "
+            + ", ".join(f"{k}={v}" for k, v in gone.most_common(15)))
+    # Every line on his owner, unfiltered -- the Revenue Board prices these
+    # (Carlos 2026-11-03: "if you ever see a sale from someone not on the
+    # list you still want to add it for the revenue board").
+    cols.owner_lines = list(mine)
+    if not crew and mine:
+        log(f"[nds] crew filter matched NOBODY -- using all {len(mine)} "
+            f"line(s) on his owner")
+        crew = list(mine)
     if not crew:
         raise RuntimeError("nds log: ZERO crew lines — check the window / "
                            "owner spelling before posting anything")
@@ -302,22 +359,34 @@ def load_soh(log=print):
             import io as _mio
             start = today - dt.timedelta(days=31)
             parts = []
+            # Carlos 2026-10-27: "carhi1816 is my b2b logins. we don't
+            # need to use it for anything anymore" — the b2batt leg is
+            # RETIRED. alphaletegp is the only NDS dealer (probe that day:
+            # its one recent crew order was 10/19, pre-NDS).
             try:
                 parts.append(("nds", _pull_nds_soh(start, today, log=log)))
             except Exception as e:  # noqa: BLE001
                 log(f"[nds] nds-dealer pull blocked ({type(e).__name__})")
-            try:
-                from automations.sp_order_log.run import pull_csv
-                b2b, _wl = pull_csv(start, today, log=log)
-                parts.append(("b2batt", b2b))
-            except Exception as e:  # noqa: BLE001
-                log(f"[nds] b2batt pull blocked ({type(e).__name__})")
             if not parts:
-                raise RuntimeError("both dealers' SOH pulls failed")
+                raise RuntimeError("the NDS dealer SOH pull failed")
+            # The dealers' SOH grids are configured differently: the
+            # alphaletegp export has no Customer Name / Wireless Order # /
+            # Wireless Acct # columns at all (seen 2026-10-27, 100 cols),
+            # while b2batt's carries them. The merge projects onto the
+            # RICHEST header — the one with Customer Name — so the wrap-up
+            # pipeline's fields survive; rows from the thinner export just
+            # leave those cells blank.
+            def _rows_of(blob):
+                return list(_mcsv.reader(_mio.StringIO(
+                    blob.decode("utf-8-sig", errors="replace"))))
+            parts = sorted(
+                parts,
+                key=lambda nb: ("Customer Name" not in
+                                [str(c).strip() for c in
+                                 (_rows_of(nb[1])[:1] or [[]])[0]]))
             merged, seen, hdr_row = [], set(), None
             for name, blob in parts:
-                rws = list(_mcsv.reader(_mio.StringIO(
-                    blob.decode("utf-8-sig", errors="replace"))))
+                rws = _rows_of(blob)
                 if not rws:
                     continue
                 h = [str(c).strip() for c in rws[0]]
@@ -354,15 +423,23 @@ def load_soh(log=print):
         return None
     hdr = [str(h).strip() for h in rows[0]]
     ix = {h: i for i, h in enumerate(hdr)}
-    for need in ("User Name", "Order Date", "Customer Name",
-                 "Wireless Status", "Wireless Active Date",
-                 "Wireless Line Count"):
+    for need in ("User Name", "Order Date", "Wireless Status",
+                 "Wireless Active Date", "Wireless Line Count"):
         if need not in ix:
             log(f"[nds] SOH missing column {need!r}")
             _SOH_MEMO.append(None)
             return None
-    crew_names = guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
-    toks = [guests._tokens(n) for n in crew_names]
+    # Customer Name is DISPLAY-only here (the aggregate boards don't need
+    # it) and the alphaletegp grid doesn't export it yet (2026-10-28) —
+    # warn, don't refuse. The wrap-up texter still requires it and stays
+    # held until the column is added in the SaraPlus portal.
+    if "Customer Name" not in ix:
+        log("[nds] SOH has no Customer Name column — order log shows "
+            "blank customers until the alphaletegp grid gains it")
+    # Carlos sells too (2026-10-26: "i dont see my sale in the order log" —
+    # the guest roster is the reps UNDER him and leaves him out, so his own
+    # lines were filtered off every board).
+    toks = [guests._tokens(n) for n in crew_names(log)]
 
     def _is_crew(n):
         t = guests._tokens(n)
@@ -417,6 +494,11 @@ def load_soh(log=print):
                 cache.unlink()
             except OSError:
                 pass
+        _SOH_MEMO.append(None)
+        return None
+    if len(crew) < SOH_MIN_ORDERS:
+        log(f"[nds] SOH has {len(crew)} NDS-era order(s) — below the trust "
+            f"floor of {SOH_MIN_ORDERS}; boards stay on Tableau")
         _SOH_MEMO.append(None)
         return None
     res = (ix, crew, pulled_at)
@@ -558,6 +640,54 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     """The crew's lines as a status-colored workbook. SaraPlus relay first
     (Carlos 2026-10-08: "lets make this come from sara plus instead"),
     Tableau when the relay is missing or stale."""
+    # The wireless per-line feed first (Carlos 2026-10-29: B2B-style
+    # workbook — All Reps / Pending by Rep / Paycheck by Week / tab per
+    # rep, with customer first+last names, which only this feed carries).
+    # THE house format (Carlos 2026-10-29, after the Activation/Pay Week
+    # screenshot): the SAME renderer Raf's #alphalete-sales log and every
+    # NDS office's log use — office_metrics.nds_orderlog through
+    # uploaded.order_log's column_profile. Pay Period tab first, per-rep
+    # tabs with "Week m/d to m/d • Paid Friday m/d" banners, the
+    # Pending / Disconnect / Cancel section, and the Activation/Pay Week
+    # calendar under every rep tab.
+    try:
+        from automations.office_metrics import nds_orderlog as NOL
+        path = pull(today)
+        # NOL.load wants an EXACT normalized owner; Carlos's cell carries
+        # the office suffix, so match the way load_crew does.
+        _all = NOL._read_csv(path)
+        header2 = _all[0] if _all else []
+        _oc = next((i for i, h in enumerate(header2)
+                    if NOL._norm_h(h).startswith("owner")), 0)
+        rows2 = [r for r in _all[1:]
+                 if len(r) > _oc and "CARLOS" in str(r[_oc]).upper()
+                 and "HIDALGO" in str(r[_oc]).upper()]
+        if rows2:
+            x, n = NOL._render_order_log("Carlos Hidalgo", header2, rows2,
+                                         today, OUT_DIR)
+            log(f"[nds] house order log: {n} line(s) -> {Path(x).name}")
+            return Path(x)
+        log("[nds] house order log: no rows for Carlos — falling back")
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] house order log failed ({type(e).__name__}: "
+            f"{str(e)[:140]}) — falling back")
+    # IDENTICAL-format path (Carlos 2026-10-29): the same shape_lines +
+    # att_order_log.xlsx builder his old log used — paycheck-week banners,
+    # pay boxes, Pending by Rep, the shared colour map — fed by the NDS
+    # SOH + wireless per-line scrape with the activation-day tracker.
+    try:
+        from automations.sp_order_log.run import build_artifacts_nds
+        return build_artifacts_nds(out_dir=OUT_DIR, today=today,
+                                   log=log)["xlsx"]
+    except Exception as e:  # noqa: BLE001 — fall through to the plainer
+        log(f"[nds] identical-format log failed ({type(e).__name__}: "
+            f"{str(e)[:140]}) — falling back")
+    from automations.nds_metrics import order_xlsx, wireless_pull
+    wcache = wireless_pull.cached(today)
+    if wcache:
+        orders, wlines = wireless_pull.parse(wcache.read_bytes(), log=log)
+        if wlines:
+            return order_xlsx.build(orders, wlines, today, OUT_DIR, log=log)
     soh = load_soh(log=log)
     if soh:
         return build_order_log_soh(soh[0], soh[1], today, soh[2], log=log)
@@ -1052,6 +1182,142 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
     return out
 
 
+def build_override_board(cols, crew, today, log=print) -> Path:
+    """NDS Leader Overrides, SECTIONS layout (Carlos 2026-10-29): one
+    section per tree leader with first-gen trainees. Each trainee row =
+    what the DD actually PAID them for the latest settled week (the
+    Scoutly RAW tab, NDS Wireless campaign — SaraPlus statuses lag the
+    per-line payouts, so the deposit is the only source that matches
+    itself), then the leader's total with the override at 2.5/5/7.5/10%.
+    First generation only."""
+    import collections
+    from PIL import Image, ImageDraw
+    from automations.recruiting_report.fill import open_by_key
+    from automations.sales_boards.render import _title_font, title_bar
+    from automations.team_tree import run as TT
+    from automations.total_knocks import guests as gst
+
+    sh = open_by_key("1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY")
+    raw = next(w for w in sh.worksheets()
+               if w.title.strip().lower() == "raw")
+    vals = raw.get_all_values()
+    hix = {h: k for k, h in enumerate(vals[0])}
+    weeks = [r[0].strip() for r in vals[1:] if r and r[0].strip()]
+    week = weeks[-1] if weeks else "?"
+
+    def money(v):
+        try:
+            return float(str(v).replace("$", "").replace(",", "") or 0)
+        except ValueError:
+            return 0.0
+
+    paid = collections.defaultdict(float)
+    for r in vals[1:]:
+        if (r and r[0].strip() == week
+                and r[hix["Campaign"]].strip() == "NDS Wireless"):
+            paid[r[hix["Rep Name"]].strip()] += money(
+                r[hix["Total $ to ICD"]])
+    log(f"[nds] overrides: DD week {week!r}, {len(paid)} paid rep(s), "
+        f"${sum(paid.values()):,.0f} NDS total")
+
+    _wk, reps, _roots, _sched = TT.build(today)
+
+    def paid_for(name):
+        t = gst._tokens(name)
+        for rep, amt in paid.items():
+            rt = gst._tokens(rep)
+            if gst._subseq(t, rt) or gst._subseq(rt, t):
+                return amt
+        return 0.0
+
+    sections = []
+    for leader in reps:
+        kids = list(leader.children)
+        if not kids:
+            continue
+        rows = [(k.name, paid_for(k.name)) for k in kids]
+        rows.sort(key=lambda x: -x[1])
+        total = sum(v for _n, v in rows)
+        sections.append((leader.name, rows, total))
+    sections.sort(key=lambda s: -s[2])
+
+    # ---------------- render: one table per leader, stacked ----------
+    S = 2
+    COLW = [230 * S, 95 * S, 80 * S, 80 * S, 80 * S, 80 * S]
+    W = sum(COLW)
+    ROW = 26 * S
+    f_head = _title_font(13 * S)
+    f_cell = _title_font(12 * S)
+    HEADS = ["First Gen", "Paid $", "2.5%", "5%", "7.5%", "10%"]
+    NAVY, LBLUE, GREY = (46, 84, 150), (178, 203, 233), (229, 229, 229)
+
+    def table_height(n_rows):
+        return ROW * (1 + n_rows + 1) + 14 * S
+
+    H = 60 * S + sum(table_height(len(rows)) + 16 * S
+                     for _l, rows, _t in sections)
+    img = Image.new("RGB", (W + 24 * S, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    y = 8 * S
+    d.text((12 * S, y),
+           f"NDS Leader Overrides — DD WE {week} (what the deposit paid "
+           "each first gen) x 2.5% / 5% / 7.5% / 10%",
+           font=f_cell, fill=(90, 90, 90))
+    y += 26 * S
+
+    def row_out(cells, y, bg, bold=False):
+        x = 12 * S
+        for (val, w) in zip(cells, COLW):
+            d.rectangle([x, y, x + w, y + ROW], fill=bg,
+                        outline=(120, 120, 120))
+            d.text((x + 6 * S, y + 5 * S), str(val),
+                   font=f_head if bold else f_cell, fill=(20, 20, 20))
+            x += w
+        return y + ROW
+
+    for leader, rows, total in sections:
+        d.rectangle([12 * S, y, 12 * S + W, y + ROW], fill=NAVY)
+        d.text((18 * S, y + 5 * S),
+               f"{leader}  —  {len(rows)} first gen", font=f_head,
+               fill=(255, 255, 255))
+        y += ROW
+        y = row_out(HEADS, y, LBLUE, bold=True)
+        for name, amt in rows:
+            y = row_out([name, f"${amt:,.0f}", f"${amt*.025:,.0f}",
+                         f"${amt*.05:,.0f}", f"${amt*.075:,.0f}",
+                         f"${amt*.10:,.0f}"], y, (255, 255, 255))
+        y = row_out([f"{leader.split()[0].upper()} TOTAL",
+                     f"${total:,.0f}", f"${total*.025:,.0f}",
+                     f"${total*.05:,.0f}", f"${total*.075:,.0f}",
+                     f"${total*.10:,.0f}"], y, GREY, bold=True)
+        y += 16 * S
+    out = OUT_DIR / "nds_override_board.png"
+    img.crop((0, 0, img.width, min(img.height, y + 8 * S))).save(out)
+    for leader, rows, total in sections:
+        log(f"[nds] overrides {leader}: 1st-gen paid ${total:,.0f} -> "
+            f"2.5% ${total*.025:,.0f} / 5% ${total*.05:,.0f} / "
+            f"7.5% ${total*.075:,.0f} / 10% ${total*.10:,.0f}")
+    return out
+
+
+def build_knocks_final(cols, crew, today, log=print) -> Path:
+    """Yesterday's LAST knocks board (Carlos 2026-10-28: "the last nds
+    knocks board from the day prior should also be posted every morning
+    in the NDS thread"). nds_oof renders all day into
+    output/nds_oof/<date>/total_knocks_*.png on this machine — the newest
+    one by mtime IS the day's final board. No render of its own: a day
+    with no knocks run is an honest skip."""
+    from automations.nds_oof.run import OUTPUT_DIR as _NOOF
+    yday = today - dt.timedelta(days=1)
+    cands = sorted((_NOOF / yday.isoformat()).glob("*knocks*.png"),
+                   key=lambda q: q.stat().st_mtime)
+    if not cands:
+        raise RuntimeError(f"no knocks boards rendered for {yday}")
+    log(f"[nds] knocks final: {cands[-1].name} "
+        f"({dt.datetime.fromtimestamp(cands[-1].stat().st_mtime):%H:%M})")
+    return cands[-1]
+
+
 def build_revenue_board(cols, crew, today, log=print) -> Path:
     """#1 Revenue Board — styled like the B2B one, base-comp mode, but
     priced from the TABLEAU NDS log, not SaraPlus. 2026-10-23: both
@@ -1069,8 +1335,17 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     i_pkg = cols.find("package")
     i_tn = cols.find("spe.tn type", "tn type")
     monday = week_of(today)
+    # Carlos 2026-11-03: "if you ever see a sale from someone not on the
+    # list you still want to add it for the revenue board" -- every line on
+    # his owner prices here; the crew roster never drops one.
+    lines = getattr(cols, "owner_lines", None) or crew
+    extra = sorted({_c(cols, r, i_rep) for r in lines}
+                   - {_c(cols, r, i_rep) for r in crew} - {""})
+    if extra:
+        log(f"[nds] revenue board: +{len(extra)} rep(s) off the roster, "
+            f"kept: {', '.join(extra)}")
     per_rep: Dict[str, dict] = {}
-    for r in crew:
+    for r in lines:
         od = _parse_date(_c(cols, r, i_od))
         rep = _c(cols, r, i_rep)
         if not rep or od is None or not (monday <= od <= today):
@@ -1088,7 +1363,7 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     out = render(rows, office, monday, today,
                  OUT_DIR / "nds_revenue_board.png",
                  board_name="NDS Revenue Board", tiered=False)
-    log(f"[nds] revenue board (styled, TABLEAU lines): {len(rows)} rep(s), "
+    log(f"[nds] revenue board (styled, ALL lines on his owner): {len(rows)} rep(s), "
         f"crew ${sum(r['total'] for r in rows):,.0f}")
     return out
 
@@ -1197,6 +1472,16 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
 
     tables = {"last": _table(ls, le, "posted_last", "can_last"),
               "this": _table(ts, te, "posted_this", "can_this")}
+    # DD reconciliation visibility (Carlos 2026-10-28): the log carries the
+    # same numbers the board shows.
+    for key in ("last", "this"):
+        t = tables[key]
+        log(f"[nds] act-rev {t['label']}: posted ${t['totals']['posted']:,}"
+            f" / open ${t['totals']['pending']:,}"
+            f" / cancelled ${t['totals']['canceled']:,}")
+        for row in t["rows"]:
+            if row["posted"]:
+                log(f"[nds]   {key} {row['rep'][:26]}: ${row['posted']:,}")
     out = OUT_DIR / "nds_activation_revenue.png"
     saved = list(bpng.COLS)
     bpng.COLS[:] = [("Rep Name", "rep", "left"),
@@ -1216,6 +1501,28 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
     return out
 
 
+def build_team_tree(cols, crew, today, log=print) -> Path:
+    """The 6am NDS team tree rides the 7:30 thread (Carlos 2026-10-28:
+    post it "in the NDS metrics thread every morning instead of just on
+    the Aplayers" — the A-Players 6am post stays). The team_tree agent
+    renders on this same machine; only TODAY's render is ever posted, a
+    stale file is an honest skip."""
+    # ALWAYS render our own copy into our own file. Sharing the agent's
+    # team_tree.png is what posted the VERIZON tree here on 2026-10-28
+    # (the agent's second leg overwrote it) — a file nobody else writes
+    # can't go stale or get swapped.
+    from automations.team_tree import run as TT
+    week, reps, roots, scheduled = TT.build(today)
+    html = OUT_DIR / "nds_team_tree.html"
+    png = OUT_DIR / f"nds_team_tree_{today.isoformat()}.png"
+    html.write_text(TT.render_html(week, reps, roots, scheduled),
+                    encoding="utf-8")
+    TT.render_png(html, png)
+    log(f"[nds] team tree rendered fresh: week {week!r}, {len(reps)} reps, "
+        f"{png.stat().st_size:,}b")
+    return png
+
+
 def build_pct_on_board(cols, crew, today, log=print) -> Path:
     """The NDS Sales Board tab's "% on the Board" block (Carlos 2026-10-24).
     Ignores the Tableau pull — it shoots the live Sheet. On Monday before the
@@ -1227,7 +1534,30 @@ def build_pct_on_board(cols, crew, today, log=print) -> Path:
         OUT_DIR / f"nds_pct_on_board_{today.isoformat()}.png", log=log)
 
 
+def build_day_board(cols, crew, today, log=print) -> Path:
+    """Yesterday's board cut (Carlos 2026-10-28) — see board_shots."""
+    from automations.nds_metrics import board_shots
+    return board_shots.render(today, OUT_DIR, log=log)["day"]
+
+
+def build_week_board(cols, crew, today, log=print) -> Path:
+    """Week-to-date board cut (Carlos 2026-10-28) — see board_shots."""
+    from automations.nds_metrics import board_shots
+    return board_shots.render(today, OUT_DIR, log=log)["week"]
+
+
+# Sections that BUILD (so --only/--dm previews work) but never post to the
+# thread (Carlos 2026-10-29: "dont send the override tree on the nds thread
+# yet") — move a sid out of here when he says go.
+HELD_FROM_THREAD = {"override_board"}
+
 SECTIONS = [
+    ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
+     build_day_board),
+    ("week_board", "\U0001F4C5", "NDS Sales Board — Week to Date",
+     build_week_board),
+    ("knocks_final", "\U0001F6AA", "NDS Knocks Board — Day Prior",
+     build_knocks_final),
     ("revenue_board", "\U0001F4B0", "NDS Revenue Board",
      build_revenue_board),
     # Carlos 2026-10-24: the Sales Board tab's "% on the Board" block, every
@@ -1235,6 +1565,10 @@ SECTIONS = [
     # this thread posts 7:30). Verizon's copy rides the 5:10 sales_boards run.
     ("pct_on_board", "\U0001F4CA", "NDS % On Board",
      build_pct_on_board),
+    ("team_tree", "\U0001F333", "NDS Team Tree",
+     build_team_tree),
+    ("override_board", "\U0001FA9C", "NDS Leader Overrides",
+     build_override_board),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
@@ -1270,7 +1604,8 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         header = f"NDS Metrics — {today.strftime('%B %d, %Y')}"
         ts = client.chat_postMessage(channel=CHANNEL[1], text=header)["ts"]
         contents = "\n".join(f"{emoji} {title}"
-                             for _id, emoji, title, _fn in SECTIONS)
+                             for _id, emoji, title, _fn in SECTIONS
+                             if _id not in HELD_FROM_THREAD)
         client.chat_postMessage(channel=CHANNEL[1], thread_ts=ts,
                                 text="In this thread:\n" + contents)
         state = {"ts": ts, "posted": []}
@@ -1278,6 +1613,8 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         from automations.shared.slack_metrics_post import pin_message
         pin_message(client, CHANNEL[1], ts, log=log)
     for (sid, emoji, title, _fn) in SECTIONS:
+        if sid in HELD_FROM_THREAD:
+            continue
         path = artifacts.get(sid)
         if not path or (sid in state["posted"] and not force):
             continue
@@ -1324,6 +1661,43 @@ def delete_today(today, log=print) -> None:
     sp.unlink()
 
 
+def prune_sections(sids, today, log=print) -> None:
+    """Delete ONE section's reply(ies) from today's thread and clear it
+    from state, so --post can replace just that board (Carlos 2026-10-28:
+    the Verizon tree landed in the NDS thread and only that message
+    should go)."""
+    from automations.shared.slack_metrics_post import _client
+    client = _client()
+    sp = _state_path(today)
+    if not sp.exists():
+        log("[nds] no thread state — nothing to prune")
+        return
+    state = json.loads(sp.read_text())
+    ts = state.get("ts")
+    titles = {sid: f"{emoji} *{title}*"
+              for sid, emoji, title, _fn in SECTIONS if sid in sids}
+    if not ts or not titles:
+        return
+    replies = client.conversations_replies(channel=CHANNEL[1], ts=ts,
+                                           limit=200).get("messages", [])
+    for m in replies:
+        # a files_upload_v2 reply often has EMPTY text (the caption lives
+        # on the file), so match the upload's FILENAME too — that's what
+        # made the first prune delete nothing (2026-10-28)
+        txt = (m.get("text") or "").strip()
+        fnames = " ".join((f.get("name") or "")
+                          for f in (m.get("files") or []))
+        for sid, needle in titles.items():
+            if needle in txt or sid in fnames:
+                try:
+                    client.chat_delete(channel=CHANNEL[1], ts=m["ts"])
+                    log(f"[nds] pruned {sid} reply {m['ts']}")
+                except Exception as e:  # noqa: BLE001
+                    log(f"[nds] prune {m['ts']} failed: {str(e)[:120]}")
+    state["posted"] = [x for x in state.get("posted", []) if x not in sids]
+    sp.write_text(json.dumps(state))
+
+
 def dm_previews(artifacts, user, log=print) -> None:
     from automations.shared import slack_metrics_post as smp
     for sid, emoji, title, _fn in SECTIONS:
@@ -1351,18 +1725,34 @@ def main(argv=None) -> int:
                     help="delete today's NDS Metrics thread (Lucy's own "
                          "posts) and clear its state; pair with --repull "
                          "--post to repost fresh")
+    ap.add_argument("--prune", default=None,
+                    help="comma-separated section ids: delete just their "
+                         "replies from today's thread (then usually --only "
+                         "<same> --post to replace them)")
     ap.add_argument("--repull", action="store_true",
                     help="delete today's SOH + order-log caches first (test "
                          "a fresh pull, e.g. a new dealer login)")
     ap.add_argument("--force", action="store_true",
                     help="re-post sections already in today's thread state "
                          "(replace a bad one); pair with --only")
+    ap.add_argument("--tab", action="store_true",
+                    help="refresh the 'NDS Order Log' tab on the Vantura board from "
+                         "today's wireless feed; alone = ONLY that, no pull, no post")
     a = ap.parse_args(argv)
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    if a.tab and not (a.post or a.dm or a.only):
+        # The tab by itself (Carlos 2026-10-29): today's cached feed -> tab.
+        from automations.nds_metrics import order_log_tab
+        order_log_tab.refresh(today)
+        print("=== done ===", flush=True)
+        return 0
+
     if a.delete_today:
         delete_today(today)
+    if a.prune:
+        prune_sections(set(a.prune.split(",")), today)
     if a.repull:
         for f in OUT_DIR.glob(f"*_{today.isoformat()}.csv"):
             f.unlink()
@@ -1386,6 +1776,17 @@ def main(argv=None) -> int:
         dm_previews(artifacts, a.dm)
     if a.post:
         post_thread(artifacts, today, force=a.force)
+    if a.post or a.tab:
+        # Every morning after the thread (Carlos 2026-10-29): the same lines the
+        # order-log workbook carries, merged into the "NDS Order Log" tab on the
+        # Vantura Master Sales Board. Its own try: a tab problem never sinks
+        # the thread.
+        try:
+            from automations.nds_metrics import order_log_tab
+            order_log_tab.refresh(today)
+        except Exception as e:  # noqa: BLE001
+            print(f"[nds] NDS Order Log tab FAILED (thread unaffected): "
+                  f"{type(e).__name__}: {e}")
     if not a.dm and not a.post:
         print("[nds] dry-run — --dm for previews, --post for the thread")
     print("=== done ===", flush=True)

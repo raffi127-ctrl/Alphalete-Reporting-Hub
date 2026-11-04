@@ -681,11 +681,11 @@ class FaultReporting(unittest.TestCase):
             self.assertEqual(asked[0]["system"], system, stage)
             self.assertIn(system, P.SYSTEMS, "no remedy text for " + system)
 
-    def test_refused_password_and_locked_page_dm_and_still_post(self):
+    def test_refused_password_and_locked_page_go_to_the_dm_only(self):
         """Eve 2026-10-13: Eveliz's refused SaraPlus password and Jennifer's
         locked OwnerVille went to the channel only, and nobody at either
-        office was told. The laptop files them as plain sweep/knocks faults.
-        They now get the DM AND keep the channel post ("al canal y a dm")."""
+        office was told -- so they got the DM too. Megan 2026-10-28: the
+        channel copy is noise, "we can't do anything about it". DM only."""
         for stage, summary, system in (
                 ("sweep", "AccountProblem: SaraPlus did not accept that email "
                           "and password. If you recently changed it...",
@@ -696,11 +696,25 @@ class FaultReporting(unittest.TestCase):
             asked = []
             with mock.patch.object(P, "ask_office_to_sign_in",
                                    lambda *a, **k: asked.append(k)):
-                _out, posts, _tab = self._run(
+                _out, posts, tab = self._run(
                     [self._row(stage=stage, summary=summary, detail="")])
             self.assertEqual([k["system"] for k in asked], [system], stage)
             self.assertIn(system, P.SYSTEMS)
-            self.assertTrue(posts, stage + " must still reach the channel")
+            self.assertEqual(posts, [], stage + " must not reach the channel")
+            tab.update_cell.assert_called_once()
+
+    def test_any_office_must_act_fault_is_dmd_not_posted(self):
+        dms = []
+        with mock.patch.object(P, "dm_office_people",
+                               lambda k, t, **kw: dms.append((k, t))):
+            _out, posts, tab = self._run(
+                [self._row(stage="sweep", summary="SaraPlus wants the code it "
+                           "emails to the owner", detail="")])
+        self.assertEqual(posts, [], "the channel can't fix it")
+        self.assertEqual(len(dms), 1)
+        self.assertEqual(dms[0][0], "kash")
+        self.assertIn("Kash's Local Office", dms[0][1])
+        tab.update_cell.assert_called_once()
 
     def test_an_ordinary_sweep_fault_still_posts(self):
         self.assertIsNone(P._signin_system(
@@ -797,14 +811,25 @@ class FaultsThatFixThemselves(FaultReporting):
         client.reactions_remove.assert_called_once()
         self.assertNotIn("2026-09-13|_calm|parent|done", threads)
 
-    def test_one_that_needs_a_person_still_gets_its_own_post(self):
+    def test_one_that_needs_claude_still_gets_its_own_post(self):
         posts, _t, _th, _c = self._run2(
             [self._row(stage="knocks", summary=self.TIMEOUT),
              self._row(office="drew", stage="sweep",
-                       summary="AccountProblem: SaraPlus emailed code")])
+                       summary="SaraPlus changed, this one is ours")])
         tops = [t for t, ts in posts if ts is None]
         self.assertEqual(len(tops), 2)
-        self.assertTrue(any("Do this" in t and "Drew" in t for t in tops))
+        self.assertTrue(any("paste it to Claude" in t and "Drew" in t
+                            for t in tops))
+
+    def test_one_only_the_office_can_fix_goes_to_their_dm(self):
+        dms = []
+        with mock.patch.object(P, "dm_office_people",
+                               lambda k, t, **kw: dms.append(k)):
+            posts, _t, _th, _c = self._run2(
+                [self._row(office="drew", stage="sweep",
+                           summary="AccountProblem: SaraPlus emailed code")])
+        self.assertEqual(dms, ["drew"])
+        self.assertEqual(posts, [], "Megan 2026-10-28: not the channel")
 
     def test_short_reasons(self):
         self.assertEqual(P.short_reason("knocks-slow", ""),

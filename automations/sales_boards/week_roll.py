@@ -73,12 +73,12 @@ from pathlib import Path
 from automations.recruiting_report.fill import open_by_key, _retry
 from automations.sales_boards.run import SHEET_ID
 from automations.sales_boards.zeros import we_label
-from automations.vantura_boards import (BOARD_TABS, MAIN_TAB as BOARD,
+from automations.vantura_boards import (BOARD_TABS, MAIN_TAB as BOARD, board_on,
                                         READ_RANGE, board_ws, is_stat_label)
 
 WEEKDATA, STATIONS = "WeekData", "Stations"
 WE_CELL = "B2"                  # gold week selector
-STATIONS_WE = "Q2"              # Stations' week label (S2 until the 9/3 re-layout dropped two columns)
+STATIONS_WE = "R2"              # Stations' week label (Q2 until the 2026-11-02 Notes column at B; S2 before the 9/3 re-layout)
 WD_DAY_COLS = "BCDEFGH"         # WeekData Mon..Sun, parallel to the board's E..K
 PICKER_ROWS = 11                # weeks kept in WeekData!J:K (and the dropdown)
 EPOCH = dt.date(1899, 12, 30)   # Sheets serial 0
@@ -180,8 +180,8 @@ class Board:
         self.campaigns = {}
         while r <= len(grid):
             name = self.cell(r, self.c_name)
-            if not name or name.upper() == "TOTAL":
-                break
+            if not name or name.upper() in ("TOTAL", "LAST WEEK"):
+                break      # 'Last Week' (10/27) is a formula row, never a 'Last Wk' target
             row = self.read_row(r)
             self.campaigns[campaign or row["campaign"] or name] = row
             r += 1
@@ -224,6 +224,8 @@ def read_boards(sh) -> dict:
     weeks, so a missing tab stops the roll before anything is written."""
     out = {}
     for camp, tab in BOARD_TABS.items():
+        if not board_on(camp):
+            continue                     # switched off (vantura_boards.OFF_BOARDS)
         try:
             # today's title first, then the one the board had before the
             # 2026-10-03 rename (vantura_boards.LEGACY_TABS)

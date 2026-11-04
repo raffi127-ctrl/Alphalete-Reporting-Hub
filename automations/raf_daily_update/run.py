@@ -322,6 +322,24 @@ def harvest(day: dt.date, office: str = OFFICE_ID) -> List[dict]:
     return cands
 
 
+def _harvest_with_retry(day: dt.date, office_id: str) -> List[dict]:
+    """harvest, once more after a minute if an AppStream page timed out.
+    10/26 5pm: Retention Details (p=701) missed its 30s load once, Raf's run
+    died before writing or posting, and Omar's run three minutes later on the
+    same console loaded fine. A slow page is worth one retry; anything else
+    (or a second timeout) still fails the run and raises the alert."""
+    try:
+        return harvest(day, office_id)
+    except Exception as e:  # noqa: BLE001
+        if "Timeout" not in type(e).__name__:
+            raise
+        log(f"  !! AppStream page timed out ({e.__class__.__name__}) — "
+            "retrying once in 60s")
+        import time
+        time.sleep(60)
+        return harvest(day, office_id)
+
+
 def _find_earlier_interviews(app, day, wanted, ensure_week, pick_sunday,
                              date_header_for, roster_label, n_cols,
                              lookback: int = 7) -> Dict[str, tuple]:
@@ -617,11 +635,27 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
         learn_pending(client, st)
         _save_state(st, spath)
     ids = slack_ids(rows, client)
+    # A helper who also runs 2nd rounds (Omar) is already known by id —
+    # 10/28 the thread asked Omar to tag himself.
+    for name, sid in office.tag_helpers.items():
+        ids.setdefault(L._norm(name), sid)
     missing = [n for n in L.hires_by_leader(rows) if L._norm(n) not in ids]
     tag = L.tag_text(rows, ids, helpers=list(office.tag_helpers.values()))
     replies = [L.CONGRATS_ASK, L.CONGRATS_HOW, L.CONGRATS_TEXT]
+    # Posting outside the office's own channel (the shared test channel,
+    # where every office's thread for the day lands): don't go looking for a
+    # recruiter's post there — recruiters only post in their own channel, and
+    # another office's 'Daily Update M/D' would match (10/26: Raf's rerun
+    # would have put his tags in Omar's thread). Other offices also name the
+    # owner in the parent; Raf's parent wording is unchanged.
+    away = channel != office.channel
+    parent = L.parent_text(day) + (
+        f" \u2014 {office.owner}" if away and office.key != "raf" else "")
+    # Posted-today marker per channel for other offices, so a test post never
+    # blocks the first post in their own channel.
+    mark = day.isoformat() if office.key == "raf" else f"{day.isoformat()}@{channel}"
     log(f"  slack -> {channel}" + ("" if live else "  (dry-run, not sent)"))
-    log(f"    parent: {L.parent_text(day)}")
+    log(f"    parent: {parent}")
     for t in replies:
         log(f"    reply : {t}")
     log(f"    image : {image}")
@@ -629,11 +663,11 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
         log(f"    tags  : {line}")
     if not live:
         return
-    if st.get("posted", {}).get(day.isoformat()):
-        log(f"  already posted {day} (thread {st['posted'][day.isoformat()]})"
+    if st.get("posted", {}).get(mark):
+        log(f"  already posted {day} (thread {st['posted'][mark]})"
             " — not posting again")
         return
-    theirs = _existing_parent(client, channel, day)
+    theirs = "" if away else _existing_parent(client, channel, day)
     if theirs:
         # A recruiter beat us to it: don't post a second Daily Update — add
         # only the leader tags (the part they don't post) to THEIR thread.
@@ -641,14 +675,13 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
             f"({theirs}) — adding only the tags to their thread")
         ts = theirs
     else:
-        ts = client.chat_postMessage(channel=channel,
-                                     text=L.parent_text(day))["ts"]
+        ts = client.chat_postMessage(channel=channel, text=parent)["ts"]
         for t in replies:
             client.chat_postMessage(channel=channel, thread_ts=ts, text=t)
         smp.post_reply_with_image(image, comment="", thread_ts=ts,
                                   channel_id=channel, today=day, mirror=False,
                                   wait_visible=True)
-    st.setdefault("posted", {})[day.isoformat()] = ts
+    st.setdefault("posted", {})[mark] = ts
     _save_state(st, spath)
     if tag:
         ask_ts = client.chat_postMessage(channel=channel, thread_ts=ts,
@@ -697,8 +730,8 @@ def main(argv=None) -> int:
     sheet = office.test_sheet if args.test_sheet else office.sheet
     channel = args.channel or office.channel
     if args.write and not sheet:
-        ap.error(f"no {'test ' if args.test_sheet else ''}Daily Update sheet "
-                 f"for office {office.key} yet — add its link in offices.py")
+        ap.error(f"office {office.key} has no {'test ' if args.test_sheet else ''}"
+                 "sheet in offices.py — it is Slack post only (or add its link)")
     if args.post and not channel:
         ap.error(f"no Slack channel for office {office.key} yet — add it in "
                  "offices.py or pass --channel")
@@ -716,7 +749,7 @@ def main(argv=None) -> int:
         return 0
 
     cands = (seed_from_real(day, office.sheet, office.tab) if args.seed_from_real
-             else harvest(day, office.office_id))
+             else _harvest_with_retry(day, office.office_id))
     rows = L.build_rows(cands)
     log(f"  {L.summary_line(rows)}")
     for r in rows:
@@ -731,7 +764,7 @@ def main(argv=None) -> int:
         write_sheet(rows, day, args.write, sheet, test=args.test_sheet,
                     tab=office.tab)
     else:
-        log(f"  no Daily Update sheet for office {office.key} yet — sheet step skipped")
+        log(f"  office {office.key} has no sheet here — Slack post only")
 
     from automations.raf_daily_update.render import render
     stem = (f"daily_update_{day.isoformat()}" if office.key == "raf"

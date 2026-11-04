@@ -1,0 +1,24 @@
+# The public Streamlit apps (lucyeco.streamlit.app and the six single-tool
+# deploys) deploy from the `site` branch, not `main`. Streamlit Cloud restarts
+# every app on every push to its branch, and `main` takes ~90 pushes a day from
+# the Claude sessions -- the apps were rebooting more than they were serving
+# (Megan 2026-11-03: "none of our apps are loading"). `site` moves to `main`
+# once a day here, or whenever someone runs this workflow by hand (Actions tab
+# -> Promote site -> Run workflow), or `git push origin main:site` locally.
+name: Promote site
+on:
+  schedule:
+    - cron: "0 9 * * *"     # 09:00 UTC = 3am Central, before anybody is on the apps
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: fast-forward site to main
+        run: |
+          git push origin origin/main:refs/heads/site

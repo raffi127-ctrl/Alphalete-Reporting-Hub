@@ -122,5 +122,32 @@ class TheGuardChecksALoneCandidateToo(unittest.TestCase):
         self.assertEqual(set(mc._RUNNER_STATUSES), {"done", "failed"})
 
 
+class UnreadableIsNotOrphaned(unittest.TestCase):
+    """2026-10-26: Sheets timed out and live Lucy 4 was called an orphan."""
+
+    def _flaky(self, fails):
+        calls = {"n": 0}
+        w = mock.Mock()
+
+        def _vals():
+            calls["n"] += 1
+            if calls["n"] <= fails:
+                raise TimeoutError("read timed out")
+            return [HDR, _row("done")]
+        w.get_all_values.side_effect = _vals
+        sh = mock.Mock()
+        sh.worksheet.return_value = w
+        return sh
+
+    def test_a_slow_read_is_retried(self):
+        with mock.patch.object(mc, "_LIVENESS_RETRY_S", (0, 0)):
+            self.assertTrue(mc._tab_is_live(self._flaky(2), "T"))
+
+    def test_never_readable_is_none_and_not_live(self):
+        with mock.patch.object(mc, "_LIVENESS_RETRY_S", (0, 0)):
+            self.assertIsNone(mc._tab_liveness(self._flaky(99), "T"))
+            self.assertFalse(mc._tab_is_live(self._flaky(99), "T"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -343,6 +343,11 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         _log("no SaraPlus campaign on this machine — sales come from elsewhere")
         return 0
     att_key = str((att or {}).get("office_key") or "")
+    if C.sara_paused(att_key):
+        # NO SARAPLUS AT ALL FOR THIS OFFICE (config.SARA_PAUSED_KEYS): no
+        # sign-in, no read, no probe -- the owner is using the login himself.
+        _log("SaraPlus is paused for %s -- not signing in, nothing read" % att_key)
+        return 0
 
     held = sara_read.sara_held_until()
     if held is not None:
@@ -402,6 +407,20 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # never told (Eveliz, 2026-10-03..06). As signin-saraplus the poster
         # DMs the owner, their helpers, Megan & Eve, once a day.
         stage = "signin-saraplus" if _is_code_wall(e) else "sweep"
+        # THE CODE CAN COME FROM LUCY NOW (2026-10-29). Before anybody is
+        # told, a detached helper asks Lucy 1 for the emailed code and types
+        # it in itself; only if that cannot finish does it file this same
+        # fault and offer the window -- the old path, minutes later. Once per
+        # RETRY_AFTER_MINUTES, so an office with no forward set up costs one
+        # short detour, not one per sweep.
+        if stage == "signin-saraplus":
+            try:
+                from automations.icd_alerts import sara_code
+                if not sara_code.recently_tried() and sara_code.launch(att_key, log=_log):
+                    sara_read.hold_sara(log=_log)
+                    return 1
+            except Exception:  # noqa: BLE001 — never cost the fault report
+                pass
         # WITH THE NIGHT'S EVIDENCE: how old the session was and what the
         # keep-alive did, so the wall tells idle-expiry from a hard lifetime.
         # EVIDENCE FIRST: the relay keeps 1500 characters of detail and the
@@ -625,6 +644,18 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
                 "no OwnerVille login is saved on this computer, and this "
                 "office has no SaraPlus — so nothing can be read or reported "
                 "at all. The install needs to be run again."))
+        else:
+            # NOT SILENT EITHER (Omar 2026-10-28): his OwnerVille login was
+            # cleared to get past a stuck check, the sign-in window said
+            # "Signed in", and every sweep after it skipped knocks with only
+            # this log line to show for it -- an hour of "did it relay yet?"
+            # that one fault row would have answered. De-duplicated by its
+            # summary, so it is one row however many sweeps run.
+            _report("knocks", RuntimeError(
+                "no OwnerVille login is saved on this computer, so the knocks "
+                "board cannot run (credit-check and sales alerts still do). "
+                "Save it with: python -m automations.icd_alerts.run "
+                "--set-ownerville-login"))
         return 0
 
     try:
@@ -826,6 +857,32 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("headshots skipped: %s" % type(e).__name__)
 
+        # OFFICE JOBS: what this office's admin pressed on the office admin
+        # page (first kind: Sterling background-check invites). Office
+        # hours, ahead of the gate like headshots.
+        try:
+            from automations.icd_alerts import office_jobs
+            office_jobs.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("office jobs skipped: %s" % type(e).__name__)
+
+        # THE OWNER'S PNL, for an office that asked for it. Office hours, its
+        # own state file; today only the one-time DD check (see pnl.py).
+        try:
+            from automations.icd_alerts import pnl
+            pnl.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("pnl skipped: %s" % type(e).__name__)
+
+        # CAN THIS MAC READ THE OWNER'S SARAPLUS TEXTS? Once a day, read-only,
+        # counts only -- for the offices whose codes come by SMS (Eveliz,
+        # 2026-10-29). See messages_probe.py.
+        try:
+            from automations.icd_alerts import messages_probe
+            messages_probe.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("messages check skipped: %s" % type(e).__name__)
+
         alerting = C.in_selling_window()
         # Sales read noon to midnight every day; alerts keep their own hours.
         # Outside BOTH, nothing to do.
@@ -836,7 +893,10 @@ def _main(argv=None) -> int:
             # an expired one means a fresh login at the 2am close-out, and on
             # some accounts every fresh login is an emailed-code wall
             # (Eveliz, 2026-10-06). See sara_read.keep_session_alive.
-            if not args.dry_run and not sara_read.sara_held_until():
+            _att_keys = [str(r.get("office_key") or "") for r in C.active_enrollments()
+                         if str(r.get("campaign") or "att").strip().lower() not in C.NO_SARAPLUS]
+            if (not args.dry_run and not sara_read.sara_held_until()
+                    and not any(C.sara_paused(k) for k in _att_keys)):
                 try:
                     did = sara_read.keep_session_alive(headless=headless,
                                                        log=_log)

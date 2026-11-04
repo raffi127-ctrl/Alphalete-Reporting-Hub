@@ -42,6 +42,7 @@ OWNER_EMAILS: Dict[str, str] = {
     "Muhammad Haque":      "m.hammad.malikk@gmail.com",   # Contacts: "Hammad Malik"
     "Nii Tagoe":           "niitagoe4@gmail.com",         # Contacts: "Nii Teiko - Tagoe"
     "Nuri Burgos":         "nuri@22select.com",
+    "Omar Mohamad":        "oomohamad98@gmail.com",      # IN 2026-10-27 (Eve)
     "Rashad Reed":         "rashadreed715@gmail.com",
     "Salik Mallick":       "salikmallick6@gmail.com",
     "Trang Canavan":       "trang.lecanavan@gmail.com",
@@ -72,7 +73,7 @@ OWNER_EMAILS: Dict[str, str] = {
     "Tony Chavez":         "tonycv1920@gmail.com",
     # sahil
     "Andre Burton":        "andre082702@gmail.com",
-    "Brian Tran":          "ttran.brian@gmail.com",
+    # Brian Tran (ttran.brian@gmail.com) OUT 2026-10-29: office 23082 closed (Raf).
     "Marcellus Butler":    "marcellusbutlerjr@gmail.com",
     "Sahil Multani":       "multani.business@gmail.com",
     # jess
@@ -137,6 +138,10 @@ EXTRA_RECIPIENTS: Dict[str, List[str]] = {
     # "can I get sent this sheet for Gabe's office please every night" —
     # office 22189, on Pat's captainship, so Starr's own mail never had it.
     "Gabe Perez": ["starr.novamanagement@gmail.com"],  # Starr Rodenhurst
+    # Rafael 2026-11-03 (mail "Knocking data of chat"): "can we give Blake the
+    # nightly knocking report of Chan Park?" Blake Welle, B2B captain, office
+    # 15623. Only Chan's own office mail, not the rest of Chan's captainship.
+    "Chan Park": ["blakew.mobility@gmail.com"],        # Blake Welle
 }
 
 

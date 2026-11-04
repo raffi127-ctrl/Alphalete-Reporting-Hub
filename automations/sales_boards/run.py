@@ -59,7 +59,7 @@ from automations.recruiting_report.fill import open_by_key, _retry
 from automations.pnl_office.run import _token
 from automations.sales_boards import render as R
 from automations.sales_boards import zeros as Z
-from automations.vantura_boards import MAIN_TAB, board_ws, campaign_of, tab_for
+from automations.vantura_boards import MAIN_TAB, board_on, board_ws, campaign_of, tab_for
 
 SANDBOX_SHEET_ID = "15QzcyFqTzX9RYNJ2SvT_HOiyQsMU1v90wHjSUHA_cNc"   # re-copied 7/18
 PROD_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
@@ -100,7 +100,10 @@ CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 #   (name, channel_id, include_zeros?)
 TARGETS = [
     ("#alphalete-gp-sales", "C07J46MQNUX", False),
-    ("#a-players-b2b", "C0AJQA8P716", True),
+    # A-PLAYERS STOPPED (Carlos 2026-10-28: "on the a players slack lets stop all of these")
+    # — the boards and the Zero Streaks there are retired (the streaks
+    # lived only in that room, so they stop entirely). The Box Revenue
+    # Board imports this list too, so its A-Players leg stops with it.
 ]
 
 # The second daily thread in the same channel — the three ATTTRACKER-B2B Tableau
@@ -696,7 +699,7 @@ def rewind_writes(grid, snap, tab: str = "") -> tuple:
     by_name = {}
     for r in range(hdr_row + 1, len(grid) + 1):
         name = cell(r, c_name)
-        if name.upper() == "TOTAL":
+        if name.upper() in ("TOTAL", "LAST WEEK"):
             break            # the stats block below repeats campaign names
         if name:
             by_name.setdefault(name, r)
@@ -888,6 +891,13 @@ def main(argv=None) -> int:
     # corrected re-post.
     programs = [args.program] if args.program else \
         [p for p in PROGRAMS if p != "BOX"]
+    off = [p for p in programs if not board_on(p)]
+    if off:
+        print(f"{', '.join(off)} board switched off "
+              "(vantura_boards.OFF_BOARDS) — not posted")
+        programs = [p for p in programs if board_on(p)]
+        if not programs:
+            return 0
 
     sh = open_by_key(SHEET_ID)
     # One tab per program (vantura_boards): B2B off "NDS Sales Board", BOX

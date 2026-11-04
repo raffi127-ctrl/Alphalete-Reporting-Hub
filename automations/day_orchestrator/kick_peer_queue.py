@@ -21,6 +21,8 @@ TARGETS = {
 }
 CMD = ("launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control; "
        "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-read "
+       "2>/dev/null; "
+       "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-text "
        "2>/dev/null; echo KICKED; launchctl list | grep mini-control")
 
 

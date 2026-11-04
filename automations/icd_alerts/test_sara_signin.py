@@ -21,6 +21,20 @@ from automations.icd_alerts import config as C
 from automations.icd_alerts import sara_read as R
 from automations.icd_alerts import sara_signin as X
 
+
+_NO_DIALOG = mock.patch("automations.icd_alerts.code_forward.offer_after_signin",
+                        lambda *a, **k: "not asked")
+
+
+def setUpModule():
+    """run() offers the code forward after ALL SET, in a real dialog that
+    waits for a person: left alone it hangs the suite on an open window."""
+    _NO_DIALOG.start()
+
+
+def tearDownModule():
+    _NO_DIALOG.stop()
+
 SESSION = "https://www.saraplus.com/e/(S(qvxtpep3hkijen2pmu1hwdge))"
 
 
@@ -85,6 +99,88 @@ class TheSweepStandsBackWhileSomebodyTypesTest(unittest.TestCase):
     def test_sara_and_box_locks_are_separate_files(self):
         """One office can sell both; holding one must not mute the other."""
         self.assertNotEqual(C.SARA_SIGNIN_LOCK, C.SC_SIGNIN_LOCK)
+
+
+class LucyTypesTheLoginTest(unittest.TestCase):
+    """Eve 2026-11-03: the owner who ran the line only types the code."""
+
+    def setUp(self):
+        self.said = []
+        for target, attr, value in (
+                (X.C, "creds", lambda: {"email": "o@gmail.com", "password": "pw"}),
+                (X.C, "install", lambda: {"office_key": "isaiah"})):
+            p = mock.patch.object(target, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+        p = mock.patch("automations.shared.sara_passcode._request_code")
+        self.request = p.start()
+        self.addCleanup(p.stop)
+        p = mock.patch.object(X, "_show_login_form")
+        self.form = p.start()
+        self.addCleanup(p.stop)
+
+    def _go(self, login):
+        with mock.patch.object(X.S, "_login", login):
+            X._fill_for_the_owner("page", log=self.said.append)
+
+    def test_at_the_code_screen_it_asks_for_the_code(self):
+        self._go(mock.Mock(side_effect=X.S.SaraPasscodeWall("wall")))
+        self.request.assert_called_once()
+        self.assertEqual(self.request.call_args.kwargs["destination"], "email")
+        self.assertTrue(any("NEWEST" in l for l in self.said))
+
+    def test_an_office_on_texts_gets_a_text(self):
+        with mock.patch.object(X.C, "install", lambda: {"office_key": "eveliz"}):
+            self._go(mock.Mock(side_effect=X.S.SaraPasscodeWall("wall")))
+        self.assertEqual(self.request.call_args.kwargs["destination"], "mobile")
+
+    def test_no_code_wanted_asks_for_nothing(self):
+        self._go(mock.Mock(return_value="root"))
+        self.request.assert_not_called()
+
+    def test_a_refused_password_leaves_the_form_for_a_person(self):
+        self._go(mock.Mock(side_effect=X.S.SaraError("invalid")))
+        self.request.assert_not_called()
+        self.form.assert_called_once()
+        self.assertTrue(any("usual password" in l for l in self.said))
+
+    def test_no_saved_login_is_left_to_the_person(self):
+        login = mock.Mock()
+        with mock.patch.object(X.C, "creds", side_effect=RuntimeError("none")):
+            self._go(login)
+        login.assert_not_called()
+
+    def test_the_line_fills_and_the_window_autoprompt_opens_does_not(self):
+        from automations.icd_alerts import autoprompt as A
+        self.addCleanup(X._FILL.__setitem__, 0, False)
+        with mock.patch.object(X, "run", return_value=0):
+            X.main([])
+            self.assertTrue(X._FILL[0])
+            X.main(A.SYSTEMS["saraplus"]["args"])
+            self.assertFalse(X._FILL[0])
+
+    def test_the_window_fills_only_when_told(self):
+        import inspect
+        src = inspect.getsource(X._window)
+        self.assertIn("if _FILL[0]:\n                _fill_for_the_owner", src)
+
+
+class ShowLoginFormTest(unittest.TestCase):
+    """Jamis 2026-11-02: the window sat on SaraPlus's marketing page."""
+
+    def test_clicks_through_to_the_form(self):
+        seen, said = [], []
+        with mock.patch.object(X.S, "_open_login_form", seen.append):
+            X._show_login_form("page", log=said.append)
+        self.assertEqual(seen, ["page"])
+        self.assertEqual(said, [])
+
+    def test_a_failed_click_tells_them_where_the_button_is(self):
+        said = []
+        with mock.patch.object(X.S, "_open_login_form",
+                               side_effect=RuntimeError("slow page")):
+            X._show_login_form("page", log=said.append)
+        self.assertIn("LOGIN", said[0])
 
 
 if __name__ == "__main__":
@@ -463,3 +559,100 @@ class EveryRunFilesItsOwnVerdict(unittest.TestCase):
         X._LAST_VERDICT[:] = []
         X._hand_session_to_the_reader(["https://ui.saraplus.com/"], log=lambda *a: None)
         self.assertTrue(any("no session root" in l for l in X._LAST_VERDICT))
+
+
+class TheWindowWaitsForLucysOwnBrowserTest(unittest.TestCase):
+    """Valeria, 2026-11-02: her sign-in ran in the middle of Lucy's automatic
+    code try, on the same profile, and all she got was a wall of red text."""
+    BUSY = ("BrowserType.launch_persistent_context: Failed to create a "
+            "ProcessSingleton for your profile directory.")
+
+    def _open(self, chromium, seconds_per_sleep=5):
+        now = [0.0]
+
+        def sleep(_s):
+            now[0] += seconds_per_sleep
+        lines = []
+        with mock.patch.object(X, "_hold_lock") as hold, \
+                mock.patch.object(X, "_LAST_VERDICT", []):
+            try:
+                out = X._open_browser(chromium, {}, log=lines.append,
+                                      sleep=sleep, clock=lambda: now[0])
+            except X.ProfileStuck:
+                out = "stuck"
+        return out, lines, hold
+
+    def test_it_waits_and_opens_when_the_browser_lets_go(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = [
+            Exception(self.BUSY), Exception(self.BUSY), "window"]
+        with mock.patch.object(X, "_browsers_on_profile", return_value=[77]), \
+                mock.patch.object(X, "_free_profile") as free:
+            out, lines, hold = self._open(ch)
+        self.assertEqual(out, "window")
+        free.assert_not_called()
+        hold.assert_called_once()    # Lucy's code try removed the lock on exit
+        self.assertIn("Please wait", " ".join(lines))
+
+    def test_past_the_wait_it_closes_the_browser_for_them(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = (
+            [Exception(self.BUSY)] * 2 + ["window"])
+        with mock.patch.object(X, "_browsers_on_profile", return_value=[77]), \
+                mock.patch.object(X, "_free_profile") as free:
+            out, _, _ = self._open(ch, seconds_per_sleep=X.PROFILE_BUSY_WAIT_SECONDS)
+        self.assertEqual(out, "window")
+        free.assert_called_once()
+
+    def test_it_stops_when_closing_it_did_not_help(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = Exception(self.BUSY)
+        with mock.patch.object(X, "_browsers_on_profile", return_value=[]), \
+                mock.patch.object(X, "_free_profile"):
+            out, _, hold = self._open(ch, seconds_per_sleep=X.PROFILE_BUSY_WAIT_SECONDS)
+        self.assertEqual(out, "stuck")
+        hold.assert_not_called()
+
+    def test_a_different_error_is_not_waited_on(self):
+        ch = mock.Mock()
+        ch.launch_persistent_context.side_effect = ValueError("no chrome here")
+        with self.assertRaises(ValueError):
+            self._open(ch)
+        self.assertEqual(ch.launch_persistent_context.call_count, 1)
+
+    def test_only_this_exact_profile_counts(self):
+        ps = "\n".join([
+            " 10 /x/Chrome --user-data-dir=/u/.config/lucy-reports/chrome-profile --foo",
+            " 11 /x/Chrome --user-data-dir=/u/.config/lucy-reports/chrome-profile-as --foo",
+            " 12 /x/Chrome --user-data-dir=/u/.config/lucy-reports/chrome-profile",
+            " 13 /x/Python -m automations.icd_alerts.sara_signin",
+        ])
+        self.assertEqual(
+            X._browsers_on_profile("/u/.config/lucy-reports/chrome-profile", ps),
+            [10, 12])
+
+
+class AfterTheHandSignInTheForwardIsOfferedTest(unittest.TestCase):
+    """Only once it worked, and it can never turn a good sign-in into a bad one."""
+
+    def _run(self, verified, offer):
+        with mock.patch.object(X, "_window", return_value=0), \
+                mock.patch.object(X, "verify_hidden_read", return_value=verified), \
+                mock.patch.object(X, "_tell_upstream"), \
+                mock.patch.object(R, "clear_sara_hold"), \
+                mock.patch.object(C, "creds", return_value={}), \
+                mock.patch("automations.icd_alerts.code_forward.offer_after_signin", offer):
+            return X.run(log=lambda *_: None)
+
+    def test_offered_after_all_set(self):
+        offer = mock.Mock()
+        self.assertEqual(self._run(0, offer), 0)
+        offer.assert_called_once()
+
+    def test_not_offered_when_not_yet(self):
+        offer = mock.Mock()
+        self.assertEqual(self._run(1, offer), 1)
+        offer.assert_not_called()
+
+    def test_a_crash_keeps_the_sign_in_good(self):
+        self.assertEqual(self._run(0, mock.Mock(side_effect=RuntimeError("x"))), 0)

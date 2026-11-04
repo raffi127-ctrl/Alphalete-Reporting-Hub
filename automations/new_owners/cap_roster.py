@@ -202,7 +202,9 @@ TEAMS: Dict[str, tuple] = {
     # Carlos retired 2026-10-20: his captainship dissolved and his board box
     # came off; "Carlos's Team" left the SFDC filter on 10/14.
     "Eveliz": ("b2b", "Eveliz's Team"),
-    "Luis":   ("b2b", "Luis's Team"),
+    # Luis off 2026-11-03: "Luis's Team" stopped answering (CB-Owner Metrics
+    # exports 0 thumbs, same as Carlos and Atef). His board box stays the roster.
+    # Add him back as ("b2b", "Luis's Team") if the value returns.
     # Atef off 2026-10-20 (Eve): his captainship moved to NDS, "Atef's Team" left
     # the SFDC filter (CB-Owner Metrics exports 0 thumbs, same as Carlos), and
     # NDS Captain Teams has no "Atef's Team" yet. Add him back as

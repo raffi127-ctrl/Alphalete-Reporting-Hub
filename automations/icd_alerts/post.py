@@ -664,6 +664,70 @@ def record_backslides(office_key: str, found: List[Dict],
         pass
 
 
+# THE TEXT FOLLOWS SARAPLUS DOWN, ONCE IT HAS SAID SO TWICE (Eveliz's A
+# Players B2B text, 2026-10-31: "I have 2 lines on my Sara (not 3)" / "and i
+# did 1 not 2"). SaraPlus showed Gian-Carlo 3 and Zachary 2 on one read and
+# 2 and 1 a few minutes later; decide_sales' ONLY UP rule kept the 3 and the
+# 2 on the board for the rest of the day. Same on 10/29 (Yave 10 -> 5) and
+# 10/30 (Aleen 2 -> 1).
+#
+# The STANDINGS shown in the text now take the lower number once two
+# DIFFERENT laptop reads in a row are both below it -- one low read is still
+# a half-rendered grid and is ignored. What was ANNOUNCED does not move: the
+# 'Last Posted Sales JSON' high-water mark stays max(), so a dip and a
+# recovery never re-announce a sale. Eveliz first, then EVERY office the
+# same afternoon (Eve 2026-10-31: "prendelo para todas las oficinas").
+# SALES_FOLLOW_DROPS_OFF holds an office back if one ever needs it.
+SALES_FOLLOW_DROPS_OFF: frozenset = frozenset()
+
+PREV_READ_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "icd_prev_sales_read.json")
+
+
+def shown_sales(high: Dict, now: Dict, prev_read: Optional[Dict]) -> Dict:
+    """The day's standings for the text: the high-water mark, lowered to what
+    the last TWO reads both say (the higher of the two) when both are under
+    it. No previous read, or an empty read now, changes nothing."""
+    if not prev_read or not now:
+        return {k: dict(v) for k, v in (high or {}).items()}
+    out = {}
+    for rep, hm in (high or {}).items():
+        a = (now or {}).get(rep) or {}
+        b = (prev_read or {}).get(rep) or {}
+        out[rep] = {m: min(int(hv or 0),
+                           max(int(a.get(m, 0) or 0), int(b.get(m, 0) or 0)))
+                    for m, hv in hm.items()}
+    return out
+
+
+def prev_read(key: str, day: dt.date, received: str, sales: Dict,
+              save: bool = True, path: Optional[Path] = None) -> Optional[Dict]:
+    """The sales of the laptop read BEFORE this one (by 'Received At'), so
+    two reads in a row can be compared. The poster ticks every minute and the
+    laptop every ~2, so the same read is seen more than once: only a new
+    'Received At' moves the window."""
+    path = path or PREV_READ_PATH
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        data = {}
+    slot = "%s|%s" % (day.isoformat(), key)
+    got = data.get(slot) or {}
+    if got.get("at") == received:
+        return got.get("prev")
+    before = got.get("sales")
+    if save:
+        data = {k: v for k, v in data.items()
+                if k.split("|", 1)[0] >= (day - dt.timedelta(days=3)).isoformat()}
+        data[slot] = {"at": received, "sales": sales, "prev": before}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, sort_keys=True))
+        except OSError:
+            pass
+    return before
+
+
 def is_stale(received: Optional[dt.datetime], now: Optional[dt.datetime] = None,
              minutes: int = STALE_MINUTES) -> bool:
     if not received:
@@ -1371,6 +1435,25 @@ def off_kinds(book=None) -> Dict[str, set]:
     return out
 
 
+def _key_is_off(key: str) -> bool:
+    """A sign-up that was DECLINED, or a key paused from our side. Its row on
+    the channels tab still reads like a request, so without this the ops room
+    was asked to approve luke-b2batt/luke2 (declined duplicates of `luke`) and
+    jamis10 (paused, Box not launched) every pass (2026-11-02)."""
+    key = (key or "").strip().lower()
+    if not key:
+        return False
+    try:
+        from automations.icd_alerts import config as C
+        from automations.icd_alerts import offices as O
+        if key in C.PAUSED_KEYS:
+            return True
+        o = O.sheet_offices().get(key)
+        return bool(o) and not o.active
+    except Exception:  # noqa: BLE001 — unsure = keep asking, never hide one
+        return False
+
+
 def pending_knocks(book=None) -> List[Dict]:
     """Offices that asked for a knocks board nobody has signed off yet."""
     if book is None:
@@ -1386,6 +1469,8 @@ def pending_knocks(book=None) -> List[Dict]:
         wanted = (row[CH_KN_WANTED] or "").strip()
         ok = (row[CH_KN_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
         if not wanted or wanted == "No knocks board" or ok or _off(row[CH_KN_APPROVED]):
+            continue
+        if _key_is_off(row[CH_OFFICE]):
             continue
         try:
             asked = json.loads(row[CH_KN_JSON] or "[]")
@@ -1413,6 +1498,8 @@ def pending_requests(book=None) -> List[Dict]:
             row = list(row) + [""] * (CH_APPROVED + 1 - len(row))
         approved = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
         if not (row[CH_ASKED] or "").strip() or approved or _off(row[CH_APPROVED]):
+            continue
+        if _key_is_off(row[CH_OFFICE]):
             continue
         try:
             asked = json.loads(row[CH_ASKED_JSON] or "[]")
@@ -1617,6 +1704,22 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # here so a pattern is visible rather than one odd afternoon.
         record_backslides(key, backslid(sales, last_sales, office.campaign),
                           day, log=log)
+        # What the TEXT shows; merged_sales stays the announced high-water.
+        board_sales = merged_sales
+        if key not in SALES_FOLLOW_DROPS_OFF and not sales_baseline:
+            names = H_SHAPE(office.campaign).metrics
+            now_norm = {str(k): {m: int((v or {}).get(m, 0) or 0) for m in names}
+                        for k, v in sales.items()}
+            board_sales = shown_sales(
+                merged_sales, now_norm,
+                prev_read(key, day, (row[COL_RECEIVED] or "").strip(),
+                          now_norm, save=send))
+            for rep in sorted(board_sales):
+                for m, n in board_sales[rep].items():
+                    if n < merged_sales[rep].get(m, 0):
+                        log("%-10s %s %s shown %d (SaraPlus corrected it "
+                            "from %d on 2 reads)" % (key, rep, m, n,
+                                                     merged_sales[rep][m]))
         if catching_up and (lines or sold):
             # ONE MESSAGE, NOT A SHOUTOUT PER SALE (Eve 2026-09-30): what sold
             # while the machine was dark still gets said, but as the day's
@@ -1629,7 +1732,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             lines = []
         hype_lines, gifs_used = [], 0
         if sold and catching_up:
-            board = scoreboard_text(merged_sales, sold, office.campaign, show)
+            board = scoreboard_text(board_sales, sold, office.campaign, show)
             hype_lines = [
                 "_Catching up — sales made while the office computer was "
                 "offline:_\n" + (catchup_lines(board) or ", ".join(
@@ -1679,7 +1782,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # cannot be resolved must not cost the channel its alert, and must
         # not stop 'Last Posted' being written (a retry would re-announce).
         if (sold or (sales_baseline and merged_sales)) and texts.get(key):
-            board = scoreboard_text(merged_sales, [] if sales_baseline else sold,
+            board = scoreboard_text(board_sales, [] if sales_baseline else sold,
                                     office.campaign, show)
             if board:
                 # RAF'S HEADCOUNT BLOCK under the totals, same as his partner
@@ -1688,7 +1791,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     knocks_today = _knocks_today(tab.spreadsheet, day)
                 from automations.alphalete_sales_board import notify as N
                 hc = N.headcount_lines(eco_headcount(
-                    merged_sales, knocks_today.get(key), office.campaign,
+                    board_sales, knocks_today.get(key), office.campaign,
                     show))
                 if hc:
                     board += "\n" + "\n".join(hc)
@@ -1819,9 +1922,25 @@ INDEED_ASK = (
     # SUPER SIMPLE (Megan 2026-10-21: "that message is too long"). Two lines:
     # who, and the one thing to do. The other five slots are swallowed (%.0s)
     # so ask_office_to_sign_in can fill it like SIGNIN_ASK.
-    ":raising_hand: *%s* — Lucy needs a human.%.0s%.0s%.0s%.0s%.0s\n"
-    "On the LucyECO computer: click Lucy's Chrome and tick "
+    # Says INDEED and PUSHING (Megan 2026-10-29: "this should say for indeed
+    # specifically for pushing applicants") -- the same DM thread also carries
+    # SaraPlus sign-in alerts, so "Lucy needs a human" alone was ambiguous.
+    ":raising_hand: *%s* — Lucy needs a human on *Indeed* to keep pushing "
+    "applicants.%.0s%.0s%.0s%.0s%.0s\n"
+    "On the LucyECO computer: click Lucy's Chrome (it shows Indeed) and tick "
     "\u201cVerify you are human.\u201d")
+
+# THE SARAPLUS CODE ASK LEADS WITH WHAT THEY GET (Megan 2026-11-03: "stop
+# having to login yourself- just run this and let us know when done!"). Owners
+# were not finishing the forward step, and they do not read. The steps, the
+# code and the password all live on the page. Same six slots as SIGNIN_ASK; the
+# "why" slot is swallowed (%.0s).
+SARA_CODE_ASK = (
+    ":lock: *%s — Lucy cannot sign into %s.*\n"
+    "%s stopped updating at %s. Nothing is lost.%.0s\n\n"
+    "*Stop having to log in yourself — on the office computer running "
+    "LucyECO, just run this and let us know when done!*\n"
+    "%s")
 
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
                "Alphalete-Reporting-Hub/signin.html")
@@ -1870,10 +1989,9 @@ SYSTEMS = {
     "saraplus": {
         "name": "SaraPlus",
         "what": "Credit checks and sales",
-        "why": " SaraPlus wants to confirm that computer with a code it "
-               "emails you. The password is fine — do NOT change it.",
-        "how": "On that computer, open this and follow the steps on the "
-               "page (about 1 minute):\n" + SARA_SIGNIN_PAGE,
+        "ask": SARA_CODE_ASK,
+        "why": "",
+        "how": SARA_SIGNIN_PAGE,
     },
     "ownerville": {
         "name": "OwnerVille",
@@ -1909,8 +2027,8 @@ SYSTEMS = {
         "what": "Resume pushing",
         "ask": INDEED_ASK,
         # Same three slots as the default; super simple like the ask.
-        "good": ":white_check_mark: *%s* — good to go. Lucy is pushing "
-                "again.%.0s%.0s",
+        "good": ":white_check_mark: *%s* — good to go on Indeed. Lucy is "
+                "pushing applicants again.%.0s%.0s",
         "why": " Lucy's Chrome is showing Indeed's \"Verify you are human\" "
                "box.",
         "how": "At that computer: click Lucy's Chrome in the Dock (the "
@@ -1952,7 +2070,8 @@ def _signin_system(fault: Dict) -> Optional[str]:
 
 def ask_office_to_sign_in(office_key: str, when: str = "", *,
                           system: str = "servicecloud",
-                          send: bool = False, book=None, log=print) -> bool:
+                          send: bool = False, book=None, log=print,
+                          force: bool = False) -> bool:
     """DM the owner, Megan and Eve that Lucy cannot sign into something.
 
     Ryan McSpadden on how often the authenticator is needed: "It saves
@@ -1969,9 +2088,19 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
     # whose Service Cloud then dropped has two different problems and two
     # different fixes; one telling the other to stay quiet would leave half
     # its numbers missing with nothing said.
-    if _once_a_day(SIGNIN_WARNED_PATH, "signin|%s|%s" % (office_key, system),
+    # force: say it again today -- the people on the DM changed (Atef
+    # 2026-10-29: Cesar and Atef added after the morning's ask went out).
+    if not force and _once_a_day(SIGNIN_WARNED_PATH, "signin|%s|%s" % (office_key, system),
                    day):
         return False
+    try:
+        _fixed = json.loads(SIGNIN_FIXED_PATH.read_text())
+        _k = "%s|signin|%s|%s" % (day.isoformat(), office_key, system)
+        if _k in _fixed:
+            _fixed.pop(_k, None)
+            SIGNIN_FIXED_PATH.write_text(json.dumps(_fixed, indent=2, sort_keys=True))
+    except (OSError, ValueError):
+        pass
     office = O.get(office_key)
     label = getattr(office, "label", None) or office_key
     text = spec.get("ask", SIGNIN_ASK) % (label, spec["name"], spec["what"],
@@ -2364,6 +2493,12 @@ def what_to_do(label: str, summary: str) -> str:
         return ":wrench: *Do this:* paste it to Claude. It won't fix itself."
     return (":large_green_circle: *Nothing to do.* It usually fixes itself. "
             "No ✅ within an hour? Paste it to Claude.")
+
+
+def office_must_act(summary: str) -> bool:
+    """True for the "send this to <office>" faults -- the ones only the
+    office can fix, which go to their group DM instead of the channel."""
+    return what_to_do("", summary).startswith(":point_right:")
 
 
 def fixes_itself(label: str, summary: str) -> bool:
@@ -2847,10 +2982,20 @@ def confirm_signins_fixed(day: Optional[dt.date] = None, *, send: bool = False,
         dm_office_people(office_key, text, log=log)
         fixed[k] = now.isoformat(timespec="seconds")
         done.append(office_key)
+        # THE NEXT WALL IS A NEW OUTAGE. Rashad 2026-10-29: asked at 10:01,
+        # "Good to go" at 11:14, the code wall came back at 13:28 and nobody
+        # was told again all day because the ask is once a day -- the last
+        # thing he was sent said he was fine. Forgetting the ask once the fix
+        # is confirmed lets a later wall the same day ask again.
+        asked.pop(k, None)
     if done:
         fixed = {k: v for k, v in fixed.items() if k.startswith(day.isoformat())}
         SIGNIN_FIXED_PATH.parent.mkdir(parents=True, exist_ok=True)
         SIGNIN_FIXED_PATH.write_text(json.dumps(fixed, indent=2, sort_keys=True))
+        try:
+            SIGNIN_WARNED_PATH.write_text(json.dumps(asked, indent=2, sort_keys=True))
+        except OSError:
+            pass
     return done
 
 
@@ -2917,6 +3062,11 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
         # because it is the only road home. Marked as handled, never posted:
         # the answer is read off the ICD Faults tab by whoever asked.
         if str(f["stage"] or "").startswith("probe-"):
+            # A CODE REQUEST is closed by code_answer when it is answered or
+            # runs out -- marking it here would hide it from the one step
+            # that has to read it.
+            if f["stage"] in ("probe-code-request", "probe-code-forward"):
+                continue
             log("PROBE  %-10s %s -- filed, not posted" % (f["office"], f["stage"]))
             try:
                 tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
@@ -2924,11 +3074,29 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                 log("could not mark the probe row: %s" % type(e).__name__)
             continue
 
+        office = O.get(f["office"])
+        label = office.label if office else f["office"]
         system = _signin_system(f)
-        # A "signin-" stage is DM-only (Megan 2026-09-15). The refused
-        # password / locked page get the DM AND keep their channel post below
-        # (Eve 2026-10-13: "que lleguen al canal y a dm").
-        dm_only = str(f["stage"] or "").startswith("signin-")
+        # ONLY THE OFFICE CAN FIX IT -> THEIR GROUP DM, NEVER THE CHANNEL
+        # (Megan 2026-10-28: "this alert should be going to the ICD dm with
+        # Eve and I not in the alerts channel since we can't do anything
+        # about it"). Covers the "signin-" stages (DM-only since 2026-09-15),
+        # the refused password / locked page -- which Eve had sent to both
+        # on 2026-10-13 -- and anything else what_to_do hands to the office.
+        dm_only = (str(f["stage"] or "").startswith("signin-")
+                   or bool(system) or office_must_act(f["summary"]))
+        if dm_only and not system:
+            # No sign-in remedy to quote: send the fault itself to the DM.
+            dm_office_people(f["office"], "\n".join(
+                [fault_headline(label, f["stage"]), "> %s" % f["summary"],
+                 "Only the office can fix this, on their office computer."]),
+                log=log)
+            try:
+                tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+            except Exception as e:  # noqa: BLE001
+                log("DM'd the fault but could not mark it: %s"
+                    % type(e).__name__)
+            continue
         if system:
             try:
                 ask_office_to_sign_in(f["office"], f.get("first") or "",
@@ -2960,9 +3128,6 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                     log("HOLDING %s sweep-empty -- no sale at the door today, "
                         "an empty list is a slow day" % f["office"])
                 continue
-
-        office = O.get(f["office"])
-        label = office.label if office else f["office"]
 
         if fixes_itself(label, f["summary"]):
             try:
@@ -3407,6 +3572,8 @@ def warn_stale_machines(day: Optional[dt.date] = None, *, send: bool = False,
 LAPTOP_ACKNOWLEDGED = {
     "cyrus": "Megan, 2026-09-15 — the only office on a laptop; accepted "
              "knowing the lid closing takes his channel quiet.",
+    "raf": "Megan, 2026-11-03 — Raf's own MacBook, allowed on purpose "
+           "(dist/setup.py LAPTOP_OK lets the install through).",
 }
 
 
@@ -4074,6 +4241,28 @@ def main(argv=None) -> int:
                 run_requested_approvals(send=args.send)
                 notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
+                # BEFORE the faults: a Mac waiting on a SaraPlus code is
+                # waiting on THIS, and every tick it waits is a tick dark.
+                try:
+                    from automations.icd_alerts import code_answer
+                    from automations.recruiting_report.fill import open_by_key
+                    # ONE OPEN FOR ALL FOUR: this runs every minute, and each
+                    # open is a Sheets read of its own.
+                    book = open_by_key(RELAY_SPREADSHEET_ID)
+                    code_answer.answer_requests(book, send=args.send)
+                    code_answer.record_forwards(book, send=args.send)
+                    code_answer.confirm_forwards(book, send=args.send)
+                    code_answer.publish_confirmed(book, send=args.send)
+                    code_answer.publish_working(book, send=args.send)
+                    code_answer.check_forward_scope(book, send=args.send)
+                    # Sterling's codes (office admin page, 2026-11-03).
+                    code_answer.confirm_forwards(book, send=args.send,
+                                                 service=code_answer.STERLING)
+                    code_answer.check_forward_scope(book, send=args.send,
+                                                    service=code_answer.STERLING)
+                except Exception as e:  # noqa: BLE001 — never cost the alerts
+                    print("could not answer code requests: %s: %s"
+                          % (type(e).__name__, str(e)[:100]))
                 notify_faults(day, send=args.send)
                 close_recovered_faults(day, send=args.send)
                 try:

@@ -111,6 +111,34 @@ def _require_fresh_gate(lines, log=print) -> None:
 
 
 # --- #6 / #7 : screenshots of the LUCY CHURN tab ---------------------------
+def _rolloff_proven_zero(ws) -> bool:
+    """A written board whose picked product has NO disconnects also shows a lone
+    '#N/A': the list filters to that product and nothing matches. That is a real
+    zero, not an unwritten board (Sabrina 2026-11-01: Wireless 77 activations, 0
+    disconnects, 3 AIR rows, and #6 failed every retry). True only when the
+    board's own row for the picked product proves it: activations > 0 AND
+    disconnects exactly 0. Anything unreadable stays False, so the guard holds.
+    Filter, header and product are all found by label."""
+    grid = ws.get("A1:F14")
+    picked = hdr = None
+    for row in grid:
+        label = str(row[0]).strip().lower() if row else ""
+        if label == "filter:" and len(row) > 1:
+            picked = str(row[1]).strip().lower()
+        elif label == "product":
+            hdr = [str(c).strip().lower() for c in row]
+        elif hdr and picked and label == picked:
+            if "activations" not in hdr or "disconnects" not in hdr:
+                return False
+            try:
+                acts = int(row[hdr.index("activations")])
+                discs = int(row[hdr.index("disconnects")])
+            except (IndexError, ValueError):
+                return False
+            return acts > 0 and discs == 0
+    return False
+
+
 def _assert_rolloff_has_data(ws, o: B2BOffice) -> None:
     """#6's blank-guard — the twin of #7's 'no rep rows' check.
 
@@ -136,6 +164,8 @@ def _assert_rolloff_has_data(ws, o: B2BOffice) -> None:
         # '#N/A' / '#REF!' are the unwritten-board signature, not data.
         if v and not v.startswith("#"):
             return
+    if _rolloff_proven_zero(ws):
+        return
     raise ValueError(
         "customer_churn: no rolloff rows on {!r} (churn board not written yet "
         "— vantura_churn hasn't run for this office) — skip rather than post "

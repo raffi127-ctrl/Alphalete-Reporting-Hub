@@ -41,5 +41,61 @@ class Tabs(unittest.TestCase):
         self.assertEqual(W.week_label(dt.date(2026, 10, 26)), "WE 10/26 - 11/1")
 
 
+class StationsStep(unittest.TestCase):
+    """Stations protected for the runners' login: the roll is not a failure."""
+
+    def _run(self, boom):
+        from unittest import mock
+        with mock.patch.object(W, "point_stations", side_effect=boom) as pt:
+            return W.stations_step(object(), "Line Up WE 11.1", "Line Up WE 11.8"), pt
+
+    def test_protected_write_is_one_line_not_a_crash(self):
+        notes, _ = self._run(RuntimeError("You are trying to edit a protected cell"))
+        self.assertEqual(len(notes), 1)
+        self.assertIn("Line Up WE 11.8", notes[0])
+
+    def test_any_other_error_still_stops_the_run(self):
+        with self.assertRaises(RuntimeError):
+            self._run(RuntimeError("[500] backend"))
+
+    def test_nothing_to_point_touches_nothing(self):
+        from unittest import mock
+        with mock.patch.object(W, "point_stations") as pt:
+            self.assertEqual(W.stations_step(object(), None, "x"), [])
+            self.assertEqual(W.stations_step(object(), "x", "x"), [])
+        pt.assert_not_called()
+
+
+class TheLineUpIsNotLucys(unittest.TestCase):
+    """A person refreshes the Line Up on Fridays (Eve 2026-11-02)."""
+
+    def _sheet(self, titles):
+        from unittest import mock
+        sh = mock.MagicMock()
+        sh.fetch_sheet_metadata.return_value = {"sheets": [
+            {"properties": {"title": t, "index": i}} for i, t in enumerate(titles)]}
+        return sh
+
+    def test_a_monday_copy_never_touches_the_line_up(self):
+        from unittest import mock
+        sh = self._sheet(["Sales Board WE 11.1", "Line Up WE 11.1"])
+        board = {"terminated": [], "renames": {}, "missing": [], "history_line": ["WE"]}
+        with mock.patch.object(W, "plan"),                 mock.patch.object(W, "roll_board", return_value=board) as rb,                 mock.patch.object(W, "point_stations") as pt:
+            rc, notes = W.roll(sh, dt.date(2026, 11, 2), True)
+        self.assertEqual((rc, notes), (0, []))
+        rb.assert_called_once()
+        pt.assert_not_called()
+        sh.batch_update.assert_not_called()
+
+    def test_a_board_already_made_points_stations_at_the_hand_made_line_up(self):
+        from unittest import mock
+        sh = self._sheet(["Line Up WE 11.08", "Sales Board WE 11.08",
+                          "Sales Board WE 11.01", "Line Up WE 11.1"])
+        with mock.patch.object(W, "point_stations", return_value=3) as pt:
+            rc, _ = W.roll(sh, dt.date(2026, 11, 2), True)
+        self.assertEqual(rc, 0)
+        pt.assert_called_once_with(sh, "Line Up WE 11.1", "Line Up WE 11.08")
+
+
 if __name__ == "__main__":
     unittest.main()

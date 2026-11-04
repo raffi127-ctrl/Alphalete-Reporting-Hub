@@ -114,6 +114,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -595,10 +596,11 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
     except Exception as e:  # noqa: BLE001 -- no password here, or no file
         log("passcode inbox unreadable: %s" % str(e)[:300])
         return EXIT_FAIL
-    M = imaplib.IMAP4_SSL(VC._ing.IMAP_HOST)
+    M = imaplib.IMAP4_SSL(VC._ing.IMAP_HOST, timeout=60)   # a dead socket must not hang the queue (shikamaru 8/5 lesson)
     try:
         M.login(account, password)
         q = query or ("from:security.info@saraplus.com newer_than:%dd" % days)
+        found_links = []   # Google forwarding-confirmation links, echoed LAST (the queue shows a log's tail)
         # All Mail leaves out Spam and Trash -- and a filter that trashes or a
         # spam verdict is exactly how a forwarded code goes missing (10/26).
         for folder in ("[Gmail]/All Mail", "[Gmail]/Spam", "[Gmail]/Trash"):
@@ -611,7 +613,7 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
             uids = (data[0] or b"").split() if typ == "OK" else []
             log("mail in %s [%s] matching %r: %d" % (account, folder, q, len(uids)))
             for uid in list(reversed(uids))[:limit]:
-                typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE TO SUBJECT)])")
+                typ, d = M.fetch(uid, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (DATE FROM TO SUBJECT)])")
                 if typ != "OK" or not d or not d[0]:
                     continue
                 meta = d[0][0] if isinstance(d[0][0], bytes) else b""
@@ -635,6 +637,33 @@ def passcode_mail(log=_log, days: int = 3, limit: int = 12,
                        (msg.get("To") or "?").strip()[:60],
                        arrived.strftime("%m/%d %H:%M:%S") if arrived else "?",
                        gap, (msg.get("Subject") or "").strip()[:40]))
+                # Google's forwarding confirmation: the 9-10 digit code the OTHER
+                # account has to type under Settings > Forwarding (10/26). Only
+                # that sender, only the code -- never a passcode body.
+                if "forwarding-noreply@google.com" in (msg.get("From") or "").lower():
+                    try:
+                        t2, d2 = M.fetch(uid, "(RFC822)")
+                        full = _email.message_from_bytes(d2[0][1])
+                        body = VC._body_text(full)
+                        codes = re.findall(r"\b\d{6,12}\b", body)
+                        links = re.findall(r"https://mail-settings\.google\.com/\S+", body)
+                        log("    FORWARDING CONFIRMATION subject=%r code(s)=%s"
+                            % ((full.get("Subject") or "").strip()[:120], codes[:3] or "none in body"))
+                        for lk in links[:2]:
+                            log("    FORWARDING LINK %s" % lk.rstrip(".,)>]"))
+                            found_links.append(lk.rstrip(".,)>]"))
+                        if not codes and not links:
+                            log("    body excerpt: %s" % re.sub(r"\s+", " ", body)[:600])
+                    except Exception as e:  # noqa: BLE001
+                        log("    forwarding confirmation body unreadable (%s)" % type(e).__name__)
+        if query and "forwarding-noreply" in query:
+            log("FORWARD LINKS: %s" % (" | ".join(found_links) if found_links else "none found"))
+            # the queue shows a log line up to ~200 chars; a Google link is ~400,
+            # so it also goes out in 100-char pieces to be joined back in order
+            for n, lk in enumerate(found_links[:2], 1):
+                parts = [lk[i:i + 100] for i in range(0, len(lk), 100)]
+                for j, part in enumerate(parts, 1):
+                    log("LINKPART %d.%d/%d %s" % (n, j, len(parts), part))
     finally:
         try:
             M.logout()

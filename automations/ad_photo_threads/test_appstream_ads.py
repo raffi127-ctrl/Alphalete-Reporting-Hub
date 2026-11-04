@@ -26,9 +26,26 @@ class ReportRowsTests(unittest.TestCase):
                 self.row("Jose", "Cruz", "B, Irving, TX")]
         self.assertEqual(aa.ad_of(rows, "Jose Cruz"), ["A, Dallas, TX", "B, Irving, TX"])
 
+    def test_two_last_names_either_side(self):
+        rows = [self.row("Carmelo", "Alduen", "AT&T Assistant, Tampa, FL"),
+                self.row("Yanuleidy", "Acuna Perez", "AT&T Team Member, Brandon, FL")]
+        self.assertEqual(aa.ad_of(rows, "Carmelo Alduen Arias"), ["AT&T Assistant, Tampa, FL"])
+        self.assertEqual(aa.ad_of(rows, "Yanuleidy Acuna"), ["AT&T Team Member, Brandon, FL"])
+        self.assertEqual(aa.ad_of(rows, "Carmelo Arias"), [])
+
+    def test_near_names(self):
+        rows = [self.row("Howard", "Barbour", "A"), self.row("Jim", "Barber", "B"),
+                self.row("Ann", "Lee", "C")]
+        self.assertEqual(aa.near(rows, "Howard Barber"), ["Howard Barbour", "Jim Barber"])
+
     def test_one_word_name_or_short_row_is_nothing(self):
         self.assertEqual(aa.ad_of([self.row("Krystal", "Lee", "A")], "Krystal"), [])
         self.assertEqual(aa.ad_of([["Ana", "Lee"]], "Ana Lee"), [])
+
+    def test_report_week_starts_sunday(self):
+        self.assertEqual(aa.sunday_of(dt.date(2026, 10, 27)), dt.date(2026, 10, 25))
+        self.assertEqual(aa.sunday_of(dt.date(2026, 10, 25)), dt.date(2026, 10, 25))
+        self.assertEqual(aa.sunday_of(dt.date(2026, 10, 24)), dt.date(2026, 10, 18))
 
     def test_header_and_key(self):
         self.assertEqual(aa.header(dt.date(2026, 10, 3)), "Oct 3, 2026")
@@ -51,6 +68,24 @@ class CollectUsesItTests(unittest.TestCase):
         self.assertIsNone(collect.appstream_ad(c, d, book, found={"2026-10-22|carlo palacio": ""}))
         self.assertIsNone(collect.appstream_ad(c, dt.date(2026, 10, 21), book, found=found))
 
+
+
+class TriesTests(unittest.TestCase):
+    """Eve 10/29: a "" is looked up again, MAX_TRIES evenings in all."""
+    K = "2026-10-19|jamar gray"
+
+    def test_old_blank_counts_as_one_try(self):
+        self.assertEqual(aa.tries({"appstream_ads": {self.K: ""}}, self.K), 1)
+
+    def test_gives_up_after_max_tries(self):
+        st = {"appstream_ads": {self.K: ""}, "appstream_ads_tries": {self.K: ["a", "b"]}}
+        self.assertFalse(aa.gave_up(st, self.K))
+        st["appstream_ads_tries"][self.K].append("c")
+        self.assertTrue(aa.gave_up(st, self.K))
+
+    def test_found_is_never_given_up(self):
+        st = {"appstream_ads": {self.K: "Sales Rep"}, "appstream_ads_tries": {self.K: list("abc")}}
+        self.assertFalse(aa.gave_up(st, self.K))
 
 if __name__ == "__main__":
     unittest.main()

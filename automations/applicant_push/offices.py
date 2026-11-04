@@ -331,6 +331,33 @@ OFFICES = {
     # applicant names never land in another office's channel), and the
     # non-Carlos removal policies (confirmed-uncontactable and never-opening
     # resumes are removed).
+    # COLTEN WRIGHT, SOUTH SHORE (2026-11-02, Megan: "Colten would like to get
+    # his machine pushing from Eco as well"). Pushed ONLY from his own office
+    # computer (relay key "colten"), never a Lucy. No Slack to-do posts: his
+    # Slack is SaraPlus alerts only (9/29). Non-texting, keep-on-no-number,
+    # like Khalil.
+    "14733": {
+        "office_id": "14733",
+        "account": "lucyresume",
+        "hint": "COLTEN WRIGHT",
+        "owner": "Colten Wright",
+        "label": "office 14733 · Colten Wright — SOUTH SHORE SPECIALIZED MARKETING, INC.",
+        "short": "office 14733, Colten",
+        "suffix": "-14733",
+        "cdp_profile": "/tmp/rp_cdp_14733",
+        "cdp_port": "9257",
+        "cdp_kill_pat": "rp_cdp_14733",
+        "walk_diag_tab": "OAT Walk Diag 14733",
+        "push_diag_tab": "Applicant Push Diag 14733",
+        "log_stem": "applicant-push-14733",
+        "hub_report_id": "applicant_push_colten",
+        "hub_display": "Applicant Push (Colten)",
+        "post_channel": "",
+        "post_todo": False,
+        "allow_retext": False,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
+    },
     "11901": {
         "office_id": "11901",
         "account": "lucyresume",
@@ -487,7 +514,7 @@ def group(name: str) -> dict:
 # risking the wrapper's hard time cap), and a bad tick for one office cannot
 # starve the other — which running both inside one tick would do, since the first
 # office's wedge burns the cap before the second ever opens a session.
-ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065"]
+ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065", "14733"]
 
 # WHICH MACHINE WORKS WHICH OFFICES (2026-09-13, Megan: "we can move Raf's push
 # to lucy 3 since she's not got a lot on her").
@@ -591,16 +618,53 @@ ROTATION_BY_MACHINE = {
     # 2026-09-27 (Carlos): Raf's 2nd + 3rd funnels back in — full rotation.
     # 2026-10-20 (Megan, "just take it live"): 11580 left Lucy 2 for Carlos's
     # own computer.
-    "Lucy 2": ["23467", "11901"],
-    "Lucy 4": ["11280", "23965", "24065"],
+    # 2026-10-29 (Megan, "yes take atef live on his computer"): 23467 left
+    # Lucy 2 -- Indeed walled Lucy 2's resume reads all day (17 walls, 0 sent).
+    # 2026-10-29: 11901 left Lucy 2 (Indeed walled its resume reads all day)
+    # for KHALIL'S OWN COMPUTER (Megan: "it needs to run from HIS relay
+    # machine") -- see the relay entry below.
+    "Lucy 2": [],
+    # 2026-10-29 (Megan: "we can run it from this machine right now as long
+    # as it's in the background"): Raf's three left Lucy 4 for Megan's laptop.
+    # Indeed walled Lucy 4's resume reads (0 sent on 11280 for days); her
+    # laptop read them first try (Tyesha Parker, sent). Runs from the separate
+    # clone ~/lucy-push-runner with APPLICANT_PUSH_BACKGROUND=1, so it never
+    # touches her working folder and its Chrome stays out of her way.
+    # ON MEGAN'S LAPTOP, IN ITS OWN MAC USER (2026-10-29: "let's do the 2nd
+    # user"). Her laptop gets past Indeed (16 sent that afternoon); run from
+    # her own login it kept surfacing its Chrome, so it now runs in a separate
+    # macOS user ("lucyecoraf", setup /Users/Shared/lucy-push-setup.sh) whose
+    # windows can never reach her screen. Same .machine-profile name.
+    # BACK ON LUCY 4, 10/30: Chrome would not stay up in the background Mac
+    # user (froze, then exited, every tick; 0 sent). Lucy 4 sends everyone who
+    # already has a phone until Raf has an office computer on the relay.
+    # BACK ON LUCY 4 (Megan 2026-10-30: "move to lucy 4"). The Lucy Mac user on
+    # her laptop never got a working push Chrome: it froze before answering,
+    # on screen or not (a plain Chrome there was fine; cause not found). Lucy 4
+    # sends whoever already has a phone; Indeed blocks its resume reads.
+    # RAF'S THREE LEFT LUCY 4 FOR HIS OWN MACBOOK (Megan 2026-11-03: "yes
+    # take raf's push live on his machine"). One Chrome there takes turns
+    # through all three, so one clearing of Indeed's box covers every office
+    # -- Lucy 4 lost the pass within ~30 minutes every time. Lucy 4 pushes
+    # nobody now; the list stays so a rollback is one edit.
+    "Lucy 4": [],
+    "Megan's laptop": [],
     # NOT A LUCY. An office's own relay computer, pushing its own queue one app
     # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
     # Listed here so "one office, one machine" stays checkable in one place;
     # rotation_for() never matches it, because no Lucy is named this.
     "Carlos's office computer (relay)": ["11580"],
+    "Atef's office computer (relay)": ["23467"],
+    "Khalil's office computer (relay)": ["11901"],
+    "Colten's office computer (relay)": ["14733"],
+    "Raf's office computer (relay)": ["11280", "23965", "24065"],
 }
 # Machines in ROTATION_BY_MACHINE that are office relay computers, not Lucys.
-RELAY_MACHINES = {"Carlos's office computer (relay)"}
+RELAY_MACHINES = {"Carlos's office computer (relay)",
+                  "Atef's office computer (relay)",
+                  "Khalil's office computer (relay)",
+                  "Colten's office computer (relay)",
+                  "Raf's office computer (relay)"}
 
 
 def rotation_for(machine: str = None) -> list:

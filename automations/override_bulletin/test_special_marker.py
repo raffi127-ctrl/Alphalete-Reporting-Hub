@@ -73,5 +73,90 @@ class SpecialLedgerMatchTest(unittest.TestCase):
             {M._norm_name("Carlos Hidalgo"): 300.10})
 
 
+class P10LedgerOnlyColtenCarlosTest(unittest.TestCase):
+    """2026-10-30: the P10-2026 Special lines also carried Rafael ($116,259.02)
+    and Trang ($35,150.90). Summed in, $191,039 tripped the size guard on a
+    $127,674 week and Colten/Carlos never landed. Only they take it from here."""
+
+    HDR = SpecialLedgerMatchTest.HDR
+    LEDGER = [
+        ["Carlos Hidalgo (Alphalete Specialized Marketing, Inc.)",
+         "P10-2026 Special Override - EDM", "343.85"],
+        ["Colten Wright (South Shore Specialized Marketing, Inc.)",
+         "P10-2026 Special Override - NDS", "39293.20"],
+        ["Rafael Hidalgo (Alphalete Marketing, Inc.)",
+         "P10-2026 Special Override - ATT", "115571.32"],
+        ["", "P10-2026 Special Override - EDM", "687.70"],
+        ["Trang Canavan (Fresh Success Marketing Group, Inc.)",
+         "P10-2026 Special Override - RES-ATT", "35150.90"],
+        ["Colten Wright (South Shore Specialized Marketing, Inc.)",
+         "September 2026 Standard Overrides - Credico", "500.00"],
+    ]
+
+    def _plan(self, week_total):
+        rows = [["ALL ORG OVERRIDES", "10.18.26", "10.11.26"],
+                ["Total", "", str(week_total)]]
+        ws = _WS(rows)
+        mk = {"kind": M.SPECIAL, "period": "P10-2026", "row": 9, "col": 2,
+              "week": "10.11.26", "pending": True}
+        orig = M.read_markers
+        M.read_markers = lambda _ws: [mk]
+        try:
+            return M.plan_placements(ws, [self.HDR] + self.LEDGER,
+                                     owner_col=self.HDR[0], expl_col=self.HDR[1],
+                                     amt_col=self.HDR[2])
+        finally:
+            M.read_markers = orig
+
+    def test_only_colten_and_carlos_are_placed(self):
+        to_place, pending, _orph, held = self._plan(127674.00)
+        self.assertEqual(held, [])
+        self.assertEqual(pending, [])
+        self.assertEqual(to_place[0]["amounts"],
+                         {"colten wright": 39293.20, "carlos hidalgo": 343.85})
+
+    def test_credico_needs_the_full_label(self):
+        self.assertEqual(
+            M.amounts_for([self.HDR] + self.LEDGER, M.CREDICO, "P9-2026",
+                          owner_col=self.HDR[0], expl_col=self.HDR[1],
+                          amt_col=self.HDR[2]),
+            {"colten wright": 500.00})
+        # the period label alone must NOT pick up the Special line
+        self.assertIsNone(
+            M.amounts_for([self.HDR] + self.LEDGER, M.CREDICO, "P10-2026",
+                          owner_col=self.HDR[0], expl_col=self.HDR[1],
+                          amt_col=self.HDR[2]))
+
+
+class SpecialAlsoLandsInAllOrgTest(unittest.TestCase):
+    def test_special_is_added_to_the_all_org_cell(self):
+        rows = [["ALL ORG OVERRIDES", "10.11.26"],
+                ["Colten Wright", "25486.11"],          # row 2
+                ["Colten Wright", "10109"],             # row 3 leader
+                ["Captain Override", "10109"],          # row 4
+                ["Special Override", ""]]               # row 5
+        ws = _WS(rows)
+        mk = {"kind": M.SPECIAL, "period": "P10-2026", "row": 9, "col": 1,
+              "amounts": {"colten wright": 39293.20}}
+        updates, _ = M.apply_placements(
+            ws, [mk], roster={"colten wright": (2, True, "Colten Wright")},
+            captains={"colten wright": {"total": 3, "captain": 4, "special": 5}})
+        self.assertIn({"range": "B2", "values": [[64779.31]]}, updates)
+        self.assertIn({"range": "B5", "values": [[39293.2]]}, updates)
+
+
+class NextCredicoMarkerTest(unittest.TestCase):
+    WEEKS = ["11.22.26", "11.15.26", "11.8.26", "11.1.26", "10.25.26", "10.18.26"]
+
+    def test_five_weeks_after_the_last(self):
+        mks = [{"kind": M.CREDICO, "period": "P9-2026", "week": "10.18.26"}]
+        self.assertEqual(M.next_credico_marker(mks, self.WEEKS, "11.22.26"), "P10-2026")
+        self.assertIsNone(M.next_credico_marker(mks, self.WEEKS, "11.15.26"))
+
+    def test_december_rolls_to_january(self):
+        mks = [{"kind": M.CREDICO, "period": "P12-2026", "week": "10.18.26"}]
+        self.assertEqual(M.next_credico_marker(mks, self.WEEKS, "11.22.26"), "P1-2027")
+
+
 if __name__ == "__main__":
     unittest.main()

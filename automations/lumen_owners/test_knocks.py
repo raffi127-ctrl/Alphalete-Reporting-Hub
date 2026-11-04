@@ -27,6 +27,155 @@ class KnocksTest(unittest.TestCase):
         self.assertIn("Aaron Nimako (Quantum Fiber)", labels)
         self.assertEqual(len(labels), len(set(labels)))
 
+    def test_att_boards_same_owners_on_campaign_3(self):
+        # Aaron Nimako, 2026-10-31: "can we have the at&t knocks attached too?"
+        with mock.patch("automations.shared.terminated_icds.terminated_lookup",
+                        return_value=lambda n: False):
+            q = KN.owner_boards({}, logfn=lambda *a: None, program=KN.QUANTUM)
+            a = KN.owner_boards({}, logfn=lambda *a: None, program=KN.ATT)
+        # Isaiah, 2026-10-31: Chan + Raf knocks too — AT&T only, at the end.
+        self.assertEqual([l.replace("(Quantum Fiber)", "(AT&T)") for l, _c in q]
+                         + ["Chan Park (AT&T)", "Rafael Hidalgo (AT&T)"],
+                         [l for l, _c in a])
+        self.assertTrue(all(c["campaign_id"] == "3" for _l, c in a))
+        cfg = dict(a)
+        self.assertEqual(cfg["Rafael Hidalgo (AT&T)"]["ov"], "master")
+        self.assertEqual(cfg["Chan Park (AT&T)"]["ov"], "impersonate")
+        self.assertEqual(KN.PROGRAMS, (KN.QUANTUM, KN.ATT))
+
+    def test_att_files_dont_collide_with_quantum(self):
+        sat = dt.date(2026, 10, 24)
+        self.assertEqual(
+            KN.weekly_attachment_label(sat, KN.ATT),
+            "Weekly Knock Dispositions - Lumen Owners ATT - Oct 19-24, 2026")
+        self.assertNotEqual(KN.program_dir("o", KN.ATT),
+                            KN.program_dir("o", KN.QUANTUM))
+        self.assertEqual(KN.daily_label(KN.ATT), "Daily Knocks — AT&T")
+        self.assertEqual(KN.daily_label(KN.QUANTUM), KN.PDF_LABEL)
+        self.assertEqual(KN.weekly_label(KN.QUANTUM), KN.WEEKLY_LABEL)
+
+    def test_att_daily_pdf_names(self):
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        tmp = Path(tempfile.mkdtemp())
+        lab = "Nigel Marshall (AT&T)"
+        png = KN.owner_dir(tmp, lab) / "total_knocks_2026-10-30.png"
+        Image.new("RGB", (40, 20), "white").save(png)
+        files = KN.pdf_files([(lab, png)], dt.date(2026, 10, 30), tmp, KN.ATT)
+        self.assertEqual([l for l, _p in files], [
+            "Lumen Owners ATT - Daily Knocks disposition - Oct 30, 2026",
+            "Nigel Marshall ATT - Daily Knocks disposition - Oct 30, 2026"])
+
+    def test_one_campaign_down_still_mails_the_other(self):
+        # Quantum pulls fine, AT&T owner fails: both "attached"/note lines,
+        # attached lines first, notes last.
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        tmp = Path(tempfile.mkdtemp())
+        png = tmp / "b.png"
+        Image.new("RGB", (40, 20), "white").save(png)
+
+        def fake_pull(page, pairs, aliases, target, mon, sat, have, d, logfn):
+            if "(AT&T)" in pairs[0][0]:
+                return [], [(pairs[0][0], "TimeoutError")], [], []
+            return [(pairs[0][0], png)], [], [], []
+
+        class Sess:
+            def __enter__(self): return object()
+            def __exit__(self, *a): return False
+
+        pairs = lambda aliases, logfn=None, program=KN.QUANTUM: [
+            ("Nigel Marshall (%s)" % program[1], {})]
+        with mock.patch.object(KN, "owner_boards", side_effect=pairs), \
+             mock.patch.object(KN, "_pull_program", side_effect=fake_pull), \
+             mock.patch.object(KN, "WEEKLY_DIR", tmp / "wk"), \
+             mock.patch("automations.shared.tableau_patchright."
+                        "ownerville_session", return_value=Sess()):
+            blocks, files = KN.build(dt.date(2026, 10, 31), tmp, {},
+                                     logfn=lambda *a: None)
+        kinds = [b[3] for b in blocks]
+        self.assertEqual(kinds, ["attached", "note"])
+        self.assertEqual(blocks[0][0], KN.PDF_LABEL)
+        self.assertIn("Nigel Marshall (AT&amp;T)", blocks[1][0])
+        self.assertEqual(len(files), 2)
+
+    def test_shealey_is_24273_in_this_mail_only(self):
+        # Eve, 2026-11-03: 24273 is the office she gave for Lumen. Her
+        # captainship boards and the 9 PM mail stay on 23858.
+        from automations.shared.ownerville_office_pins import pinned_office
+        seen = []
+
+        def fake_pull(page, pairs, *a):
+            seen.append(pinned_office("Shealey Miller"))
+            return [], [], [], []
+
+        class Sess:
+            def __enter__(self): return object()
+            def __exit__(self, *a): return False
+
+        import tempfile
+        from pathlib import Path
+        tmp = Path(tempfile.mkdtemp())
+        with mock.patch("automations.shared.terminated_icds.terminated_lookup",
+                        return_value=lambda n: False),              mock.patch.object(KN, "_pull_program", side_effect=fake_pull),              mock.patch.object(KN, "WEEKLY_DIR", tmp / "wk"),              mock.patch("automations.shared.tableau_patchright."
+                        "ownerville_session", return_value=Sess()):
+            labels = [l for l, _c in KN.owner_boards({}, logfn=lambda *a: None)]
+            KN.build(dt.date(2026, 11, 3), tmp, {}, logfn=lambda *a: None)
+        self.assertIn("Shealey Miller (Quantum Fiber)", labels)
+        self.assertEqual(seen, ["24273", "24273"])
+        self.assertEqual(pinned_office("Shealey Miller"), "23858")
+
+    def test_menu_offers_reads_the_campaign_links(self):
+        self.assertTrue(KN.menu_offers(
+            ["Home", "RES AT&T", "RES-ATT-Quantum Fiber"], "Quantum Fiber"))
+        self.assertFalse(KN.menu_offers(["Home", "RES AT&T"], "Quantum Fiber"))
+        self.assertIsNone(KN.menu_offers(["Home", "Sales"], "Quantum Fiber"))
+
+    def test_office_without_quantum_goes_to_att_only(self):
+        # Eve, 2026-11-03: their "Quantum" board was their AT&T board again.
+        answers = {"Shealey": False, "Aaron": True, "Nigel": None}
+        boom = lambda page, label, cfg, aliases: answers[cfg["name"]]
+        pairs = [("%s (Quantum Fiber)" % n, {"name": n}) for n in answers]
+        with mock.patch.object(KN, "_office_offers_quantum", boom):
+            kept = KN.keep_quantum_offices(None, pairs, {}, lambda *a: None)
+        self.assertEqual([c["name"] for _l, c in kept], ["Aaron", "Nigel"])
+
+    def test_unreadable_menu_keeps_the_owner(self):
+        def boom(*a):
+            raise RuntimeError("Office Access did not load")
+        pairs = [("Nigel (Quantum Fiber)", {"name": "Nigel"})]
+        with mock.patch.object(KN, "_office_offers_quantum", boom):
+            kept = KN.keep_quantum_offices(None, pairs, {}, lambda *a: None)
+        self.assertEqual(kept, pairs)
+
+    def test_only_quantum_asks_for_the_menu(self):
+        import tempfile
+
+        class Sess:
+            def __enter__(self): return object()
+            def __exit__(self, *a): return False
+
+        asked, pulled = [], {}
+
+        def keep(page, pairs, aliases, logfn):
+            asked.append([l for l, _c in pairs])
+            return []
+
+        def fake_pull(page, pairs, *a):
+            pulled[len(pulled)] = [l for l, _c in pairs]
+            return [], [], [], []
+
+        pairs = lambda aliases, logfn=None, program=KN.QUANTUM: [
+            ("Vaughn (%s)" % program[1], {"name": "Vaughn"})]
+        with mock.patch.object(KN, "owner_boards", pairs),                 mock.patch.object(KN, "keep_quantum_offices", keep),                 mock.patch.object(KN, "_pull_program", fake_pull),                 mock.patch("automations.shared.tableau_patchright."
+                           "ownerville_session", return_value=Sess()):
+            KN.build(dt.date(2026, 11, 3), tempfile.mkdtemp(), {},
+                     logfn=lambda *a: None)
+        self.assertEqual(asked, [["Vaughn (Quantum Fiber)"]])
+        self.assertEqual(pulled, {0: [], 1: ["Vaughn (AT&T)"]})
+
     def test_nobody_configured_means_no_blocks_and_no_login(self):
         with mock.patch.object(KN, "owner_boards", return_value=[]):
             self.assertEqual(KN.build(dt.date(2026, 10, 23), "x", {}), ([], []))

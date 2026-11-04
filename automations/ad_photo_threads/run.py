@@ -160,6 +160,8 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
         except Exception as e:                # noqa: BLE001 — next office still runs
             failed.append(o["key"])
             print(f"[{o['key']}] FAILED: {type(e).__name__}: {str(e)[:300]}")
+            _alert(o, day or dt.date.today(),
+                   crash=f"{type(e).__name__}: {str(e)[:300]}")
         if not explicit_date:
             try:
                 from automations.ad_photo_threads import audit
@@ -171,6 +173,56 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
 
 
 REDO_BUDGET_MIN = 35
+
+
+def _alert_key(o: dict) -> str:
+    return f"ad_photo_threads:{o['key']}"
+
+
+def _alert(o: dict, day: dt.date, *, failed=(), no_thread=(),
+           crash: str = "") -> None:
+    """Carlos 10/29: the nightly died two nights running and only its log on
+    the mini knew -- he found the missing ads himself. Say it in
+    #claudecorrections-and-requests, one thread per office (repeats from the
+    30-minute ticks land in the same thread). Only Lucy posts there; from any
+    other machine (a Windows test) it's just printed. Never raises."""
+    who = f"{o['owner']}'s ad photo threads"
+    lines = []
+    if crash:
+        lines.append(f"The evening post stopped before posting anything: `{crash}`")
+    for title, why in failed:
+        lines.append(f"• *{title}* didn't post: `{why}`")
+    for title in no_thread:
+        lines.append(f"• *{title}* had 1st rounds this week but has *no thread*")
+    lines.append("Re-run (posts only what's missing):")
+    lines.append(f"```lucy rerun ad_photo_threads --nightly --office {o['key']} "
+                 f"--date {day.isoformat()}```")
+    print(f"[{o['key']}] ALERT: " + " | ".join(lines))
+    try:
+        from automations.shared import incident_thread
+        if not incident_thread.is_lucy():
+            print("  (not Lucy -- the alert is printed, not posted)")
+            return
+        incident_thread.open_or_followup(
+            key=_alert_key(o),
+            title=f"{who}: ads missing from the channel ({day:%a %m/%d})",
+            channel_line=f"*Ad photo threads* — {o['owner']}: ads missing",
+            body=lines, label=f"Ad Photo Threads — {o['owner']}",
+            subjects=[t for t, _ in failed] + list(no_thread))
+    except Exception as e:                    # noqa: BLE001
+        print(f"  couldn't post the alert ({type(e).__name__}: {str(e)[:120]})")
+
+
+def _all_clear(o: dict, day: dt.date) -> None:
+    """Every ad posted and has its thread: close this office's alert if one is
+    open (free when none is)."""
+    try:
+        from automations.shared import incident_thread
+        incident_thread.resolve_if_open(
+            _alert_key(o), what=f"*{o['owner']}'s ad photo threads*",
+            detail=f"Every ad with 1st rounds has its thread ({day:%m/%d}).")
+    except Exception as e:                    # noqa: BLE001
+        print(f"  couldn't close the alert ({type(e).__name__}: {str(e)[:120]})")
 
 
 def redo_all(through: dt.date, crop: bool = True) -> int:
@@ -328,9 +380,10 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
         try:
             from automations.ad_photo_threads import unthreaded
             got = unthreaded.check(day, channel, title_only=bool(o.get("title_only")),
-                                   cache=cache)
-            if got["posted"]:
-                print(f"No-thread note posted: {got['new']} interview(s)")
+                                   cache=cache,
+                                   lookup_on=config.appstream_ads_on(o["key"]))
+            print(f"No-ad thread: {got['new']} added, {got['placed']} crossed out, "
+                  f"{got['waiting']} still being looked up")
         except Exception as e:                # noqa: BLE001 — never costs the post
             print(f"no-thread note failed: {type(e).__name__}: {str(e)[:160]}")
     try:
@@ -338,9 +391,15 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
             print("Pin reminder DM sent.")
     except Exception as e:                    # noqa: BLE001 — never costs the post
         print(f"pin reminder DM failed: {type(e).__name__}: {str(e)[:160]}")
+    failed, no_thread = counts.get("failed") or [], counts.get("no_thread") or []
+    if failed or no_thread:
+        _alert(o, day, failed=failed, no_thread=no_thread)
+    else:
+        _all_clear(o, day)
     # Done only when the day actually had candidates; an empty sheet at 4:30 PM
-    # (interviewers late to log) gets re-read on the next tick.
-    if rep.candidates:
+    # (interviewers late to log) gets re-read on the next tick. Not when an ad
+    # failed either: the next tick retries just that one.
+    if rep.candidates and not failed:
         post.mark_day_done(channel, day)
         if not explicit_date:
             _scorecard_if_due(o, channel, day)
@@ -466,6 +525,10 @@ def main(argv=None) -> int:
                            "(Carlos 10/7): Lucy's daily replies out, one block per "
                            "week back in, same threads. --date = through, --since "
                            "= first day. The nightly goes weekly for that channel after.")
+    mode.add_argument("--add-to-week", metavar="NAMES",
+                      help="Comma-separated sheet names of --date, weekly layout: re-post "
+                           "just that week's block in the thread their ad already has. "
+                           "Never opens a thread. Lists only unless you add --apply.")
     mode.add_argument("--mark-status", action="store_true",
                       help="Put the live ✅ / closed ❌ mark on every ad title in "
                            "the office's weekly channel now, and pin only the ✅ "
@@ -490,6 +553,13 @@ def main(argv=None) -> int:
     ap.add_argument("--names", help="With --appstream-ads: only these sheet names (comma-separated).")
     ap.add_argument("--limit", type=int, help="With --appstream-ads: look up at most N.")
     ap.add_argument("--lookback", type=int, help="With --appstream-ads: days back (default 7).")
+    ap.add_argument("--redo", action="store_true",
+                    help="With --appstream-ads: look again at the ones already looked up and not found.")
+    mode.add_argument("--sweep-old-notes", action="store_true",
+                      help="Once (Eve 10/30): the old @channel no-ad notes of --office "
+                           "(or all): landed people into their thread, the rest into "
+                           "the pinned no-ad thread, then the notes deleted. Prints "
+                           "only; --apply does it. --since = first day (default 10/14).")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -539,11 +609,50 @@ def main(argv=None) -> int:
         day = dt.date.fromisoformat(a.date) if a.date else None
         return nightly(day, explicit_date=bool(a.date), only=a.office)
     if a.appstream_ads:
-        from automations.ad_photo_threads import appstream_ads
+        from automations.ad_photo_threads import appstream_ads, config
         day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
         names = [n for n in (a.names or "").split(",") if n.strip()] or None
-        print(appstream_ads.run(a.office or "rafael", day, names=names, apply=a.apply,
-                                limit=a.limit, lookback=a.lookback))
+        # Eve 10/27: "--office all" = every live office in one pass (the
+        # no-ad notes come from several channels, not one).
+        keys = ([o["key"] for o in config.OFFICES if o.get("live")]
+                if a.office == "all" else [a.office or "rafael"])
+        for k in keys:
+            try:
+                print(appstream_ads.run(k, day, names=names, apply=a.apply,
+                                        limit=a.limit, lookback=a.lookback, redo=a.redo))
+            except Exception as e:            # noqa: BLE001 -- one office never stops the rest
+                print(f"[appstream ads] {k}: failed: {type(e).__name__}: {str(e)[:200]}")
+        return 0
+    if a.sweep_old_notes:
+        from automations.ad_photo_threads import appstream_ads, config, unthreaded
+        day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
+        since = dt.date.fromisoformat(a.since or "2026-10-14")
+        keys = ([o["key"] for o in config.OFFICES if o.get("live")]
+                if a.office in (None, "all") else [a.office])
+        for k in keys:
+            o = config.office(k)
+            config.use(o)
+            print(f"\n=== {o['owner']} ({k})")
+            try:
+                cache: dict = {}
+                if a.apply and config.appstream_ads_on(k):
+                    print(appstream_ads.run(k, day, apply=True, debug=False,
+                                            lookback=(day - since).days,
+                                            redo=True, cache=cache))
+                    config.use(o)
+                got = unthreaded.sweep_old(day, o["live_channel"],
+                                           title_only=bool(o.get("title_only")),
+                                           since=since, apply=a.apply, cache=cache)
+                print(f"old notes: {got['notes']} | named in them: {got['named']}")
+                for who, what in got["placed"].items():
+                    print(f"  landed  {who}: {what}")
+                for who in got["no_ad"]:
+                    print(f"  no ad   {who}")
+                if a.apply:
+                    print(f"no-ad thread: {got['thread']['new']} added | "
+                          f"notes deleted: {got['deleted']}")
+            except Exception as e:            # noqa: BLE001 -- one office never stops the rest
+                print(f"  failed: {type(e).__name__}: {str(e)[:200]}")
         return 0
     if a.redo_weekly and a.office == "all":
         return redo_all(dt.date.fromisoformat(a.date) if a.date else collect.central_today(),
@@ -594,6 +703,17 @@ def main(argv=None) -> int:
             mondays, channel, max_ads=a.max_ads or 3,
             crop=not a.no_crop, name=a.sample_name))
         return 0
+    if a.add_to_week:
+        from automations.ad_photo_threads import weekly
+        channel = a.channel or config.LIVE_CHANNEL_ID
+        if not weekly.is_weekly(channel):
+            print("This channel is not in the weekly layout: use --add-photo.")
+            return 1
+        names = [n.strip() for n in a.add_to_week.split(",") if n.strip()]
+        got = weekly.add_to_week(names, day, channel, apply=a.apply, crop=not a.no_crop)
+        for name, what in got.items():
+            print(f"{name}: {what}")
+        return 1 if any(w.startswith("FAILED") for w in got.values()) else 0
     if a.redo_weekly:
         from automations.ad_photo_threads import weekly
         print(f"Redo weekly — {config.office(a.office or 'rafael')['owner']} through {day}")

@@ -226,10 +226,36 @@ def _refuse_real_client_under_test(which: str) -> None:
             "automations.shared.live_effects)".format(which))
 
 
+class _Anything(dict):
+    """A Slack reply that answers every key, so callers that read
+    resp["channel"]["id"] keep working when nothing was sent."""
+    def __missing__(self, key):
+        return _Anything()
+
+    def get(self, key, default=None):
+        return dict.get(self, key, _Anything() if default is None else default)
+
+
+class _SilentClient:
+    """APPLICANT_PUSH_BACKGROUND=1: a computer a PERSON is using -- Megan's
+    laptop, an ICD's relay machine. Megan 2026-10-29: "it has to stay 100%
+    behind the scenes". Its Slack login is that person's own, so anything this
+    process posts would go out AS THEM (it did: a stuck-read screenshot DM'd
+    to Carlos from Megan's account). Every call is logged and dropped."""
+    def __getattr__(self, name):
+        def _drop(*a, **k):
+            print("[slack] background mode: NOT sent (%s, would be from this "
+                  "computer's own login)" % name, flush=True)
+            return _Anything(ok=False, channel=_Anything(id="background-mode"))
+        return _drop
+
+
 def _client(token: Optional[str] = None):
     """The posting client. `token` overrides the machine's default -- an
     office whose Slack lives in another workspace posts with its own bot
     (icd_alerts.office_slack.client_for)."""
+    if os.environ.get("APPLICANT_PUSH_BACKGROUND") == "1":
+        return _SilentClient()
     _refuse_real_client_under_test("posting")
     import certifi
     ctx = ssl.create_default_context(cafile=certifi.where())

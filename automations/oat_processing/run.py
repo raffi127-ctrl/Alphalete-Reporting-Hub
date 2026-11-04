@@ -61,6 +61,26 @@ from .classify import (Applicant, Action, Decision, classify,
                        verdict_for_history as classify_history)
 
 
+
+def _bring_front(pg) -> None:
+    """bring_to_front, EXCEPT on a computer a person is using.
+
+    APPLICANT_PUSH_BACKGROUND=1 (Megan's laptop, 2026-10-29: "it keeps taking
+    over my screen - it HAS TO RUN IN THE BACKGROUND"). bring_to_front raises
+    Chrome over whatever she is doing, on every resume read. There the tab is
+    marked focused for the page itself instead (CDP focus emulation), and the
+    window never moves; the launch flags already keep a hidden window running
+    at full speed. Everywhere else: unchanged."""
+    if os.environ.get("APPLICANT_PUSH_BACKGROUND") == "1":
+        try:
+            cdp = pg.context.new_cdp_session(pg)
+            cdp.send("Emulation.setFocusEmulationEnabled", {"enabled": True})
+            cdp.send("Page.setWebLifecycleState", {"state": "active"})
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    pg.bring_to_front()
+
 def _norm_name(s: str) -> str:
     """Fold a name for allowlist matching: lowercase, strip accents/punctuation,
     collapse whitespace. AppStream renders 'Willy Jean - Felix' and the removed
@@ -430,6 +450,50 @@ def jump_to_last(page) -> bool:
                if(!el) return false;
                el.scrollIntoView({block:'center'}); el.click(); return true; }"""))
     except Exception:  # noqa: BLE001
+        return False
+
+
+def jump_to_number(page, n: int) -> bool:
+    """Jump the OAT pager to applicant n. The pager is a <select> of numbers
+    sitting right before "of <N> Emails" (seen live 2026-10-04); set it and fire
+    change. Fallback: the pager links carry start=<n> in their query, so rewrite
+    the URL the same way. (Carlos: "you can pick the resume you start on.")"""
+    try:
+        ok = False
+        for fr in page.frames:
+            try:
+                ok = fr.evaluate(
+                    """(n) => {
+                       const sels=[...document.querySelectorAll('select')];
+                       const el=sels.find(s => {
+                         const ctx=((s.parentElement||{}).innerText||'');
+                         return /of\s+\d+\s*Emails?/i.test(ctx); });
+                       if(!el) return false;
+                       const has=[...el.options].some(o=>o.value==String(n));
+                       if(!has) return false;
+                       el.value=String(n);
+                       el.dispatchEvent(new Event('change',{bubbles:true}));
+                       return true; }""", int(n))
+            except Exception:  # noqa: BLE001
+                continue
+            if ok:
+                break
+        if not ok:
+            import re as _re
+            m = _re.search(r"rqst=([A-F0-9-]+)", page.url or "", _re.I)
+            if m:
+                page.goto("https://applicantstream.com/index.cfm?p=604&rqst=%s"
+                          "&start=%d" % (m.group(1), int(n)),
+                          wait_until="domcontentloaded")
+                ok = True
+        if ok:
+            page.wait_for_timeout(2500)
+            _log("[oat] pager jump -> applicant %d" % int(n))
+        else:
+            _log("[oat] pager jump: control not found — starting at 1")
+        return bool(ok)
+    except Exception as e:  # noqa: BLE001
+        _log("[oat] pager jump failed: %s" % type(e).__name__)
         return False
 
 
@@ -1064,6 +1128,13 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     untick_send_boxes(page, live=True)
     _who = f"{a.first_name} {a.last_name}".strip()
     _before = _queue_total(page)
+    # The duplicate table shows when the record OPENS and can be gone once
+    # Send is clicked (Keren Ospina 10/26: table on screen at load, "no
+    # message at all" after the click), so read it now as well.
+    try:
+        _dups_at_load = read_dup_rows(page)
+    except Exception:  # noqa: BLE001
+        _dups_at_load = []
     if not _click_first(page, ["Send to AI", "Send To AI"]):
         _log("    'Send to AI' button not found — skipped")
         return "no_button"
@@ -1073,7 +1144,7 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         # re-applicant with its duplicate table instead of the cannot-send
         # panel, so the click "does nothing" -- Keren Ospina, Brought On Board
         # (Retired) 11/13/2025. Past the window, overwrite and send.
-        _dups = read_dup_rows(page)
+        _dups = read_dup_rows(page) or _dups_at_load
         if _dups:
             _seen = "; ".join("%s (%s)" % (d.get("status", "")[:40],
                                            d.get("entered", "")) for d in _dups[:4])
@@ -2291,12 +2362,33 @@ def _is_blocked_detail(detail: str) -> bool:
     return str(detail or "").startswith(_BLOCKED_PREFIX)
 
 
+def _hub_sheets_here() -> bool:
+    """True when the Hub's Sheets client (recruiting_report/fill.py) is on this
+    machine. The office bundle leaves it out on purpose (see
+    icd_alerts/package.py HUB_ONLY_IMPORTS); the Lucys and the Hub have it."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec(
+            "automations.recruiting_report.fill") is not None
+    except Exception:  # noqa: BLE001 -- a broken parent package reads as absent
+        return False
+
+
 def _write_walk_diag(start, end, cache_size, skips, counts) -> None:
     """Append a one-row proof of this walk to the 'OAT Walk Diag' Sheet tab so the
     walk's behaviour can be verified queue-independently (read the Sheet directly),
     since the mini-control poller can get jammed. Shows the queue delta, the
     no-number cache size + how many re-reads were SKIPPED (cache working), and the
     full outcome counts (incl. re-text sent/removed). Best-effort."""
+    if not _hub_sheets_here():
+        # An office's own computer ships without the Hub's Sheets client
+        # (recruiting_report/fill.py, gspread, the OAuth token): that is the
+        # design, not a fault -- its counts travel back through LAST_WALK and
+        # icd_alerts/resume_push.py relays them. Say so, rather than print an
+        # ImportError on every walk (Raf's push-health log, 2026-11-03).
+        _log("[oat] walk diag: not written here (Hub-only Sheets tab; this "
+             "machine relays its counts instead)")
+        return
     try:
         from automations.recruiting_report import fill as _fill
         sh = _fill._client().open_by_key(
@@ -2583,6 +2675,32 @@ _CF_CLEARED = False
 # each applicant's retries) on a gate that is closed for all of them.
 _CF_WALLED = False
 _CF_WALL_DETAIL = "cloudflare challenge never cleared"
+# Leave the walled Indeed tab OPEN for a human (Megan 2026-11-03: "there's
+# nothing up on lucy 4 to clear out"). The box only showed during the 150s
+# wait, then the tab closed -- whoever got the DM found nothing to tick. Set
+# by the caller once that office's Indeed DM is out (applicant_push.run).
+KEEP_WALL_TAB = False
+_WALL_TAB_KEPT = False
+
+
+_WALL_TAB_PAGE = None
+
+
+def wall_tab_kept() -> bool:
+    """A walled Indeed tab was left open this tick for a human to tick."""
+    return _WALL_TAB_KEPT
+
+
+def show_wall_tab() -> bool:
+    """End of the walk: put the kept Indeed page in front, so it is the first
+    thing the person the DM asks sees on Lucy's Chrome."""
+    if not (_WALL_TAB_KEPT and _WALL_TAB_PAGE):
+        return False
+    try:
+        _bring_front(_WALL_TAB_PAGE)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _cf_session_cleared() -> bool:
@@ -2614,8 +2732,9 @@ def _mark_cf_walled(detail: str) -> None:
 def reset_cf_session() -> None:
     """Forget the session's Cloudflare verdict. Called when a fresh browser session
     opens, so one tick's wall never silences the next tick's read."""
-    global _CF_CLEARED, _CF_WALLED
-    _CF_CLEARED, _CF_WALLED = False, False
+    global _CF_CLEARED, _CF_WALLED, _WALL_TAB_KEPT, _WALL_TAB_PAGE
+    _CF_CLEARED, _CF_WALLED, _WALL_TAB_KEPT = False, False, False
+    _WALL_TAB_PAGE = None
 
 
 def _rd_mod():
@@ -2886,7 +3005,7 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                  f"{a.first_name} {a.last_name} "
                  f"[panel email: {a.email or '(blank)'}]")
             try:
-                page.bring_to_front()
+                _bring_front(page)
             except Exception:  # noqa: BLE001
                 pass
             page.wait_for_timeout(1500)   # let AS settle after the phone change
@@ -3270,7 +3389,7 @@ def lookup_resume_phone(page):
     CLICKING the 'View resume' link (real gesture + referer + in-session nav — the
     way Megan opens it), which gets past Cloudflare where a cold page.goto now hits
     the 'Just a moment…' block (2026-08-02). Falls back to loading the signed href."""
-    global _LAST_RESUME_EMAIL
+    global _LAST_RESUME_EMAIL, _WALL_TAB_KEPT, _WALL_TAB_PAGE
     _LAST_RESUME_EMAIL = ""
     # DOWNLOAD FIRST (Carlos, 2026-09-20/23: "what if you download the resume?
     # when you open it on the right there's a download option"). The AppStream
@@ -3354,7 +3473,7 @@ def lookup_resume_phone(page):
         # Cloudflare's challenge JS only runs in a FOREGROUND tab (browsers throttle
         # background tabs), so bring the resume tab to front. OAT tab restored below.
         try:
-            newpg.bring_to_front()
+            _bring_front(newpg)
         except Exception:  # noqa: BLE001
             pass
         # employers.indeed.com throws a Cloudflare 'Just a moment…' interstitial;
@@ -3491,6 +3610,10 @@ def lookup_resume_phone(page):
             # on 2026-09-22 that turned ONE closed gate into 162 "blocked" reads and
             # 57 people written off for the day in Raf's office alone.
             _mark_cf_walled(reason)
+            if KEEP_WALL_TAB:
+                _WALL_TAB_KEPT = True
+                _log("    [cf] leaving the Indeed page open on screen for a "
+                     "human to tick 'Verify you are human'")
         if reason:
             return None, f"{_BLOCKED_PREFIX}{reason} (title={newpg.title()[:40]!r})"
 
@@ -3535,6 +3658,10 @@ def lookup_resume_phone(page):
         # definition, so it's blocked (retryable), not a confirmed empty resume.
         return None, f"{_BLOCKED_PREFIX}resume open err: {type(e).__name__}"
     finally:
+        if newpg and _WALL_TAB_KEPT and _CF_WALLED:
+            # Left up for a human. The walk still needs its own tab in front
+            # until it ends; show_wall_tab() raises this one then.
+            _WALL_TAB_PAGE, newpg = newpg, None
         if newpg:
             try:
                 newpg.close()
@@ -3543,7 +3670,7 @@ def lookup_resume_phone(page):
         # Restore the OAT tab to the foreground — the new resume tab backgrounded
         # it, which left 'Send to AI' unclickable afterward.
         try:
-            page.bring_to_front()
+            _bring_front(page)
         except Exception:  # noqa: BLE001
             pass
 
@@ -3870,6 +3997,9 @@ def run_walk(page, live: bool = False, limit: int = None,
         _log("[oat] FATAL: could not open the One-App-at-a-time page")
         return 2
     _select_indeed_job_board(page)
+    _start_at = os.environ.get("OAT_START_AT", "")
+    if _start_at.isdigit() and int(_start_at) > 1:
+        jump_to_number(page, int(_start_at))
 
     # WHOSE queue is this? Checked BEFORE a single applicant is read, because
     # everything past this point sends, removes or texts a real person.

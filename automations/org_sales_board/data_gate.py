@@ -62,7 +62,10 @@ from typing import List, Optional, Tuple
 #
 # KEEP IN SYNC with section_pull.SPECS: any spec flagged `day_behind` belongs
 # here, and test_data_gate_lagging.py fails the build if one is missing.
-LAGGING_SECTIONS = ("retail je", "box")
+#
+# "verizon" ADDED 2026-10-27 with the section: its PDF reaches us ~9:31am via
+# Carlos's forward, so at the morning fill yesterday is never out yet.
+LAGGING_SECTIONS = ("retail je", "box", "verizon")
 
 # Local clock (the runners are on Central) past which an incomplete board stops
 # holding the email — the send goes out with what's on the board. MUST stay before

@@ -27,8 +27,14 @@ THREAD_GAPS = "%s 15 Min Gaps" % TEAM
 
 # Hours, on this machine's clock (Lucy 2 = Central). Sunday off unless
 # shared/day_override says that date is a Saturday.
-WEEKDAY_START, WEEKDAY_STOP = (14, 0), (21, 0)
+# 1:30 since 2026-11-03 (Carlos: "lets start our knocks board 30 mins earlier
+# moving forward"); was 2:00. Saturday unchanged.
+WEEKDAY_START, WEEKDAY_STOP = (13, 30), (21, 0)
 SATURDAY_START, SATURDAY_STOP = (10, 15), (17, 30)   # 10:15 since 2026-10-24
+# One-off earlier starts, by date (Carlos 2026-10-30: "the NDS knock board and
+# the NDS 15-minute gaps start 30 minutes early today"). Only the START moves;
+# stop and slots are unchanged. Safe to leave old dates here.
+START_OVERRIDES = {"2026-10-30": (13, 30)}
 
 # First Knock colours on the board (Sebastian 2026-10-21, OK'd by Eve): this
 # crew starts at 2:00, not Raf's 1:30 -- green up to 2:00, gray 2:01-2:29, red
@@ -39,13 +45,13 @@ FIRST_KNOCK_RED_AT = (14, 30)
 # Extra board slots on top of the hourly ones (Carlos 2026-10-22: "send the
 # knock board at 2:30 as well and then have it continue its regular
 # schedule"). Weekday clock; each is a (hour, minute) half-hour slot.
-EXTRA_BOARD_SLOTS = [(14, 30)]
+EXTRA_BOARD_SLOTS: list = []       # 2:30 is covered by the half-hour rule now
 # Saturday (Carlos 2026-10-24: "board + gaps at 10:15, 10:30, 10:45, 11 and
 # then continue on the regular schedule"): three extra board slots inside the
 # 10 o'clock hour; 11:00 onward is the hourly rule.
 SAT_EXTRA_BOARD_SLOTS = [(10, 15), (10, 30), (10, 45)]
 GAPS_EVERY_MIN = 15          # the typed list
-BOARD_EVERY_MIN = 60         # the picture
+BOARD_EVERY_MIN = 30         # the picture (hourly until 2026-10-26: "send every 30 minutes instead of every hour")
 CALLOUT_EVERY_MIN = 60       # "no dispo, no credit check" lines
 GAP_THRESHOLD_MIN = 15
 
@@ -57,6 +63,30 @@ KIND_WEEK = "nds_week"
 # Saturday, right after the last board of the day (Carlos 2026-10-26).
 WEEK_ROW_KEY = "Carlos Hidalgo (NDS)"
 WEEK_AFTER = SATURDAY_STOP
+# Monday morning: last week's Mon–Sat board again, as a reply in that day's
+# "NDS Metrics —" thread (Carlos 2026-11-02: "didn't we go over Monday morning
+# posting an NDS knocks board for the whole [week] in the NDS metrics thread").
+# Slack only (the Saturday one already texted it). First tick at/after this
+# clock on a Monday; the metrics thread is up by ~7:45.
+WEEK_MONDAY_AFTER = (10, 0)
+WEEK_MONDAY_THREAD = "NDS Metrics"
+
+# Reps who knock on RAF's Ownerville but belong on THIS knocks board (Carlos
+# 2026-11-03: "theres two people whos knocks will be under rafs owner ville
+# (just for knocks not anywhere else) ... Cinthya reyes and nathaly benitez").
+# Their rows are lifted off the relay workbook's 'Lucy Knocks' tab, where
+# gap_alerts (Lucy 1) drops Raf's board rows every 30 min -- no second
+# Ownerville session, no impersonation. Keyed by that tab's Key column; names
+# matched the way total_knocks.guests matches (loose, unique hits only).
+# BOARD ONLY: not the gaps list, not the call-outs, not the owners' board
+# share (Raf's row there already carries them). Raf's own board is untouched.
+BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Nathaly Benitez"]}
+# Raf's rows are re-shared only when HIS board draws (~:04 and ~:34), so a
+# board drawn at :00/:30 carried numbers 26 minutes old (Carlos 2026-11-03
+# 2:30pm: "the numbers dont seem accurate"). Before pulling, a board tick
+# waits up to this many minutes for a share newer than the slot's start;
+# past that it draws with what is there and says so in the log.
+BORROWED_FRESH_WAIT_MIN = 9
 
 # Credit checks for the call-outs come from Carlos's own SaraPlus, relayed by
 # his office Mac mini under this ICD office key (icd_alerts).

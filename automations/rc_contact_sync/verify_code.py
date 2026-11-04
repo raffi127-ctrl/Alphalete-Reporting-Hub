@@ -133,6 +133,12 @@ def _inbox(inbox):
     return addr, pw_path.read_text(encoding="utf-8-sig").strip().replace(" ", "")
 
 
+# All Mail leaves out Trash and Spam. Somebody clearing the reporting inbox by
+# hand can trash a code before it is read (Eve, 2026-11-02), and a code that was
+# trashed is still a good code.
+CODE_FOLDERS = ("[Gmail]/All Mail", "[Gmail]/Trash", "[Gmail]/Spam")
+
+
 def _newest_code(since: dt.datetime, query: str,
                  inbox=DEFAULT_INBOX) -> Optional[Tuple[str, dt.datetime]]:
     """The newest code in a mail that ARRIVED AFTER `since`, or None."""
@@ -140,27 +146,34 @@ def _newest_code(since: dt.datetime, query: str,
     M = imaplib.IMAP4_SSL(_ing.IMAP_HOST)
     try:
         M.login(account, password)
-        M.select('"[Gmail]/All Mail"', readonly=True)
         best = None
-        for uid in reversed(_candidates(M, query)):        # newest first
-            typ, data = M.fetch(uid, "(RFC822)")
-            if typ != "OK" or not data or not data[0]:
-                continue
-            msg = email.message_from_bytes(data[0][1])
+        for folder in CODE_FOLDERS:
             try:
-                when = parsedate_to_datetime(msg.get("Date"))
+                typ, _ = M.select('"%s"' % folder, readonly=True)
+                if typ != "OK":
+                    continue
+                uids = _candidates(M, query)
             except Exception:                              # noqa: BLE001
-                continue
-            if when is None:
-                continue
-            if when.tzinfo is None:
-                when = when.astimezone()
-            if when < since:
-                # Sorted newest-first, so everything past here is older too.
-                break
-            code = extract_code(_body_text(msg))
-            if code and (best is None or when > best[1]):
-                best = (code, when)
+                continue                                   # a folder this account lacks
+            for uid in reversed(uids):                     # newest first
+                typ, data = M.fetch(uid, "(RFC822)")
+                if typ != "OK" or not data or not data[0]:
+                    continue
+                msg = email.message_from_bytes(data[0][1])
+                try:
+                    when = parsedate_to_datetime(msg.get("Date"))
+                except Exception:                          # noqa: BLE001
+                    continue
+                if when is None:
+                    continue
+                if when.tzinfo is None:
+                    when = when.astimezone()
+                if when < since:
+                    # Sorted newest-first, so everything past here is older too.
+                    break
+                code = extract_code(_body_text(msg))
+                if code and (best is None or when > best[1]):
+                    best = (code, when)
         return best
     finally:
         try:

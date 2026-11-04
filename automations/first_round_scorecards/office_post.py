@@ -20,6 +20,7 @@ board and the docs say, names already merged ('Same person?' tab).
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --sample   # group DM Raf+Camila+Eve
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --post     # the office channels
     python -m automations.first_round_scorecards.office_post --date 2026-10-08 --restyle carlos  # re-format a posted thread (or: all)
+    python -m automations.first_round_scorecards.office_post --date 2026-10-20 --only khalil --post  # one office's thread only (backfill)
 
 run.py posts the day by itself once LIVE is on (after Eve's OK to the sample).
 An office with no channel here is left out (printed), it still has
@@ -54,12 +55,12 @@ SAMPLE_TO = ("U045Z8N0ZQC",       # Rafael Hidalgo
 # must be IN the channel: they're private, a post without her = channel_not_found.
 # A new office = one line here + invite Lucy.
 CHANNELS: Dict[str, str] = {
-    "Aya Al-Khafaji": "C0AU7GN2TJ7",          # #aya-al-khafaji-office-recruiting-22992
+    # Aya Al-Khafaji OFF 10/28 (Camila: "we dont work with Aya anymore")
     "Carlos Hidalgo": "C09L1S3MQ1E",          # #carlos-hidalgo-office-recruiting-11580
     "Colten Wright": "C0AUAPMEF37",           # #colten-wrights-office-recruiting-14733
     "Cyrus Wade": "C0AUC4PAF2A",              # #cyrus-wade-office-recruiting-22815
     "Drew Tepper": "C0C532LA6JY",             # #drew-tepper-recruiting-22583
-    "Eveliz Wright": "C0C5TPWLR2R",           # #eveliz-wright-office-recruiting-18404
+    "Eveliz Wright": "C0C8MSC33S6",           # #18404-south-shore-consulting-group-inc-eveliz-wright (Camila 10/29)
     "Geoge Delgado": "C0C81LUN0KS",           # #george-delgado-recruiting (ZOOMS INFO spells it Geoge)
     "George Delgado": "C0C81LUN0KS",
     "Haytham Nagi": "C0AUUSCSEV7",            # #haytham-nagi-office-recruiting-22524
@@ -74,7 +75,7 @@ CHANNELS: Dict[str, str] = {
     "Rashad Reed": "C0APEHLHDD2",             # #rashad-reed-office-recruiting-23411
     "Roshan Ahmad": "C0AUUT7JH33",            # #roshan-amin-ahmads-office-recruiting-19833
     "Ryan McSpadden": "C0794R5TLG5",          # #ryan-mcspaddens-office-recruiting-22820
-    "Salik Mallick": "C05BPNNJGE7",           # #salik-hammad-recruiting-office-21328
+    "Salik Mallick": "C0C1VT19BEX",           # #salik-haque-office-recruiting-21328 (old C05BPNNJGE7 = "dont use", 10/28)
     "Samuel Acay": "C0C6YEBS550",             # #samuel-acay-recruiting
     # Eve, 2026-10-07 (the channels where Camila filed each script)
     "Blue Mendoza": "C0BF3GWFJ73",
@@ -96,11 +97,26 @@ CHANNELS: Dict[str, str] = {
     "Jennifer Figueroa": "C0AU0G3M2NT",       # #23132-figspire-management-inc-jennifer-figueroa
     "Miguel Zaragoza": "C0C74FUGXP0",         # #24145-nobilis-marketing-group-inc-miguel-zaragoza
     "Joshua Ghorbani": "C0C6AMLDQBY",         # #joshua-ghorbani-office
+    # Megan 2026-10-27: his Zoom was audited all along, the office post skipped
+    # him for want of this line. Same channel as his applicant-push to-dos.
+    "Khalil Mansour": "C0AUKHN120L",          # #11901-alphalete-management-group-inc-khalil-mansour
+    # Eve 2026-10-28: audited, no office post. Same channels as their ad photo
+    # threads (ad_photo_threads/config.py), so Lucy is already in them.
+    "Kash Rai": "C08U6GCS7SB",                # #kash-rai-office-recruiting-22177
+    "Atef Choudhury": "C0B85KRS5FU",          # #atef-choudhury-office-recruiting-23467
+    "José Velazquez": "C0AU9JBCJGK",          # #jose-velasquez-office-recruiting-22434
+    # Camila added Eve 10/28, Lucy invited the same day
+    "Andre Burton": "C0BHQJ9GB29",            # #22041-kaizen-solutions-inc-andre-burton-jr
+    "Frank Matos": "C0C6BT2CZT3",             # #frank-matos-recruiting
+    "Nicolas Lujan": "C0C2W413YJ3",           # #nicolas-lujan-interviews
+    "Hasan Salame": "C0CAZ17H5NF",            # #24279-hasans-funnel-rafael-hidalgo20261026
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",
                "Raf Hidalgo 3rd funnel": "Rafael Hidalgo",
-               "Geoge Delgado": "George Delgado"}
+               "Rafael Hidalgo 2nd Funnel": "Rafael Hidalgo",   # RAF 2nd/3rd FUNNEL columns (10/28)
+               "Geoge Delgado": "George Delgado",
+               "Salik Malik": "Salik Mallick"}                  # ZOOMS INFO spelling
 LEDGER = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards" / "posted.json"
 # ~30 threads + ~40 replies in one go: the first v2 sample (10/8) hit Slack's
 # 'ratelimited' halfway. Wait out Retry-After, and pace the posts and deletes.
@@ -244,13 +260,13 @@ def _save(data: Dict) -> None:
     LEDGER.write_text(json.dumps(data, indent=1), encoding="utf-8")
 
 
-def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
+def post_day(rows: List[Dict], day: dt.date, *, sample: bool, only: str = "") -> int:
     """Each office's thread in its channel (or every office's in the sample
     group DM). The thread and each reply are kept in the ledger, so a re-run
     after a failure finishes the same thread and never posts one twice.
     Returns 1 if any post failed."""
     client = _client()
-    todo = posts(rows, day)
+    todo = [p for p in posts(rows, day) if not only or p[0] == only]
     if not todo:
         print("OFFICE POSTS: no audited interview with an office that day")
         return 0
@@ -497,6 +513,9 @@ def main(argv=None) -> int:
     ap.add_argument("--restyle", metavar="OFFICE",
                     help="edit that office's already-posted thread for --date into today's "
                          "format (e.g. carlos, or all); posts nothing new")
+    ap.add_argument("--only", metavar="OFFICE",
+                    help="post just that office's thread, no summary (a backfill: e.g. "
+                         "khalil, for an office added to CHANNELS after its days went by)")
     args = ap.parse_args(argv)
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
@@ -508,6 +527,23 @@ def main(argv=None) -> int:
     if args.clear_sample:
         clear_sample()
     rows = day_rows(day)
+    if args.only:
+        hits = [o for o in by_office(rows, day) if _squash(o).startswith(_squash(args.only))]
+        only = hits[0] if len(hits) == 1 else ""
+        if len(hits) > 1:
+            raise SystemExit(f"--only {args.only!r}: matches {hits}")
+        if not only:
+            print(f"ONLY {args.only}: no audited interview that day")
+            return 0
+        for office, channel, head, replies in posts(rows, day):
+            if office == only:
+                print(f"\n=== {office} -> {channel or 'NO CHANNEL'} ===\n{head}")
+                for _, text in replies:
+                    print(f"  ↳ {text}")
+        if not (args.sample or args.post):
+            print("\nDRY-RUN: nothing posted")
+            return 0
+        return post_day(rows, day, sample=args.sample, only=only)
     print(summary_text(rows, day))
     if args.summary_only:
         if not (args.sample or args.post):

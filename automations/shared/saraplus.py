@@ -22,6 +22,7 @@ which are not machines we set up.
 """
 from __future__ import annotations
 
+import re
 import datetime as dt
 import time
 from typing import Dict, List, Optional
@@ -620,9 +621,231 @@ def _run_report_once(page, base_url: str, day: dt.date, service: str,
     _set_telerik_date(page, FIELD_START, day)
     _set_telerik_date(page, FIELD_END, day)
     _select_service(page, service)
+    _pick_company_if_asked(page)
     page.click(SUBMIT)
     page.wait_for_selector(grid, timeout=GRID_TIMEOUT_MS)
     page.wait_for_timeout(2000)
+    rows = _grid_rows(page, grid)
+    # "CLICK TO LOAD RECORDS." Omar's account (2026-10-26) renders the grid
+    # with one placeholder row and loads the rows only when that text is
+    # clicked -- every other account loads them on submit. Read as-is, that
+    # is a day of zero checks for an office that is selling. Click it, wait
+    # for the grid to change, read again -- and SAY what happened, because
+    # the first version of this clicked in silence and his sales grid still
+    # read as the placeholder two days later (2026-10-28).
+    if needs_load_click(rows):
+        rows = _click_load_records(page, grid, rows)
+    return rows
+
+
+# "SELECT COMPANY". Omar's Reporting Hub (2026-10-28) carries a company combo
+# beside the Service one, and its dashboards stayed on "Click here to load
+# records." through every click on the words AND on the real button, while
+# the credit grid showed no reps on a day with four sales. A multi-company
+# (dealer / parent) login needs a company picked before a dashboard has
+# anything to load. Picked by preference words (the office's business name),
+# else the only choice, else the first real choice -- and SAID in the note.
+PREFERRED_COMPANY_WORDS: List[str] = []
+LAST_COMPANY = {"note": ""}
+
+
+def _pick_company_if_asked(page) -> None:
+    try:
+        # By id, OR by what it shows: Omar's combo is not named "company"
+        # anywhere in its id (release .25 found "none on page" while the
+        # page read "Select Company"), so the text it shows when unset --
+        # its value, or the emptyMessage in its Telerik client state -- is
+        # the match.
+        combos = page.evaluate(
+            """() => Array.from(document.querySelectorAll('input.rcbInput')).map(i => {
+                 const st = document.getElementById(i.id + '_ClientState');
+                 let empty = '';
+                 try { empty = (JSON.parse((st && st.value) || '{}').emptyMessage || ''); } catch (e) {}
+                 return {id: i.id, value: (i.value || '').trim(), empty: empty};
+               }).filter(c => /compan/i.test(c.id) || /compan/i.test(c.value) || /compan/i.test(c.empty))"""
+        )
+    except Exception as e:  # noqa: BLE001
+        LAST_COMPANY["note"] = "company combo: ? (%s)" % type(e).__name__
+        return
+    if not combos:
+        LAST_COMPANY["note"] = "company combo: none on page"
+        return
+    c = combos[0]
+    if c["value"] and not re.search(r"select", c["value"], re.I):
+        LAST_COMPANY["note"] = "company combo %s already %r" % (c["id"], c["value"])
+        return
+    LAST_COMPANY["note"] = "company combo %s found (value %r, empty-message %r)" % (c["id"], c["value"], c.get("empty"))
+    try:
+        page.click("#" + c["id"])
+        page.wait_for_timeout(800)
+        items = page.evaluate(
+            """() => Array.from(document.querySelectorAll('.rcbList li, [class*="rcbItem"]'))
+                 .map(el => (el.textContent || '').trim()).filter(t => t)""")
+    except Exception as e:  # noqa: BLE001
+        LAST_COMPANY["note"] = "company combo %s: could not open (%s)" % (c["id"], type(e).__name__)
+        return
+    real = [t for t in items if not re.search(r"select", t, re.I)]
+    want = None
+    for t in real:
+        if any(w in t.lower() for w in PREFERRED_COMPANY_WORDS):
+            want = t
+            break
+    if want is None and real:
+        want = real[0]
+    if want is None:
+        LAST_COMPANY["note"] = "company combo %s: no choices (%s)" % (c["id"], ", ".join(items)[:200])
+        return
+    try:
+        picked = page.evaluate(
+            """(want) => {
+                 for (const el of document.querySelectorAll('.rcbList li, [class*="rcbItem"]')) {
+                   if ((el.textContent || '').trim() === want) { el.click(); return true; }
+                 }
+                 return false;
+               }""", want)
+        page.wait_for_timeout(800)
+    except Exception as e:  # noqa: BLE001
+        picked = "error %s" % type(e).__name__
+    LAST_COMPANY["note"] = ("company combo %s was %r; choices [%s]; picked %r (%s)"
+                            % (c["id"], c["value"], ", ".join(real)[:300], want, picked))
+
+
+def needs_load_click(rows: List[List[str]]) -> bool:
+    return len(rows) == 1 and "load records" in " ".join(rows[0]).lower()
+
+
+# What the last load-records click did, for the empty-read evidence.
+LAST_LOAD_CLICK = {"note": ""}
+
+
+def _click_load_records(page, grid: str, rows: List[List[str]]) -> List[List[str]]:
+    note = []
+    # THE PLACEHOLDER IS A BUTTON. Omar's evidence (2026-10-28, release .14):
+    # the rgNoRecords row reads "Click [here] to load records." where "here"
+    # is <input type=submit ... btnOrderDashEmptyRecordGetOrders
+    # class=pseudoHyperLink> -- a submit styled as a link. A click on the
+    # words around it, on the cell, the row or the table does nothing; only
+    # the button posts back. It goes first; the text clicks stay as fallbacks
+    # for a grid that words it differently.
+    targets = ("%s input[id$='btnOrderDashEmptyRecordGetOrders']" % grid,
+               "%s tr.rgNoRecords input[type='submit']" % grid,
+               "%s input.pseudoHyperLink" % grid,
+               "%s >> text=/load records/i" % grid,
+               "text=/click\\s*to\\s*load records/i",
+               "%s tbody tr" % grid)
+    button_clicked = False
+    # THE BUTTON IS A FULL POSTBACK. Mark the page before pressing it: when
+    # the mark is gone the page has reloaded and what the grid shows then is
+    # the answer -- rows, or the placeholder again (truly empty). Stop there.
+    # Keep waiting only while the reload has not happened yet, up to 45s, so
+    # an account whose grid takes 20-30s to come back (Omar, 2026-11-01:
+    # "he has sales since Friday on that account") is read, while an empty
+    # grid still costs only a few seconds.
+    try:
+        page.evaluate("window.__lucyLoadMark = 1")
+    except Exception:  # noqa: BLE001
+        pass
+    for sel in targets:
+        if button_clicked:
+            # ONE press of the button is the test. The three button selectors
+            # name the same element, and after the first press failed the
+            # other two cost 45s each for the same answer -- on a page with
+            # three placeholder grids that alone ran a sweep past the
+            # 20-minute stop (Omar, 2026-10-28 23:06 ET).
+            # The button WAS there and WAS pressed. The word / cell / row
+            # clicks below it are proven no-ops on this markup, and each one
+            # costs ~20s; three passes x three attempts of them is what pushed
+            # Omar's sweeps past the 20-minute stop (2026-10-28).
+            note.append("button pressed; skipping the text fallbacks")
+            break
+        try:
+            loc = page.locator(sel).first
+            loc.click(timeout=8_000)
+            note.append("clicked %r" % sel)
+            if "input" in sel:
+                button_clicked = True
+        except Exception as e:  # noqa: BLE001
+            note.append("no click via %r (%s)" % (sel, type(e).__name__))
+            continue
+        # The rows arrive on a postback; poll instead of a fixed pause.
+        # Reload-aware (2026-11-01): stop as soon as the page has come back
+        # from the postback (the mark set above is gone) and settled -- rows
+        # or not. Only an unanswered postback keeps us waiting, to 45s.
+        reloaded_polls = 0
+        for i in range(30 if "input" in sel else 7):
+            page.wait_for_timeout(1500)
+            try:
+                rows = _grid_rows(page, grid)
+            except Exception:  # noqa: BLE001
+                rows = rows
+            if not needs_load_click(rows):
+                note.append("rows after click: %d (%.0fs)" % (len(rows), 1.5 * (i + 1)))
+                LAST_LOAD_CLICK["note"] = "; ".join(note)
+                return rows
+            if "input" in sel:
+                try:
+                    reloaded = page.evaluate(
+                        "!window.__lucyLoadMark && document.readyState === 'complete'")
+                except Exception:  # noqa: BLE001
+                    reloaded = False
+                reloaded_polls = reloaded_polls + 1 if reloaded else 0
+                if reloaded_polls >= 2:
+                    note.append("page came back from the postback still on the placeholder (%.0fs)" % (1.5 * (i + 1)))
+                    break
+        else:
+            note.append("still the placeholder %ds after the click" % (45 if "input" in sel else 10))
+    # Playwright's click lands on the text; the handler may sit on an ancestor
+    # that the browser's own click() reaches and a pointer event at the text
+    # node does not (Omar 2026-10-28: three selector clicks, grid unchanged).
+    # So: every element around the text gets a DOM click, then the grid's own
+    # ASP.NET postback -- the thing a real click on a RadGrid ends up calling.
+    if button_clicked:
+        LAST_LOAD_CLICK["note"] = "; ".join(note)
+        return rows
+    js_passes = (
+        ("dom-click", """() => {
+             const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+             let n, did = 0;
+             while ((n = walk.nextNode())) {
+               if (!/load\\s*records/i.test(n.textContent || '')) continue;
+               let el = n.parentElement;
+               for (let d = 0; el && d < 4; d++, el = el.parentElement) { el.click(); did++; }
+             }
+             return did;
+           }"""),
+        ("postback", """(sel) => {
+             const g = document.querySelector(sel);
+             if (!g || typeof __doPostBack !== 'function') return 0;
+             const uid = (g.id || '').replace(/_/g, '$');
+             __doPostBack(uid, 'Rebind');
+             return 1;
+           }"""),
+    )
+    for name, js in js_passes:
+        try:
+            did = page.evaluate(js, grid) if name == "postback" else page.evaluate(js)
+            note.append("%s: %s" % (name, did))
+            if not did:
+                continue
+        except Exception as e:  # noqa: BLE001
+            note.append("%s failed (%s)" % (name, type(e).__name__))
+            continue
+        for _ in range(7):
+            page.wait_for_timeout(1500)
+            try:
+                rows = _grid_rows(page, grid)
+            except Exception:  # noqa: BLE001
+                rows = rows
+            if not needs_load_click(rows):
+                note.append("rows after %s: %d" % (name, len(rows)))
+                LAST_LOAD_CLICK["note"] = "; ".join(note)
+                return rows
+        note.append("still the placeholder 10s after %s" % name)
+    LAST_LOAD_CLICK["note"] = "; ".join(note)
+    return rows
+
+
+def _grid_rows(page, grid: str) -> List[List[str]]:
     return page.evaluate(
         """(sel) => {
              const g = document.querySelector(sel);
@@ -811,6 +1034,23 @@ def grid_headers(page, grid: str) -> List[str]:
 def merge_dtv(agents: List[Dict], dtv: Dict[str, int]) -> List[Dict]:
     for a in agents:
         a["dtv_streaming"] = dtv.get(strip_office(a["name"]), 0)
+    return agents
+
+
+def lines_sold(agents: List[Dict], lines: Optional[Dict[str, Dict[str, int]]]) -> List[Dict]:
+    """Each rep's wireless lines off the Wireless grid: New + Port - Tablets -
+    Wearables. Tablets and watches are not sales (Megan 2026-10-26), and
+    neither is a wireless upgrade (Raf 2026-10-27) -- an INTERNET upgrade
+    still is, and stays in internet_upgrades. `lines` is parse_lines(); None
+    (not read) leaves every count as the AT&T grid had it, and a rep missing
+    from the grid sold no lines."""
+    if lines is None:
+        return agents
+    for a in agents:
+        got = lines.get(strip_office(a["name"])) or {}
+        a["wireless_lines_sold"] = max(
+            int(got.get("New Lines", 0)) + int(got.get("Port Lines", 0))
+            - int(got.get("Tablets", 0)) - int(got.get("Wearables", 0)), 0)
     return agents
 
 

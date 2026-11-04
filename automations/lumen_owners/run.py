@@ -86,12 +86,26 @@ FALLBACK_TO = ["parkwchan19@gmail.com", "mylesnealbusiness@gmail.com",
                "partnersmarketing.co@gmail.com", "osterhousevaughn@gmail.com",
                "nigelmarshall002@gmail.com", "isaiahkellum07@gmail.com",
                "batde3y@gmail.com", "krisnatvhuoth@gmail.com",
-               "ecebuyukozerbusiness@gmail.com", "pthomp2133@gmail.com"]
+               "ecebuyukozerbusiness@gmail.com", "pthomp2133@gmail.com",
+               "aiye.afariogun.b@gmail.com",   # Chan, 10/29 thread
+               "miller10xbusiness@gmail.com"]  # Shealey Miller, 24273
 TITLE = "Lumen Owners"
 
 # Owner names (as the Quantum view prints them, any case) Raf asked to leave
 # off. Empty = everybody on the tracker.
 EXCLUDE: Tuple[str, ...] = ()
+
+# Owners who get a row even when the Quantum view leaves them out (Eve,
+# 2026-10-30): the view only lists ICDs with recent Quantum sales, so Vaughn
+# (on it in September) dropped off and wrote "my stats are not included", and
+# Shealey (incorporated 10/2026) was never on it. (name, company). Their Lumen
+# columns print dashes; the AT&T columns come from the fiber crosstab as usual.
+EXTRA_OWNERS: Tuple[Tuple[str, str], ...] = (
+    ("Vaughn Osterhouse", "kingdom management group, inc."),
+    ("Shealey Miller", ""),
+    # Office 23639, gave Office Access 2026-10-30 (Eve).
+    ("Isaiah Kellum", "showtime solutions, inc."),
+)
 
 ON_ATT = "On AT&T"            # sells AT&T, but neither internet nor wireless
 NOT_YET = "Not on AT&T yet"
@@ -131,6 +145,30 @@ def lumen_weeks(rows: List[List[str]], today: dt.date, n: int = 2) -> List[dt.da
     return ds[:n]
 
 
+def lumen_this_week(rows: List[List[str]], today: dt.date) -> Optional[dt.date]:
+    """The week-ending date in the grid's header that is still running
+    (>= today), or None when the view doesn't have it yet. Pure.
+
+    WHY (Eve, 2026-10-30): the finished weeks alone hid what owners sold
+    this week; the view already carries the running week (to date)."""
+    from automations.recruiting_report.quantum_fallback import _date
+    if not rows:
+        return None
+    ds = sorted(d for d in (_date(h) for h in rows[0]) if d and d >= today)
+    return ds[0] if ds else None
+
+
+def add_this_week(lumen: Dict[str, dict], rows: List[List[str]],
+                  week: Optional[dt.date]) -> None:
+    """Set each owner's 'now' = Lumen sales of the running week (None = dash:
+    no week yet, or an extra owner the view doesn't list)."""
+    from automations.recruiting_report.quantum_fallback import quantum_sales
+    for key, L in lumen.items():
+        L["now"] = (quantum_sales(rows, key, week)
+                    if week and any((r[0] if r else "").strip() == key
+                                    for r in rows[1:]) else None)
+
+
 def lumen_by_owner(rows: List[List[str]], weeks: List[dt.date]
                    ) -> Dict[str, dict]:
     """{sales_key: {'owner', 'office', 'weeks': {date: int|None}}}. Pure.
@@ -146,6 +184,21 @@ def lumen_by_owner(rows: List[List[str]], weeks: List[dt.date]
             continue
         out[key] = {"owner": owner, "office": office,
                     "weeks": {w: quantum_sales(rows, key, w) for w in weeks}}
+    return out
+
+
+def add_extra_owners(lumen: Dict[str, dict], weeks: List[dt.date],
+                     extra=None) -> Dict[str, dict]:
+    """`lumen` plus a dash-only entry for each EXTRA_OWNERS name the view
+    didn't list (matched on the folded owner name). Pure."""
+    have = {_fold(L["owner"]) for L in lumen.values()}
+    out = dict(lumen)
+    for name, office in (EXTRA_OWNERS if extra is None else extra):
+        if _fold(name) in have:
+            continue
+        out["%s [%s]" % (name.upper(), office)] = {
+            "owner": name.upper(), "office": office,
+            "weeks": {w: None for w in weeks}}
     return out
 
 
@@ -216,6 +269,7 @@ it every seller reads "On AT&T". Pure given its inputs."""
                                   "NewInternet": dict(m.get("NewInternet") or {})},
                      "att_past": prev,
                      "lumen": L["weeks"],
+                     "lumen_now": L.get("now"),
                      "status": status_for(units, internet, wireless)})
 
     def _lumen_last(r):
@@ -233,13 +287,17 @@ def _cell(v) -> str:
     return "&ndash;" if v is None else html.escape(str(v))
 
 
-def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
-    """The email body: a plain table any mail client renders."""
+def table_html(rows: List[dict], weeks: List[dt.date], att_week: str,
+               this_week: Optional[dt.date] = None) -> str:
+    """The email body: a plain table any mail client renders. `this_week` =
+    the running Lumen week; its column goes first, marked 'to date'."""
     th = ('style="padding:6px 10px;border:1px solid #ccc;background:#1f3864;'
           'color:#fff;font-size:13px;text-align:center"')
     td = 'style="padding:6px 10px;border:1px solid #ccc;font-size:13px;text-align:center"'
     tdl = 'style="padding:6px 10px;border:1px solid #ccc;font-size:13px;text-align:left"'
     wk = ["Lumen WE %d/%d" % (w.month, w.day) for w in weeks]
+    if this_week:
+        wk = ["Lumen sales<br>this week (to date)"] + wk
     head = ("<tr><th %s>Owner</th><th %s>Status</th><th %s>AT&amp;T units<br>%s</th>"
             "<th %s>AT&amp;T New Internet<br>%s</th>%s</tr>"
             % (th, th, th, html.escape(att_week), th, html.escape(att_week),
@@ -255,8 +313,9 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
         body.append(
             "<tr><td %s>%s</td><td %s>%s</td><td %s>%s</td><td %s>%s</td>%s</tr>"
             % (tdl, who, td, badge, td, r["att_units"], td, r["att_ni"],
-               "".join("<td %s>%s</td>" % (td, _cell(r["lumen"].get(w)))
-                       for w in weeks)))
+               "".join("<td %s>%s</td>" % (td, _cell(v)) for v in
+                       ([r.get("lumen_now")] if this_week else [])
+                       + [r["lumen"].get(w) for w in weeks])))
     on = sum(1 for r in rows if r["status"] != NOT_YET)
     summary = ("<p style=\"font-size:14px\"><b>%d</b> Lumen owner(s) &middot; "
                "<b style=\"color:#1a7f37\">%d on AT&amp;T</b> &middot; "
@@ -508,6 +567,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not lumen:
         print("[lumen] Quantum view returned no owners — not sending")
         return 1
+    lumen = add_extra_owners(lumen, weeks)
+    this_week = lumen_this_week(grid, today)
+    add_this_week(lumen, grid, this_week)
     aliases = load_aliases()
     cur = _wk.reporting_sunday(today)
     past = [att_weeks.get(cur - dt.timedelta(days=7 * i))
@@ -515,15 +577,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     rows = build_rows(lumen, fiber, aliases, past, mix)
     monday = _wk.reporting_monday(today)
     att_week = "week of %s" % monday.strftime("%m/%d")
-    body = table_html(rows, weeks, att_week)
+    body = table_html(rows, weeks, att_week, this_week)
     from automations.lumen_owners import metrics30 as M30
     m30 = M30.by_owner(grid30)
     print("[lumen] 30-day metrics: %d owner(s) in the view" % len(m30))
     body += M30.table_html(rows, m30)
     for r in rows:
-        print("ROW | %-28s | %-16s | AT&T %3d (NI %3d) | Lumen %s"
+        print("ROW | %-28s | %-16s | AT&T %3d (NI %3d) | Lumen %s | now %s"
               % (r["owner"], r["status"], r["att_units"], r["att_ni"],
-                 [r["lumen"].get(w) for w in weeks]))
+                 [r["lumen"].get(w) for w in weeks], r.get("lumen_now")))
 
     # The tab + its pictures. A Sheets hiccup here must not cost Raf the
     # table he already gets — the mail goes without the pictures and says so.

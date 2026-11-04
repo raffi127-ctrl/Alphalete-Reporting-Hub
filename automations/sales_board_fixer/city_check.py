@@ -134,7 +134,8 @@ def blueink_cities(names: List[str]) -> Dict[str, Dict[str, str]]:
     '(Wk 3)' / '(NC)' come off before matching; Blue Ink has the bare name."""
     from automations.apex_new_starts import blueink_data as BID
     bare = {n: base_name(n).strip() for n in names}
-    found = BID.for_people(sorted(set(bare.values())))
+    # near: 'Ortencia' on the board signed as 'Ortensia' (WE 11.1)
+    found = BID.for_people(sorted(set(bare.values())), near=True)
     out = {}
     for n, b in bare.items():
         hire = found.get(b)
@@ -228,11 +229,16 @@ def main(argv=None) -> int:
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
     ap.add_argument("--no-dm", action="store_true",
                     help="no mandar el DM a Alisson + Evelyn")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="solo mirar, aunque venga --apply (lucy rerun lo trae siempre)")
     a = ap.parse_args(argv)
+    if a.dry_run:
+        a.apply = False
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     title = R.week_tabs(today)[0]
 
     sh = R._book(a.sheet_id)
+    title = R.TN.find(R._tabs(sh), title) or title
     ws = sh.worksheet(title)
     grid = ws.get_all_values()
     col = location_col(grid)

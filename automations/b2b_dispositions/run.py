@@ -547,9 +547,11 @@ def _handoff_text(specs: List[Dict], out_dir: Path, slot: str) -> bool:
             continue
         try:
             mp = tp.write_manifest(spec, out_dir, slot)
-            from automations.day_orchestrator import mini_control as mc
-            mc.enqueue("text_dispositions", mp.name, by="b2b_dispositions")
-            print(f"  queued text_dispositions {mp.name}", flush=True)
+            # Local outbox, not the Mini Control sheet (2026-10-26: the sheet
+            # stopped answering; texts sat queued for hours while Slack posted).
+            from automations.day_orchestrator import text_outbox as tob
+            tob.drop(mp, by="b2b_dispositions")
+            print(f"  outbox text_dispositions {mp.name}", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"  HANDOFF FAILED: {type(e).__name__}: {str(e)[:200]}",
                   flush=True)

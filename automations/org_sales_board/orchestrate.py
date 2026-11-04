@@ -119,6 +119,16 @@ def _adapter_je_retail(ctx: AdapterContext) -> PullDict:
     else:
         try:
             csv_path = je_pull.fetch(page=ctx.page, today=ctx.today, verbose=True)
+        except je_pull.WeekNotPosted as e:
+            # The dropdown itself says JE hasn't posted the week. Early in the
+            # week that is JE's day-behind wait (same window as the stale-week
+            # check below); later it is JE frozen — fail loud.
+            from automations.org_sales_board import week as _wk
+            if len(_wk.completed_days(ctx.today or dt.date.today())) >= 3:
+                raise
+            ctx.logfn(f"  ⚠ {e} — a day behind; skipping JE fill. Self-heals "
+                      f"on the next run once JE posts the week.")
+            return {}
         except Exception as e:  # noqa: BLE001 — re-raised unless it's the empty week
             if not je_pull.empty_week_dialog(e, ctx.today):
                 raise
@@ -294,11 +304,35 @@ def _adapter_frontier(ctx: AdapterContext) -> PullDict:
     return pull
 
 
+def _adapter_verizon(ctx: AdapterContext) -> PullDict:
+    """Verizon daily production (Verizon section, 1 ICD: Nicolas Murrugarra).
+
+    Added 2026-10-27 (Carlos asked, Maud confirmed): read from Credico's
+    emailed 'Verizon Wireless - Daily Sales Scorecard (SCI) - Wireless Only'
+    PDF via verizon_pull — NOT Tableau, so ctx.page is unused. It reaches us
+    only through Carlos's forward (~9:31am CT), so the morning fill is two days
+    behind and the 14:30 catch-up brings yesterday. Every value carries its
+    date, so the fill writes only this board week's days."""
+    from automations.org_sales_board import verizon_pull
+    pdf = verizon_pull.fetch(ctx.out_dir)
+    if not pdf:
+        ctx.logfn("  ⚠ Verizon Wireless scorecard PDF not in the inbox — skipping "
+                  "(it only arrives through Carlos's forward).")
+        return {}
+    pull = verizon_pull.to_board_pull(verizon_pull.parse(pdf))
+    if not pull:
+        ctx.logfn(f"  ⚠ {verizon_pull.ICD} not in {Path(pdf).name} — skipping.")
+    else:
+        ctx.logfn(f"  [verizon] {verizon_pull.ICD} daily filled from {Path(pdf).name}.")
+    return pull
+
+
 # shared_key -> adapter. Unlisted keys are not yet implemented.
 ADAPTERS: Dict[str, Callable[[AdapterContext], PullDict]] = {
     "sara_retail": _adapter_sara_retail,
     "je": _adapter_je_retail,
     "frontier": _adapter_frontier,
+    "verizon": _adapter_verizon,
     "fiber": _make_section_adapter("fiber"),
     "nds": _make_section_adapter("nds"),
     "b2b": _make_section_adapter("b2b"),

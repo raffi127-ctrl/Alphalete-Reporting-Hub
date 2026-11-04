@@ -96,8 +96,8 @@ class GoodToGoTest(unittest.TestCase):
         dms = self._run(self._indeed_book("10/20/2026 13:40:00"),
                         system="indeed")[1]
         self.assertEqual(dms[0][1], ":white_check_mark: *Cyrus's Local "
-                                    "Office* — good to go. Lucy is pushing "
-                                    "again.")
+                                    "Office* — good to go on Indeed. Lucy is "
+                                    "pushing applicants again.")
 
     def test_dry_run_sends_nothing(self):
         self.assertEqual(self._run(self._book(), send=False)[1], [])

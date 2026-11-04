@@ -95,10 +95,13 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
         for key, (office, mode) in RP.PUSH_OFFICES.items():
             if mode != "live":
                 continue
-            homes = [m for m, offs in offices.ROTATION_BY_MACHINE.items()
-                     if office in offs]
-            self.assertEqual(len(homes), 1, (key, homes))
-            self.assertIn(homes[0], offices.RELAY_MACHINES, (key, homes))
+            # One number, or several for a computer that takes turns (Raf's
+            # three, 11/03): each one is checked on its own.
+            for one in (office if isinstance(office, tuple) else (office,)):
+                homes = [m for m, offs in offices.ROTATION_BY_MACHINE.items()
+                         if one in offs]
+                self.assertEqual(len(homes), 1, (key, one, homes))
+                self.assertIn(homes[0], offices.RELAY_MACHINES, (key, one, homes))
 
     def test_a_relay_entry_is_never_a_lucy(self):
         from automations.applicant_push import offices
@@ -114,7 +117,9 @@ class NobodyIsSentUntilSwitchedOn(unittest.TestCase):
 
     def test_every_listed_office_states_its_number_and_mode(self):
         for key, (office, mode) in RP.PUSH_OFFICES.items():
-            self.assertTrue(office.isdigit(), key)
+            # One number, or several for a computer that takes turns (Raf's).
+            for one in (office if isinstance(office, tuple) else (office,)):
+                self.assertTrue(one.isdigit(), key)
             self.assertIn(mode, ("dry", "live"), key)
 
     def test_an_unlisted_office_does_nothing(self):
@@ -366,15 +371,31 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
         spec = P.SYSTEMS["indeed"]
         text = spec["good"] % ("Carlos's Local Office", spec["name"], "1:43 PM")
         self.assertEqual(text, ":white_check_mark: *Carlos's Local Office* "
-                               "— good to go. Lucy is pushing again.")
+                               "— good to go on Indeed. Lucy is pushing applicants again.")
         self.assertEqual(P._SIGNIN_PROOF["indeed"], "probe-indeed-clear")
 
     def test_a_clean_run_resets_the_count(self):
-        RP._note_wall(True)
-        RP._note_wall(True)
+        for _ in range(RP.WALL_RUNS - 1):
+            RP._note_wall(True)
         RP._note_wall(False)
-        RP._note_wall(True)
+        for _ in range(RP.WALL_RUNS - 1):
+            RP._note_wall(True)
         self.assertEqual(self.filed, [])
+
+    def test_a_block_that_lasts_overnight_alerts_again_next_morning(self):
+        # Atef, 10/30: alerted 10/29, count carried past the limit, no DM.
+        for _ in range(RP.WALL_RUNS + 3):
+            RP._note_wall(True)
+        self.assertEqual(len(self.filed), 1)        # once today
+        st = RP._state()
+        st["wall_alert_day"] = "2026-01-01"         # that was another day
+        RP._save_state(st)
+        RP._note_wall(True)
+        self.assertEqual(len(self.filed), 2)
+
+    def test_two_walls_in_a_row_alert(self):
+        # Megan 2026-10-29: catch it early -- 2, not 3.
+        self.assertEqual(RP.WALL_RUNS, 2)
 
     def test_the_poster_dms_it_and_keeps_it_out_of_the_channel(self):
         from automations.icd_alerts import post as P
@@ -385,9 +406,10 @@ class IndeedsCheckReachesThePeopleWhoCanTickIt(unittest.TestCase):
                               spec["what"], "1:07 PM", spec["why"],
                               spec["how"])
         self.assertEqual(text, (
-            ":raising_hand: *Carlos's Local Office* — Lucy needs a human.\n"
-            "On the LucyECO computer: click Lucy's Chrome and tick "
-            "\u201cVerify you are human.\u201d"))
+            ":raising_hand: *Carlos's Local Office* — Lucy needs a human on "
+            "*Indeed* to keep pushing applicants.\n"
+            "On the LucyECO computer: click Lucy's Chrome (it shows Indeed) "
+            "and tick \u201cVerify you are human.\u201d"))
         self.assertLessEqual(len(text.splitlines()), 2)   # SUPER SIMPLE
 
 
@@ -641,6 +663,39 @@ class AnOfficeOnlyLoginCountsAsSignedIn(unittest.TestCase):
             self._ctx(False)))
 
 
+class TheAwaitTextIsRetunedOnLivePushesOnly(unittest.TestCase):
+    """Megan 2026-10-28: every office's Await text carries the right times --
+    on the office computer too, where 11580 actually pushes. Test runs edit
+    nothing."""
+
+    def _walk(self, live):
+        from automations.oat_processing import run as OAT
+        from automations.oat_processing import await_template as AT
+        page = mock.MagicMock()
+        page.locator.return_value.count.return_value = 0
+        with mock.patch.object(OAT, "attach_dialog_accept"), \
+             mock.patch.object(OAT, "open_oat", return_value=True), \
+             mock.patch.object(OAT, "office_on_page", return_value="11580"), \
+             mock.patch.object(OAT, "run_walk", return_value=0), \
+             mock.patch.object(RP, "_recheck_once_per_fix"), \
+             mock.patch.object(AT, "ensure_await_template") as ens:
+            RP._walk(page, live, {"office_key": "carlos"})
+        return ens
+
+    def test_live_retunes_for_the_pinned_office(self):
+        ens = self._walk(True)
+        ens.assert_called_once()
+        self.assertEqual(ens.call_args.args[1], "11580")
+
+    def test_a_test_run_edits_nothing(self):
+        self._walk(False).assert_not_called()
+
+    def test_the_two_files_ship(self):
+        for rel in ("automations/oat_processing/await_window.py",
+                    "automations/oat_processing/await_template.py"):
+            self.assertIn(rel, package.AGENT_FILES)
+
+
 class ResumeHelperIsGone(unittest.TestCase):
 
     def test_setup_does_not_ask_for_it(self):
@@ -650,6 +705,54 @@ class ResumeHelperIsGone(unittest.TestCase):
 
     def test_the_old_setup_flag_still_answers(self):
         self.assertEqual(RP.main(["--setup"]), 0)
+
+
+class TheWalkDiagKnowsWhereItIs(unittest.TestCase):
+    """Raf's push-health log, 2026-11-03 17:49 CT: every office walk ended in
+    "[oat] walk diag write failed: ImportError: cannot import name 'fill'".
+    The tab is Hub-only by design (no fill.py, no gspread, no OAuth token on an
+    office machine; the counts relay through LAST_WALK instead), so the writer
+    says that plainly and skips -- it never tries the import there."""
+
+    def _run(self, here):
+        from automations.oat_processing import run as OAT
+        lines = []
+        with mock.patch.object(OAT, "_hub_sheets_here", return_value=here), \
+             mock.patch.object(OAT, "_log", side_effect=lines.append):
+            OAT._write_walk_diag(10, 8, 3, 1, {"sent": 2})
+        return lines
+
+    def test_an_office_machine_skips_and_says_so(self):
+        lines = self._run(here=False)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("not written here", lines[0])
+        self.assertNotIn("ImportError", lines[0])
+        self.assertNotIn("failed", lines[0])
+
+    def test_a_hub_machine_still_reports_a_real_write_failure(self):
+        # Stub the PACKAGE ATTRIBUTE: `from automations.recruiting_report
+        # import fill` reads it first, so a sys.modules entry is ignored and
+        # the real client runs -- which on the Hub appends a real row to the
+        # production diag tab (it did, 2026-11-03).
+        import automations.recruiting_report as pkg
+        fake = mock.MagicMock()
+        fake._client.side_effect = RuntimeError("no token")
+        with mock.patch.object(pkg, "fill", fake, create=True):
+            lines = self._run(here=True)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("walk diag write failed", lines[0])
+        self.assertIn("no token", lines[0])
+
+    def test_the_office_bundle_has_no_hub_sheets_client(self):
+        # The detector reads the bundle, not a flag: fill.py is left out of
+        # the office package on purpose, so an office machine answers False.
+        self.assertNotIn("automations/recruiting_report/fill.py",
+                         package.AGENT_FILES)
+        import importlib.util
+        from automations.oat_processing import run as OAT
+        with mock.patch.object(importlib.util, "find_spec", return_value=None):
+            self.assertFalse(OAT._hub_sheets_here())
+        self.assertTrue(OAT._hub_sheets_here())    # this repo has it
 
 
 if __name__ == "__main__":

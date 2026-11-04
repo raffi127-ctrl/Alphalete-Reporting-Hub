@@ -198,6 +198,22 @@ class OwnerLanes(unittest.TestCase):
         self.assertIn("'%s'!B4:B59" % OWN, found[0].value)
         self.assertIn("'%s'!BA4:BA59" % OWN, found[0].value)
 
+    def test_range_starting_a_row_late_is_lined_up(self):
+        # Miami JAIRO 2026-10-30: BL5:BL113 next to B4:B113 -> every lane blank
+        f, v, e = owner_tab()
+        f[2][0] = f[2][0].replace("BA4:BA53", "BA5:BA53")
+        found = [x for x in LC.check(f, v, e, {OWN: owner_board(54)}, None)
+                 if x.where == "A3"]
+        self.assertEqual([x.kind for x in found], ["lane_range"])
+        self.assertEqual(found[0].value, own_lane(">=10"))
+        self.assertIn("BA started on row 5, not 4", found[0].detail)
+
+    def test_late_start_fixed_even_when_board_not_loaded(self):
+        f, v, e = owner_tab()
+        f[2][0] = f[2][0].replace("BA4:BA53", "BA5:BA53")
+        found = [x for x in LC.check(f, v, e, {}, None) if x.where == "A3"]
+        self.assertEqual([x.value for x in found], [own_lane(">=10")])
+
     def test_unquoted_tab_names_are_read(self):
         f = '=iferror(FILTER(JAIRO!B4:B113, JAIRO!C4:C113>=12),"")'
         self.assertEqual([r[0] for r in LC.ranges(f)], ["JAIRO", "JAIRO"])

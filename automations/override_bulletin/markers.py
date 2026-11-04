@@ -45,6 +45,23 @@ _TOTAL_LABELS = ("total", "total general", "grand total", "totals")
 # of scale the read is wrong, not the org.
 MAX_PLACEMENT_SHARE = 0.5
 
+# Whose Special comes from the LEDGER (Eve 2026-10-30): only Colten and Carlos.
+# The ledger's 'P<n>-YYYY Special Override' lines also carry Rafael (his special
+# is filled every week from its own view, so the ledger line is the period sum of
+# money already on the tab) and owners with no Special row at all (Trang). On
+# P10-2026 those two put $191,039 against a $127,674 week, the size guard held
+# it, and Colten's $39,293.20 + Carlos's $343.85 never landed. Had it passed, it
+# would have overwritten Rafael's weekly special with $116k.
+SPECIAL_LEDGER_OWNERS = ("colten wright", "carlos hidalgo")
+
+# Every Credico line says this (Eve 2026-10-30) — 'September 2026 Standard
+# Overrides - Credico'. Lowercase, compared against the lowered explanation.
+CREDICO_LABEL = "standard overrides - credico"
+
+# Credico lands every 5 weeks (Eve 2026-10-30, and the marker row agrees since
+# P5-2026: 5.31 -> 7.5 -> 8.9 -> 9.13 -> 10.18). Used to place the next marker.
+CREDICO_EVERY_WEEKS = 5
+
 
 def _is_red(cell):
     fg = (cell.get("effectiveFormat", {}).get("textFormat", {})
@@ -159,6 +176,22 @@ def set_marker(ws, kind, period, col, *, dry_run=True):
     return a1
 
 
+def next_credico_marker(markers, weeks, week_mdy):
+    """The Credico period whose marker belongs on `week_mdy`, or None.
+
+    `weeks` is the sheet's week labels newest-first. The newest Credico marker
+    P<n> sits at some week; CREDICO_EVERY_WEEKS newer than that is P<n+1> (Credico
+    is monthly: P12 is followed by P1 of the next year)."""
+    cred = [m for m in markers if m["kind"] == CREDICO and m["week"] in weeks]
+    if not cred or week_mdy not in weeks:
+        return None
+    last = min(cred, key=lambda m: weeks.index(m["week"]))      # newest = leftmost
+    if weeks.index(last["week"]) - weeks.index(week_mdy) != CREDICO_EVERY_WEEKS:
+        return None
+    n, year = (int(x) for x in _PERIOD.match(last["period"]).groups())
+    return f"P1-{year + 1}" if n >= 12 else f"P{n + 1}-{year}"
+
+
 def ledger_needles(kind, period):
     """Explanation substrings that identify this period's ledger rows.
 
@@ -168,8 +201,9 @@ def ledger_needles(kind, period):
     P10-2026 Special while the real P10 Special wasn't even in Tableau yet (his
     Specials run $270-$420). Same test `_periods_in_ledger` already uses.
     Credico is MONTH-labelled ('June 2026 Standard Overrides - Credico'), so we
-    map P<n> to month n and require BOTH the month-year and 'credico' — never
-    just 'credico', which matches every period at once."""
+    map P<n> to month n and require BOTH the month-year and the full
+    'standard overrides - credico' label — never just the period, which would
+    also match that period's Special line."""
     m = _PERIOD.match(period)
     if not m:
         return []
@@ -177,9 +211,9 @@ def ledger_needles(kind, period):
     if kind == SPECIAL:
         return [[period, "special override"]]
     month = _MONTHS[n - 1] if 1 <= n <= 12 else None
-    cands = [[period]]                                  # in case it's period-labelled
+    cands = [[period, CREDICO_LABEL]]                   # in case it's period-labelled
     if month:
-        cands.insert(0, [f"{month} {year}", "credico"])
+        cands.insert(0, [f"{month} {year}", CREDICO_LABEL])
     return cands
 
 
@@ -249,6 +283,9 @@ def plan_placements(ws, ledger_rows, *, aliases=None, owner_col, expl_col, amt_c
             continue
         amts = amounts_for(ledger_rows, mk["kind"], mk["period"],
                            owner_col=owner_col, expl_col=expl_col, amt_col=amt_col)
+        if amts and mk["kind"] == SPECIAL:
+            amts = {k: v for k, v in (F.rekey(amts, aliases) if aliases else amts).items()
+                    if k in SPECIAL_LEDGER_OWNERS}
         if amts:
             mk = {**mk, "amounts": F.rekey(amts, aliases) if aliases else amts}
             total = round(sum(amts.values()), 2)
@@ -283,7 +320,7 @@ def _periods_in_ledger(rows, kind, *, expl_col):
             m = re.search(r"\bP(\d{1,2})-(\d{4})\b", expl)
             if m:
                 found.add(f"P{int(m.group(1))}-{m.group(2)}")
-        elif kind == CREDICO and "credico" in low:
+        elif kind == CREDICO and CREDICO_LABEL in low:
             for i, mon in enumerate(_MONTHS, start=1):
                 m = re.search(rf"\b{mon}\s+(\d{{4}})\b", expl)
                 if m:
@@ -324,6 +361,23 @@ def apply_placements(ws, to_place, *, roster, captains, dry_run=True):
                     continue
                 new = round(amt, 2)
                 log.append(f"  {mk['period']} special {owner}: = {new}")
+                # The ALL ORG cell carries regular + captain + special, so the
+                # special goes there too — without it the bulletin's year total
+                # stays short until a backtrack happens to rebuild that week
+                # (P10-2026 sat $39,637.05 short, 2026-10-30). Added on top of
+                # whatever special the sub-row already held, net of it.
+                hit = roster.get(owner)
+                if hit:
+                    prev = 0.0
+                    if row - 1 < len(vals) and mk["col"] < len(vals[row - 1]):
+                        prev = _num_locale(vals[row - 1][mk["col"]]) or 0.0
+                    r1 = hit[0]
+                    cur = 0.0
+                    if r1 - 1 < len(vals) and mk["col"] < len(vals[r1 - 1]):
+                        cur = _num_locale(vals[r1 - 1][mk["col"]]) or 0.0
+                    s1 = round(cur - prev + new, 2)
+                    log.append(f"  {mk['period']} ALL ORG {owner}: {cur} -> {s1}")
+                    updates.append({"range": f"{col_letter}{r1}", "values": [[s1]]})
             updates.append({"range": f"{col_letter}{row}", "values": [[new]]})
         # marker goes black once its money is placed
         fmts.append({"range": f"{col_letter}{mk['row']}",

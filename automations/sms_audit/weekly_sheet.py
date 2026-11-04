@@ -169,8 +169,12 @@ RENAMED = {
     '% of people texted who booked': '% of people we texted who booked',
     '% of recruiter replies within 5 minutes': "Of a recruiter's responses, % within 5 minutes",
     '% of replies by a person within 5 minutes': "Of a recruiter's responses, % within 5 minutes",
-    '% of them who booked': '% of blast people who booked',
-    '% of them who replied': '% of blast people who replied',
+    '% of blast people who booked': '% of bulk people who booked',
+    '% of blast people who replied': '% of bulk people who replied',
+    '% of normal applicants who booked': '% of one-by-one people who booked',
+    '% of normal applicants who replied': '% of one-by-one people who replied',
+    '% of them who booked': '% of bulk people who booked',
+    '% of them who replied': '% of bulk people who replied',
     '% that failed — 1st text to them': 'Of our FIRST text to someone, % that fail',
     '% that failed — later texts to them': 'Of LATER texts to the same person, % that fail',
     '% that failed — our FIRST text to them': 'Of our FIRST text to someone, % that fail',
@@ -205,7 +209,9 @@ RENAMED = {
     'Not delivered': "TOTAL texts that didn't arrive",
     'Number not valid': 'Phone number not valid',
     "Of a person's responses, % within 5 minutes": "Of a recruiter's responses, % within 5 minutes",
-    'People in the normal flow': 'People not on the cold list',
+    'People in the normal flow': 'People we texted one by one',
+    'People not on the cold list': 'People we texted one by one',
+    'People on the blast': 'People we texted in bulk',
     'People texted': 'People we texted',
     'People who texted back': 'People who texted us back',
     "Person's replies within 5 min %": "Of a recruiter's responses, % within 5 minutes",
@@ -780,19 +786,30 @@ ROWS = [
      _drop("texts failed, reached another way")),
     ("Why they didn't book", "We answered by email, not by text",
      _drop("we answered by email, not by text")),
-    # Megan 2026-09-26: "there should be a 2nd section below for the cold
-    # list". The log says which is which — Source "Mass SMS" is the bulk
-    # re-engagement blast. Holding the two in one number is what made the
-    # whole office look broken: Raf's cold list books at 8%, his live flow at
-    # 74%, and Carlos runs no blast at all.
-    ("Cold list", "People on the blast", _lane("cold", "people")),
-    ("Cold list", "% of blast people who replied", _lane_pct("cold", "replied")),
-    ("Cold list", "% of blast people who booked", _lane_pct("cold", "booked")),
+    # Megan 2026-09-26 asked for this split: "there should be a 2nd section
+    # below for the cold list". The log says which is which — Source
+    # "Mass SMS". Holding the two in one number is what made the whole office
+    # look broken: Raf's bulk lane books at 8%, his one-by-one lane at 74%,
+    # and Carlos sends no bulk at all.
+    #
+    # RENAMED 2026-10-26, and the wording is the point. Megan: "mass sms just
+    # means a message was sent out in bulk, not that the candidates were
+    # cold." Calling it a cold list asserted something about the PEOPLE that
+    # the data does not say. Checking the bodies settled it: 762 of one
+    # week's sends were "Thanks for applying…" to brand-new applicants and
+    # 1,410 were day-2 follow-ups, and 46% of that group had a bulk send as
+    # their first ever contact. The split is HOW WE SENT IT — a method the
+    # office controls — not who they are.
+    ("Texted in bulk", "People we texted in bulk", _lane("cold", "people")),
+    ("Texted in bulk", "% of bulk people who replied",
+     _lane_pct("cold", "replied")),
+    ("Texted in bulk", "% of bulk people who booked",
+     _lane_pct("cold", "booked")),
 
-    ("Not the cold list", "People not on the cold list", _lane("live", "people")),
-    ("Not the cold list", "% of normal applicants who replied",
+    ("Texted one by one", "People we texted one by one", _lane("live", "people")),
+    ("Texted one by one", "% of one-by-one people who replied",
      _lane_pct("live", "replied")),
-    ("Not the cold list", "% of normal applicants who booked",
+    ("Texted one by one", "% of one-by-one people who booked",
      _lane_pct("live", "booked")),
 
     # Megan 2026-09-26: the follow-up split was less useful than knowing what
@@ -1228,8 +1245,8 @@ def write_week(ws, rep, week_end, dry_run=False):
 # 0.90/0.94/0.99 are the same colour to a human eye. Kept light enough that
 # black Georgia stays legible on every one.
 SECTION_TINT = {
-    'Cold list'                              : (0.97, 0.89, 0.66),
-    'Not the cold list'                      : (0.64, 0.92, 0.87),
+    'Texted in bulk'                         : (0.97, 0.89, 0.66),
+    'Texted one by one'                      : (0.64, 0.92, 0.87),
     'Text quality'                           : (0.93, 0.87, 0.97),
     'Questions handled badly'                : (0.99, 0.88, 0.85),
     'This week'                               : (0.85, 0.85, 0.86),
@@ -1541,7 +1558,7 @@ def _widths(ws, last_col, last_row):
     cells are fit to size of the text they contain").
 
     The label columns are AUTO-sized — a fixed width clipped "Normal
-    applicants (not the cold list)" and "Too recent to judge (texted in the
+    applicants (texted one by one)" and "Too recent to judge (texted in the
     last 3 days)", and the longest label changes whenever one is reworded, so
     a number here would go stale the next time somebody edits a row.
 

@@ -103,9 +103,20 @@ class TeamBook:
     _exact: dict = field(default_factory=dict)
     _plain: dict = field(default_factory=dict)
     _short: dict = field(default_factory=dict)
+    # ICD Aliases ({canonical: [aliases]}), for a spelling no pass below can
+    # see -- 'ortensia martinez' is the board's 'Ortencia Denice Martinez'.
+    aliases: dict = field(default_factory=dict)
 
     def team_for(self, rep: str) -> str:
         """The rep's team, or '' when the board can't place them."""
+        team = self._team_for(rep)
+        if team or not self.aliases:
+            return team
+        from automations.focus_office_att.aliases import alias_to_canonical
+        canon = alias_to_canonical(rep, self.aliases)
+        return self._team_for(canon) if canon != rep else ""
+
+    def _team_for(self, rep: str) -> str:
         n = _norm(rep)
         if n in self._exact:
             return self._exact[n]
@@ -253,5 +264,14 @@ def for_office(office: str, day: dt.date, *, verbose: bool = False):
         saturday = day - dt.timedelta(days=1)
     key = (office, saturday)
     if key not in _CACHE:
-        _CACHE[key] = load(office, saturday, verbose=verbose)
+        book = load(office, saturday, verbose=verbose)
+        if book is not None:
+            # Same alias sheet the TK fill reads, so the knock board's teams
+            # and the sales board's knocks agree on who a rep is.
+            try:
+                from automations.focus_office_att.aliases import load_aliases
+                book.aliases = load_aliases()
+            except Exception:  # noqa: BLE001 -- aliases never cost the book
+                pass
+        _CACHE[key] = book
     return _CACHE[key]

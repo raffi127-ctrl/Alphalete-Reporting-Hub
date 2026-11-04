@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import datetime as dt
 import unittest
+from unittest import mock
 
+from automations.day_orchestrator import registry as reg
+from automations.shared import run_manifest as rm
 from automations.shared import weekend_release as wr
 
 SAT = dt.date(2026, 8, 15)          # a real Saturday
@@ -92,6 +95,53 @@ class HoldsOnARealFailure(Base):
         }, alerts=["captainship_cancel_rate"])
         self.assertFalse(ok)
         self.assertIn("alerta", why)
+
+
+class ACleanRerunClearsTheFailure(Base):
+    """Sun 2026-11-01: org_sales_board FAILED at 06:44, re-ran clean at 09:40."""
+    MORNING = {"org_sales_board": {"status": "FAILED",
+                                   "last_attempt_ts": "2026-11-01T06:00:00"}}
+
+    def setUp(self):
+        super().setUp()
+        self._read = rm.read_manifest
+        self._cfg = reg.load_config
+        self._resolve = reg.resolve_report
+        reg.load_config = lambda: None
+        reg.resolve_report = lambda cfg, rid: mock.Mock(
+            verify={"type": "manifest", "report_id": "org-sales-board"})
+
+    def tearDown(self):
+        rm.read_manifest = self._read
+        reg.load_config = self._cfg
+        reg.resolve_report = self._resolve
+        super().tearDown()
+
+    def manifest(self, **m):
+        rm.read_manifest = lambda rid: m if rid == "org-sales-board" else None
+
+    def test_a_clean_later_run_releases(self):
+        self.manifest(ok=True, failed=[], run_ts="2026-11-01T09:40:00")
+        ok, why = self.clean(dict(self.MORNING), alerts=["org_sales_board"])
+        self.assertTrue(ok, why)
+
+    def test_a_clean_file_from_before_the_failure_still_holds(self):
+        self.manifest(ok=True, failed=[], run_ts="2026-11-01T05:00:00")
+        self.assertFalse(self.clean(dict(self.MORNING))[0])
+
+    def test_a_later_run_with_failed_parts_still_holds(self):
+        self.manifest(ok=False, failed=["b2b"], run_ts="2026-11-01T09:40:00")
+        self.assertFalse(self.clean(dict(self.MORNING))[0])
+
+    def test_no_manifest_still_holds(self):
+        rm.read_manifest = lambda rid: None
+        self.assertFalse(self.clean(dict(self.MORNING))[0])
+
+    def test_a_person_stopping_it_still_holds(self):
+        self.manifest(ok=True, failed=[], run_ts="2026-11-01T09:40:00")
+        self.assertFalse(self.clean({"org_sales_board": {
+            "status": "HALTED_FOR_FIX",
+            "last_attempt_ts": "2026-11-01T06:00:00"}})[0])
 
 
 class HoldsOnMissingContent(Base):

@@ -31,15 +31,26 @@ from automations.owner_chat_texts.config import GROUP_SOUTHSHORE_ORG
 # skip (`key` = the last-sent file name).
 SSO_GROUP = GROUP_SOUTHSHORE_ORG
 
-# Jairo Ruiz 2026-10-26 (Slack DM with Megan): the same South Shore list in his
-# own "A PLAYERSSS" chat. Lucy 1 is a member (find_group 2026-10-26: exactly one
-# chat, 16 people). The full name, not "A PLAYERS": that needle hits 6 chats.
+# Jairo Ruiz 2026-10-26 (Slack DM with Megan): the lines in his own
+# "A PLAYERSSS" chat -- only A-Players and AMs are in it. Lucy 1 is a member
+# (find_group 2026-10-26: exactly one chat, 16 people). The full name, not
+# "A PLAYERS": that needle hits 6 chats. Eve the same day: the owners on
+# Jairo's campaign, NDS -- so this chat gets NDS offices' sales for the owners
+# on our Org board, not the South Shore list.
 JAIRO_GROUP = "A PLAYERSSS"
+JAIRO_CAMPAIGN = "nds"
+
+# South Shore owners who text into the SSO chat but are NOT on the Recruiting
+# Dashboard's South Shore group (no AppStream office there), so they can't ride
+# SOUTH_SHORE_NAMES. Colten 2026-10-30: "make sure Samuel is added to Southshore
+# org owners post ... moving forward".
+SSO_EXTRA = ["Samuel Acay"]
 
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.
 OWNER_FALLBACK = {
     "rafael_hidalgo": "Rafael Hidalgo",
+    "samuel": "Samuel Acay",
 }
 
 # The selling day, Central. The plist fires at :50 (after most offices' relay

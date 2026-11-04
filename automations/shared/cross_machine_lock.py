@@ -43,6 +43,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import socket
+import threading
 import time
 
 LOCK_TAB = "Post Locks"
@@ -51,6 +52,44 @@ HEADERS = ["Key", "Holder", "Claimed At", "Note"]
 DEFAULT_TTL_S = 45 * 60          # a tracker run is minutes; an hour is abandoned
 DEFAULT_WAIT_S = 15 * 60
 POLL_S = 10.0
+
+# HARD CAP on any ONE Sheets call the lock makes (2026-10-28). The Sheets client
+# retries a 429 up to 6x with 30s+ sleeps, and a timed-out GET 3x at up to 180s
+# each — right for a report's own data, ruinous for a best-effort lock. The
+# control workbook is polled nonstop by every Lucy's queue lanes on the same
+# per-USER read quota, so 429s are routine. 10/28: the Box catch-up reused its
+# images, skipped every channel (all already posted) and was STILL killed at 45m,
+# frozen in the lock's own enter/exit calls across two orgs. Past this cap the
+# call is abandoned (daemon thread) and treated like any other sheet failure:
+# carry on without the lock.
+OP_TIMEOUT_S = 45.0
+
+
+class _OpTimeout(Exception):
+    pass
+
+
+def _bounded(fn, *args, timeout: float = None, **kwargs):
+    """fn(*args) with a wall-clock cap. Raises _OpTimeout past it (the call keeps
+    running in a daemon thread nobody waits on — it can never hold the process
+    open at exit). Re-raises whatever fn raised."""
+    timeout = OP_TIMEOUT_S if timeout is None else timeout
+    box = {}
+
+    def _run():
+        try:
+            box["v"] = fn(*args, **kwargs)
+        except BaseException as e:   # noqa: BLE001 — handed back to the caller
+            box["e"] = e
+
+    t = threading.Thread(target=_run, daemon=True, name="shared-lock-op")
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise _OpTimeout("sheet call over {:.0f}s".format(timeout))
+    if "e" in box:
+        raise box["e"]
+    return box.get("v")
 
 
 def holder_id() -> str:
@@ -95,6 +134,10 @@ class SharedLock:
     no-ops, so a run that posts to 15 orgs claims once, not fifteen times."""
 
     _held: set = set()           # keys this PROCESS already holds
+    # Keys this PROCESS already failed to lock because the SHEET was slow or
+    # unreachable. Later acquisitions of the same key skip straight to "no
+    # lock" instead of paying the same timeouts again for every org.
+    _gave_up: set = set()
 
     def __init__(self, key: str, *, ttl_s: float = DEFAULT_TTL_S,
                  wait_s: float = DEFAULT_WAIT_S, note: str = "", log=print):
@@ -103,14 +146,15 @@ class SharedLock:
         self.me = holder_id()
         self.acquired = False
         self._reentrant = False
+        self._appended = False   # we wrote a claim row (even one that timed out)
         self._ws = None
 
     # -- sheet helpers: every one returns a value, never raises -------------
     def _rows(self):
         """[(row_number, holder, claimed_at_str)] for this key, sheet order."""
         try:
-            vals = self._ws.get_all_values()
-        except Exception:        # noqa: BLE001
+            vals = _bounded(self._ws.get_all_values)
+        except Exception:        # noqa: BLE001 — incl. _OpTimeout
             return None
         out = []
         for i, r in enumerate(vals[1:], start=2):
@@ -130,7 +174,7 @@ class SharedLock:
 
     def _drop(self, rownum: int):
         try:
-            self._ws.delete_rows(rownum)
+            _bounded(self._ws.delete_rows, rownum)
             return True
         except Exception:        # noqa: BLE001
             return False
@@ -140,9 +184,12 @@ class SharedLock:
         if self.key in SharedLock._held:
             self._reentrant = self.acquired = True
             return self
+        if self.key in SharedLock._gave_up:
+            return self          # already logged once this process
         try:
-            self._ws = _ws()
+            self._ws = _bounded(_ws)
         except Exception as e:   # noqa: BLE001 — no sheet => no shared locking
+            SharedLock._gave_up.add(self.key)
             self.log("  ⚠ shared lock unavailable ({}: {}) — continuing without "
                      "cross-machine protection".format(
                          type(e).__name__, str(e)[:80]))
@@ -152,6 +199,7 @@ class SharedLock:
         while True:
             rows = self._rows()
             if rows is None:
+                SharedLock._gave_up.add(self.key)
                 self.log("  ⚠ shared lock unreadable — continuing without it")
                 return self
             live = self._live(rows)
@@ -166,13 +214,16 @@ class SharedLock:
                     self.acquired = True
                     SharedLock._held.add(self.key)
                     return self
+                self._appended = True
                 try:
-                    self._ws.append_row(
+                    _bounded(
+                        self._ws.append_row,
                         [self.key, self.me,
                          dt.datetime.now().isoformat(timespec="seconds"),
                          self.note[:200]],
                         value_input_option="RAW")
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 — incl. _OpTimeout
+                    SharedLock._gave_up.add(self.key)
                     self.log("  ⚠ could not write the shared claim — continuing "
                              "without cross-machine protection")
                     return self
@@ -210,8 +261,10 @@ class SharedLock:
             time.sleep(POLL_S)
 
     def __exit__(self, *exc):
-        if self._reentrant or not self.acquired:
+        if self._reentrant or not (self.acquired or self._appended):
             return False
+        # A claim whose write timed out may still land a moment later; drop it
+        # like a held one so it never blocks the other machine for a full lease.
         SharedLock._held.discard(self.key)
         try:
             rows = self._rows()

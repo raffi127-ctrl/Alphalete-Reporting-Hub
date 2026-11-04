@@ -60,12 +60,13 @@ OFFICES = {
     "raf": Office(key="raf", owner="Rafael Hidalgo", channel=CHANNEL_ID,
                   uploader="lucy", mode="live", sheet_log=True),
     # Omar Mohamad, Kalkan Marketing (24153), in his recruiting room (Slack
-    # Connect, Lucy Reporting is in it). Enrolling on LucyEco 2026-10-26
-    # 5:30pm; Megan the same day: "we can just wait on his enrollment" -- so
-    # nothing posts until then. Once enrolled: fill eco_key from 'Relay
-    # Keys', run a --test-job, then flip to "live".
+    # Connect, Lucy Reporting is in it). Signed up on LucyEco 2026-10-26 as
+    # `omar` (Omars-iMac); his OwnerVille login only landed 2026-10-28 (first
+    # knocks row) -- 10/27's test jobs all came back "no OwnerVille login
+    # saved". 10/29 test jobs found Calvin Kilgore, Martin Fleming and Pedro
+    # Guerrero in his View Progress (RES-AT&T) -> LIVE 2026-10-29 (Megan: yes).
     "omar": Office(key="omar", owner="Omar Mohamad", channel="C0C6HKZ63EK",
-                   uploader="eco", eco_key="", mode="dry"),
+                   uploader="eco", eco_key="omar", mode="live"),
 }
 
 

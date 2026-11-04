@@ -764,20 +764,29 @@ def main(argv=None) -> int:
                 failures.append(f"{name}: {type(e).__name__}: {e}")
                 log(f"  !! {name} harvest FAILED: {type(e).__name__}: {e}")
     from automations.recruiting_report.fill import _retry, open_by_key
+    from automations.shared import sheets_retry
     for name, (sheet_id, tab, cands, cr_map) in results.items():
         try:
             apply_to_sheet(name, sheet_id, tab, cands, cr_map, args.write)
         except Exception as e:  # noqa: BLE001
             failures.append(f"{name} write: {type(e).__name__}: {e}")
             log(f"  !! {name} write FAILED: {type(e).__name__}: {e}")
+        # 12 offices back to back trip the 60-reads/min quota: 2026-11-02 a
+        # 429 killed George Hipolito's term-sync. tries=7 waits out ~63s, a
+        # full quota window. Both syncs re-read before writing, so a retry is safe.
+        sh = None
         try:
             sh = _retry(lambda sid=sheet_id: open_by_key(sid))
-            sync_statuses(name, sh, tab, args.write)
+            sheets_retry.call(sync_statuses, name, sh, tab, args.write, tries=7)
         except Exception as e:  # noqa: BLE001
             failures.append(f"{name} term-sync: {type(e).__name__}: {e}")
             log(f"  !! {name} term-sync FAILED: {type(e).__name__}: {e}")
+        if sh is None:
+            # Never fall through to the PREVIOUS office's workbook.
+            failures.append(f"{name} rollcall: skipped, sheet did not open")
+            continue
         try:
-            rollcall_sync(name, sh, tab, args.write)
+            sheets_retry.call(rollcall_sync, name, sh, tab, args.write, tries=7)
         except Exception as e:  # noqa: BLE001
             failures.append(f"{name} rollcall: {type(e).__name__}: {e}")
             log(f"  !! {name} rollcall FAILED: {type(e).__name__}: {e}")

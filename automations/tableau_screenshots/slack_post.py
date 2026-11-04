@@ -47,10 +47,11 @@ ORG_CHANNELS = {
     "carlos_gp":   ["C07J46MQNUX"],       # #alphalete-gp-sales (private, Carlos)
     "ambient_1":   ["C0B1DHEFVLH"],       # #ambient-sales-1 (private, Cy Wade)
     "aeon":        ["C0849EPM4LD"],       # #aeon-sales (private, Cody Cannon)
-    "domin8":      ["C0B395PUUCW"],       # #domin8-b2b-sales (private) — Lucy
+    "domin8":      ["C0B395PUUCW"],       # #domin8-nds-sales (was -b2b-; private) — Lucy
                                           # (U0BCFGCR5PV) must be a MEMBER or
                                           # files_upload_v2 → not_in_channel.
-    "a_players":   ["C0AJQA8P716"],       # #a-players-b2b (private, Carlos) —
+    "a_players":   [],                    # #a-players-b2b STOPPED (Carlos
+                                          # 2026-10-28) — was C0AJQA8P716 —
                                           # mirrors #alphalete-gp-sales exactly
                                           # (same boards, same B2B-first order).
 }
@@ -66,7 +67,7 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org + #alph
              "carlos_gp": "#alphalete-gp-sales",
              "ambient_1": "#ambient-sales-1",
              "aeon": "#aeon-sales",
-             "domin8": "#domin8-b2b-sales",
+             "domin8": "#domin8-nds-sales",
              "a_players": "#a-players-b2b"}
 
 # Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
@@ -102,9 +103,12 @@ ORG_ORDER: dict[str, list[str]] = {
 # Cesar/Domin8 2026-07-23: #domin8-b2b-sales wants just B2B AT&T ("National
 # Tracker"), B2B AT&T CRU ("National CRU"), and the Order Tiered Bonus ranking.
 # Cesar 2026-08-19 (thread on the day's tracker post): add B2B D2D Consolidated.
+# Cesar 2026-10-26, in the renamed #domin8-nds-sales ("Lineup!"): the office
+# sells NDS now -- "NDS TRACKER" and "ORDER TIERED BONUS" (his third item,
+# "Total Production for the Week", has no tracker board yet). Megan 10/27:
+# set Atef's trackers up for his ECO enrollment.
 ORG_TRACKERS: dict[str, list[str]] = {
-    "domin8": ["b2b_att_country", "b2b_att_country_cru",
-               "b2b_d2d_consolidated", "order_tiered_bonus"],
+    "domin8": ["nds", "order_tiered_bonus"],
 }
 
 
@@ -218,6 +222,11 @@ for _xorg, _xcids in EXTRA_ORG_CHANNELS.items():
 # metrics thread is separate (office_metrics) and still goes to Legacy.
 PAUSED_ORGS: dict[str, str] = {
     "isaiah": "moved to #everforward-sales (khalil's thread) — Francia 2026-10-02",
+    # Carlos 2026-10-28 ("on the a players slack lets stop all of these").
+    # Emptying its ORG_CHANNELS list was not enough: the org stayed in ORGS, so
+    # every run counted #a-players-b2b as a channel that didn't land and
+    # drop-tableau-screenshots opened each morning (10/29).
+    "a_players": "stopped — Carlos 2026-10-28, all scheduled A-Players posts off",
 }
 for _paused_key in PAUSED_ORGS:
     ORG_CHANNELS.pop(_paused_key, None)
@@ -1344,6 +1353,18 @@ def _by_id_safe(page_id: str, pages: list) -> dict:
         (p for p in pages if p.get("id") == page_id), {"id": page_id})
 
 
+def run_lock(today: dt.date, note: str = ""):
+    """The cross-machine claim on today's tracker posts. ONE per run: run.py
+    holds it around its whole org loop, so each post_all inside nests
+    re-entrantly (zero Sheets calls) instead of claiming + releasing per org —
+    ~7 calls on the control workbook each, which under a 429 storm froze the
+    10/28 Box catch-up past its 45m cap with nothing left to post. post_all
+    still takes it itself so a direct caller is covered too."""
+    from automations.shared.cross_machine_lock import SharedLock
+    return SharedLock("tableau_screenshots|{}".format(today.isoformat()),
+                      note=note)
+
+
 def post_all(captures: list, pages: list, today: dt.date | None = None,
              *, dry_run: bool = False, replace: bool = False,
              org: str = DEFAULT_ORG, new_thread: bool = False,
@@ -1373,9 +1394,7 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
     # posts 15 orgs claims once. Best-effort — if the sheet is unreachable we log
     # it and post anyway (see cross_machine_lock: duplicates are cosmetic, a
     # report that never goes out is not).
-    from automations.shared.cross_machine_lock import SharedLock
-    _lock = SharedLock("tableau_screenshots|{}".format(today.isoformat()),
-                       note="posting trackers ({})".format(org))
+    _lock = run_lock(today, note="posting trackers ({})".format(org))
 
     # Filter + order to THIS org's tracker selection FIRST (a subset channel like
     # #domin8-b2b-sales, and the only route an opt_in_only board takes to a
@@ -1477,3 +1496,38 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
         "org": org,
         "channels": channel_results,
     }
+
+
+def already_delivered(pages: list, selected_ids, orgs, today: dt.date) -> bool:
+    """True only when EVERY org already has every selected board it posts today.
+
+    Read-only, and it never guesses: any channel it can't read, any org on
+    another workspace's token, any board missing anywhere -> False, and the run
+    captures as before. Lets the Box catch-up skip the browser entirely once a
+    settle pass has already put Box everywhere (2026-10-28: it queued behind
+    that pass for the shared tracker profile and was killed at 45m, raising a
+    ❌ for a board every channel already had)."""
+    try:
+        from automations.office_metrics.offices import CROSS_WS_TOKEN_FILES
+    except Exception:                                 # noqa: BLE001
+        CROSS_WS_TOKEN_FILES = {}
+    sel = set(selected_ids)
+    try:
+        client = smp._client()
+        for org in orgs:
+            if org in CROSS_WS_TOKEN_FILES:
+                return False
+            owed = sel & set(tracker_ids_for(org, pages))
+            if not owed:
+                continue
+            if is_email_org(org):
+                if not owed <= _emailed_today(org, today):
+                    return False
+                continue
+            for ch in channels_for(org):
+                ts, _legacy = find_thread_ts(client, ch, today)
+                if not ts or not owed <= posted_ids(client, ch, ts, pages, today):
+                    return False
+        return True
+    except BaseException:                             # noqa: BLE001 — incl. SystemExit
+        return False

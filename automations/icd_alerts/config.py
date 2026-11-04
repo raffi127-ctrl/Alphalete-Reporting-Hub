@@ -344,6 +344,27 @@ def _install_raw() -> Dict:
 #              His AT&T B2B key `carlos-b2batt` keeps running.
 PAUSED_KEYS = frozenset({"jamis10", "carlos"})
 
+# SARAPLUS ONLY, knocks stay. SaraPlus allows ONE login per account at a time,
+# and Tre (2026-11-02, Raf: "tell LUCY to log off of his sara moving forward")
+# needs his own login free to sell -- every Lucy sign-in bumps him. A key here
+# is never read, signed into, kept alive overnight or probed on SaraPlus; its
+# OwnerVille knocks board and texts carry on. Not PAUSED_KEYS: that would stop
+# his TeleMapper board too, which he asked to keep.
+SARA_PAUSED_KEYS = frozenset({"tre"})
+
+
+def sara_paused(key) -> bool:
+    return str(key or "").strip().lower() in SARA_PAUSED_KEYS
+
+
+def sara_paused_here() -> bool:
+    """True when ANY enrollment on this machine is in SARA_PAUSED_KEYS: the
+    SaraPlus login is one per machine, so one paused office pauses it all."""
+    try:
+        return any(sara_paused(r.get("office_key")) for r in enrollments())
+    except Exception:  # noqa: BLE001
+        return False
+
 # OFFICES ON THE THREE CREDIT-CHECK ALERTS (Carlos 2026-10-22, option A):
 # "got someone on the tablet" / "got a credit check" / "got a passed credit
 # check", failed checks never posted. OPT-IN: each owner answered YES to
@@ -562,7 +583,15 @@ def in_sales_window(now: Optional[dt.datetime] = None) -> bool:
 #   steve         -- Steve McElwee, #luxe-chat 2026-10-24: "extend Lucy until
 #                    8:30 pm on Saturdays as well".
 SELLING_END_OVERRIDES = {"carlos-b2batt": {5: (23, 0)},
-                         "steve": {5: (20, 30)}}
+                         "steve": {5: (20, 30)},
+                         # Omar's reps were still closing at 22:20 ET on
+                         # 2026-10-28, an hour after the default end; Megan
+                         # was watching sales land with no alert. Mon-Sat.
+                         "omar": {d: (23, 0) for d in range(6)},
+                         # Raf's own machine (enrolled 2026-11-03): his sales
+                         # board on Lucy 1 announced sales until midnight, and
+                         # Megan wants nothing to change for him on timing.
+                         "raf": {d: (23, 59) for d in range(6)}}
 
 
 def _selling_end(now: dt.datetime):

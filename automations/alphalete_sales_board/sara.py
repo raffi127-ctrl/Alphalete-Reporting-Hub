@@ -78,10 +78,26 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
             records = parse_records(
                 _run_report(page, base, day, "AT&T Internet", GRID_INTERNET, log=log))
             log("AT&T Internet pass: records for %d reps" % len(records))
+
+            # Lines off the Wireless grid: tablets, watches and wireless
+            # upgrades are not sales (Megan 2026-10-26, Raf 2026-10-27), and
+            # only this grid says which lines were which. A failed pass leaves
+            # the line counts as read rather than losing the sweep.
+            lines = None
+            try:
+                w_rows = _run_report(page, base, day, _sp.SERVICE_WIRELESS,
+                                     _sp.GRID_WIRELESS, log=log)
+                lines = _sp.parse_lines(_sp.grid_headers(page, _sp.GRID_WIRELESS), w_rows)
+                log("Wireless pass: lines for %d reps" % len(lines or {})
+                    if lines is not None else
+                    "Wireless grid has no Tablets/Wearables labels -- NL left as read")
+            except Exception as e:  # noqa: BLE001 — the sales still stand
+                log("Wireless pass failed (%s) -- NL left as read" % type(e).__name__)
         finally:
             ctx.close()
 
-    return {"agents": merge_dtv(att, dtv), "records": records, "day": day}
+    return {"agents": _sp.lines_sold(merge_dtv(att, dtv), lines),
+            "records": records, "day": day}
 
 
 def probe(*, headless: bool = True, log=print) -> Dict:

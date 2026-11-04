@@ -172,6 +172,15 @@ case "$OFFICE" in
     HUB_NAME="Applicant Push (Khalil)"
     POST_TODO=1
     ;;
+  14733)
+    # Colten -- pushed from his own computer (relay); this arm only keeps a
+    # stray tick on a Lucy from reading another office's names.
+    OFFICE_SLUG="-14733"
+    OFFICE_LABEL="office 14733 (Colten)"
+    HUB_ID="applicant_push_colten"
+    HUB_NAME="Applicant Push (Colten)"
+    POST_TODO=0
+    ;;
   23965)
     OFFICE_SLUG="-23965"
     OFFICE_LABEL="office 23965 (Raf 2nd funnel)"
@@ -244,6 +253,14 @@ case "$OFFICE" in
     # apps were added 2026-09-08). His to-do post goes HERE and nowhere else.
     export OAT_SCORECARD_CHANNEL="C0AUKHN120L"
     ;;
+  14733)
+    export OAT_OFFICE_ID="14733"
+    export OAT_FILE_SUFFIX="-14733"
+    export OAT_WALK_DIAG_TAB="OAT Walk Diag 14733"
+    export OAT_OFFICE_LABEL="office 14733 · Colten Wright — South Shore Specialized Marketing"
+    export OAT_OFFICE_SHORT="office 14733, Colten"
+    export OAT_REMOVE_NO_PHONE="0"
+    ;;
   23965)
     export OAT_OFFICE_ID="23965"
     export OAT_FILE_SUFFIX="-23965"
@@ -277,14 +294,40 @@ case "$OFFICE" in
     ;;
 esac
 
+# The hour/minute the post-run steps read (the noon / 4pm to-do posts). They
+# came from the old 7AM-10PM gate; when that gate moved into window.py on
+# 10/28 these two went with it, and under `set -u` every tick then died at the
+# first `$h` after the walk -- no to-do posts, no Hub row, from 10/28 ~8pm to
+# 10/29 ~4:40pm.
+h=$((10#$(date +%H)))
+m=$((10#$(date +%M)))
+PUSH_STAMP="$LOG_DIR/.applicant-push-started${OFFICE_SLUG:--11580}"
 if [ "$DRYRUN" -eq 0 ]; then
-  # ---- WINDOW GATE: only run 7:00 AM–10:00 PM CST (last run at 22:00) ----
-  h=$((10#$(date +%H)))
-  m=$((10#$(date +%M)))
-  if ! { { [ "$h" -ge 7 ] && [ "$h" -le 21 ]; } || { [ "$h" -eq 22 ] && [ "$m" -eq 0 ]; }; }; then
-    echo "[$(date)] outside 7AM-10PM CST window (h=$h) — skipping $OFFICE_LABEL" >> "$LOG_FILE"
+  # ---- WINDOW GATE: Carlos's schedule (Megan 2026-10-28) -------------------
+  # 5:30 AM-10:00 PM CST, each office every 15 min, and before 7:00 only once
+  # THIS Lucy's 4am batch is done (automations/applicant_push/window.py gate).
+  # A skipped office advances the rotation so the others are not held up.
+  _why=$(PYTHONPATH="$(pwd)" "$VENV_PY" -m automations.applicant_push.window "$OFFICE" "$PUSH_STAMP" 2>/dev/null)
+  _gate=$?
+  if [ "$_gate" -ne 0 ]; then
+    [ -n "$_why" ] || _why="schedule gate could not run (exit $_gate)"
+    echo "[$(date)] ${_why} — skipping $OFFICE_LABEL" >> "$LOG_FILE"
+    [ -n "$OFFICE_ARG" ] && echo "$OFFICE" > "$ROTATE_MARK"
+    # Past the office's daily stop the agent is ticking on purpose with nothing
+    # to do. Beat anyway: silent_job_watch can't read the stop (it's cached on
+    # this box only) and paged "didn't run today on Lucy 4" at 16:06 on
+    # 2026-11-02, an hour after the 15:15 stop.
+    case "$_why" in
+      *"past today's stop"*)
+        _capped 120 "heartbeat" \
+          "$VENV_PY" -m automations.shared.silent_job_watch \
+            --beat-machine applicant_push --exit 0 --note "$OFFICE_LABEL (past today's stop)" \
+          >> "$LOG_FILE" 2>&1 || true
+        ;;
+    esac
     exit 0
   fi
+  date +%s > "$PUSH_STAMP"
   # -------------------------------------------------------------------------
 fi
 
@@ -308,6 +351,17 @@ if [ -d .git ]; then
   # beats not running at all (the whole reason this pull is best-effort).
   _capped 90 "git pull" \
     sh -c 'git pull --ff-only --autostash --quiet origin main >/dev/null 2>&1' || true
+  # --autostash CAN LEAVE A FILE WITH CONFLICT MARKERS AND STILL EXIT 0 (see
+  # mini_control's update, 2026-08-27 + 10/28). If that file is THIS script,
+  # every later tick dies on its own syntax before writing a single log line --
+  # 2026-10-29: Lucy 2 + Lucy 4 pushed nothing all morning after a local edit
+  # to the window gate clashed with the new 5:30 gate. Put any unmerged file
+  # back to the pulled code; the machine's own edit stays in `git stash list`.
+  _um=$(git diff --name-only --diff-filter=U 2>/dev/null)
+  if [ -n "$_um" ]; then
+    echo "[$(date)] HEALED unmerged after pull (local edit parked in git stash): $_um" >> "$LOG_DIR/applicant-push-heal.log"
+    git checkout HEAD -- $_um >/dev/null 2>&1 || true
+  fi
 fi
 # -----------------------------------------------------------------------------
 
@@ -414,6 +468,7 @@ if kill -0 "$_RUN_PID" 2>/dev/null; then
     11580) pkill -f rp_cdp_profile >/dev/null 2>&1 ;;
     23467) pkill -f rp_cdp_23467   >/dev/null 2>&1 ;;
     11901) pkill -f rp_cdp_11901   >/dev/null 2>&1 ;;
+    14733) pkill -f rp_cdp_14733   >/dev/null 2>&1 ;;
     23965) pkill -f rp_cdp_23965   >/dev/null 2>&1 ;;
     11280) pkill -f rp_cdp_11280   >/dev/null 2>&1 ;;
     24065) pkill -f rp_cdp_24065   >/dev/null 2>&1 ;;
@@ -465,7 +520,7 @@ case " $* " in
           touch "$_GRP_MARK"
         else
           echo "[$(date)] GROUPED TO-DO POST FAILED for group '$POST_GROUP' ($_SLOT) — the walk ran fine, but the list did NOT reach Slack. Probe read-only with: lucy slack_channel <id>" >> "$LOG_FILE"
-          osascript -e "display notification \"$HUB_NAME: the $_SLOT grouped to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+          [ "${APPLICANT_PUSH_BACKGROUND:-0}" = 1 ] || osascript -e "display notification \"$HUB_NAME: the $_SLOT grouped to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
         fi
       fi
     elif [ -n "$_SLOT" ] && [ "$POST_TODO" -eq 1 ]; then
@@ -488,7 +543,7 @@ case " $* " in
           touch "$_POST_MARK"
         else
           echo "[$(date)] TO-DO POST FAILED for $OFFICE_LABEL ($_SLOT) — the walk ran fine, but the flagged-applicant list did NOT reach Slack. Probe the channel read-only with: lucy slack_channel <id>  (a private channel Lucy was removed from answers channel_not_found, not not_in_channel)" >> "$LOG_FILE"
-          osascript -e "display notification \"$HUB_NAME: the $_SLOT to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+          [ "${APPLICANT_PUSH_BACKGROUND:-0}" = 1 ] || osascript -e "display notification \"$HUB_NAME: the $_SLOT to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
         fi
       fi
     elif [ -n "$_SLOT" ]; then
@@ -528,7 +583,7 @@ case " $* " in
       # FAILED row, no Sosumi. Before this code existed the refusal exited 1 and
       # three quiet ticks published FAILED for BOTH offices and opened
       # "Applicant Push failed" in #claudecorrections (2026-09-04, the afternoon
-      # the window shipped). Publishing nothing matches the 7AM-10PM gate above,
+      # the window shipped). Publishing nothing matches the schedule gate above,
       # which also just leaves the day alone. 75 is EX_TEMPFAIL = HELD, this
       # repo's existing word for it; NOT 3, which resume_pushing already uses for
       # an Indeed wedge that MUST keep counting toward the streak.
@@ -588,6 +643,6 @@ case " $* " in
 esac
 
 if [ "$_NOTIFY" -eq 1 ]; then
-  osascript -e "display notification \"$HUB_NAME failed $FAIL_STREAK passes in a row (exit $ST) — the AppStream session for $OFFICE_LABEL may have expired, or Cloudflare needs a human clear on Lucy 2\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+  [ "${APPLICANT_PUSH_BACKGROUND:-0}" = 1 ] || osascript -e "display notification \"$HUB_NAME failed $FAIL_STREAK passes in a row (exit $ST) — the AppStream session for $OFFICE_LABEL may have expired, or Cloudflare needs a human clear on Lucy 2\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
 fi
 exit 0

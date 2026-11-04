@@ -36,6 +36,8 @@ PNL_SHEET_ID = os.environ.get("CARLOS_PNL_SHEET_ID", "1ngQtKRNeuGV_FDBp-d9boZmxp
 TAB = "Security Ledger"
 CAP_TAB = "Captain Bonus (Tableau)"
 OVR_TAB = "Override Weekly (Tableau)"
+DATES_TAB = "Override Dates (Tableau)"
+DATES_VIEWS = [VIEW.rsplit("/", 1)[0] + "/" + v for v in ("DATESTOREMEMBER-2026", "DATESTOREMEMBER2026", "DatestoRemember2026")] + [VIEW]
 OVR_HEADER = ["Week (Sun)", "P&L week ending (Sat)", "Period", "Standard override", "Pulled", "Source"]
 OVR_SOURCE = "Tableau → Overrides ICD View → ORG Override Summary (Carlos Hidalgo, all campaign rows)"
 TILLER_ID = "1D2mjKSRNCM3fleq8e7uJyRuIotVqMfEW6baC7DV9fAE"
@@ -428,6 +430,102 @@ def write_overrides(svc, via_hub: bool) -> str:
     return f"override weekly: {got} week-rows refreshed from periods {periods}; {len(keep)} on the tab"
 
 
+def pull_dates_hub() -> tuple[str, str, list]:
+    """Find the 'Dates to Remember 2026' sheet in the Overrides ICD View workbook and return (view, sheet, rows).
+    Tries the sheet as its own view first, then as a crosstab sheet of the security-ledger dashboard."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright, tableau_session
+    from automations.recruiting_report.opt_phase import list_crosstab_sheets
+    from automations.override_bulletin.pulls import read_crosstab
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / "Dates_to_Remember.csv"
+    with tableau_session(headless=True, verbose=False) as pg:
+        # 1) walk the workbook's own "Views" page (plain links, no API): view page -> workbook link -> /views list
+        found = []
+        try:
+            pg.goto(VIEW, wait_until="domcontentloaded")
+            pg.wait_for_timeout(12_000)
+            wb_links = pg.evaluate("""() => Array.from(document.querySelectorAll('a[href*="/workbooks/"]')).map(a => a.href)""") or []
+            log(f"dates: workbook links {wb_links[:5]}")
+            wb = next((h for h in wb_links if "/workbooks/" in h), None)
+            if wb:
+                wb = wb.split("?")[0].rstrip("/")
+                wb = wb[: wb.index("/workbooks/") + len("/workbooks/")] + wb[wb.index("/workbooks/") + len("/workbooks/"):].split("/")[0]
+                pg.goto(wb + "/views", wait_until="domcontentloaded")
+                pg.wait_for_timeout(12_000)
+                for _ in range(6):   # the card list fills in progressively
+                    pg.mouse.wheel(0, 2000); pg.wait_for_timeout(1500)
+                links = pg.evaluate("""() => Array.from(document.querySelectorAll('a[href*="/views/"]')).map(a => [a.textContent.trim(), a.href])""") or []
+                if not links:   # cards are not plain links: ask vizportal for the workbook's views, and keep the page text as a clue
+                    wbid = wb.rsplit("/", 1)[1]
+                    raw = pg.evaluate("""async (wbid) => {
+                        const xsrf = (document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || '';
+                        const body = {method: 'getViews', params: {filter: {operator: 'and', clauses: [{operator: 'eq', field: 'workbookId', value: wbid}]},
+                                      order: [{field: 'name', ascending: true}], page: {startIndex: 0, maxItems: 200}}};
+                        const r = await fetch('/vizportal/api/web/v1/getViews', {method: 'POST', credentials: 'include',
+                                      headers: {'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf}, body: JSON.stringify(body)});
+                        return await r.text();
+                    }""", wbid)
+                    try:
+                        _vs = json.loads(raw).get("result", {}).get("views") or []
+                        log("dates: workbook views: " + " ; ".join(f"{v.get('name')}={v.get('repositoryUrl') or v.get('sheetId') or '?'}" for v in _vs))
+                    except Exception:  # noqa: BLE001
+                        log(f"dates: vizportal views for workbook {wbid} -> {str(raw)[:600]}")
+                    try:
+                        base = VIEW.split("#")[0] + "#/site/sci/views/"
+                        for v in json.loads(raw).get("result", {}).get("views") or []:
+                            slug = (v.get("repositoryUrl") or "").replace("/sheets/", "/")
+                            links.append([v.get("name", ""), base + slug if slug else ""])
+                    except Exception as e:  # noqa: BLE001
+                        log(f"dates: vizportal parse failed ({str(e)[:80]})")
+                    txt = pg.evaluate("() => document.body.innerText") or ""
+                    log(f"dates: views page text: {' | '.join(t.strip() for t in txt.splitlines() if t.strip())[:1500]}")
+                names = sorted({n for n, _ in links if n})
+                log(f"dates: workbook views ({len(names)}): {names[:60]}")
+                found = [(n, h.split("?")[0]) for n, h in links if n and h and "date" in n.lower()]
+                log(f"dates: candidate views {found[:10]}")
+        except Exception as e:  # noqa: BLE001
+            log(f"dates: workbook walk failed ({str(e)[:120]})")
+        candidates = [h for _, h in found] + DATES_VIEWS
+        seen = set()
+        for view in candidates:
+            if not view or view in seen:
+                continue
+            seen.add(view)
+            try:
+                sheets = list_crosstab_sheets(view, page=pg, verbose=False)
+            except Exception as e:  # noqa: BLE001
+                log(f"dates: {view.rsplit('/', 1)[1][:40]} -> no crosstab dialog ({str(e)[:60]})")
+                continue
+            log(f"dates: {view.rsplit('/', 1)[1][:40]} offers sheets {sheets}")
+            if not sheets:
+                continue
+            blocks = []
+            for sh in sheets:   # every sheet on the dates dashboard: 'Available for Payments', 'Credico Dates', 'Period Dates', …
+                out = OUT_DIR / f"Dates_{re.sub(r'[^A-Za-z0-9]+', '_', sh)}.csv"
+                try:
+                    download_crosstab_patchright(view, sh, out, verbose=False, page=pg)
+                    blocks.append((sh, read_crosstab(out)))
+                except Exception as e:  # noqa: BLE001
+                    log(f"dates: sheet {sh!r} failed ({str(e)[:80]})")
+            if blocks:
+                return view, " + ".join(sh for sh, _ in blocks), blocks
+    return "", "", []
+
+
+def write_dates(svc) -> str:
+    """One tab, one block per Tableau sheet: a title row, the crosstab rows, a blank row."""
+    view, label, blocks = pull_dates_hub()
+    if not blocks:
+        return "dates: nothing found in Tableau — tab left as is"
+    body = [["Pulled", dt.date.today().isoformat(), "View", view.rsplit("/", 1)[1], "Sheets", label], []]
+    for sh, rows in blocks:
+        rows = [list(r) for r in rows if any(str(c).strip() for c in r)]
+        body += [[f"## {sh}"]] + rows + [[]]
+    svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{DATES_TAB}'!A1:Z2000").execute()
+    svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{DATES_TAB}'!A1", valueInputOption="RAW", body={"values": body}).execute()
+    return f"dates: {', '.join(f'{sh} {len(r)} rows' for sh, r in blocks)} -> '{DATES_TAB}'"
+
+
 def write(rows: list[list], balance: float | None, via_hub: bool = False):
     from automations.carlos_finance.tiller_sync import _svc   # Sheets client that retries 429/5xx
     svc = _svc()
@@ -445,6 +543,11 @@ def write(rows: list[list], balance: float | None, via_hub: bool = False):
         log(write_overrides(svc, via_hub))
     except Exception as e:  # noqa: BLE001
         log(f"override weekly failed (rest of the run is fine): {str(e)[:160]}")
+    if via_hub:
+        try:
+            log(write_dates(svc))
+        except Exception as e:  # noqa: BLE001
+            log(f"dates refresh failed (rest of the run is fine): {str(e)[:160]}")
     return svc
 
 
@@ -471,9 +574,18 @@ def main(argv=None) -> int:
     ap.add_argument("--from-files", action="store_true", help="skip Tableau; reuse the last downloaded CSVs")
     import getpass
     default_via = os.environ.get("CARLOS_TABLEAU_VIA") or ("hub" if getpass.getuser().lower().startswith("lucy") else "chrome")
+    ap.add_argument("--dates-only", action="store_true", help="only refresh the Dates to Remember tab (Lucy / hub session)")
     ap.add_argument("--via", choices=["chrome", "hub"], default=default_via, help="chrome = copy Carlos's Chrome Tableau session (his Mac); hub = the Hub's shared Tableau session (Lucy)")
     args = ap.parse_args(argv)
     log(f"tableau via: {args.via}")
+    if args.dates_only:
+        from automations.carlos_finance.tiller_sync import _svc
+        svc = _svc()
+        tabs = {sh["properties"]["title"] for sh in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"]}
+        if DATES_TAB not in tabs:
+            svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"addSheet": {"properties": {"title": DATES_TAB}}}]}).execute()
+        log(write_dates(svc))
+        return 0
     if args.from_files:
         from automations.override_bulletin.pulls import read_crosstab
         rows = read_crosstab(OUT_DIR / "Transaction_Details.csv")

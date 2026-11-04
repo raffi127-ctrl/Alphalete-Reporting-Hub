@@ -12,6 +12,8 @@
 #                    day's AC..AI cell shows live numbers instead of staying
 #                    blank; each pass replaces it, and the next day's normal
 #                    yesterday-pull writes the final count.
+#   --weeks 3        keep the two prior weeks' funnel columns refreshing too
+#                    (trainings book late; the daily full pass goes 5 back)
 #   --no-activity    skip the hub activity row — ~30 runs/day would drown the
 #                    activity log. Failure alerts still post, incident-threaded.
 #
@@ -54,7 +56,22 @@ LOG="$LOG_DIR/ad_sales_board_carlos_$(date +%Y%m%d).log"
 
 echo "[$(date)] ad-sales-board-carlos START $*" >> "$LOG"
 "$VENV_PY" -m automations.ad_sales_board.run \
-    --office 11580 --today --no-activity "$@" >> "$LOG" 2>&1
+    --office 11580 --weeks 3 --today --no-activity "$@" >> "$LOG" 2>&1
 rc=$?
 echo "[$(date)] ad-sales-board-carlos END rc=$rc" >> "$LOG"
+
+# ---- SINCE-LIVE FUNNEL (Carlos 2026-10-30; gate reworked 2026-11-02) --------
+# One Source Report window per ad family [first posting -> today+28], so
+# cross-week funnel events (bookings, trainings, brought-on-board) stop
+# vanishing from the board's since-live columns. EVERY tick calls it; the
+# module exits in one sheet read (no browser) while 'SL Funnel' is under 5
+# hours old. The first cut gated here on the wall clock (07/13h, minute<30)
+# measured AFTER the main pass — one slow pass or skipped tick lost the day's
+# shot with no retry, and the feed sat frozen 10/30->11/02. A failed attempt
+# now self-heals 30 minutes later. Manual: lucy rerun since_live_funnel
+# (machine: Lucy 2) — the rerun passes no flag, so it never skips.
+echo "[$(date)] since-live funnel START" >> "$LOG"
+"$VENV_PY" -m automations.ad_sales_board.since_live --max-age-hours 5 >> "$LOG" 2>&1
+echo "[$(date)] since-live funnel END rc=$?" >> "$LOG"
+# -----------------------------------------------------------------------------
 exit $rc

@@ -550,6 +550,9 @@ RECIPIENTS: dict = {
         "maudmiller4@gmail.com", "Zenithzenith2099@gmail.com",
         "niitagoe4@gmail.com", "raffi127@gmail.com",
         "rashadreed715@gmail.com", "salikmallick6@gmail.com",
+        # IN 2026-10-27 (Eve): Omar Mohamad (Kalkan, 24153, promoted out of
+        # Salik/Hammad) joins Raf's captainship. Live group updated same day.
+        "oomohamad98@gmail.com",
         # OUT 2026-08-20 (Eve): Steve McElwee (mcelwee.steve95@gmail.com) is not
         # in Rafael's captainship. Off the board, off his six metrics tabs and
         # off the live "Raf's Captain Team" group the same day — and since that
@@ -657,8 +660,13 @@ RECIPIENTS: dict = {
         # receiving the report; only this backup was behind. Synced FROM the
         # group, which is the safe direction — it can't revive anyone removed on
         # purpose (see Jeremiah above).
+        #
+        # Brian Tran (ttran.brian@gmail.com) sacado el 2026-10-29: su oficina
+        # 23082 (Sky Nova) cerro — Raf: "He shut down! Marcellus moved to
+        # Cleveland and is taking over." Sale tambien del grupo de Contactos;
+        # aca para que seed_groups no lo reponga.
         "andre082702@gmail.com",
-        "ttran.brian@gmail.com", "dylanjtwaddle@gmail.com",
+        "dylanjtwaddle@gmail.com",
         "marcellusbutlerjr@gmail.com",
         "maudmiller4@gmail.com", "raffi127@gmail.com",
         "multani.business@gmail.com",
@@ -715,7 +723,9 @@ RECIPIENTS: dict = {
         "harman100703@gmail.com", "lusalazar619@gmail.com",
         "maudmiller4@gmail.com",
         "mihir.vadlamani@gmail.com", "raffi127@gmail.com",
-        "rob.diamondbiz@gmail.com",
+        # OUT 2026-11-03 (Eve): rob.diamondbiz@ — Roberto Rodriguez, two-week zero
+        # rule (B2B - All Units en 0 WE 11.01 / 10.25). Salio del grupo vivo
+        # "Luis' Captainship" el mismo dia; si queda aca seed_groups lo repone.
     ],
     # FALLBACK ONLY — the live list is the "Atef's Captainship" Contacts group
     # (distro.GROUPS). Snapshot of that group on 2026-08-18, the day his
@@ -885,6 +895,31 @@ RECIPIENTS["jess"] = [
 # grupo "Luke's Captainship" (distro.GROUPS). Arranca con Luke + los que reciben
 # las capitanias B2B; los owners de su equipo entran cuando exista su caja en el
 # Org Sales Board.
+# Blake Welle, 2026-11-03 (Rafael por mail, "He's on the B2B program"). FALLBACK:
+# el vivo es el grupo "Blake's Captainship" (distro.GROUPS). Elijah Golston va
+# por su empresa: "Pac North Best Marketing, Inc" en Gmail y en Tableau. Aaron,
+# Alex Censi, Derrick, Mamadou y Ben salen de la direccion, sin nombre al lado.
+RECIPIENTS["blake"] = [
+    "blakew.mobility@gmail.com",        # Blake Welle
+    "elldeemusic@gmail.com",            # Ellen Dent
+    "pacnorthbestinc@gmail.com",        # Elijah Golston
+    "robertsalexc14@gmail.com",         # Alex Roberts
+    "jamisgaray18@gmail.com",           # Jamis Garay
+    "luna.leung@gmail.com",             # Luna Leung
+    "amanip.business@gmail.com",        # Amani Pittman
+    "aaroncorso.mobility@gmail.com",    # Aaron Corso
+    "lusalazar619@gmail.com",           # Luis Salazar
+    "jackieleroyatt@gmail.com",         # Jackie LeRoy
+    "alexvcensi@gmail.com",             # Alex Censi
+    "nicolaslujan17@icloud.com",        # Nicolas Lujan
+    "derrick.marble@marbleconsulting.co",  # Derrick Marble
+    "mdiallo.mobility@gmail.com",       # Mamadou Diallo
+    "krownbellbenjamin@gmail.com",      # Ben Krownbell
+    "CarlosHidalgo349@gmail.com",
+    "dylanjtwaddle@gmail.com",
+    "maudmiller4@gmail.com",
+    "raffi127@gmail.com",
+]
 RECIPIENTS["luke"] = [
     # Copia del grupo vivo el 2026-10-01 (lo armo Eve).
     "takeoffenterprisesinc@gmail.com",  # Luke Baldwin
@@ -984,10 +1019,11 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_b2b_eveliz, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
     ]),
-    Captain("luis", "Luis", "b2b", title_bg="#B5ADFB", to=_to("luis"), churn=[
-        ChurnSource(_own.open_ws_b2b_luis, _ni_render, "Wireless Churn",
-                    title_prefix="WIRELESS CHURN"),
-    ]),
+    # Luis RETIRADO 2026-11-03: "Luis's Team" ya no está en B2B Captain's Teams
+    # (SFDC) y Luis Salazar figura en Blake's Team. Carlos a Maud y Eve: "if luis
+    # is no longer showing people under his captainship then yes hes no longer a
+    # captain and we can stop the report". Para volver a mandarlo, reponer esta
+    # entrada y "luis" en _GROUPS.
     # Atef RETIRADO de B2B 2026-10-19 (Eve): "Atef's Team" ya no está en B2B
     # Captain's Teams (SFDC) desde el 10/14. Volvió el mismo día como flavor
     # "nds" — ver su entrada en el bloque NDS de abajo.
@@ -1000,6 +1036,13 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_b2b_luke, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
     ]),
+    # Blake Welle, 2026-11-03 (Rafael; Eve: roll out). title_bg = the band of his
+    # box on the Org Sales Board. Knocks stay behind PREVIEW_KINDS like every
+    # other B2B captain.
+    Captain("blake", "Blake", "b2b", title_bg="#B4B3F8", to=_to("blake"), churn=[
+        ChurnSource(_own.open_ws_b2b_blake, _ni_render, "Wireless Churn",
+                    title_prefix="WIRELESS CHURN"),
+    ]),
     # ----- NDS -----
     Captain("khalil", "Khalil", "nds", title_bg="#EA4335", to=_to("khalil"), churn=[
         ChurnSource(_own.open_ws_nds_khalil, _ni_render, "New Internet Churn"),
@@ -1010,21 +1053,20 @@ CAPTAINS: List[Captain] = [
     Captain("jairo", "Jairo", "nds", title_bg="#FBBC04", to=_to("jairo"), churn=[
         ChurnSource(_own.open_ws_nds_jairo, _ni_render, "New Internet Churn"),
     ]),
-    # Atef DE VUELTA como NDS 2026-10-19 (Eve: "los numeros de el ya pertenecen
-    # a NDS, sino se va a quedar sin su reporte diario de ventas"). Sin esperar
-    # a "Atef's Team" en NDS: §2 y el churn leen las vistas NDS de todos los
-    # equipos cortadas a su caja del Org Sales Board, asi que hoy muestran solo
-    # a Atef y suman a Sabrina/Dhyey el dia que Tableau los pase a NDS.
-    # Sin knocks (Eve 2026-10-19): el login de Raf no tiene Office Access a las
-    # oficinas de Atef/Dhey/Sabrina (Atef 23467 en "Request Sent" sin aceptar)
-    # y nadie lo pidio; asi el mail no muestra un hueco que parece un error.
-    # Cuando haya acceso y lo pidan, sacar skip_kinds.
-    Captain("atef", "Atef", "nds", title_bg="#00695C", to=_to("atef"), churn=[
-        ChurnSource(_own.open_ws_nds_atef, _ni_render, "New Internet Churn"),
-    ], skip_kinds=frozenset({"daily_knocks", "knock_dispo"})),
+    # Atef RETIRADO 2026-10-27: Carlos respondió al mail del 10/26 "Atef is
+    # no longer a captain we can end this report". (Había vuelto como NDS el
+    # 10/19, sin knocks.) Para volver a mandarlo, reponer su Captain("atef",
+    # "Atef", "nds", ... churn open_ws_nds_atef, skip_kinds knocks) y "atef"
+    # en la fila NDS de _GROUPS.
 ]
 
-BY_KEY = {c.key: c for c in CAPTAINS}
+# Built but NOT live: no scheduled build, no block, no review link, no auto-send.
+# Only an explicit `--only <key>` reaches them, to mail a sample. Roll out = move
+# the entry up into CAPTAINS and add the key to its line in _GROUPS.
+PREVIEW_CAPTAINS: List[Captain] = [
+]
+
+BY_KEY = {c.key: c for c in CAPTAINS + PREVIEW_CAPTAINS}
 
 
 # ---------------------------------------------------------------------------
@@ -1086,8 +1128,8 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Fiber 2", ("wayne", "starr")),
     ("Fiber 3", ("tony", "chan", "sahil")),
     ("Fiber 4", ("pat", "jess")),
-    ("B2B", ("eveliz", "luis", "luke")),
-    ("NDS", ("khalil", "colten", "jairo", "atef")),
+    ("B2B", ("eveliz", "luke", "blake")),
+    ("NDS", ("khalil", "colten", "jairo")),
 )
 _PER_CAPTAIN = [
     Block(k, f"{wave} — {BY_KEY[k].display_name}", (k,))

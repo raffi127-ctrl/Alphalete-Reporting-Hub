@@ -53,10 +53,21 @@ _TAIL_COMPANY = re.compile(
     r"|\s+(?:" + "|".join(KNOWN_COMPANIES) + r"))$")
 
 
+# Eveliz 10/30: titles copied out of Slack bring Slack's own text along --
+# a pasted screenshot's name glued on ("...Speakingimage.png") and the
+# "(edited)" marker. Never part of an ad.
+_SLACK_TAIL = re.compile(
+    r"(?:\s*\(edited\)|\s*image\s*(?:\(\d+\))?\.(?:png|jpe?g|gif|heic|webp))+\s*$", re.I)
+
+
+def _unslack(title: str) -> str:
+    return _SLACK_TAIL.sub("", title or "")
+
+
 def norm_keep_company(title: str) -> str:
     """`norm` as it was before 9/23: the company tail stays. The keys saved
     in state before then were made this way (--merge-dups needs it)."""
-    t = (title or "").replace("&amp;", "&").replace("·", " ").lower()
+    t = _unslack(title).replace("&amp;", "&").replace("·", " ").lower()
     t = _LEAD_JUNK.sub("", t)
     t = t.replace("entry-level", "entry level")
     t = re.sub(r"[^a-z0-9&()]+", " ", t)
@@ -70,7 +81,7 @@ def norm(title: str) -> str:
 
 def pretty(title: str) -> str:
     """How a title is SHOWN: the interviewers' spelling, minus the paste junk."""
-    t = (title or "").replace("&amp;", "&")
+    t = _unslack(title).replace("&amp;", "&")
     t = _LEAD_JUNK.sub("", t)
     t = re.sub(r"\s+\?\s+", " – ", t)
     t = re.sub(r"\s+", " ", t).strip(" ,")
@@ -122,7 +133,7 @@ _LOCATION_CUT = re.compile(r"\s*\?\s*|\s+[–—]\s+|\s*,\s*")
 
 def title_without_place(title: str) -> str:
     """The ad's title with the city/company tail cut off, as typed."""
-    t = _LEAD_JUNK.sub("", (title or "").replace("&amp;", "&")).strip()
+    t = _LEAD_JUNK.sub("", _unslack(title).replace("&amp;", "&")).strip()
     return _LOCATION_CUT.split(t, maxsplit=1)[0].strip(" .")
 
 
@@ -139,6 +150,19 @@ def _other_city(a: str, b: str) -> bool:
         p += 1
     ca, cb = " ".join(wa[p:-1]), " ".join(wb[p:-1])
     return bool(ca and cb) and difflib.SequenceMatcher(None, ca, cb).ratio() < 0.75
+
+
+def _city_of_role_ad(key: str, ad: str) -> bool:
+    """`key` is the "... role" ad's title with a real place instead of "role".
+    Kash's interviewers type "<title> role" when they don't know the place, so
+    that spelling turns into an ad. 11/2: "... (Spanish Needed) Benbrook TX",
+    confirmed on AppStream, scored 0.906 against it, read as a typo and got no
+    thread. "role" isn't a place, so _other_city couldn't tell them apart."""
+    if not ad.endswith(" role"):
+        return False
+    head = ad[:-len("role")]
+    words = key[len(head):].split() if key.startswith(head) else []
+    return len(words) >= 2 and len(words[-1]) == 2 and words[-1].isalpha()
 
 
 class TitleBook:
@@ -272,7 +296,8 @@ class TitleBook:
         if any(a.startswith(key) or a.endswith(" " + key) for a in self.ads):
             return None
         if any(difflib.SequenceMatcher(None, key, a).ratio() >= self.UNSURE_RATIO
-               and not _other_city(key, a) for a in self.ads):
+               and not _other_city(key, a) and not _city_of_role_ad(key, a)
+               for a in self.ads):
             return None
         # New ads fold among themselves: "... Orlando F" cut short is the
         # "... Orlando FL" new ad, whichever row comes first.

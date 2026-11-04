@@ -708,3 +708,30 @@ class BoardTest(unittest.TestCase):
                          [["Elfina", "Alfina"], ["Elfina", "Lucina"], ["Elfina", "Ulfina"]])
         got = board.apply_merges([r("Angela"), r("Angela"), r("Ángela")], {})
         self.assertEqual({x["interviewer"] for x in got}, {"Angela"})
+
+
+class RegradeFirstReadTest(unittest.TestCase):
+    """An office that just got its own script: its last two weeks re-graded in
+    place, one run per posted day, then one DM to Eve (Eve, 2026-10-29)."""
+
+    def test_regrades_posted_days_and_dms_eve(self):
+        from unittest import mock
+        from automations.shared import slack_metrics_post as smp
+        ledger = {"r1": {"date": "2026-10-20"}, "r2": {"date": "2026-10-27"},
+                  "r3": {"date": "2026-10-30"},          # today: already on the new script
+                  "r4": {"date": "2026-10-01"},          # too old
+                  "_days_done": ["2026-10-27"]}
+        client = mock.MagicMock()
+        calls = []
+        with mock.patch.object(run, "_ledger", return_value=ledger), \
+                mock.patch.object(run, "main", side_effect=lambda a: calls.append(a) or
+                                  (1 if a[1] == "2026-10-27" else 0)), \
+                mock.patch.object(run, "_dm_channel", return_value="D1"), \
+                mock.patch.object(smp, "_client", return_value=client):
+            run.regrade_first_read(dt.date(2026, 10, 30), ["Frank Matos"])
+        self.assertEqual([c[1] for c in calls], ["2026-10-20", "2026-10-27"])
+        self.assertEqual(calls[0][2:], ["--post", "--refresh", "--owner", "Frank Matos"])
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        self.assertEqual(client.chat_postMessage.call_args.kwargs["channel"], "D1")
+        self.assertIn("Frank Matos", text)
+        self.assertIn("menos 2026-10-27", text)

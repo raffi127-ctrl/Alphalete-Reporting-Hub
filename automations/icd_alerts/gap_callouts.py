@@ -279,16 +279,35 @@ def _is_spanish(template: str) -> bool:
     return any(mk in template for mk in _SPANISH_MARKERS)
 
 
-def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None) -> str:
+def _tagged_first(office_key: str, full_name: str, first: str, *, remember: bool) -> str:
+    """ONE REP'S RUNNING JOKE in the Slack call-out too (Megan 2026-10-27:
+    "every 3rd call-out/sale"). The sale lines and the typed gap list already
+    count his mentions; the Slack call-out named him six times in a week and
+    never did. Same table, same counter room ('<office>-gaps'); the tag
+    follows his first name. Never raises -- the joke must not cost a line."""
+    try:
+        from automations.shared import rep_asides as _RA
+        rule = _RA.due("%s-gaps" % office_key, full_name, remember=remember)
+        if rule:
+            return _RA.tag_name(first, first, rule["tag"])
+    except Exception:  # noqa: BLE001
+        pass
+    return first
+
+
+def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None,
+         *, remember: bool = True) -> str:
     """One sentence in the house voice, chosen by office + hour so a re-run
     repeats itself and neighbouring hours don't."""
     if not callouts:
         return ""
-    firsts = []
+    firsts, shown = [], {}
     for c in callouts:
         f = _first(c["name"])
         if f and f not in firsts:
             firsts.append(f)
+            shown[f] = _tagged_first(office_key, c["name"], f, remember=remember)
+    firsts = [shown.get(f, f) for f in firsts]
     m = min(c["mins"] for c in callouts)
     m = (m // 5) * 5                       # "40+", not "43+"
     seed = "callout|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
@@ -304,7 +323,8 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None)
     # name sits on its own bullet with its own minutes, longest gap first.
     crowd = ("%d de ustedes" if spanish else "%d of y'all") % len(firsts)
     head = template.format(names=crowd, m=m)
-    bullets = ["• %s — %d min" % (_first(c["name"]), c["mins"]) for c in callouts]
+    bullets = ["• %s — %d min" % (shown.get(_first(c["name"]), _first(c["name"])), c["mins"])
+               for c in callouts]
     return head + "\n" + "\n".join(bullets)
 
 
@@ -440,7 +460,7 @@ def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict
     if not due(st, now, CALLOUT_EVERY_OVERRIDES.get(key)):
         return ""
     prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records_now or {})
-    text = line(key, pick_from_gaps(gaps, records_now, prev), now)
+    text = line(key, pick_from_gaps(gaps, records_now, prev), now, remember=remember)
     if remember:
         _remember(key, {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
                         "records": dict(records_now or {})})
@@ -924,7 +944,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             log("%-14s no fresh knocks relay" % key)
             continue
         try:
-            rows = M.to_rows(json.loads(krow[K.KN_ROWS] or "[]"), json.loads(krow[K.KN_TRACKER] or "[]"))
+            # ON THE OFFICE'S CLOCK (offices.OV_CLOCK): Omar's 5:54 PM call-out
+            # still read every rep an hour idle after the board was fixed,
+            # because this path read the relay straight (2026-10-30).
+            rows = M.to_rows(*K.shift_ov_clock(office, json.loads(krow[K.KN_ROWS] or "[]"),
+                                               json.loads(krow[K.KN_TRACKER] or "[]"), now))
         except ValueError:
             continue
         rrow = relay.get(key) or next((r for k, r in relay.items() if k.startswith(key) or key.startswith(k)), None)
@@ -991,7 +1015,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         if not krow:
             continue
         try:
-            rows = M.to_rows(json.loads(krow[K.KN_ROWS] or "[]"), json.loads(krow[K.KN_TRACKER] or "[]"))
+            # ON THE OFFICE'S CLOCK (offices.OV_CLOCK): Omar's 5:54 PM call-out
+            # still read every rep an hour idle after the board was fixed,
+            # because this path read the relay straight (2026-10-30).
+            rows = M.to_rows(*K.shift_ov_clock(office, json.loads(krow[K.KN_ROWS] or "[]"),
+                                               json.loads(krow[K.KN_TRACKER] or "[]"), now))
         except ValueError:
             continue
         praise = pace_callout(key, rows, now, remember=send, campaign=getattr(office, "campaign", None))
@@ -1054,6 +1082,37 @@ LIAR_REPLIES = (
     "¡Ojo! Not lying — the board moves when you do 📋💰 Show me",
     "Me? Lie? 💅 The board doesn't lie 📋 Show me 👀",
 )
+# CURSING AT LUCY EARNS A WITTY ANSWER, NOT A SHRUG (Megan 2026-10-26: "If
+# someone curses at lucy - we should reply with something witty - I don't
+# want to encourage cursing"). The answer never repeats the word, never
+# scolds, and always points back at the doors -- the joke is that Lucy is
+# unbothered and the board is still empty. Checked BEFORE snitch/liar, so
+# "lucy u a snitch fk off" gets this one.
+CURSE_TRIGGER = re.compile(
+    r"(\bf+u+c*k\w*|\bf[ck]k?\b|\bfck\w*|\bfuk\w*|\bf\*+k\w*|\bstfu\b|\bsh[i1]t+\w*"
+    r"|\bbullsh\w*|\bbs\b|\bwtf\b|\bb[i1]tch\w*|\bass+hole\w*|\bd[i1]ck\w*)",
+    re.I)
+CURSE_REPLIES = (
+    "Language, habibi 🧼 The board's still waiting 📋",
+    "Swear jar's open 🫙 One door per word 🚪",
+    "Spicy 🌶️ Save that energy for the doors 🚪",
+    "Lucy hears you 👂 Lucy also hears zero knocks 🚪",
+    "¡Tranquilo! Keep it PG and keep it moving 🚪😌",
+    "Heard. I'll take the apology in credit checks 🧾😌",
+    "Potty mouth, empty board 📋 Fix one of them 🚪",
+)
+CURSE_REPLIES_B2B = tuple(
+    t.replace("One door per word 🚪", "One walk-in per word 🏢")
+     .replace("Save that energy for the doors 🚪", "Save that energy for the owners 🏢")
+     .replace("Lucy also hears zero knocks 🚪", "Lucy also hears zero walk-ins 🏢")
+     .replace("keep it moving 🚪😌", "keep it moving 🏢😌")
+     .replace("in credit checks 🧾😌", "in signed deals 💼😌")
+     .replace("Fix one of them 🚪", "Fix one of them 🏢")
+    for t in CURSE_REPLIES)
+# A top-level message is only "at Lucy" when it names her; a thread reply
+# under her own post already is.
+MENTIONS_LUCY = re.compile(r"\blucy\b", re.I)
+
 ANSWER_BACK_EVERY_MIN = 10        # how often the threads are scanned
 ANSWER_BACK_LOOKBACK_MIN = 180    # how far back a call-out can be answered
 
@@ -1061,7 +1120,9 @@ ANSWER_BACK_LOOKBACK_MIN = 180    # how far back a call-out can be answered
 def answer_for(reply_text: str, seed: str, campaign=None) -> str:
     """The one-line answer a rep's reply earns, or "" when it earns none."""
     t = str(reply_text or "")
-    if SNITCH_TRIGGER.search(t):
+    if CURSE_TRIGGER.search(t):
+        pool = CURSE_REPLIES_B2B if is_b2b(campaign) else CURSE_REPLIES
+    elif SNITCH_TRIGGER.search(t):
         pool = SNITCH_REPLIES_B2B if is_b2b(campaign) else SNITCH_REPLIES
     elif LIAR_TRIGGER.search(t):
         pool = LIAR_REPLIES
@@ -1125,10 +1186,39 @@ def answer_back(now: dt.datetime, *, send: bool, log=print, channels=None, clien
             continue
         for m in res.get("messages") or []:
             ts = str(m.get("ts") or "")
-            if not ts or not _is_ours(m, me) or int(m.get("reply_count") or 0) == 0:
+            if not ts:
                 continue
             tkey = "%s:%s" % (ch, ts)
             if tkey in answered:
+                continue
+            # A REP CURSING AT LUCY IN THE CHANNEL ITSELF ("Fk Lucy", Elevate
+            # 2026-10-09) is not a thread reply, so the thread scan below never
+            # saw it. A top-level message that names her and trips a trigger
+            # gets its answer as a thread under THAT message, once.
+            if not _is_ours(m, me):
+                text = m.get("text") or ""
+                if m.get("user") and MENTIONS_LUCY.search(text):
+                    answer = answer_for(text, "answer|%s|%s" % (ch, ts), room_campaign.get(ch))
+                    if answer and int(m.get("reply_count") or 0):
+                        try:
+                            rep = rc.conversations_replies(channel=ch, ts=ts, limit=30) or {}
+                        except Exception:  # noqa: BLE001
+                            rep = {}
+                        if any(_is_ours(r, me) for r in (rep.get("messages") or [])
+                               if str(r.get("ts")) != ts):
+                            answered[tkey] = now.isoformat(timespec="seconds")
+                            continue
+                    if answer:
+                        log("answer_back %s (top-level) -> %s" % (tkey, answer))
+                        said.append(answer)
+                        if send:
+                            try:
+                                P._slack(ch, answer, thread_ts=ts, **_OS.post_kwargs(room_office.get(ch)))
+                                answered[tkey] = now.isoformat(timespec="seconds")
+                            except Exception as e:  # noqa: BLE001
+                                log("answer_back: FAILED to reply in %s (%s)" % (tkey, type(e).__name__))
+                continue
+            if int(m.get("reply_count") or 0) == 0:
                 continue
             try:
                 rep = rc.conversations_replies(channel=ch, ts=ts, limit=30) or {}

@@ -99,7 +99,7 @@ Nothing here posts to Slack.
 per Sat-Fri week, headed `WE 9/25`. Sections, in order: This week (with the
 days the column actually covers) · Who we texted · Why texts never arrive ⊞ ·
 1st Rounds · Why they didn't book ⊞ (with Our texts never reached them ⊞
-nested) · Cold list · Not the cold list · Texts it takes to book · Did they
+nested) · Texted in bulk · Texted one by one · Texts it takes to book · Did they
 show up? · When we text · How fast we reply · People we left hanging · What
 applicants ask · Text quality ⊞ · Questions handled badly ⊞ · Problems to fix.
 

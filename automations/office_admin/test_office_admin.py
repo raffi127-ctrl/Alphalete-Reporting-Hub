@@ -1,0 +1,414 @@
+"""Office admin page: logins, request rows, worker decisions, office jobs.
+
+    python -m unittest automations.office_admin.test_office_admin
+
+Offline: no Sheets, no relay, no browser.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import unittest
+from unittest import mock
+
+from automations.office_admin import accounts as A
+from automations.office_admin import config as C
+from automations.office_admin import sheets as S
+from automations.office_admin import worker as W
+
+
+class Passwords(unittest.TestCase):
+    def test_round_trip(self):
+        h = A.hash_password("correct horse", iterations=1000)
+        self.assertTrue(A.check_password("correct horse", h))
+        self.assertFalse(A.check_password("wrong", h))
+
+    def test_never_stores_the_password(self):
+        self.assertNotIn("hunter22", A.hash_password("hunter22", iterations=1000))
+
+    def test_garbage_hash_is_a_no(self):
+        self.assertFalse(A.check_password("x", ""))
+        self.assertFalse(A.check_password("x", "plain-text"))
+
+
+class Login(unittest.TestCase):
+    def _admins(self, active="Yes", office="omar"):
+        return [{"Username": "Omar-Admin", "Password Hash": A.hash_password("pw123456", iterations=1000),
+                 "Office Key": office, "Active": active, "_row": 2}]
+
+    def test_good_login(self):
+        a = A.authenticate(self._admins(), " omar-admin ", "pw123456")
+        self.assertEqual(a["Office Key"], "omar")
+
+    def test_wrong_password(self):
+        self.assertIsNone(A.authenticate(self._admins(), "omar-admin", "nope"))
+
+    def test_disabled_login(self):
+        self.assertIsNone(A.authenticate(self._admins(active="No"), "omar-admin", "pw123456"))
+
+    def test_office_not_set_up(self):
+        self.assertIsNone(A.authenticate(self._admins(office="nobody"), "omar-admin", "pw123456"))
+
+    def test_unknown_user(self):
+        self.assertIsNone(A.authenticate(self._admins(), "someone", "pw123456"))
+
+
+class Records(unittest.TestCase):
+    def test_by_header_not_index(self):
+        vals = [["Status", "Request ID"], ["queued", "abc"]]
+        r = S.records(vals)[0]
+        self.assertEqual((r["Request ID"], r["Status"], r["_row"]), ("abc", "queued", 2))
+
+    def test_col_letter(self):
+        self.assertEqual([S.col_letter(n) for n in (1, 26, 27)], ["A", "Z", "AA"])
+
+
+class Candidates(unittest.TestCase):
+    def test_valid_people_needs_name_and_email(self):
+        got = W.valid_people([{"first_name": "A", "last_name": "B", "email": "a@b.c"},
+                              {"first_name": "A", "last_name": "", "email": "a@b.c"},
+                              {"first_name": "A", "last_name": "B", "email": "none"},
+                              "junk"])
+        self.assertEqual(len(got), 1)
+
+
+class JudgeJob(unittest.TestCase):
+    def test_answered_sent_is_done(self):
+        v = W.judge_job({"answered": True, "result": {"status": "sent"}}, 1)
+        self.assertEqual(v["Status"], C.DONE)
+
+    def test_answered_dry_is_done(self):
+        v = W.judge_job({"answered": True, "result": {"status": "dry_run"}}, 1)
+        self.assertEqual(v["Status"], C.DONE)
+
+    def test_answered_error_is_failed(self):
+        v = W.judge_job({"answered": True, "result": {"status": "error"}}, 1)
+        self.assertEqual(v["Status"], C.FAILED)
+
+    def test_still_queued_waits(self):
+        self.assertIsNone(W.judge_job({"status": "queued"}, 500))
+
+    def test_offered_never_answered_is_unconfirmed_not_resent(self):
+        v = W.judge_job({"status": "offered"}, C.STALE_MINUTES + 1)
+        self.assertEqual(v["Status"], C.FAILED)
+        self.assertIn("UNCONFIRMED", v["Result"])
+        self.assertIn("twice", v["Result"])
+
+    def test_offered_recently_waits(self):
+        self.assertIsNone(W.judge_job({"status": "offered"}, 5))
+
+
+class FakeWs:
+    """An in-memory 'Admin Requests' tab."""
+    def __init__(self):
+        self.values = [list(C.REQUESTS_HEADERS)]
+
+    def get_all_values(self):
+        return [list(r) for r in self.values]
+
+    def append_row(self, row, value_input_option=None):
+        self.values.append(list(row))
+
+    def row_values(self, n):
+        return list(self.values[n - 1])
+
+    def batch_update(self, data, value_input_option=None):
+        for d in data:
+            a1 = d["range"]
+            col = ord(a1[0]) - 64
+            row = int(a1[1:])
+            r = self.values[row - 1]
+            r += [""] * (col - len(r))
+            r[col - 1] = d["values"][0][0]
+
+
+ADMIN = {"username": "omar-admin", "office": "omar", "name": "x"}
+PEOPLE = [{"first_name": "Ana", "last_name": "Lopez", "email": "a@x.com"}]
+
+
+class SendGoesToTheOfficeComputer(unittest.TestCase):
+    def test_send_logs_then_queues_on_the_relay(self):
+        from automations.office_admin import actions
+        ws = FakeWs()
+        with mock.patch("automations.office_admin.relay_client.request_job",
+                        return_value="job-1") as rq:
+            jid = actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+        self.assertEqual(jid, "job-1")
+        _, kw = rq.call_args
+        self.assertEqual(kw["mode"], "dry")                 # Omar starts dry
+        self.assertEqual(rq.call_args[0][:2], ("omar", "bgc_send"))
+        row = S.read_requests(ws)[0]
+        self.assertEqual((row["Status"], row["Job ID"]), (C.AT_OFFICE, "job-1"))
+
+    def test_relay_down_is_a_failed_row_not_a_lost_press(self):
+        from automations.office_admin import actions, relay_client
+        ws = FakeWs()
+        with mock.patch("automations.office_admin.relay_client.request_job",
+                        side_effect=relay_client.RelayError("down")):
+            with self.assertRaises(relay_client.RelayError):
+                actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+        self.assertEqual(S.read_requests(ws)[0]["Status"], C.FAILED)
+
+    def test_nobody_valid_is_refused_before_anything(self):
+        from automations.office_admin import actions
+        ws = FakeWs()
+        with self.assertRaises(ValueError):
+            actions.send_bgc(ws, ADMIN, C.office("omar"), [{"first_name": "A"}])
+        self.assertEqual(S.read_requests(ws), [])
+
+    def test_refresh_copies_the_answer(self):
+        from automations.office_admin import actions
+        ws = FakeWs()
+        with mock.patch("automations.office_admin.relay_client.request_job", return_value="j"):
+            actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+        req = S.read_requests(ws)[0]
+        ans = {"status": "dry_run", "answered": True, "result": {"status": "dry_run", "would_send": ["Ana Lopez"]}}
+        with mock.patch("automations.office_admin.relay_client.job_status", return_value=ans):
+            out = actions.refresh_send(ws, req)
+        self.assertEqual(out["Status"], C.DONE)
+        self.assertEqual(S.read_requests(ws)[0]["Status"], C.DONE)
+
+    def test_refresh_waits_while_relay_unreachable(self):
+        from automations.office_admin import actions, relay_client
+        ws = FakeWs()
+        with mock.patch("automations.office_admin.relay_client.request_job", return_value="j"):
+            actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+        req = S.read_requests(ws)[0]
+        with mock.patch("automations.office_admin.relay_client.job_status",
+                        side_effect=relay_client.RelayError("timeout")):
+            out = actions.refresh_send(ws, req)
+        self.assertEqual(out["Status"], C.AT_OFFICE)
+
+    def test_find_reads_todays_calendar_offers(self):
+        from automations.office_admin import actions
+        import contextlib
+        seen = {}
+
+        @contextlib.contextmanager
+        def fake_session():
+            yield "app"
+
+        def fake_read(app, office_id, day, log=print):
+            seen.update(office=office_id, day=day)
+            return PEOPLE
+        with mock.patch("automations.office_admin.offered.read", fake_read):
+            out = actions.find_bob(C.office("omar"), today=dt.date(2026, 11, 3), session=fake_session)
+        self.assertEqual(seen, {"office": "24153", "day": dt.date(2026, 11, 3)})
+        self.assertEqual(out, PEOPLE)
+
+
+class OfferedYes(unittest.TestCase):
+    """Megan 2026-11-03: Calendar -> SECOND INTERVIEWS -> Offer Position? = Yes."""
+    def row(self, first, offer, section="SECOND INTERVIEWS", phone="945-393-4079"):
+        return {"first": first, "last": "X", "phone": phone, "email": first + "@x.com",
+                "offer": offer, "section": section}
+
+    def test_only_yes_in_second_interviews(self):
+        from automations.office_admin import offered as O
+        got = O.offered_yes([self.row("Allen", "Yes"), self.row("Alexis", "No"),
+                             self.row("Pending", ""), self.row("First", "Yes", "FIRST INTERVIEWS"),
+                             self.row("Unknown", "Yes", "")])
+        self.assertEqual([p["first_name"] for p in got], ["Allen"])
+        self.assertEqual(got[0]["phone"], "9453934079")
+
+    def test_same_person_twice_is_one(self):
+        from automations.office_admin import offered as O
+        self.assertEqual(len(O.offered_yes([self.row("Allen", "Yes"), self.row("Allen", "Yes")])), 1)
+
+    def test_namesakes_with_different_phones_are_two(self):
+        from automations.office_admin import offered as O
+        got = O.offered_yes([self.row("Oscar", "Yes", phone="1"), self.row("Oscar", "Yes", phone="2")])
+        self.assertEqual(len(got), 2)
+
+
+class CalendarV2(unittest.TestCase):
+    """ApplicantStream "version 2" calendar: one Name column, Offer Position
+    inside the Show Up cell of the 2nd Interview tab (Megan 2026-11-03)."""
+    def test_name_split(self):
+        from automations.office_admin import offered as O
+        self.assertEqual(O.split_name("Porter Osborne"), ("Porter", "Osborne"))
+        self.assertEqual(O.split_name("Den Rhys Amiel Ramos"), ("Den", "Rhys Amiel Ramos"))
+        self.assertEqual(O.split_name(""), ("", ""))
+
+    def test_only_yes(self):
+        from automations.office_admin import offered as O
+        rows = [{"name": "Porter Osborne", "phone": "+1 (214) 809-5118", "email": "p@x.com", "offer": "Yes"},
+                {"name": "Nicholas Stanley", "phone": "1", "email": "n@x.com", "offer": "No"},
+                {"name": "Sadaf Rahmani", "phone": "2", "email": "s@x.com", "offer": ""}]
+        got = O.v2_offered_yes(rows)
+        self.assertEqual([(p["first_name"], p["phone"]) for p in got], [("Porter", "2148095118")])
+
+    def test_showed_but_no_offer_control_refuses(self):
+        from automations.office_admin import offered as O
+        with self.assertRaises(RuntimeError):
+            O.check_v2_rows([{"show": "Showed", "has_offer_control": False}])
+
+    def test_only_no_shows_is_a_real_zero(self):
+        from automations.office_admin import offered as O
+        O.check_v2_rows([{"show": "Not Showed Change Status", "has_offer_control": False}])
+
+
+class SterlingCodes(unittest.TestCase):
+    def test_sterling_request_round_trips(self):
+        from automations.icd_alerts import code_answer as CA
+        when = dt.datetime(2026, 11, 3, 9, 30, tzinfo=dt.timezone.utc)
+        s = CA.summary_for(when, CA.STERLING)
+        self.assertEqual(CA.service_of(s), CA.STERLING)
+        self.assertEqual(CA.since_of(s), when)
+        self.assertEqual(CA.service_of(CA.summary_for(when)), CA.SARAPLUS)
+
+    def test_sterling_query_is_codes_only(self):
+        from automations.icd_alerts import code_answer as CA
+        q = CA.query_for("omar@x.com", CA.STERLING)
+        self.assertIn("from:noreply@us.fadv.co", q)
+        self.assertIn("subject:authentication", q)
+        self.assertIn("to:omar@x.com", q)
+
+    def test_scope_check_allows_codes_not_results(self):
+        from automations.icd_alerts import code_answer as CA
+        q = CA.scope_query("omar@x.com")
+        self.assertIn("-(from:noreply@us.fadv.co subject:authentication)", q)
+        self.assertNotIn("{", q)
+
+    def test_sterling_code_is_read(self):
+        from automations.rc_contact_sync.verify_code import extract_code
+        self.assertEqual(extract_code("Authentication Request\nYour authentication code is 966828."), "966828")
+
+    def test_sterling_request_answered_from_its_own_tab(self):
+        from automations.icd_alerts import code_answer as CA
+        now = dt.datetime(2026, 11, 3, 10, 0, tzinfo=dt.timezone.utc)
+        since = now - dt.timedelta(minutes=2)
+        fault = {"office": "omar", "stage": CA.REQUEST_STAGE,
+                 "summary": CA.summary_for(since, CA.STERLING), "rownum": 5}
+        queries = []
+
+        def newest(s, q):
+            queries.append(q)
+            return ("966828", now)
+        book = mock.MagicMock()
+        tabs = {CA.MAIL_TAB: [["Office", "Forwards From"]],
+                CA.STERLING_MAIL_TAB: [["Office", "Forwards From"], ["omar", "omar@x.com"]]}
+        book.worksheet.side_effect = lambda t: mock.MagicMock(get_all_values=lambda: tabs[t])
+        with mock.patch("automations.icd_alerts.post.open_faults", return_value=[fault]):
+            out = CA.answer_requests(book, send=False, now=now, newest_code=newest, log=lambda *_: None)
+        self.assertEqual(out[0]["status"], CA.STATUS_READY)
+        self.assertIn("fadv", queries[0])
+
+
+class SterlingForward(unittest.TestCase):
+    """Each ICD's Sterling codes go to their OWN email; they forward them like
+    SaraPlus's (Megan 2026-11-03)."""
+    def test_address_summary_round_trips_per_service(self):
+        from automations.icd_alerts import code_answer as CA
+        s = CA.forward_summary("omar@gmail.com", CA.STERLING)
+        self.assertEqual((CA.forward_service_of(s), CA.address_of(s)), (CA.STERLING, "omar@gmail.com"))
+        s = CA.forward_summary("omar@gmail.com")
+        self.assertEqual((CA.forward_service_of(s), CA.address_of(s)), (CA.SARAPLUS, "omar@gmail.com"))
+
+    def _book(self, tabs):
+        book = mock.MagicMock()
+        made = {}
+
+        def ws(t):
+            if t not in tabs:
+                raise KeyError(t)
+            m = made.setdefault(t, mock.MagicMock())
+            m.get_all_values.side_effect = lambda: tabs[t]
+            m.append_row.side_effect = lambda row, **k: tabs[t].append(row)
+            return m
+        book.worksheet.side_effect = ws
+        book.add_worksheet.side_effect = lambda title, **k: tabs.setdefault(title, [list(["Office"])]) and ws(title)
+        return book
+
+    def test_sterling_address_lands_on_its_own_tab(self):
+        from automations.icd_alerts import code_answer as CA
+        tabs = {"ICD Faults": [], CA.MAIL_TAB: [["Office", "Forwards From", "Added", "Note"]],
+                CA.STERLING_MAIL_TAB: [["Office", "Forwards From", "Added", "Note"]]}
+        fault = {"office": "omar", "stage": CA.FORWARD_STAGE, "rownum": 3,
+                 "summary": CA.forward_summary("omar@gmail.com", CA.STERLING)}
+        with mock.patch("automations.icd_alerts.post.open_faults", return_value=[fault]):
+            CA.record_forwards(self._book(tabs), send=True, log=lambda *_: None)
+        self.assertEqual(tabs[CA.STERLING_MAIL_TAB][-1][:2], ["omar", "omar@gmail.com"])
+        self.assertEqual(len(tabs[CA.MAIL_TAB]), 1)          # SaraPlus tab untouched
+
+    def test_no_sterling_row_falls_back_to_the_saraplus_address(self):
+        from automations.icd_alerts import code_answer as CA
+        now = dt.datetime(2026, 11, 3, 10, 0, tzinfo=dt.timezone.utc)
+        fault = {"office": "omar", "stage": CA.REQUEST_STAGE, "rownum": 5,
+                 "summary": CA.summary_for(now - dt.timedelta(minutes=1), CA.STERLING)}
+        queries = []
+        tabs = {CA.MAIL_TAB: [["Office", "Forwards From"], ["omar", "omar@gmail.com"]]}
+        book = mock.MagicMock()
+        book.worksheet.side_effect = lambda t: mock.MagicMock(get_all_values=lambda: tabs[t]) if t in tabs else (_ for _ in ()).throw(KeyError(t))
+        with mock.patch("automations.icd_alerts.post.open_faults", return_value=[fault]):
+            CA.answer_requests(book, send=False, now=now, log=lambda *_: None,
+                               newest_code=lambda s, q: queries.append(q) or None)
+        self.assertEqual(len(queries), 1)
+        self.assertIn("fadv", queries[0])
+        self.assertIn("to:omar@gmail.com", queries[0])
+
+    def test_filter_link_carries_sender_and_subject(self):
+        from automations.icd_alerts import sterling_forward as SF
+        self.assertIn("from=noreply%40us.fadv.co", SF.FILTER_URL)
+        self.assertIn("subject=Authentication%20Request", SF.FILTER_URL)
+
+    def _ask(self, pick):
+        a = mock.MagicMock()
+        a.Cancelled = type("Cancelled", (Exception,), {})
+        a.choose.return_value = pick
+        return a
+
+    def test_walk_skips_gmail_forward_when_saraplus_already_did_it(self):
+        from automations.icd_alerts import code_forward as F, sterling_forward as SF
+        ask = self._ask(F.YES)
+        with mock.patch.object(F, "_login_email", return_value="omar@gmail.com"), \
+                mock.patch.object(F, "_open") as op, mock.patch.object(F, "_copy"), \
+                mock.patch("automations.icd_alerts.relay.report_forward", return_value=True) as rf, \
+                mock.patch("automations.icd_alerts.relay.forward_confirmed", return_value=True):
+            self.assertEqual(SF.walk_through(ask, say=lambda *_: None, office_key="omar"), "done")
+        rf.assert_called_once_with("omar@gmail.com", office_key="omar", service="sterling")
+        self.assertEqual([c.args[0] for c in op.call_args_list], [SF.FILTER_URL])   # filter only
+
+    def test_walk_adds_gmail_forward_when_missing(self):
+        from automations.icd_alerts import code_forward as F, sterling_forward as SF
+        ask = self._ask(F.YES)
+        with mock.patch.object(F, "_login_email", return_value="omar@gmail.com"), \
+                mock.patch.object(F, "_open") as op, mock.patch.object(F, "_copy"), \
+                mock.patch.object(F, "_wait_for_gmail", return_value=True), \
+                mock.patch("automations.icd_alerts.relay.report_forward", return_value=True), \
+                mock.patch("automations.icd_alerts.relay.forward_confirmed", return_value=False):
+            self.assertEqual(SF.walk_through(ask, say=lambda *_: None, office_key="omar"), "done")
+        self.assertEqual([c.args[0] for c in op.call_args_list], [F.FORWARDING_URL, SF.FILTER_URL])
+
+    def test_skip(self):
+        from automations.icd_alerts import code_forward as F, sterling_forward as SF
+        with mock.patch.object(F, "_login_email", return_value="omar@gmail.com"), \
+                mock.patch("automations.icd_alerts.relay.report_forward") as rf:
+            self.assertEqual(SF.walk_through(self._ask(F.LATER), say=lambda *_: None), "skipped for now")
+        rf.assert_not_called()
+
+
+class OfficeComputer(unittest.TestCase):
+    def test_sterling_dry_sends_nothing(self):
+        from automations.icd_alerts import sterling_send
+        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=False)
+        self.assertEqual(r["status"], "dry_run")
+        self.assertEqual(r["would_send"], ["A B"])
+
+    def test_sterling_live_refuses_until_wired(self):
+        from automations.icd_alerts import sterling_send
+        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=True)
+        self.assertEqual(r["status"], "error")
+
+    def test_unknown_kind_is_an_answer_not_a_crash(self):
+        from automations.icd_alerts import office_jobs
+        r = office_jobs.work({"kind": "nope", "mode": "dry"}, "omar", log=lambda *_: None)
+        self.assertEqual(r["status"], "error")
+
+    def test_office_hours(self):
+        from automations.icd_alerts import office_jobs
+        self.assertFalse(office_jobs.due(dt.datetime(2026, 11, 2, 3, 0), {}))
+        self.assertTrue(office_jobs.due(dt.datetime(2026, 11, 2, 12, 0), {}))
+
+
+if __name__ == "__main__":
+    unittest.main()

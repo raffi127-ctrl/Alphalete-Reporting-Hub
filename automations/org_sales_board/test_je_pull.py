@@ -446,8 +446,39 @@ class UnpostedWeekFetchTest(unittest.TestCase):
 
         with mock.patch.object(je_pull, "download_crosstab_patchright",
                                fake_download),              mock.patch.object(je_pull, "_week_label", return_value=TARGET),              mock.patch.object(je_pull, "_check_one_week") as check:
-            je_pull.fetch(page=object())
+            with self.assertRaises(je_pull.WeekNotPosted):
+                je_pull.fetch(page=object())
         check.assert_not_called()
+
+    def test_box_not_found_is_not_reported_as_unposted(self):
+        # WE 10.18: no week box at all is a broken pull, not JE's wait.
+        hook = je_pull._drive_week_selection(TARGET)
+        hook.left_view_week = True
+        self.assertFalse(hook.week_not_posted)
+
+
+class UnpostedWeekAdapterTest(unittest.TestCase):
+    """Tue 2026-10-27: JE hadn't posted WE 11/1, the view showed its saved
+    7/5/2026 week, and the WE 10.18 stuck-filter check dropped Retail JE —
+    holding the Org Sales Board email. Unposted early in the week = a wait."""
+
+    def _run(self, today):
+        import datetime as dt
+        from unittest import mock
+        from automations.org_sales_board import orchestrate
+        ctx = mock.Mock(from_csv=None, page=object(), today=today)
+        with mock.patch.object(je_pull, "fetch",
+                               side_effect=je_pull.WeekNotPosted("x")):
+            return orchestrate._adapter_je_retail(ctx)
+
+    def test_tuesday_unposted_week_waits(self):
+        import datetime as dt
+        self.assertEqual(self._run(dt.date(2026, 10, 27)), {})
+
+    def test_thursday_unposted_week_fails_loud(self):
+        import datetime as dt
+        with self.assertRaises(je_pull.WeekNotPosted):
+            self._run(dt.date(2026, 10, 29))
 
 
 class EmptyWeekDialogTest(unittest.TestCase):
@@ -561,6 +592,52 @@ class OpenDropdownTest(unittest.TestCase):
         f = FakeFilter(WEEKS, ["8/9/2026"], combo_fails=99)
         _drive(f)
         self.assertLessEqual(f.combo_clicks, 3)
+
+
+class _StuckGlass:
+    """A tab-glass that ignores clicks (a second glass sits on top of it)."""
+
+    def __init__(self, filt):
+        self.filt = filt
+
+    def click(self, **kw):
+        self.filt.glass_click_kwargs.append(kw)
+        if not kw.get("force"):
+            raise TimeoutError("<div class='tab-glass'> intercepts pointer events")
+
+    def evaluate(self, _js):
+        self.filt.glasses -= 1
+
+
+class _GlassFilter(FakeFilter):
+    def __init__(self, *a, glasses=2, **kw):
+        super().__init__(*a, **kw)
+        self.glasses = glasses
+        self.glass_click_kwargs = []
+
+    def locator(self, selector):
+        if "tab-glass" in selector:
+            return _Loc([_StuckGlass(self) for _ in range(self.glasses)])
+        return super().locator(selector)
+
+
+class LeftoverGlassTest(unittest.TestCase):
+    """Sat 2026-10-31: week set to 11/1, then Download timed out under a
+    'tab-glass clear-glass' cover and Retail JE dropped all day."""
+
+    def test_a_glass_that_wont_close_is_removed(self):
+        f = _GlassFilter(WEEKS, ["8/9/2026"], glasses=2)
+        _drive(f)
+        self.assertEqual(f.checked, {TARGET})
+        self.assertEqual(f.glasses, 0)
+
+    def test_glass_clicks_are_forced_and_bounded(self):
+        f = _GlassFilter(WEEKS, ["8/9/2026"], glasses=1)
+        _drive(f)
+        self.assertTrue(f.glass_click_kwargs)
+        for kw in f.glass_click_kwargs:
+            self.assertTrue(kw.get("force"))
+            self.assertLessEqual(kw.get("timeout", 30000), 3000)
 
 
 class StaleWeekAdapterTest(unittest.TestCase):

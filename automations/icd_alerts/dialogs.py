@@ -41,14 +41,32 @@ def _front(script: str) -> str:
     front. `result`, `text returned` and the Cancel error (-128) behave the
     same inside the block.
     """
-    return 'tell application "System Events"\nactivate\n%s\nend tell' % script
+    # `with timeout`: inside a tell block an Apple event waits TWO MINUTES
+    # for its reply by default, and a person reading a password box is
+    # slower than that. Omar's install, 2026-10-26: "AppleEvent timed out
+    # (-1712)" on the SaraPlus login box, and the fallback to input() hit
+    # EOF because the installer runs from a pipe. A day is "take your time".
+    return ('with timeout of 86400 seconds\n'
+            'tell application "System Events"\nactivate\n%s\nend tell\n'
+            'end timeout' % script)
+
+
+def _run_osascript(text: str) -> "subprocess.CompletedProcess":
+    return subprocess.run(["osascript", "-e", text],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 def _osascript(script: str) -> str:
-    proc = subprocess.run(["osascript", "-e", _front(script)],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = _run_osascript(_front(script))
+    err = proc.stderr.decode("utf-8", "replace").strip()
+    if proc.returncode != 0 and "System Events" in err:
+        # The front-and-centre wrapper is a nicety; the box is the point.
+        # A Mac that will not let the Terminal drive System Events (not
+        # authorised, timed out) still gets the plain dialog.
+        proc = _run_osascript(script)
+        err = proc.stderr.decode("utf-8", "replace").strip()
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.decode("utf-8", "replace").strip())
+        raise RuntimeError(err)
     return proc.stdout.decode("utf-8", "replace").strip()
 
 

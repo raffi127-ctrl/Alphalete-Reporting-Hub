@@ -88,7 +88,14 @@ CENTRAL = ZoneInfo("America/Chicago")
 # ORG campaign section -> section_pull.SPECS key (the views that can be pinned
 # to an old week). Retail NL / Retail Internet (SARA) and Retail JE are not here.
 SECTION_SPECS = {"ATT Fiber Team": "fiber", "ATT NDS Team": "nds",
-                 "B2B": "b2b", "BOX": "box"}
+                 "B2B": "b2b", "BOX": "box", "Verizon": "verizon"}
+# Keys read from an emailed file instead of a Tableau view. Verizon's PDF
+# (verizon_pull) already carries last week with real dates, so it needs no
+# browser and no week pin — and no calibration either: its section is filled
+# from that same PDF, and one owner is far below MIN_CALIBRATION_ROWS, so the
+# check could only ever reject it and write a 0 over real sales (Nicolas
+# Murrugarra, 2026-10-27: 122 lines landed as 0 on All Campaigns).
+EMAIL_KEYS = {"verizon"}
 
 MIN_FILLED = 3                  # frozen rows a table needs before a blank reads "new"
 MIN_CALIBRATION_ROWS = 5
@@ -286,6 +293,27 @@ def trusted(checked: int, bad: List[str]) -> bool:
             and len(bad) / checked <= MAX_DISAGREE_SHARE)
 
 
+def pull_email_sections(keys, today: dt.date, logfn=print):
+    """Same return as pull_sections, for EMAIL_KEYS — no browser."""
+    from automations.org_sales_board import verizon_pull as vp
+    from automations.org_sales_board import week as wk
+    want = set(wk.reporting_week(today - dt.timedelta(days=7)))
+    pulls, failed = {}, []
+    for key in sorted(set(keys) & EMAIL_KEYS):
+        try:
+            pdf = vp.fetch(OUT_DIR)
+            days = {d: v for d, v in vp.parse(pdf).items() if d in want} if pdf else {}
+        except Exception as e:                                # noqa: BLE001
+            logfn(f"  [!] {key}: PDF could not be read ({type(e).__name__}: {str(e)[:90]})")
+            days = {}
+        if set(days) != want:
+            logfn(f"  [!] {key}: the newest PDF does not cover all of last week — not used")
+            failed.append(key)
+            continue
+        pulls[key] = (vp.METRIC, vp.to_board_pull(days))
+    return pulls, failed
+
+
 def pull_sections(keys, today: dt.date, page, logfn=print):
     """({spec key: (metric, parsed)}, [failed keys]) for LAST week."""
     from automations.org_sales_board import section_pull as sp
@@ -422,7 +450,7 @@ def plan_org(grid, fgrid, pulls, failed, aliases, today: dt.date):
             metric, parsed = pulls[key]
             days_of = lambda n, p=parsed, m=metric: person_days(p, m, n, aliases)
             checked, bad = calibrate(dfilled, days_of)
-            if not trusted(checked, bad):
+            if key not in EMAIL_KEYS and not trusted(checked, bad):
                 reason = (f"last week's view does not match the rows already "
                           f"frozen ({len(bad)} of {checked}: {'; '.join(bad[:3])})")
         if reason:
@@ -694,8 +722,13 @@ def apply_org_boards(*, today: Optional[dt.date] = None, dry_run: bool = True,
         pulls, failed = {}, []
     else:
         logfn(f"  newcomers found — pulling last week's view(s): {', '.join(keys)}")
-        pulls, failed = _session(page, lambda pg: pull_sections(
-            keys, today, pg, logfn=logfn))
+        pulls, failed = pull_email_sections(keys, today, logfn=logfn)
+        views = [k for k in keys if k not in EMAIL_KEYS]
+        if views:
+            p2, f2 = _session(page, lambda pg: pull_sections(
+                views, today, pg, logfn=logfn))
+            pulls.update(p2)
+            failed += f2
     written: List[dict] = []
     if "org" in boards:
         try:

@@ -173,6 +173,7 @@ def plan_captainship_leaderboard_rollover(ws, header_row, data_rows, last_col,
 DAILY_SECTION_LABELS = [
     "Retail NL", "ATT Fiber Team", "Retail JE", "ATT NDS Team", "B2B",
     "BOX", "Retail Internet",          # Frontier retired 2026-08-19
+    "Verizon",                         # added 2026-10-27 where Frontier was
 ]
 
 # Weekday name -> Python weekday() index. A daily section's week starts on the

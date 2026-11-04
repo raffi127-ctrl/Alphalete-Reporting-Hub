@@ -1,0 +1,612 @@
+"""Edit office 11580's "Await Call AI" SMS template so its interview-time
+clause matches the clock (Carlos 2026-10-28). await_window.await_clause says
+WHAT it should say; this module drives the AppStream UI to make it so, along
+Carlos's own route: SMS/Email (top-left) -> SMS Templates -> Await Call AI ->
+Edit (next to Activated) -> fix the "Are you available ... ?" box -> save.
+
+Run `applicant_push --office 11580 --await-probe` to dump what the pages hold
+(no edit), `--await-apply` to do one live update and stop. The push pass calls
+ensure_await_template(page) before walking; failures are logged, never raised
+— a stale clause must not stop the push itself.
+"""
+
+import datetime as dt
+import re
+
+from automations.oat_processing.await_window import (DAYS, WINDOWS_BY_OFFICE,
+                                                     await_clause,
+                                                     clause_from_schedule,
+                                                     parse_span)
+
+_T = r"[0-9]{1,2}:[0-9]{2}\s*(?:am|pm)?"
+# "TODAY, Wednesday" (Megan 10/28) -- and the bare weekday for 2+ days out.
+_WD = r"(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)"
+# The day word: what we write (TODAY / TOMORROW / a weekday) or AppStream's own
+# fill-in "currentInterviewDay" (24065: "Are you available currentInterviewDay
+# 12:45 pm - 3:45 pm for a quick ZOOM…"). "at/between" optional for the same
+# reason.
+_PREP = r"(?:(?:at|between|from)\s+)?"
+CLAUSE_RE = re.compile(
+    r"available\s+(?:(?:today|tomorrow)(?:\s*,?\s*(?:" + _WD +
+    r"|currentInterviewDay|nextInterviewDay))?|" + _WD +
+    r"|currentInterviewDay|nextInterviewDay),?\s+" + _PREP + _T +
+    r"(?:\s*[-\u2013]\s*" + _T + r")?"
+    r"(?:\s*(?:,?\s*or|/)\s*" + _PREP + _T + r"(?:\s*[-\u2013]\s*" + _T + r")?)?",
+    re.I)
+# A template that asks with no time at all (23965 10/28: "…a quick 20-minute
+# Zoom Interview. Are you available?"). For the chosen offices the clause goes
+# in right there, and from then on CLAUSE_RE finds and updates it.
+BARE_ASK_RE = re.compile(r"Are you available\?")
+# EACH ACCOUNT'S TEXT (Megan 2026-10-28, approved on the "Await Text
+# Approvals" page: "approved, build it for all accounts"). All of them follow
+# Jacob's 23607 Await Call AI as closely as possible ("we want to be as close
+# to this as possible"), cleaned up -- shortcodes for the job board and the
+# weekday, "20-minute", "full-time, on-site". Raf, Carlos and Khalil recruit
+# near each other, so each changes a few words ("should all be just a bit
+# different"; Raf's accounts differ from each other too). Box 2's %s is the
+# day + times clause ("available TODAY, currentInterviewDay, from ..."),
+# rebuilt before every push from that office's AI Settings > Hours. Plain
+# characters only: one curly quote makes every text cost more credits.
+_JACOB_B1 = ("Hi applicantFirstName, we reviewed your application for the "
+             "full-time, on-site adPostingTitle role on jobBoard and would "
+             "like to schedule a brief 20-minute Zoom interview to discuss "
+             "your experience and the position.")
+TEXTS = {
+    "23965": (_JACOB_B1,
+              "Are you %s for a quick Zoom to go over the position?"),
+    "24065": ("Hi applicantFirstName, we received your application for the "
+              "full-time, on-site adPostingTitle role on jobBoard and would "
+              "like to set up a brief 20-minute Zoom interview to discuss "
+              "your experience and the position.",
+              "Are you %s for a quick Zoom to discuss the position?"),
+    "11280": ("Hello applicantFirstName, we reviewed your application for "
+              "the full-time, on-site adPostingTitle position on jobBoard and "
+              "would like to schedule a short 20-minute Zoom interview to "
+              "discuss your experience and the role.",
+              "Would you be %s for a quick Zoom to go over the role?"),
+    "11580": ("Hi applicantFirstName, thank you for applying for the "
+              "full-time, on-site adPostingTitle role on jobBoard. We would "
+              "like to schedule a brief 20-minute Zoom interview to discuss "
+              "your experience and the position.",
+              "Are you %s for a quick Zoom to review the position?"),
+    "11901": ("Hi applicantFirstName, we reviewed your application for the "
+              "full-time, on-site adPostingTitle role with Innovate Impact "
+              "Group on jobBoard and would like to schedule a brief "
+              "20-minute Zoom interview to discuss your experience and the "
+              "position.",
+              "Are you %s for a quick Zoom to talk through the position?"),
+    "23467": ("Hi applicantFirstName, this is Josh. We reviewed your "
+              "application for the full-time, on-site adPostingTitle role on "
+              "jobBoard and would like to schedule a brief 20-minute Zoom "
+              "interview to discuss your experience and the position.",
+              "Are you %s for a quick Zoom to go over the position?"),
+}
+# Colten 14733, approved 2026-11-02 (Megan: "approve").
+TEXTS["14733"] = (
+    "Hi applicantFirstName, we reviewed your application for the full-time, "
+    "on-site adPostingTitle role on jobBoard and would like to book a brief "
+    "20-minute Zoom interview to go over your experience and the position.",
+    "Are you %s for a quick Zoom to learn more about the position?")
+STANDARD_BODY1, STANDARD_BODY2 = TEXTS["23965"]
+# WHICH OFFICES' Await text is set. Every other office's template is never
+# opened.
+OFFICES = set(TEXTS)
+_SAID_NO_WINDOWS: set = set()
+
+_log = print
+
+
+def set_logger(fn) -> None:
+    global _log
+    _log = fn
+
+
+def _click_text(page, pattern: str, hover_first: str = "") -> bool:
+    """Click the first link/button whose text matches `pattern` (regex, any
+    frame). Optionally hover a menu label first to reveal a dropdown."""
+    for fr in page.frames:
+        try:
+            if hover_first:
+                h = fr.locator(
+                    "xpath=//a[contains(normalize-space(.),'%s')] "
+                    "| //*[@role='button'][contains(normalize-space(.),'%s')]"
+                    % (hover_first, hover_first)).first
+                if h.count():
+                    h.hover(timeout=4000)
+                    fr.page.wait_for_timeout(600)
+            loc = fr.locator("a, button, input[type=submit], [role=menuitem]")
+            n = min(loc.count(), 400)
+            for i in range(n):
+                el = loc.nth(i)
+                try:
+                    t = (el.inner_text(timeout=300) or
+                         el.get_attribute("value") or "").strip()
+                except Exception:  # noqa: BLE001
+                    continue
+                if t and re.search(pattern, t, re.I):
+                    el.click(timeout=6000)
+                    page.wait_for_timeout(2000)
+                    return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
+def _goto_templates(page) -> bool:
+    """Land on the SMS Templates list. Menu route first, with one retry."""
+    for _ in range(2):
+        _click_text(page, r"^SMS\s*Templates$", hover_first="SMS/Email")
+        if _page_has(page, r"Await"):
+            return True
+        # some skins need the menu itself clicked before the submenu exists
+        _click_text(page, r"SMS\s*/?\s*Email")
+        page.wait_for_timeout(1200)
+        if _click_text(page, r"SMS\s*Templates"):
+            if _page_has(page, r"Await"):
+                return True
+    return _page_has(page, r"Await")
+
+
+def _page_has(page, pattern: str) -> bool:
+    for fr in page.frames:
+        try:
+            if re.search(pattern, fr.inner_text("body", timeout=2000) or "", re.I):
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
+def _open_await_edit(page) -> bool:
+    """From the templates list, click the Edit control on the Await row."""
+    for fr in page.frames:
+        try:
+            row = fr.locator(
+                "xpath=//tr[contains(translate(normalize-space(.),"
+                "'AWITCL','awitcl'),'await call ai')]").first
+            if row.count():
+                ed = row.locator(
+                    "xpath=.//a[contains(translate(.,'EDIT','edit'),'edit')] "
+                    "| .//input[contains(translate(@value,'EDIT','edit'),'edit')] "
+                    "| .//img[contains(translate(@alt,'EDIT','edit'),'edit')]"
+                ).first
+                if ed.count():
+                    ed.click(timeout=6000)
+                    page.wait_for_timeout(2500)
+                    return True
+        except Exception:  # noqa: BLE001
+            continue
+    # fallback: any Edit control near the word Await anywhere
+    return _click_text(page, r"^Edit$")
+
+
+def _fields(page):
+    """Every visible input/textarea on the edit form: (frame, locator, value)."""
+    out = []
+    for fr in page.frames:
+        try:
+            loc = fr.locator("textarea, input[type=text]")
+            for i in range(min(loc.count(), 60)):
+                el = loc.nth(i)
+                try:
+                    v = el.input_value(timeout=400)
+                except Exception:  # noqa: BLE001
+                    continue
+                out.append((fr, el, v or ""))
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def probe(page) -> None:
+    """No edits: walk the route and print what each step shows."""
+    _log("[await-probe] going to SMS Templates…")
+    ok = _goto_templates(page)
+    _log("[await-probe] templates page reached: %s | url=%s" % (ok, page.url[:90]))
+    for fr in page.frames:
+        try:
+            t = fr.inner_text("body", timeout=2000) or ""
+        except Exception:  # noqa: BLE001
+            continue
+        for line in t.splitlines():
+            if re.search(r"await|template|activat", line, re.I):
+                _log("[await-probe] text: %r" % line.strip()[:120])
+    if not _open_await_edit(page):
+        _log("[await-probe] could NOT open the Await edit form")
+        return
+    _log("[await-probe] edit form open | url=%s" % page.url[:90])
+    for _fr, el, v in _fields(page):
+        try:
+            name = el.get_attribute("name") or el.get_attribute("id") or "?"
+        except Exception:  # noqa: BLE001
+            name = "?"
+        _log("[await-probe] field %-24s = %r" % (name, v[:160]))
+    for fr in page.frames:
+        try:
+            loc = fr.locator("button, input[type=submit], input[type=button], a")
+            for i in range(min(loc.count(), 200)):
+                el = loc.nth(i)
+                try:
+                    t = (el.inner_text(timeout=200) or
+                         el.get_attribute("value") or "").strip()
+                except Exception:  # noqa: BLE001
+                    continue
+                if t and re.search(r"save|update|submit|apply|done", t, re.I):
+                    _log("[await-probe] control: %r (tag=%s)"
+                         % (t[:60], el.evaluate("e=>e.tagName")))
+        except Exception:  # noqa: BLE001
+            continue
+
+
+# --- the office's own schedule (Megan 2026-10-28) ---------------------------
+# Settings > Office Level Settings: "Current Active Interview Slots" (a row per
+# slot, a column per weekday, "8:00 AM - 4:00 PM") and "Calendar Time
+# Increment". Read once a day per office and kept, so a push pass does not
+# reopen Settings every 10 minutes.
+_SCHED_JS = r"""() => {
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const out = {slots: {}, step: null, source: ''};
+  // 1) The ExtJS page (seen live 10/28 on 23965 + 24065): tabs "1st Interview",
+  //    "2nd Interview", "3rd Interview", "FDOT / BOB", one grid + one
+  //    increment radio set per tab. The Await text is the 1st-round invite.
+  const tabs = [...document.querySelectorAll('.x-tab-strip-text')].map(t => norm(t.textContent));
+  const panels = [...document.querySelectorAll('.x-tab-panel-body > .x-panel')];
+  let pi = tabs.findIndex(t => /^1st\s*Interview$/i.test(t));
+  if (pi < 0 && panels.length) pi = 0;
+  if (pi >= 0 && panels[pi]) {
+    const p = panels[pi];
+    const g = p.querySelector('.x-grid3');
+    if (g) {
+      const heads = [...g.querySelectorAll('.x-grid3-header td.x-grid3-hd')].map(td => norm(td.innerText));
+      for (const r of g.querySelectorAll('.x-grid3-body .x-grid3-row')) {
+        [...r.querySelectorAll('td.x-grid3-cell')].forEach((td, i) => {
+          const d = heads[i], v = norm(td.innerText);
+          if (days.includes(d) && v) (out.slots[d] = out.slots[d] || []).push(v);
+        });
+      }
+      const rad = [...p.querySelectorAll('input[type=radio]')].find(e => e.checked);
+      if (rad && /^\d+$/.test(rad.value || '')) out.step = parseInt(rad.value);
+      out.source = 'tab:' + (tabs[pi] || '?');
+    }
+  }
+  if (Object.keys(out.slots).length && out.step) return out;
+  // 2) A plain HTML table, as a fallback.
+  for (const t of document.querySelectorAll('table')) {
+    const rows = [...t.rows];
+    const hi = rows.findIndex(r => [...r.cells].some(c => norm(c.innerText) === 'Sunday')
+                                 && [...r.cells].some(c => norm(c.innerText) === 'Monday'));
+    if (hi < 0) continue;
+    const head = [...rows[hi].cells].map(c => norm(c.innerText));
+    for (const r of rows.slice(hi + 1)) {
+      [...r.cells].forEach((c, i) => {
+        const d = head[i]; const v = norm(c.innerText);
+        if (days.includes(d) && v) (out.slots[d] = out.slots[d] || []).push(v);
+      });
+    }
+    out.source = 'table';
+    break;
+  }
+  if (!out.step) {
+    for (const e of document.querySelectorAll('input[type=radio]:checked')) {
+      if (/^\d+$/.test(e.value || '')) { out.step = parseInt(e.value); break; }
+    }
+  }
+  return out;
+}"""
+
+_HDR_TIME = re.compile(r"Time:\s*([A-Za-z]{3,9}),?\s*(\d{1,2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)", re.I)
+
+
+def office_now(page):
+    """The office's own clock off AppStream's header ('Time: Oct, 28 02:16 PM
+    - Central …'), so an office in another time zone gets its own hours.
+    Falls back to this computer's clock."""
+    now = dt.datetime.now()
+    for fr in page.frames:
+        try:
+            m = _HDR_TIME.search(fr.inner_text("body", timeout=2000) or "")
+        except Exception:  # noqa: BLE001
+            continue
+        if m:
+            try:
+                mon = dt.datetime.strptime(m.group(1)[:3], "%b").month
+                h = int(m.group(3)) % 12 + (12 if m.group(5).upper() == "PM" else 0)
+                year = now.year + (1 if (mon == 1 and now.month == 12) else 0)
+                return dt.datetime(year, mon, int(m.group(2)), h, int(m.group(4)))
+            except Exception:  # noqa: BLE001
+                pass
+    return now
+
+
+def _sched_path(office_id: str):
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    os.makedirs(os.path.join(root, "output"), exist_ok=True)
+    # "-v2": the 10/28 afternoon reader (ExtJS 1st Interview tab). A copy
+    # saved by the first reader may hold the wrong grid, so it is not reused.
+    return os.path.join(root, "output", "await-schedule-v4-%s-%s.json"
+                        % (office_id, dt.date.today().isoformat()))
+
+
+# AI > AI Settings > Hours (Megan 10/28: "for the schedule we need to look at
+# AI>ai settings>hours"). Its "Current Active Interview Time" list is the
+# schedule the AI books into -- one header letter per weekday (M T W T F S S,
+# a day with no slots still shows its letter), then one "08:15 AM - 08:45 AM"
+# line per slot with its capacity under it. The old Settings > Office Level
+# Settings grid disagrees with it on several offices, so it is not read.
+_AI_HOURS_MARK = "Current Active Interview Time"
+_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+         "Sunday"]
+_SLOT_RE = re.compile(r"^(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)$",
+                      re.I)
+
+
+def parse_ai_hours(text: str):
+    """({weekday: [(start, end)]}, slot minutes) from the Hours page text."""
+    i = (text or "").find(_AI_HOURS_MARK)
+    if i < 0:
+        return {}, None
+    lines = [x.strip() for x in text[i + len(_AI_HOURS_MARK):].splitlines()]
+    slots, day, idx, length = {}, None, -1, None
+    for x in lines:
+        if not x or x == "Video Tutorial" or x.isdigit():
+            continue
+        if x in ("M", "T", "W", "F", "S"):
+            j = idx + 1
+            while j < 7 and _WEEK[j][0] != x:
+                j += 1
+            if j >= 7:
+                break
+            idx, day = j, _WEEK[j]
+            continue
+        m = _SLOT_RE.match(x)
+        if m and day:
+            sp = parse_span("%s - %s" % (m.group(1), m.group(2)))
+            if sp:
+                slots.setdefault(day, []).append(sp)
+                length = length or (sp[1] - sp[0])
+            continue
+        if day:
+            break                      # the list is over
+    return slots, length
+
+
+# STOP PUSHING 30 MIN BEFORE THE LAST SLOT (Carlos 10/28: "Stop pushing 15
+# minutes prior to last 1st interview time slot"; Megan: "do 30 min"). 30 is
+# the same lead the text itself uses: from then on every text would offer
+# tomorrow, and an applicant pushed at 5:30 the next morning is offered that
+# same day instead -- the better show-up window. Per office, from the day's
+# saved AI Settings > Hours (the first push of the day saves it). No saved
+# schedule yet = no stop yet, so that first push still runs and reads it.
+STOP_BEFORE_LAST_MIN = 30
+
+
+def stop_at_today(office_id: str, now=None):
+    """Today's stop time for this office, or None (no schedule read yet
+    today, or no slots today)."""
+    import json
+    import os
+    from automations.oat_processing.await_window import starts_from_spans
+    now = now or dt.datetime.now()
+    path = _sched_path(office_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        d = json.load(open(path))
+        shift = int(d.get("shift_min") or 0)       # office clock - this clock
+        office = now + dt.timedelta(minutes=shift)
+        spans = [tuple(x) for x in d["slots"].get(DAYS[(office.weekday() + 1) % 7], [])]
+        starts = starts_from_spans(spans, int(d["step"]))
+    except Exception:  # noqa: BLE001 -- unreadable = no stop, never a crash
+        return None
+    if not starts:
+        return None
+    stop = max(starts) - STOP_BEFORE_LAST_MIN
+    # The office's stop time, said on THIS computer's clock.
+    return office.replace(hour=stop // 60, minute=stop % 60, second=0,
+                          microsecond=0) - dt.timedelta(minutes=shift)
+
+
+def past_stop(office_id: str, now=None) -> bool:
+    now = now or dt.datetime.now()
+    stop = stop_at_today(office_id, now)
+    return bool(stop) and now >= stop
+
+
+def read_office_schedule(page, office_id: str):
+    """({weekday: [(start, end)]}, slot minutes) from AI > AI Settings >
+    Hours, or (None, None). Cached for the day. Goes back to the page it
+    started on, so the template steps after it carry on as before."""
+    import json
+    import os
+    path = _sched_path(office_id)
+    if os.path.exists(path):
+        try:
+            d = json.load(open(path))
+            return ({k: [tuple(x) for x in v] for k, v in d["slots"].items()},
+                    d["step"])
+        except Exception:  # noqa: BLE001
+            pass
+    back = page.url
+    # How far the OFFICE's clock is from this computer's, to the half hour
+    # (Atef 23467 is on Mountain time, Lucy 2 on Central, 10/29). The stop
+    # time below is the office's; the push gate compares it to this machine's.
+    try:
+        shift = int(round((office_now(page) - dt.datetime.now())
+                          .total_seconds() / 1800.0)) * 30
+    except Exception:  # noqa: BLE001
+        shift = 0
+    m = re.search(r"rqst=([^&#]+)", back or "")
+    tok = m.group(1) if m else page.evaluate(
+        "() => ((document.querySelector('a[href*=\"rqst=\"]') || {}).href"
+        " || '').replace(/.*rqst=([^&#]+).*/, '$1')")
+    if not tok:
+        _log("[await] office %s: no session token to open AI Settings > Hours"
+             % office_id)
+        return None, None
+    text = shown = ""
+    try:
+        page.goto("https://applicantstream.com/index.cfm?rqst=%s&p=1504"
+                  "&pane=hours" % tok, wait_until="domcontentloaded",
+                  timeout=45000)
+        for _ in range(30):
+            text = page.evaluate("() => document.body.innerText") or ""
+            if _AI_HOURS_MARK in text and re.search(
+                    r"\d{1,2}:\d{2}\s*[AP]M\s*-", text.split(_AI_HOURS_MARK, 1)[1]):
+                break
+            page.wait_for_timeout(500)
+        shown = page.evaluate(
+            "() => ((document.querySelector('select') || {}).selectedOptions"
+            " || [{}])[0].text || ''") or ""
+    finally:
+        try:
+            page.goto(back, wait_until="domcontentloaded", timeout=45000)
+        except Exception:  # noqa: BLE001
+            pass
+    if "#%s " % office_id not in shown + " ":
+        _log("[await] office %s: AI Settings > Hours showed another office "
+             "(%r) -- not used" % (office_id, shown[:60]))
+        return None, None
+    slots, step = parse_ai_hours(text)
+    if not slots or not step:
+        _log("[await] office %s: no interview times on AI Settings > Hours"
+             % office_id)
+        return None, None
+    try:
+        json.dump({"slots": slots, "step": step, "shift_min": shift},
+                  open(path, "w"))
+    except Exception:  # noqa: BLE001
+        pass
+    _log("[await] office %s schedule (AI Settings > Hours): %s, %d-min slots"
+         % (office_id, "; ".join("%s %d slots" % (d[:3], len(slots[d]))
+                                 for d in DAYS if d in slots), step))
+    return slots, step
+
+
+def _named_field(page, name: str):
+    for fr in page.frames:
+        try:
+            loc = fr.locator("textarea[name='%s'], input[name='%s']"
+                             % (name, name)).first
+            if loc.count():
+                return loc
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+# WHAT THE LAST UPDATE DID, for the office computer's stats row (Megan
+# 2026-10-30: the text updates could not be seen on the relay computers without
+# someone signed in to AppStream). "failed" until an update proves otherwise.
+LAST_RESULT: dict = {}
+
+
+def _note_result(result: str, text: str = "") -> None:
+    LAST_RESULT.clear()
+    LAST_RESULT.update({"result": result, "text": text,
+                         "at": dt.datetime.now().strftime("%H:%M")})
+
+
+def _set_standard(page, office_id: str, want: str, apply: bool) -> bool:
+    """Both boxes to this office's text (box 1 fixed, box 2 with `want`)."""
+    body1, body2 = TEXTS[office_id]
+    b1, b2 = _named_field(page, "smsBody"), _named_field(page, "smsBody2")
+    if b1 is None or b2 is None:
+        _log("[await] office %s: the two message boxes (smsBody/smsBody2) "
+             "were not found — template left as-is" % office_id)
+        return False
+    new2 = body2 % want
+    if len(new2) > 160:
+        _log("[await] office %s: %d characters is over the 160 box -- left "
+             "as-is: %r" % (office_id, len(new2), new2))
+        return False
+    try:
+        cur1, cur2 = b1.input_value(timeout=1500), b2.input_value(timeout=1500)
+    except Exception:  # noqa: BLE001
+        cur1 = cur2 = None
+    if cur1 == body1 and cur2 == new2:
+        _log("[await] office %s: already current: %s" % (office_id, want))
+        _note_result("already current", new2)
+        return True
+    if not apply:
+        _log("[await] office %s WOULD set: %r | %r"
+             % (office_id, body1[:60], new2))
+        return True
+    b1.fill(body1)
+    b2.fill(new2)
+    page.wait_for_timeout(400)
+    saved = (_click_text(page, r"^Save and Activate SMS Message$")
+             or _click_text(page, r"^Save SMS Message$"))
+    page.wait_for_timeout(2000)
+    _log("[await] office %s set -> %s (save clicked: %s)"
+         % (office_id, new2, saved))
+    _note_result("saved" if saved else "save not clicked", new2)
+    return saved
+
+
+def _next_morning(now, slots):
+    """5:00 on the office's next interview day after today, or None."""
+    for ahead in range(1, 8):
+        d = now + dt.timedelta(days=ahead)
+        if slots.get(DAYS[(d.weekday() + 1) % 7]):
+            return d.replace(hour=5, minute=0, second=0, microsecond=0)
+    return None
+
+
+def last_push_of_day(office_id: str, every_minutes: int = 15, now=None) -> bool:
+    """True when the NEXT push would already be past today's stop."""
+    now = now or dt.datetime.now()
+    later = now + dt.timedelta(minutes=every_minutes)
+    if stop_at_today(office_id, now) is None:
+        # No interview slots today (Sunday), so no stop time: pushing runs to
+        # 10pm, and Monday's 7:00 texts would read tonight's "TOMORROW,
+        # nextInterviewDay" as Tuesday.
+        return (later.hour, later.minute) >= (22, 0)
+    return past_stop(office_id, later)
+
+
+def ensure_await_template(page, office_id: str, apply: bool = True,
+                          next_morning: bool = False) -> bool:
+    """Make the Await template's clause match the clock. True = verified
+    correct (updated, or already right). Never raises.
+
+    next_morning=True: written AFTER the day's last walk (Megan 2026-10-29:
+    "at 7am today applicants were still told tomorrow's interview times").
+    Anyone pushed overnight is texted when the AI's hours open (7:00), with
+    whatever the template says then -- and "TOMORROW, nextInterviewDay" left
+    from the evening reads as the day AFTER by morning. So the day ends with
+    the NEXT interview day's hours worded for that morning: "TODAY,
+    currentInterviewDay, from 8:15am...". Right even if the morning's first
+    push never runs."""
+    if office_id not in OFFICES:
+        return True
+    _note_result("failed")
+    try:
+        # Every office, Carlos's included: the schedule set in AppStream
+        # (Megan 10/28: "we should always use the schedule set in app
+        # stream"). Hours typed into this code would drift from it.
+        slots, step = read_office_schedule(page, office_id)
+        if not slots:
+            return False
+        when = office_now(page)
+        if next_morning:
+            when = _next_morning(when, slots) or when
+        want = clause_from_schedule(when, slots, step,
+                                    office_id=office_id)
+        if not want:
+            _log("[await] office %s: no interview slots any day — "
+                 "template left as-is" % office_id)
+            return False
+        if not _goto_templates(page):
+            _log("[await] SMS Templates page not reached — leaving template")
+            return False
+        if not _open_await_edit(page):
+            _log("[await] Await edit form not reached — leaving template")
+            return False
+        return _set_standard(page, office_id, want, apply)
+    except Exception as e:  # noqa: BLE001
+        _log("[await] failed, leaving template as-is: %s: %s"
+             % (type(e).__name__, str(e)[:120]))
+        return False

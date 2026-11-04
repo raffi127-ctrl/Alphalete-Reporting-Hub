@@ -26,7 +26,8 @@ from typing import Callable, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STAMP = REPO_ROOT / "output" / "state" / "queue_selfheal.stamp"
-LABELS = ("com.alphalete.mini-control", "com.alphalete.mini-control-read")
+LABELS = ("com.alphalete.mini-control", "com.alphalete.mini-control-read",
+          "com.alphalete.mini-control-text")
 STALE_MIN = 25
 KICK_EVERY_MIN = 30
 

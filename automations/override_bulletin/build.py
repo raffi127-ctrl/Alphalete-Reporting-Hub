@@ -67,6 +67,9 @@ WOW_WEEKS = 5
 YEARS = ["2025", "2024", "2023"]
 _YEAR_HDR_RE = re.compile(r"total overrides\s+(\d{4})", re.I)
 
+# Leaders hidden from the CAPTAINSHIP OVERRIDES table (lowercase sheet names).
+NOT_CAPTAINS_NOW = {"carlos hidalgo", "atef choudhury"}
+
 GOLD = "#C9A24B"
 GOLD_LT = "#E7CE86"
 
@@ -260,6 +263,11 @@ def read_data(tab=None):
         out.sort(key=lambda x: (x["total"] or 0), reverse=True)
         return out
     captainship, program = _named(cap_by), _named(prog_by)
+    # Not captains right now (Maud, 2026-10-30) — off the CAPTAINSHIP table only.
+    # Their rows stay on the Sheet and still count in every total; they'll likely
+    # be captains again, so re-adding is deleting the name here.
+    captainship = [r for r in captainship
+                   if r["name"].strip().lower() not in NOT_CAPTAINS_NOW]
 
     # --- REGULAR = combined − captainship − program, per person/week ----------
     def _val(src, key, i=None, yr=None):
@@ -282,6 +290,10 @@ def read_data(tab=None):
         reg["total"] = (row["total"] or 0) - _val(cap, "t") - _val(prog, "t")
         reg["years"] = {y: (v or 0) - _val(cap, "y", yr=y) - _val(prog, "y", yr=y)
                         for y, v in row["years"].items()}
+        # Same 4-quiet-weeks rule, on the REGULAR money: a leader whose override is
+        # all captainship shows $0 across this table (Atef, 2026-10-30).
+        reg["hidden"] = row.get("hidden") or not any(
+            round(v or 0, 2) > 0 for v in reg["series"][:4])
         regular.append(reg)
 
     return week_labels, combined, regular, captainship, program

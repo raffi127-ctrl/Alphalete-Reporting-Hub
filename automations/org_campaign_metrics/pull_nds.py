@@ -68,6 +68,10 @@ CHURN_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
              "NDS-SNRES-ATT-OOFWorkbook/CHURNRATES/"
              "4fdc2f44-19b3-4941-a9c2-831e88172728/ChurnALlExp?:iid=1")
 CHURN_SHEET = "Churn Rates (ICD)"
+# 'Low Metrics Owner' split in two on 2026-10-31 -- '... - All Time' and
+# '... - Last Week'. This view is LowMetricsLastWeek and its numbers stamp
+# under the current week (see the header), so it is the Last Week one.
+LOWMETRICS_SHEET = "Low Metrics Owner - Last Week"
 
 TABLEAU_WB = "NDS-SNRES-ATT-OOFWorkbook"
 
@@ -125,6 +129,38 @@ def _norm_hdr(h):
     Act. Rate ')."""
     s = " ".join((h or "").split()).strip().lower()
     return s.rstrip("-").strip()
+
+
+def renamed_sheet(sheet, error_text):
+    """The sibling sheet a renamed 'Low Metrics Owner' most likely became.
+
+    Only for that one sheet, and only when the crosstab error lists what IS
+    there. 'Low Metrics Flags' is a different table (one row per flag, not per
+    owner) and is never a stand-in. Preference: a 'Low Metrics' sheet that
+    still says 'owner', else the only other 'Low Metrics' sheet. Two or more
+    candidates with no 'owner' is a guess, so it returns None and the miss is
+    reported as before. The parse still checks the header: a sheet without
+    'Metric Flag Count' stamps nothing."""
+    if not (sheet or "").strip().lower().startswith("low metrics owner"):
+        return None
+    import ast
+    m = re.search(r"thumb\(s\): (\[.*?\])", error_text or "")
+    if not m:
+        return None
+    try:
+        names = [str(n) for n in ast.literal_eval(m.group(1))]
+    except (ValueError, SyntaxError):
+        return None
+    cands = [n for n in names
+             if n.strip().lower().startswith("low metrics")
+             and n.strip().lower() not in ((sheet or "").strip().lower(),
+                                           "low metrics flags")]
+    owner = [n for n in cands if "owner" in n.lower()]
+    if len(owner) == 1:
+        return owner[0]
+    if len(cands) == 1:
+        return cands[0]
+    return None
 
 
 def _find_col(header, *needles):
@@ -358,8 +394,23 @@ def collect(page, today, log=print):
             download_crosstab_patchright(url, sheet, out, verbose=False,
                                          page=page)
         except Exception as e:  # noqa: BLE001 — partial data beats none
+            # THE WHOLE LINE, NOT 120 CHARS (2026-10-31). The cut landed in
+            # the middle of the thumbnail list, so a renamed sheet showed up as
+            # "saw 5 thumb(s): ['Low Metrics Flags', 'Low Metrics" and nobody
+            # could tell what it had been renamed to.
             log("  [nds] pull failed %r: %s: %s"
-                % (sheet, type(e).__name__, str(e).splitlines()[0][:120]))
+                % (sheet, type(e).__name__, str(e).splitlines()[0]))
+            alt = renamed_sheet(sheet, str(e))
+            if alt:
+                log("  [nds] trying %r in place of %r" % (alt, sheet))
+                try:
+                    download_crosstab_patchright(url, alt, out, verbose=False,
+                                                 page=page)
+                    rows = _read_tab_csv(out)
+                    log("  [nds] %s: %d rows (from %r)" % (fname, len(rows), alt))
+                    return rows
+                except Exception as e2:  # noqa: BLE001
+                    log("  [nds] %r failed too: %s" % (alt, type(e2).__name__))
             misses.append(sheet)
             return []
         rows = _read_tab_csv(out)
@@ -397,7 +448,7 @@ def collect(page, today, log=print):
     nat_spr = _parse_rep_summary_spr(
         _crosstab(DAILY_URL, "Rep Summary", "nds_rep_summary.csv"))
     lmo = _parse_low_metrics(
-        _crosstab(LOWMETRICS_URL, "Low Metrics Owner", "nds_low_metrics.csv"))
+        _crosstab(LOWMETRICS_URL, LOWMETRICS_SHEET, "nds_low_metrics.csv"))
     nat_churn = _parse_national_churn(
         _crosstab(CHURN_URL, CHURN_SHEET, "nds_churn_all.csv"))
     wm = _parse_weekly_metrics_all(

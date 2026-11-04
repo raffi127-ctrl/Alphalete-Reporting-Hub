@@ -83,9 +83,10 @@ def marks_on(key: str) -> bool:
     """Does office `key` get the live/closed mark on its thread titles?"""
     return STATUS_MARK_OFFICES == "all" or key in STATUS_MARK_OFFICES
 
-# Eve 10/21: after the evening post, an @channel note in the office's
-# indeed-photos channel naming the 1st rounds that landed on no thread
-# (blank Ad Title, or an ad not on a title-only list) -- see unthreaded.py.
+# Eve 10/21: after the evening post, the 1st rounds that landed on no thread
+# (blank Ad Title, or an ad not on a title-only list) are said in the office's
+# indeed-photos channel. Since 10/29: in ONE pinned "no ad" thread, and a blank
+# title only after AppStream came up empty 3 evenings -- see unthreaded.py.
 # Empty = off; "all" = every live office; a set of keys = just those.
 UNTHREADED_OFFICES: object = "all"          # Eve 10/21: on, every live office
 
@@ -107,7 +108,8 @@ def appstream_ads_on(key: str) -> bool:
 # (Qualify / Answer Call / Ad Title) and 1st-rounds thread (screenshot + ad
 # title per candidate); say only what's missing -- see audit.py. Started with
 # Aya, whose admin takes her 1st rounds over 10/23. A set of keys or "all".
-AUDIT_OFFICES: object = {"aya"}
+# Aya OFF 10/28 (Camila: "we dont work with Aya anymore") -- no office on it.
+AUDIT_OFFICES: object = set()
 AUDIT_AFTER = (18, 0)
 # Where it goes: "preview" = Eve's DM (with an all-clear too), or a channel id.
 # Eve 10/22: live in #ars-recruiting-numbers (where the Late Join Audit goes),
@@ -299,8 +301,14 @@ SOUTH_SHORE = "13a1ACbG_F_r1g5D9Zny7fSixuolobwyEL1YQXu1WgJk"
 SOUTH_SHORE_CLOSED = "1r4hjaI8T42cT9j7DGDjtmoX8dffGWVstllqUSqVLETM"
 
 _MORE = [
-    ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Mallick", "21328", "Elite Prime Group",
-     "C05BPNNJGE7", "C0C3RDDJ9MH", r"elite\s*prime\s*group.*1st\s*round"),
+    # Salik's 1st rounds moved to #salik-haque-office-recruiting-21328 from
+    # 9/28 (old C05BPNNJGE7 renamed "dont use" 10/9); there the thread is
+    # "Elite Prime Group - 28 of September - 1st rounds" through 10/19, then
+    # "FIRST ROUND THREAD: 10/23" from 10/23. Both channels read (like Rashad).
+    # ARS tab renamed "Salik Mallick" -> "Salik Malik".
+    ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Malik", "21328", "Elite Prime Group",
+     ["C0C1VT19BEX", "C05BPNNJGE7"], "C0C3RDDJ9MH",
+     r"elite\s*prime\s*group.*1st\s*round|^\W*first\s*round\s*thread"),
     ("kash", "Kash Rai", ARS_J_TO_L, "Kash Rai", "22177", "Palace Acquisitions Inc",
      "C08U6GCS7SB", "C0C3VMK0B1U", r"palace\s*acquisitions.*1st\s*round"),
     ("cyrus", "Cyrus Wade", ARS_A_TO_C, "Cyrus Wade", "22815", "Ambient Marketing",
@@ -355,8 +363,12 @@ _MORE = [
     # #eveliz-wright-office-recruiting-18404 started 10/1 with the same
     # "FIRST ROUND THREAD: mm/dd" thread as Colten; interviewers Diana,
     # Romina, Lucia F. (ARS). Photos channel created by Eve 10/5.
+    # Camila 10/29: the room moved to #18404-south-shore-consulting-group-inc-
+    # eveliz-wright (C0C8MSC33S6) -- its FIRST ROUND THREADs start 10/27; the
+    # old C0C5TPWLR2R's last one is 10/26. Both read (like Rashad), so the
+    # weekly re-post keeps the days still in the old room.
     ("eveliz", "Eveliz Wright", SOUTH_SHORE, "Eveliz Wright", "18404", "Eveliz Wright",
-     "C0C5TPWLR2R", "C0C6VCLRAUS", r"first\s*round\s*thread"),
+     ["C0C8MSC33S6", "C0C5TPWLR2R"], "C0C6VCLRAUS", r"first\s*round\s*thread"),
     # Jamis Garay (Carlos 10/6). Naiara posts ":m:*MIDSPIRE - 1st ROUNDS -
     # 10/05*" in #jamis-office every day; the "*EOD REPORT - 10/05*" that
     # follows doesn't match. Photos channel created 10/6.
@@ -410,6 +422,13 @@ _MORE = [
     # renamed altura-recruiting -> valeria-recruiting 10/19.
     ("valeria", "Valeria Tristan", SOUTH_SHORE_CLOSED, "VALERIA TRISTAN", "22850", "Altura Marketing",
      "C0C70G1ENPK", "C0CBCMWCDL6", r"first\s*round\s*thread"),
+    # Frank Matos (Camila 10/29), Peak Management, Boca Raton / Tamarac FL.
+    # #frank-matos-recruiting posts "*Peak Management* - *First Round Thread*
+    # 10/16", then "FIRST ROUND THREAD: 10/19" from 10/19 on; the "EOD ...
+    # INTERVIEWERS' REPORT" recap doesn't match. South Shore tab "Frank Matos".
+    # Photos channel #indeed-photos-frank-matos-office created 10/29.
+    ("frank", "Frank Matos", SOUTH_SHORE, "Frank Matos", "23221", "Peak Management, Inc.",
+     "C0C6BT2CZT3", "C0CDEFEARRS", r"first\s*round\s*thread"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -427,6 +446,7 @@ _TZ = {
     "omar": "America/Detroit",         # ads: Dearborn, MI (slots in EST)
     "luke": "America/Los_Angeles",     # ads: Palo Alto / Santa Clara / Sunnyvale, CA
     "valeria": "America/New_York",     # Altura Marketing, Tampa FL
+    "frank": "America/New_York",       # ads: Boca Raton / Tamarac / Coral Springs, FL
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
@@ -460,6 +480,7 @@ _LIVE = {
     "jennifer",                        # 10/22: 10/1-10/22 loaded, 16 threads, marks on
     "joshua",                          # 10/22: 10/1-10/22 loaded, 9 threads, 60 photos, marks on
     "omar",                            # 10/19: 10/7-10/19 loaded from Lucy 1, 9 threads, Eastern
+    "frank",                           # 10/29: 10/1-10/29 loaded from Lucy 1, Eastern (Eve: "dejalo corriendo diario")
 }
 
 # Spellings an office confirmed are one ad, {typed title: the ad's title}.
@@ -468,6 +489,12 @@ _LIVE = {
 # Manager" runs in Doral AND Princeton (Valeria 9/24): the city-less copy can't
 # be told apart, so Eve 9/24 folded all three into ONE thread.
 _ALIASES = {
+    # Eve 11/3: "(Bilingual/Spanish)" with no city (Daniel Williams 10/28, Jada
+    # Overton 10/9; Camila named it too) goes in the existing city-less
+    # "(Bilingual Spanish Required)" thread, never a thread of its own.
+    "haytham": {
+        "AT&T Retail Associate (Bilingual/Spanish)": "AT&T Retail Associate (Bilingual Spanish Required)",
+    },
     # Eve 10/19: every Omar ad gets its thread, even one seen 1-2 times (an
     # alias target counts as a confirmed ad). Broken pastes shown fixed.
     "omar": {
@@ -637,6 +664,10 @@ _SCORECARD_TABS = {
                    "Sales Representative (AT&T)": "Miami, FL",
                    "AT&T Sales Associate": "Miami, FL",
                }},
+    # Colten 10/29: the same Friday post in Jairo's indeed-photos channel,
+    # plus the two Fridays before it. No All in One tab (none asked for).
+    "jairo": {"scorecard_seconds_from_sheet": True, "scorecard": True,
+              "scorecard_tag": "U0BVCKR63CK"},  # Eve 10/29: jairoruizpmg, not U04Q6T14M34
 }
 
 OFFICES += [

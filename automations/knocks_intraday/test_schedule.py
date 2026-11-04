@@ -135,9 +135,20 @@ class RosterIsaiah(unittest.TestCase):
     entry outlived its cause and quietly cost him every board (Megan: "Isaiah
     should post just like the others just with more limited data")."""
 
-    def test_isaiah_is_enrolled_in_the_eod_slot(self):
+    def test_isaiah_gets_a_9pm_board_from_somewhere(self):
+        """Not blocked, and EITHER on this slot OR his room already gets a
+        board. Since his LucyEco enrollment his own computer posts his knock
+        board in #everforward-sales (icd_alerts.approved_knocks), so this slot
+        drops him on purpose — two boards in one room is the 9/3 duplicate.
+        What must never come back is the BLOCKED entry that silently cost him
+        every board."""
         from automations.knocks_intraday import roster
-        self.assertIn("isaiah", {o.key for o in roster.enrolled("eod")})
+        from automations.office_metrics.offices import OFFICES
+        self.assertNotIn("isaiah", roster.BLOCKED)
+        on_slot = "isaiah" in {o.key for o in roster.enrolled("eod")}
+        served = OFFICES["isaiah"].channel_id in roster.disposition_channels()
+        self.assertTrue(on_slot or served,
+                        "isaiah is on no 9 PM board at all")
 
     def test_nothing_is_blocked_without_a_reason_string(self):
         """A BLOCKED entry must carry WHY. An empty dict is fine; a key with a

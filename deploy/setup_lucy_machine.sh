@@ -179,6 +179,9 @@ cd "$HOME/recruiting-report"
 #                     (logtail, git_status, …), so a diagnostic never waits out a
 #                     22-minute report. Without it the box still works; it just
 #                     goes quiet whenever a long rerun is in front (2026-08-27).
+# mini-control-text    its TEXT LANE — only the iMessage sends + the local text
+#                     outbox, so a text never waits out a report (2026-10-26).
+#                     Without it main sends the texts, just later.
 # session-holder      keeps ownerville warm + exports the session file the
 #                     readiness gate reads — WITHOUT THIS, NO REPORT EVER RUNS
 # keep-awake          caffeinate -s, so launchd's 4am job isn't deferred
@@ -187,7 +190,7 @@ cd "$HOME/recruiting-report"
 # day-orchestrator is deliberately NOT installed here — putting a machine on the
 # 4am clock is a separate "this box is live now" decision:
 #     lucy rerun install_orchestrator_agent --machine "<name>"
-for agent in mini-control mini-control-read session-holder keep-awake orchestrator-schedule-guard; do
+for agent in mini-control mini-control-read mini-control-text session-holder keep-awake orchestrator-schedule-guard; do
     if ./.venv/bin/python automations/day_orchestrator/install_agent.py "$agent"; then
         echo "  $agent ✓"
     else

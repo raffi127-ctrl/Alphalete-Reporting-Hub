@@ -22,6 +22,7 @@ no "correct" to put back, so the fixer does not guess.
 from __future__ import annotations
 
 import collections
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -39,6 +40,7 @@ ROLL_CALL_FOR = {"X": "Off", "T": "T"}
 ERRORS = ("#REF!", "#N/A", "#DIV/0!", "#VALUE!", "#NAME?", "#ERROR!", "#NUM!")
 
 KIND_LABEL = {
+    "campaign_blank": "Campaign vacía: puesta según lo vendido",
     "x_over_formula": "X/letra escrita encima de una fórmula",
     "typed_over_formula": "número escrito a mano encima de una fórmula",
     "missing_formula": "fórmula borrada",
@@ -47,13 +49,28 @@ KIND_LABEL = {
     "error_value": "celda con error",
     "font": "fuente / tamaño de letra distinto",
     "number_format": "formato de número distinto (%, decimales)",
+    "borders": "bordes distintos al resto de la columna",
+    "dropdown_missing": "columna con desplegable: esta fila tiene texto sin desplegable",
+    "dropdown_different": "desplegable con otra lista que el resto de la columna",
+    "dropdown_value_off": "el texto de la celda no está en la lista del desplegable de la columna",
+    "dropdown_mixed": "columna con dos listas de desplegable distintas (hay que elegir una)",
+    "style": "negrita / centrado distinto",
     "roll_call_blank": "X/T en Int con la Roll Call vacía",
     "cf_broken": "regla de formato condicional rota (#REF!)",
     "cf_foreign": "regla de formato condicional que apunta fuera de la tab",
     "cf_duplicate": "regla de formato condicional repetida",
     "cf_self": "regla de 'ya está puesto' que se cuenta a sí misma (tacha a cualquiera)",
+    "cf_strike_stray": "tachado de Car Rides pegado sobre los autos (tacha nombres ya puestos)",
+    "cf_stray_cell": "regla de color pegada en una celda suelta (no la tiene el resto de la columna)",
+    "background_shift": "colores de fondo corridos una columna en esta fila",
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
+    "cf_row_shift": "color de estado que pinta la fila de al lado, no la del rep",
+    "day_stats_formula": "fila de resumen del día (en el campo / en el board) con otra fórmula que los demás días",
+    "day_formula_differs": "un día con otra fórmula que los demás días en la misma fila",
+    "status_word": "la fórmula busca un estado que no existe en Field Status (nunca se cumple)",
+    "last_week_stale": "LAST/PRIOR WEEK o historial con números viejos (entraron ventas después de copiarlos)",
+    "day_stats_wrong": "fila de resumen del día no cuenta a los reps que vendieron o golpearon",
     "filter_short": "el filtro/orden no cubre las columnas del rep",
     "lineup_short": "Line Up: la lista de nombres no termina en la fila arriba de TOTALS del Sales Board",
     "lineup_old_week": "Line Up: la lista de nombres lee una semana vieja, no el board en uso",
@@ -67,6 +84,8 @@ KIND_LABEL = {
     "lane_spill_blocked": "Lanes: algo escrito debajo de un carril (lo deja en blanco)",
     "lane_threshold": "Lanes: el corte de la fórmula no es el del título",
     "lane_twin_differs": "Lanes: Current Week y Last week filtran distinto",
+    "tab_name_space": "Nombre de tab con un espacio de más (una fórmula por fecha no la encuentra)",
+    "date_wrong": "Fechas de la semana mal en el board (días o título)",
 }
 
 
@@ -435,6 +454,215 @@ def _group_added_rows(found: List[Finding]) -> List[Finding]:
     return found
 
 
+def _no_rows(pattern: str) -> str:
+    return re.sub(r"(\[[+-]\d+\]\$?)\d+", r"\1", pattern)
+
+
+REP_ROW = re.compile(r"\breps?\b", re.I)
+DAY_MAJORITY = 4         # days that must share a formula before an odd day is fixed
+
+
+def check_day_rows(tab: str, values, formulas) -> List[Finding]:
+    """Under the rep list every day block repeats the same row of formulas --
+    TOTALS, 'Rolled a Zero', '% on the Board', the Teams lines (Eve 2026-10-30:
+    'formulas pisadas con numeros' -- WE 10.25 Tuesday 'Rolled a Zero' counted
+    zeros while the other six days did field - board). Same cell in each day,
+    compared day to day: when 4+ days share one formula and are the majority,
+    a day with a typed number or another formula gets it back (its own
+    columns). A blank day is left alone -- some boards stop at Saturday."""
+    first, last = block_rows(values)
+    starts = sorted(min(cols.values()) for cols in day_blocks(values).values())
+    counts = set(_stat_rows(values).values())
+    broken = any(_overcounts(values, r, starts) for r in counts)
+    if len(starts) < DAY_MAJORITY:
+        return []
+    width = min(b - a for a, b in zip(starts, starts[1:]))
+    lay = layout(values)
+    out: List[Finding] = []
+    for r in range(lay.sub_row + 1, len(formulas) + 1):
+        if first <= r <= last:
+            continue
+        label = " ".join(str(_g(values, r, lay.name_col)).split()) or str(r)
+        # a rep count that overcounts means the days' own formulas are the broken
+        # ones: every 'Reps ...' row of that board is left as typed, reported only
+        if (r in counts or broken and REP_ROW.search(label)) and                 (broken or _overcounts(values, r, starts)):
+            continue
+        for off in range(width):
+            cells = [(c + off, str(_g(formulas, r, c + off))) for c in starts]
+            pats = {c: normalize_cols(x, c) for c, x in cells if x.startswith("=")}
+            if not pats:
+                continue
+            top, hits = collections.Counter(pats.values()).most_common(1)[0]
+            if hits < max(DAY_MAJORITY, len(starts) // 2 + 1):
+                continue
+            for c, raw in cells:
+                if c in pats:
+                    # =SUM(U6:U113) vs =SUM(U4:U113): only where the range
+                    # starts -- same total, and moving it up could pull a
+                    # header date into the sum (Drew, 2026-10-30)
+                    if pats[c] == top or _no_rows(pats[c]) == _no_rows(top):
+                        continue
+                    kind = "day_formula_differs"
+                elif _typed_number(raw):
+                    kind = "typed_over_formula"
+                else:
+                    continue
+                fix = denormalize_cols(top, c)
+                out.append(Finding(
+                    kind, tab, a1(r, c), "%s, fila %s" % (KIND_LABEL[kind], label),
+                    row=r, name=label, before=raw[:120], after=fix[:120], value=fix))
+    return out
+
+
+STATUS_HEADER = "field status"
+
+
+def check_status_words(tab: str, values, formulas) -> List[Finding]:
+    """A formula that tests Field Status against a word nobody uses: the week
+    column of our board said "<>1st Week" while the column says '1st Wk', so
+    week-one reps were never left out of the week's field count (Eve
+    2026-10-30). When the tab's other formulas test the same column with a
+    word that IS used and starts the same way ('1st'), that word goes in."""
+    col = next((c for c, x in enumerate(values[0] if values else [], 1)
+                if " ".join(str(x).split()).lower() == STATUS_HEADER), 0)
+    if not col:
+        return []
+    first, last = block_rows(values)
+    used = {" ".join(_g(values, r, col).split()).lower()
+            for r in range(first, last + 1) if _g(values, r, col).strip()}
+    letters = col_letter(col)
+    rx = re.compile(r'(\$?%s\$?\d+:\$?%s\$?\d+\s*(?:,\s*"<>|<>\s*"))([^"]*)(")' % (letters, letters))
+    said = collections.Counter()
+    for row in formulas:
+        for f in row:
+            if str(f).startswith("="):
+                for m in rx.finditer(str(f)):
+                    said[m.group(2)] += 1
+    good = [w for w in said if w.lower() in used]
+    out: List[Finding] = []
+    for r, row in enumerate(formulas, 1):
+        for c, f in enumerate(row, 1):
+            f = str(f)
+            if not f.startswith("=") or not rx.search(f):
+                continue
+            def swap(m):
+                w = m.group(2)
+                if not w or w.lower() in used:
+                    return m.group(0)
+                like = [g for g in good if g.split()[0].lower() == w.split()[0].lower()]
+                return m.group(1) + like[0] + m.group(3) if len(like) == 1 else m.group(0)
+            fixed = rx.sub(swap, f)
+            if fixed != f:
+                label = " ".join(str(_g(values, r, layout(values).name_col)).split()) or str(r)
+                out.append(Finding("status_word", tab, a1(r, c),
+                                   "%s, fila %s" % (KIND_LABEL["status_word"], label),
+                                   row=r, name=label, before=f[:120], after=fixed[:120], value=fixed))
+    return out
+
+
+# --- the per-day summary rows under TOTALS ------------------------------------
+
+STAT_ROWS = (("field", re.compile(r"in\s+the\s+field", re.I)),
+             ("board", re.compile(r"on\s+the\s+board", re.I)))
+
+
+def _num(x) -> Optional[float]:
+    s = str(x if x is not None else "").strip().replace(",", "").rstrip("%")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _stat_rows(values) -> Dict[str, int]:
+    """{'field': row, 'board': row} -- 'Total Reps in the Field' and 'Reps that
+    got on the Board', found by label under TOTALS. '% of Reps on the Board' is
+    a ratio, not a count: left out."""
+    lay = layout(values)
+    out: Dict[str, int] = {}
+    for r in range(lay.last + 2, len(values) + 1):
+        text = " ".join(" ".join(str(_g(values, r, c)).split())
+                        for c in range(1, lay.name_col + 2))
+        if "%" in text:
+            continue
+        for key, rx in STAT_ROWS:
+            if key not in out and rx.search(text):
+                out[key] = r
+                break
+    return out
+
+
+def _overcounts(values, r: int, cols) -> bool:
+    """A rep count on row r that says more reps than the board has names --
+    Drew's 'Reps in the Field' (2026-10-30) counts the empty rows too: 108 every
+    day, so he types Monday's real 12 by hand. Copying that formula over his
+    number would put the 108 back."""
+    first, last = block_rows(values)
+    reps = sum(1 for x in range(first, last + 1) if name_at(values, x))
+    return any((_num(_g(values, r, c)) or 0) > reps for c in cols)
+
+
+def check_day_stats(tab: str, values, formulas) -> List[Finding]:
+    """'Total Reps in the Field' / 'Reps that got on the Board', each day
+    (Raf 2026-10-30: "the sales board isn't showing active reps selling").
+    A day where reps sold or knocked but the row says 0 -- or says fewer in
+    the field than on the board -- has a broken count. When the other days
+    agree on one formula, the odd day gets it back (same formula, its own
+    columns); when they don't, it's only reported. A day nobody has worked yet
+    reads 0 on both sides and is never flagged."""
+    rows = _stat_rows(values)
+    if not rows:
+        return []
+    first, last = block_rows(values)
+    days = [(d, cols.get("apps") or cols.get("units"), cols.get("tk"))
+            for d, cols in day_blocks(values).items()]
+    days = [x for x in days if x[1]]
+    out: List[Finding] = []
+    for key, r in rows.items():
+        pats = {}
+        for _d, c, _tk in days:
+            f = str(_g(formulas, r, c))
+            if f.startswith("="):
+                pats[c] = normalize_cols(f, c)
+        top, hits = (collections.Counter(pats.values()).most_common(1)[0]
+                     if pats else (None, 0))
+        if hits < max(3, len(days) // 2 + 1):
+            top = None
+        for day, c, tk in days:
+            shown = _num(_g(values, r, c))
+            if shown is None:
+                continue
+            reps = [x for x in range(first, last + 1) if name_at(values, x)]
+            sold = sum(1 for x in reps if (_num(_g(values, x, c)) or 0) > 0)
+            active = sum(1 for x in reps if (_num(_g(values, x, c)) or 0) > 0
+                         or (tk and (_num(_g(values, x, tk)) or 0) > 0))
+            on_board = _num(_g(values, rows["board"], c)) if "board" in rows else None
+            if shown > len(reps):
+                bad = True
+                said = "%s dice %d, más que los %d reps del board" % (day, shown, len(reps))
+            elif key == "field":
+                bad = (active and not shown) or (on_board is not None and shown < on_board)
+                said = "%s dice %d en el campo; %d reps vendieron o golpearon" % (day, shown, active)
+            else:
+                bad = sold and not shown
+                said = "%s dice %d en el board; %d reps vendieron" % (day, shown, sold)
+            if not bad:
+                continue
+            raw = _g(formulas, r, c)
+            label = " ".join(str(_g(values, r, layout(values).name_col)).split())
+            if top and pats.get(c) != top and not _overcounts(values, r, [x[1] for x in days]):
+                fix = denormalize_cols(top, c)
+                out.append(Finding("day_stats_formula", tab, a1(r, c),
+                                   "%s (%s)" % (KIND_LABEL["day_stats_formula"], said),
+                                   row=r, name=label, before=str(raw)[:120] or "(vacía)",
+                                   after=fix[:120], value=fix))
+            else:
+                out.append(Finding("day_stats_wrong", tab, a1(r, c),
+                                   "%s (%s)" % (KIND_LABEL["day_stats_wrong"], said),
+                                   row=r, name=label, before=str(raw)[:120] or "(vacía)"))
+    return out
+
+
 def check_errors(tab: str, values, formulas) -> List[Finding]:
     """Error values anywhere on the tab. Reported; the rep-block ones are
     fixed by check_formulas when the column has a healthy majority."""
@@ -531,7 +759,7 @@ def check_lineup_names(tab: str, formulas, boards: Dict[str, Tuple[int, int, int
 
 # --- fonts -----------------------------------------------------------------
 
-def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
+def check_fonts(tab: str, sheet_id: int, values, fonts, fill_blank: bool = False) -> List[Finding]:
     """fonts[r-1][c-1] = (family, size) as the cell shows it. Per column of
     the rep block: the cells off the column's majority font get it back.
 
@@ -543,22 +771,119 @@ def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
         tab, sheet_id, values, fonts, "font", lambda f: bool(f[0]),
         lambda f: "%s %s" % f,
         lambda f: {"textFormat": {"fontFamily": f[0], "fontSize": f[1]}},
-        "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize")
+        "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize", fill_blank=fill_blank)
 
 
-def check_number_formats(tab: str, sheet_id: int, values, numfmts) -> List[Finding]:
+def check_styles(tab: str, sheet_id: int, values, styles, fill_blank: bool = False) -> List[Finding]:
+    """styles[r-1][c-1] = (bold, horizontal). A row pasted values-only or
+    re-added by hand keeps Georgia 12 but loses bold and centering -- the
+    numbers sit thin in the cell's corner (Eve 2026-10-27: Basil, Baylen).
+    Vertical alignment is left out: top/middle/bottom mixes all over the board
+    and doesn't show at this row height. Same majority rule as fonts."""
+    return _column_format(
+        tab, sheet_id, values, styles, "style", lambda f: bool(f[1]),
+        lambda f: "%s%s" % ("negrita " if f[0] else "", (f[1] or "-").lower()),
+        lambda f: {"textFormat": {"bold": f[0]}, "horizontalAlignment": f[1]},
+        "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment", fill_blank=fill_blank,
+        vote_parts=True)
+
+
+BG_SHIFT_MIN = 3   # this many cells off in one run: not a cell someone painted
+
+
+def check_background_shift(tab: str, sheet_id: int, values, bgs) -> List[Finding]:
+    """bgs[r-1][c-1] = the background the cell was GIVEN (json, "" = none), never
+    the effective one: that one carries the conditional colors. A row whose cells
+    carry the color of the column next door got pasted one column over (Cesar
+    Flores 2026-11-01, BK:BT). A single painted cell is somebody's highlight, so
+    only a run counts."""
+    first, last = block_rows(values)
+    named = [r for r in range(first, last + 1) if name_at(values, r)]
+    if len(named) < MIN_ROWS:
+        return []
+
+    def at(r, c):
+        row = bgs[r - 1] if r - 1 < len(bgs) else []
+        return (row[c - 1] if c - 1 < len(row) else None) or ""
+    width = max((len(r) for r in bgs[first - 1:last]), default=0)
+    lay = layout(values)
+    top = {}
+    for c in range(lay.name_col + 1, width + 1):
+        best, hits = collections.Counter(at(r, c) for r in named).most_common(1)[0]
+        if hits >= MAJORITY * len(named):
+            top[c] = best
+    out = []
+    for r in range(first, last + 1):
+        done = set()
+        for step in (1, -1):
+            c = lay.name_col + 1
+            while c <= width:
+                run = []
+                while c in top and c + step in top and at(r, c) == top[c + step]:
+                    run.append(c)
+                    c += 1
+                off = [x for x in run if at(r, x) != top[x] and x not in done]
+                if len(off) >= BG_SHIFT_MIN:
+                    done.update(off)
+                    for x in off:
+                        out.append(Finding(
+                            "background_shift", tab, a1(r, x),
+                            "%s, columna %s" % (KIND_LABEL["background_shift"], header(values, x)),
+                            row=r, name=name_at(values, r),
+                            before=at(r, x) or "sin color", after=top[x] or "sin color",
+                            request={"updateCells": {
+                                "range": _cell_range(sheet_id, r, x),
+                                "rows": [{"values": [{"userEnteredFormat":
+                                    {"backgroundColor": json.loads(top[x])} if top[x] else {}}]}],
+                                "fields": "userEnteredFormat.backgroundColor"}}))
+                c += 1
+    return out
+
+
+def check_borders(tab: str, sheet_id: int, values, borders, fill_blank: bool = False) -> List[Finding]:
+    """borders[r-1][c-1] = ((side, style, color json), ...). A free row is what
+    the next new rep is made from, so it has to match the reps (Eve 2026-11-01:
+    the Extra rows she duplicates every Friday)."""
+    def fmt(f):
+        return {"borders": {side: dict({"style": style},
+                                       **({"color": json.loads(color)} if color else {}))
+                            for side, style, color in f}}
+    return _column_format(
+        tab, sheet_id, values, borders, "borders", lambda f: True,
+        lambda f: ", ".join("%s %s" % (side, style.lower()) for side, style, _ in f) or "sin bordes",
+        fmt, "userEnteredFormat.borders", fill_blank=fill_blank)
+
+
+def check_number_formats(tab: str, sheet_id: int, values, numfmts, fill_blank: bool = False,
+                         own_format=None) -> List[Finding]:
     """numfmts[r-1][c-1] = (type, pattern). A formula put back into a cell
     that was formatted as % shows '5.6%' where its column shows '0.1' -- the
-    value is right and still reads wrong. Same majority rule as fonts."""
-    return _column_format(
+    value is right and still reads wrong. Same majority rule as fonts.
+
+    own_format[r-1][c-1] = the cell has a number format of its own. Without one,
+    what it shows comes from its formula, so setting it back to automatic
+    changes nothing and the same "fix" came back every day (Ryan McSpadden AF4:AF7,
+    =UNIQUE names showing 0.00, 2026-11-02): those are not findings."""
+    found = _column_format(
         tab, sheet_id, values, numfmts, "number_format", lambda f: True,
         lambda f: f[1] or f[0] or "automático",
         lambda f: {"numberFormat": {"type": f[0], "pattern": f[1]}} if f[0]
         else {"numberFormat": {}},
-        "userEnteredFormat.numberFormat")
+        "userEnteredFormat.numberFormat", fill_blank=fill_blank)
+    if own_format is None:
+        return found
+
+    def already_automatic(x):
+        if x.after != "automático" or not x.row:
+            return False
+        row = own_format[x.row - 1] if x.row - 1 < len(own_format) else []
+        c = col_index(re.match(r"[A-Z]+", x.where).group(0)) - 1
+        return not (row[c] if c < len(row) else False)
+    return [x for x in found if not already_automatic(x)]
 
 
-def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields):
+def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields,
+                   fill_blank=False, vote_parts=False):
     first, last = block_rows(values)
     n = last - first + 1
     if n < MIN_ROWS:
@@ -570,9 +895,10 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields)
     rows = named if len(named) >= MIN_ROWS else range(first, last + 1)
     lay = layout(values)
     out = []
+    def titled(c):
+        return bool(_g(values, lay.sub_row, c).strip() or _g(values, lay.day_row, c).strip())
     for c in range(1, width + 1):
-        if c <= lay.name_col or not (_g(values, lay.sub_row, c).strip()
-                                     or _g(values, lay.day_row, c).strip()):
+        if c <= lay.name_col or not (titled(c) or (c > 1 and titled(c - 1) and titled(c + 1))):
             continue          # A/B carry group labels and ranks, styled by hand
         col = {}
         for r in rows:
@@ -582,20 +908,205 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields)
         if len(col) < MIN_ROWS:
             continue
         top, hits = collections.Counter(col.values()).most_common(1)[0]
+        if vote_parts and hits < MAJORITY * len(col):
+            # Email on 2026-11-01: 50 centered, 18 not, 9 centered in bold. No
+            # single look reaches the majority, but "centered" (59) and "not
+            # bold" (68) each do: vote each one on its own.
+            parts = [collections.Counter(f[i] for f in col.values()).most_common(1)[0]
+                     for i in range(len(top))]
+            top, hits = tuple(p[0] for p in parts), min(p[1] for p in parts)
         if hits < MAJORITY * len(col) or not usable(top):
             continue
-        for r, f in col.items():
+        # fill_blank: the free rows don't vote, but they do get the format, so
+        # a rep typed into one starts out looking like everybody else
+        # (Eve 2026-11-01).
+        todo = dict(col)
+        if fill_blank:
+            for r in range(first, last + 1):
+                if r in todo or name_at(values, r):
+                    continue
+                row = grid[r - 1] if r - 1 < len(grid) else []
+                cell = row[c - 1] if c - 1 < len(row) else None
+                todo[r] = tuple(cell) if cell is not None else None
+        for r, f in todo.items():
             if f == top:
                 continue
             out.append(Finding(
                 kind, tab, a1(r, c),
                 "%s, columna %s" % (KIND_LABEL[kind], header(values, c)),
                 row=r, name=name_at(values, r),
-                before=show(f), after=show(top),
+                before=show(f) if f is not None else "sin formato", after=show(top),
                 request={"updateCells": {
                     "range": _cell_range(sheet_id, r, c),
                     "rows": [{"values": [{"userEnteredFormat": fmt(top)}]}],
                     "fields": fields}}))
+    return out
+
+
+_SPARE_NAME = re.compile(r"^(zz\s*extra|extra|xx)$", re.I)
+DROPDOWN_FREE_ROWS = 30  # more blank rows than this is a template, not spare rows
+DROPDOWN_BOARD_CAP = 500 # more writes than this on one owner's board = misread: report
+DROPDOWN_VOTERS = 0.50   # share of the reps that must have one for the column to count
+DROPDOWN_SAME = 0.90     # share of those that must agree before Lucy writes it
+
+
+def _dropdown_choices(rule: dict) -> Optional[set]:
+    """The words a list rule accepts; None when it isn't a typed list."""
+    cond = rule.get("condition") or {}
+    if cond.get("type") == "ONE_OF_LIST":
+        return {str(v.get("userEnteredValue", "")).strip() for v in cond.get("values", [])}
+    if cond.get("type") == "BOOLEAN" and not cond.get("values"):
+        return {"TRUE", "FALSE"}
+    return None
+
+
+def check_dropdowns(tab: str, sheet_id: int, values, rules,
+                    fill_blank: bool = False, hidden=frozenset()) -> List[Finding]:
+    """rules[r-1][c-1] = the cell's data validation, or None. A column where the
+    reps have a dropdown has it on EVERY row of the block; text pasted in is not
+    a dropdown (Raf + Eve 2026-11-01: rows added for new 1st weeks came without
+    them, and the free rows they go into had none either).
+
+    Only rows with a rep vote. A row's value is never changed: a word that is
+    not on the list is reported, because the dropdown would mark it invalid. A
+    column split between two lists is reported, not picked for: it may be the
+    list that is wrong (our 'A-Play Yes/No' mostly carries the Leadership list).
+    fill_blank: the free rows get the dropdown too.
+
+    The dropdown is COPIED from a row that has it, never written: the API cannot
+    read or send a label's color, so a written rule comes out grey (Eve
+    2026-11-02). copyPaste keeps the colors, but a row the filter hides sends the
+    paste to the next visible row (TOTALS on 2026-11-01), so hidden: those rows
+    are only reported."""
+    first, last = block_rows(values)
+    named = [r for r in range(first, last + 1)
+             if name_at(values, r) and not _SPARE_NAME.match(name_at(values, r))]
+    if len(named) < MIN_ROWS:
+        return []
+    lay = layout(values)
+
+    def rule_at(r, c):
+        row = rules[r - 1] if r - 1 < len(rules) else []
+        return row[c - 1] if c - 1 < len(row) else None
+
+    width = max((len(rules[r - 1]) for r in named if r - 1 < len(rules)), default=0)
+    # A dead tab can carry 100+ blank rows (Salik's 'Fiber Sales Board', WE 8/24:
+    # 2,725 writes in the 2026-11-01 preview). Those are not spare rows.
+    blank = [r for r in range(first, last + 1) if not name_at(values, r)]
+    fix_rows = [r for r in range(first, last + 1) if name_at(values, r)
+                or (fill_blank and len(blank) <= DROPDOWN_FREE_ROWS)]
+    out = []
+    for c in range(lay.name_col + 1, width + 1):
+        have = {r: json.dumps(rule_at(r, c), sort_keys=True) for r in named if rule_at(r, c)}
+        if len(have) < max(MIN_ROWS, DROPDOWN_VOTERS * len(named)):
+            continue
+        top, hits = collections.Counter(have.values()).most_common(1)[0]
+        col = header(values, c)
+        if hits < DROPDOWN_SAME * len(have):
+            out.append(Finding(
+                "dropdown_mixed", tab, col_letter(c),
+                "%s, columna %s" % (KIND_LABEL["dropdown_mixed"], col),
+                before="%d filas con una lista, %d con otra" % (hits, len(have) - hits)))
+            continue
+        rule = json.loads(top)
+        choices = _dropdown_choices(rule)
+        source = next((r for r in sorted(have) if have[r] == top and r not in hidden), None)
+        for r in fix_rows:
+            cur = rule_at(r, c)
+            if cur and json.dumps(cur, sort_keys=True) == top:
+                continue
+            text = _g(values, r, c).strip()
+            kind = "dropdown_different" if cur else "dropdown_missing"
+            base = dict(where=a1(r, c), row=r, name=name_at(values, r),
+                        before=text or "vacía", after="desplegable")
+            if choices is not None and text and text not in choices:
+                out.append(Finding("dropdown_value_off", tab,
+                                   detail="%s, columna %s: %r"
+                                          % (KIND_LABEL["dropdown_value_off"], col, text), **base))
+                continue
+            can_copy = source is not None and r not in hidden
+            out.append(Finding(
+                kind, tab, detail="%s, columna %s%s" % (KIND_LABEL[kind], col,
+                                                        "" if can_copy else " (fila oculta)"),
+                request={"copyPaste": {
+                    "source": _cell_range(sheet_id, source, c),
+                    "destination": _cell_range(sheet_id, r, c),
+                    "pasteType": "PASTE_DATA_VALIDATION"}} if can_copy else None, **base))
+    return out
+
+
+# The row-1 header, and what a rep's sales for the week say about it (Eve
+# 2026-11-02). A value already in the cell stays, whatever was sold.
+CAMPAIGN_HEADER = "campaign"
+CAMPAIGN_FIBER, CAMPAIGN_BOTH = "Fiber", "Fiber + Wireless"
+
+
+def campaign_for(sold: Dict[str, float]) -> str:
+    """Any NL = Fiber + Wireless: the list has no Wireless of its own (Eve: only
+    Fiber, Fiber + Wireless, Roadtrip). Int, DTV or Int Up without NL = Fiber.
+    Nothing sold = "" (nothing to say about that rep)."""
+    if sold.get("nl", 0) > 0:
+        return CAMPAIGN_BOTH
+    fiber = any(sold.get(h, 0) > 0 for h in ("int", "int up", "dtv"))
+    return CAMPAIGN_FIBER if fiber else ""
+
+
+LAST_WEEK_BANNER = "last week's totals"
+
+
+def _last_week_cols(values) -> Dict[str, int]:
+    """{header (lower case): column} under the LAST WEEK'S TOTALS banner, up to
+    the next banner. Empty on a tab without it."""
+    row = values[0]
+    start = next((c for c, x in enumerate(row, 1)
+                  if " ".join(str(x).split()).lower() == LAST_WEEK_BANNER), 0)
+    if not start:
+        return {}
+    end = next((c for c in range(start + 1, len(row) + 1) if _g(values, 1, c).strip()),
+               len(row) + 1)
+    lay = layout(values)
+    return {" ".join(_g(values, lay.sub_row, c).split()).lower(): c for c in range(start, end)}
+
+
+def _sold(values, r: int, blocks, last_week=None) -> Dict[str, float]:
+    """Sales on row r: this week's day blocks, plus last week's totals when given.
+    X / T count as 0."""
+    out: Dict[str, float] = collections.Counter()
+    for cols in list(blocks.values()) + ([last_week] if last_week else []):
+        for h in ("int", "int up", "dtv", "nl"):
+            if h in cols:
+                try:
+                    out[h] += float(_g(values, r, cols[h]).replace(",", "") or 0)
+                except ValueError:
+                    pass
+    return out
+
+
+def check_campaign(tab: str, values) -> List[Finding]:
+    """A rep with a blank Campaign gets it from what they sold last week and so
+    far this week (Eve 2026-11-02): the new week's tab starts with its reps blank.
+
+    Only the cell's value. NEVER write this column's dataValidation: the API
+    cannot read or send a dropdown's colors, so writing the rule turns every
+    label grey (2026-11-02, WE 11.01 + 11.08, put back by hand)."""
+    if not values:
+        return []
+    col = next((c for c, x in enumerate(values[0], 1)
+                if " ".join(str(x).split()).lower() == CAMPAIGN_HEADER), 0)
+    if not col:
+        return []
+    first, last = block_rows(values)
+    blocks = day_blocks(values)
+    last_week = _last_week_cols(values)
+    out: List[Finding] = []
+    for r in range(first, last + 1):
+        name = name_at(values, r)
+        if not name or _SPARE_NAME.match(name) or _g(values, r, col).strip():
+            continue
+        word = campaign_for(_sold(values, r, blocks, last_week))
+        if word:
+            out.append(Finding("campaign_blank", tab, a1(r, col), KIND_LABEL["campaign_blank"],
+                               row=r, name=name, before="vacía", after=word, value=word))
     return out
 
 
@@ -608,6 +1119,7 @@ def _cell_range(sheet_id: int, r: int, c: int) -> dict:
 
 # What the note on a touched cell says. English: the owners read these.
 NOTE_LABEL = {
+    "date_wrong": "the week's date here was wrong",
     "x_over_formula": "an X/letter was typed over this formula",
     "typed_over_formula": "a number was typed over this formula",
     "missing_formula": "this formula had been deleted",
@@ -615,6 +1127,9 @@ NOTE_LABEL = {
     "row_added_wrong": "this row was added without its formulas",
     "font": "font/size didn't match the column",
     "number_format": "number format didn't match the column",
+    "style": "bold/centering didn't match the column",
+    "day_formula_differs": "this day's formula didn't match the other days",
+    "day_stats_formula": "this day's count didn't use the same formula as the other days",
     "roll_call_blank": "Int had the status but the Roll Call was blank",
     "start_date_moved": "this was another rep's start date (left behind by a sort)",
     "days_formula": "# Days Worked was missing or pointed at another row",
@@ -656,14 +1171,16 @@ def note_requests(found: List[Finding], sheet_id: int, notes, when: str) -> List
 LUCY_NOTE = re.compile(r"^Lucy (?:fixed this )?\((\d{1,2})/(\d{1,2})\)")
 
 
-def old_note_requests(sheet_id: int, notes, today) -> Tuple[List[dict], list]:
+def old_note_requests(sheet_id: int, notes, today, every: bool = False) -> Tuple[List[dict], list]:
     """(requests, notes as they stay) -- Lucy's notes from before this week's
     Monday taken off. A new week's tab is a copy of the last one, notes and
     all, and a board kept in one tab forever would pile them up (Eve
     2026-10-20). Only Lucy's paragraphs go; whatever a person wrote in the
-    same note stays."""
+    same note stays.
+    every: ALL of Lucy's notes go, whatever the date -- our own board
+    gets no notes at all (Eve 2026-10-26: too many corners)."""
     import datetime as dt
-    monday = today - dt.timedelta(days=today.weekday())
+    monday = today + dt.timedelta(days=400) if every else today - dt.timedelta(days=today.weekday())
     out, kept = [], []
     for r, row in enumerate(notes or [], 1):
         new_row = []
@@ -811,6 +1328,21 @@ def check_conditional(tab: str, sheet_id: int, rules: List[dict], ncols: int,
         else:
             seen[key] = i
 
+    dead_idx = {d[0] for d in dead}
+    for i, rule in enumerate(rules):
+        fix = None if i in dead_idx else _strike_strays(rule)
+        if fix:
+            keep, text = fix
+            new = dict(rule, ranges=keep)
+            new["booleanRule"] = dict(rule["booleanRule"], condition=dict(
+                rule["booleanRule"]["condition"], values=[{"userEnteredValue": text}]))
+            out.append(Finding(
+                "cf_strike_stray", tab, "regla %d" % i,
+                "%s: %s" % (KIND_LABEL["cf_strike_stray"], _rule_text(rule)),
+                before=_ranges_a1(rule), after=_ranges_a1(new),
+                request={"updateConditionalFormatRule":
+                         {"sheetId": sheet_id, "index": i, "rule": new}}))
+
     for i, kind, why in sorted(dead, reverse=True):
         out.append(Finding(kind, tab, "regla %d" % i, why,
                            before=_ranges_a1(rules[i]), after="(borrada)",
@@ -818,7 +1350,87 @@ def check_conditional(tab: str, sheet_id: int, rules: List[dict], ncols: int,
                                     {"sheetId": sheet_id, "index": i}}))
 
     if block:
+        busy = dead_idx | {int(x.where.split()[1]) for x in out}
+        out += _stray_cells(tab, sheet_id, rules, block, busy)
+        out += _row_shifts(tab, sheet_id, rules, block[0], dead_idx)
         out += _short_and_fragmented(tab, rules, block, {d[0] for d in dead})
+    return out
+
+
+STRAY_MAX_ROWS = 3   # a rule on this few rows of a column doesn't belong to it
+
+
+def _stray_cells(tab, sheet_id, rules, block, skip) -> List[Finding]:
+    """A cell pasted from another column brings that column's rules along, just
+    for itself: AO60 and BK57 (2026-11-01) got Roll Call's "0 = bold red", so a 0
+    looked different from every other 0 in Apps. Taking the piece off the rule
+    changes only those cells. Formula rules stay out: their references hang off
+    the first range, and the Late rules are split on purpose ('cf_fragmented')."""
+    first, last = block
+    out = []
+    for i, rule in enumerate(rules):
+        cond = (rule.get("booleanRule") or {}).get("condition") or {}
+        ranges = rule.get("ranges") or []
+        if i in skip or len(ranges) < 2 or not cond or cond.get("type") == "CUSTOM_FORMULA":
+            continue
+        rows_in: Dict[int, set] = {}
+        for rg in ranges:
+            for c in range(rg.get("startColumnIndex", 0), rg.get("endColumnIndex", 0)):
+                rows_in.setdefault(c, set()).update(
+                    x for x in range(rg.get("startRowIndex", 0) + 1, rg.get("endRowIndex", 0) + 1)
+                    if first <= x <= last)
+
+        def stray(rg):
+            top, bottom = rg.get("startRowIndex", 0) + 1, rg.get("endRowIndex", 0)
+            cols = range(rg.get("startColumnIndex", 0), rg.get("endColumnIndex", 0))
+            return (top == bottom and first <= top <= last and len(cols) <= 2
+                    and all(len(rows_in[c]) <= STRAY_MAX_ROWS for c in cols))
+        keep = [rg for rg in ranges if not stray(rg)]
+        if not keep or len(keep) == len(ranges):
+            continue
+        new = dict(rule, ranges=keep)
+        out.append(Finding(
+            "cf_stray_cell", tab, "regla %d" % i,
+            "%s: %s" % (KIND_LABEL["cf_stray_cell"], _rule_text(rule)),
+            before=", ".join(_range_a1(rg) for rg in ranges if stray(rg)),
+            after="(sacada de esas celdas)",
+            request={"updateConditionalFormatRule":
+                     {"sheetId": sheet_id, "index": i, "rule": new}}))
+    return out
+
+
+# =BL5="1st Wk" -- one cell (column may be $-fixed, row relative) against a word
+STATUS_EQ = re.compile(r'^=\s*(\$?)([A-Z]{1,3})(\d+)\s*=\s*("[^"]*")\s*$', re.I)
+
+
+def _row_shifts(tab, sheet_id, rules, first, dead) -> List[Finding]:
+    """A status color ("paint the name by Field Status") whose cell sits one
+    row off from where the rule starts: each rep is painted by the NEXT/previous
+    rep's status. Jairo, 2026-10-29: "every time I select a week it transfers
+    the color to the row above" -- B4:B142 read =BL5="1st Wk". Usually left by
+    a row inserted/deleted at the top of the block. Only rules that start on
+    the first rep row, so a rule meant to look one row away elsewhere stays."""
+    out = []
+    for i, rule in enumerate(rules):
+        cond = ((rule.get("booleanRule") or {}).get("condition") or {})
+        if i in dead or cond.get("type") != "CUSTOM_FORMULA":
+            continue
+        text = ((cond.get("values") or [{}])[0]).get("userEnteredValue", "")
+        m = STATUS_EQ.match(text)
+        rg = (rule.get("ranges") or [{}])[0]
+        start = rg.get("startRowIndex", 0) + 1
+        if not m or start != first or abs(int(m.group(3)) - start) != 1:
+            continue
+        fixed = "=%s%s%d=%s" % (m.group(1), m.group(2).upper(), start, m.group(4))
+        new = dict(rule)
+        new["booleanRule"] = dict(rule["booleanRule"], condition=dict(
+            cond, values=[{"userEnteredValue": fixed}]))
+        out.append(Finding(
+            "cf_row_shift", tab, "regla %d" % i,
+            "%s: %s en %s" % (KIND_LABEL["cf_row_shift"], text, _ranges_a1(rule)),
+            before=text, after=fixed,
+            request={"updateConditionalFormatRule":
+                     {"sheetId": sheet_id, "index": i, "rule": new}}))
     return out
 
 
@@ -906,6 +1518,44 @@ def _counts_itself(rule: dict, rules: List[dict]) -> bool:
                 ((oc.get("values") or [{}])[0]).get("userEnteredValue", "")):
             dup.update(_cells(other))
     return mine <= dup
+
+
+def _strike_strays(rule: dict):
+    """(kept ranges, new formula) for a Car Ride "already placed" rule with
+    pieces pasted onto the car rides themselves, else None.
+
+    The Line Up's pool under the car rides ('REPS NAMES from Sales Board')
+    strikes a name once it sits in that day's car rides: =COUNTIF($D$3:$G$46,
+    D50)>0 on D50:G84. Colten, 2026-10-28: "the dash through the names" -- the
+    same rule had also been pasted onto E17:E21 / U9:U13 / AU7 (inside the car
+    rides), so whoever is put there shows struck, every day. A piece on the
+    rows the rule counts is never the pool: it goes, the pool stays, and the
+    formula is re-anchored on the first piece left. Only when a pool piece
+    exists, below the counted rows -- a rule living only on the car rides
+    is cf_self's business."""
+    br = rule.get("booleanRule") or {}
+    cond = br.get("condition") or {}
+    if not ((br.get("format") or {}).get("textFormat") or {}).get("strikethrough") \
+            or cond.get("type") != "CUSTOM_FORMULA":
+        return None
+    text = ((cond.get("values") or [{}])[0]).get("userEnteredValue", "")
+    m = COUNTIF_ANY.match(text)
+    ranges = rule.get("ranges") or []
+    if not m or not ranges or col_index(m.group(5)) != ranges[0].get("startColumnIndex", 0) + 1 \
+            or int(m.group(6)) != ranges[0].get("startRowIndex", 0) + 1:
+        return None
+    r1, r2 = int(m.group(2)), int(m.group(4))
+    def on_counted_rows(rg):
+        return rg.get("startRowIndex", 0) + 1 <= r2 and rg.get("endRowIndex", 0) >= r1
+    keep = [rg for rg in ranges if not on_counted_rows(rg)]
+    # the pool sits BELOW what it counts; anything else (ours: Stations M5
+    # struck when on the OFF list further down) is a different rule -- leave it
+    if not keep or len(keep) == len(ranges) \
+            or any(rg.get("startRowIndex", 0) + 1 <= r2 for rg in keep):
+        return None
+    anchor = "%s%d" % (col_letter(keep[0].get("startColumnIndex", 0) + 1),
+                       keep[0].get("startRowIndex", 0) + 1)
+    return keep, text[:m.start(5)] + anchor + text[m.end(6):]
 
 
 def _points_outside(text: str, ncols: int) -> bool:

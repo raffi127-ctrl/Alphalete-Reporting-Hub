@@ -41,6 +41,7 @@ CAMPAIGN_SECTIONS: List[str] = [
     "B2B",
     "BOX",
     "Retail Internet",          # Frontier retired 2026-08-19
+    "Verizon",                  # added 2026-10-27 (Nicolas Murrugarra)
 ]
 
 

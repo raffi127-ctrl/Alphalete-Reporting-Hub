@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.second-round-retention-hourly</string>
+
+    <!-- 2nd round retention per office (Eve 2026-10-29): feed for Camila's
+         dashboard. LUCY 1. Path is the laptop placeholder; install_agent.py
+         rewrites it. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/second_round_retention_hourly.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- :07 every hour, 7am-7pm, every day. Machine LOCAL time (Lucy 1 is
+         Central) = 8:07am-8:07pm Eastern, the window Camila's dashboard shows.
+         :07 keeps it off the Funnel Board's :05 start. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>7</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/second-round-retention.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/second-round-retention.launchd.err.log</string>
+</dict>
+</plist>

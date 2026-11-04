@@ -281,6 +281,7 @@ API = "https://api.doubleentry.com"
 # `promoting_owner_id=`, and the items still come back as {id, name, ...}.
 _OWNERS_EP = f"{API}/client/org-summary/search/user"
 _SUMMARY_EP = f"{API}/client/org-summary"
+_REPORTS_EP = f"{API}/client/reports"
 
 # How many consecutive 4-week anchors may come back empty before a history
 # walk gives up. Two, not one: a single quiet month (an office between
@@ -311,11 +312,137 @@ def _api_token(page, *, verbose: bool = True) -> str:
                        "page didn't load its data")
 
 
-def _get(page, url: str, token: str) -> dict:
-    r = page.request.get(url, headers={"authorization": token})
+def _get(page, url: str, token: str, company_id=None) -> dict:
+    headers = {"authorization": token}
+    if company_id is not None:
+        # How the site's own Financial Report picks the office. Passing the id
+        # as a query param instead answers 403.
+        headers["x-company-id"] = str(company_id)
+    r = page.request.get(url, headers=headers)
     if not r.ok:
         raise RuntimeError(f"GET {url.split('?')[0]} -> HTTP {r.status}")
     return r.json()["data"]
+
+
+# The org summary only totals accounts named the standard way. Joseph Logan's
+# books call them 'Payroll Expenses:Owner Payroll' and 'Shareholder
+# Distributions', so his summary reads 0 while his own Financial Report shows
+# the money (Maud, 2026-11-02: $500-$600 a week on the report, $0 on his tab; she
+# confirmed Shareholder Distributions is his Owners Withdrawal). On 10/24 he was
+# the only one of 77 offices that differed.
+_DETAIL_SECTION = "REGULAR EXPENSES"
+_DETAIL_LINES = {
+    "OWNERS PAYROLL": {"owner payroll", "owners payroll"},
+    "OWNERS WITHDRAWAL": {"shareholder distributions"},
+}
+
+
+def _detail_lines(report: dict) -> dict:
+    """{metric: {week_end: value}} from one month of a Financial Report.
+
+    Only the expense section: 'Shareholder Distributions' is also listed under
+    LOAN BALANCES as a running balance, which is not what went out that week."""
+    from automations.financial_report.parse import _num
+    ends = []
+    for r in report.get("ranges") or []:
+        try:
+            ends.append(dt.date.fromisoformat(r.get("end_date") or ""))
+        except ValueError:
+            ends.append(None)     # 'Monthly Total' has no end date
+    out: dict = {}
+    for sec in report.get("sections") or []:
+        if (sec.get("label") or "").strip().upper() != _DETAIL_SECTION:
+            continue
+        for it in sec.get("items") or []:
+            # 'Payroll Expenses:Owner Payroll' -> 'owner payroll'
+            line = (it.get("label") or "").split(":")[-1].strip().lower()
+            metric = next((m for m, names in _DETAIL_LINES.items()
+                           if line in names), None)
+            if not metric:
+                continue
+            for end, v in zip(ends, it.get("transactions") or []):
+                if end is not None and v not in (None, ""):
+                    out.setdefault(metric, {})[end] = _num(v)
+    return out
+
+
+def _needs_detail(metrics: dict) -> list:
+    """The detail metrics this office's summary reports as 0 for every week."""
+    return [m for m in _DETAIL_LINES
+            if metrics.get(m) and not any(metrics[m].values())]
+
+
+def _apply_detail(metrics: dict, detail: dict) -> None:
+    """Put the Financial Report's value on summary weeks that read 0. A number
+    the summary already has is never replaced, and neither are weeks outside
+    the summary's window."""
+    for metric in _needs_detail(metrics):
+        for week, v in (detail.get(metric) or {}).items():
+            if v and week in metrics[metric]:
+                metrics[metric][week] = v
+
+
+# Joseph's books also pool his recruiting vendors into two accounts, so the summary
+# has no Indeed or Arcadia row for him. The account's charges name the vendor
+# (the same list the site opens when you click an amount): Advertising holds
+# Indeed + Jobs2Me, Recruiter holds Arcadia + Aptel + his recruiter's paycheck.
+# Jobs2Me and unnamed lines belong to no metric, same rule as the emailed books.
+_RECRUITING_PREFIX = "recruiting costs:"
+_PAYEE_METRICS = {"indeed": "INDEED",
+                  "arcadia consulting": "ARCADIA CONSULTING",
+                  "aptel": "APTEL"}
+
+
+def _recruiting_accounts(report: dict) -> list:
+    """Account codes of a Financial Report's pooled recruiting lines."""
+    return [it["code"] for sec in report.get("sections") or []
+            if (sec.get("label") or "").strip().upper() == _DETAIL_SECTION
+            for it in sec.get("items") or []
+            if (it.get("label") or "").strip().lower().startswith(_RECRUITING_PREFIX)
+            and it.get("code")]
+
+
+def _payee_totals(charges: list) -> dict:
+    """{metric: total} for one week's charges."""
+    from automations.financial_report.parse import _num
+    out: dict = {}
+    for c in charges:
+        metric = _PAYEE_METRICS.get((c.get("transaction_name") or "").strip().lower())
+        if metric:
+            out[metric] = round(out.get(metric, 0.0) + _num(c.get("amount")), 2)
+    return out
+
+
+def _fetch_payees(page, token: str, company_id, codes: list, ends: list) -> dict:
+    """{week_end: {metric: total}} from the charges behind `codes`."""
+    out: dict = {}
+    for end in ends:
+        start = end - dt.timedelta(days=6)
+        charges: list = []
+        for code in codes:
+            n = 1
+            while True:
+                data = _get(page, f"{_REPORTS_EP}/transactions?account_numbers[]={code}"
+                                  f"&company_id={company_id}&start_at={start}&end_at={end}"
+                                  f"&search=&per_page=100&page={n}",
+                            token, company_id=company_id)
+                charges += data.get("items") or []
+                if not (data.get("pagination") or {}).get("has_more_pages"):
+                    break
+                n += 1
+        out[end] = _payee_totals(charges)
+    return out
+
+
+def _apply_payees(metrics: dict, by_week: dict) -> None:
+    """Fill a vendor metric the summary has no number for. A summary number is
+    never replaced, and a week with no charge stays empty rather than 0."""
+    for metric in _PAYEE_METRICS.values():
+        if any((metrics.get(metric) or {}).values()):
+            continue
+        for week, totals in by_week.items():
+            if totals.get(metric):
+                metrics.setdefault(metric, {})[week] = totals[metric]
 
 
 def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
@@ -335,6 +462,7 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
     by_owner: dict = {}
     problems: list = []
     weeks: list = []
+    detail_cache: dict = {}   # an office can sit under several promoting owners
     with session(verbose=verbose) as page:
         token = _api_token(page, verbose=verbose)
         owners = _get(page, f"{_OWNERS_EP}?per_page=200&page=1", token)["items"]
@@ -365,6 +493,29 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
                         ends[i]: _num(vals[i])
                         for i in range(min(len(ends), len(vals)))
                         if vals[i] not in (None, "")}
+                _sign_profit_loss(metrics)
+                if _needs_detail(metrics):
+                    try:
+                        detail: dict = {}
+                        codes: set = set()
+                        for y, m in sorted({(e.year, e.month) for e in ends}):
+                            month = detail_cache.get((comp["id"], y, m))
+                            if month is None:
+                                month = detail_cache[(comp["id"], y, m)] = _get(
+                                    page,
+                                    f"{_REPORTS_EP}?type=weekly&month={m}"
+                                    f"&year={y}&color_scheme=light",
+                                    token, company_id=comp["id"])
+                            for metric, vals in _detail_lines(month).items():
+                                detail.setdefault(metric, {}).update(vals)
+                            codes.update(_recruiting_accounts(month))
+                        _apply_detail(metrics, detail)
+                        if codes:
+                            _apply_payees(metrics, _fetch_payees(
+                                page, token, comp["id"], sorted(codes), ends))
+                    except Exception as e:  # noqa: BLE001 — keep the summary's numbers
+                        problems.append((name, f"financial report fetch failed: "
+                                               f"{str(e)[:90]}"))
                 owner = _owner_from_office(name)
                 key = norm_name(owner)
                 if not key:
@@ -386,6 +537,16 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
         print(f"-> doubleentry: {n} office(s) for {len(by_owner)} owner(s); "
               f"weeks {[w.isoformat() for w in weeks]}", flush=True)
     return by_owner, weeks, problems
+
+
+def _sign_profit_loss(metrics: dict) -> None:
+    """Double Entry's PROFIT/LOSS is the funds move with the sign flipped: funds
+    down $27,275 reads +27,275 (217 of 217 week pairs, 2026-11-03). Flip it, so a
+    week the funds fell reads as a loss, the same as parse._resign_profit_loss."""
+    pl = metrics.get("PROFIT/LOSS")
+    if pl:
+        metrics["PROFIT/LOSS"] = {w: (-v if isinstance(v, (int, float)) else v)
+                                  for w, v in pl.items()}
 
 
 def _default_week_end() -> dt.date:
@@ -493,6 +654,8 @@ def fetch_office_history(owner_key: str, *, weeks_back: int = 52,
                       f"{'data' if hit_this_anchor else 'nothing'}", flush=True)
             anchor -= dt.timedelta(days=28)   # each anchor answers with 4 weeks
             walked += 4
+    for off in offices.values():
+        _sign_profit_loss(off["metrics"])
     if verbose:
         print(f"-> doubleentry history: {owner_key} — {len(offices)} office(s), "
               f"{len(weeks)} week(s)", flush=True)

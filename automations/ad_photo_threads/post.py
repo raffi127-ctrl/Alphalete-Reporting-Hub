@@ -229,6 +229,7 @@ def _uploads(item: dict, tmp: str, crop: bool) -> tuple:
     cut to this ad's people on it (Raf 9/21: no candidates from other ads); a
     name the cropper can't find gets nothing from that shot (Eve 9/21: never
     fall back to the whole group call). crop=False posts shots whole."""
+    from PIL import UnidentifiedImageError
     from automations.sara_down.run import _download_image
     from automations.ad_photo_threads import crop as cropper
     uploads, seen = [], set()
@@ -243,8 +244,17 @@ def _uploads(item: dict, tmp: str, crop: bool) -> tuple:
             continue
         aliases = {c.name: c.alt_names for c in item["cands"]
                    if c.name in shot["names"] and c.alt_names}
-        cuts = cropper.crop_names(data, shot["names"], f.get("id", ""),
-                                  aliases=aliases or None)
+        try:
+            cuts = cropper.crop_names(data, shot["names"], f.get("id", ""),
+                                      aliases=aliases or None)
+        except UnidentifiedImageError:
+            # Carlos 10/29: one screenshot Slack handed back wasn't an image
+            # and it took down the whole evening post. Its people just go
+            # without a photo ("name not visible"), like a name the cropper
+            # can't find.
+            print(f"  {f.get('id', '')}: not an image, skipped "
+                  f"({', '.join(shot['names'])})")
+            continue
         for j, n in enumerate(shot["names"]):
             if not cuts.get(n):
                 continue
@@ -428,7 +438,8 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
     wk = weeks.setdefault(bucket(rep.day), {})
     day = rep.day.isoformat()
     counts = {"threads_new": 0, "replies": 0, "skipped_done": 0, "photos": 0,
-              "pin_errors": 0, "to_pin": [], "to_unpin": []}
+              "pin_errors": 0, "to_pin": [], "to_unpin": [], "failed": [],
+              "no_thread": []}
 
     intro_key = f"_pilot_intro_{day}"
     if pilot and not ch_state.get(intro_key):
@@ -442,11 +453,11 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
         # that actually have screenshots, so the sample shows the real thing.
         items = [i for i in items if i["images"]][:max_ads]
 
-    for item in items:
+    def one(item: dict) -> None:
         ad = wk.setdefault(item["key"], {"thread_ts": "", "days": [], "pinned": False})
         if day in ad["days"]:
             counts["skipped_done"] += 1
-            continue
+            return
         if ad["thread_ts"] and not _thread_alive(cl, channel, ad["thread_ts"]):
             # The header was deleted (by hand, or a retire that died halfway):
             # replying to it would put the reply LOOSE in the channel -- 9/23,
@@ -507,6 +518,19 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
                                             week_stats(ad, header_week(ad, monday))))
         except Exception as e:                   # noqa: BLE001 — never costs the photos
             print(f"  header update failed for {item['title']!r}: {str(e)[:160]}")
+
+    # Carlos 10/29: one ad's error used to end the pass for every ad after
+    # it. Skip it, name it in counts["failed"], keep going; the next tick
+    # retries it (its day isn't in `days` yet).
+    for item in items:
+        try:
+            one(item)
+        except Exception as e:                   # noqa: BLE001 — the next ad still posts
+            why = f"{type(e).__name__}: {str(e)[:200]}"
+            print(f"  FAILED {item['title']!r}: {why}")
+            counts["failed"].append((item["title"], why))
+    counts["no_thread"] = [i["title"] for i in items
+                           if not (wk.get(i["key"]) or {}).get("thread_ts")]
 
     # Threads a PERSON has to pin, because Lucy's own pin was refused (she
     # pins them herself since 2026-09-25 — see config.PIN_REMINDER_USER): once

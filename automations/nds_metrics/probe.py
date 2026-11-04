@@ -29,6 +29,78 @@ from pathlib import Path
 LOOKBACK_DAYS = 60
 
 
+def dd_join(log=print) -> int:
+    """Join the WE 10.25 DD (Scoutly RAW tab, NDS Wireless campaign) to the
+    SaraPlus SOH cache by customer — Carlos 2026-10-28: "check through sara
+    plus and figure it out. doesnt make sense that its this behind." Shows,
+    per PAID customer: present in SaraPlus at all? status? active date?"""
+    import collections
+    import csv as _csv
+    import io
+    from automations.nds_metrics.run import OUT_DIR, _parse_date
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key("1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY")
+    raw = next(w for w in sh.worksheets() if w.title.strip().lower() == "raw")
+    vals = raw.get_all_values()
+    ix = {h: i for i, h in enumerate(vals[0])}
+    dd = collections.defaultdict(float)
+    dd_dates: dict = {}
+    for r in vals[1:]:
+        if r and r[0].strip() == "10.25" and "NDS" in r[ix["Campaign"]].upper():
+            try:
+                amt = float(str(r[ix["Total $ to ICD"]]).replace("$", "")
+                            .replace(",", "") or 0)
+            except ValueError:
+                amt = 0.0
+            key = (r[ix["Customer Name"]].strip().upper() or "(blank)",
+                   r[ix["Rep Name"]].strip())
+            dd[key] += amt
+            dd_dates.setdefault(key, r[ix["Sale Date"]].strip())
+    cache = sorted(OUT_DIR.glob("nds_soh_*.csv"))[-1]
+    rows = list(_csv.reader(io.StringIO(
+        cache.read_bytes().decode("utf-8-sig", errors="replace"))))
+    hx = {h.strip(): i for i, h in enumerate(rows[0])}
+    def cell(r, c):
+        i = hx.get(c)
+        return str(r[i]).strip() if i is not None and len(r) > i else ""
+    def toks(n):
+        return {t for t in n.upper().replace(",", " ").split() if len(t) > 1}
+    # The alphaletegp export has NO Customer Name column, so the join key
+    # is REP (token overlap) + DD Sale Date == SOH Order Date (±1 day).
+    soh = []
+    for r in rows[1:]:
+        soh.append((toks(cell(r, "User Name")),
+                    _parse_date(cell(r, "Order Date")), r))
+    log(f"[ddjoin] {len(dd)} paid customer(s) on the 10.25 DD vs "
+        f"{len(soh)} SOH row(s) in {cache.name} "
+        f"(join: rep + sale date; export has no customer column)")
+    found = missing = 0
+    # dd keys now carry the sale date too
+    for (cust, rep), amt in sorted(dd.items(), key=lambda x: -x[1]):
+        rt = toks(rep)
+        sd = _parse_date(dd_dates.get((cust, rep), ""))
+        def _ok(st, od):
+            if not (rt and st and (rt & st)):
+                return False
+            if sd is None or od is None:
+                return bool(rt & st)
+            return abs((od - sd).days) <= 1
+        hit = next((r for st, od, r in soh if _ok(st, od)), None)
+        if hit is None:
+            missing += 1
+            log(f"DDJOIN MISSING  {cust[:24]:24} {rep[:20]:20} ${amt:>7,.0f}")
+        else:
+            found += 1
+            log(f"DDJOIN present  {cust[:24]:24} {rep[:20]:20} ${amt:>7,.0f}"
+                f" | status={cell(hit, 'Wireless Status') or '?':10}"
+                f" | act={cell(hit, 'Wireless Active Date') or '-':10}"
+                f" | ord={cell(hit, 'Order Date') or '-'}"
+                f" | lines={cell(hit, 'Wireless Line Count') or '?'}")
+    log(f"[ddjoin] present {found}, MISSING {missing}")
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     from automations.office_metrics import nds_orderlog as NO
     from automations.total_knocks import guests
@@ -108,11 +180,41 @@ def main(argv=None) -> int:
                   + ", ".join(f"{k}={v}" for k, v in c.most_common(6)))
         per2 = collections.Counter(str(r[i_un]).strip() for r in crew_rows)
         print(f"[ndsm] SOH crew reps: {dict(per2)}")
+        # Carlos 2026-10-27: "show me the recent sales on carhi1816" —
+        # every crew order of the last 10 days on THIS dealer, one line each.
+        def _d(v):
+            for f in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+                try:
+                    return dt.datetime.strptime(
+                        str(v).strip().split()[0], f).date()
+                except (ValueError, IndexError):
+                    continue
+            return None
+        i_od, i_cn = ix.get("Order Date"), ix.get("Customer Name")
+        i_ws, i_lc = ix.get("Wireless Status"), ix.get("Wireless Line Count")
+        for r in sorted(crew_rows,
+                        key=lambda r: _d(r[i_od]) or dt.date.min,
+                        reverse=True):
+            d = _d(r[i_od]) if i_od is not None and len(r) > i_od else None
+            if d is None or (today - d).days > 10:
+                continue
+            def g(i):
+                return str(r[i]).strip() if i is not None and len(r) > i                     else ""
+            print(f"B2BATT {d} | {g(i_un)[:24]:24} | {g(i_cn)[:24]:24} | "
+                  f"{g(i_ws) or '?':12} | {g(i_lc) or '?'} line(s)")
     except Exception as e:  # noqa: BLE001 — leg 2 failing must not hide leg 1
         print(f"[ndsm] SaraPlus leg FAILED: {type(e).__name__}: {e}")
     print("=== done ===", flush=True)
     return 0
 
 
+def _entry(argv=None):
+    import sys as _sys
+    args = list(argv if argv is not None else _sys.argv[1:])
+    if "--dd-join" in args:
+        return dd_join()
+    return main(argv)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(_entry())

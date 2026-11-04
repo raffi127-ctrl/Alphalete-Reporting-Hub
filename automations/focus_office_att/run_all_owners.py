@@ -466,20 +466,24 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
     # A board pinned to ONE office (shared.ownerville_office_pins) is found by
     # its office number, never by name: Shealey Miller is Angel Padilla's
     # 23858, and a name search would take whichever of his two rows is first.
-    from automations.shared.ownerville_office_pins import pinned_office
-    pin = pinned_office(sheet_tab_name)
-    if pin:
-        owner_row = None
+    from automations.shared.ownerville_office_pins import (
+        account_fallback, pinned_office)
+
+    def _row_by_number(number: str):
         try:
-            sb.fill(pin)
+            sb.fill(number)
             page.wait_for_timeout(800)
             for tr in table.locator("tbody tr").all():
                 cells = tr.locator("td").all()
-                if cells and cells[0].inner_text().strip() == pin:
-                    owner_row = tr
-                    break
+                if cells and cells[0].inner_text().strip() == number:
+                    return tr
         except Exception as e:  # noqa: BLE001
             print(f"  ⚠ Search box unusable: {e}")
+        return None
+
+    pin = pinned_office(sheet_tab_name)
+    if pin:
+        owner_row = _row_by_number(pin)
         if owner_row is None:
             print(f"  ❌ Office {pin} (pinned for '{sheet_tab_name}') is not on "
                   "the Office Access list.")
@@ -497,6 +501,18 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
             if cand != sheet_tab_name:
                 print(f"  ✓ Matched via known alias '{cand}' (Sheet tab: '{sheet_tab_name}')")
             break
+
+    # Every spelling missed: an ONBOARDED office still has its account number
+    # (ownerville_office_pins.account_fallback — Omar 10/26 was "Mohammad" in
+    # our config, "Mohamad" in ownerville). The number cannot be misspelled.
+    if owner_row is None and not pin:
+        acct = account_fallback(sheet_tab_name)
+        if acct:
+            owner_row = _row_by_number(acct)
+            if owner_row is not None:
+                print(f"  ✓ '{sheet_tab_name}' not found by name — matched "
+                      f"onboarded account {acct}. Fix the spelling in its "
+                      "onboarding row (or add an ICD alias).")
 
     # Fall back: interactively prompt for an unknown name, save it as an alias.
     if owner_row is None:

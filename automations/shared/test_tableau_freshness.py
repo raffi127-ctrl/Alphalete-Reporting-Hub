@@ -557,11 +557,18 @@ class TheAlertSaysWhatActuallyHappened(unittest.TestCase):
         for r in ("box_order_log", "tableau_screenshots_box"):
             self.assertIn(r, text)
 
-    def test_one_report_reads_singular(self):
-        self.assertIn("the report that pulled it already ran",
+    def test_it_says_pulled_not_sent(self):
+        """2026-10-28: the alert fires inside the pull, before the report has
+        decided to post. box_order_log held, and this said it "already ran and
+        SENT". It can only know who PULLED."""
+        text = self._text_with(["box_order_log"])
+        self.assertIn("pulled by `box_order_log`", text)
+        self.assertNotIn("already ran and SENT", text)
+        self.assertNotIn("Already delivered", text)
+
+    def test_it_points_at_the_held_line_in_the_thread(self):
+        self.assertIn("held its post says so in this thread",
                       self._text_with(["box_order_log"]))
-        self.assertIn("the reports that pulled it already ran",
-                      self._text_with(["box_order_log", "tableau_screenshots_box"]))
 
     def test_it_does_not_tell_you_to_re_run_a_source(self):
         text = self._text()
@@ -809,3 +816,47 @@ class OneFrozenWorkbookIsOneThread(unittest.TestCase):
         # …and the closed week repeating all week is not itself an alert
         self.assertFalse(any("(identical" in s and "closed" in s
                              for a in self.alerts for s in a["subjects"]))
+
+
+class AReportThatHeldIsNotDelivered(unittest.TestCase):
+    """2026-10-28. box_order_log pulled the stale Box feed (newest 10/26), held
+    at 7:00 and on every pass after it, and the stale alert still said it had
+    "already ran and SENT". record_held marks it, says so once in the thread,
+    and triage stops telling people to re-send something that never went out."""
+
+    DAY = dt.date(2026, 10, 28)
+    VIEW = "B2BBOXEnergyTracker/BoxOrderLog/CarlosOrderLog → Order Log"
+
+    def setUp(self):
+        self.said = []
+        self._real_say = tf._say_held_in_thread
+        tf._say_held_in_thread = lambda rid, rep, why="": self.said.append(
+            (rid, rep))
+        for p in tf.STATE_DIR.glob("*"):
+            p.unlink()
+        tf.alert_stale("box-order-log-src", self.VIEW, dt.date(2026, 10, 26),
+                       dt.date(2026, 10, 27), self.DAY, report="box_order_log")
+
+    def tearDown(self):
+        tf._say_held_in_thread = self._real_say
+
+    def test_it_says_held_once_in_the_workbook_thread(self):
+        tf.record_held("box_order_log", today=self.DAY)
+        tf.record_held("box_order_log", today=self.DAY)   # the 30-min retry
+        self.assertEqual(self.said, [(
+            "tableau-stale-b2bboxenergytracker-workbook", "box_order_log")])
+
+    def test_a_report_that_never_pulled_says_nothing(self):
+        self.assertEqual(tf.record_held("someone_else", today=self.DAY), [])
+        self.assertEqual(self.said, [])
+
+    def test_triage_reads_held_as_nothing_to_do(self):
+        from automations.shared import incident_triage as tri
+        key = "drop-tableau-stale-b2bboxenergytracker-workbook"
+        before = tri.classify(key, day=self.DAY, now_hour=9)
+        self.assertEqual(before.bucket, tri.NEEDS_YOU)
+        tf.record_held("box_order_log", today=self.DAY)
+        after = tri.classify(key, day=self.DAY, now_hour=9)
+        self.assertEqual(after.bucket, tri.WAITING)
+        self.assertIn("HELD", after.line)
+        self.assertIn("nothing to re-send", after.line)

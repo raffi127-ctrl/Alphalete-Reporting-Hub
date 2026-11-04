@@ -93,8 +93,12 @@ LOG_PATH = C.APP_DIR / "resume-push.log"
 LOCK_PATH = C.APP_DIR / "resume-push.lock"
 
 # Lucy 2's cadence and hours: every 10 minutes, 7am-10pm, every day.
-EVERY_MINUTES = 10
-DAY_START = (7, 0)
+# 15 since 2026-10-28 (Carlos): each pass now first retunes the Await text's
+# interview times to the clock (oat_processing/await_template), so passes are
+# a touch longer and 15 keeps them from stacking.
+EVERY_MINUTES = 15
+# 5:30 since 2026-10-28 (Carlos: "start pushing resumes at 5:30am tomorrow").
+DAY_START = (5, 30)
 DAY_END = (22, 0)
 # A push that has held the lock this long has died without cleaning up.
 LOCK_STALE_MINUTES = 60
@@ -142,6 +146,32 @@ PUSH_OFFICES = {
     "trang": ("6564", "dry"),        # Trang Canavan, Fresh Success Marketing
     "tre": ("21182", "dry"),         # Lamar "Tre" Mitchell III, Mission III
     "valeria": ("22850", "dry"),     # Valeria Tristan, Altura Marketing
+    # ATEF, LIVE (Megan 2026-10-29: "yes take atef live on his computer").
+    # Dry run 10/29 walked his queue clean; Lucy 2 could not read a single
+    # resume (Indeed walled it 17 times that day), his own computer can. He
+    # left Lucy 2 in the same change (ROTATION_BY_MACHINE).
+    "atef": ("23467", "live"),       # Atef Choudhury, Domin8 Acquisitions
+    # KHALIL, LIVE (Megan 2026-10-29: "it needs to run from HIS relay
+    # machine"). Francia ran finish_setup on it 10/29 (login saved 11:45);
+    # 11901 left Lucy 2 in the same change (ROTATION_BY_MACHINE).
+    "khalil-nds": ("11901", "live"),  # Khalil Mansour, Alphalete Management Group
+    # COLTEN, LIVE from his own computer (Megan 2026-11-02: "Colten would like
+    # to get his machine pushing from Eco as well"). Nobody pushed 14733
+    # before. Nothing runs until his computer has said yes to pushing and
+    # holds his office's Lucy Resume login (finish_setup).
+    "colten": ("14733", "live"),      # Colten Wright, South Shore Specialized Marketing
+    # RAF, THREE OFFICES ON ONE COMPUTER (Megan 2026-11-03: "I keep having to
+    # clear it for Raf on lucy 4 - we need to make it so it holds the clear
+    # for days"). Lucy 4 lost Indeed's pass within ~30 min every time (23965
+    # cleared 9:54, walled again 10:28 in the same Chrome), while the office
+    # computers held it all day (Carlos 31 sent, Khalil 33, no wall). His
+    # computer takes turns through all three in ONE Chrome, so one tick of
+    # Indeed's box covers every office. Dry until his computer has checked in
+    # and the three have left Lucy 4 (ROTATION_BY_MACHINE) -- never both.
+    # LIVE (Megan 2026-11-03 17:55 CT: "yes take raf's push live on his
+    # machine"). His MacBook's dry walk at 17:44 ran clean with the login
+    # saved; the three left Lucy 4 in the same change (ROTATION_BY_MACHINE).
+    "raf": (("11280", "23965", "24065"), "live"),  # Rafael Hidalgo
 }
 LOGIN_POLL_SECONDS = 90
 
@@ -168,10 +198,32 @@ def push_record() -> dict:
     return {}
 
 
-def _listed(record: Optional[dict] = None):
-    """(AppStream office ID, mode) for this machine's office, or None."""
+# The office THIS push is working, when the machine carries several (Raf's
+# three). Set by push() before anything reads _listed(); None = the first.
+_CURRENT_OFFICE: Optional[str] = None
+
+
+def office_ids(record: Optional[dict] = None) -> "tuple[str, ...]":
+    """Every AppStream office this machine pushes, in turn order."""
     rec = push_record() if record is None else record
-    return PUSH_OFFICES.get(str(rec.get("office_key") or ""))
+    got = PUSH_OFFICES.get(str(rec.get("office_key") or ""))
+    if not got:
+        return ()
+    ids = got[0]
+    return tuple(str(i) for i in ids) if isinstance(ids, (tuple, list)) \
+        else (str(ids),)
+
+
+def _listed(record: Optional[dict] = None):
+    """(AppStream office ID, mode) for the office being pushed, or None.
+    On a machine with several offices, the one push() picked this run."""
+    rec = push_record() if record is None else record
+    got = PUSH_OFFICES.get(str(rec.get("office_key") or ""))
+    if not got:
+        return None
+    ids = office_ids(rec)
+    oid = _CURRENT_OFFICE if _CURRENT_OFFICE in ids else ids[0]
+    return (oid, got[1])
 
 
 def enabled() -> bool:
@@ -186,11 +238,26 @@ def armed(record: Optional[dict] = None) -> bool:
     return bool(got) and got[1] == "live"
 
 
+# Offices whose SUNDAY start is later than the fleet's 1pm. Carlos, 10/31:
+# "for me lets move it to 3pm" — his office waits until Sunday 3:00 PM.
+SUNDAY_START_HOUR_BY_OFFICE = {"11580": 15}
+
+
 def quiet_now(now: Optional[dt.datetime] = None) -> bool:
     """The weekend quiet window: nothing pushes Friday 1pm -> Sunday 1pm
-    (Carlos, 9/4). The Lucys' own rule, imported, not retyped."""
+    (Carlos, 9/4). The Lucys' own rule, imported, not retyped. On top of it,
+    an office in SUNDAY_START_HOUR_BY_OFFICE stays quiet on Sundays until its
+    own later hour."""
+    now = now or dt.datetime.now()
     from automations.applicant_push.window import quiet_window
-    return quiet_window(now or dt.datetime.now())
+    if quiet_window(now):
+        return True
+    got = _listed()
+    if got and now.weekday() == 6:
+        start_h = SUNDAY_START_HOUR_BY_OFFICE.get(str(got[0]))
+        if start_h and now.hour < start_h:
+            return True
+    return False
 
 
 def in_window(now: Optional[dt.datetime] = None) -> bool:
@@ -224,18 +291,60 @@ def _lock_held(now: Optional[float] = None) -> bool:
     return ((now or time.time()) - started) < LOCK_STALE_MINUTES * 60
 
 
+def _past_stop(now: dt.datetime, office: Optional[str] = None) -> bool:
+    """30 min before this office's last interview slot today (Megan 10/28).
+    Never stops a push on an error."""
+    try:
+        oid = office
+        if not oid:
+            got = _listed()
+            if not got:
+                return False
+            oid = got[0]
+        from automations.oat_processing import await_template as AT
+        return AT.past_stop(oid, now)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _since(last: Optional[str], now: dt.datetime) -> Optional[dt.timedelta]:
+    try:
+        return now - dt.datetime.fromisoformat(last or "")
+    except ValueError:
+        return None
+
+
+def _office_last_start(st: dict, oid: str, single: bool) -> Optional[str]:
+    if single:
+        return st.get("last_start")
+    return ((st.get("by_office") or {}).get(oid) or {}).get("last_start")
+
+
+def pick_office(now: Optional[dt.datetime] = None,
+                record: Optional[dict] = None) -> Optional[str]:
+    """The office to push now: due (EVERY_MINUTES since ITS last start) and
+    not past its own stop; the longest-waiting first. None = nobody is due."""
+    now = now or dt.datetime.now()
+    ids = office_ids(record)
+    st = _state()
+    best, best_wait = None, None
+    for oid in ids:
+        if _past_stop(now, oid):
+            continue
+        gap = _since(_office_last_start(st, oid, len(ids) == 1), now)
+        if gap is not None and gap < dt.timedelta(minutes=EVERY_MINUTES):
+            continue
+        wait = gap if gap is not None else dt.timedelta(days=999)
+        if best_wait is None or wait > best_wait:
+            best, best_wait = oid, wait
+    return best
+
+
 def due(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if not in_window(now) or _lock_held(now.timestamp()):
         return False
-    last = _state().get("last_start")
-    if not last:
-        return True
-    try:
-        then = dt.datetime.fromisoformat(last)
-    except ValueError:
-        return True
-    return (now - then) >= dt.timedelta(minutes=EVERY_MINUTES)
+    return pick_office(now) is not None
 
 
 HEALTH_STAGE = "probe-push-health"
@@ -1047,10 +1156,30 @@ def _walk(page, live: bool, record: dict) -> dict:
         return {"reached": True, "office": seen, "rc": 2, "why": why}
     _point_walk_here(seen, record)
     _recheck_once_per_fix(OAT)
+    if live:
+        # The Await text's interview times follow the clock (Carlos 10/28;
+        # Megan: every office that pushes). Only offices with their windows on
+        # file are touched; a failed edit is logged and never stops the push.
+        try:
+            from automations.oat_processing import await_template as AT
+            AT.set_logger(_log)
+            AT.ensure_await_template(page, seen, apply=True)
+        except Exception as e:  # noqa: BLE001
+            _log("await template step skipped: %s" % type(e).__name__)
     before = len(OAT._ACTIVITY_ROWS)
     OAT.LAST_WALK = {}
     rc = OAT.run_walk(page, live=live)
     walk = dict(OAT.LAST_WALK or {})
+    # The day's LAST push leaves tomorrow morning's text in place, so anyone
+    # texted when the AI's hours open is offered that day's slots.
+    if live:
+        try:
+            from automations.oat_processing import await_template as AT
+            if AT.last_push_of_day(seen, EVERY_MINUTES):
+                AT.ensure_await_template(page, seen, apply=True,
+                                         next_morning=True)
+        except Exception as e:  # noqa: BLE001
+            _log("next-morning await step skipped: %s" % type(e).__name__)
     rows = OAT._ACTIVITY_ROWS[before:] if live else []
     sent = sum(1 for r in rows if len(r) > 5
                and str(r[5]).startswith("sent"))
@@ -1070,9 +1199,11 @@ def _walk(page, live: bool, record: dict) -> dict:
 # NOT ON THE FIRST WALLED RUN. Indeed's box often clears by itself on the next
 # fresh session -- Carlos's came up at 1:07pm on 10/21 and he watched it push
 # again by 1:43 with nobody touching it. A DM for that is noise that teaches
-# people to ignore the one that matters, so it waits for WALL_RUNS in a row
-# (about half an hour at one run every 10 minutes).
-WALL_RUNS = 3
+# people to ignore the one that matters, so it waits for WALL_RUNS in a row.
+# 2, down from 3 (Megan 2026-10-29: "I want to catch issues as early as
+# possible"): at one run every 15 minutes, 3 meant 30-45 minutes of no
+# pushing before anyone heard; 2 is 15-30, still past a one-off blip.
+WALL_RUNS = 2
 
 
 def _note_wall(walled: bool) -> None:
@@ -1094,8 +1225,17 @@ def _note_wall(walled: bool) -> None:
         except Exception:  # noqa: BLE001
             pass
         return
-    if streak != WALL_RUNS:
+    # ONCE PER DAY WHILE IT LASTS, not only the moment the count hits the limit
+    # (Megan 2026-10-30: "atef didn't get a dm alert"). His count carried over
+    # from 10/29 (alerted 3:47pm) and walked past the limit, so the next
+    # morning's block said nothing.
+    if streak < WALL_RUNS:
         return
+    today = dt.date.today().isoformat()
+    if st.get("wall_alert_day") == today:
+        return
+    st["wall_alert_day"] = today
+    _save_state(st)
     try:
         from automations.icd_alerts import relay as R
         R.report_fault(
@@ -1119,17 +1259,39 @@ def _note_wall(walled: bool) -> None:
 STATS_STAGE = "probe-push-stats"
 
 
+def stats_summary(record: dict, office: Optional[str]) -> str:
+    """The relay row's summary for one office's numbers. The relay upserts on
+    (office key, day, stage, summary), so a machine with several offices puts
+    the office number in the SUMMARY ("push stats 11280") and keeps three rows.
+
+    NOT in the office key: the relay only accepts a key that is enrolled, and
+    "raf-11280" is not -- every stats row from Raf's computer was refused "not
+    authorised" on 11/3 and the push report showed nothing (Megan: "check the
+    push report bug now")."""
+    if len(office_ids(record)) > 1 and office:
+        return "push stats %s" % office
+    return "push stats"
+
+
 def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
     try:
         from automations.icd_alerts import relay as R
-        R.report_fault(STATS_STAGE, "push stats", json.dumps({
+        try:
+            from automations.oat_processing import await_template as AT
+            await_text = dict(AT.LAST_RESULT)
+        except Exception:  # noqa: BLE001
+            await_text = {}
+        rec = push_record()
+        R.report_fault(STATS_STAGE, stats_summary(rec, out.get("office")),
+                       json.dumps({
+            "await": await_text,
             "office": out.get("office"), "live": bool(live),
             "start": out.get("queue_start"), "end": out.get("queue_end"),
             "sent_run": int(out.get("sent") or 0), "sent_today": sent_today,
             "unconfirmed": int(out.get("unconfirmed") or 0),
             "walled": bool(out.get("walled")), "result": result,
             "at": dt.datetime.now().strftime("%H:%M")}),
-            log=_log, office_key=str(push_record().get("office_key") or ""))
+            log=_log, office_key=str(rec.get("office_key") or ""))
     except Exception:  # noqa: BLE001 -- the telling, never the work
         pass
 
@@ -1148,13 +1310,30 @@ def push(live: bool, scheduled: bool = False) -> int:
         _log("DRY RUN: office %r is switched on for reading only "
              "(PUSH_OFFICES) -- nothing is sent" % record.get("office_key"))
         live = False
+    global _CURRENT_OFFICE
+    ids = office_ids(record)
+    multi = len(ids) > 1
+    if multi:
+        pick = pick_office(record=record)
+        if pick is None and not scheduled:
+            pick = ids[0]            # a hand run always does something
+        if pick is None:
+            _log("none of offices %s is due -- nothing to do" % ", ".join(ids))
+            return 0
+        _CURRENT_OFFICE = pick
+        _log("this computer pushes %s; this run: office %s"
+             % (", ".join(ids), pick))
     if live and quiet_now():
         _log("weekend quiet window (Fri 1pm - Sun 1pm): nothing pushes")
         return 0
     C.APP_DIR.mkdir(parents=True, exist_ok=True)
     LOCK_PATH.write_text(str(time.time()))
     st = _state()
-    st["last_start"] = dt.datetime.now().isoformat(timespec="seconds")
+    now_iso = dt.datetime.now().isoformat(timespec="seconds")
+    st["last_start"] = now_iso
+    if multi:
+        bo = st.setdefault("by_office", {})
+        bo.setdefault(_CURRENT_OFFICE, {})["last_start"] = now_iso
     _save_state(st)
     result, out, guard = "ok", {}, None
     try:
@@ -1232,8 +1411,18 @@ def push(live: bool, scheduled: bool = False) -> int:
             sent[day] = int(sent.get(day, 0)) + int(out.get("sent", 0))
             st["sent_by_day"] = sent
             st["office"] = out.get("office")
+            sent_office_today = int(sent[day])
+            if multi and _CURRENT_OFFICE:
+                ob = st.setdefault("by_office", {}).setdefault(
+                    _CURRENT_OFFICE, {})
+                osent = {k: v for k, v in (ob.get("sent_by_day") or {}).items()
+                         if k >= (dt.date.today()
+                                  - dt.timedelta(days=14)).isoformat()}
+                osent[day] = int(osent.get(day, 0)) + int(out.get("sent", 0))
+                ob["sent_by_day"] = osent
+                sent_office_today = int(osent[day])
             if out.get("reached") and out.get("office"):
-                _file_stats(out, live, int(sent[day]), result)
+                _file_stats(out, live, sent_office_today, result)
         if result == "ok":
             st.pop("reported", None)    # the next fault is news again
         _save_state(st)

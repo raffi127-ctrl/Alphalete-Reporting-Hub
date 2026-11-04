@@ -574,6 +574,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             tracker = json.loads(row[KN_TRACKER] or "[]")
         except ValueError:
             tracker = []
+        raw, tracker = shift_ov_clock(office, raw, tracker, now)
         rows_for_board = M.to_rows(raw, tracker)
         if not rows_for_board:
             log("%-10s relayed nothing to draw yet today" % key)
@@ -1130,6 +1131,50 @@ def _remember_gaps(key: str, day: dt.date, names, dest: str = "") -> None:
         pass
 
 
+def _shift_clock_text(text: str, minutes: int) -> str:
+    """'2:22 PM' + 60 -> '3:22 PM'. Unknown shapes come back untouched."""
+    for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
+        try:
+            t = dt.datetime.strptime(str(text).strip().upper(), fmt)
+        except ValueError:
+            continue
+        t = t + dt.timedelta(minutes=minutes)
+        return t.strftime("%I:%M %p").lstrip("0")
+    return text
+
+
+def _shift_iso(text: str, minutes: int) -> str:
+    try:
+        t = dt.datetime.fromisoformat(str(text))
+    except ValueError:
+        return text
+    return (t + dt.timedelta(minutes=minutes)).isoformat()
+
+
+def shift_ov_clock(office, raw: list, tracker: list, now=None):
+    """Read OwnerVille's times on the OFFICE's clock (offices.OV_CLOCK).
+
+    OwnerVille stamps every knock in the LOGIN's profile timezone; Omar's is
+    Central and his office is Eastern, so his 3:25 PM board showed last knocks
+    at 2:22 PM and the gap list called everyone an hour idle (2026-10-30).
+    Durations and counts are untouched -- only wall-clock fields move."""
+    minutes = O.ov_clock_shift_minutes(office, now)
+    if not minutes:
+        return raw, tracker
+    for r in raw or []:
+        for f in ("first knock", "last knock"):
+            if r.get(f):
+                r[f] = _shift_clock_text(r[f], minutes)
+    for t in tracker or []:
+        for f in ("firstKnockDate", "lastKnockDate"):
+            if t.get(f):
+                t[f] = _shift_clock_text(t[f], minutes)
+        for f in ("firstKnockTimestamp", "lastKnockTimestamp"):
+            if t.get(f):
+                t[f] = _shift_iso(t[f], minutes)
+    return raw, tracker
+
+
 def _minutes_since(last_knock: str, now: dt.datetime):
     """Minutes between a board's "Last Knock" cell and now, or None.
 
@@ -1218,7 +1263,13 @@ THREAD_TITLE = "Knocks and Dispositions"
 # and every 2 hours post in there"); b2b_dispositions --morning opens that
 # thread at 7:30 with yesterday's final board, and pins it.
 THREAD_TITLES = {"C0AJQA8P716": THREAD_TITLE,          # #a-players-b2b
-                 "C07J46MQNUX": "Box Knocks Board"}    # #alphalete-gp-sales
+                 "C07J46MQNUX": "Box Knocks Board",    # #alphalete-gp-sales
+                 # #alphalete-lvl1-chat: Raf's boards from the Lucys already
+                 # collapse into one thread a day (gap_alerts thread_daily,
+                 # Megan 2026-09-20 "versus the chat being filled up"). His
+                 # own machine's boards have to look the same when they take
+                 # over (Megan 2026-11-03: "CHANGE NOTHING").
+                 "C09JG28CD27": THREAD_TITLE}
 THREADED_CHANNELS = set(THREAD_TITLES)
 # Rooms whose day-thread is the metrics job's morning parent, not ours.
 METRICS_THREAD_CHANNELS = {"C07J46MQNUX"}
@@ -1264,6 +1315,10 @@ def _upload(channel_id: str, boards, comment: str, office: Optional[str] = None)
     other room is a channel post, because a board people have to open a thread
     to see is a board they stop looking at.
     """
+    # A-PLAYERS STOPPED (Carlos 2026-10-28: "on the a players slack lets stop all of these")
+    if channel_id == "C0AJQA8P716":
+        print("  skipping #a-players-b2b (stopped 2026-10-28)")
+        return
     from automations.shared import slack_metrics_post as smp
     from automations.icd_alerts import office_slack as _OS
     client = _OS.client_for(office) if _OS.is_cross_workspace(office) else smp._client()

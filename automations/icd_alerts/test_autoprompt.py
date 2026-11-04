@@ -52,6 +52,40 @@ class OnlyWhenSomebodyIsThereTest(unittest.TestCase):
                 self.assertEqual(PR.console_user(), "")
 
 
+class OnlyTheOwnersOwnAccountTest(unittest.TestCase):
+    """Eveliz and Luke switch between their own Mac account and a guest one
+    for their reps (Eve 2026-10-29). Lucy's profile lives in the owner's
+    folder, so a window while a rep is on the other account helps nobody --
+    Luke 2026-10-28: six windows in a row, all closed without signing in."""
+
+    def _at(self, who, lucy="takeoffenterprisesinc", locked=False):
+        return (mock.patch.object(PR, "console_user", return_value=who),
+                mock.patch.object(PR, "screen_locked", return_value=locked),
+                mock.patch.object(PR, "lucy_user", return_value=lucy))
+
+    def test_the_owner_at_their_own_account_counts(self):
+        a, b, c = self._at("takeoffenterprisesinc")
+        with a, b, c:
+            self.assertTrue(PR.owner_is_there())
+
+    def test_a_rep_on_the_guest_account_does_not(self):
+        a, b, c = self._at("Guest")
+        with a, b, c:
+            self.assertTrue(PR.somebody_is_there())
+            self.assertFalse(PR.owner_is_there())
+
+    def test_no_window_opens_for_the_guest_account(self):
+        a, b, c = self._at("Guest")
+        with a, b, c, mock.patch("subprocess.Popen") as popen,              mock.patch.object(A, "recently_offered", return_value=False):
+            self.assertFalse(A.offer("saraplus", log=lambda *_: None))
+            popen.assert_not_called()
+
+    def test_unknown_lucy_account_keeps_the_old_rule(self):
+        a, b, c = self._at("Guest", lucy="")
+        with a, b, c:
+            self.assertTrue(PR.owner_is_there())
+
+
 class NotEveryTwoMinutesTest(unittest.TestCase):
     def setUp(self):
         self.addCleanup(self._clear)

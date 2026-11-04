@@ -328,12 +328,13 @@ class TestTheAlertStaysReadable(unittest.TestCase):
                 by_ch[c] = {"b2b_box"}          # everything else missing
         rep = run_reconcile(by_ch, orgs)
         parts = rp.failed_parts(rep)
-        # ONE line per missing BOARD, not one per (board, channel): 8 boards
-        # across 3 orgs is 8 lines here and would be 24 uncompressed.
+        # ONE line per missing BOARD, not one per (board, channel): N boards
+        # across 3 orgs is N lines here and would be 3N uncompressed.
         att = [p for p in parts
                if p == "AT&T Internet Country Sales Tracker — missing from ALL channels"]
         self.assertEqual(len(att), 1, f"expected one compressed line, got {parts}")
-        self.assertEqual(len(parts), 8, f"one line per board, got {parts}")
+        missing = [i for i in pages_mod.default_ids() if i != "b2b_box"]
+        self.assertEqual(len(parts), len(missing), f"one line per board, got {parts}")
         self.assertFalse([p for p in parts if sp.ORG_LABEL["palace"] in p],
                          "a board missing everywhere must not also be listed per-org")
 
@@ -357,7 +358,7 @@ class TestExpectedSetTracksTheRealDeclarations(unittest.TestCase):
     def test_subset_org_is_only_owed_its_subset(self):
         want = set(rp.expected_for("domin8", DAY, now=LATE_ENOUGH))
         self.assertEqual(want, set(sp.ORG_TRACKERS["domin8"]))
-        self.assertNotIn("nds", want)
+        self.assertNotIn("att_country", want)   # domin8 = nds + order_tiered_bonus since 2026-10-26
 
     def test_default_org_is_owed_every_non_opt_in_board(self):
         want = set(rp.expected_for("elevate", DAY, now=LATE_ENOUGH))

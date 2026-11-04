@@ -24,6 +24,7 @@ it). Matching is case- and spacing-insensitive.
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from typing import Dict, Optional
 
 # board name -> ownerville office number
@@ -39,9 +40,88 @@ def _key(name) -> str:
 _BY_KEY = {_key(k): v for k, v in OFFICE_PINS.items()}
 
 
+# Pins that hold only while one report runs (scoped_pins). Empty otherwise.
+_SCOPED: Dict[str, str] = {}
+
+
+@contextmanager
+def scoped_pins(pins: Dict[str, str]):
+    """Inside this block `pins` win over OFFICE_PINS, and everything goes back
+    afterwards. For a report that reads a person from a DIFFERENT office than
+    the other reports do: Shealey Miller gave 24273 (Sapphire Marketing) for
+    the Lumen Owners mail (Eve, 2026-11-03), while her captainship boards and
+    the 9 PM mail stay on 23858."""
+    saved = dict(_SCOPED)
+    _SCOPED.update({_key(k): v for k, v in pins.items()})
+    try:
+        yield
+    finally:
+        _SCOPED.clear()
+        _SCOPED.update(saved)
+
+
 def pinned_office(name) -> Optional[str]:
     """The office number `name` is pinned to, or None for a normal owner."""
-    return _BY_KEY.get(_key(name))
+    k = _key(name)
+    return _SCOPED.get(k) or _BY_KEY.get(k)
+
+
+# --- account-number FALLBACK for onboarded offices -------------------------
+# A pin above REPLACES the name search. This only kicks in AFTER every name
+# spelling has missed. Three new offices failed their first 9 PM knock board on
+# a name the Office Access table spells differently — Jairo 9/29, Drew 9/28,
+# Omar 10/26 ("Omar Mohammad" typed at onboarding, "Omar Mohamad" in
+# ownerville) — and each one needed a code fix pushed to Lucy 3 while the board
+# sat dark. Every onboarded office already carries its ownerville account
+# number (`ov_account`, the Office Access table's first column), and a number
+# does not have spellings. So a name that misses gets one more try by number
+# before the board is given up, and the identity check accepts that number.
+_ONBOARDED_FILES = (
+    "automations/office_metrics/onboarded_offices.json",
+    "automations/b2b_metrics/onboarded_offices.json",
+)
+_FALLBACK: Optional[Dict[str, str]] = None
+
+
+def _digits(value) -> str:
+    m = re.search(r"\d+", str(value or ""))
+    return m.group(0) if m else ""
+
+
+def _load_fallback(rows=None) -> Dict[str, str]:
+    """{normalized name: account} from the onboarded offices. A name that maps
+    to two DIFFERENT numbers is dropped — a guess between two offices is the
+    exact mistake the identity check exists to stop."""
+    if rows is None:
+        import json
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        rows = []
+        for rel in _ONBOARDED_FILES:
+            try:
+                data = json.loads((root / rel).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            rows.extend(r for r in (data or []) if isinstance(r, dict))
+    seen: Dict[str, set] = {}
+    for r in rows:
+        acct = _digits(r.get("ov_account"))
+        if not acct:
+            continue
+        for field in ("knocks_office", "owner"):
+            k = _key(r.get(field))
+            if k:
+                seen.setdefault(k, set()).add(acct)
+    return {k: next(iter(v)) for k, v in seen.items() if len(v) == 1}
+
+
+def account_fallback(name) -> Optional[str]:
+    """The onboarded ownerville account number for `name`, or None. Used only
+    once the name search has failed — never instead of it."""
+    global _FALLBACK
+    if _FALLBACK is None:
+        _FALLBACK = _load_fallback()
+    return _FALLBACK.get(_key(name))
 
 
 def label_is_office(label, office_id: str) -> bool:

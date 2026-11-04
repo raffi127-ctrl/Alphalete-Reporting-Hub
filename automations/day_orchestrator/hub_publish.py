@@ -48,7 +48,7 @@ _HUB_CARD = {
     # the hand-built card is 'birthday-reminders'. Without this line the pill
     # greens on an auto-registered dupe and the real card sits white.
     "birthday_reminders": "birthday-reminders",
-    # Raf's 7am mind map — its own LaunchAgent, so the wrapper publishes and
+    # Raf's 6am mind map — its own LaunchAgent, so the wrapper publishes and
     # this line is what keeps the pill on the hand-built card.
     "sales_board_mind_map": "sales-board-mind-map",
     # Raf's local office — folded onto the shared card with the other offices
@@ -284,7 +284,12 @@ _HUB_CARD = {
     "frank_metrics": "office-metrics",     # 2026-10-09, Frank Matos, same card
     "hasani_metrics": "office-metrics",    # 2026-10-20, Hasani Lynch, same card
     "steve_metrics": "office-metrics",     # 2026-10-20, Steve McElwee, same card
+    "omar_metrics": "office-metrics",      # 2026-10-26, Omar Mohamad, same card
     "samuel_metrics": "office-metrics",    # 2026-10-21, Samuel Acay, same card
+    "atef_metrics": "office-metrics",      # 2026-10-27, Atef Choudhury, same card
+    "joseph_delgado_metrics": "office-metrics",  # 2026-10-29, Joseph Delgado, same card
+    "jose_metrics": "office-metrics",      # 2026-10-28, Jose Velasquez, same card
+    "aiden_metrics": "office-metrics",     # 2026-11-03, Aiden Atoori, same card
     # nii + trang had self-registered their own Report Library cards; folded
     # onto the one card 2026-09-28 (Megan: "consolidate"). Their library rows
     # were deleted.
@@ -381,6 +386,11 @@ _HUB_CARD = {
     "owner_chat_texts_trackers": "owner-chat-texts",
     "owner_chat_texts_board": "owner-chat-texts",
     "owner_chat_texts": "owner-chat-texts",
+    # 2nd Round Daily Update Post: ONE card for every office (Megan 2026-10-26).
+    # Each office's 5pm run lands here under its own Report Name; phase_runs
+    # counts them, so the pill is green only when every office posted.
+    "raf_daily_update": "2nd-round-daily-update-post",
+    "daily_update_omar": "2nd-round-daily-update-post",
     # Colten's org board: the 7am send and the Run button's dry run are one card.
     "southshore_org_board": "southshore-org-board",
     "southshore_org_board_dry": "southshore-org-board",

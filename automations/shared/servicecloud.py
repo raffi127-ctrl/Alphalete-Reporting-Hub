@@ -209,6 +209,65 @@ def is_completed(status: str) -> bool:
     return (status or "").strip().lower() in COMPLETED_STATUSES
 
 
+# REQUIRES TPV REVIEW IS A SALE IF ITS HISTORY SAYS TPV PASSED. Carlos
+# Hidalgo, 2026-10-26, for Roshan's office: "as long as it says TPV passed at
+# some point, then she should count it as a sale for the day. If it doesn't
+# say TPV passed, then she doesn't need to count it ... more often than not,
+# it'll say TPV passed." Roshan read 23 when she was at ~28.
+#
+# The status alone cannot answer it, so each one is looked up in the
+# contract's own history (⋮ -> View Contract History). Contract 302154 on
+# 2026-10-26 is the worked example: grid says Requires TPV Review, history
+# carries `text tpv: TPV passed for <phone> AVL TPV`.
+TPV_REVIEW_STATUSES = frozenset({
+    "requires tpv review",
+})
+
+TPV_PASSED_MARK = "tpv passed"
+
+
+def needs_tpv_history(status: str) -> bool:
+    """Is this a contract whose sale-or-not lives in its history?"""
+    return (status or "").strip().lower() in TPV_REVIEW_STATUSES
+
+
+def history_says_tpv_passed(edges) -> bool:
+    """Did TPV pass at any point? Reads `new_value` on every history entry,
+    so both the `text tpv` note and a `status alias` of TPV Passed count."""
+    for e in edges or []:
+        if TPV_PASSED_MARK in str((e or {}).get("new_value") or "").lower():
+            return True
+    return False
+
+
+# The app's own history call, captured 2026-10-26 from the Contracts grid's
+# "View Contract History" (Megan's signed-in browser). Not guessed: an
+# unknown field makes GraphQL answer with errors.
+HISTORY_QUERY = """query ($page: Int, $per_page: Int, $entity_id: String!, $entity: Entities!, $sortBy: SortableHistoryField, $sort: SortDirection, $database: String) {
+  history(
+    input: {page: $page, per_page: $per_page, entity: $entity, entity_id: $entity_id, sortBy: $sortBy, sort: $sort, database: $database}
+  ) {
+    totalCount
+    edges {
+      field
+      new_value
+      date_time
+    }
+  }
+}"""
+
+
+def history_body(contract_id) -> dict:
+    """The variables exactly as the app sends them (entity_id is a number on
+    the wire even though the schema says String)."""
+    cid = str(contract_id or "").strip()
+    return {"query": HISTORY_QUERY,
+            "variables": {"page": 1, "per_page": 100,
+                          "entity_id": int(cid) if cid.isdigit() else cid,
+                          "entity": "contract", "sortBy": "date_time",
+                          "sort": "DESCENDING", "database": "mysql"}}
+
+
 def unknown_statuses(statuses) -> list:
     """Statuses on the page that this file has never heard of.
 
@@ -221,7 +280,7 @@ def unknown_statuses(statuses) -> list:
     for s in statuses or []:
         low = (s or "").strip().lower()
         if (not low or low in COMPLETED_STATUSES
-                or low in PRESALE_STATUSES
+                or low in PRESALE_STATUSES or low in TPV_REVIEW_STATUSES
                 or low in KNOWN_NOT_COUNTED or low in seen):
             continue
         seen.add(low)

@@ -147,17 +147,45 @@ def _drive_week_selection(label: str, verbose: bool = False):
 
         Escape closes the menu without touching the glass; clicking the glass itself
         is the fallback. Best-effort by design: a dropdown left open is cosmetic, but
-        a raised timeout kills the whole JE pull."""
+        a raised timeout kills the whole JE pull.
+
+        THE GLASS HAS TO BE GONE, NOT JUST CLICKED AT (Sat 2026-10-31). The week
+        was set to 11/1 on both attempts, then the toolbar's Download button
+        timed out — "<div class="tab-glass clear-glass tab-widget"> intercepts
+        pointer events" — and Retail JE dropped all day. The old single
+        `.first` glass click could itself be intercepted (a second glass on
+        top) and failed silently, leaving the cover over the toolbar. Now every
+        glass is force-clicked (no hit-test, so a stacked glass can't block it),
+        and anything still there after that is removed from the DOM: the week
+        is already applied by this point, so a stray menu is cosmetic, while
+        the cover kills the download."""
         try:
             page.keyboard.press("Escape")
             page.wait_for_timeout(600)
         except Exception:  # noqa: BLE001
             pass
+        for _ in range(2):
+            try:
+                glasses = viz.locator("div.tab-glass")
+                n = glasses.count()
+            except Exception:  # noqa: BLE001
+                return
+            if not n:
+                return
+            for i in reversed(range(n)):       # topmost (last) first
+                try:
+                    glasses.nth(i).click(timeout=3000, force=True)
+                except Exception:  # noqa: BLE001
+                    pass
+            page.wait_for_timeout(400)
         try:
-            glass = viz.locator("div.tab-glass").first
-            if glass.count():
-                glass.click(timeout=3000)      # bounded — never the 30s default
-                page.wait_for_timeout(400)
+            glasses = viz.locator("div.tab-glass")
+            n = glasses.count()
+            for i in reversed(range(n)):
+                glasses.nth(i).evaluate("el => el.remove()")
+            if n and verbose:
+                print(f"  [je] ⚠ removed {n} leftover menu cover(s) so "
+                      "Download can be clicked")
         except Exception:  # noqa: BLE001
             pass
 
@@ -340,6 +368,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
 
     def pre_export(page, viz):
         pre_export.left_view_week = False   # reset: the download retry re-runs us
+        pre_export.week_not_posted = False
         tbox, cur = _find_box(page, viz)
         if tbox is None:
             if verbose:
@@ -376,6 +405,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
                       "(JE hasn't posted it) — leaving selection unchanged")
             _close_dropdown(page, viz)
             pre_export.left_view_week = True
+            pre_export.week_not_posted = True
             return
 
         _only(page, viz, label)    # fast path; the loop below verifies it
@@ -435,7 +465,17 @@ def _drive_week_selection(label: str, verbose: bool = False):
                 f"(of {len(weeks)} week option(s))")
 
     pre_export.left_view_week = False
+    pre_export.week_not_posted = False
     return pre_export
+
+
+class WeekNotPosted(RuntimeError):
+    """JE's dropdown has no option for the current week yet — JE simply has
+    not posted it (every Tuesday morning: Monday lands ~13:53). The crosstab
+    then shows the saved view's OWN week (7/5/2026), which is not last week, so
+    the adapter's stuck-filter check (WE 10.18) read it as a broken pull and
+    dropped Retail JE every Tuesday (2026-10-27). Raised so the caller can tell
+    'not posted' apart from 'filter never driven'."""
 
 
 # The only sheet JE's view still renders when the pinned week has no rows.
@@ -481,6 +521,9 @@ def fetch(out_path: Optional[Path] = None, verbose: bool = False, page=None,
     # to show another week: parse() flags it not-current and the adapter fills
     # nothing. Checking it here raised instead and dropped Retail JE on
     # Tue 2026-09-29 ("shows week(s) 7/5/2026, expected only 10/4/2026").
+    if hook.week_not_posted:
+        raise WeekNotPosted(f"JE hasn't posted week {label} yet (not in the "
+                            f"'Sales Week Ending' dropdown)")
     if not hook.left_view_week:
         _check_one_week(out_path, label)
     return out_path

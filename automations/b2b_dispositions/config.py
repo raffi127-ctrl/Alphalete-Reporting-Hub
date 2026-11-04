@@ -175,7 +175,9 @@ TEXT_ROUTES = {
     (CAMPAIGN_BOX, POST_HOURLY): [],
     (CAMPAIGN_BOX, POST_DISPOSITIONS): [],
     # ON (Carlos 2026-09-29): the Box gaps card texts Box B2B every run.
-    (CAMPAIGN_BOX, POST_GAPS): [TEXT_GROUP_BOX],
+    # Box OFF (Carlos 2026-10-28): the gaps text to Box B2B is retired with
+    # the Box agents; [] so even a hand run texts nobody.
+    (CAMPAIGN_BOX, POST_GAPS): [],
     (CAMPAIGN_ATT, POST_GAPS): [],
     # NDS (RES AT&T OOF) board + gaps from automations/nds_oof (Carlos
     # 2026-10-19): his crew's two rooms. The manifests ride this module's

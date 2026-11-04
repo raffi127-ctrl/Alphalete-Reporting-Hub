@@ -46,8 +46,12 @@ try:
 except Exception:  # noqa: BLE001 -- Windows console, best effort
     pass
 
+from automations.alphalete_sales_board import tab_names as TN
 from automations.sales_board_fixer import checks as K
 from automations.sales_board_fixer import lanes_check as LC
+from automations.sales_board_fixer import spaced_tabs as ST
+from automations.sales_board_fixer import week_dates as WD
+from automations.sales_board_fixer import last_week as LW
 from automations.sales_board_fixer import tenure as T
 
 SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"   # Alphalete SALES BOARD 2025
@@ -58,7 +62,7 @@ SANDBOX_PREFIX = "SANDBOX — "     # a test copy of a tab, checked like the rea
 # 'Lanes JAIRO' (Miami) -- Eve 2026-10-19: "deben ser todos"
 LANE_NAME = re.compile(r"\blanes?\b", re.I)
 LINEUP_NAME = re.compile(r"\bline ?up\b", re.I)   # 'Line Up WE 10.25', 'Line Up NDS'
-MAX_FIXES = 300                   # more than this on one tab = misread, don't write
+MAX_FIXES = 300                   # more than this on one tab = flagged in the log, still written
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "sales_board_fixer"
 LANES_GOOD_FILE = OUT_DIR / "lanes_good.json"   # last healthy Lanes formulas + headers
@@ -96,30 +100,64 @@ def load(sh, title: str, titles=()) -> dict:
         "fields": "sheets(properties(sheetId,title,gridProperties),conditionalFormats,basicFilter)"})
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
-    fonts, numfmts, notes = [], [], []
+    fonts, numfmts, styles, notes, dropdowns, borders, bgs = [], [], [], [], [], [], []
+    hidden_rows = set()
+    own_numfmts = []
     if K.is_board(values):
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
         grid = sh.fetch_sheet_metadata({
             "includeGridData": True, "ranges": [rng],
             "fields": "sheets(data(rowData(values(effectiveFormat("
-                      "textFormat(fontFamily,fontSize),numberFormat),note))))"})
+                      "textFormat(fontFamily,fontSize,bold),numberFormat,"
+                      "horizontalAlignment,borders),"
+                      "userEnteredFormat(backgroundColor,numberFormat,textFormat(bold)),"
+                      "note,dataValidation)),rowMetadata(hiddenByFilter)))"})
         rows = grid["sheets"][0]["data"][0].get("rowData", [])
+        hidden_rows = {i for i, m in enumerate(grid["sheets"][0]["data"][0].get("rowMetadata", []), 1)
+                       if m.get("hiddenByFilter")}
         for rd in rows:
             vs = rd.get("values", [])
             fonts.append([_font(v) for v in vs])
             numfmts.append([_numfmt(v) for v in vs])
+            own_numfmts.append([bool(((v or {}).get("userEnteredFormat") or {}).get("numberFormat"))
+                                for v in vs])
+            styles.append([_style(v) for v in vs])
             notes.append([(v or {}).get("note", "") for v in vs])
+            dropdowns.append([(v or {}).get("dataValidation") for v in vs])
+            borders.append([_borders(v) for v in vs])
+            bgs.append([_given_bg(v) for v in vs])
     t = {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
          "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
          "basic_filter": sheet.get("basicFilter"),
-         "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
+         "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "styles": styles,
+         "notes": notes, "dropdowns": dropdowns, "hidden_rows": hidden_rows,
+         "own_numfmts": own_numfmts,
+         "borders": borders, "bgs": bgs}
+    if ws.spreadsheet.id == SHEET_ID and LW.TAB.match(title) and K.is_board(values):
+        t.update(load_older(sh, title, ws))
     if LANE_NAME.search(title):
         t.update(load_lanes(sh, t))
     elif LINEUP_NAME.search(title):
         t["home"], t["run_boards"] = _home_board(titles, title)
         t["boards"] = lineup_boards(sh, formulas, t["home"])
     return t
+
+
+def load_older(sh, title: str, ws) -> dict:
+    """Our board's week tab: last week's and the week before's tabs, to keep
+    LAST/PRIOR WEEK'S TOTALS and the history in step with them (last_week.py)."""
+    today = dt.date.today()
+    sun = LW.week_sunday(title, today)
+    older = []
+    for (other, days, dest) in zip(LW.older_titles(title, list(_tabs(sh)), today), (7, 14),
+                                   (LW.WR.LAST, LW.WR.PRIOR)):
+        if not other:
+            continue
+        o = sh.worksheet(other)
+        older.append((other, sun - dt.timedelta(days=days), o.get_all_values(),
+                      o.get_all_values(value_render_option="UNFORMATTED_VALUE"), dest))
+    return {"raw": ws.get_all_values(value_render_option="UNFORMATTED_VALUE"), "older": older}
 
 
 def lineup_boards(sh, formulas, home: str = None) -> dict:
@@ -182,8 +220,8 @@ def load_lanes(sh, t: dict) -> dict:
     boards, targets = {}, ({} if ours else None)
     anchor = L.lanes_week(dt.date.today())
     for key, back in ((("current", 0), ("last", 7)) if ours else ()):
-        title = fill.tab_title(anchor - dt.timedelta(days=back))
-        if title not in have:
+        title = TN.find(have, fill.tab_title(anchor - dt.timedelta(days=back)))
+        if title is None:
             continue
         g = sh.worksheet(title).get_all_values()
         end = L.totals_row([r[2] if len(r) > 2 else "" for r in g])
@@ -210,7 +248,11 @@ def lanes_findings(t: dict) -> list:
         return LC.check(t["formulas"], t["values"], x["entered"], x["boards"], x["good"],
                         x["targets"], tab=t["title"])
     except RuntimeError:
-        return []
+        if not (x["good"] or {}).get("formulas"):
+            return []                  # never had lanes: not a lanes tab
+        return [K.Finding("lane_banners_gone", t["title"], "fila de títulos",
+                          "'Current Week' and 'Last week' are both gone; the lanes "
+                          "stop moving until someone puts them back")]
 
 
 def _font(v: dict):
@@ -218,6 +260,26 @@ def _font(v: dict):
     if not tf.get("fontFamily"):
         return None
     return (tf["fontFamily"], tf.get("fontSize"))
+
+
+def _style(v: dict):
+    # bold as it was given: the effective one carries the conditional rules, and
+    # writing over those changes nothing (AO60, BK57 2026-11-01)
+    ef = (v or {}).get("effectiveFormat") or {}
+    given = (v or {}).get("userEnteredFormat") or {}
+    return (bool((given.get("textFormat") or {}).get("bold")),
+            ef.get("horizontalAlignment"))
+
+
+def _given_bg(v: dict) -> str:
+    bg = ((v or {}).get("userEnteredFormat") or {}).get("backgroundColor")
+    return json.dumps(bg, sort_keys=True) if bg else ""
+
+
+def _borders(v: dict):
+    b = ((v or {}).get("effectiveFormat") or {}).get("borders") or {}
+    return tuple(sorted((side, x.get("style", ""), json.dumps(x.get("color") or {}, sort_keys=True))
+                        for side, x in b.items()))
 
 
 def _numfmt(v: dict):
@@ -235,15 +297,28 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
         found = lanes_findings(t)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
     elif K.is_board(v):
-        found = (K.check_formulas(title, v, f) + K.check_outside_block(title, v, f)
+        found = (K.check_formulas(title, v, f) + _one_per_cell(
+                     K.check_day_rows(title, v, f) + K.check_outside_block(title, v, f)
+                     + K.check_day_stats(title, v, f) + K.check_status_words(title, v, f))
                  + K.check_roll_call(title, v, learn=owner)
-                 + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
-                 + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"]))
+                 + K.check_fonts(title, t["sheet_id"], v, t["fonts"], fill_blank=not owner)
+                 + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"],
+                                          fill_blank=not owner, own_format=t.get("own_numfmts"))
+                 + K.check_styles(title, t["sheet_id"], v, t["styles"], fill_blank=not owner)
+                 + K.check_background_shift(title, t["sheet_id"], v, t.get("bgs") or [])
+                 + K.check_dropdowns(title, t["sheet_id"], v, t.get("dropdowns") or [],
+                                     fill_blank=True, hidden=t.get("hidden_rows") or ()))
+        if not owner:
+            found += K.check_borders(title, t["sheet_id"], v, t.get("borders") or [],
+                                     fill_blank=True)
+            found += K.check_campaign(title, v)
         first, last = K.block_rows(v)
         fixed_cells = {x.where for x in found if x.value is not None}
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"],
                                      block=(first, last))
+        if not owner and t.get("older"):
+            found += LW.check(title, v, f, t["raw"], t["older"])
         if tenure and T.has_tenure(v):
             found += T.audit(title, t["sheet_id"], v, f, t.get("basic_filter"), *tenure)
     else:
@@ -253,6 +328,19 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
             found += K.check_lineup_names(title, f, t["boards"], t.get("home"),
                                           keep=t.get("run_boards", ()))
     return found
+
+
+def _one_per_cell(found: list) -> list:
+    """Day-to-day, neighbour and summary-row checks can land on the same cell:
+    the first fix for a cell wins, a later one there is dropped."""
+    seen, out = set(), []
+    for x in found:
+        if x.fixable and x.where in seen:
+            continue
+        if x.fixable:
+            seen.add(x.where)
+        out.append(x)
+    return out
 
 
 def tenure_history(sh, today: dt.date):
@@ -291,8 +379,10 @@ def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     def still_there(x):
         if x.row is None or not x.name:
             return True
-        now = names_now[x.row - 1].strip() if x.row - 1 < len(names_now) else ""
-        return now == x.name
+        now = names_now[x.row - 1] if x.row - 1 < len(names_now) else ""
+        # labels under TOTALS wrap ('Total Reps in the Field / \nBoard / Zero')
+        # and the findings carry them on one line
+        return " ".join(now.split()) == " ".join(x.name.split())
     todo = [x for x in found if x.fixable and still_there(x)]
     skipped = [x for x in found if x.fixable and not still_there(x)]
     for x in skipped:
@@ -302,15 +392,18 @@ def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     if cells:
         ws.batch_update([{"range": x.where, "values": [[x.value]]} for x in cells],
                         value_input_option="USER_ENTERED")
-    fmt = [x.request for x in todo if x.request and "updateCells" in x.request]
+    fmt = [x.request for x in todo if x.request
+           and ("updateCells" in x.request or "copyPaste" in x.request)]
     # a note on every touched cell, so a person can hover and see what changed
     if notes:
         fmt += K.note_requests(todo, t["sheet_id"], t.get("notes") or [],
                                dt.date.today().strftime("%m/%d"))
-    # rule deletes last, highest index first (checks.py already sorted them)
+    # rule edits by index before any delete moves the indices; deletes last,
+    # highest index first (checks.py already sorted them)
+    ups = [x.request for x in todo if x.request and "updateConditionalFormatRule" in x.request]
     dels = [x.request for x in todo if x.request and "deleteConditionalFormatRule" in x.request]
-    if fmt or dels:
-        sh.batch_update({"requests": fmt + dels})
+    if fmt or ups or dels:
+        sh.batch_update({"requests": fmt + ups + dels})
     return todo
 
 
@@ -371,11 +464,30 @@ def main(argv=None) -> int:
                     help="tab a revisar (repetible). Default: Sales Board + Line Up de esta semana y Stations")
     ap.add_argument("--apply", action="store_true", help="arreglar (backup antes de escribir)")
     ap.add_argument("--sheet-id", default=SHEET_ID)
+    ap.add_argument("--max-fixes", type=int, default=MAX_FIXES,
+                    help="arriba de esto por tab, avisa en el log (escribe igual)")
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
     ap.add_argument("--owners", nargs="?", const="", default=None, metavar="NOMBRE",
                     help="revisar los All-in-One de los dueños (owners.json); "
                          "sólo escribe en los que tienen \"apply\": true")
+    ap.add_argument("--restore", metavar="BACKUP",
+                    help="poner una tab como la vio un backup de output/sales_board_fixer/ "
+                         "(nombre del archivo); solo compara sin --restore-write")
+    ap.add_argument("--restore-write", action="store_true")
     a = ap.parse_args(argv)
+    if a.restore:
+        # through the owners job's rerun (it adds --owners --apply): those are
+        # ignored here, and the Hub card is never coloured by a restore
+        from automations.sales_board_fixer import restore
+        from automations.recruiting_report.fill import open_by_key
+        f = OUT_DIR / Path(a.restore).name
+        sid = a.sheet_id
+        if sid == SHEET_ID:   # owners' backups carry the first 8 of their sheet id
+            for o in json.loads((Path(__file__).parent / "owners.json")
+                                .read_text(encoding="utf-8"))["owners"]:
+                if o["sheet_id"][:8] in f.name:
+                    sid = o["sheet_id"]
+        return restore.run(open_by_key(sid), f, a.restore_write, OUT_DIR)
     # only the full scheduled pass colours the card; a --tab / one owner / a
     # read-only look doesn't
     if a.owners is not None:
@@ -409,12 +521,33 @@ def _main(a) -> int:
     # Monday 04:xx runs before the week roll makes this week's Sales Board:
     # skip it (tomorrow's run picks it up), don't crash
     have = _tabs(sh)
+    titles = [TN.find(have, t) or t for t in titles]
     for title in [t for t in titles if t not in have]:
         print("  no existe %r todavía -- salteada" % title)
     titles = [t for t in titles if t in have]
-    results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today))
+    _spare_rows(sh, [t for t in titles if t.lower().startswith("sales board")], "",
+                a.apply, stamp)
+    results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today),
+                       max_fixes=a.max_fixes)
+    spaced = _spaced_tabs(sh, today)
+    if spaced:
+        results["nombres de tabs"] = spaced
+    _warn_spaced([("Alphalete", sh.id, x.tab) for x in spaced], a.apply)
+    _warn_dates(_dated_rows("Alphalete", sh.id, results), a.apply)
     print("reporte:", report(results, stamp, a.apply))
     return 0
+
+
+def _spare_rows(sh, titles, label: str, do_apply: bool, stamp: str) -> None:
+    """Raf 2026-10-27: at least 10 spare rows at the bottom of every board,
+    TOTALS reaching all of them (extra_rows.py). Before the audit, so the
+    audit sees the board as it is left. Never stops the fixer."""
+    from automations.sales_board_fixer import extra_rows
+    for title in titles:
+        try:
+            extra_rows.do_tab(sh, title, label, do_apply, stamp + "_extra")
+        except Exception as e:  # noqa: BLE001
+            print("%s%s: filas libres no se pudo (%s)" % (label, title, type(e).__name__))
 
 
 def _drop_past(found: list, values, stop: str) -> list:
@@ -429,7 +562,7 @@ def _drop_past(found: list, values, stop: str) -> list:
                 if " ".join(str(x).split()).lower() == stop.lower()), 0)
     if not col:
         return found
-    return [x for x in found if x.kind not in ("font", "number_format")
+    return [x for x in found if x.kind not in ("font", "number_format", "style")
             or _col_of(x.where) < col]
 
 
@@ -466,31 +599,38 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
         if do_apply:
             # last week's 'Lucy fixed this' notes come along when a week tab
             # is copied: take Lucy's old ones off first, so today's go on clean
-            clear, t["notes"] = K.old_note_requests(t["sheet_id"], t.get("notes"), dt.date.today())
+            # our own board gets none at all (Eve 2026-10-26: too many corners)
+            clear, t["notes"] = K.old_note_requests(t["sheet_id"], t.get("notes"), dt.date.today(),
+                                                    every=not owner)
             if clear:
                 sh.batch_update({"requests": clear})
                 print("  notas viejas de Lucy borradas: %d" % len(clear))
         found = _drop_past(audit(t, tenure, owner), t["values"], format_stop)
+        found += _wrong_dates(t["values"], title, t.get("formulas"))
         if owner:
-            name_col = K.layout(t["values"]).name_col if K.is_board(t["values"]) else 0
-            for x in found:
-                if (x.kind not in kinds or _owners_rank_cell(x, name_col)
-                        or (x.kind == "x_over_formula" and not _x_kept(x, t["values"], found))):
-                    x.value = x.request = None                      # report only
+            held = _hold_owner_cells(found, t["values"], kinds)
+            if held:
+                print("  OJO: %d desplegables en una tab de dueño -- solo reporto, no escribo"
+                      % held)
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
         if do_apply and n_fix > max_fixes:
-            # thousands of "fixes" means the tab was read wrong, not that it
-            # is that broken -- never write on a misread
-            print("  NO se escribe: %d arreglos es demasiado (tope %d), revisar a mano"
+            # Eve 2026-10-27: a big week (15 new reps in the wrong font) is
+            # real, and skipping it left the board broken for days -- write
+            # anyway; the backup below is the way back if it was a misread
+            print("  OJO: %d arreglos, más que el tope %d -- escribo igual (backup)"
                   % (n_fix, max_fixes))
-        elif do_apply:
+        if do_apply:
             print("  backup:", backup(t, stamp))
-            done = apply(sh, t, found)
+            done = apply(sh, t, found, notes=owner)
             print("  escritos: %d" % len(done))
             t2 = load(sh, title, titles)
-            left = [x for x in _drop_past(audit(t2, tenure, owner), t2["values"], format_stop)
-                    if kinds is None or x.kind in kinds]
+            left = _drop_past(audit(t2, tenure, owner), t2["values"], format_stop)
+            if owner:
+                # same rules as the first pass, or the '#' column an owner
+                # writes their own way reads as work left (Eve 2026-11-03)
+                _hold_owner_cells(left, t2["values"], kinds)
+                left = [x for x in left if x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
         if LANE_NAME.search(title) and not title.startswith(SANDBOX_PREFIX):
@@ -529,7 +669,9 @@ OWNERS_FILE = Path(__file__).with_name("owners.json")
 # tabs per week, '10.12' + '10.12 Linep' + '10.12 Stations' (2026-10-13);
 # Salik/Hammad one tab per Monday, '10/12', '10/5'... (2026-10-14)
 BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b|^\s*\d{1,2}[./]\d{1,2}\s*$", re.I)
-SIDE_NAME = re.compile(r"line\s*u?p|stations", re.I)
+NEWEST_TAB_DAYS = 21
+COPY_PREFIX = re.compile(r"^\s*(?:copy of\s+)+", re.I)
+SIDE_NAME = re.compile(r"line\s*u?p|stations|car\s*rides?", re.I)   # Eveliz: 'Car Rides B2B'
 WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}[./]\d{1,2})\b")
 DATED_TAB = re.compile(r"^\s*(\d{1,2})[./](\d{1,2})\s*$")
 
@@ -582,8 +724,38 @@ def side_tabs(visible, picked) -> list:
     return out
 
 
+def newest_week_tab(visible, today: dt.date, copies: bool = False):
+    """The board tab with the newest week in its name, when this_weeks_tab finds
+    none: Dover's 'WE 11/1/26' isn't a bare date, and Salik's '10/26' is 8 days
+    old until he adds this week's. Eve, 2026-11-03: leftmost-with-reps had the
+    fixer on Salik's dead 'Fiber Sales Board' and Dover's 'w.e 10/12/26'.
+    Next week's tab can exist early, so it doesn't count. Past NEWEST_TAB_DAYS
+    the dates are an archive beside a board with no date (Frank, Drew).
+    A name with no year, right of an older tab, is last year's: Isaiah keeps
+    'Sales Board WE 11.03' from 2025 behind 'WE 12.21.25 NEW'.
+    copies: this owner starts each week by duplicating the last one and works
+    on 'Copy of ...' (Dover, Eve 2026-11-03), so a copy beats the tab it has the
+    same date as. Off for everyone else: a copy is usually a backup."""
+    this_week = today - dt.timedelta(days=today.weekday())
+    best, oldest_left = None, None
+    for t in visible:
+        is_copy = bool(COPY_PREFIX.match(t))
+        if not BOARD_NAME.search(COPY_PREFIX.sub("", t)) or (is_copy and not copies):
+            continue
+        week = WD.week_of(t, today)
+        if week is None:
+            continue
+        stale = not ST.has_year(t) and oldest_left is not None and week > oldest_left
+        oldest_left = week if oldest_left is None else min(oldest_left, week)
+        if stale or week > this_week or (this_week - week).days > NEWEST_TAB_DAYS:
+            continue
+        if best is None or week > best[0] or (is_copy and week == best[0]):
+            best = (week, t)
+    return best[1] if best else None
+
+
 def owner_tabs(sh, boards: int = 1, week_end: bool = False,
-               newest_right: bool = False) -> list:
+               newest_right: bool = False, copies: bool = False) -> list:
     """The tabs to check in an owner's All-in-One: the leftmost visible sales
     board(s) with reps on it -- owners keep the current week first, and name
     it anything ('Sales Board', 'NEW Sales Board', 'Sales Board W.E 10.11') --
@@ -593,11 +765,12 @@ def owner_tabs(sh, boards: int = 1, week_end: bool = False,
     visible = [s["properties"]["title"] for s in meta["sheets"]
                if not s["properties"].get("hidden")]
     picked = []
-    dated = this_weeks_tab(visible, dt.date.today(), week_end, newest_right)
+    today = dt.date.today()
+    dated = this_weeks_tab(visible, today, week_end, newest_right) or newest_week_tab(visible, today, copies)
     for title in ([dated] if dated else []) + [t for t in visible if t != dated]:
         if len(picked) >= boards:
             break
-        if BOARD_NAME.search(title) and not title.lower().startswith("copy of"):
+        if title == dated or (BOARD_NAME.search(title) and not title.lower().startswith("copy of")):
             v = sh.worksheet(title).get_all_values()
             first, last = K.block_rows(v)
             if K.is_board(v) and any(K.name_at(v, r) for r in range(first, last + 1)):
@@ -682,10 +855,15 @@ def lane_tabs(sh, only_for=None) -> list:
 # column majority of that board, the Roll Call word that board writes
 # (checks.roll_call_words). An X typed over a formula is put back only when the
 # Roll Call carries the same status, so the formula shows the X again (_x_kept).
+# 'style' (bold/centering, 2026-10-27) is ours only for now: on owners' boards
+# bold is often a per-rep highlight, and Eveliz alone went 214 -> 360 fixes,
+# past the cap, which would have stopped every fix on her board.
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
-               "lineup_short", "lineup_old_week",
+               "cf_strike_stray", "cf_row_shift", "day_stats_formula", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
+               "date_wrong",
+               "dropdown_missing",
                *LC.REPAIRS}
 
 
@@ -714,6 +892,22 @@ def _x_kept(x, values, found) -> bool:
     return False
 
 
+def _hold_owner_cells(found: list, values, kinds) -> int:
+    """Owners' boards: turn what Lucy must not write into report-only findings.
+    Returns how many dropdowns the board cap held back (0 = under the cap)."""
+    name_col = K.layout(values).name_col if K.is_board(values) else 0
+    for x in found:
+        if (x.kind not in kinds or _owners_rank_cell(x, name_col)
+                or (x.kind == "x_over_formula" and not _x_kept(x, values, found))):
+            x.value = x.request = None
+    drops = [x for x in found if x.kind == "dropdown_missing" and x.fixable]
+    if len(drops) <= K.DROPDOWN_BOARD_CAP:
+        return 0
+    for x in drops:
+        x.value = x.request = None
+    return len(drops)
+
+
 def _owners_rank_cell(x, name_col: int) -> bool:
     """The '#' column left of the names. Owners write it their own way --
     Rashad switched to =IF(B5<>"",ROW()-3,"") on purpose (2026-10-13) and a
@@ -728,6 +922,8 @@ def _owners_rank_cell(x, name_col: int) -> bool:
 
 
 REPEATS_FILE = OUT_DIR / "owner_repeats.json"
+SPACED_FILE = OUT_DIR / "spaced_tabs_told.json"
+DATES_FILE = OUT_DIR / "week_dates_told.json"
 REPEAT_DAYS = 3                   # same fix N days in a row -> tell Eve
 EVE_USER_ID = "U088E2KJEV8"       # Evelyn Sobrino
 
@@ -751,7 +947,89 @@ def repeats(history: dict, written, today: dt.date) -> list:
             and days[REPEAT_DAYS] not in history[k]]
 
 
-def _tell_eve(lines) -> None:
+def _spaced_tabs(sh, today: dt.date) -> list:
+    """Recent week tabs with a stray space in the name. Never stops the fixer."""
+    try:
+        found = ST.findings(sh, today)
+    except Exception as e:  # noqa: BLE001
+        print("  nombres de tabs: no se pudo mirar (%s)" % type(e).__name__)
+        return []
+    for x in found:
+        print("  OJO: tab %s con un espacio de más en el nombre" % x.before)
+    return found
+
+
+def _warn_spaced(tabs: list, do_apply: bool) -> None:
+    """DM Eve once per tab, on real runs only. tabs: (who, sheet id, title).
+    A book shared by two owners lists its tab twice: one line is enough."""
+    if not do_apply or not tabs:
+        return
+    who_by_key = {}
+    for who, sheet_id, title in tabs:
+        who_by_key.setdefault("%s|%s" % (sheet_id, title), (who, title))
+    fresh = ST.new_ones(SPACED_FILE, list(who_by_key))
+    if not fresh:
+        return
+    lines = ["%s: %r" % who_by_key[k] for k in fresh]
+    text = ("Salesboard Fixer: these week tabs have a stray space in their name. A formula "
+            "that builds the name from the date won't find them (that's what broke Cy Wade's "
+            "Lanes). Nothing was renamed:\n") + "\n".join("• " + l for l in lines)
+    try:
+        if _dm_eve(text):
+            print("  DM a Eve: %d tabs con espacios" % len(lines))
+    except Exception as e:  # noqa: BLE001 -- a warning never stops the fixer
+        print("  DM a Eve no salió (%s)" % type(e).__name__)
+
+
+def _wrong_dates(values, title: str, formulas=None) -> list:
+    """Wrong day numbers / week label on a board tab: the ones Lucy can settle by
+    the tab's name get written, the rest warn. Never stops the fixer."""
+    if not K.is_board(values) or SIDE_NAME.search(title) or LANE_NAME.search(title):
+        return []
+    try:
+        found = WD.findings(values, title, dt.date.today(), formulas)
+    except Exception as e:  # noqa: BLE001
+        print("  fechas: no se pudo mirar %r (%s)" % (title, type(e).__name__))
+        return []
+    for x in found:
+        print("  OJO fechas %r %s: %s" % (title, x.where, x.detail))
+    return found
+
+
+def _dated_rows(who: str, sheet_id: str, results: dict) -> list:
+    """(who, sheet id, tab, line for the DM), one per tab with wrong dates that
+    Lucy isn't writing herself."""
+    rows = []
+    for found in results.values():
+        wrong = [x for x in found if x.kind == "date_wrong" and not x.fixable]
+        if wrong:
+            rows.append((who, sheet_id, wrong[0].tab, WD.warning_line(wrong)))
+    return rows
+
+
+def _warn_dates(rows: list, do_apply: bool) -> None:
+    """DM Eve once per tab per week, on real runs only."""
+    if not do_apply or not rows:
+        return
+    today = dt.date.today()
+    monday = today - dt.timedelta(days=today.weekday())
+    by_key = {"%s|%s|%s" % (sheet_id, tab, monday): (who, tab, line)
+              for who, sheet_id, tab, line in rows}
+    fresh = ST.new_ones(DATES_FILE, list(by_key))
+    if not fresh:
+        return
+    text = ("Salesboard Fixer: these current boards show the wrong dates. "
+            "Nothing was changed:\n") + "\n".join(
+        "• %s: %r: %s" % by_key[k] for k in fresh)
+    try:
+        if _dm_eve(text):
+            print("  DM a Eve: %d boards con fechas mal" % len(fresh))
+    except Exception as e:  # noqa: BLE001
+        print("! no pude avisar las fechas a Eve (%s)" % type(e).__name__)
+
+
+def _dm_eve(text: str) -> bool:
+    """DM Eve as Lucy. False when this machine posts as someone else."""
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     try:
@@ -760,18 +1038,23 @@ def _tell_eve(lines) -> None:
         who = ""
     if who and "lucy" not in who.lower():
         print("! esta máquina postea como %s, no Lucy -- no mando el DM" % who)
-        return
+        return False
+    ch = client.conversations_open(users=EVE_USER_ID)["channel"]["id"]
+    client.chat_postMessage(channel=ch, text=text)
+    return True
+
+
+def _tell_eve(lines) -> None:
     text = ("Salesboard Fixer: Lucy fixed these %d days in a row -- someone keeps "
             "changing them back by hand. Ask the owner if they want it that way:\n"
             % REPEAT_DAYS) + "\n".join("• " + l for l in lines)
-    ch = client.conversations_open(users=EVE_USER_ID)["channel"]["id"]
-    client.chat_postMessage(channel=ch, text=text)
-    print("  DM a Eve: %d repetidos" % len(lines))
+    if _dm_eve(text):
+        print("  DM a Eve: %d repetidos" % len(lines))
 
 
 def run_owners(only, do_apply: bool, stamp: str) -> dict:
     owners = json.loads(OWNERS_FILE.read_text(encoding="utf-8"))["owners"]
-    results, written = {}, {}
+    results, written, spaced, wrong_dates = {}, {}, [], []
     for o in owners:
         if only and only.lower() not in o["name"].lower():
             continue
@@ -781,7 +1064,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
             # ('COLTEN', 'JAIRO'): list them in owners.json (2026-10-14)
             tabs = ([t for t in o["tabs"] if t in _tabs(sh)] if o.get("tabs")
                     else owner_tabs(sh, o.get("boards", 1), o.get("week_end", False),
-                                    o.get("newest_right", False)))
+                                    o.get("newest_right", False), o.get("copy_tabs", False)))
             lanes = lane_tabs(sh, o.get("tabs"))
             tabs += [t for t in lanes if t not in tabs]
         except Exception as e:  # noqa: BLE001 -- one owner's sheet never stops the rest
@@ -796,6 +1079,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
                 rolled += roll_lanes(sh, title, o, on, stamp)
         except Exception as e:  # noqa: BLE001
             print("== %s: Lanes no se pudo pasar de semana (%s)" % (o["name"], type(e).__name__))
+        _spare_rows(sh, [t for t in tabs if t not in lanes], o["name"] + " · ", on, stamp)
         # Miami's big book (2026-10-14) ran the read quota out mid-owner: wait
         # out the minute and redo that owner (a fix already written re-audits
         # clean). Anything else skips the owner, never the rest of the run.
@@ -815,6 +1099,11 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
         if rolled:
             res.setdefault(o["name"] + " · lanes week", []).extend(rolled)
         results.update(res)
+        names = _spaced_tabs(sh, dt.date.today())
+        if names:
+            results[o["name"] + " · nombres de tabs"] = names
+        spaced += [(o["name"], o["sheet_id"], x.tab) for x in names]
+        wrong_dates += _dated_rows(o["name"], o["sheet_id"], res)
         if on:
             for tab, found in res.items():
                 for x in found:
@@ -831,6 +1120,8 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
         REPEATS_FILE.write_text(json.dumps(history, indent=1), encoding="utf-8")
         if again:
             _tell_eve([written[k] for k in again])
+    _warn_spaced(spaced, do_apply)
+    _warn_dates(wrong_dates, do_apply)
     return results
 
 

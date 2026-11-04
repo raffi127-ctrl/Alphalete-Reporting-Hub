@@ -25,5 +25,7 @@ VENV_PY=".venv/bin/python"
 export PYTHONPATH="$(pwd)"
 export NO_COLOR=1
 
+# --skip-if-waiting: one waiting copy is enough (same as the thread scan;
+# a stuck queue stacked five thread-scan copies on Lucy 1, 2026-10-29).
 "$VENV_PY" -m automations.day_orchestrator.mini_control \
-  --by "Number Scan" --enqueue rerun new_start_number_replies
+  --by "Number Scan" --skip-if-waiting --enqueue rerun new_start_number_replies

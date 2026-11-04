@@ -12,6 +12,9 @@ automations/icd_alerts/sara_read.py
 automations/icd_alerts/box_read.py
 automations/icd_alerts/box_signin.py
 automations/icd_alerts/sara_signin.py
+automations/icd_alerts/sara_code.py
+automations/icd_alerts/code_answer.py
+automations/icd_alerts/code_forward.py
 automations/icd_alerts/ov_signin.py
 automations/icd_alerts/as_signin.py
 automations/icd_alerts/resume_push.py
@@ -20,6 +23,8 @@ automations/oat_processing/config.py
 automations/oat_processing/classify.py
 automations/oat_processing/resume_download.py
 automations/oat_processing/run.py
+automations/oat_processing/await_window.py
+automations/oat_processing/await_template.py
 automations/oat_processing/bin/ocr_screen.js
 automations/oat_processing/bin/read_file.js
 automations/recruiting_report/__init__.py
@@ -37,6 +42,7 @@ automations/icd_alerts/dialogs.py
 automations/icd_alerts/ov_read.py
 automations/shared/ownerville_knocks.py
 automations/shared/saraplus.py
+automations/shared/sara_passcode.py
 automations/shared/servicecloud.py
 automations/shared/name_case.py
 automations/shared/credit_check_line.py
@@ -45,3 +51,12 @@ automations/shared/browser_banner.py
 automations/icd_alerts/headshot_jobs.py
 automations/headshots/__init__.py
 automations/headshots/ov_upload.py
+automations/icd_alerts/office_jobs.py
+automations/icd_alerts/sterling_send.py
+automations/icd_alerts/sterling_forward.py
+automations/icd_alerts/pnl.py
+automations/icd_alerts/apex_signin.py
+automations/carlos_payroll_pull/__init__.py
+automations/carlos_payroll_pull/run.py
+automations/icd_alerts/messages_probe.py
+automations/icd_alerts/sms_code.py

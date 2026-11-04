@@ -21,6 +21,110 @@ def board(rows):
 GOOD = "=SUM(E%(r)d)"
 
 
+class Campaign(unittest.TestCase):
+    def tab(self, reps):
+        """reps: (name, int, int up, dtv, nl, campaign). Two days, Campaign in col N."""
+        h1 = ["", "", "", "MON", "", "", "", "", "TUE", "", "", "", "", "Campaign"]
+        h3 = ["", "#", "Name", "Apps", "Int", "Int Up", "DTV", "NL",
+              "Apps", "Int", "Int Up", "DTV", "NL", ""]
+        rows = [h1, [""] * 14, h3]
+        for name, i, u, d, n, camp in reps:
+            # Int on Monday (X = off), the rest on Tuesday, so days have to add up
+            rows.append(["", "", name, "", i, "", "", "", "", "", u, d, n, camp])
+        rows.append(["", "", "TOTALS"] + [""] * 11)
+        return rows
+
+    def run_it(self, reps):
+        return K.check_campaign("t", self.tab(reps))
+
+    def test_what_was_sold_picks_the_word(self):
+        cases = [("1", "", "", "2", "Fiber + Wireless"), ("3", "", "", "", "Fiber"),
+                 ("", "", "", "4", "Fiber + Wireless"), ("", "", "1", "", "Fiber"),
+                 ("", "2", "", "", "Fiber"), ("", "", "1", "1", "Fiber + Wireless"),
+                 ("", "1", "", "1", "Fiber + Wireless"), ("X", "", "", "2", "Fiber + Wireless")]
+        for i, u, d, n, want in cases:
+            found = self.run_it([("Rep", i, u, d, n, "")])
+            self.assertEqual([x.after for x in found], [want], (i, u, d, n))
+
+    def test_a_filled_cell_stays_whatever_was_sold(self):
+        self.assertEqual(self.run_it([("Rep", "", "", "", "4", "Fiber")]), [])
+
+    def test_nothing_sold_stays_blank(self):
+        self.assertEqual(self.run_it([("Rep", "0", "", "", "", ""), ("Spare", "X", "", "", "", "")]), [])
+
+    def test_only_the_value_is_written_never_the_dropdown(self):
+        x = self.run_it([("Rep", "1", "", "", "", "")])[0]
+        self.assertEqual(x.value, "Fiber")
+        self.assertIsNone(x.request)
+
+    def test_last_weeks_sales_count_on_a_new_week(self):
+        h1 = ["", "", "", "LAST WEEK'S TOTALS", "", "", "", "Other", "MON", "", "", "", "", "Campaign"]
+        h3 = ["", "#", "Name", "INT", "INT UP", "DTV", "NL", "x",
+              "Apps", "Int", "Int Up", "DTV", "NL", ""]
+        rep = lambda name, i, n: ["", "", name, i, "0", "0", n, "9", "", "", "", "", "", ""]
+        v = [h1, [""] * 14, h3, rep("Both", "1", "2"), rep("Lines", "0", "3"),
+             rep("Int", "4", "0"), rep("None", "0", "0"), ["", "", "TOTALS"] + [""] * 11]
+        found = K.check_campaign("t", v)
+        self.assertEqual([(x.name, x.after) for x in found],
+                         [("Both", "Fiber + Wireless"), ("Lines", "Fiber + Wireless"), ("Int", "Fiber")])
+
+    def test_no_campaign_column_nothing_happens(self):
+        v = self.tab([("A", "", "", "", "4", "")])
+        v[0][13] = ""
+        self.assertEqual(K.check_campaign("t", v), [])
+
+
+class NumberFormatFromAFormula(unittest.TestCase):
+    AUTO, COMMA = ("", ""), ("NUMBER", "0.00")
+
+    def run_it(self, own):
+        rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(8)]
+        v, _ = board(rows)
+        grid = [[self.AUTO] * 7 for _ in v]
+        grid[4][5] = self.COMMA          # F5 shows 0.00, the rest of F automatic
+        flags = [[False] * 7 for _ in v]
+        flags[4][5] = own
+        return [x for x in K.check_number_formats("t", 5, v, grid, own_format=flags)
+                if x.where == "F5"]
+
+    def test_format_that_comes_from_the_formula_is_not_a_finding(self):
+        self.assertEqual(self.run_it(own=False), [])
+
+    def test_a_format_set_on_the_cell_is_still_fixed(self):
+        found = self.run_it(own=True)
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].fixable)
+
+
+class DropdownsKeepTheirColors(unittest.TestCase):
+    RULE = {"condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Here"}]}}
+
+    def found(self, hidden=()):
+        rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(8)]
+        v, _ = board(rows)
+        rules = [[None] * 7 for _ in v]
+        for r in range(4, 12):            # column G of each rep, row 7 missing it
+            rules[r - 1][6] = None if r == 7 else self.RULE
+        return K.check_dropdowns("t", 5, v, rules, hidden=frozenset(hidden))
+
+    def test_missing_dropdown_is_copied_never_written(self):
+        x = [f for f in self.found() if f.where == "G7"][0]
+        paste = x.request["copyPaste"]
+        self.assertEqual(paste["pasteType"], "PASTE_DATA_VALIDATION")
+        self.assertEqual(paste["source"]["startRowIndex"], 3)      # row 4, a row that has it
+        self.assertEqual(paste["destination"]["startRowIndex"], 6)
+        self.assertNotIn("updateCells", x.request)
+
+    def test_a_hidden_source_row_is_not_copied_from(self):
+        x = [f for f in self.found(hidden=[4]) if f.where == "G7"][0]
+        self.assertEqual(x.request["copyPaste"]["source"]["startRowIndex"], 4)
+
+    def test_a_row_the_filter_hides_is_only_reported(self):
+        x = [f for f in self.found(hidden=[7]) if f.where == "G7"][0]
+        self.assertFalse(x.fixable)
+        self.assertIn("oculta", x.detail)
+
+
 class Formulas(unittest.TestCase):
     def test_x_typed_over_formula_gets_formula_back(self):
         rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(8)]
@@ -70,6 +174,19 @@ class Fonts(unittest.TestCase):
         self.assertIn("updateCells", found[0].request)
 
 
+    def test_row_that_lost_bold_and_centering_gets_it_back(self):
+        v, _ = board([("Rep %d" % i, GOOD, "1", "Here") for i in range(8)])
+        styles = [[None] * 7 for _ in range(3)]
+        for i in range(8):
+            styles.append([(False, None)] + [(True, "CENTER")] * 6)
+        styles[3 + 4][4] = (False, "RIGHT")
+        found = K.check_styles("t", 7, v, styles)
+        self.assertEqual([y.where for y in found], ["E8"])
+        fmt = found[0].request["updateCells"]["rows"][0]["values"][0]["userEnteredFormat"]
+        self.assertEqual(fmt["horizontalAlignment"], "CENTER")
+        self.assertTrue(fmt["textFormat"]["bold"])
+
+
 class Notes(unittest.TestCase):
     def test_note_says_what_changed_and_keeps_an_existing_note(self):
         rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(6)]
@@ -95,6 +212,9 @@ class Notes(unittest.TestCase):
         self.assertEqual(len(reqs), 2)
         _, kept = K.old_note_requests(7, [["Lucy fixed this (12/29):"]], dt.date(2027, 1, 6))
         self.assertEqual(kept, [[""]])                      # last year's, before Monday
+        reqs, kept = K.old_note_requests(7, notes, dt.date(2026, 10, 21), every=True)
+        self.assertEqual(kept, [["Raf: call him", "", ""]])  # our board: all of Lucy's go
+        self.assertEqual(len(reqs), 3)
 
     def test_rule_deletes_get_no_note(self):
         rule = Conditional.rule(None, "=COUNTIF(#REF!,A4)>0")
@@ -128,8 +248,51 @@ class Conditional(unittest.TestCase):
         self.assertEqual([(y.kind, y.request["deleteConditionalFormatRule"]["index"])
                           for y in found], [("cf_self", 1)])
 
+    def test_car_ride_strike_pasted_on_the_car_rides_goes(self):
+        # Colten 10/28: Monday's pool rule also sat on E17:E21 -> names struck
+        def piece(r0, r1, c0, c1):
+            return {"sheetId": 7, "startRowIndex": r0, "endRowIndex": r1,
+                    "startColumnIndex": c0, "endColumnIndex": c1}
+        strike = {"textFormat": {"strikethrough": True}}
+        mon = self.rule("=COUNTIF($D$3:$G$46, E17) > 0")
+        mon["ranges"] = [piece(16, 21, 4, 5), piece(49, 84, 3, 7)]
+        mon["booleanRule"]["format"] = strike
+        tue = self.rule("=COUNTIF($L$3:$O$46, L50) > 0", rows=(49, 84), cols=(11, 15))
+        tue["booleanRule"]["format"] = strike
+        found = K.check_conditional("t", 7, [mon, tue], ncols=52)
+        self.assertEqual([(y.kind, y.where, y.after) for y in found],
+                         [("cf_strike_stray", "regla 0", "D50:G84")])
+        new = found[0].request["updateConditionalFormatRule"]["rule"]
+        self.assertEqual(new["booleanRule"]["condition"]["values"][0]["userEnteredValue"],
+                         "=COUNTIF($D$3:$G$46, D50) > 0")
+        self.assertEqual(new["booleanRule"]["format"], strike)
+
+    def test_off_list_strike_above_its_list_stays(self):
+        # ours, Stations: M5 struck when on the OFF list below -- not a pool
+        off = self.rule("=COUNTIF($F$44:$H$157, M5)>0")
+        off["ranges"] = [{"sheetId": 7, "startRowIndex": 4, "endRowIndex": 5,
+                          "startColumnIndex": 12, "endColumnIndex": 13},
+                         {"sheetId": 7, "startRowIndex": 43, "endRowIndex": 157,
+                          "startColumnIndex": 1, "endColumnIndex": 10}]
+        off["booleanRule"]["format"] = {"textFormat": {"strikethrough": True}}
+        self.assertFalse(K.check_conditional("t", 7, [off], ncols=34))
+
     def test_literal_text_is_not_a_column(self):
         self.assertFalse(K.check_conditional("t", 7, [self.rule('=$B4="ZZZ1"')], ncols=10))
+
+    def test_status_color_one_row_off_is_reanchored(self):
+        # Jairo 10/29: names B4:B142 painted by =BL5="1st Wk" -> the row above
+        shifted = self.rule('=BL5="1st Wk"', rows=(3, 142), cols=(1, 2))
+        right = self.rule('=AZ4="2nd Wk"', rows=(3, 142), cols=(1, 2), color=0.5)
+        below = self.rule('=BL5="RT"', rows=(40, 60), cols=(1, 2), color=0.3)  # not on row 4
+        found = K.check_conditional("t", 7, [shifted, right, below], ncols=70, block=(4, 142))
+        self.assertEqual([(y.kind, y.where, y.after) for y in found],
+                         [("cf_row_shift", "regla 0", '=BL4="1st Wk"')])
+        new = found[0].request["updateConditionalFormatRule"]["rule"]
+        self.assertEqual(new["ranges"], shifted["ranges"])
+        self.assertEqual(new["booleanRule"]["format"], shifted["booleanRule"]["format"])
+        # without the rep block (Line Up / Stations) nothing is guessed
+        self.assertFalse(K.check_conditional("t", 7, [shifted], ncols=70))
 
 
 def owner_board(n_reps, blanks=6):
@@ -378,3 +541,109 @@ class OutsideBlock(unittest.TestCase):
         found = K.check_outside_block("t", v, f)
         self.assertEqual([x.where for x in found], ["D13", "D14", "D15"])
         self.assertEqual(found[0].value, "=SUM($E13:$G13)")
+
+
+def stats_board(field_shown, board_shown, field_fx=None, sold=(1, 0, 2, 0), tk=(50, 40, 0, 0)):
+    n = len(field_shown)
+    sold, tk = (tuple(sold) + (0,) * 7)[:n], (tuple(tk) + (0,) * 7)[:n]
+    """n days (MON..., one per shown value) of Apps | TK, 6 reps, TOTALS, a blank row, then
+    'Total Reps in the Field' and 'Reps that got on the Board' under each Apps."""
+    days = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")[:n]
+    w = 3 + 2 * n
+    hdr1 = ["", "", ""] + [x for d in days for x in (d, "")]
+    hdr3 = ["", "#", "Name"] + ["Apps", "TK"] * n
+    vals, fx = [hdr1, [""] * w, hdr3], [hdr1, [""] * w, hdr3]
+    for i in range(6):
+        row = ["", str(i + 1), "Rep %d" % i]
+        for d in range(n):
+            row += [str(sold[d]) if i == 0 else "0", str(tk[d]) if i < 2 else ""]
+        vals.append(row)
+        fx.append(row)
+    vals.append(["", "", "TOTALS"] + [""] * (w - 3))
+    fx.append(["", "", "TOTALS"] + [""] * (w - 3))
+    vals.append([""] * w)
+    fx.append([""] * w)
+    for label, shown, f in (("Total Reps in the Field", field_shown, field_fx),
+                            ("Reps that got on the Board", board_shown, None)):
+        v, x = ["", "", label], ["", "", label]
+        for d in range(n):
+            c = 4 + 2 * d
+            apps, tkc = K.col_letter(c), K.col_letter(c + 1)
+            good = "=COUNTIF(%s4:%s9,\">0\")+COUNTIF(%s4:%s9,\">0\")" % (apps, apps, tkc, tkc)
+            v.append(str(shown[d]))
+            x.append((f or {}).get(d, good))
+            v.append("")
+            x.append("")
+        vals.append(v)
+        fx.append(x)
+    return vals, fx
+
+
+class DayStats(unittest.TestCase):
+    def test_day_with_knocks_but_zero_in_field_gets_other_days_formula(self):
+        v, f = stats_board((2, 0, 1, 0), (1, 0, 1, 0), field_fx={1: "=0"})
+        found = K.check_day_stats("t", v, f)
+        self.assertEqual([(y.kind, y.where) for y in found], [("day_stats_formula", "F12")])
+        self.assertEqual(found[0].value, '=COUNTIF(F4:F9,">0")+COUNTIF(G4:G9,">0")')
+
+    def test_day_nobody_worked_yet_is_not_flagged(self):
+        v, f = stats_board((2, 2, 1, 0), (1, 0, 1, 0))
+        self.assertEqual(K.check_day_stats("t", v, f), [])
+
+    def test_fewer_in_field_than_on_board_with_no_formula_to_copy_is_reported(self):
+        bad = {d: "=1" for d in range(4)}
+        v, f = stats_board((1, 2, 1, 0), (1, 0, 2, 0), field_fx=bad)
+        found = K.check_day_stats("t", v, f)
+        self.assertEqual([(y.kind, y.where) for y in found], [("day_stats_wrong", "H12")])
+        self.assertFalse(found[0].fixable)
+
+    def test_board_without_summary_rows_is_skipped(self):
+        v, f = stats_board((2, 2, 1, 0), (1, 0, 1, 0))
+        self.assertEqual(K.check_day_stats("t", v[:10], f[:10]), [])
+
+
+class DayRows(unittest.TestCase):
+    def test_odd_day_formula_and_typed_day_get_the_days_formula(self):
+        v, f = stats_board((2, 0, 1, 0, 0, 0, 0), (1, 0, 1, 0, 0, 0, 0), field_fx={1: "=0"})
+        f[11][9] = "7"                                   # THU typed over
+        found = {y.where: (y.kind, y.value) for y in K.check_day_rows("t", v, f)}
+        self.assertEqual(found["F12"], ("day_formula_differs", '=COUNTIF(F4:F9,">0")+COUNTIF(G4:G9,">0")'))
+        self.assertEqual(found["J12"][0], "typed_over_formula")
+
+    def test_three_days_agreeing_is_not_enough(self):
+        v, f = stats_board((2, 0, 1, 0), (1, 0, 1, 0), field_fx={1: "=0", 3: "=1"})
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row == 12])
+
+    def test_sum_that_only_starts_on_another_row_is_left_alone(self):
+        v, f = stats_board((2, 0, 1, 0, 0, 0, 0), (1, 0, 1, 0, 0, 0, 0),
+                           field_fx={1: '=COUNTIF(F3:F9,">0")+COUNTIF(G3:G9,">0")'})
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row == 12])
+
+    def test_typed_count_stays_when_the_days_formula_counts_empty_rows(self):
+        # Drew 2026-10-30: the formula says 108 every day, Monday's 12 is typed on purpose
+        v, f = stats_board((2, 50, 50, 50, 50, 50, 50), (1, 0, 1, 0, 0, 0, 0))
+        f[11][3] = "2"
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row == 12])
+        wrong = [y for y in K.check_day_stats("t", v, f) if y.row == 12]
+        self.assertTrue(wrong and all(not y.fixable for y in wrong))
+
+    def test_other_rep_rows_stay_too_when_the_field_count_is_broken(self):
+        v, f = stats_board((2, 50, 50, 50, 50, 50, 50), (1, 0, 1, 0, 0, 0, 0))
+        f[11][3] = "2"
+        f[12][3] = "1"                                   # board count typed as well
+        self.assertFalse([y for y in K.check_day_rows("t", v, f) if y.row in (12, 13)])
+
+
+class StatusWords(unittest.TestCase):
+    def test_week_count_testing_a_word_nobody_uses_gets_the_used_one(self):
+        v = [["", "", "", "Field Status"], [""] * 4, ["", "#", "Name", "Apps"]]
+        f = [list(r) for r in v]
+        for i, st in enumerate(["1st Wk", "2nd Wk", "RT"]):
+            v.append(["", i, "Rep %d" % i, st]); f.append(list(v[-1]))
+        v.append(["", "", "TOTALS", ""])
+        f.append(["", "", "TOTALS", '=COUNTIFS(D4:D6,"<>1st Week",$D4:$D6,"<>RT")'])
+        f.append(["", "", "x", '=SUMPRODUCT(($D4:$D6<>"1st Wk")*1)'])
+        v.append(["", "", "x", "2"])
+        found = K.check_status_words("t", v, f)
+        self.assertEqual([(x.where, x.value) for x in found],
+                         [("D7", '=COUNTIFS(D4:D6,"<>1st Wk",$D4:$D6,"<>RT")')])

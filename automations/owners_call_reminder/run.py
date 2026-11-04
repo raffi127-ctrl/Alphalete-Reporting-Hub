@@ -60,7 +60,7 @@ FINAL_SUBJECT = "🚨 FINAL CALL — fill out the recognition sheet"
 # The 11am + 4pm reminder.
 BODY = (
     "Reminder: the Owner's Call is tonight at 8:15pm CST, followed by the Leader's "
-    "Call at 8:45pm CST! 🔥🎉\n"
+    "Call at 9:00pm CST! 🔥🎉\n"
     "\n"
     "Please make sure to fill out the recognition sheet before the call:\n"
     + SHEET_URL

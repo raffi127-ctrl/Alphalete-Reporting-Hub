@@ -100,28 +100,36 @@ class TheBackgroundPusher(unittest.TestCase):
         for x in self.p:
             x.stop()
 
-    def test_hours_are_7am_to_10pm(self):
-        at = lambda h, m=0: dt.datetime(2026, 10, 5, h, m)
-        self.assertFalse(self.RP.in_window(at(6, 59)))
-        self.assertTrue(self.RP.in_window(at(7)))
+    def test_hours_are_5_30am_to_10pm(self):
+        # Carlos 10/28: "5:30am" start; 10pm end unchanged.
+        at = lambda h, m=0: dt.datetime(2026, 11, 2, h, m)
+        self.assertFalse(self.RP.in_window(at(5, 29)))
+        self.assertTrue(self.RP.in_window(at(5, 30)))
         self.assertTrue(self.RP.in_window(at(21, 59)))
         self.assertFalse(self.RP.in_window(at(22)))
 
-    def test_every_ten_minutes(self):
-        now = dt.datetime(2026, 10, 5, 12, 0)
-        self.assertTrue(self.RP.due(now))
-        self.RP._save_state({"last_start": "2026-10-05T11:55:00"})
-        self.assertFalse(self.RP.due(now))
-        self.RP._save_state({"last_start": "2026-10-05T11:50:00"})
-        self.assertTrue(self.RP.due(now))
+    def test_every_fifteen_minutes(self):
+        now = dt.datetime(2026, 11, 2, 12, 0)
+        with mock.patch.object(self.RP, "_past_stop", return_value=False):
+            self.assertTrue(self.RP.due(now))
+            self.RP._save_state({"last_start": "2026-11-02T11:50:00"})
+            self.assertFalse(self.RP.due(now))
+            self.RP._save_state({"last_start": "2026-11-02T11:45:00"})
+            self.assertTrue(self.RP.due(now))
+
+    def test_past_the_stop_nothing_starts(self):
+        now = dt.datetime(2026, 11, 2, 15, 20)
+        with mock.patch.object(self.RP, "_past_stop", return_value=True):
+            self.assertFalse(self.RP.due(now))
 
     def test_a_running_push_is_not_doubled(self):
-        now = dt.datetime.now().replace(hour=12)
-        self.RP.LOCK_PATH.write_text(str(now.timestamp() - 60))
-        self.assertFalse(self.RP.due(now))
-        # ...but a lock left by a push that died does not block forever.
-        self.RP.LOCK_PATH.write_text(str(now.timestamp() - 2 * 3600))
-        self.assertTrue(self.RP.due(now))
+        now = dt.datetime(2026, 11, 2, 12, 0)
+        with mock.patch.object(self.RP, "_past_stop", return_value=False):
+            self.RP.LOCK_PATH.write_text(str(now.timestamp() - 60))
+            self.assertFalse(self.RP.due(now))
+            # ...but a lock left by a push that died does not block forever.
+            self.RP.LOCK_PATH.write_text(str(now.timestamp() - 2 * 3600))
+            self.assertTrue(self.RP.due(now))
 
     def test_an_office_that_did_not_ask_never_pushes(self):
         with mock.patch.object(self.RP.C, "enrollments",

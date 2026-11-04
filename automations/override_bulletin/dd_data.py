@@ -245,11 +245,20 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     tot_col = next((i for i, h in enumerate(hdr) if "total dd" in (h or "").lower()), 4)
 
     icds, by_key = [], {}
+    # Active-NO rows stay out of every table, but a leader's list can still name
+    # them. WE 10.25.26 (2026-10-29): six such ICDs (Ana Griffin, Cinthya Reyes,
+    # Lizette Ruiz, ...) were flagged "no DD row — counted as $0" although each
+    # HAS a row, marked NO and $0 for weeks. Remember this week's figure so the
+    # podium can tell "inactive, nothing this week" from a real missing row.
+    inactive_wk = {}
     for r in vals[1:]:
         nm = (r[0] or "").strip()
         if not nm or nm.lower().startswith("total"):
             continue
         if len(r) > 1 and r[1].strip().upper() != "YES":
+            i0 = wk_cols[0][0] if wk_cols else None
+            inactive_wk[_key(nm, aliases)] = (
+                money(r[i0]) if i0 is not None and i0 < len(r) else 0.0)
             continue
         row = {"name": nm, "key": _key(nm, aliases),
                "campaign": (r[2] or "").strip() if len(r) > 2 else "",
@@ -514,6 +523,8 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                     problems.append(f"{name}: '{item['icd']}' has no 2026 total — "
                                     f"the leader's 2026 figure is understated, so "
                                     f"the card says 'partial'")
+            elif inactive_wk.get(_key(item["icd"], aliases), None) == 0.0:
+                pass                       # Active NO and $0 this week: a real $0
             else:
                 missing.append(item["icd"])
                 msg = (f"{name}: '{item['icd']}' has no DD row and no manual "

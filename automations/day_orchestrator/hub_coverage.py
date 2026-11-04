@@ -131,6 +131,7 @@ _NOT_A_REPORT = frozenset({
     "alphalete_sales_board_watchdog",
     # auto-registered sub-step / dupe stubs of a real card (never published)
     "applicant_morning", "applicant_evening", "appstream_morning", "leaders_call_mon",
+    "leaders_call_reminders",
     "weather_6am", "texas_de_brazil_745", "new_start_followup_sat",
     "override_bulletin_send_fri", "brand_audit_noon", "car_rides_cleanup",
     "harvest_prime",
@@ -221,6 +222,40 @@ _NOT_A_REPORT = frozenset({
 # A name here is a promise that the report DOES NOT RUN — keep it in step with
 # on_scheduler:false + cadence weekdays [] in schedule_config, both doors.
 _RETIRED: frozenset = frozenset({
+    # Daily Update Fill. Carlos 2026-11-03: "good to be discontinued! i dont
+    # need it anymore". The 8:45 PM on its card never had a timer behind it, so
+    # the 11 owner boards stopped at 8/21-22. Module stays on disk: raf_daily_update
+    # imports ensure_week and pick_sunday from it. Revive = delete these lines.
+    "daily_update_fill", "daily-update-fill",
+    # Owner Rep Audit PAUSED 2026-11-03 (Eve): staff on the owner's list got
+    # deactivated (Kash 22177). Not retired for good: take it out of here and
+    # set on_scheduler true once the protected-staff veto ships.
+    "owner-rep-audit", "owner_rep_audit",
+    # B2B Dispositions. Box-only since AT&T left HOURLY/DISPOSITION_CAMPAIGNS,
+    # and every post went to Carlos (#alphalete-gp-sales + his "Box B2B" text
+    # group). Carlos 2026-10-28: "all of these box automations you're good to
+    # turn off" (67e3e6c removed the Lucy 2 agents). The watcher then called it
+    # missing on 10/29; Megan: retire it from the Hub. Both doors shut in
+    # schedule_config (on_scheduler false, weekdays [], standalone_weekdays []).
+    # Every spelling the card was ever filed under, plus the weekly Carlos B2B
+    # board that folded into it. Module stays on disk; revive = the
+    # install_b2b_dispositions_*_agent reruns + delete these lines.
+    "b2b_dispositions", "b2b-dispositions",
+    "b2b_dispositions_hourly", "b2b_dispositions_final",
+    "b2b_dispositions_gaps", "b2b_dispositions_morning",
+    "weekly_knock_dispositions_carlos_b2b",
+    # BOX Order Log + the Vantura Revenue Board, same Carlos 10/28 turn-off.
+    # remove_box_order_log_agent unloaded the order log, and the watcher then
+    # called it missing on 10/29. The revenue board only ever posted the BOX
+    # board on a live pass (ATT is the B2B Metrics runner's), into that order
+    # log's thread; with the BOX board off too (vantura_boards.OFF_BOARDS,
+    # Eve 2026-10-30) it has nothing left to post. Revive = the install_*
+    # reruns + delete these lines.
+    "box_order_log", "box-order-log",
+    "vantura_revenue_board", "vantura-revenue-board",
+    # Atef NDS watch. Only existed to DM Eve when Atef's captainship landed in
+    # NDS; Carlos 2026-10-27: Atef is no longer a captain. Both spellings.
+    "atef-nds-watch", "atef_nds_watch",
     # B2B Ongoing Cancels. Its only source, ATTTRACKER-B2B/B2BCancelRates, was
     # removed from Tableau; Carlos, 2026-08-30: "yes it got removed. we can
     # remove this automation we werent looking at it". Both doors are shut —
@@ -759,6 +794,8 @@ _INFRA_AGENTS = {
     # reason mini-control is here: it is the channel reports are run THROUGH,
     # not a report, and it publishes nothing a card could show.
     "mini-control-read",
+    # The text lane: third process of the same poller (iMessage sends only).
+    "mini-control-text",
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",

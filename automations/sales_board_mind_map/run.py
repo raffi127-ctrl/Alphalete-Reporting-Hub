@@ -1,11 +1,11 @@
-"""Alphalete sales board mind map — daily 7:00am PNG to #alphalete-lvl1-chat.
+"""Alphalete sales board mind map — daily 6:00am PNG to #alphalete-lvl1-chat.
 
 Raf's Loom (2026-09-20, l10-alphalete "MIND MAP"): *"Can we do a mind map just
 based off of the sales board and have it posted every day? Especially with new
 starts... we should try to make the colors what they are here. So if it's a
 week one, the mind map should be this color... if it's terminated, obviously we
 can just remove the person... let's have it posted for us and the level one
-chat... let's do 7 a.m. every day."*
+chat... let's do 7 a.m. every day."* Raf moved it up to 6:00 (via Maud, 2026-11-03).
 
 Same shape as the B2B tree Carlos gets ([[automations/team_tree]]) — he was
 pointing at that PNG in the Loom — with the two things he asked to change:
@@ -298,8 +298,8 @@ def week_tab_for(sh, today: dt.date, *, logfn=print) -> str:
     """Which week's tab to draw.
 
     MONDAY READS THE WEEK THAT JUST CLOSED (Megan 2026-09-21: "Monday should
-    post the full week prior anyways"). A Monday 7am post about the week that
-    started seven hours ago would be a roster with no production behind it —
+    post the full week prior anyways"). A Monday 6am post about the week that
+    started six hours ago would be a roster with no production behind it —
     every average 0.0, every termination count zero. The finished week is the
     one worth looking at, and it is what the office is reviewing on Monday.
 

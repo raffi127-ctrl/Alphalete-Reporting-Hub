@@ -17,6 +17,26 @@ class Pins(unittest.TestCase):
         self.assertEqual(P.pinned_office("Shealey Miller"), "23858")
         self.assertEqual(P.pinned_office("  shealey   MILLER "), "23858")
 
+    def test_scoped_pin_holds_only_inside_the_block(self):
+        with P.scoped_pins({"Shealey Miller": "24273"}):
+            self.assertEqual(P.pinned_office("shealey miller"), "24273")
+        self.assertEqual(P.pinned_office("Shealey Miller"), "23858")
+
+    def test_scoped_pin_goes_back_after_an_error(self):
+        with self.assertRaises(ValueError):
+            with P.scoped_pins({"Shealey Miller": "24273"}):
+                raise ValueError("boom")
+        self.assertEqual(P.pinned_office("Shealey Miller"), "23858")
+
+    def test_identity_check_follows_the_scoped_pin(self):
+        page = _Page("Shealey Miller (24273 - Sapphire Marketing Group, Inc.)")
+        with P.scoped_pins({"Shealey Miller": "24273"}):
+            KP.assert_impersonating(page, "RQ", "Shealey Miller", {},
+                                    verbose=False)
+        with self.assertRaises(RuntimeError):
+            KP.assert_impersonating(page, "RQ", "Shealey Miller", {},
+                                    verbose=False)
+
     def test_a_normal_owner_is_not_pinned(self):
         self.assertIsNone(P.pinned_office("Angel Padilla"))
         self.assertIsNone(P.pinned_office("Nuri Burgos"))

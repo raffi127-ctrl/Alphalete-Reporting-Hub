@@ -57,6 +57,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Per-metric timeout. Browser pulls can be slow; this is a backstop so one
 # hung module drops to FAILED and the rest still run, not a target runtime.
 PER_METRIC_TIMEOUT_S = 20 * 60
+# The Order Log now posts A-F / G-M / N-Z threads with one reply per rep in
+# #alphalete-sales AND its #alphalete-lvl1-chat mirror (~130 reps x 2), which
+# alone can take ~15 min of Slack calls on top of the pull (2026-10-31).
+TIMEOUT_BY_MODULE = {"automations.uploaded.order_log": 35 * 60}
 
 # (slug, label, module, base_args) — order matches the Metrics thread.
 METRICS = [
@@ -97,17 +101,18 @@ def _run_one(label: str, module: str, base_args: list[str],
     """Launch one metric module as a subprocess, streaming its output.
     Returns (ok, note). `env` overrides the subprocess environment."""
     cmd = [sys.executable, "-u", "-m", module] + base_args
+    timeout_s = TIMEOUT_BY_MODULE.get(module, PER_METRIC_TIMEOUT_S)
     print(f"\n{'='*70}\n▶  {label}\n   {' '.join(cmd)}\n{'='*70}", flush=True)
     started = time.monotonic()
     try:
         result = subprocess.run(cmd, cwd=str(REPO_ROOT),
-                                timeout=PER_METRIC_TIMEOUT_S, env=env)
+                                timeout=timeout_s, env=env)
         elapsed = time.monotonic() - started
         if result.returncode == 0:
             return True, f"{elapsed:5.0f}s"
         return False, f"exit {result.returncode} after {elapsed:.0f}s"
     except subprocess.TimeoutExpired:
-        return False, f"TIMED OUT after {PER_METRIC_TIMEOUT_S//60}m"
+        return False, f"TIMED OUT after {timeout_s//60}m"
     except Exception as e:  # launch failure — keep going
         return False, f"launch error: {e}"
 

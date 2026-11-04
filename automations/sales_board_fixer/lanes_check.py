@@ -22,6 +22,8 @@ one in the last healthy copy Lucy saved of that tab (lanes_good.json, keyed by
 sheet + tab). A hand-typed block (Frank) never had one, so it is never touched.
 
 WHAT GETS FIXED
+  lane_banner_lost    'Current Week' or 'Last week' typed over (A1 said 'v',
+                      JD 2026-11-03) -> title put back; lanes.py stops without it.
   lane_formula_lost   formula deleted / typed over / #REF! -> put back from
                       the healthy copy, or (ours only, where each block reads
                       its own week) from the same lane in the other block.
@@ -32,6 +34,8 @@ WHAT GETS FIXED
                       outside it and vanishes from every lane.
   lane_extra_lost     another formula on the lane row (col M '2wks in a Row').
 WHAT IS ONLY REPORTED -- someone may have done it on purpose
+  lane_banners_gone   both titles gone from a tab Lucy knows has lanes: nothing
+                      says which block is which, so a person has to look.
   lane_spill_blocked  something typed under a lane: when the list reaches it
                       the whole lane goes BLANK (iferror hides the error).
   lane_threshold      the cut-off doesn't match the header ('8+' filtering >=7).
@@ -54,7 +58,7 @@ RANGE_RE = re.compile(r"(?:'([^']+)'|(?<![\w'])([A-Za-z_][\w.]*))!"
 # a range compared with a number: ...!C4:C53>=10
 NUMBER_TAIL_RE = re.compile(r"\s*(>=|<)\s*(\d+)")
 TOTALS = "totals"
-REPAIRS = ("lane_formula_lost", "lane_col_moved", "lane_range", "lane_extra_lost")
+REPAIRS = ("lane_banner_lost", "lane_formula_lost", "lane_col_moved", "lane_range", "lane_extra_lost")
 
 
 def ranges(f: str):
@@ -127,18 +131,29 @@ def _squash(f: str) -> str:
 
 
 def _fix_ranges(f: str, boards: Dict[str, list], headers: Dict[str, str]):
-    """(formula, moved [(tab, old, new, header)], ends [(tab, old, new)]):
-    columns moved back to their header, and every range ended on the row
-    above its board's TOTALS (when the board has one)."""
-    moved, ends = [], []
+    """(formula, moved [(tab, old, new, header)], ends [(tab, old, new)],
+    starts [(tab, col, old, new)]): columns moved back to their header, every
+    range started on the row its first range (the names) starts on, and every
+    range ended on the row above its board's TOTALS (when the board has one).
+
+    Starts (Miami 2026-10-30): one range at BL5:BL113 next to B4:B113 made
+    FILTER's ranges different sizes; iferror turned the error into "" and every
+    lane went blank for two days with nothing looking broken."""
+    moved, ends, starts = [], [], []
     widths = {}
+    first = {}
+    for t, _c1, a, _c2, _z, _m in ranges(f):
+        first.setdefault(t, a)
 
     def sub(m):
         tab, c1, r1, c2, r2 = (m.group(1) or m.group(2), m.group(3), int(m.group(4)),
                                m.group(5), int(m.group(6)))
+        if r1 != first[tab]:
+            starts.append((tab, c1, r1, first[tab]))
+            r1 = first[tab]
         grid = boards.get(tab)
         if grid is None:
-            return m.group(0)
+            return _ref(tab, c1, r1, c2, r2) if r1 != int(m.group(4)) else m.group(0)
         if c1 == c2:
             want = headers.get(_header_key(tab, c1))
             if want and board_header(grid, col_index(c1) - 1) != want:
@@ -152,9 +167,10 @@ def _fix_ranges(f: str, boards: Dict[str, list], headers: Dict[str, str]):
         if end and end >= r1 and end != r2:
             ends.append((tab, r2, end))
             r2 = end
-        return _ref(tab, c1, r1, c2, r2) if (c1, r2) != (m.group(3), int(m.group(6))) else m.group(0)
+        return (_ref(tab, c1, r1, c2, r2)
+                if (c1, r1, r2) != (m.group(3), int(m.group(4)), int(m.group(6))) else m.group(0))
     out = RANGE_RE.sub(sub, f)
-    return out, moved, ends
+    return out, moved, ends, starts
 
 
 def check(lanes_formulas, lanes_values, entered, boards: Dict[str, list],
@@ -170,11 +186,18 @@ def check(lanes_formulas, lanes_values, entered, boards: Dict[str, list],
       lanes.py computes them; None on an owner's sheet (fixed tabs).
     """
     good = good or {"formulas": {}, "headers": {}}
+    out: List[Finding] = []
+    fix = L.lost_banner(lanes_values)
+    if fix:
+        out.append(Finding("lane_banner_lost", tab, col_letter(fix[1] + 1) + str(fix[0] + 1),
+                           "the '%s' title was typed over; the lanes stop moving without it"
+                           % fix[2], before=_cell(lanes_values, fix[0], fix[1]),
+                           after=fix[2], value=fix[2]))
+        lanes_values = L.with_banner(lanes_values, fix)
     row0, blocks = L.find_blocks(lanes_values)
     r1 = row0 + 1                                    # the lane row, 1-based
     frow = list(lanes_formulas[row0]) if row0 < len(lanes_formulas) else []
     heads = lanes_values[row0 - 1] if row0 >= 1 else []
-    out: List[Finding] = []
     weekly = targets is not None
 
     def at(c):
@@ -211,14 +234,18 @@ def check(lanes_formulas, lanes_values, entered, boards: Dict[str, list],
                            % ("deleted" if not old.strip() else "broken", origin))
             if weekly and L.REF_RE.search(new):
                 new = L.repoint(new, *targets[key])
-            new, moved, ends = _fix_ranges(new, boards, good["headers"])
+            new, moved, ends, starts = _fix_ranges(new, boards, good["headers"])
             if moved:
                 kind = kind or "lane_col_moved"
                 why += ["'%s' moved %s -> %s" % (h.replace("|", " ").strip(), o, n)
                         for _t, o, n, h in moved]
+            if starts:
+                kind = kind or "lane_range"
+                why += ["%s started on row %d, not %d like the rest (lane showed blank)"
+                        % (cl, a, b) for _t, cl, a, b in starts]
             if new != old:
                 kind = kind or "lane_range"
-                if kind == "lane_range":
+                if kind == "lane_range" and (ends or not starts):
                     why.append("pointed at the wrong week or stopped short of TOTALS"
                                if weekly else "stopped short of TOTALS (rows %s)"
                                % ", ".join("%d->%d" % (a, b) for _t, a, b in ends[:1]))

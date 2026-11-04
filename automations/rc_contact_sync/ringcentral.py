@@ -182,8 +182,17 @@ def create_contact(token: str, ext_id: str, *, first: str, last: str,
            "Content-Type": "application/json"}
     url = ("%s/restapi/v1.0/account/~/extension/%s/address-book/contact"
            % (C.RC_BASE_URL, ext_id))
-    for _ in range(5):
-        r = requests.post(url, headers=hdr, json=body, timeout=25)
+    last_err = None
+    for attempt in range(5):
+        try:
+            r = requests.post(url, headers=hdr, json=body, timeout=40)
+        except requests.exceptions.RequestException as e:
+            # a slow/dropped connection (ReadTimeout killed a 159-contact
+            # backfill on 2026-11-02) -- wait and try again, like a 429; the
+            # caller's loop handles an RCError per contact, never a traceback
+            last_err = e
+            time.sleep(10 * (attempt + 1))
+            continue
         if r.status_code == 429:
             time.sleep(int(r.headers.get("Retry-After", 15)))
             continue
@@ -191,7 +200,9 @@ def create_contact(token: str, ext_id: str, *, first: str, last: str,
             raise RCError("creating contact %r failed (%s): %s"
                           % (company or first, r.status_code, r.text[:300]))
         return r.json()
-    raise RCError("creating contact %r: rate limited after retries" % company)
+    raise RCError("creating contact %r: gave up after retries (%s)"
+                  % (company or first, ("%s: %s" % (type(last_err).__name__, str(last_err)[:120]))
+                     if last_err else "rate limited"))
 
 
 # --- messages -----------------------------------------------------------------
@@ -307,8 +318,18 @@ def send_group_mms(token: str, from_number: str, to_numbers: List[str],
         url = "%s/restapi/v1.0/account/~/extension/~/sms" % C.RC_BASE_URL
         hdr["Content-Type"] = "application/json"
         req = dict(json=body)
-    for _ in range(5):
-        r = requests.post(url, headers=hdr, timeout=40, **req)
+    last_err = None
+    for attempt in range(5):
+        try:
+            r = requests.post(url, headers=hdr, timeout=40, **req)
+        except requests.exceptions.RequestException as e:
+            # NOTE: a timeout AFTER RingCentral accepted the send would resend
+            # on retry; RC's SMS endpoint answers fast, so the risk is small,
+            # and the alternative (a traceback that stops every customer after
+            # this one) is worse.
+            last_err = e
+            time.sleep(10 * (attempt + 1))
+            continue
         if r.status_code == 429:
             time.sleep(int(r.headers.get("Retry-After", 20)))
             continue
@@ -316,7 +337,9 @@ def send_group_mms(token: str, from_number: str, to_numbers: List[str],
             raise RCError("send to %s failed (%s): %s"
                           % (to_numbers, r.status_code, r.text[:300]))
         return r.json()
-    raise RCError("send to %s kept rate-limiting" % (to_numbers,))
+    raise RCError("send to %s: gave up after retries (%s)"
+                  % (to_numbers, ("%s: %s" % (type(last_err).__name__, str(last_err)[:120]))
+                     if last_err else "rate limited"))
 
 
 def texted_any(messages: List[dict], phones: List[str], names: List[str],

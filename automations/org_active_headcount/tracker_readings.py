@@ -390,10 +390,11 @@ def board_icds() -> Dict[str, List[str]]:
     def c(r, k):
         row = g[r] if r < len(g) else []
         return row[k].strip() if k < len(row) else ""
-    # By its 'RUNNING WEEK TOTALS' header, not the col-A title: 'All Units' was
-    # renamed 'All Campaigns HC' on 2026-09-13 and this lookup died on it.
+    # By the 'Campaign' label itself: the column left the RUNNING WEEK TOTALS
+    # block for the Deltas block below it, and this lookup died on that
+    # (2026-11-02).
     hdr = next(i for i in range(len(g))
-               if any(str(x).strip().lower().startswith("running week") for x in g[i]))
+               if any(str(x).strip().lower() == "campaign" for x in g[i]))
     camp_col = next(k for k in range(len(g[hdr])) if c(hdr, k).lower() == "campaign")
     out: Dict[str, List[str]] = {}
     r = hdr + 1
@@ -416,18 +417,25 @@ def match(icd: str, rows: List[dict]) -> List[dict]:
     A label the board CUT OFF ('ATEF CHOUDHU..', 'CARLOS HIDAL..') matches when
     the first name is exact and the cut last name is a prefix of 3+ letters —
     the B2B and BOX trackers truncate long names, and an exact-word test missed
-    Atef, Carlos and Valeria on all 60 B2B images of the first run."""
+    Atef, Carlos and Valeria on all 60 B2B images of the first run.
+
+    The dots themselves can get lost in the reading ('VALERIA TRISTA') or come
+    back as one ellipsis character. Without them the cut has to be longer (5+
+    letters), so a different person with the same first name is not taken for
+    this one."""
     from automations.org_active_headcount import sources as src
     want = _tokens(src.source_name(icd))
     out = []
     for row in rows:
         label = (row.get("owner") or "").strip()
         got = _tokens(label)
-        if label.endswith("..") and len(got) >= 2:
+        if label.endswith(("..", "\u2026")) and len(got) >= 2:
             ok = (got[0] == want[0] and len(got[-1]) >= 3
                   and want[-1].startswith(got[-1]))
         else:
-            ok = all(t in got for t in want)
+            ok = all(t in got for t in want) or (
+                len(got) == 2 and len(want) >= 2 and got[0] == want[0]
+                and len(got[-1]) >= 5 and want[-1].startswith(got[-1]))
         if ok:
             out.append(row)
     return out

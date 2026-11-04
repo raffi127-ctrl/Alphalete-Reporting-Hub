@@ -152,8 +152,10 @@ def add(who: str, we: dt.date, dry: bool) -> None:
         return
     g, n = p["gid"], p["last_row"]
     reqs = [
-        {"insertDimension": {"range": {"sheetId": g, "dimension": "COLUMNS", "startIndex": 1, "endIndex": 2},
-                             "inheritFromBefore": False}},
+        # shift only the totals block right (Loom: select C1:C<n>, insert cells, shift right) — a whole-column
+        # insert also pushes the tax / payments tables below it one column over every week
+        {"insertRange": {"range": {"sheetId": g, "startRowIndex": 0, "endRowIndex": n, "startColumnIndex": 1, "endColumnIndex": 2},
+                         "shiftDimension": "COLUMNS"}},
         {"copyPaste": {"source": {"sheetId": g, "startRowIndex": 0, "endRowIndex": n, "startColumnIndex": 2, "endColumnIndex": 3},
                        "destination": {"sheetId": g, "startRowIndex": 0, "endRowIndex": n, "startColumnIndex": 1, "endColumnIndex": 2},
                        "pasteType": "PASTE_NORMAL"}},
@@ -166,6 +168,11 @@ def add(who: str, we: dt.date, dry: bool) -> None:
     s.batchUpdate(spreadsheetId=p["sheet"], body={"requests": reqs}).execute()
     data = [{"range": f"'{TAB}'!B1", "values": [[hdr]]}] + [{"range": f"'{TAB}'!B{i}", "values": [[""]]} for i in clear]
     s.values().batchUpdate(spreadsheetId=p["sheet"], body={"valueInputOption": "USER_ENTERED", "data": data}).execute()
+    if isinstance(hdr, float):   # copied format can be 0.00, which shows Nov 1 (11.1) as "11.10"
+        s.batchUpdate(spreadsheetId=p["sheet"], body={"requests": [{"repeatCell": {
+            "range": {"sheetId": g, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 2},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.0#"}}},
+            "fields": "userEnteredFormat.numberFormat"}}]}).execute()
     print("  done")
 
 
@@ -206,16 +213,16 @@ def tableau() -> None:
 
 
 def payout(we: dt.date) -> float:
-    """Raf's 'Payout toward CC' = sum of the CC payments table (Q:S, under the 'CC#' header on the same tab)
+    """Raf's 'Payout toward CC' = sum of the CC payments table (under the 'CC#' header on the same tab)
     dated Mon–Sun of the week ending `we`. Blank dates belong to the date above (merged cells)."""
     p, s = PEOPLE["raf"], sheets()
-    rows = s.values().get(spreadsheetId=p["sheet"], range=f"'{TAB}'!Q1:S600",
+    rows = s.values().get(spreadsheetId=p["sheet"], range=f"'{TAB}'!A1:AZ600",
                           valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
-    head = next(i for i, r in enumerate(rows) if r and str(r[0]).strip() == "CC#")
+    head, c0 = next((i, j) for i, r in enumerate(rows) for j, x in enumerate(r) if str(x).strip() == "CC#")
     start, total, cur = we - dt.timedelta(days=6), 0.0, None
     print(f"  Raf CC payments {start:%m/%d}–{we:%m/%d}:")
     for i, r in enumerate(rows[head + 1:], start=head + 2):
-        r = (r + ["", "", ""])[:3]
+        r = (r[c0:] + ["", "", ""])[:3]
         if isinstance(r[1], (int, float)):
             cur = dt.date(1899, 12, 30) + dt.timedelta(days=int(r[1]))
         if cur and start <= cur <= we and isinstance(r[2], (int, float)):

@@ -213,7 +213,7 @@ class EveryBoardIsGatedTest(unittest.TestCase):
                 "%s probes a workbook none of its boards come from" % eid)
 
     def test_only_box_and_the_email_board_remain_ungated(self):
-        self.assertEqual({"b2b_box", "vzftr"}, set(fr.UNGATED))
+        self.assertEqual({"b2b_box", "vzftr", "vzw_wireless"}, set(fr.UNGATED))
 
 
 class QuantumIsWiredInTest(unittest.TestCase):

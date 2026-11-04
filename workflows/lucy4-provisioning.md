@@ -66,7 +66,7 @@ timezone → **America/Chicago** (launchd caches TZ — it must be set before an
 agent loads), network time, Command Line Tools, `pmset … disablesleep 1`,
 Remote Login, Screen Sharing, the team installer, the Google sign-in, the
 `.machine-profile` marker, and five LaunchAgents:
-`mini-control`, `mini-control-read`, `session-holder`, `keep-awake`,
+`mini-control`, `mini-control-read`, `mini-control-text`, `session-holder`, `keep-awake`,
 `orchestrator-schedule-guard`.
 
 Anything that didn't stick is printed as a manual checklist at the end — read it,
@@ -403,7 +403,7 @@ Reasons a report is pinned where it is. Check before routing anything to Lucy 4.
 
 ```
 [ ] lucy diag --machine "Lucy 4"            → answers; sleep LOCKED; agents listed
-[ ] agent list matches Lucy 2/3: mini-control, mini-control-read, session-holder,
+[ ] agent list matches Lucy 2/3: mini-control, mini-control-read, mini-control-text, session-holder,
     keep-awake, orchestrator-schedule-guard (+ day-orchestrator only if §6 ran)
 [ ] lucy login_check                        → BOTH OwnerVille and AppStream pass
 [ ] lucy sheets_whoami                      → alphaletereporting@, no denials

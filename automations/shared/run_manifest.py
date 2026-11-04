@@ -246,6 +246,17 @@ def read_manifest(report_id: str) -> Optional[dict]:
         return None
 
 
+def healed_since(report_id: str, since_ts: Optional[str]) -> bool:
+    """Did a run AFTER `since_ts` finish clean? True only when the manifest is ok,
+    lists nothing failed, and was written after that moment: an old clean file
+    proves nothing. Any read problem answers False."""
+    m = read_manifest(report_id) or {}
+    ran = m.get("run_ts") or ""
+    if not m.get("ok") or m.get("failed") or not ran or not since_ts:
+        return False
+    return ran[:19] > since_ts[:19]
+
+
 def retry_spec(report_id: str) -> Optional[dict]:
     """Hub helper: return {failed, retry_args, kind, run_ts} ONLY when there's
     something to retry (manifest exists, not ok, has failed parts + retry args).

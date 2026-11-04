@@ -340,6 +340,20 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
     except Exception as e:  # noqa: BLE001
         print(f"⚠ auto-marker skipped: {type(e).__name__}: {e}")
 
+    # ---- auto-set the CREDICO marker: next month's Credico belongs 5 weeks after
+    # the last one (Eve 2026-10-30). Same red-until-it-lands mechanism; without a
+    # marker the money is an orphan and never placed (P9-2026 was only on Eve's tab).
+    try:
+        wk_list = sheet_weeks(ws)                      # newest-first
+        nxt = M.next_credico_marker(M.read_markers(ws), wk_list, week_mdy)
+        if nxt and not M.has_marker(ws, M.CREDICO, nxt):
+            M.set_marker(ws, M.CREDICO, nxt, F.week_col(ws, week_mdy),
+                         dry_run=not write)
+            print(f"auto-set CREDICO marker {nxt} on {week_mdy} "
+                  f"({M.CREDICO_EVERY_WEEKS} weeks after the last one)")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ credico auto-marker skipped: {type(e).__name__}: {e}")
+
     # ---- late Special/Credico: place any PENDING period whose money has landed.
     # Placement is never derived — the marker row says which week a period belongs
     # in; a period with no marker is reported, not guessed. The red->black flip

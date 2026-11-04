@@ -70,6 +70,13 @@ AGENT_FILES = [
     # (2026-09-15).
     "automations/icd_alerts/box_signin.py",
     "automations/icd_alerts/sara_signin.py",
+    # The code screen cleared by itself, with the code from Lucy 1
+    # (2026-10-29). code_answer only for its request wording -- the half
+    # that runs on Lucy 1 is imported late and never on a Mac.
+    "automations/icd_alerts/sara_code.py",
+    "automations/icd_alerts/code_answer.py",
+    # Setup asks for the code forward right there (Megan 2026-10-29).
+    "automations/icd_alerts/code_forward.py",
     "automations/icd_alerts/ov_signin.py",
     # Resume pushing on the office's own machine: the installer's AppStream
     # check runs it, so it has to be there when setup.py is.
@@ -84,6 +91,10 @@ AGENT_FILES = [
     "automations/oat_processing/classify.py",
     "automations/oat_processing/resume_download.py",
     "automations/oat_processing/run.py",
+    # The Await text's interview times, retuned to the clock before each live
+    # push (Carlos/Megan 2026-10-28).
+    "automations/oat_processing/await_window.py",
+    "automations/oat_processing/await_template.py",
     # The Mac's own text recognition for resumes Indeed draws as a picture
     # (no Claude key ships to an office; 2026-10-22, Jorge Banos).
     "automations/oat_processing/bin/ocr_screen.js",
@@ -112,6 +123,7 @@ AGENT_FILES = [
     "automations/icd_alerts/ov_read.py",
     "automations/shared/ownerville_knocks.py",
     "automations/shared/saraplus.py",
+    "automations/shared/sara_passcode.py",
     # My Service Cloud: where a Box office's sales live. Ships for the same
     # reason saraplus.py does -- the read happens on the office's machine.
     "automations/shared/servicecloud.py",
@@ -125,6 +137,23 @@ AGENT_FILES = [
     "automations/icd_alerts/headshot_jobs.py",
     "automations/headshots/__init__.py",
     "automations/headshots/ov_upload.py",
+    # Office admin page jobs (Raf 2026-11-01): the admin's buttons, done on
+    # this computer with this office's own logins.
+    "automations/icd_alerts/office_jobs.py",
+    "automations/icd_alerts/sterling_send.py",
+    "automations/icd_alerts/sterling_forward.py",
+    # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
+    "automations/icd_alerts/pnl.py",
+    # The PNL's Apex half: the owner's one sign-in window, and Carlos's
+    # export shipped whole (stdlib at the top; its Google writes are never
+    # called on an office Mac).
+    "automations/icd_alerts/apex_signin.py",
+    "automations/carlos_payroll_pull/__init__.py",
+    "automations/carlos_payroll_pull/run.py",
+    # Whether this Mac can read the owner's SaraPlus code texts (Eve 2026-10-29).
+    "automations/icd_alerts/messages_probe.py",
+    # SaraPlus's code read off the owner's texts in Messages (Eve 2026-10-31).
+    "automations/icd_alerts/sms_code.py",
 ]
 
 # HUB-ONLY IMPORTS THAT SHIP ON PURPOSE, each inside a function, never at

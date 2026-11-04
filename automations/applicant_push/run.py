@@ -120,6 +120,38 @@ def _run_stage(name: str, work):
     applicant is touched, so a fresh-profile retry is safe and self-heals. Returns
     ``work``'s value, or None if the session never established after all retries
     (the other stage still runs — a batch session failure never blocks leftovers)."""
+    guard = _background_guard()
+    try:
+        return _run_stage_inner(name, work)
+    finally:
+        if guard is not None:
+            guard.stop()
+
+
+def _background_guard():
+    """APPLICANT_PUSH_BACKGROUND=1 -- a computer a PERSON is using (Megan's
+    laptop, 2026-10-29: "we can run it from this machine right now as long as
+    it's in the background"). Every resume read calls bring_to_front, which
+    pulls this Chrome in front of whatever she is doing; the relay agent's
+    focus guard hides it again the moment it does (Carlos's computer since
+    10/21). Only THIS push's Chrome is hidden, by its own profile path -- never
+    her own Chrome. Off everywhere else: the Lucys have nobody to disturb."""
+    if os.environ.get("APPLICANT_PUSH_BACKGROUND") != "1":
+        return None
+    try:
+        from automations.icd_alerts import resume_push as _relay
+        _relay.PROFILE_DIR = rp.CDP_PROFILE
+        g = _relay._FocusGuard().start()
+        g.hold()
+        rp._log("[push] background mode: this push's Chrome is kept out of "
+                "the way (%s)" % rp.CDP_PROFILE)
+        return g
+    except Exception as e:  # noqa: BLE001 -- a visible window is not a failure
+        rp._log("[push] background guard unavailable: %s" % e)
+        return None
+
+
+def _run_stage_inner(name: str, work):
     for attempt in range(1, MAX_SESSION_ATTEMPTS + 1):
         try:
             with rp.warm_appstream_cdp_page(diag_tab=DIAG_TAB) as (page, ctx, net):
@@ -139,7 +171,8 @@ def _run_stage(name: str, work):
 def run(live: bool = False, limit: int = None, max_actions: int = None,
         batch_only: bool = False, oat_only: bool = False,
         batch_limit: int = 0, office: str = None,
-        recheck_nophone: bool = False) -> int:
+        recheck_nophone: bool = False,
+        await_probe: bool = False, await_apply: bool = False) -> int:
     """Run the unified pipeline: LEFTOVERS (OAT) then BATCH (Resume Pushing), each in
     its OWN fresh warm CDP session (see _run_stage for why — batch needs a clean
     console→v2 start, not a mid-run hop).
@@ -168,10 +201,53 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 
         def _oat_work(page, ctx, net):
             oat.attach_dialog_accept(page)
+            from automations.oat_processing import await_template as _at
+            _at.set_logger(rp._log)
+            if await_probe:
+                _at.probe(page)
+                return 0
+            if await_apply:
+                _at.ensure_await_template(page, office or "", apply=True)
+                return 0
+            if live:
+                # Leave a walled Indeed page up for whoever the DM asks.
+                try:
+                    from automations.applicant_push import indeed_alert as _ia0
+                    oat.KEEP_WALL_TAB = _ia0.waiting_on_human(office or "")
+                except Exception:  # noqa: BLE001
+                    oat.KEEP_WALL_TAB = False
+            if live:
+                # Keep the Await text's interview times matched to the clock
+                # (Carlos 2026-10-28). Best-effort: a failed template edit is
+                # logged and must never stop the push itself.
+                _at.ensure_await_template(page, office or "", apply=True)
             try:
                 _rc = oat.run_walk(page, live=live, limit=limit,
                                    max_actions=max_actions)
-                if oat._cf_walled():
+                # The day's LAST push: leave tomorrow morning's text in place
+                # (see await_template.ensure_await_template next_morning).
+                if live and _at.last_push_of_day(office or ""):
+                    _at.ensure_await_template(page, office or "", apply=True,
+                                              next_morning=True)
+                # Tell someone who can tick Indeed's box (Megan 2026-11-03).
+                if live:
+                    try:
+                        from automations.applicant_push import indeed_alert as _ia
+                        from automations.shared import hub_identity as _hi
+                        _ia.note(office or "", offices.get(office or "").get("short")
+                                 or ("office %s" % office), _hi.machine_name(),
+                                 walled=bool(oat._cf_walled()),
+                                 cleared=bool(oat._cf_session_cleared()),
+                                 log=rp._log)
+                    except Exception as _e:  # noqa: BLE001
+                        rp._log("[indeed-alert] skipped: %s" % type(_e).__name__)
+                if oat._cf_walled() and oat.wall_tab_kept():
+                    # A person was asked to tick the box on THIS browser's open
+                    # Indeed page -- keep it, or the next tick kills what they
+                    # are about to click (Megan 2026-11-03).
+                    oat.show_wall_tab()
+                    rp._log("[cf] keeping this Chrome + its Indeed page for a human")
+                elif oat._cf_walled():
                     # Indeed never let THIS browser through. Don't keep it warm —
                     # a cold one gets a fresh challenge it often passes.
                     rp.mark_browser_suspect(
@@ -249,7 +325,13 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # an irreversible send; keep them in step.
 # 2026-09-27 (Carlos): Raf's 2nd + 3rd funnels un-paused ("good to go ahead
 # and start pushing for [Raf]'s second and third funnel") — all six live.
-PUSH_ALLOWED = {"23467", "11901", "11580", "11280", "23965", "24065"}
+# 2026-10-28 evening (Carlos): 11580 back ON, but not until TOMORROW 5:30 AM
+# ("start pushing resumes at 5:30am tomorrow... for me") — the gate below
+# keeps tonight quiet and self-opens at the mark, no second deploy needed.
+PUSH_ALLOWED = {"23467", "11901", "11280", "23965", "24065", "14733"}
+import datetime as _dt_gate
+if _dt_gate.datetime.now() >= _dt_gate.datetime(2026, 10, 29, 5, 30):
+    PUSH_ALLOWED = PUSH_ALLOWED | {"11580"}
 
 
 def _dm_shots(shots_dir, office) -> None:
@@ -311,6 +393,12 @@ def main(argv=None) -> int:
                    help="explicit acknowledgement that this live push targets an "
                         "office OUTSIDE the hard-coded PUSH_ALLOWED allowlist — "
                         "for supervised audit runs only")
+    p.add_argument("--await-probe", action="store_true",
+                   help="Diag (2026-10-28): open SMS Templates -> Await Call AI "
+                        "edit form and DUMP its fields. No edits, no push.")
+    p.add_argument("--await-apply", action="store_true",
+                   help="Update the Await template's time clause once, then "
+                        "stop. No push.")
     p.add_argument("--attachment-probe", action="store_true",
                    help="READ-ONLY diagnostic: for every applicant the walk "
                         "flags as having no number, log what resume surfaces "
@@ -382,7 +470,9 @@ def main(argv=None) -> int:
     if args.batch_only and args.oat_only:
         print("[push] --batch-only and --oat-only are mutually exclusive", flush=True)
         return 2
-    return run(live=live, limit=args.limit, max_actions=args.max_actions,
+    return run(await_probe=getattr(args, "await_probe", False),
+               await_apply=getattr(args, "await_apply", False),
+               live=live, limit=args.limit, max_actions=args.max_actions,
                batch_only=args.batch_only, oat_only=args.oat_only,
                batch_limit=args.batch_limit, office=args.office,
                recheck_nophone=args.recheck_nophone)

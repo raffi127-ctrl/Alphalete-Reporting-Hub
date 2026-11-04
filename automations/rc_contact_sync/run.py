@@ -132,6 +132,31 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
                                                  for ln in body.split("\n"))))
             continue
         try:
+            # Carlos 2026-10-27: "starting tomorrow lets post inside of the
+            # NDS metrics thread instead of making a separate thread." In
+            # gp-sales the day's NDS Metrics thread (state file written by
+            # nds_metrics at 7:30) takes the post as ONE reply — title +
+            # names together, since Slack has no thread inside a thread.
+            # No NDS thread that day (Sunday, or pre-7:30) and the named
+            # header below still happens; #a-players-b2b is unchanged
+            # (it has no NDS Metrics thread).
+            nds_ts = None
+            if chan == "C07J46MQNUX":
+                try:
+                    import json as _j
+                    from automations.nds_metrics.run import _state_path
+                    _sp = _state_path(day)
+                    if _sp.exists():
+                        nds_ts = _j.loads(_sp.read_text()).get("ts")
+                except Exception:                          # noqa: BLE001
+                    nds_ts = None
+            if nds_ts:
+                res = smp.post_reply_text_only(
+                    "*%s*\n%s" % (title, body), thread_ts=nds_ts,
+                    channel_id=chan)
+                log("  posted to %s (inside the NDS Metrics thread, "
+                    "reply ts=%s)" % (label, res.get("ts")))
+                continue
             ts = _saved_thread_ts(day, chan)
             if ts:
                 head = {"thread_ts": ts, "existed": True}
@@ -223,7 +248,7 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
                           "existing": True}
             log("  – %s: %s already in the address book" % (label, cust["phone"]))
             continue
-        first, last = RC.split_name(cust["customer_name"])
+        first, last = (titlecase_name(x) for x in RC.split_name(cust["customer_name"]))
         notes = "Rep Name: %s" % titlecase_name(cust["rep"])
         if dry_run:
             log("  [dry-run] would create: company=%r name=%r phone=%s notes=%r"
@@ -248,6 +273,50 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
         log("  + %s — %s (Rep: %s)" % (titlecase_name(cust["business"]) or first,
                                        RC.e164(cust["phone"]),
                                        titlecase_name(cust["rep"])))
+    # 3b. The order's OTHER lines, each its own contact named "<Customer> -
+    #     Line N" (Carlos 2026-11-02: "label them as the second line and
+    #     third line on the account, just in case those customers reach out
+    #     or we reach out to that phone number"). Runs for every customer,
+    #     including ones whose main contact was already there -- the lines
+    #     are what's new. Dedup by phone AND by state key, like the main one.
+    from automations.rc_contact_sync import guest as _guest
+    line_added = line_skipped = 0
+    for cust in customers:
+        extras = _guest.extra_line_contacts(cust)
+        if not extras:
+            continue
+        first, last = (titlecase_name(x) for x in RC.split_name(cust["customer_name"]))
+        who = titlecase_name(cust["customer_name"]) or cust["order_id"]
+        for x in extras:
+            lkey = "%s:%s:L%s" % (cust["day"], cust["order_id"], x["line"])
+            lphone = RC.norm_phone(x["phone"])
+            if lkey in state or lphone in by_phone:
+                line_skipped += 1
+                continue
+            lname_last = ("%s - %s" % (last, x["label"])).strip(" -")
+            notes = ("Rep Name: %s | %s of order %s (BAN %s) | main contact %s"
+                     % (titlecase_name(cust["rep"]), x["label"],
+                        cust.get("wireless_order") or cust["order_id"],
+                        cust.get("ban") or "?", RC.e164(cust["phone"]) if cust.get("phone") else "?"))
+            if dry_run:
+                log("  [dry-run] would create: name=%r phone=%s notes=%r"
+                    % (("%s %s" % (first, lname_last)).strip(), RC.e164(x["phone"]), notes))
+                line_added += 1
+                continue
+            try:
+                RC.create_contact(token, contacts_ext, first=first, last=lname_last,
+                                  company="", phone=x["phone"], notes=notes)
+            except RC.RCError as e:
+                log("  ✗ %s %s: %s" % (who, x["label"], str(e)[:200]))
+                failed_rows.append("%s %s" % (who, x["label"]))
+                continue
+            state[lkey] = {"day": cust["day"], "phone": lphone, "existing": False,
+                           "line": x["line"]}
+            C.save_state(state)
+            by_phone[lphone] = {"company": ""}
+            line_added += 1
+            log("  + %s - %s — %s" % (who, x["label"], RC.e164(x["phone"])))
+    log("extra lines: %d added, %d already there" % (line_added, line_skipped))
     if not dry_run:
         C.save_state(state)
     log("contacts: %d added, %d already there, %d could not be added"
@@ -373,12 +442,13 @@ def main(argv=None) -> int:
                          "outbound wrap-up bodies sent to the guest "
                          "customers in the window")
     ap.add_argument("--since", default=None, metavar="YYYY-MM-DD",
-                    help="BACKFILL the guest reps' sales under Raf's code "
-                         "from this date through yesterday (or the "
-                         "positional date): contacts + one wrap-up-text "
-                         "post for the whole range. No SaraPlus login — "
-                         "reads the Lucy 1 'Raf Guest Orders' handoff, so "
-                         "run raf_guest_orders on Lucy 1 first.")
+                    help="BACKFILL the crew's NDS sales (Carlos's own "
+                         "SaraPlus code, since 2026-10-27) from this date "
+                         "through yesterday (or the positional date): "
+                         "contacts + one wrap-up-text post for the whole "
+                         "range. No SaraPlus login here — reads the NDS "
+                         "wireless per-line feed cached by nds_wireless_pull "
+                         "on Lucy 2, so that pull must have run first.")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser (debugging)")
     args = ap.parse_args(argv)
@@ -405,7 +475,7 @@ def main(argv=None) -> int:
             customers = customers[:args.limit]
         return run(until, dry_run=not args.live, skip_slack=args.no_slack,
                    customers=customers, sms_from=since,
-                   prefix="Sales under Raf's SaraPlus code, %d/%d – %d/%d:"
+                   prefix="NDS sales (Carlos's SaraPlus code), %d/%d – %d/%d:"
                           % (since.month, since.day, until.month, until.day))
     return run(day, dry_run=not args.live, limit=args.limit,
                headless=not args.headed, skip_slack=args.no_slack)

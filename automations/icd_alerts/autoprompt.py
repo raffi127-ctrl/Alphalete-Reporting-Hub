@@ -45,6 +45,9 @@ SYSTEMS = {
     },
     "saraplus": {
         "module": "automations.icd_alerts.sara_signin",
+        # Opened with nobody asking: never mail a code on the strength of an
+        # unlocked screen (sara_signin, LUCY TYPES THE LOGIN).
+        "args": ["--no-fill"],
         "stamp": "sara-autoprompt.txt",
         "name": "SaraPlus",
     },
@@ -70,6 +73,13 @@ SYSTEMS = {
         "module": "automations.icd_alerts.ov_signin",
         "stamp": "ov-autoprompt.txt",
         "name": "OwnerVille",
+    },
+    # The owner's PNL (pnl.py): sign into Apex once in Lucy's own profile,
+    # so the payroll export runs on this Mac (Eve + Megan 2026-10-29).
+    "apex": {
+        "module": "automations.icd_alerts.apex_signin",
+        "stamp": "apex-autoprompt.txt",
+        "name": "Apex",
     },
     "ownerville_password": {
         "module": "automations.icd_alerts.run",
@@ -112,7 +122,9 @@ def offer(system: str, log=print) -> bool:
     spec = SYSTEMS.get(system)
     if not spec:
         return False
-    if not PR.somebody_is_there():
+    if not PR.owner_is_there():
+        # Nobody there, or a rep on the other Mac account: a window now is one
+        # nobody who has the code will see. The DM still goes out.
         return False
     if recently_offered(system):
         return False

@@ -34,6 +34,16 @@ SUBJECT_CONTAINS = "Dual-Campaign Wireless Performance"
 FILENAME_GLOB = "Dual-Campaign Wireless Performance Report*VZ+FTR*.xlsx"
 SHEET = "Combined - Current Week"
 
+# --- the second email tracker: Verizon Wireless (Wireless Only) scorecard ---
+# Carlos 2026-10-27. Credico mails it ~9:31am CT to its internal Verizon list,
+# NOT to us — Carlos's Gmail filter forwards it, so it is matched by subject and
+# filename only (the From line is whoever forwarded it). A 4-page PDF of lines
+# sold per OWNER (no reps): page 1 = current week, 2-3 = the two before, 4 = MTD.
+# We post page 1, cropped to the table (it sits in the top third of a blank page).
+VZW_ID = "vzw_wireless"
+VZW_SUBJECT = "Verizon Wireless - Daily Sales Scorecard"
+VZW_FILENAME_GLOB = "Daily Sales - Verizon Wireless*Wireless Only*.pdf"
+
 # Columns whose stored value is a 0..1 fraction to render as a percentage, and the
 # float column to show with decimals. Everything else numeric renders as an int.
 _PERCENT_HEADERS = {"Self Setup %", "Insurance %", "Wireless Attach"}
@@ -51,7 +61,7 @@ def fetch_xlsx(dest: str | Path, *, since_days: int = 10, verbose: bool = True) 
     return next(iter(found.values()), None)
 
 
-def source_ready(*, since_days: int = 10) -> "tuple[bool, str]":
+def source_ready(board_id: str = "vzftr", *, since_days: int = 10) -> "tuple[bool, str]":
     """Cheap readiness probe (no attachment download) — is a VZ+FTR .xlsx already
     in the inbox within the window? Lets the morning run GATE on the source being
     present so it only attempts a board it can actually render, instead of a fetch
@@ -65,16 +75,18 @@ def source_ready(*, since_days: int = 10) -> "tuple[bool, str]":
     FAILS OPEN (returns True) on any probe error: a flaky IMAP check must never
     silently drop the board — capture() still self-guards if the file is truly
     absent. Returns (ready, human detail)."""
+    if board_id == VZW_ID:
+        sender, glob, subject, what = "", VZW_FILENAME_GLOB, VZW_SUBJECT, "Verizon Wireless .pdf"
+    else:
+        sender, glob, subject, what = EMAIL_FROM, FILENAME_GLOB, SUBJECT_CONTAINS, "VZ+FTR .xlsx"
     try:
         matches = email_ingest.list_matches(
-            EMAIL_FROM, [FILENAME_GLOB], subject=SUBJECT_CONTAINS,
-            since_days=since_days)
-        hit = matches.get(FILENAME_GLOB)
+            sender, [glob], subject=subject, since_days=since_days)
+        hit = matches.get(glob)
         if hit:
             fn, date = hit
             return True, f"{fn} ({date})"
-        return False, (f"no VZ+FTR .xlsx from {EMAIL_FROM} in the last "
-                       f"{since_days} day(s)")
+        return False, f"no {what} in the last {since_days} day(s)"
     except Exception as e:  # noqa: BLE001 — fail open, capture() self-guards
         return True, f"probe error ({type(e).__name__}) — attempting anyway"
 
@@ -268,6 +280,8 @@ def capture(page, spec: dict, out_dir, force_crop=None, verbose: bool = True) ->
     to crop, we render the sheet directly."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if spec.get("id") == VZW_ID:
+        return _capture_vzw(spec, out_dir, verbose=verbose)
     tmp = Path(tempfile.gettempdir()) / "vzftr_tracker"
     xlsx = fetch_xlsx(tmp, verbose=verbose)
     if not xlsx:
@@ -281,3 +295,47 @@ def capture(page, spec: dict, out_dir, force_crop=None, verbose: bool = True) ->
     # lived headless chromium is cheap and keeps this fully decoupled from Tableau.
     render_png(xlsx, out_png, context=None, verbose=verbose)
     return out_png
+
+
+def fetch_vzw_pdf(dest: str | Path, *, since_days: int = 10,
+                  verbose: bool = True) -> Path | None:
+    """Newest Verizon Wireless (Wireless Only) scorecard PDF, or None."""
+    found = email_ingest.fetch_by_globs(
+        "", [VZW_FILENAME_GLOB], dest,
+        subject=VZW_SUBJECT, since_days=since_days, verbose=verbose)
+    return next(iter(found.values()), None)
+
+
+def render_vzw_png(pdf_path: str | Path, out_path: str | Path, *,
+                   verbose: bool = True) -> Path:
+    """Page 1 (current week) of the scorecard PDF -> PNG, cropped to the content."""
+    import fitz
+    out_path = Path(out_path)
+    doc = fitz.open(str(pdf_path))
+    try:
+        page = doc[0]
+        box = fitz.Rect()
+        for b in page.get_text("blocks"):
+            box |= fitz.Rect(b[:4])
+        for d in page.get_drawings():          # the red header bars / total row
+            box |= d["rect"]
+        if box.is_empty:
+            raise RuntimeError(f"page 1 of {Path(pdf_path).name} is blank")
+        clip = (box + (-8, -8, 8, 8)) & page.rect
+        page.get_pixmap(dpi=300, clip=clip).save(str(out_path))
+    finally:
+        doc.close()
+    if verbose:
+        print(f"  ✓ rendered Verizon Wireless page 1 -> {out_path.name}", flush=True)
+    return out_path
+
+
+def _capture_vzw(spec: dict, out_dir: Path, *, verbose: bool = True) -> Path:
+    tmp = Path(tempfile.gettempdir()) / "vzw_tracker"
+    pdf = fetch_vzw_pdf(tmp, verbose=verbose)
+    if not pdf:
+        raise RuntimeError(
+            "no Verizon Wireless (Wireless Only) scorecard in the last 10 days "
+            "— nothing to render (it reaches us only via Carlos's forward)")
+    out_png = out_dir / f"{cap._sanitize(spec['title'])}.png"
+    return render_vzw_png(pdf, out_png, verbose=verbose)

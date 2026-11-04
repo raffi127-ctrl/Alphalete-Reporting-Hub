@@ -82,21 +82,21 @@ def plan(applicants: List[dict], phones: Dict[str, str],
     return rows
 
 
-def person_body(a: dict, added_by: str, today: dt.date) -> dict:
+def person_body(a: dict, added_by: str, today: dt.date, note: str = "") -> dict:
     body = {"names": [{"givenName": a.get("first_name", ""),
                        "familyName": a.get("last_name", "")}]}
     if a.get("phone"):
         body["phoneNumbers"] = [{"value": e164(a["phone"]), "type": "mobile"}]
     if a.get("email"):
         body["emailAddresses"] = [{"value": a["email"]}]
-    body["biographies"] = [{"value": "Applicant - added from Slack by %s, %s"
-                            % (added_by or "Jiraiya", today.strftime("%m/%d/%Y")),
+    note = note or "Applicant - added from Slack by %s" % (added_by or "Jiraiya")
+    body["biographies"] = [{"value": "%s, %s" % (note, today.strftime("%m/%d/%Y")),
                             "contentType": "TEXT_PLAIN"}]
     return body
 
 
 def add_all(applicants: List[dict], *, write: bool, added_by: str = "",
-            svc=None) -> List[dict]:
+            note: str = "", svc=None) -> List[dict]:
     """plan() + create the 'add' rows when write. Each row gains 'done'."""
     svc = svc or service()
     phones, emails = existing_index(svc)
@@ -106,7 +106,7 @@ def add_all(applicants: List[dict], *, write: bool, added_by: str = "",
         r["done"] = False
         if r["status"] != "add" or not write:
             continue
-        body = person_body(r["applicant"], added_by, today)
+        body = person_body(r["applicant"], added_by, today, note)
         cw._retry(lambda: svc.people().createContact(
             body=body, personFields="names").execute())
         r["done"] = True

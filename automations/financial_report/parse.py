@@ -74,6 +74,9 @@ _GERMAN_METRICS_REVAMP: Dict[str, str] = {
     "recruiter - nlr/arcadia":    "ARCADIA CONSULTING",
     "owners draw/atm":            "OWNERS WITHDRAWAL",
     "net income for week":        "PROFIT/LOSS",
+    # Jordan's books have no 'Operating %' row; Maud wants their 'GROSS MARGIN %'
+    # in it (Blue, 2026-10-26). Stored as a fraction (0.396), same as Double Entry.
+    "gross margin %":             "OPERATING PERCENTAGE %",
 }
 _COEL_METRICS: Dict[str, str] = {
     "local balance":  "TOTAL FUNDS AVAILABLE",
@@ -370,6 +373,10 @@ def _parse_german(wb) -> Tuple[List[dict], List[dt.date]]:
             m = metrics.setdefault(canon, {})
             for ci, d in date_cols.items():
                 v = r[ci].value if ci < len(r) else None
+                # A week Jordan hasn't booked yet carries a 0 margin, not a
+                # real 0% — leave the cell alone rather than stamp 0%.
+                if canon == "OPERATING PERCENTAGE %" and v == 0:
+                    continue
                 if isinstance(v, (int, float)):
                     m.setdefault(d, v)            # latest sheet wins
     if not owner:

@@ -71,31 +71,36 @@ def _with_credit(sales: Dict, credit: Optional[Dict], rec: Optional[Dict]) -> Di
 
 
 def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
-    """NDS lines off the Wireless grid instead of SaraPlus's line count
-    (Carlos 2026-10-22: "Jacob at 11 lines. Seven of those are ported, four
-    of those are upgrade lines" ... tablets and wearables "shouldn't be
-    counted as the sales that we made, at least for NDS").
+    """Every SaraPlus office's lines off the Wireless grid, not SaraPlus's
+    line count. NDS first (Carlos 2026-10-22: "Jacob at 11 lines. Seven of
+    those are ported, four of those are upgrade lines" ... tablets and
+    wearables "shouldn't be counted as the sales that we made"), then every
+    AT&T office (Megan 2026-10-26: no scorecard counts watches or tablets;
+    Raf 2026-10-27: "Att wireless upgrade does not count as a sale. Att fiber
+    internet upgrade does count as a sale").
 
         NL     = New Lines + Port Lines - Tablets - Wearables
-        Int Up += Upgrade Lines   (the board's Upgrades section, outside TOTALS)
+        NDS:   Int Up += Upgrade Lines   (its board's Upgrades section,
+                                          outside TOTALS -- _Nds.total)
+        else:  Upgrade Lines are dropped. "Int Up" there is INTERNET
+               upgrades, which do count, so a wireless upgrade put in it
+               would be counted as a sale.
 
     Line Count is New + Port + Upgrade, and Phones + Tablets + Wearables is the
     same lines split by device, so taking the devices off New + Port assumes a
     tablet or watch is never an upgrade. A rep missing from the grid sold no
     lines. None (not read) leaves the AT&T grid's count as it was.
 
-    B2B AT&T TOO (Sebastian Avellaneda 2026-10-23), plus one more move: an
-    Internet Air is an INTERNET sale there, not an upgrade -- Jorge Hernandez's
-    "1 Up" on the A Players text was an Air. So off the B2B AT&T board Air
-    leaves Int Up for Int. NDS keeps Air inside Int Up: its board shows Air
-    as its own section and takes it back out (post._nds_scoreboard).
+    B2B AT&T, one more move (Sebastian Avellaneda 2026-10-23): an Internet Air
+    is an INTERNET sale there, not an upgrade -- Jorge Hernandez's "1 Up" on
+    the A Players text was an Air. So off the B2B AT&T board Air leaves Int Up
+    for Int. NDS keeps Air inside Int Up: its board shows Air as its own
+    section and takes it back out (post._nds_scoreboard).
     """
     from automations.icd_alerts import config as C
-    if not C.wireless_lines_wanted(rec):
-        return sales
     nds = str((rec or {}).get("campaign") or "").strip().lower() == "nds"
     out = {k: dict(v) for k, v in (sales or {}).items()}
-    if not nds:
+    if C.wireless_lines_wanted(rec) and not nds:
         # Even on a sweep whose Wireless pass failed: Air comes off the AT&T
         # grid, not this one.
         for row in out.values():
@@ -109,7 +114,8 @@ def _nds_lines(sales: Dict, lines: Optional[Dict], rec: Optional[Dict]) -> Dict:
         row = out.setdefault(str(rep), {m: 0 for m in _sale_metrics(rec)})
         row["NL"] = max(int(got.get("New Lines", 0)) + int(got.get("Port Lines", 0))
                         - int(got.get("Tablets", 0)) - int(got.get("Wearables", 0)), 0)
-        row["Int Up"] = int(row.get("Int Up", 0) or 0) + int(got.get("Upgrade Lines", 0))
+        if nds:
+            row["Int Up"] = int(row.get("Int Up", 0) or 0) + int(got.get("Upgrade Lines", 0))
     return out
 
 
@@ -694,7 +700,10 @@ def _scrub(text: str, rec: Optional[Dict] = None) -> str:
     for k in _SECRET_KEYS:
         out = re.sub(r"(?i)\b%s\b(\s*[=:]\s*)(\S+)" % re.escape(k),
                      r"%s\1[removed]" % k, out)
-    return out[:1500]
+    # 6000, not 1500: Omar's sales grid (2026-10-28) needed the grid's own HTML
+    # to be seen before anyone could say why it never loaded, and 1500 cut
+    # the evidence off at the row list.
+    return out[:6000]
 
 
 FAULT_SUMMARY_MAX = 600
@@ -761,6 +770,110 @@ def report_fault(stage: str, summary: str, detail: str = "",
             log("could not report the fault upstream: %s" % type(e).__name__)
         return False
 
+
+
+# --- the SaraPlus code, from Lucy 1 (code_answer) ----------------------------
+# The ask rides the fault road, which every relay already takes; the answer
+# needs `code_poll`, which only a redeployed relay knows. An older one answers
+# "bad day" -- read as UNSUPPORTED, so the Mac falls back to the DM it always
+# sent instead of waiting nine minutes for nothing.
+CODE_READY, CODE_WAITING, CODE_NONE, CODE_UNSUPPORTED = (
+    "ready", "waiting", "none", "unsupported")
+
+
+def request_code(since: dt.datetime, office_key: str = "", log=None,
+                 service: str = "saraplus") -> bool:
+    """Tell Lucy 1 this Mac is on a code screen (SaraPlus or Sterling),
+    asked at `since`."""
+    from automations.icd_alerts import code_answer as CA
+    return report_fault(CA.REQUEST_STAGE, CA.summary_for(since, service),
+                        log=log, office_key=office_key)
+
+
+def poll_code(since: dt.datetime, office_key: str = "") -> Dict[str, str]:
+    """{'status': ready|waiting|none|unsupported, 'code': ...}. Never raises:
+    a network blip is a 'waiting', and the caller's clock decides when to
+    stop."""
+    try:
+        rec = _endpoint(office_key)
+        body = {"office_key": rec["office_key"], "key": rec["relay_key"],
+                "code_poll": {"since": since.isoformat(timespec="seconds")}}
+        out = json.loads(_post(rec["relay_url"], json.dumps(body).encode("utf-8")))
+    except Exception:  # noqa: BLE001
+        return {"status": CODE_WAITING, "code": ""}
+    if not out.get("ok"):
+        return {"status": CODE_UNSUPPORTED, "code": "",
+                "error": str(out.get("error") or "")[:80]}
+    status = str(out.get("status") or CODE_WAITING)
+    return {"status": status, "code": str(out.get("code") or "")}
+
+
+def forward_confirmed(office_key: str = "") -> bool:
+    """Has Gmail's forward from this office been confirmed on our side?
+
+    USES THE code_poll THE RELAY ALREADY HAS, so no relay redeploy: Lucy 1 keeps
+    a 'Code Answers' row with this office, CA.FORWARD_STATE in place of a time,
+    and no code. code_poll reads that as "taken"; no row is "waiting". Never
+    raises: anything else means not confirmed, and the owner is just asked to
+    check again."""
+    from automations.icd_alerts import code_answer as CA
+    return _state_row(CA.FORWARD_STATE, office_key)
+
+
+def forward_working(office_key: str = "") -> bool:
+    """Have SaraPlus's codes already reached us from this office, so nothing is
+    left for the owner to do? Same road as forward_confirmed. Never raises."""
+    from automations.icd_alerts import code_answer as CA
+    return _state_row(CA.FORWARD_WORKING_STATE, office_key)
+
+
+def _state_row(state: str, office_key: str = "") -> bool:
+    try:
+        rec = _endpoint(office_key)
+        body = {"office_key": rec["office_key"], "key": rec["relay_key"],
+                "code_poll": {"since": state}}
+        out = json.loads(_post(rec["relay_url"], json.dumps(body).encode("utf-8")))
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(out.get("ok")) and out.get("status") == "taken"
+
+
+def report_forward(address: str, office_key: str = "", log=None,
+                   service: str = "saraplus") -> bool:
+    """Send home the address SaraPlus (or, with service="sterling", Sterling)
+    mails this office's codes to.
+
+    NOT report_fault, ON PURPOSE: that scrubs every email address, and this
+    message is nothing but one -- typed by the owner during setup so Lucy 1
+    can match their forwarded codes (code_forward, code_answer). The fault
+    road is still the one used, so no relay redeploy is needed for it. Never
+    raises."""
+    from automations.icd_alerts import code_answer as CA
+    try:
+        rec = _endpoint(office_key)
+    except Exception:  # noqa: BLE001 -- not enrolled yet
+        return False
+    try:
+        body = {
+            "office_key": rec["office_key"],
+            "key": rec["relay_key"],
+            "fault": {
+                "day": C.today().isoformat(),
+                "stage": CA.FORWARD_STAGE,
+                "summary": CA.forward_summary(address, service),
+                "detail": "",
+                "agent": AGENT_VERSION,
+                "platform": "%s %s" % (platform.system(), platform.release()),
+                "python": platform.python_version(),
+            },
+            "local_time": dt.datetime.now().isoformat(timespec="seconds"),
+        }
+        raw = _post(rec["relay_url"], json.dumps(body).encode("utf-8"))
+        return bool(json.loads(raw).get("ok"))
+    except Exception as e:  # noqa: BLE001
+        if log:
+            log("could not send the code-forward address: %s" % type(e).__name__)
+        return False
 
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          sales: Optional[Dict] = None, dry_run: bool = False,

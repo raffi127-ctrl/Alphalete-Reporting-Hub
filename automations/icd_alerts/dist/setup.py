@@ -133,10 +133,19 @@ def copy_app():
 def make_venv():
     if venv_python().exists():
         return
-    if run([sys.executable, "-m", "venv", str(VENV_DIR)]) != 0:
+    # A FOLDER WITH NO PYTHON IN IT IS A BROKEN FOLDER, NOT A SAVED STEP.
+    # Omar 2026-10-28: a macOS update replaced the system Python the venv was
+    # built on; `python -m venv` over the leftover folder produced a Python
+    # with "No module named pip" and the install died at step 3. Start clean.
+    if VENV_DIR.exists():
+        import shutil
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
+    if run([sys.executable, "-m", "venv", "--clear", str(VENV_DIR)]) != 0:
         raise SystemExit(
             "Could not set up the program's private Python folder. Please send "
             "the reporting team a photo of this window.")
+    if run([venv_python(), "-m", "pip", "--version"]) != 0:
+        run([venv_python(), "-m", "ensurepip", "--upgrade"])
 
 
 def install_deps():
@@ -384,6 +393,27 @@ def ask_for_ownerville(replace=False, required=False):
                     replace=replace)
 
 
+# A LOGIN CHECK THAT CANNOT FINISH MUST NOT HOLD THE INSTALL. Omar's install
+# (2026-10-26) sat on "checking the OwnerVille login" for twenty minutes:
+# Lucy's browser opened a page that never rendered on his Mac, and the check
+# waited on it forever, so the office never got to steps 7-10. Four minutes
+# is twice the slow case; past that the check is reported as "could not
+# finish" and setup carries on -- the login can be verified later with the
+# one-command sign-in window.
+CHECK_TIMEOUT_S = 240
+
+
+def _checked_run(cmd, title):
+    try:
+        return subprocess.run(cmd, cwd=str(APP_DIR), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=CHECK_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        say("      the %s check could not finish in %d minutes -- skipped for "
+            "now. Setup carries on; the reporting team will verify %s with "
+            "you afterwards." % (title, CHECK_TIMEOUT_S // 60, title))
+        return None
+
+
 def check_ownerville() -> bool:
     """Sign in to OwnerVille for real, the same way the knocks read will.
 
@@ -413,10 +443,11 @@ def check_ownerville() -> bool:
             pass
         return True                      # they skipped it; nothing to verify
     say("      checking the OwnerVille login (this one takes a minute)...")
-    proc = subprocess.run(
+    proc = _checked_run(
         [str(venv_python()), "-m", "automations.icd_alerts.run", "--knocks",
-         "--dry-run"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+         "--dry-run"], "OwnerVille")
+    if proc is None:
+        return False
     if proc.returncode == 0:
         say("      OwnerVille login works.")
         return True
@@ -505,9 +536,10 @@ def check_appstream() -> bool:
     if not (CONFIG_DIR / "appstream-creds.json").exists():
         return False
     say("      checking the AppStream login (this one takes a minute)...")
-    proc = subprocess.run(
-        [str(venv_python()), "-m", "automations.icd_alerts.as_signin"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = _checked_run(
+        [str(venv_python()), "-m", "automations.icd_alerts.as_signin"], "AppStream")
+    if proc is None:
+        return False
     if proc.returncode == 0:
         say("      AppStream login works.")
         return True
@@ -583,10 +615,20 @@ def login_until_it_works(attempts=3):
         verdict = check_account_verdict()
         if verdict == "ok":
             return True
-        if verdict == "wall":
+        if verdict in ("wall", "stuck"):
             # NOT a typo, so no "type it again". The code has to be typed in
             # Lucy's browser; do that here, now, with the person present.
-            if clear_passcode_wall():
+            # "stuck" (the hidden check never finished) takes the same door:
+            # the window shows what it was waiting on.
+            if verdict == "stuck":
+                say("      the hidden SaraPlus check could not finish -- opening")
+                say("      Lucy's SaraPlus window so you can see what it needs.")
+            cleared = clear_passcode_wall()
+            if verdict == "wall":
+                # THE OWNER IS HERE NOW, which is the whole reason to ask now
+                # (Megan 2026-10-29). Done once, Lucy types every later code.
+                offer_code_forward()
+            if cleared:
                 return True
             say("      Not confirmed yet. Finish it any time with the setup")
             say("      link -- it opens the same window. Your password is saved.")
@@ -943,9 +985,14 @@ def check_account_verdict() -> str:
     worked. The agent's own message is the signal; read it.
     """
     say("      signing in to SaraPlus to make sure it works...")
-    proc = subprocess.run(
-        [str(venv_python()), "-m", "automations.icd_alerts.run", "--check"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = _checked_run(
+        [str(venv_python()), "-m", "automations.icd_alerts.run", "--check"], "SaraPlus")
+    if proc is None:
+        # Omar 2026-10-28: "it just keeps saying checking your saraplus
+        # signin and then not doing anything else". A hidden check that
+        # cannot finish gets the VISIBLE window instead, where whatever it is
+        # waiting on (a security box, a code) can actually be dealt with.
+        return "stuck"
     out = proc.stdout.decode("utf-8", "replace")
     for line in out.splitlines():
         if line.strip() and not line.startswith("[icd_alerts]"):
@@ -973,6 +1020,19 @@ def clear_passcode_wall() -> bool:
         [str(venv_python()), "-m", "automations.icd_alerts.sara_signin"],
         cwd=str(APP_DIR))
     return proc.returncode == 0
+
+
+def offer_code_forward() -> None:
+    """SaraPlus wants a code from this account, so it will again every few
+    days. Walk the owner through forwarding those mails to us, so Lucy can
+    type them herself from now on (icd_alerts/code_forward). Never raises."""
+    try:
+        from automations.icd_alerts import code_forward
+        say("      Setting up SaraPlus code forwarding, so Lucy can enter")
+        say("      those codes herself from now on.")
+        say("      code forwarding: %s" % code_forward.walk_through(ask, say))
+    except Exception as e:  # noqa: BLE001 -- a courtesy on top of the install
+        say("      code forwarding skipped: %s" % type(e).__name__)
 
 
 # --- scheduling -------------------------------------------------------------
@@ -1065,10 +1125,22 @@ def first_run() -> None:
     Never fatal: everything is installed and scheduled by this point, and a
     first sweep that fails costs a wait, not a setup.
     """
-    say("      saying hello to the reporting team...")
-    proc = subprocess.run(
-        [str(venv_python()), "-m", "automations.icd_alerts.run", "--once"],
-        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    say("      saying hello to the reporting team (a full first sweep -- this")
+    say("      one can take ten minutes; the schedule above is already live)...")
+    # NOT FOREVER (Haytham 2026-10-28, "stuck" on this line): the first sweep
+    # also reads yesterday for the catch-up, so it is the slowest sweep of
+    # all. Past the limit it is reported as still running, which is what it
+    # is -- the schedule installed at step 9 keeps going without this window.
+    try:
+        proc = subprocess.run(
+            [str(venv_python()), "-m", "automations.icd_alerts.run", "--once"],
+            cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=15 * 60)
+    except subprocess.TimeoutExpired:
+        say("      the first sweep is still running after 15 minutes. That is")
+        say("      fine -- it finishes on its own, and the next one starts on")
+        say("      schedule. Your office is enrolled.")
+        return
     out = proc.stdout.decode("utf-8", "replace")
     if proc.returncode == 0:
         say("      done — your office is enrolled.")
@@ -1129,6 +1201,24 @@ def is_desktop() -> bool:
         return True
 
 
+# OFFICES ALLOWED ON A LAPTOP, by office key -- Megan's call, one at a time,
+# knowing a closed lid takes the channel quiet. The poster's
+# LAPTOP_ACKNOWLEDGED carries the same names so the daily nudge stays quiet.
+#   raf  -- Megan 2026-11-03: Raf's own MacBook ("but we're going to allow it").
+LAPTOP_OK = ("raf",)
+
+
+def _office_key_early() -> str:
+    """The office this code belongs to, from the install.json the installer
+    wrote beside setup.py (seed_install_json runs before the desktop check)."""
+    for p in (HERE / "install.json", CONFIG_DIR / "install.json"):
+        try:
+            return str(json.loads(p.read_text()).get("office_key") or "").strip().lower()
+        except Exception:  # noqa: BLE001 -- missing or half-written
+            continue
+    return ""
+
+
 def require_desktop() -> bool:
     """Stop a laptop install before anything is copied onto it.
 
@@ -1141,6 +1231,12 @@ def require_desktop() -> bool:
     refusal leaves nothing behind on their machine.
     """
     if is_desktop():
+        return True
+    if _office_key_early() in LAPTOP_OK:
+        say("")
+        say("  This is a laptop, and this office is allowed to run on one.")
+        say("  Keep it plugged in with the lid open -- a closed lid takes your")
+        say("  channel quiet.")
         return True
     say("")
     say("  %s%sThis needs to run on a desktop.%s" % (BOLD, RED, OFF))

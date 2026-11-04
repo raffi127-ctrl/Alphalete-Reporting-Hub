@@ -13,7 +13,9 @@ Each run, in order (state in output/owner_rep_audit/<YYYY-MM>.json):
              REMOVE -> deactivate in Slack, none -> done, else -> ask again).
   3. REMIND  once, on/after REMIND_DAY, to owners who haven't finished, plus
              one DM to Evelyn listing those owners (she writes them herself).
-  4. SUMMARY the thread's results reply, edited in place.
+  4. SUMMARY the thread's results reply, edited in place, plus a NEW reply
+             naming the owners who finished since the last run (an edit
+             doesn't notify anyone).
   5. CLOSE   once, on/after CLOSE_DAY: post the unfinished owners' lists in
              the thread tagging Evelyn.
 
@@ -166,6 +168,8 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
               "owners can't be matched, so nobody gets a DM")
     from automations.owner_rep_audit.slack_ops import find_owner, in_slack
     from automations.owner_rep_audit.sellers import drop_sellers, recent_sellers
+    from automations.owner_rep_audit.slack_ops import protected_ids
+    protected = protected_ids()    # raises: no list goes out unfiltered
     sellers = recent_sellers(day)
     if sellers is not None:
         print(f"  {len(sellers)} reps sold in the last 30 days (Tableau order log)")
@@ -186,7 +190,8 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
                   "— add them to config.OWNER_SLACK")
             continue
         ov_count = len(o["reps"])
-        o["reps"] = in_slack(o["reps"], users, o["slack_id"])
+        o["reps"] = [r for r in in_slack(o["reps"], users, o["slack_id"])
+                     if r["slack_id"] not in protected]
         in_sl = len(o["reps"])
         o["reps"] = drop_sellers(o["reps"], sellers)
         print(f"  {o['office']} {o['owner']}: {ov_count} active in OwnerVille"
@@ -203,6 +208,7 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
             o["last_seen_ts"] = o["dm_ts"]
         o["status"] = "sent"
     st["thread_ts"] = out.channel(M.thread_intro(st["month"]))
+    st["announced"] = _finished(st)    # they're all in the first summary
     return st
 
 
@@ -210,20 +216,37 @@ def remove(o: dict, names: List[str], out: Out) -> None:
     from automations.owner_rep_audit import slack_ops as S
     from automations.ao_cleanup.slack_read import all_users
     users = all_users()
-    for name in names:
+    try:
+        protected = S.protected_ids()
+    except Exception as e:  # noqa: BLE001
+        o["log"].append(f"nobody removed, staff check failed: {type(e).__name__}")
+        o["kept"] = list(dict.fromkeys(names))
+        o["removed"] = []
+        return
+    removed, kept = [], []
+    for name in dict.fromkeys(names):
         rep = next(r for r in o["reps"] if r["name"] == name)
         acct = S.find_rep(rep, users)
         if not acct:
             res = "not in Slack"
+        elif acct["id"] in protected:
+            res = f"kept, protected staff {acct['id']}"
+            kept.append(name)
         elif out.mode != "live":
             res = f"would deactivate {acct['id']}"
+            removed.append(name)
         else:
             res = S.deactivate(acct["id"])
+            if res == "ok":
+                removed.append(name)
         o["log"].append(f"{name}: slack {res}")
-    o["removed"] = names
+    o["removed"], o["kept"] = removed, kept
 
 
 def poll(st: dict, out: Out, today: dt.date) -> None:
+    # A month opened before updates existed: whoever finished is already in its
+    # summary, so only owners who finish from here on get an update.
+    st.setdefault("announced", _finished(st))
     if out.mode == "dry":
         return
     from automations.owner_rep_audit import slack_ops as S
@@ -240,6 +263,7 @@ def poll(st: dict, out: Out, today: dt.date) -> None:
             o["status"] = status
             if picked:
                 remove(o, picked, out)
+                answer = M.done(o["removed"], o.get("kept", []))
             out.reply_dm(o, answer)
 
 
@@ -266,15 +290,32 @@ def _summary_rows(st: dict) -> List[dict]:
             if o.get("status") not in ("no_access",)]
 
 
+def _finished(st: dict) -> List[str]:
+    return [k for k, o in st["offices"].items() if o.get("status") == "done"]
+
+
 def summary(st: dict, out: Out) -> None:
     text = M.summary(_summary_rows(st))
-    if text == st.get("summary_text"):
+    if text != st.get("summary_text"):
+        if st.get("summary_ts"):
+            out.edit(st["summary_ts"], text)
+        else:
+            st["summary_ts"] = out.channel(text, thread_ts=st.get("thread_ts"))
+        st["summary_text"] = text
+    post_update(st, out)
+
+
+def post_update(st: dict, out: Out) -> None:
+    """A new reply in the thread for the owners who finished since the last
+    one. At most one per run, nothing when nobody new finished."""
+    announced = st.get("announced", [])
+    fresh = [k for k in _finished(st) if k not in announced]
+    if not fresh:
         return
-    if st.get("summary_ts"):
-        out.edit(st["summary_ts"], text)
-    else:
-        st["summary_ts"] = out.channel(text, thread_ts=st.get("thread_ts"))
-    st["summary_text"] = text
+    waiting = sum(1 for o in _summary_rows(st) if o["status"] != "done")
+    out.channel(M.update([st["offices"][k] for k in fresh], waiting),
+                thread_ts=st.get("thread_ts"))
+    st["announced"] = announced + fresh
 
 
 def close(st: dict, out: Out) -> None:
@@ -285,6 +326,23 @@ def close(st: dict, out: Out) -> None:
         st["pending_ts"] = out.channel(M.pending_for_evelyn(left),
                                        thread_ts=st.get("thread_ts"))
     st["closed"] = True
+
+
+def check_protected() -> int:
+    """READ-ONLY: who this machine's token protects. Reads Slack and prints;
+    no DMs, no replies read, no state, nobody deactivated."""
+    from automations.ao_cleanup.slack_read import client
+    from automations.owner_rep_audit import slack_ops as S
+    cli = client()
+    chans = S.visible_channels(cli)
+    staff = [c for c in chans if S.STAFF_CHANNEL.search(c.get("name") or "")]
+    ids, listed = S.protected_ids(cli), S.file_ids()
+    print(f"CHECK channels visible {len(chans)}, recruiting {len(staff)}")
+    print(f"CHECK protected {len(ids)}, from the file {len(listed)}, "
+          f"from channels only {len(ids - listed)}")
+    for c in sorted(staff, key=lambda x: x.get("name") or ""):
+        print(f"CHECK channel {c.get('name')}")
+    return 0
 
 
 def main(argv=None) -> int:
@@ -299,8 +357,12 @@ def main(argv=None) -> int:
                                       "reading OwnerVille")
     ap.add_argument("--only", nargs="*", help="limit to these office numbers")
     ap.add_argument("--show", action="store_true", help="print the state")
+    ap.add_argument("--check-protected", action="store_true",
+                    help="read-only: print who this machine protects, then stop")
     a = ap.parse_args(argv)
 
+    if a.check_protected:
+        return check_protected()
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     if a.show:
         print(json.dumps(load_state(today), indent=1)[:20000])

@@ -106,6 +106,11 @@ class MessageTests(unittest.TestCase):
 class DueTests(unittest.TestCase):
     O = {"key": "aya", "owner": "Aya", "live_channel": "C1"}
 
+    def setUp(self):
+        p = mock.patch.object(config, "AUDIT_OFFICES", {"aya"})
+        p.start()
+        self.addCleanup(p.stop)
+
     def test_not_before_the_evening(self):
         with mock.patch.object(audit, "run") as run:
             audit.if_due(self.O, dt.datetime(2026, 10, 22, 17, 0))

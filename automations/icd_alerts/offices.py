@@ -294,6 +294,35 @@ OFFICES: Dict[str, AlertOffice] = {
         campaign="att",
     ),
 
+    "raf": AlertOffice(
+        key="raf", owner="Rafael Hidalgo", label="Rafael's Local Office",
+        # UNROUTED on purpose: the installer asks them where they want
+        # their alerts, and a human approves it. Nothing posts until then.
+        channels=("C068PH3RFSM",),   # #alphalete-sales -- where his sales board sweep posts today (Megan 2026-11-03: "exactly as it is now")
+        timezone="America/Chicago", active=True, platform="mac",
+        slack_user_id="U045Z8N0ZQC",
+        # Hours are the ORG DEFAULT, not this owner's own -- nobody
+        # has told us theirs yet. Correct them here when they do.
+        day_start="13:30", day_end="22:00",
+        sat_start="10:45", sat_end="20:00", saturday=True,
+        # AT&T fiber, which is also the default -- said plainly so the
+        # next person does not have to know what the default is.
+        campaign="att",
+    ),
+    "aiden": AlertOffice(
+        key="aiden", owner="Aiden Atoori", label="Aiden's Local Office",
+        # #odysseyy, his own private room (Megan 2026-11-03). Enrolled by
+        # command, so no installer request ever named it: until this line
+        # his credit checks fell through to Megan's DM.
+        channels=("C0CES186PGC",),   # the second #odysseyy -- Megan 2026-11-03: "This should be his slack channel"
+        timezone="America/Los_Angeles", active=True, platform="mac",
+        slack_user_id="U07Q243HP7Z",
+        # His own hours, from his installer's knocks note (2026-11-03):
+        # "Mon-Fri 1PM to 9PM, Saturdays 10am to 6pm" (Pacific).
+        day_start="13:00", day_end="21:00",
+        sat_start="10:00", sat_end="18:00", saturday=True,
+        campaign="nds",
+    ),
 }
 
 
@@ -513,9 +542,50 @@ def _one_per_key(rows: List[Dict]) -> Dict[str, AlertOffice]:
 #
 # ADDED TO the owner, never instead.
 HELPERS = {
-    "khalil": ("U0543NQEWMD",),        # Francia Olivares
-    "khalil-nds": ("U0543NQEWMD",),    # same machine, the live enrolment
+    # Khalil's sign-in / Indeed DMs go to his "Everforward Automations" group:
+    # Francia + the Everforward office account + Khalil + Megan + Eve
+    # (Megan 2026-10-29). Lucy opens that same set of people (plus herself).
+    "khalil": ("U0543NQEWMD", "U0ASETVB6BS"),        # Francia Olivares, Everforward
+    "khalil-nds": ("U0543NQEWMD", "U0ASETVB6BS"),    # same machine, the live enrolment
+    "atef": ("U07GR1FUHKL",),          # Cesar Castillo (Megan 2026-10-29: the
+                                       # sign-in DM = Megan, Eve, Cesar, Atef)
+    # Trang's sign-in DMs (Megan 2026-11-02): Megan, Eve, Trang, Michael Canavan,
+    # Amber. These three are AO-workspace users, so the DM goes on Lucy's AO
+    # token like every other office's; only her boards live in Fresh Success.
+    "trang": ("U0C3J8MN99S", "U09S2LTUZ55"),   # Michael Canavan, Amber (Hester)
 }
+
+
+# THE OWNERVILLE CLOCK IS THE LOGIN'S, NOT THE OFFICE'S. OwnerVille renders
+# every knock time in the logged-in user's profile timezone. Colten's profile
+# is Eastern and his board reads right; Omar's profile is Central, so on
+# 2026-10-30 his 3:25 PM Eastern board showed every last knock an hour ago
+# (2:22 PM) and the gap list judged his reps 60 minutes idle (Megan: "Omar's
+# knock boards need to be posting in eastern"). The permanent fix is the
+# profile; until then, name the clock here and the board shifts the times
+# into the office's own timezone. Remove the entry once the profile is fixed.
+OV_CLOCK = {
+    "omar": "America/Chicago",
+}
+
+
+def ov_clock_shift_minutes(office, when=None) -> int:
+    """Minutes to ADD to an OwnerVille time to read it on this office's clock.
+    0 when the login's clock is the office's (the default)."""
+    import datetime as _dt
+    key = (getattr(office, "key", "") or "").strip().lower()
+    clock = OV_CLOCK.get(key)
+    if not clock:
+        return 0
+    try:
+        from zoneinfo import ZoneInfo
+        when = when or _dt.datetime.now()
+        naive = when.replace(tzinfo=None)
+        off_office = ZoneInfo(office.timezone).utcoffset(naive) or _dt.timedelta(0)
+        off_clock = ZoneInfo(clock).utcoffset(naive) or _dt.timedelta(0)
+        return int((off_office - off_clock).total_seconds() // 60)
+    except Exception:  # noqa: BLE001 -- a bad zone name must not cost a board
+        return 0
 
 
 def helpers_for(key: str) -> tuple:

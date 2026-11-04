@@ -317,8 +317,8 @@ SECTION_OVERRIDES: dict = {
     # lists exactly these; cancels/disconnects post "No new ... orders" on empty
     # days. Rep Activations + Order Log are SEPARATE boards (Megan 2026-08-07 —
     # both shown, not combined).
-    "isaiah": ("knocks_gaps", "churn", "rep_activations", "activation_rate",
-               "order_log", "cancels", "disconnects"),
+    "isaiah": ("knocks_gaps", "churn", "rep_activations", "pending_orders",
+               "activation_rate", "order_log", "cancels", "disconnects"),
     # drew (Precision, #precisionmanagement-nds-sales) is WIRELESS/NDS — owner
     # "DREW TEPPER[precision management team, inc.]" in the NDS-SN workbook (572
     # wireless orders, verified 2026-08-12). Wired like isaiah. Churn = per-rep,
@@ -329,8 +329,8 @@ SECTION_OVERRIDES: dict = {
     # BACK 2026-09-28 in #precision-management-att-sales (C0C4YKN7QGJ); the
     # same boards as isaiah/khalil MINUS Time Gaps -- he does not disposition
     # in OwnerVille, so there are no knocks to draw (Megan 2026-09-28).
-    "drew": ("churn", "rep_activations", "activation_rate", "order_log",
-             "cancels", "disconnects"),
+    "drew": ("churn", "rep_activations", "pending_orders", "activation_rate",
+             "order_log", "cancels", "disconnects"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook
@@ -444,6 +444,9 @@ OFFICE_TIMEZONES: dict = {
     "salik":   "America/Detroit",              # Southfield, MI — EASTERN
     "cody":    "America/Chicago",              # Corpus Christi, TX
     "haytham": "America/Chicago",              # Austin, TX
+    "jose":    "America/Los_Angeles",          # Legacy Shore Marketing, California (Megan 2026-10-28; ECO sign-up tz Pacific)
+    "aiden":   "America/Los_Angeles",          # Atoori Management, north LA county (Tableau zips, 2026-11-03) -- PACIFIC
+    "atef":    "America/Denver",               # Domin8 Acquisitions, Denver CO — Mountain
     "trang":   "America/Chicago",              # San Antonio, TX
     "isaiah":  "America/Chicago",              # Dallas, TX
     "nii":     "America/New_York",             # Wilkes-Barre, PA — EASTERN
@@ -458,6 +461,7 @@ OFFICE_TIMEZONES: dict = {
     "frank":   "America/New_York",             # Peak Management, South Shore org (FL) — EASTERN; confirm on his ECO sign-up
     "hasani":  "America/Chicago",              # Covenant United, Austin TX — CENTRAL (OwnerVille address, harvested 2026-10-20)
     "steve":   "America/Chicago",              # Luxe Global Consulting, Abilene TX — CENTRAL (OwnerVille address, harvested 2026-10-20)
+    "omar":    "America/Detroit",              # Kalkan Marketing, Dearborn MI — EASTERN (ad photo threads config, 2026-10-19)
     "samuel":  "America/New_York",             # Dynasty Growth Group, South Shore org — EASTERN (ECO sign-up 2026-10-21)
     "lajahnik": "America/Denver",              # Aventis Consulting, Utah — MOUNTAIN (customer 801/385 numbers on her order log, 2026-10-09)
     "joseph":  "America/Detroit",              # Logan Legacy Group, Grandville, MI — EASTERN
@@ -525,9 +529,12 @@ def _merge_onboarded() -> None:
             # Activation Rate by Rep rides with Rep Activations: no form
             # checkbox exists for it, and every NDS thread gets it (Megan
             # 2026-10-05: "add it to all NDS threads").
+            # Pending Orders rides with it too, right after Rep Activations
+            # (Colten 2026-10-26, Megan: "everyone in NDS").
             if "rep_activations" in _slugs:
                 i = _slugs.index("rep_activations") + 1
-                _slugs = _slugs[:i] + ("activation_rate",) + _slugs[i:]
+                _slugs = (_slugs[:i] + ("pending_orders", "activation_rate")
+                          + _slugs[i:])
             if _slugs:
                 SECTION_OVERRIDES[key] = _slugs
         for rk, url in (r.get("per_office_views") or {}).items():

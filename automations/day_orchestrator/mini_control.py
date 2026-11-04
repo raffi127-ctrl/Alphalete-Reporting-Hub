@@ -108,6 +108,7 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -127,6 +128,7 @@ import gspread
 from automations.recruiting_report import fill as _fill
 from automations.day_orchestrator import registry
 from automations.day_orchestrator import routing
+from automations.day_orchestrator import control_books
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # The control tab lives on the same workbook as Hub Activity (the orchestrator's
@@ -227,7 +229,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "restart_jiraiya",
                     # Installs the read lane. Plumbing, so a cap-hit day — the
                     # exact day you most want fast reads — can still deploy it.
-                    "install_mini_control_read",
+                    "install_mini_control_read", "install_mini_control_text",
                     "install_enrollment_pending",
                     "pip_install", "playwright_install",
                     # Pinning Chrome is deploy plumbing: it must run on a
@@ -251,7 +253,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_alphalete_app_password",
                     "set_appstream_state", "set_appstream_alt_state",
                     "appstream_promote_alt",
-                    "post_note",
+                    "post_note", "signin_ask",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     # Same reason as sheets_login: a human-cleared login is
                     # bounded and idempotent, and the day you need it is the
@@ -315,17 +317,105 @@ READONLY_ACTIONS = {"push_appstream_fleet",
 #          message, or touches the shared browser profile, so it is safe to run
 #          alongside a report.
 #   main — everything else, unchanged: reruns, plumbing, secrets.
-# The split is disjoint and derived from the action name alone, so the two lanes
+#   text — exactly TEXT_ACTIONS (below): the rows that send an iMessage.
+# The split is disjoint and derived from the action name alone, so the lanes
 # can never claim the same row — no locking, no leases.
+#
+# THE TEXT LANE (2026-10-26). Carlos's NDS board + gap texts sat 2-4 hours on
+# Lucy 2: first a 1-hour sms_log pull, then a vantura_nds_sara rerun stuck on a
+# verification code, held main while texts that take seconds waited behind
+# them. Slack kept flowing; only the texts stalled. A text never waits on a
+# report again: the text lane takes the text rows AND drains the local text
+# outbox (text_outbox.py), which used to be drained only between main's polls.
+#
+# One exception keeps a text from ever being stranded: while the text lane is
+# NOT running on this box (not installed yet, crashed, or a Windows box), main
+# takes the text rows back — exactly the old behaviour. "Running" is a
+# heartbeat file the text lane touches every 30s from a side thread, so a text
+# lane busy on a long send still reads as alive (see _text_lane_live).
 LANE_MAIN = "main"
 LANE_READ = "read"
+LANE_TEXT = "text"
+LANES = (LANE_MAIN, LANE_READ, LANE_TEXT)
+
+# Rows whose whole job is an iMessage send. NOT here: the Messages LOOKUPS
+# (find_group, group_members, text_resolve, text_replies) — they send nothing
+# and stay on the read lane — and reports that text as one step among many
+# (`rerun …`), which stay on main and take the Messages send lock themselves
+# (automations/shared/messages_lock.py, via text_post).
+TEXT_ACTIONS = {"sendtext", "textgroup", "textgroup_image",
+                "text_dispositions", "text_obcl", "text_tracker",
+                # One-number image-send experiments.
+                "sendimage_diag", "sendimage_fmt", "sendimage_loc",
+                # Proves Messages for the process that SENDS — which is now
+                # this lane, so the probe has to run here to mean anything.
+                "messages_diag"}
+# Text rows that capture before they send (text_tracker opens Tableau, and may
+# wait on the shared browser profile behind a main-lane report). The text lane
+# runs them AFTER the pure sends in a pass, so a capture never sits in front
+# of a ready-to-go text.
+TEXT_CAPTURE_ACTIONS = {"text_tracker"}
+
+# The text lane's heartbeat. Per machine (a home-dir file), cross-platform.
+TEXT_LANE_HEARTBEAT = (Path.home() / ".config" / "recruiting-report"
+                       / "mini_control_text.alive")
+TEXT_LANE_BEAT_S = 30
+#: Older than this and main treats the text lane as down and takes texts back.
+#: Six missed beats: a launchd restart (ThrottleInterval 30s) stays inside it.
+TEXT_LANE_STALE_S = 180
 
 
-def _lane_owns(action: str, lane: str) -> bool:
-    """Does `lane` run this action? The two lanes partition every action between
-    them, so exactly one of them owns any given row."""
-    is_read = str(action or "").strip().lower() in READONLY_ACTIONS
-    return is_read if lane == LANE_READ else not is_read
+def _text_lane_live(now: float | None = None) -> bool:
+    """Is a text-lane process running on THIS machine right now?"""
+    try:
+        age = (time.time() if now is None else now) - TEXT_LANE_HEARTBEAT.stat().st_mtime
+    except OSError:
+        return False
+    return age < TEXT_LANE_STALE_S
+
+
+def _beat_text_lane() -> None:
+    try:
+        TEXT_LANE_HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
+        TEXT_LANE_HEARTBEAT.write_text(_now())
+    except Exception:  # noqa: BLE001 — a missed beat only hands texts to main
+        pass
+
+
+def _start_text_lane_heartbeat() -> None:
+    """Touch the heartbeat now and every TEXT_LANE_BEAT_S from a daemon thread,
+    so a 5-minute osascript send doesn't read as a dead lane. The thread dies
+    with the process (and on the self-reload execv), which is the point."""
+    import threading
+    _beat_text_lane()
+
+    def _loop():
+        while True:
+            time.sleep(TEXT_LANE_BEAT_S)
+            _beat_text_lane()
+    threading.Thread(target=_loop, name="text-lane-heartbeat", daemon=True).start()
+
+
+def _lane_owns(action: str, lane: str, text_live: bool = True) -> bool:
+    """Does `lane` run this action? The lanes partition every action between
+    them, so exactly one of them owns any given row.
+
+    `text_live` is whether the text lane is running on this box. When it isn't,
+    main owns the text rows too (so a box without the text lane texts exactly
+    as it did before the split). The default is True — the partition as
+    designed — and main's poll passes the real answer."""
+    a = str(action or "").strip().lower()
+    if lane == LANE_READ:
+        return a in READONLY_ACTIONS
+    if lane == LANE_TEXT:
+        return a in TEXT_ACTIONS
+    if a in READONLY_ACTIONS:
+        return False
+    return a not in TEXT_ACTIONS or not text_live
+
+
+#: poll_once tags a row it starts with its lane: "started <ts> · <lane> lane".
+_LANE_TAG_RE = r"·\s*(main|read|text)\s+lane"
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
@@ -377,6 +467,9 @@ MINI_CONTROL_LABEL = "com.alphalete.mini-control"   # this poller's own launchd 
 # The read lane is a SECOND launchd job running the same module with --lane read.
 # restart_poller kicks both, so a mini_control fix still deploys in one command.
 MINI_CONTROL_READ_LABEL = "com.alphalete.mini-control-read"
+# The text lane is the THIRD job: same module, --lane text. Kicked by
+# restart_poller with the other two.
+MINI_CONTROL_TEXT_LABEL = "com.alphalete.mini-control-text"
 HUB_WATCH_LABEL = "com.alphalete.hub-watch"          # the Hub change-watcher
 
 # Machine identity — which runner is this? A gitignored `.machine-profile` file
@@ -453,17 +546,98 @@ def _parse_ts(s: str) -> dt.datetime | None:
         return None
 
 
-def _open(sandbox: bool = False, machine: str | None = None):
+#: How often a poller also drains its OLD tab in AUTOMATION MASTER.
+LEGACY_POLL_S = 180
+#: How long a peek at the old tab may take before the lane gives up on it for
+#: this round. The first cut-over (2026-10-29) ran the old-tab poll inline, and
+#: AUTOMATION MASTER — the very file that froze the fleet — hung each lane for
+#: minutes at a time: jobs sat 'queued' in Lucy 2's and Lucy 4's OWN workbooks
+#: while their lanes waited on the old one.
+LEGACY_PEEK_S = 20
+
+
+def _legacy_has_work(machine: str, lane: str, wait_s: float | None = None) -> bool:
+    """Is a row for this lane queued on the OLD tab? Read in a side thread with
+    a hard wait, so a hung AUTOMATION MASTER skips a round instead of freezing
+    the lane. False on a timeout or error — the next round looks again, and
+    the lane's own workbook is never held up by the old one."""
+    box: dict = {}
+
+    def _peek():
+        try:
+            box["rows"] = _open(False, machine, legacy=True).get_all_records()
+        except Exception as e:  # noqa: BLE001
+            box["err"] = e
+    t = threading.Thread(target=_peek, daemon=True)
+    t.start()
+    t.join(LEGACY_PEEK_S if wait_s is None else wait_s)
+    rows = box.get("rows")
+    if rows is None:
+        print("[mini_control] old tab didn't answer in {}s — skipped this round"
+              .format(LEGACY_PEEK_S if wait_s is None else wait_s))
+        return False
+    return any(str(r.get("Status", "")).strip().lower() == "queued"
+               and _lane_owns(r.get("Action", ""), lane,
+                              text_live=(lane != LANE_MAIN))
+               for r in rows)
+
+#: Opened control tabs, by (workbook, tab name): (opened_at, Worksheet). Opening costs TWO
+#: Sheets reads (workbook metadata, then the tab lookup) before the one read
+#: that matters. 2026-10-28: every poll re-opened, so 4 Lucys x 3 lanes spent
+#: ~60 reads/min — the whole per-user cap all the Lucys share — just sitting
+#: idle, and every heartbeat, rerun and report on top of that got 429s. The
+#: handle stays valid; every row read still goes to the network.
+_WS_CACHE: dict = {}
+_WS_TTL_S = 1800
+
+
+def _open(sandbox: bool = False, machine: str | None = None, *,
+          legacy: bool = False, runner: bool = False):
     """Open (creating if needed) the control worksheet for THIS machine — or the
-    shared TEST tab when sandbox."""
-    tab = SANDBOX_TAB if sandbox else _control_tab_for(_machine_profile(machine))
-    sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+    shared TEST tab when sandbox.
+
+    The tab lives in the machine's OWN workbook (control_books, 2026-10-29);
+    `legacy=True` is her old tab in AUTOMATION MASTER, which pollers keep
+    draining for rows queued by code that predates the move. `runner=True` is
+    the poller itself: it alone may prove a tab live (see _prove_live), because
+    only a runner reading the tab makes queueing into it safe."""
+    mach = _machine_profile(machine)
+    tab = SANDBOX_TAB if sandbox else _control_tab_for(mach)
+    book = CONTROL_SHEET_ID
+    if not (sandbox or legacy):
+        book = control_books.book_for(mach) or CONTROL_SHEET_ID
+    key = (book, tab)
+    hit = _WS_CACHE.get(key)
+    if hit and time.time() - hit[0] < _WS_TTL_S:
+        return hit[1]
+    sh = _fill._client().open_by_key(book)
     try:
-        return sh.worksheet(tab)
+        ws = sh.worksheet(tab)
     except gspread.WorksheetNotFound:
         ws = sh.add_worksheet(title=tab, rows=300, cols=len(HEADERS))
         ws.update([HEADERS], "A1")
-        return ws
+    if runner and book != CONTROL_SHEET_ID:
+        _prove_live(sh, ws, mach)
+    _WS_CACHE[key] = (time.time(), ws)
+    return ws
+
+
+def _prove_live(sh, ws, machine: str) -> None:
+    """A poller's first look at its own workbook: if no runner has finished a
+    row there yet, write one finished `ping` so queue commands can see that this
+    tab IS read (they only queue into a tab a runner has drained — the guard
+    that ended the 'Mini Control - Mini' strandings). Best-effort: a failure
+    only means rows keep going to the old tab a little longer."""
+    try:
+        if _tab_liveness(sh, ws.title) is True:
+            return
+        now = _now_tz()
+        ws.append_row([now, "ping", "", "poller", "done",
+                       "{} reads this workbook".format(machine), now],
+                      value_input_option="RAW")
+        _memo_save(_memo_key(sh, ws.title))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -1289,13 +1463,13 @@ def _action_restart_poller(args: str) -> tuple[bool, str]:
     replaced with fresh code by launchd. start_new_session so the kickstart child
     isn't in the poller's process group and survives the kill.
 
-    Kicks BOTH lanes. They are two launchd jobs running this same module, so a
-    restart that reloaded only main would leave the read lane serving stale code
-    indefinitely — and nothing in the queue would show it."""
-    labels = [MINI_CONTROL_LABEL, MINI_CONTROL_READ_LABEL]
-    # `|| true`: the read lane may not be installed yet on a machine that hasn't
-    # run install_mini_control_read. A missing label must not fail the restart of
-    # the lane that IS there.
+    Kicks ALL THREE lanes. They are launchd jobs running this same module, so a
+    restart that reloaded only main would leave the read and text lanes serving
+    stale code indefinitely — and nothing in the queue would show it."""
+    labels = [MINI_CONTROL_LABEL, MINI_CONTROL_READ_LABEL, MINI_CONTROL_TEXT_LABEL]
+    # `|| true`: the read/text lanes may not be installed yet on a machine that
+    # hasn't run their installers. A missing label must not fail the restart of
+    # the lanes that ARE there.
     kicks = "; ".join(f"launchctl kickstart -k gui/{os.getuid()}/{l} || true"
                       for l in labels)
     try:
@@ -1307,8 +1481,8 @@ def _action_restart_poller(args: str) -> tuple[bool, str]:
         return False, f"couldn't schedule restart: {str(e)[:140]}"
     global _restart_scheduled_at
     _restart_scheduled_at = time.time()
-    return True, (f"restart scheduled for {' + '.join(labels)} (~3s) — both "
-                  f"lanes reload their code; the rest of the queue is held "
+    return True, (f"restart scheduled for {' + '.join(labels)} (~3s) — every "
+                  f"lane reloads its code; the rest of the queue is held "
                   f"until they do")
 
 
@@ -1435,8 +1609,43 @@ def _action_install_mini_control_read(args: str) -> tuple[bool, str]:
 
     Idempotent — re-run to redeploy after a plist change. Run `update` +
     `restart_poller` first so this action exists in the running poller."""
+    ok, msg = _install_lane_agent(MINI_CONTROL_READ_LABEL, LANE_READ)
+    if not ok:
+        return ok, msg
+    return True, msg + " · read lane live (20s) · reads no longer queue behind reruns"
+
+
+def _action_install_mini_control_text(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the Mini Control TEXT LANE on THIS machine.
+
+    2026-10-26: Carlos's NDS texts waited 2-4 hours on Lucy 2 behind a 1-hour
+    sms_log pull and then a rerun stuck on a verification code — the queue's
+    main lane is one serial worker. This job runs the same module with lane
+    'text': it takes ONLY TEXT_ACTIONS and drains the local text outbox, so a
+    text goes out in seconds whatever main is doing.
+
+    Until this is installed (or whenever it is down for 3+ minutes) main keeps
+    sending texts itself, so installing it — or failing to — never strands one.
+    Sends are serialized machine-wide by automations/shared/messages_lock.py.
+
+    The pre-flight pass sends whatever text rows are queued right now, exactly
+    as the lane would a few seconds later — no test message is sent.
+
+    macOS: Messages consent belongs to the python binary launchd runs, which
+    is the same one main uses — prove it with a `textgroup` to a test group
+    after installing. Idempotent; `update` + `restart_poller` first."""
+    ok, msg = _install_lane_agent(MINI_CONTROL_TEXT_LABEL, LANE_TEXT)
+    if not ok:
+        return ok, msg
+    return True, msg + " · text lane live (30s) · texts no longer queue behind reruns"
+
+
+def _install_lane_agent(label: str, lane: str) -> tuple[bool, str]:
+    """Write, lint, pre-flight and bootstrap one Mini Control lane's plist."""
+    if sys.platform != "darwin":
+        return False, (f"{label} is a macOS LaunchAgent — nothing to install "
+                       f"on {sys.platform}")
     uid = os.getuid()
-    label = MINI_CONTROL_READ_LABEL
     src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
     dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
     if not src_plist.exists():
@@ -1468,9 +1677,9 @@ def _action_install_mini_control_read(args: str) -> tuple[bool, str]:
     #    rather than by a read that silently never answers.
     ok, out = _run_cmd([sys.executable, "-m",
                         "automations.day_orchestrator.mini_control",
-                        "--once", "--lane", LANE_READ], timeout_s=180)
+                        "--once", "--lane", lane], timeout_s=180)
     if not ok:
-        return False, (f"plist OK but a read-lane pass FAILED — NOT going live: "
+        return False, (f"plist OK but a {lane}-lane pass FAILED — NOT going live: "
                        f"{(out or '')[-160:]}")
 
     # 3) (re)bootstrap the agent.
@@ -1486,8 +1695,7 @@ def _action_install_mini_control_read(args: str) -> tuple[bool, str]:
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     state = next((ln.strip() for ln in (pr.stdout or "").splitlines()
                   if "state =" in ln), "loaded")
-    return True, (f"installed {label} · {state} · read lane live (20s) · "
-                  f"reads no longer queue behind reruns")
+    return True, f"installed {label} · {state}"
 
 
 def _action_install_lucy2_digest(args: str) -> tuple[bool, str]:
@@ -3053,6 +3261,10 @@ def _action_textgroup(args: str) -> tuple[bool, str]:
     if "::" not in args:
         return False, "textgroup needs '<group name> :: <message>'"
     group, text = [x.strip() for x in args.split("::", 1)]
+    # A queue row is one line, so a multi-line message arrives with the two
+    # characters backslash-n — on 2026-10-26 Carlos's gaps list landed in the
+    # chat as "...\n\nJacob Isaiah Ortega - 49 min\n...". Turn them back into breaks.
+    text = text.replace("\\n", "\n").strip()
     if not group or not text:
         return False, "textgroup needs both a group name and a message"
     try:
@@ -3096,13 +3308,18 @@ def _action_sendtext(args: str) -> tuple[bool, str]:
     # send returns instantly. (The earlier pre-lookup is dropped: it just added a
     # second identical prompt/timeout.)
     safe = text.replace("\\", "\\\\").replace('"', '\\"')
-    sent_ok, res = _osascript(
-        'tell application "Messages"\n'
-        '  set svcId to id of 1st service whose service type = iMessage\n'
-        '  set targetService to service id svcId\n'
-        f'  set targetBuddy to buddy "{phone}" of targetService\n'
-        f'  send "{safe}" to targetBuddy\n'
-        'end tell', timeout=300)
+    from automations.shared import messages_lock
+    try:
+        with messages_lock.held(f"sendtext {phone}"):
+            sent_ok, res = _osascript(
+                'tell application "Messages"\n'
+                '  set svcId to id of 1st service whose service type = iMessage\n'
+                '  set targetService to service id svcId\n'
+                f'  set targetBuddy to buddy "{phone}" of targetService\n'
+                f'  send "{safe}" to targetBuddy\n'
+                'end tell', timeout=300)
+    except messages_lock.MessagesBusy as e:
+        return False, f"send to {phone} NOT sent: {e}"
     if not sent_ok:
         return False, (f"send to {phone} FAILED: {res} · if this timed out, the "
                        "'… wants to control Messages' dialog went unanswered on the "
@@ -4256,17 +4473,29 @@ def _action_update(args: str) -> tuple[bool, str]:
             capture_output=True, text=True, timeout=30).stdout.strip()
     except Exception:  # noqa: BLE001 — the probe must never mask the pull result
         unmerged = ""
+    # SELF-HEAL IT (2026-10-28). Saying so was not enough: the mini and Lucy 3
+    # both sat with `UU office-mapping*.json` (an onboard_apply edit vs. an
+    # incoming commit) — reports reading the mapping broke, and every later
+    # `update` died at `checkout main` with "resolve your current index first",
+    # so the fleet stopped taking deploys until a person ran git_recover. The
+    # pull itself succeeded, so HEAD is the new origin code: put exactly those
+    # files back to HEAD. The local edit is still in the stash (git keeps it
+    # when the pop conflicts), so nothing is discarded.
     if unmerged:
-        files = ", ".join(unmerged.split("\n")[:6])
+        paths = [p for p in unmerged.split("\n") if p.strip()]
+        healed, _h = _g("checkout", "HEAD", "--", *paths)
+        files = ", ".join(paths[:6])
+        if healed:
+            return ok, (
+                f"pulled · ⚠ the machine's own edit to {files} clashed with the "
+                "new code, so those file(s) now hold the NEW version and the "
+                "machine's edit is parked in `git stash list` (re-run "
+                f"onboard_apply if it was an enrollment). · {out}")
         return False, (
             "PULLED, but the autostash pop CONFLICTED and left the tree "
-            f"unmerged: {files}. This runner is now on new code with a broken "
-            "working copy — anything reading those files will fail (a broken "
-            "schedule_config.json takes out the whole 4am batch). Your local "
-            "edit is NOT lost, it is in the stash: `git checkout --theirs <f> "
-            "&& git add <f>` to take origin's version, or `lucy git_recover "
-            "<f>` to restore it from origin/main; `git stash list` still has "
-            f"the edit. · {out}")
+            f"unmerged: {files}, and restoring them failed ({_h[:120]}). "
+            "Anything reading those files will fail until `lucy git_recover`. "
+            f"The local edit is in `git stash list`. · {out}")
     return ok, out
 
 
@@ -4306,14 +4535,24 @@ def _action_git_status(args: str) -> tuple[bool, str]:
     inc_set = {l.strip() for l in inc}
     blockers = [m for m in mod
                 if m[3:].strip() in inc_set and not m.startswith("??")]
+    # A HALF-MERGED file blocks EVERYTHING, overlap or not (2026-10-28): the
+    # mini and Lucy 3 each had one `UU` file, `update` died at `checkout main`
+    # with "resolve your current index first", and this said "nothing
+    # blocking a pull" because the file wasn't in the incoming list.
+    unmerged = [m for m in mod if m[:2] in ("UU", "AA", "DD", "AU", "UA",
+                                             "DU", "UD")]
 
     lines = [f"branch {branch} · HEAD {head}",
              f"behind origin/main by {behind} commit(s)",
              f"locally modified: {len(mod)} · incoming files: {len(inc)}"]
+    if unmerged:
+        lines.append("⚠ HALF-MERGED — blocks every update and breaks anything "
+                     "reading it; fix with `lucy git_recover`:")
+        lines += [f"    {u}" for u in unmerged]
     if blockers:
         lines.append("⚠ BLOCKS THE PULL (modified AND incoming):")
         lines += [f"    {b}" for b in blockers]
-    elif mod:
+    elif mod and not unmerged:
         lines.append("no pull blockers — local edits don't overlap incoming")
     lines.append("--- git status --short ---")
     lines += mod or ["(clean)"]
@@ -4454,6 +4693,33 @@ def _action_set_machine_profile(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return True, (f".machine-profile written as '{match}' (verify step failed: "
                       f"{type(e).__name__})")
+
+
+def _action_icd_correct_sales(args: str) -> tuple[bool, str]:
+    """Lower (or set) ONE rep's pinned sale count on the ICD relay row.
+
+      icd_correct_sales <office> "<rep>" <METRIC>=<n> [YYYY-MM-DD]
+      e.g. icd_correct_sales carlos-b2batt "Andrew De La Torre" NL=4
+
+    WHY (Carlos 2026-10-27): SaraPlus glitched a rep to 8 NL and came back to
+    4; the poster's ONLY-UP rule kept the 8 all day and every standings text
+    repeated it. Only the box running the ICD poster can reach that workbook,
+    so this is the way to fix it from anywhere. See icd_alerts/correct_sales.py."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if len(parts) < 3:
+        return False, ('usage: icd_correct_sales <office> "<rep>" <METRIC>=<n> '
+                       '[YYYY-MM-DD]  e.g. icd_correct_sales carlos-b2batt '
+                       '"Andrew De La Torre" NL=4')
+    office, rep, setting = parts[0], parts[1], parts[2]
+    cmd = [sys.executable, "-m", "automations.icd_alerts.correct_sales",
+           "--office", office, "--rep", rep, "--set", setting, "--send"]
+    if len(parts) > 3:
+        cmd += ["--day", parts[3]]
+    return _run_cmd(cmd, timeout_s=300)
 
 
 def _action_icd_board(args: str) -> tuple[bool, str]:
@@ -5250,6 +5516,20 @@ _CRED_PUSH_FIELDS = {
 }
 
 
+def _cred_file_for(key: str):
+    """The whitelisted path for a cred-file key, or None. Besides the fixed
+    table, any `contacts-rw-token-<account>` key is accepted (2026-10-31):
+    one Google Contacts token per new owner's reception Gmail
+    (fiber_owners_distro.contacts_write.token_path), read by
+    second_round_contacts on Lucy 1."""
+    if key in _CRED_FILES:
+        return _CRED_FILES[key]()
+    import re as _re
+    if _re.fullmatch(r"contacts-rw-token-[a-z0-9_]{1,64}", key):
+        return Path.home() / ".config" / "recruiting-report" / f"{key}.json"
+    return None
+
+
 def _action_push_cred_file(args: str) -> tuple[bool, str]:
     """Push one whitelisted credential FILE from THIS machine to another
     runner (zero-touch, like push_slack_tokens — born 2026-08-21 when Lucy
@@ -5260,8 +5540,8 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
         return False, ("push_cred_file needs '<file-key> <target machine>' — "
                        f"known keys: {', '.join(sorted(_CRED_FILES))}")
     key, target = parts[0], parts[1].strip().strip("'\"").strip()
-    if key not in _CRED_FILES:
-        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
+    if _cred_file_for(key) is None:
+        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))} (or contacts-rw-token-<account>)"
     # Compare against this box's TRUE identity, not _machine_profile(), which
     # falls back to DEFAULT_MACHINE ("Lucy 1") when there is no .machine-profile
     # marker. Megan's laptop has no marker, so every `push_cred_file … "Lucy 1"`
@@ -5274,7 +5554,7 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
     # every bare `lucy rerun` to a tab no poller reads.
     if target.lower() == _this_box().strip().lower():
         return False, "target is THIS machine — nothing to push"
-    path = _CRED_FILES[key]()
+    path = _cred_file_for(key)
     try:
         content = path.read_text(encoding="utf-8-sig")
     except Exception as e:  # noqa: BLE001
@@ -5398,9 +5678,9 @@ def _action_set_cred_file(args: str) -> tuple[bool, str]:
         note = " (unwrapped shlex quoting)"
     else:
         note = ""
-    if key not in _CRED_FILES:
-        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
-    path = _CRED_FILES[key]()
+    if _cred_file_for(key) is None:
+        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))} (or contacts-rw-token-<account>)"
+    path = _cred_file_for(key)
     # A bag-of-credentials file MERGES: the sender only ever holds the logins it
     # needs, and the keys it doesn't carry belong to reports that run here and
     # not there (see _CRED_FILES_MERGE).
@@ -6577,6 +6857,30 @@ def _action_post_nsf_correction(args: str) -> tuple[bool, str]:
                        timeout_s=120, log_name="nsf-correction.log")
     tail = [ln for ln in (out or "").splitlines() if "posted" in ln or "identity" in ln]
     return ok, (" · ".join(tail)[:300] or (out or "")[-200:])
+
+
+def _action_signin_ask(args: str) -> tuple[bool, str]:
+    """Send an office's "Lucy cannot sign into X" DM again TODAY, to the
+    people on file right now. `signin_ask atef SaraPlus`. The poster says it
+    once a day on its own; this is for when the DM's people changed after
+    it went out (Atef 2026-10-29: Cesar + Atef added mid-morning)."""
+    parts = (args or "").split()
+    if not parts:
+        return False, "usage: signin_ask <office> [SaraPlus|ownerville|servicecloud]"
+    office = parts[0].strip().lower()
+    system = (parts[1] if len(parts) > 1 else "saraplus").strip().lower()
+    from automations.icd_alerts import post as P
+    # The system is a SYSTEMS key ("saraplus", "ownerville", "servicecloud"),
+    # never free text: "SaraPlus" fell through to the Service Cloud wording
+    # and told Atef, who has no Box office, to fix My Service Cloud
+    # (2026-10-29 12:24). Refuse anything that is not a key.
+    known = set(getattr(P, "SYSTEMS", {}) or {})
+    if known and system not in known:
+        return False, "unknown system %r -- one of: %s" % (system, ", ".join(sorted(known)))
+    lines: list = []
+    ok = P.ask_office_to_sign_in(office, "", system=system, send=True,
+                                 log=lines.append, force=True)
+    return bool(ok), ("sent to the office DM" if ok else "not sent") + " | " + " / ".join(l[:160] for l in lines[-4:])
 
 
 def _action_post_note(args: str) -> tuple[bool, str]:
@@ -9179,6 +9483,7 @@ ACTIONS = {
     "cherry_pick": _action_cherry_pick,
     "set_machine_profile": _action_set_machine_profile,
     "icd_board": _action_icd_board,
+    "icd_correct_sales": _action_icd_correct_sales,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
@@ -9212,6 +9517,7 @@ ACTIONS = {
     "restart_hub": _action_restart_hub,
     "install_hub_watch": _action_install_hub_watch,
     "install_mini_control_read": _action_install_mini_control_read,
+    "install_mini_control_text": _action_install_mini_control_text,
     "restart_jiraiya": _action_restart_jiraiya,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
@@ -9230,6 +9536,7 @@ ACTIONS = {
     "set_raffi_app_password": _action_set_raffi_app_password,
     "set_alphalete_app_password": _action_set_alphalete_app_password,
     "post_note": _action_post_note,
+    "signin_ask": _action_signin_ask,
     "incident_resolve": _action_incident_resolve,
     "incident_working": _action_incident_working,
     "incident_waiting": _action_incident_waiting,
@@ -9320,12 +9627,13 @@ def _rerun_home(args: str, by: str = "") -> str | None:
              .get(parts[0]) if r else None)
     if raw_r is not None and not str(by).startswith(AUTO_BY_PREFIX):
         try:
-            sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+            sh, _ = _book()
             history = {}
             for m in _fleet.RUNNERS:
                 try:
-                    history[m] = sh.worksheet(
-                        _control_tab_for(m)).get_all_values()[1:]
+                    tab = _control_tab_for(m)
+                    ws = _own_live_tab(m, tab) or sh.worksheet(tab)
+                    history[m] = ws.get_all_values()[1:]
                 except Exception:  # noqa: BLE001 — that box just isn't a target
                     pass
             from automations.shared import silent_job_watch as _sjw
@@ -9350,7 +9658,8 @@ def _rerun_home(args: str, by: str = "") -> str | None:
 
 
 def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = False,
-            machine: str | None = None, auto: bool = False) -> None:
+            machine: str | None = None, auto: bool = False,
+            skip_if_waiting: bool = False) -> None:
     """Add a fix request to the queue (called by Eve / Megan / the orchestrator).
     Targets `machine`'s tab (default 'Lucy 1' → the original 'Mini Control').
 
@@ -9373,9 +9682,9 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     # 'lucy2' still routes to 'Mini Control - Lucy 2'. A genuinely NEW machine
     # bootstraps its own tab the first time ITS poller runs — never from here.
     if machine is not None and not sandbox:
-        sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+        sh, sheets = _book()
         prefix = "{} - ".format(CONTROL_TAB)
-        tabs = {t.title for t in sh.worksheets()
+        tabs = {t.title for t in sheets
                 if t.title == CONTROL_TAB or t.title.startswith(prefix)}
         def _canon_m(s):
             return re.sub(r"[^a-z0-9]", "", s.lower())
@@ -9402,6 +9711,15 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
         proven = [t for t in cands if _tab_is_live(sh, t)]
         if len(cands) == 1:
             if not proven:
+                if _tab_liveness(sh, cands[0]) is None:
+                    # UNREADABLE is not ORPHANED (2026-10-26). Sheets timed out all
+                    # afternoon and Lucy 4 — 681 rows drained, one that same evening
+                    # — was reported as a tab "NO runner has ever drained". Still
+                    # refuse to queue (fail-safe), but say what actually happened.
+                    print("[mini_control] couldn't read {} — Google Sheets isn't "
+                          "answering. Nothing queued for '{}'; try again in a few "
+                          "minutes.".format(cands[0], machine))
+                    return
                 print("[mini_control] machine '{}' has a tab ({}) but NO runner "
                       "has ever drained it — nothing queued, it would sit "
                       "'queued' forever. Known machines: {}".format(
@@ -9419,14 +9737,48 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
                 wanted if wanted in tabs else cands[0])
         machine = DEFAULT_MACHINE if target == CONTROL_TAB \
             else target[len(prefix):]
-    ws = _open(sandbox, machine)
+        # The tab list already holds this tab's handle — _open would spend two
+        # more reads (workbook + tab lookup) fetching the same object.
+        for t in sheets:
+            if t.title == target and (CONTROL_SHEET_ID, target) not in _WS_CACHE:
+                _WS_CACHE[(CONTROL_SHEET_ID, target)] = (time.time(), t)
+        own = _own_live_tab(machine, target)
+        ws = own if own is not None else _open(sandbox, machine, legacy=True)
+    else:
+        ws = _open(sandbox, machine, legacy=True)
+    if skip_if_waiting and _already_waiting(ws, action, args):
+        print(f"[mini_control] skipped: {action} {args} is already waiting on "
+              f"{_control_tab_for(_machine_profile(machine))}")
+        return
     ws.append_row([_now_tz(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
     # Don't echo a secret back at the person queueing it — their terminal
     # scrollback is one more place the password would sit.
     shown = "<redacted>" if action in SECRET_ACTIONS else args
+    where = getattr(getattr(ws, "spreadsheet", None), "id", None)
+    home = " (own workbook)" if where and where != CONTROL_SHEET_ID else ""
     print(f"[mini_control] queued: {action} {shown} (by {by}) "
-          f"→ {_control_tab_for(_machine_profile(machine))}")
+          f"→ {_control_tab_for(_machine_profile(machine))}{home}")
+
+
+def _already_waiting(ws, action: str, args: str) -> bool:
+    """Is the same job already queued or running on this tab?
+
+    WHY (Megan 2026-10-29). The new-start thread scan queues a rerun every 30
+    minutes whether or not the last one ran. While Lucy 1's queue was stuck it
+    stacked FIVE copies of `rerun new_start_thread_replies`, which would have
+    run back to back. A scheduled enqueuer passes skip_if_waiting so one waiting
+    copy is enough. A read error answers False — queueing a duplicate is safer
+    than dropping the job."""
+    try:
+        rows = ws.get_all_values()[1:]
+    except Exception:  # noqa: BLE001
+        return False
+    want = (str(action).strip().lower(), str(args or "").strip())
+    return any(len(r) > 4
+               and (str(r[1]).strip().lower(), str(r[2]).strip()) == want
+               and str(r[4]).strip().lower() in ("queued", "running")
+               for r in rows)
 
 
 #: Statuses only a RUNNER writes. A tab carrying one of these has been drained
@@ -9442,19 +9794,117 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
 _RUNNER_STATUSES = ("done", "failed")
 
 
+#: The control workbook + its tab list, opened once per process (2026-10-29).
+#: `lucy update` queues on every Lucy, and each enqueue used to re-open the
+#: workbook, re-list its tabs and re-read the WHOLE tab for proof of life: ~6
+#: reads a Lucy, 24 for one update — on the per-user cap every Lucy shares.
+#: With the cap already full, each of those 24 got a 429, slept and retried, and
+#: `lucy update` sat 25 minutes queueing nothing. Same TTL as _WS_CACHE.
+_BOOK_CACHE: dict = {}
+
+
+def _book(key: str = CONTROL_SHEET_ID):
+    """(Spreadsheet, [Worksheet]) for a control workbook — 2 reads the first
+    time in a process, none after."""
+    hit = _BOOK_CACHE.get(key)
+    if hit and time.time() - hit[0] < _WS_TTL_S:
+        return hit[1], hit[2]
+    sh = _fill._client().open_by_key(key)
+    sheets = sh.worksheets()
+    _BOOK_CACHE[key] = (time.time(), sh, sheets)
+    return sh, sheets
+
+
+def _own_live_tab(machine: str, tab: str):
+    """`machine`'s tab in her OWN workbook when a runner has proven it — else
+    None, and the row goes to the old tab. Any error is None: the old tab is
+    always drained, so falling back can never strand a row."""
+    key = control_books.book_for(machine)
+    if not key:
+        return None
+    try:
+        osh, osheets = _book(key)
+        ws = next((t for t in osheets if t.title == tab), None)
+        if ws is not None and _tab_is_live(osh, tab):
+            return ws
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+#: Tabs a runner has drained, remembered on disk so a queue command doesn't
+#: re-read a whole control tab (hundreds of rows) to re-prove what it proved an
+#: hour ago. Only a YES is remembered: "never drained" and "unreadable" are
+#: always re-checked, so an orphan can never be waved through by the memo.
+_LIVE_MEMO = REPO_ROOT / "output" / ".mini_control_live_tabs.json"
+_LIVE_MEMO_TTL_S = 24 * 3600
+
+
+def _memo_key(sh, title: str):
+    sid = getattr(sh, "id", None)
+    return "{}|{}".format(sid, title) if isinstance(sid, str) else None
+
+
+def _memo_live(key) -> bool:
+    if not key:
+        return False
+    try:
+        seen = json.loads(_LIVE_MEMO.read_text(encoding="utf-8")).get(key)
+        return bool(seen) and time.time() - float(seen) < _LIVE_MEMO_TTL_S
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _memo_save(key) -> None:
+    if not key:
+        return
+    try:
+        try:
+            memo = json.loads(_LIVE_MEMO.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            memo = {}
+        memo[key] = time.time()
+        _LIVE_MEMO.parent.mkdir(parents=True, exist_ok=True)
+        _LIVE_MEMO.write_text(json.dumps(memo), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+#: Seconds to wait before each re-read of a control tab that failed to read.
+_LIVENESS_RETRY_S = (3, 10)
+
+
+def _tab_liveness(sh, title: str):
+    """True = a runner has drained this tab, False = none ever has, None = the
+    tab could not be read (after retrying — a slow Sheets read is not proof of
+    an orphan; 2026-10-26 Lucy 4)."""
+    key = _memo_key(sh, title)
+    if _memo_live(key):
+        return True
+    for wait in (0,) + tuple(_LIVENESS_RETRY_S):
+        if wait:
+            time.sleep(wait)
+        try:
+            vals = sh.worksheet(title).get_all_values()
+        except Exception:  # noqa: BLE001
+            continue
+        live = any(len(r) > 4 and str(r[4]).strip().lower() in _RUNNER_STATUSES
+                   for r in vals[1:])
+        if live:
+            _memo_save(key)
+        return live
+    return None
+
+
 def _tab_is_live(sh, title: str) -> bool:
     """Has a runner ever drained this control tab?
 
     Fail-SAFE on a read error: answers False, so an unreadable tab is treated as
     an orphan and the caller refuses to queue rather than dropping the row into
     something that may never be read. The cost of a false 'no' is a clear error
-    message; the cost of a false 'yes' is silence for five days."""
-    try:
-        vals = sh.worksheet(title).get_all_values()
-    except Exception:  # noqa: BLE001
-        return False
-    return any(len(r) > 4 and str(r[4]).strip().lower() in _RUNNER_STATUSES
-               for r in vals[1:])
+    message; the cost of a false 'yes' is silence for five days. (The caller
+    tells "unreadable" apart from "orphaned" with _tab_liveness.)"""
+    return _tab_liveness(sh, title) is True
 
 
 def _set(ws, rownum: int, status: str, result: str = "", finished: bool = False) -> None:
@@ -9499,7 +9949,8 @@ def _autoruns_today(rows: list[dict]) -> int:
 _ORPHAN_GRACE_MIN = 10
 
 
-def _reclaim_orphans(ws, rows, lane: str = LANE_MAIN) -> int:
+def _reclaim_orphans(ws, rows, lane: str = LANE_MAIN,
+                     text_live: bool = True) -> int:
     """Close rows still marked 'running' that nothing is actually running.
 
     WHY (Megan 2026-08-19): three stale pills in one day —
@@ -9525,14 +9976,23 @@ def _reclaim_orphans(ws, rows, lane: str = LANE_MAIN) -> int:
     one case the invariant does not cover: a second poller process briefly
     overlapping this one. Rows younger than that are left alone, so a live job is
     never stolen. Marked 'orphaned' (not 'failed') so it is obvious in the tab
-    that the action's outcome is UNKNOWN — it may well have completed."""
+    that the action's outcome is UNKNOWN — it may well have completed.
+
+    WHO STARTED IT WINS over the action name. A text row can run on main (while
+    the text lane is down) or on the text lane, so poll_once tags each row it
+    starts "· <lane> lane"; a tagged row is only ever reclaimed by that lane.
+    Untagged rows (started by older code) fall back to the action-name split."""
     import re as _re
     now = dt.datetime.now()
     n = 0
     for i, row in enumerate(rows):
         if str(row.get("Status", "")).strip().lower() != "running":
             continue
-        if not _lane_owns(str(row.get("Action", "")), lane):
+        tag = _re.search(_LANE_TAG_RE, str(row.get("Result", "")))
+        if tag:
+            if tag.group(1) != lane:
+                continue                  # another lane started it — hands off
+        elif not _lane_owns(str(row.get("Action", "")), lane, text_live):
             continue                      # the other lane's live job — hands off
         started = None
         m = _re.search(r"started\s+(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})",
@@ -9556,7 +10016,7 @@ def _reclaim_orphans(ws, rows, lane: str = LANE_MAIN) -> int:
     return n
 
 
-def _pass_order(rows: list) -> list:
+def _pass_order(rows: list, lane: str = LANE_MAIN) -> list:
     """(index, row) for one pass — PLUMBING FIRST, then sheet order.
 
     THE QUEUE IS ONE SERIAL WORKER AND A BACKFILL IS DOZENS OF ROWS. On
@@ -9580,11 +10040,21 @@ def _pass_order(rows: list) -> list:
     themselves -- a backfill still runs oldest-first, which is what makes it
     re-runnable -- and plumbing cannot starve reports because there is never
     much of it.
+
+    The TEXT lane adds one rule: captures (text_tracker) go after the pure
+    sends, so a Tableau capture waiting on the browser never holds a ready
+    text. Main's order is unchanged.
     """
     numbered = list(enumerate(rows))
-    return sorted(numbered,
-                  key=lambda pair: 0 if str(pair[1].get("Action", "")).strip()
-                  .lower() in PLUMBING_ACTIONS else 1)
+
+    def _key(pair):
+        a = str(pair[1].get("Action", "")).strip().lower()
+        if a in PLUMBING_ACTIONS:
+            return 0
+        if lane == LANE_TEXT and a in TEXT_CAPTURE_ACTIONS:
+            return 2
+        return 1
+    return sorted(numbered, key=_key)
 
 
 def _plumbing_waiting(ws, lane: str) -> bool:
@@ -9608,26 +10078,31 @@ _REPOLL_NOW = False
 
 
 def poll_once(*, dry_run: bool = False, sandbox: bool = False,
-              machine: str | None = None, lane: str = LANE_MAIN) -> int:
+              machine: str | None = None, lane: str = LANE_MAIN,
+              legacy: bool = False) -> int:
     """One poll pass: run every 'queued' row's whitelisted action. Returns the
     number of rows acted on.
 
     Only rows belonging to `lane` are considered — see _lane_owns. The main lane
-    behaves exactly as it always did except that it now leaves the seven
-    READONLY_ACTIONS to the read lane."""
-    ws = _open(sandbox, machine)
+    leaves READONLY_ACTIONS to the read lane and TEXT_ACTIONS to the text lane
+    — the latter only while the text lane is actually running here."""
+    ws = _open(sandbox, machine, legacy=legacy, runner=True)
     rows = ws.get_all_records()           # list of dicts keyed by header
+    if not (legacy or sandbox):
+        global _LAST_ROWS
+        _LAST_ROWS = rows                 # stall_watch reuses it: no extra read
+    text_live = _text_lane_live() if lane == LANE_MAIN else True
     # Close anything left 'running' by a previous pass before doing new work, so
     # a stale pill never reads as live (see _reclaim_orphans).
     if not dry_run:
-        _orphans = _reclaim_orphans(ws, rows, lane)
+        _orphans = _reclaim_orphans(ws, rows, lane, text_live)
         if _orphans:
             print(f"[mini_control] reclaimed {_orphans} orphaned 'running' row(s)",
                   flush=True)
             rows = ws.get_all_records()   # re-read: statuses just changed
     cap_used = _autoruns_today(rows)
     acted = 0
-    for i, row in _pass_order(rows):
+    for i, row in _pass_order(rows, lane):
         if str(row.get("Status", "")).strip().lower() != "queued":
             continue
         rownum = i + 2                    # +1 header row, +1 for 1-based
@@ -9637,8 +10112,22 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         # lane owns it and will pick it up on its own pass. An unknown action
         # belongs to main (the lane that reports it), so it still gets failed
         # rather than sitting queued forever.
-        if not _lane_owns(action, lane):
+        if not _lane_owns(action, lane, text_live):
             continue
+        # MAIN COVERING FOR A DOWN TEXT LANE. This pass's snapshot may be an
+        # hour old by the time main reaches a text row (it ran a report first),
+        # and the text lane may have come up meanwhile and taken the row. So
+        # re-ask both right before claiming it — the same row must never be
+        # texted by two lanes.
+        if (lane == LANE_MAIN and action.strip().lower() in TEXT_ACTIONS
+                and not dry_run):
+            if _text_lane_live():
+                continue                  # the text lane is back — it's theirs
+            try:
+                if str(ws.cell(rownum, 5).value or "").strip().lower() != "queued":
+                    continue              # someone already took it
+            except Exception:  # noqa: BLE001 — can't confirm: leave it queued
+                continue
         handler = ACTIONS.get(action)
 
         # A restart is landing: leave this row for the process that will have
@@ -9682,7 +10171,7 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
             continue
 
         print(f"[mini_control] running: {action} {shown}")
-        _set(ws, rownum, "running", f"started {_now()}")
+        _set(ws, rownum, "running", f"started {_now()} · {lane} lane")
         cap_used += 1
         # Park who queued this for the handler to read (see _CURRENT_BY). Always
         # cleared, so a handler can never inherit the previous row's author.
@@ -9807,6 +10296,8 @@ def _maybe_reconcile_schedules() -> None:
 # watch_peers). Read lane only: main is serial and a long rerun would look like
 # a dead queue. 2026-10-19: Lucy 1 stopped polling at ~08:40 and nobody knew.
 _PULSE_EVERY_S = 600
+# This box's own queue as the last poll read it (stall_watch's queue check).
+_LAST_ROWS = None
 _last_pulse = 0.0
 
 
@@ -9869,8 +10360,43 @@ def _maybe_pulse(mach: str) -> None:
         _sjw.beat(_sjw.job_id_for_machine("mini_control", mach),
                   note=routing.batch_note(_batch_running()))
         _sjw.watch_peers(mach)
+        # Alive but stuck: ownerville held too long, or this box's queue not
+        # moving (2026-10-30, Lucy 3 skipped Raf's knocks for ~an hour).
+        from automations.day_orchestrator import stall_watch as _stall
+        _stall.check(mach, rows=_LAST_ROWS)
     except Exception as e:  # noqa: BLE001
         print(f"[mini_control] pulse error (continuing): {type(e).__name__}: {str(e)[:160]}")
+
+
+def _drain_text_outbox(*, dry_run: bool, sandbox: bool, lane: str) -> None:
+    """Send whatever the capture jobs dropped in the local text outbox. The
+    TEXT lane's job (it never waits on a report); main does it only while the
+    text lane is down on this box. Never in dry-run/sandbox, never on the read
+    lane. text_outbox.drain takes a lock, so two drainers never overlap. Never
+    raises: a text problem must not stop the queue."""
+    if dry_run or sandbox:
+        return
+    if lane == LANE_READ or (lane == LANE_MAIN and _text_lane_live()):
+        return
+    try:
+        from automations.day_orchestrator import text_outbox as tob
+        if not tob.pending():
+            return
+        sent, left = tob.drain(_action_text_dispositions,
+                               log=lambda m: print(m, flush=True))
+        print(f"[mini_control] text outbox: {sent} sent, {left} still pending",
+              flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[mini_control] text outbox error (continuing): "
+              f"{type(e).__name__}: {str(e)[:160]}", flush=True)
+
+
+#: Least seconds between two reads of the queue SHEET, per lane. The launchd
+#: plists wake read every 20s and text every 30s; reading the sheet that often
+#: on 4 Lucys is most of the 60 reads/min the shared Google login gets (see
+#: _WS_CACHE). Read-lane answers now take up to 45s, queued text actions up to
+#: 60s; the local text outbox still drains on every wake. Main keeps its 120s.
+_SHEET_POLL_MIN_S = {LANE_READ: 45, LANE_TEXT: 60}
 
 
 def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False,
@@ -9881,6 +10407,12 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
           f"(machine {mach!r}, lane {lane!r})"
           + (" [DRY-RUN]" if dry_run else ""))
     startup_head = _git_head()
+    if lane == LANE_TEXT and not (dry_run or sandbox):
+        _start_text_lane_heartbeat()
+    sheet_gap = _SHEET_POLL_MIN_S.get(lane, 0)
+    last_poll = None
+    last_legacy = None
+    force_poll = False
     while True:
         # Self-reload: if `lucy update` advanced the repo, re-exec with the FRESH
         # code at this safe boundary (between polls, nothing in flight) so a
@@ -9900,10 +10432,38 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
             if dry_run:
                 argv.append("--dry-run")
             os.execv(sys.executable, argv)
-        try:
-            poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach, lane=lane)
-        except Exception as e:
-            print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
+        # Texts first: the local outbox never waits on the sheet (see
+        # text_outbox.py). Drained again after the poll so a slow sheet costs
+        # a text at most one poll_once, never a loop.
+        _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
+        # The loop still wakes every interval_s (the text outbox is local and
+        # free); the SHEET is read at most every _SHEET_POLL_MIN_S for the lane.
+        if (force_poll or last_poll is None
+                or time.monotonic() - last_poll >= sheet_gap):
+            force_poll = False
+            last_poll = time.monotonic()
+            try:
+                poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach, lane=lane)
+            except Exception as e:
+                _WS_CACHE.clear()     # a renamed/re-made tab: open fresh next time
+                _BOOK_CACHE.clear()
+                print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
+            # The OLD tab in AUTOMATION MASTER, for rows from code that predates
+            # the per-Lucy workbooks (a laptop not yet updated, the onboarding
+            # app's queue_enqueue). Slow on purpose: that workbook is the one
+            # that froze the fleet.
+            if (not sandbox and control_books.book_for(mach)
+                    and (last_legacy is None
+                         or time.monotonic() - last_legacy >= LEGACY_POLL_S)):
+                last_legacy = time.monotonic()
+                try:
+                    if _legacy_has_work(mach, lane):
+                        poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach,
+                                  lane=lane, legacy=True)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[mini_control] old-tab poll error (continuing): "
+                          f"{type(e).__name__}: {str(e)[:160]}")
+            _drain_text_outbox(dry_run=dry_run, sandbox=sandbox, lane=lane)
         # Drift-immune daily schedule reconcile (no-op except the first poll in the
         # 1-2am window). Kept OUT of the try above so its own guard applies, but it
         # never raises anyway.
@@ -9918,6 +10478,7 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         global _REPOLL_NOW
         if _REPOLL_NOW:
             _REPOLL_NOW = False
+            force_poll = True
             continue      # plumbing is waiting — straight to the next poll
         time.sleep(interval_s)
 
@@ -9926,7 +10487,12 @@ def print_status(n: int = 10, *, sandbox: bool = False, machine: str | None = No
     """Print the last N queue rows + their results to the terminal, so you can
     check what the mini did WITHOUT opening the Sheet. Newest row last (right
     above your prompt)."""
-    ws = _open(sandbox, machine)
+    ws = None
+    if not sandbox:
+        mach = _machine_profile(machine)
+        ws = _own_live_tab(mach, _control_tab_for(mach))
+    if ws is None:
+        ws = _open(sandbox, machine, legacy=True)
     rows = ws.get_all_records()
     if not rows:
         print("(no commands on the Mini Control queue yet)")
@@ -10053,7 +10619,7 @@ def print_help() -> None:
 # control flags to the FRONT before parsing, wherever the user put them, while
 # everything else stays in the REMAINDER for the report.
 _VALUE_CONTROL_FLAGS = ("--machine", "--by")   # take a value
-_BOOL_CONTROL_FLAGS = ("--sandbox",)           # bare toggle
+_BOOL_CONTROL_FLAGS = ("--sandbox", "--skip-if-waiting")   # bare toggles
 
 
 def _hoist_control_flags(argv: List[str]) -> List[str]:
@@ -10100,13 +10666,17 @@ def main(argv=None) -> int:
                     help="print the last N queue rows + their results and exit "
                          "(default 10) — check outcomes without the Sheet")
     ap.add_argument("--interval", type=int, default=120, help="loop interval seconds")
-    ap.add_argument("--lane", default=LANE_MAIN, choices=[LANE_MAIN, LANE_READ],
-                    help="which half of the queue this process runs. 'main' "
+    ap.add_argument("--lane", default=LANE_MAIN, choices=list(LANES),
+                    help="which part of the queue this process runs. 'main' "
                          "(default) = reruns + plumbing; 'read' = the read-only "
-                         "actions (logtail, git_status, …), which run in their "
-                         "own launchd job so a log read never waits on a report.")
+                         "actions (logtail, git_status, …); 'text' = the iMessage "
+                         "sends + the local text outbox. Each runs in its own "
+                         "launchd job so neither a log read nor a text ever "
+                         "waits on a report.")
     ap.add_argument("--dry-run", action="store_true", help="poll but execute nothing")
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")
+    ap.add_argument("--skip-if-waiting", action="store_true",
+                    help="don't queue if the same job is already queued/running")
     ap.add_argument("--machine", default=None,
                     help="target machine profile, e.g. 'Lucy 2'. Enqueue side: "
                          "which runner's tab to queue to (default 'Lucy 1'). Loop "
@@ -10133,8 +10703,9 @@ def main(argv=None) -> int:
             from automations.shared import fleet
             targets = list(fleet.RUNNERS)
         for m in targets:
+            extra = {"skip_if_waiting": True} if a.skip_if_waiting else {}
             enqueue(a.enqueue[0], shlex.join(a.enqueue[1:]), by=a.by,
-                    sandbox=a.sandbox, machine=m)
+                    sandbox=a.sandbox, machine=m, **extra)
         return 0
     if a.loop:
         poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox,

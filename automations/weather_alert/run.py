@@ -58,6 +58,8 @@ CITIES = {
     # drew / Precision Management: 800 Trafalgar Ct, Maitland FL 32751 (their
     # site's contact page, 2026-09-28) -- the Orlando area.
     "orlando": ("Maitland / Orlando, FL", 28.6275, -81.3631, "America/New_York"),
+    # aiden / Atoori Management: Megan 2026-11-03 "Aiden is in LA".
+    "los_angeles": ("Los Angeles, CA", 34.0522, -118.2437, "America/Los_Angeles"),
     # maxamad / Maximal Management: San Antonio per his OwnerVille office
     # address (harvest_zones, 2026-09-28).
     "san_antonio": ("San Antonio, TX", 29.4241, -98.4936, "America/Chicago"),
@@ -67,6 +69,7 @@ CITIES = {
     "southfield": ("Southfield / Detroit, MI", 42.4734, -83.2219, "America/Detroit"),
     "corpus_christi": ("Corpus Christi, TX", 27.8006, -97.3964, "America/Chicago"),
     "austin": ("Austin, TX", 30.2672, -97.7431, "America/Chicago"),
+    "denver": ("Denver, CO", 39.7392, -104.9903, "America/Denver"),
     "abilene": ("Abilene, TX", 32.4487, -99.7331, "America/Chicago"),
     "grandville": ("Grandville / Grand Rapids, MI", 42.9095, -85.7631, "America/Detroit"),
     "wilkes_barre": ("Wilkes-Barre, PA", 41.2459, -75.8813, "America/New_York"),
@@ -80,10 +83,15 @@ CITIES = {
     # (takeoffenterprise.com) and its CA filing, 2026-10-06. OwnerVille could
     # not find him under Raf's login (not on the Office Access list).
     "santa_clara": ("Santa Clara, CA", 37.3541, -121.9552, "America/Los_Angeles"),
+    "sacramento": ("Sacramento, CA", 38.5816, -121.4944, "America/Los_Angeles"),
     # valeria / Altura Marketing: Tampa, FL -- the company's own site
     # (alturamarketinginc.com, 410 S Ware Blvd), 2026-10-08.
     "tampa": ("Tampa, FL", 27.9506, -82.4572, "America/New_York"),
     "deerfield_beach": ("Deerfield Beach, FL", 26.3184, -80.0998, "America/New_York"),
+    # joseph-delgado / Golden View Solutions: Fort Myers / Cape Coral -- 13 of
+    # his 20 NDS sale zips in Tableau's lead-penetration crosstab are 339xx,
+    # the rest Sarasota / North Port (342xx), 2026-10-29.
+    "fort_myers": ("Fort Myers, FL", 26.6406, -81.8723, "America/New_York"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -126,6 +134,7 @@ OFFICE_CITY = {
 # test_offices fails for a metrics office with neither. Email-only offices
 # (Joseph, Christian) have no channel and are skipped.
 METRICS_CITY = {
+    "atef": "denver",
     "rashad": "lubbock", "hammad": "southfield", "salik": "southfield",
     "cody": "corpus_christi", "haytham": "austin", "trang": "san_antonio",
     "nii": "wilkes_barre", "jacob": "memphis",
@@ -133,10 +142,15 @@ METRICS_CITY = {
     "frank": "deerfield_beach", # Peak Management, Deerfield Beach FL (Megan 2026-10-09); ECO key frank
     "hasani": "austin",         # Covenant United, Austin TX (OwnerVille office address, harvested 2026-10-20)
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
+    "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
+    "aiden": "los_angeles",     # Atoori Management (NDS), Los Angeles (Megan 2026-11-03); Pacific; #odysseyy
+    "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
+    "atef": "denver",           # Domin8 Acquisitions, Denver CO (reps: "whole denver office"); Mountain
     "samuel": "orlando",        # Dynasty Growth Group: 590 of 846 NDS orders (8/31-10/4) installed in Kissimmee/Orlando; OV access to 23751 pending for the street address
     "joseph": "grandville",     # Logan Legacy Group, Grandville MI (OwnerVille office address, harvested 2026-10-20); #logan-legacy-sales
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
     "tre": "houston",           # Mission III Management, Houston -- #mission-iii-sales (2026-10-07)
+    "joseph-delgado": "fort_myers",  # Golden View Solutions (NDS), sales in Fort Myers/Cape Coral per Tableau zips; #goldenview-d2d-sales. NOT "joseph" (= Logan)
 }
 
 
@@ -340,13 +354,17 @@ def _workspace_client(token_file: str):
                      ssl=ssl.create_default_context(cafile=certifi.where()))
 
 
-def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None) -> int:
+def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None,
+                 only: str = "") -> int:
     """One forecast per city, one post per office channel. Never raises: a
     room that fails is logged and the rest still get theirs. Returns how
-    many posts went out (or would have)."""
+    many posts went out (or would have). `only` limits it to one office key
+    (a late add whose room missed the 6am post, Joseph Delgado 2026-10-29)."""
     summaries = {"dfw": dfw_summary} if dfw_summary else {}
     sent, seen = 0, set()
     for key, city, chans, *rest in office_posts():
+        if only and key != only:
+            continue
         token_file = rest[0] if rest else ""
         label, lat, lon, tz = CITIES[city]
         if city not in summaries:
@@ -390,6 +408,9 @@ def main() -> int:
     ap.add_argument("--offices-only", action="store_true",
                     help="Post to the ECO office rooms only -- not #alphalete-sales. "
                          "For a mid-day rollout after the 6am post already went.")
+    ap.add_argument("--office", default="",
+                    help="with --offices-only: post to this ONE office key's room "
+                         "(e.g. joseph-delgado), not every office room again.")
     args = ap.parse_args()
 
     try:
@@ -409,7 +430,8 @@ def main() -> int:
 
     if args.offices_only:
         from automations.shared import slack_metrics_post as smp
-        n = post_offices(smp._client(), dry_run=False, dfw_summary=s)
+        n = post_offices(smp._client(), dry_run=False, dfw_summary=s,
+                         only=args.office)
         print(f"[weather] offices only: {n} room(s) posted", flush=True)
         return 0
     try:

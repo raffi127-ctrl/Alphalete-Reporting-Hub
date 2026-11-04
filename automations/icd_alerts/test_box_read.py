@@ -504,3 +504,88 @@ class TheLiveReadCarriesTheAccountCount(unittest.TestCase):
     def test_the_counts_report_is_counts_only(self):
         rows = [{B.COL_ACCOUNTS: 2, SC.COL_CONTRACT_ID: 4471}, {B.COL_ACCOUNTS: 1}, {B.COL_ACCOUNTS: ""}, {B.COL_ACCOUNTS: 1}]
         self.assertEqual(B.account_count_report(rows), "4 rows: 1=2, 2=1, blank=1; multi: 4471x2")
+
+
+class RequiresTpvReviewCountsWhenHistorySaysPassed(unittest.TestCase):
+    """Carlos, 2026-10-26 (Roshan's office): a Requires TPV Review contract is
+    a sale if its history says TPV passed at some point, and not otherwise.
+    Shapes below are the live history answers for 302154 (passed) and 302098
+    (never passed) read on 2026-10-26."""
+
+    PASSED = [{"field": "text tpv",
+               "new_value": "\"TPV passed for 8320000000 AVL TPV\""},
+              {"field": "status alias", "new_value": "\"Requires TPV Review\""}]
+    NEVER = [{"field": "status alias", "new_value": "\"Requires TPV Review\""},
+             {"field": "status alias", "new_value": "\"TPV Sent\""}]
+
+    def _review(self, cid):
+        r = _row("Aylin Vasquez", "Requires TPV Review")
+        r["Contract ID"] = cid
+        return r
+
+    def test_history_reader(self):
+        self.assertTrue(SC.history_says_tpv_passed(self.PASSED))
+        self.assertFalse(SC.history_says_tpv_passed(self.NEVER))
+        self.assertFalse(SC.history_says_tpv_passed([]))
+
+    def test_review_alone_is_not_a_sale(self):
+        out = B.tally([self._review(302098)], DAY)
+        self.assertNotIn("Aylin Vasquez", out["sales"])
+        self.assertEqual(out["records"]["Aylin Vasquez"], 1)
+
+    def test_review_with_proof_is_a_sale(self):
+        r = self._review(302154)
+        r[B.COL_TPV_PASSED] = True
+        out = B.tally([r], DAY)
+        self.assertEqual(out["sales"]["Aylin Vasquez"]["Sales"], 1)
+
+    def test_review_is_no_longer_an_unknown_status(self):
+        out = B.tally([self._review(302154)], DAY)
+        self.assertEqual(out["unknown"], [])
+
+    def test_lookup_marks_only_the_passed_ones(self):
+        rows = [self._review(302154), self._review(302098),
+                _row("Max Allen", "TPV Passed")]
+        answers = {302154: self.PASSED, 302098: self.NEVER}
+        asked = []
+
+        def fake_gql(page, body, borrowed=None):
+            cid = body["variables"]["entity_id"]
+            asked.append(cid)
+            return {"data": {"history": {"edges": answers[cid]}}}
+
+        real, B._gql = B._gql, fake_gql
+        try:
+            n = B.prove_tpv_from_history(None, rows, [DAY], log=lambda *_: None)
+        finally:
+            B._gql = real
+        self.assertEqual(n, 1)
+        self.assertEqual(sorted(asked), [302098, 302154])   # never the sold one
+        out = B.tally(rows, DAY)
+        self.assertEqual(out["sales"]["Aylin Vasquez"]["Sales"], 1)
+        self.assertEqual(out["sales"]["Max Allen"]["Sales"], 1)
+
+    def test_a_failed_lookup_costs_the_sale_not_the_day(self):
+        rows = [self._review(302154), _row("Max Allen", "TPV Passed")]
+
+        def boom(page, body, borrowed=None):
+            raise RuntimeError("network")
+
+        real, B._gql = B._gql, boom
+        try:
+            n = B.prove_tpv_from_history(None, rows, [DAY], log=lambda *_: None)
+        finally:
+            B._gql = real
+        self.assertEqual(n, 0)
+        out = B.tally(rows, DAY)
+        self.assertNotIn("Aylin Vasquez", out["sales"])
+        self.assertEqual(out["sales"]["Max Allen"]["Sales"], 1)
+
+    def test_errors_answer_does_not_count(self):
+        rows = [self._review(302154)]
+        real, B._gql = B._gql, lambda *a, **k: {"errors": [{"message": "x"}]}
+        try:
+            B.prove_tpv_from_history(None, rows, [DAY], log=lambda *_: None)
+        finally:
+            B._gql = real
+        self.assertNotIn(B.COL_TPV_PASSED, rows[0])

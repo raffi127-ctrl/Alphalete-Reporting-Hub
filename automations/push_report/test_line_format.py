@@ -92,7 +92,28 @@ class TheLine(unittest.TestCase):
                                     "start": 120, "end": 7, "sent_run": 3,
                                     "sent_today": 30, "walled": False,
                                     "at": "20:33"}),
-                        "9", "", now.strftime("%m/%d/%Y") + " 20:33:00"]]
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:33:00"], [
+                        # Atef's 23467 from his own computer since 2026-10-29.
+                        "atef", stamp, pr.RELAY_STATS_STAGE, "push stats",
+                        json.dumps({"office": "23467", "live": True,
+                                    "start": 29, "end": 2, "sent_run": 2,
+                                    "sent_today": 27, "walled": False,
+                                    "at": "20:36"}),
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:36:00"], [
+                        # Khalil's 11901 from his own computer since 2026-10-29.
+                        "khalil-nds", stamp, pr.RELAY_STATS_STAGE, "push stats",
+                        json.dumps({"office": "11901", "live": True,
+                                    "start": 111, "end": 2, "sent_run": 3,
+                                    "sent_today": 109, "walled": False,
+                                    "at": "20:29"}),
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:29:00"], [
+                        # Colten's 14733 from his own computer since 2026-11-02.
+                        "colten", stamp, pr.RELAY_STATS_STAGE, "push stats",
+                        json.dumps({"office": "14733", "live": True,
+                                    "start": 9, "end": 1, "sent_run": 2,
+                                    "sent_today": 8, "walled": False,
+                                    "at": "20:31"}),
+                        "9", "", now.strftime("%m/%d/%Y") + " 20:31:00"]]
                 if self.tab in skip_rows:
                     return []
                 at, queue, sent = rows[self.tab]
@@ -121,19 +142,31 @@ class TheLine(unittest.TestCase):
         _fill._client = lambda: _Client()
         pr.dt = _DT
         pr._paused_offices = lambda: set(paused)
+        # Raf's three pushed from Lucy 4 when these were written; they left
+        # for his own computer 2026-11-03 (test_relay_multi covers that). The
+        # Lucy-side lines -- diag tabs, paused, the silent-machine page -- are
+        # pinned on that layout so they keep guarding the Lucy path.
+        real_offices = pr.OFFICES
+        pr.OFFICES = [o for o in real_offices if not o[0].startswith(
+            "relay:raf:")] + [
+            ("OAT Walk Diag 11280", "Raf main 11280",        "Lucy 4"),
+            ("OAT Walk Diag 23965", "Raf 2nd funnel 23965",  "Lucy 4"),
+            ("OAT Walk Diag 24065", "Raf 24065",             "Lucy 4")]
         try:
             return pr.build_report()
         finally:
             _fill._client, pr.dt = real_client, real_dt
             pr._paused_offices = real_paused
+            pr.OFFICES = real_offices
 
     def test_exact_message(self):
         got = self._render(dt.datetime(2026, 9, 24, 20, 37))
         self.assertEqual(got, "\n".join([
             "*Push report 8:37 PM*",
             "Carlos 11580 (his computer): 30 pushed · 7 left @ 8:33 PM",
-            "Atef 23467: 27 pushed · 2 left @ 8:36 PM",
-            "Khalil 11901: 109 pushed · 2 left @ 8:29 PM",
+            "Atef 23467 (his computer): 27 pushed · 2 left @ 8:36 PM",
+            "Khalil 11901 (his computer): 109 pushed · 2 left @ 8:29 PM",
+            "Colten 14733 (his computer): 8 pushed · 1 left @ 8:31 PM",
             ":x: Raf main 11280: 34 pushed · 114 left @ 8:21 PM",
             ":x: Raf 2nd funnel 23965: 0 pushed · 33 left @ 8:28 PM",
             ":x: Raf 24065: 24 pushed · 36 left @ 8:34 PM",
@@ -161,8 +194,8 @@ class BacklogFlag(unittest.TestCase):
 
     def test_ten_or_under_does_not(self):
         got = TheLine()._render(dt.datetime(2026, 9, 24, 20, 37))
-        for name in ("Carlos 11580 (his computer)", "Atef 23467",
-                     "Khalil 11901"):
+        for name in ("Carlos 11580 (his computer)", "Atef 23467 (his computer)",
+                     "Khalil 11901 (his computer)"):
             self.assertIn("\n%s:" % name, got)
             self.assertNotIn(":x: %s" % name, got)
 
@@ -244,9 +277,9 @@ class PausedOffices(unittest.TestCase):
         """Lucy 4 sat with an EMPTY rotation for 4 minutes on 2026-09-25."""
         got = TheLine()._render(
             dt.datetime(2026, 9, 25, 9, 20),
-            paused={"11280", "23965", "24065"},
+            paused={"11280", "23965", "24065", "11901"},
             skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
-                       "OAT Walk Diag 24065"))
+                       "OAT Walk Diag 24065", "OAT Walk Diag 11901"))
         self.assertIn("Lucy 4: all offices paused", got)
         self.assertNotIn(":warning: Lucy 4 has posted NO runs today", got)
 
@@ -255,7 +288,7 @@ class PausedOffices(unittest.TestCase):
         got = TheLine()._render(
             dt.datetime(2026, 9, 25, 9, 20), paused=set(),
             skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
-                       "OAT Walk Diag 24065"))
+                       "OAT Walk Diag 24065", "OAT Walk Diag 11901"))
         self.assertIn(":warning: Lucy 4 has posted NO runs today", got)
 
 

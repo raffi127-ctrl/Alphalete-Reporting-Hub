@@ -1,4 +1,4 @@
-"""Hourly resume-push report, DM'd to Carlos on Slack (Carlos, 2026-09-24:
+"""Hourly resume-push report, posted per office into its recruiting-channel thread (2026-11-02; was a DM to Carlos) (Carlos, 2026-09-24:
 "every hour report back to me on how much has been pushed for every and how
 resumes are left in the 'one app at a time'" + "cant lucy report to me? even
 if its through slack").
@@ -52,11 +52,19 @@ OFFICES = [
     # 11580 pushes from CARLOS'S OWN COMPUTER since 2026-10-20, which cannot
     # write the diag tab -- it relays its numbers instead (RELAY_SOURCE below).
     ("relay:carlos:11580",  "Carlos 11580",          "Carlos's computer"),
-    ("OAT Walk Diag 23467", "Atef 23467",            "Lucy 2"),
-    ("OAT Walk Diag 11901", "Khalil 11901",          "Lucy 2"),
-    ("OAT Walk Diag 11280", "Raf main 11280",        "Lucy 4"),
-    ("OAT Walk Diag 23965", "Raf 2nd funnel 23965",  "Lucy 4"),
-    ("OAT Walk Diag 24065", "Raf 24065",             "Lucy 4"),
+    # 23467 left Lucy 2 for ATEF'S OWN COMPUTER 2026-10-29 (Megan: "yes take
+    # atef live on his computer") -- relayed like Carlos's.
+    ("relay:atef:23467",    "Atef 23467",            "Atef's computer"),
+    # 11901 from KHALIL'S OWN COMPUTER since 2026-10-29, relayed like Carlos's.
+    ("relay:khalil-nds:11901", "Khalil 11901",       "Khalil's computer"),
+    # 14733 from COLTEN'S OWN COMPUTER since 2026-11-02.
+    ("relay:colten:14733",  "Colten 14733",          "Colten's computer"),
+    # Raf's three from RAF'S OWN COMPUTER since 2026-11-03 (they left Lucy 4).
+    # One computer, three offices: each relays its own row, told apart by the
+    # office number in the summary (resume_push.stats_summary).
+    ("relay:raf:11280",     "Raf main 11280",        "Raf's computer"),
+    ("relay:raf:23965",     "Raf 2nd funnel 23965",  "Raf's computer"),
+    ("relay:raf:24065",     "Raf 24065",             "Raf's computer"),
 ]
 
 STALE_AFTER_MIN = 120
@@ -128,9 +136,11 @@ def _paused_offices() -> set:
     return out
 
 
-def _relay_stats(book, office_key: str, today: str):
+def _relay_stats(book, office_key: str, today: str, office: str = ""):
     """(numbers dict, last-run datetime) from the office computer's newest
-    stats row today, or (None, None). Never raises."""
+    stats row today, or (None, None). Never raises. A computer with several
+    offices (Raf's) files one row per office, "push stats <office>"; only
+    that office's row -- or a plain "push stats" row naming it -- counts."""
     import json
     try:
         rows = book.worksheet(RELAY_FAULTS_TAB).get_all_values()
@@ -141,6 +151,9 @@ def _relay_stats(book, office_key: str, today: str):
         if len(r) < 8 or r[2] != RELAY_STATS_STAGE:
             continue
         if (r[0] or "").strip().lower() != office_key:
+            continue
+        summ = (r[3] or "").strip()
+        if office and summ not in ("push stats", "push stats %s" % office):
             continue
         day = str(r[1]).strip()
         if day != today and not day.startswith(today):
@@ -153,6 +166,8 @@ def _relay_stats(book, office_key: str, today: str):
             stats = json.loads(r[4] or "{}")
         except Exception:  # noqa: BLE001
             stats = {}
+        if office and str(stats.get("office") or office) != office:
+            continue
         if best is None or (last and (best[1] is None or last > best[1])):
             best = (stats, last)
     return best if best else (None, None)
@@ -192,7 +207,8 @@ def build_report(unreadable=None) -> str:
                 except Exception as e:  # noqa: BLE001
                     relay_book = False
                     print("relay workbook unreadable: %s" % type(e).__name__)
-            stats, last = (_relay_stats(relay_book, tab.split(":")[1], today)
+            stats, last = (_relay_stats(relay_book, tab.split(":")[1], today,
+                                        _office_id(tab))
                            if relay_book else (None, None))
             if stats is None:
                 if relay_book is False and unreadable is not None:
@@ -291,6 +307,149 @@ def build_report(unreadable=None) -> str:
     return ("*Push report %s*\n" % _hm12(now.strftime("%H:%M"))) + "\n".join(lines)
 
 
+# ONE THREAD PER OFFICE CHANNEL PER DAY (Megan 2026-11-02: "move this alert
+# of the push report to be in each of their recruiting channels" + "1 header
+# thread named something like Lucy Processed resumes for Monday Nov 2nd -
+# ##(total number)... in the thread it should give the hourly update... The
+# total number in the header should update each time"). Each office's lines go
+# to ITS OWN recruiting channel (applicant_push.offices post_channel); Raf's
+# three share his. The header is edited in place with the day's total pushed,
+# and an hourly reply is added only when that channel's lines changed.
+THREADS_STATE = "push-report-threads.json"
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        return "%dth" % n
+    return "%d%s" % (n, {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
+
+
+def header_text(day: dt.date, total: int) -> str:
+    """'Lucy Processed Resumes for Monday Nov 2nd - 70'."""
+    return "*Lucy Processed Resumes for %s %s %s - %d*" % (
+        day.strftime("%A"), day.strftime("%b"), _ordinal(day.day), total)
+
+
+# Raf's accounts each have their OWN recruiting channel for this report
+# (Megan 2026-11-02: "Each of Raf's accounts has their own slack channel"),
+# while his to-do posts still share #rafs-office-recruiting-11280.
+#   23965 -> #raf-hidalgo-recruiting-23965-tiffani
+#   24065 -> #full-ai-test-rafael-hidalgo-25065-maria-q (the "25065" in the
+#            name is a typo; its "24065 Recruiters" tab is this office)
+# Colten's 14733 -> #colten-wrights-office-recruiting-14733 (his existing
+# channel, shown by Megan 2026-11-02; Lucy is in it).
+REPORT_CHANNEL = {"23965": "C0CAV0P4RRS", "24065": "C0CBEDBFXM2",
+                  "14733": "C0AUAPMEF37"}
+
+
+def channel_of_label() -> dict:
+    """{'Carlos 11580': 'C09L…', …} from each office's own post_channel."""
+    from automations.applicant_push import offices as _o
+    out = {}
+    for tab, label, _m in OFFICES:
+        oid = _office_id(tab)
+        ch = REPORT_CHANNEL.get(oid) or (_o.OFFICES.get(oid) or {}).get("post_channel") or ""
+        if ch:
+            out[label] = ch
+    return out
+
+
+def split_by_channel(text: str) -> dict:
+    """{channel: (stamp, [lines], total_pushed)} out of build_report's text.
+    A channel whose offices have nothing yet today (no runs, paused) and no
+    warning is left out: never post a blank board."""
+    rows = text.split("\n")
+    stamp = rows[0].strip("*").replace("Push report ", "")
+    chans = channel_of_label()
+    machine_of = {label: m for _t, label, m in OFFICES}
+    out: dict = {}
+    real: dict = {}
+    for line in rows[1:]:
+        bare = line[4:] if line.startswith(":x: ") else line
+        label = next((l for l in chans if bare.startswith(l + ":")
+                      or bare.startswith(l + " (")), None)
+        targets = []
+        if label:
+            targets = [chans[label]]
+        else:
+            for l, m in machine_of.items():
+                if l in chans and (line.startswith(":warning: %s " % m)
+                                   or line.startswith("%s: " % m)):
+                    targets.append(chans[l])
+        for ch in dict.fromkeys(targets):
+            entry = out.setdefault(ch, [stamp, [], 0])
+            entry[1].append(line)
+            m = re.search(r"(\d+) pushed", line)
+            if label and m:
+                entry[2] += int(m.group(1))
+            if label and not re.search(r": (no runs yet today|paused)$", bare):
+                real[ch] = True
+            # A "posted NO runs today" warning alone is not news for an office
+            # that has never pushed (Colten 11/2, before his setup: a "- 0"
+            # header). A warning still counts once the office has numbers.
+            if not label and "posted NO runs today" not in line:
+                real[ch] = True
+    return {ch: tuple(v) for ch, v in out.items() if real.get(ch)}
+
+
+def post_threads(client, text: str, today: dt.date = None, state_dir=None) -> list:
+    """Post/edit each channel's header + hourly reply. Returns the channels
+    Slack accepted. State (header ts + last reply) lives beside the logs."""
+    import json
+    from pathlib import Path
+    if today is None:
+        # Nothing pushes Fri 1pm -> Sun 1pm, so nothing to report: without this
+        # every channel would get a Saturday "posted NO runs today" warning.
+        from automations.applicant_push.window import quiet_window
+        if quiet_window(dt.datetime.now()):
+            print("[push_report] weekend quiet window -- no thread posts")
+            return []
+    today = today or dt.date.today()
+    d = Path(state_dir) if state_dir else (
+        Path(__file__).resolve().parents[2] / "output")
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / THREADS_STATE
+    try:
+        state = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 -- no state = a fresh day
+        state = {}
+    day = state.setdefault(today.isoformat(), {})
+    ok = []
+    for ch, (stamp, lines, total) in split_by_channel(text).items():
+        cur = day.setdefault(ch, {})
+        body = "*%s*\n%s" % (stamp, "\n".join(lines))
+        head = header_text(today, total)
+        try:
+            if not cur.get("ts"):
+                r = client.chat_postMessage(channel=ch, text=head)
+                if r is None or r.get("ok") is False:
+                    print("[push_report] %s refused the header: %s"
+                          % (ch, (r or {}).get("error")))
+                    continue
+                cur["ts"], cur["head"] = r["ts"], head
+            elif cur.get("head") != head:
+                client.chat_update(channel=ch, ts=cur["ts"], text=head)
+                cur["head"] = head
+            # Only a CHANGED update gets a new reply -- an evening of
+            # identical hourly lines is noise in an owner's channel.
+            same = "\n".join(lines) == cur.get("last")
+            if not same:
+                r = client.chat_postMessage(channel=ch, thread_ts=cur["ts"],
+                                            text=body)
+                if r is not None and r.get("ok") is False:
+                    print("[push_report] %s refused the reply: %s"
+                          % (ch, r.get("error")))
+                    continue
+                cur["last"] = "\n".join(lines)
+            ok.append(ch)
+        except Exception as e:  # noqa: BLE001 -- one channel never stops the rest
+            print("[push_report] %s: %s: %s" % (ch, type(e).__name__, str(e)[:120]))
+    for k in [k for k in state if k < (today - dt.timedelta(days=7)).isoformat()]:
+        state.pop(k, None)
+    path.write_text(json.dumps(state, indent=1))
+    return ok
+
+
 REPORT_ID = "push_hourly_report"
 
 
@@ -353,8 +512,16 @@ def main(argv=None) -> int:
     ch = ""
     if "--channel" in args:
         ch = args[args.index("--channel") + 1]
-    elif "--group" in args:
-        ch = client.conversations_open(users=",".join(GROUP))["channel"]["id"]
+    elif "--group" in args or "--threads" in args:
+        # --group (what the LaunchAgent passes) now means the per-office
+        # channel threads (Megan 2026-11-02: "move this alert ... to be in each
+        # of their recruiting channels"); the Carlos/Eve/Megan DM stops.
+        ok = post_threads(client, text)
+        print("[push_report] posted to %d channel thread(s): %s"
+              % (len(ok), ", ".join(ok)))
+        if ok:
+            record_delivery(unreadable, "office threads")
+        return 0
     if not ch:
         ch = client.conversations_open(users=CARLOS)["channel"]["id"]
     resp = client.chat_postMessage(channel=ch, text=text)

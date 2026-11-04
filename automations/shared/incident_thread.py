@@ -244,6 +244,25 @@ NEEDS_HUMAN_REACTION = "red_circle"
 LUCY_USER_ID = "U0BCG8F9B5Z"
 
 
+WORKING_NOTE = "Working on it \u2014 "   # + the person's first name
+
+
+def operator_name() -> str:
+    """The person at THIS keyboard, for the "Working on it" note: MINI_BY if
+    set, else the Mac's account full name ("Megan Hines" -> Megan). Lucy 4's
+    alerts screen shows it next to the ticket (Megan 2026-11-03)."""
+    import os
+    name = (os.environ.get("MINI_BY") or "").strip()
+    if not name:
+        try:
+            import pwd
+            name = (pwd.getpwuid(os.getuid()).pw_gecos or "").split(",")[0]
+        except Exception:  # noqa: BLE001 — Windows has no pwd
+            name = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    first = name.strip().split()[0] if name.strip() else "someone"
+    return first[:1].upper() + first[1:]
+
+
 def whoami(client=None) -> str:
     """The Slack user id this machine's token authenticates as ("" if unknown)."""
     try:
@@ -2509,7 +2528,13 @@ def main(argv=None) -> int:
             # appeared while the CLI printed "queued on the MINI". NOT
             # machine=None either: that reads the LOCAL .machine-profile, which
             # would route Lucy 2's hand-off to Lucy 2's own tab. (2026-08-18)
-            mc.enqueue(act, "{} {}".format(arg, a.note).strip(),
+            note = a.note
+            if a.working:
+                # WHO TOOK IT goes in the thread as one line; Lucy's reaction
+                # alone can't say (every mark comes from her token).
+                note = (WORKING_NOTE + operator_name()
+                        + (" \u2014 " + a.note if a.note else ""))
+            mc.enqueue(act, "{} {}".format(arg, note).strip(),
                        by="incident_thread-cli", machine=mc.DEFAULT_MACHINE)
         except Exception as e:  # noqa: BLE001
             print("this machine posts as {}, not Lucy, and the hand-off to the "

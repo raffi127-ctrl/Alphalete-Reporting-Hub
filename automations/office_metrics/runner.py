@@ -39,6 +39,8 @@ except Exception:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PER_METRIC_TIMEOUT_S = 20 * 60
+# A too-big Order Log posts one file per rep, same allowance Raf's has.
+ORDER_LOG_TIMEOUT_S = 35 * 60
 
 # Per-office ✅/❌ results for TODAY, read by the ONE Hub card's checklist
 # (dashboard._channel_status). Mirrors the Tableau trackers' _posted_today.json:
@@ -205,6 +207,14 @@ def _nds_metrics(o: Office) -> list[dict]:
         dict(slug="rep_activations", label="🆕 Rep Activations",
              module="automations.office_metrics.nds_orderlog",
              owner_args=["--owner", o.owner, "--board", "rep_summary"], env={},
+             dry_flag="--dry-run", post_flag="--live"),
+        # ⏳ Pending Orders — every pending wireless line in the Rep
+        # Activations window (posted/canceled/disconnected left out) with the
+        # customer's name + number, grouped by rep, so the rep can chase it
+        # (Colten 2026-10-26; Megan: "everyone in NDS").
+        dict(slug="pending_orders", label="⏳ Pending Orders",
+             module="automations.office_metrics.nds_orderlog",
+             owner_args=["--owner", o.owner, "--board", "pending_orders"], env={},
              dry_flag="--dry-run", post_flag="--live"),
         # 📈 Activation Rate by Rep — per rep, wireless lines activated / sold,
         # 0-30 and 31-60 days, off a 60-day NDS ORDER LOG pull (Khalil asked
@@ -679,9 +689,10 @@ def _mirror_gaps(client, primary_chan: str, mirror_ids: list, today: dt.date,
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
     print(f"\n{'='*70}\n▶  {label}\n   {' '.join(cmd)}\n{'='*70}", flush=True)
     started = time.monotonic()
+    timeout_s = ORDER_LOG_TIMEOUT_S if "Order Log" in label else PER_METRIC_TIMEOUT_S
     try:
         result = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env,
-                                timeout=PER_METRIC_TIMEOUT_S)
+                                timeout=timeout_s)
         elapsed = time.monotonic() - started
         if result.returncode == 0:
             return True, f"{elapsed:5.0f}s"
@@ -691,7 +702,7 @@ def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
             return False, f"⏳ HELD — Order Log data behind (exit 75 after {elapsed:.0f}s)"
         return False, f"exit {result.returncode} after {elapsed:.0f}s"
     except subprocess.TimeoutExpired:
-        return False, f"TIMED OUT after {PER_METRIC_TIMEOUT_S//60}m"
+        return False, f"TIMED OUT after {timeout_s//60}m"
     except Exception as e:                      # noqa: BLE001
         return False, f"launch error: {e}"
 

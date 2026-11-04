@@ -1,7 +1,7 @@
 #!/bin/bash
-# Alphalete sales board mind map — daily 7:00am PNG to #alphalete-lvl1-chat
-# (Raf's Loom, 2026-09-20: "let's do 7 a.m. every day"; Megan the same day:
-# NOT #alphalete-sales).
+# Alphalete sales board mind map — daily 6:00am PNG to #alphalete-lvl1-chat
+# (Raf's Loom, 2026-09-20; moved from 7:00 to 6:00 by Raf via Maud, 2026-11-03;
+# Megan 2026-09-20: NOT #alphalete-sales).
 #
 # Rebuilds the office tree from 'Alphalete SALES BOARD 2025' (Trainer column =
 # parent, Team = root, colour = the rep's WEEK read off the board's own cells),

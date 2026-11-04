@@ -3,24 +3,26 @@
 WHAT RAF ASKED. Two rows in every ICD tab's OPT section, right under
 "New Start Retention" -- the same two rows he added to the owners' All-in-One
 template:
-  * Badged Reps  -- how many new starts got badged that week.
-  * Badged %     -- Badged Reps / New Starts Showed, goal 50%. A formula, so it
-                    follows whatever the recruiting run puts in New Starts Showed.
+  * Badged Reps  -- how many of the week's new starts got badged.
+  * Badged %     -- Badged Reps / NS SHOWED, goal 50%, written as a value.
 On the All-in-One the owner types Badged Reps by hand; HERE nobody does, we pull it.
 
-WHERE THE NUMBER COMES FROM. OwnerVille -> CEO Dashboard (p=9197) -> Recruiting
--> Recruiting Pipeline -> ONBOARDING -> BADGED. That table is drawn from one JSON
-call, which is what we read:
+WHERE THE NUMBERS COME FROM (both take any office id, no impersonation; the
+office id is the same one office-mapping.json carries for AppStream):
 
-    v2.ownerville.com/components/prototypes/prototypes.cfc
-        ?method=getRecruitOnboardingWeekly&officeId=<office>&rqst=<token>
+  * NS SHOWED -- OwnerVille -> CEO Dashboard (p=9197) -> Recruiting -> Recruiting
+    Pipeline -> ONBOARDING. One JSON call:
+        prototypes.cfc?method=getRecruitOnboardingWeekly&officeId=<office>&rqst=<token>
+        -> {"data": {"weeks": [{"wk": "2026-09-27", "bobShowed": 8, "badged": 5, ...}]}}
+    Same attendance AppStream has, so it equals the tab's New Starts Showed.
 
--> {"data": {"weeks": [{"wk": "2026-09-27", "bobSched": 14, "bobShowed": 8,
-                        "badged": 5, ...}, ...]}}
-
-`bobSched`/`bobShowed`/`badged` are the table's NS SCHED / NS SHOWED / BADGED.
-It takes any office id straight (no Office Access impersonation needed), and the
-office id is the same one office-mapping.json carries for AppStream.
+  * BADGED -- CEO Dashboard -> Onboard, one row per rep:
+        prototypes.cfc?method=getAgentOnboardingStatus&officeId=<office>&rqst=<token>
+        -> {"data": {"rows": [{"startDate": "2026-10-08", "badgedAt": "2026-10-13 ..."}]}}
+    counted by the week of `startDate`. NOT the weekly table's `badged`: that one
+    counts by the week the badge was ISSUED, so it divided one week's badges by
+    another week's shows -- Hammad Haque 10/11: 9 badged, 7 of them started the
+    weeks before, 1 showed = 900% (Raf, 2026-10-26; checked rep by rep 10/27).
 
 WEEK -> COLUMN. `wk` is the Sunday the week STARTS; the tab's row-1 header is
 the Sunday AFTER it (WE), so OV's 9/27-10/3 lands in the 10/4 column. Checked
@@ -57,6 +59,7 @@ WEEKS_BACK = 4
 
 ENDPOINT = ("https://v2.ownerville.com/components/prototypes/prototypes.cfc"
             "?method=getRecruitOnboardingWeekly&officeId={office}&rqst={rqst}")
+REPS_ENDPOINT = ENDPOINT.replace("getRecruitOnboardingWeekly", "getAgentOnboardingStatus")
 
 
 # --- weeks ------------------------------------------------------------------
@@ -94,6 +97,63 @@ def parse_weeks(payload: dict) -> Optional[Dict[dt.date, int]]:
     return out
 
 
+def _week_of(s) -> Optional[dt.date]:
+    try:
+        d = dt.date.fromisoformat(str(s)[:10])
+    except ValueError:
+        return None
+    return d - dt.timedelta(days=(d.weekday() + 1) % 7)
+
+
+def parse_badged_by_start(payload: dict) -> Optional[Tuple[Dict[dt.date, int], dt.date]]:
+    """({start week Sunday: reps badged}, first week the list fully covers)
+    from getAgentOnboardingStatus. A rep badged late counts in the week they
+    STARTED (Raf: someone from 9/19 who badges today raises 9/19). None = no
+    rep list (no access / unknown id) -- the caller writes nothing for the tab.
+
+    The list only keeps RECENT badges (Trang Canavan 10/27: starts back to July,
+    every July/Aug start unbadged). So a week counts only from the week of the
+    oldest badge it holds: anyone who started then or later badged after it, so
+    they're all in the list. Older weeks would read as a made-up 0."""
+    rows = ((payload or {}).get("data") or {}).get("rows")
+    if not isinstance(rows, list):
+        return None
+    out: Dict[dt.date, int] = {}
+    badge_weeks = []
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("badgedAt"):
+            continue
+        wk, bwk = _week_of(r.get("startDate")), _week_of(r.get("badgedAt"))
+        if wk is None or bwk is None:
+            continue
+        badge_weeks.append(bwk)
+        out[wk] = out.get(wk, 0) + 1
+    if not badge_weeks:
+        return None
+    return out, min(badge_weeks)
+
+
+def parse_showed(payload: dict) -> Optional[Dict[dt.date, int]]:
+    """{week start Sunday: NS SHOWED} -- the Badged % denominator. None = OV
+    didn't send the field, so the caller leaves the old formula alone."""
+    weeks = ((payload or {}).get("data") or {}).get("weeks") or []
+    if not any("bobShowed" in w for w in weeks):
+        return None
+    out: Dict[dt.date, int] = {}
+    for w in weeks:
+        try:
+            out[dt.date.fromisoformat(str(w["wk"])[:10])] = int(float(w.get("bobShowed") or 0))
+        except (KeyError, ValueError, TypeError):
+            continue
+    return out
+
+
+def badged_pct(badged: int, showed: int):
+    """Badged / NS Showed, both for the same start week. No shows = blank: a %
+    of nobody isn't 0%."""
+    return round(badged / showed, 4) if showed else ""
+
+
 def fetch_live(office_ids: List[str], *, headless: bool = True) -> Dict[str, dict]:
     """Raw JSON per office, read through the machine's OwnerVille session."""
     from automations.b2b_dispositions.capture import capture_rqst
@@ -110,7 +170,15 @@ def fetch_live(office_ids: List[str], *, headless: bool = True) -> Dict[str, dic
                     " return r.ok ? await r.json() : {error: r.status}; }", url)
             except Exception as e:  # one office failing must not sink the rest
                 raw[oid] = {"error": str(e)[:200]}
-            print(f"  OV {oid}: {'ok' if parse_weeks(raw[oid]) else raw[oid].get('error', 'no data')}",
+            try:
+                raw[f"reps:{oid}"] = page.evaluate(
+                    "async (u) => { const r = await fetch(u, {credentials: 'include'});"
+                    " return r.ok ? await r.json() : {error: r.status}; }",
+                    REPS_ENDPOINT.format(office=oid, rqst=rqst))
+            except Exception as e:
+                raw[f"reps:{oid}"] = {"error": str(e)[:200]}
+            ok = parse_weeks(raw[oid]) and parse_badged_by_start(raw[f"reps:{oid}"])
+            print(f"  OV {oid}: {'ok' if ok else raw[oid].get('error') or raw[f'reps:{oid}'].get('error', 'no data')}",
                   flush=True)
     return raw
 
@@ -236,7 +304,7 @@ def main(argv=None) -> int:
     weeks = weeks_to_write(today)
     tab_offices = tabs_to_offices(fill.load_mapping())
     if args.only:
-        want = {_norm(t) for t in args.only}
+        want = {_norm(t.strip("\"'")) for t in args.only}  # queued args may keep their quotes
         tab_offices = {t: o for t, o in tab_offices.items() if _norm(t) in want}
         missing = want - {_norm(t) for t in tab_offices}
         if missing:
@@ -261,10 +329,17 @@ def main(argv=None) -> int:
             result.append((tab, f"SKIPPED: {len(multi[tab])} offices on one tab ({', '.join(multi[tab])})"))
             continue
         oid = tab_offices[tab][0]
-        by_week = parse_weeks(raw.get(oid) or {})
-        if by_week is None:
+        ov_weeks = parse_weeks(raw.get(oid) or {})
+        showed = parse_showed(raw.get(oid) or {})
+        started = parse_badged_by_start(raw.get(f"reps:{oid}") or {})
+        # The weekly table can say "Not authorized" while the rep list answers
+        # (Calvin Ribera 22162, 10/27): then the % divides by the tab's own New
+        # Starts Showed, which is the same attendance. Without the rep list there
+        # is nothing to write -- never the weekly table's `badged` (by badge week).
+        if started is None:
             result.append((tab, f"SKIPPED: no OwnerVille data for office {oid}"))
             continue
+        by_week, first_start = started
         try:
             ws = fill.worksheet_ci(sh, tab)
         except Exception:
@@ -278,22 +353,37 @@ def main(argv=None) -> int:
         cols = fill.find_sunday_columns([header])
         data, shown = [], []
         # First time a tab gets the rows (or --all-weeks): every closed week OV
-        # knows, so the row isn't blank behind the last 4. Before OV's first
-        # week stays blank -- no source, and a 0 there would be a made-up number.
+        # knows, so the row isn't blank behind the last 4. Weeks before the rep
+        # list's first start date stay as they are -- no source, and a 0 there
+        # would be a made-up number.
         tab_weeks = weeks
         if args.all_weeks or note.startswith("inserted"):
-            tab_weeks = sorted(w for w in by_week if w <= weeks[-1])
+            known = ov_weeks or {first_start + dt.timedelta(days=7 * k): 0
+                                 for k in range((weeks[-1] - first_start).days // 7 + 1)}
+            tab_weeks = sorted(w for w in known if w <= weeks[-1])
         for w in tab_weeks:
             col = sheet_col(cols, w)
-            if col is None:
+            if col is None or w < first_start:
                 continue
             v = by_week.get(w, 0)
             data.append({"range": f"{_col_letter(col)}{rows['badged']}", "values": [[v]]})
-            shown.append(f"{w.strftime('%m/%d')}={v}")
+            if showed is None:
+                L, b, ns = _col_letter(col), rows["badged"], rows["ns_showed"]
+                data.append({"range": f"{L}{rows['badged_pct']}",
+                             "values": [[f'=IF({L}{b}="","",IFERROR({L}{b}/{L}{ns},""))']]})
+                shown.append(f"{w.strftime('%m/%d')}={v}")
+                continue
+            s = showed.get(w, 0)
+            data.append({"range": f"{_col_letter(col)}{rows['badged_pct']}",
+                         "values": [[badged_pct(v, s)]]})
+            shown.append(f"{w.strftime('%m/%d')}={v}/{s}")
         if data and not args.dry_run:
             fill._retry(ws.batch_update, data, value_input_option="USER_ENTERED")
         verb = "would write" if args.dry_run else "wrote"
-        result.append((tab, f"{note}; {verb} Badged (office {oid}) {' '.join(shown)}"))
+        what = "Badged by start week" if showed is None else "Badged by start week/OV showed"
+        if showed is None:
+            what += " (no OV weekly table -- % over the tab's New Starts Showed)"
+        result.append((tab, f"{note}; {verb} {what} (office {oid}) {' '.join(shown)}"))
 
     # the template too, so a tab duplicated from it is born with the two rows
     if not args.only:

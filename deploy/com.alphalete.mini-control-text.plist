@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.mini-control-text</string>
+
+    <!-- The TEXT LANE of the Mini Control queue: the third sibling of
+         com.alphalete.mini-control, running the same module in lane "text".
+         It picks up ONLY the iMessage-send actions (text_dispositions,
+         textgroup, text_tracker, text_obcl, sendtext, ...) and drains the
+         local text outbox, so a text never waits behind a report. On
+         2026-10-26 Carlos's NDS texts sat 2-4 hours on Lucy 2 behind a 1-hour
+         sms_log pull and a rerun stuck on a verification code.
+
+         The lanes split the queue by action name and each reclaims only the
+         rows it started. While this job is NOT running (not installed, or down
+         3+ min) main sends the texts itself, so a box without it texts exactly
+         as before. Sends are serialized machine-wide by
+         automations/shared/messages_lock.py.
+
+         Polls every 30s, not the read lane's 20: each pass reads the whole
+         control tab, and on 2026-10-26 those tabs were big enough to time
+         out. The outbox (where the NDS/Box texts arrive) is drained before
+         and after every pass, without touching the Sheet.
+
+         NOTE: install_agent swaps "/Users/megan/1st Claude Folder" for this
+         machine's repo path, same as the sibling plists. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/megan/1st Claude Folder/.venv/bin/python</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>automations.day_orchestrator.mini_control</string>
+        <string>--loop</string>
+        <string>--lane</string>
+        <string>text</string>
+        <string>--interval</string>
+        <string>30</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Start at login and keep it alive (restart if it ever exits/crashes). -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- Don't hot-loop if it dies fast: wait 30s between restarts. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mini_control_text.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mini_control_text.err.log</string>
+</dict>
+</plist>

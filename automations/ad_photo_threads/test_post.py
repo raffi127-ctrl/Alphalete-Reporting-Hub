@@ -372,10 +372,6 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(post.day_done("C9", d))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ForeverThreadTests(PublishTests):
     """Raf 2026-09-23: one thread per ad forever, a new one only for a new ad."""
     def setUp(self):
@@ -718,3 +714,33 @@ class PinReconcileTests(unittest.TestCase):
         self.assertIsNone(post.last_active({}))
         self.assertEqual(post.last_active({"days": ["2026-09-01", "2026-09-20"]}),
                          dt.date(2026, 9, 20))
+
+
+class BrokenScreenshotTest(unittest.TestCase):
+    """Carlos 10/29: a screenshot that isn't an image (UnidentifiedImageError)
+    took down the whole evening post. Now only its people go without a photo."""
+
+    def test_bad_image_is_skipped_not_fatal(self):
+        import tempfile
+        from PIL import UnidentifiedImageError
+        from automations.ad_photo_threads import crop as cropper
+        from automations.ad_photo_threads import post as post_mod
+        c1 = collect.Candidate(name="Ana", title_raw="x", interviewer="", qualify="", stars="", source="", images=[{"id": "F1"}])
+        c2 = collect.Candidate(name="Bo", title_raw="x", interviewer="", qualify="", stars="", source="", images=[{"id": "F2"}])
+        item = {"cands": [c1, c2],
+                "shots": [{"file": {"id": "F1"}, "names": ["Ana"]},
+                          {"file": {"id": "F2"}, "names": ["Bo"]}]}
+
+        def crop(data, names, fid, aliases=None):
+            if fid == "F1":
+                raise UnidentifiedImageError("cannot identify image file")
+            return {n: b"png" for n in names}
+        with tempfile.TemporaryDirectory() as tmp,                 mock.patch("automations.sara_down.run._download_image",
+                           return_value=(b"x", "png")),                 mock.patch.object(cropper, "crop_names", side_effect=crop):
+            uploads, missing = post_mod._uploads(item, tmp, True)
+        self.assertEqual(len(uploads), 1)
+        self.assertEqual(missing, ["Ana"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -74,6 +74,8 @@ _TEAMSTATS: dict[str, Tuple[str, Optional[str], Optional[str]]] = {
     "carlos": (_B2B_VIEW, _B2B_FIELD, "Carlos's Team"),
     "eveliz": (_B2B_VIEW, _B2B_FIELD, "Eveliz's Team"),
     "luis":   (_B2B_VIEW, _B2B_FIELD, "Luis's Team"),
+    # Blake Welle, 2026-11-03: the filter value answers (15 owners).
+    "blake":  (_B2B_VIEW, _B2B_FIELD, "Blake's Team"),
     # Atef, unblocked 2026-09-03. His §2 had shown the 'Not available yet' note
     # since his captainship split off Carlos' on 2026-08-18: the filter value
     # "Atef's Team" did not exist in B2B Captain's Teams (SFDC), and only
@@ -141,7 +143,8 @@ def _filtered_url(base: str, field: Optional[str], value: Optional[str]) -> str:
 
 # Captains whose §2 filters on their Org Sales Board block (captain_key → board
 # captain name) instead of a team value Tableau no longer has. See _TEAMSTATS.
-_BOARD_ROSTER = {"carlos": "Carlos"}
+# Luis joined 2026-11-03: filtering on "Luis's Team" came back with headers only.
+_BOARD_ROSTER = {"carlos": "Carlos", "luis": "Luis"}
 # Every value of _B2B_FIELD as of 2026-10-14. The base view's saved team filter
 # leaves out Unassigned/Devin/Luke, so an Owner Name filter alone drops anyone
 # sitting there; listing all of them shows the board's "(Todo)". A team

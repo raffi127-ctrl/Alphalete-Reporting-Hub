@@ -132,6 +132,153 @@ class Posts(unittest.TestCase):
                          "AO Workspace: Terminations in other Offices - October 2026")
 
 
+class Updates(unittest.TestCase):
+    """More owners answer -> a new reply in the thread (Eve 11/2)."""
+
+    class FakeOut:
+        mode = "live"
+
+        def __init__(self):
+            self.posts, self.edits = [], []
+
+        def channel(self, text, thread_ts=None):
+            self.posts.append((text, thread_ts))
+            return "ts-new"
+
+        def edit(self, ts, text):
+            self.edits.append(ts)
+
+    def state(self):
+        def office(oid, owner, status, removed=()):
+            return {"office": oid, "owner": owner, "status": status,
+                    "removed": list(removed), "confirmed_on": "11/3"}
+        return {"thread_ts": "T1", "summary_ts": "S1", "offices": {
+            "1": office("1", "Clean Start", "done"),
+            "2": office("2", "Ann Owner", "sent"),
+            "3": office("3", "Bo Owner", "sent"),
+            "4": office("4", "No Access", "no_access")}}
+
+    def test_first_summary_is_not_an_update(self):
+        st, out = self.state(), self.FakeOut()
+        st["announced"] = run._finished(st)
+        st.pop("summary_ts")
+        run.summary(st, out)
+        self.assertEqual(len(out.posts), 1)
+        self.assertTrue(out.posts[0][0].startswith(C.SUMMARY_HEAD))
+
+    def test_new_answers_post_once_in_the_same_thread(self):
+        st, out = self.state(), self.FakeOut()
+        st["announced"] = run._finished(st)
+        st["offices"]["2"].update(status="done", removed=["Ann Rep"])
+        run.summary(st, out)
+        self.assertEqual(out.edits, ["S1"])
+        self.assertEqual(len(out.posts), 1)
+        text, thread = out.posts[0]
+        self.assertEqual(thread, "T1")
+        self.assertTrue(text.startswith(f"{C.UPDATE_HEAD}: 1 more owner answered"))
+        self.assertIn("*Ann Owner* (2)", text)
+        self.assertIn("> Ann Rep", text)
+        self.assertNotIn("Clean Start", text)
+        self.assertIn("Still no reply: 1 owner", text)
+        self.assertNotIn("No Access", text)
+        run.summary(st, out)            # next run, nobody new
+        self.assertEqual(len(out.posts), 1)
+
+    def test_owners_who_only_picked_names_are_not_news(self):
+        st, out = self.state(), self.FakeOut()
+        st["announced"] = run._finished(st)
+        st["offices"]["2"]["status"] = "selected"
+        run.summary(st, out)
+        self.assertEqual(out.posts, [])
+
+    def test_month_already_open_when_this_shipped(self):
+        st, out = self.state(), self.FakeOut()      # no "announced" in the file
+        run.poll(st, type("Dry", (), {"mode": "dry"})(), dt.date(2026, 11, 3))
+        self.assertEqual(st["announced"], ["1"])
+        run.summary(st, out)
+        self.assertEqual(out.posts, [])
+
+    def test_last_owner_closes_the_count(self):
+        text = M.update([{"owner": "A", "office": "1", "removed": []},
+                         {"owner": "B", "office": "2", "removed": []}], 0)
+        self.assertIn("2 more owners answered", text)
+        self.assertIn("✅ Nobody left: A (1), B (2)", text)
+        self.assertIn("Every owner has answered", text)
+
+
+class ProtectedStaff(unittest.TestCase):
+    users = [{"id": "U1", "name": "Staff Person", "email": "s@x.com"},
+             {"id": "U2", "name": "Gone Rep", "email": "g@x.com"}]
+
+    def office(self):
+        return {"owner": "A", "reps": [{"name": "Staff Person", "email": "s@x.com"},
+                                       {"name": "Gone Rep", "email": "g@x.com"}],
+                "log": []}
+
+    def run_remove(self, protected, scim=None):
+        from unittest import mock
+        from automations.owner_rep_audit import slack_ops as S
+        scim = scim or mock.Mock(return_value="ok")
+        o, out = self.office(), mock.Mock(mode="live")
+        with mock.patch("automations.ao_cleanup.slack_read.all_users",
+                        return_value=self.users), \
+                mock.patch.object(S, "protected_ids", protected), \
+                mock.patch.object(S, "deactivate", scim):
+            run.remove(o, ["Staff Person", "Gone Rep"], out)
+        return o, scim
+
+    def test_staff_stays_even_after_the_owner_confirms(self):
+        from unittest import mock
+        o, scim = self.run_remove(mock.Mock(return_value={"U1"}))
+        scim.assert_called_once_with("U2")
+        self.assertEqual((o["removed"], o["kept"]), (["Gone Rep"], ["Staff Person"]))
+
+    def test_cant_read_channels_means_nobody_goes(self):
+        from unittest import mock
+        o, scim = self.run_remove(mock.Mock(side_effect=RuntimeError("no")))
+        scim.assert_not_called()
+        self.assertEqual(o["removed"], [])
+
+    def test_failed_scim_is_not_reported_as_removed(self):
+        from unittest import mock
+        o, _ = self.run_remove(mock.Mock(return_value=set()),
+                               mock.Mock(return_value="admin"))
+        self.assertEqual(o["removed"], [])
+
+    def test_channel_members_and_file_are_both_protected(self):
+        from unittest import mock
+        from automations.owner_rep_audit import slack_ops as S
+        cli = mock.Mock()
+        cli.conversations_list.return_value = {"channels": [
+            {"id": "C1", "name": "kash-rai-office-recruiting-22177"},
+            {"id": "C2", "name": "alphalete-sales"}]}
+        cli.conversations_members.return_value = {"members": ["U9"]}
+        ids = S.protected_ids(cli)
+        self.assertIn("U9", ids)
+        self.assertIn("U07R68ZGHT6", ids)      # Perla, from the file
+        self.assertEqual(cli.conversations_members.call_count, 1)
+
+    def test_check_protected_does_nothing_else_even_with_live(self):
+        # The scheduler entry's base_args carry --live, so a hand rerun of this
+        # check always arrives with it.
+        from unittest import mock
+        from automations.owner_rep_audit import slack_ops as S
+        with mock.patch("automations.ao_cleanup.slack_read.client"), \
+                mock.patch.object(S, "visible_channels", return_value=[]), \
+                mock.patch.object(S, "protected_ids", return_value=set()), \
+                mock.patch.object(S, "deactivate") as scim, \
+                mock.patch.object(run, "Out") as out, \
+                mock.patch.object(run, "save_state") as save, \
+                mock.patch.object(run, "load_state") as load:
+            self.assertEqual(run.main(["--live", "--check-protected"]), 0)
+        for never in (scim, out, save, load):
+            never.assert_not_called()
+
+    def test_owner_is_told_who_stayed(self):
+        self.assertIn("Staff Person", M.done(["Gone Rep"], ["Staff Person"]))
+        self.assertIn("Nobody was removed", M.done([], ["Staff Person"]))
+
+
 class Matching(unittest.TestCase):
     users = [{"id": "U1", "name": "Kash Rai", "email": "k@x.com"},
              {"id": "U2", "name": "Ann Lee", "email": "ann@x.com"},

@@ -227,6 +227,11 @@ _NO_ACTION_PREFIXES = ("drop-tableau-stale-",)
 _NO_ACTION_LINE = ("*Nothing to do.* An upstream Tableau feed is serving older "
                    "data than it should, and nothing has been built on it yet. "
                    "It clears when the feed catches up.")
+_STALE_HELD_LINE = (
+    "*Nothing to do.* An upstream Tableau feed is serving older data than it "
+    "should. {reports} pulled it and HELD its post instead of sending old "
+    "numbers, so nothing went out and there is nothing to re-send. It posts on "
+    "its own once the feed catches up.")
 _STALE_ALREADY_SENT_LINE = (
     "*Needs one of you.* An upstream Tableau feed served older data than it "
     "should — and {reports} already ran off it, so what went out carries the "
@@ -669,9 +674,19 @@ def _stale_hit_reports(key: str, day: dt.date) -> list:
 
     Best-effort on purpose. This decides WORDING, so a missing or unreadable
     state file must degrade to the quiet verdict, never raise inside triage.
+
+    Minus anything that HELD (2026-10-28): box_order_log pulled the stale Box
+    feed, refused to post on its own gate, and still counted here as "already
+    sent". A report that held delivered nothing, so there is nothing to re-send.
     """
-    reports = _stale_state(key, day).get("reports") or []
-    return sorted(str(r) for r in reports if r)
+    st = _stale_state(key, day)
+    held = {str(r) for r in st.get("held") or [] if r}
+    return sorted(str(r) for r in st.get("reports") or [] if r and r not in held)
+
+
+def _stale_held_reports(key: str, day: dt.date) -> list:
+    """Reports that pulled a stale source today and then held their post."""
+    return sorted(str(r) for r in _stale_state(key, day).get("held") or [] if r)
 
 
 def _match(tail: str, table: Sequence[Tuple[str, str]]) -> Optional[str]:
@@ -738,6 +753,13 @@ def classify(key: str, *, day: Optional[dt.date] = None,
                     ", ".join(hits)),
                 line=_STALE_ALREADY_SENT_LINE.format(
                     reports=", ".join("`{}`".format(h) for h in hits)))
+        held = _stale_held_reports(key, day)
+        if held:
+            return Verdict(key, WAITING,
+                           "A feed ran behind; {} held instead of posting.".format(
+                               ", ".join(held)),
+                           line=_STALE_HELD_LINE.format(reports=", ".join(
+                               "`{}`".format(h) for h in held)))
         return Verdict(key, WAITING,
                        "An upstream Tableau feed is running behind.",
                        line=_NO_ACTION_LINE)

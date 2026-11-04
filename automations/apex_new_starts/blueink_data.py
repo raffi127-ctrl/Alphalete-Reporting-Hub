@@ -184,25 +184,51 @@ def index_by_person(bundles: List[dict]) -> tuple:
     return by_email, by_name
 
 
-def _search_for(name: str, email: str = "") -> Optional[dict]:
+def near_key(board: str, packet: str) -> bool:
+    """Same surname, first name spelled a letter or two off.
+
+    Sales Board WE 11.1: the board has 'Ortencia Denice Martinez', her
+    paperwork (background check, ATTUID) says 'Ortensia'. `_key` calls those
+    two people. A board middle name that is the packet's first name counts
+    too ('Ortencia Denice Martinez' signed as 'Denice Martinez')."""
+    from difflib import SequenceMatcher
+    from automations.terminated_reps.board import base_name
+    a, b = _key(board).split("|"), _key(packet).split("|")
+    if len(a) != 2 or len(b) != 2 or a[0] != b[0]:
+        return False
+    middles = [p.lower() for p in _norm(base_name(board)).split()[1:-1]]
+    return (SequenceMatcher(None, a[1], b[1]).ratio() >= 0.8
+            or b[1] in middles)
+
+
+def _search_for(name: str, email: str = "", near: bool = False) -> Optional[dict]:
     """One person, looked up on the server. Their surname is the query, then
     their whole name; the match is still `_key`, so a search that returns a
-    different Williams cannot be mistaken for this one."""
+    different Williams cannot be mistaken for this one.
+
+    near=True (city check only -- never Apex): with no exact match, also
+    search each middle name and take a `near_key` packet, but only when
+    exactly ONE person is that close. Two near Martinezes -> no match."""
     want = _key(name)
     parts = [p for p in _norm(name).split() if p]
     terms = [parts[-1]] if len(parts) > 1 else []
     terms.append(_norm(name))
     if email:
         terms.append(email)
+    if near:
+        terms += parts[1:-1]
+    close: Dict[str, dict] = {}
     for term in terms:
-        for b in search_bundles(term):
+        for b in search_bundles(term, limit=50 if near else 20):
             for pkt in b.get("packets") or []:
                 if str(pkt.get("status")) != "co":
                     continue
                 if _key(pkt.get("name") or "") == want or (
                         email and _norm(pkt.get("email")).lower() == email):
                     return b
-    return None
+                if near and near_key(name, pkt.get("name") or ""):
+                    close.setdefault(_key(pkt.get("name") or ""), b)
+    return next(iter(close.values())) if len(close) == 1 else None
 
 
 def _doc_rank(doc_name: str) -> int:
@@ -245,7 +271,7 @@ def extract(bundle: dict, mapping: Dict[str, Dict[str, str]],
 
 
 def for_people(people, mapping: Optional[dict] = None,
-               limit: int = 200) -> Dict[str, NewHire]:
+               limit: int = 200, near: bool = False) -> Dict[str, NewHire]:
     """{board name: NewHire} for everyone we can find a signed packet for.
 
     `people` is anything with `.name` and `.email` (the board's Candidates), or
@@ -266,7 +292,7 @@ def for_people(people, mapping: Optional[dict] = None,
             # Not in the recent sweep -- ask the server directly before
             # declaring somebody has no paperwork. They may simply have signed
             # further back than the sweep reaches.
-            b = _search_for(name, email)
+            b = _search_for(name, email, near=near)
         if not b:
             out[name] = NewHire(name=name, missing_packet=True)
             continue

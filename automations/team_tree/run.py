@@ -54,7 +54,11 @@ CHANNEL = ("#a-players-b2b", "C0AJQA8P716")
 CARLOS_SLACK_ID = "U046G04P5LG"
 
 # Office runners — never tree nodes, never counted (Carlos 2026-08-30).
-EXCLUDED = {"nico murrugarra", "sebastian avellaneda"}
+# Sebastian back on (Carlos 2026-10-28: "i don't see sebastians name") —
+# he trains most of the NDS crew, so his branch anchors that tree.
+# Carlos too (2026-10-28: "carlos hidalgo you don't have to include") —
+# he's on the Sales Board for production, just not a tree node.
+EXCLUDED = {"nico murrugarra", "carlos hidalgo"}
 
 # Free-typed name -> Sales Board name, for pairs token matching can't bridge.
 ALIASES = {
@@ -154,12 +158,18 @@ def build(today: dt.date, verizon_only: bool = False):
         name, status = rep["name"], _norm(rep["lead"])
         if status == "terminated" or _norm(name) in EXCLUDED:
             continue
-        # Two trees only: BOX, and everything else (B2B + Verizon) on B2B.
+        # Carlos 2026-10-28: the main tree is NDS ONLY. BOX is removed
+        # ("the box sales board we can remove. we're not using it" — which
+        # also drops Tara/Zitlaly/Carmen/Anna/Amelia, all BOX rows), and
+        # Verizon reps live on their own daily tree now instead of riding
+        # the AT&T one ("why are people from verizon showing under NDS").
         raw_camp = rep["campaign"].strip().upper()
         if verizon_only and not raw_camp.startswith("VER"):
             continue
-        camp = "BOX" if raw_camp == "BOX" else "B2B"
-        reps.append(Rep(name, camp, rep["trainer"], status))
+        if not verizon_only and (raw_camp == "BOX"
+                                 or raw_camp.startswith("VER")):
+            continue
+        reps.append(Rep(name, "B2B", rep["trainer"], status))
 
     by_norm = {_norm(r.name): r for r in reps}
 
@@ -178,8 +188,9 @@ def build(today: dt.date, verizon_only: bool = False):
                 continue
             if verizon_only and not camp.startswith("VER"):
                 continue
-            ns = Rep(name, "BOX" if camp == "BOX" else "B2B", trainer.strip(),
-                     "new start")
+            if not verizon_only and (camp == "BOX" or camp.startswith("VER")):
+                continue
+            ns = Rep(name, "B2B", trainer.strip(), "new start")
             parent = _resolve(trainer, by_norm)
             if parent is not None:
                 parent.children.append(ns)
@@ -217,9 +228,12 @@ def build(today: dt.date, verizon_only: bool = False):
         when = _parse_date(row[lay["orient"]], today)
         if not when or when < today:
             continue
-        if verizon_only and "ver" not in _norm(row[lay["campaign"]]):
+        rc = _norm(row[lay["campaign"]])
+        if verizon_only and "ver" not in rc:
             continue
-        camp = "BOX" if "box" in _norm(row[lay["campaign"]]) else "B2B"
+        if not verizon_only and ("box" in rc or "ver" in rc):
+            continue
+        camp = "B2B"
         second = _resolve(row[lay["second"]], by_norm)
         # Campaign overrides the 2nd-rounder's team on a mismatch (Carlos
         # 2026-08-30, the Dominic Drennon case) — the start still counts for
@@ -278,8 +292,7 @@ def _branch_html(r: Rep) -> str:
 
 def render_html(week, reps, roots, scheduled, campaigns=None) -> str:
     css = (Path(__file__).parent / "style.css").read_text()
-    campaigns = campaigns or (("B2B", "Alphalete AT&amp;T NDS"),
-                              ("BOX", "Alphalete BOX"))
+    campaigns = campaigns or (("B2B", "Alphalete AT&amp;T NDS"),)
     sections = []
     for camp, title in campaigns:
         branches = "".join(_branch_html(r) for r in roots
@@ -471,7 +484,7 @@ def post(png: Path, week: str, *, dm: bool, comment: str = None) -> dict:
         filename=f"alphalete-team-tree-{week or 'week'}.png",
         initial_comment=comment or (
             f"Alphalete team tree — week ending {week}: "
-            "AT&T NDS + BOX by trainer, color = leadership "
+            "AT&T NDS by trainer, color = leadership "
             "status, Level 2+ leader stats and office totals."))
     return {"ok": resp.get("ok"), "channel": channel}
 
@@ -495,8 +508,13 @@ def main(argv=None) -> int:
           f"{len(roots)} branches, {len(scheduled)} scheduled orientations")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    html_path = OUT_DIR / "team_tree.html"
-    png_path = OUT_DIR / "team_tree.png"
+    # The Verizon leg gets its OWN files: both legs sharing team_tree.png
+    # let the later Verizon render overwrite the NDS one, and the NDS
+    # Metrics thread picked it up (Carlos 2026-10-28: "you only posted the
+    # verizon tree on the nds thread").
+    stem = "team_tree_verizon" if args.verizon else "team_tree"
+    html_path = OUT_DIR / f"{stem}.html"
+    png_path = OUT_DIR / f"{stem}.png"
     campaigns = ((("B2B", "Alphalete VERIZON"),) if args.verizon else None)
     if args.verizon:
         TREE_LABEL["B2B"] = "Verizon"     # leader-card tags in this one-off

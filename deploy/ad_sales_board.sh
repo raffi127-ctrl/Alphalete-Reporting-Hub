@@ -50,7 +50,13 @@ mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/ad_sales_board_$(date +%Y%m%d).log"
 
 echo "[$(date)] ad-sales-board START $*" >> "$LOG"
-"$VENV_PY" -m automations.ad_sales_board.run "$@" >> "$LOG" 2>&1
+# --weeks 5: funnel stages lag applies — trainings book 1-2+ weeks after the
+# apply, so a 2-week horizon froze most Trn/NS numbers at zero (Carlos
+# 2026-10-29: October showed 63 trainings booked on the monthly report, ~5 on
+# the weekly board). Five weeks keeps a month of funnel columns live; the
+# shrink guard still protects pull totals, and an explicit --weeks on a
+# manual rerun overrides this (argparse: last flag wins).
+"$VENV_PY" -m automations.ad_sales_board.run --weeks 5 "$@" >> "$LOG" 2>&1
 rc=$?
 echo "[$(date)] ad-sales-board END rc=$rc" >> "$LOG"
 
@@ -64,7 +70,7 @@ SCI_SSID="1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg"
 echo "[$(date)] ad-sales-board SCI START $*" >> "$LOG"
 INDEED_SOURCE_SPREADSHEET_ID="$SCI_SSID" \
     RECRUITING_ROSTER_JSON="$(pwd)/deploy/sci-roster.json" \
-    "$VENV_PY" -m automations.ad_sales_board.run "$@" >> "$LOG" 2>&1
+    "$VENV_PY" -m automations.ad_sales_board.run --weeks 5 "$@" >> "$LOG" 2>&1
 rc_sci=$?
 echo "[$(date)] ad-sales-board SCI END rc=$rc_sci" >> "$LOG"
 [ $rc -eq 0 ] && rc=$rc_sci

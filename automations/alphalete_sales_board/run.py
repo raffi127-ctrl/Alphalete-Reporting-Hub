@@ -563,8 +563,18 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
             _order = [rep for rep, _d in sorted(gained.items())]
             _hype = N.hype_batch(_order, gained, day)
             _hype, _gifs = _SH.within_budget(_hype, day, "ao-board")
-            for _line in _hype:
-                N.slack(_line, dry_run=not send, log=_log)
+            # ONE REP'S RUNNING JOKE (Megan 2026-10-27, shared.rep_asides):
+            # every Nth sale line that names him carries his tag after his
+            # name, and the aside goes under that post. The lines come back
+            # one per rep, in `_order`.
+            from automations.shared import rep_asides as _RA
+            for _rep, _line in zip(_order, _hype):
+                _rule = _RA.due("ao-board", _rep, remember=send)
+                if _rule:
+                    _line = _RA.tag_name(_line, N._first(_rep), _rule["tag"])
+                _ts = N.slack(_line, dry_run=not send, log=_log)
+                if _rule and _rule.get("aside"):
+                    N.slack_reply(_ts, _rule["aside"], dry_run=not send, log=_log)
             if send:
                 # Recorded AFTER they go out, so a dry run never spends it.
                 _SH.record_gifs(day, "ao-board", _gifs)

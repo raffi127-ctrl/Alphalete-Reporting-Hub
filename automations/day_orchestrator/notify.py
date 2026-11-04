@@ -154,6 +154,13 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             title = f":information_source: *{name}* — no new emails today on {lbl}"
             err = ("no new background-check emails came in, so there was nothing "
                    "to sync" + (f" · {when}" if when else ""))
+        elif kind == "NOTHING_DUE":
+            # Ran, found nobody to serve — NOT a failure (Megan 2026-11-03:
+            # "the reply should say that there is nothing to send ... and it
+            # should also check mark green").
+            title = f":information_source: *{name}* — nothing to send today"
+            err = ("no new starts are dated today, so there was nothing to send"
+                   + (f" · {when}" if when else ""))
         elif kind == "WAITING":
             # An approval-gated send phase: nothing is broken, the day's review
             # post just hasn't been ✅'d yet (Megan 2026-08-18).
@@ -197,7 +204,7 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         else:
             title = f":x: *{name}* — didn't run clean on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
-        parent = [f"{'*Status:*' if kind in ('NO_NEW', 'NUDGE') else '*Error:*'} {err}"]
+        parent = [f"{'*Status:*' if kind in ('NO_NEW', 'NUDGE', 'NOTHING_DUE') else '*Error:*'} {err}"]
         # The detail block is built FIRST (it used to be built after the parent
         # post) so the whole incident — parent, in-thread detail, and what a
         # repeat says — goes out in one incident_thread call.
@@ -229,6 +236,12 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                 f"quiet day, not a miss.",
                 "_If you were expecting results in and don't see them, reply "
                 "here and we'll check._",
+            ]
+        elif kind == "NOTHING_DUE":
+            reply = [
+                "Nothing to send today — no new starts are dated for today on "
+                "the OBCL tab, so there was nobody to send documents to. "
+                "Nothing is broken and nothing needs re-running.",
             ]
         elif kind == "NUDGE":
             # Benign reminder — nothing is broken, nothing to diagnose. No
@@ -285,7 +298,7 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         # the first message's thread, not as another channel post — but they're
         # SEPARATE incidents, so a quiet day never lands in the same thread as a
         # genuine miss (Eve 2026-08-14).
-        key = (f"nonew-{report_id}" if kind == "NO_NEW"
+        key = (f"nonew-{report_id}" if kind in ("NO_NEW", "NOTHING_DUE")
                else f"standalone-{report_id}")
         # WAITING wears the purple circle — the same color the Hub's approval
         # pill uses (Megan 2026-08-18) — so the channel list reads at a glance:
@@ -298,6 +311,14 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                              reaction=("large_purple_circle"
                                        if kind == "WAITING" else None),
                              dry_run=dry_run, tag=key)
+        if inc and kind == "NOTHING_DUE" and not dry_run:
+            # Closed on the spot: there is nothing for anyone to do, so it
+            # lands already wearing the green ✅.
+            try:
+                from automations.shared import incident_thread as _it
+                _it.resolve(key=key, lines=["Nothing to send today — closed."])
+            except Exception:  # noqa: BLE001 — an open FYI beats a lost one
+                pass
         if inc:
             return True
         ts = _post_corrections(cfg, title, parent, dry_run,
@@ -308,7 +329,12 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             return True
         # fall through to email if the Slack post didn't land
     # Email fallback / non-Slack path.
-    if kind == "NO_NEW":
+    if kind == "NOTHING_DUE":
+        subj = f"ℹ️ [{lbl}] {name} — nothing to send today — {day}"
+        text = (f"No new starts are dated today, so {name} had nothing to send. "
+                f"Nothing is broken.\n\nReport: {name} (report_id: {report_id})\n"
+                + (f"When: {when}\n" if when else ""))
+    elif kind == "NO_NEW":
         subj = f"ℹ️ [{lbl}] {name} — no new emails — {day}"
         text = (f"No new background-check emails came in on {lbl}, so there was "
                 f"nothing to sync today.\n\nReport: {name} "

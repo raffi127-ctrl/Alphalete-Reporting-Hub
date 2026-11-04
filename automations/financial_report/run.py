@@ -3,7 +3,7 @@ spreadsheets.
 
 TWO SOURCES, and as of 2026-08 the run uses BOTH:
   --web    Double Entry (doubleentry.com org summary). The primary: no waiting
-           on a sender, and its PROFIT/LOSS carries a real sign. Covers the 37
+           on a sender, and its PROFIT/LOSS has a sign (flipped to read right in web_source). Covers the 37
            offices raffi127's account manages.
   --email  the FINANCIAL SUMMARY workbooks in the reporting inbox. Still the
            only source for the ~60 owners Double Entry doesn't expose to that
@@ -154,7 +154,7 @@ def merge_sources(primary, secondary, logfn=print):
     """Merge two (by_owner, weeks, problems) triples — `primary` wins.
 
     Used for the Double Entry + email hybrid. Double Entry is primary: it's
-    fresher (no waiting on a sender) and its PROFIT/LOSS carries a real sign,
+    fresher (no waiting on a sender) and its PROFIT/LOSS has a sign (flipped to read right in web_source),
     where the emailed template reports magnitude only. The emailed books then
     cover the ~60 owners Double Entry doesn't expose to this account.
 
@@ -515,6 +515,14 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 print(f"financial bulletin: skipped "
                       f"({type(e).__name__}: {str(e)[:120]})")
+            # Raf + Maud's weekly email of the Our Org tab (Raf via Maud 2026-11-03).
+            # Outside the try above: if the rebuild failed, Eve still hears the
+            # mail didn't go instead of nothing at all.
+            try:
+                from automations.financial_bulletin import email_send as _fbe
+                _fbe.weekly_pass()
+            except Exception as e:  # noqa: BLE001
+                print(f"org finances: skipped ({type(e).__name__}: {str(e)[:120]})")
         print("done")
         return 0
     finally:

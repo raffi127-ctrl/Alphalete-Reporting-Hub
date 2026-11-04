@@ -51,6 +51,12 @@ EXCLUDE_TERMINATED off the job never writes the 'Terminated (auto)' column and
 never adds or re-adds the ISNA(MATCH(...)) condition -- whatever is in the
 formulas stays as she left it. The week roll and the end row keep running.
 
+A BANNER TYPED OVER STOPPED THE ROLL, AND NOBODY KNEW (JD Mascorro 2026-11-03).
+A1 said 'v' instead of 'Current Week', so every tick refused and the lanes sat on
+last week until JD noticed. Now one lost banner is put back (the other banner and
+the lane headers say where it goes), and anything that keeps the lanes from
+moving DMs Eve, once a day per reason.
+
 Same tab every week (Maud + Rafael 2026-09-24: "re-writing on the same tab").
 
     python -m automations.alphalete_sales_board.lanes            # preview
@@ -61,8 +67,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import re
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from automations.alphalete_sales_board import config as C
@@ -77,6 +85,9 @@ EXCL_LABEL = "terminated (auto)"
 EXCL_HEADER = "Terminated (auto)"
 # Off since Maud 2026-09-26 -- see PAUSED in the module docstring.
 EXCLUDE_TERMINATED = False
+LANE_WORD = re.compile(r"\blanes?\b", re.I)
+TOLD_FILE = (Path(__file__).resolve().parents[2]
+             / "output" / "sales_board_fixer" / "lanes_told.json")
 
 # 'Sales Board WE 9.27'!C4:C87 -- the tab name, then a plain A1 range.
 REF_RE = re.compile(r"'(%s [^']*)'!(\$?[A-Z]+\$?)(\d+):(\$?[A-Z]+\$?)(\d+)"
@@ -118,6 +129,35 @@ def find_blocks(grid: List[List[str]]) -> Tuple[int, Dict[str, List[int]]]:
             return r + 2, blocks
     raise RuntimeError("no 'Current Week' / 'Last week' banner on the %r tab"
                        % TAB)
+
+
+def lost_banner(grid: List[List[str]]) -> Optional[Tuple[int, int, str]]:
+    """(row0, col0, label) when exactly one of the two banners is gone and the
+    lane headers under the other one show where it belongs; else None.
+    Both gone proves nothing -- a tab may simply not be a lanes tab."""
+    for r, row in enumerate(grid[:-1]):
+        low = [str(c).strip().lower() for c in row]
+        have = [x for x in (CURRENT_LABEL, LAST_LABEL) if x in low]
+        if len(have) != 1:
+            continue
+        heads = [str(c).strip() for c in grid[r + 1]]
+        starts = [c for c, h in enumerate(heads)
+                  if LANE_WORD.search(h) and (c == 0 or not heads[c - 1])]
+        at = low.index(have[0])
+        if len(starts) != 2 or at not in starts:
+            continue
+        other = starts[0] if at == starts[1] else starts[1]
+        return r, other, "Last week" if have[0] == CURRENT_LABEL else "Current Week"
+    return None
+
+
+def with_banner(grid: List[List[str]], fix: Tuple[int, int, str]) -> List[List[str]]:
+    """A copy of `grid` with the banner from `lost_banner` back in place."""
+    r, c, label = fix
+    out = [list(row) for row in grid]
+    out[r] += [""] * (c + 1 - len(out[r]))
+    out[r][c] = label
+    return out
 
 
 def totals_row(col_c: List[str]) -> Optional[int]:
@@ -263,11 +303,9 @@ def lanes_week(day: dt.date) -> dt.date:
 
 
 def _find_ws(book_ws, title: str):
-    want = title.strip().lower()
-    for ws in book_ws:
-        if ws.title.strip().lower() == want:
-            return ws
-    return None
+    from automations.alphalete_sales_board import tab_names as TN
+    real = TN.find([ws.title for ws in book_ws], title)
+    return next((ws for ws in book_ws if ws.title == real), None)
 
 
 def _heal_lost(formulas: List[List[str]], values: List[List[str]]) -> Dict[str, int]:
@@ -288,6 +326,29 @@ def _heal_lost(formulas: List[List[str]], values: List[List[str]]) -> Dict[str, 
     return {"%s%d" % (_col_letter(c), row0 + 1): c for c in fixes}
 
 
+def _tell_eve(reason: str, today: dt.date) -> None:
+    """DM Eve once a day per reason (the job ticks every 10 minutes). Only
+    remembered once it really went out; a failed DM never stops the job."""
+    try:
+        told = json.loads(TOLD_FILE.read_text(encoding="utf-8"))
+        if told.get("date") != today.isoformat():
+            told = {}
+    except (OSError, ValueError):
+        told = {}
+    said = told.get("said", [])
+    if reason in said:
+        return
+    try:
+        from automations.sales_board_fixer import run as FX
+        if not FX._dm_eve("Lanes (Alphalete Sales Board): " + reason):
+            return
+        TOLD_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TOLD_FILE.write_text(json.dumps({"date": today.isoformat(),
+                                         "said": said + [reason]}), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        _log("could not DM Eve (%s)" % type(e).__name__)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--apply", action="store_true", help="write the formulas")
@@ -299,14 +360,19 @@ def main(argv=None) -> int:
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today())
 
+    def stuck(reason: str, rc: int = 2) -> int:
+        _log(reason)
+        if apply_writes:
+            _tell_eve("not updating -- %s" % reason, dt.date.today())
+        return rc
+
     from automations.recruiting_report.fill import _client
     book = _client().open_by_key(C.SPREADSHEET_ID)
     worksheets = book.worksheets()
 
     lanes = _find_ws(worksheets, TAB)
     if lanes is None:
-        _log("no %r tab on the sales board -- nothing to do" % TAB)
-        return 2
+        return stuck("no %r tab on the sales board" % TAB)
 
     anchor = lanes_week(day)
     cur_title = fill.tab_title(anchor)
@@ -318,15 +384,13 @@ def main(argv=None) -> int:
         if ws is None:
             # The new week's tab isn't built yet: leave the lanes alone, the
             # next tick flips them once it exists.
-            _log("%r not there yet -- waiting, nothing written" % title)
-            return 0
+            return stuck("%r not there yet -- waiting, nothing written" % title, rc=0)
         grid = ws.get_values(value_render_option="UNFORMATTED_VALUE")
         col_c = [r[2] if len(r) > 2 else "" for r in grid]
         end = totals_row([str(v) for v in col_c])
         if end is None:
-            _log("no TOTALS row in col C of %r -- not guessing, nothing written"
-                 % ws.title)
-            return 2
+            return stuck("no TOTALS row in col C of %r -- not guessing, nothing written"
+                         % ws.title)
         targets[key] = (ws.title, end - 1)
         cols[key] = col_c
         if not EXCLUDE_TERMINATED:
@@ -336,8 +400,7 @@ def main(argv=None) -> int:
         try:
             term.update(terminated_bases(grid, ws.title, monday))
         except Exception as e:           # a layout the reader can't parse
-            _log("REFUSED: can't read terminations on %r: %s" % (ws.title, e))
-            return 2
+            return stuck("REFUSED: can't read terminations on %r: %s" % (ws.title, e))
         _log("%-7s -> %r rows to %d" % (key, ws.title, end - 1))
 
     excluded = []
@@ -355,6 +418,18 @@ def main(argv=None) -> int:
     values = lanes.get_all_values()
     formulas = lanes.get("A1:Z%d" % max(len(values), 1),
                          value_render_option="FORMULA")
+    fix = lost_banner(values)
+    if fix:
+        r0, c0, label = fix
+        a1 = "%s%d" % (_col_letter(c0), r0 + 1)
+        was = values[r0][c0] if c0 < len(values[r0]) else ""
+        _log("%s says %r, should be %r" % (a1, was, label))
+        if apply_writes:
+            lanes.update_acell(a1, label)
+            _tell_eve("%s said %r instead of %r -- Lucy put the title back and the "
+                      "lanes moved on. Nothing else to do." % (a1, was, label),
+                      dt.date.today())
+        values = with_banner(values, fix)
     # A lane deleted / typed over / #REF! used to stop the whole job here.
     # Borrow it from the same lane in the other block (or the Salesboard
     # Fixer's last healthy copy); the repoint below aims it at this block's
@@ -362,14 +437,12 @@ def main(argv=None) -> int:
     try:
         healed = _heal_lost(formulas, values)
     except RuntimeError as e:
-        _log("REFUSED: %s" % e)
-        return 2
+        return stuck("REFUSED: %s" % e)
     try:
         updates = plan(formulas, values, targets, excluded,
                        exclude_terminated=EXCLUDE_TERMINATED)
     except (RuntimeError, ValueError) as e:
-        _log("REFUSED: %s" % e)
-        return 2
+        return stuck("REFUSED: %s" % e)
     # a healed cell whose borrowed copy already pointed at the right week
     # produced no update above -- it still has to be written
     row0, _ = find_blocks(values)

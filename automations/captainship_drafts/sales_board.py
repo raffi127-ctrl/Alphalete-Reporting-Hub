@@ -73,6 +73,8 @@ CAPTAIN_TOKEN = {
     "pat": "pat", "jess": "jess",
     # 2026-10-01: Luke Baldwin (B2B), caja nueva en el Org Sales Board.
     "luke": "luke",
+    # 2026-11-03: Blake Welle (B2B), caja nueva en el Org Sales Board.
+    "blake": "blake",
 }
 
 _DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",

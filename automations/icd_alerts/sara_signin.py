@@ -24,8 +24,14 @@ challenge, and "the wall survived a new profile" then reads as proof the
 account expired. It is not proof. It is the heal feeding the wall.
 
 So this opens the profile the sweep really uses, in front of a person, and
-waits while they sign in and type the code SaraPlus emails them. One person,
-once per machine, and the trust cookie stays in the profile afterwards.
+waits while they type the code SaraPlus emails them. One person, once per
+machine, and the trust cookie stays in the profile afterwards.
+
+LUCY TYPES THE LOGIN (Eve 2026-11-03), because this computer already has it
+and the only thing that truly needs a person is the code. ONLY WHEN SOMEBODY
+RAN THE LINE. The window autoprompt opens by itself passes --no-fill: it opens
+on any unlocked screen, about every half hour, so filling it would mail the
+owner a code each time, at a desk nobody may be sitting at.
 
     python -m automations.icd_alerts.sara_signin
 
@@ -35,9 +41,13 @@ is how an office waits a day for numbers that were never coming.
 from __future__ import annotations
 
 import datetime as dt
+import os
+import re
+import signal
+import subprocess
 import sys
 import time
-from typing import Dict
+from typing import Dict, List, Optional
 
 from automations.icd_alerts import config as C
 from automations.shared import saraplus as S
@@ -45,6 +55,11 @@ from automations.shared import saraplus as S
 SETTLE_SECONDS = 10
 WAIT_SECONDS = 600          # the email is the slow part, not the typing
 POLL_SECONDS = 5
+# HOW LONG A PERSON WAITS FOR LUCY'S OWN HIDDEN BROWSER before it is closed for
+# them. It normally lets go by itself: her automatic code try took 82 seconds
+# on Valeria's Mac (2026-11-02).
+PROFILE_BUSY_WAIT_SECONDS = 120
+PROFILE_BUSY_POLL_SECONDS = 5
 
 
 def _signed_in(url: str) -> bool:
@@ -89,7 +104,7 @@ def _hand_session_to_the_reader(urls, log=print) -> None:
             try:
                 from automations.icd_alerts import sara_read as _SR
                 _SR._remember_session(root)
-                log("  Handing this signed-in session to the automatic reads.")
+                log("  Passing this sign-in over to Lucy.")
                 _LAST_VERDICT.append("session handed to the reader: %s" % root)
             except Exception as e:  # noqa: BLE001 -- never cost the person their sign-in
                 _LAST_VERDICT.append("could not hand the session over: %s" % type(e).__name__)
@@ -97,8 +112,51 @@ def _hand_session_to_the_reader(urls, log=print) -> None:
     _LAST_VERDICT.append("no session root in the window's urls: %s" % ", ".join(urls or [])[:300])
 
 
+# Set by main: did a person run this, or did autoprompt open it? See the top.
+_FILL = [False]
+
+
+def _fill_for_the_owner(page, log=print) -> None:
+    """Type the saved login and ask SaraPlus for the code. Never raises.
+
+    ANYTHING GOING WRONG LEAVES THE WINDOW WORKING BY HAND, as it always did: a
+    saved password that is out of date just puts the form in front of them."""
+    try:
+        cr = C.creds()
+    except Exception:  # noqa: BLE001 -- no login saved here
+        cr = {}
+    if not (cr.get("email") and cr.get("password")):
+        return
+    try:
+        from automations.icd_alerts import sms_code as T
+        from automations.shared import sara_passcode as SP
+        try:
+            S._login(page, cr["email"], cr["password"],
+                     creds_hint="the SaraPlus login saved on this computer", log=log)
+            return      # no code wanted: the wait in _window sees it signed in
+        except S.SaraPasscodeWall:
+            pass
+        text = T.wants_text(str(C.install().get("office_key") or ""))
+        SP._request_code(page, log=log, destination="mobile" if text else "email")
+        log("")
+        log("  Lucy filled in your login and asked for the code. Check your %s,"
+            % ("phone" if text else "email"))
+        log("  and type the NEWEST code into the SaraPlus window.")
+    except Exception as e:  # noqa: BLE001
+        _LAST_VERDICT.append("could not fill the login: %s" % type(e).__name__)
+        log("")
+        log("  Please sign in with your usual password in the SaraPlus window.")
+        _show_login_form(page, log=log)
+
+
 def run(log=print) -> int:
     from patchright.sync_api import sync_playwright
+    # SARAPLUS PAUSED ON THIS MACHINE (config.SARA_PAUSED_KEYS): no window,
+    # no code, nothing that touches the owner's login -- even from a sweep
+    # that was still running the code from before the pause.
+    if C.sara_paused_here():
+        log("SaraPlus is paused for this office -- not opening SaraPlus")
+        return 0
 
     try:
         cr = C.creds()
@@ -108,22 +166,20 @@ def run(log=print) -> int:
     log("")
     log("  Opening SaraPlus in Lucy's browser.")
     log("")
-    log("  Sign in there, then enter the code SaraPlus emails you. It has to")
-    log("  be THIS window -- signing in with your own browser does not reach")
-    log("  Lucy, however many times you do it.")
+    if _FILL[0]:
+        log("  Lucy signs in for you. You only type the code SaraPlus sends you.")
+    else:
+        log("  Sign in there, then type the code SaraPlus sends you.")
+    log("  It has to be in THIS window: your own browser can't reach Lucy.")
     if cr.get("email"):
         log("")
         log("  The account is %s." % cr["email"])
     log("")
-    log("  Your password is NOT being changed and does not need to be.")
+    log("  Your password stays the same.")
     log("")
 
     C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    C.SARA_SIGNIN_LOCK.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        C.SARA_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
-    except OSError:
-        pass          # not being able to say so must not stop them signing in
+    _hold_lock()
     try:
         rc = _window(log=log)
     finally:
@@ -132,7 +188,8 @@ def run(log=print) -> int:
         except OSError:
             pass
     if rc != 0:
-        _tell_upstream("window closed or not signed in (rc %d)" % rc, log=log)
+        _tell_upstream("window closed or not signed in (rc %d)" % rc,
+                       detail="\n".join(_LAST_VERDICT), log=log)
         return rc
     # THE WINDOW IS NOT THE THING THAT HAS TO WORK. Every sweep runs its own,
     # hidden browser, and on 2026-09-21 Khalil's visible window was trusted at
@@ -155,6 +212,14 @@ def run(log=print) -> int:
             from automations.icd_alerts import sara_read as SR
             SR.clear_sara_hold()
         except Exception:  # noqa: BLE001 -- never turn "done" into a failure
+            pass
+        # THE ONE MOMENT THE OWNER IS AT THIS COMPUTER, code in hand (Eve/Megan
+        # 2026-11-02). Eleven offices hit the wall in two weeks and only setup
+        # ever offered the forward, so offices already installed never saw it.
+        try:
+            from automations.icd_alerts import code_forward as CF
+            CF.offer_after_signin(say=log)
+        except Exception:  # noqa: BLE001 -- same rule
             pass
     return rc
 
@@ -190,7 +255,7 @@ def verify_hidden_read(log=print) -> int:
     """One real scheduled-style SaraPlus sign-in, hidden, and a plain verdict."""
     from automations.icd_alerts import sara_read as SR
     log("")
-    log("  Now checking the automatic reads can get in too (about a minute)...")
+    log("  Now checking that Lucy can get in on her own (about a minute)...")
     said: list = []
     try:
         got = SR.check_account(headless=True,
@@ -199,7 +264,7 @@ def verify_hidden_read(log=print) -> int:
         _LAST_VERDICT.extend(["hidden log: " + l for l in said[-12:]])
         _LAST_VERDICT.extend([str(e)[:300]] + ["hidden: " + l for l in (getattr(e, "presented", None) or [])])
         log("")
-        log("  NOT YET. The automatic read was stopped:")
+        log("  NOT YET. Lucy was stopped here:")
         for line in str(e).splitlines()[:3]:
             if line.strip():
                 log("    " + line.strip())
@@ -218,8 +283,8 @@ def verify_hidden_read(log=print) -> int:
         return 1
     if got.get("ok"):
         log("")
-        log("  ALL SET. The automatic reads can get into SaraPlus, so sales")
-        log("  will start coming through on their own. Nothing else to do.")
+        log("  ALL SET. Lucy can get into SaraPlus on her own, so your")
+        log("  sales will start coming through.")
         return 0
     log("")
     log("  Signed in, but landed somewhere unexpected (%s). Please send the "
@@ -253,6 +318,129 @@ def _live_urls(ctx) -> list:
     return out
 
 
+def _show_login_form(page, log=print) -> None:
+    """Take the person past SaraPlus's home page to the form they have to fill.
+
+    ui.saraplus.com is a marketing page: the username box is one LOGIN click
+    away. The hidden read makes that click (saraplus._open_login_form), this
+    window did not, so it opened on an advert and sat there waiting. Jamis,
+    2026-11-02: "nothing happens", and no code ever came, because SaraPlus only
+    sends one after the password goes in. If the click fails, say where the
+    button is: the window still works by hand, and must not be lost over this.
+    """
+    try:
+        S._open_login_form(page)
+    except Exception:  # noqa: BLE001 -- a person can still click it themselves
+        log("  If you see SaraPlus's home page, click LOGIN at the top right.")
+
+
+def _hold_lock() -> None:
+    """Tell the sweeps to stand back. Not being able to say so must not stop
+    anyone signing in."""
+    try:
+        C.SARA_SIGNIN_LOCK.parent.mkdir(parents=True, exist_ok=True)
+        C.SARA_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+    except OSError:
+        pass
+
+
+class ProfileStuck(RuntimeError):
+    """The profile would not come free, even after closing what held it."""
+
+
+def _profile_busy(error) -> bool:
+    """Chrome's words for "another browser has this profile"."""
+    text = str(error).lower()
+    return ("processsingleton" in text
+            or "existing browser session" in text
+            or "profile is already in use" in text)
+
+
+def _browsers_on_profile(profile_dir=None, ps_output: Optional[str] = None) -> List[int]:
+    """Chromes running on exactly this profile.
+
+    EXACTLY: chrome-profile is also the start of chrome-profile-as, -ov and
+    -sc, which are other logins and are none of this window's business."""
+    if ps_output is None:
+        try:
+            ps_output = subprocess.run(["ps", "-axo", "pid=,command="],
+                                       capture_output=True, text=True,
+                                       timeout=10).stdout
+        except Exception:  # noqa: BLE001 -- no ps (Windows): nothing to name
+            return []
+    flag = re.compile(r"--user-data-dir=%s(\s|$)"
+                      % re.escape(str(profile_dir or C.PROFILE_DIR)))
+    pids = []
+    for line in ps_output.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if pid.isdigit() and flag.search(command):
+            pids.append(int(pid))
+    return pids
+
+
+def _free_profile(sleep=time.sleep) -> None:
+    """Close Lucy's hidden browser, or clear the note a dead one left behind."""
+    pids = _browsers_on_profile()
+    for sig in (signal.SIGTERM, getattr(signal, "SIGKILL", signal.SIGTERM)):
+        if not pids:
+            break
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+        sleep(3)
+        pids = _browsers_on_profile()
+    if not pids:
+        # NOBODY HOLDS IT, so these are left over from a browser that died
+        # without cleaning up, a power cut being the obvious way.
+        for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            try:
+                (C.PROFILE_DIR / name).unlink()
+            except OSError:
+                pass
+
+
+def _open_browser(chromium, kw, log=print, sleep=time.sleep, clock=time.monotonic):
+    """Open the window, waiting out Lucy's own hidden browser if it is in there.
+
+    WHY (Valeria, 2026-11-02): the sweep hit the code screen at 16:26 and started
+    its automatic code try, in a hidden browser on this profile. She ran the
+    sign-in at 16:26:55. Chrome allows one browser per profile, so all she got
+    was a wall of red text with "profile is already in use" in it, and that
+    browser let go by itself under a minute later. The person always wins: wait
+    a moment, then close the hidden browser for them."""
+    started, said, freed = clock(), False, False
+    while True:
+        try:
+            ctx = chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
+        except Exception as e:  # noqa: BLE001 -- anything else is re-raised
+            if not _profile_busy(e):
+                raise
+            if freed:
+                raise ProfileStuck(str(e)[:300])
+            if not said:
+                said = True
+                log("  Lucy is using her browser for a moment. The SaraPlus")
+                log("  window opens as soon as she is done. Please wait here.")
+                _LAST_VERDICT.append("profile busy: %s"
+                                     % (_browsers_on_profile() or "no browser found"))
+            if clock() - started < PROFILE_BUSY_WAIT_SECONDS:
+                sleep(PROFILE_BUSY_POLL_SECONDS)
+                continue
+            freed = True
+            _LAST_VERDICT.append("closed what held the profile after %ds"
+                                 % PROFILE_BUSY_WAIT_SECONDS)
+            _free_profile(sleep=sleep)
+            continue
+        if said:
+            _LAST_VERDICT.append("profile came free after %ds" % (clock() - started))
+        # Lucy's code try removes the sign-in lock when it finishes, and this
+        # window may have been waiting on exactly that.
+        _hold_lock()
+        return ctx
+
+
 def _window(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
@@ -261,10 +449,19 @@ def _window(log=print) -> int:
         kw = {"headless": False, "args": ["--disable-sync"]}
         if _SR.browser_id():
             kw["user_agent"] = _SR.browser_id()
-        ctx = p.chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
+        try:
+            ctx = _open_browser(p.chromium, kw, log=log)
+        except ProfileStuck as e:
+            _LAST_VERDICT.append("profile stuck: %s" % e)
+            log("")
+            log("  The SaraPlus window could not open because something on this")
+            log("  computer is still holding Lucy's browser. Restart the computer")
+            log("  and run this again. If it does the same, tell Megan or Eve.")
+            return 1
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(S.LOGIN_URL, timeout=60000)
+            _show_login_form(page, log=log)
             if any(_signed_in(u) for u in _live_urls(ctx)):
                 # Only THIS window. The hidden read is checked next -- and it
                 # must present the identity this window was trusted as, so
@@ -277,6 +474,8 @@ def _window(log=print) -> int:
                 log("  This window is already signed in.")
                 _hand_session_to_the_reader(_live_urls(ctx), log=log)
                 return 0
+            if _FILL[0]:
+                _fill_for_the_owner(page, log=log)
 
             waited, said, url = 0, False, ""
             while waited < WAIT_SECONDS:
@@ -299,8 +498,8 @@ def _window(log=print) -> int:
                     except Exception:  # noqa: BLE001
                         pass
                     log("")
-                    log("  Signed in. This browser is trusted now, so the")
-                    log("  sweep can read sales again within a few minutes.")
+                    log("  Signed in. Lucy can read your sales again within a")
+                    log("  few minutes.")
                     _hand_session_to_the_reader(urls, log=log)
                     # LET SARAPLUS FINISH. The window used to close the
                     # instant the address changed -- before any "remember
@@ -321,8 +520,8 @@ def _window(log=print) -> int:
                 url = urls[0]
                 if any(_still_challenged(u) for u in urls) and not said:
                     said = True
-                    log("  SaraPlus is asking for the emailed code — that is")
-                    log("  this step, not a password problem. Enter it here.")
+                    log("  SaraPlus is asking for the code. That's this step, so")
+                    log("  nothing is wrong with your password. Type it there.")
         finally:
             try:
                 ctx.close()
@@ -336,11 +535,12 @@ def _window(log=print) -> int:
     else:
         log("")
         log("  Did not reach the SaraPlus Hub, so this is not done yet.")
-    log("  Run this again when you have the code to hand.")
+    log("  Paste the same line again when you have the code.")
     return 1
 
 
 def main(argv=None) -> int:
+    _FILL[0] = "--no-fill" not in (sys.argv[1:] if argv is None else argv)
     return run()
 
 
