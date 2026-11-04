@@ -217,6 +217,25 @@ class TestReplyTagging(unittest.TestCase):
         self.assertNotIn("in a row", out)      # streak of 1 isn't shown
         self.assertIn("1x this week", out)
 
+    def test_cancel_rate_in_suffix(self):
+        from automations.rc_contact_sync_raf import run as R
+        with mock.patch("automations.shared.slack_tag_learning.lookup",
+                        side_effect=lambda n: None):
+            out = R.missing_names_reply(
+                [self._cust("Jordan Ruiz", "Yani")], 5,
+                rep_stats={"Jordan Ruiz": (1, 1)},
+                cancel_map={"Jordan Ruiz": "8.0%"})
+        self.assertIn("8.0% cancel", out)
+
+    def test_no_cancel_when_rep_unmatched(self):
+        from automations.rc_contact_sync_raf import run as R
+        with mock.patch("automations.shared.slack_tag_learning.lookup",
+                        side_effect=lambda n: None):
+            out = R.missing_names_reply(
+                [self._cust("Jordan Ruiz", "Yani")], 5,
+                rep_stats={"Jordan Ruiz": (1, 1)}, cancel_map={})
+        self.assertNotIn("cancel", out)
+
     def test_line_has_phone_and_products(self):
         out = self._reply(
             [self._cust("Hank Tran", "Rebecca Alcantara", "469-343-5714",

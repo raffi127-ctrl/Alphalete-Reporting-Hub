@@ -39,23 +39,25 @@ REPORT_ID = "rc_contact_sync_raf"
 NO_REP = "(no rep on the order)"
 
 
-def _rep_stat_suffix(stat) -> str:
-    """' _(🔥 3 days in a row · 4x this week)_' for a rep, from (streak, week).
-    The streak only shows when it is a real run (2+ days); the weekly count
-    always shows. Returns '' when there's nothing to show."""
-    if not stat:
-        return ""
-    streak, week = stat
+def _rep_stat_suffix(stat, cancel: str = None) -> str:
+    """' _(🔥 3 days in a row · 4x this week · 8% cancel)_' for a rep, from
+    (streak, week) + an optional cancel-rate string. The streak only shows on a
+    real run (2+ days); the weekly count always shows; the cancel rate shows
+    when known. Returns '' when there's nothing to show."""
     bits = []
-    if streak and streak >= 2:
-        bits.append(":fire: %d days in a row" % streak)
-    if week and week >= 1:
-        bits.append("%dx this week" % week)
+    if stat:
+        streak, week = stat[0], stat[1]
+        if streak and streak >= 2:
+            bits.append(":fire: %d days in a row" % streak)
+        if week and week >= 1:
+            bits.append("%dx this week" % week)
+    if cancel:
+        bits.append("%s cancel" % cancel)
     return "  _(%s)_" % " · ".join(bits) if bits else ""
 
 
 def missing_names_reply(missing: List[Dict[str, str]], total: int,
-                        rep_stats: dict = None) -> str:
+                        rep_stats: dict = None, cancel_map: dict = None) -> str:
     """The threaded reply: the un-texted customers, grouped by the rep who
     sold them, each with their phone and their product categories.
 
@@ -74,6 +76,7 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int,
         return ("The 1 customer was messaged. :white_check_mark:" if total == 1
                 else "All %d customers were messaged. :white_check_mark:" % total)
     rep_stats = rep_stats or {}
+    cancel_map = cancel_map or {}
     by_rep: Dict[str, List[Dict[str, str]]] = {}
     for m in missing:
         by_rep.setdefault(titlecase_name(m.get("rep", "")) or NO_REP,
@@ -82,7 +85,8 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int,
              % (len(missing), total, "" if total == 1 else "s")]
     mentions: List[str] = []
     for rep in sorted(by_rep):
-        lines.append("*%s*%s" % (rep, _rep_stat_suffix(rep_stats.get(rep))))
+        lines.append("*%s*%s" % (rep, _rep_stat_suffix(rep_stats.get(rep),
+                                                       cancel_map.get(rep))))
         for m in by_rep[rep]:
             who = titlecase_name(m.get("business", "")) or \
                   titlecase_name(m.get("customer_name", "")) or "(no name)"

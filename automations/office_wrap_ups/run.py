@@ -64,7 +64,7 @@ def _header_text(title: str, day: dt.date) -> str:
 
 def post_office(profile: Dict[str, str], day: dt.date,
                 missing: List[Dict[str, str]], total: int,
-                *, dry_run: bool, log=print) -> str:
+                *, dry_run: bool, cancel_map: dict = None, log=print) -> str:
     """Header + threaded reply to one office's channel. Returns a status word.
     Same-workspace offices go through slack_metrics_post (default AO token); an
     office in another workspace (Trang → FRESH SUCCESS) posts with its own bot
@@ -84,7 +84,13 @@ def post_office(profile: Dict[str, str], day: dt.date,
                       for m in missing if titlecase_name(m.get("rep", ""))})
     rep_stats = (history.update_and_stats(chan, flagged, day,
                                           persist=not dry_run) if chan else {})
-    body = missing_names_reply(missing, total, rep_stats=rep_stats)
+    cancel_map = cancel_map or {}
+    unmatched = [r for r in flagged if r not in cancel_map]
+    if flagged and cancel_map and unmatched:
+        log("  [%s] no cancel %% for: %s (name mismatch vs the cancel view?)"
+            % (profile["key"], ", ".join(unmatched)))
+    body = missing_names_reply(missing, total, rep_stats=rep_stats,
+                               cancel_map=cancel_map)
 
     # Tag Dylan so the morning post is readily visible to him — using his id
     # from THIS office's workspace (AO by default, or the cross-ws id keyed by
@@ -187,6 +193,11 @@ def run(office_keys: Optional[List[str]] = None, day: Optional[dt.date] = None,
         return 1
     log("%s: %d SMS since %s" % (C.WATCH_LINE_LABEL, len(msgs), since))
 
+    # 2b. Per-rep ongoing cancel rate — ONE all-office pull covers every rep
+    #     (fails open: {} just omits the cancel %).
+    from automations.office_wrap_ups import cancel_rates
+    cancel_map = cancel_rates.fetch_map(log=log)
+
     # 3. Each office: filter to the target day, check, post.
     failed: List[str] = []
     for p in profiles:
@@ -201,7 +212,7 @@ def run(office_keys: Optional[List[str]] = None, day: Optional[dt.date] = None,
         log("  [%s] never messaged: %d of %d" % (p["key"], len(missing),
                                                  len(customers)))
         status = post_office(p, day, missing, len(customers),
-                             dry_run=dry_run, log=log)
+                             dry_run=dry_run, cancel_map=cancel_map, log=log)
         if status == "failed":
             failed.append(p["key"])
 
