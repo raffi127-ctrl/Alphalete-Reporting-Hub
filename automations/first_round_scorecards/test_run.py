@@ -192,6 +192,20 @@ class ScriptFormatTest(unittest.TestCase):
         self.assertIn("send the address via zoom chat", b["system"])
         self.assertIn("quoted any pay number at all", b["rules"])
 
+    def test_eveliz_wrap_up_no_longer_books_the_2nd_round(self):
+        b = grade.build("Eveliz Wright")
+        wrap = dict(b["portions"])["wrap_up"]
+        self.assertIn("phone call before 5pm today", wrap)
+        self.assertNotIn("Which time works best", b["system"])
+        self.assertIn("business professional attire", wrap)
+        self.assertNotIn("booked a day and time", b["rules"])
+        # the rest of her script is still Profits': no pay, 6 months, zoom address
+        self.assertEqual(grade.score(self.r("Eveliz Wright", pay=False))["na"], ["pay"])
+        self.assertIn("within 6 months", dict(b["portions"])["management"])
+        self.assertIn("quoted any pay number at all", b["rules"])
+        # the other Profits offices keep booking on the call
+        self.assertIn("booked a day and time", grade.build("Jairo Ruiz")["rules"])
+
     def test_highline_leaves_pay_schedule_commute(self):
         s = grade.score(self.r("Ryan McSpadden", pay=False, schedule=False, commute=False))
         self.assertEqual((s["score"], s["n_red"] + s["n_must"]), (100, 8))

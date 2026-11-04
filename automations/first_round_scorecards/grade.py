@@ -122,8 +122,11 @@ OFFICES = {
     # Scripts shaped differently from Rafael's -- see FORMATS below.
     # 2026-10-12: Colten's new script (Eve) -- Rafael's shape minus the pay
     "Colten Wright": {"format": "colten"},
-    **{o: {"format": "profits"} for o in ("Eveliz Wright", "Jairo Ruiz",
-                                         "Drew Tepper", "George Delgado", "Samuel Acay")},
+    **{o: {"format": "profits"} for o in ("Jairo Ruiz", "Drew Tepper", "George Delgado",
+                                         "Samuel Acay")},
+    # 2026-11-04 (Camila): Eveliz's new script -- same Profits lines, but the 2nd
+    # round is no longer booked on the call (the standard 5pm wrap-up instead)
+    "Eveliz Wright": {"format": "profits_no_booking"},
     "Roshan Ahmad": {"format": "highline"},
     # 2026-10-19 (Camila): Priscilla's revised script, Highline in Plano
     "Ryan McSpadden": {"format": "highline_ryan"},
@@ -143,8 +146,10 @@ OWNER_ALIASES = {"raf hidalgo": "Rafael Hidalgo", "nii tagoe": "Nii Teiko",
 # so an interviewer isn't marked down for a part her script leaves to the 2nd
 # round), which script portions it drops, the lines that read differently, and
 # the rules that change. Score = % of the items that DO apply.
-#   profits  -- Profits Management (Eveliz, Jairo, Drew, George, Samuel):
+#   profits  -- Profits Management (Jairo, Drew, George, Samuel):
 #               no pay in the 1st round, the 2nd round is booked on the call.
+#   profits_no_booking -- Eveliz's (2026-11-04): profits, but with the standard
+#               wrap-up (call before 5pm, attire + notebook, different direction).
 #   highline -- Highline Management (Roshan): pay, hours and commute all
 #               wait for the 2nd round.
 #   highline_ryan -- Priscilla's revised Highline script (Ryan, 2026-10-19):
@@ -391,6 +396,13 @@ FORMATS = {
         },
     },
 }
+
+# Everything in "profits" except its wrap-up: no wrap_up entry here = the
+# standard one in build().
+FORMATS["profits_no_booking"] = {
+    part: ({k: v for k, v in FORMATS["profits"][part].items() if k != "wrap_up"}
+           if isinstance(FORMATS["profits"][part], dict) else FORMATS["profits"][part])
+    for part in FORMATS["profits"]}
 
 # A script changed in Slack (script_watch.py, Camila 2026-10-12) -> the model's
 # reading of it, saved on the machine that grades. Wins over the lines above
