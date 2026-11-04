@@ -53,8 +53,16 @@ deleted.
    - Branch: **`site`**
    - Main file path: from the table above
    - App URL: the same name as before (e.g. `lucyeco`)
+   - Branch is case-sensitive: lowercase `site` (autocapitalised `Site`
+     reads "This branch does not exist").
    - Advanced settings → Python version: 3.12 if offered (3.14 also works
      today); Secrets: paste what you copied in step 1.
+   - If the Secrets box shows a token as dots, the copy is unusable. Deploy
+     anyway, then paste the real one in Settings → Secrets afterwards. For
+     `slack_user_token` (Lucy Reporting), on the office network:
+     `ssh alphalete@alphaletes-mac-mini.local "cat ~/.config/recruiting-report/slack-user-token" | tr -d '\n' | pbcopy`
+4b. **Share → "Make this app public" on.** A recreated app can come back
+   private.
 4. **Deploy.** The first build installs dependencies and takes 3–5 minutes.
 5. **Check.** Open the app's URL in a fresh tab. For `lucyeco` also open
    `https://lucyeco.streamlit.app/join-lucy-eco` and
@@ -70,8 +78,13 @@ Before: `git log --oneline -1 origin/site` equals (or is behind) `origin/main`.
 After each redeploy, from the repo on Megan's Mac:
 
 ```bash
-curl -s -m 20 -o /dev/null -w "%{http_code} %{time_total}s\n" https://lucyeco.streamlit.app/~/+/_stcore/health
+curl -s -m 20 -L -c /tmp/st -b /tmp/st -o /dev/null -w "%{http_code} %{time_total}s\n" https://lucyeco.streamlit.app/~/+/_stcore/health
 ```
+
+`-L -c -b` matter: every streamlit.app URL first answers `303` to a
+share.streamlit.io cookie hop, public apps included. Without them you get
+`303` or a 20s timeout and it looks like the app is down or private. The
+first check right after a deploy can still time out while the app wakes.
 
 `200` in well under a second, repeated a few times a minute apart while other
 sessions keep pushing to `main`, is the proof: a push to `main` no longer
