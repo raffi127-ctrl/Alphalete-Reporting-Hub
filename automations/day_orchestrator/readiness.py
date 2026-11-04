@@ -433,6 +433,9 @@ class ReadinessCache:
         if ptype == "owner_tracker_late":
             return self._probe_owner_tracker_late(source_id, probe)
 
+        if ptype == "owner_board_verizon":
+            return self._probe_owner_board_verizon(source_id, probe)
+
         if ptype == "dd_week":
             return self._probe_dd_week(source_id, probe)
 
@@ -645,6 +648,18 @@ class ReadinessCache:
             if type(e).__name__ == "TrackerFetchError":
                 return Readiness(False, "no tracker thread yet")
             return Readiness(True, f"late-tracker probe error ({type(e).__name__}) "
+                                   "— running; the report self-guards")
+        return Readiness(ok, why)
+
+    def _probe_owner_board_verizon(self, source_id: str, probe: dict) -> Readiness:
+        """The board for NEW A Players (owner_chat_texts_verizon_send, Carlos
+        2026-11-04) waits for Verizon's numbers. The decision lives in
+        owner_chat_texts.run.verizon_status. Fails OPEN: the run self-guards."""
+        try:
+            from automations.owner_chat_texts import run as oct_run
+            ok, why = oct_run.verizon_status(self.target_date)
+        except Exception as e:  # noqa: BLE001
+            return Readiness(True, f"verizon probe error ({type(e).__name__}) "
                                    "— running; the report self-guards")
         return Readiness(ok, why)
 

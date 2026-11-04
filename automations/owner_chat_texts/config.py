@@ -63,6 +63,15 @@ TRACKER_GROUPS = [GROUP_OWNERS_REAL]
 BOARD_GROUPS = [GROUP_OWNERS_REAL, GROUP_KNOCKING,
                 GROUP_COLTEN_A_PLAYERS, GROUP_SOUTHSHORE_ORG]
 
+# Carlos 2026-11-04: the same board in "NEW A Players", but AFTER the Verizon
+# numbers land (~9:30 CT) so Nico's line is current. Its own later send
+# (--only board_verizon, scheduler: owner_chat_texts_verizon_send); the 7:45
+# rooms above are untouched. Past VERIZON_SEND_ANYWAY_AFTER (CT) it stops
+# waiting and the caption says Verizon isn't in.
+GROUP_NEW_A_PLAYERS = "NEW A Players"
+VERIZON_BOARD_GROUPS = [GROUP_NEW_A_PLAYERS]
+VERIZON_SEND_ANYWAY_AFTER = "10:30"
+
 # "All the Trackers" = exactly what #alphalete-sales carries each morning: the
 # default org-wide set, in post order. Read from tableau_screenshots so a
 # tracker added/retired there is added/retired here with no second list.

@@ -33,6 +33,9 @@ Usage
   # trackers the 9:00 PDF went out without, once they post (one follow-up PDF)
   python -m automations.owner_chat_texts.run --only late
 
+  # the board for NEW A Players, once Verizon's numbers are on it
+  python -m automations.owner_chat_texts.run --only board_verizon
+
 --send is the ONLY thing that texts anyone. Python 3.9-safe (Lucy runtime).
 """
 from __future__ import annotations
@@ -217,6 +220,91 @@ def _run_late(day: dt.date, out_dir: Path, dry_run: bool, out: dict) -> None:
         out["errors"].append("late: %s: %s" % (type(e).__name__, str(e)[:240]))
 
 
+def _verizon_blank(day: dt.date) -> bool:
+    """Is yesterday's Verizon column still empty on the Org board? Anything
+    unreadable reads as not blank: this check must never cost the text."""
+    try:
+        from automations.org_sales_board import data_gate as dg
+        for s in dg.coverage(yday=day - dt.timedelta(days=1)):
+            if s["name"].strip().lower().startswith("verizon"):
+                return bool(s["col"] and s["expected"] and s["missing"])
+    except Exception as e:  # noqa: BLE001
+        print("  verizon check skipped (%s: %s)" % (type(e).__name__, e), flush=True)
+    return False
+
+
+def _verizon_pdf_in(day: dt.date) -> bool:
+    """Has the scorecard mailed on `day` (sales through yesterday) reached us?"""
+    from automations.org_sales_board import verizon_pull as vp
+    pdf = vp.fetch(cfg.OUTPUT_DIR / day.isoformat())
+    d = vp.report_date(pdf) if pdf else None
+    return bool(d and d >= day)
+
+
+def verizon_status(day: dt.date) -> tuple:
+    """(ready, reason) for the NEW A Players board. Ready when Nico's yesterday
+    is on the board, when today's PDF is in (the run tops it off), or past
+    VERIZON_SEND_ANYWAY_AFTER. Readiness asks this, so report and gate agree."""
+    now = dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()
+    hh, mm = (int(x) for x in cfg.VERIZON_SEND_ANYWAY_AFTER.split(":"))
+    if day < now.date() or (day == now.date() and now.time() >= dt.time(hh, mm)):
+        return True, "past %s — sending with what the board has" % (
+            cfg.VERIZON_SEND_ANYWAY_AFTER)
+    if not _verizon_blank(day):
+        return True, "Verizon is on the board"
+    if _verizon_pdf_in(day):
+        return True, "today's Verizon PDF is in"
+    return False, "Verizon PDF not in yet (sends anyway at %s)" % (
+        cfg.VERIZON_SEND_ANYWAY_AFTER)
+
+
+def _top_off_verizon() -> None:
+    """Verizon section, then All Campaigns (the tab this image shows, which is
+    written from the board, not computed). Same commands as board_catchup.sh;
+    --no-manifest so a one-section pull never gives the day's verdict."""
+    import subprocess
+    root = Path(__file__).resolve().parents[2]
+    for args in (["automations.org_sales_board.run", "--step", "daily",
+                  "--skip-compare", "--no-manifest", "--sections", "Verizon"],
+                 ["automations.all_campaigns_board.run", "--apply"]):
+        rc = subprocess.run([sys.executable, "-u", "-m"] + args, cwd=str(root),
+                            timeout=900).returncode
+        print("  verizon top-off: %s exit=%s" % (args[0], rc), flush=True)
+
+
+def _run_board_verizon(day: dt.date, out_dir: Path, dry_run: bool, force: bool,
+                       resend: bool, out: dict) -> None:
+    """The board for NEW A Players, after Verizon (Carlos 2026-11-04)."""
+    key = "wow_board_verizon"
+    if _marker(key, day).exists() and not dry_run and not resend:
+        out["skipped"].append("%s (already sent %s)" % (
+            key, _marker(key, day).read_text().strip()[:19]))
+        return
+    try:
+        ready, why = verizon_status(day)
+        if not ready and not force:
+            out["skipped"].append("board_verizon (WAITING — %s)" % why)
+            return
+        if not force:
+            from automations.org_sales_board import data_gate
+            gate_ok, gate_why = data_gate.gate()
+            if not gate_ok:
+                out["skipped"].append("board (HOLD — %s)" % gate_why)
+                return
+        if not dry_run and _verizon_blank(day) and _verizon_pdf_in(day):
+            _top_off_verizon()
+        caption = cfg.board_caption(day)
+        if _verizon_blank(day):
+            caption += " (Verizon not in yet)"
+        from automations.owner_chat_texts.board_shot import capture_wow_board
+        png = capture_wow_board(out_dir)
+        _send_item(key, caption, png, cfg.VERIZON_BOARD_GROUPS, day, dry_run,
+                   out, resend=resend)
+    except Exception as e:  # noqa: BLE001
+        out["errors"].append("board_verizon: %s: %s" % (type(e).__name__,
+                                                        str(e)[:240]))
+
+
 def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
         dry_run: bool = True, force: bool = False,
         resend: bool = False, owe: Optional[list] = None) -> dict:
@@ -266,6 +354,9 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
             _write_late_pending(day, have + [t for t in owe if t not in have])
         _run_late(day, out_dir, dry_run, out)
 
+    if only == "board_verizon":
+        _run_board_verizon(day, out_dir, dry_run, force, resend, out)
+
     if only in (None, "board"):
         # Same completeness rule as the board email: don't show the owners a
         # board that is short of yesterday. data_gate reads the SHEET, so it
@@ -302,7 +393,8 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
     # backstop counts as delivered (the caption names the gaps), so `missing`
     # alone doesn't fail the run once the send has happened.
     undelivered = [s for s in out["skipped"]
-                   if s.startswith(("board (HOLD", "trackers (WAITING"))]
+                   if s.startswith(("board (HOLD", "trackers (WAITING",
+                                    "board_verizon (WAITING"))]
     out["ok"] = not (out["errors"] or undelivered)
     return out
 
@@ -343,6 +435,25 @@ def _late_manifest(res: dict) -> None:
               % type(e).__name__, flush=True)
 
 
+VERIZON_REPORT_ID = "owner_chat_texts_verizon_send"
+
+
+def _verizon_manifest(res: dict) -> None:
+    """Its own account for delivery_check, same reason as _late_manifest. Never
+    allowed to fail the run."""
+    try:
+        if not res.get("ok"):
+            return
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            VERIZON_REPORT_ID, kind="tracker",
+            succeeded=list(res.get("sent") or []),
+            note="; ".join(res.get("skipped") or []) or "texted NEW A Players")
+    except Exception as e:  # noqa: BLE001
+        print("  (manifest write failed: %s — the run itself was fine)"
+              % type(e).__name__, flush=True)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Text trackers + Org WOW board to the owner iMessage chats")
@@ -351,9 +462,13 @@ def main(argv=None) -> int:
                          "render, resolve groups, send nothing)")
     ap.add_argument("--dry-run", action="store_true",
                     help="already the default; --send wins if both are passed")
-    ap.add_argument("--only", choices=["trackers", "board", "late"], default=None,
+    ap.add_argument("--only", choices=["trackers", "board", "late", "board_verizon"],
+                    default=None,
                     help="late = text the trackers the 9:00 PDF was missing, "
-                         "once they post (scheduler: owner_chat_texts_late_send)")
+                         "once they post (scheduler: owner_chat_texts_late_send); "
+                         "board_verizon = the board for NEW A Players, once "
+                         "Verizon is on it (scheduler: "
+                         "owner_chat_texts_verizon_send)")
     ap.add_argument("--force", action="store_true",
                     help="skip the board data-completeness gate (testing)")
     ap.add_argument("--resend", action="store_true",
@@ -390,7 +505,8 @@ def main(argv=None) -> int:
 
     # The late follow-up has no Hub half of its own: the trackers pill already
     # went green on the 9:00 PDF.
-    if res["ok"] and not dry and res["sent"] and args.only != "late":
+    if (res["ok"] and not dry and res["sent"]
+            and args.only not in ("late", "board_verizon")):
         try:  # the Hub must never fail a delivered text
             from automations.day_orchestrator import hub_publish
             # The Hub card is a PHASE card (Megan 2026-08-23: "2 colors"):
@@ -417,6 +533,8 @@ def main(argv=None) -> int:
             pass
     if args.only == "late" and not dry:
         _late_manifest(res)
+    if args.only == "board_verizon" and not dry:
+        _verizon_manifest(res)
     if res["ok"]:
         print("=== done%s ===" % (" (dry-run)" if dry else ""), flush=True)
     elif not res["errors"]:
