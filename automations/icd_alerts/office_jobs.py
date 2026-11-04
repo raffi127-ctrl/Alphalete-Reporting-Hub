@@ -107,9 +107,10 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
     try:
         if kind == "bgc_send":
             from automations.icd_alerts import sterling_send
-            people = list((job.get("payload") or {}).get("people") or [])
-            res = sterling_send.send_invites(people, live=live,
-                                             office_key=office_key, log=log)
+            payload = job.get("payload") or {}
+            res = sterling_send.send_invites(list(payload.get("people") or []), live=live,
+                                             office_key=office_key, log=log,
+                                             location=payload.get("location") or {})
         else:
             res = {"status": "error", "error": "this computer doesn't know job kind %r yet -- update Lucy" % kind}
     except Exception as e:  # noqa: BLE001

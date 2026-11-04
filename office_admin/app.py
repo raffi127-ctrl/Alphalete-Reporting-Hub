@@ -155,6 +155,31 @@ def _bgc_section(admin, reqs, ws) -> None:
                    "Ask Lucy's team to finish setting it up.")
         return
 
+    # The office's city + state: Sterling's form needs it on every invite.
+    sws = S.settings_tab()
+    location = S.location_of(S.office_settings(sws, office.key))
+    editing = st.session_state.get("edit_location") or not location
+    if editing:
+        st.markdown("**Where is your office?** (asked once)")
+        with st.form("location"):
+            states = list(C.US_STATES)
+            pick = st.selectbox("State", ["Pick your state"] + states,
+                                index=(states.index(location["state"]) + 1) if location else 0)
+            city = st.text_input("City", value=location.get("city", "") if location else "")
+            if st.form_submit_button("Save", type="primary"):
+                try:
+                    S.save_office_location(sws, office.key, pick, city, admin["username"])
+                    st.session_state.pop("edit_location", None)
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e).capitalize() + ".")
+        return
+    loc_cols = st.columns([4, 1])
+    loc_cols[0].caption("Office location: %s, %s" % (location["city"], location["state"]))
+    if loc_cols[1].button("Change", key="chg-loc"):
+        st.session_state["edit_location"] = True
+        st.rerun()
+
     sends = _mine(reqs, office.key, C.SEND_BGC)
     last_send = sends[0] if sends else None
     if last_send and last_send.get("Status") == C.AT_OFFICE:
@@ -194,7 +219,7 @@ def _bgc_section(admin, reqs, ws) -> None:
             if st.button("📨 Send background checks (%d)" % len(picked), type="primary",
                          use_container_width=True, disabled=send_open or not picked):
                 try:
-                    actions.send_bgc(ws, admin, office, picked)
+                    actions.send_bgc(ws, admin, office, picked, location)
                     st.session_state.pop("bob", None)
                 except Exception as e:  # noqa: BLE001
                     st.error(str(e)[:300])

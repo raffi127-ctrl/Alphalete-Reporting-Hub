@@ -123,6 +123,7 @@ class FakeWs:
 
 ADMIN = {"username": "omar-admin", "office": "omar", "name": "x"}
 PEOPLE = [{"first_name": "Ana", "last_name": "Lopez", "email": "a@x.com"}]
+LOC = {"country": "United States", "state": "Michigan", "city": "Dearborn"}
 
 
 class SendGoesToTheOfficeComputer(unittest.TestCase):
@@ -131,7 +132,7 @@ class SendGoesToTheOfficeComputer(unittest.TestCase):
         ws = FakeWs()
         with mock.patch("automations.office_admin.relay_client.request_job",
                         return_value="job-1") as rq:
-            jid = actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+            jid = actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE, LOC)
         self.assertEqual(jid, "job-1")
         _, kw = rq.call_args
         self.assertEqual(kw["mode"], "dry")                 # Omar starts dry
@@ -145,21 +146,21 @@ class SendGoesToTheOfficeComputer(unittest.TestCase):
         with mock.patch("automations.office_admin.relay_client.request_job",
                         side_effect=relay_client.RelayError("down")):
             with self.assertRaises(relay_client.RelayError):
-                actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+                actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE, LOC)
         self.assertEqual(S.read_requests(ws)[0]["Status"], C.FAILED)
 
     def test_nobody_valid_is_refused_before_anything(self):
         from automations.office_admin import actions
         ws = FakeWs()
         with self.assertRaises(ValueError):
-            actions.send_bgc(ws, ADMIN, C.office("omar"), [{"first_name": "A"}])
+            actions.send_bgc(ws, ADMIN, C.office("omar"), [{"first_name": "A"}], LOC)
         self.assertEqual(S.read_requests(ws), [])
 
     def test_refresh_copies_the_answer(self):
         from automations.office_admin import actions
         ws = FakeWs()
         with mock.patch("automations.office_admin.relay_client.request_job", return_value="j"):
-            actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+            actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE, LOC)
         req = S.read_requests(ws)[0]
         ans = {"status": "dry_run", "answered": True, "result": {"status": "dry_run", "would_send": ["Ana Lopez"]}}
         with mock.patch("automations.office_admin.relay_client.job_status", return_value=ans):
@@ -171,7 +172,7 @@ class SendGoesToTheOfficeComputer(unittest.TestCase):
         from automations.office_admin import actions, relay_client
         ws = FakeWs()
         with mock.patch("automations.office_admin.relay_client.request_job", return_value="j"):
-            actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE)
+            actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE, LOC)
         req = S.read_requests(ws)[0]
         with mock.patch("automations.office_admin.relay_client.job_status",
                         side_effect=relay_client.RelayError("timeout")):
@@ -245,6 +246,168 @@ class CalendarV2(unittest.TestCase):
     def test_only_no_shows_is_a_real_zero(self):
         from automations.office_admin import offered as O
         O.check_v2_rows([{"show": "Not Showed Change Status", "has_offer_control": False}])
+
+
+class OfficeLocation(unittest.TestCase):
+    """Sterling's form needs the owner's city + state (Megan 2026-11-03)."""
+    def _ws(self):
+        ws = FakeWs()
+        ws.values = [list(C.SETTINGS_HEADERS)]
+        return ws
+
+    def test_save_then_read(self):
+        ws = self._ws()
+        S.save_office_location(ws, "omar", "Michigan", "  Dearborn ", "omar-admin")
+        self.assertEqual(S.location_of(S.office_settings(ws, "omar")),
+                         {"country": "United States", "state": "Michigan", "city": "Dearborn"})
+
+    def test_change_replaces_the_row(self):
+        ws = self._ws()
+        S.save_office_location(ws, "omar", "Michigan", "Dearborn", "a")
+        S.save_office_location(ws, "omar", "Texas", "Plano", "a")
+        self.assertEqual(len(ws.values), 2)
+        self.assertEqual(S.location_of(S.office_settings(ws, "omar"))["city"], "Plano")
+
+    def test_bad_input_refused(self):
+        ws = self._ws()
+        with self.assertRaises(ValueError):
+            S.save_office_location(ws, "omar", "Pick your state", "Dearborn", "a")
+        with self.assertRaises(ValueError):
+            S.save_office_location(ws, "omar", "Michigan", "  ", "a")
+
+    def test_unset_office_has_no_location(self):
+        self.assertEqual(S.location_of(S.office_settings(self._ws(), "omar")), {})
+
+    def test_send_refused_without_location(self):
+        from automations.office_admin import actions
+        ws = FakeWs()
+        with mock.patch("automations.office_admin.relay_client.request_job") as rq:
+            with self.assertRaises(ValueError):
+                actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE, {})
+        rq.assert_not_called()
+
+    def test_location_rides_in_the_job(self):
+        from automations.office_admin import actions
+        ws = FakeWs()
+        with mock.patch("automations.office_admin.relay_client.request_job", return_value="j") as rq:
+            actions.send_bgc(ws, ADMIN, C.office("omar"), PEOPLE, LOC)
+        self.assertEqual(rq.call_args[0][2]["location"], LOC)
+
+    def test_office_computer_refuses_without_location(self):
+        from automations.icd_alerts import sterling_send
+        r = sterling_send.send_invites(PEOPLE, live=False)
+        self.assertEqual(r["status"], "error")
+
+
+class SterlingOrderPicks(unittest.TestCase):
+    """Order Information picks (Megan 2026-11-03)."""
+    def test_bill_code_is_the_one_real_option(self):
+        from automations.icd_alerts import sterling_send as SS
+        self.assertEqual(SS.pick_bill_code(["<select billcode>", "1658411"]), "1658411")
+
+    def test_bill_code_none_or_many_stops(self):
+        from automations.icd_alerts import sterling_send as SS
+        with self.assertRaises(ValueError):
+            SS.pick_bill_code(["<select billcode>"])
+        with self.assertRaises(ValueError):
+            SS.pick_bill_code(["<select billcode>", "1658411", "999"])
+
+    def test_job_position_is_the_elite_one(self):
+        from automations.icd_alerts import sterling_send as SS
+        self.assertEqual(SS.pick_elite(["<select Job Title>", "Sterling - Basic", "Sterling - Elite", "Other"]),
+                         "Sterling - Elite")
+        self.assertEqual(SS.pick_elite(["<select Job Title>", "Sterling Basic", "Sterling Elite / Extra", "X"]),
+                         "Sterling Elite / Extra")
+
+    def test_screening_package_same_rule(self):
+        from automations.icd_alerts import sterling_send as SS
+        self.assertEqual(SS.pick_elite(["<Select a package>", "Sterling Elite / Extra", "Sterling Basic"]),
+                         "Sterling Elite / Extra")
+
+    def test_job_position_none_or_two_elite_stops(self):
+        from automations.icd_alerts import sterling_send as SS
+        with self.assertRaises(ValueError):
+            SS.pick_elite(["<select Job Title>", "Sterling - Basic"])
+        with self.assertRaises(ValueError):
+            SS.pick_elite(["Sterling - Elite", "Sterling Elite / Extra"])
+
+    def test_elite_picked_by_name(self):
+        from automations.icd_alerts import sterling_send as SS
+        opts = ["<Select a package>", "Sterling - Basic", "Sterling  -  Elite"]
+        self.assertEqual(SS.pick_option(opts, SS.SCREENING_PACKAGE), "Sterling  -  Elite")
+        with self.assertRaises(ValueError):
+            SS.pick_option(["<select Job Title>", "Other"], SS.JOB_POSITION)
+
+
+class SterlingBulkCsv(unittest.TestCase):
+    """Client Hub bulk upload, headers off Sterling's own template."""
+    def test_rows_and_header(self):
+        from automations.icd_alerts import sterling_send as SS
+        out = SS.build_csv([{"first_name": "Lincoln", "last_name": "Peterson", "email": "p@x.com"},
+                            {"first_name": "Den Rhys", "last_name": "Amiel Ramos", "email": "d@x.com"}])
+        self.assertEqual(out.splitlines(), ["First,Last,Email",
+                                            "Lincoln,Peterson,p@x.com",
+                                            "Den Rhys,Amiel Ramos,d@x.com"])
+
+    def test_skips_incomplete_and_duplicate_emails(self):
+        from automations.icd_alerts import sterling_send as SS
+        out = SS.build_csv([{"first_name": "A", "last_name": "B", "email": "a@x.com"},
+                            {"first_name": "A", "last_name": "B", "email": "A@X.com"},
+                            {"first_name": "C", "last_name": "", "email": "c@x.com"},
+                            {"first_name": "D", "last_name": "E", "email": "none"}])
+        self.assertEqual(len(out.splitlines()), 2)
+
+    def test_header_is_byte_for_byte_sterlings_template(self):
+        from pathlib import Path
+        from automations.icd_alerts import sterling_send as SS
+        tpl = Path(__file__).resolve().parents[2] / "resources" / "sterling" / "client-hub-template.csv"
+        self.assertTrue(SS.build_csv([]).encode("utf-8").startswith(tpl.read_bytes()))
+
+    def test_found_count_must_match_before_send(self):
+        from automations.icd_alerts import sterling_send as SS
+        self.assertEqual(SS.found_count("Bulk candidates uploaded: 1 found"), 1)
+        SS.check_found("Bulk candidates uploaded:  12 found", 12)
+        with self.assertRaises(ValueError):
+            SS.check_found("Bulk candidates uploaded: 11 found", 12)
+        with self.assertRaises(ValueError):
+            SS.check_found("Drag here or click to browse for a file", 1)
+
+    def test_commas_in_names_are_quoted(self):
+        from automations.icd_alerts import sterling_send as SS
+        out = SS.build_csv([{"first_name": "Jr, Reggie", "last_name": "Mason", "email": "r@x.com"}])
+        self.assertIn('"Jr, Reggie",Mason,r@x.com', out)
+
+
+class ClientHubLocation(unittest.TestCase):
+    """Client Hub Location box reads 'Plano, TX, USA' (Megan screenshot 11/04)."""
+    def test_text_from_saved_location(self):
+        from automations.icd_alerts import sterling_send as SS
+        self.assertEqual(SS.location_text({"state": "Texas", "city": "Plano"}), "Plano, TX, USA")
+        self.assertEqual(SS.location_text({"state": "Michigan", "city": " Dearborn "}), "Dearborn, MI, USA")
+
+    def test_bad_state_stops(self):
+        from automations.icd_alerts import sterling_send as SS
+        with self.assertRaises(ValueError):
+            SS.location_text({"state": "Tejas", "city": "Plano"})
+
+    def test_matches_what_the_box_shows(self):
+        from automations.icd_alerts import sterling_send as SS
+        loc = {"state": "Texas", "city": "Plano"}
+        self.assertTrue(SS.location_matches("Plano, TX, USA", loc))
+        self.assertTrue(SS.location_matches("plano,tx", loc))
+        self.assertFalse(SS.location_matches("Plano, IL, USA", loc))
+
+    def test_suggestion_list_picks_the_right_state(self):
+        from automations.icd_alerts import sterling_send as SS
+        loc = {"state": "Texas", "city": "Plano"}
+        got = SS.pick_location_suggestion(["Plano, IL, USA", "Plano, TX, USA", "Plano Pkwy, TX, USA"], loc)
+        self.assertEqual(got, "Plano, TX, USA")
+        with self.assertRaises(ValueError):
+            SS.pick_location_suggestion(["Plano, IL, USA"], loc)
+
+    def test_every_page_state_has_a_code(self):
+        from automations.icd_alerts import sterling_send as SS
+        self.assertEqual(set(C.US_STATES), set(SS.STATE_CODES))
 
 
 class SterlingCodes(unittest.TestCase):
@@ -366,7 +529,9 @@ class SterlingForward(unittest.TestCase):
                 mock.patch("automations.icd_alerts.relay.forward_confirmed", return_value=True):
             self.assertEqual(SF.walk_through(ask, say=lambda *_: None, office_key="omar"), "done")
         rf.assert_called_once_with("omar@gmail.com", office_key="omar", service="sterling")
-        self.assertEqual([c.args[0] for c in op.call_args_list], [SF.FILTER_URL])   # filter only
+        # Gmail opens in the ICD's own account (code_forward.for_account, Eve 11/04).
+        self.assertEqual([c.args[0] for c in op.call_args_list],
+                         [F.for_account(SF.FILTER_URL, "omar@gmail.com")])   # filter only
 
     def test_walk_adds_gmail_forward_when_missing(self):
         from automations.icd_alerts import code_forward as F, sterling_forward as SF
@@ -377,7 +542,9 @@ class SterlingForward(unittest.TestCase):
                 mock.patch("automations.icd_alerts.relay.report_forward", return_value=True), \
                 mock.patch("automations.icd_alerts.relay.forward_confirmed", return_value=False):
             self.assertEqual(SF.walk_through(ask, say=lambda *_: None, office_key="omar"), "done")
-        self.assertEqual([c.args[0] for c in op.call_args_list], [F.FORWARDING_URL, SF.FILTER_URL])
+        self.assertEqual([c.args[0] for c in op.call_args_list],
+                         [F.for_account(F.FORWARDING_URL, "omar@gmail.com"),
+                          F.for_account(SF.FILTER_URL, "omar@gmail.com")])
 
     def test_skip(self):
         from automations.icd_alerts import code_forward as F, sterling_forward as SF
@@ -390,13 +557,16 @@ class SterlingForward(unittest.TestCase):
 class OfficeComputer(unittest.TestCase):
     def test_sterling_dry_sends_nothing(self):
         from automations.icd_alerts import sterling_send
-        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=False)
+        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=False,
+                                       location={"state": "Texas", "city": "Plano"})
         self.assertEqual(r["status"], "dry_run")
+        self.assertEqual(r["location"], "Plano, Texas")
         self.assertEqual(r["would_send"], ["A B"])
 
     def test_sterling_live_refuses_until_wired(self):
         from automations.icd_alerts import sterling_send
-        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=True)
+        r = sterling_send.send_invites([{"first_name": "A", "last_name": "B", "email": "a@b.c"}], live=True,
+                                       location={"state": "Texas", "city": "Plano"})
         self.assertEqual(r["status"], "error")
 
     def test_unknown_kind_is_an_answer_not_a_crash(self):

@@ -40,21 +40,26 @@ def log_find(ws, admin: Dict, people: List[Dict]) -> None:
         S.update_request(ws, row, Status=C.DONE, Result=json.dumps({"candidates": people}))
 
 
-def send_bgc(ws, admin: Dict, office: C.Office, people: List[Dict]) -> str:
+def send_bgc(ws, admin: Dict, office: C.Office, people: List[Dict],
+             location: Optional[Dict[str, str]] = None) -> str:
     """Queue the send for the ECO computer. Returns the relay job id. Logged
     BEFORE it is queued, so a press is never lost even if the relay call
-    then fails."""
+    then fails. `location` = the office's State/City (sheets.location_of) --
+    Sterling's form will not go without it, so neither does this."""
     from automations.office_admin import relay_client
     from automations.office_admin.worker import valid_people
     people = valid_people(people)
     if not people:
         raise ValueError("Nobody with a name and email was picked.")
+    if not (location or {}).get("state") or not (location or {}).get("city"):
+        raise ValueError("Set your office's city and state first.")
     rid = S.add_request(ws, username=admin["username"], office_key=office.key,
                         action=C.SEND_BGC, details={"people": people})
     row = _row_of(ws, rid)
     try:
         jid = relay_client.request_job(office.key, "bgc_send",
-                                       {"people": people, "request_id": rid},
+                                       {"people": people, "request_id": rid,
+                                        "location": location},
                                        mode=office.bgc_mode)
     except Exception as e:
         if row:

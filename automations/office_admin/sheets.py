@@ -114,6 +114,46 @@ def set_admin_cells(ws, row: int, updates: Dict[str, str]) -> None:
     _set_cells(ws, row, updates)
 
 
+# ---------------------------------------------------------- settings tab --
+
+def settings_tab(sheet_id: str = ""):
+    return open_tab(C.SETTINGS_TAB, C.SETTINGS_HEADERS, sheet_id)
+
+
+def office_settings(ws, office_key: str) -> Dict[str, str]:
+    """This office's row ({} when none). One row per office."""
+    k = (office_key or "").strip().lower()
+    for r in records(_retry(ws.get_all_values)):
+        if (r.get("Office Key") or "").strip().lower() == k:
+            return r
+    return {}
+
+
+def save_office_location(ws, office_key: str, state: str, city: str, by: str) -> None:
+    """Set the office's State + City, replacing its row if it has one."""
+    if state not in C.US_STATES:
+        raise ValueError("pick a state from the list")
+    city = " ".join((city or "").split())
+    if not city:
+        raise ValueError("type the city")
+    row = office_settings(ws, office_key)
+    fields = {"State": state, "City": city, "Updated By": by, "Updated At": now_str()}
+    if row:
+        _set_cells(ws, row["_row"], fields)
+    else:
+        fields["Office Key"] = office_key.strip().lower()
+        _retry(ws.append_row, [fields.get(h, "") for h in C.SETTINGS_HEADERS],
+               value_input_option="RAW")
+
+
+def location_of(row: Dict[str, str]) -> Dict[str, str]:
+    """{'country','state','city'} for Sterling's form, or {} when not set."""
+    state, city = (row.get("State") or "").strip(), (row.get("City") or "").strip()
+    if state not in C.US_STATES or not city:
+        return {}
+    return {"country": "United States", "state": state, "city": city}
+
+
 # ---------------------------------------------------------- requests tab --
 
 def requests_tab(sheet_id: str = ""):

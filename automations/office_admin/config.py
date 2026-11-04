@@ -49,6 +49,24 @@ REQUESTS_HEADERS = ["Request ID", "Requested At", "Username", "Office Key",
                     "Action", "Details", "Status", "Result", "Updated At",
                     "Job ID"]
 
+# Per-office answers the Sterling E-Invite form needs every time, asked ONCE
+# on the page and kept here (Megan 2026-11-03: "we will need to ask the city
+# and state of the owner"). Sterling's "Location of Job/Position".
+SETTINGS_TAB = "Office Settings"
+SETTINGS_HEADERS = ["Office Key", "State", "City", "Updated By", "Updated At"]
+
+# Sterling's State dropdown, by its visible names.
+US_STATES = (
+    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+    "Connecticut", "Delaware", "District of Columbia", "Florida", "Georgia",
+    "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky",
+    "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+    "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire",
+    "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota",
+    "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island",
+    "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont",
+    "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming")
+
 # Request actions -- one per button.
 FIND_BGC = "find_bgc"
 SEND_BGC = "send_bgc"

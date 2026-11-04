@@ -23,3 +23,7 @@
 *.zip   binary
 *.xlsx  binary
 *.pdf   binary
+
+# Sterling's own CSV template, kept byte-for-byte (CRLF) -- test_office_admin
+# compares sterling_send.build_csv against it.
+resources/sterling/client-hub-template.csv -text
