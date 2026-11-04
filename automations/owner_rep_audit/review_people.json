@@ -1,0 +1,637 @@
+[
+{
+"slack_id": "U0BJJDYJB50",
+"name": "Aaron Bell",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0A9D5MJHKK",
+"name": "Abe Dylan Ricafrente",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0ATN1EHTME",
+"name": "Adarius Phillips",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U09ML69603W",
+"name": "Agustina",
+"channels": "frank-matos"
+},
+{
+"slack_id": "U0BCNBW8WHE",
+"name": "akeem usher",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0BDF7J3A9H",
+"name": "Ameer Almutairy",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U09CYNWRLBC",
+"name": "Ammar Alkhafaji",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0C6P51UBEK",
+"name": "Ana Sofia Tenjo",
+"channels": "valeria"
+},
+{
+"slack_id": "U0C9HU24JLE",
+"name": "Anabelle salguero",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U069URK7752",
+"name": "Analay Ruiz",
+"channels": "valeria"
+},
+{
+"slack_id": "U0C39H4N31C",
+"name": "Andrea Chavira",
+"channels": "nicolas-lujan"
+},
+{
+"slack_id": "U0BHAND2W9L",
+"name": "André LaFond",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0C6WNRKV51",
+"name": "Aneris Albelo-Torres",
+"channels": "valeria"
+},
+{
+"slack_id": "U0APN78GZDM",
+"name": "Anibal Joel Lopez",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0CCBSVN1M1",
+"name": "Anthony Murillo",
+"channels": "haytham-nagi"
+},
+{
+"slack_id": "U0AU5NRT9QU",
+"name": "Arcie",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0BMV6MN2UE",
+"name": "Arian Escalona",
+"channels": "samuel-acay"
+},
+{
+"slack_id": "U0B7V04H1R8",
+"name": "Ayden Soto",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0B3CUJRME0",
+"name": "Benito Cal",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0BN22U11UJ",
+"name": "Bianca Garcia",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U09QWLWC1JM",
+"name": "Blaine Chipman",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U09KDLP7QA0",
+"name": "Brandon Childs",
+"channels": "isaiah-revelle"
+},
+{
+"slack_id": "U0BCRC8S0BW",
+"name": "Brenda Rico",
+"channels": "isaiah-revelle"
+},
+{
+"slack_id": "U072ACXTR7B",
+"name": "Caleb Richards",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0C65NN0L57",
+"name": "Caleb Richards",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0BMAG2CYCQ",
+"name": "Callista Flythe",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U096SPZ18S0",
+"name": "Cam Fouts",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0CAFSDABPB",
+"name": "Carlos A Cortes",
+"channels": "eveliz-wright"
+},
+{
+"slack_id": "U0BFX5HG9UM",
+"name": "Carlos Vega",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U083H9N6WUA",
+"name": "Carolina",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U06UM7VKGLX",
+"name": "Catalina Gonzalez",
+"channels": "isaiah-revelle"
+},
+{
+"slack_id": "U0BCM2RU5EW",
+"name": "Christian Yonson",
+"channels": "cyrus-wade, haytham-nagi"
+},
+{
+"slack_id": "U0BF2QU6R0R",
+"name": "CINTIA GARCIA",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0BV0EBMKNY",
+"name": "Cristian Skeete",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U084KUFFNV6",
+"name": "Dat Huynh",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0BAU0C7PPH",
+"name": "Dax Manetta",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U0AG4NFAYJC",
+"name": "Denva Wade",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0B7A477PQF",
+"name": "Diannys Caraballo",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U09AW4DK13P",
+"name": "Diego Cura",
+"channels": "isaiah-revelle"
+},
+{
+"slack_id": "U09P0H2S6Q4",
+"name": "Ehmani Goss",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0A8FHTREKY",
+"name": "Eleida Coc",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U096NS13LHZ",
+"name": "Elhassan",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U09E853CD2Q",
+"name": "Elijah",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0B43EF5YBZ",
+"name": "Elijah Pelayo",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0C41D70VHP",
+"name": "Favour Nicolas",
+"channels": "ryan-mcspaddens"
+},
+{
+"slack_id": "U0B55JXDJTW",
+"name": "Genesis Cordero",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U049A2MJST1",
+"name": "hammad malik",
+"channels": "jacob-dover"
+},
+{
+"slack_id": "U0BJQUKQKGE",
+"name": "Hannah Smith",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0BNTDS0XEJ",
+"name": "Hunter Henslee",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0BSB02AKJM",
+"name": "Indelible Marketing",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0BCK4QKZSA",
+"name": "Ivan Teran",
+"channels": "haytham-nagi"
+},
+{
+"slack_id": "U0BLJ88LBU5",
+"name": "Jadyn Shaheed",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0BBBGSC97T",
+"name": "Jaelynne Bethea",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U09S0G635FZ",
+"name": "Jae’Len Arnum",
+"channels": "ryan-mcspaddens"
+},
+{
+"slack_id": "U0BD376586S",
+"name": "jahmarflowers30",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0BG8BWGHUG",
+"name": "Jared",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0B6DTP87RU",
+"name": "Jasmin Salguero",
+"channels": "valeria"
+},
+{
+"slack_id": "U0BG65FQ7RD",
+"name": "Javier Ibarra",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U0CBQUTSZR7",
+"name": "Javohn S",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0AQY8BJUG3",
+"name": "Jayden G",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U09TL6HH336",
+"name": "Jerome Harris",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0ASX1YUJH0",
+"name": "Jessica Abrams",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U09BCA6FT60",
+"name": "Jessica Abrams",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0BHE0S231S",
+"name": "Jonelie Capisnon",
+"channels": "cyrus-wade, haytham-nagi"
+},
+{
+"slack_id": "U0BVBBHTNEL",
+"name": "josephdelgado3888",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U0A8NBUC1LH",
+"name": "Joshua Viera",
+"channels": "valeria"
+},
+{
+"slack_id": "U0AV86ZCCRE",
+"name": "Joshua Viera",
+"channels": "valeria"
+},
+{
+"slack_id": "U0BGJ7F3K8V",
+"name": "Joshua Viera",
+"channels": "joseph-delgados"
+},
+{
+"slack_id": "U06ARQ0F1B6",
+"name": "Juweria Syed",
+"channels": "haytham-nagi, jacob-dover"
+},
+{
+"slack_id": "U0C6W25Q9QQ",
+"name": "Kamila Nava",
+"channels": "frank-matos"
+},
+{
+"slack_id": "U0AJ7MN8GJJ",
+"name": "karla",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U09GX6TQY12",
+"name": "Keegan Escamilla",
+"channels": "isaiah-revelle"
+},
+{
+"slack_id": "U0B9XJQELK1",
+"name": "Kyle Stallard",
+"channels": "ryan-mcspaddens"
+},
+{
+"slack_id": "U0B6CMQM54H",
+"name": "Kyrel Polanco",
+"channels": "kash-rai, maxamad-adens, rashad-reed"
+},
+{
+"slack_id": "U0B86R451B3",
+"name": "Landon Mardi",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0CAFQARTMX",
+"name": "Larona Chiloane",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0B4P76U459",
+"name": "Laura",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0BCXULLRR8",
+"name": "laura kumar",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0BG6LK4JJH",
+"name": "Liyanda Ndlovu",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U08EJHJDUUF",
+"name": "Logan Ellis",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0C3GAPK8KW",
+"name": "Lorena Gomez",
+"channels": "salik-haque"
+},
+{
+"slack_id": "U0C56826CSZ",
+"name": "Lucia Fracassi",
+"channels": "eveliz-wright, jairo-ruiz"
+},
+{
+"slack_id": "U07KA13EG3H",
+"name": "Lucia Masters",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U07Q1JYDQUR",
+"name": "Maddy Rose",
+"channels": "maxamad-adens, rashad-reed"
+},
+{
+"slack_id": "U0AUP1P91U4",
+"name": "Malachi",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0B9R8EF0NN",
+"name": "Malachi Ramzy",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0B0QTT4NLU",
+"name": "marcel tinsley",
+"channels": "valeria"
+},
+{
+"slack_id": "U08Q4SV81QT",
+"name": "Marco Martinez",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U08EGPQ43MK",
+"name": "Markees jones",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U05D3G5CSE6",
+"name": "Max Allen",
+"channels": "ryan-mcspaddens"
+},
+{
+"slack_id": "U09SDDHGWQH",
+"name": "Maxamad",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0BE074AS1W",
+"name": "Maxime Hunt",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0A7U1U8274",
+"name": "Melvin Hallman",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0AMEA47FQD",
+"name": "Michael Robinson",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U08BQGBR77F",
+"name": "Minahil Mujahid",
+"channels": "frank-matos"
+},
+{
+"slack_id": "U0BLGF9EM4Y",
+"name": "Mo Ejaz",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0B1RQ240BS",
+"name": "Mohammed Abudaqqa",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U0B0L3FC51T",
+"name": "Nareese Peterson",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U091UDLHZPY",
+"name": "Nataia Trotter",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0A7VCXU79Q",
+"name": "natalie dewland",
+"channels": "maxamad-adens"
+},
+{
+"slack_id": "U08U41C6X1B",
+"name": "Nicole Gendreau",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U09U39BNN2Y",
+"name": "Nolan Quigley",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0A24KEVDS9",
+"name": "Omar H",
+"channels": "ryan-mcspaddens"
+},
+{
+"slack_id": "U0C6FR5ENHJ",
+"name": "oomohamad98",
+"channels": "salik-haque"
+},
+{
+"slack_id": "U0BPDB85M43",
+"name": "Oscar Reyes",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0B98PZ067P",
+"name": "Patience Edwards",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0BAYF3705Q",
+"name": "Phil Fleury",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0AA1HX0RQ9",
+"name": "Phil Fleury",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0BEX4C1ZPE",
+"name": "Prissy Gonzales",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0B7A32SUNT",
+"name": "Raegan Corrin",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0C371NBQ91",
+"name": "Rania Fouad",
+"channels": "nicolas-lujan"
+},
+{
+"slack_id": "U0BP3UNMKSR",
+"name": "Raymark Pajulas",
+"channels": "cyrus-wade"
+},
+{
+"slack_id": "U0ATCCL7AJ2",
+"name": "Sean Wainstein",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0BCMF32XLZ",
+"name": "Sherese Campbell",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0B8LA2LRGU",
+"name": "Spencer Berger",
+"channels": "isaiah-revelle"
+},
+{
+"slack_id": "U05V1KLBMT2",
+"name": "Sydnee Hammett",
+"channels": "kash-rai"
+},
+{
+"slack_id": "U0C1DRHA760",
+"name": "Thomas Childress",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U0A5UATJ62X",
+"name": "Traveon",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0BCC7SHWV8",
+"name": "Trenton Stewart",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U08A243AV9Q",
+"name": "Valeria Tristan",
+"channels": "valeria"
+},
+{
+"slack_id": "U054BLVL94N",
+"name": "Valeria Zavala",
+"channels": "frank-matos, george-delgado, jairo-ruiz, nicolas-lujan, valeria"
+},
+{
+"slack_id": "U09K1SXDZK2",
+"name": "Vincent Dodson",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0B9Z99BP1Q",
+"name": "Wendy Kheswa",
+"channels": "aya-al-khafaji"
+},
+{
+"slack_id": "U088K2CT02Y",
+"name": "Yassi",
+"channels": "jacob-dover, ryan-mcspaddens"
+},
+{
+"slack_id": "U0C6TNV0CCQ",
+"name": "Zachary Lugones",
+"channels": "eveliz-wright"
+},
+{
+"slack_id": "U0BHE4MD258",
+"name": "Zarahy",
+"channels": "rashad-reed"
+},
+{
+"slack_id": "U0C4DLR3TM3",
+"name": "Zylin Flowers",
+"channels": "jose-velasquez"
+}
+]

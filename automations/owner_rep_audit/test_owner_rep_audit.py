@@ -279,6 +279,42 @@ class ProtectedStaff(unittest.TestCase):
         self.assertIn("Nobody was removed", M.done([], ["Staff Person"]))
 
 
+class OvStatus(unittest.TestCase):
+    rows = [{"office": "1 A", "roster": "inactive", "name": "Ana Lopez", "email": "a@x.com"},
+            {"office": "2 B", "roster": "active", "name": "Ana Lopez", "email": "new@x.com"},
+            {"office": "1 A", "roster": "admin", "name": "Bo Diaz", "email": "b@x.com"}]
+
+    def test_email_wins_and_name_is_only_the_fallback(self):
+        from automations.owner_rep_audit.ov_status import match
+        self.assertEqual(len(match({"name": "Ana Lopez", "email": "a@x.com"}, self.rows)), 1)
+        self.assertEqual(len(match({"name": "Ana Lopez", "email": ""}, self.rows)), 2)
+
+    def test_one_word_name_matches_nobody(self):
+        from automations.owner_rep_audit.ov_status import match
+        self.assertEqual(match({"name": "Ana", "email": ""}, self.rows), [])
+
+    def test_a_working_row_beats_an_old_retired_one(self):
+        from automations.owner_rep_audit.ov_status import verdict
+        self.assertEqual(verdict(self.rows[:2]), "active")
+        self.assertEqual(verdict(self.rows[:1]), "terminated")
+        self.assertEqual(verdict([]), "not found")
+
+    def test_no_email_is_saved_in_the_people_file(self):
+        from automations.owner_rep_audit.ov_status import PEOPLE_FILE
+        self.assertNotIn("@", PEOPLE_FILE.read_text(encoding="utf-8"))
+
+    def test_flag_stops_before_anything_else_even_with_live(self):
+        from unittest import mock
+        from automations.owner_rep_audit import ov_status
+        with mock.patch.object(ov_status, "main", return_value=0) as m, \
+                mock.patch.object(run, "Out") as out, \
+                mock.patch.object(run, "load_state") as load:
+            self.assertEqual(run.main(["--live", "--ov-status"]), 0)
+        m.assert_called_once_with()
+        out.assert_not_called()
+        load.assert_not_called()
+
+
 class Matching(unittest.TestCase):
     users = [{"id": "U1", "name": "Kash Rai", "email": "k@x.com"},
              {"id": "U2", "name": "Ann Lee", "email": "ann@x.com"},

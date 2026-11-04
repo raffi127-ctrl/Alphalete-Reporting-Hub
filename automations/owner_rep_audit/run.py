@@ -359,10 +359,15 @@ def main(argv=None) -> int:
     ap.add_argument("--show", action="store_true", help="print the state")
     ap.add_argument("--check-protected", action="store_true",
                     help="read-only: print who this machine protects, then stop")
+    ap.add_argument("--ov-status", action="store_true",
+                    help="read-only: where review_people.json stands in OwnerVille")
     a = ap.parse_args(argv)
 
     if a.check_protected:
         return check_protected()
+    if a.ov_status:
+        from automations.owner_rep_audit import ov_status
+        return ov_status.main()
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     if a.show:
         print(json.dumps(load_state(today), indent=1)[:20000])
