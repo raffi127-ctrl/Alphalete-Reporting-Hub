@@ -57,7 +57,9 @@ def booked(day: dt.date, offices: Iterable[str] = OFFICES) -> List[Dict]:
                 for r in dump._day_rows(page, ds):
                     out.append({"office": office, "time": r["time"], "name": r["name"]})
             except Exception as exc:  # noqa: BLE001 -- one office can't hold the rest
-                print(f"AppStream office {office} not read ({type(exc).__name__}: {exc})")
+                body = " ".join((page.evaluate("() => document.body.innerText") or "").split())
+                print(f"AppStream office {office} not read ({type(exc).__name__}: {exc}) "
+                      f"url={page.url[-50:]} page={body[:200]!r}")
     return out
 
 

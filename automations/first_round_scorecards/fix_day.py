@@ -69,8 +69,8 @@ def new_times(day: dt.date, docs: List[Dict], office_id: str) -> Dict[str, Dict]
     """{'2:09 PM': {'slot': '2:15 PM', 'early': 6}} off the office's own calendar."""
     bookings = appstream.booked(day, [office_id])
     print(f"AppStream {office_id}: {len(bookings)} booked on {day}")
-    if not bookings:
-        raise SystemExit("AppStream calendar came back empty - nothing changed")
+    if not bookings:        # unknown beats wrong: no time, no false warning
+        print("AppStream calendar came back empty - every time goes to 'not on AppStream'")
     out = {}
     for d in docs:
         started = _at(day, d["start"])
