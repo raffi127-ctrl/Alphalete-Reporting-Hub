@@ -15,8 +15,8 @@ dynamically imported module" errors (measured 2026-11-03; memory
 
 Already done on the repo side (nothing to repeat):
 - Branch `site` exists on GitHub and is a copy of `main`.
-- `.github/workflows/promote-site.yml` moves `site` up to `main` every day at
-  3am Central, or by hand (GitHub → Actions → "Promote site" → Run workflow;
+- `.github/workflows/promote-site.yml` moves `site` up to `main` at the top of
+  every hour (skipped when `main` has not changed), or by hand (GitHub → Actions → "Promote site" → Run workflow;
   or locally `git push origin main:site`).
 - `streamlit==1.66.1` is pinned in every requirements file.
 
@@ -95,7 +95,7 @@ should show no "Pulling code changes" line after a push to `main`.
 
 - A change to a public tool is live only after `site` moves. If it matters
   today, promote by hand (Actions → Promote site → Run workflow, or
-  `git push origin main:site`). Otherwise it lands at 3am.
+  `git push origin main:site`). Otherwise it lands within the hour.
 - Never deploy an app from `main` again.
 - "Failed to fetch dynamically imported module" on an open tab after a
   promote = stale tab; hard refresh (Cmd+Shift+R).

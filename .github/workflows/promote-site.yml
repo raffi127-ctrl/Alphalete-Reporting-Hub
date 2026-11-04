@@ -3,12 +3,15 @@
 # every app on every push to its branch, and `main` takes ~90 pushes a day from
 # the Claude sessions -- the apps were rebooting more than they were serving
 # (Megan 2026-11-03: "none of our apps are loading"). `site` moves to `main`
-# once a day here, or whenever someone runs this workflow by hand (Actions tab
-# -> Promote site -> Run workflow), or `git push origin main:site` locally.
+# at the top of every hour here (Megan 2026-11-04: changes should not wait for
+# 3am), or whenever someone runs this workflow by hand (Actions tab -> Promote
+# site -> Run workflow), or `git push origin main:site` locally. Each move
+# restarts the apps for a minute or two, so an hour where main did not change
+# pushes nothing -- a no-op push would still be a restart.
 name: Promote site
 on:
   schedule:
-    - cron: "0 9 * * *"     # 09:00 UTC = 3am Central, before anybody is on the apps
+    - cron: "0 * * * *"     # top of every hour (GitHub may start it a few minutes late)
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -21,4 +24,8 @@ jobs:
           fetch-depth: 0
       - name: fast-forward site to main
         run: |
+          if [ "$(git rev-parse origin/main)" = "$(git rev-parse origin/site)" ]; then
+            echo "site already at main -- nothing to promote"
+            exit 0
+          fi
           git push origin origin/main:refs/heads/site
