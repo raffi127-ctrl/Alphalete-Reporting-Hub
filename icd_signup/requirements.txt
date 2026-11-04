@@ -5,7 +5,7 @@
 # would look accepted and reach nobody.
 #
 # Mirrors disposition_signup/requirements.txt (same Sheets-backed pattern).
-streamlit>=1.30
+streamlit==1.66.1  # PINNED 2026-11-03: a rebuild on a newer build breaks every open tab ("Failed to fetch dynamically imported module"); move it on purpose
 gspread>=5.10
 google-auth>=2.20
 slack_sdk>=3.21        # the corrections-channel ping when a sign-up lands

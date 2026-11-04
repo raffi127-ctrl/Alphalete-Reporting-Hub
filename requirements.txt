@@ -15,7 +15,7 @@
 # So: adding a tool to streamlit_app.py means adding its dependencies here,
 # and removing one never means removing a line unless no tool needs it.
 
-streamlit>=1.36              # st.navigation / st.Page
+streamlit==1.66.1  # PINNED 2026-11-03: a rebuild on a newer build breaks every open tab ("Failed to fetch dynamically imported module"); move it on purpose              # st.navigation / st.Page
 
 # Sheets + auth — every tool reads or writes a workbook
 gspread>=6.0

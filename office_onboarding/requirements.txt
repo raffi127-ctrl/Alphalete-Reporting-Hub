@@ -3,7 +3,7 @@
 # Cloud app (same Sheets-backed pattern) + streamlit-sortables for the Thread
 # Builder admin editor's drag-and-drop. If sortables is ever unavailable the
 # editor degrades to a checkbox+order fallback, so this is the only extra dep.
-streamlit>=1.30
+streamlit==1.66.1  # PINNED 2026-11-03: a rebuild on a newer build breaks every open tab ("Failed to fetch dynamically imported module"); move it on purpose
 pandas>=2.0
 gspread>=5.10
 google-auth>=2.20
