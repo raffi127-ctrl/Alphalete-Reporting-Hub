@@ -423,7 +423,7 @@ end on that week, not on REPORT_DAY, and that is correct); a Captain Team \
 Stats board under a grey note saying Tableau loads activations a day late, \
 whose REPORT_DAY column is missing or blank (the day before REPORT_DAY must \
 still be there — ending earlier than that is still a blocker); zero values that are formatted like their neighbours; a \
-consistent house style you merely would have designed differently.
+consistent house style you merely would have designed differently; slight softness in a small table, which is enlarged for this review only.
 
 Report blockers (would refuse to send) and minors (would mention but still \
 send). ok = true when there are no blockers. Refer to images by their number \
@@ -464,6 +464,28 @@ def _shrink(ctype: str, data: bytes) -> Tuple[str, bytes]:
         return ctype, data
 
 
+def _enlarge_small(ctype: str, data: bytes) -> Tuple[str, bytes]:
+    """Agranda las tablas chicas SOLO para la revision; el mail no cambia.
+
+    Eve 2026-11-04: las cajas de churn de Blake (444 px de ancho) frenaron por
+    "blurry, tiny font" y celdas vacias, y ninguna de las dos cosas estaba: el
+    PDF tenia la misma letra en las 5 cajas y todos los valores de la hoja.
+    Salta logos (lado menor < 300) y lo que ya es ancho."""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        w, h = im.size
+        factor = min(3, 2400 // max(w, h))
+        if w >= 900 or min(w, h) < 300 or factor < 2:
+            return ctype, data
+        buf = io.BytesIO()
+        im.convert("RGB").resize((w * factor, h * factor),
+                                 Image.LANCZOS).save(buf, "PNG")
+        return "image/png", buf.getvalue()
+    except Exception:  # noqa: BLE001 — sin PIL o imagen rara, va como esta
+        return ctype, data
+
+
 def _visual_content(today: dt.date, key: str) -> list:
     msg = _parse(today, key)
     html, imgs = _html_and_images(msg)
@@ -494,7 +516,7 @@ def _visual_content(today: dt.date, key: str) -> list:
         ctype, data = imgs.get(cid, ("", b""))
         if not data:
             continue
-        ctype, data = _shrink(ctype, data)
+        ctype, data = _enlarge_small(*_shrink(ctype, data))
         content.append({"type": "text", "text": f"IMAGE {i}:"})
         content.append({"type": "image", "source": {
             "type": "base64", "media_type": ctype,

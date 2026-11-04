@@ -257,6 +257,41 @@ class TestJudge(Base):
         self.assertEqual(calls, [self.b2b, self.b2b])
 
 
+class TestEnlargeSmall(unittest.TestCase):
+    @staticmethod
+    def _png(w, h):
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (w, h), "white").save(buf, "PNG")
+        return buf.getvalue()
+
+    @staticmethod
+    def _size(data):
+        import io
+        from PIL import Image
+        return Image.open(io.BytesIO(data)).size
+
+    def test_churn_box_is_tripled(self):
+        ctype, out = A._enlarge_small("image/png", self._png(444, 448))
+        self.assertEqual(ctype, "image/png")
+        self.assertEqual(self._size(out), (1332, 1344))
+
+    def test_tall_box_stays_under_the_cap(self):
+        _, out = A._enlarge_small("image/png", self._png(444, 830))
+        self.assertEqual(self._size(out), (888, 1660))
+
+    def test_wide_image_and_logo_are_untouched(self):
+        for w, h in ((1800, 734), (200, 200)):
+            data = self._png(w, h)
+            self.assertEqual(A._enlarge_small("image/png", data),
+                             ("image/png", data))
+
+    def test_unreadable_bytes_go_as_they_are(self):
+        self.assertEqual(A._enlarge_small("image/png", b"nope"),
+                         ("image/png", b"nope"))
+
+
 class TestSwitch(unittest.TestCase):
     def test_starts_tomorrow(self):
         self.assertFalse(A.is_on(dt.date(2026, 10, 5)))
