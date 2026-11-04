@@ -4,7 +4,8 @@ AppStream's Retention - Details (new) (p=783, the Focus Report's source) lists,
 under every metric row, one `tr.adminRow` per recruiter/admin when the admin
 breakdown is on. funnel_board/fetch.py deliberately skips those rows; this
 pulls them for a single office across a range of Sun-Sat report weeks and
-leaves the RAW table (head + every mainRow with its adminRows) as JSON, so a
+leaves the RAW table (head + every mainRow with its adminRows, each row with its
+data-admin-id in `admin_rows` — several identities share the name "System") as JSON, so a
 standalone Focus Report can grow a "who did it" group under each metric.
 
 Runs where a live AppStream session is (Lucy 2). Output goes two places:
@@ -47,10 +48,16 @@ _JS_TABLE = """() => {
         if (tr.classList.contains('mainRow')) {
             cur = {id: tr.getAttribute('data-id'), group: tr.getAttribute('data-group-name') || '',
                    isRet: tr.getAttribute('data-is-retention') === '1',
-                   label: cells[0], vals: cells.slice(1), admins: {}};
+                   label: cells[0], vals: cells.slice(1), admins: {}, admin_rows: []};
             rows.push(cur);
         } else if (tr.classList.contains('adminRow') && cur) {
+            // `admins` keys on the display name and LOSES rows that share one
+            // (several AI/automation identities all render as "System", 11/4/26:
+            // Carlos's office had three, Raf's six, and the later ones overwrote
+            // the earlier — a third of the bookings looked unattributed).
+            // admin_rows keeps every row with its data-admin-id.
             cur.admins[cells[0]] = cells.slice(1);
+            cur.admin_rows.push([cells[0], tr.getAttribute('data-admin-id') || '', ...cells.slice(1)]);
         }
     }
     const cbs = [...document.querySelectorAll('input[type=checkbox]')].map(c => ({
