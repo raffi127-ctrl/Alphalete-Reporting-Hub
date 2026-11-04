@@ -23,8 +23,11 @@ looks worse is survivable; a prompt that never appears is not.
 """
 from __future__ import annotations
 
+import contextlib
 import platform
 import subprocess
+import threading
+import time
 
 IS_MAC = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
@@ -224,6 +227,35 @@ def hold(body: str, seconds: int) -> None:
                    % (_esc_applescript(body), TITLE, int(seconds)))
     except Exception:  # noqa: BLE001 -- the Terminal line still says it
         pass
+
+
+@contextlib.contextmanager
+def holding(body: str, seconds: int = 10, first_after: float = 1.0):
+    """Keep a hold() box up for as long as the block runs, for work that cannot
+    be paused to show one. The work stays on this thread; the box does not.
+
+    On the way out it waits for the last box to time out, so the next window
+    never opens on top of it. Work done within first_after shows no box at all.
+    Whoever clicks a box away gets the rest of that turn without one.
+    """
+    stop = threading.Event()
+
+    def keep_it_up():
+        if stop.wait(first_after):
+            return
+        while not stop.is_set():
+            started = time.time()
+            hold(body, seconds)
+            if stop.wait(max(0.0, seconds - (time.time() - started))):
+                return
+
+    box = threading.Thread(target=keep_it_up, daemon=True)
+    box.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        box.join(seconds + 5)
 
 
 def message(body: str, *, error: bool = False) -> None:

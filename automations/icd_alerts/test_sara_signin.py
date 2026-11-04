@@ -38,6 +38,18 @@ def tearDownModule():
 SESSION = "https://www.saraplus.com/e/(S(qvxtpep3hkijen2pmu1hwdge))"
 
 
+class _Box:
+    def __init__(self, body, shown):
+        self.body, self.shown = body, shown
+
+    def __enter__(self):
+        self.shown.append(self.body)
+
+    def __exit__(self, *_):
+        self.shown.append("box gone")
+        return False
+
+
 class TheSecurityWallIsNotSuccessTest(unittest.TestCase):
     def test_the_passcode_page_is_not_signed_in(self):
         """The bug this exists to stop: a 'no password field' test calls the
@@ -370,6 +382,32 @@ class SignInProvesTheAutomaticReadTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertFalse(any("ALL SET" in l for l in said))
         self.assertTrue(any("don't close" in l for l in said))
+
+    def test_a_window_is_up_during_the_hidden_check(self):
+        """Eve 2026-11-04: nothing else is on screen for that minute."""
+        from unittest import mock
+        from automations.icd_alerts import dialogs
+        shown = []
+        with mock.patch.object(dialogs, "holding",
+                               wraps=lambda body: _Box(body, shown)), \
+             mock.patch.object(R, "check_account",
+                               side_effect=lambda **k: shown.append("check") or {"ok": True}):
+            X.verify_hidden_read(log=lambda *_: None)
+        self.assertEqual(shown[0], X.CHECKING)
+        self.assertEqual(shown[1:], ["check", "box gone"])
+
+    def test_the_window_goes_away_when_the_check_fails(self):
+        from unittest import mock
+        from automations.icd_alerts import dialogs
+        shown = []
+        said = []
+        with mock.patch.object(dialogs, "holding",
+                               wraps=lambda body: _Box(body, shown)), \
+             mock.patch.object(R, "check_account",
+                               side_effect=R.AccountProblem("wants a code")):
+            self.assertEqual(X.verify_hidden_read(log=said.append), 1)
+        self.assertEqual(shown[-1], "box gone")
+        self.assertTrue(any("NOT YET" in l for l in said))
 
     def test_all_set_comes_after_the_forward_windows(self):
         from unittest import mock

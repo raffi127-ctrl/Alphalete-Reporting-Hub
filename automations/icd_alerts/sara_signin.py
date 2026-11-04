@@ -257,15 +257,25 @@ def _tell_upstream(verdict: str, detail: str = "", log=print) -> None:
         pass
 
 
+CHECKING = ("Almost done! Please don't close anything.\n\n"
+            "Lucy is checking that she can get in on her own. "
+            "This takes about a minute.")
+
+
 def verify_hidden_read(log=print) -> int:
     """One real scheduled-style SaraPlus sign-in, hidden, and a plain verdict."""
     from automations.icd_alerts import sara_read as SR
     log("")
     log("  Now checking that Lucy can get in on her own (about a minute)...")
     said: list = []
+    from automations.icd_alerts import dialogs
     try:
-        got = SR.check_account(headless=True,
-                               log=lambda *a: said.append(" ".join(str(x) for x in a)[:200]))
+        # NOTHING ELSE IS ON SCREEN FOR THIS MINUTE (Eve 2026-11-04): the SaraPlus
+        # window has closed and the check is hidden. Close the Terminal here and
+        # the code forward is never offered.
+        with dialogs.holding(CHECKING):
+            got = SR.check_account(headless=True,
+                                   log=lambda *a: said.append(" ".join(str(x) for x in a)[:200]))
     except SR.AccountProblem as e:
         _LAST_VERDICT.extend(["hidden log: " + l for l in said[-12:]])
         _LAST_VERDICT.extend([str(e)[:300]] + ["hidden: " + l for l in (getattr(e, "presented", None) or [])])
