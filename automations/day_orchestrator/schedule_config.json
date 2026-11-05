@@ -15043,6 +15043,27 @@
     "type": "not_configured"
    }
   },
+  "nds_tnc_check": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_note": "Carlos 2026-11-05: 8:30pm + 9:30pm (today) and 7:30am (--yesterday): NDS dealer SaraPlus (alphaletegp) -> Detail Reports -> Sales Order History for the one day -> every row's View Customer card -> 'T&C Sent Via' + 'Confirmation Date'. No confirmation DATE = Slack call-out in #alphalete-gp-sales (under the NDS Metrics thread when open) tagging Carlos + Sebastian Avellaneda: 'Hey, customer <first> (rep: <rep>) — TNC has not been completed.' Real schedule = three Report Library cards (nds_tnc_check_830pm / _930pm / _730am). Dry-run by default; --post is the only flag that posts. --probe dumps headers + card text to the 'TNC Probe' tab.",
+   "display_name": "NDS T&C confirmation check",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.nds_tnc_check.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "20:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null
+  },
   "nds_oof": {
    "on_scheduler": false,
    "machine": "Lucy 2",
