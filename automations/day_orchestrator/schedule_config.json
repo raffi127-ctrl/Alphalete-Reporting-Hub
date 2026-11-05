@@ -4740,6 +4740,26 @@
     "rc_contact_sync"
    ]
   },
+  "rc_inbox": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "MANUAL-ONLY, READ-ONLY (Carlos 2026-11-05: 'look through our text. did erika gutierrez reach out to us'): prints every SMS between Taylor's RingCentral line and one customer -- numbers come from Taylor's contact book (main + 'Line N' contacts) and the NDS feed -- oldest first, inbound marked IN, and uploads the transcript to the control sheet's 'RC Inbox' tab (base64). `lucy rerun rc_inbox --customer \"Erika Gutierrez\" --since 2026-10-20`; add --inbound-only for just what the customer wrote. Never writes to RingCentral.",
+   "display_name": "RC inbox lookup (one customer's texts)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.rc_contact_sync.inbox"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
   "raf_guest_orders": {
    "on_scheduler": false,
    "_off_scheduler_note": "Carlos's guest reps' orders off RAF'S SaraPlus (Carlos 2026-10-08: his reps sell ONLY under Raf's code until they move to his own AT&T NDS code ~a week out, so his own dealer's Sales Order History reads them all as zero and the B2B Metrics thread's #8 order log + #9 activation overview go out missing his whole crew). on_scheduler:false = NOT in the 4am batch; the real schedule is the STANDALONE com.alphalete.raf-guest-orders LaunchAgent on LUCY 1 (03:45/04:15 before Lucy 2's 4am batch needs the rows (rc_contact_sync at order 11.5, then b2b_metrics' sections), 06:30 catch-up, 12:45 for midday reruns -- deploy/raf_guest_orders.sh). Logs in with the sales-board sweep's machinery (Raf's saraplus-creds.json + the verified .saraplus_profile, login_healing -- his account has NO emailed-passcode step, which is exactly why this runs on Lucy 1 and not where sp_order_log lives), pulls the same 31-day Sales Order History CSV, keeps ONLY the rows whose User Name matches the guest roster (total_knocks.guests.GUEST_REPS, the same 3-pass unique-hit matcher the knock boards split on), and base64s a dated envelope into the control sheet's 'Raf Guest Orders' tab. Lucy 2's sp_order_log.run merges those rows into Carlos's export before shape_lines (raf_guest.merge -- never raises, refuses a pull older than 26h LOUDLY and continues with Carlos's rows only). TEMPORARY: when the reps move onto Carlos's own code, bootout the agent -- the merge fail-opens past the stale tab by itself. `lucy rerun raf_guest_orders --machine \"Lucy 1\"` (base_args carry --pull).",
