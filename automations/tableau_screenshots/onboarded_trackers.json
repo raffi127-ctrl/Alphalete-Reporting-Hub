@@ -529,9 +529,11 @@
   },
   {
     "key": "sahil",
-    "label": "Sahil's Local Office (channel from ECO sign-up)",
+    "label": "#mcoast-sales",
     "owner": "Sahil Multani",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CEVPYDZCP"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",

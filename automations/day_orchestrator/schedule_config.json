@@ -16647,8 +16647,8 @@
   "sahil_metrics": {
    "order": 26.9,
    "machine": "Lucy 4",
-   "on_scheduler": false,
-   "display_name": "Sahil's Daily Metrics (channel from ECO sign-up)",
+   "on_scheduler": true,
+   "display_name": "Sahil's Daily Metrics (mcoast-sales)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"
@@ -16681,7 +16681,7 @@
     "report_id": "sahil_metrics"
    },
    "_onboarded": true,
-   "_note": "Office metrics for sahil. wired by hand 2026-11-04 (Eve: Sahil Multani joining Lucy ECO, dry run). M Coast, Inc, OwnerVille 20490, Raleigh NC. Off until the Lucy 4 dry run shows data on every board."
+   "_note": "Office metrics for sahil. wired by hand 2026-11-04 (Eve: Sahil Multani joining Lucy ECO, dry run). M Coast, Inc, OwnerVille 20490, Raleigh NC. Off until the Lucy 4 dry run shows data on every board. | 2026-11-05: room #mcoast-sales (C0CEVPYDZCP), dry run green 11/04, scheduler ON."
   },
   "starr_metrics": {
    "order": 26.95,
