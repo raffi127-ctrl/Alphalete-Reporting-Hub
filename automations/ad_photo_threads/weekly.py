@@ -416,8 +416,8 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
                 chunk = uploads[n:n + post.MAX_FILES_PER_REPLY]
                 # Every message carries the tag so tomorrow's refresh finds it.
                 comment = text if i == 0 else f"_{tag} · photos {i + 1}/{len(chunks)}_"
-                r = cl.files_upload_v2(channel=channel, thread_ts=ts,
-                                       file_uploads=chunk, initial_comment=comment)
+                r = post.upload_with_retry(cl, channel=channel, thread_ts=ts,
+                                           file_uploads=chunk, initial_comment=comment)
                 wait_for_share(cl, channel, ts, _uploaded_file_id(r), text=comment)
             counts["photos"] += len(uploads)
         # One message, so the week's tag (in the first line) takes the

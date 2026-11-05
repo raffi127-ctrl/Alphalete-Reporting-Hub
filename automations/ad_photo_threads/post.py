@@ -28,6 +28,7 @@ import datetime as dt
 import json
 import tempfile
 import time
+import urllib.error
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -36,6 +37,7 @@ from automations.ad_photo_threads import collect, config, titles
 REPO = Path(__file__).resolve().parents[2]
 STATE_PATH = REPO / "output" / "ad_photo_threads" / "state.json"
 MAX_FILES_PER_REPLY = 10          # Slack's cap on files in one message
+UPLOAD_RETRY_WAITS = (20, 60)     # seconds; a 504 on the upload is usually gone in a minute
 
 
 def _load_state() -> dict:
@@ -222,6 +224,26 @@ def plan(rep: collect.DayReport) -> List[dict]:
              "text": reply_text(rep, groups[k]),
              "shots": _shots(groups[k]),
              "images": _unique_images(groups[k])} for k in keys]
+
+
+def upload_with_retry(cl, **kw):
+    """files_upload_v2, trying again when Slack's upload server answers 5xx.
+
+    11/4: 504s on single ads in 5 offices the same evening. The pass is hours
+    long and serial, so one 504 left that ad's week empty until the next pass.
+    Only urllib's own HTTPError is retried: the SDK raises that from the step
+    that sends the bytes, before anything is shared, so trying again can't
+    double-post. A timeout is NOT retried here: it can come from the share step
+    and part-post (see collect.py), and the next tick clears and redoes it."""
+    for wait in UPLOAD_RETRY_WAITS:
+        try:
+            return cl.files_upload_v2(**kw)
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                raise
+            print(f"  upload got HTTP {e.code}; trying again in {wait}s")
+            time.sleep(wait)
+    return cl.files_upload_v2(**kw)
 
 
 def _uploads(item: dict, tmp: str, crop: bool) -> tuple:
@@ -497,8 +519,8 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
             for n in range(0, len(uploads), MAX_FILES_PER_REPLY):
                 chunk = uploads[n:n + MAX_FILES_PER_REPLY]
                 kw = {"initial_comment": text} if n == 0 else {}
-                cl.files_upload_v2(channel=channel, thread_ts=ad["thread_ts"],
-                                   file_uploads=chunk, **kw)
+                upload_with_retry(cl, channel=channel, thread_ts=ad["thread_ts"],
+                                      file_uploads=chunk, **kw)
             counts["photos"] += len(uploads)
 
         ad["days"].append(day)
@@ -604,9 +626,9 @@ def add_photos(rep: collect.DayReport, channel: str, names: List[str], *,
                 [f"*{rep.day:%a} {rep.day.month}/{rep.day.day}* · photo added",
                  f"{'✅' if _ok(c) else '❌'} " + " · ".join(b for b in bits if b)]
                 + note_lines(c))
-            cl.files_upload_v2(channel=channel, thread_ts=ad["thread_ts"],
-                               file_uploads=uploads[:MAX_FILES_PER_REPLY],
-                               initial_comment=text)
+            upload_with_retry(cl, channel=channel, thread_ts=ad["thread_ts"],
+                                  file_uploads=uploads[:MAX_FILES_PER_REPLY],
+                                  initial_comment=text)
         out[name] = f"added {len(uploads)} photo(s)"
     return out
 
@@ -896,9 +918,9 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
                                         text=text)
                 for n in range(0, len(uploads), MAX_FILES_PER_REPLY):
                     kw = {"initial_comment": text} if n == 0 else {}
-                    cl.files_upload_v2(channel=channel, thread_ts=tgt["thread_ts"],
-                                       file_uploads=uploads[n:n + MAX_FILES_PER_REPLY],
-                                       **kw)
+                    upload_with_retry(cl, channel=channel, thread_ts=tgt["thread_ts"],
+                                          file_uploads=uploads[n:n + MAX_FILES_PER_REPLY],
+                                          **kw)
             tgt.setdefault("stats", {})[d] = day_stats(
                 [c for c in rep.candidates if c.ad == target])
             if d not in tgt.setdefault("days", []):

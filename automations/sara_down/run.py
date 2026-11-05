@@ -48,6 +48,7 @@ import smtplib
 import ssl
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -195,10 +196,20 @@ def _tokens() -> list[tuple[str, str]]:
 
 
 def _download(url: str, token: str) -> bytes:
-    r = requests.get(url, headers={"Authorization": f"Bearer {token}"},
-                     timeout=60)
-    r.raise_for_status()
-    return r.content
+    # 11/4: a timeout on one screenshot cost a whole ad for the night. Try again
+    # on a network failure or a 5xx; a 4xx or a sign-in page won't get better.
+    for wait in (15, 45, None):
+        try:
+            r = requests.get(url, headers={"Authorization": f"Bearer {token}"},
+                             timeout=60)
+            if r.status_code < 500 or wait is None:
+                r.raise_for_status()
+                return r.content
+        except (requests.ConnectionError, requests.Timeout):
+            if wait is None:
+                raise
+        time.sleep(wait)
+    raise RuntimeError("unreachable")
 
 
 def _download_image(f: dict) -> tuple[bytes, str]:
@@ -219,10 +230,15 @@ def _download_image(f: dict) -> tuple[bytes, str]:
             "No Slack token on this machine — can't download the screenshots.")
 
     problems: list[str] = []
+    network_only = True
     for label, tok in toks:
         try:
             data = _download(url, tok)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            problems.append(f"{label}: {type(e).__name__} {str(e)[:80]}")
+            continue
         except Exception as e:
+            network_only = False
             problems.append(f"{label}: {type(e).__name__} {str(e)[:80]}")
             continue
         subtype = _sniff_image(data)
@@ -232,8 +248,16 @@ def _download_image(f: dict) -> tuple[bytes, str]:
                 print(f"  note: {name} downloaded {len(data)} bytes, Slack said "
                       f"{expected} — attaching what we got")
             return data, subtype
+        network_only = False
         head = data[:40].decode("utf-8", "replace").strip().replace("\n", " ")
         problems.append(f"{label}: {len(data)} bytes, not an image ({head!r})")
+
+    if network_only:
+        # Not a permissions problem: nothing came back at all. Don't send anyone
+        # off to reinstall the Slack app over a network hiccup (11/4, Atef).
+        raise SaraDownError(
+            f"Couldn't reach Slack to download the image {name!r} (network, "
+            "not permissions).\n    tried -> " + "\n    tried -> ".join(problems))
 
     raise SaraDownError(
         f"Slack returned a sign-in page instead of the image {name!r}.\n"
