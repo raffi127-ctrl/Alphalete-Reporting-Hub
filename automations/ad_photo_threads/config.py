@@ -104,10 +104,26 @@ APPSTREAM_ADS_OFFICES: object = "all"     # Eve 10/24: on, every live office (ve
 # their own each evening (unthreaded.place_found). Eve saw the first batch 11/4;
 # by hand: --place-orphans [--apply].
 PLACE_ORPHANS_NIGHTLY = True
-# Eve 11/4: AppStream gave these an ad, but Eve doesn't trust the match: common
-# name, dates a day apart, no photo. They stay open in the no-ad thread until a
-# person puts the ad in the sheet. {"YYYY-MM-DD|name"}.
-APPSTREAM_AD_REJECTED = {"2026-10-29|juan rodriguez"}
+# Eve 11/4: AppStream gave these an ad, but Eve doesn't trust the match. They
+# stay open in the no-ad thread until a person says. {"YYYY-MM-DD|name"}.
+APPSTREAM_AD_REJECTED: set = set()
+# Eve 11/5: a person answered in the no-ad thread (the interviewers' sheet is
+# not ours to write). Wins over every lookup; the ad's thread is opened if it
+# has none. {"YYYY-MM-DD|name in the sheet": ad}.
+NO_AD_ANSWERS = {
+    # Jairo, Camila 11/5. Stacia's real name is Lovelie Joseph Jonathas, Juan's
+    # is Juan Perdomo; the sheet has them this way.
+    "2026-10-28|stacia joseph": "Client Support Associate \u2013 Kendall Lakes FL",
+    "2026-10-28|smyme theosmy": "Handshake / Brand Promotions Trainee",
+    "2026-10-29|roydel castellanos": "Handshake / Brand Promotions Trainee",
+    "2026-10-29|juan rodriguez": "AT&T Customer Experience Representative \u2013 Miami FL",
+    "2026-10-30|lara gurdikyan": "Handshake / Entry Level Assistant Manager",
+    # Valeria, Camila 11/5.
+    "2026-10-27|maria ludwig": "Handshake / Customer Acquisition Representative",
+}
+# Eve 11/5: Camila's team no longer does this office's 1st rounds: the no-ad
+# thread tags the channel, not them. Aya.
+NO_AD_TAG_CHANNEL = {"C0C3XGN68GJ"}
 
 
 def appstream_ads_on(key: str) -> bool:

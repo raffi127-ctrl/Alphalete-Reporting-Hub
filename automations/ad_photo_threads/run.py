@@ -558,6 +558,9 @@ def main(argv=None) -> int:
     ap.add_argument("--lookback", type=int, help="With --appstream-ads: days back (default 7).")
     ap.add_argument("--redo", action="store_true",
                     help="With --appstream-ads: look again at the ones already looked up and not found.")
+    mode.add_argument("--retag-no-ad", action="store_true",
+                      help="Once (Eve 11/5): say this office's open no-ad names again as one "
+                           "reply tagging the channel. Lists only unless --apply.")
     mode.add_argument("--tidy-no-ad", action="store_true",
                       help="Once (Eve 11/5): take the crossed-out names off the pinned "
                            "no-ad threads. Lists only unless --apply.")
@@ -632,6 +635,14 @@ def main(argv=None) -> int:
                                         limit=a.limit, lookback=a.lookback, redo=a.redo))
             except Exception as e:            # noqa: BLE001 -- one office never stops the rest
                 print(f"[appstream ads] {k}: failed: {type(e).__name__}: {str(e)[:200]}")
+        return 0
+    if a.retag_no_ad:
+        from automations.ad_photo_threads import config, unthreaded
+        day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
+        o = config.office(a.office)
+        for ln in unthreaded.retag(day, o["live_channel"], apply=a.apply):
+            print(f"[{a.office}] {ln}")
+        print("retag done" + ("" if a.apply else " (nothing changed: no --apply)"))
         return 0
     if a.tidy_no_ad:
         from automations.ad_photo_threads import config, unthreaded

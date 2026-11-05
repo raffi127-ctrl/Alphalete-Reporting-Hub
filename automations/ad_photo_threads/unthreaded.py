@@ -77,8 +77,9 @@ def line(d: dt.date, c, title_only: bool) -> str:
     return f"• {who}: Ad Title \"{c.title_raw.strip()}\" {why}"
 
 
-def reply_text(day: dt.date, lines: List[str]) -> str:
-    tags = " ".join(f"<@{u}>" for u in TAG_USERS)
+def reply_text(day: dt.date, lines: List[str], channel: str = "") -> str:
+    tags = ("<!channel>" if channel in config.NO_AD_TAG_CHANNEL
+            else " ".join(f"<@{u}>" for u in TAG_USERS))
     return f"{tags} *{day.month}/{day.day}*\n" + "\n".join(lines)
 
 
@@ -96,7 +97,7 @@ def _rewrite(cl, channel: str, rts: str, rows: list) -> str:
     left = _open_lines(rows)
     if left:
         cl.chat_update(channel=channel, ts=rts,
-                       text=reply_text(dt.date.fromisoformat(rows[0][2]), left))
+                       text=reply_text(dt.date.fromisoformat(rows[0][2]), left, channel))
         return "edited"
     try:
         cl.chat_delete(channel=channel, ts=rts)
@@ -150,7 +151,7 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
     cutoff = max(day - dt.timedelta(days=lookback), post.week_monday(day)).isoformat()
     now_missing = {_key(d, c) for d, c in missing}
     placed = [k for k in said if k >= cutoff and k not in now_missing]
-    text = reply_text(day, lines) if lines else ""
+    text = reply_text(day, lines, channel) if lines else ""
     out = {"missing": len(missing), "waiting": len(waiting), "new": len(new),
            "placed": len(placed), "text": text, "posted": False}
     if not apply or not (lines or placed):
@@ -189,6 +190,30 @@ def _strike(cl, channel: str, slot: dict, keys) -> None:
             for r, text in zip(hit, was):
                 r[1] = text
             print(f"  no-ad thread: edit failed: {type(e).__name__}: {str(e)[:120]}")
+
+
+def retag(day: dt.date, channel: str, *, apply: bool = False, cl=None) -> List[str]:
+    """Eve 11/5, once for an office moved to NO_AD_TAG_CHANNEL: the names still
+    open are said again as one new reply tagging the channel (an edit notifies
+    nobody) and the old replies go. Their open lines. Lists only unless `apply`."""
+    state = post._load_state()
+    slot = state.get(channel, {}).get("unplaced") or {}
+    replies = slot.get("replies") or {}
+    rows = [r for rs in replies.values() for r in rs if not r[1].startswith("~")]
+    lines = [r[1] for r in rows]
+    if not apply or not rows:
+        return lines
+    cl = cl or collect._client()
+    new = cl.chat_postMessage(channel=channel, thread_ts=slot["ts"],
+                              text=reply_text(day, lines, channel))["ts"]
+    slot["replies"] = {new: [[r[0], r[1], day.isoformat()] for r in rows]}
+    post._save_state(state)
+    for rts in replies:
+        try:
+            cl.chat_delete(channel=channel, ts=rts)
+        except Exception as e:                    # noqa: BLE001 -- the rest still go
+            print(f"  no-ad thread: old reply {rts} not deleted: {str(e)[:120]}")
+    return lines
 
 
 def tidy(channel: str, *, apply: bool = False, cl=None) -> Dict[str, str]:
@@ -251,7 +276,8 @@ def place_found(day: dt.date, channel: str, *, apply: bool = False, cl=None, bui
         if not place:
             continue
         if is_weekly:
-            got = weekly.add_to_week(place, d, channel, apply=apply, cl=cl, crop=crop)
+            told = {n.lower() for n in place if f"{d_iso}|{n.lower()}" in config.NO_AD_ANSWERS}
+            got = weekly.add_to_week(place, d, channel, apply=apply, cl=cl, crop=crop, open_for=told)
         elif apply:
             got = post.add_photos(rep, channel, place, cl=cl)
         else:

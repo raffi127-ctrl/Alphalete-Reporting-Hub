@@ -642,14 +642,17 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
 
 
 def add_to_week(names: List[str], day: dt.date, channel: str, *, apply: bool = False,
-                cl=None, build=None, crop: bool = True) -> Dict[str, str]:
+                cl=None, build=None, crop: bool = True,
+                open_for=()) -> Dict[str, str]:
     """Eve 11/3: someone whose ad only became known after their week went out
     (Daniel Williams, Jada Overton). The nightly only refreshes the current
     week and --redo-weekly rewrites the whole channel, so this re-posts just
     that past week's block, in the thread the ad ALREADY has.
 
     Never opens a thread and never edits a header: no live thread for the ad
-    means that person is left out and it says so. Lists only unless `apply`.
+    means that person is left out and it says so. Except `open_for` (lowercase
+    names, Eve 11/5): a person told us their ad, so it gets its thread, pinned.
+    Lists only unless `apply`.
     {name: what happened}."""
     build = build or collect.build
     cl = cl or collect._client()
@@ -669,6 +672,11 @@ def add_to_week(names: List[str], day: dt.date, channel: str, *, apply: bool = F
             out[name] = "not on the sheet that day"
         elif not c.ad:
             out[name] = "ad unknown"
+        elif c.ad not in threads and name.strip().lower() in open_for:
+            out[name] = (f"{'added to' if apply else 'would go in'} a NEW thread "
+                         f"{c.ad!r} ({len(c.images)} photo(s))")
+            if c.ad not in keys:
+                keys.append(c.ad)
         elif c.ad not in threads:
             out[name] = f"no thread for {c.ad!r}: left out, none opened"
         elif not post._thread_alive(cl, channel, threads[c.ad]):
@@ -679,7 +687,7 @@ def add_to_week(names: List[str], day: dt.date, channel: str, *, apply: bool = F
                 keys.append(c.ad)
     for item in plan_week(reports):
         if item["key"] in keys:
-            print(f"  {item['title']} (thread {threads[item['key']]}), block for {week_tag(monday)}:")
+            print(f"  {item['title']} (thread {threads.get(item['key'], 'NEW')}), block for {week_tag(monday)}:")
             for c in item["cands"]:
                 print(f"    {c.name}: {len(c.images)} photo(s)")
     if not apply or not keys:
@@ -687,7 +695,8 @@ def add_to_week(names: List[str], day: dt.date, channel: str, *, apply: bool = F
     counts = {"pin_errors": 0, "to_pin": []}
     since = dt.date.fromisoformat(state[channel].get("since") or config.THREADS_SINCE)
     got = publish_week(reports, channel, cl=cl, threads=dict(threads), crop=crop,
-                       only_keys=keys, on_done=_recorder(channel, monday, cl, counts, pin=False),
+                       only_keys=keys, on_done=_recorder(channel, monday, cl, counts, pin=bool(open_for)),
+                       on_fail=_opened_saver(channel),
                        history=ad_history(reports[-1].book, since, days[-1], cache=cache))
     for title, why in got["failed"]:
         print(f"  FAILED {title}: {why}")

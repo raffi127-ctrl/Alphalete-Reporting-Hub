@@ -67,12 +67,12 @@ class CheckTests(unittest.TestCase):
 
     def test_waits_while_appstream_still_looking(self):
         k = "2026-10-19|jamar gray"
-        state = {"C1": {"appstream_ads": {k: ""}, "appstream_ads_tries": {k: ["a", "b"]}}}
+        state = {"C1": {"appstream_ads": {k: ""}, "appstream_ads_tries": {k: ["a"]}}}
         cl = self.client()
         got = self.run_check(state, [cand("Jamar Gray", "")], cl, lookup_on=True)
         self.assertEqual((got["waiting"], got["posted"]), (1, False))
         cl.chat_postMessage.assert_not_called()
-        state["C1"]["appstream_ads_tries"][k].append("c")
+        state["C1"]["appstream_ads_tries"][k].append("b")
         got = self.run_check(state, [cand("Jamar Gray", "")], cl, lookup_on=True)
         self.assertTrue(got["posted"])
 
@@ -169,6 +169,44 @@ class OrphanTests(unittest.TestCase):
         _, cl, _ = self.run_place(state, False)
         cl.chat_update.assert_not_called()
         self.assertFalse(state["C1"]["unplaced"]["replies"]["2.0"][0][1].startswith("~"))
+
+    def test_retag_says_open_names_again_to_the_channel(self):
+        from automations.ad_photo_threads import config
+        state = self.state()
+        state["C1"]["unplaced"]["replies"]["2.0"][0][1] = "~• Lux T (10/28): x~ ✅ placed"
+        cl = mock.Mock()
+        cl.chat_postMessage.return_value = {"ts": "9.0"}
+        with mock.patch.object(unthreaded.post, "_load_state", lambda: state), \
+                mock.patch.object(unthreaded.post, "_save_state", lambda s: None), \
+                mock.patch.object(config, "NO_AD_TAG_CHANNEL", {"C1"}):
+            self.assertEqual(len(unthreaded.retag(self.TODAY, "C1", cl=cl)), 2)
+            cl.chat_postMessage.assert_not_called()
+            unthreaded.retag(self.TODAY, "C1", apply=True, cl=cl)
+        kw = cl.chat_postMessage.call_args.kwargs
+        self.assertEqual(kw["thread_ts"], "1.0")
+        self.assertIn("<!channel>", kw["text"])
+        self.assertNotIn("<@", kw["text"])
+        self.assertNotIn("Lux", kw["text"])
+        self.assertEqual(list(state["C1"]["unplaced"]["replies"]), ["9.0"])
+        cl.chat_delete.assert_called_once_with(channel="C1", ts="2.0")
+
+    def test_other_channels_keep_their_tags(self):
+        text = unthreaded.reply_text(self.TODAY, ["x"], "C1")
+        self.assertIn("<@U07FWSYP3NV>", text)
+        self.assertNotIn("<!channel>", text)
+
+    def test_an_answered_name_may_open_its_thread(self):
+        from automations.ad_photo_threads import config, weekly
+        state = self.state()
+        rep = SimpleNamespace(candidates=[cand("No One", "", ad="handshake x")])
+        add = mock.Mock(return_value={})
+        with mock.patch.object(unthreaded.post, "_load_state", lambda: state), \
+                mock.patch.object(weekly, "is_weekly", lambda c: True), \
+                mock.patch.object(weekly, "add_to_week", add), \
+                mock.patch.object(config, "NO_AD_ANSWERS", {"2026-10-28|no one": "Handshake X"}):
+            unthreaded.place_found(self.TODAY, "C1", cl=mock.Mock(),
+                                   build=lambda d, cl=None, cache=None: rep)
+        self.assertEqual(add.call_args.kwargs["open_for"], {"no one"})
 
     def test_tidy_cleans_what_was_crossed_out_before(self):
         state = self.state()

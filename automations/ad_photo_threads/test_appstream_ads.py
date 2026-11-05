@@ -1,5 +1,6 @@
 import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.ad_photo_threads import appstream_ads as aa
 
@@ -51,8 +52,8 @@ class ReportRowsTests(unittest.TestCase):
         book = SimpleNamespace(resolve=lambda t: "manager")
         day = dt.date(2026, 10, 29)
         found = {"2026-10-29|juan rodriguez": "Entry Level Manager", "2026-10-29|ana diaz": "Entry Level Manager"}
-        self.assertIn("2026-10-29|juan rodriguez", config.APPSTREAM_AD_REJECTED)
-        self.assertIsNone(collect.appstream_ad(SimpleNamespace(name="Juan Rodriguez"), day, book, found))
+        with mock.patch.object(config, "APPSTREAM_AD_REJECTED", {"2026-10-29|juan rodriguez"}):
+            self.assertIsNone(collect.appstream_ad(SimpleNamespace(name="Juan Rodriguez"), day, book, found))
         self.assertEqual(collect.appstream_ad(SimpleNamespace(name="Ana Diaz"), day, book, found), "manager")
 
     def test_near_names(self):
@@ -100,9 +101,9 @@ class TriesTests(unittest.TestCase):
         self.assertEqual(aa.tries({"appstream_ads": {self.K: ""}}, self.K), 1)
 
     def test_gives_up_after_max_tries(self):
-        st = {"appstream_ads": {self.K: ""}, "appstream_ads_tries": {self.K: ["a", "b"]}}
+        st = {"appstream_ads": {self.K: ""}, "appstream_ads_tries": {self.K: ["a"]}}
         self.assertFalse(aa.gave_up(st, self.K))
-        st["appstream_ads_tries"][self.K].append("c")
+        st["appstream_ads_tries"][self.K].append("b")
         self.assertTrue(aa.gave_up(st, self.K))
 
     def test_found_is_never_given_up(self):

@@ -576,6 +576,9 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
 
     for c in rep.candidates:
         if c.ad is None:
+            c.ad = answered_ad(c, day, book)
+    for c in rep.candidates:
+        if c.ad is None:
             c.already = same_person_row(c, day, tabs, book)
     blank = [c for c in rep.candidates
              if c.ad is None and not c.already and lookup_ok(c)]
@@ -592,6 +595,13 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
             if c.ad is None:
                 c.ad = appstream_ad(c, day, book)
     return rep
+
+
+def answered_ad(c: Candidate, day: dt.date, book: TitleBook) -> Optional[str]:
+    """The ad a person gave for `c` in the no-ad thread (config.NO_AD_ANSWERS)."""
+    from automations.ad_photo_threads import appstream_ads
+    ad = config.NO_AD_ANSWERS.get(appstream_ads.key(day, c.name))
+    return book.resolve(ad) if ad else None
 
 
 def appstream_ad(c: Candidate, day: dt.date, book: TitleBook,

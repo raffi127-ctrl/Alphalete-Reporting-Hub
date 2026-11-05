@@ -17,7 +17,7 @@ What it found is kept in the state file (state[channel]["appstream_ads"],
 {"YYYY-MM-DD|name": ad text or ""}) so collect.build uses it on every later
 pass without opening AppStream again; "" = looked, nothing usable.
 
-Eve 10/29: a "" is looked at again on the next evenings, up to MAX_TRIES
+Eve 10/29 (11/5: two, not three): a "" is looked at again the next evening, up to MAX_TRIES
 evenings in all (state[channel]["appstream_ads_tries"], {key: [ISO days
 tried]}) -- people are sometimes sent to the call list late. Only after that
 does unthreaded.py move them to the channel's pinned "no ad" thread.
@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Tuple
 SENT_DAYS_BACK = 21
 L_CALL_LIST = "Sent to Call List"      # the report row (applicant_tracker's label)
 N_CALL_COLS = 8                        # First .. Ad, as applicant_tracker reads it
-MAX_TRIES = 3                          # evenings a "" is looked up before giving up
+MAX_TRIES = 2                          # Eve 11/5: that night and the next, then the alert
 # Eve 11/4, what was still missed: the interview's own row carries the ad too
 # (Natahja Quinn, Nannerl Nanga), some sat on the call list longer than 3 weeks
 # (Jamea Robinson: 5), and spellings differ (Hyacinthe/Hyacinthie).
