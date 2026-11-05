@@ -355,7 +355,7 @@ HEALTH_EVERY_MINUTES = 15
 # characters of a row, and a raw tail filled that with attachment and Cloudflare
 # chatter -- on 10/22 the row cut off right at "Jorge Banos" and nobody could
 # tell whether he went through. These, newest last, short.
-_KEY_LINES = ("SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
+_KEY_LINES = ("would not take orders", "SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
               "DID NOT STICK", "why not sent",
               "read by the Mac itself", "phone read OFF THE SCREEN",
               "resume phone", "resume read BLOCKED", "QUEUE at", "removed",
@@ -959,6 +959,52 @@ _CLOSED = ("has been closed", "target closed", "browser closed",
            "connection closed", "browser has disconnected")
 
 
+# A STUCK CHROME HEALS ITSELF (Raf's MacBook, 2026-11-05: Lucy's Chrome had
+# been up 38 hours; from 7:44am connect_over_cdp timed out, then every run for
+# two hours died on "Network.setCacheDisabled ... session closed" -- Chrome
+# alive, its control port dead, and nothing ever restarted it). A crash that
+# says Lucy cannot drive her own Chrome quits THAT Chrome (her profile only,
+# never the person's), so the next run launches a fresh one.
+_STUCK_SIGNS = ("connect_over_cdp", "session closed", "target closed",
+                "browser has been closed", "setcachedisabled",
+                "websocket", "econnrefused")
+
+
+def _is_stuck_chrome(e: BaseException) -> bool:
+    low = ("%s %s" % (type(e).__name__, e)).lower()
+    return any(s in low for s in _STUCK_SIGNS)
+
+
+def _quit_lucy_chrome() -> int:
+    """Kill Lucy's own Chrome (by its profile folder). Returns how many
+    processes were asked to stop. Never touches another Chrome."""
+    try:
+        if IS_WINDOWS:
+            ps = ("Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | "
+                  "Where-Object { $_.CommandLine -like '*%s*' } | "
+                  "ForEach-Object { Stop-Process -Id $_.ProcessId -Force; 1 }"
+                  % str(PROFILE_DIR).replace("'", "''"))
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                                 capture_output=True, text=True,
+                                 timeout=60).stdout
+            return out.count("1")
+        pids = _lucy_pids()
+        for pid in pids:
+            try:
+                os.kill(pid, 15)
+            except OSError:
+                pass
+        time.sleep(3)
+        for pid in _lucy_pids():
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+        return len(pids)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def explain_failure(e: BaseException) -> "tuple[str, str]":
     """(reason, hint) for a crash in the setup check, in plain words.
 
@@ -1445,6 +1491,11 @@ def push(live: bool, scheduled: bool = False) -> int:
             return 0 if out.get("rc") == 0 else 1
     except Exception as e:  # noqa: BLE001
         result = "crash"
+        if _is_stuck_chrome(e):
+            n = _quit_lucy_chrome()
+            _log("Lucy's Chrome would not take orders (%s) -- quit it (%d "
+                 "process(es)); the next run starts a fresh one"
+                 % (type(e).__name__, n))
         import traceback
         _report_once(result, "resume push crashed: %s" % type(e).__name__,
                      traceback.format_exc())

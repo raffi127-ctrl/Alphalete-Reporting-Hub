@@ -18,5 +18,18 @@ class CfCompare(unittest.TestCase):
         self.assertEqual(OAT.CF_STATS, {})
 
 
+class StuckChrome(unittest.TestCase):
+    def test_raf_1105_errors_count_as_stuck(self):
+        self.assertTrue(RP._is_stuck_chrome(TimeoutError(
+            "BrowserType.connect_over_cdp: Timeout 180000ms exceeded.")))
+        self.assertTrue(RP._is_stuck_chrome(RuntimeError(
+            "Protocol error (Network.setCacheDisabled): Internal server "
+            "error, session closed.")))
+
+    def test_other_crashes_do_not_kill_chrome(self):
+        self.assertFalse(RP._is_stuck_chrome(ValueError("bad office id")))
+        self.assertFalse(RP._is_stuck_chrome(KeyError("start")))
+
+
 if __name__ == "__main__":
     unittest.main()
