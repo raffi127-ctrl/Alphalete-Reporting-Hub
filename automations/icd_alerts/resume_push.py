@@ -1348,21 +1348,82 @@ def _etime_min(et: str) -> Optional[int]:
         return None
 
 
-def _chrome_up_min() -> Optional[int]:
-    """Minutes Lucy's Chrome has been running (one Chrome, kept between runs),
-    or None. Part of the office-computer comparison (Megan 2026-11-04)."""
+def _port_owner_pid() -> Optional[int]:
+    """The Chrome process Lucy actually drives: the one LISTENING on her
+    control port. None when it cannot be told (or on Windows)."""
+    if IS_WINDOWS:
+        return None
     try:
-        if IS_WINDOWS:
+        out = subprocess.run(["lsof", "-nP", "-iTCP:%d" % PORT,
+                              "-sTCP:LISTEN", "-t"],
+                             capture_output=True, text=True,
+                             timeout=10).stdout.split()
+        return int(out[0]) if out else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ppid(pid: int) -> int:
+    try:
+        out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
+                             capture_output=True, text=True,
+                             timeout=10).stdout.strip()
+        return int(out) if out.isdigit() else 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _belongs_to(pid: int, root: int) -> bool:
+    """Is `pid` the root process or one of its children/grandchildren?"""
+    for _ in range(12):
+        if pid == root:
+            return True
+        if pid <= 1:
+            return False
+        pid = _ppid(pid)
+    return False
+
+
+def _chrome_up_min() -> Optional[int]:
+    """Minutes the Chrome Lucy DRIVES has been running, or None.
+
+    Measured on the process holding her control port. The first version took
+    the oldest process that named her profile folder, and on Raf's MacBook
+    (11/5) it still read ~41 hours right after his Chrome was quit and a fresh
+    one had taken over -- it was timing a leftover, not her Chrome."""
+    try:
+        owner = _port_owner_pid()
+        if not owner:
             return None
-        out = subprocess.run(["pgrep", "-of", "user-data-dir=%s" % PROFILE_DIR],
-                             capture_output=True, text=True).stdout.split()
-        if not out:
-            return None
-        et = subprocess.run(["ps", "-o", "etime=", "-p", out[0]],
+        et = subprocess.run(["ps", "-o", "etime=", "-p", str(owner)],
                             capture_output=True, text=True).stdout.strip()
         return _etime_min(et)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _reap_stray_chrome() -> int:
+    """Quit leftover processes of Lucy's profile that are NOT part of the
+    Chrome she drives (an old Chrome that never fully went away keeps her
+    profile busy -- the kind of thing that leaves a Chrome she cannot
+    control). Only her profile; only when the live Chrome is known. Returns
+    how many were stopped. Never raises."""
+    try:
+        owner = _port_owner_pid()
+        if not owner:
+            return 0
+        n = 0
+        for pid in _lucy_pids():
+            if _belongs_to(pid, owner):
+                continue
+            try:
+                os.kill(pid, 15)
+                n += 1
+            except OSError:
+                pass
+        return n
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
@@ -1386,6 +1447,7 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             "cf": out.get("cf") or {},
             "chrome": out.get("chrome") or "",
             "chrome_up_min": out.get("chrome_up_min"),
+            "chrome_strays": out.get("chrome_strays") or 0,
             "at": dt.datetime.now().strftime("%H:%M")}),
             log=_log, office_key=str(rec.get("office_key") or ""))
     except Exception:  # noqa: BLE001 -- the telling, never the work
@@ -1466,6 +1528,10 @@ def push(live: bool, scheduled: bool = False) -> int:
             except Exception:  # noqa: BLE001
                 pass
             out["chrome_up_min"] = _chrome_up_min()
+            out["chrome_strays"] = _reap_stray_chrome()
+            if out["chrome_strays"]:
+                _log("quit %d leftover process(es) of an old Lucy's Chrome"
+                     % out["chrome_strays"])
             if not out.get("reached"):
                 result = "no_queue_page"
                 _report_once(result, "the resume push could not open One App "

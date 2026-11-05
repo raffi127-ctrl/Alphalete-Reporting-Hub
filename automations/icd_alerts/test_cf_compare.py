@@ -31,5 +31,40 @@ class StuckChrome(unittest.TestCase):
         self.assertFalse(RP._is_stuck_chrome(KeyError("start")))
 
 
+class ChromeAge(unittest.TestCase):
+    """Raf 11/5: the age read ~41h after a fresh Chrome took over."""
+    PARENT = {500: 400, 400: 1, 777: 1, 501: 400}   # 400 = live Chrome
+
+    def setUp(self):
+        from unittest import mock
+        self.mock = mock
+        self.p = [mock.patch.object(RP, "_ppid", lambda pid: self.PARENT.get(pid, 0)),
+                  mock.patch.object(RP, "_port_owner_pid", lambda: 400),
+                  mock.patch.object(RP, "_lucy_pids", lambda: [400, 500, 501, 777])]
+        for x in self.p:
+            x.start()
+
+    def tearDown(self):
+        for x in self.p:
+            x.stop()
+
+    def test_helpers_belong_to_the_live_chrome(self):
+        self.assertTrue(RP._belongs_to(500, 400))
+        self.assertTrue(RP._belongs_to(400, 400))
+        self.assertFalse(RP._belongs_to(777, 400))
+
+    def test_only_the_leftover_is_quit(self):
+        killed = []
+        with self.mock.patch.object(RP.os, "kill", lambda pid, sig: killed.append(pid)):
+            self.assertEqual(RP._reap_stray_chrome(), 1)
+        self.assertEqual(killed, [777])
+
+    def test_nothing_quit_when_the_live_chrome_is_unknown(self):
+        with self.mock.patch.object(RP, "_port_owner_pid", lambda: None), \
+             self.mock.patch.object(RP.os, "kill") as k:
+            self.assertEqual(RP._reap_stray_chrome(), 0)
+            k.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
