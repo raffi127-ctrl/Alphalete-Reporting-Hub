@@ -305,6 +305,14 @@ def _canon_text(t):
     return re.sub(r'\s+', ' ', t).strip()
 
 
+def _canon_city(c):
+    """City comparison form: _canon_text plus any trailing ', tx' dropped.
+    The live-ads tab's Locations carry the state ('Fort Worth, TX 76116');
+    stream groups and registry spellings may or may not — the closed-family
+    X-out must match across both forms."""
+    return re.sub(r',\s*tx$', '', _canon_text(c)).strip()
+
+
 def _title_variant(a, b):
     """True when one title is the other plus a trailing qualifier — 'Sales
     Representative' vs 'Sales Representative - AT&T' (Magma Irving 2026-11-03:

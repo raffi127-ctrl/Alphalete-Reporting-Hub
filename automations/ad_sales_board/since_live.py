@@ -113,6 +113,42 @@ def _live_ads(sess, today):
     return list(best.values())
 
 
+def _closed_families(sess, today):
+    """{(canon title, canon city): close date} for families whose NEWEST week
+    block on the live-ads tab is fully closed — Carlos closed the ad and did
+    not repost it. run.py X's out those families' remaining day cells so a
+    blank Thursday reads "closed, nothing coming", not "day not pulled yet"
+    (Carlos 2026-11-04). Only the newest block votes: prior-week rows are
+    carried copies that never get a close stamp, and a close-and-repost puts
+    an open row in the same block, which keeps the family live. Close date =
+    the block's LATEST close (close, repost, close again)."""
+    fams = {}
+    for r in sheet.get_values(sess, LIVE_RANGE):
+        r = list(r) + [""] * 9
+        we, posted, closed, title, loc = r[0], r[1], r[2], r[5], r[8]
+        if not str(title).strip():
+            continue
+        d = _as_date(posted)
+        if d is None or (today - d).days > MAX_AGE_DAYS:
+            continue
+        wk = _as_date(we)
+        if wk is None:
+            continue
+        city = re.sub(r"\s\d{5}$", "", str(loc)).strip()
+        # _canon_city, not _canon_text: the tab's Locations carry the state
+        # ("Fort Worth, TX"), a stream group's city may not — run.py looks
+        # these keys up with the same normalizer so both forms meet.
+        key = (parse._canon_text(str(title).strip()), parse._canon_city(city))
+        fams.setdefault(key, []).append((wk, _as_date(closed)))
+    out = {}
+    for key, rows in fams.items():
+        newest = max(wk for wk, _c in rows)
+        block = [c for wk, c in rows if wk == newest]
+        if block and all(c is not None for c in block):
+            out[key] = max(block)
+    return out
+
+
 def _ensure_tab(sess, title, n_rows=200):
     """Create a hidden tab if the workbook doesn't have it yet."""
     r = _request(sess, "get", "%s/%s" % (sheet.API, sheet.SPREADSHEET_ID),

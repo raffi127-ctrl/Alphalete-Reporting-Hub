@@ -52,6 +52,13 @@ NO_ACTIVITY = False
 # same way; the 2026-10-02 fold_cityless inconsistency cannot recur here.
 CANON_ACTIVE = []
 
+# Registry families whose newest week block is fully closed (no open repost):
+# {(canon title, canon city): close date}, same source tab. rows_for writes
+# "X" into those families' empty day cells from the close date on, so a blank
+# tail reads "closed, nothing coming" instead of "waiting on the pull"
+# (Carlos 2026-11-04).
+CANON_CLOSED = {}
+
 CARD_ID = "ad-sales-board"
 CARD_NAME = "Ad Sales Board (weekly Source Report)"
 # Same `standalone-` family prefix as the monthly job, for the same reason: the
@@ -220,6 +227,22 @@ def ad_key(inbox, title, city, agnostic):
     return k if agnostic else k + ((str(city).lower() or "?"),)
 
 
+def _x_remaining(recv, title, city, week_start):
+    """A fully-closed ad's day cells from the close date on show "X" where
+    there is no count. Real counts always beat the X (a partial close day, a
+    residual application), totals sum before this runs, the next pass's carry
+    reads an X back as blank (_int_or_blank), and a repost reopens the family
+    (it leaves CANON_CLOSED), so an X can neither be mistaken for data nor
+    outlive the closure."""
+    key = (parse._canon_text(str(title).strip()),
+           parse._canon_city(str(city).strip()))
+    closed = CANON_CLOSED.get(key)
+    if not closed:
+        return list(recv)
+    return ["X" if not v and week_start + dt.timedelta(days=i) >= closed
+            else v for i, v in enumerate(recv)]
+
+
 def rows_for(manager, label, week_start, ads, name_rows, day_recv):
     """The data-tab rows for one (manager, week): a WEEK ENDING band row first
     (the visible board is one stacked scroll of all weeks — the band is each
@@ -266,7 +289,8 @@ def rows_for(manager, label, week_start, ads, name_rows, day_recv):
         out.append([manager, label, parse.account_name(g["inbox"]), g["inbox"],
                     g["title"], g["city"], g["rec"]["apps"], g["rec"]["scl"],
                     len(got) if fed else "", ", ".join(got), iso]
-                   + day_cells(days) + [rank] + list(recv)
+                   + day_cells(days) + [rank]
+                   + _x_remaining(recv, g["title"], g["city"], week_start)
                    + [g["rec"][f] for f in METRIC_FIELDS])
     if unmatched:
         tot_days = [a + b for a, b in zip(tot_days, unmatched_days)]
@@ -328,7 +352,7 @@ def main(argv=None):
     ap.add_argument("--no-group-subject", dest="group_subject",
                     action="store_false", help="legacy merged pull")
     a = ap.parse_args(argv)
-    global SPLIT_CITIES, NO_ACTIVITY, CANON_ACTIVE
+    global SPLIT_CITIES, NO_ACTIVITY, CANON_ACTIVE, CANON_CLOSED
     NO_ACTIVITY = a.no_activity
     if a.group_subject:
         fetch.GROUP_SUBJECT = True
@@ -418,14 +442,17 @@ def main(argv=None):
     # Canonical registry for offices that keep a live-ads tab (Carlos only).
     # Best-effort: a failed read means this pass simply runs without folding,
     # exactly like every pass before 2026-11-03 — never worth aborting over.
-    canon_by_office = {}
+    canon_by_office, closed_by_office = {}, {}
     if any(str(o) == "11580" for o, _n in targets):
         try:
             from automations.ad_sales_board import since_live as _sl
             canon_by_office["11580"] = [
                 (t, c) for t, c, _d in _sl._live_ads(sess, today)]
-            print("[ad_sales_board] canonical registry (11580): %d ads"
-                  % len(canon_by_office["11580"]), flush=True)
+            closed_by_office["11580"] = _sl._closed_families(sess, today)
+            print("[ad_sales_board] canonical registry (11580): %d ads, "
+                  "%d closed families"
+                  % (len(canon_by_office["11580"]),
+                     len(closed_by_office["11580"])), flush=True)
         except Exception as e:  # noqa: BLE001
             print("[ad_sales_board] registry read failed (%s) — folding off "
                   "this pass" % str(e)[:120], flush=True)
@@ -474,6 +501,7 @@ def main(argv=None):
         while queue:
             oid, name = queue.pop(0)
             CANON_ACTIVE = canon_by_office.get(str(oid), [])
+            CANON_CLOSED = closed_by_office.get(str(oid), {})
             try:
                 fetch.select_office(page, tok, oid)
                 agnostic = name in CITY_AGNOSTIC and not SPLIT_CITIES
