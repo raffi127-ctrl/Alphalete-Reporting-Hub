@@ -8,6 +8,9 @@ from typing import Dict
 from automations.second_round_contacts import config as C
 
 TRACKED, HIRED, REMOVED = "tracked", "hired", "removed"
+# Added from an office that is no longer on the owner's roster row (a closed
+# funnel). Kept for good, never audited -- Eve 2026-11-05, Omar's 24153.
+KEPT = "kept"
 
 
 def load() -> Dict[str, Dict[str, dict]]:

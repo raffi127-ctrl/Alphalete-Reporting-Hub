@@ -171,15 +171,14 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
 
 # ---------------------------------------------------------------- audit --
 
-def audit_offices(owner: R.Owner, entries: Dict[str, dict]) -> List[str]:
-    """The roster's offices plus any office a tracked contact was added from.
-    Taking an old funnel off the roster must not make its people look not hired."""
-    out = list(owner.offices)
-    for e in entries.values():
-        office = e.get("office")
-        if office and e.get("status") == S.TRACKED and office not in out:
-            out.append(office)
-    return out
+def from_old_office(owner: R.Owner, entries: Dict[str, dict]) -> set:
+    """Tracked contacts added from an office that is no longer on the owner's
+    row. Their office is gone (Omar's 24153, closed 2026-11-04), so the audit
+    cannot see what happened to them: they are KEPT for good, never removed on
+    missing data (Eve 2026-11-05)."""
+    return {k for k, e in entries.items()
+            if e.get("status") == S.TRACKED and e.get("office")
+            and e.get("office") not in owner.offices}
 
 
 def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str, dict]:
@@ -218,11 +217,22 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
             o = by_account.get(account)
             if not o:
                 continue
-            keys = {k for k, e in entries.items() if e.get("status") == S.TRACKED}
+            old = from_old_office(o, entries)
+            for k in sorted(old):
+                e = entries[k]
+                _log("    %s %s: added from office %s, no longer on the row -- kept for good" % (
+                    "keep" if write else "would keep", e.get("display", k), e.get("office")))
+                if write:
+                    e["status"] = S.KEPT
+                    e["kept"] = today.isoformat()
+                    e["reason"] = "office %s left the roster row" % e.get("office")
+            if old and write:
+                S.save(st)
+            keys = {k for k, e in entries.items() if e.get("status") == S.TRACKED} - old
             if not keys:
                 continue
             try:
-                facts_all[account] = gather_facts(app, audit_offices(o, entries), keys, today)
+                facts_all[account] = gather_facts(app, o.offices, keys, today)
             except Exception as e:  # noqa: BLE001
                 _log("  %s: ApplicantStream read failed (%s) -- audit skipped for this owner" % (o.owner, type(e).__name__))
                 failed += 1

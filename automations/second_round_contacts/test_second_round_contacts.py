@@ -111,10 +111,12 @@ class TwoOffices(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 RUN.gather_facts(None, ["24232", "24153"], {"p:1"}, T)
 
-    def test_audit_still_reads_the_office_a_contact_came_from(self):
+    def test_contacts_from_an_office_off_the_row_are_kept_not_audited(self):
         entries = {"p:1": {"office": "24153", "status": S.TRACKED},
-                   "p:2": {"office": "99999", "status": S.REMOVED}}
-        self.assertEqual(RUN.audit_offices(self.owner("24232"), entries), ["24232", "24153"])
+                   "p:2": {"office": "24232", "status": S.TRACKED},
+                   "p:3": {"office": "24153", "status": S.REMOVED}}
+        self.assertEqual(RUN.from_old_office(self.owner("24232"), entries), {"p:1"})
+        self.assertEqual(RUN.from_old_office(self.owner("24232, 24153"), entries), set())
 
 
 class Contacts(unittest.TestCase):
