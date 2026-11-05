@@ -35,6 +35,15 @@ class Parse(unittest.TestCase):
         self.assertEqual(card[C.LABEL_CONFIRMED], "")
         self.assertFalse(has_confirmation_date(card))
 
+    def test_order_summary_button_bounds_the_date(self):
+        card = parse_card_text("T&C Sent Via:\nEmail to a@b.com\nConfirmation Date:\n"
+                               "11/4/2026 6:23:24 PM\nOrder Summary\nNotes:\nhi")
+        self.assertEqual(card[C.LABEL_CONFIRMED], "11/4/2026 6:23:24 PM")
+
+    def test_message_title_cases_shouted_names(self):
+        self.assertIn("customer Alba (rep: Nathaly Elizabeth Molina)",
+                      C.message("ALBA", "NATHALY ELIZABETH MOLINA"))
+
     def test_status_word_is_not_a_date(self):
         self.assertFalse(has_confirmation_date({C.LABEL_CONFIRMED: "Sent"}))
         self.assertFalse(has_confirmation_date({}))
@@ -53,6 +62,8 @@ class Parse(unittest.TestCase):
         cols = map_columns(["", "", "Order ID", "Order Date", "User Name",
                             "Customer Name", "Phone"])
         self.assertEqual(cols, {"order_id": 2, "rep": 4, "customer": 5})
+        cols = map_columns(["Order ID", "Salesperson", "User Name", "Customer Name"])
+        self.assertEqual(cols["salesperson"], 1)
         with self.assertRaises(RuntimeError):
             map_columns(["Order ID", "Phone"])
 

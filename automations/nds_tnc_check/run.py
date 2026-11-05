@@ -65,7 +65,8 @@ def parse_card_text(text: str) -> Dict[str, str]:
     A value runs from its label to the NEXT label of the list, whichever
     comes first, so a wrapped 'Email to\\n<address>' stays one value."""
     flat = _norm(text)
-    any_label = "|".join("(?:%s)" % _label_re(l) for l in C.CARD_LABELS)
+    any_label = "|".join("(?:%s)" % _label_re(l)
+                         for l in C.CARD_LABELS + C.STOP_LABELS)
     out: Dict[str, str] = {}
     for label in C.CARD_LABELS:
         m = re.search(r"(?i)(?<![A-Za-z])" + _label_re(label)
@@ -105,6 +106,10 @@ def map_columns(headers: List[str]) -> Dict[str, int]:
             raise RuntimeError(
                 "the grid has none of %s. Columns seen: %s"
                 % (cands, ", ".join(h for h in headers if h)[:500]))
+    for cand in C.COL_SALESPERSON:          # optional, logged only
+        if cand.lower() in heads:
+            out["salesperson"] = heads.index(cand.lower())
+            break
     return out
 
 
@@ -294,7 +299,10 @@ def scan(day: dt.date, *, limit: Optional[int] = None, probe: bool = False,
                         break
                     seen += 1
                     oid = r[cols["order_id"]]
+                    sp = (_norm(r[cols["salesperson"]])
+                          if "salesperson" in cols and len(r) > cols["salesperson"] else "")
                     rec = {"order_id": oid, "rep": _norm(r[cols["rep"]]),
+                           "salesperson": sp,
                            "customer": _norm(r[cols["customer"]]),
                            "sent_via": "", "confirmed": "", "card_read": "no"}
                     res = _open_card(page, oid, ix)
@@ -315,8 +323,8 @@ def scan(day: dt.date, *, limit: Optional[int] = None, probe: bool = False,
                     else:
                         log("  %s: the customer card never showed its T&C block"
                             % oid)
-                    log("  %-14s %-22s %-22s via=%r confirmed=%r"
-                        % (oid, rec["customer"][:22], rec["rep"][:22],
+                    log("  %-14s %-22s rep=%r salesperson=%r via=%r confirmed=%r"
+                        % (oid, rec["customer"][:22], rec["rep"][:30], sp[:30],
                            rec["sent_via"][:40], rec["confirmed"][:30]))
                     out.append(rec)
                     _close_card(page)

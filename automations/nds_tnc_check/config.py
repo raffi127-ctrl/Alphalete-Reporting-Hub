@@ -30,6 +30,10 @@ CARD_LABELS = [
     "T&C Sent Date:", "Confirmation Status:", "T&C Sent Via:",
     "Confirmation Date:", "Notes:",
 ]
+# Not fields, but they sit right after Confirmation Date on the live card
+# (probe 2026-11-05: '... 6:23:24 PM Order Summary Notes:'), so they bound
+# the value too.
+STOP_LABELS = ["Order Summary", "Order History"]
 LABEL_SENT_VIA = "T&C Sent Via:"
 LABEL_CONFIRMED = "Confirmation Date:"
 
@@ -37,7 +41,8 @@ LABEL_CONFIRMED = "Confirmation Date:"
 # the NDS dealer's grid is the same Telerik RadGrid as the b2b dealer's, but
 # the header spelling is checked at run time and logged.
 COL_ORDER_ID = ["Order ID", "Order Id", "DSI #", "Order #"]
-COL_REP = ["User Name", "Sales Rep", "Salesperson", "Rep Name"]
+COL_REP = ["User Name", "Sales Rep", "Rep Name"]
+COL_SALESPERSON = ["Salesperson"]       # logged beside User Name (optional)
 COL_CUSTOMER = ["Customer Name", "Customer", "Name"]
 
 # --- Slack ------------------------------------------------------------------
@@ -58,7 +63,13 @@ MENTIONS = [
 def message(customer_first: str, rep: str) -> str:
     tags = " ".join("<@%s>" % u for u in MENTIONS)
     return ("%s Hey, customer %s (rep: %s) — TNC has not been completed."
-            % (tags, customer_first or "(no name)", rep or "(no rep)"))
+            % (tags, _title(customer_first) or "(no name)",
+               _title(rep) or "(no rep)"))
+
+
+def _title(s: str) -> str:
+    """SaraPlus shouts names (ALBA ALVAREZ) -- the post says Alba Alvarez."""
+    return " ".join(w[:1].upper() + w[1:].lower() for w in (s or "").split())
 
 STATE_PATH = OUT_DIR / "posted.json"   # {"YYYY-MM-DD|slot": [order ids]}
 NAV_TIMEOUT_MS = 60_000
