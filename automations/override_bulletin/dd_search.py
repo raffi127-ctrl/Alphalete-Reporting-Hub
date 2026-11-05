@@ -499,6 +499,21 @@ def accumulate_all(write=False, page=None, verbose=True, source="program-summary
     credico_skip = set() if credico_ok else {
         P._norm_name(F.canon(n, aliases)) for n in CREDICO_OWNERS}
 
+    # A NEW owner earning for the first time has no Active-YES row, so the loop
+    # below would skip their money without a word (Eve 2026-11-05, Omar Mohamad).
+    # Best-effort: this must never cost the whole week's fill.
+    from automations.override_bulletin import dd_new_owner as N
+    new_lines = []
+    try:
+        pulled = N.from_pull(ws, vals, ourk, aliases,
+                             lambda s: P._norm_name(F.canon(s, aliases)),
+                             write=write)
+        new_lines += N.pull_lines(pulled)
+        if pulled["changed"]:
+            vals = ws.get_all_values()
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ new-owner check failed ({type(e).__name__}: {e})")
+
     changes, same, folded, missing, held, wrote = [], 0, [], [], [], 0
     for i, r in enumerate(vals[1:], start=2):
         nm = (r[0] or "").strip()
@@ -544,6 +559,12 @@ def accumulate_all(write=False, page=None, verbose=True, source="program-summary
     for nm, cur, ours in sorted(changes, key=lambda x: -abs(x[2] - x[1])):
         print(f"   {nm}: tab ${cur:,.2f} -> ours ${ours:,.2f}  "
               f"(Δ ${ours - cur:,.2f})")
+    try:
+        new_lines += N.list_lines(N.sync_lists(write=write, aliases=aliases))
+        if write:
+            N.tell_channel(new_lines)
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ new-owner list sync failed ({type(e).__name__}: {e})")
     return {"changes": changes, "same": same, "folded": folded,
             "held": held, "missing": missing}
 

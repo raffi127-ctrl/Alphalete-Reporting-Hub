@@ -137,6 +137,16 @@ def build_preview(verbose: bool = True):
     return paths, d
 
 
+def _sync_new_owners() -> None:
+    """A row added by hand after dd_populate still has to reach the leaders'
+    lists before the link is built. A failure here never stops the review."""
+    try:
+        from automations.override_bulletin import dd_new_owner as N
+        N.tell_channel(N.list_lines(N.sync_lists(write=True)))
+    except Exception as e:  # noqa: BLE001
+        print(f"  (new-owner list sync failed: {type(e).__name__}: {e})", flush=True)
+
+
 def _companion_page(d, verbose: bool = True) -> list:
     """The 'Up and Coming RCs and NCs' page, as a 1-item list (empty on failure).
 
@@ -837,6 +847,7 @@ def main(argv=None) -> int:
     # "--post --refresh" and has to mean refresh. Same order, same reason as the
     # other two gates.
     if args.refresh:
+        _sync_new_owners()
         paths, _ = build_preview()
         link = upload_pdf(build_pdf(paths, today=today))
         print(f"✓ refreshed in place, existing link still valid: {link}",
@@ -876,6 +887,7 @@ def main(argv=None) -> int:
         # would republish a week that already went out (7.19.26 went out twice
         # that way). Six of the seven Thursday passes normally hold; the pass
         # after her fill picks it up. Exits 0 — a correct hold, not a failure.
+        _sync_new_owners()
         paths, d = build_preview()
         have = (d["weeks"] or [""])[0]
         if have != week_label(today):
