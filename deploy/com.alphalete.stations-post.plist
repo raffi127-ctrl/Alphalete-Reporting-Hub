@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.stations-post</string>
+    <!-- Stations picture (Raf, 2026-11-05).
+         LUCY 1. Path is the laptop placeholder; install_agent.py rewrites it. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/stations_post.sh</string>
+        <string>--send</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+    <!-- Mon-Fri 10:00 CT. Saturdays off, same as the Line Up: Raf said 10/31 they
+         have no structure yet and he would follow up. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.stations-post.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.stations-post.err</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
