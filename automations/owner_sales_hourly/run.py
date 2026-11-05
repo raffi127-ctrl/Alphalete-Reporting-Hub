@@ -28,6 +28,8 @@ SOUTH SHORE TOO (Colten 2026-10-24): a second text, only the South Shore owners
 NDS TOO (Jairo 2026-10-26, Eve: "the ones on the same campaign as Jairo"): a
 third text into his "A PLAYERSSS" chat -- only sales from NDS offices, only
 owners on our Org board, titled "NDS Sales Today".
+CARLOS TOO (Carlos 2026-11-04): the owners list into his "ATT B2B Leaders" chain,
+hourly on the :15, titled "Alphalete Owner Sales Today".
 RAF IN THE SSO CHAT (Raf 2026-11-04): his line ranks with theirs so he can
 compete, but his sales stay out of that chat's TOTAL (cfg.SSO_NOT_IN_TOTAL).
 
@@ -39,7 +41,7 @@ Usage
   python -m automations.owner_sales_hourly.run --send
 
   --force   ignore the time window and the "nothing changed" skip
-  --only owners|sso|jairo   text just that one chat
+  --only owners|sso|jairo|carlos   text just that one chat
 
 --send is the ONLY thing that texts anyone. Python 3.9-safe (Lucy runtime).
 """
@@ -200,7 +202,10 @@ def in_window(now: dt.datetime) -> bool:
 
 
 def hourly_chat_skips(name: str, now: dt.datetime) -> bool:
-    """True on the :15 pass for a chat that only gets one text an hour."""
+    """True on the pass a one-text-an-hour chat sits out: :15 for most, :45
+    for the ones on the :15."""
+    if name in cfg.HOURLY_ON_THE_15:
+        return now.minute >= 30
     return name in cfg.HOURLY_CHATS and now.minute < 30
 
 
@@ -219,7 +224,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="actually text the owners chat (default: dry run)")
     ap.add_argument("--force", action="store_true",
                     help="ignore the time window and the unchanged-numbers skip")
-    ap.add_argument("--only", choices=("owners", "sso", "jairo"),
+    ap.add_argument("--only", choices=("owners", "sso", "jairo", "carlos"),
                     help="text just one chat (e.g. a catch-up send to SSO)")
     args = ap.parse_args(argv)
 
@@ -261,7 +266,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today", ()),
             ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, "Owner Sales Today",
              cfg.SSO_NOT_IN_TOTAL),
-            ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today", ())):
+            ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today", ()),
+            ("carlos", cfg.CARLOS_GROUP, "last_sent_carlos", totals,
+             cfg.CARLOS_TITLE, ())):
         if args.only and args.only != name:
             continue
         # --only / --force are a person asking for that text now.

@@ -147,6 +147,18 @@ class HalfHourPass(unittest.TestCase):
             self.assertTrue(run.hourly_chat_skips(chat, self._at(15)))
             self.assertFalse(run.hourly_chat_skips(chat, self._at(45)))
 
+    def test_carlos_chat_only_the_15_so_it_starts_with_the_owners_chat(self):
+        self.assertFalse(run.hourly_chat_skips("carlos", self._at(15)))
+        self.assertTrue(run.hourly_chat_skips("carlos", self._at(45)))
+
+    def test_carlos_title_and_chat(self):
+        from automations.owner_sales_hourly import config as cfg
+        self.assertEqual(cfg.CARLOS_GROUP, "ATT B2B Leaders")
+        text = run.build_text({"A": 1}, dt.datetime(2026, 11, 5, 12, 15),
+                              cfg.CARLOS_TITLE)
+        self.assertEqual(text.splitlines()[0],
+                         "Alphalete Owner Sales Today - 12:15 PM CT")
+
     def test_plist_fires_every_30_minutes_inside_the_window(self):
         import plistlib
         from pathlib import Path

@@ -22,6 +22,7 @@ from pathlib import Path
 # wrong room.
 from automations.owner_chat_texts.config import GROUP_OWNERS_REAL as TEXT_GROUP
 from automations.owner_chat_texts.config import GROUP_SOUTHSHORE_ORG
+from automations.b2b_dispositions.config import TEXT_GROUP_ATT
 
 # Colten Wright 2026-10-24 (Slack): the same list in his "SOUTHSHORE ORG" chat
 # too, "we could just do SSO owners". Lucy 1 already texts that chat the board
@@ -39,6 +40,13 @@ SSO_GROUP = GROUP_SOUTHSHORE_ORG
 # on our Org board, not the South Shore list.
 JAIRO_GROUP = "A PLAYERSSS"
 JAIRO_CAMPAIGN = "nds"
+
+# Carlos Hidalgo 2026-11-04 (Slack): the owners text in his "ATT B2B Leaders"
+# chain once an hour, starting when the owners chat starts, titled with
+# Alphalete in front. Same list as the owners chat, own "nothing changed" skip.
+# The name lives in b2b_dispositions.config, like every other text to that chat.
+CARLOS_GROUP = TEXT_GROUP_ATT
+CARLOS_TITLE = "Alphalete Owner Sales Today"
 
 # South Shore owners who text into the SSO chat but are NOT on the Recruiting
 # Dashboard's South Shore group (no AppStream office there), so they can't ride
@@ -70,6 +78,9 @@ SUPERSEDED_BY = {"rafael_hidalgo": "raf"}
 # text. Only that chat: the plist fires at :15 and :45, and these chats -- which
 # nobody asked to speed up -- still get one text an hour, on the :45.
 HOURLY_CHATS = ("sso", "jairo")
+# One an hour too, but on the :15: the owners chat's first text of the day is
+# 12:15, and Carlos asked to start when it starts.
+HOURLY_ON_THE_15 = ("carlos",)
 
 # The selling day, Central. This is the guard the code applies, so a stray hand
 # run at 9am texts nothing. weekday(): (first hour, last hour) inclusive.

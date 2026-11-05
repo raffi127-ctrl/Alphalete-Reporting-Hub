@@ -27,6 +27,10 @@ Eveliz ...), own total, own "nothing changed" skip. **Raf is listed there too**
 Today" -- only NDS offices' sales, only owners on our Org board, with its own
 "nothing changed" skip.
 
+**And into Carlos's ATT B2B Leaders** (Carlos, 2026-11-04): the same owners list,
+titled "Alphalete Owner Sales Today", once an hour on the :15 so it starts when
+the owners chat starts (12:15 PM).
+
 - **Alphalete Owners: every 30 minutes** (:15 and :45, Raf 2026-11-04). SOUTHSHORE
   ORG and A PLAYERSSS: once an hour, on the :45. Mon–Sat, 12 PM–9 PM Central.
 - Skipped when no number moved since the last text.
