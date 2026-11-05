@@ -701,6 +701,13 @@ class OfficeComputer(unittest.TestCase):
         r = office_jobs.work({"kind": "nope", "mode": "dry"}, "omar", log=lambda *_: None)
         self.assertEqual(r["status"], "error")
 
+    def test_computer_without_sterling_login_never_asks(self):
+        from automations.icd_alerts import office_jobs
+        with mock.patch("automations.icd_alerts.config.sterling_creds", return_value={}), \
+                mock.patch.object(office_jobs, "run_once") as ran:
+            self.assertFalse(office_jobs.maybe_run(log=lambda *_: None))
+        ran.assert_not_called()
+
     def test_office_hours(self):
         from automations.icd_alerts import office_jobs
         self.assertFalse(office_jobs.due(dt.datetime(2026, 11, 2, 3, 0), {}))

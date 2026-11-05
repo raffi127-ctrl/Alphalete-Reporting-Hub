@@ -142,6 +142,13 @@ def maybe_run(log=print) -> bool:
     """Called from every agent tick. Cheap when nothing is due."""
     if os.environ.get("LUCY_NO_OFFICE_JOBS"):
         return False
+    # ONLY A COMPUTER THAT CAN DO THE WORK ASKS. Every enrolled computer
+    # asking every 3 minutes would be thousands of extra calls a day on the
+    # relay that carries every office's alerts; today the only job is
+    # Sterling, so a computer with no Sterling login saved (sterling_setup)
+    # never asks.
+    if not C.sterling_creds():
+        return False
     state = _load()
     if not due(state=state):
         return False
