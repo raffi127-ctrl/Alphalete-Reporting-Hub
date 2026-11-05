@@ -186,6 +186,29 @@ def _card_frame_text(page, order_id: str, customer: str, prev_text: str,
     if seen_other:
         log("  %s: a card is open but it does not name this order/customer "
             "(%r) -- not trusted" % (order_id, _norm(seen_other)[:120]))
+    # Say what IS there, so a layout change or a never-opened window can be
+    # told apart from the log alone (full text -> the 'TNC Probe' tab).
+    dump: List[str] = []
+    for fr in page.frames:
+        if fr == page.main_frame:
+            continue
+        try:
+            txt = fr.evaluate("() => (document.body.innerText || '')") or ""
+        except Exception:  # noqa: BLE001
+            txt = "(unreadable frame)"
+        log("  frame %s: %r" % ((fr.url or "")[:90], _norm(txt)[:160]))
+        dump.append("frame " + (fr.url or ""))
+        dump.extend(l.strip() for l in txt.splitlines() if l.strip())
+    try:
+        vis = page.evaluate(
+            """() => [...document.querySelectorAll('.RadWindow, .rwWindowContent, iframe')]
+                 .map(e => e.tagName + '#' + (e.id || '') + ' visible=' + (e.offsetParent !== null)
+                      + ' src=' + (e.getAttribute('src') || '').slice(0, 80))""")
+        log("  windows: %s" % "; ".join(vis)[:400])
+        dump.insert(0, "windows: " + "; ".join(vis))
+    except Exception:  # noqa: BLE001
+        pass
+    _probe_dump("untrusted card for %s (%s)" % (order_id, customer), dump, log=log)
     return "", ""
 
 
