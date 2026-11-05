@@ -320,13 +320,19 @@ class SoloOffices(unittest.TestCase):
         from automations.captainship_night_knocks import run as R
         name = R.SOLO_OFFICES[0]
         got = R._with_solo({"chan": [name.upper()]})
-        self.assertNotIn(R.SOLO_KEY, got)
+        self.assertNotIn(name, got.get(R.SOLO_KEY, []))
 
     def test_every_solo_office_has_an_owner_address(self):
         from automations.captainship_night_knocks import owners as O
         from automations.captainship_night_knocks import run as R
         for name in R.SOLO_OFFICES:
             self.assertTrue(O.owner_email(name), name)
+
+    def test_every_solo_office_has_a_zone(self):
+        from automations.captainship_night_knocks import run as R
+        from automations.captainship_night_knocks import zones as Z
+        for name in R.SOLO_OFFICES:
+            self.assertIn(name, Z.ICD_TIMEZONES)
 
     def test_no_captainship_in_the_alert_name(self):
         from automations.captainship_night_knocks import run as R

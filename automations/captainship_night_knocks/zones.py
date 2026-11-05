@@ -154,6 +154,11 @@ ICD_TIMEZONES: Dict[str, str] = {
     # was "Its only 356 PST my guys will knock a lot longer". The wave follows
     # where the doors are, not the office address.
     "Aaron Nimako":     "America/Los_Angeles",           # team knocks Pacific
+    # Rafael 2026-11-04, mail "Knocking report". Alex is solo (run.SOLO_OFFICES);
+    # his harvest failed 11/5, so his market comes from Nelros's "RES ATT
+    # Participants October 12-16". Austin is on Pat's roster; harvest 11/5 = Pacific.
+    "Alex Roberts":     "America/Los_Angeles",           # Portland, OR
+    "Austin Eldredge":  "America/Los_Angeles",           # Anaheim, CA
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a

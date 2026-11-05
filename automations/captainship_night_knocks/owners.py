@@ -126,6 +126,9 @@ OWNER_EMAILS: Dict[str, str] = {
     # no captainship (run.SOLO_OFFICES). Rafael 2026-10-24, mail "Aaron Nimako
     # - knocking report" — Aaron answered on that thread from this address.
     "Aaron Nimako":        "aaron.nimako@gmail.com",
+    # Rafael 2026-11-04, mail "Knocking report": both answered on that thread.
+    "Alex Roberts":        "robertsalexc14@gmail.com",
+    "Austin Eldredge":     "aeldredge90@gmail.com",
 }
 
 

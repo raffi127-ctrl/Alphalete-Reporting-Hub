@@ -109,7 +109,9 @@ HELD_OUT = {"atef"}
 # report and in knocks_access_watch. Each name still needs a zone (zones.py) and
 # an address (owners.py) like any other office.
 SOLO_KEY = "solo"
-SOLO_OFFICES: Tuple[str, ...] = ("Aaron Nimako",)
+# Rafael 2026-11-04 (mail "Knocking report"): same night mail for Alex Roberts
+# (B2B team, so no night roster brings him in; his knocks are on Fiber D2D).
+SOLO_OFFICES: Tuple[str, ...] = ("Aaron Nimako", "Alex Roberts")
 
 
 def _with_solo(rosters: Dict[str, List[str]]) -> Dict[str, List[str]]:
