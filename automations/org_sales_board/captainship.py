@@ -181,7 +181,7 @@ def _a1col(c: int) -> str:  # 1-based col -> letter(s)
 
 
 def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
-                     dry_run: bool = False, metric=None) -> list:
+                     dry_run: bool = False, metric=None, keep_unfound=False) -> list:
     """Fill a captainship's daily Mon-Sun + running total and the
     leaderboard's this-week total. `per_for(name, metric)` returns that ICD's
     {date: value} dict for the given metric (team view first, org-wide fallback)
@@ -204,6 +204,11 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
     updates, missing = [], []
     for row, name in anchor.daily:
         per = per_for(name, metric)
+        if not per and keep_unfound:
+            # A program did not come down this run, so "found nowhere" proves
+            # nothing: this rep's sales may live in that program. Leave the row
+            # as it is rather than writing 0 over real sales (2026-11-05, NDS).
+            continue
         if not per:
             # No match in any pull view this week. Write 0 on COMPLETED days
             # (not "NS"), so it reads as a real zero AND matches the VA tab's 0s
@@ -484,12 +489,29 @@ def pull_programs(page, today, *, programs=None, resolve_csv=None,
                 break
             except Exception as e:    # noqa: BLE001 — flake, not a board failure
                 _last_exc = e
+                if (tkey == "nds" and resolve_csv is None
+                        and sp.is_empty_crosstab_dialog(e)):
+                    logfn(f"  ⚠ program pull nds: the workbook shows nothing "
+                          f"({str(e)[:80]})")
+                    break
                 _more = _attempt < _PROG_PULL_TRIES
                 logfn(f"  ⚠ program pull {tkey} attempt {_attempt}/"
                       f"{_PROG_PULL_TRIES} failed ({type(e).__name__}: "
                       f"{str(e)[:80]})" + (" — retrying…" if _more else ""))
                 if _more:
                     time.sleep(_PROG_PULL_BACKOFF_S * _attempt)
+        if (tkey == "nds" and _last_exc is not None and not _out_of_time
+                and resolve_csv is None):
+            # The workbook stays the source; Sara only fills in when it fails.
+            from automations.org_sales_board import nds_fallback
+            try:
+                prog[tkey] = nds_fallback.program_shape(
+                    nds_fallback.pull(page, today, out_dir, logfn))
+                nds_fallback.mark_used(today)
+                _last_exc = None
+            except Exception as e:  # noqa: BLE001 -- falls through to failed
+                logfn(f"  ⚠ Sara fallback for nds failed too "
+                      f"({type(e).__name__}: {str(e)[:80]})")
         if _out_of_time:
             logfn(f"  ⚠ program pull {tkey} stopped: under "
                   f"{_PROG_PULL_MIN_LEFT_S // 60} min left in this run")
@@ -561,14 +583,25 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     # the very same views, filters and retry policy.
     prog, failed_programs = pull_programs(
         page, today, programs=programs, resolve_csv=resolve_csv, logfn=logfn)
+    # Programs with no data this run: failed, or left out by --programs. Their
+    # captains are skipped and unfound reps keep their numbers. Writing 0 for
+    # them would wipe real sales.
+    not_pulled = set(failed_programs)
+    if _prog_filter is not None:
+        not_pulled |= set(PROGRAMS) - _prog_filter
 
     summary = {"filled": [], "missing": {}, "failed_programs": failed_programs,
-               "auto_added": auto_added}
+               "auto_added": auto_added, "skipped_captainships": []}
     failed_captainships: list = []   # per-captain fill errors — never crash the board
     captains = discover_captainships(grid)
     logfn(f"  discovered {len(captains)} captainship block(s) on the board: "
           f"{[c[0] for c in captains]}")
     for title, tkey in captains:
+        if tkey in not_pulled:
+            logfn(f"  captainship {title} ({tkey}): no {tkey} data this run, "
+                  f"left as it is")
+            summary["skipped_captainships"].append(title)
+            continue
         t = TYPES[tkey]
         metric = t["metric"]
         pull = prog.get(tkey, {})
@@ -619,7 +652,8 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
                               if tkey == "fiber" and variant == "new_internet"
                               else None)
                 missing = fill_captainship(ws, anchor, today, per_for,
-                                           dry_run=dry_run, metric=box_metric)
+                                           dry_run=dry_run, metric=box_metric,
+                                           keep_unfound=bool(not_pulled))
                 total_icds += len(anchor.daily)
                 all_missing += missing
             summary["filled"].append(title)

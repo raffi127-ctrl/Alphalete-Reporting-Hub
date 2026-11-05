@@ -184,6 +184,19 @@ def _make_section_adapter(spec_key: str):
                 csv_path = section_pull.pull_section_byday(
                     spec, ctx.out_dir, ctx.page, logfn=ctx.logfn, today=today)
             except RuntimeError as e:
+                # NDS: the workbook stays the source, Sara fills in when it fails.
+                if spec_key == "nds":
+                    from automations.org_sales_board import nds_fallback
+                    try:
+                        pulled = nds_fallback.section_shape(
+                            nds_fallback.pull(ctx.page, today, ctx.out_dir,
+                                              ctx.logfn), metric=spec.metric)
+                    except Exception as fb:  # noqa: BLE001 -- report the first error
+                        ctx.logfn(f"  ⚠ Sara fallback for NDS failed too "
+                                  f"({type(fb).__name__}: {str(fb)[:80]})")
+                    else:
+                        nds_fallback.mark_used(today)
+                        return pulled
                 # A day-behind source whose week hasn't published yet returns an
                 # EMPTY view, and Tableau answers an empty view with an empty
                 # Crosstab dialog ("saw 0 thumb(s)"). That is a wait, not a
@@ -211,6 +224,9 @@ def _make_section_adapter(spec_key: str):
         # time added"). Hand it today's NDS + B2B files. Never fatal: the
         # board's fill is this job's real work, and a missed hand-off fails
         # loudly on the Southshore side instead.
+        if spec_key == "nds" and not ctx.from_csv:
+            from automations.org_sales_board import nds_fallback
+            nds_fallback.clear(today)      # the workbook answered this run
         if spec_key in ("nds", "b2b") and not ctx.from_csv:
             try:
                 from automations.southshore_org_board import data as _sso

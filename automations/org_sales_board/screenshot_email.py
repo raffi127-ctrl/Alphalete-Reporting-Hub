@@ -809,6 +809,11 @@ def build_email(images: List[Tuple], to_addrs: List[str],
     widest = _beh.scale_of(images)
     rows, cids = [], []
     rows.append(_beh.banner_row("ALPHALETE ORG"))
+    # `day` is the day the numbers are for; the board ran the day after.
+    from automations.org_sales_board import nds_fallback
+    nds_note = nds_fallback.note_for(day + dt.timedelta(days=1))
+    if nds_note:
+        rows.append(_beh.text_row(f"<b>{nds_note}</b><br><br>", size=14))
     seen_allunits = False
     for entry in images:
         name, path = entry[0], entry[1]
