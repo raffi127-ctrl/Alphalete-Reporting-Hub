@@ -1440,6 +1440,22 @@ class StationsRollFilters(unittest.TestCase):
         self.assertEqual(self._findings({19: self.TERMINATED,
                                          22: self.NEW_START}), [])
 
+    def test_off_today_roster_is_not_a_new_start_list(self):
+        off_today = ('=IFERROR(FILTER(\'Roll Call\'!$E$3:$E$1500, '
+                     '(\'Roll Call\'!$B$3:$B$1500="Active")+'
+                     '(\'Roll Call\'!$B$3:$B$1500="New Start"), '
+                     '(\'Roll Call\'!$D$3:$D$1500="Verizon"), '
+                     'INDEX(\'Roll Call\'!$H$3:$M$1500,0,WEEKDAY(TODAY(),2))="Off"),"")')
+        self.assertEqual(self._findings({11: off_today, 19: self.TERMINATED,
+                                         22: self.NEW_START}), [])
+
+    def test_a_new_start_list_without_the_week_is_still_caught(self):
+        bad = self.NEW_START.replace(
+            ',INDIRECT("\'Roll Call\'!$A$3:$A$1046")&""=\'Sales Board\'!$B$2&""', "")
+        found = self._findings({22: bad})
+        self.assertTrue(any("no longer compares the current week" in f
+                            for f in found), found)
+
     def test_a_drifted_new_start_list_is_still_caught(self):
         bad = self.NEW_START.replace("$D$3:", "$D$14:")
         found = self._findings({22: bad})

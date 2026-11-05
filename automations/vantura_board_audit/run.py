@@ -1288,7 +1288,11 @@ def _audit_stations_tab(prefix, vals, form, week_board, known,
             # Reading 'Roll Call'!$D$ alone also matched the hidden TERMINATED
             # source (T5, added by hand ~2026-09-15, reads $D$14:$D$470 on
             # purpose) and called a healthy helper "drifted" every day.
-            if "'Roll Call'!$D$" in c and '"New Start"' in c:
+            # A formula that also takes "Active" is a daily roster, not a list
+            # of that week's new starts: L12 / L37 on Stations list who is Off
+            # TODAY, and have no week to compare (2026-11-05).
+            if ("'Roll Call'!$D$" in c and '"New Start"' in c
+                    and '"Active"' not in c):
                 n_roll += 1
                 if "$D$3:" not in c or "#REF" in c:
                     out.append(f"{prefix}: new-start list {at} formula drifted "
