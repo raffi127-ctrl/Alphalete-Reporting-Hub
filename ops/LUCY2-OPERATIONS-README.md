@@ -1,0 +1,3 @@
+
+## Sheets identity per machine (11/4/2026)
+The gspread OAuth token (`~/.config/recruiting-report/oauth-token.json`, spreadsheets scope only) belongs to a DIFFERENT Google account on each machine: **mini = CarlosHidalgo349@gmail.com, Lucy 2 = alphaletereporting@gmail.com**. Symptom of forgetting this: a module works on the mini, then the same module on Lucy 2 dies with `PermissionError` in `gspread open_by_key`. Fix: share the spreadsheet to **alphaletereporting@gmail.com** (writer). Sharing raffi127@gmail.com (the account named in the captainship_boards docs) does NOT cover Lucy 2's gspread token. First hit: nico_roster_check on 'Nico Verizon Payroll', 11/4.

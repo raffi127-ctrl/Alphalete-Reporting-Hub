@@ -1642,6 +1642,33 @@ Diagnose a mismatch: `logtail vantura-nds-sara SUMMARY 2` (per-rep units from Sa
 chars — use `logtail vantura-nds-sara <REP-UPPERCASE> 2` for one rep's `Int n + NL n  Up n Air n DTV n`
 line and the `!` flags).
 
+**11/4 — Roll Call "Off" marks not showing on Stations (Carlos).** Root cause: the Stations MARK OFF box
+is two-way — manual dropdown picks in the TOP half (L6:L11 NDS / L31:L36 Verizon) and a TODAY()-keyed
+auto-list formula at **L12** (NDS) / **L37** (Verizon) that lists every Active / New Start rep whose
+Roll Call mark for today's weekday is "Off". The 4am `resetOffList` cleared the WHOLE box (L5:L18 /
+L30:L43 — before 11/2: K5:K18 / K30:K43), so the auto-list formulas were wiped and the box stayed empty.
+Fixed 11/4 (Apps Script API PUT, HEAD = live for triggers): `resetOffList` clears only L6:L11 / L31:L36;
+`stationsHelperGuard` (6:45am `rollDailyNormalize`) re-seats L12 / L37 ONLY when the cell is empty;
+formulas re-written by hand 11/4:
+`=IFERROR(FILTER('Roll Call'!$E$3:$E$1500, ('Roll Call'!$B$3:$B$1500="Active")+('Roll Call'!$B$3:$B$1500="New Start"), ('Roll Call'!$D$3:$D$1500="NDS")+('Roll Call'!$D$3:$D$1500="B2B"), INDEX('Roll Call'!$H$3:$M$1500,0,WEEKDAY(TODAY(),2))="Off"),"")`
+(Verizon: campaign "Verizon"). No week filter on purpose: Roll Call col A is the rep's START week, and
+H:M always hold the CURRENT week's marks. Lookouts: the list spills down from L12 (more than 7 Off =
+rows past L18); the mark must be exactly "Off" (NoShow/Floater don't list); a Roll Call column insert
+shifts these direct refs by itself but the guard's canonical copy must then be updated too.
+
+**Board vs SaraPlus audit (11/3–11/4, `rerun vantura_nds_sara --probe --date <d>` per day, logs via
+`logdump`):** WE 11.1 matched rep-for-rep every day — Mon 11, Tue 13, Wed 13, Thu 23, Fri 28, Sat 17
+(=105) — and Mon 11/2 = 10 once Eduardo's Slack-only 2 was removed. The only "off" day was Sara's own
+over-count (Cinthya Tue 11/3). Method note: the SUMMARY line truncates names to 22 chars (Diego Javier
+Del Pozo…, Nathaly Elizabeth Moli…) — compare on the per-rep `-> Board Name =` lines, not the summary.
+
+**11/4 — SaraPlus itself over-counted (Cinthya Tue 11/3: Sara 8 NL, real 4).** The board copies Sara
+exactly, so a Sara mistake lands on the board; `rerun vantura_nds_sara --date 2026-11-03` at 8:58 found
+Sara STILL at 8 ("board already matches SaraPlus"), so F16 was set to 4 by hand (Carlos). A hand-set
+number on a PAST day sticks: the passes only read today (4–9pm) and yesterday (5am); only a hand
+`--date` rerun re-reads an older day, and that would put Sara's number back if Sara is still wrong.
+When Sara is corrected later, the rerun is safe. Standing rule: Carlos's word beats Sara on the board.
+
 **Revenue Board rule (Carlos 11/3, main a92df54f): "if you ever see a sale from someone not on the list
 you still want to add it for the revenue board."** `load_crew` keeps every line on his owner on
 `cols.owner_lines`; `build_revenue_board` prices those (no crew filter at all) and logs

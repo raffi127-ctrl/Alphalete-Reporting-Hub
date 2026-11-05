@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-11-04 07:30 CST_
+_Last sync: 2026-11-04 20:00 CST_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 
@@ -19,11 +19,12 @@ Source: `~/alphalete-readmes/`
 | [FOCUS-REPORT-CAMPAIGN-README.md](ops/FOCUS-REPORT-CAMPAIGN-README.md) | Focus Report Campaign Metrics — System README | 2026-09-30 |
 | [LOCAL-OFFICE-SALES-CALLOUTS-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-README.md) | Local Office Sales Call Outs — README | 2026-11-03 |
 | [LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md) | Local Office Sales Call Outs — session README (Sep 29 → Oct 19, 2026) | 2026-10-21 |
+| [LUCY2-OPERATIONS-README.md](ops/LUCY2-OPERATIONS-README.md) | Sheets identity per machine (11/4/2026) | 2026-11-04 |
 | [ONE-ON-ONES-README.md](ops/ONE-ON-ONES-README.md) | ONE-ON-ONES README — Carlos's Monday 1:1 call | 2026-10-19 |
 | [RESUME-PUSHING-README.md](ops/RESUME-PUSHING-README.md) | Resume Pushing — How It Works | 2026-11-03 |
 | [SECOND-ROUND-CONTACTS-README.md](ops/SECOND-ROUND-CONTACTS-README.md) | Second-round contacts for new owners — how it works | 2026-10-31 |
-| [VANTURA-BOARD-README.md](ops/VANTURA-BOARD-README.md) | Vantura Master Sales Board — How It All Works | 2026-11-03 |
-| [VANTURA-PAYROLL-SESSION-README.md](ops/VANTURA-PAYROLL-SESSION-README.md) | Vantura Payroll — Session Handoff README | 2026-10-28 |
+| [VANTURA-BOARD-README.md](ops/VANTURA-BOARD-README.md) | Vantura Master Sales Board — How It All Works | 2026-11-04 |
+| [VANTURA-PAYROLL-SESSION-README.md](ops/VANTURA-PAYROLL-SESSION-README.md) | Vantura Payroll — Session Handoff README | 2026-11-04 |
 | [VANTURA-PNL-COMMISSION-README.md](ops/VANTURA-PNL-COMMISSION-README.md) | Vantura P&L + Commission — How It All Works | 2026-09-06 |
 | [VANTURA-REPS-CONTACTS-README.md](ops/VANTURA-REPS-CONTACTS-README.md) | Vantura Reps → Google Contacts (alphaletegp) — how it works | 2026-10-31 |
 
@@ -45,7 +46,7 @@ Source: `~/recruiting-report/`
 | [automations/harvest/README.md](recruiting-report/automations/harvest/README.md) | automations/harvest — harvest-once Tableau cache | 2026-07-15 |
 | [automations/indeed_source_report/README.md](recruiting-report/automations/indeed_source_report/README.md) | Source Report - Indeed dashboard | 2026-09-05 |
 | [automations/oat_processing/README.md](recruiting-report/automations/oat_processing/README.md) | OAT Processing — "One App at a time" leftovers handler | 2026-07-30 |
-| [automations/owner_knocks_hourly/README.md](recruiting-report/automations/owner_knocks_hourly/README.md) | Owner Knocks Hourly | 2026-10-29 |
+| [automations/owner_knocks_hourly/README.md](recruiting-report/automations/owner_knocks_hourly/README.md) | Owner Knocks Hourly | 2026-11-04 |
 | [automations/owner_sales_hourly/README.md](recruiting-report/automations/owner_sales_hourly/README.md) | Owner Sales Hourly | 2026-10-26 |
 | [automations/recruiter_stats/README.md](recruiting-report/automations/recruiter_stats/README.md) | Recruiter Stats | 2026-09-06 |
 | [automations/rep_knock_breakdown/README.md](recruiting-report/automations/rep_knock_breakdown/README.md) | Rep Knock Breakdown | 2026-10-18 |
@@ -64,7 +65,7 @@ Source: `~/recruiting-report/`
 | [pay_structure/README.md](recruiting-report/pay_structure/README.md) | Alphalete Pay Structure — self-serve editor | 2026-07-30 |
 | [resources/hub-code-gs/README.md](recruiting-report/resources/hub-code-gs/README.md) | Hub Code.gs snippets | 2026-07-15 |
 | [resources/office-layout/README.md](recruiting-report/resources/office-layout/README.md) | New office — layout visuals | 2026-07-18 |
-| [resources/recruiting-context/README.md](recruiting-report/resources/recruiting-context/README.md) | Recruiting context | 2026-10-18 |
+| [resources/recruiting-context/README.md](recruiting-report/resources/recruiting-context/README.md) | Recruiting context | 2026-11-04 |
 | [resources/swag/README.txt](recruiting-report/resources/swag/README.txt) | Drop the real swag-package photo here as:  swag-card.png  (or .jpg) | 2026-07-15 |
 | [tracker_onboarding/README.md](recruiting-report/tracker_onboarding/README.md) | Tracker Onboarding | 2026-07-30 |
 
@@ -74,10 +75,10 @@ Source: `see table`
 
 | File | What it is | Last edited |
 |---|---|---|
-| [hv-commissions-README.txt](other/hv-commissions-README.txt) | usage: cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python ~/hv-commissions/build_hv.p — `~/hv-commissions/README.txt` | 2026-10-22 |
+| [hv-commissions-README.txt](other/hv-commissions-README.txt) | usage: cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python ~/hv-commissions/build_hv.p — `~/hv-commissions/README.txt` | 2026-11-04 |
 | [shikamaru-README.md](other/shikamaru-README.md) | Manager Agent — `~/shikamaru/README.md` | 2026-07-16 |
 
-_49 files._
+_50 files._
 
 
 ## How this works
