@@ -536,13 +536,41 @@ def eco_headcount(sales: Dict, knock_rows: List[Dict], campaign=None,
     same way. [] when the office relayed no knocks today -- with sellers only,
     every day would read 100% on the board.
     """
-    from automations.total_knocks import pull as TP
-    knocked = {_rep_key(r.get(TP.COL_REP, "")) for r in knock_rows or []
-               if int(r.get(TP.COL_TOTAL_KNOCKS, 0) or 0) > 0}
-    knocked.discard("")
-    if not knocked:
+    day = _eco_field(sales, knock_rows, campaign, show)
+    if not day:
         return []
-    field, board = set(knocked), set()
+    field, board, apps, ints = day
+    n = len(field)
+    out = [("Total Reps in the Field / Board / Zero", str(n)),
+           ("Reps that got on the Board", str(len(board))),
+           ("Reps that rolled a Zero", str(n - len(board))),
+           ("% of Reps on the Board", "%d%%" % round(100.0 * len(board) / n))]
+    if tuple(H_SHAPE(campaign).metrics) == ("Int", "Int Up", "DTV", "NL"):
+        out.append(("New INT per Rep AVG", "%.1f" % (ints / n)))
+    out.append(("App per Rep AVG", "%.1f" % (apps / n)))
+    return out
+
+
+def _eco_field(sales: Dict, knock_rows: List[Dict], campaign=None, show=None):
+    """(field {rep key: name to print}, on-the-board keys, apps, new INTs), or
+    None when the office relayed no knocks today. The one count behind both
+    the headcount block and the zero list, so the names can't disagree with
+    "Reps that rolled a Zero"."""
+    from automations.total_knocks import pull as TP
+    shown = show or (lambda rep: rep)
+
+    def tidy(rep):
+        rep = str(shown(rep) or rep).strip()
+        return rep.title() if rep.isupper() else rep
+
+    knocked = {}
+    for r in knock_rows or []:
+        rep = r.get(TP.COL_REP, "")
+        if int(r.get(TP.COL_TOTAL_KNOCKS, 0) or 0) > 0 and _rep_key(rep):
+            knocked.setdefault(_rep_key(rep), tidy(rep))
+    if not knocked:
+        return None
+    field, board = dict(knocked), set()
     apps = ints = 0
     for rep, m in (sales or {}).items():
         m = m or {}
@@ -554,21 +582,27 @@ def eco_headcount(sales: Dict, knock_rows: List[Dict], campaign=None,
                   if h), min(keys) if keys else "")
         if not k:
             continue
-        field.add(k)
+        field.setdefault(k, tidy(rep))
         a = _apps(m, campaign)
         if a:
             board.add(k)
         apps += a
         ints += int(m.get("Int", 0) or 0)
-    n = len(field)
-    out = [("Total Reps in the Field / Board / Zero", str(n)),
-           ("Reps that got on the Board", str(len(board))),
-           ("Reps that rolled a Zero", str(n - len(board))),
-           ("% of Reps on the Board", "%d%%" % round(100.0 * len(board) / n))]
-    if tuple(H_SHAPE(campaign).metrics) == ("Int", "Int Up", "DTV", "NL"):
-        out.append(("New INT per Rep AVG", "%.1f" % (ints / n)))
-    out.append(("App per Rep AVG", "%.1f" % (apps / n)))
-    return out
+    return field, board, apps, ints
+
+
+def eco_zero_lines(sales: Dict, knock_rows: List[Dict], campaign=None,
+                   show=None) -> List[str]:
+    """The reps on a zero BY NAME, under the headcount block (Ryan McSpadden,
+    2026-11-04: "Could we have this text also include the reps that are on
+    zeros??"). Same people the "rolled a Zero" line counts: knocked today, no
+    app yet. [] when nobody is on a zero or no knocks came in."""
+    day = _eco_field(sales, knock_rows, campaign, show)
+    if not day:
+        return []
+    field, board = day[0], day[1]
+    names = sorted((field[k] for k in field if k not in board), key=str.lower)
+    return ["", "Reps on a Zero:"] + names if names else []
 
 
 def _knocks_today(book, day: dt.date) -> Dict[str, List[Dict]]:
@@ -1795,6 +1829,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     show))
                 if hc:
                     board += "\n" + "\n".join(hc)
+                if _CFG.zero_names_wanted(key):
+                    zeros = eco_zero_lines(board_sales, knocks_today.get(key),
+                                           office.campaign, show)
+                    if zeros:
+                        board += "\n" + "\n".join(zeros)
             if board and not can_text:
                 log("%-10s standings text skipped -- this machine cannot "
                     "send iMessage" % key)

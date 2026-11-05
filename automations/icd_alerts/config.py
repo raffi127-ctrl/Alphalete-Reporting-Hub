@@ -416,6 +416,17 @@ def credit_tiers_wanted(office_key: str) -> bool:
     return str(office_key or "").strip().lower() in CREDIT_TIER_KEYS
 
 
+# Offices whose group text also lists the reps on a zero BY NAME. Opt-in: it
+# calls people out in front of their group, so only the owner who asked gets it.
+ZERO_NAMES_KEYS = frozenset({
+    "ryan",                                     # asked 2026-11-04
+})
+
+
+def zero_names_wanted(office_key: str) -> bool:
+    return str(office_key or "").strip().lower() in ZERO_NAMES_KEYS
+
+
 def credit_tiers_here() -> bool:
     """Does any office this machine relays for want the three alerts?"""
     return any(credit_tiers_wanted(r.get("office_key"))

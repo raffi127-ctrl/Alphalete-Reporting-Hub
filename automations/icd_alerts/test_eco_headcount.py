@@ -52,5 +52,34 @@ class EcoHeadcountTest(unittest.TestCase):
         self.assertEqual(out["App per Rep AVG"], "1.0")
 
 
+
+class EcoZeroNamesTest(unittest.TestCase):
+    """Ryan McSpadden, 2026-11-04: list the reps on a zero in the text."""
+
+    def test_names_match_the_rolled_a_zero_count(self):
+        sales = {"Max Allen": {"Sales": 3, "Volume": 9000},
+                 "Sohaib Hafeez": {"Sales": 1, "Volume": 500}}
+        knocks = [K("Maximilian Allen", 74), K("Toby Ringel", 102),
+                  K("Colten Stiles", 73), K("Never Out", 0)]
+        lines = P.eco_zero_lines(sales, knocks, "b2b_box")
+        self.assertEqual(lines, ["", "Reps on a Zero:",
+                                 "Colten Stiles", "Toby Ringel"])
+        count = dict(P.eco_headcount(sales, knocks, "b2b_box"))
+        self.assertEqual(count["Reps that rolled a Zero"], "2")
+
+    def test_an_upgrade_alone_is_still_a_zero(self):
+        lines = P.eco_zero_lines({"JUSTIN AVILA": M(0, 1)}, [K("A B", 5)])
+        self.assertEqual(lines, ["", "Reps on a Zero:", "A B", "Justin Avila"])
+
+    def test_nothing_when_nobody_is_on_a_zero_or_no_knocks(self):
+        self.assertEqual(P.eco_zero_lines({"A B": M(1)}, [K("A B", 5)]), [])
+        self.assertEqual(P.eco_zero_lines({"A B": M(1)}, []), [])
+
+    def test_only_the_offices_that_asked(self):
+        from automations.icd_alerts import config as C
+        self.assertTrue(C.zero_names_wanted("ryan"))
+        self.assertFalse(C.zero_names_wanted("kash"))
+
+
 if __name__ == "__main__":
     unittest.main()
