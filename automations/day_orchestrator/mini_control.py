@@ -7527,6 +7527,11 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
         prefix=      Subject prefix, so the copy is not read as a duplicate of
                      the morning's report. Default "Corrected — ".
         date=        rebuild for another day (default today).
+        full=yes     rebuild the WHOLE report, Sales Board and Tableau
+                     sections included. For a correction in those sections
+                     (2026-11-05: the weekly totals left Wednesday out), where
+                     the default knocks-only copy would drop the very tables
+                     being corrected. Still mails only to=.
 
     WHY IT EXISTS. `lucy rerun captainship_drafts` cannot send: the registry
     gives that report `--dry-run` in base_args and rerun appends extra args
@@ -7561,10 +7566,11 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
     for raw in parts[1:]:
         if "=" not in raw:
             return False, (f"captainship_send_owner: unknown argument {raw!r} "
-                           "— expected to=/owner=/note=/prefix=/date=")
+                           "— expected to=/owner=/note=/prefix=/date=/full=")
         k, v = raw.split("=", 1)
         opts[k.strip().lower()] = v.strip()
-    unknown = set(opts) - {"to", "cc", "owner", "note", "prefix", "date"}
+    unknown = set(opts) - {"to", "cc", "owner", "note", "prefix", "date",
+                           "full"}
     if unknown:
         return False, ("captainship_send_owner: unknown option(s) "
                        f"{sorted(unknown)}")
@@ -7589,16 +7595,27 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
         return False, (f"unknown captain key {key!r}. known: "
                        + ", ".join(known))
 
+    full = opts.get("full", "").lower()
+    if full not in ("", "yes", "no"):
+        return False, ("captainship_send_owner: full= takes yes or no, "
+                       f"got {full!r}")
+    full = full == "yes"
     cmd = [sys.executable, "-u", "-m", "automations.captainship_drafts.run",
-           "--only", key, "--send", "--to", to,
-           # A knocks correction, not a rebuild of the whole report: those two
-           # sections would take the Sheets/Tableau sessions, and the mail
-           # already prints its own 'pending' note where they'd be.
-           "--skip-sheets", "--skip-tableau",
-           "--subject-prefix", opts.get("prefix", "Corrected — "),
-           "--note", opts.get(
-               "note", "Corrected copy — this replaces the knock boards in "
-                       "this morning's report.")]
+           "--only", key, "--send", "--to", to]
+    if full:
+        # The whole report, rebuilt from the boards as they are now. --no-wait:
+        # a correction comes after the fact, the morning fills are long done.
+        cmd += ["--no-wait"]
+        default_note = "Corrected copy — this replaces this morning's report."
+    else:
+        # A knocks correction, not a rebuild of the whole report: those two
+        # sections would take the Sheets/Tableau sessions, and the mail
+        # already prints its own 'pending' note where they'd be.
+        cmd += ["--skip-sheets", "--skip-tableau"]
+        default_note = ("Corrected copy — this replaces the knock boards in "
+                        "this morning's report.")
+    cmd += ["--subject-prefix", opts.get("prefix", "Corrected — "),
+            "--note", opts.get("note", default_note)]
     if opts.get("cc"):
         cmd += ["--cc", opts["cc"]]
     if date_arg:
