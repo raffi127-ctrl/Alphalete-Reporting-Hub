@@ -761,6 +761,10 @@ function _adminCall(body) {
   if (body.office_job_results) return _officeJobResults();
   if (body.office_job_collected) return _officeJobCollected(body.office_job_collected);
   if (body.office_job_log) return _officeJobLog(body.office_job_log);
+  if (body.office_settings) {   // Lucy's read of what an admin set (account number, city, state)
+    var st = _admSettings(String(body.office_settings.office || '').trim().toLowerCase());
+    return {ok: true, appstream: st.appstream, state: st.state, city: st.city};
+  }
   return {ok: false, error: 'unknown admin call'};
 }
 
@@ -1087,21 +1091,32 @@ function _officeJobStatus(office, id) {
 // Chrome extension on the admin's computer -- which holds NO office key and
 // no Google login, only a sign-in that lasts the working day.
 //
+// ONE ADMIN, SEVERAL OFFICES (Megan 2026-11-04): one row per (admin, office);
+// the same username on several rows = an admin who runs several offices.
+// Password = the row with a hash (relay_admins keeps them the same).
+//
 //   'Office Admins'   Username | Office | Salt | Hash | Active | Mode | Name |
 //                     Last Login | AppStream   <- we fill it (office_admin.relay_admins)
-// AppStream = the office's ApplicantStream id: the extension refuses to send
-// from a calendar showing any other office.
-//   'Office Settings' Office | State | City | Updated By | Updated At
+//   'Office Settings' Office | State | City | Updated By | Updated At | AppStream
+//
+// APPSTREAM = the office's ApplicantStream account number. The admin can
+// enter / change it (and city + state) per office in the extension; it is
+// how the calendar on screen is matched to one of their offices -- no match,
+// nothing is sent. 'Office Settings' wins over the admin row's starting value.
 //
 // Hash = SHA-256 hex of (salt + password); passwords are long, generated ones,
 // and sign-in is rate-limited, so a single round is enough here.
-// MODE (dry | live) is ours, on the admin's row: the extension never says.
-// A session is a random token in the script cache for 8 hours.
+// MODE (dry | live) is ours, per admin-office row: the extension never says.
+// SIGN IN ONCE PER COMPUTER (Megan 2026-11-04: "the admin won't have to
+// login though?"): a session is a random token kept 90 days in Script
+// Properties (the cache tops out at 6 h). Every call re-checks the admin's
+// rows, so turning a login off (relay_admins --disable) ends it at once.
 var ADMINS_TAB = 'Office Admins';
 var ADM = {USER: 0, OFFICE: 1, SALT: 2, HASH: 3, ACTIVE: 4, MODE: 5, NAME: 6, LAST: 7, APPSTREAM: 8};
 var ADM_HEAD = ['Username', 'Office', 'Salt', 'Hash', 'Active', 'Mode', 'Name', 'Last Login', 'AppStream'];
 var SETTINGS_TAB = 'Office Settings';
-var SESSION_SECONDS = 8 * 3600;
+var SET_HEAD = ['Office', 'State', 'City', 'Updated By', 'Updated At', 'AppStream'];
+var SESSION_DAYS = 90;
 var MAX_TRIES = 5;
 
 function _admSheet(name, head) {
@@ -1116,19 +1131,32 @@ function _sha256Hex(text) {
   return bytes.map(function (b) { var h = (b & 0xff).toString(16); return h.length < 2 ? '0' + h : h; }).join('');
 }
 
-function _admRow(username) {
+function _digits(v) { return String(v || '').replace(/\D/g, ''); }
+
+// Every row for this username: [{i, r}]
+function _admRows(username) {
   var rows = _admSheet(ADMINS_TAB, ADM_HEAD).getDataRange().getValues();
   var u = String(username || '').trim().toLowerCase();
+  var out = [];
   for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][ADM.USER]).trim().toLowerCase() === u) return {i: i, r: rows[i]};
+    if (String(rows[i][ADM.USER]).trim().toLowerCase() === u) out.push({i: i, r: rows[i]});
   }
-  return null;
+  return out;
 }
 
 function _session(token) {
   if (!token) return null;
-  var raw = CacheService.getScriptCache().get('adm:' + token);
-  return raw ? JSON.parse(raw) : null;
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty('adm:' + token);
+  if (!raw) return null;
+  var sess = JSON.parse(raw);
+  if (Date.now() > sess.exp) { props.deleteProperty('adm:' + token); return null; }
+  // Still an admin? Offices re-read, so a login turned off ends right away
+  // and an office added/removed shows up without signing in again.
+  var rows = _admRows(sess.username).filter(function (h) { return String(h.r[ADM.ACTIVE]).toUpperCase() === 'TRUE'; });
+  if (!rows.length) { props.deleteProperty('adm:' + token); return null; }
+  sess.offices = rows.map(function (h) { return String(h.r[ADM.OFFICE]).trim().toLowerCase(); });
+  return sess;
 }
 
 function _officeAdminCall(a) {
@@ -1137,10 +1165,13 @@ function _officeAdminCall(a) {
   var sess = _session(String(a.token || ''));
   if (!sess) return {ok: false, error: 'signed out', signed_out: true};
   if (what === 'whoami') return _admWhoami(sess);
-  if (what === 'set_location') return _admSetLocation(sess, a);
-  if (what === 'send') return _admSend(sess, a);
-  if (what === 'status') return _officeJobStatus(sess.office, String(a.job_id || ''));
-  if (what === 'already') return _admAlready(sess);
+  // Everything else is for ONE of this admin's offices.
+  var office = String(a.office || '').trim().toLowerCase();
+  if (sess.offices.indexOf(office) < 0) return {ok: false, error: "That isn't one of your offices."};
+  if (what === 'set_office') return _admSetOffice(sess, office, a);
+  if (what === 'send') return _admSend(sess, office, a);
+  if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
+  if (what === 'already') return _admAlready(office);
   return {ok: false, error: 'unknown call'};
 }
 
@@ -1150,67 +1181,81 @@ function _admLogin(a) {
   var triesKey = 'admtries:' + user;
   var tries = Number(cache.get(triesKey) || 0);
   if (tries >= MAX_TRIES) return {ok: false, error: 'Too many tries. Wait 15 minutes.'};
-  var hit = _admRow(user);
-  var good = hit && String(hit.r[ADM.ACTIVE]).toUpperCase() === 'TRUE' &&
-      _sha256Hex(String(hit.r[ADM.SALT]) + String(a.password || '')) === String(hit.r[ADM.HASH]);
+  var rows = _admRows(user).filter(function (h) { return String(h.r[ADM.ACTIVE]).toUpperCase() === 'TRUE'; });
+  var keyRow = rows.filter(function (h) { return String(h.r[ADM.HASH]); })[0];
+  var good = keyRow &&
+      _sha256Hex(String(keyRow.r[ADM.SALT]) + String(a.password || '')) === String(keyRow.r[ADM.HASH]);
   if (!good) {
     cache.put(triesKey, String(tries + 1), 900);
     return {ok: false, error: "That username and password don't match."};
   }
   cache.remove(triesKey);
   var token = Utilities.getUuid();
-  var sess = {username: user, office: String(hit.r[ADM.OFFICE]).trim().toLowerCase(),
-              name: String(hit.r[ADM.NAME] || user),
-              appstream: String(hit.r[ADM.APPSTREAM] || '').replace(/\D/g, '')};
-  cache.put('adm:' + token, JSON.stringify(sess), SESSION_SECONDS);
-  _admSheet(ADMINS_TAB, ADM_HEAD).getRange(hit.i + 1, ADM.LAST + 1).setValue(new Date());
+  var sess = {username: user, name: String(keyRow.r[ADM.NAME] || user),
+              offices: rows.map(function (h) { return String(h.r[ADM.OFFICE]).trim().toLowerCase(); })};
+  sess.exp = Date.now() + SESSION_DAYS * 86400000;
+  PropertiesService.getScriptProperties().setProperty('adm:' + token, JSON.stringify(sess));
+  var sh = _admSheet(ADMINS_TAB, ADM_HEAD), now = new Date();
+  rows.forEach(function (h) { sh.getRange(h.i + 1, ADM.LAST + 1).setValue(now); });
   var who = _admWhoami(sess);
   who.token = token;
   return who;
 }
 
-function _admMode(sess) {
-  var hit = _admRow(sess.username);
-  return hit && String(hit.r[ADM.MODE]).trim().toLowerCase() === 'live' ? 'live' : 'dry';
-}
-
-function _admLocation(office) {
-  var rows = _admSheet(SETTINGS_TAB, ['Office', 'State', 'City', 'Updated By', 'Updated At'])
-      .getDataRange().getValues();
+function _admSettings(office) {
+  var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
+  if (sh.getLastColumn() < SET_HEAD.length) {        // older tab: add AppStream column
+    sh.getRange(1, 1, 1, SET_HEAD.length).setValues([SET_HEAD]);
+  }
+  var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]).trim().toLowerCase() === office) {
-      return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || '')};
+      return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || ''),
+              appstream: _digits(rows[i][5])};
     }
   }
-  return {row: -1, state: '', city: ''};
+  return {row: -1, state: '', city: '', appstream: ''};
+}
+
+// One office as the extension sees it.
+function _admOffice(sess, office) {
+  var row = _admRows(sess.username).filter(function (h) {
+    return String(h.r[ADM.OFFICE]).trim().toLowerCase() === office;
+  })[0];
+  var set = _admSettings(office);
+  return {office: office,
+          appstream: set.appstream || (row ? _digits(row.r[ADM.APPSTREAM]) : ''),
+          state: set.state, city: set.city,
+          mode: row && String(row.r[ADM.MODE]).trim().toLowerCase() === 'live' ? 'live' : 'dry'};
 }
 
 function _admWhoami(sess) {
-  var loc = _admLocation(sess.office);
-  return {ok: true, office: sess.office, name: sess.name, username: sess.username,
-          appstream: sess.appstream, mode: _admMode(sess), state: loc.state, city: loc.city};
+  return {ok: true, name: sess.name, username: sess.username,
+          offices: sess.offices.map(function (o) { return _admOffice(sess, o); })};
 }
 
-function _admSetLocation(sess, a) {
+function _admSetOffice(sess, office, a) {
   var state = String(a.state || '').trim(), city = String(a.city || '').trim().replace(/\s+/g, ' ');
+  var appstream = _digits(a.appstream);
   if (!state || !city) return {ok: false, error: 'Pick the state and type the city.'};
+  if (!appstream) return {ok: false, error: 'Type the ApplicantStream account number (numbers only).'};
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var sh = _admSheet(SETTINGS_TAB, ['Office', 'State', 'City', 'Updated By', 'Updated At']);
-    var loc = _admLocation(sess.office);
-    var row = [sess.office, state, city, sess.username, new Date()];
-    if (loc.row > 0) sh.getRange(loc.row + 1, 1, 1, 5).setValues([row]);
+    var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
+    var cur = _admSettings(office);
+    var row = [office, state, city, sess.username, new Date(), appstream];
+    if (cur.row > 0) sh.getRange(cur.row + 1, 1, 1, row.length).setValues([row]);
     else sh.appendRow(row);
-    return {ok: true, state: state, city: city};
+    return {ok: true, office: _admOffice(sess, office)};
   } finally {
     lock.releaseLock();
   }
 }
 
-function _admSend(sess, a) {
-  var loc = _admLocation(sess.office);
-  if (!loc.state || !loc.city) return {ok: false, error: "Set your office's city and state first."};
+function _admSend(sess, office, a) {
+  var o = _admOffice(sess, office);
+  if (!o.state || !o.city) return {ok: false, error: "Set this office's city and state first."};
   var people = (a.people || []).filter(function (p) {
     return p && String(p.first_name || '').trim() && String(p.last_name || '').trim() &&
         String(p.email || '').indexOf('@') > 0;
@@ -1219,12 +1264,12 @@ function _admSend(sess, a) {
             email: String(p.email).trim()};
   });
   if (!people.length) return {ok: false, error: 'Nobody with a name and email was picked.'};
-  return _officeJobEnqueue({office: sess.office, kind: 'bgc_send', mode: _admMode(sess),
+  return _officeJobEnqueue({office: office, kind: 'bgc_send', mode: o.mode,
                             payload: {people: people, by: sess.username,
-                                      location: {country: 'United States', state: loc.state, city: loc.city}}});
+                                      location: {country: 'United States', state: o.state, city: o.city}}});
 }
 
-function _admAlready(sess) {
+function _admAlready(office) {
   // Who this office's computer already SENT (not test runs), last 14 days.
   var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
   var out = {};
@@ -1233,7 +1278,7 @@ function _admAlready(sess) {
   var cutoff = new Date(Date.now() - 14 * 86400000);
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
-    if (String(r[OJ.OFFICE]).trim().toLowerCase() !== sess.office) continue;
+    if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office) continue;
     if (!(r[OJ.RESULT_AT] instanceof Date) || r[OJ.RESULT_AT] < cutoff) continue;
     var res = {};
     try { res = JSON.parse(String(r[OJ.RESULT] || '{}')); } catch (err) {}

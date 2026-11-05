@@ -7,13 +7,19 @@ The relay checks SHA-256(salt + password); the password itself is never
 stored. Mode (dry | live) is set HERE, per admin -- never by the extension.
 
     python -m automations.office_admin.relay_admins --add raf-admin --office raf --name "Raf's admin"
+    python -m automations.office_admin.relay_admins --add raf-admin --office omar   # 2nd office, same password
+    python -m automations.office_admin.relay_admins --remove-office raf-admin omar
     python -m automations.office_admin.relay_admins --reset raf-admin
     python -m automations.office_admin.relay_admins --mode raf-admin live
     python -m automations.office_admin.relay_admins --disable raf-admin
     python -m automations.office_admin.relay_admins --list
 
---add/--reset print a generated password ONCE in this terminal: hand it to
-the admin yourself.
+ONE ADMIN, SEVERAL OFFICES (Megan 2026-11-04): one row per (admin, office).
+--add for a username that already exists adds the office and keeps their
+password. A brand-new username, or --reset, prints a generated password
+ONCE in this terminal: hand it to the admin yourself. The admin can enter or
+change each office's ApplicantStream account number (and city + state) in
+the extension; the AppStream column here is only its starting value.
 """
 from __future__ import annotations
 
@@ -72,6 +78,7 @@ def main(argv=None) -> int:
     g.add_argument("--reset", metavar="USERNAME")
     g.add_argument("--disable", metavar="USERNAME")
     g.add_argument("--mode", nargs=2, metavar=("USERNAME", "dry|live"))
+    g.add_argument("--remove-office", nargs=2, metavar=("USERNAME", "OFFICE"))
     g.add_argument("--list", action="store_true")
     ap.add_argument("--office")
     ap.add_argument("--name", default="")
@@ -87,41 +94,63 @@ def main(argv=None) -> int:
 
     if a.add:
         u = a.add.strip().lower()
-        if _find(rows, u):
-            print("%s exists -- use --reset" % u, file=sys.stderr)
-            return 2
-        if not C.office(a.office or ""):
+        o = C.office(a.office or "")
+        if not o:
             print("--office must be one of: %s" % ", ".join(sorted(C.OFFICES)), file=sys.stderr)
             return 2
+        mine = [r for r in rows[1:] if r and r[0].strip().lower() == u]
+        if any(len(r) > 1 and r[1].strip().lower() == o.key for r in mine):
+            print("%s already has office %s" % (u, o.key), file=sys.stderr)
+            return 2
+        if mine:   # existing admin, another office: same password
+            first = mine[0] + [""] * (len(HEAD) - len(mine[0]))
+            _retry(ws.append_row, [u, o.key, first[2], first[3], "TRUE", o.bgc_mode,
+                                   a.name.strip() or first[6], "", o.appstream_id],
+                   value_input_option="RAW")
+            print("added office %s to %s (same password, mode %s)" % (o.key, u, o.bgc_mode))
+            return 0
         pw = new_password()
         salt, h = make_hash(pw)
-        o = C.office(a.office)
         _retry(ws.append_row, [u, o.key, salt, h, "TRUE", o.bgc_mode, a.name.strip(), "",
                                o.appstream_id],
                value_input_option="RAW")
         print("added %s (office %s, mode %s)\n\nPassword (shown once):\n\n    %s\n"
-              % (u, a.office, C.office(a.office).bgc_mode, pw))
+              % (u, o.key, o.bgc_mode, pw))
         return 0
 
-    target = a.reset or a.disable or (a.mode[0] if a.mode else "")
-    row = _find(rows, target)
-    if not row:
+    if a.remove_office:
+        u, off = a.remove_office[0].strip().lower(), a.remove_office[1].strip().lower()
+        hit = [i for i, r in enumerate(rows[1:], start=2)
+               if r and r[0].strip().lower() == u and len(r) > 1 and r[1].strip().lower() == off]
+        if not hit:
+            print("%s has no office %s" % (u, off), file=sys.stderr)
+            return 2
+        _retry(ws.update, [["FALSE"]], "E%d" % hit[0])
+        print("office %s turned off for %s" % (off, u))
+        return 0
+
+    target = (a.reset or a.disable or (a.mode[0] if a.mode else "")).strip().lower()
+    mine = [i for i, r in enumerate(rows[1:], start=2) if r and r[0].strip().lower() == target]
+    if not mine:
         print("no such username", file=sys.stderr)
         return 2
     if a.disable:
-        _retry(ws.update, [["FALSE"]], "E%d" % row)
-        print("disabled %s" % target)
+        for row in mine:
+            _retry(ws.update, [["FALSE"]], "E%d" % row)
+        print("disabled %s (all offices)" % target)
     elif a.mode:
         m = a.mode[1].strip().lower()
         if m not in ("dry", "live"):
             print("mode is dry or live", file=sys.stderr)
             return 2
-        _retry(ws.update, [[m]], "F%d" % row)
-        print("%s is now %s" % (target, m))
+        for row in mine:
+            _retry(ws.update, [[m]], "F%d" % row)
+        print("%s is now %s (all offices)" % (target, m))
     else:
         pw = new_password()
         salt, h = make_hash(pw)
-        _retry(ws.update, [[salt, h, "TRUE"]], "C%d:E%d" % (row, row))
+        for row in mine:   # one password across every office row
+            _retry(ws.update, [[salt, h, "TRUE"]], "C%d:E%d" % (row, row))
         print("password reset for %s\n\nPassword (shown once):\n\n    %s\n" % (target, pw))
     return 0
 

@@ -153,11 +153,24 @@ def run(office: C.Office, *, post: bool, force: bool = False, now=None, read=Non
     return 0
 
 
+def account_number(office: C.Office, log=_log) -> str:
+    """The office's ApplicantStream account number: what its admin set in the
+    extension (relay 'Office Settings'), else our starting value."""
+    try:
+        from automations.headshots.eco import _call
+        got = str(_call({"office_settings": {"office": office.key}}).get("appstream") or "")
+        if got:
+            return got
+    except Exception as e:  # noqa: BLE001 -- relay down: our value
+        log("  relay settings not read (%s) -- using %s" % (type(e).__name__, office.appstream_id))
+    return office.appstream_id
+
+
 def _read_offered(office: C.Office, day: dt.date) -> List[Dict]:
     from automations.applicant_tracker.applicantstream import session
     from automations.office_admin import offered
     with session() as app:
-        return offered.read(app, office.appstream_id, day)
+        return offered.read(app, account_number(office), day)
 
 
 def main(argv=None) -> int:

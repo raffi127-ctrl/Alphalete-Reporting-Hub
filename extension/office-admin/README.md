@@ -9,16 +9,21 @@ people to the office's ECO computer, which signs in to Sterling and bulk-uploads
 1. Chrome → `chrome://extensions` → turn on **Developer mode** (top right).
 2. **Load unpacked** → pick this `extension/office-admin` folder.
 3. Pin it (puzzle icon → pin **Lucy Office Admin**).
-4. Click the icon → sign in with the username + password from
+4. Click the icon → sign in **once** (this computer stays signed in 90 days; turning the
+   login off with `relay_admins --disable` ends it at once). Logins come from
    `python -m automations.office_admin.relay_admins --add <username> --office <office>`.
-5. First time only: set the office's **state + city**.
+5. **Several offices, one admin:** run `--add` again with the same username and another
+   `--office` — same password. Each office shows as its own card in the icon.
+6. First time per office: enter its **ApplicantStream account number**, **state** and
+   **city** (changeable any time with "Change account number or location").
 
 ## Use
 Open the ApplicantStream calendar (today) → **🛡️ Send background checks** (bottom right) →
 check the ticks → **Send**. The panel shows the office computer's answer (it checks every ~3 min).
 
 ## Safety
-- Refuses if the calendar on screen is another office than the admin's.
+- Picks the office by the account number on the calendar ("Office ID: 11280" / "#11280");
+  a calendar whose number isn't on any of the admin's offices = nothing sent.
 - Test mode (`relay_admins --mode <user> dry`) = the office computer fills everything in
   Sterling and stops before Send Invites.
 - Needs the relay version with the `office_admin` calls (resources/icd-alerts-relay.gs).

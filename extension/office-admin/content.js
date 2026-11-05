@@ -41,18 +41,24 @@
     const me = await ask('whoami');
     if (!me.ok) {
       shell('<p class="lucy-oa-err">' + esc(me.signed_out
-        ? 'Sign in first: click the Lucy Office Admin icon at the top right of Chrome.'
+        ? 'Sign in first: click the Lucy Office Admin icon at the top right of Chrome (once per computer).'
         : me.error) + '</p>');
       return;
     }
-    if (!me.city || !me.state) {
-      shell('<p class="lucy-oa-err">Set your office\'s city and state first: click the Lucy Office Admin icon at the top right of Chrome.</p>');
+    // Which of this admin's offices is this calendar? By account number.
+    const pageOffice = LucyOffered.officeId();
+    const offices = me.offices || [];
+    const office = offices.find(o => o.appstream && o.appstream === pageOffice) ||
+      (!pageOffice && offices.length === 1 ? offices[0] : null);
+    if (!office) {
+      shell('<p class="lucy-oa-err">' + (pageOffice
+        ? 'This calendar is ApplicantStream account ' + esc(pageOffice) + ', which isn\'t set on any of your offices. ' +
+          'Check the account numbers in the Lucy Office Admin icon (top right of Chrome).'
+        : 'Couldn\'t tell which office this calendar is. Open the calendar for one office.') + '</p>');
       return;
     }
-    const pageOffice = LucyOffered.officeId();
-    if (me.appstream && pageOffice && pageOffice !== me.appstream) {
-      shell('<p class="lucy-oa-err">This calendar is office ' + esc(pageOffice) +
-        '. You\'re signed in for office ' + esc(me.appstream) + ' — switch to your office first.</p>');
+    if (!office.city || !office.state) {
+      shell('<p class="lucy-oa-err">Set office ' + esc(office.office) + '\'s city and state first: click the Lucy Office Admin icon at the top right of Chrome.</p>');
       return;
     }
     shell('<p>Reading today\'s second interviews…</p>');
@@ -63,13 +69,14 @@
       shell('<p class="lucy-oa-err">Couldn\'t read this calendar: ' + esc(e.message) + '</p>');
       return;
     }
-    const already = (await ask('already')).sent || {};
-    render(me, people, already);
+    const already = (await ask('already', {office: office.office})).sent || {};
+    render(office, people, already);
   }
 
-  function render(me, people, already) {
-    const loc = '<div class="lucy-oa-loc">📍 ' + esc(me.city) + ', ' + esc(me.state) + '</div>';
-    const mode = me.mode === 'live' ? '' :
+  function render(office, people, already) {
+    const loc = '<div class="lucy-oa-loc">📍 ' + esc(office.city) + ', ' + esc(office.state) +
+      ' <span class="lucy-oa-acct">· account ' + esc(office.appstream) + '</span></div>';
+    const mode = office.mode === 'live' ? '' :
       '<div class="lucy-oa-test">Test mode: checked, not sent.</div>';
     if (!people.length) {
       shell(mode + loc + '<p>Nobody marked <b>Yes</b> for Offer Position today yet.</p>');
@@ -102,15 +109,15 @@
       const picked = boxes.filter(b => b.checked).map(b => people[+b.dataset.i]);
       btn.disabled = true;
       btn.textContent = 'Sending to your office computer…';
-      const out = await ask('send', {people: picked});
+      const out = await ask('send', {office: office.office, people: picked});
       if (!out.ok) {
         result('err', out.error || 'Didn\'t go through.');
         count();
         return;
       }
-      await chrome.storage.local.set({lastSend: {job_id: out.job_id, at: new Date().toISOString(),
+      await chrome.storage.local.set({lastSend: {office: office.office, job_id: out.job_id, at: new Date().toISOString(),
                                                  names: picked.map(p => p.first_name + ' ' + p.last_name)}});
-      watch(out.job_id);
+      watch(office.office, out.job_id);
     };
   }
 
@@ -120,12 +127,12 @@
   }
 
   // The office computer asks every ~3 minutes; show where it is.
-  function watch(jobId) {
+  function watch(officeKey, jobId) {
     result('wait', '⏳ Waiting for your office computer… (it checks every few minutes)');
     clearInterval(pollTimer);
     const started = Date.now();
     pollTimer = setInterval(async () => {
-      const s = await ask('status', {job_id: jobId});
+      const s = await ask('status', {office: officeKey, job_id: jobId});
       if (!s.ok) return;
       if (s.answered) {
         clearInterval(pollTimer);

@@ -33,3 +33,4 @@
 #lucy-oa-panel .lucy-oa-ok { background: #E6F4EA; color: #1e6b34; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
 #lucy-oa-panel .lucy-oa-err { background: #FDECEA; color: #8a1c13; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
 #lucy-oa-panel .lucy-oa-wait { background: #EEF2F7; color: #34495e; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+#lucy-oa-panel .lucy-oa-acct { font-size: 12px; font-weight: 500; color: #4a6585; }
