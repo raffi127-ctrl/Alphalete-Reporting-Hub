@@ -15,7 +15,8 @@ The whole transcript also goes to the control sheet's 'RC Inbox' tab
 (base64, the status_probe relay) so the mini can read it whole.
 
     lucy rerun rc_inbox --customer "Erika Gutierrez" --since 2026-10-20
-    lucy rerun rc_inbox --customer Gutierrez --since 2026-10-20 --all-directions
+    lucy rerun rc_inbox --all --since 2026-10-20        # EVERY NDS customer: what we
+                                                       # send (by template) + every reply
 
 Never writes to RingCentral; identity is asserted before the read.
 """
@@ -86,6 +87,183 @@ def feed_numbers(words: List[str], since: dt.date, until: dt.date,
     return out
 
 
+def _messages_since(token: str, ext_id: str, day: dt.date) -> List[dict]:
+    """SMS *and* MMS (the wrap-up goes out as an MMS with the flyer, and a
+    reply inside that group thread can come back typed MMS)."""
+    import time as _t
+    start = dt.datetime.combine(day, dt.time.min).astimezone()
+    out: List[dict] = []
+    seen = set()
+    for mtype in ("SMS", "MMS"):
+        params = {"messageType": mtype, "perPage": 250,
+                  "dateFrom": start.astimezone(dt.timezone.utc)
+                                   .strftime("%Y-%m-%dT%H:%M:%SZ")}
+        page = 1
+        while True:
+            params["page"] = page
+            data = RC._get(token,
+                           "/restapi/v1.0/account/~/extension/%s/message-store"
+                           % ext_id, params)
+            for m in data.get("records", []):
+                if m.get("id") in seen:
+                    continue
+                seen.add(m.get("id"))
+                out.append(m)
+            if not data.get("navigation", {}).get("nextPage"):
+                break
+            page += 1
+            _t.sleep(0.3)
+    return out
+
+
+# The texts Lucy sends on her own, by their opening words.
+TEMPLATES = (
+    ("delivered text (rc_delivered_text)",
+     "hello! i see that your device(s) have been delivered"),
+    ("wrap-up (rc_wrapup)", "thank you for choosing at&t! here's your order wrap-up"),
+)
+
+
+def template_of(body: str) -> str:
+    b = (body or "").strip().lower()
+    for label, needle in TEMPLATES:
+        if needle in b:
+            return label
+    return "typed by a person (not a template)"
+
+
+BUCKETS = (
+    ("activation help", ("activat", "sim", "esim", "set up", "setup", "turn on",
+                         "not working", "doesn't work", "won't", "wont")),
+    ("delivery / shipping", ("deliver", "package", "tracking", "ups", "fedex",
+                             "shipped", "arrive", "received", "recieved")),
+    ("billing / charges", ("bill", "charge", "payment", "price", "cost", "pay ",
+                           "autopay", "auto pay", "credit")),
+    ("cancel / return", ("cancel", "return", "refund", "send back", "don't want",
+                         "dont want")),
+    ("trade-in", ("trade", "old phone")),
+    ("thanks / ok", ("thank", "thanks", "ok", "okay", "got it", "perfect", "great",
+                     "sounds good", "will do", "👍", "gracias")),
+    ("wrong number / stop", ("wrong number", "stop", "who is this", "who's this",
+                             "unsubscribe")),
+)
+
+
+def bucket_of(body: str) -> str:
+    b = " " + (body or "").strip().lower() + " "
+    for label, needles in BUCKETS:
+        if any(n in b for n in needles):
+            return label
+    return "question / other"
+
+
+def name_map(book: List[dict]) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for c in book:
+        for n in _contact_numbers(c):
+            out.setdefault(n, _contact_name(c))
+    return out
+
+
+def run_all(since: dt.date, *, log=print) -> int:
+    """Every text on Taylor's line since `since`: what Lucy sent (by
+    template), what people typed by hand, and every reply that came back --
+    bucketed, with the contact's name, and whether we answered it."""
+    log("RC inbox — ALL conversations since %s" % since)
+    creds = C.rc_creds()
+    info = RC.token_info(creds)
+    token = info["access_token"]
+    me = RC.identity(info)
+    RC.assert_identity(me, creds.get("expected_owner_id") or C.RC_OWNER_ID)
+    contacts_ext = str(creds["contacts_extension_id"])
+    watch_ext = str(creds["watch_extension_id"])
+    watch_token = token
+    if creds.get("watch_jwt"):
+        watch_token = RC.token(creds, jwt=creds["watch_jwt"])
+    names = name_map(RC.address_book(token, contacts_ext))
+    try:
+        own = RC.norm_phone(RC.sender_number(token))
+    except Exception:  # noqa: BLE001
+        own = RC.norm_phone("945-337-2199")
+
+    msgs = _messages_since(watch_token, watch_ext, since)
+    log("%d message(s) on the line since %s" % (len(msgs), since))
+
+    def other_party(m: dict) -> str:
+        nums = [n for n in RC._msg_numbers(m) if n != own]
+        # a group text lists the customer AND the rep; prefer a number that
+        # is a known customer contact
+        for n in nums:
+            if n in names:
+                return n
+        return nums[0] if nums else ""
+
+    out_by_template: Dict[str, List[dict]] = {}
+    inbound: List[dict] = []
+    for m in msgs:
+        body = m.get("subject") or ""
+        if m.get("direction") == "Inbound":
+            inbound.append(m)
+        else:
+            out_by_template.setdefault(template_of(body), []).append(m)
+
+    lines: List[str] = []
+    lines.append("=== WHAT WE SENT (%d outbound) ===" % sum(
+        len(v) for v in out_by_template.values()))
+    for label, ms in sorted(out_by_template.items(), key=lambda kv: -len(kv[1])):
+        who = {other_party(m) for m in ms}
+        lines.append("  %-40s %4d message(s) to %d number(s)" % (label, len(ms), len(who)))
+    for label, _ in TEMPLATES:
+        ms = out_by_template.get(label) or []
+        if ms:
+            lines.append("")
+            lines.append("--- the %s, as sent ---" % label)
+            lines.append((ms[-1].get("subject") or "").strip())
+    typed = out_by_template.get("typed by a person (not a template)") or []
+    if typed:
+        lines.append("")
+        lines.append("--- typed by a person (%d), newest 25 ---" % len(typed))
+        for m in sorted(typed, key=lambda x: x.get("creationTime") or "")[-25:]:
+            n = other_party(m)
+            lines.append("  %s  -> %s %s  %s" % (
+                _when(m), RC.e164(n), ("(%s)" % names[n]) if n in names else "",
+                (m.get("subject") or "").replace("\n", " ⏎ ")[:220]))
+
+    # replies: bucket + did we answer after it
+    lines.append("")
+    lines.append("=== REPLIES FROM CUSTOMERS (%d inbound) ===" % len(inbound))
+    by_bucket: Dict[str, List[dict]] = {}
+    for m in inbound:
+        by_bucket.setdefault(bucket_of(m.get("subject") or ""), []).append(m)
+    for label, ms in sorted(by_bucket.items(), key=lambda kv: -len(kv[1])):
+        lines.append("  %-24s %3d" % (label, len(ms)))
+    # per-number: last direction tells whether the last word was theirs
+    last_dir: Dict[str, str] = {}
+    for m in sorted(msgs, key=lambda x: x.get("creationTime") or ""):
+        last_dir[other_party(m)] = m.get("direction") or ""
+    unanswered = sorted({other_party(m) for m in inbound
+                         if last_dir.get(other_party(m)) == "Inbound"})
+    lines.append("  conversations where the customer has the last word: %d" % len(unanswered))
+    for label, ms in sorted(by_bucket.items(), key=lambda kv: -len(kv[1])):
+        lines.append("")
+        lines.append("--- %s (%d) ---" % (label, len(ms)))
+        for m in sorted(ms, key=lambda x: x.get("creationTime") or ""):
+            n = other_party(m)
+            flag = "  [UNANSWERED]" if last_dir.get(n) == "Inbound" else ""
+            lines.append("  %s  %s %s  %s%s" % (
+                _when(m), RC.e164(n), ("(%s)" % names[n]) if n in names else "(not in book)",
+                (m.get("subject") or "").replace("\n", " ⏎ ")[:300], flag))
+    for ln in lines:
+        log(ln)
+    try:
+        from automations.rc_contact_sync.status_probe import _upload_bytes
+        _upload_bytes("\n".join(lines).encode(), TAB, log=log)
+    except Exception as e:  # noqa: BLE001
+        log("  (tab upload failed: %s: %s)" % (type(e).__name__, str(e)[:120]))
+    print("=== done ===", flush=True)
+    return 0
+
+
 def _when(m: dict) -> str:
     raw = m.get("creationTime") or ""
     try:
@@ -131,8 +309,8 @@ def run(words: List[str], since: dt.date, until: dt.date, *,
     for n, label in sorted(numbers.items()):
         log("  %s  %s" % (RC.e164(n), label))
 
-    msgs = RC.sms_since(watch_token, watch_ext, since)
-    log("%d SMS on the watched line since %s" % (len(msgs), since))
+    msgs = _messages_since(watch_token, watch_ext, since)
+    log("%d SMS/MMS on the watched line since %s" % (len(msgs), since))
     rows: List[str] = []
     for m in msgs:
         nums = RC._msg_numbers(m)
@@ -169,8 +347,11 @@ def main(argv=None) -> int:
         prog="rc_inbox",
         description="READ-ONLY transcript of a customer's texts with Taylor's "
                     "RingCentral line.")
-    ap.add_argument("--customer", nargs="+", required=True, metavar="WORD",
+    ap.add_argument("--customer", nargs="+", default=None, metavar="WORD",
                     help="name words, all must appear (e.g. Erika Gutierrez)")
+    ap.add_argument("--all", action="store_true",
+                    help="every conversation on the line: what we send by "
+                         "template, every reply bucketed, unanswered flagged")
     ap.add_argument("--since", default=None, metavar="YYYY-MM-DD",
                     help="default: 30 days back")
     ap.add_argument("--until", default=None, metavar="YYYY-MM-DD",
@@ -178,9 +359,14 @@ def main(argv=None) -> int:
     ap.add_argument("--inbound-only", action="store_true",
                     help="only what the customer wrote to us")
     args = ap.parse_args(argv)
-    words = [w for a in args.customer for w in a.split()]
     since = (dt.date.fromisoformat(args.since) if args.since
              else dt.date.today() - dt.timedelta(days=30))
+    if args.all:
+        return run_all(since)
+    if not args.customer:
+        print("✗ give --customer WORD... or --all")
+        return 2
+    words = [w for a in args.customer for w in a.split()]
     until = (dt.date.fromisoformat(args.until) if args.until
              else C.yesterday())
     return run(words, since, until, inbound_only=args.inbound_only)
