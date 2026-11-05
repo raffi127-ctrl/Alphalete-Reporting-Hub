@@ -104,6 +104,10 @@ APPSTREAM_ADS_OFFICES: object = "all"     # Eve 10/24: on, every live office (ve
 # their own each evening (unthreaded.place_found). Off until Eve sees the first
 # batch; by hand meanwhile: --place-orphans [--apply].
 PLACE_ORPHANS_NIGHTLY = False
+# Eve 11/4: AppStream gave these an ad, but Eve doesn't trust the match: common
+# name, dates a day apart, no photo. They stay open in the no-ad thread until a
+# person puts the ad in the sheet. {"YYYY-MM-DD|name"}.
+APPSTREAM_AD_REJECTED = {"2026-10-29|juan rodriguez"}
 
 
 def appstream_ads_on(key: str) -> bool:

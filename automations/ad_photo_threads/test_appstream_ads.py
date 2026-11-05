@@ -45,6 +45,16 @@ class ReportRowsTests(unittest.TestCase):
         self.assertEqual(aa.interview_cols(head), (1, 2, 8))
         self.assertIsNone(aa.interview_cols(["", "First Name", "Last Name", "Email"]))
 
+    def test_rejected_match_is_not_used(self):
+        from types import SimpleNamespace
+        from automations.ad_photo_threads import collect, config
+        book = SimpleNamespace(resolve=lambda t: "manager")
+        day = dt.date(2026, 10, 29)
+        found = {"2026-10-29|juan rodriguez": "Entry Level Manager", "2026-10-29|ana diaz": "Entry Level Manager"}
+        self.assertIn("2026-10-29|juan rodriguez", config.APPSTREAM_AD_REJECTED)
+        self.assertIsNone(collect.appstream_ad(SimpleNamespace(name="Juan Rodriguez"), day, book, found))
+        self.assertEqual(collect.appstream_ad(SimpleNamespace(name="Ana Diaz"), day, book, found), "manager")
+
     def test_near_names(self):
         rows = [self.row("Howard", "Barbour", "A"), self.row("Jim", "Barber", "B"),
                 self.row("Ann", "Lee", "C")]

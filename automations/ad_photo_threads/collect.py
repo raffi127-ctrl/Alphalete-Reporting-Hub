@@ -603,5 +603,7 @@ def appstream_ad(c: Candidate, day: dt.date, book: TitleBook,
     if found is None:
         from automations.ad_photo_threads import post
         found = (post._load_state().get(config.LIVE_CHANNEL_ID) or {}).get("appstream_ads") or {}
+    if appstream_ads.key(day, c.name) in config.APPSTREAM_AD_REJECTED:
+        return None
     ad = found.get(appstream_ads.key(day, c.name))
     return book.resolve(ad) if ad else None
