@@ -213,10 +213,19 @@ def newcomer_plan(served: dict | None, all_orgs: list, captured_ids: list,
       • no morning ledger today → nothing (the morning run serves everyone)
       • an org the morning set already served → nothing
       • queued within NEWCOMER_REQUEUE_MIN → nothing (its rerun is in flight)
-      • only boards captured today, in that org's own order; none → nothing."""
-    if served is None:
+      • nothing captured today at all → nothing (the day hasn't started)
+      • otherwise EVERY board the org is enrolled for, in its own order.
+
+    EVERY BOARD, NOT ONLY TODAY'S CAPTURED ONES (Megan 2026-11-05: "only 3
+    trackers were posted for sahil"). This used to send just the ids in the
+    day's stamp, and on Sahil's first day the stamp on Lucy 3 held only the
+    settle set (nds, b2b_box, quantum_fiber), so his room got 3 of 9 — and the
+    rerun then marked him served, which closed the door on the other six for
+    good. The rerun this queues reuses today's PNGs where the stamp has them
+    and captures the rest fresh, under the same freshness gate as any run, so
+    a board that is not ready is held, never posted stale."""
+    if served is None or not captured_ids:
         return {}
-    have = set(captured_ids)
     plan = {}
     for org in all_orgs:
         if org in served.get("served", []):
@@ -229,7 +238,7 @@ def newcomer_plan(served: dict | None, all_orgs: list, captured_ids: list,
                     continue
             except ValueError:
                 pass
-        ids = [i for i in ids_for(org) if i in have]
+        ids = list(ids_for(org))
         if ids:
             plan[org] = ids
     return plan

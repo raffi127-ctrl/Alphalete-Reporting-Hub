@@ -20,11 +20,20 @@ def plan(served, captured=("att_country", "nds", "b2b_box")):
 
 
 class NewcomerPlan(unittest.TestCase):
-    def test_org_the_morning_missed_gets_todays_captured_boards(self):
+    def test_org_the_morning_missed_gets_every_board_it_is_enrolled_for(self):
         served = {"served": ["alphalete"], "queued": {}}
-        # quantum_fiber wasn't captured today (held) -> not sent from here
+        # quantum_fiber wasn't captured today: still queued -- the rerun
+        # captures it fresh (or holds it), instead of leaving the office short
+        # (Sahil 2026-11-05 got 3 of 9 and was then marked served).
         self.assertEqual(plan(served),
-                         {"goldenview": ["att_country", "nds", "b2b_box"]})
+                         {"goldenview": ["att_country", "nds", "b2b_box",
+                                         "quantum_fiber"]})
+
+    def test_a_settle_only_stamp_still_sends_the_whole_set(self):
+        served = {"served": ["alphalete"], "queued": {}}
+        self.assertEqual(plan(served, captured=("nds", "b2b_box")),
+                         {"goldenview": ["att_country", "nds", "b2b_box",
+                                         "quantum_fiber"]})
 
     def test_no_morning_ledger_means_nothing(self):
         self.assertEqual(plan(None), {})
