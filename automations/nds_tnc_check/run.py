@@ -288,12 +288,12 @@ def _probe_dump(label: str, lines: List[str], log=_log) -> None:
             ws = sh.worksheet("TNC Probe")
         except Exception:  # noqa: BLE001
             ws = sh.add_worksheet("TNC Probe", rows=400, cols=2)
-        existing = ws.get_all_values()
-        start = len(existing) + 1
         stamp = dt.datetime.now().isoformat(timespec="seconds")
-        ws.update("A%d" % start,
-                  [[stamp, "== " + label + " =="]] + [[stamp, l[:4000]] for l in lines])
-        log("probe dump -> 'TNC Probe' tab rows %d-%d" % (start, start + len(lines)))
+        # append_rows grows the grid; update() past the last row does not.
+        ws.append_rows([[stamp, "== " + label + " =="]]
+                       + [[stamp, l[:4000]] for l in lines[:1500]],
+                       value_input_option="RAW")
+        log("probe dump -> 'TNC Probe' tab (%d lines)" % len(lines))
     except Exception as e:  # noqa: BLE001
         log("(sheet dump failed: %s: %s)" % (type(e).__name__, str(e)[:120]))
 
