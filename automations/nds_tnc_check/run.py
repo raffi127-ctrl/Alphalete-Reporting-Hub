@@ -138,10 +138,33 @@ def _read_grid_raw(page) -> Tuple[List[str], List[List[str]]]:
     return raw["headers"], raw["rows"]
 
 
-def _card_frame_text(page, timeout_ms: int) -> Tuple[str, str]:
-    """(url, innerText) of the View Customer card's iframe once it carries
-    the T&C block; ('', '') if it never shows."""
+def frame_is_this_card(txt: str, order_id: str, customer: str,
+                       prev_text: str) -> bool:
+    """Is this frame THIS order's card? The RadWindow keeps the previous
+    customer's iframe around after Close, so 'a frame with a Confirmation
+    Date on it' read the FIRST card for every order (dry run 2026-11-05:
+    four customers, one email). The card must name this order -- its id,
+    or failing that the customer's surname -- and must not be the text we
+    just read."""
+    if not re.search(r"(?i)confirmation\s+date", txt or ""):
+        return False
+    if prev_text and _norm(txt) == _norm(prev_text):
+        return False
+    if order_id and order_id in txt:
+        return True
+    words = [w for w in _norm(customer).split() if len(w) > 2]
+    if words and re.search(r"(?i)\b" + re.escape(words[-1]) + r"\b", txt):
+        return True
+    return False
+
+
+def _card_frame_text(page, order_id: str, customer: str, prev_text: str,
+                     timeout_ms: int, log=_log) -> Tuple[str, str]:
+    """(url, innerText) of THIS order's View Customer card once it carries
+    the T&C block; ('', '') if it never shows. The frame read is blanked
+    afterwards so it can never be mistaken for the next order's card."""
     deadline = dt.datetime.now() + dt.timedelta(milliseconds=timeout_ms)
+    seen_other = ""
     while dt.datetime.now() < deadline:
         for fr in page.frames:
             if fr == page.main_frame:
@@ -150,9 +173,19 @@ def _card_frame_text(page, timeout_ms: int) -> Tuple[str, str]:
                 txt = fr.evaluate("() => (document.body.innerText || '')") or ""
             except Exception:  # noqa: BLE001
                 continue
+            if frame_is_this_card(txt, order_id, customer, prev_text):
+                url = fr.url or ""
+                try:
+                    fr.evaluate("() => { document.body.innerHTML = ''; }")
+                except Exception:  # noqa: BLE001
+                    pass
+                return url, txt
             if re.search(r"(?i)confirmation\s+date", txt):
-                return (fr.url or ""), txt
+                seen_other = txt
         page.wait_for_timeout(700)
+    if seen_other:
+        log("  %s: a card is open but it does not name this order/customer "
+            "(%r) -- not trusted" % (order_id, _norm(seen_other)[:120]))
     return "", ""
 
 
@@ -281,6 +314,7 @@ def scan(day: dt.date, *, limit: Optional[int] = None, probe: bool = False,
             sara._submit(page, log=log)
 
             seen = 0
+            prev_text = ""
             for page_no in range(1, C.MAX_PAGES + 1):
                 headers, rows = _read_grid_raw(page)
                 if page_no == 1:
@@ -310,8 +344,11 @@ def scan(day: dt.date, *, limit: Optional[int] = None, probe: bool = False,
                         log("  %s: %s" % (oid, res))
                         out.append(rec)
                         continue
-                    url, txt = _card_frame_text(page, C.CARD_TIMEOUT_MS)
+                    url, txt = _card_frame_text(page, oid, rec["customer"],
+                                                prev_text, C.CARD_TIMEOUT_MS,
+                                                log=log)
                     if txt:
+                        prev_text = txt
                         card = parse_card_text(txt)
                         rec["sent_via"] = card.get(C.LABEL_SENT_VIA, "")
                         rec["confirmed"] = card.get(C.LABEL_CONFIRMED, "")

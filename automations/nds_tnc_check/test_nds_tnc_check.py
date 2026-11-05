@@ -1,8 +1,9 @@
 import unittest
 
 from automations.nds_tnc_check import config as C
-from automations.nds_tnc_check.run import (first_name, has_confirmation_date,
-                                           map_columns, parse_card_text)
+from automations.nds_tnc_check.run import (first_name, frame_is_this_card,
+                                           has_confirmation_date, map_columns,
+                                           parse_card_text)
 
 CARD_OK = """Verification Status: Approved
 Last Status Update 11/4/2026
@@ -43,6 +44,17 @@ class Parse(unittest.TestCase):
     def test_message_title_cases_shouted_names(self):
         self.assertIn("customer Alba (rep: Nathaly Elizabeth Molina)",
                       C.message("ALBA", "NATHALY ELIZABETH MOLINA"))
+
+    def test_stale_card_is_not_this_order(self):
+        first = "Order DSI1 ALBA ALVAREZ ... Confirmation Date: 11/4/2026"
+        # the previous customer's frame, still in the DOM after Close
+        self.assertFalse(frame_is_this_card(first, "DSI2", "CARLA GARCIA", first))
+        self.assertFalse(frame_is_this_card(first, "DSI2", "CARLA GARCIA", ""))
+        self.assertTrue(frame_is_this_card(first, "DSI1", "ALBA ALVAREZ", ""))
+        # no order id on the card: the surname vouches for it
+        self.assertTrue(frame_is_this_card(
+            "Customer: Carla Garcia Confirmation Date:", "DSI2", "CARLA GARCIA", first))
+        self.assertFalse(frame_is_this_card("no tnc block here", "DSI1", "ALBA ALVAREZ", ""))
 
     def test_status_word_is_not_a_date(self):
         self.assertFalse(has_confirmation_date({C.LABEL_CONFIRMED: "Sent"}))
