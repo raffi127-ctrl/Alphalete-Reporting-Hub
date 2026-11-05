@@ -308,6 +308,43 @@ def _type_code(page, code_: str) -> None:
             boxes.nth(i).fill(d)
 
 
+def _enter_user(page, username: str, log=print) -> None:
+    """The User ID step. A REMEMBERED computer shows the box already filled and
+    LOCKED (Raf's MacBook 11/05: `<input disabled id="user...">`, both setup
+    runs timed out typing into it) with the Password box right under it -- so:
+      * locked + shows this user  -> nothing to type, straight to Password
+      * locked + shows SOMEONE ELSE -> clear it (the X / "Not you?") and type
+      * open                       -> type it and press Continue"""
+    user = page.get_by_label("User ID / Email")
+    user.wait_for(timeout=STEP_TIMEOUT_MS)
+    for _ in range(10):                      # a box can be locked for a moment while the page loads
+        if user.is_enabled():
+            break
+        page.wait_for_timeout(500)
+    if user.is_enabled():
+        user.fill(username)
+        page.get_by_role("button", name="Continue").click()
+        return
+    shown = (user.input_value() or "").strip().lower()
+    if shown == username.strip().lower():
+        log("      Sterling remembers %s -- straight to the password" % username)
+        return
+    log("      Sterling remembers a different user (%s) -- switching" % (shown or "?"))
+    for label in ("Not you?", "Clear", "Change"):
+        b = page.get_by_text(label, exact=False)
+        if b.count() and b.first.is_visible():
+            b.first.click()
+            break
+    else:
+        page.locator('button[aria-label*="lear"], [data-testid*="clear"]').first.click()
+    user.wait_for(state="visible", timeout=STEP_TIMEOUT_MS)
+    page.wait_for_timeout(1000)
+    if not user.is_enabled():
+        raise StepFailed("login", "Sterling shows user %r and won't let it be changed" % shown)
+    user.fill(username)
+    page.get_by_role("button", name="Continue").click()
+
+
 def sign_in(page, creds: Dict, *, office_key: str = "", get_code=None, log=print) -> None:
     """Login page -> (code) -> portal. Already signed in (remembered) = no-op.
     get_code(since) supplies the emailed code; default = Lucy 1 via code()."""
@@ -318,8 +355,7 @@ def sign_in(page, creds: Dict, *, office_key: str = "", get_code=None, log=print
         return
     _cookie_banner(page)
     try:
-        page.get_by_label("User ID / Email").fill(creds["username"])
-        page.get_by_role("button", name="Continue").click()
+        _enter_user(page, creds["username"], log)
         page.get_by_label("Password").fill(creds["password"], timeout=STEP_TIMEOUT_MS)
         remember = page.get_by_label("Remember me")
         if remember.count() and not remember.is_checked():
