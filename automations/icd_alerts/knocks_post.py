@@ -868,7 +868,23 @@ def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
         # The flat 1:30 PM target greened every Saturday first-knock on every
         # board, because no office starts at 1:30 on a Saturday.
         first_knock_green_at=knocks_render.first_knock_target(office, day),
+        # Broken up by team, like his gap_alerts / knocks_intraday boards
+        # (Raf 2026-11-05: "Team knocks not displaying ... can we get the
+        # team version please?"). This path never passed teams, so the board
+        # off his own Lucy came out flat. for_office is keyed by OWNER name
+        # and returns None for every office without a sales board -> those
+        # boards are untouched. Fail-soft: no board read = ungrouped board.
+        teams=_teams_for(office, day),
         date_text="%s · %s" % (day.strftime("%a %m/%d"), _clock(now)))
+
+
+def _teams_for(office, day: dt.date):
+    """The office's rep -> team book, or None (never raises)."""
+    try:
+        from automations.weekly_knock_dispositions import teams as TEAMS
+        return TEAMS.for_office(getattr(office, "owner", "") or "", day)
+    except Exception:  # noqa: BLE001 -- a team split never costs the board
+        return None
 
 
 def _clock(now: dt.datetime) -> str:
