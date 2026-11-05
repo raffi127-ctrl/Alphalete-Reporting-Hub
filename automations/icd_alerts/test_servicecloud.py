@@ -559,7 +559,11 @@ class TheSignInToolAsksForTheLoginItself(unittest.TestCase):
     """
 
     def _signin(self):
-        from automations.icd_alerts import box_signin
+        # dialogs is imported HERE so mock.patch can swap the package attribute.
+        # Patching sys.modules does not stop `from pkg import dialogs` once any
+        # other test has imported it: the real box pops up on the screen
+        # (Eve's laptop, 2026-11-04).
+        from automations.icd_alerts import box_signin, dialogs  # noqa: F401
         return box_signin
 
     def test_it_asks_when_nothing_is_saved_and_saves_the_answer(self):
@@ -572,8 +576,7 @@ class TheSignInToolAsksForTheLoginItself(unittest.TestCase):
         with mock.patch.object(B.C, "sc_creds", lambda: {}), \
              mock.patch.object(B.C, "save_sc_creds",
                                lambda e, p: saved.update(email=e, password=p)), \
-             mock.patch.dict("sys.modules",
-                             {"automations.icd_alerts.dialogs": fake}):
+             mock.patch("automations.icd_alerts.dialogs", fake):
             got = B._login(log=lambda *a: None)
         self.assertEqual(saved["email"], "ryan@boxenergy.com")
         self.assertEqual(got["email"], "ryan@boxenergy.com")
@@ -583,8 +586,7 @@ class TheSignInToolAsksForTheLoginItself(unittest.TestCase):
         fake = mock.MagicMock()
         with mock.patch.object(B.C, "sc_creds",
                                lambda: {"email": "a@b.c", "password": "x"}), \
-             mock.patch.dict("sys.modules",
-                             {"automations.icd_alerts.dialogs": fake}):
+             mock.patch("automations.icd_alerts.dialogs", fake):
             got = B._login(log=lambda *a: None)
         self.assertEqual(got["email"], "a@b.c")
         fake.text.assert_not_called()
@@ -597,8 +599,7 @@ class TheSignInToolAsksForTheLoginItself(unittest.TestCase):
         fake.Cancelled = RuntimeError
         fake.text.side_effect = RuntimeError()
         with mock.patch.object(B.C, "sc_creds", lambda: {}), \
-             mock.patch.dict("sys.modules",
-                             {"automations.icd_alerts.dialogs": fake}):
+             mock.patch("automations.icd_alerts.dialogs", fake):
             got = B._login(log=lambda *a: None)
         self.assertEqual(got, {}, "no login, but no crash either")
 
