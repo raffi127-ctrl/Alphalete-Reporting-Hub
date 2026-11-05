@@ -339,14 +339,23 @@ def scan(day: dt.date, *, limit: Optional[int] = None, probe: bool = False,
                            "salesperson": sp,
                            "customer": _norm(r[cols["customer"]]),
                            "sent_via": "", "confirmed": "", "card_read": "no"}
-                    res = _open_card(page, oid, ix)
-                    if res != "clicked":
-                        log("  %s: %s" % (oid, res))
-                        out.append(rec)
-                        continue
-                    url, txt = _card_frame_text(page, oid, rec["customer"],
-                                                prev_text, C.CARD_TIMEOUT_MS,
-                                                log=log)
+                    url, txt = "", ""
+                    for attempt in (1, 2):
+                        res = _open_card(page, oid, ix)
+                        if res != "clicked":
+                            log("  %s: %s" % (oid, res))
+                            break
+                        url, txt = _card_frame_text(page, oid, rec["customer"],
+                                                    prev_text, C.CARD_TIMEOUT_MS,
+                                                    log=log)
+                        if txt:
+                            break
+                        # The window sometimes does not come up on the first
+                        # click right after the previous one closed: close
+                        # whatever is there, settle, and click once more.
+                        log("  %s: no card on attempt %d -- retrying" % (oid, attempt))
+                        _close_card(page)
+                        page.wait_for_timeout(2500)
                     if txt:
                         prev_text = txt
                         card = parse_card_text(txt)

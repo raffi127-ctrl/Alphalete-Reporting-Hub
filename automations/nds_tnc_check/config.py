@@ -73,5 +73,5 @@ def _title(s: str) -> str:
 
 STATE_PATH = OUT_DIR / "posted.json"   # {"YYYY-MM-DD|slot": [order ids]}
 NAV_TIMEOUT_MS = 60_000
-CARD_TIMEOUT_MS = 25_000
+CARD_TIMEOUT_MS = 40_000
 MAX_PAGES = 10
