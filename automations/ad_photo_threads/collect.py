@@ -574,11 +574,15 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
                                      "images": imgs, "ts": msg["ts"],
                                      "text": msg.get("text", "")})
 
+    from automations.ad_photo_threads import appstream_ads as _aa
     for c in rep.candidates:
-        if c.ad is None:
+        twin = config.NO_AD_SAME_PERSON.get(_aa.key(day, c.name))
+        if c.ad is None and twin:
+            c.already = f"same person as {twin}"
+        elif c.ad is None:
             c.ad = answered_ad(c, day, book)
     for c in rep.candidates:
-        if c.ad is None:
+        if c.ad is None and not c.already:
             c.already = same_person_row(c, day, tabs, book)
     blank = [c for c in rep.candidates
              if c.ad is None and not c.already and lookup_ok(c)]

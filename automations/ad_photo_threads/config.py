@@ -111,15 +111,20 @@ APPSTREAM_AD_REJECTED: set = set()
 # not ours to write). Wins over every lookup; the ad's thread is opened if it
 # has none. {"YYYY-MM-DD|name in the sheet": ad}.
 NO_AD_ANSWERS = {
-    # Jairo, Camila 11/5. Stacia's real name is Lovelie Joseph Jonathas, Juan's
-    # is Juan Perdomo; the sheet has them this way.
-    "2026-10-28|stacia joseph": "Client Support Associate \u2013 Kendall Lakes FL",
+    # Jairo, Camila 11/5.
     "2026-10-28|smyme theosmy": "Handshake / Brand Promotions Trainee",
     "2026-10-29|roydel castellanos": "Handshake / Brand Promotions Trainee",
-    "2026-10-29|juan rodriguez": "AT&T Customer Experience Representative \u2013 Miami FL",
     "2026-10-30|lara gurdikyan": "Handshake / Entry Level Assistant Manager",
     # Valeria, Camila 11/5.
     "2026-10-27|maria ludwig": "Handshake / Customer Acquisition Representative",
+}
+# Eve 11/5: a person said this row is someone already on an ad thread under
+# another name: it only comes off the no-ad list, never posted twice.
+# {"YYYY-MM-DD|name in the sheet": the name they're posted under}.
+NO_AD_SAME_PERSON = {
+    # Jairo, Camila 11/5: both already in their thread with the real name.
+    "2026-10-28|stacia joseph": "Lovelie Joseph Jonathas",
+    "2026-10-29|juan rodriguez": "Juan Perdomo",
 }
 # Eve 11/5: Camila's team no longer does this office's 1st rounds: the no-ad
 # thread tags the channel, not them. Aya.
