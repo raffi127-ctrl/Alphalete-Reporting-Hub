@@ -1,5 +1,5 @@
 """Fiber churn tier per owner, for the 'Nov Tier / $ per sale' column on the
-New Internet churn images (Raf's Loom 2026-10-29, Rafael's captainship only).
+New Internet churn images (Raf's Loom 2026-10-29, all Fiber captainships since 2026-11-05).
 
 SOURCE OF THE TIER (Chris Williford 2026-11-04, "Churn tiers for whole
 captainship on Fiber"; refreshed the Monday new tiers start):

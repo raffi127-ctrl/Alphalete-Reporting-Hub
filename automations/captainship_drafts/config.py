@@ -323,8 +323,8 @@ class ChurnSource:
                                # New Internet look (Eve). Empty = the render
                                # module's own title.
     fiber_tiers: bool = False  # add each owner's Fiber churn tier + $ per sale
-                               # to the images. Rafael's captainship only (Raf's
-                               # Loom 2026-10-29).
+                               # to the images. Fiber captainships (Raf's
+                               # Loom 2026-10-29; all fiber since Eve 2026-11-05).
 
 
 @dataclass(frozen=True)
@@ -966,27 +966,32 @@ CAPTAINS: List[Captain] = [
     # pins its own blue palette (title bar AND date band) and takes no title_bg
     # at all, so a brand color here is not just off-style, it raises TypeError.
     Captain("wayne", "Wayne", "fiber", title_bg="#E69138", to=_to("wayne"), churn=[
-        ChurnSource(_own.open_ws_fiber_wayne, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_fiber_wayne, _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_wayne, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("wayne")),
     Captain("starr", "Starr", "fiber", title_bg="#9900FF", to=_to("starr"), churn=[
-        ChurnSource(_own.open_ws_fiber_starr, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_fiber_starr, _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_starr, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("starr")),
     Captain("chan", "Chan", "fiber", title_bg="#8A7465", to=_to("chan"), churn=[
-        ChurnSource(_own.open_ws_fiber_chan, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_fiber_chan, _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_chan, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("chan")),
     Captain("tony", "Tony", "fiber", title_bg="#001F5B", to=_to("tony"), churn=[
-        ChurnSource(_own.open_ws_fiber_tony, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_fiber_tony, _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_tony, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("tony")),
     Captain("sahil", "Sahil", "fiber", title_bg="#800020", to=_to("sahil"), churn=[
-        ChurnSource(_own.open_ws_fiber_sahil, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_fiber_sahil, _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_sahil, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("sahil")),
@@ -1003,12 +1008,14 @@ CAPTAINS: List[Captain] = [
     # vacio hace que --send los SALTEE en vez de mandarle el reporte a quien no
     # corresponde. Los borradores igual se arman.
     Captain("pat", "Pat", "fiber", title_bg="#6F8691", to=_to("pat"), churn=[
-        ChurnSource(_own.open_ws_fiber_pat, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_fiber_pat, _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_pat, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("pat")),
     Captain("jess", "Jess", "fiber", title_bg="#C2379A", to=_to("jess"), churn=[
-        ChurnSource(_own.open_ws_fiber_jess, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_fiber_jess, _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_jess, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("jess")),
