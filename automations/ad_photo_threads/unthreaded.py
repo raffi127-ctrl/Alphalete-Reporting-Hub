@@ -9,8 +9,9 @@ AppStream for appstream_ads.MAX_TRIES evenings (appstream_ads.py); only the
 ones still nowhere after that -- and the ones whose typed Ad Title matches no
 ad -- go to ONE pinned thread per channel ("1st rounds with no ad",
 state[channel]["unplaced"]), one reply per evening with that evening's new
-names. Whoever knows where they go finds them there. A name that later lands
-on its ad is struck through in its reply. Interviews from the last
+names. Whoever knows where they go finds them there. Eve 11/5: a name that
+later lands on its ad comes off its reply, so only the open ones show; a reply
+with nobody left is deleted. Interviews from the last
 LOOKBACK_DAYS (today left out: the sheet is still being filled in).
 """
 import datetime as dt
@@ -34,7 +35,7 @@ HEADER = ("\U0001F4CC *1st rounds with no ad*\n"
           "Lucy couldn't place these 1st rounds on any ad thread (sheet, Slack, "
           "Call List and AppStream checked for {n} evenings). If you know where "
           "one goes, put the ad in the *Ad Title* column of the interviewers "
-          "sheet. Names that later land on their ad get crossed out here.")
+          "sheet. Names that later land on their ad come off this list.")
 
 
 def find(day: dt.date, *, build: Optional[Callable] = None, cl=None,
@@ -82,8 +83,27 @@ def reply_text(day: dt.date, lines: List[str]) -> str:
 
 
 def _struck(text: str) -> str:
-    """A line crossed out as placed (once)."""
+    """A line marked as placed (once). Only in the state, no longer on Slack."""
     return text if text.startswith("~") else f"~{text}~ ✅ placed"
+
+
+def _open_lines(rows: list) -> List[str]:
+    return [r[1] for r in rows if not r[1].startswith("~")]
+
+
+def _rewrite(cl, channel: str, rts: str, rows: list) -> str:
+    """Make the reply show only its open names; nobody left, it goes."""
+    left = _open_lines(rows)
+    if left:
+        cl.chat_update(channel=channel, ts=rts,
+                       text=reply_text(dt.date.fromisoformat(rows[0][2]), left))
+        return "edited"
+    try:
+        cl.chat_delete(channel=channel, ts=rts)
+    except Exception as e:                        # noqa: BLE001 -- already gone is fine
+        if "message_not_found" not in str(e):
+            raise
+    return "deleted"
 
 
 def _thread(cl, channel: str, slot: dict) -> str:
@@ -126,7 +146,7 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
     lines = [line(d, c, title_only) for d, c in new]
     # Said, still in the window, no longer missing = it landed on its ad.
     # Only this week's: the evening refresh posts this week by itself. A closed
-    # week's is crossed out by place_found, once it's really in its thread.
+    # week's comes off in place_found, once it's really in its thread.
     cutoff = max(day - dt.timedelta(days=lookback), post.week_monday(day)).isoformat()
     now_missing = {_key(d, c) for d, c in missing}
     placed = [k for k in said if k >= cutoff and k not in now_missing]
@@ -139,18 +159,7 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
     slot = state.setdefault(channel, {}).setdefault("unplaced", {})
     ts = _thread(cl, channel, slot)
     replies = slot.setdefault("replies", {})      # reply ts -> [[key, line], ...]
-    for rts, rows in replies.items():
-        hit = [r for r in rows if r[0] in placed and not r[1].startswith("~")]
-        if not hit:
-            continue
-        for r in hit:
-            r[1] = _struck(r[1])
-        try:
-            cl.chat_update(channel=channel, ts=rts,
-                           text=reply_text(dt.date.fromisoformat(rows[0][2]),
-                                           [r[1] for r in rows]))
-        except Exception as e:                    # noqa: BLE001 -- never costs the new names
-            print(f"  no-ad thread: strike-through failed: {type(e).__name__}: {str(e)[:120]}")
+    _strike(cl, channel, slot, placed)
     if lines:
         r = cl.chat_postMessage(channel=channel, thread_ts=ts, text=text)
         replies[r["ts"]] = [[_key(d, c), ln, day.isoformat()] for (d, c), ln in zip(new, lines)]
@@ -165,23 +174,48 @@ def check(day: dt.date, channel: str, *, title_only: bool, cl=None, build=None,
 
 
 def _strike(cl, channel: str, slot: dict, keys) -> None:
-    """Cross these keys out in the replies that named them."""
+    """Take these keys off the replies that named them. A failed edit leaves
+    the name open, so the next evening tries again."""
     for rts, rows in (slot.get("replies") or {}).items():
         hit = [r for r in rows if r[0] in keys and not r[1].startswith("~")]
         if not hit:
             continue
+        was = [r[1] for r in hit]
         for r in hit:
             r[1] = _struck(r[1])
-        cl.chat_update(channel=channel, ts=rts,
-                       text=reply_text(dt.date.fromisoformat(rows[0][2]), [r[1] for r in rows]))
+        try:
+            _rewrite(cl, channel, rts, rows)
+        except Exception as e:                    # noqa: BLE001 -- never costs the new names
+            for r, text in zip(hit, was):
+                r[1] = text
+            print(f"  no-ad thread: edit failed: {type(e).__name__}: {str(e)[:120]}")
+
+
+def tidy(channel: str, *, apply: bool = False, cl=None) -> Dict[str, str]:
+    """Eve 11/5, once: the replies that still show crossed-out names, and the
+    pinned header. {reply ts: what it does}. Lists only unless `apply`."""
+    from automations.ad_photo_threads import appstream_ads
+    slot = post._load_state().get(channel, {}).get("unplaced") or {}
+    todo = {rts: rows for rts, rows in (slot.get("replies") or {}).items()
+            if any(r[1].startswith("~") for r in rows)}
+    out = {rts: ("delete, nobody left" if not _open_lines(rows)
+                 else f"edit, {len(_open_lines(rows))} left of {len(rows)}")
+           for rts, rows in todo.items()}
+    if not apply or not slot.get("ts"):
+        return out
+    cl = cl or collect._client()
+    cl.chat_update(channel=channel, ts=slot["ts"], text=HEADER.format(n=appstream_ads.MAX_TRIES))
+    for rts, rows in todo.items():
+        _rewrite(cl, channel, rts, rows)
+    return out
 
 
 def place_found(day: dt.date, channel: str, *, apply: bool = False, cl=None, build=None,
                 cache: Optional[dict] = None, crop: bool = True) -> Dict[str, str]:
     """Eve 11/4: an open name from a CLOSED week whose ad is known by now. The
     nightly only posts the current week, so it goes into the thread its ad
-    already has (weekly.add_to_week: never opens one) and only then is crossed
-    out. Their other row already on an ad: just crossed out. Lists only unless
+    already has (weekly.add_to_week: never opens one) and only then comes off
+    the list. Their other row already on an ad: just comes off. Lists only unless
     `apply`. {"date name": what happened}."""
     from automations.ad_photo_threads import weekly
     cl = cl or collect._client()
@@ -208,7 +242,7 @@ def place_found(day: dt.date, channel: str, *, apply: bool = False, cl=None, bui
             if c is None:
                 out[f"{d_iso} {n}"] = "not on the sheet that day: stays open"
             elif c.already and not c.ad:
-                out[f"{d_iso} {n}"] = f"already on its ad ({c.already}): only crossed out"
+                out[f"{d_iso} {n}"] = f"already on its ad ({c.already}): only taken off the list"
                 done.add(f"{d_iso}|{n}")
             elif c.ad:
                 place.append(c.name.strip())

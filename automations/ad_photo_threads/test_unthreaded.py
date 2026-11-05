@@ -87,14 +87,30 @@ class CheckTests(unittest.TestCase):
             got = self.run_check({}, [cand("Ana", "Unknown ad")], self.client(), lookup_on=True)
         self.assertTrue(got["posted"])
 
-    def test_placed_later_is_crossed_out(self):
+    def test_placed_later_comes_off_the_list(self):
         state, cl = {}, self.client()
-        self.run_check(state, [cand("Jamar Gray", "")], cl)
-        got = self.run_check(state, [], cl)
+        self.run_check(state, [cand("Jamar Gray", ""), cand("Bo", "")], cl)
+        got = self.run_check(state, [cand("Bo", "")], cl)
         self.assertEqual(got["placed"], 1)
         text = cl.chat_update.call_args.kwargs["text"]
-        self.assertIn("~", text)
-        self.assertIn("placed", text)
+        self.assertNotIn("Jamar", text)
+        self.assertNotIn("~", text)
+        self.assertIn("Bo", text)
+
+    def test_reply_with_nobody_left_is_deleted(self):
+        state, cl = {}, self.client()
+        self.run_check(state, [cand("Jamar Gray", "")], cl)
+        self.run_check(state, [], cl)
+        cl.chat_update.assert_not_called()
+        cl.chat_delete.assert_called_once_with(channel="C1", ts="101.0")
+
+    def test_failed_edit_stays_open_for_next_evening(self):
+        state, cl = {}, self.client()
+        self.run_check(state, [cand("Jamar Gray", ""), cand("Bo", "")], cl)
+        cl.chat_update.side_effect = RuntimeError("slack down")
+        self.run_check(state, [cand("Bo", "")], cl)
+        rows = state["C1"]["unplaced"]["replies"]["101.0"]
+        self.assertFalse(rows[0][1].startswith("~"))
 
     def test_dry_run_posts_nothing(self):
         cl = self.client()
@@ -144,12 +160,30 @@ class OrphanTests(unittest.TestCase):
         self.assertFalse(rows[2][1].startswith("~"))    # still nobody knows
         self.assertIn("stays open", got["2026-10-28 no one"])
         cl.chat_update.assert_called_once()
+        text = cl.chat_update.call_args.kwargs["text"]
+        self.assertNotIn("Lux T", text)
+        self.assertIn("No One", text)
 
     def test_without_apply_nothing_changes(self):
         state = self.state()
         _, cl, _ = self.run_place(state, False)
         cl.chat_update.assert_not_called()
         self.assertFalse(state["C1"]["unplaced"]["replies"]["2.0"][0][1].startswith("~"))
+
+    def test_tidy_cleans_what_was_crossed_out_before(self):
+        state = self.state()
+        state["C1"]["unplaced"]["replies"]["2.0"][0][1] = "~• Lux T (10/28): x~ ✅ placed"
+        state["C1"]["unplaced"]["replies"]["3.0"] = [
+            ["2026-10-29|ann", "~• Ann (10/29): x~ ✅ placed", "2026-10-30"]]
+        cl = mock.Mock()
+        with mock.patch.object(unthreaded.post, "_load_state", lambda: state):
+            listed = unthreaded.tidy("C1", cl=cl)
+            cl.chat_update.assert_not_called()
+            unthreaded.tidy("C1", apply=True, cl=cl)
+        self.assertEqual(set(listed), {"2.0", "3.0"})
+        self.assertEqual(cl.chat_update.call_count, 2)     # pinned header + reply 2.0
+        self.assertNotIn("Lux T", cl.chat_update.call_args.kwargs["text"])
+        cl.chat_delete.assert_called_once_with(channel="C1", ts="3.0")
 
     def test_typed_title_waits_for_the_lookup_too(self):
         self.assertTrue(unthreaded.still_trying(self.OLD, cand("Ana B", "Sales ???"), {}, True))

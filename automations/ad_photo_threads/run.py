@@ -382,7 +382,7 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
             got = unthreaded.check(day, channel, title_only=bool(o.get("title_only")),
                                    cache=cache,
                                    lookup_on=config.appstream_ads_on(o["key"]))
-            print(f"No-ad thread: {got['new']} added, {got['placed']} crossed out, "
+            print(f"No-ad thread: {got['new']} added, {got['placed']} off the list, "
                   f"{got['waiting']} still being looked up")
             if config.PLACE_ORPHANS_NIGHTLY:
                 for who, what in unthreaded.place_found(day, channel, apply=True, cache=cache).items():
@@ -558,6 +558,9 @@ def main(argv=None) -> int:
     ap.add_argument("--lookback", type=int, help="With --appstream-ads: days back (default 7).")
     ap.add_argument("--redo", action="store_true",
                     help="With --appstream-ads: look again at the ones already looked up and not found.")
+    mode.add_argument("--tidy-no-ad", action="store_true",
+                      help="Once (Eve 11/5): take the crossed-out names off the pinned "
+                           "no-ad threads. Lists only unless --apply.")
     mode.add_argument("--place-orphans", action="store_true",
                       help="Open names of the no-ad thread from a closed week whose ad is known "
                            "now: list them (--apply: post them in their thread, cross them out). "
@@ -629,6 +632,19 @@ def main(argv=None) -> int:
                                         limit=a.limit, lookback=a.lookback, redo=a.redo))
             except Exception as e:            # noqa: BLE001 -- one office never stops the rest
                 print(f"[appstream ads] {k}: failed: {type(e).__name__}: {str(e)[:200]}")
+        return 0
+    if a.tidy_no_ad:
+        from automations.ad_photo_threads import config, unthreaded
+        keys = ([o["key"] for o in config.OFFICES if o.get("live")]
+                if a.office in (None, "all") else [a.office])
+        for k in keys:
+            o = config.office(k)
+            try:
+                for rts, what in unthreaded.tidy(o["live_channel"], apply=a.apply).items():
+                    print(f"[{k}] {rts}: {what}")
+            except Exception as e:            # noqa: BLE001 -- one office never stops the rest
+                print(f"[{k}] failed: {type(e).__name__}: {str(e)[:200]}")
+        print("tidy done" + ("" if a.apply else " (nothing changed: no --apply)"))
         return 0
     if a.place_orphans:
         from automations.ad_photo_threads import config, unthreaded
