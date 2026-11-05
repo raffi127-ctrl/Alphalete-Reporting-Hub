@@ -88,13 +88,14 @@ def feed_numbers(words: List[str], since: dt.date, until: dt.date,
 
 
 def _messages_since(token: str, ext_id: str, day: dt.date) -> List[dict]:
-    """SMS *and* MMS (the wrap-up goes out as an MMS with the flyer, and a
-    reply inside that group thread can come back typed MMS)."""
+    """Every text since `day`. RingCentral files MMS (the wrap-up with its
+    flyer, group-thread replies) under messageType=SMS too -- asking for
+    "MMS" is rejected (parameterName messageType, 2026-11-05)."""
     import time as _t
     start = dt.datetime.combine(day, dt.time.min).astimezone()
     out: List[dict] = []
     seen = set()
-    for mtype in ("SMS", "MMS"):
+    for mtype in ("SMS",):
         params = {"messageType": mtype, "perPage": 250,
                   "dateFrom": start.astimezone(dt.timezone.utc)
                                    .strftime("%Y-%m-%dT%H:%M:%SZ")}
