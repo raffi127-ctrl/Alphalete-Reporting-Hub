@@ -60,9 +60,13 @@ OWNER_FALLBACK = {
 # day the new one has a reading; with no `raf` row the old row still counts.
 SUPERSEDED_BY = {"rafael_hidalgo": "raf"}
 
-# The selling day, Central. The plist fires at :50 (after most offices' relay
-# has caught the hour); this is the guard the code applies, so a stray hand run
-# at 9am texts nothing. weekday(): (first hour, last hour) inclusive.
+# Raf 2026-11-04 (LUCY OWNERS CHAT): "an update every 30minutes" of the owners
+# text. Only that chat: the plist fires at :15 and :45, and these chats -- which
+# nobody asked to speed up -- still get one text an hour, on the :45.
+HOURLY_CHATS = ("sso", "jairo")
+
+# The selling day, Central. This is the guard the code applies, so a stray hand
+# run at 9am texts nothing. weekday(): (first hour, last hour) inclusive.
 WINDOW = {
     0: (12, 21), 1: (12, 21), 2: (12, 21), 3: (12, 21), 4: (12, 21),
     5: (12, 21),

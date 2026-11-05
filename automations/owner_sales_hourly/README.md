@@ -25,7 +25,8 @@ Eveliz ...), own total, own "nothing changed" skip.
 Today" -- only NDS offices' sales, only owners on our Org board, with its own
 "nothing changed" skip.
 
-- :50 every hour, Mon–Sat, 12 PM–9 PM Central.
+- **Alphalete Owners: every 30 minutes** (:15 and :45, Raf 2026-11-04). SOUTHSHORE
+  ORG and A PLAYERSSS: once an hour, on the :45. Mon–Sat, 12 PM–9 PM Central.
 - Skipped when no number moved since the last text.
 - Not sent before any office has relayed a sale that day.
 

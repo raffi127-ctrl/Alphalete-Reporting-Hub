@@ -25,7 +25,7 @@ from pathlib import Path
 from automations.owner_chat_texts.config import GROUP_OWNERS_REAL as TEXT_GROUP
 
 # Field hours, Central. weekday(): (first hour, last hour) inclusive. The plist
-# fires at :20 (off owner_sales_hourly's :50 so the two texts don't land
+# fires at :20 (off owner_sales_hourly's :15/:45 so the two texts don't land
 # together); this is the guard the code applies, so a stray hand run at 9am
 # texts nothing. 2 PM is the first hour with knocks on the board (1:30 starts).
 WINDOW = {

@@ -2,7 +2,8 @@
 
 RUNS ON LUCY 1 — Messages there is signed in as alphaletereporting@gmail.com
 and is already a member of the owners chat (owner_chat_texts texts it every
-morning). Raf's 2026-10-24 ask: once an hour, how many sales each owner is at.
+morning). Raf's 2026-10-24 ask: how many sales each owner is at; since 2026-11-04 every
+30 minutes in that chat (the SSO and NDS chats below stay hourly).
 
     Owner Sales Today - 5:50 PM CT
     1. Jairo Ruiz 33
@@ -192,6 +193,11 @@ def in_window(now: dt.datetime) -> bool:
     return bool(span) and span[0] <= now.hour <= span[1]
 
 
+def hourly_chat_skips(name: str, now: dt.datetime) -> bool:
+    """True on the :15 pass for a chat that only gets one text an hour."""
+    return name in cfg.HOURLY_CHATS and now.minute < 30
+
+
 def _last_path(day: dt.date, key: str = "last_sent"):
     return cfg.OUT_DIR / day.isoformat() / ("%s.txt" % key)
 
@@ -248,6 +254,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, "Owner Sales Today"),
             ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today")):
         if args.only and args.only != name:
+            continue
+        # --only / --force are a person asking for that text now.
+        if not args.only and not args.force and hourly_chat_skips(name, now):
             continue
         print("=== %s ===" % (group if isinstance(group, str)
                                else group.get("group")))

@@ -126,5 +126,32 @@ class SouthShore(unittest.TestCase):
         self.assertEqual(kept, {"Lizette Ruiz-Conejo": 4})
 
 
+class HalfHourPass(unittest.TestCase):
+    def _at(self, minute):
+        return dt.datetime(2026, 11, 4, 17, minute)
+
+    def test_owners_chat_gets_both_passes(self):
+        self.assertFalse(run.hourly_chat_skips("owners", self._at(15)))
+        self.assertFalse(run.hourly_chat_skips("owners", self._at(45)))
+
+    def test_other_chats_only_the_45(self):
+        for chat in ("sso", "jairo"):
+            self.assertTrue(run.hourly_chat_skips(chat, self._at(15)))
+            self.assertFalse(run.hourly_chat_skips(chat, self._at(45)))
+
+    def test_plist_fires_every_30_minutes_inside_the_window(self):
+        import plistlib
+        from pathlib import Path
+        plist = Path(run.__file__).resolve().parents[2] / "deploy" / (
+            "com.alphalete.owner-sales-hourly.plist")
+        with plist.open("rb") as fh:
+            slots = plistlib.load(fh)["StartCalendarInterval"]
+        self.assertEqual({s["Minute"] for s in slots}, {15, 45})
+        self.assertEqual(len(slots), 6 * 10 * 2)
+        for s in slots:
+            now = dt.datetime(2026, 11, 2 + s["Weekday"] - 1, s["Hour"], s["Minute"])
+            self.assertTrue(run.in_window(now), now)
+
+
 if __name__ == "__main__":
     unittest.main()

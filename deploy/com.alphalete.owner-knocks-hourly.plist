@@ -26,7 +26,7 @@
     </dict>
 
     <!-- :20 every hour, Mon-Sat 2pm-9pm. Machine LOCAL time (Lucy 1 is
-         Central). :20 so it does not land with owner_sales_hourly's :50 text
+         Central). :20 so it does not land with owner_sales_hourly's :15/:45 text
          in the same chat, nor gap_alerts' :00 / :30. -->
     <key>StartCalendarInterval</key>
     <array>
