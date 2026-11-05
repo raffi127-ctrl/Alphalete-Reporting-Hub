@@ -909,6 +909,14 @@ def main(argv=None) -> int:
     if args.check:
         if already_sent(today, args.channel):
             print("— already sent this week, nothing to do", flush=True)
+            # The companion gets ONE try on the pass that sends the DD. When
+            # that try fails, every later pass lands here and nothing retried
+            # it: Thu 2026-11-05 the 15:00 try died on the Sheets read quota
+            # and the 16:00 pass said "already sent" — the RCs/NCs never went.
+            # Safe to call every pass: send_rcs_ncs keeps its own per-week
+            # sent marker, so once it is out this is an "ALREADY SENT" no-op.
+            if args.send:
+                send_companion(args.distro)
             return 0
         who = (find_approval(today, args.channel)
                or auto_approval(today, args.channel))

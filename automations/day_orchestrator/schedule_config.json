@@ -4741,6 +4741,9 @@
    ]
   },
   "rc_inbox": {
+   "hand_run_only": true,
+   "close_on": "exit_zero",
+   "_close_on_note": "2026-11-05: a by-hand, read-only lookup (one customer's texts to the 'RC Inbox' tab) with nothing fixed to check, so a clean exit IS the evidence. Its first run (Carlos, 11/5) left failure-rc_inbox open after a clean re-run ('nothing can confirm it DELIVERED'). hand_run_only so the didn't-run watcher never learns a schedule from it.",
    "on_scheduler": false,
    "_off_scheduler_note": "MANUAL-ONLY, READ-ONLY (Carlos 2026-11-05: 'look through our text. did erika gutierrez reach out to us'): prints every SMS between Taylor's RingCentral line and one customer -- numbers come from Taylor's contact book (main + 'Line N' contacts) and the NDS feed -- oldest first, inbound marked IN, and uploads the transcript to the control sheet's 'RC Inbox' tab (base64). `lucy rerun rc_inbox --customer \"Erika Gutierrez\" --since 2026-10-20`; add --inbound-only for just what the customer wrote. Never writes to RingCentral.",
    "display_name": "RC inbox lookup (one customer's texts)",
