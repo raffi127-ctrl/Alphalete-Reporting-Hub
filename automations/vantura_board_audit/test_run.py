@@ -372,6 +372,14 @@ class StationsLegendHeaderRow(unittest.TestCase):
             self._stations_with_legend("Handling Objections"))
         self.assertNotIn("Handling Objections", reported)
 
+    def test_extension_notes_are_not_reported(self):
+        """2026-11-05: 'Extention Needed' / 'Small Extention' typed beside a
+        station are notes about the territory, not people."""
+        for note in ("Extention Needed", "Small Extention", "Extension Needed"):
+            rows, extra = self._stations_with_legend("Getting Bill")
+            rows[5][0] = note
+            self.assertNotIn(note, self._names_reported((rows, extra)))
+
     def test_reps_under_the_legend_header_are_still_checked(self):
         """Skipping the header must not skip the block — a typo in a rep name
         sitting under it is exactly what this check is for."""

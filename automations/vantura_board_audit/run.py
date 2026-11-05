@@ -1325,7 +1325,7 @@ def _audit_stations_tab(prefix, vals, form, week_board, known,
                         r"tuesday|wednesday|thursday|friday|in a |in both|"
                         r"roadtrip|pitch|closing|transition|running|day 0|"
                         r"pk$|qq|intro |saturday|sunday|early objection|"
-                        r"je 9|station )", re.I)
+                        r"je 9|station |(small )?exten[st]ion)", re.I)
     name_cols = list(range(0, 7)) + list(range(8, 15)) + [89]  # 2026-07-21: +col O (new BOX station col)
 
     # Only PERSON-SHAPED text is a candidate. The station grid keeps free-text
