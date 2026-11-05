@@ -549,9 +549,11 @@
   },
   {
     "key": "starr",
-    "label": "Starr's Local Office (channel from ECO sign-up)",
+    "label": "#nova-sales",
     "owner": "Starr Rodenhurst",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CF5AV722F"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",

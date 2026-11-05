@@ -16686,8 +16686,8 @@
   "starr_metrics": {
    "order": 26.95,
    "machine": "Lucy 4",
-   "on_scheduler": false,
-   "display_name": "Starr's Daily Metrics (channel from ECO sign-up)",
+   "on_scheduler": true,
+   "display_name": "Starr's Daily Metrics (nova-sales)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"
@@ -16720,7 +16720,7 @@
     "report_id": "starr_metrics"
    },
    "_onboarded": true,
-   "_note": "Office metrics for starr. wired by hand 2026-11-04 (Eve: same dry run as Sahil Multani, Zoom to set up Lucy on 11/05). AT&T D2D like sahil/steve (OwnerVille/AppStream 17573, Nova Management, Inc., Fremont CA -- Pacific), all 11 D2D boards. No ICD Signup row yet: channel held on Megan's DM until her ECO sign-up names it. Sheet 'Starr Rodenhurst - Lucy Metrics' copied from the Master Metrics Templates, shared Editor with alphaletereporting@ (Lucy 4). Schedule off until the Lucy 4 dry run shows data on every board."
+   "_note": "Office metrics for starr. wired by hand 2026-11-04 (Eve: same dry run as Sahil Multani, Zoom to set up Lucy on 11/05). AT&T D2D like sahil/steve (OwnerVille/AppStream 17573, Nova Management, Inc., Fremont CA -- Pacific), all 11 D2D boards. No ICD Signup row yet: channel held on Megan's DM until her ECO sign-up names it. Sheet 'Starr Rodenhurst - Lucy Metrics' copied from the Master Metrics Templates, shared Editor with alphaletereporting@ (Lucy 4). Schedule off until the Lucy 4 dry run shows data on every board. | 2026-11-05: room #nova-sales (C0CF5AV722F), dry run green 11/04, scheduler ON."
   }
  },
  "read_only_standalone": {
