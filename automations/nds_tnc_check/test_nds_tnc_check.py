@@ -46,15 +46,28 @@ class Parse(unittest.TestCase):
                       C.message("ALBA", "NATHALY ELIZABETH MOLINA"))
 
     def test_stale_card_is_not_this_order(self):
-        first = "Order DSI1 ALBA ALVAREZ ... Confirmation Date: 11/4/2026"
+        first = "Order DSI1 ALBA ALVAREZ ... Confirmation Status: Confirmed Confirmation Date: 11/4/2026"
         # the previous customer's frame, still in the DOM after Close
         self.assertFalse(frame_is_this_card(first, "DSI2", "CARLA GARCIA", first))
         self.assertFalse(frame_is_this_card(first, "DSI2", "CARLA GARCIA", ""))
         self.assertTrue(frame_is_this_card(first, "DSI1", "ALBA ALVAREZ", ""))
         # no order id on the card: the surname vouches for it
         self.assertTrue(frame_is_this_card(
-            "Customer: Carla Garcia Confirmation Date:", "DSI2", "CARLA GARCIA", first))
-        self.assertFalse(frame_is_this_card("no tnc block here", "DSI1", "ALBA ALVAREZ", ""))
+            "Customer: Carla Garcia Confirmation Status: Pending", "DSI2", "CARLA GARCIA", first))
+        self.assertFalse(frame_is_this_card("no tnc block here DSI1 ALVAREZ", "DSI1", "ALBA ALVAREZ", ""))
+
+    def test_pending_card_has_no_confirmation_date_row(self):
+        # the live unconfirmed card (DSI283647598, 2026-11-04): the row is
+        # simply absent, and that card must still be recognised AND flagged
+        pending = ("SP Order ID:\nDSI283647598\nCARLA GARCIA\nT&C Sent Date:\n"
+                   "11/4/2026 9:57:44 PM\nConfirmation Status:\nPending Confirmation\n"
+                   "T&C Sent Via:\nEmail to c@g.com\nOrder Summary\nNotes\nAdd new")
+        self.assertTrue(frame_is_this_card(pending, "DSI283647598", "CARLA GARCIA", ""))
+        card = parse_card_text(pending)
+        self.assertEqual(card.get(C.LABEL_SENT_VIA), "Email to c@g.com")
+        self.assertNotIn(C.LABEL_CONFIRMED, card)
+        self.assertFalse(has_confirmation_date(card))
+        self.assertEqual(card["Confirmation Status:"], "Pending Confirmation")
 
     def test_status_word_is_not_a_date(self):
         self.assertFalse(has_confirmation_date({C.LABEL_CONFIRMED: "Sent"}))

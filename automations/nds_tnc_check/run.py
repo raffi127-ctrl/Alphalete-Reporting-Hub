@@ -138,6 +138,14 @@ def _read_grid_raw(page) -> Tuple[List[str], List[List[str]]]:
     return raw["headers"], raw["rows"]
 
 
+# The T&C block's own words. NOT 'Confirmation Date': an UNCONFIRMED order's
+# card has no Confirmation Date row at all (Carla Garcia, DSI283647598,
+# 2026-11-04: 'Confirmation Status: Pending Confirmation / T&C Sent Via:' and
+# nothing after) -- keying on that label read every pending sale as "card
+# never showed" and called out none of them, the one case this exists for.
+_TNC_BLOCK = re.compile(r"(?i)T\s*&\s*C\s+Sent|Confirmation\s+Status")
+
+
 def frame_is_this_card(txt: str, order_id: str, customer: str,
                        prev_text: str) -> bool:
     """Is this frame THIS order's card? The RadWindow keeps the previous
@@ -146,7 +154,7 @@ def frame_is_this_card(txt: str, order_id: str, customer: str,
     four customers, one email). The card must name this order -- its id,
     or failing that the customer's surname -- and must not be the text we
     just read."""
-    if not re.search(r"(?i)confirmation\s+date", txt or ""):
+    if not _TNC_BLOCK.search(txt or ""):
         return False
     if prev_text and _norm(txt) == _norm(prev_text):
         return False
@@ -180,7 +188,7 @@ def _card_frame_text(page, order_id: str, customer: str, prev_text: str,
                 except Exception:  # noqa: BLE001
                     pass
                 return url, txt
-            if re.search(r"(?i)confirmation\s+date", txt):
+            if _TNC_BLOCK.search(txt):
                 seen_other = txt
         page.wait_for_timeout(700)
     if seen_other:
@@ -384,6 +392,7 @@ def scan(day: dt.date, *, limit: Optional[int] = None, probe: bool = False,
                         card = parse_card_text(txt)
                         rec["sent_via"] = card.get(C.LABEL_SENT_VIA, "")
                         rec["confirmed"] = card.get(C.LABEL_CONFIRMED, "")
+                        rec["status"] = card.get("Confirmation Status:", "")
                         rec["card_read"] = "yes"
                         if probe:
                             lines = [l.strip() for l in txt.splitlines() if l.strip()]
@@ -392,9 +401,10 @@ def scan(day: dt.date, *, limit: Optional[int] = None, probe: bool = False,
                     else:
                         log("  %s: the customer card never showed its T&C block"
                             % oid)
-                    log("  %-14s %-22s rep=%r salesperson=%r via=%r confirmed=%r"
+                    log("  %-14s %-22s rep=%r salesperson=%r via=%r status=%r confirmed=%r"
                         % (oid, rec["customer"][:22], rec["rep"][:30], sp[:30],
-                           rec["sent_via"][:40], rec["confirmed"][:30]))
+                           rec["sent_via"][:40], rec.get("status", "")[:30],
+                           rec["confirmed"][:30]))
                     out.append(rec)
                     _close_card(page)
                     page.wait_for_timeout(1200)
