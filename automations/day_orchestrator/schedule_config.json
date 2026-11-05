@@ -4606,7 +4606,9 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
-   "after": [],
+   "after": [
+    "nds_metrics"
+   ],
    "timeout_minutes": 40,
    "_timeout_note": "One customer card is opened per order and each is a page load; 20 orders is the normal day, so the ceiling is generous on purpose.",
    "verify": {
@@ -4645,7 +4647,8 @@
    "freshness_target": null,
    "depends_on": [],
    "after": [
-    "rc_contact_sync"
+    "rc_contact_sync",
+    "rc_wrapup"
    ],
    "timeout_minutes": 20,
    "verify": {
@@ -4701,27 +4704,41 @@
    "machine": "Lucy 2"
   },
   "rc_wrapup": {
-   "on_scheduler": false,
-   "_off_scheduler_note": "MANUAL-ONLY wrap-up group-text sender (Carlos 2026-10-08: send the D2D Wrap Up canvas content to the guest customers who never got the wrap-up text — one INDIVIDUAL group per customer: Taylor's line + the sales rep + the customer, never one big thread). Text = the #alphalete-gp-sales 'D2D Wrap Up' canvas (F095EC26XHQ) with Order # ('Wireless Order #') and BAN ('Wireless Acct #') filled per customer off the Lucy 1 raf_guest envelope; PIN is not in SaraPlus, the line says the rep will confirm it in the thread. Rep numbers resolve from Taylor's RingCentral contact list by name (unique-hit matcher; unresolved rep = customer SKIPPED, listed). DRY RUN by default and it uploads the complete plan to the control sheet's 'Wrapup Preview' tab for the mini; `-- --live` sends (state file rc-wrapup-sent.json: one wrap-up per customer EVER, re-runs are safe). `-- --fetch-flyer` downloads the canvas flyer image to the config area first; without it the text goes alone. SENDS TEXTS TO CUSTOMERS — never add --live without Carlos having seen the preview.",
-   "display_name": "D2D wrap-up group texts (Raf-code guests)",
+   "on_scheduler": true,
+   "display_name": "D2D wrap-up group texts (never-texted customers)",
    "source_type": "api",
    "data_sources": [],
    "command": [
     "automations.rc_contact_sync.wrapup"
    ],
    "base_args": [
-    "--since",
-    "2026-09-29"
+    "--live"
    ],
    "cadence": {
-    "weekdays": []
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "not_before": "06:50"
    },
-   "priority": "P3",
+   "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
-   "verify": null,
+   "verify": {
+    "type": "manifest",
+    "report_id": "rc_wrapup"
+   },
    "timeout_minutes": 20,
-   "machine": "Lucy 2"
+   "machine": "Lucy 2",
+   "_note": "Carlos 2026-11-04: 'You should be posting [who didn't send the wrap-up] and then sending the wrap-up.' ARMED daily, right after rc_contact_sync (which posts the never-texted names inside the day's NDS Metrics thread): re-runs the same never-texted check on yesterday's crew sales and group-texts the D2D wrap-up (Taylor's line + rep + customer, one group per customer, Order # and BAN filled off the NDS wireless feed, PIN left for the rep) to each customer nobody messaged. rc-wrapup-sent.json = one wrap-up per customer EVER, so re-runs are safe. Rep numbers: Taylor's RC book -> alphaletegp Google contacts -> Vantura Daily Update; an unresolved rep = customer skipped and listed. `lucy rerun rc_wrapup --dry-run` previews (uploads the plan to the control sheet's 'Wrapup Preview' tab); `--since YYYY-MM-DD` backfills a window. Built 2026-10-08 as the manual Raf-code backfill, never armed until today. Flyer: resources/rc_contact_sync/wrapup_flyer.png when present, else text only.",
+   "order": 11.55,
+   "after": [
+    "rc_contact_sync"
+   ]
   },
   "raf_guest_orders": {
    "on_scheduler": false,

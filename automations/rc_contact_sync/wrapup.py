@@ -31,9 +31,10 @@ SAFETY RAILS, because this one texts CUSTOMERS:
   * a customer whose rep can't be resolved is SKIPPED and listed — never
     sent half a group.
 
-    python -m automations.rc_contact_sync.wrapup --since 2026-09-29            # preview
+    python -m automations.rc_contact_sync.wrapup                              # preview yesterday
     python -m automations.rc_contact_sync.wrapup --since 2026-09-29 --find-reps
-    python -m automations.rc_contact_sync.wrapup --since 2026-09-29 --live
+    python -m automations.rc_contact_sync.wrapup --live                       # the daily run (scheduled)
+    python -m automations.rc_contact_sync.wrapup --since 2026-09-29 --live    # backfill a window
 """
 from __future__ import annotations
 
@@ -257,6 +258,16 @@ def fetch_flyer(file_id: str = FLYER_FILE_ID, log=print) -> int:
     return 0
 
 
+def _manifest(failed: List[str], *, dry_run: bool, note: str = "") -> None:
+    """The orchestrator's verify step reads this (verify.type = manifest)."""
+    try:
+        from automations.shared import run_manifest as _rm
+        _rm.write_manifest("rc_wrapup", failed=failed, kind="part", note=note,
+                           dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001
+        print("  (manifest not written: %s: %s)" % (type(e).__name__, str(e)[:120]))
+
+
 # --- the run ------------------------------------------------------------------
 
 def run(since: dt.date, until: dt.date, *, live: bool = False,
@@ -361,6 +372,7 @@ def run(since: dt.date, until: dt.date, *, live: bool = False,
 
     sent_state = _load_sent()
     sent = skipped = failed = 0
+    failed_names: List[str] = []
     preview: List[str] = []   # dry run: the whole plan, uploaded for the mini
     if limit:
         missing = missing[:limit]
@@ -402,9 +414,12 @@ def run(since: dt.date, until: dt.date, *, live: bool = False,
             time.sleep(6)   # polite pacing; RC business SMS is ~40-60/min
         except RC.RCError as e:
             failed += 1
+            failed_names.append(who)
             log("  ✗ %s: %s" % (who, str(e)[:200]))
     log("wrap-ups: %d %s, %d skipped (no rep number), %d failed"
         % (sent, "sent" if live else "previewed", skipped, failed))
+    _manifest(failed_names, dry_run=not live,
+              note="%d sent, %d skipped" % (sent, skipped))
     if not live:
         # the full plan, retrievable whole on the mini (the Result cell
         # truncates; this doesn't): sp_order_log's base64-tab relay.
@@ -427,11 +442,17 @@ def main(argv=None) -> int:
         description="Group-text the D2D wrap-up (Taylor + rep + customer) to "
                     "the guest customers nobody texted.")
     ap.add_argument("--since", default=None, metavar="YYYY-MM-DD",
-                    help="required unless --fetch-flyer")
+                    help="start of the sale-day window; default: yesterday "
+                         "(the daily run -- Carlos 2026-11-04: post who "
+                         "didn't send the wrap-up, then send it)")
     ap.add_argument("--until", default=None, metavar="YYYY-MM-DD",
                     help="default: yesterday")
     ap.add_argument("--live", action="store_true",
                     help="actually send (default: print every message)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="preview even when --live is present (the "
+                         "scheduler's base_args carry --live; `lucy rerun "
+                         "rc_wrapup --dry-run` previews)")
     ap.add_argument("--find-reps", action="store_true",
                     help="only resolve + print the reps' numbers")
     ap.add_argument("--limit", type=int, default=None,
@@ -442,13 +463,11 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if args.fetch_flyer:
         return fetch_flyer()
-    if not args.since:
-        print("✗ --since is required (e.g. --since 2026-09-29)")
-        return 2
-    since = dt.date.fromisoformat(args.since)
     until = (dt.date.fromisoformat(args.until) if args.until
              else C.yesterday())
-    return run(since, until, live=args.live, find_reps_only=args.find_reps,
+    since = dt.date.fromisoformat(args.since) if args.since else until
+    live = args.live and not args.dry_run
+    return run(since, until, live=live, find_reps_only=args.find_reps,
                limit=args.limit)
 
 

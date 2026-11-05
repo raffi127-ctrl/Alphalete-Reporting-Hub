@@ -140,14 +140,23 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
             # No NDS thread that day (Sunday, or pre-7:30) and the named
             # header below still happens; #a-players-b2b is unchanged
             # (it has no NDS Metrics thread).
+            # The NDS thread is keyed by the morning it was POSTED (the
+            # run date), not by the sale day it reports on -- `day` here
+            # is yesterday, and reading its file found yesterday's thread
+            # (11/3 and 11/4 posts landed one thread back). Look for the
+            # thread posted today, then yesterday's only when the run
+            # itself is a day late.
             nds_ts = None
             if chan == "C07J46MQNUX":
                 try:
                     import json as _j
                     from automations.nds_metrics.run import _state_path
-                    _sp = _state_path(day)
-                    if _sp.exists():
-                        nds_ts = _j.loads(_sp.read_text()).get("ts")
+                    for _d in (dt.date.today(), day + dt.timedelta(days=1)):
+                        _sp = _state_path(_d)
+                        if _sp.exists():
+                            nds_ts = _j.loads(_sp.read_text()).get("ts")
+                            if nds_ts:
+                                break
                 except Exception:                          # noqa: BLE001
                     nds_ts = None
             if nds_ts:
