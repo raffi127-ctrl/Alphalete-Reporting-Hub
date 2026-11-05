@@ -27,6 +27,10 @@ class _FakeClient:
     def conversations_replies(self, **kw):
         return {"messages": []}
 
+    def conversations_open(self, **kw):
+        self.opened = kw
+        return {"ok": True, "channel": {"id": "D9"}}
+
 
 class TopLevelPosting(unittest.TestCase):
     def setUp(self):
@@ -74,6 +78,22 @@ class TopLevelPosting(unittest.TestCase):
     def test_threaded_still_reacts(self):
         self._post(react_emoji="door")
         self.assertEqual(self.client.reactions[0]["timestamp"], "1111.2222")
+
+
+    def test_user_id_target_uploads_to_the_dm(self):
+        """An office held on Megan's DM has her USER id as its channel. Uploads
+        refuse a user id (Sahil's 9 PM board, 2026-11-04), so it must go to the
+        DM channel conversations.open gives back."""
+        smp.post_reply_with_image(
+            Path("x.png"), comment="c", today=dt.date(2026, 11, 4),
+            channel_id="U04G5HJBGFN", top_level=True)
+        self.assertEqual(self.client.opened, {"users": "U04G5HJBGFN"})
+        self.assertEqual(self.client.uploads[0]["channel"], "D9")
+
+    def test_channel_id_target_is_untouched(self):
+        self._post()
+        self.assertEqual(self.client.uploads[0]["channel"], "C1")
+        self.assertFalse(hasattr(self.client, "opened"))
 
 
 if __name__ == "__main__":

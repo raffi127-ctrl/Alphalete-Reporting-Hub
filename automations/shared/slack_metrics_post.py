@@ -807,6 +807,20 @@ _SHARE_WAIT_S = 20.0
 _SHARE_POLL_S = 1.0
 
 
+def _postable_channel(client, channel_id: str) -> str:
+    """A USER id (U…/W…) as an upload target becomes that person's DM channel.
+
+    chat.postMessage takes a user id and lands in the DM, but
+    files.completeUploadExternal does not: a new office whose channel is held
+    on Megan's DM (channel_id = her user id until the sign-up names a room)
+    posted its text fine and lost every image. Sahil's 9 PM knocks board
+    died that way on 2026-11-04 ("SlackApiError … completeUploadExternal").
+    Anything else is returned untouched."""
+    if channel_id[:1] in ("U", "W"):
+        return client.conversations_open(users=channel_id)["channel"]["id"]
+    return channel_id
+
+
 def _uploaded_file_id(resp) -> str:
     """The new file's id out of a files_upload_v2 response. The SDK returns
     {'files': [{...}]} for v2 and {'file': {...}} for the older shape — read both
@@ -930,8 +944,9 @@ def post_reply_with_image(
     # Cody's 2 PM / 5:15 PM. Default False, so every other caller is unchanged.
     thread_ts = None if top_level else (thread_ts
                                         or find_metrics_thread_ts(client, today))
+    post_ch = _postable_channel(client, channel_id)
     upload_resp = client.files_upload_v2(
-        channel=channel_id,
+        channel=post_ch,
         thread_ts=thread_ts,
         file=str(image_path),
         filename=file_name or f"{comment} {today.month}.{today.day}.png",
@@ -943,12 +958,12 @@ def post_reply_with_image(
         "file": _uploaded_file_id(upload_resp),
     }
     if wait_visible and out["ok"]:
-        out["visible"] = wait_for_share(client, channel_id, thread_ts,
+        out["visible"] = wait_for_share(client, post_ch, thread_ts,
                                         out.get("file") or "", text=comment)
     if react_emoji and thread_ts:   # a top-level post has no ts to react to
         try:
             r = client.reactions_add(
-                channel=channel_id, timestamp=thread_ts, name=react_emoji
+                channel=post_ch, timestamp=thread_ts, name=react_emoji
             )
             out["reaction_ok"] = r.get("ok")
         except Exception as e:

@@ -19,6 +19,9 @@ export PYTHONPATH="$(pwd)" NO_COLOR=1
 LOG_FILE="$LOG_DIR/org-campaign-metrics-$(date +%Y-%m-%d-%H%M%S).log"
 "$VENV_PY" -u -m automations.org_campaign_metrics.run --write >> "$LOG_FILE" 2>&1
 ST=$?
+# Where pass 1 ends: on 11/4 pass 1 died on a Sheets read timeout and the
+# alert showed the last 15 lines of the CLEAN SCI pass, hiding the error.
+PASS1_LINES=$(wc -l < "$LOG_FILE" | tr -d ' ')
 
 # ---- SCI PASS (captainship split, Carlos 2026-10-02) ------------------------
 # The 15 captainship-only owners' Focus Reports live in the SCI Recruiting
@@ -42,13 +45,17 @@ RERUN=""
 [ $ST_SCI -ne 0 ] && RERUN="${RERUN:+$RERUN  +  }lucy rerun org_campaign_metrics --write --ssid $ORG_SCI_SSID"
 [ $ST -eq 0 ] && ST=$ST_SCI
 if [ $ST -ne 0 ]; then
-    "$VENV_PY" - "$LOG_FILE" "$RERUN" <<'PY'
+    FAILED_END=0                      # 0 = whole log (the SCI pass failed)
+    [ $ST_SCI -eq 0 ] && FAILED_END=$PASS1_LINES
+    "$VENV_PY" - "$LOG_FILE" "$RERUN" "$FAILED_END" <<'PY'
 import sys
 from pathlib import Path
 try:
     from automations.day_orchestrator import notify
     from automations.day_orchestrator.registry import load_config
-    tail = Path(sys.argv[1]).read_text().splitlines()[-15:]
+    lines = Path(sys.argv[1]).read_text().splitlines()
+    end = int(sys.argv[3] or 0)
+    tail = (lines[:end] if end else lines)[-15:]
     notify.post_alert(":rotating_light: *Org Focus Report campaign stamper* failed",
                       ["```"] + tail + ["```",
                        "Re-run: `%s`" % sys.argv[2]],
