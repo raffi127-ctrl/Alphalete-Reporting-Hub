@@ -101,6 +101,14 @@ class Text(unittest.TestCase):
             "Owner Sales Today - 5:50 PM CT", "",
             "1. C 9", "2. A 5", "3. B 5", "", "🏆 TOTAL: 19"])
 
+    def test_not_in_total_is_ranked_but_not_counted(self):
+        now = dt.datetime(2026, 11, 4, 17, 50)
+        text = run.build_text({"Jairo Ruiz": 40, "Rafael Hidalgo": 26, "Drew Tepper": 27},
+                              now, not_in_total=["rafael  hidalgo"])
+        self.assertEqual(text.splitlines()[2:], [
+            "1. Jairo Ruiz 40", "2. Drew Tepper 27", "3. Rafael Hidalgo 26",
+            "", "🏆 TOTAL: 67"])
+
     def test_custom_title(self):
         now = dt.datetime(2026, 10, 24, 17, 50)
         text = run.build_text({"A": 1}, now, "NDS Sales Today")

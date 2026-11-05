@@ -46,6 +46,12 @@ JAIRO_CAMPAIGN = "nds"
 # org owners post ... moving forward".
 SSO_EXTRA = ["Samuel Acay"]
 
+# Listed and ranked in the SSO chat but NOT counted in its TOTAL. Raf 2026-11-04:
+# "Can my sales be added here so I can compete in their chat? But don't add my
+# sales to the total sales please." Not on SOUTH_SHORE_NAMES: he isn't South
+# Shore, and that list also feeds the Recruiting Dashboard.
+SSO_NOT_IN_TOTAL = ["Rafael Hidalgo"]
+
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.
 OWNER_FALLBACK = {

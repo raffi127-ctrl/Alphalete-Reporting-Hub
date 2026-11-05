@@ -19,7 +19,9 @@ Owner Sales Today - 5:50 PM CT
 
 **Also into SOUTHSHORE ORG** (Colten, 2026-10-24): same text, only the South
 Shore owners (`funnel_board.roster.SOUTH_SHORE_NAMES`: Colten, Jairo, Drew,
-Eveliz ...), own total, own "nothing changed" skip.
+Eveliz ...), own total, own "nothing changed" skip. **Raf is listed there too**
+(Raf, 2026-11-04: to compete): ranked like the others, not counted in the total
+(`config.SSO_NOT_IN_TOTAL`).
 
 **And into Jairo's A PLAYERSSS** (Jairo + Eve, 2026-10-26): "NDS Sales
 Today" -- only NDS offices' sales, only owners on our Org board, with its own

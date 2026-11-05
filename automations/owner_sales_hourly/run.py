@@ -28,6 +28,8 @@ SOUTH SHORE TOO (Colten 2026-10-24): a second text, only the South Shore owners
 NDS TOO (Jairo 2026-10-26, Eve: "the ones on the same campaign as Jairo"): a
 third text into his "A PLAYERSSS" chat -- only sales from NDS offices, only
 owners on our Org board, titled "NDS Sales Today".
+RAF IN THE SSO CHAT (Raf 2026-11-04): his line ranks with theirs so he can
+compete, but his sales stay out of that chat's TOTAL (cfg.SSO_NOT_IN_TOTAL).
 
 Usage
   # dry-run (DEFAULT): print the text, resolve the chat on a Mac, send nothing
@@ -46,7 +48,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from automations.owner_sales_hourly import config as cfg
 
@@ -178,13 +180,17 @@ def _clock(now: dt.datetime) -> str:
 
 
 def build_text(totals: Dict[str, int], now: dt.datetime,
-               title: str = "Owner Sales Today") -> str:
+               title: str = "Owner Sales Today",
+               not_in_total: Iterable[str] = ()) -> str:
+    """`not_in_total`: owners who get a ranked line but don't count in the TOTAL."""
+    left_out = {_norm(n) for n in not_in_total}
     rows: List[Tuple[str, int]] = sorted(totals.items(),
                                          key=lambda kv: (-kv[1], kv[0]))
     lines = ["%s - %s CT" % (title, _clock(now)), ""]
     for i, (name, n) in enumerate(rows, 1):
         lines.append("%d. %s %d" % (i, name, n))
-    lines += ["", "🏆 TOTAL: %d" % sum(totals.values())]
+    total = sum(n for name, n in rows if _norm(name) not in left_out)
+    lines += ["", "🏆 TOTAL: %d" % total]
     return "\n".join(lines)
 
 
@@ -246,13 +252,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("not on the Org board's top boxes (left off): %s"
               % ", ".join(dropped))
     sso, _ = only_org(everyone, south_shore_owners(_load_aliases()))
+    if sso:     # never a list of only Raf over a TOTAL of 0
+        sso.update(only_org(everyone, {_norm(n) for n in cfg.SSO_NOT_IN_TOTAL})[0])
     nds, _ = only_org(owner_totals(relay, offices, day, cfg.JAIRO_CAMPAIGN), org)
 
     rc = 0
-    for name, group, key, chat_totals, title in (
-            ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today"),
-            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, "Owner Sales Today"),
-            ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today")):
+    for name, group, key, chat_totals, title, not_in_total in (
+            ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today", ()),
+            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, "Owner Sales Today",
+             cfg.SSO_NOT_IN_TOTAL),
+            ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today", ())):
         if args.only and args.only != name:
             continue
         # --only / --force are a person asking for that text now.
@@ -260,17 +269,19 @@ def main(argv: Optional[List[str]] = None) -> int:
             continue
         print("=== %s ===" % (group if isinstance(group, str)
                                else group.get("group")))
-        rc = max(rc, _send_one(group, key, chat_totals, now, day, args, title))
+        rc = max(rc, _send_one(group, key, chat_totals, now, day, args, title,
+                               not_in_total))
     return rc
 
 
 def _send_one(group, key: str, totals: Dict[str, int], now: dt.datetime,
-              day: dt.date, args, title: str = "Owner Sales Today") -> int:
+              day: dt.date, args, title: str = "Owner Sales Today",
+              not_in_total: Iterable[str] = ()) -> int:
     if not totals:
         print("nobody on this chat's list has relayed sales yet — not texting")
         return 0
 
-    text = build_text(totals, now, title)
+    text = build_text(totals, now, title, not_in_total)
     print(text)
     print()
 
