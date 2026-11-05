@@ -1226,5 +1226,57 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "starr",
+    "report_id": "starr_metrics",
+    "label": "Starr's Local Office",
+    "owner": "Starr Rodenhurst",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "sheet_id": "1pI4zYv5TN-4etFNQ1Bstw40L6PyIF5fsC8h11mfZcD4",
+    "knocks_office": "Starr Rodenhurst",
+    "ov_account": "17573",
+    "owner_office": "",
+    "business_name": "Nova Management, Inc.",
+    "website": "",
+    "header_label": "Starr Rodenhurst",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-11-04 (Eve: same dry run as Sahil Multani, Zoom to set up Lucy on 11/05). AT&T D2D like sahil/steve (OwnerVille/AppStream 17573, Nova Management, Inc., Fremont CA -- Pacific), all 11 D2D boards. No ICD Signup row yet: channel held on Megan's DM until her ECO sign-up names it. Sheet 'Starr Rodenhurst - Lucy Metrics' copied from the Master Metrics Templates, shared Editor with alphaletereporting@ (Lucy 4). Schedule off until the Lucy 4 dry run shows data on every board.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

@@ -16564,6 +16564,45 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for sahil. wired by hand 2026-11-04 (Eve: Sahil Multani joining Lucy ECO, dry run). M Coast, Inc, OwnerVille 20490, Raleigh NC. Off until the Lucy 4 dry run shows data on every board."
+  },
+  "starr_metrics": {
+   "order": 26.95,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Starr's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "starr",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "starr_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for starr. wired by hand 2026-11-04 (Eve: same dry run as Sahil Multani, Zoom to set up Lucy on 11/05). AT&T D2D like sahil/steve (OwnerVille/AppStream 17573, Nova Management, Inc., Fremont CA -- Pacific), all 11 D2D boards. No ICD Signup row yet: channel held on Megan's DM until her ECO sign-up names it. Sheet 'Starr Rodenhurst - Lucy Metrics' copied from the Master Metrics Templates, shared Editor with alphaletereporting@ (Lucy 4). Schedule off until the Lucy 4 dry run shows data on every board."
   }
  },
  "read_only_standalone": {

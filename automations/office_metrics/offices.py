@@ -447,6 +447,7 @@ OFFICE_TIMEZONES: dict = {
     "jose":    "America/Los_Angeles",          # Legacy Shore Marketing, California (Megan 2026-10-28; ECO sign-up tz Pacific)
     "aiden":   "America/Los_Angeles",          # Atoori Management, north LA county (Tableau zips, 2026-11-03) -- PACIFIC
     "sahil":   "America/New_York",             # M Coast, Raleigh NC -- Eastern
+    "starr":   "America/Los_Angeles",          # Nova Management, Fremont CA -- Pacific
     "atef":    "America/Denver",               # Domin8 Acquisitions, Denver CO — Mountain
     "trang":   "America/Chicago",              # San Antonio, TX
     "isaiah":  "America/Chicago",              # Dallas, TX
