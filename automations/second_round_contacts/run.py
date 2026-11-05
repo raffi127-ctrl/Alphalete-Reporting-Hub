@@ -62,6 +62,24 @@ def read_lists(app, office: str, labels, days: List[dt.date]) -> List[Tuple[str,
     return out
 
 
+def read_offices(app, offices: List[str], labels, days: List[dt.date]):
+    """(found, errors) across an owner's offices. For the ADDS only: one office
+    this login cannot open must not stop the numbers from the other one."""
+    from automations.applicant_tracker.applicantstream import OfficeNotAvailable
+    found: List[Tuple[str, dt.date, dict]] = []
+    errors: List[str] = []
+    for office in offices:
+        try:
+            found.extend(read_lists(app, office, labels, days))
+        except OfficeNotAvailable as e:
+            _log("  ApplicantStream office %s not available (%s)" % (office, e))
+            errors.append("office %s not available" % office)
+        except Exception as e:  # noqa: BLE001 -- one office never sinks the other
+            _log("  ApplicantStream office %s read failed (%s: %s)" % (office, type(e).__name__, str(e)[:160]))
+            errors.append("office %s %s" % (office, type(e).__name__))
+    return found, errors
+
+
 def plan_adds(found: List[Tuple[str, dt.date, dict]], phones: Dict[str, str],
               emails: Dict[str, str]) -> List[dict]:
     """plan() rows with the EARLIEST day a person appeared attached."""
@@ -85,7 +103,7 @@ def plan_adds(found: List[Tuple[str, dt.date, dict]], phones: Dict[str, str],
 
 def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
              ws=None) -> int:
-    from automations.applicant_tracker.applicantstream import OfficeNotAvailable, session
+    from automations.applicant_tracker.applicantstream import session
     st = S.load()
     failed = 0
     with session() as app:
@@ -96,19 +114,11 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
                 if ws is not None and write:
                     R.stamp(ws, o, "SKIPPED: " + msg)
                 continue
-            try:
-                found = read_lists(app, o.office, C.ADD_LABELS, days)
-            except OfficeNotAvailable as e:
-                _log("  %s: ApplicantStream office %s not available (%s)" % (o.owner, o.office, e))
-                failed += 1
+            found, errors = read_offices(app, o.offices, C.ADD_LABELS, days)
+            failed += len(errors)
+            if len(errors) == len(o.offices):      # nothing was read at all
                 if ws is not None and write:
-                    R.stamp(ws, o, "FAILED: office %s not available" % o.office)
-                continue
-            except Exception as e:  # noqa: BLE001 -- one owner never sinks the rest
-                _log("  %s: ApplicantStream read failed (%s: %s)" % (o.owner, type(e).__name__, str(e)[:160]))
-                failed += 1
-                if ws is not None and write:
-                    R.stamp(ws, o, "FAILED: %s" % type(e).__name__)
+                    R.stamp(ws, o, "FAILED: " + "; ".join(errors))
                 continue
             try:
                 svc = K.service(o.account)
@@ -150,8 +160,9 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
                 S.save(st)
                 added += 1
                 _log("    + %s" % display)
-            res = "%d added, %d already there, %d skipped (%d second-round rows read)%s" % (
-                added, exists, skipped, len(found), "" if write else " [DRY RUN]")
+            res = "%d added, %d already there, %d skipped (%d second-round rows read)%s%s" % (
+                added, exists, skipped, len(found), "" if write else " [DRY RUN]",
+                "".join(" -- FAILED: %s" % e for e in errors))
             _log("  %s: %s" % (o.owner, res))
             if ws is not None and write:
                 R.stamp(ws, o, res)
@@ -160,10 +171,26 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
 
 # ---------------------------------------------------------------- audit --
 
-def gather_facts(app, owner: R.Owner, keys: set, today: dt.date) -> Dict[str, dict]:
-    """{key: {offered, bob, ns_sched, ns_showed}} for the tracked people of one office."""
+def audit_offices(owner: R.Owner, entries: Dict[str, dict]) -> List[str]:
+    """The roster's offices plus any office a tracked contact was added from.
+    Taking an old funnel off the roster must not make its people look not hired."""
+    out = list(owner.offices)
+    for e in entries.values():
+        office = e.get("office")
+        if office and e.get("status") == S.TRACKED and office not in out:
+            out.append(office)
+    return out
+
+
+def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str, dict]:
+    """{key: {offered, bob, ns_sched, ns_showed}} for the tracked people, across
+    every office. A read that fails RAISES: the audit then skips this owner,
+    because a person whose office went unread would look not hired and get
+    deleted."""
     days = [today - dt.timedelta(days=i) for i in range(C.AUDIT_LOOKBACK_DAYS, -1, -1)]
-    found = read_lists(app, owner.office, C.AUDIT_LABELS, days)
+    found: List[Tuple[str, dt.date, dict]] = []
+    for office in offices:
+        found.extend(read_lists(app, office, C.AUDIT_LABELS, days))
     facts: Dict[str, dict] = {k: {} for k in keys}
     slot = {C.LABEL_OFFERED: "offered", C.LABEL_BOB: "bob", C.LABEL_NS_SCHED: "ns_sched",
             C.LABEL_NS_SHOWED: "ns_showed", C.LABEL_SHOWED: "showed"}
@@ -195,7 +222,7 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
             if not keys:
                 continue
             try:
-                facts_all[account] = gather_facts(app, o, keys, today)
+                facts_all[account] = gather_facts(app, audit_offices(o, entries), keys, today)
             except Exception as e:  # noqa: BLE001
                 _log("  %s: ApplicantStream read failed (%s) -- audit skipped for this owner" % (o.owner, type(e).__name__))
                 failed += 1

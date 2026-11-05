@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 from automations.second_round_contacts import config as C
@@ -18,10 +19,15 @@ class Owner:
     ov_campaign: str
     start: Optional[dt.date]
     notes: str
+    # Every office to read, current one first (`office` is always offices[0]).
+    offices: List[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.offices = self.offices or [self.office]
 
     @property
     def label(self) -> str:
-        return "%s (office %s -> %s)" % (self.owner, self.office, self.account)
+        return "%s (office %s -> %s)" % (self.owner, ", ".join(self.offices), self.account)
 
 
 def _norm(s) -> str:
@@ -55,7 +61,10 @@ def parse_rows(values: List[List[str]]) -> List[Owner]:
                 break
             except ValueError:
                 continue
-        out.append(Owner(row=i, owner=owner, office="".join(ch for ch in office if ch.isdigit()) or office,
+        # "24232, 24153" = moved to a new funnel: the new office first, then the
+        # old one, which keeps being read while people still finish there.
+        offices = re.findall(r"\d+", office) or [office]
+        out.append(Owner(row=i, owner=owner, office=offices[0], offices=offices,
                          account=account.lower(),
                          active=at("Active").lower() in ("yes", "y", "true", "on"),
                          ov_campaign=at("OwnerVille Campaign") or C.DEFAULT_OV_CAMPAIGN,

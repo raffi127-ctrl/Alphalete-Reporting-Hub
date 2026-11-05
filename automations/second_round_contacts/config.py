@@ -21,7 +21,8 @@ day; "fully badged" = OwnerVille -> Onboard -> View Progress -> campaign
 
 WHO IS SYNCED is the "2R Contacts" tab Megan / Eve keep on the Org workbook
 (next to Eve's "New Owners" bank): one row per owner -- their ApplicantStream
-office id, their reception Gmail, Active Yes/No. A row only runs once that
+office id (when an owner moves to a new funnel: "new, old", e.g. "24232, 24153",
+and both are read), their reception Gmail, Active Yes/No. A row only runs once that
 Gmail's Contacts token is on the machine (contacts-rw-token-<local>.json,
 made once with fiber_owners_distro.contacts_write --authorize).
 """

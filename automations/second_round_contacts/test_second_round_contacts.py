@@ -1,11 +1,13 @@
 import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.second_round_contacts import config as C
 from automations.second_round_contacts import contacts as K
 from automations.second_round_contacts import roster as R
 from automations.second_round_contacts import rules
 from automations.second_round_contacts import state as S
+from automations.second_round_contacts import run as RUN
 from automations.second_round_contacts.run import plan_adds
 
 T = dt.date(2026, 10, 31)
@@ -65,6 +67,54 @@ class Roster(unittest.TestCase):
         vals = [["Reception Email", "Owner", "Active", "ApplicantStream Office ID"],
                 ["a@b.com", "X Y", "yes", "123"]]
         self.assertEqual(R.parse_rows(vals)[0].office, "123")
+
+
+class TwoOffices(unittest.TestCase):
+    """Omar 2026-11-05: his own funnel is 24232, the first run read Raf's 24153."""
+
+    A = {"first_name": "Ana", "last_name": "Lopez", "phone": "2145550101", "email": ""}
+
+    def owner(self, cell="24232, 24153"):
+        return R.parse_rows([C.ROSTER_HEADERS, ["Omar", cell, "r@x.com", "Yes", "", "", "", "", ""]])[0]
+
+    def test_new_office_first_old_still_read(self):
+        o = self.owner()
+        self.assertEqual((o.office, o.offices), ("24232", ["24232", "24153"]))
+        self.assertEqual(self.owner("24153").offices, ["24153"])
+
+    def test_adds_keep_the_office_that_could_be_read(self):
+        from automations.applicant_tracker.applicantstream import OfficeNotAvailable
+
+        def fake(_app, office, _labels, _days):
+            if office == "24232":
+                raise OfficeNotAvailable("no")
+            return [(C.LABEL_BOOKED, T, self.A)]
+        with mock.patch.object(RUN, "read_lists", fake):
+            found, errors = RUN.read_offices(None, ["24232", "24153"], C.ADD_LABELS, [T])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(errors, ["office 24232 not available"])
+
+    def test_audit_merges_offices_earliest_date(self):
+        key = S.key_for(self.A)
+        by_office = {"24232": [(C.LABEL_OFFERED, dt.date(2026, 11, 4), self.A)],
+                     "24153": [(C.LABEL_OFFERED, dt.date(2026, 11, 2), self.A)]}
+        with mock.patch.object(RUN, "read_lists", lambda _a, office, _l, _d: by_office[office]):
+            facts = RUN.gather_facts(None, ["24232", "24153"], {key}, T)
+        self.assertEqual(facts[key]["offered"], dt.date(2026, 11, 2))
+
+    def test_audit_refuses_to_decide_on_an_unread_office(self):
+        def fake(_a, office, _l, _d):
+            if office == "24153":
+                raise RuntimeError("down")
+            return []
+        with mock.patch.object(RUN, "read_lists", fake):
+            with self.assertRaises(RuntimeError):
+                RUN.gather_facts(None, ["24232", "24153"], {"p:1"}, T)
+
+    def test_audit_still_reads_the_office_a_contact_came_from(self):
+        entries = {"p:1": {"office": "24153", "status": S.TRACKED},
+                   "p:2": {"office": "99999", "status": S.REMOVED}}
+        self.assertEqual(RUN.audit_offices(self.owner("24232"), entries), ["24232", "24153"])
 
 
 class Contacts(unittest.TestCase):
