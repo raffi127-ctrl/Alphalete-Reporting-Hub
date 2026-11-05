@@ -101,6 +101,56 @@ def dd_join(log=print) -> int:
     return 0
 
 
+def soh_dump(log=print) -> int:
+    """Every crew SaraPlus order the boards price -- one row per order, ALL
+    export columns, priced $ first -- to the control sheet's 'DD Probe' tab.
+    Carlos 2026-11-05: the Revenue Board said $6,153 for 10.25-10.31 and his
+    DD says $6,311 -- reconciling that line by line needs the orders behind
+    the board, which only live in Lucy 2's SOH cache. READ-ONLY on SaraPlus
+    (reuses today's cache), never touches a board."""
+    import collections
+    from automations.nds_metrics.run import (_parse_date, _soh_cell, load_soh,
+                                             price_order)
+    from automations.recruiting_report.fill import open_by_key
+    soh = load_soh(log=log)
+    if not soh:
+        log("[sohdump] no SaraPlus orders available -- nothing to dump")
+        return 1
+    ix, crew, pulled_at = soh
+    hdr = sorted(ix, key=ix.get)
+    first = [h for h in ("User Name", "Order ID", "Order Date",
+                         "Wireless Status", "Wireless Active Date",
+                         "Wireless Line Count", "Port Line Count",
+                         "BYOD Line Count", "New Line Count",
+                         "Upgrade Line Count", "Customer Name", "Phone",
+                         "TPV Status") if h in ix]
+    cols = first + [h for h in hdr if h not in first]
+    rows = [["priced $"] + cols]
+    by_rep_week = collections.defaultdict(float)
+    for r in crew:
+        amt = price_order(ix, r)
+        rows.append([amt] + [_soh_cell(ix, r, c) for c in cols])
+        act = _parse_date(_soh_cell(ix, r, "Wireless Active Date"))
+        st = _soh_cell(ix, r, "Wireless Status").lower()
+        key = ("cancel" if ("cancel" in st or "disconnect" in st)
+               else act.isoformat() if act else "open")
+        by_rep_week[(_soh_cell(ix, r, "User Name"), key)] += amt
+    for (rep, key), amt in sorted(by_rep_week.items()):
+        log(f"SOHDUMP {rep[:26]:26} {key:10} ${amt:,.0f}")
+    ctl = open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+    try:
+        tab = ctl.worksheet("DD Probe")
+    except Exception:  # noqa: BLE001
+        tab = ctl.add_worksheet("DD Probe", rows=600, cols=120)
+    tab.resize(rows=max(len(rows) + 5, 50), cols=max(len(rows[0]), 2))
+    tab.clear()
+    tab.update(rows, "A1", value_input_option="RAW")
+    log(f"[sohdump] {len(rows) - 1} crew order(s), {len(cols)} column(s), "
+        f"SaraPlus pulled {pulled_at:%m/%d %H:%M} -> 'DD Probe' tab")
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     from automations.office_metrics import nds_orderlog as NO
     from automations.total_knocks import guests
@@ -213,6 +263,8 @@ def _entry(argv=None):
     args = list(argv if argv is not None else _sys.argv[1:])
     if "--dd-join" in args:
         return dd_join()
+    if "--soh-dump" in args:
+        return soh_dump()
     return main(argv)
 
 
