@@ -953,7 +953,8 @@ def _to(key: str) -> str:
 # blue date band ("ok como está").
 CAPTAINS: List[Captain] = [
     Captain("rafael", "Rafael", "rafael", title_bg="#E8612A", to=_to("rafael"), churn=[
-        ChurnSource(_cap.open_ws_new_int,  _ni_render, "New Internet Churn"),
+        ChurnSource(_cap.open_ws_new_int,  _ni_render, "New Internet Churn",
+                    fiber_tiers=True),
         ChurnSource(_cap.open_ws_wireless, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_rafael_boxes()),
