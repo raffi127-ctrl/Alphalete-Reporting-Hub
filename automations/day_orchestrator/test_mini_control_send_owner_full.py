@@ -28,6 +28,8 @@ class SendOwnerFull(unittest.TestCase):
         self.assertIn("--skip-sheets", cmd)
         self.assertIn("--skip-tableau", cmd)
         self.assertIn("knock boards", cmd[cmd.index("--note") + 1])
+        # Owners filter on the subject: it never changes unless asked.
+        self.assertNotIn("--subject-prefix", cmd)
 
     def test_full_keeps_sheets_and_tableau(self):
         cmd = self._cmd("colten to=a@b.com,c@d.com full=yes date=2026-11-05")
@@ -37,6 +39,12 @@ class SendOwnerFull(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--to") + 1], "a@b.com,c@d.com")
         self.assertEqual(cmd[cmd.index("--date") + 1], "2026-11-05")
         self.assertNotIn("knock boards", cmd[cmd.index("--note") + 1])
+        self.assertNotIn("--subject-prefix", cmd)
+        self.assertTrue(cmd[cmd.index("--note") + 1].startswith("Updated"))
+
+    def test_prefix_only_when_asked(self):
+        cmd = self._cmd("colten to=a@b.com prefix=Sample")
+        self.assertEqual(cmd[cmd.index("--subject-prefix") + 1], "Sample")
 
     def test_full_still_needs_to(self):
         ok, msg = mc._action_captainship_send_owner("colten full=yes")

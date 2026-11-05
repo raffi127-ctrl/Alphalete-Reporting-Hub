@@ -7524,8 +7524,11 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
                      (`--drop-owner`: grey note, still counted in "N of M").
         note=        one bold line above the greeting, e.g. why this copy
                      exists. Defaults to a correction notice.
-        prefix=      Subject prefix, so the copy is not read as a duplicate of
-                     the morning's report. Default "Corrected — ".
+        prefix=      Subject prefix. Default NONE: the subject stays exactly
+                     the morning's, because owners file these reports with
+                     Gmail filters on the subject and a changed one can miss
+                     the folder they read (Eve 2026-11-05). The note at the top
+                     of the mail is what says it is an update.
         date=        rebuild for another day (default today).
         full=yes     rebuild the WHOLE report, Sales Board and Tableau
                      sections included. For a correction in those sections
@@ -7606,16 +7609,18 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
         # The whole report, rebuilt from the boards as they are now. --no-wait:
         # a correction comes after the fact, the morning fills are long done.
         cmd += ["--no-wait"]
-        default_note = "Corrected copy — this replaces this morning's report."
+        default_note = ("Updated report: this replaces this morning's "
+                        "version.")
     else:
         # A knocks correction, not a rebuild of the whole report: those two
         # sections would take the Sheets/Tableau sessions, and the mail
         # already prints its own 'pending' note where they'd be.
         cmd += ["--skip-sheets", "--skip-tableau"]
-        default_note = ("Corrected copy — this replaces the knock boards in "
-                        "this morning's report.")
-    cmd += ["--subject-prefix", opts.get("prefix", "Corrected — "),
-            "--note", opts.get("note", default_note)]
+        default_note = ("Updated report: this replaces the knock boards in "
+                        "this morning's version.")
+    if opts.get("prefix"):
+        cmd += ["--subject-prefix", opts["prefix"]]
+    cmd += ["--note", opts.get("note", default_note)]
     if opts.get("cc"):
         cmd += ["--cc", opts["cc"]]
     if date_arg:
