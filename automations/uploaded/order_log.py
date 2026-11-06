@@ -1819,6 +1819,12 @@ def _sale_type_counts(recs) -> dict:
 # most likely not selling any more — no tab for them.
 REP_TAB_ACTIVE_WEEKS = 2
 
+# Owners whose rep tabs show ONLY Pending / Disconnect / Cancel (+ the pay-week
+# calendar): no "Paid Friday" week sections, no pay-level columns. Sahil
+# 2026-11-05: he transfers sales between reps and runs the paycheck talk
+# himself every Thursday, so Lucy's "paid" list would only confuse it.
+NO_PAY_REP_TAB_OWNERS = {"Sahil Multani"}
+
 
 def _rep_tab_cutoff(newest: date, weeks: int = REP_TAB_ACTIVE_WEEKS) -> date:
     """Earliest sale date that still earns a rep their own tab: the Sunday of
@@ -1848,7 +1854,8 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "",
         return 0
     today = today or date.today()
 
-    pay_grid = _load_pay_grid(owner)
+    hide_pay = owner in NO_PAY_REP_TAB_OWNERS
+    pay_grid = None if hide_pay else _load_pay_grid(owner)
     # When the office has a pay structure, each rep tab gains one column per
     # leader level (after Activation Date) showing that product's pay, plus a
     # TOTAL row per week. No structure -> the tab is exactly as before.
@@ -1910,6 +1917,8 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "",
 
     for rep, bucket in per_rep.items():
         weeks, pdc, latest = bucket["weeks"], bucket["pdc"], bucket["latest"]
+        if hide_pay:
+            weeks = {}
         if not weeks and not pdc:
             continue
         # No dated line at all -> can't tell they went quiet, so keep the tab.
@@ -2340,7 +2349,9 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
         else:
             try:
                 result = post_reply_with_file(
-                    xlsx_path, comment="📋 Order Log (*NEW* - Track your paycheck)",
+                    xlsx_path, comment=("📋 Order Log — Pending / Cancels"
+                                        if owner_name in NO_PAY_REP_TAB_OWNERS
+                                        else "📋 Order Log (*NEW* - Track your paycheck)"),
                     react_emoji="clipboard", file_name=slack_filename)
                 print(f"  ✓ Slack: posted Order Log (file={result.get('file')})")
             except SlackPostError as e:
