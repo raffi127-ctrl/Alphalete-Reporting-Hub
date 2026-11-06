@@ -1328,5 +1328,57 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "oren",
+    "report_id": "oren_metrics",
+    "label": "Oren's Local Office",
+    "owner": "Oren Shezaf",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "sheet_id": "17zuMOIdwpgf4ssCUHkvhERTe1sf2MvQtNJVieIP7VDs",
+    "knocks_office": "Oren Shezaf",
+    "ov_account": "22536",
+    "owner_office": "",
+    "business_name": "Omnia Management Inc",
+    "website": "",
+    "header_label": "Oren Shezaf",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-11-06 (Megan: 'Oren is set up to do a zoom to enroll - let's do his dry run'). Omnia Management Inc, OwnerVille/AppStream 22536 (office-mapping.json), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Oren Shezaf - Lucy Metrics' 17zuMOIdwpgf4ssCUHkvhERTe1sf2MvQtNJVieIP7VDs (Master Metrics Templates copy, writer alphaletereporting@). Timezone from his Slack profile (Central) until his order-log zips say otherwise. Scheduler OFF until the dry run is read.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

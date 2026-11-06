@@ -16861,8 +16861,8 @@
   "install_verizon_house_feed_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "NOT in the 4am batch. Installs/refreshes com.alphalete.verizon-house-feed on Lucy 4 (StartInterval 300, wrapper gates 10:00-21:59 Central): reads Nico Murrugarra's Verizon Optix on Lucy 4 and relays knocks + sales under office key 'nicolas' until his own ECO machine relays (Megan 2026-11-06). Needs a one-time Optix sign-in at Lucy 4 first: lucy rerun optix_signin_lucy4. Touches no Sheet.",
-   "machine": "Lucy 4",
-   "display_name": "Install Verizon house feed (Nico, 5-min)",
+   "machine": null,
+   "display_name": "Install Verizon house feed (Nico, 5-min, Megan's laptop)",
    "command": [
     "automations.day_orchestrator.install_agent"
    ],
@@ -16879,12 +16879,14 @@
    "depends_on": [],
    "verify": {
     "type": "not_configured"
-   }
+   },
+   "hand_run_only": true,
+   "_machine_note": "Runs on MEGAN'S LAPTOP, not a Lucy (Megan 2026-11-06: 'we need to do it on this laptop in the background not a lucy'). Install it locally: python -m automations.day_orchestrator.install_agent verizon-house-feed."
   },
   "uninstall_verizon_house_feed_agent": {
    "on_scheduler": false,
    "_note": "Turn the Lucy 4 Verizon house feed OFF the day Nico's own ECO machine relays — two senders under 'nicolas' would report his office twice.",
-   "machine": "Lucy 4",
+   "machine": null,
    "display_name": "Uninstall Verizon house feed (Nico)",
    "command": [
     "automations.day_orchestrator.uninstall_agent"
@@ -16903,34 +16905,14 @@
    "depends_on": [],
    "verify": {
     "type": "not_configured"
-   }
-  },
-  "optix_signin_lucy4": {
-   "on_scheduler": false,
-   "hand_run_only": true,
-   "_note": "Opens Verizon Optix in Lucy 4's own browser profile for a ONE-TIME human sign-in (Nico's account). Someone must be at / screen-sharing Lucy 4. Waits up to 5 min and verifies by the 'select your profile' page.",
-   "machine": "Lucy 4",
-   "display_name": "Optix sign-in on Lucy 4 (Verizon, by hand)",
-   "command": [
-    "automations.icd_alerts.optix_signin"
-   ],
-   "timeout_minutes": 8,
-   "source_type": "local",
-   "data_sources": [],
-   "cadence": {
-    "weekdays": []
    },
-   "priority": "P3",
-   "freshness_target": null,
-   "depends_on": [],
-   "verify": {
-    "type": "not_configured"
-   }
+   "hand_run_only": true,
+   "_machine_note": "Runs on MEGAN'S LAPTOP, not a Lucy (Megan 2026-11-06: 'we need to do it on this laptop in the background not a lucy'). Install it locally: python -m automations.day_orchestrator.install_agent verizon-house-feed."
   },
   "verizon_house_feed_preview": {
    "on_scheduler": false,
    "_note": "One preview read of Nico's Optix on Lucy 4 — prints reps/knocks/sales, sends nothing.",
-   "machine": "Lucy 4",
+   "machine": null,
    "display_name": "Verizon house feed — preview read (Nico)",
    "command": [
     "automations.verizon_office.house_feed"
@@ -16950,7 +16932,48 @@
    "depends_on": [],
    "verify": {
     "type": "not_configured"
-   }
+   },
+   "hand_run_only": true,
+   "_machine_note": "Runs on MEGAN'S LAPTOP, not a Lucy (Megan 2026-11-06: 'we need to do it on this laptop in the background not a lucy'). Install it locally: python -m automations.day_orchestrator.install_agent verizon-house-feed."
+  },
+  "oren_metrics": {
+   "order": 36.96,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Oren's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "oren",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "oren_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for oren. wired by hand 2026-11-06 (Megan: 'Oren is set up to do a zoom to enroll - let's do his dry run'). Omnia Management Inc, OwnerVille/AppStream 22536 (office-mapping.json), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Oren Shezaf - Lucy Metrics' 17zuMOIdwpgf4ssCUHkvhERTe1sf2MvQtNJVieIP7VDs (Master Metrics Templates copy, writer alphaletereporting@). Timezone from his Slack profile (Central) until his order-log zips say otherwise. Scheduler OFF until the dry run is read."
   }
  },
  "read_only_standalone": {
