@@ -419,7 +419,8 @@ _MORE = [
     # Photos channel #indeed-photos-omar-mohammads-office created 10/19 (Lucy +
     # Lucy Reporting invited).
     ("omar", "Omar Mohammad", ARS_M_TO_Q, "Omar Mohammad", "24153", "Kalkan Marketing",
-     "C0C6HKZ63EK", "C0C9X8Y56R5", r"kalkan\s*marketing\s*-\s*\d.*1st\s*round"),
+     # 11/06: the team posts 1st Rounds in #24232-kalkan-marketing-inc-omar-mohamad now
+     "C0CEZ64FYM6", "C0C9X8Y56R5", r"kalkan\s*marketing\s*-\s*\d.*1st\s*round"),
     # Cody Cannon (Maddie 10/19), Corpus Christi TX. Lucia posts
     # "*AEON - October 19th - 1st rounds*" in his recruiting room every day
     # (since 8/31); the "*AEON* *EOD - 10/16 - Interviewers Daily Report*"

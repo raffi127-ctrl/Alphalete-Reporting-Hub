@@ -65,7 +65,8 @@ OFFICES = {
     # knocks row) -- 10/27's test jobs all came back "no OwnerVille login
     # saved". 10/29 test jobs found Calvin Kilgore, Martin Fleming and Pedro
     # Guerrero in his View Progress (RES-AT&T) -> LIVE 2026-10-29 (Megan: yes).
-    "omar": Office(key="omar", owner="Omar Mohamad", channel="C0C6HKZ63EK",
+    # 2026-11-06: C0C6HKZ63EK renamed #old-omar-dont-use; live room = #24232-kalkan-marketing-inc-omar-mohamad
+    "omar": Office(key="omar", owner="Omar Mohamad", channel="C0CEZ64FYM6",
                    uploader="eco", eco_key="omar", mode="live"),
 }
 

@@ -109,7 +109,7 @@ class Office:
 # Omar first (Raf: "Let's test in Omar's office").
 OFFICES: Dict[str, Office] = {
     "omar": Office(key="omar", owner="Omar Mohamad", appstream_id="24153",
-                   channel="C0C6HKZ63EK", bgc_mode="dry", tz="America/Detroit",
+                   channel="C0CEZ64FYM6", bgc_mode="dry", tz="America/Detroit",
                    alert_at="17:30"),   # = 4:30 PM CT
     # Raf's MacBook (ECO key raf, enrolled 11/03) is the FIRST test machine
     # (Megan 2026-11-04): his Sterling account is rahidalgo, codes to raffi127.

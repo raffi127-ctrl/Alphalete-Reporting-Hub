@@ -9372,6 +9372,67 @@ def _action_slack_delete(args: str) -> tuple[bool, str]:
     return True, f"deleted {ts} from {cid}"
 
 
+def _action_slack_copy_thread(args: str) -> tuple[bool, str]:
+    """Re-post one of Lucy's threads into another room, as Lucy — Slack has no
+    "move", so an office that changes rooms gets its posts copied over.
+
+      slack_copy_thread <from_channel> <thread_ts> <to_channel>
+
+    The parent and every reply LUCY wrote go over in order, text + blocks,
+    images re-uploaded into the new thread; other people's replies stay
+    behind. Copy only: the old thread is untouched (retract it with
+    `slack_delete` once the copy is checked). Megan 2026-11-06, Omar's
+    #old-omar-dont-use -> #24232-kalkan-marketing-inc-omar-mohamad."""
+    import ssl as _ssl, time as _time
+    import urllib.request
+    parts = (args or "").split()
+    if len(parts) < 3:
+        return False, "slack_copy_thread needs <from_channel> <thread_ts> <to_channel>"
+    src, ts, dest = parts[0], parts[1], parts[2]
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        token = _load_token()
+        ctx = _ssl.create_default_context(cafile=certifi.where())
+        client = WebClient(token=token, ssl=ctx)
+        me = client.auth_test()["user_id"]
+        msgs = client.conversations_replies(channel=src, ts=ts, limit=200)["messages"]
+        mine = [m for m in msgs if m.get("user") == me]
+        if not mine or mine[0].get("ts") != ts:
+            return False, f"{src}/{ts} is not a thread Lucy ({me}) started"
+        new_ts, copied = None, 0
+        for m in mine:
+            text = m.get("text") or ""
+            if m.get("files"):
+                for f in m["files"]:
+                    req = urllib.request.Request(
+                        f["url_private"], headers={"Authorization": f"Bearer {token}"})
+                    data = urllib.request.urlopen(req, context=ctx, timeout=60).read()
+                    if data[:15].lower().startswith(b"<!doctype html"):
+                        return False, f"could not download {f.get('name')} (sign-in page)"
+                    client.files_upload_v2(
+                        channel=dest, thread_ts=new_ts, file=data,
+                        filename=f.get("name") or "image.png",
+                        initial_comment=text or None)
+                    text = ""
+            else:
+                kw = {"channel": dest, "text": text,
+                      "unfurl_links": False, "unfurl_media": False}
+                if m.get("blocks"):
+                    kw["blocks"] = m["blocks"]
+                if new_ts:
+                    kw["thread_ts"] = new_ts
+                r = client.chat_postMessage(**kw)
+                if new_ts is None:
+                    new_ts = r["ts"]
+            copied += 1
+            _time.sleep(1.2)
+    except Exception as e:  # noqa: BLE001
+        return False, f"copy FAILED after part of it: {type(e).__name__} {str(e)[:160]}"
+    return True, f"copied {copied} of Lucy's msg(s) {src}/{ts} -> {dest}/{new_ts}"
+
+
 def _action_slack_dedupe(args: str) -> tuple[bool, str]:
     """Delete REPEATS of a line Lucy posted, keeping the first -- across every
     room her call-outs go to, or one room.
@@ -9644,6 +9705,7 @@ ACTIONS = {
     "focus_dm_check": _action_focus_dm_check,
     "slack_thread": _action_slack_thread,
     "slack_delete": _action_slack_delete,
+    "slack_copy_thread": _action_slack_copy_thread,
     "slack_dedupe": _action_slack_dedupe,
     "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,

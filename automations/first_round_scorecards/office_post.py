@@ -90,7 +90,8 @@ CHANNELS: Dict[str, str] = {
     "Tre Mitchell": "C0AUG0B5SKC",            # Lamar (Tre) Mitchell
     "Nii Tagoe": "C0AVA8LSGLQ",               # #23275-next-horizon-group-inc-nii-tagoe (Eve, 2026-10-08)
     # Camila 2026-10-19 (ZOOM 7, Kalkan Marketing)
-    "Omar Mohammad": "C0C6HKZ63EK",           # #omars-mohammad-office-recruiting-24153-rafael-hidalgo
+    # C0C6HKZ63EK (24153 room) renamed #old-omar-dont-use 2026-11-05 (Raf)
+    "Omar Mohammad": "C0CEZ64FYM6",           # #24232-kalkan-marketing-inc-omar-mohamad
     # Eve 2026-10-21 (no script of their own yet -> graded on Rafael's)
     "Luke Baldwin": "C0AUUSV77TK",            # #20958-takeoff-enterprises-inc-2nd-luke-baldwin
     "Mercy Ohiokhai": "C0BLZTZKDDE",          # #23888-mercel-management-inc-mercy-ohiokhai
