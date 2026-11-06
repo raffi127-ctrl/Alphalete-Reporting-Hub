@@ -505,6 +505,20 @@ def _entry(argv=None):
         return soh_dump()
     if "--line-calib" in args:
         return line_calib()
+    if "--week-rates" in args:
+        import datetime as _dt
+        from automations.nds_metrics import activation_by_week as AW
+        from automations.nds_metrics import line_revenue as LR
+        from automations.nds_metrics.run import load_soh
+        soh = load_soh()
+        if not soh:
+            print("[week] no SaraPlus orders"); return 1
+        ix, orders, _p = soh
+        soh_active, _ = LR.soh_dates(ix, orders)
+        state, feed_date, lines = LR.replay(LR.cached_feeds(), soh_active, save=False)
+        AW.log_rows(AW.rows_for(soh, lines, state, _dt.date.today()))
+        print("=== done ===", flush=True)
+        return 0
     if "--protect" in args:
         import datetime as _dt
         from automations.nds_metrics import line_revenue as LR

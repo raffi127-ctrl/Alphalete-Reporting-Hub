@@ -1497,6 +1497,16 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
                               log=log,
                               tableau=(cols, getattr(cols, "owner_lines", None) or crew))
 
+def build_activation_by_week(cols, crew, today, log=print) -> Path:
+    """Activation rate by Mon-Sun week ending, the last 5 weeks since NDS
+    started (Carlos 2026-11-06) -- activation_by_week.py."""
+    from automations.nds_metrics import activation_by_week as AW
+    soh = load_soh(log=log)
+    if not soh:
+        raise RuntimeError("activation by week needs the SaraPlus relay")
+    return AW.build(soh, today, OUT_DIR / "nds_activation_by_week.png", log=log)
+
+
 def build_team_tree(cols, crew, today, log=print) -> Path:
     """The 6am NDS team tree rides the 7:30 thread (Carlos 2026-10-28:
     post it "in the NDS metrics thread every morning instead of just on
@@ -1574,6 +1584,10 @@ SECTIONS = [
      build_activation_revenue),
     ("activation_by_rep", "\U0001F4C8", "NDS Activation Rate by Rep",
      build_activation_png),
+    # Carlos 2026-11-06: activation rate per Mon-Sun WEEK ENDING, the last 5
+    # weeks since NDS started, off SaraPlus per-line statuses.
+    ("activation_by_week", "\U0001F4C6", "NDS Activation Rate by Week Ending",
+     build_activation_by_week),
     ("pending_orders", "⏳", "NDS Pending Orders", build_pending_png),
     # customer_churn: DISCONTINUED for Fiber (Carlos 2026-10-08 scope list);
     # build_churn_rolloff_png stays importable for reference only.
