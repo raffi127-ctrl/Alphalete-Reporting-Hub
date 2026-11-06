@@ -537,6 +537,100 @@ def weekly_board(saturday: dt.date, *, send: bool,
 
 
 # --- tick --------------------------------------------------------------------
+# ---------------------------------------------------------------- no dispos --
+
+def no_dispo_slot(now: dt.datetime) -> Optional[str]:
+    """'HH:MM' of the NO_DISPO_SLOTS slot `now` sits in (within the grace), on
+    a NO_DISPO_WEEKDAYS day; None otherwise."""
+    if now.weekday() not in C.NO_DISPO_WEEKDAYS:
+        return None
+    for h, m in C.NO_DISPO_SLOTS:
+        slot = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if 0 <= (now - slot).total_seconds() < C.NO_DISPO_SLOT_GRACE_MIN * 60:
+            return slot.strftime("%H:%M")
+    return None
+
+
+def station_names(values: List[List[str]]) -> List[str]:
+    """The names in the car-ride grid, left to right then down, blanks out,
+    first appearance wins."""
+    out: List[str] = []
+    seen = set()
+    for row in values or []:
+        for cell in row or []:
+            name = " ".join(str(cell or "").split())
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            out.append(name)
+    return out
+
+
+def _read_station_names() -> List[str]:
+    from automations.recruiting_report import fill as _fill
+    ws = _fill.open_by_key(C.NO_DISPO_SHEET_ID).worksheet(C.NO_DISPO_TAB)
+    return station_names(ws.get(C.NO_DISPO_RANGE))
+
+
+def _knocks(row: Dict) -> int:
+    for k in ("Total Knocks", "Knocks", "Total"):
+        v = row.get(k)
+        if v not in (None, ""):
+            try:
+                return int(str(v).replace(",", "").strip() or 0)
+            except ValueError:
+                return 0
+    return 0
+
+
+def no_dispo_names(names: List[str], rows: List[Dict]) -> List[str]:
+    """Roster names with no dispositions on `rows`: no row at all, or a row
+    with zero knocks. Matched like total_knocks.guests (exact -> plain ->
+    first+last -> tokens), so a middle name on one side does not count as
+    absent."""
+    from automations.total_knocks import guests as G
+    rows = list(rows or [])
+    claimed, missing = G.match_rows(rows, names)
+    has = {name for i, name in claimed.items() if _knocks(rows[i]) > 0}
+    return [n for n in names if n not in has]
+
+
+def no_dispo_text(missing: List[str], slot: str) -> str:
+    """Carlos's wording: 'No dispositions from,' then the names."""
+    hh, mm = slot.split(":")
+    h = int(hh)
+    clock = "%d:%s %s" % (h % 12 or 12, mm, "PM" if h >= 12 else "AM")
+    return "No dispositions from (%s): %s" % (clock, ", ".join(missing))
+
+
+def _no_dispo_message(today: dt.date, now: dt.datetime, rows: List[Dict],
+                      state: Dict, *, send: bool) -> str:
+    """The message for this slot, or ''. Never raises: a sheet hiccup costs
+    this slot's message, not the tick."""
+    slot = no_dispo_slot(now)
+    if not slot:
+        return ""
+    key = "%s %s" % (today.isoformat(), slot)
+    if state.get("no_dispo_slot") == key:
+        return ""
+    try:
+        names = _read_station_names()
+    except Exception as e:  # noqa: BLE001
+        _log("no-dispo: Stations %s unreadable (%s) -- skipped this slot"
+             % (C.NO_DISPO_RANGE, type(e).__name__))
+        return ""
+    if not names:
+        _log("no-dispo: no names in Stations %s -- nothing to check" % C.NO_DISPO_RANGE)
+        return ""
+    everyone = rows + borrowed_rows(today, rows)
+    missing = no_dispo_names(names, everyone)
+    _log("no-dispo %s: %d on the car-ride grid, %d without dispositions%s"
+         % (slot, len(names), len(missing), (": " + ", ".join(missing)) if missing else ""))
+    if send:
+        state["no_dispo_slot"] = key
+    return no_dispo_text(missing, slot) if missing else ""
+
+
 def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
          no_gaps: bool = False) -> int:
     now = dt.datetime.now()
@@ -591,12 +685,14 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     if want_board and not board_rows:
         _log("board: no rows on the grid -- not drawn (never post blank)")
     callout = "" if no_gaps else _callout(over, today, now, send=send)
+    no_dispo = _no_dispo_message(today, now, rows, state, send=send and C.NO_DISPO_SEND)
 
     if not send:
         _log("DRY RUN -- would post:")
         _log("  board: %s" % (", ".join(p.name for p in pngs) or "(none)"))
         _log("  gaps:\n%s" % (body or "(nobody over 15 min)"))
         _log("  call-out: %s" % (callout or "(none)"))
+        _log("  no-dispo: %s" % (no_dispo or "(none)"))
         return 0
 
     from automations.icd_alerts import post as P
@@ -614,6 +710,13 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     if callout:
         P._slack(C.SLACK_CHANNEL, callout)
         _log("slack: call-out posted")
+    if no_dispo:
+        if C.NO_DISPO_SEND:
+            P._slack(C.SLACK_CHANNEL, no_dispo)
+            _queue_text(C.KIND_NO_DISPO, no_dispo.split(":")[0], today, now, text=no_dispo)
+            _log("slack: no-dispo posted")
+        else:
+            _log("no-dispo (NO_DISPO_SEND off, not posted): %s" % no_dispo)
     _save(state)
     return 0
 

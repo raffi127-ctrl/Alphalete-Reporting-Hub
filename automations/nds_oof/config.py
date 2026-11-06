@@ -102,5 +102,23 @@ BORROWED_ICD_OFFICES = {"rafael": "raf"}   # ICD office key read off the relay 2
 # his office Mac mini under this ICD office key (icd_alerts).
 RELAY_OFFICE_KEY = "carlos-b2batt"
 
+# "No dispositions from" (Carlos 2026-11-06): at these weekday slots, every
+# rep in the Stations tab's car-ride grid (Vantura master, C6:F15 = Territory
+# Leader + Rep #1-#3 under ALPHALETE NDS) who has no dispositions yet is
+# named in one message. Reads the same pull the gaps use (our Ownerville +
+# the borrowed rows off Raf's relay for Cinthya/Nathaly). Slots that fall on
+# a board draw (2:30, 3:00) post right after the board's wait for Raf's
+# share, so ~:35/:05; 2:45 and 3:15 land on the tick.
+NO_DISPO_SLOTS = [(14, 30), (14, 45), (15, 0), (15, 15)]
+NO_DISPO_WEEKDAYS = [0, 1, 2, 3, 4]            # Mon-Fri; Saturdays start 10:15
+NO_DISPO_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura master
+NO_DISPO_TAB = "Stations"
+NO_DISPO_RANGE = "C6:F15"
+NO_DISPO_SLOT_GRACE_MIN = 14                   # anything before the next slot still counts (a slow tick)
+KIND_NO_DISPO = "nds_no_dispo"
+# OFF until Carlos confirms where it goes (Slack call-out in #alphalete-gp-sales
+# + the two text groups are the proposal). While False the message is logged only.
+NO_DISPO_SEND = False
+
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "nds_oof_state.json"
 PROFILE_DIR = Path(__file__).resolve().parents[1] / "uploaded" / ".browser_profile_nds_oof"

@@ -184,6 +184,9 @@ TEXT_ROUTES = {
     # text handoff, so the routes live here.
     ("RES AT&T OOF", "nds_board"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
     ("RES AT&T OOF", "nds_gaps"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
+    # "No dispositions from" at 2:30/2:45/3:00/3:15 (Carlos 2026-11-06),
+    # nds_oof; sends only once nds_oof.config.NO_DISPO_SEND is on.
+    ("RES AT&T OOF", "nds_no_dispo"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
     ("RES AT&T OOF", "nds_week"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
 }
 
