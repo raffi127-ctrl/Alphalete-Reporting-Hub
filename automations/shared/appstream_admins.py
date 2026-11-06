@@ -45,6 +45,7 @@ import datetime as dt
 import json
 import re
 import sys
+import time
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
@@ -458,32 +459,55 @@ def _tell_megan(text: str, log=print) -> None:
 
 
 def verify_login(login: Dict, log=print, headed: bool = False) -> Optional[bool]:
-    """Sign in as the NEW account in a scratch profile. True = the office
-    console (#searchMC) or at least a signed-in page; False = login form
-    again; None = could not tell (Chrome problem)."""
+    """Sign in as the NEW account in a scratch profile, the way the office
+    machines do (resume_push.sign_in → ownerville_knocks.login: username →
+    NEXT → wait → password → wait → submit; the security box clears itself).
+    True = the office console (#searchMC) or a signed-in page; False = still
+    the sign-in page; None = could not tell (Chrome problem)."""
     import shutil
-    from automations.shared.tableau_patchright import (
-        appstream_direct_session, APPSTREAM_PROFILE_DIR)
+    from patchright.sync_api import sync_playwright
+    from automations.shared.tableau_patchright import _launch_persistent, APPSTREAM_PROFILE_DIR
+    from automations.shared import ownerville_knocks as K
     probe = APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_provision"
     shutil.rmtree(probe, ignore_errors=True)
     try:
-        with appstream_direct_session(headless=not headed, verbose=False,
-                                      profile_dir=probe,
-                                      username=login["username"],
-                                      password=login["password"],
-                                      allow_form_login=True,
-                                      force_form_login=True) as page:
-            if page.locator("#searchMC").count() > 0:
-                log("login verified: office console open as %s" % login["username"])
-                return True
-            body = (page.inner_text("body") or "")[:600].lower()
-            if "log out" in body and "password" not in body:
-                log("login verified: signed in as %s (no office console yet)"
-                    % login["username"])
-                return True
-            log("login NOT verified: still on the sign-in page · %s"
-                % body[:300].replace("\n", " "))
-            return False
+        with sync_playwright() as p:
+            ctx = _launch_persistent(p, probe, headless=not headed,
+                                     label="appstream_verify", verbose=False)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                try:
+                    K.login(page, login["username"], login["password"], log=log,
+                            url="https://applicantstream.com/")
+                except Exception as e:  # noqa: BLE001
+                    log("the sign-in form did not behave: %s" % type(e).__name__)
+                deadline = time.time() + 90
+                while time.time() < deadline:
+                    try:
+                        if page.locator("#searchMC").count() > 0:
+                            log("login verified: office console open as %s" % login["username"])
+                            return True
+                        cookies = ctx.storage_state().get("cookies", [])
+                        if any((c.get("name") or "").lower().startswith("rqst") for c in cookies) \
+                                or page.locator("a[href*='p=99']").count() > 0:
+                            log("login verified: signed in as %s" % login["username"])
+                            return True
+                    except Exception:  # noqa: BLE001
+                        pass
+                    page.wait_for_timeout(5_000)
+                body = ""
+                try:
+                    body = (page.inner_text("body") or "")[:300].replace("\n", " ")
+                except Exception:  # noqa: BLE001
+                    pass
+                log("login NOT verified: no console after 90s · %s · %s"
+                    % (re.sub(r"(rqst=)[^&#]+", r"\1<hidden>", page.url or ""), body))
+                return False
+            finally:
+                try:
+                    ctx.close()
+                except Exception:  # noqa: BLE001
+                    pass
     except Exception as e:  # noqa: BLE001
         log("login check could not run: %s" % str(e)[:300].replace("\n", " "))
         return None
@@ -803,7 +827,10 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
 
     verified: Optional[bool] = None
     if verify and (created or not existing or force_verify):
-        verified = verify_login(login, log=log, headed=headed)
+        # HEADED when run from a person's Mac: Cloudflare's security box does
+        # not clear in a headless scratch profile ("Please complete the
+        # security check", 2026-11-06); the office machines sign in headed too.
+        verified = verify_login(login, log=log, headed=headed or local)
     dm_sent = False
     if dm and assigned and verified is not False:
         dm_sent = _dm_icd(owner, login, slack_id, log=log)
