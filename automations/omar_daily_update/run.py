@@ -34,7 +34,9 @@ except Exception:  # noqa: BLE001
     pass
 
 EASTERN = ZoneInfo("America/Detroit")
-OFFICE_ID = "24153"                                        # Omar Mohammad
+# AppStream 24232 since 2026-11-04: eStream closed 24153 (Raf's funnel) and
+# moved Omar's call list to his own office. OwnerVille stays 24153.
+OFFICE_ID = "24232"                                        # Omar Mohammad
 REAL_SHEET = "1eYIs-FV0-J_TGTQtunFxdeII6uwLpvHYbj7C3t_eRTY"   # All In One - Omar
 # "SANDBOX - All In One - Omar (2nd rds test)", Eve's copy (2026-10-26).
 SANDBOX_SHEET = "1nbXYO2WrGbrCbOnrIrvDyv1L0kZMmsgE_JnrwG3n6zk"

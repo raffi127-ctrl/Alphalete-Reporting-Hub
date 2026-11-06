@@ -112,8 +112,16 @@ def _is_byday(fn: str) -> bool:
     return low.endswith(".pdf") and any(n in low for n in _BYDAY_NAMES)
 
 
+# WE 10.24.2026 (sent 11/2) added "Page 1 - Summary W.E. 10.24.pdf" — the top-10
+# cards, no footer totals — and it comes BEFORE the RANKED PDF in the email. It
+# was taken as the main PDF and the run died "no '… Total' footer rows parsed".
+_NOT_MAIN = ("summary",)
+
+
 def _is_main(fn: str) -> bool:
-    return fn.lower().endswith(".pdf") and not _is_byday(fn)
+    low = fn.lower()
+    return (low.endswith(".pdf") and not _is_byday(fn)
+            and not any(n in low for n in _NOT_MAIN))
 
 
 def available_weeks(since_days: int = 400) -> Dict[dt.date, str]:
@@ -182,7 +190,8 @@ def fetch(dest_dir: str | Path, weeks: Optional[List[dt.date]] = None,
                 if _is_byday(fn) and byday is None:
                     byday = dest / f"{we:%Y-%m-%d}_byday.pdf"
                     byday.write_bytes(part.get_payload(decode=True))
-                elif _is_main(fn) and main is None:
+                elif _is_main(fn) and (main is None or "ranked" in fn.lower()):
+                    # A RANKED-named PDF beats any other PDF taken before it.
                     main = dest / f"{we:%Y-%m-%d}_main.pdf"
                     main.write_bytes(part.get_payload(decode=True))
             if byday is None and main is None:

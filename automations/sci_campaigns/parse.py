@@ -202,6 +202,55 @@ def parse_footer(pdf_path: Path, *, prev: bool = False) -> Dict[str, int]:
     return out
 
 
+def parse_byday_from_footer(pdf_path: Path) -> tuple:
+    """The by-day half, rebuilt from the RANKED PDF's OWN 'LW' footer.
+
+    Same tuple as parse_byday. Every campaign row the by-day PDF carries is also
+    printed in the RANKED footer as '<campaign> Total' (checked WE 10.17.2026:
+    all 10 match, and 'Combined Grand Total' = the by-day Grand Total). WE
+    10.24.2026's email came with no by-day PDF at all, so this fills it from the
+    week's own email instead of waiting a week for the next one.
+
+    The by-day Grand Total can't be rebuilt from the footer (the wireless
+    tracker's own Grand Total counts units no row prints), so grand comes back
+    None and check_consistency skips the identity. In its place: the TELECOM
+    tracker's Grand Total (the first one printed) must equal the sum of its
+    rows, or this refuses and the week waits for the next email. Only the LW
+    column: a follower's RANKED prior column can be an older week (see
+    run.resolve_week)."""
+    text = _text(pdf_path)
+    vals: Dict[str, int] = {}
+    extra: Dict[str, int] = {}
+    unknown: Dict[str, int] = {}
+    for line in text.splitlines():
+        for seg in line.split("#"):
+            for m in _FOOTER_ANY.finditer(seg):
+                name = " ".join(m.group(1).split())
+                key = name.casefold()
+                units = _int(m.group(2))
+                if key.endswith("grand"):
+                    continue
+                if key in BYDAY_MAP:
+                    vals.setdefault(BYDAY_MAP[key], units)
+                elif key == "at&t nds":
+                    extra.setdefault("AT&T NDS", units)
+                elif not any(key.startswith(p) for p, _ in FOOTER_RULES):
+                    unknown.setdefault(name, units)
+    if not vals:
+        raise ParseError(f"{pdf_path.name}: no campaign '… Total' rows in the "
+                         f"RANKED footer to stand in for the by-day PDF.")
+    telecom = ("AT&T Fiber", "Frontier Fiber", "DTV", "Lumen Fiber", "Rogers",
+               "Kinetic", "Verizon FiOS Fiber", "Verizon 5G Fiber")
+    g = re.search(r"(?<!Combined )Grand Total\s+([\d,]+)", text)
+    got = sum(vals.get(k, 0) for k in telecom)
+    if g is None or _int(g.group(1)) != got:
+        raise ParseError(
+            f"{pdf_path.name}: the RANKED footer's telecom rows sum to {got} but "
+            f"its Grand Total says {g.group(1) if g else 'nothing'} — not using "
+            f"it in place of the by-day PDF.")
+    return (vals, None, extra, [], unknown)
+
+
 def parse_week(byday_pdf: Optional[Path], main_pdf: Optional[Path],
                *, prev: bool = False) -> Parsed:
     """Both PDFs -> one {tab row label: units} map. Both are REQUIRED: with only

@@ -91,6 +91,11 @@ def resolve_week(we: dt.date, got: dict) -> tuple:
     byday = src_b = None
     if own and own.byday_pdf:
         byday, src_b = _try(scp.parse_byday, own.byday_pdf), "own email"
+    if byday is None and own and own.main_pdf:
+        # No by-day PDF in the week's own email (WE 10.24.2026): its RANKED
+        # footer prints the same campaign totals.
+        byday = _try(scp.parse_byday_from_footer, own.main_pdf)
+        src_b = "own email" if byday is not None else None
     if byday is None and nxt and nxt.byday_pdf:
         byday = _try(scp.parse_byday, nxt.byday_pdf, prev=True)
         src_b = f"WE {nxt_label} prior-week column"

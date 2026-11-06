@@ -61,7 +61,10 @@ OFFICES: Dict[str, Office] = {
     # `sheet` here: this entry only posts the Daily Update thread (picture +
     # leader tags) in his recruiting channel.
     "omar": Office(
-        key="omar", office_id="24153", owner="Omar Mohamad",
+        # AppStream 24153 was Raf's funnel, closed by eStream 2026-11-04 ("Cancel
+        # Rafs funnel - 24153"); Omar's own office is 24232 (call list moved
+        # 10/30). OwnerVille is still 24153 — that is a different system.
+        key="omar", office_id="24232", owner="Omar Mohamad",
         channel="C0C6HKZ63EK",   # #omars-mohammad-office-recruiting-24153-rafael-hidalgo
         posts_in_own_channel=True,   # Megan 2026-10-26: post in his channel
         tag_helpers={"Omar Mohamad": "U0C144X8SBD"}),   # not look-alike U0A0J2T9XKL
