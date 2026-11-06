@@ -44,9 +44,18 @@ class T(unittest.TestCase):
     def test_picture_html(self):
         html = R.render_html(R.last_weeks(R.parse_weeks(WOW)), R.parse_tiers(TIERS))
         self.assertIn("$143,779", html)                   # 4-week total
-        self.assertIn("$6 at 3,840+ New Fiber", html)
+        self.assertIn("Your tiers", html)
+        self.assertIn("Tier 3</td><td>3,840+", html)
+        self.assertIn("Tier 2 &middot; $5", html)           # 7/5 week labeled by tier
         self.assertIn("#d6f5dd", html)                    # $6 = top tier = green
         self.assertIn("#fff1c2", html)                    # $5 week (7/5) = amber
+
+    def test_next_tier(self):
+        tiers = R.parse_tiers(TIERS)
+        w = R.parse_weeks(WOW)
+        self.assertIn("top tier", R.next_tier_line(R.last_weeks(w), tiers))   # 4,350
+        w[dt.date(2026, 7, 19)] = {"fiber": 2956, "units": 5086, "rate": 5, "total": 25430}
+        self.assertIn("884 short", R.next_tier_line(R.last_weeks(w), tiers))
 
     def test_periods_window(self):
         self.assertEqual(R._periods(dt.date(2026, 11, 6)),

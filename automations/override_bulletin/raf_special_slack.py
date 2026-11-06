@@ -144,51 +144,87 @@ def _rate_style(rate, tiers) -> str:
 
 _CSS = """<style>
  body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#fff}
- .card{display:inline-block;padding:18px;background:#fff;min-width:560px}
+ .card{display:inline-block;padding:18px;background:#fff;min-width:620px}
  .title{background:#1f3b64;color:#fff;font-weight:700;font-size:22px;
         padding:12px 18px;border-radius:6px 6px 0 0}
- .what{background:#f3f6fa;color:#333;font-size:14px;padding:10px 18px;line-height:1.45}
- .tiers{padding:4px 18px 12px;background:#f3f6fa;border-radius:0 0 6px 6px}
- .chip{display:inline-block;padding:4px 10px;margin-right:6px;border-radius:12px;
-       font-size:13px;font-weight:700}
- table{border-collapse:collapse;width:100%;margin-top:14px}
+ .what{background:#f3f6fa;color:#333;font-size:14px;padding:10px 18px 12px;
+       line-height:1.45;border-radius:0 0 6px 6px}
+ h3{font-size:15px;color:#1f3b64;margin:16px 0 6px}
+ table{border-collapse:collapse;width:100%}
  th{background:#efefef;font-size:13px;padding:8px 12px;border:1px solid #ccc}
  td{font-size:15px;padding:8px 12px;border:1px solid #ccc;text-align:right}
- td.wk{text-align:left;font-weight:700}
- td.rate{text-align:center;font-weight:700}
+ td.l{text-align:left;font-weight:700}
+ td.c{text-align:center;font-weight:700}
  tr.new td{font-weight:700}
  tr.tot td{background:#1f3b64;color:#fff;font-weight:700;font-size:16px}
+ .next{margin-top:10px;font-size:14px;color:#333;background:#f3f6fa;
+       padding:8px 12px;border-radius:6px}
  .src{color:#888;font-size:11px;margin-top:8px}
 </style>"""
 
 
+def tier_for(rate, tiers):
+    """(tier number, threshold) whose rate matches; (None, None) if none does."""
+    for t, r, th in tiers:
+        if abs(float(r) - float(rate or 0)) < 0.001:
+            return t, th
+    return None, None
+
+
+def next_tier_line(shown, tiers) -> str:
+    """How far the newest week was from the next tier up. '' at the top tier."""
+    if not tiers:
+        return ""
+    d, v = shown[-1]
+    fiber = int(v.get("fiber") or 0)
+    up = [(t, r, th) for t, r, th in tiers if th > fiber]
+    if not up:
+        return "WE %s hit the top tier (Tier %d, $%g)." % (_md(d), tiers[-1][0], tiers[-1][1])
+    t, r, th = up[0]
+    return ("Next tier: <b>Tier %d ($%g)</b> at %s New Fiber &mdash; WE %s was "
+            "<b>%s short</b>." % (t, r, format(th, ","), _md(d), format(th - fiber, ",")))
+
+
 def render_html(shown: list, tiers: list) -> str:
-    chips = "".join('<span class="chip" style="%s">$%g at %s+ New Fiber</span>'
-                    % (_rate_style(r, tiers), r, format(th, ","))
-                    for _, r, th in tiers)
+    tier_rows = "".join(
+        '<tr><td class="c" style="%s">Tier %d</td><td>%s+</td>'
+        '<td class="c" style="%s">$%g</td></tr>'
+        % (_rate_style(r, tiers), t, format(th, ","), _rate_style(r, tiers), r)
+        for t, r, th in tiers)
+    tier_block = ("<h3>Your tiers</h3><table><tr><th>Tier</th>"
+                  "<th>Org New Fiber that week</th><th>You get per unit</th></tr>"
+                  "%s</table>" % tier_rows) if tiers else ""
     trs = []
     for i, (d, v) in enumerate(shown):
         cls = ' class="new"' if i == len(shown) - 1 else ""
+        t, _ = tier_for(v.get("rate"), tiers)
+        label = ("Tier %d &middot; $%g" % (t, v.get("rate") or 0)) if t \
+            else "$%g" % (v.get("rate") or 0)
         trs.append(
-            '<tr%s><td class="wk">WE %s</td><td>%s</td>'
-            '<td class="rate" style="%s">$%g</td><td>%s</td><td>%s</td></tr>'
+            '<tr%s><td class="l">WE %s</td><td>%s</td>'
+            '<td class="c" style="%s">%s</td><td>%s</td><td>%s</td></tr>'
             % (cls, _md(d), format(int(v.get("fiber") or 0), ","),
-               _rate_style(v.get("rate") or 0, tiers), v.get("rate") or 0,
+               _rate_style(v.get("rate") or 0, tiers), label,
                format(int(v.get("units") or 0), ","), _money(v["total"])))
     total = sum(v["total"] for _, v in shown)
-    trs.append('<tr class="tot"><td class="wk">%d-week total</td><td></td><td></td>'
+    trs.append('<tr class="tot"><td class="l">%d-week total</td><td></td><td></td>'
                '<td></td><td>%s</td></tr>' % (len(shown), _money(total)))
+    nxt = next_tier_line(shown, tiers)
     return ("<html><head><meta charset='utf-8'>%s</head><body><div class='card'>"
             "<div class='title'>Raf's AT&amp;T Special Override</div>"
-            "<div class='what'><b>What it is:</b> each week you're paid a rate on the "
-            "org's <b>Override Estimate</b>. The rate goes up with the org's "
-            "<b>New Fiber Estimate</b> that week:</div>"
-            "<div class='tiers'>%s</div>"
-            "<table><tr><th>Week</th><th>New Fiber</th><th>Rate</th>"
+            "<div class='what'><b>What it is:</b> each week you're paid a rate per unit "
+            "of the org's <b>Override Estimate</b>. The rate is set by your "
+            "<b>tier</b>, which depends on the org's <b>New Fiber Estimate</b> that "
+            "week.</div>"
+            "%s"
+            "<h3>Last %d weeks</h3>"
+            "<table><tr><th>Week</th><th>New Fiber</th><th>Tier</th>"
             "<th>Override Est.</th><th>Payout</th></tr>%s</table>"
+            "%s"
             "<div class='src'>Source: Tableau &rarr; ResATTSpecialDealOverride-Raf "
-            "&rarr; Payout- Raf wow</div></div></body></html>"
-            % (_CSS, chips, "".join(trs)))
+            "&rarr; Payout- Raf wow / Payouts Raf</div></div></body></html>"
+            % (_CSS, tier_block, len(shown), "".join(trs),
+               ("<div class='next'>%s</div>" % nxt) if nxt else ""))
 
 
 def render_png(shown: list, tiers: list, out_path: Path) -> Path:
