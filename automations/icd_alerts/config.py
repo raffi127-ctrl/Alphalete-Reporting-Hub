@@ -411,7 +411,7 @@ SARA_PAUSED_KEYS = frozenset({"tre"})
 # --set-login`) and it proves the login: that writes SARA_ACTIVATED_PATH on
 # the machine and the pause lifts itself. Nobody edits this file at that
 # moment (Megan: "this needs to be auto ran as much as possible").
-SARA_WAITING_KEYS = frozenset({"nigel"})
+SARA_WAITING_KEYS = frozenset()  # nigel lifted 2026-11-06 15:25: his install-time sign-in passed (hidden read)
 SARA_ACTIVATED_PATH = APP_DIR / "sara-activated.txt"
 
 
