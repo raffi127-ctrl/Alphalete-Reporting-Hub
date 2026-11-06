@@ -32,7 +32,7 @@ import datetime as dt
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from automations.nds_oof import config as C
 from automations.shared.day_override import weekday as _wd
@@ -162,27 +162,108 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
     return over, rows
 
 
-def _shared_at(today: dt.date) -> Dict[str, dt.datetime]:
-    """{key: when it was shared} for today's 'Lucy Knocks' rows we borrow from."""
+def _parse_at(text: str) -> Optional[dt.datetime]:
+    """'2026-11-03T14:31:00' (Lucy Knocks) or '11/6/2026 10:14:45' (ICD)."""
+    text = (text or "").strip()
+    for fmt in ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M"):
+        try:
+            return dt.datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+    try:
+        return dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _borrow_sources(today: dt.date) -> Dict[str, Tuple[List[Dict], Optional[dt.datetime], str]]:
+    """{borrow key: (renderer rows, when shared, where from)} for today.
+
+    Two places, newest wins: the 'Lucy Knocks' row a Lucy's gap_alerts
+    shares (how Raf's rows arrived until 2026-11-03) and the 'ICD Knocks'
+    relay his own office Mac writes now (C.BORROWED_ICD_OFFICES), read the
+    way the owners' hourly board reads every office. Never raises."""
     want = getattr(C, "BORROWED_ROWS", None) or {}
-    out: Dict[str, dt.datetime] = {}
+    out: Dict[str, Tuple[List[Dict], Optional[dt.datetime], str]] = {}
     if not want:
         return out
     from automations.owner_knocks_hourly import share as S
     try:
-        ws = S._tab(S._book())
-        lines = ws.get_all_values()[1:] if ws is not None else []
-    except Exception:  # noqa: BLE001
+        book = S._book()
+    except Exception as e:  # noqa: BLE001
+        _log("borrowed: relay workbook unavailable (%s) -- board without them" % type(e).__name__)
         return out
+    try:
+        ws = S._tab(book)
+        lines = ws.get_all_values()[1:] if ws is not None else []
+    except Exception as e:  # noqa: BLE001
+        _log("borrowed: 'Lucy Knocks' tab unavailable (%s)" % type(e).__name__)
+        lines = []
     for r in lines:
         r = list(r) + [""] * (len(S.HEADER) - len(r))
         key = r[S.K_KEY].strip().lower()
-        if key in want and r[S.K_DAY].strip() == today.isoformat():
-            try:
-                out[key] = dt.datetime.fromisoformat(r[S.K_AT])
-            except ValueError:
-                pass
+        if key not in want or r[S.K_DAY].strip() != today.isoformat():
+            continue
+        try:
+            src = json.loads(r[S.K_ROWS] or "[]")
+        except ValueError:
+            src = []
+        out[key] = (src, _parse_at(r[S.K_AT]), "Lucy Knocks")
+
+    icd = getattr(C, "BORROWED_ICD_OFFICES", None) or {}
+    by_office = {str(o).strip().lower(): k for k, o in icd.items() if k in want}
+    if not by_office:
+        return out
+    try:
+        from automations.icd_alerts import knocks_map as KM, knocks_post as KP
+        from automations.icd_alerts import post as P
+        klines = book.worksheet(KP.KNOCKS_TAB).get_all_values()[1:]
+    except Exception as e:  # noqa: BLE001
+        _log("borrowed: 'ICD Knocks' tab unavailable (%s)" % type(e).__name__)
+        return out
+    try:
+        from automations.icd_alerts import offices as O
+        offices = O.all_offices()
+    except Exception:  # noqa: BLE001
+        offices = {}
+    for row in klines:
+        row = list(row) + [""] * (KP.KN_POSTED + 1 - len(row))
+        okey = (row[KP.KN_OFFICE] or "").strip().lower()
+        key = by_office.get(okey)
+        if not key:
+            continue
+        try:
+            day_key = P._day_key(row[KP.KN_DAY])
+        except Exception:  # noqa: BLE001
+            day_key = (row[KP.KN_DAY] or "").strip()
+        if day_key != today.isoformat():
+            continue
+        try:
+            raw = json.loads(row[KP.KN_ROWS] or "[]")
+            tracker = json.loads(row[KP.KN_TRACKER] or "[]")
+        except ValueError:
+            _log("borrowed: ICD Knocks row for %s unreadable" % okey)
+            continue
+        try:
+            raw, tracker = KP.shift_ov_clock(offices.get(okey), raw, tracker)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            rows = KM.to_rows(raw, tracker)
+        except Exception as e:  # noqa: BLE001
+            _log("borrowed: ICD Knocks rows for %s did not map (%s)" % (okey, type(e).__name__))
+            continue
+        at = _parse_at(row[KP.KN_RECEIVED])
+        prev = out.get(key)
+        newer = prev is None or (at is not None and (prev[1] is None or at > prev[1]))
+        if rows and newer:
+            out[key] = (rows, at, "ICD Knocks office %s" % okey)
     return out
+
+
+def _shared_at(today: dt.date) -> Dict[str, dt.datetime]:
+    """{key: when it was shared} for today's borrowed rows, whichever tab."""
+    return {k: at for k, (_rows, at, _src) in _borrow_sources(today).items() if at}
 
 
 def wait_for_fresh_share(now: dt.datetime, *, shared_at, sleep=None,
@@ -226,35 +307,22 @@ def wait_for_fresh_share(now: dt.datetime, *, shared_at, sleep=None,
 
 
 def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
-    """Rows for C.BORROWED_ROWS off the 'Lucy Knocks' tab (today's row for each
-    key), matched like total_knocks.guests. A name already on `own` is left
-    off, a name with no row today is logged. Never raises: the board matters
-    more than the borrowed names."""
+    """Rows for C.BORROWED_ROWS off today's shared/relayed rows (_borrow_sources),
+    matched like total_knocks.guests. A name already on `own` is left off, a
+    name with no row today is logged. Never raises: the board matters more
+    than the borrowed names."""
     want = getattr(C, "BORROWED_ROWS", None) or {}
     if not want:
         return []
-    from automations.owner_knocks_hourly import share as S
     from automations.total_knocks import guests as G
     have = {G._norm(G._rep(r)) for r in own}
     keep = set(own[0].keys()) if own else None
     out: List[Dict] = []
-    try:
-        ws = S._tab(S._book())
-        lines = ws.get_all_values()[1:] if ws is not None else []
-    except Exception as e:  # noqa: BLE001
-        _log("borrowed: 'Lucy Knocks' tab unavailable (%s) -- board without them" % type(e).__name__)
-        return []
+    sources = _borrow_sources(today)
     seen = set()
-    for r in lines:
-        r = list(r) + [""] * (len(S.HEADER) - len(r))
-        key = r[S.K_KEY].strip().lower()
-        if key not in want or r[S.K_DAY].strip() != today.isoformat():
-            continue
+    for key, (src, at, where) in sources.items():
         seen.add(key)
-        try:
-            src = json.loads(r[S.K_ROWS] or "[]")
-        except ValueError:
-            src = []
+        at_text = at.isoformat(timespec="seconds") if at else "?"
         claimed, missing = G.match_rows(src, want[key])
         for i, name in sorted(claimed.items()):
             row = src[i]
@@ -264,7 +332,7 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
             if keep:
                 row = {k: v for k, v in row.items() if k in keep}
             out.append(row)
-            _log("borrowed: %s off %s (shared %s)" % (G._rep(src[i]), key, r[S.K_AT] or "?"))
+            _log("borrowed: %s off %s (shared %s, %s)" % (G._rep(src[i]), key, at_text, where))
         for name in missing:
             # Close spellings, so a roster typo is fixable from the log alone
             # (Carlos: "i may have slight mispelling"): any row sharing a
@@ -277,7 +345,7 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
                     " (%d rows: %s)" % (len(src), ", ".join(G._rep(x) for x in src)[:400])))
     for key in want:
         if key not in seen:
-            _log("borrowed: no 'Lucy Knocks' row for %s today" % key)
+            _log("borrowed: no 'Lucy Knocks' row and no 'ICD Knocks' relay for %s today" % key)
     return out
 
 

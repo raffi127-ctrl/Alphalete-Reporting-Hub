@@ -91,6 +91,12 @@ BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Nathaly Benitez"]}
 # waits up to this many minutes for a share newer than the slot's start;
 # past that it draws with what is there and says so in the log.
 BORROWED_FRESH_WAIT_MIN = 9
+# Since 2026-11-03 Raf's board draws on HIS office Mac (Lucy 1's gap_alerts
+# for him is switched off), so nothing writes his 'Lucy Knocks' row any more
+# -- Cinthya + Nathaly vanished from the NDS board 11/04-11/05. His Mac
+# relays his knocks to the 'ICD Knocks' tab like every office; this maps a
+# borrowed key to that office key. Both tabs are read; the newer row wins.
+BORROWED_ICD_OFFICES = {"rafael": "rafael"}
 
 # Credit checks for the call-outs come from Carlos's own SaraPlus, relayed by
 # his office Mac mini under this ICD office key (icd_alerts).
