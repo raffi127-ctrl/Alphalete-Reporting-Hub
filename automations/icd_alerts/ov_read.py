@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.13.1"
+CODE_RELEASE = "2026.11.06.1"
 
 
 class KnocksProblem(RuntimeError):
@@ -51,6 +51,13 @@ class KnocksProblem(RuntimeError):
 # (2026-10-06): "B2B AT&T SBS" (id 2) and "B2B-BOX-Energy" (id 16).
 _CLIENT_WORDS = {"b2b_att": ("at&t", "att"), "att": ("at&t", "att"),
                  "nds": ("nds", "at&t"), "b2b_box": ("box",), "energy": ("energy",)}
+# Words that mark a DIFFERENT client whose name also contains ours. Nigel's
+# page (2026-11-06) offered "RES AT&T" and "RES-ATT-Quantum Fiber": both say
+# AT&T, only one is his AT&T campaign. Candidates carrying these lose.
+_CLIENT_AVOID = {"att": ("quantum", "fiber", "box", "energy", "b2b"),
+                 "b2b_att": ("quantum", "fiber", "box", "energy"),
+                 "nds": ("quantum", "fiber", "box", "energy", "b2b"),
+                 "b2b_box": ("at&t", "att", "energy"), "energy": ("at&t", "att", "box")}
 
 
 def _is_v2(page) -> bool:
@@ -72,29 +79,39 @@ def _choose_client(page, cid: str, campaign: str, *, log=print) -> bool:
     grid the way a click would. Returns False when nothing on the page could
     be picked -- the caller then raises the original error, with evidence."""
     words = list(_CLIENT_WORDS.get((campaign or "").strip().lower(), ()))
+    avoid = list(_CLIENT_AVOID.get((campaign or "").strip().lower(), ()))
     try:
+        # ONLY A SELECT THAT LISTS CLIENTS. Matching the id against EVERY
+        # <select> picked "feedbackModules -> Promotions (3)" on Nigel's page
+        # (2026-11-06): the modules menu happened to have an option valued 3,
+        # the same number as his client id, and the grid never built because
+        # the real client choice was never made. A client list names a client.
         picked = page.evaluate(
-            """([cid, words]) => {
+            """([cid, words, avoid]) => {
                 const sels = Array.from(document.querySelectorAll('select'));
+                const low = o => (o.text || '').toLowerCase();
+                const clientish = s => /client|campaign|d2d/i.test((s.id || '') + ' ' + (s.name || ''))
+                    || Array.from(s.options).some(o => words.some(w => low(o).includes(w)));
                 const pick = (s, o) => {
                     s.value = o.value;
                     s.dispatchEvent(new Event('change', {bubbles: true}));
                     return (s.id || s.name || 'select') + ' -> ' + o.text.trim()
                         + ' (' + o.value + ')';
                 };
-                if (cid) for (const s of sels) {
+                if (cid) for (const s of sels.filter(clientish)) {
                     const o = Array.from(s.options).find(o => o.value == cid);
                     if (o) return pick(s, o);
                 }
                 for (const s of sels) {
-                    const o = Array.from(s.options).find(o => {
-                        const t = (o.text || '').toLowerCase();
+                    const opts = Array.from(s.options).filter(o => {
+                        const t = low(o);
                         return t && !/choose/.test(t) && words.some(w => t.includes(w));
                     });
+                    const o = opts.find(o => !avoid.some(a => low(o).includes(a))) || opts[0];
                     if (o) return pick(s, o);
                 }
                 return '';
-            }""", [str(cid or ""), words])
+            }""", [str(cid or ""), words, avoid])
     except Exception as e:  # noqa: BLE001 — no picker is an answer, not a crash
         log("client picker check failed: %s" % type(e).__name__)
         return False
@@ -108,12 +125,16 @@ def _choose_client(page, cid: str, campaign: str, *, log=print) -> bool:
         # header dropdown.
         try:
             picked = page.evaluate(
-                """([cid, words]) => {
+                """([cid, words, avoid]) => {
                     const all = Array.from(document.querySelectorAll('a, li, button, [onclick]'));
-                    const cands = all.filter(e => {
-                        const t = (e.innerText || '').trim().toLowerCase();
+                    const txt = e => (e.innerText || '').trim().toLowerCase();
+                    let cands = all.filter(e => {
+                        const t = txt(e);
                         return t && t.length < 40 && !/choose/.test(t) && words.some(w => t.includes(w));
                     });
+                    // "RES AT&T" beats "RES-ATT-Quantum Fiber" for an AT&T office
+                    const clean = cands.filter(e => !avoid.some(a => txt(e).includes(a)));
+                    if (clean.length) cands = clean;
                     const tag = e => '<' + e.tagName.toLowerCase() + '#' + (e.id || '-') + '.' + (String(e.className) || '-')
                         + (e.href ? ' href=' + e.href.slice(0, 120) : '')
                         + (e.getAttribute('onclick') ? ' onclick=' + e.getAttribute('onclick').slice(0, 80) : '')
@@ -127,7 +148,7 @@ def _choose_client(page, cid: str, campaign: str, *, log=print) -> bool:
                     const d = 'link ' + tag(el);
                     el.click();
                     return d;
-                }""", [str(cid or ""), words])
+                }""", [str(cid or ""), words, avoid])
         except Exception as e:  # noqa: BLE001
             log("client link check failed: %s" % type(e).__name__)
             return False
