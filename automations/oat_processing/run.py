@@ -1111,6 +1111,46 @@ def untick_send_boxes(page, live: bool) -> str:
     return note
 
 
+# A ONE-LETTER LAST NAME NEVER SENDS (Raf's 23965, 11/4-11/6: Alianna G and
+# Lili G -- Send to AI clicked twice every run, AppStream said nothing, they
+# never left the queue). Megan 2026-11-06: "if they just have a single letter
+# last name add 3 x's behind it so it sends". G -> Gxxx, typed into the
+# panel's Last Name box right before the send.
+_SHORT_LAST_RE = re.compile(r"^\s*([A-Za-z])\.?\s*$")
+
+
+def padded_last_name(last: str) -> str:
+    """'G' / 'G.' -> 'Gxxx'; anything longer -> '' (leave it alone)."""
+    m = _SHORT_LAST_RE.match(last or "")
+    return (m.group(1) + "xxx") if m else ""
+
+
+def _pad_short_last_name(page, a: Applicant, live: bool) -> bool:
+    """Type the padded last name into the panel. True when it changed it."""
+    new = padded_last_name(a.last_name)
+    if not new:
+        return False
+    if not live:
+        _log(f"    [last name] would change {a.last_name!r} -> {new!r}")
+        return False
+    try:
+        loc = page.locator("input[name='lname']").first
+        if loc.count() == 0:
+            _log("    [last name] Last Name box not found -- left as is")
+            return False
+        loc.click(timeout=4000)
+        loc.fill("")
+        loc.press_sequentially(new, delay=35)   # real keystrokes, like the phone
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(600)
+    except Exception as e:  # noqa: BLE001
+        _log(f"    [last name] could not change it: {type(e).__name__}")
+        return False
+    _log(f"    [last name] one letter -> {new}: {a.first_name} {a.last_name}")
+    a.last_name = new
+    return True
+
+
 def do_send_ai(page, a: Applicant, live: bool) -> str:
     """GOAL = get to AI. Attempt Send, then handle the ATS's post-click reveal:
     SEND > overwrite+SEND > (>1wk) flag re-text > auto-remove. Returns an outcome
@@ -1126,6 +1166,7 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if not _guard_office_now(page, "Send to AI"):
         return _office_guard_outcome()
     untick_send_boxes(page, live=True)
+    _pad_short_last_name(page, a, live=True)
     _who = f"{a.first_name} {a.last_name}".strip()
     _before = _queue_total(page)
     # The duplicate table shows when the record OPENS and can be gone once
@@ -1291,7 +1332,9 @@ def _handle_visible_dup(page, a: Applicant, live: bool) -> str:
 def do_override_send_ai(page, a: Applicant, live: bool) -> str:
     _would(live, "Overwrite Old Applicants (Send to AI)")
     if not live:
+        _pad_short_last_name(page, a, False)
         return "dry"
+    _pad_short_last_name(page, a, live=True)
     if _try_overwrite_send(page):
         _log(f"    ✅ SENT via overwrite: {a.first_name} {a.last_name}")
         return "sent_override"
