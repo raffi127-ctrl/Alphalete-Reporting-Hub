@@ -657,12 +657,16 @@ class _Verizon(Shape):
     """
     presale_ping = False
 
+    # LINES ARE THE COUNT (Megan 2026-11-06: "the number of emojis is the
+    # number of lines"). The office's Slack tally gives one :drop_of_blood: per
+    # line, and Credico counts lines too. "Sales" rides along for the Optix
+    # path (a house marked Sale Made, line count unknown) but is not counted.
     def breakdown(self, metrics):
-        n = int(metrics.get("Sales", 0) or 0)
-        return "%d sale%s" % (n, "" if n == 1 else "s") if n else ""
+        n = int(metrics.get("Lines", 0) or 0)
+        return "%d line%s" % (n, "" if n == 1 else "s") if n else ""
 
 
-VERIZON = _Verizon(("Sales",), ("Sales",), {"Sales": "Sales"})
+VERIZON = _Verizon(("Lines", "Sales"), ("Lines",), {"Lines": "Lines", "Sales": "Sales"})
 
 SHAPES = {"b2b_box": BOX, "nds": NDS, "verizon": VERIZON}
 

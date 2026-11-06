@@ -13,7 +13,8 @@ reposts the WHOLE list with that rep bumped up:
     Jacob :calling::calling::calling:
     16/50:fire::fire:
 
-  :drop_of_blood: = one VERIZON sale (Nico's reps)
+  :drop_of_blood: = one VERIZON LINE (Nico's reps; Megan 2026-11-06: "the
+                    number of emojis is the number of lines")
   :calling:       = one AT&T sale (Carlos's NDS reps) -- NOT counted here
   "16/50"         = the room's combined total vs the goal -- not used
 
@@ -154,7 +155,7 @@ def fetch(day: dt.date) -> List[Tuple[dt.datetime, str]]:
 def run(day: dt.date, *, send: bool, log=print) -> int:
     counts = day_counts(fetch(day), day)
     sales, unmatched = match_names(counts, roster())
-    log("Verizon tally %s: %d rep(s), %d sale(s)" % (day, len(sales), sum(sales.values())))
+    log("Verizon tally %s: %d rep(s), %d line(s)" % (day, len(sales), sum(sales.values())))
     for rep, n in sorted(sales.items(), key=lambda kv: -kv[1]):
         log("  %-28s %d" % (rep, n))
     if unmatched:
@@ -163,7 +164,7 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
         log("preview — nothing sent")
         return 0
     if not sales:
-        log("no Verizon sales in today's list yet — nothing sent")
+        log("no Verizon lines in today's list yet — nothing sent")
         return 0
     from automations.icd_alerts import offices as O, relay as R
     from automations.verizon_office import house_feed as HF
@@ -172,7 +173,7 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
         log("✗ no active %r key on Relay Keys — nothing sent" % OFFICE_KEY)
         return 1
     rec = {"office_key": OFFICE_KEY, "relay_key": key, "relay_url": O.RELAY_URL, "campaign": "verizon"}
-    body = R.payload({}, day, rec, sales={r: {"Sales": n} for r, n in sales.items()})
+    body = R.payload({}, day, rec, sales={r: {"Lines": n} for r, n in sales.items()})
     body["agent"] = "verizon_slack_tally"
     R._post(rec["relay_url"], json.dumps(body).encode("utf-8"))
     log("✓ relayed %d seller(s) as %s" % (len(sales), OFFICE_KEY))

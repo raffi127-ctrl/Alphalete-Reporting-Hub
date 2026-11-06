@@ -418,9 +418,10 @@ def _box_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
 def _verizon_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
     """Verizon: 'Name 3' per rep, highest first, flame on who moved, then
     TOTALS -- the "countdown" Nico asked for (2026-11-06, Carlos: "I think he
-    means the sales count"). Sales only: Optix carries no line count."""
+    means the sales count"). LINES, one per :drop_of_blood: on the office's
+    tally (Megan: "the number of emojis is the number of lines")."""
     from automations.alphalete_sales_board import notify as N
-    rows = [(show(rep) if show else rep, int((m or {}).get("Sales", 0) or 0), rep)
+    rows = [(show(rep) if show else rep, int((m or {}).get("Lines", 0) or 0), rep)
             for rep, m in (sales or {}).items()]
     rows = [r for r in rows if r[1] > 0]
     if not rows:
@@ -431,6 +432,7 @@ def _verizon_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
                           (" " + N.FIRE) if (raw in flames or name in flames) else "")
              for name, n, raw in rows]
     lines.append("")
+    lines.append("Lines: %d" % sum(r[1] for r in rows))
     lines.append("%s TOTALS: %d" % (N.TROPHY, sum(r[1] for r in rows)))
     return "\n".join(lines)
 
@@ -495,7 +497,7 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
         return _box_scoreboard(sales, fired, show)
     if str(campaign or "").strip().lower() == "nds":
         return _nds_scoreboard(sales, fired, show)
-    if names == ("Sales",):
+    if names == ("Lines", "Sales"):
         return _verizon_scoreboard(sales, fired, show)
     if names != ("Int", "Int Up", "DTV", "NL"):
         return ""
@@ -543,8 +545,8 @@ def _apps(m: Dict, campaign=None) -> int:
         return int(m.get("Sales", 0) or 0)
     if str(campaign or "").strip().lower() == "nds":
         return int(m.get("Air", 0) or 0) + int(m.get("NL", 0) or 0)
-    if names == ("Sales",):                      # Verizon: a sale IS an app
-        return int(m.get("Sales", 0) or 0)
+    if names == ("Lines", "Sales"):              # Verizon: lines, like NL
+        return int(m.get("Lines", 0) or 0)
     return sum(int(m.get(k, 0) or 0) for k in ("Int", "DTV", "NL"))
 
 

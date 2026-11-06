@@ -83,25 +83,25 @@ class VerizonSales(unittest.TestCase):
     def test_the_sale_shape(self):
         from automations.shared import sale_hype as H
         s = H.shape("verizon")
-        self.assertEqual(s.metrics, ("Sales",))
-        self.assertEqual(s.total({"Sales": 3}), 3)
+        self.assertEqual(s.metrics, ("Lines", "Sales"))
+        self.assertEqual(s.total({"Lines": 3, "Sales": 1}), 3)   # lines are the count
         self.assertFalse(s.presale_ping)          # Sale Started is not trusted yet
-        self.assertEqual(s.breakdown({"Sales": 1}), "1 sale")
+        self.assertEqual(s.breakdown({"Lines": 1}), "1 line")
 
     def test_the_hub_counts_a_verizon_sale_as_an_app(self):
         from automations.icd_alerts import post as P
-        self.assertEqual(P._apps({"Sales": 2}, campaign="verizon"), 2)
+        self.assertEqual(P._apps({"Lines": 2}, campaign="verizon"), 2)
 
     def test_the_countdown_text(self):
         from automations.icd_alerts import post as P
-        txt = P.scoreboard_text({"Richard Bautista": {"Sales": 3}, "Diego Chacon": {"Sales": 1},
-                                 "Isaac Nambo": {"Sales": 0}}, ["Diego Chacon"], campaign="verizon")
+        txt = P.scoreboard_text({"Richard Bautista": {"Lines": 3}, "Diego Chacon": {"Lines": 1},
+                                 "Isaac Nambo": {"Lines": 0}}, ["Diego Chacon"], campaign="verizon")
         lines = txt.splitlines()
         self.assertTrue(lines[0].endswith(" 3"), lines)
         self.assertIn("Diego", lines[1])
         self.assertTrue(lines[-1].endswith("TOTALS: 4"))
         self.assertNotIn("Isaac", txt)
-        self.assertEqual(P.scoreboard_text({"A B": {"Sales": 0}}, [], campaign="verizon"), "")
+        self.assertEqual(P.scoreboard_text({"A B": {"Lines": 0}}, [], campaign="verizon"), "")
 
     def test_sale_started_is_not_a_sale(self):
         t = O.tally([row("Diego Chacon", "VZW Sale Started", 1),
