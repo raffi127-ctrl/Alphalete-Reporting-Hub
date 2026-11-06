@@ -528,9 +528,7 @@ def icd_message(owner: str, login: Dict) -> str:
     background-check links are rolling out), anything else the installer asks."""
     first = owner.strip().split()[0]
     return (
-        "Hi %s! Lucy here :wave: I'm Alphalete's reporting assistant. Once your "
-        "office computer is enrolled in Lucy ECO, I post your knocks boards, "
-        "credit-check alerts and daily metrics for you.\n\n"
+        "Hi %s! Lucy here :wave: I'm Alphalete's reporting assistant.\n\n"
         "*Your AppStream login for Lucy ECO is ready* (this is the login I use, "
         "not your own):\n"
         "• Username: `%s`\n"
@@ -543,8 +541,7 @@ def icd_message(owner: str, login: Dict) -> str:
         "*Please have these ready for the call:*\n"
         "• Your OwnerVille username and password\n"
         "• The email login where your SaraPlus codes go (if you're in that program)\n"
-        "• Your Sterling email login (we're rolling out the background-check links)\n"
-        "• Any other login the installer asks for along the way\n\n"
+        "• Your Sterling email login\n\n"
         "That keeps the call short. Reply here if anything's unclear. "
         "Here's the sign-up form we'll use on the call, for reference: %s"
         % (first, login["username"], login["password"], PYTHON_URL, ENROLL_URL))
