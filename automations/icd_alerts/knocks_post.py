@@ -824,6 +824,7 @@ BOARD_CAMPAIGN_NAME = {
     "energy": "Energy Wells",
     "b2b_att": "B2B AT&T",
     "b2b_box": "B2B Box",
+    "verizon": "Verizon Wireless",
 }
 
 

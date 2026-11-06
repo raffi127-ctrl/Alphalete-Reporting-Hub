@@ -36,6 +36,7 @@ from automations.total_knocks.pull import (
     COL_NO_ANSWER, COL_TALK_TO_NI, COL_PRES_NI, COL_SALE,
     COL_NOT_INTERESTED, COL_COME_BACK, COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
     COL_VL, COL_PRESENTATION,
+    COL_VZ_NOT_HOME, COL_VZ_APPOINTMENT, COL_VZ_SALE_STARTED, COL_VZ_CANCELED,
     COL_B2B_TALKED_TO_NI, COL_B2B_CORP_LOCAL,
     COL_B2B_CORP_NO_OPP, COL_B2B_NONE, COL_B2B_INACCURATE_LEAD,
     COL_BOX_TALKED_TO, COL_BOX_OWNER_TALKED_TO, COL_BOX_CONTRACT_SIGNED,
@@ -521,6 +522,19 @@ WIRELESS_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                            COL_NO_ANSWER, COL_NOT_INTERESTED, COL_COME_BACK,
                            COL_INACCESSIBLE, COL_DO_NOT_KNOCK]
 WIRELESS_KNOCKS_HEADERS = _with_derived(WIRELESS_KNOCKS_COLUMNS)
+
+# Verizon (Optix, 2026-11-06): the same board, Verizon's dispositions. Total
+# Leads Knocked = houses; Total Knocks = every disposition. First/Last Knock
+# and Gaps are KEPT (the renderer computes Avg Hrs from them, and Megan's
+# standing ask is the same columns on every campaign) but come through blank:
+# Optix Lead Details carries no times.
+VERIZON_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS,
+                          COL_TOTAL_TALK_TO, COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                          COL_GAPS, COL_TOTAL_GAPS, COL_NO_ANSWER, COL_VZ_NOT_HOME,
+                          COL_NOT_INTERESTED, COL_COME_BACK, COL_VZ_APPOINTMENT,
+                          COL_VZ_SALE_STARTED, COL_SALE, COL_VZ_CANCELED,
+                          COL_INACCESSIBLE, COL_DO_NOT_KNOCK]
+VERIZON_KNOCKS_HEADERS = _with_derived(VERIZON_KNOCKS_COLUMNS)
 
 # B2B. TWO boards, because the two campaigns are two vocabularies — see the
 # column sets in rashad_metrics.knocks_pull for the live header dumps they came
@@ -2372,6 +2386,7 @@ SHAPE_WIRELESS = "wireless"    # NDS disposition shape: counts, no Talk-To split
 SHAPE_GAPS_ONLY = "gaps_only"  # no disposition page at all: Time Tracker only
 SHAPE_B2B_ATT = "b2b_att"      # B2B AT&T SBS (2): Corp Franchise buckets
 SHAPE_B2B_BOX = "b2b_box"      # B2B-BOX-Energy (16): Owner Talked To, Contract
+SHAPE_VERIZON = "verizon"      # Verizon Optix, relayed bucketed (Sale Started)
 
 
 def b2b_vocab(rows: "list[dict]") -> str:
@@ -2405,6 +2420,10 @@ def knocks_shape(rows: "list[dict]") -> str:
     first = rows[0]
     if COL_TOTAL_KNOCKS not in first:
         return SHAPE_GAPS_ONLY
+    # VERIZON FIRST of the rest: no OwnerVille grid has a "Sale Started"
+    # column, and the wireless test below would otherwise claim it.
+    if COL_VZ_SALE_STARTED in first:
+        return SHAPE_VERIZON
     # B2B FIRST, both of them: their grids carry Total Knocks and no house
     # Talk-To split, so the wireless test below claims either one — and the
     # wireless BOARD has no column for a single B2B bucket, so the office would
@@ -2434,6 +2453,7 @@ _SHAPE_COLUMNS = {
     SHAPE_GAPS_ONLY: TELEMAPPER_KNOCKS_COLUMNS,
     SHAPE_B2B_ATT: B2B_ATT_KNOCKS_HEADERS,
     SHAPE_B2B_BOX: B2B_BOX_KNOCKS_HEADERS,
+    SHAPE_VERIZON: VERIZON_KNOCKS_HEADERS,
 }
 
 
@@ -2533,6 +2553,17 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
             base_cols=base, out_cols=out, teams=teams, kpis=kpis,
+            credit_checks=credit_checks)], shape)
+    elif shape == SHAPE_VERIZON:
+        # Same renderer as every other shape; Verizon's columns. No
+        # extra_totals: the comparison office is fiber.
+        return ([render_total_knocks(
+            target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
+            knocks_green_at=knocks_green_at,
+            first_knock_green_at=first_knock_green_at, sort_by=sort_by,
+            title_suffix=title_suffix, end=end, date_text=date_text,
+            base_cols=VERIZON_KNOCKS_COLUMNS,
+            out_cols=VERIZON_KNOCKS_HEADERS, teams=teams, kpis=kpis,
             credit_checks=credit_checks)], shape)
     elif shape == SHAPE_WIRELESS:
         # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for

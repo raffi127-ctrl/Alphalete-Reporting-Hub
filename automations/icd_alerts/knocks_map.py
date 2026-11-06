@@ -89,6 +89,7 @@ def _parts_by_shape() -> "Dict[str, list]":
         R.SHAPE_ENERGYWELL: list(KP._ENERGYWELL_TALK_TO_PARTS),
         R.SHAPE_B2B_ATT:    list(KP._B2B_ATT_TALK_TO_PARTS),
         R.SHAPE_B2B_BOX:    list(KP._B2B_BOX_TALK_TO_PARTS),
+        R.SHAPE_VERIZON:    list(TP.VERIZON_TALK_TO_PARTS),
         # SHAPE_WIRELESS and SHAPE_GAPS_ONLY are deliberately absent: neither
         # board draws Total Talk to, and neither grid carries the parts.
     }

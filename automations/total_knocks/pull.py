@@ -129,6 +129,15 @@ COL_B2B_QUALIFYING_QS   = "Qualifying Questions"
 COL_B2B_SARA_PLUS       = "Sara Plus"
 COL_B2B_CUSTOMER_REVIEW = "Customer Gave Review"
 # From Time Tracker (p=510 JSON), merged onto the disposition rows by badge ID.
+# VERIZON (Optix Lead Details, Megan 2026-11-06). Relayed by the office's own
+# machine (icd_alerts.optix_read.board_row) already bucketed; everything that
+# means the same as an AT&T column USES that column's name, and only these four
+# are Verizon's own. "Sale Started" is unique to Optix and is what
+# render.knocks_shape() recognises the shape by.
+COL_VZ_NOT_HOME         = "Not Home"
+COL_VZ_APPOINTMENT      = "Appointment"
+COL_VZ_SALE_STARTED     = "Sale Started"
+COL_VZ_CANCELED         = "Sale Canceled"
 COL_GAPS                = "Gaps"               # count of gaps
 COL_TOTAL_GAPS          = "Total Gaps (min)"   # total gap minutes (int)
 # Extra Time Tracker fields, carried ONLY on the standalone gaps-only rows
@@ -168,7 +177,15 @@ COUNT_COLUMNS = {
     COL_TALK_TO, COL_B2B_INACCURATE, COL_DNK, COL_CLOSE, COL_PRESENTATION,
     COL_B2B_CLIENT_ACQUIRED, COL_B2B_NO_CONTACT, COL_B2B_QUALIFYING_QS,
     COL_B2B_SARA_PLUS, COL_B2B_CUSTOMER_REVIEW,
+    COL_VZ_NOT_HOME, COL_VZ_APPOINTMENT, COL_VZ_SALE_STARTED, COL_VZ_CANCELED,
 }
+
+# Verizon Total Talk to: everyone who opened the door and talked. No answer,
+# Not Home, Inaccessible and Do Not Knock are not talks.
+VERIZON_TALK_TO_PARTS = [
+    COL_NOT_INTERESTED, COL_COME_BACK, COL_VZ_APPOINTMENT,
+    COL_VZ_SALE_STARTED, COL_SALE, COL_VZ_CANCELED,
+]
 
 DISP_TABLE = "table#table-dispositions"
 

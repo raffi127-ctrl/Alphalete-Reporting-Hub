@@ -50,5 +50,34 @@ class Tally(unittest.TestCase):
         self.assertNotIn("CASTLE", repr(t))
 
 
+class BoardRow(unittest.TestCase):
+    def test_column_names_match_the_board(self):
+        from automations.total_knocks import pull as TP
+        known = {v for k, v in vars(TP).items() if k.startswith("COL_")}
+        for col in [c for c in O.BOARD_COLUMNS.values() if c] + ["Rep", "Do Not Knock"]:
+            self.assertIn(col, known, col)
+
+    def test_dnk_comes_out_of_inaccessible(self):
+        t = O.tally([row("Isaac Nambo", "Do Not Solicit Sign", 1),
+                     row("Isaac Nambo", "Gated Community", 1),
+                     row("Isaac Nambo", "No Interest No Preso", 2),
+                     row("Isaac Nambo", "Declined - Price/Competition", 1)])
+        r = O.board_row("Isaac Nambo", t["reps"]["Isaac Nambo"])
+        self.assertEqual(tuple(int(r[k]) for k in ("Do Not Knock", "Inaccessible", "Not Interested",
+                                                    "Total Leads Knocked", "Total Knocks")),
+                         (1, 1, 2, 4, 5))
+
+    def test_the_board_recognises_and_totals_it(self):
+        from automations.icd_alerts import knocks_map
+        from automations.total_knocks import render as R
+        t = O.tally([row("Richard Bautista", "Sale Made - Wireless", 1),
+                     row("Richard Bautista", "Appointment", 1),
+                     row("Richard Bautista", "No Answer", 3)])
+        rows = knocks_map.to_rows([O.board_row("Richard Bautista", t["reps"]["Richard Bautista"])])
+        self.assertEqual(R.knocks_shape(rows), R.SHAPE_VERIZON)
+        self.assertEqual(rows[0]["Total Talk to"], 2)
+        self.assertEqual(rows[0]["Total Knocks"], 5)
+
+
 if __name__ == "__main__":
     unittest.main()

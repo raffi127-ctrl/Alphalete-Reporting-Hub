@@ -642,8 +642,7 @@ def _optix_knocks(rows_of, headless: bool, dry_run: bool, day: dt.date) -> int:
             _report("knocks", e, office_key=key)
             worst = 1
             continue
-        rows = [dict({"Rep": rep, "Total Knocks": c["Knocks"]}, **c)
-                for rep, c in sorted(out["reps"].items())]
+        rows = [optix_read.board_row(rep, c) for rep, c in sorted(out["reps"].items())]
         if not rows:
             _log("no knocks logged in Optix yet today")
         if out.get("mismatch"):

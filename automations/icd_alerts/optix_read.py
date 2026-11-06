@@ -105,6 +105,8 @@ def tally(rows: List[Dict]) -> Dict:
         b = bucket(latest)
         if b:
             rec[b] += 1
+            if _DNK.search(latest):
+                rec["Do Not Knock"] = rec.get("Do Not Knock", 0) + 1
             if b in TALK_TO:
                 rec["Talk To"] += 1
             if b == "Other" and latest not in unknown:
@@ -112,6 +114,38 @@ def tally(rows: List[Dict]) -> Dict:
     totals = {k: sum(v[k] for v in reps.values())
               for k in ["Doors", "Knocks", "Talk To", *BUCKETS]}
     return {"reps": reps, "totals": totals, "unknown": unknown}
+
+
+# tally() bucket -> the knock board's column name (total_knocks.pull). Plain
+# strings, because total_knocks is not shipped to office machines;
+# test_optix_read pins them to the pull constants so they cannot drift.
+BOARD_COLUMNS = {
+    "Doors": "Total Leads Knocked", "Knocks": "Total Knocks",
+    "No Answer": "No answer", "Not Home": "Not Home",
+    "No Interest": "Not Interested", "Declined": "Not Interested",
+    "Existing Customer": "Not Interested",
+    "Stop Back": "Come Back", "Appointment": "Appointment",
+    "Sale Started": "Sale Started", "Sale": "Sale", "Canceled": "Sale Canceled",
+    "No Access": "Inaccessible", "Other": None,
+}
+# Do Not Solicit Sign is its own board column, not just "no access".
+_DNK = re.compile(r"do not solicit", re.I)
+
+
+def board_row(rep: str, counts: Dict[str, int]) -> Dict[str, object]:
+    """One relayed row in the knock board's own column names."""
+    # First/Last Knock and gaps are BLANK, not 0: Optix Lead Details carries no
+    # times, and the board draws "no data" differently from "zero minutes".
+    row: Dict[str, object] = {"Rep": rep, "Do Not Knock": counts.get("Do Not Knock", 0),
+                              "First Knock": "", "Last Knock": "",
+                              "Gaps": "", "Total Gaps (min)": ""}
+    for bucket_name, col in BOARD_COLUMNS.items():
+        if col:
+            row[col] = int(row.get(col, 0) or 0) + int(counts.get(bucket_name, 0))
+    row["Inaccessible"] = int(row["Inaccessible"]) - int(counts.get("Do Not Knock", 0))
+    # TEXT, like an OwnerVille grid cell: the relay carries strings, and the
+    # Hub (knocks_map.to_rows) parses only its count columns as numbers.
+    return {k: (v if isinstance(v, str) else str(v)) for k, v in row.items()}
 
 
 def signin_in_progress() -> bool:
