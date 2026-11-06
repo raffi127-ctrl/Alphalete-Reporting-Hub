@@ -797,9 +797,28 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
     return 0
 
 
+def office_from_registry(key: str) -> Dict:
+    """owner + office id for an ECO key, off office_metrics/onboarded_offices.json
+    (the row the metrics dry run already needs). {} when the key is unknown."""
+    reg = Path(__file__).resolve().parents[1] / "office_metrics" / "onboarded_offices.json"
+    try:
+        rows = json.loads(reg.read_text())
+    except (OSError, ValueError):
+        return {}
+    for r in rows if isinstance(rows, list) else []:
+        if str(r.get("key", "")).strip().lower() == key.strip().lower():
+            return {"owner": str(r.get("owner") or "").strip(),
+                    "office_id": str(r.get("ov_account") or "").strip()}
+    return {}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("owner", help="the owner's name, e.g. \"Nigel Marshall\"")
+    ap.add_argument("owner", nargs="?", default="",
+                    help="the owner's name, e.g. \"Nigel Marshall\" (or use --key)")
+    ap.add_argument("--key", default="",
+                    help="their ECO key, e.g. nigel — owner + office id come from "
+                         "office_metrics/onboarded_offices.json (the dry-run row)")
     ap.add_argument("--office-id", help="their AppStream/OwnerVille office id, "
                                         "when the name alone is ambiguous")
     ap.add_argument("--office-key", default="", help="their ECO key (defaults to first name)")
@@ -819,6 +838,18 @@ def main(argv=None) -> int:
                     help="sign in as the login even when it already existed "
                          "(after somebody assigned the office by hand)")
     a = ap.parse_args(argv)
+    if a.key:
+        reg = office_from_registry(a.key)
+        if not reg.get("owner"):
+            print("no office with key %r in office_metrics/onboarded_offices.json — "
+                  "wire the metrics row first, or pass the owner's name" % a.key)
+            return 2
+        a.owner = a.owner or reg["owner"]
+        a.office_id = a.office_id or reg["office_id"]
+        a.office_key = a.office_key or a.key
+    if not a.owner:
+        print("need the owner's name or --key <eco key>")
+        return 2
     return provision(a.owner, office_id=a.office_id, office_key=a.office_key,
                      check_only=a.check, verify=not a.no_verify, headed=a.headed,
                      dump_offices=a.dump_offices, force_verify=a.verify,

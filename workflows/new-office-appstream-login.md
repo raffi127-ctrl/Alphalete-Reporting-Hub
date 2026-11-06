@@ -14,6 +14,16 @@ Megan, 2026-11-06: every ECO office gets its own AppStream admin login
 
 Code: `automations.shared.appstream_provision.eco_login("Nigel Marshall")`.
 
+## STANDING (Megan 2026-11-06): a dry run for an enrolling ICD = the login too
+
+When Megan or Eve asks for an ICD's dry run, create their AppStream login in
+the same session, without being asked separately. The metrics row already
+holds the owner and office number, so the key is all it needs:
+
+```bash
+.venv/bin/python -m automations.shared.appstream_admins --key nigel --local --verify
+```
+
 ## One command, run with the metrics dry run
 
 **Run it on YOUR Mac (Megan or Eve), as your own AppStream login.** The
