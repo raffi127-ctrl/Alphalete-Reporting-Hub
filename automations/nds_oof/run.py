@@ -199,7 +199,10 @@ def wait_for_fresh_share(now: dt.datetime, *, shared_at, sleep=None,
     sleep = sleep or _time.sleep
     slot_start = now.replace(minute=(now.minute // C.BOARD_EVERY_MIN) * C.BOARD_EVERY_MIN,
                              second=0, microsecond=0)
-    deadline = now + dt.timedelta(minutes=max_wait)
+    # Off the real clock, like the check below: `now` is the slot's
+    # reference time, not necessarily this instant (the tests pass a fixed
+    # one, and a deadline built from it had already passed).
+    deadline = dt.datetime.now() + dt.timedelta(minutes=max_wait)
     waited = False
     while True:
         at = shared_at()
