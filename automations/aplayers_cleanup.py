@@ -138,6 +138,41 @@ def orphan_sweep(client, days: int, live: bool) -> int:
     return failed
 
 
+def delete_thread(client, ts: str, live: bool) -> int:
+    """ONE thread by its parent ts (2026-11-06: the Lucy 2 queue re-ran a
+    `--send` row and #a-players-b2b got the NDS knocks recap thread twice).
+    Every reply newest first, then the parent. chat_delete only removes
+    Lucy's own posts; anything a human wrote survives with an error."""
+    try:
+        msgs = client.conversations_replies(channel=CHANNEL, ts=ts,
+                                            limit=200).get("messages", [])
+    except Exception as e:  # noqa: BLE001
+        print(f"[thread] couldn't list {ts}: {str(e)[:100]}")
+        return 1
+    if not msgs:
+        print(f"[thread] nothing at {ts}")
+        return 1
+    parent = next((m for m in msgs if m.get("ts") == ts), None)
+    when = dt.datetime.fromtimestamp(float(ts))
+    print(f"[thread] {when:%m/%d %H:%M} {((parent or {}).get('text') or '')[:60]!r}"
+          f" — {len(msgs)} msg(s) incl. parent")
+    if not live:
+        print("[thread] dry run — add --live to delete")
+        return 0
+    deleted = failed = 0
+    for m in sorted(msgs, key=lambda m: m.get("ts", ""), reverse=True):
+        try:                                   # replies first, parent last
+            client.chat_delete(channel=CHANNEL, ts=m["ts"])
+            deleted += 1
+        except Exception as e:  # noqa: BLE001
+            if "message_not_found" not in str(e):
+                print(f"    ✗ {m['ts']}: {str(e)[:90]}")
+                failed += 1
+        time.sleep(1.1)
+    print(f"[thread] deleted {deleted}, {failed} failure(s)")
+    return 1 if failed else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="aplayers_cleanup")
     ap.add_argument("--days", type=int, default=15)
@@ -145,9 +180,16 @@ def main(argv=None) -> int:
                     help="actually delete (default: preview only)")
     ap.add_argument("--orphans", action="store_true",
                     help="sweep threads whose parent was deleted by hand")
+    ap.add_argument("--thread", metavar="TS", default=None,
+                    help="delete just this one Lucy thread (its parent ts): "
+                         "every reply, then the parent; dry unless --live")
     a = ap.parse_args(argv)
     from automations.shared.slack_metrics_post import _client
     client = _client()
+    if a.thread:
+        rc = delete_thread(client, a.thread, a.live)
+        print("=== done ===", flush=True)
+        return rc
     if a.orphans:
         failed = orphan_sweep(client, a.days, a.live)
         print("=== done ===", flush=True)

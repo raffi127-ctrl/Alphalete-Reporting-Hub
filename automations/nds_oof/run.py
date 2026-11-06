@@ -777,6 +777,19 @@ def recap_week(saturday: dt.date, *, channel: str, send: bool) -> int:
     head = ("*%s Knocks — week of Mon %s – Sat %s*\nThe Mon–Sat board, then each "
             "day's end-of-day board, in this thread." % (
                 C.TEAM, monday.strftime("%-m/%-d"), saturday.strftime("%-m/%-d")))
+    # Never twice (2026-11-06: the queue re-ran a --send row and the room
+    # got the thread two times): a parent with this exact text today = done.
+    oldest = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
+    try:
+        hist = client.conversations_history(channel=channel, oldest=str(oldest), limit=200)
+        dup = next((m for m in hist.get("messages", [])
+                    if (m.get("text") or "").strip() == head.strip()), None)
+    except Exception as e:  # noqa: BLE001
+        _log("history check failed (%s) -- going ahead" % type(e).__name__)
+        dup = None
+    if dup:
+        _log("already in %s today (parent %s) -- not posting again" % (channel, dup.get("ts")))
+        return 0
     if not send:
         _log("DRY RUN -- would open a thread in %s:\n%s\nand post %d picture(s)"
              % (channel, head, len(items)))

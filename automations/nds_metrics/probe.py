@@ -283,7 +283,7 @@ def line_calib(log=print) -> int:
     day_counts = []
     for d, pth in feeds:
         try:
-            lines = WL.parse_wireless_xls(pth.read_bytes())
+            lines = LR.parse_feed(pth.read_bytes())     # the board's own parser
         except Exception:  # noqa: BLE001
             lines = []
         day_counts.append("%s(%d)" % (d.strftime("%m/%d"), len(lines)))
