@@ -1432,10 +1432,23 @@ def main() -> int:
     else:
         say("      %s campaign — no SaraPlus needed, skipping that login."
             % this_campaign)
-        # REQUIRED HERE, because it is the only login this office has. With
-        # no SaraPlus there are no credit checks and no sales -- the knocks
-        # board is the whole product, and OwnerVille is what reads it.
-        ask_for_ownerville(required=True)
+        if this_campaign in getattr(_C, "OPTIX_CAMPAIGNS", ()):
+            # VERIZON: no OwnerVille either. Knocks AND sales come from Optix,
+            # whose session lives in Lucy's own browser profile -- so the
+            # office signs in once, now, in the window Lucy uses.
+            say("      %s reads Verizon Optix — opening it so you can sign in."
+                % this_campaign)
+            try:
+                from automations.icd_alerts import optix_signin
+                optix_signin.run(log=say)
+            except Exception as e:  # noqa: BLE001 — sign-in can be redone later
+                say("      Could not open Optix (%s). Run later: python -m "
+                    "automations.icd_alerts.optix_signin" % type(e).__name__)
+        else:
+            # REQUIRED HERE, because it is the only login this office has. With
+            # no SaraPlus there are no credit checks and no sales -- the knocks
+            # board is the whole product, and OwnerVille is what reads it.
+            ask_for_ownerville(required=True)
         ok = True
 
     # AND THE BOX SALES LOGIN, for the campaigns that have one. Asked about
@@ -1460,7 +1473,10 @@ def main() -> int:
     # relaying -- 13 reps, read and sent, four minutes later. Claiming a
     # failure that did not happen sends somebody to fix a working thing, and
     # it is the sort of wrongness that costs every other message its weight.
-    ov_ok = ownerville_until_it_works() if ok else None
+    if this_campaign in getattr(_C, "OPTIX_CAMPAIGNS", ()):
+        ov_ok = None    # Verizon: no OwnerVille at all -- "never tried", not failed
+    else:
+        ov_ok = ownerville_until_it_works() if ok else None
 
     # RESUME PUSHING, only for the offices that want it (Carlos 2026-10-05).
     # Same three states as ov_ok: worked, failed, never tried.

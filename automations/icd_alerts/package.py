@@ -69,6 +69,8 @@ AGENT_FILES = [
     # sales have stopped. It was left out of the bundle when it was written
     # (2026-09-15).
     "automations/icd_alerts/box_signin.py",
+    "automations/icd_alerts/optix_read.py",
+    "automations/icd_alerts/optix_signin.py",
     "automations/icd_alerts/sara_signin.py",
     # The code screen cleared by itself, with the code from Lucy 1
     # (2026-10-29). code_answer only for its request wording -- the half

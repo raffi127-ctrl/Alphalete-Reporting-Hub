@@ -54,6 +54,9 @@ CAMPAIGNS = (
     ("energy", "Energy Wells", False),
     ("b2b_att", "B2B — AT&T", True),
     ("b2b_box", "B2B — Box Energy", False),
+    # Verizon Wireless through Credico (Megan 2026-11-06, Nico Murrugarra
+    # first). No SaraPlus: knocks AND sales come from Verizon Optix.
+    ("verizon", "Verizon Wireless", False),
 )
 CAMPAIGN_LABEL = {k: label for k, label, _sara in CAMPAIGNS}
 _SARAPLUS = {k for k, _label, sara in CAMPAIGNS if sara}

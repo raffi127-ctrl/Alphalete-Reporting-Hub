@@ -613,6 +613,52 @@ def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
     return worst
 
 
+def _optix_knocks(rows_of, headless: bool, dry_run: bool, day: dt.date) -> int:
+    """Verizon: read Optix Lead Details, relay ONE ROW PER REP (counts only).
+
+    The relayed rows use the knock board's own words where they exist ("Rep",
+    "Total Knocks") so the central side can map them like any other grid;
+    the Verizon buckets ride alongside under their own names.
+    """
+    from automations.icd_alerts import optix_read
+    worst = 0
+    for rec in rows_of:
+        key = str(rec.get("office_key") or "")
+        try:
+            out = W.timed("knocks", lambda: optix_read.read_day(day, headless=headless, log=_log),
+                          log=_log, report=_report, office_key=key)
+        except W.SweepTimeout:
+            worst = 1
+            continue
+        except optix_read.SignInInProgress:
+            continue
+        except optix_read.SignInNeeded as e:
+            print("\n%s" % e)
+            _report("knocks", e, office_key=key)
+            worst = 1
+            continue
+        except Exception as e:  # noqa: BLE001 — one office never costs another
+            _log("optix read failed: %s" % traceback.format_exc())
+            _report("knocks", e, office_key=key)
+            worst = 1
+            continue
+        rows = [dict({"Rep": rep, "Total Knocks": c["Knocks"]}, **c)
+                for rep, c in sorted(out["reps"].items())]
+        if not rows:
+            _log("no knocks logged in Optix yet today")
+        if out.get("mismatch"):
+            _report("knocks", RuntimeError(
+                "Optix count mismatch: page says %(page)s dispositions, counted %(counted)s"
+                % out["mismatch"]), office_key=key)
+        try:
+            R.send_knocks(rows, day, time_tracker=[], dry_run=dry_run,
+                          office_key=key, log=_log)
+        except R.RelayError as e:
+            _log("could not send the knocks this time: %s" % e)
+            worst = 1
+    return worst
+
+
 def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
     """Hand over today's disposition rows, ONE READ PER ENROLLED CAMPAIGN.
 
@@ -632,7 +678,19 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
     ONE CAMPAIGN FAILING DOES NOT COST THE OTHERS. They are separate reads of
     separate grids; a pin that will not take on one says nothing about the
     other, and losing both would turn a half-outage into a whole one.
+
+    VERIZON READS OPTIX, NOT OWNERVILLE (2026-11-06). Those enrollments are
+    handled first and never reach the OwnerVille login check below -- a
+    Verizon office has no OwnerVille login, and that is not a fault.
     """
+    all_rows = C.active_enrollments() if C.enrollments() else []
+    optix_rows = [r for r in all_rows
+                  if str(r.get("campaign") or "att").strip().lower() in C.OPTIX_CAMPAIGNS]
+    if not all_rows and C.campaign() in C.OPTIX_CAMPAIGNS:
+        optix_rows = [{}]
+    worst_optix = _optix_knocks(optix_rows, headless, dry_run, day) if optix_rows else 0
+    if optix_rows and len(optix_rows) == max(len(all_rows), 1):
+        return worst_optix          # nothing on this machine uses OwnerVille
     if not C.OV_CREDS_PATH.exists():
         _log("no OwnerVille login saved — skipping knocks")
         if not C.uses_saraplus():
@@ -670,8 +728,9 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
     if C.enrollments() and not C.active_enrollments():
         _log("every campaign on this machine is paused -- no knocks read")
         return 0
-    rows_of = C.active_enrollments() or [{}]
-    worst = 0
+    rows_of = [r for r in (C.active_enrollments() or [{}])
+               if str(r.get("campaign") or "att").strip().lower() not in C.OPTIX_CAMPAIGNS] or [{}]
+    worst = worst_optix
     for rec in rows_of:
         key = str(rec.get("office_key") or "")
         campaign = str(rec.get("campaign") or "att")

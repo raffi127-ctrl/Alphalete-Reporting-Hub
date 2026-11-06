@@ -137,7 +137,21 @@ def campaign_id() -> str:
 # NDS-SNRES-ATT-OOFWorkbook and its board is "ATT NDS Team". An NDS office
 # enrolling was never asked for a SaraPlus login and could never have had a
 # credit check or a sale read, with nothing reporting a fault.
-NO_SARAPLUS = ("energy", "b2b_box")
+NO_SARAPLUS = ("energy", "b2b_box", "verizon")
+
+# WHO READS KNOCKS FROM VERIZON OPTIX INSTEAD OF OWNERVILLE (Megan 2026-11-06).
+# These offices have no OwnerVille login at all -- asking for one is how an
+# install dies at step 6.
+OPTIX_CAMPAIGNS = ("verizon",)
+
+
+def uses_optix() -> bool:
+    """Does ANY active campaign on this machine read Optix?"""
+    rows = active_enrollments() if enrollments() else []
+    if not rows:
+        return campaign() in OPTIX_CAMPAIGNS
+    return any(str(r.get("campaign") or "att").strip().lower()
+               in OPTIX_CAMPAIGNS for r in rows)
 
 # WHO USES MY SERVICE CLOUD. Box only, for now -- Megan 2026-09-15, from
 # Ryan's own screenshot. Energy Wells and NDS are still board-only, and
