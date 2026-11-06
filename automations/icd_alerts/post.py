@@ -521,6 +521,8 @@ def _apps(m: Dict, campaign=None) -> int:
         return int(m.get("Sales", 0) or 0)
     if str(campaign or "").strip().lower() == "nds":
         return int(m.get("Air", 0) or 0) + int(m.get("NL", 0) or 0)
+    if names == ("Sales",):                      # Verizon: a sale IS an app
+        return int(m.get("Sales", 0) or 0)
     return sum(int(m.get(k, 0) or 0) for k in ("Int", "DTV", "NL"))
 
 
@@ -3419,8 +3421,9 @@ def _campaign_has_alerts(office_key: str) -> bool:
         if not rec:
             return True
         campaign = str(rec.campaign or "").strip().lower()
-        from automations.icd_alerts.config import SERVICECLOUD_CAMPAIGNS
-        return uses_saraplus(campaign) or campaign in SERVICECLOUD_CAMPAIGNS
+        from automations.icd_alerts.config import SERVICECLOUD_CAMPAIGNS, OPTIX_CAMPAIGNS
+        return (uses_saraplus(campaign) or campaign in SERVICECLOUD_CAMPAIGNS
+                or campaign in OPTIX_CAMPAIGNS)
     except Exception:  # noqa: BLE001
         return True
 
@@ -3915,6 +3918,8 @@ def sales_system_for(office) -> str:
     """
     from automations.icd_alerts import config as C
     campaign = (getattr(office, "campaign", "") or "att").strip().lower()
+    if campaign in getattr(C, "OPTIX_CAMPAIGNS", ()):
+        return "Verizon Optix"
     if campaign in C.NO_SARAPLUS:
         return SYSTEMS["servicecloud"]["name"]
     return SYSTEMS["saraplus"]["name"]

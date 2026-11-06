@@ -645,6 +645,14 @@ def _optix_knocks(rows_of, headless: bool, dry_run: bool, day: dt.date) -> int:
         rows = [optix_read.board_row(rep, c) for rep, c in sorted(out["reps"].items())]
         if not rows:
             _log("no knocks logged in Optix yet today")
+        # SALES RIDE ON THE SAME READ (one pull, many channels): a house whose
+        # latest Optix disposition is "Sale Made - Wireless" is a sale, per rep.
+        sales = {rep: {"Sales": c["Sale"]} for rep, c in out["reps"].items() if c.get("Sale")}
+        try:
+            R.send({}, day, sales=sales, dry_run=dry_run, office_key=key, log=_log)
+        except R.RelayError as e:
+            _log("could not send the Verizon sales this time: %s" % e)
+            worst = 1
         if out.get("mismatch"):
             _report("knocks", RuntimeError(
                 "Optix count mismatch: page says %(page)s dispositions, counted %(counted)s"

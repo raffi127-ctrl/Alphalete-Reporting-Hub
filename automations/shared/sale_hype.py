@@ -644,7 +644,27 @@ NDS = _Nds(METRICS + ("Air",), COUNTED,
            dict(METRIC_LABEL, Air="Air"))   # Air rides along; COUNTED is unchanged
                                             # (Air is already inside Int Up)
 
-SHAPES = {"b2b_box": BOX, "nds": NDS}
+class _Verizon(Shape):
+    """Verizon Wireless (Optix, 2026-11-06): a sale is a house a rep marked
+    "Sale Made - Wireless". One count, no lines -- Optix does not carry the
+    line count; Credico's next-day Sales Verification does, and that is the
+    sales BOARD, not this ping.
+
+    NO PRE-SALE PING. "VZW Sale Started" exists, but it is the house's LATEST
+    disposition, so it disappears when the sale completes and comes back if a
+    rep re-opens one -- a count that moves both ways is not an alert anybody
+    should trust until it has been watched on a real day.
+    """
+    presale_ping = False
+
+    def breakdown(self, metrics):
+        n = int(metrics.get("Sales", 0) or 0)
+        return "%d sale%s" % (n, "" if n == 1 else "s") if n else ""
+
+
+VERIZON = _Verizon(("Sales",), ("Sales",), {"Sales": "Sales"})
+
+SHAPES = {"b2b_box": BOX, "nds": NDS, "verizon": VERIZON}
 
 
 def shape(campaign=None) -> Shape:
