@@ -16813,6 +16813,100 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for nigel. wired by hand 2026-11-06 (Megan: 'Nigel Marshall is enrolling today - let's do his dry run'; Eve told via DM so she does not run it too). VP Executives, Inc., OwnerVille/AppStream 20034 (sibling 23515 'VP Executives, Inc 2nd'), ATT Fiber since fall 2026 (moved from Lumen/Quantum Fiber; Tableau owner 'NIGEL MARSHALL [vp executives, inc.]'). Eleven fiber boards like tre/sahil on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Nigel Marshall - Lucy Metrics' 1YI-mW9oqoNlXKMC5en6aZx6OkZ1E4PkXNLeh3dMBCDg copied from the Master Metrics Templates, writer alphaletereporting@. City + timezone unknown (weather not wired yet). Scheduler OFF until the dry run shows data on every board."
+  },
+  "install_verizon_house_feed_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "NOT in the 4am batch. Installs/refreshes com.alphalete.verizon-house-feed on Lucy 4 (StartInterval 300, wrapper gates 10:00-21:59 Central): reads Nico Murrugarra's Verizon Optix on Lucy 4 and relays knocks + sales under office key 'nicolas' until his own ECO machine relays (Megan 2026-11-06). Needs a one-time Optix sign-in at Lucy 4 first: lucy rerun optix_signin_lucy4. Touches no Sheet.",
+   "machine": "Lucy 4",
+   "display_name": "Install Verizon house feed (Nico, 5-min)",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "verizon-house-feed"
+   ],
+   "source_type": "local",
+   "data_sources": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "uninstall_verizon_house_feed_agent": {
+   "on_scheduler": false,
+   "_note": "Turn the Lucy 4 Verizon house feed OFF the day Nico's own ECO machine relays — two senders under 'nicolas' would report his office twice.",
+   "machine": "Lucy 4",
+   "display_name": "Uninstall Verizon house feed (Nico)",
+   "command": [
+    "automations.day_orchestrator.uninstall_agent"
+   ],
+   "base_args": [
+    "verizon-house-feed"
+   ],
+   "timeout_minutes": 5,
+   "source_type": "local",
+   "data_sources": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "optix_signin_lucy4": {
+   "on_scheduler": false,
+   "hand_run_only": true,
+   "_note": "Opens Verizon Optix in Lucy 4's own browser profile for a ONE-TIME human sign-in (Nico's account). Someone must be at / screen-sharing Lucy 4. Waits up to 5 min and verifies by the 'select your profile' page.",
+   "machine": "Lucy 4",
+   "display_name": "Optix sign-in on Lucy 4 (Verizon, by hand)",
+   "command": [
+    "automations.icd_alerts.optix_signin"
+   ],
+   "timeout_minutes": 8,
+   "source_type": "local",
+   "data_sources": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "verizon_house_feed_preview": {
+   "on_scheduler": false,
+   "_note": "One preview read of Nico's Optix on Lucy 4 — prints reps/knocks/sales, sends nothing.",
+   "machine": "Lucy 4",
+   "display_name": "Verizon house feed — preview read (Nico)",
+   "command": [
+    "automations.verizon_office.house_feed"
+   ],
+   "base_args": [
+    "--office",
+    "nicolas"
+   ],
+   "timeout_minutes": 5,
+   "source_type": "local",
+   "data_sources": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
   }
  },
  "read_only_standalone": {

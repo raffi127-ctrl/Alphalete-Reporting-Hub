@@ -415,6 +415,26 @@ def _box_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
     return "\n".join(lines)
 
 
+def _verizon_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
+    """Verizon: 'Name 3' per rep, highest first, flame on who moved, then
+    TOTALS -- the "countdown" Nico asked for (2026-11-06, Carlos: "I think he
+    means the sales count"). Sales only: Optix carries no line count."""
+    from automations.alphalete_sales_board import notify as N
+    rows = [(show(rep) if show else rep, int((m or {}).get("Sales", 0) or 0), rep)
+            for rep, m in (sales or {}).items()]
+    rows = [r for r in rows if r[1] > 0]
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: -r[1])
+    flames = set(fired or [])
+    lines = ["%s %d%s" % (N.short_name(name), n,
+                          (" " + N.FIRE) if (raw in flames or name in flames) else "")
+             for name, n, raw in rows]
+    lines.append("")
+    lines.append("%s TOTALS: %d" % (N.TROPHY, sum(r[1] for r in rows)))
+    return "\n".join(lines)
+
+
 def first_read_board(merged_sales: Dict, campaign=None, show=None) -> List[str]:
     """ONE board to Slack on the first read of a day that already carries
     sales -- the same picture the text group gets, labelled as a snapshot.
@@ -475,6 +495,8 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
         return _box_scoreboard(sales, fired, show)
     if str(campaign or "").strip().lower() == "nds":
         return _nds_scoreboard(sales, fired, show)
+    if names == ("Sales",):
+        return _verizon_scoreboard(sales, fired, show)
     if names != ("Int", "Int Up", "DTV", "NL"):
         return ""
     from automations.alphalete_sales_board import notify as N

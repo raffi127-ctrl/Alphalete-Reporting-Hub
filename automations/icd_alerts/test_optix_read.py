@@ -92,6 +92,17 @@ class VerizonSales(unittest.TestCase):
         from automations.icd_alerts import post as P
         self.assertEqual(P._apps({"Sales": 2}, campaign="verizon"), 2)
 
+    def test_the_countdown_text(self):
+        from automations.icd_alerts import post as P
+        txt = P.scoreboard_text({"Richard Bautista": {"Sales": 3}, "Diego Chacon": {"Sales": 1},
+                                 "Isaac Nambo": {"Sales": 0}}, ["Diego Chacon"], campaign="verizon")
+        lines = txt.splitlines()
+        self.assertTrue(lines[0].endswith(" 3"), lines)
+        self.assertIn("Diego", lines[1])
+        self.assertTrue(lines[-1].endswith("TOTALS: 4"))
+        self.assertNotIn("Isaac", txt)
+        self.assertEqual(P.scoreboard_text({"A B": {"Sales": 0}}, [], campaign="verizon"), "")
+
     def test_sale_started_is_not_a_sale(self):
         t = O.tally([row("Diego Chacon", "VZW Sale Started", 1),
                      row("Diego Chacon", "Sale Made - Wireless", 1)])

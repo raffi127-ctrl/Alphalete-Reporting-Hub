@@ -27,7 +27,7 @@ class VerizonOffice:
 
 OFFICES = (
     VerizonOffice(
-        key="nico",
+        key="nicolas",          # = his ECO office key (icd_alerts/offices.py)
         owner="Nicolas Murrugarra",
         office="High Value Acquisitions, Inc.",
         sales_channel="C07J46MQNUX",   # #alphalete-gp-sales (Nico 2026-11-06), shared with Carlos

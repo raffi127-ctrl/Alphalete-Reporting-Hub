@@ -323,6 +323,19 @@ OFFICES: Dict[str, AlertOffice] = {
         sat_start="10:00", sat_end="18:00", saturday=True,
         campaign="nds",
     ),
+    "nicolas": AlertOffice(
+        key="nicolas", owner="Nicolas Murrugarra", label="Nicolas's Local Office",
+        # UNROUTED on purpose: the installer asks them where they want
+        # their alerts, and a human approves it. Nothing posts until then.
+        channels=(),
+        timezone="America/Chicago", active=True, platform="mac",
+        slack_user_id="U047D64M0RW",
+        # Hours are the ORG DEFAULT, not this owner's own -- nobody
+        # has told us theirs yet. Correct them here when they do.
+        day_start="13:30", day_end="20:30",
+        sat_start="10:45", sat_end="17:00", saturday=True,
+        campaign="verizon",
+    ),
 }
 
 
