@@ -88,6 +88,12 @@ def parse_wireless_xls(data: bytes) -> List[Dict[str, str]]:
                 "line_idx": c[0], "line_type": c[1], "device_type": c[2],
                 "tn": norm_tn(c[3]), "device": c[4], "plan": c[5],
                 "line_status": c[6],
+                # the trailing cells (Est. Shipping Range, Ship Date,
+                # Delivered Date, Port Status) -- additive, 2026-11-06, for
+                # nds_metrics.line_revenue's BYOD fallback
+                "ship_date": c[8] if len(c) > 8 else "",
+                "delivered": c[9] if len(c) > 9 else "",
+                "port_status": c[10] if len(c) > 10 else "",
             })
     return out
 
@@ -139,7 +145,9 @@ def update_state(state: Dict[str, dict], lines: List[Dict[str, str]],
     stamped = {"live": 0, "tableau": 0, "order": 0}
     for ln in lines:
         key = line_key(ln)
-        active = ln["line_status"].strip().lower() == "active"
+        status_low = ln["line_status"].strip().lower()
+        active = status_low == "active"
+        dead = "disconnect" in status_low or "cancel" in status_low
         rec = state.get(key)
         if rec is None:
             rec = {"order_id": ln["order_id"]}
@@ -158,6 +166,11 @@ def update_state(state: Dict[str, dict], lines: List[Dict[str, str]],
                 rec["first_active"] = today.isoformat()
                 rec["src"] = "live"
                 stamped["live"] += 1
+        if dead and "first_dead" not in rec:
+            # additive (2026-11-06): the day the line FIRST showed
+            # Disconnected/Cancelled -- nds_metrics.line_revenue's
+            # cancelled-week basis. Never moves once stamped.
+            rec["first_dead"] = today.isoformat()
         rec["status"] = ln["line_status"]
         rec["last_seen"] = today.isoformat()
     log("line tracker: %d live flip(s), %d tableau-seeded, %d order-dated"

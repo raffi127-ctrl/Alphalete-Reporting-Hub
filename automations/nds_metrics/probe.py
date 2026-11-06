@@ -151,6 +151,150 @@ def soh_dump(log=print) -> int:
     return 0
 
 
+def line_calib(log=print) -> int:
+    """Carlos 2026-11-06 ("price each individual line"): replay every cached
+    wireless feed through nds_metrics.line_revenue and lay the board's lines
+    against the latest deposit week on the Vantura RAW tab (Campaign 'NDS
+    Wireless', Commission Type 'Base' = one row per paid line). Every line
+    + the join -> the control sheet's 'DD Probe' tab; a CALIB line per
+    deposit row in the log. READ-ONLY: the tracker is replayed in memory
+    (save=False), no board is touched."""
+    import collections
+    from automations.nds_metrics import line_revenue as LR
+    from automations.nds_metrics.run import _parse_date, load_soh
+    from automations.recruiting_report.fill import open_by_key
+    soh = load_soh(log=log)
+    if not soh:
+        log("[calib] no SaraPlus orders available -- nothing to do")
+        return 1
+    today = dt.date.today()
+    feeds = LR.cached_feeds()
+    log("[calib] cached feeds: " + (", ".join(d.isoformat() for d, _ in feeds)
+                                    or "NONE"))
+    res = LR.prepare(soh, today, log=log, save=False)
+    ls, le, ts, te = res["weeks"]
+    detail = res["detail"]
+    # --- the deposit week that ends `le` ---------------------------------
+    sh = open_by_key("1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY")
+    raw = next(w for w in sh.worksheets() if w.title.strip().lower() == "raw")
+    vals = raw.get_all_values()
+    hix = {h.strip(): k for k, h in enumerate(vals[0])}
+    want = {"%d.%d" % (le.month, le.day), "%d.%02d" % (le.month, le.day)}
+
+    def money(v):
+        try:
+            return float(str(v).replace("$", "").replace(",", "") or 0)
+        except ValueError:
+            return 0.0
+
+    dd = [r for r in vals[1:] if r and str(r[0]).strip() in want
+          and len(r) > hix["Campaign"]
+          and r[hix["Campaign"]].strip() == "NDS Wireless"]
+    base = [r for r in dd if r[hix["Commission Type"]].strip() == "Base"]
+    log("[calib] deposit WE %s: %d NDS rows, %d base line(s), $%s total"
+        % (sorted(want)[0], len(dd), len(base),
+           "{:,.0f}".format(sum(money(r[hix["Total $ to ICD"]]) for r in dd))))
+    if not dd:
+        log("[calib] the RAW tab has no rows for that week yet (loads "
+            "Wednesday) -- dumping the board's lines only")
+    by_cust = collections.defaultdict(list)
+    for d in detail:
+        if d["customer"]:
+            by_cust[" ".join(str(d["customer"]).upper().split())].append(d)
+
+    def find(cust):
+        c = " ".join(cust.upper().split())
+        if c in by_cust:
+            return by_cust[c]
+        ct = set(c.split())
+        for k, v in by_cust.items():
+            kt = set(k.split())
+            if ct and (ct <= kt or kt <= ct):
+                return v
+        return []
+
+    out = [["DD customer", "DD rep", "DD product", "DD category", "DD act",
+            "DD $", "board lines for that customer", "verdict"]]
+    verdicts = collections.Counter()
+    used = set()
+    for r in sorted(base, key=lambda r: (r[hix["Rep Name"]], r[hix["Customer Name"]],
+                                          r[hix["Activation Date"]])):
+        cust = r[hix["Customer Name"]].strip()
+        act = _parse_date(r[hix["Activation Date"]])
+        amt = money(r[hix["Total $ to ICD"]])
+        cat = r[hix["Category"]].strip()
+        prod = r[hix["Product"]].strip() or r[hix["Description"]].strip()
+        if cat.upper() == "AIR":
+            verdicts["air (checked by count)"] += 1
+            out.append([cust, r[hix["Rep Name"]], prod, cat, str(act or ""), amt,
+                        "", "air"])
+            continue
+        found = find(cust)
+        desc = "; ".join("L%s %s %s %s%s $%.0f" % (
+            d["line"], d["kind"], d["status"], d["activation"] or "-",
+            ("(%s)" % d["src"]) if d["src"] else "", d["base"]) for d in found)
+        verdict = "none"
+        if found:
+            verdict = "customer only"
+            acts = [(d, _parse_date(d["activation"]) if d["activation"] else None)
+                    for d in found if d["activation"]]
+            free = [(d, a) for d, a in acts if id(d) not in used]
+            for d, a in free:
+                if a == act:
+                    verdict = "exact"
+                    used.add(id(d))
+                    break
+            else:
+                for d, a in free:
+                    if a and act and abs((a - act).days) == 1:
+                        verdict = "off by 1 (%s)" % d["src"]
+                        used.add(id(d))
+                        break
+                else:
+                    for d, a in free:
+                        if a and act and LR.week_bounds(a)[2] == LR.week_bounds(act)[2]:
+                            verdict = "same week"
+                            used.add(id(d))
+                            break
+        verdicts[verdict] += 1
+        log("CALIB %-24s %-10s act %s $%4.0f | %s | %s"
+            % (cust[:24], prod[:10], act or "-", amt, verdict, desc[:160]))
+        out.append([cust, r[hix["Rep Name"]], prod, cat, str(act or ""), amt,
+                    desc, verdict])
+    # board lines posted last week with no deposit base line = the over-count
+    extra = [d for d in detail if d["bucket"].startswith("posted_last")
+             and id(d) not in used and d["kind"] not in ("air",)]
+    for d in extra:
+        log("CALIB BOARD-ONLY %-24s L%s %s %s act %s $%.0f (%s)"
+            % (str(d["customer"])[:24], d["line"], d["kind"], d["status"],
+               d["activation"], d["base"], d["src"]))
+    air_dd = sum(1 for r in base if r[hix["Category"]].strip().upper() == "AIR")
+    air_board = sum(1 for d in detail if d["kind"] == "air"
+                    and d["bucket"].startswith("posted_last"))
+    log("[calib] verdicts: " + ", ".join("%s=%d" % kv for kv in sorted(verdicts.items()))
+        + "; board-only last-week lines=%d; Air deposit=%d board=%d"
+        % (len(extra), air_dd, air_board))
+    out.append([])
+    cols = ["rep", "customer", "order_id", "order_date", "line", "type",
+            "device_type", "device", "plan", "status", "first_active", "src",
+            "first_dead", "activation", "dead", "kind", "base", "addon", "bucket"]
+    out.append(cols)
+    for d in detail:
+        out.append([d.get(c, "") for c in cols])
+    ctl = open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+    try:
+        tab = ctl.worksheet("DD Probe")
+    except Exception:  # noqa: BLE001
+        tab = ctl.add_worksheet("DD Probe", rows=600, cols=40)
+    tab.resize(rows=max(len(out) + 5, 50), cols=max(len(cols), 8))
+    tab.clear()
+    tab.update(out, "A1", value_input_option="RAW")
+    log("[calib] %d deposit line(s) + %d board line(s) -> 'DD Probe' tab"
+        % (len(base), len(detail)))
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     from automations.office_metrics import nds_orderlog as NO
     from automations.total_knocks import guests
@@ -265,6 +409,8 @@ def _entry(argv=None):
         return dd_join()
     if "--soh-dump" in args:
         return soh_dump()
+    if "--line-calib" in args:
+        return line_calib()
     return main(argv)
 
 

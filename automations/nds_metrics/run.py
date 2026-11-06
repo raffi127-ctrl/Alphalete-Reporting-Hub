@@ -1430,76 +1430,18 @@ def price_order(ix, r) -> float:
 
 
 def build_activation_revenue(cols, crew, today, log=print) -> Path:
-    """#5 Activation Revenue Overview — activated $ per rep by activation
-    week, SaraPlus orders priced on the SOW at base comp."""
-    from automations.att_order_log import payout as ap
-    from automations.box_order_log import png as bpng
+    """#5 Activation Revenue Overview -- $ per rep by activation week, priced
+    per LINE the way the deposit pays (line_revenue: the SaraPlus wireless
+    report's per-line statuses + the activation-day ledger + Internet Air
+    off the SOH; Mon-Sun weeks). Carlos 2026-11-06: "price each individual
+    line and add internet air". Orders the wireless report does not carry
+    fall back to price_order at order level."""
+    from automations.nds_metrics import line_revenue
     soh = load_soh(log=log)
     if not soh:
         raise RuntimeError("activation revenue needs the SaraPlus relay")
-    ix, orders, pulled_at = soh
-    ls, le, ts, te = ap.week_bounds(today)
-    reps: Dict[str, dict] = {}
-    for r in orders:
-        rep = _soh_cell(ix, r, "User Name")
-        if not rep:
-            continue
-        a = reps.setdefault(rep, {"posted_last": 0.0, "posted_this": 0.0,
-                                  "open": 0.0, "can_last": 0.0,
-                                  "can_this": 0.0})
-        amt = price_order(ix, r)
-        st = _soh_cell(ix, r, "Wireless Status").lower()
-        act = _parse_date(_soh_cell(ix, r, "Wireless Active Date"))
-        if "cancel" in st or "disconnect" in st:
-            which = "can_last" if (act and ls <= act <= le) else "can_this"
-            a[which] += amt
-        elif act is None:
-            a["open"] += amt
-        elif ls <= act <= le:
-            a["posted_last"] += amt
-        elif ts <= act <= te:
-            a["posted_this"] += amt
-
-    def _table(start, end, pk, ck):
-        rows = [{"rep": rep, "posted": round(a[pk]),
-                 "pending": round(a["open"]), "canceled": round(a[ck])}
-                for rep, a in reps.items()]
-        rows.sort(key=lambda x: (-x["posted"], x["rep"].lower()))
-        totals = {k: sum(x[k] for x in rows)
-                  for k in ("posted", "pending", "canceled")}
-        return {"label": ap.label(start, end), "rows": rows,
-                "totals": totals}
-
-    tables = {"last": _table(ls, le, "posted_last", "can_last"),
-              "this": _table(ts, te, "posted_this", "can_this")}
-    # DD reconciliation visibility (Carlos 2026-10-28): the log carries the
-    # same numbers the board shows.
-    for key in ("last", "this"):
-        t = tables[key]
-        log(f"[nds] act-rev {t['label']}: posted ${t['totals']['posted']:,}"
-            f" / open ${t['totals']['pending']:,}"
-            f" / cancelled ${t['totals']['canceled']:,}")
-        for row in t["rows"]:
-            if row["posted"]:
-                log(f"[nds]   {key} {row['rep'][:26]}: ${row['posted']:,}")
-    out = OUT_DIR / "nds_activation_revenue.png"
-    saved = list(bpng.COLS)
-    bpng.COLS[:] = [("Rep Name", "rep", "left"),
-                    ("Posted $", "posted", "center"),
-                    ("Cancelled $", "canceled", "center"),
-                    ("Still Open $", "pending", "center")]
-    try:
-        bpng.render(tables, out, money=True,
-                    subtitle="NDS — activated $ by activation week, "
-                             "ATT-D2D-OOF SOW at BASE COMP (Tier 3-3, OOF "
-                             "rates; BYOD priced as BYOD port; add-ons not "
-                             f"in the export). SaraPlus pulled "
-                             f"{pulled_at:%H:%M}.")
-    finally:
-        bpng.COLS[:] = saved
-    log("[nds] activation revenue (SARAPLUS + SOW base comp)")
-    return out
-
+    return line_revenue.build(soh, today, OUT_DIR / "nds_activation_revenue.png",
+                              log=log)
 
 def build_team_tree(cols, crew, today, log=print) -> Path:
     """The 6am NDS team tree rides the 7:30 thread (Carlos 2026-10-28:

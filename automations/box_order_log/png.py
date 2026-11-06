@@ -201,7 +201,8 @@ def render(tables: Dict, out_path: Path, *, subtitle: str = "",
     w_this, _ = _table_width(probe, this["rows"], fonts[2], fonts[1], money)
     rows_h = max(len(last["rows"]), len(this["rows"])) + 1     # +1 TOTAL strip
 
-    sub_h = 26 * SCALE if subtitle else 0
+    # a "\n" in the subtitle = a second line (nds line_revenue, 2026-11-06)
+    sub_h = 26 * SCALE * (subtitle.count("\n") + 1) if subtitle else 0
     hidden = tables.get("hidden") or []
     foot_h = 20 * SCALE if hidden else 0
     W = PAD * 2 + w_last + GAP + w_this
