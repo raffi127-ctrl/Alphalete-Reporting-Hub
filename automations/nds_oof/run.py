@@ -568,7 +568,8 @@ def _share_dump() -> int:
         hits = []
         if rows:
             try:
-                hits = [G._rep(rows[i]) for i in G.match_rows(rows, want).values()]
+                hit_map, _missing = G.match_rows(rows, want)
+                hits = [G._rep(rows[i]) for i in hit_map]
             except Exception as e:  # noqa: BLE001
                 hits = ["(match failed: %s)" % type(e).__name__]
         _log("share-dump: key=%r owner=%r day=%r at=%r rows=%s hits=%s"
