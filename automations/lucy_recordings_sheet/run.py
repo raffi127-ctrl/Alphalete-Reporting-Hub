@@ -255,6 +255,14 @@ def _q(tab):
     return "'%s'" % tab
 
 
+# Sheets turns a typed/picked "November 2026" into a DATE, which never equals
+# the text month in the calc tabs - so compare against B1 rendered as text.
+def filter_formula(tab: str, cols: str, sort_col: int) -> str:
+    month = 'IF(ISNUMBER($B$1), TEXT($B$1, "mmmm yyyy"), $B$1)'
+    return ('=IFERROR(SORT(FILTER(%s!%s, %s!A2:A=%s), %d, FALSE), "Sin datos para este mes")'
+            % (_q(tab), cols, _q(tab), month, sort_col))
+
+
 def create_sheet(S, share: list) -> str:
     body = {"properties": {"title": "LUCY 2nd Round Recordings (TEST)"},
             "sheets": [{"properties": {"title": t, "hidden": t in (CALC_OWNER, CALC_REP, MONTHS)}}
@@ -268,11 +276,9 @@ def create_sheet(S, share: list) -> str:
     reqs = []
     layouts = {
         TAB_OWNER: (["Dueño", "Grabaciones", "2nd rounds hechas", "% grabadas", "Nota promedio"],
-                    "=IFERROR(SORT(FILTER(%s!B2:F, %s!A2:A=$B$1), 2, FALSE), \"Sin datos para este mes\")"
-                    % (_q(CALC_OWNER), _q(CALC_OWNER)), 4),
+                    filter_formula(CALC_OWNER, "B2:F", 2), 4),
         TAB_REP: (["Rep", "Dueño", "Grabaciones", "Nota promedio"],
-                  "=IFERROR(SORT(FILTER(%s!B2:E, %s!A2:A=$B$1), 3, FALSE), \"Sin datos para este mes\")"
-                  % (_q(CALC_REP), _q(CALC_REP)), 3),
+                  filter_formula(CALC_REP, "B2:E", 3), 3),
     }
     vals = []
     for tab, (hdr, formula, score_col) in layouts.items():
