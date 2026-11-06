@@ -60,7 +60,9 @@ OWNER_EMAILS: Dict[str, str] = {
     # starr
     "Blue Mendoza":        "adreyb15@gmail.com",
     "JC Pascual":          "jpascual@elevaremanagementinc.com",
-    "Juan Botero Berrio":  "juanbotero0120@gmail.com",
+    # Juan Botero Berrio (juanbotero0120@gmail.com) OUT 2026-11-05: off Starr's
+    # captainship (Starr). Miguel Zaragoza IN the same day.
+    "Miguel Zaragoza":     "nobilismarketinggroup@gmail.com",
     "Milly Villagrana":    "milly.vinceremarketing@gmail.com",
     "Natalia Gwarda":      "nataliagwarda@gmail.com",
     "Oren Shezaf":         "omniamanagementinc@gmail.com",

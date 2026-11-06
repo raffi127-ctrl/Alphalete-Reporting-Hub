@@ -113,6 +113,10 @@ RECIPIENTS: dict[str, List[str]] = {
         "milly.vinceremarketing@gmail.com", "omniamanagementinc@gmail.com",
         # OUT 2026-08-25, two-week zero rule: William Sassenberg.
         "raffi127@gmail.com", "starr.novamanagement@gmail.com",
+        # IN 2026-11-05 (Starr): Miguel Zaragoza, same add as
+        # captainship_drafts.config.RECIPIENTS and the live group. Juan Botero
+        # Berrio came off Starr's the same day (he was never on this list).
+        "nobilismarketinggroup@gmail.com",
     ],
 }
 

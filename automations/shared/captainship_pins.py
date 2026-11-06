@@ -124,7 +124,16 @@ from typing import Dict, Iterable, Optional
 # "Colten's Team", asi que sin el pin el pull de churn le rearma las filas y el
 # gate lo vuelve a ofrecer. Sigue siendo ICD NDS del org (oficina 23230, Palm
 # City Management, tab 'Kyle Campas - NDS') — el pin es solo de Colten.
+#
+# 2026-11-05 (Starr, respondiendo su Captainship Report 11/4: "remove Juan and
+# add Miguel"): Juan Botero Berrio sale de la capitania de Starr — misma forma
+# que Kyle Campas. Tableau lo sigue filando bajo "Starr's Team" hasta que
+# SmartCircle lo mueva; sin el pin las tabs de metricas le rearman la fila y el
+# gate lo vuelve a ofrecer. Sus 6 filas de Starr en el Org Sales Board salieron
+# el mismo dia. Sigue siendo ICD ATT fiber (oficina 23703) — pin solo de Starr.
+# Las dos grafias: board/Focus "Juan Botero Berrio", AppStream/Tableau con guion.
 NOT_ON_TEAM: Dict[str, tuple] = {
+    "Starr": ("Juan Botero Berrio", "Juan Botero-Berrio"),
     "Raf": ("Steve McElwee",),
     "Sahil": ("Jeremiah Minor",),
     "Pat": ("Jesus Hawthorne", "Roberto Luconi", "William Sassenberg",
@@ -376,9 +385,25 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
 # entrada es la que lo mantiene del lado de Pat en cada corrida diaria.
 # Borrarla el dia que SmartCircle lo pase a "Pat's Team".
 #
+# 2026-11-05 (Starr, respondiendo su Captainship Report 11/4: "add Miguel"):
+# Miguel Zaragoza (oficina 24145, Nobilis; ex rep de Starr) entra a la
+# capitania de Starr. Ya vende como dueno (WE 11/1: 29 NI, 47 apps) pero
+# Tableau no lo tiene en "Starr's Team" — y no se sabia en que equipo lo tiene
+# (desde Windows no se abre Tableau). Por eso la fuente es ANY_TEAM: sus filas
+# se toman donde sea que Tableau lo file (otro equipo, "Unassigned"...). Eve:
+# "lo podemos buscar de forma individual hasta que lo integren en ese filtro".
+# Borrar la entrada el dia que Chris Williford lo pase a "Starr's Team" (igual
+# es inofensiva: desde ahi route_team no cambia nada). Las dos grafias porque
+# como rep figuraba "Miguel Zaragoza Carranza".
+#
+# ANY_TEAM = take the rep from whatever team Tableau files them under.
+ANY_TEAM = "*"
+
 # team the report is BUILDING -> {rep: the team Tableau currently files them under}
 ADOPTED: Dict[str, Dict[str, str]] = {
     "Pat": {"Alex Touati": "Tony's Team"},
+    "Starr": {"Miguel Zaragoza": ANY_TEAM,
+              "Miguel Zaragoza Carranza": ANY_TEAM},
 }
 
 
@@ -404,6 +429,7 @@ def route_team(team: str, owner: str) -> str:
     """
     for capt, reps in ADOPTED.items():
         for rep, src in reps.items():
-            if _k(rep) == _k(owner) and captain_key(src) == captain_key(team):
+            if _k(rep) == _k(owner) and (
+                    src == ANY_TEAM or captain_key(src) == captain_key(team)):
                 return f"{capt}'s Team"
     return team

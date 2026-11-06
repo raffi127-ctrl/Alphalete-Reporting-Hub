@@ -90,7 +90,8 @@ ICD_TIMEZONES: Dict[str, str] = {
     # wave is real now.
     "Blue Mendoza":     "America/New_York",              # Charlotte, NC
     "JC Pascual":       "America/Los_Angeles",           # San Leandro, CA
-    "Juan Botero Berrio": "America/Los_Angeles",         # Concord, CA
+    # Juan Botero Berrio (Concord, CA) OUT 2026-11-05: off Starr's captainship.
+    "Miguel Zaragoza":  "America/Los_Angeles",           # 24145; came off Starr's Bay Area team — VERIFY city
     "Milly Villagrana": "America/Los_Angeles",           # Gold River, CA
     "Natalia Gwarda":   "America/Los_Angeles",           # San Leandro, CA
     "Oren Shezaf":      "America/Chicago",               # Kansas City, MO

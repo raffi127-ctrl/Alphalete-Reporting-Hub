@@ -105,6 +105,9 @@ REMOVALS: dict = {
         # in BOTH of Starr's fiber boxes. Kobe Cireus flagged the same day
         # stays: he is still selling Fiber - All Units.
         ("William Sassenberg", "William@optimabusinessmgmt.com"),
+        # 2026-11-05 (Starr): Juan Botero Berrio sale de su capitania (no es la
+        # regla de dos semanas). Sus otros grupos quedan: sigue siendo ICD.
+        ("Juan Botero Berrio", "juanbotero0120@gmail.com"),
     ],
     # 2026-09-09 (Eve): "she is shut down" — la oficina 23576 (Illumane, Inc.)
     # de Kimberly Rodriguez cerró, que es por qué AppStream venía rechazándola

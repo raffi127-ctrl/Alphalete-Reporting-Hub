@@ -93,3 +93,18 @@ def _main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_main())
+
+
+def test_any_team_adoption_follows_the_rep_wherever_tableau_files_him():
+    """Miguel Zaragoza (Starr, 2026-11-05): adopted from ANY team until
+    SmartCircle puts him on Starr's — Unassigned, another captain, anything."""
+    for team in ("Unassigned", "Tony's Team", "", "Starr's Team"):
+        assert pins.route_team(team, "Miguel Zaragoza") == "Starr's Team"
+    assert pins.route_team("Unassigned", "miguel  zaragoza carranza") == "Starr's Team"
+    assert pins.adopted_from("Starr's Team", "Miguel Zaragoza") == pins.ANY_TEAM
+
+
+def test_any_team_adoption_leaves_everyone_else_alone():
+    assert pins.route_team("Unassigned", "Juan Botero-Berrio") == "Unassigned"
+    assert pins.route_team("Tony's Team", "Alex Touati") == "Pat's Team"
+    assert pins.route_team("Wayne's Team", "Alex Touati") == "Wayne's Team"

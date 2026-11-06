@@ -595,12 +595,15 @@ RECIPIENTS: dict = {
         "adreyb15@gmail.com", "dylanjtwaddle@gmail.com",
         "jpascual@elevaremanagementinc.com",
         "maudmiller4@gmail.com", "milly.vinceremarketing@gmail.com",
-        # IN 2026-08-28 (Eve): Juan Botero Berrio ya estaba en el grupo VIVO
-        # "Starr's Captainship" pero no aca, asi que seed_groups lo marcaba
-        # para SACAR. Su tarjeta de Contacts tampoco tenia direccion — Eve se
-        # la cargo el mismo dia; el mail arreglo el matcheo, esta linea es la
-        # que lo deja adentro. Mismo caso que Abdallah en la lista de Jairo.
-        "juanbotero0120@gmail.com",
+        # OUT 2026-11-05 (Starr, respondiendo su Captainship Report 11/4:
+        # "remove Juan and add Miguel"): Juan Botero Berrio
+        # (juanbotero0120@gmail.com) sale de la capitania de Starr — del grupo
+        # VIVO, de las 6 tablas de Starr del Org Sales Board y pin en
+        # captainship_pins. Sigue siendo ICD de ATT fiber (oficina 23703).
+        # IN 2026-11-05 (Starr, mismo mail): Miguel Zaragoza (oficina 24145,
+        # Nobilis Marketing Group, salio del equipo de Starr). Agregado primero
+        # al grupo VIVO; aca para que seed_groups no lo saque.
+        "nobilismarketinggroup@gmail.com",
         "nataliagwarda@gmail.com", "omniamanagementinc@gmail.com",
         "raffi127@gmail.com", "starr.novamanagement@gmail.com",
         # OUT 2026-08-25, two-week zero rule: William Sassenberg
