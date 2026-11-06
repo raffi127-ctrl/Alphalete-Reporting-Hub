@@ -56,7 +56,7 @@ MANUAL = {
         "Indeed": "Double Entry email 'Alphalete Marketing Inc (Rafael Hidalgo) Texas' (Tue) — highlighted Indeed; also update last week's column",
         "Recruiting Bonuses (Aisha)": "Apex",
         "Zach's Pay (overrides)": "you fill it",
-        "Zach's Pay (true up + taxes) - 22/24": "Slack DM Raf ↔ Zach, last one sent",
+        "Zach's Pay (true up + taxes)": "Slack DM Raf ↔ Zach, last one sent",   # label's "- 22/24" part changes
         "Profit Share": "left blank for now (Maud 2026-10-23)",
     },
 }
@@ -291,7 +291,8 @@ def tableau(weeks: list[dt.date]) -> dict:
     from automations.override_bulletin import pulls as P
     OUT.mkdir(parents=True, exist_ok=True)
     res = {"security": {}, "org": {"carlos": {}, "raf": {}}, "att": {}, "captain": {}}
-    periods = sorted({period_of(w) for w in weeks})
+    # late adjustments for a week can land in the NEIGHBOURING period too, so pull one period either side
+    periods = sorted({period_of(w) + d for w in weeks for d in (-1, 0, 1)} - {0})
     with tableau_session(headless=True, verbose=False) as page:
         f = OUT / "_sfdc_balance.csv"
         try:
@@ -492,8 +493,8 @@ def fill(who: str, we: dt.date, tab: str | None, values: dict, prior: dict, dry:
     L = _col(col)
     data = [{"range": f"'{tab}'!{L}{first}", "values": [[hdr(we)]]}]
     todo = []
-    for label in MANUAL[who]:
-        i = label_row.get(_n(label))
+    for label in MANUAL[who]:   # exact label, or a row that starts with it (labels like "… - 24/24" change)
+        i = label_row.get(_n(label)) or next((r for k, r in label_row.items() if k.startswith(_n(label))), None)
         if i and _n(label) not in {_n(k) for k in values}:
             if fresh:
                 data.append({"range": f"'{tab}'!{L}{i}", "values": [[""]]})
