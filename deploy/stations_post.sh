@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stations picture, 10:00 CT Mon-Fri (Raf, 2026-11-05).
+# Stations picture, 9:00 CT Mon-Fri (Raf, 2026-11-05; moved from 10:00 on 11-06).
 #
 # RUNS ON LUCY 1, and only there: Lucy 1's Messages is in the "Alphalete A-Team
 # Chat"; anywhere else this exits 1 at group resolution.
