@@ -65,7 +65,9 @@ OFFICES: Dict[str, Office] = {
         # Rafs funnel - 24153"); Omar's own office is 24232 (call list moved
         # 10/30). OwnerVille is still 24153 — that is a different system.
         key="omar", office_id="24232", owner="Omar Mohamad",
-        channel="C0C6HKZ63EK",   # #omars-mohammad-office-recruiting-24153-rafael-hidalgo
+        # C0C6HKZ63EK (the 24153 room) was renamed #old-omar-dont-use on
+        # 2026-11-06; his live room came with the 24232 move.
+        channel="C0CEZ64FYM6",   # #24232-kalkan-marketing-inc-omar-mohamad
         posts_in_own_channel=True,   # Megan 2026-10-26: post in his channel
         tag_helpers={"Omar Mohamad": "U0C144X8SBD"}),   # not look-alike U0A0J2T9XKL
 }

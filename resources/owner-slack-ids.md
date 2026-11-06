@@ -63,6 +63,7 @@ detail in the thread. [[feedback_short_header_posts]]
 | 11580 | Carlos Hidalgo | C09L1S3MQ1E | Confirmed by Megan 2026-10-20 |
 | 23965 | Tiffani Brown | C0CAV0P4RRS | `raf-hidalgo-recruiting-23965-tiffani`, created 2026-10-20 |
 | 24065 | Maria Quintero | C0CBLLEF2CQ | `raf-hidalgo-recruiting-24065-maria`. Was named ...-24064- until Megan renamed it 2026-10-20; the id did not change. |
+| 24232 | Omar Mohamad | C0CEZ64FYM6 | `24232-kalkan-marketing-inc-omar-mohamad` (private, aptel). His live room since the 11/04 move; the 24153 room C0C6HKZ63EK was renamed `old-omar-dont-use` 2026-11-06 |
 | 24153 | Omar Mohamad | C0C6HKZ63EK | `omars-mohammad-office-recruiting-24153-rafael-hidalgo` (Slack Connect, aptel owns it). Confirmed by Megan 2026-10-26 |
 
 ## Where else IDs live in code (keep in sync)
