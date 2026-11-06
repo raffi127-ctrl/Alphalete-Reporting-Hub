@@ -96,7 +96,7 @@ BORROWED_FRESH_WAIT_MIN = 9
 # -- Cinthya + Nathaly vanished from the NDS board 11/04-11/05. His Mac
 # relays his knocks to the 'ICD Knocks' tab like every office; this maps a
 # borrowed key to that office key. Both tabs are read; the newer row wins.
-BORROWED_ICD_OFFICES = {"rafael": "rafael"}
+BORROWED_ICD_OFFICES = {"rafael": "raf"}   # ICD office key read off the relay 2026-11-06
 
 # Credit checks for the call-outs come from Carlos's own SaraPlus, relayed by
 # his office Mac mini under this ICD office key (icd_alerts).
