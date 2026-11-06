@@ -32,19 +32,18 @@ class Weeks(unittest.TestCase):
         self.assertFalse(w1["current"])
         self.assertTrue(AW.rows_for((IX, [order("E", "DSI9", order_date="11/05/2026", **{"Wireless Status": "Pending Shipment", "Wireless Line Count": "1"})], None), [], {}, FRI)[0]["current"])
 
-    def test_render_writes_a_png(self):
-        import tempfile
-        from pathlib import Path
-        rows = [{"we": dt.date(2026, 10, 25), "orders": 18, "orders_act": 15, "lines": 45, "activated": 31,
-                 "churned": 2, "pending": 9, "cancelled": 5, "rate": 31 / 45, "current": False},
-                {"we": dt.date(2026, 11, 1), "orders": 25, "orders_act": 12, "lines": 70, "activated": 30,
-                 "churned": 1, "pending": 38, "cancelled": 2, "rate": 30 / 70, "current": False},
-                {"we": dt.date(2026, 11, 8), "orders": 20, "orders_act": 5, "lines": 55, "activated": 9,
-                 "churned": 0, "pending": 46, "cancelled": 0, "rate": 9 / 55, "current": True}]
-        out = Path(tempfile.gettempdir()) / "nds_activation_by_week_test.png"
-        AW.render(rows, out, today=FRI, pulled_at=dt.datetime(2026, 11, 6, 6, 30), feed_date=dt.date(2026, 11, 6))
-        self.assertGreater(out.stat().st_size, 5000)
-        print("rendered", out)
+    def test_per_rep_cells_and_columns(self):
+        o1 = order("Nick", "DSI1", order_date="10/20/2026", **{"Wireless Status": "Active", "Wireless Line Count": "2", "Port Line Count": "2"})
+        o2 = order("Jacob", "DSI2", order_date="10/22/2026", **{"Wireless Status": "Shipped - Delivered", "Wireless Line Count": "1", "Port Line Count": "1"})
+        lines = [line("DSI1", 1, "Active", tn="2220000001"), line("DSI1", 2, "Shipped", tn="2220000002"),
+                 line("DSI2", 1, "Delivered", tn="2220000003")]
+        weeks, data = AW.aggregate((IX, [o1, o2], None), lines, {}, FRI)
+        self.assertEqual(weeks, [dt.date(2026, 10, 25)])
+        self.assertEqual(data["Nick"][weeks[0]]["activated"], 1)
+        self.assertEqual(data["Jacob"][weeks[0]]["activated"], 0)
+        self.assertEqual(data[AW.TOTAL][weeks[0]]["lines"], 3)
+        self.assertEqual(AW._color(dt.date(2026, 10, 25), FRI, 0.8), "Green")
+        self.assertEqual(AW._color(dt.date(2026, 10, 25), FRI, 0.5), "Red")
 
 
 if __name__ == "__main__":
