@@ -203,6 +203,12 @@ class HalfHourPass(unittest.TestCase):
         self.assertFalse(run.hourly_chat_skips("knocking", self._at(15)))
         self.assertFalse(run.hourly_chat_skips("knocking", self._at(45)))
 
+    def test_org_totals_ride_the_everyone_chats(self):
+        # owners (Megan), Knocking (Raf), Carlos's chain (Carlos) -- 11/6.
+        import inspect
+        src = inspect.getsource(run.main)
+        self.assertIn('ORG_TOTAL_CHATS = ("owners", "knocking", "carlos")', src)
+
     def test_carlos_title_and_chat(self):
         from automations.owner_sales_hourly import config as cfg
         self.assertEqual(cfg.CARLOS_GROUP, "ATT B2B Leaders")

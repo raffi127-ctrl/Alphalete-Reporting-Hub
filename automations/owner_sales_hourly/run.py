@@ -29,7 +29,7 @@ NDS TOO (Jairo 2026-10-26, Eve: "the ones on the same campaign as Jairo"): a
 third text into his "A PLAYERSSS" chat -- only sales from NDS offices, only
 owners on our Org board, titled "NDS Sales Today".
 CARLOS TOO (Carlos 2026-11-04): the owners list into his "ATT B2B Leaders" chain,
-hourly on the :15, titled "Alphalete Owner Sales Today".
+hourly on the :15, titled "Alphalete Owner Sales Today"; the org totals under it too (Carlos 2026-11-06).
 ALPHALETE IN THE SSO CHAT (Colten 2026-11-06, Raf approved): a second text into
 SOUTHSHORE ORG on the same :45 -- our Org-board owners who are NOT South Shore,
 titled "Alphalete Owner Sales Today", its own TOTAL -- so the two orgs compete.
@@ -289,6 +289,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     # own sum so the two can still compete there (Megan 2026-11-06).
     org_lines = org_total_lines(alphalete, sso)
 
+    # The chats that carry everyone get the two org lines under the TOTAL:
+    # owners (Megan 11/6), Knocking (Raf 11/6), Carlos's chain (Carlos 11/6).
+    ORG_TOTAL_CHATS = ("owners", "knocking", "carlos")
     rc = 0
     for name, group, key, chat_totals, title, not_in_total in (
             ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today", ()),
@@ -313,7 +316,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         rc = max(rc, _send_one(group, key, chat_totals, now, day, args, title,
                                not_in_total,
                                send_anyway=name in pair and pair_moved,
-                               org_totals=(org_lines if name in ("owners", "knocking")
+                               org_totals=(org_lines if name in ORG_TOTAL_CHATS
                                            else ())))
     return rc
 
