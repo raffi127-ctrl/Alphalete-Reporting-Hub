@@ -234,9 +234,10 @@ def _rows_from_json(text: str) -> List[Dict]:
     for d in found:
         vals = {k: str(v) for k, v in d.items() if isinstance(v, (str, int))}
         ids = [v for v in vals.values() if re.fullmatch(r"\d{3,6}", v)]
-        if not ids:
-            continue
         texts = [v for v in vals.values() if v and not re.fullmatch(r"\d+", v)]
+        # {"totalcount": "173"} is a count, not an office: a row has a name too
+        if not ids or not texts:
+            continue
         out.append({"id": ids[0], "owner": texts[0] if texts else "",
                     "office": texts[1] if len(texts) > 1 else "", "raw": vals})
     return out
@@ -477,7 +478,7 @@ def verify_login(login: Dict, log=print, headed: bool = False) -> Optional[bool]
 # --- the job --------------------------------------------------------------------
 def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
               check_only: bool = False, verify: bool = True, headed: bool = False,
-              log=print) -> int:
+              dump_offices: bool = False, log=print) -> int:
     from automations.shared.appstream_provision import eco_login
     from automations.shared.tableau_patchright import appstream_direct_session
 
@@ -554,6 +555,10 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
                     "them (account 23981) then re-run this command to assign the office"
                     % owner)
             log("NOT LISTED  : " + note)
+        if check_only and dump_offices:
+            allrows = grids["assigned"] + grids["not_assigned"]
+            log("OFFICE LIST (%d): %s" % (len(allrows), "; ".join(
+                "%s %s" % (r["id"], r["owner"]) for r in sorted(allrows, key=lambda r: norm(r["owner"])))))
         if check_only:
             log("SUMMARY check-only · admin %s · office %s"
                 % ("exists" if existing else "would be created",
@@ -623,9 +628,12 @@ def main(argv=None) -> int:
     ap.add_argument("--no-verify", action="store_true",
                     help="skip signing in as the new login afterwards")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--dump-offices", action="store_true",
+                    help="with --check: write every office the form offers to the log")
     a = ap.parse_args(argv)
     return provision(a.owner, office_id=a.office_id, office_key=a.office_key,
-                     check_only=a.check, verify=not a.no_verify, headed=a.headed)
+                     check_only=a.check, verify=not a.no_verify, headed=a.headed,
+                     dump_offices=a.dump_offices)
 
 
 if __name__ == "__main__":
