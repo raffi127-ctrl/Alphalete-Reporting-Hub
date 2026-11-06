@@ -100,7 +100,7 @@ class SlotPulls(unittest.TestCase):
         self.assertTrue(seen.get("pulled"), "the slot did not make the tick pull")
 
     def test_no_slot_and_nothing_due_still_skips(self):
-        now = dt.datetime(2026, 11, 6, 15, 25, 5)   # not a slot
+        now = dt.datetime(2026, 11, 6, 15, 40, 5)   # past the last slot + grace
         state = {"board_at": "2026-11-06T15:05:10", "gaps_at": "2026-11-06T15:20:10"}
         with mock.patch.object(R, "_state", lambda: dict(state)), \
              mock.patch.object(R, "in_window", lambda n: True), \
