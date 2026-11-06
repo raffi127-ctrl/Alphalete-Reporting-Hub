@@ -475,6 +475,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     day = day or dt.date.today()
     values = tab.get_all_values()
     posted_total = 0
+    # Today's SaraPlus credit checks per office, read ONCE per run and only if
+    # some board actually gets drawn (Raf 2026-11-06).
+    credit_rows = None
 
     for i, row in enumerate(values[1:], start=2):
         row = list(row) + [""] * (KN_POSTED + 1 - len(row))
@@ -616,7 +619,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     pass
             continue
 
-        boards, shape = _render(office, rows_for_board, day, now)
+        if credit_rows is None:
+            credit_rows = _relay_rows(book, day, log)
+        credit = credit_checks_for(office, credit_rows.get(key),
+                                   rows_for_board, credit_rows.get("", {}))
+        boards, shape = _render(office, rows_for_board, day, now,
+                                credit_checks=credit)
         log("%-10s %d rep(s), %s board -> %s"
             % (key, len(rows_for_board), shape,
                ", ".join(d.get("channel_name") or d["channel_id"] for d in due)))
@@ -840,7 +848,77 @@ def _board_title(office) -> str:
     return "%s (%s)" % (label, short) if short else label
 
 
-def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
+def _relay_rows(book, day: dt.date, log=print) -> Dict:
+    """{office key: today's 'ICD Relay' row} plus {"": name fixes}. {} on a
+    failed read -- the board then draws without the column, never fails."""
+    try:
+        tab = book.worksheet(P.RELAY_TAB)
+        out = {(r[P.COL_OFFICE] or "").strip().lower(): r
+               for _, r in P._rows_for(day, tab)}
+        out[""] = P.RN.load(book)
+        return out
+    except Exception as e:  # noqa: BLE001 -- a column never costs the board
+        log("credit checks not read (%s: %s) -- boards draw without them"
+            % (type(e).__name__, str(e)[:120]))
+        return {}
+
+
+def credit_checks_for(office, relay_row, knock_rows: List[Dict],
+                      name_fixes=None) -> Optional[Dict[str, int]]:
+    """{rep name as the BOARD spells it: credit checks today}, or None when
+    this office has no SaraPlus read to show (Box / Energy campaigns, or no
+    relay row today) -- None leaves the column off the board entirely.
+
+    Raf 2026-11-06: "can we add total amount of credit checks on this
+    report? ... obviously only people with LUCYECO". The count is the same
+    one the :mag: ping posts: the Records cell, or -- for an office on the
+    three-tier alerts, where Records means "on the tablet" -- each rep's
+    'Credit Checked'. SaraPlus spells reps its own way, so each is matched to
+    a knocks row the way the headcount block matches them (post._same_rep,
+    after the office's Rep Name Fixes); a rep with no match keeps their
+    SaraPlus name, which still counts in the office TOTAL."""
+    from automations.icd_alerts import config as CFG, rep_names as RN
+    from automations.total_knocks import pull as TP
+    key = getattr(office, "key", "") or ""
+    campaign = (getattr(office, "campaign", "") or "att").strip().lower()
+    if campaign in CFG.NO_SARAPLUS or not relay_row:
+        return None
+    row = list(relay_row) + [""] * (P.COL_SALES + 1 - len(relay_row))
+    if CFG.credit_tiers_wanted(key):
+        sales = P._loads(row[P.COL_SALES]) or {}
+        counts = {r: int((m or {}).get("Credit Checked", 0) or 0)
+                  for r, m in sales.items() if isinstance(m, dict)}
+    else:
+        counts = {r: int(n or 0)
+                  for r, n in (P._loads(row[P.COL_RECORDS]) or {}).items()}
+    # NOT ONE CHECK YET = NO COLUMN, never a column of zeros. An office whose
+    # SaraPlus read is failing relays an empty cell too, and a board of 0s
+    # would state a zero we never proved [[feedback_empty_means_proven_zero]].
+    # The column appears with the day's first credit check.
+    if not any(counts.values()):
+        return None
+    show = RN.resolver(name_fixes or {}, key) or (lambda n: n)
+    board = {}
+    for r in knock_rows or []:
+        name = str(r.get(TP.COL_REP, "") or "").strip()
+        if P._rep_key(name):
+            board.setdefault(P._rep_key(name), name)
+    out: Dict[str, int] = {}
+    for rep, n in counts.items():
+        if not n:
+            continue
+        hit = ""
+        for k in sorted({P._rep_key(rep), P._rep_key(show(rep))} - {""}):
+            hit = P._same_rep(k, board)
+            if hit:
+                break
+        name = board[hit] if hit else show(rep)
+        out[name] = out.get(name, 0) + n
+    return out
+
+
+def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime,
+            credit_checks: Optional[Dict[str, int]] = None):
     """The office's board(s), through the SAME renderer every other office
     uses -- ([paths], shape).
 
@@ -875,6 +953,7 @@ def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
         # and returns None for every office without a sales board -> those
         # boards are untouched. Fail-soft: no board read = ungrouped board.
         teams=_teams_for(office, day),
+        credit_checks=credit_checks,
         date_text="%s · %s" % (day.strftime("%a %m/%d"), _clock(now)))
 
 

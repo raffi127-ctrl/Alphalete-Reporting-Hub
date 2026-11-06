@@ -216,6 +216,15 @@ COL_AVG_APP_PER_REP = "Average App per Rep"
 # a reader compares down the column. Blank — never 0.00 — when the row has no
 # apps, since dividing by nothing is not a zero.
 COL_TALK_TO_PER_APP = "Avg Talk To's per App"
+# "Credit Checks" (Raf 2026-11-06: "can we add total amount of credit checks on
+# this report? ... obviously only people with LUCYECO") — the rep's SaraPlus
+# credit checks for the day, the same count the :mag: ping announces, relayed
+# by the office's own Lucy ECO machine. It sits right after Avg. Hrs Knocking,
+# where Raf circled it. Rides an OPTIONAL `credit_checks` argument, so every
+# board whose caller has no SaraPlus read (Lucy 1's boards, /knocks, Chan's
+# line) is byte-identical. The office TOTAL is SaraPlus's own day total, so a
+# rep whose SaraPlus spelling matched no knocks row still counts in it.
+COL_CREDIT_CHECKS = "Credit Checks"
 # "% Talk To's per Knocks" (Eve, 2026-08-28) — Total Talk To ÷ Total Knocks,
 # one decimal (Chan 2026-08-27: 1043 / 5466 = 19.1%). It sits immediately after
 # the Total Talk To it divides, ahead of Talk To's per Rep, so the funnel reads
@@ -1218,6 +1227,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         hide_columns: "tuple[str, ...]" = (),
                         extra_totals: "list[tuple] | None" = None,
                         apps: "dict[str, int] | None" = None,
+                        credit_checks: "dict[str, int] | None" = None,
                         rate_columns: bool = True,
                         knocks_green_at: "int | None" = None,
                         first_knock_green_at: "int | None" = None,
@@ -1433,6 +1443,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                             n_knockers=n_knockers,
                             extra_knockers=extra_knockers,
                             bands=bands, band_knockers=band_knockers)
+    if credit_checks is not None:
+        _insert_credit_column(cols, disp, table, credit_checks,
+                              n_extra=len(extra_rows), bands=bands)
     _cell_bgs: dict = {}
     if rate_columns:
         # After the hide and apps passes, by NAME on what survived, same as
@@ -1888,6 +1901,45 @@ def _insert_apps_column(cols: list, disp: list, table: list,
         row.insert(at, v)
         row.insert(at + 1, a)
         row.insert(at + 2, pa)
+
+
+def _insert_credit_column(cols: list, disp: list, table: list,
+                          credit: dict, *, n_extra: int,
+                          bands: "dict | None" = None) -> None:
+    """Put "Credit Checks" into `cols`/`disp`/`table` IN PLACE, right after
+    Avg. Hrs Knocking (or at the end when this shape has no such column).
+
+    Same row layout as _insert_apps_column: extra-office TOTAL rows (blank —
+    their SaraPlus is not ours to read), this office's TOTAL, then reps and
+    team bands. A rep row reads `credit` by name (0 when absent); a band sums
+    its own reps as drawn. The office TOTAL is the sum of EVERY entry in
+    `credit` — SaraPlus's day total — not just the matched rows, because the
+    number Raf asked for is the office's credit checks, and a spelling we
+    failed to match must not quietly make it smaller."""
+    bands = bands or {}
+    at = (cols.index(COL_HRS_KNOCKING) + 1 if COL_HRS_KNOCKING in cols
+          else len(cols))
+    rep_at = cols.index(COL_REP)
+    by_key: dict = {}
+    for k, v in credit.items():
+        by_key[_apps_key(k)] = by_key.get(_apps_key(k), 0) + int(v or 0)
+    values: list = []
+    for i, row in enumerate(table):
+        if i in bands or i == n_extra:
+            values.append(None)             # filled below
+        elif i < n_extra:
+            values.append("")
+        else:
+            values.append(str(by_key.get(_apps_key(row[rep_at]), 0)))
+    if n_extra < len(values):
+        values[n_extra] = str(sum(int(v or 0) for v in credit.values()))
+    for _bi, _reps in bands.items():
+        values[_bi] = str(sum(int(values[i]) for i in _reps
+                              if str(values[i]).isdigit()))
+    cols.insert(at, COL_CREDIT_CHECKS)
+    disp.insert(at, COL_CREDIT_CHECKS)
+    for row, v in zip(table, values):
+        row.insert(at, v)
 
 
 def _gap_min(v: str) -> int:
@@ -2407,6 +2459,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          first_knock_green_at: "int | None" = None,
                          sort_by: str = "knocks",
                          apps: "dict | None" = None,
+                         credit_checks: "dict | None" = None,
                          teams=None,
                          kpis: "dict | None" = None
                          ) -> "tuple[list[Path], str]":
@@ -2460,7 +2513,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=ENERGYWELL_KNOCKS_COLUMNS,
-            out_cols=ENERGYWELL_KNOCKS_HEADERS, teams=teams, kpis=kpis)], shape)
+            out_cols=ENERGYWELL_KNOCKS_HEADERS, teams=teams, kpis=kpis,
+            credit_checks=credit_checks)], shape)
     elif shape in (SHAPE_B2B_ATT, SHAPE_B2B_BOX):
         # Through the SAME renderer as every other shape, for the reason the
         # Energy Wells and wireless shapes were moved here: the shape decides
@@ -2478,7 +2532,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             knocks_green_at=knocks_green_at,
             first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
-            base_cols=base, out_cols=out, teams=teams, kpis=kpis)], shape)
+            base_cols=base, out_cols=out, teams=teams, kpis=kpis,
+            credit_checks=credit_checks)], shape)
     elif shape == SHAPE_WIRELESS:
         # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for
         # the reason the Energy Wells shape was moved here on 2026-08-30
@@ -2500,7 +2555,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=WIRELESS_KNOCKS_COLUMNS,
-            out_cols=WIRELESS_KNOCKS_HEADERS, teams=teams, kpis=kpis)], shape)
+            out_cols=WIRELESS_KNOCKS_HEADERS, teams=teams, kpis=kpis,
+            credit_checks=credit_checks)], shape)
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
@@ -2510,7 +2566,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals,
-                                     teams=teams, kpis=kpis)], shape)
+                                     teams=teams, kpis=kpis,
+            credit_checks=credit_checks)], shape)
     if not needs_time_gaps(shape):
         return ([first], shape)
     gaps = render_time_gaps(target, rows=rows, out_dir=out_dir,
