@@ -82,6 +82,30 @@ class Borrowed(unittest.TestCase):
         self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Nathaly Benitez"])
         self.assertEqual(at, {"rafael": dt.datetime(2026, 11, 6, 14, 31, 10)})
 
+    def test_empty_relay_row_still_counts_as_reported(self):
+        from automations.icd_alerts import knocks_post as KP
+        icd_row = [""] * (KP.KN_POSTED + 1)
+        icd_row[KP.KN_OFFICE] = "raf"; icd_row[KP.KN_DAY] = "2026-11-06"
+        icd_row[KP.KN_ROWS] = "[]"; icd_row[KP.KN_TRACKER] = "[]"
+        icd_row[KP.KN_RECEIVED] = "11/6/2026 10:10:01"
+
+        class _Book:
+            def worksheet(self, name):
+                return _WS([icd_row])
+
+        with mock.patch("automations.owner_knocks_hourly.share._book", lambda: _Book()), \
+             mock.patch("automations.owner_knocks_hourly.share._tab", lambda book, create=False: _WS([])), \
+             mock.patch("automations.icd_alerts.knocks_map.to_rows", lambda raw, tracker: []), \
+             mock.patch("automations.icd_alerts.knocks_post.shift_ov_clock", lambda o, raw, tr, now=None: (raw, tr)), \
+             mock.patch("automations.icd_alerts.offices.all_offices", lambda: {}), \
+             mock.patch("automations.icd_alerts.post._day_key", lambda d: d), \
+             mock.patch.object(R.C, "BORROWED_ICD_OFFICES", {"rafael": "raf"}), \
+             mock.patch.object(R, "_log"):
+            src = R._borrow_sources(dt.date(2026, 11, 6))
+            at = R._shared_at(dt.date(2026, 11, 6))
+        self.assertEqual(src["rafael"][0], [])
+        self.assertEqual(at["rafael"], dt.datetime(2026, 11, 6, 10, 10, 1))
+
     def test_newer_tab_wins(self):
         from automations.icd_alerts import knocks_post as KP
         icd_row = [""] * (KP.KN_POSTED + 1)

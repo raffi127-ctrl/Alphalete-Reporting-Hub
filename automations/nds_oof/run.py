@@ -256,7 +256,9 @@ def _borrow_sources(today: dt.date) -> Dict[str, Tuple[List[Dict], Optional[dt.d
         at = _parse_at(row[KP.KN_RECEIVED])
         prev = out.get(key)
         newer = prev is None or (at is not None and (prev[1] is None or at > prev[1]))
-        if rows and newer:
+        # An empty relay row still counts: his Mac has reported and nobody
+        # has knocked yet, which is "0 rows on raf's relay", not "no relay".
+        if newer:
             out[key] = (rows, at, "ICD Knocks office %s" % okey)
     return out
 
