@@ -446,6 +446,7 @@ OFFICE_TIMEZONES: dict = {
     "haytham": "America/Chicago",              # Austin, TX
     "jose":    "America/Los_Angeles",          # Legacy Shore Marketing, California (Megan 2026-10-28; ECO sign-up tz Pacific)
     "aiden":   "America/Los_Angeles",          # Atoori Management, north LA county (Tableau zips, 2026-11-03) -- PACIFIC
+    "nigel":   "America/Los_Angeles",          # VP Executives, Portland OR (order-log zips 97211-97232, 2026-11-06) -- PACIFIC
     "sahil":   "America/New_York",             # M Coast, Raleigh NC -- Eastern
     "starr":   "America/Los_Angeles",          # Nova Management, Fremont CA -- Pacific
     "atef":    "America/Denver",               # Domin8 Acquisitions, Denver CO — Mountain

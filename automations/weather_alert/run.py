@@ -60,6 +60,9 @@ CITIES = {
     "orlando": ("Maitland / Orlando, FL", 28.6275, -81.3631, "America/New_York"),
     # aiden / Atoori Management: Megan 2026-11-03 "Aiden is in LA".
     "los_angeles": ("Los Angeles, CA", 34.0522, -118.2437, "America/Los_Angeles"),
+    # nigel / VP Executives: 97211-97232 (NE Portland) + 97302 (Salem) in his
+    # AT&T order log, 2026-11-06; his 2nd office's 850xx Phoenix zips are a minority.
+    "portland": ("Portland, OR", 45.5152, -122.6784, "America/Los_Angeles"),
     # maxamad / Maximal Management: San Antonio per his OwnerVille office
     # address (harvest_zones, 2026-09-28).
     "san_antonio": ("San Antonio, TX", 29.4241, -98.4936, "America/Chicago"),
@@ -148,6 +151,7 @@ METRICS_CITY = {
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
     "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
     "aiden": "los_angeles",     # Atoori Management (NDS), Los Angeles (Megan 2026-11-03); Pacific; #odysseyy
+    "nigel": "portland",        # VP Executives (ATT Fiber), Portland OR per his order-log zips 2026-11-06; Pacific; channel from ECO sign-up
     "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up
     "starr": "fremont",         # Nova Management, Fremont CA; Pacific; channel from ECO sign-up
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
