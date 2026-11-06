@@ -223,3 +223,16 @@ launchctl kickstart -k gui/$(id -u)/com.alphalete.session-holder
 asserts it. `automations/shared/test_login_policy.py` pins every rule above as a
 test. If you change a rule here, change it there too — otherwise the tests are the
 thing that will get "fixed" back.
+
+## Addendum 2026-11-06 — the per-office "Lucy ECO" login is made for them
+
+Every ECO office's AppStream admin is created from a Lucy BEFORE the office
+enrolls, always in this shape: First Name `Lucy ECO`, Last Name = the owner's
+full name, Username `LucyECO<First>`, Password `<First>123!`. It is assigned
+ONLY that owner's office (Settings → Admins → tick under "Offices Not
+Assigned" → Save Changes). `lucy provision_appstream "<Owner>" --office-id N`
+does the whole thing; see `workflows/new-office-appstream-login.md`. The
+office machine derives the same login from the owner's name and proves it
+signs in before it is kept — nobody is asked to type it. The two fleet
+accounts above are unchanged: no Lucy ever signs in as an office's login
+except the one scratch-profile check right after creating it.

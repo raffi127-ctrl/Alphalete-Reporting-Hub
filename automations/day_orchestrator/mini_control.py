@@ -8820,6 +8820,40 @@ def _action_appstream_whoami_account(args: str) -> tuple[bool, str]:
     return ok, res.split("·")[-1].strip()[:400]
 
 
+def _action_provision_appstream(args: str) -> tuple[bool, str]:
+    """Create an office's "Lucy ECO <Owner>" AppStream admin login and assign
+    their office — BEFORE they enroll / alongside the dry run (Megan 2026-11-06).
+
+      provision_appstream "<Owner Name>" [--office-id N] [--check] [--no-verify]
+
+    Drives Settings -> Admins -> Add New Admin as this machine's 'Lucy Reports'
+    session: First Name 'Lucy ECO', Last Name = the owner, Username
+    LucyECO<First>, Password <First>123!, ticks the owner's office under
+    'Offices Not Assigned', Save Changes, then re-opens the admin to prove the
+    office sits under 'Already Assigned' and signs in as the new login once.
+    Re-running on an existing admin only does the assignment. If the owner is
+    not in the office list the login is still created and Megan gets a DM:
+    AppStream has to add them to our call center first. The result lands on
+    the 'AppStream Logins' tab of the Lucy Access App. --check is read-only.
+    Log: appstream-provision.log (lucy logtail appstream-provision.log)."""
+    import shlex
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]})"
+    if not parts:
+        return False, 'need: provision_appstream "<Owner Name>" [--office-id N] [--check]'
+    cmd = [sys.executable, "-m", "automations.shared.appstream_admins"] + parts
+    ok, res = _run_cmd(cmd, timeout_s=25 * 60, log_name="appstream-provision.log")
+    tail = res.split("·")[-1].strip()
+    # keep the SUMMARY line if the tail has one — it is the whole answer
+    for line in reversed(tail.splitlines()):
+        if line.startswith("SUMMARY"):
+            tail = line
+            break
+    return ok, tail[:420]
+
+
 def _action_set_appstream_account(args: str) -> tuple[bool, str]:
     """Install a NAMED AppStream login on THIS machine.
 
@@ -9575,6 +9609,7 @@ ACTIONS = {
     "set_appstream_account": _action_set_appstream_account,
     "appstream_whoami_account": _action_appstream_whoami_account,
     "appstream_whoami": _action_appstream_whoami,
+    "provision_appstream": _action_provision_appstream,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_tracker_mirror": _action_install_tracker_mirror,
     "install_day_orchestrator": _action_install_day_orchestrator,

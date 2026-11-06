@@ -175,3 +175,33 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- the per-office "Lucy ECO" admin login ------------------------------------
+# Megan 2026-11-06, the format every ECO office's AppStream login follows:
+#   First Name  Lucy ECO
+#   Last Name   <owner's first and last name>
+#   Username    LucyECO<OwnerFirst>
+#   Password    <OwnerFirst>123!
+# Deterministic ON PURPOSE: the office's own machine can derive it from the
+# owner's name (finish_setup / the installer try it before asking anybody),
+# and the admin page shows the same thing a person would have typed. Created in
+# AppStream by automations.shared.appstream_admins (Settings -> Admins).
+ECO_FIRST_NAME = "Lucy ECO"
+
+
+def eco_login(owner: str) -> dict:
+    """{'first_name','last_name','username','password'} for an owner's name.
+
+    'Nigel Marshall' -> first 'Lucy ECO', last 'Nigel Marshall',
+    username 'LucyECONigel', password 'Nigel123!'. Accents dropped and spaces
+    squeezed so 'José  Velásquez' still gives 'LucyECOJose' / 'Jose123!'."""
+    name = " ".join(_ascii(owner or "").split())
+    if not name:
+        raise ValueError("eco_login needs the owner's name")
+    first = re.sub(r"[^A-Za-z]", "", name.split()[0])
+    if not first:
+        raise ValueError("owner's first name has no letters: %r" % owner)
+    first = first[:1].upper() + first[1:]
+    return {"first_name": ECO_FIRST_NAME, "last_name": name,
+            "username": "LucyECO" + first, "password": first + "123!"}

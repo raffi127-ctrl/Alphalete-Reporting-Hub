@@ -255,6 +255,15 @@ def _resume_push(log) -> str:
         if not yes:
             return "not wanted"
     if not C.appstream_creds():
+        # THE STANDARD LOGIN FIRST (Megan 2026-11-06): every office's AppStream
+        # admin is made BEFORE enrollment as 'Lucy ECO <Owner>' / LucyECO<First>
+        # / <First>123! (appstream_admins), so this machine can derive it from
+        # the owner's name and prove it — nobody has to type it. Only when that
+        # sign-in fails does it fall back to asking.
+        std = _standard_appstream_login(rows, log)
+        if std == "done":
+            return "done"
+    if not C.appstream_creds():
         try:
             # The office's own LUCY RESUME login, not the owner's (Megan's
             # recap, 2026-10-20): see ask_for_appstream in dist/setup.py.
@@ -286,6 +295,46 @@ def _resume_push(log) -> str:
                                 getattr(RP, "LAST_SIGNIN_PAGE", ""), log=log)
         return "still needs signing in"
     return "done"
+
+
+def _standard_appstream_login(rows, log) -> str:
+    """Try the office's standard 'Lucy ECO' login (derived from the owner's
+    name). 'done' = saved and signed in; anything else = not usable, and the
+    creds file is left EMPTY so the caller asks instead."""
+    try:
+        from automations.shared.appstream_provision import eco_login
+        from automations.icd_alerts import resume_push as RP
+    except Exception:  # noqa: BLE001 — older copy
+        return "not available"
+    owner = next((str(r.get("owner") or "").strip() for r in rows
+                  if r.get("owner")), "")
+    if not owner:
+        return "no owner on record"
+    try:
+        login = eco_login(owner)
+    except ValueError:
+        return "owner name unusable"
+    log("")
+    log("  Trying the office's standard AppStream login (%s) — about a minute."
+        % login["username"])
+    C.save_appstream_creds(login["username"], login["password"])
+    try:
+        rc = RP.check_login(log=log)
+    except Exception as e:  # noqa: BLE001
+        rc = -1
+        log("  could not check it: %s" % _short_reason(e))
+    if rc == 0:
+        log("  AppStream login works.")
+        return "done"
+    # not ours to keep: a wrong saved login would make every push 'still
+    # needs signing in' forever
+    try:
+        C.AS_CREDS_PATH.unlink()
+    except OSError:
+        pass
+    log("  the standard login did not sign in (it may not be created yet) — "
+        "asking instead.")
+    return "failed"
 
 
 def _resume_push_crashed(RP, step: str, e: BaseException, log) -> str:

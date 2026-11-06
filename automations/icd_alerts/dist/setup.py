@@ -549,8 +549,42 @@ def check_appstream() -> bool:
     return False
 
 
+def try_standard_appstream_login() -> bool:
+    """The office's standard 'Lucy ECO' login, made for them before enrollment
+    (Megan 2026-11-06): username LucyECO<First>, password <First>123!, derived
+    from the owner's name on this install. Saved only if it really signs in."""
+    if (CONFIG_DIR / "appstream-creds.json").exists():
+        return True
+    rec = _load_current()
+    owner = str(rec.get("owner") or "").strip()
+    first = "".join(ch for ch in owner.split()[0] if ch.isalpha()) if owner else ""
+    if not first:
+        return False
+    first = first[:1].upper() + first[1:]
+    user, password = "LucyECO" + first, first + "123!"
+    say("      trying the office's standard AppStream login (%s)..." % user)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    path = CONFIG_DIR / "appstream-creds.json"
+    path.write_text(json.dumps({"username": user, "password": password}))
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    if check_appstream():
+        return True
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    say("      the standard login is not working yet -- asking for one instead.")
+    return False
+
+
 def appstream_until_it_works(attempts=2):
-    """Ask, check, offer one more go on a typo. -> True / False."""
+    """The standard login first, then ask, check, offer one more go on a typo.
+    -> True / False."""
+    if try_standard_appstream_login():
+        return True
     ask_for_appstream()
     for attempt in range(1, attempts + 1):
         if check_appstream():
