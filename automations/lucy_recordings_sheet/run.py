@@ -23,8 +23,9 @@ SOURCES
     ApplicantStream login. That sheet starts 2026-10-25, so October's count
     is partial and shows blank.
 
-SCHEDULE: 11:00 PM CT nightly on Lucy 1 (the quietest hour; needs the bot's
-files, so it stays on Lucy 1).
+SCHEDULE: 8:00 AM CT daily on Lucy 1 (needs the bot's files). Moved from 11 PM
+(Eve 2026-11-06): by 8 the 7:07 AM retention pass has re-read yesterday's late
+2nd rounds, so yesterday is complete. --email then mails Raf the month summary.
 
     python -m automations.lucy_recordings_sheet.run --dry-run
     python -m automations.lucy_recordings_sheet.run --dry-run --from-json export.json
@@ -697,6 +698,77 @@ def write(S, ssid, owner_rows, rep_rows, totals, month_list):
         % (len(owner_rows), len(rep_rows), len(month_list)))
 
 
+# ---------- email to Raf ----------
+#
+# Eve 2026-11-06: send Raf the report "when the info is as up to date as
+# possible" -> the 8:00 AM CT run, after the 7:07 AM retention pass has
+# re-read yesterday's late 2nd rounds. Plain HTML, no images.
+
+RAFAEL = "raffi127@gmail.com"
+
+
+def _cell_color(v, cuts):
+    if v == "" or v is None:
+        return ""
+    good, mid = cuts
+    return "#C8E6C9" if v >= good else "#FFE9A8" if v >= mid else "#F6C1C1"
+
+
+def build_email_html(month: str, totals: list, owner_rows: list, ssid: str) -> str:
+    t = next((x for x in totals if x[0] == month), [month, 0, "", "", "", 0])
+    fmt_pct = lambda v: "—" if v == "" else "%d%%" % round(v * 100)
+    fmt_num = lambda v: "—" if v == "" else str(v)
+    cards = [("Recordings", fmt_num(t[1])), ("2nd Rounds Done", fmt_num(t[2])),
+             ("% Recorded", fmt_pct(t[3])), ("Avg Score", fmt_num(t[4]))]
+    card_html = "".join(
+        '<td style="background:#EEF2FA;padding:12px 8px;text-align:center;width:25%%">'
+        '<div style="font-size:11px;color:#7A8294;font-weight:bold">%s</div>'
+        '<div style="font-size:24px;color:#1F2A44;font-weight:bold">%s</div></td>' % c
+        for c in cards)
+    rows = sorted((r for r in owner_rows if r[0] == month),
+                  key=lambda r: (r[1] == NO_OWNER, -r[2], r[1]))
+    body = []
+    for i, r in enumerate(rows):
+        bg = "#F1F1F1" if r[1] == NO_OWNER else ("#F6F8FC" if i % 2 else "#FFFFFF")
+        pct_bg = _cell_color(r[4], (0.5, 0.25))
+        sc_bg = _cell_color(r[5], (8, 6))
+        body.append(
+            '<tr style="background:%s"><td style="padding:6px 10px">%s</td>'
+            '<td style="text-align:center">%s</td><td style="text-align:center">%s</td>'
+            '<td style="text-align:center;background:%s">%s</td>'
+            '<td style="text-align:center;background:%s;font-weight:bold">%s</td></tr>'
+            % (bg, r[1], r[2], fmt_num(r[3]), pct_bg or bg, fmt_pct(r[4]),
+               sc_bg or bg, fmt_num(r[5])))
+    link = "https://docs.google.com/spreadsheets/d/%s" % ssid
+    through = (dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%b %d")
+    return (
+        '<div style="font-family:Roboto,Arial,sans-serif;max-width:680px">'
+        '<div style="background:#1F2A44;color:#fff;padding:14px 16px;font-size:18px;font-weight:bold">'
+        'LUCY · 2nd Round Recordings — %s</div>'
+        '<div style="color:#7A8294;font-size:12px;padding:6px 2px">Through %s</div>'
+        '<table style="width:100%%;border-collapse:separate;border-spacing:4px"><tr>%s</tr></table>'
+        '<table style="width:100%%;border-collapse:collapse;font-size:13px;margin-top:10px">'
+        '<tr style="background:#2E3E61;color:#fff"><th style="text-align:left;padding:8px 10px">Owner</th>'
+        '<th>Recordings</th><th>2nd Rounds Done</th><th>%% Recorded</th><th>Avg Score</th></tr>%s</table>'
+        '<p style="margin:16px 0"><a href="%s" style="background:#E0B84C;color:#1F2A44;padding:10px 16px;'
+        'text-decoration:none;font-weight:bold;border-radius:4px">Open the full sheet (by rep)</a></p>'
+        '</div>' % (month, through, card_html, "".join(body), link))
+
+
+def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str) -> None:
+    from email.message import EmailMessage
+    from automations.org_sales_board.screenshot_email import FROM_ADDR, send
+    msg = EmailMessage()
+    msg["Subject"] = "LUCY 2nd Round Recordings — %s" % month
+    msg["From"] = FROM_ADDR
+    msg["To"] = ", ".join(to)
+    msg.set_content("LUCY 2nd Round Recordings - %s. Open the sheet: "
+                    "https://docs.google.com/spreadsheets/d/%s" % (month, ssid))
+    msg.add_alternative(build_email_html(month, totals, owner_rows, ssid), subtype="html")
+    send(msg)
+    log("emailed '%s' to %s" % (msg["Subject"], ", ".join(to)))
+
+
 def main(argv=None) -> int:
     for s in (sys.stdout, sys.stderr):
         try:
@@ -709,6 +781,8 @@ def main(argv=None) -> int:
     ap.add_argument("--create", action="store_true", help="make a new sheet first")
     ap.add_argument("--share", action="append", default=[], help="email to share a new sheet with")
     ap.add_argument("--sheet", default=SSID, help="sheet id to write")
+    ap.add_argument("--email", action="store_true", help="after writing, email the report to Raf")
+    ap.add_argument("--email-to", help="after writing, email the report to THIS address instead (test)")
     ap.add_argument("--restyle", action="store_true",
                     help="rebuild the two visible tabs' layout (keeps the sheet + link)")
     a = ap.parse_args(argv)
@@ -754,6 +828,10 @@ def main(argv=None) -> int:
     if a.restyle and not a.create:
         restyle(S, ssid)
     write(S, ssid, owner_rows, rep_rows, totals, month_list)
+    if a.email or a.email_to:
+        # The report covers through yesterday: on the 1st, that's last month.
+        month = month_label((dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%Y-%m"))
+        send_email([a.email_to] if a.email_to else [RAFAEL], month, totals, owner_rows, ssid)
     return 0
 
 
