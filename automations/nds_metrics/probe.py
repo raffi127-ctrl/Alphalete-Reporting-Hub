@@ -334,6 +334,60 @@ def line_calib(log=print) -> int:
     return 0
 
 
+def find_word(word: str, log=print) -> int:
+    """Carlos 2026-11-06 ("can you see when the protect is attached on sara
+    plus or in the order log"): one word, searched through today's three
+    caches -- the Tableau NDS order log CSV, the SaraPlus SOH export and the
+    wireless report -- with the columns / cells that carry it, plus the
+    vocabulary of the order log's product-ish columns. Read-only."""
+    import collections
+    import csv as _csv
+    import io as _io
+    import re as _re
+    from automations.nds_metrics.run import OUT_DIR
+    today = dt.date.today()
+    rx = _re.compile(_re.escape(word), _re.I)
+    for label, path in (("order log (Tableau)", OUT_DIR / f"nds_orderlog_{today.isoformat()}.csv"),
+                        ("SaraPlus SOH export", OUT_DIR / f"nds_soh_{today.isoformat()}.csv")):
+        if not path.exists():
+            log(f"[find] {label}: no cache today ({path.name})")
+            continue
+        rows = list(_csv.reader(_io.StringIO(path.read_bytes().decode("utf-8-sig", errors="replace"))))
+        hdr = [str(h).strip() for h in rows[0]] if rows else []
+        hits_h = [h for h in hdr if rx.search(h)]
+        col_hits = collections.Counter()
+        samples = {}
+        for r in rows[1:]:
+            for i, v in enumerate(r):
+                if v and rx.search(v):
+                    name = hdr[i] if i < len(hdr) else f"col{i}"
+                    col_hits[name] += 1
+                    samples.setdefault(name, v[:90])
+        log(f"[find] {label}: {len(rows) - 1} row(s); header hits: {hits_h or 'none'}; cell hits: "
+            + (", ".join(f"{k}={n} e.g. {samples[k]!r}" for k, n in col_hits.most_common(8)) or "none"))
+        if label.startswith("order log"):
+            for col in ("Package", "spe.Wireless Type", "spe.dtr Order Type", "Device Description",
+                        "Product Type (Broken Out)", "Wireless Installment Plan", "Rep Tier Bonus Status"):
+                i = next((k for k, h in enumerate(hdr) if h.lower() == col.lower()), None)
+                if i is None:
+                    continue
+                c = collections.Counter(str(r[i]).strip() or "(blank)" for r in rows[1:] if len(r) > i)
+                log(f"[find]   order log {col}: " + ", ".join(f"{k[:40]}={n}" for k, n in c.most_common(8)))
+    path = OUT_DIR / f"nds_wireless_{today.isoformat()}.html"
+    if path.exists():
+        txt = path.read_text(errors="replace")
+        ms = list(rx.finditer(txt))
+        ex = ""
+        if ms:
+            m = ms[0]
+            ex = "; e.g. " + repr(_re.sub(r"<[^>]+>", " ", txt[max(0, m.start() - 120):m.end() + 120]))
+        log(f"[find] wireless report: {len(ms)} occurrence(s) of {word!r}{ex}")
+    else:
+        log("[find] wireless report: no cache today")
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     from automations.office_metrics import nds_orderlog as NO
     from automations.total_knocks import guests
@@ -451,6 +505,9 @@ def _entry(argv=None):
         return soh_dump()
     if "--line-calib" in args:
         return line_calib()
+    if "--find" in args:
+        i = args.index("--find")
+        return find_word(args[i + 1] if len(args) > i + 1 else "protect")
     if "--double-days" in args:
         from automations.nds_metrics import double_tier
         from automations.nds_metrics.run import sow_rates
