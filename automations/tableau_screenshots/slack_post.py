@@ -622,6 +622,35 @@ def reset_transport_budget():
     _transport_retries_left = TRANSPORT_RETRY_BUDGET
 
 
+def _upload_with_retry(client, channel: str, thread_ts: str, png, spec: dict, today):
+    """files_upload_v2 for one image, retried on a TRANSPORT failure.
+
+    2026-11-06, #vp-sales (Nigel's first day): all nine images were captured,
+    the thread was cleared for a re-post, and the FIRST upload died on
+    `timeout: The read operation timed out` (socket.timeout — a big PNG over a
+    slow moment). That one exception failed the whole org: 0 of 9 posted, a
+    section-drop incident, and the by-hand rerun minutes later just worked.
+    Same rule as _read_with_retry: a call that never got an answer gets another
+    go while the run's transport budget lasts; a real Slack error does not."""
+    global _transport_retries_left
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return client.files_upload_v2(
+                channel=channel, thread_ts=thread_ts, file=str(png),
+                filename=Path(png).name, initial_comment=reply_caption(spec, today))
+        except _TRANSIENT_TRANSPORT as e:
+            if attempt > 2 or _transport_retries_left <= 0:
+                raise
+            _transport_retries_left -= 1
+            pause = TRANSPORT_BACKOFF_S[min(attempt - 1, len(TRANSPORT_BACKOFF_S) - 1)]
+            print(f"  {channel}: upload of {spec['id']} hit a transport error "
+                  f"({type(e).__name__}: {str(e)[:60]}) — retrying in {pause}s "
+                  f"({_transport_retries_left} retries left this run)", flush=True)
+            time.sleep(pause)
+
+
 def _read_with_retry(call, chan: str, method: str, **kwargs):
     """Run a Slack READ (history/replies), retrying a `ratelimited` answer ONCE
     and a TRANSPORT failure up to twice.
@@ -963,9 +992,7 @@ def _post_to_channel_unlocked(client, channel: str, captures: list, pages: list,
                   flush=True)
     results = []
     for spec, png in captures:
-        up = client.files_upload_v2(
-            channel=channel, thread_ts=thread_ts, file=str(png),
-            filename=Path(png).name, initial_comment=reply_caption(spec, today))
+        up = _upload_with_retry(client, channel, thread_ts, png, spec, today)
         out = {"id": spec["id"], "ok": up.get("ok"),
                "file": (up.get("file") or {}).get("id")}
         try:
