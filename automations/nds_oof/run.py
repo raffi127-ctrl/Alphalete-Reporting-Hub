@@ -545,6 +545,38 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     return 0
 
 
+def _share_dump() -> int:
+    """Diagnostic: what is on the relay workbook's 'Lucy Knocks' tab right
+    now, as Lucy 2 sees it (the mini cannot read that workbook)."""
+    import json as _json
+    from automations.owner_knocks_hourly import share as S
+    from automations.total_knocks import guests as G
+    want = [n for ns in (getattr(C, "BORROWED_ROWS", {}) or {}).values() for n in ns]
+    try:
+        ws = S._tab(S._book())
+        lines = ws.get_all_values() if ws is not None else []
+    except Exception as e:  # noqa: BLE001
+        _log("share-dump: tab unavailable: %s: %s" % (type(e).__name__, str(e)[:160]))
+        return 1
+    _log("share-dump: %d row(s) incl. header; header=%s" % (len(lines), lines[:1]))
+    for r in lines[1:]:
+        r = list(r) + [""] * (len(S.HEADER) - len(r))
+        try:
+            rows = _json.loads(r[S.K_ROWS] or "[]")
+        except ValueError:
+            rows = None
+        hits = []
+        if rows:
+            try:
+                hits = [G._rep(rows[i]) for i in G.match_rows(rows, want).values()]
+            except Exception as e:  # noqa: BLE001
+                hits = ["(match failed: %s)" % type(e).__name__]
+        _log("share-dump: key=%r owner=%r day=%r at=%r rows=%s hits=%s"
+             % (r[S.K_KEY], r[S.K_OWNER], r[S.K_DAY], r[S.K_AT],
+                "bad-json" if rows is None else len(rows), hits))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--send", action="store_true", help="post to Slack and queue the texts")
@@ -563,7 +595,12 @@ def main(argv=None) -> int:
     ap.add_argument("--no-gaps", action="store_true",
                     help="board only: no gap list, no call-out (a hand run after hours)")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--share-dump", action="store_true",
+                    help="print every 'Lucy Knocks' row (key/owner/day/at/"
+                         "rows + the borrowed names found) and exit")
     args = ap.parse_args(argv)
+    if args.share_dump:
+        return _share_dump()
     if args.compare:
         from automations.nds_oof import week_compare as WC
         return WC.post(dt.date.fromisoformat(args.compare),
