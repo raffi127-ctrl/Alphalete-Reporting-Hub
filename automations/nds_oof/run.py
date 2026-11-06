@@ -578,6 +578,38 @@ def _share_dump() -> int:
         _log("share-dump: key=%r owner=%r day=%r at=%r rows=%s hits=%s"
              % (r[S.K_KEY], r[S.K_OWNER], r[S.K_DAY], r[S.K_AT],
                 "bad-json" if rows is None else len(rows), hits))
+    # The office Macs' own relay ('ICD Knocks') -- where Raf's rows live
+    # since his board left Lucy 1 (2026-11-03).
+    try:
+        from automations.icd_alerts import knocks_map as KM, knocks_post as KP
+        kws = S._book().worksheet(KP.KNOCKS_TAB)
+        klines = kws.get_all_values()
+    except Exception as e:  # noqa: BLE001
+        _log("share-dump: '%s' unavailable: %s: %s"
+             % ("ICD Knocks", type(e).__name__, str(e)[:160]))
+        return 0
+    _log("share-dump: ICD Knocks %d row(s); header=%s" % (len(klines), klines[:1]))
+    for row in klines[1:]:
+        row = list(row) + [""] * (KP.KN_POSTED + 1 - len(row))
+        try:
+            raw = _json.loads(row[KP.KN_ROWS] or "[]")
+            tracker = _json.loads(row[KP.KN_TRACKER] or "[]")
+            rows = KM.to_rows(raw, tracker)
+        except Exception as e:  # noqa: BLE001
+            rows = None
+            err = type(e).__name__
+        hits = []
+        if rows:
+            try:
+                hit_map, _m = G.match_rows(rows, want)
+                hits = [G._rep(rows[i]) for i in hit_map]
+            except Exception as e:  # noqa: BLE001
+                hits = ["(match failed: %s)" % type(e).__name__]
+        _log("share-dump: ICD office=%r day=%r received=%r rows=%s keys=%s hits=%s"
+             % (row[KP.KN_OFFICE], row[KP.KN_DAY], row[KP.KN_RECEIVED],
+                ("bad: " + err) if rows is None else len(rows),
+                sorted(rows[0].keys())[:8] if rows else [], hits))
+    return 0
 
 
 # --- the week recap (one thread, all the pictures) ---------------------------
