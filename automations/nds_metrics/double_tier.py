@@ -1,11 +1,11 @@
-"""Sean Balderrama's "Double Tier Bonus - <date>" days, read off Raf's inbox.
+"""Sean Balderrama's "Double Tier Bonus - <date>" days, read off Carlos's inbox.
 
 Carlos 2026-11-06: "Double tiers you can see off of my email and then you'll
 know sales from that date are double tiers." Every eligible sale on such a
-day counts twice toward the rep tier (line_revenue.tier_order_counts). Raf
-(raffi127) is on the same Smart Circle NDS distribution as Carlos, and Lucy 2
-already reads that inbox over IMAP (owner roster, background checks), so the
-days come from there: sender sbalderrama@thesmartcircle.com, subject
+day counts twice toward the rep tier (line_revenue.tier_order_counts). The
+mini's inbox manager already holds Carlos's Gmail app password; the same file
+is pushed to Lucy 2 (push_cred_file), and Raf's inbox is the fallback on a
+box that has his file. The search: sender sbalderrama@thesmartcircle.com, subject
 "Double Tier Bonus  - 10/31" (the date in the subject IS the double day --
 the 10/30 evening email says "tomorrow, 10/31", the 10/9 morning one says
 "today, 10/9"). Known days are cached in output/nds_metrics/double_tier_days.json
@@ -26,10 +26,15 @@ import re
 from pathlib import Path
 from typing import Iterable, Optional, Set
 
-from automations.fiber_owners_distro.roster import (ACCOUNT, IMAP_HOST,
-                                                     _app_password, _decode)
+from automations.fiber_owners_distro.roster import IMAP_HOST, _decode
 from automations.nds_metrics.run import OUT_DIR
 
+# Carlos's own inbox (he is on Smart Circle's NDS distribution); the app
+# password travels with `push_cred_file gmail-app-password-carloshidalgo349
+# "Lucy 2"` from the mini. Raf's file is the fallback on a box that has it.
+_CFG = Path.home() / ".config" / "recruiting-report"
+INBOXES = (("carloshidalgo349@gmail.com", _CFG / "gmail-app-password-carloshidalgo349"),
+           ("raffi127@gmail.com", _CFG / "gmail-app-password-raffi127"))
 SENDER = "sbalderrama@thesmartcircle.com"
 SUBJECT_WORD = "Double Tier"
 SINCE = dt.date(2026, 10, 1)
@@ -58,10 +63,19 @@ def parse_subject(subject: str, sent: Optional[dt.date]) -> Optional[dt.date]:
         return None
 
 
+def _inbox():
+    for account, path in INBOXES:
+        if path.exists():
+            return account, path.read_text(encoding="utf-8-sig").strip().replace(" ", "")
+    raise RuntimeError("no Gmail app password on this box for any of: "
+                       + ", ".join(a for a, _ in INBOXES))
+
+
 def fetch(log=print) -> Set[str]:
     """The inbox, live: every double-tier day Sean has announced since SINCE."""
+    account, password = _inbox()
     M = imaplib.IMAP4_SSL(IMAP_HOST)
-    M.login(ACCOUNT, _app_password())
+    M.login(account, password)
     try:
         M.select('"[Gmail]/All Mail"', readonly=True)
         _typ, data = M.search(None, '(FROM "%s" SUBJECT "%s" SINCE "%s")'
@@ -80,8 +94,8 @@ def fetch(log=print) -> Set[str]:
             d = parse_subject(subj, sent)
             if d:
                 out.add(d.isoformat())
-        log("[nds] double tier: %d email(s) from Sean since %s -> %s"
-            % (len(ids), SINCE, ", ".join(sorted(out)) or "none"))
+        log("[nds] double tier: %d email(s) from Sean in %s since %s -> %s"
+            % (len(ids), account, SINCE, ", ".join(sorted(out)) or "none"))
         return out
     finally:
         try:

@@ -5290,6 +5290,13 @@ _CRED_FILES = {
     # outside the repo, so `lucy update` never carries it.
     "gmail-app-password-alphaletegp":
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-alphaletegp",
+    # carloshidalgo349@gmail.com's Gmail app password (the inbox manager on the
+    # mini already uses it). On Lucy 2 nds_metrics.double_tier reads Sean
+    # Balderrama's "Double Tier Bonus - <date>" emails from it every morning
+    # (Carlos 2026-11-06: "Double tiers you can see off of my email"). Outside
+    # the repo; moved with push_cred_file, never pasted.
+    "gmail-app-password-carloshidalgo349":
+        lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-carloshidalgo349",
     "ownerville-creds":
         lambda: REPO_ROOT / "ownerville-creds.json",
     # SaraPlus portal login for the Alphalete Sales Board sweep
