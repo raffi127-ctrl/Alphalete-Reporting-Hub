@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Lucy New Starts to Apex",
+  "version": "1.0.0",
+  "description": "Fill each week's new starts into Apex -- Employment Record, User Profile, Tax & Bank -- from the Hub's list. Replaces the Fill Apex bookmark.",
+  "permissions": [
+    "storage",
+    "clipboardRead",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://apex.herbjoyent.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Lucy New Starts to Apex",
+    "default_icon": {
+      "16": "icons/lucy-16.png",
+      "32": "icons/lucy-32.png",
+      "48": "icons/lucy-48.png",
+      "128": "icons/lucy-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://apex.herbjoyent.com/*"
+      ],
+      "js": [
+        "engine.js",
+        "main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://apex.herbjoyent.com/*"
+      ],
+      "js": [
+        "setup.js",
+        "loader.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "world": "ISOLATED",
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/lucy-16.png",
+    "32": "icons/lucy-32.png",
+    "48": "icons/lucy-48.png",
+    "128": "icons/lucy-128.png"
+  }
+}

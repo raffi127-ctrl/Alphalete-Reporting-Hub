@@ -1225,36 +1225,83 @@ _JS = r"""
    await filterTo(f,'',surname);
    return rowFor(p);
  }
+ function pickByText(words){
+   /* The tightest clickable thing whose own text contains every word.
+
+      Exact equality gated the whole Add path and it is too strict for this
+      app: Apex hangs a count on a roster tab ("All Employees 482"), puts the
+      label in a nested <span>, and a parent <li> carries every tab's text at
+      once so it never equals any one of them. When the match failed, adding
+      people did nothing at all and said only that it "could not check"
+      (Megan, 2026-10-02: "The adding the people to apex if they aren't in
+      pending isn't working").
+
+      Contains, then shortest, is what a person pointing at the screen does.
+      Clicking a nested span is fine -- the handler sits on an ancestor and
+      DOM events bubble to it. */
+   var els=document.querySelectorAll(
+       'a,button,li,span,td,div[role="tab"],[ng-click],[ui-sref]');
+   var best=null, bestLen=1e9, i, t, j, ok, el;
+   for(i=0;i<els.length;i++){
+     el=els[i];
+     if(el.closest&&el.closest('#anspanel')) continue;   /* never our own UI */
+     if(el.offsetParent===null) continue;                /* hidden */
+     t=cleanRole(el.textContent);
+     if(!t||t.length>60) continue;
+     ok=true;
+     for(j=0;j<words.length;j++) if(t.indexOf(words[j])<0){ ok=false; break; }
+     if(!ok) continue;
+     if(t.length<bestLen){ best=el; bestLen=t.length; }
+   }
+   return best;
+ }
+ function clickableLabels(){
+   /* What this page actually offers, for when a match fails. A failure that
+      says only "could not find it" costs another whole round trip to Megan;
+      one that lists what it saw is answerable from the screenshot. */
+   var els=document.querySelectorAll('a,button,li,div[role="tab"]');
+   var out=[], i, t;
+   for(i=0;i<els.length&&out.length<25;i++){
+     if(els[i].closest&&els[i].closest('#anspanel')) continue;
+     if(els[i].offsetParent===null) continue;
+     t=norm(els[i].textContent);
+     if(t&&t.length<40&&out.indexOf(t)<0) out.push(t);
+   }
+   return out;
+ }
  function allEmployeesTab(){
    /* The tab strip, so a name can be checked against EVERYBODY and not just
       the Pending list. */
-   var els=document.querySelectorAll('a,button,li'), i;
-   for(i=0;i<els.length;i++){
-     if(norm(els[i].textContent)==='all employees') return els[i];
-   }
-   return null;
+   return pickByText(['all','employees']);
  }
  async function existsAnywhere(p){
    /* "Not on the Pending tab" is NOT "not in Apex" -- the lookup only ever
       searched Pending. Creating somebody who is already there would make a
       SECOND payroll record for a real employee, so look at All Employees
-      before offering to add them (Megan, 2026-09-17). Returns true, false,
-      or null when the check could not be made at all. */
+      before offering to add them (Megan, 2026-09-17).
+
+      Returns true, false, or a STRING saying why it could not tell. A bare
+      null made every failure read the same and none of them said what the
+      page looked like. */
    var tab=allEmployeesTab();
-   if(!tab) return null;
+   if(!tab){
+     return 'no "All Employees" tab on this page. It offers: '+
+            (clickableLabels().join(' \u00b7 ')||'nothing clickable');
+   }
    tab.click();
    await sleep(1200);
    var f=filterBoxes();
-   if(!f) return null;
+   if(!f){
+     return 'the All Employees tab opened but has no First/Last filter row to '+
+            'search with';
+   }
    var row=await lookupRow(f,p);
    return !!row;
  }
  function addButton(){
-   var els=document.querySelectorAll('a,button'), i;
-   for(i=0;i<els.length;i++){
-     if(cleanRole(els[i].textContent)==='add employee') return els[i];
-   }
-   return null;
+   /* "+ Add Employee", top left. Same tolerance as the tab: the plus, a
+      nested span, or "Add New Employee" all have to match. */
+   return pickByText(['add','employee']);
  }
  async function addMissing(people,say){
    /* Fill the "+ Add Employee" form for somebody Apex does not have. Stops
@@ -1265,10 +1312,13 @@ _JS = r"""
      var p=people[i];
      say('<b>'+p.name+'</b>: checking All Employees first\u2026');
      var there=await existsAnywhere(p);
-     if(there===null){
-       say('<span style="color:#b00">'+p.name+': could not check All '+
-           'Employees from this page \u2014 open Roster \u2192 Employees and '+
-           'try again. Nothing was created.</span>');
+     if(typeof there==='string'){
+       /* Say what stopped it, not that something did. Nothing is created
+          without this check: a duplicate here is a second payroll record for
+          a real person. */
+       say('<span style="color:#b00">'+p.name+': cannot check All Employees '+
+           '\u2014 '+there+'. Open Roster \u2192 Employees and press '+
+           '<b>look again</b>. Nothing was created.</span>');
        return made;
      }
      if(there){
@@ -1280,7 +1330,8 @@ _JS = r"""
      var add=addButton();
      if(!add){
        say('<span style="color:#b00">No "Add Employee" button on this page. '+
-           'Open Roster \u2192 Employees. Nothing was created.</span>');
+           'It offers: '+(clickableLabels().join(' \u00b7 ')||'nothing')+
+           '. Nothing was created.</span>');
        return made;
      }
      add.click();
@@ -1323,6 +1374,11 @@ _JS = r"""
    return made;
  }
  window.__ansAddMissing=addMissing;
+ /* The two controls the Add path hangs on, reachable from a test. They
+    were matched on exact text and silently found nothing on the real
+    roster; nothing pinned either of them. */
+ window.__ansRoster={tab:allEmployeesTab,add:addButton,
+                     labels:clickableLabels,pick:pickByText};
  async function findEveryone(say){
    /* Clicking the button on each page of a five-page list to teach it where
       people are is exactly the kind of chore this is supposed to remove
@@ -2137,6 +2193,13 @@ _JS = r"""
      /* Read the picker while the form is still HERE -- it was being read
         after the form had been removed, so it always fell back to the top
         of the list. */
+     /* The whole week starts at the TOP, every time. It used to start at a
+        saved position that moved past people who FAILED as well as people
+        who were done -- so after one run where everybody read "not on the
+        Pending list", the position sat at the end of the list and "Run the
+        whole week" did nothing at all: one person would go in through "Try
+        one", the full run would not (Megan, 2026-10-23). Finished people are
+        skipped by isDone() below; everybody else gets their turn. */
      var from=0, stop=D.length;
      if(onlyOne){
        var pk=document.getElementById('anspick');
@@ -2579,14 +2642,23 @@ PAGE = """<!doctype html><meta charset="utf-8">
 
 {notice_html}
 <div class="ok">
-  <b>This week is already on your clipboard.</b> Open Apex and click your
-  <b>Fill Apex</b> bookmark. That is the whole job — there is nothing to copy
-  and nothing to paste.
+  <b>This week is already on your clipboard.</b> Open Apex and press
+  <b>Fill Apex</b>, bottom right of the page. That is the whole job — there is
+  nothing to copy and nothing to paste.
 </div>
 
-<div class="drag">
-  <div style="margin-bottom:14px;font-size:16px">Haven't saved the button on
-  this computer yet? Drag it to your bookmarks bar. Once, ever:</div>
+<div class="ok" style="background:#f4f7f7;border-left-color:#555">
+  <b>No Fill Apex button on the Apex page?</b> The extension is not installed
+  on this computer yet. Chrome → <b>chrome://extensions</b> → turn on
+  <b>Developer mode</b> → <b>Load unpacked</b> → pick the
+  <b>extension/apex-new-starts</b> folder in the Hub's folder. Once, ever —
+  and every later fix arrives with the rest of the Hub.
+</div>
+
+<details class="drag" style="text-align:left">
+  <summary style="cursor:pointer;font-size:15px;color:#555">The old bookmark
+  (only if the extension is not installed yet)</summary>
+  <div style="margin:14px 0;font-size:16px">Drag it to your bookmarks bar:</div>
   <a class="btn" href="{js}" id="thebtn">Fill Apex</a>
   <div style="margin-top:16px;font-size:14px;color:#555">
     No bookmarks bar? <button id="copybtn" style="font:inherit;padding:6px 12px;
@@ -2599,15 +2671,16 @@ PAGE = """<!doctype html><meta charset="utf-8">
   <div style="margin-top:14px;font-size:13px;color:#888">
     Clicking it does <b>nothing at all</b>? That is an old copy of the button.
     A current one is <b>{stublen} characters</b> — check it in Bookmarks →
-    Open Bookmarks Manager, or just drag this one over the top.
+    Open Bookmarks Manager, or just drag this one over the top. The extension
+    cannot fail this way, which is why it replaced this.
   </div>
-</div>
+</details>
 
 <ol>
   <li>Log into Apex yourself, with the code it texts you.</li>
   <li>Open <b>Roster → Employees</b> and click the <b>Pending</b> tab.</li>
-  <li>Click <b>Fill Apex</b>. Fill in the Socials it asks for, then
-      <b>Start the run</b>.</li>
+  <li>Press <b>Fill Apex</b>, bottom right. Fill in the Socials it asks
+      for, then <b>Start the run</b>.</li>
 </ol>
 
 <p class="quiet">Clipboard empty? Click <b>Get this week's setup</b> on the Hub

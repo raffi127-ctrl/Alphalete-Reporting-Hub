@@ -1,0 +1,22 @@
+/* Only the launch button and its messages. The run panel draws its own styles
+   from the engine, so that it looks the same whoever is driving it. */
+#lucy-ans-btn {
+  position: fixed; right: 22px; bottom: 22px; z-index: 2147482000;
+  background: #0F766E; color: #fff; border: 0; border-radius: 28px;
+  padding: 14px 24px; font: 700 16px/1 -apple-system, Segoe UI, Arial, sans-serif;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer;
+}
+#lucy-ans-btn:hover { background: #0b5a54; }
+#lucy-ans-msg {
+  position: fixed; right: 22px; bottom: 84px; z-index: 2147482001;
+  width: 360px; border-radius: 10px; padding: 12px 34px 12px 14px;
+  font: 14px/1.45 -apple-system, Segoe UI, Arial, sans-serif;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+}
+#lucy-ans-msg .lucy-ans-x {
+  position: absolute; top: 8px; right: 8px; background: none; border: 0;
+  font-size: 14px; cursor: pointer; color: inherit; opacity: .6;
+}
+.lucy-ans-err  { background: #FDECEA; color: #8a1c13; }
+.lucy-ans-wait { background: #EEF2F7; color: #34495e; }
+.lucy-ans-ok   { background: #E6F4EA; color: #1e6b34; }
