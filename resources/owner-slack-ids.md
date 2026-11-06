@@ -40,6 +40,7 @@ When you confirm a new ID, add it here in the same commit.
 | Aiden Atoori | Atoori Management, Inc. (NDS, LA; ECO key `aiden`) | U07Q243HP7Z | aiden.originmgmt@gmail.com. Room #odysseyy C0CES186PGC (the SECOND one; C0CFFFDKTAL is his first, unused). Confirmed by Megan 2026-11-03 |
 | Sahil Multani | M Coast, Inc (AT&T, Raleigh NC; captain) | U07QDQ62RNZ | multani.business@gmail.com. Only Slack account under that name, email matches `captainship_night_knocks/owners.py` (2026-11-04) |
 | Starr Rodenhurst | Nova Management, Inc. (AT&T, Fremont CA; 17573; captain) | U0BQAF8B3S7 | starr.novamanagement@gmail.com. Only Slack account under that name, email matches `captainship_night_knocks/owners.py` (2026-11-04) |
+| Nigel Marshall | VP Executives, Inc (AT&T Fiber, 20034; Phoenix → LA end of Nov 2026) | U07QDQ7FPJR | nigelmarshall002@gmail.com. Only Slack account under that name, email matches (2026-11-06, Megan's screenshot). Room #vp-sales C0CFKTML6UE (private, he made it 11/06); Megan's DM with him D0CFFJLVCBD |
 | Atef Choudhury | Domin8 Acquisitions (23467) | U06E0GV0RNH | atefchy98@gmail.com. ⚠ look-alike U0CCYL2JZ7G "Atef's Office Slack" (atefchoudhury349@gmail.com) is a second account. Megan 2026-10-29 (sign-in alert DM) |
 | Cesar Castillo | Domin8 — Atef's super A / helper | U07GR1FUHKL | spikemaxblue12358@gmail.com. Gets Atef's sign-in alert DM with Megan, Eve, Atef (Megan 2026-10-29) |
 | Rashad Reed | Rashad's Local Office | U08LSELFTDW | |

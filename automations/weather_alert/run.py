@@ -63,6 +63,7 @@ CITIES = {
     # nigel / VP Executives: 97211-97232 (NE Portland) + 97302 (Salem) in his
     # AT&T order log, 2026-11-06; his 2nd office's 850xx Phoenix zips are a minority.
     "portland": ("Portland, OR", 45.5152, -122.6784, "America/Los_Angeles"),
+    "phoenix": ("Phoenix, AZ", 33.4484, -112.0740, "America/Phoenix"),
     # maxamad / Maximal Management: San Antonio per his OwnerVille office
     # address (harvest_zones, 2026-09-28).
     "san_antonio": ("San Antonio, TX", 29.4241, -98.4936, "America/Chicago"),
@@ -151,7 +152,7 @@ METRICS_CITY = {
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
     "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
     "aiden": "los_angeles",     # Atoori Management (NDS), Los Angeles (Megan 2026-11-03); Pacific; #odysseyy
-    "nigel": "portland",        # VP Executives (ATT Fiber), Portland OR per his order-log zips 2026-11-06; Pacific; channel from ECO sign-up
+    "nigel": "phoenix",         # VP Executives (ATT Fiber): Phoenix now, Los Angeles from 2026-11-30 (Megan 2026-11-06, CITY_CHANGES); #vp-sales
     "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up
     "starr": "fremont",         # Nova Management, Fremont CA; Pacific; channel from ECO sign-up
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern
@@ -344,12 +345,33 @@ def metrics_posts() -> list:
             # that demands a city for it is asking for a city nobody knows yet.
             print(f"[weather] {key}: destination is a DM hold, not a channel -- skipped", flush=True)
             continue
-        city = OFFICE_CITY.get(key) or METRICS_CITY.get(key)
+        city = _city_today(key, OFFICE_CITY.get(key) or METRICS_CITY.get(key))
         if not city:
             print(f"[weather] {key}: metrics office with no city -- skipped", flush=True)
             continue
         out.append((key, city, [o.channel_id], o.slack_token_file))
     return out
+
+
+# AN OFFICE THAT IS MOVING: the forecast switches city on a date, by itself.
+# key -> (first day in the new city, ISO date; new CITIES key). Megan 2026-11-06
+# on Nigel Marshall: "on the last of the month his weather should change from
+# Phoenix to LA."
+CITY_CHANGES = {
+    "nigel": ("2026-11-30", "los_angeles"),
+}
+
+
+def _city_today(key: str, city, today=None):
+    """The city to forecast for `key` today: CITY_CHANGES wins once its date
+    has arrived, otherwise whatever the office row says."""
+    import datetime as _dt
+    when_new = CITY_CHANGES.get(key)
+    if not when_new:
+        return city
+    on, new_city = when_new
+    today = today or _dt.date.today()
+    return new_city if today >= _dt.date.fromisoformat(on) else city
 
 
 def _workspace_client(token_file: str):

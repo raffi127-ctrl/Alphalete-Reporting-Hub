@@ -569,9 +569,11 @@
   },
   {
     "key": "nigel",
-    "label": "Nigel's Local Office (channel from ECO sign-up)",
+    "label": "Nigel's Local Office",
     "owner": "Nigel Marshall",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CFKTML6UE"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",

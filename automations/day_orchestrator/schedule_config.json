@@ -16778,7 +16778,7 @@
   "nigel_metrics": {
    "order": 36.95,
    "machine": "Lucy 4",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Nigel's Daily Metrics (channel from ECO sign-up)",
    "source_type": "tableau",
    "data_sources": [
