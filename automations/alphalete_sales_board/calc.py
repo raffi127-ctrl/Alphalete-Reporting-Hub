@@ -107,6 +107,26 @@ def match_name(sara_name: str, board_names: List[str],
                   "roster, or map the spelling in config.NAME_MAP" % sara_name)
 
 
+def text_only_sales(agents: List[Dict]) -> Dict[str, Dict[str, int]]:
+    """{'Joshua Mascorro': metrics} -- the EXCLUDE_REPS logins that sold today.
+
+    THEY COUNT IN THE TEXT, NOT ON THE BOARD (Raf 2026-11-05, on the chat's two
+    boards disagreeing: "JDS sales are good to be counted ... Jd should
+    count"). He still has no row, so nothing is written for him; the sale
+    transfer form moves those sales onto the reps' rows after the day closes
+    (sale_transfers), so today's text and tomorrow's board never both carry
+    them. Guest-office reps stay out entirely -- they are another owner's."""
+    out = {}
+    for a in agents:
+        name = str(a.get("name", "")).strip()
+        if name.upper() not in C.EXCLUDE_REPS:
+            continue
+        m = metrics_for(a)
+        if any(m.values()):
+            out[" ".join(w.capitalize() for w in name.split())] = m
+    return out
+
+
 def calculate(agents: List[Dict], board_names: List[str],
               alias_map: Optional[Dict[str, str]] = None
               ) -> Tuple[List[Dict], List[str], List[Dict]]:

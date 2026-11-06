@@ -451,7 +451,7 @@ def catchup_lines(board: str) -> str:
 
 
 def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
-                    show=None) -> str:
+                    show=None, teams=None) -> str:
     """The day's standings for an office's TEXT GROUP -- Raf's partner-chat
     layout, off the office's own relayed sales (Megan, 2026-09-22: "for
     those enrolled in LucyECO can we build out this for their text alerts
@@ -483,8 +483,11 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
     flames = [(show(r) if show else r) for r in (fired or [])]
     if not any(N.rep_total(m) for m in named.values()):
         return ""
+    # `teams` = the office's own sales-board team book (Raf's, 2026-11-05:
+    # "We want the team stats on there every post"); None for an office
+    # with no board, which keeps the old shape.
     return N.leaderboard(named, flames, None, (), flag_missing=False,
-                         teams=None)
+                         teams=teams)
 
 
 def _rep_key(name: str) -> str:
@@ -549,6 +552,42 @@ def eco_headcount(sales: Dict, knock_rows: List[Dict], campaign=None,
         out.append(("New INT per Rep AVG", "%.1f" % (ints / n)))
     out.append(("App per Rep AVG", "%.1f" % (apps / n)))
     return out
+
+
+# STANDINGS TEXT PAUSED -- logged, NOT sent; the group approval and the
+# office stay as they are, so turning it back on is deleting the line.
+# Raf 2026-11-05: his room got this board AND the Lucy 1 sales board a minute
+# apart on every sale. Lucy 1 keeps sending until his move to his own Lucy is
+# done (Eve, #l10 thread); both boards are kept in the same shape meanwhile.
+TEXT_PAUSED = {"raf": "Lucy 1's sales board sends Raf's room until his "
+                      "move to his own Lucy is done (Eve 2026-11-05)"}
+
+
+# OFFICES WHOSE HEADCOUNT IS THEIR OWN SALES BOARD'S, not worked out from
+# knocks. Raf's sheet counts the field by roll call (Raf 2026-11-01: knocks
+# miss reps walking together or working apartments), and his Lucy 1 board
+# copies that block as it reads. On 2026-11-05 his Eco text said 57 in the
+# field off knocks while the Lucy 1 text said 46 off the sheet, one minute
+# apart in the same room. Eve 2026-11-05: make the Eco one read like Lucy 1.
+BOARD_HEADCOUNT = {"raf"}
+
+
+def board_headcount(key: str, day: dt.date, log=print) -> Optional[List[Tuple[str, str]]]:
+    """The sales board's own headcount block for an office in
+    BOARD_HEADCOUNT -- the same cells Lucy 1's text copies
+    (alphalete_sales_board.fill.board_stats). None = not such an office.
+    A read that fails returns [] -- the block is dropped, same as Lucy 1 does,
+    never swapped for the knocks count that would disagree with it."""
+    if key not in BOARD_HEADCOUNT:
+        return None
+    try:
+        from automations.alphalete_sales_board import fill as SB
+        ws = SB.open_tab(day)
+        return SB.board_stats(ws, ws.get_all_values(), day)
+    except Exception as e:  # noqa: BLE001 -- the block, never the text
+        log("%-10s sales board headcount skipped: %s: %s"
+            % (key, type(e).__name__, str(e)[:160]))
+        return []
 
 
 def _eco_field(sales: Dict, knock_rows: List[Dict], campaign=None, show=None):
@@ -1815,18 +1854,23 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # AFTER the Slack rooms and never blocking them -- a group that
         # cannot be resolved must not cost the channel its alert, and must
         # not stop 'Last Posted' being written (a retry would re-announce).
-        if (sold or (sales_baseline and merged_sales)) and texts.get(key):
+        if (sold or (sales_baseline and merged_sales)) and texts.get(key)                 and key in TEXT_PAUSED:
+            log("%-10s standings text paused -- %s" % (key, TEXT_PAUSED[key]))
+        elif (sold or (sales_baseline and merged_sales)) and texts.get(key):
             board = scoreboard_text(board_sales, [] if sales_baseline else sold,
-                                    office.campaign, show)
+                                    office.campaign, show,
+                                    teams=_KP._teams_for(office, day))
             if board:
                 # RAF'S HEADCOUNT BLOCK under the totals, same as his partner
                 # chat (Megan 2026-10-22). Knocks read once, on first need.
                 if knocks_today is None:
                     knocks_today = _knocks_today(tab.spreadsheet, day)
                 from automations.alphalete_sales_board import notify as N
-                hc = N.headcount_lines(eco_headcount(
-                    board_sales, knocks_today.get(key), office.campaign,
-                    show))
+                stats = board_headcount(key, day, log=log)
+                if stats is None:
+                    stats = eco_headcount(board_sales, knocks_today.get(key),
+                                          office.campaign, show)
+                hc = N.headcount_lines(stats)
                 if hc:
                     board += "\n" + "\n".join(hc)
                 if _CFG.zero_names_wanted(key):

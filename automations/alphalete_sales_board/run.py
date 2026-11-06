@@ -503,6 +503,12 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
     # --- what is NEW since the last sweep -----------------------------------
     data = S.load()
     today = {r["board_name"]: r["metrics"] for r in rows}
+    # JD'S SALES COUNT IN THE TEXT (Raf 2026-11-05), never on the board: they
+    # join `today` after the board writes above, so the scoreboard, TOTALS and
+    # the team lines (he has no team -> Unassigned) carry them. Kept out of the
+    # per-sale Slack hype below, which never announced him.
+    text_only = calc.text_only_sales(agents)
+    today.update(text_only)
     gained = S.deltas(data, day, today)
     rec_gained = S.record_deltas(data, day, records)
 
@@ -560,7 +566,8 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
             # BATCHED, so no two reps get the same sentence. Each of these
             # is posted as its own Slack message and Slack groups them, so a
             # repeat is as visible here as inside one post.
-            _order = [rep for rep, _d in sorted(gained.items())]
+            _order = [rep for rep, _d in sorted(gained.items())
+                      if rep not in text_only]
             _hype = N.hype_batch(_order, gained, day)
             _hype, _gifs = _SH.within_budget(_hype, day, "ao-board")
             # ONE REP'S RUNNING JOKE (Megan 2026-10-27, shared.rep_asides):
