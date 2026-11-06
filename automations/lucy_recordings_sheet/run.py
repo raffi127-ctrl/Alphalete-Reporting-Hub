@@ -49,8 +49,8 @@ HERE = Path(__file__).resolve().parent
 BOT_ROOT = Path(os.environ.get("AUDIT_BOT_ROOT", str(Path.home() / "2nd-rd-audits")))
 BOT_RUNTIME = BOT_ROOT / ".runtime"
 
-# SANDBOX "LUCY 2nd Round Recordings (TEST)" (alphaletereporting, 2026-11-06)
-# until Eve says "use the real Sheet".
+# OFFICIAL "LUCY 2nd Round Recordings" - Drive: Alphalete Marketing > ARS >
+# AUDITS (Eve moved it there 2026-11-06; owner alphaletereporting).
 SSID = os.environ.get("LUCY_RECORDINGS_SSID", "1esRRAWpHo_Drn9vb5rjiC7sNL0pBjSgixw1HGOSlB_Q")
 RETENTION_SSID = "1JF1M-SYYbRnrp0dFr-IKxPiXMPdHPvGomyP6r4aSFZw"
 SHEETS = "https://sheets.googleapis.com/v4/spreadsheets"
