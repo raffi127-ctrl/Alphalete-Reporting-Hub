@@ -196,7 +196,7 @@ def open_admins(page, log=print) -> str:
     page.goto("%s?rqst=%s&p=%d" % (BASE, tok, ADMINS_PAGE), timeout=90_000)
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_timeout(4_000)
-    if page.locator("button:has-text('Add New Admin')").count() == 0:
+    if page.locator("button:text-is('Add New Admin')").count() == 0:
         body = page.inner_text("body")[:300].replace("\n", " ")
         log("this session has NO 'Add New Admin' on Settings -> Admins; it is "
             "not an admin-manager here. Page said: %s" % body)
@@ -214,7 +214,7 @@ def _wait_form(page, timeout_ms: int = 30_000) -> None:
 
 
 def open_new_admin(page) -> None:
-    page.locator("button:has-text('Add New Admin')").first.click()
+    page.locator("button:text-is('Add New Admin'):visible").first.click()
     _wait_form(page)
 
 
@@ -267,8 +267,18 @@ def _fill(page, login: Dict) -> None:
     page.fill("#password", login["password"])
 
 
+# THE REAL BUTTON IS THE EXTJS ONE. `button:has-text('Save Changes')` also
+# matches a hidden Bootstrap modal button (#commonModalSave, 'Save changes')
+# that sits in the page template — Lucy 3's first run (2026-11-06) resolved to
+# that one and never saved. Exact text + the ExtJS classes, visible only.
+_SAVE_SELECTOR = ("button.x-btn-text.icon-save:visible, "
+                  "button.x-btn-text:text-is('Save Changes'):visible")
+
+
 def _save(page) -> None:
-    page.locator("button:has-text('Save Changes')").first.click()
+    btn = page.locator(_SAVE_SELECTOR).first
+    btn.wait_for(state="visible", timeout=15_000)
+    btn.click()
     page.wait_for_timeout(5_000)
 
 
