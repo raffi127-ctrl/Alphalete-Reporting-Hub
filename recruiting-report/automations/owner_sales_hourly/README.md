@@ -19,13 +19,20 @@ Owner Sales Today - 5:50 PM CT
 
 **Also into SOUTHSHORE ORG** (Colten, 2026-10-24): same text, only the South
 Shore owners (`funnel_board.roster.SOUTH_SHORE_NAMES`: Colten, Jairo, Drew,
-Eveliz ...), own total, own "nothing changed" skip.
+Eveliz ...), own total, own "nothing changed" skip. **Raf is listed there too**
+(Raf, 2026-11-04: to compete): ranked like the others, not counted in the total
+(`config.SSO_NOT_IN_TOTAL`).
 
 **And into Jairo's A PLAYERSSS** (Jairo + Eve, 2026-10-26): "NDS Sales
 Today" -- only NDS offices' sales, only owners on our Org board, with its own
 "nothing changed" skip.
 
-- :50 every hour, Mon–Sat, 12 PM–9 PM Central.
+**And into Carlos's ATT B2B Leaders** (Carlos, 2026-11-04): the same owners list,
+titled "Alphalete Owner Sales Today", once an hour on the :15 so it starts when
+the owners chat starts (12:15 PM).
+
+- **Alphalete Owners: every 30 minutes** (:15 and :45, Raf 2026-11-04). SOUTHSHORE
+  ORG and A PLAYERSSS: once an hour, on the :45. Mon–Sat, 12 PM–9 PM Central.
 - Skipped when no number moved since the last text.
 - Not sent before any office has relayed a sale that day.
 

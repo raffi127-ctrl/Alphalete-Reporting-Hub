@@ -1675,3 +1675,16 @@ you still want to add it for the revenue board."** `load_crew` keeps every line 
 `revenue board: +N rep(s) off the roster, kept: ...`. A crew filter that matches nobody now falls back to
 all owner lines instead of raising. Re-post of one section = `rerun nds_metrics --prune revenue_board
 --only revenue_board --post --force` (prune deletes the old reply from today's thread first).
+
+## 2026-11-05 — Revenue Board "$6,153" vs the direct deposit "$6,311" (WE 11.1)
+Carlos: the NDS activation-revenue table said last week (10.25–10.31) posted $6,153; his DD shows NDS Wireless $6,311. Both are right — they measure different things. Reconciled line by line (RAW tab WE 11.1 block, campaign `NDS Wireless`, ties to $6,311 exactly; SaraPlus orders behind the board dumped with `lucy rerun nds_metrics_probe --soh-dump` → control sheet 'DD Probe' tab; per-line truth from the 'NDS Order Log' tab).
+
+**Bridge:** board $6,153 → minus 13 lines SaraPlus calls activated but the NDS portal still shows Shipped/Delivered (−$2,381) → minus 3 lines activated after the deposit cut, Marvin Stone L2 / Kenny Nguyen L4 / Cardinal's new line (−$451) → minus Dania Marisol Amaya, disconnected (−$188) → minus Noe Mendez paid at the in-footprint rate $193 not $213 (−$20) = **$3,113 paid for the board's orders** → plus Subba Rao's 10/31 line the board files under Cancelled because a sister line disconnected (+$213) → plus Jose Guevara, SaraPlus active 10/23 so the board had it the week before (+$193) → plus Sunday 11/1 activations the board shows under THIS WEEK (+$1,278: Georgeatte Mcdonald 2, Subba Rao 2, Sri Krishna Majety 2) → plus Internet Air activations the board can't see (+$369 = 3 × $123) → plus Smedra's Tier Volume Bonus (+$840) → plus add-ons (+$305) = **$6,311**.
+
+**Why, structurally (lookouts):**
+1. The board prices EVERY line of an order on the day SaraPlus stamps the order's `Wireless Active Date`; AT&T pays per LINE as each one actually activates (phones still Shipped/Delivered pay nothing yet). That alone was $2,381 of the week.
+2. The deposit's week runs Mon–Sun (WE 11.1 paid activations 10/26–11/1); the board's weeks are Sun–Sat Tableau weeks. Sunday activations always land one board-week later.
+3. The alphaletegp SaraPlus export has no Internet Air column and no IF/OOF flag: Air activations ($93 + $30 ABP = $123) never show on the board, and in-footprint ports pay $193 (the DD marks them `IF`), the board assumes $213 OOF.
+4. Tier Volume Bonus and add-ons (Unlimited Extra $10 / Premium $15 / Protect $15+$10) exist only in the DD — the board's subtitle already says add-ons are out.
+5. Chargeback watch: Subba Rao Maddela L1 disconnected 11/5 after all three lines were paid in WE 11.1.
+Possible fixes, NOT built (Carlos's call): price per line from the NDS Order Log statuses instead of per order; add Air from the SaraPlus AIA count; read IF/OOF from the Tableau NDS-SN order log. Owner boards untouched; nothing on the Vantura board was written.

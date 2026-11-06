@@ -108,6 +108,8 @@ push to main, queue `update` on Lucy 1.
 | Fiber sales feed chats | `alphalete_sales_board/guest_feed.py` → `GROUPS` | Lucy 1 |
 | NDS knocks board hours | `nds_oof/config.py` → `WEEKDAY_START` (1:30 since 11-03), `SATURDAY_START` (10:15), `START_OVERRIDES` for one date | push; Lucy 2 picks it up on the next 15-min tick |
 | A rep who knocks on RAF's Ownerville but belongs on the NDS board | `nds_oof/config.py` → `BORROWED_ROWS` (`{"rafael": [names]}`; spell as Ownerville does) | push. Board picture only — not gaps, call-outs, texts or the weekly. Raf's board untouched. |
+| NDS T&C check: who gets tagged, wording, channel | `nds_tnc_check/config.py` → `MENTIONS` (Slack IDs), `message()`, `CHANNEL` | push, `update` on Lucy 2 |
+| NDS T&C check: times | Report Library cards `nds_tnc_check_830pm` / `_930pm` / `_730am` (`schedule.time`; args carry `--post` once live, `--yesterday` on the morning one) | sheet edit only; card_scheduler reads it every pass |
 | One date on another day's rules | `shared/day_override.py` → `TREAT_AS_SATURDAY` (+ the date line in `deploy/gap_alerts_5min.sh`) | both |
 
 Deploy flow: commit → `git push origin HEAD:main` → queue `update` on the
@@ -120,6 +122,7 @@ Lucy 2") → verify by `logtail`. See `~/alphalete-readmes/LUCY2-OPERATIONS-READ
 
 | Command | Machine | Does |
 |---|---|---|
+| `rerun nds_tnc_check [--date YYYY-MM-DD\|--yesterday] [--post]` | Lucy 2 | NDS T&C check for one day; dry-run unless `--post`. `--probe --limit 2` dumps the grid headers + card text to the control sheet's `TNC Probe` tab. |
 | `b2b_dispositions --morning --send` | Lucy 2 | Open today's threads, post yesterday's boards, pin |
 | `b2b_dispositions --backfill-yesterday "Fiber Knocks Board" --send` | Lucy 2 | Put yesterday's final board into today's thread of that name |
 | `b2b_dispositions --delete-loose "<prefix>" --send` | Lucy 2 | Delete TODAY's loose Lucy posts starting with prefix (never thread parents) |
@@ -133,6 +136,7 @@ Lucy 2") → verify by `logtail`. See `~/alphalete-readmes/LUCY2-OPERATIONS-READ
 
 ## 6. Known issues / gotchas
 
+- **NDS T&C check (11-05)**: reads the NDS dealer's SaraPlus (alphaletegp) Sales Order History for the day and opens every row's View Customer card (own Chrome profile `.saraplus_nds_tnc_profile`, so it can overlap nds_metrics' 7:30 pull). Log (`logtail nds-tnc-check-<date> tnc 20`): `N order(s): a confirmed, b NOT confirmed, c card(s) unreadable` — unreadable cards are logged, never called out. A first login on a new profile hits the passcode wall; it self-clears through the alphaletegp inbox/forward like nds_metrics. If SaraPlus renames a label, `CARD_LABELS` in `nds_tnc_check/config.py` is where it lives; the grid columns are matched by header (`COL_ORDER_ID`/`COL_REP`/`COL_CUSTOMER`) and the headers are logged every run. The View Customer RadWindow keeps the PREVIOUS customer's iframe after Close, so a card is only trusted when it names the order id (or the customer's surname) and differs from the last one read; the frame is blanked after reading. Symptom of this going wrong: every order logging the same email/time. A PENDING sale's card has NO `Confirmation Date` row at all (`Confirmation Status: Pending Confirmation`, then `T&C Sent Via`, then the Order Summary button) — the card is recognised by `T&C Sent` / `Confirmation Status`, never by the date row; a missing row IS the not-confirmed case.
 - **Unpinning needs `pins:read`** on the Lucy Reporting Slack app (pinning works). Until Megan adds the scope, yesterday's pins stay.
 - **Lucy 1 is slow some days**: each Fiber pass can take ~10 min, so "every 15 min" lands every 20–30. The sales sweep holds a lock most of each 5-minute cycle; use `sales_board_standings`, not `alphalete_sales_board …`, for reads.
 - **BOX-1 needs the office mini**. "last relayed … too old" in Lucy 1's poster log = the mini is asleep/off/logged out.
@@ -151,6 +155,7 @@ Lucy 2") → verify by `logtail`. See `~/alphalete-readmes/LUCY2-OPERATIONS-READ
 
 ## 7. Change log
 
+- 11-05 **NDS T&C check** (`automations/nds_tnc_check`, Lucy 2): 8:30pm + 9:30pm for today and 7:30am for yesterday, every day. Every NDS sale's View Customer card → `T&C Sent Via` / `Confirmation Date`; no DATE = Slack call-out in #alphalete-gp-sales (under the NDS Metrics thread when open) tagging Carlos + Sebastian Avellaneda: "Hey, customer <first> (rep: <rep>) — TNC has not been completed." Cards added in dry-run; `--post` goes on once Carlos confirms the destination.
 - 09-29 Split knocks from gaps; Box hourly → once a day; AT&T daily boards stopped; Fiber board + gaps texted hourly; Fiber sales/credit feed off Raf's SaraPlus (SAL-7/8).
 - 09-30 Jacob Ortega added to the crew.
 - 10-03 Labels BOX/FIB/SAL/ATT; Fiber Saturdays from 10:30; morning threads + pins; campaign-first names; FIB-3 every 15 min, BOX-3 every 30; FIB-2 hourly; Sebastian Avellaneda added; loose pre-thread posts deleted.
