@@ -108,10 +108,26 @@ if not rec:
         except Exception:
             pass
         url = pub["relay_url"] + "?" + urllib.parse.urlencode({"office": office_key})
-        with urllib.request.urlopen(url, timeout=30, context=ctx) as r:
-            out = json.loads(r.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(url, timeout=30, context=ctx) as r:
+                out = json.loads(r.read().decode("utf-8"))
+        except ssl.SSLCertVerificationError:
+            # A python.org Python has NO certificate bundle until "Install
+            # Certificates.command" is run (Nigel's Mac Studio, 2026-11-06:
+            # two 'office I do not recognise' for a lookup that worked on
+            # every other machine). curl trusts the Mac's own keychain, so
+            # the same lookup through curl stays verified and just works.
+            import subprocess
+            out = json.loads(subprocess.run(
+                ["curl", "-fsSL", "--max-time", "40", url],
+                capture_output=True, text=True, check=True).stdout)
         rec = out.get("office") if out.get("ok") else None
-    except Exception:
+        if not rec:
+            print("\nThe reporting team's sign-up list answered: %s"
+                  % str(out.get("error") or out)[:200])
+    except Exception as e:
+        print("\nCould not reach the reporting team's sign-up list (%s: %s)."
+              % (type(e).__name__, str(e)[:160]))
         rec = None
 if not rec:
     print("\nThat code is for an office I do not recognise (%r)." % office_key)
