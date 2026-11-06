@@ -23,10 +23,13 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 11:00 PM every day, machine LOCAL time (Lucy 1 is Central): the
-         quietest hour on the Lucys (Eve 2026-11-06). -->
+    <!-- 8:00 AM every day, machine LOCAL time (Lucy 1 is Central). Moved from
+         11 PM (Eve 2026-11-06): the 7:07 AM 2nd-round-retention pass has
+         re-read yesterday's late 2nd rounds by then, so the sheet (and Raf's
+         email) has yesterday complete. The label keeps "nightly" so the
+         installed agent is replaced, not duplicated. -->
     <key>StartCalendarInterval</key>
-    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/lucy-recordings.launchd.out.log</string>

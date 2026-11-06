@@ -1,5 +1,5 @@
 #!/bin/bash
-# LUCY 2nd round recordings sheet for Raf — NIGHTLY 11 PM CT
+# LUCY 2nd round recordings sheet for Raf — DAILY 8:00 AM CT (was 11 PM)
 # (Eve, 2026-11-06). RUNS ON LUCY 1: it reads the audit bot's files in
 # ~/2nd-rd-audits and writes with the drive-full-reporting token. No AppStream:
 # 2nd rounds come from the retention sheet. Takes ~2 min.
