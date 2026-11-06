@@ -44,7 +44,7 @@ LOOKBACK_DAYS = 60
 # history back to 9/22, which is not NDS production). Every SaraPlus board
 # floors at this date; the Tableau rate/churn boards keep their lookback
 # (banding needs it).
-NDS_SINCE = dt.date(2026, 10, 20)
+NDS_SINCE = dt.date(2026, 10, 19)   # 10/20 until 2026-11-06: Jose Guevara's 10/19 order was paid as NDS Wireless on WE 11.1 and is Smedra's 4th order of that tier week
 # SaraPlus only drives boards once it holds this many NDS-era crew orders.
 # 2026-10-26: the FIRST call-center entry landed and the Order Log flipped to
 # SaraPlus showing that one order while Tableau had the crew's full 17 lines.

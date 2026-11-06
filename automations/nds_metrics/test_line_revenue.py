@@ -11,6 +11,8 @@ RATES = {
                  "tablet_wearable_nonbyod": 25},
     "addons": {"unlimited_premium": 15, "unlimited_extra": 10},
     "internet_air": {"activation": 93, "auto_bill_pay_bonus": 30},
+    "rep_tier": {"bands": [[4, 30], [5, 50], [7, 75], [9, 110]],
+                 "double_days": ["2026-10-31"]},
 }
 FRI = dt.date(2026, 11, 6)      # last = 10/26..11/1, this = 11/2..11/8
 
@@ -201,3 +203,35 @@ class FeedParse(unittest.TestCase):
         self.assertEqual(lines[2]["customer"], "JANE ROE")
         self.assertTrue(LR.is_byod(l1))
         self.assertFalse(LR.is_byod(lines[1]))
+
+
+class RepTier(unittest.TestCase):
+    def test_week_and_rate(self):
+        self.assertEqual(LR.tier_week(dt.date(2026, 10, 19)), dt.date(2026, 10, 18))   # Monday -> that Sunday
+        self.assertEqual(LR.tier_week(dt.date(2026, 10, 25)), dt.date(2026, 10, 25))   # a Sunday starts its week
+        self.assertEqual(LR.tier_week(dt.date(2026, 10, 31)), dt.date(2026, 10, 25))
+        self.assertEqual([LR.tier_rate(n, RATES) for n in (3, 4, 5, 6, 7, 8, 9, 12)],
+                         [0, 30, 50, 50, 75, 75, 110, 110])
+
+    def test_smedra_week_of_10_26_reproduces_the_deposit(self):
+        # 6 orders 10/26-10/31 and 10/31 is a double day -> 7 -> $75 on each activated port line
+        orders = [order("Nick Smedra", "O%d" % i, order_date=d, **{"Port Line Count": "2"})
+                  for i, d in enumerate(("10/26/2026", "10/27/2026", "10/28/2026",
+                                         "10/28/2026", "10/30/2026", "10/31/2026"))]
+        counts = LR.tier_order_counts(IX, orders, RATES)
+        self.assertEqual(counts[("Nick Smedra", dt.date(2026, 10, 25))], 7)
+        upg = order("Jacob", "U1", order_date="10/21/2026", **{"Port Line Count": "0", "Upgrade Line Count": "4"})
+        self.assertNotIn(("Jacob", dt.date(2026, 10, 18)), LR.tier_order_counts(IX, [upg], RATES))
+
+    def test_tier_rides_the_active_port_line(self):
+        orders = [order("Nick Smedra", "DSI%d" % i, order_date="10/2%d/2026" % i,
+                        **{"Wireless Status": "Active", "Wireless Active Date": "10/28/2026",
+                           "Wireless Line Count": "1", "Port Line Count": "1"})
+                  for i in range(1, 5)]                       # 4 orders 10/21-10/24 -> $30
+        lines = [line("DSI1", 1, "Active", tn="5550000001", plan="AT&T Value 2.0")]
+        state = {"5550000001": {"first_active": "2026-10-28", "src": "order"}}
+        res = LR.compute((IX, orders, dt.datetime(2026, 11, 6)), FRI, lines, state, RATES,
+                         log=lambda *_: None)
+        row = res["tables"]["last"]["rows"][0]
+        self.assertEqual(row["posted"], 213 + 30 + 3 * 213)    # the line + its tier, 3 orders at order level
+        self.assertEqual(res["stats"]["tier_last"], 30)

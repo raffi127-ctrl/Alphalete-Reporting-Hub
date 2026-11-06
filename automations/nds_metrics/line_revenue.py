@@ -29,8 +29,14 @@ WHAT THIS BOARD DOES: the same, from what SaraPlus shows today.
     in SaraPlus); the plan's Unlimited Extra ($10) / Premium ($15) rides on
     an Active line; Internet Air $93 (+$30 when the order has ABP) from the
     SOH Internet columns, on its install date.
-  * NOT priced (deposit only): the monthly Tier Volume Bonus, Protect
-    Advantage, the in-footprint rate.
+  * rep tier bonus (Sean Balderrama 10/19): the rep's ELIGIBLE ORDERS in
+    the Sun-Sat SALE week (an order with a port line; double-tier days count
+    twice) set a rate -- 4 orders $30, 5-6 $50, 7-8 $75, 9+ $110 -- paid on
+    each of those orders' port lines when the line activates. Added to the
+    line's posted $ in its activation week. DNQ (churn > 7% / activation
+    rate < 60%, both only at 20+) is not modeled.
+  * NOT priced (deposit only): Protect Advantage (SaraPlus shows it
+    nowhere we read; $15 / $50 since 11/3), the in-footprint rate.
   * weeks: Monday..Sunday like the deposit -- "last week" is the week the
     Wednesday deposit pays.
   * Cancelled $: a line now Disconnected/Cancelled, in the week it died
@@ -301,6 +307,44 @@ def assign_byod(order_lines: List[dict], n_byod: int) -> None:
         ln["device_type"] = ((ln.get("device_type") or "") + " BYOD").strip()
 
 
+# ------------------------------------------------------- rep tier bonus ----
+
+def tier_week(d: dt.date) -> dt.date:
+    """The SUNDAY starting the Sun..Sat sale week that holds d -- Smart
+    Circle's week for the rep tier (both deposits reproduce on it)."""
+    return d - dt.timedelta(days=(d.weekday() + 1) % 7)
+
+
+def tier_rate(n_orders: int, rates: Optional[dict] = None) -> float:
+    """$ per activated port line for a rep with n eligible orders in the
+    sale week: <4 $0, 4 $30, 5-6 $50, 7-8 $75, 9+ $110."""
+    rate = 0.0
+    for thr, amt in (rates or sow_rates())["rep_tier"]["bands"]:
+        if n_orders >= int(thr):
+            rate = float(amt)
+    return rate
+
+
+def tier_order_counts(ix, orders, rates: Optional[dict] = None) -> Dict[tuple, int]:
+    """{(rep, tier-week Sunday): eligible orders}, an order = at least one
+    port line (upgrade-only / Air-only orders do not count), a double-tier
+    day counts twice."""
+    rt = (rates or sow_rates())["rep_tier"]
+    dbl = set(rt.get("double_days") or [])
+    out: Dict[tuple, int] = collections.Counter()
+    for r in orders:
+        rep = _soh_cell(ix, r, "User Name")
+        od = _parse_date(_soh_cell(ix, r, "Order Date"))
+        try:
+            ports = int(float(_soh_cell(ix, r, "Port Line Count") or 0))
+        except ValueError:
+            ports = 0
+        if not rep or od is None or ports <= 0:
+            continue
+        out[(rep, tier_week(od))] += 2 if od.isoformat() in dbl else 1
+    return out
+
+
 # ------------------------------------------------------------- the board ----
 
 def _bucket(a: dict, key: str, d: dt.date, amt: float, wk) -> str:
@@ -340,9 +384,15 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
     reps: Dict[str, dict] = {}
     detail: List[dict] = []
     stats = collections.Counter()
+    tier_counts = tier_order_counts(ix, orders, rates)
+    tier_total = {"last": 0.0, "this": 0.0}
 
     def rep_of(r):
         return _soh_cell(ix, r, "User Name")
+
+    def tier_for(rep, order_date_text):
+        od = _parse_date(order_date_text)
+        return tier_rate(tier_counts.get((rep, tier_week(od)), 0), rates) if od else 0.0
 
     for oid, r in by_order.items():
         rep = rep_of(r)
@@ -364,7 +414,9 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                     dead = dead_date(rec, ln.get("line_status", ""),
                                      soh_cancel.get(oid))
                     addon = addon_of(ln.get("plan", ""), rates) if act else 0.0
-                    amt = base + addon
+                    tier = (tier_for(rep, _soh_cell(ix, r, "Order Date"))
+                            if (act and kind in ("port", "byod port")) else 0.0)
+                    amt = base + addon + tier
                     where = "open"
                     if dead is not None:
                         # SOW: activated-and-disconnected the same week is
@@ -376,6 +428,9 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                     if act is not None:
                         where = _bucket(a, "posted", act, amt, wk) + ("+can" if dead else "")
                         stats["active"] += 1
+                        if tier and where.startswith("posted_"):
+                            tier_total[where.split("_")[1].split("+")[0]] += tier
+                            stats["tier_lines"] += 1
                     elif dead is None:
                         a["open"] += base
                         stats["open"] += 1
@@ -394,7 +449,7 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                         "activation": act.isoformat() if act else "",
                         "dead": dead.isoformat() if dead else "",
                         "kind": kind + (" (BYOD assumed)" if ln.get("_byod_assumed") else ""),
-                        "base": base, "addon": addon, "bucket": where})
+                        "base": base, "addon": addon, "tier": tier, "bucket": where})
                 stats["lines"] += len(panel)
             else:
                 # not on the wireless report: order-level, the old way
@@ -418,7 +473,7 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                     "first_active": "", "src": "soh", "first_dead": "",
                     "activation": act.isoformat() if act else "",
                     "dead": "", "kind": "order", "base": amt, "addon": 0.0,
-                    "bucket": where})
+                    "tier": 0.0, "bucket": where})
         # Internet Air off the SOH (install date = the deposit's activation)
         pkg = _soh_cell(ix, r, "Internet Package").lower()
         ist = _soh_cell(ix, r, "Internet Status").lower()
@@ -446,7 +501,7 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                 "first_active": "", "src": "soh", "first_dead": "",
                 "activation": inst.isoformat() if inst else "",
                 "dead": canc.isoformat() if canc else "", "kind": "air",
-                "base": amt, "addon": 0.0, "bucket": where})
+                "base": amt, "addon": 0.0, "tier": 0.0, "bucket": where})
 
     ls, le, ts, te = wk
 
@@ -461,6 +516,8 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
 
     tables = {"last": _table(ls, le, "posted_last", "can_last"),
               "this": _table(ts, te, "posted_this", "can_this")}
+    stats["tier_last"] = round(tier_total["last"])
+    stats["tier_this"] = round(tier_total["this"])
     return {"tables": tables, "detail": detail, "stats": stats, "weeks": wk}
 
 
@@ -491,7 +548,8 @@ def prepare(soh, today: dt.date, log=print, save: bool = True) -> dict:
     log(f"[nds] act-rev lines: {s['lines']} on the wireless report "
         f"({s['active']} active, {s['open']} open, {s['dead']} dead), "
         f"{s['orders_off_report']} order(s) off the report priced at order "
-        f"level, {s['air']} Internet Air")
+        f"level, {s['air']} Internet Air, rep tier bonus ${s['tier_last']:,} "
+        f"last / ${s['tier_this']:,} this on {s['tier_lines']} line(s)")
     log_tables(res["tables"], log=log)
     return res
 
@@ -505,10 +563,10 @@ def build(soh, today: dt.date, out: Path, log=print) -> Path:
     sub = ("NDS -- $ by activation week, Mon-Sun like the deposit. Each LINE "
            "priced the day it first shows Active on SaraPlus's wireless "
            f"report ({feed_note}); Internet Air $93 (+$30 ABP) on its install "
-           "date;\nUnlimited Extra/Premium ride with an active line. OOF rates "
-           "at base comp (no IF flag in SaraPlus); tier volume bonus + Protect "
-           "are deposit-only. A paid line that later dies shows in Cancelled $ "
-           f"too. SaraPlus pulled {res['pulled_at']:%H:%M}.")
+           "date;\nUnlimited Extra/Premium + the rep tier bonus (orders per "
+           "Sun-Sat sale week: 4=$30 5-6=$50 7-8=$75 9+=$110 a line) ride with "
+           "an active line. OOF rates at base comp; Protect not in SaraPlus. "
+           f"A paid line that later dies shows in Cancelled $ too. SaraPlus pulled {res['pulled_at']:%H:%M}.")
     saved = list(bpng.COLS)
     bpng.COLS[:] = [("Rep Name", "rep", "left"),
                     ("Posted $", "posted", "center"),

@@ -1,10 +1,16 @@
 {
   "_source": "ATT-D2D-OOF SOW Schedule A (eff 09.01.2026) + Change Notice eff 10.07.2026 (kzeller@thesmartcircle.com, 'ATT D2D OOF SOW-Eff.10.07.2026 (Sched A).pdf', extracted 2026-10-09). Carlos 2026-10-09: 'use the NDS SOW ... and assume base comp for now.'",
-  "_base_comp_note": "BASE COMP = Churn Tier 3-3 for both port charts — the AUTOMATIC tier when the ICD has 19 or fewer port (resp. BYOD) activations in the month, which is where the crew's volume sits. When volume clears 19/month the real 0-30 x 90-day churn tier applies and these two numbers must move (full Chart 2/4 grids are in the PDF in output/fiber_metrics).",
+  "_base_comp_note": "BASE COMP = Churn Tier 3-3 for both port charts \u2014 the AUTOMATIC tier when the ICD has 19 or fewer port (resp. BYOD) activations in the month, which is where the crew's volume sits. When volume clears 19/month the real 0-30 x 90-day churn tier applies and these two numbers must move (full Chart 2/4 grids are in the PDF in output/fiber_metrics).",
   "assumed_tier": "3-3",
   "wireless": {
-    "port_nonbyod": {"OOF": 213, "INFP": 193},
-    "port_byod": {"OOF": 188, "INFP": 168},
+    "port_nonbyod": {
+      "OOF": 213,
+      "INFP": 193
+    },
+    "port_byod": {
+      "OOF": 188,
+      "INFP": 168
+    },
     "new_line": 25,
     "upgrade_voice": 30,
     "tablet_wearable_nonbyod": 25
@@ -15,13 +21,47 @@
     "unlimited_extra": 10,
     "oof_bundle_with_internet_air": 25,
     "protect_advantage_1": 15,
-    "protect_advantage_4": 50
+    "protect_advantage_4": 50,
+    "_protect_note": "Smart Circle 11/3/2026 'Device Protection (PA) - Bonus Removal Effective 11/3': the $10 (PA1) / $25 (PA4) bonus is gone for sales from 11/3; the $15 / $50 base stays. SaraPlus shows no protection feature anywhere we read (SOH export, wireless report, customer card) -- not priced on the board."
   },
-  "internet_air": {"activation": 93, "auto_bill_pay_bonus": 30,
-                   "_note": "the 10/07/2026 Change Notice re-declared Section 2(b)(ii)(a) — this $93 is the post-change amount"},
+  "internet_air": {
+    "activation": 93,
+    "auto_bill_pay_bonus": 30,
+    "_note": "the 10/07/2026 Change Notice re-declared Section 2(b)(ii)(a) \u2014 this $93 is the post-change amount"
+  },
   "exclusions": [
     "VoIP-carrier ports (Bandwidth.com etc.) are not paid",
     "non-smartphone devices pay as BYOD",
     "activated-and-disconnected same week excluded from the DD"
-  ]
+  ],
+  "rep_tier": {
+    "_source": "Sean Balderrama (Smart Circle) 10/19/2026 'Re: NDS - Commission Grid': 'Weekly Lines are paid a tiered bonus based on order count within a given week. Paid upon Line Activation.' Bands = orders in the Sun-Sat SALE week -> $ per activated port line of those orders. Reproduces every Tier Volume Bonus row on the WE 10.25 + WE 11.1 deposits (Smedra 4 orders 10/19-10/25 incl. Guevara -> $30; 6 orders + the 10/31 double day = 7 -> $75; Andrew 4 -> $30; Jacob's upgrade-only order did not count). DNQ (0-30 day churn > 7% at 20+ activations, or activation rate < 60% at 20+ sales) is NOT modeled.",
+    "bands": [
+      [
+        4,
+        30
+      ],
+      [
+        5,
+        50
+      ],
+      [
+        7,
+        75
+      ],
+      [
+        9,
+        110
+      ]
+    ],
+    "counts": "orders with at least one port line (BYOD or not); upgrade-only and Air-only orders do not count",
+    "double_days": [
+      "2026-10-08",
+      "2026-10-09",
+      "2026-10-10",
+      "2026-10-12",
+      "2026-10-31"
+    ],
+    "_double_days_note": "Sean's 'Double Tier Bonus - <date>' emails: every eligible sale that day counts twice toward the tier. Append each new one here."
+  }
 }

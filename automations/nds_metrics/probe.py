@@ -307,7 +307,7 @@ def line_calib(log=print) -> int:
     out.append([])
     cols = ["rep", "customer", "order_id", "order_date", "line", "type",
             "device_type", "device", "plan", "status", "first_active", "src",
-            "first_dead", "activation", "dead", "kind", "base", "addon", "bucket"]
+            "first_dead", "activation", "dead", "kind", "base", "addon", "tier", "bucket"]
     out.append(cols)
     for d in detail:
         out.append([d.get(c, "") for c in cols])
