@@ -114,6 +114,50 @@ def _caption(today: dt.date, office: "roster.FocusOffice" = None) -> str:
     return f"{head} {tags}" if tags else head
 
 
+def _text_caption(today: dt.date) -> str:
+    """The text twin of _caption: same words, no Slack bold or @-tags (those
+    would arrive in iMessage as literal asterisks and <@U...> junk)."""
+    return f"{today.month}/{today.day}/{today:%y} Daily Recruiting Focus Report"
+
+
+def text_office(office: "roster.FocusOffice", png: Path, today: dt.date, *,
+                dry_run: bool = True, force: bool = False) -> dict:
+    """Send the office's PNG to each of its iMessage groups.
+
+    One state entry PER GROUP ("<key>|text|<group>"), separate from the Slack
+    one: the agent ticks every 10 minutes, so a group that failed at 7:00 is
+    retried at 7:10 without re-texting the groups that already got it, and a
+    Slack post that already went out never blocks the texts."""
+    out = {"sent": [], "skipped": [], "errors": []}
+    groups = tuple(getattr(office, "text_groups", ()) or ())
+    if not groups:
+        return out
+    from automations.b2b_dispositions import text_post as tp
+    caption = _text_caption(today)
+    for group in groups:
+        k = f"{office.key}|text|{group}"
+        state = _load_state()
+        if state.get(k) == today.isoformat() and not force:
+            out["skipped"].append(group)
+            continue
+        try:
+            res = tp.send_to_group(group, caption, [png], dry_run=dry_run)
+        except Exception as e:  # noqa: BLE001 — one chat never blocks the rest
+            out["errors"].append(f"{group}: {type(e).__name__}: {e}")
+            print(f"[{office.key}] !! TEXT to {group!r} FAILED: "
+                  f"{type(e).__name__}: {e}")
+            continue
+        print(f"[{office.key}] {'WOULD TEXT' if dry_run else 'TEXTED'} "
+              f"{res.get('resolved_name')!r} ({res.get('participants')} "
+              f"participants): {caption}")
+        out["sent"].append(group)
+        if not dry_run:
+            state = _load_state()
+            state[k] = today.isoformat()
+            _save_state(state)
+    return out
+
+
 def post_office(office: "roster.FocusOffice", spreadsheet, *,
                 dry_run: bool = True, force: bool = False,
                 keep_png: bool = False,
@@ -124,9 +168,26 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
     state = _load_state()
     already = state.get(office.key)
     if already == today.isoformat() and not force:
-        print(f"[{office.key}] already posted for {today} — skipping "
-              f"(use --force to repost)")
-        return {"office": office.key, "skipped": "already_posted"}
+        groups = tuple(getattr(office, "text_groups", ()) or ())
+        owed = [g for g in groups
+                if state.get(f"{office.key}|text|{g}") != today.isoformat()]
+        if not owed:
+            print(f"[{office.key}] already posted for {today} — skipping "
+                  f"(use --force to repost)")
+            return {"office": office.key, "skipped": "already_posted"}
+        # Slack went out but a chat didn't (it failed last tick): re-text
+        # only the owed chats, with today's already-rendered PNG.
+        png = OUTPUT_DIR / f"daily-focus-{office.key}-{today.isoformat()}.png"
+        if not png.exists():
+            raise RuntimeError(f"texts owed to {owed} but {png} is gone")
+        texts = text_office(office, png, today, dry_run=dry_run)
+        if texts["errors"]:
+            # Already reported as failed on the tick that missed. Counting
+            # every 10-min retry would write a Hub row per tick (the 9/4
+            # seventeen-rows bug), so a still-failing retry stays quiet.
+            return {"office": office.key, "skipped": "text_retry_failed",
+                    "texts": texts}
+        return {"office": office.key, "texts": texts}
 
     # Resolve the tab through the report's own finder so a minor tab rename
     # ("Rafael Hidalgo" -> "Rafael Hidalgo (Raf)") doesn't silently stop the
@@ -155,6 +216,14 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         file_name=f"Daily Focus — {office.label} {today.month}.{today.day}.png",
     )
 
+    if not dry_run:
+        # Slack is done — record it NOW, so a text failure below can never
+        # cause a second Slack reply on the next tick.
+        state = _load_state()
+        state[office.key] = today.isoformat()
+        _save_state(state)
+    texts = text_office(office, png, today, dry_run=dry_run, force=force)
+
     if dry_run:
         print(f"[{office.key}] DRY RUN — would start/reuse thread "
               f"{roster.THREAD_TITLE!r} in {office.channel_name} "
@@ -165,14 +234,17 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         if keep_png:
             print(f"[{office.key}]   PNG kept at {png}")
         return {"office": office.key, "dry_run": True, "png": str(png),
-                "parent": parent, "reply": reply}
+                "parent": parent, "reply": reply, "texts": texts}
 
-    state[office.key] = today.isoformat()
-    _save_state(state)
     print(f"[{office.key}] POSTED to {office.channel_name} "
           f"thread={parent.get('thread_ts')} existed={parent.get('existed')}")
+    if texts["errors"]:
+        # Slack posted; a chat didn't. Fail the office so the Hub shows it —
+        # the next tick re-texts only the chat that missed.
+        raise RuntimeError("Slack posted, but text failed: "
+                           + "; ".join(texts["errors"]))
     return {"office": office.key, "dry_run": False, "png": str(png),
-            "parent": parent, "reply": reply}
+            "parent": parent, "reply": reply, "texts": texts}
 
 
 def main(argv: Optional[List[str]] = None) -> int:

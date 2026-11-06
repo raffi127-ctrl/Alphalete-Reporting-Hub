@@ -63,6 +63,11 @@ class FocusOffice:
     # would notify from the channel, not from inside the thread. Per office, so
     # a new office tags its OWN owner rather than inheriting Raf.
     tag_user_ids: tuple = ()
+    # iMessage groups that get the same image + date line, right after the
+    # Slack post. Resolved by NAME ("contains") on every send, never a stored
+    # chat id -- same rule as every other Lucy text. Lucy 1 (the mini, where
+    # the 7pm agent runs) must be a member of each.
+    text_groups: tuple = ()
 
 
 # Raf's office. The channel is PRIVATE and was renamed from
@@ -79,6 +84,11 @@ RAF = FocusOffice(
     channel_name="#rafs-office-recruiting-11280",
     timezone="America/Chicago",
     tag_user_ids=("U045Z8N0ZQC",),   # Rafael Hidalgo
+    # Raf, #rafs-office-recruiting-11280, 2026-11-06: "Can we get this
+    # automatically sent in our 'ADMIN Staff' Chat + 'Alphalete Ateam' Chat".
+    # Both rooms already get Lucy texts from Lucy 1: Admin Staff = birthday
+    # reminders, "Alphalete A-Team Chat🔥🔥" = the stations post.
+    text_groups=("Admin Staff", "Alphalete A-Team Chat"),
 )
 
 # ENROLLED — start with Raf alone (his explicit ask: "I would like it for my
