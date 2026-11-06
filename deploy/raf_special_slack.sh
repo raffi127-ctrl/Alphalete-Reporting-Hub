@@ -1,12 +1,12 @@
 #!/bin/bash
 # Raf's AT&T Special Override -> his Slack DM, once per new week (Raf, 2026-11-06).
 #
-# RUNS ON LUCY 1 (Raf's Tableau login; Slack token posts as Lucy). Checks daily,
-# posts only when a week newer than the last one sent shows up.
+# RUNS ON LUCY 1 (Raf's Tableau login; Slack token posts as Lucy). Every Friday
+# (Eve 2026-11-06); retries the same afternoon never double-post.
 #
 #   bash deploy/raf_special_slack.sh             # dry: prints the message
 #   bash deploy/raf_special_slack.sh --preview   # DM to Eve only
-#   bash deploy/raf_special_slack.sh --send      # DM to Raf (new week only)
+#   bash deploy/raf_special_slack.sh --send      # DM to Raf (once per day)
 set -u
 cd "$(dirname "$0")/.." || exit 1
 

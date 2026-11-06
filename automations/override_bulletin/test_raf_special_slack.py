@@ -36,12 +36,17 @@ class T(unittest.TestCase):
         shown = R.last_weeks(w)
         self.assertEqual([d.day for d, _ in shown], [21, 28, 5, 12])
 
-    def test_message(self):
-        msg = R.build_message(R.last_weeks(R.parse_weeks(WOW)), R.parse_tiers(TIERS))
-        self.assertIn("WE 7/12 is in", msg)
-        self.assertIn("Tier 3: *$6* per unit at 3,840+", msg)
-        self.assertIn("$143,779", msg)                    # 4-week total
-        self.assertIn("vs last week: +$12,311", msg)
+    def test_caption(self):
+        cap = R.caption(R.last_weeks(R.parse_weeks(WOW)))
+        self.assertIn("WE 7/12: *$38,796*", cap)
+        self.assertIn("+$12,311 vs last week", cap)
+
+    def test_picture_html(self):
+        html = R.render_html(R.last_weeks(R.parse_weeks(WOW)), R.parse_tiers(TIERS))
+        self.assertIn("$143,779", html)                   # 4-week total
+        self.assertIn("$6 at 3,840+ New Fiber", html)
+        self.assertIn("#d6f5dd", html)                    # $6 = top tier = green
+        self.assertIn("#fff1c2", html)                    # $5 week (7/5) = amber
 
     def test_periods_window(self):
         self.assertEqual(R._periods(dt.date(2026, 11, 6)),

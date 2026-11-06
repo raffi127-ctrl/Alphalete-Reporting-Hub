@@ -6,8 +6,9 @@
     <string>com.alphalete.raf-special-slack</string>
     <!-- Raf's AT&T Special Override DM (Raf, 2026-11-06).
          LUCY 1. Path is the laptop placeholder; install_agent.py rewrites it.
-         Checks Mon-Sat 14:00 CT (after the Friday override fill is done with
-         Tableau); posts only when a new week is in, so Raf gets one per week. -->
+         EVERY FRIDAY (Eve 2026-11-06): 14:00 CT, after the Friday override
+         fill is done with Tableau; 15:00 and 16:00 are retries only (one send
+         per Friday, state file). -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -23,12 +24,9 @@
     </dict>
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
     </array>
     <key>StandardOutPath</key>
     <string>/tmp/com.alphalete.raf-special-slack.out</string>

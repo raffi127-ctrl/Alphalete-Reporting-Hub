@@ -14938,16 +14938,14 @@
   "raf_special_slack": {
    "on_scheduler": false,
    "machine": "Lucy 1",
-   "_note": "Raf 2026-11-06: his AT&T Special Override (Tableau ResATTSpecialDealOverride-Raf -> Payout- Raf wow) as a Slack DM from Lucy: what it is (tier table) + last 4 weeks. Real schedule = com.alphalete.raf-special-slack on LUCY 1 (Raf's Tableau login), Mon-Sat 14:00 CT with --send; posts only when a new week is in (state file). This entry with no args = dry run (prints); base_args --preview = DM to Eve only.",
+   "_note": "Raf 2026-11-06: his AT&T Special Override (Tableau ResATTSpecialDealOverride-Raf -> Payout- Raf wow) as a Slack DM from Lucy: what it is (tier table) + last 4 weeks. Sent as a picture. Real schedule = com.alphalete.raf-special-slack on LUCY 1 (Raf's Tableau login), EVERY FRIDAY 14:00 CT with --send (Eve 2026-11-06), retries 15:00/16:00; one send per Friday (state file). Hand runs: `rerun raf_special_slack` = dry run; `--preview` = DM to Eve only; `--send` = DM to Raf (once per day).",
    "display_name": "Raf Special Override DM",
    "source_type": "tableau",
    "data_sources": [],
    "command": [
     "automations.override_bulletin.raf_special_slack"
    ],
-   "base_args": [
-    "--preview"
-   ],
+   "base_args": [],
    "cadence": {
     "weekdays": []
    },
@@ -14959,7 +14957,7 @@
   },
   "install_raf_special_slack_agent": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Install/refresh com.alphalete.raf-special-slack on LUCY 1 (Raf's special override DM, checks Mon-Sat 14:00 CT, one post per new week). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "_off_scheduler_note": "Install/refresh com.alphalete.raf-special-slack on LUCY 1 (Raf's special override picture DM, Fridays 14:00 CT + retries, one send per Friday). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
    "machine": "Lucy 1",
    "display_name": "Install Raf Special Override DM agent",
    "source_type": "local",

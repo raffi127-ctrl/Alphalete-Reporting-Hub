@@ -14,14 +14,16 @@ Week it has four rows, found BY LABEL:
 The tier table comes from the sibling sheet `Payouts Raf` (live, so a tier
 change in Tableau shows up in the message without a code change).
 
-"Whenever it updates": the agent checks every day; it posts ONLY when a week
-newer than the last one sent shows up, so Raf gets one message per new week.
+Sent as a PICTURE (Eve 2026-11-06: table, tier colored, total at the bottom)
+with a one-line caption. EVERY FRIDAY (Eve 2026-11-06, "todos los viernes a
+rafael, empezando hoy"): the agent fires Friday 14:00 CT with retries at 15:00
+and 16:00; one send per Friday (state file), so a retry never double-posts.
 
 LUCY 1 (Raf's Tableau login; its Slack token posts as Lucy).
 
   python -m automations.override_bulletin.raf_special_slack           # dry: prints it
   python -m automations.override_bulletin.raf_special_slack --preview # DM to Eve only
-  python -m automations.override_bulletin.raf_special_slack --send    # DM to Raf (new week only)
+  python -m automations.override_bulletin.raf_special_slack --send    # DM to Raf (once per day)
 
 Python 3.9-safe (Lucy runtime).
 """
@@ -116,38 +118,103 @@ def _md(d: dt.date) -> str:
     return "%d/%d" % (d.month, d.day)
 
 
-def build_message(shown: list, tiers: list) -> str:
-    newest = shown[-1][0]
-    lines = [
-        "*Your AT&T Special Override — WE %s is in*" % _md(newest),
-        "",
-        "*What it is:* every week you get paid a rate on the org's "
-        "*Override Estimate*. The rate depends on the org's *New Fiber Estimate* "
-        "that week:",
-    ]
-    if tiers:
-        lines += ["• Tier %d: *$%g* per unit at %s+ New Fiber" % (t, rate, format(th, ","))
-                  for t, rate, th in tiers]
-    lines += ["", "*Last %d weeks:*" % len(shown)]
-    rows = [("Week", "New Fiber", "Rate", "Override Est.", "Payout")]
-    for d, v in shown:
-        rows.append(("WE " + _md(d),
-                     format(int(v.get("fiber") or 0), ","),
-                     "$%g" % (v.get("rate") or 0),
-                     format(int(v.get("units") or 0), ","),
-                     _money(v["total"])))
-    rows.append(("Total", "", "", "", _money(sum(v["total"] for _, v in shown))))
-    w = [max(len(r[i]) for r in rows) for i in range(5)]
-    table = ["  ".join(r[i].ljust(w[i]) if i == 0 else r[i].rjust(w[i])
-                       for i in range(5)) for r in rows]
-    table.insert(len(table) - 1, "-" * len(table[0]))
-    lines += ["```"] + table + ["```"]
+def caption(shown: list) -> str:
+    d, v = shown[-1]
+    line = "Raf's AT&T Special Override — WE %s: *%s*" % (_md(d), _money(v["total"]))
     if len(shown) >= 2:
-        prev, cur = shown[-2][1]["total"], shown[-1][1]["total"]
-        diff = cur - prev
-        lines.append("vs last week: %s%s" % ("+" if diff >= 0 else "-", _money(abs(diff))))
-    lines.append("_Source: Tableau → ResATTSpecialDealOverride-Raf → Payout- Raf wow._")
-    return "\n".join(lines)
+        diff = v["total"] - shown[-2][1]["total"]
+        line += " (%s%s vs last week)" % ("+" if diff >= 0 else "-", _money(abs(diff)))
+    return line
+
+
+# Lowest rate -> highest: red-ish, amber, green. More than 3 rates reuse the scale.
+_RATE_COLORS = [("#fde2e1", "#9b1c1c"), ("#fff1c2", "#7a5300"), ("#d6f5dd", "#13652b")]
+
+
+def _rate_style(rate, tiers) -> str:
+    rates = sorted({float(r) for _, r, _ in tiers}) or [4.0, 5.0, 6.0]
+    try:
+        i = rates.index(float(rate))
+    except ValueError:
+        return "background:#eee;color:#333"
+    k = i * len(_RATE_COLORS) // len(rates) if len(rates) > 3 else i
+    bg, fg = _RATE_COLORS[min(k, len(_RATE_COLORS) - 1)]
+    return "background:%s;color:%s" % (bg, fg)
+
+
+_CSS = """<style>
+ body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#fff}
+ .card{display:inline-block;padding:18px;background:#fff;min-width:560px}
+ .title{background:#1f3b64;color:#fff;font-weight:700;font-size:22px;
+        padding:12px 18px;border-radius:6px 6px 0 0}
+ .what{background:#f3f6fa;color:#333;font-size:14px;padding:10px 18px;line-height:1.45}
+ .tiers{padding:4px 18px 12px;background:#f3f6fa;border-radius:0 0 6px 6px}
+ .chip{display:inline-block;padding:4px 10px;margin-right:6px;border-radius:12px;
+       font-size:13px;font-weight:700}
+ table{border-collapse:collapse;width:100%;margin-top:14px}
+ th{background:#efefef;font-size:13px;padding:8px 12px;border:1px solid #ccc}
+ td{font-size:15px;padding:8px 12px;border:1px solid #ccc;text-align:right}
+ td.wk{text-align:left;font-weight:700}
+ td.rate{text-align:center;font-weight:700}
+ tr.new td{font-weight:700}
+ tr.tot td{background:#1f3b64;color:#fff;font-weight:700;font-size:16px}
+ .src{color:#888;font-size:11px;margin-top:8px}
+</style>"""
+
+
+def render_html(shown: list, tiers: list) -> str:
+    chips = "".join('<span class="chip" style="%s">$%g at %s+ New Fiber</span>'
+                    % (_rate_style(r, tiers), r, format(th, ","))
+                    for _, r, th in tiers)
+    trs = []
+    for i, (d, v) in enumerate(shown):
+        cls = ' class="new"' if i == len(shown) - 1 else ""
+        trs.append(
+            '<tr%s><td class="wk">WE %s</td><td>%s</td>'
+            '<td class="rate" style="%s">$%g</td><td>%s</td><td>%s</td></tr>'
+            % (cls, _md(d), format(int(v.get("fiber") or 0), ","),
+               _rate_style(v.get("rate") or 0, tiers), v.get("rate") or 0,
+               format(int(v.get("units") or 0), ","), _money(v["total"])))
+    total = sum(v["total"] for _, v in shown)
+    trs.append('<tr class="tot"><td class="wk">%d-week total</td><td></td><td></td>'
+               '<td></td><td>%s</td></tr>' % (len(shown), _money(total)))
+    return ("<html><head><meta charset='utf-8'>%s</head><body><div class='card'>"
+            "<div class='title'>Raf's AT&amp;T Special Override</div>"
+            "<div class='what'><b>What it is:</b> each week you're paid a rate on the "
+            "org's <b>Override Estimate</b>. The rate goes up with the org's "
+            "<b>New Fiber Estimate</b> that week:</div>"
+            "<div class='tiers'>%s</div>"
+            "<table><tr><th>Week</th><th>New Fiber</th><th>Rate</th>"
+            "<th>Override Est.</th><th>Payout</th></tr>%s</table>"
+            "<div class='src'>Source: Tableau &rarr; ResATTSpecialDealOverride-Raf "
+            "&rarr; Payout- Raf wow</div></div></body></html>"
+            % (_CSS, chips, "".join(trs)))
+
+
+def render_png(shown: list, tiers: list, out_path: Path) -> Path:
+    """HTML -> headless Chrome screenshot (same way b2b_metrics.rep_boards does)."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_path.with_suffix(".html")
+    tmp.write_text(render_html(shown, tiers), encoding="utf-8")
+    from patchright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = None
+        for kw in ({"channel": "chrome"}, {}):
+            try:
+                browser = p.chromium.launch(headless=True, **kw)
+                break
+            except Exception:  # noqa: BLE001
+                continue
+        if browser is None:
+            raise RuntimeError("no headless Chrome/Chromium to render")
+        try:
+            page = browser.new_page(device_scale_factor=2,
+                                    viewport={"width": 900, "height": 700})
+            page.goto(tmp.as_uri(), wait_until="networkidle")
+            page.query_selector(".card").screenshot(path=str(out_path))
+        finally:
+            browser.close()
+    return out_path
 
 
 def _periods(today: dt.date) -> list:
@@ -180,7 +247,8 @@ def pull(today: dt.date, verbose=True):
             if not tiers and used:
                 try:
                     tout = OUT_DIR / "tiers.csv"
-                    from automations.shared.tableau_patchright import                         download_crosstab_patchright
+                    from automations.shared.tableau_patchright import (
+                        download_crosstab_patchright)
                     download_crosstab_patchright(
                         P._with_filter(P.RAF_BONUS_VIEW, "Period", used),
                         TIER_SHEET, tout, page=page, verbose=verbose)
@@ -205,9 +273,9 @@ def _save_state(d: dict) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     g = ap.add_mutually_exclusive_group()
-    g.add_argument("--send", action="store_true", help="DM Raf (only when a new week is in)")
+    g.add_argument("--send", action="store_true", help="DM Raf (once per day)")
     g.add_argument("--preview", action="store_true", help="DM Eve only, always")
-    ap.add_argument("--force", action="store_true", help="--send even if this week went already")
+    ap.add_argument("--force", action="store_true", help="--send even if it went today already")
     a = ap.parse_args(argv)
 
     try:
@@ -221,28 +289,31 @@ def main(argv=None) -> int:
     if not shown:
         print("no weeks with a Raf Payout Total -- nothing to send")
         return 1
-    newest = shown[-1][0].isoformat()
-    text = build_message(shown, tiers)
+    text = caption(shown)
+    png = render_png(shown, tiers, OUT_DIR / ("raf_special_%s.png" % today.isoformat()))
     print(text)
+    print("picture: %s" % png)
 
     if not (a.send or a.preview):
         print("\n(dry run -- nothing posted)")
         return 0
     state = _state()
-    if a.send and not a.force and state.get("last_week") == newest:
-        print("WE %s already sent to Raf on %s -- nothing to do"
-              % (newest, state.get("sent_at")))
+    if a.send and not a.force and state.get("sent_day") == today.isoformat():
+        print("already sent to Raf today (%s) -- nothing to do" % state.get("sent_at"))
         return 0
 
     from automations.shared import slack_metrics_post as smp
     to = EVE if a.preview else RAF
-    r = smp._client().chat_postMessage(channel=to, text=text)
-    print("posted to %s: ok=%s ts=%s" % ("Eve (preview)" if a.preview else "Raf",
-                                         r.get("ok"), r.get("ts")))
+    # as_bot=False: the machine's user token, which on Lucy 1 IS Lucy (the
+    # text preview went out that way on 2026-11-06).
+    r = smp.dm_user_with_file(png, user=to, comment=text, file_name=png.name,
+                              as_bot=False)
+    print("posted to %s: %s" % ("Eve (preview)" if a.preview else "Raf", r))
     if a.send:
-        _save_state({"last_week": newest,
+        _save_state({"sent_day": today.isoformat(),
+                     "week": shown[-1][0].isoformat(),
                      "sent_at": dt.datetime.now().isoformat(timespec="seconds"),
-                     "ts": r.get("ts")})
+                     "file": r.get("file")})
     return 0
 
 
