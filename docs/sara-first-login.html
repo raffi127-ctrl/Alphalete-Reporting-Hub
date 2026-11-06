@@ -1,0 +1,89 @@
+<title>Add your SaraPlus login to Lucy</title>
+<meta name="description" content="One line to give Lucy your SaraPlus login once your account is active -- alerts switch on by themselves.">
+<style>
+  :root { color-scheme: light dark; --gold:#B4975A; --line:#8884; }
+  body { font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         margin:0; padding:40px 22px; }
+  .wrap { max-width:36rem; margin:0 auto; }
+  h1 { font-size:1.5rem; margin:0 0 .3rem; }
+  .who { opacity:.75; margin:0 0 1.8rem; }
+  .step { display:flex; gap:14px; margin:0 0 1.6rem; }
+  .num { flex:0 0 auto; width:1.7rem; height:1.7rem; border-radius:50%;
+         background:var(--gold); color:#fff; font-weight:700; font-size:.85rem;
+         display:flex; align-items:center; justify-content:center; }
+  .cmd { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+         background:#8881; border:1px solid var(--line); border-radius:8px;
+         padding:12px 14px; overflow-x:auto; white-space:pre-wrap;
+         word-break:break-all; margin:.6rem 0; }
+  button { font:inherit; font-weight:600; padding:11px 20px; border:0;
+           border-radius:9px; background:var(--gold); color:#fff; cursor:pointer; }
+  button.done { background:#2e7d32; }
+  .note { border:1px solid var(--line); border-radius:10px; padding:14px 16px;
+          margin-top:1.8rem; font-size:.95rem; }
+</style>
+<div class="wrap">
+  <h1>Add your SaraPlus login to Lucy</h1>
+  <p class="who">About 2 minutes, once your SaraPlus account is active. You will need the SaraPlus email and password you sign in with.</p>
+
+  <div class="step"><div class="num">1</div><div>
+    <b>Do this on the office computer that runs Lucy</b> — the iMac or Mac mini
+    you set up on the call, not a laptop. Lucy signs in to SaraPlus from that
+    computer with a login saved there.
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div>
+    Open <b>Terminal</b>: hold <b>Command</b> and tap <b>Space</b>, type
+    <b>terminal</b>, press Return.
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div>
+    Press the button, then paste into that window and press Return.
+    <div class="cmd" id="cmd">loading&#8230;</div>
+    <button id="copy">Copy the command</button>
+  </div></div>
+
+  <div class="step"><div class="num">4</div><div>
+    A box pops up asking for your <b>SaraPlus email</b>, then your
+    <b>SaraPlus password</b>. Type them exactly as you sign in.
+  </div></div>
+
+  <div class="step"><div class="num">5</div><div>
+    Lucy signs in by herself to check. A browser window opens —
+    <b>don't type or click anything in it</b>, including the security box;
+    it clears on its own in about 30 seconds. If SaraPlus asks for the code
+    it emails you, Lucy reads it from your inbox; if a window asks you for
+    it, type it there.
+  </div></div>
+
+  <div class="step"><div class="num">6</div><div>
+    Wait for the last line. <b>"That worked"</b> means you're done: SaraPlus
+    switches on for your office by itself and credit-check alerts start on
+    Lucy's next sweep. Anything else: run the same line again and retype the
+    password; still stuck, send the reporting team a photo of the window.
+  </div></div>
+
+  <div class="note">
+    <b>Nothing else changes.</b> Your OwnerVille login, your knocks board, your
+    channels and your schedule are all left alone. Only the SaraPlus login
+    Lucy uses is added.
+  </div>
+</div>
+<script>
+  // Same shape as sara-signin.html: the whole command, pulled fresh first,
+  // absolute interpreter path (see the notes there for why each part).
+  var PY = "~/.lucy-reports/venv/bin/python";
+  var CMD = "cd ~/.lucy-reports/app"
+          + " && rm -f ~/.config/lucy-reports/last-selfupdate.txt"
+          + " && " + PY + " -c \"from automations.icd_alerts import selfupdate as s; s.run()\""
+          + " && " + PY + " -m automations.icd_alerts.run --set-login";
+  document.getElementById("cmd").textContent = CMD;
+  var btn = document.getElementById("copy");
+  btn.addEventListener("click", function () {
+    function ok() { btn.textContent = "Copied — paste it into Terminal"; btn.className = "done"; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(CMD).then(ok, function () {
+        btn.textContent = "Select the line above and copy it";
+      });
+    } else { btn.textContent = "Select the line above and copy it"; }
+  });
+</script>

@@ -402,11 +402,34 @@ PAUSED_KEYS = frozenset({"jamis10", "carlos"})
 # is never read, signed into, kept alive overnight or probed on SaraPlus; its
 # OwnerVille knocks board and texts carry on. Not PAUSED_KEYS: that would stop
 # his TeleMapper board too, which he asked to keep.
-SARA_PAUSED_KEYS = frozenset({"tre", "nigel"})  # nigel: SaraPlus not active yet (Megan 2026-11-06) -- OwnerVille knocks only until it is
+SARA_PAUSED_KEYS = frozenset({"tre"})
+
+# WAITING FOR SARAPLUS, not opted out: offices enrolled before their SaraPlus
+# account existed (Nigel 2026-11-06: "we're still waiting on Sara to activate
+# so we just need OV"). Paused exactly like the list above -- UNTIL the owner
+# runs the SaraPlus walkthrough (docs/sara-first-login.html -> `run
+# --set-login`) and it proves the login: that writes SARA_ACTIVATED_PATH on
+# the machine and the pause lifts itself. Nobody edits this file at that
+# moment (Megan: "this needs to be auto ran as much as possible").
+SARA_WAITING_KEYS = frozenset({"nigel"})
+SARA_ACTIVATED_PATH = APP_DIR / "sara-activated.txt"
+
+
+def sara_activated_here() -> bool:
+    return SARA_ACTIVATED_PATH.exists()
+
+
+def mark_sara_activated(note: str = "") -> Path:
+    app_dir()
+    SARA_ACTIVATED_PATH.write_text(note or "set-login proved the SaraPlus login")
+    return SARA_ACTIVATED_PATH
 
 
 def sara_paused(key) -> bool:
-    return str(key or "").strip().lower() in SARA_PAUSED_KEYS
+    k = str(key or "").strip().lower()
+    if k in SARA_PAUSED_KEYS:
+        return True
+    return k in SARA_WAITING_KEYS and not sara_activated_here()
 
 
 def sara_paused_here() -> bool:

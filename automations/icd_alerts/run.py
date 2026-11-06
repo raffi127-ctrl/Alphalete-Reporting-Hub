@@ -96,6 +96,18 @@ def cmd_set_login(headless: bool = True) -> int:
             # The sweep may be standing back after the refusals; a person
             # just fixed it, so the next tick must try, not sit out the hold.
             sara_read.clear_sara_hold()
+            # An office that enrolled BEFORE its SaraPlus existed is paused
+            # on SaraPlus (config.SARA_WAITING_KEYS). A proven login is the
+            # moment that ends -- here, by itself, not by somebody editing
+            # the list (Megan 2026-11-06).
+            try:
+                if any(C.sara_paused(e.get("office_key")) and not
+                       str(e.get("office_key", "")).lower() in C.SARA_PAUSED_KEYS
+                       for e in C.enrollments()):
+                    C.mark_sara_activated("set-login proved %s" % email)
+                    _log("SaraPlus is now switched ON for this office.")
+            except Exception:  # noqa: BLE001 -- never fail a proven login over a marker
+                pass
             ask.message("That worked — your alerts will start again within a "
                         "few minutes.\n\nNothing else to do.")
             print("OK")
