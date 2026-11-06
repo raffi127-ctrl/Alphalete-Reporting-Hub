@@ -123,7 +123,12 @@ GROUP_KNOCKING = "Knocking Chat A-Players"
 #     as it always did, and the "Bo=Kelvinton" reply loop (apply_replies +
 #     deploy/sales_text_read_chat.py) reads and answers in the same room --
 #     Raf's "all of it" (2026-09-28) includes the paperwork.
-LIVE_GROUPS = [GROUP_KNOCKING]
+# MOVED TO RAF'S OWN LUCY ECO (Megan 2026-11-06: "you can stop it running on
+# Lucy 1 - Raf now has an ECO machine"). The per-sale board now comes from
+# icd_alerts/post.py (office `raf`); Lucy 1 still fills the Sales Board sheet,
+# posts the Slack hype, and sends the end-of-day / Times of Sales boards,
+# which the Eco does not send. Put GROUP_KNOCKING back here to switch it on.
+LIVE_GROUPS = []
 # Raf 2026-09-29: "Can we stop all post on this channel, it doesn't get used"
 # (with a screenshot of the Lvl 1's iMessage room) -- so the end-of-day
 # scoreboard no longer texts the Lvl 1's. GROUP_LVL1 stays defined only so the

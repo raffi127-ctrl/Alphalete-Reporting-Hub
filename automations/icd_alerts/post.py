@@ -556,11 +556,9 @@ def eco_headcount(sales: Dict, knock_rows: List[Dict], campaign=None,
 
 # STANDINGS TEXT PAUSED -- logged, NOT sent; the group approval and the
 # office stay as they are, so turning it back on is deleting the line.
-# Raf 2026-11-05: his room got this board AND the Lucy 1 sales board a minute
-# apart on every sale. Lucy 1 keeps sending until his move to his own Lucy is
-# done (Eve, #l10 thread); both boards are kept in the same shape meanwhile.
-TEXT_PAUSED = {"raf": "Lucy 1's sales board sends Raf's room until his "
-                      "move to his own Lucy is done (Eve 2026-11-05)"}
+# Raf's was paused 11/5 (two boards a minute apart) and switched ON 11/6 when
+# Lucy 1 stopped texting his room (Megan: "Raf now has an ECO machine").
+TEXT_PAUSED: Dict[str, str] = {}
 
 
 # OFFICES WHOSE HEADCOUNT IS THEIR OWN SALES BOARD'S, not worked out from
@@ -578,16 +576,64 @@ def board_headcount(key: str, day: dt.date, log=print) -> Optional[List[Tuple[st
     (alphalete_sales_board.fill.board_stats). None = not such an office.
     A read that fails returns [] -- the block is dropped, same as Lucy 1 does,
     never swapped for the knocks count that would disagree with it."""
+    return board_reads(key, day, None, log=log)[0]
+
+
+def board_reads(key: str, day: dt.date, sales: Optional[Dict], log=print
+                ) -> Tuple[Optional[List[Tuple[str, str]]], List[str]]:
+    """(headcount block, reps who sold with no row on the board) for an
+    office in BOARD_HEADCOUNT, off ONE read of the tab. (None, []) for any
+    other office. A failed read gives ([], []) -- both bits are dropped,
+    never the text.
+
+    The second list is Lucy 1's "X sold with no row on this week's board"
+    note (Eve 2026-11-06, when Raf's text moved to his Eco): the same match
+    Lucy 1 does (calc.match_name + the Sales Text Aliases tab), skipping JD
+    and guest-office reps exactly like calc.calculate does."""
     if key not in BOARD_HEADCOUNT:
-        return None
+        return None, []
     try:
         from automations.alphalete_sales_board import fill as SB
         ws = SB.open_tab(day)
-        return SB.board_stats(ws, ws.get_all_values(), day)
+        grid = ws.get_all_values()
+        stats = SB.board_stats(ws, grid, day)
     except Exception as e:  # noqa: BLE001 -- the block, never the text
         log("%-10s sales board headcount skipped: %s: %s"
             % (key, type(e).__name__, str(e)[:160]))
+        return [], []
+    unlisted: List[str] = []
+    if sales:
+        try:
+            from automations.alphalete_sales_board import (
+                aliases as SA, calc as SC, config as SBC, notify as N)
+            from automations.total_knocks import guests as G
+            names = SB.board_names(grid)
+            alias_map = SA.load()
+            for rep, m in sales.items():
+                if not N.rep_total(m or {}):
+                    continue
+                raw = str(rep or "").strip()
+                if raw.upper() in SBC.EXCLUDE_REPS:
+                    continue
+                if G.guest_for(SBC.GUEST_HOST, raw):
+                    continue
+                if not SC.match_name(raw, names, alias_map)[0]:
+                    unlisted.append(raw)
+        except Exception as e:  # noqa: BLE001 -- the note, never the text
+            log("%-10s no-row check skipped: %s: %s"
+                % (key, type(e).__name__, str(e)[:160]))
+            unlisted = []
+    return stats, unlisted
+
+
+def no_row_note(unlisted: List[str]) -> List[str]:
+    """Lucy 1's footer, word for word (alphalete_sales_board.notify)."""
+    if not unlisted:
         return []
+    from automations.alphalete_sales_board import notify as N
+    who = ", ".join(N.short_name(r) for r in unlisted)
+    return ["", "%s %s sold with no row on this week's board - counted "
+                "above, not on the board yet." % (N.FIRE, who)]
 
 
 def _eco_field(sales: Dict, knock_rows: List[Dict], campaign=None, show=None):
@@ -1866,7 +1912,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 if knocks_today is None:
                     knocks_today = _knocks_today(tab.spreadsheet, day)
                 from automations.alphalete_sales_board import notify as N
-                stats = board_headcount(key, day, log=log)
+                stats, unlisted = board_reads(key, day, board_sales, log=log)
                 if stats is None:
                     stats = eco_headcount(board_sales, knocks_today.get(key),
                                           office.campaign, show)
@@ -1878,6 +1924,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                                            office.campaign, show)
                     if zeros:
                         board += "\n" + "\n".join(zeros)
+                # Last, where Lucy 1 puts it: who sold with no row on the board.
+                note = no_row_note(unlisted)
+                if note:
+                    board += "\n" + "\n".join(note)
             if board and not can_text:
                 log("%-10s standings text skipped -- this machine cannot "
                     "send iMessage" % key)

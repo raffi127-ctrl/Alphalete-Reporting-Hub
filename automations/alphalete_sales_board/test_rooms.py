@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_every_board_goes_to_the_knocking_chat_not_the_old_rooms():
     boards = C.LIVE_GROUPS + C.END_OF_DAY_GROUPS + C.TIMES_GROUPS + [C.REPLY_GROUP]
-    assert C.GROUP_KNOCKING in C.LIVE_GROUPS
+    # the per-sale board moved to Raf's Eco (Megan 2026-11-06)
+    assert C.GROUP_KNOCKING not in C.LIVE_GROUPS
     assert C.GROUP_KNOCKING in C.END_OF_DAY_GROUPS
     assert C.GROUP_KNOCKING in C.TIMES_GROUPS
     assert C.GROUP_PARTNERS not in boards
