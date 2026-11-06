@@ -1264,6 +1264,24 @@ function _admSend(sess, office, a) {
             email: String(p.email).trim()};
   });
   if (!people.length) return {ok: false, error: 'Nobody with a name and email was picked.'};
+  // ALREADY SENT = ASK, NEVER A SILENT SECOND INVITE (Megan 2026-11-06). A bulk
+  // upload re-invited an email Sterling had invited two days before, so the
+  // admin is shown who was already sent and decides: resend 'all' sends them
+  // again too, 'skip' drops them and sends the rest. No answer = nothing sent.
+  var sent = _admAlready(office).sent;
+  var dups = people.filter(function (p) { return sent[p.email.toLowerCase()]; })
+      .map(function (p) {
+        return {name: p.first_name + ' ' + p.last_name, email: p.email, sent_on: sent[p.email.toLowerCase()]};
+      });
+  var resend = String(a.resend || '');
+  if (dups.length && resend !== 'all' && resend !== 'skip') {
+    return {ok: false, needs_confirm: true, duplicates: dups,
+            error: 'Some of these were already sent a background check.'};
+  }
+  if (dups.length && resend === 'skip') {
+    people = people.filter(function (p) { return !sent[p.email.toLowerCase()]; });
+    if (!people.length) return {ok: true, skipped_all: true, job_id: ''};
+  }
   return _officeJobEnqueue({office: office, kind: 'bgc_send', mode: o.mode,
                             payload: {people: people, by: sess.username,
                                       location: {country: 'United States', state: o.state, city: o.city}}});

@@ -34,3 +34,9 @@
 #lucy-oa-panel .lucy-oa-err { background: #FDECEA; color: #8a1c13; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
 #lucy-oa-panel .lucy-oa-wait { background: #EEF2F7; color: #34495e; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
 #lucy-oa-panel .lucy-oa-acct { font-size: 12px; font-weight: 500; color: #4a6585; }
+#lucy-oa-panel .lucy-oa-warn { background: #FFF6DB; color: #5c4400; border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+#lucy-oa-panel .lucy-oa-warn ul { margin: 6px 0 6px 18px; padding: 0; }
+#lucy-oa-panel .lucy-oa-choices { display: flex; gap: 8px; margin-top: 8px; }
+#lucy-oa-panel .lucy-oa-choices button { flex: 1; padding: 9px; border-radius: 7px; border: 0; font-weight: 600; cursor: pointer; }
+#lucy-oa-panel .lucy-oa-again { background: #1F6FB2; color: #fff; }
+#lucy-oa-panel .lucy-oa-skip { background: #e4e9ef; color: #1d2330; }

@@ -3,19 +3,48 @@
   "name": "Lucy Office Admin",
   "version": "1.0.0",
   "description": "Send today's background checks from your ApplicantStream calendar -- Lucy does the rest on your office computer.",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://script.google.com/*",
     "https://script.googleusercontent.com/*",
     "https://applicantstream.com/*",
     "https://*.applicantstream.com/*"
   ],
-  "background": {"service_worker": "background.js"},
-  "action": {"default_popup": "popup.html", "default_title": "Lucy Office Admin"},
-  "content_scripts": [{
-    "matches": ["https://applicantstream.com/*", "https://*.applicantstream.com/*"],
-    "js": ["offered.js", "content.js"],
-    "css": ["content.css"],
-    "run_at": "document_idle"
-  }]
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Lucy Office Admin",
+    "default_icon": {
+      "16": "icons/lucy-16.png",
+      "32": "icons/lucy-32.png",
+      "48": "icons/lucy-48.png",
+      "128": "icons/lucy-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://applicantstream.com/*",
+        "https://*.applicantstream.com/*"
+      ],
+      "js": [
+        "offered.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/lucy-16.png",
+    "32": "icons/lucy-32.png",
+    "48": "icons/lucy-48.png",
+    "128": "icons/lucy-128.png"
+  }
 }

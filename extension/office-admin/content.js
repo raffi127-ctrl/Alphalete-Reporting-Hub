@@ -105,20 +105,52 @@
     };
     boxes.forEach(b => b.addEventListener('change', count));
     count();
-    btn.onclick = async () => {
-      const picked = boxes.filter(b => b.checked).map(b => people[+b.dataset.i]);
+    const send = async (picked, resend) => {
       btn.disabled = true;
       btn.textContent = 'Sending to your office computer…';
-      const out = await ask('send', {office: office.office, people: picked});
-      if (!out.ok) {
-        result('err', out.error || 'Didn\'t go through.');
+      const out = await ask('send', {office: office.office, people: picked, resend: resend || ''});
+      if (out.needs_confirm) {           // already sent before: the admin decides
+        confirmResend(picked, out.duplicates || []);
         count();
         return;
       }
-      await chrome.storage.local.set({lastSend: {office: office.office, job_id: out.job_id, at: new Date().toISOString(),
-                                                 names: picked.map(p => p.first_name + ' ' + p.last_name)}});
+      if (!out.ok) {
+        result('err', esc(out.error || 'Didn\'t go through.'));
+        count();
+        return;
+      }
+      if (out.skipped_all) {
+        result('ok', 'Nothing sent — everyone picked had already been sent one.');
+        count();
+        return;
+      }
+      const dupEmails = resend === 'skip' ? (panel._dups || []) : [];
+      const sentNames = picked.filter(p => !dupEmails.includes((p.email || '').toLowerCase()))
+                              .map(p => p.first_name + ' ' + p.last_name);
+      await chrome.storage.local.set({lastSend: {office: office.office, job_id: out.job_id,
+                                                 at: new Date().toISOString(), names: sentNames}});
       watch(office.office, out.job_id);
     };
+
+    // "Already sent" = ask, never a silent second invite (Megan 11/06: alert
+    // the admin, let them resend or not).
+    const confirmResend = (picked, dups) => {
+      panel._dups = dups.map(d => (d.email || '').toLowerCase());
+      const others = picked.length - dups.length;
+      const list = dups.map(d => '<li><b>' + esc(d.name) + '</b> — sent ' + esc(d.sent_on) + '</li>').join('');
+      result('warn', '⚠️ <b>Already sent a background check:</b><ul>' + list + '</ul>Send to them again?' +
+        '<div class="lucy-oa-choices">' +
+        '<button class="lucy-oa-again">Send again to them too</button>' +
+        '<button class="lucy-oa-skip">' + (others ? 'Skip them, send the other ' + others : 'Don\'t send') + '</button>' +
+        '</div>');
+      panel.querySelector('.lucy-oa-again').onclick = () => send(picked, 'all');
+      panel.querySelector('.lucy-oa-skip').onclick = () => {
+        if (!others) { result('ok', 'Nothing sent.'); return; }
+        send(picked, 'skip');
+      };
+    };
+
+    btn.onclick = () => send(boxes.filter(b => b.checked).map(b => people[+b.dataset.i]), '');
   }
 
   function result(kind, html) {
