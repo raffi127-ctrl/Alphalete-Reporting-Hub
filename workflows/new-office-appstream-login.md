@@ -78,7 +78,7 @@ if it can, and proves the sign-in.
 
 ## Then the ICD gets a DM from Lucy
 
-When the office is assigned (and the sign-in did not fail) Lucy DMs the ICD:
+When the office is assigned (and the sign-in did not fail) Lucy opens a GROUP DM with Megan, Eve and the ICD and posts:
 what Lucy ECO is, their login, that the sign-up form is done together on the
 Zoom call, the Python download to do before the call, and the logins to have
 ready (OwnerVille, the SaraPlus-code email, the Sterling email, anything else

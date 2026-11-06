@@ -557,9 +557,19 @@ def _dm_icd(owner: str, login: Dict, slack_id: str, log=print) -> bool:
             "resources/owner-slack-ids.md or pass --slack-id)" % owner)
         return False
     try:
+        # A GROUP DM — Megan, Eve and the ICD together (Megan 2026-11-06: "make
+        # sure it's me, Eve, Nigel in the DM"), so the call prep is in one thread.
         from automations.icd_alerts import post as P
-        P._slack(sid, icd_message(owner, login))
-        log("DM sent to %s (%s) with the login + %s" % (owner, sid, ENROLL_URL))
+        from automations.icd_alerts import office_slack as _OS
+        members = [OPERATORS["megan"], OPERATORS["eve"], sid]
+        client = _OS.client_for(None)
+        conv = client.conversations_open(users=",".join(dict.fromkeys(members)))
+        channel = (conv.get("channel") or {}).get("id")
+        if not channel:
+            raise RuntimeError("conversations.open gave no channel id")
+        P._slack(channel, icd_message(owner, login))
+        log("group DM (Megan, Eve, %s %s) sent with the login + %s"
+            % (owner, sid, ENROLL_URL))
         return True
     except Exception as e:  # noqa: BLE001
         log("DM to %s (%s) failed: %s" % (owner, sid, str(e)[:160]))
