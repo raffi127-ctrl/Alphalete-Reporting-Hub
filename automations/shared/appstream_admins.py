@@ -46,6 +46,7 @@ import json
 import re
 import sys
 import unicodedata
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -568,11 +569,81 @@ def _dm_icd(owner: str, login: Dict, slack_id: str, log=print) -> bool:
         return False
 
 
+# --- running it from YOUR login (Megan / Eve) -----------------------------------
+# Megan 2026-11-06: the office list on the admin form depends on who is signed
+# in. 'Lucy Reports' on a Lucy was offered 173 offices without Nigel's; Megan's
+# own login offers every office. So the normal way to run this is on Megan's or
+# Eve's Mac, signed in as themselves (--local). The profile keeps the session.
+ADMIN_PROFILE = Path.home() / ".config" / "recruiting-report" / "appstream-admin-profile"
+OPERATORS = {"megan": "U04G5HJBGFN", "eve": "U088E2KJEV8"}
+
+
+def _signed_in(page) -> bool:
+    try:
+        if TOKRE.search(page.url or ""):
+            return True
+        return page.locator("a[href*='p=99']").count() > 0   # the Log Out link
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@contextmanager
+def operator_session(headed: bool = True, log=print):
+    """A page on AppStream as the PERSON running this. If the saved profile is
+    not signed in, the window stays open and they sign in themselves (the
+    security box clears by itself if it is left alone 20-30s)."""
+    from patchright.sync_api import sync_playwright
+    from automations.shared.tableau_patchright import _launch_persistent
+    ADMIN_PROFILE.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = _launch_persistent(p, ADMIN_PROFILE, headless=not headed,
+                                 label="appstream_admin", verbose=False)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            page.goto(BASE, wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(4_000)
+            if not _signed_in(page):
+                log("Sign in to AppStream in the window that just opened, with YOUR "
+                    "login. Leave the security box alone — it clears itself. "
+                    "Waiting up to 5 minutes...")
+                for _ in range(60):
+                    page.wait_for_timeout(5_000)
+                    if _signed_in(page):
+                        break
+                else:
+                    raise RuntimeError("not signed in to AppStream after 5 minutes")
+                page.wait_for_timeout(3_000)
+            log("signed in as you")
+            yield page
+        finally:
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _tell_operator(text: str, log=print) -> None:
+    """The person who ran it (MINI_BY on a Lucy, the Mac's user otherwise)."""
+    try:
+        from automations.shared.incident_thread import operator_name
+        who = operator_name()
+    except Exception:  # noqa: BLE001
+        who = "Megan"
+    sid = OPERATORS.get(who.lower(), MEGAN)
+    try:
+        from automations.icd_alerts import post as P
+        P._slack(sid, text)
+        log("told %s" % who)
+    except Exception as e:  # noqa: BLE001
+        log("could not DM %s: %s" % (who, str(e)[:160]))
+
+
 # --- the job --------------------------------------------------------------------
 def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
               check_only: bool = False, verify: bool = True, headed: bool = False,
               dump_offices: bool = False, force_verify: bool = False,
-              slack_id: str = "", dm: bool = True, log=print) -> int:
+              slack_id: str = "", dm: bool = True, local: bool = False,
+              log=print) -> int:
     from automations.shared.appstream_provision import eco_login
     from automations.shared.tableau_patchright import appstream_direct_session
 
@@ -590,7 +661,9 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
     assigned = False
     created = False
     note = ""
-    with appstream_direct_session(headless=not headed, verbose=False) as page:
+    session = (operator_session(headed=True, log=log) if local
+               else appstream_direct_session(headless=not headed, verbose=False))
+    with session as page:
         _hook_grid_calls(page)
         try:
             open_admins(page, log=log)
@@ -649,11 +722,9 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
             # offered 173 offices without Nigel's 20034, while Megan's own session
             # offered it. So "not listed" means Lucy cannot tick it — a person whose
             # list has it (Megan) can, or Lucy Reports gets the office first.
-            note = ("%s is not in the office list Lucy Reports is offered on the admin "
-                    "form (Megan's own list may have it). Assign it from Megan's "
-                    "AppStream (Settings > Admins > %s > tick it under Offices Not "
-                    "Assigned > Save Changes), or give Lucy Reports that office, then "
-                    "re-run with --verify" % (owner, login["username"]))
+            note = ("either %s isn't in our call center or your login doesn't have "
+                    "access to that office — check, then assign it manually or "
+                    "request access" % owner)
             log("NOT LISTED  : " + note)
         if check_only and dump_offices:
             allrows = grids["assigned"] + grids["not_assigned"]
@@ -710,14 +781,11 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
     # Megan assigned by hand still reads 'NOT LISTED' here — the sign-in proof
     # (verify_login) is the real check for an existing admin, not another DM.
     if not office and created:
-        _tell_megan(
-            ":warning: *AppStream login for %s* — `%s` exists but Lucy could NOT assign "
-            "the office: it is not in the list Lucy Reports is offered on the admin form. "
-            "Please assign it from your AppStream (Settings > Admins > %s > tick %s under "
-            "Offices Not Assigned > Save Changes), then run "
-            "`lucy provision_appstream \"%s\" --verify --machine \"Lucy 3\"` to prove "
-            "the login." % (owner, login["username"], login["username"],
-                            office_id or owner, owner), log=log)
+        _tell_operator(
+            ":warning: *AppStream login for %s* — `%s` exists but the office could "
+            "not be assigned: either %s isn't in our call center, or your login "
+            "doesn't have access to it. Please check and assign it manually, or "
+            "request access." % (owner, login["username"], owner), log=log)
     log("SUMMARY %s · %s · office %s%s%s"
         % ("created" if created else "exists", login["username"],
            ("%s assigned" % office["id"]) if assigned else "NOT LISTED (Megan told)",
@@ -747,6 +815,9 @@ def main(argv=None) -> int:
     ap.add_argument("--slack-id", default="", help="the ICD's Slack id for the DM "
                                                    "(else owner-slack-ids.md / ICD Signup)")
     ap.add_argument("--no-dm", action="store_true", help="do not DM the ICD")
+    ap.add_argument("--local", action="store_true",
+                    help="run on THIS Mac as YOUR AppStream login (a window opens; "
+                         "sign in once, the profile keeps it)")
     ap.add_argument("--verify", action="store_true",
                     help="sign in as the login even when it already existed "
                          "(after somebody assigned the office by hand)")
@@ -754,7 +825,7 @@ def main(argv=None) -> int:
     return provision(a.owner, office_id=a.office_id, office_key=a.office_key,
                      check_only=a.check, verify=not a.no_verify, headed=a.headed,
                      dump_offices=a.dump_offices, force_verify=a.verify,
-                     slack_id=a.slack_id, dm=not a.no_dm)
+                     slack_id=a.slack_id, dm=not a.no_dm, local=a.local)
 
 
 if __name__ == "__main__":

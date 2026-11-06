@@ -16,6 +16,20 @@ Code: `automations.shared.appstream_provision.eco_login("Nigel Marshall")`.
 
 ## One command, run with the metrics dry run
 
+**Run it on YOUR Mac (Megan or Eve), as your own AppStream login.** The
+office list on the admin form depends on who is signed in: Lucy Reports on a
+Lucy is offered 173 offices (Nigel's 20034 was not one), your login offers
+every office. A window opens the first time so you sign in; the profile keeps
+the session after that.
+
+```bash
+.venv/bin/python -m automations.shared.appstream_admins "Nigel Marshall" --office-id 20034 --local
+```
+
+Add `--verify` to prove the sign-in on a login that already existed. The
+Lucy-queue version below still works for offices Lucy Reports can see.
+
+
 ```bash
 python -m automations.day_orchestrator.mini_control --by Megan --enqueue provision_appstream "Nigel Marshall" --office-id 20034 --machine "Lucy 2"
 ```
@@ -46,10 +60,20 @@ python -m automations.day_orchestrator.mini_control --by Megan --enqueue provisi
 
 ## Owner not in the office list
 
-The login is **still created**. Megan gets a Slack DM saying the owner has
-to be added to Alphalete Marketing Call Center (23981) in AppStream. Once
-that is done, run the same command again — it finds the admin and only does
-the assignment.
+The login is **still created**. Whoever ran it gets a Slack DM: "either
+<Owner> isn't in our call center, or your login doesn't have access to it —
+check, then assign it manually or request access." Once that is done, run the
+same command again with `--verify` — it finds the admin, does the assignment
+if it can, and proves the sign-in.
+
+## Then the ICD gets a DM from Lucy
+
+When the office is assigned (and the sign-in did not fail) Lucy DMs the ICD:
+what Lucy ECO is, their login, that the sign-up form is done together on the
+Zoom call, the Python download to do before the call, and the logins to have
+ready (OwnerVille, the SaraPlus-code email, the Sterling email, anything else
+the installer asks). Slack id comes from `resources/owner-slack-ids.md`, then
+the ICD Signup tab, else `--slack-id`; no id = no DM, said in the summary.
 
 ## On the office's machine
 
