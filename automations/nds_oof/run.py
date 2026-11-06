@@ -679,6 +679,25 @@ def _share_dump() -> int:
              % (row[KP.KN_OFFICE], row[KP.KN_DAY], row[KP.KN_RECEIVED],
                 ("bad: " + err) if rows is None else len(rows),
                 sorted(rows[0].keys())[:8] if rows else [], hits))
+        okey = (row[KP.KN_OFFICE] or "").strip().lower()
+        if okey in {str(o).lower() for o in (getattr(C, "BORROWED_ICD_OFFICES", {}) or {}).values()}:
+            # Every name, raw grid and mapped, to the control sheet (logtail
+            # truncates): is a borrowed rep missing from the relay itself,
+            # or dropped by the map?
+            try:
+                raw = _json.loads(row[KP.KN_ROWS] or "[]")
+                tracker = _json.loads(row[KP.KN_TRACKER] or "[]")
+            except ValueError:
+                raw, tracker = [], []
+            lines = ["raw grid rows: %d; tracker rows: %d; mapped rows: %s"
+                     % (len(raw), len(tracker), len(rows) if rows else 0)]
+            if raw:
+                lines.append("raw keys: " + ", ".join(sorted(raw[0].keys())))
+            lines += ["raw: " + " | ".join(str(v) for v in x.values())[:300] for x in raw]
+            lines += ["tracker: " + " | ".join(str(v) for v in x.values())[:200] for x in tracker]
+            lines += ["mapped: " + G._rep(x) for x in (rows or [])]
+            from automations.nds_tnc_check.run import _probe_dump
+            _probe_dump("ICD Knocks office %s %s" % (okey, row[KP.KN_DAY]), lines, log=_log)
     return 0
 
 
