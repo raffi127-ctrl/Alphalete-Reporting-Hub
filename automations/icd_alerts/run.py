@@ -839,6 +839,22 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("sales catch-up skipped: %s" % type(e).__name__)
 
+        # A PUSHING OFFICE TAKES RELEASES DURING PUSH HOURS TOO (Megan
+        # 2026-11-06: "run it now so those apps get pushed asap"). The update
+        # used to run only inside cmd_once, behind the selling/sales gate --
+        # noon at the earliest -- so a 9am fix for Raf's 5:30am pushes sat
+        # until lunch. Ahead of the gate, for push computers only, and never
+        # while a push is mid-walk (its files are swapped under the NEXT run,
+        # not this one). The call is one small file when there is nothing new.
+        try:
+            from automations.icd_alerts import resume_push as _rp_upd
+            if (not args.dry_run and _rp_upd.enabled()
+                    and not _rp_upd._lock_held()):
+                from automations.icd_alerts import selfupdate
+                selfupdate.run(log=_log, today=day)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("self-update (push hours) skipped: %s" % type(e).__name__)
+
         # RESUME PUSHING, for an office that asked for it. Its own hours
         # (7am-10pm, every day) and its own process, so it goes ahead of the
         # gate and never holds up a sweep (Carlos 2026-10-05).
