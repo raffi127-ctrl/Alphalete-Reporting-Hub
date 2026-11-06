@@ -19,7 +19,9 @@ import time
 from automations.icd_alerts import config as C
 from automations.icd_alerts import optix_read as O
 
-WAIT_SECONDS = 300
+# Verizon SSO is last name + User ID, then password and adaptive MFA -- give
+# a person time to find a code (Megan's first try ran out at 5 min, 2026-11-06).
+WAIT_SECONDS = 600
 POLL_SECONDS = 3
 
 
@@ -60,6 +62,10 @@ def _window(log) -> int:
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(O.PROFILE_URL, timeout=60000)
+            try:
+                page.bring_to_front()
+            except Exception:  # noqa: BLE001
+                pass
             deadline = time.time() + WAIT_SECONDS
             while time.time() < deadline:
                 if signed_in(page):

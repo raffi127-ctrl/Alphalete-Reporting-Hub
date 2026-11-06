@@ -3,8 +3,9 @@
     python -m automations.verizon_office.house_feed --office nicolas          # preview
     python -m automations.verizon_office.house_feed --office nicolas --send
 
-THE STOPGAP UNTIL THE OFFICE'S OWN ECO MACHINE ARRIVES (Megan 2026-11-06:
-"start nico on lucy 4"). Same idea as Raf's house feed
+THE STOPGAP UNTIL THE OFFICE'S OWN ECO MACHINE ARRIVES. Runs on MEGAN'S
+LAPTOP in the background (Megan 2026-11-06: "we need to do it on this laptop
+in the background not a lucy") -- so it pauses whenever the laptop sleeps. Same idea as Raf's house feed
 (alphalete_sales_board/eco_relay.py): the read happens on our machine, the
 relay carries it under the OFFICE's key, and everything downstream -- the knock
 board, sale alerts, the iMessage scoreboard -- cannot tell the difference.
@@ -14,7 +15,7 @@ go out from the same Optix read, exactly as the ECO agent does it
 (icd_alerts.run._optix_knocks).
 
 WHEN HIS ECO MACHINE RELAYS, TURN THIS OFF -- two senders under one key would
-be one office reported twice. `lucy rerun uninstall_verizon_house_feed_agent`.
+be one office reported twice. `python -m automations.day_orchestrator.uninstall_agent verizon-house-feed`.
 
 THE OPTIX SESSION lives in this machine's Lucy profile
 (config.OPTIX_PROFILE_DIR), signed in once by a person:

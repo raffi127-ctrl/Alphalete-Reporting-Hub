@@ -1,7 +1,7 @@
 #!/bin/bash
-# Verizon house feed — read a Verizon office's Optix on THIS Lucy and relay it
+# Verizon house feed — read a Verizon office's Optix on this machine and relay it
 # under the office's key, until their own ECO machine relays (Megan 2026-11-06,
-# Nico Murrugarra on Lucy 4). Every 5 minutes via launchd
+# Nico Murrugarra, on MEGAN'S LAPTOP). Every 5 minutes via launchd
 # (com.alphalete.verizon-house-feed).
 #
 #   bash deploy/verizon_house_feed.sh            # PREVIEW, sends nothing

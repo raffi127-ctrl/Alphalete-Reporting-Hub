@@ -5,8 +5,8 @@
     <key>Label</key>
     <string>com.alphalete.verizon-house-feed</string>
 
-    <!-- Path is the laptop's; on Lucy 4, regenerate with the install path via
-         `lucy rerun install_verizon_house_feed_agent`. -->
+    <!-- Path is the laptop's; install on Megan's laptop via
+         `python -m automations.day_orchestrator.install_agent verizon-house-feed`. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
