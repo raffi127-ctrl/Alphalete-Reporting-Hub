@@ -105,8 +105,11 @@ _GRIDS_JS = """
     const hdr = panel ? panel.querySelector('.x-panel-header') : null;
     const title = hdr ? hdr.innerText : '';
     const rows = [...g.querySelectorAll('.x-grid3-row')].map((r, i) => {
-      const cells = [...r.querySelectorAll('.x-grid3-cell-inner')]
+      let cells = [...r.querySelectorAll('.x-grid3-cell-inner')]
         .map(c => (c.innerText || '').trim());
+      // the all-admins list renders its one column without .x-grid3-cell-inner
+      // (Lucy 3, 2026-11-06: 'admins: 0 listed' with 78 rows on screen)
+      if (!cells.length) cells = [(r.innerText || '').replace(/\s+/g, ' ').trim()];
       return {i, cells, selected: r.classList.contains('x-grid3-row-selected')};
     });
     return {title: (title || '').replace(/\\s+/g, ' ').trim(), rows};
@@ -163,6 +166,21 @@ def admin_names(page) -> List[str]:
             cells = [c for c in r.get("cells", []) if c]
             if len(cells) == 1 and not re.fullmatch(r"\d+", cells[0]):
                 names.append(cells[0])
+    if not names:
+        # belt and braces: the list is also plain text on the page, one name
+        # per line between 'Admin Name' and the form
+        try:
+            body = page.inner_text("body")
+            block = body.split("Admin Name", 1)[1] if "Admin Name" in body else ""
+            for line in block.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith(("Add New Admin", "Show/Hide", "Admin Details")):
+                    break
+                names.append(line)
+        except Exception:  # noqa: BLE001
+            pass
     return names
 
 
