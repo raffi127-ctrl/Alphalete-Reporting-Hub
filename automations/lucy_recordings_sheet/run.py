@@ -107,8 +107,16 @@ def load_bot_export(from_json: str | None) -> dict:
 
 def _session():
     from google.auth.transport.requests import AuthorizedSession
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
     from automations.first_round_scorecards.drive_auth import load_credentials
-    return AuthorizedSession(load_credentials())
+    S = AuthorizedSession(load_credentials())
+    # The Sheets read quota (60/min) is shared by every report on this Google
+    # account; the first fills died on a 429 (2026-11-06). Wait and retry.
+    retry = Retry(total=6, backoff_factor=15, status_forcelist=(429, 500, 502, 503),
+                  allowed_methods=None, respect_retry_after_header=True)
+    S.mount("https://", HTTPAdapter(max_retries=retry))
+    return S
 
 
 def load_interviews(S) -> tuple[dict, dict]:
