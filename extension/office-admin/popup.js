@@ -68,6 +68,30 @@ $('go').onclick = async () => {
   $('pass').value = '';
   if (out.ok) home(out); else err(out.error);
 };
+// Opens the panel on the calendar tab -- works even on a tab that was open
+// before the extension was loaded (the floating button only appears after a reload).
+$('run').onclick = async () => {
+  err('');
+  const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+  if (!tab || !/^https:\/\/([^/]+\.)?applicantstream\.com\//.test(tab.url || '')) {
+    err('Open the ApplicantStream calendar in this tab first.');
+    return;
+  }
+  if (!chrome.scripting) {        // new files, old install: Chrome hasn't reloaded the extension yet
+    err('Update needed: open chrome://extensions and click ↻ on Lucy Office Admin, then try again.');
+    return;
+  }
+  try {
+    await chrome.scripting.insertCSS({target: {tabId: tab.id}, files: ['content.css']});
+    await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['offered.js', 'content.js']});
+    const [r] = await chrome.scripting.executeScript({target: {tabId: tab.id},
+      func: () => { if (!window.__lucyOfficeAdminOpen) return false; window.__lucyOfficeAdminOpen(); return true; }});
+    if (!r || !r.result) { err('Reload the calendar page and try again.'); return; }
+    window.close();
+  } catch (e) {
+    err('Couldn\'t open on this page: ' + e.message);
+  }
+};
 $('pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('go').click(); });
 $('out').onclick = () => chrome.runtime.sendMessage({type: 'signout'}, () => { show('home', false); show('signin', true); });
 start();

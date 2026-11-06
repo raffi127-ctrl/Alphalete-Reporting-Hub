@@ -19,11 +19,11 @@ people to the office's ECO computer, which signs in to Sterling and bulk-uploads
 
 ## Use
 Open the ApplicantStream calendar (today) → **🛡️ Send background checks** (bottom right) →
-check the ticks → **Send**. The panel shows the office computer's answer (it checks every ~3 min).
+check the ticks → **Send**. The panel shows the ICD's Lucy ECO machine's answer (it checks every ~3 min).
 
 ## Safety
 - Picks the office by the account number on the calendar ("Office ID: 11280" / "#11280");
   a calendar whose number isn't on any of the admin's offices = nothing sent.
-- Test mode (`relay_admins --mode <user> dry`) = the office computer fills everything in
+- Test mode (`relay_admins --mode <user> dry`) = the ICD's Lucy ECO machine fills everything in
   Sterling and stops before Send Invites.
 - Needs the relay version with the `office_admin` calls (resources/icd-alerts-relay.gs).

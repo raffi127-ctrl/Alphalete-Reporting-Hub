@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "description": "Send today's background checks from your ApplicantStream calendar -- Lucy does the rest on your office computer.",
   "permissions": [
-    "storage"
+    "storage",
+    "scripting",
+    "activeTab"
   ],
   "host_permissions": [
     "https://script.google.com/*",
