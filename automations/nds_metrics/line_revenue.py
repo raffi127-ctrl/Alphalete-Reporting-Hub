@@ -20,9 +20,10 @@ WHAT THIS BOARD DOES: the same, from what SaraPlus shows today.
     line FIRST showed Active). Every run replays ALL cached feeds oldest ->
     newest into it, so history survives a missed morning and does not
     depend on which order-log path ran. A flip seen by the 06:10 pull
-    happened the day before (LIVE_FLIP_LAG_DAYS); a line already Active the
-    first time it was ever seen takes the order's SOH active date (src
-    "order").
+    happened two days before (LIVE_FLIP_LAG_DAYS -- SaraPlus runs a day
+    behind AT&T, the pull another); a line already Active the first time it
+    was ever seen takes the order's SOH active date (src "order"), or its
+    order date when the SOH has none (src "orderdate").
   * price: sow_rates.json at base comp -- port $213 / BYOD port $188 / new
     line $25 / upgrade $30 / tablet $25, OOF rates (no IF/OOF flag anywhere
     in SaraPlus); the plan's Unlimited Extra ($10) / Premium ($15) rides on
@@ -55,9 +56,13 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from automations.nds_metrics.run import (OUT_DIR, _parse_date, _soh_cell,
                                          price_order, sow_rates)
 
-# The feed is pulled ~06:10; a line that flipped Active since yesterday's
-# pull activated the day before the pull that first shows it.
-LIVE_FLIP_LAG_DAYS = 1
+# The feed is pulled ~06:10. Calibrated against the WE 11.1 deposit
+# (probe --line-calib, 2026-11-06): with feeds on consecutive mornings, a
+# line AT&T activated on day D shows Active in the pull of D+2 (SaraPlus
+# itself runs a day behind AT&T) -- 8 of the 9 flips with back-to-back feeds
+# sat exactly two mornings after the deposit's activation date, one sat one
+# morning after. Two keeps every one of them in the deposit's week.
+LIVE_FLIP_LAG_DAYS = 2
 DEAD_WORDS = ("disconnect", "cancel")
 FEED_RE = re.compile(r"^nds_wireless_(\d{4}-\d{2}-\d{2})\.html$")
 
@@ -117,6 +122,51 @@ def soh_dates(ix, orders) -> Tuple[Dict[str, str], Dict[str, Optional[dt.date]]]
     return active, cancel
 
 
+def parse_feed(data: bytes) -> List[dict]:
+    """A cached wireless feed -> sp_order_log-shaped line dicts (order_id,
+    customer, order_date, salesperson, order_status, line_idx, line_type,
+    device_type, tn, device, plan, line_status, ship_date, delivered,
+    port_status), read with nds_metrics.wireless_pull.parse -- the parser the
+    NDS Order Log tab uses. It reads BOTH shapes this dealer serves (the
+    Excel export and the grid scrape the pull falls back to) and SPM orders;
+    sp_order_log.wireless_lines.parse_wireless_xls returned nothing for the
+    scrape days (10/31, 11/4-11/6 on the first calibration) and hung an SPM
+    order's lines on the previous DSI order. Dedupes the nested-table
+    double rendering by (order, line, number)."""
+    import html as _html
+    from automations.nds_metrics import wireless_pull as NW
+    from automations.sp_order_log.wireless_lines import norm_tn
+    _orders, lines = NW.parse(data, log=lambda *_a, **_k: None)
+    out, seen = [], set()
+
+    def u(v):
+        return _html.unescape(str(v or "")).replace("\xa0", " ").strip()
+
+    for ln in lines:
+        idx = u(ln.get("line_no"))
+        if not idx.isdigit():          # "Resolve Order" rows carry no number
+            continue
+        oid = u(ln.get("dsi"))
+        tn = norm_tn(u(ln.get("device")))        # the Line Number cell
+        key = (oid, idx, tn)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "order_id": oid, "customer": u(ln.get("customer")),
+            "order_date": u(ln.get("order_date")),
+            "salesperson": u(ln.get("rep")),
+            "order_status": u(ln.get("order_status")),
+            "line_idx": idx, "line_type": u(ln.get("line_type")),
+            "device_type": u(ln.get("line_number")),  # the Device Type cell
+            "tn": tn, "device": u(ln.get("line_phone")),   # the device model
+            "plan": u(ln.get("plan")), "line_status": u(ln.get("line_status")),
+            "ship_date": u(ln.get("ship_date")), "delivered": u(ln.get("delivered")),
+            "port_status": u(ln.get("port_status")),
+        })
+    return out
+
+
 def replay(feeds: Sequence[Tuple[dt.date, Path]], soh_active: Dict[str, str],
            log=print, save: bool = True):
     """Fold every cached feed, oldest first, into sp_order_log's activation
@@ -130,7 +180,7 @@ def replay(feeds: Sequence[Tuple[dt.date, Path]], soh_active: Dict[str, str],
     folded = []
     for d, p in feeds:
         try:
-            lines = WL.parse_wireless_xls(p.read_bytes())
+            lines = parse_feed(p.read_bytes())
         except Exception as e:  # noqa: BLE001
             log(f"[nds] feed {p.name} unreadable ({type(e).__name__}) -- skipped")
             continue
@@ -168,12 +218,18 @@ def replay(feeds: Sequence[Tuple[dt.date, Path]], soh_active: Dict[str, str],
 
 # -------------------------------------------------------------- pricing ----
 
-def activation_date(rec: Optional[dict]) -> Optional[dt.date]:
+def activation_date(rec: Optional[dict],
+                    floor: Optional[dt.date] = None) -> Optional[dt.date]:
+    """The line's activation day: a live flip less the feed lag, never
+    earlier than `floor` (the order's SOH active date = its FIRST line's
+    activation, so no later line can precede it)."""
     if not rec:
         return None
     d = _iso(rec.get("first_active"))
     if d and rec.get("src") == "live":
         d -= dt.timedelta(days=LIVE_FLIP_LAG_DAYS)
+        if floor and d < floor:
+            d = floor
     return d
 
 
@@ -304,7 +360,7 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                 for ln in panel:
                     rec = state.get(WL.line_key(ln))
                     base, kind = price_line(ln, rates)
-                    act = activation_date(rec)
+                    act = activation_date(rec, _iso(soh_active.get(oid)))
                     dead = dead_date(rec, ln.get("line_status", ""),
                                      soh_cancel.get(oid))
                     addon = addon_of(ln.get("plan", ""), rates) if act else 0.0

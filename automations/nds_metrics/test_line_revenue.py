@@ -77,14 +77,18 @@ class Pricing(unittest.TestCase):
         self.assertEqual(LR.addon_of("Unlimited Starter", RATES), 0.0)
 
     def test_dates(self):
-        self.assertEqual(LR.activation_date({"first_active": "2026-11-02", "src": "live"}),
+        self.assertEqual(LR.activation_date({"first_active": "2026-11-03", "src": "live"}),
                          dt.date(2026, 11, 1))
+        # never before the order's own first activation
+        self.assertEqual(LR.activation_date({"first_active": "2026-11-03", "src": "live"},
+                                            dt.date(2026, 11, 2)),
+                         dt.date(2026, 11, 2))
         self.assertEqual(LR.activation_date({"first_active": "2026-10-26", "src": "order"}),
                          dt.date(2026, 10, 26))
         self.assertIsNone(LR.activation_date({}))
         self.assertIsNone(LR.dead_date({"first_dead": "2026-11-05"}, "Active", None))
         self.assertEqual(LR.dead_date({"first_dead": "2026-11-05"}, "Disconnected", None),
-                         dt.date(2026, 11, 4))
+                         dt.date(2026, 11, 3))
         self.assertEqual(LR.dead_date({}, "Cancelled", dt.date(2026, 11, 2)),
                          dt.date(2026, 11, 2))
 
@@ -111,8 +115,8 @@ class Board(unittest.TestCase):
                  line("DSI1", 3, "Shipped"),                          # open
                  line("DSI1", 4, "Active")]                           # flipped 11/4 -> 11/3 (this week)
         state = {"2145550001": {"first_active": "2026-10-26", "src": "order"},
-                 "2145550002": {"first_active": "2026-11-02", "src": "live"},
-                 "2145550004": {"first_active": "2026-11-04", "src": "live"}}
+                 "2145550002": {"first_active": "2026-11-03", "src": "live"},
+                 "2145550004": {"first_active": "2026-11-05", "src": "live"}}
         res = LR.compute(self.soh(o), FRI, lines, state, RATES, log=lambda *_: None)
         t = res["tables"]
         last, this = t["last"]["rows"][0], t["this"]["rows"][0]
@@ -127,12 +131,12 @@ class Board(unittest.TestCase):
         o = order("Jacob Ortega", "DSI2", **{"Wireless Status": "Active/Disconnected",
                                            "Wireless Active Date": "10/31/2026",
                                            "Wireless Line Count": "2", "Port Line Count": "2"})
-        lines = [line("DSI2", 1, "Disconnected", tn="3330000001"),   # paid 10/31, died 11/4 (seen 11/5)
+        lines = [line("DSI2", 1, "Disconnected", tn="3330000001"),   # paid 10/31, died 11/3 (seen 11/5)
                  line("DSI2", 2, "Disconnected", tn="3330000002")]   # active 10/30, died 10/31: same week
         state = {"3330000001": {"first_active": "2026-10-31", "src": "order",
                                 "first_dead": "2026-11-05"},
-                 "3330000002": {"first_active": "2026-10-31", "src": "live",
-                                "first_dead": "2026-11-01"}}
+                 "3330000002": {"first_active": "2026-11-01", "src": "live",
+                                "first_dead": "2026-11-02"}}
         res = LR.compute(self.soh(o), FRI, lines, state, RATES, log=lambda *_: None)
         last, this = res["tables"]["last"]["rows"][0], res["tables"]["this"]["rows"][0]
         self.assertEqual(last["posted"], 213 + 10)      # L1 only
@@ -171,3 +175,29 @@ class Board(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+EXCEL_FEED = b"""<table>
+<tr><td></td><td></td><td>Customer Name</td><td>Contact Phone</td><td>Order Number</td><td>Order Date</td><td>Wireless Order Number</td><td>Wireless Account Number</td><td>Lines</td><td>Salesperson</td><td>Dealer Name</td><td>Dealer Code</td><td>Order Status</td></tr>
+<tr><td></td><td></td><td>JOHN DOE</td><td>2145550000</td><td>DSI1</td><td>10/28/2026</td><td>99-1</td><td>BAN1</td><td>2</td><td>NICK SMEDRA</td><td>ALPHA</td><td>APCZD</td><td>Active</td></tr>
+<tr><td>Line</td><td>Line Type</td><td>Device Type</td><td>Line Number</td><td>Phone</td><td>Plan</td><td>Line Status</td><td>Est. Shipping Range</td><td>Ship Date</td><td>Delieverd Date</td><td>Port Status</td></tr>
+<tr><td>1</td><td>Port</td><td>Smartphone</td><td>214-555-0001</td><td>BYOD</td><td>AT&amp;T Extra 2.0</td><td>Active</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>2</td><td>Port</td><td>Smartphone</td><td>214-555-0002</td><td>iPhone 18 Pro</td><td>AT&amp;T Premium 2.0</td><td>Shipped</td><td></td><td>10/29/2026</td><td></td><td></td></tr>
+<tr><td>1</td><td>Port</td><td>Smartphone</td><td>214-555-0001</td><td>BYOD</td><td>AT&amp;T Extra 2.0</td><td>Active</td><td></td><td></td><td></td><td></td></tr>
+<tr><td></td><td></td><td>JANE ROE</td><td>2145550009</td><td>SPM7</td><td>10/23/2026</td><td>99-2</td><td>BAN2</td><td>1</td><td>JORGE H</td><td>ALPHA</td><td>APCZD</td><td>Active</td></tr>
+<tr><td>1</td><td>Port</td><td>Smartphone</td><td>214-555-0009</td><td>BYOD</td><td>AT&amp;T Premium 2.0</td><td>Active</td><td></td><td></td><td></td><td></td></tr>
+</table>"""
+
+
+class FeedParse(unittest.TestCase):
+    def test_both_orders_and_dedupe(self):
+        lines = LR.parse_feed(EXCEL_FEED)
+        self.assertEqual([(l["order_id"], l["line_idx"]) for l in lines],
+                         [("DSI1", "1"), ("DSI1", "2"), ("SPM7", "1")])   # the repeat dropped, SPM kept
+        l1 = lines[0]
+        self.assertEqual((l1["tn"], l1["device"], l1["device_type"], l1["plan"], l1["line_status"]),
+                         ("2145550001", "BYOD", "Smartphone", "AT&T Extra 2.0", "Active"))
+        self.assertEqual(lines[1]["ship_date"], "10/29/2026")
+        self.assertEqual(lines[2]["customer"], "JANE ROE")
+        self.assertTrue(LR.is_byod(l1))
+        self.assertFalse(LR.is_byod(lines[1]))
