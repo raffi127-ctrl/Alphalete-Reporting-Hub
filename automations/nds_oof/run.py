@@ -638,8 +638,8 @@ def _no_dispo_message(today: dt.date, now: dt.datetime, rows: List[Dict],
 
 
 def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
-         no_gaps: bool = False) -> int:
-    now = dt.datetime.now()
+         no_gaps: bool = False, now: Optional[dt.datetime] = None) -> int:
+    now = now or dt.datetime.now()
     today = now.date()
     state = _state()
     if _week_due(state, now):
@@ -666,7 +666,12 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         return 0
     want_board = board or force or _board_due(state, now)
     want_gaps = (not no_gaps) and (force or _due(state, "gaps_at", C.GAPS_EVERY_MIN, now))
-    if not want_board and not want_gaps:
+    # A "No dispositions from" slot is a reason to pull on its own: the 3:15
+    # tick on 2026-11-06 found neither board nor gaps due (the 3:00 tick had
+    # run late, after its wait for Raf's share) and skipped the check.
+    nd_slot = no_dispo_slot(now)
+    want_nodispo = bool(nd_slot) and state.get("no_dispo_slot") != "%s %s" % (today.isoformat(), nd_slot)
+    if not want_board and not want_gaps and not want_nodispo:
         _log("nothing due at %s" % _clock(now))
         return 0
     out_dir = OUTPUT_DIR / today.isoformat()

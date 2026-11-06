@@ -73,5 +73,45 @@ class NoDispo(unittest.TestCase):
         self.assertEqual(B.TEXT_ROUTES[(C.CAMPAIGN_LABEL, C.KIND_NO_DISPO)], [B.TEXT_GROUP_ATT])
 
 
+class SlotPulls(unittest.TestCase):
+    def test_a_slot_alone_makes_the_tick_pull(self):
+        """3:15 on 2026-11-06: board + gaps not due, so the tick returned
+        'nothing due' and never checked. The slot itself must pull."""
+        now = dt.datetime(2026, 11, 6, 15, 15, 5)
+        state = {"board_at": "2026-11-06T15:05:10", "gaps_at": "2026-11-06T15:05:10"}
+        seen = {}
+
+        def fake_pull(today, *, want_board, headless=True):
+            seen["pulled"] = True
+            return [], []
+
+        with mock.patch.object(R, "_state", lambda: dict(state)), \
+             mock.patch.object(R, "_save", lambda st: None), \
+             mock.patch.object(R, "in_window", lambda n: True), \
+             mock.patch.object(R, "_week_due", lambda st, n: False), \
+             mock.patch.object(R, "_week_monday_due", lambda st, n: False), \
+             mock.patch.object(R, "pull", fake_pull), \
+             mock.patch.object(R, "_read_station_names", lambda: ["A B"]), \
+             mock.patch.object(R, "borrowed_rows", lambda today, own: []), \
+             mock.patch.object(R, "_callout", lambda *a, **k: ""), \
+             mock.patch.object(R, "_log"):
+            rc = R.tick(send=False, force=False, board=False, now=now)
+        self.assertEqual(rc, 0)
+        self.assertTrue(seen.get("pulled"), "the slot did not make the tick pull")
+
+    def test_no_slot_and_nothing_due_still_skips(self):
+        now = dt.datetime(2026, 11, 6, 15, 25, 5)   # not a slot
+        state = {"board_at": "2026-11-06T15:05:10", "gaps_at": "2026-11-06T15:20:10"}
+        with mock.patch.object(R, "_state", lambda: dict(state)), \
+             mock.patch.object(R, "in_window", lambda n: True), \
+             mock.patch.object(R, "_week_due", lambda st, n: False), \
+             mock.patch.object(R, "_week_monday_due", lambda st, n: False), \
+             mock.patch.object(R, "_board_due", lambda st, n: False), \
+             mock.patch.object(R, "_due", lambda st, k, e, n: False), \
+             mock.patch.object(R, "pull", side_effect=AssertionError("must not pull")), \
+             mock.patch.object(R, "_log"):
+            self.assertEqual(R.tick(send=False, force=False, board=False, now=now), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
