@@ -274,6 +274,36 @@ def line_calib(log=print) -> int:
     log("[calib] verdicts: " + ", ".join("%s=%d" % kv for kv in sorted(verdicts.items()))
         + "; board-only last-week lines=%d; Air deposit=%d board=%d"
         % (len(extra), air_dd, air_board))
+    # --- per-line status TIMELINE across the cached feeds: what each feed
+    # day showed for every line of a deposit customer (the lag between the
+    # deposit's activation day and the day SaraPlus's report says Active)
+    from automations.sp_order_log import wireless_lines as WL
+    dd_custs = {" ".join(r[hix["Customer Name"]].upper().split()) for r in base}
+    timeline = collections.OrderedDict()
+    day_counts = []
+    for d, pth in feeds:
+        try:
+            lines = WL.parse_wireless_xls(pth.read_bytes())
+        except Exception:  # noqa: BLE001
+            lines = []
+        day_counts.append("%s(%d)" % (d.strftime("%m/%d"), len(lines)))
+        for ln in lines:
+            c = " ".join(str(ln.get("customer") or "").upper().split())
+            if not any(c == x or (set(c.split()) and (set(c.split()) <= set(x.split())
+                                                       or set(x.split()) <= set(c.split())))
+                       for x in dd_custs):
+                continue
+            key = (c, ln["order_id"], ln["line_idx"], ln.get("tn", ""))
+            timeline.setdefault(key, {})[d.isoformat()] = ln["line_status"] or "(blank)"
+    log("[calib] feed days (lines): " + ", ".join(day_counts))
+    out.append([])
+    days = [d.isoformat() for d, _ in feeds]
+    out.append(["customer", "order", "line", "tn"] + days)
+    for (c, oid, li, tn), seen in timeline.items():
+        out.append([c, oid, li, tn] + [seen.get(d, "") for d in days])
+        log("TIMELINE %-24s %s L%s | %s" % (
+            c[:24], oid, li, " | ".join("%s %s" % (d[5:], seen.get(d, "-")[:9])
+                                        for d in days)))
     out.append([])
     cols = ["rep", "customer", "order_id", "order_date", "line", "type",
             "device_type", "device", "plan", "status", "first_active", "src",
