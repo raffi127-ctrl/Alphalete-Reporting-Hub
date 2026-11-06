@@ -516,15 +516,37 @@ def owner_slack_id(owner: str) -> str:
     return ""
 
 
+PYTHON_URL = "https://www.python.org/downloads/"
+
+
 def icd_message(owner: str, login: Dict) -> str:
+    """Megan 2026-11-06: say what it is, that the enrollment form is done
+    together on the Zoom call, give the Python download to do BEFORE the call
+    (the installer's slow first step), and list what to have ready — OwnerVille
+    login, the email the SaraPlus code goes to, the Sterling email login (the
+    background-check links are rolling out), anything else the installer asks."""
     first = owner.strip().split()[0]
     return (
-        "Hi %s! Lucy here :wave: Your AppStream login for Lucy ECO is ready:\n"
-        "• Username: `%s`\n• Password: `%s`\n\n"
-        "Next step is the Lucy ECO sign-up form — it takes about 2 minutes:\n%s\n"
-        "Once it's in, I'll send you the install steps right here. Any trouble, "
-        "just reply to this message."
-        % (first, login["username"], login["password"], ENROLL_URL))
+        "Hi %s! Lucy here :wave: I'm Alphalete's reporting assistant. Once your "
+        "office computer is enrolled in Lucy ECO, I post your knocks boards, "
+        "credit-check alerts and daily metrics for you.\n\n"
+        "*Your AppStream login for Lucy ECO is ready* (this is the login I use, "
+        "not your own):\n"
+        "• Username: `%s`\n"
+        "• Password: `%s`\n\n"
+        "We'll go through the enrollment form together on our Zoom call, so "
+        "nothing to fill in yet.\n\n"
+        "*One thing to do before the call* (it's the slow part): install Python "
+        "on the computer Lucy will run on. Click, download, open it and hit "
+        "Next until it's done:\n%s\n\n"
+        "*Please have these ready for the call:*\n"
+        "• Your OwnerVille username and password\n"
+        "• The email login where your SaraPlus codes go (if you're in that program)\n"
+        "• Your Sterling email login (we're rolling out the background-check links)\n"
+        "• Any other login the installer asks for along the way\n\n"
+        "That keeps the call short. Reply here if anything's unclear. "
+        "Here's the sign-up form we'll use on the call, for reference: %s"
+        % (first, login["username"], login["password"], PYTHON_URL, ENROLL_URL))
 
 
 def _dm_icd(owner: str, login: Dict, slack_id: str, log=print) -> bool:
