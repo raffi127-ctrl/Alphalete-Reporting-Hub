@@ -815,6 +815,72 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
             worst = 1
     return worst
 
+# --- the knocks read, off the sweep's clock -------------------------------------
+# A tick reads SaraPlus FIRST and the OwnerVille knocks grid second, and launchd
+# will not start the next tick until this one ends. So a slow OwnerVille read
+# (Colten 2026-11-06: 237s; Nigel: 210s, seven times) holds the NEXT credit-check
+# read for as long as it takes -- "alerts arriving late and then all at once",
+# which Colten reported as "Lucy is lagging". The scheduled tick now hands the
+# knocks read to a detached child and returns, so the next tick's SaraPlus read
+# starts on time. ONE child at a time: a lock file with the start time; a lock
+# older than the knocks deadline is a crash's leftover, not a running read.
+KNOCKS_LOCK = C.APP_DIR / "knocks-running.json"
+KNOCKS_LOCK_STALE_S = W.DEADLINE_SECONDS + 120
+
+
+def _knocks_lock_live(now: float | None = None) -> bool:
+    import json, time
+    try:
+        started = float(json.loads(KNOCKS_LOCK.read_text()).get("started") or 0)
+    except (OSError, ValueError, AttributeError):
+        return False
+    now = time.time() if now is None else now
+    return 0 < now - started < KNOCKS_LOCK_STALE_S
+
+
+def _write_knocks_lock(pid: int) -> None:
+    import json, time
+    try:
+        C.app_dir()
+        KNOCKS_LOCK.write_text(json.dumps({"pid": pid, "started": time.time()}))
+    except OSError:
+        pass
+
+
+def _release_knocks_lock() -> None:
+    try:
+        KNOCKS_LOCK.unlink()
+    except OSError:
+        pass
+
+
+def knocks_in_background(headless: bool, day: dt.date, *, log=_log) -> int:
+    """Start `run --knocks` as a detached child and return at once."""
+    import subprocess
+    if _knocks_lock_live():
+        log("knocks read from the last tick is still running -- not starting another")
+        return 0
+    cmd = [sys.executable, "-m", "automations.icd_alerts.run", "--knocks",
+           "--day", day.isoformat()] + ([] if headless else ["--headful"])
+    kw = {}
+    if sys.platform.startswith("win"):
+        kw["creationflags"] = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                               | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    else:
+        kw["start_new_session"] = True
+    try:
+        C.app_dir()
+        out = open(C.APP_DIR / "knocks-background.log", "a")
+        child = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, **kw)
+    except Exception as e:  # noqa: BLE001 -- fall back to the old, in-line read
+        log("could not start the knocks read in the background (%s) -- reading "
+            "in-line" % type(e).__name__)
+        return cmd_knocks(headless, False, day)
+    _write_knocks_lock(child.pid)
+    log("knocks read started in the background (pid %d)" % child.pid)
+    return 0
+
 
 def main(argv=None) -> int:
     """_main, with a crash that nothing below caught REPORTED before it ends.
@@ -885,7 +951,10 @@ def _main(argv=None) -> int:
     if args.check:
         return cmd_check(headless)
     if args.knocks:
-        return cmd_knocks(headless, args.dry_run, day)
+        try:
+            return cmd_knocks(headless, args.dry_run, day)
+        finally:
+            _release_knocks_lock()      # the background child is done
     if args.box:
         return cmd_box(headless, args.dry_run, day)
     if args.once:
@@ -1022,7 +1091,13 @@ def _main(argv=None) -> int:
         rb = cmd_box(headless, args.dry_run, day)
         # Knocks keep the selling window; the knocks close-out above delivers
         # the finished day either way.
-        rk = 0 if sales_only else cmd_knocks(headless, args.dry_run, day)
+        if sales_only:
+            rk = 0
+        elif args.if_due and not args.dry_run:
+            # the next tick's SaraPlus read waits for nobody
+            rk = knocks_in_background(headless, day)
+        else:
+            rk = cmd_knocks(headless, args.dry_run, day)
         return rc or rb or rk
     ap.print_help()
     return 2
