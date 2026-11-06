@@ -109,7 +109,7 @@ _GRIDS_JS = """
         .map(c => (c.innerText || '').trim());
       // the all-admins list renders its one column without .x-grid3-cell-inner
       // (Lucy 3, 2026-11-06: 'admins: 0 listed' with 78 rows on screen)
-      if (!cells.length) cells = [(r.innerText || '').replace(/\s+/g, ' ').trim()];
+      if (!cells.length) cells = [(r.innerText || '').replace(/\\s+/g, ' ').trim()];
       return {i, cells, selected: r.classList.contains('x-grid3-row-selected')};
     });
     return {title: (title || '').replace(/\\s+/g, ' ').trim(), rows};
@@ -204,13 +204,126 @@ def open_admins(page, log=print) -> str:
     return tok
 
 
+_CAPTURED: Dict[str, list] = {"assigned": [], "not_assigned": []}
+
+
+def _walk(obj, out: list) -> None:
+    if isinstance(obj, dict):
+        if any(isinstance(v, (str, int)) for v in obj.values()):
+            out.append(obj)
+        for v in obj.values():
+            _walk(v, out)
+    elif isinstance(obj, list):
+        # a record can also be a plain list of values (ColdFusion query rows)
+        if obj and all(isinstance(v, (str, int, float)) or v is None for v in obj):
+            out.append({"c%d" % i: ("" if v is None else v) for i, v in enumerate(obj)})
+            return
+        for v in obj:
+            _walk(v, out)
+
+
+def _rows_from_json(text: str) -> List[Dict]:
+    """The grid data call answers JSON; keep every record that carries an
+    office id (a 3-6 digit number), as {'id','owner','office','raw'}."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    found, out = [], []
+    _walk(data, found)
+    for d in found:
+        vals = {k: str(v) for k, v in d.items() if isinstance(v, (str, int))}
+        ids = [v for v in vals.values() if re.fullmatch(r"\d{3,6}", v)]
+        if not ids:
+            continue
+        texts = [v for v in vals.values() if v and not re.fullmatch(r"\d+", v)]
+        out.append({"id": ids[0], "owner": texts[0] if texts else "",
+                    "office": texts[1] if len(texts) > 1 else "", "raw": vals})
+    return out
+
+
+def _hook_grid_calls(page) -> None:
+    def _on_response(resp):
+        try:
+            url = resp.url or ""
+            if "accountsNotAssigned" in url:
+                _CAPTURED["not_assigned"] = _rows_from_json(resp.text())
+            elif "accountsAssigned" in url:
+                _CAPTURED["assigned"] = _rows_from_json(resp.text())
+        except Exception:  # noqa: BLE001
+            pass
+    page.on("response", _on_response)
+
+
 def _wait_form(page, timeout_ms: int = 30_000) -> None:
     page.wait_for_selector("#firstname", timeout=timeout_ms)
     # the office grids come in by AJAX after the form — give them a moment
     for _ in range(20):
         if read_office_grids(page)["not_assigned"]:
-            return
+            break
         page.wait_for_timeout(500)
+    page.wait_for_timeout(1_500)
+
+
+def _grid_diag(page) -> str:
+    try:
+        return page.evaluate("""() => {
+          const g = [...document.querySelectorAll('.x-grid3')];
+          return g.map(x => {
+            const p = x.closest('.x-panel');
+            const t = p && p.querySelector('.x-panel-header') ? p.querySelector('.x-panel-header').innerText.replace(/\\s+/g,' ').trim() : '';
+            const sc = x.querySelector('.x-grid3-scroller');
+            return (t || 'untitled') + ': rows=' + x.querySelectorAll('.x-grid3-row').length
+              + ' pager=' + (!!(p && p.querySelector('.x-tbar-page-next')))
+              + ' scroll=' + (sc ? sc.scrollHeight + '/' + sc.clientHeight : '-');
+          }).join(' | ');
+        }""")
+    except Exception as e:  # noqa: BLE001
+        return "diag failed: %s" % str(e)[:80]
+
+
+def _bring_row_on_screen(page, office_id: str, log=print) -> bool:
+    """A long 'Not Assigned' list is not all in the DOM at once (Nigel 20034
+    was in the data but not among the 173 rendered rows, 2026-11-06). Scroll
+    the grid to the bottom in steps and page it if it has a pager, until the
+    row with this office id exists."""
+    def _present() -> bool:
+        return any(r["id"] == str(office_id)
+                   for r in read_office_grids(page)["not_assigned"])
+    if _present():
+        return True
+    js_scroll = """(step) => {
+      const grids = [...document.querySelectorAll('.x-grid3')];
+      const g = grids[grids.length - 1];
+      const sc = g && g.querySelector('.x-grid3-scroller');
+      if (!sc) return -1;
+      sc.scrollTop = Math.min(sc.scrollTop + step, sc.scrollHeight);
+      sc.dispatchEvent(new Event('scroll'));
+      return sc.scrollTop;
+    }"""
+    last = -2
+    for _ in range(60):
+        pos = page.evaluate(js_scroll, 600)
+        page.wait_for_timeout(300)
+        if _present():
+            return True
+        if pos == last or pos < 0:
+            break
+        last = pos
+    # a pager toolbar?
+    for _ in range(40):
+        nxt = page.locator(".x-tbar-page-next:visible").last
+        if nxt.count() == 0:
+            break
+        try:
+            nxt.click()
+        except Exception:  # noqa: BLE001
+            break
+        page.wait_for_timeout(800)
+        if _present():
+            return True
+    log("could not bring office %s onto the screen (%s)" % (office_id, _grid_diag(page)))
+    return False
 
 
 def open_new_admin(page) -> None:
@@ -383,6 +496,7 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
     created = False
     note = ""
     with appstream_direct_session(headless=not headed, verbose=False) as page:
+        _hook_grid_calls(page)
         try:
             open_admins(page, log=log)
         except PermissionError:
@@ -411,8 +525,18 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
         else:
             open_new_admin(page)
         grids = read_office_grids(page)
-        log("offices     : %d already assigned, %d not assigned"
-            % (len(grids["assigned"]), len(grids["not_assigned"])))
+        log("offices     : on screen %d already assigned, %d not assigned · data "
+            "call %d assigned, %d not assigned · %s"
+            % (len(grids["assigned"]), len(grids["not_assigned"]),
+               len(_CAPTURED["assigned"]), len(_CAPTURED["not_assigned"]),
+               _grid_diag(page)))
+        if _CAPTURED["not_assigned"]:
+            log("data sample : %s" % json.dumps(_CAPTURED["not_assigned"][0]["raw"])[:200])
+        # the data call is the truth; the screen may hold only the first rows
+        if len(_CAPTURED["not_assigned"]) > len(grids["not_assigned"]):
+            grids["not_assigned"] = _CAPTURED["not_assigned"]
+        if len(_CAPTURED["assigned"]) > len(grids["assigned"]):
+            grids["assigned"] = _CAPTURED["assigned"]
         have = match_office(grids["assigned"], owner, office_id)
         if have:
             office, assigned = have[0], True
@@ -439,7 +563,8 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
         if not existing:
             _fill(page, login)
         if office and not assigned:
-            if not _tick_not_assigned_row(page, office["id"]):
+            if not _bring_row_on_screen(page, office["id"], log=log) \
+                    or not _tick_not_assigned_row(page, office["id"]):
                 log("could not tick office %s in 'Offices Not Assigned'" % office["id"])
                 if not existing:
                     log("NOT saving a login with no office ticked — fix the tick first")
@@ -475,7 +600,7 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
             ":warning: *AppStream login for %s* — created `%s` but could NOT assign an office: "
             "%s is not in our call center's office list. Get them added to Alphalete "
             "Marketing Call Center (23981) in AppStream, then run "
-            "`lucy provision_appstream \"%s\" --machine \"Lucy 4\"` again to assign it."
+            "`lucy provision_appstream \"%s\" --machine \"Lucy 3\"` again to assign it."
             % (owner, login["username"], owner, owner), log=log)
     log("SUMMARY %s · %s · office %s%s"
         % ("created" if created else "exists", login["username"],

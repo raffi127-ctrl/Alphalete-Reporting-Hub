@@ -8845,13 +8845,12 @@ def _action_provision_appstream(args: str) -> tuple[bool, str]:
         return False, 'need: provision_appstream "<Owner Name>" [--office-id N] [--check]'
     cmd = [sys.executable, "-m", "automations.shared.appstream_admins"] + parts
     ok, res = _run_cmd(cmd, timeout_s=25 * 60, log_name="appstream-provision.log")
-    tail = res.split("·")[-1].strip()
-    # keep the SUMMARY line if the tail has one — it is the whole answer
-    for line in reversed(tail.splitlines()):
-        if line.startswith("SUMMARY"):
-            tail = line
-            break
-    return ok, tail[:420]
+    # keep the SUMMARY line whole — it is the answer, and it has '·' in it, so
+    # splitting on '·' first (the usual tail trick) kept only its last piece
+    for line in reversed(res.splitlines()):
+        if line.strip().startswith("SUMMARY"):
+            return ok, line.strip()[:420]
+    return ok, res.split("·")[-1].strip()[:420]
 
 
 def _action_set_appstream_account(args: str) -> tuple[bool, str]:
