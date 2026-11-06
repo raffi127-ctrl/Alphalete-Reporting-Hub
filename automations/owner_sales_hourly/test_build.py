@@ -134,6 +134,52 @@ class SouthShore(unittest.TestCase):
         self.assertEqual(kept, {"Lizette Ruiz-Conejo": 4})
 
 
+class SouthShoreVsAlphalete(unittest.TestCase):
+    def test_alphalete_side_is_org_minus_south_shore(self):
+        org = {"Jairo Ruiz": 71, "Rafael Hidalgo": 26, "Isaiah Revelle": 30,
+               "Colten Wright": 41, "Jacob Dover": 28}
+        self.assertEqual(run.alphalete_only(org, run.south_shore_owners()),
+                         {"Rafael Hidalgo": 26, "Isaiah Revelle": 30,
+                          "Jacob Dover": 28})
+
+    def test_titles_tell_the_two_orgs_apart(self):
+        from automations.owner_sales_hourly import config as cfg
+        now = dt.datetime(2026, 11, 6, 17, 45)
+        self.assertEqual(run.build_text({"A": 1}, now, cfg.SSO_TITLE).splitlines()[0],
+                         "South Shore Owner Sales Today - 5:45 PM CT")
+        self.assertEqual(
+            run.build_text({"A": 1}, now, cfg.SSO_ALPHALETE_TITLE).splitlines()[0],
+            "Alphalete Owner Sales Today - 5:45 PM CT")
+
+
+    def test_either_list_moving_sends_both(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from automations.owner_sales_hourly import config as cfg
+        now = dt.datetime(2026, 11, 6, 17, 45)
+        ss, al = {"Jairo Ruiz": 71}, {"Isaiah Revelle": 30}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(cfg, "OUT_DIR", Path(tmp)):
+            for key, t, title in (("a", ss, "SS"), ("b", al, "AL")):
+                last = run._last_path(now.date(), key)
+                last.parent.mkdir(parents=True, exist_ok=True)
+                last.write_text(run.build_text(t, now, title), encoding="utf-8")
+            pair = [("a", ss, "SS"), ("b", al, "AL")]
+            self.assertFalse(run.head_to_head_moved(now.date(), now, pair))
+            pair = [("a", ss, "SS"), ("b", {"Isaiah Revelle": 31}, "AL")]
+            self.assertTrue(run.head_to_head_moved(now.date(), now, pair))
+
+
+    def test_owners_chat_ends_with_both_org_totals(self):
+        al, ss = {"Rafael Hidalgo": 26, "Isaiah Revelle": 30}, {"Jairo Ruiz": 71}
+        text = run.build_text({**al, **ss}, dt.datetime(2026, 11, 6, 17, 45),
+                              org_totals=run.org_total_lines(al, ss))
+        self.assertEqual(text.splitlines()[-3:],
+                         ["🏆 TOTAL: 127", "Alphalete Org. Total: 56",
+                          "Southshore Org. Total: 71"])
+
+
 class HalfHourPass(unittest.TestCase):
     def _at(self, minute):
         return dt.datetime(2026, 11, 4, 17, minute)
@@ -143,13 +189,19 @@ class HalfHourPass(unittest.TestCase):
         self.assertFalse(run.hourly_chat_skips("owners", self._at(45)))
 
     def test_other_chats_only_the_45(self):
-        for chat in ("sso", "jairo"):
+        for chat in ("sso", "sso_alphalete", "jairo"):
             self.assertTrue(run.hourly_chat_skips(chat, self._at(15)))
             self.assertFalse(run.hourly_chat_skips(chat, self._at(45)))
 
     def test_carlos_chat_only_the_15_so_it_starts_with_the_owners_chat(self):
         self.assertFalse(run.hourly_chat_skips("carlos", self._at(15)))
         self.assertTrue(run.hourly_chat_skips("carlos", self._at(45)))
+
+    def test_knocking_chat_on_the_owners_cadence(self):
+        # Raf 2026-11-06: same text as the owners chat, every :15 and :45.
+        self.assertEqual(cfg.KNOCKING_GROUP, "Knocking Chat A-Players")
+        self.assertFalse(run.hourly_chat_skips("knocking", self._at(15)))
+        self.assertFalse(run.hourly_chat_skips("knocking", self._at(45)))
 
     def test_carlos_title_and_chat(self):
         from automations.owner_sales_hourly import config as cfg

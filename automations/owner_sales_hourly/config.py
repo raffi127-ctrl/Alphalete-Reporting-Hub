@@ -48,17 +48,36 @@ JAIRO_CAMPAIGN = "nds"
 CARLOS_GROUP = TEXT_GROUP_ATT
 CARLOS_TITLE = "Alphalete Owner Sales Today"
 
+# Raf 2026-11-06 (#l10-alphalete, "Whole Org on chat on knocking A-players
+# chat"): "Whatever the cadence of the Alphalete post is on the org chat, can
+# we post it on our knocking report chat please? I want the office to see other
+# guys crushing." The owners chat's text, word for word, on the owners chat's
+# cadence (every :15 and :45) -- so it is NOT in HOURLY_CHATS. Same chat name
+# alphalete_sales_board / gap_alerts text from Lucy 1.
+from automations.owner_chat_texts.config import GROUP_KNOCKING as KNOCKING_GROUP
+
 # South Shore owners who text into the SSO chat but are NOT on the Recruiting
 # Dashboard's South Shore group (no AppStream office there), so they can't ride
 # SOUTH_SHORE_NAMES. Colten 2026-10-30: "make sure Samuel is added to Southshore
 # org owners post ... moving forward".
 SSO_EXTRA = ["Samuel Acay"]
 
-# Listed and ranked in the SSO chat but NOT counted in its TOTAL. Raf 2026-11-04:
-# "Can my sales be added here so I can compete in their chat? But don't add my
-# sales to the total sales please." Not on SOUTH_SHORE_NAMES: he isn't South
-# Shore, and that list also feeds the Recruiting Dashboard.
-SSO_NOT_IN_TOTAL = ["Rafael Hidalgo"]
+# Raf's ranked-but-not-counted line in the South Shore text (Raf 2026-11-04)
+# is GONE since 2026-11-06 (Megan): he competes on the Alphalete text in the
+# same chat now, counted there.
+
+# SOUTH SHORE vs ALPHALETE (Colten 2026-11-06, Raf approved same day: "lets
+# turn it on"). The SSO chat gets TWO texts on the same :45 -- its South Shore
+# list, then the Alphalete list (our Org-board owners who are NOT South Shore),
+# each with its own TOTAL, so the two orgs can see each other's number. Titles
+# say which org is which; the South Shore one used to be "Owner Sales Today".
+SSO_TITLE = "South Shore Owner Sales Today"
+SSO_ALPHALETE_TITLE = "Alphalete Owner Sales Today"
+
+# The owners chat keeps ONE list of everyone (Megan 2026-11-06: "just have all
+# together"), with these two lines under its TOTAL so the orgs compete there too.
+ALPHALETE_ORG_LINE = "Alphalete Org. Total"
+SSO_ORG_LINE = "Southshore Org. Total"
 
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.
@@ -77,7 +96,7 @@ SUPERSEDED_BY = {"rafael_hidalgo": "raf"}
 # Raf 2026-11-04 (LUCY OWNERS CHAT): "an update every 30minutes" of the owners
 # text. Only that chat: the plist fires at :15 and :45, and these chats -- which
 # nobody asked to speed up -- still get one text an hour, on the :45.
-HOURLY_CHATS = ("sso", "jairo")
+HOURLY_CHATS = ("sso", "sso_alphalete", "jairo")
 # One an hour too, but on the :15: the owners chat's first text of the day is
 # 12:15, and Carlos asked to start when it starts.
 HOURLY_ON_THE_15 = ("carlos",)

@@ -30,8 +30,15 @@ third text into his "A PLAYERSSS" chat -- only sales from NDS offices, only
 owners on our Org board, titled "NDS Sales Today".
 CARLOS TOO (Carlos 2026-11-04): the owners list into his "ATT B2B Leaders" chain,
 hourly on the :15, titled "Alphalete Owner Sales Today".
-RAF IN THE SSO CHAT (Raf 2026-11-04): his line ranks with theirs so he can
-compete, but his sales stay out of that chat's TOTAL (cfg.SSO_NOT_IN_TOTAL).
+ALPHALETE IN THE SSO CHAT (Colten 2026-11-06, Raf approved): a second text into
+SOUTHSHORE ORG on the same :45 -- our Org-board owners who are NOT South Shore,
+titled "Alphalete Owner Sales Today", its own TOTAL -- so the two orgs compete.
+Raf is on the Alphalete text, not the South Shore one (Megan 2026-11-06).
+ORG TOTALS IN THE OWNERS CHAT (Megan 2026-11-06): still one list of everyone,
+plus "Alphalete Org. Total" and "Southshore Org. Total" under the TOTAL.
+KNOCKING CHAT TOO (Raf 2026-11-06): the owners chat's text, word for word and
+on its cadence (:15 and :45), into "Knocking Chat A-Players" -- so Raf's office
+sees the other owners' numbers. Own "nothing changed" skip.
 
 Usage
   # dry-run (DEFAULT): print the text, resolve the chat on a Mac, send nothing
@@ -41,7 +48,7 @@ Usage
   python -m automations.owner_sales_hourly.run --send
 
   --force   ignore the time window and the "nothing changed" skip
-  --only owners|sso|jairo|carlos   text just that one chat
+  --only owners|sso|sso_alphalete|jairo|carlos|knocking   text just that one chat
 
 --send is the ONLY thing that texts anyone. Python 3.9-safe (Lucy runtime).
 """
@@ -156,6 +163,12 @@ def south_shore_owners(aliases: Optional[Dict] = None) -> set:
     return names
 
 
+def alphalete_only(totals: Dict[str, int], south_shore: set) -> Dict[str, int]:
+    """Org-board owners minus South Shore — the "Alphalete" side of the SSO
+    chat's head-to-head. Raf is Alphalete, so he counts here."""
+    return {n: v for n, v in totals.items() if _norm(n) not in south_shore}
+
+
 def _load_aliases() -> Dict:
     from automations.focus_office_att.aliases import load_aliases
     try:
@@ -183,8 +196,10 @@ def _clock(now: dt.datetime) -> str:
 
 def build_text(totals: Dict[str, int], now: dt.datetime,
                title: str = "Owner Sales Today",
-               not_in_total: Iterable[str] = ()) -> str:
-    """`not_in_total`: owners who get a ranked line but don't count in the TOTAL."""
+               not_in_total: Iterable[str] = (),
+               org_totals: Iterable[Tuple[str, int]] = ()) -> str:
+    """`not_in_total`: owners who get a ranked line but don't count in the TOTAL.
+    `org_totals`: (label, n) lines under the TOTAL, e.g. each org's sum."""
     left_out = {_norm(n) for n in not_in_total}
     rows: List[Tuple[str, int]] = sorted(totals.items(),
                                          key=lambda kv: (-kv[1], kv[0]))
@@ -193,6 +208,7 @@ def build_text(totals: Dict[str, int], now: dt.datetime,
         lines.append("%d. %s %d" % (i, name, n))
     total = sum(n for name, n in rows if _norm(name) not in left_out)
     lines += ["", "🏆 TOTAL: %d" % total]
+    lines += ["%s: %d" % (label, n) for label, n in org_totals]
     return "\n".join(lines)
 
 
@@ -224,7 +240,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="actually text the owners chat (default: dry run)")
     ap.add_argument("--force", action="store_true",
                     help="ignore the time window and the unchanged-numbers skip")
-    ap.add_argument("--only", choices=("owners", "sso", "jairo", "carlos"),
+    ap.add_argument("--only", choices=("owners", "sso", "sso_alphalete", "jairo", "carlos",
+                             "knocking"),
                     help="text just one chat (e.g. a catch-up send to SSO)")
     args = ap.parse_args(argv)
 
@@ -256,19 +273,36 @@ def main(argv: Optional[List[str]] = None) -> int:
     if dropped:
         print("not on the Org board's top boxes (left off): %s"
               % ", ".join(dropped))
-    sso, _ = only_org(everyone, south_shore_owners(_load_aliases()))
-    if sso:     # never a list of only Raf over a TOTAL of 0
-        sso.update(only_org(everyone, {_norm(n) for n in cfg.SSO_NOT_IN_TOTAL})[0])
+    sso_names = south_shore_owners(_load_aliases())
+    sso, _ = only_org(everyone, sso_names)
+    alphalete = alphalete_only(totals, sso_names)
     nds, _ = only_org(owner_totals(relay, offices, day, cfg.JAIRO_CAMPAIGN), org)
+
+    # The SSO chat's South Shore + Alphalete texts are a head-to-head: if
+    # EITHER moved, both go, so the chat never compares a fresh number with a
+    # stale one (Megan 2026-11-06).
+    pair = {"sso": ("last_sent_sso", sso, cfg.SSO_TITLE),
+            "sso_alphalete": ("last_sent_sso_alphalete", alphalete,
+                              cfg.SSO_ALPHALETE_TITLE)}
+    pair_moved = head_to_head_moved(day, now, pair.values())
+    # The owners chat keeps everyone on one list; under its TOTAL, each org's
+    # own sum so the two can still compete there (Megan 2026-11-06).
+    org_lines = org_total_lines(alphalete, sso)
 
     rc = 0
     for name, group, key, chat_totals, title, not_in_total in (
             ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today", ()),
-            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, "Owner Sales Today",
-             cfg.SSO_NOT_IN_TOTAL),
+            ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, cfg.SSO_TITLE, ()),
+            # Right after the South Shore text, same chat (Colten 2026-11-06).
+            ("sso_alphalete", cfg.SSO_GROUP, "last_sent_sso_alphalete",
+             alphalete, cfg.SSO_ALPHALETE_TITLE, ()),
             ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today", ()),
             ("carlos", cfg.CARLOS_GROUP, "last_sent_carlos", totals,
-             cfg.CARLOS_TITLE, ())):
+             cfg.CARLOS_TITLE, ()),
+            # The owners text again, same cadence, for Raf's office (Raf
+            # 2026-11-06: "I want the office to see other guys crushing").
+            ("knocking", cfg.KNOCKING_GROUP, "last_sent_knocking", totals,
+             "Owner Sales Today", ())):
         if args.only and args.only != name:
             continue
         # --only / --force are a person asking for that text now.
@@ -277,24 +311,47 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("=== %s ===" % (group if isinstance(group, str)
                                else group.get("group")))
         rc = max(rc, _send_one(group, key, chat_totals, now, day, args, title,
-                               not_in_total))
+                               not_in_total,
+                               send_anyway=name in pair and pair_moved,
+                               org_totals=(org_lines if name in ("owners", "knocking")
+                                           else ())))
     return rc
+
+
+def org_total_lines(alphalete: Dict[str, int],
+                    south_shore: Dict[str, int]) -> List[Tuple[str, int]]:
+    """The two org lines under the owners chat's TOTAL."""
+    return [(cfg.ALPHALETE_ORG_LINE, sum(alphalete.values())),
+            (cfg.SSO_ORG_LINE, sum(south_shore.values()))]
+
+
+def head_to_head_moved(day: dt.date, now: dt.datetime, pair) -> bool:
+    """True when ANY (last-sent key, totals, title) in `pair` has new numbers."""
+    return any(t and _changed(_last_path(day, k), build_text(t, now, ti))
+               for k, t, ti in pair)
+
+
+def _changed(last, text: str) -> bool:
+    """True when `text` has different numbers from the last one sent."""
+    return not (last.exists()
+                and _numbers(last.read_text(encoding="utf-8")) == _numbers(text))
 
 
 def _send_one(group, key: str, totals: Dict[str, int], now: dt.datetime,
               day: dt.date, args, title: str = "Owner Sales Today",
-              not_in_total: Iterable[str] = ()) -> int:
+              not_in_total: Iterable[str] = (), send_anyway: bool = False,
+              org_totals: Iterable[Tuple[str, int]] = ()) -> int:
+    """`send_anyway`: its partner text moved, so this one goes even unchanged."""
     if not totals:
         print("nobody on this chat's list has relayed sales yet — not texting")
         return 0
 
-    text = build_text(totals, now, title, not_in_total)
+    text = build_text(totals, now, title, not_in_total, org_totals)
     print(text)
     print()
 
     last = _last_path(day, key)
-    if (not args.force and last.exists()
-            and _numbers(last.read_text(encoding="utf-8")) == _numbers(text)):
+    if not args.force and not send_anyway and not _changed(last, text):
         print("same numbers as the last text — skipped")
         return 0
 
