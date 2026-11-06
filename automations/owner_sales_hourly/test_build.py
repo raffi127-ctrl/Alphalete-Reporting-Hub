@@ -199,7 +199,7 @@ class HalfHourPass(unittest.TestCase):
 
     def test_knocking_chat_on_the_owners_cadence(self):
         # Raf 2026-11-06: same text as the owners chat, every :15 and :45.
-        self.assertEqual(cfg.KNOCKING_GROUP, "Knocking Chat A-Players")
+        self.assertEqual(run.cfg.KNOCKING_GROUP, "Knocking Chat A-Players")
         self.assertFalse(run.hourly_chat_skips("knocking", self._at(15)))
         self.assertFalse(run.hourly_chat_skips("knocking", self._at(45)))
 
