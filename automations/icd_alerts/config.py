@@ -68,6 +68,13 @@ SARA_SIGNIN_LOCK = APP_DIR / "sara-signin.lock"
 # crashed sign-in cannot mute the sweep for the afternoon.
 SC_SIGNIN_LOCK_MINUTES = 10
 SARA_SIGNIN_LOCK_MINUTES = 15   # a passcode has to arrive by email first
+# Optix (optixtogo.verizon.com): a Verizon office's knocks, as OwnerVille is
+# AT&T's. Its own profile for the same reason as Service Cloud's: the profile
+# IS the Verizon SSO session (Nico Murrugarra, 2026-11-06).
+OPTIX_CREDS_PATH = APP_DIR / "optix-creds.json"
+OPTIX_PROFILE_DIR = APP_DIR / "chrome-profile-optix"
+OPTIX_SIGNIN_LOCK = APP_DIR / "optix-signin.lock"
+OPTIX_SIGNIN_LOCK_MINUTES = 10
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"
