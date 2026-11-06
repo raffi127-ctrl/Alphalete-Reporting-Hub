@@ -97,7 +97,7 @@
         esc(p.first_name + ' ' + p.last_name) + (note ? ' <span class="lucy-oa-note">— ' + esc(note) + '</span>' : '') +
         '</label>';
     }).join('');
-    shell(mode + loc + '<p>Tick who should get one:</p>' + rows +
+    shell(mode + loc + '<p class="lucy-oa-pick">Tick who should get one:</p>' + rows +
       '<button id="lucy-oa-send" class="lucy-oa-primary"></button><div id="lucy-oa-result"></div>');
     const btn = panel.querySelector('#lucy-oa-send');
     const boxes = Array.from(panel.querySelectorAll('input[type=checkbox]'));
@@ -268,6 +268,8 @@
         const took = ' <small>(took ' + clock(Date.now() - started) + ')</small>';
         const sendBtn = panel && panel.querySelector('#lucy-oa-send');
         if (sendBtn) sendBtn.hidden = true;     // done: no second press by accident
+        // Done: the tick list is history -- show only the result.
+        if (panel) panel.querySelectorAll('.lucy-oa-row, .lucy-oa-pick').forEach(el => el.remove());
         result(r.status === 'sent' || r.status === 'dry_run' ? 'ok' : 'err', summary(r, ctx) + took);
       } else if (s.status === 'offered') {
         if (stage !== 2) { stage = 2; late = false; eta = Date.now() + WORK_MS; draw(); }

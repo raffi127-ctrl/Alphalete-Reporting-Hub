@@ -60,3 +60,12 @@
 #lucy-oa-panel .lucy-oa-miss { background: #fff; color: #8a1c13; border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
 #lucy-oa-panel .lucy-oa-miss ul { margin: 4px 0 0 18px; padding: 0; }
 #lucy-oa-panel .lucy-oa-stay { background: #FFF6DB; color: #5c4400; border-radius: 6px; padding: 8px 10px; margin-top: 8px; font-size: 14px; }
+/* ApplicantStream's own CSS floats labels/lists into columns -- the panel
+   ignores it (Megan 11/06: names wrapped around the result box). */
+#lucy-oa-panel, #lucy-oa-panel * { float: none !important; box-sizing: border-box; text-align: left; }
+#lucy-oa-panel label, #lucy-oa-panel .lucy-oa-row { display: block !important; width: auto !important; margin: 0; clear: both; }
+#lucy-oa-panel #lucy-oa-result { display: block; clear: both; width: 100%; }
+#lucy-oa-panel ol { list-style: decimal outside !important; display: block; }
+#lucy-oa-panel ul { list-style: disc outside !important; display: block; }
+#lucy-oa-panel li { display: list-item !important; width: auto !important; }
+#lucy-oa-panel .lucy-oa-steps { list-style: none !important; }
