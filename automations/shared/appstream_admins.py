@@ -478,7 +478,8 @@ def verify_login(login: Dict, log=print, headed: bool = False) -> Optional[bool]
 # --- the job --------------------------------------------------------------------
 def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
               check_only: bool = False, verify: bool = True, headed: bool = False,
-              dump_offices: bool = False, log=print) -> int:
+              dump_offices: bool = False, force_verify: bool = False,
+              log=print) -> int:
     from automations.shared.appstream_provision import eco_login
     from automations.shared.tableau_patchright import appstream_direct_session
 
@@ -551,9 +552,15 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
             office = cands[0]
             log("to assign   : %s %s (%s)" % (office["id"], office["owner"], office["office"]))
         if not have and not cands:
-            note = ("%s is NOT in our call center's office list — ask AppStream to add "
-                    "them (account 23981) then re-run this command to assign the office"
-                    % owner)
+            # THE LIST IS PER SIGNED-IN ADMIN (2026-11-06): Lucy Reports' session was
+            # offered 173 offices without Nigel's 20034, while Megan's own session
+            # offered it. So "not listed" means Lucy cannot tick it — a person whose
+            # list has it (Megan) can, or Lucy Reports gets the office first.
+            note = ("%s is not in the office list Lucy Reports is offered on the admin "
+                    "form (Megan's own list may have it). Assign it from Megan's "
+                    "AppStream (Settings > Admins > %s > tick it under Offices Not "
+                    "Assigned > Save Changes), or give Lucy Reports that office, then "
+                    "re-run with --verify" % (owner, login["username"]))
             log("NOT LISTED  : " + note)
         if check_only and dump_offices:
             allrows = grids["assigned"] + grids["not_assigned"]
@@ -597,16 +604,18 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
             log("saved       : admin '%s'%s" % (mine, " · office %s assigned" % office["id"] if assigned else ""))
 
     verified: Optional[bool] = None
-    if verify and (created or not existing):
+    if verify and (created or not existing or force_verify):
         verified = verify_login(login, log=log, headed=headed)
     _record(owner, office_key, login, office, assigned, verified, note, log=log)
     if not office:
         _tell_megan(
-            ":warning: *AppStream login for %s* — created `%s` but could NOT assign an office: "
-            "%s is not in our call center's office list. Get them added to Alphalete "
-            "Marketing Call Center (23981) in AppStream, then run "
-            "`lucy provision_appstream \"%s\" --machine \"Lucy 3\"` again to assign it."
-            % (owner, login["username"], owner, owner), log=log)
+            ":warning: *AppStream login for %s* — `%s` exists but Lucy could NOT assign "
+            "the office: it is not in the list Lucy Reports is offered on the admin form. "
+            "Please assign it from your AppStream (Settings > Admins > %s > tick %s under "
+            "Offices Not Assigned > Save Changes), then run "
+            "`lucy provision_appstream \"%s\" --verify --machine \"Lucy 3\"` to prove "
+            "the login." % (owner, login["username"], login["username"],
+                            office_id or owner, owner), log=log)
     log("SUMMARY %s · %s · office %s%s"
         % ("created" if created else "exists", login["username"],
            ("%s assigned" % office["id"]) if assigned else "NOT LISTED (Megan told)",
@@ -630,10 +639,13 @@ def main(argv=None) -> int:
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--dump-offices", action="store_true",
                     help="with --check: write every office the form offers to the log")
+    ap.add_argument("--verify", action="store_true",
+                    help="sign in as the login even when it already existed "
+                         "(after somebody assigned the office by hand)")
     a = ap.parse_args(argv)
     return provision(a.owner, office_id=a.office_id, office_key=a.office_key,
                      check_only=a.check, verify=not a.no_verify, headed=a.headed,
-                     dump_offices=a.dump_offices)
+                     dump_offices=a.dump_offices, force_verify=a.verify)
 
 
 if __name__ == "__main__":
