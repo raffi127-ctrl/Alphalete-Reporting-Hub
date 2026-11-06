@@ -193,7 +193,7 @@ class SendGoesToTheOfficeComputer(unittest.TestCase):
             return PEOPLE
         with mock.patch("automations.office_admin.offered.read", fake_read):
             out = actions.find_bob(C.office("omar"), today=dt.date(2026, 11, 3), session=fake_session)
-        self.assertEqual(seen, {"office": "24153", "day": dt.date(2026, 11, 3)})
+        self.assertEqual(seen, {"office": "24232", "day": dt.date(2026, 11, 3)})
         self.assertEqual(out, PEOPLE)
 
 

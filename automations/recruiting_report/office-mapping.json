@@ -423,11 +423,11 @@
     },
     {
       "sheet_tab": "Omar Mohamad",
-      "office_id": "24153",
+      "office_id": "24232",
       "as_owner": "Omar Mohamad",
       "as_company": "Kalkan Marketing",
       "confidence": 1.0,
-      "note": "tab added 2026-11-03 (Raf). as_owner is on purpose NOT what AppStream lists: it shows office 24153 under Rafael Hidalgo, and as_owner is a Tableau fallback name, so that spelling would pull Raf's numbers into this tab."
+      "note": "tab added 2026-11-03 (Raf). as_owner is on purpose NOT what AppStream lists: it shows office 24153 under Rafael Hidalgo, and as_owner is a Tableau fallback name, so that spelling would pull Raf's numbers into this tab. 2026-11-06: office 24153 -> 24232 (eStream closed 24153 on 11/4; Omar's call list moved to 24232 on 10/30)."
     }
   ],
   "needs_review": [],
