@@ -39,6 +39,17 @@ class NoDispo(unittest.TestCase):
     def test_wording(self):
         self.assertEqual(R.no_dispo_text(["A B", "C D"], "14:30"),
                          "No dispositions from (2:30 PM): A B, C D")
+        self.assertEqual(R.no_dispo_text([], "15:15"),
+                         "Everyone on the lineup has dispositioned! (3:15 PM)")
+
+    def test_everyone_dispositioned_still_sends(self):
+        rows = [{"Rep": n, "Total Knocks": "3"} for n in R.station_names(GRID)]
+        with mock.patch.object(R, "_read_station_names", lambda: R.station_names(GRID)), \
+             mock.patch.object(R, "borrowed_rows", lambda today, own: []), \
+             mock.patch.object(R, "_log"):
+            now = dt.datetime(2026, 11, 6, 15, 15, 5)
+            msg = R._no_dispo_message(now.date(), now, rows, {}, send=True)
+        self.assertEqual(msg, "Everyone on the lineup has dispositioned! (3:15 PM)")
 
     def test_message_once_per_slot_and_off_by_default(self):
         state = {}
