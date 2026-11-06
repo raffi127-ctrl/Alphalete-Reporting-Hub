@@ -1115,7 +1115,10 @@ var ADMINS_TAB = 'Office Admins';
 var ADM = {USER: 0, OFFICE: 1, SALT: 2, HASH: 3, ACTIVE: 4, MODE: 5, NAME: 6, LAST: 7, APPSTREAM: 8};
 var ADM_HEAD = ['Username', 'Office', 'Salt', 'Hash', 'Active', 'Mode', 'Name', 'Last Login', 'AppStream'];
 var SETTINGS_TAB = 'Office Settings';
-var SET_HEAD = ['Office', 'State', 'City', 'Updated By', 'Updated At', 'AppStream'];
+// 'Approved Accounts' is the GUARD (Megan 2026-11-06): only Megan sets it
+// (relay_admins --accounts). Admins can use these accounts and no others, so a
+// calendar from someone else's office can never send through this Sterling.
+var SET_HEAD = ['Office', 'State', 'City', 'Updated By', 'Updated At', 'AppStream', 'Approved Accounts'];
 var SESSION_DAYS = 90;
 var MAX_TRIES = 5;
 
@@ -1211,17 +1214,17 @@ function _admLogin(a) {
 
 function _admSettings(office) {
   var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
-  if (sh.getLastColumn() < SET_HEAD.length) {        // older tab: add AppStream column
+  if (sh.getLastColumn() < SET_HEAD.length) {        // older tab: add the newer columns
     sh.getRange(1, 1, 1, SET_HEAD.length).setValues([SET_HEAD]);
   }
   var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]).trim().toLowerCase() === office) {
       return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || ''),
-              appstream: _accounts(rows[i][5])};
+              appstream: _accounts(rows[i][5]), approved: _accounts(rows[i][6])};
     }
   }
-  return {row: -1, state: '', city: '', appstream: ''};
+  return {row: -1, state: '', city: '', appstream: '', approved: ''};
 }
 
 // One office as the extension sees it.
@@ -1232,6 +1235,7 @@ function _admOffice(sess, office) {
   var set = _admSettings(office);
   return {office: office,
           appstream: set.appstream || (row ? _accounts(row.r[ADM.APPSTREAM]) : ''),
+          approved: set.approved,
           state: set.state, city: set.city,
           mode: row && String(row.r[ADM.MODE]).trim().toLowerCase() === 'live' ? 'live' : 'dry'};
 }
@@ -1246,12 +1250,19 @@ function _admSetOffice(sess, office, a) {
   var appstream = _accounts(a.appstream);
   if (!state || !city) return {ok: false, error: 'Pick the state and type the city.'};
   if (!appstream) return {ok: false, error: 'Type the ApplicantStream account number(s).'};
+  var ok = _accounts(_admSettings(office).approved).split(', ').filter(String);
+  var bad = appstream.split(', ').filter(function (n) { return ok.indexOf(n) < 0; });
+  if (bad.length) {
+    return {ok: false, error: 'Account ' + bad.join(', ') + (bad.length > 1 ? " aren't" : " isn't") +
+        " approved for this office" + (ok.length ? ' (approved: ' + ok.join(', ') + ')' : '') +
+        '. Ask Megan to add it.'};
+  }
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
     var cur = _admSettings(office);
-    var row = [office, state, city, sess.username, new Date(), appstream];
+    var row = [office, state, city, sess.username, new Date(), appstream];  // G (approved) untouched
     if (cur.row > 0) sh.getRange(cur.row + 1, 1, 1, row.length).setValues([row]);
     else sh.appendRow(row);
     return {ok: true, office: _admOffice(sess, office)};
@@ -1263,6 +1274,17 @@ function _admSetOffice(sess, office, a) {
 function _admSend(sess, office, a) {
   var o = _admOffice(sess, office);
   if (!o.state || !o.city) return {ok: false, error: "Set this office's city and state first."};
+  // THE GUARD: the calendar's own account number must be approved for this
+  // office (and switched on by its admin). Anything else sends nothing.
+  // Several accounts can go in one send ("11280, 11901"): EVERY one must pass.
+  var acct = _accounts(a.appstream);
+  var approved = String(o.approved || '').split(', ').filter(String);
+  var chosen = String(o.appstream || '').split(', ').filter(String);
+  if (!acct) return {ok: false, error: "Couldn't tell which ApplicantStream account this calendar is. Reload the calendar and try again."};
+  var off = acct.split(', ').filter(function (n) { return approved.indexOf(n) < 0 || chosen.indexOf(n) < 0; });
+  if (off.length) {
+    return {ok: false, error: 'ApplicantStream account ' + off.join(', ') + " isn't approved for this office, so nothing was sent. Ask Megan to add it."};
+  }
   var people = (a.people || []).filter(function (p) {
     return p && String(p.first_name || '').trim() && String(p.last_name || '').trim() &&
         String(p.email || '').indexOf('@') > 0;
@@ -1290,7 +1312,7 @@ function _admSend(sess, office, a) {
     if (!people.length) return {ok: true, skipped_all: true, job_id: ''};
   }
   return _officeJobEnqueue({office: office, kind: 'bgc_send', mode: o.mode,
-                            payload: {people: people, by: sess.username,
+                            payload: {people: people, by: sess.username, appstream: acct,
                                       location: {country: 'United States', state: o.state, city: o.city}}});
 }
 

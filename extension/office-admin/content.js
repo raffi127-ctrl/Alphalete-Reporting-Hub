@@ -49,14 +49,16 @@
     // Which of this admin's offices is this calendar? By account number.
     const pageOffice = LucyOffered.officeId();
     const offices = me.offices || [];
-    // An office can have several accounts ("11280, 24153"), all on one Sterling.
-    const accts = o => (String(o.appstream || '').match(/\d+/g) || []);
-    const office = offices.find(o => pageOffice && accts(o).includes(pageOffice)) ||
-      (!pageOffice && offices.length === 1 ? offices[0] : null);
+    // An office can have several accounts ("11280, 24153"), all on one
+    // Sterling. Only APPROVED ones count (the guard -- relay_admins --accounts).
+    const nums = v => (String(v || '').match(/\d+/g) || []);
+    const accts = o => nums(o.appstream).filter(n => nums(o.approved).includes(n));
+    // No account number on the page = no send: the account IS the guard.
+    const office = offices.find(o => pageOffice && accts(o).includes(pageOffice)) || null;
     if (!office) {
       shell('<p class="lucy-oa-err">' + (pageOffice
-        ? 'This calendar is ApplicantStream account ' + esc(pageOffice) + ', which isn\'t set on any of your offices. ' +
-          'Check the account numbers in the Lucy Office Admin icon (top right of Chrome).'
+        ? 'This calendar is ApplicantStream account ' + esc(pageOffice) + ', which isn\'t approved for any of your offices, ' +
+          'so nothing can be sent from it. Ask Megan if it should be.'
         : 'Couldn\'t tell which office this calendar is. Open the calendar for one office.') + '</p>');
       return;
     }
@@ -64,35 +66,111 @@
       shell('<p class="lucy-oa-err">Set office ' + esc(office.office) + '\'s city and state first: click the Lucy Office Admin icon at the top right of Chrome.</p>');
       return;
     }
-    shell('<p>Reading today\'s second interviews…</p>');
-    let people;
-    try {
-      people = await LucyOffered.read();
-    } catch (e) {
-      shell('<p class="lucy-oa-err">Couldn\'t read this calendar: ' + esc(e.message) + '</p>');
-      return;
+    // SEVERAL ACCOUNTS = ONE LIST, ONE SEND (Megan 11/06: same Sterling link
+    // for all). Lucy opens each account's calendar in a hidden frame, reads it,
+    // then puts the admin's ApplicantStream back on the account she was on.
+    const list = accts(office);
+    let people = [], problems = [];
+    if (list.length > 1) {
+      const order = [pageOffice].concat(list.filter(n => n !== pageOffice));
+      for (let i = 0; i < order.length; i++) {
+        shell('<p>Reading account <b>' + esc(order[i]) + '</b> (' + (i + 1) + ' of ' + order.length + ')…</p>' +
+              '<p class="lucy-oa-note">Lucy is checking each of this office\'s calendars. Stay on this page.</p>');
+        try {
+          const got = order[i] === pageOffice ? await LucyOffered.read() : await readAccount(order[i]);
+          got.forEach(p => { p.acct = order[i]; });
+          people = people.concat(got);
+        } catch (e) {
+          problems.push({acct: order[i], why: e.message});
+        }
+      }
+      try { await switchBack(pageOffice); } catch (e) { /* the next calendar load fixes it */ }
+      // The same person on two calendars gets ONE invite.
+      const seen = {};
+      people = people.filter(p => {
+        const k = (p.email || (p.first_name + '|' + p.last_name + '|' + p.phone)).toLowerCase();
+        if (seen[k]) return false;
+        seen[k] = 1;
+        return true;
+      });
+    } else {
+      shell('<p>Reading today\'s second interviews…</p>');
+      try {
+        people = await LucyOffered.read();
+        people.forEach(p => { p.acct = pageOffice; });
+      } catch (e) {
+        shell('<p class="lucy-oa-err">Couldn\'t read this calendar: ' + esc(e.message) + '</p>');
+        return;
+      }
     }
     const already = (await ask('already', {office: office.office})).sent || {};
-    render(office, people, already);
+    render(office, people, already, list.length > 1 ? list : [pageOffice], problems);
   }
 
-  function render(office, people, already) {
+  // Another account's calendar, read in a hidden frame: switch the session's
+  // office (the same p=104 newOfficeId switch the Indeed report uses), open the
+  // calendar, prove it IS that account, read it.
+  const BASE = location.origin + location.pathname;
+  const TOK = (location.href.match(/rqst=([A-Z0-9-]+)/i) || [])[1] || '';
+  function frameLoad(url, ms) {
+    return new Promise((resolve, reject) => {
+      let f = document.getElementById('lucy-oa-frame');
+      if (!f) {
+        f = document.createElement('iframe');
+        f.id = 'lucy-oa-frame';
+        document.body.appendChild(f);
+      }
+      const t = setTimeout(() => reject(new Error('the page took too long to open')), ms || 45000);
+      f.onload = () => { clearTimeout(t); resolve(f.contentDocument); };
+      f.src = url;
+    });
+  }
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  async function readAccount(acct) {
+    if (!TOK) throw new Error('reload the calendar and try again');
+    await frameLoad(BASE + '?p=104&rqst=' + TOK + '&newOfficeId=' + acct);
+    const d = await frameLoad(BASE + '?rqst=' + TOK + '&p=102');
+    for (let i = 0; i < 30 && !(LucyOffered.isCalendar(d) && LucyOffered.officeId(d)); i++) await wait(1000);
+    if (LucyOffered.officeId(d) !== acct) {
+      throw new Error('your ApplicantStream login couldn\'t open account ' + acct + ' (it showed ' +
+                      (LucyOffered.officeId(d) || 'no calendar') + ')');
+    }
+    await wait(4000);                       // rows fill in after the page loads
+    const got = await LucyOffered.read(d);
+    LucyOffered.isCalendar(document);       // reader back on this tab
+    return got;
+  }
+  async function switchBack(acct) {
+    if (TOK) await frameLoad(BASE + '?p=104&rqst=' + TOK + '&newOfficeId=' + acct, 20000);
+    const f = document.getElementById('lucy-oa-frame');
+    if (f) f.remove();
+  }
+
+  function render(office, people, already, accounts, problems) {
+    accounts = accounts || [LucyOffered.officeId()];
+    problems = problems || [];
     const loc = '<div class="lucy-oa-loc">📍 ' + esc(office.city) + ', ' + esc(office.state) +
-      ' <span class="lucy-oa-acct">· account ' + esc(LucyOffered.officeId() || office.appstream) + '</span></div>';
+      ' <span class="lucy-oa-acct">· account' + (accounts.length > 1 ? 's ' : ' ') + esc(accounts.join(', ')) + '</span></div>' +
+      problems.map(pr => '<div class="lucy-oa-err">⚠️ Account ' + esc(pr.acct) + ' wasn\'t read: ' + esc(pr.why) +
+                         '. Nobody from it is on this list.</div>').join('');
     const mode = office.mode === 'live' ? '' :
       '<div class="lucy-oa-test">Test mode: checked, not sent.</div>';
     if (!people.length) {
       shell(mode + loc + '<p>Nobody marked <b>Yes</b> for Offer Position today yet.</p>');
       return;
     }
+    let lastAcct = null;
     const rows = people.map((p, i) => {
+      const head = accounts.length > 1 && p.acct !== lastAcct
+        ? '<div class="lucy-oa-accthead">Account ' + esc(p.acct) + '</div>' : '';
+      lastAcct = p.acct;
       const email = (p.email || '').trim();
       const done = email && already[email.toLowerCase()];
       const indeed = /@indeedemail\.com$/i.test(email);
       const note = !email ? 'no email in ApplicantStream'
         : done ? 'already sent ' + done
         : indeed ? 'Indeed forwarding email — check it' : '';
-      return '<label class="lucy-oa-row' + (email ? '' : ' off') + '"><input type="checkbox" data-i="' + i + '"' +
+      return head + '<label class="lucy-oa-row' + (email ? '' : ' off') + '"><input type="checkbox" data-i="' + i + '"' +
         (email && !done ? ' checked' : '') + (email ? '' : ' disabled') + '> ' +
         esc(p.first_name + ' ' + p.last_name) + (note ? ' <span class="lucy-oa-note">— ' + esc(note) + '</span>' : '') +
         '</label>';
@@ -111,7 +189,8 @@
     const send = async (picked, resend) => {
       btn.disabled = true;
       btn.textContent = 'Sending to ' + owner() + ' Lucy ECO machine…';
-      const out = await ask('send', {office: office.office, people: picked, resend: resend || ''});
+      const out = await ask('send', {office: office.office, people: picked, resend: resend || '',
+                                     appstream: Array.from(new Set(picked.map(p => p.acct))).join(', ')});
       if (out.needs_confirm) {           // already sent before: the admin decides
         confirmResend(picked, out.duplicates || []);
         count();
@@ -165,7 +244,24 @@
       };
     };
 
-    btn.onclick = () => send(boxes.filter(b => b.checked).map(b => people[+b.dataset.i]), '');
+    // LAST CHECK before anything goes (Megan 11/06): whose Sterling, which
+    // calendar. Nothing is sent until "Yes, send".
+    btn.onclick = () => {
+      const picked = boxes.filter(b => b.checked).map(b => people[+b.dataset.i]);
+      const whose = owner().replace(/'s$/, '').replace(/^the ICD$/, 'this office');
+      result('confirm',
+        '<div class="lucy-oa-confirm-title">⚠️ CONFIRM</div>' +
+        'Send <b>' + picked.length + '</b> background check link' + (picked.length === 1 ? '' : 's') +
+        ' from <b>' + esc(whose.toUpperCase()) + '\'S STERLING</b>?' +
+        '<div class="lucy-oa-confirm-acct">ApplicantStream account' + (accounts.length > 1 ? 's' : '') +
+        ' <b>' + esc(Array.from(new Set(picked.map(p => p.acct))).join(', ')) +
+        '</b> · ' + esc(office.city) + ', ' + esc(office.state) + '</div>' +
+        (accounts.length > 1 ? 'Make sure these are the correct accounts.' : 'Make sure you\'re on the correct calendar.') +
+        '<div class="lucy-oa-choices"><button class="lucy-oa-again lucy-oa-yes">Yes, send</button>' +
+        '<button class="lucy-oa-skip lucy-oa-no">Cancel</button></div>');
+      panel.querySelector('.lucy-oa-yes').onclick = () => send(picked, '');
+      panel.querySelector('.lucy-oa-no').onclick = () => result('wait', 'Nothing sent.');
+    };
   }
 
   function result(kind, html) {

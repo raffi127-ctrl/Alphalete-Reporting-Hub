@@ -13,27 +13,34 @@ var LucyOffered = (function () {
   var norm = function (s) { return (s || '').replace(/\s+/g, ' ').trim(); };
   var OFFER_SEL = 'select[id="sOfferPosition"], select.offerPosition, select[name="sOfferPosition"]';
   var BANNER = /^([A-Z0-9 &]*?(INTERVIEWS?|ORIENTATIONS?|TRAINING))\b/;
+  // The page being read: this tab, or another account's calendar loaded in a
+  // hidden frame (several accounts, one send -- Megan 2026-11-06).
+  var doc = document;
+  var on = function (d) { doc = d || document; };
 
-  function isV2() {
-    var t = document.body.innerText || '';
+  function isV2(d) {
+    on(d);
+    var t = doc.body.innerText || '';
     return /Applicant Interview Calendar/i.test(t) && /2nd Interview/.test(t) && /First Day of Sales/.test(t);
   }
 
-  function isCalendar() {
-    var t = document.body.innerText || '';
-    return isV2() || /SECOND INTERVIEWS|FIRST INTERVIEWS/.test(t) || /Calendars for \d/.test(t);
+  function isCalendar(d) {
+    on(d);
+    var t = doc.body.innerText || '';
+    return isV2(doc) || /SECOND INTERVIEWS|FIRST INTERVIEWS/.test(t) || /Calendars for \d/.test(t);
   }
 
   // The office the page is showing: V1 "Office ID: 24153", V2 picker "(#11280 - ...)".
-  function officeId() {
-    var t = document.body.innerText || '';
+  function officeId(d) {
+    on(d);
+    var t = doc.body.innerText || '';
     var m = t.match(/Office ID:\s*(\d+)/) || t.match(/\(#(\d+)\s*-/);
     return m ? m[1] : '';
   }
 
   function readV1() {
     var rows = [], section = '', header = null, sawSection = false;
-    var nodes = document.querySelectorAll('tr, td, th, div, span, h1, h2, h3, h4, b, strong');
+    var nodes = doc.querySelectorAll('tr, td, th, div, span, h1, h2, h3, h4, b, strong');
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       if (n.tagName !== 'TR') {
@@ -68,7 +75,7 @@ var LucyOffered = (function () {
   }
 
   function clickV2Tab() {
-    var els = document.querySelectorAll('a, button, li, div, span');
+    var els = doc.querySelectorAll('a, button, li, div, span');
     for (var i = 0; i < els.length; i++) {
       if (/^\s*2nd Interview\b/.test(els[i].innerText || '') && els[i].children.length <= 3) {
         els[i].click(); return true;
@@ -78,7 +85,7 @@ var LucyOffered = (function () {
   }
 
   function showAllV2() {
-    var sel = Array.prototype.find.call(document.querySelectorAll('select'), function (s) {
+    var sel = Array.prototype.find.call(doc.querySelectorAll('select'), function (s) {
       return s.offsetParent && (/_length$/.test(s.name || '') ||
         /entries/i.test(((s.closest('label') || {}).innerText) || ''));
     });
@@ -92,7 +99,7 @@ var LucyOffered = (function () {
   }
 
   function readV2Table() {
-    var tables = Array.prototype.filter.call(document.querySelectorAll('table'), function (t) { return t.offsetParent; });
+    var tables = Array.prototype.filter.call(doc.querySelectorAll('table'), function (t) { return t.offsetParent; });
     for (var i = 0; i < tables.length; i++) {
       var hdr = tables[i].querySelector('thead tr') || tables[i].querySelector('tr');
       if (!hdr) continue;
@@ -136,10 +143,10 @@ var LucyOffered = (function () {
     var all = readV2Table();
     // still paged? walk Next
     for (var guard = 0; guard < 40; guard++) {
-      var info = norm((document.querySelector('.dataTables_info') || {}).innerText);
+      var info = norm((doc.querySelector('.dataTables_info') || {}).innerText);
       var m = info.match(/Showing\s+([\d,]+)\s+to\s+([\d,]+)\s+of\s+([\d,]+)/i);
       if (!m || +m[2].replace(/,/g, '') >= +m[3].replace(/,/g, '')) break;
-      var next = document.querySelector('.paginate_button.next:not(.disabled), a.next:not(.disabled)');
+      var next = doc.querySelector('.paginate_button.next:not(.disabled), a.next:not(.disabled)');
       if (!next) throw new Error('More rows than shown and no Next button.');
       next.click(); await sleep(1500);
       all = all.concat(readV2Table());
@@ -148,8 +155,9 @@ var LucyOffered = (function () {
   }
 
   // -> [{first_name, last_name, email, phone}] of Offer Position = Yes, once each.
-  async function read() {
-    var rows = isV2() ? await readV2() : readV1();
+  async function read(d) {
+    on(d);
+    var rows = isV2(doc) ? await readV2() : readV1();
     var seen = {}, out = [];
     rows.forEach(function (r) {
       if ((r.offer || '').toLowerCase() !== 'yes' || !r.first) return;

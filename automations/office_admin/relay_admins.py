@@ -13,6 +13,13 @@ stored. Mode (dry | live) is set HERE, per admin -- never by the extension.
     python -m automations.office_admin.relay_admins --mode raf-admin live
     python -m automations.office_admin.relay_admins --disable raf-admin
     python -m automations.office_admin.relay_admins --list
+    python -m automations.office_admin.relay_admins --accounts raf 11280 11901   # approve accounts
+    python -m automations.office_admin.relay_admins --accounts raf               # show them
+
+APPROVED ACCOUNTS ARE THE GUARD (Megan 2026-11-06): an office's admins can
+only use the ApplicantStream accounts approved here ('Office Settings' tab,
+'Approved Accounts'). A calendar from any other account sends nothing, so
+another ICD's applicants can never go out on this office's Sterling.
 
 ONE ADMIN, SEVERAL OFFICES (Megan 2026-11-04): one row per (admin, office).
 --add for a username that already exists adds the office and keeps their
@@ -74,6 +81,49 @@ def _find(rows: List[List[str]], username: str) -> Optional[int]:
     return None
 
 
+SETTINGS_TAB = "Office Settings"
+SET_HEAD = ["Office", "State", "City", "Updated By", "Updated At", "AppStream", "Approved Accounts"]
+
+
+def _set_accounts(office: str, numbers: List[str]) -> int:
+    """Approve the ApplicantStream accounts an office may send from (replaces
+    the list). No numbers = just show the current list. Numbers taken off
+    the list are also switched off for the office's admins."""
+    import datetime as dt
+    import re
+    from automations.icd_alerts import post as P
+    from automations.recruiting_report.fill import _retry, open_by_key
+    office = office.strip().lower()
+    nums: List[str] = []
+    for n in re.findall(r"\d+", " ".join(numbers)):
+        if n not in nums:
+            nums.append(n)
+    ss = open_by_key(P.RELAY_SPREADSHEET_ID)
+    try:
+        ws = ss.worksheet(SETTINGS_TAB)
+    except Exception:  # noqa: BLE001 -- first use
+        ws = _retry(ss.add_worksheet, title=SETTINGS_TAB, rows=100, cols=len(SET_HEAD))
+    rows = _retry(ws.get_all_values)
+    if not rows or len(rows[0]) < len(SET_HEAD) or rows[0][6:7] != ["Approved Accounts"]:
+        _retry(ws.update, [SET_HEAD], "A1")
+        rows = _retry(ws.get_all_values)
+    hit = next((i for i, r in enumerate(rows[1:], start=2) if r and r[0].strip().lower() == office), None)
+    cur = rows[hit - 1] + [""] * 7 if hit else [""] * 7
+    if not numbers:
+        print("%s approved: %s" % (office, cur[6] or "(none)"))
+        print("%s in use:   %s" % (office, cur[5] or "(none)"))
+        return 0
+    approved = ", ".join(nums)
+    in_use = [n for n in re.findall(r"\d+", cur[5] or "") if n in nums]
+    if hit:
+        _retry(ws.update, [[", ".join(in_use) or approved, approved]], "F%d:G%d" % (hit, hit))
+    else:
+        _retry(ws.append_row, [office, "", "", "megan", dt.datetime.now().isoformat(timespec="seconds"),
+                               approved, approved])
+    print("%s approved: %s" % (office, approved))
+    return 0
+
+
 def main(argv=None) -> int:
     from automations.office_admin import config as C
     from automations.recruiting_report.fill import _retry
@@ -85,11 +135,14 @@ def main(argv=None) -> int:
     g.add_argument("--mode", nargs=2, metavar=("USERNAME", "dry|live"))
     g.add_argument("--remove-office", nargs=2, metavar=("USERNAME", "OFFICE"))
     g.add_argument("--list", action="store_true")
+    g.add_argument("--accounts", nargs="+", metavar=("OFFICE", "NUMBER"))
     ap.add_argument("--office")
     ap.add_argument("--name", default="")
     ap.add_argument("--password", default="",
                     help="with --add/--reset: use this password instead of a made-up one")
     a = ap.parse_args(argv)
+    if a.accounts:
+        return _set_accounts(a.accounts[0], a.accounts[1:])
     ws = _tab()
     rows = _rows(ws)
 

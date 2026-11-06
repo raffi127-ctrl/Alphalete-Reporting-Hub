@@ -35,6 +35,8 @@ function card(o, editing) {
     '<label>ApplicantStream account number</label>' +
     (accts(o).length ? accts(o) : ['']).map(n => acctBox(n)).join('') +
     '<button class="link" data-more="1">+ Add another account (same Sterling)</button>' +
+    (o.approved ? '<p class="muted">Approved for this office: ' + esc(o.approved) + '</p>'
+                : '<p class="muted">No accounts approved for this office yet — ask Megan.</p>') +
     '<label>State</label><select data-f="state">' + opts + '</select>' +
     '<label>City</label><input data-f="city" value="' + esc(o.city) + '">' +
     '<button data-save="' + esc(o.office) + '">Save</button></div>';
