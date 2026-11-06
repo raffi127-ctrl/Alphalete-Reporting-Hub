@@ -1709,17 +1709,28 @@ def prune_sections(sids, today, log=print) -> None:
 
 
 def dm_previews(artifacts, user, log=print) -> None:
+    """`user` = one Slack id (a PREVIEW DM, the original use) or a comma-
+    separated list (Carlos 2026-11-06: "send to sebastian and i on slack" --
+    one group DM from Lucy with the board, no PREVIEW wording)."""
     from automations.shared import slack_metrics_post as smp
+    users = [u.strip() for u in str(user).split(",") if u.strip()]
+    stamp = dt.date.today().strftime("%B %d, %Y")
     for sid, emoji, title, _fn in SECTIONS:
         path = artifacts.get(sid)
         if not path:
             continue
         for pp in (path if isinstance(path, (list, tuple)) else [path]):
-            smp.dm_user_with_file(
-                Path(pp), user=user, file_name=Path(pp).name,
-                comment=f"{emoji} *{title}* — NDS Metrics PREVIEW (crew "
-                        "only, not posted).")
-        log(f"[nds] DM'd {sid}")
+            if len(users) > 1:
+                res = smp.dm_users_with_file(
+                    Path(pp), users=users, file_name=Path(pp).name,
+                    comment=f"{emoji} *{title}* — {stamp}")
+                log(f"[nds] sent {sid} to {len(users)} people ({res.get('mode')})")
+            else:
+                smp.dm_user_with_file(
+                    Path(pp), user=users[0], file_name=Path(pp).name,
+                    comment=f"{emoji} *{title}* — NDS Metrics PREVIEW (crew "
+                            "only, not posted).")
+                log(f"[nds] DM'd {sid}")
 
 
 def main(argv=None) -> int:
