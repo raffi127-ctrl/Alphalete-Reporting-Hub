@@ -14,12 +14,17 @@ const show = (id, on) => { $(id).hidden = !on; };
 const err = text => { $('msg').textContent = text || ''; show('msg', !!text); };
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 
+// Every ApplicantStream account this office's admins send from -- all of
+// them go to the office's one Sterling (Megan 2026-11-06: Raf's accounts).
+const accts = o => (String(o.appstream || '').match(/\d+/g) || []);
+const acctBox = n => '<input data-f="appstream" inputmode="numeric" value="' + esc(n) + '" placeholder="e.g. 11280">';
+
 function card(o, editing) {
   const ready = o.appstream && o.city && o.state;
   const badge = o.mode === 'live' ? '' : '<span class="test">test mode</span>';
   if (ready && !editing) {
     return '<div class="card" data-office="' + esc(o.office) + '"><h3>Office ' + esc(o.office) + badge + '</h3>' +
-      '<div class="acct">ApplicantStream account: <b>' + esc(o.appstream) + '</b></div>' +
+      '<div class="acct">ApplicantStream account' + (accts(o).length > 1 ? 's' : '') + ': <b>' + esc(accts(o).join(', ')) + '</b></div>' +
       '<div class="loc">📍 ' + esc(o.city) + ', ' + esc(o.state) + '</div>' +
       '<button class="link" data-edit="' + esc(o.office) + '">Change account number or location</button></div>';
   }
@@ -27,7 +32,9 @@ function card(o, editing) {
     STATES.map(s => '<option' + (s === o.state ? ' selected' : '') + '>' + s + '</option>').join('');
   return '<div class="card" data-office="' + esc(o.office) + '"><h3>Office ' + esc(o.office) + badge + '</h3>' +
     (ready ? '' : '<p class="muted">Set this office up once:</p>') +
-    '<label>ApplicantStream account number</label><input data-f="appstream" inputmode="numeric" value="' + esc(o.appstream) + '" placeholder="e.g. 11280">' +
+    '<label>ApplicantStream account number</label>' +
+    (accts(o).length ? accts(o) : ['']).map(n => acctBox(n)).join('') +
+    '<button class="link" data-more="1">+ Add another account (same Sterling)</button>' +
     '<label>State</label><select data-f="state">' + opts + '</select>' +
     '<label>City</label><input data-f="city" value="' + esc(o.city) + '">' +
     '<button data-save="' + esc(o.office) + '">Save</button></div>';
@@ -38,12 +45,16 @@ function home(me, editing) {
   $('name').textContent = me.name;
   $('offices').innerHTML = (me.offices || []).map(o => card(o, editing === o.office)).join('');
   $('offices').querySelectorAll('[data-edit]').forEach(b => { b.onclick = () => home(me, b.dataset.edit); });
+  $('offices').querySelectorAll('[data-more]').forEach(b => {
+    b.onclick = () => b.insertAdjacentHTML('beforebegin', acctBox(''));
+  });
   $('offices').querySelectorAll('[data-save]').forEach(b => {
     b.onclick = async () => {
       err('');
       const c = b.closest('.card');
       const val = f => c.querySelector('[data-f="' + f + '"]').value.trim();
-      const appstream = val('appstream').replace(/\D/g, '');
+      const appstream = Array.from(c.querySelectorAll('[data-f="appstream"]'))
+        .map(i => i.value.replace(/\D/g, '')).filter(Boolean).join(', ');
       if (!appstream) { err('Type the ApplicantStream account number (numbers only).'); return; }
       if (!val('state') || !val('city')) { err('Pick the state and type the city.'); return; }
       const out = await ask('set_office', {office: b.dataset.save, appstream, state: val('state'), city: val('city')});
@@ -53,7 +64,13 @@ function home(me, editing) {
   });
   chrome.storage.local.get(['lastSend'], st => {
     const l = st.lastSend;
-    $('last').textContent = l ? 'Last send (' + l.office + '): ' + new Date(l.at).toLocaleString() + ' — ' + l.names.join(', ') : '';
+    // A numbered list -- one name per line is easy to read (Megan 11/06).
+    $('last').innerHTML = l
+      ? '<b>Last send' + (l.test ? ' (test — nothing sent)' : '') + '</b> · office ' + esc(l.office) + ' · ' +
+        esc(new Date(l.at).toLocaleString([], {month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit'})) +
+        ' · ' + l.names.length + ' ' + (l.names.length === 1 ? 'person' : 'people') +
+        '<ol class="names">' + l.names.map(n => '<li>' + esc(n) + '</li>').join('') + '</ol>'
+      : '';
   });
 }
 

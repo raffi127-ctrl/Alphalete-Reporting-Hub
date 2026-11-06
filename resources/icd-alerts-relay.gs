@@ -1132,6 +1132,13 @@ function _sha256Hex(text) {
 }
 
 function _digits(v) { return String(v || '').replace(/\D/g, ''); }
+// One office can use several ApplicantStream accounts that all go to the same
+// Sterling (Megan 2026-11-06: every one of Raf's accounts). Stored "11280, 24153".
+function _accounts(v) {
+  var seen = {}, out = [];
+  (String(v || '').match(/\d+/g) || []).forEach(function (n) { if (!seen[n]) { seen[n] = 1; out.push(n); } });
+  return out.join(', ');
+}
 
 // Every row for this username: [{i, r}]
 function _admRows(username) {
@@ -1211,7 +1218,7 @@ function _admSettings(office) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]).trim().toLowerCase() === office) {
       return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || ''),
-              appstream: _digits(rows[i][5])};
+              appstream: _accounts(rows[i][5])};
     }
   }
   return {row: -1, state: '', city: '', appstream: ''};
@@ -1224,7 +1231,7 @@ function _admOffice(sess, office) {
   })[0];
   var set = _admSettings(office);
   return {office: office,
-          appstream: set.appstream || (row ? _digits(row.r[ADM.APPSTREAM]) : ''),
+          appstream: set.appstream || (row ? _accounts(row.r[ADM.APPSTREAM]) : ''),
           state: set.state, city: set.city,
           mode: row && String(row.r[ADM.MODE]).trim().toLowerCase() === 'live' ? 'live' : 'dry'};
 }
@@ -1236,9 +1243,9 @@ function _admWhoami(sess) {
 
 function _admSetOffice(sess, office, a) {
   var state = String(a.state || '').trim(), city = String(a.city || '').trim().replace(/\s+/g, ' ');
-  var appstream = _digits(a.appstream);
+  var appstream = _accounts(a.appstream);
   if (!state || !city) return {ok: false, error: 'Pick the state and type the city.'};
-  if (!appstream) return {ok: false, error: 'Type the ApplicantStream account number (numbers only).'};
+  if (!appstream) return {ok: false, error: 'Type the ApplicantStream account number(s).'};
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {

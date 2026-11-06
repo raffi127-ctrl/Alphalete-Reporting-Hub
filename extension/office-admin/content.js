@@ -49,7 +49,9 @@
     // Which of this admin's offices is this calendar? By account number.
     const pageOffice = LucyOffered.officeId();
     const offices = me.offices || [];
-    const office = offices.find(o => o.appstream && o.appstream === pageOffice) ||
+    // An office can have several accounts ("11280, 24153"), all on one Sterling.
+    const accts = o => (String(o.appstream || '').match(/\d+/g) || []);
+    const office = offices.find(o => pageOffice && accts(o).includes(pageOffice)) ||
       (!pageOffice && offices.length === 1 ? offices[0] : null);
     if (!office) {
       shell('<p class="lucy-oa-err">' + (pageOffice
@@ -76,7 +78,7 @@
 
   function render(office, people, already) {
     const loc = '<div class="lucy-oa-loc">📍 ' + esc(office.city) + ', ' + esc(office.state) +
-      ' <span class="lucy-oa-acct">· account ' + esc(office.appstream) + '</span></div>';
+      ' <span class="lucy-oa-acct">· account ' + esc(LucyOffered.officeId() || office.appstream) + '</span></div>';
     const mode = office.mode === 'live' ? '' :
       '<div class="lucy-oa-test">Test mode: checked, not sent.</div>';
     if (!people.length) {
@@ -129,7 +131,8 @@
       const sentNames = picked.filter(p => !dupEmails.includes((p.email || '').toLowerCase()))
                               .map(p => (p.first_name + ' ' + p.last_name).trim());
       await chrome.storage.local.set({lastSend: {office: office.office, job_id: out.job_id,
-                                                 at: new Date().toISOString(), names: sentNames}});
+                                                 at: new Date().toISOString(), names: sentNames,
+                                                 test: office.mode !== 'live'}});
       // Everyone on today's list, and why each one left out was left out.
       const nm = p => (p.first_name + ' ' + p.last_name).trim();
       const pickedSet = new Set(picked);
@@ -189,7 +192,7 @@
       : r.status === 'sent'
         ? (done.length === total ? '✅' : '⚠️') + ' Sent to <b>' + done.length + '/' + total + '</b>'
         : '⚠️ Sent to <b>0/' + total + '</b>';
-    const list = done.length ? '<div class="lucy-oa-names">' + esc(done.join(', ')) + '</div>' : '';
+    const list = done.length ? '<ol class="lucy-oa-names">' + done.map(n => '<li>' + esc(n) + '</li>').join('') + '</ol>' : '';
     const miss = notSent.length
       ? '<div class="lucy-oa-miss"><b>Not sent (' + notSent.length + '):</b><ul>' +
         notSent.map(m => '<li><b>' + esc(m.name) + '</b> — ' + esc(m.why) + '</li>').join('') + '</ul></div>'

@@ -56,7 +56,7 @@
 #lucy-oa-panel .lucy-oa-bar { height: 8px; background: #dbe4ee; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
 #lucy-oa-panel .lucy-oa-bar span { display: block; height: 100%; background: #1F6FB2; transition: width 1s linear; }
 #lucy-oa-panel .lucy-oa-head2 { font-size: 17px; margin-bottom: 4px; }
-#lucy-oa-panel .lucy-oa-names { font-size: 13px; margin-bottom: 6px; }
+#lucy-oa-panel .lucy-oa-names { font-size: 13px; margin: 4px 0 6px 20px; padding: 0; }
 #lucy-oa-panel .lucy-oa-miss { background: #fff; color: #8a1c13; border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
 #lucy-oa-panel .lucy-oa-miss ul { margin: 4px 0 0 18px; padding: 0; }
 #lucy-oa-panel .lucy-oa-stay { background: #FFF6DB; color: #5c4400; border-radius: 6px; padding: 8px 10px; margin-top: 8px; font-size: 14px; }

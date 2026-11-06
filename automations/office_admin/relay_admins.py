@@ -39,9 +39,14 @@ def make_hash(password: str, salt: Optional[str] = None) -> tuple:
     return salt, hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
 
+# SIMPLE ON PURPOSE (Megan 2026-11-06: "super simple"): office admins type it
+# once per computer. A word + 4 digits ("lucy4827"); the relay locks a login
+# out for 15 minutes after repeated misses, and --disable ends it at once.
+_WORDS = ("lucy", "sunny", "tiger", "maple", "river", "rocket", "peach", "comet")
+
+
 def new_password() -> str:
-    alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    return "".join(secrets.choice(alphabet) for _ in range(14))
+    return secrets.choice(_WORDS) + "".join(secrets.choice("23456789") for _ in range(4))
 
 
 def _tab():
@@ -82,6 +87,8 @@ def main(argv=None) -> int:
     g.add_argument("--list", action="store_true")
     ap.add_argument("--office")
     ap.add_argument("--name", default="")
+    ap.add_argument("--password", default="",
+                    help="with --add/--reset: use this password instead of a made-up one")
     a = ap.parse_args(argv)
     ws = _tab()
     rows = _rows(ws)
@@ -109,7 +116,7 @@ def main(argv=None) -> int:
                    value_input_option="RAW")
             print("added office %s to %s (same password, mode %s)" % (o.key, u, o.bgc_mode))
             return 0
-        pw = new_password()
+        pw = a.password.strip() or new_password()
         salt, h = make_hash(pw)
         _retry(ws.append_row, [u, o.key, salt, h, "TRUE", o.bgc_mode, a.name.strip(), "",
                                o.appstream_id],
@@ -147,7 +154,7 @@ def main(argv=None) -> int:
             _retry(ws.update, [[m]], "F%d" % row)
         print("%s is now %s (all offices)" % (target, m))
     else:
-        pw = new_password()
+        pw = a.password.strip() or new_password()
         salt, h = make_hash(pw)
         for row in mine:   # one password across every office row
             _retry(ws.update, [[salt, h, "TRUE"]], "C%d:E%d" % (row, row))

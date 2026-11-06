@@ -159,8 +159,11 @@ def account_number(office: C.Office, log=_log) -> str:
     try:
         from automations.headshots.eco import _call
         got = str(_call({"office_settings": {"office": office.key}}).get("appstream") or "")
-        if got:
-            return got
+        # Several accounts ("11280, 24153") since 11/06: the alert still reads
+        # the first one only. Widen it before switching the alert on.
+        first = (got.replace(",", " ").split() or [""])[0]
+        if first:
+            return first
     except Exception as e:  # noqa: BLE001 -- relay down: our value
         log("  relay settings not read (%s) -- using %s" % (type(e).__name__, office.appstream_id))
     return office.appstream_id
