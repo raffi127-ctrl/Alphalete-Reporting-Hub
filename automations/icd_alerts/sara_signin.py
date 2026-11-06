@@ -203,6 +203,18 @@ def run(log=print) -> int:
                    else "signed in, but the hidden read is still challenged (rc %d)" % rc,
                    detail="\n".join(_LAST_VERDICT), log=log)
     if rc == 0:
+        # A PROVEN SIGN-IN SWITCHES SARAPLUS ON for an office that enrolled
+        # before its account existed (config.SARA_WAITING_KEYS) -- here, not by
+        # somebody editing the list later. Nigel 2026-11-06: his install-time
+        # sign-in passed at 14:25 while his key sat paused in the code.
+        try:
+            from automations.icd_alerts import config as _C
+            if any(str(e.get("office_key", "")).lower() in _C.SARA_WAITING_KEYS
+                   for e in _C.enrollments()):
+                _C.mark_sara_activated("sara_signin hidden read passed")
+                log("SaraPlus is now switched ON for this office.")
+        except Exception:  # noqa: BLE001 -- never fail a proven sign-in over a marker
+            pass
         # THE PERSON'S FIX IS TRIED AT ONCE. hold_sara() stands the sweeps
         # down for 30 minutes after a wall; a code typed here at 11:45 that
         # left the hold in place had Rashad's first row waiting on the clock
