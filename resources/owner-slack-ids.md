@@ -14,6 +14,7 @@ When you confirm a new ID, add it here in the same commit.
 | Evelyn (Eve) Sobrino | Approver: review gates, bulletins | U088E2KJEV8 |
 | Rafael (Raf) Hidalgo | Owner | U045Z8N0ZQC |
 | Maud Miller | | U045USN7NCD |
+| JD Mascorro | Apex new-starts heads-up DM (with Alisson, Eve, Megan) | U05094TTPKQ | josh.mascorro17@gmail.com, confirmed by Megan 2026-11-06 (screenshot). ⚠ look-alike U068T4LA0C8 "JD Mascorro" (jd.alphaletemarketing@gmail.com) is a second account |
 | Camila Hornos Kraschinsky | Recruiting (ARS reports); tagged on 1st to 2nd Below the Mark | U07FWSYP3NV |
 | Lucy Reporting | The bot account all reports post as | U0BCG8F9B5Z |
 

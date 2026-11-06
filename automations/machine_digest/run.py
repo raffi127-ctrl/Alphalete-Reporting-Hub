@@ -456,7 +456,11 @@ def _nudge_specs(cfg) -> dict:
                      "hour": int(spec.get("hour", 12)),
                      "how": str(spec.get("how") or ""),
                      "name": rep_raw.get("display_name") or rid,
-                     "aliases": aliases}
+                     "aliases": aliases,
+                     # Slack user ids: the reminder goes to THEIR group DM, not
+                     # #claudecorrections (Megan 2026-11-06, Apex: "get it out
+                     # of the alerts channel"). Empty = the channel, as before.
+                     "to": [str(u) for u in (spec.get("to") or []) if u]}
     return out
 
 
@@ -1643,7 +1647,7 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
                     when=("last day to do it this week" if _last
                           else "due today or tomorrow"),
                     day=day_human, machine_label="", how=_spec["how"],
-                    dry_run=dry_run)
+                    to_users=_spec.get("to") or None, dry_run=dry_run)
                 newly.add(cid)
                 posted += 1
     except Exception as e:  # noqa: BLE001 — a missed nudge must not sink the pass

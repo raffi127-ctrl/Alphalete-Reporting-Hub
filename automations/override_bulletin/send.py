@@ -836,9 +836,16 @@ def main(argv=None):
         return 1 if wanted and not (res or {}).get("published") else 0
 
     if a.rcs_ncs:
-        return _rc(send_rcs_ncs(do_send=a.send, preview=a.preview, test=a.test,
-                                force=a.force, notify=a.notify,
-                                out_dir=a.out_dir))
+        res = send_rcs_ncs(do_send=a.send, preview=a.preview, test=a.test,
+                           force=a.force, notify=a.notify, out_dir=a.out_dir)
+        # Already out this week is DONE, not a failure. review_gate retries the
+        # companion on every pass after the DD send (f6f68a7), so this branch is
+        # hit hourly once it has gone; as exit 1 it opened "RCs and NCs failed"
+        # at 19:00 Thu 2026-11-05 and repeated to 22:00, an hour after the email
+        # went out at 18:00. A hard block still exits 1.
+        if (res or {}).get("reason") == "already sent":
+            return 0
+        return _rc(res)
     if a.dd:
         return _rc(send_dd(do_send=a.send, preview=a.preview, test=a.test,
                            force=a.force, notify=a.notify, out_dir=a.out_dir,

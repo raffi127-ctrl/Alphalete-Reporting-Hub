@@ -135,7 +135,7 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
 
 def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day="",
                           machine_label="Lucy 2", how="", channel="email",
-                          dry_run=False):
+                          to_users=None, dry_run=False):
     """Per-report problem alert for a STANDALONE report that isn't in the
     orchestrator loop (Lucy 2's launchd agents, summarized off the shared Hub
     Activity log by machine_digest) — so Lucy 2 gets the SAME per-problem Slack
@@ -144,6 +144,31 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
     knows (name, id, status, time) + a paste-to-Claude block. Same channel routing
     + email fallback as send_failure_alert. Returns True if delivered."""
     lbl = machine_label or "Lucy 2"
+    if kind == "NUDGE" and to_users:
+        # A REMINDER FOR THE PEOPLE WHO PRESS THE BUTTON, not an incident
+        # (Megan 2026-11-06, New Starts -> Apex: "set up a dm of
+        # Alisson/JD/Eve/Myself for this and get it out of the alerts
+        # channel"). One plain message in their group DM. Once a day comes
+        # from the watcher's own day ledger; nothing to close, it just stops
+        # once somebody runs it this week.
+        text = (f":wave: *{name}* — heads up, nobody's run this yet"
+                + (f" · {when}" if when else "")
+                + (f"\n{how}" if how else ""))
+        if dry_run:
+            print(f"[notify] DRY-RUN — nudge DM → {','.join(to_users)}:\n{text}\n",
+                  flush=True)
+            return True
+        try:
+            from automations.shared.slack_metrics_post import _client
+            cl = _client()
+            dm = cl.conversations_open(users=",".join(to_users))["channel"]["id"]
+            cl.chat_postMessage(channel=dm, text=text, unfurl_links=False,
+                                unfurl_media=False)
+            print(f"[notify] nudge DM ({report_id}) → {dm}", flush=True)
+            return True
+        except Exception as e:  # noqa: BLE001 — fall back to the channel
+            print(f"[notify] nudge DM failed ({report_id}): {e} — "
+                  f"posting to the channel instead", flush=True)
     if _corrections_channel(cfg):
         if kind == "MISSED":
             title = f":no_entry_sign: *{name}* — didn't run today on {lbl}"

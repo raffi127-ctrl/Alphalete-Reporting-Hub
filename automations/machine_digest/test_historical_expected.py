@@ -586,6 +586,43 @@ class TheNotRunYetNudge(unittest.TestCase):
         self.assertEqual(specs["apex-new-starts"]["weekdays"], [3, 4])
         self.assertTrue(specs["apex-new-starts"]["how"])   # must say how to run it
 
+    def test_the_apex_nudge_goes_to_its_group_dm(self):
+        """Megan 2026-11-06: Alisson, JD, Eve and Megan, not #claudecorrections."""
+        from automations.day_orchestrator import registry as _reg
+        to = _nudge_specs(_reg.load_config())["apex-new-starts"]["to"]
+        self.assertEqual(sorted(to), sorted(["U0BBG374GE9", "U05094TTPKQ",
+                                             "U088E2KJEV8", "U04G5HJBGFN"]))
+
+    def test_a_nudge_with_people_never_touches_the_channel(self):
+        from unittest import mock
+        from automations.day_orchestrator import notify
+        sent = []
+
+        class _Cl:
+            def conversations_open(self, users):
+                sent.append(("open", users))
+                return {"channel": {"id": "G1"}}
+
+            def chat_postMessage(self, **kw):
+                sent.append(("post", kw["channel"], kw["text"]))
+                return {"ok": True}
+
+        with mock.patch("automations.shared.slack_metrics_post._client",
+                        lambda: _Cl()), \
+             mock.patch.object(notify, "_incident_post",
+                               side_effect=AssertionError("posted to the channel")), \
+             mock.patch.object(notify, "_post_corrections",
+                               side_effect=AssertionError("posted to the channel")):
+            ok = notify.send_standalone_alert(
+                object(), name="New Starts → Apex", report_id="apex-new-starts",
+                kind="NUDGE", status="not run yet this week",
+                when="due today or tomorrow", how="press it",
+                to_users=["U1", "U2"])
+        self.assertTrue(ok)
+        self.assertEqual(sent[0], ("open", "U1,U2"))
+        self.assertEqual(sent[1][1], "G1")
+        self.assertIn("nobody's run this yet", sent[1][2])
+
     def test_nudging_and_silencing_are_declared_together(self):
         """THE PAIRING. A card that nudges must also be hand_run_only, or step 2
         posts the ":no_entry_sign: didn't run today on <machine>" incident and

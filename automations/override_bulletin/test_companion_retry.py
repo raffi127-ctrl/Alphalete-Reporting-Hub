@@ -33,3 +33,30 @@ def test_soft_launch_mode_is_kept(sent_week):
 def test_a_check_without_send_never_sends(sent_week):
     assert RG.main(["--check"]) == 0
     assert sent_week == []
+
+
+# --- the sender's exit code, which the retry above leans on --------------------
+# The first cut of the retry faked send_companion, so it never saw that
+# `send.py --rcs-ncs --send` EXITS 1 when the week is already out. Every pass
+# after the 18:00 send on Thu 2026-11-05 then read as "RCs and NCs failed".
+
+from automations.override_bulletin import send as S
+
+
+def _exit_for(monkeypatch, result):
+    monkeypatch.setattr(S, "send_rcs_ncs", lambda **_k: result)
+    return S.main(["--rcs-ncs", "--send", "--notify"])
+
+
+def test_already_sent_is_a_clean_exit(monkeypatch):
+    assert _exit_for(monkeypatch, {"published": False,
+                                   "reason": "already sent"}) == 0
+
+
+def test_a_hard_block_still_fails(monkeypatch):
+    assert _exit_for(monkeypatch, {"published": False,
+                                   "reason": "hard block"}) == 1
+
+
+def test_a_real_send_is_clean(monkeypatch):
+    assert _exit_for(monkeypatch, {"published": True}) == 0
