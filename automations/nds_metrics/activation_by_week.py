@@ -190,12 +190,42 @@ def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
                                  "color": _color(we, today, rate)}
         return cells
 
-    rows = [("Crew Total (all reps)", "", True, _cells(data.get(TOTAL, {})))]
+    # Carlos 2026-11-06: under the crew activation rate, the crew CANCEL rate
+    # (never-activated dead lines / sold; the Churn Rates board's colours)
+    # and how many lines are still PENDING; the rep rows stay activation only.
+    def _crew_cancel() -> dict:
+        cells = {}
+        for we in all_weeks:
+            c = data.get(TOTAL, {}).get(we)
+            if not c or not c["lines"]:
+                cells[col_of[we]] = {}
+                continue
+            rate = c["cancelled"] / c["lines"]
+            cells[col_of[we]] = {"act": str(c["lines"]), "disc": str(c["cancelled"]),
+                                 "rate": "%s%%" % round(rate * 100, 1),
+                                 "color": ("Green" if rate < 0.04 else
+                                           "Yellow" if rate < 0.06 else "Red")}
+        return cells
+
+    def _crew_pending() -> dict:
+        cells = {}
+        for we in all_weeks:
+            c = data.get(TOTAL, {}).get(we)
+            if not c or not c["lines"]:
+                cells[col_of[we]] = {}
+                continue
+            cells[col_of[we]] = {"rate": "%d of %d" % (c["pending"], c["lines"]), "color": ""}
+        return cells
+
+    rows = [("Crew Total (all reps) \u2014 activation rate", "", True, _cells(data.get(TOTAL, {}))),
+            ("Crew Total \u2014 cancel rate", "", True, _crew_cancel()),
+            ("Crew Total \u2014 lines still pending", "", True, _crew_pending())]
     for rep in sorted((k for k in data if k != TOTAL), key=str.lower):
         rows.append((rep, "", False, _cells(data[rep])))
     sub = ("Carlos's crew on his own NDS code \u2014 %s (of the sales made each Mon\u2013Sun week: "
            "activated/sold lines + rate off SaraPlus per-line statuses; activated = went Active, "
-           "churned-after included; cancels count as sold; * = week in progress; last %d weeks; "
+           "churned-after included; cancel rate = cancelled-before-activating/sold; cancels count as sold; "
+           "* = week in progress; last %d weeks; "
            "wireless report %s, SaraPlus %s)"
            % (today.strftime("%B %d, %Y"), WEEKS,
               feed_date.strftime("%m/%d") if feed_date else "n/a",
