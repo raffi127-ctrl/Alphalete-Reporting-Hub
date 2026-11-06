@@ -57,3 +57,12 @@ def test_all_blank_column_is_dropped():
     last = {"headers": ["#", "Rep", "Knocks", "Apps"], "rows": [["1", "Ana Lopez", "12", ""]]}
     header, rows, bgs, n_tot = W.build(prev, last)
     assert header == ["Rep", "Knocks"] and rows[0] == ["Ana Lopez", "10 → 12  (+2)"]
+
+
+def test_recap_days_monday_to_saturday():
+    import datetime as _dt
+    from automations.nds_oof.run import recap_days
+    days = recap_days(_dt.date(2026, 10, 31))
+    assert days[0] == _dt.date(2026, 10, 26)
+    assert days[-1] == _dt.date(2026, 10, 31)
+    assert [d.weekday() for d in days] == [0, 1, 2, 3, 4, 5]

@@ -22,6 +22,10 @@ CAMPAIGN_ID = "1"       # picker href on 2026-10-19: p=510&invD2DClientId=1
 # Where it goes (Carlos's rooms).
 TEXT_GROUPS = ["NEW A Players", "ATT B2B Leaders"]
 SLACK_CHANNEL = "C07J46MQNUX"                  # #alphalete-gp-sales
+# `--recap-week`: last week's Mon-Sat board + every day's end-of-day board in
+# ONE new thread here (Carlos 2026-11-06: "Create a thread on the a players
+# slack and post them all on there").
+RECAP_CHANNEL = "C0AJQA8P716"                  # #a-players-b2b
 THREAD_BOARD = "%s Knocks Board" % TEAM        # "<title> — Month Dth YYYY" (shared style)
 THREAD_GAPS = "%s 15 Min Gaps" % TEAM
 

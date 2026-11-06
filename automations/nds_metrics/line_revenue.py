@@ -139,6 +139,19 @@ def replay(feeds: Sequence[Tuple[dt.date, Path]], soh_active: Dict[str, str],
             continue
         WL.update_state(state, lines, d, {}, soh_active,
                         log=lambda *_a, **_k: None)
+        if not folded:
+            # The EARLIEST feed: a line already Active on first sight with no
+            # SOH active date to borrow (a Partial order) got stamped "live"
+            # on this day, which is only "active on or before". Date it at
+            # its ORDER date instead -- 2026-11-06: Yesenia Cordero's tablet
+            # (order 10/20, paid 10/22) showed as a 10/28 activation.
+            for ln in lines:
+                rec = state.get(WL.line_key(ln))
+                if (rec and rec.get("src") == "live"
+                        and rec.get("first_active") == d.isoformat()):
+                    od = _parse_date(ln.get("order_date", ""))
+                    rec["first_active"] = (od or d).isoformat()
+                    rec["src"] = "orderdate"
         folded.append(d)
         newest_date, newest_lines = d, lines
     if folded:

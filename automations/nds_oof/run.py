@@ -578,6 +578,115 @@ def _share_dump() -> int:
         _log("share-dump: key=%r owner=%r day=%r at=%r rows=%s hits=%s"
              % (r[S.K_KEY], r[S.K_OWNER], r[S.K_DAY], r[S.K_AT],
                 "bad-json" if rows is None else len(rows), hits))
+
+
+# --- the week recap (one thread, all the pictures) ---------------------------
+def recap_days(saturday: dt.date) -> List[dt.date]:
+    """Mon..Sat of the week that ends on `saturday`."""
+    monday = saturday - dt.timedelta(days=5)
+    return [monday + dt.timedelta(days=i) for i in range(6)]
+
+
+def _last_board_from_slack(day: dt.date, client):
+    """A day with no board on disk: pull the LAST '*NDS Knocks Board — H:MM*'
+    reply (with its picture) back out of that day's NDS Metrics thread in
+    #alphalete-gp-sales. -> (downloaded paths, clock text)."""
+    import requests
+    state = (Path(__file__).resolve().parents[2] / "output" / "nds_metrics"
+             / f"thread_{day.isoformat()}.json")
+    try:
+        ts = json.loads(state.read_text()).get("ts")
+    except Exception:  # noqa: BLE001
+        ts = None
+    if not ts:
+        _log("%s: no NDS Metrics thread state on this box" % day)
+        return [], ""
+    reps = client.conversations_replies(channel=C.SLACK_CHANNEL, ts=ts, limit=500)
+    prefix = "%s Knocks Board — " % C.TEAM
+    hits = [m for m in reps.get("messages", [])[1:]
+            if (m.get("text") or "").replace("*", "").startswith(prefix)
+            and "Mon–Sat" not in (m.get("text") or "") and m.get("files")]
+    if not hits:
+        _log("%s: no board reply in the NDS Metrics thread" % day)
+        return [], ""
+    last = max(hits, key=lambda m: float(m.get("ts") or 0))
+    clock = (last.get("text") or "").replace("*", "").split("— ", 1)[-1].strip()
+    out_dir = OUTPUT_DIR / day.isoformat()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for f in last.get("files", []):
+        url = f.get("url_private_download") or f.get("url_private")
+        if not url:
+            continue
+        r = requests.get(url, headers={"Authorization": "Bearer %s" % client.token},
+                         timeout=60)
+        if r.status_code != 200 or len(r.content) < 1000:
+            _log("%s: download of %s failed (%s)" % (day, f.get("name"), r.status_code))
+            continue
+        dest = out_dir / ("slack_%s" % (f.get("name") or "board.png"))
+        dest.write_bytes(r.content)
+        paths.append(dest)
+    return paths, clock
+
+
+def recap_week(saturday: dt.date, *, channel: str, send: bool) -> int:
+    """Carlos 2026-11-06: "send me the weekly knocks board for last week and
+    each individual end of day knocks for last week. Create a thread on the a
+    players slack and post them all on there." ONE new thread in `channel`
+    (config.RECAP_CHANNEL = #a-players-b2b): the Mon–Sat combined board
+    first, then each day's LAST board of the day. output/nds_oof/<date>/
+    holds one board per day that every tick overwrites, so the file on disk
+    IS the end-of-day picture; a day with nothing on disk is fetched back
+    from that day's NDS Metrics thread. Dry by default: lists the plan."""
+    from automations.weekly_knock_dispositions import run as W
+    days = recap_days(saturday)
+    monday = days[0]
+    png = (Path(W.OUT_DIR) / W._slug(C.WEEK_ROW_KEY)
+           / ("weekly_knock_dispositions_%s.png" % saturday.isoformat()))
+    if not png.exists():
+        _log("weekly board: not on disk -- rendering it (dry) with weekly_knock_dispositions")
+        W.main(["--office", C.WEEK_ROW_KEY, saturday.isoformat(), "--dry-run"])
+    if not png.exists():
+        _log("weekly board: still no picture at %s" % png)
+        return 1
+    span = "%s–%s" % (monday.strftime("%-m/%-d"), saturday.strftime("%-m/%-d"))
+    items = [(png, "*%s Knocks Board — Mon–Sat %s*" % (C.TEAM, span))]
+    _log("weekly: %s" % png)
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    for d in days:
+        ddir = OUTPUT_DIR / d.isoformat()
+        pngs = (sorted((p for p in ddir.glob("*.png") if not p.name.startswith("slack_")),
+                       key=lambda p: p.stat().st_mtime) if ddir.exists() else [])
+        src = "disk"
+        if pngs:
+            newest = pngs[-1].stat().st_mtime
+            pngs = [p for p in pngs if newest - p.stat().st_mtime < 120]   # the last tick's set
+            when = dt.datetime.fromtimestamp(newest).strftime("%-I:%M %p")
+        else:
+            src = "slack"
+            pngs, when = _last_board_from_slack(d, client)
+        if not pngs:
+            _log("%s: no end-of-day board anywhere -- skipped" % d)
+            continue
+        label = "*%s Knocks Board — %s %s, end of day (%s)*" % (
+            C.TEAM, d.strftime("%a"), d.strftime("%-m/%-d"), when)
+        for i, p in enumerate(pngs):
+            items.append((p, label if i == 0 else None))
+        _log("%s: %s (%s, %s)" % (d, ", ".join(p.name for p in pngs), src, when))
+    head = ("*%s Knocks — week of Mon %s – Sat %s*\nThe Mon–Sat board, then each "
+            "day's end-of-day board, in this thread." % (
+                C.TEAM, monday.strftime("%-m/%-d"), saturday.strftime("%-m/%-d")))
+    if not send:
+        _log("DRY RUN -- would open a thread in %s:\n%s\nand post %d picture(s)"
+             % (channel, head, len(items)))
+        return 0
+    parent = client.chat_postMessage(channel=channel, text=head)
+    ts = parent["ts"]
+    for p, comment in items:
+        client.files_upload_v2(channel=channel, file=str(p), filename=p.name,
+                               initial_comment=comment, thread_ts=ts)
+    _log("posted %d picture(s) in a new thread (%s) in %s" % (len(items), ts, channel))
     return 0
 
 
@@ -598,6 +707,11 @@ def main(argv=None) -> int:
                          "--send posts it (Slack only)")
     ap.add_argument("--no-gaps", action="store_true",
                     help="board only: no gap list, no call-out (a hand run after hours)")
+    ap.add_argument("--recap-week", metavar="SATURDAY",
+                    help="one new thread with that week's Mon–Sat board + every "
+                         "day's end-of-day board (YYYY-MM-DD); --send posts it")
+    ap.add_argument("--recap-channel", default=C.RECAP_CHANNEL,
+                    help="where --recap-week opens its thread (default #a-players-b2b)")
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--share-dump", action="store_true",
                     help="print every 'Lucy Knocks' row (key/owner/day/at/"
@@ -605,6 +719,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if args.share_dump:
         return _share_dump()
+    if args.recap_week:
+        return recap_week(dt.date.fromisoformat(args.recap_week),
+                          channel=args.recap_channel, send=args.send)
     if args.compare:
         from automations.nds_oof import week_compare as WC
         return WC.post(dt.date.fromisoformat(args.compare),
