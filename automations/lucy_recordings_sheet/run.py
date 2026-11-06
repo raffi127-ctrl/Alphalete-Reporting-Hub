@@ -298,6 +298,7 @@ LAYOUTS = {
         "hdr": ["Owner", "Recordings", "2nd Rounds Done", "% Recorded", "Avg Score"],
         "calc": CALC_OWNER, "cols": "B2:F", "owner_col": "B2:B", "sort": 2,
         "pct": 3, "score": 4, "widths": [250, 150, 150, 150, 150],
+        "other": TAB_REP, "other_label": "View by Rep  →",
         "cards": [("RECORDINGS", 2, "0"), ("2ND ROUNDS DONE", 3, "0"),
                   ("% RECORDED", 4, "0%"), ("AVG SCORE", 5, "0.0")],
     },
@@ -305,6 +306,7 @@ LAYOUTS = {
         "hdr": ["Rep", "Owner", "Recordings", "Avg Score"],
         "calc": CALC_REP, "cols": "B2:E", "owner_col": "C2:C", "sort": 3,
         "pct": None, "score": 3, "widths": [230, 230, 150, 150],
+        "other": TAB_OWNER, "other_label": "←  View by Owner",
         "cards": [("RECORDINGS", 2, "0"), ("REPS RECORDING", 6, "0"),
                   ("AVG SCORE", 5, "0.0")],
     },
@@ -393,6 +395,9 @@ def restyle(S, ssid):
         last = chr(ord("A") + ncol - 1)
         vals += [
             {"range": "%s!A1" % _q(tab), "values": [[TITLE]]},
+            # A link to the other tab, top right - the bottom tab bar is easy to miss.
+            {"range": "%s!%s1" % (_q(tab), last), "values": [[
+                '=HYPERLINK("#gid=%d", "%s")' % (ids[lay["other"]], lay["other_label"])]]},
             {"range": "%s!A2:B2" % _q(tab), "values": [["Month", this_month]]},
             {"range": "%s!A4" % _q(tab), "values": [[c[0] for c in lay["cards"]]]},
             {"range": "%s!A5" % _q(tab), "values": [[card_formula(c[1]) for c in lay["cards"]]]},
@@ -410,8 +415,14 @@ def restyle(S, ssid):
                 "hideGridlines": True, "frozenRowCount": R_HDR + 1}},
                 "fields": "gridProperties(hideGridlines,frozenRowCount)"}},
             # Title bar.
-            {"mergeCells": {"range": _rng(sid, R_TITLE, R_TITLE + 1, 0, ncol), "mergeType": "MERGE_ALL"}},
-            _fmt(sid, R_TITLE, R_TITLE + 1, 0, ncol,
+            {"mergeCells": {"range": _rng(sid, R_TITLE, R_TITLE + 1, 0, ncol - 1), "mergeType": "MERGE_ALL"}},
+            _fmt(sid, R_TITLE, R_TITLE + 1, ncol - 1, ncol,
+                 {"backgroundColor": NAVY, "horizontalAlignment": "RIGHT",
+                  "padding": {"right": 14},
+                  "textFormat": {"fontFamily": "Roboto", "fontSize": 10, "bold": True,
+                                 "underline": True, "foregroundColor": _rgb("FFD666")}},
+                 "userEnteredFormat(backgroundColor,horizontalAlignment,padding,textFormat)"),
+            _fmt(sid, R_TITLE, R_TITLE + 1, 0, ncol - 1,
                  {"backgroundColor": NAVY, "horizontalAlignment": "LEFT",
                   "padding": {"left": 14},
                   "textFormat": {"fontFamily": "Montserrat", "fontSize": 16, "bold": True,
@@ -536,7 +547,6 @@ def restyle(S, ssid):
                     "minpoint": {"color": LOW, "type": "NUMBER", "value": "0"},
                     "midpoint": {"color": MID, "type": "NUMBER", "value": "0.25"},
                     "maxpoint": {"color": GOOD, "type": "NUMBER", "value": "0.5"}}}}})
-        _ = last
     S.post("%s/%s/values:batchUpdate" % (SHEETS, ssid),
            json={"valueInputOption": "USER_ENTERED", "data": vals}).raise_for_status()
     S.post("%s/%s:batchUpdate" % (SHEETS, ssid), json={"requests": reqs}).raise_for_status()
