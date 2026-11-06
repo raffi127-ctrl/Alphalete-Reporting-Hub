@@ -73,6 +73,17 @@ class GridReading(unittest.TestCase):
                                  "office": "Atoori Management, Inc.", "i": 1,
                                  "selected": True}])
 
+    def test_the_hidden_account_key_is_not_the_office_id(self):
+        # the live grid (2026-11-06): accountpk, office id, owner, office name
+        grid = {"title": "", "rows": [
+            {"i": 0, "cells": ["", "10366", "20034", "Nigel Marshall", "VP Executives, Inc"],
+             "selected": False}]}
+        rows = A._office_rows(grid)
+        self.assertEqual(rows[0]["id"], "20034")
+        self.assertEqual(rows[0]["owner"], "Nigel Marshall")
+        self.assertEqual(rows[0]["office"], "VP Executives, Inc")
+        self.assertEqual(A.match_office(rows, "x", "20034")[0]["id"], "20034")
+
 
 if __name__ == "__main__":
     unittest.main()

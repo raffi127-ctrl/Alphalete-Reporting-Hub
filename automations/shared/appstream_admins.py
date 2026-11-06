@@ -127,10 +127,16 @@ def _grids(page) -> List[Dict]:
 
 
 def _office_rows(grid: Dict) -> List[Dict]:
+    """Rows as [accountpk (hidden), office id, owner, office name] — the first
+    cell is the account KEY, not the office (10366 / 20034 / Nigel Marshall /
+    VP Executives, Inc on 2026-11-06). Older 3-cell shape kept as a fallback."""
     out = []
     for r in grid.get("rows", []):
         cells = [c for c in r.get("cells", []) if c != ""]
-        if len(cells) >= 3 and re.fullmatch(r"\d+", cells[0]):
+        if len(cells) >= 4 and re.fullmatch(r"\d+", cells[0]) and re.fullmatch(r"\d+", cells[1]):
+            out.append({"id": cells[1], "owner": cells[2], "office": cells[3],
+                        "key": cells[0], "i": r["i"], "selected": r.get("selected", False)})
+        elif len(cells) >= 3 and re.fullmatch(r"\d+", cells[0]):
             out.append({"id": cells[0], "owner": cells[1], "office": cells[2],
                         "i": r["i"], "selected": r.get("selected", False)})
     return out
@@ -234,13 +240,21 @@ def _rows_from_json(text: str) -> List[Dict]:
     _walk(data, found)
     for d in found:
         vals = {k: str(v) for k, v in d.items() if isinstance(v, (str, int))}
+        low = {k.lower(): v for k, v in vals.items()}
+        # the real columns (seen 2026-11-06): accountpk, officefk, officename,
+        # ownername — the OFFICE id is officefk, not the first number in the row
+        oid = next((v for k, v in low.items() if k in ("officefk", "officeid", "office_id")
+                    and re.fullmatch(r"\d{3,6}", v)), "")
+        owner = next((v for k, v in low.items() if "owner" in k), "")
+        name = next((v for k, v in low.items() if "officename" in k or k == "name"), "")
         ids = [v for v in vals.values() if re.fullmatch(r"\d{3,6}", v)]
         texts = [v for v in vals.values() if v and not re.fullmatch(r"\d+", v)]
         # {"totalcount": "173"} is a count, not an office: a row has a name too
-        if not ids or not texts:
+        if not (oid or ids) or not (owner or texts):
             continue
-        out.append({"id": ids[0], "owner": texts[0] if texts else "",
-                    "office": texts[1] if len(texts) > 1 else "", "raw": vals})
+        out.append({"id": oid or ids[0], "owner": owner or texts[0],
+                    "office": name or (texts[1] if len(texts) > 1 else ""), "raw": vals,
+                    "all_ids": ids})
     return out
 
 
@@ -467,10 +481,11 @@ def verify_login(login: Dict, log=print, headed: bool = False) -> Optional[bool]
                 log("login verified: signed in as %s (no office console yet)"
                     % login["username"])
                 return True
-            log("login NOT verified: still on the sign-in page")
+            log("login NOT verified: still on the sign-in page · %s"
+                % body[:300].replace("\n", " "))
             return False
     except Exception as e:  # noqa: BLE001
-        log("login check could not run: %s" % str(e)[:200])
+        log("login check could not run: %s" % str(e)[:300].replace("\n", " "))
         return None
     finally:
         shutil.rmtree(probe, ignore_errors=True)
@@ -707,8 +722,18 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
             % (len(grids["assigned"]), len(grids["not_assigned"]),
                len(_CAPTURED["assigned"]), len(_CAPTURED["not_assigned"]),
                _grid_diag(page)))
-        if _CAPTURED["not_assigned"]:
-            log("data sample : %s" % json.dumps(_CAPTURED["not_assigned"][0]["raw"])[:200])
+        for label in ("assigned", "not_assigned"):
+            if _CAPTURED[label]:
+                log("data %-12s: %s" % (label, json.dumps(_CAPTURED[label][0]["raw"])[:200]))
+            if grids[label]:
+                log("screen %-10s: %s" % (label, json.dumps(grids[label][0])[:200]))
+        # if any screen/data row carries the wanted office id anywhere, say so
+        if office_id:
+            where = [label for label in ("assigned", "not_assigned")
+                     if any(str(office_id) in (r.get("all_ids") or [r.get("id")])
+                            or str(office_id) in json.dumps(r) for r in
+                            (_CAPTURED[label] + grids[label]))]
+            log("office %s appears in: %s" % (office_id, ", ".join(where) or "nowhere"))
         # the data call is the truth; the screen may hold only the first rows
         if len(_CAPTURED["not_assigned"]) > len(grids["not_assigned"]):
             grids["not_assigned"] = _CAPTURED["not_assigned"]
