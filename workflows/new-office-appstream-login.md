@@ -17,9 +17,12 @@ Code: `automations.shared.appstream_provision.eco_login("Nigel Marshall")`.
 ## One command, run with the metrics dry run
 
 ```bash
-python -m automations.day_orchestrator.mini_control --by Megan --enqueue provision_appstream "Nigel Marshall" --office-id 20034 --machine "Lucy 4"
+python -m automations.day_orchestrator.mini_control --by Megan --enqueue provision_appstream "Nigel Marshall" --office-id 20034 --machine "Lucy 2"
 ```
 
+- `--machine` must be an **AppStream holder** (Lucy 1, 2 or 3). Lucy 4 is
+  deliberately not one (a fourth holder churns the shared Lucy Reports token),
+  so the command exits 4 there. Lucy 2 or 3 by default; Lucy 1 is the busiest.
 - `--office-id` = their OwnerVille/AppStream office number (same one as
   `ov_account` in `office_metrics/onboarded_offices.json`). Needed when an
   owner has more than one office; otherwise the name is enough.

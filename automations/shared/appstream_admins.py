@@ -343,8 +343,11 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
     login = eco_login(owner)
     office_key = office_key or norm(owner).split()[0]
     log("owner       : %s" % owner)
-    log("login       : %s / %s  (first '%s', last '%s')"
-        % (login["username"], login["password"], login["first_name"], login["last_name"]))
+    # the password is never printed: this log's tail lands in the queue's
+    # Result cell, which `lucy status` puts on screen. The 'AppStream Logins'
+    # tab holds it.
+    log("login       : %s  (first '%s', last '%s')"
+        % (login["username"], login["first_name"], login["last_name"]))
 
     existing = None
     office: Optional[Dict] = None

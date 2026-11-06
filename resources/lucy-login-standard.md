@@ -235,4 +235,4 @@ does the whole thing; see `workflows/new-office-appstream-login.md`. The
 office machine derives the same login from the owner's name and proves it
 signs in before it is kept — nobody is asked to type it. The two fleet
 accounts above are unchanged: no Lucy ever signs in as an office's login
-except the one scratch-profile check right after creating it.
+except the one scratch-profile check right after creating it. Run it on an AppStream holder (Lucy 1/2/3), never Lucy 4.
