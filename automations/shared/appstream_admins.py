@@ -705,7 +705,11 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
     if dm_sent:
         note = (note + " · " if note else "") + "DM'd the ICD"
     _record(owner, office_key, login, office, assigned, verified, note, log=log)
-    if not office:
+    # ONE DM, when the login is first made. From Lucy Reports' session the
+    # Already Assigned grid also hides offices outside its own set, so an admin
+    # Megan assigned by hand still reads 'NOT LISTED' here — the sign-in proof
+    # (verify_login) is the real check for an existing admin, not another DM.
+    if not office and created:
         _tell_megan(
             ":warning: *AppStream login for %s* — `%s` exists but Lucy could NOT assign "
             "the office: it is not in the list Lucy Reports is offered on the admin form. "
@@ -719,6 +723,8 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
            ("%s assigned" % office["id"]) if assigned else "NOT LISTED (Megan told)",
            "" if verified is None else (" · login verified" if verified else " · LOGIN FAILED"),
            " · DM sent to the ICD" if dm_sent else (" · no DM (no Slack id)" if dm and assigned else "")))
+    if verified is True:
+        return 0
     if not office:
         return 3
     if verified is False:
