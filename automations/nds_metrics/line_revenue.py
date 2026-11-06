@@ -41,8 +41,12 @@ WHAT THIS BOARD DOES: the same, from what SaraPlus shows today.
     $188. A number the order log has not seen yet prices OOF.
   * double-tier days: double_tier.py reads Sean's "Double Tier Bonus - <date>"
     emails off Raf's inbox every run (seed + cache in sow_rates / output).
-  * NOT priced (deposit only): Protect Advantage (SaraPlus shows it
-    nowhere we read; $15 / $50 since 11/3).
+  * Protect Advantage: the SaraPlus Sales Order History GRID (not its CSV
+    export) shows 'Protection Plans Sold' / 'Protection Plan' / 'Plan Status'
+    per order; run._grid_protect pages through it after the export into
+    nds_protect_<date>.json, and each plan is priced ($25 / $75 for sales
+    through 11/2, $15 / $50 from 11/3) with the order's first activated line.
+  * NOT priced: the rep tier DNQ rule.
   * weeks: Monday..Sunday like the deposit -- "last week" is the week the
     Wednesday deposit pays.
   * Cancelled $: a line now Disconnected/Cancelled, in the week it died
@@ -344,6 +348,45 @@ def assign_byod(order_lines: List[dict], n_byod: int) -> None:
         ln["device_type"] = ((ln.get("device_type") or "") + " BYOD").strip()
 
 
+# ------------------------------------------------------------- protect ----
+
+def protect_rate(plan: str, sale_date: Optional[dt.date],
+                 rates: Optional[dict] = None) -> float:
+    """$ per protection plan: Protect Advantage for 4 (the plan text says 4 /
+    four) vs for 1, at the rate in force on the SALE date ($25 / $75 through
+    11/2, $15 / $50 from 11/3)."""
+    periods = (rates or sow_rates()).get("protect_rates", {}).get("periods") or []
+    cur = None
+    for per in periods:
+        if sale_date is None or sale_date >= dt.date.fromisoformat(per["from"]):
+            cur = per
+    if cur is None:
+        return 0.0
+    pa4 = bool(re.search(r"(?<!\d)4(?!\d)|four", (plan or "").lower()))
+    return float(cur["pa4"] if pa4 else cur["pa1"])
+
+
+def load_protect(today: dt.date, log=print) -> dict:
+    """{order id: {sold, plan, status, ...}} off today's grid sidecar
+    (run._grid_protect), else the newest one on disk."""
+    import json as _json
+    cands = sorted(OUT_DIR.glob("nds_protect_*.json"))
+    want = OUT_DIR / f"nds_protect_{today.isoformat()}.json"
+    path = want if want.exists() else (cands[-1] if cands else None)
+    if path is None:
+        log("[nds] protect: no grid sidecar on disk -- protection plans unpriced")
+        return {}
+    try:
+        data = _json.loads(path.read_text())
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] protect: {path.name} unreadable ({type(e).__name__}) -- unpriced")
+        return {}
+    orders = data.get("orders") or {}
+    n = sum(1 for o in orders.values() if (o.get("sold") or "0").strip() not in ("", "0", "0.0"))
+    log(f"[nds] protect: {path.name}: {len(orders)} order(s), {n} with a plan")
+    return orders
+
+
 # ------------------------------------------------------- rep tier bonus ----
 
 def tier_week(d: dt.date) -> dt.date:
@@ -404,11 +447,12 @@ def _fresh():
 
 def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
             rates: Optional[dict] = None, log=print, if_tns=None,
-            double_days=None) -> dict:
+            double_days=None, protect=None) -> dict:
     """The pure core: SOH (ix, orders, pulled_at) + feed lines + tracker
     state (+ the order log's in-footprint numbers, Sean's double-tier days)
     -> {"tables", "detail", "stats"}. No IO."""
     if_tns = set(if_tns or ())
+    protect = protect or {}
     from automations.sp_order_log import wireless_lines as WL
     rates = rates or sow_rates()
     ix, orders, _pulled = soh
@@ -442,6 +486,8 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
             continue
         a = reps.setdefault(rep, _fresh())
         panel = lines_by_order.get(oid)
+        first_act: Optional[dt.date] = None
+        order_dead = any(w in _soh_cell(ix, r, "Wireless Status").lower() for w in DEAD_WORDS)
         if _soh_cell(ix, r, "Wireless Status") or _soh_cell(ix, r, "Wireless Line Count"):
             if panel:
                 try:
@@ -471,6 +517,7 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                         where = _bucket(a, "can", dead, base, wk)
                         stats["dead"] += 1
                     if act is not None:
+                        first_act = act if first_act is None else min(first_act, act)
                         where = _bucket(a, "posted", act, amt, wk) + ("+can" if dead else "")
                         stats["active"] += 1
                         if tier and where.startswith("posted_"):
@@ -519,6 +566,37 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                     "activation": act.isoformat() if act else "",
                     "dead": "", "kind": "order", "base": amt, "addon": 0.0,
                     "tier": 0.0, "bucket": where})
+        # Protection plans off the SaraPlus grid sidecar: paid with the
+        # order's first activated line, at the rate of the sale date.
+        pr = protect.get(oid)
+        try:
+            sold = int(float((pr or {}).get("sold") or 0))
+        except ValueError:
+            sold = 0
+        if sold > 0:
+            od = _parse_date(_soh_cell(ix, r, "Order Date"))
+            rate = protect_rate((pr or {}).get("plan", ""), od, rates)
+            amt = sold * rate
+            act_p = first_act or _parse_date(_soh_cell(ix, r, "Wireless Active Date"))
+            where = "open"
+            if order_dead:
+                where = _bucket(a, "can", soh_cancel.get(oid) or act_p or today, amt, wk)
+            elif act_p is not None:
+                where = _bucket(a, "posted", act_p, amt, wk)
+                if where.startswith("posted_"):
+                    stats["protect_$_" + where.split("_")[1]] += amt
+            else:
+                a["open"] += amt
+            stats["protect_plans"] += sold
+            detail.append({
+                "rep": rep, "customer": (pr or {}).get("customer", ""), "order_id": oid,
+                "order_date": _soh_cell(ix, r, "Order Date"), "line": "PROTECT",
+                "type": "protection", "device_type": "", "device": "",
+                "plan": (pr or {}).get("plan", ""), "status": (pr or {}).get("status", ""),
+                "first_active": "", "src": "grid", "first_dead": "",
+                "activation": act_p.isoformat() if act_p else "", "dead": "",
+                "kind": "protect x%d" % sold, "base": amt, "addon": 0.0, "tier": 0.0,
+                "bucket": where})
         # Internet Air off the SOH (install date = the deposit's activation)
         pkg = _soh_cell(ix, r, "Internet Package").lower()
         ist = _soh_cell(ix, r, "Internet Status").lower()
@@ -563,6 +641,8 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
               "this": _table(ts, te, "posted_this", "can_this")}
     stats["tier_last"] = round(tier_total["last"])
     stats["tier_this"] = round(tier_total["this"])
+    stats["protect_last"] = round(stats.get("protect_$_last", 0))
+    stats["protect_this"] = round(stats.get("protect_$_this", 0))
     return {"tables": tables, "detail": detail, "stats": stats, "weeks": wk}
 
 
@@ -595,8 +675,9 @@ def prepare(soh, today: dt.date, log=print, save: bool = True,
     if not tableau:
         log("[nds] no order log rows handed in -- every line priced OOF")
     dbl = double_tier.days(rates["rep_tier"].get("double_days") or [], log=log)
+    protect = load_protect(today, log=log)
     res = compute(soh, today, lines, state, rates=rates, log=log,
-                  if_tns=if_tns, double_days=dbl)
+                  if_tns=if_tns, double_days=dbl, protect=protect)
     res["double_days"] = sorted(dbl)
     res["feed_date"] = feed_date
     res["pulled_at"] = pulled_at
@@ -606,7 +687,8 @@ def prepare(soh, today: dt.date, log=print, save: bool = True,
         f"{s['orders_off_report']} order(s) off the report priced at order "
         f"level, {s['air']} Internet Air, {s['if_lines']} in-footprint line(s), "
         f"rep tier bonus ${s['tier_last']:,} last / ${s['tier_this']:,} this on "
-        f"{s['tier_lines']} line(s)")
+        f"{s['tier_lines']} line(s), protect {s['protect_plans']} plan(s) "
+        f"${s['protect_last']:,} last / ${s['protect_this']:,} this")
     log_tables(res["tables"], log=log)
     return res
 
@@ -623,7 +705,8 @@ def build(soh, today: dt.date, out: Path, log=print, tableau=None) -> Path:
            "date;\nUnlimited Extra/Premium + the rep tier bonus (orders per "
            "Sun-Sat sale week: 4=$30 5-6=$50 7-8=$75 9+=$110 a line; double-tier "
            "days off Sean's emails) ride with an active line. In-footprint "
-           "($193/$168) off the order log; Protect not in SaraPlus. "
+           "($193/$168) off the order log; Protect off the SaraPlus grid "
+           "($25/$75, $15/$50 from 11/3) with the first line. "
            f"SaraPlus pulled {res['pulled_at']:%H:%M}.")
     saved = list(bpng.COLS)
     bpng.COLS[:] = [("Rep Name", "rep", "left"),

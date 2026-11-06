@@ -505,6 +505,17 @@ def _entry(argv=None):
         return soh_dump()
     if "--line-calib" in args:
         return line_calib()
+    if "--protect" in args:
+        import datetime as _dt
+        from automations.nds_metrics import line_revenue as LR
+        pr = LR.load_protect(_dt.date.today())
+        for oid, o in sorted(pr.items()):
+            if (o.get("sold") or "0").strip() not in ("", "0", "0.0"):
+                print("PROTECT %s %-22s %-24s sold=%s plan=%r status=%r wireless=%r active=%r"
+                      % (oid, (o.get("rep") or "")[:22], (o.get("customer") or "")[:24], o.get("sold"),
+                         o.get("plan"), o.get("status"), o.get("wireless_status"), o.get("active")))
+        print("=== done ===", flush=True)
+        return 0
     if "--find" in args:
         i = args.index("--find")
         return find_word(args[i + 1] if len(args) > i + 1 else "protect")

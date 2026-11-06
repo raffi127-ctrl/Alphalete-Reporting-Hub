@@ -22,7 +22,7 @@
     "oof_bundle_with_internet_air": 25,
     "protect_advantage_1": 15,
     "protect_advantage_4": 50,
-    "_protect_note": "Smart Circle 11/3/2026 'Device Protection (PA) - Bonus Removal Effective 11/3': the $10 (PA1) / $25 (PA4) bonus is gone for sales from 11/3; the $15 / $50 base stays. SaraPlus shows no protection feature anywhere we read (SOH export, wireless report, customer card) -- not priced on the board."
+    "_protect_note": "see protect_rates (by sale date); the grid sidecar nds_protect_<date>.json is the source"
   },
   "internet_air": {
     "activation": 93,
@@ -63,5 +63,20 @@
       "2026-10-31"
     ],
     "_double_days_note": "SEED only: nds_metrics/double_tier.py reads Sean's 'Double Tier Bonus - <date>' emails off Raf's inbox every run and caches them in output/nds_metrics/double_tier_days.json; this list is the floor for days before the reader existed."
+  },
+  "protect_rates": {
+    "_source": "SOW 2(c): $15 PA1 / $50 PA4 per Authorized Feature, + the $10 / $25 Wireless Protect bonus that Smart Circle's 11/3/2026 'Device Protection (PA) - Bonus Removal Effective 11/3' email removed for sales from 11/3. Paid with the order's first line activation (the deposit dated Sravanthi Solasa's $15+$10 on her line's 11/1 activation). Source on the board: the SaraPlus Sales Order History GRID columns 'Protection Plans Sold' / 'Protection Plan' / 'Plan Status' (run._grid_protect sidecar).",
+    "periods": [
+      {
+        "from": "2026-09-01",
+        "pa1": 25,
+        "pa4": 75
+      },
+      {
+        "from": "2026-11-03",
+        "pa1": 15,
+        "pa4": 50
+      }
+    ]
   }
 }

@@ -13,6 +13,8 @@ RATES = {
     "internet_air": {"activation": 93, "auto_bill_pay_bonus": 30},
     "rep_tier": {"bands": [[4, 30], [5, 50], [7, 75], [9, 110]],
                  "double_days": ["2026-10-31"]},
+    "protect_rates": {"periods": [{"from": "2026-09-01", "pa1": 25, "pa4": 75},
+                                  {"from": "2026-11-03", "pa1": 15, "pa4": 50}]},
 }
 FRI = dt.date(2026, 11, 6)      # last = 10/26..11/1, this = 11/2..11/8
 
@@ -279,3 +281,25 @@ class DoubleTierMail(unittest.TestCase):
         self.assertEqual(DT.parse_subject("Re: Double Tier Bonus - 10/12", sent), dt.date(2026, 10, 12))
         self.assertEqual(DT.parse_subject("Double Tiers Bonus: 1/2", dt.date(2026, 12, 31)), dt.date(2027, 1, 2))
         self.assertIsNone(DT.parse_subject("Checking Historical Rep Tier Status (NDS)", sent))
+
+
+class Protect(unittest.TestCase):
+    def test_rate_by_plan_and_sale_date(self):
+        self.assertEqual(LR.protect_rate("AT&T Protect Advantage for 1", dt.date(2026, 10, 23), RATES), 25)
+        self.assertEqual(LR.protect_rate("Protect Advantage for 4 Devices", dt.date(2026, 10, 23), RATES), 75)
+        self.assertEqual(LR.protect_rate("Protect Advantage for 1", dt.date(2026, 11, 3), RATES), 15)
+        self.assertEqual(LR.protect_rate("PA4", dt.date(2026, 11, 5), RATES), 50)
+        self.assertEqual(LR.protect_rate("", dt.date(2026, 11, 5), RATES), 15)
+
+    def test_plan_rides_the_first_activated_line(self):
+        o = order("Yahir", "DSI1", order_date="10/23/2026", **{"Wireless Status": "Active",
+                  "Wireless Active Date": "11/01/2026", "Wireless Line Count": "1", "Port Line Count": "1"})
+        lines = [line("DSI1", 1, "Active", tn="3363839250", plan="AT&T Value 2.0")]
+        state = {"3363839250": {"first_active": "2026-11-03", "src": "live"}}      # -> 11/1
+        res = LR.compute((IX, [o], dt.datetime(2026, 11, 6)), FRI, lines, state, RATES,
+                         log=lambda *_: None,
+                         protect={"DSI1": {"sold": "1", "plan": "AT&T Protect Advantage for 1", "status": "Active"}})
+        row = res["tables"]["last"]["rows"][0]
+        self.assertEqual(row["posted"], 213 + 25)
+        self.assertEqual(res["stats"]["protect_plans"], 1)
+        self.assertEqual(res["stats"]["protect_last"], 25)

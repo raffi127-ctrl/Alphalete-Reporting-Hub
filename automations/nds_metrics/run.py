@@ -326,9 +326,62 @@ def _pull_nds_soh(start: dt.date, end: dt.date, log=print) -> bytes:
             data = _export_csv(page, log)
             if not data or len(data) < 200:
                 raise RuntimeError("NDS SOH export came back empty")
+            try:
+                _grid_protect(page, end, log=log)
+            except Exception as e:  # noqa: BLE001 -- the sidecar never sinks the export
+                log(f"[nds] protect grid read failed ({type(e).__name__}: "
+                    f"{str(e)[:120]}) -- no protection sidecar today")
             return data
         finally:
             ctx.close()
+
+
+def _grid_protect(page, today: dt.date, log=print) -> Path:
+    """The Protection columns the on-screen Sales Order History grid carries
+    and the CSV export leaves out: 'Protection Plans Sold', 'Protection Plan',
+    'Plan Status' per order (Carlos 2026-11-06: "protect add ons should be on
+    sara plus somewhere look again" -- the T&C probe's header dump showed them
+    at [107] / [133] / [134]; the export has 97 of the grid's 142 columns).
+    Pages through the grid that is already on screen after the export and
+    writes OUT_DIR/nds_protect_<date>.json for line_revenue."""
+    import json as _json
+    from automations.nds_tnc_check.run import _next_page, _read_grid_raw
+    want = {"order id": "order_id", "customer name": "customer",
+            "protection plans sold": "sold", "protection plan": "plan",
+            "plan status": "status", "wireless status": "wireless_status",
+            "wireless active date": "active", "user name": "rep"}
+    orders: dict = {}
+    pages = 0
+    while pages < 40:
+        hdr, rows = _read_grid_raw(page)
+        low = [" ".join(str(h).lower().split()) for h in hdr]
+        ix = {k: low.index(h) for h, k in want.items() if h in low}
+        if "order_id" not in ix:
+            raise RuntimeError("grid has no Order ID column: "
+                               + ", ".join(h for h in hdr if h)[:300])
+        if pages == 0:
+            missing = [h for h in ("protection plans sold", "protection plan", "plan status")
+                       if h not in low]
+            if missing:
+                log(f"[nds] protect grid: columns missing on this dealer: {missing}")
+        for r in rows:
+            oid = r[ix["order_id"]].strip() if len(r) > ix["order_id"] else ""
+            if not oid:
+                continue
+            orders[oid] = {k: (r[i].strip() if len(r) > i else "")
+                           for k, i in ix.items() if k != "order_id"}
+        pages += 1
+        if not _next_page(page):
+            break
+    out = OUT_DIR / f"nds_protect_{today.isoformat()}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with_plans = sum(1 for o in orders.values()
+                     if (o.get("sold") or "0").strip() not in ("", "0", "0.0"))
+    out.write_text(_json.dumps({"pulled": dt.datetime.now().isoformat(timespec="seconds"),
+                                "pages": pages, "orders": orders}))
+    log(f"[nds] protect grid: {len(orders)} order(s) over {pages} page(s), "
+        f"{with_plans} with a protection plan -> {out.name}")
+    return out
 
 
 _SOH_MEMO: list = []
