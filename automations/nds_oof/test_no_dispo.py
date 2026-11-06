@@ -55,7 +55,11 @@ class NoDispo(unittest.TestCase):
             state2 = {}
             R._no_dispo_message(now.date(), now, ROWS, state2, send=False)
             self.assertNotIn("no_dispo_slot", state2)
-        self.assertFalse(C.NO_DISPO_SEND)   # stays off until Carlos confirms the destination
+        self.assertTrue(C.NO_DISPO_SEND)    # Carlos 2026-11-06: ATT B2B Leaders text chain only
+
+    def test_route_is_att_b2b_leaders_only(self):
+        from automations.b2b_dispositions import config as B
+        self.assertEqual(B.TEXT_ROUTES[(C.CAMPAIGN_LABEL, C.KIND_NO_DISPO)], [B.TEXT_GROUP_ATT])
 
 
 if __name__ == "__main__":

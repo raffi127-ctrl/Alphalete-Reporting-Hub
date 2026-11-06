@@ -712,11 +712,12 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         _log("slack: call-out posted")
     if no_dispo:
         if C.NO_DISPO_SEND:
-            P._slack(C.SLACK_CHANNEL, no_dispo)
+            # Text only (Carlos 2026-11-06: "just on the att b2b leaders
+            # text chain"); the route in b2b_dispositions TEXT_ROUTES says which chain.
             _queue_text(C.KIND_NO_DISPO, no_dispo.split(":")[0], today, now, text=no_dispo)
-            _log("slack: no-dispo posted")
+            _log("text: no-dispo queued")
         else:
-            _log("no-dispo (NO_DISPO_SEND off, not posted): %s" % no_dispo)
+            _log("no-dispo (NO_DISPO_SEND off, not sent): %s" % no_dispo)
     _save(state)
     return 0
 

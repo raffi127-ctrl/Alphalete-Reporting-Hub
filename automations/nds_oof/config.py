@@ -116,9 +116,9 @@ NO_DISPO_TAB = "Stations"
 NO_DISPO_RANGE = "C6:F15"
 NO_DISPO_SLOT_GRACE_MIN = 14                   # anything before the next slot still counts (a slow tick)
 KIND_NO_DISPO = "nds_no_dispo"
-# OFF until Carlos confirms where it goes (Slack call-out in #alphalete-gp-sales
-# + the two text groups are the proposal). While False the message is logged only.
-NO_DISPO_SEND = False
+# Carlos 2026-11-06: "just on the att b2b leaders text chain" -- a text to
+# ATT B2B Leaders only (b2b_dispositions TEXT_ROUTES), no Slack post.
+NO_DISPO_SEND = True
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "nds_oof_state.json"
 PROFILE_DIR = Path(__file__).resolve().parents[1] / "uploaded" / ".browser_profile_nds_oof"
