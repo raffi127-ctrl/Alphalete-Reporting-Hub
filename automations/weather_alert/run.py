@@ -64,6 +64,7 @@ CITIES = {
     # AT&T order log, 2026-11-06; his 2nd office's 850xx Phoenix zips are a minority.
     "portland": ("Portland, OR", 45.5152, -122.6784, "America/Los_Angeles"),
     "phoenix": ("Phoenix, AZ", 33.4484, -112.0740, "America/Phoenix"),
+    "kansas_city": ("Kansas City, MO", 39.0997, -94.5786, "America/Chicago"),
     # maxamad / Maximal Management: San Antonio per his OwnerVille office
     # address (harvest_zones, 2026-09-28).
     "san_antonio": ("San Antonio, TX", 29.4241, -98.4936, "America/Chicago"),
@@ -153,6 +154,7 @@ METRICS_CITY = {
     "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
     "aiden": "los_angeles",     # Atoori Management (NDS), Los Angeles (Megan 2026-11-03); Pacific; #odysseyy
     "nigel": "phoenix",         # VP Executives (ATT Fiber): Phoenix now, Los Angeles from 2026-11-30 (Megan 2026-11-06, CITY_CHANGES); #vp-sales
+    "oren": "kansas_city",      # Omnia Management (ATT Fiber 22536): order-log zips 66062/66212/641xx = KC metro (2026-11-06); Central; channel from ECO sign-up
     "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up
     "starr": "fremont",         # Nova Management, Fremont CA; Pacific; channel from ECO sign-up
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern

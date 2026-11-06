@@ -1340,7 +1340,7 @@
     "knocks_office": "Oren Shezaf",
     "ov_account": "22536",
     "owner_office": "",
-    "business_name": "Omnia Management Inc",
+    "business_name": "Omnia Management, Inc.",
     "website": "",
     "header_label": "Oren Shezaf",
     "thresholds": {
@@ -1376,7 +1376,7 @@
     "per_office_views": {},
     "machine": "Lucy 4",
     "campaign": "fiber_d2d",
-    "notes": "wired by hand 2026-11-06 (Megan: 'Oren is set up to do a zoom to enroll - let's do his dry run'). Omnia Management Inc, OwnerVille/AppStream 22536 (office-mapping.json), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Oren Shezaf - Lucy Metrics' 17zuMOIdwpgf4ssCUHkvhERTe1sf2MvQtNJVieIP7VDs (Master Metrics Templates copy, writer alphaletereporting@). Timezone from his Slack profile (Central) until his order-log zips say otherwise. Scheduler OFF until the dry run is read.",
+    "notes": "wired by hand 2026-11-06 (Megan: 'Oren is set up to do a zoom to enroll - let's do his dry run'). Omnia Management Inc, OwnerVille/AppStream 22536 (office-mapping.json), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Oren Shezaf - Lucy Metrics' 17zuMOIdwpgf4ssCUHkvhERTe1sf2MvQtNJVieIP7VDs (Master Metrics Templates copy, writer alphaletereporting@). Timezone from his Slack profile (Central) until his order-log zips say otherwise. Scheduler OFF until the dry run is read. | 2026-11-06 17:40 CT: order log (ALLREPS, 10/05-11/05) 540 rows, owner 'Oren Shezaf', office 'Omnia Management, Inc.', zips 66062 Olathe / 66212 Overland Park / 641xx Kansas City MO -> weather kansas_city, Central confirmed.",
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
