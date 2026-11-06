@@ -475,11 +475,82 @@ def verify_login(login: Dict, log=print, headed: bool = False) -> Optional[bool]
         shutil.rmtree(probe, ignore_errors=True)
 
 
+# --- telling the ICD -----------------------------------------------------------
+ENROLL_URL = "https://lucyeco.streamlit.app/join-lucy-eco"
+_SLACK_IDS_MD = Path(__file__).resolve().parents[2] / "resources" / "owner-slack-ids.md"
+
+
+def owner_slack_id(owner: str) -> str:
+    """The ICD's Slack id: resources/owner-slack-ids.md first (the one place
+    for who's who), then the ICD Signup tab's slack_user_id. '' when unknown —
+    a DM to a guessed account is worse than no DM."""
+    o = norm(owner).split()
+    if len(o) < 2:
+        return ""
+    want_first, want_last = o[0], o[-1]
+    try:
+        for line in _SLACK_IDS_MD.read_text().splitlines():
+            if not line.startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) < 3:
+                continue
+            name = norm(re.sub(r"\(.*?\)", "", cells[0])).split()
+            ids = [c for c in cells if re.fullmatch(r"U[A-Z0-9]{8,12}", c)]
+            if name and ids and name[0] == want_first and name[-1] == want_last:
+                return ids[0]
+    except OSError:
+        pass
+    try:
+        from automations.recruiting_report.fill import open_by_key
+        from automations.icd_alerts import post as P
+        ws = open_by_key(P.RELAY_SPREADSHEET_ID).worksheet("ICD Signup")
+        rows = ws.get_all_values()
+        hdr = [h.strip().lower() for h in rows[0]]
+        io, iu = hdr.index("owner"), hdr.index("slack_user_id")
+        for r in rows[1:]:
+            if len(r) > max(io, iu) and norm(r[io]) == norm(owner) and r[iu].strip():
+                return r[iu].strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def icd_message(owner: str, login: Dict) -> str:
+    first = owner.strip().split()[0]
+    return (
+        "Hi %s! Lucy here :wave: Your AppStream login for Lucy ECO is ready:\n"
+        "• Username: `%s`\n• Password: `%s`\n\n"
+        "Next step is the Lucy ECO sign-up form — it takes about 2 minutes:\n%s\n"
+        "Once it's in, I'll send you the install steps right here. Any trouble, "
+        "just reply to this message."
+        % (first, login["username"], login["password"], ENROLL_URL))
+
+
+def _dm_icd(owner: str, login: Dict, slack_id: str, log=print) -> bool:
+    """Megan 2026-11-06: 'once this is created you should DM it and the lucyeco
+    enrollment link to the ICD'. Only when the office is assigned — a login
+    that sees no office is not ready to hand over."""
+    sid = (slack_id or "").strip() or owner_slack_id(owner)
+    if not sid:
+        log("no Slack id known for %s — DM NOT sent (add them to "
+            "resources/owner-slack-ids.md or pass --slack-id)" % owner)
+        return False
+    try:
+        from automations.icd_alerts import post as P
+        P._slack(sid, icd_message(owner, login))
+        log("DM sent to %s (%s) with the login + %s" % (owner, sid, ENROLL_URL))
+        return True
+    except Exception as e:  # noqa: BLE001
+        log("DM to %s (%s) failed: %s" % (owner, sid, str(e)[:160]))
+        return False
+
+
 # --- the job --------------------------------------------------------------------
 def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
               check_only: bool = False, verify: bool = True, headed: bool = False,
               dump_offices: bool = False, force_verify: bool = False,
-              log=print) -> int:
+              slack_id: str = "", dm: bool = True, log=print) -> int:
     from automations.shared.appstream_provision import eco_login
     from automations.shared.tableau_patchright import appstream_direct_session
 
@@ -606,6 +677,11 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
     verified: Optional[bool] = None
     if verify and (created or not existing or force_verify):
         verified = verify_login(login, log=log, headed=headed)
+    dm_sent = False
+    if dm and assigned and verified is not False:
+        dm_sent = _dm_icd(owner, login, slack_id, log=log)
+    if dm_sent:
+        note = (note + " · " if note else "") + "DM'd the ICD"
     _record(owner, office_key, login, office, assigned, verified, note, log=log)
     if not office:
         _tell_megan(
@@ -616,10 +692,11 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
             "`lucy provision_appstream \"%s\" --verify --machine \"Lucy 3\"` to prove "
             "the login." % (owner, login["username"], login["username"],
                             office_id or owner, owner), log=log)
-    log("SUMMARY %s · %s · office %s%s"
+    log("SUMMARY %s · %s · office %s%s%s"
         % ("created" if created else "exists", login["username"],
            ("%s assigned" % office["id"]) if assigned else "NOT LISTED (Megan told)",
-           "" if verified is None else (" · login verified" if verified else " · LOGIN FAILED")))
+           "" if verified is None else (" · login verified" if verified else " · LOGIN FAILED"),
+           " · DM sent to the ICD" if dm_sent else (" · no DM (no Slack id)" if dm and assigned else "")))
     if not office:
         return 3
     if verified is False:
@@ -639,13 +716,17 @@ def main(argv=None) -> int:
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--dump-offices", action="store_true",
                     help="with --check: write every office the form offers to the log")
+    ap.add_argument("--slack-id", default="", help="the ICD's Slack id for the DM "
+                                                   "(else owner-slack-ids.md / ICD Signup)")
+    ap.add_argument("--no-dm", action="store_true", help="do not DM the ICD")
     ap.add_argument("--verify", action="store_true",
                     help="sign in as the login even when it already existed "
                          "(after somebody assigned the office by hand)")
     a = ap.parse_args(argv)
     return provision(a.owner, office_id=a.office_id, office_key=a.office_key,
                      check_only=a.check, verify=not a.no_verify, headed=a.headed,
-                     dump_offices=a.dump_offices, force_verify=a.verify)
+                     dump_offices=a.dump_offices, force_verify=a.verify,
+                     slack_id=a.slack_id, dm=not a.no_dm)
 
 
 if __name__ == "__main__":

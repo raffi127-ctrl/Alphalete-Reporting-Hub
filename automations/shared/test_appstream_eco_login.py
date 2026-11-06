@@ -76,3 +76,15 @@ class GridReading(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IcdDm(unittest.TestCase):
+    def test_message_has_login_and_link(self):
+        m = A.icd_message("Pat Example", {"username": "LucyECOPat", "password": "Pat123!"})
+        self.assertIn("Hi Pat!", m)
+        self.assertIn("LucyECOPat", m)
+        self.assertIn(A.ENROLL_URL, m)
+
+    def test_slack_id_from_the_md_table(self):
+        self.assertEqual(A.owner_slack_id("Sahil Multani"), "U07QDQ62RNZ")
+        self.assertEqual(A.owner_slack_id("Starr Rodenhurst"), "U0BQAF8B3S7")
