@@ -43,6 +43,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import sys
 import time
@@ -588,15 +589,35 @@ def icd_message(owner: str, login: Dict) -> str:
         % (first, login["username"], login["password"], PYTHON_URL, ENROLL_URL))
 
 
-def _dm_icd(owner: str, login: Dict, slack_id: str, log=print) -> bool:
+def _dm_icd(owner: str, login: Dict, slack_id: str, log=print,
+            via_lucy: bool = False) -> bool:
     """Megan 2026-11-06: 'once this is created you should DM it and the lucyeco
     enrollment link to the ICD'. Only when the office is assigned — a login
-    that sees no office is not ready to hand over."""
+    that sees no office is not ready to hand over.
+
+    via_lucy: THE DM MUST COME FROM LUCY (Megan 2026-11-06, after Oren's went
+    out as her). A --local run posts with whatever Slack token this laptop
+    holds — the person's own. So from a laptop the DM is queued on Lucy 1
+    (`post_note users=…`), whose identity IS Lucy; a Lucy posts directly."""
     sid = (slack_id or "").strip() or owner_slack_id(owner)
     if not sid:
         log("no Slack id known for %s — DM NOT sent (add them to "
             "resources/owner-slack-ids.md or pass --slack-id)" % owner)
         return False
+    if via_lucy:
+        try:
+            from automations.day_orchestrator import mini_control as M
+            members = ",".join(dict.fromkeys([OPERATORS["megan"], OPERATORS["eve"], sid]))
+            text = icd_message(owner, login).replace("\n", "\\n")
+            M.enqueue("post_note", "users=%s %s" % (members, text),
+                      by=os.environ.get("MINI_BY") or "Megan", machine="Lucy 1")
+            log("group DM (Megan, Eve, %s %s) QUEUED on Lucy 1 so it comes from Lucy"
+                % (owner, sid))
+            return True
+        except Exception as e:  # noqa: BLE001
+            log("could not queue the DM on Lucy 1: %s — NOT sending from this "
+                "laptop (it would come from you)" % str(e)[:160])
+            return False
     try:
         # A GROUP DM — Megan, Eve and the ICD together (Megan 2026-11-06: "make
         # sure it's me, Eve, Nigel in the DM"), so the call prep is in one thread.
@@ -833,7 +854,7 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
         verified = verify_login(login, log=log, headed=headed or local)
     dm_sent = False
     if dm and assigned and verified is not False:
-        dm_sent = _dm_icd(owner, login, slack_id, log=log)
+        dm_sent = _dm_icd(owner, login, slack_id, log=log, via_lucy=local)
     if dm_sent:
         note = (note + " · " if note else "") + "DM'd the ICD"
     _record(owner, office_key, login, office, assigned, verified, note, log=log)

@@ -99,3 +99,19 @@ class IcdDm(unittest.TestCase):
     def test_slack_id_from_the_md_table(self):
         self.assertEqual(A.owner_slack_id("Sahil Multani"), "U07QDQ62RNZ")
         self.assertEqual(A.owner_slack_id("Starr Rodenhurst"), "U0BQAF8B3S7")
+
+
+class DmComesFromLucy(unittest.TestCase):
+    def test_local_run_queues_on_lucy_1_instead_of_posting(self):
+        from unittest import mock
+        calls = []
+        fake = mock.Mock(); fake.enqueue = lambda action, args, **kw: calls.append((action, args, kw))
+        with mock.patch.dict("sys.modules", {"automations.day_orchestrator.mini_control": fake}):
+            ok = A._dm_icd("Pat Example", {"username": "LucyECOPat", "password": "x"},
+                           "U0PAT", log=lambda m: None, via_lucy=True)
+        self.assertTrue(ok)
+        action, args, kw = calls[0]
+        self.assertEqual(action, "post_note")
+        self.assertTrue(args.startswith("users=U04G5HJBGFN,U088E2KJEV8,U0PAT "))
+        self.assertIn("LucyECOPat", args)
+        self.assertEqual(kw.get("machine"), "Lucy 1")
