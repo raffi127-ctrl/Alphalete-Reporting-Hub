@@ -201,12 +201,101 @@ def map_owners_to_offices(owners: list, owner_of: dict) -> dict:
     return out
 
 
+# ---------- guessing an owner for reps who never confirmed one ----------
+#
+# Eve 2026-11-06: reps who never told Lucy their ICD get an owner looked up
+# from lists we already have, marked "(auto)" so it's clear Lucy guessed it.
+#   1. owner_rep_audit/review_people.json - Slack id -> owner's recruiting
+#      channel (matched by Slack id, so name spelling doesn't matter).
+#   2. AUTOMATION MASTER 'Knocks Daily' - rep name -> the office they knock
+#      for (most recent day wins). Exact full-name match only.
+# Nothing found -> stays "(no owner confirmed)".
+
+REVIEW_PEOPLE = HERE.parent / "owner_rep_audit" / "review_people.json"
+KNOCKS_SSID, KNOCKS_TAB = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw", "Knocks Daily"
+AUTO = " (auto)"
+
+
+def _owner_index(owner_names: list) -> dict:
+    """normalized name / channel slug -> bot owner name."""
+    canon = _alias_canon()
+    idx = {}
+    for n in owner_names:
+        for k in {norm(n), canon(n)}:
+            if k:
+                idx[k] = n
+                idx[k.replace(" ", "-")] = n
+                idx[k.replace(" ", "-") + "s"] = n      # "maxamad-adens"
+    return idx
+
+
+def _owner_of_label(label: str, idx: dict) -> str:
+    # "Carlos Hidalgo - Box" / "Next Horizon Group, Inc. Nii Tagoe"
+    base = re.split(r"\s[—–-]\s", label or "")[0]
+    for cand in (base, " ".join(norm(base).split()[-2:])):
+        hit = idx.get(norm(cand)) or idx.get(norm(cand).replace(" ", "-"))
+        if hit:
+            return hit
+    return ""
+
+
+def load_guess_sources(S) -> tuple:
+    """({slack id: channel slug}, [(date, office label, rep name)])."""
+    slack = {}
+    try:
+        for p in json.loads(REVIEW_PEOPLE.read_text(encoding="utf-8")):
+            chans = [c.strip() for c in str(p.get("channels") or "").split(",") if c.strip()]
+            if p.get("slack_id") and len(chans) == 1:       # several channels = ambiguous
+                slack[p["slack_id"]] = chans[0]
+    except Exception as e:  # noqa: BLE001
+        log("review_people.json not read (%s)" % e)
+    knocks = []
+    try:
+        r = S.get("%s/%s/values/%s!A2:D200000" % (SHEETS, KNOCKS_SSID, _q(KNOCKS_TAB)))
+        r.raise_for_status()
+        knocks = [(x[0], x[1], x[3]) for x in r.json().get("values", []) if len(x) >= 4]
+    except Exception as e:  # noqa: BLE001
+        log("Knocks Daily not read (%s)" % e)
+    return slack, knocks
+
+
+def guess_owners(uids: list, names: dict, owner_names: list, slack: dict, knocks: list) -> dict:
+    """uid -> (owner name, source) for the uids we can place."""
+    idx = _owner_index(owner_names)
+    by_rep = {}
+    for day, office, rep_name in sorted(knocks):        # later days overwrite
+        own = _owner_of_label(office, idx)
+        if own and len(norm(rep_name).split()) >= 2:
+            by_rep[norm(rep_name)] = own
+    out = {}
+    for uid in uids:
+        slug = slack.get(uid)
+        if slug and idx.get(slug):
+            out[uid] = (idx[slug], "slack channel")
+            continue
+        nm = norm(names.get(uid, ""))
+        if len(nm.split()) >= 2 and nm in by_rep:
+            out[uid] = (by_rep[nm], "knocks")
+    return out
+
+
 # ---------- build ----------
 
-def build(export: dict, done: dict, owner_of: dict):
+def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None):
     owners = {o["id"]: o.get("name", o["id"]) for o in export["owners"]}
     reps, names = export["reps"], export["names"]
     offices = map_owners_to_offices(export["owners"], owner_of)
+    name_to_oid = {v: k for k, v in owners.items()}
+    guesses = guesses or {}
+
+    def owner_for(uid):
+        """(owner name, guessed?) - confirmed owner first, then the guess."""
+        oid = (reps.get(uid) or {}).get("owner_id") if uid else None
+        if oid:
+            return owners.get(oid, NO_OWNER), False
+        if uid in guesses:
+            return guesses[uid][0], True
+        return NO_OWNER, False
 
     own = defaultdict(lambda: {"n": 0, "scores": []})    # (month, owner name)
     rep = defaultdict(lambda: {"n": 0, "scores": []})    # (month, uid)
@@ -218,8 +307,7 @@ def build(export: dict, done: dict, owner_of: dict):
         mk = ts[:7]
         months.add(mk)
         uid = r.get("uid") or ""
-        oid = (reps.get(uid) or {}).get("owner_id") if uid else None
-        oname = owners.get(oid, NO_OWNER) if oid else NO_OWNER
+        oname, _guessed = owner_for(uid)
         for b in (own[(mk, oname)], rep[(mk, uid or "?")]):
             b["n"] += 1
             if r.get("score") is not None:
@@ -231,7 +319,6 @@ def build(export: dict, done: dict, owner_of: dict):
             if any(done.get((mk, x)) for x in offices.get(oid, [])):
                 own[(mk, oname)]  # touch -> row with 0 recordings
 
-    name_to_oid = {v: k for k, v in owners.items()}
     owner_rows = []
     for (mk, oname), b in own.items():
         oid = name_to_oid.get(oname)
@@ -246,10 +333,10 @@ def build(export: dict, done: dict, owner_of: dict):
                            "" if avg is None else avg])
     rep_rows = []
     for (mk, uid), b in rep.items():
-        oid = (reps.get(uid) or {}).get("owner_id")
+        oname, guessed = owner_for(uid)
         avg = round(sum(b["scores"]) / len(b["scores"]), 1) if b["scores"] else None
         rep_rows.append([month_label(mk), names.get(uid) or NO_NAME,
-                         owners.get(oid, NO_OWNER) if oid else NO_OWNER, b["n"],
+                         oname + (AUTO if guessed else ""), b["n"],
                          "" if avg is None else avg])
     # Month totals for the cards: % = recordings of owners whose 2nd rounds we
     # know / those 2nd rounds; score = average over every scored recording.
@@ -535,6 +622,12 @@ def restyle(S, ssid):
                 {"userEnteredValue": '=$%s%d="%s"' % (owner_letter, R_DATA + 1, NO_OWNER)}]},
             "format": {"backgroundColor": NO_OWNER_BG,
                        "textFormat": {"italic": True, "foregroundColor": MUTED}}}}}})
+        if tab == TAB_REP:      # an owner Lucy guessed ("... (auto)") reads as a guess
+            reqs.append({"addConditionalFormatRule": {"rule": {
+                "ranges": [_rng(sid, R_DATA, LAST_ROW, 1, 2)], "booleanRule": {
+                    "condition": {"type": "CUSTOM_FORMULA", "values": [
+                        {"userEnteredValue": '=RIGHT($B%d, %d)="%s"' % (R_DATA + 1, len(AUTO.strip()), AUTO.strip())}]},
+                    "format": {"textFormat": {"italic": True, "foregroundColor": MUTED}}}}}})
         # Score colors = the live scorecard's cuts: 8+ green, 6-8 yellow, under 6 red.
         score = _rng(sid, R_DATA, LAST_ROW, lay["score"], lay["score"] + 1)
         for cond, values, color in (
@@ -626,7 +719,17 @@ def main(argv=None) -> int:
     S = _session()
     done, owner_of = load_interviews(S)
     log("retention sheet: %d office(s)" % len(owner_of))
-    owner_rows, rep_rows, totals, month_list, unmatched = build(export, done, owner_of)
+    reps = export["reps"]
+    no_owner = sorted({r.get("uid") for r in export["records"]
+                       if r.get("uid") and not (reps.get(r["uid"]) or {}).get("owner_id")})
+    slack, knocks = load_guess_sources(S)
+    guesses = guess_owners(no_owner, export["names"],
+                           [o.get("name", "") for o in export["owners"]], slack, knocks)
+    log("no confirmed owner: %d rep(s); guessed %d (%s)" % (
+        len(no_owner), len(guesses),
+        ", ".join("%s -> %s [%s]" % (export["names"].get(u, u), o, src)
+                  for u, (o, src) in sorted(guesses.items()))))
+    owner_rows, rep_rows, totals, month_list, unmatched = build(export, done, owner_of, guesses)
     if unmatched:
         log("owners with NO AppStream office match (2nd rounds blank): " + ", ".join(unmatched))
     no_uid = sum(1 for r in export["records"] if not r.get("uid"))
