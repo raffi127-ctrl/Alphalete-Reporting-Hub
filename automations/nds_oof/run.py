@@ -595,12 +595,18 @@ def no_dispo_names(names: List[str], rows: List[Dict]) -> List[str]:
     return [n for n in names if n not in has]
 
 
-def no_dispo_text(missing: List[str], slot: str) -> str:
-    """Carlos's wording: 'No dispositions from,' then the names."""
+def _slot_clock(slot: str) -> str:
     hh, mm = slot.split(":")
     h = int(hh)
-    clock = "%d:%s %s" % (h % 12 or 12, mm, "PM" if h >= 12 else "AM")
-    return "No dispositions from (%s): %s" % (clock, ", ".join(missing))
+    return "%d:%s %s" % (h % 12 or 12, mm, "PM" if h >= 12 else "AM")
+
+
+def no_dispo_text(missing: List[str], slot: str) -> str:
+    """Carlos's wording: 'No dispositions from,' then the names -- or, when
+    nobody is missing (Carlos 2026-11-06), that everyone has dispositioned."""
+    if not missing:
+        return "Everyone on the lineup has dispositioned! (%s)" % _slot_clock(slot)
+    return "No dispositions from (%s): %s" % (_slot_clock(slot), ", ".join(missing))
 
 
 def _no_dispo_message(today: dt.date, now: dt.datetime, rows: List[Dict],
@@ -628,7 +634,7 @@ def _no_dispo_message(today: dt.date, now: dt.datetime, rows: List[Dict],
          % (slot, len(names), len(missing), (": " + ", ".join(missing)) if missing else ""))
     if send:
         state["no_dispo_slot"] = key
-    return no_dispo_text(missing, slot) if missing else ""
+    return no_dispo_text(missing, slot)
 
 
 def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
