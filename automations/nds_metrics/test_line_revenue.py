@@ -235,3 +235,47 @@ class RepTier(unittest.TestCase):
         row = res["tables"]["last"]["rows"][0]
         self.assertEqual(row["posted"], 213 + 30 + 3 * 213)    # the line + its tier, 3 orders at order level
         self.assertEqual(res["stats"]["tier_last"], 30)
+
+
+class InFootprint(unittest.TestCase):
+    def test_if_rates(self):
+        self.assertEqual(LR.price_line(line("o", 1, "Active"), RATES, infp=True), (193.0, "port IF"))
+        self.assertEqual(LR.price_line(line("o", 1, "Active", device_type="BYOD"), RATES, infp=True),
+                         (168.0, "byod port IF"))
+
+    def test_if_numbers_off_the_order_log(self):
+        class Cols:
+            def __init__(self, hdr):
+                self.h = [x.lower() for x in hdr]
+            def find(self, *cands):
+                for c in cands:
+                    if c.lower() in self.h:
+                        return self.h.index(c.lower())
+                return None
+        cols = Cols(["Rep", "IF/OOF", "spe.TN"])
+        rows = [["A", "IF", "(972) 900-0215"], ["B", "OOF", "8178847534"], ["C", "", "x"]]
+        self.assertEqual(LR.if_numbers(cols, rows, log=lambda *_: None), {"9729000215"})
+        self.assertEqual(LR.if_numbers(Cols(["Rep"]), rows, log=lambda *_: None), set())
+
+    def test_compute_prices_the_if_line_and_doubles_the_day(self):
+        o = order("Nick", "DSI1", order_date="10/31/2026", **{"Wireless Status": "Active",
+                  "Wireless Active Date": "10/31/2026", "Wireless Line Count": "1", "Port Line Count": "1"})
+        others = [order("Nick", "DSI%d" % i, order_date="10/27/2026", **{"Port Line Count": "1"}) for i in (2, 3, 4)]
+        lines = [line("DSI1", 1, "Active", tn="9729000215", plan="AT&T Value 2.0")]
+        state = {"9729000215": {"first_active": "2026-10-31", "src": "order"}}
+        res = LR.compute((IX, [o] + others, dt.datetime(2026, 11, 6)), FRI, lines, state, RATES,
+                         log=lambda *_: None, if_tns={"9729000215"}, double_days={"2026-10-31"})
+        row = res["tables"]["last"]["rows"][0]
+        # 3 orders + the doubled 10/31 one = 5 -> $50; the line itself in-footprint $193
+        self.assertEqual(row["posted"], 193 + 50)
+        self.assertEqual(res["stats"]["if_lines"], 1)
+
+
+class DoubleTierMail(unittest.TestCase):
+    def test_subject_dates(self):
+        from automations.nds_metrics import double_tier as DT
+        sent = dt.date(2026, 10, 30)
+        self.assertEqual(DT.parse_subject("Double Tier Bonus  - 10/31", sent), dt.date(2026, 10, 31))
+        self.assertEqual(DT.parse_subject("Re: Double Tier Bonus - 10/12", sent), dt.date(2026, 10, 12))
+        self.assertEqual(DT.parse_subject("Double Tiers Bonus: 1/2", dt.date(2026, 12, 31)), dt.date(2027, 1, 2))
+        self.assertIsNone(DT.parse_subject("Checking Historical Rep Tier Status (NDS)", sent))

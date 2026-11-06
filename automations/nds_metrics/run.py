@@ -1441,7 +1441,8 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
     if not soh:
         raise RuntimeError("activation revenue needs the SaraPlus relay")
     return line_revenue.build(soh, today, OUT_DIR / "nds_activation_revenue.png",
-                              log=log)
+                              log=log,
+                              tableau=(cols, getattr(cols, "owner_lines", None) or crew))
 
 def build_team_tree(cols, crew, today, log=print) -> Path:
     """The 6am NDS team tree rides the 7:30 thread (Carlos 2026-10-28:

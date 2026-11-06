@@ -62,6 +62,6 @@
       "2026-10-12",
       "2026-10-31"
     ],
-    "_double_days_note": "Sean's 'Double Tier Bonus - <date>' emails: every eligible sale that day counts twice toward the tier. Append each new one here."
+    "_double_days_note": "SEED only: nds_metrics/double_tier.py reads Sean's 'Double Tier Bonus - <date>' emails off Raf's inbox every run and caches them in output/nds_metrics/double_tier_days.json; this list is the floor for days before the reader existed."
   }
 }

@@ -171,7 +171,16 @@ def line_calib(log=print) -> int:
     feeds = LR.cached_feeds()
     log("[calib] cached feeds: " + (", ".join(d.isoformat() for d, _ in feeds)
                                     or "NONE"))
-    res = LR.prepare(soh, today, log=log, save=False)
+    tableau = None
+    try:
+        from automations.nds_metrics import run as NM
+        cols, crew = NM.load_crew(NM.pull(today, log=log), log=log)
+        tableau = (cols, getattr(cols, "owner_lines", None) or crew)
+    except Exception as e:  # noqa: BLE001
+        log("[calib] order log unavailable (%s: %s) -- IF/OOF not applied"
+            % (type(e).__name__, str(e)[:100]))
+    res = LR.prepare(soh, today, log=log, save=False, tableau=tableau)
+    log("[calib] double-tier days: " + ", ".join(res.get("double_days") or []))
     ls, le, ts, te = res["weeks"]
     detail = res["detail"]
     # --- the deposit week that ends `le` ---------------------------------
@@ -372,7 +381,8 @@ def main(argv=None) -> int:
                               if i_rep is not None and len(r) > i_rep)
     for rep, n in per.most_common(20):
         print(f"  NDSREP {rep}: {n}" + ("" if is_crew(rep) else "  (NOT in crew list)"))
-    for col in ("dtr status", "product type", "churn buckets"):
+    for col in ("dtr status", "product type", "churn buckets", "if/oof",
+                "rep tier bonus status", "wireless installment plan"):
         i = next((j for j, h in enumerate(hdr_n) if col in h), None)
         if i is not None:
             c = collections.Counter(str(r[i]).strip() or "(blank)"
@@ -441,6 +451,13 @@ def _entry(argv=None):
         return soh_dump()
     if "--line-calib" in args:
         return line_calib()
+    if "--double-days" in args:
+        from automations.nds_metrics import double_tier
+        from automations.nds_metrics.run import sow_rates
+        d = double_tier.days(sow_rates()["rep_tier"].get("double_days") or [])
+        print("[nds] double-tier days known: " + ", ".join(sorted(d)))
+        print("=== done ===", flush=True)
+        return 0
     return main(argv)
 
 

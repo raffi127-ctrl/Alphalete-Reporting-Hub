@@ -35,8 +35,14 @@ WHAT THIS BOARD DOES: the same, from what SaraPlus shows today.
     each of those orders' port lines when the line activates. Added to the
     line's posted $ in its activation week. DNQ (churn > 7% / activation
     rate < 60%, both only at 20+) is not modeled.
+  * in-footprint: the Tableau NDS order log's IF/OOF column, joined to the
+    feed line by phone number (Carlos 2026-11-06: "on the order log you can
+    see if its in foot print") -> port $193 / BYOD $168 instead of $213 /
+    $188. A number the order log has not seen yet prices OOF.
+  * double-tier days: double_tier.py reads Sean's "Double Tier Bonus - <date>"
+    emails off Raf's inbox every run (seed + cache in sow_rates / output).
   * NOT priced (deposit only): Protect Advantage (SaraPlus shows it
-    nowhere we read; $15 / $50 since 11/3), the in-footprint rate.
+    nowhere we read; $15 / $50 since 11/3).
   * weeks: Monday..Sunday like the deposit -- "last week" is the week the
     Wednesday deposit pays.
   * Cancelled $: a line now Disconnected/Cancelled, in the week it died
@@ -256,11 +262,15 @@ def is_byod(ln: dict) -> bool:
     return lt == "byod" or "byod" in hay
 
 
-def price_line(ln: dict, rates: Optional[dict] = None) -> Tuple[float, str]:
-    """-> (base $, kind) for one feed line. Air lines are $0 here: Internet
-    Air is priced off the SOH's Internet columns (which carry the install
-    date); an AIA line on the wireless report would double it."""
+def price_line(ln: dict, rates: Optional[dict] = None,
+               infp: bool = False) -> Tuple[float, str]:
+    """-> (base $, kind) for one feed line. `infp` = the order log marks the
+    number in-footprint (port $193 / BYOD $168 instead of $213 / $188). Air
+    lines are $0 here: Internet Air is priced off the SOH's Internet columns
+    (which carry the install date); an AIA line on the wireless report would
+    double it."""
     sw = (rates or sow_rates())["wireless"]
+    fp = "INFP" if infp else "OOF"
     lt = (ln.get("line_type") or "").strip().lower()
     hay = " ".join(str(ln.get(k) or "") for k in
                    ("device_type", "device")).lower()
@@ -275,9 +285,36 @@ def price_line(ln: dict, rates: Optional[dict] = None) -> Tuple[float, str]:
         return float(sw["upgrade_voice"]), "upgrade"
     if lt in ("port", "byod", ""):
         if is_byod(ln):
-            return float(sw["port_byod"]["OOF"]), "byod port"
-        return float(sw["port_nonbyod"]["OOF"]), "port"
+            return float(sw["port_byod"][fp]), "byod port" + (" IF" if infp else "")
+        return float(sw["port_nonbyod"][fp]), "port" + (" IF" if infp else "")
     return 0.0, "unpriced:" + lt
+
+
+def if_numbers(cols, rows, log=print) -> set:
+    """Phone numbers the Tableau NDS order log marks in-footprint (its IF/OOF
+    column), normalized like the feed's tn. The SaraPlus export carries no
+    footprint flag; the order log does (Carlos 2026-11-06: "on the order log
+    you can see if its in foot print")."""
+    from automations.sp_order_log.wireless_lines import norm_tn
+    i_f = cols.find("if/oof")
+    i_tn = cols.find("spe.tn")
+    if i_f is None or i_tn is None:
+        log("[nds] order log: no IF/OOF or spe.TN column -- every line priced OOF")
+        return set()
+    vocab = collections.Counter()
+    out = set()
+    for r in rows:
+        if len(r) <= max(i_f, i_tn):
+            continue
+        v = str(r[i_f]).strip().upper()
+        vocab[v or "(blank)"] += 1
+        tn = norm_tn(r[i_tn])
+        if tn and (v in ("IF", "INFP", "IN FOOTPRINT", "IN-FOOTPRINT", "IN FOOT PRINT")
+                   or v.startswith("INFP") or v.startswith("IF ")):
+            out.add(tn)
+    log("[nds] order log IF/OOF: " + ", ".join("%s=%d" % kv for kv in vocab.most_common(6))
+        + "; %d in-footprint number(s)" % len(out))
+    return out
 
 
 def addon_of(plan: str, rates: Optional[dict] = None) -> float:
@@ -325,12 +362,14 @@ def tier_rate(n_orders: int, rates: Optional[dict] = None) -> float:
     return rate
 
 
-def tier_order_counts(ix, orders, rates: Optional[dict] = None) -> Dict[tuple, int]:
+def tier_order_counts(ix, orders, rates: Optional[dict] = None,
+                      double_days=None) -> Dict[tuple, int]:
     """{(rep, tier-week Sunday): eligible orders}, an order = at least one
     port line (upgrade-only / Air-only orders do not count), a double-tier
-    day counts twice."""
+    day counts twice (`double_days`: double_tier.days(); the sow_rates seed
+    list when not given)."""
     rt = (rates or sow_rates())["rep_tier"]
-    dbl = set(rt.get("double_days") or [])
+    dbl = set(double_days) if double_days is not None else set(rt.get("double_days") or [])
     out: Dict[tuple, int] = collections.Counter()
     for r in orders:
         rep = _soh_cell(ix, r, "User Name")
@@ -364,9 +403,12 @@ def _fresh():
 
 
 def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
-            rates: Optional[dict] = None, log=print) -> dict:
+            rates: Optional[dict] = None, log=print, if_tns=None,
+            double_days=None) -> dict:
     """The pure core: SOH (ix, orders, pulled_at) + feed lines + tracker
-    state -> {"tables", "detail", "stats"}. No IO."""
+    state (+ the order log's in-footprint numbers, Sean's double-tier days)
+    -> {"tables", "detail", "stats"}. No IO."""
+    if_tns = set(if_tns or ())
     from automations.sp_order_log import wireless_lines as WL
     rates = rates or sow_rates()
     ix, orders, _pulled = soh
@@ -384,7 +426,7 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
     reps: Dict[str, dict] = {}
     detail: List[dict] = []
     stats = collections.Counter()
-    tier_counts = tier_order_counts(ix, orders, rates)
+    tier_counts = tier_order_counts(ix, orders, rates, double_days)
     tier_total = {"last": 0.0, "this": 0.0}
 
     def rep_of(r):
@@ -409,13 +451,16 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                 assign_byod(panel, n_byod)
                 for ln in panel:
                     rec = state.get(WL.line_key(ln))
-                    base, kind = price_line(ln, rates)
+                    infp = bool(ln.get("tn")) and ln.get("tn") in if_tns
+                    base, kind = price_line(ln, rates, infp)
+                    if infp:
+                        stats["if_lines"] += 1
                     act = activation_date(rec, _iso(soh_active.get(oid)))
                     dead = dead_date(rec, ln.get("line_status", ""),
                                      soh_cancel.get(oid))
                     addon = addon_of(ln.get("plan", ""), rates) if act else 0.0
                     tier = (tier_for(rep, _soh_cell(ix, r, "Order Date"))
-                            if (act and kind in ("port", "byod port")) else 0.0)
+                            if (act and kind.split(" IF")[0] in ("port", "byod port")) else 0.0)
                     amt = base + addon + tier
                     where = "open"
                     if dead is not None:
@@ -535,28 +580,40 @@ def log_tables(tables: dict, log=print) -> None:
                 log(f"[nds]   {key} {row['rep'][:26]}: ${row['posted']:,}")
 
 
-def prepare(soh, today: dt.date, log=print, save: bool = True) -> dict:
-    """IO wrapper: cached feeds -> replayed ledger -> compute()."""
+def prepare(soh, today: dt.date, log=print, save: bool = True,
+            tableau=None) -> dict:
+    """IO wrapper: cached feeds -> replayed ledger -> the order log's
+    in-footprint numbers (`tableau` = (Cols, rows) off nds_metrics.load_crew)
+    -> Sean's double-tier days off the inbox -> compute()."""
+    from automations.nds_metrics import double_tier
     ix, orders, pulled_at = soh
+    rates = sow_rates()
     soh_active, _ = soh_dates(ix, orders)
     feeds = cached_feeds()
     state, feed_date, lines = replay(feeds, soh_active, log=log, save=save)
-    res = compute(soh, today, lines, state, log=log)
+    if_tns = if_numbers(tableau[0], tableau[1], log=log) if tableau else set()
+    if not tableau:
+        log("[nds] no order log rows handed in -- every line priced OOF")
+    dbl = double_tier.days(rates["rep_tier"].get("double_days") or [], log=log)
+    res = compute(soh, today, lines, state, rates=rates, log=log,
+                  if_tns=if_tns, double_days=dbl)
+    res["double_days"] = sorted(dbl)
     res["feed_date"] = feed_date
     res["pulled_at"] = pulled_at
     s = res["stats"]
     log(f"[nds] act-rev lines: {s['lines']} on the wireless report "
         f"({s['active']} active, {s['open']} open, {s['dead']} dead), "
         f"{s['orders_off_report']} order(s) off the report priced at order "
-        f"level, {s['air']} Internet Air, rep tier bonus ${s['tier_last']:,} "
-        f"last / ${s['tier_this']:,} this on {s['tier_lines']} line(s)")
+        f"level, {s['air']} Internet Air, {s['if_lines']} in-footprint line(s), "
+        f"rep tier bonus ${s['tier_last']:,} last / ${s['tier_this']:,} this on "
+        f"{s['tier_lines']} line(s)")
     log_tables(res["tables"], log=log)
     return res
 
 
-def build(soh, today: dt.date, out: Path, log=print) -> Path:
+def build(soh, today: dt.date, out: Path, log=print, tableau=None) -> Path:
     from automations.box_order_log import png as bpng
-    res = prepare(soh, today, log=log)
+    res = prepare(soh, today, log=log, tableau=tableau)
     fd = res["feed_date"]
     feed_note = (f"wireless report {fd:%m/%d}" if fd
                  else "NO wireless report -- every order priced at order level")
@@ -564,9 +621,10 @@ def build(soh, today: dt.date, out: Path, log=print) -> Path:
            "priced the day it first shows Active on SaraPlus's wireless "
            f"report ({feed_note}); Internet Air $93 (+$30 ABP) on its install "
            "date;\nUnlimited Extra/Premium + the rep tier bonus (orders per "
-           "Sun-Sat sale week: 4=$30 5-6=$50 7-8=$75 9+=$110 a line) ride with "
-           "an active line. OOF rates at base comp; Protect not in SaraPlus. "
-           f"A paid line that later dies shows in Cancelled $ too. SaraPlus pulled {res['pulled_at']:%H:%M}.")
+           "Sun-Sat sale week: 4=$30 5-6=$50 7-8=$75 9+=$110 a line; double-tier "
+           "days off Sean's emails) ride with an active line. In-footprint "
+           "($193/$168) off the order log; Protect not in SaraPlus. "
+           f"SaraPlus pulled {res['pulled_at']:%H:%M}.")
     saved = list(bpng.COLS)
     bpng.COLS[:] = [("Rep Name", "rep", "left"),
                     ("Posted $", "posted", "center"),
