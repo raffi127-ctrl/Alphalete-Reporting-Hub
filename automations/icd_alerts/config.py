@@ -402,7 +402,7 @@ PAUSED_KEYS = frozenset({"jamis10", "carlos"})
 # is never read, signed into, kept alive overnight or probed on SaraPlus; its
 # OwnerVille knocks board and texts carry on. Not PAUSED_KEYS: that would stop
 # his TeleMapper board too, which he asked to keep.
-SARA_PAUSED_KEYS = frozenset({"tre"})
+SARA_PAUSED_KEYS = frozenset({"tre", "nigel"})  # nigel: SaraPlus not active yet (Megan 2026-11-06) -- OwnerVille knocks only until it is
 
 
 def sara_paused(key) -> bool:
