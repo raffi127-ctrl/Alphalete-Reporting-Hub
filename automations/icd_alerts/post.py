@@ -432,7 +432,9 @@ def _verizon_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
                           (" " + N.FIRE) if (raw in flames or name in flames) else "")
              for name, n, raw in rows]
     lines.append("")
-    lines.append("Lines: %d" % sum(r[1] for r in rows))
+    # "APPS" is the room's word (Carlos 2026-11-06: "Every 🩸 is an app" --
+    # "his crew has 8 apps"); each one equals a Credico line that day.
+    lines.append("Apps: %d" % sum(r[1] for r in rows))
     lines.append("%s TOTALS: %d" % (N.TROPHY, sum(r[1] for r in rows)))
     return "\n".join(lines)
 

@@ -86,7 +86,7 @@ class VerizonSales(unittest.TestCase):
         self.assertEqual(s.metrics, ("Lines", "Sales"))
         self.assertEqual(s.total({"Lines": 3, "Sales": 1}), 3)   # lines are the count
         self.assertFalse(s.presale_ping)          # Sale Started is not trusted yet
-        self.assertEqual(s.breakdown({"Lines": 1}), "1 line")
+        self.assertEqual(s.breakdown({"Lines": 1}), "1 app")
 
     def test_the_hub_counts_a_verizon_sale_as_an_app(self):
         from automations.icd_alerts import post as P

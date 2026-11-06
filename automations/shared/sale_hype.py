@@ -663,7 +663,7 @@ class _Verizon(Shape):
     # path (a house marked Sale Made, line count unknown) but is not counted.
     def breakdown(self, metrics):
         n = int(metrics.get("Lines", 0) or 0)
-        return "%d line%s" % (n, "" if n == 1 else "s") if n else ""
+        return "%d app%s" % (n, "" if n == 1 else "s") if n else ""   # Carlos: "every 🩸 is an app"
 
 
 VERIZON = _Verizon(("Lines", "Sales"), ("Lines",), {"Lines": "Lines", "Sales": "Sales"})

@@ -193,6 +193,11 @@ class IcdSignup(NamedTuple):
     submitted_at: str = ""
     office_key: str = ""
     note: str = ""
+    # VERIZON ONLY: the company name EXACTLY as Credico writes it on their
+    # emails ("High Value Acquisitions, Inc."). Credico's file names carry it,
+    # and it is the only thing that tells one Verizon office's reports from
+    # another's in the shared Hub inbox (Megan 2026-11-06).
+    credico_office: str = ""
 
     def problems(self) -> List[str]:
         """What is wrong with this, in the words of the person who typed it."""
@@ -207,6 +212,9 @@ class IcdSignup(NamedTuple):
         for label, value in (("start", self.day_start), ("end", self.day_end)):
             if not _TIME.match(value or ""):
                 out.append("The weekday %s time should look like 13:30." % label)
+        if self.campaign == "verizon" and not (self.credico_office or "").strip():
+            out.append("Please type your company name exactly as it appears on "
+                       "your Credico report emails (e.g. High Value Acquisitions, Inc.).")
         if self.saturday:
             for label, value in (("start", self.sat_start), ("end", self.sat_end)):
                 if not _TIME.match(value or ""):
@@ -264,6 +272,7 @@ class IcdSignup(NamedTuple):
             text_groups_json=str(row.get("text_groups_json") or "[]"),
             alert_channels_json=str(row.get("alert_channels_json") or "[]"),
             knocks_json=str(row.get("knocks_json") or "[]"),
+            credico_office=str(row.get("credico_office") or "").strip(),
         )
 
 

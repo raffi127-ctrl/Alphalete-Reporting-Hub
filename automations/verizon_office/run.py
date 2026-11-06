@@ -71,14 +71,38 @@ def post(channel: str, parent: str, thread: List[str]) -> str:
     return ts
 
 
+def check_forwarding(*, since_days: int = 7, log=print) -> int:
+    """Has each Verizon office's Credico mail reached the Hub inbox yet?
+
+    The one proof the office's Outlook rule works -- set up on the sign-up
+    form, so nobody here has to log into their mailbox. Read-only."""
+    from automations.shared import email_ingest
+    missing = 0
+    for o in OF.all_offices():
+        globs = [f"Sales Verification - Verizon Wireless - {o.office}*.xlsx",
+                 f"Compliance Flags - Verizon Wireless - {o.office}*.xlsx"]
+        hits = email_ingest.list_matches("", globs, since_days=since_days)
+        if hits:
+            newest = max(d for _fn, d in hits.values())
+            log("✓ %-12s %-34s arriving (newest %s)" % (o.key, o.office, newest))
+        else:
+            missing += 1
+            log("✗ %-12s %-34s nothing yet — their Outlook rule is not delivering" % (o.key, o.office))
+    return 1 if missing else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--check-forwarding", action="store_true",
+                    help="which Verizon offices' Credico emails are arriving (read-only)")
     ap.add_argument("--office", help="office key from offices.py (fetches from the Hub inbox)")
     ap.add_argument("--board", choices=["sales", "compliance", "both"], default="both")
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx (preview)")
     ap.add_argument("--cf", type=Path, help="local Compliance Flags xlsx (preview)")
     ap.add_argument("--send", action="store_true", help="really post (default: preview only)")
     a = ap.parse_args(argv)
+    if a.check_forwarding:
+        return check_forwarding()
     today = dt.date.today()
 
     office = OF.get(a.office) if a.office else None

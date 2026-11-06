@@ -29,7 +29,7 @@ _HEADER = ["office_key", "owner", "office_label", "contact", "platform",
            # and reordering columns under somebody is how a sheet stops
            # meaning what it says.
            "alert_channels_json", "knocks_json", "campaign",
-           "text_groups_json"]
+           "text_groups_json", "credico_office"]
 
 _LOCAL_FALLBACK = (Path(__file__).resolve().parents[2] / "output"
                    / "icd_signup_submissions.json")

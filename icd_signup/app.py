@@ -179,6 +179,27 @@ with st.container(border=True):
                    "campaigns use — so this office will not get those, and "
                    "will not be asked for a SaraPlus login.")
 
+    # VERIZON: the reports come from Credico by email, so the office sends
+    # them to Lucy with ONE Outlook rule (Megan 2026-11-06: "we need to be able
+    # to scale this to Lucy ECO"). Lucy matches their emails by company name.
+    credico_office = ""
+    if campaign in getattr(S, "VERIZON_CAMPAIGNS", ("verizon",)):
+        st.subheader("Your Credico reports")
+        credico_office = st.text_input(
+            "Your company name, exactly as Credico writes it on your report emails",
+            placeholder="e.g. High Value Acquisitions, Inc.",
+            help="Look at any 'Sales Verification' email from VZ Reports — the "
+                 "subject ends with 'For <your company>'. Copy that part exactly.")
+        st.info(
+            "**Send your Credico reports to Lucy — one time, 2 minutes:**\n\n"
+            "1. Open your **Credico Outlook** → ⚙️ **Settings** → **Mail** → **Rules** → **+ Add new rule**\n"
+            "2. Name it **Lucy**\n"
+            "3. Condition: **From** → `vzreports@credicousa.com`\n"
+            "4. Action: **Redirect to** → `alphaletereporting@gmail.com`\n"
+            "5. **Untick** *Stop processing more rules*, press **Save**, then use the "
+            "**↑ arrow** to move it to the **top** of your rules.\n\n"
+            "Lucy tells the reporting team as soon as your first report arrives.")
+
     st.subheader("Your selling hours")
     st.caption("Nothing posts outside these — this is how Lucy knows your reps "
                "are actually out.")
@@ -355,7 +376,8 @@ if submitted:
         wanted_channels=summary, contact=contact.strip(),
         alert_channels_json=json.dumps(alerts),
         knocks_json=json.dumps(dests),
-        text_groups_json=json.dumps(texts))
+        text_groups_json=json.dumps(texts),
+        credico_office=(credico_office or "").strip())
     problems = rec.problems()
     if problems:
         for p in problems:
