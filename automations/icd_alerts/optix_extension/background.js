@@ -31,6 +31,14 @@ async function status(text, ok) {
 // and returns ONLY {agent, latestDisposition, totalDisposition} per row.
 async function pageRead(mdy) {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // THE FILTER PANEL IS REMOVED, not hidden, once results show (Angular
+  // ng-if on showFilter). Its toggle is the options icon beside "Details" --
+  // NOT the back button next to it, which leaves for the dashboard.
+  const hasApply = () => [...document.querySelectorAll("button")].some(b => /^\s*apply\s*$/i.test(b.textContent || ""));
+  if (!hasApply()) {
+    const t = document.querySelector('span.vzicon.icon-options[ng-click*="showFilter"]');
+    if (t) { t.click(); await sleep(1500); }
+  }
   const boxes = [...document.querySelectorAll("input")].filter(i => /MM\/DD\/YYYY/i.test(i.placeholder || ""));
   if (boxes.length < 2) return {error: "Open Smart Leads → Lead Details in this tab (the date boxes were not found)."};
   for (const b of boxes.slice(0, 2)) {

@@ -1416,6 +1416,14 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
 
     hrs_pos = _out.index(COL_HRS_KNOCKING)
     tg_pos = _out.index(COL_TOTAL_GAPS)
+    # No rep has a gap reading (Verizon Optix carries no times) -> the summary
+    # rows say nothing either. Summing blanks printed "0" and "0h 0m", which
+    # reads as an office with no gaps rather than one we can't time.
+    _gap_cols = [_out.index(c) for c in (COL_GAPS, COL_TOTAL_GAPS) if c in _out]
+    if sub and all(not str(r[p] or "").strip() for r in sub for p in _gap_cols):
+        for t in extra_rows + [totals] + [r for r in display if is_team_band(r, rep_i)]:
+            for p in _gap_cols:
+                t[p] = ""
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
         r[hrs_pos] = _fmt_hm(r[hrs_pos])

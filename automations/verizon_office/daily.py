@@ -8,8 +8,9 @@ ONE PULL, ONE THREAD: the newest Sales Verification in the Hub inbox (Credico
 every program) feeds, in order:
 
   1. the sales board image (board_image, the Altura look)
-  2. canceled orders · 3. ongoing (not activated) · 4. disconnects
-  5. rep activations · 6. activation rate + AutoPay %       (metrics.py)
+  2. the NDS wireless thread, same renderers (thread_boards.py): Rep
+     Activations, Pending Orders, Activation Rate by Rep, Order Log (.xlsx,
+     a tab per rep), Canceled Orders, Disconnected Orders
   + Wednesdays: the compliance board, when its file is in
 
 They go INTO the day's existing "Verizon Metrics MM/DD/YYYY" thread in
@@ -28,14 +29,15 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-from automations.verizon_office import board_image, metrics, offices as OF, parse, run as RUN
+from automations.verizon_office import board_image, offices as OF, parse, run as RUN, thread_boards
 
 ROOT = Path(__file__).resolve().parents[2]
 LIVE_OFFICES: tuple = ()          # add "nicolas" the day he is on ECO
 
 
 def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
-    """[(kind, payload)] in thread order. kind = "image" (path, caption) or "text"."""
+    """[(kind, payload)] in thread order. kind = "image" / "file" (path,
+    caption) or "text"."""
     sv = parse.read_sales_verification(sv_path)
     if parse.file_date(sv_path) != today:
         raise RuntimeError(f"newest Sales Verification is {parse.file_date(sv_path)}, not today — stale, nothing posts")
@@ -46,8 +48,13 @@ def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
     png = board_image.render(sv_path, out / f"sales_board_{today:%Y-%m-%d}.png")
     steps = [("image", (png, f":satellite_antenna: *Verizon Sales Board — {sv.office}* · "
                              f"through {sv.through:%a %-m/%-d}" if sv.through else ""))]
-    for head, body in metrics.build(sv_path, today):
-        steps.append(("text", f"{head}\n{body}"))
+    for it in thread_boards.build(office.owner, sv_path, today, out / "boards"):
+        if it["kind"] == "text":
+            steps.append(("text", it["comment"]))
+            continue
+        for k, path in enumerate(it["paths"], 1):
+            part = f" ({k} of {len(it['paths'])})" if len(it["paths"]) > 1 else ""
+            steps.append((it["kind"], (path, it["comment"] + part)))
     if cf_path and today.weekday() == 2:                       # Wednesday
         from automations.verizon_office import board
         p, th = board.compliance_board(parse.read_compliance(cf_path))
@@ -61,7 +68,7 @@ def post(office: OF.VerizonOffice, today: dt.date, steps, log=print) -> None:
     client = S._client()
     ts = SB.open_verizon_metrics_thread(client, office.sales_channel, today)
     for kind, payload in steps:
-        if kind == "image":
+        if kind in ("image", "file"):
             path, caption = payload
             client.files_upload_v2(channel=office.sales_channel, thread_ts=ts,
                                    file=str(path), initial_comment=caption)
@@ -91,7 +98,7 @@ def main(argv=None) -> int:
         return 1
     md = [f"# Verizon Metrics thread — {'SENT' if a.send else 'PREVIEW'} · {office.owner} · {today}\n"]
     for kind, payload in steps:
-        md.append(f"\n[image] {payload[1]}  ({payload[0]})\n" if kind == "image" else f"\n{payload}\n")
+        md.append(f"\n[{kind}] {payload[1]}  ({payload[0]})\n" if kind != "text" else f"\n{payload}\n")
     prev = ROOT / "output" / f"verizon_daily_preview_{office.key}_{today:%Y-%m-%d}.md"
     prev.write_text("\n".join(md), encoding="utf-8")
     print("%d item(s) planned → %s" % (len(steps), prev))
