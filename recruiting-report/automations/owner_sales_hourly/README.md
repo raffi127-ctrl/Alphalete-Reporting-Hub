@@ -17,11 +17,22 @@ Owner Sales Today - 5:50 PM CT
 🏆 TOTAL: 261
 ```
 
-**Also into SOUTHSHORE ORG** (Colten, 2026-10-24): same text, only the South
-Shore owners (`funnel_board.roster.SOUTH_SHORE_NAMES`: Colten, Jairo, Drew,
-Eveliz ...), own total, own "nothing changed" skip. **Raf is listed there too**
-(Raf, 2026-11-04: to compete): ranked like the others, not counted in the total
-(`config.SSO_NOT_IN_TOTAL`).
+**Also into SOUTHSHORE ORG — South Shore vs Alphalete** (Colten 2026-10-24;
+the head-to-head Colten 2026-11-06, Raf approved). Two texts back to back:
+
+1. **South Shore Owner Sales Today** — only the South Shore owners
+   (`funnel_board.roster.SOUTH_SHORE_NAMES` + `config.SSO_EXTRA`), own total.
+2. **Alphalete Owner Sales Today** — our Org-board owners who are NOT South
+   Shore (Raf included and counted), own total.
+
+The pair always goes out together: if either list moved, both are texted, so
+the chat always compares two current numbers (Megan 2026-11-06). Raf's old
+ranked-but-not-counted line on the South Shore text is gone — he's on the
+Alphalete one now.
+
+**Org totals in the owners chat** (Megan 2026-11-06): still one list of
+everyone, plus two lines under the TOTAL — `Alphalete Org. Total: #` and
+`Southshore Org. Total: #` (same split as the SOUTHSHORE ORG texts).
 
 **And into Jairo's A PLAYERSSS** (Jairo + Eve, 2026-10-26): "NDS Sales
 Today" -- only NDS offices' sales, only owners on our Org board, with its own
