@@ -170,5 +170,29 @@ var LucyOffered = (function () {
     return out;
   }
 
-  return {read: read, isCalendar: isCalendar, isV2: isV2, officeId: officeId};
+  // NEW STARTS on the calendar's day: every row whose last cell says "First
+  // Day of Training" (raf_daily_update reads start times off the same rows).
+  // -> [{first_name, last_name, email, phone}]
+  var EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  function readStarts(d) {
+    on(d);
+    var out = [];
+    doc.querySelectorAll('tr').forEach(function (tr) {
+      var cells = Array.prototype.map.call(tr.children, function (c) { return norm(c.innerText); });
+      if (cells.length < 5 || !/First Day of Training/i.test(cells[cells.length - 1])) return;
+      var email = cells.find(function (c) { return EMAIL.test(c); }) || '';
+      out.push({first_name: cells[1] || '', last_name: cells[2] || '', email: email,
+                phone: (cells[3] || '').replace(/\D/g, '').slice(-10)});
+    });
+    return out;
+  }
+  // Which day the calendar is showing: "Calendars for 11-09-2026".
+  function shownDay(d) {
+    on(d);
+    var m = (doc.body.innerText || '').match(/Calendars for (\d{2}-\d{2}-\d{4})/);
+    return m ? m[1] : '';
+  }
+
+  return {read: read, readStarts: readStarts, shownDay: shownDay,
+          isCalendar: isCalendar, isV2: isV2, officeId: officeId};
 })();

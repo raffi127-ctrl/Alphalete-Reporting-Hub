@@ -71,7 +71,8 @@ function home(me, editing) {
       ? '<b>Last send' + (l.test ? ' (test — nothing sent)' : '') + '</b> · office ' + esc(l.office) + ' · ' +
         esc(new Date(l.at).toLocaleString([], {month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit'})) +
         ' · ' + l.names.length + ' ' + (l.names.length === 1 ? 'person' : 'people') +
-        '<ol class="names">' + l.names.map(n => '<li>' + esc(n) + '</li>').join('') + '</ol>'
+        '<ol class="names">' + l.names.slice(0, 5).map(n => '<li>' + esc(n) + '</li>').join('') + '</ol>' +
+        (l.names.length > 5 ? '<div>…and ' + (l.names.length - 5) + ' more</div>' : '')
       : '';
   });
 }
@@ -89,7 +90,9 @@ $('go').onclick = async () => {
 };
 // Opens the panel on the calendar tab -- works even on a tab that was open
 // before the extension was loaded (the floating button only appears after a reload).
-$('run').onclick = async () => {
+$('run').onclick = () => openPanel('');
+$('next').onclick = () => openPanel('next');
+async function openPanel(mode) {
   err('');
   const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
   if (!tab || !/^https:\/\/([^/]+\.)?applicantstream\.com\//.test(tab.url || '')) {
@@ -104,13 +107,14 @@ $('run').onclick = async () => {
     await chrome.scripting.insertCSS({target: {tabId: tab.id}, files: ['content.css']});
     await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['offered.js', 'content.js']});
     const [r] = await chrome.scripting.executeScript({target: {tabId: tab.id},
-      func: () => { if (!window.__lucyOfficeAdminOpen) return false; window.__lucyOfficeAdminOpen(); return true; }});
+      args: [mode],
+      func: (m) => { if (!window.__lucyOfficeAdminOpen) return false; window.__lucyOfficeAdminOpen(m); return true; }});
     if (!r || !r.result) { err('Reload the calendar page and try again.'); return; }
     window.close();
   } catch (e) {
     err('Couldn\'t open on this page: ' + e.message);
   }
-};
+}
 chrome.storage.local.get(['hideButton'], st => { $('showbtn').checked = !st.hideButton; });
 $('showbtn').onchange = () => chrome.storage.local.set({hideButton: !$('showbtn').checked});
 $('pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('go').click(); });

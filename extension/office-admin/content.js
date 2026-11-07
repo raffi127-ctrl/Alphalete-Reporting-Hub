@@ -61,7 +61,8 @@
     if (panel) { panel.remove(); panel = null; }
   }
 
-  async function open() {
+  async function open(mode) {
+    if (typeof mode !== 'string') mode = '';   // a click passes an event
     shell('<p>Checking who you are…</p>');
     const me = await ask('whoami');
     if (!me.ok) {
@@ -88,6 +89,12 @@
     }
     if (!office.city || !office.state) {
       shell('<p class="lucy-oa-err">Set office ' + esc(office.office) + '\'s city and state first: click the Lucy Office Admin icon at the top right of Chrome.</p>');
+      return;
+    }
+    // The Lucy icon's "Next week's starts" goes straight to that list.
+    if (mode === 'next') {
+      const already = (await ask('already', {office: office.office})).sent || {};
+      openRoster(office, already);
       return;
     }
     // SEVERAL ACCOUNTS = ONE LIST, ONE SEND (Megan 11/06: same Sterling link
@@ -174,12 +181,137 @@
   // STARTS (Raf's onboarding checklist, via the relay) for the Friday re-send
   // of the Sterling link -- there NOBODY is pre-ticked (Megan 11/06).
   let todayArgs = null;
+  // "2026-11-03" or "11/3/2026" -> "11/3": short enough for one line.
+  const shortDate = s => {
+    let m = String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return (+m[2]) + '/' + (+m[3]);
+    m = String(s).match(/^(\d{1,2})\/(\d{1,2})/);
+    return m ? (+m[1]) + '/' + (+m[2]) : String(s);
+  };
+  const pad = n => String(n).padStart(2, '0');
+  const mdy = t => pad(t.getMonth() + 1) + '/' + pad(t.getDate()) + '/' + t.getFullYear();
+  const keyName = (f, l) => (String(f || '').split(/\s+/)[0] + '|' + String(l || '')).toLowerCase().replace(/[^a-z|]/g, '');
+  // NEXT WEEK'S STARTS (Megan 11/06): read off each of the office's selected
+  // ApplicantStream calendars, Mon-Sat of next week ("First Day of Training"
+  // rows), with each person's BG status from the Sterling result emails.
+  // Anyone with no result email yet is ticked; the rest are not.
   async function openRoster(office, already) {
-    shell('<p>Reading next week\'s start list…</p>');
-    const r = await ask('roster', {office: office.office});
-    if (!r.ok) { shell('<p class="lucy-oa-err">' + esc(r.error || 'Couldn\'t read the start list.') + '</p>'); return; }
-    render(office, r.people || [], already, null, [], {roster: true, week: r.week, updated: r.updated});
+    const nums = v => (String(v || '').match(/\d+/g) || []);
+    const list = nums(office.appstream).filter(n => nums(office.approved).includes(n));
+    const now = new Date();
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((8 - now.getDay()) % 7 || 7));
+    const days = [0, 1, 2, 3, 4, 5].map(i => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i));
+    const week = (monday.getMonth() + 1) + '/' + monday.getDate();
+    const pageOffice = LucyOffered.officeId();
+    let people = [], problems = [];
+    for (let i = 0; i < list.length; i++) {
+      const acct = list[i];
+      try {
+        const got = await readWeek(acct, days, (msg) => shell(
+          '<p>Reading next week\'s starts: account <b>' + esc(acct) + '</b> (' + (i + 1) + ' of ' + list.length + ')…</p>' +
+          '<p class="lucy-oa-note">' + esc(msg) + ' Stay on this page.</p>'));
+        got.forEach(p => { p.acct = acct; people.push(p); });
+      } catch (e) {
+        problems.push({acct: acct, why: e.message});
+      }
+    }
+    try { await switchBack(pageOffice); } catch (e) { /* next calendar load fixes it */ }
+    LucyOffered.isCalendar(document);
+    const seen = {};
+    people = people.filter(p => {
+      const k = (p.email || keyName(p.first_name, p.last_name)).toLowerCase();
+      if (seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    });
+    const bg = await ask('bg_status', {office: office.office});
+    const status = {};
+    ((bg && bg.people) || []).forEach(b => { status[keyName(b.first, b.last)] = b; });
+    people.forEach(p => { const b = status[keyName(p.first_name, p.last_name)]; p.status = b ? b.status : ''; p.bgdate = b ? b.date : ''; });
+    render(office, people, already, list, problems, {roster: true, week: week});
   }
+  // RETENTION DETAILS (p=701) is the source (Megan 11/06): its weekly grid has
+  // a "Total New Starts Scheduled" row, and each day's number links to the
+  // list of who starts that day (p=715: First Name, Last Name, Email, Phone).
+  // The week is picked with the report's own form (frmRR: startDate2 +
+  // weekStart, as applicant_tracker/find_ad.py does).
+  const ROW = 'total new starts scheduled';
+  const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const head = day => day.toLocaleDateString('en-US', {month: 'short'}) + ' ' + day.getDate() + ', ' + day.getFullYear();
+  function frameNext(ms) {                  // the frame's NEXT load (a form submit)
+    const f = document.getElementById('lucy-oa-frame');
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('the report took too long to open')), ms || 120000);
+      f.onload = () => { clearTimeout(t); resolve(f.contentDocument); };
+    });
+  }
+  async function readWeek(acct, days, say) {
+    if (!TOK) throw new Error('reload the calendar and try again');
+    say('Opening the account…');
+    await frameLoad(BASE + '?p=104&rqst=' + TOK + '&newOfficeId=' + acct);
+    say('Opening Retention Details…');
+    let d = await frameLoad(BASE + '?rqst=' + TOK + '&p=701', 120000);
+    for (let i = 0; i < 60 && !(d.forms.frmRR && d.forms.frmRR.weekStart); i++) await wait(1000);
+    const f = d.forms.frmRR;
+    if (!f || !f.weekStart) throw new Error('Retention Details didn\'t open (no week form)');
+    if (LucyOffered.officeId(d) && LucyOffered.officeId(d) !== acct) {
+      throw new Error('your ApplicantStream login couldn\'t open account ' + acct);
+    }
+    const mon = days[0];
+    // The report's week runs Sunday-Saturday (seen live 11/06): start it the Sunday before.
+    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() - 1);
+    say('Moving the report to the week of ' + (mon.getMonth() + 1) + '/' + mon.getDate() + '…');
+    const next = frameNext();
+    if (f.startDate2) f.startDate2.value = mdy(sun);
+    f.weekStart.removeAttribute('readonly');
+    f.weekStart.value = mdy(sun).replace(/\//g, '-');
+    HTMLFormElement.prototype.submit.call(f);
+    d = await next;
+    // The weekly grid renders slowly: wait for the row AND next week's dates.
+    let cells = null;
+    for (let i = 0; i < 90 && !cells; i++) {
+      await wait(2000);
+      const trs = Array.from(d.querySelectorAll('tr'));
+      const hdr = trs.map(tr => Array.from(tr.children).map(c => norm(c.innerText)))
+                     .find(r => r.some(x => x.includes(norm(head(mon)))));
+      const row = trs.find(tr => { const c = tr.querySelector('td,th'); return c && norm(c.innerText).startsWith(ROW); });
+      if (hdr && row) cells = {hdr, row: Array.from(row.children)};
+    }
+    if (!cells) throw new Error('the report didn\'t show the week of ' + (mon.getMonth() + 1) + '/' + mon.getDate());
+    if (LucyOffered.officeId(d) && LucyOffered.officeId(d) !== acct) {
+      throw new Error('the report showed account ' + LucyOffered.officeId(d) + ', not ' + acct);
+    }
+    const out = [];
+    for (const day of days) {
+      const col = cells.hdr.findIndex(x => x.includes(norm(head(day))));
+      const cell = col >= 0 ? cells.row[col] : null;
+      const a = cell && cell.querySelector('a');
+      const n = parseInt((cell && cell.innerText) || '0', 10) || 0;
+      if (!a || !n) continue;
+      const label = day.toLocaleDateString([], {weekday: 'short', month: 'numeric', day: 'numeric'}).replace(',', '');
+      say(label + ': ' + n + ' new start' + (n === 1 ? '' : 's') + '…');
+      const href = a.getAttribute('href');
+      const dd = await frameLoad(/^http/.test(href) ? href : location.origin + '/' + href.replace(/^\//, ''), 60000);
+      for (let i = 0; i < 20 && !dd.querySelector('table tr td'); i++) await wait(1000);
+      readList(dd).forEach(p => { p.start = label; out.push(p); });
+    }
+    return out;
+  }
+  // The p=715 list: the biggest table, columns found by header text.
+  function readList(d) {
+    let best = null, n = 0;
+    d.querySelectorAll('table').forEach(t => { const r = t.querySelectorAll('tr').length; if (r > n) { n = r; best = t; } });
+    if (!best) return [];
+    const rows = Array.from(best.querySelectorAll('tr'));
+    const h = Array.from(rows[0].querySelectorAll('th,td')).map(c => norm(c.innerText));
+    const at = k => h.indexOf(k);
+    const fi = at('first name'), li = at('last name'), ei = at('email'), pi = at('phone');
+    return rows.slice(1).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()))
+      .filter(r => r.length > Math.max(fi, li) && fi >= 0 && r[fi])
+      .map(r => ({first_name: r[fi], last_name: li >= 0 ? r[li] : '', email: ei >= 0 ? r[ei] : '',
+                  phone: pi >= 0 ? String(r[pi]).replace(/\D/g, '').slice(-10) : ''}));
+  }
+
   function tabs(office, already, onRoster) {
     return '<div class="lucy-oa-tabs"><button data-tab="today" class="' + (onRoster ? '' : 'on') + '">Today\'s offers</button>' +
       '<button data-tab="next" class="' + (onRoster ? 'on' : '') + '">Next week\'s starts</button></div>';
@@ -198,17 +330,17 @@
     opts = opts || {};
     const R = !!opts.roster;
     if (!R) todayArgs = [office, people, already, accounts, problems];
-    accounts = R ? [] : (accounts || [LucyOffered.officeId()]);
+    accounts = accounts || [LucyOffered.officeId()];
     problems = problems || [];
     const loc = tabs(office, already, R) + '<div class="lucy-oa-loc">📍 ' + esc(office.city) + ', ' + esc(office.state) +
-      (R ? ' <span class="lucy-oa-acct">· week of ' + esc(opts.week || '?') + ' · from the onboarding checklist</span></div>'
+      (R ? ' <span class="lucy-oa-acct">· week of ' + esc(opts.week || '?') + ' · account' + (accounts.length > 1 ? 's ' : ' ') + esc(accounts.join(', ')) + '</span></div>'
          : ' <span class="lucy-oa-acct">· account' + (accounts.length > 1 ? 's ' : ' ') + esc(accounts.join(', ')) + '</span></div>') +
       problems.map(pr => '<div class="lucy-oa-err">⚠️ Account ' + esc(pr.acct) + ' wasn\'t read: ' + esc(pr.why) +
                          '. Nobody from it is on this list.</div>').join('');
     const mode = office.mode === 'live' ? '' :
       '<div class="lucy-oa-test">Test mode: checked, not sent.</div>';
     if (!people.length) {
-      shell(mode + loc + (R ? '<p>Nobody is on next week\'s start list yet.</p>'
+      shell(mode + loc + (R ? '<p>No "First Day of Training" on these calendars next week yet.</p>'
                             : '<p>Nobody marked <b>Yes</b> for Offer Position today yet.</p>'));
       wireTabs(office, already);
       return;
@@ -221,12 +353,13 @@
       const done = email && already[email.toLowerCase()];
       const indeed = /@indeedemail\.com$/i.test(email);
       const note = R
-        ? (!email ? 'no email on the checklist' : [p.status ? 'BG: ' + p.status : '', done ? 'sent ' + done : ''].filter(Boolean).join(' · '))
+        ? [p.start, !email ? 'no email in ApplicantStream' : p.status ? 'BG: ' + p.status + (p.bgdate ? ' ' + shortDate(p.bgdate) : '') : 'BG: no result yet',
+           done ? 'sent ' + done : ''].filter(Boolean).join(' · ')
         : !email ? 'no email in ApplicantStream'
         : done ? 'sent ' + done
         : indeed ? 'Indeed forwarding email — check it' : '';
       return '<label class="lucy-oa-row' + (email ? '' : ' off') + '"><input type="checkbox" data-i="' + i + '"' +
-        (email && !done && !R ? ' checked' : '') + (email ? '' : ' disabled') + '> ' +
+        (email && (R ? !p.status : !done) ? ' checked' : '') + (email ? '' : ' disabled') + '> ' +
         esc(p.first_name + ' ' + p.last_name) + (note ? ' <span class="lucy-oa-note">— ' + esc(note) + '</span>' : '') +
         '</label>';
     };
@@ -246,7 +379,7 @@
     const fresh = people.filter(p => !isDone(p)).length;
     const old = people.length - fresh;
     const top = R
-      ? '<p class="lucy-oa-pick">Next week\'s starts (' + people.length + '). Tick who needs the link again:</p>' + list(() => true)
+      ? '<p class="lucy-oa-pick">Next week\'s starts (' + people.length + '). Ticked = no background check result yet:</p>' + list(() => true)
       : fresh
       ? '<p class="lucy-oa-pick">Tick who should get one (' + fresh + '):</p>' + list(p => !isDone(p))
       : '<div class="lucy-oa-ok">✅ Everyone offered today has already been sent one.</div>';
@@ -271,8 +404,8 @@
       btn.textContent = 'Sending to ' + owner() + ' Lucy ECO machine…';
       // Next week's starts are a RE-SEND on purpose: no "already sent?" stop.
       const out = await ask('send', {office: office.office, people: picked,
-                                     resend: R ? 'all' : (resend || ''), source: R ? 'roster' : '',
-                                     appstream: R ? '' : Array.from(new Set(picked.map(p => p.acct))).join(', ')});
+                                     resend: R ? 'all' : (resend || ''),
+                                     appstream: Array.from(new Set(picked.map(p => p.acct))).join(', ')});
       if (out.needs_confirm) {           // already sent before: the admin decides
         confirmResend(picked, out.duplicates || []);
         count();
