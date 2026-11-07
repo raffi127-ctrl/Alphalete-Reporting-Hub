@@ -1380,5 +1380,57 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "miguel",
+    "report_id": "miguel_metrics",
+    "label": "Miguel's Local Office",
+    "owner": "Miguel Zaragoza",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "sheet_id": "1NF8sO5aLXi18PAR36kwupTqnqDBGSzZQW52F_iVc99o",
+    "knocks_office": "Miguel Zaragoza",
+    "ov_account": "24145",
+    "owner_office": "",
+    "business_name": "Nobilis Marketing Group",
+    "website": "",
+    "header_label": "Miguel Zaragoza",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-11-06 (Megan: 'Miguel is enrolling next week as well'). Nobilis Marketing Group, OwnerVille/AppStream 24145 (office-mapping.json; new owner 10/26, came off Starr Rodenhurst's team as a rep), AT&T Fiber on Starr's captainship. Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Miguel Zaragoza - Lucy Metrics' 1NF8sO5aLXi18PAR36kwupTqnqDBGSzZQW52F_iVc99o (Master Metrics Templates copy, writer alphaletereporting@). Timezone Pacific (Starr's area) until his order-log zips say otherwise. Scheduler OFF until the dry run is read.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

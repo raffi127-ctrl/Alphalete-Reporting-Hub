@@ -16974,6 +16974,45 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for oren. wired by hand 2026-11-06 (Megan: 'Oren is set up to do a zoom to enroll - let's do his dry run'). Omnia Management Inc, OwnerVille/AppStream 22536 (office-mapping.json), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Oren Shezaf - Lucy Metrics' 17zuMOIdwpgf4ssCUHkvhERTe1sf2MvQtNJVieIP7VDs (Master Metrics Templates copy, writer alphaletereporting@). Timezone from his Slack profile (Central) until his order-log zips say otherwise. Scheduler OFF until the dry run is read."
+  },
+  "miguel_metrics": {
+   "order": 36.97,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Miguel's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "miguel",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "miguel_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for miguel. wired by hand 2026-11-06 (Megan: 'Miguel is enrolling next week as well'). Nobilis Marketing Group, OwnerVille/AppStream 24145 (office-mapping.json; new owner 10/26, came off Starr Rodenhurst's team as a rep), AT&T Fiber on Starr's captainship. Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Miguel Zaragoza - Lucy Metrics' 1NF8sO5aLXi18PAR36kwupTqnqDBGSzZQW52F_iVc99o (Master Metrics Templates copy, writer alphaletereporting@). Timezone Pacific (Starr's area) until his order-log zips say otherwise. Scheduler OFF until the dry run is read."
   }
  },
  "read_only_standalone": {

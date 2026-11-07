@@ -42,6 +42,7 @@ When you confirm a new ID, add it here in the same commit.
 | Starr Rodenhurst | Nova Management, Inc. (AT&T, Fremont CA; 17573; captain) | U0BQAF8B3S7 | starr.novamanagement@gmail.com. Only Slack account under that name, email matches `captainship_night_knocks/owners.py` (2026-11-04) |
 | Nigel Marshall | VP Executives, Inc (AT&T Fiber, 20034; Phoenix → LA end of Nov 2026) | U07QDQ7FPJR | nigelmarshall002@gmail.com. Only Slack account under that name, email matches (2026-11-06, Megan's screenshot). Room #vp-sales C0CFKTML6UE (private, he made it 11/06); Megan's DM with him D0CFFJLVCBD |
 | Oren Shezaf | Omnia Management Inc (AT&T Fiber, 22536; Starr's captainship) | U09F8EMT21J | orenshezaf@gmail.com — the account Megan DMs (screenshot 2026-11-06). ⚠ look-alike U0BAW17EYP3 "Oren Shezaf" (omniamanagementinc@gmail.com, the captainship email) is a second account |
+| Miguel Zaragoza | Nobilis Marketing Group (AT&T Fiber, 24145; new owner off Starr's team, Starr's captainship) | U0BQLCVB2BW | miguelzaragoza39@gmail.com (Megan's screenshot 2026-11-06). Only Slack account under that name |
 | Atef Choudhury | Domin8 Acquisitions (23467) | U06E0GV0RNH | atefchy98@gmail.com. ⚠ look-alike U0CCYL2JZ7G "Atef's Office Slack" (atefchoudhury349@gmail.com) is a second account. Megan 2026-10-29 (sign-in alert DM) |
 | Cesar Castillo | Domin8 — Atef's super A / helper | U07GR1FUHKL | spikemaxblue12358@gmail.com. Gets Atef's sign-in alert DM with Megan, Eve, Atef (Megan 2026-10-29) |
 | Rashad Reed | Rashad's Local Office | U08LSELFTDW | |

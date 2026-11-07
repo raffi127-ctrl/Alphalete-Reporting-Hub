@@ -448,6 +448,7 @@ OFFICE_TIMEZONES: dict = {
     "aiden":   "America/Los_Angeles",          # Atoori Management, north LA county (Tableau zips, 2026-11-03) -- PACIFIC
     "nigel":   "America/Los_Angeles",          # VP Executives, Portland OR (order-log zips 97211-97232, 2026-11-06) -- PACIFIC
     "oren":    "America/Chicago",               # Omnia Management, Kansas City metro (order-log zips 66062/66212/641xx, 2026-11-06) -- CENTRAL
+    "miguel":  "America/Los_Angeles",          # Nobilis Marketing Group (ATT Fiber, 24145), off Starr's team -- Pacific until order-log zips confirm
     "sahil":   "America/New_York",             # M Coast, Raleigh NC -- Eastern
     "starr":   "America/Los_Angeles",          # Nova Management, Fremont CA -- Pacific
     "atef":    "America/Denver",               # Domin8 Acquisitions, Denver CO — Mountain
