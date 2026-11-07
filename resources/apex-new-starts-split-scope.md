@@ -92,7 +92,14 @@ in the title bar (`Account No: 23981`, the call centre) — `offered.py` already
 reads the Office ID one.
 
 **A week is six reads, one per date.** The calendar is per-day, so Mon–Sat each
-get a `cd=` fetch and the results are pooled.
+get a `cd=` fetch and the results are pooled — Megan, 2026-11-06: *"it would
+only be sent to those marked showed up on that week"*.
+
+**Pooling means de-duplicating by email.** Somebody rescheduled inside the week
+appears on two days — No on Monday, Yes on Wednesday — and a double entry would
+mean a second payroll record for a real person. One row per email, and a `Yes`
+on any day of the week wins. The same guard that already checks All Employees
+before creating anybody is the second line of defence, not the first.
 
 **Follow Up Status is not a second condition.** The rows also carry one
 (Cancelled / Confirmed / Booked Today - Confirmed / Called), and it is tempting
