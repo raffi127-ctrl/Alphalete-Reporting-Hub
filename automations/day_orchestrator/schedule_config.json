@@ -17059,6 +17059,35 @@
    "verify": {
     "type": "not_configured"
    }
+  },
+  "verizon_daily_nicolas": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "OFF until Nico is on ECO (Megan 2026-11-06: nothing live until then). Then: add 'nicolas' to verizon_office.daily.LIVE_OFFICES, set on_scheduler true + weekdays, and add the Hub card. Runs ~11:15 CT, after Credico's Sales Verification lands in the Hub inbox (~10:45) through Nico's Outlook redirect rule. Posts into the existing 'Verizon Metrics MM/DD/YYYY' thread in #alphalete-gp-sales (opened 5:10 by sales_boards for Carlos's Vantura Verizon board). Lucy 4, not Lucy 1 (Megan 2026-11-07).",
+   "machine": "Lucy 4",
+   "display_name": "Verizon Metrics — Nico (Credico, daily)",
+   "source_type": "email",
+   "data_sources": [
+    "Credico Sales Verification (Hub inbox)"
+   ],
+   "command": [
+    "automations.verizon_office.daily"
+   ],
+   "base_args": [
+    "--office",
+    "nicolas",
+    "--send"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "standalone_start_hour": 11,
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 15
   }
  },
  "read_only_standalone": {
