@@ -155,6 +155,7 @@ METRICS_CITY = {
     "aiden": "los_angeles",     # Atoori Management (NDS), Los Angeles (Megan 2026-11-03); Pacific; #odysseyy
     "nigel": "phoenix",         # VP Executives (ATT Fiber): Phoenix now, Los Angeles from 2026-11-30 (Megan 2026-11-06, CITY_CHANGES); #vp-sales
     "oren": "kansas_city",      # Omnia Management (ATT Fiber 22536): order-log zips 66062/66212/641xx = KC metro (2026-11-06); Central; channel from ECO sign-up
+    "miguel": "sacramento",     # Nobilis Marketing Group (ATT Fiber 24145): order-log zips 95841/95826/95827 + Marysville/Yuba City (2026-11-06); Pacific; channel from ECO sign-up
     "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up
     "starr": "fremont",         # Nova Management, Fremont CA; Pacific; channel from ECO sign-up
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern

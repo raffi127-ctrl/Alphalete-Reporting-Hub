@@ -1392,7 +1392,7 @@
     "knocks_office": "Miguel Zaragoza",
     "ov_account": "24145",
     "owner_office": "",
-    "business_name": "Nobilis Marketing Group",
+    "business_name": "Nobilis Marketing Group, Inc.",
     "website": "",
     "header_label": "Miguel Zaragoza",
     "thresholds": {
@@ -1428,7 +1428,7 @@
     "per_office_views": {},
     "machine": "Lucy 4",
     "campaign": "fiber_d2d",
-    "notes": "wired by hand 2026-11-06 (Megan: 'Miguel is enrolling next week as well'). Nobilis Marketing Group, OwnerVille/AppStream 24145 (office-mapping.json; new owner 10/26, came off Starr Rodenhurst's team as a rep), AT&T Fiber on Starr's captainship. Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Miguel Zaragoza - Lucy Metrics' 1NF8sO5aLXi18PAR36kwupTqnqDBGSzZQW52F_iVc99o (Master Metrics Templates copy, writer alphaletereporting@). Timezone Pacific (Starr's area) until his order-log zips say otherwise. Scheduler OFF until the dry run is read.",
+    "notes": "wired by hand 2026-11-06 (Megan: 'Miguel is enrolling next week as well'). Nobilis Marketing Group, OwnerVille/AppStream 24145 (office-mapping.json; new owner 10/26, came off Starr Rodenhurst's team as a rep), AT&T Fiber on Starr's captainship. Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Miguel Zaragoza - Lucy Metrics' 1NF8sO5aLXi18PAR36kwupTqnqDBGSzZQW52F_iVc99o (Master Metrics Templates copy, writer alphaletereporting@). Timezone Pacific (Starr's area) until his order-log zips say otherwise. Scheduler OFF until the dry run is read. | 2026-11-06 22:30 CT: order log (ALLREPS, 10/05-11/05) 79 rows, owner 'Miguel Zaragoza', office 'Nobilis Marketing Group, Inc.', zips 95841/95826/95827/95842 Sacramento + 95901 Marysville + 95961 Yuba City -> weather sacramento, Pacific confirmed.",
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
