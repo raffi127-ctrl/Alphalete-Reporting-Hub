@@ -34,7 +34,7 @@ THREAD_GAPS = "%s 15 Min Gaps" % TEAM
 # 1:30 since 2026-11-03 (Carlos: "lets start our knocks board 30 mins earlier
 # moving forward"); was 2:00. Saturday unchanged.
 WEEKDAY_START, WEEKDAY_STOP = (13, 30), (21, 0)
-SATURDAY_START, SATURDAY_STOP = (10, 15), (17, 30)   # 10:15 since 2026-10-24
+SATURDAY_START, SATURDAY_STOP = (11, 45), (18, 0)    # 11:45-6:00 since 2026-11-07 (Carlos); was 10:15-5:30
 # One-off earlier starts, by date (Carlos 2026-10-30: "the NDS knock board and
 # the NDS 15-minute gaps start 30 minutes early today"). Only the START moves;
 # stop and slots are unchanged. Safe to leave old dates here.
@@ -53,7 +53,10 @@ EXTRA_BOARD_SLOTS: list = []       # 2:30 is covered by the half-hour rule now
 # Saturday (Carlos 2026-10-24: "board + gaps at 10:15, 10:30, 10:45, 11 and
 # then continue on the regular schedule"): three extra board slots inside the
 # 10 o'clock hour; 11:00 onward is the hourly rule.
-SAT_EXTRA_BOARD_SLOTS = [(10, 15), (10, 30), (10, 45)]
+# Saturday (Carlos 2026-11-07): boards 11:45, 12:00, 12:15, 12:30, then every
+# 30 min to 6:00. An hour with named slots uses ONLY those, so hour 12 names
+# all three; 1pm onward is the half-hour rule.
+SAT_EXTRA_BOARD_SLOTS = [(11, 45), (12, 0), (12, 15), (12, 30)]
 GAPS_EVERY_MIN = 15          # the typed list
 BOARD_EVERY_MIN = 30         # the picture (hourly until 2026-10-26: "send every 30 minutes instead of every hour")
 CALLOUT_EVERY_MIN = 60       # "no dispo, no credit check" lines
@@ -110,7 +113,7 @@ RELAY_OFFICE_KEY = "carlos-b2batt"
 # a board draw (2:30, 3:00) post right after the board's wait for Raf's
 # share, so ~:35/:05; 2:45 and 3:15 land on the tick.
 NO_DISPO_SLOTS = [(14, 30), (14, 45), (15, 0), (15, 15)]
-NO_DISPO_WEEKDAYS = [0, 1, 2, 3, 4]            # Mon-Fri; Saturdays start 10:15
+NO_DISPO_WEEKDAYS = [0, 1, 2, 3, 4, 5]         # Mon-Sat (Carlos 2026-11-07: Saturday too)
 NO_DISPO_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura master
 NO_DISPO_TAB = "Stations"
 NO_DISPO_RANGE = "C6:F15"
