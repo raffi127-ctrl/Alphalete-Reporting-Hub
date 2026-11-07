@@ -1,5 +1,9 @@
 const $ = id => document.getElementById(id);
-chrome.storage.local.get(["cfg", "last"], ({cfg = {}, last}) => {
+chrome.storage.local.get(["cfg", "last"], async ({cfg, last}) => {
+  if (!cfg || !cfg.office) {      // the installer's pre-filled office + key
+    try { const pre = await (await fetch(chrome.runtime.getURL("config.json"))).json();
+          cfg = {office: pre.office || "", key: pre.key || "", dry: !!pre.dry}; } catch (e) { cfg = {}; }
+  }
   $("office").value = cfg.office || ""; $("key").value = cfg.key || ""; $("dry").checked = !!cfg.dry;
   if (last) { $("last").textContent = `${last.at}: ${last.text}`; $("last").classList.toggle("bad", !last.ok); }
 });

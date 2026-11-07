@@ -111,10 +111,10 @@ class VerizonSales(unittest.TestCase):
 
 class SharedRules(unittest.TestCase):
     def test_the_extension_and_python_count_the_same(self):
-        """extension/optix/rules.json must say exactly what optix_read does."""
+        """automations/icd_alerts/optix_extension/rules.json must say exactly what optix_read does."""
         import json
         from pathlib import Path
-        r = json.loads((Path(__file__).resolve().parents[2] / "extension/optix/rules.json").read_text())
+        r = json.loads((Path(__file__).resolve().parent / "optix_extension" / "rules.json").read_text())
         self.assertEqual([tuple(x) for x in r["rules"]], [tuple(x) for x in O._RULES])
         self.assertEqual({k: v for k, v in O.BOARD_COLUMNS.items() if v}, r["board_columns"])
 

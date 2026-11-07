@@ -1,5 +1,5 @@
 {
- "_note": "ONE set of rules for Optix dispositions, read by BOTH the Lucy Optix Chrome extension (extension/optix) and automations/icd_alerts/optix_read.py. First match wins; anything else is 'Other' and named. Mapped from Nico Murrugarra's Optix 2026-11-06.",
+ "_note": "ONE set of rules for Optix dispositions, read by BOTH the Lucy Optix Chrome extension (automations/icd_alerts/optix_extension) and automations/icd_alerts/optix_read.py. First match wins; anything else is 'Other' and named. Mapped from Nico Murrugarra's Optix 2026-11-06.",
  "rules": [
   [
    "^no answer",

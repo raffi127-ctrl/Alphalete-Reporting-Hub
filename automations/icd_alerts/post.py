@@ -2198,7 +2198,7 @@ SYSTEMS = {
     },
     # VERIZON OPTIX (Megan 2026-11-07: "build out a DM to go to the ICD if the
     # sign in is expired"). Filed as signin-optix by the Lucy Optix Chrome
-    # extension (extension/optix) and by optix_read. Verizon's SSO session
+    # extension (automations/icd_alerts/optix_extension) and by optix_read. Verizon's SSO session
     # ended overnight on the first day it was tested, so this is expected
     # roughly daily -- and until somebody signs in, the knock board is empty.
     "optix": {

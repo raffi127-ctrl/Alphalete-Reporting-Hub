@@ -12,7 +12,7 @@ The outcome rules are `rules.json`, shared with `automations/icd_alerts/optix_re
 
 ## Install (on the office's ECO computer, ~1 min)
 1. Chrome → `chrome://extensions` → **Developer mode** on.
-2. **Load unpacked** → pick this `extension/optix` folder. Pin it.
+2. **Load unpacked** → pick this `automations/icd_alerts/optix_extension` folder. Pin it.
 3. Click the icon → **Office code** + **Lucy key** (from the Relay Keys tab) → tick **Test mode** first → Save.
 4. In Optix: profile → **Dashboard** → **SMART LEADS** → **Lead Details**. Leave that tab open.
 5. **Send my knocks now** → it should say "Test mode: N reps, N knocks". Then untick Test mode.

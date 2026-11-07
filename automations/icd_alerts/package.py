@@ -71,6 +71,19 @@ AGENT_FILES = [
     "automations/icd_alerts/box_signin.py",
     "automations/icd_alerts/optix_read.py",
     "automations/icd_alerts/optix_signin.py",
+    # THE LUCY OPTIX CHROME EXTENSION (Verizon). Data, not imports: setup.py
+    # copies this folder to the owner's Documents for a one-click Load
+    # unpacked, with their office code + key pre-filled (config.json).
+    "automations/icd_alerts/optix_extension/manifest.json",
+    "automations/icd_alerts/optix_extension/background.js",
+    "automations/icd_alerts/optix_extension/popup.html",
+    "automations/icd_alerts/optix_extension/popup.js",
+    "automations/icd_alerts/optix_extension/rules.json",
+    "automations/icd_alerts/optix_extension/README.md",
+    "automations/icd_alerts/optix_extension/icons/lucy-16.png",
+    "automations/icd_alerts/optix_extension/icons/lucy-32.png",
+    "automations/icd_alerts/optix_extension/icons/lucy-48.png",
+    "automations/icd_alerts/optix_extension/icons/lucy-128.png",
     "automations/icd_alerts/sara_signin.py",
     # The code screen cleared by itself, with the code from Lucy 1
     # (2026-10-29). code_answer only for its request wording -- the half

@@ -117,6 +117,56 @@ def run(args, **kw):
 
 
 # --- steps ------------------------------------------------------------------
+def install_optix_extension(rec) -> bool:
+    """Put the Lucy Optix extension where the owner can click it in, ready.
+
+    Megan 2026-11-07: "add the extension install to the install run on lucy
+    eco for verizon". The folder goes to Documents (easy to find in Chrome's
+    folder picker -- the Desktop copy is how manifest.json once got dragged
+    out of it), with config.json holding THIS office's code and Lucy key so
+    the owner types nothing. Returns True when the folder is in place."""
+    src = APP_DIR / "automations" / "icd_alerts" / "optix_extension"
+    dest = HOME / "Documents" / "Lucy Optix"
+    if not (src / "manifest.json").exists():
+        say("      the Lucy Optix extension is missing from this install — "
+            "ask the reporting team to resend it.")
+        return False
+    try:
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
+        (dest / "config.json").write_text(json.dumps({
+            "office": str(rec.get("office_key") or ""),
+            "key": str(rec.get("relay_key") or ""),
+            "tz": str(rec.get("timezone") or "America/Chicago"),
+        }))
+    except OSError as e:
+        say("      could not put the Lucy Optix folder in Documents (%s)." % e)
+        return False
+    try:
+        if IS_WINDOWS:
+            subprocess.Popen(["cmd", "/c", "start", "chrome", "chrome://extensions"])
+        else:
+            subprocess.Popen(["open", "-a", "Google Chrome", "chrome://extensions"])
+    except Exception:  # noqa: BLE001 — the steps still say where to go
+        pass
+    steps = ("Last step — add Lucy Optix to Chrome (about 1 minute):\n\n"
+             "1. Chrome is open on the Extensions page. Turn on Developer mode "
+             "(top right).\n"
+             "2. Click Load unpacked, open Documents, click the Lucy Optix "
+             "folder once, then Select.\n"
+             "3. In Optix: sign in → Consumer profile → Dashboard → SMART "
+             "LEADS → Lead Details, and leave that tab open.\n\n"
+             "Your office code and Lucy key are already filled in. Click the "
+             "red Lucy icon → Send my knocks now to check it.")
+    say("      " + steps.replace("\n", "\n      "))
+    try:
+        ask.message(steps)
+    except Exception:  # noqa: BLE001 — printed above either way
+        pass
+    return True
+
+
 def copy_app():
     src = HERE / "automations"
     if not src.is_dir():
@@ -1438,9 +1488,10 @@ def main() -> int:
             # office signs in once, now, in the window Lucy uses.
             # Knocks come from the Lucy Optix Chrome extension in the office's
             # OWN Chrome (Verizon refuses data to program-launched browsers).
-            say("      %s reads Verizon Optix through the Lucy Optix Chrome "
-                "extension — the reporting team installs it in this "
-                "computer's Chrome with you (about 1 minute)." % this_campaign)
+            # Chrome lets no installer add an extension by itself, so this does
+            # everything else: the folder, the office code + key pre-filled,
+            # Chrome opened on the right page, and three steps on screen.
+            install_optix_extension(rec)
         else:
             # REQUIRED HERE, because it is the only login this office has. With
             # no SaraPlus there are no credit checks and no sales -- the knocks

@@ -117,8 +117,23 @@ async function signedOut() {
   return login.length > 0 || optix.length === 0;
 }
 
+// PRE-FILLED BY THE LUCY ECO INSTALLER: setup.py writes config.json (office
+// code + Lucy key) into this folder, so the owner never types a key. Used
+// only until the popup saves its own settings.
+async function loadCfg() {
+  let cfg = (await chrome.storage.local.get("cfg")).cfg;
+  if (cfg && cfg.office) return cfg;
+  try {
+    const pre = await (await fetch(chrome.runtime.getURL("config.json"))).json();
+    if (pre && pre.office) { cfg = {office: String(pre.office).toLowerCase(), key: pre.key || "",
+                                    tz: pre.tz, start: pre.start, end: pre.end, dry: !!pre.dry};
+                             await chrome.storage.local.set({cfg}); return cfg; }
+  } catch (e) {}
+  return cfg || {};
+}
+
 async function readNow(why) {
-  const cfg = (await chrome.storage.local.get("cfg")).cfg || {};
+  const cfg = await loadCfg();
   // Test mode needs no key: it reads and counts, and sends nothing.
   if (!cfg.office || (!cfg.key && !cfg.dry)) return status("Not set up yet — click the Lucy icon and enter your office code (and key, unless Test mode).", false);
   const tz = cfg.tz || "America/Chicago";
