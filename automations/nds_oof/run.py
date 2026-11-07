@@ -544,7 +544,8 @@ def no_dispo_slot(now: dt.datetime) -> Optional[str]:
     a NO_DISPO_WEEKDAYS day; None otherwise."""
     if now.weekday() not in C.NO_DISPO_WEEKDAYS:
         return None
-    for h, m in C.NO_DISPO_SLOTS:
+    slots = C.NO_DISPO_SAT_SLOTS if now.weekday() == 5 else C.NO_DISPO_SLOTS
+    for h, m in slots:
         slot = now.replace(hour=h, minute=m, second=0, microsecond=0)
         if 0 <= (now - slot).total_seconds() < C.NO_DISPO_SLOT_GRACE_MIN * 60:
             return slot.strftime("%H:%M")

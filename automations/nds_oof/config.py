@@ -112,7 +112,8 @@ RELAY_OFFICE_KEY = "carlos-b2batt"
 # the borrowed rows off Raf's relay for Cinthya/Nathaly). Slots that fall on
 # a board draw (2:30, 3:00) post right after the board's wait for Raf's
 # share, so ~:35/:05; 2:45 and 3:15 land on the tick.
-NO_DISPO_SLOTS = [(14, 30), (14, 45), (15, 0), (15, 15)]
+NO_DISPO_SLOTS = [(14, 30), (14, 45), (15, 0), (15, 15)]          # Mon-Fri
+NO_DISPO_SAT_SLOTS = [(12, 15), (12, 30), (12, 45)]               # Saturday (Carlos 2026-11-07)
 NO_DISPO_WEEKDAYS = [0, 1, 2, 3, 4, 5]         # Mon-Sat (Carlos 2026-11-07: Saturday too)
 NO_DISPO_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura master
 NO_DISPO_TAB = "Stations"

@@ -23,7 +23,10 @@ class NoDispo(unittest.TestCase):
         self.assertEqual(R.no_dispo_slot(dt.datetime(2026, 11, 6, 14, 41, 0)), "14:30")   # late tick
         self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 6, 14, 29, 0)))
         self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 6, 15, 30, 5)))
-        self.assertEqual(R.no_dispo_slot(dt.datetime(2026, 11, 7, 14, 30, 5)), "14:30")  # Sat too (11-07)
+        self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 7, 14, 30, 5)))           # Sat: weekday slots off
+        self.assertEqual(R.no_dispo_slot(dt.datetime(2026, 11, 7, 12, 15, 5)), "12:15")  # Sat slots (11-07)
+        self.assertEqual(R.no_dispo_slot(dt.datetime(2026, 11, 7, 12, 45, 5)), "12:45")
+        self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 6, 12, 15, 5)))           # Fri: no 12:15
         self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 8, 14, 30, 5)))           # Sun
 
     def test_station_names_flatten_dedupe(self):
