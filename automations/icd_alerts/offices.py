@@ -325,9 +325,9 @@ OFFICES: Dict[str, AlertOffice] = {
     ),
     "nicolas": AlertOffice(
         key="nicolas", owner="Nicolas Murrugarra", label="Nicolas's Local Office",
-        # UNROUTED on purpose: the installer asks them where they want
-        # their alerts, and a human approves it. Nothing posts until then.
-        channels=(),
+        # His sales cheers go where his reps post the 🩸 tally (Megan
+        # 2026-11-07: they were landing in her DM as "no Slack channel set").
+        channels=("C07J46MQNUX",),           # #alphalete-gp-sales (shared with Carlos)
         timezone="America/Chicago", active=True, platform="mac",
         slack_user_id="U047D64M0RW",
         # Hours are the ORG DEFAULT, not this owner's own -- nobody
