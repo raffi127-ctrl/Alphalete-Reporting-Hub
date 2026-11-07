@@ -757,6 +757,15 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
              % ", ".join("%s %d" % (k, v) for k, v in sorted(since.items(), key=lambda kv: -kv[1])[:12]))
         pngs30 = render_board(board_rows, today, now, out_dir / "last30",
                               extra_columns={C.BOARD_30_COL: since})
+        # Its OWN file name: the plain board is total_knocks_<day>.png too,
+        # and the text sender stages pictures by basename -- same name,
+        # one picture wins, and the test board could go out as the plain one.
+        renamed = []
+        for p in pngs30:
+            q = p.with_name(p.stem + "_last30" + p.suffix)
+            p.replace(q)
+            renamed.append(q)
+        pngs30 = renamed
     if want_board and not board_rows:
         _log("board: no rows on the grid -- not drawn (never post blank)")
     callout = "" if no_gaps else _callout(over, today, now, send=send)
