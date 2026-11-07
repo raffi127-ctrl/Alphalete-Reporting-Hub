@@ -13,6 +13,8 @@ office's own logins, which live here and nowhere else.
 KINDS
   bgc_send -- sign in to the office's Sterling account and send each person
               a background-check e-invite (sterling_send.py).
+  apex_week -- new starts into Apex for one week (apex_new_starts.eco_run).
+              The job says WHICH WEEK; who is in it is read here.
 
 A JOB IS NEVER DONE TWICE. The relay hands a job out once; this computer
 answers it once. If the work cannot START (another browser has Lucy's
@@ -100,6 +102,23 @@ def send_result(rec: Dict, job_id: str, res: Dict) -> bool:
     return False
 
 
+def _appstream_id(office_key: str) -> str:
+    """This office's ApplicantStream id, from the office table.
+
+    Read from OUR table rather than from the job, for the same reason the
+    background-check flow checks the account number on the calendar: the id
+    decides whose applicants get read, so it is not something the caller gets
+    to say.
+    """
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    if not o or not o.appstream_id:
+        raise RuntimeError(
+            "office %r has no ApplicantStream id in office_admin.config.OFFICES"
+            % office_key)
+    return o.appstream_id
+
+
 def work(job: Dict, office_key: str, log=print) -> Dict:
     """One job -> its result dict. Never raises."""
     kind = job.get("kind")
@@ -111,6 +130,16 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
             res = sterling_send.send_invites(list(payload.get("people") or []), live=live,
                                              office_key=office_key, log=log,
                                              location=payload.get("location") or {})
+        elif kind == "apex_week":
+            # New starts -> Apex. The job carries a DATE and nothing else: who
+            # is in the week is read here, off this office's own training
+            # calendar, so a list cannot be posted in from outside.
+            from automations.apex_new_starts import eco_run
+            payload = job.get("payload") or {}
+            res = eco_run.run_week(
+                dt.date.fromisoformat(str(payload.get("week_start"))),
+                office_appstream=_appstream_id(office_key),
+                live=live, log=log)
         else:
             res = {"status": "error", "error": "this computer doesn't know job kind %r yet -- update Lucy" % kind}
     except Exception as e:  # noqa: BLE001

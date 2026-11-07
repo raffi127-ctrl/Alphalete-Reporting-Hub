@@ -938,7 +938,7 @@ var OJ = {ID: 0, OFFICE: 1, KIND: 2, MODE: 3, PAYLOAD: 4, QUEUED: 5,
 var OJ_HEAD = ['Job ID', 'Office', 'Kind', 'Mode', 'Payload JSON', 'Queued At',
                'Status', 'Offered At', 'Result JSON', 'Result At',
                'Collected At'];
-var OJ_KINDS = {bgc_send: true};
+var OJ_KINDS = {bgc_send: true, apex_week: true};
 var OJ_MAX_PER_CALL = 2;
 
 function _ojSheet() {
@@ -1180,9 +1180,10 @@ function _officeAdminCall(a) {
   if (sess.offices.indexOf(office) < 0) return {ok: false, error: "That isn't one of your offices."};
   if (what === 'set_office') return _admSetOffice(sess, office, a);
   if (what === 'send') return _admSend(sess, office, a);
+  if (what === 'apex_week') return _admApexWeek(sess, office, a);
   if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
   if (what === 'already') return _admAlready(office);
-  if (what === 'roster') return _admRoster(office);
+  if (what === 'bg_status') return _admBgStatus(office);
   return {ok: false, error: 'unknown call'};
 }
 
@@ -1278,15 +1279,6 @@ function _admSend(sess, office, a) {
   // THE GUARD: the calendar's own account number must be approved for this
   // office (and switched on by its admin). Anything else sends nothing.
   // Several accounts can go in one send ("11280, 11901"): EVERY one must pass.
-  // A send from NEXT WEEK'S STARTS has no calendar: its guard is the roster --
-  // only people on this office's own published roster can go.
-  if (String(a.source || '') === 'roster') {
-    var onRoster = {};
-    _admRoster(office).people.forEach(function (p) { if (p.email) onRoster[p.email.toLowerCase()] = 1; });
-    var stray = (a.people || []).filter(function (p) { return !onRoster[String(p && p.email || '').trim().toLowerCase()]; });
-    if (stray.length) return {ok: false, error: "Some of these aren't on next week's start list, so nothing was sent."};
-    a.appstream = (o.approved || '').split(', ')[0] || '';
-  }
   var acct = _accounts(a.appstream);
   var approved = String(o.approved || '').split(', ').filter(String);
   var chosen = String(o.appstream || '').split(', ').filter(String);
@@ -1326,24 +1318,24 @@ function _admSend(sess, office, a) {
                                       location: {country: 'United States', state: o.state, city: o.city}}});
 }
 
-// NEXT WEEK'S STARTS (Megan 2026-11-06): on Fridays the admin may re-send the
-// Sterling link to people starting the following week. Lucy 1 copies that
-// week's onboarding-checklist roster here ('Office Roster' tab,
-// office_admin/roster_publish.py); the extension lists it with NOBODY ticked.
-var ROSTER_TAB = 'Office Roster';
-function _admRoster(office) {
-  var sh = _book().getSheetByName(ROSTER_TAB);
-  if (!sh) return {ok: true, week: '', updated: '', people: []};
-  var rows = sh.getDataRange().getValues(), out = [], week = '', updated = '';
+// NEXT WEEK'S STARTS (Megan 2026-11-06): the extension reads who starts next
+// week off the office's own ApplicantStream calendars; this hands it each
+// person's background-check status from the Sterling result EMAILS (Lucy 1
+// copies them to the 'BG Status' tab -- office_admin/roster_publish.py).
+var BG_TAB = 'BG Status';
+function _admBgStatus(office) {
+  var sh = _book().getSheetByName(BG_TAB);
+  if (!sh) return {ok: true, updated: '', people: []};
+  var rows = sh.getDataRange().getValues(), out = [], updated = '';
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (String(r[0]).trim().toLowerCase() !== office) continue;
-    week = r[1] instanceof Date ? Utilities.formatDate(r[1], 'America/Chicago', 'M/d/yyyy') : String(r[1]);
-    updated = String(r[6] || '');
-    out.push({first_name: String(r[2] || '').trim(), last_name: String(r[3] || '').trim(),
-              email: String(r[4] || '').trim(), status: String(r[5] || '').trim()});
+    updated = String(r[5] || '');
+    out.push({first: String(r[1] || '').trim(), last: String(r[2] || '').trim(),
+              status: String(r[3] || '').trim(),
+              date: r[4] instanceof Date ? Utilities.formatDate(r[4], 'America/Chicago', 'M/d') : String(r[4] || '')});
   }
-  return {ok: true, week: week, updated: updated, people: out};
+  return {ok: true, updated: updated, people: out};
 }
 
 function _admAlready(office) {
