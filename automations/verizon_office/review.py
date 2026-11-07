@@ -36,8 +36,11 @@ REVIEW_DIR = ROOT / "resources" / "verizon_review"
 MANIFEST = REVIEW_DIR / "manifest.json"
 POSTED = ROOT / "output" / "verizon_review_posted.json"
 
-# The group: Alphalete GP, Carlos, Evelyn, Lucy, Megan, Nico.
-GROUP_DM = "C0CF6B3TUEB"
+# The group: Alphalete GP, Carlos, Evelyn, Lucy, Lucy Reporting, Megan, Nico.
+# Opened 2026-11-07 for this: the first group (C0CF6B3TUEB) had only the
+# *Lucy* bot account, whose token no Lucy machine holds, and a group DM can't
+# take a new member -- so Megan's call was a new group with Lucy Reporting in.
+GROUP_DM = "C0CFN3SBFCM"
 
 DAY = dt.date(2026, 11, 6)               # the example day: Friday 11/6
 INV = ROOT / "output" / "_verizon_inventory" / "outlook"
@@ -203,7 +206,7 @@ def _group_client(log=print):
     user token every Lucy posts metrics with) -- 11/7 first send died on
     channel_not_found with the user token. Ask each; never guess."""
     from automations.shared import slack_metrics_post as S
-    for name, make in (("bot", S._bot_client), ("user", S._client)):
+    for name, make in (("user", S._client), ("bot", S._bot_client)):
         try:
             c = make()
             try:
