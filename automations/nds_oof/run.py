@@ -813,6 +813,29 @@ def _share_dump() -> int:
             lines += ["mapped: " + G._rep(x) for x in (rows or [])]
             from automations.nds_tnc_check.run import _probe_dump
             _probe_dump("ICD Knocks office %s %s" % (okey, row[KP.KN_DAY]), lines, log=_log)
+    # The SALES relay row for Carlos's office (what Lucy 1's standings text
+    # reads): Sales JSON vs Last Posted, and when the office Mac last wrote.
+    try:
+        from automations.icd_sales_board import relay_read as RR
+        rws = S._book().worksheet(RR.RELAY_TAB)
+        grid = rws.get_all_values()
+        header = [str(h).strip() for h in grid[0]] if grid else []
+        want_off = {"carlos-b2batt", "carlos-nds", "carlos"}
+        for raw_row in grid[1:]:
+            rec = dict(zip(header, raw_row))
+            if (rec.get(RR.COL_OFFICE) or "").strip().lower() not in want_off:
+                continue
+            _log("share-dump: ICD Relay office=%r day=%r local=%r agent=%r sales=%s last_posted=%s"
+                 % (rec.get(RR.COL_OFFICE), rec.get(RR.COL_DAY), rec.get(RR.COL_LOCAL),
+                    (rec.get(RR.COL_AGENT) or "")[:20],
+                    (rec.get(RR.COL_SALES) or "")[:300],
+                    (rec.get("Last Posted Sales JSON") or "")[:300]))
+            lines = ["%s: %s" % (k, (v or "")[:3000]) for k, v in rec.items()
+                     if k and k != RR.COL_RECORDS]
+            _probe_dump("ICD Relay office %s %s" % (rec.get(RR.COL_OFFICE), rec.get(RR.COL_DAY)),
+                        lines, log=_log)
+    except Exception as e:  # noqa: BLE001
+        _log("share-dump: 'ICD Relay' unavailable: %s: %s" % (type(e).__name__, str(e)[:160]))
     return 0
 
 
