@@ -359,15 +359,53 @@ def board_kpis() -> Dict:
             "first_knock": knock_kpis.Scale(gh * 60 + gm, rh * 60 + rm)}
 
 
-def render_board(rows: List[Dict], today: dt.date, now: dt.datetime, out_dir: Path) -> List[Path]:
+def render_board(rows: List[Dict], today: dt.date, now: dt.datetime, out_dir: Path,
+                 extra_columns: Optional[Dict] = None) -> List[Path]:
     from automations.total_knocks import render as knocks_render
+    out_dir.mkdir(parents=True, exist_ok=True)
     pngs, shape = knocks_render.render_knocks_boards(
         today, rows=rows, out_dir=out_dir,
         title_suffix="%s — Carlos" % C.TEAM,
         date_text="%s — %s" % (today.strftime("%a %m/%d"), _clock(now)),
-        rate_columns=True, sort_by="knocks", kpis=board_kpis())
+        rate_columns=True, sort_by="knocks", kpis=board_kpis(),
+        extra_columns=extra_columns)
     _log("board: %s (%s)" % (", ".join(p.name for p in pngs), shape))
     return list(pngs)
+
+
+def _rep_key(name: str) -> str:
+    return " ".join(str(name or "").split()).lower()
+
+
+def _total_knocks(row: Dict) -> int:
+    from automations.total_knocks import pull as knocks
+    v = str(row.get(knocks.COL_TOTAL_KNOCKS, "") or "").replace(",", "").strip()
+    return int(v) if v.isdigit() else 0
+
+
+def knocks_since_last(rows: List[Dict], state: Dict, today: dt.date) -> Dict[str, int]:
+    """{rep: knocks since the previous board went out}. The previous
+    board's totals live in state['last_board_knocks'] (saved only when a
+    board was really sent); a new day, or a rep with no earlier total,
+    counts from zero. Never negative (Ownerville corrects itself)."""
+    from automations.total_knocks import pull as knocks
+    prev = (state.get("last_board_knocks") or {}) \
+        if state.get("last_board_knocks_day") == today.isoformat() else {}
+    out: Dict[str, int] = {}
+    for r in rows:
+        rep = str(r.get(knocks.COL_REP, "") or "").strip()
+        if not rep:
+            continue
+        out[rep] = max(_total_knocks(r) - int(prev.get(_rep_key(rep), 0) or 0), 0)
+    return out
+
+
+def remember_board_knocks(rows: List[Dict], state: Dict, today: dt.date) -> None:
+    from automations.total_knocks import pull as knocks
+    state["last_board_knocks"] = {
+        _rep_key(r.get(knocks.COL_REP, "")): _total_knocks(r)
+        for r in rows if str(r.get(knocks.COL_REP, "") or "").strip()}
+    state["last_board_knocks_day"] = today.isoformat()
 
 
 # --- post --------------------------------------------------------------------
@@ -712,6 +750,13 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
 
     body = gaps_text(over, now) if want_gaps else ""
     pngs = render_board(board_rows, today, now, out_dir) if (want_board and board_rows) else []
+    pngs30: List[Path] = []
+    if want_board and board_rows and C.BOARD_30_TEST:
+        since = knocks_since_last(board_rows, state, today)
+        _log("board-30: since last board -> %s"
+             % ", ".join("%s %d" % (k, v) for k, v in sorted(since.items(), key=lambda kv: -kv[1])[:12]))
+        pngs30 = render_board(board_rows, today, now, out_dir / "last30",
+                              extra_columns={C.BOARD_30_COL: since})
     if want_board and not board_rows:
         _log("board: no rows on the grid -- not drawn (never post blank)")
     callout = "" if no_gaps else _callout(over, today, now, send=send)
@@ -720,6 +765,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     if not send:
         _log("DRY RUN -- would post:")
         _log("  board: %s" % (", ".join(p.name for p in pngs) or "(none)"))
+        _log("  board-30 (NEW A Players): %s" % (", ".join(p.name for p in pngs30) or "(none)"))
         _log("  gaps:\n%s" % (body or "(nobody over 15 min)"))
         _log("  call-out: %s" % (callout or "(none)"))
         _log("  no-dispo: %s" % (no_dispo or "(none)"))
@@ -729,6 +775,10 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     if pngs:
         _post_board(pngs, today, now)
         _queue_text(C.KIND_BOARD, "%s Knocks Board — %s" % (C.TEAM, _clock(now)), today, now, paths=pngs)
+        if pngs30:
+            _queue_text(C.KIND_BOARD_30, "%s Knocks Board — %s" % (C.TEAM, _clock(now)),
+                        today, now, paths=pngs30)
+        remember_board_knocks(board_rows, state, today)
         state["board_at"] = now.isoformat(timespec="seconds")
     if body:
         _post_gaps(body, today)

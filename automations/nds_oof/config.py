@@ -66,6 +66,13 @@ GAP_THRESHOLD_MIN = 15
 KIND_BOARD = "nds_board"
 KIND_GAPS = "nds_gaps"
 KIND_WEEK = "nds_week"
+# TEST (Carlos 2026-11-07): the board with a "Knocks Last 30 Min" column
+# (knocks since the previous board went out) texted to NEW A Players only;
+# the plain board keeps going to Slack + ATT B2B Leaders. Routes in
+# b2b_dispositions TEXT_ROUTES. Off = one board everywhere, as before.
+KIND_BOARD_30 = "nds_board_30"
+BOARD_30_TEST = True
+BOARD_30_COL = "Knocks Last 30 Min"
 # The Mon–Sat combined board (weekly_knock_dispositions, row key below) on
 # Saturday, right after the last board of the day (Carlos 2026-10-26).
 WEEK_ROW_KEY = "Carlos Hidalgo (NDS)"
