@@ -802,6 +802,74 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     return 0
 
 
+def gps_week(saturday: Optional[dt.date] = None, *, headless: bool = True) -> int:
+    """Carlos 2026-11-07 ("read mine for this week and show how many we've
+    had so far"): every knock's GPS verdict off HIS Ownerville's Today's
+    Activity (p=88, the table rep_knock_breakdown reads for Raf), Sun..Sat of
+    the week, counted per rep and per day. Prints + writes the 'TNC Probe'
+    tab. Read-only. Cinthya/Nathaly knock on Raf's Ownerville, so they are
+    not here."""
+    from automations.rep_knock_breakdown import pull as P
+    from automations.rep_knock_breakdown import streaks as S
+    from automations.shared.tableau_patchright import ownerville_session
+    from automations.total_knocks import pull as knocks
+    from automations.nds_tnc_check.run import _probe_dump
+    today = dt.date.today()
+    sat = saturday or (today + dt.timedelta(days=(5 - today.weekday()) % 7))
+    sunday = sat - dt.timedelta(days=6)
+    days = [sunday + dt.timedelta(days=i) for i in range(7) if sunday + dt.timedelta(days=i) <= today]
+    per_rep: Dict[str, Dict] = {}
+    per_day: Dict[str, Dict] = {}
+    with ownerville_session(headless=headless, profile_dir=str(C.PROFILE_DIR)) as page:
+        rqst = knocks._capture_rqst(page)
+        if not rqst:
+            raise RuntimeError("couldn't capture the ownerville rqst token")
+        page.goto("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s&invD2DClientId=%s"
+                  % (P.C.PAGE_TODAYS_ACTIVITY, rqst, C.CAMPAIGN_ID),
+                  wait_until="networkidle", timeout=45000)
+        page.wait_for_timeout(800)
+        for day in days:
+            try:
+                reps = P.pull_day(page, rqst, day)
+            except Exception as e:  # noqa: BLE001 -- a day with nobody out
+                _log("gps-week %s: %s" % (day, str(e)[:120]))
+                continue
+            d = per_day.setdefault(day.isoformat(), {"knocks": 0, "failed": 0, "reps": 0})
+            for rep in reps:
+                rows = rep.get("rows") or []
+                failed = [x for x in rows if S.gps_failed(x)]
+                if rows:
+                    d["reps"] += 1
+                d["knocks"] += len(rows)
+                d["failed"] += len(failed)
+                pr = per_rep.setdefault(rep["name"], {"knocks": 0, "failed": 0, "reasons": {},
+                                                      "streak3": 0, "days": {}})
+                pr["knocks"] += len(rows)
+                pr["failed"] += len(failed)
+                pr["days"][day.strftime("%a")] = "%d/%d" % (len(failed), len(rows))
+                for x in failed:
+                    why = S.reason(x.get("gps", ""))
+                    pr["reasons"][why] = pr["reasons"].get(why, 0) + 1
+                pr["streak3"] += len(S.fail_streaks(S.chronological(rows), 3))
+            _log("gps-week %s: %d rep(s), %d knocks, %d failed GPS"
+                 % (day, d["reps"], d["knocks"], d["failed"]))
+    lines = ["week %s..%s (through %s)" % (sunday, sat, days[-1] if days else "-")]
+    tot_k = sum(v["knocks"] for v in per_day.values())
+    tot_f = sum(v["failed"] for v in per_day.values())
+    lines.append("TOTAL: %d knocks, %d failed GPS (%.1f%%)" % (tot_k, tot_f, (100.0 * tot_f / tot_k) if tot_k else 0))
+    for day, v in sorted(per_day.items()):
+        lines.append("%s: %d reps, %d knocks, %d failed" % (day, v["reps"], v["knocks"], v["failed"]))
+    for name, v in sorted(per_rep.items(), key=lambda kv: (-kv[1]["failed"], kv[0])):
+        lines.append("%s: %d failed / %d knocks; %s; 3-in-a-row streaks: %d; by day %s"
+                     % (name, v["failed"], v["knocks"],
+                        ", ".join("%d %s" % (n, w) for w, n in sorted(v["reasons"].items(), key=lambda kv: -kv[1])) or "-",
+                        v["streak3"], " ".join("%s %s" % (d, c) for d, c in v["days"].items())))
+    for l in lines:
+        _log("gps-week: " + l)
+    _probe_dump("GPS week %s" % sat, lines, log=_log)
+    return 0
+
+
 def _share_dump() -> int:
     """Diagnostic: what is on the relay workbook's 'Lucy Knocks' tab right
     now, as Lucy 2 sees it (the mini cannot read that workbook)."""
@@ -1054,10 +1122,16 @@ def main(argv=None) -> int:
     ap.add_argument("--recap-channel", default=C.RECAP_CHANNEL,
                     help="where --recap-week opens its thread (default #a-players-b2b)")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--gps-week", nargs="?", const="", metavar="SATURDAY",
+                    help="count failed-GPS knocks per rep, Sun..Sat of that week "
+                         "(default this week), read-only")
     ap.add_argument("--share-dump", action="store_true",
                     help="print every 'Lucy Knocks' row (key/owner/day/at/"
                          "rows + the borrowed names found) and exit")
     args = ap.parse_args(argv)
+    if args.gps_week is not None:
+        return gps_week(dt.date.fromisoformat(args.gps_week) if args.gps_week else None,
+                        headless=not args.headed)
     if args.share_dump:
         return _share_dump()
     if args.recap_week:
