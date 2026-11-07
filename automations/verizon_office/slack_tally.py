@@ -177,8 +177,16 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
     # relay reader drops an empty sales cell as "no reading", and the owner
     # texts list only offices with one (Megan 2026-11-07: "nico should be
     # listed at 0"). The same shape an AT&T office has before its first sale.
-    payload_sales = ({r: {"Lines": n} for r, n in sales.items()} if sales
-                     else {r: {"Lines": 0} for r in roster()})
+    zero = {}
+    if not sales:
+        try:
+            zero = {r: {"Lines": 0} for r in roster()}
+        except Exception:  # noqa: BLE001 — no Credico file here is not a reason to vanish
+            zero = {}
+        # NO ROSTER ON THIS MACHINE (Lucy 4's first tick 2026-11-07 relayed
+        # "{}"): the owner still has to read 0, so the owner stands in.
+        zero = zero or {OF_OWNER: {"Lines": 0}}
+    payload_sales = {r: {"Lines": n} for r, n in sales.items()} if sales else zero
     body = R.payload({}, day, rec, sales=payload_sales)
     body["agent"] = "verizon_slack_tally"
     R._post(rec["relay_url"], json.dumps(body).encode("utf-8"))
@@ -193,6 +201,7 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
 # which must not hold Lucy's Slack sign-in. LIVE_OFFICES gates tick(); empty
 # until Nico is on ECO ("we can't take anything live until ..."). Add
 # "nicolas" the day he is, then `lucy rerun install_verizon_slack_tally_agent`.
+OF_OWNER = "Nicolas Murrugarra"   # stands in at 0 when no roster can be read
 LIVE_OFFICES: tuple = ("nicolas",)   # Nico on ECO 2026-11-07
 EVERY_MINUTES = 5
 _STATE = None
