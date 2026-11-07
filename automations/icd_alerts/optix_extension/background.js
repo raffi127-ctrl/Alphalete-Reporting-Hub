@@ -66,8 +66,16 @@ async function pageRead(mdy) {
       let s = tr && window.angular ? angular.element(tr).scope() : null;
       while (s && !s.summaryList) s = s.$parent;
       if (!s) { if (m[1] === "0") return {rows: [], page: 0}; continue; }
-      return {page: Number(m[1]), rows: s.summaryList.map(x => ({agent: x.agent,
-        latestDisposition: x.latestDisposition, totalDisposition: x.totalDisposition}))};
+      // A TIME, IF OPTIX KEEPS ONE (Megan 2026-11-07: fill First/Last Knock
+      // now, not tomorrow). Only fields whose value carries a clock time
+      // (h:mm) and whose NAME says date or time -- never an address field.
+      const timeKey = (x) => Object.keys(x).find(k => /date|time/i.test(k) && !/addr|cust|name/i.test(k)
+        && /\d{1,2}:\d{2}/.test(String(x[k] || "")));
+      const sample = s.summaryList.find(x => timeKey(x));
+      const tk = sample ? timeKey(sample) : "";
+      return {page: Number(m[1]), timeField: tk, rows: s.summaryList.map(x => ({agent: x.agent,
+        latestDisposition: x.latestDisposition, totalDisposition: x.totalDisposition,
+        when: tk ? String(x[tk] || "") : ""}))};
     }
   }
   return {error: "Optix did not answer within a minute."};
@@ -143,7 +151,7 @@ async function reportSignedOut(cfg, day, why) {
   await post({office_key: cfg.office, key: cfg.key, local_time: new Date().toISOString(),
               fault: {day: day.iso, stage: "signin-optix",
                       summary: "Verizon Optix is signed out on this computer",
-                      detail: why, agent: "lucy-optix-ext/1.0.1", platform: "chrome-extension"}});
+                      detail: why, agent: "lucy-optix-ext/1.0.2", platform: "chrome-extension"}});
 }
 
 async function signedOut() {
@@ -195,6 +203,30 @@ async function readNow(why) {
   const knocks = Object.values(reps).reduce((a, c) => a + c.Knocks, 0);
   if (out.page && knocks !== out.page) await status(`Optix says ${out.page} dispositions, counted ${knocks} — check before trusting.`, false);
   const times = cfg.dry ? {} : await stampTimes(reps, cfg.tz || "America/Chicago", day.iso);
+  // OPTIX'S OWN TIMES WIN when it has them: earliest / latest disposition per
+  // rep today. The 10-minute stamps above stay as the fallback.
+  const optixTimes = {};
+  for (const r of out.rows) {
+    let w = String(r.when || "");
+    if (!(Number(r.totalDisposition || 0) > 0 || (r.latestDisposition || "").trim())) continue;
+    // ISO with a zone ("2026-11-07T15:42:13Z") is UTC: turn it into the
+    // office's own clock first, or every time is hours off.
+    if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$/.test(w)) {
+      const d = new Date(w);
+      if (!isNaN(d)) w = new Intl.DateTimeFormat("en-US", {timeZone: cfg.tz || "America/Chicago",
+        hour: "numeric", minute: "2-digit", hour12: true}).format(d).replace(/\u202f|\s+/g, " ");
+    }
+    const m = /(\d{1,2}):(\d{2})(?::\d{2})?\s*([AP]M)?/i.exec(w);
+    if (!m) continue;
+    let h = Number(m[1]) % 12; if ((m[3] || "").toUpperCase() === "PM") h += 12;
+    if (!m[3]) h = Number(m[1]);
+    const mins = h * 60 + Number(m[2]);
+    const rep = (r.agent || "").replace(/\s+/g, " ").trim() || "(unassigned)";
+    const t = optixTimes[rep] || (optixTimes[rep] = {lo: mins, hi: mins});
+    t.lo = Math.min(t.lo, mins); t.hi = Math.max(t.hi, mins);
+  }
+  const hm = v => `${(Math.floor(v / 60) % 12) || 12}:${String(v % 60).padStart(2, "0")} ${v >= 720 ? "PM" : "AM"}`;
+  for (const [rep, t] of Object.entries(optixTimes)) times[rep] = {first: hm(t.lo), last: hm(t.hi)};
   const rows = Object.keys(reps).sort().map(rep => {
     const r = boardRow(rep, reps[rep], rules.board_columns), t = times[rep];
     if (t) { r["First Knock"] = t.first || ""; r["Last Knock"] = t.last || ""; }
@@ -202,11 +234,12 @@ async function readNow(why) {
   });
   const sales = Object.fromEntries(Object.entries(reps).filter(([, c]) => c.Sale).map(([rep, c]) => [rep, {Sales: c.Sale}]));
   if (cfg.dry) return status(`Test mode: ${rows.length} reps, ${knocks} knocks — nothing sent.`, true);
-  const base = {office_key: cfg.office, key: cfg.key, day: day.iso, agent: "lucy-optix-ext/1.0.1", local_time: new Date().toISOString()};
+  const base = {office_key: cfg.office, key: cfg.key, day: day.iso, agent: "lucy-optix-ext/1.0.2", local_time: new Date().toISOString()};
   const a = await post({...base, knocks_rows: rows, knocks_time_tracker: []});
   // NO SALES FROM HERE: an office's sales row has ONE writer. Verizon counts
   // APPS (lines) off the room's Slack tally (verizon_office/slack_tally); Optix
   // only knows houses. "Sale Made" still shows on the knock board (Sale column).
-  const note = unknown.length ? ` · new outcomes: ${unknown.join(", ")}` : "";
+  const note = (unknown.length ? ` · new outcomes: ${unknown.join(", ")}` : "")
+    + (Object.keys(optixTimes).length ? ` · times from Optix (${out.timeField})` : " · times from Lucy's reads");
   return status(a && a.ok ? `Sent ${rows.length} reps, ${knocks} knocks${note}` : `Relay said: ${JSON.stringify(a)}`, !!(a && a.ok));
 }
