@@ -132,6 +132,64 @@ def render(sv_path: Path, out: Path) -> Path:
     return _screenshot_html(build_html(sv), out)
 
 
+# Short column heads for the compliance grid (board.FLAG_WORDS is the sentence form).
+FLAG_HEADS = {
+    "3X % Increase": "Sales 3x own avg", "3X Campaign Avg": "Sales 3x campaign",
+    "Avg 4+ Lines / Order": "4+ lines / order", "2X Campaign BYOD %": "BYOD 2x campaign",
+    "2X Campaign Shipped Never Activated > 21 Days %": "Shipped, never activated",
+    "Low Port Sales": "Low port-ins", "Insurance >10%": "Insurance >10%",
+    "Bill/Ship Addr Match": "Bill/ship address", "SSN On Multiple Orders": "Same SSN, multiple orders",
+    "Reused Email Address": "Reused email",
+}
+
+
+def compliance_html(cf: parse.Compliance) -> str:
+    """Rep x flag grid: a check where Credico flagged the rep. Only the checks
+    that tripped for someone get a column, so the grid stays phone-width."""
+    from automations.verizon_office.parse import CHURN_KEYS
+    seen = []
+    for r in cf.reps:
+        for f in r.flagged:
+            if f not in seen and not f.endswith("% Churn"):
+                seen.append(f)
+    churn_filled = any(r.churn.get(k) for r in cf.reps for k in CHURN_KEYS)
+    reps = sorted(cf.reps, key=lambda r: (-r.flags, r.name))
+    heads = "".join(f"<th>{html.escape(FLAG_HEADS.get(f, f))}</th>" for f in seen)
+    churn_heads = "".join(f"<th>{k} day churn</th>" for k in CHURN_KEYS) if churn_filled else ""
+    rows = []
+    for r in reps:
+        cls = "" if r.flags else ' class="zero"'
+        marks = "".join(f'<td class="{"hit" if f in r.flagged else ""}">{"✓" if f in r.flagged else ""}</td>'
+                        for f in seen)
+        churn = ("".join(f"<td>{r.churn[k] * 100:.0f}%</td>" if r.churn.get(k) else "<td></td>"
+                         for k in CHURN_KEYS) if churn_filled else "")
+        pill = f'<span class="pill {"red" if r.flags >= 2 else "amb" if r.flags else "ok"}">{r.flags}</span>'
+        rows.append(f'<tr{cls}><td class="rep">{html.escape(r.name)}</td><td>{pill}</td>'
+                    f"<td>{r.sales}</td>{marks}{churn}</tr>")
+    flagged = sum(1 for r in cf.reps if r.flags)
+    we = f"Week ending {cf.week_end.month}/{cf.week_end.day}" if cf.week_end else ""
+    note = ("" if churn_filled else
+            "Churn: Credico left it empty for every rep and the campaign this week, so none is shown. ")
+    return f"""<html><head><style>{CSS}
+table{{border-collapse:collapse;background:#fff}} th{{white-space:normal;max-width:96px}}
+td.hit{{background:#f6d6d0;color:#a33b2c;font-weight:700}} tr.zero td{{color:#9a8f78}}
+.pill.red{{background:#a33b2c;color:#fff}} .pill.amb{{background:#e7b84a;color:#3b3226}} .pill.ok{{background:#d9e8d3;color:#2f7a3a}}
+</style></head><body><div id="card" style="padding:22px;display:inline-block;background:#f4ede0">
+<div class="name">Verizon Compliance Flags</div>
+<div class="sub">{html.escape(cf.reps and "HIGH VALUE ACQUISITIONS" or "")} · {we} · {flagged} of {len(cf.reps)} reps flagged</div>
+<table style="margin-top:12px"><tr><th>Rep</th><th>Flags</th><th>Sales</th>{heads}{churn_heads}</tr>{"".join(rows)}</table>
+<div class="foot">✓ = Credico flagged that rep for it. {note}Source: Credico Compliance Flags (weekly).</div>
+</div></body></html>"""
+
+
+def compliance_image(cf_path: Path, out: Path) -> Path:
+    from automations.tableau_screenshots.email_tracker import _screenshot_html
+    cf = parse.read_compliance(cf_path)
+    if not cf.reps:
+        raise RuntimeError("no reps in the Compliance Flags file — not drawing a blank board")
+    return _screenshot_html(compliance_html(cf), out)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sv", type=Path, required=True)

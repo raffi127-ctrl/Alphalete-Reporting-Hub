@@ -101,10 +101,13 @@
     {
       "key": "compliance",
       "title": ":shield: Compliance Board",
-      "what": "Credico's weekly compliance flags per rep.",
+      "what": "Credico's weekly compliance flags per rep: a ✓ for each thing Credico flagged.",
       "when": "Wednesdays, same *Verizon Metrics* thread.",
       "files": [],
-      "text": ":triangular_flag_on_post: *Verizon Compliance Flags* · WE 10/31 · 11 of 15 reps flagged\n• *Giovanni Monreal* — 2 flags: 4+ lines per order, own-device (BYOD) 2x the campaign\n• *Isaac Salomon Nambo* — 2 flags: sales jumped 3x vs own average, own-device (BYOD) 2x the campaign\n• *Jose Ramos* — 2 flags: 4+ lines per order, same SSN on multiple orders\n• *Ndifreke Ikotidem* — 2 flags: sales jumped 3x vs own average, same SSN on multiple orders\n• *Edgar Camunez* — 1 flag: same SSN on multiple orders\n• *Gary Van Whitaker* — 1 flag: same SSN on multiple orders\n• *Jair Hernandez Otero* — 1 flag: own-device (BYOD) 2x the campaign\n• *Jayden Willingham* — 1 flag: same SSN on multiple orders\n• *Jose Rojas* — 1 flag: own-device (BYOD) 2x the campaign\n• *Nicholas Esmerado Macias* — 1 flag: sales jumped 3x vs own average\n• *William Bautista* — 1 flag: same SSN on multiple orders\n:warning: Churn columns came back empty for every rep AND the campaign — Credico hasn't filled them this week, so no churn is shown.\n_Credico: this is a heads-up, not a complaint. Source: Compliance Flags - Verizon Wireless - High Value Acquisitions, Inc. - 20261104.xlsx → sheet VZWCF._"
+      "text": "",
+      "thread_files": [
+        "compliance.png"
+      ]
     },
     {
       "key": "opt",
@@ -112,7 +115,10 @@
       "what": "Nico's weekly rows on the OPT report, with the SAME row names as the NDS tabs so DD reads them the same way. Blank = Credico doesn't send that number yet.",
       "when": "Weekly, with the OPT fill.",
       "files": [],
-      "text": "```Row                           WE 11/08  WE 11/01  WE 10/25  WE 10/18\nActive Selling Heads                13        15        13         9\nScorecard Ranking                    —         —         —         —\nNational AVG for sales               —         —         —         —\n0-30 Day Churn               (no file)  blank@CR (no file) (no file)\n60 Day Churn                 (no file)  blank@CR (no file) (no file)\n90 Day Churn                 (no file)  blank@CR (no file) (no file)\nActivation % by Week             35.4%    100.0%     95.0%     87.3%\n0-30 Day Cancel Rate  4wk av     21.1% (no file) (no file) (no file)\nTotal Leads                  (to wire) (to wire) (to wire) (to wire)\nNew Lines                           99        98       119        79\nAVG Apps Per Active Headcoun       7.6       6.5       9.2       8.8\nAIR                                N/A       N/A       N/A       N/A\nPersonal Production          (to wire) (to wire) (to wire) (to wire)\nDirect Deposit               (to wire) (to wire) (to wire) (to wire)\nABP %                            28.3%     54.1%     58.8%     49.4%\nNext Up %                          N/A       N/A       N/A       N/A\nExtra/Premium %                  16.2%      7.1%     12.6%     25.3%```"
+      "text": "",
+      "thread_files": [
+        "opt_rows.png"
+      ]
     },
     {
       "key": "signin_dm",

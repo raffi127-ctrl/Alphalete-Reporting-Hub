@@ -158,21 +158,18 @@ def build() -> List[Dict]:
             files, text="" if files else it["comment"])
 
     # 11. compliance
-    head, th = board.compliance_board(parse.read_compliance(CF))
     add("compliance", ":shield: Compliance Board",
-        "Credico's weekly compliance flags per rep.",
-        "Wednesdays, same *Verizon Metrics* thread.",
-        text=head + "\n" + "\n".join(th))
+        "Credico's weekly compliance flags per rep: a ✓ for each thing Credico flagged.",
+        "Wednesdays, same *Verizon Metrics* thread.")
+    items[-1]["thread_files"] = [board_image.compliance_image(CF, REVIEW_DIR / "compliance.png").name]
 
     # 12. OPT
     rows = V.weeks(SV, 4, None, quality=QUALITY if QUALITY.exists() else None, compliance=CF)
-    lines = ["%-28s" % "Row" + "".join("%10s" % ("WE " + w.strftime("%m/%d").lstrip("0")) for w, _ in rows)]
-    for label, _src, _k in V.ROWS:
-        lines.append("%-28s" % label[:28] + "".join("%10s" % V.fmt(label, vals[label]) for _w, vals in rows))
     add("opt", ":bar_chart: OPT Report Tab (\"Nicolas Murrugarra – Verizon\")",
         "Nico's weekly rows on the OPT report, with the SAME row names as the NDS tabs so DD reads them the same way. "
         "Blank = Credico doesn't send that number yet.",
-        "Weekly, with the OPT fill.", text="```" + "\n".join(lines) + "```")
+        "Weekly, with the OPT fill.")
+    items[-1]["thread_files"] = [opt_png(rows, REVIEW_DIR / "opt_rows.png").name]
 
     # 13. signed-out DM
     spec = P.SYSTEMS["optix"]
@@ -186,6 +183,40 @@ def build() -> List[Dict]:
 
     MANIFEST.write_text(json.dumps({"day": DAY.isoformat(), "items": items}, indent=2, ensure_ascii=False))
     return items
+
+
+def opt_png(rows, out: Path) -> Path:
+    """The OPT rows as a picture: a code block wraps on a phone (Megan
+    2026-11-07 screenshot). Cells we can't fill yet are BLANK, not our
+    internal markers ("(to wire)", "(no file)", "blank@CR")."""
+    import html
+    from automations.alphalete_org_report import opt_verizon as V
+    from automations.tableau_screenshots.email_tracker import _screenshot_html
+
+    def cell(label, v):
+        if v in ("later", "blank", "nofile", None):
+            return '<td class="nil"></td>'
+        return f"<td>{html.escape(V.fmt(label, v))}</td>"
+
+    head = "".join(f"<th>WE {w.month}/{w.day}</th>" for w, _ in rows)
+    body = "".join(
+        f'<tr><td class="lab">{html.escape(label)}</td>' + "".join(cell(label, vals[label]) for _w, vals in rows) + "</tr>"
+        for label, _src, _k in V.ROWS)
+    page = f"""<html><head><style>
+body{{margin:0;background:#fff;font-family:-apple-system,Helvetica,Arial,sans-serif;color:#222}}
+.wrap{{padding:22px;display:inline-block}}
+h1{{font:700 20px Georgia;margin:0 0 4px}} .sub{{font-size:12px;color:#666;margin-bottom:12px}}
+table{{border-collapse:collapse}} th{{background:#1f2a44;color:#fff;font-size:13px;padding:8px 14px}}
+td{{border:1px solid #ddd;padding:7px 14px;text-align:center;font-size:14px;min-width:70px}}
+td.lab{{text-align:left;font-weight:600;background:#f6f6f6;min-width:230px}}
+td.nil{{background:#fafafa}} .foot{{font-size:11.5px;color:#666;margin-top:10px}}
+</style></head><body><div id="card" class="wrap">
+<h1>Nicolas Murrugarra – Verizon</h1>
+<div class="sub">OPT Report rows, from Credico. Same row names as the NDS tabs.</div>
+<table><tr><th></th>{head}</tr>{body}</table>
+<div class="foot">Blank = Credico doesn't send that number yet. N/A = not a Verizon product.</div>
+</div></body></html>"""
+    return _screenshot_html(page, out)
 
 
 def _post_text(it: Dict) -> str:
@@ -245,9 +276,32 @@ def send(items: List[Dict], log=print) -> int:
             client.chat_postMessage(channel=GROUP_DM, thread_ts=ts, text=it["text"])
             # the example rides in the thread so the reaction sits on the
             # report's own post, not on a wall of example text
+        _thread_files(client, it, ts)
         posted[it["key"]] = ts
         POSTED.write_text(json.dumps(posted, indent=2))
         log(f"  ✓ {it['title']}")
+    return 0
+
+
+def _thread_files(client, it: Dict, parent_ts: str) -> None:
+    files = [REVIEW_DIR / f for f in it.get("thread_files") or []]
+    if files:
+        client.files_upload_v2(channel=GROUP_DM, thread_ts=parent_ts,
+                               file_uploads=[{"file": str(f), "filename": f.name} for f in files])
+
+
+def replace(key: str, parent_ts: str, old_reply: str, log=print) -> int:
+    """Swap a report's example in its EXISTING thread: delete Lucy's old reply,
+    post the new one. Same post, so any reaction already on it stays."""
+    items = {it["key"]: it for it in json.loads(MANIFEST.read_text())["items"]}
+    it = items[key]
+    client = _group_client(log)
+    if old_reply:
+        client.chat_delete(channel=GROUP_DM, ts=old_reply)
+    if it.get("text"):
+        client.chat_postMessage(channel=GROUP_DM, thread_ts=parent_ts, text=it["text"])
+    _thread_files(client, it, parent_ts)
+    log(f"  ✓ replaced the example under {it['title']}")
     return 0
 
 
@@ -269,7 +323,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--build", action="store_true", help="render the examples (laptop)")
     ap.add_argument("--send", action="store_true", help="post to the review group DM as Lucy")
+    ap.add_argument("--replace", metavar="KEY", help="re-post one report's example in its thread")
+    ap.add_argument("--parent", help="--replace: the report post's ts")
+    ap.add_argument("--old-reply", default="", help="--replace: Lucy's old reply to delete")
     a = ap.parse_args(argv)
+    if a.replace:
+        return replace(a.replace, a.parent, a.old_reply)
     items = build() if a.build else json.loads(MANIFEST.read_text())["items"]
     if a.send:
         return send(items)
@@ -279,6 +338,8 @@ def main(argv=None) -> int:
         print(_post_text(it))
         for f in it["files"]:
             print(f"  [attached] {f}")
+        for f in it.get("thread_files") or []:
+            print(f"  [in the thread] {f}")
         if it["text"]:
             print("  [in the thread]\n" + it["text"])
     print("-" * 60 + "\npreview only: nothing posted (--send posts)")

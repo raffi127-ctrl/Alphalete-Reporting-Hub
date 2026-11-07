@@ -56,9 +56,10 @@ def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
             part = f" ({k} of {len(it['paths'])})" if len(it["paths"]) > 1 else ""
             steps.append((it["kind"], (path, it["comment"] + part)))
     if cf_path and today.weekday() == 2:                       # Wednesday
-        from automations.verizon_office import board
-        p, th = board.compliance_board(parse.read_compliance(cf_path))
-        steps.append(("text", p + "\n" + "\n".join(th)))
+        cf = parse.read_compliance(cf_path)
+        png = board_image.compliance_image(cf_path, out / f"compliance_{today:%Y-%m-%d}.png")
+        we = f" · WE {cf.week_end.month}/{cf.week_end.day}" if cf.week_end else ""
+        steps.append(("image", (png, f":shield: *Verizon Compliance Flags*{we}")))
     return steps
 
 
