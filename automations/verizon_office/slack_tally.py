@@ -221,7 +221,9 @@ def tick(*, send: bool, log=print) -> int:
     _STATE = _STATE or Path(os.path.expanduser("~/.config/recruiting-report/verizon_tally_last"))
     try:
         last = dt.datetime.fromisoformat(_STATE.read_text().strip())
-        if now - last < dt.timedelta(minutes=EVERY_MINUTES):
+        # A MINUTE OF SLACK: launchd fires every 300 s, a hair early is normal,
+        # and a strict 5-minute gate skipped every other tick (2026-11-07).
+        if now - last < dt.timedelta(minutes=EVERY_MINUTES - 1):
             return 0
     except (OSError, ValueError):
         pass
