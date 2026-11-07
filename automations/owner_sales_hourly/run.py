@@ -206,7 +206,7 @@ def build_text(totals: Dict[str, int], now: dt.datetime,
                                          key=lambda kv: (-kv[1], kv[0]))
     lines = ["%s - %s CT" % (title, _clock(now)), ""]
     for i, (name, n) in enumerate(rows, 1):
-        lines.append("%d. %s %d" % (i, name, n))
+        lines.append("%d. %s %d" % (i, cfg.DISPLAY_NAMES.get(name, name), n))
     total = sum(n for name, n in rows if _norm(name) not in left_out)
     lines += ["", "🏆 TOTAL: %d" % total]
     lines += ["%s: %d" % (label, n) for label, n in org_totals]

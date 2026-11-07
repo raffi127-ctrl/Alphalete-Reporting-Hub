@@ -163,9 +163,9 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
     if not send:
         log("preview — nothing sent")
         return 0
-    if not sales:
-        log("no Verizon lines in today's list yet — nothing sent")
-        return 0
+    # NO LINES YET STILL RELAYS -- an empty reading. The owner sales texts list
+    # only offices that relayed today (no row = "agent did not run"), and Megan
+    # 2026-11-07: "nico should be listed at 0 then on the sales text".
     from automations.icd_alerts import offices as O, relay as R
     from automations.verizon_office import house_feed as HF
     key = HF._relay_key(OFFICE_KEY)
@@ -173,10 +173,17 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
         log("✗ no active %r key on Relay Keys — nothing sent" % OFFICE_KEY)
         return 1
     rec = {"office_key": OFFICE_KEY, "relay_key": key, "relay_url": O.RELAY_URL, "campaign": "verizon"}
-    body = R.payload({}, day, rec, sales={r: {"Lines": n} for r, n in sales.items()})
+    # NOTHING POSTED YET = every Credico rep at 0, not an empty reading: the
+    # relay reader drops an empty sales cell as "no reading", and the owner
+    # texts list only offices with one (Megan 2026-11-07: "nico should be
+    # listed at 0"). The same shape an AT&T office has before its first sale.
+    payload_sales = ({r: {"Lines": n} for r, n in sales.items()} if sales
+                     else {r: {"Lines": 0} for r in roster()})
+    body = R.payload({}, day, rec, sales=payload_sales)
     body["agent"] = "verizon_slack_tally"
     R._post(rec["relay_url"], json.dumps(body).encode("utf-8"))
-    log("✓ relayed %d seller(s) as %s" % (len(sales), OFFICE_KEY))
+    log("✓ relayed %d seller(s) as %s%s" % (len(sales), OFFICE_KEY,
+                                         "" if sales else " (none yet: an empty reading, so he shows at 0)"))
     return 0
 
 

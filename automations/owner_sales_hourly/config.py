@@ -87,6 +87,13 @@ OWNER_FALLBACK = {
     "samuel": "Samuel Acay",
 }
 
+# HOW A NAME PRINTS on the text, when it is not how the roster spells it.
+# Applied at the very last step (build_text) -- matching to the Org board, the
+# South Shore split and the ICD Aliases all still use the roster name.
+DISPLAY_NAMES = {
+    "Nicolas Murrugarra": 'Nico Murrugarra "BDN"',     # Megan 2026-11-07
+}
+
 # ONE OFFICE RELAYING UNDER TWO KEYS. Since 2026-11-03 Raf's own MacBook (Lucy
 # ECO, key `raf`) relays the same SaraPlus his Lucy 1 sweep relays as
 # `rafael_hidalgo`; summed, the 9:50 PM text showed him at 52 for a 26-sale
