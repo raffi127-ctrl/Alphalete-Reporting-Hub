@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.vantura-verizon-credico</string>
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it on Lucy 2
+         (lucy rerun install_vantura_verizon_credico_agent).
+         DAILY 11:10am + 12:40pm CT: Credico's Sales Verification (sales through
+         yesterday) reaches the Hub inbox ~10:45; the pass sets every matched rep's
+         day cells on the Vantura 'Verizon Sales Board' to Credico's valid lines and
+         fills column Q 'Approved'. The 12:40 pass is the retry for a late email;
+         both are idempotent (only changed cells are written). Carlos 2026-11-07. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/vantura_verizon_credico.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>40</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-verizon-credico.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-verizon-credico.launchd.err.log</string>
+</dict>
+</plist>
