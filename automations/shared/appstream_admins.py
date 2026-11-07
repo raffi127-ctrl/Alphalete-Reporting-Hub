@@ -872,7 +872,8 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
         % ("created" if created else "exists", login["username"],
            ("%s assigned" % office["id"]) if assigned else "NOT LISTED (Megan told)",
            "" if verified is None else (" · login verified" if verified else " · LOGIN FAILED"),
-           " · DM sent to the ICD" if dm_sent else (" · no DM (no Slack id)" if dm and assigned else "")))
+           (" · DM queued on Lucy 1" if local else " · DM sent to the ICD") if dm_sent
+           else (" · DM NOT sent (see log)" if dm and assigned else "")))
     if verified is True:
         return 0
     if not office:
