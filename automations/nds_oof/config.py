@@ -131,5 +131,15 @@ KIND_NO_DISPO = "nds_no_dispo"
 # ATT B2B Leaders only (b2b_dispositions TEXT_ROUTES), no Slack post.
 NO_DISPO_SEND = True
 
+# GPS alerts (Carlos 2026-11-07: "do it on the ATT b2b Leaders text chain
+# every 30 mins like raf does"): on every board tick (:00/:30 in the window)
+# read HIS Ownerville's Today's Activity knock table; a rep with
+# GPS_FAIL_STREAK+ failed-GPS knocks IN A ROW gets one text per streak (same
+# wording as Raf's rep_knock_breakdown), never repeated (state 'gps_texted').
+# Cinthya/Nathaly knock on Raf's Ownerville -- his job covers them.
+GPS_ALERTS = True
+GPS_FAIL_STREAK = 3
+KIND_GPS = "nds_gps"
+
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "nds_oof_state.json"
 PROFILE_DIR = Path(__file__).resolve().parents[1] / "uploaded" / ".browser_profile_nds_oof"

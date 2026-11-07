@@ -187,6 +187,8 @@ TEXT_ROUTES = {
     # one. Put TEXT_GROUP_ALL back on nds_board when the test ends.
     ("RES AT&T OOF", "nds_board"): [TEXT_GROUP_ATT],
     ("RES AT&T OOF", "nds_board_30"): [TEXT_GROUP_ALL],
+    # GPS alerts, 3 failed knocks in a row (Carlos 2026-11-07): leaders only.
+    ("RES AT&T OOF", "nds_gps"): [TEXT_GROUP_ATT],
     ("RES AT&T OOF", "nds_gaps"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
     # "No dispositions from" at 2:30/2:45/3:00/3:15 (nds_oof). Carlos
     # 2026-11-06: "just on the att b2b leaders text chain".

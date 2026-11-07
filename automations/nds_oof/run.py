@@ -762,6 +762,10 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     callout = "" if no_gaps else _callout(over, today, now, send=send)
     no_dispo = _no_dispo_message(today, now, rows, state, send=send and C.NO_DISPO_SEND)
 
+    if want_board and C.GPS_ALERTS:
+        # Every board tick (:00/:30), like Raf's: 3 failed-GPS knocks in a row.
+        gps_check(today, now, state, send=send, headless=headless)
+
     if not send:
         _log("DRY RUN -- would post:")
         _log("  board: %s" % (", ".join(p.name for p in pngs) or "(none)"))
@@ -800,6 +804,83 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
             _log("no-dispo (NO_DISPO_SEND off, not sent): %s" % no_dispo)
     _save(state)
     return 0
+
+
+# --- GPS alerts (3 failed knocks in a row) -------------------------------------
+
+def gps_alert_texts(rep: Dict, day: dt.date, at_least: int) -> List[Dict]:
+    """[{key, body}] -- one per `at_least`+ failed-GPS streak in this rep's
+    knocks today. Raf's wording (rep_knock_breakdown.run.streak_texts)."""
+    from automations.rep_knock_breakdown import streaks as S
+    seq = S.chronological(rep.get("rows") or [])
+    out = []
+    for s_, e_ in S.fail_streaks(rep.get("rows") or [], at_least):
+        run = seq[s_:e_ + 1]
+        dists = [d for d in (S.distance_text(x.get("gps", "")) for x in run) if d]
+        body = ("GPS alert: %s has %d knocks in a row that failed GPS "
+                "(%s to %s) — %s%s."
+                % (rep["name"], len(run), run[0].get("time", ""),
+                   run[-1].get("time", ""), S.reason_text(run),
+                   " (" + " / ".join(dists[:5]) + " from the door)" if dists else ""))
+        out.append({"key": S.streak_key(day, rep.get("pid", rep["name"]), run[0]),
+                    "body": body})
+    return out
+
+
+def new_gps_alerts(reps: List[Dict], day: dt.date, state: Dict) -> List[Dict]:
+    """The streak texts not yet sent today (state['gps_texted'] = {key: ts})."""
+    texted = (state.get("gps_texted") or {}) if state.get("gps_texted_day") == day.isoformat() else {}
+    out = []
+    for rep in reps:
+        for a in gps_alert_texts(rep, day, C.GPS_FAIL_STREAK):
+            if a["key"] not in texted:
+                out.append(a)
+    return out
+
+
+def _pull_knock_table(day: dt.date, *, headless: bool = True) -> List[Dict]:
+    """Every rep's knocks today off Carlos's Ownerville Today's Activity."""
+    from automations.rep_knock_breakdown import pull as P
+    from automations.shared.tableau_patchright import ownerville_session
+    from automations.total_knocks import pull as knocks
+    with ownerville_session(headless=headless, profile_dir=str(C.PROFILE_DIR)) as page:
+        rqst = knocks._capture_rqst(page)
+        if not rqst:
+            raise RuntimeError("couldn't capture the ownerville rqst token")
+        page.goto("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s&invD2DClientId=%s"
+                  % (P.C.PAGE_TODAYS_ACTIVITY, rqst, C.CAMPAIGN_ID),
+                  wait_until="networkidle", timeout=45000)
+        page.wait_for_timeout(800)
+        return P.pull_day(page, rqst, day)
+
+
+def gps_check(today: dt.date, now: dt.datetime, state: Dict, *, send: bool,
+              headless: bool = True) -> int:
+    """Read the knock table, text each NEW 3-in-a-row GPS streak to the
+    nds_gps route (ATT B2B Leaders). Never raises: the board matters more."""
+    try:
+        reps = _pull_knock_table(today, headless=headless)
+    except Exception as e:  # noqa: BLE001
+        _log("gps: knock table not read (%s: %s) -- skipped this tick"
+             % (type(e).__name__, str(e)[:140]))
+        return 0
+    alerts = new_gps_alerts(reps, today, state)
+    _log("gps: %d rep(s) read, %d new streak alert(s)" % (len(reps), len(alerts)))
+    if not alerts:
+        return 0
+    if not send:
+        for a in alerts:
+            _log("  DRY RUN would text: %s" % a["body"])
+        return 0
+    if state.get("gps_texted_day") != today.isoformat():
+        state["gps_texted"], state["gps_texted_day"] = {}, today.isoformat()
+    n = 0
+    for a in alerts:
+        _queue_text(C.KIND_GPS, a["body"][:60], today, now, text=a["body"])
+        state.setdefault("gps_texted", {})[a["key"]] = now.isoformat(timespec="seconds")
+        _log("  text: %s" % a["body"])
+        n += 1
+    return n
 
 
 def gps_week(saturday: Optional[dt.date] = None, *, headless: bool = True) -> int:
@@ -1125,10 +1206,21 @@ def main(argv=None) -> int:
     ap.add_argument("--gps-week", nargs="?", const="", metavar="SATURDAY",
                     help="count failed-GPS knocks per rep, Sun..Sat of that week "
                          "(default this week), read-only")
+    ap.add_argument("--gps-now", action="store_true",
+                    help="read today's knock table and text new 3-in-a-row GPS "
+                         "streaks (--send to really text)")
     ap.add_argument("--share-dump", action="store_true",
                     help="print every 'Lucy Knocks' row (key/owner/day/at/"
                          "rows + the borrowed names found) and exit")
     args = ap.parse_args(argv)
+    if args.gps_now:
+        st = _state()
+        n = gps_check(dt.date.today(), dt.datetime.now(), st, send=args.send,
+                      headless=not args.headed)
+        if args.send:
+            _save(st)
+        _log("gps-now: %d alert(s) %s" % (n, "texted" if args.send else "(dry run)"))
+        return 0
     if args.gps_week is not None:
         return gps_week(dt.date.fromisoformat(args.gps_week) if args.gps_week else None,
                         headless=not args.headed)
