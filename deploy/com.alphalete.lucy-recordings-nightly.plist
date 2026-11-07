@@ -12,6 +12,8 @@
     <array>
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/lucy_recordings_nightly.sh</string>
+        <!-- Mail Raf the month-to-date summary after the fill (Eve rolled it out 2026-11-06). -->
+        <string>--email</string>
     </array>
 
     <key>WorkingDirectory</key>
