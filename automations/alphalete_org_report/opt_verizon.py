@@ -24,23 +24,31 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# (OPT row label, Overview column, kind) -- kind: "n" count, "pct" share 0-1
+# THE NDS OPT ROWS, SAME LABELS (Megan 2026-11-06: "this should mirror as
+# close to the other programs as possible"). NDS is the nearest program --
+# door-to-door wireless -- so every label is opt_nds's own, filled from its
+# Verizon equivalent. (row label, source, how)
 ROWS: List[Tuple[str, str, str]] = [
-    ("Active Selling Heads", "Scoring HC", "n"),
-    ("Total Verizon Lines", "Valid Lines", "n"),
-    ("Lines per Rep", None, "ratio"),            # Valid Lines / Scoring HC
-    ("Submitted %", "% Sub.", "pct"),
-    ("Activated %", "% Total Acts.", "pct"),
-    ("Approved %", "% Appr.", "pct"),
-    ("Canceled %", "% Canc.", "pct"),
-    ("Disconnected %", "% Disc.", "pct"),
-    ("AutoPay %", "AutoPay %", "pct"),
-    ("BYOD %", "BYOD %", "pct"),
-    ("Port-In %", "Port-In %", "pct"),
-    ("Unlimited Plus+ %", "UPlus+ %", "pct"),
-    ("Insured %", "Insured %", "pct"),
-    ("Paid On %", "% Paid On", "pct"),
+    ("Active Selling Heads",                 "Scoring HC", "n"),
+    ("Scorecard Ranking",                    "scorecard rank", "card"),
+    ("National AVG for sales",               "scorecard: avg Valid Lines per office", "card"),
+    ("0-30 Day Churn",                       "Compliance Flags (weekly)", "later"),
+    ("60 Day Churn",                         "Compliance Flags (weekly)", "later"),
+    ("90 Day Churn",                         "Compliance Flags (weekly)", "later"),
+    ("Activation % by Week",                 "% Total Acts.", "pct"),
+    ("0-30 Day Cancel Rate  4wk avg",        "Quality Scorecard 4-wk rolling Canceled %", "later"),
+    ("Total Leads",                          "Optix (blocked)", "later"),
+    ("New Lines",                            "Valid Lines", "n"),
+    ("AVG Apps Per Active Headcount",        "Scoring Avg (Valid Lines / Scoring HC)", "ratio"),
+    ("AIR",                                  "not a Verizon product", "na"),
+    ("Personal Production",                  "Nico's own lines (none on Credico's rep list)", "later"),
+    ("Direct Deposit",                       "Credico ARC (needs his Credico sign-in)", "later"),
+    ("ABP %",                                "AutoPay %", "pct"),
+    ("Next Up %",                            "AT&T-only upgrade program", "na"),
+    ("Extra/Premium %",                      "UPlus+ % (Unlimited Plus or higher)", "pct"),
 ]
+_COL = {"Active Selling Heads": "Scoring HC", "Activation % by Week": "% Total Acts.",
+        "New Lines": "Valid Lines", "ABP %": "AutoPay %", "Extra/Premium %": "UPlus+ %"}
 
 
 def sheet_week(credico_week_end: dt.date) -> dt.date:
@@ -48,35 +56,74 @@ def sheet_week(credico_week_end: dt.date) -> dt.date:
     return credico_week_end + dt.timedelta(days=1)
 
 
-def values_for(overview_row: Dict) -> Dict[str, Optional[float]]:
-    out: Dict[str, Optional[float]] = {}
-    for label, col, kind in ROWS:
-        if kind == "ratio":
-            hc, lines = overview_row.get("Scoring HC"), overview_row.get("Valid Lines")
+def values_for(overview_row: Dict, card: Optional[Dict] = None) -> Dict[str, object]:
+    """One week's row values. 'later' = source not wired yet (shown, never 0);
+    'na' = no Verizon equivalent (the row stays as the other programs have it)."""
+    out: Dict[str, object] = {}
+    for label, _src, kind in ROWS:
+        if kind in ("n", "pct"):
+            v = overview_row.get(_COL[label])
             try:
-                out[label] = round(float(lines) / float(hc), 1) if float(hc) else None
+                out[label] = float(v) if v not in (None, "") else None
             except (TypeError, ValueError):
                 out[label] = None
-            continue
-        v = overview_row.get(col)
-        try:
-            out[label] = float(v) if v not in (None, "") else None
-        except (TypeError, ValueError):
-            out[label] = None
+        elif kind == "ratio":
+            try:
+                out[label] = round(float(overview_row["Valid Lines"]) / float(overview_row["Scoring HC"]), 1)
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                out[label] = None
+        elif kind == "card":
+            out[label] = (card or {}).get(label)
+        else:
+            out[label] = kind      # "later" / "na"
     return out
 
 
-def fmt(label: str, v: Optional[float]) -> str:
+def scorecard(path: Path, owner: str) -> Dict[dt.date, Dict[str, object]]:
+    """{credico week end: {Scorecard Ranking, National AVG for sales}} from the
+    Daily Sales Scorecard xlsx (every Verizon office, one sheet per week)."""
+    import openpyxl, re
+    out: Dict[dt.date, Dict[str, object]] = {}
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    for ws in wb.worksheets:
+        rows = [r for r in ws.iter_rows(values_only=True) if any(c is not None for c in r)]
+        title = next((str(r[0]) for r in rows[:3] if r and r[0] and "Week Ending" in str(r[0])), "")
+        m = re.search(r"Week Ending (\w+ \d{1,2}, \d{4})", title)
+        hi = next((i for i, r in enumerate(rows) if r and r[0] == "Owner Name"), None)
+        if not m or hi is None:
+            continue
+        hdr = [str(c).replace("\n", " ") if c else "" for c in rows[hi]]
+        ix = {h: i for i, h in enumerate(hdr) if h}
+        offices = [r for r in rows[hi + 1:] if r and r[0] and isinstance(r[ix["Valid Lines"]], (int, float))]
+        mine = next((r for r in offices if str(r[0]).strip().lower() == owner.lower()), None)
+        if not offices or not mine:
+            continue
+        we = dt.datetime.strptime(m.group(1), "%B %d, %Y").date()
+        out[we] = {"Scorecard Ranking": "%s of %d" % (mine[ix["Rank"]], len(offices)),
+                   "National AVG for sales": round(sum(r[ix["Valid Lines"]] for r in offices) / len(offices), 1)}
+    return out
+
+
+def fmt(label: str, v) -> str:
+    if v == "later":
+        return "(to wire)"
+    if v == "na":
+        return "N/A"
     if v is None:
-        return "— (blank in Credico: flagged, not 0)"
+        return "—"
+    if isinstance(v, str):
+        return v
     kind = next(k for l, _c, k in ROWS if l == label)
-    return f"{v*100:.1f}%" if kind == "pct" else (f"{v:g}")
+    return f"{v*100:.1f}%" if kind == "pct" else f"{v:g}"
 
 
-def weeks(sv_path: Path, n: int = 4) -> List[Tuple[dt.date, Dict[str, Optional[float]]]]:
+def weeks(sv_path: Path, n: int = 4, card_path: Optional[Path] = None,
+          owner: str = "Nicolas Murrugarra"):
     from automations.verizon_office import parse
     sv = parse.read_sales_verification(sv_path)
-    return [(sheet_week(o["Week End Date"]), values_for(o)) for o in sv.overview[:n]]
+    cards = scorecard(card_path, owner) if card_path else {}
+    return [(sheet_week(o["Week End Date"]), values_for(o, cards.get(o["Week End Date"])))
+            for o in sv.overview[:n]]
 
 
 def main(argv=None) -> int:
@@ -84,6 +131,7 @@ def main(argv=None) -> int:
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx")
     ap.add_argument("--office", help="verizon_office key (newest file from the Hub inbox)")
     ap.add_argument("--weeks", type=int, default=4)
+    ap.add_argument("--scorecard", type=Path, help="Daily Sales Scorecard xlsx (all offices) for rank + national avg")
     a = ap.parse_args(argv)
     path = a.sv
     if not path and a.office:
@@ -91,15 +139,15 @@ def main(argv=None) -> int:
         path = RUN.fetch(OF.get(a.office), "sales")
     if not path:
         ap.error("give --sv FILE or --office KEY (no Sales Verification found)")
-    rows = weeks(path, a.weeks)
+    rows = weeks(path, a.weeks, a.scorecard)
     if not rows:
         print("✗ no weeks in the Overview sheet — nothing to show")
         return 1
     print("Verizon OPT preview — %s (nothing written)\n" % Path(path).name)
-    head = "%-22s" % "Row" + "".join("%14s" % ("WE " + w.strftime("%-m/%-d")) for w, _ in rows)
+    head = "%-32s" % "Row (same label as NDS)" + "".join("%12s" % ("WE " + w.strftime("%-m/%-d")) for w, _ in rows)
     print(head)
-    for label, _c, _k in ROWS:
-        print("%-22s" % label + "".join("%14s" % fmt(label, vals[label]).split(" (")[0] for _w, vals in rows))
+    for label, src, _k in ROWS:
+        print("%-32s" % label + "".join("%12s" % fmt(label, vals[label]) for _w, vals in rows) + "   ← " + src)
     return 0
 
 
