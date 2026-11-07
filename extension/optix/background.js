@@ -92,7 +92,8 @@ async function post(body) {
 
 async function readNow(why) {
   const cfg = (await chrome.storage.local.get("cfg")).cfg || {};
-  if (!cfg.office || !cfg.key) return status("Not set up yet — click the Lucy icon and enter your office code.", false);
+  // Test mode needs no key: it reads and counts, and sends nothing.
+  if (!cfg.office || (!cfg.key && !cfg.dry)) return status("Not set up yet — click the Lucy icon and enter your office code (and key, unless Test mode).", false);
   const tz = cfg.tz || "America/Chicago";
   const h = hourLocal(tz);
   if (why === "timer" && (h < (cfg.start ?? 10) || h >= (cfg.end ?? 22))) return;
