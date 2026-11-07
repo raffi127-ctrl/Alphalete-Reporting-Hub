@@ -200,5 +200,48 @@ class Apply(unittest.TestCase):
         self.assertEqual(ws.data[1]["values"], [["2"]])
 
 
+
+class FallbackInbox(unittest.TestCase):
+    def test_newest_matching_attachment_wins(self):
+        import email.mime.multipart, email.mime.base, email.mime.text, tempfile, pathlib
+        from email import encoders
+
+        def msg(fname, body=b"x"):
+            m = email.mime.multipart.MIMEMultipart()
+            m["Subject"] = "Fwd: Sales Verification - Verizon Wireless - High Value Acquisitions, Inc. - 20261107"
+            m.attach(email.mime.text.MIMEText("fyi"))
+            part = email.mime.base.MIMEBase("application", "octet-stream")
+            part.set_payload(body)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=fname)
+            m.attach(part)
+            return m.as_bytes()
+
+        store = {b"1": msg("Sales Verification - Verizon Wireless - High Value Acquisitions, Inc. - 20261106.xlsx", b"old"),
+                 b"2": msg("Compliance Flags - Verizon Wireless - High Value Acquisitions, Inc. - 20261107.xlsx"),
+                 b"3": msg("Sales Verification - Verizon Wireless - High Value Acquisitions, Inc. - 20261107.xlsx", b"new")}
+
+        class M:
+            def search(self, charset, query):
+                assert "Sales Verification" in query and "SINCE" in query
+                return "OK", [b"1 2 3"]
+            def fetch(self, i, what):
+                return "OK", [(b"", store[i])]
+
+        with tempfile.TemporaryDirectory() as d:
+            out = R._newest_attachment(M(), "Sales Verification - Verizon Wireless - High Value Acquisitions, Inc.*.xlsx",
+                                       10, pathlib.Path(d))
+            self.assertTrue(out.name.endswith("20261107.xlsx"))
+            self.assertEqual(out.read_bytes(), b"new")
+
+    def test_no_match_is_none(self):
+        import tempfile, pathlib
+        class M:
+            def search(self, charset, query): return "OK", [b""]
+            def fetch(self, i, what): raise AssertionError("no fetch expected")
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(R._newest_attachment(M(), "Sales*.xlsx", 10, pathlib.Path(d)))
+
+
 if __name__ == "__main__":
     unittest.main()

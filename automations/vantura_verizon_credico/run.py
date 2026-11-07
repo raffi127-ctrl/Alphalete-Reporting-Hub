@@ -42,8 +42,11 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import difflib
+import email
+import fnmatch
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -56,6 +59,12 @@ APPROVED_COL = 17                         # Q
 APPROVED_HEADER = "Approved"
 CREDICO_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]   # parse.DAYS order
 STALE_DAYS = 3                            # newest file older than this -> don't write
+SINCE_DAYS = 10
+# Fallback inbox: until Nico's Credico Outlook redirects to the Hub inbox, a
+# copy forwarded to Carlos (any sender) is accepted -- Carlos's app password
+# already lives on Lucy 2 for the double-tier reader.
+CARLOS_INBOX = ("carloshidalgo349@gmail.com",
+                Path.home() / ".config" / "recruiting-report" / "gmail-app-password-carloshidalgo349")
 
 FIRST_NAME_ALIASES = {                    # = vantura_orderlog_sales.run.FIRST_NAME_ALIASES
     "william": "will",
@@ -266,6 +275,61 @@ def apply(ws, items: List[tuple]) -> int:
     return len(data)
 
 
+# ------------------------------------------------------------------ fetch ----
+def _newest_attachment(M, glob: str, since_days: int, dest: Path,
+                       subject: str = "Sales Verification") -> Optional[Path]:
+    """Newest attachment matching `glob` on a message whose subject carries
+    `subject`, any sender (a forward keeps the file name). `M` is an open
+    imaplib connection (or anything with search/fetch)."""
+    from automations.shared.email_ingest import _filename, _safe_name
+    since = (dt.date.today() - dt.timedelta(days=since_days)).strftime("%d-%b-%Y")
+    _typ, data = M.search(None, '(SUBJECT "%s" SINCE "%s")' % (subject, since))
+    for i in reversed((data[0] or b"").split()):
+        _typ, raw = M.fetch(i, "(RFC822)")
+        if not raw or not raw[0]:
+            continue
+        msg = email.message_from_bytes(raw[0][1])
+        for part in msg.walk():
+            fn = _filename(part)
+            if fn and fnmatch.fnmatch(fn.lower(), glob.lower()):
+                dest.mkdir(parents=True, exist_ok=True)
+                out = dest / _safe_name(fn)
+                out.write_bytes(part.get_payload(decode=True))
+                return out
+    return None
+
+
+def fetch_from_carlos_inbox(office, log=_log) -> Optional[Path]:
+    account, pw_path = CARLOS_INBOX
+    if not pw_path.exists():
+        log("[vz]   (no app password for %s on this box -- fallback inbox skipped)" % account)
+        return None
+    import imaplib
+    from automations.shared.email_ingest import IMAP_HOST
+    glob = "Sales Verification - Verizon Wireless - %s*.xlsx" % office.office
+    M = imaplib.IMAP4_SSL(IMAP_HOST)
+    M.login(account, pw_path.read_text(encoding="utf-8-sig").strip().replace(" ", ""))
+    try:
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        return _newest_attachment(M, glob, SINCE_DAYS,
+                                  Path(tempfile.gettempdir()) / ("vantura_verizon_credico_" + office.key))
+    finally:
+        M.logout()
+
+
+def fetch(office, log=_log) -> Tuple[Optional[Path], str]:
+    """(path, source): the Hub inbox first (Credico as sender -- the Outlook
+    redirect), then Carlos's inbox (a forward from Nico or Credico CC)."""
+    from automations.verizon_office import run as VRUN
+    path = VRUN.fetch(office, "sales", since_days=SINCE_DAYS)
+    if path:
+        return Path(path), "Hub inbox (alphaletereporting, from Credico)"
+    path = fetch_from_carlos_inbox(office, log=log)
+    if path:
+        return path, "Carlos's inbox (%s)" % CARLOS_INBOX[0]
+    return None, ""
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="vantura_verizon_credico")
     ap.add_argument("--sv", type=Path, default=None, help="local Sales Verification xlsx")
@@ -277,19 +341,26 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
 
-    from automations.verizon_office import offices as OF, parse as VP, run as VRUN
-    path = a.sv or VRUN.fetch(OF.get(OFFICE_KEY), "sales")
+    from automations.verizon_office import offices as OF, parse as VP
+    office = OF.get(OFFICE_KEY)
+    if a.sv:
+        path, source = Path(a.sv), "local file"
+    else:
+        path, source = fetch(office, log=_log)
     if not path:
-        _log("[vz] no Sales Verification file in the Hub inbox -- nothing to do")
+        _log("[vz] SKIP -- no '%s' Sales Verification in the Hub inbox or Carlos's inbox "
+             "(last %d days). Until Nico's Credico Outlook redirects to alphaletereporting@gmail.com "
+             "(workflows/verizon-icd-onboarding.md) or a copy is forwarded to Carlos, the Slack "
+             "numbers stand." % (office.office, SINCE_DAYS))
         print("=== done ===", flush=True)
-        return 1
+        return 0
     sv = VP.read_sales_verification(Path(path))
-    _log("[vz] %s: %d week block(s), newest WE %s, through %s"
-         % (Path(path).name, len(sv.weeks), sv.weeks[0].end if sv.weeks else "-", sv.through))
+    _log("[vz] %s from %s: %d week block(s), newest WE %s, through %s"
+         % (Path(path).name, source, len(sv.weeks), sv.weeks[0].end if sv.weeks else "-", sv.through))
     if sv.through and (today - sv.through).days > STALE_DAYS:
-        _log("[vz] file is stale (through %s) -- not writing" % sv.through)
+        _log("[vz] SKIP -- newest file is stale (through %s) -- not writing" % sv.through)
         print("=== done ===", flush=True)
-        return 1
+        return 0
 
     from automations.recruiting_report.fill import open_by_key, _retry
     sh = open_by_key(SHEET_ID)
