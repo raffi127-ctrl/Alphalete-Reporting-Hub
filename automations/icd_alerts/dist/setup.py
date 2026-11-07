@@ -1436,14 +1436,11 @@ def main() -> int:
             # VERIZON: no OwnerVille either. Knocks AND sales come from Optix,
             # whose session lives in Lucy's own browser profile -- so the
             # office signs in once, now, in the window Lucy uses.
-            say("      %s reads Verizon Optix — opening it so you can sign in."
-                % this_campaign)
-            try:
-                from automations.icd_alerts import optix_signin
-                optix_signin.run(log=say)
-            except Exception as e:  # noqa: BLE001 — sign-in can be redone later
-                say("      Could not open Optix (%s). Run later: python -m "
-                    "automations.icd_alerts.optix_signin" % type(e).__name__)
+            # Knocks come from the Lucy Optix Chrome extension in the office's
+            # OWN Chrome (Verizon refuses data to program-launched browsers).
+            say("      %s reads Verizon Optix through the Lucy Optix Chrome "
+                "extension — the reporting team installs it in this "
+                "computer's Chrome with you (about 1 minute)." % this_campaign)
         else:
             # REQUIRED HERE, because it is the only login this office has. With
             # no SaraPlus there are no credit checks and no sales -- the knocks

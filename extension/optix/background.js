@@ -98,6 +98,25 @@ async function post(body) {
   try { return await r.json(); } catch (e) { return {ok: r.ok}; }
 }
 
+// SIGNED OUT -> a "signin-optix" fault, which Lucy 1 turns into a DM to the
+// owner, Megan and Eve (post.SYSTEMS["optix"], once a day). Megan 2026-11-07:
+// "build out a DM to go to the ICD if the sign in is expired". Never in test
+// mode, and only in selling hours.
+async function reportSignedOut(cfg, day, why) {
+  if (cfg.dry || !cfg.key) return;
+  await post({office_key: cfg.office, key: cfg.key, local_time: new Date().toISOString(),
+              fault: {day: day.iso, stage: "signin-optix",
+                      summary: "Verizon Optix is signed out on this computer",
+                      detail: why, agent: "lucy-optix-ext/1.0.0", platform: "chrome-extension"}});
+}
+
+async function signedOut() {
+  // An Optix tab sitting on Verizon's sign-in page, or no Optix tab at all.
+  const login = await chrome.tabs.query({url: "https://ilogin.verizon.com/*"});
+  const optix = await chrome.tabs.query({url: "https://optixtogo.verizon.com/*"});
+  return login.length > 0 || optix.length === 0;
+}
+
 async function readNow(why) {
   const cfg = (await chrome.storage.local.get("cfg")).cfg || {};
   // Test mode needs no key: it reads and counts, and sends nothing.
@@ -108,12 +127,18 @@ async function readNow(why) {
   const all = await chrome.tabs.query({url: "https://" + LEAD_DETAILS + "*"});
   // The Lead Details tab, not the Smart Leads dashboard tab (same address, different #!/ page).
   const tabs = all.filter(t => /leaddetails/i.test(t.url || ""));
-  if (!tabs.length) return status("Open Optix → Smart Leads → Lead Details and leave that tab open.", false);
+  if (!tabs.length) {
+    if (why === "timer" && await signedOut()) await reportSignedOut(cfg, todayLocal(tz), "no Lead Details tab; Optix is on the sign-in page or closed");
+    return status("Open Optix → Smart Leads → Lead Details and leave that tab open.", false);
+  }
   const rules = await (await fetch(chrome.runtime.getURL("rules.json"))).json();
   const day = todayLocal(tz);
   const [res] = await chrome.scripting.executeScript({target: {tabId: tabs[0].id}, world: "MAIN", func: pageRead, args: [day.mdy]});
   const out = res && res.result;
-  if (!out || out.error) return status((out && out.error) || "Could not read the tab.", false);
+  if (!out || out.error) {
+    if (why === "timer" && await signedOut()) await reportSignedOut(cfg, day, (out && out.error) || "could not read the tab");
+    return status((out && out.error) || "Could not read the tab.", false);
+  }
   if (out.none) return status(`Optix: no knocks logged yet today (${day.mdy}) — Lucy will check again in ${EVERY_MIN} min.`, true);
   const {reps, unknown} = tally(out.rows, rules);
   const knocks = Object.values(reps).reduce((a, c) => a + c.Knocks, 0);
@@ -123,7 +148,9 @@ async function readNow(why) {
   if (cfg.dry) return status(`Test mode: ${rows.length} reps, ${knocks} knocks — nothing sent.`, true);
   const base = {office_key: cfg.office, key: cfg.key, day: day.iso, agent: "lucy-optix-ext/1.0.0", local_time: new Date().toISOString()};
   const a = await post({...base, knocks_rows: rows, knocks_time_tracker: []});
-  if (Object.keys(sales).length) await post({...base, records: {}, sales});
+  // NO SALES FROM HERE: an office's sales row has ONE writer. Verizon counts
+  // APPS (lines) off the room's Slack tally (verizon_office/slack_tally); Optix
+  // only knows houses. "Sale Made" still shows on the knock board (Sale column).
   const note = unknown.length ? ` · new outcomes: ${unknown.join(", ")}` : "";
   return status(a && a.ok ? `Sent ${rows.length} reps, ${knocks} knocks${note}` : `Relay said: ${JSON.stringify(a)}`, !!(a && a.ok));
 }

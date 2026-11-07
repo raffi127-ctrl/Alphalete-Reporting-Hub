@@ -2196,6 +2196,21 @@ SYSTEMS = {
                "taskbar on Windows), tick the box once, then leave the "
                "window alone. Lucy carries on by herself.",
     },
+    # VERIZON OPTIX (Megan 2026-11-07: "build out a DM to go to the ICD if the
+    # sign in is expired"). Filed as signin-optix by the Lucy Optix Chrome
+    # extension (extension/optix) and by optix_read. Verizon's SSO session
+    # ended overnight on the first day it was tested, so this is expected
+    # roughly daily -- and until somebody signs in, the knock board is empty.
+    "optix": {
+        "name": "Verizon Optix",
+        "what": "Your knocks board and sales alerts",
+        "why": " Optix signed out on that computer — Verizon ends the "
+               "sign-in about once a day.",
+        "how": "At that computer, in Chrome: open Optix and sign in (last "
+               "name + User ID, then password and the code). Pick the "
+               "Consumer profile → Dashboard → SMART LEADS → Lead Details, "
+               "and leave that tab open. Lucy picks it up within 10 minutes.",
+    },
     "ownerville_locked": {
         "name": "OwnerVille",
         "what": "Your knocks board",
@@ -2602,6 +2617,7 @@ FAULT_STAGE_LABEL = {
     "signin-servicecloud": "signing into My Service Cloud",
     "signin-saraplus": "signing into SaraPlus",
     "signin-ownerville": "signing into OwnerVille",
+    "signin-optix": "signing into Verizon Optix",
     "install": "during setup",
     "sweep": "reading SaraPlus",
     "knocks": "reading OwnerVille",
@@ -2873,7 +2889,8 @@ RECOVERY_GRACE_MIN = 5
 # Which relay proves a stage is reading again.
 _RECOVERY_PROOF = {"sweep": "relay", "box": "relay", "knocks": "knocks",
                    "signin-saraplus": "relay", "signin-servicecloud": "relay",
-                   "signin-ownerville": "knocks", "login": "relay",
+                   "signin-ownerville": "knocks", "signin-optix": "knocks",
+                   "login": "relay",
                    # A setup fault ("SaraPlus did not verify during setup")
                    # is answered by the same thing a sweep fault is: the
                    # office's records arriving. Drew Tepper 2026-09-28: the
@@ -3028,7 +3045,7 @@ SIGNIN_FIXED_PATH = (Path.home() / ".config" / "recruiting-report"
 # Which relay proves each sign-in is working again (see _RECOVERY_PROOF).
 _SIGNIN_PROOF = {"saraplus": "relay", "saraplus_password": "relay",
                  "servicecloud": "relay", "ownerville": "knocks",
-                 "ownerville_locked": "knocks",
+                 "ownerville_locked": "knocks", "optix": "knocks",
                  # Resume pushing files no relay rows, so the office computer
                  # files a quiet probe when a run gets past Indeed again after
                  # the alert (resume_push._note_wall). Filed, never posted.

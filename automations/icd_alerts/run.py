@@ -22,6 +22,7 @@ with an emailed passcode, and watching that happen once beats guessing at it.
 from __future__ import annotations
 
 import argparse
+import os
 import datetime as dt
 import traceback
 import sys
@@ -633,6 +634,13 @@ def _optix_knocks(rows_of, headless: bool, dry_run: bool, day: dt.date) -> int:
     the Verizon buckets ride alongside under their own names.
     """
     from automations.icd_alerts import optix_read
+    # THE LUCY OPTIX CHROME EXTENSION IS THE READER (2026-11-07). Verizon
+    # refuses Optix data to any browser a program launches -- hidden, visible,
+    # bundled Chromium and real Chrome all got an empty profile list -- while
+    # the office's everyday Chrome gets it. So on an office machine the
+    # extension sends the knocks, and this sweep opens nothing.
+    if not os.environ.get("LUCY_OPTIX_BROWSER_READ"):
+        return 0
     try:
         last = dt.datetime.fromisoformat(C.OPTIX_LAST_READ.read_text().strip())
         if dt.datetime.now() - last < dt.timedelta(minutes=C.OPTIX_EVERY_MINUTES):
@@ -657,7 +665,9 @@ def _optix_knocks(rows_of, headless: bool, dry_run: bool, day: dt.date) -> int:
             continue
         except optix_read.SignInNeeded as e:
             print("\n%s" % e)
-            _report("knocks", e, office_key=key)
+            # The STAGE names the system, so Lucy 1 DMs the owner, Megan and
+            # Eve to go sign in (post.SYSTEMS["optix"]) instead of a laptop fault.
+            _report("signin-optix", e, office_key=key)
             worst = 1
             continue
         except Exception as e:  # noqa: BLE001 — one office never costs another
