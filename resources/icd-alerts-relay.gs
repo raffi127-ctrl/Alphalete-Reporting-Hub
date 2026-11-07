@@ -1182,6 +1182,7 @@ function _officeAdminCall(a) {
   if (what === 'send') return _admSend(sess, office, a);
   if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
   if (what === 'already') return _admAlready(office);
+  if (what === 'roster') return _admRoster(office);
   return {ok: false, error: 'unknown call'};
 }
 
@@ -1277,6 +1278,15 @@ function _admSend(sess, office, a) {
   // THE GUARD: the calendar's own account number must be approved for this
   // office (and switched on by its admin). Anything else sends nothing.
   // Several accounts can go in one send ("11280, 11901"): EVERY one must pass.
+  // A send from NEXT WEEK'S STARTS has no calendar: its guard is the roster --
+  // only people on this office's own published roster can go.
+  if (String(a.source || '') === 'roster') {
+    var onRoster = {};
+    _admRoster(office).people.forEach(function (p) { if (p.email) onRoster[p.email.toLowerCase()] = 1; });
+    var stray = (a.people || []).filter(function (p) { return !onRoster[String(p && p.email || '').trim().toLowerCase()]; });
+    if (stray.length) return {ok: false, error: "Some of these aren't on next week's start list, so nothing was sent."};
+    a.appstream = (o.approved || '').split(', ')[0] || '';
+  }
   var acct = _accounts(a.appstream);
   var approved = String(o.approved || '').split(', ').filter(String);
   var chosen = String(o.appstream || '').split(', ').filter(String);
@@ -1314,6 +1324,26 @@ function _admSend(sess, office, a) {
   return _officeJobEnqueue({office: office, kind: 'bgc_send', mode: o.mode,
                             payload: {people: people, by: sess.username, appstream: acct,
                                       location: {country: 'United States', state: o.state, city: o.city}}});
+}
+
+// NEXT WEEK'S STARTS (Megan 2026-11-06): on Fridays the admin may re-send the
+// Sterling link to people starting the following week. Lucy 1 copies that
+// week's onboarding-checklist roster here ('Office Roster' tab,
+// office_admin/roster_publish.py); the extension lists it with NOBODY ticked.
+var ROSTER_TAB = 'Office Roster';
+function _admRoster(office) {
+  var sh = _book().getSheetByName(ROSTER_TAB);
+  if (!sh) return {ok: true, week: '', updated: '', people: []};
+  var rows = sh.getDataRange().getValues(), out = [], week = '', updated = '';
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[0]).trim().toLowerCase() !== office) continue;
+    week = r[1] instanceof Date ? Utilities.formatDate(r[1], 'America/Chicago', 'M/d/yyyy') : String(r[1]);
+    updated = String(r[6] || '');
+    out.push({first_name: String(r[2] || '').trim(), last_name: String(r[3] || '').trim(),
+              email: String(r[4] || '').trim(), status: String(r[5] || '').trim()});
+  }
+  return {ok: true, week: week, updated: updated, people: out};
 }
 
 function _admAlready(office) {

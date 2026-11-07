@@ -82,3 +82,6 @@
 #lucy-oa-panel .lucy-oa-done { margin-top: 12px; border-top: 1px solid #e4e9ef; padding-top: 8px; }
 #lucy-oa-panel .lucy-oa-done summary { cursor: pointer; color: #5b6b7c; font-size: 13px; display: list-item; }
 #lucy-oa-panel .lucy-oa-done .lucy-oa-row { color: #5b6b7c; }
+#lucy-oa-panel .lucy-oa-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+#lucy-oa-panel .lucy-oa-tabs button { flex: 1; padding: 8px; border: 1px solid #c9d6e4; border-radius: 7px; background: #fff; color: #123E66; font-weight: 600; cursor: pointer; }
+#lucy-oa-panel .lucy-oa-tabs button.on { background: #123E66; color: #fff; border-color: #123E66; }

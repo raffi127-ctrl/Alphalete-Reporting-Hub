@@ -170,17 +170,47 @@
     if (f) f.remove();
   }
 
-  function render(office, people, already, accounts, problems) {
-    accounts = accounts || [LucyOffered.officeId()];
+  // Two lists, one panel: today's offers (off the calendar) and NEXT WEEK'S
+  // STARTS (Raf's onboarding checklist, via the relay) for the Friday re-send
+  // of the Sterling link -- there NOBODY is pre-ticked (Megan 11/06).
+  let todayArgs = null;
+  async function openRoster(office, already) {
+    shell('<p>Reading next week\'s start list…</p>');
+    const r = await ask('roster', {office: office.office});
+    if (!r.ok) { shell('<p class="lucy-oa-err">' + esc(r.error || 'Couldn\'t read the start list.') + '</p>'); return; }
+    render(office, r.people || [], already, null, [], {roster: true, week: r.week, updated: r.updated});
+  }
+  function tabs(office, already, onRoster) {
+    return '<div class="lucy-oa-tabs"><button data-tab="today" class="' + (onRoster ? '' : 'on') + '">Today\'s offers</button>' +
+      '<button data-tab="next" class="' + (onRoster ? 'on' : '') + '">Next week\'s starts</button></div>';
+  }
+  function wireTabs(office, already) {
+    panel.querySelectorAll('.lucy-oa-tabs button').forEach(b => {
+      b.onclick = () => {
+        if (b.classList.contains('on')) return;
+        if (b.dataset.tab === 'next') openRoster(office, already);
+        else if (todayArgs) render.apply(null, todayArgs);
+      };
+    });
+  }
+
+  function render(office, people, already, accounts, problems, opts) {
+    opts = opts || {};
+    const R = !!opts.roster;
+    if (!R) todayArgs = [office, people, already, accounts, problems];
+    accounts = R ? [] : (accounts || [LucyOffered.officeId()]);
     problems = problems || [];
-    const loc = '<div class="lucy-oa-loc">📍 ' + esc(office.city) + ', ' + esc(office.state) +
-      ' <span class="lucy-oa-acct">· account' + (accounts.length > 1 ? 's ' : ' ') + esc(accounts.join(', ')) + '</span></div>' +
+    const loc = tabs(office, already, R) + '<div class="lucy-oa-loc">📍 ' + esc(office.city) + ', ' + esc(office.state) +
+      (R ? ' <span class="lucy-oa-acct">· week of ' + esc(opts.week || '?') + ' · from the onboarding checklist</span></div>'
+         : ' <span class="lucy-oa-acct">· account' + (accounts.length > 1 ? 's ' : ' ') + esc(accounts.join(', ')) + '</span></div>') +
       problems.map(pr => '<div class="lucy-oa-err">⚠️ Account ' + esc(pr.acct) + ' wasn\'t read: ' + esc(pr.why) +
                          '. Nobody from it is on this list.</div>').join('');
     const mode = office.mode === 'live' ? '' :
       '<div class="lucy-oa-test">Test mode: checked, not sent.</div>';
     if (!people.length) {
-      shell(mode + loc + '<p>Nobody marked <b>Yes</b> for Offer Position today yet.</p>');
+      shell(mode + loc + (R ? '<p>Nobody is on next week\'s start list yet.</p>'
+                            : '<p>Nobody marked <b>Yes</b> for Offer Position today yet.</p>'));
+      wireTabs(office, already);
       return;
     }
     // NEW people on top, ticked; anyone ALREADY SENT folded away underneath
@@ -190,11 +220,13 @@
       const email = (p.email || '').trim();
       const done = email && already[email.toLowerCase()];
       const indeed = /@indeedemail\.com$/i.test(email);
-      const note = !email ? 'no email in ApplicantStream'
+      const note = R
+        ? (!email ? 'no email on the checklist' : [p.status ? 'BG: ' + p.status : '', done ? 'sent ' + done : ''].filter(Boolean).join(' · '))
+        : !email ? 'no email in ApplicantStream'
         : done ? 'sent ' + done
         : indeed ? 'Indeed forwarding email — check it' : '';
       return '<label class="lucy-oa-row' + (email ? '' : ' off') + '"><input type="checkbox" data-i="' + i + '"' +
-        (email && !done ? ' checked' : '') + (email ? '' : ' disabled') + '> ' +
+        (email && !done && !R ? ' checked' : '') + (email ? '' : ' disabled') + '> ' +
         esc(p.first_name + ' ' + p.last_name) + (note ? ' <span class="lucy-oa-note">— ' + esc(note) + '</span>' : '') +
         '</label>';
     };
@@ -213,15 +245,18 @@
     };
     const fresh = people.filter(p => !isDone(p)).length;
     const old = people.length - fresh;
-    const top = fresh
+    const top = R
+      ? '<p class="lucy-oa-pick">Next week\'s starts (' + people.length + '). Tick who needs the link again:</p>' + list(() => true)
+      : fresh
       ? '<p class="lucy-oa-pick">Tick who should get one (' + fresh + '):</p>' + list(p => !isDone(p))
       : '<div class="lucy-oa-ok">✅ Everyone offered today has already been sent one.</div>';
-    const folded = old
+    const folded = !R && old
       ? '<details class="lucy-oa-done"><summary>Already sent today (' + old + ') — open to send again</summary>' +
         list(isDone) + '</details>'
       : '';
     shell(mode + loc + top + folded +
       '<button id="lucy-oa-send" class="lucy-oa-primary"></button><div id="lucy-oa-result"></div>');
+    wireTabs(office, already);
     const btn = panel.querySelector('#lucy-oa-send');
     const boxes = Array.from(panel.querySelectorAll('input[type=checkbox]'));
     const count = () => {
@@ -234,8 +269,10 @@
     const send = async (picked, resend) => {
       btn.disabled = true;
       btn.textContent = 'Sending to ' + owner() + ' Lucy ECO machine…';
-      const out = await ask('send', {office: office.office, people: picked, resend: resend || '',
-                                     appstream: Array.from(new Set(picked.map(p => p.acct))).join(', ')});
+      // Next week's starts are a RE-SEND on purpose: no "already sent?" stop.
+      const out = await ask('send', {office: office.office, people: picked,
+                                     resend: R ? 'all' : (resend || ''), source: R ? 'roster' : '',
+                                     appstream: R ? '' : Array.from(new Set(picked.map(p => p.acct))).join(', ')});
       if (out.needs_confirm) {           // already sent before: the admin decides
         confirmResend(picked, out.duplicates || []);
         count();
@@ -261,13 +298,14 @@
       const nm = p => (p.first_name + ' ' + p.last_name).trim();
       const pickedSet = new Set(picked);
       const notSent = [];
-      people.forEach(p => {
+      // Next week's list: only the people she ticked count (the rest weren't asked for).
+      (R ? picked : people).forEach(p => {
         const email = (p.email || '').trim().toLowerCase();
         if (!email) notSent.push({name: nm(p), why: 'no email in ApplicantStream'});
         else if (!pickedSet.has(p)) notSent.push({name: nm(p), why: already[email] ? 'already sent ' + already[email] + ' — not ticked' : 'not ticked'});
         else if (dupEmails.includes(email)) notSent.push({name: nm(p), why: 'already sent ' + (already[email] || 'before') + ' — skipped'});
       });
-      watch(office.office, out.job_id, {total: people.length, asked: sentNames, notSent: notSent,
+      watch(office.office, out.job_id, {total: R ? picked.length : people.length, asked: sentNames, notSent: notSent,
                                         live: office.mode === 'live'});
     };
 
@@ -296,12 +334,15 @@
       const whose = owner().replace(/'s$/, '').replace(/^the ICD$/, 'this office');
       result('confirm',
         '<div class="lucy-oa-confirm-title">⚠️ CONFIRM</div>' +
-        'Send <b>' + picked.length + '</b> background check link' + (picked.length === 1 ? '' : 's') +
+        (R ? 'RESEND <b>' : 'Send <b>') + picked.length + '</b> background check link' + (picked.length === 1 ? '' : 's') +
         ' from <b>' + esc(whose.toUpperCase()) + '\'S STERLING</b>?' +
-        '<div class="lucy-oa-confirm-acct">ApplicantStream account' + (accounts.length > 1 ? 's' : '') +
-        ' <b>' + esc(Array.from(new Set(picked.map(p => p.acct))).join(', ')) +
-        '</b> · ' + esc(office.city) + ', ' + esc(office.state) + '</div>' +
-        (accounts.length > 1 ? 'Make sure these are the correct accounts.' : 'Make sure you\'re on the correct calendar.') +
+        (R
+          ? '<div class="lucy-oa-confirm-acct">Next week\'s starts · week of <b>' + esc(opts.week || '?') + '</b> · ' +
+            esc(office.city) + ', ' + esc(office.state) + '</div>Make sure these are the people who need it again.'
+          : '<div class="lucy-oa-confirm-acct">ApplicantStream account' + (accounts.length > 1 ? 's' : '') +
+            ' <b>' + esc(Array.from(new Set(picked.map(p => p.acct))).join(', ')) +
+            '</b> · ' + esc(office.city) + ', ' + esc(office.state) + '</div>' +
+            (accounts.length > 1 ? 'Make sure these are the correct accounts.' : 'Make sure you\'re on the correct calendar.')) +
         '<div class="lucy-oa-choices"><button class="lucy-oa-again lucy-oa-yes">Yes, send</button>' +
         '<button class="lucy-oa-skip lucy-oa-no">Cancel</button></div>');
       panel.querySelector('.lucy-oa-yes').onclick = () => send(picked, '');

@@ -679,6 +679,15 @@ def _run(args) -> None:
             print(f"[ov-names] pass skipped: "
                   f"{type(e).__name__}: {str(e).splitlines()[0][:160]}")
 
+    # Next week's starts -> the relay, for the office admin extension's
+    # Friday re-send list (Megan 2026-11-06). An extra: never turns this red.
+    if not args.dry_run:
+        try:
+            from automations.office_admin import roster_publish
+            roster_publish.publish()
+        except Exception as e:  # noqa: BLE001
+            print(f"[office-roster] skipped: {type(e).__name__}: {str(e)[:160]}")
+
     if sanity_problems:
         # Raised LAST so weeks that read fine still got their updates, and
         # raised at all because this has to reach somebody: main() turns an
