@@ -46,7 +46,7 @@ titled "Alphalete Owner Sales Today", once an hour on the :15 so it starts when
 the owners chat starts (12:15 PM).
 
 - **Alphalete Owners: every 30 minutes** (:15 and :45, Raf 2026-11-04). SOUTHSHORE
-  ORG and A PLAYERSSS: once an hour, on the :45. Mon–Sat, 12 PM–9 PM Central.
+  ORG and A PLAYERSSS: once an hour, on the :45. Mon–Sat, 12 PM–10 PM Central (last round 10:45 / 10:15, Carlos 11/6).
 - Skipped when no number moved since the last text.
 - Not sent before any office has relayed a sale that day.
 
