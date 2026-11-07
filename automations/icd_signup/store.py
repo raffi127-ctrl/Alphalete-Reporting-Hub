@@ -134,6 +134,37 @@ def _save_local(rows: List[Dict]) -> None:
     _LOCAL_FALLBACK.write_text(json.dumps(rows, indent=2))
 
 
+def enrolled_key_for(owner: str, campaign: str = "") -> str:
+    """The key this owner ALREADY has, when we enrolled them first.
+
+    Nico Murrugarra (2026-11-07): his office was set up from the command line
+    as `nicolas` with every report built on it; he typed "Nico" on the form,
+    which minted `nico` -- a second office with none of it. The installer then
+    asked him again for everything the form had just taken. Same surname, same
+    first initial and same campaign is the same person; anything looser is a
+    new office, as before. "" when there is no such office."""
+    import re
+
+    def parts(name):
+        w = [re.sub(r"[^a-z]", "", x) for x in (name or "").lower().split()]
+        w = [x for x in w if x]
+        return (w[0][:1], w[-1]) if len(w) >= 2 else None
+
+    want = parts(owner)
+    if not want:
+        return ""
+    try:
+        from automations.icd_alerts import offices as O
+        roster = O.OFFICES.values()
+    except Exception:  # noqa: BLE001 — the form must still work without it
+        return ""
+    camp = (campaign or "att").strip().lower()
+    hits = [o.key for o in roster
+            if parts(o.owner) == want
+            and (getattr(o, "campaign", "") or "att").strip().lower() == camp]
+    return hits[0] if len(hits) == 1 else ""
+
+
 def office_key_for(owner: str, taken=(), campaign: str = "") -> str:
     """This enrollment's key: first name, then the campaign if that is taken.
 
@@ -358,16 +389,25 @@ def submit(rec: IcdSignup, book=None) -> IcdSignup:
 
     taken = {s.office_key for s in existing if s.office_key}
     rec = rec._replace(
-        office_key=rec.office_key or office_key_for(rec.owner, taken,
-                                                    rec.campaign),
+        office_key=rec.office_key or enrolled_key_for(rec.owner, rec.campaign)
+        or office_key_for(rec.owner, taken, rec.campaign),
         status=STATUS_PENDING,
         submitted_at=rec.submitted_at or stamp(),
     )
     row = rec.as_row()
-    ordered = [row.get(h, "") for h in _HEADER]
     try:
-        _tab(book).append_row(["TRUE" if v is True else
-                               "FALSE" if v is False else v for v in ordered])
+        tab = _tab(book)
+        # BY THE SHEET'S OWN HEADER, NOT _HEADER'S ORDER. A column added to the
+        # tab by hand (slack_user_id) sat where credico_office was about to
+        # land, so Nico's company name was saved as his Slack id (2026-11-07).
+        # Columns this form does not know get "" and stay the person's.
+        try:
+            head = [h.strip() for h in tab.row_values(1)] or _HEADER
+        except Exception:  # noqa: BLE001
+            head = _HEADER
+        ordered = [row.get(h, "") for h in head]
+        tab.append_row(["TRUE" if v is True else
+                        "FALSE" if v is False else v for v in ordered])
         return rec, True
     except Exception:  # noqa: BLE001 — the owner's answers must not be lost
         # A LOCAL DRAFT IS NOT A SAVE, and the caller has to know the
