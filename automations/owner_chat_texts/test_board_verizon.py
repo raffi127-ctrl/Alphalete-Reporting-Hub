@@ -47,8 +47,11 @@ class BoardVerizon(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.top_off.assert_called_once()
         args = self.send.call_args[0]
-        self.assertEqual(args[3], ["NEW A Players"])
+        self.assertEqual(args[3], ["NEW A Players", cfg.GROUP_OWNERS_REAL])
         self.assertNotIn("Verizon", args[1])
+        caps = self.send.call_args[1]["group_captions"]
+        self.assertEqual(list(caps), [cfg.GROUP_OWNERS_REAL])
+        self.assertIn("UPDATED", caps[cfg.GROUP_OWNERS_REAL])
 
     def test_already_on_the_board_sends_without_top_off(self):
         res = self._go([False, False, False], False)

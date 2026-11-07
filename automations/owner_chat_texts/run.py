@@ -83,7 +83,8 @@ def _slug(name: str) -> str:
 
 
 def _send_item(key: str, caption: str, png: Path, groups: list, day: dt.date,
-               dry_run: bool, out: dict, resend: bool = False) -> None:
+               dry_run: bool, out: dict, resend: bool = False,
+               group_captions: Optional[dict] = None) -> None:
     """Send one captioned image to its groups; record per-group results.
 
     `resend` deliberately ignores today's marker. Only for the case it was
@@ -118,7 +119,8 @@ def _send_item(key: str, caption: str, png: Path, groups: list, day: dt.date,
                 key, name, gm.read_text().strip()[:19]))
             continue
         try:
-            res = tp.send_to_group(name, caption, [png], dry_run=dry_run,
+            text = (group_captions or {}).get(name, caption)
+            res = tp.send_to_group(name, text, [png], dry_run=dry_run,
                                    dest=group if isinstance(group, dict) else None)
             out["sent"].append("%s %s -> %s (chat %s, %s participants)" % (
                 "WOULD TEXT" if dry_run else "TEXTED", key, name,
@@ -294,8 +296,10 @@ def _run_board_verizon(day: dt.date, out_dir: Path, dry_run: bool, force: bool,
             return
         from automations.owner_chat_texts.board_shot import capture_wow_board
         png = capture_wow_board(out_dir)
+        upd = cfg.board_update_caption(day)
         _send_item(key, cfg.board_caption(day), png, cfg.VERIZON_BOARD_GROUPS,
-                   day, dry_run, out, resend=resend)
+                   day, dry_run, out, resend=resend,
+                   group_captions={g: upd for g in cfg.VERIZON_UPDATE_GROUPS})
     except Exception as e:  # noqa: BLE001
         out["errors"].append("board_verizon: %s: %s" % (type(e).__name__,
                                                         str(e)[:240]))
@@ -444,7 +448,7 @@ def _verizon_manifest(res: dict) -> None:
         run_manifest.write_manifest(
             VERIZON_REPORT_ID, kind="tracker",
             succeeded=list(res.get("sent") or []),
-            note="; ".join(res.get("skipped") or []) or "texted NEW A Players")
+            note="; ".join(res.get("skipped") or []) or "texted NEW A Players + Alphalete owners")
     except Exception as e:  # noqa: BLE001
         print("  (manifest write failed: %s — the run itself was fine)"
               % type(e).__name__, flush=True)

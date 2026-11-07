@@ -70,7 +70,12 @@ BOARD_GROUPS = [GROUP_OWNERS_REAL, GROUP_KNOCKING,
 # aren't in by the orchestrator's noon backstop, nothing goes out and the run
 # retires MISSED (which alerts).
 GROUP_NEW_A_PLAYERS = "NEW A Players"
-VERIZON_BOARD_GROUPS = [GROUP_NEW_A_PLAYERS]
+# Carlos 2026-11-07 (Slack, OK'd by Raf): the owners chat gets the board at
+# 7:45 with Nico's line still blank, so it gets it a SECOND time here, every
+# day, once Verizon is in. Its caption says it's the update (the 7:45 one
+# stays as is).
+VERIZON_BOARD_GROUPS = [GROUP_NEW_A_PLAYERS, GROUP_OWNERS_REAL]
+VERIZON_UPDATE_GROUPS = [GROUP_OWNERS_REAL]
 
 # "All the Trackers" = exactly what #alphalete-sales carries each morning: the
 # default org-wide set, in post order. Read from tableau_screenshots so a
@@ -148,3 +153,8 @@ def board_caption(day) -> str:
     import datetime as dt
     d = day - dt.timedelta(days=1)
     return "Alphalete Org WOW Sales Board %d/%d" % (d.month, d.day)
+
+
+def board_update_caption(day) -> str:
+    """The second board in a chat that already got the 7:45 one."""
+    return "UPDATED with Nico's numbers — " + board_caption(day)
