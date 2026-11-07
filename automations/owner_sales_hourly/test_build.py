@@ -255,7 +255,7 @@ class HalfHourPass(unittest.TestCase):
         with plist.open("rb") as fh:
             slots = plistlib.load(fh)["StartCalendarInterval"]
         self.assertEqual({s["Minute"] for s in slots}, {15, 45})
-        self.assertEqual(len(slots), 6 * 10 * 2)
+        self.assertEqual(len(slots), 6 * 11 * 2)  # 12 PM-10 PM
         for s in slots:
             now = dt.datetime(2026, 11, 2 + s["Weekday"] - 1, s["Hour"], s["Minute"])
             self.assertTrue(run.in_window(now), now)

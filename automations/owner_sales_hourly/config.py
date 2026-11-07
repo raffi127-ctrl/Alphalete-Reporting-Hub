@@ -104,9 +104,11 @@ HOURLY_ON_THE_15 = ("carlos",)
 
 # The selling day, Central. This is the guard the code applies, so a stray hand
 # run at 9am texts nothing. weekday(): (first hour, last hour) inclusive.
+# Carlos 2026-11-06: one more round an hour after the old last text (9:45 ->
+# 10:45 PM), so the window runs to the 10 PM hour.
 WINDOW = {
-    0: (12, 21), 1: (12, 21), 2: (12, 21), 3: (12, 21), 4: (12, 21),
-    5: (12, 21),
+    0: (12, 22), 1: (12, 22), 2: (12, 22), 3: (12, 22), 4: (12, 22),
+    5: (12, 22),
 }
 
 # What went out last, per day — a send with exactly the same numbers as the

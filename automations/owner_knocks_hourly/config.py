@@ -28,10 +28,19 @@ from automations.owner_chat_texts.config import GROUP_OWNERS_REAL as TEXT_GROUP
 # fires at :20 (off owner_sales_hourly's :15/:45 so the two texts don't land
 # together); this is the guard the code applies, so a stray hand run at 9am
 # texts nothing. 2 PM is the first hour with knocks on the board (1:30 starts).
+# Carlos 2026-11-06: one more text an hour after the old last one (9:20 ->
+# 10:20 PM), so the window runs to the 10 PM hour.
 WINDOW = {
-    0: (14, 21), 1: (14, 21), 2: (14, 21), 3: (14, 21), 4: (14, 21),
-    5: (14, 21),
+    0: (14, 22), 1: (14, 22), 2: (14, 22), 3: (14, 22), 4: (14, 22),
+    5: (14, 22),
 }
+
+# Carlos Hidalgo 2026-11-06 (Slack): the board in his "NEW A Players" and
+# "ATT B2B Leaders" chats too -- same picture, same :20 cadence, sent right
+# after the owners chat. Names live in b2b_dispositions.config like every
+# other text to those chats. A failed extra chat doesn't stop the others.
+from automations.b2b_dispositions.config import TEXT_GROUP_ALL, TEXT_GROUP_ATT
+EXTRA_GROUPS = (TEXT_GROUP_ALL, TEXT_GROUP_ATT)
 
 # Offices one of OUR Lucys pulls instead of the owner's Mac -- shared on the
 # relay workbook's 'Lucy Knocks' tab (share.py). gap_alerts shares these keys

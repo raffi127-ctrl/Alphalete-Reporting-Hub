@@ -273,20 +273,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     from automations.b2b_dispositions import text_post as T
-    try:
-        # The picture alone (Megan 2026-09-15: "just the chart photo is
-        # fine") — its title already says whose board and what time.
-        res = T.send_to_group(cfg.TEXT_GROUP, "", [png], dry_run=dry)
-    except Exception as e:  # noqa: BLE001
-        print("text failed: %s" % e)
-        return 1
-    print("%s -> %s (%s people)" % ("[dry-run] would text" if dry else "texted",
-                                    res.get("resolved_name"),
-                                    res.get("participants") or "?"))
-    if not dry:
+    rc = 0
+    owners_ok = False
+    for group in (cfg.TEXT_GROUP,) + tuple(cfg.EXTRA_GROUPS):
+        try:
+            # The picture alone (Megan 2026-09-15: "just the chart photo is
+            # fine") — its title already says whose board and what time.
+            res = T.send_to_group(group, "", [png], dry_run=dry)
+        except Exception as e:  # noqa: BLE001
+            print("text to %s failed: %s" % (group, e))
+            rc = 1
+            continue
+        print("%s -> %s (%s people)" % (
+            "[dry-run] would text" if dry else "texted",
+            res.get("resolved_name"), res.get("participants") or "?"))
+        owners_ok = owners_ok or group == cfg.TEXT_GROUP
+    # Only the owners chat failing keeps the numbers unsaved (retried next
+    # hour, as before); an extra chat failing doesn't re-text the others.
+    if not dry and owners_ok:
         last.parent.mkdir(parents=True, exist_ok=True)
         last.write_text(sig, encoding="utf-8")
-    return 0
+    return rc
 
 
 if __name__ == "__main__":
