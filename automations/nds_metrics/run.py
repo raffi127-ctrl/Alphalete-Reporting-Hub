@@ -1507,6 +1507,16 @@ def build_activation_by_week(cols, crew, today, log=print) -> Path:
     return AW.build(soh, today, OUT_DIR / "nds_activation_by_week.png", log=log)
 
 
+def build_rep_tiers_shot(cols, crew, today, log=print) -> Path:
+    from automations.nds_metrics import tableau_shots as TS
+    return TS.capture("rep_tiers", OUT_DIR, log=log)
+
+
+def build_top_reps_shot(cols, crew, today, log=print) -> Path:
+    from automations.nds_metrics import tableau_shots as TS
+    return TS.capture("top_reps", OUT_DIR, log=log)
+
+
 def build_team_tree(cols, crew, today, log=print) -> Path:
     """The 6am NDS team tree rides the 7:30 thread (Carlos 2026-10-28:
     post it "in the NDS metrics thread every morning instead of just on
@@ -1588,6 +1598,12 @@ SECTIONS = [
     # weeks since NDS started, off SaraPlus per-line statuses.
     ("activation_by_week", "\U0001F4C6", "NDS Activation Rate by Week Ending",
      build_activation_by_week),
+    # Carlos 2026-11-07: the Tableau "Order Tiered Bonus - Rep Ranking" view
+    # filtered to his owner (posted on B2B before, never on NDS) and the
+    # workbook's "Top 100 Reps View" (top 50), every morning.
+    ("rep_tiers", "\U0001F3C5", "NDS Rep Tiered Ranking (this week)",
+     build_rep_tiers_shot),
+    ("top_reps", "\U0001F3C6", "NDS Top 50 Reps", build_top_reps_shot),
     ("pending_orders", "⏳", "NDS Pending Orders", build_pending_png),
     # customer_churn: DISCONTINUED for Fiber (Carlos 2026-10-08 scope list);
     # build_churn_rolloff_png stays importable for reference only.
