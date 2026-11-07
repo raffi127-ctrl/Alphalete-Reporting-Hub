@@ -164,8 +164,15 @@ def _context(p, headless: bool):
     nico's eco machine"). Optix opens the way the owner opens it himself, on
     his own computer and his own login; `headless` is ignored on purpose."""
     C.OPTIX_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    # REAL GOOGLE CHROME, like every other Hub site that turns bundled
+    # Chromium away (Tableau, Sheets: chrome_guard / tableau_patchright).
+    # Megan 2026-11-06: "try again using a regular browser". The profile
+    # signed in under bundled Chromium is NOT reused -- Chrome keeps its own
+    # (OPTIX_PROFILE_DIR + "-chrome"), signed in once with optix_signin.
+    prof = C.OPTIX_PROFILE_DIR.with_name(C.OPTIX_PROFILE_DIR.name + "-chrome")
+    prof.mkdir(parents=True, exist_ok=True)
     return p.chromium.launch_persistent_context(
-        str(C.OPTIX_PROFILE_DIR), headless=False, args=["--disable-sync"])
+        str(prof), channel="chrome", headless=False, args=["--disable-sync"])
 
 
 # Runs in the Lead Details page once Apply has loaded: the whole result set

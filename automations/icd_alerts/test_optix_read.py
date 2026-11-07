@@ -109,5 +109,15 @@ class VerizonSales(unittest.TestCase):
         self.assertEqual(t["reps"]["Diego Chacon"]["Sale"], 1)
 
 
+class SharedRules(unittest.TestCase):
+    def test_the_extension_and_python_count_the_same(self):
+        """extension/optix/rules.json must say exactly what optix_read does."""
+        import json
+        from pathlib import Path
+        r = json.loads((Path(__file__).resolve().parents[2] / "extension/optix/rules.json").read_text())
+        self.assertEqual([tuple(x) for x in r["rules"]], [tuple(x) for x in O._RULES])
+        self.assertEqual({k: v for k, v in O.BOARD_COLUMNS.items() if v}, r["board_columns"])
+
+
 if __name__ == "__main__":
     unittest.main()

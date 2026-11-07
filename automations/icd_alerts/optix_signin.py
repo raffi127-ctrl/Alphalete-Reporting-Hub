@@ -57,8 +57,7 @@ def _window(log) -> int:
     from patchright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(C.OPTIX_PROFILE_DIR), headless=False, args=["--disable-sync"])
+        ctx = O._context(p, False)      # the SAME real-Chrome profile the reader uses
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(O.PROFILE_URL, timeout=60000)
