@@ -38,7 +38,9 @@ async function pageRead(mdy) {
     if (window.angular) { try { angular.element(b).val(mdy).triggerHandler("input"); angular.element(b).triggerHandler("change"); } catch (e) {} }
     b.dispatchEvent(new Event("input", {bubbles: true})); b.dispatchEvent(new Event("change", {bubbles: true}));
   }
-  const apply = [...document.querySelectorAll("button")].find(b => /^\s*apply\s*$/i.test(b.innerText || ""));
+  // textContent, not innerText: after an Apply the filter panel FOLDS AWAY and a
+  // hidden button's innerText is "" (Megan's first real test, 2026-11-07).
+  const apply = [...document.querySelectorAll("button")].find(b => /^\s*apply\s*$/i.test(b.textContent || ""));
   if (!apply) return {error: "No Apply button on this tab."};
   const before = document.body.innerText.match(/(\d+) dispositions from (\d+) unique leads/);
   apply.click();
