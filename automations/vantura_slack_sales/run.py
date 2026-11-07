@@ -641,6 +641,18 @@ def match_rep(author: str, rows: dict[str, int]):
                 rp = row.split()
                 if rp and rp[0] == parts[0] and rp[-1] == parts[-1]:
                     return row
+    # ONE word (the office roster: "CHACON", "SAMANTHA", "Will" -- Carlos
+    # 2026-11-07 "either their first name or their last name"): the one row
+    # whose first OR last name is that word. Two rows sharing it = no match,
+    # reported, never guessed.
+    for cand in cands:
+        parts = cand.split()
+        if len(parts) == 1:
+            tok = parts[0]
+            hits = [row for row in rows
+                    if row.split() and (row.split()[0] == tok or row.split()[-1] == tok)]
+            if len(hits) == 1:
+                return hits[0]
     return None
 
 
@@ -676,7 +688,7 @@ def run_campaign(posts, g, day: dt.date, campaign: str, log=_log) -> dict:
         else:
             delta = f"   <- board has {on_board or '(blank)'}"
         log(f"  {_cell(g, row, NAME_COL):<28} {rec['count']:>2}"
-            f"  ({len(rec['posts'])} post(s)){delta}")
+            f"  ({len(rec['posts'])} post(s){', roster' if rec.get('roster') else ''}){delta}")
         for f in dict.fromkeys(rec["flags"]):
             log(f"      ! {f}")
     for author, rec in unmatched:

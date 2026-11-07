@@ -566,3 +566,61 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+ROSTER_1106_2155 = """Verizon D2D :fire::fire::chart_with_upwards_trend::bangbang:
+
+CHACON :drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood:
+
+SAMANTHA :drop_of_blood: :drop_of_blood: :drop_of_blood: :drop_of_blood:
+
+ISAAC :drop_of_blood:
+
+JAYDEN :drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood:
+
+GARY :drop_of_blood::drop_of_blood:
+
+THAIS :drop_of_blood::drop_of_blood:
+
+Edgar :drop_of_blood:
+
+Will :drop_of_blood:
+
+Jacob :calling::calling::calling::calling::calling::calling:
+
+Annett - :calling::calling::calling:
+
+Nick- :calling::calling::calling::calling:
+
+Fernando:calling::calling::calling::calling::calling:
+
+48/50:fire::fire:"""
+
+
+def test_roster_post_counts_by_name_not_author():
+    p = _post(ROSTER_1106_2155, hh=21, mm=55, day=6, author="Jose Pimentel")
+    assert p.roster and p.campaign is None
+    names = {n: d for n, d, _ph in p.roster}
+    assert names["CHACON"] == 4 and names["SAMANTHA"] == 4 and names["Will"] == 1
+    assert names["Jacob"] == 0 and names["Fernando"] == 0       # phones are AT&T
+    rec = P.tally([p], p.sales_day, "Verizon")
+    assert rec["CHACON"]["count"] == 4 and rec["Edgar"]["count"] == 1
+    assert "Jose Pimentel" not in rec and "Jacob" not in rec
+    assert rec["CHACON"]["roster"] and "roster list" in rec["CHACON"]["flags"][0]
+    # the day's number is the highest list of the day, never a sum
+    earlier = _post(ROSTER_1106_2155.replace("CHACON :drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood:",
+                                             "CHACON :drop_of_blood:"), hh=19, mm=0, day=6, author="Thais")
+    rec2 = P.tally([earlier, p], p.sales_day, "Verizon")
+    assert rec2["CHACON"]["count"] == 4 and len(rec2["CHACON"]["posts"]) == 2
+
+
+def test_roster_before_office_opens_is_yesterday():
+    p = _post("Verizon :fire:\nAt&amp;t :fire:\n\nBAUTISTA :drop_of_blood::drop_of_blood:\nJose :calling:",
+              hh=8, mm=9, day=6, author="Andrew De la torre")
+    assert p.roster and p.sales_day == dt.date(2026, 7, 5)
+    assert P.roster_lines("SAMANTHA \U0001FA78\U0001FA78")[0][1] == 2      # pasted unicode drops
+
+
+def test_roster_does_not_credit_the_author_as_a_verizon_sale():
+    p = _post(ROSTER_1106_2155, hh=20, mm=0, day=6, author="Samantha Ruiz")
+    assert P.tally([p], p.sales_day, "Verizon").get("Samantha Ruiz") is None

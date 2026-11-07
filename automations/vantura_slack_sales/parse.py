@@ -358,6 +358,42 @@ CAMPAIGNS = [
 BY_NAME = {c.name: c for c in CAMPAIGNS}
 
 
+# --- the office ROSTER post (first seen 2026-11-05; Carlos 2026-11-07) ------
+# "Verizon D2D :fire::fire: / CHACON :drop_of_blood: x4 / SAMANTHA :drop_of_blood:
+# / ... / Jacob :calling: x6 / ... / 48/50 :fire:" -- the whole office re-posts
+# ONE running list through the evening. A line is a rep's FIRST or LAST name
+# and then one red drop per Verizon app ("however many teardrops there are is
+# how many apps they got"); the AT&T reps get phones, which the NDS board does
+# not take from Slack. Snapshot counts, so a name's number for the day is the
+# MAX over the day's roster posts (the fill only raises anyway). A roster
+# posted before the office opens is yesterday's final (Andrew De la Torre
+# 2026-11-06 08:09 = Thursday's list), so it belongs to the day before.
+ROSTER_DROP = re.compile(r":drop_of_blood:|\U0001FA78")
+ROSTER_PHONE = re.compile(r":calling:|\U0001F4F2")
+_ROSTER_MARK = r"(?::drop_of_blood:|\U0001FA78|:calling:|\U0001F4F2)"
+_ROSTER_LINE = re.compile(
+    r"(?m)^[ \t>*_]*([A-Za-z][A-Za-z.'`\u00C0-\u017F -]{0,40}?)[ \t]*[-:]?[ \t]*"
+    r"((?:" + _ROSTER_MARK + r"[ \t]*)+)[ \t]*$")
+ROSTER_OPEN_HOUR = 10
+
+
+def roster_lines(text: str) -> list[tuple[str, int, int]]:
+    """[(name as posted, red drops, phones)] for every roster line."""
+    out = []
+    for m in _ROSTER_LINE.finditer(text):
+        name = m.group(1).strip(" -:*_\t")
+        if not name:
+            continue
+        marks = m.group(2)
+        out.append((name, len(ROSTER_DROP.findall(marks)),
+                    len(ROSTER_PHONE.findall(marks))))
+    return out
+
+
+def is_roster(text: str) -> bool:
+    return any(d or ph for _n, d, ph in roster_lines(text))
+
+
 @dataclass
 class PostRead:
     """One channel message, after parsing."""
@@ -374,6 +410,7 @@ class PostRead:
     skipped: bool = False          # looked like a campaign, read as chatter
     text: str = ""
     files: int = 0                 # attachments — an image-only post has text ""
+    roster: list = field(default_factory=list)   # [(name, drops, phones)]
 
     @property
     def excerpt(self) -> str:
@@ -483,6 +520,15 @@ def read_post(ts: str, when: dt.datetime, author: str, author_id: str,
               text: str, files: int = 0) -> PostRead:
     post = PostRead(ts=ts, when=when, author=author, author_id=author_id,
                     sales_day=sales_day(when, text), text=text, files=files)
+    if author not in BOT_AUTHORS and is_roster(text):
+        # The office list, not the poster's own sale: credited by NAME in
+        # tally(), never to the author. Before the office opens it is
+        # yesterday's final list.
+        post.roster = roster_lines(text)
+        local = when.astimezone(TZ)
+        if local.hour < ROSTER_OPEN_HOUR:
+            post.sales_day = local.date() - dt.timedelta(days=1)
+        return post
     if not is_sale_post(author, text):
         return post
     c = campaign_of(text)
@@ -522,4 +568,27 @@ def tally(posts: list[PostRead], day: dt.date, campaign: str) -> dict[str, dict]
             numbered = [p.count for p in rec["posts"] if p.count]
             unnumbered = [p for p in rec["posts"] if not p.count]
             rec["count"] = max(numbered, default=0) + len(unnumbered)
+    if campaign == "Verizon":
+        # The roster lists: a name's day = the highest drop count any roster
+        # post of that day gave it. Keyed by the NAME on the line (first or
+        # last), which run.match_rep resolves to a board row.
+        for p in posts:
+            if not p.roster or p.sales_day != day:
+                continue
+            for name, drops, _phones in p.roster:
+                if drops <= 0:
+                    continue
+                rec = out.setdefault(name, {"count": 0, "posts": [], "flags": [],
+                                            "roster": True})
+                if drops > rec["count"]:
+                    rec["count"] = drops
+                if p not in rec["posts"]:
+                    rec["posts"].append(p)
+        for name, rec in out.items():
+            if rec.get("roster"):
+                last = max(rec["posts"], key=lambda q: float(q.ts))
+                rec["flags"].append(
+                    "roster list (%d post(s), last by %s %s): %d red drop(s)"
+                    % (len(rec["posts"]), last.author,
+                       last.when.astimezone(TZ).strftime("%H:%M"), rec["count"]))
     return out
