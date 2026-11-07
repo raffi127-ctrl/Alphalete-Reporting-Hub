@@ -29,7 +29,8 @@ class Mirror(unittest.TestCase):
 class RealFiles(unittest.TestCase):
     def test_quality_4wk_cancel_for_nico(self):
         q = V.quality_cancel(Path(glob.glob(str(INV / "raw/Quality Scorecard*SCI-WO*.pdf"))[0]), "Nicolas Murrugarra")
-        self.assertEqual(q, (dt.date(2026, 11, 3), 0.211))   # 8 of 38 canceled, 4 weeks rolling
+        self.assertEqual(q[0], dt.date(2026, 11, 3))
+        self.assertAlmostEqual(q[1], 0.211)          # 8 of 38 canceled, 4 weeks rolling
 
 
 if __name__ == "__main__":
