@@ -1,0 +1,126 @@
+{
+  "day": "2026-11-06",
+  "items": [
+    {
+      "key": "knocks",
+      "title": ":door: Knocks Board",
+      "what": "Every rep's doors, knocks, talk-tos and each Optix disposition, read off Optix Lead Details on Nico's ECO computer. Time columns are blank on purpose: Optix doesn't record what time a door was knocked.",
+      "when": "All day, on the schedule Nico picks on the Lucy ECO sign-up, plus a final board at night.",
+      "files": [
+        "knocks_board.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "countdown",
+      "title": ":iphone: Sales Countdown Text (iMessage)",
+      "what": "The day's apps per rep, highest first, with a :fire: on whoever just sold, and the office total. Example uses Thursday 11/5's real numbers.",
+      "when": "Texted to the \"Verizon\" iMessage group (Nico + Carlos) every time the count goes up.",
+      "files": [],
+      "text": "```William Bautista 6 🔥\nGary Van Whitaker 6\nEdgar Camunez 3\nBrandy Ahumada Ruiz 3\nThais Alvarez Aragon 2\nGiovanni Monreal 2\nJair Hernandez Otero 1\n\nApps: 23\n🏆 TOTALS: 23```"
+    },
+    {
+      "key": "live_apps",
+      "title": ":drop_of_blood: Live App Alerts",
+      "what": "When a rep's :drop_of_blood: count goes up in #alphalete-gp-sales, Lucy cheers it in the channel (each :drop_of_blood: = 1 app, the same count the reps already post).",
+      "when": "Live, as the tally moves (afternoon to midnight).",
+      "files": [],
+      "text": "William closed it. Anyone can do the job, nobody does it like William :dollar:"
+    },
+    {
+      "key": "sales_board",
+      "title": ":satellite_antenna: Verizon Sales Board",
+      "what": "Apps by rep by day for the week, with this week vs last week on the same days. From Credico's Sales Verification email.",
+      "when": "Daily, about 11:15am, in the day's *Verizon Metrics* thread in #alphalete-gp-sales (previous-day numbers, like every program).",
+      "files": [
+        "sales_board.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "rep_activations",
+      "title": "🆕 Rep Activations",
+      "what": "Last week and this week per rep: activated, pending, total, canceled/disconnected.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "rep_activations.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "pending_orders",
+      "title": "⏳ Pending Orders",
+      "what": "Every line that's submitted but not activated yet, grouped by rep, with how many days it's been waiting.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "pending_orders_1.png",
+        "pending_orders_2.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "activation_rate",
+      "title": "📈 Activation Rate by Rep",
+      "what": "Per rep: % of lines activated, sold 0-30 days ago and 31-60 days ago. Green / yellow / red by the same bars as Carlos's board.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "activation_rate.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "order_log",
+      "title": "📋 Order Log",
+      "what": "Excel file: every line (rep, dates, order #, plan, device, ported from, status), plus a tab per rep.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "order_log.xlsx"
+      ],
+      "text": ""
+    },
+    {
+      "key": "cancels",
+      "title": "🚫 Canceled Orders",
+      "what": "Lines Credico canceled in the last 3 days.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "cancels.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "disconnects",
+      "title": "❎ Disconnected Orders",
+      "what": "Lines that disconnected in the last 3 days.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "disconnects.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "compliance",
+      "title": ":shield: Compliance Board",
+      "what": "Credico's weekly compliance flags per rep.",
+      "when": "Wednesdays, same *Verizon Metrics* thread.",
+      "files": [],
+      "text": ":triangular_flag_on_post: *Verizon Compliance Flags* · WE 10/31 · 11 of 15 reps flagged\n• *Giovanni Monreal* — 2 flags: 4+ lines per order, own-device (BYOD) 2x the campaign\n• *Isaac Salomon Nambo* — 2 flags: sales jumped 3x vs own average, own-device (BYOD) 2x the campaign\n• *Jose Ramos* — 2 flags: 4+ lines per order, same SSN on multiple orders\n• *Ndifreke Ikotidem* — 2 flags: sales jumped 3x vs own average, same SSN on multiple orders\n• *Edgar Camunez* — 1 flag: same SSN on multiple orders\n• *Gary Van Whitaker* — 1 flag: same SSN on multiple orders\n• *Jair Hernandez Otero* — 1 flag: own-device (BYOD) 2x the campaign\n• *Jayden Willingham* — 1 flag: same SSN on multiple orders\n• *Jose Rojas* — 1 flag: own-device (BYOD) 2x the campaign\n• *Nicholas Esmerado Macias* — 1 flag: sales jumped 3x vs own average\n• *William Bautista* — 1 flag: same SSN on multiple orders\n:warning: Churn columns came back empty for every rep AND the campaign — Credico hasn't filled them this week, so no churn is shown.\n_Credico: this is a heads-up, not a complaint. Source: Compliance Flags - Verizon Wireless - High Value Acquisitions, Inc. - 20261104.xlsx → sheet VZWCF._"
+    },
+    {
+      "key": "opt",
+      "title": ":bar_chart: OPT Report Tab (\"Nicolas Murrugarra – Verizon\")",
+      "what": "Nico's weekly rows on the OPT report, with the SAME row names as the NDS tabs so DD reads them the same way. Blank = Credico doesn't send that number yet.",
+      "when": "Weekly, with the OPT fill.",
+      "files": [],
+      "text": "```Row                           WE 11/08  WE 11/01  WE 10/25  WE 10/18\nActive Selling Heads                13        15        13         9\nScorecard Ranking                    —         —         —         —\nNational AVG for sales               —         —         —         —\n0-30 Day Churn               (no file)  blank@CR (no file) (no file)\n60 Day Churn                 (no file)  blank@CR (no file) (no file)\n90 Day Churn                 (no file)  blank@CR (no file) (no file)\nActivation % by Week             35.4%    100.0%     95.0%     87.3%\n0-30 Day Cancel Rate  4wk av     21.1% (no file) (no file) (no file)\nTotal Leads                  (to wire) (to wire) (to wire) (to wire)\nNew Lines                           99        98       119        79\nAVG Apps Per Active Headcoun       7.6       6.5       9.2       8.8\nAIR                                N/A       N/A       N/A       N/A\nPersonal Production          (to wire) (to wire) (to wire) (to wire)\nDirect Deposit               (to wire) (to wire) (to wire) (to wire)\nABP %                            28.3%     54.1%     58.8%     49.4%\nNext Up %                          N/A       N/A       N/A       N/A\nExtra/Premium %                  16.2%      7.1%     12.6%     25.3%```"
+    },
+    {
+      "key": "signin_dm",
+      "title": ":lock: Optix Signed-Out DM",
+      "what": "If Optix signs out on Nico's ECO computer (Verizon does this about once a day), Lucy sends this so the knocks board doesn't just go quiet.",
+      "when": "A DM to Nico, Megan and Eve, once a day at most, only when it happens.",
+      "files": [],
+      "text": ":lock: *Nicolas's Local Office — Lucy cannot sign into Verizon Optix.*\nYour knocks board and sales alerts stopped updating at 4:10 PM. Nothing is lost — the numbers are still there, we just cannot see them.\n\n*This has to be done on the office computer running LucyECO* — the same one you set up. Optix signed out on that computer — Verizon ends the sign-in about once a day.\n\nAt that computer, in Chrome: open Optix and sign in (last name + User ID, then password and the code). Pick the Consumer profile → Dashboard → SMART LEADS → Lead Details, and leave that tab open. Lucy picks it up within 10 minutes."
+    }
+  ]
+}
