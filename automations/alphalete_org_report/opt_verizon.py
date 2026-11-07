@@ -32,11 +32,11 @@ ROWS: List[Tuple[str, str, str]] = [
     ("Active Selling Heads",                 "Scoring HC", "n"),
     ("Scorecard Ranking",                    "scorecard rank", "card"),
     ("National AVG for sales",               "scorecard: avg Valid Lines per office", "card"),
-    ("0-30 Day Churn",                       "Compliance Flags (weekly)", "later"),
-    ("60 Day Churn",                         "Compliance Flags (weekly)", "later"),
-    ("90 Day Churn",                         "Compliance Flags (weekly)", "later"),
+    ("0-30 Day Churn",                       "Compliance Flags (weekly, sales-weighted)", "pct_later"),
+    ("60 Day Churn",                         "Compliance Flags (weekly, sales-weighted)", "pct_later"),
+    ("90 Day Churn",                         "Compliance Flags (weekly, sales-weighted)", "pct_later"),
     ("Activation % by Week",                 "% Total Acts.", "pct"),
-    ("0-30 Day Cancel Rate  4wk avg",        "Quality Scorecard 4-wk rolling Canceled %", "later"),
+    ("0-30 Day Cancel Rate  4wk avg",        "Quality Scorecard 4-wk rolling Canceled %", "pct_later"),
     ("Total Leads",                          "Optix (blocked)", "later"),
     ("New Lines",                            "Valid Lines", "n"),
     ("AVG Apps Per Active Headcount",        "Scoring Avg (Valid Lines / Scoring HC)", "ratio"),
@@ -74,6 +74,8 @@ def values_for(overview_row: Dict, card: Optional[Dict] = None) -> Dict[str, obj
                 out[label] = None
         elif kind == "card":
             out[label] = (card or {}).get(label)
+        elif kind == "pct_later":
+            out[label] = "nofile"  # filled by weeks() when that week's file is given
         else:
             out[label] = kind      # "later" / "na"
     return out
@@ -107,6 +109,10 @@ def scorecard(path: Path, owner: str) -> Dict[dt.date, Dict[str, object]]:
 def fmt(label: str, v) -> str:
     if v == "later":
         return "(to wire)"
+    if v == "blank":
+        return "blank@CR"
+    if v == "nofile":
+        return "(no file)"
     if v == "na":
         return "N/A"
     if v is None:
@@ -114,16 +120,68 @@ def fmt(label: str, v) -> str:
     if isinstance(v, str):
         return v
     kind = next(k for l, _c, k in ROWS if l == label)
-    return f"{v*100:.1f}%" if kind == "pct" else f"{v:g}"
+    return f"{v*100:.1f}%" if kind in ("pct", "pct_later") else f"{v:g}"
+
+
+def quality_cancel(pdf: Path, owner: str) -> Optional[Tuple[dt.date, float]]:
+    """(published-on, 4-week rolling Canceled %) for this owner, from Credico's
+    weekly Quality Scorecard (SCI-WO) PDF. Its first block is "Four Weeks
+    Rolling": Rank, Units, Approved n %, Activated n %, Canceled n %,
+    Disconnected n %, Pending n %. pypdf keeps a table row on one line; fitz
+    splits every cell, so pypdf it is."""
+    import re
+    import pypdf
+    text = "\n".join((pg.extract_text() or "") for pg in pypdf.PdfReader(str(pdf)).pages)
+    line = next((l for l in text.splitlines() if l.strip().lower().startswith(owner.lower())), None)
+    if not line:
+        return None
+    pcts = re.findall(r"(\d+(?:\.\d+)?)%", line)
+    m = re.search(r"(\d{8})\.pdf$", Path(pdf).name)
+    if len(pcts) < 3 or not m:
+        return None
+    return dt.datetime.strptime(m.group(1), "%Y%m%d").date(), float(pcts[2]) / 100   # 3rd % = Canceled
+
+
+def compliance_churn(xlsx: Path) -> Optional[Tuple[dt.date, Dict[str, Optional[float]]]]:
+    """(week end, {0-30/60/90 Day Churn}) -- the office's churn, each rep's
+    churn weighted by their sales. All-zero INCLUDING the campaign = Credico
+    left it blank: returned as None (never written as a proven 0)."""
+    from automations.verizon_office import parse
+    cf = parse.read_compliance(xlsx)
+    tot = sum(r.sales for r in cf.reps)
+    camp = next((r.campaign for r in cf.reps if r.campaign), {})
+    blank = not any(r.churn.get(k) for r in cf.reps for k in parse.CHURN_KEYS) and not any(camp.values())
+    vals = {}
+    for k, label in (("0-30", "0-30 Day Churn"), ("60", "60 Day Churn"), ("90", "90 Day Churn")):
+        vals[label] = None if (blank or not tot) else sum(r.churn.get(k, 0) * r.sales for r in cf.reps) / tot
+    return (cf.week_end, vals) if cf.week_end else None
 
 
 def weeks(sv_path: Path, n: int = 4, card_path: Optional[Path] = None,
-          owner: str = "Nicolas Murrugarra"):
+          owner: str = "Nicolas Murrugarra", quality: Optional[Path] = None,
+          compliance: Optional[Path] = None):
     from automations.verizon_office import parse
     sv = parse.read_sales_verification(sv_path)
     cards = scorecard(card_path, owner) if card_path else {}
-    return [(sheet_week(o["Week End Date"]), values_for(o, cards.get(o["Week End Date"])))
-            for o in sv.overview[:n]]
+    out = [(sheet_week(o["Week End Date"]), values_for(o, cards.get(o["Week End Date"])))
+           for o in sv.overview[:n]]
+    # Weekly files land on the sheet week they belong to: Compliance Flags by
+    # its own week ending; the Quality Scorecard's 4-week figure on the week
+    # it was PUBLISHED in (it is a rolling number as of that day).
+    if quality:
+        q = quality_cancel(quality, owner)
+        if q:
+            for w, vals in out:
+                if w - dt.timedelta(days=6) <= q[0] <= w:
+                    vals["0-30 Day Cancel Rate  4wk avg"] = q[1]
+    if compliance:
+        c = compliance_churn(compliance)
+        if c:
+            for w, vals in out:
+                if w == sheet_week(c[0]):
+                    for k, v in c[1].items():
+                        vals[k] = v if v is not None else "blank"
+    return out
 
 
 def main(argv=None) -> int:
@@ -132,6 +190,8 @@ def main(argv=None) -> int:
     ap.add_argument("--office", help="verizon_office key (newest file from the Hub inbox)")
     ap.add_argument("--weeks", type=int, default=4)
     ap.add_argument("--scorecard", type=Path, help="Daily Sales Scorecard xlsx (all offices) for rank + national avg")
+    ap.add_argument("--quality", type=Path, help="Quality Scorecard (SCI-WO) pdf for the 4-wk cancel rate")
+    ap.add_argument("--compliance", type=Path, help="Compliance Flags xlsx for 0-30/60/90 churn")
     a = ap.parse_args(argv)
     path = a.sv
     if not path and a.office:
@@ -139,7 +199,7 @@ def main(argv=None) -> int:
         path = RUN.fetch(OF.get(a.office), "sales")
     if not path:
         ap.error("give --sv FILE or --office KEY (no Sales Verification found)")
-    rows = weeks(path, a.weeks, a.scorecard)
+    rows = weeks(path, a.weeks, a.scorecard, quality=a.quality, compliance=a.compliance)
     if not rows:
         print("✗ no weeks in the Overview sheet — nothing to show")
         return 1
