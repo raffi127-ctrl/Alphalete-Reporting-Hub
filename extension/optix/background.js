@@ -46,6 +46,12 @@ async function pageRead(mdy) {
   apply.click();
   for (let i = 0; i < 60; i++) {           // up to ~60 s for Optix to answer
     await sleep(1000);
+    // OPTIX'S OWN "NOTHING YET" is a real answer, not a wait: before the
+    // first knock of the day the grid says exactly this (Saturday 2026-11-07
+    // 9:20am) and has no count line at all.
+    if (i > 2 && /No data found matching the given filter criteria/i.test(document.body.innerText)) {
+      return {rows: [], page: 0, none: true};
+    }
     const m = document.body.innerText.match(/(\d+) dispositions from (\d+) unique leads/);
     if (m && (!before || i > 3)) {
       const tr = [...document.querySelectorAll("tr")].find(t => t.querySelector("td"));
@@ -99,13 +105,16 @@ async function readNow(why) {
   const tz = cfg.tz || "America/Chicago";
   const h = hourLocal(tz);
   if (why === "timer" && (h < (cfg.start ?? 10) || h >= (cfg.end ?? 22))) return;
-  const tabs = await chrome.tabs.query({url: "https://" + LEAD_DETAILS + "*"});
+  const all = await chrome.tabs.query({url: "https://" + LEAD_DETAILS + "*"});
+  // The Lead Details tab, not the Smart Leads dashboard tab (same address, different #!/ page).
+  const tabs = all.filter(t => /leaddetails/i.test(t.url || ""));
   if (!tabs.length) return status("Open Optix → Smart Leads → Lead Details and leave that tab open.", false);
   const rules = await (await fetch(chrome.runtime.getURL("rules.json"))).json();
   const day = todayLocal(tz);
   const [res] = await chrome.scripting.executeScript({target: {tabId: tabs[0].id}, world: "MAIN", func: pageRead, args: [day.mdy]});
   const out = res && res.result;
   if (!out || out.error) return status((out && out.error) || "Could not read the tab.", false);
+  if (out.none) return status(`Optix: no knocks logged yet today (${day.mdy}) — Lucy will check again in ${EVERY_MIN} min.`, true);
   const {reps, unknown} = tally(out.rows, rules);
   const knocks = Object.values(reps).reduce((a, c) => a + c.Knocks, 0);
   if (out.page && knocks !== out.page) await status(`Optix says ${out.page} dispositions, counted ${knocks} — check before trusting.`, false);
