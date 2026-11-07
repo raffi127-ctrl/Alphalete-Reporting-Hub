@@ -108,9 +108,21 @@ if not rec:
         except Exception:
             pass
         url = pub["relay_url"] + "?" + urllib.parse.urlencode({"office": office_key})
+        def _cert_failure(e):
+            # urlopen wraps it: URLError(reason=SSLCertVerificationError) --
+            # Nico's iMac 2026-11-07 printed exactly that and skipped this
+            # fallback, because only the bare error was caught.
+            r = getattr(e, "reason", e)
+            return isinstance(e, ssl.SSLError) or isinstance(r, ssl.SSLError) or \
+                "CERTIFICATE_VERIFY_FAILED" in str(e)
         try:
-            with urllib.request.urlopen(url, timeout=30, context=ctx) as r:
-                out = json.loads(r.read().decode("utf-8"))
+            try:
+                with urllib.request.urlopen(url, timeout=30, context=ctx) as r:
+                    out = json.loads(r.read().decode("utf-8"))
+            except Exception as e:
+                if not _cert_failure(e):
+                    raise
+                raise ssl.SSLCertVerificationError(str(e))
         except ssl.SSLCertVerificationError:
             # A python.org Python has NO certificate bundle until "Install
             # Certificates.command" is run (Nigel's Mac Studio, 2026-11-06:
