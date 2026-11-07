@@ -87,8 +87,7 @@ SET_HEAD = ["Office", "State", "City", "Updated By", "Updated At", "AppStream", 
 
 def _set_accounts(office: str, numbers: List[str]) -> int:
     """Approve the ApplicantStream accounts an office may send from (replaces
-    the list). No numbers = just show the current list. Numbers taken off
-    the list are also switched off for the office's admins."""
+    the list) and switches them all on. No numbers = just show the list."""
     import datetime as dt
     import re
     from automations.icd_alerts import post as P
@@ -99,9 +98,11 @@ def _set_accounts(office: str, numbers: List[str]) -> int:
         if n not in nums:
             nums.append(n)
     ss = open_by_key(P.RELAY_SPREADSHEET_ID)
-    try:
-        ws = ss.worksheet(SETTINGS_TAB)
-    except Exception:  # noqa: BLE001 -- first use
+    # A quota blip on the lookup must not read as "no tab" (it already exists).
+    titles = [w.title for w in _retry(ss.worksheets)]
+    if SETTINGS_TAB in titles:
+        ws = _retry(ss.worksheet, SETTINGS_TAB)
+    else:
         ws = _retry(ss.add_worksheet, title=SETTINGS_TAB, rows=100, cols=len(SET_HEAD))
     rows = _retry(ws.get_all_values)
     if not rows or len(rows[0]) < len(SET_HEAD) or rows[0][6:7] != ["Approved Accounts"]:
@@ -114,9 +115,10 @@ def _set_accounts(office: str, numbers: List[str]) -> int:
         print("%s in use:   %s" % (office, cur[5] or "(none)"))
         return 0
     approved = ", ".join(nums)
-    in_use = [n for n in re.findall(r"\d+", cur[5] or "") if n in nums]
+    # Approved = in use: every approved calendar is read into the one list
+    # (Megan 2026-11-06). An admin can still take one off in the Lucy icon.
     if hit:
-        _retry(ws.update, [[", ".join(in_use) or approved, approved]], "F%d:G%d" % (hit, hit))
+        _retry(ws.update, [[approved, approved]], "F%d:G%d" % (hit, hit))
     else:
         _retry(ws.append_row, [office, "", "", "megan", dt.datetime.now().isoformat(timespec="seconds"),
                                approved, approved])

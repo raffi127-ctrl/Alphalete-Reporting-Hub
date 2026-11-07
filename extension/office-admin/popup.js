@@ -111,6 +111,8 @@ $('run').onclick = async () => {
     err('Couldn\'t open on this page: ' + e.message);
   }
 };
+chrome.storage.local.get(['hideButton'], st => { $('showbtn').checked = !st.hideButton; });
+$('showbtn').onchange = () => chrome.storage.local.set({hideButton: !$('showbtn').checked});
 $('pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('go').click(); });
 $('out').onclick = () => chrome.runtime.sendMessage({type: 'signout'}, () => { show('home', false); show('signin', true); });
 start();

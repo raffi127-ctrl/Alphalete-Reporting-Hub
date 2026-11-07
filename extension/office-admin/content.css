@@ -3,7 +3,12 @@
   background: #1F6FB2; color: #fff; border: 0; border-radius: 28px;
   padding: 14px 22px; font: 600 16px/1 -apple-system, Segoe UI, Arial, sans-serif;
   box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer;
+  display: flex; align-items: center; gap: 12px;
 }
+#lucy-oa-btn .lucy-oa-hide {
+  font-size: 13px; opacity: .75; padding: 2px 6px; border-radius: 50%; border-left: 1px solid rgba(255,255,255,.35);
+}
+#lucy-oa-btn .lucy-oa-hide:hover { opacity: 1; background: rgba(255,255,255,.18); }
 #lucy-oa-btn:hover { background: #185a91; }
 #lucy-oa-panel {
   position: fixed; right: 22px; bottom: 84px; z-index: 2147483001; width: 380px;
@@ -74,3 +79,6 @@
 #lucy-oa-panel .lucy-oa-confirm-acct { background: #fff; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
 #lucy-oa-frame { position: fixed; left: -12000px; top: 0; width: 1400px; height: 1000px; border: 0; visibility: visible; }
 #lucy-oa-panel .lucy-oa-accthead { margin: 10px 0 2px; padding: 3px 8px; background: #123E66; color: #fff; border-radius: 5px; font-weight: 700; font-size: 13px; }
+#lucy-oa-panel .lucy-oa-done { margin-top: 12px; border-top: 1px solid #e4e9ef; padding-top: 8px; }
+#lucy-oa-panel .lucy-oa-done summary { cursor: pointer; color: #5b6b7c; font-size: 13px; display: list-item; }
+#lucy-oa-panel .lucy-oa-done .lucy-oa-row { color: #5b6b7c; }

@@ -7,16 +7,40 @@
   if (window.__lucyOfficeAdmin) return;
   window.__lucyOfficeAdmin = true;
 
-  const ask = (call, extra) => new Promise(r => chrome.runtime.sendMessage({type: 'relay', call, extra}, r));
+  // After Lucy is updated, a tab opened before the update loses its link to
+  // the extension (chrome.runtime goes away): say "refresh", don't just fail.
+  const STALE = 'Lucy was just updated — refresh this page (⌘R / Ctrl+R) and try again.';
+  const live = () => !!(chrome.runtime && chrome.runtime.id);
+  const ask = (call, extra) => new Promise(r => {
+    if (!live()) { r({ok: false, error: STALE}); return; }
+    try { chrome.runtime.sendMessage({type: 'relay', call, extra}, out => r(out || {ok: false, error: STALE})); }
+    catch (e) { r({ok: false, error: STALE}); }
+  });
   const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   let panel, pollTimer, tickTimer;
 
+  // The floating button can be hidden with its ✕ (Megan 11/06: "not always
+  // in the way"). The Lucy icon's "Send background checks" always works, and
+  // its "Show the button on the calendar" brings this back.
+  let hidden = false;
+  if (live()) chrome.storage.local.get(['hideButton'], st => { hidden = !!st.hideButton; button(); });
+  if (live()) chrome.storage.onChanged.addListener(ch => {
+    if (!ch.hideButton) return;
+    hidden = !!ch.hideButton.newValue;
+    const b = document.getElementById('lucy-oa-btn');
+    if (hidden && b) b.remove(); else button();
+  });
   function button() {
-    if (document.getElementById('lucy-oa-btn') || !LucyOffered.isCalendar()) return;
-    const b = document.createElement('button');
+    if (hidden || document.getElementById('lucy-oa-btn') || !LucyOffered.isCalendar()) return;
+    const b = document.createElement('div');
     b.id = 'lucy-oa-btn';
-    b.textContent = '🛡️ Send background checks';
-    b.addEventListener('click', open);
+    b.innerHTML = '<span class="lucy-oa-go">🛡️ Send background checks</span>' +
+                  '<span class="lucy-oa-hide" title="Hide this button (the Lucy icon still works)">✕</span>';
+    b.querySelector('.lucy-oa-go').addEventListener('click', open);
+    b.querySelector('.lucy-oa-hide').addEventListener('click', e => {
+      e.stopPropagation();
+      if (live()) chrome.storage.local.set({hideButton: true}); else b.remove();
+    });
     document.body.appendChild(b);
   }
 
@@ -159,23 +183,44 @@
       shell(mode + loc + '<p>Nobody marked <b>Yes</b> for Offer Position today yet.</p>');
       return;
     }
-    let lastAcct = null;
-    const rows = people.map((p, i) => {
-      const head = accounts.length > 1 && p.acct !== lastAcct
-        ? '<div class="lucy-oa-accthead">Account ' + esc(p.acct) + '</div>' : '';
-      lastAcct = p.acct;
+    // NEW people on top, ticked; anyone ALREADY SENT folded away underneath
+    // (Megan 11/06: a list of "already sent" lines looked bad). They can still
+    // be opened and ticked to send again -- the duplicate prompt still asks.
+    const row = (p, i) => {
       const email = (p.email || '').trim();
       const done = email && already[email.toLowerCase()];
       const indeed = /@indeedemail\.com$/i.test(email);
       const note = !email ? 'no email in ApplicantStream'
-        : done ? 'already sent ' + done
+        : done ? 'sent ' + done
         : indeed ? 'Indeed forwarding email — check it' : '';
-      return head + '<label class="lucy-oa-row' + (email ? '' : ' off') + '"><input type="checkbox" data-i="' + i + '"' +
+      return '<label class="lucy-oa-row' + (email ? '' : ' off') + '"><input type="checkbox" data-i="' + i + '"' +
         (email && !done ? ' checked' : '') + (email ? '' : ' disabled') + '> ' +
         esc(p.first_name + ' ' + p.last_name) + (note ? ' <span class="lucy-oa-note">— ' + esc(note) + '</span>' : '') +
         '</label>';
-    }).join('');
-    shell(mode + loc + '<p class="lucy-oa-pick">Tick who should get one:</p>' + rows +
+    };
+    const isDone = p => { const e = (p.email || '').trim().toLowerCase(); return !!(e && already[e]); };
+    const list = (filter) => {
+      let lastAcct = null, html = '';
+      people.forEach((p, i) => {
+        if (!filter(p)) return;
+        if (accounts.length > 1 && p.acct !== lastAcct) {
+          html += '<div class="lucy-oa-accthead">Account ' + esc(p.acct) + '</div>';
+          lastAcct = p.acct;
+        }
+        html += row(p, i);
+      });
+      return html;
+    };
+    const fresh = people.filter(p => !isDone(p)).length;
+    const old = people.length - fresh;
+    const top = fresh
+      ? '<p class="lucy-oa-pick">Tick who should get one (' + fresh + '):</p>' + list(p => !isDone(p))
+      : '<div class="lucy-oa-ok">✅ Everyone offered today has already been sent one.</div>';
+    const folded = old
+      ? '<details class="lucy-oa-done"><summary>Already sent today (' + old + ') — open to send again</summary>' +
+        list(isDone) + '</details>'
+      : '';
+    shell(mode + loc + top + folded +
       '<button id="lucy-oa-send" class="lucy-oa-primary"></button><div id="lucy-oa-result"></div>');
     const btn = panel.querySelector('#lucy-oa-send');
     const boxes = Array.from(panel.querySelectorAll('input[type=checkbox]'));
@@ -209,7 +254,7 @@
       const dupEmails = resend === 'skip' ? (panel._dups || []) : [];
       const sentNames = picked.filter(p => !dupEmails.includes((p.email || '').toLowerCase()))
                               .map(p => (p.first_name + ' ' + p.last_name).trim());
-      await chrome.storage.local.set({lastSend: {office: office.office, job_id: out.job_id,
+      if (live()) await chrome.storage.local.set({lastSend: {office: office.office, job_id: out.job_id,
                                                  at: new Date().toISOString(), names: sentNames,
                                                  test: office.mode !== 'live'}});
       // Everyone on today's list, and why each one left out was left out.
@@ -365,7 +410,7 @@
         const sendBtn = panel && panel.querySelector('#lucy-oa-send');
         if (sendBtn) sendBtn.hidden = true;     // done: no second press by accident
         // Done: the tick list is history -- show only the result.
-        if (panel) panel.querySelectorAll('.lucy-oa-row, .lucy-oa-pick').forEach(el => el.remove());
+        if (panel) panel.querySelectorAll('.lucy-oa-row, .lucy-oa-pick, .lucy-oa-done, .lucy-oa-accthead').forEach(el => el.remove());
         result(r.status === 'sent' || r.status === 'dry_run' ? 'ok' : 'err', summary(r, ctx) + took);
       } else if (s.status === 'offered') {
         if (stage !== 2) { stage = 2; late = false; eta = Date.now() + WORK_MS; draw(); }
