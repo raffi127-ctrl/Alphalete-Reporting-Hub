@@ -29,7 +29,9 @@ already listed in `sms_audit/analyze.py`. FDOT/BOB is one of the four tabs on
 the V2 Applicant Interview Calendar (`p=1511`): *1st Interview / 2nd Interview
 / FDOT/BOB / First Day of Sales*.
 
-So: **the FDOT/BOB calendar, rows marked Showed Up, for that week.**
+So: **the training calendar, rows marked Show Up = Yes, for that week.** On
+the old calendar (`p=102`) that is the purple `FIRST DAY OF TRAINING` section —
+see the page spec below. On V2 it is the `FDOT/BOB` tab.
 
 This is per-office for free — the calendar belongs to an ApplicantStream
 account, which is exactly how the background-check extension already scopes
@@ -48,6 +50,58 @@ A new `fdot.py` is a sibling of it, not a new capability. The risk is the usual
 one: it must **fail loudly** if it cannot find the FDOT/BOB section, never
 return an empty list — a wrong section here would create payroll records for
 people who did not start.
+
+
+### The page itself (Megan's screenshot, 2026-11-06 — Raf's office)
+
+Read off the real calendar rather than assumed. **This is the OLD calendar
+(`p=102`), not V2**, so the reader has to handle both exactly as `offered.py`
+does.
+
+**URL** — any date can be opened directly, no clicking through:
+
+    applicantstream.com/index.cfm?p=102&newOfficeId=<account>&cd=MM%2FDD%2FYYYY
+
+`newOfficeId=11280` and `cd=11/02/2026` on the example. That matches
+[[reference_appstream_calendar_reads]]: the calendar goes to past days.
+
+**The section is a purple banner row reading `FIRST DAY OF TRAINING`**, and the
+same page carries a **`FIRST DAY OF SALES`** section above it (empty on the
+example: *"No First Day of Sales found for 11-02-2026"*). Only rows under the
+training banner count. This is the same trap `offered.py` already guards for
+SECOND INTERVIEWS, and for the same reason — the wrong section here creates
+payroll records for people who have not started.
+
+**Show Up is a pair of radio buttons, Yes / No** — not a dropdown and not text.
+So the reader takes the *checked* radio in that column. (`offered.py` reads a
+`<select id="sOfferPosition">`; this is a different control and cannot be
+copied straight across.)
+
+**Columns, as the header spells them:** Time · First Name · Last Name · Phone ·
+Cell Phone · Email · Rating · Booked By · First By Phone · Job Board ·
+**Show Up** · Done By · Remove · Follow Up Status · Follow Up By · Follow Up
+Time. Found by header text, never position.
+
+**Email is present on every row** on this page, which settles the earlier
+question: Blue Ink matching can be by email (proof) rather than name
+(judgement) — `matched_on`.
+
+**The office guard is on the page**: a header block reading
+`Office ID: 11280   Owner: Rafael Hidalgo`. Note this is NOT the account number
+in the title bar (`Account No: 23981`, the call centre) — `offered.py` already
+reads the Office ID one.
+
+**A week is six reads, one per date.** The calendar is per-day, so Mon–Sat each
+get a `cd=` fetch and the results are pooled.
+
+**Follow Up Status is not a second condition.** The rows also carry one
+(Cancelled / Confirmed / Booked Today - Confirmed / Called), and it is tempting
+to read `Cancelled` as "did not start". Megan, 2026-11-06: *"it's just if they
+are scheduled to start"* — it describes the **appointment**, not the outcome.
+Show Up is the outcome.
+
+So the rule is exactly one column: **Show Up = Yes**. Nothing else is consulted,
+and a reader that starts filtering on Follow Up Status is wrong.
 
 ### What replaces the OBCL
 
@@ -101,63 +155,59 @@ the code:
 That is three independent layers, all built on the same premise. "The ICD's
 machine just runs it" requires removing the premise.
 
-### Three ways forward
+### DECIDED, 2026-11-06: the machine may hold it (option A)
 
-**A. Machine does everything, including the Social.** The ECO machine reads the
-Social from the Blue Ink API, holds it in memory, types it into Apex, discards
-it. The admin genuinely just says "run it".
+Megan: *"the ICDs relay machine can hold a social"* … *"the way the current
+automation works is that user is able to preview the tax doc with the social to
+copy and paste it"* … *"so it can just disappear from that if they can just
+access it to fill it in that time."*
 
-This is not automatically unacceptable — a number in RAM for a few seconds on
-one machine is a far smaller exposure than a number in a Google Sheet, and the
-relay would never see it. But the leak paths that the current design removes by
-simply never having the number would all need closing, deliberately:
+Her reasoning is sound and worth writing down, because it is the thing that
+makes this a smaller change than it first looks: **the operator already
+previews the signed tax document and copies the number out of it by hand.** The
+number is already on a screen and already in a clipboard. What changes is that
+a machine does the copying — and a machine does not screenshot it, leave it in
+a clipboard, or read it out loud on a Zoom.
 
-- the discard in `blueink_data.extract` (the change itself)
-- the masked-`str` guarantee has no equivalent on an automated path — anything
-  that logs a field value, or an exception that quotes one
-- the Hub's own log display, which the operator reads
-- screenshots, if any step takes them
-- the Chrome profile: form autofill, session storage, and anything Apex itself
-  caches in it
-- `NEVER_TYPE` exists to stop exactly this and would need a documented hole
+**Built, 2026-11-06.** `blueink_data.py`:
 
-Doable. Not a small change, and it is the kind that is easy to get 95% right.
+- **Opt-in only.** `extract(..., keep_ssn=True)` / `for_people(..., keep_ssn=True)`.
+  No caller gets a Social without asking; every existing call site is unchanged
+  and still comes away with nothing but `has_ssn = True`.
+- **Wrapped, not a string.** It arrives as the existing `Secret` from
+  `ssn_prompt`, whose `str`, `repr`, f-string and dict-repr are all dots. The
+  one place the real value is reachable is `.reveal()`.
+- **Not in `values`.** Kept out of the field map rather than filtered out of
+  each consumer, so `fillable()`, the setup payload, the batch file, the Hub
+  log and (later) the relay row are all structurally unable to carry one.
+- **`json.dumps` refuses it.** A `Secret` is not serialisable, so anything that
+  tries to write a Social into a payload, a file or the relay **fails loudly**
+  rather than succeeding quietly. This is the strongest guarantee in the set.
+- **Held for the run, never written down.** Memory only, exactly as Megan
+  described.
 
-**B. Machine does two of the three pages, the admin types only the Socials.**
-The Social lives on the **Tax & Bank** page; creating the employee does not need
-it (`PAGE_OF["new"]` has no SSN). So the ECO machine can create the person, fill
-and save the **Employment Record** and **User Profile**, and leave only the tax
-page.
+`test_ssn_custody.py` pins all of it — nine tests, including that the default
+is still "drop it on the floor".
 
-The admin's whole job becomes: open a panel that has already found everyone,
-and type N numbers with each signed W-4 already on screen beside the box. No
-Apex navigation, no lookups, no creating anybody, no Blue Ink.
+**Still to do on the machine side:** the Chrome profile (form autofill and
+anything Apex caches in it), and a documented hole in `apex.py`'s `NEVER_TYPE`
+list for the one call site that is allowed to type it.
 
-Every guarantee above survives untouched.
-
-**C. The split from the earlier scope** — machine builds the list, admin runs
-the whole fill in their own browser. Least new code; the admin still does the
-most work.
-
-**My recommendation: B.** It is most of the automation for none of the safety
-change, and it is the only one of the three where I would not be asking you to
-weigh a trade-off you cannot easily check afterwards. A is a legitimate choice
-if you want it — it just needs to be chosen, not drifted into.
-
----
-
-## Work items (for B)
+## Work items
 
 | # | Where | What | Size |
 |---|---|---|---|
-| 1 | `automations/office_admin/fdot.py` (new) | FDOT/BOB calendar → Showed Up, for a week, per account. Sibling of `offered.py`; fails loudly on an unrecognised page | medium |
-| 2 | `automations/apex_new_starts/roster.py` | a second roster source behind the existing interface, so Raf's board path is untouched | small |
-| 3 | `automations/icd_alerts/apex_signin.py` | allow the kept session to be used for writing, not only the PNL read | small, but a **policy change** — say so out loud |
-| 4 | `automations/apex_new_starts/eco_run.py` (new) | create + fill + save pages 1 and 2 from the ECO machine, stop before the tax page, record who got how far | medium |
-| 5 | `resources/icd-alerts-relay.gs` | an `apex_week` job kind; the result carries who is ready for Socials. One row per person (~1.2 KB measured) rather than a week in one cell | ~150 lines, **needs an Apps Script redeploy** |
-| 6 | `extension/apex-new-starts/` | relay half (`background.js`/`config.js` near-verbatim from office-admin), sign-in, and a tax-page-only mode | medium |
-| 7 | ECO machine | Blue Ink key via `push_cred_file`; Apex signed in once by the owner | 15 min |
-| 8 | tests | the FDOT reader against a real saved calendar; the no-Social pin; the relay round trip; "stops before the tax page" | medium |
+| ✅ | `automations/apex_new_starts/blueink_data.py` | the opt-in Social: `keep_ssn`, a `Secret`, out of `values`. **Done 2026-11-06**, `test_ssn_custody.py` | done |
+| 1 | `automations/office_admin/fdot.py` (new) | FDOT/BOB calendar → Showed Up, for a week, per account. Sibling of `offered.py`; **fails loudly** on an unrecognised page rather than returning an empty list | medium |
+| 2 | `automations/apex_new_starts/roster.py` (new) | a second roster source behind the existing interface, so Raf's board + OBCL path is untouched | small |
+| 3 | `automations/icd_alerts/apex_signin.py` | let the kept session be used for writing, not only the PNL's read | small, but a **policy change** — say it out loud |
+| 4 | `automations/apex_new_starts/eco_run.py` (new) | the whole fill from the ECO machine: create, all three pages, save. Takes the Social from `for_people(keep_ssn=True)` and `.reveal()`s it at the one call site | medium |
+| 5 | `automations/apex_new_starts/apex.py` | one documented hole in `NEVER_TYPE` for that call site. It exists to stop exactly this, so the exception has to be explicit and narrow | small |
+| 6 | ECO machine hardening | the Chrome profile: form autofill off, and whatever Apex itself caches in it. This is the leak path the Python guarantees do **not** cover | small, **do not skip** |
+| 7 | `resources/icd-alerts-relay.gs` | an `apex_week` job kind; one row per person (~1.2 KB measured) rather than a week in one cell. **No Social ever goes in it** — `json.dumps` now refuses | ~150 lines, **needs an Apps Script redeploy** |
+| 8 | `extension/apex-new-starts/` | relay half (`background.js`/`config.js` near-verbatim from office-admin), sign-in, and "run it for these people" — a pick-list and a progress clock, no filling | medium |
+| 9 | ECO machine setup | that office's own Blue Ink key; Apex signed in once by the owner | 15 min |
+| 10 | tests | the FDOT reader against a real saved calendar; the relay round trip; the no-Social pins extended to the relay row and the ECO run's logs | medium |
 
 ---
 
@@ -191,9 +241,16 @@ because SaraPlus *emails* its codes and the office forwards those mails. Under
 B this is a few minutes every few weeks, not per run, but it should be a known
 chore rather than a surprise at 8am.
 
-**One more thing the same account implies:** if several offices share one Apex
-account, their runs collide with each other too, not just with their admin.
-That decides whether runs need to be serialised across offices.
+**Answered, same day:** *"Apex and blue ink are both 1 per office."* So offices
+do not collide with each other — only the admin and the ICD machine inside one
+office share an account, and option B's sequential handoff is the only ordering
+that matters.
+
+It also means **Blue Ink is a per-office key**, not one shared one. That is
+better than it sounds: each office's machine only ever holds its own people's
+paperwork. And it needs no code change — `config.CREDS_PATH` is a single
+repo-root path, and each ECO machine serves exactly one office, so the office's
+own key simply lives on the office's own machine.
 
 ---
 

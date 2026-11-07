@@ -58,19 +58,40 @@ class NewHire:
     values: Dict[str, str] = dfield(default_factory=dict)
     rejected: List[tuple] = dfield(default_factory=list)   # (name, why)
     missing_packet: bool = False
-    has_ssn: bool = False          # their packet HAS one; its value is not kept
+    has_ssn: bool = False          # their packet HAS one; see `ssn` below
     matched_on: str = ""           # 'email' (proof) or 'name' (judgement)
+    # Only ever set when the CALLER ASKED for it (`keep_ssn=True`), and only on
+    # the machine that is about to type it into Apex. A Secret, so a stray
+    # print, an f-string, a dict repr or an exception that quotes it shows dots
+    # and not a Social. It is deliberately NOT in `values`, so it cannot reach
+    # `fillable()`, the setup payload, the batch file or the relay.
+    ssn: Optional["Secret"] = None
 
     @property
     def have(self) -> List[str]:
         return [k for k in FM.PERSONAL if self.values.get(k)]
 
-    # There is no `sensitive` property any more, and that is the point: since
-    # 2026-09-05 the Social is not read out of Blue Ink at all. `extract` sees
-    # it, records that one EXISTS, and drops the value on the floor. Nothing in
-    # this report ever holds a Social Security number, so nothing can print it,
-    # log it, write it to output/ or hand it to a browser. The operator types it
-    # into a local prompt (see ssn_prompt.py) and it goes straight into Apex.
+    # THE SOCIAL, AND WHO MAY HOLD ONE.
+    #
+    # From 2026-09-05 this report did not read Socials out of Blue Ink at all:
+    # `extract` saw one, recorded that it EXISTED, and dropped the value.
+    #
+    # Megan, 2026-11-06, deciding it for the ICD-machine build: "the ICDs relay
+    # machine can hold a social ... so it can just disappear from that if they
+    # can just access it to fill it in that time". Her argument for it is
+    # sound: the operator already previews the signed tax document and copies
+    # the number out of it by hand, so the exposure is not new -- what changes
+    # is that a machine does the copying.
+    #
+    # So it is now opt-in and narrow:
+    #   * nothing gets a Social unless the caller passes `keep_ssn=True`;
+    #   * it arrives as a `Secret` and lives in `ssn`, never in `values`, so
+    #     every existing path -- `fillable()`, the setup payload, the batch
+    #     file, the relay, the logs -- is unchanged and still cannot carry one;
+    #   * it is held for the one run that types it and never written down.
+    #
+    # The default is still "drop it on the floor". Turning it on is a decision
+    # a call site has to make out loud.
 
     def fillable(self) -> Dict[str, str]:
         return {k: v for k, v in self.values.items()
@@ -240,8 +261,13 @@ def _doc_rank(doc_name: str) -> int:
 
 
 def extract(bundle: dict, mapping: Dict[str, Dict[str, str]],
-            name: str) -> NewHire:
-    """Map one bundle's fields into a NewHire, rejecting wrong-shaped values."""
+            name: str, *, keep_ssn: bool = False) -> NewHire:
+    """Map one bundle's fields into a NewHire, rejecting wrong-shaped values.
+
+    `keep_ssn` is the only way to come away with a Social, and the caller has
+    to ask for it -- see the note on NewHire. Default is to record that one
+    exists and discard the value.
+    """
     hire = NewHire(name=name, bundle_id=str(bundle.get("id", "")),
                    packet_name=_norm((bundle.get("packets") or [{}])[0].get("name")))
     docs = {d["key"]: _norm(d.get("name")) for d in bundle.get("documents") or []}
@@ -254,8 +280,13 @@ def extract(bundle: dict, mapping: Dict[str, Dict[str, str]],
         if not sem or not val or val == "[signature]":
             continue
         if sem in FM.SENSITIVE:
-            # Seen and deliberately discarded -- see the note on NewHire.
+            # See the note on NewHire. Recording that one exists is free and
+            # always happens; keeping the value is opt-in, wrapped, and goes
+            # nowhere near `values`.
             hire.has_ssn = True
+            if keep_ssn and sem == "ssn" and hire.ssn is None:
+                from automations.apex_new_starts.ssn_prompt import Secret
+                hire.ssn = Secret(val)
             continue
         rule = SHAPE.get(sem)
         if rule and not rule.match(val):
@@ -271,7 +302,8 @@ def extract(bundle: dict, mapping: Dict[str, Dict[str, str]],
 
 
 def for_people(people, mapping: Optional[dict] = None,
-               limit: int = 200, near: bool = False) -> Dict[str, NewHire]:
+               limit: int = 200, near: bool = False,
+               *, keep_ssn: bool = False) -> Dict[str, NewHire]:
     """{board name: NewHire} for everyone we can find a signed packet for.
 
     `people` is anything with `.name` and `.email` (the board's Candidates), or
@@ -296,7 +328,7 @@ def for_people(people, mapping: Optional[dict] = None,
         if not b:
             out[name] = NewHire(name=name, missing_packet=True)
             continue
-        hire = extract(b, mapping, name)
+        hire = extract(b, mapping, name, keep_ssn=keep_ssn)
         hire.matched_on = "email" if email and email in by_email else "name"
         out[name] = hire
     return out
