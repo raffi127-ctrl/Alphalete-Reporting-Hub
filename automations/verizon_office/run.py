@@ -39,7 +39,7 @@ def fetch(office: OF.VerizonOffice, which: str, *, since_days: int = 10) -> Opti
     dest = Path(tempfile.gettempdir()) / f"verizon_office_{office.key}"
     # Matched by file name + subject, never by sender alone: a redirect keeps
     # Credico as the sender, a forward would not.
-    found = email_ingest.fetch_by_globs("", [glob], dest, subject=subject,
+    found = email_ingest.fetch_by_globs(SENDER, [glob], dest, subject=subject,
                                         since_days=since_days, verbose=False)
     return next(iter(found.values()), None)
 
@@ -81,7 +81,9 @@ def check_forwarding(*, since_days: int = 7, log=print) -> int:
     for o in OF.all_offices():
         globs = [f"Sales Verification - Verizon Wireless - {o.office}*.xlsx",
                  f"Compliance Flags - Verizon Wireless - {o.office}*.xlsx"]
-        hits = email_ingest.list_matches("", globs, since_days=since_days)
+        # BY SENDER: a redirect keeps Credico as the sender, and an all-mail
+        # search with no sender took 3+ minutes (2026-11-06).
+        hits = email_ingest.list_matches(SENDER, globs, since_days=since_days)
         if hits:
             newest = max(d for _fn, d in hits.values())
             log("✓ %-12s %-34s arriving (newest %s)" % (o.key, o.office, newest))
