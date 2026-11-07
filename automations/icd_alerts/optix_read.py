@@ -157,10 +157,15 @@ def signin_in_progress() -> bool:
 
 
 def _context(p, headless: bool):
-    """The Optix profile. NEVER rotated: it IS the Verizon SSO session."""
+    """The Optix profile. NEVER rotated: it IS the Verizon SSO session.
+
+    ALWAYS A VISIBLE WINDOW, on the office's own ECO machine (Megan
+    2026-11-06: "we need to not use a hidden browser and just pop it up on
+    nico's eco machine"). Optix opens the way the owner opens it himself, on
+    his own computer and his own login; `headless` is ignored on purpose."""
     C.OPTIX_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     return p.chromium.launch_persistent_context(
-        str(C.OPTIX_PROFILE_DIR), headless=headless, args=["--disable-sync"])
+        str(C.OPTIX_PROFILE_DIR), headless=False, args=["--disable-sync"])
 
 
 # Runs in the Lead Details page once Apply has loaded: the whole result set
@@ -198,12 +203,25 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True, log=print)
                 raise SignInNeeded(
                     "Verizon Optix has signed this computer out, so knocks cannot be "
                     "read until somebody signs in again. Nothing is lost.")
-            # profile page -> Dashboard
-            page.get_by_text("Dashboard", exact=False).first.click()
+            # profile page -> Consumer tab -> Dashboard. Seen 2026-11-06 in
+            # Lucy's window: it opens on the BUSINESS tab, whose profile list is
+            # EMPTY; Nico's profile (NicMurCr0, Credico USA LLC - D2D) is under
+            # CONSUMER. "Welcome {{ssoProfileName}}" never renders here, so it is
+            # not a readiness signal -- the profile row is.
+            page.wait_for_function("() => /Profile ID/.test(document.body.innerText)", timeout=60000)
+            try:
+                page.get_by_text("Consumer", exact=True).first.click()
+            except Exception:  # noqa: BLE001 — some profiles have no tabs
+                pass
+            page.wait_for_function(
+                "() => /Credico|D2D|Mobile Only/i.test(document.body.innerText)", timeout=60000)
+            page.wait_for_timeout(1500)
+            page.get_by_role("button", name="Dashboard").first.click()
+            page.wait_for_url(lambda u: "MultiProfile" not in u, timeout=60000)
             page.wait_for_timeout(6000)
             # rep dashboard -> SMART LEADS (opens its own tab)
             with ctx.expect_page(timeout=30000) as new:
-                page.get_by_text("SMART", exact=False).first.click()
+                page.get_by_text(re.compile(r"smart\s*leads", re.I)).first.click()
             leads = new.value
             leads.wait_for_load_state("domcontentloaded")
             leads.wait_for_timeout(4000)

@@ -75,6 +75,12 @@ OPTIX_CREDS_PATH = APP_DIR / "optix-creds.json"
 OPTIX_PROFILE_DIR = APP_DIR / "chrome-profile-optix"
 OPTIX_SIGNIN_LOCK = APP_DIR / "optix-signin.lock"
 OPTIX_SIGNIN_LOCK_MINUTES = 10
+# The Optix read opens a VISIBLE window on the office's machine (Megan
+# 2026-11-06), so it runs every 10 minutes, not every 2-minute sweep -- 30
+# pop-ups an hour on the owner's screen would be a cost they feel. Still 4x
+# Nico's own 40-minute posts, and the knock board posts every 15-30.
+OPTIX_EVERY_MINUTES = 10
+OPTIX_LAST_READ = APP_DIR / "optix-last-read"
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"

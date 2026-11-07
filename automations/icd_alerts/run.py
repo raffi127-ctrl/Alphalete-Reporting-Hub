@@ -633,6 +633,17 @@ def _optix_knocks(rows_of, headless: bool, dry_run: bool, day: dt.date) -> int:
     the Verizon buckets ride alongside under their own names.
     """
     from automations.icd_alerts import optix_read
+    try:
+        last = dt.datetime.fromisoformat(C.OPTIX_LAST_READ.read_text().strip())
+        if dt.datetime.now() - last < dt.timedelta(minutes=C.OPTIX_EVERY_MINUTES):
+            return 0                      # read recently -- no window this tick
+    except (OSError, ValueError):
+        pass
+    try:
+        C.OPTIX_LAST_READ.parent.mkdir(parents=True, exist_ok=True)
+        C.OPTIX_LAST_READ.write_text(dt.datetime.now().isoformat())
+    except OSError:
+        pass
     worst = 0
     for rec in rows_of:
         key = str(rec.get("office_key") or "")
