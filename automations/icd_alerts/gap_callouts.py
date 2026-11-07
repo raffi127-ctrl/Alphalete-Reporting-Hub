@@ -957,7 +957,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             sales = json.loads(rrow[P.COL_SALES] or "{}") if rrow and len(rrow) > P.COL_SALES else {}
         except ValueError:
             records, sales = {}, {}
-        records = activity(records, sales, getattr(office, "campaign", None))
+        campaign = getattr(office, "campaign", None)
+        records = activity(records, sales, campaign)
+        sold = activity({}, sales, campaign)
         st = state.get(key) or {}
         if not due(st, now):
             continue
@@ -968,12 +970,23 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         # RECEIPTS FIRST: whoever Lucy named last tick and who has since run a
         # credit check or put up a sale gets told so, before today's list.
         called_before = list(st.get("called") or []) if st.get("day") == now.date().isoformat() else []
-        proven = receipts(called_before, records, prev)
-        receipt = receipt_line(key, proven, now, getattr(office, "campaign", None))
+        # A B2B RECEIPT SAYS "DEAL", SO ONLY A SALE EARNS ONE (Ryan McSpadden
+        # 2026-11-06: Jae'Len's Awaiting Signature contract -- a PDF, Box's
+        # credit check -- was posted as "had a deal behind the quiet", and he
+        # never signed). The contract still keeps the rep off the call-out
+        # list above; it just isn't announced as a sale.
+        if is_b2b(campaign):
+            # No "sold" snapshot yet (first hour, or state from before this
+            # rule): nobody can be fresh against it.
+            prev_sold = st["sold"] if st.get("day") == now.date().isoformat() and "sold" in st else dict(sold)
+            proven = receipts(called_before, sold, prev_sold)
+        else:
+            proven = receipts(called_before, records, prev)
+        receipt = receipt_line(key, proven, now, campaign)
         callouts = pick(rows, records, prev, now)
         text = line(key, callouts, now, getattr(office, "campaign", None))
         state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
-                      "records": records, "called": [c["name"] for c in callouts]}
+                      "records": records, "sold": sold, "called": [c["name"] for c in callouts]}
         if send:
             _remember(key, state[key])
         dests = [c.id for c in (approved_ch.get(key) or [])]

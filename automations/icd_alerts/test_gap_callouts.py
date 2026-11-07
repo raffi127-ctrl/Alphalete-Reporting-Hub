@@ -724,6 +724,52 @@ class ReceiptsTest(unittest.TestCase):
         self.assertEqual(G.receipt_line("x", [], NOW), "")
 
 
+class ABoxReceiptNeedsASale(unittest.TestCase):
+    """Ryan McSpadden 2026-11-06: Jae'Len's Awaiting Signature contract (a
+    PDF, Box's credit check) was posted as "had a deal behind the quiet" and
+    he never signed. A B2B receipt says deal, so only a sale earns one."""
+
+    def _tick(self, when, records, sales, posted):
+        import json as _json
+        rows = {G.K.KNOCKS_TAB: [["hdr"], ["ryan", when.date().isoformat(), "[]", "[]", "0", "x", "", ""]],
+                G.P.RELAY_TAB: [["hdr"], ["ryan", when.date().isoformat(), _json.dumps(records), "x",
+                                          "", "", "", "", _json.dumps(sales)]]}
+        book = mock.Mock()
+        book.worksheet.side_effect = lambda n: mock.Mock(get_all_values=mock.Mock(return_value=rows.get(n, [["hdr"]])))
+        with mock.patch.object(G.P, "approved_channels", return_value={"ryan": [mock.Mock(id="C1")]}), \
+                mock.patch.object(G.O, "get", return_value=mock.Mock(campaign="b2b_box", active=True)), \
+                mock.patch.object(G.K, "_office_now", return_value=when), \
+                mock.patch.object(G, "callouts_allowed", return_value=True), \
+                mock.patch.object(G.K, "in_field_hours", return_value=True), \
+                mock.patch.object(G.K, "_too_old", return_value=False), \
+                mock.patch.object(G.M, "to_rows", return_value=[]), \
+                mock.patch.object(G, "pick", return_value=[{"name": "Jae'Len Arnum", "mins": 34}]), \
+                mock.patch.object(G, "praise_window", return_value=False), \
+                mock.patch.object(G, "answer_back", return_value=[]), \
+                mock.patch.object(G, "already_said", return_value=False), \
+                mock.patch.object(G.P, "_slack", lambda ch, t: posted.append(t)):
+            G.run(when.date(), send=True, book=book, log=lambda m: None, only="ryan")
+
+    def _receipts(self, posted):
+        return [t for t in posted if "Jae'Len" in t and " min" not in t]
+
+    def test_awaiting_signature_is_not_announced_as_a_deal(self):
+        import pathlib, tempfile
+        posted = []
+        with mock.patch.object(G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json"):
+            self._tick(dt.datetime(2026, 11, 6, 17, 38), {}, {}, posted)
+            self._tick(dt.datetime(2026, 11, 6, 18, 40), {"Jae'Len Arnum": 1}, {}, posted)
+        self.assertEqual(self._receipts(posted), [])
+
+    def test_a_real_sale_still_gets_its_receipt(self):
+        import pathlib, tempfile
+        posted = []
+        with mock.patch.object(G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json"):
+            self._tick(dt.datetime(2026, 11, 6, 17, 38), {}, {}, posted)
+            self._tick(dt.datetime(2026, 11, 6, 18, 40), {}, {"Jae'Len Arnum": {"Sales": 1, "Volume": 69000}}, posted)
+        self.assertEqual(len(self._receipts(posted)), 1, posted)
+
+
 class AnswerBackTest(unittest.TestCase):
     """Megan 2026-10-07 ("do 4"): a reply that calls a call-out snitching or
     lying earns ONE answer in that thread, in the house voice."""
