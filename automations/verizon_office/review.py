@@ -197,9 +197,26 @@ def _load_posted() -> Dict:
         return {}
 
 
-def send(items: List[Dict], log=print) -> int:
+def _group_client(log=print):
+    """The Lucy token that can SEE the group. The group's Lucy is *Lucy*
+    (U0BCFGCR5PV, the bot token), not *Lucy Reporting* (U0BCG8F9B5Z, the
+    user token every Lucy posts metrics with) -- 11/7 first send died on
+    channel_not_found with the user token. Ask each; never guess."""
     from automations.shared import slack_metrics_post as S
-    client = S._client()
+    for name, make in (("bot", S._bot_client), ("user", S._client)):
+        try:
+            c = make()
+            c.conversations_info(channel=GROUP_DM)
+            log(f"  posting as {c.auth_test().get('user')} ({name} token)")
+            return c
+        except Exception as e:  # noqa: BLE001 — missing token / can't see it
+            log(f"  {name} token can't post there: {str(e)[:120]}")
+    raise SystemExit("✗ no Lucy token on this machine can see the review group "
+                     f"{GROUP_DM} — invite that Lucy, or run where the bot token is")
+
+
+def send(items: List[Dict], log=print) -> int:
+    client = _group_client(log)
     posted = _load_posted()
     if "intro" not in posted:
         posted["intro"] = client.chat_postMessage(channel=GROUP_DM, text=INTRO)["ts"]
