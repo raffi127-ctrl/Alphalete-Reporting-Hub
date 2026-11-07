@@ -9,6 +9,7 @@ import unittest
 
 from automations.verizon_office.parse import RepWeek, SalesVerification, Week
 from automations.vantura_verizon_credico import run as R
+RUN = R
 
 TODAY = dt.date(2026, 11, 7)            # Saturday; board shows WE 11.8 (Mon 11/2..Sun 11/8)
 HDR = ["#", "REP", "Current Week", "Last Wk", "Monday", "Tuesday", "Wednesday", "Thursday",
@@ -241,6 +242,23 @@ class FallbackInbox(unittest.TestCase):
             def fetch(self, i, what): raise AssertionError("no fetch expected")
         with tempfile.TemporaryDirectory() as d:
             self.assertIsNone(R._newest_attachment(M(), "Sales*.xlsx", 10, pathlib.Path(d)))
+
+
+
+class Repost(unittest.TestCase):
+    def test_repost_runs_sales_boards_corrected(self):
+        import subprocess
+        calls = []
+        class R:  # fake CompletedProcess
+            returncode = 0; stdout = "posted\n"; stderr = ""
+        orig = subprocess.run
+        subprocess.run = lambda cmd, **kw: calls.append(cmd) or R()
+        try:
+            self.assertEqual(RUN.repost_boards(log=lambda *_: None), 0)
+        finally:
+            subprocess.run = orig
+        self.assertEqual(calls[0][1:], ["-m", "automations.sales_boards.run", "--program", "Verizon",
+                                        "--post", "--corrected"])
 
 
 if __name__ == "__main__":

@@ -34,6 +34,11 @@ the live evening ticker; this pass corrects through yesterday late morning.
 
   python -m automations.vantura_verizon_credico.run --plan          # plan only
   python -m automations.vantura_verizon_credico.run --fill --yes    # write
+  ... --repost       # after a write, re-post the Verizon day + week boards
+                     # ('(corrected)' captions, sales_boards --corrected) into
+                     # the day's Verizon Metrics thread -- Carlos 11/7: "then
+                     # the screen shot sent out ... one for yesterday sales
+                     # sorted highest to lowest and one for the week"
   ... --sv FILE.xlsx                                                 # local file
 Python 3.9-safe (Lucy runtime).
 """
@@ -45,6 +50,7 @@ import difflib
 import email
 import fnmatch
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -330,6 +336,24 @@ def fetch(office, log=_log) -> Tuple[Optional[Path], str]:
     return None, ""
 
 
+REPOST_CMD = ["-m", "automations.sales_boards.run", "--program", "Verizon", "--post", "--corrected"]
+
+
+def repost_boards(log=_log) -> int:
+    """Re-post yesterday's Verizon day board + the week ranking with
+    '(corrected)' captions (sales_boards dedupes by caption, so the 5:10
+    replies stay and these land beside them). Returns the exit code."""
+    log("[vz] re-posting the Verizon boards: python " + " ".join(REPOST_CMD))
+    r = subprocess.run([sys.executable] + REPOST_CMD, capture_output=True, text=True)
+    for line in (r.stdout or "").splitlines()[-25:]:
+        log("    | " + line)
+    if r.returncode:
+        for line in (r.stderr or "").splitlines()[-10:]:
+            log("    ! " + line)
+        log("[vz] board re-post FAILED (exit %d)" % r.returncode)
+    return r.returncode
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="vantura_verizon_credico")
     ap.add_argument("--sv", type=Path, default=None, help="local Sales Verification xlsx")
@@ -337,6 +361,8 @@ def main(argv=None) -> int:
     ap.add_argument("--yes", action="store_true")
     ap.add_argument("--plan", action="store_true",
                     help="plan only, even with --fill --yes (a rerun carries them)")
+    ap.add_argument("--repost", action="store_true",
+                    help="after a write, re-post the Verizon day + week boards (corrected)")
     ap.add_argument("--today", default=None)
     a = ap.parse_args(argv)
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
@@ -376,6 +402,9 @@ def main(argv=None) -> int:
     elif a.fill and a.yes and not a.plan:
         n = apply(ws, items)
         _log("[vz] wrote %d cell(s) on '%s'" % (n, ws.title))
+        if a.repost and n and repost_boards(log=_log):
+            print("=== done ===", flush=True)
+            return 2
     else:
         _log("[vz] PLAN ONLY -- %d cell(s) would change (--fill --yes to write)" % len(items))
     print("=== done ===", flush=True)

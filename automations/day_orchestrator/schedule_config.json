@@ -11504,7 +11504,7 @@
   },
   "vantura_verizon_credico": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Vantura 'Verizon Sales Board' corrected from CREDICO's Sales Verification (Carlos 2026-11-07: 'however she got the numbers i want lucy to fill out our verizon salesboard with those numbers ... add in this approved number'). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-verizon-credico, installed via `lucy rerun install_vantura_verizon_credico_agent`) on LUCY 2, daily 11:10 + 12:40 CT — Credico's 'Sales Verification - Verizon Wireless - High Value Acquisitions, Inc. - YYYYMMDD.xlsx' (vzreports@credicousa.com, sales through YESTERDAY) reaches the Hub inbox ~10:45 via Nico's Outlook redirect; same file Megan's verizon_office tracker reads. Writes: every matched rep's day cells for the days the file covers inside the board's shown week = Credico VALID LINES (authoritative, lowering included; a T/X/F marker stays unless Credico shows lines; a board rep Credico does not list is left alone and logged), plus column Q 'Approved' (rep 'Appr. %' for the Credico week whose Saturday falls in the board week; crew '% Appr.' on the Verizon totals row). Names matched first-name (+aliases) & subset/last-name/fuzzy/middle-name, unmatched REPORTED never guessed. Pure Sheets API + IMAP. --plan = read-only (overrides the --fill --yes a rerun carries); --sv FILE reads a local xlsx.",
+   "_off_scheduler_note": "Vantura 'Verizon Sales Board' corrected from CREDICO's Sales Verification (Carlos 2026-11-07: 'however she got the numbers i want lucy to fill out our verizon salesboard with those numbers ... add in this approved number'). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-verizon-credico, installed via `lucy rerun install_vantura_verizon_credico_agent`) on LUCY 2, daily 11:10 + 12:40 CT — Credico's 'Sales Verification - Verizon Wireless - High Value Acquisitions, Inc. - YYYYMMDD.xlsx' (vzreports@credicousa.com, sales through YESTERDAY) reaches the Hub inbox ~10:45 via Nico's Outlook redirect; same file Megan's verizon_office tracker reads. Writes: every matched rep's day cells for the days the file covers inside the board's shown week = Credico VALID LINES (authoritative, lowering included; a T/X/F marker stays unless Credico shows lines; a board rep Credico does not list is left alone and logged), plus column Q 'Approved' (rep 'Appr. %' for the Credico week whose Saturday falls in the board week; crew '% Appr.' on the Verizon totals row). Names matched first-name (+aliases) & subset/last-name/fuzzy/middle-name, unmatched REPORTED never guessed. After a write, --repost runs sales_boards --program Verizon --post --corrected (yesterday's day board + the week ranking, '(corrected)' captions, into the day's Verizon Metrics thread; Carlos 11/7 in the review DM: 'then the screen shot sent out ... one for yesterday sales sorted highest to lowest and one screenshot for the week'). Pure Sheets API + IMAP + one Slack post. --plan = read-only (overrides the --fill --yes a rerun carries); --sv FILE reads a local xlsx.",
    "display_name": "Vantura Verizon board <- Credico (11:10am + 12:40pm)",
    "source_type": "email",
    "data_sources": [
@@ -11515,7 +11515,8 @@
    ],
    "base_args": [
     "--fill",
-    "--yes"
+    "--yes",
+    "--repost"
    ],
    "cadence": {
     "weekdays": []
@@ -11552,7 +11553,7 @@
   },
   "install_vantura_verizon_credico_agent": {
    "on_scheduler": false,
-   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_verizon_credico_agent` can install the STANDALONE com.alphalete.vantura-verizon-credico LaunchAgent on LUCY 2 (daily 11:10 + 12:40, deploy/vantura_verizon_credico.sh, --fill --yes). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_verizon_credico_agent` can install the STANDALONE com.alphalete.vantura-verizon-credico LaunchAgent on LUCY 2 (daily 11:10 + 12:40, deploy/vantura_verizon_credico.sh, --fill --yes --repost). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
    "display_name": "Install Vantura Verizon Credico agent (11:10am + 12:40pm)",
    "source_type": "local",
    "data_sources": [],

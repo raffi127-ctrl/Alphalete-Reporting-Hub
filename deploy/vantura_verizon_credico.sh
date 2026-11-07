@@ -4,7 +4,9 @@
 # (sales through YESTERDAY) to the Hub inbox ~10:45; this sets each matched
 # rep's day cells to Credico's valid lines (the Slack roster fill is the live
 # ticker, this is the correction) and writes column Q 'Approved'. Idempotent:
-# only changed cells are written. See the module docstring.
+# only changed cells are written; after a write the Verizon day + week boards
+# are re-posted '(corrected)' into the day's Verizon Metrics thread. See the
+# module docstring.
 #   plan only:  .venv/bin/python -m automations.vantura_verizon_credico.run --plan
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -17,7 +19,7 @@ VENV_PY=".venv/bin/python3.14"
 LOG_DIR="output/logs"; mkdir -p "$LOG_DIR"
 export PYTHONPATH="$(pwd)" NO_COLOR=1
 LOG_FILE="$LOG_DIR/vantura-verizon-credico-$(date +%Y-%m-%d-%H%M%S).log"
-"$VENV_PY" -u -m automations.vantura_verizon_credico.run --fill --yes >> "$LOG_FILE" 2>&1
+"$VENV_PY" -u -m automations.vantura_verizon_credico.run --fill --yes --repost >> "$LOG_FILE" 2>&1
 ST=$?
 if [ $ST -ne 0 ]; then
     "$VENV_PY" - "$LOG_FILE" <<'PY'
