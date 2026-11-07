@@ -17109,6 +17109,52 @@
     "type": "not_configured"
    }
   },
+  "install_verizon_daily_agent": {
+    "on_scheduler": false,
+    "_off_scheduler_note": "NOT in the 4am batch. Installs com.alphalete.verizon-daily on Lucy 4: 11:15/11:45/12:30/13:30 local, deploy/verizon_daily.sh --send -> verizon_office.daily posts Nico's Credico boards ONCE a day into the Verizon Metrics thread in #alphalete-gp-sales. Nico on ECO 2026-11-07.",
+    "machine": "Lucy 4",
+    "display_name": "Install Verizon daily metrics (Nico, 11:15 CT)",
+    "command": [
+      "automations.day_orchestrator.install_agent"
+    ],
+    "base_args": [
+      "verizon-daily"
+    ],
+    "source_type": "local",
+    "data_sources": [],
+    "cadence": {
+      "weekdays": []
+    },
+    "priority": "P3",
+    "freshness_target": null,
+    "depends_on": [],
+    "verify": {
+      "type": "not_configured"
+    }
+  },
+  "uninstall_verizon_daily_agent": {
+    "on_scheduler": false,
+    "machine": "Lucy 4",
+    "display_name": "Uninstall Verizon daily metrics (Nico)",
+    "command": [
+      "automations.day_orchestrator.uninstall_agent"
+    ],
+    "base_args": [
+      "verizon-daily"
+    ],
+    "timeout_minutes": 5,
+    "source_type": "local",
+    "data_sources": [],
+    "cadence": {
+      "weekdays": []
+    },
+    "priority": "P3",
+    "freshness_target": null,
+    "depends_on": [],
+    "verify": {
+      "type": "not_configured"
+    }
+  },
   "verizon_daily_nicolas": {
    "on_scheduler": false,
    "_off_scheduler_note": "OFF until Nico is on ECO (Megan 2026-11-06: nothing live until then). Then: add 'nicolas' to verizon_office.daily.LIVE_OFFICES, set on_scheduler true + weekdays, and add the Hub card. Runs ~11:15 CT, after Credico's Sales Verification lands in the Hub inbox (~10:45) through Nico's Outlook redirect rule. Posts into the existing 'Verizon Metrics MM/DD/YYYY' thread in #alphalete-gp-sales (opened 5:10 by sales_boards for Carlos's Vantura Verizon board). Lucy 4, not Lucy 1 (Megan 2026-11-07).",

@@ -20,7 +20,7 @@ is missing). No weather / trackers: that room already has them (Megan
 2026-11-07).
 
 NOTHING LIVE UNTIL ECO (Megan 2026-11-06): --send posts only for offices in
-LIVE_OFFICES, which is empty. Stale (not dated today) or blank -> nothing posts.
+LIVE_OFFICES ("nicolas" since 11/7, the day he went on ECO). Stale (not dated today) or blank -> nothing posts.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from pathlib import Path
 from automations.verizon_office import board_image, offices as OF, parse, run as RUN, thread_boards
 
 ROOT = Path(__file__).resolve().parents[2]
-LIVE_OFFICES: tuple = ()          # add "nicolas" the day he is on ECO
+LIVE_OFFICES: tuple = ("nicolas",)   # Nico on ECO 2026-11-07
 
 
 def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
@@ -87,6 +87,9 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     office = OF.get(a.office)
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
+    if a.send and (ROOT / "output" / f".verizon_daily_posted_{office.key}_{today:%Y-%m-%d}").exists():
+        print("already posted today — nothing to do")
+        return 0
     sv = a.sv or RUN.fetch(office, "sales")
     if not sv:
         print("✗ no Sales Verification in the Hub inbox — is the office's Outlook rule delivering?")
@@ -109,7 +112,14 @@ def main(argv=None) -> int:
     if office.key not in LIVE_OFFICES:
         print("✗ %s is not live (LIVE_OFFICES) — nothing posted" % office.key)
         return 1
+    # ONCE A DAY. The timer tries several times until Credico's email is in
+    # (deploy/com.alphalete.verizon-daily.plist); the first post wins.
+    marker = ROOT / "output" / f".verizon_daily_posted_{office.key}_{today:%Y-%m-%d}"
+    if marker.exists():
+        print("already posted today (%s) — nothing to do" % marker.name)
+        return 0
     post(office, today, steps)
+    marker.write_text(dt.datetime.now().isoformat())
     return 0
 
 

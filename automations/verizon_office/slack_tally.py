@@ -186,7 +186,7 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
 # which must not hold Lucy's Slack sign-in. LIVE_OFFICES gates tick(); empty
 # until Nico is on ECO ("we can't take anything live until ..."). Add
 # "nicolas" the day he is, then `lucy rerun install_verizon_slack_tally_agent`.
-LIVE_OFFICES: tuple = ()
+LIVE_OFFICES: tuple = ("nicolas",)   # Nico on ECO 2026-11-07
 EVERY_MINUTES = 5
 _STATE = None
 
