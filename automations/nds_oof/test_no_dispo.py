@@ -26,6 +26,8 @@ class NoDispo(unittest.TestCase):
         self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 7, 14, 30, 5)))           # Sat: weekday slots off
         self.assertEqual(R.no_dispo_slot(dt.datetime(2026, 11, 7, 12, 15, 5)), "12:15")  # Sat slots (11-07)
         self.assertEqual(R.no_dispo_slot(dt.datetime(2026, 11, 7, 12, 45, 5)), "12:45")
+        self.assertEqual(R.no_dispo_slot(dt.datetime(2026, 11, 7, 13, 15, 5)), "13:15")
+        self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 7, 13, 30, 5)))
         self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 6, 12, 15, 5)))           # Fri: no 12:15
         self.assertIsNone(R.no_dispo_slot(dt.datetime(2026, 11, 8, 14, 30, 5)))           # Sun
 
