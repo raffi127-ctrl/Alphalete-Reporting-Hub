@@ -2619,7 +2619,14 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             base_cols=VERIZON_KNOCKS_COLUMNS,
             out_cols=VERIZON_KNOCKS_HEADERS, teams=teams, kpis=kpis,
-            credit_checks=credit_checks, extra_columns=extra_columns)], shape)
+            credit_checks=credit_checks, extra_columns=extra_columns,
+            # NO GAPS ON VERIZON (Megan 2026-11-07: "We should remove gaps &
+            # total gaps"). Optix records no knock times; the Lucy Optix
+            # extension times First/Last Knock itself off its 10-minute reads,
+            # good enough for a span, not for gaps. The columns stay in the set
+            # (Hrs Knocking is computed from them; blank gaps = 0) and are just
+            # not drawn.
+            hide_columns=(COL_GAPS, COL_TOTAL_GAPS))], shape)
     elif shape == SHAPE_WIRELESS:
         # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for
         # the reason the Energy Wells shape was moved here on 2026-08-30

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lucy Optix",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Sends your office's Optix knocks and sales (counts only) to Lucy every 10 minutes, from the Lead Details tab you already have open.",
   "permissions": ["storage", "scripting", "alarms", "tabs"],
   "host_permissions": [

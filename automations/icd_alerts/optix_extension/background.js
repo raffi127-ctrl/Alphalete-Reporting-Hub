@@ -101,6 +101,34 @@ function boardRow(rep, c, cols) {
   return row;
 }
 
+// FIRST / LAST KNOCK, TIMED HERE (Megan 2026-11-07: the time columns were
+// empty). Optix keeps no time per knock, but this reads every EVERY_MIN
+// minutes, so: First Knock = the read where a rep's knocks first went above 0
+// today, Last Knock = the latest read where they went up. Good to about
+// EVERY_MIN minutes. Kept per day in this Chrome; a rep already knocking when
+// the extension first runs gets that read as their first knock.
+function clock(tz) {
+  return new Intl.DateTimeFormat("en-US", {timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true})
+    .format(new Date()).replace(/\u202f|\s+/g, " ");
+}
+async function stampTimes(reps, tz, dayIso) {
+  const k = "times:" + dayIso;
+  const all = (await chrome.storage.local.get(k))[k] || {};
+  const now = clock(tz);
+  for (const [rep, c] of Object.entries(reps)) {
+    const t = all[rep] || {n: 0, first: "", last: ""};
+    if (c.Knocks > 0 && !t.first) t.first = now;
+    if (c.Knocks > t.n) t.last = now;
+    t.n = Math.max(t.n, c.Knocks);
+    all[rep] = t;
+  }
+  // only today's key stays; older days go
+  const old = Object.keys(await chrome.storage.local.get(null)).filter(x => x.startsWith("times:") && x !== k);
+  if (old.length) await chrome.storage.local.remove(old);
+  await chrome.storage.local.set({[k]: all});
+  return all;
+}
+
 async function post(body) {
   const r = await fetch(RELAY, {method: "POST", body: JSON.stringify(body), redirect: "follow"});
   try { return await r.json(); } catch (e) { return {ok: r.ok}; }
@@ -115,7 +143,7 @@ async function reportSignedOut(cfg, day, why) {
   await post({office_key: cfg.office, key: cfg.key, local_time: new Date().toISOString(),
               fault: {day: day.iso, stage: "signin-optix",
                       summary: "Verizon Optix is signed out on this computer",
-                      detail: why, agent: "lucy-optix-ext/1.0.0", platform: "chrome-extension"}});
+                      detail: why, agent: "lucy-optix-ext/1.0.1", platform: "chrome-extension"}});
 }
 
 async function signedOut() {
@@ -166,10 +194,15 @@ async function readNow(why) {
   const {reps, unknown} = tally(out.rows, rules);
   const knocks = Object.values(reps).reduce((a, c) => a + c.Knocks, 0);
   if (out.page && knocks !== out.page) await status(`Optix says ${out.page} dispositions, counted ${knocks} — check before trusting.`, false);
-  const rows = Object.keys(reps).sort().map(rep => boardRow(rep, reps[rep], rules.board_columns));
+  const times = cfg.dry ? {} : await stampTimes(reps, cfg.tz || "America/Chicago", day.iso);
+  const rows = Object.keys(reps).sort().map(rep => {
+    const r = boardRow(rep, reps[rep], rules.board_columns), t = times[rep];
+    if (t) { r["First Knock"] = t.first || ""; r["Last Knock"] = t.last || ""; }
+    return r;
+  });
   const sales = Object.fromEntries(Object.entries(reps).filter(([, c]) => c.Sale).map(([rep, c]) => [rep, {Sales: c.Sale}]));
   if (cfg.dry) return status(`Test mode: ${rows.length} reps, ${knocks} knocks — nothing sent.`, true);
-  const base = {office_key: cfg.office, key: cfg.key, day: day.iso, agent: "lucy-optix-ext/1.0.0", local_time: new Date().toISOString()};
+  const base = {office_key: cfg.office, key: cfg.key, day: day.iso, agent: "lucy-optix-ext/1.0.1", local_time: new Date().toISOString()};
   const a = await post({...base, knocks_rows: rows, knocks_time_tracker: []});
   // NO SALES FROM HERE: an office's sales row has ONE writer. Verizon counts
   // APPS (lines) off the room's Slack tally (verizon_office/slack_tally); Optix
