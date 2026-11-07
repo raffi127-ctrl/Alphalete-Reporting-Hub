@@ -192,7 +192,8 @@
         "sat_end": "17:00",
         "saturday": true,
         "tz": "America/Chicago"
-      }
+      },
+      "campaign": "verizon"
     }
   }
 }

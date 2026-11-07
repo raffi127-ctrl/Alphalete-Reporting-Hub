@@ -142,7 +142,7 @@ def add_to_offices_py(text: str) -> None:
 
 
 def add_to_public_json(key: str, owner: str, label: str, tz: str,
-                       day, sat, saturday: bool) -> None:
+                       day, sat, saturday: bool, campaign: str = "att") -> None:
     pub = json.loads(PUBLIC_JSON.read_text())
     template = next(iter((pub.get("offices") or {}).values()), {})
     pub.setdefault("offices", {})[key] = {
@@ -158,6 +158,11 @@ def add_to_public_json(key: str, owner: str, label: str, tz: str,
             "sat_start": sat[0], "sat_end": sat[1],
             "saturday": saturday, "tz": tz,
         },
+        # WHAT THE INSTALLER ASKS FOR keys off this (dist/config.campaign()
+        # reads install.json, built from this record). Left out, every
+        # command-line enrolment installed as AT&T and asked a Verizon office
+        # for SaraPlus (Nico's iMac, 2026-11-07).
+        "campaign": campaign,
     }
     PUBLIC_JSON.write_text(json.dumps(pub, indent=2) + "\n")
 
@@ -275,7 +280,7 @@ def enroll(name: str, *, office: Optional[str] = None, tz: str = DEFAULT_TZ,
     relay_key = mint_key(key)
     add_to_offices_py(entry_text(key, owner, label, tz, slack_id, day, sat,
                                  saturday, platform, hours_known, campaign))
-    add_to_public_json(key, owner, label, tz, day, sat, saturday)
+    add_to_public_json(key, owner, label, tz, day, sat, saturday, campaign)
     log("  roster + public record written")
 
     # BEFORE the key and the push: a roster file that does not import would
