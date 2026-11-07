@@ -74,8 +74,9 @@ SSO_EXTRA = ["Samuel Acay"]
 SSO_TITLE = "South Shore Owner Sales Today"
 SSO_ALPHALETE_TITLE = "Alphalete Owner Sales Today"
 
-# The owners chat keeps ONE list of everyone (Megan 2026-11-06: "just have all
-# together"), with these two lines under its TOTAL so the orgs compete there too.
+# The two org lines under a TOTAL. The owners chat first kept one list with
+# these under it (Megan 2026-11-06); later that day Raf had it split into an
+# Alphalete text + a South Shore text, BOTH ending with these two lines.
 ALPHALETE_ORG_LINE = "Alphalete Org. Total"
 SSO_ORG_LINE = "Southshore Org. Total"
 

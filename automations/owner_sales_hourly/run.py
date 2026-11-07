@@ -34,8 +34,9 @@ ALPHALETE IN THE SSO CHAT (Colten 2026-11-06, Raf approved): a second text into
 SOUTHSHORE ORG on the same :45 -- our Org-board owners who are NOT South Shore,
 titled "Alphalete Owner Sales Today", its own TOTAL -- so the two orgs compete.
 Raf is on the Alphalete text, not the South Shore one (Megan 2026-11-06).
-ORG TOTALS IN THE OWNERS CHAT (Megan 2026-11-06): still one list of everyone,
-plus "Alphalete Org. Total" and "Southshore Org. Total" under the TOTAL.
+OWNERS CHAT SPLIT TOO (Raf 2026-11-06): "Alphalete Owner Sales Today" then
+"South Shore Owner Sales Today", each ending with "Alphalete Org. Total" and
+"Southshore Org. Total" under its TOTAL; both go when either moves.
 KNOCKING CHAT TOO (Raf 2026-11-06): the owners chat's text, word for word and
 on its cadence (:15 and :45), into "Knocking Chat A-Players" -- so Raf's office
 sees the other owners' numbers. Own "nothing changed" skip.
@@ -48,7 +49,7 @@ Usage
   python -m automations.owner_sales_hourly.run --send
 
   --force   ignore the time window and the "nothing changed" skip
-  --only owners|sso|sso_alphalete|jairo|carlos|knocking   text just that one chat
+  --only owners|owners_sso|sso|sso_alphalete|jairo|carlos|knocking|knocking_sso   text just that one chat
 
 --send is the ONLY thing that texts anyone. Python 3.9-safe (Lucy runtime).
 """
@@ -240,8 +241,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="actually text the owners chat (default: dry run)")
     ap.add_argument("--force", action="store_true",
                     help="ignore the time window and the unchanged-numbers skip")
-    ap.add_argument("--only", choices=("owners", "sso", "sso_alphalete", "jairo", "carlos",
-                             "knocking"),
+    ap.add_argument("--only", choices=("owners", "owners_sso", "sso", "sso_alphalete", "jairo", "carlos",
+                             "knocking", "knocking_sso"),
                     help="text just one chat (e.g. a catch-up send to SSO)")
     args = ap.parse_args(argv)
 
@@ -281,20 +282,42 @@ def main(argv: Optional[List[str]] = None) -> int:
     # The SSO chat's South Shore + Alphalete texts are a head-to-head: if
     # EITHER moved, both go, so the chat never compares a fresh number with a
     # stale one (Megan 2026-11-06).
-    pair = {"sso": ("last_sent_sso", sso, cfg.SSO_TITLE),
-            "sso_alphalete": ("last_sent_sso_alphalete", alphalete,
-                              cfg.SSO_ALPHALETE_TITLE)}
-    pair_moved = head_to_head_moved(day, now, pair.values())
-    # The owners chat keeps everyone on one list; under its TOTAL, each org's
-    # own sum so the two can still compete there (Megan 2026-11-06).
+    # The owners chat is split the same way since Raf 2026-11-06 ("we need the
+    # post separated"): Alphalete text, then South Shore text, each one ending
+    # with BOTH org totals. Same pair rule as the SSO chat.
+    pairs = {
+        "sso": {"sso": ("last_sent_sso", sso, cfg.SSO_TITLE),
+                "sso_alphalete": ("last_sent_sso_alphalete", alphalete,
+                                  cfg.SSO_ALPHALETE_TITLE)},
+        "owners": {"owners": ("last_sent_owners_alphalete", alphalete,
+                              cfg.SSO_ALPHALETE_TITLE),
+                   "owners_sso": ("last_sent_owners_sso", sso, cfg.SSO_TITLE)},
+        # Raf's knocking chat carries the owners chat's texts, so it is split
+        # the same way (Megan 2026-11-06).
+        "knocking": {"knocking": ("last_sent_knocking_alphalete", alphalete,
+                                  cfg.SSO_ALPHALETE_TITLE),
+                     "knocking_sso": ("last_sent_knocking_sso", sso,
+                                      cfg.SSO_TITLE)},
+    }
     org_lines = org_total_lines(alphalete, sso)
-
-    # The chats that carry everyone get the two org lines under the TOTAL:
-    # owners (Megan 11/6), Knocking (Raf 11/6), Carlos's chain (Carlos 11/6).
-    ORG_TOTAL_CHATS = ("owners", "knocking", "carlos")
+    # The chats that carry the two org lines under the TOTAL: owners (Megan
+    # 11/6; both of its texts, Raf 11/6), Knocking (Raf 11/6), Carlos's chain
+    # (Carlos 11/6).
+    ORG_TOTAL_CHATS = ("owners", "owners_sso", "knocking", "knocking_sso",
+                       "carlos")
+    pair_of = {name: pid for pid, members in pairs.items() for name in members}
+    pair_moved = {
+        pid: head_to_head_moved(
+            day, now, members.values(),
+            org_lines if set(members) & set(ORG_TOTAL_CHATS) else ())
+        for pid, members in pairs.items()}
     rc = 0
     for name, group, key, chat_totals, title, not_in_total in (
-            ("owners", cfg.TEXT_GROUP, "last_sent", totals, "Owner Sales Today", ()),
+            ("owners", cfg.TEXT_GROUP, "last_sent_owners_alphalete", alphalete,
+             cfg.SSO_ALPHALETE_TITLE, ()),
+            # Right after the Alphalete text, same chat (Raf 2026-11-06).
+            ("owners_sso", cfg.TEXT_GROUP, "last_sent_owners_sso", sso,
+             cfg.SSO_TITLE, ()),
             ("sso", cfg.SSO_GROUP, "last_sent_sso", sso, cfg.SSO_TITLE, ()),
             # Right after the South Shore text, same chat (Colten 2026-11-06).
             ("sso_alphalete", cfg.SSO_GROUP, "last_sent_sso_alphalete",
@@ -304,8 +327,10 @@ def main(argv: Optional[List[str]] = None) -> int:
              cfg.CARLOS_TITLE, ()),
             # The owners text again, same cadence, for Raf's office (Raf
             # 2026-11-06: "I want the office to see other guys crushing").
-            ("knocking", cfg.KNOCKING_GROUP, "last_sent_knocking", totals,
-             "Owner Sales Today", ())):
+            ("knocking", cfg.KNOCKING_GROUP, "last_sent_knocking_alphalete",
+             alphalete, cfg.SSO_ALPHALETE_TITLE, ()),
+            ("knocking_sso", cfg.KNOCKING_GROUP, "last_sent_knocking_sso", sso,
+             cfg.SSO_TITLE, ())):
         if args.only and args.only != name:
             continue
         # --only / --force are a person asking for that text now.
@@ -315,7 +340,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                                else group.get("group")))
         rc = max(rc, _send_one(group, key, chat_totals, now, day, args, title,
                                not_in_total,
-                               send_anyway=name in pair and pair_moved,
+                               send_anyway=pair_moved.get(pair_of.get(name), False),
                                org_totals=(org_lines if name in ORG_TOTAL_CHATS
                                            else ())))
     return rc
@@ -323,14 +348,16 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 def org_total_lines(alphalete: Dict[str, int],
                     south_shore: Dict[str, int]) -> List[Tuple[str, int]]:
-    """The two org lines under the owners chat's TOTAL."""
+    """The two org lines under a TOTAL."""
     return [(cfg.ALPHALETE_ORG_LINE, sum(alphalete.values())),
             (cfg.SSO_ORG_LINE, sum(south_shore.values()))]
 
 
-def head_to_head_moved(day: dt.date, now: dt.datetime, pair) -> bool:
+def head_to_head_moved(day: dt.date, now: dt.datetime, pair,
+                       org_totals: Iterable[Tuple[str, int]] = ()) -> bool:
     """True when ANY (last-sent key, totals, title) in `pair` has new numbers."""
-    return any(t and _changed(_last_path(day, k), build_text(t, now, ti))
+    return any(t and _changed(_last_path(day, k),
+                              build_text(t, now, ti, org_totals=org_totals))
                for k, t, ti in pair)
 
 

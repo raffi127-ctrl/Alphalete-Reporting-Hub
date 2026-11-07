@@ -180,6 +180,36 @@ class SouthShoreVsAlphalete(unittest.TestCase):
                           "Southshore Org. Total: 71"])
 
 
+    def test_owners_chat_split_every_half_hour(self):
+        for chat in ("owners", "owners_sso", "knocking", "knocking_sso"):
+            for m in (15, 45):
+                self.assertFalse(run.hourly_chat_skips(
+                    chat, dt.datetime(2026, 11, 6, 17, m)))
+
+    def test_pair_check_counts_the_org_lines(self):
+        # Same list, but the OTHER org moved: the org lines changed, so the
+        # pair must go even though this text's own rows did not.
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from automations.owner_sales_hourly import config as cfg
+        now = dt.datetime(2026, 11, 6, 17, 45)
+        al = {"Isaiah Revelle": 30}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(cfg, "OUT_DIR", Path(tmp)):
+            last = run._last_path(now.date(), "a")
+            last.parent.mkdir(parents=True, exist_ok=True)
+            last.write_text(run.build_text(
+                al, now, "AL", org_totals=run.org_total_lines(al, {"J": 71})),
+                encoding="utf-8")
+            self.assertFalse(run.head_to_head_moved(
+                now.date(), now, [("a", al, "AL")],
+                run.org_total_lines(al, {"J": 71})))
+            self.assertTrue(run.head_to_head_moved(
+                now.date(), now, [("a", al, "AL")],
+                run.org_total_lines(al, {"J": 72})))
+
+
 class HalfHourPass(unittest.TestCase):
     def _at(self, minute):
         return dt.datetime(2026, 11, 4, 17, minute)
@@ -207,7 +237,7 @@ class HalfHourPass(unittest.TestCase):
         # owners (Megan), Knocking (Raf), Carlos's chain (Carlos) -- 11/6.
         import inspect
         src = inspect.getsource(run.main)
-        self.assertIn('ORG_TOTAL_CHATS = ("owners", "knocking", "carlos")', src)
+        self.assertIn('ORG_TOTAL_CHATS = ("owners", "owners_sso", "knocking", "knocking_sso",\n                       "carlos")', src)
 
     def test_carlos_title_and_chat(self):
         from automations.owner_sales_hourly import config as cfg

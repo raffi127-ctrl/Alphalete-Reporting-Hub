@@ -30,9 +30,12 @@ the chat always compares two current numbers (Megan 2026-11-06). Raf's old
 ranked-but-not-counted line on the South Shore text is gone — he's on the
 Alphalete one now.
 
-**Org totals in the owners chat** (Megan 2026-11-06): still one list of
-everyone, plus two lines under the TOTAL — `Alphalete Org. Total: #` and
-`Southshore Org. Total: #` (same split as the SOUTHSHORE ORG texts).
+**The owners chat is split too** (Raf 2026-11-06, "we need the post
+separated"): every 30 min, "Alphalete Owner Sales Today" then "South Shore
+Owner Sales Today", each ending with `Alphalete Org. Total: #` and
+`Southshore Org. Total: #` under the TOTAL. Both go when either moved.
+Raf's knocking chat gets the same two texts (Megan 2026-11-06). Carlos's
+chain keeps ONE list of everyone with the two org lines.
 
 **And into Jairo's A PLAYERSSS** (Jairo + Eve, 2026-10-26): "NDS Sales
 Today" -- only NDS offices' sales, only owners on our Org board, with its own
