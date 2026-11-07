@@ -1239,6 +1239,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         date_text: str = "",
                         title_prefix: str = "",
                         hide_columns: "tuple[str, ...]" = (),
+                        fill_rep_rows: bool = False,
                         extra_totals: "list[tuple] | None" = None,
                         apps: "dict[str, int] | None" = None,
                         credit_checks: "dict[str, int] | None" = None,
@@ -1483,6 +1484,23 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # mins" on the NDS board. {column name: {rep: value}}.
         _insert_extra_columns(cols, disp, table, extra_columns,
                               n_extra=len(extra_rows), bands=bands)
+    if fill_rep_rows:
+        # EVERY CELL FILLED ON A REP ROW (Megan 2026-11-07, Verizon: "all
+        # others should be filled/calculated in"). The two office averages,
+        # taken over ONE rep, are that rep's own numbers: doors per rep = their
+        # Total Knocks, talk-to's per rep = their Total Talk to. Summary and
+        # team rows keep their averages.
+        _ri = cols.index(COL_REP) if COL_REP in cols else 1
+        _pairs = [(cols.index(a), cols.index(b)) for a, b in
+                  ((COL_DOORS_PER_REP, COL_TOTAL_KNOCKS),
+                   (COL_TALK_TO_PER_REP, COL_TOTAL_TALK_TO))
+                  if a in cols and b in cols]
+        for _r in table[len(extra_rows) + 1:]:
+            if is_team_band(_r, _ri):
+                continue
+            for _dst, _src in _pairs:
+                if not str(_r[_dst]).strip():
+                    _r[_dst] = _r[_src]
     # LAST, once every column exists (the rate columns above are inserted at
     # draw time, so no earlier point can see the whole board). Box only: the
     # order is keyed off this board carrying Ryan's column, so no other shape
@@ -2626,7 +2644,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             # good enough for a span, not for gaps. The columns stay in the set
             # (Hrs Knocking is computed from them; blank gaps = 0) and are just
             # not drawn.
-            hide_columns=(COL_GAPS, COL_TOTAL_GAPS))], shape)
+            hide_columns=(COL_GAPS, COL_TOTAL_GAPS), fill_rep_rows=True)], shape)
     elif shape == SHAPE_WIRELESS:
         # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for
         # the reason the Energy Wells shape was moved here on 2026-08-30
