@@ -42,9 +42,17 @@ class NoDispo(unittest.TestCase):
 
     def test_wording(self):
         self.assertEqual(R.no_dispo_text(["A B", "C D"], "14:30"),
-                         "No dispositions from (2:30 PM): A B, C D")
+                         "No dispositions from — 2:30 PM\n\nA B\nC D")
         self.assertEqual(R.no_dispo_text([], "15:15"),
-                         "Everyone on the lineup has dispositioned! (3:15 PM)")
+                         "Everyone on the lineup has dispositioned! — 3:15 PM")
+
+    def test_nickname_matches_by_unique_surname(self):
+        rows = [{"Rep": "Nicholas Paul Smedra", "Total Knocks": "9"},
+                {"Rep": "Isadora Bazan Puga", "Total Knocks": "2"},
+                {"Rep": "Rodolfo Bazan", "Total Knocks": "0"}]
+        with mock.patch.object(R, "_log"):
+            out = R.no_dispo_names(["Nick Smedra", "Rodolfo Bazan", "Isadora Bazan Puga", "Pat Lee"], rows)
+        self.assertEqual(out, ["Rodolfo Bazan", "Pat Lee"])   # Nick = Nicholas; Rodolfo 0 knocks
 
     def test_everyone_dispositioned_still_sends(self):
         rows = [{"Rep": n, "Total Knocks": "3"} for n in R.station_names(GRID)]
@@ -53,7 +61,7 @@ class NoDispo(unittest.TestCase):
              mock.patch.object(R, "_log"):
             now = dt.datetime(2026, 11, 6, 15, 15, 5)
             msg = R._no_dispo_message(now.date(), now, rows, {}, send=True)
-        self.assertEqual(msg, "Everyone on the lineup has dispositioned! (3:15 PM)")
+        self.assertEqual(msg, "Everyone on the lineup has dispositioned! — 3:15 PM")
 
     def test_message_once_per_slot_and_off_by_default(self):
         state = {}
@@ -62,8 +70,8 @@ class NoDispo(unittest.TestCase):
              mock.patch.object(R, "_log"):
             now = dt.datetime(2026, 11, 6, 14, 30, 5)
             msg = R._no_dispo_message(now.date(), now, ROWS, state, send=True)
-            self.assertEqual(msg, "No dispositions from (2:30 PM): Eduardo Alvarez, "
-                                  "Andrew De La Torre, Roseanna Jurado")
+            self.assertEqual(msg, "No dispositions from — 2:30 PM\n\nEduardo Alvarez\n"
+                                  "Andrew De La Torre\nRoseanna Jurado")
             self.assertEqual(state["no_dispo_slot"], "2026-11-06 14:30")
             self.assertEqual(R._no_dispo_message(now.date(), now, ROWS, state, send=True), "")
             # a dry run never marks the slot

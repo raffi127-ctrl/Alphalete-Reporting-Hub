@@ -593,6 +593,22 @@ def no_dispo_names(names: List[str], rows: List[Dict]) -> List[str]:
     rows = list(rows or [])
     claimed, missing = G.match_rows(rows, names)
     has = {name for i, name in claimed.items() if _knocks(rows[i]) > 0}
+    # A roster nickname against Ownerville's legal name ("Nick Smedra" vs
+    # "Nicholas Paul Smedra", 2026-11-07): when exactly ONE unclaimed row
+    # shares the surname, that row is the rep. Two or none: still missing.
+    taken = set(claimed)
+    for name in missing:
+        last = (G._plain(name).split() or [""])[-1]
+        if not last:
+            continue
+        cands = [i for i, r in enumerate(rows)
+                 if i not in taken and (G._plain(G._rep(r)).split() or [""])[-1] == last]
+        if len(cands) == 1:
+            taken.add(cands[0])
+            _log("no-dispo: %s taken as %s (same surname, only one)"
+                 % (name, G._rep(rows[cands[0]])))
+            if _knocks(rows[cands[0]]) > 0:
+                has.add(name)
     return [n for n in names if n not in has]
 
 
@@ -603,11 +619,13 @@ def _slot_clock(slot: str) -> str:
 
 
 def no_dispo_text(missing: List[str], slot: str) -> str:
-    """Carlos's wording: 'No dispositions from,' then the names -- or, when
-    nobody is missing (Carlos 2026-11-06), that everyone has dispositioned."""
+    """Carlos's wording: 'No dispositions from,' then the names, laid out
+    like the 15-min gaps text (Carlos 2026-11-07: one name per line under a
+    dated header) -- or, when nobody is missing (2026-11-06), that everyone
+    has dispositioned."""
     if not missing:
-        return "Everyone on the lineup has dispositioned! (%s)" % _slot_clock(slot)
-    return "No dispositions from (%s): %s" % (_slot_clock(slot), ", ".join(missing))
+        return "Everyone on the lineup has dispositioned! — %s" % _slot_clock(slot)
+    return "No dispositions from — %s\n\n%s" % (_slot_clock(slot), "\n".join(missing))
 
 
 def _no_dispo_message(today: dt.date, now: dt.datetime, rows: List[Dict],
@@ -726,7 +744,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         if C.NO_DISPO_SEND:
             # Text only (Carlos 2026-11-06: "just on the att b2b leaders
             # text chain"); the route in b2b_dispositions TEXT_ROUTES says which chain.
-            _queue_text(C.KIND_NO_DISPO, no_dispo.split(":")[0], today, now, text=no_dispo)
+            _queue_text(C.KIND_NO_DISPO, no_dispo.splitlines()[0], today, now, text=no_dispo)
             _log("text: no-dispo queued")
         else:
             _log("no-dispo (NO_DISPO_SEND off, not sent): %s" % no_dispo)
