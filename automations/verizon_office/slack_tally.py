@@ -180,6 +180,40 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
     return 0
 
 
+# WHICH OFFICES' TALLIES LUCY 1'S POSTER RELAYS. Empty on purpose: Megan
+# 2026-11-06, "we can't take anything live until we're ready to get nico on
+# ECO". Add "nicolas" here the day he is.
+LIVE_OFFICES: tuple = ()
+EVERY_MINUTES = 5
+_STATE = None
+
+
+def tick(*, send: bool, log=print) -> int:
+    """One poster tick: relay the tally at most every EVERY_MINUTES, only for
+    LIVE_OFFICES, only in the sales day's hours (12:00-00:59 CT)."""
+    global _STATE
+    if OFFICE_KEY not in LIVE_OFFICES:
+        return 0
+    import os
+    from pathlib import Path
+    now = dt.datetime.now(TZ)
+    if 1 <= now.hour < 12:
+        return 0
+    _STATE = _STATE or Path(os.path.expanduser("~/.config/recruiting-report/verizon_tally_last"))
+    try:
+        last = dt.datetime.fromisoformat(_STATE.read_text().strip())
+        if now - last < dt.timedelta(minutes=EVERY_MINUTES):
+            return 0
+    except (OSError, ValueError):
+        pass
+    try:
+        _STATE.parent.mkdir(parents=True, exist_ok=True)
+        _STATE.write_text(now.isoformat())
+    except OSError:
+        pass
+    return run(sales_day(dt.datetime.now(dt.timezone.utc)), send=send, log=log)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", help="YYYY-MM-DD (default: today's sales day)")
