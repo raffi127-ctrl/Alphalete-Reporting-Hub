@@ -5,8 +5,8 @@
     <key>Label</key>
     <string>com.alphalete.verizon-slack-tally</string>
 
-    <!-- Path is the laptop's; install on Megan's laptop via
-         `python -m automations.day_orchestrator.install_agent verizon-slack-tally`. -->
+    <!-- Path is the laptop's; on Lucy 4, install via
+         `lucy rerun install_verizon_slack_tally_agent`. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Verizon live sales — read the office's running tally in #alphalete-gp-sales
 # (Nico's reps' :drop_of_blood: list) and relay it as office 'nicolas', every
-# 5 minutes via launchd (com.alphalete.verizon-slack-tally). Megan's laptop.
+# 5 minutes via launchd (com.alphalete.verizon-slack-tally) on LUCY 4 (Megan:
+# not Lucy 1, the most weighed-down machine).
 #
 #   bash deploy/verizon_slack_tally.sh            # PREVIEW, sends nothing
 #   bash deploy/verizon_slack_tally.sh --send     # relay
@@ -29,7 +30,7 @@ export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
 echo "[$(date)] verizon slack tally starting (args: ${*:-none})" >> "$LOG_FILE"
-"$VENV_PY" -m automations.verizon_office.slack_tally "$@" >> "$LOG_FILE" 2>&1
+"$VENV_PY" -m automations.verizon_office.slack_tally --tick "$@" >> "$LOG_FILE" 2>&1
 rc=$?
 echo "[$(date)] verizon slack tally done (exit $rc)" >> "$LOG_FILE"
 exit $rc

@@ -180,9 +180,12 @@ def run(day: dt.date, *, send: bool, log=print) -> int:
     return 0
 
 
-# WHICH OFFICES' TALLIES LUCY 1'S POSTER RELAYS. Empty on purpose: Megan
-# 2026-11-06, "we can't take anything live until we're ready to get nico on
-# ECO". Add "nicolas" here the day he is.
+# RUNS ON LUCY 4 as its own 5-minute job (com.alphalete.verizon-slack-tally),
+# NOT inside Lucy 1's poster -- Megan 2026-11-07: "don't do it on lucy 1 as
+# that's the most weighed down machine" -- and never on the office's machine,
+# which must not hold Lucy's Slack sign-in. LIVE_OFFICES gates tick(); empty
+# until Nico is on ECO ("we can't take anything live until ..."). Add
+# "nicolas" the day he is, then `lucy rerun install_verizon_slack_tally_agent`.
 LIVE_OFFICES: tuple = ()
 EVERY_MINUTES = 5
 _STATE = None
@@ -218,7 +221,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", help="YYYY-MM-DD (default: today's sales day)")
     ap.add_argument("--send", action="store_true")
+    ap.add_argument("--tick", action="store_true", help="the Lucy 4 job: LIVE_OFFICES only, gated + throttled")
     a = ap.parse_args(argv)
+    if a.tick:
+        return tick(send=a.send)
     day = dt.date.fromisoformat(a.date) if a.date else sales_day(dt.datetime.now(dt.timezone.utc))
     return run(day, send=a.send)
 

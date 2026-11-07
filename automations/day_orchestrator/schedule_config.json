@@ -17013,6 +17013,52 @@
    },
    "_onboarded": true,
    "_note": "Office metrics for miguel. wired by hand 2026-11-06 (Megan: 'Miguel is enrolling next week as well'). Nobilis Marketing Group, OwnerVille/AppStream 24145 (office-mapping.json; new owner 10/26, came off Starr Rodenhurst's team as a rep), AT&T Fiber on Starr's captainship. Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Miguel Zaragoza - Lucy Metrics' 1NF8sO5aLXi18PAR36kwupTqnqDBGSzZQW52F_iVc99o (Master Metrics Templates copy, writer alphaletereporting@). Timezone Pacific (Starr's area) until his order-log zips say otherwise. Scheduler OFF until the dry run is read."
+  },
+  "install_verizon_slack_tally_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "NOT in the 4am batch. Installs com.alphalete.verizon-slack-tally on Lucy 4 (StartInterval 300, wrapper gates 12:00-00:59 CT): reads the Verizon reps' 🩸 tally in #alphalete-gp-sales and relays APPS for offices in slack_tally.LIVE_OFFICES. Lucy 4, not Lucy 1 (Megan 2026-11-07: Lucy 1 is the most weighed down). Install only when Nico is on ECO and 'nicolas' is in LIVE_OFFICES.",
+   "machine": "Lucy 4",
+   "display_name": "Install Verizon live apps (Slack tally, 5-min)",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "verizon-slack-tally"
+   ],
+   "source_type": "local",
+   "data_sources": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "uninstall_verizon_slack_tally_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 4",
+   "display_name": "Uninstall Verizon live apps (Slack tally)",
+   "command": [
+    "automations.day_orchestrator.uninstall_agent"
+   ],
+   "base_args": [
+    "verizon-slack-tally"
+   ],
+   "timeout_minutes": 5,
+   "source_type": "local",
+   "data_sources": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
   }
  },
  "read_only_standalone": {

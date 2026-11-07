@@ -4400,17 +4400,6 @@ def main(argv=None) -> int:
                 return 0
             if args.send:
                 assert_posting_as_lucy()
-            # VERIZON LIVE APPS (Megan 2026-11-07): the room's 🩸 tally, read
-            # HERE -- Lucy 1 already reads Slack every minute -- and never on an
-            # office's machine, which must not hold Lucy's Slack sign-in. Before
-            # run() so a new app relays and posts in the same tick. Only offices
-            # in slack_tally.LIVE_OFFICES (empty until Nico is on ECO); throttled
-            # to every 5 minutes inside.
-            try:
-                from automations.verizon_office import slack_tally
-                slack_tally.tick(send=args.send)
-            except Exception as e:  # noqa: BLE001 — never cost the poster its tick
-                print("verizon tally skipped: %s" % e)
             run(day, send=args.send, only=args.office)
             if args.watch:
                 # NO MORNING RECAP HERE, AND THERE NEVER WILL BE. The metrics
