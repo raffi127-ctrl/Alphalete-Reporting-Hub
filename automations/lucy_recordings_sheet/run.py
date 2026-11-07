@@ -714,6 +714,14 @@ def _cell_color(v, cuts):
     return "#C8E6C9" if v >= good else "#FFE9A8" if v >= mid else "#F6C1C1"
 
 
+def date_range() -> str:
+    """'Nov 1 – Nov 5' - the 1st of the month through yesterday (CT)."""
+    y = dt.datetime.now(CT).date() - dt.timedelta(days=1)
+    first = y.replace(day=1)
+    a, b = "%s %d" % (first.strftime("%b"), first.day), "%s %d" % (y.strftime("%b"), y.day)
+    return a if a == b else "%s – %s" % (a, b)
+
+
 def build_email_html(month: str, totals: list, owner_rows: list, ssid: str) -> str:
     t = next((x for x in totals if x[0] == month), [month, 0, "", "", "", 0])
     fmt_pct = lambda v: "—" if v == "" else "%d%%" % round(v * 100)
@@ -740,26 +748,27 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str) -> s
             % (bg, r[1], r[2], fmt_num(r[3]), pct_bg or bg, fmt_pct(r[4]),
                sc_bg or bg, fmt_num(r[5])))
     link = "https://docs.google.com/spreadsheets/d/%s" % ssid
-    through = (dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%b %d")
     return (
         '<div style="font-family:Roboto,Arial,sans-serif;max-width:680px">'
         '<div style="background:#1F2A44;color:#fff;padding:14px 16px;font-size:18px;font-weight:bold">'
-        'LUCY · 2nd Round Recordings — %s</div>'
-        '<div style="color:#7A8294;font-size:12px;padding:6px 2px">Through %s</div>'
+        'LUCY · 2nd Round Recordings</div>'
+        '<div style="background:#FFF4CC;border-left:5px solid #E0B84C;padding:10px 14px;margin:6px 0">'
+        '<span style="font-size:22px;font-weight:bold;color:#1F2A44">%s</span>'
+        '<span style="font-size:14px;color:#5B6478;padding-left:8px">· Month to date</span></div>'
         '<table style="width:100%%;border-collapse:separate;border-spacing:4px"><tr>%s</tr></table>'
         '<table style="width:100%%;border-collapse:collapse;font-size:13px;margin-top:10px">'
         '<tr style="background:#2E3E61;color:#fff"><th style="text-align:left;padding:8px 10px">Owner</th>'
         '<th>Recordings</th><th>2nd Rounds Done</th><th>%% Recorded</th><th>Avg Score</th></tr>%s</table>'
         '<p style="margin:16px 0"><a href="%s" style="background:#E0B84C;color:#1F2A44;padding:10px 16px;'
         'text-decoration:none;font-weight:bold;border-radius:4px">Open the full sheet (by rep)</a></p>'
-        '</div>' % (month, through, card_html, "".join(body), link))
+        '</div>' % (date_range(), card_html, "".join(body), link))
 
 
 def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str) -> None:
     from email.message import EmailMessage
     from automations.org_sales_board.screenshot_email import FROM_ADDR, send
     msg = EmailMessage()
-    msg["Subject"] = "LUCY 2nd Round Recordings — %s" % month
+    msg["Subject"] = "LUCY 2nd Round Recordings — %s (month to date)" % date_range()
     msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to)
     msg.set_content("LUCY 2nd Round Recordings - %s. Open the sheet: "
