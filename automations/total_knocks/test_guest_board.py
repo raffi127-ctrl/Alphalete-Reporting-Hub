@@ -82,21 +82,18 @@ class BoardTests(unittest.TestCase):
 
 
 class DeliveryTests(unittest.TestCase):
-    def test_carlos_s_rooms_live_in_gap_alerts_not_here(self):
-        # ONE config per audience. gap_alerts runs on Lucy 1 (the box that can
-        # text) and already holds Raf's pull, so his two rooms are there and
-        # this map is empty — naming them twice is how a room gets the same
-        # board from two machines.
+    def test_carlos_s_rooms_are_off_and_stay_off(self):
+        # ONE config per audience, and since 2026-10-19 that audience is NDS:
+        # his crew's board, gaps and call-outs come from HIS Ownerville
+        # (automations/nds_oof on Lucy 2). The guest entry in gap_alerts stays
+        # EMPTY on purpose -- the roster still keeps these reps off Raf's
+        # boards, but no room gets this board from here. A room in either map
+        # would be a second copy of what nds_oof already posts.
         self.assertEqual(GB.destinations(GUEST),
                          {"text_groups": [], "channels": []})
         from automations.gap_alerts import config as C
-        rooms = C.guest_destinations(C.RAF)[GUEST]
-        self.assertEqual([d["name"] for d in rooms],
-                         ["NEW A Players", "ATT B2B Leaders"])
-        self.assertTrue(all(d["kind"] == "imessage" for d in rooms))
-        # He asked Lucy to STOP posting these shots in #a-players-b2b on
-        # 2026-09-21 — no Slack room here undoes that.
-        self.assertFalse([d for d in rooms if d["kind"] == "slack"])
+        self.assertEqual(C.RAF.get("guests"), {GUEST: []})
+        self.assertEqual(C.guest_destinations(C.RAF), {})
 
     def test_dry_run_is_the_default_and_sends_nothing(self):
         said = []
@@ -115,17 +112,20 @@ class DeliveryTests(unittest.TestCase):
 
     def test_every_guest_with_reps_has_somewhere_to_go(self):
         # A roster entry nobody delivers renders a board nobody sees. Either
-        # this map names a room, or the host's gap_alerts config does.
+        # this map names a room, the host's gap_alerts config does, or that
+        # config lists the guest with NO rooms -- a deliberate "off" (Carlos's
+        # crew since 2026-10-19, reported by nds_oof instead).
         from automations.gap_alerts import config as C
-        by_name = {o["name"].strip().lower(): o for o in C.enabled()}
+        by_name = {o["name"].strip().lower(): o for o in C.OFFICES}
         for host in G.GUEST_REPS:
-            rooms = C.guest_destinations(by_name.get(host.strip().lower(), {}))
+            cfg = by_name.get(host.strip().lower(), {})
+            rooms = C.guest_destinations(cfg)
             for guest in G.guests_of(host):
                 d = GB.destinations(guest)
+                switched_off = guest in (cfg.get("guests") or {})
                 self.assertTrue(d["text_groups"] or d["channels"]
-                                or rooms.get(guest),
+                                or rooms.get(guest) or switched_off,
                                 f"{guest} has no destination")
-
 
 if __name__ == "__main__":
     unittest.main()
