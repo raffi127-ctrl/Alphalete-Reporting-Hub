@@ -206,7 +206,13 @@ def _group_client(log=print):
     for name, make in (("bot", S._bot_client), ("user", S._client)):
         try:
             c = make()
-            c.conversations_info(channel=GROUP_DM)
+            try:
+                c.conversations_info(channel=GROUP_DM)
+            except Exception as e:  # noqa: BLE001
+                # A posting token without mpim:read can still post; only a
+                # token that CAN look and can't find the group is ruled out.
+                if "missing_scope" not in str(e):
+                    raise
             log(f"  posting as {c.auth_test().get('user')} ({name} token)")
             return c
         except Exception as e:  # noqa: BLE001 — missing token / can't see it
