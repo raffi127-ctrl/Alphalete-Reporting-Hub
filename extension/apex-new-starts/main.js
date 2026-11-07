@@ -30,9 +30,17 @@
     }
   });
 
-  // Tell the other half the page is ready to be driven, so the button can say
-  // so instead of appearing dead.
-  document.dispatchEvent(new CustomEvent('ans-engine-ready', {
+  // Say the page is ready to be driven, so the button can report that instead
+  // of appearing dead.
+  //
+  // ANSWER A PING rather than only announcing. The two halves are separate
+  // content scripts in separate worlds and Chrome does not promise which is
+  // injected first -- announcing once would be missed whenever this half wins
+  // the race, and the button would then insist the engine had not loaded for
+  // as long as the tab was open.
+  const ready = () => document.dispatchEvent(new CustomEvent('ans-engine-ready', {
     detail: {ok: typeof window.__ansEngine === 'function'}
   }));
+  document.addEventListener('ans-ping', ready);
+  ready();
 })();

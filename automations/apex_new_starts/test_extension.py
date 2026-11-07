@@ -217,3 +217,47 @@ def test_every_file_the_manifest_names_exists():
     named += list(m["icons"].values())
     for rel in named:
         assert (EXT / rel).exists(), f"manifest names a missing file: {rel}"
+
+
+# ------------------------------------------------------------- the handshake
+
+def test_the_two_halves_find_each_other_in_either_order(page):
+    """The halves are separate content scripts in separate worlds and Chrome
+    does not promise which is injected first. An announcement alone would be
+    missed whenever the page half wins the race, and the button would then
+    insist the engine had not loaded for as long as the tab stayed open. So the
+    extension half ASKS -- this proves an answer comes back even when it starts
+    listening long after the announcement went out.
+    """
+    page.set_content("<body></body>")
+    page.evaluate((EXT / "engine.js").read_text(encoding="utf-8"))
+    page.evaluate((EXT / "main.js").read_text(encoding="utf-8"))
+    # Only now does the other half begin listening: the announcement is gone.
+    answered = page.evaluate("""() => new Promise(resolve => {
+        document.addEventListener('ans-engine-ready', e => resolve(!!e.detail.ok));
+        document.dispatchEvent(new CustomEvent('ans-ping'));
+        setTimeout(() => resolve('no answer'), 1000);
+    })""")
+    assert answered is True
+
+
+def test_the_page_half_reports_a_missing_engine_instead_of_going_quiet(page):
+    """main.js without engine.js: the button must be told, not left waiting."""
+    page.set_content("<body></body>")
+    page.evaluate((EXT / "main.js").read_text(encoding="utf-8"))
+    said = page.evaluate("""() => new Promise(resolve => {
+        document.addEventListener('ans-failed', e => resolve(e.detail.error));
+        document.dispatchEvent(new CustomEvent('ans-run', {detail: {week: 'x'}}));
+        setTimeout(() => resolve('went quiet'), 1000);
+    })""")
+    assert "Reload" in said
+
+
+def test_a_run_request_reaches_the_engine_with_its_week(page):
+    page.set_content("<body></body>")
+    page.evaluate((EXT / "main.js").read_text(encoding="utf-8"))
+    page.evaluate("window.__ansEngine = cfg => { window.__got = cfg; }")
+    page.evaluate("""d => document.dispatchEvent(new CustomEvent('ans-run',
+        {detail: {week: 'WE 11.8', data: d}}))""", PEOPLE)
+    assert page.evaluate("window.__got.week") == "WE 11.8"
+    assert page.evaluate("window.__got.data.length") == 2

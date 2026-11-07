@@ -17,6 +17,21 @@
   document.addEventListener('ans-engine-ready', e => {
     engineReady = !!(e && e.detail && e.detail.ok);
   });
+
+  // Ask, in case the page half loaded before this one was listening. The two
+  // halves are separate content scripts in separate worlds and Chrome does not
+  // promise which is injected first, so an announcement alone would be missed
+  // whenever the page half wins the race -- and the button would then insist
+  // the engine had not loaded for as long as the tab stayed open.
+  function askEngine(ms) {
+    if (engineReady) return Promise.resolve(true);
+    return new Promise(resolve => {
+      const done = () => { clearTimeout(t); clearInterval(i); resolve(engineReady); };
+      const t = setTimeout(done, ms || 600);
+      const i = setInterval(() => { if (engineReady) done(); }, 40);
+      document.dispatchEvent(new CustomEvent('ans-ping'));
+    });
+  }
   document.addEventListener('ans-failed', e => {
     say('err', esc((e && e.detail && e.detail.error) || 'The run did not start.'));
   });
@@ -65,8 +80,9 @@
   }
 
   async function start() {
-    if (!engineReady) {
-      say('err', 'The run engine has not loaded on this tab yet — reload Apex and try again.');
+    if (!(await askEngine())) {
+      say('err', 'The run engine has not loaded on this tab yet — reload '
+               + 'Apex and press Fill Apex again.');
       return;
     }
     const held = (await chrome.storage.local.get(['week'])).week;
