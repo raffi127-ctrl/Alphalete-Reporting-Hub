@@ -51,6 +51,7 @@ VZ = ":drop_of_blood:"
 REP_ALIASES = {
     "SAMANTHA": "Brandy Ahumada Ruiz",   # tally 3 = Credico Thu 3; Slack "Samantha Ruiz" samanthaahumada817@
     "BAUTISTA": "William Bautista",      # tally 6 = William Thu 6 (Richard 0); posts as bautista4.inc@
+    "GIO": "Giovanni Monreal",           # the only Gio on Credico's roster (2026-11-07 list)
 }
 _LINE = re.compile(r"^\s*[*_~]*([A-Za-zÀ-ÿ'][A-Za-zÀ-ÿ' .-]*?)[*_~]*\s*((?::drop_of_blood:\s*)+)")
 

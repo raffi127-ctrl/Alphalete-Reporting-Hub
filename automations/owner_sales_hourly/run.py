@@ -104,6 +104,13 @@ def owner_totals(relay: Dict, offices: Dict, day: dt.date,
         total = sum(H.rep_total(m, office_campaign) for m in days[day].values())
         name = owner_name(key, office)
         out[name] = out.get(name, 0) + total
+    for key in getattr(cfg, "SHOW_AT_ZERO", ()):
+        office = offices.get(key)
+        if office is None:
+            continue
+        if campaign and getattr(office, "campaign", None) != campaign:
+            continue
+        out.setdefault(owner_name(key, office), 0)
     return out
 
 

@@ -94,6 +94,12 @@ DISPLAY_NAMES = {
     "Nicolas Murrugarra": 'Nico Murrugarra "BDN"',     # Megan 2026-11-07
 }
 
+# LISTED AT 0 BEFORE THEIR FIRST SALE. owner_totals lists only offices with a
+# reading today, and a Verizon office's reading is its Slack tally -- which has
+# nothing until a rep posts the list, while the relay drops all-zero reps.
+# Megan 2026-11-07: "nico should be listed at 0 then on the sales text".
+SHOW_AT_ZERO = ("nicolas",)
+
 # ONE OFFICE RELAYING UNDER TWO KEYS. Since 2026-11-03 Raf's own MacBook (Lucy
 # ECO, key `raf`) relays the same SaraPlus his Lucy 1 sweep relays as
 # `rafael_hidalgo`; summed, the 9:50 PM text showed him at 52 for a 26-sale
