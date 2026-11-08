@@ -16,7 +16,8 @@ line per owner (most knocks first) and an **ORG TOTAL** line under them.
   `b2b`), then **D2D TOTAL**, **B2B TOTAL**, **ORG TOTAL** at the bottom.
 - Every knock time is on the office's own clock, so a time zone doesn't move
   an average (a 1:30 Eastern start = a 1:30 Central start).
-- :20 every hour, Mon–Sat, 2 PM–9 PM Central.
+- :20 every hour, Mon–Sat, 2 PM–10 PM Central (last one 10:20, Carlos 11/6).
+- Same picture also into Carlos's **NEW A Players** and **ATT B2B Leaders** (Carlos 11/6).
 - Skipped when no owner's knocks moved since the last text.
 - An office whose relay stopped (>25 min old) is left off, not drawn frozen.
 
