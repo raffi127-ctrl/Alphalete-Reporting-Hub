@@ -12,26 +12,27 @@ Code: `automations/online_presence/` (rows in `offices.json`) + `automations/icd
 **Everything starts dry.** Nothing posts until the office's row says `"mode": "live"` AND the
 run is started with `--live`.
 
-## What the ICD does (5 steps)
+## What the ICD does
 
-**Before the call**
-1. **Make a Zoho Social account** at zoho.com/social with their business email, and pick a plan.
-   Standard is $10/mo billed yearly or $15 month-to-month; there's no free plan after the 15-day trial.
-2. **Connect their pages in Zoho:** Settings → Channels → connect each page they want Lucy to
-   post to (Instagram, Facebook Page, Google Business Profile, LinkedIn **company** page, X).
-3. **Answer 4 questions:**
-   - Business name exactly as it shows on Google.
-   - Email where unhappy customers can write.
-   - Who approves posts and replies.
-   - **Which pages Lucy should post to.** Lucy posts ONLY there, and DMs the owner only when one
-     of THESE disconnects.
+**Before the call:** answer 4 questions.
+- Business name exactly as it shows on Google.
+- Email where unhappy customers can write.
+- Who approves posts and replies.
+- **Which pages Lucy should post to.** Lucy posts ONLY there, and DMs the owner only when one of
+  THESE disconnects.
 
-**On the call (~15 min)**
-4. **Google listing → Manager.** Google Business Profile → ⋮ → Business Profile settings →
+**On the call (~25 min), on their office computer, with us walking them through it:**
+1. **Make their Zoho Social account** at zoho.com/social with the **email they already use**
+   (no new email for anyone to keep track of). They put **their own card** on it: Standard is
+   $10/mo billed yearly, $15 month-to-month, and there's no free plan after the 15-day trial.
+2. **Connect their pages in Zoho:** Settings → Channels → connect each page from their answers
+   (Instagram, Facebook Page, Google Business Profile, LinkedIn **company** page, X).
+3. **Google listing → Manager.** Google Business Profile → ⋮ → Business Profile settings →
    People and access → Add → `alphaletemarketing@gmail.com` → **Manager**, not "Site manager".
    The listing must be verified.
-5. **Sign into Zoho on their office computer.** We send the command, a Zoho window opens on
-   their screen, they sign in, and it closes itself. Lucy never sees the password.
+4. **Sign Lucy's window into Zoho.** We send `zoho-signin`, a Zoho window opens on their
+   screen, they sign in with the account from step 1, and it closes itself. Lucy never sees the
+   password. Zoho's sign-in codes go to THEIR email; if Zoho ever signs them out, Lucy DMs them.
 
 ## What we do
 
@@ -46,8 +47,8 @@ Before the call:
 
 On the call:
 ```
-python -m automations.online_presence.setup zoho-signin <key>        # step 5: Zoho opens on their screen
-python -m automations.online_presence.setup invites --accept         # after step 4
+python -m automations.online_presence.setup zoho-signin <key>        # step 4: Zoho opens on their screen
+python -m automations.online_presence.setup invites --accept         # after step 3
 python -m automations.online_presence.setup link-google <key>
 python -m automations.online_presence.setup check <key>              # everything ✅ but Mode = ready
 python -m automations.online_presence.run --office <key>             # dry run: prints what it WOULD do
