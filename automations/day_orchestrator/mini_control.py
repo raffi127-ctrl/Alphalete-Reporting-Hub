@@ -250,7 +250,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "set_credico_state", "set_ownerville_state",
-                    "set_alphalete_app_password",
+                    "set_alphalete_app_password", "set_lucysterling_app_password",
                     "set_appstream_state", "set_appstream_alt_state",
                     "appstream_promote_alt",
                     "post_note", "signin_ask",
@@ -450,6 +450,8 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
                   # The shared reporting mailbox's app password: one paste feeds
                   # every emailing report on the machine (2026-08-13).
                   "set_alphalete_app_password",
+                  # The Sterling RESULTS inbox's app password (2026-11-08).
+                  "set_lucysterling_app_password",
                   # A Gmail refresh token for that same mailbox. It was relying
                   # on the queuer blanking the cell by hand, so a token stayed
                   # readable in the Sheet for anyone with the link — noticed
@@ -6461,6 +6463,43 @@ def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
     return True, f"raffi127 app password installed + IMAP login verified ({path.name})"
 
 
+def _action_set_lucysterling_app_password(args: str) -> tuple[bool, str]:
+    """Install the lucysterlingreports@ Gmail APP PASSWORD on THIS machine (the
+    Sterling RESULTS inbox each ICD forwards to -- code_answer.RESULTS_INBOX).
+    Lucy 1 reads it to confirm the ICDs' Gmail forwards and to publish each
+    office's BG statuses. Args = the 16-char app password (spaces ok). Writes
+    ~/.config/recruiting-report/gmail-app-password-lucysterling (chmod 600) and
+    proves it with a read-only IMAP login. NEVER echoes it; Args auto-redacted."""
+    import imaplib
+    import shlex
+    raw = (args or "").strip()
+    try:
+        parts = shlex.split(raw)
+        pw = "".join(parts).strip() if parts else raw
+    except Exception:  # noqa: BLE001
+        pw = raw
+    pw = pw.replace(" ", "")
+    if len(pw) < 12:
+        return False, "set_lucysterling_app_password needs the 16-char app password as Args"
+    from automations.icd_alerts import code_answer as CA
+    path = CA.RESULTS_APP_PW
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(pw + "\n", encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    try:
+        M = imaplib.IMAP4_SSL("imap.gmail.com")
+        M.login(CA.RESULTS_INBOX, pw)
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        M.logout()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"password written to {path} but IMAP login FAILED "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:100]}) — check the code")
+    return True, f"{CA.RESULTS_INBOX} app password installed + IMAP login verified ({path.name})"
+
+
 def _action_set_alphalete_app_password(args: str) -> tuple[bool, str]:
     """Install the alphaletereporting@ Gmail APP PASSWORD on THIS machine. Args
     is the 16-char app password (spaces ok). Writes it to
@@ -9658,6 +9697,7 @@ ACTIONS = {
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
     "set_alphalete_app_password": _action_set_alphalete_app_password,
+    "set_lucysterling_app_password": _action_set_lucysterling_app_password,
     "post_note": _action_post_note,
     "signin_ask": _action_signin_ask,
     "incident_resolve": _action_incident_resolve,
