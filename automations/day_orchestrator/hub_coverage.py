@@ -75,6 +75,10 @@ _SKIP_RE = re.compile(
 # surfaces any new report that needs an entry here.
 CURATED_ALIAS = {
     "texas_de_brazil": "june_texas_de_brazil_monthly_competition",
+    # Nico's Verizon daily metrics report onto the shared D2D Office Daily
+    # Metrics card, not one of their own (Megan 2026-11-07).
+    "verizon_daily_nicolas": "office-metrics",
+    "verizon_slack_tally": "icd-alerts-poster",
     # Standalone agents whose scheduler report_id differs from the real card id —
     # alias so the pill wires to the EXISTING card instead of auto-creating a
     # duplicate. Surfaced by audit_agents() (2026-07-27).

@@ -117,6 +117,13 @@ def _office_metrics_card() -> dict:
                 _omr.MAIN_OFFICE_MODULE, [], "daily_metrics")]
     buttons += [(o.label, o.channel_name, "automations.office_metrics.runner",
                  ["--office", o.key, "--live"], o.report_id) for o in offs]
+    # VERIZON OFFICES ride this card too (Megan 2026-11-07: Nico "should be
+    # added to the metrics one", not a card of his own). Their metrics come
+    # from Credico's email, not Tableau, so the button runs verizon_office.daily
+    # -- which posts once a day, so a second click cannot double the thread.
+    buttons += [("Nicolas's Local Office (Verizon)", "#alphalete-gp-sales",
+                 "automations.verizon_office.daily",
+                 ["--office", "nicolas", "--send"], "verizon_daily_nicolas")]
     # One office per line for the breakdown panel (white-space:pre-wrap).
     office_bullets = "\n".join(f"• {lb} → {ch}" for lb, ch, _m, _a, _r in buttons)
     # De-duped: Hammad + Salik share #elite-prime-sales, so the raw list repeats
@@ -161,6 +168,12 @@ def _office_metrics_card() -> dict:
             "• 🆕 Rep Activations\n"
             "• 💳 New Internet ABP %\n"
             "• 📸 Tableau Metrics (screenshot of the ATT TRACKER Metrics view, scoped to the office)\n\n"
+            "VERIZON OFFICES (Credico's emailed Sales Verification, not Tableau)\n"
+            "Rep Activations (4 weeks), Pending Orders, Activation Rate by Rep, "
+            "Activation Rate by Week-Ending, Churn Rates by Rep, Order Log "
+            "(Excel, pay two weeks behind), Canceled Orders, Disconnected "
+            "Orders, + Compliance on Wednesdays, into the day's Verizon Metrics "
+            "thread ~11:15 CT (Lucy 4).\n\n"
             "SUNDAYS ONLY (extra board, same thread)\n"
             "• 📋 Weekly Knock Dispositions — per-rep Mon–Sat talk-to "
             "productivity + total apps (Raf's ask, 2026-08-22): talk-to "

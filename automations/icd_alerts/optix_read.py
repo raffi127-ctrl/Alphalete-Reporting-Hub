@@ -40,7 +40,7 @@ PROFILE_URL = BASE + "/SimplexMS/web/ContainerUI/Modules/MultiProfile/MultiProfi
 # so it gets ruled on instead of silently vanishing.
 BUCKETS = ["No Answer", "Not Home", "No Interest", "Declined", "Stop Back",
            "Appointment", "Sale Started", "Sale", "Canceled", "No Access",
-           "Existing Customer", "Other"]
+           "Existing Customer", "Knock", "Other"]
 TALK_TO = {"No Interest", "Declined", "Stop Back", "Appointment",
            "Sale Started", "Sale", "Canceled", "Existing Customer"}
 _RULES = [  # (regex on the disposition text, bucket) -- first match wins
@@ -55,6 +55,9 @@ _RULES = [  # (regex on the disposition text, bucket) -- first match wins
     (r"^sale cancel", "Canceled"),
     (r"no access|gated|do not solicit|house for sale|vacant", "No Access"),
     (r"^existing customer", "Existing Customer"),
+    # A dash and a number, no outcome name ("- 361613680", Nico 2026-11-07):
+    # a door knocked, not a sale (Nico) -- counts in Knocks/Doors, no column.
+    (r"^-\s*\d", "Knock"),
 ]
 
 
@@ -126,7 +129,7 @@ BOARD_COLUMNS = {
     "Existing Customer": "Not Interested",
     "Stop Back": "Come Back", "Appointment": "Appointment",
     "Sale Started": "Sale Started", "Sale": "Sale", "Canceled": "Sale Canceled",
-    "No Access": "Inaccessible", "Other": None,
+    "No Access": "Inaccessible", "Knock": None, "Other": None,
 }
 # Do Not Solicit Sign is its own board column, not just "no access".
 _DNK = re.compile(r"do not solicit", re.I)

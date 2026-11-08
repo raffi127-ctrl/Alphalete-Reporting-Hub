@@ -1,65 +1,69 @@
 {
- "_note": "ONE set of rules for Optix dispositions, read by BOTH the Lucy Optix Chrome extension (automations/icd_alerts/optix_extension) and automations/icd_alerts/optix_read.py. First match wins; anything else is 'Other' and named. Mapped from Nico Murrugarra's Optix 2026-11-06.",
- "rules": [
-  [
-   "^no answer",
-   "No Answer"
+  "_note": "ONE set of rules for Optix dispositions, read by BOTH the Lucy Optix Chrome extension (automations/icd_alerts/optix_extension) and automations/icd_alerts/optix_read.py. First match wins; anything else is 'Other' and named. Mapped from Nico Murrugarra's Optix 2026-11-06.",
+  "rules": [
+    [
+      "^no answer",
+      "No Answer"
+    ],
+    [
+      "not home",
+      "Not Home"
+    ],
+    [
+      "^no interest",
+      "No Interest"
+    ],
+    [
+      "^declined",
+      "Declined"
+    ],
+    [
+      "^stop back",
+      "Stop Back"
+    ],
+    [
+      "^appointment",
+      "Appointment"
+    ],
+    [
+      "sale started",
+      "Sale Started"
+    ],
+    [
+      "^sale made",
+      "Sale"
+    ],
+    [
+      "^sale cancel",
+      "Canceled"
+    ],
+    [
+      "no access|gated|do not solicit|house for sale|vacant",
+      "No Access"
+    ],
+    [
+      "^existing customer",
+      "Existing Customer"
+    ],
+    [
+      "^-\\s*\\d",
+      "Knock"
+    ]
   ],
-  [
-   "not home",
-   "Not Home"
-  ],
-  [
-   "^no interest",
-   "No Interest"
-  ],
-  [
-   "^declined",
-   "Declined"
-  ],
-  [
-   "^stop back",
-   "Stop Back"
-  ],
-  [
-   "^appointment",
-   "Appointment"
-  ],
-  [
-   "sale started",
-   "Sale Started"
-  ],
-  [
-   "^sale made",
-   "Sale"
-  ],
-  [
-   "^sale cancel",
-   "Canceled"
-  ],
-  [
-   "no access|gated|do not solicit|house for sale|vacant",
-   "No Access"
-  ],
-  [
-   "^existing customer",
-   "Existing Customer"
-  ]
- ],
- "dnk": "do not solicit",
- "board_columns": {
-  "Doors": "Total Leads Knocked",
-  "Knocks": "Total Knocks",
-  "No Answer": "No answer",
-  "Not Home": "Not Home",
-  "No Interest": "Not Interested",
-  "Declined": "Not Interested",
-  "Existing Customer": "Not Interested",
-  "Stop Back": "Come Back",
-  "Appointment": "Appointment",
-  "Sale Started": "Sale Started",
-  "Sale": "Sale",
-  "Canceled": "Sale Canceled",
-  "No Access": "Inaccessible"
- }
+  "dnk": "do not solicit",
+  "board_columns": {
+    "Doors": "Total Leads Knocked",
+    "Knocks": "Total Knocks",
+    "No Answer": "No answer",
+    "Not Home": "Not Home",
+    "No Interest": "Not Interested",
+    "Declined": "Not Interested",
+    "Existing Customer": "Not Interested",
+    "Stop Back": "Come Back",
+    "Appointment": "Appointment",
+    "Sale Started": "Sale Started",
+    "Sale": "Sale",
+    "Canceled": "Sale Canceled",
+    "No Access": "Inaccessible"
+  }
 }

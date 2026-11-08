@@ -33,6 +33,11 @@ HUB_ACTIVITY_TAB = "Hub Activity"
 
 # orchestrator report_id -> Hub CARD id. Reports absent here have no Hub card.
 _HUB_CARD = {
+    # Nico's Verizon daily metrics -> the shared office-metrics card (Megan
+    # 2026-11-07: he is "added to the metrics one", no card of his own).
+    "verizon_daily_nicolas": "office-metrics",
+    # His live-apps tally belongs to the ECO relay card with his knocks.
+    "verizon_slack_tally": "icd-alerts-poster",
     "rep_knock_threads": "rep-knock-threads",
     "rep_knock_threads_dry": "rep-knock-threads",
     "att_focus_raf": "recruiting",
