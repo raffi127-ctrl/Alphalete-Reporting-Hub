@@ -206,3 +206,40 @@ def _patch(monkeypatch, *, rows, hires, for_people=None):
     monkeypatch.setattr(BID, "for_people",
                         for_people or (lambda people, *a, **k: dict(hires or {})))
     monkeypatch.setattr(eco_run, "fill_one", lambda *a, **k: None)
+
+
+# ------------------------------------- the control map, read off the real form
+
+def test_the_two_controls_nothing_may_write_are_named():
+    """$ctrl.sendUserPassword emails a real person; Salary sits under Rate of
+    Pay and is the wrong box for $10/hr. Named so they can be excluded
+    outright, not just avoided by a label match."""
+    assert "$ctrl.sendUserPassword" in eco_run.NEVER
+    assert "$ctrl.employmentRecord.Salary" in eco_run.NEVER
+    for model in eco_run.NEVER:
+        assert model not in eco_run.BY_MODEL.values()
+        assert model not in eco_run.BY_WIDGET_ID.values()
+
+
+def test_every_dropdown_is_treated_as_an_id_not_a_label():
+    """A dropdown's model carries the chosen ID. Typing a label into it puts a
+    word where an id belongs -- the page looks right and the save is wrong.
+    Each one lives in BY_WIDGET_ID, never in BY_MODEL."""
+    for key, model in eco_run.BY_WIDGET_ID.items():
+        assert key not in eco_run.BY_MODEL, "%s is a widget, not a text box" % key
+    for model in eco_run.BY_MODEL.values():
+        assert not model.endswith("ID"), (
+            "%s carries an id — it belongs in BY_WIDGET_ID" % model)
+
+
+def test_the_sales_rep_role_is_the_radio_value_we_read():
+    assert (eco_run.ROLE_MODEL, eco_run.ROLE_VALUE) == ("$ctrl.roleID", "11")
+
+
+def test_filling_refuses_until_somebody_has_watched_it(monkeypatch):
+    """A half-right fill lands on a real payroll record, and nothing here has
+    yet typed into Apex and pressed Save."""
+    monkeypatch.delenv("APEX_FILL_PROVEN", raising=False)
+    with pytest.raises(RuntimeError, match="never been watched"):
+        eco_run.fill_one(eco_run.Starter(name="Test Person"), {}, None,
+                         log=lambda *a: None)

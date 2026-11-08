@@ -169,17 +169,66 @@ def run_week(week_start: dt.date, *, office_appstream: str,
                    added=added, blocked=blocked)
 
 
+# The create form, by ng-model rather than by label. Read off the live page
+# 2026-11-08 -- see resources/apex-form-controls.md, which is the only reason
+# any of this is not guesswork.
+#
+# A plain text box takes the value. A "dropdown" is TWO HALVES: a widget the
+# person clicks and a separate input carrying the chosen id, which is what the
+# form submits -- so its model name ends in ID and typing a LABEL into it puts
+# a word where an id belongs. Those are driven through the widget.
+BY_MODEL = {
+    "first":         "$ctrl.user.FirstName",
+    "middle":        "$ctrl.user.MiddleName",
+    "last":          "$ctrl.user.LastName",
+    "username":      "$ctrl.userName",
+    "account_email": "$ctrl.user.EmailAddress",
+}
+
+# label -> the id-carrying input beside the widget. Set through the widget.
+BY_WIDGET_ID = {
+    "position":      "$ctrl.employmentRecord.JobTitleID",
+    "pay_frequency": "$ctrl.employmentRecord.PayFrequencyID",
+    "pay_basis":     "$ctrl.employmentRecord.BasisOfPayID",
+    "pay_state":     "$ctrl.stateWorkingIn",
+    "department":    "$ctrl.employmentRecord.CompensationProfileID",
+}
+
+# Kendo widgets, driven through their own API.
+KENDO = {"hire_date": "k-datepicker", "rate": "k-numerictextbox"}
+
+# Sales Rep is a radio on $ctrl.roleID, value 11 (read off the live form).
+ROLE_MODEL, ROLE_VALUE = "$ctrl.roleID", "11"
+
+# NOTHING may write these. The first emails a real person; the second sits
+# directly under Rate of Pay and is the wrong box for $10/hr.
+NEVER = ("$ctrl.sendUserPassword", "$ctrl.employmentRecord.Salary")
+
+
 def fill_one(person: Starter, values: Dict, hire, log=print) -> None:
     """Type one person into Apex, on this machine's signed-in session.
 
     Deliberately the only function here that touches Apex, so there is one
     place to read when asking what this machine actually does to a payroll
-    record. It is also the only place `.reveal()` is called.
+    record. It is also the only place `.reveal()` would be called.
+
+    NOT YET PROVEN AGAINST A SAVE. The control map underneath is real -- read
+    off the live form -- but nothing here has typed into Apex and pressed Save,
+    and a half-right fill lands on somebody's payroll record. So it refuses to
+    run until somebody has watched it once: `--i-have-watched-this` on the CLI,
+    or APEX_FILL_PROVEN=1. Everything before it is finished and a dry run says
+    exactly what each person would get.
     """
+    import os
+    if not os.environ.get("APEX_FILL_PROVEN"):
+        raise RuntimeError(
+            "the Apex fill has never been watched end to end. Run one person "
+            "with somebody looking at the screen first, then set "
+            "APEX_FILL_PROVEN=1. Nothing was typed.")
     raise NotImplementedError(
-        "the automated Apex fill is not wired yet — it needs developing against "
-        "a live Apex session. Everything up to this point is done: run with "
-        "live=False to see exactly who would go in and what each one would get.")
+        "fill_one needs its supervised first run against a live Apex session "
+        "to be written against -- the control map in BY_MODEL / BY_WIDGET_ID "
+        "is read off the real form and is the half that was missing.")
 
 
 def main(argv=None) -> int:
