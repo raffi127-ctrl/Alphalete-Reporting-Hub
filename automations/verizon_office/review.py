@@ -302,7 +302,8 @@ def send(items: List[Dict], log=print, rnd: int = 1) -> int:
             ts = _file_ts(client, r)
         else:
             ts = client.chat_postMessage(channel=GROUP_DM, text=head)["ts"]
-            client.chat_postMessage(channel=GROUP_DM, thread_ts=ts, text=it["text"])
+            if (it.get("text") or "").strip():     # a picture-only example has none (OPT, round 2)
+                client.chat_postMessage(channel=GROUP_DM, thread_ts=ts, text=it["text"])
             # the example rides in the thread so the reaction sits on the
             # report's own post, not on a wall of example text
         _thread_files(client, it, ts)
