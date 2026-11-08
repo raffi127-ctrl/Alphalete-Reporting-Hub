@@ -1338,6 +1338,41 @@ function _admBgStatus(office) {
   return {ok: true, updated: updated, people: out};
 }
 
+function _admApexWeek(sess, office, a) {
+  // "Run new starts -> Apex for the week of X" on the office's OWN computer:
+  // it holds that office's Blue Ink key and its Apex session, and the admin
+  // holds neither (Megan 2026-11-06). The admin says WHICH WEEK; nothing about
+  // who is in it is decided here -- the office's computer reads that off its
+  // own training calendar, so a stale or edited list cannot be posted in.
+  var week = String(a.week_start || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) {
+    return {ok: false, error: 'week_start must look like 2026-11-02.'};
+  }
+  // ONE AT A TIME, PER OFFICE. This job CREATES PAYROLL RECORDS, so a second
+  // press while the first is still running must not queue a second run --
+  // both would read the same calendar and both would try to create the same
+  // people. The duplicate check on the Apex side is the second line of
+  // defence; not queuing it twice is the first.
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  if (sh) {
+    var rows = sh.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      var r = rows[i];
+      if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office) continue;
+      if (String(r[OJ.KIND]) !== 'apex_week') continue;
+      if (r[OJ.RESULT_AT]) continue;                      // finished, fine
+      var p = {};
+      try { p = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+      if (String(p.week_start || '') !== week) continue;
+      return {ok: true, job_id: String(r[OJ.ID]), already_running: true,
+              status: String(r[OJ.STATUS])};
+    }
+  }
+  var o = _admOffice(sess, office);
+  return _officeJobEnqueue({office: office, kind: 'apex_week', mode: o.mode,
+                            payload: {week_start: week, by: sess.username}});
+}
+
 function _admAlready(office) {
   // Who this office's computer already SENT (not test runs), last 14 days.
   var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
