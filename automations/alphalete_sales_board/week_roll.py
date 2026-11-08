@@ -13,6 +13,9 @@ does on the COPY what Eve did by hand:
     (values; the running ones are formulas and start again by themselves).
   * Terminated reps are deleted: 'T' in the Sunday Apps cell, or 'Terminated'
     on their row of the New Starts box.
+  * 'F' in the Sunday Apps cell: the row comes off next week's board too, but the
+    rep is NOT terminated (Raf 2026-11-08, Eve's OK). terminated_reps only reads
+    'T', so Slack and OwnerVille stay as they are. Eve gets the names by DM.
   * Field Status one week further, and the name with it (Eve: "queremos
     mantener trackeado solo a los que son week 2 y 3"):
         1st Wk -> 2nd Wk, name + ' (Wk 2)', Leadership 'In Training' -> 'Entry Level'
@@ -66,6 +69,7 @@ WK_TAG = re.compile(r"\s*\(\s*Wk\s*\d\s*\)\s*$", re.I)
 WE_LABEL = re.compile(r"^\s*WE\s*\d", re.I)
 NEW_STARTS = "NEW STARTS"            # 'New Starts/Raf'
 TERMINATED = "TERMINATED"
+OFF_BOARD_MARK = "F"                 # Sunday Apps: off the board, not terminated
 ORDINAL = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th"}
 
 
@@ -202,14 +206,19 @@ def plan(values, formulas, raw, monday: dt.date) -> Dict[str, object]:
         if m:
             spelled.setdefault(int(m.group(1)), str(_cell(values, r, fs_c)).strip())
 
-    delete, terminated, renames, on_board = [], [], {}, set()
+    delete, terminated, off_board, renames, on_board = [], [], [], {}, set()
     run_c, last_c, prior_c = (_label_cols(banner, x) for x in (RUNNING, LAST, PRIOR))
     for r in range(first, last + 1):
         name = str(_cell(values, r, nc))
         key = _norm(base_name(name))
-        if key and (_norm(_cell(values, r, sun_apps)) == "T" or key in ns_term):
+        sun_mark = _norm(_cell(values, r, sun_apps))
+        if key and (sun_mark == "T" or key in ns_term):
             delete.append(r)
             terminated.append(name.strip())
+            continue
+        if key and sun_mark == OFF_BOARD_MARK:
+            delete.append(r)
+            off_board.append(name.strip())
             continue
         if key:
             on_board.add(key)
@@ -256,8 +265,10 @@ def plan(values, formulas, raw, monday: dt.date) -> Dict[str, object]:
         for c, v in enumerate(values[r - 1], 1):
             if str(v).strip() and _typed(formulas, r, c):
                 cells[K.col_letter(c) + str(r)] = ""
+    off_keys = {_norm(base_name(n)) for n in off_board}
     missing = [n for n in ns_names if _norm(base_name(n)) not in on_board
-               and _norm(base_name(n)) not in ns_term]
+               and _norm(base_name(n)) not in ns_term
+               and _norm(base_name(n)) not in off_keys]
 
     # the week that closed, for the top of the history
     hist = next((r for r in range(tot + 1, len(values) + 1)
@@ -271,7 +282,7 @@ def plan(values, formulas, raw, monday: dt.date) -> Dict[str, object]:
         [_cell(raw, tot, c) for c in range(nc + 1, width + 1)]
 
     return {"cells": cells, "delete": delete, "terminated": terminated,
-            "renames": renames, "missing": missing, "history_row": hist,
+            "off_board": off_board, "renames": renames, "missing": missing, "history_row": hist,
             "history_line": line, "first": first, "last": last, "name_col": nc}
 
 
@@ -446,6 +457,8 @@ def roll(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
               % (old_board, new_board, len(p["cells"]), p["history_line"][0],
                  p["history_line"][1:4]))
         print("    terminated out (%d): %s" % (len(p["terminated"]), ", ".join(p["terminated"]) or "-"))
+        print("    off the board with F, not terminated (%d): %s"
+              % (len(p["off_board"]), ", ".join(p["off_board"]) or "-"))
         print("    renamed (%d): %s" % (len(p["renames"]), "; ".join(
             "%s -> %s" % kv for kv in p["renames"].items()) or "-"))
         print("    New Starts not on the board: %s" % (", ".join(p["missing"]) or "-"))
@@ -456,6 +469,9 @@ def roll(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
           % (new_board, len(p["terminated"]), len(p["renames"]), p["history_line"][0]))
     if p["terminated"]:
         print("    terminated: " + ", ".join(p["terminated"]))
+    if p.get("off_board"):
+        notes.append("Off the board with F, not terminated: " + ", ".join(p["off_board"]))
+        print("    " + notes[-1])
     if p["missing"]:
         notes.append("New Starts not on the board (not added): " + ", ".join(p["missing"]))
         print("    ! " + notes[-1])

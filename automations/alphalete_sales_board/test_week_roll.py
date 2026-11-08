@@ -97,5 +97,37 @@ class TheLineUpIsNotLucys(unittest.TestCase):
         pt.assert_called_once_with(sh, "Line Up WE 11.1", "Line Up WE 11.08")
 
 
+class OffBoardMark(unittest.TestCase):
+    """'F' in Sunday Apps: off next week's board, not terminated (Raf 2026-11-08)."""
+
+    def _plan(self, *reps):
+        """reps = (name, Monday Apps, Sunday Apps)."""
+        grid = [["", "", "", "MON", "", "", "SUN", "", ""],
+                ["", "#", "WE 11/2 - 11/8", "Apps", "Int", "Roll Call",
+                 "Apps", "Int", "Roll Call"]]
+        for i, (name, mon, sun) in enumerate(reps, 1):
+            grid.append(["", i, name, mon, "", "", sun, sun, ""])
+        grid.append(["", "", "TOTALS", "", "", "", "", "", ""])
+        return W.plan(grid, grid, grid, dt.date(2026, 11, 9))
+
+    def test_f_comes_off_and_is_not_listed_as_terminated(self):
+        p = self._plan(("Ana Stay", "X", ""), ("Bo Fired", "X", "F"), ("Cy Gone", "X", "T"))
+        self.assertEqual(p["delete"], [4, 5])
+        self.assertEqual(p["off_board"], ["Bo Fired"])
+        self.assertEqual(p["terminated"], ["Cy Gone"])
+
+    def test_lowercase_f_counts(self):
+        self.assertEqual(self._plan(("Bo Fired", "X", " f "))["off_board"], ["Bo Fired"])
+
+    def test_f_on_another_day_does_nothing(self):
+        p = self._plan(("Ana Stay", "F", ""))
+        self.assertEqual((p["delete"], p["off_board"]), ([], []))
+
+    def test_terminated_reps_does_not_read_f_as_a_termination(self):
+        from automations.terminated_reps import board
+        self.assertNotIn("f", board.TERM_MARKS)
+        self.assertIn("t", board.TERM_MARKS)
+
+
 if __name__ == "__main__":
     unittest.main()
