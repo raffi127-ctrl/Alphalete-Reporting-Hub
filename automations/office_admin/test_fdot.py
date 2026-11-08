@@ -195,9 +195,10 @@ def test_two_people_with_no_email_are_still_two_people():
     assert len(fdot.showed_up([a, b])) == 2
 
 
-def test_a_week_reads_monday_to_saturday_whichever_day_it_is_given(monkeypatch):
-    """Given any date in the week, it reads that week -- not the next six days
-    from whenever it happened to run."""
+def test_a_week_reads_all_seven_days_whichever_day_it_is_given(monkeypatch):
+    """Given any date in the week, it reads that whole week -- not the next
+    seven days from whenever it happened to run. All seven, because a training
+    day nobody expected is the one that would be missed (Megan, 11/08)."""
     seen = []
 
     def fake_read(app, office, day, log=print):
@@ -207,5 +208,5 @@ def test_a_week_reads_monday_to_saturday_whichever_day_it_is_given(monkeypatch):
     monkeypatch.setattr(fdot, "read", fake_read)
     fdot.read_week(None, "11280", dt.date(2026, 11, 6), log=lambda *a: None)
     assert seen[0] == dt.date(2026, 11, 2), "Monday of that week"
-    assert seen[-1] == dt.date(2026, 11, 7), "Saturday"
-    assert len(seen) == 6
+    assert seen[-1] == dt.date(2026, 11, 8), "Sunday"
+    assert len(seen) == 7

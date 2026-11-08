@@ -31,9 +31,11 @@ have not started, so a read that cannot find the training banner RAISES. An
 empty list means the page was read and nobody showed; it never means "we could
 not tell".
 
-A WEEK IS SIX READS. The calendar is per-day -- index.cfm?p=102 with
-cd=MM/DD/YYYY -- so Mon..Sat are fetched in turn and pooled, de-duplicated by
-email. Somebody rescheduled inside the week appears twice (No on Monday, Yes on
+A WEEK IS SEVEN READS. The calendar is per-day -- index.cfm?p=102 with
+cd=MM/DD/YYYY -- so Monday to Sunday are fetched in turn and pooled,
+de-duplicated by email. All seven, not Mon-Sat: Megan, 2026-11-08, "Monday to
+Friday, actually all 7 days". A training day nobody expected is exactly the one
+that would be missed. Somebody rescheduled inside the week appears twice (No on Monday, Yes on
 Wednesday); a Yes on any day wins, and one row per person is what stops a
 second payroll record for a real employee.
 """
@@ -205,8 +207,8 @@ def read(app, office_id: str, day: dt.date, log=print) -> List[Dict]:
 
 
 def read_week(app, office_id: str, week_start: dt.date, log=print,
-              days: int = 6) -> List[Dict]:
-    """Mon..Sat of one week, pooled and de-duplicated.
+              days: int = 7) -> List[Dict]:
+    """Monday to Sunday of one week, pooled and de-duplicated.
 
     Every day is read. A day that cannot be read raises rather than being
     skipped quietly -- a missing Tuesday is a missing new start, and the first

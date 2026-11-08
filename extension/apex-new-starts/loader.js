@@ -60,9 +60,19 @@
 
   function run(week) {
     document.getElementById('lucy-ans-msg')?.remove();
+    // Only the TICKED people. The admin unticks in the icon; if that did not
+    // reach the run, the tick would be decoration and somebody she took off
+    // the list would get a payroll record anyway.
+    const skip = new Set(week.skip || []);
+    const data = (week.data || []).filter(p => !skip.has(p.name));
+    if (!data.length) {
+      say('err', 'Everybody is unticked \u2014 nothing to fill. '
+               + 'Tick somebody in the Lucy icon first.');
+      return;
+    }
     document.dispatchEvent(new CustomEvent('ans-run', {detail: {
       week: week.week, build: week.build, built_at: week.built_at,
-      notice: week.notice, start: week.start, data: week.data
+      notice: week.notice, start: week.start, data: data
     }}));
   }
 
