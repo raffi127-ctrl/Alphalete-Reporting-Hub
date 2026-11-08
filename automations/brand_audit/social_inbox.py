@@ -533,10 +533,12 @@ def _office_publish(P, cl, ts: str, st: dict, caption: str, dry_run: bool,
     import datetime as dt
     from zoneinfo import ZoneInfo
     from automations.brand_audit import zoho_draft
-    if st.get("scheduled") or st.get("published"):
+    if st.get("scheduled") or st.get("published") or st.get("eco_job"):
         return []
     photo = st.get("photo_path")
     now = dt.datetime.now(ZoneInfo(P.timezone)).replace(tzinfo=None)
+    if P.post_via == "eco":
+        return _office_queue(P, ts, st, caption, dry_run, sched_file, now)
     if P.zoho_schedules:
         slot = zoho_draft.next_daily_slot(list(P.post_hours), sched_state=sched_file)
         act = {"ts": ts, "action": "both_approved", "caption": caption,
@@ -591,6 +593,41 @@ def _office_publish(P, cl, ts: str, st: dict, caption: str, dry_run: bool,
     except Exception:
         pass
     st["posted"] = True
+    return [act]
+
+
+def _office_queue(P, ts: str, st: dict, caption: str, dry_run: bool,
+                  sched_file: Path, now) -> list[dict]:
+    """Hand the approved post to the office's OWN computer (relay job).
+
+    Same one-a-day, inside-the-window rule as everywhere else, judged on the
+    office's clock. The 🚀 / "posted" note comes later, when the computer
+    answers (online_presence.watch) -- queued is not posted."""
+    last = {}
+    try:
+        last = json.loads(sched_file.read_text())
+    except Exception:
+        pass
+    if last.get("last_scheduled_date") == now.date().isoformat():
+        return [{"ts": ts, "action": "waiting_for_tomorrow",
+                 "note": "today's one post already went out"}]
+    if not (min(P.post_hours) <= now.hour <= max(P.post_hours)):
+        return [{"ts": ts, "action": "waiting_for_window",
+                 "note": f"{now:%H:%M} office time is outside "
+                         f"{min(P.post_hours)}:00-{max(P.post_hours)}:59"}]
+    act = {"ts": ts, "action": "queue_to_office", "caption": caption,
+           "photo": st.get("photo_path"), "pages": list(P.pages)}
+    if dry_run:
+        return [act]
+    from automations.brand_audit import zoho_draft
+    from automations.online_presence import relay
+    try:
+        st["eco_job"] = relay.enqueue_post(P.key, caption, Path(st["photo_path"]),
+                                           P.pages, live=True, thread_ts=ts)
+    except Exception as e:
+        return [act, {"ts": ts, "action": "schedule_error", "error": str(e)[:200]}]
+    zoho_draft._record_slot(now, sched_file)     # today's one post is spoken for
+    act["job_id"] = st["eco_job"]
     return [act]
 
 

@@ -25,13 +25,14 @@ from pathlib import Path
 
 from patchright.sync_api import sync_playwright
 
-from automations.shared.tableau_patchright import _launch_persistent, PROFILE_DIR
-
 # Dedicated, isolated profile — separate from the report profiles and from the
 # human's everyday Chrome, so the automation can drive it on a schedule.
-ZOHO_PROFILE_DIR = PROFILE_DIR.parent / ".browser_profile_zoho"
+# Same folder as tableau_patchright.PROFILE_DIR's parent, spelled out here so
+# this file ships to ICD office computers (online presence) WITHOUT the whole
+# Tableau stack: nothing at import time may need more than patchright.
+ZOHO_PROFILE_DIR = (Path(__file__).resolve().parent.parent / "uploaded"
+                    / ".browser_profile_zoho")
 ZOHO_SOCIAL_URL = "https://social.zoho.com/"
-_STOP_FILE = ZOHO_PROFILE_DIR / ".stop"
 
 
 def launch_login(max_minutes: int = 30, profile_dir: Path | None = None) -> int:
@@ -44,6 +45,7 @@ def launch_login(max_minutes: int = 30, profile_dir: Path | None = None) -> int:
     if stop_file.exists():
         stop_file.unlink()
 
+    from automations.shared.tableau_patchright import _launch_persistent
     with sync_playwright() as p:
         ctx = _launch_persistent(p, profile_dir, headless=False,
                                  label="zoho-login")
@@ -85,6 +87,31 @@ _VIDEO_ONLY_CHANNELS = ("tiktok",)            # skipped for photo posts
 _CHAN_GROUP = "#newpost-composer-header-group-div-{net}-id"
 
 
+# The pages an ICD can pick on sign-up, and how each shows up in Zoho's
+# composer (the <net> in #newpost-composer-header-group-div-<net>-id).
+# Matched loosely on purpose -- 'linkedinprofile' is the PERSONAL profile
+# and is never a page, everything else LinkedIn is the company page.
+PAGES = ("instagram", "facebook", "google", "linkedin", "x")
+
+
+def page_of(net: str) -> str | None:
+    """Zoho channel code -> one of PAGES (None = not a page we post to)."""
+    n = (net or "").lower()
+    if "linkedinprofile" in n or "youtube" in n or "tiktok" in n:
+        return None
+    if "instagram" in n:
+        return "instagram"
+    if "facebook" in n or n.startswith("fb"):
+        return "facebook"
+    if "linkedin" in n:
+        return "linkedin"
+    if "twitter" in n or n in ("x", "xprofile"):
+        return "x"
+    if "google" in n or "gmb" in n or "gbp" in n:
+        return "google"
+    return None
+
+
 def _present_channels(pg) -> list[str]:
     return pg.evaluate(
         "() => [...document.querySelectorAll("
@@ -93,7 +120,8 @@ def _present_channels(pg) -> list[str]:
         ".replace('-id',''))")
 
 
-def select_channels(pg, media_type: str = "photo") -> list[str]:
+def select_channels(pg, media_type: str = "photo",
+                    keep: tuple | None = None) -> list[str]:
     """Deselect channels we must not post to, return the ones left selected.
     ALWAYS removes Raf's personal LinkedIn (linkedinprofile) + YouTube; removes
     TikTok for photos (video-only). Raises if Raf's LinkedIn can't be removed —
@@ -101,6 +129,10 @@ def select_channels(pg, media_type: str = "photo") -> list[str]:
     exclude = set(_NEVER_CHANNELS)
     if media_type != "video":
         exclude |= set(_VIDEO_ONLY_CHANNELS)
+    # `keep` = the pages an office chose on sign-up: anything else connected
+    # in their Zoho is deselected, so Lucy posts only where they said.
+    if keep is not None:
+        exclude |= {n for n in _present_channels(pg) if page_of(n) not in keep}
 
     for net in _present_channels(pg):
         if net not in exclude:
@@ -141,7 +173,7 @@ def _launch_zoho(p, headless: bool, profile_dir: Path | None = None):
 
 
 def _compose(pg, caption: str, image_path: str | None,
-             media_type: str) -> list[str]:
+             media_type: str, keep: tuple | None = None) -> list[str]:
     """Open New Post, set the caption, attach the photo (gallery -> Attach),
     and select channels. Returns the channels left selected. Shared by
     create_draft + schedule_post."""
@@ -171,7 +203,7 @@ def _compose(pg, caption: str, image_path: str | None,
         pg.wait_for_timeout(2000)
 
     # channel selection (drops Raf's personal LinkedIn, YouTube, TikTok-for-photos)
-    return select_channels(pg, media_type=media_type)
+    return select_channels(pg, media_type=media_type, keep=keep)
 
 
 def channel_check(profile_dir: Path | None = None, *, headless: bool = False,
@@ -193,6 +225,42 @@ def channel_check(profile_dir: Path | None = None, *, headless: bool = False,
             pg.locator(_NEW_POST).first.click(timeout=15000)
             pg.wait_for_timeout(3000)
             return {"logged_in": True, "channels": _present_channels(pg)}
+        finally:
+            ctx.close()
+
+
+def wait_for_signin(profile_dir: Path | None = None, *, max_minutes: int = 20,
+                    timeout: int = 60000) -> dict:
+    """Open Zoho in a visible window and wait for a PERSON to sign in.
+
+    For an ICD's own computer (online presence): Lucy asks, this window opens
+    on their screen, the owner signs into THEIR Zoho, and the window closes on
+    its own the moment the Zoho home loads -- no stop file, nothing to press.
+    Returns {"logged_in", "channels"}; never types a password itself."""
+    Path(profile_dir or ZOHO_PROFILE_DIR).mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = _launch_zoho(p, False, profile_dir)
+        try:
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                pg.goto(ZOHO_SOCIAL_URL, wait_until="domcontentloaded",
+                        timeout=timeout)
+            except Exception:
+                pass
+            deadline = time.time() + max_minutes * 60
+            while time.time() < deadline:
+                try:
+                    if ("social.zoho.com" in pg.url
+                            and "accounts.zoho.com" not in pg.url
+                            and pg.locator(_NEW_POST).first.is_visible()):
+                        pg.locator(_NEW_POST).first.click(timeout=15000)
+                        pg.wait_for_timeout(3000)
+                        return {"logged_in": True,
+                                "channels": _present_channels(pg)}
+                except Exception:
+                    pass
+                time.sleep(3)
+            return {"logged_in": False, "channels": []}
         finally:
             ctx.close()
 
@@ -463,7 +531,8 @@ def schedule_post(caption: str, image_path: str | None, company_name: str = "",
 
 def post_now(caption: str, image_path: str | None, company_name: str = "",
              *, media_type: str = "photo", headless: bool = False,
-             timeout: int = 60000, profile_dir: Path | None = None) -> dict:
+             timeout: int = 60000, profile_dir: Path | None = None,
+             keep: tuple | None = None) -> dict:
     """PUBLISH the post immediately (Publish Now -> Post Now). Composes caption
     + photo + channel selection (Raf's personal LinkedIn always excluded), then
     posts live. Returns ok + channels. Irreversible once live."""
@@ -479,7 +548,7 @@ def post_now(caption: str, image_path: str | None, company_name: str = "",
                 raise RuntimeError("Zoho session expired — run `--login`.")
             pg.wait_for_timeout(2500)
 
-            channels = _compose(pg, caption, image_path, media_type)
+            channels = _compose(pg, caption, image_path, media_type, keep)
             # Publish Now is the default option; make sure it's selected
             try:
                 pg.locator("text=Publish Now").first.click(timeout=4000)

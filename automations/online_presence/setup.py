@@ -3,18 +3,19 @@
     # 1. the office's row (one input per thing; names, not ids)
     python -m automations.online_presence.setup add --office kash \
         --name "Kash Marketing" --room "#kash-online-presence" \
-        --approvers "Kash Rai, Jane Doe" --email "hr@kashmarketing.com"
+        --approvers "Kash Rai, Jane Doe" --email "hr@kashmarketing.com" \
+        --owner "Kash Rai" --pages "Instagram, Facebook, Google"
 
     # 2. after the owner adds alphaletemarketing@gmail.com as Manager
     python -m automations.online_presence.setup invites            # look
     python -m automations.online_presence.setup invites --accept   # take them
     python -m automations.online_presence.setup link-google kash   # find + save
 
-    # 3. Lucy's own login to the office's Zoho (a visible window, once)
-    python -m automations.brand_audit.zoho_draft --login --office kash
+    # 3. the owner signs into THEIR Zoho on THEIR office computer
+    python -m automations.online_presence.setup zoho-signin kash
 
     # 4. the checklist: everything green = ready for a dry run
-    python -m automations.online_presence.setup check kash --zoho
+    python -m automations.online_presence.setup check kash
 
 Nothing here posts anything, anywhere. `add` and `link-google` write the
 office's row in offices.json; `invites --accept` accepts Google manager
@@ -117,6 +118,20 @@ def resolve_room(room: str, cl=None) -> str:
                      "invite Lucy first")
 
 
+_PAGE_WORDS = {"ig": "instagram", "insta": "instagram", "instagram": "instagram",
+               "fb": "facebook", "facebook": "facebook",
+               "google": "google", "gbp": "google", "google business": "google",
+               "linkedin": "linkedin", "x": "x", "twitter": "x"}
+
+
+def _page(word: str) -> str:
+    w = word.strip().lower()
+    if w not in _PAGE_WORDS:
+        raise ValueError(f"{word.strip()!r} isn't a page Lucy posts to "
+                         "(Instagram, Facebook, Google, LinkedIn, X)")
+    return _PAGE_WORDS[w]
+
+
 # ---- commands ----------------------------------------------------------------
 def cmd_add(a) -> int:
     old = offices.get(a.office)
@@ -124,6 +139,9 @@ def cmd_add(a) -> int:
         room = resolve_room(a.room) if a.room else (old.slack_channel if old else "")
         approvers = (tuple(resolve_person(n) for n in a.approvers.split(",") if n.strip())
                      if a.approvers else (old.approvers if old else ()))
+        owner = resolve_person(a.owner) if a.owner else (old.owner_slack_id if old else "")
+        pages = (tuple(_page(x) for x in a.pages.split(",") if x.strip())
+                 if a.pages else (old.pages if old else ()))
     except ValueError as e:
         print(f"✗ {e}")
         return 1
@@ -135,10 +153,12 @@ def cmd_add(a) -> int:
                 slack_channel=room,
                 approvers=approvers,
                 contact_email=a.email or base.contact_email,
-                timezone=a.timezone or base.timezone)
+                timezone=a.timezone or base.timezone,
+                owner_slack_id=owner, pages=pages)
     offices.save(p)
     print(f"✓ saved {p.key}: {p.business_name} · room {p.slack_channel} · "
-          f"{len(p.approvers)} approver(s) · mode {p.mode}")
+          f"{len(p.approvers)} approver(s) · posts to "
+          f"{', '.join(p.pages) or 'nothing yet'} · mode {p.mode}")
     for prob in p.problems():
         print(f"  still missing: {prob}")
     return 0
@@ -186,6 +206,51 @@ def cmd_link_google(a) -> int:
              "\n  ⚠ Google says this listing is NOT verified — replies will fail "
              "until the owner finishes verification."))
     return 0
+
+
+def cmd_zoho_signin(a) -> int:
+    """On the install call: open Zoho on the OWNER's office computer so they
+    sign into their own Zoho there. The window closes itself once they're in;
+    the next `check` shows which pages it sees."""
+    from automations.online_presence import relay
+    p = offices.get(a.office)
+    if not p or p.key == "alphalete":
+        print(f"✗ no office {a.office!r} (run `add` first)")
+        return 1
+    job = relay.enqueue(p.key, "zoho_signin", {"minutes": a.minutes}, live=True)
+    print(f"✓ asked {p.key}'s office computer to open Zoho (job {job[:8]}). It "
+          "opens within ~3 minutes, stays up to "
+          f"{a.minutes} min, and closes itself once they're signed in.")
+    return 0
+
+
+def _eco_zoho_rows(p) -> List[Tuple[bool, str]]:
+    """What the office's computer last told us about its Zoho."""
+    from automations.online_presence import relay, watch
+    res, when = None, ""
+    try:
+        mine = [r for r in relay.answered() if str(r.get("office", "")).lower() == p.key
+                and r.get("kind") in ("zoho_signin", "social_check")]
+        if mine:
+            res = mine[-1].get("result") or {}
+            when = "just now"
+    except Exception:
+        pass
+    if res is None:
+        last = watch._load(p.path("watch.json")).get("last_check") or {}
+        res, when = last.get("result"), last.get("day", "")
+    if not res:
+        return [(False, "Zoho on the office computer: no report yet "
+                        f"(run `zoho-signin {p.key}` on the call)")]
+    signed = res.get("status") in ("ok", "signed_in")
+    rows = [(signed, f"Zoho on the office computer is signed in ({when})")]
+    if signed:
+        have = watch.connected_pages(res.get("channels"))
+        for page in p.pages:
+            rows.append((page in have, f"{watch._NAMES.get(page, page)} connected in Zoho"))
+        rows.append((True, "Zoho's own names for what it sees: "
+                           + (", ".join(res.get("channels") or []) or "none")))
+    return rows
 
 
 def _slack_room_check(p) -> List[Tuple[bool, str]]:
@@ -247,7 +312,9 @@ def checklist(p, *, zoho: bool = False) -> List[Tuple[bool, str]]:
                                    f"{open_} without a reply"))
             except Exception as e:
                 rows.append((False, f"Google reviews readable ({str(e)[:90]})"))
-    if p.social:
+    if p.social and p.post_via == "eco":
+        rows.extend(_eco_zoho_rows(p))
+    elif p.social:
         prof = p.zoho_profile
         if not zoho:
             rows.append((prof.exists(), "Zoho login folder exists on this Lucy"
@@ -299,7 +366,14 @@ def main(argv=None) -> int:
     s.add_argument("--approvers", default="", help="names, comma separated")
     s.add_argument("--email", default="", help="where complaints are invited to write")
     s.add_argument("--timezone", default="", help="e.g. America/Los_Angeles")
+    s.add_argument("--owner", default="", help="the owner's name (gets disconnect DMs)")
+    s.add_argument("--pages", default="",
+                   help="pages to post to, e.g. \"Instagram, Facebook, Google\"")
     s.set_defaults(fn=cmd_add)
+    s = sub.add_parser("zoho-signin", help="open Zoho on the office's computer")
+    s.add_argument("office")
+    s.add_argument("--minutes", type=int, default=20)
+    s.set_defaults(fn=cmd_zoho_signin)
     s = sub.add_parser("invites", help="Google manager invites waiting for us")
     s.add_argument("--accept", action="store_true")
     s.set_defaults(fn=cmd_invites)

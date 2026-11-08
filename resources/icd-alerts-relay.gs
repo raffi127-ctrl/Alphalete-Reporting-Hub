@@ -117,6 +117,9 @@ function doPost(e) {
     // only: it can never queue or read another office's job.
     if (body.office_job_request) {
       var rq = body.office_job_request;
+      // Online-presence kinds come from LUCY only (admin key): a post must
+      // have passed an approver's check in Slack first.
+      if (OJ_ADMIN_ONLY[String(rq.kind || '')]) return _reply({ok: false, error: 'admin only'});
       return _reply(_officeJobEnqueue({office: office, kind: rq.kind,
                                        mode: rq.mode, payload: rq.payload}));
     }
@@ -938,7 +941,10 @@ var OJ = {ID: 0, OFFICE: 1, KIND: 2, MODE: 3, PAYLOAD: 4, QUEUED: 5,
 var OJ_HEAD = ['Job ID', 'Office', 'Kind', 'Mode', 'Payload JSON', 'Queued At',
                'Status', 'Offered At', 'Result JSON', 'Result At',
                'Collected At'];
-var OJ_KINDS = {bgc_send: true, apex_week: true};
+var OJ_KINDS = {bgc_send: true, apex_week: true,
+                // online presence (icd_alerts/social_post.py): the office's own Zoho
+                zoho_signin: true, social_check: true, social_post: true};
+var OJ_ADMIN_ONLY = {zoho_signin: true, social_check: true, social_post: true};
 var OJ_MAX_PER_CALL = 2;
 
 function _ojSheet() {
@@ -950,17 +956,31 @@ function _ojSheet() {
   return sh;
 }
 
+// A social post's PHOTO is too big for a sheet cell (50k chars), so it waits
+// in Drive like a headshot does; the job carries the file id and the photo is
+// put back inline only when the office's computer collects the job.
+function _socialFolder() {
+  var it = DriveApp.getFoldersByName('Lucy Social Post Jobs');
+  return it.hasNext() ? it.next() : DriveApp.createFolder('Lucy Social Post Jobs');
+}
 function _officeJobEnqueue(j) {
   var office = String(j.office || '').trim().toLowerCase();
   var kind = String(j.kind || '').trim();
   var mode = String(j.mode || 'dry') === 'live' ? 'live' : 'dry';
   if (!office || !OJ_KINDS[kind]) return {ok: false, error: 'missing office or unknown kind'};
+  var payload = j.payload || {};
+  if (payload.photo_b64) {
+    var blob = Utilities.newBlob(Utilities.base64Decode(String(payload.photo_b64)),
+                                 'image/jpeg', office + ' - social post.jpg');
+    payload.photo_file = _socialFolder().createFile(blob).getId();
+    delete payload.photo_b64;
+  }
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     var id = Utilities.getUuid();
     var sh = _ojSheet();
-    sh.appendRow([id, office, kind, mode, JSON.stringify(j.payload || {}),
+    sh.appendRow([id, office, kind, mode, JSON.stringify(payload),
                   new Date(), 'queued', '', '', '', '']);
     return {ok: true, job_id: id};
   } finally {
@@ -990,6 +1010,17 @@ function _officeJobsFor(office) {
       if (String(r[OJ.STATUS]) !== 'queued') continue;
       var payload = {};
       try { payload = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+      if (payload.photo_file) {
+        try {
+          payload.photo_b64 = Utilities.base64Encode(
+              DriveApp.getFileById(String(payload.photo_file)).getBlob().getBytes());
+        } catch (err) {
+          sh.getRange(i + 1, OJ.STATUS + 1).setValue('error');
+          sh.getRange(i + 1, OJ.RESULT + 1, 1, 2).setValues([[
+              JSON.stringify({status: 'error', error: 'photo file missing on our side'}), now]]);
+          continue;
+        }
+      }
       sh.getRange(i + 1, OJ.STATUS + 1, 1, 2).setValues([['offered', now]]);
       out.push({job_id: String(r[OJ.ID]), kind: String(r[OJ.KIND]),
                 mode: String(r[OJ.MODE]), payload: payload});

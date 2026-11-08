@@ -8,7 +8,9 @@ Each office posts to ITS OWN pages and ITS OWN Google listing (Megan,
 posts AND the review replies waiting on an approver.
 
     photos   -> the office's room -> Lucy edits + captions -> approver ✅ ->
-                the office's own Zoho (logged in on a Lucy) -> their socials
+                a job on the relay -> the office's OWN computer posts it from
+                the ICD's OWN Zoho (they make it, pay for it, connect their
+                pages to it; Megan 2026-11-08) -> their socials
     reviews  -> the office's Google listing (we are a Manager on it) ->
                 4-5★ auto-reply, under 4★ waits in the room for ✅ / ❌
 
@@ -61,6 +63,15 @@ class Presence:
     mode: str = "dry"              # "dry" | "live"
     reviews: bool = True           # run review replies for this office
     social: bool = True            # run photo posting for this office
+    # WHICH PAGES the ICD chose on sign-up (zoho_draft.PAGES: instagram,
+    # facebook, google, linkedin, x). Lucy posts ONLY to these, and DMs the
+    # owner only when one of THESE drops out of their Zoho -- a page they
+    # never picked being disconnected is not news to them.
+    pages: Tuple[str, ...] = ()
+    owner_slack_id: str = ""       # who gets "your Instagram disconnected"
+    # "eco" = the office's own computer posts from the ICD's own Zoho (the
+    # default for every office). "lucy" = a Zoho login kept on a Lucy.
+    post_via: str = "eco"
     # Free Zoho may not schedule. False = Lucy publishes ("Post Now") herself
     # inside the posting window instead of handing Zoho a time.
     zoho_schedules: bool = False
@@ -120,6 +131,17 @@ class Presence:
             out.append("no contact email for review complaints")
         if any(h < 8 or h > 18 for h in self.post_hours):
             out.append("post hours must be between 8am and 6pm")
+        if self.post_via not in ("eco", "lucy"):
+            out.append(f"post_via must be 'eco' or 'lucy', not {self.post_via!r}")
+        if self.social:
+            from automations.brand_audit.zoho_draft import PAGES
+            if not self.pages:
+                out.append("no pages chosen to post to")
+            bad = [x for x in self.pages if x not in PAGES]
+            if bad:
+                out.append(f"unknown page(s) {bad} (pick from {', '.join(PAGES)})")
+            if not self.owner_slack_id:
+                out.append("no owner Slack id (for 'your page disconnected' DMs)")
         return out
 
 
@@ -137,6 +159,7 @@ def alphalete() -> Presence:
         contact_email=C.REVIEW_REPLY_CONTACT,
         gbp_location=C.GBP_LOCATION_PATH or "",
         mode="live",
+        post_via="lucy",
         zoho_schedules=True,
         auto_reply_min_stars=C.AUTO_POST_MIN_STARS,
         auto_reply_daily_cap=C.AUTO_POST_DAILY_CAP,
@@ -149,7 +172,7 @@ def alphalete() -> Presence:
 
 # ---- the rows -------------------------------------------------------------
 _FIELDS = {f.name for f in fields(Presence)}
-_TUPLES = ("approvers", "post_hours")
+_TUPLES = ("approvers", "post_hours", "pages")
 _ALPHALETE_ONLY = ("review_channel", "state_dir", "zoho_profile_dir",
                    "learned_style_path", "scrape_best_time")
 

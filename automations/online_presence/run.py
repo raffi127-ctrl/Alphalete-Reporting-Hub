@@ -27,10 +27,20 @@ from typing import Dict, List
 from automations.online_presence import offices
 
 
-def run_office(p: offices.Presence, *, live: bool) -> Dict[str, List[dict]]:
+def run_office(p: offices.Presence, *, live: bool,
+               answers: List[dict] | None = None) -> Dict[str, List[dict]]:
+    """`answers` = this office's answered relay jobs (read once per pass for
+    every office, by main). Posts, checks and DMs come from those first, so a
+    photo posted since the last pass gets its 🚀 before anything new queues."""
     from automations.brand_audit import review_replies, social_inbox
     dry = not (live and p.is_live)
     out: Dict[str, List[dict]] = {"dry_run": dry}
+    if p.social and p.post_via == "eco":
+        from automations.brand_audit.social_inbox import _client
+        from automations.online_presence import watch
+        acts = watch.collect(p, answers or [], _client(), dry=dry) if answers else []
+        chk = watch.ensure_daily_check(p, live=not dry)
+        out["office computer"] = acts + ([chk] if chk else [])
     if p.reviews:
         out["reviews"] = review_replies.process_reviews(dry_run=dry, profile=p)
     if p.social:
@@ -71,6 +81,18 @@ def main(argv=None) -> int:
         print("=== done ===")
         return 0
 
+    # ONE read of the relay for every office (not one per office).
+    answers: Dict[str, List[dict]] = {}
+    if any(p.social and p.post_via == "eco" for p in todo):
+        try:
+            from automations.online_presence import relay
+            for r in relay.answered():
+                answers.setdefault(str(r.get("office", "")).lower(), []).append(r)
+        except Exception as e:
+            print(f"relay read failed ({type(e).__name__}: {str(e)[:80]}) — "
+                  "office answers wait for the next pass")
+    read: List[str] = []
+
     failed = 0
     for p in todo:
         probs = p.problems()
@@ -78,7 +100,10 @@ def main(argv=None) -> int:
             print(f"[{p.key}] skipped — {'; '.join(probs)}")
             continue
         try:
-            res = run_office(p, live=a.live)
+            mine = answers.get(p.key, [])
+            res = run_office(p, live=a.live, answers=mine)
+            if not res["dry_run"]:
+                read += [r["job_id"] for r in mine]
         except Exception:
             failed += 1
             print(f"[{p.key}] FAILED\n{traceback.format_exc()}")
@@ -89,6 +114,9 @@ def main(argv=None) -> int:
                 what = (x.get("reply") or x.get("caption") or x.get("note")
                         or x.get("error") or "")
                 print(f"[{p.key}] {tag} {part}: {x.get('action')} · {str(what)[:90]}")
+    if read:
+        from automations.online_presence import relay
+        relay.mark_read(read)
     print("=== done ===")
     return 1 if failed else 0
 

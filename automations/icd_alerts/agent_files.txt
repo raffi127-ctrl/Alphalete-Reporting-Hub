@@ -73,3 +73,7 @@ automations/carlos_payroll_pull/__init__.py
 automations/carlos_payroll_pull/run.py
 automations/icd_alerts/messages_probe.py
 automations/icd_alerts/sms_code.py
+automations/icd_alerts/social_post.py
+automations/brand_audit/__init__.py
+automations/brand_audit/config.py
+automations/brand_audit/zoho_draft.py

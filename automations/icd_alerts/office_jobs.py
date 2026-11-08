@@ -15,6 +15,8 @@ KINDS
               a background-check e-invite (sterling_send.py).
   apex_week -- new starts into Apex for one week (apex_new_starts.eco_run).
               The job says WHICH WEEK; who is in it is read here.
+  zoho_signin / social_check / social_post -- online presence: this office's
+              own Zoho (social_post.py).
 
 A JOB IS NEVER DONE TWICE. The relay hands a job out once; this computer
 answers it once. If the work cannot START (another browser has Lucy's
@@ -140,6 +142,17 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
                 dt.date.fromisoformat(str(payload.get("week_start"))),
                 office_appstream=_appstream_id(office_key),
                 live=live, log=log)
+        elif kind in ("zoho_signin", "social_check", "social_post"):
+            # Online presence: this office's OWN Zoho, signed in here
+            # (social_post.py). Lucy 3 sends only approved posts.
+            from automations.icd_alerts import social_post
+            payload = job.get("payload") or {}
+            if kind == "zoho_signin":
+                res = social_post.signin(payload, log=log)
+            elif kind == "social_check":
+                res = social_post.check(payload, log=log)
+            else:
+                res = social_post.post(payload, live, log=log)
         else:
             res = {"status": "error", "error": "this computer doesn't know job kind %r yet -- update Lucy" % kind}
     except Exception as e:  # noqa: BLE001

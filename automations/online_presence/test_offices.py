@@ -21,7 +21,8 @@ from automations.online_presence import offices
 def _office(**kw):
     base = dict(key="kash", business_name="Kash Marketing",
                 slack_channel="C0KASHROOM", approvers=("U046XBPN0G2",),
-                contact_email="hr@kash.example", gbp_location="")
+                contact_email="hr@kash.example", gbp_location="",
+                owner_slack_id="U046XBPN0G2", pages=("instagram", "facebook"))
     base.update(kw)
     return offices.Presence(**base)
 
@@ -204,7 +205,7 @@ class PhotosPerOffice(unittest.TestCase):
 
     def test_free_zoho_posts_inside_the_window_dry(self):
         from automations.brand_audit import social_inbox as S
-        p = _office(post_hours=(0, 23))
+        p = _office(post_hours=(0, 23), post_via="lucy")
         fake = FakeSlack()
         acts = S._office_publish(p, fake, "1.1", {"photo_path": "x.jpg"},
                                  "cap", True, p.path("zoho_schedule.json"),
@@ -240,6 +241,149 @@ class PhotosPerOffice(unittest.TestCase):
                                                p.zoho_profile), [])
 
 
+class OfficeComputerPosts(unittest.TestCase):
+    """post_via 'eco': the ICD's own computer posts from the ICD's own Zoho."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = mock.patch.object(offices, "STATE_ROOT", Path(self.tmp.name))
+        self.root.start()
+
+    def tearDown(self):
+        self.root.stop()
+        self.tmp.cleanup()
+
+    def test_every_office_posts_from_its_own_computer_by_default(self):
+        self.assertEqual(_office().post_via, "eco")
+        self.assertEqual(offices.alphalete().post_via, "lucy")
+
+    def test_approved_post_is_queued_not_posted_and_dry_queues_nothing(self):
+        from automations.brand_audit import social_inbox as S
+        p = _office(post_hours=(0, 23))
+        with mock.patch("automations.online_presence.relay.enqueue_post",
+                        side_effect=AssertionError("queued on a dry pass")):
+            acts = S._office_publish(p, FakeSlack(), "1.1", {"photo_path": "x.jpg"},
+                                     "cap", True, p.path("zoho_schedule.json"), None)
+        self.assertEqual(acts[0]["action"], "queue_to_office")
+        self.assertEqual(acts[0]["pages"], ["instagram", "facebook"])
+
+    def test_live_queues_once_and_takes_todays_slot(self):
+        from automations.brand_audit import social_inbox as S
+        p = _office(post_hours=(0, 23))
+        photo = Path(self.tmp.name) / "p.jpg"
+        photo.write_bytes(b"jpg")
+        st = {"photo_path": str(photo)}
+        sched = p.path("zoho_schedule.json")
+        with mock.patch("automations.online_presence.relay.enqueue_post",
+                        return_value="JOB1") as q:
+            S._office_publish(p, FakeSlack(), "1.1", st, "cap", False, sched, None)
+            again = S._office_publish(p, FakeSlack(), "1.1", st, "cap", False, sched, None)
+        self.assertEqual(q.call_count, 1)
+        self.assertEqual(st["eco_job"], "JOB1")
+        self.assertEqual(again, [])
+        st2 = {"photo_path": str(photo)}
+        with mock.patch("automations.online_presence.relay.enqueue_post",
+                        side_effect=AssertionError("second post today")):
+            acts = S._office_publish(p, FakeSlack(), "2.2", st2, "c", False, sched, None)
+        self.assertEqual(acts[0]["action"], "waiting_for_tomorrow")
+
+
+class ChosenPagesOnly(unittest.TestCase):
+    """DM the owner only when a page THEY chose drops out of their Zoho."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = mock.patch.object(offices, "STATE_ROOT", Path(self.tmp.name))
+        self.root.start()
+
+    def tearDown(self):
+        self.root.stop()
+        self.tmp.cleanup()
+
+    def _check(self, channels, status="ok", dry=False, p=None):
+        from automations.online_presence import watch
+        fake = FakeSlack()
+        acts = watch.collect(p or _office(), [{"job_id": "J", "kind": "social_check",
+                                               "answered": True,
+                                               "result": {"status": status,
+                                                          "channels": channels}}],
+                             fake, dry=dry)
+        dms = [kw for k, kw in fake.calls if k == "post"]
+        return acts, dms
+
+    def test_all_chosen_connected_no_dm(self):
+        acts, dms = self._check(["instagram", "facebook"])
+        self.assertEqual(dms, [])
+        self.assertEqual(acts[0]["action"], "check_ok")
+
+    def test_an_unchosen_page_missing_is_not_news(self):
+        acts, dms = self._check(["instagram", "facebook"])     # no X, no Google
+        self.assertEqual(dms, [])
+
+    def test_a_chosen_page_missing_dms_the_owner_once_a_day(self):
+        acts, dms = self._check(["instagram"])
+        self.assertEqual(len(dms), 1)
+        self.assertEqual(dms[0]["channel"], "U046XBPN0G2")
+        self.assertIn("Facebook", dms[0]["text"])
+        self.assertNotIn("Instagram", dms[0]["text"])
+        _, again = self._check(["instagram"])
+        self.assertEqual(again, [])
+
+    def test_signed_out_says_so(self):
+        _, dms = self._check([], status="signed_out")
+        self.assertIn("signed out", dms[0]["text"])
+
+    def test_personal_linkedin_is_not_the_company_page(self):
+        from automations.online_presence import watch
+        self.assertEqual(watch.connected_pages(["linkedinprofile"]), set())
+
+    def test_dry_pass_sends_nothing(self):
+        _, dms = self._check(["instagram"], dry=True)
+        self.assertEqual(dms, [])
+
+
+class PostAnswers(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = mock.patch.object(offices, "STATE_ROOT", Path(self.tmp.name))
+        self.root.start()
+        from automations.brand_audit import social_inbox as S
+        self.S, self.p = S, _office()
+        S._save_state({"1.1": {"eco_job": "J1", "caption": "c"}},
+                      self.p.path("social_inbox.json"))
+
+    def tearDown(self):
+        self.root.stop()
+        self.tmp.cleanup()
+
+    def _answer(self, result):
+        from automations.online_presence import watch
+        fake = FakeSlack()
+        acts = watch.collect(self.p, [{"job_id": "J1", "kind": "social_post",
+                                       "answered": True, "result": result}],
+                             fake, dry=False)
+        return acts, fake, self.S._load_state(self.p.path("social_inbox.json"))["1.1"]
+
+    def test_posted_gets_the_rocket(self):
+        acts, fake, st = self._answer({"status": "posted",
+                                       "channels": ["instagram", "facebook"]})
+        self.assertTrue(st["posted"])
+        self.assertIn(("react", {"channel": "C0KASHROOM", "name": "rocket",
+                                 "timestamp": "1.1"}), fake.calls)
+
+    def test_blocked_tells_the_room_dms_owner_and_retries_later(self):
+        acts, fake, st = self._answer({"status": "signed_out", "channels": []})
+        self.assertNotIn("eco_job", st)              # will be queued again
+        chans = [kw["channel"] for k, kw in fake.calls if k == "post"]
+        self.assertEqual(sorted(chans), ["C0KASHROOM", "U046XBPN0G2"])
+
+    def test_error_mid_post_is_never_retried(self):
+        acts, fake, st = self._answer({"status": "error", "error": "boom"})
+        self.assertEqual(st["eco_job"], "J1")
+        self.assertEqual(st["post_error"], "boom")
+        self.assertEqual([k for k, _ in fake.calls if k == "post"], [])
+
+
 class DryTwiceOver(unittest.TestCase):
     def _run(self, *, live_flag, mode):
         from automations.online_presence import run
@@ -254,6 +398,8 @@ class DryTwiceOver(unittest.TestCase):
             return []
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(offices, "STATE_ROOT", Path(d)), \
+                mock.patch("automations.online_presence.watch.ensure_daily_check",
+                           lambda p, live: None), \
                 mock.patch("automations.brand_audit.review_replies.process_reviews", rv), \
                 mock.patch("automations.brand_audit.social_inbox.process_inbox", ib):
             run.run_office(_office(mode=mode), live=live_flag)
@@ -269,6 +415,13 @@ class DryTwiceOver(unittest.TestCase):
 
 
 class SlackNames(unittest.TestCase):
+    def test_page_words(self):
+        from automations.online_presence import setup
+        self.assertEqual([setup._page(w) for w in ("IG", "Facebook", "twitter", "Google")],
+                         ["instagram", "facebook", "x", "google"])
+        with self.assertRaises(ValueError):
+            setup._page("myspace")
+
     def test_name_from_the_ids_doc(self):
         from automations.online_presence import setup
         self.assertEqual(setup.resolve_person("Kash Rai", cl=object()), "U046XBPN0G2")
