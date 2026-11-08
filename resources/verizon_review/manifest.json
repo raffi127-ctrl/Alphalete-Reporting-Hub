@@ -90,6 +90,37 @@
       "text": ""
     },
     {
+      "key": "revenue_board",
+      "title": "💰 Revenue Board",
+      "what": "This sales week (Sun-Sat): $ by rep by day on Credico's comp grid, each rep's weekly bonus tier, and the week total with the bonus. Estimates; Credico's statement is the pay.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "revenue_board.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "activation_revenue",
+      "title": "💵 Activation Revenue Overview",
+      "what": "4 weeks (two pictures): activated $, canceled $ and still-open $ by rep, on Credico's comp grid.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "activation_revenue_1.png",
+        "activation_revenue_2.png"
+      ],
+      "text": ""
+    },
+    {
+      "key": "rep_tiers",
+      "title": "🏅 Rep Tiered Ranking",
+      "what": "Each rep's weekly activation-bonus tier this week (4 / 5-6 / 7-8 / 9+ orders). Yellow = 1 order from the next tier.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "rep_tiers.png"
+      ],
+      "text": ""
+    },
+    {
       "key": "order_log",
       "title": "📋 Order Log",
       "what": "Excel file: every line (rep, dates, order #, plan, device, ported from, status), plus a tab per rep. Pay dates are two weeks behind (one week later than the other programs).",

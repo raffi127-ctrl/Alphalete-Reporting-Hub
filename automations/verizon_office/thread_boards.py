@@ -414,6 +414,9 @@ BOARDS = [
     ("activation_rate", "📈 Activation Rate by Rep"),
     ("activation_by_week", "📆 Activation Rate by Week-Ending"),
     ("churn", "📉 Churn Rates by Rep"),
+    ("revenue_board", "💰 Revenue Board"),
+    ("activation_revenue", "💵 Activation Revenue Overview"),
+    ("rep_tiers", "🏅 Rep Tiered Ranking"),
     ("order_log", "📋 Order Log"),
     ("cancels", "🚫 Canceled Orders"),
     ("disconnects", "❎ Disconnected Orders"),
@@ -441,6 +444,12 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
             paths = [activation_by_week(owner, header, rows, target, out_dir)[0]]
         elif slug == "churn":
             paths = [churn(owner, header, rows, target, out_dir)[0]]
+        elif slug in ("revenue_board", "activation_revenue", "rep_tiers"):
+            # Priced on Credico's comp grid (verizon_office.comp); these read
+            # the file themselves -- they need fields the NDS rows don't carry.
+            from automations.verizon_office import revenue as RV
+            got = getattr(RV, slug)(owner, Path(sv_path).resolve(), target, out_dir.resolve())
+            paths = got if isinstance(got, list) else [got]
         elif slug == "order_log":
             kind, paths = "file", [order_log(owner, header, rows, target, out_dir)[0]]
         else:

@@ -217,10 +217,12 @@ def render(tables: Dict, out_path: Path, *, subtitle: str = "",
         y0 += sub_h
 
     _draw_table(draw, PAD, y0,
-                "LAST WEEK  ({})".format(last["label"]), last["rows"], fonts,
+                "{}  ({})".format((tables.get("titles") or ("LAST WEEK", "THIS WEEK"))[0],
+                                  last["label"]), last["rows"], fonts,
                 money=money, totals=last.get("totals"))
     _draw_table(draw, PAD + w_last + GAP, y0,
-                "THIS WEEK  ({})".format(this["label"]), this["rows"], fonts,
+                "{}  ({})".format((tables.get("titles") or ("LAST WEEK", "THIS WEEK"))[1],
+                                  this["label"]), this["rows"], fonts,
                 money=money, totals=this.get("totals"))
     if hidden:
         draw.text((PAD, int(H) - PAD - 14 * SCALE),

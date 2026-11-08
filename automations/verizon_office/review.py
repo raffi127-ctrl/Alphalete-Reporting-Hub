@@ -141,6 +141,9 @@ def build() -> List[Dict]:
     whats = {
         "rep_activations": "The last 4 weeks per rep (two pictures: this + last week, then the two before): activated, pending, total, canceled/disconnected.",
         "activation_by_week": "The last 4 sales weeks: of the lines sold each week, how many have activated since. Office total + every rep.",
+        "revenue_board": "This sales week (Sun-Sat): $ by rep by day on Credico's comp grid, each rep's weekly bonus tier, and the week total with the bonus. Estimates; Credico's statement is the pay.",
+        "activation_revenue": "4 weeks (two pictures): activated $, canceled $ and still-open $ by rep, on Credico's comp grid.",
+        "rep_tiers": "Each rep's weekly activation-bonus tier this week (4 / 5-6 / 7-8 / 9+ orders). Yellow = 1 order from the next tier.",
         "churn": "Of the lines that activated 0-30 and 31-60 days ago, how many have disconnected since. Office total (the office churn rate) + every rep. Green 5% or less, yellow up to 10%, red over 10%.",
         "pending_orders": "Every line that's submitted but not activated yet, grouped by rep, with how many days it's been waiting.",
         "activation_rate": "Per rep: % of lines activated, sold 0-30 days ago and 31-60 days ago. Green / yellow / red by the same bars as Carlos's board.",
@@ -260,12 +263,16 @@ def _group_client(log=print):
 # ROUND 2 (2026-11-07): the reports Carlos ❌'d, fixed, plus the first new
 # one from his "What's missing" list. Its own posted-file, so round 1's
 # record never says these already went out.
-ROUND2_KEYS = ("rep_activations", "order_log", "opt", "activation_by_week", "churn")
+ROUND2_KEYS = ("rep_activations", "order_log", "opt", "activation_by_week", "churn",
+               "revenue_board", "activation_revenue", "rep_tiers")
 ROUND2_CHANGED = {
     "rep_activations": "Now shows 4 weeks (pay is two weeks behind).",
     "order_log": "Pay dates moved one week later.",
     "opt": "Now a 6-week view.",
     "activation_by_week": "NEW, from Carlos's \"What's missing\" list.",
+    "revenue_board": "NEW, from Carlos's \"What's missing\" list, priced on the comp grid Carlos sent.",
+    "activation_revenue": "NEW, from Carlos's \"What's missing\" list, priced on the comp grid Carlos sent.",
+    "rep_tiers": "NEW, from Carlos's \"What's missing\" list.",
     "churn": "NEW, from Carlos's \"What's missing\" list (churn rates + churn by rep in one board).",
 }
 ROUND2_INTRO = (

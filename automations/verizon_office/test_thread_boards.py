@@ -48,6 +48,21 @@ class Churn(unittest.TestCase):
         self.assertEqual([r[0] for r in seen["table"][1:]], ["A B"])   # never-activated rep left off
 
 
+class Comp(unittest.TestCase):
+    def test_line_pay_on_the_comp_grid(self):
+        from automations.verizon_office import comp as C
+        port = {"status": "Posted", "port_new": True, "autopay": True, "premium": True, "protect": False}
+        self.assertEqual(C.line_pay(port, 4), 190 + 60 + 35)
+        self.assertEqual(C.line_pay(dict(port, port_new=False, autopay=False, premium=False), 4), 25)
+        self.assertEqual(C.line_pay(dict(port, status="Disconnected"), 4), 0)
+
+    def test_weekly_tiers(self):
+        from automations.verizon_office import comp as C
+        self.assertEqual([C.weekly_tier(n)[1] for n in (3, 4, 6, 7, 9)], [0, 30, 50, 75, 110])
+        self.assertEqual(C.next_weekly(4), ("T2", 1, 50))
+        self.assertIsNone(C.next_weekly(12))
+
+
 class Plan(unittest.TestCase):
     def test_plan_names_fit_the_board(self):
         self.assertEqual(T._plan("Verizon Simplicity Plan (Smartphone) - New"), "Simplicity Plan")

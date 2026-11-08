@@ -433,6 +433,7 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
 def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
                  board_name: str, tiered: bool = True) -> Path:
     kick = ("BOX LEADERS" if "box" in board_name.lower()
+            else "VERIZON LEADERS" if "verizon" in board_name.lower()
             else "AT&T B2B LEADERS")
     week_total = sum(r["total"] for r in rows)
     next_total = sum(r.get("ntotal", 0) for r in rows)
