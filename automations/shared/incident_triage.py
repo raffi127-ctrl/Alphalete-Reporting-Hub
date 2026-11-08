@@ -105,6 +105,26 @@ _ALL_REACTIONS = tuple(BUCKET_REACTION.values())
 # exception was called.
 
 _CODE_CHANGE: Sequence[Tuple[str, str]] = (
+    # Slack refusing OUR request for a reason in our own setup. Listed first so
+    # a stray "503"/"timed out" elsewhere in the tail can't outrank it.
+    # 2026-11-08: the Sunday knock run died on 'channel_not_found' (a room held
+    # on Megan's user id) and the thread said "The source was briefly down" --
+    # i.e. wait, when the fix was ours to make.
+    ("'channel_not_found'",
+     "Slack can't find the channel it posts to — the room it's set up for is "
+     "wrong or gone."),
+    ("'not_in_channel'",
+     "Lucy isn't a member of the Slack channel it posts to."),
+    ("'is_archived'",
+     "The Slack channel it posts to was archived."),
+    ("'invalid_auth'",
+     "The Slack login it uses is no longer valid."),
+    ("'token_revoked'",
+     "The Slack login it uses was revoked."),
+    ("'account_inactive'",
+     "The Slack account it posts as was deactivated."),
+    ("'missing_scope'",
+     "The Slack login it uses isn't allowed to do this."),
     ("view not found",
      "The Tableau view this pulls from is gone or was renamed."),
     ("no such view",
@@ -158,8 +178,25 @@ _TRANSIENT: Sequence[Tuple[str, str]] = (
     ("429", "The source rate-limited us."),
     ("quota exceeded", "The source rate-limited us."),
     ("temporarily unavailable", "The source was briefly down."),
-    ("502", "The source was briefly down."),
-    ("503", "The source was briefly down."),
+    # 502/503 by their HTTP wording only, never the bare digits (same rule as
+    # 500 below): a Sunday knock log is full of office numbers and epoch
+    # timestamps, and a bare "503" there called our own crash a source blip
+    # (2026-11-08).
+    ("[502]", "The source was briefly down."),
+    ("[503]", "The source was briefly down."),
+    ("502:", "The source was briefly down."),
+    ("503:", "The source was briefly down."),
+    ("httperror 502", "The source was briefly down."),
+    ("httperror 503", "The source was briefly down."),
+    ("502 server error", "The source was briefly down."),
+    ("503 server error", "The source was briefly down."),
+    ("status 502", "The source was briefly down."),
+    ("status 503", "The source was briefly down."),
+    ("status code 502", "The source was briefly down."),
+    ("status code 503", "The source was briefly down."),
+    ("bad gateway", "The source was briefly down."),
+    ("service unavailable", "The source was briefly down."),
+    ("currently unavailable", "The source was briefly down."),
     # Google's APIs answer a routine blip with 500 "Internal error encountered"
     # (Sheets and Slack both), and 500 was the one of the three not listed —
     # so it fell past every signature to the no-signature branch and got told

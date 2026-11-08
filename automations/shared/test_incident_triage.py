@@ -119,6 +119,46 @@ class Buckets(unittest.TestCase):
         self.assertNotIn("briefly down", v.reason)
 
 
+class OurSlackSetupIsNotASourceBlip(unittest.TestCase):
+    """2026-11-08: the Sunday knock run died on Slack 'channel_not_found' and
+    the thread said "The source was briefly down" -- wait, when it was ours."""
+
+    TAIL = ("[wkd] posted nigel marshall.\n"
+            "slack_sdk.errors.slackapierror: the request to the slack api "
+            "failed. (url: https://slack.com/api/conversations.history)\n"
+            "the server responded with: {'ok': false, 'error': "
+            "'channel_not_found'}")
+
+    def test_channel_not_found_is_a_fix_not_a_wait(self):
+        v = _classify(tail=self.TAIL)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("channel", v.reason)
+        self.assertNotIn("briefly down", v.reason)
+
+    def test_it_wins_over_a_stray_503_in_the_same_tail(self):
+        v = _classify(tail="retrying after 503 earlier\n" + self.TAIL)
+        self.assertNotIn("briefly down", v.reason)
+
+    def test_a_bare_502_or_503_inside_a_number_is_not_a_blip(self):
+        for tail in ("office #25031 posted", "ts 1794137503.1 read",
+                     "line 502, in run"):
+            self.assertNotIn("briefly down", _classify(tail=tail).reason, tail)
+
+    def test_real_502_503_wording_is_still_a_blip(self):
+        for tail in ("apierror: [503]: the service is currently unavailable.",
+                     "<httperror 503 when requesting https://sheets...>",
+                     "502 server error: bad gateway for url"):
+            v = _classify(tail=tail)
+            self.assertEqual(v.bucket, tri.LUCY, tail)
+            self.assertIn("briefly down", v.reason, tail)
+
+    def test_a_real_slack_blip_is_still_transient(self):
+        v = _classify(tail="slackapierror: {'ok': false, 'error': "
+                           "'internal_error'} [500]: internal error encountered")
+        self.assertEqual(v.bucket, tri.LUCY)
+        self.assertIn("briefly down", v.reason)
+
+
 class NobodyIsComingBackForIt(unittest.TestCase):
     """:pending: and the purple circle both say 'it gets picked up on its own'.
     Only tableau failures are retried, and only a report with a readiness probe
