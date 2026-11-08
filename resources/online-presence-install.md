@@ -27,6 +27,13 @@ run is started with `--live`.
   there, only DMs them when one of THESE disconnects, and every audit checks their website links to
   those exact accounts.
 - Who approves, an email for customer concerns, and their timezone.
+- **"Do you already have a Slack channel for your social media / branding?"**
+  - **Yes:** a box opens for its Channel ID (a pasted Slack link works too). They add Lucy Reporting.
+  - **No:** Lucy creates a **private** channel in our Slack named `<company-name>-lucyeco-social`
+    (e.g. `#palace-acquisitions-lucyeco-social`) on her next pass (`python -m automations.online_presence.rooms --live`,
+    also run at the start of every `online_presence.run --live`). She adds Megan, Eve, the ICD who
+    enrolled, Lucy, the Lucy app and @hubposter, and writes the Channel ID back onto their sign-up.
+    Anyone she can't match to a Slack ID is listed, never guessed.
 
 Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workbook. Nothing turns on.
 
@@ -46,11 +53,11 @@ Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workb
 ## What we do
 
 Before the call:
-- Create `#<office>-online-presence`. Invite **Lucy Reporting**, **@hubposter** (opens the
-  photos), the owner and the approvers.
+- The Slack room: theirs (from the form), or the one Lucy made for them. Either way **Lucy
+  Reporting** and **@hubposter** (opens the photos) must be in it; `setup check` confirms both.
 - Add the row straight from their form (anything typed on the line wins over the form):
   ```
-  python -m automations.online_presence.setup add --office <key> --from-signup "<Business name>" --room "#<office>-online-presence"
+  python -m automations.online_presence.setup add --office <key> --from-signup "<Business name>"
   ```
   `<key>` = the office's ECO key. Names resolve from `resources/owner-slack-ids.md` first.
 

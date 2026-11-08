@@ -141,7 +141,7 @@ class SignupAnswers(unittest.TestCase):
             "Address": "100 Main St, Dallas, TX 75201", "Phone": "214 555 0100",
             "Website": "kash.example", "Google Listing Link": "https://maps.app.goo.gl/x",
             "Complaints Email": "hr@kash.example", "Approvers": "Kash Rai",
-            "Pages": ["Google"]}
+            "Pages": ["Google"], "Slack Room": "create us one"}
 
     def test_good_form_passes_and_is_tidied(self):
         self.assertEqual(signup.problems(self.GOOD), [])
@@ -166,6 +166,14 @@ class SignupAnswers(unittest.TestCase):
         probs = signup.problems(dict(self.GOOD, **{"Instagram Link": "facebook.com/kash",
                                                    "Instagram Link": "facebook.com/kash"}))
         self.assertTrue(any("Instagram link should be" in p for p in probs))
+
+    def test_slack_room_question(self):
+        self.assertTrue(any("Slack channel" in p for p in
+                            signup.problems(dict(self.GOOD, **{"Slack Room": ""}))))
+        self.assertTrue(any("Channel ID" in p for p in
+                            signup.problems(dict(self.GOOD, **{"Slack Room": "existing"}))))
+        self.assertEqual(signup.problems(dict(self.GOOD, **{"Slack Room": "existing",
+                                                            "Slack Channel": "C0ABC12DE"})), [])
 
     def test_a_facebook_link_is_not_a_google_listing(self):
         probs = signup.problems(dict(self.GOOD, **{"Google Listing Link": "facebook.com/kash"}))

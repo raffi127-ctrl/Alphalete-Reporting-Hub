@@ -38,7 +38,7 @@ SOCIAL_FIELDS = (("Instagram Link", "instagram.com", "Instagram"),
 HEADER = ["Submitted At", "Status", "Owner", "Owner Email", "Business Name",
           "Address", "Phone", "Website", "Google Listing Link", "Indeed Link",
           "Glassdoor Link", "Pages", "Approvers", "Complaints Email", "Timezone",
-          "Notes"] + [f for f, _, _ in SOCIAL_FIELDS]
+          "Notes"] + [f for f, _, _ in SOCIAL_FIELDS] + ["Slack Room", "Slack Channel"]
 PAGES = ("Instagram", "Facebook", "Google", "LinkedIn", "X")
 _LOCAL = Path(__file__).resolve().parents[2] / "output" / "lucyeco_social_signups_local.json"
 _CLIENT = None
@@ -98,6 +98,10 @@ def problems(a: Dict) -> List[str]:
             out.append(f"You picked {page} for posting: add your {page} link.")
     if not a.get("Pages"):
         out.append("Pick at least one page for Lucy to post to.")
+    if not a.get("Slack Room"):
+        out.append("Tell us whether you already have a Slack channel for this.")
+    elif a["Slack Room"] == "existing" and not str(a.get("Slack Channel") or "").strip():
+        out.append("Paste your Slack channel's Channel ID (or pick 'create one for me').")
     return out
 
 
@@ -113,7 +117,7 @@ def tidy(a: Dict) -> Dict:
 
 
 # ---- keeping them ------------------------------------------------------------
-def _tab():
+def _tab(create: bool = True):
     from automations.icd_alerts import post as P
     if _CLIENT is not None:
         book = _CLIENT.open_by_key(P.RELAY_SPREADSHEET_ID)
@@ -123,6 +127,8 @@ def _tab():
     try:
         tab = book.worksheet(TAB)
     except Exception:
+        if not create:
+            return None                  # readers never make the tab
         tab = book.add_worksheet(title=TAB, rows=200, cols=len(HEADER))
         tab.append_row(HEADER)
     return tab

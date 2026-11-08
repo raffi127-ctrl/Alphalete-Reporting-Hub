@@ -152,6 +152,13 @@ def _fill_from_signup(a) -> bool:
     for attr, col in pairs:
         if not getattr(a, attr) and str(row.get(col) or "").strip():
             setattr(a, attr, str(row[col]).strip())
+    if not a.room:
+        if str(row.get("Slack Channel") or "").strip():
+            a.room = str(row["Slack Channel"]).strip()
+        elif row.get("Slack Room") == "create us one":
+            print("  ⚠ they asked us to CREATE their Slack room: make "
+                  f"#{a.office}-online-presence, invite Lucy + @hubposter + them, "
+                  "then re-run with --room")
     print(f"  using the sign-up {a.from_signup!r} sent on {row.get('Submitted At')}")
     return True
 

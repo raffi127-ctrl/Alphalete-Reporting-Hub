@@ -22,6 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from automations.online_presence import signup                  # noqa: E402
 from automations.shared import onboarding_ui as ui              # noqa: E402
 
+# Megan's "where's the Channel ID" screenshot, shared with the other forms.
+SLACK_ID_IMG = (Path(__file__).resolve().parents[2] / "tracker_onboarding"
+                / "slack_id_help.png")
+
 st.set_page_config(page_title="Join LucyECO Social", page_icon="📸")
 ui.render_header("Join LucyECO Social",
                  "Lucy posts your team's photos to your pages and answers your "
@@ -68,6 +72,21 @@ for page in signup.PAGES:
     socials[field] = st.text_input(f"Your {page} page link", key=f"link_{page}",
                                    placeholder=f"{host0}/yourpage")
 
+st.subheader("Your Slack room")
+st.caption("Lucy puts your photos, captions and review replies for approval in one "
+           "Slack channel.")
+has_room = st.radio(
+    "Do you already have a Slack channel for your social media / branding?",
+    ["Yes, I have one", "No, please create one for me"], index=None, key="has_room")
+slack_channel = ""
+if has_room == "Yes, I have one":
+    slack_channel = ui.channel_id_input("Paste that channel's Channel ID", key="slack_channel")
+    ui.channel_id_help_expander(SLACK_ID_IMG)
+    st.caption("Add **Lucy Reporting** to that channel so she can post there.")
+elif has_room:
+    st.caption("No problem: once you send this, Lucy makes a private channel for you "
+               "(your company name + \"-lucyeco-social\", like #palace-acquisitions-lucyeco-social) and adds you to it.")
+
 st.subheader("Approvals")
 approvers = st.text_input("Who can approve posts and review replies?",
                           placeholder="Names, separated by commas")
@@ -89,7 +108,10 @@ answers = {"Owner": owner, "Owner Email": owner_email, "Business Name": business
            "Address": address, "Phone": phone, "Website": website,
            "Google Listing Link": google_link, "Indeed Link": indeed,
            "Glassdoor Link": glassdoor, "Pages": list(pages), "Approvers": approvers,
-           "Complaints Email": complaints, "Timezone": tz, "Notes": notes, **socials}
+           "Complaints Email": complaints, "Timezone": tz, "Notes": notes,
+           "Slack Room": {"Yes, I have one": "existing",
+                          "No, please create one for me": "create us one"}.get(has_room or "", ""),
+           "Slack Channel": slack_channel, **socials}
 
 st.divider()
 if st.button("Send my sign-up", type="primary"):

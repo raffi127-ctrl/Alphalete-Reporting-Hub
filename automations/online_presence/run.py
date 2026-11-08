@@ -78,8 +78,16 @@ def main(argv=None) -> int:
         todo = list(allrows.values())
     if not todo:
         print("No offices set up yet (python -m automations.online_presence.setup add ...)")
-        print("=== done ===")
-        return 0
+
+    # Rooms first: an office that said "create one for me" gets its channel
+    # the next time this runs, whether or not it has an office row yet.
+    try:
+        from automations.online_presence import rooms
+        for r in rooms.run(live=a.live):
+            print(f"[room] {r.get('business')}: {r['action']} #{r.get('channel', '')}"
+                  + (" — invite by hand: " + ", ".join(r["missed"]) if r.get("missed") else ""))
+    except Exception as e:
+        print(f"[room] couldn't check for rooms to make ({type(e).__name__}: {str(e)[:80]})")
 
     # ONE read of the relay for every office (not one per office).
     answers: Dict[str, List[dict]] = {}
