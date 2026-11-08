@@ -14982,7 +14982,7 @@
     3,
     4
    ],
-   "_note": "Raf 2026-10-22 (Loom), picture moved 30 min earlier 2026-11-02: 11:15 CT picture of the Line Up box (Alphalete SALES BOARD 2025 -> 'Line Up WE <sunday>', '#' .. 'Car Ride #5') -> #alphalete-sales + 'Knocking Chat A-Players'; 20:45 CT the car-ride names (struck-out names dropped) -> the 'Car Ride Leaders' iMessage chat. Real schedule = com.alphalete.lineup-post on LUCY 1 (texting machine), Mon-Fri (Saturdays off 2026-11-02: Raf said Saturdays have no structure yet, he will follow up), --auto picks the slot by the CT hour. Dry-runs by default; --send posts. One send per slot per day (lock file).",
+   "_note": "Raf 2026-10-22 (Loom), picture moved 30 min earlier 2026-11-02: 11:15 CT picture of the Line Up box (Alphalete SALES BOARD 2025 -> 'Line Up WE <sunday>', '#' .. 'Car Ride #5') -> #alphalete-sales + 'Knocking Chat A-Players'; 20:00 CT (Raf moved it from 20:45, 2026-11-06) the car-ride leaders only, first name of each row, one per line (struck-out names dropped) -> the 'Car Ride Leaders' iMessage chat. Real schedule = com.alphalete.lineup-post on LUCY 1 (texting machine), Mon-Fri (Saturdays off 2026-11-02: Raf said Saturdays have no structure yet, he will follow up), --auto picks the slot by the CT hour. Dry-runs by default; --send posts. One send per slot per day (lock file).",
    "display_name": "Line Up Post + Car Rides (Raf)",
    "source_type": "sheet",
    "data_sources": [],
@@ -15096,9 +15096,9 @@
   },
   "install_lineup_post_agent": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Install/refresh com.alphalete.lineup-post on LUCY 1 (Line Up picture 11:15 + Car Ride names 20:45, Mon-Fri CT). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "_off_scheduler_note": "Install/refresh com.alphalete.lineup-post on LUCY 1 (Line Up picture 11:15 + Car Ride leaders 20:00, Mon-Fri CT). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
    "machine": "Lucy 1",
-   "display_name": "Install Line Up Post agent (11:15 + 20:45 Mon-Fri)",
+   "display_name": "Install Line Up Post agent (11:15 + 20:00 Mon-Fri)",
    "source_type": "local",
    "data_sources": [],
    "command": [

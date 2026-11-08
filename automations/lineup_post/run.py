@@ -5,6 +5,10 @@ the lineup ... from the numbers all the way to column Car Ride #5 ... posted on
 Alphalete Sales and ... the A-Players chat. And then at 8:45 p.m. at night, it
 copies all these names ... posted on this Car Ride chat."
 
+Raf, Loom 2026-11-06: the chat only gets the LEADER of each car ride (first name
+of the row), pasted as a plain list like he copies the column by hand, and it
+goes at 8:00 PM instead of 8:45.
+
 Source: `Alphalete SALES BOARD 2025` -> tab `Line Up WE <m>.<d>` (this week's
 Sunday). The car-ride box is col A ('#') through the 'Car Ride #5' header, both
 found BY LABEL on the header row (the row whose col A is '#'). A car ride is a
@@ -12,7 +16,7 @@ numbered row with at least one name; the empty numbered rows and the reference
 blocks underneath ('Rep names from Sales Board', notes) are left out.
 
   --photo  (11:15, Raf moved it from 11:45 on 2026-11-02)  picture of the box -> #alphalete-sales + Knocking Chat A-Players
-  --names  (20:45)  the names as text  -> the Car Ride iMessage chat
+  --names  (20:00)  the leaders' names as text  -> the Car Ride iMessage chat
 
 WHY A TEMP TAB: the box has empty numbered rows in the middle (12-20 today).
 To leave them out of the picture we hide them on a throwaway COPY of the tab,
@@ -139,13 +143,10 @@ def find_box(grid, struck=frozenset()):
     return hdr, last_col, rows
 
 
-def names_text(rows, day: dt.date) -> str:
-    lines = ["Car Rides - %s %d/%d" % (day.strftime("%a"), day.month, day.day)]
-    for _, num, names in rows:
-        if not names:
-            continue
-        lines.append("%s. %s" % (num, ", ".join(names)))
-    return "\n".join(lines)
+def names_text(rows) -> str:
+    """One leader per line, nothing else. The leader is the first name still
+    standing on the row: names were already dropped if crossed out."""
+    return "\n".join(names[0] for _, _, names in rows if names)
 
 
 def render_photo(sh, ws, hdr, last_col, rows, day: dt.date) -> Path:
@@ -190,7 +191,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--photo", action="store_true", help="11:15 picture")
-    g.add_argument("--names", action="store_true", help="8:45 PM names text")
+    g.add_argument("--names", action="store_true", help="8:00 PM leaders' names text")
     # The LaunchAgent fires both slots with --auto: before 4pm CT is the
     # picture, after is the names. One agent, one plist.
     g.add_argument("--auto", action="store_true", help="--photo before 4pm CT, --names after")
@@ -233,7 +234,9 @@ def main(argv=None) -> int:
                 lambda grp, text, imgs, dry_run=True: {"resolved_name": "(not checked - not a Mac)"})
         text_post = _Preview()
     if a.names:
-        body = names_text(rows, day)
+        body = names_text(rows)
+        if not body:
+            raise SystemExit("Line Up: every name in the car-ride box is crossed out")
         print(body)
         for grp in NAMES_GROUPS:
             r = text_post.send_text_to_group(grp, body, dry_run=not a.send)

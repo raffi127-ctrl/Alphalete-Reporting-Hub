@@ -21,11 +21,17 @@ class LineupTest(unittest.TestCase):
         self.assertEqual([r for r, _, _ in rows], [3, 5])
         self.assertEqual(rows[1][2], ["Rhea McKee", "Jesus Galvan", "Auryn Deter"])
 
-    def test_struck_names_dropped_from_text(self):
-        _, _, rows = R.find_box(GRID, struck={(3, 3)})
-        txt = R.names_text(rows, dt.date(2026, 10, 22))
-        self.assertIn("1. Jordan Castillo\n", txt)
-        self.assertNotIn("Ivan", txt)
+    def test_text_is_only_the_leaders_one_per_line(self):
+        _, _, rows = R.find_box(GRID)
+        self.assertEqual(R.names_text(rows), "Jordan Castillo\nRhea McKee")
+
+    def test_crossed_out_leader_gives_way_to_next_name_on_the_row(self):
+        _, _, rows = R.find_box(GRID, struck={(3, 2)})
+        self.assertEqual(R.names_text(rows), "Ivan Munoz\nRhea McKee")
+
+    def test_row_with_everyone_crossed_out_is_left_out(self):
+        _, _, rows = R.find_box(GRID, struck={(3, 2), (3, 3)})
+        self.assertEqual(R.names_text(rows), "Rhea McKee")
 
     def test_tab_is_this_weeks_sunday(self):
         self.assertEqual(R.tab_name(dt.date(2026, 10, 22)), "Line Up WE 10.25")
