@@ -136,6 +136,10 @@ def build_pngs(today: Optional[dt.date] = None,
         p = OUT_DIR / f"org_active_headcount_{name}.png"
         _export_png(ws.id, rng, p, token, spreadsheet_id=d.SHEET_ID)
         out.append((p, rng))
+    # Rafael 2026-11-08: App Avg week over week, ranked like the headcount box.
+    from automations.org_active_headcount import app_avg_delta
+    out.append((app_avg_delta.render(OUT_DIR / "org_active_headcount_app_avg.png", g),
+                "app_avg (ranked from the delta box)"))
     # Rafael 2026-10-25: the same summary per org (RAF w/out Carlos & Colten,
     # CARLOS, COLTEN) closes the mail, like the Org Sales Board's closing trio.
     # Drawn from the tab's own cells (org_split), not a Sheets range.
@@ -181,10 +185,16 @@ def build_parts(today: Optional[dt.date] = None,
     colpx = column_pixels(open_by_key(d.SHEET_ID), ws.id)
     parts = [(f"headcount_{name}", p, _range_width_px(colpx, rng))
              for name, (p, rng) in zip(("board", "delta"), shots[:2])]
+    # The App Avg table: as wide as the delta box's own name + week columns, so
+    # one row reads the same size as the delta picture above it.
+    dx = d.find_delta(g)
+    parts += [("headcount_app_avg", p,
+               _range_width_px(colpx, f"A{dx['hdr']}:{d.A(dx['week'] + 2)}{dx['hdr']}"))
+              for p, _lbl in shots[2:3]]
     # The per-org summaries: sized like the whole-org summary they mirror
     # (columns A..Sunday of the top table), so one row reads the same size.
     sum_px = _range_width_px(colpx, f"A1:{d.A(d.find_summary(g, d.find_daily(g)['hdr'])['days'][-1])}1")
-    for (p, _lbl), key in zip(shots[2:], [t for t, _ in org_split.ORGS]):
+    for (p, _lbl), key in zip(shots[3:], [t for t, _ in org_split.ORGS]):
         parts.append((f"headcount_org_{key}", p, sum_px))
     return parts, " + ".join(rng for _p, rng in shots)
 
@@ -215,7 +225,7 @@ def main(argv=None) -> int:
     parts, _rng = build_parts(today, sandbox=a.sandbox)
     for name, p, px in parts:
         print(f"screenshot {name} -> {p} ({p.stat().st_size // 1024} KB, {px} sheet px)")
-    labels = ["Headcount", "Delta vs last week"] + [t for _k, t in org_split.ORGS]
+    labels = ["Headcount", "Delta vs last week", "App Avg vs last week"] + [t for _k, t in org_split.ORGS]
     yday = today - dt.timedelta(days=1)
     subject = f"{'UPDATE — ' if a.update else ''}{TITLE} — through {yday:%a %m/%d}"
     try:
