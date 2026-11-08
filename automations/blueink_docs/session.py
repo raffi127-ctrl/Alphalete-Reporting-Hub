@@ -170,10 +170,67 @@ def login() -> int:
             return 1
         STORAGE_STATE.chmod(0o600)
         ctx.close()
+    # Saved FROM this profile, so there is nothing to adopt back into it.
+    _stamp_adopted()
     print(f"\nSaved {cookies} cookie(s) and {items} stored item(s) to "
           f"{STORAGE_STATE.name} (owner-only). This machine can now read and "
           "send without anyone signing in again.")
     return 0
+
+
+# Stamped inside the profile once a storage_state file has been poured into it.
+# A state NEWER than the stamp is one that arrived from elsewhere (push_cred_file
+# blueink-session) and has not been adopted yet.
+ADOPTED_MARK = ".adopted_storage_state"
+
+
+def _state_is_new() -> bool:
+    if not STORAGE_STATE.exists() or STORAGE_STATE.stat().st_size == 0:
+        return False
+    mark = PROFILE_DIR / ADOPTED_MARK
+    return (not mark.exists()
+            or STORAGE_STATE.stat().st_mtime > mark.stat().st_mtime)
+
+
+def _stamp_adopted() -> None:
+    try:
+        PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        (PROFILE_DIR / ADOPTED_MARK).write_text(str(time.time()))
+    except OSError:
+        pass
+
+
+def adopt_state(ctx) -> None:
+    """Pour the storage_state file's cookies + localStorage into a persistent
+    profile, once.
+
+    WHY (2026-11-08). Lucy 2's profile expired; Megan, in Corpus, signed in on
+    her laptop and the session file was pushed over. open_context always
+    preferred the PROFILE, so Lucy 2 kept replaying its own dead login and
+    the good file sat unread -- "expired" while a fresh browser fed that same
+    file landed on the dashboard (checked 11/8: Blue Ink's login is now
+    cookies + localStorage 'auth'/stytch, nothing in IndexedDB or
+    sessionStorage). The page used to write localStorage is a stub served by
+    route, so the app's own scripts never run against a half-seeded origin."""
+    state = json.loads(STORAGE_STATE.read_text())
+    if state.get("cookies"):
+        ctx.add_cookies(state["cookies"])
+    page = ctx.new_page()
+    try:
+        for o in state.get("origins") or []:
+            items = o.get("localStorage") or []
+            if not items:
+                continue
+            stub = o["origin"].rstrip("/") + "/__lucy_seed__"
+            page.route(stub, lambda r: r.fulfill(
+                status=200, content_type="text/html", body="<html></html>"))
+            page.goto(stub)
+            page.evaluate("items => items.forEach(i => "
+                          "localStorage.setItem(i.name, i.value))", items)
+            page.unroute(stub)
+    finally:
+        page.close()
+    _stamp_adopted()
 
 
 def have_profile() -> bool:
@@ -207,6 +264,8 @@ def open_context(p, *, headless: bool = True):
             user_data_dir=str(PROFILE_DIR), headless=headless,
             viewport={"width": 1440, "height": 1000},
             args=["--window-size=1440,1000", "--disable-sync"])
+        if _state_is_new():
+            adopt_state(ctx)
         return ctx, ctx
     browser = p.chromium.launch(
         headless=headless,
