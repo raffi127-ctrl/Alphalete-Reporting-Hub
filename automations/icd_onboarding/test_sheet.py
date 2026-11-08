@@ -19,8 +19,8 @@ HEAD = list(B.COLUMNS) + [B.TERMINATED_AT]
 
 class FakeWS:
     def __init__(self, rows=()):
-        self.title = B.tab_name(MONDAY)
-        self.grid = [["Week of 11/02/2026"], list(HEAD)] + [list(r) for r in rows]
+        self.title = B.TAB
+        self.grid = [list(HEAD)] + [list(r) for r in rows]
         self.updates, self.formats = [], []
 
     def get_all_values(self):
@@ -50,14 +50,15 @@ class FakeBook:
     def add_worksheet(self, title=None, rows=None, cols=None):
         self._ws = FakeWS()
         self._ws.title = title
-        self._ws.grid = [[], []]
+        self._ws.grid = [[]]
         self.added.append(title)
         return self._ws
 
 
-def _person(name, **extra):
+def _person(name, week=None, **extra):
     row = [""] * len(HEAD)
     first, last = name.split()[0], " ".join(name.split()[1:])
+    row[HEAD.index(B.WEEK)] = week or B.week_label(MONDAY)
     row[HEAD.index("Name")] = first
     row[HEAD.index("Last Name")] = last
     row[HEAD.index("Email")] = first.lower() + "@example.com"
@@ -88,11 +89,37 @@ def test_blank_rows_are_not_people():
 
 # -------------------------------------------------------------- seeding
 
-def test_a_new_week_gets_its_headers():
+def test_a_new_office_gets_one_onboarding_tab():
     book = FakeBook()
     S.seed(book, MONDAY, _cal("Ada Fournier"), log=lambda *a: None)
-    assert book.added == [B.tab_name(MONDAY)]
-    assert any("Week of" in str(v) for _, v in book._ws.updates)
+    assert book.added == [B.TAB], "one tab, not one per week"
+    assert any(B.WEEK in str(v) for _, v in book._ws.updates)
+
+
+def test_a_second_week_goes_onto_the_SAME_tab():
+    """52 tabs a year in somebody's own metrics workbook is not a board,
+    it is a mess (Megan, 2026-11-08: "add a tab to their metrics sheet?")."""
+    ws = FakeWS([_person("Ada Fournier")])
+    book = FakeBook(ws)
+    later = MONDAY + dt.timedelta(days=7)
+    S.seed(book, later, _cal("Bruno Castell"), log=lambda *a: None)
+    assert book.added == [], "no new tab"
+    written = " ".join(str(v) for _, v in ws.updates)
+    assert "Bruno" in written and B.week_label(later) in written
+
+
+def test_a_week_only_sees_its_own_rows():
+    rows = [_person("Ada Fournier"),
+            _person("Bruno Castell", week=B.week_label(MONDAY + dt.timedelta(days=7)))]
+    got = B.for_week(S.rows_of(FakeWS(rows).get_all_values()), MONDAY)
+    assert [r["Name"] for r in got] == ["Ada"]
+
+
+def test_the_picker_is_offered_every_week_newest_first():
+    rows = [_person("Ada Fournier"),
+            _person("Bruno Castell", week=B.week_label(MONDAY + dt.timedelta(days=7)))]
+    weeks = B.weeks_on(S.rows_of(FakeWS(rows).get_all_values()))
+    assert weeks == ["11/09/2026", "11/02/2026"]
 
 
 def test_seeding_twice_adds_nobody_twice():
@@ -151,7 +178,7 @@ def test_an_already_ticked_cell_is_left_alone():
 
 def test_a_renamed_column_says_so_instead_of_guessing():
     ws = FakeWS([_person("Ada Fournier")])
-    ws.grid[1][HEAD.index("Blue Ink")] = "BlueInk"
+    ws.grid[0][HEAD.index("Blue Ink")] = "BlueInk"
     with pytest.raises(RuntimeError, match="no 'Blue Ink' column"):
         S.tick(FakeBook(ws), MONDAY, "Blue Ink", ["Ada Fournier"], log=lambda *a: None)
 
@@ -162,7 +189,7 @@ def test_marking_somebody_off_keeps_their_row():
     ws = FakeWS([_person("Ada Fournier"), _person("Bruno Castell")])
     n = S.terminate(FakeBook(ws), MONDAY, ["Bruno Castell"], log=lambda *a: None)
     assert n == 1
-    assert len(ws.grid) == 4, "the row is still there"
+    assert len(ws.grid) == 3, "header + both people — the row is still there"
     assert all("Bruno" not in str(v) for _, v in ws.updates), "only a date is written"
 
 

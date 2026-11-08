@@ -110,9 +110,12 @@ def test_the_identity_columns_are_not_tickable_either():
 
 # ------------------------------------------------------------------ the week
 
-def test_the_tab_is_named_for_the_monday_whichever_day_is_given():
-    assert B.tab_name(dt.date(2026, 11, 8)) == "Week of 11.02"
-    assert B.tab_name(dt.date(2026, 11, 2)) == "Week of 11.02"
+def test_the_week_column_holds_the_monday_whichever_day_is_given():
+    """One tab per office; the WEEK is a column, so any day in the week lands
+    on the same Monday."""
+    assert B.week_label(dt.date(2026, 11, 8)) == "11/02/2026"
+    assert B.week_label(dt.date(2026, 11, 2)) == "11/02/2026"
+    assert B.TAB == "Onboarding"
 
 
 def test_the_columns_come_from_the_real_obcl():

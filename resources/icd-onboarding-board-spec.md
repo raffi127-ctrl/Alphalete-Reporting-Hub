@@ -23,9 +23,20 @@ board."*
 
 ## Where it lives
 
-A **live Google Sheet per ICD**, one tab per week. The sheet is the record —
-it can be opened, shared and fixed by hand like any other — but nobody is
-expected to open it. The extension is the way in.
+**One `Onboarding` tab in the office's OWN metrics workbook.** All 36 offices
+already have one (`office_metrics.offices`, each with its `sheet_id`), so there
+is nothing new to create and nothing new to share — and an office sees its own
+people and nobody else's. A single workbook holding every ICD would have shown
+each of them everyone.
+
+**Weeks are rows, not tabs.** A `Week of` column, and the extension's week
+picker filters on it. Tabs-per-week would put 52 a year into somebody's own
+workbook. Measured: 52 ICDs × 52 weeks × 30 people ≈ 1.4M cells across the
+fleet, well inside Sheets' 10M per workbook — and that is spread over 36
+workbooks, not one.
+
+The sheet is the record — it can be opened, shared and fixed by hand like any
+other — but nobody is expected to open it. The extension is the way in.
 
 ## Who fills each column
 

@@ -35,7 +35,13 @@ from typing import Dict, Iterable, List, Optional, Sequence
 # Interviewer, Start Time, Badge, Location, Telemapper / Skool / Slack / Upline
 # Slack / SaraPlus / Friday Confirmation) are left off until an office asks for
 # one. An empty column nobody fills is a column everybody learns to ignore.
-IDENTITY: Sequence[str] = ("Name", "Last Name", "Email", "Phone", "Start")
+# One tab per office, weeks stacked — so the week is a column, and the
+# extension's week picker filters on it. Tabs-per-week would put 52 a year into
+# somebody's own workbook (Megan, 2026-11-08: "add a tab to their metrics
+# sheet?").
+WEEK = "Week of"
+
+IDENTITY: Sequence[str] = (WEEK, "Name", "Last Name", "Email", "Phone", "Start")
 
 # The ICD's own column, and the only one on the chart that needs a person.
 # It also decides which printed sheet somebody lands on.
@@ -77,10 +83,22 @@ def _fold(text) -> str:
     return re.sub(r"[^a-z0-9]+", "", raw.lower())
 
 
+# The one tab this adds to an office's existing metrics workbook.
+TAB = "Onboarding"
+
+
+def monday_of(day: dt.date) -> dt.date:
+    return day - dt.timedelta(days=day.weekday())
+
+
+def week_label(week_start: dt.date) -> str:
+    """'11/02/2026' -- the Monday, which is what the Week of column holds."""
+    return monday_of(week_start).strftime("%m/%d/%Y")
+
+
 def tab_name(week_start: dt.date) -> str:
-    """'Week of 11.02' -- the Monday, spelled the way the OBCL tabs are."""
-    monday = week_start - dt.timedelta(days=week_start.weekday())
-    return "Week of %d.%02d" % (monday.month, monday.day)
+    """Kept so older callers still read: the tab no longer varies by week."""
+    return TAB
 
 
 def person_key(row: Dict) -> str:
@@ -110,6 +128,7 @@ def seed_rows(people: Iterable[Dict], started: Optional[dt.date] = None) -> List
         if not first and not last:
             continue
         out.append({
+            WEEK: week_label(started) if started else "",
             "Name": first,
             "Last Name": last,
             "Email": str(p.get("email") or "").strip(),
@@ -118,6 +137,24 @@ def seed_rows(people: Iterable[Dict], started: Optional[dt.date] = None) -> List
                      if (p.get("started") or started) else "",
         })
     return out
+
+
+def for_week(rows: List[Dict], week_start: dt.date) -> List[Dict]:
+    """Just this week's rows. The tab holds every week the office has had."""
+    want = week_label(week_start)
+    return [r for r in rows if str(r.get(WEEK) or "").strip() == want]
+
+
+def weeks_on(rows: List[Dict]) -> List[str]:
+    """Every week the tab holds, newest first -- what the picker offers."""
+    seen = {str(r.get(WEEK) or "").strip() for r in rows}
+    seen.discard("")
+    def key(label):
+        try:
+            return dt.datetime.strptime(label, "%m/%d/%Y")
+        except ValueError:
+            return dt.datetime.min
+    return sorted(seen, key=key, reverse=True)
 
 
 def merge(existing: List[Dict], fresh: List[Dict]) -> Dict:

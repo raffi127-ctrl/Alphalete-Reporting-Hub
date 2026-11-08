@@ -1,4 +1,4 @@
-"""The board's Google Sheet — one workbook per ICD, one tab per week.
+"""The board's Google Sheet — ONE TAB in each ICD's own metrics workbook.
 
 `board.py` holds the rules and never touches a network. This is the half that
 reads and writes, kept apart so the rules can be tested without a sheet and so
@@ -7,6 +7,17 @@ there is exactly one place to look when asking what this writes.
 Megan, 2026-11-08: *"We can build it where it lives on a live Google sheet for
 them. They just don't need to go to that sheet."* The sheet is the record — it
 can be opened, shared and fixed by hand — but the ICD works in the extension.
+
+**Which sheet: their own.** All 36 offices already have a metrics workbook
+(`office_metrics.offices`, each with its `sheet_id`), so this adds one
+`Onboarding` tab to the book they already have rather than making a new one.
+Nothing new to create or share, and — the part that matters — an office sees
+its own people and nobody else's. One workbook holding all 52 ICDs would have
+shown each of them everyone.
+
+Weeks are stacked as ROWS, with a `Week of` column, because tabs-per-week would
+put 52 a year into somebody's own workbook. The extension's week picker reads
+that column.
 
 WHAT THIS WILL NOT DO
   * create a tab that already exists, or re-lay one. A re-seed adds the people
@@ -23,11 +34,10 @@ from typing import Dict, List, Optional, Sequence
 
 from automations.icd_onboarding import board as B
 
-# Where a week's rows start. Row 1 is the week, row 2 the headers — the same
-# shape as the OBCL, so anybody who knows that sheet knows this one.
-WEEK_ROW = 1
-HEADER_ROW = 2
-FIRST_DATA_ROW = 3
+# Row 1 is the header, then people. No week banner row: the week is a column,
+# so one tab carries every week this office has had.
+HEADER_ROW = 1
+FIRST_DATA_ROW = 2
 
 
 def _a1(col: int) -> str:
@@ -64,27 +74,31 @@ def rows_of(grid: List[List[str]]) -> List[Dict]:
     return out
 
 
-def _header_block(week_start: dt.date) -> List[List[str]]:
-    monday = week_start - dt.timedelta(days=week_start.weekday())
-    return [
-        ["Week of %s" % monday.strftime("%m/%d/%Y")],
-        list(B.COLUMNS) + [B.TERMINATED_AT],
-    ]
+def _header_block() -> List[List[str]]:
+    return [list(B.COLUMNS) + [B.TERMINATED_AT]]
 
 
-def open_week(workbook, week_start: dt.date, *, create: bool = True):
-    """The worksheet for this week, made with its headers if it is new."""
-    title = B.tab_name(week_start)
+def open_board(workbook, *, create: bool = True):
+    """This office's Onboarding tab, made with its headers if it is new.
+
+    Never re-lays an existing tab: somebody may have added a column of their
+    own, and this has no business tidying it away.
+    """
     for ws in workbook.worksheets():
-        if ws.title == title:
+        if ws.title == B.TAB:
             return ws
     if not create:
         return None
-    ws = workbook.add_worksheet(
-        title=title, rows=200, cols=len(B.COLUMNS) + 4)
-    ws.update(values=_header_block(week_start), range_name="A1")
+    ws = workbook.add_worksheet(title=B.TAB, rows=1000,
+                                cols=len(B.COLUMNS) + 4)
+    ws.update(values=_header_block(), range_name="A1")
     ws.freeze(rows=HEADER_ROW)
     return ws
+
+
+# Older name, kept so nothing breaks mid-change.
+def open_week(workbook, week_start=None, *, create: bool = True):
+    return open_board(workbook, create=create)
 
 
 def seed(workbook, week_start: dt.date, people: List[Dict],
@@ -96,16 +110,17 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
     and every tick an automation has earned survive untouched, and a person the
     ICD marked off does not reappear.
     """
-    ws = open_week(workbook, week_start, create=not dry_run)
+    ws = open_board(workbook, create=not dry_run)
     if ws is None:
-        log("  (dry run — the tab %s does not exist yet)" % B.tab_name(week_start))
-        existing = []
+        log("  (dry run — no %s tab on this workbook yet)" % B.TAB)
+        all_rows, existing = [], []
     else:
-        existing = rows_of(ws.get_all_values())
+        all_rows = rows_of(ws.get_all_values())
+        existing = B.for_week(all_rows, week_start)
     fresh = B.seed_rows(people, started=week_start)
     plan = B.merge(existing, fresh)
-    log("  %s: %d already there, %d to add%s"
-        % (B.tab_name(week_start), plan["keep"], len(plan["add"]),
+    log("  week of %s: %d already there, %d to add%s"
+        % (B.week_label(week_start), plan["keep"], len(plan["add"]),
            ", %d marked off" % len(plan["left"]) if plan["left"] else ""))
     if dry_run or not plan["add"]:
         return plan
@@ -118,7 +133,8 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
             if name in cols:
                 line[cols[name]] = value
         block.append(line)
-    start = FIRST_DATA_ROW + len(existing)
+    # Appended to the END of the tab, after every week already on it.
+    start = FIRST_DATA_ROW + len(all_rows)
     ws.update(values=block,
               range_name="A%d:%s%d" % (start, _a1(width), start + len(block) - 1))
     return plan
@@ -131,9 +147,9 @@ def tick(workbook, week_start: dt.date, column: str, names: Sequence[str],
     Every filler calls this rather than writing cells itself, so there is one
     place that decides what a tick is allowed to do.
     """
-    ws = open_week(workbook, week_start, create=False)
+    ws = open_board(workbook, create=False)
     if ws is None:
-        log("  no board for %s yet" % B.tab_name(week_start))
+        log("  no %s tab on this workbook yet" % B.TAB)
         return 0
     grid = ws.get_all_values()
     cols = layout(grid)
@@ -141,8 +157,9 @@ def tick(workbook, week_start: dt.date, column: str, names: Sequence[str],
         raise RuntimeError(
             "the board has no %r column. If it was renamed, rename it here too "
             "— this never guesses at a position." % column)
-    rows = rows_of(grid)
-    want = B.tick_plan(rows, column, names)
+    all_rows = rows_of(grid)
+    mine = B.for_week(all_rows, week_start)
+    want = [all_rows.index(mine[i]) for i in B.tick_plan(mine, column, names)]
     log("  %s: %d to tick" % (column, len(want)))
     if dry_run or not want:
         return 0
@@ -162,16 +179,17 @@ def terminate(workbook, week_start: dt.date, names: Sequence[str],
     Writes the date into the row-state column. The row STAYS: hidden from the
     board and the printout, still there to answer what happened to somebody.
     """
-    ws = open_week(workbook, week_start, create=False)
+    ws = open_board(workbook, create=False)
     if ws is None:
         return 0
     grid = ws.get_all_values()
     cols = layout(grid)
     if B.TERMINATED_AT not in cols:
         raise RuntimeError("the board has no %r column." % B.TERMINATED_AT)
-    rows = rows_of(grid)
+    all_rows = rows_of(grid)
+    mine = B.for_week(all_rows, week_start)
     want = {B._fold(n) for n in names}
-    hit = [i for i, r in enumerate(rows)
+    hit = [all_rows.index(r) for r in mine
            if B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", ""))) in want
            and not str(r.get(B.TERMINATED_AT) or "").strip()]
     log("  marking off %d" % len(hit))
@@ -188,18 +206,20 @@ def set_classroom(workbook, week_start: dt.date, assignments: Dict[str, str],
                   *, dry_run: bool = False, log=print) -> int:
     """{name: classroom} — the one column the ICD sets, and the one that
     decides which printed sheet somebody lands on."""
-    ws = open_week(workbook, week_start, create=False)
+    ws = open_board(workbook, create=False)
     if ws is None:
         return 0
     grid = ws.get_all_values()
     cols = layout(grid)
     if B.CLASSROOM not in cols:
         raise RuntimeError("the board has no %r column." % B.CLASSROOM)
-    rows = rows_of(grid)
+    all_rows = rows_of(grid)
+    mine = B.for_week(all_rows, week_start)
     want = {B._fold(k): v for k, v in assignments.items()}
     writes = []
     a1 = _a1(cols[B.CLASSROOM] + 1)
-    for i, r in enumerate(rows):
+    for r in mine:
+        i = all_rows.index(r)
         key = B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", "")))
         if key in want and str(r.get(B.CLASSROOM) or "").strip() != want[key]:
             writes.append({"range": "%s%d" % (a1, FIRST_DATA_ROW + i),
