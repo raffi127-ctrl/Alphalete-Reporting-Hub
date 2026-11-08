@@ -41,6 +41,15 @@ def fetch(office: OF.VerizonOffice, which: str, *, since_days: int = 10) -> Opti
     # Credico as the sender, a forward would not.
     found = email_ingest.fetch_by_globs(SENDER, [glob], dest, subject=subject,
                                         since_days=since_days, verbose=False)
+    if not found:
+        # FORWARDED, NOT REDIRECTED (2026-11-08): Nico's company mail drops a
+        # rule's REDIRECT to an outside address without a bounce, but lets a
+        # FORWARD through -- his own "... to Personal Gmail" rules forward and
+        # arrive. A forward is From the office, not Credico, so take any
+        # sender; the file name carries the office's company name, so another
+        # office's report can never match.
+        found = email_ingest.fetch_by_globs("", [glob], dest, subject=subject,
+                                            since_days=since_days, verbose=False)
     return next(iter(found.values()), None)
 
 
@@ -84,6 +93,11 @@ def check_forwarding(*, since_days: int = 7, log=print) -> int:
         # BY SENDER: a redirect keeps Credico as the sender, and an all-mail
         # search with no sender took 3+ minutes (2026-11-06).
         hits = email_ingest.list_matches(SENDER, globs, since_days=since_days)
+        if not hits:
+            # A FORWARD comes from the office, not Credico (see fetch); the
+            # subject narrows the any-sender search so it stays quick.
+            hits = email_ingest.list_matches("", globs, subject="Verizon Wireless",
+                                             since_days=since_days)
         if hits:
             newest = max(d for _fn, d in hits.values())
             log("✓ %-12s %-34s arriving (newest %s)" % (o.key, o.office, newest))
