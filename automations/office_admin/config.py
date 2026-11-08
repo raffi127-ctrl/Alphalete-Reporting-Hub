@@ -104,6 +104,12 @@ class Office:
     # "dry": the office computer signs in and reports who it WOULD invite,
     # sends nothing. "live": sends. Set here, never on the office computer.
     bgc_mode: str = "dry"
+    # New starts -> Apex. "off" means the office's computer refuses the job
+    # outright. Default off, and OFF IS THE POINT: this one creates payroll
+    # records, and Megan 2026-11-08: "we should only test on Raf's".
+    # "dry" reads the calendar and the packets and reports who it would add;
+    # "live" fills Apex. Set here, never on the office computer.
+    apex_mode: str = "off"
 
 
 # Omar first (Raf: "Let's test in Omar's office").
@@ -116,7 +122,7 @@ OFFICES: Dict[str, Office] = {
     # (Megan 2026-11-04): his Sterling account is rahidalgo, codes to raffi127.
     "raf": Office(key="raf", owner="Rafael Hidalgo", appstream_id="11280",
                   channel="C06881A7WLV", bgc_mode="dry", tz="America/Chicago",
-                  alert_at="16:30"),
+                  alert_at="16:30", apex_mode="dry"),
 }
 
 

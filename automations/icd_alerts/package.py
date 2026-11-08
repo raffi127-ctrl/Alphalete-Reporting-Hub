@@ -155,6 +155,29 @@ AGENT_FILES = [
     # Office admin page jobs (Raf 2026-11-01): the admin's buttons, done on
     # this computer with this office's own logins.
     "automations/icd_alerts/office_jobs.py",
+    # New starts -> Apex (Megan 2026-11-08). The office's own computer reads
+    # its training calendar and its Blue Ink packets; the admin only presses a
+    # button. values.py rather than run.py on purpose -- run.py pulls the sales
+    # board and so Google Sheets, which has no business on an office Mac.
+    "automations/apex_new_starts/__init__.py",
+    "automations/apex_new_starts/eco_run.py",
+    "automations/apex_new_starts/values.py",
+    "automations/apex_new_starts/apex.py",
+    "automations/apex_new_starts/blueink_data.py",
+    "automations/apex_new_starts/fieldmap.py",
+    "automations/apex_new_starts/field_map.json",
+    "automations/apex_new_starts/ssn_prompt.py",
+    "automations/office_admin/__init__.py",
+    "automations/office_admin/config.py",
+    "automations/office_admin/fdot.py",
+    "automations/blueink_docs/__init__.py",
+    "automations/blueink_docs/blueink.py",
+    "automations/blueink_docs/config.py",
+    "automations/shared/workbooks.py",
+    "automations/shared/new_start_eligibility.py",
+    "automations/shared/hub_autopublish.py",
+    "automations/applicant_tracker/__init__.py",
+    "automations/applicant_tracker/applicantstream.py",
     "automations/icd_alerts/sterling_send.py",
     "automations/icd_alerts/sterling_forward.py",
     "automations/icd_alerts/sterling_setup.py",

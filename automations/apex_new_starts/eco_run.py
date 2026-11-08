@@ -80,7 +80,9 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
     invented: a gap is reported and the person is held back, never filled with
     a placeholder that lands on a payroll record.
     """
-    from automations.apex_new_starts import run as RUN
+    # values, not run: run.py imports the sales board and so Google Sheets,
+    # and an office Mac reads a calendar, not a board.
+    from automations.apex_new_starts import values as V
 
     ready, blocked = [], []
     for p in people:
@@ -89,7 +91,7 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
             blocked.append({"name": p.name,
                             "why": "no signed Blue Ink packet — type this one by hand"})
             continue
-        values = RUN.apex_values(p, hire)
+        values = V.apex_values(p, hire)
         gaps = [lbl for lbl in ("dob", "address1", "city", "zip")
                 if not values.get(lbl)]
         if gaps:

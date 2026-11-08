@@ -202,11 +202,19 @@ def test_the_half_that_holds_the_list_is_isolated():
     assert "setup.js" in iso[0]["js"], "the parser must share the loader's world"
 
 
-def test_it_only_ever_touches_apex():
+def test_it_only_ever_runs_on_apex():
+    """The extension reaches Lucy's relay to fetch the week (so the admin does
+    not go to the Hub), but it INJECTS nowhere except Apex. Those are different
+    permissions and only the second one puts code on somebody's page."""
     m = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert m["host_permissions"] == ["https://apex.herbjoyent.com/*"]
     for c in m["content_scripts"]:
         assert c["matches"] == ["https://apex.herbjoyent.com/*"]
+    allowed = {"https://apex.herbjoyent.com/*",
+               "https://script.google.com/*",
+               "https://script.googleusercontent.com/*"}
+    extra = set(m["host_permissions"]) - allowed
+    assert not extra, "it should not reach anywhere else: %s" % sorted(extra)
+    assert "https://apex.herbjoyent.com/*" in m["host_permissions"]
 
 
 def test_every_file_the_manifest_names_exists():

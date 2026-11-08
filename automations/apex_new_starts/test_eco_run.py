@@ -314,3 +314,43 @@ def test_saving_still_refuses_until_watched(monkeypatch):
     with pytest.raises(RuntimeError, match="never been watched"):
         eco_run.fill_one(eco_run.Starter(name="Ada Fournier"), {}, None,
                          log=lambda *a: None, page=Page(), save=True)
+
+
+# ------------------------------------------- only where it has been switched on
+
+def test_apex_is_off_for_every_office_except_rafs():
+    """Megan, 2026-11-08: "we should only test on Raf's". This job creates
+    payroll records, so off is the default and switching an office on is a
+    deliberate edit."""
+    from automations.office_admin import config as OC
+    on = {k: o.apex_mode for k, o in OC.OFFICES.items() if o.apex_mode != "off"}
+    assert set(on) == {"raf"}, "only Raf's office may run this yet, got %r" % on
+    assert on["raf"] != "live", "and not live until a save has been watched"
+
+
+def test_an_office_that_is_off_refuses_the_job_rather_than_running_it():
+    from automations.icd_alerts import office_jobs as OJ
+    res = OJ.work({"kind": "apex_week", "mode": "dry",
+                   "payload": {"week_start": "2026-11-02"}},
+                  "omar", log=lambda *a: None)
+    assert res["status"] == "error"
+    assert "not switched on" in res["error"]
+
+
+def test_the_office_package_ships_what_the_job_needs():
+    """The sweep runs on office Macs, which only have the files package.py
+    lists. A job whose import fails answers 'error' and looks like a bug in
+    the report rather than a missing file."""
+    import pathlib, re
+    src = pathlib.Path("automations/icd_alerts/package.py").read_text()
+    listed = set(re.findall(r'"(automations/[^"]+)"', src))
+    for need in ("automations/apex_new_starts/eco_run.py",
+                 "automations/apex_new_starts/values.py",
+                 "automations/apex_new_starts/blueink_data.py",
+                 "automations/office_admin/fdot.py",
+                 "automations/blueink_docs/blueink.py",
+                 "automations/applicant_tracker/applicantstream.py"):
+        assert need in listed, "%s never reaches the office computers" % need
+    assert "automations/apex_new_starts/run.py" not in listed, (
+        "run.py pulls the sales board and Google Sheets — values.py exists so "
+        "it does not have to ship")

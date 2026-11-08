@@ -133,6 +133,18 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
                                              office_key=office_key, log=log,
                                              location=payload.get("location") or {})
         elif kind == "apex_week":
+            # OFF unless this office has been switched on by hand. The job
+            # creates payroll records, so a machine that was never meant to run
+            # it refuses rather than discovering that at the save.
+            from automations.office_admin import config as OC
+            o = OC.office(office_key)
+            mode = (o.apex_mode if o else "off") or "off"
+            if mode == "off":
+                return {"status": "error", "mode": "off",
+                        "error": "new starts -> Apex is not switched on for %s "
+                                 "(apex_mode is off in office_admin.config)."
+                                 % office_key}
+            live = live and mode == "live"
             # New starts -> Apex. The job carries a DATE and nothing else: who
             # is in the week is read here, off this office's own training
             # calendar, so a list cannot be posted in from outside.
