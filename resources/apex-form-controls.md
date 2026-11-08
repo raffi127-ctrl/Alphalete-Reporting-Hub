@@ -84,3 +84,46 @@ That last one is worth chasing: if typing into the filter boxes does not filter
 until **Apply Filters** is pressed, it is a far better candidate for the
 2026-10-02 "adding the missing reps isn't working" than the exact-text matching
 that was blamed at the time — and that blame was checked today and is wrong.
+
+## Proven live, 2026-11-08 (filled, verified, NOT saved)
+
+The whole form was filled in Megan's session and every validation error
+cleared. Nothing was saved; the tab was closed and the record discarded.
+
+### What actually sets a dropdown
+
+    const idEl = [...document.querySelectorAll('input[ng-model]')]
+        .find(e => (e.getAttribute('ng-model')||'').endsWith('JobTitleID'));
+    const sel  = idEl.closest('.form-group').querySelector('select');
+    const w    = jQuery(sel).data('kendoDropDownList');
+    w.select(i);              // i = index of the option whose TEXT matches
+    w.trigger('change');      // fires k-on-change -> the controller sets the ID
+
+`k-ng-model` holds the chosen OBJECT; `k-on-change`
+(`$ctrl.changeJobTitle($ctrl.employmentRecord)`) is what copies it to the ID.
+
+Kendo DatePicker and NumericTextBox take `.value(x)` then `.trigger('change')`.
+The security role is `input[type=radio][ng-model="$ctrl.roleID"][value="11"]`
+and a plain `.click()` ticks it.
+
+### DO NOT verify a dropdown by reading the hidden input's `.value`
+
+It stays `''` even when the field is correctly set, and that nearly got written
+up as a bug. The honest signals are:
+
+- `w.value()` — the chosen id (`"5"` for Sales Rep), and `w.text()`;
+- the hidden input's CLASSES: `ng-not-empty ng-valid ng-valid-required`;
+- that field's validation message disappearing from the page.
+
+AngularJS debug info is OFF in production, so `angular.element(el).scope()`
+returns undefined and `$apply` is not available. Driving the widget's own API
+is the way in; the injector on `<body>` is reachable but not needed.
+
+### The password-reset checkbox DEFAULTS TO TICKED
+
+`$ctrl.sendUserPassword` was already `checked` on a freshly opened form, with
+nothing having touched it. **Saving a new employee therefore emails that person
+a password reset** unless it is deliberately unticked.
+
+"Never touch it" is the wrong rule — the default does something. Whatever fills
+this form has to SET it deliberately, one way or the other, and say which.

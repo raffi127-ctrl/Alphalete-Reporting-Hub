@@ -236,10 +236,81 @@ def test_the_sales_rep_role_is_the_radio_value_we_read():
     assert (eco_run.ROLE_MODEL, eco_run.ROLE_VALUE) == ("$ctrl.roleID", "11")
 
 
-def test_filling_refuses_until_somebody_has_watched_it(monkeypatch):
-    """A half-right fill lands on a real payroll record, and nothing here has
-    yet typed into Apex and pressed Save."""
-    monkeypatch.delenv("APEX_FILL_PROVEN", raising=False)
-    with pytest.raises(RuntimeError, match="never been watched"):
+def test_filling_needs_the_page_rather_than_guessing_at_one():
+    """Filling itself is proven (live, 2026-11-08 — every validation error
+    cleared). What is still unproven is SAVING, which has its own test."""
+    with pytest.raises(RuntimeError, match="needs the Apex page"):
         eco_run.fill_one(eco_run.Starter(name="Test Person"), {}, None,
                          log=lambda *a: None)
+
+
+# ------------------------------------- the fill, against the proven mechanism
+
+def test_the_password_reset_is_set_deliberately_and_set_OFF():
+    """It DEFAULTS TO TICKED on a fresh form (read live 2026-11-08), so saving
+    would email a brand new rep a password reset. Leaving it as found is a
+    decision too — this one is made on purpose."""
+    spec = eco_run.fill_spec(eco_run.Starter(name="Ada Fournier"), {"first": "Ada"})
+    assert spec["email_password_reset"] is False
+
+
+def test_dropdowns_go_in_as_dropdowns_and_text_as_text():
+    spec = eco_run.fill_spec(
+        eco_run.Starter(name="Ada Fournier", hire_date=MONDAY),
+        {"first": "Ada", "last": "Fournier", "position": "Sales Rep",
+         "pay_state": "Texas", "rate": "10.00"})
+    assert spec["text"]["$ctrl.user.FirstName"] == "Ada"
+    assert spec["drops"]["JobTitleID"] == "Sales Rep"
+    assert spec["drops"]["stateWorkingIn"] == "Texas"
+    assert spec["rate"] == "10.00", "the numeric box, not a dropdown"
+    assert spec["hire_date"] == "2026-11-02"
+    assert spec["role_value"] == "11"
+
+
+def test_salary_is_never_in_what_gets_filled():
+    spec = eco_run.fill_spec(eco_run.Starter(name="Ada Fournier"),
+                             {"first": "Ada", "rate": "10.00", "salary": "99999"})
+    assert "salary" not in str(spec).lower() or "99999" not in str(spec)
+
+
+def test_a_fill_that_leaves_apex_objecting_raises(monkeypatch):
+    """Apex's own validation is the judge, not our idea of done."""
+    class Page:
+        def evaluate(self, js, spec):
+            return {"done": ["FirstName"], "missed": [],
+                    "errors": ["State Working In is required."],
+                    "salaryTouched": False, "passwordResetTicked": False}
+    with pytest.raises(RuntimeError, match="still objects"):
+        eco_run.fill_one(eco_run.Starter(name="Ada Fournier"), {}, None,
+                         log=lambda *a: None, page=Page())
+
+
+def test_writing_salary_stops_everything(monkeypatch):
+    class Page:
+        def evaluate(self, js, spec):
+            return {"done": [], "missed": [], "errors": [],
+                    "salaryTouched": True, "passwordResetTicked": False}
+    with pytest.raises(RuntimeError, match="wrong box"):
+        eco_run.fill_one(eco_run.Starter(name="Ada Fournier"), {}, None,
+                         log=lambda *a: None, page=Page())
+
+
+def test_a_clean_fill_does_not_save_by_default():
+    class Page:
+        def evaluate(self, js, spec):
+            return {"done": ["FirstName", "JobTitle=Sales Rep"], "missed": [],
+                    "errors": [], "salaryTouched": False, "passwordResetTicked": False}
+    got = eco_run.fill_one(eco_run.Starter(name="Ada Fournier"), {}, None,
+                           log=lambda *a: None, page=Page())
+    assert got["errors"] == []
+
+
+def test_saving_still_refuses_until_watched(monkeypatch):
+    monkeypatch.delenv("APEX_FILL_PROVEN", raising=False)
+    class Page:
+        def evaluate(self, js, spec):
+            return {"done": [], "missed": [], "errors": [],
+                    "salaryTouched": False, "passwordResetTicked": False}
+    with pytest.raises(RuntimeError, match="never been watched"):
+        eco_run.fill_one(eco_run.Starter(name="Ada Fournier"), {}, None,
+                         log=lambda *a: None, page=Page(), save=True)

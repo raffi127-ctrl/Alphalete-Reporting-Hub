@@ -205,30 +205,148 @@ ROLE_MODEL, ROLE_VALUE = "$ctrl.roleID", "11"
 NEVER = ("$ctrl.sendUserPassword", "$ctrl.employmentRecord.Salary")
 
 
-def fill_one(person: Starter, values: Dict, hire, log=print) -> None:
-    """Type one person into Apex, on this machine's signed-in session.
+FILL_JS = r"""(spec) => {
+  /* Proven against the live form 2026-11-08 -- resources/apex-form-controls.md.
+     Every control is driven through its OWN widget API, because AngularJS
+     debug info is off in production: angular.element(el).scope() is undefined
+     and there is no $apply to reach for. */
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const $ = window.jQuery;
+  const done = [], missed = [];
 
-    Deliberately the only function here that touches Apex, so there is one
-    place to read when asking what this machine actually does to a payroll
-    record. It is also the only place `.reveal()` would be called.
+  const setText = (model, val) => {
+    const el = document.querySelector('[ng-model="' + model + '"]');
+    if (!el) { missed.push(model + ' (no control)'); return; }
+    el.value = val;
+    el.dispatchEvent(new Event('input', {bubbles: true}));
+    el.dispatchEvent(new Event('change', {bubbles: true}));
+    done.push(model.split('.').pop());
+  };
 
-    NOT YET PROVEN AGAINST A SAVE. The control map underneath is real -- read
-    off the live form -- but nothing here has typed into Apex and pressed Save,
-    and a half-right fill lands on somebody's payroll record. So it refuses to
-    run until somebody has watched it once: `--i-have-watched-this` on the CLI,
-    or APEX_FILL_PROVEN=1. Everything before it is finished and a dry run says
-    exactly what each person would get.
+  const dropFor = idSuffix => {
+    const idEl = [...document.querySelectorAll('input[ng-model]')]
+        .find(e => (e.getAttribute('ng-model') || '').endsWith(idSuffix));
+    if (!idEl) return null;
+    const grp = idEl.closest('.form-group');
+    const sel = grp && grp.querySelector('select');
+    return (sel && $) ? {sel, w: $(sel).data('kendoDropDownList'), idEl} : null;
+  };
+
+  const setDrop = (idSuffix, wantText) => {
+    const d = dropFor(idSuffix);
+    if (!d || !d.w) { missed.push(idSuffix + ' (no widget)'); return; }
+    const opts = [...d.sel.options].map(o => norm(o.text));
+    const want = norm(wantText).toLowerCase();
+    let i = opts.findIndex(t => t.toLowerCase() === want);
+    if (i < 0) i = opts.findIndex(t => t.toLowerCase().indexOf(want) === 0);
+    if (i < 0) {
+      /* Name every option. A dropdown handed something it does not have stays
+         on 'Select' with no error anywhere -- the silent failure this whole
+         report keeps meeting. */
+      missed.push(idSuffix + ' has no "' + wantText + '" -- it offers: ' +
+                  opts.filter(Boolean).join(' | '));
+      return;
+    }
+    d.w.select(i);
+    d.w.trigger('change');
+    done.push(idSuffix.replace(/ID$/, '') + '=' + opts[i]);
+  };
+
+  const widget = (cls, kind) => $('.' + cls + ' input').toArray()
+      .map(el => $(el).data(kind)).find(Boolean);
+
+  for (const [m, v] of Object.entries(spec.text || {})) setText(m, v);
+  for (const [k, v] of Object.entries(spec.drops || {})) setDrop(k, v);
+
+  if (spec.hire_date) {
+    const dp = widget('k-datepicker', 'kendoDatePicker');
+    if (dp) { dp.value(new Date(spec.hire_date)); dp.trigger('change');
+              done.push('Hire Date'); }
+    else missed.push('Hire Date (no datepicker)');
+  }
+  if (spec.rate) {
+    const nb = widget('k-numerictextbox', 'kendoNumericTextBox');
+    if (nb) { nb.value(Number(spec.rate)); nb.trigger('change');
+              done.push('Rate of Pay'); }
+    else missed.push('Rate of Pay (no numeric box)');
+  }
+  if (spec.role_value) {
+    const r = [...document.querySelectorAll('input[type=radio][ng-model="$ctrl.roleID"]')]
+        .find(x => x.value === String(spec.role_value));
+    if (r) { r.click(); done.push('Role'); }
+    else missed.push('Role (no radio with value ' + spec.role_value + ')');
+  }
+
+  /* The password-reset box DEFAULTS TO TICKED on a fresh form: saving would
+     email the person. Always set deliberately, never left as found. */
+  const pw = document.querySelector('[ng-model="$ctrl.sendUserPassword"]');
+  if (pw && pw.checked !== !!spec.email_password_reset) {
+    pw.click();
+    done.push('password reset ' + (spec.email_password_reset ? 'ON' : 'OFF'));
+  }
+
+  /* What the page itself still objects to. This is the honest check: reading
+     .value on a dropdown's hidden ID input shows '' even when it IS set. */
+  const errors = [...new Set([...document.querySelectorAll('.text-danger, ng-message')]
+      .filter(e => e.offsetParent).map(e => norm(e.innerText)).filter(Boolean))];
+  const salary = document.querySelector('[ng-model="$ctrl.employmentRecord.Salary"]');
+  return {done, missed, errors,
+          salaryTouched: !!(salary && salary.value),
+          passwordResetTicked: pw ? pw.checked : null};
+}"""
+
+
+def fill_spec(person: Starter, values: Dict) -> Dict:
+    """What FILL_JS should put where, for one person. Pure -- no browser."""
+    text = {model: values[key] for key, model in BY_MODEL.items() if values.get(key)}
+    drops = {BY_WIDGET_ID[k].split(".")[-1]: values[k]
+             for k in BY_WIDGET_ID if values.get(k)}
+    return {
+        "text": text,
+        "drops": drops,
+        "hire_date": person.hire_date.isoformat() if person.hire_date else "",
+        "rate": values.get("rate", ""),
+        "role_value": ROLE_VALUE,
+        # Deliberate, because the box defaults to ticked. These people are
+        # created FOR payroll, not to be invited to sign in, and an unexpected
+        # "reset your password" email to a brand new rep is a support call.
+        "email_password_reset": False,
+    }
+
+
+def fill_one(person: Starter, values: Dict, hire, log=print, *, page=None,
+             save: bool = False) -> Dict:
+    """Fill one person into the Apex form that is already on screen.
+
+    The only function here that touches Apex, so there is one place to read
+    when asking what this machine does to a payroll record.
+
+    FILLING is proven (2026-11-08, filled live and every validation error
+    cleared). SAVING is not: nothing has yet pressed Save, and a half-right
+    save lands on a real person. So `save` stays off unless somebody has
+    watched one go through and set APEX_FILL_PROVEN=1.
     """
     import os
+    if page is None:
+        raise RuntimeError("fill_one needs the Apex page to fill.")
+    got = page.evaluate(FILL_JS, fill_spec(person, values))
+    for m in got.get("missed") or []:
+        log("    missed: %s" % m)
+    if got.get("salaryTouched"):
+        raise RuntimeError("Salary was written -- that is the wrong box for an "
+                           "hourly rate. Nothing saved.")
+    if got.get("errors"):
+        raise RuntimeError("Apex still objects: %s" % "; ".join(got["errors"][:4]))
+    if not save:
+        log("    filled, NOT saved (%d fields)" % len(got.get("done") or []))
+        return got
     if not os.environ.get("APEX_FILL_PROVEN"):
         raise RuntimeError(
-            "the Apex fill has never been watched end to end. Run one person "
-            "with somebody looking at the screen first, then set "
-            "APEX_FILL_PROVEN=1. Nothing was typed.")
+            "filled, but saving has never been watched end to end. Look at the "
+            "screen, press Save by hand once, then set APEX_FILL_PROVEN=1.")
     raise NotImplementedError(
-        "fill_one needs its supervised first run against a live Apex session "
-        "to be written against -- the control map in BY_MODEL / BY_WIDGET_ID "
-        "is read off the real form and is the half that was missing.")
+        "the Save step is the one thing still unproven -- it wants its "
+        "supervised first run.")
 
 
 def main(argv=None) -> int:
