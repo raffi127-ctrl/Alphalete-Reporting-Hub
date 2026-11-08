@@ -133,7 +133,8 @@ NUDGE_STILL_QUIET_MIN = 240
 QUIET_WARN_UNTIL_HOUR = 21
 
 
-def quiet_watch_open(local: dt.datetime) -> bool:
+def quiet_watch_open(local: dt.datetime,
+                     last_local: Optional[dt.datetime] = None) -> bool:
     """Is it a time of day when a silent office computer means something?
 
     SATURDAY CLOSES AT THE AGENT'S OWN SATURDAY END (17:00 local), not 21:00.
@@ -148,12 +149,24 @@ def quiet_watch_open(local: dt.datetime) -> bool:
     quiet" until 21:30 -- every one of those machines checked in again at its
     00:0x close-out. A watcher that cries wolf every Saturday is one people
     stop reading.
+
+    UNLESS IT WAS STILL CHECKING IN AFTER THE END (Megan 2026-11-07). Cyrus
+    relayed sales until 17:51 that Saturday, went silent, and nobody told him
+    -- his owners-chat number sat 5 lines short all evening. A machine that
+    checked in after 17:00 proves its session was still resuming, so silence
+    after that is a real stop, not the 16:58 one above. `last_local` is its
+    last check-in on the OFFICE'S clock; such an office keeps the weekday
+    watch (to QUIET_WARN_UNTIL_HOUR).
     """
     from automations.icd_alerts import config as C
     if local.weekday() == 5:
         end_h, end_m = C.SATURDAY_END_HHMM
         if (local.hour, local.minute) >= (end_h, end_m):
-            return False
+            past_end = (last_local is not None
+                        and last_local.date() == local.date()
+                        and (last_local.hour, last_local.minute) >= (end_h, end_m))
+            if not past_end:
+                return False
     return QUIET_WARN_AFTER_HOUR <= local.hour <= QUIET_WARN_UNTIL_HOUR
 
 
@@ -4113,7 +4126,11 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         # further into its morning than a Central one, and a single shared
         # cutoff would nag one of them early and let the other slide.
         local = O.office_now(office) if office else now
-        if not quiet_watch_open(local):
+        # The check-in stamp is on our clock; shift it onto the office's.
+        seen_at = _parse_received(q.get("last") or "")
+        last_local = (seen_at + (local.replace(tzinfo=None) - now)
+                      if seen_at else None)
+        if not quiet_watch_open(local, last_local):
             continue
         prev = sent.get(q["office"])
         still_open = (isinstance(prev, dict) and (prev.get("dm") or prev.get("ts"))

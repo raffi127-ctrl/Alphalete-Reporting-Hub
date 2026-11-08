@@ -100,6 +100,20 @@ class SaturdayEveningIsNotQuietTest(unittest.TestCase):
         self.assertFalse(P.quiet_watch_open(self._at(self.SAT, 17, 45)))
         self.assertFalse(P.quiet_watch_open(self._at(self.SAT, 21, 30)))
 
+    def test_saturday_stays_open_when_it_checked_in_after_the_end(self):
+        # Megan 2026-11-07: Cyrus relayed until 17:51 and then went silent.
+        sat = dt.date(2026, 11, 7)
+        last = self._at(sat, 17, 51)
+        self.assertTrue(P.quiet_watch_open(self._at(sat, 18, 40), last))
+        self.assertTrue(P.quiet_watch_open(self._at(sat, 21, 30), last))
+        self.assertFalse(P.quiet_watch_open(self._at(sat, 22, 0), last))
+        # A 16:58 stop is still the agent's own Saturday end.
+        self.assertFalse(P.quiet_watch_open(self._at(sat, 18, 40),
+                                            self._at(sat, 16, 58)))
+        # Friday's check-in proves nothing about Saturday evening.
+        self.assertFalse(P.quiet_watch_open(
+            self._at(sat, 18, 40), dt.datetime(2026, 11, 6, 20, 0)))
+
     def test_weekdays_unchanged(self):
         self.assertFalse(P.quiet_watch_open(self._at(self.MON, 10, 59)))
         self.assertTrue(P.quiet_watch_open(self._at(self.MON, 11, 0)))
