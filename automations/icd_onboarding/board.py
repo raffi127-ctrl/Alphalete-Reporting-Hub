@@ -223,3 +223,126 @@ def sheets(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
         "outstanding": sum(len(p["remaining"]) for p in out[k]),
         "everyone_done": all(not p["remaining"] for p in out[k]),
     } for k in order]
+
+
+def print_text(pages: List[Dict]) -> str:
+    """The sheets as plain text — for a preview, and for reading a diff.
+
+    Each person's outstanding steps are a BULLETED CHECKLIST, one per line, so
+    somebody can tick them off on paper (Megan, 2026-11-08). A comma-separated
+    run of nine steps is not something anybody checks off.
+    """
+    out = []
+    for p in pages:
+        out.append(p["classroom"].upper())
+        out.append("=" * len(p["classroom"]))
+        for who in p["people"]:
+            band = band_of(who)
+            if not who["remaining"]:
+                out.append("  %s — DONE" % who["name"])
+            else:
+                out.append("  %s   (%d of %d done)  [%s]"
+                           % (who["name"], who["done"], who["total"], band.upper()))
+                out.extend("     [ ] %s" % s for s in who["remaining"])
+            out.append("")
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+# How far along somebody is, as a word AND a colour. The word matters: these
+# get printed, and a sheet that only says it in colour says nothing on a mono
+# printer or to anyone who cannot pick the shades apart.
+#
+#   done   — nothing left
+#   close  — 1-2 steps to go
+#   behind — 3 or more, and the reason somebody is chasing
+BANDS = (("done", 0), ("close", 2), ("behind", 10 ** 6))
+
+BAND_COLOUR = {
+    "done":   {"ink": "#1e6b34", "wash": "#E6F4EA"},
+    "close":  {"ink": "#7a5a00", "wash": "#FFF6DB"},
+    "behind": {"ink": "#8a1c13", "wash": "#FDECEA"},
+}
+
+
+def band_of(person: Dict) -> str:
+    """'done' / 'close' / 'behind' for one person on a sheet."""
+    left = len(person.get("remaining") or ())
+    for name, upto in BANDS:
+        if left <= upto:
+            return name
+    return "behind"
+
+
+PRINT_CSS = """
+ @page { margin: 14mm; }
+ body { font: 12pt/1.45 -apple-system, Helvetica, Arial, sans-serif; color: #111; }
+ .sheet { page-break-after: always; }
+ .sheet:last-child { page-break-after: auto; }
+ h1 { font-size: 20pt; margin: 0 0 2pt; }
+ .sub { color: #555; font-size: 10pt; margin-bottom: 14pt; }
+ .who { margin: 0 0 12pt; page-break-inside: avoid; }
+ .nm { font-weight: 700; font-size: 13pt; }
+ .cnt { color: #666; font-weight: 400; font-size: 10pt; }
+ ul { list-style: none; margin: 4pt 0 0; padding-left: 4pt; }
+ li { padding: 2.5pt 0; }
+ .box { display: inline-block; width: 11pt; height: 11pt; border: 1.2pt solid #333;
+        margin-right: 8pt; vertical-align: -1pt; border-radius: 2pt; }
+ .done { color: #1e6b34; font-weight: 600; }
+ /* The bands. A wash behind the name rather than coloured text, so it still
+    reads when somebody prints it in black and white. */
+ .who { border-left: 4pt solid #ccc; padding: 4pt 0 4pt 8pt; }
+ .b-done   { border-left-color: #1e6b34; background: #E6F4EA; }
+ .b-close  { border-left-color: #7a5a00; background: #FFF6DB; }
+ .b-behind { border-left-color: #8a1c13; background: #FDECEA; }
+ .tag { font-size: 9pt; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; margin-left: 6pt; }
+ .t-done { color: #1e6b34; } .t-close { color: #7a5a00; } .t-behind { color: #8a1c13; }
+ .key { font-size: 9pt; color: #555; margin-bottom: 10pt; }
+ .key span { margin-right: 12pt; }
+ .sw { display: inline-block; width: 9pt; height: 9pt; border-radius: 2pt;
+       vertical-align: -1pt; margin-right: 4pt; }
+"""
+
+
+def print_html(pages: List[Dict], *, week: str = "") -> str:
+    """One printable page per classroom, each step a box to tick.
+
+    Self-contained: the panel opens it and the ICD presses print. One classroom
+    per sheet of paper is the whole request, so the page break is not styling.
+    """
+    def esc(t):
+        return (str(t).replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;"))
+
+    parts = ["<!doctype html><meta charset='utf-8'>",
+             "<title>Onboarding%s</title>" % (" — " + esc(week) if week else ""),
+             "<style>%s</style>" % PRINT_CSS]
+    for p in pages:
+        parts.append("<div class='sheet'>")
+        parts.append("<h1>%s</h1>" % esc(p["classroom"]))
+        bits = [esc(week)] if week else []
+        bits.append("%d still to do" % p["outstanding"] if p["outstanding"]
+                    else "everything done")
+        parts.append("<div class='sub'>%s</div>" % " · ".join(bits))
+        parts.append(
+            "<div class='key'>"
+            "<span><i class='sw' style='background:#E6F4EA;border:1pt solid #1e6b34'></i>done</span>"
+            "<span><i class='sw' style='background:#FFF6DB;border:1pt solid #7a5a00'></i>close — 1-2 left</span>"
+            "<span><i class='sw' style='background:#FDECEA;border:1pt solid #8a1c13'></i>behind — 3+</span>"
+            "</div>")
+        for who in p["people"]:
+            band = band_of(who)
+            parts.append("<div class='who b-%s'><div class='nm'>%s" % (band, esc(who["name"])))
+            if who["remaining"]:
+                parts.append(" <span class='cnt'>%d of %d done</span>"
+                             "<span class='tag t-%s'>%s</span></div>"
+                             % (who["done"], who["total"], band, band))
+                parts.append("<ul>")
+                parts.extend("<li><span class='box'></span>%s</li>" % esc(s)
+                             for s in who["remaining"])
+                parts.append("</ul></div>")
+            else:
+                parts.append(" <span class='tag t-done'>done</span></div></div>")
+        parts.append("</div>")
+    return "\n".join(parts)
