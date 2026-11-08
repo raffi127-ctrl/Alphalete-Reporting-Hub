@@ -47,6 +47,15 @@ JAIRO_CAMPAIGN = "nds"
 # The name lives in b2b_dispositions.config, like every other text to that chat.
 CARLOS_GROUP = TEXT_GROUP_ATT
 CARLOS_TITLE = "Alphalete Owner Sales Today"
+# Nico Murrugarra's "Verizon" chat (21 people): Carlos 2026-11-07 wants the
+# owners text there as ONE list like his ATT B2B Leaders, not the split pair.
+# Pinned by its people (the name "Verizon" is far too common to look up), the
+# same pins its knock board uses (icd_alerts Office Channels, office nicolas).
+VERIZON_GROUP = {
+    "group": "Verizon",
+    "chat_guid": "any;+;0ead6e325c74485c913d4d950b25c3d2",
+    "require_handles": ["+14698417861", "+19378236610"],
+}
 
 # Raf 2026-11-06 (#l10-alphalete, "Whole Org on chat on knocking A-players
 # chat"): "Whatever the cadence of the Alphalete post is on the org chat, can
@@ -113,7 +122,7 @@ SUPERSEDED_BY = {"rafael_hidalgo": "raf"}
 HOURLY_CHATS = ("sso", "sso_alphalete", "jairo")
 # One an hour too, but on the :15: the owners chat's first text of the day is
 # 12:15, and Carlos asked to start when it starts.
-HOURLY_ON_THE_15 = ("carlos",)
+HOURLY_ON_THE_15 = ("carlos", "verizon")
 
 # The selling day, Central. This is the guard the code applies, so a stray hand
 # run at 9am texts nothing. weekday(): (first hour, last hour) inclusive.

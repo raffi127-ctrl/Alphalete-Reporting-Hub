@@ -249,7 +249,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="ignore the time window and the unchanged-numbers skip")
     ap.add_argument("--only", choices=("owners", "owners_sso", "sso", "sso_alphalete", "jairo", "carlos",
-                             "knocking", "knocking_sso"),
+                             "verizon", "knocking", "knocking_sso"),
                     help="text just one chat (e.g. a catch-up send to SSO)")
     args = ap.parse_args(argv)
 
@@ -311,7 +311,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 11/6; both of its texts, Raf 11/6), Knocking (Raf 11/6), Carlos's chain
     # (Carlos 11/6).
     ORG_TOTAL_CHATS = ("owners", "owners_sso", "knocking", "knocking_sso",
-                       "carlos")
+                       "carlos", "verizon")
     pair_of = {name: pid for pid, members in pairs.items() for name in members}
     pair_moved = {
         pid: head_to_head_moved(
@@ -331,6 +331,10 @@ def main(argv: Optional[List[str]] = None) -> int:
              alphalete, cfg.SSO_ALPHALETE_TITLE, ()),
             ("jairo", cfg.JAIRO_GROUP, "last_sent_jairo", nds, "NDS Sales Today", ()),
             ("carlos", cfg.CARLOS_GROUP, "last_sent_carlos", totals,
+             cfg.CARLOS_TITLE, ()),
+            # Nico's "Verizon" chat: the same ONE list as Carlos's ATT B2B
+            # Leaders, with both org lines (Carlos 2026-11-07).
+            ("verizon", cfg.VERIZON_GROUP, "last_sent_verizon", totals,
              cfg.CARLOS_TITLE, ()),
             # The owners text again, same cadence, for Raf's office (Raf
             # 2026-11-06: "I want the office to see other guys crushing").
@@ -402,7 +406,11 @@ def _send_one(group, key: str, totals: Dict[str, int], now: dt.datetime,
 
     from automations.b2b_dispositions import text_post as T
     try:
-        res = T.send_text_to_group(group, text, dry_run=dry)
+        if isinstance(group, dict):     # a participant-pinned chat
+            res = T.send_text_to_group(group.get("group") or "", text,
+                                       dry_run=dry, dest=group)
+        else:
+            res = T.send_text_to_group(group, text, dry_run=dry)
     except Exception as e:  # noqa: BLE001 — one bad chat must not stop the other
         print("text failed: %s" % e)
         return 1
