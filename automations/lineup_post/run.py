@@ -7,7 +7,8 @@ copies all these names ... posted on this Car Ride chat."
 
 Raf, Loom 2026-11-06: the chat only gets the LEADER of each car ride (first name
 of the row), pasted as a plain list like he copies the column by hand, and it
-goes at 8:00 PM instead of 8:45.
+goes at 8:00 PM instead of 8:45. Raf, 2026-11-08: his reminder on how to answer
+goes on top of that list every time (NAMES_REMINDER).
 
 Source: `Alphalete SALES BOARD 2025` -> tab `Line Up WE <m>.<d>` (this week's
 Sunday). The car-ride box is col A ('#') through the 'Car Ride #5' header, both
@@ -51,6 +52,18 @@ PHOTO_GROUPS = ["Knocking Chat A-Players"]
 # Full name on Lucy 1 is "Car Ride Leaders" + two emojis (31 people,
 # find_group 2026-10-30); the match is "contains", so the emojis stay out.
 NAMES_GROUPS = ["Car Ride Leaders"]
+# Raf 2026-11-08: top of every names text, word for word (new car ride leaders
+# come in all the time). Real emojis: this goes to iMessage, where Slack's
+# :white_check_mark: would show up as those letters.
+NAMES_REMINDER = (
+    "Please talk to everyone in you car ride, and provide feedback on everyones "
+    "T feedback not just your own!\n"
+    "\n"
+    "✅ = You and your car ride want to keep you territory\n"
+    "❌ = You want new territory, always tell us how many days you’ve "
+    "been at the T and why you want new T.\n"
+    "AD = Add doors"
+)
 
 TAB_PREFIX = "Line Up WE"
 LAST_HEADER = "car ride #5"
@@ -144,9 +157,16 @@ def find_box(grid, struck=frozenset()):
 
 
 def names_text(rows) -> str:
-    """One leader per line, nothing else. The leader is the first name still
-    standing on the row: names were already dropped if crossed out."""
+    """One leader per line. The leader is the first name still standing on the
+    row: names were already dropped if crossed out."""
     return "\n".join(names[0] for _, _, names in rows if names)
+
+
+def names_message(rows) -> str:
+    """What the Car Ride Leaders chat gets: Raf's reminder, then the leaders.
+    Empty when there are no leaders, so nothing goes out with only the reminder."""
+    leaders = names_text(rows)
+    return "%s\n\n\n\n%s" % (NAMES_REMINDER, leaders) if leaders else ""
 
 
 def render_photo(sh, ws, hdr, last_col, rows, day: dt.date) -> Path:
@@ -234,9 +254,12 @@ def main(argv=None) -> int:
                 lambda grp, text, imgs, dry_run=True: {"resolved_name": "(not checked - not a Mac)"})
         text_post = _Preview()
     if a.names:
-        body = names_text(rows)
+        body = names_message(rows)
         if not body:
             raise SystemExit("Line Up: every name in the car-ride box is crossed out")
+        # errors="replace": the reminder's emojis must not kill a Windows console.
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(errors="replace")
         print(body)
         for grp in NAMES_GROUPS:
             r = text_post.send_text_to_group(grp, body, dry_run=not a.send)

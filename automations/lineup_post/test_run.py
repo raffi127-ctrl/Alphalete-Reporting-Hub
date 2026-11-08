@@ -33,6 +33,21 @@ class LineupTest(unittest.TestCase):
         _, _, rows = R.find_box(GRID, struck={(3, 2), (3, 3)})
         self.assertEqual(R.names_text(rows), "Rhea McKee")
 
+    def test_message_has_the_reminder_on_top_then_the_leaders(self):
+        _, _, rows = R.find_box(GRID)
+        msg = R.names_message(rows)
+        self.assertTrue(msg.startswith("Please talk to everyone in you car ride"))
+        self.assertTrue(msg.endswith("AD = Add doors\n\n\n\nJordan Castillo\nRhea McKee"))
+
+    def test_reminder_uses_real_emojis_for_imessage(self):
+        self.assertIn("✅ = You and your car ride", R.NAMES_REMINDER)
+        self.assertIn("❌ = You want new territory", R.NAMES_REMINDER)
+        self.assertNotIn(":white_check_mark:", R.NAMES_REMINDER)
+
+    def test_reminder_alone_never_goes_out(self):
+        _, _, rows = R.find_box(GRID, struck={(3, 2), (3, 3), (5, 2), (5, 3), (5, 6)})
+        self.assertEqual(R.names_message(rows), "")
+
     def test_tab_is_this_weeks_sunday(self):
         self.assertEqual(R.tab_name(dt.date(2026, 10, 22)), "Line Up WE 10.25")
         self.assertEqual(R.tab_name(dt.date(2026, 10, 25)), "Line Up WE 10.25")
