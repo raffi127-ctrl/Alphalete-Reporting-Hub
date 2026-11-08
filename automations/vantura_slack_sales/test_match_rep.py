@@ -39,10 +39,19 @@ class RosterTokens(unittest.TestCase):
     def test_middle_name_go_by(self):
         self.assertEqual(self.m("JACOB"), _norm("Jaime Jacob Castillo"))
 
+    def test_first_name_beats_middle_name(self):
+        rows = dict(ROWS)
+        rows[_norm("Jacob Ortega")] = 99                 # a FIRST name wins over a middle name
+        self.assertEqual(match_rep("JACOB", rows), _norm("Jacob Ortega"))
+
     def test_never_guesses(self):
         rows = dict(ROWS)
-        rows[_norm("Jacob Ortega")] = 99                 # two rows carry 'jacob' -> no match
+        rows[_norm("Jacob Ortega")] = 99
+        rows[_norm("Jacob Diego Raya")] = 100            # two first names -> no match
         self.assertIsNone(match_rep("JACOB", rows))
+        rows2 = dict(ROWS)
+        rows2[_norm("Ana Jacob Perez")] = 101            # two middle names -> no match
+        self.assertIsNone(match_rep("JACOB", rows2))
         self.assertIsNone(self.m("Rudy"))
 
 
