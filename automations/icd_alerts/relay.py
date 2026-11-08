@@ -820,6 +820,13 @@ def forward_confirmed(office_key: str = "") -> bool:
     return _state_row(CA.FORWARD_STATE, office_key)
 
 
+def results_forward_confirmed(office_key: str = "") -> bool:
+    """Has Gmail's forward of Sterling RESULTS (to the results inbox) been
+    confirmed on our side? Same road as forward_confirmed. Never raises."""
+    from automations.icd_alerts import code_answer as CA
+    return _state_row(CA.RESULTS_FORWARD_STATE, office_key)
+
+
 def forward_working(office_key: str = "") -> bool:
     """Have SaraPlus's codes already reached us from this office, so nothing is
     left for the owner to do? Same road as forward_confirmed. Never raises."""

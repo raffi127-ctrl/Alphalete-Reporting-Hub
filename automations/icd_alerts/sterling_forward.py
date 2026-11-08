@@ -63,6 +63,75 @@ FILTER_STEPS = (
     "Click OK here when you're done." % (STERLING_SUBJECT, F.REPORTING_INBOX))
 
 
+# --- the RESULTS forward (Megan 2026-11-08) ---------------------------------
+# Sterling's background-check RESULT mails -> their own inbox, never the
+# reporting one, so the office admin's "Next week's starts" shows each
+# person's BG status. Everything from Sterling EXCEPT the login codes: those
+# keep going to the reporting inbox through the filter above.
+RESULTS_INBOX = "lucysterlingreports@gmail.com"
+RESULTS_FILTER_URL = ("https://mail.google.com/mail/u/0/#create-filter/from="
+                      + STERLING_SENDER.replace("@", "%40")
+                      + "&hasnot=%22" + STERLING_SUBJECT.replace(" ", "%20") + "%22")
+ADD_RESULTS_FORWARD = (
+    "One more forward: Sterling's background check RESULTS, so your admin can "
+    "see who has passed. They go to Lucy's own results inbox, %s, not to the "
+    "reporting team.\n\n"
+    "Gmail just opened. Please make sure you're in the %s account.\n\n"
+    "1. Click Add a forwarding address.\n"
+    "2. PASTE into the box (hold Command and tap V). We already copied it.\n"
+    "3. Click Next, Proceed, then OK.\n\n"
+    "Leave \"Disable forwarding\" selected.\n\n"
+    "Click OK here when you're done.")
+RESULTS_FILTER_STEPS = (
+    "Last filter! Gmail just opened a box with Sterling's address filled in, and "
+    "\"Doesn't have\" set to \"%s\" so your login codes are left out.\n\n"
+    "1. Click Create filter.\n"
+    "2. Check Forward it to.\n"
+    "3. Pick %s.\n"
+    "4. Click Create filter again.\n\n"
+    "Click OK here when you're done." % (STERLING_SUBJECT, RESULTS_INBOX))
+RESULTS_WAIT_S = 180
+
+
+def _wait_for_results(office_key: str, say=print, sleep=None) -> bool:
+    """Has Lucy 1 confirmed this office's RESULTS forward? Up to 3 minutes."""
+    import time
+    from automations.icd_alerts import relay as R
+    sleep = sleep or time.sleep
+    say("      Checking with Lucy -- this takes up to 3 minutes...")
+    deadline = time.time() + RESULTS_WAIT_S
+    while True:
+        if R.results_forward_confirmed(office_key):
+            return True
+        if time.time() >= deadline:
+            return False
+        sleep(F.CONFIRM_POLL_S)
+
+
+def walk_results(ask, address: str, say=print, office_key: str = "") -> str:
+    """The results forward, for the address Sterling mails. Never raises."""
+    from automations.icd_alerts import relay as R
+    try:
+        if not R.report_forward(address, office_key=office_key, service="sterling_results"):
+            say("      could not reach the reporting team -- tell them %s" % address)
+            return "address not sent"
+        if not R.results_forward_confirmed(office_key):
+            F._copy(RESULTS_INBOX, say)
+            F._open(F.for_account(F.FORWARDING_URL, address), say)
+            ask.message(ADD_RESULTS_FORWARD % (RESULTS_INBOX, address))
+            if not _wait_for_results(office_key, say, sleep=F.holding(ask)):
+                ask.message(F.LEFT_OPEN)
+                return "not confirmed yet"
+        F._open(F.for_account(RESULTS_FILTER_URL, address), say)
+        ask.message(RESULTS_FILTER_STEPS)
+        return "done"
+    except ask.Cancelled:
+        return "skipped for now"
+    except Exception as e:  # noqa: BLE001
+        say("      could not show the results forward steps: %s" % type(e).__name__)
+        return "skipped for now"
+
+
 def _saraplus_address() -> str:
     """The address this computer's SaraPlus login uses -- usually the same."""
     return F._login_email()
@@ -99,7 +168,10 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
                 return "not confirmed yet"
         F._open(F.for_account(FILTER_URL, address), say)
         ask.message(FILTER_STEPS)
-        return "done"
+        # Then the results forward, same Gmail account (Megan 2026-11-08).
+        res = walk_results(ask, address, say, office_key=office_key)
+        say("      results forward: %s" % res)
+        return "done" if res == "done" else res
     except ask.Cancelled:
         return "skipped for now"
     except Exception as e:  # noqa: BLE001

@@ -18,7 +18,11 @@ ticks them by default.
 
 bg_check_sync calls publish() after each pass (11:30 / 4pm on Lucy 1).
 
-The result emails land in Raf's inbox, so today this is Raf's office only.
+WHERE THE RESULTS COME FROM. Raf's land in his own inbox (raffi127, read by
+bg_check_sync's email_source). Every other office forwards its Sterling RESULT
+mails to lucysterlingreports@gmail.com (sterling_forward.walk_results); a
+forwarded mail carries the ICD's address in X-Forwarded-For, and the relay's
+'Sterling Results Mail' tab says which office that address is.
 """
 from __future__ import annotations
 
@@ -62,16 +66,82 @@ def write(office: str, people: List[Dict], now: str) -> None:
     _retry(ws.update, [HEAD] + keep + rows, "A1")
 
 
+def _results_office_map() -> Dict[str, str]:
+    """ICD address -> office key, off the relay's 'Sterling Results Mail' tab."""
+    from automations.icd_alerts import code_answer as CA
+    from automations.icd_alerts import post as P
+    from automations.recruiting_report.fill import _retry, open_by_key
+    book = open_by_key(P.RELAY_SPREADSHEET_ID)
+    try:
+        rows = _retry(book.worksheet(CA.SERVICES[CA.STERLING_RESULTS]["tab"]).get_all_values)
+    except Exception:  # noqa: BLE001 -- no office has set it up yet
+        return {}
+    return {r[1].strip().lower(): r[0].strip().lower() for r in rows[1:]
+            if len(r) > 1 and r[0].strip() and "@" in r[1]}
+
+
+def results_inbox_events(days: int = DAYS) -> Dict[str, list]:
+    """office -> [BGEvent] from the results inbox, by X-Forwarded-For."""
+    import email
+    import imaplib
+    import re
+    from automations.bg_check_sync import email_source as ES, parse
+    from automations.icd_alerts import code_answer as CA
+    if not CA.RESULTS_APP_PW.exists():
+        return {}
+    who = _results_office_map()
+    if not who:
+        return {}
+    M = imaplib.IMAP4_SSL(ES.IMAP_HOST)
+    M.login(CA.RESULTS_INBOX, CA.RESULTS_APP_PW.read_text(encoding="utf-8-sig").strip().replace(" ", ""))
+    out: Dict[str, list] = {}
+    try:
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        since = (dt.date.today() - dt.timedelta(days=days)).strftime("%d-%b-%Y")
+        typ, data = M.search(None, '(FROM "%s" SINCE %s)' % (ES.FADV_SENDER, since))
+        for mid in (data[0] or b"").split() if typ == "OK" else []:
+            typ, got = M.fetch(mid, "(RFC822)")
+            if typ != "OK" or not got or not got[0]:
+                continue
+            msg = email.message_from_bytes(got[0][1])
+            fwd = re.findall(r"[\w.+-]+@[\w.-]+\w", msg.get("X-Forwarded-For", "") or "")
+            office = next((who[a.lower()] for a in fwd if a.lower() in who), "")
+            if not office:
+                continue
+            ev = parse.classify(ES._decode(msg.get("From", "")), ES._decode(msg.get("Subject", "")),
+                                ES._best_text(msg), date=ES._to_iso(msg.get("Date", "")),
+                                source_id=mid.decode())
+            if ev:
+                out.setdefault(office, []).append(ev)
+    finally:
+        try:
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
 def publish(*, dry_run: bool = False, log=print) -> int:
     from automations.bg_check_sync import email_source
-    people = latest_by_person(email_source.fetch_events(since_days=DAYS, verbose=False))
-    log("bg status: %d people with a Sterling result email in the last %d days" % (len(people), DAYS))
-    if dry_run:
-        for p in people:
-            log("  %s %s  %s  (%s)" % (p["first"], p["last"], p["status"], p["date"]))
-        return len(people)
-    write(OFFICE, people, dt.datetime.now().isoformat(timespec="minutes"))
-    return len(people)
+    by_office = {OFFICE: latest_by_person(email_source.fetch_events(since_days=DAYS, verbose=False))}
+    try:
+        for office, events in results_inbox_events().items():
+            if office != OFFICE:           # Raf: his own inbox is the full record
+                by_office[office] = latest_by_person(events)
+    except Exception as e:  # noqa: BLE001 -- Raf's still publishes
+        log("bg status: results inbox not read (%s)" % type(e).__name__)
+    now = dt.datetime.now().isoformat(timespec="minutes")
+    total = 0
+    for office, people in by_office.items():
+        log("bg status: %s -- %d people with a Sterling result email in the last %d days"
+            % (office, len(people), DAYS))
+        total += len(people)
+        if dry_run:
+            for p in people[:20]:
+                log("  %s %s  %s  (%s)" % (p["first"], p["last"], p["status"], p["date"]))
+            continue
+        write(office, people, now)
+    return total
 
 
 def main(argv=None) -> int:

@@ -61,6 +61,9 @@ def main(argv=None) -> int:
     res = sterling_send.check_login(office_key=office_key, log=say)
     if res.get("ok"):
         say("  ALL SET. Your admin can send background checks from now on.")
+        if fwd != "done":
+            say("  (The forward isn't finished yet -- run this same line again later")
+            say("   so your admin can also see who has passed.)")
         return 0
     say("  The sign-in didn't finish: %s" % res.get("error"))
     say("  Run this same line again, or tell the reporting team.")

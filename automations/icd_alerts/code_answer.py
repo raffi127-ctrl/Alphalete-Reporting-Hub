@@ -46,6 +46,7 @@ import datetime as dt
 import email
 import imaplib
 import re
+from pathlib import Path
 from email.header import decode_header, make_header
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -80,12 +81,25 @@ FORWARD_PREFIX = "SaraPlus codes go to "
 # the results -- and the scope check below counts results as "too wide".
 SARAPLUS = "saraplus"
 STERLING = "sterling"
+# STERLING RESULTS (Megan 2026-11-08): each ICD forwards Sterling's background-
+# check RESULT mails -- never their codes -- to a separate inbox Lucy 1 reads,
+# lucysterlingreports@gmail.com, so applicants' outcomes never sit in the
+# reporting inbox. Same forward road as the codes: the address goes home,
+# lands on its own tab, and Lucy 1 confirms Gmail's forward -- in THAT inbox.
+STERLING_RESULTS = "sterling_results"
+RESULTS_INBOX = "lucysterlingreports@gmail.com"
+RESULTS_APP_PW = Path.home() / ".config" / "recruiting-report" / "gmail-app-password-lucysterling"
+RESULTS_FORWARD_STATE = "results-forward-confirmed"
 SERVICES = {
     SARAPLUS: {"prefix": SUMMARY_PREFIX, "tab": MAIL_TAB, "name": "SaraPlus",
                "query": "from:security.info@saraplus.com to:%s newer_than:1d"},
     STERLING: {"prefix": "Sterling code request ", "tab": "Sterling Code Mail",
                "name": "Sterling",
                "query": "from:noreply@us.fadv.co subject:authentication to:%s newer_than:1d"},
+    # Never asked for a code: the prefix is only here so nothing else claims it.
+    STERLING_RESULTS: {"prefix": "Sterling results request ", "tab": "Sterling Results Mail",
+                       "name": "Sterling results", "inbox": RESULTS_INBOX,
+                       "query": "from:noreply@us.fadv.co to:%s newer_than:1d"},
 }
 STERLING_MAIL_TAB = SERVICES[STERLING]["tab"]
 
@@ -124,7 +138,9 @@ def since_of(summary: str) -> Optional[dt.datetime]:
 # Sterling's setup step (sterling_forward) sends its address home the same
 # way, under its own prefix, so it lands on the Sterling tab.
 STERLING_FORWARD_PREFIX = "Sterling codes go to "
-_FORWARD_PREFIXES = {SARAPLUS: FORWARD_PREFIX, STERLING: STERLING_FORWARD_PREFIX}
+STERLING_RESULTS_PREFIX = "Sterling results go to "
+_FORWARD_PREFIXES = {SARAPLUS: FORWARD_PREFIX, STERLING: STERLING_FORWARD_PREFIX,
+                     STERLING_RESULTS: STERLING_RESULTS_PREFIX}
 
 
 def forward_summary(address: str, service: str = SARAPLUS) -> str:
@@ -392,10 +408,14 @@ def requester_of(subject: str) -> str:
     return m.group(1).lower() if m else ""
 
 
-def _imap():
+def _imap(results: bool = False):
+    """The reporting inbox, or (results=True) the Sterling results inbox."""
     from automations.shared import email_ingest as I
     M = imaplib.IMAP4_SSL(I.IMAP_HOST)
-    M.login(I.ACCOUNT, I._app_password())
+    if results:
+        M.login(RESULTS_INBOX, RESULTS_APP_PW.read_text(encoding="utf-8-sig").strip().replace(" ", ""))
+    else:
+        M.login(I.ACCOUNT, I._app_password())
     M.select('"[Gmail]/All Mail"', readonly=True)
     return M
 
@@ -405,9 +425,9 @@ def _search(M, query: str) -> List[bytes]:
     return (data[0] or b"").split() if typ == "OK" else []
 
 
-def _confirmation_mails() -> Dict[str, str]:
+def _confirmation_mails(results: bool = False) -> Dict[str, str]:
     """requester address -> confirm link, newest mail winning. Read-only."""
-    M = _imap()
+    M = _imap(results)
     try:
         out: Dict[str, str] = {}
         for uid in _search(M, CONFIRM_QUERY):      # oldest first: newest overwrites
@@ -556,9 +576,10 @@ def confirm_forwards(book=None, *, send: bool = False,
                 if late and NOTE_NO_MAIL not in note:
                     log("FWD    %-10s no Gmail confirmation mail" % office)
                     _note(at, note, NOTE_NO_MAIL)
-                    _say("*%s* started the %s code forward, but Gmail's "
-                         "confirmation never reached the reporting inbox. They "
-                         "may have stopped before adding the address." % (office, svc_name))
+                    _say("*%s* started the %s forward, but Gmail's "
+                         "confirmation never reached %s. They "
+                         "may have stopped before adding the address."
+                         % (office, svc_name, SERVICES[service].get("inbox", "the reporting inbox")))
                 done.append({"office": office, "status": "no mail"})
                 continue
             if not send:
@@ -571,13 +592,14 @@ def confirm_forwards(book=None, *, send: bool = False,
                 log("FWD    %-10s could not confirm: %s" % (office, e))
                 _note(at, note, NOTE_FAILED)
                 _say("*%s*: Lucy could not confirm Gmail's %s forward "
-                     "(%s: %s). Please click the confirmation email in the "
-                     "reporting inbox." % (office, svc_name, type(e).__name__, str(e)[:120]))
+                     "(%s: %s). Please click the confirmation email in %s."
+                     % (office, svc_name, type(e).__name__, str(e)[:120],
+                        SERVICES[service].get("inbox", "the reporting inbox")))
                 done.append({"office": office, "status": "failed"})
                 continue
             log("FWD    %-10s Gmail forward confirmed" % office)
             _note(at, note, NOTE_CONFIRMED)
-            _say("*%s*: Gmail's %s code forward is confirmed. It starts "
+            _say("*%s*: Gmail's %s forward is confirmed. It starts "
                  "working once they save the filter." % (office, svc_name))
             done.append({"office": office, "status": "confirmed"})
         except Exception as e:  # noqa: BLE001 -- one row never costs the rest
@@ -586,7 +608,8 @@ def confirm_forwards(book=None, *, send: bool = False,
 
 
 def publish_confirmed(book=None, *, send: bool = False,
-                      now: Optional[dt.datetime] = None, log=print) -> List[str]:
+                      now: Optional[dt.datetime] = None, log=print,
+                      service: str = SARAPLUS) -> List[str]:
     """Let each Mac see that its forward is confirmed. Never raises.
 
     The note on MAIL_TAB is the truth, however it got there (Lucy pressed
@@ -602,7 +625,8 @@ def publish_confirmed(book=None, *, send: bool = False,
         if book is None:
             from automations.recruiting_report.fill import open_by_key
             book = open_by_key(P.RELAY_SPREADSHEET_ID)
-        sheet = book.worksheet(MAIL_TAB)
+        sheet = book.worksheet(SERVICES[service]["tab"] if service == STERLING_RESULTS else MAIL_TAB)
+        state = RESULTS_FORWARD_STATE if service == STERLING_RESULTS else FORWARD_STATE
         rows = sheet.get_all_values()
         codes = None
         for at, r in enumerate(rows[1:], start=2):
@@ -614,7 +638,7 @@ def publish_confirmed(book=None, *, send: bool = False,
             if not send:
                 continue
             codes = codes or _tab(book, CODES_TAB, CODES_HEADER)
-            codes.append_row([office, FORWARD_STATE, "",
+            codes.append_row([office, state, "",
                               now.isoformat(timespec="seconds"), "", ""],
                              value_input_option="RAW")
             sheet.update_cell(at, 4, "%s; %s" % (r[3], NOTE_MAC_TOLD))

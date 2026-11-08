@@ -4461,6 +4461,12 @@ def main(argv=None) -> int:
                                                  service=code_answer.STERLING)
                     code_answer.check_forward_scope(book, send=args.send,
                                                     service=code_answer.STERLING)
+                    # Sterling RESULTS forward, into its own inbox (2026-11-08).
+                    code_answer.confirm_forwards(
+                        book, send=args.send, service=code_answer.STERLING_RESULTS,
+                        mails=lambda: code_answer._confirmation_mails(results=True))
+                    code_answer.publish_confirmed(book, send=args.send,
+                                                  service=code_answer.STERLING_RESULTS)
                 except Exception as e:  # noqa: BLE001 — never cost the alerts
                     print("could not answer code requests: %s: %s"
                           % (type(e).__name__, str(e)[:100]))
