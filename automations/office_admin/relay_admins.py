@@ -81,6 +81,56 @@ def _find(rows: List[List[str]], username: str) -> Optional[int]:
     return None
 
 
+class _EcoOffice:
+    """An enrolled Lucy ECO office that isn't in config.OFFICES: enough for a
+    login row (key, test mode, no starting account -- the guard is the
+    approved accounts on 'Office Settings')."""
+    def __init__(self, key: str):
+        self.key, self.bgc_mode, self.appstream_id = key, "dry", ""
+
+
+def office_for(key: str):
+    """config.OFFICES first, else any enrolled ECO office (Megan 2026-11-08:
+    the Hub card sets up a new office with no code change)."""
+    from automations.office_admin import config as C
+    o = C.office(key or "")
+    if o:
+        return o
+    k = (key or "").strip().lower()
+    try:
+        from automations.icd_alerts import offices as O
+        if k and O.get(k):
+            return _EcoOffice(k)
+    except Exception:  # noqa: BLE001 -- registry unreadable: config only
+        pass
+    return None
+
+
+def offices_for_hub() -> List[tuple]:
+    """[(key, 'Owner Name')] -- every office an admin login can be made for."""
+    from automations.office_admin import config as C
+    out = {k: o.owner for k, o in C.OFFICES.items()}
+    try:
+        from automations.icd_alerts import offices as O
+        for k, o in O.all_offices().items():
+            out.setdefault(k, o.owner)
+    except Exception:  # noqa: BLE001
+        pass
+    return sorted(out.items(), key=lambda kv: (kv[1] or kv[0]).lower())
+
+
+def admins() -> List[Dict]:
+    """Every login row, for the Hub card's pickers and table."""
+    rows = _rows(_tab())
+    out = []
+    for r in rows[1:]:
+        r = r + [""] * (len(HEAD) - len(r))
+        if r[0].strip():
+            out.append({"username": r[0].strip(), "office": r[1].strip(), "active": r[4].strip().upper() == "TRUE",
+                        "mode": r[5].strip() or "dry", "name": r[6].strip(), "last": r[7].strip()})
+    return out
+
+
 SETTINGS_TAB = "Office Settings"
 SET_HEAD = ["Office", "State", "City", "Updated By", "Updated At", "AppStream", "Approved Accounts"]
 
@@ -156,9 +206,9 @@ def main(argv=None) -> int:
 
     if a.add:
         u = a.add.strip().lower()
-        o = C.office(a.office or "")
+        o = office_for(a.office or "")
         if not o:
-            print("--office must be one of: %s" % ", ".join(sorted(C.OFFICES)), file=sys.stderr)
+            print("--office must be an enrolled Lucy ECO office (e.g. %s)" % ", ".join(sorted(C.OFFICES)), file=sys.stderr)
             return 2
         mine = [r for r in rows[1:] if r and r[0].strip().lower() == u]
         if any(len(r) > 1 and r[1].strip().lower() == o.key for r in mine):

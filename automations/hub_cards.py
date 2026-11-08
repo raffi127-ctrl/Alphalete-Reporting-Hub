@@ -1555,6 +1555,51 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        # Megan 2026-11-08: "make it a hub card" -- the office admin logins for
+        # the Lucy Office Admin extension, without terminal commands. The form
+        # is dashboard._render_office_admin_logins (hooked on this id); the
+        # Show button lists every login.
+        "id": "office-admin-logins",
+        "name": "Office Admin Logins (Background Checks)",
+        "creator": "Megan",
+        "emoji": "🛡️",
+        "color": "#1F6FB2",
+        "category": "🎯 Recruiting",
+        "description": "Make and manage the logins office admins use in the Lucy Office Admin extension to send Sterling background checks, and approve each office's ApplicantStream accounts.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** **Add an admin**: name + office → a username and a simple password to hand them.\n"
+            "**•** **Change an admin**: new password, switch live/test, or turn the login off.\n"
+            "**•** **Office accounts**: which ApplicantStream accounts an office may send from. "
+            "This is the guard: any other calendar sends nothing.\n\n"
+            "WHAT THE ADMIN DOES\n"
+            "Installs Lucy Office Admin from the Chrome Web Store link, clicks the Lucy icon "
+            "and signs in once. New logins start in **test mode** unless you tick live.\n\n"
+            "BEFORE AN OFFICE CAN SEND\n"
+            "The ICD's ECO machine runs the Sterling setup link once: "
+            "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/sterling-setup.html"
+        ),
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {"frequency": "weekly", "weekdays": [], "time": "On demand",
+                     "time_label": "On demand", "estimated_minutes": 1},
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Listed every admin login above.",
+            "message_failed": "❌ Couldn't read the logins. See the log above.",
+        },
+        "actions": [
+            {
+                "label": "Show every admin login",
+                "icon": "📋",
+                "primary": True,
+                "help": "Lists every office admin login: office, live or test, last sign-in.",
+                "module": "automations.office_admin.relay_admins",
+                "args_fn": (lambda: ["--list"]),
+            },
+        ],
+    },
+    {
         "id": "lucy-broadcast",
         "name": "Lucy Broadcast (Q 5 Min)",
         "creator": "Raf & Claude",

@@ -3799,6 +3799,110 @@ def _tdb_store_all() -> dict:
     return _s.all()
 
 
+def _oa_run(argv):
+    """Run relay_admins in-process; -> (ok, printed text)."""
+    import contextlib, io
+    from automations.office_admin import relay_admins as _ra
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            rc = _ra.main(argv)
+    except SystemExit as e:                     # argparse refusing an input
+        rc = e.code
+    except Exception as e:                      # noqa: BLE001
+        return False, "%s: %s" % (type(e).__name__, e)
+    return rc in (0, None), buf.getvalue().strip()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _oa_offices():
+    from automations.office_admin import relay_admins as _ra
+    return _ra.offices_for_hub()
+
+
+def _render_office_admin_logins() -> None:
+    """Office Admin Logins card (Megan 2026-11-08): the relay_admins commands as
+    three small forms. One box per thing; the username is made from the name."""
+    import re as _re
+    from automations.office_admin import relay_admins as _ra
+    offices = _oa_offices()
+    labels = {k: "%s (%s)" % (owner or k, k) for k, owner in offices}
+    keys = [k for k, _ in offices]
+
+    with st.expander("➕ Add an admin", expanded=True):
+        with st.form("oa_add", clear_on_submit=False):
+            name = st.text_input("Admin's full name", placeholder="e.g. Aisha Ceron")
+            office = st.selectbox("Office", keys, format_func=lambda k: labels.get(k, k),
+                                  index=keys.index("raf") if "raf" in keys else 0)
+            pw = st.text_input("Password (leave blank and Lucy makes a simple one)",
+                               placeholder="e.g. sunny4821")
+            live = st.checkbox("Live (really sends). Untick for test mode", value=True)
+            go = st.form_submit_button("Create login", type="primary")
+        if go:
+            first = _re.sub(r"[^a-z0-9]", "", (name.strip().split() or [""])[0].lower())
+            if not first:
+                st.error("Type the admin's name first.")
+            else:
+                argv = ["--add", first, "--office", office, "--name", name.strip()]
+                if pw.strip():
+                    argv += ["--password", pw.strip()]
+                ok, out = _oa_run(argv)
+                if ok and live:
+                    ok2, out2 = _oa_run(["--mode", first, "live"])
+                    out += "\n" + out2
+                    ok = ok and ok2
+                (st.success if ok else st.error)("Username: **%s**" % first if ok else "Didn't work")
+                st.code(out or "(no output)", language=None)
+                if ok:
+                    st.caption("Send them the store link + this username and password: "
+                               "https://chromewebstore.google.com/detail/dapenpchflbhodfhndnlhojjnfmmabnp")
+
+    with st.expander("🔑 Change an admin"):
+        try:
+            people = _ra.admins()
+        except Exception as e:                  # noqa: BLE001
+            people = []
+            st.error("Couldn't read the logins: %s" % e)
+        users = sorted({p["username"] for p in people})
+        if users:
+            with st.form("oa_change"):
+                who = st.selectbox("Admin", users, format_func=lambda u: "%s · %s" % (u, ", ".join(
+                    "%s %s%s" % (p["office"], p["mode"], "" if p["active"] else " (off)")
+                    for p in people if p["username"] == u)))
+                what = st.radio("Change", ["New password", "Switch to live", "Switch to test",
+                                           "Turn the login off"], horizontal=True)
+                newpw = st.text_input("New password (for New password; blank = Lucy makes one)")
+                go2 = st.form_submit_button("Save change", type="primary")
+            if go2:
+                argv = {"New password": ["--reset", who] + (["--password", newpw.strip()] if newpw.strip() else []),
+                        "Switch to live": ["--mode", who, "live"],
+                        "Switch to test": ["--mode", who, "dry"],
+                        "Turn the login off": ["--disable", who]}[what]
+                ok, out = _oa_run(argv)
+                (st.success if ok else st.error)("Done" if ok else "Didn't work")
+                st.code(out or "(no output)", language=None)
+        else:
+            st.caption("No admin logins yet.")
+
+    with st.expander("✅ Office ApplicantStream accounts"):
+        with st.form("oa_accts"):
+            office2 = st.selectbox("Office", keys, format_func=lambda k: labels.get(k, k),
+                                   index=keys.index("raf") if "raf" in keys else 0, key="oa_acct_office")
+            nums = st.text_area("Account numbers, one per line (this replaces the list)",
+                                placeholder="11280\n23965")
+            c1, c2 = st.columns(2)
+            show = c1.form_submit_button("Show current")
+            save = c2.form_submit_button("Save accounts", type="primary")
+        if show or save:
+            found = _re.findall(r"\d+", nums or "")
+            if save and not found:
+                st.error("Type at least one account number.")
+            else:
+                ok, out = _oa_run(["--accounts", office2] + (found if save else []))
+                (st.success if ok else st.error)("Saved" if (ok and save) else ("Current list" if ok else "Didn't work"))
+                st.code(out or "(no output)", language=None)
+
+
 def _render_texas_de_brazil_dinner_inputs() -> None:
     """Texas de Brazil card: the rolling DINNER-date schedule, in the shared
     'TdB Manual Inputs' Sheet store (live cross-machine — reaches the mini with
@@ -4039,6 +4143,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         if (report["id"] == "june_texas_de_brazil_monthly_competition"
                 and not _paused_reason(report)):
             _render_texas_de_brazil_dinner_inputs()
+
+        # Office Admin Logins only: the add / change / accounts form.
+        if report["id"] == "office-admin-logins":
+            _render_office_admin_logins()
 
         # Checklist (gates the primary run button)
         all_checked = True
