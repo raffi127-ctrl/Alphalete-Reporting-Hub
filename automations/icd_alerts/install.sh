@@ -94,7 +94,14 @@ import json, ssl, sys, urllib.parse, urllib.request
 office_key, relay_key = sys.argv[1], sys.argv[2]
 pub = json.load(open("offices.json"))
 rec = (pub.get("offices") or {}).get(office_key)
-if not rec:
+roster_rec = rec
+# ALWAYS ASK THE RELAY FOR THE SIGN-UP, even for an office already on the
+# roster (Megan 2026-11-08: Nico "filled out this form and then the installer
+# also asked him the same questions" -- his code was on the roster, so the
+# sign-up was never read and every pop-up came back). The roster supplies the
+# office; the sign-up supplies the owner's answers.
+rec = None
+if True:
     # AN OFFICE THAT SIGNED ITSELF UP is not in this file and cannot be: it is
     # written on GitHub and needs a push, while the sign-up form runs on
     # Streamlit's servers where there is no repo. So ask the relay, which is
@@ -134,13 +141,17 @@ if not rec:
                 ["curl", "-fsSL", "--max-time", "40", url],
                 capture_output=True, text=True, check=True).stdout)
         rec = out.get("office") if out.get("ok") else None
-        if not rec:
+        if not rec and not roster_rec:
             print("\nThe reporting team's sign-up list answered: %s"
                   % str(out.get("error") or out)[:200])
     except Exception as e:
-        print("\nCould not reach the reporting team's sign-up list (%s: %s)."
-              % (type(e).__name__, str(e)[:160]))
+        if not roster_rec:
+            print("\nCould not reach the reporting team's sign-up list (%s: %s)."
+                  % (type(e).__name__, str(e)[:160]))
         rec = None
+if roster_rec:
+    # Roster first, the sign-up's answers on top of it.
+    rec = dict(roster_rec, **(rec or {}))
 if not rec:
     print("\nThat code is for an office I do not recognise (%r)." % office_key)
     print("Check it with the reporting team — nothing has been changed.")
