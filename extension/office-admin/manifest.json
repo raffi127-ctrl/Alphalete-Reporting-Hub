@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lucy Office Admin",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Send background-check invites to today's offered applicants, straight from your ApplicantStream calendar.",
   "permissions": [
     "storage",

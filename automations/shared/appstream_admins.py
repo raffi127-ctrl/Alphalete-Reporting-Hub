@@ -564,8 +564,9 @@ def icd_message(owner: str, login: Dict) -> str:
     """Megan 2026-11-06: say what it is, that the enrollment form is done
     together on the Zoom call, give the Python download to do BEFORE the call
     (the installer's slow first step), and list what to have ready — OwnerVille
-    login, the email the SaraPlus code goes to, the Sterling email login (the
-    background-check links are rolling out), anything else the installer asks."""
+    login, the email the SaraPlus code goes to, anything else the installer asks.
+    NO STERLING here (Megan 2026-11-08): background checks are offered only to
+    some offices, by their own link -- docs/sterling-setup.html."""
     first = owner.strip().split()[0]
     return (
         "Hi %s! Lucy here :wave: I'm Alphalete's reporting assistant.\n\n"
@@ -582,8 +583,7 @@ def icd_message(owner: str, login: Dict) -> str:
         "it's done:\n%s\n\n"
         "*Please have these ready for the call:*\n"
         "• Your OwnerVille username and password\n"
-        "• The email login where your SaraPlus codes go (if you're in that program)\n"
-        "• Your Sterling email login\n\n"
+        "• The email login where your SaraPlus codes go (if you're in that program)\n\n"
         "That keeps the call short. Reply here if anything's unclear. "
         "Here's the sign-up form we'll use on the call, for reference: %s"
         % (first, login["username"], login["password"], PYTHON_URL, ENROLL_URL))
