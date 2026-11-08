@@ -25,7 +25,9 @@ WHERE EACH DAY'S NUMBER COMES FROM (a tracker posted on day D shows D-1):
     or the one that fits yesterday's number wins, or the day is '-'.
     An ICD missing from an image that WAS read is 0 (Eve: "si no están = 0");
     BOX is the exception (a failed join is not a zero) -> '-'.
-  - Carlos Hidalgo: B2B + BOX (he is on both; '-' if either is '-').
+  - An ICD in DUAL: the sum of its boards ('-' if either is '-'). Carlos
+    Hidalgo was B2B + BOX until he switched to NDS (Megan 2026-11-08); he now
+    reads off his 'Campaign' cell like everyone else.
   - Retail NL: SARA Plus, distinct reps Monday..day (the Monday focus report's
     own count, retail_daily). Not in SARA = 0.
   - Retail JE: 'Productive Rep Count' of the reporting week — it only knows
@@ -117,8 +119,13 @@ WE_ANY = re.compile(r"^WE\s+(\d{1,2})\.(\d{1,2})$", re.I)
 CAMPAIGN_SOURCE = {"fiber": "att_country", "nds": "nds", "b2b": "b2b_att_country",
                    "box": "b2b_box", "je": "je", "retail nl": "retail",
                    "verizon": "vzw"}
-# ICDs that run on TWO campaigns and are ONE row on the daily block
-DUAL = {"carlos hidalgo": ("b2b_att_country", "b2b_box")}
+# ICDs that run on TWO campaigns and are ONE row on the daily block. Matched by
+# NAME, so it beats the row's 'Campaign' cell — an owner who changes campaign
+# must come OUT of here, or he keeps reading boards he is no longer on. Carlos
+# Hidalgo was B2B + BOX until he switched to NDS: wk of 11/02 he was on neither
+# image, so every day carried a flat 5 while the NDS tracker read 4..14
+# (Megan 2026-11-08). Empty now; kept for the next two-campaign owner.
+DUAL: Dict[str, Tuple[str, ...]] = {}
 
 
 # ------------------------------------------------------------------ layout --
