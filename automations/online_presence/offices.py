@@ -74,6 +74,22 @@ class Presence:
     google_link: str = ""
     indeed_url: str = ""           # optional: their Indeed company page
     glassdoor_url: str = ""        # optional
+    # Their social accounts, from sign-up. The website must link to THESE
+    # (an old or look-alike account linked from their site gets flagged).
+    instagram_url: str = ""
+    facebook_url: str = ""
+    linkedin_url: str = ""
+    x_url: str = ""
+    tiktok_url: str = ""
+    youtube_url: str = ""
+
+    @property
+    def social_links(self) -> Dict[str, str]:
+        return {k: v for k, v in (("instagram", self.instagram_url),
+                                  ("facebook", self.facebook_url),
+                                  ("linkedin", self.linkedin_url),
+                                  ("x", self.x_url), ("tiktok", self.tiktok_url),
+                                  ("youtube", self.youtube_url)) if v}
     # WHICH PAGES the ICD chose on sign-up (zoho_draft.PAGES: instagram,
     # facebook, google, linkedin, x). Lucy posts ONLY to these, and DMs the
     # owner only when one of THESE drops out of their Zoho -- a page they
@@ -158,6 +174,9 @@ class Presence:
                 out.append(f"unknown page(s) {bad} (pick from {', '.join(PAGES)})")
             if not self.owner_slack_id:
                 out.append("no owner Slack id (for 'your page disconnected' DMs)")
+            for page in self.pages:
+                if page != "google" and page not in self.social_links:
+                    out.append(f"posts to {page} but has no {page} link")
         return out
 
 
@@ -182,6 +201,9 @@ def alphalete() -> Presence:
         google_link="https://maps.google.com/maps?cid=7671689793908717645",
         indeed_url="https://www.indeed.com/cmp/Alphalete-Marketing",
         glassdoor_url="https://www.glassdoor.com/Overview/Working-at-Alphalete-Marketing-EI_IE1528823.11,30.htm",
+        instagram_url="https://www.instagram.com/alphaletemarketing/",
+        facebook_url="https://www.facebook.com/alphaletemarketing",
+        linkedin_url="https://www.linkedin.com/company/15255695",
         zoho_schedules=True,
         auto_reply_min_stars=C.AUTO_POST_MIN_STARS,
         auto_reply_daily_cap=C.AUTO_POST_DAILY_CAP,

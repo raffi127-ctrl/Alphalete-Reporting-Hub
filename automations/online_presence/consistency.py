@@ -164,13 +164,32 @@ def website_checks(p) -> List[Dict]:
                   and k["zip"] and k["zip"] in text)
         out.append(_row("Website", "address", ok, p.address,
                         "found" if ok else "address not on the home/contact pages", where))
-    for page in p.pages:
-        pat = _SOCIAL.get(page)
-        if pat:
-            out.append(_row("Website", f"{page} link", bool(re.search(pat, allhtml, re.I)),
-                            f"a link to their {page}", "linked" if re.search(pat, allhtml, re.I)
-                            else "no link", where))
+    linked = re.findall(r'href=["\']([^"\']+)', allhtml)
+    for page, url in p.social_links.items():
+        want = social_handle(url)
+        theirs = [u for u in linked if re.search(_SOCIAL.get(page, "$^"), u, re.I)
+                  or (page == "tiktok" and "tiktok.com" in u)
+                  or (page == "youtube" and re.search(r"youtu\.?be", u))]
+        handles = sorted({social_handle(u) for u in theirs})
+        ok = want in handles
+        out.append(_row("Website", f"links to their {page}", ok, url,
+                        "links to it" if ok else (f"links to {', '.join(handles)} instead"
+                                                  if handles else f"no {page} link on the site"),
+                        where))
     return out
+
+
+def social_handle(url: str) -> str:
+    """'instagram.com/AlphaleteMarketing/reels' -> 'instagram.com/alphaletemarketing'
+    -- the account, not the page of it, so two links to one account agree."""
+    u = re.sub(r"^https?://", "", (url or "").strip().lower())
+    u = re.sub(r"^(www\.|m\.|mobile\.)", "", u).split("?")[0].split("#")[0]
+    u = u.replace("twitter.com", "x.com").replace("youtu.be", "youtube.com")
+    parts = [x for x in u.split("/") if x]
+    if not parts:
+        return ""
+    keep = 3 if len(parts) > 2 and parts[1] in ("company", "in", "channel", "c", "user") else 2
+    return "/".join(parts[:keep]).lstrip("@")
 
 
 def _directory_checks(site: str, url: str, p) -> List[Dict]:

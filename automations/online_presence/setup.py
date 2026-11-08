@@ -145,7 +145,10 @@ def _fill_from_signup(a) -> bool:
              ("website", "Website"), ("google_link", "Google Listing Link"),
              ("indeed", "Indeed Link"), ("glassdoor", "Glassdoor Link"),
              ("email", "Complaints Email"), ("approvers", "Approvers"),
-             ("owner", "Owner"), ("pages", "Pages"), ("timezone", "Timezone"))
+             ("owner", "Owner"), ("pages", "Pages"), ("timezone", "Timezone"),
+             ("instagram", "Instagram Link"), ("facebook", "Facebook Link"),
+             ("linkedin", "LinkedIn Link"), ("x", "X Link"),
+             ("tiktok", "TikTok Link"), ("youtube", "YouTube Link"))
     for attr, col in pairs:
         if not getattr(a, attr) and str(row.get(col) or "").strip():
             setattr(a, attr, str(row[col]).strip())
@@ -181,7 +184,9 @@ def cmd_add(a) -> int:
                 website=a.website or base.website,
                 google_link=a.google_link or base.google_link,
                 indeed_url=a.indeed or base.indeed_url,
-                glassdoor_url=a.glassdoor or base.glassdoor_url)
+                glassdoor_url=a.glassdoor or base.glassdoor_url,
+                **{f"{n}_url": getattr(a, n) or getattr(base, f"{n}_url")
+                   for n in ("instagram", "facebook", "linkedin", "x", "tiktok", "youtube")})
     offices.save(p)
     print(f"✓ saved {p.key}: {p.business_name} · room {p.slack_channel} · "
           f"{len(p.approvers)} approver(s) · posts to "
@@ -437,6 +442,8 @@ def main(argv=None) -> int:
                    help="their Google listing link (Share → Copy link)")
     s.add_argument("--indeed", default="", help="their Indeed company page (optional)")
     s.add_argument("--glassdoor", default="", help="their Glassdoor page (optional)")
+    for n in ("instagram", "facebook", "linkedin", "x", "tiktok", "youtube"):
+        s.add_argument(f"--{n}", default="", help=f"their {n} link")
     s.add_argument("--pages", default="",
                    help="pages to post to, e.g. \"Instagram, Facebook, Google\"")
     s.set_defaults(fn=cmd_add)

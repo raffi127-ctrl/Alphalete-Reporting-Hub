@@ -24,7 +24,8 @@ def _office(**kw):
                 contact_email="hr@kash.example", gbp_location="",
                 owner_slack_id="U046XBPN0G2", pages=("instagram", "facebook"),
                 address="100 Main St, Dallas, TX 75201", phone="214-555-0100",
-                website="https://kash.example", google_link="https://maps.google.com/maps?cid=1")
+                website="https://kash.example", google_link="https://maps.google.com/maps?cid=1",
+                instagram_url="https://instagram.com/kash", facebook_url="https://facebook.com/kash")
     base.update(kw)
     return offices.Presence(**base)
 

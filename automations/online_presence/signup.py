@@ -26,10 +26,19 @@ from pathlib import Path
 from typing import Dict, List
 
 TAB = "LucyECO Social Signups"
+# Social links are part of the TRUTH too (Megan 2026-11-08: "the form should
+# just ask for all their social links"): audits check their website links to
+# THESE accounts, and a page they pick to post to must have its link.
+SOCIAL_FIELDS = (("Instagram Link", "instagram.com", "Instagram"),
+                 ("Facebook Link", "facebook.com", "Facebook"),
+                 ("LinkedIn Link", "linkedin.com", "LinkedIn"),
+                 ("X Link", ("x.com", "twitter.com"), "X"),
+                 ("TikTok Link", "tiktok.com", "TikTok"),
+                 ("YouTube Link", ("youtube.com", "youtu.be"), "YouTube"))
 HEADER = ["Submitted At", "Status", "Owner", "Owner Email", "Business Name",
           "Address", "Phone", "Website", "Google Listing Link", "Indeed Link",
           "Glassdoor Link", "Pages", "Approvers", "Complaints Email", "Timezone",
-          "Notes"]
+          "Notes"] + [f for f, _, _ in SOCIAL_FIELDS]
 PAGES = ("Instagram", "Facebook", "Google", "LinkedIn", "X")
 _LOCAL = Path(__file__).resolve().parents[2] / "output" / "lucyeco_social_signups_local.json"
 _CLIENT = None
@@ -76,6 +85,17 @@ def problems(a: Dict) -> List[str]:
         v = str(a.get(k) or "").strip()
         if v and not re.match(r"[^@\s]+@[^@\s]+\.[a-z]{2,}$", v, re.I):
             out.append(f"Check the {k.lower()}.")
+    for field, hosts, name in SOCIAL_FIELDS:
+        v = str(a.get(field) or "").strip()
+        hosts = (hosts,) if isinstance(hosts, str) else hosts
+        if v and not any(h in v.lower() for h in hosts):
+            out.append(f"The {name} link should be a {name} page ({hosts[0]}/…).")
+    for page in a.get("Pages") or []:
+        if page == "Google":
+            continue                       # the Google listing link covers it
+        field = f"{page} Link"
+        if not str(a.get(field) or "").strip():
+            out.append(f"You picked {page} for posting: add your {page} link.")
     if not a.get("Pages"):
         out.append("Pick at least one page for Lucy to post to.")
     return out
@@ -83,8 +103,9 @@ def problems(a: Dict) -> List[str]:
 
 def tidy(a: Dict) -> Dict:
     a = {k: (v.strip() if isinstance(v, str) else v) for k, v in a.items()}
-    if a.get("Website") and not a["Website"].lower().startswith("http"):
-        a["Website"] = "https://" + a["Website"]
+    for k in ["Website"] + [f for f, _, _ in SOCIAL_FIELDS]:
+        if a.get(k) and not str(a[k]).lower().startswith("http"):
+            a[k] = "https://" + a[k]
     d = re.sub(r"\D", "", a.get("Phone") or "")[-10:]
     if len(d) == 10:
         a["Phone"] = f"({d[:3]}) {d[3:6]}-{d[6:]}"

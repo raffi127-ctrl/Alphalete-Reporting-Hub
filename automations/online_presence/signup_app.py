@@ -49,10 +49,26 @@ google_link = st.text_input(
 indeed = st.text_input("Your Indeed company page (if you have one)", placeholder="optional")
 glassdoor = st.text_input("Your Glassdoor page (if you have one)", placeholder="optional")
 
-st.subheader("Posting")
-pages = st.multiselect("Which pages should Lucy post to?", signup.PAGES,
-                       help="Lucy only posts to these, and only messages you if one "
-                            "of these gets disconnected.")
+st.subheader("Where should Lucy post?")
+st.caption("Tick each page Lucy should post your photos to, and paste the link to "
+           "that page. Lucy only posts to these, and only messages you if one of "
+           "them gets disconnected.")
+# ONE QUESTION PER PAGE (Megan 2026-11-08): tick it, and its link box opens
+# right under it. Not st.form, so the box can appear the moment it's ticked.
+pages, socials = [], {}
+for page in signup.PAGES:
+    if not st.checkbox(page, key=f"page_{page}"):
+        continue
+    pages.append(page)
+    if page == "Google":
+        st.caption("↳ Uses your Google listing link above.")
+        continue
+    field, hosts, _ = next(f for f in signup.SOCIAL_FIELDS if f[2] == page)
+    host0 = hosts if isinstance(hosts, str) else hosts[0]
+    socials[field] = st.text_input(f"Your {page} page link", key=f"link_{page}",
+                                   placeholder=f"{host0}/yourpage")
+
+st.subheader("Approvals")
 approvers = st.text_input("Who can approve posts and review replies?",
                           placeholder="Names, separated by commas")
 complaints = st.text_input(
@@ -73,7 +89,7 @@ answers = {"Owner": owner, "Owner Email": owner_email, "Business Name": business
            "Address": address, "Phone": phone, "Website": website,
            "Google Listing Link": google_link, "Indeed Link": indeed,
            "Glassdoor Link": glassdoor, "Pages": list(pages), "Approvers": approvers,
-           "Complaints Email": complaints, "Timezone": tz, "Notes": notes}
+           "Complaints Email": complaints, "Timezone": tz, "Notes": notes, **socials}
 
 st.divider()
 if st.button("Send my sign-up", type="primary"):

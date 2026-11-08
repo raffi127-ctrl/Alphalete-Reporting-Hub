@@ -22,8 +22,10 @@ run is started with `--live`.
   Indeed and Glassdoor against them and flags anything that doesn't match. The Google link is also
   what picks THEIR listing; a name could match two offices.
 - Their Indeed and Glassdoor pages, if they have them (optional).
-- **Which pages Lucy should post to** (Instagram, Facebook, Google, LinkedIn, X). Lucy posts ONLY
-  there, and only DMs them when one of THESE disconnects.
+- **Which pages Lucy should post to:** a checkbox each for Instagram, Facebook, Google, LinkedIn and X.
+  Ticking one opens a box for the link to THAT profile (Google uses the listing link). Lucy posts ONLY
+  there, only DMs them when one of THESE disconnects, and every audit checks their website links to
+  those exact accounts.
 - Who approves, an email for customer concerns, and their timezone.
 
 Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workbook. Nothing turns on.
