@@ -204,7 +204,9 @@ with st.container(border=True):
             "1. Open your **Credico Outlook** → ⚙️ **Settings** → **Mail** → **Rules** → **+ Add new rule**\n"
             "2. Name it **Lucy**\n"
             "3. Condition: **From** → `vzreports@credicousa.com`\n"
-            "4. Action: **Redirect to** → `alphaletereporting@gmail.com`\n"
+            "4. Action: **Forward to** → `alphaletereporting@gmail.com` "
+            "(**Forward**, not Redirect — company mail drops a redirect to an "
+            "outside address)\n"
             "5. **Untick** *Stop processing more rules*, press **Save**, then use the "
             "**↑ arrow** to move it to the **top** of your rules.\n\n"
             "Lucy tells the reporting team as soon as your first report arrives.")

@@ -11,7 +11,7 @@ First office done: Nico Murrugarra / High Value Acquisitions (2026-11-06). Repea
 Outlook → ⚙️ Settings → Mail → Rules → **Add rule**:
 - Name: `Lucy - Credico reports to Hub`
 - Condition: **From** `vzreports@credicousa.com`
-- Action: **Redirect to** `alphaletereporting@gmail.com`  (redirect keeps the original sender + attachments)
+- Action: **Forward to** `alphaletereporting@gmail.com` (FORWARD, not Redirect: company Microsoft 365 mail drops a rule redirect to an outside address with no bounce -- Nico 11/8. Lucy accepts the forwarded file by its office-named attachment.)
 - **UNTICK "Stop processing more rules"**
 - Save, then use the ↑ arrow to keep it **at the top** — ICDs often already have their own forward rules
   that end in "stop processing", which would block a rule below them.
