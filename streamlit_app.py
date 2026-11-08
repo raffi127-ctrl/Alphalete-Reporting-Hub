@@ -60,6 +60,11 @@ TOOLS = [
     ("automations/icd_sales_board/lucyeco_page.py", "lucyeco",
      "Lucy ECOsystem", ":material/hub:",
      "Who is enrolled in what, and on what schedule", False),
+    # LINK ONLY: an office already on Lucy ECOsystem is sent this when it
+    # wants Lucy running its socials + Google reviews (LucyECO Social).
+    ("automations/online_presence/signup_app.py", "join-lucyeco-social",
+     "Join LucyECO Social", ":material/photo_camera:",
+     "Offices — Lucy posts your photos and answers your Google reviews", False),
     ("disposition_signup/app.py", "daily-dispositions", "Daily Dispositions",
      ":material/schedule:",
      "Being replaced by Lucy ECOsystem — reachable by link only", False),

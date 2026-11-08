@@ -133,7 +133,29 @@ def _page(word: str) -> str:
 
 
 # ---- commands ----------------------------------------------------------------
+def _fill_from_signup(a) -> bool:
+    """Copy a submitted LucyECO Social form into the command's answers.
+    Anything also typed on the command line wins over the form."""
+    from automations.online_presence import signup
+    row = signup.find(a.from_signup)
+    if not row:
+        print(f"✗ no LucyECO Social sign-up for {a.from_signup!r}")
+        return False
+    pairs = (("name", "Business Name"), ("address", "Address"), ("phone", "Phone"),
+             ("website", "Website"), ("google_link", "Google Listing Link"),
+             ("indeed", "Indeed Link"), ("glassdoor", "Glassdoor Link"),
+             ("email", "Complaints Email"), ("approvers", "Approvers"),
+             ("owner", "Owner"), ("pages", "Pages"), ("timezone", "Timezone"))
+    for attr, col in pairs:
+        if not getattr(a, attr) and str(row.get(col) or "").strip():
+            setattr(a, attr, str(row[col]).strip())
+    print(f"  using the sign-up {a.from_signup!r} sent on {row.get('Submitted At')}")
+    return True
+
+
 def cmd_add(a) -> int:
+    if a.from_signup and not _fill_from_signup(a):
+        return 1
     old = offices.get(a.office)
     try:
         room = resolve_room(a.room) if a.room else (old.slack_channel if old else "")
@@ -154,7 +176,12 @@ def cmd_add(a) -> int:
                 approvers=approvers,
                 contact_email=a.email or base.contact_email,
                 timezone=a.timezone or base.timezone,
-                owner_slack_id=owner, pages=pages)
+                owner_slack_id=owner, pages=pages,
+                address=a.address or base.address, phone=a.phone or base.phone,
+                website=a.website or base.website,
+                google_link=a.google_link or base.google_link,
+                indeed_url=a.indeed or base.indeed_url,
+                glassdoor_url=a.glassdoor or base.glassdoor_url)
     offices.save(p)
     print(f"✓ saved {p.key}: {p.business_name} · room {p.slack_channel} · "
           f"{len(p.approvers)} approver(s) · posts to "
@@ -188,7 +215,10 @@ def cmd_link_google(a) -> int:
     if not p or p.key == "alphalete":
         print(f"✗ no office {a.office!r} (run `add` first)")
         return 1
-    hits = gbp_api.find_location(a.name or p.business_name)
+    # THE LINK THEY GAVE US picks the listing; a name is only the fallback
+    # (two offices can share a name).
+    by_link = gbp_api.location_for_link(p.google_link) if p.google_link and not a.name else None
+    hits = [by_link] if by_link else gbp_api.find_location(a.name or p.business_name)
     if len(hits) != 1:
         print(f"✗ {len(hits)} listings match {a.name or p.business_name!r}:")
         for h in hits:
@@ -251,6 +281,28 @@ def _eco_zoho_rows(p) -> List[Tuple[bool, str]]:
         rows.append((True, "Zoho's own names for what it sees: "
                            + (", ".join(res.get("channels") or []) or "none")))
     return rows
+
+
+def cmd_audit(a) -> int:
+    """Every site checked against what the office told us on sign-up."""
+    from automations.online_presence import consistency
+    p = offices.get(a.office)
+    if not p:
+        print(f"✗ no office {a.office!r}")
+        return 1
+    rows = consistency.checks(p)
+    print(f"\n{p.business_name} — does every site match the sign-up?\n")
+    for r in rows:
+        mark = {True: "✅", False: "❌", None: "👀"}[r["ok"]]
+        line = f"  {mark} {r['site']}: {r['item']}"
+        if r["ok"] is False:
+            line += f" — should be {r['expected']!r}, shows {r['found']!r}"
+        elif r["ok"] is None:
+            line += f" — {r['expected']} ({r['found']})"
+        print(line)
+    bad = sum(1 for r in rows if r["ok"] is False)
+    print(f"\n{bad} thing(s) don't match." if bad else "\nEverything we can check matches.")
+    return 0
 
 
 def _slack_room_check(p) -> List[Tuple[bool, str]]:
@@ -331,6 +383,15 @@ def checklist(p, *, zoho: bool = False) -> List[Tuple[bool, str]]:
                                  + (", ".join(r["channels"]) or "none")))
             except Exception as e:
                 rows.append((False, f"Zoho check failed ({str(e)[:90]})"))
+    try:
+        from automations.online_presence import consistency
+        cc = consistency.checks(p)
+        bad = [f"{r['site']} {r['item']}" for r in cc if r["ok"] is False]
+        rows.append((not bad, "Every site matches the sign-up" if not bad else
+                     f"{len(bad)} don't match: " + "; ".join(bad[:4])
+                     + f" (run `audit {p.key}`)"))
+    except Exception as e:
+        rows.append((False, f"Sign-up match check failed ({str(e)[:70]})"))
     rows.append((p.is_live, f"Mode: {p.mode}"
                  + ("" if p.is_live else " (nothing posts until this says live)")))
     return rows
@@ -367,6 +428,15 @@ def main(argv=None) -> int:
     s.add_argument("--email", default="", help="where complaints are invited to write")
     s.add_argument("--timezone", default="", help="e.g. America/Los_Angeles")
     s.add_argument("--owner", default="", help="the owner's name (gets disconnect DMs)")
+    s.add_argument("--from-signup", default="", dest="from_signup",
+                   help="business name on a LucyECO Social sign-up: copy its answers")
+    s.add_argument("--address", default="", help="office address, e.g. \"100 Main St, Dallas, TX 75201\"")
+    s.add_argument("--phone", default="", help="company phone")
+    s.add_argument("--website", default="", help="company website")
+    s.add_argument("--google-link", default="", dest="google_link",
+                   help="their Google listing link (Share → Copy link)")
+    s.add_argument("--indeed", default="", help="their Indeed company page (optional)")
+    s.add_argument("--glassdoor", default="", help="their Glassdoor page (optional)")
     s.add_argument("--pages", default="",
                    help="pages to post to, e.g. \"Instagram, Facebook, Google\"")
     s.set_defaults(fn=cmd_add)
@@ -381,6 +451,9 @@ def main(argv=None) -> int:
     s.add_argument("office")
     s.add_argument("--name", default="", help="listing name if it differs")
     s.set_defaults(fn=cmd_link_google)
+    s = sub.add_parser("audit", help="every site vs the sign-up answers")
+    s.add_argument("office")
+    s.set_defaults(fn=cmd_audit)
     s = sub.add_parser("check", help="the install checklist")
     s.add_argument("office")
     s.add_argument("--zoho", action="store_true",

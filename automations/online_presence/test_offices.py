@@ -22,7 +22,9 @@ def _office(**kw):
     base = dict(key="kash", business_name="Kash Marketing",
                 slack_channel="C0KASHROOM", approvers=("U046XBPN0G2",),
                 contact_email="hr@kash.example", gbp_location="",
-                owner_slack_id="U046XBPN0G2", pages=("instagram", "facebook"))
+                owner_slack_id="U046XBPN0G2", pages=("instagram", "facebook"),
+                address="100 Main St, Dallas, TX 75201", phone="214-555-0100",
+                website="https://kash.example", google_link="https://maps.google.com/maps?cid=1")
     base.update(kw)
     return offices.Presence(**base)
 

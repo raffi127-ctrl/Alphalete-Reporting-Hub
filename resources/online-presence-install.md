@@ -14,12 +14,19 @@ run is started with `--live`.
 
 ## What the ICD does
 
-**Before the call:** answer 4 questions.
-- Business name exactly as it shows on Google.
-- Email where unhappy customers can write.
-- Who approves posts and replies.
-- **Which pages Lucy should post to.** Lucy posts ONLY there, and DMs the owner only when one of
-  THESE disconnects.
+**Before the call:** fill in the sign-up form at **lucyeco.streamlit.app/join-lucyeco-social**
+(link only, not on the front page). It asks:
+- Their name and email.
+- **Business name, office address, company phone, company website, and their Google listing link**
+  (Google Maps → Share → Copy link). These are the TRUTH: every audit checks Google, their website,
+  Indeed and Glassdoor against them and flags anything that doesn't match. The Google link is also
+  what picks THEIR listing; a name could match two offices.
+- Their Indeed and Glassdoor pages, if they have them (optional).
+- **Which pages Lucy should post to** (Instagram, Facebook, Google, LinkedIn, X). Lucy posts ONLY
+  there, and only DMs them when one of THESE disconnects.
+- Who approves, an email for customer concerns, and their timezone.
+
+Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workbook. Nothing turns on.
 
 **On the call (~25 min), on their office computer, with us walking them through it:**
 1. **Make their Zoho Social account** at zoho.com/social with the **email they already use**
@@ -39,9 +46,9 @@ run is started with `--live`.
 Before the call:
 - Create `#<office>-online-presence`. Invite **Lucy Reporting**, **@hubposter** (opens the
   photos), the owner and the approvers.
-- Add the row:
+- Add the row straight from their form (anything typed on the line wins over the form):
   ```
-  python -m automations.online_presence.setup add --office <key> --name "<Business name as on Google>" --room "#<office>-online-presence" --approvers "<Name>, <Name>" --owner "<Owner name>" --email "<complaints email>" --pages "Instagram, Facebook, Google" --timezone "America/Chicago"
+  python -m automations.online_presence.setup add --office <key> --from-signup "<Business name>" --room "#<office>-online-presence"
   ```
   `<key>` = the office's ECO key. Names resolve from `resources/owner-slack-ids.md` first.
 
@@ -50,6 +57,7 @@ On the call:
 python -m automations.online_presence.setup zoho-signin <key>        # step 4: Zoho opens on their screen
 python -m automations.online_presence.setup invites --accept         # after step 3
 python -m automations.online_presence.setup link-google <key>
+python -m automations.online_presence.setup audit <key>              # every site vs their sign-up answers
 python -m automations.online_presence.setup check <key>              # everything ✅ but Mode = ready
 python -m automations.online_presence.run --office <key>             # dry run: prints what it WOULD do
 ```
@@ -84,5 +92,6 @@ python -m automations.online_presence.run --office <key>             # dry run: 
 - Confirm Zoho's channel names on the first real `zoho-signin` (the check prints them). The page
   mapping (`zoho_draft.page_of`) is a best guess until then.
 - Hub card + a scheduled `online_presence.run --live` (noon + 4pm like the social scanner).
-- Sign-up form: add the step-3 questions; until then we ask on the call.
+- The form page goes public when the `site` branch is next promoted (hourly), not on push to main.
+- Indeed + Glassdoor are **check by hand** in every audit: both block robots and we don't get around that.
 - Prove Google on the first real ICD listing (their Manager invite).

@@ -63,6 +63,17 @@ class Presence:
     mode: str = "dry"              # "dry" | "live"
     reviews: bool = True           # run review replies for this office
     social: bool = True            # run photo posting for this office
+    # THE TRUTH FROM SIGN-UP (Megan 2026-11-08). What the office says its
+    # address, phone, website and Google listing ARE -- every audit checks
+    # Google, their website, Indeed and Glassdoor against these
+    # (consistency.py), and the Google link is what picks THE listing, not
+    # a name two offices could share.
+    address: str = ""
+    phone: str = ""
+    website: str = ""
+    google_link: str = ""
+    indeed_url: str = ""           # optional: their Indeed company page
+    glassdoor_url: str = ""        # optional
     # WHICH PAGES the ICD chose on sign-up (zoho_draft.PAGES: instagram,
     # facebook, google, linkedin, x). Lucy posts ONLY to these, and DMs the
     # owner only when one of THESE drops out of their Zoho -- a page they
@@ -125,6 +136,11 @@ class Presence:
             out.append("no business name")
         if not self.slack_channel.strip():
             out.append("no Slack room")
+        for field, label in (("address", "office address"), ("phone", "company phone"),
+                             ("website", "company website"),
+                             ("google_link", "Google listing link")):
+            if not str(getattr(self, field) or "").strip():
+                out.append(f"no {label}")
         if self.mode not in ("dry", "live"):
             out.append(f"mode must be 'dry' or 'live', not {self.mode!r}")
         if self.reviews and not self.contact_email.strip():
@@ -160,6 +176,12 @@ def alphalete() -> Presence:
         gbp_location=C.GBP_LOCATION_PATH or "",
         mode="live",
         post_via="lucy",
+        address="5217 Tennyson Pkwy Suite 100, Plano, TX 75024",
+        phone="(469) 242-0625",
+        website="https://alphaletemarketing.com",
+        google_link="https://maps.google.com/maps?cid=7671689793908717645",
+        indeed_url="https://www.indeed.com/cmp/Alphalete-Marketing",
+        glassdoor_url="https://www.glassdoor.com/Overview/Working-at-Alphalete-Marketing-EI_IE1528823.11,30.htm",
         zoho_schedules=True,
         auto_reply_min_stars=C.AUTO_POST_MIN_STARS,
         auto_reply_daily_cap=C.AUTO_POST_DAILY_CAP,

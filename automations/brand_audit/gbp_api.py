@@ -185,7 +185,7 @@ def list_locations(account_name: str, sess=None) -> list[dict]:
     the v4 reviews path needs '<account_name>/<location_name>'."""
     sess = sess or _session()
     out, token = [], None
-    read_mask = "name,title,storefrontAddress,metadata"
+    read_mask = "name,title,storefrontAddress,metadata,phoneNumbers,websiteUri"
     while True:
         params = {"pageSize": 100, "readMask": read_mask}
         if token:
@@ -212,10 +212,22 @@ def all_locations(sess=None) -> list[dict]:
     for acct in list_accounts(sess):
         for loc in list_locations(acct["name"], sess):
             meta = loc.get("metadata") or {}
+            adr = loc.get("storefrontAddress") or {}
             out.append({"path": f"{acct['name']}/{loc['name']}",
                         "title": loc.get("title", ""),
                         "account": acct.get("accountName", ""),
-                        "verified": meta.get("hasVoiceOfMerchant")})
+                        "verified": meta.get("hasVoiceOfMerchant"),
+                        # what Google SHOWS the public -- the audit checks
+                        # these against what the office told us on sign-up
+                        "address": ", ".join(filter(None, [
+                            " ".join(adr.get("addressLines") or []),
+                            adr.get("locality"), adr.get("administrativeArea"),
+                            adr.get("postalCode")])),
+                        "phone": ((loc.get("phoneNumbers") or {})
+                                  .get("primaryPhone") or ""),
+                        "website": loc.get("websiteUri") or "",
+                        "place_id": meta.get("placeId") or "",
+                        "maps_uri": meta.get("mapsUri") or ""})
     return out
 
 
@@ -226,6 +238,60 @@ def find_location(business_name: str, sess=None) -> list[dict]:
     locs = all_locations(sess)
     exact = [l for l in locs if _norm(l["title"]) == want]
     return exact or [l for l in locs if want and want in _norm(l["title"])]
+
+
+def listing_ids(link: str) -> dict:
+    """{'cid', 'place_id'} from a Google Maps / listing link an owner pasted.
+
+    Share links (maps.app.goo.gl, g.page, goo.gl/maps) are followed to the
+    real Maps url first. A Maps place url carries the listing as
+    '!1s0x<a>:0x<cid-hex>' and/or a place id ('ChIJ...'); a ?cid= link carries
+    it plainly. Either one pins THE listing -- far safer than a name, since
+    two offices can share a name."""
+    import re
+    from urllib.parse import unquote
+    url = (link or "").strip()
+    if not url:
+        return {}
+    if re.search(r"(maps\.app\.goo\.gl|goo\.gl/maps|g\.page|g\.co/kgs|share\.google)", url):
+        try:
+            import requests
+            r = requests.get(url, timeout=20, allow_redirects=True,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            url = r.url + " " + r.text[:20000]
+        except Exception:
+            pass
+    url = unquote(url)
+    out = {}
+    m = re.search(r"[?&]cid=(\d+)", url) or re.search(r"ludocid=(\d+)", url)
+    if m:
+        out["cid"] = m.group(1)
+    else:
+        m = re.search(r"!1s0x[0-9a-f]+:0x([0-9a-f]+)", url, re.I) or \
+            re.search(r"0x[0-9a-f]+:0x([0-9a-f]+)", url, re.I)
+        if m:
+            out["cid"] = str(int(m.group(1), 16))
+    m = re.search(r"(ChIJ[0-9A-Za-z_-]{10,})", url)
+    if m:
+        out["place_id"] = m.group(1)
+    return out
+
+
+def location_for_link(link: str, sess=None) -> dict | None:
+    """The managed listing a pasted Google link points at, or None."""
+    want = listing_ids(link)
+    if not want:
+        return None
+    for loc in all_locations(sess):
+        cid = ""
+        if loc.get("maps_uri"):
+            import re
+            m = re.search(r"cid=(\d+)", loc["maps_uri"])
+            cid = m.group(1) if m else ""
+        if (want.get("cid") and want["cid"] == cid) or \
+                (want.get("place_id") and want["place_id"] == loc.get("place_id")):
+            return loc
+    return None
 
 
 def pending_invitations(sess=None) -> list[dict]:
