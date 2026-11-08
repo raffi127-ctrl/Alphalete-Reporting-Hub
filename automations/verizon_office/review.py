@@ -356,10 +356,17 @@ def main(argv=None) -> int:
     ap.add_argument("--build", action="store_true", help="render the examples (laptop)")
     ap.add_argument("--send", action="store_true", help="post to the review group DM as Lucy")
     ap.add_argument("--round", type=int, default=1, help="2 = post only the round-2 fixes")
+    ap.add_argument("--delete", metavar="TS", help="delete one of Lucy's own posts (a duplicate) and its thread replies")
     ap.add_argument("--replace", metavar="KEY", help="re-post one report's example in its thread")
     ap.add_argument("--parent", help="--replace: the report post's ts")
     ap.add_argument("--old-reply", default="", help="--replace: Lucy's old reply to delete")
     a = ap.parse_args(argv)
+    if a.delete:
+        client = _group_client()
+        for ts in [a.delete] + [x for x in (a.old_reply or "").split(",") if x]:
+            client.chat_delete(channel=GROUP_DM, ts=ts)
+            print("  deleted", ts)
+        return 0
     if a.replace:
         return replace(a.replace, a.parent, a.old_reply)
     items = build() if a.build else json.loads(MANIFEST.read_text())["items"]
