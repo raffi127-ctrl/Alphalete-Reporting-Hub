@@ -23,8 +23,10 @@ WHERE EACH DAY'S NUMBER COMES FROM (a tracker posted on day D shows D-1):
     column Rep Count ('Total Rep Count' on BOX, joined to its owner by
     ELE+Gas = Grand Total). Fiber and B2B are read two ways; they must agree,
     or the one that fits yesterday's number wins, or the day is '-'.
-    An ICD missing from an image that WAS read is 0 (Eve: "si no están = 0");
-    BOX is the exception (a failed join is not a zero) -> '-'.
+    An ICD missing from an image that WAS read takes its LAST number, like a
+    day that could not be read (Eve 2026-11-08: "si ese owner no aparece en el
+    tracker o no se puede tomar el numero correcto mas actual, tomar el ultimo
+    disponible"). It used to be 0 on every board but BOX.
   - An ICD in DUAL: the sum of its boards ('-' if either is '-'). Carlos
     Hidalgo was B2B + BOX until he switched to NDS (Megan 2026-11-08); he now
     reads off his 'Campaign' cell like everyone else.
@@ -569,7 +571,7 @@ def pick_tracker(icd: str, tid: str, reading: Optional[dict], prev) -> object:
     def one(rows):
         hits = tr.match(icd, rows)
         if not hits:
-            return "-" if tid == tr.BOX else 0
+            return "-"              # plan_day carries the row's last number
         nums = [h.get("rep_count") for h in hits if isinstance(h.get("rep_count"), int)]
         return nums[0] if nums else "-"
     a = one(reading["A"])

@@ -531,6 +531,37 @@ class MissingDayCarriesTheLastNumber(unittest.TestCase):
             daily.pick_tracker = orig
         self.assertEqual(w["E19"], 10)             # Mon 10, Tue '-' -> 10
 
+    def test_an_owner_not_on_a_tracker_that_was_read_keeps_his_last_number(self):
+        """Eve 2026-11-08: not on the tracker = the last number, never a 0."""
+        from automations.org_active_headcount.daily import plan_day
+        g = self._g()
+        g[19 - 1][4] = ""                          # Rafael Wed empty, Tue carried 10
+        other = {"A": [{"owner": "SOMEBODY ELSE", "rep_count": 9}],
+                 "B": [{"owner": "SOMEBODY ELSE", "rep_count": 9}]}
+        w = dict(plan_day(g, dt.date(2026, 9, 16), dt.date(2026, 9, 17),
+                          trackers={"att_country": other}, retail={}, je={}))
+        self.assertEqual(w["E19"], 10)
+
+    def test_a_monday_owner_not_on_the_tracker_keeps_last_sunday(self):
+        from automations.org_active_headcount.daily import plan_day
+        g = self._g()
+        g[20 - 1][2] = ""
+        other = {"A": [{"owner": "SOMEBODY ELSE", "rep_count": 9}], "B": None}
+        w = dict(plan_day(g, dt.date(2026, 9, 14), dt.date(2026, 9, 17),
+                          trackers={"nds": other, "att_country": other}, retail={}, je={}))
+        self.assertEqual(w["C20"], 41)
+
+    def test_one_reading_that_misses_the_owner_does_not_lose_the_other(self):
+        from automations.org_active_headcount.daily import pick_tracker
+        reading = {"A": [{"owner": "SOMEBODY ELSE", "rep_count": 9}],
+                   "B": [{"owner": "KASH RAI", "rep_count": 10}]}
+        self.assertEqual(pick_tracker("Kash Rai", "att_country", reading, 8), 10)
+
+    def test_an_owner_on_the_tracker_at_zero_is_a_real_zero(self):
+        from automations.org_active_headcount.daily import pick_tracker
+        reading = {"A": [{"owner": "KASH RAI", "rep_count": 0}], "B": None}
+        self.assertEqual(pick_tracker("Kash Rai", "att_country", reading, 8), 0)
+
     def test_the_roll_gives_last_week_the_carried_number(self):
         from automations.org_active_headcount.daily import plan_roll, find_delta
         g = self._g()
