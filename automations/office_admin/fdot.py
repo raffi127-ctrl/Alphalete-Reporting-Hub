@@ -121,7 +121,18 @@ READ_JS = r"""(want) => {
     out.push({first: first, last: at('last name'), phone: at('phone'),
               email: at('email'), show: show, section: section, had_control: had});
   }
-  if (!sawSection) return {ok: false, error: 'no "' + want + '" banner on the calendar', rows: out};
+  if (!sawSection) {
+    /* A day with no training at all is ORDINARY -- Sundays especially -- and
+       the page says so in as many words, the same way it does for an empty
+       First Day of Sales ("No First Day of Sales found for 11-02-2026"). That
+       sentence is the difference between a proven zero and "we could not
+       tell", and only the second one may stop a week. */
+    const said = norm(document.body.innerText || '');
+    const empty = new RegExp('no\\s+' + want.replace(/\s+/g, '\\s+') +
+                             '\\s+found', 'i').test(said);
+    if (empty) return {ok: true, rows: [], emptyDay: true};
+    return {ok: false, error: 'no "' + want + '" banner on the calendar', rows: out};
+  }
   return {ok: true, rows: out};
 }"""
 
@@ -199,6 +210,9 @@ def read(app, office_id: str, day: dt.date, log=print) -> List[Dict]:
     if not got.get("ok"):
         raise RuntimeError("training calendar: %s" % got.get("error"))
     rows = got.get("rows") or []
+    if got.get("emptyDay"):
+        log("  %s: the calendar says no first day of training" % day)
+        return []
     check_rows(rows)
     people = showed_up(rows)
     log("  %s: %d training rows, %d showed up" % (

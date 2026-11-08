@@ -210,3 +210,25 @@ def test_a_week_reads_all_seven_days_whichever_day_it_is_given(monkeypatch):
     assert seen[0] == dt.date(2026, 11, 2), "Monday of that week"
     assert seen[-1] == dt.date(2026, 11, 8), "Sunday"
     assert len(seen) == 7
+
+
+def test_a_day_the_calendar_says_has_no_training_is_a_proven_zero(page):
+    """Sundays, mostly. The page says so in as many words -- the same sentence
+    it uses for an empty First Day of Sales -- and that sentence is the only
+    thing that turns "nothing here" into a fact rather than a guess
+    ([[feedback_empty_means_proven_zero]])."""
+    html = ("<!doctype html><html><body>"
+            "<div>No First Day of Training found for 11-08-2026</div>"
+            "</body></html>")
+    got = _read(page, html)
+    assert got["ok"] is True, "it was read, and it was empty"
+    assert got["emptyDay"] is True
+    assert fdot.showed_up(got["rows"]) == []
+
+
+def test_a_page_that_says_nothing_at_all_still_fails(page):
+    """No banner AND no sentence = we could not tell. That must stop the week,
+    not report nobody."""
+    got = _read(page, "<!doctype html><html><body><div>Loading…</div></body></html>")
+    assert got["ok"] is False
+    assert not got.get("emptyDay")
