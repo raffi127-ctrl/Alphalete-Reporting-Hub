@@ -157,7 +157,7 @@ def compliance_churn(xlsx: Path) -> Optional[Tuple[dt.date, Dict[str, Optional[f
     return (cf.week_end, vals) if cf.week_end else None
 
 
-def weeks(sv_path: Path, n: int = 4, card_path: Optional[Path] = None,
+def weeks(sv_path: Path, n: int = 6, card_path: Optional[Path] = None,
           owner: str = "Nicolas Murrugarra", quality: Optional[Path] = None,
           compliance: Optional[Path] = None):
     from automations.verizon_office import parse
@@ -188,7 +188,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx")
     ap.add_argument("--office", help="verizon_office key (newest file from the Hub inbox)")
-    ap.add_argument("--weeks", type=int, default=4)
+    ap.add_argument("--weeks", type=int, default=6)   # Carlos 2026-11-07: a 6-week view
     ap.add_argument("--scorecard", type=Path, help="Daily Sales Scorecard xlsx (all offices) for rank + national avg")
     ap.add_argument("--quality", type=Path, help="Quality Scorecard (SCI-WO) pdf for the 4-wk cancel rate")
     ap.add_argument("--compliance", type=Path, help="Compliance Flags xlsx for 0-30/60/90 churn")

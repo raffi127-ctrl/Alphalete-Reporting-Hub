@@ -155,22 +155,40 @@ def activation_rate(owner: str, header, rows, target: dt.date, out_dir: Path) ->
     return out, len(table) - 1
 
 
-def rep_activations(owner, header, rows, target, out_dir) -> Path:
+def rep_activations(owner, header, rows, target, out_dir) -> List[Path]:
     """The house Rep Activations board (rep_activations build_week_tables +
-    render), Posted / Pending / Total / Canceled. Without NDS's shipping
-    split: Credico has no Shipped / Delivered / Porting Issue, so those
-    columns would only ever say 0."""
+    render), Posted / Pending / Total / Canceled, FOUR weeks as two pictures:
+    the newest two, then the two before (Carlos 2026-11-07: "because pay is
+    two weeks behind on this campaign we should have this show 4 weeks").
+    Without NDS's shipping split: Credico has no Shipped / Delivered /
+    Porting Issue, so those columns would only ever say 0.
+
+    The older picture counts only lines sold by the end of its weeks, so its
+    Pending is what was still pending from THEN, not this week's again."""
     import pandas as pd
     from automations.office_metrics import nds_orderlog as N
-    from automations.rep_activations.aggregate import build_week_tables
+    from automations.rep_activations.aggregate import build_week_tables, week_bounds
     from automations.rep_activations.render import render
     i = {c: header.index(c) for c in header}
-    df = pd.DataFrame([{
-        "Rep": r[i["Rep"]], "Status": N._house_status(r[i["DTR Status"]]),
-        "Activation Date": r[i["sp.Order Date"]],      # when the rep sold it
-        "Install Date": r[i["Status Date"]],
-    } for r in rows])
-    return render(build_week_tables(df, target), out_dir / f"verizon_rep_activations_{target.isoformat()}.png")
+
+    def frame(upto=None):
+        out = []
+        for r in rows:
+            sold = N._parse_date(r[i["sp.Order Date"]])
+            if upto and sold and sold > upto:
+                continue
+            out.append({"Rep": r[i["Rep"]], "Status": N._house_status(r[i["DTR Status"]]),
+                        "Activation Date": r[i["sp.Order Date"]],      # when the rep sold it
+                        "Install Date": r[i["Status Date"]]})
+        return pd.DataFrame(out)
+
+    older_day = target - dt.timedelta(days=14)
+    _ls, _le, _ts, older_end = week_bounds(older_day)
+    older = build_week_tables(frame(older_end), older_day)
+    older["titles"] = ("3 Weeks Ago", "2 Weeks Ago")
+    return [render(build_week_tables(frame(), target),
+                   out_dir / f"verizon_rep_activations_{target.isoformat()}.png"),
+            render(older, out_dir / f"verizon_rep_activations_{target.isoformat()}_older.png")]
 
 
 def pending_orders(owner, header, rows, target, out_dir) -> Tuple[List[Path], int]:
@@ -247,6 +265,52 @@ def status_orders(owner, header, rows, target, out_dir, slug: str) -> Tuple[Path
                   empty_note=f"No new Local Office {noun} orders."), len(hits)
 
 
+def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 4) -> Tuple[Path, int]:
+    """Activation Rate by Week-Ending (Carlos 2026-11-07): the lines SOLD in
+    each of the last `weeks` Sun-Sat weeks, and how many of those have
+    activated since -- "all the sales from X week that have activated, not
+    which sales activated on X week". Office total + one row per rep, same
+    table and colour bars as Activation Rate by Rep (0-30 day bands: the
+    newest four weeks are all inside 30 days)."""
+    from automations.b2b_metrics.rep_boards import render_table_png
+    from automations.office_metrics import nds_orderlog as N
+    from automations.rep_activations.aggregate import week_bounds
+    i = {c: header.index(c) for c in header}
+    this_sun = week_bounds(target)[2]
+    ends = [this_sun - dt.timedelta(days=1 + 7 * k) for k in range(weeks)]   # newest first
+    cols = [f"WE {e.month}/{e.day}" for e in ends]
+    data: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: {c: [0, 0] for c in cols})
+    for r in rows:
+        sold = N._parse_date(r[i["sp.Order Date"]])
+        if not sold:
+            continue
+        for c, e in zip(cols, ends):
+            if e - dt.timedelta(days=6) <= sold <= e:
+                act = 1 if r[i["DTR Active Date"]] else 0
+                for who in (r[i["Rep"]] or "(no rep)", "__office__"):
+                    data[who][c][0] += act
+                    data[who][c][1] += 1
+
+    def cell(an):
+        a, n = an
+        if not n:
+            return {}
+        rate = a / n
+        color = next(c for floor, c in N._ACT_BANDS["0-30 Day"] if rate >= floor)
+        return {"disc": str(a), "act": str(n), "rate": f"{round(rate * 100, 1)}%", "color": color}
+
+    office = data.pop("__office__", {c: [0, 0] for c in cols})
+    table = [("Office Total (all reps)", "", True, {c: cell(office[c]) for c in cols})]
+    for rep in sorted(data, key=str.lower):
+        table.append((rep, "", False, {c: cell(data[rep][c]) for c in cols}))
+    out = out_dir / f"verizon_activation_by_week_{target.isoformat()}.png"
+    render_table_png("ACTIVATION RATE BY WEEK-ENDING",
+                     f"{owner} — lines sold each week that have activated since "
+                     f"(activated/sold), as of {target:%B} {target.day}",
+                     cols, table, out)
+    return out, len(table) - 1
+
+
 # The house order-log writer (uploaded.order_log), Verizon's columns. Date and
 # status columns REUSE the house raw names: that is what its date parsing and
 # status colours key off (see order_log.column_profile). Install Date rides
@@ -274,8 +338,14 @@ def order_log(owner, header, rows, target, out_dir) -> Tuple[Path, int]:
             r[i["DTR Status"]], "")))
     tsv = out_dir / f"verizon_order_log_src_{target.isoformat()}.csv"
     tsv.write_text("\n".join(lines), encoding="utf-16")
-    with house.column_profile(_LOG_COLUMNS, _LOG_HEADERS, optional_raw={"Ported From"}):
-        return Path(house.csv_to_xlsx(tsv, out_dir, owner=owner)), len(rows)
+    # Verizon pays two weeks behind: every pay date one week later than the
+    # house Friday-after (Carlos 2026-11-07).
+    saved, house.PAY_EXTRA_WEEKS = house.PAY_EXTRA_WEEKS, 1
+    try:
+        with house.column_profile(_LOG_COLUMNS, _LOG_HEADERS, optional_raw={"Ported From"}):
+            return Path(house.csv_to_xlsx(tsv, out_dir, owner=owner)), len(rows)
+    finally:
+        house.PAY_EXTRA_WEEKS = saved
 
 
 # (slug, label) in the NDS thread's order (office_metrics.runner._nds_metrics).
@@ -283,6 +353,7 @@ BOARDS = [
     ("rep_activations", "🆕 Rep Activations"),
     ("pending_orders", "⏳ Pending Orders"),
     ("activation_rate", "📈 Activation Rate by Rep"),
+    ("activation_by_week", "📆 Activation Rate by Week-Ending"),
     ("order_log", "📋 Order Log"),
     ("cancels", "🚫 Canceled Orders"),
     ("disconnects", "❎ Disconnected Orders"),
@@ -301,11 +372,13 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
         comment = f"{label} — {day}"
         kind, paths = "image", []
         if slug == "rep_activations":
-            paths = [rep_activations(owner, header, rows, target, out_dir)]
+            paths = rep_activations(owner, header, rows, target, out_dir)
         elif slug == "pending_orders":
             paths, _n = pending_orders(owner, header, rows, target, out_dir)
         elif slug == "activation_rate":
             paths = [activation_rate(owner, header, rows, target, out_dir)[0]]
+        elif slug == "activation_by_week":
+            paths = [activation_by_week(owner, header, rows, target, out_dir)[0]]
         elif slug == "order_log":
             kind, paths = "file", [order_log(owner, header, rows, target, out_dir)[0]]
         else:

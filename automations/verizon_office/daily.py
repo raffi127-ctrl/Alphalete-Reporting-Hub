@@ -7,7 +7,7 @@ ONE PULL, ONE THREAD: the newest Sales Verification in the Hub inbox (Credico
 -> the office's Outlook redirect rule, ~10:45am CT, previous-day numbers like
 every program) feeds, in order:
 
-  1. the sales board image (board_image, the Altura look)
+  1. (the sales board is Carlos's vantura_verizon_credico, same thread)
   2. the NDS wireless thread, same renderers (thread_boards.py): Rep
      Activations, Pending Orders, Activation Rate by Rep, Order Log (.xlsx,
      a tab per rep), Canceled Orders, Disconnected Orders
@@ -45,9 +45,10 @@ def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
         raise RuntimeError("no reps this week — not posting a blank board")
     out = ROOT / "output" / "verizon_office" / office.key
     out.mkdir(parents=True, exist_ok=True)
-    png = board_image.render(sv_path, out / f"sales_board_{today:%Y-%m-%d}.png")
-    steps = [("image", (png, f":satellite_antenna: *Verizon Sales Board — {sv.office}* · "
-                             f"through {sv.through:%a %-m/%-d}" if sv.through else ""))]
+    # NO SALES BOARD FROM HERE (Carlos 2026-11-07): his vantura_verizon_credico
+    # fills the Vantura 'Verizon Sales Board' tab from the same Credico file
+    # and posts its day + week pictures into this same thread (Lucy 2).
+    steps = []
     for it in thread_boards.build(office.owner, sv_path, today, out / "boards"):
         if it["kind"] == "text":
             steps.append(("text", it["comment"]))

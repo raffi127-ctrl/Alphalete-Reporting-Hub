@@ -164,7 +164,7 @@ def build() -> List[Dict]:
     items[-1]["thread_files"] = [board_image.compliance_image(CF, REVIEW_DIR / "compliance.png").name]
 
     # 12. OPT
-    rows = V.weeks(SV, 4, None, quality=QUALITY if QUALITY.exists() else None, compliance=CF)
+    rows = V.weeks(SV, 6, None, quality=QUALITY if QUALITY.exists() else None, compliance=CF)
     add("opt", ":bar_chart: OPT Report Tab (\"Nicolas Murrugarra – Verizon\")",
         "Nico's weekly rows on the OPT report, with the SAME row names as the NDS tabs so DD reads them the same way. "
         "Blank = Credico doesn't send that number yet.",

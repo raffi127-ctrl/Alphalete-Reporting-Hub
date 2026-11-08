@@ -194,9 +194,12 @@ def render(summary: dict, out_path) -> Path:
 
     cols = _cols(summary.get("pending_cols"))
     alert = frozenset(summary.get("alert_cols") or ())
-    left = _build_table(f"Last Week: {summary['last']['label']}",
+    # A caller can retitle the two weeks (Verizon's 4-week view posts an older
+    # pair, which is not "last"/"this" week). Default: unchanged.
+    names = summary.get("titles") or ("Last Week", "This Week")
+    left = _build_table(f"{names[0]}: {summary['last']['label']}",
                         summary["last"], fonts, cols, alert)
-    right = _build_table(f"This Week: {summary['this']['label']}",
+    right = _build_table(f"{names[1]}: {summary['this']['label']}",
                          summary["this"], fonts, cols, alert)
 
     canvas_w = PAD * S + left.width + GAP * S + right.width + PAD * S

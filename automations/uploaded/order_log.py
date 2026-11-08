@@ -1610,7 +1610,13 @@ def _week_bounds(d: date):
     """Sun-Sat week containing d -> (sunday, saturday, paid_friday)."""
     start = d - timedelta(days=(d.weekday() + 1) % 7)
     end = start + timedelta(days=6)
-    return start, end, end + timedelta(days=6)
+    return start, end, end + timedelta(days=6 + 7 * PAY_EXTRA_WEEKS)
+
+
+# A campaign paid LATER than the house Friday-after: Verizon pays two weeks
+# behind (Carlos 2026-11-07), so its log sets this to 1 for its own build
+# (verizon_office.thread_boards). 0 = every other office, unchanged.
+PAY_EXTRA_WEEKS = 0
 
 
 # Raf 2026-09-16: a pay-period calendar on every Order Log — a few weeks back so
@@ -1625,7 +1631,8 @@ def _pay_period_weeks(today: date, back: int = PAY_PERIOD_WEEKS_BACK,
     """(sunday, saturday, paid_friday) for `total` weeks, starting `back` weeks
     before the week containing today."""
     from automations.shared.pay_period import pay_weeks
-    return pay_weeks(today, back, total)
+    return [(a, b, c + timedelta(weeks=PAY_EXTRA_WEEKS))
+            for a, b, c in pay_weeks(today, back, total)]
 
 
 def _write_pay_period_table(sh, top: int, left: int, today: date) -> tuple:
