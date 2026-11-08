@@ -115,6 +115,44 @@ class TheSlowFaultCarriesIt(unittest.TestCase):
                          "the fault was lost because its breakdown failed")
 
 
+class TheBreakdownSurvivesTheCut(unittest.TestCase):
+    """2026-11-08: run._report cuts the message at 200 characters, and the
+    breakdown sat after a 190-character sentence -- every slow fault in the
+    fleet read 'Where it went: AT&T Internet 25s' and stopped there."""
+
+    def setUp(self):
+        S.reset_pass_timings()
+
+    def tearDown(self):
+        S.reset_pass_timings()
+
+    def _said(self, report_takes_detail=True):
+        said = {}
+        if report_takes_detail:
+            def report(stage, exc, office_key="", detail=""):
+                said.update(text=str(exc), detail=detail)
+        else:
+            def report(stage, exc, office_key=""):
+                said.update(text=str(exc))
+        S._record_pass("sign-in", 1, 120, True)
+        S._record_pass("AT&T Internet", 1, 25, True)
+        S._record_pass("AT&T", 1, 40, True)
+        with mock.patch.object(W, "SLOW_SECONDS", 0):
+            W.timed("sweep", lambda: "ok", log=lambda *_: None, report=report)
+        return said
+
+    def test_the_breakdown_is_inside_the_first_200_characters(self):
+        head = self._said()["text"][:200]
+        self.assertIn("sign-in 120s", head)
+        self.assertIn("AT&T 40s", head)
+
+    def test_the_full_breakdown_rides_in_the_detail(self):
+        self.assertIn("sign-in 120s", self._said()["detail"])
+
+    def test_a_reporter_without_detail_still_files_the_fault(self):
+        self.assertIn("Healthy is a few", self._said(False)["text"])
+
+
 class TheReadResetsItsOwnTimings(unittest.TestCase):
     """Otherwise a fast read inherits the previous slow one's breakdown and
     the fault points at the wrong pass."""

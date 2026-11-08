@@ -20,6 +20,7 @@ the same, so a change to the site is a change in one file, for all 52 offices.
 from __future__ import annotations
 
 import re
+import time
 import datetime as dt
 from typing import Dict, Optional
 
@@ -1009,10 +1010,18 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
         # resume_only=True in their own evidence). Now it is set, and cleared
         # again whatever happens.
         _RESUME_ONLY["on"] = bool(resume_only)
+        _t0 = time.time()
         try:
             ctx, page, base = _heal_and_login(p, headless, log=log)
         finally:
             _RESUME_ONLY["on"] = False
+            # The sign-in is the one stretch no pass timed, so a slow sweep's
+            # breakdown could not say whether the minutes went to SaraPlus's
+            # reports or to getting in (2026-11-08).
+            try:
+                S._record_pass("sign-in", 1, time.time() - _t0, True)
+            except Exception:  # noqa: BLE001
+                pass
         try:
 
             try:

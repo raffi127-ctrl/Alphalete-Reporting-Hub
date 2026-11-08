@@ -130,21 +130,36 @@ def timed(stage: str, fn: Callable, *, log=print, report=None,
                 # diagnosis had to infer the retried pass from arithmetic --
                 # these laptops cannot be reached to read their own logs. The
                 # breakdown rides the fault into the 'ICD Faults' tab instead.
+                #
+                # BREAKDOWN FIRST, AND IN THE DETAIL TOO (2026-11-08). run._report
+                # cuts the message at 200 characters and the breakdown sat at
+                # the END of a 190-character sentence, so every slow fault in
+                # the fleet read "Where it went: AT&T Internet 25s" and stopped
+                # -- 25s of a 207s read, the other passes cut off. 'other' is
+                # whatever no pass accounts for (browser start, page loads).
                 detail = ""
                 try:
                     from automations.shared import saraplus as _S
                     detail = _S.pass_timings_summary()
+                    if detail:
+                        passed = sum(float(t.get("secs") or 0)
+                                     for t in _S.pass_timings())
+                        if took - passed >= 5:
+                            detail += " | other %.0fs" % (took - passed)
                 except Exception:  # noqa: BLE001 — a missing breakdown must
                     detail = ""    # not cost the fault itself
-                report("%s-slow" % stage,
-                       RuntimeError(
-                           "this read took %.0f seconds. Healthy is a few. "
-                           "The office sees this as alerts arriving late and "
-                           "then all at once, because the job cannot start "
-                           "again until it finishes.%s"
-                           % (took, ("  Where it went: %s" % detail)
-                              if detail else "")),
-                       office_key=office_key)
+                exc = RuntimeError(
+                    "this read took %.0f seconds%s. Healthy is a few. "
+                    "The office sees this as alerts arriving late and "
+                    "then all at once, because the job cannot start "
+                    "again until it finishes."
+                    % (took, (" -- Where it went: %s" % detail)
+                       if detail else ""))
+                try:
+                    report("%s-slow" % stage, exc, office_key=office_key,
+                           detail=("Where it went: %s" % detail) if detail else "")
+                except TypeError:   # a reporter that takes no detail
+                    report("%s-slow" % stage, exc, office_key=office_key)
             except Exception:  # noqa: BLE001
                 pass
 
