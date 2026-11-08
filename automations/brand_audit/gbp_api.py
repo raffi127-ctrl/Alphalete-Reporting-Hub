@@ -197,6 +197,66 @@ def list_locations(account_name: str, sess=None) -> list[dict]:
             return out
 
 
+def _norm(name: str) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).strip()
+
+
+def all_locations(sess=None) -> list[dict]:
+    """Every listing this login manages, across every account:
+    [{path, title, verified}]. `path` is the v4 'accounts/<a>/locations/<l>'
+    that list_reviews / reply_to_review take. `verified` is Google's
+    hasVoiceOfMerchant (None = Google didn't say)."""
+    sess = sess or _session()
+    out = []
+    for acct in list_accounts(sess):
+        for loc in list_locations(acct["name"], sess):
+            meta = loc.get("metadata") or {}
+            out.append({"path": f"{acct['name']}/{loc['name']}",
+                        "title": loc.get("title", ""),
+                        "account": acct.get("accountName", ""),
+                        "verified": meta.get("hasVoiceOfMerchant")})
+    return out
+
+
+def find_location(business_name: str, sess=None) -> list[dict]:
+    """Listings whose title matches `business_name` (case/punctuation blind;
+    exact match first, then contains). More than one = ask, never pick."""
+    want = _norm(business_name)
+    locs = all_locations(sess)
+    exact = [l for l in locs if _norm(l["title"]) == want]
+    return exact or [l for l in locs if want and want in _norm(l["title"])]
+
+
+def pending_invitations(sess=None) -> list[dict]:
+    """Manager/owner invitations waiting for THIS login to accept:
+    [{name, role, business}]. An owner who adds us as Manager shows up here
+    until it's accepted."""
+    sess = sess or _session()
+    out = []
+    for acct in list_accounts(sess):
+        try:
+            data = _get(sess, f"{_ACCOUNTS_API}/{acct['name']}/invitations")
+        except Exception:
+            continue                      # not every account type has invites
+        for inv in data.get("invitations") or []:
+            tgt = inv.get("targetLocation") or inv.get("targetAccount") or {}
+            out.append({"name": inv.get("name", ""),
+                        "role": inv.get("role", ""),
+                        "business": (tgt.get("locationName")
+                                     or tgt.get("accountName") or "")})
+    return out
+
+
+def accept_invitation(name: str, sess=None) -> None:
+    """Accept one invitation (from pending_invitations()['name'])."""
+    sess = sess or _session()
+    r = sess.post(f"{_ACCOUNTS_API}/{name}:accept", json={}, timeout=_TIMEOUT)
+    if r.status_code == 403:
+        raise GBPAccessError(f"403 accepting {name}")
+    r.raise_for_status()
+
+
 # ── reviews ──────────────────────────────────────────────────────────────────
 # Google returns star ratings as words on v4; map to ints for our star logic.
 _STAR_WORD = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5}

@@ -54,16 +54,26 @@ _REPLY_SCHEMA = {
 }
 
 
-def _load() -> dict:
+def _load(path: Path | None = None) -> dict:
     try:
-        return json.loads(_STATE.read_text())
+        return json.loads((path or _STATE).read_text())
     except Exception:
         return {}
 
 
-def _save(s: dict) -> None:
-    _STATE.parent.mkdir(parents=True, exist_ok=True)
-    _STATE.write_text(json.dumps(s, indent=2))
+def _save(s: dict, path: Path | None = None) -> None:
+    f = path or _STATE
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(s, indent=2))
+
+
+def _profile(profile=None):
+    """The office this run is for. None = Alphalete, exactly as configured in
+    config.py (its rooms, approvers, listing, contact and caps)."""
+    if profile is not None:
+        return profile
+    from automations.online_presence.offices import alphalete
+    return alphalete()
 
 
 def _key(rv: dict) -> str:
@@ -71,29 +81,35 @@ def _key(rv: dict) -> str:
     return f"{rv.get('author','')}|{rv.get('publish_time','') or (rv.get('text','') or '')[:50]}"
 
 
-def gbp_ready() -> bool:
+def gbp_ready(location: str | None = None) -> bool:
     """True once we can both READ the full review list and POST replies:
     a location is configured AND a Business Profile token exists. Until then
     the workflow reads the Places 5-review sample and only drafts (no posting)."""
-    return bool(GBP_LOCATION_PATH) and gbp_api.has_token()
+    loc = GBP_LOCATION_PATH if location is None else location
+    return bool(loc) and gbp_api.has_token()
 
 
-def get_reviews(company) -> list[dict]:
+def get_reviews(company, location: str | None = None) -> list[dict]:
     """Reviews for a company (rating/text/author/when/name/has_reply).
 
     Prefers the Business Profile API (FULL history + a review 'name' we can
     reply to). Falls back to the Places API 5-review sample if GBP isn't set up
     yet, access isn't granted (403), or anything errors — so the drafting side
     keeps working while access is pending. Already-answered reviews are dropped."""
-    if gbp_ready():
+    loc = GBP_LOCATION_PATH if location is None else location
+    if gbp_ready(loc):
         try:
-            revs = gbp_api.list_reviews(GBP_LOCATION_PATH)
+            revs = gbp_api.list_reviews(loc)
             # Don't re-reply to reviews that already have a business reply.
             return [r for r in revs if not r.get("has_reply")]
         except gbp_api.GBPAccessError:
             pass  # allowlist not granted yet — fall back to the sample
         except Exception:
             pass
+    if company is None:
+        # An ICD office: no intake row, so no Places sample to fall back on.
+        # No listing access = nothing to reply to, which the setup check says.
+        return []
     res = google_reviews.collect(company)
     return ((res.as_dict().get("evidence") or {}).get("reviews")) or \
         (res.evidence.get("reviews") if hasattr(res, "evidence") else []) or []
@@ -147,15 +163,15 @@ def _positive_system(company_name: str) -> str:
         "template.\n\n"
         "If the review is in another language, reply in that language.\n\n"
         "END EVERY REPLY with a closing phrase, then the company name on its own "
-        "line:\n\nWarm Regards,\nAlphalete Marketing\n\n"
+        f"line:\n\nWarm Regards,\n{company_name}\n\n"
         "VARY the closing phrase between replies — pick whichever fits: "
         + ", ".join(_SIGNOFF_POSITIVE) + ". The company line is ALWAYS exactly "
-        "'Alphalete Marketing'. If you replied in another language, write the "
+        f"'{company_name}'. If you replied in another language, write the "
         "closing in THAT language too (Spanish: 'Saludos cordiales,' / "
-        "'Un cordial saludo,') and still end with 'Alphalete Marketing'.")
+        f"'Un cordial saludo,') and still end with '{company_name}'.")
 
 
-def _negative_system(company_name: str) -> str:
+def _negative_system(company_name: str, contact: str | None = None) -> str:
     """Voice for 1-3★ replies — DELIBERATELY different from the positive voice.
 
     Modeled on the replies Alphalete actually posts (Luke 7/16, Mladen 6/23,
@@ -164,7 +180,11 @@ def _negative_system(company_name: str) -> str:
     claims), so the reply is a legal + reputational document, not a friendly
     note. The cardinal rule is NEVER concede the allegation — an earlier warm
     voice ("being unpaid for days of real work is not okay") publicly admitted
-    fault and was rejected across the board (Megan, 2026-07-16)."""
+    fault and was rejected across the board (Megan, 2026-07-16).
+
+    `contact` = the office's own complaint address (online_presence); None =
+    Alphalete's REVIEW_REPLY_CONTACT."""
+    contact = REVIEW_REPLY_CONTACT if contact is None else contact
     return (
         f"You write {company_name}'s PUBLIC reply to a LOW-RATED Google review "
         "(1-3 stars). This is a legal and reputational statement on a permanent "
@@ -222,10 +242,10 @@ def _negative_system(company_name: str) -> str:
         "concern was raised (without conceding it), take it offline, sign off. "
         "The DEFAULT negative reply has NO context paragraph.\n\n"
         "TAKE IT OFFLINE: direct them to contact "
-        f"{REVIEW_REPLY_CONTACT or 'the company directly'} so the concern can be "
+        f"{contact or 'the company directly'} so the concern can be "
         "reviewed through the appropriate internal process. Phrase this plainly "
         "and professionally, e.g. 'We would appreciate the opportunity to review "
-        f"your concerns directly. Please contact {REVIEW_REPLY_CONTACT}.' "
+        f"your concerns directly. Please contact {contact}.' "
         "NEVER use tentative, pleading or casual phrasing for this. Banned "
         "outright: \"If you're willing, email me at\", \"if you're open to it\", "
         "\"feel free to\", \"shoot us an email\", \"if you'd like\", \"we'd love "
@@ -237,23 +257,25 @@ def _negative_system(company_name: str) -> str:
         "details, never be sarcastic.\n\n"
         "If the review is in another language, reply in that language.\n\n"
         "END EVERY REPLY with a closing phrase, then the company name on its own "
-        "line:\n\nWarm Regards,\nAlphalete Marketing\n\n"
+        f"line:\n\nWarm Regards,\n{company_name}\n\n"
         "The closing may vary between replies — use one of: "
         + ", ".join(_SIGNOFF_NEGATIVE) + ". Keep it formal (nothing breezy on a "
-        "complaint). The company line is ALWAYS exactly 'Alphalete Marketing'. "
+        f"complaint). The company line is ALWAYS exactly '{company_name}'. "
         "If you replied in another language, write the closing in that language "
-        "too and still end with 'Alphalete Marketing'.")
+        f"too and still end with '{company_name}'.")
 
 
 def draft_reply(review: dict, company_name: str, feedback: str = "",
-                avoid: list[str] | None = None) -> str:
+                avoid: list[str] | None = None, *, contact: str | None = None,
+                min_stars: int | None = None) -> str:
     """Draft the business's public reply to one review. Positive and critical
     reviews get DIFFERENT voices (see _positive_system / _negative_system)."""
     import anthropic
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     stars = review.get("rating")
-    negative = isinstance(stars, (int, float)) and stars < AUTO_POST_MIN_STARS
-    system = (_negative_system(company_name) if negative
+    cut = AUTO_POST_MIN_STARS if min_stars is None else min_stars
+    negative = isinstance(stars, (int, float)) and stars < cut
+    system = (_negative_system(company_name, contact) if negative
               else _positive_system(company_name))
     user = (f"Review — {stars}★ from {review.get('author') or 'a customer'}:\n"
             f"\"{review.get('text') or '(no text, just a rating)'}\"\n\n"
@@ -296,7 +318,8 @@ def post_reply_to_google(review: dict, reply: str, company) -> dict:
     return gbp_api.reply_to_review(name, reply)
 
 
-def _human_note(cl, channel: str, card_ts: str) -> str:
+def _human_note(cl, channel: str, card_ts: str,
+                approvers: tuple | None = None) -> str:
     """The approver's edit feedback for one drafted reply — the latest human text
     reply in THAT draft card's own thread ("too soft", "mention the refund").
 
@@ -322,7 +345,8 @@ def _human_note(cl, channel: str, card_ts: str) -> str:
         text = (r.get("text") or "").strip()
         if not text or text.startswith(":"):
             continue                       # blanks + our own emoji-led messages
-        if SOCIAL_APPROVERS and r.get("user") not in SOCIAL_APPROVERS:
+        allowed = SOCIAL_APPROVERS if approvers is None else approvers
+        if allowed and r.get("user") not in allowed:
             continue
         note = text                        # latest approver note wins
     return note
@@ -362,20 +386,33 @@ def _review_block(review: dict, reply: str) -> str:
 
 
 def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
-                    channel: str | None = None) -> list[dict]:
+                    channel: str | None = None, profile=None) -> list[dict]:
     """One daily scan: post a 'Response Reviews MM/DD/YY' header thread, draft a
     reply for each new review as a REPLY in that thread, and pick up reactions on
     every still-open day's threads (approve / redo / skip). Keeps re-checking a
     day's header until an approver reacts a 'done' emoji on it. Posting to Google
-    is stubbed (API pending) — approved replies are marked ready."""
+    is stubbed (API pending) — approved replies are marked ready.
+
+    `profile` = an ICD office (automations.online_presence.offices): its own
+    room, approvers, listing, sign-off name, contact and caps. None = Alphalete."""
     import datetime as dt
-    from automations.brand_audit import intake
-    company = intake.find_company(company_name)
-    if not company:
-        return [{"error": f"company {company_name!r} not found"}]
-    channel = channel or ALERT_SLACK_CHANNEL_ID
+    P = _profile(profile)
+    if P.key == "alphalete":
+        from automations.brand_audit import intake
+        company = intake.find_company(company_name)
+        if not company:
+            return [{"error": f"company {company_name!r} not found"}]
+    else:
+        company, company_name = None, P.business_name
+        if not P.gbp_location:
+            return [{"action": "no_listing",
+                     "note": f"{P.key}: no Google listing linked yet"}]
+    channel = channel or P.reviews_channel
+    who = P.counted_approvers
+    min_stars, cap = P.auto_reply_min_stars, P.auto_reply_daily_cap
+    state_file = P.path("review_replies.json")
     cl = _client()
-    state = _load()
+    state = _load(state_file)
     state.setdefault("headers", {})
     state.setdefault("reviews", {})
     recent = list(state.get("_recent_replies", []))   # for cross-reply variety
@@ -393,23 +430,24 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     #    rating >= AUTO_POST_MIN_STARS  -> auto-post to Google now + FYI to Slack.
     #    below that / no reply target   -> queue in Slack for approve/redo/skip.
     new_count = 0
-    auto_ok = gbp_ready()
+    auto_ok = gbp_ready(P.gbp_location)
     counts = state.setdefault("auto_post_counts", {})
     posted_today = counts.get(today, 0)          # throttle across runs in a day
     deferred = 0
-    for rv in get_reviews(company):
+    for rv in get_reviews(company, P.gbp_location):
         k = _key(rv)
         if k in state["reviews"]:
             continue
         stars = rv.get("rating")
         auto = (auto_ok and isinstance(stars, (int, float))
-                and stars >= AUTO_POST_MIN_STARS and rv.get("name"))
+                and stars >= min_stars and rv.get("name"))
         # Throttle: once today's auto-post cap is hit, leave the rest UNTOUCHED
         # (don't draft, don't record) so the next daily run picks them up.
-        if auto and posted_today >= AUTO_POST_DAILY_CAP:
+        if auto and posted_today >= cap:
             deferred += 1
             continue
-        reply = draft_reply(rv, company_name, avoid=recent[:15])
+        reply = draft_reply(rv, company_name, avoid=recent[:15],
+                            contact=P.contact_email, min_stars=min_stars)
         recent.insert(0, reply)
         new_count += 1
         if auto:
@@ -441,7 +479,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     if deferred:
         actions.append({"action": "deferred", "count": deferred,
                         "note": f"{deferred} more held for later daily runs "
-                                f"(cap {AUTO_POST_DAILY_CAP} auto-posts/day)"})
+                                f"(cap {cap} auto-posts/day)"})
     if not dry_run and hdr and new_count == 0 and not hdr.get("noted_empty"):
         cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
                             text="No new reviews needing a response today. React "
@@ -459,17 +497,20 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             continue
         rv = st.get("review") or {}
         rx = _thread_reactions(cl, st["reply_ts"], channel).get(st["reply_ts"])
+        reject = _reacted(rx, SOCIAL_REJECT_EMOJI, who)
+        approve = _reacted(rx, SOCIAL_APPROVE_EMOJI, who)
         rejected = st.setdefault("rejected", [])
         cur = st.get("reply")
         # ❌ OVERRIDES ✅ (changed 2026-07-16). Previously a card carrying both
         # was posted anyway and the ❌ silently did nothing — confusing, and it
         # published something the approver had just objected to. Not posting is
         # the reversible direction, so any ❌ wins.
-        if _reacted(rx, SOCIAL_REJECT_EMOJI) and cur and cur not in rejected:
+        if reject and cur and cur not in rejected:
             rejected.append(cur)
-            note = _human_note(cl, channel, st["reply_ts"]) if not dry_run else ""
+            note = _human_note(cl, channel, st["reply_ts"], who) if not dry_run else ""
             new = draft_reply(rv, company_name, feedback=note,
-                              avoid=(rejected + recent)[:15])
+                              avoid=(rejected + recent)[:15],
+                              contact=P.contact_email, min_stars=min_stars)
             recent.insert(0, new)
             actions.append({"action": "redraft", "review": k, "reply": new,
                             "applied_note": note})
@@ -480,7 +521,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
                 st["reply"] = new
                 st["reply_ts"] = r.get("ts")
             continue
-        if _reacted(rx, SOCIAL_APPROVE_EMOJI):
+        if approve:
             actions.append({"action": "approved", "review": k, "reply": cur})
             if not dry_run:
                 try:
@@ -496,13 +537,13 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
         if h.get("completed") or not h.get("ts"):
             continue
         if _reacted(_thread_reactions(cl, h["ts"], channel).get(h["ts"]),
-                    HEADER_DONE_EMOJI):
+                    HEADER_DONE_EMOJI, who):
             h["completed"] = True
             actions.append({"action": "header_completed", "date": date})
 
     if not dry_run:
         state["_recent_replies"] = recent[:40]
-        _save(state)
+        _save(state, state_file)
     return actions
 
 

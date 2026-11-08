@@ -39,17 +39,21 @@ _SEED = {
 }
 
 
-def _load() -> dict:
+# `path` = an office's own style file (online_presence); None = Alphalete's.
+# Each office learns from ITS approvers only -- one office's "crop tighter"
+# must not change how another office's photos come out.
+def _load(path: Path | None = None) -> dict:
     try:
-        return json.loads(_FILE.read_text())
+        return json.loads((path or _FILE).read_text())
     except Exception:
-        _save(dict(_SEED))
+        _save(dict(_SEED), path)
         return dict(_SEED)
 
 
-def _save(d: dict) -> None:
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    _FILE.write_text(json.dumps(d, indent=2))
+def _save(d: dict, path: Path | None = None) -> None:
+    f = path or _FILE
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(d, indent=2))
 
 
 def _similar(lst: list[str], note: str) -> bool:
@@ -57,29 +61,30 @@ def _similar(lst: list[str], note: str) -> bool:
     return any(n == x.lower() or n in x.lower() or x.lower() in n for x in lst)
 
 
-def caption_rules() -> list[str]:
+def caption_rules(path: Path | None = None) -> list[str]:
     """Standing caption feedback to apply to every generation."""
-    return _load().get("caption_feedback", [])
+    return _load(path).get("caption_feedback", [])
 
 
-def add_caption_feedback(note: str) -> None:
+def add_caption_feedback(note: str, path: Path | None = None) -> None:
     note = (note or "").strip()[:_MAX_NOTE_LEN]
     if not note:
         return
-    d = _load()
+    d = _load(path)
     lst = d.setdefault("caption_feedback", [])
     if not _similar(lst, note):
         lst.append(note)
         d["caption_feedback"] = lst[-_MAX_RULES:]
-        _save(d)
+        _save(d, path)
 
 
-def photo_default_zoom() -> float:
-    return float(_load().get("photo_default_zoom", 1.0))
+def photo_default_zoom(path: Path | None = None) -> float:
+    return float(_load(path).get("photo_default_zoom", 1.0))
 
 
-def add_photo_feedback(note: str, zoom: float | None = None) -> None:
-    d = _load()
+def add_photo_feedback(note: str, zoom: float | None = None,
+                       path: Path | None = None) -> None:
+    d = _load(path)
     lst = d.setdefault("photo_feedback", [])
     note = (note or "").strip()[:_MAX_NOTE_LEN]
     if note and not _similar(lst, note):
@@ -89,4 +94,4 @@ def add_photo_feedback(note: str, zoom: float | None = None) -> None:
         # nudge the default crop tighter toward what they keep asking for
         d["photo_default_zoom"] = round(
             min(1.5, max(float(d.get("photo_default_zoom", 1.0)), zoom * 0.9)), 2)
-    _save(d)
+    _save(d, path)

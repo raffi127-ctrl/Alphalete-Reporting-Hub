@@ -34,15 +34,18 @@ ZOHO_SOCIAL_URL = "https://social.zoho.com/"
 _STOP_FILE = ZOHO_PROFILE_DIR / ".stop"
 
 
-def launch_login(max_minutes: int = 30) -> int:
+def launch_login(max_minutes: int = 30, profile_dir: Path | None = None) -> int:
     """Open the dedicated Zoho profile in a visible window for a one-time login.
-    Cookies persist to ZOHO_PROFILE_DIR as the human signs in."""
-    ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    if _STOP_FILE.exists():
-        _STOP_FILE.unlink()
+    Cookies persist to the profile dir as the human signs in. `profile_dir` =
+    an office's own Zoho login (online_presence); None = Alphalete's."""
+    profile_dir = Path(profile_dir or ZOHO_PROFILE_DIR)
+    stop_file = profile_dir / ".stop"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    if stop_file.exists():
+        stop_file.unlink()
 
     with sync_playwright() as p:
-        ctx = _launch_persistent(p, ZOHO_PROFILE_DIR, headless=False,
+        ctx = _launch_persistent(p, profile_dir, headless=False,
                                  label="zoho-login")
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
@@ -52,16 +55,16 @@ def launch_login(max_minutes: int = 30) -> int:
             pass
         print(f"Chrome is open. Log into Zoho Social (do your 2FA normally).",
               flush=True)
-        print(f"When done, this closes on its own once {_STOP_FILE} appears "
+        print(f"When done, this closes on its own once {stop_file} appears "
               f"(or after {max_minutes} min).", flush=True)
 
         waited, deadline = 0, max_minutes * 60
-        while waited < deadline and not _STOP_FILE.exists():
+        while waited < deadline and not stop_file.exists():
             time.sleep(2)
             waited += 2
         ctx.close()
-    if _STOP_FILE.exists():
-        _STOP_FILE.unlink()
+    if stop_file.exists():
+        stop_file.unlink()
     print("Login window closed — profile saved.", flush=True)
     return 0
 
@@ -124,11 +127,11 @@ def select_channels(pg, media_type: str = "photo") -> list[str]:
     return remaining
 
 
-def _launch_zoho(p, headless: bool):
+def _launch_zoho(p, headless: bool, profile_dir: Path | None = None):
     """Persistent Zoho context with a LARGE viewport — the media dialog's
     'Attach' button sits bottom-right and is off-screen / unclickable at the
     default window size. System Chrome first, bundled Chromium fallback."""
-    base = dict(user_data_dir=str(ZOHO_PROFILE_DIR), headless=headless,
+    base = dict(user_data_dir=str(profile_dir or ZOHO_PROFILE_DIR), headless=headless,
                 viewport={"width": 1680, "height": 1000},
                 args=["--window-size=1700,1050"])
     try:
@@ -171,6 +174,29 @@ def _compose(pg, caption: str, image_path: str | None,
     return select_channels(pg, media_type=media_type)
 
 
+def channel_check(profile_dir: Path | None = None, *, headless: bool = False,
+                  timeout: int = 60000) -> dict:
+    """Is this Zoho login still signed in, and which socials are connected?
+
+    Opens New Post only to read the channel list, then closes the window
+    without saving anything (nothing is typed, so there is nothing to keep).
+    For the install call: run it after the owner connects their accounts."""
+    Path(profile_dir or ZOHO_PROFILE_DIR).mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = _launch_zoho(p, headless, profile_dir)
+        try:
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
+            if "accounts.zoho.com" in pg.url:
+                return {"logged_in": False, "channels": []}
+            pg.wait_for_timeout(2500)
+            pg.locator(_NEW_POST).first.click(timeout=15000)
+            pg.wait_for_timeout(3000)
+            return {"logged_in": True, "channels": _present_channels(pg)}
+        finally:
+            ctx.close()
+
+
 def _click_action(pg, label: str) -> bool:
     """Reliable click of a footer action button ('Post Now', 'Schedule', 'Save
     Draft'). The publishing-options popup overlaps these and the button can read
@@ -203,7 +229,8 @@ def _click_save_draft(pg) -> None:
 
 def create_draft(caption: str, image_path: str | None,
                  company_name: str = "", *, media_type: str = "photo",
-                 headless: bool = False, timeout: int = 60000) -> dict:
+                 headless: bool = False, timeout: int = 60000,
+                 profile_dir: Path | None = None) -> dict:
     """Create a DRAFT post (image + caption) in Zoho Social via the warm
     logged-in profile, WITHOUT publishing. Runs headful — headless trips Zoho's
     re-auth wall. Raises if the session has expired (re-run `--login`).
@@ -213,9 +240,9 @@ def create_draft(caption: str, image_path: str | None,
     """
     from patchright.sync_api import sync_playwright
 
-    ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    Path(profile_dir or ZOHO_PROFILE_DIR).mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        ctx = _launch_zoho(p, headless)
+        ctx = _launch_zoho(p, headless, profile_dir)
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
             pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
@@ -338,7 +365,8 @@ def _set_schedule(pg, when: dt.datetime) -> None:
 _JITTER_MINUTES = [3, 11, 17, 24, 33, 41, 48, 56]   # non-round -> looks human
 
 
-def next_daily_slot(candidate_hours: list[int] | None = None) -> dt.datetime:
+def next_daily_slot(candidate_hours: list[int] | None = None,
+                    sched_state: Path | None = None) -> dt.datetime:
     """Next open DAILY slot: one post/day, never in the past, and NEVER the same
     time two days running. Rotates through `candidate_hours` (good windows) and
     adds a random non-round minute so the feed never looks automated."""
@@ -346,7 +374,7 @@ def next_daily_slot(candidate_hours: list[int] | None = None) -> dt.datetime:
     candidate_hours = [h for h in (candidate_hours or []) if 8 <= h <= 18] or [12]
     state = {}
     try:
-        state = json.loads(_SCHED_STATE.read_text())
+        state = json.loads(Path(sched_state or _SCHED_STATE).read_text())
     except Exception:
         pass
     today = dt.date.today()
@@ -365,9 +393,20 @@ def next_daily_slot(candidate_hours: list[int] | None = None) -> dt.datetime:
     return when
 
 
-def _record_slot(when: dt.datetime) -> None:
-    _SCHED_STATE.parent.mkdir(parents=True, exist_ok=True)
-    _SCHED_STATE.write_text(json.dumps(
+def posted_today(sched_state: Path | None = None) -> bool:
+    """True once a post already went out (or was scheduled) for today -- the
+    one-a-day rule for offices whose free Zoho cannot schedule."""
+    try:
+        state = json.loads(Path(sched_state or _SCHED_STATE).read_text())
+    except Exception:
+        return False
+    return state.get("last_scheduled_date") == dt.date.today().isoformat()
+
+
+def _record_slot(when: dt.datetime, sched_state: Path | None = None) -> None:
+    f = Path(sched_state or _SCHED_STATE)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(
         {"last_scheduled_date": when.date().isoformat(),
          "last_scheduled_hour": when.hour}, indent=2))
 
@@ -375,7 +414,8 @@ def _record_slot(when: dt.datetime) -> None:
 def schedule_post(caption: str, image_path: str | None, company_name: str = "",
                   *, when: dt.datetime | None = None, media_type: str = "photo",
                   dry_run: bool = True, headless: bool = False,
-                  timeout: int = 60000) -> dict:
+                  timeout: int = 60000, profile_dir: Path | None = None,
+                  sched_state: Path | None = None) -> dict:
     """Compose (caption + photo + channel selection) then SCHEDULE the post.
     when=None -> next daily slot. dry_run=True is SAFE: it sets everything but
     clicks *Save Draft* instead of Schedule, so nothing publishes — flip to
@@ -383,10 +423,10 @@ def schedule_post(caption: str, image_path: str | None, company_name: str = "",
     scheduled datetime + channels left selected."""
     from patchright.sync_api import sync_playwright
 
-    when = when or next_daily_slot()
-    ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    when = when or next_daily_slot(sched_state=sched_state)
+    Path(profile_dir or ZOHO_PROFILE_DIR).mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        ctx = _launch_zoho(p, headless)
+        ctx = _launch_zoho(p, headless, profile_dir)
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
             pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
@@ -413,7 +453,7 @@ def schedule_post(caption: str, image_path: str | None, company_name: str = "",
                     result = {"ok": False, "channels": channels,
                               "error": "composer still open after Schedule"}
                 else:
-                    _record_slot(when)
+                    _record_slot(when, sched_state)
                     result = {"ok": True, "dry_run": False, "channels": channels,
                               "scheduled_for": when.isoformat()}
             return result
@@ -423,15 +463,15 @@ def schedule_post(caption: str, image_path: str | None, company_name: str = "",
 
 def post_now(caption: str, image_path: str | None, company_name: str = "",
              *, media_type: str = "photo", headless: bool = False,
-             timeout: int = 60000) -> dict:
+             timeout: int = 60000, profile_dir: Path | None = None) -> dict:
     """PUBLISH the post immediately (Publish Now -> Post Now). Composes caption
     + photo + channel selection (Raf's personal LinkedIn always excluded), then
     posts live. Returns ok + channels. Irreversible once live."""
     from patchright.sync_api import sync_playwright
 
-    ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    Path(profile_dir or ZOHO_PROFILE_DIR).mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        ctx = _launch_zoho(p, headless)
+        ctx = _launch_zoho(p, headless, profile_dir)
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
             pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
@@ -489,9 +529,19 @@ def main(argv=None) -> int:
                    help="open the dedicated profile for a one-time Zoho login")
     p.add_argument("--minutes", type=int, default=30,
                    help="how long to hold the login window open")
+    p.add_argument("--office", default="",
+                   help="an office's ECO key: log into THAT office's Zoho")
     args = p.parse_args(argv)
     if args.login:
-        return launch_login(args.minutes)
+        prof = None
+        if args.office:
+            from automations.online_presence import offices
+            o = offices.get(args.office)
+            if not o:
+                print(f"no online-presence office {args.office!r}")
+                return 1
+            prof = o.zoho_profile
+        return launch_login(args.minutes, prof)
     p.print_help()
     return 0
 

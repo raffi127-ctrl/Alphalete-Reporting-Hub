@@ -51,25 +51,28 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
-def acquire_lock() -> bool:
+def acquire_lock(path: Path | None = None) -> bool:
     """True if we got the singleton lock. False if another LIVE run holds it.
-    A stale lock (dead pid) is reclaimed."""
-    _LOCK.parent.mkdir(parents=True, exist_ok=True)
-    if _LOCK.exists():
+    A stale lock (dead pid) is reclaimed. `path` = an office's own lock, so
+    one office's pass never waits on (or races) another's."""
+    lock = path or _LOCK
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    if lock.exists():
         try:
-            old = int(_LOCK.read_text().strip() or "0")
+            old = int(lock.read_text().strip() or "0")
         except ValueError:
             old = 0
         if old and old != os.getpid() and _pid_alive(old):
             return False
-    _LOCK.write_text(str(os.getpid()))
+    lock.write_text(str(os.getpid()))
     return True
 
 
-def release_lock() -> None:
+def release_lock(path: Path | None = None) -> None:
+    lock = path or _LOCK
     try:
-        if _LOCK.exists() and _LOCK.read_text().strip() == str(os.getpid()):
-            _LOCK.unlink()
+        if lock.exists() and lock.read_text().strip() == str(os.getpid()):
+            lock.unlink()
     except OSError:
         pass
 
@@ -99,16 +102,17 @@ def _token() -> str:
     return smp._load_token()
 
 
-def _load_state() -> dict:
+def _load_state(path: Path | None = None) -> dict:
     try:
-        return json.loads(_STATE.read_text())
+        return json.loads((path or _STATE).read_text())
     except Exception:
         return {}
 
 
-def _save_state(s: dict) -> None:
-    _STATE.parent.mkdir(parents=True, exist_ok=True)
-    _STATE.write_text(json.dumps(s, indent=2))
+def _save_state(s: dict, path: Path | None = None) -> None:
+    f = path or _STATE
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(s, indent=2))
 
 
 def _image_files(msg: dict) -> list[dict]:
@@ -134,15 +138,18 @@ def _has_context(text: str) -> bool:
     return len(t) >= 8
 
 
-def _reacted(reactions: list[dict] | None, emoji: tuple) -> bool:
-    """True if an authorized approver reacted with one of `emoji`."""
+def _reacted(reactions: list[dict] | None, emoji: tuple,
+             approvers: tuple | None = None) -> bool:
+    """True if an authorized approver reacted with one of `emoji`.
+    `approvers` = an office's own list; None = Alphalete's SOCIAL_APPROVERS."""
+    allowed = SOCIAL_APPROVERS if approvers is None else approvers
     for rx in (reactions or []):
         if rx.get("name") not in emoji:
             continue
         users = rx.get("users") or []
-        if not SOCIAL_APPROVERS:          # no allow-list set yet → anyone counts
+        if not allowed:                   # no allow-list set yet → anyone counts
             return True
-        if any(u in SOCIAL_APPROVERS for u in users):
+        if any(u in allowed for u in users):
             return True
     return False
 
@@ -167,12 +174,13 @@ def _thread_reactions(cl, parent_ts: str, channel: str | None = None) -> dict:
     return out
 
 
-def _human_reply_after(cl, parent_ts: str, after_ts: str) -> dict | None:
+def _human_reply_after(cl, parent_ts: str, after_ts: str,
+                       channel: str | None = None) -> dict | None:
     """Latest plain-text reply in the thread, posted after `after_ts`, that is a
     human answer (not one of our bot prompts — those start with an emoji
     shortcode). Used to read why a photo was rejected."""
     try:
-        reps = cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+        reps = cl.conversations_replies(channel=channel or SOCIAL_INBOX_CHANNEL_ID,
                                         ts=parent_ts).get("messages", [])
     except Exception:
         return None
@@ -241,17 +249,19 @@ def _clean_reply(text: str) -> str:
     return re.sub(r"<@[^>]+>", "", text or "").strip()
 
 
-def _rep_context(cl, parent_ts: str) -> str:
+def _rep_context(cl, parent_ts: str, channel: str | None = None,
+                 approvers: tuple | None = None) -> str:
     """Substantive replies from a REP (a non-approver) — the real answers to
     Lucy's questions. Approver messages (Megan/Raf uploading photos or tagging
     the rep to respond) and bare @-pings do NOT count as the answer."""
     out = []
+    allowed = SOCIAL_APPROVERS if approvers is None else approvers
     try:
-        for r in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+        for r in cl.conversations_replies(channel=channel or SOCIAL_INBOX_CHANNEL_ID,
                                           ts=parent_ts).get("messages", []):
             if r.get("ts") == parent_ts or r.get("files"):
                 continue
-            if r.get("user") in SOCIAL_APPROVERS:   # not the rep's answer
+            if r.get("user") in allowed:   # not the rep's answer
                 continue
             t = _clean_reply(r.get("text"))
             if t and not t.startswith(":") and len(t) >= 3:
@@ -261,14 +271,17 @@ def _rep_context(cl, parent_ts: str) -> str:
     return " | ".join(out)
 
 
-def _rep_answered_after(cl, parent_ts: str, after_ts: str) -> bool:
+def _rep_answered_after(cl, parent_ts: str, after_ts: str,
+                        channel: str | None = None,
+                        approvers: tuple | None = None) -> bool:
     """True if a rep (non-approver) posted a substantive reply after `after_ts`."""
+    allowed = SOCIAL_APPROVERS if approvers is None else approvers
     try:
-        for r in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+        for r in cl.conversations_replies(channel=channel or SOCIAL_INBOX_CHANNEL_ID,
                                           ts=parent_ts).get("messages", []):
             if r.get("ts", "") <= (after_ts or "") or r.get("files"):
                 continue
-            if r.get("user") in SOCIAL_APPROVERS:
+            if r.get("user") in allowed:
                 continue
             t = _clean_reply(r.get("text"))
             if t and not t.startswith(":") and len(t) >= 3:
@@ -375,12 +388,13 @@ def _interpret_photo_feedback(text: str) -> dict:
                 "zoom": 1.0, "note": "Brightened it up a touch — take another look."}
 
 
-def _newest_file_reply_ts(cl, parent_ts: str) -> str | None:
+def _newest_file_reply_ts(cl, parent_ts: str,
+                          channel: str | None = None) -> str | None:
     """ts of the most recent thread reply carrying a file (the photo we just
     uploaded). Retries — the file message can lag a beat after upload."""
     for _ in range(5):
         try:
-            reps = cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+            reps = cl.conversations_replies(channel=channel or SOCIAL_INBOX_CHANNEL_ID,
                                             ts=parent_ts).get("messages", [])
             files = [r for r in reps if r.get("files") and r.get("ts") != parent_ts]
             if files:
@@ -393,7 +407,8 @@ def _newest_file_reply_ts(cl, parent_ts: str) -> str | None:
 
 # ---- caption generation -----------------------------------------------------
 def caption_for(image_bytes: bytes, context: str, company_name: str,
-                avoid: list[str] | None = None, feedback: str = "") -> str:
+                avoid: list[str] | None = None, feedback: str = "",
+                style_path: Path | None = None) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     system = (
@@ -463,7 +478,7 @@ def caption_for(image_bytes: bytes, context: str, company_name: str,
         "(no 'Vincent (LVL 3)'). Naming the promotion itself ('Level 2') is fine."
     )
     from automations.brand_audit import style
-    learned = style.caption_rules()
+    learned = style.caption_rules(style_path)
     if learned:
         system += ("\n\nSTANDING TEAM FEEDBACK — ALWAYS FOLLOW (learned from past "
                    "corrections; these override anything above if they conflict):\n"
@@ -504,15 +519,106 @@ def caption_for(image_bytes: bytes, context: str, company_name: str,
     return json.loads(text).get("caption", "")
 
 
+# ---- an ICD office's publish step ------------------------------------------
+def _office_publish(P, cl, ts: str, st: dict, caption: str, dry_run: bool,
+                    sched_file: Path, zoho_prof: Path) -> list[dict]:
+    """Both halves approved -> out it goes, on the OFFICE's own Zoho.
+
+    One post a day, never after 6pm, on the office's own clock. A Zoho plan
+    that can schedule gets a time; the free plan may not, so Lucy publishes
+    it herself ("Post Now") on the first pass inside the window -- and if
+    today already had its post, it waits for tomorrow's pass.
+
+    Errors stay in the action list (our log), never in the office's room."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    from automations.brand_audit import zoho_draft
+    if st.get("scheduled") or st.get("published"):
+        return []
+    photo = st.get("photo_path")
+    now = dt.datetime.now(ZoneInfo(P.timezone)).replace(tzinfo=None)
+    if P.zoho_schedules:
+        slot = zoho_draft.next_daily_slot(list(P.post_hours), sched_state=sched_file)
+        act = {"ts": ts, "action": "both_approved", "caption": caption,
+               "photo": photo, "scheduled_for": slot.isoformat()}
+        if dry_run:
+            return [act]
+        try:
+            res = zoho_draft.schedule_post(
+                caption, photo, P.business_name, when=slot, media_type="photo",
+                dry_run=False, profile_dir=zoho_prof, sched_state=sched_file)
+        except Exception as e:
+            res = {"ok": False, "error": str(e)}
+        if not res.get("ok"):
+            return [act, {"ts": ts, "action": "schedule_error",
+                          "error": res.get("error")}]
+        h12 = slot.hour % 12 or 12
+        said = (f":rocket: *Lucy has scheduled this to post* on {slot:%a %b} "
+                f"{slot.day} at {h12}:{slot.minute:02d} "
+                f"{'AM' if slot.hour < 12 else 'PM'}.")
+        st["scheduled"] = True
+    else:
+        last = {}
+        try:
+            last = json.loads(sched_file.read_text())
+        except Exception:
+            pass
+        if last.get("last_scheduled_date") == now.date().isoformat():
+            return [{"ts": ts, "action": "waiting_for_tomorrow",
+                     "note": "today's one post already went out"}]
+        if not (min(P.post_hours) <= now.hour <= max(P.post_hours)):
+            return [{"ts": ts, "action": "waiting_for_window",
+                     "note": f"{now:%H:%M} office time is outside "
+                             f"{min(P.post_hours)}:00-{max(P.post_hours)}:59"}]
+        act = {"ts": ts, "action": "post_now", "caption": caption, "photo": photo}
+        if dry_run:
+            return [act]
+        try:
+            res = zoho_draft.post_now(caption, photo, P.business_name,
+                                      media_type="photo", profile_dir=zoho_prof)
+        except Exception as e:
+            res = {"ok": False, "error": str(e)}
+        if not res.get("ok"):
+            return [act, {"ts": ts, "action": "schedule_error",
+                          "error": res.get("error")}]
+        zoho_draft._record_slot(now, sched_file)
+        said = ":rocket: *Lucy posted this* to your connected pages."
+        st["published"] = True
+    cl.chat_postMessage(channel=P.slack_channel, thread_ts=ts, text=said)
+    try:
+        cl.reactions_add(channel=P.slack_channel, name=SOCIAL_POSTED_EMOJI,
+                         timestamp=ts)
+    except Exception:
+        pass
+    st["posted"] = True
+    return [act]
+
+
 # ---- the polled processor ---------------------------------------------------
 def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
-                  limit: int = 20) -> list[dict]:
+                  limit: int = 20, profile=None) -> list[dict]:
     """Walk recent submissions; return the actions taken/proposed. In dry_run
-    nothing is written to Slack or posted — it just reports what it would do."""
+    nothing is written to Slack or posted — it just reports what it would do.
+
+    `profile` = an ICD office (automations.online_presence.offices): its own
+    room, approvers, learned style, Zoho login and one-a-day slot. None =
+    Alphalete, exactly as before."""
+    if profile is None:
+        from automations.online_presence.offices import alphalete
+        profile = alphalete()
+    P = profile
+    alpha = P.key == "alphalete"
+    if not alpha:
+        company_name = P.business_name
+    chan, who = P.slack_channel, P.counted_approvers
+    state_file, style_file = P.path("social_inbox.json"), P.style_file
+    sched_file = P.path("zoho_schedule.json") if not alpha else None
+    zoho_prof = None if alpha else P.zoho_profile
+    photo_prefix = "social_" if alpha else f"social_{P.key}_"
     cl = _client()
-    msgs = cl.conversations_history(channel=SOCIAL_INBOX_CHANNEL_ID,
+    msgs = cl.conversations_history(channel=chan,
                                     limit=limit).get("messages", [])
-    state = _load_state()
+    state = _load_state(state_file)
     # Captions we've already used (persisted across runs so we never repeat a
     # line even days apart). Newest first; we feed the recent slice as a
     # "do-not-reuse" list to every new caption.
@@ -535,21 +641,21 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         # even if it was already scheduled. Checked first, on active + scheduled
         # items, so one person's skull overrides the other's approval.
         if (not st.get("posted")) or st.get("scheduled"):
-            krx = _thread_reactions(cl, ts)
-            if any(_reacted(krx.get(t), SOCIAL_KILL_EMOJI)
+            krx = _thread_reactions(cl, ts, chan)
+            if any(_reacted(krx.get(t), SOCIAL_KILL_EMOJI, who)
                    for t in (ts, st.get("photo_ts"), st.get("caption_ts")) if t):
                 actions.append({"ts": ts, "action": "killed",
                                 "was_scheduled": bool(st.get("scheduled"))})
                 if not dry_run:
                     if st.get("scheduled"):
                         cl.chat_postMessage(
-                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            channel=chan, thread_ts=ts,
                             text=":skull: Got it — but heads up, this was already "
                                  "*scheduled in Zoho*. Please remove it from the "
                                  "scheduled queue (I can't auto-unschedule yet).")
                     else:
                         cl.chat_postMessage(
-                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            channel=chan, thread_ts=ts,
                             text=":skull: Got it — we won't post this one.")
                 st["killed"] = True
                 st["posted"] = True
@@ -573,7 +679,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                     raw = _download(imgs[-1]["url_private"])
                     quality = photo_edit.quality_report(raw)
                     img = photo_edit.process_bytes(
-                        raw, zoom=style.photo_default_zoom())
+                        raw, zoom=style.photo_default_zoom(style_file))
                 except Exception as e:
                     actions.append({"ts": ts, "action": "caption_error",
                                     "error": str(e)})
@@ -584,14 +690,14 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             #    anything thuggish-unprofessional → approvers ✅ post / ❌ deny.
             if not st.get("screen_ok"):
                 if st.get("flagged_ts"):
-                    frx = _thread_reactions(cl, ts).get(st["flagged_ts"])
-                    if _reacted(frx, SOCIAL_APPROVE_EMOJI):
+                    frx = _thread_reactions(cl, ts, chan).get(st["flagged_ts"])
+                    if _reacted(frx, SOCIAL_APPROVE_EMOJI, who):
                         st["screen_ok"] = True
-                    elif _reacted(frx, SOCIAL_REJECT_EMOJI):
+                    elif _reacted(frx, SOCIAL_REJECT_EMOJI, who):
                         actions.append({"ts": ts, "action": "photo_denied"})
                         if not dry_run:
                             cl.chat_postMessage(
-                                channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                                channel=chan, thread_ts=ts,
                                 text=":no_entry: Denied — we won't post this one. "
                                      "Thanks for sending though!")
                             st["posted"] = True
@@ -609,7 +715,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                                         "issues": issues})
                         if not dry_run:
                             r0 = cl.chat_postMessage(
-                                channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                                channel=chan, thread_ts=ts,
                                 text=":warning: *Flagging for review* — heads up, "
                                      "this looks like it has: " + "; ".join(issues)
                                      + ".\n*Approvers: react :white_check_mark: to "
@@ -621,7 +727,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             # 2) post the EDITED PHOTO for approval — NO context needed
             if not st.get("photo_ts"):
                 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-                photo_path = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
+                photo_path = OUTPUT_DIR / f"{photo_prefix}{ts.replace('.', '')}_ig.jpg"
                 photo_path.write_bytes(img)
                 actions.append({"ts": ts, "action": "propose_photo",
                                 "photo": str(photo_path), "quality": quality})
@@ -631,22 +737,23 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                         warn = (":warning: *Photo quality* — "
                                 + " ".join(quality["warnings"]) + "\n\n")
                     cl.files_upload_v2(
-                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        channel=chan, thread_ts=ts,
                         file=str(photo_path), title="Edited photo — IG ready",
                         initial_comment=f"{warn}:frame_with_picture: *Edited "
                         "photo* (auto-enhanced + cropped) — react "
                         ":white_check_mark: to approve the PHOTO, :x: to ask for "
                         "a different edit / upload your own.")
-                    st["photo_ts"] = _newest_file_reply_ts(cl, ts)
+                    st["photo_ts"] = _newest_file_reply_ts(cl, ts, chan)
                     st["photo_path"] = str(photo_path)
 
             # 3) CAPTION — needs context; ask the rep / wait, then post
             if not st.get("caption"):
-                rep_ctx = _rep_context(cl, ts)
+                rep_ctx = _rep_context(cl, ts, chan, who)
                 full_context = (text + ("\n" + rep_ctx if rep_ctx else "")).strip()
                 if not st.get("context_resolved"):
                     if st.get("asked_context_ts"):
-                        if not _rep_answered_after(cl, ts, st["asked_context_ts"]):
+                        if not _rep_answered_after(cl, ts, st["asked_context_ts"],
+                                                   chan, who):
                             actions.append({"ts": ts, "action": "awaiting_context"})
                             continue
                         st["context_resolved"] = True
@@ -660,14 +767,15 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                                             "message": msg})
                             if not dry_run:
                                 r0 = cl.chat_postMessage(
-                                    channel=SOCIAL_INBOX_CHANNEL_ID,
+                                    channel=chan,
                                     thread_ts=ts, text=msg)
                                 st["asked_context_ts"] = r0.get("ts")
                             continue
                         st["context_resolved"] = True
                 try:
                     cap = caption_for(img, full_context, company_name,
-                                      avoid=recent_captions[:25])
+                                      avoid=recent_captions[:25],
+                                      style_path=style_file)
                 except Exception as e:
                     actions.append({"ts": ts, "action": "caption_error",
                                     "error": str(e)})
@@ -677,7 +785,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                                 "caption": cap})
                 if not dry_run:
                     r = cl.chat_postMessage(
-                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        channel=chan, thread_ts=ts,
                         text=":sparkles: *Proposed caption* — react "
                              ":white_check_mark: to approve the CAPTION, :x: for "
                              f"a different one:\n\n{cap}")
@@ -686,27 +794,28 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             continue
 
         # 3) collect reactions on the caption and the photo (judged separately)
-        thread_rx = _thread_reactions(cl, ts)
+        thread_rx = _thread_reactions(cl, ts, chan)
         cap_reactions = thread_rx.get(st.get("caption_ts"))
         photo_reactions = thread_rx.get(st.get("photo_ts"))
-        caption_ok = _reacted(cap_reactions, SOCIAL_APPROVE_EMOJI)
-        photo_ok = _reacted(photo_reactions, SOCIAL_APPROVE_EMOJI)
+        caption_ok = _reacted(cap_reactions, SOCIAL_APPROVE_EMOJI, who)
+        photo_ok = _reacted(photo_reactions, SOCIAL_APPROVE_EMOJI, who)
         cur = st.get("caption")
 
         # caption ❌ -> regenerate a fresh caption (approval wins over reject)
         rejected = st.setdefault("rejected", [])
-        if (not caption_ok and _reacted(cap_reactions, SOCIAL_REJECT_EMOJI)
+        if (not caption_ok and _reacted(cap_reactions, SOCIAL_REJECT_EMOJI, who)
                 and cur and cur not in rejected):
             rejected.append(cur)
-            fb = _human_reply_after(cl, ts, st.get("caption_ts") or ts)
+            fb = _human_reply_after(cl, ts, st.get("caption_ts") or ts, chan)
             if fb and fb.get("text"):
-                style.add_caption_feedback(fb["text"])   # Lucy learns from it
+                style.add_caption_feedback(fb["text"], style_file)   # Lucy learns from it
             try:
                 raw = _download(imgs[-1]["url_private"])
                 newcap = caption_for(photo_edit.process_bytes(raw), text,
                                      company_name,
                                      avoid=(rejected + recent_captions)[:25],
-                                     feedback=(fb.get("text") if fb else ""))
+                                     feedback=(fb.get("text") if fb else ""),
+                                     style_path=style_file)
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
@@ -715,7 +824,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                             "caption": newcap, "rejected": cur})
             if not dry_run:
                 r = cl.chat_postMessage(
-                    channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                    channel=chan, thread_ts=ts,
                     text=":arrows_counterclockwise: Got it — a different take. "
                          "React :white_check_mark: to approve the CAPTION, :x: "
                          f"for another:\n\n{newcap}")
@@ -725,17 +834,17 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
 
         # photo ❌ -> ask WHY, then skip (don't want it) or fix (how it looks)
         photo_rejected = (not photo_ok
-                          and _reacted(photo_reactions, SOCIAL_REJECT_EMOJI))
+                          and _reacted(photo_reactions, SOCIAL_REJECT_EMOJI, who))
         if photo_rejected and not st.get("photo_dismissed"):
             # use feedback already in the thread (after the photo was proposed);
             # only ask "what's off?" if they haven't said anything yet
-            reply = _human_reply_after(cl, ts, st.get("photo_ts") or ts)
+            reply = _human_reply_after(cl, ts, st.get("photo_ts") or ts, chan)
             if not reply:
                 if not st.get("photo_why_ts"):
                     actions.append({"ts": ts, "action": "ask_photo_reason"})
                     if not dry_run:
                         q = cl.chat_postMessage(
-                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            channel=chan, thread_ts=ts,
                             text=":frame_with_picture: Got a :x: on the photo — "
                                  "what's off? If you just don't want *this photo* "
                                  "posted, tell me and I'll skip it. If it's *how "
@@ -748,12 +857,13 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             interp = _interpret_photo_feedback(reply.get("text", ""))
             if interp.get("intent") == "fix":   # Lucy learns the photo preference
                 style.add_photo_feedback(reply.get("text", ""),
-                                         zoom=float(interp.get("zoom") or 1.0))
+                                         zoom=float(interp.get("zoom") or 1.0),
+                                         path=style_file)
             if interp.get("intent") == "skip":
                 actions.append({"ts": ts, "action": "photo_skipped"})
                 if not dry_run:
                     cl.chat_postMessage(
-                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        channel=chan, thread_ts=ts,
                         text=":ok_hand: Got it — skipping this one. Send the next "
                              "photo whenever.")
                     st["photo_dismissed"] = True
@@ -772,19 +882,19 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
-            new_path = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
+            new_path = OUTPUT_DIR / f"{photo_prefix}{ts.replace('.', '')}_ig.jpg"
             new_path.write_bytes(newimg)
             actions.append({"ts": ts, "action": "photo_reedited",
                             "photo": str(new_path)})
             if not dry_run:
                 note = interp.get("note") or "Updated the edit."
                 cl.files_upload_v2(
-                    channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                    channel=chan, thread_ts=ts,
                     file=str(new_path), title="Edited photo (v2)",
                     initial_comment=f":frame_with_picture: {note} React "
                     ":white_check_mark: to approve the PHOTO, :x: if it still "
                     "needs work.")
-                st["photo_ts"] = _newest_file_reply_ts(cl, ts)
+                st["photo_ts"] = _newest_file_reply_ts(cl, ts, chan)
                 st["photo_path"] = str(new_path)
                 st["photo_why_ts"] = None   # next ❌ asks why again
             continue
@@ -792,7 +902,10 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         # BOTH approved -> SCHEDULE into the next daily slot (one post/day).
         # Zoho is only touched on a live (non-dry-run) pass; channel exclusion
         # (Raf's personal LinkedIn) is enforced inside schedule_post.
-        if caption_ok and photo_ok:
+        if caption_ok and photo_ok and not alpha:
+            actions.extend(_office_publish(P, cl, ts, st, cur, dry_run,
+                                           sched_file, zoho_prof))
+        elif caption_ok and photo_ok:
             from automations.brand_audit import zoho_draft, best_time
             hours, _src = best_time.best_good_hours(company_name)
             slot = zoho_draft.next_daily_slot(hours)
@@ -811,13 +924,13 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                     when_txt = (f"{slot:%a %b} {slot.day} at {h12}:"
                                 f"{slot.minute:02d} {'AM' if slot.hour < 12 else 'PM'}")
                     cl.chat_postMessage(
-                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        channel=chan, thread_ts=ts,
                         text=f":rocket: *Lucy has scheduled this to post* on "
                              f"{when_txt} (Facebook, X, LinkedIn company page, "
                              "Instagram, Google).")
                     # mark the ORIGINAL submitted photo as handled/posted
                     try:
-                        cl.reactions_add(channel=SOCIAL_INBOX_CHANNEL_ID,
+                        cl.reactions_add(channel=chan,
                                          name=SOCIAL_POSTED_EMOJI, timestamp=ts)
                     except Exception:
                         pass
@@ -834,7 +947,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
 
     if not dry_run:
         state["_recent_captions"] = recent_captions[:50]   # cap history
-        _save_state(state)
+        _save_state(state, state_file)
     return actions
 
 
