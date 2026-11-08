@@ -31,7 +31,7 @@ def test_the_seed_fills_identity_and_nothing_else():
     assert rows[0]["Start"] == "11/02/2026"
     for col in B.TICKS:
         assert col not in rows[0], "%s is not the seed's to write" % col
-    assert B.BY_HAND not in rows[0]
+    assert B.CLASSROOM not in rows[0], "the classroom is the ICD's to set"
 
 
 def test_a_second_seed_adds_newcomers_and_rewrites_nobody():
@@ -47,7 +47,7 @@ def test_somebody_the_icd_marked_off_does_not_come_back():
     """The calendar will go on saying they showed up for training. The board
     is the only thing that knows they left -- that is why it exists."""
     gone = dict(B.seed_rows(_cal("Ada Fournier"), MONDAY)[0],
-                **{B.BY_HAND: B.TERMINATED})
+                **{B.TERMINATED_AT: "11/06/2026"})
     got = B.merge([gone], B.seed_rows(_cal("Ada Fournier"), MONDAY))
     assert got["add"] == [], "they were marked off; the seed must not re-add them"
     assert got["left"] == [B.person_key(gone)]
@@ -64,7 +64,7 @@ def test_people_are_matched_on_email_not_spelling():
 def test_terminated_rows_are_hidden_not_dropped():
     rows = [dict(B.seed_rows(_cal("Ada Fournier"), MONDAY)[0]),
             dict(B.seed_rows(_cal("Bruno Castell"), MONDAY)[0],
-                 **{B.BY_HAND: B.TERMINATED})]
+                 **{B.TERMINATED_AT: "11/06/2026"})]
     assert [r["Name"] for r in B.visible(rows)] == ["Ada"]
     assert [r["Name"] for r in B.visible(rows, show_terminated=True)] == ["Ada", "Bruno"]
     assert len(rows) == 2, "the row itself is still there"
@@ -85,12 +85,20 @@ def test_an_already_ticked_row_is_not_rewritten():
     assert B.tick_plan(rows, "Digi Docs", ["Ada Fournier"]) == []
 
 
-def test_final_status_is_not_a_machine_column():
-    """It is the ICD's, and it is the one signal AppStream cannot give us."""
+def test_the_classroom_is_not_a_machine_column():
+    """It is the ICD's: they say who goes on which printed sheet."""
     rows = B.seed_rows(_cal("Ada Fournier"), MONDAY)
     with pytest.raises(ValueError, match="not a column a machine may write"):
-        B.tick_plan(rows, B.BY_HAND, ["Ada Fournier"])
-    assert B.BY_HAND not in B.TICKS
+        B.tick_plan(rows, B.CLASSROOM, ["Ada Fournier"])
+    assert B.CLASSROOM not in B.TICKS
+
+
+def test_there_is_no_final_status_column():
+    """Megan, 2026-11-08: "I don't think that we need a final status on this."
+    Terminating is something the ICD DOES in the panel, so it is row state and
+    never a box on the chart."""
+    assert "Final Status" not in B.COLUMNS
+    assert B.TERMINATED_AT not in B.COLUMNS
 
 
 def test_the_identity_columns_are_not_tickable_either():
@@ -112,3 +120,67 @@ def test_the_columns_come_from_the_real_obcl():
                 "Blue Ink", "Headshot Photo", "UID Request", "Owner Submit",
                 "Added to APEX"):
         assert col in B.COLUMNS
+
+
+# --------------------------------------------------- the printed chart
+
+def _row(name, classroom="", **steps):
+    r = dict(B.seed_rows(_cal(name), MONDAY)[0])
+    r[B.CLASSROOM] = classroom
+    r.update(steps)
+    return r
+
+
+def test_remaining_lists_only_the_steps_still_outstanding():
+    r = _row("Ada Fournier", "A", **{"Blue Ink": "✓", "BG Status": "Passed"})
+    left = B.remaining(r)
+    assert "Blue Ink" not in left and "BG Status" not in left
+    assert "Digi Docs" in left and "Added to APEX" in left
+    assert left == [c for c in B.STEPS if c in left], "kept in step order"
+
+
+def test_a_blank_step_is_a_gap_not_a_quiet_zero():
+    """A step nobody can see is a step nobody chases."""
+    assert len(B.remaining(_row("Ada Fournier"))) == len(B.STEPS)
+
+
+def test_one_sheet_per_classroom():
+    rows = [_row("Ada Fournier", "Tuesday AM"), _row("Bruno Castell", "Tuesday AM"),
+            _row("Cora Nilsen", "Thursday PM")]
+    got = B.sheets(rows)
+    assert [s["classroom"] for s in got] == ["Thursday AM".replace("AM", "PM"), "Tuesday AM"] \
+        or [s["classroom"] for s in got] == ["Thursday PM", "Tuesday AM"]
+    assert [len(s["people"]) for s in got] == [1, 2]
+
+
+def test_people_with_no_classroom_land_on_a_sheet_of_their_own_LAST():
+    """It is a job to do, not a classroom — it should not head the stack."""
+    rows = [_row("Ada Fournier", "Tuesday AM"), _row("Bruno Castell")]
+    got = B.sheets(rows)
+    assert got[-1]["classroom"] == B.UNASSIGNED
+    assert got[-1]["people"][0]["name"] == "Bruno Castell"
+
+
+def test_the_sheet_leads_with_whoever_has_most_outstanding():
+    rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS[:8]}),
+            _row("Bruno Castell", "A")]
+    people = B.sheets(rows)[0]["people"]
+    assert people[0]["name"] == "Bruno Castell", "most left first"
+    assert people[1]["done"] == 8
+
+
+def test_somebody_finished_still_appears_with_nothing_left():
+    """Dropping them would make the sheet say they left, not that they're done."""
+    rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS})]
+    sheet = B.sheets(rows)[0]
+    assert sheet["people"][0]["remaining"] == []
+    assert sheet["everyone_done"] is True
+    assert sheet["outstanding"] == 0
+
+
+def test_terminated_people_are_off_the_printout_unless_asked_for():
+    rows = [_row("Ada Fournier", "A"),
+            _row("Bruno Castell", "A", **{B.TERMINATED_AT: "11/06/2026"})]
+    assert [p["name"] for p in B.sheets(rows)[0]["people"]] == ["Ada Fournier"]
+    both = B.sheets(rows, show_terminated=True)[0]["people"]
+    assert len(both) == 2

@@ -30,31 +30,43 @@ import re
 import unicodedata
 from typing import Dict, Iterable, List, Optional, Sequence
 
-# As the OBCL spells them, in the order a person works through them. Read off
-# the live OBCL 2026-11-08; the Alphalete-only ones (Classroom, Badge, 2ND
-# Round Interviewer, Telemapper/Skool/Slack) are deliberately left out until an
-# ICD asks -- an empty column nobody fills is a column everybody learns to
-# ignore.
-COLUMNS: Sequence[str] = (
-    "Name", "Last Name", "Email", "Phone", "Start",
-    "Contact Added", "BG Status", "Digi Docs", "Onboarding Quizzes",
-    "Blue Ink", "Headshot Photo", "UID Request", "Owner Submit",
+# The board every ICD gets. Taken from the real OBCL rather than invented, and
+# cut to what travels: Alphalete's own workflow columns (#, 2ND Round
+# Interviewer, Start Time, Badge, Location, Telemapper / Skool / Slack / Upline
+# Slack / SaraPlus / Friday Confirmation) are left off until an office asks for
+# one. An empty column nobody fills is a column everybody learns to ignore.
+IDENTITY: Sequence[str] = ("Name", "Last Name", "Email", "Phone", "Start")
+
+# The ICD's own column, and the only one on the chart that needs a person.
+# It also decides which printed sheet somebody lands on.
+CLASSROOM = "Classroom"
+
+# The onboarding steps, in the order a person works through them. Every one is
+# filled by an automation that already exists -- see the spec for which.
+STEPS: Sequence[str] = (
+    "Contact Added",
+    "BG Status",
+    "Digi Docs",
+    "Onboarding Quizzes",
+    "Blue Ink",
+    "Headshot Photo",
+    "UID Request",
+    "Owner Submit",
     "Added to APEX",
-    "Final Status",          # the ICD's own column -- see the spec
 )
 
-# Which columns a machine may ever write. Final Status is the ICD's, and the
-# four identity columns are the seed's. Anything else is a tick.
-TICKS: Sequence[str] = (
-    "Contact Added", "BG Status", "Digi Docs", "Onboarding Quizzes",
-    "Blue Ink", "Headshot Photo", "UID Request", "Owner Submit",
-    "Added to APEX",
-)
-BY_HAND = "Final Status"
+COLUMNS: Sequence[str] = tuple(IDENTITY) + (CLASSROOM,) + tuple(STEPS)
 
-# What the ICD can put in Final Status. Anything non-blank that is not one of
-# these is still respected -- they may type whatever explains it.
-TERMINATED = "Terminated"
+# Which columns a machine may write. Classroom is the ICD's; identity is the
+# seed's; everything else is a step, and steps go ON only.
+TICKS: Sequence[str] = tuple(STEPS)
+
+# ROW STATE, not a column on the chart. Megan, 2026-11-08: "I don't think that
+# we need a final status on this" -- terminating is something the ICD DOES in
+# the panel (click them off, show/hide for the week), not a box anybody fills
+# in. It still has to live somewhere for the row to stay hidden next time, so
+# it sits past the chart's columns, written by the panel and nobody else.
+TERMINATED_AT = "Terminated"
 
 GREEN = {"red": 0.71, "green": 0.87, "blue": 0.66}
 
@@ -125,7 +137,7 @@ def merge(existing: List[Dict], fresh: List[Dict]) -> Dict:
         seen[person_key(r)] = r
     add, left = [], []
     for r in existing:
-        if str(r.get(BY_HAND) or "").strip():
+        if str(r.get(TERMINATED_AT) or "").strip():
             left.append(person_key(r))
     for r in fresh:
         if person_key(r) not in seen:
@@ -142,8 +154,7 @@ def visible(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
     """
     if show_terminated:
         return list(rows)
-    return [r for r in rows
-            if _fold(r.get(BY_HAND)) != _fold(TERMINATED)]
+    return [r for r in rows if not str(r.get(TERMINATED_AT) or "").strip()]
 
 
 def tick_plan(rows: List[Dict], column: str, names: Iterable[str]) -> List[int]:
@@ -155,7 +166,7 @@ def tick_plan(rows: List[Dict], column: str, names: Iterable[str]) -> List[int]:
     """
     if column not in TICKS:
         raise ValueError(
-            "%r is not a column a machine may write. The ticks are: %s"
+            "%r is not a column a machine may write. The steps are: %s"
             % (column, ", ".join(TICKS)))
     want = {_fold(n) for n in names}
     out = []
@@ -164,3 +175,51 @@ def tick_plan(rows: List[Dict], column: str, names: Iterable[str]) -> List[int]:
         if who in want and not str(r.get(column) or "").strip():
             out.append(i)
     return out
+
+
+UNASSIGNED = "No classroom yet"
+
+
+def remaining(row: Dict) -> List[str]:
+    """The steps this person still has outstanding, in the order they come.
+
+    A step counts as done only if there is something in its cell. A blank is a
+    gap, never a quiet zero -- the whole point of the board is that things stop
+    getting missed, and a step nobody can see is a step nobody chases.
+    """
+    return [c for c in STEPS if not str(row.get(c) or "").strip()]
+
+
+def classroom_of(row: Dict) -> str:
+    return str(row.get(CLASSROOM) or "").strip() or UNASSIGNED
+
+
+def sheets(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
+    """One printed sheet per classroom. Megan, 2026-11-08: "one printed sheet
+    per classroom ... breaks it down super simple of what's remaining for who."
+
+    Returns [{classroom, people: [{name, remaining, done, total}], ...}],
+    classrooms in name order with the unassigned pile LAST -- it is a job to do,
+    not a classroom, and it should not head the stack of printouts.
+
+    Anybody finished is still listed, with nothing remaining. Dropping them
+    would make the sheet say somebody left rather than somebody is done.
+    """
+    out: Dict[str, List[Dict]] = {}
+    for r in visible(rows, show_terminated=show_terminated):
+        left = remaining(r)
+        out.setdefault(classroom_of(r), []).append({
+            "name": ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip(),
+            "remaining": left,
+            "done": len(STEPS) - len(left),
+            "total": len(STEPS),
+            "terminated": bool(str(r.get(TERMINATED_AT) or "").strip()),
+        })
+    named = sorted(k for k in out if k != UNASSIGNED)
+    order = named + ([UNASSIGNED] if UNASSIGNED in out else [])
+    return [{
+        "classroom": k,
+        "people": sorted(out[k], key=lambda p: (-len(p["remaining"]), p["name"])),
+        "outstanding": sum(len(p["remaining"]) for p in out[k]),
+        "everyone_done": all(not p["remaining"] for p in out[k]),
+    } for k in order]

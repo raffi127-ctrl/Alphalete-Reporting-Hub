@@ -45,9 +45,14 @@ that run today against Alphalete's OBCL.
 | Headshot Photo | the headshot upload, **on the ICD's own ECO machine** | exists for Alphalete; per-ICD is new |
 | BG Status | the Sterling / fadv sync | exists |
 | Added to APEX | the Apex run | **built** (`apex_new_starts/eco_run.py`) |
-| **Final Status** | **the ICD, by hand, in the extension** | **the new bit** |
+| **Classroom** | **the ICD, in the extension** — it also decides which printed sheet they land on | **the new bit** |
 
-**Final Status is the whole point.** AppStream has no idea who was terminated:
+**No Final Status column** (Megan, 2026-11-08: *"I don't think that we need a
+final status on this"*). Terminating is something the ICD **does** in the panel
+— click them off, show/hide for the week — so it is row state, kept past the
+chart's columns, and never a box anybody fills in.
+
+**That action is the whole point.** AppStream has no idea who was terminated:
 a week read straight off the training calendar gave 29 people, 16 of whom had
 already been let go — proven on Raf's office for w/c 11-02. Nothing in
 ApplicantStream distinguishes them, and First Day of Sales is empty all week,
@@ -68,7 +73,13 @@ the pattern the background-check extension already uses.
    cell somebody has touched.
 2. **Relay reach** — the extension reads and writes the board through the same
    relay and sign-in as the background-check one.
-3. **The panel** — board, week picker, terminate, show/hide terminated.
+3. **The panel** — board, week picker, terminate, show/hide terminated, and
+   setting each person's classroom.
+3b. **Print** — one sheet per classroom, "super simple of what's remaining for
+   who" (Megan). Whoever has most outstanding leads the sheet; anybody finished
+   still appears, marked done, because dropping them would read as having left.
+   People with no classroom yet get their own sheet, LAST — that is a job to
+   do, not a classroom.
 4. **Re-point the fillers** — `obcl_ov_sweep` and the rest write to this board
    as well as to Alphalete's OBCL.
 5. **Headshot upload per ICD**, on their machine.
