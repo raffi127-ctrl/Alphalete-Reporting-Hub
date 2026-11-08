@@ -184,6 +184,58 @@ def weeks(sv_path: Path, n: int = 6, card_path: Optional[Path] = None,
     return out
 
 
+OPT_TAB = "Nicolas Murrugarra - Verizon"      # created 2026-11-08 from 'NDS Template'
+
+
+def fill(sv_path: Path, tab: str = OPT_TAB, n: int = 6, *, quality: Optional[Path] = None,
+         compliance: Optional[Path] = None, dry_run: bool = False, log=print) -> int:
+    """Write the last `n` weeks into the office's OPT tab on the Alphalete Org
+    sheet (Megan 2026-11-08: "wire the weekly fill"). Same lookups as the NDS
+    fill: the row by its col-B label (NDS_ROW_LABEL_ALTERNATES spellings), the
+    week by the WE-Sunday header -- never a fixed index. Cells Credico doesn't
+    send are LEFT ALONE, not blanked: a person may have typed one in."""
+    import gspread
+    from automations.alphalete_org_report import opt_nds as N
+    from automations.recruiting_report import fill as rfill
+    from automations.shared import sheet_flags
+    rows = weeks(sv_path, n, None, quality=quality, compliance=compliance)
+    if not rows:
+        log("✗ no weeks in the Overview sheet — nothing written")
+        return 1
+    sh = rfill.open_by_key(N.ALPHALETE_ORG_SHEET_ID, rfill._client())
+    ws = rfill._retry(sh.worksheet, tab)
+    grid = rfill._retry(ws.get_all_values)
+    updates, misses = [], []
+    for week_end, vals in rows:
+        col = N._find_week_col(grid, f"{week_end.month}/{week_end.day}/{week_end.year % 100}")
+        if col is None:
+            misses.append(f"no column for WE {week_end.month}/{week_end.day}")
+            continue
+        for label, _src, _kind in ROWS:
+            v = vals.get(label)
+            if v in ("later", "blank", "nofile", None):
+                continue
+            row = next((r for cand in N.NDS_ROW_LABEL_ALTERNATES.get(label, [label])
+                        for r in [N._find_row_by_label(grid, cand)] if r is not None), None)
+            if row is None:
+                misses.append(f"no row for {label!r}")
+                continue
+            updates.append({"range": gspread.utils.rowcol_to_a1(row + 1, col + 1),
+                            "values": [[fmt(label, v)]]})
+    for m in sorted(set(misses)):
+        log(f"  [miss] {tab}: {m}")
+    if dry_run:
+        log(f"[DRY-RUN] {tab}: would write {len(updates)} cell(s) over {len(rows)} week(s)")
+        return 0
+    if updates:
+        rfill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
+        red = sheet_flags.weird_ranges(updates)
+        if red:
+            sheet_flags.apply_red_font(ws, red, retry=rfill._retry)
+    log(f"[OK] {tab}: wrote {len(updates)} cell(s) over {len(rows)} week(s)")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx")
@@ -192,6 +244,8 @@ def main(argv=None) -> int:
     ap.add_argument("--scorecard", type=Path, help="Daily Sales Scorecard xlsx (all offices) for rank + national avg")
     ap.add_argument("--quality", type=Path, help="Quality Scorecard (SCI-WO) pdf for the 4-wk cancel rate")
     ap.add_argument("--compliance", type=Path, help="Compliance Flags xlsx for 0-30/60/90 churn")
+    ap.add_argument("--fill", action="store_true", help="WRITE the weeks into the OPT tab")
+    ap.add_argument("--dry-run", action="store_true", help="with --fill: say what would be written")
     a = ap.parse_args(argv)
     path = a.sv
     if not path and a.office:
@@ -199,12 +253,15 @@ def main(argv=None) -> int:
         path = RUN.fetch(OF.get(a.office), "sales")
     if not path:
         ap.error("give --sv FILE or --office KEY (no Sales Verification found)")
+    if a.fill:
+        return fill(Path(path), n=a.weeks, quality=a.quality, compliance=a.compliance,
+                    dry_run=a.dry_run)
     rows = weeks(path, a.weeks, a.scorecard, quality=a.quality, compliance=a.compliance)
     if not rows:
         print("✗ no weeks in the Overview sheet — nothing to show")
         return 1
     print("Verizon OPT preview — %s (nothing written)\n" % Path(path).name)
-    head = "%-32s" % "Row (same label as NDS)" + "".join("%12s" % ("WE " + w.strftime("%-m/%-d")) for w, _ in rows)
+    head = "%-32s" % "Row (same label as NDS)" + "".join("%12s" % ("WE %d/%d" % (w.month, w.day)) for w, _ in rows)
     print(head)
     for label, src, _k in ROWS:
         print("%-32s" % label + "".join("%12s" % fmt(label, vals[label]) for _w, vals in rows) + "   ← " + src)

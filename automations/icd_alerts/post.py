@@ -1777,7 +1777,10 @@ def credit_checks_wanted(office_key: str) -> bool:
 
 # office key -> a label in front of each Slack line (Carlos 2026-10-03:
 # "everything posted should have the campaign name first").
-LINE_PREFIX = {"carlos": "Box — ", "carlos-b2batt": "AT&T — "}
+LINE_PREFIX = {"carlos": "Box — ", "carlos-b2batt": "AT&T — ",
+               # Nico shares #alphalete-gp-sales with Carlos's AT&T crew
+               # (Megan 2026-11-08: "Add 'VZ' in front of these").
+               "nicolas": "VZ — "}
 
 
 def run(day: Optional[dt.date] = None, *, send: bool = False,

@@ -121,6 +121,16 @@ def main(argv=None) -> int:
         return 0
     post(office, today, steps)
     marker.write_text(dt.datetime.now().isoformat())
+    # THE OPT TAB rides the same pull (Megan 2026-11-08: "wire the weekly
+    # fill"): the last six weeks into 'Nicolas Murrugarra - Verizon' on the
+    # Alphalete Org sheet, so the current week's column is never stale. Its
+    # own failure never undoes the post above.
+    if office.key == "nicolas":
+        try:
+            from automations.alphalete_org_report import opt_verizon as OV
+            OV.fill(Path(sv), compliance=cf)
+        except Exception as e:  # noqa: BLE001
+            print("⚠ OPT tab fill failed (the thread posted fine): %s" % e)
     return 0
 
 
