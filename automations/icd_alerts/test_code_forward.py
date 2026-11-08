@@ -797,3 +797,26 @@ class WideForwardAlarm(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RafAndCarlosForwardOnPurpose(unittest.TestCase):
+    """Megan 2026-11-08: Raf and Carlos forward whole inboxes here on purpose
+    (several report forwards), so the scope check never tells on them. Anyone
+    else still gets told."""
+
+    def test_only_the_others_are_told(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sheet = Sheet([CA.MAIL_HEADER,
+                       ["raf", "r@gmail.com", NOW.isoformat(), ""],
+                       ["carlos-b2batt", "c@gmail.com", NOW.isoformat(), ""],
+                       ["Luke", "l@gmail.com", NOW.isoformat(), ""]])
+        told = []
+        wide = CA.check_forward_scope(
+            Book({CA.MAIL_TAB: sheet}), send=True, now=NOW,
+            counts=lambda addrs: {a: 7 for a in addrs},
+            stamp_path=Path(tmp.name) / "s.txt", tell=told.append,
+            log=lambda *_: None)
+        self.assertEqual(len(told), 1)
+        self.assertIn("Luke", told[0])
+        self.assertEqual({o for o, _ in wide}, {"raf", "carlos-b2batt", "Luke"})

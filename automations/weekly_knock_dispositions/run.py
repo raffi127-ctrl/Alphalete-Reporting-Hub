@@ -735,6 +735,13 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                       flush=True)
                 if name not in failed:
                     failed.append(name)
+        except Exception as e:  # noqa: BLE001 -- one office's room never
+            # costs the offices after it their board, nor the manifest
+            # (2026-11-08: Oren's held room crashed the run after Nigel).
+            print(f"[wkd] ❌ {name}: post failed: {type(e).__name__}: "
+                  f"{str(e)[:200]}", flush=True)
+            if name not in failed:
+                failed.append(name)
         finally:
             smp.CHANNEL_ID, smp.HEADER_LABEL = keep_chan, keep_label
             if keep_tok is None:

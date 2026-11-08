@@ -515,8 +515,11 @@ def find_metrics_thread_ts(client, today: dt.date,
         f"for {today.day} de {_SPANISH_MONTHS[today.month]}",
     ]
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    # A room held on Megan's DM is her USER id: history needs the DM channel
+    # ("channel_not_found" killed the 11/8 Sunday knock run at Oren).
     resp = client.conversations_history(
-        channel=channel_id or CHANNEL_ID, oldest=str(oldest), limit=100
+        channel=_postable_channel(client, channel_id or CHANNEL_ID),
+        oldest=str(oldest), limit=100
     )
     for msg in resp.get("messages", []):
         text = msg.get("text", "")

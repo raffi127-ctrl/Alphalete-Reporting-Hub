@@ -249,3 +249,42 @@ class OrgLinesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaleDeltaZeros(unittest.TestCase):
+    """Country WE 11.1: a no-source run wrote 0 into Miguel's and Omar's delta
+    rows; a later good run filled their leaderboard (47, 27) but skipped the
+    delta (0 is not blank) -> the box ran 74 short of 'Sales (Last Week)' and
+    the email was held. A delta of all literal 0s against a leaderboard > 0 is
+    re-filled -- only when the source's week IS that leaderboard number."""
+
+    def _settled(self, lb_week):
+        g, at = _block(REPS)
+        lb_row = at["lb_total"] - 1
+        g[lb_row - 1][3] = str(lb_week)                       # leaderboard D
+        g[at["totals"] - 2][10] = str(lb_week)                # LAST WEEK'S K
+        g[at["drow"] - 1][6] = "0"                            # delta Mon
+        g[at["drow"] - 1][9] = "0"                            # delta Tue
+        return g, at
+
+    def test_refilled_when_the_source_matches_the_leaderboard(self):
+        g, at = self._settled(8)
+        ups, notes = _plan(g, _days({"New Person": {"Monday": 5, "Tuesday": 3}}))
+        got = {u["range"]: u["values"][0][0] for u in ups}
+        self.assertEqual(got[f"G{at['drow']}"], 5)
+        self.assertEqual(got[f"J{at['drow']}"], 3)
+        # leaderboard / stack already carry them -- nothing grown twice
+        self.assertNotIn(f"D{at['lb_total']}", got)
+        self.assertNotIn(f"C{at['stack']}", got)
+        self.assertTrue(any("re-filled" in n for n in notes))
+
+    def test_left_alone_when_the_source_disagrees(self):
+        g, at = self._settled(8)
+        ups, notes = _plan(g, _days({"New Person": {"Monday": 7}}))
+        self.assertEqual(ups, [])
+        self.assertTrue(any("left as is" in n for n in notes))
+
+    def test_a_real_zero_week_is_not_touched(self):
+        g, at = self._settled(0)
+        ups, _ = _plan(g, _days({"New Person": {"Monday": 5}}))
+        self.assertNotIn(f"G{at['drow']}", {u["range"] for u in ups})

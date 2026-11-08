@@ -245,6 +245,48 @@ def delta_blanks(grid, fgrid) -> List[Blank]:
     return out
 
 
+def delta_zero_mismatch(grid, fgrid, leaderboard: Optional[dict],
+                        today: dt.date) -> Tuple[List[Blank], Dict[str, float]]:
+    """Delta rows whose per-day 'Last week' is ALL literal 0 while the same
+    person's leaderboard last week is > 0 -- and that leaderboard number.
+
+    HOW IT HAPPENS (Country, WE 11.1). A run that can't source last week
+    writes 0 into every blank (Eve 2026-09-15). Miguel Zaragoza's and Omar
+    Mohamad's delta rows existed on such a run; their leaderboard rows did
+    not yet. A later, good run filled the leaderboard (47, 27) and grew the
+    WE row -- but skipped the delta, because 0 is not blank. The box then
+    read 74 short of 'Sales (Last Week)' and the auto-check held the email.
+
+    The leaderboard number is the guard: a real rollover freeze of an
+    all-zero week has a 0 leaderboard too, so it is never listed here."""
+    out: List[Blank] = []
+    want: Dict[str, float] = {}
+    if not leaderboard:
+        return out, want
+    _, filled = leaderboard_blanks(grid, fgrid, leaderboard["header_row"],
+                                   leaderboard["data_rows"], today)
+    lw = {n.strip().lower(): v for n, v in filled if v}
+    if not lw:
+        return out, want
+    from automations.org_sales_board import rollover as ro
+    for t in ro.find_delta_tables(grid):
+        days = {c: _cell(grid, t["header_row"] - 1, c).capitalize()
+                for c in t["this_cols"]}
+        days = {c: d for c, d in days.items() if d in WEEKDAYS}
+        if not days:
+            continue
+        for r in t["data_rows"]:
+            name = _cell(grid, r, 2)
+            if not name or name.strip().lower() not in lw:
+                continue
+            cells = [(c + 1, d) for c, d in days.items()]
+            if all(_cell(grid, r, c) != "" and _num(_cell(grid, r, c)) == 0
+                   and not _is_formula(fgrid, r, c) for c, _d in cells):
+                out += [Blank(r, c, name, d) for c, d in cells]
+                want[name] = lw[name.strip().lower()]
+    return out, want
+
+
 def stack_row(grid, totals_row: int, today: dt.date) -> Optional[int]:
     """The 'WE m.d' row for last week, at the top of the stack under a daily
     Totals row (All Campaigns / Country). None when it is not there or is not
@@ -517,7 +559,8 @@ def plan_block(grid, fgrid, *, section: str, leaderboard: Optional[dict],
         lblank, _ = leaderboard_blanks(grid, fgrid, leaderboard["header_row"],
                                        leaderboard["data_rows"], today)
     dcells = delta_blanks(grid, fgrid)
-    names = list(dict.fromkeys(b.name for b in dblank + lblank + dcells))
+    zcells, zwant = delta_zero_mismatch(grid, fgrid, leaderboard, today)
+    names = list(dict.fromkeys(b.name for b in dblank + lblank + dcells + zcells))
     if not names:
         return updates, notes
 
@@ -560,9 +603,24 @@ def plan_block(grid, fgrid, *, section: str, leaderboard: Optional[dict],
         for b in (b for b in dcells if b.name == name):
             updates.append({"range": f"{_a1(b.col)}{b.row}",
                             "values": [[days.get(b.day, 0)]]})
+        zmine = [b for b in zcells if b.name == name]
+        if zmine:
+            # Overwrite the stale 0s ONLY when this source's week is the very
+            # number the leaderboard already carries for them.
+            if tot and int(tot) == int(zwant[name]):
+                for b in zmine:
+                    updates.append({"range": f"{_a1(b.col)}{b.row}",
+                                    "values": [[days.get(b.day, 0)]]})
+                notes.append(f"{board} / {name}: delta 'Last week' was 0 against "
+                             f"a leaderboard {_fmt(zwant[name])} -> re-filled")
+            else:
+                notes.append(f"{board} / {name}: delta 'Last week' is 0 but the "
+                             f"leaderboard says {_fmt(zwant[name])}; source says "
+                             f"{_fmt(tot)} -- left as is")
         where = [w for w, got in (("LAST WEEK", mine),
                                   ("leaderboard", [b for b in lblank if b.name == name]),
-                                  ("delta", [b for b in dcells if b.name == name])) if got]
+                                  ("delta", [b for b in dcells + zmine
+                                             if b.name == name])) if got]
         notes.append(f"{board} / {name}: last week = {tot} "
                      f"({' '.join(f'{d[:3]} {days[d]}' for d in WEEKDAYS)}) -> "
                      f"{', '.join(where)}" + ("" if tot else " (no sales: 0)"))
@@ -767,7 +825,8 @@ def apply_country(ws=None, *, today: Optional[dt.date] = None,
     new = (daily_blanks(grid, fgrid, cf.BLOCK_LABEL)[0]
            or (lb and leaderboard_blanks(grid, fgrid, lb["header_row"],
                                          lb["data_rows"], today)[0])
-           or delta_blanks(grid, fgrid))
+           or delta_blanks(grid, fgrid)
+           or delta_zero_mismatch(grid, fgrid, lb, today)[0])
     if not new:
         logfn("  Country: nobody new without last week — nothing to do")
         return []
