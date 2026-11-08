@@ -2,7 +2,7 @@
 # Verizon daily metrics (Nico) — Credico's Sales Verification from the Hub
 # inbox -> sales board image + the NDS wireless boards into the day's
 # "Verizon Metrics" thread in #alphalete-gp-sales. Fired by launchd
-# (com.alphalete.verizon-daily) on LUCY 4 at 11:15 / 11:45 / 12:30 / 13:30;
+# (com.alphalete.verizon-daily) on LUCY 4 at 11:15 / 11:45 / 12:30 / 13:30 / 14:30 / 15:30 / 17:00 (Sundays land ~2:10 PM);
 # daily.py posts ONCE a day, the first time today's file is in.
 #
 #   bash deploy/verizon_daily.sh            # PREVIEW, sends nothing
