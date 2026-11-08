@@ -17208,6 +17208,28 @@
    },
    "hand_run_only": true,
    "timeout_minutes": 10
+  },
+  "install_lucyeco_social_rooms_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.lucyeco-social-rooms on LUCY 3 (every 10 min, 7am-9pm; deploy/lucyeco_social_rooms.sh -> python -m automations.online_presence.rooms --live). Makes the private #<company-name>-lucyeco-social Slack room for any LucyECO Social sign-up that answered 'No, please create one for me', invites Megan, Eve, the ICD, Lucy Reporting, the Lucy app and @hubposter, and writes the Channel ID back onto the sign-up row (Megan 2026-11-08). Quiet no-op when nobody is waiting. `lucy rerun install_lucyeco_social_rooms_agent --machine \"Lucy 3\"` after `lucy update`.",
+   "display_name": "Install LucyECO Social rooms tick (10 min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lucyeco-social-rooms"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 3"
   }
  },
  "read_only_standalone": {
