@@ -175,9 +175,11 @@ class SouthShoreVsAlphalete(unittest.TestCase):
         al, ss = {"Rafael Hidalgo": 26, "Isaiah Revelle": 30}, {"Jairo Ruiz": 71}
         text = run.build_text({**al, **ss}, dt.datetime(2026, 11, 6, 17, 45),
                               org_totals=run.org_total_lines(al, ss))
-        self.assertEqual(text.splitlines()[-3:],
+        self.assertEqual(text.splitlines()[-6:],
                          ["🏆 TOTAL: 127", "Alphalete Org. Total: 56",
-                          "Southshore Org. Total: 71"])
+                          "Southshore Org. Total: 71", "",
+                          "Alphalete Avg / ICD: 28.0",
+                          "Southshore Avg / ICD: 71.0"])
 
 
     def test_owners_chat_split_every_half_hour(self):

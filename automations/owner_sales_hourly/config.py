@@ -88,6 +88,8 @@ SSO_ALPHALETE_TITLE = "Alphalete Owner Sales Today"
 # Alphalete text + a South Shore text, BOTH ending with these two lines.
 ALPHALETE_ORG_LINE = "Alphalete Org. Total"
 SSO_ORG_LINE = "Southshore Org. Total"
+ALPHALETE_AVG_LINE = "Alphalete Avg / ICD"
+SSO_AVG_LINE = "Southshore Avg / ICD"
 
 # Relay office keys that are not in the alert-office table (icd_alerts.offices)
 # but do relay sales. Raf's own office relays as `rafael_hidalgo`.

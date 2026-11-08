@@ -205,9 +205,10 @@ def _clock(now: dt.datetime) -> str:
 def build_text(totals: Dict[str, int], now: dt.datetime,
                title: str = "Owner Sales Today",
                not_in_total: Iterable[str] = (),
-               org_totals: Iterable[Tuple[str, int]] = ()) -> str:
+               org_totals: Iterable[Tuple[str, object]] = ()) -> str:
     """`not_in_total`: owners who get a ranked line but don't count in the TOTAL.
-    `org_totals`: (label, n) lines under the TOTAL, e.g. each org's sum."""
+    `org_totals`: (label, n) lines under the TOTAL, e.g. each org's sum; an
+    empty label is a blank line."""
     left_out = {_norm(n) for n in not_in_total}
     rows: List[Tuple[str, int]] = sorted(totals.items(),
                                          key=lambda kv: (-kv[1], kv[0]))
@@ -216,7 +217,7 @@ def build_text(totals: Dict[str, int], now: dt.datetime,
         lines.append("%d. %s %d" % (i, cfg.DISPLAY_NAMES.get(name, name), n))
     total = sum(n for name, n in rows if _norm(name) not in left_out)
     lines += ["", "🏆 TOTAL: %d" % total]
-    lines += ["%s: %d" % (label, n) for label, n in org_totals]
+    lines += ["%s: %s" % (label, n) if label else "" for label, n in org_totals]
     return "\n".join(lines)
 
 
@@ -358,10 +359,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 def org_total_lines(alphalete: Dict[str, int],
-                    south_shore: Dict[str, int]) -> List[Tuple[str, int]]:
-    """The two org lines under a TOTAL."""
+                    south_shore: Dict[str, int]) -> List[Tuple[str, object]]:
+    """The two org lines under a TOTAL, a blank line, then each org's average
+    per owner on its list (Megan 11/07: not every ICD is on ECO yet, so the
+    totals alone aren't a fair race)."""
+    def avg(org: Dict[str, int]) -> str:
+        return "%.1f" % (sum(org.values()) / len(org)) if org else "0.0"
     return [(cfg.ALPHALETE_ORG_LINE, sum(alphalete.values())),
-            (cfg.SSO_ORG_LINE, sum(south_shore.values()))]
+            (cfg.SSO_ORG_LINE, sum(south_shore.values())),
+            ("", ""),
+            (cfg.ALPHALETE_AVG_LINE, avg(alphalete)),
+            (cfg.SSO_AVG_LINE, avg(south_shore))]
 
 
 def head_to_head_moved(day: dt.date, now: dt.datetime, pair,
