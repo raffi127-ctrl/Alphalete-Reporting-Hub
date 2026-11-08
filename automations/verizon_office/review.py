@@ -139,10 +139,11 @@ def build() -> List[Dict]:
 
     # 5-10. the NDS wireless thread
     whats = {
-        "rep_activations": "Last week and this week per rep: activated, pending, total, canceled/disconnected.",
+        "rep_activations": "The last 4 weeks per rep (two pictures: this + last week, then the two before): activated, pending, total, canceled/disconnected.",
+        "activation_by_week": "The last 4 sales weeks: of the lines sold each week, how many have activated since. Office total + every rep.",
         "pending_orders": "Every line that's submitted but not activated yet, grouped by rep, with how many days it's been waiting.",
         "activation_rate": "Per rep: % of lines activated, sold 0-30 days ago and 31-60 days ago. Green / yellow / red by the same bars as Carlos's board.",
-        "order_log": "Excel file: every line (rep, dates, order #, plan, device, ported from, status), plus a tab per rep.",
+        "order_log": "Excel file: every line (rep, dates, order #, plan, device, ported from, status), plus a tab per rep. Pay dates are two weeks behind (one week later than the other programs).",
         "cancels": "Lines Credico canceled in the last 3 days.",
         "disconnects": "Lines that disconnected in the last 3 days.",
     }
@@ -255,11 +256,39 @@ def _group_client(log=print):
                      f"{GROUP_DM} — invite that Lucy, or run where the bot token is")
 
 
-def send(items: List[Dict], log=print) -> int:
+# ROUND 2 (2026-11-07): the reports Carlos ❌'d, fixed, plus the first new
+# one from his "What's missing" list. Its own posted-file, so round 1's
+# record never says these already went out.
+ROUND2_KEYS = ("rep_activations", "order_log", "opt", "activation_by_week")
+ROUND2_CHANGED = {
+    "rep_activations": "Now shows 4 weeks (pay is two weeks behind).",
+    "order_log": "Pay dates moved one week later.",
+    "opt": "Now a 6-week view.",
+    "activation_by_week": "NEW, from Carlos's \"What's missing\" list.",
+}
+ROUND2_INTRO = (
+    ":repeat: *Round 2: the fixes you asked for.* Same as before: "
+    ":white_check_mark: = approved, :x: = reply in that post's thread with what to change.\n\n"
+    "• *Verizon Sales Board*: Carlos's own build now fills the Vantura 'Verizon Sales Board' tab "
+    "from Credico and posts the day + week pictures into the Verizon Metrics thread, so ours is gone.\n"
+    "• Still waiting on a ✅ from *both* of you (from round 1, above): Live App Alerts, Pending Orders "
+    "(Carlos), Canceled Orders, Disconnected Orders, Compliance Board (both).\n"
+    "• Coming next from \"What's missing\": churn, revenue and the tier ranking. We're getting the "
+    "Verizon pay + tier numbers first."
+)
+
+
+def send(items: List[Dict], log=print, rnd: int = 1) -> int:
+    global POSTED
     client = _group_client(log)
+    if rnd == 2:
+        POSTED = ROOT / "output" / "verizon_review_posted_round2.json"
+        items = [dict(it, what=ROUND2_CHANGED.get(it["key"], "") + " " + it["what"])
+                 for it in items if it["key"] in ROUND2_KEYS]
     posted = _load_posted()
     if "intro" not in posted:
-        posted["intro"] = client.chat_postMessage(channel=GROUP_DM, text=INTRO)["ts"]
+        posted["intro"] = client.chat_postMessage(
+            channel=GROUP_DM, text=ROUND2_INTRO if rnd == 2 else INTRO)["ts"]
         POSTED.write_text(json.dumps(posted, indent=2))
     for it in items:
         if it["key"] in posted:
@@ -323,6 +352,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--build", action="store_true", help="render the examples (laptop)")
     ap.add_argument("--send", action="store_true", help="post to the review group DM as Lucy")
+    ap.add_argument("--round", type=int, default=1, help="2 = post only the round-2 fixes")
     ap.add_argument("--replace", metavar="KEY", help="re-post one report's example in its thread")
     ap.add_argument("--parent", help="--replace: the report post's ts")
     ap.add_argument("--old-reply", default="", help="--replace: Lucy's old reply to delete")
@@ -331,7 +361,7 @@ def main(argv=None) -> int:
         return replace(a.replace, a.parent, a.old_reply)
     items = build() if a.build else json.loads(MANIFEST.read_text())["items"]
     if a.send:
-        return send(items)
+        return send(items, rnd=a.round)
     print(INTRO + "\n")
     for it in items:
         print("-" * 60)

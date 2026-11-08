@@ -40,10 +40,11 @@
     {
       "key": "rep_activations",
       "title": "🆕 Rep Activations",
-      "what": "Last week and this week per rep: activated, pending, total, canceled/disconnected.",
+      "what": "The last 4 weeks per rep (two pictures: this + last week, then the two before): activated, pending, total, canceled/disconnected.",
       "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
       "files": [
-        "rep_activations.png"
+        "rep_activations_1.png",
+        "rep_activations_2.png"
       ],
       "text": ""
     },
@@ -69,9 +70,19 @@
       "text": ""
     },
     {
+      "key": "activation_by_week",
+      "title": "📆 Activation Rate by Week-Ending",
+      "what": "The last 4 sales weeks: of the lines sold each week, how many have activated since. Office total + every rep.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "activation_by_week.png"
+      ],
+      "text": ""
+    },
+    {
       "key": "order_log",
       "title": "📋 Order Log",
-      "what": "Excel file: every line (rep, dates, order #, plan, device, ported from, status), plus a tab per rep.",
+      "what": "Excel file: every line (rep, dates, order #, plan, device, ported from, status), plus a tab per rep. Pay dates are two weeks behind (one week later than the other programs).",
       "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
       "files": [
         "order_log.xlsx"
