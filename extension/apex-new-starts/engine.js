@@ -1159,13 +1159,21 @@ window.__ansEngine = function (CFG) {
  function pickByText(words){
    /* The tightest clickable thing whose own text contains every word.
 
-      Exact equality gated the whole Add path and it is too strict for this
-      app: Apex hangs a count on a roster tab ("All Employees 482"), puts the
-      label in a nested <span>, and a parent <li> carries every tab's text at
-      once so it never equals any one of them. When the match failed, adding
-      people did nothing at all and said only that it "could not check"
-      (Megan, 2026-10-02: "The adding the people to apex if they aren't in
-      pending isn't working").
+      Written 2026-10-02 for "The adding the people to apex if they aren't in
+      pending isn't working" (Megan), on a THEORY that the exact-equality match
+      was too strict.
+
+      THAT THEORY WAS WRONG, and this says so rather than leaving a confident
+      comment nobody re-checks. Read off the live roster 2026-11-08: the tab is
+      <li class="uib-tab nav-item"> whose text is exactly "All Employees" -- no
+      count, no badge -- and the control is <a class="btn btn-primary">
+      "Add Employee", with no plus in the text. Exact equality would have
+      matched both. Whatever broke the Add path that day, it was not this.
+
+      The tolerant match is kept because it costs nothing and survives a label
+      that gains a count later; it is NOT a fix for a known cause. If adding
+      people fails again, the cause is still to be found -- start from what the
+      panel now prints, not from here.
 
       Contains, then shortest, is what a person pointing at the screen does.
       Clicking a nested span is fine -- the handler sits on an ancestor and
