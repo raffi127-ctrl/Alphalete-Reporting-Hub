@@ -311,6 +311,65 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 4) -> 
     return out, len(table) - 1
 
 
+# Churn colour bars. NOT Credico's or Tableau's (neither gives Verizon one):
+# lower is better, so the floors run the other way from activation. Megan /
+# Carlos to confirm (2026-11-07).
+CHURN_BANDS = ((0.05, "Green"), (0.10, "Yellow"), (1.01, "Red"))
+CHURN_WINDOWS = (("0-30 Day", 0, 30), ("31-60 Day", 31, 60))
+
+
+def churn(owner, header, rows, target, out_dir) -> Tuple[Path, int]:
+    """Churn Rates by Rep (Carlos's "What's missing", 2026-11-07): of the lines
+    ACTIVATED 0-30 / 31-60 days ago, how many have since disconnected
+    (Credico: Status Code CAN with a Disc. line status). Office total + one
+    row per rep, the same table Carlos's B2B "CHURN RATES BY REP" uses, cells
+    (disconnected/activated) + rate.
+
+    From the daily Sales Verification, not the weekly Compliance Flags,
+    whose churn columns Credico has been leaving blank. That file carries
+    about six weeks of sales, so 31-60 only ever holds the lines activated
+    31 to ~40 days ago -- the subtitle says so rather than hiding it."""
+    from automations.b2b_metrics.rep_boards import render_table_png
+    from automations.office_metrics import nds_orderlog as N
+    i = {c: header.index(c) for c in header}
+    cols = [w[0] for w in CHURN_WINDOWS]
+    data: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: {c: [0, 0] for c in cols})
+    oldest = 0
+    for r in rows:
+        act = N._parse_date(r[i["DTR Active Date"]])
+        if not act:
+            continue
+        age = (target - act).days
+        oldest = max(oldest, age)
+        gone = 1 if r[i["DTR Status"]] == "Disconnected" else 0
+        for name, lo, hi in CHURN_WINDOWS:
+            if lo <= age <= hi:
+                for who in (r[i["Rep"]] or "(no rep)", "__office__"):
+                    data[who][name][0] += gone
+                    data[who][name][1] += 1
+
+    def cell(dn):
+        d, n = dn
+        if not n:
+            return {}
+        rate = d / n
+        color = next(c for ceil, c in CHURN_BANDS if rate <= ceil)
+        return {"disc": str(d), "act": str(n), "rate": f"{round(rate * 100, 1)}%", "color": color}
+
+    office = data.pop("__office__", {c: [0, 0] for c in cols})
+    table = [("Office Total (all reps)", "", True, {c: cell(office[c]) for c in cols})]
+    for rep in sorted(data, key=str.lower):
+        table.append((rep, "", False, {c: cell(data[rep][c]) for c in cols}))
+    partial = (f"; 31-60 covers lines activated 31-{oldest} days ago so far"
+               if 31 <= oldest < 60 else "")
+    out = out_dir / f"verizon_churn_{target.isoformat()}.png"
+    render_table_png("CHURN RATES BY REP",
+                     f"{owner} — {target:%B} {target.day}, {target.year} "
+                     f"(disconnected/activated, by days since activation{partial})",
+                     cols, table, out)
+    return out, len(table) - 1
+
+
 # The house order-log writer (uploaded.order_log), Verizon's columns. Date and
 # status columns REUSE the house raw names: that is what its date parsing and
 # status colours key off (see order_log.column_profile). Install Date rides
@@ -354,6 +413,7 @@ BOARDS = [
     ("pending_orders", "⏳ Pending Orders"),
     ("activation_rate", "📈 Activation Rate by Rep"),
     ("activation_by_week", "📆 Activation Rate by Week-Ending"),
+    ("churn", "📉 Churn Rates by Rep"),
     ("order_log", "📋 Order Log"),
     ("cancels", "🚫 Canceled Orders"),
     ("disconnects", "❎ Disconnected Orders"),
@@ -379,6 +439,8 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
             paths = [activation_rate(owner, header, rows, target, out_dir)[0]]
         elif slug == "activation_by_week":
             paths = [activation_by_week(owner, header, rows, target, out_dir)[0]]
+        elif slug == "churn":
+            paths = [churn(owner, header, rows, target, out_dir)[0]]
         elif slug == "order_log":
             kind, paths = "file", [order_log(owner, header, rows, target, out_dir)[0]]
         else:

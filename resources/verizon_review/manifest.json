@@ -80,6 +80,16 @@
       "text": ""
     },
     {
+      "key": "churn",
+      "title": "📉 Churn Rates by Rep",
+      "what": "Of the lines that activated 0-30 and 31-60 days ago, how many have disconnected since. Office total (the office churn rate) + every rep. Green 5% or less, yellow up to 10%, red over 10%.",
+      "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
+      "files": [
+        "churn.png"
+      ],
+      "text": ""
+    },
+    {
       "key": "order_log",
       "title": "📋 Order Log",
       "what": "Excel file: every line (rep, dates, order #, plan, device, ported from, status), plus a tab per rep. Pay dates are two weeks behind (one week later than the other programs).",

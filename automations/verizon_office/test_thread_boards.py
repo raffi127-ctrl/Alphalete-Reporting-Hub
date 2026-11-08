@@ -23,6 +23,31 @@ class Status(unittest.TestCase):
                          ("active", "canceled", "disconnected"))
 
 
+class Churn(unittest.TestCase):
+    def test_disconnected_over_activated_by_days_since_activation(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        h = list(T.HEADER)
+        i = {c: h.index(c) for c in h}
+
+        def line(rep, status, active):
+            r = [""] * len(h)
+            r[i["Rep"]], r[i["DTR Status"]], r[i["DTR Active Date"]] = rep, status, active
+            return r
+        rows = [line("A B", "Posted", "11/01/2026"), line("A B", "Disconnected", "11/02/2026"),
+                line("A B", "Posted", "10/01/2026"), line("C D", "Submitted", "")]
+        seen = {}
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch("automations.b2b_metrics.rep_boards.render_table_png",
+                           side_effect=lambda t, st, cols, table, out: seen.update(table=table) or out):
+            T.churn("X", h, rows, dt.date(2026, 11, 7), Path(td))
+        office = seen["table"][0][3]
+        self.assertEqual((office["0-30 Day"]["disc"], office["0-30 Day"]["act"]), ("1", "2"))
+        self.assertEqual((office["31-60 Day"]["disc"], office["31-60 Day"]["act"]), ("0", "1"))
+        self.assertEqual([r[0] for r in seen["table"][1:]], ["A B"])   # never-activated rep left off
+
+
 class Plan(unittest.TestCase):
     def test_plan_names_fit_the_board(self):
         self.assertEqual(T._plan("Verizon Simplicity Plan (Smartphone) - New"), "Simplicity Plan")
