@@ -157,21 +157,30 @@ with st.container(border=True):
         help="Your setup link appears on this page the moment you submit — "
              "nothing is emailed. This is so the reporting team can reach you "
              "if something goes wrong.")
-    ov_name = st.text_input(
-        "How your name is spelled in OwnerVille",
-        placeholder="Leave blank if it is the same as above",
-        help="OwnerVille often spells names differently, and we would rather "
-             "ask than guess.")
 
     st.subheader("Your campaign")
     campaign = st.radio(
         "Which campaign does this office run?",
         options=[k for k, _l, _s in S.CAMPAIGNS],
         format_func=S.campaign_label)
+    is_verizon = campaign in getattr(S, "VERIZON_CAMPAIGNS", ("verizon",))
+    # OWNERVILLE NAME only where OwnerVille is used: Verizon reads knocks from
+    # Optix and sales from Credico (Megan 2026-11-08: "super streamlined").
+    ov_name = ""
+    if not is_verizon:
+        ov_name = st.text_input(
+            "How your name is spelled in OwnerVille",
+            placeholder="Leave blank if it is the same as above",
+            help="OwnerVille often spells names differently, and we would rather "
+                 "ask than guess.")
     # WHAT THEY GET DEPENDS ON IT, so say so here rather than letting them
     # find out. AT&T is the only campaign on SaraPlus, and credit checks and
     # sales come from SaraPlus.
-    if S.uses_saraplus(campaign):
+    if is_verizon:
+        st.caption("You will get **sale alerts, a knocks board from Verizon "
+                   "Optix, and daily metrics from your Credico reports**. No "
+                   "SaraPlus or OwnerVille login is needed.")
+    elif S.uses_saraplus(campaign):
         st.caption("You will get **credit checks, sales and a knocks board**.")
     else:
         st.caption("You will get a **knocks and dispositions board**. Credit "
@@ -234,8 +243,11 @@ with st.container(border=True):
     # arrive (Megan 2026-09-15: "for Box/energywell we need LucyECO to only
     # ask them to enroll in the knock reports from their machines").
     alert_channels = []
-    if S.uses_saraplus(campaign):
-        st.subheader("Where your credit checks and sales should post")
+    if S.uses_saraplus(campaign) or is_verizon:
+        # VERIZON ASKS TOO: its sale cheers need a room, or they wait in
+        # Megan's DM ("no Slack channel set yet") -- Nico's did, 2026-11-07.
+        st.subheader("Where your sale alerts should post" if is_verizon
+                     else "Where your credit checks and sales should post")
         st.caption("A channel **ID** is safest — in Slack, click the channel "
                    "name at the top, scroll to the bottom of the About tab, "
                    "and copy the ID (it looks like C09AVM17PAR). A #name "
@@ -280,7 +292,7 @@ with st.container(border=True):
                                format_func=lambda v: dict(S.KNOCKS_CHOICES)[v],
                                index=1)
             knocks.append((ch.strip(), int(cad)))
-    if not S.uses_saraplus(campaign):
+    if not (S.uses_saraplus(campaign) or is_verizon):
         # A knocks-only office never sees the alerts block, where this is
         # otherwise said first.
         st.info(
@@ -465,10 +477,16 @@ if submitted:
             # numbers POST, not whether they can install.
             st.markdown("### Set your computer up now")
             st.markdown(
-                "Do this on the **desktop in your office** — the iMac, "
-                "Mac mini or Mac Studio it will live on. It takes about five "
-                "minutes and asks you for your SaraPlus and OwnerVille "
-                "logins **on that machine** — they stay there.")
+                ("Do this on the **desktop in your office** — the iMac, "
+                 "Mac mini or Mac Studio it will live on. It takes about five "
+                 "minutes. No SaraPlus or OwnerVille login: at the end it opens "
+                 "Chrome and shows three steps to add **Lucy Optix**, which "
+                 "reads your knocks from Verizon Optix.")
+                if is_verizon else
+                ("Do this on the **desktop in your office** — the iMac, "
+                 "Mac mini or Mac Studio it will live on. It takes about five "
+                 "minutes and asks you for your SaraPlus and OwnerVille "
+                 "logins **on that machine** — they stay there."))
             st.link_button("Open my setup page", link, type="primary")
             st.caption("This link is yours alone — it carries your office's "
                        "code. Please do not forward it. It will not install "
