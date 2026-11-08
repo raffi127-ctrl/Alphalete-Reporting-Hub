@@ -253,6 +253,17 @@ NAME_ALIASES = {
     "tara ecklof": "Tara Lynn Ecklof",
     "francisco jimenez": "Francisco Javier Jimenez",
     "adabella amaya": "Adabella Amaya Gallegos",
+    # Office ROSTER names (Carlos 2026-11-08) -> Verizon board rows. The room
+    # posts first names, last names and nicknames; these are the ones a bare
+    # token cannot resolve. Board rows carry the Credico (legal) names since
+    # 11/8. "bautista": every 'BAUTISTA' line this far matched William's
+    # Credico lines (Thu 11/5 = 6), Richard has none -- flagged to Carlos.
+    "samantha": "Brandy Ahumada Ruiz",
+    "samantha ruiz": "Brandy Ahumada Ruiz",
+    "brandy": "Brandy Ahumada Ruiz",
+    "gio": "Giovanni Monreal",
+    "nick": "Nicholas Esmerado Macias",
+    "bautista": "Will Bautista",
     # Verizon (2026-10-08) — Slack's display names vs the Verizon board rows.
     # KNOWN_USERS carries the board spelling today, so these only matter once
     # users.info works; "Will Bautista", "Luis Valenciano" and "Kyara" are
@@ -653,6 +664,12 @@ def match_rep(author: str, rows: dict[str, int]):
                     if row.split() and (row.split()[0] == tok or row.split()[-1] == tok)]
             if len(hits) == 1:
                 return hits[0]
+            if not hits:
+                # the go-by name can be a MIDDLE name on the legal-name row
+                # ("JACOB" -> "Jaime Jacob Castillo", Carlos 2026-11-08)
+                mid = [row for row in rows if tok in row.split()[1:-1]]
+                if len(mid) == 1:
+                    return mid[0]
     return None
 
 
