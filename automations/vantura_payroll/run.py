@@ -1800,7 +1800,8 @@ def _owner_dd_write_log(owner: str, lines: list, log=_log, gc=None,
 OWNER_OL_TAB = "ORDER LOG RAW"
 
 
-def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id: str = "") -> int:
+def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id: str = "",
+                          chunk_weeks: int = 0, tab_suffix: str = "") -> int:
     from collections import Counter
     from automations.office_metrics import nds_orderlog as NO
     from automations.shared.tableau_patchright import tableau_session
@@ -1828,34 +1829,81 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
         first = head.splitlines()[0] if head else ""
         return "<html" not in head.lower() and "<!doctype" not in head.lower() and first.count(",") >= 5
 
-    body = b""
-    for attempt in (1, 2, 3):
-        try:
-            with tableau_session(verbose=False) as page:
-                r = page.context.request.get(url, timeout=300_000)
-                body = r.body() or b""
-                ok = r.status == 200 and len(body) >= 500 and _looks_like_csv(body)
-                plog(f"[orderlog] csv status={r.status} bytes={len(body):,} valid={ok} (try {attempt}/3)")
-                if ok:
-                    break
-                plog("[orderlog] body head: " + body[:150].decode("utf-8-sig", "replace").replace("\n", " "))
-        except Exception as e:  # noqa: BLE001
-            plog(f"[orderlog] try {attempt} failed: {str(e)[:140]}")
-        body = b""
-    if not body:
-        plog("STOP: no ORDER LOG csv")
-        _owner_dd_write_log(owner, lines, log)
-        return 4
-    out.write_bytes(body)
-    rows = NO._read_csv(out)
-    header = [str(h).strip() for h in rows[0]]
-    data = [r for r in rows[1:] if any(str(c).strip() for c in r)]
+    # The export is CAPPED: a 52-week pull on 2026-11-08 came back with exactly
+    # 8,192 rows (2^13) for 5 owners (Carlos 2026-11-09: "are you sure you're
+    # not just capped on how many dates you can view at once?"). --ol-chunk-weeks N
+    # pulls the window in N-week slices and stitches them; every slice's row
+    # count is logged so a slice that hits the cap is visible.
+    EXPORT_CAP = 8192
+
+    def _fetch(u: str, label: str) -> bytes:
+        for attempt in (1, 2, 3):
+            try:
+                with tableau_session(verbose=False) as page:
+                    r = page.context.request.get(u, timeout=300_000)
+                    b = r.body() or b""
+                    ok = r.status == 200 and len(b) >= 500 and _looks_like_csv(b)
+                    plog(f"[orderlog] {label} csv status={r.status} bytes={len(b):,} valid={ok} (try {attempt}/3)")
+                    if ok:
+                        return b
+                    plog("[orderlog] body head: " + b[:150].decode("utf-8-sig", "replace").replace("\n", " "))
+            except Exception as e:  # noqa: BLE001
+                plog(f"[orderlog] {label} try {attempt} failed: {str(e)[:140]}")
+        return b""
+
+    windows = [(start, end)]
+    if chunk_weeks and chunk_weeks > 0:
+        windows = []
+        a = start
+        while a <= end:
+            b_ = min(end, a + dt.timedelta(days=7 * chunk_weeks - 1))
+            windows.append((a, b_))
+            a = b_ + dt.timedelta(days=1)
+        plog(f"[orderlog] chunked pull: {len(windows)} window(s) of {chunk_weeks} wk")
+    header: list[str] = []
+    data: list[list[str]] = []
+    seen_rows: set = set()
+    capped = 0
+    for k, (a, b_) in enumerate(windows, 1):
+        body = _fetch(NO._orderlog_url(a, b_), f"[{a}..{b_}]")
+        if not body:
+            plog(f"STOP: no ORDER LOG csv for window {a}..{b_}")
+            _owner_dd_write_log(owner, lines, log, tab_suffix=tab_suffix)
+            return 4
+        part = out.with_name(out.stem + (f"_{k}" if len(windows) > 1 else "") + out.suffix)
+        part.write_bytes(body)
+        rows = NO._read_csv(part)
+        hdr = [str(h).strip() for h in rows[0]]
+        if not header:
+            header = hdr
+        elif hdr != header:
+            plog(f"[orderlog] window {k}: header differs ({len(hdr)} cols vs {len(header)}) -- mapping by name")
+        idx = [hdr.index(h) if h in hdr else None for h in header]
+        n_new = n_rows = 0
+        for r in rows[1:]:
+            if not any(str(c).strip() for c in r):
+                continue
+            n_rows += 1
+            rr = [(r[i] if (i is not None and i < len(r)) else "") for i in idx]
+            key = tuple(rr)
+            if key in seen_rows:
+                continue
+            seen_rows.add(key)
+            data.append(rr)
+            n_new += 1
+        hit = n_rows >= EXPORT_CAP
+        capped += int(hit)
+        plog(f"[orderlog] window {a}..{b_}: {n_rows:,} rows ({n_new:,} new){'  ** AT THE 8,192 CAP -- narrow the window **' if hit else ''}")
+    if capped:
+        plog(f"[orderlog] WARNING: {capped} window(s) hit the export cap; the log is INCOMPLETE there")
+    else:
+        plog(f"[orderlog] no window hit the {EXPORT_CAP:,}-row cap; stitched {len(data):,} rows from {len(windows)} window(s)")
     plog(f"[orderlog] {len(data)} rows; header ({len(header)}): {header}")
     hl = [h.lower() for h in header]
     oc = next((i for i, h in enumerate(hl) if h.startswith("owner")), None)
     if oc is None:
         plog("STOP: no Owner column")
-        _owner_dd_write_log(owner, lines, log)
+        _owner_dd_write_log(owner, lines, log, tab_suffix=tab_suffix)
         return 4
     toks = [t for t in _n(owner).split() if t]
     by_owner = [r for r in data if len(r) > oc and all(t in _n(r[oc]) for t in toks)]
@@ -1882,19 +1930,53 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
     # paid on their lines (2026-11-08: 12 of Khalil's 38 paid reps had no
     # order-log rows under his owner filter).
     rep_i = next((i for i, h in enumerate(hl) if h == "rep"), None)
+    num_i = next((i for i, h in enumerate(hl) if h == "rep.rep number" or h.endswith("rep number")), None)
+    # whole-file picture: who else is in Carlos's export, and under which lead-rep codes
+    plog(f"[orderlog] whole file: {len(data):,} rows; rows by Owner & Office: "
+         f"{dict(Counter(_n(r[oc]).split('[')[0].strip()[:28] for r in data if len(r) > oc).most_common(8))}")
+    if lr_i is not None:
+        plog(f"[orderlog] whole file: Lead Rep IDs: {dict(Counter(str(r[lr_i]).strip() for r in data if len(r) > lr_i).most_common(10))}")
+    if rep_i is not None:
+        plog(f"[orderlog] whole file: {len({r[rep_i] for r in data if len(r) > rep_i})} distinct reps")
     mine = list(by_owner)
     try:
         from automations.recruiting_report import fill as _f0
-        _dd = _f0._client().open_by_key(AUTOMATION_MASTER_ID).worksheet(f"{owner} DD RAW").get_all_values()
-        _ri = [str(h).strip().lower() for h in _dd[0]].index("rep.name")
         import re as _re2
-        paid_reps = {_n(_re2.sub(r"\s*\(\d+\)\s*$", "", r[_ri])) for r in _dd[1:] if len(r) > _ri and r[_ri].strip()}
-        if rep_i is not None and paid_reps:
-            seen = {id(r) for r in mine}
-            extra = [r for r in data if len(r) > rep_i and _n(r[rep_i]) in paid_reps and id(r) not in seen]
-            mine += extra
-            plog(f"[orderlog] + {len(extra)} row(s) by paid-rep name ({len(paid_reps)} names); their Owner & Office: "
-                 f"{dict(Counter(_n(r[oc]).split('[')[0].strip()[:30] for r in extra).most_common(6))}")
+        _ctl = _f0._client().open_by_key(AUTOMATION_MASTER_ID)
+        paid_reps: set = set()
+        paid_nums: set = set()
+        dd_tabs = [w.title for w in _ctl.worksheets() if w.title.startswith(f"{owner} DD RAW")]
+        for _t in dd_tabs:
+            _dd = _ctl.worksheet(_t).get_all_values()
+            if not _dd:
+                continue
+            _h = [str(h).strip().lower() for h in _dd[0]]
+            _ri = _h.index("rep.name") if "rep.name" in _h else None
+            _ni = _h.index("cl.icd rep name") if "cl.icd rep name" in _h else None
+            for r in _dd[1:]:
+                if _ri is not None and len(r) > _ri and r[_ri].strip():
+                    paid_reps.add(_n(_re2.sub(r"\s*\(\d+\)\s*$", "", r[_ri])))
+                for _c in (_ri, _ni):
+                    if _c is not None and len(r) > _c:
+                        m = _re2.search(r"\((\d+)\)\s*$", r[_c])
+                        if m:
+                            paid_nums.add(m.group(1))
+        plog(f"[orderlog] paid reps from {len(dd_tabs)} DD RAW tab(s): {len(paid_reps)} names, {len(paid_nums)} rep numbers")
+        seen = {id(r) for r in mine}
+        extra = [r for r in data if id(r) not in seen and (
+            (rep_i is not None and len(r) > rep_i and _n(r[rep_i]) in paid_reps)
+            or (num_i is not None and len(r) > num_i and str(r[num_i]).strip() in paid_nums))]
+        mine += extra
+        plog(f"[orderlog] + {len(extra)} row(s) by paid-rep name/number; their Owner & Office: "
+             f"{dict(Counter(_n(r[oc]).split('[')[0].strip()[:30] for r in extra).most_common(6))}"
+             + (f"; their Lead Rep IDs: {dict(Counter(str(r[lr_i]).strip() for r in extra).most_common(6))}" if lr_i is not None else ""))
+        # which paid reps are STILL nowhere in the file (by name or number)?
+        in_file_names = {_n(r[rep_i]) for r in data if rep_i is not None and len(r) > rep_i}
+        in_file_nums = {str(r[num_i]).strip() for r in data if num_i is not None and len(r) > num_i}
+        missing = sorted(n for n in paid_reps if n not in in_file_names)
+        plog(f"[orderlog] paid reps with NO rows anywhere in the export: {len(missing)} of {len(paid_reps)}; "
+             f"rep numbers absent: {len([x for x in paid_nums if x not in in_file_nums])} of {len(paid_nums)}")
+        plog("[orderlog] missing names: " + ", ".join(missing)[:1500])
     except Exception as e:  # noqa: BLE001
         plog(f"[orderlog] paid-rep widening skipped: {str(e)[:120]}")
     if not mine:
@@ -1926,7 +2008,7 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
     gc = _f._client()
     book_id = OWNER_DD_BOOKS.get(_n(owner))
     wrote = False
-    if book_id:
+    if book_id and not tab_suffix:      # a suffixed run never touches the book's live tab
         try:
             import gspread as _gs
             b = gc.open_by_key(book_id)
@@ -1946,7 +2028,7 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
         try:
             import gspread as _gs
             ctl = gc.open_by_key(AUTOMATION_MASTER_ID)
-            tname = f"{owner} ORDER LOG RAW"[:99]
+            tname = f"{owner} ORDER LOG RAW{(' ' + tab_suffix) if tab_suffix else ''}"[:99]
             try:
                 t = ctl.worksheet(tname)
                 t.clear()
@@ -1958,7 +2040,7 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
             plog(f"WROTE fallback tab '{tname}' on AUTOMATION MASTER: {len(rows_out) - 1} row(s) + header")
         except Exception as e:  # noqa: BLE001
             plog(f"fallback write failed too: {str(e)[:160]}")
-    _owner_dd_write_log(owner, lines, log, gc=gc)
+    _owner_dd_write_log(owner, lines, log, gc=gc, tab_suffix=tab_suffix)
     return 0
 
 
@@ -2015,6 +2097,9 @@ def main(argv: list[str] | None = None) -> int:
                          "(the owner's ICD id, e.g. 11754) instead of the Owner & Office match")
     ap.add_argument("--weeks-back", type=int, default=8,
                     help="for --owner-orderlog: how many full weeks of Order Dates (default 8)")
+    ap.add_argument("--ol-chunk-weeks", type=int, default=0,
+                    help="for --owner-orderlog: pull the window in N-week slices and stitch them "
+                         "(the csv export caps at 8,192 rows; 0 = one pull)")
     ap.add_argument("--skip-discover", action="store_true",
                     help="for --owner-dd: skip the one-time dump of the view's filter cards")
     ap.add_argument("--skip-tieout", action="store_true",
@@ -2047,7 +2132,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if getattr(args, "owner_orderlog", None):
-        return _owner_orderlog_probe(args.owner_orderlog, args.weeks_back, lead_rep_id=args.lead_rep_id or "")
+        return _owner_orderlog_probe(args.owner_orderlog, args.weeks_back, lead_rep_id=args.lead_rep_id or "",
+                                     chunk_weeks=args.ol_chunk_weeks, tab_suffix=args.dd_tab_suffix)
     if getattr(args, "owner_dd", None):
         fo = None
         if args.dd_filter:
