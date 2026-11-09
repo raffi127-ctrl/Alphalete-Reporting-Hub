@@ -1795,7 +1795,7 @@ def _owner_dd_write_log(owner: str, lines: list, log=_log, gc=None) -> None:
 OWNER_OL_TAB = "ORDER LOG RAW"
 
 
-def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log) -> int:
+def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id: str = "") -> int:
     from collections import Counter
     from automations.office_metrics import nds_orderlog as NO
     from automations.shared.tableau_patchright import tableau_session
@@ -1856,6 +1856,21 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log) -> int:
     by_owner = [r for r in data if len(r) > oc and all(t in _n(r[oc]) for t in toks)]
     owners = Counter(_n(r[oc]).split("[")[0].strip() for r in data if len(r) > oc)
     plog(f"[orderlog] owners in file: {len(owners)}; {owner!r} rows by Owner & Office: {len(by_owner)}")
+    # LEAD REP (Carlos 2026-11-08: "all the reps under Khalil's lead rep in
+    # Tableau"): the view's icd.Lead Rep ID is the owner's ICD id, and it stays
+    # on a rep's orders after the rep leaves or transfers. When given, it is
+    # the primary filter and the Owner & Office match is only a fallback.
+    lr_i = next((i for i, h in enumerate(hl) if "lead rep" in h), None)
+    if lead_rep_id and lr_i is not None:
+        by_lead = [r for r in data if len(r) > lr_i and str(r[lr_i]).strip() == str(lead_rep_id).strip()]
+        plog(f"[orderlog] rows with icd.Lead Rep ID={lead_rep_id}: {len(by_lead)}; their Owner & Office: "
+             f"{dict(Counter(_n(r[oc]).split('[')[0].strip()[:30] for r in by_lead).most_common(6))}")
+        ids_owner = Counter(str(r[lr_i]).strip() for r in by_owner)
+        plog(f"[orderlog] Lead Rep IDs seen on the owner's own rows: {dict(ids_owner.most_common(5))}")
+        if by_lead:
+            by_owner = by_lead
+    elif lead_rep_id:
+        plog("[orderlog] no 'lead rep' column in the export — using Owner & Office")
     # ALSO keep rows whose Rep is one of the owner's PAID reps (from the DD RAW
     # fallback tab this probe's sibling wrote): a rep who left or transferred
     # shows under another Owner & Office in the order log, yet the owner was
@@ -1990,6 +2005,9 @@ def main(argv: list[str] | None = None) -> int:
                          "owner (Order Date = last --weeks-back full weeks) and write "
                          "it to that owner's book 'ORDER LOG RAW' tab. Read-only on "
                          "Tableau and on THIS board.")
+    ap.add_argument("--lead-rep-id", default="",
+                    help="for --owner-orderlog: keep rows whose icd.Lead Rep ID equals this "
+                         "(the owner's ICD id, e.g. 11754) instead of the Owner & Office match")
     ap.add_argument("--weeks-back", type=int, default=8,
                     help="for --owner-orderlog: how many full weeks of Order Dates (default 8)")
     ap.add_argument("--skip-discover", action="store_true",
@@ -2021,7 +2039,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if getattr(args, "owner_orderlog", None):
-        return _owner_orderlog_probe(args.owner_orderlog, args.weeks_back)
+        return _owner_orderlog_probe(args.owner_orderlog, args.weeks_back, lead_rep_id=args.lead_rep_id or "")
     if getattr(args, "owner_dd", None):
         fo = None
         if args.dd_filter:
