@@ -16312,6 +16312,35 @@
    "timeout_minutes": 30,
    "machine": "Lucy 2"
   },
+  "nds_churn": {
+   "on_scheduler": true,
+   "machine": "Lucy 2",
+   "display_name": "NDS Churn & Activations (Carlos's NDS code)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.nds_churn.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "06:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 25,
+   "_note": "Carlos 2026-11-09: the B2B LUCY CHURN report remade for NDS ('go through the order log and see if you can make the same report ... remove [CRU/IRU] ... anything that involved the captainship, we wouldn't need'). Pulls the NDS-SN ORDERLOG (nds_metrics.pull, owner Carlos), computes 0-30 bases/disconnects by activation date + the rolloff list (col J = Disconnect Reason) + the NDS Activations rows + activation rates, RECONCILES the wireless 0-30 count against the NDS workbook's CHURNRATES view (ChurnALlExp sliced to Carlos; a mismatch writes NOTHING, exit 1; no rows for Carlos = write UNVERIFIED, logged), then writes the 'NDS CHURN' + 'NDS Activations' tabs on the Vantura Master Sales Board (1Hltk25z...). Tier charts + the A13 status line come from nds_churn/comp.py (SOW Schedule A charts 1-4 + the latest Churn Notice: Tier 3-3 both, eff 11/02/2026 -- update comp.NOTICE when the next notice lands). not_before 06:00 so the tab is fresh for the 06:30+ NDS Metrics thread, whose customer_churn section shoots it (HELD_FROM_THREAD until Carlos okays the preview). Hand runs: `rerun nds_churn --probe` (export header/mapping), `--dry-run`, `--setup` (recreate the tabs), `--dm U046G04P5LG` (live + picture)."
+  },
   "samuel_metrics": {
    "order": 26.85,
    "machine": "Lucy 4",

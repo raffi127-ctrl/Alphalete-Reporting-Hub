@@ -1589,10 +1589,24 @@ def build_week_board(cols, crew, today, log=print) -> Path:
     return board_shots.render(today, OUT_DIR, log=log)["week"]
 
 
+def build_customer_churn(cols, crew, today, log=print) -> Path:
+    """The NDS CHURN tab (automations.nds_churn, written 07:00) as one
+    picture -- the B2B thread's #6 Customer Churn remade for NDS (Carlos
+    2026-11-09). Shot off the live sheet like pct_on_board; a missing tab
+    is an honest skip."""
+    from automations.nds_churn import sheet as NCS
+    from automations.recruiting_report.fill import open_by_key, worksheet_ci
+    from automations.vantura_churn import shot
+    ws = worksheet_ci(open_by_key(NCS.SHEET_ID), NCS.TAB)
+    out = OUT_DIR / f"nds_customer_churn_{today.isoformat()}.png"
+    return shot.render_report(ws, out, log=log)
+
+
 # Sections that BUILD (so --only/--dm previews work) but never post to the
 # thread (Carlos 2026-10-29: "dont send the override tree on the nds thread
-# yet") — move a sid out of here when he says go.
-HELD_FROM_THREAD = {"override_board"}
+# yet") — move a sid out of here when he says go. customer_churn joined
+# 2026-11-09: held until Carlos okays the NDS CHURN preview.
+HELD_FROM_THREAD = {"override_board", "customer_churn"}
 
 SECTIONS = [
     ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
@@ -1625,6 +1639,11 @@ SECTIONS = [
     # weeks since NDS started, off SaraPlus per-line statuses.
     ("activation_by_week", "\U0001F4C6", "NDS Activation Rate by Week Ending",
      build_activation_by_week),
+    # Carlos 2026-11-09: the B2B thread's Customer Churn picture, remade --
+    # the NDS CHURN tab (nds_churn, 07:00) as one shot. HELD_FROM_THREAD
+    # until he okays the preview.
+    ("customer_churn", "\U0001F43A", "NDS Customer Churn",
+     build_customer_churn),
     # Carlos 2026-11-07: the Tableau "Order Tiered Bonus - Rep Ranking" view
     # filtered to his owner (posted on B2B before, never on NDS) and the
     # workbook's "Top 100 Reps View" (top 50), every morning.
