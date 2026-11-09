@@ -117,6 +117,9 @@ NO_AD_ANSWERS = {
     "2026-10-30|lara gurdikyan": "Handshake / Entry Level Assistant Manager",
     # Valeria, Camila 11/5.
     "2026-10-27|maria ludwig": "Handshake / Customer Acquisition Representative",
+    # Jairo, Eve 11/9: the sheet's "Jose Colon" is "Javier Colon" in AppStream
+    # (21270, Total First Interviews 11/4 4:00 PM, ad "AT&T Team Member").
+    "2026-11-04|jose colon": "AT&T Team Member ? Miramar FL",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.

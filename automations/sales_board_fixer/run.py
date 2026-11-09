@@ -66,6 +66,7 @@ MAX_FIXES = 300                   # more than this on one tab = flagged in the l
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "sales_board_fixer"
 LANES_GOOD_FILE = OUT_DIR / "lanes_good.json"   # last healthy Lanes formulas + headers
+CITY_TOLD_FILE = OUT_DIR / "lineup_city_told.json"   # Line Up City lines Eve already got
 
 
 def week_sunday(today: dt.date) -> dt.date:
@@ -529,6 +530,8 @@ def _main(a) -> int:
                 a.apply, stamp)
     results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today),
                        max_fixes=a.max_fixes)
+    if not a.tab:
+        _line_up_city(sh, today, have, a.apply)
     spaced = _spaced_tabs(sh, today)
     if spaced:
         results["nombres de tabs"] = spaced
@@ -536,6 +539,30 @@ def _main(a) -> int:
     _warn_dates(_dated_rows("Alphalete", sh.id, results), a.apply)
     print("reporte:", report(results, stamp, a.apply))
     return 0
+
+
+def _line_up_city(sh, today: dt.date, have, do_apply: bool) -> None:
+    """Maud 2026-11-09: City = the zip's formula, locked. This week's tab and
+    next week's, which a person makes on Friday (lineup_city.py). Eve only hears
+    about what needs a person."""
+    from automations.sales_board_fixer import lineup_city
+    lines = []
+    for day in (today, today + dt.timedelta(days=7)):
+        title = TN.find(have, week_tabs(day)[1])
+        if title:
+            lines += lineup_city.do_tab(sh, title, do_apply)
+    if not do_apply:
+        return
+    # once per thing: a morning DM repeating the same zip is noise
+    try:
+        told = set(json.loads(CITY_TOLD_FILE.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        told = set()
+    fresh = [x for x in lines if x not in told]
+    if fresh and _dm_eve("Line Up City:\n" + "\n".join("• " + x for x in fresh)):
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        CITY_TOLD_FILE.write_text(json.dumps(sorted(told | set(fresh)), ensure_ascii=False),
+                                  encoding="utf-8")
 
 
 def _spare_rows(sh, titles, label: str, do_apply: bool, stamp: str) -> None:
