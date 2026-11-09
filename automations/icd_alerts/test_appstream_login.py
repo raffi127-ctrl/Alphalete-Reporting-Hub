@@ -20,8 +20,10 @@ from automations.icd_alerts.test_install_completeness import _install_problems
 
 class TheInstallerAsksForAppStream(unittest.TestCase):
 
-    def test_it_asks_only_offices_that_push(self):
-        self.assertIn("if ask_about_resume_pushing():", SETUP)
+    def test_every_office_is_asked_with_no_resume_question_first(self):
+        # Megan 2026-11-09: the installer just asks for the Lucy ECO AppStream
+        # login the ECO team gave them -- no "push your resumes?" gate.
+        self.assertNotIn("if ask_about_resume_pushing():", SETUP)
         self.assertIn("as_ok = appstream_until_it_works()", SETUP)
 
     def test_the_login_is_verified_not_just_saved(self):
@@ -58,14 +60,17 @@ class AMissingLoginIsSaid(unittest.TestCase):
             self.tmp, sara=True,
             files=["saraplus-creds.json", "ownerville-creds.json"])
         self.assertFalse(blocking)
-        self.assertTrue(any("AppStream" in n for n in notes))
+        self.assertTrue(any("ApplicantStream" in n for n in notes))
 
-    def test_no_push_no_note(self):
+    def test_every_office_is_told_a_missing_login(self):
+        # Since 2026-11-09 every office gets a Lucy ECO AppStream login from
+        # the ECO team, so a missing one is said whether or not it pushes.
         self._write(False)
-        _, notes = _install_problems(
+        blocking, notes = _install_problems(
             self.tmp, sara=True,
             files=["saraplus-creds.json", "ownerville-creds.json"])
-        self.assertFalse(any("AppStream" in n for n in notes))
+        self.assertFalse(blocking)
+        self.assertTrue(any("ApplicantStream" in n for n in notes))
 
     def test_login_saved_no_note(self):
         self._write(True)
