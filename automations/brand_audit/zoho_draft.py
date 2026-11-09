@@ -89,6 +89,9 @@ _CHAN_GROUP = "#newpost-composer-header-group-div-{net}-id"
 
 # The pages an ICD can pick on sign-up, and how each shows up in Zoho's
 # composer (the <net> in #newpost-composer-header-group-div-<net>-id).
+# CONFIRMED on Alphalete's Zoho 2026-11-09: facebookpage, twitter, instagram,
+# googlemybusiness, tiktok (LinkedIn wasn't connected there to see its code;
+# anything 'linkedin…' except 'linkedinprofile' is read as the company page).
 # Matched loosely on purpose -- 'linkedinprofile' is the PERSONAL profile
 # and is never a page, everything else LinkedIn is the company page.
 PAGES = ("instagram", "facebook", "google", "linkedin", "x")
@@ -221,9 +224,12 @@ def channel_check(profile_dir: Path | None = None, *, headless: bool = False,
             pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
             if "accounts.zoho.com" in pg.url:
                 return {"logged_in": False, "channels": []}
-            pg.wait_for_timeout(2500)
-            pg.locator(_NEW_POST).first.click(timeout=15000)
-            pg.wait_for_timeout(3000)
+            pg.wait_for_timeout(5000)
+            btn = next((x for x in pg.locator(_NEW_POST).all() if x.is_visible()), None)
+            if btn is None:
+                return {"logged_in": True, "channels": [], "note": "no New Post button"}
+            btn.click(timeout=15000)
+            pg.wait_for_timeout(4000)
             return {"logged_in": True, "channels": _present_channels(pg)}
         finally:
             ctx.close()
@@ -249,16 +255,23 @@ def wait_for_signin(profile_dir: Path | None = None, *, max_minutes: int = 20,
                 pass
             deadline = time.time() + max_minutes * 60
             while time.time() < deadline:
-                try:
-                    if ("social.zoho.com" in pg.url
-                            and "accounts.zoho.com" not in pg.url
-                            and pg.locator(_NEW_POST).first.is_visible()):
-                        pg.locator(_NEW_POST).first.click(timeout=15000)
-                        pg.wait_for_timeout(3000)
-                        return {"logged_in": True,
-                                "channels": _present_channels(pg)}
-                except Exception:
-                    pass
+                # EVERY TAB, and only a VISIBLE "New Post" (2026-11-09: Zoho
+                # landed its home in another tab, and the page carries a hidden
+                # duplicate button, so watching the first tab's first match
+                # sat there after a successful sign-in).
+                for tab in list(ctx.pages):
+                    try:
+                        if "social.zoho.com" not in tab.url or "accounts.zoho.com" in tab.url:
+                            continue
+                        btn = next((x for x in tab.locator(_NEW_POST).all()
+                                    if x.is_visible()), None)
+                        if btn is None:
+                            continue
+                        btn.click(timeout=15000)
+                        tab.wait_for_timeout(4000)
+                        return {"logged_in": True, "channels": _present_channels(tab)}
+                    except Exception:
+                        continue
                 time.sleep(3)
             return {"logged_in": False, "channels": []}
         finally:
