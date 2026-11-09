@@ -290,22 +290,40 @@ def test_leaderboard_board_stats_block():
 
 
 
-def test_board_stats_copies_the_board_on_sunday_too():
-    """The text copies the board's block as-is on every day -- Sunday and a
-    day with no roll call included. No fallback rewrites them."""
+def test_a_day_without_roll_call_counts_reps_on_the_board():
+    """Sunday 11/8 read "52 in the field" with 4 sold: nobody took roll call,
+    so the board's formula counted the roster. A day with only T / F marks gets
+    reps-on-the-board as the field; one real mark keeps the board's numbers.
+    Rep-info columns past Sunday's Roll Call (STATUS...) are not roll call."""
     from automations.alphalete_sales_board import fill
-    grid = [["", "", "", "SUN", ""],
-            ["", "", "", "", ""],
-            ["", "", "Rep", "Apps", "Int"],
-            ["", "", "Ana", "6", "2"],
-            ["", "", "TOTALS", "8", "3"],
-            ["", "", "", "", ""],
-            ["", "", "Total Reps in the Field / Board / Zero", "35", ""],
+    grid = [["", "", "", "SUN", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", ""],
+            ["", "", "Rep", "Apps", "Int", "Int Up", "DTV", "Roll Call", "STATUS"],
+            ["", "", "Ana", "6", "2", "0", "0", "", "PASSED"],
+            ["", "", "Bo", "T", "", "", "", "T", "SENT"],
+            ["", "", "Cy", "F", "", "", "", "", ""],
+            ["", "", "TOTALS", "8", "3", "0", "0", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "Total Reps in the Field / Board / Zero", "52", ""],
             ["", "", "Reps that got on the Board", "4", ""],
-            ["", "", "Reps that rolled a Zero", "31", ""],
-            ["", "", "% of Reps on the Board", "11%", ""]]
-    assert fill.board_stats(None, grid, dt.date(2026, 10, 25)) == [
-        ("Total Reps in the Field / Board / Zero", "35"),
+            ["", "", "Reps that rolled a Zero", "48", ""],
+            ["", "", "% of Reps on the Board", "8%", ""],
+            ["", "", "New INT per Rep AVG", "0.1", ""],
+            ["", "", "App per Rep AVG", "0.2", ""]]
+    sun = dt.date(2026, 11, 8)
+    assert fill.board_stats(None, grid, sun) == [
+        ("Total Reps in the Field / Board / Zero", "4"),
         ("Reps that got on the Board", "4"),
-        ("Reps that rolled a Zero", "31"),
-        ("% of Reps on the Board", "11%")]
+        ("New INT per Rep AVG", "0.8"),
+        ("App per Rep AVG", "2.0")]
+    grid[3][7] = "HERE"                       # roll call taken: board as-is
+    assert fill.board_stats(None, grid, sun)[0] == (
+        "Total Reps in the Field / Board / Zero", "52")
+    grid[3][7] = ""
+    grid[4][4] = "X"                          # an X in a sales cell counts too
+    assert fill.board_stats(None, grid, sun)[0] == (
+        "Total Reps in the Field / Board / Zero", "52")
+    grid[4][4] = ""
+    grid[9][3] = "0"                          # nobody sold: no block at all
+    assert fill.board_stats(None, grid, sun) == []
+

@@ -137,8 +137,10 @@ def board_stats(ws, grid, day: dt.date, fresh: bool = False):
 
     "In the field" is the BOARD'S formula: reps whose Apps cell for the day has
     no X / T / CR / RT / STF / L (Raf 2026-11-01: back to roll call, knocks miss
-    reps walking together or working apartments). No fallback here: a day nobody
-    marked reads the whole roster, and Zero / % / both averages follow it.
+    reps walking together or working apartments). A day nobody marked would
+    read the whole roster (Sunday 11/8: 52 in the field, 4 sold), so that day
+    gets `no_roll_call_stats` instead -- the 10/26 fallback, dropped when the
+    board briefly counted knocks and never put back when it stopped.
     """
     col, rows = stats_cells(grid, day)
     if not rows:
@@ -148,7 +150,84 @@ def board_stats(ws, grid, day: dt.date, fresh: bool = False):
         got = ws.get("%s:%s" % (_a1(rows[0][0], col), _a1(rows[-1][0], col)))
         vals = [(got[i][0] if i < len(got) and got[i] else "").strip()
                 for i in range(len(rows))]
-    return [(label, v) for (_r, label), v in zip(rows, vals)]
+    stats = [(label, v) for (_r, label), v in zip(rows, vals)]
+    if roll_call_taken(grid, col):
+        return stats
+    tot = B.last_rep_row(grid) + 1
+    int_col = B.day_blocks(grid).get(day.strftime("%A"), {}).get("Int")
+    apps = B.cell(grid, tot, col).strip()
+    ints = B.cell(grid, tot, int_col).strip() if int_col else ""
+    if fresh:
+        apps = (ws.acell(_a1(tot, col)).value or "").strip()
+        ints = (ws.acell(_a1(tot, int_col)).value or "").strip() if int_col else ""
+    return no_roll_call_stats(stats, apps, ints)
+
+
+# Marks that sit in a day's cells all week, whoever took roll call: T =
+# terminated, F = off the board (week_roll stamps it). Neither is a roll call.
+CARRIED_MARKS = {"T", "F"}
+
+
+def roll_call_taken(grid, col: int) -> bool:
+    """Did anybody mark today's roll call? Any letter in the day's block (an X
+    in a sales cell, HERE/LATE/OFF in Roll Call) says yes -- except T and F,
+    which every day carries. Sunday 11/8 had only T's and F's: nobody took it.
+    The day's block ends at its Roll Call; Sunday has no next banner, and past
+    it sit the rep-info columns (Team, Status, City...).
+    """
+    width = max(len(r) for r in grid[:B.SUB_ROW]) if grid else 0
+    end = next((c - 1 for c in range(col + 1, width + 1)
+                if B.cell(grid, B.DAY_ROW, c).strip().upper() in B.DAY_LABELS),
+               width)
+    end = next((c for c in range(col, end + 1)
+                if B.cell(grid, B.SUB_ROW, c).strip().lower() == "roll call"), end)
+    for r in range(B.SUB_ROW + 1, B.last_rep_row(grid) + 1):
+        for c in range(col, end + 1):
+            v = B.cell(grid, r, c).strip().upper()
+            if v and v not in CARRIED_MARKS and not _is_number(v):
+                return True
+    return False
+
+
+def _is_number(s: str) -> bool:
+    try:
+        float(s.replace(",", ""))
+        return True
+    except ValueError:
+        return False
+
+
+def _num(s) -> float:
+    try:
+        return float(str(s).replace(",", "").strip() or 0)
+    except ValueError:
+        return 0.0
+
+
+def no_roll_call_stats(stats, apps, ints):
+    """The block for a day nobody took roll call (Sunday, as a rule): "in the
+    field" = reps who got on the board, the only ones we can see out there
+    (voice note to Eve, 2026-10-26: "count number of people actively knocking
+    that day"). Zero and % go -- they would always read 0 and 100%. Averages
+    are re-divided by that field. Nobody on the board = no block at all.
+    """
+    get = dict((l.lower(), v) for l, v in stats)
+    board = int(_num(get.get("reps that got on the board", 0)))
+    if not board:
+        return []
+    out = []
+    for label, v in stats:
+        low = label.lower()
+        if low.startswith("total reps in the field"):
+            v = str(board)
+        elif low.startswith("reps that rolled a zero") or low.startswith("% of reps"):
+            continue
+        elif low.startswith("new int per rep"):
+            v = "%.1f" % (_num(ints) / board)
+        elif low.startswith("app per rep"):
+            v = "%.1f" % (_num(apps) / board)
+        out.append((label, v))
+    return out
 
 
 def _a1(row: int, col: int) -> str:
