@@ -1801,7 +1801,7 @@ OWNER_OL_TAB = "ORDER LOG RAW"
 
 
 def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id: str = "",
-                          chunk_weeks: int = 0, tab_suffix: str = "") -> int:
+                          chunk_weeks: int = 0, tab_suffix: str = "", end_date: "dt.date | None" = None) -> int:
     from collections import Counter
     from automations.office_metrics import nds_orderlog as NO
     from automations.shared.tableau_patchright import tableau_session
@@ -1815,9 +1815,9 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
         return " ".join(str(s or "").lower().split())
 
     today = dt.date.today()
-    we = week_ending(today)                      # most recent Sunday on/before today
+    end = end_date or today
+    we = week_ending(end)                        # most recent Sunday on/before the end
     start = we - dt.timedelta(days=7 * weeks_back - 1)   # Monday, N weeks back
-    end = today
     url = NO._orderlog_url(start, end)
     plog(f"owner-orderlog: owner={owner!r} Order Date {start} .. {end} ({weeks_back} wks) url={url[:120]}")
     out_dir = REPO_ROOT / "output" / "vantura_payroll"
@@ -1946,8 +1946,18 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
         paid_reps: set = set()
         paid_nums: set = set()
         dd_tabs = [w.title for w in _ctl.worksheets() if w.title.startswith(f"{owner} DD RAW")]
-        for _t in dd_tabs:
-            _dd = _ctl.worksheet(_t).get_all_values()
+        import time as _time
+        for _k, _t in enumerate(dd_tabs):
+            if _k:
+                _time.sleep(1.5)                 # 5+ tab reads back to back tripped the 60/min read quota (2026-11-09)
+            for _try in (1, 2, 3):
+                try:
+                    _dd = _ctl.worksheet(_t).get_all_values()
+                    break
+                except Exception:  # noqa: BLE001
+                    if _try == 3:
+                        raise
+                    _time.sleep(20)
             if not _dd:
                 continue
             _h = [str(h).strip().lower() for h in _dd[0]]
@@ -2097,6 +2107,9 @@ def main(argv: list[str] | None = None) -> int:
                          "(the owner's ICD id, e.g. 11754) instead of the Owner & Office match")
     ap.add_argument("--weeks-back", type=int, default=8,
                     help="for --owner-orderlog: how many full weeks of Order Dates (default 8)")
+    ap.add_argument("--ol-end", default="",
+                    help="for --owner-orderlog: last Order Date to pull (YYYY-MM-DD, default today); "
+                         "--weeks-back counts back from here")
     ap.add_argument("--ol-chunk-weeks", type=int, default=0,
                     help="for --owner-orderlog: pull the window in N-week slices and stitch them "
                          "(the csv export caps at 8,192 rows; 0 = one pull)")
@@ -2133,7 +2146,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if getattr(args, "owner_orderlog", None):
         return _owner_orderlog_probe(args.owner_orderlog, args.weeks_back, lead_rep_id=args.lead_rep_id or "",
-                                     chunk_weeks=args.ol_chunk_weeks, tab_suffix=args.dd_tab_suffix)
+                                     chunk_weeks=args.ol_chunk_weeks, tab_suffix=args.dd_tab_suffix,
+                                     end_date=dt.date.fromisoformat(args.ol_end) if args.ol_end else None)
     if getattr(args, "owner_dd", None):
         fo = None
         if args.dd_filter:
