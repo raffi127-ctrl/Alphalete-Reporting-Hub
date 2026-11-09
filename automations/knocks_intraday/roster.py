@@ -76,6 +76,11 @@ BLOCKED: dict = {
     # "does not disposition in OwnerVille, so there are no knocks to draw"
     # (office_metrics.SECTION_OVERRIDES drops his Time Gaps for that reason).
     "drew": "no OwnerVille dispositions (Megan 2026-09-28) — nothing to draw",
+    # cody enrolled in Lucy ECO on 2026-11-09: his own Mac relays knocks and
+    # posts the board to #aeon-sales every 30 minutes, so the scraped
+    # 2 PM / 5:15 PM / 9 PM boards here would double the same room
+    # (Megan 2026-11-09: "we should take him off the other knocks posting now").
+    "cody": "on Lucy ECO since 2026-11-09 — his machine posts the board every 30 min",
 }
 
 # RAF IS NOT IN office_metrics.OFFICES, and that is not an oversight to fix
