@@ -7,8 +7,8 @@ one of them and not the other -- and the Windows half is the one nobody can
 test until an ICD runs it.
 
 WHAT IT ASKS FOR: their SaraPlus login and their OwnerVille login -- plus
-their AppStream login, only if they want Lucy to push resumes from this
-computer. Nothing else. The office key, the relay url and the relay key are already in
+their office's Lucy ECO AppStream login, given to them by the ECO team
+(no resume-pushing question since 2026-11-09). Nothing else. The office key, the relay url and the relay key are already in
 install.json, filled in when this package was built for this office, so there
 is no code for anyone to mistype. See `automations/icd_alerts/package.py`.
 
@@ -570,7 +570,8 @@ def ask_for_appstream(replace=False):
     (lucy-login-standard rule 3). Not the owner's own login -- the push signs
     in by itself every 10 minutes, and a person's login is one they use.
     Not required -- credit checks and boards work without it."""
-    return _ask_one("appstream-creds.json", "AppStream (Lucy Resume)",
+    return _ask_one("appstream-creds.json",
+                    "ApplicantStream (the Lucy ECO login the ECO team gave you)",
                     "username", "username", "password", required=False,
                     replace=replace)
 
@@ -1426,9 +1427,10 @@ def install_problems(awake=None):
                          for r in _recs)
     except Exception:  # noqa: BLE001
         wants_push = False
-    if wants_push and not (CONFIG_DIR / "appstream-creds.json").exists():
-        notes.append("no AppStream login, so Lucy cannot push resumes from "
-                     "this computer yet")
+    if not (CONFIG_DIR / "appstream-creds.json").exists():
+        notes.append("no ApplicantStream login is saved yet -- run this again "
+                     "with the Lucy ECO login the ECO team gave you"
+                     + (", or Lucy cannot push resumes from this computer" if wants_push else ""))
     if not (CONFIG_DIR / "install.json").exists():
         blocking.append("this office's settings were never written")
     if awake and not awake.get("never_sleeps"):
@@ -1526,13 +1528,16 @@ def main() -> int:
     else:
         ov_ok = ownerville_until_it_works() if ok else None
 
-    # RESUME PUSHING, only for the offices that want it (Carlos 2026-10-05).
+    # THE OFFICE'S LUCY ECO APPSTREAM LOGIN, every office, no question first
+    # (Megan 2026-11-09: "take off 'do you want Lucy to push your resumes?' and
+    # just ask them to enter the AppStream login provided by the ECO team").
+    # The standard login is tried first, so usually nobody types anything.
+    # Resume pushing itself is no longer offered here: an office already set
+    # to push keeps its dry-run check; everyone else is switched on by us.
     # Same three states as ov_ok: worked, failed, never tried.
-    as_ok = None
-    if ask_about_resume_pushing():
-        as_ok = appstream_until_it_works()
-        if as_ok:
-            as_ok = push_dry_run_ready()
+    as_ok = appstream_until_it_works()
+    if as_ok and _load_current().get("push_resumes"):
+        as_ok = push_dry_run_ready()
 
     step(7, total, "Where your alerts should go")
     ask_for_ov_name()
@@ -1607,8 +1612,8 @@ def main() -> int:
             notes.append("the OwnerVille login did not work, so the knocks "
                          "board will not post yet")
         if as_ok is False and (CONFIG_DIR / "appstream-creds.json").exists():
-            notes.append("resume pushing is not working yet -- run this "
-                         "again to finish it")
+            notes.append("the ApplicantStream login did not work yet -- run "
+                         "this again to finish it")
         if blocking:
             # NOT "ALL SET". This office cannot report anything, and telling
             # them otherwise is how one waits a week for a board that was
