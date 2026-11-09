@@ -100,7 +100,7 @@ async function openPanel(mode) {
     return;
   }
   if (!chrome.scripting) {        // new files, old install: Chrome hasn't reloaded the extension yet
-    err('Update needed: open chrome://extensions and click ↻ on Lucy Office Admin, then try again.');
+    err('Update needed: open chrome://extensions and click ↻ on Lucy BG✔️ Send, then try again.');
     return;
   }
   try {

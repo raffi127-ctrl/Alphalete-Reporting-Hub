@@ -1,4 +1,4 @@
-# Lucy Office Admin — Chrome extension
+# Lucy BG✔️ Send — Chrome extension
 
 One button on the admin's own ApplicantStream calendar: **🛡️ Send background checks**.
 It reads today's second interviews marked **Offer Position = Yes** off the page the admin is
@@ -8,7 +8,7 @@ people to the office's ECO computer, which signs in to Sterling and bulk-uploads
 ## Install (per admin computer, ~1 min)
 1. Chrome → `chrome://extensions` → turn on **Developer mode** (top right).
 2. **Load unpacked** → pick this `extension/office-admin` folder.
-3. Pin it (puzzle icon → pin **Lucy Office Admin**).
+3. Pin it (puzzle icon → pin **Lucy BG✔️ Send**).
 4. Click the icon → sign in **once** (this computer stays signed in 90 days; turning the
    login off with `relay_admins --disable` ends it at once). Logins come from
    `python -m automations.office_admin.relay_admins --add <username> --office <office>`.
