@@ -371,7 +371,11 @@ def sync_closed_week(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
     for a1, v in sorted(cells.items()):
         print("    %s = %r" % (a1, v))
     # a Line Up that came in after the roll gets its names here
-    notes = lineup_step(sh, find_tab(tabs, LINEUP_PREFIX, sunday), old_t, new_t, apply)
+    lineup = find_tab(tabs, LINEUP_PREFIX, sunday)
+    notes = lineup_step(sh, lineup, old_t, new_t, apply)
+    if not lineup:
+        notes.append("no '%s' tab yet: Line Up names were not checked"
+                     % tab_title(LINEUP_PREFIX, sunday))
     if not cells or not apply:
         return 0, notes
     new.batch_update([{"range": a1, "values": [[v]]} for a1, v in cells.items()],
@@ -519,6 +523,30 @@ def plan_lineup_names(values, dropdowns, board_names) -> Dict[str, str]:
     return cells
 
 
+def lineup_doubts(values, dropdowns, board_names) -> List[str]:
+    """Car-ride cells whose person IS on the board but Lucy will not touch: two
+    people on one name, or no dropdown to pick from. Eve gets these by DM."""
+    header, pool, cols = lineup_layout(values)
+    options: Dict[str, List[str]] = {}
+    for name in board_names:
+        k = _norm(base_name(name))
+        if k and name not in options.setdefault(k, []):
+            options[k].append(name)
+    out: List[str] = []
+    for r in range(header + 1, pool):
+        for c in cols:
+            x = str(_cell(values, r, c))
+            found = options.get(_norm(base_name(x))) if x.strip() else None
+            if not found:
+                continue
+            a1 = K.col_letter(c) + str(r)
+            if len(found) > 1:
+                out.append("%s '%s' is two people on the board" % (a1, x.strip()))
+            elif (r, c) not in dropdowns and x != found[0]:
+                out.append("%s '%s' has no dropdown (board: '%s')" % (a1, x.strip(), found[0].strip()))
+    return out
+
+
 def plan_pool_repoint(formulas, pool: int, old_board: str, new_board: str) -> Dict[str, str]:
     """The dropdown's list still reading last week's board reads this week's."""
     out: Dict[str, str] = {}
@@ -563,7 +591,9 @@ def lineup_step(sh, lineup: Optional[str], old_board: Optional[str], board: Opti
         first, last = K.block_rows(bv)
         nc = K.layout(bv).name_col
         names = [str(_cell(bv, r, nc)) for r in range(first, last + 1)]
-        cells = plan_lineup_names(values, _dropdown_cells(sh, lineup, header + 1, pool - 1), names)
+        dropdowns = _dropdown_cells(sh, lineup, header + 1, pool - 1)
+        cells = plan_lineup_names(values, dropdowns, names)
+        notes = ["'%s' needs a person: %s" % (lineup, d) for d in lineup_doubts(values, dropdowns, names)]
         print("  '%s': %d names follow '%s', %d list formulas re-pointed" % (
             lineup, len(cells), board, len(repoint)))
         for a1, v in sorted(cells.items()):
@@ -571,10 +601,17 @@ def lineup_step(sh, lineup: Optional[str], old_board: Optional[str], board: Opti
         if cells and apply:
             ws.batch_update([{"range": a, "values": [[v]]} for a, v in cells.items()],
                             value_input_option="RAW")
+            # read it back: a write that did not take is a failure too
+            left = plan_lineup_names(ws.get_all_values(), dropdowns, names)
+            if left:
+                notes.append("'%s': %d names still differ from the board after the update: %s"
+                             % (lineup, len(left), ", ".join(sorted(left)[:10])))
+        for n in notes:
+            print("  ! " + n)
+        return notes
     except Exception as e:  # noqa: BLE001 -- the tabs are made; this is one step
         print("  ! Line Up names not updated: %s: %s" % (type(e).__name__, e))
         return ["'%s' names were not updated: %s" % (lineup, str(e)[:150])]
-    return []
 
 
 def _a1_rc(a1: str) -> Tuple[int, int]:

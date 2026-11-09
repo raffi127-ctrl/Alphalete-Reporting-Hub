@@ -185,6 +185,57 @@ class LineUpNamesFollowTheBoard(unittest.TestCase):
                          {"B7": "={'Sales Board WE 11.15'!$C4:$C77}"})
         self.assertEqual(W.plan_pool_repoint(f, 6, "Sales Board WE 11.01", "Sales Board WE 11.15"), {})
 
+    def test_doubts_name_the_cell(self):
+        g = self._grid()
+        doubts = W.lineup_doubts(g, self._all(g), self.BOARD)
+        self.assertEqual(len(doubts), 1)
+        self.assertIn("B5", doubts[0])
+        self.assertIn("two people", doubts[0])
+
+    def test_no_dropdown_is_a_doubt_only_when_the_name_differs(self):
+        g = self._grid("Bryson Knowles (Wk 2)", "Travis Smith (Wk 2)")
+        doubts = W.lineup_doubts(g, set(), self.BOARD)
+        self.assertTrue(any(d.startswith("C3") for d in doubts))
+        self.assertFalse(any(d.startswith("B3") for d in doubts))
+
+    def _step(self, after_write):
+        from unittest import mock
+        g = self._grid("Bryson Knowles (Wk 2)", "Travis Smith (Wk 2)")
+        g[3][1] = "Alyssa Moreno "
+        g[4][1] = ""
+        ws, board, sh = mock.Mock(), mock.Mock(), mock.Mock()
+        board.get_all_values.return_value = [[self.BOARD[0]]]
+        reads = {"n": 0}
+
+        def values(value_render_option=None):
+            if value_render_option:
+                return g
+            reads["n"] += 1
+            return g if reads["n"] == 1 else after_write(g)
+        ws.get_all_values.side_effect = values
+        sh.worksheet.side_effect = lambda t: ws if t == "LU" else board
+        names = ["Travis Smith (Wk 3)", "Bryson Knowles (Wk 2)", "Alyssa Moreno "]
+        with mock.patch.object(W, "_dropdown_cells", return_value=self._all(g)), \
+                mock.patch.object(W.K, "block_rows", return_value=(1, 3)), \
+                mock.patch.object(W.K, "layout", return_value=mock.Mock(name_col=1)), \
+                mock.patch.object(W, "_cell", side_effect=lambda v, r, c: (
+                    names[r - 1] if v is board.get_all_values.return_value else
+                    (v[r - 1][c - 1] if 0 < r <= len(v) and 0 < c <= len(v[r - 1]) else ""))):
+            return W.lineup_step(sh, "LU", None, "BOARD", True), ws
+
+    def test_a_write_that_did_not_take_is_reported(self):
+        notes, ws = self._step(lambda g: g)
+        ws.batch_update.assert_called_once()
+        self.assertIn("still differ", notes[0])
+
+    def test_a_write_that_took_says_nothing(self):
+        def fixed(g):
+            out = [list(r) for r in g]
+            out[2][2] = "Travis Smith (Wk 3)"
+            return out
+        notes, _ = self._step(fixed)
+        self.assertEqual(notes, [])
+
     def test_a_broken_step_does_not_fail_the_roll(self):
         from unittest import mock
         sh = mock.Mock()

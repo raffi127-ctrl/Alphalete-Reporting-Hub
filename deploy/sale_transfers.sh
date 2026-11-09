@@ -56,8 +56,22 @@ echo "[$(date)] sale_transfers exit=$ST" >> "$LOG_FILE"
 # Monday, after the last slot: the new tab's history + Last Week read last week's
 # tab again, late transfers included (Eve 2026-11-09, 380 vs 375).
 if [ -n "$APPLY" ] && [ "$(date +%u)" = "1" ] && [ "$(date +%H%M)" -ge "0800" ]; then
-    "$VENV_PY" -u -m automations.alphalete_sales_board.week_roll --sync-closed-week --apply >> "$LOG_FILE" 2>&1 \
-        || echo "[$(date)] closed-week sync failed" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.alphalete_sales_board.week_roll --sync-closed-week --apply >> "$LOG_FILE" 2>&1
+    SYNC=$?
+    echo "[$(date)] closed-week sync exit=$SYNC" >> "$LOG_FILE"
+    # the module DMs Eve what it found; this covers it dying before it could
+    if [ "$SYNC" -ne 0 ]; then
+        "$VENV_PY" -u -c "
+import datetime as dt, sys
+from automations.day_orchestrator import registry as _reg, notify
+notify.send_standalone_alert(
+    _reg.load_config(), name='Sales Board - Monday re-read + Line Up names',
+    report_id='sales_board_sale_transfers', kind='FAILED',
+    status='last week numbers and Line Up names were not updated (exit ' + sys.argv[1] + ')',
+    when='Monday after the 08:00 transfers',
+    day=dt.date.today().isoformat(), machine_label='Lucy 1')
+" "$SYNC" >> "$LOG_FILE" 2>&1 || true
+    fi
 fi
 
 # A failed slot has a retry behind it; alert only on the LAST one (08:00).
