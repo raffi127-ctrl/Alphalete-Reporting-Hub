@@ -153,6 +153,38 @@ def _mark(key: str) -> None:
     STATE_PATH.write_text(json.dumps(d, indent=1), encoding="utf-8")
 
 
+def _post_slack(smp, png: Path, text: str, *, send: bool):
+    """Post the picture and CHECK it is in the channel (2026-11-09: Slack said
+    ok with a file id and the post never appeared). Not there after ~30s ->
+    one more upload. Returns True (seen) / None (dry run, or couldn't read the
+    channel -- not a miss) / False (missing after both tries)."""
+    for attempt in (1, 2):
+        r = smp.post_reply_with_image(png, comment=text, channel_id=SLACK_CHANNEL,
+                                      top_level=True, mirror=False, dry_run=not send,
+                                      file_name=png.name)
+        print("%s -> #alphalete-sales %s" % ("SLACK" if send else "PREVIEW", r))
+        if not send:
+            return None
+        landed = smp.file_landed_in_channel(smp._client(), r.get("file") or "",
+                                            SLACK_CHANNEL, comment=text)
+        print("in the channel: %s (try %d)" % (landed, attempt))
+        if landed is not False:
+            return landed
+    return False
+
+
+def _alert_eve(status: str) -> None:
+    """Same alert the other Lucy 1 standalone jobs use. Never raises."""
+    try:
+        from automations.day_orchestrator import notify, registry as _reg
+        notify.send_standalone_alert(
+            _reg.load_config(), name="Stations Post (Raf)",
+            report_id="stations_post", kind="FAILED", status=status,
+            when="9:00 CT", day=_ct_today().isoformat(), machine_label="Lucy 1")
+    except Exception as e:  # noqa: BLE001
+        print("alert failed too: %s: %s" % (type(e).__name__, e))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--send", action="store_true", help="really post (default: dry run)")
@@ -180,15 +212,20 @@ def main(argv=None) -> int:
     if slack_key not in done:
         from automations.shared import slack_metrics_post as smp
         try:
-            r = smp.post_reply_with_image(png, comment=text, channel_id=SLACK_CHANNEL,
-                                          top_level=True, mirror=False, dry_run=not a.send,
-                                          file_name=png.name)
-            print("%s -> #alphalete-sales %s" % ("SLACK" if a.send else "PREVIEW", r))
-            if a.send:
+            landed = _post_slack(smp, png, text, send=a.send)
+            if landed is False:
+                failed += 1
+                print("FAILED #alphalete-sales: Slack said ok twice but the "
+                      "picture never showed up in the channel")
+                _alert_eve("the picture never showed up in #alphalete-sales "
+                           "(Slack said ok, tried twice)")
+            elif a.send:
                 _mark(slack_key)
         except Exception as e:  # noqa: BLE001 -- one room never blocks the other
             failed += 1
             print("FAILED #alphalete-sales: %s: %s" % (type(e).__name__, e))
+            if a.send:
+                _alert_eve("#alphalete-sales post failed: %s" % type(e).__name__)
 
     if not a.send and sys.platform != "darwin":
         # Resolving the iMessage room needs Messages (a Mac).
