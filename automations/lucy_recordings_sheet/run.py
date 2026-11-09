@@ -202,6 +202,53 @@ def map_owners_to_offices(owners: list, owner_of: dict) -> dict:
     return out
 
 
+NEW_STARTS_WEEKS = 4
+
+
+def closed_weeks(today: dt.date, n: int = NEW_STARTS_WEEKS) -> list:
+    """The last n finished Sun-Sat weeks, as their Sundays, oldest first."""
+    sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    return [sun - dt.timedelta(days=7 * i) for i in range(n, 0, -1)]
+
+
+def load_new_starts(S) -> list:
+    """Rows of the retention sheet's 'New Starts' tab. Empty if it can't be read:
+    the recordings report still goes out, without this table."""
+    try:
+        r = S.get("%s/%s/values/%s!A2:F100000" % (SHEETS, RETENTION_SSID, _q("New Starts")))
+        r.raise_for_status()
+        return r.json().get("values", [])
+    except Exception as e:  # noqa: BLE001
+        log("New Starts tab not read (%s) - table left out" % e)
+        return []
+
+
+def new_starts_table(rows: list, weeks: list, owners: list, offices: dict) -> tuple:
+    """([owner, scheduled, started, %, started per week], weeks that have data).
+    Best show ratio first; owners with nothing scheduled are left out."""
+    wanted = {w.isoformat() for w in weeks}
+    sched, started, seen = defaultdict(int), defaultdict(int), set()
+    for row in rows:
+        if len(row) < 6 or row[0] not in wanted:
+            continue
+        try:
+            s, h = int(float(row[4] or 0)), int(float(row[5] or 0))
+        except ValueError:
+            continue
+        seen.add(row[0])
+        sched[row[2]] += s
+        started[row[2]] += h
+    out = []
+    n = max(len(seen), 1)
+    for o in owners:
+        ids = offices.get(o["id"]) or []
+        s, h = sum(sched[x] for x in ids), sum(started[x] for x in ids)
+        if s:
+            out.append([o.get("name", o["id"]), s, h, round(h / s, 4), round(h / n, 1)])
+    out.sort(key=lambda r: (-r[3], -r[1], r[0]))
+    return out, sorted(seen)
+
+
 # ---------- guessing an owner for reps who never confirmed one ----------
 #
 # Eve 2026-11-06: reps who never told Lucy their ICD get an owner looked up
@@ -774,7 +821,8 @@ def write(S, ssid, owner_rows, rep_rows, totals, month_list):
 # possible" -> the 8:00 AM CT run, after the 7:07 AM retention pass has
 # re-read yesterday's late 2nd rounds. Plain HTML, no images.
 
-RAFAEL = "raffi127@gmail.com"
+# Raf + Colten try it first (Raf + Eve 2026-11-09); then --email-org for everyone.
+TRIAL_TO = ["raffi127@gmail.com", "coltenwrightsc@gmail.com"]
 ORG_SENT_DIR = HERE.parents[1] / "output" / "state" / "lucy_recordings_org_sent"
 
 
@@ -838,8 +886,41 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
         '%s%s</div>' % (date_range(), card_html, "".join(body), rule, button))
 
 
+def new_starts_html(table: list, weeks_seen: list) -> str:
+    if not table or not weeks_seen:
+        return ""
+    first = dt.date.fromisoformat(weeks_seen[0])
+    last = dt.date.fromisoformat(weeks_seen[-1]) + dt.timedelta(days=6)
+    span = "%s %d – %s %d" % (first.strftime("%b"), first.day, last.strftime("%b"), last.day)
+    n = len(weeks_seen)
+    body = []
+    for i, r in enumerate(table):
+        bg = "#F6F8FC" if i % 2 else "#FFFFFF"
+        body.append(
+            '<tr style="background:%s"><td style="padding:6px 10px">%s</td>'
+            '<td style="text-align:center">%s</td><td style="text-align:center">%s</td>'
+            '<td style="text-align:center;background:%s;font-weight:bold">%d%%</td>'
+            '<td style="text-align:center">%s</td></tr>'
+            % (bg, r[0], r[1], r[2], _cell_color(r[3], (0.5, 0.25)), round(r[3] * 100), r[4]))
+    s, h = sum(r[1] for r in table), sum(r[2] for r in table)
+    body.append(
+        '<tr style="background:#EEF2FA;font-weight:bold"><td style="padding:6px 10px">Total</td>'
+        '<td style="text-align:center">%d</td><td style="text-align:center">%d</td>'
+        '<td style="text-align:center">%d%%</td><td style="text-align:center">%s</td></tr>'
+        % (s, h, round(100 * h / s), round(h / n, 1)))
+    return (
+        '<div style="font-family:Roboto,Arial,sans-serif;max-width:680px;margin-top:22px">'
+        '<div style="background:#1F2A44;color:#fff;padding:12px 16px;font-size:16px;font-weight:bold">'
+        'New Starts · Last %d Weeks</div>'
+        '<div style="padding:8px 2px;font-size:13px;color:#5B6478">%s</div>'
+        '<table style="width:100%%;border-collapse:collapse;font-size:13px">'
+        '<tr style="background:#2E3E61;color:#fff"><th style="text-align:left;padding:8px 10px">Owner</th>'
+        '<th>Scheduled</th><th>Started</th><th>%% Started</th><th>Avg Started / Week</th></tr>%s</table></div>'
+        % (n, span, "".join(body)))
+
+
 def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str,
-               show_link: bool = True) -> None:
+               show_link: bool = True, extra_html: str = "") -> None:
     from email.message import EmailMessage
     from automations.org_sales_board.screenshot_email import FROM_ADDR, send
     msg = EmailMessage()
@@ -848,7 +929,8 @@ def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str,
     msg["To"] = ", ".join(to)
     msg.set_content("LUCY 2nd Round Recordings - %s, month to date." % month + (
         " Open the sheet: https://docs.google.com/spreadsheets/d/%s" % ssid if show_link else ""))
-    msg.add_alternative(build_email_html(month, totals, owner_rows, ssid, show_link), subtype="html")
+    msg.add_alternative(build_email_html(month, totals, owner_rows, ssid, show_link) + extra_html,
+                        subtype="html")
     send(msg)
     log("emailed '%s' to %s" % (msg["Subject"], ", ".join(to)))
 
@@ -865,10 +947,10 @@ def main(argv=None) -> int:
     ap.add_argument("--create", action="store_true", help="make a new sheet first")
     ap.add_argument("--share", action="append", default=[], help="email to share a new sheet with")
     ap.add_argument("--sheet", default=SSID, help="sheet id to write")
-    ap.add_argument("--email", action="store_true", help="after writing, email the report to Raf")
+    ap.add_argument("--email", action="store_true", help="after writing, email the report to Raf + Colten")
     ap.add_argument("--email-org", action="store_true",
                     help="after writing, email the whole org (Alphalete Org Owners), once a day")
-    ap.add_argument("--email-to", help="after writing, email THIS address the org version (test)")
+    ap.add_argument("--email-to", help="after writing, email THESE addresses (comma separated) the org version (test)")
     ap.add_argument("--restyle", action="store_true",
                     help="rebuild the two visible tabs' layout (keeps the sheet + link)")
     a = ap.parse_args(argv)
@@ -894,6 +976,13 @@ def main(argv=None) -> int:
         ", ".join("%s -> %s [%s]" % (export["names"].get(u, u), o, src)
                   for u, (o, src) in sorted(guesses.items()))))
     owner_rows, rep_rows, totals, month_list, unmatched = build(export, done, owner_of, guesses)
+    ns_weeks = closed_weeks(dt.datetime.now(CT).date())
+    ns_table, ns_seen = new_starts_table(
+        load_new_starts(S), ns_weeks, export["owners"],
+        map_owners_to_offices(export["owners"], owner_of))
+    log("new starts: %d owner(s), weeks with data: %s (wanted %s)" % (
+        len(ns_table), ", ".join(ns_seen) or "none", ", ".join(w.isoformat() for w in ns_weeks)))
+    extra_html = new_starts_html(ns_table, ns_seen)
     if unmatched:
         log("owners with NO AppStream office match (2nd rounds blank): " + ", ".join(unmatched))
     no_uid = sum(1 for r in export["records"] if not r.get("uid"))
@@ -908,6 +997,9 @@ def main(argv=None) -> int:
         log("--- %s, by rep (top 15) ---" % cur)
         for r in [x for x in rep_rows if x[0] == cur][:15]:
             print("  %-28s %-28s grab=%-4s nota=%s" % tuple(r[1:]))
+        log("--- new starts, last %d weeks ---" % len(ns_seen))
+        for r in ns_table:
+            print("  %-32s sched=%-4s started=%-4s pct=%-7s avg=%s" % tuple(r))
         return 0
 
     ssid = a.sheet
@@ -922,15 +1014,16 @@ def main(argv=None) -> int:
         # The report covers through yesterday: on the 1st, that's last month.
         month = month_label((dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%Y-%m"))
         if a.email_to:
-            send_email([a.email_to], month, totals, owner_rows, ssid, show_link=False)
+            send_email([x.strip() for x in a.email_to.split(",") if x.strip()], month, totals,
+                       owner_rows, ssid, show_link=False, extra_html=extra_html)
         elif a.email_org:
-            return _send_org(month, totals, owner_rows, ssid)
+            return _send_org(month, totals, owner_rows, ssid, extra_html)
         else:
-            send_email([RAFAEL], month, totals, owner_rows, ssid)
+            send_email(TRIAL_TO, month, totals, owner_rows, ssid, extra_html=extra_html)
     return 0
 
 
-def _send_org(month: str, totals: list, owner_rows: list, ssid: str) -> int:
+def _send_org(month: str, totals: list, owner_rows: list, ssid: str, extra_html: str = "") -> int:
     """Whole org, at most once a day: a rerun must never mail ~56 people again.
     No sheet button: the sheet isn't shared with the owners."""
     from automations.org_sales_board.screenshot_email import resolve_distro
@@ -942,7 +1035,7 @@ def _send_org(month: str, totals: list, owner_rows: list, ssid: str) -> int:
     if not to:
         log("org email NOT sent: no distro")
         return 1
-    send_email(to, month, totals, owner_rows, ssid, show_link=False)
+    send_email(to, month, totals, owner_rows, ssid, show_link=False, extra_html=extra_html)
     ORG_SENT_DIR.mkdir(parents=True, exist_ok=True)
     lock.write_text(dt.datetime.now(CT).isoformat(), encoding="utf-8")
     return 0

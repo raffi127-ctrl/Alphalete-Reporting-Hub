@@ -10,6 +10,11 @@ SOURCE: ApplicantStream > Retention - Details (new) (p=783), per office:
   "Total Second Interviews" (booked) and "Second Interviews Showed Up".
   Weeks are SUN-SAT, same as the dashboard.
 
+NEW STARTS (Raf 2026-11-07, for the LUCY recordings email): the same report's
+"Total New Starts Scheduled" / "New Starts Showed Up" go to their own tab, "New
+Starts", so Camila's dashboard tab doesn't change. Older weeks once, by hand:
+    python -m automations.second_round_retention.run --backfill-new-starts 4
+
 SHEET (tab "Datos"): one row per office per day of the weeks pulled. Every run
 rewrites the weeks it pulled and keeps older weeks as they were. A1 of tab
 "Info" holds the time of the last finished read.
@@ -38,6 +43,8 @@ API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
 ET = ZoneInfo("America/New_York")
 HEADER = ["Semana (domingo)", "Fecha", "Día", "Office ID", "Owner", "Empresa",
           "2nd agendadas", "2nd vinieron", "% vinieron"]
+NEW_STARTS_TAB = "New Starts"
+NEW_STARTS_HEADER = ["Week (Sunday)", "Date", "Office ID", "Owner", "Scheduled", "Showed"]
 DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
 
@@ -81,18 +88,23 @@ def pull_office(page, rqst, weeks, today):
         for i in range(7):
             d = sun + dt.timedelta(days=i)
             if d in days and d <= today:
-                out[d] = (days[d]["b2"], days[d]["s2"])
+                out[d] = (days[d]["b2"], days[d]["s2"], days[d]["nss"], days[d]["nsh"])
     return out
 
 
 def rows_for(office, days):
     rows = []
     for d in sorted(days):
-        b, s = days[d]
+        b, s = days[d][:2]
         rows.append([week_sunday(d).isoformat(), d.isoformat(), DIAS[d.weekday()],
                      office["office_id"], office["owner"], office["company"],
                      b, s, round(s / b, 3) if b else ""])
     return rows
+
+
+def new_start_rows(office, days):
+    return [[week_sunday(d).isoformat(), d.isoformat(), office["office_id"], office["owner"],
+             days[d][2], days[d][3]] for d in sorted(days)]
 
 
 def _sheets():
@@ -130,18 +142,49 @@ def write(rows, weeks, failed_ids):
     log("wrote %d row(s) to Datos (%d kept from before) — %s" % (len(rows), len(keep), stamp))
 
 
+def merge_new_starts(old, rows, weeks, failed_ids):
+    """Rows of the weeks not pulled, plus what was pulled. An office that failed
+    keeps its last good numbers."""
+    pulled = {w.isoformat() for w in weeks}
+    keep = [x for x in old if x and (x[0] not in pulled
+                                     or (len(x) > 2 and x[2] in failed_ids))]
+    return sorted(keep + rows, key=lambda x: (x[0], str(x[3]).lower(), x[1]))
+
+
+def write_new_starts(rows, weeks, failed_ids):
+    S = _sheets()
+    meta = S.get(API, params={"fields": "sheets.properties.title"})
+    meta.raise_for_status()
+    if NEW_STARTS_TAB not in [s["properties"]["title"] for s in meta.json()["sheets"]]:
+        S.post(API + ":batchUpdate", json={"requests": [
+            {"addSheet": {"properties": {"title": NEW_STARTS_TAB}}}]}).raise_for_status()
+    rng = "'%s'" % NEW_STARTS_TAB
+    r = S.get(API + "/values/%s!A1:F100000" % rng)
+    r.raise_for_status()
+    body = merge_new_starts(r.json().get("values", [])[1:], rows, weeks, failed_ids)
+    S.post(API + "/values/%s!A:F:clear" % rng).raise_for_status()
+    S.put(API + "/values/%s!A1" % rng, params={"valueInputOption": "RAW"},
+          json={"values": [NEW_STARTS_HEADER] + body}).raise_for_status()
+    log("wrote %d row(s) to %s" % (len(rows), NEW_STARTS_TAB))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="pull and print, write nothing")
     ap.add_argument("--only", help="office ids separated by |")
     ap.add_argument("--today", help="override today (YYYY-MM-DD)")
+    ap.add_argument("--backfill-new-starts", type=int, metavar="WEEKS",
+                    help="pull this many closed weeks into the New Starts tab ONLY")
     a = ap.parse_args()
 
     today = dt.date.fromisoformat(a.today) if a.today else dt.datetime.now(ET).date()
     weeks = target_weeks(today)
+    if a.backfill_new_starts:
+        sun = week_sunday(today)
+        weeks = [sun - dt.timedelta(days=7 * n) for n in range(a.backfill_new_starts, 0, -1)]
     log("weeks: %s" % ", ".join(str(w) for w in weeks))
 
-    rows, failed = [], set()
+    rows, ns_rows, failed = [], [], set()
     sess = dict(headless=False, verbose=True, force_form_login=True,
                 profile_dir=APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_second_rd")
     with appstream_direct_session(**sess) as page:
@@ -160,6 +203,7 @@ def main():
                         raise RuntimeError("office switch failed")
                     days = pull_office(page, rqst, weeks, today)
                     rows += rows_for(o, days)
+                    ns_rows += new_start_rows(o, days)
                     b = sum(v[0] for v in days.values())
                     s = sum(v[1] for v in days.values())
                     log("%-6s %-28s %3d/%-3d %s" % (o["office_id"], o["owner"][:28], s, b,
@@ -182,7 +226,15 @@ def main():
     if a.dry_run:
         log("dry run — not writing (%d rows)" % len(rows))
         return 0
-    write(rows, weeks, failed)
+    if not a.backfill_new_starts:
+        write(rows, weeks, failed)
+    # Never lets a problem here cost Camila's dashboard its numbers.
+    try:
+        write_new_starts(ns_rows, weeks, failed)
+    except Exception as e:  # noqa: BLE001
+        log("!! New Starts tab not written: %s: %s" % (type(e).__name__, str(e)[:200]))
+        if a.backfill_new_starts:
+            return 1
     return 1 if failed else 0
 
 

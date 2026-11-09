@@ -1,8 +1,10 @@
 """python -m unittest automations.lucy_recordings_sheet.test_guard"""
+import datetime as dt
 import unittest
 
 from automations.lucy_recordings_sheet.run import (
-    DUPLICATE, LAYOUTS, NO_OWNER, TAB_OWNER, TOO_SHORT, apply_guard, owner_rank_key, table_formula)
+    DUPLICATE, LAYOUTS, NO_OWNER, TAB_OWNER, TOO_SHORT, apply_guard, closed_weeks,
+    new_starts_html, new_starts_table, owner_rank_key, table_formula)
 
 
 def rec(ts, uid="U1", seconds=1800.0, fp=None):
@@ -65,6 +67,35 @@ class RankTest(unittest.TestCase):
 
     def test_by_owner_sheet_sorts_on_percent_then_recordings(self):
         self.assertIn("TRUE, 4, FALSE, 2, FALSE)", table_formula(LAYOUTS[TAB_OWNER]))
+
+
+class NewStartsTest(unittest.TestCase):
+    WEEKS = [dt.date(2026, 10, 11), dt.date(2026, 10, 18), dt.date(2026, 10, 25), dt.date(2026, 11, 1)]
+
+    def test_closed_weeks_skip_the_week_in_progress(self):
+        self.assertEqual(closed_weeks(dt.date(2026, 11, 9)), self.WEEKS)
+        self.assertEqual(closed_weeks(dt.date(2026, 11, 8)), self.WEEKS)
+
+    def test_totals_across_an_owners_offices_only_in_the_closed_weeks(self):
+        rows = [["2026-10-11", "2026-10-12", "A1", "x", "10", "5"],
+                ["2026-11-01", "2026-11-02", "A2", "x", "10", "3"],
+                ["2026-11-08", "2026-11-09", "A1", "x", "99", "99"],
+                ["2026-11-01", "2026-11-02", "B1", "y", "4", "4"],
+                ["2026-11-01", "2026-11-02", "C1", "z", "0", "0"]]
+        owners = [{"id": "a", "name": "Ann"}, {"id": "b", "name": "Bo"}, {"id": "c", "name": "Cy"}]
+        offices = {"a": ["A1", "A2"], "b": ["B1"], "c": ["C1"]}
+        table, seen = new_starts_table(rows, self.WEEKS, owners, offices)
+        self.assertEqual(table, [["Bo", 4, 4, 1.0, 2.0], ["Ann", 20, 8, 0.4, 4.0]])
+        self.assertEqual(seen, ["2026-10-11", "2026-11-01"])
+
+    def test_no_data_leaves_the_table_out(self):
+        self.assertEqual(new_starts_html([], []), "")
+
+    def test_html_says_the_dates_and_the_total(self):
+        html = new_starts_html([["Ann", 20, 8, 0.4, 2.0]], ["2026-10-11", "2026-11-01"])
+        self.assertIn("Oct 11 – Nov 7", html)
+        self.assertIn("40%", html)
+        self.assertIn("Total", html)
 
 
 if __name__ == "__main__":
