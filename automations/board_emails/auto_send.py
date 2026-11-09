@@ -23,7 +23,8 @@ THE CHECKS, in order (each one that fails says why, in the thread):
      that one of this email's jobs pulled does NOT hold it (Eve 2026-10-21,
      same rule as the captainships): before TABLEAU_DEADLINE it waits quietly;
      once the extract loads it is rebuilt from the board and goes; still behind
-     at the cutoff, it is rebuilt once with what the board has and goes anyway.
+     at the cutoff (Org 8:00 CT, Country 12:00 CT), it is rebuilt once with what
+     the board has and goes anyway.
      A pull whose export carries no date column judges itself instead — the
      org board's BOX crosstab (section_pull.note_lag, 2026-10-25) — and names
      its board section, so the visual check is told that section is late and
@@ -130,19 +131,24 @@ UPSTREAM_CLEARED = ("what held it earlier cleared — rebuilding the email from 
 # held these emails four days running (10/15-10/18), each one ending in a ✅ by
 # hand. Copied from captainship_drafts.auto_send, not imported (see MODEL).
 TABLEAU_DEADLINE = dt.time(12, 0)       # Central
-TABLEAU_DEADLINE_REBUILD = ("Tableau still behind at 12:00 — rebuilt with the "
-                            "latest numbers it had")
+# THE ORG EMAIL GOES OUT IN THE MORNING, ALWAYS (Eve 2026-11-09: "esto debe salir
+# a la mañana siempre"). It normally leaves ~7:15; a late Just Energy view had it
+# waiting until noon. A real problem still holds it.
+ORG_TABLEAU_DEADLINE = dt.time(8, 0)    # Central
+TABLEAU_DEADLINE_REBUILD = ("Tableau still behind at the cutoff — rebuilt with "
+                            "the latest numbers it had")
 
 
 def _ct_now() -> dt.datetime:
     return dt.datetime.now(wr.CENTRAL).replace(tzinfo=None)
 
 
-def past_tableau_deadline(day: dt.date) -> bool:
-    """An older day (a rerun) is past the cutoff; today, from 12:00 CT."""
+def past_tableau_deadline(day: dt.date,
+                          deadline: dt.time = TABLEAU_DEADLINE) -> bool:
+    """An older day (a rerun) is past the cutoff; today, from `deadline` CT."""
     now = _ct_now()
     return day < now.date() or (day == now.date()
-                                and now.time() >= TABLEAU_DEADLINE)
+                                and now.time() >= deadline)
 
 _OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 STATE_DIR = _OUTPUT_DIR / "state" / "board_autosend"
@@ -174,6 +180,11 @@ class Target:
     # until 9:45 on 10/28, then Eve 2026-10-29 chose a day-behind Verizon (like
     # JE) over a late email — the 14:30 catch-up fills it in.
     wait_for: Optional[Callable[[dt.date], Optional[str]]] = None
+    # Central time past which a late Tableau source stops delaying this email.
+    tableau_deadline: dt.time = TABLEAU_DEADLINE
+    # (view marker, board section) of sources that never delay this email. They
+    # still reach the visual check as late, so their blank/zero days can't hold it.
+    no_wait_sources: Tuple[Tuple[str, str], ...] = ()
 
 
 def _org_images(run_day: dt.date) -> List[Tuple[str, Path]]:
@@ -294,7 +305,12 @@ def _country_totals(run_day: dt.date) -> List[str]:
 
 
 ORG = Target("org", "Org Sales Board", "org_sales_board_email",
-             _org_images, _org_grid, _org_totals)
+             _org_images, _org_grid, _org_totals,
+             tableau_deadline=ORG_TABLEAU_DEADLINE,
+             # Eve 2026-11-09: JE always publishes behind the other campaigns,
+             # so the email never waits for it. A frozen JE feed keeps its own
+             # ticket in #claudecorrections.
+             no_wait_sources=(("justenergyrtl", "Retail JE"),))
 COUNTRY = Target("country", "Country Sales Board", "country-sales-board-email",
                  _country_images, _country_grid, _country_totals,
                  sections=())
@@ -682,7 +698,17 @@ def judge(t: Target, day: dt.date, state: dict, *,
     ok, why = clean()
     if not ok:
         v.blocked.append(f"the day's run is not clean: {why}")
-    late[:] = [f"Tableau not updated: {s}" for s in tableau()]
+    late[:] = []
+    must_wait: List[str] = []
+    for s in tableau():
+        line = f"Tableau not updated: {s}"
+        section = next((sec for mark, sec in t.no_wait_sources
+                        if mark in s.lower()), None)
+        if section is None:
+            must_wait.append(line)
+        elif _SECTION_TAG not in line:
+            line += f" {_SECTION_TAG}{section}]"
+        late.append(line)
 
     try:
         v.new = new_owners(t, day, names())
@@ -701,15 +727,16 @@ def judge(t: Target, day: dt.date, state: dict, *,
         if verbose:
             print(f"  auto-check {t.key}: waiting — {why_wait}", flush=True)
         return v
-    if late:
+    if must_wait:
         # Waits instead of holding: no link, no tag. `held_upstream` makes the
         # pass after Tableau loads rebuild from the fresh board (below).
         state["held_upstream"] = True
-        if not past_tableau_deadline(day):
+        if not past_tableau_deadline(day, t.tableau_deadline):
             v.waiting = True
             if verbose:
                 print(f"  auto-check {t.key}: waiting for Tableau (until "
-                      f"{TABLEAU_DEADLINE:%H:%M} CT) — {'; '.join(late)}",
+                      f"{t.tableau_deadline:%H:%M} CT) — "
+                      f"{'; '.join(must_wait)}",
                       flush=True)
             return v
         if not state.get("upstream_rebuilt"):

@@ -10,7 +10,8 @@ Pins the decisions, not the Slack wording:
     it goes;
   * not built yet = wait quietly; already sent = do nothing;
   * Tableau behind = wait quietly (no link, no tag); when it loads, rebuild and
-    send; still behind at 12:00 CT, rebuild once and send anyway.
+    send; still behind at the cutoff (Org 8:00 CT, Country 12:00 CT), rebuild
+    once and send anyway.
 
     python -m unittest automations.board_emails.test_auto_send
 """
@@ -292,6 +293,76 @@ class AutoSendTest(unittest.TestCase):
         self.assertFalse(self.alert.called)
         st = A.load_state(f.target, THU)
         self.assertEqual(st.get("rebuilds", 0), 0)  # the real rebuild is intact
+
+    def test_org_email_stops_waiting_for_tableau_at_8_am(self):
+        """Eve 2026-11-09: "esto debe salir a la mañana siempre"."""
+        self.assertEqual(A.ORG.tableau_deadline, dt.time(8, 0))
+        self.assertEqual(A.COUNTRY.tableau_deadline, dt.time(12, 0))
+        f = Fake(self.tmp, THU)
+        f.target.tableau_deadline = A.ORG.tableau_deadline
+        self.seed_roster(f)
+        late = ["JE Daily Sales by ICD"]
+        with self._at(THU, 7):
+            self.assertEqual(self.run_once(f, THU, tableau=late), 1)
+            self.assertEqual(f.calls, [])
+        with self._at(THU, 8):
+            self.assertEqual(self.run_once(f, THU, tableau=late), 1)
+            self.assertEqual(f.kinds(), ["rebuild"])
+            f.calls.clear()
+            self.assertEqual(self.run_once(f, THU, tableau=late), 0)
+        self.assertEqual(f.kinds(), ["record", "send"])
+
+    def _org_rules(self, f):
+        f.target.tableau_deadline = A.ORG.tableau_deadline
+        f.target.no_wait_sources = A.ORG.no_wait_sources
+
+    def test_late_je_never_delays_the_org_email(self):
+        """Eve 2026-11-09: JE always publishes behind the other campaigns."""
+        f = Fake(self.tmp, THU)
+        self._org_rules(f)
+        self.seed_roster(f)
+        je = ["JustEnergyRTL-SalesStaffingProductivityWorkbook/WeeklyMetricsbyICD"
+              "/ThisWeek → Daily Sales by ICD (same numbers several days)"]
+        with self._at(THU, 7):
+            self.assertEqual(self.run_once(f, THU, tableau=je), 0)
+        self.assertEqual(f.kinds(), ["record", "send"])
+        self.assertFalse(self.alert.called)
+
+    def test_blank_je_days_cannot_hold_the_org_email(self):
+        f = Fake(self.tmp, THU)
+        self._org_rules(f)
+        self.seed_roster(f)
+        blank_je = lambda new, prior: {"issues": [  # noqa: E731
+            {"section": "Retail JE", "problem": "Friday column all zeros",
+             "severity": "blocker"}]}
+        with self._at(THU, 7):
+            rc = self.run_once(f, THU, visual=blank_je, tableau=[
+                "JustEnergyRTL-SalesStaffingProductivityWorkbook → Daily Sales"])
+        self.assertEqual(rc, 0)
+        self.assertIn("send", f.kinds())
+
+    def test_another_late_source_still_waits_until_the_org_cutoff(self):
+        f = Fake(self.tmp, THU)
+        self._org_rules(f)
+        self.seed_roster(f)
+        with self._at(THU, 7):
+            self.assertEqual(self.run_once(
+                f, THU, tableau=["D2D1-PAGERV4 (data only through 10-06)"]), 1)
+        self.assertEqual(f.calls, [])
+
+    def test_je_clearing_a_morning_wait_rebuilds_once_then_sends(self):
+        """Today's case: a pass already waiting when this rule went live."""
+        f = Fake(self.tmp, THU)
+        self._org_rules(f)
+        self.seed_roster(f)
+        A.save_state(f.target, THU, {"held_upstream": True})
+        je = ["JustEnergyRTL-SalesStaffingProductivityWorkbook → Daily Sales"]
+        with self._at(THU, 9):
+            self.assertEqual(self.run_once(f, THU, tableau=je), 1)
+            self.assertEqual(f.kinds(), ["rebuild"])
+            f.calls.clear()
+            self.assertEqual(self.run_once(f, THU, tableau=je), 0)
+        self.assertEqual(f.kinds(), ["record", "send"])
 
     def test_a_real_problem_still_holds_after_the_noon_rebuild(self):
         f = Fake(self.tmp, THU)

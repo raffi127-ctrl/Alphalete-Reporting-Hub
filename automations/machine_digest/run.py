@@ -581,6 +581,32 @@ def _retired_ids() -> set:
 # added a ticket to close. Its real failures (FAILED / STUCK) still alert.
 _NO_APPROVAL_REMINDER = frozenset({"org-active-headcount-email-approved"})
 
+# Emails that send THEMSELVES (board_emails.auto_send): a ✅ is only wanted on a
+# day the auto-check puts a review post up.
+_AUTO_SEND_APPROVALS = {"sales-board-screenshot-email-approved": "org",
+                        "country-sales-board-email-approved": "country"}
+
+
+def _auto_send_has_no_post(cid: str, day: dt.date) -> bool:
+    """True only when this is a self-sending email with NO review post today,
+    so there is nothing to approve (Eve 2026-11-09). Can't tell -> False: the
+    alert then keeps the "waiting for approval" wording."""
+    key = _AUTO_SEND_APPROVALS.get(cid)
+    if not key:
+        return False
+    try:
+        from automations.board_emails import auto_send as A
+        if not A.is_on(day):
+            return False
+        if key == "org":
+            from automations.org_sales_board import review_gate as G
+            return G._find_post(day) is None
+        from automations.board_emails import boards as B, review_gate as G
+        board = next(b for b in B.BOARDS if b.key == key)
+        return G._find_post(board, day) is None
+    except Exception:  # noqa: BLE001
+        return False
+
 
 def _paused_ids() -> set:
     """Ids the Hub declares STOOD DOWN (day_orchestrator.paused_reports).
@@ -1602,8 +1628,12 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         elif cid.endswith("-approved"):
             if cid in _NO_APPROVAL_REMINDER:
                 continue
-            kind = "WAITING"
-            status = "waiting for approval"
+            if _auto_send_has_no_post(cid, target_date):
+                kind = "AUTO_WAITING"
+                status = "not sent yet"
+            else:
+                kind = "WAITING"
+                status = "waiting for approval"
         try:
             notify.send_standalone_alert(
                 cfg, name=info["name"], report_id=cid, kind=kind,

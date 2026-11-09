@@ -87,6 +87,9 @@ def _waiting_head(text: str) -> Optional[str]:
     mk = _MARK_RE.search(text or "")
     if not mk or not mk.group("key").endswith("-approved"):
         return None
+    # notify's AUTO_WAITING: a self-sending email, nothing to approve.
+    if "no approval needed" in (text or ""):
+        return None
     m = re.search(r"\*([^*]+)\*", text or "")
     if not m:
         return None

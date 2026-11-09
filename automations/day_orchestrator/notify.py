@@ -201,6 +201,15 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             err = ("this phase runs itself the moment the day's review post "
                    "gets its approval checkmark — nothing to fix"
                    + (f" · {when}" if when else ""))
+        elif kind == "AUTO_WAITING":
+            # An email that sends ITSELF and has no review post today: there is
+            # nothing to approve, so "waiting for approval" sent people looking
+            # for a post that does not exist (Eve 2026-11-09).
+            shown = re.sub(r"\s*[—–-]+\s*approved\s*$", "", name,
+                           flags=re.IGNORECASE).strip() or name
+            title = f"*{shown}* — not sent yet, no approval needed"
+            err = ("it sends itself once its checks pass — nothing to fix"
+                   + (f" · {when}" if when else ""))
         elif kind == "NUDGE":
             # A REMINDER, NOT AN INCIDENT (Megan, 2026-09-24). Some cards are a
             # button a person presses — New Starts -> Apex rides the operator's
@@ -229,7 +238,7 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         else:
             title = f":x: *{name}* — didn't run clean on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
-        parent = [f"{'*Status:*' if kind in ('NO_NEW', 'NUDGE', 'NOTHING_DUE') else '*Error:*'} {err}"]
+        parent = [f"{'*Status:*' if kind in ('NO_NEW', 'NUDGE', 'NOTHING_DUE', 'AUTO_WAITING') else '*Error:*'} {err}"]
         # The detail block is built FIRST (it used to be built after the parent
         # post) so the whole incident — parent, in-thread detail, and what a
         # repeat says — goes out in one incident_thread call.
@@ -296,6 +305,15 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                 "_If the approval WAS already given and this is still here an "
                 "hour later, reply in this thread — then the checker itself "
                 "needs a look._",
+            ]
+        elif kind == "AUTO_WAITING":
+            # No @: nobody has anything to do.
+            reply = [
+                "No checkmark needed: there is no review post to approve today.",
+                "This email sends itself once its checks pass. A late Tableau "
+                "source only delays it until its cutoff, then it goes anyway.",
+                "_If a check finds a real problem, a link goes up in "
+                "#revision-emails and the approver gets tagged there._",
             ]
         else:
             claude = (
