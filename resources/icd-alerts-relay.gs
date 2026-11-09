@@ -764,6 +764,8 @@ function _adminCall(body) {
   if (body.office_job_results) return _officeJobResults();
   if (body.office_job_collected) return _officeJobCollected(body.office_job_collected);
   if (body.office_job_log) return _officeJobLog(body.office_job_log);
+  if (body.office_job_checks) return _officeJobChecks();
+  if (body.office_job_checked) return _officeJobChecked(body.office_job_checked);
   if (body.office_settings) {   // Lucy's read of what an admin set (account number, city, state)
     var st = _admSettings(String(body.office_settings.office || '').trim().toLowerCase());
     return {ok: true, appstream: st.appstream, state: st.state, city: st.city};
@@ -980,8 +982,11 @@ function _officeJobEnqueue(j) {
   try {
     var id = Utilities.getUuid();
     var sh = _ojSheet();
+    // 'checking' = held until Lucy 1 has re-read the names on ApplicantStream
+    // (office_job_checked); the office's computer is only ever handed 'queued'.
+    var start = String(j.status || '') === 'checking' ? 'checking' : 'queued';
     sh.appendRow([id, office, kind, mode, JSON.stringify(payload),
-                  new Date(), 'queued', '', '', '', '']);
+                  new Date(), start, '', '', '', '']);
     return {ok: true, job_id: id};
   } finally {
     lock.releaseLock();
@@ -1098,6 +1103,63 @@ function _officeJobCollected(ids) {
   }
 }
 
+// SECOND READER (Megan 2026-11-08): every background-check send waits here
+// until Lucy 1 has re-read that ICD's OWN ApplicantStream account and found
+// each person on it. Lucy 1 asks for the waiting ones, then answers with who
+// it found; nobody it could not find is ever handed to the office computer.
+function _officeJobChecks() {
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  if (!sh) return {ok: true, jobs: []};
+  var rows = sh.getDataRange().getValues(), out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[OJ.STATUS]) !== 'checking') continue;
+    var payload = {};
+    try { payload = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+    out.push({job_id: String(r[OJ.ID]), office: String(r[OJ.OFFICE]).trim().toLowerCase(),
+              kind: String(r[OJ.KIND]), payload: payload,
+              queued_at: r[OJ.QUEUED] instanceof Date ? r[OJ.QUEUED].toISOString() : ''});
+  }
+  return {ok: true, jobs: out};
+}
+
+// {job_id, people: [kept], dropped: [{name, email, why}], error}
+// people left -> 'queued' for the office computer, with ONLY those people.
+// none left, or Lucy couldn't check -> answered as an error; nothing is sent.
+function _officeJobChecked(c) {
+  var id = String(c.job_id || '');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _ojSheet();
+    var rows = sh.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][OJ.ID]) !== id) continue;
+      if (String(rows[i][OJ.STATUS]) !== 'checking') return {ok: true, job: 'not waiting'};
+      var payload = {};
+      try { payload = JSON.parse(String(rows[i][OJ.PAYLOAD] || '{}')); } catch (err) {}
+      var kept = (c.people || []), dropped = (c.dropped || []);
+      payload.dropped = dropped;
+      if (c.error || !kept.length) {
+        var why = c.error ? String(c.error)
+            : "None of them were found on this office's ApplicantStream list, so nothing was sent.";
+        sh.getRange(i + 1, OJ.PAYLOAD + 1).setValue(JSON.stringify(payload));
+        sh.getRange(i + 1, OJ.STATUS + 1).setValue('error');
+        sh.getRange(i + 1, OJ.RESULT + 1, 1, 2).setValues([[
+            JSON.stringify({status: 'error', error: why, dropped: dropped}), new Date()]]);
+        return {ok: true, job: 'stopped'};
+      }
+      payload.people = kept;
+      sh.getRange(i + 1, OJ.PAYLOAD + 1).setValue(JSON.stringify(payload));
+      sh.getRange(i + 1, OJ.STATUS + 1).setValue('queued');
+      return {ok: true, job: 'cleared'};
+    }
+    return {ok: false, error: 'no such job'};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function _officeJobStatus(office, id) {
   if (!id) return {ok: false, error: 'missing job'};
   var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
@@ -1109,7 +1171,9 @@ function _officeJobStatus(office, id) {
     if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office) return {ok: false, error: 'not your job'};
     var res = {};
     try { res = JSON.parse(String(r[OJ.RESULT] || '{}')); } catch (err) {}
-    return {ok: true, job_id: id, status: String(r[OJ.STATUS]),
+    var pl = {};
+    try { pl = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+    return {ok: true, job_id: id, status: String(r[OJ.STATUS]), dropped: pl.dropped || [],
             offered_at: r[OJ.OFFERED] instanceof Date ? r[OJ.OFFERED].toISOString() : '',
             answered: !!r[OJ.RESULT_AT], result: res};
   }
@@ -1152,7 +1216,7 @@ var SETTINGS_TAB = 'Office Settings';
 // 'Onboarding Sheet' is the office's OWN metrics workbook id -- the board
 // lives on an 'Onboarding' tab in it, so each office sees its own people and
 // nobody else's (Megan 2026-11-08: "add a tab to their metrics sheet?").
-var SET_HEAD = ['Office', 'State', 'City', 'Updated By', 'Updated At', 'AppStream', 'Approved Accounts', 'Onboarding Sheet'];
+var SET_HEAD = ['Office', 'State', 'City', 'Updated By', 'Updated At', 'AppStream', 'Approved Accounts', 'Onboarding Sheet', 'Owner'];
 var BOARD_TAB = 'Onboarding';
 var BOARD_HEADER_ROW = 1;
 var BOARD_FIRST_ROW = 2;
@@ -1264,10 +1328,24 @@ function _admSettings(office) {
     if (String(rows[i][0]).trim().toLowerCase() === office) {
       return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || ''),
               appstream: _accounts(rows[i][5]), approved: _accounts(rows[i][6]),
-              sheet: String(rows[i][7] || '').trim()};
+              sheet: String(rows[i][7] || '').trim(), owner: String(rows[i][8] || '').trim()};
     }
   }
-  return {row: -1, state: '', city: '', appstream: '', approved: '', sheet: ''};
+  return {row: -1, state: '', city: '', appstream: '', approved: '', sheet: '', owner: ''};
+}
+
+// Every OTHER office that has this ApplicantStream account approved. One
+// account = one office, always (Megan 2026-11-08: an admin for 2 ICDs must
+// have NO way to send one ICD's applicants through the other's Sterling).
+function _admOtherOwnersOf(acct, office) {
+  var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
+  var rows = sh.getDataRange().getValues(), out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var o = String(rows[i][0]).trim().toLowerCase();
+    if (!o || o === office) continue;
+    if (_accounts(rows[i][6]).split(', ').indexOf(acct) >= 0) out.push(o);
+  }
+  return out;
 }
 
 // One office as the extension sees it.
@@ -1278,7 +1356,7 @@ function _admOffice(sess, office) {
   var set = _admSettings(office);
   return {office: office,
           appstream: set.appstream || (row ? _accounts(row.r[ADM.APPSTREAM]) : ''),
-          approved: set.approved,
+          approved: set.approved, owner: set.owner,
           state: set.state, city: set.city,
           mode: row && String(row.r[ADM.MODE]).trim().toLowerCase() === 'live' ? 'live' : 'dry'};
 }
@@ -1328,6 +1406,11 @@ function _admSend(sess, office, a) {
   if (off.length) {
     return {ok: false, error: 'ApplicantStream account ' + off.join(', ') + " isn't approved for this office, so nothing was sent. Ask Megan to add it."};
   }
+  var shared = acct.split(', ').filter(function (n) { return _admOtherOwnersOf(n, office).length; });
+  if (shared.length) {
+    return {ok: false, error: 'ApplicantStream account ' + shared.join(', ') +
+        ' is approved for more than one office, so nothing was sent. Ask Megan to fix it.'};
+  }
   var people = (a.people || []).filter(function (p) {
     return p && String(p.first_name || '').trim() && String(p.last_name || '').trim() &&
         String(p.email || '').indexOf('@') > 0;
@@ -1336,6 +1419,12 @@ function _admSend(sess, office, a) {
             email: String(p.email).trim()};
   });
   if (!people.length) return {ok: false, error: 'Nobody with a name and email was picked.'};
+  // Before the duplicate check: the admin answers 'is this many right?' first.
+  var usual = _admUsualPerDay(office);
+  if (!a.big_ok && people.length > BIG_FLOOR && (usual === 0 || people.length > BIG_TIMES * usual)) {
+    return {ok: false, needs_big_confirm: true, count: people.length, usual: Math.round(usual),
+            error: 'This is a much bigger send than usual.'};
+  }
   // ALREADY SENT = ASK, NEVER A SILENT SECOND INVITE (Megan 2026-11-06). A bulk
   // upload re-invited an email Sterling had invited two days before, so the
   // admin is shown who was already sent and decides: resend 'all' sends them
@@ -1354,8 +1443,10 @@ function _admSend(sess, office, a) {
     people = people.filter(function (p) { return !sent[p.email.toLowerCase()]; });
     if (!people.length) return {ok: true, skipped_all: true, job_id: ''};
   }
-  return _officeJobEnqueue({office: office, kind: 'bgc_send', mode: o.mode,
+  var source = String(a.source || '') === 'next_week' ? 'next_week' : 'today';
+  return _officeJobEnqueue({office: office, kind: 'bgc_send', mode: o.mode, status: 'checking',
                             payload: {people: people, by: sess.username, appstream: acct,
+                                      source: source, week_monday: String(a.week_monday || ''),
                                       location: {country: 'United States', state: o.state, city: o.city}}});
 }
 
@@ -1517,6 +1608,31 @@ function _admApexWeek(sess, office, a) {
   var o = _admOffice(sess, office);
   return _officeJobEnqueue({office: office, kind: 'apex_week', mode: o.mode,
                             payload: {week_start: week, by: sess.username}});
+}
+
+// VOLUME CHECK (Megan 2026-11-08): a send much bigger than this office's usual
+// needs a second yes. Usual = people actually SENT (not test runs) per day over
+// the last 14 days, counting only days that had a send. Big = more than
+// BIG_TIMES that, and more than BIG_FLOOR people.
+var BIG_TIMES = 3, BIG_FLOOR = 10;
+function _admUsualPerDay(office) {
+  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  if (!sh) return 0;
+  var rows = sh.getDataRange().getValues(), byDay = {};
+  var cutoff = new Date(Date.now() - 14 * 86400000);
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office) continue;
+    if (!(r[OJ.RESULT_AT] instanceof Date) || r[OJ.RESULT_AT] < cutoff) continue;
+    var res = {};
+    try { res = JSON.parse(String(r[OJ.RESULT] || '{}')); } catch (err) {}
+    if (res.status !== 'sent') continue;
+    var d = Utilities.formatDate(r[OJ.RESULT_AT], 'America/Chicago', 'yyyy-MM-dd');
+    byDay[d] = (byDay[d] || 0) + (res.sent || []).length;
+  }
+  var days = Object.keys(byDay);
+  if (!days.length) return 0;
+  return days.reduce(function (t, d) { return t + byDay[d]; }, 0) / days.length;
 }
 
 function _admAlready(office) {

@@ -79,7 +79,15 @@
     const nums = v => (String(v || '').match(/\d+/g) || []);
     const accts = o => nums(o.appstream).filter(n => nums(o.approved).includes(n));
     // No account number on the page = no send: the account IS the guard.
-    const office = offices.find(o => pageOffice && accts(o).includes(pageOffice)) || null;
+    const matches = offices.filter(o => pageOffice && accts(o).includes(pageOffice));
+    // ONE ACCOUNT = ONE OFFICE (Megan 11/08): an admin for two ICDs must have no
+    // way to send through the wrong ICD's Sterling. Two matches = send nothing.
+    if (matches.length > 1) {
+      shell('<p class="lucy-oa-err">ApplicantStream account ' + esc(pageOffice) + ' is set on more than one of your offices (' +
+            esc(matches.map(o => o.office).join(', ')) + '), so nothing can be sent from it. Ask Megan to fix it.</p>');
+      return;
+    }
+    const office = matches[0] || null;
     if (!office) {
       shell('<p class="lucy-oa-err">' + (pageOffice
         ? 'This calendar is ApplicantStream account ' + esc(pageOffice) + ', which isn\'t approved for any of your offices, ' +
@@ -228,7 +236,8 @@
     const status = {};
     ((bg && bg.people) || []).forEach(b => { status[keyName(b.first, b.last)] = b; });
     people.forEach(p => { const b = status[keyName(p.first_name, p.last_name)]; p.status = b ? b.status : ''; p.bgdate = b ? b.date : ''; });
-    render(office, people, already, list, problems, {roster: true, week: week});
+    const iso = monday.getFullYear() + '-' + pad(monday.getMonth() + 1) + '-' + pad(monday.getDate());
+    render(office, people, already, list, problems, {roster: true, week: week, monday: iso});
   }
   // RETENTION DETAILS (p=701) is the source (Megan 11/06): its weekly grid has
   // a "Total New Starts Scheduled" row, and each day's number links to the
@@ -399,15 +408,29 @@
     };
     boxes.forEach(b => b.addEventListener('change', count));
     count();
-    const send = async (picked, resend) => {
+    const send = async (picked, resend, bigOk) => {
       btn.disabled = true;
       btn.textContent = 'Sending to ' + owner() + ' Lucy ECO machine…';
       // Next week's starts are a RE-SEND on purpose: no "already sent?" stop.
       const out = await ask('send', {office: office.office, people: picked,
-                                     resend: R ? 'all' : (resend || ''),
+                                     resend: R ? 'all' : (resend || ''), big_ok: !!bigOk,
+                                     source: R ? 'next_week' : 'today', week_monday: R ? (opts.monday || '') : '',
                                      appstream: Array.from(new Set(picked.map(p => p.acct))).join(', ')});
+      // MUCH BIGGER THAN USUAL (Megan 11/08): a second, separate yes.
+      if (out.needs_big_confirm) {
+        const usual = out.usual ? 'about ' + Math.round(out.count / Math.max(1, out.usual)) + '× this office\'s usual (' +
+          out.usual + ' a day)' : 'more than this office has sent before';
+        result('confirm', '<div class="lucy-oa-confirm-title">⚠️ BIG SEND</div>This is <b>' + out.count +
+          ' people</b> — ' + esc(usual) + '.<br>Please double-check the list before sending.' +
+          '<div class="lucy-oa-choices"><button class="lucy-oa-again lucy-oa-bigyes">Yes, send all ' + out.count + '</button>' +
+          '<button class="lucy-oa-skip lucy-oa-bigno">Cancel</button></div>');
+        panel.querySelector('.lucy-oa-bigyes').onclick = () => send(picked, resend, true);
+        panel.querySelector('.lucy-oa-bigno').onclick = () => { result('wait', 'Nothing sent.'); count(); };
+        count();
+        return;
+      }
       if (out.needs_confirm) {           // already sent before: the admin decides
-        confirmResend(picked, out.duplicates || []);
+        confirmResend(picked, out.duplicates || [], bigOk);
         count();
         return;
       }
@@ -444,7 +467,7 @@
 
     // "Already sent" = ask, never a silent second invite (Megan 11/06: alert
     // the admin, let them resend or not).
-    const confirmResend = (picked, dups) => {
+    const confirmResend = (picked, dups, bigOk) => {
       panel._dups = dups.map(d => (d.email || '').toLowerCase());
       const others = picked.length - dups.length;
       const list = dups.map(d => '<li><b>' + esc(d.name) + '</b> — sent ' + esc(d.sent_on) + '</li>').join('');
@@ -453,10 +476,10 @@
         '<button class="lucy-oa-again">Send again to them too</button>' +
         '<button class="lucy-oa-skip">' + (others ? 'Skip them, send the other ' + others : 'Don\'t send') + '</button>' +
         '</div>');
-      panel.querySelector('.lucy-oa-again').onclick = () => send(picked, 'all');
+      panel.querySelector('.lucy-oa-again').onclick = () => send(picked, 'all', bigOk);
       panel.querySelector('.lucy-oa-skip').onclick = () => {
         if (!others) { result('ok', 'Nothing sent.'); return; }
-        send(picked, 'skip');
+        send(picked, 'skip', bigOk);
       };
     };
 
@@ -464,7 +487,8 @@
     // calendar. Nothing is sent until "Yes, send".
     btn.onclick = () => {
       const picked = boxes.filter(b => b.checked).map(b => people[+b.dataset.i]);
-      const whose = owner().replace(/'s$/, '').replace(/^the ICD$/, 'this office');
+      // Whose Sterling, from OUR record of the office (relay 'Owner'), not the page.
+      const whose = office.owner || owner().replace(/'s$/, '').replace(/^the ICD$/, 'this office');
       result('confirm',
         '<div class="lucy-oa-confirm-title">⚠️ CONFIRM</div>' +
         (R ? 'RESEND <b>' : 'Send <b>') + picked.length + '</b> background check link' + (picked.length === 1 ? '' : 's') +
@@ -533,11 +557,11 @@
     clearInterval(tickTimer);
     const who = owner(), Who = who.replace(/^the/, 'The');
     const started = Date.now();
-    let stage = 1, late = false;           // 1 = waiting for pickup, 2 = working
+    let stage = 0, late = false;           // 0 = Lucy double-checks names, 1 = waiting for pickup, 2 = working
     // ESTIMATE: pickup within 3 min (the machine's check), then ~4 min in
     // Sterling (Raf's live send 11/06 took 4 min end to end). Re-aimed at pickup.
-    const PICKUP_MS = 3 * 60000, WORK_MS = 4 * 60000;
-    let eta = started + PICKUP_MS + WORK_MS;
+    const CHECK_MS = 3 * 60000, PICKUP_MS = 3 * 60000, WORK_MS = 4 * 60000;
+    let eta = started + CHECK_MS + PICKUP_MS + WORK_MS;
     const at = t => new Date(t).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
     const etaText = () => Date.now() < eta
       ? 'Should be done by about <b>' + at(eta) + '</b> (~' + Math.max(1, Math.ceil((eta - Date.now()) / 60000)) + ' min left)'
@@ -556,11 +580,14 @@
         '<div class="lucy-oa-bar"><span style="width:' + pct() + '%"></span></div>' +
         '<ol class="lucy-oa-steps">' +
         '<li class="done">✅ Request sent</li>' +
+        step(0, 'Lucy double-checks every name on ApplicantStream', '(1–5 min)') +
         step(1, esc(Who) + ' Lucy ECO machine picks it up', '(it checks every 3 min)') +
         step(2, 'Signs in to Sterling and uploads the list', '(usually 3–5 min)') +
         step(3, 'Done', '') +
         '</ol>' +
-        (late ? '<div class="lucy-oa-late">⚠️ Not picked up in 20 minutes — is ' + esc(who) + ' Lucy ECO machine on?</div>' : '') +
+        (late ? '<div class="lucy-oa-late">⚠️ ' + (stage === 0
+          ? 'Lucy hasn\'t finished double-checking the names in 20 minutes. Nothing has been sent. Tell Megan.'
+          : 'Not picked up in 20 minutes — is ' + esc(who) + ' Lucy ECO machine on?') + '</div>' : '') +
         '<div class="lucy-oa-stay">🚫 Please don\'t close this page or leave the calendar until it says <b>Done</b>.<br>You can use other tabs or browsers while you wait.</div>');
     };
     draw();
@@ -585,7 +612,13 @@
         if (sendBtn) sendBtn.hidden = true;     // done: no second press by accident
         // Done: the tick list is history -- show only the result.
         if (panel) panel.querySelectorAll('.lucy-oa-row, .lucy-oa-pick, .lucy-oa-done, .lucy-oa-accthead').forEach(el => el.remove());
+        // Names Lucy 1 couldn't find on that ICD's ApplicantStream: never sent.
+        (s.dropped || r.dropped || []).forEach(d => ctx.notSent.push({name: d.name,
+          why: d.why || 'not found on this office\'s ApplicantStream list'}));
+        ctx.asked = (ctx.asked || []).filter(n => !(s.dropped || r.dropped || []).some(d => d.name === n));
         result(r.status === 'sent' || r.status === 'dry_run' ? 'ok' : 'err', summary(r, ctx) + took);
+      } else if (s.status === 'queued' && stage < 1) {
+        stage = 1; eta = Date.now() + PICKUP_MS + WORK_MS; draw();
       } else if (s.status === 'offered') {
         if (stage !== 2) { stage = 2; late = false; eta = Date.now() + WORK_MS; draw(); }
       } else if (!late && Date.now() - started > 20 * 60000) {

@@ -4467,6 +4467,11 @@ def main(argv=None) -> int:
                         mails=lambda: code_answer._confirmation_mails(results=True))
                     code_answer.publish_confirmed(book, send=args.send,
                                                   service=code_answer.STERLING_RESULTS)
+                    # Background-check sends wait for Lucy's ApplicantStream
+                    # double-check before an office computer may send them.
+                    if args.send:
+                        from automations.office_admin import verify_jobs
+                        verify_jobs.maybe_spawn()
                 except Exception as e:  # noqa: BLE001 — never cost the alerts
                     print("could not answer code requests: %s: %s"
                           % (type(e).__name__, str(e)[:100]))

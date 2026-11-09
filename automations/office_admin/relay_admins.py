@@ -132,7 +132,8 @@ def admins() -> List[Dict]:
 
 
 SETTINGS_TAB = "Office Settings"
-SET_HEAD = ["Office", "State", "City", "Updated By", "Updated At", "AppStream", "Approved Accounts"]
+SET_HEAD = ["Office", "State", "City", "Updated By", "Updated At", "AppStream", "Approved Accounts",
+            "Onboarding Sheet", "Owner"]
 
 
 def _set_accounts(office: str, numbers: List[str]) -> int:
@@ -155,7 +156,7 @@ def _set_accounts(office: str, numbers: List[str]) -> int:
     else:
         ws = _retry(ss.add_worksheet, title=SETTINGS_TAB, rows=100, cols=len(SET_HEAD))
     rows = _retry(ws.get_all_values)
-    if not rows or len(rows[0]) < len(SET_HEAD) or rows[0][6:7] != ["Approved Accounts"]:
+    if not rows or len(rows[0]) < len(SET_HEAD) or rows[0][6:7] != ["Approved Accounts"] or rows[0][8:9] != ["Owner"]:
         _retry(ws.update, [SET_HEAD], "A1")
         rows = _retry(ws.get_all_values)
     hit = next((i for i, r in enumerate(rows[1:], start=2) if r and r[0].strip().lower() == office), None)
@@ -164,14 +165,33 @@ def _set_accounts(office: str, numbers: List[str]) -> int:
         print("%s approved: %s" % (office, cur[6] or "(none)"))
         print("%s in use:   %s" % (office, cur[5] or "(none)"))
         return 0
+    # ONE ACCOUNT = ONE OFFICE (Megan 2026-11-08): an admin who works for two
+    # ICDs must have no way to send one ICD's applicants through the other's
+    # Sterling, so a number already approved elsewhere is refused here (and
+    # the relay refuses a send from a number on two offices anyway).
+    taken = {}
+    for r in rows[1:]:
+        r = r + [""] * 9
+        o = r[0].strip().lower()
+        if o and o != office:
+            for n in re.findall(r"\d+", r[6]):
+                taken.setdefault(n, o)
+    clash = [(n, taken[n]) for n in nums if n in taken]
+    if clash:
+        print("refused: " + "; ".join("%s is already approved for %s" % c for c in clash)
+              + " -- take it off that office first", file=sys.stderr)
+        return 2
+    owner = dict(offices_for_hub()).get(office, "")
     approved = ", ".join(nums)
     # Approved = in use: every approved calendar is read into the one list
     # (Megan 2026-11-06). An admin can still take one off in the Lucy icon.
     if hit:
         _retry(ws.update, [[approved, approved]], "F%d:G%d" % (hit, hit))
+        if owner:
+            _retry(ws.update, [[owner]], "I%d" % hit)
     else:
         _retry(ws.append_row, [office, "", "", "megan", dt.datetime.now().isoformat(timespec="seconds"),
-                               approved, approved])
+                               approved, approved, "", owner])
     print("%s approved: %s" % (office, approved))
     return 0
 
