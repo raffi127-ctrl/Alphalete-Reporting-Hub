@@ -24,13 +24,38 @@ def _row(name):
 
 # ------------------------------------------------- only a finished check
 
-def test_a_check_still_in_flight_does_not_tick():
-    """'Sent' and 'Taken, pending' mean it is out, not back. Ticking those
-    reads as done on the board and on the printed sheet."""
+def test_a_check_still_in_flight_shows_where_it_got_to():
+    """Megan, 2026-11-09: "a status could also be Sent but not taken". Somebody
+    chasing needs to tell "nobody sent it" from "it is out and we are waiting"
+    — those are different jobs for different people."""
     boards = {"raf": [_row("Ada Fournier")]}
-    for status in ("Sent", "Taken, pending", "In Review"):
+    for status in ("Sent", "Taken - Pending", "Review"):
         routed, _ = BG.route([Ev("Ada", "Fournier", status)], boards)
-        assert routed == {}, "%s should not tick" % status
+        assert routed == {"raf": {"Ada Fournier": status}}
+
+
+def test_the_furthest_along_status_wins():
+    """The inbox carries every mail in the window, so one person has a Sent
+    AND a Passed. The board should say Passed."""
+    boards = {"raf": [_row("Ada Fournier")]}
+    routed, _ = BG.route([Ev("Ada", "Fournier", "Sent"),
+                          Ev("Ada", "Fournier", "Passed")], boards)
+    assert routed == {"raf": {"Ada Fournier": "Passed"}}
+    routed, _ = BG.route([Ev("Ada", "Fournier", "Passed"),
+                          Ev("Ada", "Fournier", "Sent")], boards)
+    assert routed == {"raf": {"Ada Fournier": "Passed"}}, "order must not matter"
+
+
+def test_not_sent_is_left_blank_so_it_still_counts_as_outstanding():
+    from automations.icd_onboarding import board as B
+    assert B.status_rank("") == 0 and B.status_rank(B.NOT_SENT) == 0
+
+
+def test_a_status_never_goes_backwards():
+    """A late Sent email must not pull somebody back from Passed."""
+    from automations.icd_onboarding import board as B
+    assert B.status_rank("Passed") > B.status_rank("Sent")
+    assert B.status_rank("Sent") > B.status_rank("")
 
 
 def test_every_finished_outcome_ticks_not_just_a_pass():

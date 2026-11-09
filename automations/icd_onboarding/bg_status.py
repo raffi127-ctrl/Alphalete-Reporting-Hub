@@ -32,10 +32,14 @@ from automations.icd_onboarding import board as B
 # The inbox the ICDs forward to. Theirs alone — see the note above.
 INBOX = os.environ.get("ICD_STERLING_INBOX", "lucysterlingreports@gmail.com")
 
-# Only a finished check ticks the box. "Sent" and "Taken, pending" mean the
-# check is in flight, and ticking those would read as done on the board and on
-# the printed sheet. `bg_check_sync.parse` ranks them; these are the ones that
-# mean there is an answer.
+# EVERY status goes on the board, not only the finished ones. Megan,
+# 2026-11-09: "a status could also be Sent but not taken", "or not sent". The
+# cell says where the check has got to, so somebody chasing can tell the
+# difference between "nobody sent it" and "it is out and we are waiting" --
+# which are different jobs for different people.
+#
+# Blank means NOT SENT. It is left blank rather than written, so the printed
+# sheet still counts it as outstanding and the chase list is right.
 DONE_STATUSES = ("Passed", "Failed", "Unperformable", "Complete")
 
 
@@ -81,14 +85,20 @@ def route(events_in: Iterable, boards: Dict[str, List[Dict]]) -> Tuple[Dict, Lis
 
     out: Dict[str, Dict[str, str]] = {}
     ambiguous: List[dict] = []
+    best: Dict[str, int] = {}
     for ev in events_in or ():
-        status = str(getattr(ev, "status", "") or "")
-        if status not in DONE_STATUSES:
-            continue                       # still in flight — not an answer yet
+        status = str(getattr(ev, "status", "") or "").strip()
+        if not status:
+            continue
         name = _name_of(ev)
         offices = where.get(B._fold(name.replace(" ", "")), [])
         if len(offices) == 1:
-            out.setdefault(offices[0], {})[name] = status
+            # The inbox carries every mail in the window, so somebody has a
+            # Sent AND a Passed. The furthest-along one is the status.
+            rank = B.status_rank(status)
+            if rank >= best.get(name, -1):
+                best[name] = rank
+                out.setdefault(offices[0], {})[name] = status
         elif len(offices) > 1:
             ambiguous.append({"name": name, "offices": sorted(set(offices)),
                               "status": status})
@@ -132,9 +142,9 @@ def run(week_start: Optional[dt.date] = None, *, offices: Sequence[str] = (),
 
     total = 0
     for office, people in routed.items():
-        log("  %s: %d finished check(s)" % (office, len(people)))
+        log("  %s: %d check(s) with a status" % (office, len(people)))
         total += F.apply(books[office], week, "sterling",
-                         {n: {"BG Status": True} for n in people},
+                         {n: {"BG Status": s} for n, s in people.items()},
                          dry_run=dry_run, log=log)
     if not routed:
         log("  nothing to tick")
