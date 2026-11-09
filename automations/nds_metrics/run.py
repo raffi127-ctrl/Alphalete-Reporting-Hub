@@ -55,6 +55,66 @@ _BAND_KEY = {"0-30 Day": "0-30", "31-60 Day": "31-60"}
 POSTED = ("posted",)
 DEAD = ("canceled", "cancelled", "disconnected")
 
+# ------------------------------------------------------------ sources ----
+# Carlos 2026-11-08: "there's a handful of stuff that you pull from ... any
+# activation report (Sara or Tableau), depending on where you got the
+# information from. Do this moving forward whenever you post the NDS metrics
+# thread, just so I can quickly remember and know where the info is coming
+# from." Every reply in the thread (and every DM preview) ends with a
+# "Source:" line. SOURCES is each section's usual feed; a builder that picks
+# its feed at run time (order_log and pending_orders fall through SaraPlus ->
+# Tableau) records what it actually used with note_source(), which wins for
+# that run. main() logs one "[nds] source <sid>: ..." line per built section.
+TABLEAU_OL = ("Tableau · NDS-SN (RES-ATT-OOF) Order Log, Owner = Carlos "
+              "Hidalgo, last 60 days")
+SARA_SOH = "SaraPlus · Sales Order History export (alphaletegp dealer)"
+SARA_WIRELESS = "SaraPlus · Wireless Resolution Report (per-line statuses)"
+BOARD_TAB = ("Vantura Master Sales Board · NDS Sales Board tab (SaraPlus "
+             "fills it at 5am)")
+SOURCES: Dict[str, str] = {
+    "day_board": BOARD_TAB + ", yesterday's column",
+    "week_board": BOARD_TAB + ", Monday through yesterday",
+    "knocks_final": ("Ownerville · Disposition by Rep grid, RES AT&T OOF "
+                     "campaign (yesterday's last NDS Knocks Board)"),
+    "revenue_board": TABLEAU_OL + "; priced at ATT-D2D-OOF SOW base comp",
+    "pct_on_board": ("Vantura Master Sales Board · NDS Sales Board tab, "
+                     "% on the Board block"),
+    "team_tree": ("Vantura Master Sales Board · Sales Board tabs (Trainer, "
+                  "Leadership Status) + this week's Roll Call + Daily Update"),
+    "override_board": "Vantura Master Sales Board · team tree + " + TABLEAU_OL,
+    "order_log": TABLEAU_OL,                     # run-time pick overrides
+    "activation_overview": SARA_SOH,
+    "activation_revenue": (SARA_WIRELESS + " + " + SARA_SOH + "; in-footprint "
+                           "off the Tableau order log, double-tier days off "
+                           "Sean's emails, Protect off the SaraPlus order "
+                           "grid; SOW base comp"),
+    "activation_by_rep": TABLEAU_OL,
+    "activation_by_week": SARA_WIRELESS + " + " + SARA_SOH,
+    "rep_tiers": ("Tableau · NDS-SN (RES-ATT-OOF) workbook, 'Order Tiered "
+                  "Bonus - Rep Ranking' view, Owner Name = Carlos Hidalgo"),
+    "top_reps": ("Tableau · NDS-SN (RES-ATT-OOF) workbook, 'Top 100 Reps "
+                 "View' (top 50)"),
+    "pending_orders": SARA_SOH,                  # run-time pick overrides
+    "churn_rates": TABLEAU_OL,
+    "churn_by_rep": TABLEAU_OL,
+}
+_RUN_SOURCES: Dict[str, str] = {}
+
+
+def note_source(sid: str, text: str, log=print) -> None:
+    """A builder says which feed it REALLY used this run (fallback chains)."""
+    _RUN_SOURCES[sid] = text
+    log(f"[nds] source {sid}: {text}")
+
+
+def source_for(sid: str) -> str:
+    return _RUN_SOURCES.get(sid) or SOURCES.get(sid) or "(not recorded)"
+
+
+def caption(sid: str, emoji: str, title: str, suffix: str = "") -> str:
+    """The Slack comment over a section's picture: title line, Source line."""
+    return f"{emoji} *{title}*{suffix}\n_Source: {source_for(sid)}_"
+
 
 # ---------------------------------------------------------------- load ----
 
@@ -719,6 +779,8 @@ def build_order_log(cols, crew, today, log=print) -> Path:
             x, n = NOL._render_order_log("Carlos Hidalgo", header2, rows2,
                                          today, OUT_DIR)
             log(f"[nds] house order log: {n} line(s) -> {Path(x).name}")
+            note_source("order_log", TABLEAU_OL + " (house order-log format)",
+                        log)
             return Path(x)
         log("[nds] house order log: no rows for Carlos — falling back")
     except Exception as e:  # noqa: BLE001
@@ -730,8 +792,10 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     # SOH + wireless per-line scrape with the activation-day tracker.
     try:
         from automations.sp_order_log.run import build_artifacts_nds
-        return build_artifacts_nds(out_dir=OUT_DIR, today=today,
+        xlsx = build_artifacts_nds(out_dir=OUT_DIR, today=today,
                                    log=log)["xlsx"]
+        note_source("order_log", SARA_SOH + " + " + SARA_WIRELESS, log)
+        return xlsx
     except Exception as e:  # noqa: BLE001 — fall through to the plainer
         log(f"[nds] identical-format log failed ({type(e).__name__}: "
             f"{str(e)[:140]}) — falling back")
@@ -740,9 +804,11 @@ def build_order_log(cols, crew, today, log=print) -> Path:
     if wcache:
         orders, wlines = wireless_pull.parse(wcache.read_bytes(), log=log)
         if wlines:
+            note_source("order_log", SARA_WIRELESS, log)
             return order_xlsx.build(orders, wlines, today, OUT_DIR, log=log)
     soh = load_soh(log=log)
     if soh:
+        note_source("order_log", SARA_SOH, log)
         return build_order_log_soh(soh[0], soh[1], today, soh[2], log=log)
     import openpyxl
     from openpyxl.styles import Font, PatternFill
@@ -797,6 +863,7 @@ def build_order_log(cols, crew, today, log=print) -> Path:
         today.strftime("%m-%d-%Y"))
     wb.save(out)
     log(f"[nds] order log workbook: {len(rows)} line(s)")
+    note_source("order_log", TABLEAU_OL, log)
     return out
 
 
@@ -872,6 +939,7 @@ def build_pending_png(cols, crew, today, log=print):
     SaraPlus relay first; Tableau fallback."""
     soh = load_soh(log=log)
     if soh:
+        note_source("pending_orders", SARA_SOH, log)
         return build_pending_soh(soh[0], soh[1], today, soh[2], log=log)
     from automations.box_order_log import pending_png
     from automations.box_order_log import pending as bp
@@ -920,6 +988,7 @@ def build_pending_png(cols, crew, today, log=print):
     out = OUT_DIR / "nds_pending_orders.png"
     pending_png.render(work, out)
     log(f"[nds] pending orders: {n} line(s)")
+    note_source("pending_orders", TABLEAU_OL, log)
     return out
 
 
@@ -1632,6 +1701,9 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         contents = "\n".join(f"{emoji} {title}"
                              for _id, emoji, title, _fn in SECTIONS
                              if _id not in HELD_FROM_THREAD)
+        contents += ("\n_Each post ends with a Source line: where its "
+                     "numbers came from (Tableau, SaraPlus or the Vantura "
+                     "board)._")
         client.chat_postMessage(channel=CHANNEL[1], thread_ts=ts,
                                 text="In this thread:\n" + contents)
         state = {"ts": ts, "posted": []}
@@ -1647,7 +1719,7 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         paths = list(path) if isinstance(path, (list, tuple)) else [path]
         client.files_upload_v2(
             channel=CHANNEL[1], thread_ts=ts,
-            initial_comment=f"{emoji} *{title}*",
+            initial_comment=caption(sid, emoji, title),
             file_uploads=[{"file": str(pp), "filename": Path(pp).name}
                           for pp in paths])
         if sid not in state["posted"]:
@@ -1739,13 +1811,14 @@ def dm_previews(artifacts, user, log=print) -> None:
             if len(users) > 1:
                 res = smp.dm_users_with_file(
                     Path(pp), users=users, file_name=Path(pp).name,
-                    comment=f"{emoji} *{title}* — {stamp}")
+                    comment=caption(sid, emoji, title, f" — {stamp}"))
                 log(f"[nds] sent {sid} to {len(users)} people ({res.get('mode')})")
             else:
                 smp.dm_user_with_file(
                     Path(pp), user=users[0], file_name=Path(pp).name,
-                    comment=f"{emoji} *{title}* — NDS Metrics PREVIEW (crew "
-                            "only, not posted).")
+                    comment=caption(sid, emoji, title,
+                                    " — NDS Metrics PREVIEW (crew only, "
+                                    "not posted)."))
                 log(f"[nds] DM'd {sid}")
 
 
@@ -1806,6 +1879,8 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — one board never sinks the rest
             print(f"[nds] {sid} FAILED: {type(e).__name__}: {e}")
     print(f"[nds] built: {sorted(artifacts)}")
+    for sid in sorted(artifacts):
+        print(f"[nds] source {sid}: {source_for(sid)}")
     if a.dm and a.post:
         print("[nds] --dm overrides --post — previews only, nothing posted")
         a.post = False
