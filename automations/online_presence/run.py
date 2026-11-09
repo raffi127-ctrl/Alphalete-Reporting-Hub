@@ -41,11 +41,14 @@ def run_office(p: offices.Presence, *, live: bool,
         acts = watch.collect(p, answers or [], _client(), dry=dry) if answers else []
         chk = watch.ensure_daily_check(p, live=not dry)
         out["office computer"] = acts + ([chk] if chk else [])
-        try:
-            from automations.online_presence import reels_flow
-            out["reel"] = reels_flow.step(p, _client(), live=not dry)
-        except Exception as e:                   # a reel must never stop photos/reviews
-            out["reel"] = [{"action": "reel_failed", "error": f"{type(e).__name__}: {str(e)[:120]}"}]
+        # Weekly reels (reels_flow.py) are PARKED (Megan 2026-11-09: "we don't
+        # need to worry about posting reels right now"). The code + tests stay;
+        # turning them on = calling reels_flow.step here again, plus
+        # imageio-ffmpeg on Lucy 3 and an agent release for video posting.
+    # Monthly blog + quarterly press-release drafts (content.py) are PARKED
+    # too (Megan 2026-11-09: "hold off on the blog and press releases for
+    # right now"). Turning them on = calling content.step(p, client, live=...)
+    # here.
     if p.reviews:
         # The ALERT first (seconds), then the reply drafts (Claude, slower):
         # a bad review is in front of the office before its draft is written.
