@@ -708,10 +708,26 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
             state["week_at"] = today.isoformat()
             _save(state)
     if _week_monday_due(state, now):
-        # Monday morning: last week's Mon–Sat board as a reply in today's NDS
-        # Metrics thread (Carlos 2026-11-02). Slack only; marked on a real post.
+        # Monday morning, into today's NDS Metrics thread (Slack only): the
+        # week BEFORE last's Mon–Sat board, last week's Mon–Sat board (Carlos
+        # 2026-11-02), then the week-over-week board (Carlos 2026-11-09:
+        # "last Monday through Saturday knocks, and the weeks prior ... so we
+        # can compare week over week"). Each post dedupes by title inside the
+        # thread. Marked done on a real post of last week's board; a failed
+        # extra board is logged, never retried that day.
         last_sat = today - dt.timedelta(days=2)
+        prev_sat = last_sat - dt.timedelta(days=7)
+        rc_prev = weekly_board(prev_sat, send=send, thread_prefix=C.WEEK_MONDAY_THREAD)
+        if rc_prev:
+            _log("monday: the week-before board (%s) did not post (rc %s)" % (prev_sat, rc_prev))
         rc = weekly_board(last_sat, send=send, thread_prefix=C.WEEK_MONDAY_THREAD)
+        try:
+            from automations.nds_oof import week_compare as WC
+            rc_cmp = WC.post(last_sat, thread_prefix=C.WEEK_MONDAY_THREAD, send=send)
+            if rc_cmp:
+                _log("monday: the week-over-week board did not post (rc %s)" % rc_cmp)
+        except Exception as e:  # noqa: BLE001 -- the two weekly boards stand on their own
+            _log("monday: week-over-week board failed (%s: %s)" % (type(e).__name__, e))
         if send and rc == 0:
             state["week_monday_at"] = today.isoformat()
             _save(state)
