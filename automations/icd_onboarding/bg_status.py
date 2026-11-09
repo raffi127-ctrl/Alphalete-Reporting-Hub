@@ -79,11 +79,17 @@ def _name_of(ev) -> str:
 
 
 def office_by_address(book=None) -> Dict[str, str]:
-    """{forwarding address: office key}, off the Sterling Code Mail tab.
+    """{forwarding address: office key}, off the Sterling RESULTS Mail tab.
 
     Written by the thing that sets an ICD's forward up, so there is no second
     list to keep in step. An address nobody has recorded simply is not here,
     and routing falls back to the board.
+
+    The RESULTS tab, not the codes one: `sterling_forward` runs two separate
+    forwards to two separate inboxes — codes to the reporting inbox, results to
+    lucysterlingreports@gmail.com — and files them under different services.
+    An office can have done one and not the other, so reading the codes tab
+    would claim a result forward that does not exist.
     """
     from automations.icd_alerts import code_answer as CA
 
@@ -94,7 +100,8 @@ def office_by_address(book=None) -> Dict[str, str]:
             book = open_by_key(CA.BOOK_ID) if hasattr(CA, "BOOK_ID") else None
         if book is None:
             return out
-        ws = book.worksheet(CA.STERLING_MAIL_TAB)
+        tab = CA.SERVICES[CA.STERLING_RESULTS]["tab"]
+        ws = book.worksheet(tab)
         grid = ws.get_all_values()
     except Exception:          # noqa: BLE001 — no tab yet is not an error
         return out

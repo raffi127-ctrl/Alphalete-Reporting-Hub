@@ -151,3 +151,21 @@ def test_with_no_address_and_two_boards_it_still_refuses_to_guess():
     boards = {"raf": [_row("Ada Fournier")], "omar": [_row("Ada Fournier")]}
     routed, amb = BG.route([FwdEv("Ada", "Fournier", "Passed", "")], boards, {})
     assert routed == {} and amb
+
+
+def test_the_address_map_comes_from_the_RESULTS_tab_not_the_codes_one():
+    """sterling_forward runs TWO forwards to two inboxes — codes to the
+    reporting inbox, results to lucysterlingreports. An office can have done
+    one and not the other, so reading the codes tab would claim a results
+    forward that does not exist."""
+    import inspect
+    from automations.icd_alerts import code_answer as CA
+    src = inspect.getsource(BG.office_by_address)
+    assert "STERLING_RESULTS" in src
+    assert "STERLING_MAIL_TAB" not in src
+    assert CA.SERVICES[CA.STERLING_RESULTS]["tab"] == "Sterling Results Mail"
+
+
+def test_the_results_inbox_matches_the_one_the_installer_sets_up():
+    from automations.icd_alerts import sterling_forward as SF
+    assert BG.INBOX == SF.RESULTS_INBOX
