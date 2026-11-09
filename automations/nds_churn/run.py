@@ -195,7 +195,7 @@ def main(argv=None) -> int:
     log = print
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    from automations.recruiting_report.fill import worksheet_ci
+    from automations.recruiting_report.fill import _retry, worksheet_ci
     from automations.vantura_churn import fill as VF
 
     if a.setup:
@@ -274,11 +274,24 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 -- never block the daily write
             log(f"  ⚠ {step.__name__} skipped: {e}")
     VF.update_churn_tab(ws, summary["base"], helper, log=log)
-    for b in C.BUCKETS:                       # the writer logs rate:.1%
-        if office[b]["rate"] is None:
-            office[b]["rate"] = 0.0
-            log(f"  ⚠ no {b} sales yet — office rate shown as 0.0%")
+    empty = [b for b in C.BUCKETS if office[b]["rate"] is None]
+    for b in empty:                           # the writer logs rate:.1%
+        office[b]["rate"] = 0.0
     VF.update_activation_rates(ws, office, reps, log=log)
+    if empty:
+        # A bucket with no sales is blank, not 0.0% (NDS started 10/19, so
+        # 31-60 has nothing to rate until mid-November).
+        cells = {"0-30": "E5", "31-60": "F5"}
+        _retry(lambda: ws.batch_update([{"range": cells[b], "values": [[""]]}
+                                        for b in empty],
+                                       value_input_option="USER_ENTERED"))
+        _retry(lambda: ws.spreadsheet.batch_update({"requests": [{"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 4, "endRowIndex": 5,
+                      "startColumnIndex": 4 + C.BUCKETS.index(b),
+                      "endColumnIndex": 5 + C.BUCKETS.index(b)},
+            "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 1, "blue": 1}}},
+            "fields": "userEnteredFormat.backgroundColor"}} for b in empty]}))
+        log(f"  ✓ no sales yet in {', '.join(empty)} — cell left blank")
     S.write_tier_tables(ws, ts, log=log)
     S.write_status(ws, status, log=log)
     if a.dm:
