@@ -40,10 +40,7 @@ ASK_ADDRESS = ("Lucy can type Sterling's login codes for you, so your office "
                "computer can send background checks by itself, and show your "
                "admin who has passed. Only Sterling's emails get forwarded, to "
                "Lucy's own Sterling inbox. The rest of your inbox stays private.\n\n"
-               "Which Gmail do your Sterling emails LAND in? If they go to one "
-               "email and get forwarded on to a reception inbox, pick the inbox "
-               "they end up in -- that's where the filter goes.\n\n"
-               "Is it %s?")
+               "Which Gmail are you forwarding from? Is it %s?")
 ADD_FORWARD = (
     "First, let's let Gmail forward to %s.\n\n"
     "Gmail just opened. Please make sure you're in the %s account (picture at "
@@ -170,7 +167,7 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
         if pick == F.LATER:
             return "skipped for now"
         address = guess if pick == F.YES else ask.text(
-            "The Gmail your Sterling emails land in (where you'll add the filter):").strip()
+            "The Gmail you're forwarding from:").strip()
         # A pasted link brings "mailto:" with it (Cody 2026-11-09).
         address = address.replace("mailto:", "").strip().strip("<>").strip()
         if "@" not in address:
