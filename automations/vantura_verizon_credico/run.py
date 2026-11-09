@@ -354,6 +354,24 @@ def repost_boards(log=_log) -> int:
     return r.returncode
 
 
+def _record_delivery(note: str, *, real: bool) -> None:
+    """Proof of delivery for shared/delivery_check: without it a clean run can't
+    close its own ticket ("ran clean, but nothing can confirm it DELIVERED",
+    2026-11-07). Only a real pass over Credico's file earns it -- a plan, a local
+    --sv file, a missing file or a stale one delivered nothing. Never raises:
+    the board is already written by the time this runs."""
+    if not real:
+        return
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest("vantura_verizon_credico",
+                                    succeeded=["verizon-board"], note=note)
+        _log("[vz] manifest: " + note)
+    except Exception as e:  # noqa: BLE001
+        _log("[vz] couldn't write the run manifest (%s: %s) -- the board is "
+             "written, but a failure ticket won't close itself" % (type(e).__name__, e))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="vantura_verizon_credico")
     ap.add_argument("--sv", type=Path, default=None, help="local Sales Verification xlsx")
@@ -397,14 +415,17 @@ def main(argv=None) -> int:
         _log("  %-28s %-5s %-8s -> %s%s" % (lbl[:28], a1, old, new, note))
     for p in problems:
         _log("  ! " + p)
+    real = bool(a.fill and a.yes and not a.plan and not a.sv)
     if not items:
         _log("[vz] board already matches Credico")
+        _record_delivery("board already matches Credico (through %s)" % sv.through, real=real)
     elif a.fill and a.yes and not a.plan:
         n = apply(ws, items)
         _log("[vz] wrote %d cell(s) on '%s'" % (n, ws.title))
         if a.repost and n and repost_boards(log=_log):
             print("=== done ===", flush=True)
             return 2
+        _record_delivery("wrote %d cell(s) from Credico (through %s)" % (n, sv.through), real=real)
     else:
         _log("[vz] PLAN ONLY -- %d cell(s) would change (--fill --yes to write)" % len(items))
     print("=== done ===", flush=True)

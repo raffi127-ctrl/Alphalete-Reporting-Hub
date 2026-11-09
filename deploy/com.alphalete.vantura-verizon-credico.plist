@@ -10,7 +10,9 @@
          yesterday) reaches the Hub inbox ~10:45; the pass sets every matched rep's
          day cells on the Vantura 'Verizon Sales Board' to Credico's valid lines and
          fills column Q 'Approved'. The 12:40 pass is the retry for a late email;
-         both are idempotent (only changed cells are written). Carlos 2026-11-07. -->
+         both are idempotent (only changed cells are written). Carlos 2026-11-07.
+         SUNDAY 2:40pm too: Sunday's file lands ~2:10pm, after both passes
+         (Weekday 0 = Sunday, 2026-11-09). -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -27,6 +29,7 @@
     <array>
         <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>10</integer></dict>
         <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>40</integer></dict>
     </array>
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/vantura-verizon-credico.launchd.out.log</string>

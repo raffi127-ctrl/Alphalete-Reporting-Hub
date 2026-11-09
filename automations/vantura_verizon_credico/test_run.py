@@ -202,6 +202,36 @@ class Apply(unittest.TestCase):
 
 
 
+class Delivery(unittest.TestCase):
+    """A real pass leaves the proof that closes a ticket; nothing else does."""
+
+    def _record(self, **kw):
+        from unittest import mock
+        from automations.shared import run_manifest
+        with mock.patch.object(run_manifest, "write_manifest") as w:
+            R._record_delivery("note", **kw)
+        return w
+
+    def test_real_pass_writes_manifest(self):
+        w = self._record(real=True)
+        self.assertEqual(w.call_args[0][0], "vantura_verizon_credico")
+        self.assertEqual(w.call_args[1]["succeeded"], ["verizon-board"])
+
+    def test_plan_or_local_file_writes_nothing(self):
+        self.assertFalse(self._record(real=False).called)
+
+    def test_missing_file_is_no_proof(self):
+        from unittest import mock
+        from automations.shared import run_manifest
+        from automations.verizon_office import offices as OF
+        office = mock.Mock(office="High Value Acquisitions, Inc.")
+        with mock.patch.object(OF, "get", return_value=office), \
+                mock.patch.object(R, "fetch", return_value=(None, "")), \
+                mock.patch.object(run_manifest, "write_manifest") as w:
+            self.assertEqual(R.main(["--fill", "--yes"]), 0)
+        self.assertFalse(w.called)
+
+
 class FallbackInbox(unittest.TestCase):
     def test_newest_matching_attachment_wins(self):
         import email.mime.multipart, email.mime.base, email.mime.text, tempfile, pathlib
