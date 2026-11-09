@@ -1,41 +1,33 @@
-"""Every NDS Metrics section names where its numbers came from (Carlos
-2026-11-08: "any activation report (Sara or Tableau), depending on where you
-got the information from ... so I can quickly remember")."""
+"""The four activation reports say 'Source: Sara' or 'Source: Tableau' under
+their title; nothing else in the NDS Metrics thread carries a Source line
+(Carlos 2026-11-09: "I only want it on the activation reports. You can make
+it as simple as 'Source: Sara' or 'Source: Tableau'")."""
 import unittest
 
 from automations.nds_metrics import run as R
 
-FEEDS = ("Tableau", "SaraPlus", "Vantura Master Sales Board", "Ownerville")
+ACTIVATION = {"activation_overview", "activation_revenue",
+              "activation_by_rep", "activation_by_week"}
 
 
 class Sources(unittest.TestCase):
-    def setUp(self):
-        R._RUN_SOURCES.clear()
-
-    def tearDown(self):
-        R._RUN_SOURCES.clear()
-
-    def test_every_section_names_a_feed(self):
+    def test_only_the_activation_reports_and_one_word(self):
+        self.assertEqual(set(R.SOURCES), ACTIVATION)
         for sid, _emoji, _title, _fn in R.SECTIONS:
-            src = R.source_for(sid)
-            self.assertTrue(R.SOURCES.get(sid), sid)
-            self.assertIn(src.split(" ·")[0], FEEDS, sid)
+            if sid in ACTIVATION:
+                self.assertIn(R.source_for(sid), ("Sara", "Tableau"), sid)
+            else:
+                self.assertIsNone(R.source_for(sid), sid)
 
-    def test_run_time_pick_beats_the_default(self):
-        self.assertEqual(R.source_for("order_log"), R.TABLEAU_OL)
-        R.note_source("order_log", R.SARA_SOH, log=lambda *_: None)
-        self.assertEqual(R.source_for("order_log"), R.SARA_SOH)
-
-    def test_caption_carries_the_source(self):
-        cap = R.caption("churn_rates", "x", "NDS Churn Rates")
-        self.assertEqual(cap.splitlines(),
-                         ["x *NDS Churn Rates*",
-                          f"_Source: {R.TABLEAU_OL}_"])
-        pre = R.caption("top_reps", "y", "NDS Top 50 Reps", " — PREVIEW")
-        self.assertTrue(pre.startswith("y *NDS Top 50 Reps* — PREVIEW\n"))
-
-    def test_unknown_section_is_honest(self):
-        self.assertEqual(R.source_for("nope"), "(not recorded)")
+    def test_caption_shapes(self):
+        self.assertEqual(
+            R.caption("activation_by_rep", "x", "NDS Activation Rate by Rep"),
+            "x *NDS Activation Rate by Rep*\nSource: Tableau")
+        self.assertEqual(
+            R.caption("activation_revenue", "y", "T", " — PREVIEW"),
+            "y *T* — PREVIEW\nSource: Sara")
+        self.assertEqual(R.caption("churn_rates", "z", "NDS Churn Rates"),
+                         "z *NDS Churn Rates*")
 
 
 if __name__ == "__main__":
