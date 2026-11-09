@@ -80,6 +80,8 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true",
                     help="post for real, for offices whose row says live")
     a = ap.parse_args(argv)
+    import time as _time
+    started = _time.monotonic()
 
     allrows = offices.load()
     if a.office:
@@ -169,6 +171,14 @@ def main(argv=None) -> int:
     if read:
         from automations.online_presence import relay
         relay.mark_read(read)
+    # How long the whole pass took (timing.py): logged every time, and a
+    # once-a-day heads-up past 5 minutes -- the "does LucyECO Social need its
+    # own Lucy?" number. Only the full scheduled pass counts.
+    if not a.office:
+        from automations.online_presence import timing
+        took = _time.monotonic() - started
+        timing.record("pass", took, offices=sum(1 for p in todo if p.is_live), live=a.live)
+        print(f"pass took {timing.fmt(took)}")
     print("=== done ===")
     return 1 if failed else 0
 
