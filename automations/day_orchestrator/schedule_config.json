@@ -17252,6 +17252,28 @@
    "verify": null,
    "timeout_minutes": 5,
    "machine": "Lucy 3"
+  },
+  "install_lucyeco_social_weekly_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.lucyeco-social-weekly on LUCY 3 (Fridays 12:00 noon CT; deploy/lucyeco_social_weekly.sh -> python -m automations.online_presence.weekly_card --live). Each LIVE LucyECO Social office's Brand Health card posted in its own room + a thread of what doesn't match its sign-up (Megan 2026-11-08: weekly, Friday noon). `lucy rerun install_lucyeco_social_weekly_agent --machine \"Lucy 3\"` after `lucy update`.",
+   "display_name": "Install LucyECO Social weekly card (Fri noon)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lucyeco-social-weekly"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 3"
   }
  },
  "read_only_standalone": {

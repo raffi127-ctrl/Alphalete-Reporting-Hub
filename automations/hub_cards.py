@@ -7761,6 +7761,56 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "lucyeco-social-weekly",
+        "name": "LucyECO Social weekly card",
+        "creator": "Megan",
+        "emoji": "🩺",
+        "color": "#8B5CF6",
+        "category": "📸 Social",
+        "description": "Every live LucyECO Social office's Brand Health card, posted in its own Slack room Fridays at noon, with a thread of anything online that doesn't match the office's sign-up.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Fridays at **noon CST** on Lucy 3, for each **live** office:\n"
+            "**•** Builds its **Brand Health card**: Google reviews, where it "
+            "shows up in search, Reddit mentions, its website, and a design "
+            "review of the site.\n"
+            "**•** Posts the card in the office's **own room**.\n"
+            "**•** Checks Google and their website against **what they told us "
+            "on sign-up** (address, phone, website, social links) and lists "
+            "anything that doesn't match in the thread.\n\n"
+            "GOOD TO KNOW\n"
+            "**•** **Indeed and Glassdoor are check-by-hand lines**: both block "
+            "Lucy, and she doesn't get around that.\n"
+            "**•** Bad reviews don't wait for Friday: they alert within ~10 "
+            "minutes (the LucyECO Social card)."
+        ),
+        "assignees": ["Lucy 3"],
+        "run_machine": "Lucy 3",
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "time": "12:00 PM",
+            "time_label": "Fridays 12 PM CST",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Weekly cards posted in every live office's room.",
+            "message_failed": "❌ A card failed. Open the log (output/logs/lucyeco-social-weekly-<date>.log on Lucy 3); the other offices still got theirs.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Build and post every live office's card now.",
+                "module": "automations.online_presence.weekly_card",
+                "args_fn": lambda: ["--live"],
+            },
+        ],
+    },
+    {
         "id": "vantura-payroll",
         "name": "Vantura Weekly Payroll (prep)",
         "creator": "Carlos",

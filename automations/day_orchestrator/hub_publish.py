@@ -323,6 +323,7 @@ _HUB_CARD = {
     "brand_audit": "brand-health-audit",
     "social_inbox": "social-media-posting",
     "lucyeco_social": "lucyeco-social",           # deploy/lucyeco_social_rooms.sh (Lucy 3, 10 min)
+    "lucyeco_social_weekly": "lucyeco-social-weekly",  # deploy/lucyeco_social_weekly.sh (Lucy 3, Fri noon)
     "alphalete_production": "alphalete-production",
     "tableau_screenshots": "tableau-screenshots",
     # The ~7am Box catch-up is its own card: it runs hours after the morning
