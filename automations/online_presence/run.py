@@ -83,6 +83,8 @@ def main(argv=None) -> int:
     # the next time this runs, whether or not it has an office row yet.
     try:
         from automations.online_presence import rooms
+        for pg in rooms.ping_new(live=a.live):
+            print(f"[sign-up] {pg['business']}: {pg['action']} in the alerts channel")
         for r in rooms.run(live=a.live):
             print(f"[room] {r.get('business')}: {r['action']} #{r.get('channel', '')}"
                   + (" — invite by hand: " + ", ".join(r["missed"]) if r.get("missed") else ""))
@@ -103,6 +105,11 @@ def main(argv=None) -> int:
 
     failed = 0
     for p in todo:
+        # A LIVE pass is for LIVE offices only. A dry office's dry pass still
+        # drafts captions and replies with Claude, which costs money and does
+        # nothing every 10 minutes -- run those by hand with no --live.
+        if a.live and not p.is_live:
+            continue
         probs = p.problems()
         if probs:
             print(f"[{p.key}] skipped — {'; '.join(probs)}")

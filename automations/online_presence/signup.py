@@ -38,7 +38,8 @@ SOCIAL_FIELDS = (("Instagram Link", "instagram.com", "Instagram"),
 HEADER = ["Submitted At", "Status", "Owner", "Owner Email", "Business Name",
           "Address", "Phone", "Website", "Google Listing Link", "Indeed Link",
           "Glassdoor Link", "Pages", "Approvers", "Complaints Email", "Timezone",
-          "Notes"] + [f for f, _, _ in SOCIAL_FIELDS] + ["Slack Room", "Slack Channel"]
+          "Notes"] + [f for f, _, _ in SOCIAL_FIELDS] + ["Slack Room", "Slack Channel",
+                                                         "Pinged At"]
 PAGES = ("Instagram", "Facebook", "Google", "LinkedIn", "X")
 _LOCAL = Path(__file__).resolve().parents[2] / "output" / "lucyeco_social_signups_local.json"
 _CLIENT = None
@@ -131,21 +132,47 @@ def _tab(create: bool = True):
             return None                  # readers never make the tab
         tab = book.add_worksheet(title=TAB, rows=200, cols=len(HEADER))
         tab.append_row(HEADER)
+        return tab
+    if create:                           # a reader (a dry pass) never writes
+        _ensure_header(tab)
     return tab
+
+
+def _ensure_header(tab) -> None:
+    """Add any column HEADER has gained since the tab was made, at the END.
+    Never reorders or renames (someone may be reading the tab); without this
+    a new column's values land under no header at all."""
+    try:
+        head = tab.row_values(1)
+        missing = [h for h in HEADER if h not in head]
+        if missing:
+            tab.update(range_name=f"{_col(len(head) + 1)}1", values=[missing],
+                       value_input_option="RAW")
+    except Exception:
+        pass
+
+
+def _col(n: int) -> str:
+    out = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        out = chr(65 + r) + out
+    return out
 
 
 def submit(a: Dict) -> bool:
     """Save one sign-up. True = in the workbook; False = kept as a local draft."""
     a = dict(a, **{"Submitted At": dt.datetime.now().isoformat(timespec="seconds"),
                    "Status": "PENDING"})
-    row = [", ".join(a[h]) if isinstance(a.get(h), (list, tuple)) else str(a.get(h) or "")
-           for h in HEADER]
     try:
         if os.environ.get("LUCYECO_SOCIAL_LOCAL_ONLY"):
             raise RuntimeError("local only")     # testing: never the real workbook
-        _tab().append_row(row, value_input_option="RAW")
+        tab = _tab()
+        head = tab.row_values(1) or HEADER       # write BY NAME, in the tab's own order
+        tab.append_row([_cell(a.get(h)) for h in head], value_input_option="RAW")
         return True
     except Exception:
+        row = [_cell(a.get(h)) for h in HEADER]
         rows = []
         try:
             rows = json.loads(_LOCAL.read_text())
@@ -155,6 +182,10 @@ def submit(a: Dict) -> bool:
         _LOCAL.parent.mkdir(parents=True, exist_ok=True)
         _LOCAL.write_text(json.dumps(rows, indent=2))
         return False
+
+
+def _cell(v) -> str:
+    return ", ".join(v) if isinstance(v, (list, tuple)) else str(v or "")
 
 
 def find(business_name: str) -> Dict | None:

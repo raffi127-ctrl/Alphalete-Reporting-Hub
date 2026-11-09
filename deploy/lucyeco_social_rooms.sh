@@ -1,10 +1,11 @@
 #!/bin/bash
-# LucyECO Social rooms tick: makes the private Slack room for any office whose
-# LucyECO Social sign-up said "No, please create one for me"
-# (#<company-name>-lucyeco-social; Megan, Eve, the ICD, Lucy, the Lucy app and
-# @hubposter invited; the Channel ID written back onto the sign-up row).
-# Runs on Lucy 3 via launchd (com.alphalete.lucyeco-social-rooms) every 10
-# minutes, 7am-9pm only. A quiet no-op when nobody is waiting for a room.
+# LucyECO Social tick: the whole online-presence pass, on Lucy 3 via launchd
+# (com.alphalete.lucyeco-social-rooms) every 10 minutes, 7am-9pm only.
+#   1. new sign-ups announced in the alerts channel (#alphaletemarketingbrandhealth)
+#   2. a private #<company-name>-lucyeco-social room for anyone who asked
+#   3. every LIVE office: what its computer answered (posted / disconnected),
+#      the daily "pages still connected?" check, review replies, photo posting
+# Dry offices are skipped (run those by hand). A quiet pass when nothing's waiting.
 #
 #   bash deploy/lucyeco_social_rooms.sh --dry-run   # says what it would make
 #   bash deploy/lucyeco_social_rooms.sh             # LIVE, the default
@@ -35,7 +36,19 @@ export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
 LOG_FILE="$LOG_DIR/lucyeco-social-rooms-$(date +%Y-%m-%d).log"
-"$VENV_PY" -u -m automations.online_presence.rooms $LIVE >> "$LOG_FILE" 2>&1
+echo "[$(date)] pass" >> "$LOG_FILE"
+"$VENV_PY" -u -m automations.online_presence.run $LIVE >> "$LOG_FILE" 2>&1
 ST=$?
-[ $ST -ne 0 ] && echo "[$(date)] lucyeco social rooms exit=$ST" >> "$LOG_FILE"
+[ $ST -ne 0 ] && echo "[$(date)] lucyeco social pass exit=$ST" >> "$LOG_FILE"
+
+# The Hub card ("LucyECO Social"): told about a FAILURE every time, about a
+# clean pass once an hour (the first pass of each hour) -- 84 rows a day of
+# "fine" would bury the activity sheet. Never on --dry-run.
+if [ -n "$LIVE" ]; then
+  MIN=$((10#$(date +%M)))
+  if [ $ST -ne 0 ] || [ "$MIN" -lt 10 ]; then
+    if [ $ST -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('lucyeco_social','LucyECO Social','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+  fi
+fi
 exit $ST

@@ -109,5 +109,46 @@ class Creates(unittest.TestCase):
         self.assertIn("Somebody Nobody Knows Zzq", res[0]["missed"])
 
 
+class Ping(unittest.TestCase):
+    class Cl(FakeSlack):
+        def __init__(self):
+            super().__init__(); self.posts = []
+
+        def chat_postMessage(self, **kw):
+            self.posts.append(kw)
+            return {"ts": "1.%d" % len(self.posts)}
+
+    def test_announced_once_in_the_alerts_channel_short_header_detail_in_thread(self):
+        from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID
+        tab, cl = _sheet(), self.Cl()
+        res = rooms.ping_new(live=True, cl=cl, tab=tab)
+        self.assertEqual(len(res), 1)
+        self.assertEqual([p["channel"] for p in cl.posts], [ALERT_SLACK_CHANNEL_ID] * 2)
+        self.assertIn("Kash Marketing", cl.posts[0]["text"])
+        self.assertNotIn("thread_ts", cl.posts[0])              # header
+        self.assertEqual(cl.posts[1]["thread_ts"], "1.1")        # detail in the thread
+        self.assertIn("--from-signup", cl.posts[1]["text"])
+        self.assertTrue(tab.rows[1][signup.HEADER.index("Pinged At")])
+        self.assertEqual(rooms.ping_new(live=True, cl=cl, tab=tab), [])   # never twice
+        self.assertEqual(len(cl.posts), 2)
+
+    def test_dry_announces_nothing(self):
+        tab, cl = _sheet(), self.Cl()
+        self.assertEqual(rooms.ping_new(live=False, cl=cl, tab=tab)[0]["action"], "would_ping")
+        self.assertEqual(cl.posts, [])
+
+
+class LivePassSkipsDryOffices(unittest.TestCase):
+    def test_dry_office_is_not_run_on_a_live_pass(self):
+        from automations.online_presence import run, offices
+        dry = offices.Presence(key="kash", business_name="K", slack_channel="C1")
+        with mock.patch.object(offices, "load", return_value={"kash": dry}), \
+                mock.patch.object(run, "run_office", side_effect=AssertionError("ran")), \
+                mock.patch("automations.online_presence.rooms.ping_new", return_value=[]), \
+                mock.patch("automations.online_presence.rooms.run", return_value=[]), \
+                mock.patch("automations.online_presence.relay.answered", return_value=[]):
+            self.assertEqual(run.main(["--live"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7706,6 +7706,61 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "lucyeco-social",
+        "name": "LucyECO Social",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#8B5CF6",
+        "category": "📸 Social",
+        "description": "ICD offices' own socials + Google reviews, one Slack room each: announces new sign-ups, makes the office's room, posts approved photos from the office's own Zoho, replies to their Google reviews, and DMs the owner if a page disconnects.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Every 10 minutes (7 AM–9 PM CST) on Lucy 3:\n"
+            "**•** **New sign-ups** from lucyeco…/join-lucyeco-social are "
+            "announced in **#alphaletemarketingbrandhealth**.\n"
+            "**•** An office that asked for a Slack room gets a private "
+            "**#<company-name>-lucyeco-social** with Megan, Eve, the ICD, Lucy "
+            "and @hubposter in it.\n"
+            "**•** For every **live** office: photos dropped in its room are "
+            "screened, edited and captioned for ✅/❌; approved ones post from "
+            "the office's **own Zoho** on its own computer (one a day, 8 AM–6 "
+            "PM office time); Google reviews get replies (4–5★ automatic, "
+            "lower ones wait for ✅); the owner is DMed if one of their chosen "
+            "pages disconnects.\n\n"
+            "GOOD TO KNOW\n"
+            "**•** New offices start **dry**: nothing posts until their row "
+            "says live. Setup: resources/online-presence-install.md.\n"
+            "**•** **Indeed is never replied to**, only flagged.\n"
+            "**•** The pill reports a clean pass once an hour and any failure "
+            "right away."
+        ),
+        "assignees": ["Lucy 3"],
+        "run_machine": "Lucy 3",
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "time_label": "Every 10 min · 7 AM–9 PM CST",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Pass complete — sign-ups announced, rooms made, live offices' photos and reviews handled.",
+            "message_failed": "❌ A pass failed. Open the log (output/logs/lucyeco-social-rooms-<date>.log on Lucy 3), fix, and it runs again in 10 minutes.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "An extra pass now: announce sign-ups, make rooms, and handle live offices.",
+                "module": "automations.online_presence.run",
+                "args_fn": lambda: ["--live"],
+            },
+        ],
+    },
+    {
         "id": "vantura-payroll",
         "name": "Vantura Weekly Payroll (prep)",
         "creator": "Carlos",

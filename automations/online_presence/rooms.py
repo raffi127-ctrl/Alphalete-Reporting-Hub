@@ -151,6 +151,69 @@ def run(*, live: bool, cl=None, tab=None) -> List[Dict]:
     return out
 
 
+# ---- telling us a sign-up came in --------------------------------------------
+# Megan 2026-11-08: a new LucyECO Social sign-up is announced in the ALERTS
+# channel (#alphaletemarketingbrandhealth), not left sitting silently on the
+# sheet. SHORT header, detail in the thread (Raf's standing post shape).
+def ping_line(row: Dict) -> tuple:
+    room = (f"#{channel_name(row.get('Business Name'))} (Lucy is making it)"
+            if row.get("Slack Room") in ("create us one", "created") and not
+            str(row.get("Slack Channel") or "").startswith("C")
+            else (f"<#{row['Slack Channel']}>" if row.get("Slack Channel") else "not given"))
+    head = f":inbox_tray: *New LucyECO Social sign-up: {row.get('Business Name')}*"
+    detail = "\n".join([
+        f"*Owner:* {row.get('Owner')}  {row.get('Owner Email') or ''}".rstrip(),
+        f"*Posts to:* {row.get('Pages') or '(none)'}",
+        f"*Slack room:* {room}",
+        f"*Address / phone:* {row.get('Address')} · {row.get('Phone')}",
+        f"*Website:* {row.get('Website')}",
+        f"*Google listing:* {row.get('Google Listing Link')}",
+        f"*Approvers:* {row.get('Approvers')}",
+        "",
+        "Next: book the setup call. On it, run "
+        f"`python -m automations.online_presence.setup add --office <key> "
+        f"--from-signup \"{row.get('Business Name')}\"` "
+        "(install steps: resources/online-presence-install.md).",
+    ])
+    if row.get("Notes"):
+        detail += f"\n*Notes:* {row['Notes']}"
+    return head, detail
+
+
+def ping_new(*, live: bool, cl=None, tab=None, channel: str | None = None) -> List[Dict]:
+    """Announce each sign-up not yet announced. Marked 'Pinged At' so it
+    is announced ONCE -- a crash between the post and the mark re-announces
+    at most once more, never every pass."""
+    from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID
+    from automations.online_presence import signup
+    import datetime as dt
+    tab = tab or signup._tab(create=False)
+    if tab is None:
+        return []
+    rows = tab.get_all_values()
+    if not rows or "Pinged At" not in rows[0]:
+        return []
+    header, out = rows[0], []
+    for i, raw in enumerate(rows[1:], start=2):
+        row = dict(zip(header, raw + [""] * (len(header) - len(raw))))
+        if row.get("Pinged At") or not row.get("Business Name"):
+            continue
+        head, detail = ping_line(row)
+        out.append({"action": "ping" if live else "would_ping",
+                    "business": row.get("Business Name"), "header": head})
+        if not live:
+            continue
+        if cl is None:
+            from automations.brand_audit.social_inbox import _client
+            cl = _client()
+        ch = channel or ALERT_SLACK_CHANNEL_ID
+        r = cl.chat_postMessage(channel=ch, text=head)
+        cl.chat_postMessage(channel=ch, thread_ts=r.get("ts"), text=detail)
+        tab.update_cell(i, header.index("Pinged At") + 1,
+                        dt.datetime.now().isoformat(timespec="seconds"))
+    return out
+
+
 def main(argv=None) -> int:
     for _s in (sys.stdout, sys.stderr):
         try:
@@ -160,6 +223,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="online_presence.rooms")
     ap.add_argument("--live", action="store_true", help="actually create the rooms")
     a = ap.parse_args(argv)
+    for p in ping_new(live=a.live):
+        print(f"{p['business']}: {p['action']} in the alerts channel")
     res = run(live=a.live)
     if not res:
         print("No sign-ups waiting for a room.")
