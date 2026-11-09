@@ -57,6 +57,13 @@ VERIZON_GROUP = {
     "require_handles": ["+14698417861", "+19378236610"],
 }
 
+# Frank Matos's A-players chat (Megan 2026-11-09, the day he enrolled in Lucy
+# ECO: "he also wants the owner scorecard in this group as well"): the owners
+# chat's two texts, word for word, on the owners chat's cadence -- Alphalete
+# then South Shore, each ending with both org lines -- exactly like Raf's
+# knocking chat. Pinned by its people once Lucy is in it; None = not wired yet,
+# and run.py skips the chat rather than guessing a name.
+FRANK_GROUP = None   # {"group": "<name>", "chat_guid": "any;+;...", "require_handles": [...]}
 # Raf 2026-11-06 (#l10-alphalete, "Whole Org on chat on knocking A-players
 # chat"): "Whatever the cadence of the Alphalete post is on the org chat, can
 # we post it on our knocking report chat please? I want the office to see other

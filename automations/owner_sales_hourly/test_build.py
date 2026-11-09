@@ -239,7 +239,7 @@ class HalfHourPass(unittest.TestCase):
         # owners (Megan), Knocking (Raf), Carlos's chain (Carlos) -- 11/6.
         import inspect
         src = inspect.getsource(run.main)
-        self.assertIn('ORG_TOTAL_CHATS = ("owners", "owners_sso", "knocking", "knocking_sso",\n                       "carlos", "verizon")', src)
+        self.assertIn('ORG_TOTAL_CHATS = ("owners", "owners_sso", "knocking", "knocking_sso",\n                       "carlos", "verizon", "frank", "frank_sso")', src)
 
     def test_carlos_title_and_chat(self):
         from automations.owner_sales_hourly import config as cfg

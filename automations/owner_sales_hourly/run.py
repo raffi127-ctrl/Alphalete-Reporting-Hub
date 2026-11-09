@@ -250,7 +250,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="ignore the time window and the unchanged-numbers skip")
     ap.add_argument("--only", choices=("owners", "owners_sso", "sso", "sso_alphalete", "jairo", "carlos",
-                             "verizon", "knocking", "knocking_sso"),
+                             "verizon", "knocking", "knocking_sso", "frank", "frank_sso"),
                     help="text just one chat (e.g. a catch-up send to SSO)")
     args = ap.parse_args(argv)
 
@@ -306,13 +306,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                                   cfg.SSO_ALPHALETE_TITLE),
                      "knocking_sso": ("last_sent_knocking_sso", sso,
                                       cfg.SSO_TITLE)},
+        # Frank's chat carries the owners chat's pair too (Megan 2026-11-09).
+        "frank": {"frank": ("last_sent_frank_alphalete", alphalete,
+                            cfg.SSO_ALPHALETE_TITLE),
+                  "frank_sso": ("last_sent_frank_sso", sso, cfg.SSO_TITLE)},
     }
     org_lines = org_total_lines(alphalete, sso)
     # The chats that carry the two org lines under the TOTAL: owners (Megan
     # 11/6; both of its texts, Raf 11/6), Knocking (Raf 11/6), Carlos's chain
     # (Carlos 11/6).
     ORG_TOTAL_CHATS = ("owners", "owners_sso", "knocking", "knocking_sso",
-                       "carlos", "verizon")
+                       "carlos", "verizon", "frank", "frank_sso")
     pair_of = {name: pid for pid, members in pairs.items() for name in members}
     pair_moved = {
         pid: head_to_head_moved(
@@ -342,8 +346,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             ("knocking", cfg.KNOCKING_GROUP, "last_sent_knocking_alphalete",
              alphalete, cfg.SSO_ALPHALETE_TITLE, ()),
             ("knocking_sso", cfg.KNOCKING_GROUP, "last_sent_knocking_sso", sso,
+             cfg.SSO_TITLE, ()),
+            # Frank Matos's A-players chat: the owners pair, same cadence
+            # (Megan 2026-11-09). Skipped until config.FRANK_GROUP is pinned.
+            ("frank", cfg.FRANK_GROUP, "last_sent_frank_alphalete", alphalete,
+             cfg.SSO_ALPHALETE_TITLE, ()),
+            ("frank_sso", cfg.FRANK_GROUP, "last_sent_frank_sso", sso,
              cfg.SSO_TITLE, ())):
         if args.only and args.only != name:
+            continue
+        if group is None:
             continue
         # --only / --force are a person asking for that text now.
         if not args.only and not args.force and hourly_chat_skips(name, now):
