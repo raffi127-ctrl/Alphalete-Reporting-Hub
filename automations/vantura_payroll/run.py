@@ -1392,7 +1392,9 @@ def _owner_cell(v, money: bool):
     return "" if v is None else str(v)
 
 
-def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
+def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
+                    skip_tieout: bool = False, forms_override=None,
+                    skip_discover: bool = False) -> int:
     from collections import Counter, defaultdict
     from automations.vantura_churn import cdp_pull
     from automations.override_bulletin.pulls import _with_filter
@@ -1402,6 +1404,14 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
     def plog(msg):
         log(msg)
         lines.append(str(msg))
+
+    def _flush():
+        """Partial log to the Sheet after every pull, so a run killed at its
+        timeout still leaves what it learned (the 18:53 run left nothing)."""
+        try:
+            _owner_dd_write_log(owner, lines, log=lambda *_: None)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _n(s) -> str:
         return " ".join(str(s or "").lower().split())
@@ -1464,6 +1474,7 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
         wks = Counter(_owner_cell(r[wk_i], False) for r in data
                       if wk_i < len(r) and _parse_mdy(_owner_cell(r[wk_i], False)))
         plog(f"[{tag}] {len(data)} rows; DD weeks read back: {dict(wks.most_common(12))}")
+        _flush()
         return hdr, data, wks
 
     # 1) The unfiltered view = Tableau's latest DD week(s). A requested week
@@ -1477,17 +1488,59 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
         covered = {wk for wk, labels in labels_of.items() if labels & default_weeks}
         plog(f"[default] covers WE {sorted(w.isoformat() for w in covered) or 'none'}")
 
+    # 1b) What filter / parameter cards does the view actually show? Logged
+    #     once so a miss below can be fixed without guessing (patchright
+    #     session, ~1 min; never fails the probe).
+    if not skip_discover:
+        try:
+            from automations.shared.tableau_patchright import tableau_session
+            with tableau_session(verbose=False) as pg:
+                pg.goto(ORG_DD_URL, wait_until="domcontentloaded")
+                pg.wait_for_timeout(30_000)
+                for fr in pg.frames:
+                    try:
+                        txt = fr.evaluate("() => document.body ? document.body.innerText : ''") or ""
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if len(txt) < 300:
+                        continue
+                    plog(f"[discover] frame {fr.url[:70]} text ({len(txt)} chars):")
+                    flat = " / ".join(t.strip() for t in txt.splitlines() if t.strip())[:1800]
+                    for i in range(0, len(flat), 180):
+                        plog("[discover]   " + flat[i:i + 180])
+                    try:
+                        ctl = fr.evaluate(
+                            "() => Array.from(document.querySelectorAll("
+                            "'[class*=\"Parameter\"],[class*=\"Filter\"],[role=\"combobox\"],"
+                            "[class*=\"ComboBox\"],[class*=\"tab-widget\"]')).slice(0, 80)"
+                            ".map(e => ((e.className||'')+'').slice(0,50)+' | '+"
+                            "((e.innerText||'').trim().replace(/\\s+/g,' ').slice(0,60)))"
+                            ".filter((v,i,a) => a.indexOf(v) === i)") or []
+                        for c in ctl[:40]:
+                            plog("[discover]   ctl " + str(c))
+                    except Exception as e:  # noqa: BLE001
+                        plog(f"[discover]   ctl scan failed: {str(e)[:80]}")
+            _flush()
+        except Exception as e:  # noqa: BLE001
+            plog(f"[discover] skipped: {str(e)[:120]}")
+
     # 2) Older weeks: a URL filter on the view, best guess first; the first
     #    form that validates is reused for the next week.
+    # An EMPTY viz ("0 thumbs in the Crosstab dialog") means the param was
+    # recognised but matched nothing: the view already pins cl.DD Week to its
+    # latest week, so a second filter on that field for an older week yields
+    # nothing (cl.DD Week forms, 2026-11-08 18:53 run). cl.DD Date on the
+    # DOWNLINEVIEW is silently ignored (the 10/19 probe). The workbook's
+    # PROGRAM SUMMARY pins a week with its 'Processed Week' parameter (Monday,
+    # ISO - opt_phase._program_summary_url), and a workbook parameter applies
+    # to every sheet that uses it, so try that first. Each empty form costs
+    # three download attempts (~8 min), so the list is short.
     FORMS = [
-        ("cl.DD Week", "{sat_mdy},{sun_mdy}"),
-        ("cl.DD Week", "{sun_mdy}"),
-        ("cl.DD Week", "{sat_iso},{sun_iso}"),
-        ("cl.DD Week", "{sun_iso}"),
-        ("DD Week", "{sat_mdy},{sun_mdy}"),
-        ("Period", "Period {y}-{m}"),
-        ("Period", "{y}-{m:02d}"),
+        ("Processed Week", "{mon_iso}"),
+        ("Processed Week", "{we_iso}"),
     ]
+    if forms_override:
+        FORMS = forms_override
     good_form = None
     for wk in weeks:
         if wk in covered:
@@ -1498,7 +1551,8 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
         fmt = dict(sat_mdy=f"{sat.month}/{sat.day}/{sat.year}",
                    sun_mdy=f"{sun.month}/{sun.day}/{sun.year}",
                    sat_iso=sat.isoformat(), sun_iso=sun.isoformat(),
-                   y=sun.year, m=sun.month)
+                   mon_iso=(wk - dt.timedelta(days=6)).isoformat(),   # the processed week's Monday
+                   we_iso=wk.isoformat(), y=sun.year, m=sun.month)
         forms = ([good_form] if good_form else []) + [f for f in FORMS if f != good_form]
         hit = False
         for field, tmpl in forms:
@@ -1653,6 +1707,8 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
     # Tie-out: the Program Summary downline grid (the --rafdd-probe code) for
     # the same weeks — the owner's corp total should equal the line sum.
     try:
+        if skip_tieout:
+            raise RuntimeError("--skip-tieout")
         from automations.shared.tableau_patchright import tableau_session
         from automations.recruiting_report.opt_phase import (
             PROGRAM_SUMMARY_XY_CANDIDATES, _program_summary_url, scrape_view_data)
@@ -1774,6 +1830,14 @@ def main(argv: list[str] | None = None) -> int:
                          "and write them to that owner's own book 'DD RAW' "
                          "tab (e.g. \"Khalil Mansour\"). Read-only on Tableau "
                          "and on THIS board. Pair with --weeks.")
+    ap.add_argument("--skip-discover", action="store_true",
+                    help="for --owner-dd: skip the one-time dump of the view's filter cards")
+    ap.add_argument("--skip-tieout", action="store_true",
+                    help="for --owner-dd: skip the Program Summary tie-out scrape")
+    ap.add_argument("--dd-filter",
+                    help="for --owner-dd: URL filter forms to try, ';'-separated "
+                         "'<field>=<template>' with {sat_mdy} {sun_mdy} {sat_iso} "
+                         "{sun_iso} {y} {m} placeholders (overrides the built-in list)")
     ap.add_argument("--weeks",
                     help="for --owner-dd: comma-separated week-ending SUNDAYS "
                          "YYYY-MM-DD (default: the newest completed week)")
@@ -1795,7 +1859,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if getattr(args, "owner_dd", None):
-        return _owner_dd_probe(args.owner_dd, args.weeks)
+        fo = None
+        if args.dd_filter:
+            fo = []
+            for spec in args.dd_filter.split(";"):
+                field, _, tmpl = spec.partition("=")
+                if field.strip() and tmpl.strip():
+                    fo.append((field.strip(), tmpl.strip()))
+        return _owner_dd_probe(args.owner_dd, args.weeks,
+                               skip_tieout=args.skip_tieout, forms_override=fo,
+                               skip_discover=args.skip_discover)
 
     if args.rafdd_probe:
         from automations.shared.tableau_patchright import tableau_session
