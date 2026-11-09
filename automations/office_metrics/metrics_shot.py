@@ -28,6 +28,7 @@ import argparse
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -129,8 +130,22 @@ def _slug(owner: str) -> str:
     return owner.lower().replace(" ", "_").replace("/", "-")
 
 
+# The runner kills a metric at 20 minutes (runner.PER_METRIC_TIMEOUT_S). With 30+
+# offices one pass no longer fits: the first office on each Lucy had its own
+# picture on disk, kept shooting everyone else's, and died before posting it
+# (Tableau Metrics dropped on daily_metrics + salik_metrics every morning from
+# 2026-11-03). Stop in time to post; the next office resumes off the same cache.
+CAPTURE_BUDGET_S = 12 * 60
+
+
+def own_first(owner: str, owners: list[str]) -> list[str]:
+    """`owners` with `owner` at the front, so the office running this capture
+    always gets its own picture before the budget can run out."""
+    return [owner] + [o for o in owners if o.lower() != owner.lower()]
+
+
 def capture_all(owners: list[str], *, filter_field: str, headless: bool = False,
-                verbose: bool = True) -> dict:
+                verbose: bool = True, budget_s: "float | None" = None) -> dict:
     """Capture EVERY owner's filtered Metrics view inside ONE Tableau session.
 
     Why: the per-office capture used to open its own browser and do a full
@@ -140,12 +155,16 @@ def capture_all(owners: list[str], *, filter_field: str, headless: bool = False,
     7 of the 8 logins; each office then costs just a re-render + export.
 
     Writes into a per-DAY cache so whichever office runs first pays the capture
-    and the rest just post the PNG (same idea as METRICS_XTAB_CACHE)."""
+    and the rest just post the PNG (same idea as METRICS_XTAB_CACHE).
+
+    `budget_s`: stop starting new shots after this long. Offices left out aren't
+    lost -- each one captures from where this stopped when its own run gets here."""
     from automations.shared.tableau_patchright import tableau_session
     from automations.tableau_screenshots import capture as _cap
     out_dir = _cache_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     got: dict = {}
+    started = time.monotonic()
     with tableau_session(headless=headless, allow_form_login=False,
                          verbose=verbose) as page:
         for owner in owners:
@@ -155,6 +174,11 @@ def capture_all(owners: list[str], *, filter_field: str, headless: bool = False,
                 if verbose:
                     print(f"  ↺ cached: {owner}", flush=True)
                 continue
+            if budget_s is not None and time.monotonic() - started >= budget_s:
+                print(f"  ⏱ {int(budget_s // 60)} min used -- stopping here so this "
+                      f"office can post; the next office resumes at {owner}",
+                      flush=True)
+                break
             url = build_view_url(owner, filter_field=filter_field)
             try:
                 png = _cap.capture_page(page, _spec(owner, url), out_dir,
@@ -250,8 +274,10 @@ def main(argv=None) -> int:
             else:
                 print("  no cached shot — capturing ALL offices in one session "
                       "(subsequent offices reuse these)", flush=True)
-                got = capture_all(all_owners(), filter_field=args.filter_field,
-                                  headless=args.headless, verbose=True)
+                got = capture_all(own_first(args.owner, all_owners()),
+                                  filter_field=args.filter_field,
+                                  headless=args.headless, verbose=True,
+                                  budget_s=CAPTURE_BUDGET_S)
                 png = got.get(args.owner) or cached_shot(args.owner)
         if png is None:
             png = capture(args.owner, out_dir=out_dir,
