@@ -347,21 +347,26 @@ def apply_guard(records: list) -> tuple:
     first send of a recording is the one that counts. No readable length or
     fingerprint = it counts: we only drop what we can prove."""
     kept, dropped = [], []
-    seen_fp, lengths = set(), defaultdict(list)
+    seen_fp, lengths = {}, defaultdict(list)
     for r in sorted(records, key=lambda x: x.get("ts") or ""):
         secs, fp, uid = r.get("seconds"), r.get("fp"), r.get("uid") or ""
         if secs is not None and secs < MIN_RECORDING_SECONDS:
             dropped.append((r, TOO_SHORT))
             continue
-        same_length = secs is not None and uid and any(
-            abs(secs - x) <= SAME_LENGTH_SECONDS for x in lengths[uid])
-        if (fp and fp in seen_fp) or same_length:
+        twin = next((x for x in lengths[uid] if abs(secs - x[0]) <= SAME_LENGTH_SECONDS),
+                    None) if secs is not None and uid else None
+        if fp and fp in seen_fp:
+            r["matched"] = "same file as %s" % seen_fp[fp]
+            dropped.append((r, DUPLICATE))
+            continue
+        if twin:
+            r["matched"] = "same length as %s (%.1f s)" % (twin[1], twin[0])
             dropped.append((r, DUPLICATE))
             continue
         if fp:
-            seen_fp.add(fp)
+            seen_fp[fp] = r.get("file") or "?"
         if secs is not None and uid:
-            lengths[uid].append(secs)
+            lengths[uid].append((secs, r.get("file") or "?"))
         kept.append(r)
     return kept, dropped
 
@@ -372,9 +377,10 @@ def _log_guard(export: dict, dropped: list, month_prefix: str) -> None:
     log("guard: %d recording(s) not counted (%d this month)" % (len(dropped), len(mine)))
     for r, why in mine:
         secs = r.get("seconds")
-        log("  not counted [%s] %s  %s  %s  %s" % (
+        log("  not counted [%s] %s  %s  %s  %s  %s" % (
             why, (r.get("ts") or "")[:16], names.get(r.get("uid") or "") or NO_NAME,
-            "?" if secs is None else "%.1f min" % (secs / 60), r.get("file") or ""))
+            "?" if secs is None else "%.1f min" % (secs / 60), r.get("file") or "",
+            r.get("matched") or ""))
 
 
 def _log_lengths(records: list, month_prefix: str) -> None:
