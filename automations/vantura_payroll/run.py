@@ -1394,7 +1394,7 @@ def _owner_cell(v, money: bool):
 
 def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
                     skip_tieout: bool = False, forms_override=None,
-                    skip_discover: bool = False) -> int:
+                    skip_discover: bool = False, tab_suffix: str = "") -> int:
     from collections import Counter, defaultdict
     from automations.vantura_churn import cdp_pull
     from automations.override_bulletin.pulls import _with_filter
@@ -1409,7 +1409,8 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
         """Partial log to the Sheet after every pull, so a run killed at its
         timeout still leaves what it learned (the 18:53 run left nothing)."""
         try:
-            _owner_dd_write_log(owner, lines, log=lambda *_: None)
+            _owner_dd_write_log(owner, lines, log=lambda *_: None,
+                                tab_suffix=tab_suffix)
         except Exception:  # noqa: BLE001
             pass
 
@@ -1688,7 +1689,9 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
         try:
             import gspread as _gs
             ctl = gc.open_by_key(AUTOMATION_MASTER_ID)
-            tname = f"{owner} DD RAW"[:99]
+            # --dd-tab-suffix keeps two queued runs (e.g. 8 + 7 weeks) from
+            # overwriting each other's fallback tab.
+            tname = f"{owner} DD RAW{(' ' + tab_suffix) if tab_suffix else ''}"[:99]
             try:
                 t = ctl.worksheet(tname)
                 t.clear()
@@ -1757,7 +1760,8 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
     return 0
 
 
-def _owner_dd_write_log(owner: str, lines: list, log=_log, gc=None) -> None:
+def _owner_dd_write_log(owner: str, lines: list, log=_log, gc=None,
+                        tab_suffix: str = "") -> None:
     """The probe's log, readable from any machine: the owner book's
     'DD PULL LOG' tab, else 'DD Probe' on AUTOMATION MASTER."""
     try:
@@ -1767,7 +1771,8 @@ def _owner_dd_write_log(owner: str, lines: list, log=_log, gc=None) -> None:
         import gspread as _gs
         book_id = OWNER_DD_BOOKS.get(" ".join(owner.lower().split()))
         targets = ([(book_id, OWNER_DD_LOG_TAB)] if book_id else []) + \
-                  [(AUTOMATION_MASTER_ID, "DD Probe")]
+                  [(AUTOMATION_MASTER_ID,
+                    "DD Probe" + ((" " + tab_suffix) if tab_suffix else ""))]
         for bid, tab in targets:
             try:
                 b = gc.open_by_key(bid)
@@ -2014,6 +2019,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="for --owner-dd: skip the one-time dump of the view's filter cards")
     ap.add_argument("--skip-tieout", action="store_true",
                     help="for --owner-dd: skip the Program Summary tie-out scrape")
+    ap.add_argument("--dd-tab-suffix", default="",
+                    help="for --owner-dd: suffix for the fallback '<Owner> DD RAW' and "
+                         "'DD Probe' tabs, so two queued runs don't overwrite each other")
     ap.add_argument("--dd-filter",
                     help="for --owner-dd: URL filter forms to try, ';'-separated "
                          "'<field>=<template>' with {sat_mdy} {sun_mdy} {sat_iso} "
@@ -2050,7 +2058,8 @@ def main(argv: list[str] | None = None) -> int:
                     fo.append((field.strip(), tmpl.strip()))
         return _owner_dd_probe(args.owner_dd, args.weeks,
                                skip_tieout=args.skip_tieout, forms_override=fo,
-                               skip_discover=args.skip_discover)
+                               skip_discover=args.skip_discover,
+                               tab_suffix=args.dd_tab_suffix)
 
     if args.rafdd_probe:
         from automations.shared.tableau_patchright import tableau_session
