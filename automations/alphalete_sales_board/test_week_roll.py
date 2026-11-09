@@ -129,6 +129,70 @@ class OffBoardMark(unittest.TestCase):
         self.assertIn("t", board.TERM_MARKS)
 
 
+class LineUpNamesFollowTheBoard(unittest.TestCase):
+    """Eve 2026-11-09: a rep gone '(Wk 2)' takes the dropdown's own name."""
+    BOARD = ["Ana Griffin", "Bryson Knowles (Wk 2)", "Travis Smith (Wk 3)", "Alyssa Moreno ",
+             "Sam Twin", "Sam Twin (Wk 2)", ""]
+
+    def _grid(self, a="Bryson Knowles", b="Travis Smith (Wk 2)"):
+        return [["", "Saturday", "", "", ""],
+                ["#", "Car Ride Leader #1", "Car Ride #2", "New T?", "Notes"],
+                ["1", a, b, "Bryson Knowles", "Bryson Knowles"],
+                ["2", "Alyssa Moreno", "Sean (Kash's RT)", "", ""],
+                ["3", "Sam Twin", "", "", ""],
+                ["", "Rep names from Sales Board", "FFP", "", ""],
+                ["", "Ana Griffin", "", "", ""]]
+
+    def _all(self, grid):
+        return {(r, c) for r in range(1, len(grid) + 1) for c in range(1, 6)}
+
+    def test_names_take_the_boards_spelling(self):
+        g = self._grid()
+        cells = W.plan_lineup_names(g, self._all(g), self.BOARD)
+        self.assertEqual(cells["B3"], "Bryson Knowles (Wk 2)")
+        self.assertEqual(cells["C3"], "Travis Smith (Wk 3)")
+        self.assertEqual(cells["B4"], "Alyssa Moreno ")   # the option's own space
+
+    def test_only_car_ride_columns(self):
+        g = self._grid()
+        cells = W.plan_lineup_names(g, self._all(g), self.BOARD)
+        self.assertNotIn("D3", cells)
+        self.assertNotIn("E3", cells)
+
+    def test_road_trips_and_blanks_stay(self):
+        g = self._grid()
+        cells = W.plan_lineup_names(g, self._all(g), self.BOARD)
+        self.assertNotIn("C4", cells)
+        self.assertNotIn("C5", cells)
+
+    def test_a_right_name_is_not_rewritten(self):
+        g = self._grid("Bryson Knowles (Wk 2)", "Travis Smith (Wk 3)")
+        cells = W.plan_lineup_names(g, self._all(g), self.BOARD)
+        self.assertNotIn("B3", cells)
+        self.assertNotIn("C3", cells)
+
+    def test_two_people_on_one_name_are_left_alone(self):
+        g = self._grid()
+        self.assertNotIn("B5", W.plan_lineup_names(g, self._all(g), self.BOARD))
+
+    def test_a_cell_without_a_dropdown_is_left_alone(self):
+        self.assertEqual(W.plan_lineup_names(self._grid(), set(), self.BOARD), {})
+
+    def test_the_list_follows_the_new_board(self):
+        f = self._grid()
+        f[6][1] = "={'Sales Board WE 11.08'!$C4:$C77}"
+        self.assertEqual(W.plan_pool_repoint(f, 6, "Sales Board WE 11.08", "Sales Board WE 11.15"),
+                         {"B7": "={'Sales Board WE 11.15'!$C4:$C77}"})
+        self.assertEqual(W.plan_pool_repoint(f, 6, "Sales Board WE 11.01", "Sales Board WE 11.15"), {})
+
+    def test_a_broken_step_does_not_fail_the_roll(self):
+        from unittest import mock
+        sh = mock.Mock()
+        sh.worksheet.side_effect = RuntimeError("protected")
+        notes = W.lineup_step(sh, "Line Up WE 11.15", "a", "b", True)
+        self.assertIn("not updated", notes[0])
+
+
 class ClosedWeekSync(unittest.TestCase):
     """Eve 2026-11-09: transfers landed after the roll, 380 vs 375."""
 

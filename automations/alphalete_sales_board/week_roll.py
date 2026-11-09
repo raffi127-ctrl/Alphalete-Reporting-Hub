@@ -32,6 +32,11 @@ The Line Up is NOT made here: a person refreshes it by hand on Fridays (Eve,
 2026-11-02). Once this week's Line Up tab exists, Stations' formulas are pointed
 at it if they still read last week's. Lanes rolls by itself on Tuesday (lanes.py).
 
+LINE UP NAMES FOLLOW THE BOARD (Eve 2026-11-09). The roll renames reps '(Wk 2)' /
+'(Wk 3)', and the Line Up made on Friday still has the old names. Each car-ride
+cell with a dropdown takes that same person's option, exactly as the dropdown
+spells it, never free text. Names not on the board (road trips) stay as they are.
+
 CLOSED WEEK RE-READ (Eve 2026-11-09). The roll copies last week's numbers early
 Monday, but the form's late transfers land on last week's tab at 5, 6 and 8am: WE
 11.08 went to 380 apps while the new tab's history and Last Week stayed on 375.
@@ -365,14 +370,16 @@ def sync_closed_week(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
         new_t, old_t, len(cells), ", apps %s -> %s" % apps if apps else ""))
     for a1, v in sorted(cells.items()):
         print("    %s = %r" % (a1, v))
+    # a Line Up that came in after the roll gets its names here
+    notes = lineup_step(sh, find_tab(tabs, LINEUP_PREFIX, sunday), old_t, new_t, apply)
     if not cells or not apply:
-        return 0, []
+        return 0, notes
     new.batch_update([{"range": a1, "values": [[v]]} for a1, v in cells.items()],
                      value_input_option="RAW")
     if apps:
-        return 0, ["'%s' last week's apps updated from '%s': %s -> %s (late transfers)"
-                   % (new_t, old_t, apps[0], apps[1])]
-    return 0, []
+        notes.append("'%s' last week's apps updated from '%s': %s -> %s (late transfers)"
+                     % (new_t, old_t, apps[0], apps[1]))
+    return 0, notes
 
 
 def _grid(sid: int, r1: int, r2: int, c1: int, c2: int) -> dict:
@@ -481,6 +488,103 @@ def _renumber(ws, first: int, last: int) -> None:
         ws.batch_update(fix, value_input_option="USER_ENTERED")
 
 
+def lineup_layout(values) -> Tuple[int, int, List[int]]:
+    """(header row, row of the dropdown's name list, car-ride columns), by label."""
+    header = next((r for r in range(1, len(values) + 1)
+                   if any(_norm(x).startswith("CAR RIDE LEADER") for x in values[r - 1])), 0)
+    pool = next((r for r in range(header + 1, len(values) + 1)
+                 if any(_norm(x).startswith("REP NAMES FROM") for x in values[r - 1])), 0) if header else 0
+    if not pool:
+        return 0, 0, []
+    return header, pool, [c for c, x in enumerate(values[header - 1], 1)
+                          if _norm(x).startswith("CAR RIDE")]
+
+
+def plan_lineup_names(values, dropdowns, board_names) -> Dict[str, str]:
+    """{a1: the dropdown's own spelling} for car-ride cells whose person is on
+    the board under another name. `dropdowns` = (row, col) cells with a dropdown."""
+    header, pool, cols = lineup_layout(values)
+    options: Dict[str, List[str]] = {}
+    for name in board_names:
+        k = _norm(base_name(name))
+        if k and name not in options.setdefault(k, []):
+            options[k].append(name)
+    cells: Dict[str, str] = {}
+    for r in range(header + 1, pool):
+        for c in cols:
+            x = str(_cell(values, r, c))
+            found = options.get(_norm(base_name(x))) if x.strip() else None
+            if found and len(found) == 1 and (r, c) in dropdowns and x != found[0]:
+                cells[K.col_letter(c) + str(r)] = found[0]
+    return cells
+
+
+def plan_pool_repoint(formulas, pool: int, old_board: str, new_board: str) -> Dict[str, str]:
+    """The dropdown's list still reading last week's board reads this week's."""
+    out: Dict[str, str] = {}
+    for c, f in enumerate(formulas[pool] if pool < len(formulas) else [], 1):
+        f = str(f)
+        if f.startswith("=") and "'%s'" % old_board in f:
+            out[K.col_letter(c) + str(pool + 1)] = f.replace("'%s'" % old_board, "'%s'" % new_board)
+    return out
+
+
+def _dropdown_cells(sh, title: str, first: int, last: int) -> set:
+    meta = sh.fetch_sheet_metadata({
+        "includeGridData": True, "ranges": ["'%s'!A%d:AZ%d" % (title, first, last)],
+        "fields": "sheets(data(rowData(values(dataValidation(condition(type))))))"})
+    out = set()
+    data = meta["sheets"][0]["data"][0].get("rowData", [])
+    for i, row in enumerate(data):
+        for j, v in enumerate(row.get("values", [])):
+            if v.get("dataValidation", {}).get("condition", {}).get("type") == "ONE_OF_RANGE":
+                out.add((first + i, j + 1))
+    return out
+
+
+def lineup_step(sh, lineup: Optional[str], old_board: Optional[str], board: Optional[str],
+                apply: bool) -> List[str]:
+    """Line Up names as the board has them now. Lines for the DM. It never fails
+    a finished roll: the board is made, this is one step after it."""
+    if not lineup or not board:
+        return []
+    try:
+        ws = sh.worksheet(lineup)
+        values = ws.get_all_values()
+        header, pool, cols = lineup_layout(values)
+        if not cols:
+            return ["'%s': no car-ride table found, names not checked" % lineup]
+        repoint = plan_pool_repoint(ws.get_all_values(value_render_option="FORMULA"), pool,
+                                    old_board, board) if old_board else {}
+        if repoint and apply:
+            ws.batch_update([{"range": a, "values": [[f]]} for a, f in repoint.items()],
+                            value_input_option="USER_ENTERED")
+        bv = sh.worksheet(board).get_all_values()
+        first, last = K.block_rows(bv)
+        nc = K.layout(bv).name_col
+        names = [str(_cell(bv, r, nc)) for r in range(first, last + 1)]
+        cells = plan_lineup_names(values, _dropdown_cells(sh, lineup, header + 1, pool - 1), names)
+        print("  '%s': %d names follow '%s', %d list formulas re-pointed" % (
+            lineup, len(cells), board, len(repoint)))
+        for a1, v in sorted(cells.items()):
+            print("    %s: %r -> %r" % (a1, _cell(values, *_a1_rc(a1)), v))
+        if cells and apply:
+            ws.batch_update([{"range": a, "values": [[v]]} for a, v in cells.items()],
+                            value_input_option="RAW")
+    except Exception as e:  # noqa: BLE001 -- the tabs are made; this is one step
+        print("  ! Line Up names not updated: %s: %s" % (type(e).__name__, e))
+        return ["'%s' names were not updated: %s" % (lineup, str(e)[:150])]
+    return []
+
+
+def _a1_rc(a1: str) -> Tuple[int, int]:
+    m = re.fullmatch(r"([A-Z]+)(\d+)", a1)
+    col = 0
+    for ch in m.group(1):
+        col = col * 26 + ord(ch) - 64
+    return int(m.group(2)), col
+
+
 def stations_step(sh, old_lineup: Optional[str], new_lineup: Optional[str]) -> List[str]:
     """Re-point Stations, and say so if it could not be done. Lines for the DM.
 
@@ -565,6 +669,7 @@ def roll(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
         notes.append("New Starts not on the board (not added): " + ", ".join(p["missing"]))
         print("    ! " + notes[-1])
     notes += stations_step(sh, old_lineup, lineup) if lineup else []
+    notes += lineup_step(sh, lineup, old_board, new_board, apply)
     return 0, notes
 
 
