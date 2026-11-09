@@ -184,9 +184,20 @@ def render_report(ws, out_path: Path, helper_first_col: str = None,
         log("  ⚠ no per-rep list found — screenshot is the churn block only")
         return render(ws, out_path, main_rng)
 
-    last_row = max(_range_rows(main_rng) or 0, _range_rows(reps_rng) or 0)
+    # The END row of each range, not its row count: the rep list starts at
+    # row 15, so its 20 rows end at row 34 -- counting them as "20" cropped
+    # the shot at row 24 the first time the list was longer than the rolloff
+    # block (NDS CHURN, 2026-11-09).
+    last_row = max(_range_end_row(main_rng) or 0, _range_end_row(reps_rng) or 0)
     last_col = reps_rng.split(":")[1].rstrip("0123456789")
     return render(ws, out_path, f"A1:{last_col}{last_row}")
+
+
+def _range_end_row(rng: str):
+    """Last row of an A1 range like 'AG15:AH34' -> 34."""
+    import re
+    m = re.match(r"^[A-Z]+(\d+):[A-Z]+(\d+)$", str(rng or ""))
+    return int(m.group(2)) if m else None
 
 
 def _range_rows(rng: str):
