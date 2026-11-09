@@ -38,6 +38,20 @@ from typing import Dict, List, Tuple
 
 LOCK = Path.home() / ".config" / "lucy-reports" / "office-job-verify.lock"
 LOCK_STALE_S = 20 * 60
+# In output/logs so `lucy logtail office-job-verify` reads it from any laptop.
+LOG = Path(__file__).resolve().parents[2] / "output" / "logs" / "office-job-verify.log"
+
+
+def _log(msg: str) -> None:
+    """Every check leaves a line here, so a check that dies can be read back."""
+    line = "%s %s" % (dt.datetime.now().isoformat(timespec="seconds"), msg)
+    print(line, flush=True)
+    try:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with LOG.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
 NEW_STARTS = "Total New Starts Scheduled"
 # Never during the 4am batch window: nothing here may compete with it.
 QUIET_HOURS = (3, 5)
@@ -157,14 +171,38 @@ def check_job(app, job: Dict, log=print) -> Dict:
     return {"job_id": job["job_id"], "people": kept, "dropped": dropped}
 
 
-def run(dry_run: bool = False, log=print) -> int:
+def _answer_all(jobs, why: str, dry_run: bool, log) -> int:
+    """The check could not run at all: every waiting send is STOPPED, with why."""
+    n = 0
+    for j in jobs:
+        log("  stopping %s: %s" % (j["job_id"][:8], why))
+        if not dry_run:
+            try:
+                _call({"office_job_checked": {"job_id": j["job_id"], "people": [], "dropped": [],
+                                              "error": why}})
+                n += 1
+            except Exception as e:  # noqa: BLE001
+                log("  could not answer %s: %s" % (j["job_id"][:8], type(e).__name__))
+    return n
+
+
+def run(dry_run: bool = False, log=_log) -> int:
     jobs = [j for j in (_call({"office_job_checks": True}).get("jobs") or [])
             if j.get("kind") == "bgc_send"]
     if not jobs:
         return 0
-    from automations.applicant_tracker.applicantstream import session
+    log("%d send(s) waiting for the double-check" % len(jobs))
+    try:
+        from automations.applicant_tracker.applicantstream import session
+        ctx = session()
+        app = ctx.__enter__()
+    except Exception as e:  # noqa: BLE001 -- can't open AppStream = can't send
+        log("ApplicantStream would not open: %s: %s" % (type(e).__name__, str(e)[:300]))
+        return _answer_all(jobs, "Lucy couldn't open ApplicantStream to double-check the names, so "
+                                 "nothing was sent. Please try again in a few minutes; if it keeps "
+                                 "happening, tell Megan.", dry_run, log)
     done = 0
-    with session() as app:
+    try:
         for j in jobs:
             log("checking %s for %s (%d people)" % (j["job_id"][:8], j.get("office"),
                                                    len((j.get("payload") or {}).get("people") or [])))
@@ -175,6 +213,11 @@ def run(dry_run: bool = False, log=print) -> int:
                 continue
             _call({"office_job_checked": ans})
             done += 1
+    finally:
+        try:
+            ctx.__exit__(None, None, None)
+        except Exception:  # noqa: BLE001
+            pass
     return done
 
 
@@ -185,7 +228,7 @@ def _locked() -> bool:
         return False
 
 
-def maybe_spawn(log=print) -> bool:
+def maybe_spawn(log=_log) -> bool:
     """From Lucy 1's minute tick: one relay call; if a send is waiting and no
     check is running, start one in the background. Never raises."""
     try:
@@ -215,8 +258,12 @@ def main(argv=None) -> int:
     LOCK.parent.mkdir(parents=True, exist_ok=True)
     LOCK.write_text(str(os.getpid()))
     try:
-        n = run(dry_run=a.dry_run)
-        print("answered %d waiting send(s)" % n)
+        try:
+            n = run(dry_run=a.dry_run)
+        except Exception as e:  # noqa: BLE001
+            _log("check crashed: %s: %s" % (type(e).__name__, str(e)[:300]))
+            return 1
+        _log("answered %d waiting send(s)" % n)
         return 0
     finally:
         try:
