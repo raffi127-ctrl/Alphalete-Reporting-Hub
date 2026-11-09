@@ -1749,6 +1749,24 @@ def delete_today(today, log=print) -> None:
     sp.unlink()
 
 
+def reply_is_section(m: dict, sid: str, title: str) -> bool:
+    """Does thread reply `m` carry section `sid`? Its caption names the
+    title in bold (matched WITHOUT the emoji: Slack may hand the emoji back
+    as a shortcode), or -- a files_upload_v2 reply often has EMPTY text, the
+    caption lives on the file -- the upload's filename says it: an
+    'nds_order_log...png', or the house workbook's 'Order Log 11-09-2026.xlsx'
+    (case + spaces folded; that name never matched 'order_log', which is why
+    the 2026-11-09 re-post left the morning copy in the thread)."""
+    txt = (m.get("text") or "").strip()
+    if f"*{title}*" in txt:
+        return True
+    for f in (m.get("files") or []):
+        name = (f.get("name") or "").lower().replace(" ", "_")
+        if sid in name:
+            return True
+    return False
+
+
 def prune_sections(sids, today, log=print) -> None:
     """Delete ONE section's reply(ies) from today's thread and clear it
     from state, so --post can replace just that board (Carlos 2026-10-28:
@@ -1762,26 +1780,26 @@ def prune_sections(sids, today, log=print) -> None:
         return
     state = json.loads(sp.read_text())
     ts = state.get("ts")
-    titles = {sid: f"{emoji} *{title}*"
-              for sid, emoji, title, _fn in SECTIONS if sid in sids}
+    titles = {sid: title for sid, _emoji, title, _fn in SECTIONS if sid in sids}
     if not ts or not titles:
         return
     replies = client.conversations_replies(channel=CHANNEL[1], ts=ts,
                                            limit=200).get("messages", [])
+    pruned = 0
     for m in replies:
-        # a files_upload_v2 reply often has EMPTY text (the caption lives
-        # on the file), so match the upload's FILENAME too — that's what
-        # made the first prune delete nothing (2026-10-28)
-        txt = (m.get("text") or "").strip()
-        fnames = " ".join((f.get("name") or "")
-                          for f in (m.get("files") or []))
-        for sid, needle in titles.items():
-            if needle in txt or sid in fnames:
+        if m.get("ts") == ts:
+            continue                      # never the thread parent
+        for sid, title in titles.items():
+            if reply_is_section(m, sid, title):
                 try:
                     client.chat_delete(channel=CHANNEL[1], ts=m["ts"])
+                    pruned += 1
                     log(f"[nds] pruned {sid} reply {m['ts']}")
                 except Exception as e:  # noqa: BLE001
                     log(f"[nds] prune {m['ts']} failed: {str(e)[:120]}")
+                break
+    if not pruned:
+        log(f"[nds] prune: no reply in the thread matched {sorted(titles)}")
     state["posted"] = [x for x in state.get("posted", []) if x not in sids]
     sp.write_text(json.dumps(state))
 
