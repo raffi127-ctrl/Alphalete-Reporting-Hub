@@ -1853,9 +1853,30 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log) -> int:
         _owner_dd_write_log(owner, lines, log)
         return 4
     toks = [t for t in _n(owner).split() if t]
-    mine = [r for r in data if len(r) > oc and all(t in _n(r[oc]) for t in toks)]
+    by_owner = [r for r in data if len(r) > oc and all(t in _n(r[oc]) for t in toks)]
     owners = Counter(_n(r[oc]).split("[")[0].strip() for r in data if len(r) > oc)
-    plog(f"[orderlog] owners in file: {len(owners)}; {owner!r} rows: {len(mine)}")
+    plog(f"[orderlog] owners in file: {len(owners)}; {owner!r} rows by Owner & Office: {len(by_owner)}")
+    # ALSO keep rows whose Rep is one of the owner's PAID reps (from the DD RAW
+    # fallback tab this probe's sibling wrote): a rep who left or transferred
+    # shows under another Owner & Office in the order log, yet the owner was
+    # paid on their lines (2026-11-08: 12 of Khalil's 38 paid reps had no
+    # order-log rows under his owner filter).
+    rep_i = next((i for i, h in enumerate(hl) if h == "rep"), None)
+    mine = list(by_owner)
+    try:
+        from automations.recruiting_report import fill as _f0
+        _dd = _f0._client().open_by_key(AUTOMATION_MASTER_ID).worksheet(f"{owner} DD RAW").get_all_values()
+        _ri = [str(h).strip().lower() for h in _dd[0]].index("rep.name")
+        import re as _re2
+        paid_reps = {_n(_re2.sub(r"\s*\(\d+\)\s*$", "", r[_ri])) for r in _dd[1:] if len(r) > _ri and r[_ri].strip()}
+        if rep_i is not None and paid_reps:
+            seen = {id(r) for r in mine}
+            extra = [r for r in data if len(r) > rep_i and _n(r[rep_i]) in paid_reps and id(r) not in seen]
+            mine += extra
+            plog(f"[orderlog] + {len(extra)} row(s) by paid-rep name ({len(paid_reps)} names); their Owner & Office: "
+                 f"{dict(Counter(_n(r[oc]).split('[')[0].strip()[:30] for r in extra).most_common(6))}")
+    except Exception as e:  # noqa: BLE001
+        plog(f"[orderlog] paid-rep widening skipped: {str(e)[:120]}")
     if not mine:
         plog("[orderlog] owner values sample: " + "; ".join(list(owners)[:15]))
     # read-back: order-date weeks + status mix for the owner
