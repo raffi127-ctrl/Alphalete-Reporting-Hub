@@ -1542,7 +1542,8 @@ _INVALID_SHEET_CHARS = str.maketrans({c: " " for c in r":\/?*[]"})
 # filled cell, columns auto-fit. Georgia 12 renders ~1.3x wider than the
 # width unit (Calibri 11), so autofit scales char count by _OL_WIDTH_FACTOR.
 @contextmanager
-def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset()):
+def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset(),
+                   rep_tab_columns=None, rep_tab_display=None):
     """Swap the order-log column set for ONE build, then restore the house
     fiber layout — for a campaign whose lines have a different shape (the NDS
     wireless log). Everything the pipeline reads at call time is swapped
@@ -1550,31 +1551,52 @@ def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset()):
     date-format column indexes, and the per-rep-tab column list (derived the
     same way the house list is: drop Rep / Customer Phone / Tech Install).
 
+    `rep_tab_columns` names the per-rep-tab columns outright (friendly names,
+    in tab order) for an owner whose tabs differ from that derived list —
+    Carlos's NDS crew tabs carry the line's number between Package and Status
+    (2026-11-09). `rep_tab_display` is that build's header rename map; None
+    keeps the house one.
+
     Date parsing in _load_and_clean keys off the house RAW names, so an
     alternate set must reuse them for its date columns ("sp.Order Date
     (copy)", "spe.Install Date", "Activatoin Date (order log)") — likewise
     "spe.Status" for the status sort/colors. When this isn't active the house
     globals are untouched, so every fiber office's log stays byte-identical."""
+    # Validate BEFORE touching any global: a refused layout must leave the
+    # house profile exactly as it was (there is no finally to restore it yet).
+    friendly = list(friendly_headers)
+    if rep_tab_columns is None:
+        rep_cols = [h for h in friendly
+                    if h not in ("Rep", "Customer Phone", "Tech Install")]
+    else:
+        unknown = [h for h in rep_tab_columns if h not in friendly]
+        if unknown:
+            raise ValueError(f"rep_tab_columns not in this profile's headers: "
+                             f"{unknown}")
+        rep_cols = list(rep_tab_columns)
     global COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS
     global DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER, _REP_NCOL
+    global _REP_TAB_DISPLAY
     saved = (COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS,
-             DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER, _REP_NCOL)
-    COLUMNS_TO_KEEP = list(columns_to_keep)
-    FRIENDLY_HEADERS = list(friendly_headers)
-    OPTIONAL_RAW_COLUMNS = set(optional_raw)
-    DATE_COLUMN_INDEXES = tuple(FRIENDLY_HEADERS.index(n) + 1
-                                for n in DATE_COLUMN_NAMES
-                                if n in FRIENDLY_HEADERS)
-    _REP_TAB_COLUMNS = [h for h in FRIENDLY_HEADERS
-                        if h not in ("Rep", "Customer Phone", "Tech Install")]
-    _REP_FULL_HEADER = list(_REP_TAB_COLUMNS)
-    _REP_NCOL = len(_REP_FULL_HEADER)
+             DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER, _REP_NCOL,
+             _REP_TAB_DISPLAY)
     try:
+        COLUMNS_TO_KEEP = list(columns_to_keep)
+        FRIENDLY_HEADERS = friendly
+        OPTIONAL_RAW_COLUMNS = set(optional_raw)
+        DATE_COLUMN_INDEXES = tuple(FRIENDLY_HEADERS.index(n) + 1
+                                    for n in DATE_COLUMN_NAMES
+                                    if n in FRIENDLY_HEADERS)
+        _REP_TAB_COLUMNS = rep_cols
+        _REP_FULL_HEADER = list(_REP_TAB_COLUMNS)
+        _REP_NCOL = len(_REP_FULL_HEADER)
+        if rep_tab_display is not None:
+            _REP_TAB_DISPLAY = dict(rep_tab_display)
         yield
     finally:
         (COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS,
          DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER,
-         _REP_NCOL) = saved
+         _REP_NCOL, _REP_TAB_DISPLAY) = saved
 
 
 _OL_FONT_NAME = "Georgia"

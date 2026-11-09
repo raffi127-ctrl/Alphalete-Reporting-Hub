@@ -716,6 +716,20 @@ def build_pending_soh(ix, crew, today, pulled_at, log=print):
     return outs if len(outs) > 1 else outs[0]
 
 
+# Carlos 2026-11-09 ("on this NDS order log report we need to add in the
+# phone number for each line, in between the package and status column"):
+# the crew's per-rep tabs carry the line's number (spe.TN — the All tab's
+# Customer Phone column) between Package and Status, headed Phone Number.
+# The house NDS rep tabs drop the number, and Raf's NDS offices keep theirs:
+# this layout rides only on the crew's build below.
+CREW_REP_TAB_COLUMNS = [
+    "Order Date", "Activation Date", "Customer Name", "SPM Number", "Type",
+    "Next Up", "Package", "Customer Phone", "Status", "Install Date",
+    "Ported From", "Tier Bonus $",
+]
+CREW_REP_TAB_DISPLAY = {"Customer Phone": "Phone Number"}
+
+
 def build_order_log(cols, crew, today, log=print) -> Path:
     """The crew's lines as a status-colored workbook. SaraPlus relay first
     (Carlos 2026-10-08: "lets make this come from sara plus instead"),
@@ -744,7 +758,9 @@ def build_order_log(cols, crew, today, log=print) -> Path:
                  and "HIDALGO" in str(r[_oc]).upper()]
         if rows2:
             x, n = NOL._render_order_log("Carlos Hidalgo", header2, rows2,
-                                         today, OUT_DIR)
+                                         today, OUT_DIR,
+                                         rep_tab_columns=CREW_REP_TAB_COLUMNS,
+                                         rep_tab_display=CREW_REP_TAB_DISPLAY)
             log(f"[nds] house order log: {n} line(s) -> {Path(x).name}")
             return Path(x)
         log("[nds] house order log: no rows for Carlos — falling back")

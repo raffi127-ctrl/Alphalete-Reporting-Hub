@@ -311,12 +311,17 @@ _NDS_ORDERLOG_SRC = {
 }
 
 
-def _render_order_log(owner, header, rows, target, out_dir):
+def _render_order_log(owner, header, rows, target, out_dir,
+                      rep_tab_columns=None, rep_tab_display=None):
     """Isaiah's Order Log as the SAME color-coded .xlsx every office gets, in
     the wireless column layout above: emit his order lines as a UTF-16 tab
     file (like a Tableau crosstab export) and run it through the house
     csv_to_xlsx writer under the NDS column profile — styling, status colors,
-    sort, and per-rep tabs all house. Returns (xlsx_path, line_count)."""
+    sort, and per-rep tabs all house. Returns (xlsx_path, line_count).
+
+    `rep_tab_columns` / `rep_tab_display`: an owner's own per-rep-tab layout
+    (Carlos's crew puts the line's number between Package and Status,
+    2026-11-09); None = the house NDS rep tabs every other office gets."""
     from automations.uploaded import order_log as _house
     idx = {col: _find(header, *cands)
            for col, cands in _NDS_ORDERLOG_SRC.items()}
@@ -381,7 +386,9 @@ def _render_order_log(owner, header, rows, target, out_dir):
     tsv.write_text("\n".join(lines), encoding="utf-16")
     with _house.column_profile(_NDS_COLUMNS_TO_KEEP, _NDS_FRIENDLY_HEADERS,
                                optional_raw={"Type", "Next Up", "Ported From",
-                                             "Rep Tier Bonus Amount"}):
+                                             "Rep Tier Bonus Amount"},
+                               rep_tab_columns=rep_tab_columns,
+                               rep_tab_display=rep_tab_display):
         return _house.csv_to_xlsx(tsv, out_dir, owner=owner), len(line_rows)
 
 
