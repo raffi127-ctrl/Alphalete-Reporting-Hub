@@ -469,7 +469,7 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": null,
-   "timeout_minutes": 60
+   "timeout_minutes": 240
   },
   "install_second_round_retention_agent": {
    "on_scheduler": false,
