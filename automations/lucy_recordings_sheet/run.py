@@ -280,7 +280,76 @@ def guess_owners(uids: list, names: dict, owner_names: list, slack: dict, knocks
     return out
 
 
+# ---------- guard: what does NOT count as a recording ----------
+#
+# Raf 2026-11-07: the board goes to the whole org so the owners compete, so a
+# recording sent twice, or a fake one ("a 2min recording or something"), must
+# not count. Dropped recordings leave the count AND the average score. The
+# audit bot already refuses audio under 5 minutes when ffprobe can read it; this
+# catches what got past that.
+
+MIN_RECORDING_SECONDS = 5 * 60
+# Same rep, same length to the second = the same audio exported again (a re-save
+# changes the file's bytes, so the fingerprint alone misses it).
+SAME_LENGTH_SECONDS = 1.0
+TOO_SHORT, DUPLICATE = "too short", "sent twice"
+
+
+def apply_guard(records: list) -> tuple:
+    """(records that count, [(record, reason)] that don't), oldest first, so the
+    first send of a recording is the one that counts. No readable length or
+    fingerprint = it counts: we only drop what we can prove."""
+    kept, dropped = [], []
+    seen_fp, lengths = set(), defaultdict(list)
+    for r in sorted(records, key=lambda x: x.get("ts") or ""):
+        secs, fp, uid = r.get("seconds"), r.get("fp"), r.get("uid") or ""
+        if secs is not None and secs < MIN_RECORDING_SECONDS:
+            dropped.append((r, TOO_SHORT))
+            continue
+        same_length = secs is not None and uid and any(
+            abs(secs - x) <= SAME_LENGTH_SECONDS for x in lengths[uid])
+        if (fp and fp in seen_fp) or same_length:
+            dropped.append((r, DUPLICATE))
+            continue
+        if fp:
+            seen_fp.add(fp)
+        if secs is not None and uid:
+            lengths[uid].append(secs)
+        kept.append(r)
+    return kept, dropped
+
+
+def _log_guard(export: dict, dropped: list, month_prefix: str) -> None:
+    names = export.get("names") or {}
+    mine = [(r, why) for r, why in dropped if (r.get("ts") or "").startswith(month_prefix)]
+    log("guard: %d recording(s) not counted (%d this month)" % (len(dropped), len(mine)))
+    for r, why in mine:
+        secs = r.get("seconds")
+        log("  not counted [%s] %s  %s  %s  %s" % (
+            why, (r.get("ts") or "")[:16], names.get(r.get("uid") or "") or NO_NAME,
+            "?" if secs is None else "%.1f min" % (secs / 60), r.get("file") or ""))
+
+
+def _log_lengths(records: list, month_prefix: str) -> None:
+    """How long this month's counted recordings are, shortest first - what the
+    minimum is judged against."""
+    secs = sorted(r["seconds"] for r in records
+                  if r.get("seconds") is not None and (r.get("ts") or "").startswith(month_prefix))
+    unknown = sum(1 for r in records
+                  if r.get("seconds") is None and (r.get("ts") or "").startswith(month_prefix))
+    log("lengths this month: %d known, %d unknown; shortest (min): %s" % (
+        len(secs), unknown, ", ".join("%.1f" % (s / 60) for s in secs[:25])))
+
+
 # ---------- build ----------
+
+def owner_rank_key(row: list) -> tuple:
+    """Highest % Recorded first (Raf 2026-11-07: "push the guys based on a %"; Eve
+    2026-11-09). Ties: more recordings, then name. No % known, then the "no owner"
+    row, go last. row = [month, owner, recordings, 2nd rounds, %, score]."""
+    pct = row[4]
+    return (row[1] == NO_OWNER, pct == "", -(pct or 0), -row[2], row[1])
+
 
 def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None):
     owners = {o["id"]: o.get("name", o["id"]) for o in export["owners"]}
@@ -352,7 +421,7 @@ def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None)
                        round(sum(r[2] for r in known) / ivs, 4) if ivs else "",
                        round(sum(sc) / len(sc), 1) if sc else "",
                        sum(1 for (m2, u), b in rep.items() if m2 == mk and u != "?" and b["n"])])
-    owner_rows.sort(key=lambda x: (x[0], -x[2], x[1]))
+    owner_rows.sort(key=lambda x: (x[0],) + owner_rank_key(x))
     rep_rows.sort(key=lambda x: (x[0], -x[3], x[1]))
     month_list = [month_label(m) for m in sorted(months, reverse=True)]
     unmatched = sorted(owners[o] for o, offs in offices.items() if not offs)
@@ -392,7 +461,7 @@ MONTH_EXPR = 'IF(ISNUMBER(%s), TEXT(%s, "mmmm yyyy"), %s)' % ((MONTH_CELL,) * 3)
 LAYOUTS = {
     TAB_OWNER: {
         "hdr": ["Owner", "Recordings", "2nd Rounds Done", "% Recorded", "Avg Score"],
-        "calc": CALC_OWNER, "cols": "B2:F", "owner_col": "B2:B", "sort": 2,
+        "calc": CALC_OWNER, "cols": "B2:F", "owner_col": "B2:B", "sort": 4, "then": 2,
         "pct": 3, "score": 4, "widths": [250, 150, 150, 150, 150],
         "other": TAB_REP, "other_label": "View by Rep  →",
         "cards": [("RECORDINGS", 2, "0"), ("2ND ROUNDS DONE", 3, "0"),
@@ -412,9 +481,10 @@ LAYOUTS = {
 def table_formula(lay: dict) -> str:
     calc = _q(lay["calc"])
     in_month = "%s!A2:A=%s" % (calc, MONTH_EXPR)
-    return ('=IFERROR(SORT(FILTER(%s!%s, %s), FILTER(%s!%s, %s)="%s", TRUE, %d, FALSE), '
+    then = ", %d, FALSE" % lay["then"] if lay.get("then") else ""
+    return ('=IFERROR(SORT(FILTER(%s!%s, %s), FILTER(%s!%s, %s)="%s", TRUE, %d, FALSE%s), '
             '"No data for this month")'
-            % (calc, lay["cols"], in_month, calc, lay["owner_col"], in_month, NO_OWNER, lay["sort"]))
+            % (calc, lay["cols"], in_month, calc, lay["owner_col"], in_month, NO_OWNER, lay["sort"], then))
 
 
 def card_formula(col: int) -> str:
@@ -705,6 +775,7 @@ def write(S, ssid, owner_rows, rep_rows, totals, month_list):
 # re-read yesterday's late 2nd rounds. Plain HTML, no images.
 
 RAFAEL = "raffi127@gmail.com"
+ORG_SENT_DIR = HERE.parents[1] / "output" / "state" / "lucy_recordings_org_sent"
 
 
 def _cell_color(v, cuts):
@@ -722,7 +793,8 @@ def date_range() -> str:
     return a if a == b else "%s – %s" % (a, b)
 
 
-def build_email_html(month: str, totals: list, owner_rows: list, ssid: str) -> str:
+def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
+                     show_link: bool = True) -> str:
     t = next((x for x in totals if x[0] == month), [month, 0, "", "", "", 0])
     fmt_pct = lambda v: "—" if v == "" else "%d%%" % round(v * 100)
     fmt_num = lambda v: "—" if v == "" else str(v)
@@ -733,8 +805,7 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str) -> s
         '<div style="font-size:11px;color:#7A8294;font-weight:bold">%s</div>'
         '<div style="font-size:24px;color:#1F2A44;font-weight:bold">%s</div></td>' % c
         for c in cards)
-    rows = sorted((r for r in owner_rows if r[0] == month),
-                  key=lambda r: (r[1] == NO_OWNER, -r[2], r[1]))
+    rows = sorted((r for r in owner_rows if r[0] == month), key=owner_rank_key)
     body = []
     for i, r in enumerate(rows):
         bg = "#F1F1F1" if r[1] == NO_OWNER else ("#F6F8FC" if i % 2 else "#FFFFFF")
@@ -748,6 +819,11 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str) -> s
             % (bg, r[1], r[2], fmt_num(r[3]), pct_bg or bg, fmt_pct(r[4]),
                sc_bg or bg, fmt_num(r[5])))
     link = "https://docs.google.com/spreadsheets/d/%s" % ssid
+    button = ('<p style="margin:16px 0"><a href="%s" style="background:#E0B84C;color:#1F2A44;padding:10px 16px;'
+              'text-decoration:none;font-weight:bold;border-radius:4px">Open the full sheet (by rep)</a></p>'
+              % link) if show_link else ""
+    rule = ('<p style="margin:12px 0;font-size:12px;color:#5B6478">Recordings sent more than once, or '
+            'under %d minutes, don\'t count.</p>' % (MIN_RECORDING_SECONDS // 60))
     return (
         '<div style="font-family:Roboto,Arial,sans-serif;max-width:680px">'
         '<div style="background:#1F2A44;color:#fff;padding:14px 16px;font-size:18px;font-weight:bold">'
@@ -759,21 +835,20 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str) -> s
         '<table style="width:100%%;border-collapse:collapse;font-size:13px;margin-top:10px">'
         '<tr style="background:#2E3E61;color:#fff"><th style="text-align:left;padding:8px 10px">Owner</th>'
         '<th>Recordings</th><th>2nd Rounds Done</th><th>%% Recorded</th><th>Avg Score</th></tr>%s</table>'
-        '<p style="margin:16px 0"><a href="%s" style="background:#E0B84C;color:#1F2A44;padding:10px 16px;'
-        'text-decoration:none;font-weight:bold;border-radius:4px">Open the full sheet (by rep)</a></p>'
-        '</div>' % (date_range(), card_html, "".join(body), link))
+        '%s%s</div>' % (date_range(), card_html, "".join(body), rule, button))
 
 
-def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str) -> None:
+def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str,
+               show_link: bool = True) -> None:
     from email.message import EmailMessage
     from automations.org_sales_board.screenshot_email import FROM_ADDR, send
     msg = EmailMessage()
     msg["Subject"] = "LUCY 2nd Round Recordings — %s (month to date)" % date_range()
     msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to)
-    msg.set_content("LUCY 2nd Round Recordings - %s. Open the sheet: "
-                    "https://docs.google.com/spreadsheets/d/%s" % (month, ssid))
-    msg.add_alternative(build_email_html(month, totals, owner_rows, ssid), subtype="html")
+    msg.set_content("LUCY 2nd Round Recordings - %s, month to date." % month + (
+        " Open the sheet: https://docs.google.com/spreadsheets/d/%s" % ssid if show_link else ""))
+    msg.add_alternative(build_email_html(month, totals, owner_rows, ssid, show_link), subtype="html")
     send(msg)
     log("emailed '%s' to %s" % (msg["Subject"], ", ".join(to)))
 
@@ -791,7 +866,9 @@ def main(argv=None) -> int:
     ap.add_argument("--share", action="append", default=[], help="email to share a new sheet with")
     ap.add_argument("--sheet", default=SSID, help="sheet id to write")
     ap.add_argument("--email", action="store_true", help="after writing, email the report to Raf")
-    ap.add_argument("--email-to", help="after writing, email the report to THIS address instead (test)")
+    ap.add_argument("--email-org", action="store_true",
+                    help="after writing, email the whole org (Alphalete Org Owners), once a day")
+    ap.add_argument("--email-to", help="after writing, email THIS address the org version (test)")
     ap.add_argument("--restyle", action="store_true",
                     help="rebuild the two visible tabs' layout (keeps the sheet + link)")
     a = ap.parse_args(argv)
@@ -799,6 +876,10 @@ def main(argv=None) -> int:
     export = load_bot_export(a.from_json)
     log("bot: %d recording(s), %d rep(s), %d owner(s)"
         % (len(export["records"]), len(export["reps"]), len(export["owners"])))
+    export["records"], dropped = apply_guard(export["records"])
+    this_month = dt.datetime.now(CT).strftime("%Y-%m")
+    _log_guard(export, dropped, this_month)
+    _log_lengths(export["records"], this_month)
     S = _session()
     done, owner_of = load_interviews(S)
     log("retention sheet: %d office(s)" % len(owner_of))
@@ -837,10 +918,33 @@ def main(argv=None) -> int:
     if a.restyle and not a.create:
         restyle(S, ssid)
     write(S, ssid, owner_rows, rep_rows, totals, month_list)
-    if a.email or a.email_to:
+    if a.email or a.email_to or a.email_org:
         # The report covers through yesterday: on the 1st, that's last month.
         month = month_label((dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%Y-%m"))
-        send_email([a.email_to] if a.email_to else [RAFAEL], month, totals, owner_rows, ssid)
+        if a.email_to:
+            send_email([a.email_to], month, totals, owner_rows, ssid, show_link=False)
+        elif a.email_org:
+            return _send_org(month, totals, owner_rows, ssid)
+        else:
+            send_email([RAFAEL], month, totals, owner_rows, ssid)
+    return 0
+
+
+def _send_org(month: str, totals: list, owner_rows: list, ssid: str) -> int:
+    """Whole org, at most once a day: a rerun must never mail ~56 people again.
+    No sheet button: the sheet isn't shared with the owners."""
+    from automations.org_sales_board.screenshot_email import resolve_distro
+    lock = ORG_SENT_DIR / ("%s.sent" % dt.datetime.now(CT).strftime("%Y-%m-%d"))
+    if lock.exists():
+        log("org email already went out today (%s) - not sending again" % lock.name)
+        return 0
+    to = resolve_distro()
+    if not to:
+        log("org email NOT sent: no distro")
+        return 1
+    send_email(to, month, totals, owner_rows, ssid, show_link=False)
+    ORG_SENT_DIR.mkdir(parents=True, exist_ok=True)
+    lock.write_text(dt.datetime.now(CT).isoformat(), encoding="utf-8")
     return 0
 
 
