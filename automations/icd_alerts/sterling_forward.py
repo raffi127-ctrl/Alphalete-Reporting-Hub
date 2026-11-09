@@ -168,6 +168,8 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
             return "skipped for now"
         address = guess if pick == F.YES else ask.text(
             "The email address Sterling sends your login codes to:").strip()
+        # A pasted link brings "mailto:" with it (Cody 2026-11-09).
+        address = address.replace("mailto:", "").strip().strip("<>").strip()
         if "@" not in address:
             say("      that did not look like an email address -- skipped")
             return "skipped for now"
