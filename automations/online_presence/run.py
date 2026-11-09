@@ -42,6 +42,12 @@ def run_office(p: offices.Presence, *, live: bool,
         chk = watch.ensure_daily_check(p, live=not dry)
         out["office computer"] = acts + ([chk] if chk else [])
     if p.reviews:
+        # The ALERT first (seconds), then the reply drafts (Claude, slower):
+        # a bad review is in front of the office before its draft is written.
+        if p.gbp_location:
+            from automations.brand_audit.social_inbox import _client as _cl
+            from automations.online_presence import review_alerts
+            out["bad reviews"] = review_alerts.check(p, _cl(), live=not dry)
         out["reviews"] = review_replies.process_reviews(dry_run=dry, profile=p)
     if p.social:
         lock = p.path("social_inbox.lock")
@@ -90,6 +96,17 @@ def main(argv=None) -> int:
                   + (" — invite by hand: " + ", ".join(r["missed"]) if r.get("missed") else ""))
     except Exception as e:
         print(f"[room] couldn't check for rooms to make ({type(e).__name__}: {str(e)[:80]})")
+
+    # Alphalete's own bad Google reviews alert on the same 10 minutes (its
+    # reply drafts still come from the noon brand_audit run, unchanged).
+    if not a.office:
+        try:
+            from automations.brand_audit.social_inbox import _client as _cl
+            from automations.online_presence import review_alerts
+            for x in review_alerts.check(offices.alphalete(), _cl(), live=a.live):
+                print(f"[alphalete] bad reviews: {x['action']} · {x.get('note') or x.get('error') or ''}")
+        except Exception as e:
+            print(f"[alphalete] bad-review check failed ({type(e).__name__}: {str(e)[:80]})")
 
     # ONE read of the relay for every office (not one per office).
     answers: Dict[str, List[dict]] = {}
