@@ -1846,6 +1846,8 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
                     plog(f"[orderlog] {label} csv status={r.status} bytes={len(b):,} valid={ok} (try {attempt}/3)")
                     if ok:
                         return b
+                    if r.status == 200 and not b.strip():
+                        return b"EMPTY"           # a window with no orders at all (e.g. before the data starts)
                     plog("[orderlog] body head: " + b[:150].decode("utf-8-sig", "replace").replace("\n", " "))
             except Exception as e:  # noqa: BLE001
                 plog(f"[orderlog] {label} try {attempt} failed: {str(e)[:140]}")
@@ -1866,6 +1868,9 @@ def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log, lead_rep_id
     capped = 0
     for k, (a, b_) in enumerate(windows, 1):
         body = _fetch(NO._orderlog_url(a, b_), f"[{a}..{b_}]")
+        if body == b"EMPTY":
+            plog(f"[orderlog] window {a}..{b_}: 0 rows (empty export)")
+            continue
         if not body:
             plog(f"STOP: no ORDER LOG csv for window {a}..{b_}")
             _owner_dd_write_log(owner, lines, log, tab_suffix=tab_suffix)
