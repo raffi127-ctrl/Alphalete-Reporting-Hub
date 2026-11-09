@@ -134,8 +134,9 @@ def roster() -> List[str]:
     return sorted(names)
 
 
-def fetch(day: dt.date) -> List[Tuple[dt.datetime, str]]:
-    """The channel's posts for `day` (plus the next morning's early reposts)."""
+def fetch_raw(day: dt.date) -> List[dict]:
+    """The channel's people posts for `day` (plus the next morning's early
+    reposts), as Slack gives them -- ts / user / text."""
     from automations.shared import slack_metrics_post as S
     start = dt.datetime.combine(day, DAY_STARTS, TZ)
     end = start + dt.timedelta(days=1)
@@ -144,13 +145,16 @@ def fetch(day: dt.date) -> List[Tuple[dt.datetime, str]]:
     while True:
         r = client.conversations_history(channel=CHANNEL, oldest=str(start.timestamp()),
                                          latest=str(end.timestamp()), limit=200, cursor=cursor)
-        for m in r.get("messages", []):
-            if m.get("bot_id") or m.get("subtype"):
-                continue
-            out.append((dt.datetime.fromtimestamp(float(m["ts"]), dt.timezone.utc), m.get("text", "")))
+        out += [m for m in r.get("messages", []) if not (m.get("bot_id") or m.get("subtype"))]
         cursor = (r.get("response_metadata") or {}).get("next_cursor")
         if not cursor:
             return out
+
+
+def fetch(day: dt.date) -> List[Tuple[dt.datetime, str]]:
+    """The channel's posts for `day` (plus the next morning's early reposts)."""
+    return [(dt.datetime.fromtimestamp(float(m["ts"]), dt.timezone.utc), m.get("text", ""))
+            for m in fetch_raw(day)]
 
 
 def run(day: dt.date, *, send: bool, log=print) -> int:
@@ -233,7 +237,16 @@ def tick(*, send: bool, log=print) -> int:
         _STATE.write_text(now.isoformat())
     except OSError:
         pass
-    return run(sales_day(dt.datetime.now(dt.timezone.utc)), send=send, log=log)
+    day = sales_day(dt.datetime.now(dt.timezone.utc))
+    rc = run(day, send=send, log=log)
+    # Nico's own Sales Board (Nico 2026-11-09) off the same posts. Its own
+    # failure never costs the relay above.
+    try:
+        from automations.verizon_office import nico_sheet
+        nico_sheet.sync([day], write=send, log=log)
+    except Exception as e:  # noqa: BLE001
+        log("⚠ Nico's sheet not updated (%s: %s)" % (type(e).__name__, e))
+    return rc
 
 
 def main(argv=None) -> int:

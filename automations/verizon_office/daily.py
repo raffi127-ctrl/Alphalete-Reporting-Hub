@@ -41,8 +41,12 @@ def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
     sv = parse.read_sales_verification(sv_path)
     if parse.file_date(sv_path) != today:
         raise RuntimeError(f"newest Sales Verification is {parse.file_date(sv_path)}, not today — stale, nothing posts")
-    if not sv.weeks or not sv.weeks[0].reps:
-        raise RuntimeError("no reps this week — not posting a blank board")
+    # BLANK = NO REP IN ANY WEEK. The newest block is the week in progress:
+    # Monday's file runs through Sunday, and a Sunday nobody sold leaves it
+    # empty while last week holds everything (11/9: WE 11/14 0 reps, WE 11/7
+    # 14 reps / 149 lines -- the old weeks[0] check posted nothing).
+    if not any(w.reps for w in sv.weeks):
+        raise RuntimeError("no reps in any week — not posting a blank board")
     out = ROOT / "output" / "verizon_office" / office.key
     out.mkdir(parents=True, exist_ok=True)
     # NO SALES BOARD FROM HERE (Carlos 2026-11-07): his vantura_verizon_credico
