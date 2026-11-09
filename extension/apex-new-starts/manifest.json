@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Lucy New Starts to Apex",
+  "name": "Lucy Onboarding",
   "version": "1.0.0",
-  "description": "The onboarding board for your office, and the weekly new starts into Apex. Lucy fetches both \u2014 no trip to the Hub.",
+  "description": "Your office's onboarding board \u2014 who started, what's left for each of them, and the weekly new starts into Apex.",
   "permissions": [
     "storage",
     "clipboardRead",

@@ -1,6 +1,12 @@
-# Lucy · New Starts to Apex — Chrome extension
+# Lucy Onboarding — Chrome extension
 
-One button on Apex: **Fill Apex**, bottom right. It fills each week's new starts
+Two things behind one icon:
+
+- **the onboarding board** — who started this week, what each of them still
+  needs, who to mark off, and one printed sheet per classroom;
+- **new starts → Apex**, the Thursday job.
+
+And one button on Apex itself: **Fill Apex**, bottom right. It fills each week's new starts
 into Apex — Employment Record, User Profile, Tax & Bank — from the list the Hub
 built off the sales board and everyone's signed Blue Ink packet. You type the
 Socials; nothing else is typed by hand.
@@ -10,7 +16,7 @@ This replaces the **Fill Apex bookmark**. Same engine, same run, same panel.
 ## Install (per computer, ~1 min)
 1. Chrome → `chrome://extensions` → turn on **Developer mode** (top right).
 2. **Load unpacked** → pick this `extension/apex-new-starts` folder.
-3. Pin it (puzzle icon → pin **Lucy New Starts to Apex**).
+3. Pin it (puzzle icon → pin **Lucy Onboarding**).
 4. Delete the old **Fill Apex** bookmark so nobody clicks the wrong one.
 
 ## Every week
