@@ -686,6 +686,11 @@ def _no_dispo_message(today: dt.date, now: dt.datetime, rows: List[Dict],
         _log("no-dispo: no names in Stations %s -- nothing to check" % C.NO_DISPO_RANGE)
         return ""
     everyone = rows + borrowed_rows(today, rows)
+    if not everyone:
+        # No grid at all is a pull problem, not twenty reps with nothing --
+        # never text the whole lineup off an empty read.
+        _log("no-dispo %s: the disposition grid came back EMPTY -- not texting" % slot)
+        return ""
     missing = no_dispo_names(names, everyone)
     _log("no-dispo %s: %d on the car-ride grid, %d without dispositions%s"
          % (slot, len(names), len(missing), (": " + ", ".join(missing)) if missing else ""))
@@ -747,7 +752,10 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         # Raf's numbers for the borrowed reps land ~4 min into the slot; our
         # own pull happens AFTER so both halves of the board are fresh.
         wait_for_fresh_share(now, shared_at=lambda: _shared_at(today))
-    over, rows = pull(today, want_board=want_board, headless=headless)
+    # The grid rows are needed for the board AND for the no-dispo check: at
+    # 2:45 on 2026-11-09 (no board due) the pull skipped the grid, `rows`
+    # was empty, and 17 reps who HAD knocked were texted as "no dispositions".
+    over, rows = pull(today, want_board=(want_board or want_nodispo), headless=headless)
     # Cinthya + Nathaly, knocking on Raf's Ownerville (config.BORROWED_ROWS):
     # on OUR board picture only. `rows` (our own) is what goes to the owners'
     # board share below -- Raf's row there already carries them.

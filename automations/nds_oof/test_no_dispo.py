@@ -65,6 +65,13 @@ class NoDispo(unittest.TestCase):
             msg = R._no_dispo_message(now.date(), now, rows, {}, send=True)
         self.assertEqual(msg, "Everyone on the lineup has dispositioned! — 3:15 PM")
 
+    def test_empty_grid_never_texts_the_whole_lineup(self):
+        with mock.patch.object(R, "_read_station_names", lambda: R.station_names(GRID)), \
+             mock.patch.object(R, "borrowed_rows", lambda today, own: []), \
+             mock.patch.object(R, "_log"):
+            now = dt.datetime(2026, 11, 9, 14, 45, 5)
+            self.assertEqual(R._no_dispo_message(now.date(), now, [], {}, send=True), "")
+
     def test_message_once_per_slot_and_off_by_default(self):
         state = {}
         with mock.patch.object(R, "_read_station_names", lambda: R.station_names(GRID)), \
@@ -97,6 +104,7 @@ class SlotPulls(unittest.TestCase):
 
         def fake_pull(today, *, want_board, headless=True):
             seen["pulled"] = True
+            seen["grid"] = want_board          # the no-dispo check needs the grid rows
             return [], []
 
         with mock.patch.object(R, "_state", lambda: dict(state)), \
@@ -112,6 +120,7 @@ class SlotPulls(unittest.TestCase):
             rc = R.tick(send=False, force=False, board=False, now=now)
         self.assertEqual(rc, 0)
         self.assertTrue(seen.get("pulled"), "the slot did not make the tick pull")
+        self.assertTrue(seen.get("grid"), "the slot pull must fetch the grid rows")
 
     def test_no_slot_and_nothing_due_still_skips(self):
         now = dt.datetime(2026, 11, 6, 15, 40, 5)   # past the last slot + grace
