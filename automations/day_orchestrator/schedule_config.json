@@ -12918,7 +12918,7 @@
    "depends_on": [],
    "timeout_minutes": 45,
    "_timeout_note": "Probe 6 took 11 minutes with 23 of 30 skipped as already-sent. A fresh Monday cohort where everyone needs a bundle is nearer 25, plus the add phase -- so 45, not the probe's 30.",
-   "verify": null
+   "verify": {"type": "manifest", "report_id": "digi_docs"}
   },
   "disable_digi_docs_send_agent": {
    "on_scheduler": false,

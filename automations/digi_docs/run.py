@@ -282,6 +282,17 @@ def _mark_quiet_day(quiet: bool) -> None:
 #
 # Only THIS machine's confirmed sends. Somebody sent by hand is not in it and
 # still gets the OwnerVille check, which is the authoritative one.
+def _manifest_all_sent(names) -> None:
+    """Clean delivery manifest for a live send pass with nothing left to send
+    today (every due person already sent, or no chart dated today)."""
+    try:
+        from automations.shared import run_manifest as _rm
+        _rm.write_manifest("digi_docs", failed=[], ok=True,
+                           succeeded=list(names))
+    except Exception:                                   # noqa: BLE001
+        pass    # a manifest we cannot write must not fail the run
+
+
 def sent_ledger_path() -> str:
     import datetime as _dt
     return f"output/logs/.digi-docs-sent-{_dt.date.today().isoformat()}"
@@ -453,6 +464,8 @@ def _phases(args) -> int:
         if not send:
             print("no chart is dated for today — nothing to do")
             _mark_quiet_day(True)
+            if not dry and do_send:
+                _manifest_all_sent([])
             return 0
         _mark_quiet_day(False)
 
@@ -461,6 +474,7 @@ def _phases(args) -> int:
     # round. NOTE adding is itself a send: it mails the onboarding email.
     add_list = list(send)
     no_time = []
+    not_yet = []
     if args.due_now and do_send:
         send, not_yet, no_time = roster.due_now(send)
         print(f"due now: {len(send)} · not yet: {len(not_yet)} · "
@@ -517,6 +531,13 @@ def _phases(args) -> int:
     # above is enough to know there is no work.
     if args.due_now and do_send and not send and not do_add:
         print("nobody is due yet — not opening OwnerVille")
+        # Nobody due, nobody still waiting on a later start time, nobody
+        # refused = everyone on today's chart is already on this machine's
+        # sent ledger. That IS delivered; say so, or a clean re-run after a
+        # killed pass leaves the ticket open on "nothing can confirm it
+        # delivered" (2026-11-09).
+        if not dry and not not_yet and not refused:
+            _manifest_all_sent([c.name for c in add_list])
         return _write_back(args, ws, send, added, done, refused,
                            tinted_dry=dry, do_send=do_send, fatal="")
     # `fatal` is what makes the WORST case the loudest one. Everything below
