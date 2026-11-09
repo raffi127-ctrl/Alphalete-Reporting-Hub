@@ -35,6 +35,30 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "nds_churn"
 VIEW_OWNER = "Carlos Hidalgo"
 CARLOS = "U046G04P5LG"
+# Rich output goes to a tab on the control sheet (the queue's Result cell
+# holds ~470 chars; logtail cuts lines at 200) -- read it back from the mini.
+CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+DIAG_TAB = "NDS Churn Diag"
+
+
+def write_diag(lines, log=print) -> None:
+    """Replace the diag tab's contents with these lines (one per row)."""
+    try:
+        from automations.recruiting_report.fill import _retry, open_by_key
+        sh = open_by_key(CONTROL_SHEET_ID)
+        try:
+            ws = sh.worksheet(DIAG_TAB)
+        except Exception:  # noqa: BLE001 -- first time: make it
+            ws = sh.add_worksheet(DIAG_TAB, rows=400, cols=4)
+        _retry(lambda: ws.clear())
+        rows = [[dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "written by nds_churn"]]
+        rows += [[str(x)[:49000]] for x in lines]
+        _retry(lambda: ws.batch_update([{"range": f"A1:B{len(rows)}",
+                                         "values": [r + [""] * (2 - len(r)) for r in rows]}],
+                                       value_input_option="RAW"))
+        log(f"[nds_churn] diag -> control sheet tab {DIAG_TAB!r} ({len(lines)} line(s))")
+    except Exception as e:  # noqa: BLE001 -- a diag write never fails the run
+        log(f"[nds_churn] diag tab write failed: {type(e).__name__}: {e}")
 
 
 def pull(today: dt.date, log=print) -> Path:
@@ -141,7 +165,9 @@ def main(argv=None) -> int:
     path = Path(a.from_file) if a.from_file else pull(today, log)
     header, ix, lines = C.load_owner_lines(path, log=log)
     if a.probe:
-        print(C.probe_text(header, ix, lines, today))
+        text = C.probe_text(header, ix, lines, today)
+        print(text)
+        write_diag(["PROBE " + today.isoformat()] + text.split("\n"), log=log)
         print("=== probe done ===", flush=True)
         return 0
 
@@ -166,8 +192,17 @@ def main(argv=None) -> int:
         f" — {detail}")
 
     if a.dry_run:
-        for r in helper:
-            log("   " + " | ".join("" if v is None else str(v) for v in r))
+        rows_txt = [" | ".join("" if v is None else str(v) for v in r) for r in helper]
+        for t in rows_txt:
+            log("   " + t)
+        write_diag(["DRY-RUN " + today.isoformat(),
+                    f"CHURN 0-30: base {summary['base']} disc {summary['disc']} split {summary['split']}",
+                    f"RATES: {_fmt_rates(office)} ({len(reps)} reps)",
+                    f"RECONCILE: {ok} -- {detail}",
+                    "STATUS: " + status,
+                    f"UNMAPPED: {um}",
+                    "ROLLOFF ROWS (%d):" % len(helper)] + rows_txt
+                   + ["REPS:"] + [f"{k}: {v}" for k, v in sorted(reps.items())], log=log)
         log("[dry-run] no writes performed.")
         print("=== done ===", flush=True)
         return 0
