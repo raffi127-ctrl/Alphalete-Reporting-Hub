@@ -70,5 +70,70 @@ class FindBoxTest(unittest.TestCase):
         self.assertEqual(R.caption(dt.date(2026, 11, 5)), "Stations - Thursday 11/5")
 
 
+
+class _FakeSmp:
+    """Stand-in for slack_metrics_post: upload always 'ok', landing scripted."""
+    def __init__(self, landings):
+        self.landings = list(landings)
+        self.uploads = 0
+
+    def post_reply_with_image(self, png, **kw):
+        self.uploads += 1
+        return {"ok": True, "file": "F%d" % self.uploads}
+
+    def _client(self):
+        return None
+
+    def file_landed_in_channel(self, client, file_id, channel_id, comment=""):
+        return self.landings.pop(0)
+
+
+class SlackLandingTest(unittest.TestCase):
+    def test_seen_first_time_uploads_once(self):
+        smp = _FakeSmp([True])
+        self.assertTrue(R._post_slack(smp, R.Path("x.png"), "c", send=True))
+        self.assertEqual(smp.uploads, 1)
+
+    def test_missing_ok_upload_is_retried_once(self):
+        # 2026-11-09: ok + file id, never in the channel
+        smp = _FakeSmp([False, True])
+        self.assertTrue(R._post_slack(smp, R.Path("x.png"), "c", send=True))
+        self.assertEqual(smp.uploads, 2)
+
+    def test_missing_twice_is_a_miss(self):
+        smp = _FakeSmp([False, False])
+        self.assertIs(R._post_slack(smp, R.Path("x.png"), "c", send=True), False)
+        self.assertEqual(smp.uploads, 2)
+
+    def test_cant_read_channel_is_not_a_miss_and_no_double_post(self):
+        smp = _FakeSmp([None])
+        self.assertIsNone(R._post_slack(smp, R.Path("x.png"), "c", send=True))
+        self.assertEqual(smp.uploads, 1)
+
+
+class ChannelLandedTest(unittest.TestCase):
+    class _C:
+        def __init__(self, msgs=None, boom=False):
+            self.msgs, self.boom = msgs or [], boom
+        def conversations_history(self, **kw):
+            if self.boom:
+                raise RuntimeError("no scope")
+            return {"messages": self.msgs}
+
+    def test_found_by_file_id(self):
+        from automations.shared import slack_metrics_post as smp
+        c = self._C([{"text": "", "files": [{"id": "F1"}]}])
+        self.assertTrue(smp.file_landed_in_channel(c, "F1", "C", tries=1))
+
+    def test_absent_is_false(self):
+        from automations.shared import slack_metrics_post as smp
+        c = self._C([{"text": "other", "files": [{"id": "F9"}]}])
+        self.assertIs(smp.file_landed_in_channel(c, "F1", "C", tries=2, delay=0), False)
+
+    def test_unreadable_is_none(self):
+        from automations.shared import slack_metrics_post as smp
+        self.assertIsNone(smp.file_landed_in_channel(self._C(boom=True), "F1", "C",
+                                                     tries=2, delay=0))
+
 if __name__ == "__main__":
     unittest.main()

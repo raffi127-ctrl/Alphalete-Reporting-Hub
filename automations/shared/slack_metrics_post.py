@@ -1052,6 +1052,39 @@ def file_landed_in_thread(client, file_id: str, channel_id: str,
     return False if could_read else None
 
 
+def file_landed_in_channel(client, file_id: str, channel_id: str, *,
+                           comment: str = "", tries: int = 11,
+                           delay: float = 3.0, lookback_sec: int = 600):
+    """file_landed_in_thread for a TOP-LEVEL post: is the uploaded file a
+    message in the channel itself? Same answers: True / False / None (could not
+    read the channel -- never counted as a miss).
+
+    Why (2026-11-09): the Stations picture got `ok` + a file id at 9:02 CT and
+    never showed up in #alphalete-sales; nothing checked, so nobody heard.
+    Reads only the last `lookback_sec` of the channel."""
+    if not channel_id or not (file_id or comment):
+        return None
+    import time as _time
+    could_read = False
+    for attempt in range(tries):
+        try:
+            oldest = _time.time() - lookback_sec
+            resp = client.conversations_history(channel=channel_id,
+                                                oldest=str(oldest), limit=200)
+            could_read = True
+            for msg in resp.get("messages") or []:
+                if file_id and any(f.get("id") == file_id
+                                   for f in msg.get("files") or []):
+                    return True
+                if comment and (msg.get("text") or "").strip() == comment.strip():
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        if attempt < tries - 1:
+            _time.sleep(delay)
+    return False if could_read else None
+
+
 def post_reply_with_file(
     file_path: Path,
     *,
