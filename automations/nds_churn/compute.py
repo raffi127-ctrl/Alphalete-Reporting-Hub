@@ -426,7 +426,9 @@ def status_line(ts: dict) -> str:
                 f"(Tier {p['tier']} band)")
     eff = dt.date.fromisoformat(ts["notice"]["effective"])
     exc = ts.get("excluded") or {}
-    exc_txt = ", ".join(f"{v} {k}" for k, v in sorted(exc.items())) or "none"
+    names = {"new": "tablet/wearable line", "upgrade": "upgrade", "untyped": "untyped line"}
+    exc_txt = ", ".join(f"{v} {names.get(k, k)}{'s' if v != 1 else ''}"
+                        for k, v in sorted(exc.items())) or "none"
     return (f"Churn Notice eff {eff.month}/{eff.day}: Non-BYOD Tier "
             f"{n['notice_code']} (${n['notice_pay'][0]} OOF / ${n['notice_pay'][1]} INFP per port line) · "
             f"BYOD Tier {b['notice_code']} (${b['notice_pay'][0]} / ${b['notice_pay'][1]}).  "

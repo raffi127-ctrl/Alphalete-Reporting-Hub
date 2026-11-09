@@ -115,7 +115,7 @@ class Compute(unittest.TestCase):
         self.assertIn("Tier 3-3 ($213 OOF / $193 INFP", line)
         self.assertIn("BYOD 1/1 = 100.0% (Tier 1 band)", line)
         self.assertIn("≤19 port activations", line)
-        self.assertIn("not counted: 1 new, 1 upgrade", line)
+        self.assertIn("not counted: 1 tablet/wearable line, 1 upgrade)", line)
 
     def test_rep_dnq(self):
         self.assertIsNone(comp.rep_dnq(8.0, 10, 50.0, 10))   # under the floors
