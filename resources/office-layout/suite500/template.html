@@ -1,0 +1,154 @@
+<title>Suite 500 Floor Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Layout: drafting-sheet plan on top, room key below; same sheet look as the other office-layout drawings */
+  :root{
+    --paper:#f2f0e9; --sheet:#fbfaf6; --ink:#22262d; --graphite:#6a7480;
+    --wall:#2b3038; --hall:#efeee7; --carpet:#e3dfd4; --vinyl:#dfe3e2; --dot:#c9c3b4; --plank:#c3cac8;
+    --glass:#3f7fb0; --accent:#cf4433; --accent-soft:#f0d9d4; --line:#dcd9cf; --muted:#8a8f88;
+    --display:"Archivo", "Helvetica Neue", Arial, sans-serif;
+    --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+    --paper:#14171c; --sheet:#1b1f26; --ink:#e9ebee; --graphite:#8b96a3;
+    --wall:#c9ced6; --hall:#20252d; --carpet:#2a2823; --vinyl:#232a2c; --dot:#3d3a33; --plank:#34403f;
+    --glass:#6fb0e0; --accent:#e6584a; --accent-soft:#3a2320; --line:#2b313a; --muted:#7e8892; color-scheme:dark; } }
+  :root[data-theme="dark"]{
+    --paper:#14171c; --sheet:#1b1f26; --ink:#e9ebee; --graphite:#8b96a3;
+    --wall:#c9ced6; --hall:#20252d; --carpet:#2a2823; --vinyl:#232a2c; --dot:#3d3a33; --plank:#34403f;
+    --glass:#6fb0e0; --accent:#e6584a; --accent-soft:#3a2320; --line:#2b313a; --muted:#7e8892; color-scheme:dark; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--display);
+    padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+  .wrap{max-width:1180px;margin:0 auto;display:grid;gap:22px}
+  header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:12px}
+  .eyebrow{font:500 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--graphite)}
+  h1{font-size:clamp(26px,4vw,38px);font-weight:700;margin:6px 0 0;letter-spacing:-.01em;text-wrap:balance}
+  .stamp{font:500 12px/1.5 var(--mono);color:var(--graphite);text-align:right}
+  .sheet{background:var(--sheet);border:1px solid var(--line);border-radius:4px;padding:14px;overflow-x:auto}
+  svg{display:block;width:100%;min-width:540px;height:auto}
+  .fl-carpet{fill:url(#carpet)} .fl-vinyl{fill:url(#vinyl)}
+  .hit{fill:transparent;stroke:var(--wall);stroke-width:3}
+  .room{cursor:pointer;outline:none}
+  .room:hover .hit,.room:focus-visible .hit{fill:var(--accent-soft);fill-opacity:.55}
+  .room.on .hit{fill:var(--accent-soft);fill-opacity:.8;stroke:var(--accent);stroke-width:4}
+  .tag{fill:var(--sheet);stroke:var(--ink);stroke-width:1.5}
+  .room.on .tag{fill:var(--accent);stroke:var(--accent)}
+  .tagt{font:600 13px var(--mono);fill:var(--ink);text-anchor:middle}
+  .room.on .tagt{fill:var(--sheet)}
+  .rn{font:700 15px var(--display);fill:var(--ink);text-anchor:middle;paint-order:stroke;stroke:var(--sheet);stroke-width:4px;stroke-linejoin:round}
+  .rn-s{font-size:11px;stroke-width:2.5px}
+  .rn-m{font-size:12.5px}
+  .room.on .rn{fill:var(--accent)}
+  .hall{fill:var(--hall)} .halll{font:500 11px var(--mono);letter-spacing:.2em;fill:var(--graphite);text-anchor:middle}
+  .outer{fill:none;stroke:var(--wall);stroke-width:7}
+  .win{stroke:var(--glass);stroke-width:7}
+  .door{fill:var(--hall)}
+  .desk{fill:var(--graphite);opacity:.55} .chair{fill:var(--ink);opacity:.7}
+  .entry{fill:var(--glass)}
+  .lab{font:500 11px var(--mono);fill:var(--graphite)}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;font:500 12px var(--mono);color:var(--graphite);margin-top:10px}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .sw{width:22px;height:12px;border:1px solid var(--wall);display:inline-block}
+  .note{background:var(--sheet);border:1px solid var(--line);border-left:4px solid var(--accent);padding:12px 16px;border-radius:3px;font-size:14px;line-height:1.5}
+  .note ul{margin:6px 0 0;padding-left:18px}
+  h2{font-size:15px;margin:0;letter-spacing:.02em}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .card{display:flex;gap:12px;background:var(--sheet);border:1px solid var(--line);border-radius:4px;padding:10px;cursor:pointer;transition:border-color .15s}
+  .card.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+  .noimg{width:100px;height:178px;flex:none;border:1.5px dashed var(--line);border-radius:2px;display:grid;place-items:center;text-align:center;font:500 11px/1.4 var(--mono);color:var(--graphite);padding:8px}
+  .card img{width:100px;height:178px;object-fit:cover;border-radius:2px;flex:none;background:var(--hall)}
+  .cb{min-width:0;display:flex;flex-direction:column;gap:6px}
+  .ch{display:flex;align-items:center;gap:8px}
+  .chip{font:600 12px var(--mono);border:1.5px solid var(--ink);border-radius:20px;padding:2px 7px;min-width:30px;text-align:center}
+  .card.on .chip{background:var(--accent);border-color:var(--accent);color:var(--sheet)}
+  h3{font-size:15px;margin:0}
+  .card p{margin:0;font-size:13.5px;line-height:1.45}
+  .meta{margin-top:auto;display:flex;gap:10px;flex-wrap:wrap;font:500 11px var(--mono);color:var(--graphite)}
+  @media (prefers-reduced-motion:reduce){.card{transition:none}}
+.iso3d{background:#f5f6f8;border:1px solid var(--line);border-radius:4px;overflow-x:auto}
+  .iso3d svg.iso{min-width:820px}
+  .tabs{display:flex;gap:6px}
+  .tabs button{font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:7px 12px;border:1.5px solid var(--ink);background:var(--sheet);color:var(--ink);border-radius:3px;cursor:pointer}
+  .tabs button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
+  .tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.order{background:var(--sheet);border:1px solid var(--line);border-radius:4px;padding:16px 18px;display:grid;gap:12px}
+  .tablewrap{overflow-x:auto}
+  .order table{width:100%;border-collapse:collapse;font-size:15px}
+  .order th{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--graphite);text-align:left;padding:6px 10px;border-bottom:1.5px solid var(--ink)}
+  .order td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .order td:first-child{font-weight:700}
+  .order .num{text-align:right;font:700 18px var(--mono);font-variant-numeric:tabular-nums;width:4em}
+  .order th.num{font:600 11px var(--mono)}
+  .order .where{color:var(--graphite);font-size:13.5px}
+  .order .have{margin:0;font-size:13.5px;color:var(--graphite)}
+</style>
+
+<div class="wrap">
+  <header>
+    <div><div class="eyebrow">Sketch from walk-through video · IMG_2709</div><h1>Suite 500 Floor Plan</h1></div>
+  </header>
+
+  <div class="tabs" role="group" aria-label="View"><button id="b3d" aria-pressed="true">3D view</button><button id="b2d" aria-pressed="false">Flat plan</button></div>
+  <div class="iso3d" id="v3d">@@ISO@@</div>
+  <div class="sheet" id="v2d" hidden>
+    <svg viewBox="150 0 690 490" role="img" aria-label="Floor plan sketch of Suite 500">
+      <defs>
+        <pattern id="carpet" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="var(--carpet)"/><circle cx="2" cy="2" r=".9" fill="var(--dot)"/><circle cx="5.5" cy="5.5" r=".7" fill="var(--dot)"/></pattern>
+        <pattern id="vinyl" width="60" height="12" patternUnits="userSpaceOnUse"><rect width="60" height="12" fill="var(--vinyl)"/><path d="M0 11.5H60M22 0V12" stroke="var(--plank)" stroke-width="1"/></pattern>
+      </defs>
+      <rect x="190" y="210" width="430" height="60" class="hall"/>
+      <text x="380" y="244" class="halll">MAIN HALL</text>
+      @@ROOMS@@
+      <rect x="190" y="40" width="610" height="400" class="outer"/>
+      @@WIN@@
+      @@DOORS@@
+      <rect x="793" y="300" width="14" height="60" class="entry"/>
+      <text x="800" y="466" class="lab" text-anchor="end">ENTRY → glass doors "500" (front end)</text>
+      <text x="190" y="466" class="lab" text-anchor="start">← EXIT door at the end of the hall</text>
+      <rect x="183" y="214" width="14" height="52" fill="var(--accent)"/>
+      <text x="495" y="24" class="lab" text-anchor="middle">Outside wall</text>
+    </svg>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--carpet)"></i>Carpet</span>
+      <span><i class="sw" style="background:var(--vinyl)"></i>Plank vinyl</span>
+      <span><i class="sw" style="background:var(--glass);height:5px;border:0"></i>Window</span>
+      <span><i class="sw" style="background:var(--hall)"></i>Hall / door</span>
+    </div>
+  </div>
+
+  <section class="order" aria-labelledby="order-h">
+    <h2 id="order-h">Furniture to order</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Item</th><th class="num">Qty</th><th>Where</th></tr></thead>
+      <tbody>
+      <tr><td>Rolling office chairs</td><td class="num">4</td><td class="where">Al's Office, Office 2, Office 3, reception</td></tr>
+      <tr><td>Guest chairs</td><td class="num">9</td><td class="where">2 each in Al's Office, Office 2 and Office 3 · 3 on the lobby entry wall</td></tr>
+      <tr><td>Couches</td><td class="num">2</td><td class="where">Lobby</td></tr>
+      <tr><td>Coffee table</td><td class="num">1</td><td class="where">Lobby</td></tr>
+      <tr><td>L-shaped desk</td><td class="num">1</td><td class="where">Office 2 (Al's Office keeps its existing L-desk)</td></tr>
+      <tr><td>Small straight desk</td><td class="num">1</td><td class="where">Office 3 · already in the space, use the existing one (no need to order)</td></tr>
+      <tr><td>Reception desk (small)</td><td class="num">1</td><td class="where">Lobby</td></tr>
+      <tr><td>Wall dry-erase board</td><td class="num">1</td><td class="where">ATMO side wall (the big one on the outside wall is the board you already have)</td></tr>
+      <tr><td>Tablet charging station</td><td class="num">1</td><td class="where">Mop sink / storage</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</div>
+
+<script>
+  const b3=document.getElementById('b3d'), b2=document.getElementById('b2d');
+  const show3=on=>{document.getElementById('v3d').hidden=!on;document.getElementById('v2d').hidden=on;b3.setAttribute('aria-pressed',on);b2.setAttribute('aria-pressed',!on);};
+  b3.addEventListener('click',()=>show3(true)); b2.addEventListener('click',()=>show3(false));
+  const pick = id => {
+    document.querySelectorAll('.room,.card').forEach(el => el.classList.toggle('on', el.dataset.id === id));
+  };
+  document.querySelectorAll('.room').forEach(g => {
+    const go = () => pick(g.dataset.id);
+    g.addEventListener('click', go);
+    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+  });
+</script>
