@@ -120,6 +120,11 @@ NO_AD_ANSWERS = {
     # Jairo, Eve 11/9: the sheet's "Jose Colon" is "Javier Colon" in AppStream
     # (21270, Total First Interviews 11/4 4:00 PM, ad "AT&T Team Member").
     "2026-11-04|jose colon": "AT&T Team Member ? Miramar FL",
+    # Khalil, Eve 11/9: the sheet's "Melida" (row with quotes, no last name,
+    # 11/3 2:45 PM, Ludmila) is the one AppStream name in that slot not on the
+    # tab (11901, Total First Interviews): Keegan Blackerby. Camila: "it could,
+    # they hopped off before introducing themselves".
+    '2026-11-03|"melida"': "Sales Leadership Trainee, Frisco, TX",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
