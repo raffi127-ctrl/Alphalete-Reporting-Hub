@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 24,
+  "confirmed_count": 25,
   "needs_review_count": 0,
-  "skip_count": 26,
+  "skip_count": 29,
   "confirmed": [
     {
       "sheet_tab": "Alex Guzman Benitez - NDS",
@@ -18,6 +18,15 @@
       "as_company": "Domin8 Acquisitions, Inc.",
       "confidence": 1.0,
       "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Carlos Hidalgo - NDS",
+      "office_id": "11580",
+      "as_owner": "Carlos Hidalgo",
+      "as_company": "ALPHALETE SPECIALIZED MARKETING, INC.-TX",
+      "confidence": 1.0,
+      "campaign": "NDS",
+      "note": "2026-11-09 (Eve): same AppStream office as his Carlos 1on1s / Alphalete Org B2B tabs. History 8/30-11/8 copied from the Carlos 1on1s 'Carlos Hidalgo' tab (matched the Org tab on 11/8)."
     },
     {
       "sheet_tab": "Colten Wright - NDS",
@@ -301,6 +310,18 @@
     {
       "sheet_tab": "Justin Clowdus - NDS",
       "reason": "2026-10-12: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "David Robinson - NDS",
+      "reason": "2026-11-09: new NDS owner on the tracker (digest flagged no tab). No AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Edgardo Rincan - NDS",
+      "reason": "2026-11-09: new NDS owner on the tracker (digest flagged no tab). No AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Razmik Zargarian - NDS",
+      "reason": "2026-11-09: new NDS owner on the tracker (digest flagged no tab). No AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
     }
   ],
   "sales_only_count": 2,
@@ -316,7 +337,7 @@
       "sheet_tab": "Justin Fermin - NDS",
       "as_owner": "Justin Fermin",
       "office_id_was": "23425",
-      "reason": "2026-10-28: Camila (ARS) 'cerr\u00f3' \u2014 Eve: turn recruiting OFF for now, keep sales. Moved confirmed -> sales_only WITHOUT promote_when_visible, so AppStream seeing the office never flips it back. Recruiting rows keep their history, stop updating.",
+      "reason": "2026-10-28: Camila (ARS) 'cerró' — Eve: turn recruiting OFF for now, keep sales. Moved confirmed -> sales_only WITHOUT promote_when_visible, so AppStream seeing the office never flips it back. Recruiting rows keep their history, stop updating.",
       "campaign": "NDS"
     }
   ]
