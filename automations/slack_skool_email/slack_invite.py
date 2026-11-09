@@ -308,19 +308,49 @@ def _try_client_modal(page, log) -> str:
     found = _scan(page)
     if found:
         return found
+    return _link_from_modal(page, log)
 
-    # Not in the DOM -- click Copy and read the clipboard instead.
-    for sel in ("[data-qa='copy-invite-link']",
-                "button:has-text('Copy Invite Link')",
-                "button:has-text('Copy invite link')"):
+
+#: The dialog opens on its Email tab since about 2026-11-02; the link lives on
+#: the 'Invite link' tab next to it.
+LINK_TAB_SELECTORS = (
+    "[role=tab]:has-text('Invite link')",
+    "button:has-text('Invite link')",
+    "text=/^\s*Invite link\s*$/i",
+)
+COPY_SELECTORS = (
+    "[data-qa='copy-invite-link']",
+    "button:has-text('Copy Invite Link')",
+    "button:has-text('Copy invite link')",
+    "button:has-text('Copy link')",
+    "button:has-text('Copy')",
+)
+
+
+def _link_from_modal(page, log) -> str:
+    """The invite link off the open dialog: its link tab, then Copy."""
+    for sel in LINK_TAB_SELECTORS:
         try:
-            page.click(sel, timeout=5000)
-            page.wait_for_timeout(1200)
+            page.click(sel, timeout=4000)
+            page.wait_for_timeout(1500)
+            log("  opened the invite link tab")
             break
         except Exception:
             continue
-    return INVITE_RE.search(_from_clipboard(page)) and \
-        INVITE_RE.search(_from_clipboard(page)).group(0) or ""
+    found = _scan(page)
+    if found:
+        return found
+    # Not in the DOM -- click Copy and read the clipboard instead.
+    for sel in COPY_SELECTORS:
+        try:
+            page.click(sel, timeout=3000)
+            page.wait_for_timeout(1200)
+        except Exception:
+            continue
+        m = INVITE_RE.search(_from_clipboard(page))
+        if m:
+            return m.group(0)
+    return ""
 
 
 def fetch(*, headless: bool = True, logfn=print, dump_always: bool = False) -> str:
