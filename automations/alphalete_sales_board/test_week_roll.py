@@ -244,6 +244,20 @@ class LineUpNamesFollowTheBoard(unittest.TestCase):
         self.assertIn("not updated", notes[0])
 
 
+class CityGoesWithTheRefresh(unittest.TestCase):
+    """Maud 2026-11-09: names + City lock in the same run."""
+
+    def test_city_step_runs_on_the_line_up(self):
+        from unittest import mock
+        with mock.patch("automations.sales_board_fixer.lineup_city.do_tab",
+                        return_value=["x"]) as d:
+            self.assertEqual(W.city_step("SH", "Line Up WE 11.15", True), ["x"])
+        d.assert_called_once_with("SH", "Line Up WE 11.15", True)
+
+    def test_no_line_up_yet_does_nothing(self):
+        self.assertEqual(W.city_step("SH", None, True), [])
+
+
 class ClosedWeekSync(unittest.TestCase):
     """Eve 2026-11-09: transfers landed after the roll, 380 vs 375."""
 

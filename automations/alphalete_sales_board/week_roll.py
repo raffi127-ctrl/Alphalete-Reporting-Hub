@@ -372,7 +372,7 @@ def sync_closed_week(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
         print("    %s = %r" % (a1, v))
     # a Line Up that came in after the roll gets its names here
     lineup = find_tab(tabs, LINEUP_PREFIX, sunday)
-    notes = lineup_step(sh, lineup, old_t, new_t, apply)
+    notes = lineup_step(sh, lineup, old_t, new_t, apply) + city_step(sh, lineup, apply)
     if not lineup:
         notes.append("no '%s' tab yet: Line Up names were not checked"
                      % tab_title(LINEUP_PREFIX, sunday))
@@ -707,7 +707,17 @@ def roll(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
         print("    ! " + notes[-1])
     notes += stations_step(sh, old_lineup, lineup) if lineup else []
     notes += lineup_step(sh, lineup, old_board, new_board, apply)
+    notes += city_step(sh, lineup, apply)
     return 0, notes
+
+
+def city_step(sh, lineup: Optional[str], apply: bool) -> List[str]:
+    """Same refresh as the names: Line Up City back to the zip formula and
+    locked (Maud 2026-11-09). The fixer re-checks it every morning too."""
+    if not lineup:
+        return []
+    from automations.sales_board_fixer import lineup_city
+    return lineup_city.do_tab(sh, lineup, apply)
 
 
 def main(argv=None) -> int:
