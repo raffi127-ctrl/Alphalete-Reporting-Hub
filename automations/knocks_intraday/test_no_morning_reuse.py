@@ -398,12 +398,14 @@ class TheRoster(unittest.TestCase):
             keys = {o.key for o in roster.enrolled(slot_key)}
             self.assertFalse(keys & set(roster.BLOCKED), slot_key)
 
-    def test_the_afternoon_slots_are_cody_and_joseph(self):
-        """Megan 2026-08-25: Cody's channel only; Eve 2026-10-20 added Joseph —
-        the 2 PM and 5:15 PM boards go nowhere else."""
+    def test_the_afternoon_slots_are_joseph_only(self):
+        """Megan 2026-08-25: Cody's channel only; Eve 2026-10-20 added Joseph.
+        Cody moved to Lucy ECO on 2026-11-09 (his own Mac posts every 30 min),
+        so he is BLOCKED here and the 2 PM / 5:15 PM boards go to Joseph only."""
         for slot_key in ("first", "money"):
             self.assertEqual([o.key for o in roster.enrolled(slot_key)],
-                             ["cody", "joseph"], slot_key)
+                             ["joseph"], slot_key)
+        self.assertIn("cody", roster.BLOCKED)
 
     def test_nine_pm_goes_to_every_office(self):
         """Raf 2026-08-25: the 9 PM board is for every office — Megan settled
