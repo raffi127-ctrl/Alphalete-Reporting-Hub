@@ -67,7 +67,7 @@
     const me = await ask('whoami');
     if (!me.ok) {
       shell('<p class="lucy-oa-err">' + esc(me.signed_out
-        ? 'Sign in first: click the Lucy Office Admin icon at the top right of Chrome (once per computer).'
+        ? 'Sign in first: click the Lucy BG✔️ Send icon at the top right of Chrome (once per computer).'
         : me.error) + '</p>');
       return;
     }
@@ -96,7 +96,7 @@
       return;
     }
     if (!office.city || !office.state) {
-      shell('<p class="lucy-oa-err">Set office ' + esc(office.office) + '\'s city and state first: click the Lucy Office Admin icon at the top right of Chrome.</p>');
+      shell('<p class="lucy-oa-err">Set office ' + esc(office.office) + '\'s city and state first: click the Lucy BG✔️ Send icon at the top right of Chrome.</p>');
       return;
     }
     // The Lucy icon's "Next week's starts" goes straight to that list.
