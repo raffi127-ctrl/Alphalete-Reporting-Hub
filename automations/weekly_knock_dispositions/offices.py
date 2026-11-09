@@ -143,7 +143,14 @@ def enrolled_offices() -> list[dict]:
             has_kg = (not enrolled) or bool(_KG & {str(s) for s in enrolled})
         if not has_kg:
             continue
-        nds = bool(getattr(o, "nds", False)) or key in OM.NDS_OFFICES
+        # Room still held for an ECO sign-up (placeholder = Megan's DM user
+        # id): nowhere real to post yet. Posting there failed Miguel's
+        # Sunday board with channel_not_found (2026-11-08). It appears on
+        # its own once the sign-up gives the office a room.
+        if (str(o.channel_id).startswith("U")
+                or "held" in str(o.channel_name).lower()):
+            continue
+        nds =bool(getattr(o, "nds", False)) or key in OM.NDS_OFFICES
         _name = o.knocks_office or o.owner
         out.append({
             "name": _name,
