@@ -63,7 +63,11 @@ VERIZON_GROUP = {
 # then South Shore, each ending with both org lines -- exactly like Raf's
 # knocking chat. Pinned by its people once Lucy is in it; None = not wired yet,
 # and run.py skips the chat rather than guessing a name.
-FRANK_GROUP = None   # {"group": "<name>", "chat_guid": "any;+;...", "require_handles": [...]}
+# The chat is "PEAK A PLAYERS" (15 people), pinned to Frank + Gregory Chevalier.
+# The pin (chat_guid + require_handles) is NOT written here: it is read at run
+# time from the same 'Office Channels' texts approval his knocks board uses
+# (run.py: pinned_dest_for), so no phone number sits in the repo.
+FRANK_OFFICE_KEY = "frank"
 # Raf 2026-11-06 (#l10-alphalete, "Whole Org on chat on knocking A-players
 # chat"): "Whatever the cadence of the Alphalete post is on the org chat, can
 # we post it on our knocking report chat please? I want the office to see other

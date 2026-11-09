@@ -243,6 +243,21 @@ def _numbers(text: str) -> str:
     return "\n".join(text.splitlines()[1:])
 
 
+def pinned_dest_for(office_key: str):
+    """The office's approved text destination (chat name + guid + the people it
+    is pinned to) off the 'Office Channels' tab -- the one place a pin lives,
+    so a group re-pin there carries here too. None when nothing is approved."""
+    try:
+        from automations.icd_alerts import post as P
+        dests = P.approved_texts().get(office_key) or []
+    except Exception:  # noqa: BLE001 -- the sheet unreadable: skip the chat this pass
+        return None
+    for d in dests:
+        if d.get("require_handles") or d.get("chat_guid") or d.get("group"):
+            return {k: d[k] for k in ("group", "chat_guid", "require_handles") if d.get(k)}
+    return None
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--send", action="store_true",
@@ -311,6 +326,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                             cfg.SSO_ALPHALETE_TITLE),
                   "frank_sso": ("last_sent_frank_sso", sso, cfg.SSO_TITLE)},
     }
+    frank_group = pinned_dest_for(cfg.FRANK_OFFICE_KEY)
     org_lines = org_total_lines(alphalete, sso)
     # The chats that carry the two org lines under the TOTAL: owners (Megan
     # 11/6; both of its texts, Raf 11/6), Knocking (Raf 11/6), Carlos's chain
@@ -348,10 +364,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             ("knocking_sso", cfg.KNOCKING_GROUP, "last_sent_knocking_sso", sso,
              cfg.SSO_TITLE, ()),
             # Frank Matos's A-players chat: the owners pair, same cadence
-            # (Megan 2026-11-09). Skipped until config.FRANK_GROUP is pinned.
-            ("frank", cfg.FRANK_GROUP, "last_sent_frank_alphalete", alphalete,
+            # (Megan 2026-11-09). Pin read off 'Office Channels'; skipped when none.
+            ("frank", frank_group, "last_sent_frank_alphalete", alphalete,
              cfg.SSO_ALPHALETE_TITLE, ()),
-            ("frank_sso", cfg.FRANK_GROUP, "last_sent_frank_sso", sso,
+            ("frank_sso", frank_group, "last_sent_frank_sso", sso,
              cfg.SSO_TITLE, ())):
         if args.only and args.only != name:
             continue
