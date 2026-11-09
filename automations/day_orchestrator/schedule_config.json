@@ -16323,9 +16323,17 @@
    ],
    "base_args": [],
    "cadence": {
-    "weekdays": [],
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
     "not_before": "06:00",
-    "_weekdays_note": "[] until the first live run on Lucy 2 is verified (2026-11-09); then 0-6 daily. on_scheduler stays true so `rerun nds_churn` resolves."
+    "_weekdays_note": "daily since 2026-11-09 11:40: first live write verified (reconciled 16/126 with the NDS CHURNRATES view, tab rendered, picture DM'd to Carlos)."
    },
    "priority": "P3",
    "freshness_target": null,
