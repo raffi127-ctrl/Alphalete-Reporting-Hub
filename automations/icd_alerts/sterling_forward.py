@@ -36,10 +36,10 @@ FILTER_URL = ("https://mail.google.com/mail/u/0/#create-filter/from="
               + STERLING_SENDER.replace("@", "%40")
               + "&subject=" + STERLING_SUBJECT.replace(" ", "%20"))
 
-ASK_ADDRESS = ("Lucy can type Sterling's login codes for you too, so your office "
-               "computer can send background checks by itself. Only Sterling's "
-               "code emails get forwarded to us. Background check results and the "
-               "rest of your inbox stay private.\n\n"
+ASK_ADDRESS = ("Lucy can type Sterling's login codes for you, so your office "
+               "computer can send background checks by itself, and show your "
+               "admin who has passed. Only Sterling's emails get forwarded, to "
+               "Lucy's own Sterling inbox. The rest of your inbox stays private.\n\n"
                "Are your Sterling codes emailed to %s?")
 ADD_FORWARD = (
     "First, let's let Gmail forward to %s.\n\n"
@@ -137,9 +137,26 @@ def _saraplus_address() -> str:
     return F._login_email()
 
 
+ONE_FILTER_URL = ("https://mail.google.com/mail/u/0/#create-filter/from="
+                  + STERLING_SENDER.replace("@", "%40"))
+ONE_FILTER_STEPS = (
+    "Last step! Gmail just opened a box with Sterling's address "
+    "(%s) filled in.\n\n"
+    "1. Click Create filter.\n"
+    "2. Check Forward it to.\n"
+    "3. Pick %s.\n"
+    "4. Click Create filter again.\n\n"
+    "That sends Lucy your Sterling login codes and background check results "
+    "-- and nothing else from your inbox.\n\n"
+    "Click OK here when you're done." % (STERLING_SENDER, RESULTS_INBOX))
+
+
 def walk_through(ask, say=print, office_key: str = "") -> str:
-    """Ask the address, send it home, add Gmail's forward if needed, open the
-    filter. Returns a word for the summary. Never raises."""
+    """ONE forward, ONE filter (Megan 2026-11-09): everything Sterling emails
+    -- login codes AND results -- goes to Lucy's own Sterling inbox,
+    lucysterlingreports@. Never the reporting inbox. Lucy 1 reads both codes
+    and results there (code_answer looks in it first for a Sterling code).
+    Returns a word for the summary. Never raises."""
     from automations.icd_alerts import relay as R
     try:
         guess = _saraplus_address()
@@ -154,24 +171,23 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
         if "@" not in address:
             say("      that did not look like an email address -- skipped")
             return "skipped for now"
-        if not R.report_forward(address, office_key=office_key, service="sterling"):
+        # Both tabs on our side: the code tab (whose codes to look for) and the
+        # results tab (which office a forwarded result belongs to).
+        sent = R.report_forward(address, office_key=office_key, service="sterling")
+        sent = R.report_forward(address, office_key=office_key, service="sterling_results") and sent
+        if not sent:
             say("      could not reach the reporting team -- tell them %s" % address)
             return "address not sent"
-        # Gmail's forwarding address: once per account, usually done already
-        # by the SaraPlus forward.
-        if not R.forward_confirmed(office_key):
-            F._copy(F.REPORTING_INBOX, say)
+        if not R.results_forward_confirmed(office_key):
+            F._copy(RESULTS_INBOX, say)
             F._open(F.for_account(F.FORWARDING_URL, address), say)
-            ask.message(ADD_FORWARD % (F.REPORTING_INBOX, address))
-            if not F._wait_for_gmail(office_key, say, sleep=F.holding(ask)):
+            ask.message(ADD_FORWARD % (RESULTS_INBOX, address))
+            if not _wait_for_results(office_key, say, sleep=F.holding(ask)):
                 ask.message(F.LEFT_OPEN)
                 return "not confirmed yet"
-        F._open(F.for_account(FILTER_URL, address), say)
-        ask.message(FILTER_STEPS)
-        # Then the results forward, same Gmail account (Megan 2026-11-08).
-        res = walk_results(ask, address, say, office_key=office_key)
-        say("      results forward: %s" % res)
-        return "done" if res == "done" else res
+        F._open(F.for_account(ONE_FILTER_URL, address), say)
+        ask.message(ONE_FILTER_STEPS)
+        return "done"
     except ask.Cancelled:
         return "skipped for now"
     except Exception as e:  # noqa: BLE001
@@ -193,7 +209,7 @@ def main(argv=None) -> int:
         say("  NOT YET -- run this same line again when you are ready.")
         return 1
     say("  ALL SET once that filter is saved. From now on, Lucy types")
-    say("  Sterling's login codes for you.")
+    say("  Sterling's login codes for you and sees your results.")
     return 0
 
 

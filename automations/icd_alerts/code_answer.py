@@ -191,9 +191,20 @@ def forwarding_addresses(book, service: str = SARAPLUS) -> Dict[str, str]:
     return out
 
 
-def _newest_code(since: dt.datetime, query: str):
-    """One look in the reporting inbox. Imported late: only Lucy 1 has it."""
+def _newest_code(since: dt.datetime, query: str, service: str = SARAPLUS):
+    """One look for the code. Imported late: only Lucy 1 has it.
+
+    STERLING looks in the Sterling inbox FIRST (Megan 2026-11-09: one forward,
+    everything from Sterling -> lucysterlingreports@), then the reporting inbox
+    -- where offices set up before that (Raf) still send their codes."""
     from automations.rc_contact_sync import verify_code as VC
+    if service == STERLING and RESULTS_APP_PW.exists():
+        try:
+            hit = VC._newest_code(since, query, inbox=(RESULTS_INBOX, str(RESULTS_APP_PW)))
+        except Exception:  # noqa: BLE001 -- that inbox down: the reporting one still counts
+            hit = None
+        if hit:
+            return hit
     return VC._newest_code(since, query)
 
 
@@ -273,7 +284,9 @@ def answer_requests(book=None, *, send: bool = False,
             done.append({"office": office, "status": STATUS_NONE})
             continue
         try:
-            hit = newest_code(since, query_for(address, service))
+            hit = (_newest_code(since, query_for(address, service), service)
+                   if newest_code is _newest_code
+                   else newest_code(since, query_for(address, service)))
         except Exception as e:  # noqa: BLE001 -- inbox down: try again next tick
             log("CODE   %-10s inbox not readable: %s" % (office, type(e).__name__))
             done.append({"office": office, "status": "inbox-error"})
