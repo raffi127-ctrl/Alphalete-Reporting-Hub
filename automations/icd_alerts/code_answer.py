@@ -200,12 +200,77 @@ def _newest_code(since: dt.datetime, query: str, service: str = SARAPLUS):
     from automations.rc_contact_sync import verify_code as VC
     if service == STERLING and RESULTS_APP_PW.exists():
         try:
-            hit = VC._newest_code(since, query, inbox=(RESULTS_INBOX, str(RESULTS_APP_PW)))
+            hit = _sterling_inbox_code(since, query)
         except Exception:  # noqa: BLE001 -- that inbox down: the reporting one still counts
             hit = None
         if hit:
             return hit
     return VC._newest_code(since, query)
+
+
+def _forwarded_by(query: str) -> str:
+    """The office address out of a Sterling code query ('... to:<addr> ...')."""
+    m = re.search(r"\bto:(\S+)", query or "")
+    return m.group(1).strip().lower() if m else ""
+
+
+def _sterling_inbox_code(since: dt.datetime, query: str):
+    """The newest Sterling code in the Sterling inbox that THIS office's Gmail
+    forwarded (X-Forwarded-For), mailed after `since`.
+
+    NOT BY "To:" (Cody, 2026-11-09): Sterling addresses the code to the email on
+    the Sterling login (codycannon1993@), that Gmail passes it on, and the
+    office's own Gmail (aeonreception9@) forwards it to us. Only the forwarder
+    is ours to match on -- and matching it keeps two offices' codes apart."""
+    from email.utils import parsedate_to_datetime
+    from automations.rc_contact_sync import verify_code as VC
+    who = _forwarded_by(query)
+    M = _imap(results=True)
+    try:
+        ids = _search(M, "from:noreply@us.fadv.co subject:authentication newer_than:1d")
+        for uid in reversed(ids):                         # newest first
+            typ, data = M.fetch(uid, "(BODY.PEEK[])")
+            if typ != "OK" or not data or not data[0]:
+                continue
+            msg = email.message_from_bytes(data[0][1])
+            if who and who not in (msg.get("X-Forwarded-For") or "").lower():
+                continue
+            try:
+                when = parsedate_to_datetime(msg.get("Date"))
+            except Exception:  # noqa: BLE001
+                continue
+            if when is None:
+                continue
+            if when.tzinfo is None:
+                when = when.astimezone()
+            if when < since:
+                return None
+            code = VC.extract_code(VC._body_text(msg))
+            if code:
+                return code, when
+        return None
+    finally:
+        try:
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _forwarding_seen(address: str) -> bool:
+    """Has any Sterling mail already come through THIS address's forward into
+    the Sterling inbox? Proof the forward works, however it was confirmed."""
+    M = _imap(results=True)
+    try:
+        for uid in _search(M, "from:noreply@us.fadv.co newer_than:30d"):
+            typ, data = M.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (X-FORWARDED-FOR)])")
+            if typ == "OK" and data and data[0] and address.lower() in data[0][1].decode("utf-8", "replace").lower():
+                return True
+        return False
+    finally:
+        try:
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def answer_requests(book=None, *, send: bool = False,
@@ -583,6 +648,17 @@ def confirm_forwards(book=None, *, send: bool = False,
 
     for at, office, address, added, note in waiting:
         link = found.get(address)
+        # Confirmed by hand (the Gmail mail clicked by a person): no link left
+        # for us, but Sterling mail already coming through proves it works.
+        if not link and service == STERLING_RESULTS:
+            try:
+                if _forwarding_seen(address):
+                    log("FWD    %-10s Sterling mail already arriving -- confirmed" % office)
+                    _note(at, note, NOTE_CONFIRMED)
+                    done.append({"office": office, "status": "confirmed"})
+                    continue
+            except Exception:  # noqa: BLE001 -- fall through to the usual wait
+                pass
         try:
             if not link:
                 late = now - added > dt.timedelta(minutes=CONFIRM_PATIENCE_MIN)
