@@ -32,6 +32,13 @@ The Line Up is NOT made here: a person refreshes it by hand on Fridays (Eve,
 2026-11-02). Once this week's Line Up tab exists, Stations' formulas are pointed
 at it if they still read last week's. Lanes rolls by itself on Tuesday (lanes.py).
 
+CLOSED WEEK RE-READ (Eve 2026-11-09). The roll copies last week's numbers early
+Monday, but the form's late transfers land on last week's tab at 5, 6 and 8am: WE
+11.08 went to 380 apps while the new tab's history and Last Week stayed on 375.
+So on Mondays deploy/sale_transfers.sh runs `--sync-closed-week` after the 8am
+transfers: this week's history line, TOTALS and rep Last Week cells take last
+week's tab again. Last week's tab is the source and is never written.
+
 Nothing on last week's tabs is touched. This week's tab already there =
 nothing to do (Eve made 11.1 by hand on 10/26); last week's missing = refuse
 and DM Eve. Writes only with --apply.
@@ -286,6 +293,88 @@ def plan(values, formulas, raw, monday: dt.date) -> Dict[str, object]:
             "history_line": line, "first": first, "last": last, "name_col": nc}
 
 
+def plan_closed_week_sync(old_values, old_raw, new_values, new_formulas, new_raw,
+                          closed_monday: dt.date):
+    """({a1: value}, (apps shown, apps now) or None) for THIS week's tab, so it
+    agrees with the tab of the week that closed. Only typed cells; a rep found
+    once on each tab by base name, anyone else left alone."""
+    lay, old_lay = K.layout(new_values), K.layout(old_values)
+    nc, old_nc = lay.name_col, old_lay.name_col
+    last_c = _label_cols(new_values[lay.day_row - 1], LAST)
+    run_c = _label_cols(old_values[old_lay.day_row - 1], RUNNING)
+    first, last = K.block_rows(new_values)
+    old_first, old_last = K.block_rows(old_values)
+    cells: Dict[str, object] = {}
+
+    def rows_by_name(values, nm, a, b):
+        out: Dict[str, List[int]] = {}
+        for r in range(a, b + 1):
+            k = _norm(base_name(_cell(values, r, nm)))
+            if k:
+                out.setdefault(k, []).append(r)
+        return out
+
+    def put(r, c, v):
+        if _typed(new_formulas, r, c) and _cell(new_raw, r, c) != v:
+            cells[K.col_letter(c) + str(r)] = v
+
+    old_rows = rows_by_name(old_values, old_nc, old_first, old_last)
+    for k, rows in rows_by_name(new_values, nc, first, last).items():
+        if len(rows) == 1 and len(old_rows.get(k, [])) == 1:
+            for s, d in zip(run_c, last_c):
+                put(rows[0], d, _cell(old_raw, old_rows[k][0], s))
+    tot, old_tot = last + 1, old_last + 1
+    for s, d in zip(run_c, last_c):
+        put(tot, d, _cell(old_raw, old_tot, s))
+
+    # the closed week's history line, found by its own date label
+    label = week_label(closed_monday)
+    h = next((r for r in range(tot + 1, len(new_values) + 1)
+              if str(_cell(new_values, r, nc)).strip() == label), 0)
+    apps = None
+    if h:
+        # as wide as the line already is, the way the roll wrote it
+        width = max((c for c in range(nc + 1, len(new_values[h - 1]) + 1)
+                     if str(_cell(new_values, h, c)).strip()), default=nc)
+        for c in range(nc + 1, width + 1):
+            put(h, c, _cell(old_raw, old_tot, c - nc + old_nc))
+        if run_c:
+            shown, now = _cell(new_raw, h, nc + 1), _cell(old_raw, old_tot, run_c[0])
+            if shown != now:
+                apps = (shown, now)
+    return cells, apps
+
+
+def sync_closed_week(sh, today: dt.date, apply: bool) -> Tuple[int, List[str]]:
+    """Exit code and lines worth a DM. No tab for either week = nothing to do."""
+    tabs = [w.title for w in sh.worksheets()]
+    sunday = C.week_ending(today)
+    prev = sunday - dt.timedelta(days=7)
+    new_t, old_t = find_tab(tabs, BOARD_PREFIX, sunday), find_tab(tabs, BOARD_PREFIX, prev)
+    if not new_t or not old_t:
+        print("  no '%s' or '%s' yet: nothing to re-read" % (
+            tab_title(BOARD_PREFIX, sunday), tab_title(BOARD_PREFIX, prev)))
+        return 0, []
+    old, new = sh.worksheet(old_t), sh.worksheet(new_t)
+    cells, apps = plan_closed_week_sync(
+        old.get_all_values(), old.get_all_values(value_render_option="UNFORMATTED_VALUE"),
+        new.get_all_values(), new.get_all_values(value_render_option="FORMULA"),
+        new.get_all_values(value_render_option="UNFORMATTED_VALUE"),
+        prev - dt.timedelta(days=6))
+    print("  '%s' <- '%s': %d cells differ%s" % (
+        new_t, old_t, len(cells), ", apps %s -> %s" % apps if apps else ""))
+    for a1, v in sorted(cells.items()):
+        print("    %s = %r" % (a1, v))
+    if not cells or not apply:
+        return 0, []
+    new.batch_update([{"range": a1, "values": [[v]]} for a1, v in cells.items()],
+                     value_input_option="RAW")
+    if apps:
+        return 0, ["'%s' last week's apps updated from '%s': %s -> %s (late transfers)"
+                   % (new_t, old_t, apps[0], apps[1])]
+    return 0, []
+
+
 def _grid(sid: int, r1: int, r2: int, c1: int, c2: int) -> dict:
     return {"sheetId": sid, "startRowIndex": r1 - 1, "endRowIndex": r2,
             "startColumnIndex": c1 - 1, "endColumnIndex": c2}
@@ -484,6 +573,8 @@ def main(argv=None) -> int:
     ap.add_argument("--apply", action="store_true", help="make the tabs (default: preview)")
     ap.add_argument("--sheet", help="test copy: use this sheet id instead of the real board")
     ap.add_argument("--today", help="YYYY-MM-DD, for a test (default: today, Central)")
+    ap.add_argument("--sync-closed-week", action="store_true",
+                    help="re-read last week's tab into this week's history + Last Week")
     a = ap.parse_args(argv)
     if a.today:
         today = dt.date.fromisoformat(a.today)
@@ -497,7 +588,9 @@ def main(argv=None) -> int:
     from automations.recruiting_report.fill import open_by_key
     for attempt in (1, 2, 3):
         try:
-            rc, notes = roll(open_by_key(sheet), today, a.apply)
+            book = open_by_key(sheet)
+            rc, notes = (sync_closed_week(book, today, a.apply) if a.sync_closed_week
+                         else roll(book, today, a.apply))
             break
         except Exception as e:  # noqa: BLE001 -- a failed roll has to reach Eve
             print("  FAILED: %s: %s" % (type(e).__name__, e))

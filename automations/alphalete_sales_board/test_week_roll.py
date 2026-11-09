@@ -129,5 +129,66 @@ class OffBoardMark(unittest.TestCase):
         self.assertIn("t", board.TERM_MARKS)
 
 
+class ClosedWeekSync(unittest.TestCase):
+    """Eve 2026-11-09: transfers landed after the roll, 380 vs 375."""
+
+    def _tabs(self):
+        import copy
+        banner = ["", "", "", "RUNNING WEEK TOTALS", "", "LAST WEEK'S TOTALS", ""]
+        sub = ["", "#", "WE x", "Apps", "Int", "Apps", "Int"]
+        old = [banner, sub, ["", 1, "Amjad (MJ) Malhas", 15, 10, 0, 0],
+               ["", 2, "Ana (Wk 2)", 5, 3, 0, 0], ["", 3, "Gone", 1, 1, 0, 0],
+               ["", "", "TOTALS", 21, 14, 9, 9], ["", "", "", "", "", "", ""]]
+        new = [banner, sub, ["", 1, "Amjad (MJ) Malhas", 0, 0, 12, 6],
+               ["", 2, "Ana (Wk 3)", 0, 0, 5, 3], ["", 3, "New Rep", 0, 0, 0, 0],
+               ["", "", "TOTALS", 0, 0, 18, 10], ["", "", "", "", "", "", ""],
+               ["", "", "WE 11/2 - 11/8", 18, 10, 9, 9],
+               ["", "", "WE 10/26 - 11/1", 9, 9, 7, 7]]
+        return old, new, copy.deepcopy(new)
+
+    def _plan(self, old, new, formulas):
+        from unittest import mock
+        lay = mock.Mock(name_col=3, day_row=1, sub_row=2, last=5)
+        with mock.patch.object(W.K, "layout", lambda v: lay), \
+                mock.patch.object(W.K, "block_rows", lambda v: (3, 5)):
+            return W.plan_closed_week_sync(old, old, new, formulas, new, dt.date(2026, 11, 2))
+
+    def test_changed_numbers_only(self):
+        cells, apps = self._plan(*self._tabs())
+        self.assertEqual(cells["F3"], 15)      # Amjad's Last Week apps
+        self.assertEqual(cells["G3"], 10)
+        self.assertNotIn("F4", cells)          # Ana already agrees, tag ignored
+        self.assertEqual(cells["F6"], 21)      # TOTALS
+        self.assertEqual(cells["D8"], 21)      # history line
+        self.assertEqual(apps, (18, 21))
+
+    def test_older_history_and_formulas_stay(self):
+        old, new, formulas = self._tabs()
+        formulas[2][5] = "=SUM(y)"
+        cells, _ = self._plan(old, new, formulas)
+        self.assertNotIn("F3", cells)
+        self.assertFalse([a for a in cells if a.endswith("9")])
+
+    def test_a_rep_on_one_tab_only_is_left_alone(self):
+        cells, _ = self._plan(*self._tabs())
+        self.assertNotIn("F5", cells)
+
+    def test_a_name_twice_is_left_alone(self):
+        old, new, formulas = self._tabs()
+        old[3][2] = "Amjad (MJ) Malhas"
+        cells, _ = self._plan(old, new, formulas)
+        self.assertNotIn("F3", cells)
+
+    def test_agreeing_tabs_write_nothing(self):
+        old, new, formulas = self._tabs()
+        for r in (2, 3):
+            new[r][5:7] = old[r][3:5]
+        new[5][5:7] = old[5][3:5]
+        new[7][3:] = old[5][3:]
+        cells, apps = self._plan(old, new, list(new))
+        self.assertEqual(cells, {})
+        self.assertIsNone(apps)
+
+
 if __name__ == "__main__":
     unittest.main()

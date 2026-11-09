@@ -53,6 +53,13 @@ echo "[$(date)] sale transfers starting (${APPLY:-preview})" > "$LOG_FILE"
 ST=$?
 echo "[$(date)] sale_transfers exit=$ST" >> "$LOG_FILE"
 
+# Monday, after the last slot: the new tab's history + Last Week read last week's
+# tab again, late transfers included (Eve 2026-11-09, 380 vs 375).
+if [ -n "$APPLY" ] && [ "$(date +%u)" = "1" ] && [ "$(date +%H%M)" -ge "0800" ]; then
+    "$VENV_PY" -u -m automations.alphalete_sales_board.week_roll --sync-closed-week --apply >> "$LOG_FILE" 2>&1 \
+        || echo "[$(date)] closed-week sync failed" >> "$LOG_FILE"
+fi
+
 # A failed slot has a retry behind it; alert only on the LAST one (08:00).
 if [ "$ST" -ne 0 ] && [ -n "$APPLY" ] && [ "$(date +%H%M)" -ge "0800" ]; then
     "$VENV_PY" -u -c "
