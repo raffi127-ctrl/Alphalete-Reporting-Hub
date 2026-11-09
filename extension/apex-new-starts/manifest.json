@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Lucy New Starts to Apex",
   "version": "1.0.0",
-  "description": "Fill each week's new starts into Apex. Lucy fetches the week herself -- no trip to the Hub.",
+  "description": "The onboarding board for your office, and the weekly new starts into Apex. Lucy fetches both \u2014 no trip to the Hub.",
   "permissions": [
     "storage",
     "clipboardRead",

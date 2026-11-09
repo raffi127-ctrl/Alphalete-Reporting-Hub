@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <style>
-  body { width: 340px; margin: 0; font: 14px/1.45 -apple-system, Segoe UI, Arial, sans-serif; color: #1d2330; }
+  body { width: 420px; margin: 0; font: 14px/1.45 -apple-system, Segoe UI, Arial, sans-serif; color: #1d2330; }
   header { background: #0F766E; color: #fff; padding: 12px 16px; font-weight: 600; font-size: 16px; }
   main { padding: 14px 16px 18px; }
   label { display: block; font-size: 12px; color: #555; margin: 8px 0 3px; }
@@ -23,10 +23,41 @@
   .names div { padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
   .row { display: flex; justify-content: space-between; align-items: center; }
   [hidden] { display: none !important; }
+  .tabs { display: flex; gap: 6px; margin: 10px 0 8px; }
+  .tab { flex: 1; width: auto; margin: 0; padding: 7px 8px; font-size: 13px;
+         background: #e4e9ef; color: #1d2330; }
+  .tab.on { background: #0F766E; color: #fff; }
+  /* the board */
+  .bd-top { font-size: 13px; color: #444; margin-bottom: 8px; }
+  .bd-top select { width: auto; display: inline-block; padding: 3px 6px; }
+  .bd-sum { margin: 4px 0; color: #0b4f4a; font-weight: 600; }
+  .bd-showoff { font-size: 12px; color: #666; }
+  .bd-class h3 { margin: 12px 0 4px; font-size: 13px; text-transform: uppercase;
+                 letter-spacing: .04em; color: #555; }
+  .bd-row { border-left: 4px solid #ccc; padding: 6px 8px; margin-bottom: 6px;
+            border-radius: 0 6px 6px 0; }
+  .bd-done   { border-left-color: #1e6b34; background: #E6F4EA; }
+  .bd-close  { border-left-color: #7a5a00; background: #FFF6DB; }
+  .bd-behind { border-left-color: #8a1c13; background: #FDECEA; }
+  .bd-gone   { opacity: .55; }
+  .bd-nm { font-weight: 700; font-size: 14px; }
+  .bd-tag { font-size: 10px; text-transform: uppercase; font-weight: 700;
+            margin-left: 6px; color: #555; }
+  .bd-cnt { float: right; font-size: 12px; color: #555; font-weight: 500; }
+  .bd-steps { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 3px; }
+  .bd-step { font-size: 9px; padding: 2px 5px; border-radius: 9px;
+             background: #fff; border: 1px solid #d4d4d4; color: #999; }
+  .bd-step.bd-ok { background: #0F766E; border-color: #0F766E; color: #fff; }
+  .bd-acts { display: flex; gap: 6px; margin-top: 5px; }
+  .bd-acts input { flex: 1; padding: 4px 6px; font-size: 12px; }
+  .bd-acts button { width: auto; margin: 0; padding: 4px 10px; font-size: 12px;
+                    background: #e4e9ef; color: #1d2330; }
+  .bd-primary { margin-top: 12px; }
+  .bd-none { color: #666; font-size: 13px; }
 </style>
 </head>
 <body>
-<header>Lucy &middot; New Starts to Apex</header>
+<header>Lucy &middot; Onboarding</header>
 <main>
   <!-- Sign in once per computer. Same login as the background-check one. -->
   <section id="signin" hidden>
@@ -39,19 +70,26 @@
   <section id="home" hidden>
     <div class="row"><b id="name"></b><button class="link" id="out">Sign out</button></div>
 
+    <div class="tabs">
+      <button id="t-board" class="tab on">Onboarding board</button>
+      <button id="t-apex" class="tab">New starts &rarr; Apex</button>
+    </div>
+
+    <div id="board"></div>
+
     <div id="have" hidden>
       <div class="week" id="wk"></div>
       <p class="muted" id="meta"></p>
       <div class="names" id="names"></div>
     </div>
     <p class="muted" id="none" hidden>No week loaded yet.</p>
-
     <button id="fetch">Get this week</button>
     <button id="forget" class="quiet" hidden>Forget this week</button>
     <div id="msg" hidden></div>
-    <p class="muted">Then open Apex and press <b>Fill Apex</b>, bottom right.</p>
+    <p class="muted" id="apexhint">Then open Apex and press <b>Fill Apex</b>, bottom right.</p>
   </section>
 </main>
+<script src="board.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

@@ -1149,7 +1149,13 @@ var SETTINGS_TAB = 'Office Settings';
 // 'Approved Accounts' is the GUARD (Megan 2026-11-06): only Megan sets it
 // (relay_admins --accounts). Admins can use these accounts and no others, so a
 // calendar from someone else's office can never send through this Sterling.
-var SET_HEAD = ['Office', 'State', 'City', 'Updated By', 'Updated At', 'AppStream', 'Approved Accounts'];
+// 'Onboarding Sheet' is the office's OWN metrics workbook id -- the board
+// lives on an 'Onboarding' tab in it, so each office sees its own people and
+// nobody else's (Megan 2026-11-08: "add a tab to their metrics sheet?").
+var SET_HEAD = ['Office', 'State', 'City', 'Updated By', 'Updated At', 'AppStream', 'Approved Accounts', 'Onboarding Sheet'];
+var BOARD_TAB = 'Onboarding';
+var BOARD_HEADER_ROW = 1;
+var BOARD_FIRST_ROW = 2;
 var SESSION_DAYS = 90;
 var MAX_TRIES = 5;
 
@@ -1212,6 +1218,9 @@ function _officeAdminCall(a) {
   if (what === 'set_office') return _admSetOffice(sess, office, a);
   if (what === 'send') return _admSend(sess, office, a);
   if (what === 'apex_week') return _admApexWeek(sess, office, a);
+  if (what === 'board_week') return _boardWeek(office, a);
+  if (what === 'board_mark') return _boardMark(office, a);
+  if (what === 'board_classroom') return _boardClassroom(office, a);
   if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
   if (what === 'already') return _admAlready(office);
   if (what === 'bg_status') return _admBgStatus(office);
@@ -1254,10 +1263,11 @@ function _admSettings(office) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]).trim().toLowerCase() === office) {
       return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || ''),
-              appstream: _accounts(rows[i][5]), approved: _accounts(rows[i][6])};
+              appstream: _accounts(rows[i][5]), approved: _accounts(rows[i][6]),
+              sheet: String(rows[i][7] || '').trim()};
     }
   }
-  return {row: -1, state: '', city: '', appstream: '', approved: ''};
+  return {row: -1, state: '', city: '', appstream: '', approved: '', sheet: ''};
 }
 
 // One office as the extension sees it.
@@ -1367,6 +1377,111 @@ function _admBgStatus(office) {
               date: r[4] instanceof Date ? Utilities.formatDate(r[4], 'America/Chicago', 'M/d') : String(r[4] || '')});
   }
   return {ok: true, updated: updated, people: out};
+}
+
+// ---------------------------------------------------------------- the board
+//
+// The onboarding board, read and written straight from here rather than
+// through the office's computer. A job queue is right for WORK (signing in to
+// Sterling, filling Apex); it is wrong for looking at a list, because nobody
+// waits three minutes to see a board. Reading a sheet is what Apps Script is
+// for.
+
+function _boardTab(office) {
+  var set = _admSettings(office);
+  if (!set.sheet) return null;
+  var book;
+  try { book = SpreadsheetApp.openById(set.sheet); } catch (err) { return null; }
+  return book.getSheetByName(BOARD_TAB);
+}
+
+function _boardRows(sh) {
+  var grid = sh.getDataRange().getValues();
+  if (grid.length < BOARD_FIRST_ROW) return {head: [], rows: []};
+  var head = grid[BOARD_HEADER_ROW - 1].map(function (h) { return String(h).trim(); });
+  var rows = [];
+  for (var i = BOARD_FIRST_ROW - 1; i < grid.length; i++) {
+    var r = {}, any = false;
+    for (var c = 0; c < head.length; c++) {
+      if (!head[c]) continue;
+      r[head[c]] = String(grid[i][c] == null ? '' : grid[i][c]).trim();
+      if (r[head[c]]) any = true;
+    }
+    if (any && (r['Name'] || r['Last Name'])) { r.__row = i + 1; rows.push(r); }
+  }
+  return {head: head, rows: rows};
+}
+
+function _boardWeek(office, a) {
+  var sh = _boardTab(office);
+  if (!sh) {
+    return {ok: false, error: "This office has no onboarding board yet. " +
+            "Ask Lucy's team to switch it on."};
+  }
+  var got = _boardRows(sh);
+  var want = String(a.week || '').trim();
+  var weeks = {}, out = [];
+  got.rows.forEach(function (r) {
+    var w = r['Week of'] || '';
+    if (w) weeks[w] = true;
+    if (!want || w === want) out.push(r);
+  });
+  var list = Object.keys(weeks).sort(function (x, y) {
+    return new Date(y) - new Date(x);        // newest first
+  });
+  return {ok: true, week: want || list[0] || '', weeks: list,
+          columns: got.head, people: out};
+}
+
+// Mark somebody off for the week, or put them back. The ROW STAYS either way:
+// hidden from the board and the printout, still there to answer what happened
+// to a person months later.
+function _boardMark(office, a) {
+  var sh = _boardTab(office);
+  if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
+  var got = _boardRows(sh);
+  var col = got.head.indexOf('Terminated');
+  if (col < 0) return {ok: false, error: "The board has no 'Terminated' column."};
+  var want = {};
+  (a.names || []).forEach(function (n) { want[_boardKey(n)] = true; });
+  var off = String(a.action || 'terminate') !== 'restore';
+  var stamp = off ? Utilities.formatDate(new Date(),
+      Session.getScriptTimeZone(), 'MM/dd/yyyy') : '';
+  var n = 0;
+  got.rows.forEach(function (r) {
+    if (a.week && r['Week of'] !== a.week) return;
+    if (!want[_boardKey((r['Name'] || '') + ' ' + (r['Last Name'] || ''))]) return;
+    if (off === !!r['Terminated']) return;            // already how they want it
+    sh.getRange(r.__row, col + 1).setValue(stamp);
+    n++;
+  });
+  return {ok: true, changed: n};
+}
+
+// The one column the ICD owns: who goes on which printed sheet.
+function _boardClassroom(office, a) {
+  var sh = _boardTab(office);
+  if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
+  var got = _boardRows(sh);
+  var col = got.head.indexOf('Classroom');
+  if (col < 0) return {ok: false, error: "The board has no 'Classroom' column."};
+  var want = {};
+  Object.keys(a.assignments || {}).forEach(function (k) {
+    want[_boardKey(k)] = String(a.assignments[k] || '').trim();
+  });
+  var n = 0;
+  got.rows.forEach(function (r) {
+    if (a.week && r['Week of'] !== a.week) return;
+    var k = _boardKey((r['Name'] || '') + ' ' + (r['Last Name'] || ''));
+    if (!(k in want) || r['Classroom'] === want[k]) return;
+    sh.getRange(r.__row, col + 1).setValue(want[k]);
+    n++;
+  });
+  return {ok: true, changed: n};
+}
+
+function _boardKey(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
 function _admApexWeek(sess, office, a) {

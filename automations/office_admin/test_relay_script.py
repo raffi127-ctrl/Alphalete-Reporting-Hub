@@ -76,3 +76,35 @@ def test_a_week_that_is_not_a_date_is_refused():
     src = _source()
     body = src[src.index("function _admApexWeek("):]
     assert r"^\d{4}-\d{2}-\d{2}$" in body[:1200]
+
+
+def test_the_board_calls_are_wired_end_to_end():
+    """Three pieces each: the dispatch line and the function behind it. A
+    dispatch with no function is valid JavaScript that throws for whoever
+    presses the button — which is how 2f9d48d shipped broken."""
+    src = _source()
+    for call, fn in (("board_week", "_boardWeek"),
+                     ("board_mark", "_boardMark"),
+                     ("board_classroom", "_boardClassroom")):
+        assert "what === '%s'" % call in src, "nothing dispatches %s" % call
+        assert "function %s(" % fn in src, "%s has no handler" % fn
+
+
+def test_the_board_is_read_from_the_offices_own_workbook():
+    """Each office sees its own people and nobody else's. The sheet id comes
+    from the office's settings row, never from the caller."""
+    src = _source()
+    assert "'Onboarding Sheet'" in src
+    body = src[src.index("function _boardTab("):]
+    body = body[:body.index("\nfunction ")]
+    assert "_admSettings(office)" in body
+    assert "a.sheet" not in body, "the caller does not get to name the workbook"
+
+
+def test_marking_somebody_off_never_deletes_their_row():
+    src = _source()
+    body = src[src.index("function _boardMark("):]
+    body = body[:body.index("\nfunction ")]
+    for bad in ("deleteRow", "deleteRows", "clearContent"):
+        assert bad not in body, "a terminated row is hidden, never deleted"
+    assert "restore" in body, "and it can be undone"

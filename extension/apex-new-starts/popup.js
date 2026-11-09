@@ -92,8 +92,7 @@
                                     password: $('pass').value});
     if (!out || !out.ok) { say('err', esc((out && out.error) || 'Could not sign in.')); return; }
     $('pass').value = '';
-    draw();
-  };
+    };
 
   $('out').onclick = async () => {
     await new Promise(r => chrome.runtime.sendMessage({type: 'signout'}, r));
@@ -159,5 +158,33 @@
     }, 10000);
   }
 
-  draw();
+  // Two views behind one icon: the onboarding board (what the ICD lives in)
+  // and the weekly Apex fill. The board opens first — it is the thing they
+  // check all week, the fill is a Thursday job.
+  function show(which) {
+    const board = which === 'board';
+    $('t-board').classList.toggle('on', board);
+    $('t-apex').classList.toggle('on', !board);
+    $('board').hidden = !board;
+    for (const id of ['fetch', 'have', 'none', 'forget', 'msg', 'apexhint']) {
+      const el = $(id);
+      if (el) el.hidden = board || (id === 'forget' && el.dataset.empty === '1');
+    }
+    if (board) drawBoard();
+    else drawWeek();
+  }
+
+  async function drawBoard() {
+    const office = (me && me.offices && me.offices[0]) ? me.offices[0].office : '';
+    if (!office) { $('board').innerHTML = '<p class="muted">No office is set against your login.</p>'; return; }
+    $('board').innerHTML = '<p class="muted">Opening the board…</p>';
+    const got = await window.LucyBoard.load(office, '');
+    if (!got.ok) { $('board').innerHTML = '<p class="err">' + esc(got.error) + '</p>'; return; }
+    window.LucyBoard.render($('board'));
+  }
+
+  $('t-board').onclick = () => show('board');
+  $('t-apex').onclick = () => show('apex');
+
+  draw().then(() => { if (me) show('board'); });
 })();
