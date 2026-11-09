@@ -233,7 +233,10 @@ def _sterling_inbox_code(since: dt.datetime, query: str):
             if typ != "OK" or not data or not data[0]:
                 continue
             msg = email.message_from_bytes(data[0][1])
-            if who and who not in (msg.get("X-Forwarded-For") or "").lower():
+            # Either hop counts (Megan 2026-11-09: most ICDs will run a
+            # reception inbox): the Gmail that forwarded it to us, or the
+            # Sterling-login email it was first sent to.
+            if who and who not in ((msg.get("X-Forwarded-For") or "") + " " + (msg.get("To") or "")).lower():
                 continue
             try:
                 when = parsedate_to_datetime(msg.get("Date"))
@@ -262,7 +265,7 @@ def _forwarding_seen(address: str) -> bool:
     M = _imap(results=True)
     try:
         for uid in _search(M, "from:noreply@us.fadv.co newer_than:30d"):
-            typ, data = M.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (X-FORWARDED-FOR)])")
+            typ, data = M.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (X-FORWARDED-FOR TO)])")
             if typ == "OK" and data and data[0] and address.lower() in data[0][1].decode("utf-8", "replace").lower():
                 return True
         return False

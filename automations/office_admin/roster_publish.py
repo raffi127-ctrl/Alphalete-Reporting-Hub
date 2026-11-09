@@ -104,7 +104,9 @@ def results_inbox_events(days: int = DAYS) -> Dict[str, list]:
             if typ != "OK" or not got or not got[0]:
                 continue
             msg = email.message_from_bytes(got[0][1])
-            fwd = re.findall(r"[\w.+-]+@[\w.-]+\w", msg.get("X-Forwarded-For", "") or "")
+            # The forwarding Gmail first, then the Sterling-login email it was
+            # sent to -- an ICD may have given either during setup.
+            fwd = re.findall(r"[\w.+-]+@[\w.-]+\w", (msg.get("X-Forwarded-For", "") or "") + " " + (msg.get("To", "") or ""))
             office = next((who[a.lower()] for a in fwd if a.lower() in who), "")
             if not office:
                 continue
