@@ -116,6 +116,18 @@ def main(argv=None) -> int:
         except Exception as e:
             print(f"[alphalete] bad-review check failed ({type(e).__name__}: {str(e)[:80]})")
 
+    # Reddit / Indeed / Glassdoor mentions that reached Lucy's inbox
+    # (email_alerts.py): live offices + Alphalete, once per pass.
+    if not a.office:
+        try:
+            from automations.brand_audit.social_inbox import _client as _cl
+            from automations.online_presence import email_alerts
+            watch_list = [offices.alphalete()] + [p for p in todo if p.is_live]
+            for x in email_alerts.check(watch_list, _cl(), live=a.live):
+                print(f"[mentions] {x['action']} · {x.get('note') or ''}")
+        except Exception as e:
+            print(f"[mentions] inbox check failed ({type(e).__name__}: {str(e)[:80]})")
+
     # ONE read of the relay for every office (not one per office).
     answers: Dict[str, List[dict]] = {}
     if any(p.social and p.post_via == "eco" for p in todo):
