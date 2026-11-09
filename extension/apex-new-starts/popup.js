@@ -90,7 +90,10 @@
     $('msg').hidden = true;
     const out = await ask('login', {username: $('user').value.trim(),
                                     password: $('pass').value});
-    if (!out || !out.ok) { say('err', esc((out && out.error) || 'Could not sign in.')); return; }
+    if (!out || !out.ok) {
+      say('err', esc((out && out.error) || 'No answer from Lucy\u2019s relay.'));
+      return;
+    }
     $('pass').value = '';
     };
 
@@ -166,7 +169,7 @@
     $('t-board').classList.toggle('on', board);
     $('t-apex').classList.toggle('on', !board);
     $('board').hidden = !board;
-    for (const id of ['fetch', 'have', 'none', 'forget', 'msg', 'apexhint']) {
+    for (const id of ['fetch', 'have', 'none', 'forget', 'apexhint']) {
       const el = $(id);
       if (el) el.hidden = board || (id === 'forget' && el.dataset.empty === '1');
     }

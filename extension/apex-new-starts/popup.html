@@ -59,6 +59,11 @@
 <body>
 <header>Lucy &middot; Onboarding</header>
 <main>
+  <!-- Outside both sections on purpose: a sign-in error used to render inside
+       #home, which is hidden until you ARE signed in, so it never showed and a
+       failed sign-in looked like nothing happening at all. -->
+  <div id="msg" hidden></div>
+
   <!-- Sign in once per computer. Same login as the background-check one. -->
   <section id="signin" hidden>
     <p class="muted">Sign in once — this computer stays signed in.</p>
@@ -85,7 +90,6 @@
     <p class="muted" id="none" hidden>No week loaded yet.</p>
     <button id="fetch">Get this week</button>
     <button id="forget" class="quiet" hidden>Forget this week</button>
-    <div id="msg" hidden></div>
     <p class="muted" id="apexhint">Then open Apex and press <b>Fill Apex</b>, bottom right.</p>
   </section>
 </main>

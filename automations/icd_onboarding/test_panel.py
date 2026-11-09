@@ -126,3 +126,16 @@ def test_every_person_offers_mark_off_and_a_classroom_box(page):
     assert page.locator(".bd-mark").count() == 1
     assert page.locator(".bd-cls").count() == 1
     assert page.locator("#bd-print").count() == 1
+
+
+def test_a_sign_in_error_is_somewhere_it_can_actually_be_seen():
+    """It used to render inside #home, which is hidden until you ARE signed
+    in — so a failed sign-in looked like nothing happening at all, which is
+    exactly how it was reported (Megan, 2026-11-09: "it just clears out the
+    pw")."""
+    html = (Path(__file__).resolve().parents[2] / "extension" /
+            "apex-new-starts" / "popup.html").read_text(encoding="utf-8")
+    before_home = html.split('id="home"')[0]
+    assert 'id="msg"' in before_home, (
+        "#msg must sit outside the signed-in section, or sign-in errors are "
+        "invisible")
