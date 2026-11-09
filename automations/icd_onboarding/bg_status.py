@@ -14,12 +14,22 @@ for Alphalete for months, including the compliance rule that NOBODY is marked
 Passed without an explicit "Score PASS" email. This points the same reader at
 the new inbox and puts the answer on the right office's board.
 
-WHICH OFFICE A RESULT BELONGS TO. The email does not say — it is one ICD's
-forward among many. So the BOARD decides: a person is on exactly one office's
-week. Somebody who appears on two boards is REPORTED and ticked on neither,
-the same rule the OwnerVille sweep's `match` uses — ambiguous is never guessed,
-because the cost of guessing is a background check recorded against the wrong
-person at the wrong office.
+WHICH OFFICE A RESULT BELONGS TO — the address that forwarded it. Megan,
+2026-11-09: "we're able to tell which office the BG is for based on the email
+forwarding it? the installer should log that." It already does: setting up an
+ICD's Sterling forward writes their address onto the **Sterling Code Mail** tab
+(`Office | Forwards From | Added | Note`), so the mapping exists and is
+maintained by the thing that creates the forward.
+
+That is a far better signal than the candidate's name, which two offices can
+share. Gmail stamps a forward with the mailbox it came through, so the result
+says whose it is.
+
+Where the address is missing or unknown, the BOARD decides as a fallback: a
+person is on exactly one office's week. Somebody on two boards is REPORTED and
+ticked on neither — the OwnerVille sweep's rule — because a background check
+recorded against the wrong person at the wrong office is worse than one that
+needs a human to place.
 """
 from __future__ import annotations
 
@@ -68,7 +78,45 @@ def _name_of(ev) -> str:
     return ("%s %s" % (getattr(ev, "first", ""), getattr(ev, "last", ""))).strip()
 
 
-def route(events_in: Iterable, boards: Dict[str, List[Dict]]) -> Tuple[Dict, List]:
+def office_by_address(book=None) -> Dict[str, str]:
+    """{forwarding address: office key}, off the Sterling Code Mail tab.
+
+    Written by the thing that sets an ICD's forward up, so there is no second
+    list to keep in step. An address nobody has recorded simply is not here,
+    and routing falls back to the board.
+    """
+    from automations.icd_alerts import code_answer as CA
+
+    out: Dict[str, str] = {}
+    try:
+        if book is None:
+            from automations.recruiting_report.fill import open_by_key
+            book = open_by_key(CA.BOOK_ID) if hasattr(CA, "BOOK_ID") else None
+        if book is None:
+            return out
+        ws = book.worksheet(CA.STERLING_MAIL_TAB)
+        grid = ws.get_all_values()
+    except Exception:          # noqa: BLE001 — no tab yet is not an error
+        return out
+    if not grid:
+        return out
+    head = [str(h).strip().lower() for h in grid[0]]
+    try:
+        oi, ai = head.index("office"), head.index("forwards from")
+    except ValueError:
+        return out
+    for row in grid[1:]:
+        if len(row) <= max(oi, ai):
+            continue
+        office = str(row[oi]).strip().lower()
+        addr = str(row[ai]).strip().lower()
+        if office and addr:
+            out[addr] = office
+    return out
+
+
+def route(events_in: Iterable, boards: Dict[str, List[Dict]],
+          by_address: Optional[Dict[str, str]] = None) -> Tuple[Dict, List]:
     """({office: {name: status}}, [ambiguous]) — who each result belongs to.
 
     `boards` is {office key: that week's rows}. A name on exactly one office's
@@ -91,7 +139,13 @@ def route(events_in: Iterable, boards: Dict[str, List[Dict]]) -> Tuple[Dict, Lis
         if not status:
             continue
         name = _name_of(ev)
-        offices = where.get(B._fold(name.replace(" ", "")), [])
+        # The address that forwarded it, first — it SAYS whose this is.
+        sender_office = (by_address or {}).get(
+            str(getattr(ev, "forwarded_to", "") or "").strip().lower())
+        if sender_office:
+            offices = [sender_office]
+        else:
+            offices = where.get(B._fold(name.replace(" ", "")), [])
         if len(offices) == 1:
             # The inbox carries every mail in the window, so somebody has a
             # Sent AND a Passed. The furthest-along one is the status.
@@ -135,7 +189,7 @@ def run(week_start: Optional[dt.date] = None, *, offices: Sequence[str] = (),
         books[office] = book
         boards[office] = B.for_week(S.rows_of(ws.get_all_values()), week)
 
-    routed, ambiguous = route(got, boards)
+    routed, ambiguous = route(got, boards, office_by_address())
     for a in ambiguous:
         log("  ⚠️  %s is on %d boards (%s) — not ticked anywhere"
             % (a["name"], len(a["offices"]), ", ".join(a["offices"])))

@@ -124,6 +124,29 @@ def _fetch_one(M, mid, attempts: int = FETCH_ATTEMPTS):
     return M, None
 
 
+# Gmail stamps a forward with the account it came THROUGH. Delivered-To is the
+# mailbox it landed in (ours); X-Forwarded-For / X-Forwarded-To carry the
+# original. We want the ICD's address, so the forwarded-for headers win and
+# Delivered-To is only a fallback.
+_FORWARD_HEADERS = ("X-Forwarded-For", "X-Forwarded-To", "X-Original-To",
+                    "Delivered-To")
+
+
+def _forwarded_from(msg) -> str:
+    """The ICD mailbox a result was forwarded through, lower-cased.
+
+    X-Forwarded-For is often "<from> <to>"; the LAST address is the mailbox
+    that did the forwarding.
+    """
+    import re as _re
+    for header in _FORWARD_HEADERS:
+        for raw in msg.get_all(header) or ():
+            found = _re.findall(r"[\w.+-]+@[\w.-]+", _decode(raw) or "")
+            if found:
+                return found[-1].strip().lower()
+    return ""
+
+
 def fetch_events(since_days: int = 30, verbose: bool = True) -> List[BGEvent]:
     """Fetch + parse every fadv background-check email in the window. Returns the
     BGEvents that classify to a real per-candidate status (bulk-invite / auth-code
@@ -148,6 +171,7 @@ def fetch_events(since_days: int = 30, verbose: bool = True) -> List[BGEvent]:
             body = _best_text(msg)
             ev = parse.classify(sender, subject, body, date=iso, source_id=mid.decode())
             if ev:
+                ev.forwarded_to = _forwarded_from(msg)
                 events.append(ev)
         if verbose:
             print(f"[email_source] {ACCOUNT}: {len(ids)} fadv emails since {since}, "

@@ -65,6 +65,12 @@ class BGEvent:
     subject: str
     source_id: str = ""  # gmail/imap message id, for auditing
     needs_adjudication: bool = False  # report is back but not officially PASS/FAIL
+    # WHOSE inbox forwarded it. Empty for Alphalete's own mail, which arrives
+    # directly. The ICD inbox carries every office's forwards, and the address
+    # that forwarded a result is the only thing that says which office it is
+    # (Megan, 2026-11-09) — far better than matching the candidate's name,
+    # which two offices can share.
+    forwarded_to: str = ""
 
     @property
     def rank(self) -> int:

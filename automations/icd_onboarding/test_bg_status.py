@@ -119,3 +119,35 @@ def test_it_reads_the_icds_own_inbox_not_the_reporting_one():
 def test_a_run_is_dry_by_default():
     import inspect
     assert inspect.signature(BG.run).parameters["dry_run"].default is True
+
+
+# ------------------------------------- routing by who forwarded it
+
+class FwdEv(Ev):
+    def __init__(self, first, last, status, forwarded_to=""):
+        super().__init__(first, last, status)
+        self.forwarded_to = forwarded_to
+
+
+def test_the_forwarding_address_says_whose_check_it_is():
+    """Megan, 2026-11-09: "we're able to tell which office the BG is for based
+    on the email forwarding it?" — better than the name, which two offices can
+    share."""
+    boards = {"raf": [_row("Ada Fournier")], "omar": [_row("Ada Fournier")]}
+    routed, amb = BG.route([FwdEv("Ada", "Fournier", "Passed", "omar@x.com")],
+                           boards, {"omar@x.com": "omar"})
+    assert routed == {"omar": {"Ada Fournier": "Passed"}}
+    assert amb == [], "the address settled it; no ambiguity left"
+
+
+def test_an_unknown_address_falls_back_to_the_board():
+    boards = {"raf": [_row("Ada Fournier")]}
+    routed, _ = BG.route([FwdEv("Ada", "Fournier", "Passed", "stranger@x.com")],
+                         boards, {"omar@x.com": "omar"})
+    assert routed == {"raf": {"Ada Fournier": "Passed"}}
+
+
+def test_with_no_address_and_two_boards_it_still_refuses_to_guess():
+    boards = {"raf": [_row("Ada Fournier")], "omar": [_row("Ada Fournier")]}
+    routed, amb = BG.route([FwdEv("Ada", "Fournier", "Passed", "")], boards, {})
+    assert routed == {} and amb
