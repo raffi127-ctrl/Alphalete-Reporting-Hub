@@ -84,13 +84,6 @@ class Compute(unittest.TestCase):
         self.assertEqual(r[11], "BYOD")
         self.assertIsNone(r[3]); self.assertIsNone(r[13])
 
-    def test_activations_rows(self):
-        rows = C.activations_rows(self.lines, TODAY)
-        self.assertEqual(len(rows), 4)              # HENRY posted + disc, MARIA, PEND
-        henry_disc = next(r for r in rows if r[3] == "Disconnected")
-        self.assertEqual(henry_disc[8], "Non-Pay")
-        self.assertEqual(len(henry_disc), 16)
-
     def test_activation_rates(self):
         office, reps = C.activation_rates(self.lines, TODAY)
         self.assertEqual(office["0-30"]["sold"], 4)

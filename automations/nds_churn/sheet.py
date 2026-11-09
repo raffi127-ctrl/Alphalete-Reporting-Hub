@@ -1,18 +1,26 @@
-"""The NDS CHURN and NDS Activations tabs on the Vantura Master Sales Board.
+"""The NDS CHURN tab on the Vantura Master Sales Board.
 
-Born as duplicates of LUCY CHURN / Activations (Carlos 2026-11-09: "see if
-we can remake this report ... remove that [CRU/IRU] column ... anything that
-involved the captainship, we wouldn't need"), reshaped once by --setup:
+Born as a duplicate of LUCY CHURN (Carlos 2026-11-09: "see if we can remake
+this report ... remove that [CRU/IRU] column ... anything that involved the
+captainship, we wouldn't need"), reshaped once by --setup:
   * same control box, dropdown, FILTER / SUMIF helper block (P:AE), notes
-    lookup (P99+), per-rep list (AG) -- so vantura_churn.fill writes them
+    lookup (P99+), per-rep list (AG) -- so vantura_churn.fill writes it
     unchanged;
-  * column J of the rolloff list = Disc Reason instead of CRU/IRU (column I
-    on the activations tab);
+  * column J of the rolloff list = Disc Reason instead of CRU/IRU;
   * the tier charts show the SOW's NDS tiers (comp.py) -- what a port line
     pays at each 0-30 day band, at the 90-day tier the latest Churn Notice
     placed us; the live band is marked "◀ now" by the daily run;
   * A13:N14 carries the status line (notice tiers, live rates, the <=19
     auto-tier rule, the rep DNQ rule). No captain decelerator anywhere.
+
+NO 'NDS Activations' tab, on purpose (Carlos 2026-11-09: "you already have
+an NDS order log ... make sure it doesn't mess up anything we're currently
+doing"): the per-order view is the existing 'NDS Order Log' tab
+(nds_metrics.order_log_tab, read by rc_contact_sync.delivered), and
+vantura_churn.fill.activations_worksheet falls back to ANY tab with
+'activation' in its title when the B2B 'Activations' tab goes missing -- a
+second such tab would have been written with B2B rows. The one made at
+setup on 11/09 was deleted empty the same hour.
 """
 from __future__ import annotations
 
@@ -24,9 +32,7 @@ from automations.vantura_churn import fill as VF
 
 SHEET_ID = VF.SHEET_ID
 TAB = "NDS CHURN"
-TAB_ACT = "NDS Activations"
 SRC_TAB = "LUCY CHURN"
-SRC_ACT = "Activations"
 AFTER_TAB = "NDS Order Log"          # the new tabs sit right after this one
 TITLE = "NDS — 0–30 Day Rolloff List — soonest to fall off"
 STATUS_CELL = "A13"
@@ -111,24 +117,6 @@ def ensure_churn_tab(sh, log=print) -> Tuple[object, bool]:
     _retry(lambda: sh.batch_update({"requests": reqs}))
     log(f"  ✓ '{TAB}': cleared B2B data, J15 = {REASON_HEADER}, status line "
         f"merged at A13:N14")
-    return ws, True
-
-
-def ensure_activations_tab(sh, log=print) -> Tuple[object, bool]:
-    m = _titles(sh)
-    if TAB_ACT in m:
-        return m[TAB_ACT], False
-    ws = _duplicate(sh, SRC_ACT, TAB_ACT, log)
-    last = ws.row_count
-    _retry(lambda: ws.batch_clear([f"A2:P{last}", f"R3:Y{last}"]))
-    _retry(lambda: ws.batch_update([
-        {"range": "I1", "values": [[REASON_HEADER]]},
-        # One summary row stays as the formula template update_activations
-        # copies for every rep it meets.
-        {"range": "R2", "values": [["CARLOS HIDALGO"]]},
-    ], value_input_option="USER_ENTERED"))
-    VF._reset_basic_filter(ws, 0)
-    log(f"  ✓ '{TAB_ACT}': cleared B2B rows, I1 = {REASON_HEADER}")
     return ws, True
 
 

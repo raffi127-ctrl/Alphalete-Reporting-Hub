@@ -6,11 +6,12 @@ Owner & Office = CARLOS HIDALGO) -> compute 0-30 bases / disconnects by
 activation date, the rolloff rows, the activations rows, the activation
 rates -> RECONCILE the wireless 0-30 count against the NDS workbook's own
 CHURNRATES view sliced to Carlos (office_metrics.nds_churn's ChurnALlExp
-pull) -> only then write the NDS CHURN + NDS Activations tabs on the Vantura
-Master Sales Board. A mismatch writes nothing and exits 1; a view with no
-rows for Carlos writes UNVERIFIED and says so.
+pull) -> only then write the NDS CHURN tab on the Vantura Master Sales
+Board. A mismatch writes nothing and exits 1; a view with no rows for Carlos
+writes UNVERIFIED and says so. The per-order view stays the existing 'NDS
+Order Log' tab (no activations tab here -- see sheet.py).
 
-  python -m automations.nds_churn.run --setup             # create / repair the two tabs (once)
+  python -m automations.nds_churn.run --setup             # create / repair the tab (once)
   python -m automations.nds_churn.run --probe             # export header, mapping, counts; no write
   python -m automations.nds_churn.run --dry-run           # compute + reconcile + print
   python -m automations.nds_churn.run                     # live
@@ -114,7 +115,6 @@ def main(argv=None) -> int:
                     help="compute + reconcile + print; write nothing")
     ap.add_argument("--skip-reconcile", action="store_true",
                     help="write even when the CHURNRATES view disagrees")
-    ap.add_argument("--skip-activations", action="store_true")
     ap.add_argument("--from-file", default=None, metavar="CSV",
                     help="use this export instead of pulling Tableau")
     ap.add_argument("--dm", default=None, metavar="U...",
@@ -129,15 +129,13 @@ def main(argv=None) -> int:
     if a.setup:
         sh = S.open_board()
         ws, made = S.ensure_churn_tab(sh, log)
-        act_ws, made_act = S.ensure_activations_tab(sh, log)
         S.write_tier_tables(ws, None, log=log)
         try:
             VF.apply_theme(ws, log=log)
         except Exception as e:  # noqa: BLE001 -- cosmetics never block setup
             log(f"  ⚠ theme skipped: {e}")
         VF.hide_helper_columns(ws, log=log)
-        log(f"=== setup done ({'created' if made else 'kept'} {S.TAB}, "
-            f"{'created' if made_act else 'kept'} {S.TAB_ACT}) ===")
+        log(f"=== setup done ({'created' if made else 'kept'} {S.TAB}) ===")
         return 0
 
     path = Path(a.from_file) if a.from_file else pull(today, log)
@@ -149,7 +147,6 @@ def main(argv=None) -> int:
 
     summary = C.churn_summary(lines, today)
     helper = C.helper_block(lines, today)
-    act_rows = C.activations_rows(lines, today)
     office, reps = C.activation_rates(lines, today)
     ts = C.tier_status(summary, today)
     status = C.status_line(ts)
@@ -158,7 +155,7 @@ def main(argv=None) -> int:
         log(f"⚠ product labels in the 0-30 window the map ignores: {um}")
     log(f"CHURN 0-30 (by activation date): base {summary['base']} "
         f"disc {summary['disc']}  wireless split {summary['split']}")
-    log(f"ROLLOFF rows: {len(helper)}   ACTIVATIONS rows: {len(act_rows)}")
+    log(f"ROLLOFF rows: {len(helper)}")
     log(f"RATES: {_fmt_rates(office)}   ({len(reps)} reps)")
     log("STATUS: " + status)
     if a.skip_reconcile:
@@ -195,13 +192,6 @@ def main(argv=None) -> int:
     VF.update_activation_rates(ws, office, reps, log=log)
     S.write_tier_tables(ws, ts, log=log)
     S.write_status(ws, status, log=log)
-    if not a.skip_activations:
-        try:
-            act_ws = worksheet_ci(sh, S.TAB_ACT)
-            log(f"▶ updating '{act_ws.title}'…")
-            VF.update_activations(act_ws, act_rows, log=log)
-        except Exception as e:  # noqa: BLE001 -- churn already landed
-            log(f"  ✗ {S.TAB_ACT} NOT updated: {type(e).__name__}: {e}")
     if a.dm:
         from automations.shared import slack_metrics_post as smp
         from automations.vantura_churn import shot

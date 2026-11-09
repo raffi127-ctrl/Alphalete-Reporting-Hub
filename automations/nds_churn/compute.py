@@ -12,8 +12,6 @@ can make the same report"):
     CHURN except offset +9, which was CRU/IRU, now carries the Disconnect
     Reason ("there's not going to be CRU or IRU"), so non-pay disconnects
     read as such.
-  * activations tab rows = orders from the last 30 days by ORDER date, one
-    row per SPM + BAN + status, column I = Disconnect Reason.
   * activation rates (office + per rep) = the Activation Rate by Rep rule on
     the NDS Metrics thread: sold by ORDER-date age (0-30 / 31-60 days),
     activated = Posted now or Disconnected (it was active before it fell).
@@ -321,33 +319,6 @@ def helper_block(lines: List[dict], today: dt.date) -> List[List]:
                 p,                                            # +14 Product key
                 remaining,                                    # +15 remaining after
             ])
-    return rows
-
-
-def activations_rows(lines: List[dict], today: dt.date) -> List[List]:
-    """NDS Activations tab: orders from the last 30 days (ORDER date), one
-    row per SPM + BAN + status. 16 columns A..P; I = Disc Reason."""
-    cutoff = today - dt.timedelta(days=WINDOW_DAYS)
-    groups: Dict[tuple, List[dict]] = collections.defaultdict(list)
-    for ln in lines:
-        if not ln["order_date"] or ln["order_date"] < cutoff:
-            continue
-        groups[(ln["spm"] or ln["customer"], ln["ban"], ln["status"])].append(ln)
-    rows = []
-    for (spm, ban, status), grp in groups.items():
-        g0 = grp[0]
-        order = min((g["order_date"] for g in grp if g["order_date"]), default=None)
-        rows.append([
-            g0["rep"], g0["customer"], len(grp), status, fmt_date(order),
-            fmt_date(g0["posted"]), g0["status_date"], ban,
-            _join_uniq(g["reason"] for g in grp),               # I Disc Reason
-            g0["product"],
-            " / ".join(sorted({g["tn"] for g in grp if g["tn"]})),
-            " / ".join(sorted({g["tn_type"] for g in grp if g["tn_type"]})),
-            g0["wireless_ip"] or ("BYOD" if g0["byod"] else g0["package"]),
-            g0["abp"], g0["spm"], "",
-        ])
-    rows.sort(key=lambda r: (str(r[0]).upper(), str(r[3]).upper()))
     return rows
 
 
