@@ -7,11 +7,18 @@ can make the same report"):
     by activation ("posted") date; a unit churned when its status is
     Disconnected. Products: Wireless / Air / Internet (Internet stays for
     the tab's shape; NDS sells wireless + Internet Air).
+  * WIRELESS COUNTS PORT LINES ONLY (spe.TN Type == port) -- that is what
+    Smart Circle's own NDS CHURNRATES view counts as "Activated SPE/SP":
+    proven 2026-11-09, ours 17/136 became its 16/126 the moment upgrades
+    (5), tablet/wearable "new" lines (4) and one untyped line were left
+    out, rep by rep. Those lines are counted separately (summary
+    'excluded') and named on the status line; they are not churn base.
   * the hidden helper block = one row per product + customer (+ BAN when the
     export carries one), soonest to fall off first; same 16 columns as LUCY
-    CHURN except offset +9, which was CRU/IRU, now carries the Disconnect
-    Reason ("there's not going to be CRU or IRU"), so non-pay disconnects
-    read as such.
+    CHURN except offset +9, which was CRU/IRU ("there's not going to be CRU
+    or IRU"): it shows the line type and footprint ("port · OOF"). The NDS
+    ORDERLOG export has NO disconnect-reason or non-pay column (the B2B one
+    did), so a reason cannot come from this source.
   * activation rates (office + per rep) = the Activation Rate by Rep rule on
     the NDS Metrics thread: sold by ORDER-date age (0-30 / 31-60 days),
     activated = Posted now or Disconnected (it was active before it fell).
@@ -204,13 +211,28 @@ def _line_key(ln: dict):
     return ln["spe"] or (ln["spm"], ln["tn"], ln["customer"], ln["product"])
 
 
-def churn_units(lines: List[dict], today: dt.date, days: int = WINDOW_DAYS
-                ) -> List[dict]:
+PORT = "port"
+
+
+def line_kind(ln: dict) -> str:
+    """'port' (a voice port line -- churn base), 'upgrade', 'new' (tablet /
+    wearable / hotspot add-a-line on NDS) or 'untyped'."""
+    t = (ln.get("tn_type") or "").strip().lower()
+    return t if t in (PORT, "upgrade", "new") else "untyped"
+
+
+def churn_units(lines: List[dict], today: dt.date, days: int = WINDOW_DAYS,
+                ports_only: bool = True) -> List[dict]:
+    """Distinct activated lines in the window. Wireless keeps port lines only
+    unless ports_only=False (the excluded kinds are reported by
+    excluded_units)."""
     cutoff = today - dt.timedelta(days=days)
     seen, units = set(), []
     for ln in lines:
         p = ln["prod"]
         if not p or not ln["posted"] or ln["posted"] < cutoff or ln["posted"] > today:
+            continue
+        if ports_only and p == "Wireless" and line_kind(ln) != PORT:
             continue
         key = (p, _line_key(ln))
         if key in seen:
@@ -218,6 +240,16 @@ def churn_units(lines: List[dict], today: dt.date, days: int = WINDOW_DAYS
         seen.add(key)
         units.append(ln)
     return units
+
+
+def excluded_units(lines: List[dict], today: dt.date) -> Dict[str, int]:
+    """Activated wireless lines in the window that are NOT churn base, by
+    kind: {'upgrade': n, 'new': n, 'untyped': n}."""
+    out: Dict[str, int] = collections.Counter()
+    for u in churn_units(lines, today, ports_only=False):
+        if u["prod"] == "Wireless" and line_kind(u) != PORT:
+            out[line_kind(u)] += 1
+    return dict(out)
 
 
 def churn_summary(lines: List[dict], today: dt.date) -> dict:
@@ -235,6 +267,7 @@ def churn_summary(lines: List[dict], today: dt.date) -> dict:
             if dead:
                 s["disc"] += 1
     return {"base": base, "disc": disc, "split": split,
+            "excluded": excluded_units(lines, today),
             "base_total": sum(base.values()), "disc_total": sum(disc.values())}
 
 
@@ -311,7 +344,8 @@ def helper_block(lines: List[dict], today: dt.date) -> List[List]:
                               if g["order_date"]), default=None)),  # +6 Order Date
                 fmt_date(posted),                             # +7 Activation Date
                 fmt_date(disc_real),                          # +8 Disconnect Date
-                _join_uniq((g["reason"] for g in grp)),       # +9 Disc Reason (was CRU/IRU)
+                _join_uniq(f"{line_kind(g)} · {g['if_oof']}".strip(" ·")
+                           for g in grp),                     # +9 Line · IF/OOF (was CRU/IRU)
                 _acct_lines(ban, customer),                   # +10 Lines on Acct
                 _join_uniq(_device(g) for g in grp),          # +11 Phone/BYOD
                 p,                                            # +12 Product Type
@@ -361,7 +395,8 @@ def tier_status(summary: dict, today: dt.date) -> dict:
     to the tier the latest Churn Notice placed us at. The notice is the word
     that pays; the live band is the early read."""
     sp = summary["split"]
-    out = {"notice": dict(comp.NOTICE), "products": {}}
+    out = {"notice": dict(comp.NOTICE), "products": {},
+           "excluded": summary.get("excluded") or {}}
     for key, byod, bands in (("non_byod", False, comp.NONBYOD_0_30),
                              ("byod", True, comp.BYOD_0_30)):
         base, disc = sp[key]["base"], sp[key]["disc"]
@@ -390,10 +425,13 @@ def status_line(ts: dict) -> str:
         return (f"{label} {p['disc']}/{p['base']} = {p['pct']:.1f}% "
                 f"(Tier {p['tier']} band)")
     eff = dt.date.fromisoformat(ts["notice"]["effective"])
+    exc = ts.get("excluded") or {}
+    exc_txt = ", ".join(f"{v} {k}" for k, v in sorted(exc.items())) or "none"
     return (f"Churn Notice eff {eff.month}/{eff.day}: Non-BYOD Tier "
             f"{n['notice_code']} (${n['notice_pay'][0]} OOF / ${n['notice_pay'][1]} INFP per port line) · "
             f"BYOD Tier {b['notice_code']} (${b['notice_pay'][0]} / ${b['notice_pay'][1]}).  "
             f"Live 0-30 day: {_live(n, 'Non-BYOD')} · {_live(b, 'BYOD')}.  "
+            f"Port lines only, like Smart Circle's churn view (not counted: {exc_txt}).  "
             f"≤{comp.AUTO_TIER_MAX_ACTIVATIONS} port activations in the month = automatic Tier "
             f"{comp.AUTO_TIER}.  Rep tier bonus DNQ: 0-30 churn >{comp.DNQ_CHURN_PCT:.0f}% "
             f"(at {comp.DNQ_CHURN_MIN_ACTIVATIONS}+ activations) or activation rate "

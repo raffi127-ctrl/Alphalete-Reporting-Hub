@@ -36,7 +36,7 @@ SRC_TAB = "LUCY CHURN"
 AFTER_TAB = "NDS Order Log"          # the new tabs sit right after this one
 TITLE = "NDS — 0–30 Day Rolloff List — soonest to fall off"
 STATUS_CELL = "A13"
-REASON_HEADER = "Disc Reason"
+REASON_HEADER = "Line · IF/OOF"      # was CRU/IRU; the NDS export has no disconnect reason
 TIER_ROWS = (4, 3, 2, 1)             # best band first, rows 7..10
 
 
@@ -137,6 +137,7 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
             comp.BYOD_0_30_LABEL[t], f"${boof}", f"${binfp}",
         ])
     _retry(lambda: ws.batch_update([
+        {"range": "J15", "values": [[REASON_HEADER]]},
         {"range": "H4", "values": [[
             f"Churn Tiers — Port Non-BYOD (paid at 90-day Tier {t90n})"]]},
         {"range": "K4", "values": [[
