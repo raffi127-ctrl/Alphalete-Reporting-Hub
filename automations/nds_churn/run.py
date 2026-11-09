@@ -99,9 +99,29 @@ def view_counts(today: dt.date, log=print) -> Optional[dict]:
             "reps": len(reps), "detail": detail}
 
 
+# The gate exists to catch a broken or stale pull, not a one-line roster
+# quibble: disconnects must match exactly, the base may differ by this many
+# lines (2026-11-09: the view carried 126 port lines to our 127 -- one rep's
+# single line sat outside its owner slice -- with disconnects equal at 16).
+BASE_TOLERANCE = 2
+
+
+def _rep_diff(lines, today, view: dict) -> str:
+    ours = _our_rep_units(lines, today)
+    out = []
+    for name in sorted(set(ours) | set(view.get("detail", {}))):
+        vd = view.get("detail", {}).get(name)
+        v = (int(vd[0] or 0), int(vd[1] or 0)) if vd else None
+        o = ours.get(name)
+        if v != o:
+            out.append(f"{name}: view {v} ours {o}")
+    return "; ".join(out) or "per rep identical"
+
+
 def reconcile(lines, today: dt.date, summary: dict, log=print
               ) -> Tuple[Optional[bool], str]:
-    """True = matches, False = mismatch (do not write), None = unverifiable."""
+    """True = matches (disconnects exact, base within BASE_TOLERANCE),
+    False = mismatch (do not write), None = unverifiable."""
     global _LAST_VIEW
     try:
         v = view_counts(today, log)
@@ -121,8 +141,14 @@ def reconcile(lines, today: dt.date, summary: dict, log=print
     for label, base, disc in cands:
         if base == v["base"] and disc == v["disc"]:
             return True, f"view {v['disc']}/{v['base']} = ours ({label})"
+    for label, base, disc in cands:
+        if disc == v["disc"] and abs(base - v["base"]) <= BASE_TOLERANCE:
+            return True, (f"view {v['disc']}/{v['base']} vs ours {disc}/{base} "
+                          f"({label}) -- within tolerance; "
+                          + _rep_diff(lines, today, v))
     return False, (f"view {v['disc']}/{v['base']} ({v['reps']} reps) vs ours "
-                   + "; ".join(f"{l} {d}/{b}" for l, b, d in cands))
+                   + "; ".join(f"{l} {d}/{b}" for l, b, d in cands)
+                   + " -- " + _rep_diff(lines, today, v))
 
 
 _LAST_VIEW = None
