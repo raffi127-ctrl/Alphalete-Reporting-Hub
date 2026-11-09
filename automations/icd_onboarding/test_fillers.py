@@ -174,3 +174,31 @@ def test_raf_resolves_even_though_he_has_no_metrics_workbook():
     import inspect
     src = inspect.getsource(F.workbook_for)
     assert "ALL_IN_ONE_RAF" in src, "Alphalete is not an ICD and has no metrics book"
+# ------------------------------------------- which OwnerVille programme
+
+def test_the_ov_programme_is_per_office_not_alphaletes():
+    """ICDs are in different programmes (Megan, 2026-11-09). RES-AT&T is
+    Alphalete's, and inheriting it for an ICD reads an empty table — which
+    looks exactly like nobody having done anything."""
+    import inspect
+    from automations.obcl_ov_sweep import ov_table
+    assert "campaign" in inspect.signature(ov_table.read_table).parameters
+    from automations.office_admin import config as OC
+    assert hasattr(OC.Office("k", "o", "1"), "ov_program")
+    assert OC.office("raf").ov_program == "RES-AT&T"
+
+
+def test_an_office_with_no_programme_set_does_not_inherit_alphaletes():
+    from automations.office_admin import config as OC
+    assert OC.office("omar").ov_program == "", (
+        "blank until somebody says which — a guess here reads an empty table")
+
+
+def test_a_programme_ownerville_does_not_have_fails_loudly():
+    """Selecting a campaign that is not in the dropdown selects nothing, and
+    the table then reads empty. That must raise, not return no rows."""
+    import inspect
+    from automations.obcl_ov_sweep import ov_table
+    src = inspect.getsource(ov_table.read_table)
+    assert "has no %r programme" in src
+    assert "It offers:" in src

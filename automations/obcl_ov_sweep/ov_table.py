@@ -238,8 +238,13 @@ _INFO_JS = """() => {
 }"""
 
 
-def read_table(page, *, verbose: bool = True) -> tuple:
-    """(headers, {ov name: cells}, complete). RES-AT&T, Show All, every entry.
+def read_table(page, *, verbose: bool = True, campaign: str = None) -> tuple:
+    """(headers, {ov name: cells}, complete). Show All, every entry.
+
+    `campaign` is the programme to read, defaulting to Alphalete's RES-AT&T.
+    ICDs are in DIFFERENT PROGRAMMES (Megan, 2026-11-09: "ICDs are in different
+    programs so it won't always be RES for these"), so an office tells this
+    which one it is rather than inheriting Alphalete's.
 
     `complete` compares what we read against DataTables' own "of N entries"
     (digi_docs.ownerville.snapshot's lesson: page sizes are not rosters). A
@@ -255,7 +260,19 @@ def read_table(page, *, verbose: bool = True) -> tuple:
     page.goto(f"https://v2.ownerville.com/index.cfm?p={VIEW_PROGRESS_P}"
               f"&rqst={rqst}", wait_until="domcontentloaded")
     _settle(page)
-    _campaign_select(page).select_option(label=config.CAMPAIGN)
+    want = campaign or config.CAMPAIGN
+    sel = _campaign_select(page)
+    # A campaign the dropdown does not have selects NOTHING and the table then
+    # reads empty -- which looks exactly like "nobody has done anything"
+    # ([[reference_campaign_picks_the_workbook]]: every board blank = wrong
+    # campaign). Say so, and say what the dropdown actually offers.
+    options = [o.strip() for o in sel.evaluate(
+        "s => [...s.options].map(o => o.textContent)") if o and o.strip()]
+    if want not in options:
+        raise RuntimeError(
+            "OwnerVille has no %r programme on this login. It offers: %s"
+            % (want, ", ".join(options) or "nothing"))
+    sel.select_option(label=want)
     _settle(page)
     _show_all(page)
     _settle(page)
@@ -270,7 +287,7 @@ def read_table(page, *, verbose: bool = True) -> tuple:
     claimed = int(m.group(1).replace(",", "")) if m else dov._entries_total(page)
     complete = claimed is None or len(reps) >= claimed
     if verbose:
-        print(f"  View Progress ({config.CAMPAIGN}, Show All): read "
+        print(f"  View Progress ({want}, Show All): read "
               f"{len(reps)}, table says {claimed if claimed is not None else '?'}"
               f"{'' if complete else '  ⛔ INCOMPLETE'}", flush=True)
     return heads, reps, complete

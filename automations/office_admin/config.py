@@ -110,6 +110,13 @@ class Office:
     # "dry" reads the calendar and the packets and reports who it would add;
     # "live" fills Apex. Set here, never on the office computer.
     apex_mode: str = "off"
+    # Which OwnerVille programme this office's people are in. Alphalete is
+    # RES-AT&T; ICDs are in different ones (Megan 2026-11-09: "ICDs are in
+    # different programs so it won't always be RES for these"), and a wrong one
+    # selects nothing and reads an empty table, which looks exactly like nobody
+    # having done anything. Blank means "ask OwnerVille what it offers and
+    # tell me" rather than guessing at Alphalete's.
+    ov_program: str = ""
 
 
 # Omar first (Raf: "Let's test in Omar's office").
@@ -122,7 +129,7 @@ OFFICES: Dict[str, Office] = {
     # (Megan 2026-11-04): his Sterling account is rahidalgo, codes to raffi127.
     "raf": Office(key="raf", owner="Rafael Hidalgo", appstream_id="11280",
                   channel="C06881A7WLV", bgc_mode="dry", tz="America/Chicago",
-                  alert_at="16:30", apex_mode="dry"),
+                  alert_at="16:30", apex_mode="dry", ov_program="RES-AT&T"),
 }
 
 
