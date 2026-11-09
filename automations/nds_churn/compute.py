@@ -427,4 +427,23 @@ def probe_text(header: List[str], ix: Dict[str, Optional[int]],
     um = unmapped_products(lines, today)
     if um:
         out.append(f"UNMAPPED products in window: {um}")
+    reasonish = [h for h in header if any(k in h.lower() for k in
+                                           ("reason", "pmt", "cancel", "churn", "rolloff"))]
+    out.append("reason-ish headers: " + (" | ".join(reasonish) or "(none)"))
+    out.append(f"non-pay days populated: {sum(1 for ln in lines if ln['nonpay_days'])}")
+    units = churn_units(lines, today)
+    wl = [u for u in units if u["prod"] == "Wireless"]
+    out.append("0-30 wireless units by tn_type: " + ", ".join(
+        f"{k}={v}" for k, v in collections.Counter(u["tn_type"] or "(blank)" for u in wl).most_common()))
+    kinds = collections.Counter(
+        "tablet/watch" if any(w in (u["device"] + " " + u["package"]).lower()
+                              for w in ("tab ", "tab-", "tablet", "watch", "ipad", "wearable"))
+        else ("byod" if u["byod"] else "phone") for u in wl)
+    out.append("0-30 wireless units by device kind: " + ", ".join(f"{k}={v}" for k, v in kinds.items()))
+    out.append("0-30 UNITS (customer | rep | posted | status | tn_type | device | package | byod | if_oof | reason | nonpay | spe):")
+    for u in sorted(units, key=lambda x: (x["rep"], x["posted"] or dt.date.min)):
+        out.append(" | ".join(str(x) for x in (
+            u["customer"], u["rep"], u["posted"], u["status"], u["tn_type"], u["device"][:40],
+            u["package"][:40], "BYOD" if u["byod"] else "", u["if_oof"], u["reason"],
+            u["nonpay_days"], u["spe"])))
     return "\n".join(out)

@@ -38,25 +38,28 @@ CARLOS = "U046G04P5LG"
 # Rich output goes to a tab on the control sheet (the queue's Result cell
 # holds ~470 chars; logtail cuts lines at 200) -- read it back from the mini.
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
-DIAG_TAB = "NDS Churn Diag"
+DIAG_TAB = "NDS Churn Diag"          # --dry-run
+PROBE_TAB = "NDS Churn Probe"        # --probe (its own tab, so a dry run never overwrites it)
 
 
-def write_diag(lines, log=print) -> None:
-    """Replace the diag tab's contents with these lines (one per row)."""
+def write_diag(lines, log=print, tab: str = DIAG_TAB) -> None:
+    """Replace the tab's contents with these lines (one per row)."""
     try:
         from automations.recruiting_report.fill import _retry, open_by_key
         sh = open_by_key(CONTROL_SHEET_ID)
         try:
-            ws = sh.worksheet(DIAG_TAB)
+            ws = sh.worksheet(tab)
         except Exception:  # noqa: BLE001 -- first time: make it
-            ws = sh.add_worksheet(DIAG_TAB, rows=400, cols=4)
+            ws = sh.add_worksheet(tab, rows=600, cols=4)
         _retry(lambda: ws.clear())
         rows = [[dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "written by nds_churn"]]
         rows += [[str(x)[:49000]] for x in lines]
+        if len(rows) > ws.row_count:
+            _retry(lambda: ws.add_rows(len(rows) - ws.row_count + 20))
         _retry(lambda: ws.batch_update([{"range": f"A1:B{len(rows)}",
                                          "values": [r + [""] * (2 - len(r)) for r in rows]}],
                                        value_input_option="RAW"))
-        log(f"[nds_churn] diag -> control sheet tab {DIAG_TAB!r} ({len(lines)} line(s))")
+        log(f"[nds_churn] diag -> control sheet tab {tab!r} ({len(lines)} line(s))")
     except Exception as e:  # noqa: BLE001 -- a diag write never fails the run
         log(f"[nds_churn] diag tab write failed: {type(e).__name__}: {e}")
 
@@ -81,26 +84,30 @@ def view_counts(today: dt.date, log=print) -> Optional[dict]:
         return None
     num = denom = 0.0
     got = False
-    for slots in reps.values():
+    detail = {}
+    for rep_name, slots in reps.items():
         s = slots.get("0-30") or {}
         if s.get("denom") is not None:
             denom += s["denom"]
             got = True
         if s.get("num") is not None:
             num += s["num"]
+        detail[rep_name] = (s.get("num"), s.get("denom"), s.get("pct"))
     if not got:
         return None
     return {"disc": int(round(num)), "base": int(round(denom)),
-            "reps": len(reps)}
+            "reps": len(reps), "detail": detail}
 
 
 def reconcile(lines, today: dt.date, summary: dict, log=print
               ) -> Tuple[Optional[bool], str]:
     """True = matches, False = mismatch (do not write), None = unverifiable."""
+    global _LAST_VIEW
     try:
         v = view_counts(today, log)
     except Exception as e:  # noqa: BLE001
         return None, f"view pull failed ({type(e).__name__}: {str(e)[:120]})"
+    _LAST_VIEW = v
     if not v:
         return None, "the NDS CHURNRATES view has no rows for Carlos yet"
     cands = []
@@ -116,6 +123,21 @@ def reconcile(lines, today: dt.date, summary: dict, log=print
             return True, f"view {v['disc']}/{v['base']} = ours ({label})"
     return False, (f"view {v['disc']}/{v['base']} ({v['reps']} reps) vs ours "
                    + "; ".join(f"{l} {d}/{b}" for l, b, d in cands))
+
+
+_LAST_VIEW = None
+
+
+def _our_rep_units(lines, today):
+    """Per rep: (disconnected, activated) 0-30 wireless units -- to set against
+    the view's per-rep rows when the totals disagree."""
+    out = {}
+    for u in C.churn_units(lines, today):
+        if u["prod"] != "Wireless":
+            continue
+        d, a = out.get(u["rep"], (0, 0))
+        out[u["rep"]] = (d + (1 if u["status"].lower() in C.DISCONNECTED else 0), a + 1)
+    return out
 
 
 def _fmt_rates(office: dict) -> str:
@@ -167,7 +189,8 @@ def main(argv=None) -> int:
     if a.probe:
         text = C.probe_text(header, ix, lines, today)
         print(text)
-        write_diag(["PROBE " + today.isoformat()] + text.split("\n"), log=log)
+        write_diag(["PROBE " + today.isoformat()] + text.split("\n"), log=log,
+                   tab=PROBE_TAB)
         print("=== probe done ===", flush=True)
         return 0
 
@@ -202,7 +225,12 @@ def main(argv=None) -> int:
                     "STATUS: " + status,
                     f"UNMAPPED: {um}",
                     "ROLLOFF ROWS (%d):" % len(helper)] + rows_txt
-                   + ["REPS:"] + [f"{k}: {v}" for k, v in sorted(reps.items())], log=log)
+                   + ["VIEW REPS (0-30 disc / activated / pct):"]
+                   + ([f"{k}: {v}" for k, v in sorted((_LAST_VIEW or {}).get("detail", {}).items())]
+                      or ["(no view rows)"])
+                   + ["OUR REPS (0-30 wireless disc / activated):"]
+                   + [f"{k}: {v}" for k, v in sorted(_our_rep_units(lines, today).items())]
+                   + ["RATES BY REP:"] + [f"{k}: {v}" for k, v in sorted(reps.items())], log=log)
         log("[dry-run] no writes performed.")
         print("=== done ===", flush=True)
         return 0
