@@ -158,6 +158,31 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
         {"range": "H7:N10", "values": rows},
         {"range": "H11:N12", "values": [[""] * 7, [""] * 7]},
     ], value_input_option="USER_ENTERED"))
+    # Layout the duplicate carried from the B2B tab and the theme leaves
+    # alone: stray fills on the two spare chart rows, a bold B2B marker row,
+    # and a 'Product Type' header clipped at 60px. Idempotent, so every run
+    # re-asserts it.
+    white = {"red": 1, "green": 1, "blue": 1}
+    reqs = [
+        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 10,
+                                  "endRowIndex": 12, "startColumnIndex": 7,
+                                  "endColumnIndex": 14},
+                        "cell": {"userEnteredFormat": {"backgroundColor": white}},
+                        "fields": "userEnteredFormat.backgroundColor"}},
+        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 6,
+                                  "endRowIndex": 10, "startColumnIndex": 7,
+                                  "endColumnIndex": 14},
+                        "cell": {"userEnteredFormat": {
+                            "textFormat": {"bold": False},
+                            "horizontalAlignment": "CENTER"}},
+                        "fields": "userEnteredFormat.textFormat.bold,"
+                                  "userEnteredFormat.horizontalAlignment"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": 12, "endIndex": 13},
+            "properties": {"pixelSize": 100}, "fields": "pixelSize"}},
+    ]
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
     log(f"  ✓ {ws.title}: tier charts written (90-day Tier {t90n}/{t90b}; "
         f"live bands {live_n}/{live_b})")
 
