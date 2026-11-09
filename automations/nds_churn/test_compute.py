@@ -43,6 +43,9 @@ ROWS = [
     _row("Andrew Park", "TAB T", "10/26/2026", "DSI6", "BAN6", "WIRELESS",
          "Disconnected", "11/1/2026", "10/28/2026", "SPE7", "777", "new",
          "Galaxy Tab A11+", "", ""),
+    # a PORTED iPad: TN type says port, the device says tablet -> not churn base
+    _row("Andrew Park", "PAD P", "10/26/2026", "DSI7", "BAN7", "WIRELESS",
+         "Posted", "", "10/28/2026", "SPE8", "888", "port", "iPad (A16) A335", "Verizon", ""),
     _row("Someone Else", "NOT MINE", "11/1/2026", "DSI9", "BAN9", "WIRELESS",
          "Disconnected", "11/5/2026", "11/2/2026", "SPE9", "999", "port",
          "BYOD", "AT&T", "Non-Pay", owner="KHALIL MANSOUR\nOffice"),
@@ -65,7 +68,7 @@ class Compute(unittest.TestCase):
         cls.header, cls.ix, cls.lines = C.load_owner_lines(cls.csv, log=lambda *_: None)
 
     def test_load_filters_owner_and_collapses_measures(self):
-        self.assertEqual(len(self.lines), 7)
+        self.assertEqual(len(self.lines), 8)
         self.assertEqual(self.ix["reason"], 15)
         self.assertEqual(self.header[self.ix["status"]], "DTR Status (enriched)")
         self.assertEqual(self.header[self.ix["status_date"]], "DTR Status Date")
@@ -76,7 +79,7 @@ class Compute(unittest.TestCase):
         self.assertEqual(s["disc"], {"Wireless": 1, "Air": 0, "Internet": 0})
         self.assertEqual(s["split"]["byod"], {"base": 1, "disc": 1})
         self.assertEqual(s["split"]["non_byod"], {"base": 1, "disc": 0})
-        self.assertEqual(s["excluded"], {"upgrade": 1, "new": 1})
+        self.assertEqual(s["excluded"], {"upgrade": 1, "new": 1, "device": 1})
 
     def test_helper_block_shape_and_reason(self):
         rows = C.helper_block(self.lines, TODAY)
@@ -93,8 +96,8 @@ class Compute(unittest.TestCase):
 
     def test_activation_rates(self):
         office, reps = C.activation_rates(self.lines, TODAY)
-        self.assertEqual(office["0-30"]["sold"], 6)
-        self.assertEqual(office["0-30"]["activated"], 5)
+        self.assertEqual(office["0-30"]["sold"], 7)
+        self.assertEqual(office["0-30"]["activated"], 6)
         self.assertEqual(office["31-60"]["sold"], 0)
         self.assertIsNone(office["31-60"]["rate"])
         self.assertEqual(reps["Nick Smedra"]["0-30"]["rate"], 1.0)
@@ -115,7 +118,7 @@ class Compute(unittest.TestCase):
         self.assertIn("Tier 3-3 ($213 OOF / $193 INFP", line)
         self.assertIn("BYOD 1/1 = 100.0% (Tier 1 band)", line)
         self.assertIn("≤19 port activations", line)
-        self.assertIn("not counted: 1 tablet/wearable line, 1 upgrade)", line)
+        self.assertIn("not counted: 1 ported tablet/wearable, 1 tablet/wearable line, 1 upgrade)", line)
 
     def test_rep_dnq(self):
         self.assertIsNone(comp.rep_dnq(8.0, 10, 50.0, 10))   # under the floors

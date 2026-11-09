@@ -69,6 +69,7 @@ FIELDS = {
     "tn_type": ("spe.tn type", "tn type"),
     "device": ("spe.phone", "device", "phone"),
     "wireless_ip": ("wireless installment plan", "wireless ip"),
+    "wireless_type": ("spe.wireless type", "wireless type"),
     "abp": ("auto bill pay", "abp"),
     "reason": ("disconnect reason (consolidated)", "disconnect reason"),
     "package": ("package",),
@@ -212,12 +213,24 @@ def _line_key(ln: dict):
 
 
 PORT = "port"
+# Device words that mark a non-phone line whatever its TN type says (2026-11-09:
+# Andrew De La Torre's ported iPad sat in our port count and not in Smart
+# Circle's -- a tablet is not a voice line even when its number ported).
+_NON_PHONE_WORDS = ("ipad", "tablet", " tab ", "tab a", "galaxy tab", "watch",
+                    "ultra 2", "wearable", "nighthawk", "hotspot")
+_NON_PHONE_TYPES = ("tablet", "wearable", "watch", "hotspot", "data", "connected")
 
 
 def line_kind(ln: dict) -> str:
-    """'port' (a voice port line -- churn base), 'upgrade', 'new' (tablet /
-    wearable / hotspot add-a-line on NDS) or 'untyped'."""
+    """'port' (a voice port line -- the churn base), 'upgrade', 'new'
+    (add-a-line, on NDS mostly tablets / wearables), 'device' (a tablet or
+    wearable even though its number ported) or 'untyped'."""
+    wt = (ln.get("wireless_type") or "").strip().lower()
+    blob = " %s %s " % ((ln.get("device") or "").lower(), (ln.get("package") or "").lower())
     t = (ln.get("tn_type") or "").strip().lower()
+    if t == PORT and (any(w in wt for w in _NON_PHONE_TYPES)
+                      or any(w in blob for w in _NON_PHONE_WORDS)):
+        return "device"
     return t if t in (PORT, "upgrade", "new") else "untyped"
 
 
@@ -426,7 +439,8 @@ def status_line(ts: dict) -> str:
                 f"(Tier {p['tier']} band)")
     eff = dt.date.fromisoformat(ts["notice"]["effective"])
     exc = ts.get("excluded") or {}
-    names = {"new": "tablet/wearable line", "upgrade": "upgrade", "untyped": "untyped line"}
+    names = {"new": "tablet/wearable line", "device": "ported tablet/wearable",
+             "upgrade": "upgrade", "untyped": "untyped line"}
     exc_txt = ", ".join(f"{v} {names.get(k, k)}{'s' if v != 1 else ''}"
                         for k, v in sorted(exc.items())) or "none"
     return (f"Churn Notice eff {eff.month}/{eff.day}: Non-BYOD Tier "
@@ -448,7 +462,7 @@ def probe_text(header: List[str], ix: Dict[str, Optional[int]],
         f"{k}={header[i]!r}" if i is not None else f"{k}=MISSING"
         for k, i in ix.items()))
     out.append(f"lines on owner: {len(lines)}")
-    for key in ("status", "product", "reason", "tn_type", "if_oof"):
+    for key in ("status", "product", "reason", "tn_type", "if_oof", "wireless_type"):
         c = collections.Counter(ln[key] or "(blank)" for ln in lines)
         out.append(f"{key}: " + ", ".join(f"{k}={v}" for k, v in c.most_common(12)))
     out.append(f"byod lines: {sum(1 for ln in lines if ln['byod'])}; "
@@ -480,6 +494,10 @@ def probe_text(header: List[str], ix: Dict[str, Optional[int]],
                               for w in ("tab ", "tab-", "tablet", "watch", "ipad", "wearable"))
         else ("byod" if u["byod"] else "phone") for u in wl)
     out.append("0-30 wireless units by device kind: " + ", ".join(f"{k}={v}" for k, v in kinds.items()))
+    out.append("0-30 wireless lines by line_kind (all, before the port filter): " + ", ".join(
+        f"{k}={v}" for k, v in collections.Counter(
+            line_kind(u) for u in churn_units(lines, today, ports_only=False)
+            if u["prod"] == "Wireless").most_common()))
     out.append("0-30 UNITS (customer | rep | posted | status | tn_type | device | package | byod | if_oof | reason | nonpay | spe):")
     for u in sorted(units, key=lambda x: (x["rep"], x["posted"] or dt.date.min)):
         out.append(" | ".join(str(x) for x in (
