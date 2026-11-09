@@ -108,3 +108,27 @@ def test_marking_somebody_off_never_deletes_their_row():
     for bad in ("deleteRow", "deleteRows", "clearContent"):
         assert bad not in body, "a terminated row is hidden, never deleted"
     assert "restore" in body, "and it can be undone"
+
+
+def test_the_settings_tab_is_read_by_header_not_by_position():
+    """Two columns were added to that tab on the same day — 'Onboarding Sheet'
+    and 'Owner' — and whichever landed second shifted the other's index. A read
+    by number returns the wrong cell SILENTLY, which is the worst kind."""
+    src = _source()
+    body = src[src.index("function _admSettings("):]
+    body = body[:body.index("\n\n// One office")] if "\n\n// One office" in body else body[:2000]
+    import re
+    numeric = re.findall(r"rows\[i\]\[([1-9])\]", body)
+    assert not numeric, "reads column %s by position" % ", ".join(numeric)
+    for name in ("'State'", "'City'", "'AppStream'", "'Onboarding Sheet'"):
+        assert name in body, "%s should be looked up by header" % name
+
+
+def test_saving_an_office_never_writes_over_the_newer_columns():
+    """Approved Accounts is the guard, Onboarding Sheet points at the board.
+    A fixed span of columns would take both out the moment the order moved."""
+    src = _source()
+    body = src[src.index("function _admSetOffice("):]
+    body = body[:body.index("\nfunction ")]
+    assert "cur.cols[name]" in body, "it should place each value under its own header"
+    assert "1, 1, row.length" not in body, "no fixed column span"

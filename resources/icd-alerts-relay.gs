@@ -1318,20 +1318,50 @@ function _admLogin(a) {
   return who;
 }
 
+// BY HEADER NAME, never by position. Two people added a column to this tab on
+// the same day -- 'Onboarding Sheet' and 'Owner' -- and whichever landed second
+// shifted the other's index, so a read by number returned the wrong cell
+// silently. The header is the only thing that survives a new column.
+function _setCols(sh) {
+  var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), SET_HEAD.length))
+               .getValues()[0];
+  var at = {}, i;
+  for (i = 0; i < head.length; i++) {
+    var name = String(head[i] || '').trim();
+    if (name) at[name] = i;
+  }
+  // Any column SET_HEAD knows about and the tab does not gets appended, rather
+  // than the whole header being rewritten over somebody else's work.
+  var next = head.length;
+  for (i = 0; i < SET_HEAD.length; i++) {
+    if (!(SET_HEAD[i] in at)) {
+      sh.getRange(1, next + 1).setValue(SET_HEAD[i]);
+      at[SET_HEAD[i]] = next;
+      next++;
+    }
+  }
+  return at;
+}
+
 function _admSettings(office) {
   var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
-  if (sh.getLastColumn() < SET_HEAD.length) {        // older tab: add the newer columns
-    sh.getRange(1, 1, 1, SET_HEAD.length).setValues([SET_HEAD]);
-  }
+  var at = _setCols(sh);
+  var cell = function (r, name) {
+    return (name in at && at[name] < r.length) ? String(r[at[name]] || '').trim() : '';
+  };
   var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]).trim().toLowerCase() === office) {
-      return {row: i, state: String(rows[i][1] || ''), city: String(rows[i][2] || ''),
-              appstream: _accounts(rows[i][5]), approved: _accounts(rows[i][6]),
-              sheet: String(rows[i][7] || '').trim(), owner: String(rows[i][8] || '').trim()};
+      return {row: i, cols: at,
+              state: cell(rows[i], 'State'), city: cell(rows[i], 'City'),
+              appstream: _accounts(cell(rows[i], 'AppStream')),
+              approved: _accounts(cell(rows[i], 'Approved Accounts')),
+              sheet: cell(rows[i], 'Onboarding Sheet'),
+              owner: cell(rows[i], 'Owner')};
     }
   }
-  return {row: -1, state: '', city: '', appstream: '', approved: '', sheet: '', owner: ''};
+  return {row: -1, cols: at, state: '', city: '', appstream: '', approved: '',
+          sheet: '', owner: ''};
 }
 
 // Every OTHER office that has this ApplicantStream account approved. One
@@ -1339,11 +1369,15 @@ function _admSettings(office) {
 // have NO way to send one ICD's applicants through the other's Sterling).
 function _admOtherOwnersOf(acct, office) {
   var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
+  var at = _setCols(sh);
+  var cell = function (r, name) {
+    return (name in at && at[name] < r.length) ? String(r[at[name]] || '').trim() : '';
+  };
   var rows = sh.getDataRange().getValues(), out = [];
   for (var i = 1; i < rows.length; i++) {
     var o = String(rows[i][0]).trim().toLowerCase();
     if (!o || o === office) continue;
-    if (_accounts(rows[i][6]).split(', ').indexOf(acct) >= 0) out.push(o);
+    if (_accounts(cell(rows[i], 'Approved Accounts')).split(', ').indexOf(acct) >= 0) out.push(o);
   }
   return out;
 }
@@ -1383,9 +1417,25 @@ function _admSetOffice(sess, office, a) {
   try {
     var sh = _admSheet(SETTINGS_TAB, SET_HEAD);
     var cur = _admSettings(office);
-    var row = [office, state, city, sess.username, new Date(), appstream];  // G (approved) untouched
-    if (cur.row > 0) sh.getRange(cur.row + 1, 1, 1, row.length).setValues([row]);
-    else sh.appendRow(row);
+    // Each value under its OWN header, one cell at a time. Writing a fixed
+    // span of columns was safe only while nobody added one in the middle, and
+    // two columns arrived on the same day. Approved Accounts, Onboarding Sheet
+    // and Owner are never touched here.
+    var put = {Office: office, State: state, City: city,
+               'Updated By': sess.username, 'Updated At': new Date(),
+               AppStream: appstream};
+    if (cur.row > 0) {
+      Object.keys(put).forEach(function (name) {
+        if (name in cur.cols) sh.getRange(cur.row + 1, cur.cols[name] + 1).setValue(put[name]);
+      });
+    } else {
+      var line = [];
+      Object.keys(put).forEach(function (name) {
+        if (name in cur.cols) line[cur.cols[name]] = put[name];
+      });
+      for (var c = 0; c < line.length; c++) if (line[c] === undefined) line[c] = '';
+      sh.appendRow(line);
+    }
     return {ok: true, office: _admOffice(sess, office)};
   } finally {
     lock.releaseLock();
