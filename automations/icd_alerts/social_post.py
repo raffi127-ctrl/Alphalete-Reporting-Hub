@@ -90,15 +90,16 @@ def post(payload: Dict, live: bool, log=print) -> Dict:
                  and (not want or zoho_draft.page_of(c) in want)]
         return {"status": "dry_run" if pages else "no_channels",
                 "channels": r["channels"], "would_post_to": pages}
+    video = payload.get("media") == "video"          # the weekly reel
     with tempfile.TemporaryDirectory(prefix="lucy-social-") as tmp:
-        photo = Path(tmp) / "post.jpg"
+        photo = Path(tmp) / ("post.mp4" if video else "post.jpg")
         photo.write_bytes(base64.b64decode(raw))
         # From here on a retry could double-post: every outcome is a RESULT.
         try:
             keep = tuple(payload.get("pages") or ()) or None
             res = zoho_draft.post_now(caption, str(photo), "",
-                                      media_type="photo", profile_dir=PROFILE,
-                                      keep=keep)
+                                      media_type="video" if video else "photo",
+                                      profile_dir=PROFILE, keep=keep)
         except RuntimeError as e:
             if "session expired" in str(e).lower():
                 return {"status": "signed_out", "channels": []}

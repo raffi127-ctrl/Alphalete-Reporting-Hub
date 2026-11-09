@@ -196,9 +196,12 @@ def _compose(pg, caption: str, image_path: str | None,
         with pg.expect_file_chooser(timeout=15000) as fc:
             pg.locator(_MEDIA_BTN).first.click(timeout=10000)
         fc.value.set_files(image_path)
-        pg.wait_for_timeout(3500)
+        # A reel uploads + processes far slower than a photo: give it time
+        # before Attach (a too-early click attaches nothing).
+        is_video = str(image_path).lower().endswith((".mp4", ".mov"))
+        pg.wait_for_timeout(20000 if is_video else 3500)
         attach = pg.get_by_role("button", name="Attach").first
-        attach.click(timeout=15000)
+        attach.click(timeout=60000 if is_video else 15000)
         try:
             attach.wait_for(state="detached", timeout=15000)  # dialog closes on insert
         except Exception:

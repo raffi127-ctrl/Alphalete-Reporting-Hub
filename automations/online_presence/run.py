@@ -41,6 +41,11 @@ def run_office(p: offices.Presence, *, live: bool,
         acts = watch.collect(p, answers or [], _client(), dry=dry) if answers else []
         chk = watch.ensure_daily_check(p, live=not dry)
         out["office computer"] = acts + ([chk] if chk else [])
+        try:
+            from automations.online_presence import reels_flow
+            out["reel"] = reels_flow.step(p, _client(), live=not dry)
+        except Exception as e:                   # a reel must never stop photos/reviews
+            out["reel"] = [{"action": "reel_failed", "error": f"{type(e).__name__}: {str(e)[:120]}"}]
     if p.reviews:
         # The ALERT first (seconds), then the reply drafts (Claude, slower):
         # a bad review is in front of the office before its draft is written.

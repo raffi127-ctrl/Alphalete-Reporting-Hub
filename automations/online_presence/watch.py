@@ -95,6 +95,11 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     inbox, state = S._load_state(inbox_file), _load(watch_file)
     by_job = {st.get("eco_job"): (ts, st) for ts, st in inbox.items()
               if isinstance(st, dict) and st.get("eco_job")}
+    # The weekly reel's job lives in reels.json, keyed by week.
+    reels_file = P.path("reels.json")
+    reels = _load(reels_file)
+    reel_job = {v.get("eco_job"): v for v in reels.values()
+                if isinstance(v, dict) and v.get("eco_job")}
     acts: List[Dict] = []
     for r in rows:
         res, kind = r.get("result") or {}, r.get("kind")
@@ -111,7 +116,11 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
             if probs:
                 acts.append(_dm(P, cl, probs, state, dry))
             continue
-        # social_post
+        # social_post -- the weekly reel first
+        reel = reel_job.get(r.get("job_id"))
+        if reel is not None:
+            acts.extend(_reel_answer(P, cl, reel, res, status, state, dry))
+            continue
         ts, st = by_job.get(r.get("job_id"), (None, None))
         if st is None:
             acts.append({"action": "post_answer_unmatched", "note": r.get("job_id")})
@@ -148,7 +157,42 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     if not dry:
         S._save_state(inbox, inbox_file)
         _save(watch_file, state)
+        if reel_job:
+            _save(reels_file, reels)
     return acts
+
+
+def _reel_answer(P, cl, reel: Dict, res: Dict, status: str, state: Dict,
+                 dry: bool) -> List[Dict]:
+    """The office's computer answered the reel's social_post job."""
+    ts = reel.get("ts")
+    if status == "posted":
+        pages = sorted(connected_pages(res.get("channels")))
+        if not dry:
+            cl.chat_postMessage(channel=P.slack_channel, thread_ts=ts,
+                                text=":rocket: *Reel posted* to "
+                                + ", ".join(_NAMES[p] for p in pages) + ".")
+            try:
+                cl.reactions_add(channel=P.slack_channel, name="rocket", timestamp=ts)
+            except Exception:
+                pass
+            reel["status"] = "posted"
+        return [{"action": "reel_posted", "note": ", ".join(pages)}]
+    if status in ("signed_out", "no_channels"):
+        probs = problems(P, res) or ["zoho"]
+        if not dry:
+            reel.pop("eco_job", None)
+            reel["status"] = "blocked"          # re-queued tomorrow (reels_flow)
+            reel["blocked_day"] = _today(P).isoformat()
+            cl.chat_postMessage(channel=P.slack_channel, thread_ts=ts,
+                                text=":hourglass_flowing_sand: Approved, but it can't go "
+                                     "out yet: the owner needs to reconnect Zoho. Lucy "
+                                     "tries again tomorrow.")
+        return [{"action": "reel_blocked", "note": ",".join(probs)}, _dm(P, cl, probs, state, dry)]
+    if not dry:
+        reel["status"] = "post_error"           # never retried: may be half-posted
+        reel["post_error"] = res.get("error") or status
+    return [{"action": "reel_post_error", "error": res.get("error") or status}]
 
 
 def ensure_daily_check(P, *, live: bool) -> Dict | None:

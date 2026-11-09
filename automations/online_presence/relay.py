@@ -34,9 +34,13 @@ def enqueue(office: str, kind: str, payload: Dict, *, live: bool) -> str:
 
 
 def enqueue_post(office: str, caption: str, photo: Path, pages, *,
-                 live: bool, thread_ts: str = "") -> str:
+                 live: bool, thread_ts: str = "", media: str = "photo") -> str:
+    """`photo` is the file to post -- a .jpg, or the reel's .mp4 with
+    media="video". It rides the relay's existing photo field (bytes are
+    bytes), so a reel needs no relay change."""
     return enqueue(office, "social_post", {
         "caption": caption, "pages": list(pages), "thread_ts": thread_ts,
+        "media": media,
         "photo_b64": base64.b64encode(Path(photo).read_bytes()).decode()},
         live=live)
 
