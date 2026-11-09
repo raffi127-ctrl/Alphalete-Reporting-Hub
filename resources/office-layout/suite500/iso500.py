@@ -71,7 +71,7 @@ C_CARPET="#ddd3c0"; C_VINYL="#c8ccc9"; C_HALL="#ece8df"; C_WET="#dfe3ea"; C_LOBB
 C_WALL="#e9ebef"; C_GLASS="#bfe0ea"; C_ACC="#e8482b"
 box(15,0,W,D,0,FLR_Z,"#c7ccd6",db=-3e6)
 
-ANCHOR={"O":(61,4.6),"O2":(45,4.6),"E":(21.6,2.6),"A":(33,7),"L":(67,25.6),"K":(49,31),"W":(27,31.5),"M":(37,31.5),"MS":(20.2,31)}
+ANCHOR={"O":(61,4.6),"O2":(45,4.6),"E":(21.6,2.6),"A":(33,7),"L":(67,25.6),"K":(53.5,31),"O4":(44.5,25.6),"W":(27,28.2),"M":(37,28.2),"MS":(20.2,31)}
 LINES={"MS":["MOP SINK /","STORAGE"]}
 # room names as signs on each room's hall-side wall (that face looks at the camera, so a name never covers furniture)
 SIGN={"E":(["OFFICE 3"],15,24,17),"A":(["ATMO"],24,42,17),"O2":(["OFFICE 2"],42,58,17),"O":(["AL'S OFFICE"],58,76,17),
@@ -116,7 +116,7 @@ def pill(cx,cy,nm,w,rid=None):
     emit(9e9,9e9,o)
 ROOMS=[("L","LOBBY",(58,17,76,40),C_LOBBY),("O","AL'S OFFICE",(58,0,76,17),C_CARPET),
  ("A","ATMO",(24,0,42,17),C_CARPET),("O2","OFFICE 2",(42,0,58,17),C_VINYL),
- ("K","BREAK ROOM",(40,23,58,40),C_VINYL),("MS","MOP SINK / STORAGE",(15,23,24,40),C_CARPET),
+ ("O4","OFFICE 4",(40,23,49,40),C_CARPET),("K","BREAK ROOM",(49,23,58,40),C_VINYL),("MS","MOP SINK / STORAGE",(15,23,24,40),C_CARPET),
  ("W","WOMEN'S",(24,23,30,40),C_WET),("F","FOUNTAINS",(30,23,34,30),"#e6eef5"),("M","MEN'S",(34,23,40,40),C_WET),
  ("E","OFFICE 3",(15,0,24,17),C_VINYL)]
 floor(15,17,58,23,FLR_Z,C_HALL)
@@ -124,7 +124,7 @@ label(34,20.6,FLR_Z+0.05,"MAIN HALL",size=7.5,color="#8a8478",weight="700")
 for rid,nm,(x0,y0,x1,y1),col in ROOMS:
     floor(x0,y0,x1,y1,FLR_Z,col)
     cx,cy=ANCHOR.get(rid,((x0+x1)/2,(y0+y1)/2))
-    if rid=="F": note(32,26.6,FLR_Z+3.8,"fountains")
+    if rid=="F": note(32,26.6,FLR_Z+5.8,"fountains")
     elif nm: pill(*ANCHOR.get(rid,((x0+x1)/2,(y0+y1)/2)),nm,x1-x0,rid)
 
 H=3.4; T=0.45; DW=3.0
@@ -143,7 +143,7 @@ def vwall(x,y0,y1,doors=(),dw=DW):
 
 hwall(17,15,76,doors=(19.5,33,50,60))
 box(63,17-0.2,73,17+0.2,FLR_Z+H,FLR_Z+5.6,C_GLASS,op=0.5)      # office pass-through window -> lobby
-hwall(23,15,30,doors=(19.5,)); hwall(23,34,58,doors=(49,))
+hwall(23,15,30,doors=(19.5,)); hwall(23,34,58,doors=(44.5,53.5))
 for x in (42,58): vwall(x,0,17)
 box(42-0.2,4,42+0.2,13,FLR_Z+H,FLR_Z+5.6,C_GLASS,op=0.5)       # large training <-> plank room window
 vwall(24,0,17)
@@ -170,6 +170,8 @@ def interview(x0,x1,L=False):
     chair(mid-(1.0 if L else 0),3.6,"S")
     chair(mid-w*0.55,11.2,"N"); chair(mid+w*0.55,11.2,"N")
 interview(15,24)
+# Office 4 (south side, mirrors Office 3): desk, chair behind it by the outside wall, two chairs across facing it
+box(41.2,32,47.8,34.4,FLR_Z,FLR_Z+2.5,"#3b3632"); chair(44.5,36.4,"N"); chair(42.7,28.8,"S"); chair(46.3,28.8,"S")
 # Office 2: same layout as Al's - L-desk, chair behind facing the hall, two guest chairs across
 box(46,9,55,11.4,FLR_Z,FLR_Z+2.5,"#3b3632"); box(52.6,4,55,9,FLR_Z,FLR_Z+2.5,"#3b3632")
 box(49.2,6.4,50.8,8.0,FLR_Z,FLR_Z+0.8,"#2c313b"); box(49.2,6.2,50.8,6.5,FLR_Z,FLR_Z+3.6,"#3d4452")
@@ -200,7 +202,7 @@ vwall(24,23,40); vwall(30,23,40,doors=(27,)); vwall(34,23,40,doors=(27,)); hwall
 floor(30,30,34,40,FLR_Z,"#b9bec7")                          # plumbing wall behind the fountains
 box(30.4,28.4,33.6,29.7,FLR_Z,FLR_Z+2.6,"#cfe0ea")          # water fountains
 
-vwall(40,23,40); vwall(58,23,40)
+vwall(40,23,40); vwall(49,23,40); vwall(58,23,40)
 
 # office: dark L-desk under the outside window + chair
 # Al's Office: L-desk facing the lobby window; chair behind it with its back to the outside wall
@@ -209,12 +211,12 @@ imac(68.9,9.35)
 box(69.2,6.4,70.8,8.0,FLR_Z,FLR_Z+0.8,"#2c313b"); box(69.2,6.2,70.8,6.5,FLR_Z,FLR_Z+3.6,"#3d4452")
 chair(68.4,13.3,"N"); chair(71.6,13.3,"N")                 # two guest chairs across Al's desk
 # break room: cabinets + counter down BOTH side walls, uppers both sides, sink, fridge, whiteboard
-for cx0,cx1,ux0,ux1 in ((40.3,42.7,40.3,41.3),(55.6,57.8,56.8,57.8)):
+for cx0,cx1,ux0,ux1 in ((49.3,51.7,49.3,50.3),(55.6,57.8,56.8,57.8)):
     box(cx0,25,cx1,37,FLR_Z,FLR_Z+2.8,"#7a3b2a"); box(cx0,25,cx1+0.15,37,FLR_Z+2.8,FLR_Z+3.05,"#d8cdb0")
-    box(ux0,25,ux1,37,FLR_Z+4.6,FLR_Z+6.6,"#8a4431",op=0.9)
-box(41,29,42.2,31,FLR_Z+3.05,FLR_Z+3.1,"#9aa3ab")
+    if ux0>52: box(ux0,25,ux1,37,FLR_Z+4.6,FLR_Z+6.6,"#8a4431",op=0.9)   # uppers on the east wall only
+box(50,29,51.2,31,FLR_Z+3.05,FLR_Z+3.1,"#9aa3ab")
 box(55.0,37.3,57.8,39.8,FLR_Z,FLR_Z+6.0,"#a9adb2")
-box(47,37.6,51,37.8,FLR_Z+1.6,FLR_Z+4.4,"#f4f6f8"); box(47,37.2,51,38.2,FLR_Z,FLR_Z+0.3,"#c4c9cf")
+box(52,37.6,55,37.8,FLR_Z+1.6,FLR_Z+4.4,"#f4f6f8"); box(52,37.2,55,38.2,FLR_Z,FLR_Z+0.3,"#c4c9cf")
 # training room: wall screen on the hall-side wall
 
 # end of the hall: EXIT door on the back wall, extinguisher on the electrical room wall
