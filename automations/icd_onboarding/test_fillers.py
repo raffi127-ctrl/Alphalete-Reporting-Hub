@@ -133,3 +133,44 @@ def test_a_plain_yes_still_lands_as_a_date():
     got = F.plan(rows, "blueink", {"Ada Fournier": {"Blue Ink": True}})
     written = got["Blue Ink"]["Ada Fournier"]
     assert written.count("/") == 2, "a tick is a date: %r" % written
+
+
+# ------------------------------- ticking from the job that does the thing
+
+def test_a_single_column_source_can_tick_by_name(monkeypatch):
+    """The contact sync knows WHO it just added; it should not have to build a
+    verdict dict to say so."""
+    seen = {}
+
+    def fake_apply(book, week, source, verdicts, **kw):
+        seen.update({"source": source, "verdicts": verdicts, "dry": kw.get("dry_run")})
+        return 0
+
+    monkeypatch.setattr(F, "apply", fake_apply)
+    monkeypatch.setattr(F, "workbook_for", lambda k: object())
+    F.tick("raf", MONDAY, "contacts", ["Ada Fournier", "Bruno Castell"],
+           log=lambda *a: None)
+    assert seen["verdicts"] == {"Ada Fournier": {"Contact Added": True},
+                                "Bruno Castell": {"Contact Added": True}}
+    assert seen["dry"] is True, "dry unless asked"
+
+
+def test_a_multi_column_source_must_say_which(monkeypatch):
+    monkeypatch.setattr(F, "workbook_for", lambda k: object())
+    with pytest.raises(ValueError, match="owns 5 columns"):
+        F.tick("raf", MONDAY, "ownerville", ["Ada Fournier"], log=lambda *a: None)
+
+
+def test_an_office_with_no_board_is_reported_not_silently_skipped(monkeypatch):
+    said = []
+    monkeypatch.setattr(F, "workbook_for",
+                        lambda k: (_ for _ in ()).throw(RuntimeError("no office %r" % k)))
+    n = F.tick("nowhere", MONDAY, "contacts", ["Ada Fournier"], log=said.append)
+    assert n == 0
+    assert any("nowhere" in s for s in said), "a silent miss is a tick nobody notices"
+
+
+def test_raf_resolves_even_though_he_has_no_metrics_workbook():
+    import inspect
+    src = inspect.getsource(F.workbook_for)
+    assert "ALL_IN_ONE_RAF" in src, "Alphalete is not an ICD and has no metrics book"

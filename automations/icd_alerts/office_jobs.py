@@ -153,6 +153,7 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
             res = eco_run.run_week(
                 dt.date.fromisoformat(str(payload.get("week_start"))),
                 office_appstream=_appstream_id(office_key),
+                office_key=office_key,
                 live=live, log=log)
         elif kind in ("zoho_signin", "social_check", "social_post"):
             # Online presence: this office's OWN Zoho, signed in here

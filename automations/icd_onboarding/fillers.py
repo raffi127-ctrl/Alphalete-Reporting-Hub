@@ -152,3 +152,62 @@ def apply(workbook, week_start, source: str,
                           log=lambda *a: None)
     log("  ticked %d" % n)
     return n
+
+
+# --------------------------------------------------- finding an office's board
+
+def workbook_for(office_key: str):
+    """The Google workbook holding that office's Onboarding tab.
+
+    Their own metrics workbook — the one they already have. Resolved from
+    `office_metrics.offices` so there is no second list of sheet ids to drift.
+    Raises rather than returning None: a silent miss here is a tick that never
+    lands and nobody notices.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    key = str(office_key or "").strip().lower()
+    from automations.office_metrics import offices as OM
+    rows = OM.OFFICES if isinstance(OM.OFFICES, list) else list(OM.OFFICES.values())
+    for o in rows:
+        if str(getattr(o, "key", "")).strip().lower() == key:
+            sid = getattr(o, "sheet_id", "")
+            if not sid:
+                raise RuntimeError("office %r has no metrics workbook" % office_key)
+            return open_by_key(sid)
+    # Alphalete itself is not an ICD and has no metrics workbook; its board
+    # lives on Raf's All in One.
+    if key == "raf":
+        from automations.shared.workbooks import ALL_IN_ONE_RAF
+        return open_by_key(ALL_IN_ONE_RAF)
+    raise RuntimeError(
+        "no office %r in office_metrics.offices — its board cannot be found"
+        % office_key)
+
+
+def tick(office_key: str, week_start, source: str, names: Iterable[str],
+         *, dry_run: bool = True, log=print) -> int:
+    """Tick one source's single column for `names`, on an office's board.
+
+    For the jobs that know the answer AT THE MOMENT THEY DO THE THING — the
+    contact sync as it adds somebody, the Apex run as it saves a record. They
+    write straight to the sheet because they run on a machine that already has
+    Google access; the relay exists for the EXTENSION, which does not.
+
+    Megan, 2026-11-09, choosing this over reading a state file afterwards: "the
+    contact job ticks the board as it goes ... so the ICD can see that it's
+    done."
+    """
+    cols = columns_for(source)
+    if len(cols) != 1:
+        raise ValueError(
+            "%r owns %d columns; say which with apply()" % (source, len(cols)))
+    verdicts = {str(n): {cols[0]: True} for n in names if str(n or "").strip()}
+    if not verdicts:
+        return 0
+    try:
+        book = workbook_for(office_key)
+    except RuntimeError as e:
+        log("  board: %s" % e)
+        return 0
+    return apply(book, week_start, source, verdicts, dry_run=dry_run, log=log)

@@ -354,3 +354,67 @@ def test_the_office_package_ships_what_the_job_needs():
     assert "automations/apex_new_starts/run.py" not in listed, (
         "run.py pulls the sales board and Google Sheets — values.py exists so "
         "it does not have to ship")
+
+
+# --------------------------------------- telling the board what it saved
+
+def test_a_live_run_ticks_added_to_apex_for_whoever_it_saved(monkeypatch):
+    """The run knows who it saved at the moment it saves them."""
+    told = {}
+    from automations.icd_onboarding import fillers as F
+    monkeypatch.setattr(F, "tick",
+                        lambda office, week, source, names, **kw:
+                        told.update(office=office, source=source,
+                                    names=list(names), dry=kw.get("dry_run")) or 0)
+    _patch(monkeypatch, rows=_rows("Ada Fournier", "Dev Rao"),
+           hires={"Ada Fournier": _hire("Ada Fournier", ssn=True),
+                  "Dev Rao": _hire("Dev Rao", ssn=True)})
+    eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                     live=True, log=lambda *a: None)
+    assert told["office"] == "raf" and told["source"] == "apex"
+    assert sorted(told["names"]) == ["Ada Fournier", "Dev Rao"]
+    assert told["dry"] is False, "a live run really ticks"
+
+
+def test_a_dry_run_tells_the_board_nothing(monkeypatch):
+    called = []
+    from automations.icd_onboarding import fillers as F
+    monkeypatch.setattr(F, "tick", lambda *a, **k: called.append(a) or 0)
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier")})
+    eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                     live=False, log=lambda *a: None)
+    assert called == [], "nothing happened, so there is nothing to say"
+
+
+def test_a_board_that_cannot_be_ticked_never_fails_the_run(monkeypatch):
+    """The payroll records are already saved. Raising here would report a
+    failure for work that succeeded and send somebody looking for people who
+    are in fact in Apex."""
+    from automations.icd_onboarding import fillers as F
+    monkeypatch.setattr(F, "tick",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no board")))
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier", ssn=True)})
+    said = []
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                           live=True, log=said.append)
+    assert res["status"] == "filled"
+    assert res["added"] == ["Ada Fournier"]
+    assert any("ARE saved" in s for s in said), "and it says so plainly"
+
+
+def test_an_office_key_nobody_passed_is_simply_skipped(monkeypatch):
+    from automations.icd_onboarding import fillers as F
+    monkeypatch.setattr(F, "tick",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("called")))
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier", ssn=True)})
+    eco_run.run_week(MONDAY, office_appstream="11280", live=True,
+                     log=lambda *a: None)
+
+
+def test_the_sweep_passes_the_office_key_through():
+    import inspect
+    from automations.icd_alerts import office_jobs as OJ
+    assert "office_key=office_key" in inspect.getsource(OJ.work)
