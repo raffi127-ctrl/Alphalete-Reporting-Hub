@@ -1332,6 +1332,357 @@ def _enrich_cols(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str,
     return (first_row, last_row)
 
 
+# ---- Owner DD probe (Khalil Mansour's book, 2026-11-08) --------------------
+# One captainship owner's ORG DD Detail lines -> that owner's own commission
+# book ('DD RAW' tab). Spec: README tab section 9 of "Khalil Mansour
+# Commissions & P&L". READ-ONLY on Tableau and on THIS board: it never touches
+# RAW, Commission, Adjustments or the P&L — it writes only the owner book's
+# 'DD RAW' + 'DD PULL LOG' tabs (or, if that book can't be opened, a
+# '<Owner> DD RAW' tab on AUTOMATION MASTER next to 'DD Probe').
+OWNER_DD_BOOKS = {
+    "khalil mansour": "1Gfrgba1o9HkdPoP9m6oj-2SEWA4So-idpHaLyLMyDTk",
+}
+OWNER_DD_RAW_TAB = "DD RAW"
+OWNER_DD_LOG_TAB = "DD PULL LOG"
+AUTOMATION_MASTER_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+
+
+def _parse_mdy(s) -> "dt.date | None":
+    """'10/18/2026' (or a date/datetime cell) -> date; None if it isn't one."""
+    if isinstance(s, dt.datetime):
+        return s.date()
+    if isinstance(s, dt.date):
+        return s
+    t = str(s or "").strip()
+    for f in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+        try:
+            return dt.datetime.strptime(t, f).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _owner_money(v) -> float:
+    """'$344.00' / '(12.50)' / 344 -> float; blank or junk -> 0.0."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    t = str(v or "").strip()
+    if not t:
+        return 0.0
+    neg = t.startswith("(") and t.endswith(")")
+    t = t.strip("()").replace("$", "").replace(",", "").strip()
+    try:
+        x = float(t)
+    except ValueError:
+        return 0.0
+    return -x if neg else x
+
+
+def _owner_cell(v, money: bool):
+    """A crosstab cell as it goes into DD RAW: the money column as a number,
+    dates as m/d/YYYY text, everything else as the text Tableau exported."""
+    if money:
+        return _owner_money(v)
+    if isinstance(v, dt.datetime):
+        return f"{v.month}/{v.day}/{v.year}"
+    if isinstance(v, dt.date):
+        return f"{v.month}/{v.day}/{v.year}"
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return "" if v is None else str(v)
+
+
+def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
+    from collections import Counter, defaultdict
+    from automations.vantura_churn import cdp_pull
+    from automations.override_bulletin.pulls import _with_filter, period_candidates
+
+    lines: list[str] = []
+
+    def plog(msg):
+        log(msg)
+        lines.append(str(msg))
+
+    def _n(s) -> str:
+        return " ".join(str(s or "").lower().split())
+
+    # Weeks = week-ending SUNDAYS (the book's convention; the DD view labels
+    # a week with its Saturday AND its Sunday, see _dd_week_strs).
+    if weeks_csv:
+        weeks = sorted({dt.datetime.strptime(w.strip(), "%Y-%m-%d").date()
+                        for w in weeks_csv.split(",") if w.strip()})
+    else:
+        weeks = [week_ending()]
+    want: dict[str, dt.date] = {}
+    for wk in weeks:
+        for s in _dd_week_strs(wk):
+            want[s] = wk
+    # SCI 'Period' = a MONTH. A week that straddles a month boundary can post
+    # under either month, so pull the Saturday's AND the Sunday's month.
+    periods: list[str] = []
+    for wk in weeks:
+        for d in (wk - dt.timedelta(days=1), wk):
+            p = f"Period {d.year}-{d.month}"
+            if p not in periods:
+                periods.append(p)
+    plog(f"owner-dd: owner={owner!r} weeks={[w.isoformat() for w in weeks]} "
+         f"periods={periods}")
+
+    out_dir = REPO_ROOT / "output" / "vantura_payroll"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    header: "list[str] | None" = None
+    pulled: list[tuple[str, list]] = []          # (period form, row)
+    for period in periods:
+        tgt_month = int(period.split("-")[-1])
+        got = False
+        for cand in period_candidates(period):
+            out = out_dir / ("ORG DD Detail " + cand.replace(" ", "_") + ".xlsx")
+            if out.exists():
+                out.unlink()
+            url = _with_filter(ORG_DD_URL, "Period", cand)
+            try:
+                cdp_pull.download_views([(url, ORG_DD_SHEET, str(out))], log=log)
+            except Exception as e:  # noqa: BLE001
+                plog(f"[{cand}] pull failed: {str(e)[:140]}")
+                continue
+            if not out.exists():
+                plog(f"[{cand}] no crosstab landed")
+                continue
+            hdr, data = _read_export(out, log=log)
+            hdr = [str(h).strip() for h in hdr]
+            hl = [h.lower() for h in hdr]
+            if "cl.dd week" not in hl:
+                plog(f"[{cand}] headers: {hdr}")
+                plog(f"[{cand}] no 'cl.DD Week' column — cannot pin weeks; skipping")
+                continue
+            wk_i = hl.index("cl.dd week")
+            wks = Counter(_owner_cell(r[wk_i], False) for r in data
+                          if wk_i < len(r) and str(r[wk_i]).strip())
+            plog(f"[{cand}] {len(data)} rows; DD weeks read back: "
+                 f"{dict(wks.most_common(12))}")
+            # Confirm the Period picker TOOK: Tableau ignores a mis-valued
+            # filter and returns its default (latest) week — the 10/19 trap.
+            dom = wks.most_common(1)[0][0] if wks else ""
+            dom_d = _parse_mdy(dom)
+            if len(data) < 50 or not dom_d or dom_d.month != tgt_month:
+                plog(f"[{cand}] filter did NOT take (dominant DD week {dom!r}, "
+                     f"want month {tgt_month}) — trying the next form")
+                continue
+            if header is None:
+                header = hdr
+            elif hdr != header:
+                plog(f"[{cand}] WARNING: header differs from the first file: {hdr}")
+            pulled.extend((cand, r) for r in data)
+            got = True
+            break
+        if not got:
+            plog(f"WARNING: no Period filter form validated for {period}")
+
+    if header is None or not pulled:
+        plog("STOP: nothing pulled — DD RAW left untouched")
+        _owner_dd_write_log(owner, lines, log)
+        return 4
+    plog(f"crosstab header ({len(header)} cols): {header}")
+    hl = [h.lower() for h in header]
+    try:
+        oi = hl.index("cl.icd owner name")
+        wk_i = hl.index("cl.dd week")
+    except ValueError:
+        plog(f"STOP: owner/week column missing — headers: {header}")
+        _owner_dd_write_log(owner, lines, log)
+        return 4
+    total_i = next((i for i, h in enumerate(hl) if h == "total $ to icd"), None)
+    if total_i is None:
+        total_i = next((i for i, h in enumerate(hl) if "total $" in h), None)
+    key_i = next((i for i, h in enumerate(hl) if "unique key" in h), None)
+    plog(f"columns: owner={header[oi]!r} week={header[wk_i]!r} "
+         f"money={header[total_i] if total_i is not None else None!r} "
+         f"dedupe key={header[key_i] if key_i is not None else '(whole row)'!r}")
+
+    # Owner match — exact (case/space-insensitive) first; if that finds nothing,
+    # the single owner sharing a name token (a 'Mansour, Khalil' spelling).
+    owner_n = _n(owner)
+    owners = Counter(_n(r[oi]) for _, r in pulled if oi < len(r))
+    mine = [(p, r) for p, r in pulled if oi < len(r) and _n(r[oi]) == owner_n]
+    if not mine:
+        toks = set(owner_n.replace(",", " ").split())
+        fuzzy = sorted(o for o in owners if toks & set(o.replace(",", " ").split()))
+        plog(f"no exact owner match for {owner!r}; owners sharing a name token: {fuzzy}")
+        if len(fuzzy) == 1:
+            owner_n = fuzzy[0]
+            mine = [(p, r) for p, r in pulled if oi < len(r) and _n(r[oi]) == owner_n]
+            plog(f"using the view's spelling {owner_n!r}")
+    plog(f"owner lines across the Period file(s): {len(mine)}; DD weeks: "
+         f"{dict(Counter(_owner_cell(r[wk_i], False) for _, r in mine))}")
+
+    # Keep the requested weeks only; dedupe on cl.Unique Key across the Period
+    # files (a week pulled under both months appears twice).
+    kept: list[tuple[dt.date, list]] = []
+    seen: set = set()
+    dupes = 0
+    for p, r in mine:
+        wk_s = _owner_cell(r[wk_i], False)
+        if wk_s not in want:
+            continue
+        k = (str(r[key_i]).strip() if key_i is not None and key_i < len(r)
+             and str(r[key_i]).strip() else None)
+        if k is None:
+            k = tuple(_owner_cell(c, False) for c in r)
+        if k in seen:
+            dupes += 1
+            continue
+        seen.add(k)
+        kept.append((want[wk_s], list(r) + [""] * (len(header) - len(r))))
+    kept.sort(key=lambda t: t[0])         # one block per DD week, oldest first
+    plog(f"kept {len(kept)} line(s) for {len(weeks)} week(s); {dupes} duplicate(s) "
+         "dropped across Period files")
+    week_sum: dict = defaultdict(float)
+    week_n: dict = defaultdict(int)
+    for wk, r in kept:
+        week_n[wk] += 1
+        if total_i is not None:
+            week_sum[wk] += _owner_money(r[total_i])
+    for wk in weeks:
+        plog(f"[WE {wk.month}.{wk.day}] {week_n.get(wk, 0)} line(s), "
+             f"Total $ to ICD = ${week_sum.get(wk, 0.0):,.2f}")
+        if not week_n.get(wk):
+            plog(f"[WE {wk.month}.{wk.day}] WARNING: no lines — late post, or "
+                 "the week isn't in the pulled Period(s)")
+
+    rows_out = [list(header)] + [
+        [_owner_cell(c, j == total_i) for j, c in enumerate(r)] for _, r in kept]
+    # A local copy for `lucy logtail` / a hand check on the runner.
+    try:
+        import csv as _csv
+        local = out_dir / f"{owner.replace(' ', '_')}_dd_raw.tsv"
+        with open(local, "w", newline="", encoding="utf-8") as fh:
+            _csv.writer(fh, delimiter="\t").writerows(rows_out)
+        plog(f"local copy: {local}")
+    except Exception as e:  # noqa: BLE001
+        plog(f"local copy failed: {e!r}")
+
+    # Write DD RAW (clear first; header row 1; every column in crosstab order).
+    from automations.recruiting_report import fill as _f
+    gc = _f._client()
+    book_id = OWNER_DD_BOOKS.get(owner_n) or OWNER_DD_BOOKS.get(_n(owner))
+    wrote = False
+    if book_id:
+        try:
+            book = gc.open_by_key(book_id)
+            ws = book.worksheet(OWNER_DD_RAW_TAB)
+            ws.clear()
+            need_r, need_c = len(rows_out) + 5, len(header)
+            if ws.row_count < need_r or ws.col_count < need_c:
+                ws.resize(rows=max(ws.row_count, need_r),
+                          cols=max(ws.col_count, need_c))
+            ws.update(rows_out, "A1", value_input_option="RAW")
+            plog(f"WROTE '{OWNER_DD_RAW_TAB}' in book {book_id}: "
+                 f"{len(rows_out) - 1} line(s) + header")
+            wrote = True
+        except Exception as e:  # noqa: BLE001
+            plog(f"owner book write failed ({str(e)[:160]}) — falling back to "
+                 "AUTOMATION MASTER")
+    if not wrote:
+        try:
+            import gspread as _gs
+            ctl = gc.open_by_key(AUTOMATION_MASTER_ID)
+            tname = f"{owner} DD RAW"[:99]
+            try:
+                t = ctl.worksheet(tname)
+                t.clear()
+            except _gs.WorksheetNotFound:
+                t = ctl.add_worksheet(tname, rows=len(rows_out) + 20,
+                                      cols=max(16, len(header)))
+            if t.row_count < len(rows_out) + 5 or t.col_count < len(header):
+                t.resize(rows=max(t.row_count, len(rows_out) + 5),
+                         cols=max(t.col_count, len(header)))
+            t.update(rows_out, "A1", value_input_option="RAW")
+            plog(f"WROTE fallback tab '{tname}' on AUTOMATION MASTER: "
+                 f"{len(rows_out) - 1} line(s) + header")
+        except Exception as e:  # noqa: BLE001
+            plog(f"fallback write failed too: {str(e)[:160]}")
+
+    # Tie-out: the Program Summary downline grid (the --rafdd-probe code) for
+    # the same weeks — the owner's corp total should equal the line sum.
+    try:
+        from automations.shared.tableau_patchright import tableau_session
+        from automations.recruiting_report.opt_phase import (
+            PROGRAM_SUMMARY_XY_CANDIDATES, _program_summary_url, scrape_view_data)
+        with tableau_session(verbose=False) as page:
+            for wk in weeks:
+                url = _program_summary_url(wk)
+                done = False
+                for xy in PROGRAM_SUMMARY_XY_CANDIDATES:
+                    try:
+                        fields, records = scrape_view_data(
+                            url, verbose=False, page=page, activate_xy=xy)
+                    except Exception as e:  # noqa: BLE001
+                        plog(f"[WE {wk.month}.{wk.day}] summary scrape at {xy} "
+                             f"failed: {str(e)[:100]}")
+                        continue
+                    if len(records) < 5:
+                        plog(f"[WE {wk.month}.{wk.day}] {xy} -> {len(records)} "
+                             "row(s), retry")
+                        continue
+                    fl = [str(f).lower() for f in fields]
+                    t_i = next((i for i, f in enumerate(fl) if "total $" in f), None)
+                    hits = [r for r in records
+                            if any(owner_n == _n(c) or owner_n in _n(c) for c in r)]
+                    plog(f"[WE {wk.month}.{wk.day}] downline grid {len(records)} "
+                         f"rows; fields: {fields}")
+                    for r in hits[:12]:
+                        plog(f"[WE {wk.month}.{wk.day}] SUMMARY | "
+                             + " | ".join(str(x)[:28] for x in r))
+                    if t_i is not None and hits:
+                        corp = sum(_owner_money(r[t_i]) for r in hits if t_i < len(r))
+                        ls = week_sum.get(wk, 0.0)
+                        verdict = "OK" if abs(corp - ls) < 0.005 else "WARNING mismatch"
+                        plog(f"[WE {wk.month}.{wk.day}] TIE-OUT {owner}: Program "
+                             f"Summary ${corp:,.2f} vs DD lines ${ls:,.2f} -> {verdict}")
+                    else:
+                        plog(f"[WE {wk.month}.{wk.day}] TIE-OUT: owner row not found "
+                             "in the downline grid (see fields above)")
+                    done = True
+                    break
+                if not done:
+                    plog(f"[WE {wk.month}.{wk.day}] NO downline grid captured")
+    except Exception as e:  # noqa: BLE001
+        plog(f"tie-out skipped: {str(e)[:160]}")
+
+    _owner_dd_write_log(owner, lines, log, gc=gc)
+    return 0
+
+
+def _owner_dd_write_log(owner: str, lines: list, log=_log, gc=None) -> None:
+    """The probe's log, readable from any machine: the owner book's
+    'DD PULL LOG' tab, else 'DD Probe' on AUTOMATION MASTER."""
+    try:
+        if gc is None:
+            from automations.recruiting_report import fill as _f
+            gc = _f._client()
+        import gspread as _gs
+        book_id = OWNER_DD_BOOKS.get(" ".join(owner.lower().split()))
+        targets = ([(book_id, OWNER_DD_LOG_TAB)] if book_id else []) + \
+                  [(AUTOMATION_MASTER_ID, "DD Probe")]
+        for bid, tab in targets:
+            try:
+                b = gc.open_by_key(bid)
+                try:
+                    t = b.worksheet(tab)
+                    t.clear()
+                except _gs.WorksheetNotFound:
+                    t = b.add_worksheet(tab, rows=600, cols=2)
+                if t.row_count < len(lines) + 2:
+                    t.resize(rows=len(lines) + 2)
+                t.update([[ln] for ln in lines[:580]], "A1", value_input_option="RAW")
+                log(f"owner-dd: {len(lines)} log line(s) -> '{tab}' ({bid[:8]}…)")
+                return
+            except Exception as e:  # noqa: BLE001
+                log(f"owner-dd: log write to '{tab}' failed ({str(e)[:120]})")
+    except Exception as e:  # noqa: BLE001
+        log(f"owner-dd: log write failed ({e!r})")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Vantura weekly payroll prep (Lucy 2).")
     ap.add_argument("--refresh-only", action="store_true",
@@ -1369,6 +1720,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="ONLY list every rep paid in the DD under a "
                          "'Hidalgo' owner that is not Carlos (current window, "
                          "then the Period fallback). Never writes.")
+    ap.add_argument("--owner-dd", metavar="OWNER",
+                    help="ONLY pull one captainship owner's ORG DD Detail "
+                         "lines (Period filter, weeks pinned on cl.DD Week) "
+                         "and write them to that owner's own book 'DD RAW' "
+                         "tab (e.g. \"Khalil Mansour\"). Read-only on Tableau "
+                         "and on THIS board. Pair with --weeks.")
+    ap.add_argument("--weeks",
+                    help="for --owner-dd: comma-separated week-ending SUNDAYS "
+                         "YYYY-MM-DD (default: the newest completed week)")
     ap.add_argument("--owner-probe", action="store_true",
                     help="ONLY fetch the DD dashboard's direct CSV (all "
                          "owners) and log every cl.ICD Owner Name value plus "
@@ -1385,6 +1745,9 @@ def main(argv: list[str] | None = None) -> int:
         resp.raise_for_status()
         _log(f"refresh -> {resp.text[:200]}")
         return 0
+
+    if getattr(args, "owner_dd", None):
+        return _owner_dd_probe(args.owner_dd, args.weeks)
 
     if args.rafdd_probe:
         from automations.shared.tableau_patchright import tableau_session
