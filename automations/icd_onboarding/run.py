@@ -66,9 +66,57 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     return len(got.get("add") or [])
 
 
+def _board_names(office_key: str, week_start: dt.date,
+                 columns: Sequence[str] = ()) -> List[str]:
+    """Who on this week's board is still worth looking up.
+
+    Not everybody: the search is one request per person against a slow server
+    (~23s each, measured), so asking about people who cannot gain anything is
+    how a run spends its whole budget and still leaves somebody out.
+
+    Left out:
+      * anybody MARKED OFF — they are never ticked, so an answer about them is
+        thrown away;
+      * anybody who already has every column this source fills — there is
+        nothing left to learn, and each run then has fewer to ask about than
+        the last.
+    """
+    from automations.icd_onboarding import sheet as S
+
+    ws = S.open_board(F.workbook_for(office_key), create=False)
+    if ws is None:
+        return []
+    out = []
+    for r in B.for_week(S.rows_of(ws.get_all_values()), week_start):
+        if not (r.get("Name") or r.get("Last Name")):
+            continue
+        if str(r.get(B.TERMINATED_AT) or "").strip():
+            continue
+        if columns and all(str(r.get(c) or "").strip() for c in columns):
+            continue
+        out.append(("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip())
+    return out
+
+
 def from_ownerville(office_key: str, week_start: dt.date, *,
-                    dry_run: bool = True, log=print) -> int:
-    """Five columns off one View Progress read."""
+                    dry_run: bool = True, log=print,
+                    budget_s: Optional[float] = None) -> int:
+    """Five columns off one View Progress read, plus a search for the rest.
+
+    THE PAGE ONLY EVER GIVES PAGE ONE. The table is served a page at a time,
+    so one read returns a couple of dozen rows out of a hundred-odd and the
+    people on the later pages come back unread — on Raf's office that was 24
+    of 127, and only 3 of the week's 29 got their five columns.
+
+    Unread is never "not done", so nothing was wrongly ticked; they simply
+    never got an answer. The sweep solved this long ago by asking the server's
+    own search about each missing person one at a time, and this does the same
+    — but only for the people on THIS WEEK'S BOARD, which is a couple of dozen
+    rather than the whole roster.
+    """
+    import time
+
+    from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import ov_table
     from automations.obcl_ov_sweep.run import PROFILE_DIR
     from automations.shared.tableau_patchright import ownerville_session
@@ -80,15 +128,36 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
         log("  ownerville: %s has no ov_program set — skipped rather than "
             "guessing at Alphalete's" % office_key)
         return 0
+
+    wanted = _board_names(office_key, week_start,
+                          columns=F.columns_for("ownerville"))
+    budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
+
     with ownerville_session(headless=True, verbose=False,
                             profile_dir=PROFILE_DIR) as page:
         heads, reps, complete = ov_table.read_table(page, verbose=False,
                                                     campaign=programme)
-    if not complete:
-        # Not a reason to stop: the people it DID read are answered, and the
-        # ones it did not get no verdict at all, so nothing is wrongly ticked.
-        log("  ownerville: read %d rows, the table says there are more — the "
-            "rest are 'not read', not 'not done'" % len(reps))
+        found = {B._fold(n) for n in reps}
+        missing = [n for n in wanted if B._fold(n) not in found]
+        if missing:
+            log("  ownerville: %d of this week's %d were not on page one — "
+                "asking the search for them" % (len(missing), len(wanted)))
+            t0 = time.monotonic()
+            got = 0
+            for name in missing:
+                if time.monotonic() - t0 >= budget:
+                    log("    time budget reached; %d not searched this run"
+                        % (len(missing) - got))
+                    break
+                try:
+                    ov_table.lookup_person(page, name, heads, reps)
+                except Exception as e:      # noqa: BLE001 — one name, not the run
+                    log("    %s: search failed (%s)" % (name, type(e).__name__))
+                got += 1
+            still = [n for n in wanted if B._fold(n) not in {B._fold(x) for x in reps}]
+            log("    searched %d in %.0fs — %d still not found in OwnerVille"
+                % (got, time.monotonic() - t0, len(still)))
+
     verdicts = {name: ov_table.done_columns(heads, cells)
                 for name, cells in reps.items()}
     return F.apply(F.workbook_for(office_key), week_start, "ownerville",

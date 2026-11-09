@@ -79,3 +79,72 @@ def test_the_two_self_ticking_sources_are_not_run_here():
     assert "contacts" not in names and "apex" not in names
     from automations.icd_onboarding import fillers as F
     assert set(F.SOURCES) - set(names) == {"contacts", "apex"}
+
+
+# ----------------------------------- closing the incomplete OwnerVille read
+
+def test_the_search_is_only_asked_about_this_weeks_people():
+    """The page gives one page of a hundred-odd; searching the whole roster
+    one at a time would never finish. The board is a couple of dozen."""
+    import inspect
+    src = inspect.getsource(R.from_ownerville)
+    assert "_board_names" in src
+    assert "lookup_person" in src
+
+
+def test_the_search_has_a_time_budget():
+    """It is one request per person against a slow server; without a budget a
+    bad morning turns into an hour."""
+    import inspect
+    sig = inspect.signature(R.from_ownerville)
+    assert "budget_s" in sig.parameters
+    src = inspect.getsource(R.from_ownerville)
+    assert "SEARCH_BUDGET_S" in src
+    assert "time budget reached" in src
+
+
+def test_one_name_failing_the_search_does_not_stop_the_others():
+    import inspect
+    src = inspect.getsource(R.from_ownerville)
+    body = src[src.index("for name in missing"):]
+    assert "except Exception" in body and "continue" not in body.split("got += 1")[0][-80:]
+
+
+def test_somebody_the_search_never_finds_is_reported_not_ticked():
+    """They get no verdict at all, which leaves their columns alone — unread
+    is never 'not done'."""
+    import inspect
+    src = inspect.getsource(R.from_ownerville)
+    assert "still not found in OwnerVille" in src
+
+
+def test_the_search_skips_people_it_cannot_learn_anything_about(monkeypatch):
+    """One request per person against a slow server (~23s each, measured), so
+    asking about people who gain nothing is how a run spends its whole budget
+    and still leaves somebody out."""
+    from automations.icd_onboarding import board as B
+    from automations.icd_onboarding import sheet as S
+    from automations.icd_onboarding import fillers as F
+
+    cols = list(F.columns_for("ownerville"))
+    def row(name, **kw):
+        r = {"Week of": B.week_label(MONDAY), "Name": name.split()[0],
+             "Last Name": " ".join(name.split()[1:]), B.TERMINATED_AT: ""}
+        for c in B.STEPS:
+            r[c] = ""
+        r.update(kw)
+        return r
+
+    rows = [row("Ada Fournier"),
+            row("Bruno Castell", **{B.TERMINATED_AT: "11/06/2026"}),
+            row("Cora Nilsen", **{c: "x" for c in cols})]
+    monkeypatch.setattr(S, "open_board", lambda book, create=False: object())
+    monkeypatch.setattr(S, "rows_of", lambda grid: rows)
+    monkeypatch.setattr(F, "workbook_for", lambda k: object())
+    class WS:
+        def get_all_values(self): return []
+    monkeypatch.setattr(S, "open_board", lambda book, create=False: WS())
+
+    got = R._board_names("raf", MONDAY, columns=cols)
+    assert got == ["Ada Fournier"], (
+        "the marked-off and the already-complete are not worth a request")
