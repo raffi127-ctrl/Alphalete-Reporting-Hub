@@ -1583,7 +1583,7 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
 
     if header is None or not pulled:
         plog("STOP: nothing pulled — DD RAW left untouched")
-        _owner_dd_write_log(owner, lines, log)
+        _owner_dd_write_log(owner, lines, log, tab_suffix=tab_suffix)
         return 4
     plog(f"crosstab header ({len(header)} cols): {header}")
     hl = [h.lower() for h in header]
@@ -1592,7 +1592,7 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
         wk_i = hl.index("cl.dd week")
     except ValueError:
         plog(f"STOP: owner/week column missing — headers: {header}")
-        _owner_dd_write_log(owner, lines, log)
+        _owner_dd_write_log(owner, lines, log, tab_suffix=tab_suffix)
         return 4
     total_i = next((i for i, h in enumerate(hl) if h == "total $ to icd"), None)
     if total_i is None:
@@ -1756,7 +1756,7 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
     except Exception as e:  # noqa: BLE001
         plog(f"tie-out skipped: {str(e)[:160]}")
 
-    _owner_dd_write_log(owner, lines, log, gc=gc)
+    _owner_dd_write_log(owner, lines, log, gc=gc, tab_suffix=tab_suffix)
     return 0
 
 
