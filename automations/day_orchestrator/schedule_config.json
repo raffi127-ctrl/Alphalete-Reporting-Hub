@@ -16323,16 +16323,9 @@
    ],
    "base_args": [],
    "cadence": {
-    "weekdays": [
-     0,
-     1,
-     2,
-     3,
-     4,
-     5,
-     6
-    ],
-    "not_before": "06:00"
+    "weekdays": [],
+    "not_before": "06:00",
+    "_weekdays_note": "[] until the first live run on Lucy 2 is verified (2026-11-09); then 0-6 daily. on_scheduler stays true so `rerun nds_churn` resolves."
    },
    "priority": "P3",
    "freshness_target": null,
