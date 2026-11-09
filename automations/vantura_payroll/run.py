@@ -1395,7 +1395,7 @@ def _owner_cell(v, money: bool):
 def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
     from collections import Counter, defaultdict
     from automations.vantura_churn import cdp_pull
-    from automations.override_bulletin.pulls import _with_filter, period_candidates
+    from automations.override_bulletin.pulls import _with_filter
 
     lines: list[str] = []
 
@@ -1413,70 +1413,118 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
                         for w in weeks_csv.split(",") if w.strip()})
     else:
         weeks = [week_ending()]
+    # Tableau's cl.DD Week is the weekend the lines POSTED; Smart Circle pays
+    # them the following Saturday, and this book labels a week by the Sunday
+    # after that deposit (README: the Sat 11/7 DD email is 'WE 11.8'). Verified
+    # 2026-11-08: the lines dated 10/31 + 11/1 sum to the penny to the Program
+    # Summary total for the week processed 11/2-11/8. So WE m.d holds the lines
+    # whose cl.DD Week is that Sunday minus 7 (Sun) and minus 8 (Sat) days.
+    # (The Vantura board labels the SAME lines by their cl.DD Week Sunday, one
+    # label earlier - Vantura 'WE 11.1' == this book's 'WE 11.8'.)
+    DD_WEEK_LAG = dt.timedelta(days=7)
     want: dict[str, dt.date] = {}
+    labels_of: dict = {}
     for wk in weeks:
-        for s in _dd_week_strs(wk):
+        labels_of[wk] = set(_dd_week_strs(wk - DD_WEEK_LAG))
+        for s in labels_of[wk]:
             want[s] = wk
-    # SCI 'Period' = a MONTH. A week that straddles a month boundary can post
-    # under either month, so pull the Saturday's AND the Sunday's month.
-    periods: list[str] = []
-    for wk in weeks:
-        for d in (wk - dt.timedelta(days=1), wk):
-            p = f"Period {d.year}-{d.month}"
-            if p not in periods:
-                periods.append(p)
-    plog(f"owner-dd: owner={owner!r} weeks={[w.isoformat() for w in weeks]} "
-         f"periods={periods}")
+    plog(f"owner-dd: owner={owner!r} weeks={[w.isoformat() for w in weeks]} -> "
+         f"cl.DD Week labels {dict((w.isoformat(), sorted(l)) for w, l in labels_of.items())}")
 
     out_dir = REPO_ROOT / "output" / "vantura_payroll"
     out_dir.mkdir(parents=True, exist_ok=True)
     header: "list[str] | None" = None
-    pulled: list[tuple[str, list]] = []          # (period form, row)
-    for period in periods:
-        tgt_month = int(period.split("-")[-1])
-        got = False
-        for cand in period_candidates(period):
-            out = out_dir / ("ORG DD Detail " + cand.replace(" ", "_") + ".xlsx")
-            if out.exists():
-                out.unlink()
-            url = _with_filter(ORG_DD_URL, "Period", cand)
-            try:
-                cdp_pull.download_views([(url, ORG_DD_SHEET, str(out))], log=log)
-            except Exception as e:  # noqa: BLE001
-                plog(f"[{cand}] pull failed: {str(e)[:140]}")
+    pulled: list = []                       # (pull tag, row)
+
+    def _pull(tag: str, url: str):
+        """One crosstab download -> (header, rows, Counter of DD weeks read
+        back), or (None, None, None). The read-back is how we know a URL
+        filter TOOK: Tableau silently ignores a mis-named one and returns its
+        default (latest) week - the 10/19 trap."""
+        import re as _re
+        out = out_dir / ("ORG DD Detail " + _re.sub(r"[^A-Za-z0-9._-]+", "_", tag) + ".xlsx")
+        if out.exists():
+            out.unlink()
+        try:
+            cdp_pull.download_views([(url, ORG_DD_SHEET, str(out))], log=log)
+        except Exception as e:  # noqa: BLE001
+            plog(f"[{tag}] pull failed: {str(e)[:140]}")
+            return None, None, None
+        if not out.exists():
+            plog(f"[{tag}] no crosstab landed")
+            return None, None, None
+        hdr, data = _read_export(out, log=log)
+        hdr = [str(h).strip() for h in hdr]
+        hl = [h.lower() for h in hdr]
+        if "cl.dd week" not in hl:
+            plog(f"[{tag}] headers: {hdr}")
+            plog(f"[{tag}] no 'cl.DD Week' column - cannot pin weeks; skipping")
+            return None, None, None
+        wk_i = hl.index("cl.dd week")
+        wks = Counter(_owner_cell(r[wk_i], False) for r in data
+                      if wk_i < len(r) and _parse_mdy(_owner_cell(r[wk_i], False)))
+        plog(f"[{tag}] {len(data)} rows; DD weeks read back: {dict(wks.most_common(12))}")
+        return hdr, data, wks
+
+    # 1) The unfiltered view = Tableau's latest DD week(s). A requested week
+    #    already in it needs no filter.
+    hdr0, data0, wks0 = _pull("default", ORG_DD_URL)
+    default_weeks: set = set(wks0) if wks0 else set()
+    covered: set = set()
+    if hdr0:
+        header = hdr0
+        pulled.extend(("default", r) for r in data0)
+        covered = {wk for wk, labels in labels_of.items() if labels & default_weeks}
+        plog(f"[default] covers WE {sorted(w.isoformat() for w in covered) or 'none'}")
+
+    # 2) Older weeks: a URL filter on the view, best guess first; the first
+    #    form that validates is reused for the next week.
+    FORMS = [
+        ("cl.DD Week", "{sat_mdy},{sun_mdy}"),
+        ("cl.DD Week", "{sun_mdy}"),
+        ("cl.DD Week", "{sat_iso},{sun_iso}"),
+        ("cl.DD Week", "{sun_iso}"),
+        ("DD Week", "{sat_mdy},{sun_mdy}"),
+        ("Period", "Period {y}-{m}"),
+        ("Period", "{y}-{m:02d}"),
+    ]
+    good_form = None
+    for wk in weeks:
+        if wk in covered:
+            continue
+        labels = labels_of[wk]
+        sun = wk - DD_WEEK_LAG
+        sat = sun - dt.timedelta(days=1)
+        fmt = dict(sat_mdy=f"{sat.month}/{sat.day}/{sat.year}",
+                   sun_mdy=f"{sun.month}/{sun.day}/{sun.year}",
+                   sat_iso=sat.isoformat(), sun_iso=sun.isoformat(),
+                   y=sun.year, m=sun.month)
+        forms = ([good_form] if good_form else []) + [f for f in FORMS if f != good_form]
+        hit = False
+        for field, tmpl in forms:
+            val = tmpl.format(**fmt)
+            tag = f"WE {wk.month}.{wk.day} {field}={val}"
+            hdr2, data2, wks2 = _pull(tag, _with_filter(ORG_DD_URL, field, val))
+            if hdr2 is None:
                 continue
-            if not out.exists():
-                plog(f"[{cand}] no crosstab landed")
-                continue
-            hdr, data = _read_export(out, log=log)
-            hdr = [str(h).strip() for h in hdr]
-            hl = [h.lower() for h in hdr]
-            if "cl.dd week" not in hl:
-                plog(f"[{cand}] headers: {hdr}")
-                plog(f"[{cand}] no 'cl.DD Week' column — cannot pin weeks; skipping")
-                continue
-            wk_i = hl.index("cl.dd week")
-            wks = Counter(_owner_cell(r[wk_i], False) for r in data
-                          if wk_i < len(r) and str(r[wk_i]).strip())
-            plog(f"[{cand}] {len(data)} rows; DD weeks read back: "
-                 f"{dict(wks.most_common(12))}")
-            # Confirm the Period picker TOOK: Tableau ignores a mis-valued
-            # filter and returns its default (latest) week — the 10/19 trap.
-            dom = wks.most_common(1)[0][0] if wks else ""
-            dom_d = _parse_mdy(dom)
-            if len(data) < 50 or not dom_d or dom_d.month != tgt_month:
-                plog(f"[{cand}] filter did NOT take (dominant DD week {dom!r}, "
-                     f"want month {tgt_month}) — trying the next form")
+            got = set(wks2)
+            if not (got & labels) or got == default_weeks or len(data2) < 20:
+                plog(f"[{tag}] filter did NOT take - next form")
                 continue
             if header is None:
-                header = hdr
-            elif hdr != header:
-                plog(f"[{cand}] WARNING: header differs from the first file: {hdr}")
-            pulled.extend((cand, r) for r in data)
-            got = True
+                header = hdr2
+            elif hdr2 != header:
+                plog(f"[{tag}] WARNING: header differs from the first file: {hdr2}")
+            extra = sorted(got - labels)
+            plog(f"[{tag}] filter TOOK" + (f" (also returned weeks {extra}; kept only "
+                                            "if another requested week)" if extra else ""))
+            pulled.extend((tag, r) for r in data2)
+            good_form = (field, tmpl)
+            hit = True
             break
-        if not got:
-            plog(f"WARNING: no Period filter form validated for {period}")
+        if not hit:
+            plog(f"WARNING: no URL filter form pinned WE {wk.month}.{wk.day} "
+                 f"(cl.DD Week {sorted(labels)}) - that week is NOT in DD RAW")
 
     if header is None or not pulled:
         plog("STOP: nothing pulled — DD RAW left untouched")
@@ -1580,7 +1628,7 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log) -> int:
                  f"{len(rows_out) - 1} line(s) + header")
             wrote = True
         except Exception as e:  # noqa: BLE001
-            plog(f"owner book write failed ({str(e)[:160]}) — falling back to "
+            plog(f"owner book write failed ({e!r})"[:220] + " — falling back to "
                  "AUTOMATION MASTER")
     if not wrote:
         try:
