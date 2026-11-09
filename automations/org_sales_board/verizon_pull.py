@@ -98,7 +98,16 @@ def parse(pdf_path: Path, owner: str = ICD) -> Dict[dt.date, int]:
             we_sat = dt.datetime.strptime(m.group(1), "%B %d, %Y").date()
             vals = _row_values(page, owner)
             if vals is None:
-                continue
+                # A weekly page with its day header but no row for the owner
+                # = no lines sold that week so far (the scorecard lists only
+                # owners who sold; same 'not in the tracker = 0' rule as
+                # scoring_hc). Monday's edition opens the new Sun-Sat week
+                # with an EMPTY page, and skipping it left Sunday blank, which
+                # held the NEW A Players board all day (2026-11-09).
+                if all(re.search(r"\b%s\b" % d, page.get_text()) for d in _DAYS):
+                    vals = [0] * 7
+                else:
+                    continue
             sun = we_sat - dt.timedelta(days=6)
             for i, v in enumerate(vals):
                 d = sun + dt.timedelta(days=i)
