@@ -1787,6 +1787,161 @@ def _owner_dd_write_log(owner: str, lines: list, log=_log, gc=None) -> None:
         log(f"owner-dd: log write failed ({e!r})")
 
 
+# ---- Owner ORDER LOG probe (Khalil's book, 2026-11-08) --------------------
+# The NDS-SN (RES-ATT-OOF) ORDER LOG .csv (office_metrics.nds_orderlog), Order
+# Date window = the last N full weeks, sliced to one owner, written to the
+# owner book's 'ORDER LOG RAW' tab (fallback: '<Owner> ORDER LOG RAW' on
+# AUTOMATION MASTER). READ-ONLY on Tableau; never touches this board.
+OWNER_OL_TAB = "ORDER LOG RAW"
+
+
+def _owner_orderlog_probe(owner: str, weeks_back: int = 8, log=_log) -> int:
+    from collections import Counter
+    from automations.office_metrics import nds_orderlog as NO
+    from automations.shared.tableau_patchright import tableau_session
+    lines: list[str] = []
+
+    def plog(msg):
+        log(msg)
+        lines.append(str(msg))
+
+    def _n(s) -> str:
+        return " ".join(str(s or "").lower().split())
+
+    today = dt.date.today()
+    we = week_ending(today)                      # most recent Sunday on/before today
+    start = we - dt.timedelta(days=7 * weeks_back - 1)   # Monday, N weeks back
+    end = today
+    url = NO._orderlog_url(start, end)
+    plog(f"owner-orderlog: owner={owner!r} Order Date {start} .. {end} ({weeks_back} wks) url={url[:120]}")
+    out_dir = REPO_ROOT / "output" / "vantura_payroll"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"nds_orderlog_{owner.replace(' ', '_')}_{today.isoformat()}.csv"
+
+    def _looks_like_csv(b: bytes) -> bool:
+        head = b[:4000].decode("utf-8-sig", errors="replace")
+        first = head.splitlines()[0] if head else ""
+        return "<html" not in head.lower() and "<!doctype" not in head.lower() and first.count(",") >= 5
+
+    body = b""
+    for attempt in (1, 2, 3):
+        try:
+            with tableau_session(verbose=False) as page:
+                r = page.context.request.get(url, timeout=300_000)
+                body = r.body() or b""
+                ok = r.status == 200 and len(body) >= 500 and _looks_like_csv(body)
+                plog(f"[orderlog] csv status={r.status} bytes={len(body):,} valid={ok} (try {attempt}/3)")
+                if ok:
+                    break
+                plog("[orderlog] body head: " + body[:150].decode("utf-8-sig", "replace").replace("\n", " "))
+        except Exception as e:  # noqa: BLE001
+            plog(f"[orderlog] try {attempt} failed: {str(e)[:140]}")
+        body = b""
+    if not body:
+        plog("STOP: no ORDER LOG csv")
+        _owner_dd_write_log(owner, lines, log)
+        return 4
+    out.write_bytes(body)
+    rows = NO._read_csv(out)
+    header = [str(h).strip() for h in rows[0]]
+    data = [r for r in rows[1:] if any(str(c).strip() for c in r)]
+    plog(f"[orderlog] {len(data)} rows; header ({len(header)}): {header}")
+    hl = [h.lower() for h in header]
+    oc = next((i for i, h in enumerate(hl) if h.startswith("owner")), None)
+    if oc is None:
+        plog("STOP: no Owner column")
+        _owner_dd_write_log(owner, lines, log)
+        return 4
+    toks = [t for t in _n(owner).split() if t]
+    by_owner = [r for r in data if len(r) > oc and all(t in _n(r[oc]) for t in toks)]
+    owners = Counter(_n(r[oc]).split("[")[0].strip() for r in data if len(r) > oc)
+    plog(f"[orderlog] owners in file: {len(owners)}; {owner!r} rows by Owner & Office: {len(by_owner)}")
+    # ALSO keep rows whose Rep is one of the owner's PAID reps (from the DD RAW
+    # fallback tab this probe's sibling wrote): a rep who left or transferred
+    # shows under another Owner & Office in the order log, yet the owner was
+    # paid on their lines (2026-11-08: 12 of Khalil's 38 paid reps had no
+    # order-log rows under his owner filter).
+    rep_i = next((i for i, h in enumerate(hl) if h == "rep"), None)
+    mine = list(by_owner)
+    try:
+        from automations.recruiting_report import fill as _f0
+        _dd = _f0._client().open_by_key(AUTOMATION_MASTER_ID).worksheet(f"{owner} DD RAW").get_all_values()
+        _ri = [str(h).strip().lower() for h in _dd[0]].index("rep.name")
+        import re as _re2
+        paid_reps = {_n(_re2.sub(r"\s*\(\d+\)\s*$", "", r[_ri])) for r in _dd[1:] if len(r) > _ri and r[_ri].strip()}
+        if rep_i is not None and paid_reps:
+            seen = {id(r) for r in mine}
+            extra = [r for r in data if len(r) > rep_i and _n(r[rep_i]) in paid_reps and id(r) not in seen]
+            mine += extra
+            plog(f"[orderlog] + {len(extra)} row(s) by paid-rep name ({len(paid_reps)} names); their Owner & Office: "
+                 f"{dict(Counter(_n(r[oc]).split('[')[0].strip()[:30] for r in extra).most_common(6))}")
+    except Exception as e:  # noqa: BLE001
+        plog(f"[orderlog] paid-rep widening skipped: {str(e)[:120]}")
+    if not mine:
+        plog("[orderlog] owner values sample: " + "; ".join(list(owners)[:15]))
+    # read-back: order-date weeks + status mix for the owner
+    od = next((i for i, h in enumerate(hl) if "order date" in h), None)
+    st = next((i for i, h in enumerate(hl) if h in ("dtr status", "spe.status") or "status" in h), None)
+    rep = next((i for i, h in enumerate(hl) if h == "rep" or h.endswith(" rep") or h.startswith("rep")), None)
+    if od is not None:
+        wk = Counter()
+        for r in mine:
+            d = _parse_mdy(r[od]) if od < len(r) else None
+            if d:
+                sun = d + dt.timedelta(days=(6 - d.weekday()))
+                wk[f"{sun.month}/{sun.day}"] += 1
+        plog(f"[orderlog] owner rows by Order-Date week ending: {dict(sorted(wk.items(), key=lambda kv: _parse_mdy(kv[0] + '/2026') or dt.date.min))}")
+    if st is not None:
+        plog(f"[orderlog] status mix: {dict(Counter(r[st] for r in mine if st < len(r)).most_common(10))}")
+    if rep is not None:
+        plog(f"[orderlog] reps: {len({r[rep] for r in mine if rep < len(r)})}")
+    rows_out = [header] + [[_owner_cell(c, False) for c in r] + [""] * (len(header) - len(r)) for r in mine]
+    try:
+        import csv as _csv
+        with open(out_dir / f"{owner.replace(' ', '_')}_orderlog_raw.tsv", "w", newline="", encoding="utf-8") as fh:
+            _csv.writer(fh, delimiter="\t").writerows(rows_out)
+    except Exception as e:  # noqa: BLE001
+        plog(f"local copy failed: {e!r}")
+    from automations.recruiting_report import fill as _f
+    gc = _f._client()
+    book_id = OWNER_DD_BOOKS.get(_n(owner))
+    wrote = False
+    if book_id:
+        try:
+            import gspread as _gs
+            b = gc.open_by_key(book_id)
+            try:
+                ws = b.worksheet(OWNER_OL_TAB)
+                ws.clear()
+            except _gs.WorksheetNotFound:
+                ws = b.add_worksheet(OWNER_OL_TAB, rows=len(rows_out) + 20, cols=max(20, len(header)))
+            if ws.row_count < len(rows_out) + 5 or ws.col_count < len(header):
+                ws.resize(rows=max(ws.row_count, len(rows_out) + 5), cols=max(ws.col_count, len(header)))
+            ws.update(rows_out, "A1", value_input_option="RAW")
+            plog(f"WROTE '{OWNER_OL_TAB}' in book {book_id}: {len(rows_out) - 1} row(s) + header")
+            wrote = True
+        except Exception as e:  # noqa: BLE001
+            plog(f"owner book write failed ({e!r})"[:220] + " — falling back to AUTOMATION MASTER")
+    if not wrote:
+        try:
+            import gspread as _gs
+            ctl = gc.open_by_key(AUTOMATION_MASTER_ID)
+            tname = f"{owner} ORDER LOG RAW"[:99]
+            try:
+                t = ctl.worksheet(tname)
+                t.clear()
+            except _gs.WorksheetNotFound:
+                t = ctl.add_worksheet(tname, rows=len(rows_out) + 20, cols=max(20, len(header)))
+            if t.row_count < len(rows_out) + 5 or t.col_count < len(header):
+                t.resize(rows=max(t.row_count, len(rows_out) + 5), cols=max(t.col_count, len(header)))
+            t.update(rows_out, "A1", value_input_option="RAW")
+            plog(f"WROTE fallback tab '{tname}' on AUTOMATION MASTER: {len(rows_out) - 1} row(s) + header")
+        except Exception as e:  # noqa: BLE001
+            plog(f"fallback write failed too: {str(e)[:160]}")
+    _owner_dd_write_log(owner, lines, log, gc=gc)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Vantura weekly payroll prep (Lucy 2).")
     ap.add_argument("--refresh-only", action="store_true",
@@ -1830,6 +1985,13 @@ def main(argv: list[str] | None = None) -> int:
                          "and write them to that owner's own book 'DD RAW' "
                          "tab (e.g. \"Khalil Mansour\"). Read-only on Tableau "
                          "and on THIS board. Pair with --weeks.")
+    ap.add_argument("--owner-orderlog", metavar="OWNER",
+                    help="ONLY pull the NDS-SN (RES-ATT-OOF) ORDER LOG csv for one "
+                         "owner (Order Date = last --weeks-back full weeks) and write "
+                         "it to that owner's book 'ORDER LOG RAW' tab. Read-only on "
+                         "Tableau and on THIS board.")
+    ap.add_argument("--weeks-back", type=int, default=8,
+                    help="for --owner-orderlog: how many full weeks of Order Dates (default 8)")
     ap.add_argument("--skip-discover", action="store_true",
                     help="for --owner-dd: skip the one-time dump of the view's filter cards")
     ap.add_argument("--skip-tieout", action="store_true",
@@ -1858,6 +2020,8 @@ def main(argv: list[str] | None = None) -> int:
         _log(f"refresh -> {resp.text[:200]}")
         return 0
 
+    if getattr(args, "owner_orderlog", None):
+        return _owner_orderlog_probe(args.owner_orderlog, args.weeks_back)
     if getattr(args, "owner_dd", None):
         fo = None
         if args.dd_filter:
