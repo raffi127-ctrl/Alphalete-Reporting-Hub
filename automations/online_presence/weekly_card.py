@@ -112,6 +112,8 @@ def main(argv=None) -> int:
     ap.add_argument("--office", default="")
     ap.add_argument("--live", action="store_true", help="post to live offices' rooms")
     a = ap.parse_args(argv)
+    import time as _time
+    started = _time.monotonic()
     rows = offices.load()
     todo = [rows[a.office.lower()]] if a.office and a.office.lower() in rows else (
         [] if a.office else list(rows.values()))
@@ -130,6 +132,11 @@ def main(argv=None) -> int:
             print(f"[{p.key}] FAILED\n{traceback.format_exc()}")
     if not todo:
         print("No offices set up yet.")
+    if not a.office:
+        from automations.online_presence import timing
+        took = _time.monotonic() - started
+        timing.record("weekly", took, offices=sum(1 for p in todo if p.is_live), live=a.live)
+        print(f"weekly run took {timing.fmt(took)}")
     print("=== done ===")
     return 1 if failed else 0
 

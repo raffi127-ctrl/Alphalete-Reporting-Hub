@@ -146,7 +146,10 @@ class LivePassSkipsDryOffices(unittest.TestCase):
                 mock.patch.object(run, "run_office", side_effect=AssertionError("ran")), \
                 mock.patch("automations.online_presence.rooms.ping_new", return_value=[]), \
                 mock.patch("automations.online_presence.rooms.run", return_value=[]), \
-                mock.patch("automations.online_presence.relay.answered", return_value=[]):
+                mock.patch("automations.online_presence.relay.answered", return_value=[]), \
+                mock.patch("automations.online_presence.timing.record"), \
+                mock.patch("automations.online_presence.review_alerts.check", return_value=[]), \
+                mock.patch("automations.online_presence.email_alerts.check", return_value=[]):
             self.assertEqual(run.main(["--live"]), 0)
 
 
