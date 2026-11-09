@@ -150,7 +150,7 @@ def enrolled_offices() -> list[dict]:
         if (str(o.channel_id).startswith("U")
                 or "held" in str(o.channel_name).lower()):
             continue
-        nds =bool(getattr(o, "nds", False)) or key in OM.NDS_OFFICES
+        nds = bool(getattr(o, "nds", False)) or key in OM.NDS_OFFICES
         _name = o.knocks_office or o.owner
         out.append({
             "name": _name,
