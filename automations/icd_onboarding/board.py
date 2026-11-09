@@ -64,8 +64,35 @@ STEPS: Sequence[str] = (
 COLUMNS: Sequence[str] = tuple(IDENTITY) + (CLASSROOM,) + tuple(STEPS)
 
 # Which columns a machine may write. Classroom is the ICD's; identity is the
-# seed's; everything else is a step, and steps go ON only.
+# seed's; everything else is a step.
 TICKS: Sequence[str] = tuple(STEPS)
+
+# MOST steps are a TICK: written once, never changed, because the date is
+# evidence that something happened and nothing is entitled to say it did not.
+#
+# BG Status is different. It is a STATE, and the useful thing on the board is
+# which answer came back -- including the ones that are not an answer yet
+# (Megan, 2026-11-09: "a status could also be Sent but not taken", "or not
+# sent"). So it ADVANCES: Sent -> Taken - Pending -> Review -> Complete ->
+# Passed/Failed/Unperformable, and never goes backwards. Blank means not sent.
+STATUS_STEPS: Sequence[str] = ("BG Status",)
+NOT_SENT = "Not sent"
+
+
+def status_rank(text) -> int:
+    """How far along a status is. 0 = blank, or a word we do not know.
+
+    The ranking is bg_check_sync's own, so the board and the OBCL agree about
+    what counts as further along.
+    """
+    from automations.bg_check_sync import parse
+    want = str(text or "").strip().lower()
+    if not want or want == NOT_SENT.lower():
+        return 0
+    for name, rank in parse.RANK.items():
+        if name.lower() == want:
+            return rank
+    return 0
 
 # ROW STATE, not a column on the chart. Megan, 2026-11-08: "I don't think that
 # we need a final status on this" -- terminating is something the ICD DOES in

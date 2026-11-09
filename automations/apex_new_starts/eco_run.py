@@ -120,7 +120,7 @@ def _result(week_start: dt.date, *, status: str, added=(), blocked=(),
     return out
 
 
-def run_week(week_start: dt.date, *, office_appstream: str,
+def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = "",
              live: bool = False, log=print) -> Dict:
     """The whole job. Returns a result dict; raises nothing the caller must
     catch for correctness (office_jobs also guards, belt and braces)."""
@@ -167,8 +167,31 @@ def run_week(week_start: dt.date, *, office_appstream: str,
             blocked.append({"name": person.name,
                             "why": "Apex refused it (%s)" % type(e).__name__})
             log("  %s: %s" % (person.name, type(e).__name__))
+    _tell_the_board(office_key, monday, added, log=log)
     return _result(monday, status="filled", live=True, counted=len(people),
                    added=added, blocked=blocked)
+
+
+def _tell_the_board(office_key: str, monday: dt.date, added, log=print) -> None:
+    """Tick 'Added to APEX' for everyone this run actually saved.
+
+    The run knows who it saved at the moment it saves them, so it says so
+    rather than something else working it out afterwards — the same shape as
+    the contact sync ticking 'Contact Added' (Megan, 2026-11-09).
+
+    NEVER fails the run. The payroll records are already saved by this point;
+    raising here would report a failure for work that succeeded, and send
+    somebody looking for people who are in fact in Apex. A board that did not
+    get ticked is a visible gap on the board, which is the right place for it.
+    """
+    if not office_key or not added:
+        return
+    try:
+        from automations.icd_onboarding import fillers as F
+        F.tick(office_key, monday, "apex", added, dry_run=False, log=log)
+    except Exception as e:  # noqa: BLE001
+        log("  (the board was not ticked: %s: %s — the records ARE saved)"
+            % (type(e).__name__, str(e)[:120]))
 
 
 # The create form, by ng-model rather than by label. Read off the live page

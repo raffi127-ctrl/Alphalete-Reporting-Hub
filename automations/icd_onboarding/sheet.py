@@ -229,3 +229,55 @@ def set_classroom(workbook, week_start: dt.date, assignments: Dict[str, str],
         return 0
     ws.batch_update(writes)
     return len(writes)
+
+
+def write_step(workbook, week_start: dt.date, column: str,
+               people: Dict[str, str], *, dry_run: bool = False,
+               log=print) -> int:
+    """Put a VALUE in a step's cell for each named person.
+
+    `tick` writes today's date, which proves something happened. Some steps
+    want to say WHICH answer came back instead — BG Status carries Passed /
+    Failed / Unperformable (Megan, 2026-11-09). Same rules either way: only
+    this week's rows, only cells that are still empty, never a column a machine
+    does not own, and nothing is ever cleared.
+    """
+    ws = open_board(workbook, create=False)
+    if ws is None:
+        log("  no %s tab on this workbook yet" % B.TAB)
+        return 0
+    grid = ws.get_all_values()
+    cols = layout(grid)
+    if column not in cols:
+        raise RuntimeError(
+            "the board has no %r column. If it was renamed, rename it here too "
+            "— this never guesses at a position." % column)
+    if column not in B.TICKS:
+        raise ValueError("%r is not a column a machine may write." % column)
+    all_rows = rows_of(grid)
+    mine = B.for_week(all_rows, week_start)
+    want = {B._fold(k): v for k, v in (people or {}).items()}
+    a1 = _a1(cols[column] + 1)
+    writes, greens = [], []
+    status_col = column in B.STATUS_STEPS
+    for r in mine:
+        key = B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", "")))
+        if key not in want:
+            continue
+        have = str(r.get(column) or "").strip()
+        if have:
+            # A tick is written once. A STATUS may advance -- and only advance,
+            # so a late "Sent" email can never pull somebody back from Passed.
+            if not status_col:
+                continue
+            if B.status_rank(want[key]) <= B.status_rank(have):
+                continue
+        row_no = FIRST_DATA_ROW + all_rows.index(r)
+        writes.append({"range": "%s%d" % (a1, row_no), "values": [[want[key]]]})
+        greens.append("%s%d" % (a1, row_no))
+    log("  %s: %d to write" % (column, len(writes)))
+    if dry_run or not writes:
+        return 0
+    ws.batch_update(writes)
+    ws.format(greens, {"backgroundColor": B.GREEN})
+    return len(writes)

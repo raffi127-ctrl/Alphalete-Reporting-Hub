@@ -31,7 +31,8 @@ def test_only_a_yes_ticks():
     rows = [_row("Ada Fournier")]
     got = F.plan(rows, "ownerville", {"Ada Fournier": {"Digi Docs": True,
                                                        "UID Request": False}})
-    assert got == {"Digi Docs": ["Ada Fournier"]}
+    assert list(got) == ["Digi Docs"]
+    assert list(got["Digi Docs"]) == ["Ada Fournier"]
 
 
 def test_unread_is_not_undone():
@@ -101,7 +102,7 @@ def test_somebody_not_on_the_board_is_ignored_quietly():
 def test_names_are_matched_past_spelling():
     rows = [_row("Esme Vance Hale")]
     got = F.plan(rows, "blueink", {"esme  vance-hale": {"Blue Ink": True}})
-    assert got == {"Blue Ink": ["Esme Vance Hale"]}
+    assert list(got["Blue Ink"]) == ["Esme Vance Hale"]
 
 
 # ------------------------------------------------------------- the dry run
@@ -118,3 +119,58 @@ def test_a_dry_run_names_everybody_it_would_tick():
 def test_apply_is_dry_by_default():
     import inspect
     assert inspect.signature(F.apply).parameters["dry_run"].default is True
+
+
+def test_a_status_lands_as_its_own_words_not_a_date():
+    """Megan, 2026-11-09: "We should just have Background Status: xStatus"."""
+    rows = [_row("Ada Fournier")]
+    got = F.plan(rows, "sterling", {"Ada Fournier": {"BG Status": "Passed"}})
+    assert got == {"BG Status": {"Ada Fournier": "Passed"}}
+
+
+def test_a_plain_yes_still_lands_as_a_date():
+    rows = [_row("Ada Fournier")]
+    got = F.plan(rows, "blueink", {"Ada Fournier": {"Blue Ink": True}})
+    written = got["Blue Ink"]["Ada Fournier"]
+    assert written.count("/") == 2, "a tick is a date: %r" % written
+
+
+# ------------------------------- ticking from the job that does the thing
+
+def test_a_single_column_source_can_tick_by_name(monkeypatch):
+    """The contact sync knows WHO it just added; it should not have to build a
+    verdict dict to say so."""
+    seen = {}
+
+    def fake_apply(book, week, source, verdicts, **kw):
+        seen.update({"source": source, "verdicts": verdicts, "dry": kw.get("dry_run")})
+        return 0
+
+    monkeypatch.setattr(F, "apply", fake_apply)
+    monkeypatch.setattr(F, "workbook_for", lambda k: object())
+    F.tick("raf", MONDAY, "contacts", ["Ada Fournier", "Bruno Castell"],
+           log=lambda *a: None)
+    assert seen["verdicts"] == {"Ada Fournier": {"Contact Added": True},
+                                "Bruno Castell": {"Contact Added": True}}
+    assert seen["dry"] is True, "dry unless asked"
+
+
+def test_a_multi_column_source_must_say_which(monkeypatch):
+    monkeypatch.setattr(F, "workbook_for", lambda k: object())
+    with pytest.raises(ValueError, match="owns 5 columns"):
+        F.tick("raf", MONDAY, "ownerville", ["Ada Fournier"], log=lambda *a: None)
+
+
+def test_an_office_with_no_board_is_reported_not_silently_skipped(monkeypatch):
+    said = []
+    monkeypatch.setattr(F, "workbook_for",
+                        lambda k: (_ for _ in ()).throw(RuntimeError("no office %r" % k)))
+    n = F.tick("nowhere", MONDAY, "contacts", ["Ada Fournier"], log=said.append)
+    assert n == 0
+    assert any("nowhere" in s for s in said), "a silent miss is a tick nobody notices"
+
+
+def test_raf_resolves_even_though_he_has_no_metrics_workbook():
+    import inspect
+    src = inspect.getsource(F.workbook_for)
+    assert "ALL_IN_ONE_RAF" in src, "Alphalete is not an ICD and has no metrics book"

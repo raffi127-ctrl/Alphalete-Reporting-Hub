@@ -57,8 +57,15 @@ def columns_for(source: str) -> Sequence[str]:
 
 
 def plan(rows: List[Dict], source: str,
-         verdicts: Mapping[str, Mapping[str, object]]) -> Dict[str, List[str]]:
-    """{column: [names to tick]} for one source's answers.
+         verdicts: Mapping[str, Mapping[str, object]]) -> Dict[str, Dict[str, str]]:
+    """{column: {name: what to write}} for one source's answers.
+
+    A verdict of True means "done" and the cell gets today's date. A verdict
+    that is a STRING means "done, and this is what it says" and the cell gets
+    the string — Megan, 2026-11-09: "We should just have Background Status:
+    xStatus". A date proves something happened; for a background check the
+    useful thing is WHICH answer came back, and the board has one cell to say
+    it in.
 
     `verdicts` is {person: {column: True/False/None}} — the shape
     `ov_table.done_columns` already returns, so a source adapter is a dict and
@@ -74,7 +81,10 @@ def plan(rows: List[Dict], source: str,
             continue                      # marked off — not ours to tick
         by_key[B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", "")))] = r
 
-    out: Dict[str, List[str]] = {}
+    import datetime as _dt
+    stamp = _dt.date.today().strftime("%m/%d/%Y")
+
+    out: Dict[str, Dict[str, str]] = {}
     for who, answers in (verdicts or {}).items():
         row = by_key.get(B._fold(who))
         if row is None:
@@ -84,23 +94,34 @@ def plan(rows: List[Dict], source: str,
                 raise ValueError(
                     "%r may not tick %r — it owns %s"
                     % (source, column, ", ".join(sorted(allowed))))
-            if verdict is not True:
+            if verdict is True:
+                text = stamp
+            elif isinstance(verdict, str) and verdict.strip():
+                text = verdict.strip()
+            else:
                 continue                  # False = not done, None = unread
             if str(row.get(column) or "").strip():
-                continue                  # already ticked; nothing to do
+                continue                  # already answered; nothing to do
             name = ("%s %s" % (row.get("Name", ""), row.get("Last Name", ""))).strip()
-            out.setdefault(column, []).append(name)
+            out.setdefault(column, {})[name] = text
     return out
 
 
-def describe(got: Dict[str, List[str]]) -> str:
+def describe(got: Dict[str, Dict[str, str]]) -> str:
     """What a dry run says. One line per column, names spelled out — a count
-    on its own cannot be checked against anything."""
+    on its own cannot be checked against anything. Where a column carries a
+    value rather than a date, the value is shown with the name."""
     if not got:
         return "  nothing to tick"
-    return "\n".join(
-        "  %-20s %d  %s" % (col, len(names), ", ".join(sorted(names)))
-        for col, names in sorted(got.items()))
+    lines = []
+    for col, people in sorted(got.items()):
+        bits = []
+        for name in sorted(people):
+            text = people[name]
+            dated = len(text) == 10 and text[2] == "/" and text[5] == "/"
+            bits.append(name if dated else "%s (%s)" % (name, text))
+        lines.append("  %-20s %d  %s" % (col, len(people), ", ".join(bits)))
+    return "\n".join(lines)
 
 
 def apply(workbook, week_start, source: str,
@@ -126,7 +147,67 @@ def apply(workbook, week_start, source: str,
         log("  (dry run — nothing written)")
         return 0
     n = 0
-    for column, names in got.items():
-        n += S.tick(workbook, week_start, column, names, log=lambda *a: None)
+    for column, people in got.items():
+        n += S.write_step(workbook, week_start, column, people,
+                          log=lambda *a: None)
     log("  ticked %d" % n)
     return n
+
+
+# --------------------------------------------------- finding an office's board
+
+def workbook_for(office_key: str):
+    """The Google workbook holding that office's Onboarding tab.
+
+    Their own metrics workbook — the one they already have. Resolved from
+    `office_metrics.offices` so there is no second list of sheet ids to drift.
+    Raises rather than returning None: a silent miss here is a tick that never
+    lands and nobody notices.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    key = str(office_key or "").strip().lower()
+    from automations.office_metrics import offices as OM
+    rows = OM.OFFICES if isinstance(OM.OFFICES, list) else list(OM.OFFICES.values())
+    for o in rows:
+        if str(getattr(o, "key", "")).strip().lower() == key:
+            sid = getattr(o, "sheet_id", "")
+            if not sid:
+                raise RuntimeError("office %r has no metrics workbook" % office_key)
+            return open_by_key(sid)
+    # Alphalete itself is not an ICD and has no metrics workbook; its board
+    # lives on Raf's All in One.
+    if key == "raf":
+        from automations.shared.workbooks import ALL_IN_ONE_RAF
+        return open_by_key(ALL_IN_ONE_RAF)
+    raise RuntimeError(
+        "no office %r in office_metrics.offices — its board cannot be found"
+        % office_key)
+
+
+def tick(office_key: str, week_start, source: str, names: Iterable[str],
+         *, dry_run: bool = True, log=print) -> int:
+    """Tick one source's single column for `names`, on an office's board.
+
+    For the jobs that know the answer AT THE MOMENT THEY DO THE THING — the
+    contact sync as it adds somebody, the Apex run as it saves a record. They
+    write straight to the sheet because they run on a machine that already has
+    Google access; the relay exists for the EXTENSION, which does not.
+
+    Megan, 2026-11-09, choosing this over reading a state file afterwards: "the
+    contact job ticks the board as it goes ... so the ICD can see that it's
+    done."
+    """
+    cols = columns_for(source)
+    if len(cols) != 1:
+        raise ValueError(
+            "%r owns %d columns; say which with apply()" % (source, len(cols)))
+    verdicts = {str(n): {cols[0]: True} for n in names if str(n or "").strip()}
+    if not verdicts:
+        return 0
+    try:
+        book = workbook_for(office_key)
+    except RuntimeError as e:
+        log("  board: %s" % e)
+        return 0
+    return apply(book, week_start, source, verdicts, dry_run=dry_run, log=log)

@@ -206,3 +206,42 @@ def test_the_classroom_can_be_set_and_changed():
                            log=lambda *a: None) == 0, "no change, no write"
     assert S.set_classroom(book, MONDAY, {"Ada Fournier": "Thursday PM"},
                            log=lambda *a: None) == 1
+
+
+# ------------------------------------- a status advances; a tick does not
+
+def test_a_status_may_advance_over_itself():
+    """Sent -> Passed has to land, or the board freezes at whatever arrived
+    first (Megan, 2026-11-09)."""
+    ws = FakeWS([_person("Ada Fournier", **{"BG Status": "Sent"})])
+    n = S.write_step(FakeBook(ws), MONDAY, "BG Status",
+                     {"Ada Fournier": "Passed"}, log=lambda *a: None)
+    assert n == 1
+    assert "Passed" in str(ws.updates)
+
+
+def test_a_status_never_goes_backwards():
+    """A late 'Sent' email must not pull somebody back from Passed."""
+    ws = FakeWS([_person("Ada Fournier", **{"BG Status": "Passed"})])
+    assert S.write_step(FakeBook(ws), MONDAY, "BG Status",
+                        {"Ada Fournier": "Sent"}, log=lambda *a: None) == 0
+    assert ws.updates == []
+
+
+def test_an_ordinary_tick_is_still_written_once():
+    ws = FakeWS([_person("Ada Fournier", **{"Blue Ink": "11/03/2026"})])
+    assert S.write_step(FakeBook(ws), MONDAY, "Blue Ink",
+                        {"Ada Fournier": "11/09/2026"}, log=lambda *a: None) == 0
+
+
+def test_a_status_lands_on_an_empty_cell():
+    ws = FakeWS([_person("Ada Fournier")])
+    assert S.write_step(FakeBook(ws), MONDAY, "BG Status",
+                        {"Ada Fournier": "Sent"}, log=lambda *a: None) == 1
+
+
+def test_write_step_refuses_a_column_no_machine_owns():
+    ws = FakeWS([_person("Ada Fournier")])
+    with pytest.raises(ValueError):
+        S.write_step(FakeBook(ws), MONDAY, B.CLASSROOM,
+                     {"Ada Fournier": "Tuesday AM"}, log=lambda *a: None)
