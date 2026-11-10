@@ -3829,6 +3829,11 @@ def _render_office_admin_logins() -> None:
     labels = {k: "%s (%s)" % (owner or k, k) for k, owner in offices}
     keys = [k for k, _ in offices]
 
+    st.markdown("🧩 **Extension for admins (Lucy BG✔️ Send):** "
+                "[chromewebstore.google.com/detail/dapenpchflbhodfhndnlhojjnfmmabnp]"
+                "(https://chromewebstore.google.com/detail/dapenpchflbhodfhndnlhojjnfmmabnp)")
+    st.caption("Send admins this link. They click Add to Chrome, then sign in from the Lucy icon.")
+
     with st.expander("➕ Add an admin", expanded=True):
         with st.form("oa_add", clear_on_submit=False):
             name = st.text_input("Admin's full name", placeholder="e.g. Aisha Ceron")
@@ -3839,9 +3844,20 @@ def _render_office_admin_logins() -> None:
             live = st.checkbox("Live (really sends). Untick for test mode", value=True)
             go = st.form_submit_button("Create login", type="primary")
         if go:
-            first = _re.sub(r"[^a-z0-9]", "", (name.strip().split() or [""])[0].lower())
-            if not first:
-                st.error("Type the admin's name first.")
+            # Sign-in = first + last name (Megan 2026-11-10). Someone already
+            # on file under that name keeps their login and gets the office.
+            words = [_re.sub(r"[^a-z0-9]", "", w.lower()) for w in name.split()]
+            words = [w for w in words if w]
+            key = "".join(words)
+            try:
+                same = [p["username"] for p in _ra.admins()
+                        if _re.sub(r"[^a-z0-9]", "", (p.get("name") or "").lower()) == key
+                        or _re.sub(r"[^a-z0-9]", "", p["username"].lower()) == key]
+            except Exception:                   # noqa: BLE001
+                same = []
+            first = same[0] if same else " ".join(words)
+            if len(words) < 2:
+                st.error("Type the admin's first AND last name. That's what they sign in with.")
             else:
                 argv = ["--add", first, "--office", office, "--name", name.strip()]
                 if pw.strip():
@@ -3851,10 +3867,10 @@ def _render_office_admin_logins() -> None:
                     ok2, out2 = _oa_run(["--mode", first, "live"])
                     out += "\n" + out2
                     ok = ok and ok2
-                (st.success if ok else st.error)("Username: **%s**" % first if ok else "Didn't work")
+                (st.success if ok else st.error)("They sign in with: **%s** (any capitals)" % name.strip() if ok else "Didn't work")
                 st.code(out or "(no output)", language=None)
                 if ok:
-                    st.caption("Send them the store link + this username and password: "
+                    st.caption("Send them the store link, their first + last name and the password: "
                                "https://chromewebstore.google.com/detail/dapenpchflbhodfhndnlhojjnfmmabnp")
 
     with st.expander("🔑 Change an admin"):

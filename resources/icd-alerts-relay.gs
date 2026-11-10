@@ -1244,15 +1244,34 @@ function _accounts(v) {
   return out.join(', ');
 }
 
-// Every row for this username: [{i, r}]
+// SIGN IN = FIRST + LAST NAME (Megan 2026-11-10: "sign in should always be the
+// users first and last name - that's an easy thing to remember"). Spaces,
+// capitals and punctuation never matter: "Cody Cannon", "cody  cannon" and
+// "CodyCannon" are one admin. Older logins made from a first name ("cody")
+// still work, and so does their full name off the Name column.
+function _admKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+// Every row for this admin: [{i, r}]. Username first; else the Name column --
+// but only when that name is ONE admin's (two people with one name = no match).
 function _admRows(username) {
   var rows = _admSheet(ADMINS_TAB, ADM_HEAD).getDataRange().getValues();
-  var u = String(username || '').trim().toLowerCase();
-  var out = [];
+  var u = _admKey(username);
+  if (!u) return [];
+  var pick = function (want) {
+    var out = [];
+    for (var i = 1; i < rows.length; i++) {
+      if (_admKey(rows[i][ADM.USER]) === want) out.push({i: i, r: rows[i]});
+    }
+    return out;
+  };
+  var out = pick(u);
+  if (out.length) return out;
+  var users = {};
   for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][ADM.USER]).trim().toLowerCase() === u) out.push({i: i, r: rows[i]});
+    if (_admKey(rows[i][ADM.NAME]) === u) users[_admKey(rows[i][ADM.USER])] = 1;
   }
-  return out;
+  var names = Object.keys(users);
+  return names.length === 1 ? pick(names[0]) : [];
 }
 
 function _session(token) {
@@ -1293,7 +1312,7 @@ function _officeAdminCall(a) {
 
 function _admLogin(a) {
   var cache = CacheService.getScriptCache();
-  var user = String(a.username || '').trim().toLowerCase();
+  var user = _admKey(a.username);
   var triesKey = 'admtries:' + user;
   var tries = Number(cache.get(triesKey) || 0);
   if (tries >= MAX_TRIES) return {ok: false, error: 'Too many tries. Wait 15 minutes.'};
@@ -1303,11 +1322,13 @@ function _admLogin(a) {
       _sha256Hex(String(keyRow.r[ADM.SALT]) + String(a.password || '')) === String(keyRow.r[ADM.HASH]);
   if (!good) {
     cache.put(triesKey, String(tries + 1), 900);
-    return {ok: false, error: "That username and password don't match."};
+    return {ok: false, error: "That name and password don't match."};
   }
   cache.remove(triesKey);
   var token = Utilities.getUuid();
-  var sess = {username: user, name: String(keyRow.r[ADM.NAME] || user),
+  // The session holds the sheet's own username, whatever was typed.
+  var sess = {username: String(keyRow.r[ADM.USER]).trim().toLowerCase(),
+              name: String(keyRow.r[ADM.NAME] || user),
               offices: rows.map(function (h) { return String(h.r[ADM.OFFICE]).trim().toLowerCase(); })};
   sess.exp = Date.now() + SESSION_DAYS * 86400000;
   PropertiesService.getScriptProperties().setProperty('adm:' + token, JSON.stringify(sess));
