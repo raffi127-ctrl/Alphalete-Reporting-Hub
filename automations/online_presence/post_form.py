@@ -76,6 +76,7 @@ def _text(block_id: str, label: str, hint: str = "", optional: bool = False,
 # kind: those aren't photo posts (Megan 2026-11-10: "remove the quote"). The details each kind
 # asks for are the ones its captions used most (a promotion caption names the
 # level 96/110 times, the trainer 61, the team 60, time with the company 49).
+MAX_KINDS = 10          # Slack's limit for radio buttons
 KINDS = {
     "promotion": ("🎉 A promotion", [
         ("promoted", "Who got promoted?", "Sarah Lopez (or several names)", True, False),
@@ -123,9 +124,11 @@ KINDS = {
         ("topic", "What was it about?", "Leadership meeting, door approach training...", True, True),
         ("leader", "Who led it?", "Randy", False, False),
         ("people", "Who's in the photos?", "Names, or 'the whole team'", False, False)]),
-    "event": ("🎤 A conference, trip or new market", [
+    # Community events live here too: Slack caps a pick-one list at 10 choices
+    # (11 made Slack refuse to open the form at all, 2026-11-10).
+    "event": ("🎤 A conference, event, trip or new market", [
         ("event", "What was it?",
-         "Regionals, Captain's Retreat, opening our Chicago market, visiting Starr's office...", True, True),
+         "Regionals, a toy drive, opening our Chicago market, visiting Starr's office...", True, True),
         ("city", "What city?", "Las Vegas, Chicago...", False, False),
         ("people", "Who went?", "Names, or 'the Hashiras team'", False, False),
         ("standout", "Did anyone speak, get recognized, or do it for the first time?",
@@ -136,9 +139,6 @@ KINDS = {
          "Paid training, room to grow into management, what a day looks like...", True, True),
         ("office", "What office or city?", "Dallas", False, False),
         ("apply", "How do they apply?", "DM us, link in bio, a link...", False, False)]),
-    "community": ("❤️ A community event", [
-        ("event", "What's the event?", "Toy drive, school supply giveaway...", True, True),
-        ("people", "Who's in the photos?", "Names, or 'the whole team'", False, False)]),
     "other": ("✨ Something else", [
         ("who", "Who's in it?", "Names, or 'the whole team'", True, False),
         ("what", "What's happening?", "Tell Lucy what's going on in the photos", True, True)]),

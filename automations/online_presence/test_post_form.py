@@ -41,6 +41,14 @@ class Form(unittest.TestCase):
         self.assertEqual(v["blocks"][0]["element"]["max_files"], 10)
         self.assertEqual(json.loads(v["private_metadata"])["channel"], "C1")
 
+    def test_slack_accepts_the_kind_list(self):
+        # more than 10 radio options and Slack refuses to open the form at all
+        opts = F.form("C1")["blocks"][1]["element"]["options"]
+        self.assertLessEqual(len(opts), F.MAX_KINDS)
+        self.assertLessEqual(F.MAX_KINDS, 10)
+        for o in opts:
+            self.assertLessEqual(len(o["text"]["text"]), 75)
+
     def test_promotion_asks_who_and_what_level(self):
         v = F.form("C1", "promotion")
         req = [b["block_id"] for b in v["blocks"][2:] if not b.get("optional")]
