@@ -200,6 +200,18 @@ def cmd_add(a) -> int:
           f"{', '.join(p.pages) or 'nothing yet'} · mode {p.mode}")
     for prob in p.problems():
         print(f"  still missing: {prob}")
+    if p.slack_channel:
+        from automations.online_presence import post_form
+        try:
+            b = post_form.add_button(p.slack_channel, live=True)
+        except Exception as e:
+            b = {"action": "failed", "error": str(e)[:120]}
+        if b.get("action") in ("pinned", "already_pinned"):
+            print("✓ 📸 New post button is pinned in their channel")
+        else:
+            print(f"⚠ 📸 New post button NOT added: {b.get('error') or b.get('action')}"
+                  "  (fix, then: python -m automations.online_presence.post_form "
+                  f"--pin {p.key} --live)")
     return 0
 
 
@@ -328,6 +340,12 @@ def _slack_room_check(p) -> List[Tuple[bool, str]]:
     except Exception as e:
         out.append((False, f"Lucy can't open the channel ({str(e)[:80]})"))
         return out
+    try:
+        from automations.online_presence import post_form
+        out.append((post_form.has_button(p.slack_channel, _client()),
+                    "📸 New post button is pinned in the channel"))
+    except Exception as e:
+        out.append((False, f"📸 New post button: couldn't check ({str(e)[:60]})"))
     bot = credentials.optional("slack_bot_token")
     if bot:
         # The bot can only read files (no channels:read), so it can't look the

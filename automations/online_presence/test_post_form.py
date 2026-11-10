@@ -156,5 +156,48 @@ class Redirect(unittest.TestCase):
         self.assertIn("pinned", lucy.chat_postMessage.call_args.kwargs["text"])
 
 
+class AddButton(unittest.TestCase):
+    def _bot(self, who=F.JIRAIYA, pins=()):
+        bot = mock.Mock()
+        bot.auth_test.return_value = {"user_id": who}
+        bot.pins_list.return_value = {"items": list(pins)}
+        bot.chat_postMessage.return_value = {"ts": "7.1"}
+        return bot
+
+    def test_jiraiya_joins_posts_and_pins(self):
+        bot, lucy = self._bot(), mock.Mock()
+        res = F.add_button("C0NEW", live=True, lucy_cl=lucy, bot=bot)
+        self.assertEqual(res["action"], "pinned")
+        lucy.conversations_invite.assert_called_once_with(channel="C0NEW", users=F.JIRAIYA)
+        self.assertEqual(bot.chat_postMessage.call_args.kwargs["blocks"], F.pin_blocks())
+        bot.pins_add.assert_called_once_with(channel="C0NEW", timestamp="7.1")
+
+    def test_never_a_second_button(self):
+        pinned = {"message": {"blocks": F.pin_blocks()}}
+        bot = self._bot(pins=[pinned])
+        self.assertEqual(F.add_button("C0NEW", live=True, lucy_cl=mock.Mock(), bot=bot)["action"],
+                         "already_pinned")
+        bot.chat_postMessage.assert_not_called()
+
+    def test_wrong_bot_never_posts_a_dead_button(self):
+        bot = self._bot(who="U0LUCYAPP")          # the fallback token, not Jiraiya
+        res = F.add_button("C0NEW", live=True, lucy_cl=mock.Mock(), bot=bot)
+        self.assertEqual(res["action"], "no_jiraiya_token")
+        bot.chat_postMessage.assert_not_called()
+
+    def test_dry_posts_nothing(self):
+        bot = self._bot()
+        self.assertEqual(F.add_button("C0NEW", live=False, bot=bot)["action"], "would_pin")
+        bot.chat_postMessage.assert_not_called()
+
+    def test_pin_refused_falls_back_to_lucy_then_by_hand(self):
+        bot, lucy = self._bot(), mock.Mock()
+        bot.pins_add.side_effect = Exception("missing_scope")
+        self.assertEqual(F.add_button("C0NEW", live=True, lucy_cl=lucy, bot=bot)["action"], "pinned")
+        lucy.pins_add.side_effect = Exception("missing_scope")
+        self.assertEqual(F.add_button("C0NEW", live=True, lucy_cl=lucy, bot=bot)["action"],
+                         "posted_pin_by_hand")
+
+
 if __name__ == "__main__":
     unittest.main()

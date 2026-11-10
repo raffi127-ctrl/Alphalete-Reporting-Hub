@@ -57,7 +57,8 @@ def _people(row: Dict, cl) -> (List[str], List[str]):
     that opens the photos (without it Lucy can't read a single upload).
     Returns (Slack ids, people we couldn't place -- never guessed)."""
     from automations.online_presence.setup import resolve_person
-    ids, missed = [MEGAN, EVE, LUCY, HUBPOSTER], []
+    from automations.online_presence.post_form import JIRAIYA   # runs the 📸 button
+    ids, missed = [MEGAN, EVE, LUCY, HUBPOSTER, JIRAIYA], []
     owner = str(row.get("Owner") or "").strip()
     try:
         ids.append(resolve_person(owner, cl))
@@ -116,7 +117,17 @@ def make_room(row: Dict, cl, *, live: bool) -> Dict:
     except Exception as e:
         if "already_in_channel" not in str(e):
             missed.append(f"invites failed ({str(e)[:60]})")
-    return {"action": "created", "channel": name, "id": cid, "missed": missed}
+    # The pinned 📸 New post button, so the first photo comes in through the
+    # form (Megan 2026-11-10). A failure here never undoes the channel.
+    try:
+        from automations.online_presence import post_form
+        button = post_form.add_button(cid, live=True, lucy_cl=cl)
+    except Exception as e:
+        button = {"action": "failed", "error": str(e)[:120]}
+    if button.get("action") not in ("pinned", "already_pinned"):
+        missed.append(f"📸 New post button not added ({button.get('error') or button.get('action')})")
+    return {"action": "created", "channel": name, "id": cid, "missed": missed,
+            "button": button.get("action")}
 
 
 def _write_back(tab, header: List[str], rownum: int, cid: str) -> None:

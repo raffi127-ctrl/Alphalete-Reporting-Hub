@@ -64,9 +64,11 @@ class Name(unittest.TestCase):
 
 
 class Creates(unittest.TestCase):
-    def _run(self, tab, cl, live=True):
+    def _run(self, tab, cl, live=True, button=None):
+        self.button = mock.Mock(return_value=button or {"action": "pinned"})
         with mock.patch("automations.shared.slack_metrics_post._load_bot_token",
-                        side_effect=Exception("no Lucy app token here")):
+                        side_effect=Exception("no Lucy app token here")), \
+                mock.patch("automations.online_presence.post_form.add_button", self.button):
             return rooms.run(live=live, cl=cl, tab=tab)
 
     def test_private_room_right_people_and_written_back(self):
@@ -74,13 +76,24 @@ class Creates(unittest.TestCase):
         res = self._run(tab, cl)
         self.assertEqual(cl.created, [("kash-marketing-lucyeco-social", True)])
         users = cl.invited[0][1]
-        for who in (rooms.MEGAN, rooms.EVE, rooms.HUBPOSTER, "U046XBPN0G2"):   # Kash = the ICD
+        from automations.online_presence.post_form import JIRAIYA
+        for who in (rooms.MEGAN, rooms.EVE, rooms.HUBPOSTER, JIRAIYA, "U046XBPN0G2"):   # Kash = the ICD
             self.assertIn(who, users)
+        self.assertEqual(self.button.call_args.args, ("C0NEWROOM1",))      # 📸 button pinned
+        self.assertEqual(res[0]["button"], "pinned")
         self.assertNotIn("U0BCG8F9B5Z", users)       # Lucy made it, so she's already in
         head = signup.HEADER
         self.assertEqual(tab.rows[1][head.index("Slack Channel")], "C0NEWROOM1")
         self.assertEqual(tab.rows[1][head.index("Slack Room")], "created")
         self.assertEqual(res[0]["missed"], [])
+
+    def test_button_trouble_is_reported_but_the_channel_stays(self):
+        tab, cl = _sheet(), FakeSlack()
+        res = self._run(tab, cl, button={"action": "no_jiraiya_token",
+                                         "error": "Jiraiya's token isn't on this machine"})
+        self.assertEqual(cl.created, [("kash-marketing-lucyeco-social", True)])
+        self.assertEqual(tab.rows[1][signup.HEADER.index("Slack Channel")], "C0NEWROOM1")
+        self.assertTrue(any("New post button not added" in m for m in res[0]["missed"]))
 
     def test_dry_makes_nothing(self):
         tab, cl = _sheet(), FakeSlack()

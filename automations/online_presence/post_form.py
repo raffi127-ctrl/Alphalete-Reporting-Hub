@@ -345,41 +345,74 @@ def deliver(web, chan: str, user: str, a: Dict) -> None:
 
 
 # ---- putting the button in an office's channel --------------------------------------
-def pin(P, *, live: bool) -> Dict:
-    """Jiraiya joins the office's channel (Lucy invites it), posts the button,
-    pins it. Never twice: an existing pinned button is left alone."""
-    from automations.brand_audit.social_inbox import _client as lucy
-    from automations.due_diligence.watch import _client as jiraiya
-    chan = P.slack_channel
+def has_button(chan: str, cl) -> bool:
+    """Is a 📸 New post button already pinned in this channel?"""
+    for it in cl.pins_list(channel=chan).get("items") or []:
+        if any(el.get("action_id") == BUTTON
+               for blk in (it.get("message") or {}).get("blocks") or []
+               for el in blk.get("elements") or []):
+            return True
+    return False
+
+
+def add_button(chan: str, *, live: bool, lucy_cl=None, bot=None) -> Dict:
+    """Put the pinned 📸 New post button in an office's channel.
+
+    Megan 2026-11-10 ("build this out"): every new office channel gets the
+    button automatically -- rooms.make_room calls this right after it makes
+    the channel, and `setup add` calls it for an office that brought its own.
+
+    It must be JIRAIYA that posts it: a tap only reaches the form when the
+    message belongs to the app the listener runs as. due_diligence.watch
+    falls back to the Lucy app when Jiraiya's token isn't on the machine, so
+    the token is checked by who it IS, and a box without it says so instead
+    of pinning a button that would do nothing. Never twice."""
     if not chan:
         return {"action": "no_channel"}
-    bot = jiraiya()
-    bot_user = bot.auth_test()["user_id"]
-    if not live:
-        return {"action": "would_pin", "channel": chan, "bot": bot_user}
+    if bot is None:
+        from automations.due_diligence.watch import _client as jiraiya
+        bot = jiraiya()
     try:
-        lucy().conversations_invite(channel=chan, users=bot_user)
+        me = (bot.auth_test() or {}).get("user_id")
+    except Exception as e:
+        return {"action": "no_jiraiya_token", "channel": chan, "error": str(e)[:120]}
+    if me != JIRAIYA:
+        return {"action": "no_jiraiya_token", "channel": chan,
+                "error": "Jiraiya's token isn't on this machine (set_dd_bot_token)"}
+    if not live:
+        return {"action": "would_pin", "channel": chan}
+    if lucy_cl is None:
+        from automations.brand_audit.social_inbox import _client as lucy
+        lucy_cl = lucy()
+    try:
+        lucy_cl.conversations_invite(channel=chan, users=JIRAIYA)
     except Exception as e:                        # already_in_channel is fine
         if "already_in_channel" not in str(e):
-            raise
+            return {"action": "invite_failed", "channel": chan, "error": str(e)[:120]}
     try:
-        for it in bot.pins_list(channel=chan).get("items") or []:
-            if any(el.get("action_id") == BUTTON
-                   for b in (it.get("message") or {}).get("blocks") or []
-                   for el in b.get("elements") or []):
-                return {"action": "already_pinned", "channel": chan}
+        if has_button(chan, bot):
+            return {"action": "already_pinned", "channel": chan}
     except Exception:
         pass
     r = bot.chat_postMessage(channel=chan, text="📸 New post", blocks=pin_blocks())
     # Jiraiya has pins:write + pins:read since 2026-11-10; Lucy's login is
     # the fallback. If neither can, the button is still there -- pin it by hand.
-    for who in (bot, lucy()):
+    err = ""
+    for who in (bot, lucy_cl):
         try:
             who.pins_add(channel=chan, timestamp=r["ts"])
             return {"action": "pinned", "channel": chan, "ts": r["ts"]}
         except Exception as e:                    # missing_scope / not_allowed
             err = str(e)[:120]
     return {"action": "posted_pin_by_hand", "channel": chan, "ts": r["ts"], "error": err}
+
+
+BUTTON_OK = ("pinned", "already_pinned", "would_pin")
+
+
+def pin(P, *, live: bool) -> Dict:
+    """The button for one office (by its profile) -- the --pin command."""
+    return add_button(P.slack_channel, live=live)
 
 
 def main(argv=None) -> int:
