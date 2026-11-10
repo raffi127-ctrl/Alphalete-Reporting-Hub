@@ -174,8 +174,39 @@ def probe(csv_path: Optional[Path], owner: str, day: dt.date) -> Path:
     return csv_path
 
 
+def coverage(csv_path: Optional[Path], day: dt.date) -> int:
+    """Read-only (Eve 11/10, "fiber teams"): every owner with open installs in
+    the next 7 days, and whether a Metrics thread already carries the board.
+    Owners marked NO THREAD are the ones nobody sees today."""
+    from automations.office_metrics import offices as om
+    if csv_path is None:
+        csv_path = pull.fetch(day)
+    rows = pull.read_rows(csv_path)
+    has = {o.owner.strip().casefold() for k, o in om.OFFICES.items()
+           if not o.nds and k not in om.SECTION_OVERRIDES}
+    has.add(DEFAULT_OWNER.casefold())                # Raf: daily_metrics
+    extra = [c for c in (rows[0].keys() if rows else [])
+             if "captain" in c.lower() or c.lower() in ("office", "icd")]
+    per = {}
+    for r in rows:
+        d = pull.parse_date(r.get(pull.INSTALL_DATE))
+        if d and day <= d <= day + dt.timedelta(days=6) and pull.is_open(r):
+            k = r.get(pull.OWNER, "").strip()
+            e = per.setdefault(k, {"n": 0, "today": 0,
+                                   "x": " | ".join(r.get(c, "") for c in extra)})
+            e["n"] += 1
+            e["today"] += d == day
+    print("COVERAGE {} rows; extra cols {}".format(len(rows), extra))
+    for k, e in sorted(per.items(), key=lambda kv: (kv[0].casefold() in has, -kv[1]["n"])):
+        print("COVERAGE {:<10} {:<28} week={:>3} today={:>3}  {}".format(
+            "thread" if k.casefold() in has else "NO THREAD", k, e["n"], e["today"], e["x"]))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="activations_today")
+    ap.add_argument("--coverage", action="store_true",
+                    help="read-only: owners with installs this week, with/without a thread")
     ap.add_argument("--owner", default=DEFAULT_OWNER)
     ap.add_argument("--day", default=None, help="YYYY-MM-DD (default: today CT)")
     ap.add_argument("--csv", default=None, help="Use this crosstab, skip Tableau")
@@ -188,6 +219,8 @@ def main(argv=None) -> int:
 
     day = dt.date.fromisoformat(args.day) if args.day else pull.central_today()
     csv_path = Path(args.csv) if args.csv else None
+    if args.coverage:
+        return coverage(csv_path, day)
     if args.probe:
         csv_path = probe(csv_path, args.owner, day)
         if not (args.post_slack or args.post_to or args.dm_user):
