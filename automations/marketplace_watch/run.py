@@ -91,6 +91,8 @@ def keep(card: dict, unknown_cities: set) -> Listing | None:
         return None
     title = card["title"]
     rest = title.lower()
+    for w in C.NOT_WHEELED:              # "office chairs, no wheels" = guest
+        rest = rest.replace(w, " guest ")
     wheeled = False
     for w in C.WHEELED_CHAIR:
         rest, n = re.subn(rf"{re.escape(w)}s?", " ", rest)
@@ -303,7 +305,11 @@ def main(argv=None) -> int:
     ap.add_argument("--mark-seen", action="store_true",
                     help="dry run still records items (to skip a backlog)")
     ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--search", action="append",
+                    help="test just this search (repeatable); default = all")
     a = ap.parse_args(argv)
+    if a.search:
+        C.SEARCHES = a.search
 
     if a.login:
         return login()

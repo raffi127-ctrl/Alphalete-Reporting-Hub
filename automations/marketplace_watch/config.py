@@ -24,8 +24,14 @@ SEARCHES = [
     "office furniture",
     "filing cabinet",
     "conference table",
-    # guest + lobby seating (Megan, 2026-11-10)
+    # guest + lobby seating (Megan, 2026-11-10): chairs that sit across
+    # from a desk for interviews — four legs / sled base, not wheels
     "guest chairs",
+    "side chairs",
+    "visitor chairs",
+    "accent chairs",
+    "armchair",
+    "stackable chairs",
     "reception chairs",
     "waiting room chairs",
     "lobby furniture",
@@ -41,9 +47,15 @@ SEARCHES = [
 # are cut out of the title first, so "Desk and Office Chair" still counts as
 # a desk, but "Swivel office chair" has nothing left and is dropped.
 WHEELED_CHAIR = [
-    "office chair", "desk chair", "computer chair", "task chair",
+    "desk swivel chair", "swivel desk chair", "office chair", "desk chair", "computer chair", "task chair",
     "executive chair", "gaming chair", "swivel", "rolling", "wheels",
     "casters", "ergonomic", "mesh",
+]
+
+# ...unless the title says it has NO wheels.
+NOT_WHEELED = [
+    "no wheels", "without wheels", "non rolling", "non-rolling",
+    "stationary", "sled base", "sled", "four legs", "4 legs",
 ]
 
 # A title must hit one of these to count as office furniture...
@@ -67,7 +79,8 @@ SKIP_WORDS = [
     "wanted", "iso", "looking for", "mat", "pad", "organizer", "monitor",
     "keyboard", "mouse", "printer", "dollhouse", "toy", "plant stand",
     "console", "dining", "kitchen", "bar table", "coffee table", "end table",
-    "nightstand", "entry table",
+    "nightstand", "entry table", "dinning", "vanity", "salon", "barber",
+    "hydraulic", "antenna", "hdtv", "tv",
 ]
 
 # City center coordinates for every town within ~20 miles. A city that
