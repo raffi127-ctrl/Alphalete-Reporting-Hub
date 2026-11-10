@@ -1063,6 +1063,76 @@ def first_time_owners(g, heads: int = MILESTONE_HEADS) -> List[str]:
     return out
 
 
+# ------------------------------------------------------------ 25 / 8 weeks --
+
+# Rafael 2026-11-09 (Org Active Headcount mail): "getting an 8 app average with
+# 25+ active heads is when you start promoting people". Megan: highlight the
+# weeks they hit 25/8 in light green — Rafael: "Sure lets do it!". Every week of
+# the Ongoing block, both cells of the pair (WE headcount + its App Avg), for
+# every owner. Same mechanics as the gold first-20+ rule above: one tagged
+# conditional-format rule, relative per row so the daily sort carries it, and
+# rewritten each run so a new week column / new owner is covered next morning.
+TARGET_HEADS, TARGET_AVG = 25, 8
+TARGET_TAG = "25 heads 8 app avg"
+TARGET_FILL = {"red": 0.714, "green": 0.843, "blue": 0.659}     # light green #B6D7A8
+
+
+def target_formula(og: dict, heads: int = TARGET_HEADS, avg: float = TARGET_AVG) -> str:
+    """Written for the block's top-left week cell (C). A cell lights when it is
+    a 'WE …' headcount of `heads`+ whose App Avg (right of it) is `avg`+, or an
+    App Avg of `avg`+ whose headcount (left of it) is `heads`+. N() turns blanks
+    and text into 0, so an empty week never lights."""
+    c0 = og["wcols"][0][0]
+    L, C, R = A(c0 - 1), A(c0), A(c0 + 1)
+    r0, h = og["rows"][0], og["hdr"]
+    return (f'=AND(N("{TARGET_TAG}")=0,OR('
+            f'AND(LEFT({C}${h},3)="WE ",LOWER({R}${h})="app avg",'
+            f'N({C}{r0})>={heads},N({R}{r0})>={avg}),'
+            f'AND(LOWER({C}${h})="app avg",LEFT({L}${h},3)="WE ",'
+            f'N({L}{r0})>={heads},N({C}{r0})>={avg})))')
+
+
+def target_requests(sheet_id: int, g, existing: List[dict]) -> List[dict]:
+    """Leave exactly one 25/8 rule on the tab, over every week column of the
+    Ongoing block. [] when the one there is already right."""
+    og = find_ongoing(g)
+    last = max([k for k, _ in og["wcols"]] + [a for a in og["avg"] if a])
+    rng = {"sheetId": sheet_id,
+           "startRowIndex": og["rows"][0] - 1, "endRowIndex": og["rows"][-1],
+           "startColumnIndex": og["wcols"][0][0] - 1, "endColumnIndex": last}
+    formula = target_formula(og)
+    rule = {"ranges": [rng], "booleanRule": {
+        "condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": formula}]},
+        "format": {"backgroundColor": TARGET_FILL}}}
+
+    def ours(cf):
+        vals = cf.get("booleanRule", {}).get("condition", {}).get("values", [])
+        return any(TARGET_TAG in str(v.get("userEnteredValue", "")) for v in vals)
+
+    mine = [i for i, cf in enumerate(existing) if ours(cf)]
+    if len(mine) == 1:
+        cf = existing[mine[0]]
+        if (cf["booleanRule"]["condition"]["values"][0]["userEnteredValue"] == formula
+                and cf.get("ranges") == [rng]):
+            return []
+    out = [{"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": i}}
+           for i in sorted(mine, reverse=True)]
+    out.append({"addConditionalFormatRule": {"rule": rule, "index": 0}})
+    return out
+
+
+def target_weeks(g) -> List[Tuple[str, str]]:
+    """(owner, 'WE M.D') for every pair the rule lights — for the run log."""
+    og = find_ongoing(g)
+    out = []
+    for r in og["rows"]:
+        for (k, we), a in zip(og["wcols"], og["avg"]):
+            hc, av = _num(_c(g, r, k)), _num(_c(g, r, a)) if a else None
+            if hc is not None and av is not None and hc >= TARGET_HEADS and av >= TARGET_AVG:
+                out.append((_c(g, r, 2), we))
+    return out
+
+
 def _num_f(s) -> float:
     return float(str(s).replace(",", "").replace("%", "").strip())
 
@@ -1244,6 +1314,24 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
     except Exception as e:                                         # noqa: BLE001
         # cosmetic: never hold the fill or the email over it, but say so
         logfn(f"  ⚠ first-20+ highlight NOT set -- {type(e).__name__}: {e}")
+
+    # Weeks at 25+ heads AND 8+ app avg -> light green (Rafael 2026-11-09)
+    try:
+        hits = target_weeks(V)
+        this_we = find_ongoing(V)["wcols"][0][1]
+        logfn(f"{TARGET_HEADS}+ heads with {TARGET_AVG}+ app avg: {len(hits)} owner-week(s); "
+              f"{this_we}: {', '.join(n for n, w in hits if w == this_we) or 'nobody'}")
+        # re-read: the gold rule above may have just been rewritten (indexes move)
+        md = ws.spreadsheet.fetch_sheet_metadata(
+            {"fields": "sheets(properties(sheetId),conditionalFormats)"})
+        existing = next((s.get("conditionalFormats", []) for s in md["sheets"]
+                         if s["properties"]["sheetId"] == ws.id), [])
+        treqs = target_requests(ws.id, V, existing)
+        logfn(f"  25/8 rule: {'up to date' if not treqs else ('rewriting' if apply_changes else 'would rewrite')}")
+        if apply_changes and treqs:
+            _retry(ws.spreadsheet.batch_update, {"requests": treqs})
+    except Exception as e:                                         # noqa: BLE001
+        logfn(f"  ⚠ 25/8 highlight NOT set -- {type(e).__name__}: {e}")
     # A day that could not be READ is a failure, not a quiet day (2026-09-24:
     # the tracker reader got "credit balance is too low" from the Anthropic API,
     # Wednesday stayed empty, the run exited 0 and nobody was told). Failing

@@ -849,3 +849,39 @@ class OrgHistory(unittest.TestCase):
         add_history(nums, hist, sun)
         self.assertEqual(nums["carlos"]["avg_weeks"], 4)
         self.assertEqual(nums["carlos"]["hc_avg"], [25] * 7)    # weeks 1..4 -> 10,20,30,40
+
+
+class TwentyFiveEightHighlight(unittest.TestCase):
+    """Rafael 2026-11-09: weeks at 25+ heads AND 8+ app avg go light green."""
+
+    def _g(self):
+        from automations.org_active_headcount import daily as d
+        hdr = ["All Campaings Ongoing Headcount", "", "WE 11.08", "App Avg",
+               "WE 11.01", "App Avg", "WE 10.25", "App Avg"]
+        rows = [
+            ["1", "Both", "25", "8.0", "30", "7.9", "24", "9.0"],
+            ["2", "Never", "40", "", "", "", "", ""],
+            ["3", "Later", "10", "2.0", "26", "10.6", "", ""],
+        ]
+        return d, [[], hdr, [], *rows, ["TOTALS", "", "75"]]
+
+    def test_only_25_and_8_together_count(self):
+        d, g = self._g()
+        self.assertEqual(d.target_weeks(g), [("Both", "WE 11.08"), ("Later", "WE 11.01")])
+
+    def test_formula_checks_both_cells_of_the_pair(self):
+        d, g = self._g()
+        self.assertEqual(
+            d.target_formula(d.find_ongoing(g)),
+            '=AND(N("25 heads 8 app avg")=0,OR('
+            'AND(LEFT(C$2,3)="WE ",LOWER(D$2)="app avg",N(C4)>=25,N(D4)>=8),'
+            'AND(LOWER(C$2)="app avg",LEFT(B$2,3)="WE ",N(B4)>=25,N(C4)>=8)))')
+
+    def test_rule_covers_every_week_and_is_not_stacked(self):
+        d, g = self._g()
+        add = d.target_requests(7, g, [])
+        rng = add[-1]["addConditionalFormatRule"]["rule"]["ranges"][0]
+        self.assertEqual((rng["startColumnIndex"], rng["endColumnIndex"]), (2, 8))
+        self.assertEqual((rng["startRowIndex"], rng["endRowIndex"]), (3, 6))
+        rule = add[-1]["addConditionalFormatRule"]["rule"]
+        self.assertEqual(d.target_requests(7, g, [rule]), [])
