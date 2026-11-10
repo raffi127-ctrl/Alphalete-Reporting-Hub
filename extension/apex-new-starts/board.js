@@ -43,7 +43,8 @@
     return left === 0 ? 'done' : left <= 2 ? 'close' : 'behind';
   }
 
-  const state = {office: '', week: '', weeks: [], people: [], showOff: false};
+  const state = {office: '', week: '', weeks: [], people: [], showOff: false,
+                 printRoom: ''};
 
   async function load(office, week) {
     state.office = office;
@@ -124,7 +125,17 @@
       html += '</div>';
     });
 
-    html += '<button id="bd-print" class="bd-primary">Print the sheets</button>';
+    // Print ONE classroom at a time (Megan, 2026-11-09: "a print option where
+    // I can just pick a classroom to print - one at a time if I want"). The
+    // leader running Tuesday AM wants Tuesday AM, not the whole week's stack
+    // with theirs somewhere in it. "All classrooms" is still there for the
+    // ICD who prints the lot on a Sunday night.
+    const rooms = grouped(shown).map(g => g.classroom);
+    html += '<div class="bd-print"><select id="bd-which">' +
+      '<option value="">All classrooms</option>' +
+      rooms.map(r => '<option' + (r === state.printRoom ? ' selected' : '') +
+                     ' value="' + esc(r) + '">' + esc(r) + '</option>').join('') +
+      '</select><button id="bd-print" class="bd-primary">Print</button></div>';
     root.innerHTML = html;
     wire(root);
   }
@@ -158,39 +169,66 @@
         render(root);
       };
     });
-    if (el('bd-print')) el('bd-print').onclick = () => printSheets();
+    if (el('bd-which')) el('bd-which').onchange = e => { state.printRoom = e.target.value; };
+    if (el('bd-print')) el('bd-print').onclick = () => printSheets(state.printRoom);
   }
 
-  // One printed sheet per classroom, each outstanding step a box to tick.
-  // Mirrors icd_onboarding.board.print_html so paper and screen agree.
-  function printSheets() {
+  // One printed sheet per classroom, laid out like Raf's OBCL: a row per
+  // person, a column per step, ticks shaded and blanks left open for the
+  // leader's pen. Mirrors icd_onboarding.board.print_html so paper and screen
+  // agree -- if one changes, change both.
+  //
+  // `room` prints that classroom alone; empty prints them all.
+  function printSheets(room) {
     const live = state.people.filter(p => !isOff(p));
+    const pages = grouped(live).filter(g => !room || g.classroom === room);
+    if (!pages.length) { alert('Nothing to print for that classroom.'); return; }
+    const cell = v => {
+      const t = String(v || '').trim();
+      if (!t) return '';
+      const dated = t.length === 10 && t[2] === '/' && t[5] === '/';
+      return (dated || t.toUpperCase() === 'TRUE') ? '\u2713' : t;
+    };
     let html = '<!doctype html><meta charset="utf-8"><title>Onboarding</title>' +
-      '<style>@page{margin:14mm}body{font:12pt/1.45 -apple-system,Helvetica,Arial,sans-serif}' +
+      '<style>@page{margin:10mm;size:landscape}' +
+      'body{font:10pt/1.3 -apple-system,Helvetica,Arial,sans-serif;color:#111}' +
       '.sheet{page-break-after:always}.sheet:last-child{page-break-after:auto}' +
-      'h1{font-size:20pt;margin:0 0 2pt}.sub{color:#555;font-size:10pt;margin-bottom:12pt}' +
-      '.who{border-left:4pt solid #ccc;padding:4pt 0 4pt 8pt;margin:0 0 12pt;page-break-inside:avoid}' +
-      '.b-done{border-left-color:#1e6b34;background:#E6F4EA}' +
-      '.b-close{border-left-color:#7a5a00;background:#FFF6DB}' +
-      '.b-behind{border-left-color:#8a1c13;background:#FDECEA}' +
-      '.nm{font-weight:700;font-size:13pt}.tag{font-size:9pt;font-weight:700;text-transform:uppercase;margin-left:6pt}' +
-      'ul{list-style:none;margin:4pt 0 0;padding-left:4pt}li{padding:2.5pt 0}' +
-      '.box{display:inline-block;width:11pt;height:11pt;border:1.2pt solid #333;' +
-      'margin-right:8pt;vertical-align:-1pt;border-radius:2pt}</style>';
-    grouped(live).forEach(g => {
+      'h1{font-size:18pt;margin:0 0 2pt}.sub{color:#555;font-size:9.5pt;margin-bottom:9pt}' +
+      'table{border-collapse:collapse;width:100%}th,td{border:.8pt solid #999;padding:4pt 5pt}' +
+      'thead th{background:#0f5c4d;color:#fff;font-size:8.5pt;text-align:center;vertical-align:bottom}' +
+      'thead th.nm{text-align:left;width:22%}' +
+      'tbody td{height:20pt;text-align:center;font-size:10pt}' +
+      'tbody td.nm{text-align:left;font-weight:600;white-space:nowrap}' +
+      'tbody tr:nth-child(even) td{background:#FAFAFA}' +
+      'td.on{background:#E6F4EA!important;color:#1e6b34;font-weight:700}' +
+      'td.val{font-size:8.5pt}' +
+      'td.nm span{font-weight:400;font-size:8pt;text-transform:uppercase;margin-left:5pt}' +
+      '.b-done td.nm{border-left:4pt solid #1e6b34}' +
+      '.b-close td.nm{border-left:4pt solid #7a5a00}' +
+      '.b-behind td.nm{border-left:4pt solid #8a1c13}' +
+      '.key{font-size:8.5pt;color:#555;margin-top:8pt}</style>';
+    pages.forEach(g => {
       const out = g.people.reduce((n, p) => n + remaining(p).length, 0);
       html += '<div class="sheet"><h1>' + esc(g.classroom) + '</h1>' +
-        '<div class="sub">Week of ' + esc(state.week) + ' · ' +
-        (out ? out + ' still to do' : 'everything done') + '</div>';
+        '<div class="sub">Week of ' + esc(state.week) + ' · ' + g.people.length +
+        ' people · ' + (out ? out + ' still to do' : 'everything done') + '</div>' +
+        '<table><thead><tr><th class="nm">Name</th>' +
+        STEPS.map(c => '<th>' + esc(label(c)) + '</th>').join('') +
+        '</tr></thead><tbody>';
       g.people.forEach(p => {
-        const left = remaining(p);
-        html += '<div class="who b-' + band(p) + '"><div class="nm">' + esc(who(p));
-        if (!left.length) { html += ' <span class="tag">done</span></div></div>'; return; }
-        html += ' <span class="tag">' + band(p) + '</span></div><ul>' +
-          left.map(s => '<li><span class="box"></span>' + esc(s) + '</li>').join('') +
-          '</ul></div>';
+        const b = band(p), left = remaining(p);
+        html += '<tr class="b-' + b + '"><td class="nm">' + esc(who(p)) +
+          '<span>' + (b === 'done' ? 'done'
+                      : (STEPS.length - left.length) + '/' + STEPS.length) +
+          '</span></td>' +
+          STEPS.map(c => {
+            const t = cell(p[c]);
+            const k = t === '\u2713' ? 'on' : (t ? 'on val' : '');
+            return '<td class="' + k + '">' + esc(t) + '</td>';
+          }).join('') + '</tr>';
       });
-      html += '</div>';
+      html += '</tbody></table><div class="key">A blank cell is one to tick off ' +
+        'here.</div></div>';
     });
     const w = window.open('', '_blank');
     w.document.write(html);
@@ -199,5 +237,6 @@
     w.print();
   }
 
-  window.LucyBoard = {load, render, state, remaining, band, grouped, counts};
+  window.LucyBoard = {load, render, state, remaining, band, grouped, counts,
+                      printSheets};
 })();

@@ -198,7 +198,11 @@ def test_two_people_with_no_email_are_still_two_people():
 def test_a_week_reads_all_seven_days_whichever_day_it_is_given(monkeypatch):
     """Given any date in the week, it reads that whole week -- not the next
     seven days from whenever it happened to run. All seven, because a training
-    day nobody expected is the one that would be missed (Megan, 11/08)."""
+    day nobody expected is the one that would be missed (Megan, 11/08).
+
+    SUNDAY TO SATURDAY (Megan, 11/09). Training runs on Saturdays, so a
+    Monday-start week reads a Saturday class into the FOLLOWING week and the
+    person prints on a sheet nobody is holding that day."""
     seen = []
 
     def fake_read(app, office, day, log=print):
@@ -207,9 +211,15 @@ def test_a_week_reads_all_seven_days_whichever_day_it_is_given(monkeypatch):
 
     monkeypatch.setattr(fdot, "read", fake_read)
     fdot.read_week(None, "11280", dt.date(2026, 11, 6), log=lambda *a: None)
-    assert seen[0] == dt.date(2026, 11, 2), "Monday of that week"
-    assert seen[-1] == dt.date(2026, 11, 8), "Sunday"
+    assert seen[0] == dt.date(2026, 11, 1), "Sunday of that week"
+    assert seen[-1] == dt.date(2026, 11, 7), "Saturday"
     assert len(seen) == 7
+
+    # The Saturday belongs to the week that started the Sunday BEFORE it, not
+    # to the one starting the day after.
+    seen.clear()
+    fdot.read_week(None, "11280", dt.date(2026, 11, 7), log=lambda *a: None)
+    assert seen[0] == dt.date(2026, 11, 1)
 
 
 def test_a_day_the_calendar_says_has_no_training_is_a_proven_zero(page):

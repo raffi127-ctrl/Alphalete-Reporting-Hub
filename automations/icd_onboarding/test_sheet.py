@@ -13,7 +13,8 @@ import pytest
 from automations.icd_onboarding import board as B
 from automations.icd_onboarding import sheet as S
 
-MONDAY = dt.date(2026, 11, 2)
+SUNDAY = dt.date(2026, 11, 8)   # the board's week starts on a Sunday
+MONDAY = SUNDAY                # older name, same week
 HEAD = list(B.COLUMNS) + [B.TERMINATED_AT]
 
 
@@ -119,7 +120,7 @@ def test_the_picker_is_offered_every_week_newest_first():
     rows = [_person("Ada Fournier"),
             _person("Bruno Castell", week=B.week_label(MONDAY + dt.timedelta(days=7)))]
     weeks = B.weeks_on(S.rows_of(FakeWS(rows).get_all_values()))
-    assert weeks == ["11/09/2026", "11/02/2026"]
+    assert weeks == ["11/15/2026", "11/08/2026"]
 
 
 def test_seeding_twice_adds_nobody_twice():

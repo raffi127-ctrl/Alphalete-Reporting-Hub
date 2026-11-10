@@ -12,7 +12,8 @@ import pytest
 
 from automations.icd_onboarding import board as B
 
-MONDAY = dt.date(2026, 11, 2)
+SUNDAY = dt.date(2026, 11, 8)   # the board's week starts on a Sunday
+MONDAY = SUNDAY                # older name, same week
 
 
 def _cal(*names):
@@ -28,7 +29,7 @@ def test_the_seed_fills_identity_and_nothing_else():
     Writing a blank here would be this module claiming to know something."""
     rows = B.seed_rows(_cal("Ada Fournier"), started=MONDAY)
     assert rows[0]["Name"] == "Ada" and rows[0]["Last Name"] == "Fournier"
-    assert rows[0]["Start"] == "11/02/2026"
+    assert rows[0]["Start"] == "11/08/2026"
     for col in B.TICKS:
         assert col not in rows[0], "%s is not the seed's to write" % col
     assert B.CLASSROOM not in rows[0], "the classroom is the ICD's to set"
@@ -110,12 +111,21 @@ def test_the_identity_columns_are_not_tickable_either():
 
 # ------------------------------------------------------------------ the week
 
-def test_the_week_column_holds_the_monday_whichever_day_is_given():
-    """One tab per office; the WEEK is a column, so any day in the week lands
-    on the same Monday."""
-    assert B.week_label(dt.date(2026, 11, 8)) == "11/02/2026"
-    assert B.week_label(dt.date(2026, 11, 2)) == "11/02/2026"
+def test_the_week_runs_sunday_to_saturday():
+    """Megan, 2026-11-09: "every new start scheduled for that week Sunday -
+    Sat". Training runs on Saturdays, so a Monday-start week would split a
+    Saturday classroom off into the following week's column."""
+    sunday, saturday = dt.date(2026, 11, 8), dt.date(2026, 11, 14)
+    for day in (sunday, dt.date(2026, 11, 9), saturday):
+        assert B.week_label(day) == "11/08/2026", day
+    # The day either side belongs to the week either side, not this one.
+    assert B.week_label(sunday - dt.timedelta(days=1)) == "11/01/2026"
+    assert B.week_label(saturday + dt.timedelta(days=1)) == "11/15/2026"
+
+
+def test_one_tab_per_office_and_the_week_is_a_column():
     assert B.TAB == "Onboarding"
+    assert B.WEEK in B.COLUMNS
 
 
 def test_the_columns_come_from_the_real_obcl():

@@ -222,21 +222,27 @@ def read(app, office_id: str, day: dt.date, log=print) -> List[Dict]:
 
 def read_week(app, office_id: str, week_start: dt.date, log=print,
               days: int = 7) -> List[Dict]:
-    """Monday to Sunday of one week, pooled and de-duplicated.
+    """SUNDAY to SATURDAY of one week, pooled and de-duplicated.
+
+    Sunday-start, matching the board (Megan, 2026-11-09: "every new start
+    scheduled for that week Sunday - Sat"). Training runs on Saturdays, and a
+    Monday-start week puts a Saturday classroom in the following week's
+    column -- the person then prints on a sheet nobody is holding that day.
 
     Every day is read. A day that cannot be read raises rather than being
     skipped quietly -- a missing Tuesday is a missing new start, and the first
     anybody would hear of it is a rep with no payroll record.
     """
-    monday = week_start - dt.timedelta(days=week_start.weekday())
+    from automations.icd_onboarding.board import week_start_of
+    sunday = week_start_of(week_start)
     out: List[Dict] = []
     for i in range(days):
-        out.extend(read(app, office_id, monday + dt.timedelta(days=i), log=log))
+        out.extend(read(app, office_id, sunday + dt.timedelta(days=i), log=log))
     pooled = showed_up([{"first": p["first_name"], "last": p["last_name"],
                          "phone": p["phone"], "email": p["email"],
                          "show": "Yes", "section": SECTION} for p in out])
     log("  week of %s: %d showed up (%d rows before de-duplicating)"
-        % (monday, len(pooled), len(out)))
+        % (sunday, len(pooled), len(out)))
     return pooled
 
 

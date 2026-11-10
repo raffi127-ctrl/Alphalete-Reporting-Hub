@@ -114,13 +114,26 @@ def _fold(text) -> str:
 TAB = "Onboarding"
 
 
-def monday_of(day: dt.date) -> dt.date:
-    return day - dt.timedelta(days=day.weekday())
+def week_start_of(day: dt.date) -> dt.date:
+    """The SUNDAY of the week that `day` falls in.
+
+    Sunday to Saturday, not Monday to Sunday (Megan, 2026-11-09: "I want to see
+    every new start scheduled for that week Sunday - Sat"). Training runs on
+    Saturdays, so a Monday-start week splits a Saturday classroom off from the
+    week it belongs to and the person lands on the wrong sheet.
+    """
+    return day - dt.timedelta(days=(day.weekday() + 1) % 7)
+
+
+# Older name. Kept pointing at the same function rather than deleted, so an
+# unconverted caller gets the Sunday instead of silently working a week that
+# is one day out from everybody else's.
+monday_of = week_start_of
 
 
 def week_label(week_start: dt.date) -> str:
-    """'11/02/2026' -- the Monday, which is what the Week of column holds."""
-    return monday_of(week_start).strftime("%m/%d/%Y")
+    """'11/08/2026' -- the Sunday, which is what the Week of column holds."""
+    return week_start_of(week_start).strftime("%m/%d/%Y")
 
 
 def tab_name(week_start: dt.date) -> str:

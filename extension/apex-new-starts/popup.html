@@ -52,6 +52,11 @@
   .bd-acts input { flex: 1; padding: 4px 6px; font-size: 12px; }
   .bd-acts button { width: auto; margin: 0; padding: 4px 10px; font-size: 12px;
                     background: #e4e9ef; color: #1d2330; }
+  /* The print row: pick one classroom, or all, then print. Side by side so
+     it reads as one action rather than two separate things to find. */
+  .bd-print { display: flex; gap: 6px; margin-top: 12px; align-items: stretch; }
+  .bd-print select { flex: 1; margin: 0; }
+  .bd-print .bd-primary { width: auto; margin: 0; padding: 8px 18px; }
   .bd-primary { margin-top: 12px; }
   .bd-none { color: #666; font-size: 13px; }
 </style>
