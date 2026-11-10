@@ -86,14 +86,15 @@ class Compute(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         r = rows[0]
         self.assertEqual(len(r), 16)
-        self.assertEqual(r[4], "HENRY W")
-        self.assertEqual(r[9], "port")               # was CRU/IRU; export has no reason
-        self.assertEqual(r[8], "11/3/2026")          # real disconnect date
+        self.assertIsNone(r[C.H_ALL_ORDERS_F]); self.assertIsNone(r[C.H_ALL_WIRELESS_F])
+        self.assertEqual((C.H_ALL_ORDERS_F, C.H_ALL_WIRELESS_F), (3, 4))
+        self.assertEqual(r[5], "HENRY W")
+        self.assertEqual(r[10], "port")              # was CRU/IRU; export has no reason
+        self.assertEqual(r[9], "11/3/2026")          # real disconnect date
         self.assertEqual(r[1], "11/24/2026")         # posted 10/25 + 30
-        self.assertEqual(r[10], "2 (2W)")
-        self.assertEqual(r[11], "BYOD")
-        self.assertIsNone(r[3]); self.assertIsNone(r[13])
-        self.assertEqual(r[12], "Wireless")          # product, as shown
+        self.assertEqual(r[11], "2 (2W)")
+        self.assertEqual(r[12], "BYOD")
+        self.assertEqual(r[13], "Wireless")          # product, as shown (no Notes column)
         self.assertEqual(r[14], "BYODs")             # box row, what the Filter picks
         self.assertEqual(r[15], 0)
 
@@ -112,12 +113,12 @@ class Compute(unittest.TestCase):
                      byod=False, tn_type="new", posted=dt.date(2026, 10, 28),
                      status_date_d=dt.date(2026, 11, 4))
         rows = C.helper_block(list(self.lines) + [late, air, phone], TODAY)
-        self.assertEqual([(r[4], r[14], r[15]) for r in rows],
+        self.assertEqual([(r[5], r[14], r[15]) for r in rows],
                          [("EARLY A", "Air", 0), ("HENRY W", "BYODs", 1),
                           ("NEW N", "All Wireless", 0), ("LATE L", "BYODs", 0)])
         self.assertEqual([r[1] for r in rows],
                          ["11/19/2026", "11/24/2026", "11/27/2026", "11/29/2026"])
-        self.assertEqual(rows[2][9], "new")          # a new-number phone is listed too
+        self.assertEqual(rows[2][10], "new")         # a new-number phone is listed too
         # and the list is exactly the box's disconnects
         box = C.product_box(list(self.lines) + [late, air, phone], TODAY)
         self.assertEqual(sum(r[2] for r in rows), box["all_orders"]["disc"])
@@ -135,18 +136,28 @@ class Compute(unittest.TestCase):
 
     def test_rolloff_formulas_follow_the_box(self):
         from automations.nds_churn import sheet as S
+        from automations.vantura_churn import fill as VF
         self.assertEqual(S.FILTER_BASE, {"All Orders": "$B$5", "All Wireless": "$B$7",
                                          "BYODs": "$B$9", "Air": "$B$11", "Internet": "$B$12"})
         self.assertEqual(S.FILTER_OPTIONS[0], "All Orders")
-        f = S.rolloff_formula("$B$3").format(
-            r=2, cap=41, fall="Q", lines="R", key="AD", rem="AE", cust="T",
-            n0="P", n1="Q", wl="x", air="y", inet="z")
-        self.assertTrue(f.startswith('=IFERROR(SUMPRODUCT(($Q$2:$Q$41>$Q2)*'
-                                     '(($B$3="All Orders")*($AD$2:$AD$41<>"Internet")'
-                                     '*($AD$2:$AD$41<>"")+($AD$2:$AD$41=$B$3))'
-                                     '*$R$2:$R$41)/'), f)
-        self.assertTrue(f.endswith('IF($B$3="All Orders",$B$5,IF($B$3="All Wireless",$B$7,'
-                                   'IF($B$3="BYODs",$B$9,IF($B$3="Air",$B$11,$B$12)))),"")'), f)
+        # D / E: the All Orders % and the All Wireless % after this group
+        # rolls off, whatever the Filter shows (Carlos 2026-11-10 pm)
+        fm = S.rolloff_formulas()
+        self.assertEqual(sorted(fm), [3, 4])
+        ph = dict(r=2, cap=41, fall="Q", lines="R", key="AD", rem="AE", cust="T",
+                  n0="P", n1="Q", wl="x", air="y", inet="z")
+        self.assertEqual(fm[3].format(**ph),
+                         '=IFERROR(SUMPRODUCT(($Q$2:$Q$41>$Q2)*($AD$2:$AD$41<>"Internet")'
+                         '*($AD$2:$AD$41<>"")*$R$2:$R$41)/$B$5,"")')
+        self.assertEqual(fm[4].format(**ph),
+                         '=IFERROR(SUMPRODUCT(($Q$2:$Q$41>$Q2)*($AD$2:$AD$41="All Wireless")'
+                         '*$R$2:$R$41)/$B$7,"")')
+        self.assertEqual(len(S.LIST_HEADERS), 14)
+        self.assertEqual(S.LIST_HEADERS[3:6], ("All Orders % After Rolloff",
+                                               "All Wireless % After Rolloff", "Customer"))
+        self.assertNotIn("Notes", S.LIST_HEADERS)
+        # every other churn tab keeps the churn-after + notes defaults
+        self.assertEqual(VF.DEFAULT_FORMULAS, {3: VF.U_FORMULA_T, 13: VF.AC_FORMULA})
         a16 = S.filter_formula("P", "AC", "AD", 41, "$B$3")
         # the prefix fill.helper_bounds parses, the '=$B$3' viewing_cell finds
         self.assertTrue(a16.startswith('=IFNA(FILTER($P$2:$AC$41,$AD$2:$AD$41<>"",('), a16)

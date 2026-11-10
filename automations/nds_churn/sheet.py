@@ -6,7 +6,11 @@ captainship, we wouldn't need"), reshaped once by --setup:
   * same control box, dropdown, FILTER / SUMIF helper block (P:AE), notes
     lookup (P99+), per-rep list (AG) -- so vantura_churn.fill writes it
     unchanged;
-  * column J of the rolloff list = Disc Reason instead of CRU/IRU;
+  * the rolloff list (A15:N) = Days Left | Fall-Off Date | Lines |
+    All Orders % After Rolloff | All Wireless % After Rolloff | Customer |
+    Sales Rep | Order / Activation / Disconnect Date | Line · IF/OOF |
+    Lines on Acct | Phone / BYOD | Product Type (LIST_HEADERS -- no CRU/IRU,
+    no Notes; the two churn-after columns since 11/10 pm);
   * the tier charts show the SOW's NDS tiers (comp.py) -- what a port line
     pays at each 0-30 day band, at the 90-day tier the latest Churn Notice
     placed us; the live band is marked "◀ now" by the daily run;
@@ -28,6 +32,7 @@ import re
 from typing import Optional, Tuple
 
 from automations.nds_churn import comp
+from automations.nds_churn import compute as C
 from automations.recruiting_report.fill import _retry, open_by_key
 from automations.vantura_churn import fill as VF
 
@@ -37,7 +42,6 @@ SRC_TAB = "LUCY CHURN"
 AFTER_TAB = "NDS Order Log"          # the new tabs sit right after this one
 TITLE = "NDS — 0–30 Day Rolloff List — soonest to fall off"
 STATUS_CELL = "A13"
-REASON_HEADER = "Line · IF/OOF"      # was CRU/IRU; the NDS export has no disconnect reason
 TIER_ROWS = (4, 3, 2, 1)             # best band first, rows 7..10
 
 
@@ -90,7 +94,7 @@ def ensure_churn_tab(sh, log=print) -> Tuple[object, bool]:
     _retry(lambda: ws.batch_update([
         {"range": "A1", "values": [[TITLE]]},
         {"range": "B5:B7", "values": [[0], [0], [0]]},
-        {"range": "J15", "values": [[REASON_HEADER]]},
+        {"range": "A15:N15", "values": [list(LIST_HEADERS)]},
         {"range": STATUS_CELL, "values": [["(first NDS churn run pending)"]]},
     ], value_input_option="USER_ENTERED"))
     reqs = [
@@ -116,7 +120,7 @@ def ensure_churn_tab(sh, log=print) -> Tuple[object, bool]:
             "properties": {"pixelSize": 170}, "fields": "pixelSize"}},
     ]
     _retry(lambda: sh.batch_update({"requests": reqs}))
-    log(f"  ✓ '{TAB}': cleared B2B data, J15 = {REASON_HEADER}, status line "
+    log(f"  ✓ '{TAB}': cleared B2B data, row 15 = LIST_HEADERS, status line "
         f"merged at A13:N14")
     return ws, True
 
@@ -138,7 +142,6 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
             comp.BYOD_0_30_LABEL[t], f"${boof}", f"${binfp}",
         ])
     _retry(lambda: ws.batch_update([
-        {"range": "J15", "values": [[REASON_HEADER]]},
         {"range": "H4", "values": [[
             f"Churn Tiers — Port Non-BYOD (paid at 90-day Tier {t90n})"]]},
         {"range": "K4", "values": [[
@@ -149,8 +152,8 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
         {"range": "H11:N12", "values": [[""] * 7, [""] * 7]},
     ], value_input_option="USER_ENTERED"))
     # Layout the duplicate carried from the B2B tab and the theme leaves
-    # alone: stray fills on the two spare chart rows, a bold B2B marker row,
-    # and a 'Product Type' header clipped at 60px. Idempotent, so every run
+    # alone: stray fills on the two spare chart rows and a bold B2B marker
+    # row (column widths: ensure_rolloff_layout). Idempotent, so every run
     # re-asserts it.
     white = {"red": 1, "green": 1, "blue": 1}
     reqs = [
@@ -167,10 +170,6 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
                             "horizontalAlignment": "CENTER"}},
                         "fields": "userEnteredFormat.textFormat.bold,"
                                   "userEnteredFormat.horizontalAlignment"}},
-        {"updateDimensionProperties": {
-            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                      "startIndex": 12, "endIndex": 13},
-            "properties": {"pixelSize": 100}, "fields": "pixelSize"}},
     ]
     _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
     log(f"  ✓ {ws.title}: tier charts written (90-day Tier {t90n}/{t90b}; "
@@ -202,46 +201,73 @@ BOX_NOTE = ("Top-left box: phone lines (ported or new-number) + Air; no tablets,
             "last 30 days, 31-60 = the 30 before).")
 
 # The 0-30 day rolloff list follows the box (Carlos 2026-11-10: "adjust the
-# 0-30 day portion to reflect the same way"): the Filter picks a box row, the
-# list shows that row's disconnects, and 'Churn % After Rolloff' divides what
-# is still on the report by THAT row's activations (B5 / B7 / B9 / B11 /
-# B12). "All Orders" = every row but Internet (the box's own definition).
+# 0-30 day portion to reflect the same way"): the Filter picks a box row and
+# the list shows that row's disconnects ("All Orders" = every row but
+# Internet, the box's own definition). Each listed group then carries the
+# churn the box will show once it has aged off, for All Orders AND All
+# Wireless side by side (Carlos 2026-11-10 pm: "churn after roll off we
+# should have it show the All orders and the all wireless % numbers after
+# those lines roll off"): that box row's lines still on the report ÷ its
+# activations (B5 / B7).
 FILTER_BASE = {label: f"$B${BOX_FIRST_ROW + i}"
                for i, (_k, label, kind) in enumerate(BOX_ROWS) if kind == "act"}
 FILTER_OPTIONS = tuple(FILTER_BASE)             # All Orders, All Wireless, BYODs, Air, Internet
 FILTER_EMPTY = "no disconnects in this view"
+CHURN_AFTER = ("All Orders", "All Wireless")    # the two churn-after columns, D then E
+LIST_HEADERS = ("Days Left", "Fall-Off Date", "Lines",
+                "All Orders % After Rolloff", "All Wireless % After Rolloff",
+                "Customer", "Sales Rep", "Order Date (Sold)", "Activation Date",
+                "Disconnect Date", "Line · IF/OOF", "Lines on Acct", "Phone / BYOD",
+                "Product Type")                 # A15:N15 = compute.helper_block[:14]
+# Column widths A:N, re-asserted every run: the box labels (A), the two
+# churn-after headers (D/E), the rep names and the dates need the room; H:N
+# double as the tier charts' columns.
+LIST_COL_PX = (170, 124, 103, 195, 210, 170, 230, 140, 140, 140, 140, 120, 150, 110)
 ROLLOFF_SUBTITLE = ("Days left = (Posted+30) − Today. Filter = a box row (All Orders / "
-                    "All Wireless / BYODs / Air / Internet). Churn % After Rolloff = "
-                    "that row's lines still on the 0–30 report once this group has "
-                    "aged off ÷ that row's activations.")
+                    "All Wireless / BYODs / Air / Internet) — which disconnects are "
+                    "listed. All Orders % / All Wireless % After Rolloff = that box "
+                    "row's lines still on the 0–30 report once this group has aged "
+                    "off ÷ its activations (B5 / B7).")
 FILTER_HINT = "◀ pick a box row to filter the rolloff list below"
+assert len(LIST_HEADERS) == len(LIST_COL_PX) == VF.H_WIDTH - 2
+assert LIST_COL_PX[0] == BOX_COL_A_PX
+assert LIST_HEADERS[C.H_ALL_ORDERS_F].startswith(CHURN_AFTER[0])
+assert LIST_HEADERS[C.H_ALL_WIRELESS_F].startswith(CHURN_AFTER[1])
+
+
+def _row_mask(label: str) -> str:
+    """Helper-block rows of ONE box row as a 0/1 array over the key column
+    ({key} / {cap} left for fill.update_churn_tab to fill)."""
+    k = "${key}$2:${key}${cap}"
+    if label == "All Orders":
+        return '(%s<>"Internet")*(%s<>"")' % (k, k)
+    return '(%s="%s")' % (k, label)
 
 
 def _view_mask(view: str) -> str:
-    """Helper-block rows in the picked view as a 0/1 array over the key
-    column ({key} / {cap} left for fill.update_churn_tab to fill)."""
+    """Helper-block rows in the box row the Filter cell `view` names, as a
+    0/1 array over the key column ({key} / {cap} left for
+    fill.update_churn_tab to fill)."""
     k = "${key}$2:${key}${cap}"
     return ('((%s="All Orders")*(%s<>"Internet")*(%s<>"")+(%s=%s))'
             % (view, k, k, k, view))
 
 
-def _base_pick(view: str) -> str:
-    """The box cell the picked view divides by (nested IF, last option as
-    the fallback)."""
-    opts = list(FILTER_BASE.items())
-    expr = opts[-1][1]
-    for label, cell in reversed(opts[:-1]):
-        expr = f'IF({view}="{label}",{cell},{expr})'
-    return expr
-
-
-def rolloff_formula(view: str) -> str:
-    """'Churn % After Rolloff' template for fill.update_churn_tab
-    (churn_formula=): lines of the picked box row that fall off AFTER this
-    group ÷ that row's activations. `view` = the Filter cell, e.g. '$B$3'."""
+def churn_after_formula(label: str) -> str:
+    """Template for one churn-after column (fill.update_churn_tab fills the
+    column letters): `label`'s lines that fall off AFTER this group ÷ that
+    box row's activations."""
     return ('=IFERROR(SUMPRODUCT((${fall}$2:${fall}${cap}>${fall}{r})*'
-            + _view_mask(view) + '*${lines}$2:${lines}${cap})/'
-            + _base_pick(view) + ',"")')
+            + _row_mask(label) + '*${lines}$2:${lines}${cap})/'
+            + FILTER_BASE[label] + ',"")')
+
+
+def rolloff_formulas() -> dict:
+    """{helper offset: template} for fill.update_churn_tab(formulas=): the
+    All Orders % and All Wireless % after-rolloff columns, nothing else (no
+    customer-notes lookup on this tab)."""
+    return {C.H_ALL_ORDERS_F: churn_after_formula(CHURN_AFTER[0]),
+            C.H_ALL_WIRELESS_F: churn_after_formula(CHURN_AFTER[1])}
 
 
 def filter_formula(first: str, last: str, key: str, cap: int, view: str) -> str:
@@ -254,12 +280,14 @@ def filter_formula(first: str, last: str, key: str, cap: int, view: str) -> str:
 
 
 def ensure_rolloff_layout(ws, log=print) -> str:
-    """Re-assert the rolloff list's controls (idempotent, every run): the
+    """Re-assert the rolloff list's layout (idempotent, every run): the
     A16 FILTER over the box-row key, the Filter dropdown's choices
     (FILTER_OPTIONS; the selection is kept while valid, else All Orders),
-    the subtitle (A2) and the hint beside the dropdown. Reads the block's
-    CURRENT bounds, never a constant, and runs before update_churn_tab
-    (which may grow the ranges). Returns the Filter cell as '$B$3'."""
+    the subtitle (A2), the hint beside the dropdown, the row-15 headers
+    (LIST_HEADERS), the column widths (LIST_COL_PX) and the number formats
+    of the spilled rows. Reads the block's CURRENT bounds, never a constant,
+    and runs before update_churn_tab (which may grow the ranges). Returns
+    the Filter cell as '$B$3'."""
     b = VF.helper_bounds(ws)
     f0, cap = b["f0"], b["cap"]
     first, last = VF._colletter(f0), VF._colletter(f0 + VF.H_WIDTH - 3)   # the 14 shown columns
@@ -285,6 +313,13 @@ def ensure_rolloff_layout(ws, log=print) -> str:
     hint = _retry(lambda: ws.get(hint_cell))
     cur_a2 = str(a2[0][0]) if a2 and a2[0] else ""
     cur_hint = str(hint[0][0]) if hint and hint[0] else ""
+    hdr = _retry(lambda: ws.get("A15:N15"))
+    cur_hdr = tuple(((hdr[0] if hdr else []) + [""] * len(LIST_HEADERS))[:len(LIST_HEADERS)])
+    cmeta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata({
+        "ranges": [f"'{ws.title}'!A1:{VF._colletter(len(LIST_COL_PX) - 1)}1"],
+        "fields": "sheets(data(columnMetadata(pixelSize)))"}))
+    cur_px = [c.get("pixelSize") for c in
+              cmeta["sheets"][0].get("data", [{}])[0].get("columnMetadata", [])]
 
     done = []
     if have != FILTER_OPTIONS:
@@ -308,20 +343,36 @@ def ensure_rolloff_layout(ws, log=print) -> str:
     if cur_hint != FILTER_HINT:
         updates.append({"range": hint_cell, "values": [[FILTER_HINT]]})
         done.append(f"{hint_cell} hint")
+    if cur_hdr != LIST_HEADERS:
+        updates.append({"range": "A15:N15", "values": [list(LIST_HEADERS)]})
+        done.append("row 15 headers")
     if updates:
         _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
-    # The list's date columns (Fall-Off, Order, Activation, Disconnect) get
-    # an explicit date format on every row the FILTER can spill into: the
-    # IFNA wrapper leaves spilled dates as bare serials otherwise (11/10:
-    # only row 16, formatted at setup, read as a date).
-    date_fmt = {"userEnteredFormat": {"numberFormat": {"type": "DATE",
-                                                       "pattern": "mm/dd/yyyy"}}}
-    _retry(lambda: ws.spreadsheet.batch_update({"requests": [
-        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 15,
-                                  "endRowIndex": 14 + cap,
-                                  "startColumnIndex": c0, "endColumnIndex": c1},
-                        "cell": date_fmt, "fields": "userEnteredFormat.numberFormat"}}
-        for c0, c1 in ((1, 2), (6, 9))]}))          # B, G:I
+    reqs = [{"updateDimensionProperties": {
+                "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                          "startIndex": i, "endIndex": i + 1},
+                "properties": {"pixelSize": px}, "fields": "pixelSize"}}
+            for i, px in enumerate(LIST_COL_PX)
+            if i >= len(cur_px) or cur_px[i] != px]
+    if reqs:
+        done.append(f"{len(reqs)} column width(s)")
+    # Number formats on every row the FILTER can spill into: the IFNA
+    # wrapper leaves spilled dates as bare serials otherwise (11/10: only
+    # row 16, formatted at setup, read as a date), and the columns moved
+    # one right on 11/10 pm (E = All Wireless %, G = Sales Rep, J =
+    # Disconnect Date), so each gets its own type -- B, H:J dates, D:E
+    # percentages, G plain text.
+    def _fmt(c0, c1, number_format):
+        return {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 15,
+                                         "endRowIndex": 14 + cap,
+                                         "startColumnIndex": c0, "endColumnIndex": c1},
+                               "cell": {"userEnteredFormat": {"numberFormat": number_format}},
+                               "fields": "userEnteredFormat.numberFormat"}}
+    date_fmt = {"type": "DATE", "pattern": "mm/dd/yyyy"}
+    reqs += [_fmt(1, 2, date_fmt), _fmt(7, 10, date_fmt),
+             _fmt(3, 5, {"type": "PERCENT", "pattern": "0.00%"}),
+             _fmt(6, 7, {"type": "TEXT"})]
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
     log(f"  ✓ {ws.title}: rolloff list follows the box "
         f"({'; '.join(done) if done else 'already in place'}; block {first}:{last}, "
         f"key {key}, rows to {cap}, view {vabs})")

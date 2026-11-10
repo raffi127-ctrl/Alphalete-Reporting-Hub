@@ -126,6 +126,11 @@ def open_sheet(sheet_id: str = None):
 H_LINES, H_CHURN_F, H_CUSTOMER = 2, 3, 4
 H_NOTES_F, H_KEY, H_REMAINING = 13, 14, 15
 H_WIDTH = 16
+# Helper offsets that carry a formula (update_churn_tab): the per-row
+# churn-after column and the customer-notes lookup. A tab laid out
+# differently passes its own map as `formulas=` (NDS CHURN: two churn-after
+# columns at +3/+4, no notes).
+DEFAULT_FORMULAS = {H_CHURN_F: U_FORMULA_T, H_NOTES_F: AC_FORMULA}
 # Gap between the helper block and the per-rep list.
 REP_GAP = 2
 # Keep every churn tab's helper formulas covering at least this many rows.
@@ -747,13 +752,15 @@ def update_churn_tab(ws: gspread.Worksheet, bases: dict,
                      helper_rows: list[list], log=print,
                      base_cells: tuple = DEFAULT_BASE_CELLS,
                      write_bases: bool = True,
-                     churn_formula: str = None) -> None:
+                     formulas: dict = None) -> None:
     """`base_cells` = the (Wireless, Air, Internet) activation-base cells the
     per-row 'Churn % After Rolloff' formulas divide by; `write_bases=False`
     leaves B5:B7 to the caller (the NDS tab draws its own box there);
-    `churn_formula` = a template used instead of U_FORMULA_T for that column
-    (placeholders r, cap, fall, lines, rem, key, cust, n0, n1, wl, air, inet
-    -- nds_churn.sheet.rolloff_formula). Every other tab keeps the default."""
+    `formulas` = {helper offset: template} written into every row INSTEAD
+    of DEFAULT_FORMULAS (placeholders r, cap, fall, lines, rem, key, cust,
+    n0, n1, wl, air, inet -- nds_churn.sheet.rolloff_formulas puts two
+    churn-after columns at +3/+4 and no notes lookup). Every other tab
+    keeps the defaults."""
     b = helper_bounds(ws)
     f0, cap = b["f0"], b["cap"]
     n = len(helper_rows)
@@ -780,15 +787,15 @@ def update_churn_tab(ws: gspread.Worksheet, bases: dict,
             "cust": _colletter(f0 + H_CUSTOMER),
             "n0": _colletter(f0), "n1": _colletter(f0 + 1),
             "fall": _colletter(f0 + 1), "lines": _colletter(f0 + H_LINES)}
-    tmpl = churn_formula or U_FORMULA_T
+    fm = DEFAULT_FORMULAS if formulas is None else formulas
     block = []
     for i, row in enumerate(helper_rows):
         r = i + 2
         vals = list(row)
-        vals[H_CHURN_F] = tmpl.format(
-            r=r, cap=cap, wl=base_cells[0], air=base_cells[1], inet=base_cells[2],
-            **cols)
-        vals[H_NOTES_F] = AC_FORMULA.format(r=r, **cols)
+        for off, tmpl in fm.items():
+            vals[off] = tmpl.format(
+                r=r, cap=cap, wl=base_cells[0], air=base_cells[1],
+                inet=base_cells[2], **cols)
         block.append(vals)
     # Pad to full capacity — one write both fills and clears yesterday's tail.
     block += [[""] * H_WIDTH for _ in range(cap - 1 - n)]

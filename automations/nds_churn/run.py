@@ -288,11 +288,12 @@ def main(argv=None) -> int:
             step(ws, log=log)
         except Exception as e:  # noqa: BLE001 -- never block the daily write
             log(f"  ⚠ {step.__name__} skipped: {e}")
-    # The rolloff list follows the box: Filter = a box row, the per-row
-    # 'Churn % After Rolloff' divides by that row's activations.
-    view = S.ensure_rolloff_layout(ws, log=log)
+    # The rolloff list follows the box: Filter = a box row; every listed
+    # group carries the All Orders % and the All Wireless % the box will
+    # show once it has aged off (D / E).
+    S.ensure_rolloff_layout(ws, log=log)
     VF.update_churn_tab(ws, summary["base"], helper, log=log, write_bases=False,
-                        churn_formula=S.rolloff_formula(view))
+                        formulas=S.rolloff_formulas())
     for b in [b for b in C.BUCKETS if office[b]["rate"] is None]:
         office[b]["rate"] = 0.0               # the writer logs rate:.1%
     VF.update_activation_rates(ws, office, reps, log=log)   # E5/F5 + the per-rep list
