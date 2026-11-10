@@ -119,28 +119,32 @@ def find_rep() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M")
     with tableau_session(verbose=True) as page:
-        page.goto(VIEW_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(15_000)
-        hrefs = page.eval_on_selector_all(
-            "a[href*='/workbooks/']", "els => els.map(e => e.getAttribute('href'))")
-        wb = next((h for h in hrefs if re.search(r"/workbooks/\d+", h or "")), None)
-        print("workbook link:", wb, "| all:", hrefs[:5])
+        # The workbook pages are virtualized (an anchor sweep returns 0 views,
+        # 11/10), so ask the vizportal API the Tableau UI itself calls.
+        from automations.recruiting_report import probe_b2b_views as _pv
+        page.goto("https://us-east-1.online.tableau.com/#/site/sci/workbooks",
+                  wait_until="domcontentloaded")
+        page.wait_for_timeout(12_000)
+        st, data = _pv._call(page, "getWorkbooks", {
+            "filter": {"operator": "and", "clauses": []},
+            "order": [{"field": "name", "ascending": True}],
+            "page": {"startIndex": 0, "maxItems": 500}})
+        wbs = (data.get("result") or {}).get("workbooks") or []
+        wb = next((w for w in wbs if WORKBOOK.casefold()
+                   in (w.get("repositoryUrl") or "").casefold()), None)
+        print("site workbooks:", len(wbs), "(HTTP", st, ") match:",
+              wb and (wb.get("name"), wb.get("id")))
         slugs = []
         if wb:
-            m = re.search(r"(/workbooks/\d+)", wb)
-            page.goto("https://us-east-1.online.tableau.com/#/site/sci"
-                      + m.group(1) + "/views", wait_until="domcontentloaded")
-            page.wait_for_timeout(15_000)
-            links = page.eval_on_selector_all(
-                "a[href*='/views/']",
-                "els => els.map(e => [(e.innerText||'').trim(), e.getAttribute('href')])")
-            for name, href in links:
-                mm = re.search(r"/views/" + WORKBOOK + r"/([^/?#]+)", href or "")
-                if mm and mm.group(1) not in [x for _n, x in slugs]:
-                    slugs.append(((name or "").replace("\n", " ")[:60], mm.group(1)))
-        print(f"\n{len(slugs)} view(s) in {WORKBOOK}:")
+            st, views = _pv._views(page, wb["id"])
+            print("getViews HTTP", st, "->", len(views))
+            for v in views:
+                seg = _pv._seg(v) or ""
+                sl = seg.split("/sheets/")[-1] if "/sheets/" in seg else seg.split("/")[-1]
+                slugs.append(((v.get("name") or "")[:60], sl))
+        print("\n%d view(s) in %s:" % (len(slugs), WORKBOOK))
         for n, sl in slugs:
-            print(f"   {sl}  ({n})")
+            print("   VIEW: %s  (%s)" % (sl, n))
 
         s = requests_session_from_page(page)
         hits = []
