@@ -9254,6 +9254,31 @@
     "type": "not_configured"
    }
   },
+  "activations_today_probe": {
+   "on_scheduler": true,
+   "_note": "BUILD probe (Eve 2026-11-10) for Raf's 'Activations Scheduled Today' (#alphalete-sales thread 11/9 + Dylan's Loom): lists the ATT TRACKER 2.1 D2D / PENDING INSTALLS crosstab sheets and describes the export (header, default sale-week / install-week filters, Raf's installs today), then Lucy DMs ONLY Eve (U088E2KJEV8) a [SAMPLE] image with today's real installs. Nothing goes to any channel. weekdays=[] never auto-runs; `lucy rerun activations_today_probe` with no --machine.",
+   "display_name": "Activations Scheduled Today (probe)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.activations_today.run"
+   ],
+   "base_args": [
+    "--probe",
+    "--dm-user",
+    "U088E2KJEV8"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "rashad_metrics_review": {
    "on_scheduler": true,
    "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Raf (U045Z8N0ZQC) AND Megan (U04G5HJBGFN) via --channel, for review BEFORE going public to #elevate-sales. NOTE: U045Z8N0ZQC is RAF, not Megan — an earlier version of this note mislabelled it and a session DM'd Carlos's B2B images to Raf by trusting it (2026-07-18). Megan is U04G5HJBGFN; resolve any recipient via users.info before sending. weekdays=[] never auto-runs.",
