@@ -198,6 +198,7 @@ class ARedoForAnEcoOfficeReplacesOnItsComputer(unittest.TestCase):
             res = R.redo("John Smith", dry_run=False, office=office)
         return cl, res, lucy_upload
 
+    @mock.patch.object(config, "ECO_REDO_READY", True)
     def test_the_job_is_a_replace_and_lucy_never_uploads(self):
         enq = mock.Mock(return_value="job-9")
         cl, res, lucy_upload = self._redo(enq)
@@ -272,6 +273,16 @@ class TheAddHeadshotForm(unittest.TestCase):
         self.assertEqual(enq.call_args.args[1], "Maria Lopez")
         self.assertFalse(enq.call_args.kwargs["replace"])
 
+    def test_until_the_release_an_office_redo_is_by_hand(self):
+        cl, state = FakeSlack([{"ts": "100"},
+                               self._post(self.F.line("Maria", "Lopez", "U1", True))]), {}
+        enq = mock.Mock(return_value="j")
+        with mock.patch.object(config, "ECO_REDO_READY", False):
+            _run_scan(cl, state, enq)
+        enq.assert_not_called()
+        self.assertIn("Owner Submitted", cl.files[0]["initial_comment"])
+
+    @mock.patch.object(config, "ECO_REDO_READY", True)
     def test_the_redo_box_replaces(self):
         cl, state = FakeSlack([{"ts": "100"},
                                self._post(self.F.line("Maria", "Lopez", "U1", True))]), {}

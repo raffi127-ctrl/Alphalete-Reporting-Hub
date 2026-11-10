@@ -47,12 +47,11 @@ def week_monday(today: Optional[dt.date] = None) -> dt.date:
 
 def prompt_text(monday: Optional[dt.date] = None) -> str:
     monday = monday or week_monday()
-    # Megan's exact wording (2026-08-23) — change only with her sign-off.
-    return (
-        ":camera_with_flash: *{marker} — Week of {m}/{d}*\n"
-        "• Reply in this thread with headshot photos\n"
-        "• Put the person's FIRST & LAST name in the SAME reply"
-    ).format(marker=MARKER, m=monday.month, d=monday.day)
+    # Megan's wording — change only with her sign-off. Title only since
+    # 2026-11-09 (Megan): the 📸 Add headshot button replied under it says
+    # how, and "reply with photos" would steer people around the form.
+    return ":camera_with_flash: *{marker} — Week of {m}/{d}*".format(
+        marker=MARKER, m=monday.month, d=monday.day)
 
 
 def find_week_anchor(client=None, channel: str = CHANNEL_ID,

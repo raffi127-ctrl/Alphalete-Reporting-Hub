@@ -71,6 +71,14 @@ OFFICES = {
 }
 
 
+# A REDO ON AN OFFICE COMPUTER (eco) needs the Owner Submit check in
+# ov_upload, which reaches office computers only with an agent release.
+# Until that release is out, eco redos are NOT sent to the computer -- the
+# thread says to swap the photo by hand. Flip to True in the same commit
+# that bumps automations/icd_alerts/agent_release.txt (Megan 2026-11-09).
+ECO_REDO_READY = False
+
+
 def live_offices():
     return [o for o in OFFICES.values() if o.mode == "live" and o.channel]
 

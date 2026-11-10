@@ -38,9 +38,8 @@ from automations.online_presence.post_form import JIRAIYA
 BUTTON = "headshot_add"
 FORM = "headshot_form"
 MARK = "Headshot from <@"
-BUTTON_TEXT = ("*📸 Adding a headshot?* Tap the button: ONE photo, their first "
-               "and last name, Submit. Lucy cleans it up and puts it on their "
-               "OwnerVille profile.")
+BUTTON_TEXT = ("*📸 Adding a headshot?* Tap the button. Lucy cleans it up and "
+               "puts it on their OwnerVille profile.")
 # The fixed line Jiraiya posts. run.py reads THIS, never free text.
 _LINE = re.compile(r"Headshot from <@[A-Z0-9]+>: \*(?P<name>[^*]+)\*(?P<redo> · redo)?")
 
@@ -90,8 +89,7 @@ def form(channel: str, thread_ts: str) -> Dict:
             {"type": "input", "block_id": "photo",
              "label": {"type": "plain_text", "text": "Photo"},
              "hint": {"type": "plain_text",
-                      "text": "ONE person, ONE photo. Clear, facing the camera, "
-                              "chest up."},
+                      "text": "Clear, facing the camera, chest up."},
              "element": {"type": "file_input", "action_id": "v", "max_files": 1,
                          "filetypes": ["jpg", "jpeg", "png", "heic", "webp"]}},
             _text("first", "First name", "Maria"),
@@ -101,6 +99,10 @@ def form(channel: str, thread_ts: str) -> Dict:
              "element": {"type": "checkboxes", "action_id": "v", "options": [{
                  "text": {"type": "plain_text",
                           "text": "This replaces a headshot that came out wrong"},
+                 "description": {"type": "plain_text",
+                                 "text": "Lucy re-uploads it to OwnerVille only "
+                                         "if they haven't been Owner Submitted "
+                                         "yet."},
                  "value": "redo"}]}},
         ]}
 

@@ -282,6 +282,48 @@ def _photo_pill(row) -> str:
     return "missing" if "photo" in txt else "unknown"
 
 
+def owner_submitted(row) -> dict:
+    """The row's "Owner Submit" cell: {'state': submitted|not_submitted|
+    unknown, 'text', 'html'}.
+
+    A REDO MAY ONLY REPLACE A PHOTO BEFORE THE OWNER SUBMITS (Megan
+    2026-11-09): once the owner has submitted the person, the photo on file is
+    the one that went in, and swapping it underneath is not ours to do. Found
+    by the column's HEADER, never by position. Anything we can't read is
+    'unknown', and a redo treats unknown as submitted -- it refuses."""
+    try:
+        got = row.evaluate(
+            """el => {
+                 const t = el.closest('table');
+                 if (!t) return {state: 'unknown', why: 'no table'};
+                 const heads = [...t.querySelectorAll('thead th')]
+                   .map(h => (h.textContent || '').trim());
+                 const i = heads.findIndex(h => /owner\s*submit/i.test(h));
+                 if (i < 0) return {state: 'unknown', why: 'no Owner Submit column'};
+                 const c = el.cells[i];
+                 if (!c) return {state: 'unknown', why: 'no cell'};
+                 const text = (c.textContent || '').trim();
+                 const html = (c.innerHTML || '').trim().slice(0, 400);
+                 const box = c.querySelector('input[type=checkbox]');
+                 const cls = [...c.querySelectorAll('*')].map(n => n.className || '')
+                   .join(' ') + ' ' + (c.className || '');
+                 let state = 'unknown';
+                 if (box) state = box.checked ? 'submitted' : 'not_submitted';
+                 else if (/success|green|fa-check|glyphicon-ok/i.test(cls)
+                          || /\b(yes|submitted|\d{1,2}\/\d{1,2}(\/\d{2,4})?)\b/i.test(text))
+                   state = 'submitted';
+                 else if (!text || /^(no|not submitted|pending|-|n\/a)$/i.test(text)
+                          || /danger|warning|orange/i.test(cls))
+                   state = 'not_submitted';
+                 return {state, text, html};
+               }""")
+        if isinstance(got, dict) and got.get("state"):
+            return got
+    except Exception as e:  # noqa: BLE001
+        return {"state": "unknown", "why": type(e).__name__}
+    return {"state": "unknown"}
+
+
 def dump_pill(page, row, name: str) -> None:
     """Print the Upload Documents cell markup — the ground truth for how
     OV renders uploaded vs missing. Diagnostic only."""
@@ -510,14 +552,26 @@ def upload_on_page(page, name: str, photo: Path | None, *,
     pill = _photo_pill(row)
     if dry_run:
         dump_pill(page, row, name)      # diagnostic on read-only runs
+        sub = owner_submitted(row)
+        print(f"    [Owner Submit for {name}] {sub}")
         return {"status": "already_uploaded" if pill == "uploaded"
                 else "dry_run_found", "name": name,
-                "campaign": campaign, "pill": pill, **extra}
+                "campaign": campaign, "pill": pill,
+                "owner_submit": sub.get("state"), **extra}
     if pill == "uploaded" and not replace:
         return {"status": "already_uploaded", "name": name,
                 "campaign": campaign, **extra}
-    if pill == "uploaded" and verbose:
-        print(f"  {name}: a photo is already on file — REPLACING it")
+    if pill == "uploaded":
+        # A redo: only while the owner hasn't submitted them (see
+        # owner_submitted). Can't tell = don't touch it.
+        sub = owner_submitted(row)
+        if sub.get("state") != "not_submitted":
+            return {"status": ("owner_submitted" if sub.get("state") == "submitted"
+                               else "owner_submit_unknown"),
+                    "name": name, "campaign": campaign,
+                    "owner_submit": sub, **extra}
+        if verbose:
+            print(f"  {name}: a photo is already on file — REPLACING it")
     if photo is None or not Path(photo).exists():
         raise OVUploadError(f"photo file missing: {photo}")
 

@@ -106,9 +106,11 @@ def queued_line(mode: str, replace: bool = False) -> str:
 
 def manual_line(replace: bool = False) -> str:
     """An office that is live before its computer is enrolled on LucyEco."""
-    what = "replace their photo" if replace else "upload this one"
-    return ("\nOwnerVille: please %s by hand for now — your office "
-            "computer takes this over once it's set up on Lucy" % what)
+    if replace:
+        return ("\nOwnerVille: please swap their photo by hand for now (only "
+                "if they haven't been Owner Submitted yet)")
+    return ("\nOwnerVille: please upload this one by hand for now — your "
+            "office computer takes this over once it's set up on Lucy")
 
 
 def result_line(r: Dict) -> str:
@@ -126,6 +128,14 @@ def result_line(r: Dict) -> str:
     if st == "already_uploaded":
         return ("*%s* — OwnerVille: a photo is already on their profile — "
                 "left as-is%s" % (name, as_who))
+    if st == "owner_submitted":
+        return ("*%s* — OwnerVille: already *Owner Submitted*, so the photo "
+                "on their profile was NOT replaced. Swap it by hand if it "
+                "still needs changing." % name)
+    if st == "owner_submit_unknown":
+        return ("⚠ *%s* — OwnerVille: couldn't tell if they're Owner "
+                "Submitted, so the photo was NOT replaced. Check and swap it "
+                "by hand." % name)
     if st == "dry_run_found":
         return ("*%s* — OwnerVille (test, nothing uploaded): found, Photo "
                 "pill is %s%s" % (name, res.get("pill") or "?", as_who))

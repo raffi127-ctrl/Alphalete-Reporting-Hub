@@ -261,6 +261,14 @@ def _ov_upload_note(name: str, photo, act: dict, *,
                     if res.get("replaced") else "uploaded to their profile")
             return (f"\nOwnerVille: {what} ✅{ok}{as_who}"
                     + _sheet_note(name, act))
+        if res["status"] == "owner_submitted":
+            return ("\nOwnerVille: already *Owner Submitted*, so the photo on "
+                    "their profile was NOT replaced — swap it by hand if it "
+                    "still needs changing")
+        if res["status"] == "owner_submit_unknown":
+            return ("\n⚠ OwnerVille: couldn't tell if they're Owner "
+                    "Submitted, so the photo was NOT replaced — check and "
+                    "swap it by hand")
         if res["status"] == "already_uploaded":
             return ("\nOwnerVille: a photo is already on their profile — "
                     f"left as-is{as_who}" + _sheet_note(name, act))
@@ -398,7 +406,7 @@ def redo(name: str, *, dry_run: bool = True,
     act: dict = {}
     if off.uploader == "lucy":
         ov = _ov_upload_note(got, out_p, act, replace=True)
-    elif not off.eco_key:
+    elif not off.eco_key or not config.ECO_REDO_READY:
         from automations.headshots import eco
         act["eco"] = {"status": "manual"}
         ov = eco.manual_line(replace=True)
@@ -579,8 +587,7 @@ def _ask_with_button(cl, channel: str, thread_ts: str, m: dict,
     (form.py), posted by Jiraiya so the tap reaches the form. Plain words
     from Lucy if the button can't be posted."""
     who = m.get("user", "")
-    text = (f"<@{who}> {why} Tap *📸 Add headshot*: one photo, first and last "
-            "name, Submit.")
+    text = f"<@{who}> {why} Tap *📸 Add headshot*."
     if hs_form.post_button(channel, thread_ts, text=text).get("action") == "posted":
         return
     try:
@@ -628,6 +635,11 @@ def _eco_handoff_note(off, name: str, photo, thread_ts: str, state: dict,
     way. Queued at most once per reply: the job id is saved BEFORE the post,
     so a post that fails and retries next tick cannot queue it twice."""
     from automations.headshots import eco
+    if replace and not config.ECO_REDO_READY:
+        # Their computer's uploader can't check Owner Submit yet (needs the
+        # next agent release) -- so it doesn't get a replace job at all.
+        act["eco"] = {"status": "manual", "why": "eco redo not ready"}
+        return eco.manual_line(replace=True)
     if not off.eco_key:
         # Live before the office's computer is enrolled: nothing to hand to.
         act["eco"] = {"status": "manual"}
