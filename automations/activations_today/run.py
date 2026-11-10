@@ -209,8 +209,8 @@ def main(argv=None) -> int:
         work["title"] = "[SAMPLE] " + work["title"]
         out = Path(tempfile.gettempdir()) / "activations_today_{}.png".format(day)
         for i, p in enumerate(render(work, out), 1):
-            res = smp.dm_user_with_file(
-                p, user=args.dm_user,
+            res = smp.dm_user_with_file(  # Lucy 4 has no bot token: metrics token
+                p, user=args.dm_user, as_bot=False,
                 comment="SAMPLE (real data, {}) — {} — {} installs{}".format(
                     day, LABEL, len(today), " (part {})".format(i) if i > 1 else ""))
             print("  ✓ DM: {}".format(res))
