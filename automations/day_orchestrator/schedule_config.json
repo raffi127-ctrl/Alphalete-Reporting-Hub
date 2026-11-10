@@ -12918,7 +12918,10 @@
    "depends_on": [],
    "timeout_minutes": 45,
    "_timeout_note": "Probe 6 took 11 minutes with 23 of 30 skipped as already-sent. A fresh Monday cohort where everyone needs a bundle is nearer 25, plus the add phase -- so 45, not the probe's 30.",
-   "verify": {"type": "manifest", "report_id": "digi_docs"}
+   "verify": {
+    "type": "manifest",
+    "report_id": "digi_docs"
+   }
   },
   "disable_digi_docs_send_agent": {
    "on_scheduler": false,
@@ -17327,6 +17330,84 @@
    "verify": null,
    "timeout_minutes": 5,
    "machine": "Lucy 3"
+  },
+  "juan_metrics": {
+   "order": 36.98,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Juan's Daily Metrics",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "juan",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "juan_metrics"
+   },
+   "_note": "Office metrics for juan. wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship (captainship_night_knocks/owners.py), five NDS boards like frank on Lucy 4. Channel: held on Megan's DM until she names it. Sheet 'Juan Lucio - Lucy Metrics' 1W10xyOqckxJpw8dklX1Ye2q8Abnu6896XacZLwAeH0o (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read.",
+   "_onboarded": true
+  },
+  "zaid_metrics": {
+   "order": 36.989999999999995,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Zaid's Daily Metrics",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "zaid",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "zaid_metrics"
+   },
+   "_note": "Office metrics for zaid. wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship, five NDS boards like frank on Lucy 4. Channel #zaid-arabiyat-metrics C0CGA1H2T0A (private; Megan made it 11/09; lucy_reporting in it). Sheet 'Zaid Arabiyat - Lucy Metrics' 1OS9Kt0wJcVVINSypYpSnTQS1iXXCtJYqlumNXjowKu0 (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read.",
+   "_onboarded": true
   }
  },
  "read_only_standalone": {

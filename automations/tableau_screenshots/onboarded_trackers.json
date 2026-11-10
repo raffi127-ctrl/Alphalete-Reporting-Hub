@@ -622,5 +622,45 @@
       "vzftr"
     ],
     "notes": "wired by hand 2026-11-06 (his Lucy ECO enrollment next week); all 9 trackers like tre; channel_ids filled once his ECO sign-up names the room."
+  },
+  {
+    "key": "juan",
+    "label": "Juan's Local Office",
+    "owner": "Juan Lucio",
+    "channel_ids": [
+      "C0CG4THDLG5"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-11-09 (metrics-only office); all 9 trackers like frank."
+  },
+  {
+    "key": "zaid",
+    "label": "Zaid's Local Office",
+    "owner": "Zaid Arabiyat",
+    "channel_ids": [
+      "C0CGA1H2T0A"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-11-09 (metrics-only office); all 9 trackers like frank."
   }
 ]

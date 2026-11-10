@@ -298,6 +298,8 @@ _HUB_CARD = {
     "nigel_metrics": "office-metrics",     # 2026-11-06, Nigel Marshall, same card
     "oren_metrics": "office-metrics",      # 2026-11-06, Oren Shezaf, same card
     "miguel_metrics": "office-metrics",    # 2026-11-06, Miguel Zaragoza, same card
+    "zaid_metrics": "office-metrics",  # 2026-11-09, Zaid Arabiyat, same card
+    "juan_metrics": "office-metrics",  # 2026-11-09, Juan Lucio, same card
     "starr_metrics": "office-metrics",     # 2026-11-04, Starr Rodenhurst, same card
     "sahil_metrics": "office-metrics",     # 2026-11-04, Sahil Multani, same card
     # nii + trang had self-registered their own Report Library cards; folded
