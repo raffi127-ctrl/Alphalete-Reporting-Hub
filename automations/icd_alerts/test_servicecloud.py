@@ -391,7 +391,7 @@ class ALostSessionAsksTheOfficeNotTheTeam(unittest.TestCase):
                                      log=said.append)
         text = " ".join(said)
         self.assertIn("LucyECO", text)
-        self.assertIn("signin.html", text)
+        self.assertIn("setup.html", text)  # one fix-up link (Megan 2026-11-10)
         self.assertIn("Nothing is lost", text,
                       "it reads as data loss rather than a blocked view")
 
@@ -470,17 +470,17 @@ class TheFixIsDifferentForEachSystem(unittest.TestCase):
 
     def test_service_cloud_sends_them_to_sign_in(self):
         m = self._msg("servicecloud")
-        self.assertIn("signin.html", m)
+        self.assertIn(self.P.FINISH_SETUP_PAGE, m)  # one fix-up link (2026-11-10)
         self.assertNotIn("new password", m,
                          "it tells them to change a password they cannot fix")
 
     def test_saraplus_sends_them_to_the_code_window(self):
         # SINCE 2026-10-06 only the emailed-code wall is filed as
         # signin-saraplus; a changed password stays a sweep fault. So this
-        # one sends them to sara-signin.html (2026-10-18: setup.html never
-        # cleared the code check), and must not blame the password.
+        # one sends them to the code-forward page (Megan 2026-11-10: "get
+        # Lucy to enter your sara code"), and must not blame the password.
         m = self._msg("saraplus")
-        self.assertIn(self.P.SARA_SIGNIN_PAGE, m)
+        self.assertIn(self.P.SARA_FORWARD_PAGE, m)
         self.assertNotIn("new password", m)
         self.assertNotIn(self.P.SIGNIN_PAGE, m,
                          "that page is Service Cloud's, not SaraPlus's")

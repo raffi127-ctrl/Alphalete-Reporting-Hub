@@ -42,7 +42,7 @@ class CodeWallIsASignIn(unittest.TestCase):
         self.assertIn("Stop having to log in yourself", text)
         self.assertIn("let us know when done", text)
         self.assertIn("4:12 PM", text)
-        self.assertIn(P.SARA_SIGNIN_PAGE, text)
+        self.assertIn(P.SARA_FORWARD_PAGE, text)
 
 
 if __name__ == "__main__":
