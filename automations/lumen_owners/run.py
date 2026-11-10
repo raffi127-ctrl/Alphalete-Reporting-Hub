@@ -105,6 +105,9 @@ EXTRA_OWNERS: Tuple[Tuple[str, str], ...] = (
     ("Shealey Miller", ""),
     # Office 23639, gave Office Access 2026-10-30 (Eve).
     ("Isaiah Kellum", "showtime solutions, inc."),
+    # No Quantum campaign in his office (23565), so the Quantum view dropped
+    # him and Chan wrote he "got removed from the top portion" (2026-11-09).
+    ("David Pancoast", ""),
 )
 
 ON_ATT = "On AT&T"            # sells AT&T, but neither internet nor wireless

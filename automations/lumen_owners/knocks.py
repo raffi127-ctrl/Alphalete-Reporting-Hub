@@ -40,12 +40,15 @@ LUMEN_EXTRA = (
     ("Vaughn Osterhouse", "7", "Quantum Fiber"),
     # Gave Office Access on her own office 24273 (LUMEN_OFFICE_PINS below).
     ("Shealey Miller", "7", "Quantum Fiber"),
+    # Gave Office Access on office 23584 (Eve, 2026-11-09). Chan on the 11/9
+    # mail: "we still dont see myles for the knock reports".
+    ("Myles Neal", "7", "Quantum Fiber"),
 )
 
 # Office numbers for THIS mail only (Eve, 2026-11-03: 24273 is the number
 # Shealey gave for Lumen). OFFICE_PINS keeps her on 23858 for the captainship
 # boards and the 9 PM mail.
-LUMEN_OFFICE_PINS = {"Shealey Miller": "24273"}
+LUMEN_OFFICE_PINS = {"Shealey Miller": "24273", "Myles Neal": "23584"}
 
 
 # One set of attachments per OwnerVille campaign, Quantum first (the
