@@ -415,10 +415,7 @@
       "as_company": "VP Executives, Inc",
       "confidence": 1.0,
       "hardcoded": true,
-      "siblings": [
-        "23515"
-      ],
-      "note": "two AppStream offices (Eve 2026-09-29): top box = 20034 (label A23), bottom box = 23515 'VP Executives, Inc 2nd' (anchor A25 above the box; A48 is Eve's footer label). Sales/headcount: Quantum Fiber until AT&T fiber starts, see quantum_fallback.",
+      "note": "two AppStream offices (Eve 2026-09-29): top box = 20034 (label A23), bottom box = 23515 'VP Executives, Inc 2nd' (anchor A25 above the box; A48 is Eve's footer label). 2026-11-09: 23515 dropped from our AppStream login (probe_appstream_office: switcher has no 23515; last filled WE 11/01) -- Megan: 'if it's gone from our access we can disregard it', so it is no longer a sibling. The bottom box keeps its history; nothing reads or writes it. Re-add \"siblings\": [\"23515\"] if access comes back. Sales/headcount: Quantum Fiber until AT&T fiber starts, see quantum_fallback.",
       "was_sales_only_reason": "tab added 2026-09-28 (Raf's request: Nigel is coming from Lumen over to AT&T Fiber; VP Executives Inc.). AppStream access requested by Raf and approved by Nigel that day, but the live office list (253 offices, 2026-09-28) does not show his office yet, so rows 2-23 (recruiting) cannot fill until it appears. Promotes itself (with backfill) the day AppStream sees him."
     },
     {
