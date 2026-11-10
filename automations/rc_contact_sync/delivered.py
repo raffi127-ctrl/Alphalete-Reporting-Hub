@@ -15,13 +15,25 @@ Carlos 2026-10-29, in order:
   * "do that now for any customers that have had their phones delivered and
     are not activated yet."
 
-WHAT COUNTS AS DELIVERED: the tab's *Line Status* reads "Delivered" (the
-feed's own word; a line that has activated says "Active" and is left alone,
-the message would be nonsense). NOT the "Delivered" DATE column -- on Port
-lines the parser still has two columns swapped and that cell carries junk
-like 3/17/2025 (README 10/29). Lines are grouped by order, so a customer
-with three delivered phones gets ONE text ("your device(s)"), and column S
-is marked Yes on exactly those lines.
+WHAT COUNTS AS DELIVERED, either of:
+  * the tab's *Line Status* reads "Delivered" (the feed's own word), or
+  * the *Delivered* DATE is filled in and plausible (on/after the Order
+    Date, not in the future) while the status is still on the way --
+    Shipped, Pending, Port Approved, blank. Port lines often jump from
+    Shipped straight to Active/Disconnected and never show the word
+    (Subba Rao Maddela, Georgeatte Mcdonald, 11/9: no text ever went
+    out); Carlos 2026-11-09: "Yes, fix it".
+A line that has activated says "Active" and is left alone (the message
+would be nonsense); so are Disconnected, Cancelled and BYOD. A date alone
+is never trusted: on Port lines the parser still has two columns swapped
+and that cell carries junk like 3/17/2025 (README 10/29), which fails the
+on/after-Order-Date check. Lines are grouped by order, so a customer with
+three delivered phones gets ONE text ("your device(s)"), and column S is
+marked Yes on exactly those lines.
+
+LANGUAGE: Carlos 2026-11-09, "if a customer has a spanish name we need to
+start sending the texts in spanish" -- spanish.language(customer) picks
+TEXT or TEXT_ES.
 
 SOURCES: statuses + column S come from the "NDS Order Log" tab on the
 Vantura Master (order_log_tab writes it every morning right before this
@@ -69,6 +81,10 @@ REPORT_ID = "rc_delivered_text"
 SENT_PATH = C.CONFIG_DIR / "rc-delivered-sent.json"
 COL_SENT = "Delivered Message Sent"      # column S on the tab (header-resolved, never by index)
 DELIVERED = "delivered"                  # the Line Status word that triggers
+# statuses where a Delivered DATE must NOT trigger: the phone is in use, gone,
+# or never shipped. Anything else with a plausible date is "delivered, not yet
+# active" and gets the text.
+DONE_STATES = ("active", "disconnected", "cancelled", "byod")
 # how far back a Delivered line still gets the text (a line delivered weeks ago
 # and never activated is a different conversation, not this one)
 MAX_ORDER_AGE_DAYS = 31
@@ -78,6 +94,17 @@ TEXT = ("Hello! I see that your device(s) have been delivered! It will "
         "auto-activate within 24hrs. Wouldn't want it to happen that you "
         "don't have the new phone, so if you need help activating, please "
         "let me know!")
+# the same, in Spanish, for customers with a Spanish name (Carlos 2026-11-09)
+TEXT_ES = ("¡Hola! Veo que ya le entregaron su(s) equipo(s). Se activará "
+           "automáticamente dentro de 24 horas. No queremos que se quede sin "
+           "su teléfono nuevo, así que si necesita ayuda para activarlo, "
+           "¡avíseme por favor!")
+
+
+def text_for(customer: str) -> str:
+    """TEXT_ES when the customer's name is Spanish, else TEXT."""
+    from automations.rc_contact_sync import spanish
+    return TEXT_ES if spanish.language(customer) == "es" else TEXT
 
 
 # --- pure pieces (tested) -----------------------------------------------------
@@ -112,13 +139,29 @@ def _parse_date(v: str) -> Optional[dt.date]:
     return None
 
 
+def delivered_by_date(row: Sequence[str], cols: Dict[str, int], *, today: dt.date) -> bool:
+    """A plausible Delivered DATE on a line that is still on the way: the date
+    parses, is on/after the Order Date (the swapped-column junk is years
+    earlier) and not after today, and the status is none of DONE_STATES."""
+    status = _cell(row, cols, "Line Status").lower()
+    if status in DONE_STATES:
+        return False
+    dd = _parse_date(_cell(row, cols, "Delivered"))
+    if dd is None or dd > today:
+        return False
+    od = _parse_date(_cell(row, cols, "Order Date"))
+    return od is None or dd >= od
+
+
 def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],
                  sent_state: Dict[str, dict], *, today: dt.date) -> List[Dict]:
-    """One target per ORDER with at least one line whose Line Status is
-    Delivered and that has not been texted (column S != Yes and not in
-    state). Active / Shipped / anything else is left alone. Returns, per
-    target: customer, rep, wireless_order, dsi, order_date, and the lines
-    (sheet row number, line no, device) that will be marked."""
+    """One target per ORDER with at least one line that is delivered (Line
+    Status word, or a plausible Delivered date while still on the way --
+    delivered_by_date) and that has not been texted (column S != Yes and not
+    in state). Active / Disconnected / Cancelled / anything undelivered is
+    left alone. Returns, per target: customer, rep, wireless_order, dsi,
+    order_date, and the lines (sheet row number, line no, device) that will
+    be marked."""
     cols = _hdr(header)
     for need in ("Line Status", "Line", "Customer", "Rep"):
         if need.lower() not in cols:
@@ -131,7 +174,7 @@ def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],
     targets: "Dict[str, Dict]" = {}
     for i, row in enumerate(rows):
         status = _cell(row, cols, "Line Status").lower()
-        if status != DELIVERED:
+        if status != DELIVERED and not delivered_by_date(row, cols, today=today):
             continue
         if _cell(row, cols, COL_SENT).lower() == "yes":
             continue
@@ -153,7 +196,8 @@ def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],
         })
         t["lines"].append({"sheet_row": i + 2,          # +1 header, +1 one-based
                            "line": ln,
-                           "device": _cell(row, cols, "Device")})
+                           "device": _cell(row, cols, "Device"),
+                           "why": "status" if status == DELIVERED else "date"})
     return list(targets.values())
 
 
@@ -303,18 +347,21 @@ def run(*, live: bool = False, limit: Optional[int] = None,
             skipped += 1
             continue
         to = [phone, rep_phone]
+        text = text_for(t["customer"])
+        lang = "es" if text is TEXT_ES else "en"
+        why = "by date" if all(l["why"] == "date" for l in t["lines"]) else "status"
         if not live:
-            log("  [dry-run] %s — %s — group: %s (customer) + %s (%s)"
-                % (who, lines_txt, RC.e164(phone), RC.e164(rep_phone),
+            log("  [dry-run] %s — %s (%s, %s) — group: %s (customer) + %s (%s)"
+                % (who, lines_txt, why, lang, RC.e164(phone), RC.e164(rep_phone),
                    titlecase_name(t["rep"])))
-            preview.append("%s | %s | ordered %s | %s\n  customer %s + rep %s (%s)\n  mark Yes on sheet row(s) %s"
-                           % (who, lines_txt, t["order_date"], t["wireless_order"] or t["dsi"],
+            preview.append("%s | %s | %s | %s | ordered %s | %s\n  customer %s + rep %s (%s)\n  mark Yes on sheet row(s) %s"
+                           % (who, lines_txt, why, lang, t["order_date"], t["wireless_order"] or t["dsi"],
                               RC.e164(phone), RC.e164(rep_phone), titlecase_name(t["rep"]),
                               ", ".join(str(l["sheet_row"]) for l in t["lines"])))
             sent += 1
             continue
         try:
-            res = RC.send_group_mms(token, from_number, to, TEXT)
+            res = RC.send_group_mms(token, from_number, to, text)
         except RC.RCError as e:
             failed += 1
             log("  ✗ %s: %s" % (who, str(e)[:200]))
@@ -323,7 +370,7 @@ def run(*, live: bool = False, limit: Optional[int] = None,
         for l in t["lines"]:
             sent_state[line_key(t["order_key"], l["line"])] = {
                 "at": at, "customer": who, "to": [RC.e164(n) for n in to],
-                "msg_id": res.get("id")}
+                "msg_id": res.get("id"), "lang": lang, "why": l["why"]}
         _save_sent(sent_state)
         try:
             mark_sent(ws, header, t["lines"], log=log)
@@ -331,14 +378,14 @@ def run(*, live: bool = False, limit: Optional[int] = None,
             log("    (column S mark failed for %s: %s: %s — state file has it, tomorrow's "
                 "run will not re-text)" % (who, type(e).__name__, str(e)[:120]))
         sent += 1
-        log("  + %s — %s — group with %s" % (who, lines_txt, titlecase_name(t["rep"])))
+        log("  + %s — %s (%s, %s) — group with %s" % (who, lines_txt, why, lang, titlecase_name(t["rep"])))
         time.sleep(6)   # polite pacing; RC business SMS is ~40-60/min
     log("delivered texts: %d %s, %d skipped, %d failed"
         % (sent, "sent" if live else "previewed", skipped, failed))
     if not live and preview:
         try:
             from automations.rc_contact_sync.status_probe import _upload_bytes
-            head = "from: %s\n\n%s\n\n" % (from_number, TEXT)
+            head = "from: %s\n\nEN: %s\n\nES: %s\n\n" % (from_number, TEXT, TEXT_ES)
             _upload_bytes((head + "\n\n".join(preview)).encode(), "Delivered Preview", log=log)
         except Exception as e:  # noqa: BLE001
             log("  (preview upload failed: %s: %s)" % (type(e).__name__, str(e)[:120]))

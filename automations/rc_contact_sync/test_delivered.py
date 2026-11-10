@@ -23,7 +23,7 @@ def row(**kw):
 class PickTargets(unittest.TestCase):
     def test_one_text_per_order_only_delivered_lines(self):
         rows = [row(Line="1"), row(Line="2", **{"Line Status": "Active"}),
-                row(Line="3", **{"Line Status": "Shipped"}), row(Line="4")]
+                row(Line="3", **{"Line Status": "Shipped", "Delivered": ""}), row(Line="4")]
         t = D.pick_targets(HDR, rows, {}, today=TODAY)
         self.assertEqual(len(t), 1)
         self.assertEqual([l["line"] for l in t[0]["lines"]], ["1", "4"])
@@ -37,6 +37,35 @@ class PickTargets(unittest.TestCase):
         # and a Delivered status with an empty date still counts
         rows = [row(**{"Line Status": "DELIVERED", "Delivered": ""})]
         self.assertEqual(len(D.pick_targets(HDR, rows, {}, today=TODAY)), 1)
+
+    def test_delivered_date_while_still_on_the_way_triggers(self):
+        # 11/9: Georgeatte Mcdonald's port lines carried Delivered 10/31 but the
+        # status went Shipped -> Active, never "Delivered" -> no text ever went out
+        for status in ("Shipped", "Pending", "Pending Shipment", "Port Approved", ""):
+            rows = [row(**{"Line Status": status, "Delivered": "10/28/2026"})]
+            t = D.pick_targets(HDR, rows, {}, today=TODAY)
+            self.assertEqual(len(t), 1, status)
+            self.assertEqual(t[0]["lines"][0]["why"], "date")
+        # a status-word hit says so
+        t = D.pick_targets(HDR, [row()], {}, today=TODAY)
+        self.assertEqual(t[0]["lines"][0]["why"], "status")
+
+    def test_delivered_date_never_fires_on_done_or_junk(self):
+        # in use / gone / never shipped: the date alone must not text them
+        for status in ("Active", "Disconnected", "Cancelled", "BYOD"):
+            rows = [row(**{"Line Status": status, "Delivered": "10/28/2026"})]
+            self.assertEqual(D.pick_targets(HDR, rows, {}, today=TODAY), [], status)
+        # the swapped-column junk (years before the order) on a Shipped line
+        rows = [row(**{"Line Status": "Shipped", "Delivered": "3/17/2025"})]
+        self.assertEqual(D.pick_targets(HDR, rows, {}, today=TODAY), [])
+        # a date in the future, or no date at all, on a Shipped line
+        for d in ("11/2/2026", "", "n/a"):
+            rows = [row(**{"Line Status": "Shipped", "Delivered": d})]
+            self.assertEqual(D.pick_targets(HDR, rows, {}, today=TODAY), [], d)
+        # date-triggered lines still honour column S / state
+        rows = [row(**{"Line Status": "Shipped", "Delivered": "10/28/2026",
+                       "Delivered Message Sent": "Yes"})]
+        self.assertEqual(D.pick_targets(HDR, rows, {}, today=TODAY), [])
 
     def test_already_sent_skipped_by_column_s_or_state(self):
         rows = [row(Line="1", **{"Delivered Message Sent": "Yes"}), row(Line="2")]
@@ -78,6 +107,12 @@ class Phone(unittest.TestCase):
 
 
 class Text(unittest.TestCase):
+    def test_spanish_name_gets_spanish_text(self):
+        self.assertIs(D.text_for("Yesenia Cordero"), D.TEXT_ES)
+        self.assertIs(D.text_for("Thomas Blake"), D.TEXT)
+        self.assertTrue(D.TEXT_ES.startswith("¡Hola!"))
+        self.assertIn("24 horas", D.TEXT_ES)
+
     def test_is_carlos_wording(self):
         self.assertTrue(D.TEXT.startswith("Hello! I see that your device(s) have been delivered!"))
         self.assertIn("auto-activate within 24hrs", D.TEXT)

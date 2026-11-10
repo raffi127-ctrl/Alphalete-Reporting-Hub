@@ -83,6 +83,24 @@ TEMPLATE = """Hi {first}, thank you for choosing AT&T! Here's your order wrap-up
 • ATT To-Do List: {todo}"""
 
 PIN_FALLBACK = "your rep will confirm your 4-digit PIN here"
+ORDER_FALLBACK = "(coming — rep will confirm)"
+
+# The same wrap-up in Spanish, for customers with a Spanish name
+# (Carlos 2026-11-09: "if a customer has a spanish name we need to start
+# sending the texts in spanish"). spanish.language() decides.
+TEMPLATE_ES = """Hola {first}, ¡gracias por elegir AT&T! Aquí está el resumen de su pedido — su representante de ventas {rep} y su gerente de soporte VIP Taylor están en este chat para lo que necesite.
+
+• Orden # {order}
+• BAN # {ban}
+• PIN de 4 dígitos — {pin}
+• Rastrear su pedido: att.com/orders/checkmyorder
+• Activar teléfonos: att.com/activations/activatewireless
+• Trade-In (entrega de su equipo): nextqr.com/tradein-nds
+• Taylor, Gerente VIP - 945-337-2199
+• Lista de pasos de AT&T: {todo}"""
+
+PIN_FALLBACK_ES = "su representante le confirmará su PIN de 4 dígitos aquí"
+ORDER_FALLBACK_ES = "(en camino — su representante lo confirmará)"
 # Taylor's VIP line as the canvas publishes it — the send-from when the API
 # can't be asked (no ReadAccounts scope on this app).
 TAYLOR_SMS_NUMBER = "945-337-2199"
@@ -216,13 +234,20 @@ def guest_fields(since: dt.date, until: dt.date, log=print) -> List[Dict]:
 
 
 def build_text(cust: Dict) -> str:
-    first = titlecase_name(RC.split_name(cust["customer_name"])[0]) or "there"
-    return TEMPLATE.format(
+    """The wrap-up for this customer, in Spanish when the name is Spanish."""
+    from automations.rc_contact_sync import spanish
+    es = spanish.language(cust["customer_name"]) == "es"
+    first = titlecase_name(RC.split_name(cust["customer_name"])[0]) or ("" if es else "there")
+    tmpl = TEMPLATE_ES if es else TEMPLATE
+    if es and not first:
+        tmpl = tmpl.replace("Hola {first}, ¡gracias", "Hola, ¡gracias")
+    fallback = ORDER_FALLBACK_ES if es else ORDER_FALLBACK
+    return tmpl.format(
         first=first,
         rep=titlecase_name(cust["rep"]),
-        order=cust.get("wireless_order") or "(coming — rep will confirm)",
-        ban=cust.get("ban") or "(coming — rep will confirm)",
-        pin=PIN_FALLBACK,
+        order=cust.get("wireless_order") or fallback,
+        ban=cust.get("ban") or fallback,
+        pin=PIN_FALLBACK_ES if es else PIN_FALLBACK,
         todo=TODO_URL)
 
 

@@ -122,7 +122,10 @@ def _messages_since(token: str, ext_id: str, day: dt.date) -> List[dict]:
 TEMPLATES = (
     ("delivered text (rc_delivered_text)",
      "hello! i see that your device(s) have been delivered"),
+    ("delivered text, Spanish (rc_delivered_text)",
+     "veo que ya le entregaron su(s) equipo(s)"),
     ("wrap-up (rc_wrapup)", "thank you for choosing at&t! here's your order wrap-up"),
+    ("wrap-up, Spanish (rc_wrapup)", "gracias por elegir at&t! aquí está el resumen de su pedido"),
 )
 
 
