@@ -378,6 +378,33 @@ def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 # a second session competes for the token the 4am batches share.
 OFFICES_BY_MACHINE = {
     "Lucy 3": ("raf",),
+    # LUCY 1 runs ONE step for this office -- see STEPS_BY_MACHINE.
+    "Lucy 1": ("raf",),
+}
+
+# WHICH STEPS A MACHINE IS RESPONSIBLE FOR. Absent from here means all of them,
+# which is what an ICD's own computer does: its office's logins are all on it.
+#
+# Alphalete's are not. Each source sits where its credential or its data is,
+# and a step run anywhere else does not fail -- it quietly finds nothing, which
+# is the worst way for this to be wrong. So the split is written down:
+#
+#   Lucy 3  everything off OwnerVille, AppStream and Blue Ink, because its
+#           OwnerVille is Raf's (`rhidalgo`) and it holds a warm AppStream
+#           session.
+#   Lucy 1  contacts, because `second_round_contacts` runs there and its state
+#           file -- the record of every contact it has created -- is a local
+#           file on that box. Read from anywhere else it is simply absent.
+#           Sterling too: it reads the one inbox every office forwards to, and
+#           Lucy 1 is the machine that already reads that inbox to confirm the
+#           forwards. Where the password is not installed the step says so and
+#           ticks nothing.
+#
+# The tick itself goes through Sheets, so a step reaches any office's board
+# from whichever machine runs it.
+STEPS_BY_MACHINE = {
+    "Lucy 1": ("contacts", "sterling"),
+    "Lucy 3": ("seed", "ownerville", "blueink"),
 }
 
 # A machine that is neither a Lucy nor an ECO box can still name its offices,
@@ -437,6 +464,23 @@ def offices_here() -> List[str]:
     return out
 
 
+def steps_here() -> Sequence[str]:
+    """The step names this machine runs. () means "all of them".
+
+    An explicit --only always wins; this is only the default for a scheduled
+    run that was given no arguments.
+    """
+    import os
+    named = os.environ.get("ICD_ONBOARDING_STEPS", "")
+    if named:
+        return tuple(x.strip() for x in named.replace(",", " ").split() if x.strip())
+    try:
+        from automations.shared import hub_identity as HI
+        return tuple(STEPS_BY_MACHINE.get(HI.machine_name()) or ())
+    except Exception:          # noqa: BLE001 — identity is never fatal here
+        return ()
+
+
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description="Bring an onboarding board up to date.")
@@ -455,13 +499,14 @@ def main(argv=None) -> int:
     # hourly run on a Thursday works the same board it worked on Monday.
     week = dt.date.fromisoformat(a.week) if a.week else dt.date.today()
     offices = a.office or offices_here()
+    only = list(a.only) or list(steps_here())
     if not offices:
         print("no office to run: pass --office, or run this on a machine that "
               "is enrolled for one.")
         return 1
     bad = 0
     for office in offices:
-        got = for_office(office, week, dry_run=not a.write, only=a.only)
+        got = for_office(office, week, dry_run=not a.write, only=only)
         bad += sum(1 for v in got.values() if isinstance(v, str))
         print()
     if not a.write:

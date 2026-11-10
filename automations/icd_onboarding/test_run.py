@@ -200,3 +200,44 @@ def test_sterling_runs_where_the_password_is(tmp_path, monkeypatch):
     monkeypatch.setattr(BG, "APP_PW_PATH", str(pw))
     monkeypatch.setattr(BG, "run", lambda *a, **k: 7)
     assert R.from_sterling("raf", MONDAY, log=lambda *a: None) == 7
+
+
+# --------------------------------------------- each step where its data is
+
+def test_every_routed_step_is_a_real_step():
+    """A typo here would silently run nothing on that machine."""
+    known = {n for n, _ in R.STEPS}
+    for machine, steps in R.STEPS_BY_MACHINE.items():
+        assert set(steps) <= known, machine
+
+
+def test_the_routed_machines_cover_every_step_exactly_once():
+    """A step nobody runs never fills; a step two boxes run races itself."""
+    seen = [s for steps in R.STEPS_BY_MACHINE.values() for s in steps]
+    assert sorted(seen) == sorted({n for n, _ in R.STEPS})
+    assert len(seen) == len(set(seen)), "a step is routed to two machines"
+
+
+def test_contacts_runs_where_the_contact_sync_runs():
+    """Its state file is local to that box. Read from anywhere else it is
+    simply absent, and the column never fills."""
+    assert "contacts" in R.STEPS_BY_MACHINE["Lucy 1"]
+    assert "contacts" not in R.STEPS_BY_MACHINE["Lucy 3"]
+
+
+def test_ownerville_runs_where_rafs_ownerville_is():
+    assert "ownerville" in R.STEPS_BY_MACHINE["Lucy 3"]
+    assert "ownerville" not in R.STEPS_BY_MACHINE["Lucy 1"]
+
+
+def test_a_machine_that_is_not_routed_runs_everything(monkeypatch):
+    """An ICD's own computer holds all of its office's logins."""
+    monkeypatch.delenv("ICD_ONBOARDING_STEPS", raising=False)
+    from automations.shared import hub_identity as HI
+    monkeypatch.setattr(HI, "machine_name", lambda: "some ICD's iMac")
+    assert R.steps_here() == ()
+
+
+def test_the_env_var_wins(monkeypatch):
+    monkeypatch.setenv("ICD_ONBOARDING_STEPS", "seed, blueink")
+    assert R.steps_here() == ("seed", "blueink")

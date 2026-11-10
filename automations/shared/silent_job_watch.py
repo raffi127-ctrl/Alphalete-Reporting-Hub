@@ -139,7 +139,12 @@ JOBS: Dict[str, dict] = {
     },
     "icd_onboarding": {
         "name": "ICD onboarding board",
-        # LUCY 3: the only box that can do all five steps. The board must run
+        # LUCY 3 + LUCY 1 (see icd_onboarding.run.STEPS_BY_MACHINE). Each
+        # step runs where its data is: OwnerVille/AppStream/Blue Ink on Lucy 3,
+        # contacts and the Sterling inbox on Lucy 1. Both beat the same job id,
+        # so this reads whichever ran last -- a stopped half would be noticed
+        # only when BOTH stop. Split the row if that is ever not enough.
+        # LUCY 3: the box that can do the OwnerVille steps. The board must run
         # where that office's OwnerVille is -- Lucy 2 saw 0 of 10 because it
         # signs in as `chidalgo`, Carlos's account; Lucy 3 is `rhidalgo`.
         # Megan's Mac could not hold an AppStream session for an hour.
