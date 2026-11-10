@@ -178,6 +178,7 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
 
 PENDING_ROW = 8                      # right under Internet (row 7) in the product box
 PENDING_NOTE_ROW = 9
+PENDING_COL_A_PX = 120               # column A wide enough for the label
 
 
 def write_pending(ws, pend: dict, log=print) -> None:
@@ -216,6 +217,13 @@ def write_pending(ws, pend: dict, log=print) -> None:
                                            "foregroundColor": VF._rgb("#3E4A5C")}}},
                         "fields": "userEnteredFormat(wrapStrategy,verticalAlignment,"
                                   "horizontalAlignment,textFormat)"}},
+        # 'Pending Orders' clipped at the duplicate's 96px column A (first
+        # render 11/10 read "ending Order"); the rolloff list's Days Left
+        # column loses nothing at 120.
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": PENDING_COL_A_PX}, "fields": "pixelSize"}},
     ]
     _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
     log(f"  ✓ {ws.title}: A{r} Pending Orders = {pend.get('total', 0)} ({split})")
