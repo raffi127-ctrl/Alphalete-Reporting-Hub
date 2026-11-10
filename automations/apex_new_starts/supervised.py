@@ -180,7 +180,7 @@ def signin(log=print, *, minutes: int = 20) -> int:
 
     from automations.apex_new_starts import apex as AX
 
-    with AX.ApexSession(log=log) as s:
+    with AX.ApexSession(log=log, login_timeout_s=minutes * 60) as s:
         if s.signed_in():
             log("  Already signed in — %s" % s.page.url)
             return 0
@@ -284,7 +284,10 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
     log("  TICKED, and saving with it on emails a brand new rep.")
     log("")
 
-    with AX.ApexSession(log=log) as s:
+    # 25 minutes, not the 10-minute default: this sign-in can go password ->
+    # 2FA -> password again, and a person reading a code off a phone should
+    # not lose a prepared fill to a timeout.
+    with AX.ApexSession(log=log, login_timeout_s=25 * 60) as s:
         s.require_login()
         if not wait_for_form(s.page, log=log):
             log("  The form never appeared, so nothing was typed.")

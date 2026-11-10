@@ -281,7 +281,12 @@ _AUTH_PATH = re.compile(r"/(?:identity/)?account/")
 # on the left." Every signed-in session lands there, and the prompt never needs
 # actioning ([[reference_apex_password_prompt]]). It only looks like a login
 # because it has password boxes on it.
-_PW_CHANGE = re.compile(r"/(?:identity/)?account/changepassword")
+# Apex serves this under several prefixes -- the live one on 2026-11-10 was
+# /Identity/Account/Manage/ChangePassword (screenshot from Megan). A pattern
+# written for /Account/ChangePassword missed the "Manage" segment and read a
+# signed-in session as the login page all over again, so this matches
+# ChangePassword ANYWHERE under /account/.
+_PW_CHANGE = re.compile(r"/(?:identity/)?account/(?:[a-z]+/)*changepassword")
 
 
 class ApexSession:
@@ -396,6 +401,38 @@ class ApexSession:
         """
         return bool(_PW_CHANGE.search((self.page.url or "").lower()))
 
+    def _adopt_signed_in_page(self) -> bool:
+        """Follow the sign-in to whichever TAB it finished in.
+
+        `__enter__` keeps `self.page = ctx.pages[0]`, and Apex's sign-in can
+        land somewhere else -- it opens tabs of its own, and a person who
+        signed in perfectly well may have used a second one. The old page then
+        sits on the login URL for ever while the real session is one tab away,
+        which on 2026-11-10 had a run reporting "you're on the password page"
+        after Megan had signed in, in the right window.
+
+        Returns True if it moved to a signed-in page.
+        """
+        try:
+            pages = list(self.ctx.pages) if self.ctx else []
+        except Exception:      # noqa: BLE001
+            return False
+        for page in pages:
+            if page is self.page:
+                continue
+            try:
+                url = (page.url or "").lower()
+            except Exception:  # noqa: BLE001 — a closing tab
+                continue
+            if "herbjoyent.com" not in url:
+                continue
+            if _AUTH_PATH.search(url) and not _PW_CHANGE.search(url):
+                continue
+            self.log("  (the sign-in finished in another tab — following it)")
+            self.page = page
+            return True
+        return False
+
     def signed_in(self) -> bool:
         """On a real Apex page -- not anywhere in the sign-in flow.
 
@@ -434,6 +471,12 @@ class ApexSession:
         if self.signed_in():
             self.log(f"Apex is signed in — {self.page.url}")
             return
+        if self._adopt_signed_in_page():
+            if self.password_gate():
+                self._say_standing_prompt()
+            else:
+                self.log(f"Apex is signed in — {self.page.url}")
+            return
         if self.password_gate():
             self._say_standing_prompt()
             return
@@ -463,6 +506,13 @@ class ApexSession:
                 return
             if self.signed_in() and "herbjoyent" in (self.page.url or ""):
                 self.log(f"  signed in — {self.page.url}")
+                return
+            # The tab this started on may not be the tab they finished in.
+            if self._adopt_signed_in_page():
+                if self.password_gate():
+                    self._say_standing_prompt()
+                else:
+                    self.log(f"  signed in — {self.page.url}")
                 return
         raise NotLoggedIn(
             f"Nobody signed in within {self.login_timeout_s // 60} minutes. "

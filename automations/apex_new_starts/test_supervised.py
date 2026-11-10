@@ -215,15 +215,21 @@ def test_the_change_password_page_counts_as_signed_in():
     NAV on the left." Calling it logged-out made `check_apex` print "❌ Apex"
     on a perfectly good login."""
     for url in ("https://apex.herbjoyent.com/Identity/Account/ChangePassword",
-                "https://apex.herbjoyent.com/Account/ChangePassword"):
+                "https://apex.herbjoyent.com/Account/ChangePassword",
+                # THE LIVE ONE, 2026-11-10 (screenshot from Megan, signed in as
+                # Rafael Hidalgo with the left nav on screen). A pattern written
+                # without the "Manage" segment read it as the login page.
+                "https://apex.herbjoyent.com/Identity/Account/Manage/ChangePassword",
+                "https://apex.herbjoyent.com/Account/Manage/ChangePassword"):
         assert _sess(url).signed_in() is True, url
 
 
 def test_it_is_still_recognised_as_the_prompt():
     """It has to be asked about: a URL load from it redirects back, so
     navigation has to be in-app."""
-    s = _sess("https://apex.herbjoyent.com/Identity/Account/ChangePassword")
-    assert s.password_gate() is True
+    for url in ("https://apex.herbjoyent.com/Identity/Account/ChangePassword",
+                "https://apex.herbjoyent.com/Identity/Account/Manage/ChangePassword"):
+        assert _sess(url).password_gate() is True, url
 
 
 def test_the_real_sign_in_screens_are_still_not_signed_in():
@@ -239,8 +245,9 @@ def test_the_real_sign_in_screens_are_still_not_signed_in():
 def test_the_prompt_is_not_announced_as_a_step_still_to_come():
     """It is where a finished sign-in lands, so listing it as a step had the
     wait loop reporting progress backwards."""
-    s = _sess("https://apex.herbjoyent.com/Identity/Account/ChangePassword")
-    assert s.on_signin_step() == ""
+    for url in ("https://apex.herbjoyent.com/Identity/Account/ChangePassword",
+                "https://apex.herbjoyent.com/Identity/Account/Manage/ChangePassword"):
+        assert _sess(url).on_signin_step() == "", url
 
 
 def test_nothing_raises_on_the_prompt_any_more():
@@ -277,3 +284,14 @@ def test_a_closed_window_ends_the_wait():
     """Closing it IS the person saying they are done."""
     src = inspect.getsource(SUP._hold_open)
     assert "Window closed" in src
+
+
+def test_the_run_follows_the_sign_in_into_another_tab():
+    """__enter__ keeps pages[0], and Apex's sign-in can finish in a tab of its
+    own -- the old page then sits on the login URL for ever while the real
+    session is one tab away."""
+    from automations.apex_new_starts import apex as AX
+    src = inspect.getsource(AX.ApexSession._adopt_signed_in_page)
+    assert "ctx.pages" in src
+    assert "self.page = page" in src
+    assert "_adopt_signed_in_page" in inspect.getsource(AX.ApexSession.require_login)
