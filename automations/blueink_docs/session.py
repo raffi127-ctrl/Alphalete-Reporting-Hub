@@ -43,8 +43,21 @@ DASHBOARD = f"{APP_ROOT}/dashboard/"
 # path costs nothing.)
 LOGIN_URL = f"{APP_ROOT}/"
 
-STORAGE_STATE = Path(__file__).resolve().parent / ".blueink_storage_state.json"
-PROFILE_DIR = Path(__file__).resolve().parent / ".blueink_profile"
+# PER OFFICE SINCE 2026-11-09 (Megan: "each ICD will have their own blueink
+# account"). On an ICD's computer the session is THEIRS and lives under their
+# home with every other ECO credential; the repo copy is replaced on every
+# update, and a profile parked inside it is destroyed by a `git pull` -- which
+# costs a human sign-in, not just a retry. The home copy wins when the folder
+# exists, so Alphalete's own machines keep the paths they have.
+_ECO_DIR = Path.home() / ".config" / "lucy-reports"
+_HERE = Path(__file__).resolve().parent
+
+if (_ECO_DIR / "blueink-creds.json").exists() or (_ECO_DIR / ".blueink_profile").exists():
+    STORAGE_STATE = _ECO_DIR / "blueink_storage_state.json"
+    PROFILE_DIR = _ECO_DIR / ".blueink_profile"
+else:
+    STORAGE_STATE = _HERE / ".blueink_storage_state.json"
+    PROFILE_DIR = _HERE / ".blueink_profile"
 
 
 def _sync_api():

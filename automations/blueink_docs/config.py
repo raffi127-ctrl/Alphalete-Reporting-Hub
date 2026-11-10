@@ -75,7 +75,22 @@ from automations.shared.new_start_eligibility import (  # noqa: E402
 #   {"blueink_api_key": "...", "envelope_template_id": "T-xxxxxxxxxx"}
 #
 # or from env BLUEINK_PRIVATE_API_KEY / BLUEINK_TEMPLATE_ID.
-CREDS_PATH = REPO_ROOT / "blueink-creds.json"
+#
+# PER OFFICE SINCE 2026-11-09 (Megan: "each ICD will have their own blueink
+# account"). On an ICD's computer the key is THEIRS and lives under their home
+# beside every other ECO credential, NOT in the repo: the ICD app may be
+# installed where the user cannot write, and the repo copy is replaced on every
+# update -- a key parked inside it is destroyed by a `git pull`. The home copy
+# wins when it exists, so Alphalete's own machines are untouched.
+ECO_CREDS_PATH = (Path.home() / ".config" / "lucy-reports" / "blueink-creds.json")
+
+
+def creds_path() -> Path:
+    """This machine's Blue Ink key file. The office's own, else the repo's."""
+    return ECO_CREDS_PATH if ECO_CREDS_PATH.exists() else REPO_ROOT / "blueink-creds.json"
+
+
+CREDS_PATH = creds_path()
 
 API_BASE = "https://api.blueink.com/api/v2"
 
@@ -98,8 +113,10 @@ EMAIL_MESSAGE = (
 
 
 def _creds() -> dict:
+    # Resolved per call, not once at import: the ECO setup writes the home copy
+    # while the process that will read it is already running.
     try:
-        return json.loads(CREDS_PATH.read_text())
+        return json.loads(creds_path().read_text())
     except Exception:
         return {}
 

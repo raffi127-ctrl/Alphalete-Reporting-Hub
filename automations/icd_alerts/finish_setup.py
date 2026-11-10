@@ -224,6 +224,22 @@ def _ownerville(log) -> str:
     return "done" if ov_signin.run(log=log) == 0 else "still needs signing in"
 
 
+def _blueink(log) -> str:
+    """This office's OWN Blue Ink account (Megan, 2026-11-09: "each ICD will
+    have their own blueink account").
+
+    Two separate things: the API key, which is how the board reads who has
+    signed, and a browser sign-in, which is the only way documents can be SENT
+    without burning the 50-a-year Bulk Envelope allowance. An office can have
+    the first and not the second -- the board fills, nothing is sent.
+    """
+    try:
+        from automations.icd_alerts import blueink_setup as BS
+        return BS.run(log=log)
+    except Exception as e:  # noqa: BLE001
+        return "not available yet (%s)" % type(e).__name__
+
+
 def _digi_docs(log) -> str:
     """The onboarding-documents question — asked once, on this office's own
     computer, because the answers are the labels on ITS OwnerVille.
@@ -412,7 +428,8 @@ def run(log=print, skip_box: bool = False) -> int:
                     _service_cloud_deferred if skip_box else _service_cloud),
                    ("OwnerVille sign-in", _ownerville),
                    ("Resume pushing", _resume_push),
-                   ("Onboarding documents", _digi_docs)]
+                   ("Onboarding documents", _digi_docs),
+                   ("Blue Ink account", _blueink)]
     results = []
     for name, fn in steps:
         try:
