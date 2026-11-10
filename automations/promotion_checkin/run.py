@@ -45,25 +45,37 @@ def post(*, channel: str = None, dm_user: str = None, final_call: bool = False,
          preview: bool = False):
     week, elig, blocks = build_blocks(final_call, preview=preview)
     web = _web()
-    ch = channel or C.CHANNEL_ID
-    where = f"channel {ch}"
     if dm_user:
         from automations.shared.slack_metrics_post import _resolve_user_id
         uid = _resolve_user_id(web, dm_user)
-        ch = web.conversations_open(users=uid)["channel"]["id"]
-        where = f"DM to {dm_user}"
+        targets = [(web.conversations_open(users=uid)["channel"]["id"],
+                    f"DM to {dm_user}")]
+    else:
+        targets = [(ch, f"channel {ch}")
+                   for ch in ([channel] if channel else C.CHANNEL_IDS)]
     fallback = f"Weekly Promotion Check-In — {week} — {len(elig)} reps eligible"
-    resp = web.chat_postMessage(channel=ch, blocks=blocks, text=fallback)
-    print(f"✅ Posted ({where}) — {len(elig)} eligible reps · ts={resp['ts']}")
-    # A live channel post is a scheduled report -> mark the Hub card green.
-    # [[feedback_launchd_reports_must_publish]] (skip for a preview DM).
+    # One board read, one post per channel; a channel that fails (e.g. Jiraiya
+    # not invited) never stops the others.
+    resp, failed = None, []
+    for ch, where in targets:
+        try:
+            resp = web.chat_postMessage(channel=ch, blocks=blocks, text=fallback)
+            print(f"✅ Posted ({where}) — {len(elig)} eligible reps · ts={resp['ts']}")
+        except Exception as e:                 # noqa: BLE001
+            failed.append(ch)
+            print(f"❌ Post failed ({where}): {type(e).__name__}: {e}")
+    # A live channel post is a scheduled report -> mark the Hub card green only
+    # when EVERY channel got it. [[feedback_launchd_reports_must_publish]]
     if not dm_user and not preview:
         try:
             from automations.day_orchestrator import hub_publish
-            hub_publish.publish_done("promo_checkin", "Weekly Promotion Check-In",
-                                     status="success")
+            hub_publish.publish_done(
+                "promo_checkin", "Weekly Promotion Check-In",
+                status="failed" if failed else "success")
         except Exception:
             pass
+    if failed:
+        raise SystemExit(f"Promotion Check-In not delivered to: {', '.join(failed)}")
     return resp
 
 

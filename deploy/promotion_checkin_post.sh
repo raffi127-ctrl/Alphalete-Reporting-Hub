@@ -1,5 +1,6 @@
 #!/bin/bash
-# Weekly Promotion Check-In — post the interactive card to #alphalete-lvl1-chat.
+# Weekly Promotion Check-In — post the interactive card to #alphalete-lvl1-chat
+# AND #top-leaders-alphalete-org (config.CHANNEL_IDS).
 # Two launchd jobs use this: com.alphalete.promo-checkin-mon (Mon 6:00pm CST) and
 # com.alphalete.promo-checkin-final (Mon 7:15pm, passes --final-call).
 #

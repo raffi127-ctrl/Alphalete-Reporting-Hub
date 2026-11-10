@@ -32,6 +32,10 @@ OWNER = os.environ.get("PROMO_OWNER", "Rafael Hidalgo")
 # Post as Jiraiya (the /dd bot). #alphalete-lvl1-chat is where the Level 1
 # leaders live; Jiraiya must be a MEMBER of it to post.
 CHANNEL_ID = os.environ.get("PROMO_CHANNEL_ID", "C09JG28CD27")   # #alphalete-lvl1-chat
+# Every channel the live card goes to (same cadence, one board read, N posts).
+# #top-leaders-alphalete-org is PRIVATE — Jiraiya must be invited (Megan 2026-11-09).
+CHANNEL_IDS = tuple(c.strip() for c in os.environ.get(
+    "PROMO_CHANNEL_IDS", f"{CHANNEL_ID},C067TTGFEFR").split(",") if c.strip())
 # Preview target: DM this user the interactive card before it goes to the channel.
 PREVIEW_USER = os.environ.get("PROMO_PREVIEW_USER", "").strip()
 
