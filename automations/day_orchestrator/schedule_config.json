@@ -8050,6 +8050,30 @@
    "verify": null,
    "report_id": "atef-nds-watch"
   },
+  "nds_activation_rate_probe": {
+   "close_on": "exit_zero",
+   "on_scheduler": false,
+   "display_name": "NDS Activation Rate by rep - probe (build)",
+   "_note": "BUILD PROBE (Eve 2026-11-10). Raf + Dylan Twaddle (Slack 11/9): ongoing per-rep NDS activation rate at 10-19 / 20-29 / 30-60 days, like cancel rate. Reads Tableau NDS-SNRES-ATT-OOFWorkbook/ChurnActivationRateRep (HTTP csv + every Crosstab sheet + a screenshot) into output/nds_activation_rate/ and prints the shape. Writes no Sheet, posts nothing. No machine on purpose: build runs go to the least-loaded Lucy (routing.py). Read the result with logtail.",
+   "command": [
+    "automations.nds_activation_rate.run"
+   ],
+   "base_args": [
+    "--probe"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "nds-activation-rate-probe"
+  },
   "new_owner_contacts": {
    "close_on": "exit_zero",
    "order": 62.5,
