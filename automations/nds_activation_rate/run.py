@@ -106,11 +106,84 @@ def probe() -> int:
     return 0 if ok else 1
 
 
+def find_rep() -> int:
+    """Is there a view in this workbook that already has the activation rates
+    per REP (not per owner)? Lists every view of the workbook, pulls each one's
+    HTTP .csv (cheap, no dialog) and prints its header + row count, flagging
+    the ones with a rep column and an activation column. Writes nothing."""
+    import re
+    from automations.shared.tableau_patchright import (
+        tableau_session, requests_session_from_page)
+    from automations.alphalete_org_report import tableau_http
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now(TZ).strftime("%Y%m%d_%H%M")
+    with tableau_session(verbose=True) as page:
+        page.goto(VIEW_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(15_000)
+        hrefs = page.eval_on_selector_all(
+            "a[href*='/workbooks/']", "els => els.map(e => e.getAttribute('href'))")
+        wb = next((h for h in hrefs if re.search(r"/workbooks/\d+", h or "")), None)
+        print("workbook link:", wb, "| all:", hrefs[:5])
+        slugs = []
+        if wb:
+            m = re.search(r"(/workbooks/\d+)", wb)
+            page.goto("https://us-east-1.online.tableau.com/#/site/sci"
+                      + m.group(1) + "/views", wait_until="domcontentloaded")
+            page.wait_for_timeout(15_000)
+            links = page.eval_on_selector_all(
+                "a[href*='/views/']",
+                "els => els.map(e => [(e.innerText||'').trim(), e.getAttribute('href')])")
+            for name, href in links:
+                mm = re.search(r"/views/" + WORKBOOK + r"/([^/?#]+)", href or "")
+                if mm and mm.group(1) not in [x for _n, x in slugs]:
+                    slugs.append(((name or "").replace("\n", " ")[:60], mm.group(1)))
+        print(f"\n{len(slugs)} view(s) in {WORKBOOK}:")
+        for n, sl in slugs:
+            print(f"   {sl}  ({n})")
+
+        s = requests_session_from_page(page)
+        hits = []
+        for n, sl in slugs:
+            try:
+                p = tableau_http.download_view_csv(
+                    WORKBOOK, sl, OUT_DIR / f"findrep_{sl}_{stamp}.csv", session=s)
+                raw = p.read_bytes()
+                text = raw.decode("utf-8-sig", errors="replace")
+                rows = list(csv.reader(text.splitlines()))
+                head = rows[0] if rows else []
+                cells = " | ".join(head).lower()
+                # long format: measure names live in the first column's values
+                measures = (sorted({r[0] for r in rows[1:] if r})[:40]
+                            if head and head[0].lower().startswith("measure")
+                            else [])
+                blob = (cells + " " + " ".join(measures)).lower()
+                has_rep = "rep" in cells
+                has_act = "act" in blob
+                flag = "  <== REP + ACTIVATION" if has_rep and has_act else ""
+                print(f"\n--- {sl}: {len(rows)} rows{flag}\n    HEADER: {head}")
+                if measures:
+                    print(f"    MEASURES: {measures}")
+                for r in rows[1:4]:
+                    print("     ", r[:10])
+                if flag:
+                    hits.append(sl)
+            except Exception as e:  # noqa: BLE001
+                print(f"\n--- {sl}: csv failed: {type(e).__name__}: {str(e)[:160]}")
+    print("\nFIND-REP RESULT:", hits or "no view has both a rep column and activation")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--probe", action="store_true",
                     help="download the view + print its shape; writes nothing")
+    ap.add_argument("--find-rep", action="store_true",
+                    help="list every view of the workbook and flag the ones "
+                         "with activation per rep; writes nothing")
     args = ap.parse_args(argv)
+    if args.find_rep:
+        return find_rep()
     if not args.probe:
         print("Only --probe exists yet (build stage). Nothing to fill.")
         return 2
