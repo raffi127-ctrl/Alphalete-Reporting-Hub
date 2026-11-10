@@ -253,3 +253,27 @@ def test_the_old_exception_still_imports():
     """run.py and other callers still name it in an except clause."""
     from automations.apex_new_starts import apex as AX
     assert issubclass(AX.PasswordChangeRequired, RuntimeError)
+
+
+# ------------------------- the filled form outlives the run either way
+
+def test_no_keyboard_does_not_close_the_filled_form():
+    """`input()` raises EOFError the instant stdin is not a tty, which used to
+    close the browser as soon as the fill finished -- nobody would ever have
+    got to press Save."""
+    src = inspect.getsource(SUP._hold_open)
+    assert "isatty" in src
+    assert "EOFError" in src
+    assert "wait_for_timeout" in src, "it has to actually wait, not return"
+
+
+def test_the_run_ends_by_holding_the_window_open():
+    src = inspect.getsource(SUP.run)
+    assert "_hold_open" in src
+    assert "input(" not in src, "the wait belongs in _hold_open, both paths"
+
+
+def test_a_closed_window_ends_the_wait():
+    """Closing it IS the person saying they are done."""
+    src = inspect.getsource(SUP._hold_open)
+    assert "Window closed" in src

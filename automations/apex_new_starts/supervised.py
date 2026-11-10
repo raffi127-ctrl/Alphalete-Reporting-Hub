@@ -213,6 +213,47 @@ def signin(log=print, *, minutes: int = 20) -> int:
         return 1
 
 
+HOLD_MINUTES = 45
+
+
+def _hold_open(page, log=print, *, minutes: int = HOLD_MINUTES) -> None:
+    """Keep the filled form on screen until the person is finished with it.
+
+    A filled Apex create form is not something to close out from under
+    somebody, and closing it loses the fill -- so the window outlives this
+    function's patience either way: it waits for Return when there IS a
+    keyboard, and otherwise just stays up.
+
+    WHY BOTH. Started from a terminal, Return is the obvious "done". Started
+    any other way -- a launcher, a background shell, an agent -- stdin is not a
+    tty and `input()` raises EOFError straight away, which used to close the
+    browser the instant the fill finished. Nobody would ever have got to press
+    Save.
+    """
+    import sys
+    import time
+
+    try:
+        tty = sys.stdin is not None and sys.stdin.isatty()
+    except Exception:          # noqa: BLE001
+        tty = False
+    if tty:
+        try:
+            input("  Press Return here when you are done (the window closes). ")
+            return
+        except EOFError:
+            pass
+    log("  No keyboard here, so the window stays open for %d minutes." % minutes)
+    log("  Close it yourself when you are done — nothing is waiting on it.")
+    deadline = time.time() + minutes * 60
+    while time.time() < deadline:
+        try:
+            page.wait_for_timeout(5000)
+        except Exception:      # noqa: BLE001 — they closed it; that is the signal
+            log("  Window closed.")
+            return
+
+
 def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
     from automations.apex_new_starts import apex as AX
 
@@ -265,12 +306,7 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
         log("  Nothing here will press it. If the record is right, Save moves")
         log("  them onto the Pending tab, which is where stage two finds them.")
         log("")
-        try:
-            input("  Press Return here when you are done (the window closes). ")
-        except EOFError:
-            # Not at a keyboard: leave it be rather than closing a filled form
-            # out from under somebody.
-            log("  (no keyboard — closing)")
+        _hold_open(s.page, log=log)
     return 0
 
 
