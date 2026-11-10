@@ -247,7 +247,7 @@ def pin(P, *, live: bool) -> Dict:
         if "already_in_channel" not in str(e):
             raise
     try:
-        for it in lucy().pins_list(channel=chan).get("items") or []:
+        for it in bot.pins_list(channel=chan).get("items") or []:
             if any(el.get("action_id") == BUTTON
                    for b in (it.get("message") or {}).get("blocks") or []
                    for el in b.get("elements") or []):
@@ -255,8 +255,8 @@ def pin(P, *, live: bool) -> Dict:
     except Exception:
         pass
     r = bot.chat_postMessage(channel=chan, text="📸 New post", blocks=pin_blocks())
-    # Jiraiya has no pins:write (checked 2026-11-09); Lucy's own login may.
-    # If neither can, the button is still there -- pin it by hand once.
+    # Jiraiya has pins:write + pins:read since 2026-11-10; Lucy's login is
+    # the fallback. If neither can, the button is still there -- pin it by hand.
     for who in (bot, lucy()):
         try:
             who.pins_add(channel=chan, timestamp=r["ts"])
