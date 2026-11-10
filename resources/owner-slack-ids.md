@@ -37,6 +37,8 @@ When you confirm a new ID, add it here in the same commit.
 | Luke Baldwin | Luke's Local Office (takeoff-b2b) | U0B7HR6TVEE | |
 | Maxamad Aden | Maximal (ECO `maxamad-nds`) | U09SDDHGWQH | ⚠ A second account, "Maxamad Aden" U0AHTR9V2MD, also exists. The alert system uses U09SDDHGWQH. |
 | Omar Mohamad | Kalkan Marketing (24153) | U0C144X8SBD | ⚠ look-alike U0A0J2T9XKL (oomohamad98@gmail.com) is NOT him — the real one is oomohamad012498@gmail.com and is in his recruiting channel. Megan 2026-10-26 |
+| Nadege Lamarre | Omar's office admin — headshot bot tags her on by-hand uploads | U0CC5AYHWNL | confirmed by Megan 2026-11-10 (screenshot) |
+| Alisson Rodriguez | Raf's office admin — headshot bot tags her on by-hand uploads | U0BBG374GE9 | named by Megan 2026-11-10 |
 | Aiden Atoori | Atoori Management, Inc. (NDS, LA; ECO key `aiden`) | U07Q243HP7Z | aiden.originmgmt@gmail.com. Room #odysseyy C0CES186PGC (the SECOND one; C0CFFFDKTAL is his first, unused). Confirmed by Megan 2026-11-03 |
 | Sahil Multani | M Coast, Inc (AT&T, Raleigh NC; captain) | U07QDQ62RNZ | multani.business@gmail.com. Only Slack account under that name, email matches `captainship_night_knocks/owners.py` (2026-11-04) |
 | Starr Rodenhurst | Nova Management, Inc. (AT&T, Fremont CA; 17573; captain) | U0BQAF8B3S7 | starr.novamanagement@gmail.com. Only Slack account under that name, email matches `captainship_night_knocks/owners.py` (2026-11-04) |
