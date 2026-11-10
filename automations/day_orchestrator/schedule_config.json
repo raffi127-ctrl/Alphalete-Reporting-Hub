@@ -8123,6 +8123,31 @@
    "verify": null,
    "report_id": "nds-activation-rate-probe"
   },
+  "nds_orderlog_status_probe": {
+   "close_on": "exit_zero",
+   "on_scheduler": false,
+   "display_name": "NDS Order Log statuses - probe (build)",
+   "_note": "BUILD PROBE (Eve 2026-11-10). Colten (#l10-alphalete): 'Pending Valid Payment' never shows on his Order Log. Pulls the NDS ORDERLOG export with a 60-day window and prints every status-like column + where 'valid payment' text lives. Writes no Sheet, posts nothing. No machine on purpose: least-loaded Lucy. Read with logtail.",
+   "command": [
+    "automations.office_metrics.nds_orderlog_status_probe"
+   ],
+   "base_args": [
+    "--owner",
+    "Colten Wright"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "nds-orderlog-status-probe"
+  },
   "new_owner_contacts": {
    "close_on": "exit_zero",
    "order": 62.5,
