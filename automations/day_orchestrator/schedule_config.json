@@ -2364,6 +2364,20 @@
    ],
    "base_args": []
   },
+  "algemar_daily_update": {
+   "on_scheduler": false,
+   "_note": "Algemar Kennel's Daily Update (Eve 2026-11-10; Raf #l10 11/6 wants it before Al opens). Same module as omar_daily_update with --owner algemar: AppStream 23965 'Algemar Kennel El Paso' (Raf's funnel renamed, Maud 11/10) -> the 'Daily Update' tab of Maud's 'All In One - Algemar' (1qzYa9pj...). Yesterday on Mountain time; skips anyone already on the tab. TEST: dry by default (no sandbox copy); scheduling comes after Eve's OK, same as Omar's.",
+   "display_name": "Algemar Daily Update (TEST)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.omar_daily_update.run"
+   ],
+   "base_args": [
+    "--owner",
+    "algemar"
+   ]
+  },
   "install_raf_daily_update_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_raf_daily_update_agent` can install the STANDALONE com.alphalete.raf-daily-update LaunchAgent on LUCY 2 (Mon-Sat 17:00, deploy/raf_daily_update.sh). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",

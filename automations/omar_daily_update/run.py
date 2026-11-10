@@ -16,6 +16,7 @@ The noon run covers YESTERDAY: by then the BOB calls are on the calendar.
     python -m automations.omar_daily_update.run --date 2026-10-24
     python -m automations.omar_daily_update.run --write --sandbox  # test copy
     python -m automations.omar_daily_update.run --write            # real sheet
+    python -m automations.omar_daily_update.run --owner algemar    # Al (23965), dry
 """
 from __future__ import annotations
 
@@ -41,6 +42,20 @@ REAL_SHEET = "1eYIs-FV0-J_TGTQtunFxdeII6uwLpvHYbj7C3t_eRTY"   # All In One - Oma
 # "SANDBOX - All In One - Omar (2nd rds test)", Eve's copy (2026-10-26).
 SANDBOX_SHEET = "1nbXYO2WrGbrCbOnrIrvDyv1L0kZMmsgE_JnrwG3n6zk"
 TAB = "Daily Update"
+
+# Same pull for the other new owners on Raf's funnels (Eve 2026-11-10). Each is
+# (AppStream office, real sheet, sandbox sheet or None, office clock). Omar stays
+# the default so his card and reruns don't change.
+OWNERS = {
+    "omar": (OFFICE_ID, REAL_SHEET, SANDBOX_SHEET, EASTERN),
+    # Algemar Kennel, Se7en Summit Acquisitions, El Paso TX (Mountain). AppStream
+    # 23965 "Algemar Kennel El Paso" = one of Raf's funnels renamed (Maud
+    # 2026-11-10). Sheet: Maud's "All In One - Algemar" (Mastermind Org ->
+    # Outside Promotions -> Algemar Kennel); its Daily Update tab has Omar's
+    # exact header. No sandbox copy: test with the default dry run.
+    "algemar": ("23965", "1qzYa9pj_QvDQvVQwZQx3o8xN8dMZrZFgRqMZlj5uDro", None,
+                ZoneInfo("America/Denver")),
+}
 
 
 def log(msg: str) -> None:
@@ -87,6 +102,8 @@ def write_sheet(rows: List[dict], day: dt.date, write: bool, sheet_id: str) -> i
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--owner", default="omar", choices=sorted(OWNERS),
+                    help="whose office/sheet (default omar)")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default yesterday)")
     ap.add_argument("--write", action="store_true", help="append to the Daily Update tab")
     ap.add_argument("--sandbox", action="store_true", help="write Eve's test copy")
@@ -95,18 +112,22 @@ def main(argv=None) -> int:
     if args.dry_run:
         args.write = False
 
+    office, real, sandbox, tz = OWNERS[args.owner]
+    if args.sandbox and not sandbox:
+        log("  %s has no sandbox copy -- use the default dry run" % args.owner)
+        return 2
     day = (dt.date.fromisoformat(args.date) if args.date
-           else dt.datetime.now(EASTERN).date() - dt.timedelta(days=1))
-    sheet = SANDBOX_SHEET if args.sandbox else REAL_SHEET
-    log("=== omar daily update | %s | office %s | %s%s ===" % (
-        day, OFFICE_ID, "WRITE" if args.write else "DRY-RUN",
+           else dt.datetime.now(tz).date() - dt.timedelta(days=1))
+    sheet = sandbox if args.sandbox else real
+    log("=== %s daily update | %s | office %s | %s%s ===" % (
+        args.owner, day, office, "WRITE" if args.write else "DRY-RUN",
         " (sandbox)" if args.sandbox else ""))
     if day.weekday() == 6 and not args.date:
         log("  Sunday -- no 2nd rounds, nothing to do")
         return 0
 
     from automations.raf_daily_update.run import harvest
-    rows = RL.build_rows(harvest(day, OFFICE_ID))
+    rows = RL.build_rows(harvest(day, office))
     log("  %s" % RL.summary_line(rows))
     for r in rows:
         log("    %-16s %s %-22s 2nd: %-22s %s" % (r["status"] or "to call", r["first"],
