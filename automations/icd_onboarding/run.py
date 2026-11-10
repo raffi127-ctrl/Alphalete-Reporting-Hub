@@ -310,12 +310,14 @@ def from_contacts(office_key: str, week_start: dt.date, *,
     from automations.applicant_contacts.extract import phone10
 
     by_phone, by_email, by_name = {}, {}, {}
+    per_account: Dict[str, int] = {}
     n = 0
     for _account, people in (SS.load() or {}).items():
         for entry in (people or {}).values():
             if str(entry.get("status") or "") == SS.REMOVED:
                 continue      # taken out again; not an added contact
             n += 1
+            per_account[str(_account)] = per_account.get(str(_account), 0) + 1
             ph = phone10(str(entry.get("phone") or ""))
             if ph:
                 by_phone[ph] = entry
@@ -329,6 +331,13 @@ def from_contacts(office_key: str, week_start: dt.date, *,
     log("  contacts: %d on record from the second-round sync "
         "(%d with a phone, %d with an email)"
         % (n, len(by_phone), len(by_email)))
+    # WHOSE contacts they are. The sync keys its state by ApplicantStream
+    # account, and a state full of somebody else's offices looks exactly like
+    # a state full of nobody -- both tick zero. 98 contacts matched 0 of
+    # Raf's 21 on 2026-11-10 and the counts alone could not say which it was.
+    if per_account:
+        log("    by account: %s"
+            % ", ".join("%s=%d" % kv for kv in sorted(per_account.items())))
 
     ws = S.open_board(F.workbook_for(office_key), create=False)
     if ws is None:
@@ -355,6 +364,12 @@ def from_contacts(office_key: str, week_start: dt.date, *,
         log("    matched %d: %s"
             % (len(verdicts), ", ".join("%d by %s" % (v, k)
                                         for k, v in how.items() if v)))
+    else:
+        askable = sum(1 for r in rows
+                      if str(r.get("Phone") or "").strip()
+                      or str(r.get("Email") or "").strip())
+        log("    matched 0 of %d on the board (%d of them had a phone or an "
+            "email to match on)" % (len(rows), askable))
     return F.apply(F.workbook_for(office_key), week_start, "contacts",
                    verdicts, dry_run=dry_run, log=log)
 
