@@ -123,6 +123,37 @@ def _present_channels(pg) -> list[str]:
         ".replace('-id',''))")
 
 
+# Zoho's home "Brand Health" table names every connected page the way it shows
+# publicly, with the network in the icon's class (read 2026-11-10 on
+# Alphalete's Zoho: fbPage / tw / lin (a PERSON, skipped) / linPage / ig /
+# tiktok). Google isn't in that table.
+_NAME_ICON = {"fbPage": "facebook", "ig": "instagram", "tw": "x",
+              "linPage": "linkedin", "tiktok": "tiktok"}
+
+
+def page_names(pg) -> dict:
+    """{page: public name} for the connected pages, e.g. {"facebook":
+    "Alphalete Marketing", "instagram": "alphaletemarketing"}. {} if the
+    table isn't there."""
+    try:
+        pg.wait_for_selector(".zsImg", timeout=15000)
+    except Exception:
+        return {}
+    rows = pg.evaluate("""() => [...document.querySelectorAll('.zsImg')].map(i => {
+        let row = i.parentElement;
+        for (let k = 0; k < 4 && row && !(row.innerText || '').trim(); k++) row = row.parentElement;
+        return {cls: String(i.getAttribute('class') || ''), name: ((row || {}).innerText || '').trim().split(String.fromCharCode(10))[0]};
+    })""")
+    out = {}
+    for r in rows or []:
+        toks = set(str(r.get("cls") or "").split())
+        page = next((v for k, v in _NAME_ICON.items() if k in toks), None)
+        name = (r.get("name") or "").strip()
+        if page and name and page not in out:
+            out[page] = name
+    return out
+
+
 def select_channels(pg, media_type: str = "photo",
                     keep: tuple | None = None) -> list[str]:
     """Deselect channels we must not post to, return the ones left selected.
@@ -232,12 +263,17 @@ def channel_check(profile_dir: Path | None = None, *, headless: bool = False,
             if "accounts.zoho.com" in pg.url:
                 return {"logged_in": False, "channels": []}
             pg.wait_for_timeout(5000)
+            try:
+                names = page_names(pg)
+            except Exception:
+                names = {}
             btn = next((x for x in pg.locator(_NEW_POST).all() if x.is_visible()), None)
             if btn is None:
-                return {"logged_in": True, "channels": [], "note": "no New Post button"}
+                return {"logged_in": True, "channels": [], "names": names,
+                        "note": "no New Post button"}
             btn.click(timeout=15000)
             pg.wait_for_timeout(4000)
-            return {"logged_in": True, "channels": _present_channels(pg)}
+            return {"logged_in": True, "channels": _present_channels(pg), "names": names}
         finally:
             ctx.close()
 

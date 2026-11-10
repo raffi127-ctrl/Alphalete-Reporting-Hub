@@ -4,7 +4,7 @@ Megan 2026-11-09: "this card is way too busy ... make it super simple - 7
 year old simple rule". So no grades, no scores, no tables, no jargon:
 
     🟢/🟡/🔴  ⭐ Google reviews        4.8 ★ · 820 reviews · 3 new this week
-    🟢/🟡/🔴  🔎 When people Google you   Your website is #2 · nothing bad on page 1
+    🟢/🟡/🔴  🔎 When people Google you   Your website is #2 · no negative results on page 1
     🟢/🟡/🔴  📸 Posts this week        4 posts went out
     🟢/🟡/🔴  ✅ Your info online       Everything matches
 
@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import json
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 GREEN, YELLOW, RED, GREY = "green", "yellow", "red", "grey"
 
@@ -104,17 +106,17 @@ HOW_FIX = {
     ],
 }
 HOW = {
-    "bad_review": ["Open your Slack channel (link at the top of this card).",
+    "bad_review": ["Tap your Slack channel above to open it.",
                    "Read Lucy's reply under the review.",
                    "React ✅ to post it, or ❌ and type what you'd change."],
-    "photos": ["Open your Slack channel (link at the top of this card).",
+    "photos": ["Tap your Slack channel above to open it.",
                "Tap the pinned 📸 New post button.",
                "Add your photo(s). Every photo you add goes in that ONE post. For "
                "another post, tap New post again.",
                "Say who's in it and what's happening, then tap Submit.",
                "Lucy edits every photo, writes the caption, and asks for your ✅ "
                "before anything posts."],
-    "reviews": ["Copy your review link (top of this card).",
+    "reviews": ["Tap your review link above and copy it.",
                 "Text it to 5 customers who were happy with their service.",
                 "Keep it short: \"Would you leave us a quick Google review? It helps a ton!\""],
 }
@@ -167,7 +169,7 @@ WHY = {
               "Telling Lucy who's in it and what's happening lets her write a "
               "caption that's true to what happened.",
     "reviews": "New reviews push your rating up, show Google you're active, and help push "
-               "bad search results further down. Happy customers rarely review unless you ask.",
+               "negative search results further down. Happy customers rarely review unless you ask.",
 }
 
 
@@ -235,19 +237,27 @@ def search_line(p) -> Dict:
     from automations.brand_audit.collectors import serp
     from automations.online_presence.weekly_card import company_for
     try:
-        m = serp.collect(company_for(p)).as_dict().get("metrics") or {}
+        d = serp.collect(company_for(p)).as_dict()
+        m = d.get("metrics") or {}
+        page1 = (d.get("evidence") or {}).get("page1") or []
     except Exception:
-        m = {}
+        m, page1 = {}, []
+    # The top 5 Google results for their name, as people see them (Megan
+    # 2026-11-10: "this should say what the top 5 results are and if it's bad
+    # be red").
+    top = [{"pos": r.get("position"), "title": r.get("title") or r.get("domain") or "",
+            "domain": r.get("domain") or "", "link": r.get("link") or "",
+            "kind": r.get("category") or "neutral"} for r in page1[:5]]
     if not m:
         return {"color": GREY, "text": "Couldn't search Google this week"}
     own, neg = m.get("own_site_position"), m.get("top_negative_position")
     site = f"Your website is #{own}" if own else "Your website isn't on page 1"
     if neg:
-        bad = f"something bad is #{neg}"
+        bad = f"a negative result is #{neg}"
         color = RED if (own is None or neg < own) else YELLOW
     else:
-        bad, color = "nothing bad on page 1", (GREEN if own and own <= 3 else YELLOW)
-    return {"color": color, "text": f"{site} · {bad}", "own": own, "neg": neg}
+        bad, color = "no negative results on page 1", (GREEN if own and own <= 3 else YELLOW)
+    return {"color": color, "text": f"{site} · {bad}", "own": own, "neg": neg, "top": top}
 
 
 def posts_line(p, now: dt.datetime) -> Dict:
@@ -275,12 +285,40 @@ def posts_line(p, now: dt.datetime) -> Dict:
             "pages": pages, "prev": {"n": n_prev}}
 
 
+# What's WRONG, in plain words, for the "Your info online" card (Megan
+# 2026-11-10: "this should just say what it is"). The to-do list says what
+# to DO; this says what Lucy found.
+PROBLEM = {
+    "website link is secure (https)": "Your website link on {site} doesn't start with https://",
+    "address": "The address on {site} doesn't match yours",
+    "phone": "The phone number on {site} is different from yours",
+    "website": "The website link on {site} is wrong",
+    "business name": "Your business name on {site} doesn't match",
+    "listing verified": "Your Google listing isn't verified",
+    "site loads": "Your website isn't loading",
+    "listing": "Lucy can't find your Google listing",
+}
+
+
+SEO_ONLY = {"name in page title"}
+
+
+def problem_text(r: Dict) -> str:
+    item, site = r["item"], r.get("site") or ""
+    if item.startswith("links to their "):
+        return f"Your website doesn't link to your {_page(item)} page"
+    return PROBLEM.get(item, f"Your {item} on {{site}} needs a look").format(
+        site="your website" if site.lower() == "website" else site)
+
+
 def info_line(p) -> Dict:
     from automations.online_presence import consistency
     try:
         rows = consistency.checks(p)
     except Exception:
-        return {"color": GREY, "text": "Couldn't check this week", "fixes": []}
+        return {"color": GREY, "text": "Couldn't check this week", "fixes": [], "checks": {}}
+    checks = {f'{r["site"]}|{r["item"]}': r["ok"] for r in rows}
+    rows = [r for r in rows if r["item"] not in SEO_ONLY]
     bad = [r for r in rows if r["ok"] is False]
     def say(r):
         if (r.get("site") or "").lower() == "website":
@@ -293,10 +331,13 @@ def info_line(p) -> Dict:
     fixes = [{"text": say(r),
               "why": WHY_FIX.get(r["item"], WHY_FIX["_"]),
               "how": _how(r)} for r in bad]
+    checked = sorted({r["site"] for r in rows if r.get("ok") is not None})
     if not bad:
-        return {"color": GREEN, "text": "Everything matches", "fixes": []}
+        return {"color": GREEN, "text": "Everything matches", "fixes": [], "problems": [],
+                "checked": checked, "checks": checks}
     return {"color": RED, "text": f"{len(bad)} thing{'s' if len(bad) != 1 else ''} to fix",
-            "fixes": fixes}
+            "fixes": fixes, "problems": [problem_text(r) for r in bad], "checked": checked,
+            "checks": checks}
 
 
 def todo(lines: Dict, review_link: str = "") -> List[Dict]:
@@ -445,7 +486,7 @@ def chart_svg(c: Dict, w: int = 330, h: int = 150) -> str:
         return T + ph * (1 - f)
     xy = [(x(i), y(v), lab, v) for i, (lab, v) in enumerate(pts) if v is not None]
     path = " ".join(f"{'M' if k == 0 else 'L'}{px:.1f},{py:.1f}" for k, (px, py, _, _) in enumerate(xy))
-    dots = "".join(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="4.5" fill="#2F6FDE" stroke="#fff" '
+    dots = "".join(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="4.5" fill="#B8862B" stroke="#fff" '
                    f'stroke-width="2"><title>{e(lab)}: {e(c["fmt"].format(v))}</title></circle>'
                    for px, py, lab, v in xy)
     lx, ly, _, lv = xy[-1]
@@ -453,17 +494,199 @@ def chart_svg(c: Dict, w: int = 330, h: int = 150) -> str:
     return (f'<div class="chart"><div class="ct">{e(c["title"])}</div>'
             f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" '
             f'aria-label="{e(c["title"])}">'
-            f'<line x1="{L}" y1="{T + ph}" x2="{L + pw}" y2="{T + ph}" stroke="#E2E2E2" stroke-width="1"/>'
-            f'<path d="{path}" fill="none" stroke="#2F6FDE" stroke-width="2" stroke-linejoin="round"/>'
+            f'<line x1="{L}" y1="{T + ph}" x2="{L + pw}" y2="{T + ph}" stroke="#E6DAC2" stroke-width="1"/>'
+            f'<path d="{path}" fill="none" stroke="#B8862B" stroke-width="2.5" stroke-linejoin="round"/>'
             f'{dots}<text x="{lx + 9:.1f}" y="{ly + 5:.1f}" font-size="15" font-weight="700" '
-            f'fill="#1E1E1E">{e(c["fmt"].format(lv))}</text>'
-            f'<text x="{L}" y="{h - 8}" font-size="13" fill="#888">{e(first)}</text>'
-            f'<text x="{L + pw}" y="{h - 8}" font-size="13" fill="#888" text-anchor="end">{e(last)}</text>'
+            f'fill="#2A2318">{e(c["fmt"].format(lv))}</text>'
+            f'<text x="{L}" y="{h - 8}" font-size="13" fill="#6E6253">{e(first)}</text>'
+            f'<text x="{L + pw}" y="{h - 8}" font-size="13" fill="#6E6253" text-anchor="end">{e(last)}</text>'
             f'</svg></div>')
 
 
 def _md(d) -> str:
     return f"{d:%b} {d.day}"                # "Nov 9" -- %-d breaks on Windows
+
+
+
+# ---- ranking higher on Google (Megan 2026-11-10: "we need to have ideas of
+# how to get their SEO better"). Picked from THIS office's numbers, never a
+# generic list: each idea fires only when its own reason is true this week.
+# Ordered by how much it moves a local listing. Ideas already in "Do this
+# week" are skipped, so the card never says the same thing twice.
+SEO = {
+    "reviews": {
+        "text": "Get 3+ new Google reviews every week",
+        "why": "How many reviews you get, and how recently, is one of the biggest things "
+               "Google uses to rank local businesses. A steady trickle beats a big burst.",
+        "how": [("Pick 3 happy customers each week (a great install, a thank-you text).", "weekly_reviews"),
+                "Send them your review link (it's in \"Do this week\" and the Slack message).",
+                "Lucy answers every review, which Google also likes."]},
+    "google_posts": {
+        "text": "Post on your Google listing every week",
+        "why": "Listings that post often look active to Google and show up more in Maps. "
+               "Lucy already sends your approved photos to Google, so this is one tap.",
+        "how": ["Tap 📸 New post in your Slack channel.",
+                ("Keep Google ticked on your pages (it is by default).", "google_ticked"),
+                ("One post a week is plenty.", "weekly_posts")]},
+    "push_down": {
+        "text": "Push the negative result down",
+        "why": "Google shows the pages it trusts most for your name. Every active page you "
+               "own (your website, Google listing, Facebook, Instagram, LinkedIn) can take a "
+               "top spot and push the negative one down to page 2, where almost nobody looks.",
+        "how": [("Make sure every social page uses your business name (Facebook and LinkedIn: the exact name; "
+                 "Instagram, X and TikTok usernames can be a short version).", "page_names"),
+                ("Keep posting to them every week with 📸 New post (Lucy posts to all of them at once).", "weekly_posts"),
+                ("Link to them from your website and your Google listing.", "site_links_socials")]},
+    "own_site": {
+        "text": "Get your website to #1 when people search your name",
+        "why": "When your own site isn't first, people land on someone else's page about you "
+               "first. Google puts your site first when everything points to it.",
+        "how": [("Use the exact same business name on your website, Google listing and social pages.", "name_match"),
+                ("Link your website from your Google listing and every social page.", "site_on_google"),
+                ("Put your business name in your website's page title (your website person can do this in 5 minutes).", "title_name")]},
+    "photos": {
+        "text": "Add 5 new photos to your Google listing each month",
+        "why": "Listings with fresh photos get more clicks and calls, and Google shows them more.",
+        "how": ["Use 📸 New post: the photos you approve also land on your Google listing.",
+                "Team photos, the office and happy customers all work."]},
+    "description": {
+        "text": "Say what you do and where, in your Google description",
+        "why": "Google matches searches like \"AT&T internet Dallas\" to the words in your listing.",
+        "how": ["Open your Google listing and tap Edit profile, then Description.",
+                "One or two sentences: what you sell and the cities you cover.",
+                "Save. No keyword stuffing; write it like you'd say it."]},
+}
+
+
+def _norm(x: str) -> str:
+    x = re.sub(r"[^a-z0-9]", "", (x or "").lower())
+    return re.sub(r"(llc|inc|co|corp)$", "", x)
+
+
+def names_check(business: str, names: Dict[str, str]) -> Optional[Tuple[bool, str]]:
+    """Do their Facebook / Instagram / LinkedIn / X / TikTok pages carry their
+    business name? (Megan 2026-11-10: "we should check their platform
+    names".) A page NAME must contain it; a HANDLE (@name) must too, written
+    without spaces -- 'alphaletemarketing' passes for Alphalete Marketing,
+    'AlphaleteMrktg' does not. (ok, detail) or None when Lucy has no names."""
+    if not names:
+        return None
+    biz = _norm(business)
+    # The business's main word: "Alphalete" for Alphalete Marketing (skip
+    # filler like "The"; generic trade words can't be the identifying one).
+    generic = {"the", "marketing", "management", "mgmt", "group", "sales", "solutions",
+               "services", "llc", "inc", "co", "company", "enterprises", "consulting"}
+    words = [w for w in re.findall(r"[a-z0-9]+", (business or "").lower()) if w not in generic]
+    key = next((w for w in words if len(w) >= 4), words[0] if words else biz)
+    label = {"facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn",
+             "x": "X", "tiktok": "TikTok"}
+    # Facebook / LinkedIn show a page NAME: the full business name is required.
+    # X / Instagram / TikTok show a USERNAME with a length cap (X: 15), so a
+    # short form carrying the main word passes (decided 2026-11-10).
+    def ok(page, v):
+        n = _norm(v)
+        if page in ("facebook", "linkedin"):
+            return bool(biz) and biz in n
+        return bool(biz) and (biz in n or (key and key in n))
+    off = [f"{label.get(k, k)}: {v}" for k, v in sorted(names.items()) if not ok(k, v)]
+    return (not off, "; ".join(off))
+
+
+def page_names(p) -> Dict[str, str]:
+    """The names Zoho shows for their pages: the office computer's daily check
+    (watch.json), or Alphalete's own Zoho when this machine has it."""
+    try:
+        st = json.loads(p.path("watch.json").read_text())
+        names = ((st.get("last_check") or {}).get("result") or {}).get("names") or {}
+        if names:
+            return names
+    except Exception:
+        pass
+    if p.key == "alphalete":
+        from automations.brand_audit import zoho_draft
+        cache = p.path("page_names.json")
+        try:
+            if zoho_draft.ZOHO_PROFILE_DIR.exists():
+                names = zoho_draft.channel_check(headless=False).get("names") or {}
+                if names:
+                    cache.parent.mkdir(parents=True, exist_ok=True)
+                    cache.write_text(json.dumps(names))
+                    return names
+            return json.loads(cache.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def step_done(key: str, lines: Dict):
+    """Is this how-step already done? True / False, or None when Lucy can't
+    tell (Megan 2026-11-10: "we should tell them if they ✅ on these")."""
+    g, po, inf = lines["google"], lines["posts"], lines["info"]
+    ck = inf.get("checks") or {}
+    if key == "weekly_reviews":
+        return (g.get("new") or 0) >= 3
+    if key == "weekly_posts":
+        return (po.get("n") or 0) >= 1
+    if key == "google_ticked":
+        return "google" in (po.get("pages") or [])
+    if key == "page_names":
+        return inf.get("names")
+    if key == "name_match":
+        g_ok, pn = ck.get("Google|business name"), inf.get("names")
+        if g_ok is None and pn is None:
+            return None
+        bad = [] if g_ok is not False else ["your Google listing"]
+        if pn and not pn[0]:
+            bad.append(pn[1])
+        return (not bad, "; ".join(bad))
+    if key == "site_on_google":
+        return ck.get("Google|website")
+    if key == "title_name":
+        return ck.get("Website|name in page title")
+    if key == "site_links_socials":
+        got = [v for k, v in ck.items() if k.startswith("Website|links to their ") and v is not None]
+        return all(got) if got else None
+    return None
+
+
+def _marked(how: List, lines: Dict) -> List:
+    out = []
+    for step in how:
+        if isinstance(step, (tuple, list)):
+            text, key = step
+            d = step_done(key, lines)
+            done, detail = (d if isinstance(d, tuple) else (d, ""))
+            out.append({"text": text, "done": done, "detail": detail if done is False else ""})
+        else:
+            out.append({"text": step, "done": None, "detail": ""})
+    return out
+
+
+def seo_ideas(lines: Dict, todo_items: List[Dict], n: int = 3) -> List[Dict]:
+    g, s, po = lines["google"], lines["search"], lines["posts"]
+    picks = []
+    if (g.get("new") or 0) < 3:
+        picks.append("reviews")
+    if s.get("neg"):
+        picks.append("push_down")
+    if s.get("own") and s["own"] > 1:
+        picks.append("own_site")
+    if (po.get("n") or 0) < 1:
+        picks.append("google_posts")
+    picks += ["photos", "description"]
+    done = " ".join(t["text"].lower() for t in todo_items)
+    out = []
+    for k in dict.fromkeys(picks):
+        if k == "reviews" and "review link" in done:
+            continue
+        how = _marked(SEO[k]["how"], lines)
+        # every step already done -> nothing to tell them; show the next idea
+        if how and all(h["done"] is True for h in how):
+            continue
+        out.append(dict(SEO[k], key=k, how=how))
+        if len(out) == n:
+            break
+    return out
 
 
 def slack_link(channel_id: str) -> str:
@@ -475,6 +698,7 @@ def build(p, now: Optional[dt.datetime] = None, review_days: int = 7) -> Dict:
     now = now or dt.datetime.now()
     lines = {"google": google_line(p, now, review_days), "search": search_line(p),
              "posts": posts_line(p, now), "info": info_line(p)}
+    lines["info"]["names"] = names_check(p.business_name, page_names(p))
     link = ""
     try:
         from automations.brand_audit import gbp_api
@@ -491,7 +715,8 @@ def build(p, now: Optional[dt.datetime] = None, review_days: int = 7) -> Dict:
             if hasattr(now, "strftime") else "", "until": _md(now),
             "lines": lines, "todo": todo(lines, link), "verdict": verdict, "trend": trend,
             "review_link": link, "slack_link": slack_link(p.slack_channel),
-            "progress": progress(p, lines, now)}
+            "progress": progress(p, lines, now),
+            "seo": seo_ideas(lines, todo(lines, link))}
 
 
 # ---- the page --------------------------------------------------------------------
@@ -546,131 +771,266 @@ def badges(pages) -> str:
 
 def render(card: Dict, mode: str = "image") -> str:
     """mode "image": the picture posted to Slack (points at the PDF/thread).
-    "web": the preview (the reviews line opens the list).
-    "pdf": the PDF in the thread -- everything spelled out, links clickable."""
+    "web": the preview (reviews + Why/How open in place).
+    "pdf": the PDF in the thread -- everything spelled out, links clickable.
+
+    THE LOOK (Megan 2026-11-10, "redo the card all together"): the house board
+    look she picked (feedback_sales_board_look) -- warm cream + gold, a header
+    band with the office initial in a gold circle, four number cards that each
+    say how they moved vs last week, and status words in pills."""
     e = html.escape
-    interactive = mode == "web"
-    g = card["lines"]["google"]
-    n = len(g.get("reviews") or [])
+    web, pdf, img = mode == "web", mode == "pdf", mode == "image"
+    L = card["lines"]
+    g, s, po, inf = L["google"], L["search"], L["posts"], L["info"]
+    trend = card.get("trend") or {}
+    n_new = len(g.get("reviews") or [])
 
-    ARROW = {"up": ("▲", "#22A35A"), "down": ("▼", "#D93A3A"), "same": ("=", "#9AA0A6"),
-             "new": ("", "#9AA0A6")}
+    PILL = {GREEN: ("good", "Good"), YELLOW: ("watch", "Keep an eye on it"),
+            RED: ("bad", "Needs you"), GREY: ("na", "Couldn't check")}
+    ARROW = {"up": ("▲", "up"), "down": ("▼", "down"), "same": ("●", "same"), "new": ("", "new")}
 
-    def row(k, icon, label):
-        val = e(card["lines"][k]["text"])
-        body = (f'<div class="label">{icon} {label}</div><div class="val">{val}</div>')
-        t = (card.get("trend") or {}).get(k)
-        if t:
-            a, col = ARROW[t["dir"]]
-            body += f'<div class="was">{e(t["text"])} <b style="color:{col}">{a}</b></div>' 
-        if k == "posts" and card["lines"]["posts"].get("pages"):
-            body += (f'<div class="pages">Posting to {badges(card["lines"]["posts"]["pages"])}</div>')
-        if k == "google" and n and mode == "pdf":
-            body += '<div class="tap">They\'re listed at the end, with how each was answered.</div>'
-        elif k == "google" and n:
-            if interactive:
-                return (f'<details class="row rowd"><summary><span class="dot" style="background:'
-                        f'{DOT[g["color"]]}"></span><div>{body}<div class="tap">Tap to see them and '
-                        f'how they were answered ▾</div></div></summary>'
-                        f'<div class="rvs">{review_list_html(g["reviews"])}</div></details>')
-            body += '<div class="tap">Open the PDF below to read them 👇</div>'
-        return (f'<div class="row"><span class="dot" style="background:{DOT[card["lines"][k]["color"]]}">'
-                f'</span><div>{body}</div></div>')
-    rows = "".join(row(k, icon, label) for k, icon, label in ROWS)
-    def linkify(t):
-        t = e(t)
-        import re as _re
-        return _re.sub(r"(https?://\S+)", r'<a href="\1">leave-a-review link</a>', t)
-    def steps(t):
-        return ("<ol class=\"how\">" + "".join(f"<li>{e(x)}</li>" for x in t.get("how") or [])
-                + "</ol>") if t.get("how") else ""
-    def item(t):
-        if mode == "image":
-            return f"<li>{linkify(t['text'])}</li>"
-        if mode == "pdf":
-            return f'<li>{linkify(t["text"])}<div class="why"><b>Why:</b> {e(t["why"])}</div></li>'
-        return (f'<li><details class="whyd"><summary>{linkify(t["text"])} '
-                f'<span class="whyq">Why + how?</span></summary><div class="why"><b>Why:</b> '
-                f'{e(t["why"])}<div class="howh">How:</div>{steps(t)}</div></details></li>')
-    todo = ("".join(item(t) for t in card["todo"])
-            or "<li>Nothing. Keep sending Lucy your photos!</li>")
-    ch = "".join(chart_svg(c) for c in card.get("progress") or [])
-    charts = (f'<h2>How you\'re doing week by week</h2><div class="charts">{ch}</div>'
-              if ch else "")
-    why_note = ('<div class="tap">Open the PDF below for why each one matters, and how to do it 👇</div>'
-                if mode == "image" and card["todo"] else "")
-    howto = ("<h2>How to do it</h2>" + "".join(
-        f'<div class="hw"><div class="hwt">{i}. {e(t["text"])}</div>{steps(t)}</div>'
-        for i, t in enumerate(card["todo"], 1) if t.get("how"))
-        if mode == "pdf" and card["todo"] else "")
-    # Megan 2026-11-09: least friction -- their review link and their Slack
-    # channel are one tap away on the card itself.
-    rl, sl = card.get("review_link"), card.get("slack_link")
-    if mode == "image":
-        links = ('<div class="links">⭐ Your review link · 💬 Your Slack channel '
-                 '<span class="lk2">(tap them in the message below)</span></div>'
-                 if rl or sl else "")
+    def pill(color):
+        cls, word = PILL.get(color, PILL[GREY])
+        return f'<span class="pill {cls}">{word}</span>'
+
+    def delta(k):
+        t = trend.get(k)
+        if not t:
+            return '<div class="vs na">First week: nothing to compare yet</div>'
+        a, cls = ARROW[t["dir"]]
+        txt = t["text"].replace("Last week: ", "")
+        if t["dir"] == "new":
+            return '<div class="vs na">First week: nothing to compare yet</div>'
+        return f'<div class="vs {cls}"><b>{a}</b> vs last week · {e(txt)}</div>'
+
+    def kpi(k, label, big, sub, extra=""):
+        return (f'<div class="kpi"><div class="kh"><span class="kl">{label}</span>'
+                f'{pill(L[k]["color"])}</div>' + (f'<div class="big">{big}</div>' if big else "")
+                + f'<div class="sub">{sub}</div>{extra}{delta(k)}</div>')
+
+    avg = g.get("avg")
+    k_rating = kpi("google", "Google rating",
+                   f'{avg:.1f}<span class="star">★</span>' if avg else "—",
+                   f'{g.get("count") or 0:,} reviews · <b>{n_new}</b> new this week')
+    own, neg = s.get("own"), s.get("neg")
+    TAG = {"owned": ("own", "Your website"), "profile": ("prof", "Your page"),
+           "negative": ("neg", "Negative"), "neutral": ("", "")}
+
+    def result(r):
+        cls, tag = TAG.get(r["kind"], TAG["neutral"])
+        title = e(r["title"][:80] + ("…" if len(r["title"]) > 80 else ""))
+        name = (f'<a href="{e(r["link"])}">{title}</a>' if (r["link"] and not img) else title)
+        return (f'<li class="res {cls}"><span class="rp">{r["pos"]}</span><span class="rt">'
+                f'{name}<span class="rd">{e(r["domain"])}</span></span>'
+                + (f'<span class="rtag {cls}">{tag}</span>' if tag else "") + "</li>")
+    top = s.get("top") or []
+    top_html = (f'<div class="toph">Top 5 on Google for your name</div>'
+                f'<ol class="top5">{"".join(result(r) for r in top)}</ol>') if top else ""
+    k_search = kpi("search", "When people Google you",
+                   f"#{own}" if own else "—",
+                   "your website's spot" + (f' · <span class="warn">a negative result is #{neg}</span>'
+                                            if neg else " · no negative results near the top"),
+                   top_html)
+    pages = po.get("pages") or []
+    k_posts = kpi("posts", "Posts this week", f'{po.get("n") or 0}',
+                  "posts went out",
+                  f'<div class="pages">{badges(pages)}</div>' if pages else "")
+    probs = inf.get("problems") or []
+    checked = " and ".join(("your website" if c.lower() == "website" else c)
+                           for c in inf.get("checked") or []) or "Google and your website"
+    if probs:
+        info_body = "".join(f'<li class="prob">{e(t)}</li>' for t in probs)
+        k_info = kpi("info", "Your info online", "", f'<ul class="probs">{info_body}</ul>')
+    elif inf["color"] == GREEN:
+        k_info = kpi("info", "Your info online", "", f'<div class="okline">✓ Your name, address, '
+                     f'phone and website match on {e(checked)}</div>')
     else:
-        bits = ([f'<a class="btn" href="{e(rl)}">⭐ Your review link</a>'] if rl else []) + \
-               ([f'<a class="btn" href="{e(sl)}">💬 Your Slack channel</a>'] if sl else [])
-        links = (f'<div class="links">{"".join(bits)}'
-                 + ('<div class="lk2">Send the review link to happy customers: one tap '
-                    'takes them straight to the stars.</div>' if rl else "")
-                 + "</div>") if bits else ""
-    pdf_reviews = (f'<h2>New Google reviews ({n})</h2><div class="rvs0">{review_list_html(g["reviews"])}</div>'
-                   if mode == "pdf" and n else "")
+        k_info = kpi("info", "Your info online", "", f'<div class="okline na">{e(inf["text"])}</div>')
+    kpis = k_rating + k_posts + k_info + k_search.replace('class="kpi"', 'class="kpi wide"', 1)
+
+    # new reviews: open in place (web), listed (pdf), pointed at (image)
+    revs = ""
+    if n_new:
+        body = review_list_html(g["reviews"])
+        if web:
+            revs = (f'<details class="box rv-box"><summary><b>💬 {n_new} new Google '
+                    f'review{"s" if n_new != 1 else ""}</b> <span class="tap">See them and how '
+                    f'they were answered ▾</span></summary>{body}</details>')
+        elif pdf:
+            revs = f'<div class="box rv-box"><h3>💬 New Google reviews ({n_new})</h3>{body}</div>'
+        else:
+            revs = (f'<div class="box rv-box"><b>💬 {n_new} new Google review'
+                    f'{"s" if n_new != 1 else ""}</b> <span class="tap">· read them in the PDF below</span></div>')
+
+    rl, sl = card.get("review_link"), card.get("slack_link")
+
+    def linkify(t):
+        # The Slack channel and review link are one tap away INSIDE the to-do
+        # (Megan 2026-11-10: "the slack link should be here"), not just up top.
+        import re as _re
+        out = _re.sub(r"(https?://\S+)", r'<a href="\1">link</a>', e(t))
+        if not img:
+            if sl:
+                out = out.replace("your Slack channel",
+                                  f'<a class="inl" href="{e(sl)}">your Slack channel</a>', 1)
+            if rl:
+                out = out.replace("your review link",
+                                  f'<a class="inl" href="{e(rl)}">your review link</a>', 1)
+        return out
+
+    def step_li(x):
+        if isinstance(x, dict):
+            mark = {True: '<span class="ck yes">✅ done</span>', False: '<span class="ck no">❌ not yet</span>'
+                    }.get(x.get("done"), "")
+            det = f'<div class="ckd">Lucy sees: {e(x["detail"])}</div>' if x.get("detail") else ""
+            return f'<li>{e(x["text"])} {mark}{det}</li>'
+        return f"<li>{e(x)}</li>"
+
+    def steps(t):
+        how = t.get("how") or []
+        if not how:
+            return ""
+        known = any(isinstance(x, dict) and x.get("done") is not None for x in how)
+        note = ('<div class="cknote">✅ / ❌ = what Lucy could see this week</div>' if known else "")
+        return '<ol class="how">' + "".join(step_li(x) for x in how) + "</ol>" + note
+
+    def task(i, t, tag="Why + how"):
+        head = f'<span class="num">{i}</span><span class="tt">{linkify(t["text"])}</span>'
+        if img:
+            return f'<div class="task flat">{head}</div>'
+        inner = (f'<div class="why"><b>Why:</b> {e(t["why"])}</div>'
+                 f'<div class="howh">How:</div>{steps(t)}')
+        if pdf:
+            return f'<div class="task open"><div class="th">{head}</div>{inner}</div>'
+        return (f'<details class="task"><summary>{head}<span class="wq">{tag} ▾</span></summary>'
+                f'{inner}</details>')
+
+    todo_html = ("".join(task(i, t) for i, t in enumerate(card["todo"], 1))
+                 or '<div class="task done"><span class="num">✓</span><span class="tt">'
+                    'Nothing this week. Keep sending Lucy your photos!</span></div>')
+    seo_html = "".join(task(i, t) for i, t in enumerate(card.get("seo") or [], 1))
+    seo_sec = (f'<section><h2>Rank higher on Google</h2><p class="lede">Picked from this '
+               f'week\'s numbers. Each one helps you show up first when people search you.</p>'
+               f'{seo_html}</section>') if seo_html else ""
+
+    if img:
+        links = ('<div class="links"><span class="btn gold">⭐ Your review link</span>'
+                 '<span class="btn line">💬 Your Slack channel</span>'
+                 '<span class="lk2">Tap them in the message below</span></div>') if (rl or sl) else ""
+    else:
+        bits = ([f'<a class="btn gold" href="{e(rl)}">⭐ Your review link</a>'] if rl else []) + \
+               ([f'<a class="btn line" href="{e(sl)}">💬 Your Slack channel</a>'] if sl else [])
+        links = (f'<div class="links">{"".join(bits)}<span class="lk2">Send the review link to '
+                 f'happy customers: one tap takes them straight to the stars.</span></div>'
+                 ) if bits else ""
+
+    ch = "".join(chart_svg(c) for c in card.get("progress") or [])
+    charts = (f'<section><h2>Week by week</h2><div class="charts">{ch}</div></section>'
+              if ch else "")
+    why_note = ('<p class="lede">Open the PDF below for why each one matters and how to do it.</p>'
+                if img else "")
+    verdict_cls = ("good" if card["verdict"].startswith("Great") else
+                   "bad" if "need" in card["verdict"] else "watch")
+    initial = e((card["business"] or "?").strip()[:1].upper())
+
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>{e(card['business'])} — your week online</title>
 <style>
- body{{margin:0;background:#F4F1EA;font-family:-apple-system,Helvetica,Arial,sans-serif;color:#1E1E1E}}
- .card{{width:760px;margin:24px auto;background:#fff;border-radius:22px;padding:40px 44px;
-        box-shadow:0 2px 14px rgba(0,0,0,.08)}}
- h1{{font-size:34px;margin:0}} .sub{{font-size:20px;color:#666;margin:6px 0 4px}}
- .verdict{{font-size:26px;font-weight:700;margin:18px 0 26px}}
- .row{{display:flex;gap:20px;align-items:center;padding:20px 0;border-top:1px solid #EEE}}
- .dot{{width:30px;height:30px;border-radius:50%;flex:none}}
- .label{{font-size:19px;color:#666}} .val{{font-size:28px;font-weight:700;margin-top:3px}}
- h2{{font-size:26px;margin:30px 0 10px;border-top:2px solid #1E1E1E;padding-top:24px}}
- ol{{font-size:23px;line-height:1.5;margin:0;padding-left:30px}} li{{margin:8px 0}}
- .foot{{font-size:15px;color:#999;margin-top:28px}}
- .tap{{font-size:17px;color:#2F6FDE;margin-top:6px;font-weight:600}}
- .was{{font-size:17px;color:#888;margin-top:4px}}
- .charts{{display:grid;grid-template-columns:1fr 1fr;gap:18px 26px}}
- .chart{{background:#FAFAF7;border-radius:14px;padding:12px 14px 4px}} .ct{{font-size:18px;font-weight:700;margin-bottom:2px}}
- @media print{{.chart{{break-inside:avoid}}}}
- details.whyd summary{{cursor:pointer;list-style:none}} details.whyd summary::-webkit-details-marker{{display:none}}
- .whyq{{font-size:15px;color:#2F6FDE;font-weight:700;margin-left:6px;border:1.5px solid #2F6FDE;
-        border-radius:12px;padding:1px 9px}}
- .why{{font-size:18px;color:#444;background:#F4F1EA;border-radius:10px;padding:10px 14px;margin:8px 0 4px}}
- .pages{{font-size:17px;color:#666;margin-top:8px;display:flex;align-items:center;gap:6px}}
- .bdg{{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
-       border-radius:8px;color:#fff;font-weight:800;font-size:14px;font-family:Helvetica,Arial,sans-serif}}
- a{{color:#2F6FDE}} .rvs0 .rv{{margin:14px 0}}
- @media print{{body{{background:#fff}} .card{{box-shadow:none;margin:0 auto}} details{{display:block}}}}
- details.rowd{{display:block}} details.rowd summary{{display:flex;gap:20px;align-items:center;cursor:pointer;list-style:none}}
- details.rowd summary::-webkit-details-marker{{display:none}}
- .rvs{{margin:16px 0 0 50px}} .rv{{border-left:4px solid #EEE;padding:10px 16px;margin:12px 0}}
- .rvh{{font-size:18px}} .stars{{color:#E8A317}} .when{{color:#999;font-size:15px}}
- .rvt{{font-size:18px;margin:6px 0}} .ans{{font-size:16px;color:#333}}
- .links{{background:#F4F1EA;border-radius:16px;padding:14px 18px;margin:-8px 0 18px;font-size:19px;font-weight:700}}
- .btn{{display:inline-block;background:#2F6FDE;color:#fff;text-decoration:none;border-radius:12px;
-       padding:10px 16px;margin:0 10px 6px 0;font-size:19px}}
- .lk2{{font-size:16px;color:#666;font-weight:400;margin-top:4px}}
- .howh{{font-weight:700;margin-top:8px}} ol.how{{font-size:17px;line-height:1.45;padding-left:24px;margin:4px 0}}
- ol.how li{{margin:4px 0}} .hw{{margin:12px 0 18px}} .hwt{{font-size:21px;font-weight:700}}
- .reply{{background:#F4F1EA;border-radius:10px;padding:10px 14px;margin-top:6px;font-size:16px}}
+ :root{{--ground:#F3EBDA;--paper:#FFFCF5;--band:#EADBB8;--gold:#B8862B;--gold-d:#8C6418;
+       --ink:#2A2318;--soft:#6E6253;--line:#E6DAC2;--good:#2E7D4F;--good-bg:#E2F1E6;
+       --watch:#9A6A00;--watch-bg:#FBEFD2;--bad:#B3261E;--bad-bg:#F9E1DE;--na:#7A7468;--na-bg:#EEEAE2}}
+ *{{box-sizing:border-box}}
+ body{{margin:0;background:var(--ground);color:var(--ink);
+      font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}}
+ .card{{width:780px;margin:24px auto;background:var(--paper);border-radius:22px;overflow:hidden;
+       box-shadow:0 2px 18px rgba(80,60,20,.10)}}
+ .head{{background:var(--band);padding:26px 34px;display:flex;align-items:center;gap:18px}}
+ .mono{{width:58px;height:58px;border-radius:50%;background:var(--gold);color:#fff;font:700 28px Georgia,serif;
+       display:flex;align-items:center;justify-content:center;flex:none}}
+ .hn{{flex:1;min-width:0}} .biz{{font:700 30px Georgia,"Times New Roman",serif;margin:0}}
+ .kick{{font-size:13px;letter-spacing:.14em;color:var(--gold-d);font-weight:700;margin-top:3px}}
+ .wk{{font-size:15px;color:var(--soft);margin-top:4px}}
+ .verdict{{font-size:16px;font-weight:700;border-radius:999px;padding:8px 16px;white-space:nowrap}}
+ .verdict.good{{background:var(--good-bg);color:var(--good)}} .verdict.watch{{background:var(--watch-bg);color:var(--watch)}}
+ .verdict.bad{{background:var(--bad-bg);color:var(--bad)}}
+ .wrap{{padding:24px 34px 30px}}
+ .links{{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:24px}}
+ .btn{{display:inline-block;border-radius:12px;padding:10px 16px;font-weight:700;font-size:16px;text-decoration:none}}
+ .btn.gold{{background:var(--gold);color:#fff}} .btn.line{{border:2px solid var(--gold);color:var(--gold-d)}}
+ .lk2{{font-size:14px;color:var(--soft)}}
+ .kpis{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}} .kpi.wide{{grid-column:1/-1}}
+ ul.probs{{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:6px}}
+ .prob{{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:8px 10px;font-weight:600;font-size:15px}}
+ .okline{{margin-top:10px;font-size:15px;color:var(--good);font-weight:600}} .okline.na{{color:var(--na)}}
+ .toph{{font-size:14px;font-weight:700;color:var(--soft);margin-top:14px}}
+ ol.top5{{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:6px}}
+ .res{{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:15px}}
+ .res.neg{{background:var(--bad-bg);border-color:#EBB8B2;color:var(--bad)}} .res.neg a,.res.neg .rd{{color:var(--bad)}}
+ .res.own,.res.prof{{background:var(--good-bg);border-color:#BFDEC9}}
+ .rp{{font:700 18px Georgia,serif;width:22px;text-align:center;flex:none}}
+ .rt{{flex:1;min-width:0;display:flex;flex-direction:column}} .rt a{{color:inherit;text-decoration:none;font-weight:600}}
+ .rd{{font-size:13px;color:var(--soft)}}
+ .rtag{{font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap}}
+ .rtag.own,.rtag.prof{{background:#fff;color:var(--good)}}
+ .rtag.neg{{background:var(--bad);color:#fff}}
+ .kpi{{border:1.5px solid var(--line);border-radius:16px;padding:16px 18px;background:#fff}}
+ .kh{{display:flex;justify-content:space-between;align-items:center;gap:8px}}
+ .kl{{font-size:15px;color:var(--soft);font-weight:600}}
+ .big{{font:700 40px Georgia,serif;margin:6px 0 2px;line-height:1}} .star{{color:var(--gold);font-size:34px;margin-left:4px}}
+ .sub{{font-size:15px;color:var(--ink)}} .warn{{color:var(--bad);font-weight:700}}
+ .vs{{font-size:14px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);color:var(--soft)}}
+ .vs b{{margin-right:4px}} .vs.up b{{color:var(--good)}} .vs.down b{{color:var(--bad)}} .vs.same b{{color:var(--na)}}
+ .pill{{font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap}}
+ .pill.good{{background:var(--good-bg);color:var(--good)}} .pill.watch{{background:var(--watch-bg);color:var(--watch)}}
+ .pill.bad{{background:var(--bad-bg);color:var(--bad)}} .pill.na{{background:var(--na-bg);color:var(--na)}}
+ .pages{{display:flex;gap:6px;margin-top:8px}}
+ .bdg{{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;
+      color:#fff;font-weight:800;font-size:13px}}
+ .box{{border:1.5px solid var(--line);border-radius:16px;padding:14px 18px;margin-top:14px;background:#fff;font-size:16px}}
+ details summary{{cursor:pointer;list-style:none}} details summary::-webkit-details-marker{{display:none}}
+ .tap{{color:var(--gold-d);font-weight:600;font-size:15px}}
+ section{{margin-top:28px}}
+ h2{{font:700 22px Georgia,serif;margin:0 0 4px}} h3{{font:700 18px Georgia,serif;margin:0 0 8px}}
+ .lede{{font-size:15px;color:var(--soft);margin:0 0 10px}}
+ .task{{border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:10px;background:#fff}}
+ .task summary,.task .th,.task.done,.task.flat{{display:flex;align-items:center;gap:12px}}
+ .num{{width:30px;height:30px;border-radius:50%;background:var(--gold);color:#fff;font-weight:800;
+      display:flex;align-items:center;justify-content:center;flex:none;font-size:15px}}
+ .tt{{flex:1;font-size:18px;font-weight:600;min-width:0}}
+ .wq{{font-size:13px;font-weight:700;color:var(--gold-d);border:1.5px solid var(--gold);border-radius:999px;
+     padding:2px 10px;white-space:nowrap}}
+ .why{{font-size:15px;color:var(--ink);background:var(--ground);border-radius:10px;padding:10px 12px;margin:10px 0 4px}}
+ .ck{{font-size:13px;font-weight:700;border-radius:999px;padding:1px 8px;margin-left:4px;white-space:nowrap}}
+ .ck.yes{{background:var(--good-bg);color:var(--good)}} .ck.no{{background:var(--bad-bg);color:var(--bad)}}
+ .ckd{{font-size:13px;color:var(--bad);margin-top:2px}}
+ .cknote{{font-size:13px;color:var(--soft);margin-top:4px}}
+ .howh{{font-weight:700;font-size:15px;margin-top:8px}} ol.how{{font-size:15px;line-height:1.45;padding-left:22px;margin:4px 0 2px}}
+ .charts{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}}
+ .chart{{border:1.5px solid var(--line);border-radius:14px;padding:10px 10px 2px;background:#fff}}
+ .chart svg{{width:100%;height:auto}} .ct{{font-size:14px;font-weight:700;margin-bottom:2px}}
+ .rv{{border-left:4px solid var(--line);padding:8px 14px;margin:12px 0}} .rvh{{font-size:16px}}
+ .stars{{color:var(--gold)}} .when{{color:var(--soft);font-size:14px}} .rvt{{font-size:16px;margin:6px 0}}
+ .ans{{font-size:15px}} .reply{{background:var(--ground);border-radius:10px;padding:8px 12px;margin-top:6px}}
+ .foot{{font-size:13px;color:var(--soft);margin-top:28px;border-top:1px solid var(--line);padding-top:12px}}
+ a{{color:var(--gold-d)}} a.inl{{display:inline-block;background:var(--gold);color:#fff;text-decoration:none;border-radius:9px;
+        padding:1px 10px;margin:0 2px;font-size:.95em}} .btn.gold{{color:#fff}}
+ @media print{{body{{background:#fff}} .card{{box-shadow:none;margin:0 auto}} .task,.chart,.kpi{{break-inside:avoid}}}}
 </style></head><body><div class="card">
- <h1>{e(card['business'])}</h1>
- <div class="sub">Your week online · {e(card['week_of'])} – {e(card['until'])}</div>
- <div class="verdict">{e(card['verdict'])}</div>
- {links}
- {rows}
- <h2>Do this week</h2><ol>{todo}</ol>{why_note}
- {charts}
- {howto}
- {pdf_reviews}
- <div class="foot">Lucy checks this every Friday at noon.</div>
-</div></body></html>"""
+ <div class="head"><div class="mono">{initial}</div>
+  <div class="hn"><h1 class="biz">{e(card['business'])}</h1>
+   <div class="kick">LUCYECO SOCIAL · WEEKLY CARD</div>
+   <div class="wk">Week of {e(card['week_of'])} – {e(card['until'])}</div></div>
+  <div class="verdict {verdict_cls}">{e(card['verdict'])}</div></div>
+ <div class="wrap">
+  <div class="kpis">{kpis}</div>
+  {revs}
+  <section><h2>Do this week</h2>{why_note}{todo_html}</section>
+  {seo_sec}
+  {charts}
+  {links}
+  <div class="foot">Lucy checks this every Friday at noon. Google rating and reviews come from your
+   Google listing; "When people Google you" is a logged-out Google search for your business name.</div>
+ </div></div></body></html>"""
 
 
 def save(card: Dict, out: Path, mode: str = "image") -> Path:

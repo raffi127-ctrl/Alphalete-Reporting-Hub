@@ -153,6 +153,13 @@ def website_checks(p) -> List[Dict]:
     allhtml = " ".join(pages.values())
     where = ", ".join(pages)
     out = [_row("Website", "site loads", True, p.website, "loads", p.website)]
+    # Feeds the card's "Rank higher on Google" ✅ marks, not the info problems.
+    m = re.search(r"<title[^>]*>(.*?)</title>", home, re.I | re.S)
+    title = re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+    if p.business_name:
+        out.append(_row("Website", "name in page title",
+                        p.business_name.strip().lower() in title.lower(),
+                        p.business_name, title or "no page title", p.website))
     if p.phone:
         found = {digits(x) for x in re.findall(r"\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}", text)}
         found |= {digits(x) for x in re.findall(r'tel:([+\d().\s-]+)', allhtml)}
