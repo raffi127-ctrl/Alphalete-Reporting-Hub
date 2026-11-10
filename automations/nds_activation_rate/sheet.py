@@ -42,6 +42,26 @@ GREY = {"red": 0.937, "green": 0.937, "blue": 0.937}
 WHITE = {"red": 1, "green": 1, "blue": 1}
 
 
+def _hex(h: str) -> dict:
+    h = h.lstrip("#")
+    return {k: int(h[i:i + 2], 16) / 255 for k, i in
+            (("red", 0), ("green", 2), ("blue", 4))}
+
+
+# One colour family per bucket so the three boxes read apart at a glance
+# (Eve 2026-11-10: "una división de colores, alternados"). header = the box
+# title row (white text), avg = Captainship Avg, owner = each owner's total
+# row, band = the tint behind every other owner's reps.
+PALETTE = {
+    "10-19": {"header": _hex("#3C78D8"), "avg": _hex("#A4C2F4"),
+              "owner": _hex("#C9DAF8"), "band": _hex("#EEF3FC")},
+    "20-29": {"header": _hex("#38761D"), "avg": _hex("#B6D7A8"),
+              "owner": _hex("#D9EAD3"), "band": _hex("#F1F7EE")},
+    "30-60": {"header": _hex("#E69138"), "avg": _hex("#F9CB9C"),
+              "owner": _hex("#FCE5CD"), "band": _hex("#FEF5EC")},
+}
+
+
 def tab_name(captain: str) -> str:
     return f"Activation Rate - {captain} (NDS)"
 
@@ -143,25 +163,28 @@ def render(captain: str, captain_full: str, grid, today_owners: List[str]):
     owners = list(today_owners) + [o for o in owner_order
                                    if o not in today_owners]
     rows: List[List[str]] = [[captain_full.upper() + " - NDS ACTIVATION BY REP"]]
-    kinds: List = [(1, "title")]
+    kinds: List = [(1, "title", "", -1)]
 
     def cells(key, win):
         per_day = vals.get(key, {})
         return [per_day.get(d, {}).get(win, "") for d in days]
 
+    # kinds: (row, kind, window, owner index) — window/owner index drive the
+    # per-bucket colour and the alternating owner bands in write_tab.
     for win, _hdr in WINDOWS:
         rows.append([])
         rows.append([f"ACTIVATION {win} DAYS", "Rep"] + [_label(d) for d in days])
-        kinds.append((len(rows), "box"))
+        kinds.append((len(rows), "box", win, -1))
         rows.append(["Captainship Avg", ""] + cells((CAPTAINSHIP, "Total"), win))
-        kinds.append((len(rows), "avg"))
-        for owner in owners:
+        kinds.append((len(rows), "avg", win, -1))
+        for i, owner in enumerate(owners):
             rows.append([owner, "Owner total"] + cells((owner, "Total"), win))
-            kinds.append((len(rows), "owner"))
+            kinds.append((len(rows), "owner", win, i))
             reps = sorted({rep for (o, rep) in vals if o == owner and rep != "Total"
                            and any(cells((o, rep), win))})
             for rep in reps:
                 rows.append(["", rep] + cells((owner, rep), win))
+                kinds.append((len(rows), "rep", win, i))
     return rows, kinds, len(days)
 
 
@@ -214,11 +237,13 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
             "sheetId": sid, "gridProperties": {"frozenColumnCount": 2}},
             "fields": "gridProperties.frozenColumnCount"}},
     ]
-    for r, kind in kinds:
+    edge = {"style": "SOLID_MEDIUM", "color": {"red": 0.6, "green": 0.6, "blue": 0.6}}
+    for r, kind, win, idx in kinds:
+        pal = PALETTE.get(win, {})
         if kind == "title":
             reqs.append(fmt(r, bold=True, size=13, c1=1))
         elif kind == "box":
-            reqs.append(fmt(r, bg=ORANGE, bold=True, size=12))
+            reqs.append(fmt(r, bg=pal["header"], bold=True, size=12, fg=WHITE))
             # The day labels parse as dates — show them as dates, not as the
             # 0.0% the day columns carry (11/10 first draw read '4633600.0%').
             reqs.append({"repeatCell": {"range": rng(r, 2, width), "cell": {
@@ -226,9 +251,24 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
                     "type": "DATE", "pattern": "ddd m/d/yy"}}},
                 "fields": "userEnteredFormat.numberFormat"}})
         elif kind == "avg":
-            reqs.append(fmt(r, bg=PINK, bold=True, size=12))
+            reqs.append(fmt(r, bg=pal["avg"], bold=True, size=12))
         elif kind == "owner":
-            reqs.append(fmt(r, bg=GREY, bold=True))
+            reqs.append(fmt(r, bg=pal["owner"], bold=True))
+            reqs.append({"updateBorders": {"range": rng(r), "top": edge}})
+        elif kind == "rep":
+            # owners alternate: tinted band, white band, tinted band...
+            reqs.append(fmt(r, bg=pal["band"] if idx % 2 == 0 else WHITE))
+    # Names read left-to-right; long rep names were clipped when centred.
+    reqs.append({"repeatCell": {"range": {
+        "sheetId": sid, "startRowIndex": 0, "endRowIndex": len(rows),
+        "startColumnIndex": 0, "endColumnIndex": 2},
+        "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+        "fields": "userEnteredFormat.horizontalAlignment"}})
+    for c0, px in ((0, 215), (1, 250), (2, 110)):
+        reqs.append({"updateDimensionProperties": {"range": {
+            "sheetId": sid, "dimension": "COLUMNS", "startIndex": c0,
+            "endIndex": c0 + 1 if c0 < 2 else width},
+            "properties": {"pixelSize": px}, "fields": "pixelSize"}})
     book.batch_update({"requests": reqs})
     logfn(f"  tab '{title}': {len(rows)} row(s), {n_days} day column(s)")
     return title
