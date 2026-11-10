@@ -105,6 +105,13 @@ def post_prompt(*, dry_run: bool = True, channel: str = CHANNEL_ID,
         return None
     resp = client.chat_postMessage(channel=channel, text=text)
     print("Posted this week's headshot thread (ts={}).".format(resp.get("ts")))
+    # The 📸 Add headshot button as the thread's first reply (form.py,
+    # Megan 2026-11-09). Never fails the post.
+    try:
+        from automations.headshots import form as _form
+        print("  button: {}".format(_form.post_button(channel, resp.get("ts"))))
+    except Exception as e:  # noqa: BLE001
+        print("  (button not posted: {})".format(e))
     return resp.get("ts")
 
 

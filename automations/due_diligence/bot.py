@@ -179,6 +179,19 @@ def _handler(client, req):
         print(f"[newpost] FAILED {type(e).__name__}: {e}", flush=True)
         return
 
+    # 📸 Add headshot — the button in each week's headshot thread
+    # (automations.headshots.form). Same rule as /aca: ask, ack, wrap.
+    try:
+        from automations.headshots import form as _headshot
+        if _headshot.wants(req):
+            client.send_socket_mode_response(SocketModeResponse(
+                envelope_id=req.envelope_id, payload=_headshot.ack(req)))
+            _headshot.handle(client, req)
+            return
+    except Exception as e:                    # noqa: BLE001
+        print(f"[headshot form] FAILED {type(e).__name__}: {e}", flush=True)
+        return
+
     # /personality — the word-pick personality test
     # (automations.personality.bot). Same rule as /aca: ask, ack, wrap.
     try:

@@ -42,7 +42,11 @@ ECO = config.Office(key="omar", owner="Omar", channel="CO", uploader="eco",
                     eco_key="omar", mode="live")
 
 
+BUTTON = mock.Mock(return_value={"action": "posted"})
+
+
 def _run_scan(cl, state, enqueue, offices=(ECO,)):
+    BUTTON.reset_mock()
     with mock.patch.object(R, "_client", return_value=cl), \
             mock.patch.object(R.config, "live_offices",
                               return_value=list(offices)), \
@@ -55,12 +59,20 @@ def _run_scan(cl, state, enqueue, offices=(ECO,)):
                               return_value=Path(__file__)), \
             mock.patch.object(eco, "enqueue", enqueue), \
             mock.patch.object(eco, "post_results", return_value=0), \
+            mock.patch.object(R.hs_form, "post_button", BUTTON), \
             mock.patch("automations.day_orchestrator.hub_publish.publish_done",
                        create=True):
         return R.scan(dry_run=False)
 
 
-REPLY = {"ts": "101", "user": "UREP", "text": "John Smith",
+from automations.headshots import form as _F
+
+# Since 2026-11-09 a headshot comes in ONLY through the 📸 Add headshot form:
+# Jiraiya's post with the fixed line. LOOSE is the old free reply.
+REPLY = {"ts": "101", "user": _F.JIRAIYA, "bot_id": "BJIR",
+         "text": _F.line("John", "Smith", "UREP", False),
+         "files": [{"mimetype": "image/jpeg", "name": "photo.jpg"}]}
+LOOSE = {"ts": "102", "user": "UREP", "text": "John Smith",
          "files": [{"mimetype": "image/jpeg", "name": "a.jpg"}]}
 
 
@@ -204,36 +216,79 @@ class ARedoForAnEcoOfficeReplacesOnItsComputer(unittest.TestCase):
         self.assertIn("replaced", line)
 
 
-class ALeaderCanAskForARedoInTheThread(unittest.TestCase):
+class FormOnly(unittest.TestCase):
+    """Megan 2026-11-09: no loose replies, "so we don't have errors"."""
 
-    def test_a_new_photo_with_redo_replaces_and_is_not_a_new_person(self):
-        cl, state = FakeSlack([{"ts": "100"}, dict(REPLY, text="redo John Smith")]), {}
-        enq = mock.Mock(return_value="job-r")
-        with mock.patch.object(R, "process_one",
-                               return_value=Path(__file__)) as po:
-            _run_scan(cl, state, enq)
-        self.assertEqual(enq.call_args.args[1], "John Smith")
-        self.assertTrue(enq.call_args.kwargs["replace"])
-        self.assertIn("headshot redone", cl.files[0]["initial_comment"])
-
-    def test_a_plain_photo_never_replaces(self):
-        cl, state = FakeSlack([{"ts": "100"}, REPLY]), {}
-        enq = mock.Mock(return_value="job-1")
+    def test_a_loose_photo_and_name_is_never_processed(self):
+        cl, state = FakeSlack([{"ts": "100"}, LOOSE]), {}
+        enq = mock.Mock()
         _run_scan(cl, state, enq)
+        enq.assert_not_called()
+        self.assertEqual(cl.files, [])
+        BUTTON.assert_called_once()
+
+    def test_the_button_is_offered_once_per_loose_reply(self):
+        state = {}
+        _run_scan(FakeSlack([{"ts": "100"}, LOOSE]), state, mock.Mock())
+        _run_scan(FakeSlack([{"ts": "100"}, LOOSE]), state, mock.Mock())
+        BUTTON.assert_not_called()
+
+    def test_a_typed_redo_gets_the_button(self):
+        state = {}
+        msgs = [{"ts": "100"}, {"ts": "105", "user": "ULEAD", "text": "redo Jane Doe"}]
+        enq = mock.Mock()
+        _run_scan(FakeSlack(msgs), state, enq)
+        enq.assert_not_called()
+        BUTTON.assert_called_once()
+        self.assertIn("Redo", BUTTON.call_args.kwargs["text"])
+
+    def test_a_plain_form_post_never_replaces(self):
+        enq = mock.Mock(return_value="job-1")
+        _run_scan(FakeSlack([{"ts": "100"}, REPLY]), {}, enq)
         self.assertFalse(enq.call_args.kwargs["replace"])
 
-    def test_redo_without_a_photo_asks_for_one_once(self):
-        state = {}
-        msgs = [{"ts": "100"}, {"ts": "105", "user": "ULEAD",
-                                "text": "Redo: Jane Doe"}]
-        cl = FakeSlack(msgs)
-        _run_scan(cl, state, mock.Mock())
-        self.assertIn("NEW photo", cl.posts[-1]["text"])
-        cl2 = FakeSlack(msgs)
-        _run_scan(cl2, state, mock.Mock())
-        self.assertEqual(cl2.posts, [])
-
-    def test_ordinary_chatter_is_not_a_redo(self):
+    def test_ordinary_chatter_gets_nothing(self):
         cl = FakeSlack([{"ts": "100"}, {"ts": "105", "text": "thanks Lucy!"}])
         _run_scan(cl, {}, mock.Mock())
         self.assertEqual(cl.posts, [])
+        BUTTON.assert_not_called()
+
+
+class TheAddHeadshotForm(unittest.TestCase):
+    """Megan 2026-11-09: regulate headshot uploads like the New post form."""
+
+    from automations.headshots import form as F
+
+    def _post(self, line):
+        return {"ts": "110", "user": self.F.JIRAIYA, "bot_id": "B1",
+                "text": line,
+                "files": [{"mimetype": "image/jpeg", "name": "photo.jpg"}]}
+
+    def test_a_form_post_is_read_by_its_fixed_line(self):
+        cl, state = FakeSlack([{"ts": "100"},
+                               self._post(self.F.line("maria", "lopez", "U1", False))]), {}
+        enq = mock.Mock(return_value="j")
+        _run_scan(cl, state, enq)
+        self.assertEqual(enq.call_args.args[1], "Maria Lopez")
+        self.assertFalse(enq.call_args.kwargs["replace"])
+
+    def test_the_redo_box_replaces(self):
+        cl, state = FakeSlack([{"ts": "100"},
+                               self._post(self.F.line("Maria", "Lopez", "U1", True))]), {}
+        enq = mock.Mock(return_value="j")
+        _run_scan(cl, state, enq)
+        self.assertTrue(enq.call_args.kwargs["replace"])
+
+    def test_anyone_else_writing_the_line_is_not_the_form(self):
+        msg = self._post(self.F.line("Maria", "Lopez", "U1", True))
+        msg["user"] = "USOMEONE"
+        self.assertIsNone(self.F.parse(msg))
+
+    def test_the_form_refuses_two_photos_and_missing_names(self):
+        img = {"mimetype": "image/jpeg"}
+        errs = self.F.problems({"files": [img, img], "first": "", "last": "Lopez",
+                                "redo": False})
+        self.assertIn("photo", errs)
+        self.assertIn("first", errs)
+        self.assertEqual(self.F.problems({"files": [img], "first": "Maria",
+                                          "last": "Lopez", "redo": False}), {})

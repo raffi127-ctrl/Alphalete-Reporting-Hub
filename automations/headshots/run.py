@@ -45,6 +45,7 @@ from datetime import datetime
 from pathlib import Path
 
 from automations.headshots import config
+from automations.headshots import form as hs_form
 from automations.shared.name_case import titlecase_name
 
 _STATE = Path.home() / ".config" / "headshots" / "state.json"
@@ -372,12 +373,14 @@ def redo(name: str, *, dry_run: bool = True,
         for m in cl.conversations_replies(
                 channel=channel, ts=anchor["ts"],
                 limit=200).get("messages", []):
-            if m.get("ts") == anchor["ts"] or _is_our_post(m, me):
+            fm = hs_form.parse(m)
+            if m.get("ts") == anchor["ts"] or (not fm and _is_our_post(m, me)):
                 continue
             imgs = _image_files(m)
             if not imgs:
                 continue
-            got = name_from_caption(m.get("text", ""))
+            # A form post's name, or (threads from before the form) a caption.
+            got = fm[0] if fm else name_from_caption(m.get("text", ""))
             if got and _name_key_of(got) == want:
                 if found is None or m["ts"] > found[0]["ts"]:
                     found = (m, imgs[0], anchor, got)
@@ -481,9 +484,14 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
         for m in sorted(replies, key=lambda x: x.get("ts", "")):
             if m.get("ts") == anchor["ts"]:
                 continue
-            if _is_our_post(m, me):
+            # A post from the 📸 Add headshot form (form.py) is Jiraiya's,
+            # so it looks like "ours" -- read it BEFORE that check.
+            fm = hs_form.parse(m)
+            if not fm and _is_our_post(m, me):
                 continue
             imgs = _image_files(m)
+            if not imgs and fm:
+                continue
             if not imgs:
                 # A text reply can be a "redo First Last" ask (Megan
                 # 2026-10-29: leaders ask in the thread, nobody gets tagged).
@@ -496,39 +504,24 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             if st.get("done"):
                 continue
 
-            # "redo First Last" + a NEW photo = replace that person's
-            # headshot (Megan 2026-10-29). Strip the word first, or "Redo"
-            # reads as part of the name.
-            text = m.get("text", "") or ""
-            rm = _REDO_RE.match(text)
-            is_redo = bool(rm)
-            name = name_from_caption(rm.group(1) if rm else text)
-            if not name:
-                # Hard cap: however wrong we are about WHAT needs a name, a
-                # single run can never storm the thread again (2026-08-25).
-                if run["asked"] >= _MAX_ASKS_PER_RUN:
-                    print(f"  ask cap reached ({_MAX_ASKS_PER_RUN}) — "
-                          f"skipping the rest this run")
-                    continue
-                # Ask once; the reply retries every tick, so an edited reply
-                # gets picked up without re-asking.
-                if not st.get("asked"):
+            if not fm:
+                # FORM ONLY (Megan 2026-11-09: "so we don't have errors"). A
+                # photo dropped straight in is never guessed at -- no name
+                # read out of chatter, no second photo silently dropped. It
+                # gets the 📸 Add headshot button back, once, and is left.
+                if not st.get("asked") and run["asked"] < _MAX_ASKS_PER_RUN:
                     run["asked"] += 1
-                    actions.append({"ts": ts, "action": "ask_name"})
+                    actions.append({"ts": ts, "action": "ask_form"})
                     if not dry_run:
-                        try:
-                            who = m.get("user", "")
-                            cl.chat_postMessage(
-                                channel=channel, thread_ts=anchor["ts"],
-                                text=(f"<@{who}> got the photo — who is it? "
-                                      "Edit your reply to include the "
-                                      "person's *First Last* name and I'll "
-                                      "make the headshot."))
-                            state.setdefault(sk, {})["asked"] = True
-                            _save_state(state)
-                        except Exception:
-                            pass
+                        _ask_with_button(cl, channel, anchor["ts"], m,
+                                         "headshots go through the button now, "
+                                         "so I get the name right.")
+                        state.setdefault(sk, {})["asked"] = True
+                        _save_state(state)
                 continue
+            # The form's fixed line: the name is exactly what they typed, and
+            # the Redo box decides whether the profile photo is replaced.
+            name, is_redo = fm
 
             try:
                 data = _download_image(imgs[0])
@@ -580,6 +573,25 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             actions.append(act)
 
 
+def _ask_with_button(cl, channel: str, thread_ts: str, m: dict,
+                     why: str) -> None:
+    """Answer a reply the bot can't use with the 📸 Add headshot button
+    (form.py), posted by Jiraiya so the tap reaches the form. Plain words
+    from Lucy if the button can't be posted."""
+    who = m.get("user", "")
+    text = (f"<@{who}> {why} Tap *📸 Add headshot*: one photo, first and last "
+            "name, Submit.")
+    if hs_form.post_button(channel, thread_ts, text=text).get("action") == "posted":
+        return
+    try:
+        cl.chat_postMessage(
+            channel=channel, thread_ts=thread_ts,
+            text=(f"<@{who}> {why} Reply with ONE photo and the person's "
+                  "*First Last* name in the same reply."))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # "redo First Last" (also "Redo: First Last", "redo - First Last").
 _REDO_RE = re.compile(r"^\s*redo\b[\s:,\-]*(.+)$", re.I | re.S)
 _MAX_REDOS_PER_RUN = 3
@@ -587,13 +599,10 @@ _MAX_REDOS_PER_RUN = 3
 
 def _maybe_redo_reply(cl, off, m: dict, anchor: dict, state: dict,
                       actions: list, run: dict, *, dry_run: bool) -> None:
-    """A "redo First Last" reply with NO photo. Re-making the headshot from
-    the same photo gives the same crop, so a redo needs a NEW photo: say so,
-    once per reply (Megan 2026-10-29). The photo + "redo First Last" reply is
-    handled in the main loop and REPLACES the profile photo. (`run.py --redo`
-    stays for re-running an original photo after a code fix.)"""
-    mt = _REDO_RE.match(m.get("text") or "")
-    if not mt:
+    """A text reply asking for a "redo": answer with the 📸 Add headshot
+    button (a new photo + the Redo box), once per reply. Redos go through the
+    form like everything else (Megan 2026-11-09)."""
+    if not _REDO_RE.match(m.get("text") or ""):
         return
     ts = m["ts"]
     sk = _state_key(off, ts)
@@ -602,17 +611,12 @@ def _maybe_redo_reply(cl, off, m: dict, anchor: dict, state: dict,
     if run.get("redos", 0) >= _MAX_REDOS_PER_RUN:
         return
     run["redos"] = run.get("redos", 0) + 1
-    name = name_from_caption(mt.group(1)) or "them"
-    actions.append({"ts": ts, "action": "redo_needs_photo", "name": name})
+    actions.append({"ts": ts, "action": "redo_needs_form"})
     if dry_run:
         return
-    try:
-        cl.chat_postMessage(
-            channel=off.channel, thread_ts=anchor["ts"],
-            text=(f"<@{m.get('user', '')}> to redo *{name}*, reply with a NEW "
-                  f"photo and write *redo {name}* in the same reply."))
-    except Exception:  # noqa: BLE001 -- asked again next tick
-        return
+    _ask_with_button(cl, off.channel, anchor["ts"], m,
+                     "to redo a headshot, tap the button, add a NEW photo "
+                     "and tick *Redo*.")
     state.setdefault(sk, {})["done"] = True
     _save_state(state)
 
@@ -740,12 +744,10 @@ def main(argv: list[str] | None = None) -> int:
         print("No new headshot replies.")
         return 0
     for a in actions:
-        if a["action"] == "ask_name":
-            print(f"  needs a name (reply text wasn't one): ts={a['ts']}")
-        elif a["action"] == "download_failed":
+        if a["action"] == "download_failed":
             print(f"  download failed: ts={a['ts']}")
-        elif a["action"] == "redo_needs_photo":
-            print(f"  redo asked without a photo: {a['name']}")
+        elif a["action"] in ("ask_form", "redo_needs_form"):
+            print(f"  pointed to the button: ts={a['ts']}")
         elif a["action"] == "office_failed":
             print(f"  office {a['office']} failed: {a['error']}")
         elif a.get("dry_run"):
