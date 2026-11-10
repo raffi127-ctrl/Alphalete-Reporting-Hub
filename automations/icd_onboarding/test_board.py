@@ -287,3 +287,35 @@ def test_the_sheet_carries_a_key_so_the_colours_mean_something():
     assert "class='key'" in html
     for word in ("done", "close", "behind"):
         assert word in html
+
+
+# ------------------------------------------------- free-typed classrooms
+
+def test_one_room_typed_four_ways_prints_as_one_sheet():
+    """Megan, 2026-11-09: "classrooms would be a free type field and then group
+    the same ones together for a print." Grouping on the raw string printed
+    four sheets for one classroom, each holding part of the register."""
+    rows = [_row("Ada Fournier", "Tuesday AM"),
+            _row("Bruno Castell", "tuesday am"),
+            _row("Cora Nilsen", " Tuesday AM "),
+            _row("Dag Iversen", "Tuesday  AM")]
+    pages = B.sheets(rows)
+    assert len(pages) == 1
+    assert len(pages[0]["people"]) == 4
+
+
+def test_the_spelling_printed_is_the_one_the_icd_typed():
+    """Their own wording is the heading the leader recognises, so grouping
+    ignores case and spacing without rewriting either."""
+    rows = [_row("Ada Fournier", "Tuesday AM"), _row("Bruno Castell", "tuesday am")]
+    assert B.sheets(rows)[0]["classroom"] == "Tuesday AM"
+
+
+def test_different_rooms_still_get_their_own_sheet():
+    rows = [_row("Ada Fournier", "Tuesday AM"), _row("Bruno Castell", "Tuesday PM")]
+    assert [p["classroom"] for p in B.sheets(rows)] == ["Tuesday AM", "Tuesday PM"]
+
+
+def test_the_unassigned_pile_is_still_last():
+    rows = [_row("Ada Fournier", ""), _row("Bruno Castell", "zebra room")]
+    assert [p["classroom"] for p in B.sheets(rows)][-1] == B.UNASSIGNED

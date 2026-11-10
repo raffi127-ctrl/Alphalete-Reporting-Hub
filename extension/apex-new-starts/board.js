@@ -67,16 +67,29 @@
   }
 
   // Grouped the way it prints: a sheet per classroom, no-classroom last.
+  // What makes two typed classrooms the SAME ROOM. Free typing means one room
+  // is typed several ways in a week — "Tuesday AM", "tuesday am",
+  // " Tuesday  AM " — and grouping on the raw string prints a separate sheet
+  // for each, every one holding part of the register. Case and spacing are
+  // ignored for grouping; the spelling is NOT changed, because the ICD's own
+  // wording is the heading the leader recognises. Same rule as
+  // icd_onboarding.board.room_key — if one changes, change both.
+  const roomKey = s => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase();
+
   function grouped(people) {
-    const by = {};
+    const by = {}, shown = {};
     people.forEach(p => {
       const c = String(p['Classroom'] || '').trim() || UNASSIGNED;
-      (by[c] = by[c] || []).push(p);
+      const k = roomKey(c);
+      if (!(k in shown)) shown[k] = c;
+      (by[k] = by[k] || []).push(p);
     });
-    const named = Object.keys(by).filter(c => c !== UNASSIGNED).sort();
-    if (by[UNASSIGNED]) named.push(UNASSIGNED);
+    const nokey = roomKey(UNASSIGNED);
+    const named = Object.keys(by).filter(k => k !== nokey)
+      .sort((a, b) => shown[a].toLowerCase().localeCompare(shown[b].toLowerCase()));
+    if (by[nokey]) named.push(nokey);
     return named.map(c => ({
-      classroom: c,
+      classroom: shown[c],
       people: by[c].sort((a, b) => remaining(b).length - remaining(a).length
                                    || who(a).localeCompare(who(b))),
     }));

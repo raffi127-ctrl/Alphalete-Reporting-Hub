@@ -278,6 +278,22 @@ def classroom_of(row: Dict) -> str:
     return str(row.get(CLASSROOM) or "").strip() or UNASSIGNED
 
 
+def room_key(name: str) -> str:
+    """What makes two typed classrooms THE SAME ROOM.
+
+    Megan, 2026-11-09: "classrooms would be a free type field and then group
+    the same ones together for a print." Free typing means the same room is
+    typed four ways in a week -- "Tuesday AM", "tuesday am", " Tuesday AM ",
+    "Tuesday  AM" -- and grouping on the raw string prints four sheets for one
+    classroom, each holding part of the register. Checked: it did.
+
+    So case and spacing are ignored for GROUPING. The spelling is not changed:
+    whichever way it was typed first is what gets printed, because the ICD's
+    own wording is the heading the leader recognises.
+    """
+    return " ".join(str(name or "").split()).strip().lower()
+
+
 def sheets(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
     """One printed sheet per classroom. Megan, 2026-11-08: "one printed sheet
     per classroom ... breaks it down super simple of what's remaining for who."
@@ -290,9 +306,13 @@ def sheets(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
     would make the sheet say somebody left rather than somebody is done.
     """
     out: Dict[str, List[Dict]] = {}
+    shown: Dict[str, str] = {}          # group key -> the spelling to print
     for r in visible(rows, show_terminated=show_terminated):
         left = remaining(r)
-        out.setdefault(classroom_of(r), []).append({
+        room = classroom_of(r)
+        key = room_key(room)
+        shown.setdefault(key, room)
+        out.setdefault(key, []).append({
             "name": ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip(),
             "remaining": left,
             "done": len(STEPS) - len(left),
@@ -304,10 +324,11 @@ def sheets(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
             # the gaps.
             "steps": {c: str(r.get(c) or "").strip() for c in STEPS},
         })
-    named = sorted(k for k in out if k != UNASSIGNED)
-    order = named + ([UNASSIGNED] if UNASSIGNED in out else [])
+    nokey = room_key(UNASSIGNED)
+    named = sorted((k for k in out if k != nokey), key=lambda k: shown[k].lower())
+    order = named + ([nokey] if nokey in out else [])
     return [{
-        "classroom": k,
+        "classroom": shown[k],
         "people": sorted(out[k], key=lambda p: (-len(p["remaining"]), p["name"])),
         "outstanding": sum(len(p["remaining"]) for p in out[k]),
         "everyone_done": all(not p["remaining"] for p in out[k]),
