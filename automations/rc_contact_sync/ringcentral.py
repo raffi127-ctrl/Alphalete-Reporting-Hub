@@ -253,6 +253,24 @@ def sms_since(token: str, ext_id: str, day: dt.date) -> List[dict]:
     return out
 
 
+def set_read_status(token: str, ext_id: str, msg_id: str, status: str = "Unread") -> None:
+    """Flip one message-store record Read/Unread (so the RingCentral app shows
+    it as waiting). Needs the EditMessages permission on the app; a 403 is
+    raised as RCError with RingCentral's own words."""
+    hdr = {"Authorization": "Bearer %s" % token}
+    url = "%s/restapi/v1.0/account/~/extension/%s/message-store/%s" % (
+        C.RC_BASE_URL, ext_id, msg_id)
+    for _ in range(6):
+        resp = requests.put(url, headers=hdr, json={"readStatus": status}, timeout=25)
+        if resp.status_code == 429:
+            time.sleep(int(resp.headers.get("Retry-After", 15)))
+            continue
+        if not resp.ok:
+            raise RCError("PUT message %s -> %s: %s" % (msg_id, resp.status_code, resp.text[:300]))
+        return
+    raise RCError("PUT message %s: rate limited after retries" % msg_id)
+
+
 def _msg_numbers(m: dict) -> List[str]:
     nums = [norm_phone(m.get("from", {}).get("phoneNumber", ""))]
     for t in (m.get("to") or []):

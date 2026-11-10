@@ -17,6 +17,7 @@ The whole transcript also goes to the control sheet's 'RC Inbox' tab
     lucy rerun rc_inbox --customer "Erika Gutierrez" --since 2026-10-20
     lucy rerun rc_inbox --all --since 2026-10-20        # EVERY NDS customer: what we
                                                        # send (by template) + every reply
+    lucy rerun rc_inbox --all --since 2026-10-20 --mark-unread   # + unanswered -> Unread
 
 Never writes to RingCentral; identity is asserted before the read.
 """
@@ -166,11 +167,44 @@ def name_map(book: List[dict]) -> Dict[str, str]:
     return out
 
 
-def run_all(since: dt.date, *, log=print) -> int:
-    """Every text on Taylor's line since `since`: what Lucy sent (by
-    template), what people typed by hand, and every reply that came back --
-    bucketed, with the contact's name, and whether we answered it."""
-    log("RC inbox — ALL conversations since %s" % since)
+def _sender(m: dict) -> str:
+    return RC.norm_phone((m.get("from") or {}).get("phoneNumber", ""))
+
+
+def _recipients(m: dict) -> List[str]:
+    return [RC.norm_phone(t.get("phoneNumber", "")) for t in (m.get("to") or [])]
+
+
+def kind_of(body: str) -> str:
+    """What sort of thing a customer sent (finer than bucket_of)."""
+    b = (body or "").strip()
+    low = b.lower()
+    if not b:
+        return "blank / attachment only"
+    if low.startswith(("liked “", "loved “", "laughed at “", "emphasized “",
+                       "questioned “", "disliked “")):
+        return "tapback reaction"
+    if "order #" in low and "ban" in low:
+        return "wrap-up (sent by a rep)"
+    return bucket_of(b)
+
+
+def run_all(since: dt.date, *, mark_unread: bool = False, log=print) -> int:
+    """Every text on Taylor's line since `since`.
+
+    Who said what is decided by the SENDER (from.phoneNumber), not by
+    which number in the thread is in the book -- in a group thread the rep's
+    texts also arrive as Inbound, and the first cut of this attributed them
+    to the customer. A customer is a sender whose number is in Taylor's
+    contact book (the sync puts every NDS customer and their lines there);
+    any other inbound sender is a rep / leader / unknown.
+
+    A customer thread is UNANSWERED when the newest message in it (any
+    party, Taylor's outbound or a rep's inbound) is the customer's own.
+    --mark-unread flips those customer messages back to Unread in
+    RingCentral so they show as waiting."""
+    log("RC inbox — ALL conversations since %s%s"
+        % (since, "  (+ mark unanswered Unread)" if mark_unread else ""))
     creds = C.rc_creds()
     info = RC.token_info(creds)
     token = info["access_token"]
@@ -187,32 +221,40 @@ def run_all(since: dt.date, *, log=print) -> int:
     except Exception:  # noqa: BLE001
         own = RC.norm_phone("945-337-2199")
 
-    msgs = _messages_since(watch_token, watch_ext, since)
+    msgs = sorted(_messages_since(watch_token, watch_ext, since),
+                  key=lambda x: x.get("creationTime") or "")
     log("%d message(s) on the line since %s" % (len(msgs), since))
 
-    def other_party(m: dict) -> str:
-        nums = [n for n in RC._msg_numbers(m) if n != own]
-        # a group text lists the customer AND the rep; prefer a number that
-        # is a known customer contact
-        for n in nums:
-            if n in names:
+    # thread key = the customer number in the message (sender for a
+    # customer's text; a book number among the recipients otherwise)
+    def thread_customer(m: dict) -> str:
+        snd = _sender(m)
+        if m.get("direction") == "Inbound" and snd in names:
+            return snd
+        for n in _recipients(m) + [snd]:
+            if n in names and n != own:
                 return n
-        return nums[0] if nums else ""
+        return ""
 
     out_by_template: Dict[str, List[dict]] = {}
-    inbound: List[dict] = []
+    cust_in: List[dict] = []
+    other_in: List[dict] = []
+    threads: Dict[str, List[dict]] = {}
     for m in msgs:
         body = m.get("subject") or ""
+        tc = thread_customer(m)
+        if tc:
+            threads.setdefault(tc, []).append(m)
         if m.get("direction") == "Inbound":
-            inbound.append(m)
+            (cust_in if _sender(m) in names else other_in).append(m)
         else:
             out_by_template.setdefault(template_of(body), []).append(m)
 
     lines: List[str] = []
-    lines.append("=== WHAT WE SENT (%d outbound) ===" % sum(
+    lines.append("=== WHAT WE SENT (%d outbound from Taylor's line) ===" % sum(
         len(v) for v in out_by_template.values()))
     for label, ms in sorted(out_by_template.items(), key=lambda kv: -len(kv[1])):
-        who = {other_party(m) for m in ms}
+        who = {thread_customer(m) or _recipients(m)[0] if _recipients(m) else "" for m in ms}
         lines.append("  %-40s %4d message(s) to %d number(s)" % (label, len(ms), len(who)))
     for label, _ in TEMPLATES:
         ms = out_by_template.get(label) or []
@@ -220,40 +262,90 @@ def run_all(since: dt.date, *, log=print) -> int:
             lines.append("")
             lines.append("--- the %s, as sent ---" % label)
             lines.append((ms[-1].get("subject") or "").strip())
-    typed = out_by_template.get("typed by a person (not a template)") or []
-    if typed:
-        lines.append("")
-        lines.append("--- typed by a person (%d), newest 25 ---" % len(typed))
-        for m in sorted(typed, key=lambda x: x.get("creationTime") or "")[-25:]:
-            n = other_party(m)
-            lines.append("  %s  -> %s %s  %s" % (
-                _when(m), RC.e164(n), ("(%s)" % names[n]) if n in names else "",
-                (m.get("subject") or "").replace("\n", " ⏎ ")[:220]))
 
-    # replies: bucket + did we answer after it
+    # --- what customers sent, by kind ---
     lines.append("")
-    lines.append("=== REPLIES FROM CUSTOMERS (%d inbound) ===" % len(inbound))
-    by_bucket: Dict[str, List[dict]] = {}
-    for m in inbound:
-        by_bucket.setdefault(bucket_of(m.get("subject") or ""), []).append(m)
-    for label, ms in sorted(by_bucket.items(), key=lambda kv: -len(kv[1])):
-        lines.append("  %-24s %3d" % (label, len(ms)))
-    # per-number: last direction tells whether the last word was theirs
-    last_dir: Dict[str, str] = {}
-    for m in sorted(msgs, key=lambda x: x.get("creationTime") or ""):
-        last_dir[other_party(m)] = m.get("direction") or ""
-    unanswered = sorted({other_party(m) for m in inbound
-                         if last_dir.get(other_party(m)) == "Inbound"})
-    lines.append("  conversations where the customer has the last word: %d" % len(unanswered))
-    for label, ms in sorted(by_bucket.items(), key=lambda kv: -len(kv[1])):
+    lines.append("=== FROM CUSTOMERS (%d texts from %d customers; %d more inbound from reps/others, %d numbers) ==="
+                 % (len(cust_in), len({_sender(m) for m in cust_in}),
+                    len(other_in), len({_sender(m) for m in other_in})))
+    by_kind: Dict[str, List[dict]] = {}
+    for m in cust_in:
+        by_kind.setdefault(kind_of(m.get("subject") or ""), []).append(m)
+    for label, ms in sorted(by_kind.items(), key=lambda kv: -len(kv[1])):
+        lines.append("  %-28s %3d" % (label, len(ms)))
+
+    # --- unanswered threads ---
+    unanswered: List[tuple] = []   # (last_customer_msg_time, number, [customer msgs since last reply])
+    for n, ms in threads.items():
+        last = ms[-1]
+        if last.get("direction") == "Inbound" and _sender(last) == n:
+            tail = []
+            for m in reversed(ms):
+                if m.get("direction") == "Inbound" and _sender(m) == n:
+                    tail.append(m)
+                else:
+                    break
+            tail.reverse()
+            # skip threads whose only unanswered content is a thanks/tapback/blank
+            kinds = {kind_of(m.get("subject") or "") for m in tail}
+            noise = {"thanks / ok", "tapback reaction", "blank / attachment only"}
+            unanswered.append((tail[-1].get("creationTime") or "", n, tail,
+                               kinds <= noise))
+    unanswered.sort(reverse=True)
+    real = [u for u in unanswered if not u[3]]
+    soft = [u for u in unanswered if u[3]]
+    lines.append("")
+    lines.append("=== WAITING ON US: %d customer threads where the customer has the last word (%d need a reply, %d are just thanks/reactions/blank) ==="
+                 % (len(unanswered), len(real), len(soft)))
+    for _, n, tail, _soft in real:
+        lines.append("")
+        lines.append("--- %s %s — %d unanswered text(s), newest %s ---"
+                     % (RC.e164(n), names.get(n, ""), len(tail), _when(tail[-1])))
+        for m in tail[-4:]:
+            lines.append("  %s  %s" % (_when(m), (m.get("subject") or "").replace("\n", " ⏎ ")[:300]))
+    if soft:
+        lines.append("")
+        lines.append("--- last word was only thanks / a reaction / blank ---")
+        for _, n, tail, _soft in soft:
+            lines.append("  %s  %s %s  %s" % (_when(tail[-1]), RC.e164(n), names.get(n, ""),
+                                              (tail[-1].get("subject") or "")[:80]))
+
+    # --- every customer text, by kind, for the scrub ---
+    for label, ms in sorted(by_kind.items(), key=lambda kv: -len(kv[1])):
         lines.append("")
         lines.append("--- %s (%d) ---" % (label, len(ms)))
-        for m in sorted(ms, key=lambda x: x.get("creationTime") or ""):
-            n = other_party(m)
-            flag = "  [UNANSWERED]" if last_dir.get(n) == "Inbound" else ""
-            lines.append("  %s  %s %s  %s%s" % (
-                _when(m), RC.e164(n), ("(%s)" % names[n]) if n in names else "(not in book)",
-                (m.get("subject") or "").replace("\n", " ⏎ ")[:300], flag))
+        for m in ms:
+            n = _sender(m)
+            lines.append("  %s  %s (%s)  %s" % (
+                _when(m), RC.e164(n), names.get(n, "?"),
+                (m.get("subject") or "").replace("\n", " ⏎ ")[:300]))
+    lines.append("")
+    lines.append("--- inbound from reps / others (not customer contacts), newest 40 ---")
+    for m in other_in[-40:]:
+        lines.append("  %s  %s  %s" % (_when(m), RC.e164(_sender(m)),
+                                       (m.get("subject") or "").replace("\n", " ⏎ ")[:200]))
+
+    flipped = failed = 0
+    if mark_unread:
+        lines.append("")
+        lines.append("=== MARK UNREAD ===")
+        for _, n, tail, _soft in real:
+            for m in tail:
+                if m.get("readStatus") == "Unread":
+                    continue
+                try:
+                    RC.set_read_status(watch_token, watch_ext, str(m.get("id")), "Unread")
+                    flipped += 1
+                except RC.RCError as e:
+                    failed += 1
+                    lines.append("  ✗ %s %s: %s" % (RC.e164(n), names.get(n, ""), str(e)[:200]))
+                    if "403" in str(e) or "401" in str(e) or failed >= 3:
+                        lines.append("  stopping: the app cannot edit read status (needs EditMessages)")
+                        break
+            if failed and ("403" in lines[-1] or "stopping" in lines[-1]):
+                break
+        lines.append("  %d message(s) set Unread, %d failed" % (flipped, failed))
+
     for ln in lines:
         log(ln)
     try:
@@ -262,7 +354,7 @@ def run_all(since: dt.date, *, log=print) -> int:
     except Exception as e:  # noqa: BLE001
         log("  (tab upload failed: %s: %s)" % (type(e).__name__, str(e)[:120]))
     print("=== done ===", flush=True)
-    return 0
+    return 1 if failed else 0
 
 
 def _when(m: dict) -> str:
@@ -321,7 +413,13 @@ def run(words: List[str], since: dt.date, until: dt.date, *,
         direction = (m.get("direction") or "?")
         if inbound_only and direction != "Inbound":
             continue
-        tag = "IN " if direction == "Inbound" else "OUT"
+        snd = _sender(m)
+        if direction != "Inbound":
+            tag = "OUT"
+        elif snd in numbers:
+            tag = "IN "          # the customer wrote this
+        else:
+            tag = "REP"          # someone else in the group thread (the rep)
         body = (m.get("subject") or "").replace("\n", " ⏎ ")
         rows.append("%s  %s  %s  (%s)  %s" % (
             _when(m), tag, RC.e164(hit[0]), numbers[hit[0]], body))
@@ -359,11 +457,14 @@ def main(argv=None) -> int:
                     help="feed window end (default: yesterday)")
     ap.add_argument("--inbound-only", action="store_true",
                     help="only what the customer wrote to us")
+    ap.add_argument("--mark-unread", action="store_true",
+                    help="with --all: flip every unanswered customer text back "
+                         "to Unread in RingCentral (Carlos 2026-11-09)")
     args = ap.parse_args(argv)
     since = (dt.date.fromisoformat(args.since) if args.since
              else dt.date.today() - dt.timedelta(days=30))
     if args.all:
-        return run_all(since)
+        return run_all(since, mark_unread=args.mark_unread)
     if not args.customer:
         print("✗ give --customer WORD... or --all")
         return 2
