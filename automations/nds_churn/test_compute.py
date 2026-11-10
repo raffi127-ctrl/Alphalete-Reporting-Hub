@@ -132,6 +132,37 @@ class Compute(unittest.TestCase):
         self.assertEqual(C.excluded_orders(self.lines, TODAY),
                          {"upgrade": 1, "device": 2})
 
+    def test_product_box(self):
+        # activated in window: HENRY W SPE1 (iPhone, non-BYOD), SPE2 (BYOD,
+        # disconnected), MARIA G (Air); pending: PEND P (new iPhone);
+        # UPG U / TAB T / PAD P are not orders; OLD O posted 9/5 is outside.
+        box = C.product_box(self.lines, TODAY)
+        self.assertEqual(box["wireless"], {"act": 1, "disc": 0, "pend": 1})
+        self.assertEqual(box["byod"], {"act": 1, "disc": 1, "pend": 0})
+        self.assertEqual(box["air"], {"act": 1, "disc": 0, "pend": 0})
+        self.assertEqual(box["internet"], {"act": 0, "disc": 0, "pend": 0})
+        self.assertEqual(box["all_orders"], {"act": 3, "disc": 1, "pend": 1})
+        # the box ties out with the churn summary's wireless base
+        s = C.churn_summary(self.lines, TODAY)
+        self.assertEqual(box["wireless"]["act"] + box["byod"]["act"], s["base"]["Wireless"])
+
+    def test_rolloff_formula_template_defaults(self):
+        from automations.vantura_churn import fill as VF
+        cols = {"rem": "X", "key": "AD"}
+        self.assertEqual(
+            VF.U_FORMULA_T.format(r=2, wl="$B$5", air="$B$6", inet="$B$7", **cols),
+            VF.U_FORMULA.format(r=2, **cols))
+
+    def test_is_byod_on_pending_lines(self):
+        # plan set: it decides. plan 'Pending' / blank: the device decides.
+        self.assertTrue(C.is_byod({"wireless_ip": "BYOD", "device": "iPhone 18 Pro - 256GB - Black"}))
+        self.assertFalse(C.is_byod({"wireless_ip": "Next36 w/o Next Up", "device": "XT2215-1"}))
+        self.assertTrue(C.is_byod({"wireless_ip": "Pending", "device": "XT2215-1"}))
+        self.assertTrue(C.is_byod({"wireless_ip": "", "device": "SM-G991U BYO"}))
+        self.assertTrue(C.is_byod({"wireless_ip": "Pending", "device": "iPhone 8 Plus (A1864)"}))
+        self.assertFalse(C.is_byod({"wireless_ip": "Pending", "device": "Galaxy A17 5G - 128GB - Black"}))
+        self.assertFalse(C.is_byod({"wireless_ip": "", "device": ""}))
+
     def test_counts_as_order(self):
         by = {l["customer"]: l for l in self.lines}
         self.assertTrue(C.counts_as_order(by["HENRY W"]))     # ported phone

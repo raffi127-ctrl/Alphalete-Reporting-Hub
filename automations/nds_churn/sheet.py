@@ -176,61 +176,120 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
         f"live bands {live_n}/{live_b})")
 
 
-PENDING_ROW = 8                      # right under Internet (row 7) in the product box
-PENDING_NOTE_ROW = 9
-PENDING_COL_A_PX = 120               # column A wide enough for the label
+# The top-left box, redrawn 2026-11-10 (Carlos: "my churn is being looked at
+# also without BYODs"): eight rows under the Product header, A5:D12.
+BOX_FIRST_ROW = 5
+BOX_ROWS = [                    # (compute.product_box key, label, 'act' | 'pend')
+    ("all_orders", "All Orders", "act"),
+    ("all_orders", "All Orders Pending", "pend"),
+    ("wireless", "All Wireless", "act"),
+    ("wireless", "All Wireless Pending", "pend"),
+    ("byod", "BYODs", "act"),
+    ("byod", "BYODs Pending", "pend"),
+    ("air", "Air", "act"),
+    ("internet", "Internet", "act"),
+]
+BOX_LAST_ROW = BOX_FIRST_ROW + len(BOX_ROWS) - 1          # 12
+# The activation bases the rolloff rows' 'Churn % After Rolloff' divide by
+# (vantura_churn.fill.U_FORMULA_T): wireless = All Wireless + BYODs.
+BASE_CELLS = ("($B$7+$B$9)", "$B$11", "$B$12")
+BOX_WIRELESS_CHURN_CELLS = ("D5", "D7", "D9")   # the wireless colour ramp
+BOX_AIR_CHURN_CELL = "D11"
+BOX_COL_A_PX = 150                              # 'All Wireless Pending' fits
+BOX_NOTE = ("Top-left box: phone lines (ported or new-number) + Air; no tablets, "
+            "watches, upgrades or Internet; All Wireless = non-BYOD phones; BYODs = "
+            "BYOD phones; activated / disconnected by activation date in the last 30 "
+            "days; Pending = sold in the last 30 days, not activated, not canceled.")
 
 
-def write_pending(ws, pend: dict, log=print) -> None:
-    """A8:B8 = 'Pending Orders' + the count, right under the Internet row
-    (Carlos 2026-11-10: "under the internet section lets add pending
-    orders"), styled like the product rows above it; A9 carries the
-    definition and the per-product split in the status line's small italic.
-    compute.pending_orders is the only source. Idempotent."""
-    from automations.nds_churn import compute as C
-    split = " · ".join(f"{p} {pend.get(p, 0)}" for p in C.PRODUCT_ORDER)
-    if pend.get("Other"):
-        split += f" · Other {pend['Other']}"
-    note = (f"Pending = phone, Air & Internet lines sold in the last {C.WINDOW_DAYS} days, "
-            f"not activated yet, not canceled ({pend.get('canceled', 0)} canceled; "
-            f"tablets, watches & upgrades not counted: {pend.get('excluded', 0)}) — {split}")
-    r, n = PENDING_ROW, PENDING_NOTE_ROW
+def _a1_to_range(a1: str, sheet_id: int) -> dict:
+    col = ord(a1[0]) - 65
+    row = int(a1[1:]) - 1
+    return {"sheetId": sheet_id, "startRowIndex": row, "endRowIndex": row + 1,
+            "startColumnIndex": col, "endColumnIndex": col + 1}
+
+
+def _retarget_churn_colours(ws, log=print) -> None:
+    """Move the two Churn % gradient rules (born on D5 = Wireless and D6 =
+    Air) onto the redrawn rows: wireless ramp on D5 / D7 / D9, Air ramp on
+    D11. Idempotent -- a rule already on the right cells is left alone."""
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
+    rules = next((sh.get("conditionalFormats", []) for sh in meta.get("sheets", [])
+                  if sh["properties"]["sheetId"] == ws.id), [])
+    want = {}
+    for idx, rule in enumerate(rules):
+        if "gradientRule" not in rule:
+            continue
+        cells = {(r["startRowIndex"], r["startColumnIndex"]) for r in rule["ranges"]}
+        if (4, 3) in cells:                       # D5: the wireless ramp
+            want[idx] = (rule, BOX_WIRELESS_CHURN_CELLS)
+        elif (5, 3) in cells or (10, 3) in cells:  # D6 (old) / D11: the Air ramp
+            want[idx] = (rule, (BOX_AIR_CHURN_CELL,))
+    reqs = []
+    for idx, (rule, targets) in want.items():
+        ranges = [_a1_to_range(a, ws.id) for a in targets]
+        if rule["ranges"] == ranges:
+            continue
+        new_rule = dict(rule)
+        new_rule["ranges"] = ranges
+        reqs.append({"updateConditionalFormatRule": {
+            "sheetId": ws.id, "index": idx, "rule": new_rule}})
+    if reqs:
+        _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
+    log(f"  ✓ {ws.title}: churn colour rules on {len(want)} rule(s) "
+        f"({'moved' if reqs else 'already in place'})")
+
+
+def write_product_box(ws, box: dict, log=print) -> None:
+    """A5:D12 from compute.product_box: label, count, disconnects, Churn %
+    (= C/B) for the activated rows; label + count only for the Pending
+    rows. Styled like the original Wireless row; column A widened so the
+    labels fit. Idempotent."""
+    rows = []
+    for i, (key, label, kind) in enumerate(BOX_ROWS):
+        r = BOX_FIRST_ROW + i
+        d = box[key]
+        if kind == "act":
+            rows.append([label, int(d["act"]), int(d["disc"]), f'=IFERROR(C{r}/B{r},"")'])
+        else:
+            rows.append([label, int(d["pend"]), "", ""])
     _retry(lambda: ws.batch_update([
-        {"range": f"A{r}:D{r}", "values": [["Pending Orders", int(pend.get("total", 0)), "", ""]]},
-        {"range": f"A{n}:F{n}", "values": [[note, "", "", "", "", ""]]},
+        {"range": f"A{BOX_FIRST_ROW}:D{BOX_LAST_ROW}", "values": rows},
     ], value_input_option="USER_ENTERED"))
     sid = ws.id
     reqs = [
-        # the product rows' look (borders, bold label, centred count)
+        # every box row looks like the first one (the original product row)
         {"copyPaste": {
-            "source": {"sheetId": sid, "startRowIndex": r - 2, "endRowIndex": r - 1,
-                       "startColumnIndex": 0, "endColumnIndex": 4},
-            "destination": {"sheetId": sid, "startRowIndex": r - 1, "endRowIndex": r,
-                            "startColumnIndex": 0, "endColumnIndex": 4},
+            "source": {"sheetId": sid, "startRowIndex": BOX_FIRST_ROW - 1,
+                       "endRowIndex": BOX_FIRST_ROW, "startColumnIndex": 0, "endColumnIndex": 4},
+            "destination": {"sheetId": sid, "startRowIndex": BOX_FIRST_ROW,
+                            "endRowIndex": BOX_LAST_ROW, "startColumnIndex": 0, "endColumnIndex": 4},
             "pasteType": "PASTE_FORMAT", "pasteOrientation": "NORMAL"}},
-        {"repeatCell": {"range": {"sheetId": sid, "startRowIndex": n - 1, "endRowIndex": n,
-                                  "startColumnIndex": 0, "endColumnIndex": 6},
-                        "cell": {"userEnteredFormat": {
-                            "wrapStrategy": "OVERFLOW_CELL",
-                            "verticalAlignment": "MIDDLE",
-                            "horizontalAlignment": "LEFT",
-                            "textFormat": {"fontSize": 9, "italic": True, "bold": False,
-                                           "foregroundColor": VF._rgb("#3E4A5C")}}},
-                        "fields": "userEnteredFormat(wrapStrategy,verticalAlignment,"
-                                  "horizontalAlignment,textFormat)"}},
-        # 'Pending Orders' clipped at the duplicate's 96px column A (first
-        # render 11/10 read "ending Order"); the rolloff list's Days Left
-        # column loses nothing at 120.
         {"updateDimensionProperties": {
-            "range": {"sheetId": sid, "dimension": "COLUMNS",
-                      "startIndex": 0, "endIndex": 1},
-            "properties": {"pixelSize": PENDING_COL_A_PX}, "fields": "pixelSize"}},
+            "range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": BOX_COL_A_PX}, "fields": "pixelSize"}},
     ]
     _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
-    log(f"  ✓ {ws.title}: A{r} Pending Orders = {pend.get('total', 0)} ({split})")
+    try:
+        _retarget_churn_colours(ws, log=log)
+    except Exception as e:  # noqa: BLE001 -- colours never block the numbers
+        log(f"  ⚠ churn colour rules not moved: {e}")
+    a, w, b, air = box["all_orders"], box["wireless"], box["byod"], box["air"]
+    log(f"  ✓ {ws.title}: box A5:D12 -- All Orders {a['act']}/{a['disc']} pend {a['pend']}; "
+        f"All Wireless {w['act']}/{w['disc']} pend {w['pend']}; BYODs {b['act']}/{b['disc']} "
+        f"pend {b['pend']}; Air {air['act']}/{air['disc']}; Internet "
+        f"{box['internet']['act']}/{box['internet']['disc']}")
 
 
 def write_status(ws, text: str, log=print) -> None:
     _retry(lambda: ws.batch_update([{"range": STATUS_CELL, "values": [[text]]}],
                                    value_input_option="USER_ENTERED"))
-    log(f"  ✓ {ws.title}: status line written ({len(text)} chars)")
+    # The merged A13:N14 does not grow on its own: size the two rows to the
+    # text (9pt italic, ~230 chars per line across A:N).
+    lines = max(2, -(-len(text) // 230))
+    px = max(21, (14 * lines + 8 + 1) // 2)
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": [{"updateDimensionProperties": {
+        "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": 12, "endIndex": 14},
+        "properties": {"pixelSize": px}, "fields": "pixelSize"}}]}))
+    log(f"  ✓ {ws.title}: status line written ({len(text)} chars, rows 13-14 at {px}px)")

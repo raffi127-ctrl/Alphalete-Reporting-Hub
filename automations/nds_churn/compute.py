@@ -136,9 +136,22 @@ def product_of(label: str) -> Optional[str]:
 
 
 def is_byod(rec: dict) -> bool:
-    blob = " ".join(rec.get(k, "") for k in ("package", "device",
-                                              "wireless_ip")).upper()
-    return "BYOD" in blob
+    """BYOD = the customer's own phone. The Wireless Installment Plan says so
+    once a line is active ('BYOD' vs 'Next36 ...'); until then it reads
+    'Pending' or blank, so a pending line is judged by its Device
+    Description: a bare model code ('XT2215-1', 'SM-G991U BYO', 'iPhone 8
+    Plus (...)') is the customer's phone, a retail name with ' - <size> -
+    <colour>' ('iPhone 18 Pro - 256GB - Black') is a financed new one.
+    Checked 2026-11-10 against all 130 active phone lines: the device rule
+    agreed with the plan field on every one."""
+    ip = str(rec.get("wireless_ip") or "").strip().upper()
+    blob = " ".join(str(rec.get(k) or "") for k in ("package", "device")).upper()
+    if "BYOD" in ip or "BYOD" in blob:
+        return True
+    if ip and ip != "PENDING":
+        return False                      # a financing plan: a new device
+    dev = str(rec.get("device") or "").strip()
+    return bool(dev) and " - " not in dev
 
 
 # ------------------------------------------------------------------ load ----
@@ -469,6 +482,57 @@ def pending_orders(lines: List[dict], today: dt.date) -> dict:
     res["excluded"] = excluded
     res["statuses"] = dict(statuses)
     return res
+
+
+def box_class(ln: dict) -> Optional[str]:
+    """'wireless' (a non-BYOD phone line), 'byod' (a BYOD phone line),
+    'air', 'internet'; None for a line that is not an order (tablet /
+    wearable / upgrade -- counts_as_order) or carries no product."""
+    p = ln.get("prod")
+    if not p or not counts_as_order(ln):
+        return None
+    if p == "Wireless":
+        return "byod" if ln.get("byod") else "wireless"
+    return p.lower()
+
+
+BOX_CLASSES = ("wireless", "byod", "air", "internet")
+
+
+def product_box(lines: List[dict], today: dt.date) -> dict:
+    """The NDS CHURN tab's top-left box (Carlos 2026-11-10: "my churn is
+    being looked at also without BYODs"): per class -> {'act', 'disc',
+    'pend'}. act / disc = distinct lines activated (Posted or Disconnected)
+    whose posted date sits in the 0-30 window -- phones of any TN type,
+    plus Air and Internet; pend = sold in the window, not activated, not
+    canceled. 'all_orders' = wireless + byod + air: everything but
+    Internet, tablets, watches and upgrades."""
+    cutoff = today - dt.timedelta(days=WINDOW_DAYS)
+    out = {k: {"act": 0, "disc": 0, "pend": 0} for k in BOX_CLASSES}
+    seen_act, seen_pend = set(), set()
+    for ln in lines:
+        cls = box_class(ln)
+        if cls is None:
+            continue
+        key = (cls, _line_key(ln))
+        st = ln["status"].lower()
+        if st in ACTIVATED:
+            posted = ln["posted"]
+            if posted and cutoff <= posted <= today and key not in seen_act:
+                seen_act.add(key)
+                out[cls]["act"] += 1
+                if st in DISCONNECTED:
+                    out[cls]["disc"] += 1
+            continue
+        if st in CANCELED:
+            continue
+        od = ln["order_date"]
+        if od and 0 <= (today - od).days <= WINDOW_DAYS and key not in seen_pend:
+            seen_pend.add(key)
+            out[cls]["pend"] += 1
+    out["all_orders"] = {k: out["wireless"][k] + out["byod"][k] + out["air"][k]
+                         for k in ("act", "disc", "pend")}
+    return out
 
 
 # ------------------------------------------------------------- tiers ----

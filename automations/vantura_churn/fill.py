@@ -63,6 +63,12 @@ class ActivationsTabMissing(Exception):
 # is added or removed.
 U_FORMULA = ('=IFERROR(${rem}{r}/IF(${key}{r}="Wireless",$B$5,'
              'IF(${key}{r}="Air",$B$6,$B$7)),"")')
+# Same formula with the three product bases as placeholders -- the NDS CHURN
+# tab keeps its bases elsewhere (nds_churn.sheet.BASE_CELLS) since its box
+# was redrawn 2026-11-10; every other tab still divides by B5:B7.
+U_FORMULA_T = ('=IFERROR(${rem}{r}/IF(${key}{r}="Wireless",{wl},'
+               'IF(${key}{r}="Air",{air},{inet})),"")')
+DEFAULT_BASE_CELLS = ("$B$5", "$B$6", "$B$7")
 AC_FORMULA = ('=IFERROR(VLOOKUP(${cust}{r},${n0}$100:${n1}$500,2,FALSE),"")')
 
 CENTER = {"horizontalAlignment": "CENTER"}
@@ -738,7 +744,12 @@ def read_product_bases(ws: gspread.Worksheet, log=print) -> dict:
 
 
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,
-                     helper_rows: list[list], log=print) -> None:
+                     helper_rows: list[list], log=print,
+                     base_cells: tuple = DEFAULT_BASE_CELLS,
+                     write_bases: bool = True) -> None:
+    """`base_cells` = the (Wireless, Air, Internet) activation-base cells the
+    per-row 'Churn % After Rolloff' formulas divide by; `write_bases=False`
+    leaves B5:B7 to the caller (the NDS tab draws its own box there)."""
     b = helper_bounds(ws)
     f0, cap = b["f0"], b["cap"]
     n = len(helper_rows)
@@ -768,20 +779,23 @@ def update_churn_tab(ws: gspread.Worksheet, bases: dict,
     for i, row in enumerate(helper_rows):
         r = i + 2
         vals = list(row)
-        vals[H_CHURN_F] = U_FORMULA.format(r=r, **cols)
+        vals[H_CHURN_F] = U_FORMULA_T.format(
+            r=r, wl=base_cells[0], air=base_cells[1], inet=base_cells[2], **cols)
         vals[H_NOTES_F] = AC_FORMULA.format(r=r, **cols)
         block.append(vals)
     # Pad to full capacity — one write both fills and clears yesterday's tail.
     block += [[""] * H_WIDTH for _ in range(cap - 1 - n)]
 
-    _retry(lambda: ws.batch_update([
-        {"range": "B5:B7",
-         "values": [[bases["Wireless"]], [bases["Air"]], [bases["Internet"]]]},
-        {"range": f"{first}2:{last}{cap}", "values": block},
-    ], value_input_option="USER_ENTERED"))
+    writes = [{"range": f"{first}2:{last}{cap}", "values": block}]
+    if write_bases:
+        writes.insert(0, {"range": "B5:B7",
+                          "values": [[bases["Wireless"]], [bases["Air"]],
+                                     [bases["Internet"]]]})
+    _retry(lambda: ws.batch_update(writes, value_input_option="USER_ENTERED"))
     _retry(lambda: ws.format(f"{first}2:{last}{cap}", CENTER))
-    log(f"  ✓ {ws.title}: B5:B7 = {bases['Wireless']}/{bases['Air']}/"
-        f"{bases['Internet']}, helper rows = {n} (capacity {cap - 1})")
+    where = ("B5:B7 = %s/%s/%s" % (bases["Wireless"], bases["Air"], bases["Internet"])
+             if write_bases else "bases left to the caller (%s)" % (base_cells,))
+    log(f"  ✓ {ws.title}: {where}, helper rows = {n} (capacity {cap - 1})")
 
 
 # ----------------------------------------------------------- activations

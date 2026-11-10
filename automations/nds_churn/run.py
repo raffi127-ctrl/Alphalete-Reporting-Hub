@@ -235,6 +235,9 @@ def main(argv=None) -> int:
         f"canceled {pend['canceled']}; tablets/wearables/upgrades not counted "
         f"{pend['excluded']}; statuses {pend['statuses']})")
     log(f"NOT ORDERS (0-30, by kind): {C.excluded_orders(lines, today)}")
+    box = C.product_box(lines, today)
+    log("BOX: " + "; ".join(f"{k} act {v['act']} disc {v['disc']} pend {v['pend']}"
+                            for k, v in box.items()))
     log(f"CHURN 0-30 (by activation date): base {summary['base']} "
         f"disc {summary['disc']}  wireless split {summary['split']}")
     log(f"ROLLOFF rows: {len(helper)}")
@@ -257,6 +260,7 @@ def main(argv=None) -> int:
                     f"RECONCILE: {ok} -- {detail}",
                     "STATUS: " + status,
                     f"PENDING: {pend}",
+                    f"BOX: {box}",
                     f"UNMAPPED: {um}",
                     "ROLLOFF ROWS (%d):" % len(helper)] + rows_txt
                    + ["VIEW REPS (0-30 disc / activated / pct):"]
@@ -281,7 +285,8 @@ def main(argv=None) -> int:
             step(ws, log=log)
         except Exception as e:  # noqa: BLE001 -- never block the daily write
             log(f"  ⚠ {step.__name__} skipped: {e}")
-    VF.update_churn_tab(ws, summary["base"], helper, log=log)
+    VF.update_churn_tab(ws, summary["base"], helper, log=log,
+                        base_cells=S.BASE_CELLS, write_bases=False)
     empty = [b for b in C.BUCKETS if office[b]["rate"] is None]
     for b in empty:                           # the writer logs rate:.1%
         office[b]["rate"] = 0.0
@@ -301,8 +306,8 @@ def main(argv=None) -> int:
             "fields": "userEnteredFormat.backgroundColor"}} for b in empty]}))
         log(f"  ✓ no sales yet in {', '.join(empty)} — cell left blank")
     S.write_tier_tables(ws, ts, log=log)
-    S.write_status(ws, status, log=log)
-    S.write_pending(ws, pend, log=log)
+    S.write_status(ws, status + "  " + S.BOX_NOTE, log=log)
+    S.write_product_box(ws, box, log=log)
     if a.dm:
         from automations.shared import slack_metrics_post as smp
         from automations.vantura_churn import shot
