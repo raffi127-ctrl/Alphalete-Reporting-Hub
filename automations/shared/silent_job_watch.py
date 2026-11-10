@@ -137,6 +137,25 @@ JOBS: Dict[str, dict] = {
                   "Nothing is sent or lost — only the ticks go cold."),
         "fix": "lucy rerun install_blueink_sweep_agent --machine \"Lucy 2\"",
     },
+    "icd_onboarding": {
+        "name": "ICD onboarding board",
+        # Megan's Mac, not a Lucy: it already holds Alphalete's OwnerVille,
+        # Blue Ink and Sheets sessions, so the board runs where the logins
+        # are. An ICD's own box runs its own copy of this agent.
+        "machine": "Megan's Mac",
+        "first_by": "07:00",       # first pass 06:00 + 60 min grace
+        "max_gap_min": 150,        # hourly → 2.5h tolerates one skipped pass
+        "active_until": "21:00",   # last pass 20:00 + grace
+        "weekdays": None,
+        "watch_from": "2026-11-09",
+        "means": ("the onboarding board stops filling itself, so the printed "
+                  "classroom sheets go stale and people are chased for steps "
+                  "they have already done. Nothing is sent or lost — only the "
+                  "ticks go cold."),
+        "fix": "bash deploy/icd_onboarding.sh on that machine, or "
+               "`python -m automations.day_orchestrator.install_agent "
+               "icd-onboarding` to put the hourly agent back",
+    },
     "obcl_ov_sweep": {
         "name": "OBCL <- OwnerVille sweep",
         "machine": "Lucy 3",
