@@ -1256,6 +1256,10 @@ OPTIONAL_RAW_COLUMNS = {"spe.Phone", "Auto Bill Pay", "Next Up",
                         "Rep Tier Bonus Amount"}
 
 STATUS_ORDER = [
+    # NDS lines the rep must act on go FIRST in each rep's block, so they
+    # don't blend into the other pendings (Colten 2026-11-10).
+    "Pending Valid Payment",
+    "Porting Issue",
     "Active",
     "Posted",           # NDS: the order posted (paid) — see nds_orderlog
     "Cancelled",
@@ -1278,6 +1282,11 @@ STATUS_COLORS = {
     "Pending Shipment": "FFD666",
     "Shipped":          "FFD666",
     "Delivered":        "F6B26B",
+    # NDS: plain "Pending" is in-flight (yellow); these two need the rep —
+    # same light red as the Pending Orders board (Colten 2026-11-10).
+    "Pending":               "FFD666",
+    "Pending Valid Payment": "F8D7DA",
+    "Porting Issue":         "F8D7DA",
 }
 
 STATUS_TEXT_COLORS = {
