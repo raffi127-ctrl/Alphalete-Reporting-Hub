@@ -3671,9 +3671,18 @@
    "display_name": "Probe one AppStream office (read-only)",
    "source_type": "local",
    "data_sources": [],
-   "command": ["automations.recruiting_report.probe_office"],
-   "base_args": ["20034", "23515", "--week-start", "2026-11-01"],
-   "cadence": {"weekdays": []},
+   "command": [
+    "automations.recruiting_report.probe_office"
+   ],
+   "base_args": [
+    "20034",
+    "23515",
+    "--week-start",
+    "2026-11-01"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
    "timeout_minutes": 20,
    "priority": "P3",
    "freshness_target": null,
@@ -17351,7 +17360,7 @@
   "juan_metrics": {
    "order": 36.98,
    "machine": "Lucy 4",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Juan's Daily Metrics",
    "source_type": "tableau",
    "data_sources": [
