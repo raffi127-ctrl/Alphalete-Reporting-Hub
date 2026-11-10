@@ -30,10 +30,11 @@ CENTRAL = ZoneInfo("America/Chicago")
 
 VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
             "ATTTRACKER2_1-D2D/PENDINGINSTALLS")
-# Worksheet name in the Crosstab dialog. Unconfirmed until the first --probe:
+# Worksheet name in the Crosstab dialog (confirmed by the Lucy 4 probe 2026-11-10;
+# the dialog offers it + "zzz last refresh"):
 # opt_phase's matcher is case-insensitive + rename-tolerant, and on a miss the
 # error lists every sheet the dialog offered.
-WORKSHEET = "Pending Installs"
+WORKSHEET = "Expected Installs"
 
 # Header labels as they appear in the view (Dylan's Loom, 2026-11-09).
 OWNER = "Owner Name"

@@ -154,7 +154,7 @@ def probe(csv_path: Optional[Path], owner: str, day: dt.date) -> Path:
         with tableau_session(verbose=True) as page:
             sheets = list_crosstab_sheets(pull.VIEW_URL, page=page, verbose=True)
             print("PROBE sheets: {}".format(sheets))
-            wanted = next((s for s in sheets if "pending" in s.lower()),
+            wanted = next((s for s in sheets if "install" in s.lower()),
                           pull.WORKSHEET)
             print("PROBE pulling sheet: {!r}".format(wanted))
             csv_path = pull.fetch(page=page, worksheet=wanted)
