@@ -52,14 +52,22 @@ def _hex(h: str) -> dict:
 # (Eve 2026-11-10: "una división de colores, alternados"). header = the box
 # title row (white text), avg = Captainship Avg, owner = each owner's total
 # row, band = the tint behind every other owner's reps.
+#
+# 11/10 second pass — Eve: "muy desabrido… los colores están muy blancos".
+# So: deep header, solid owner rows with WHITE text, a clearly visible band
+# (not a near-white tint), and the numbers themselves heat-coloured.
 PALETTE = {
-    "10-19": {"header": _hex("#3C78D8"), "avg": _hex("#A4C2F4"),
-              "owner": _hex("#C9DAF8"), "band": _hex("#EEF3FC")},
-    "20-29": {"header": _hex("#38761D"), "avg": _hex("#B6D7A8"),
-              "owner": _hex("#D9EAD3"), "band": _hex("#F1F7EE")},
-    "30-60": {"header": _hex("#E69138"), "avg": _hex("#F9CB9C"),
-              "owner": _hex("#FCE5CD"), "band": _hex("#FEF5EC")},
+    "10-19": {"header": _hex("#0B3D91"), "avg": _hex("#1C5FD0"),
+              "owner": _hex("#3D85E8"), "band": _hex("#BCD4F6")},
+    "20-29": {"header": _hex("#1B5E20"), "avg": _hex("#2E7D32"),
+              "owner": _hex("#43A047"), "band": _hex("#C3E6C5")},
+    "30-60": {"header": _hex("#8A3B00"), "avg": _hex("#C25E00"),
+              "owner": _hex("#EF8A17"), "band": _hex("#FBD3A6")},
 }
+# Heat scale on every % cell: red low, yellow middle, green high.
+HEAT = (("NUMBER", "0.5", _hex("#E06666")),
+        ("NUMBER", "0.75", _hex("#FFD966")),
+        ("NUMBER", "0.9", _hex("#57BB8A")))
 
 
 def tab_name(captain: str) -> str:
@@ -180,10 +188,18 @@ def render(captain: str, captain_full: str, grid, today_owners: List[str]):
         for i, owner in enumerate(owners):
             rows.append([owner, "Owner total"] + cells((owner, "Total"), win))
             kinds.append((len(rows), "owner", win, i))
-            reps = sorted({rep for (o, rep) in vals if o == owner and rep != "Total"
-                           and any(cells((o, rep), win))})
-            for rep in reps:
-                rows.append(["", rep] + cells((owner, rep), win))
+            reps = {rep for (o, rep) in vals if o == owner and rep != "Total"
+                    and any(cells((o, rep), win))}
+            # Best first, on the newest day that has a number (Eve: a flat
+            # alphabetical list is a wall of names; ranked, it reads).
+            def _key(rep, _o=owner, _w=win):
+                c = [x for x in cells((_o, rep), _w) if x]
+                try:
+                    return (-float(c[0].rstrip("%")), rep) if c else (1.0, rep)
+                except ValueError:
+                    return (1.0, rep)
+            for rep in sorted(reps, key=_key):
+                rows.append(["", "   " + rep] + cells((owner, rep), win))
                 kinds.append((len(rows), "rep", win, i))
     return rows, kinds, len(days)
 
@@ -233,17 +249,58 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
         {"updateDimensionProperties": {"range": {
             "sheetId": sid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 2},
             "properties": {"pixelSize": 190}, "fields": "pixelSize"}},
+        # frozen names; the group '+' sits on the OWNER row above its reps
         {"updateSheetProperties": {"properties": {
-            "sheetId": sid, "gridProperties": {"frozenColumnCount": 2}},
-            "fields": "gridProperties.frozenColumnCount"}},
+            "sheetId": sid, "gridProperties": {"frozenColumnCount": 2,
+                                               "rowGroupControlAfter": False}},
+            "fields": "gridProperties.frozenColumnCount,"
+                      "gridProperties.rowGroupControlAfter"}},
     ]
-    edge = {"style": "SOLID_MEDIUM", "color": {"red": 0.6, "green": 0.6, "blue": 0.6}}
+    edge = {"style": "SOLID_MEDIUM", "color": {"red": 0.2, "green": 0.2, "blue": 0.2}}
+    # Clear what a redraw would otherwise stack up: old row groups and old
+    # conditional-format rules (updateCells above wipes neither).
+    meta = book.fetch_sheet_metadata({"fields": "sheets(properties.sheetId,"
+                                                "rowGroups,conditionalFormats)"})
+    me = next((s for s in meta.get("sheets", [])
+               if s.get("properties", {}).get("sheetId") == sid), {})
+    pre = []
+    for g in sorted(me.get("rowGroups", []), key=lambda g: -g.get("depth", 1)):
+        pre.append({"deleteDimensionGroup": {"range": g["range"]}})
+    for _ in me.get("conditionalFormats", []):
+        pre.append({"deleteConditionalFormatRule": {"sheetId": sid, "index": 0}})
+    if pre:
+        book.batch_update({"requests": pre})
+
+    # Box extents (avg row .. last rep row) for the heat scale, and each
+    # owner's rep rows for the collapsible groups.
+    box_rows: dict = {}
+    rep_runs: list = []
+    run = None
+    for r, kind, win, idx in kinds:
+        if kind in ("avg", "owner", "rep"):
+            lo, hi = box_rows.get(win, (r, r))
+            box_rows[win] = (min(lo, r), max(hi, r))
+        if kind == "rep":
+            if run and run[2] == (win, idx) and run[1] == r - 1:
+                run[1] = r
+            else:
+                run = [r, r, (win, idx)]
+                rep_runs.append(run)
+    for win, (lo, hi) in box_rows.items():
+        pts = {}
+        for name, (typ, val, color) in zip(("minpoint", "midpoint", "maxpoint"), HEAT):
+            pts[name] = {"type": typ, "value": val, "color": color}
+        reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
+            "ranges": [{"sheetId": sid, "startRowIndex": lo - 1, "endRowIndex": hi,
+                        "startColumnIndex": 2, "endColumnIndex": width}],
+            "gradientRule": pts}}})
+
     for r, kind, win, idx in kinds:
         pal = PALETTE.get(win, {})
         if kind == "title":
-            reqs.append(fmt(r, bold=True, size=13, c1=1))
+            reqs.append(fmt(r, bold=True, size=14, c1=1))
         elif kind == "box":
-            reqs.append(fmt(r, bg=pal["header"], bold=True, size=12, fg=WHITE))
+            reqs.append(fmt(r, bg=pal["header"], bold=True, size=13, fg=WHITE))
             # The day labels parse as dates — show them as dates, not as the
             # 0.0% the day columns carry (11/10 first draw read '4633600.0%').
             reqs.append({"repeatCell": {"range": rng(r, 2, width), "cell": {
@@ -251,13 +308,25 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
                     "type": "DATE", "pattern": "ddd m/d/yy"}}},
                 "fields": "userEnteredFormat.numberFormat"}})
         elif kind == "avg":
-            reqs.append(fmt(r, bg=pal["avg"], bold=True, size=12))
+            reqs.append(fmt(r, bg=pal["avg"], bold=True, size=12, fg=WHITE))
         elif kind == "owner":
-            reqs.append(fmt(r, bg=pal["owner"], bold=True))
-            reqs.append({"updateBorders": {"range": rng(r), "top": edge}})
+            reqs.append(fmt(r, bg=pal["owner"], bold=True, size=11, fg=WHITE))
+            reqs.append({"updateBorders": {"range": rng(r), "top": edge,
+                                           "bottom": edge}})
         elif kind == "rep":
-            # owners alternate: tinted band, white band, tinted band...
+            # owners alternate: coloured band, white band, coloured band...
             reqs.append(fmt(r, bg=pal["band"] if idx % 2 == 0 else WHITE))
+    # Reps fold under their owner: the tab opens as a short list of owners,
+    # '+' on the left opens one owner's team.
+    for lo, hi, _k in rep_runs:
+        g = {"sheetId": sid, "dimension": "ROWS", "startIndex": lo - 1,
+             "endIndex": hi}
+        reqs.append({"addDimensionGroup": {"range": g}})
+    for lo, hi, _k in rep_runs:
+        reqs.append({"updateDimensionGroup": {"dimensionGroup": {
+            "range": {"sheetId": sid, "dimension": "ROWS",
+                      "startIndex": lo - 1, "endIndex": hi},
+            "depth": 1, "collapsed": True}, "fields": "collapsed"}})
     # Names read left-to-right; long rep names were clipped when centred.
     reqs.append({"repeatCell": {"range": {
         "sheetId": sid, "startRowIndex": 0, "endRowIndex": len(rows),

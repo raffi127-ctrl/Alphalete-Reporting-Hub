@@ -54,8 +54,8 @@ class ParseRender(unittest.TestCase):
         # Andrew Couch only has 30-60: absent from the 10-19 box, present in 30-60
         b1019 = rows[rows.index(["ACTIVATION 10-19 DAYS", "Rep", "Tue 11/10/26"]):
                      rows.index(["ACTIVATION 20-29 DAYS", "Rep", "Tue 11/10/26"])]
-        self.assertNotIn("Andrew Couch", [r[1] for r in b1019 if len(r) > 1])
-        self.assertIn(["", "Andrew Couch", "100.0%"],
+        self.assertNotIn("   Andrew Couch", [r[1] for r in b1019 if len(r) > 1])
+        self.assertIn(["", "   Andrew Couch", "100.0%"],
                       [r[:3] for r in rows[rows.index(
                           ["ACTIVATION 30-60 DAYS", "Rep", "Tue 11/10/26"]):]])
 
