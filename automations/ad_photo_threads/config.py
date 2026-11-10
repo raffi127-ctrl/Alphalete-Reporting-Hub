@@ -131,6 +131,17 @@ NO_AD_ANSWERS = {
     # Member - AT&T" -- same as Virgilio Capote and Jorge Luis Dominguez that
     # day, both typed "? Homestead FL". So: the Homestead ad.
     "2026-11-05|sabrina soria": "Bilingual Team Member - AT&T ? Homestead FL",
+    # Jamis, Camila 11/10: the 11/5 1st rounds AppStream (19592) has with a
+    # blank ad.
+    "2026-11-05|steve matthew": "Handshake / Entry Level Account Manager",
+    "2026-11-05|mang pi": "Handshake / Marketing Assistant",
+    "2026-11-05|alonzo johnson": "Handshake / Marketing Assistant",
+    "2026-11-05|gecheng zhang": "Other(NLR Indeed)",
+    "2026-11-05|sanaa hood": "Handshake / Marketing Assistant",
+    "2026-11-05|uchral javkhlantugs": "Other(NLR Indeed)",
+    "2026-11-05|heidi gerhardt": "Handshake / Marketing Assistant",
+    "2026-11-05|luis almaraz": "Handshake / Marketing Assistant",
+    "2026-11-05|alani jacob": "Handshake / Marketing Assistant",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
