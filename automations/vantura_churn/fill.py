@@ -746,10 +746,14 @@ def read_product_bases(ws: gspread.Worksheet, log=print) -> dict:
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,
                      helper_rows: list[list], log=print,
                      base_cells: tuple = DEFAULT_BASE_CELLS,
-                     write_bases: bool = True) -> None:
+                     write_bases: bool = True,
+                     churn_formula: str = None) -> None:
     """`base_cells` = the (Wireless, Air, Internet) activation-base cells the
     per-row 'Churn % After Rolloff' formulas divide by; `write_bases=False`
-    leaves B5:B7 to the caller (the NDS tab draws its own box there)."""
+    leaves B5:B7 to the caller (the NDS tab draws its own box there);
+    `churn_formula` = a template used instead of U_FORMULA_T for that column
+    (placeholders r, cap, fall, lines, rem, key, cust, n0, n1, wl, air, inet
+    -- nds_churn.sheet.rolloff_formula). Every other tab keeps the default."""
     b = helper_bounds(ws)
     f0, cap = b["f0"], b["cap"]
     n = len(helper_rows)
@@ -774,13 +778,16 @@ def update_churn_tab(ws: gspread.Worksheet, bases: dict,
 
     cols = {"rem": _colletter(f0 + H_REMAINING), "key": _colletter(f0 + H_KEY),
             "cust": _colletter(f0 + H_CUSTOMER),
-            "n0": _colletter(f0), "n1": _colletter(f0 + 1)}
+            "n0": _colletter(f0), "n1": _colletter(f0 + 1),
+            "fall": _colletter(f0 + 1), "lines": _colletter(f0 + H_LINES)}
+    tmpl = churn_formula or U_FORMULA_T
     block = []
     for i, row in enumerate(helper_rows):
         r = i + 2
         vals = list(row)
-        vals[H_CHURN_F] = U_FORMULA_T.format(
-            r=r, wl=base_cells[0], air=base_cells[1], inet=base_cells[2], **cols)
+        vals[H_CHURN_F] = tmpl.format(
+            r=r, cap=cap, wl=base_cells[0], air=base_cells[1], inet=base_cells[2],
+            **cols)
         vals[H_NOTES_F] = AC_FORMULA.format(r=r, **cols)
         block.append(vals)
     # Pad to full capacity — one write both fills and clears yesterday's tail.

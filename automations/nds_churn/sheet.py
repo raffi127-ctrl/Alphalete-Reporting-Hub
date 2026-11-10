@@ -24,6 +24,7 @@ setup on 11/09 was deleted empty the same hour.
 """
 from __future__ import annotations
 
+import re
 from typing import Optional, Tuple
 
 from automations.nds_churn import comp
@@ -190,16 +191,166 @@ BOX_ROWS = [                    # (compute.product_box key, label, 'act' | 'pend
     ("internet", "Internet", "act"),
 ]
 BOX_LAST_ROW = BOX_FIRST_ROW + len(BOX_ROWS) - 1          # 12
-# The activation bases the rolloff rows' 'Churn % After Rolloff' divide by
-# (vantura_churn.fill.U_FORMULA_T): wireless = All Wireless + BYODs.
-BASE_CELLS = ("($B$7+$B$9)", "$B$11", "$B$12")
 BOX_WIRELESS_CHURN_CELLS = ("D5", "D7", "D9")   # the wireless colour ramp
 BOX_AIR_CHURN_CELL = "D11"
 BOX_COL_A_PX = 170                              # "All Wireless Pending" in bold 12pt needs the room
 BOX_NOTE = ("Top-left box: phone lines (ported or new-number) + Air; no tablets, "
             "watches, upgrades or Internet; All Wireless = non-BYOD phones; BYODs = "
             "BYOD phones; activated / disconnected by activation date in the last 30 "
-            "days; Pending = sold in the last 30 days, not activated, not canceled.")
+            "days; Pending = sold in the last 30 days, not activated, not canceled; "
+            "activation rate per row = activated ÷ sold, by sale date (0-30 = the "
+            "last 30 days, 31-60 = the 30 before).")
+
+# The 0-30 day rolloff list follows the box (Carlos 2026-11-10: "adjust the
+# 0-30 day portion to reflect the same way"): the Filter picks a box row, the
+# list shows that row's disconnects, and 'Churn % After Rolloff' divides what
+# is still on the report by THAT row's activations (B5 / B7 / B9 / B11 /
+# B12). "All Orders" = every row but Internet (the box's own definition).
+FILTER_BASE = {label: f"$B${BOX_FIRST_ROW + i}"
+               for i, (_k, label, kind) in enumerate(BOX_ROWS) if kind == "act"}
+FILTER_OPTIONS = tuple(FILTER_BASE)             # All Orders, All Wireless, BYODs, Air, Internet
+FILTER_EMPTY = "no disconnects in this view"
+ROLLOFF_SUBTITLE = ("Days left = (Posted+30) − Today. Filter = a box row (All Orders / "
+                    "All Wireless / BYODs / Air / Internet). Churn % After Rolloff = "
+                    "that row's lines still on the 0–30 report once this group has "
+                    "aged off ÷ that row's activations.")
+FILTER_HINT = "◀ pick a box row to filter the rolloff list below"
+
+
+def _view_mask(view: str) -> str:
+    """Helper-block rows in the picked view as a 0/1 array over the key
+    column ({key} / {cap} left for fill.update_churn_tab to fill)."""
+    k = "${key}$2:${key}${cap}"
+    return ('((%s="All Orders")*(%s<>"Internet")*(%s<>"")+(%s=%s))'
+            % (view, k, k, k, view))
+
+
+def _base_pick(view: str) -> str:
+    """The box cell the picked view divides by (nested IF, last option as
+    the fallback)."""
+    opts = list(FILTER_BASE.items())
+    expr = opts[-1][1]
+    for label, cell in reversed(opts[:-1]):
+        expr = f'IF({view}="{label}",{cell},{expr})'
+    return expr
+
+
+def rolloff_formula(view: str) -> str:
+    """'Churn % After Rolloff' template for fill.update_churn_tab
+    (churn_formula=): lines of the picked box row that fall off AFTER this
+    group ÷ that row's activations. `view` = the Filter cell, e.g. '$B$3'."""
+    return ('=IFERROR(SUMPRODUCT((${fall}$2:${fall}${cap}>${fall}{r})*'
+            + _view_mask(view) + '*${lines}$2:${lines}${cap})/'
+            + _base_pick(view) + ',"")')
+
+
+def filter_formula(first: str, last: str, key: str, cap: int, view: str) -> str:
+    """A16: the visible rolloff list = the helper rows in the picked view.
+    Starts 'FILTER($P$2:$AC$<cap>,$AD$2:$AD$<cap>' so fill.helper_bounds /
+    viewing_cell / _grow_helper_formulas keep reading it."""
+    mask = _view_mask(view).format(key=key, cap=cap)
+    return (f'=IFNA(FILTER(${first}$2:${last}${cap},${key}$2:${key}${cap}<>"",'
+            f'{mask}),"{FILTER_EMPTY}")')
+
+
+def ensure_rolloff_layout(ws, log=print) -> str:
+    """Re-assert the rolloff list's controls (idempotent, every run): the
+    A16 FILTER over the box-row key, the Filter dropdown's choices
+    (FILTER_OPTIONS; the selection is kept while valid, else All Orders),
+    the subtitle (A2) and the hint beside the dropdown. Reads the block's
+    CURRENT bounds, never a constant, and runs before update_churn_tab
+    (which may grow the ranges). Returns the Filter cell as '$B$3'."""
+    b = VF.helper_bounds(ws)
+    f0, cap = b["f0"], b["cap"]
+    first, last = VF._colletter(f0), VF._colletter(f0 + VF.H_WIDTH - 3)   # the 14 shown columns
+    key = VF._colletter(f0 + VF.H_KEY)
+    view = VF.viewing_cell(ws)                                             # e.g. "B3"
+    vcol, vrow = re.match(r"([A-Z]{1,2})(\d+)", view).groups()
+    vabs = f"${vcol}${vrow}"
+    vcol_i, vrow_i = VF._col_idx(vcol), int(vrow) - 1
+    hint_cell = f"{VF._colletter(vcol_i + 1)}{vrow}"
+
+    want_a16 = filter_formula(first, last, key, cap, vabs)
+    cur = _retry(lambda: ws.get("A16", value_render_option="FORMULA"))
+    cur_a16 = str(cur[0][0]) if cur and cur[0] else ""
+    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata({
+        "includeGridData": True, "ranges": [f"{ws.title}!{view}"],
+        "fields": "sheets(data(rowData(values(formattedValue,dataValidation))))"}))
+    cell = ((meta["sheets"][0].get("data", [{}])[0].get("rowData", [{}]) or [{}])[0]
+            .get("values", [{}]) or [{}])[0]
+    dv = cell.get("dataValidation") or {}
+    have = tuple(c.get("userEnteredValue") for c in dv.get("condition", {}).get("values", []))
+    selection = cell.get("formattedValue")
+    a2 = _retry(lambda: ws.get("A2"))
+    hint = _retry(lambda: ws.get(hint_cell))
+    cur_a2 = str(a2[0][0]) if a2 and a2[0] else ""
+    cur_hint = str(hint[0][0]) if hint and hint[0] else ""
+
+    done = []
+    if have != FILTER_OPTIONS:
+        _retry(lambda: ws.spreadsheet.batch_update({"requests": [{"setDataValidation": {
+            "range": {"sheetId": ws.id, "startRowIndex": vrow_i, "endRowIndex": vrow_i + 1,
+                      "startColumnIndex": vcol_i, "endColumnIndex": vcol_i + 1},
+            "rule": {"condition": {"type": "ONE_OF_LIST",
+                                   "values": [{"userEnteredValue": o} for o in FILTER_OPTIONS]},
+                     "strict": True, "showCustomUi": True}}}]}))
+        done.append(f"dropdown {view} = {' / '.join(FILTER_OPTIONS)}")
+    updates = []
+    if selection not in FILTER_OPTIONS:
+        updates.append({"range": view, "values": [[FILTER_OPTIONS[0]]]})
+        done.append(f"{view} {selection!r} -> {FILTER_OPTIONS[0]!r}")
+    if want_a16 != cur_a16:
+        updates.append({"range": "A16", "values": [[want_a16]]})
+        done.append("A16 FILTER rewritten")
+    if cur_a2 != ROLLOFF_SUBTITLE:
+        updates.append({"range": "A2", "values": [[ROLLOFF_SUBTITLE]]})
+        done.append("A2 subtitle")
+    if cur_hint != FILTER_HINT:
+        updates.append({"range": hint_cell, "values": [[FILTER_HINT]]})
+        done.append(f"{hint_cell} hint")
+    if updates:
+        _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
+    log(f"  ✓ {ws.title}: rolloff list follows the box "
+        f"({'; '.join(done) if done else 'already in place'}; block {first}:{last}, "
+        f"key {key}, rows to {cap}, view {vabs})")
+    return vabs
+
+
+def write_box_rates(ws, rates: dict, log=print) -> None:
+    """E5:F12 -- the 0-30 / 31-60 activation rate per box row
+    (compute.box_activation_rates), banded like the office rate was; the
+    Pending rows and a bucket with no sales stay blank (not 0%)."""
+    white = {"red": 1, "green": 1, "blue": 1}
+    vals, fmt = [], []
+    for i, (key, _label, kind) in enumerate(BOX_ROWS):
+        r0 = BOX_FIRST_ROW - 1 + i
+        row = []
+        for ci, bucket in ((4, "0-30"), (5, "31-60")):
+            rate = rates[key][bucket]["rate"] if kind == "act" else None
+            row.append("" if rate is None else round(rate, 4))
+            colour = VF.band_for(rate, bucket) if rate is not None else None
+            fmt.append({"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": r0 + 1,
+                          "startColumnIndex": ci, "endColumnIndex": ci + 1},
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": VF.BAND_BG[colour] if colour else white,
+                    "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
+                    "horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat(backgroundColor,numberFormat,"
+                          "horizontalAlignment)"}})
+        vals.append(row)
+    _retry(lambda: ws.batch_update(
+        [{"range": f"E{BOX_FIRST_ROW}:F{BOX_LAST_ROW}", "values": vals}],
+        value_input_option="USER_ENTERED"))
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": fmt}))
+
+    def _r(key, b):
+        s = rates[key][b]
+        return (f"{s['activated']}/{s['sold']} = {s['rate']:.1%}" if s["rate"] is not None
+                else "no sales")
+    log(f"  ✓ {ws.title}: box rates E5:F12 -- "
+        + "; ".join(f"{label} 0-30 {_r(key, '0-30')}, 31-60 {_r(key, '31-60')}"
+                    for key, label, kind in BOX_ROWS if kind == "act"))
 
 
 def _a1_to_range(a1: str, sheet_id: int) -> dict:

@@ -223,6 +223,7 @@ def main(argv=None) -> int:
     summary = C.churn_summary(lines, today)
     helper = C.helper_block(lines, today)
     office, reps = C.activation_rates(lines, today)
+    rates = C.box_activation_rates(lines, today)
     ts = C.tier_status(summary, today)
     status = C.status_line(ts)
     um = C.unmapped_products(lines, today)
@@ -242,6 +243,7 @@ def main(argv=None) -> int:
         f"disc {summary['disc']}  wireless split {summary['split']}")
     log(f"ROLLOFF rows: {len(helper)}")
     log(f"RATES: {_fmt_rates(office)}   ({len(reps)} reps)")
+    log("BOX RATES: " + "; ".join(f"{k} {_fmt_rates(v)}" for k, v in rates.items()))
     log("STATUS: " + status)
     if a.skip_reconcile:
         ok, detail = None, "skipped (--skip-reconcile)"
@@ -261,6 +263,7 @@ def main(argv=None) -> int:
                     "STATUS: " + status,
                     f"PENDING: {pend}",
                     f"BOX: {box}",
+                    f"BOX RATES: {rates}",
                     f"UNMAPPED: {um}",
                     "ROLLOFF ROWS (%d):" % len(helper)] + rows_txt
                    + ["VIEW REPS (0-30 disc / activated / pct):"]
@@ -285,26 +288,18 @@ def main(argv=None) -> int:
             step(ws, log=log)
         except Exception as e:  # noqa: BLE001 -- never block the daily write
             log(f"  ⚠ {step.__name__} skipped: {e}")
-    VF.update_churn_tab(ws, summary["base"], helper, log=log,
-                        base_cells=S.BASE_CELLS, write_bases=False)
-    empty = [b for b in C.BUCKETS if office[b]["rate"] is None]
-    for b in empty:                           # the writer logs rate:.1%
-        office[b]["rate"] = 0.0
-    VF.update_activation_rates(ws, office, reps, log=log)
-    if empty:
-        # A bucket with no sales is blank, not 0.0% (NDS started 10/19, so
-        # 31-60 has nothing to rate until mid-November).
-        cells = {"0-30": "E5", "31-60": "F5"}
-        _retry(lambda: ws.batch_update([{"range": cells[b], "values": [[""]]}
-                                        for b in empty],
-                                       value_input_option="USER_ENTERED"))
-        _retry(lambda: ws.spreadsheet.batch_update({"requests": [{"repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": 4, "endRowIndex": 5,
-                      "startColumnIndex": 4 + C.BUCKETS.index(b),
-                      "endColumnIndex": 5 + C.BUCKETS.index(b)},
-            "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 1, "blue": 1}}},
-            "fields": "userEnteredFormat.backgroundColor"}} for b in empty]}))
-        log(f"  ✓ no sales yet in {', '.join(empty)} — cell left blank")
+    # The rolloff list follows the box: Filter = a box row, the per-row
+    # 'Churn % After Rolloff' divides by that row's activations.
+    view = S.ensure_rolloff_layout(ws, log=log)
+    VF.update_churn_tab(ws, summary["base"], helper, log=log, write_bases=False,
+                        churn_formula=S.rolloff_formula(view))
+    for b in [b for b in C.BUCKETS if office[b]["rate"] is None]:
+        office[b]["rate"] = 0.0               # the writer logs rate:.1%
+    VF.update_activation_rates(ws, office, reps, log=log)   # E5/F5 + the per-rep list
+    # E5:F12 per box row (All Orders / All Wireless / BYODs / Air / Internet);
+    # a bucket with no sales stays blank, not 0.0% (NDS started 10/19, so
+    # 31-60 has nothing to rate until mid-November).
+    S.write_box_rates(ws, rates, log=log)
     S.write_tier_tables(ws, ts, log=log)
     S.write_status(ws, status + "  " + S.BOX_NOTE, log=log)
     S.write_product_box(ws, box, log=log)

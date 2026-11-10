@@ -355,12 +355,19 @@ _ABBR = {"Wireless": "W", "Internet": "INT", "Air": "AIR"}
 
 def helper_block(lines: List[dict], today: dt.date) -> List[List]:
     """The hidden 16-column rows (formulas at +3 and +13 left None for
-    fill.update_churn_tab to inject). One row per product + account."""
+    fill.update_churn_tab to inject). One row per box row + account, soonest
+    fall-off first across every box row (Carlos 2026-11-10: "adjust the 0-30
+    day portion to reflect the same way" -- the rolloff list follows the
+    top-left box). +14 = the box row the lines belong to (BOX_LABELS: what the
+    Filter dropdown picks), +15 = lines of that same box row still on the
+    report once this group has aged off (the sheet formula recounts this per
+    view; kept for the dry-run print)."""
     groups: Dict[tuple, List[dict]] = collections.defaultdict(list)
-    for u in churn_units(lines, today):
-        if u["status"].lower() not in DISCONNECTED:
+    for u in churn_units(lines, today, ports_only=False):
+        cls = box_class(u)
+        if cls is None or u["status"].lower() not in DISCONNECTED:
             continue
-        groups[(u["prod"], u["customer"], u["ban"])].append(u)
+        groups[(cls, u["customer"], u["ban"])].append(u)
 
     acct: Dict[tuple, Dict[str, set]] = collections.defaultdict(
         lambda: collections.defaultdict(set))
@@ -382,37 +389,38 @@ def helper_block(lines: List[dict], today: dt.date) -> List[List]:
             return "BYOD"
         return g["device"] or g["package"]
 
+    def _posted(grp) -> dt.date:
+        return min(u["posted"] for u in grp)
+
+    ordered = sorted(groups.items(), key=lambda kv: (_posted(kv[1]), kv[0][1]))
     rows = []
-    for p in PRODUCT_ORDER:
-        prod = [(k, v) for k, v in groups.items() if k[0] == p]
-        prod.sort(key=lambda kv: (min(u["posted"] for u in kv[1]), kv[0][1]))
-        for (_, customer, ban), grp in prod:
-            posted = min(u["posted"] for u in grp)
-            falloff = posted + dt.timedelta(days=WINDOW_DAYS)
-            disc_real = min((g["status_date_d"] for g in grp
-                             if g["status_date_d"]), default=None)
-            remaining = sum(len(v) for _, v in prod
-                            if min(u["posted"] for u in v) > posted)
-            rows.append([
-                f"{(falloff - today).days}d",                 # +0 Days Left
-                fmt_date(falloff),                            # +1 Fall-Off Date
-                len(grp),                                     # +2 Lines
-                None,                                         # +3 churn-after formula
-                customer,                                     # +4 Customer
-                _join_uniq(g["rep"] for g in grp),            # +5 Sales Rep
-                fmt_date(min((g["order_date"] for g in grp
-                              if g["order_date"]), default=None)),  # +6 Order Date
-                fmt_date(posted),                             # +7 Activation Date
-                fmt_date(disc_real),                          # +8 Disconnect Date
-                _join_uniq(f"{line_kind(g)} · {g['if_oof']}".strip(" ·")
-                           for g in grp),                     # +9 Line · IF/OOF (was CRU/IRU)
-                _acct_lines(ban, customer),                   # +10 Lines on Acct
-                _join_uniq(_device(g) for g in grp),          # +11 Phone/BYOD
-                p,                                            # +12 Product Type
-                None,                                         # +13 notes formula
-                p,                                            # +14 Product key
-                remaining,                                    # +15 remaining after
-            ])
+    for (cls, customer, ban), grp in ordered:
+        posted = _posted(grp)
+        falloff = posted + dt.timedelta(days=WINDOW_DAYS)
+        disc_real = min((g["status_date_d"] for g in grp
+                         if g["status_date_d"]), default=None)
+        remaining = sum(len(v) for (c, _, _), v in ordered
+                        if c == cls and _posted(v) > posted)
+        rows.append([
+            f"{(falloff - today).days}d",                 # +0 Days Left
+            fmt_date(falloff),                            # +1 Fall-Off Date
+            len(grp),                                     # +2 Lines
+            None,                                         # +3 churn-after formula
+            customer,                                     # +4 Customer
+            _join_uniq(g["rep"] for g in grp),            # +5 Sales Rep
+            fmt_date(min((g["order_date"] for g in grp
+                          if g["order_date"]), default=None)),  # +6 Order Date
+            fmt_date(posted),                             # +7 Activation Date
+            fmt_date(disc_real),                          # +8 Disconnect Date
+            _join_uniq(f"{line_kind(g)} · {g['if_oof']}".strip(" ·")
+                       for g in grp),                     # +9 Line · IF/OOF (was CRU/IRU)
+            _acct_lines(ban, customer),                   # +10 Lines on Acct
+            _join_uniq(_device(g) for g in grp),          # +11 Phone/BYOD
+            grp[0]["prod"],                               # +12 Product Type
+            None,                                         # +13 notes formula
+            BOX_LABELS[cls],                              # +14 box-row key (the Filter)
+            remaining,                                    # +15 same box row, falling off later
+        ])
     return rows
 
 
@@ -497,6 +505,10 @@ def box_class(ln: dict) -> Optional[str]:
 
 
 BOX_CLASSES = ("wireless", "byod", "air", "internet")
+# The box row each class belongs to: the rolloff Filter's choices (plus
+# "All Orders" = wireless + byod + air) and the helper block's key column.
+BOX_LABELS = {"wireless": "All Wireless", "byod": "BYODs", "air": "Air",
+              "internet": "Internet"}
 
 
 def product_box(lines: List[dict], today: dt.date) -> dict:
@@ -532,6 +544,46 @@ def product_box(lines: List[dict], today: dt.date) -> dict:
             out[cls]["pend"] += 1
     out["all_orders"] = {k: out["wireless"][k] + out["byod"][k] + out["air"][k]
                          for k in ("act", "disc", "pend")}
+    return out
+
+
+def box_activation_rates(lines: List[dict], today: dt.date) -> dict:
+    """The activation rate per box row, activation_rates' shape per class:
+    {'all_orders' | 'wireless' | 'byod' | 'air' | 'internet':
+     {'0-30': {'activated', 'sold', 'rate'}, '31-60': {...}}}.
+    Sold = distinct lines ordered in the bucket (by sale date; the same
+    counts_as_order rule as the office rate), activated = those Posted or
+    Disconnected since; all_orders = wireless + byod + air (no Internet,
+    like the box's first row). A bucket with no sales rates None."""
+    def _blank():
+        return {b: {"activated": 0, "sold": 0, "rate": None} for b in BUCKETS}
+    out = {k: _blank() for k in BOX_CLASSES}
+    seen = set()
+    for ln in lines:
+        cls = box_class(ln)
+        od = ln["order_date"]
+        if cls is None or not od:
+            continue
+        age = (today - od).days
+        bucket = "0-30" if 0 <= age <= 30 else "31-60" if 31 <= age <= 60 else None
+        if bucket is None:
+            continue
+        key = (cls, _line_key(ln))
+        if key in seen:
+            continue
+        seen.add(key)
+        out[cls][bucket]["sold"] += 1
+        if ln["status"].lower() in ACTIVATED:
+            out[cls][bucket]["activated"] += 1
+    out["all_orders"] = _blank()
+    for b in BUCKETS:
+        for k in ("wireless", "byod", "air"):
+            for f in ("sold", "activated"):
+                out["all_orders"][b][f] += out[k][b][f]
+    for d in out.values():
+        for b in BUCKETS:
+            s = d[b]
+            s["rate"] = (s["activated"] / s["sold"]) if s["sold"] else None
     return out
 
 

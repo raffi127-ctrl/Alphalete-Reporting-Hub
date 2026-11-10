@@ -93,6 +93,64 @@ class Compute(unittest.TestCase):
         self.assertEqual(r[10], "2 (2W)")
         self.assertEqual(r[11], "BYOD")
         self.assertIsNone(r[3]); self.assertIsNone(r[13])
+        self.assertEqual(r[12], "Wireless")          # product, as shown
+        self.assertEqual(r[14], "BYODs")             # box row, what the Filter picks
+        self.assertEqual(r[15], 0)
+
+    def test_helper_block_follows_box(self):
+        # Carlos 2026-11-10: the list reflects the box -- every box-row
+        # disconnect (not just ports), keyed by box row, soonest fall-off
+        # first across rows; 'remaining' counts the SAME box row only.
+        byod = next(l for l in self.lines if l["customer"] == "HENRY W" and l["byod"])
+        late = dict(byod, customer="LATE L", ban="BAN8", spe="SPE12", tn="1212",
+                    posted=dt.date(2026, 10, 30), status_date_d=dt.date(2026, 11, 5))
+        air = dict(next(l for l in self.lines if l["customer"] == "MARIA G"),
+                   customer="EARLY A", ban="BAN9", spe="SPE13", status="Disconnected",
+                   posted=dt.date(2026, 10, 20), status_date_d=dt.date(2026, 11, 2))
+        phone = dict(byod, customer="NEW N", ban="BAN10", spe="SPE14", tn="1414",
+                     package="Unlimited", device="iPhone 18 Pro - 256GB - Black",
+                     byod=False, tn_type="new", posted=dt.date(2026, 10, 28),
+                     status_date_d=dt.date(2026, 11, 4))
+        rows = C.helper_block(list(self.lines) + [late, air, phone], TODAY)
+        self.assertEqual([(r[4], r[14], r[15]) for r in rows],
+                         [("EARLY A", "Air", 0), ("HENRY W", "BYODs", 1),
+                          ("NEW N", "All Wireless", 0), ("LATE L", "BYODs", 0)])
+        self.assertEqual([r[1] for r in rows],
+                         ["11/19/2026", "11/24/2026", "11/27/2026", "11/29/2026"])
+        self.assertEqual(rows[2][9], "new")          # a new-number phone is listed too
+        # and the list is exactly the box's disconnects
+        box = C.product_box(list(self.lines) + [late, air, phone], TODAY)
+        self.assertEqual(sum(r[2] for r in rows), box["all_orders"]["disc"])
+
+    def test_box_activation_rates(self):
+        r = C.box_activation_rates(self.lines, TODAY)
+        self.assertEqual(r["wireless"]["0-30"], {"activated": 1, "sold": 2, "rate": 0.5})
+        self.assertEqual(r["byod"]["0-30"], {"activated": 1, "sold": 1, "rate": 1.0})
+        self.assertEqual(r["air"]["0-30"], {"activated": 1, "sold": 1, "rate": 1.0})
+        self.assertEqual(r["internet"]["0-30"], {"activated": 0, "sold": 0, "rate": None})
+        self.assertEqual(r["all_orders"]["0-30"], {"activated": 3, "sold": 4, "rate": 0.75})
+        self.assertIsNone(r["all_orders"]["31-60"]["rate"])
+        office, _ = C.activation_rates(self.lines, TODAY)   # no Internet in the fixture
+        self.assertEqual(office["0-30"]["sold"], r["all_orders"]["0-30"]["sold"])
+
+    def test_rolloff_formulas_follow_the_box(self):
+        from automations.nds_churn import sheet as S
+        self.assertEqual(S.FILTER_BASE, {"All Orders": "$B$5", "All Wireless": "$B$7",
+                                         "BYODs": "$B$9", "Air": "$B$11", "Internet": "$B$12"})
+        self.assertEqual(S.FILTER_OPTIONS[0], "All Orders")
+        f = S.rolloff_formula("$B$3").format(
+            r=2, cap=41, fall="Q", lines="R", key="AD", rem="AE", cust="T",
+            n0="P", n1="Q", wl="x", air="y", inet="z")
+        self.assertTrue(f.startswith('=IFERROR(SUMPRODUCT(($Q$2:$Q$41>$Q2)*'
+                                     '(($B$3="All Orders")*($AD$2:$AD$41<>"Internet")'
+                                     '*($AD$2:$AD$41<>"")+($AD$2:$AD$41=$B$3))'
+                                     '*$R$2:$R$41)/'), f)
+        self.assertTrue(f.endswith('IF($B$3="All Orders",$B$5,IF($B$3="All Wireless",$B$7,'
+                                   'IF($B$3="BYODs",$B$9,IF($B$3="Air",$B$11,$B$12)))),"")'), f)
+        a16 = S.filter_formula("P", "AC", "AD", 41, "$B$3")
+        # the prefix fill.helper_bounds parses, the '=$B$3' viewing_cell finds
+        self.assertTrue(a16.startswith('=IFNA(FILTER($P$2:$AC$41,$AD$2:$AD$41<>"",('), a16)
+        self.assertIn('($AD$2:$AD$41=$B$3))),"no disconnects in this view")', a16)
 
     def test_pending_orders(self):
         # PEND P: sold 11/5, Shipped -> the one pending line; everything else
