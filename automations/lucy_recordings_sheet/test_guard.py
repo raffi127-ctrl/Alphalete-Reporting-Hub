@@ -85,7 +85,7 @@ class NewStartsTest(unittest.TestCase):
         owners = [{"id": "a", "name": "Ann"}, {"id": "b", "name": "Bo"}, {"id": "c", "name": "Cy"}]
         offices = {"a": ["A1", "A2"], "b": ["B1"], "c": ["C1"]}
         table, seen = new_starts_table(rows, self.WEEKS, owners, offices)
-        self.assertEqual(table, [["Bo", 4, 4, 1.0, 2.0], ["Ann", 20, 8, 0.4, 4.0]])
+        self.assertEqual(table, [["Bo (1 wk)", 4, 4, 1.0, 4.0], ["Ann", 20, 8, 0.4, 4.0]])
         self.assertEqual(seen, ["2026-10-11", "2026-11-01"])
 
     def test_no_data_leaves_the_table_out(self):

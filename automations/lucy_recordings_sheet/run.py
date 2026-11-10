@@ -225,9 +225,13 @@ def load_new_starts(S) -> list:
 
 def new_starts_table(rows: list, weeks: list, owners: list, offices: dict) -> tuple:
     """([owner, scheduled, started, %, started per week], weeks that have data).
-    Best show ratio first; owners with nothing scheduled are left out."""
+    Best show ratio first; owners with nothing scheduled are left out.
+    Per week = over the weeks THAT owner has loaded; an owner with fewer weeks
+    than the table gets "(N wk)" after the name (Eve 2026-11-10: a half-loaded
+    owner must not look like 100% over 4 weeks)."""
     wanted = {w.isoformat() for w in weeks}
     sched, started, seen = defaultdict(int), defaultdict(int), set()
+    office_weeks = defaultdict(set)
     for row in rows:
         if len(row) < 6 or row[0] not in wanted:
             continue
@@ -236,6 +240,7 @@ def new_starts_table(rows: list, weeks: list, owners: list, offices: dict) -> tu
         except ValueError:
             continue
         seen.add(row[0])
+        office_weeks[row[2]].add(row[0])
         sched[row[2]] += s
         started[row[2]] += h
     out = []
@@ -244,7 +249,9 @@ def new_starts_table(rows: list, weeks: list, owners: list, offices: dict) -> tu
         ids = offices.get(o["id"]) or []
         s, h = sum(sched[x] for x in ids), sum(started[x] for x in ids)
         if s:
-            out.append([o.get("name", o["id"]), s, h, round(h / s, 4), round(h / n, 1)])
+            k = len(set().union(*(office_weeks[x] for x in ids))) or n
+            name = o.get("name", o["id"]) + ("" if k >= n else " (%d wk)" % k)
+            out.append([name, s, h, round(h / s, 4), round(h / k, 1)])
     out.sort(key=lambda r: (-r[3], -r[1], r[0]))
     return out, sorted(seen)
 
