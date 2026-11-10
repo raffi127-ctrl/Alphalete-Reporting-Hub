@@ -219,8 +219,71 @@ def from_sterling(office_key: str, week_start: dt.date, *,
                          dry_run=dry_run, log=log)
 
 
+def from_contacts(office_key: str, week_start: dt.date, *,
+                  dry_run: bool = True, log=print) -> int:
+    """Contact Added, off Eve's second-round contact sync.
+
+    Megan, 2026-11-09: "we need to connect to Eve's already built automation
+    that's adding 2nd round contacts."
+
+    IT READS HER RECORD RATHER THAN REDOING HER WORK. `second_round_contacts`
+    writes every contact it creates to its own state file -- name, phone,
+    email, office, status -- so the question "has this person been added?" is
+    already answered there. Reading it needs no change to her job, no second
+    Google Contacts call, and no second idea of who counts as added.
+
+    IT ALSO COVERS THE PEOPLE ADDED BEFORE THE BOARD EXISTED, which an
+    as-it-happens tick cannot: somebody contacted at their second round three
+    weeks ago is never re-added, so a tick that only fires on creation would
+    leave them blank for ever. On the real OBCL Contact Added is true for
+    nearly everybody, and that is why.
+
+    MATCHED THE WAY SHE MATCHES: phone first, else email -- `state.key_for`'s
+    rule, not a new one. A name is not an identity here; two offices share one.
+
+    WHERE IT RUNS. Wherever the state file is, which is the machine her job
+    runs on (Lucy 1). On any other machine the file is simply absent and this
+    says so and ticks nothing -- an unread source is never a "no"
+    ([[feedback_empty_means_proven_zero]]). The tick itself goes to the Sheet,
+    so it reaches the office's board from wherever it is made.
+    """
+    from automations.icd_onboarding import sheet as S
+    from automations.second_round_contacts import config as SC
+    from automations.second_round_contacts import state as SS
+
+    if not SC.STATE_PATH.exists():
+        log("  contacts: no state file at %s — this runs where the contact "
+            "sync runs. Nothing ticked." % SC.STATE_PATH)
+        return 0
+
+    added = {}
+    for _account, people in (SS.load() or {}).items():
+        for entry in (people or {}).values():
+            if str(entry.get("status") or "") == SS.REMOVED:
+                continue      # taken out again; not an added contact
+            name = ("%s %s" % (entry.get("first_name", ""),
+                               entry.get("last_name", ""))).strip()
+            if name:
+                added[B._fold(name)] = entry
+    log("  contacts: %d on record from the second-round sync" % len(added))
+
+    ws = S.open_board(F.workbook_for(office_key), create=False)
+    if ws is None:
+        log("  contacts: no board yet")
+        return 0
+    rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
+    verdicts = {}
+    for r in rows:
+        name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+        if B._fold(name) in added:
+            verdicts[name] = {"Contact Added": True}
+    return F.apply(F.workbook_for(office_key), week_start, "contacts",
+                   verdicts, dry_run=dry_run, log=log)
+
+
 STEPS = (("seed", seed), ("ownerville", from_ownerville),
-         ("blueink", from_blueink), ("sterling", from_sterling))
+         ("blueink", from_blueink), ("sterling", from_sterling),
+         ("contacts", from_contacts))
 
 
 def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
