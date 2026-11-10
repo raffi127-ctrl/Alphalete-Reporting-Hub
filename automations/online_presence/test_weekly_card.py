@@ -54,7 +54,7 @@ class Posting(unittest.TestCase):
             W.main(argv)
 
     def test_live_posts_picture_then_links_and_pdf_in_its_thread(self):
-        self._run(["--live"], {"kash": _office()})
+        self._run(["--live", "--office", "kash"], {"kash": _office()})
         self.assertEqual([u["channel"] for u in self.uploads], ["C0KASHROOM", "C0KASHROOM"])
         self.assertNotIn("thread_ts", self.uploads[0])                 # the picture = parent
         self.assertEqual(self.uploads[1]["thread_ts"], "1.1")           # the PDF in its thread
@@ -62,10 +62,12 @@ class Posting(unittest.TestCase):
         self.assertEqual(self.posted[0]["thread_ts"], "1.1")            # links + reviews
         self.record.assert_called_once()                                # next week's "vs last week"
 
-    def test_dry_office_skipped_on_the_friday_run(self):
+    def test_dry_office_skipped_on_the_friday_run_alphalete_still_goes(self):
         self._run(["--live"], {"kash": _office(mode="dry")})
-        self.assertEqual((self.uploads, self.posted), ([], []))
-        self.record.assert_not_called()
+        chans = {u["channel"] for u in self.uploads}
+        self.assertNotIn("C0KASHROOM", chans)
+        self.assertEqual(chans, {offices.alphalete().slack_channel})    # #alphaletesocialmedia
+        self.record.assert_called_once()
 
     def test_dry_run_posts_nothing_and_saves_no_history(self):
         self._run([], {"kash": _office()})

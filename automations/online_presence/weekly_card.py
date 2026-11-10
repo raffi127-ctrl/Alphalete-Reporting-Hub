@@ -16,6 +16,8 @@ Then this Friday's numbers are saved, so next Friday can say "vs last week"
 INDEED + GLASSDOOR ARE NOT READ HERE: both block robots (Megan's rule:
 Indeed is notify-only, and we don't get around robot checks).
 
+Alphalete's own card goes to #alphaletesocialmedia on the same run.
+
 LIVE OFFICES ONLY on a --live run; anything else is a dry run that renders
 the card locally and posts nothing.
 
@@ -109,7 +111,9 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     import time as _time
     started = _time.monotonic()
-    rows = offices.load()
+    # Alphalete gets the same card in #alphaletesocialmedia (Megan 2026-11-10),
+    # first, so an office's trouble never holds it up.
+    rows = {"alphalete": offices.alphalete(), **offices.load()}
     todo = [rows[a.office.lower()]] if a.office and a.office.lower() in rows else (
         [] if a.office else list(rows.values()))
     if a.office and not todo:
@@ -125,8 +129,8 @@ def main(argv=None) -> int:
         except Exception:
             failed += 1
             print(f"[{p.key}] FAILED\n{traceback.format_exc()}")
-    if not todo:
-        print("No offices set up yet.")
+    if len(todo) <= 1 and not a.office:
+        print("No ICD offices set up yet (Alphalete only).")
     if not a.office:
         from automations.online_presence import timing
         took = _time.monotonic() - started
