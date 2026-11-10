@@ -69,7 +69,14 @@ TODO_URL = ("https://drive.google.com/file/d/"
             "10_l7f3VaQ2pjPuHTFR98_3fDsLjo1qtc/view")
 
 # SaraPlus rep spelling -> a phone, when the address book can't answer.
-REP_PHONE_OVERRIDES: Dict[str, str] = {}
+REP_PHONE_OVERRIDES: Dict[str, str] = {
+    # 2026-11-09: in none of the three lists any more (Taylor's book, the
+    # alphaletegp contacts, the Daily Update) though he still sells -- Vanessa
+    # Medina's delivered text skipped. The number is his: from this line he
+    # texted "This is Aaron from ATnT" in a customer thread on 11/7. Carlos:
+    # "find aarons phone number". Drop this once Taylor re-adds his contact.
+    "Aaron De La Torre": "401-255-1487",
+}
 
 TEMPLATE = """Hi {first}, thank you for choosing AT&T! Here's your order wrap-up — your sales rep {rep} and your VIP Support Manager Taylor are both in this thread for anything you need.
 

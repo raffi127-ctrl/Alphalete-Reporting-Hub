@@ -4726,6 +4726,43 @@
     "report_id": "rc_delivered_text"
    }
   },
+  "rc_unread_sweep": {
+   "_note": "Carlos 2026-11-09: 'the messages need to be put on unread if we haven't responded to them' ... 'Yes, daily'. Every morning after the delivered texts: re-scrub every thread on Taylor's line since 30 days back, and set every customer text we have not answered back to Unread in RingCentral (needs the EditMessages scope, added 11/9). The full breakdown lands on the control sheet's 'RC Inbox' tab. Separate from rc_inbox on purpose: rerun APPENDS base_args, so `lucy rerun rc_inbox --customer X` must stay free of --all/--mark-unread.",
+   "close_on": "exit_zero",
+   "_close_on_note": "Read-only apart from the Unread flag, no manifest; the module exits non-zero when a flip fails, so a clean exit is the evidence.",
+   "order": 11.7,
+   "on_scheduler": true,
+   "display_name": "RC unread sweep (unanswered customer texts back to Unread)",
+   "machine": "Lucy 2",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.rc_contact_sync.inbox"
+   ],
+   "base_args": [
+    "--all",
+    "--mark-unread"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "not_before": "07:10"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "after": [
+    "rc_delivered_text"
+   ],
+   "timeout_minutes": 15,
+   "verify": null
+  },
   "sp_order_log": {
    "hand_run_only": true,
    "on_scheduler": false,
