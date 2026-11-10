@@ -844,10 +844,23 @@ def build_order_log(cols, crew, today, log=print) -> Path:
 
 
 def _activation_counts(cols, crew, today):
+    """Per rep + crew total: sold / activated by sale-date bucket. Tablets,
+    wearables and upgrades are not orders (Carlos 2026-11-10: "tablets
+    watches and upgrades we should not count towards pending orders or
+    activations") -- the rule lives in nds_churn.compute.counts_as_order so
+    this board and the NDS CHURN tab's rate agree; the dropped count rides
+    under '__EXCLUDED__'."""
+    from automations.nds_churn import compute as NCC
     i_od = cols.need("order date", "sp.order date")
     i_st = cols.find("dtr status", "spe.status")
     i_rep = cols.need("rep", "rep")
+    i_prod = cols.find("product type (broken out)", "product type")
+    i_tn = cols.find("spe.tn type", "tn type")
+    i_dev = cols.find("device description")
+    i_wt = cols.find("spe.wireless type", "wireless type")
+    i_pkg = cols.find("package")
     out: Dict[str, dict] = {}
+    excluded = 0
 
     def slot(key, bucket):
         return out.setdefault(key, {b: {"sold": 0, "act": 0}
@@ -856,6 +869,12 @@ def _activation_counts(cols, crew, today):
     for r in crew:
         od = _parse_date(_c(cols, r, i_od))
         if od is None:
+            continue
+        rec = {"prod": NCC.product_of(_c(cols, r, i_prod)),
+               "tn_type": _c(cols, r, i_tn), "device": _c(cols, r, i_dev),
+               "package": _c(cols, r, i_pkg), "wireless_type": _c(cols, r, i_wt)}
+        if not NCC.counts_as_order(rec):
+            excluded += 1
             continue
         age = (today - od).days
         bucket = ("0-30 Day" if 0 <= age <= 30
@@ -869,6 +888,7 @@ def _activation_counts(cols, crew, today):
             c["sold"] += 1
             if act:
                 c["act"] += 1
+    out["__EXCLUDED__"] = excluded
     return out
 
 
@@ -876,6 +896,7 @@ def build_activation_png(cols, crew, today, log=print) -> Path:
     from automations.b2b_metrics.rep_boards import render_table_png
     from automations.vantura_churn.fill import BANDS
     counts = _activation_counts(cols, crew, today)
+    excluded = counts.pop("__EXCLUDED__", 0)
 
     def _color(bucket, rate):
         for floor, name in BANDS[_BAND_KEY[bucket]]:
@@ -902,10 +923,12 @@ def build_activation_png(cols, crew, today, log=print) -> Path:
     for b in BUCKETS:
         t = counts["__TOTAL__"][b]
         log(f"[nds] CREW {b}: {t['act']}/{t['sold']}")
+    log(f"[nds] activation by rep: {excluded} tablet/wearable/upgrade line(s) not counted")
     return render_table_png(
         "NDS — ACTIVATION RATES BY REP",
         f"Carlos's crew on his own NDS code — {today.strftime('%B %d, %Y')} "
-        "(activated/sold by sale-date age from the D2D order log; cancels "
+        "(activated/sold by sale-date age from the D2D order log; phones, Air "
+        "and Internet only — tablets, watches and upgrades not counted; cancels "
         "count as sold; Posted = activated; total = whole crew)",
         list(BUCKETS), rows, OUT_DIR / "nds_activation_by_rep.png")
 

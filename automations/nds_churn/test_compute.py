@@ -100,8 +100,14 @@ class Compute(unittest.TestCase):
         p = C.pending_orders(self.lines, TODAY)
         self.assertEqual((p["Wireless"], p["Air"], p["Internet"], p["Other"]),
                          (1, 0, 0, 0))
-        self.assertEqual((p["total"], p["canceled"]), (1, 0))
+        # excluded = UPG U + TAB T + PAD P (sold in the window, not orders)
+        self.assertEqual((p["total"], p["canceled"], p["excluded"]), (1, 0, 3))
         self.assertEqual(p["statuses"], {"Shipped": 1})
+        # a pending tablet is not a pending order
+        tab = dict(next(l for l in self.lines if l["customer"] == "PEND P"))
+        tab.update({"device": "Galaxy Tab A11+", "spe": "SPE11", "tn": "1111"})
+        p1 = C.pending_orders(list(self.lines) + [tab], TODAY)
+        self.assertEqual((p1["total"], p1["excluded"]), (1, 4))
         # a canceled line is neither pending nor activated: counted apart
         extra = dict(next(l for l in self.lines if l["customer"] == "PEND P"))
         extra.update({"status": "Canceled", "spe": "SPE10", "tn": "1010"})
@@ -113,12 +119,27 @@ class Compute(unittest.TestCase):
                          office["0-30"]["activated"] + p2["total"] + p2["canceled"])
 
     def test_activation_rates(self):
+        # Carlos 2026-11-10: tablets, watches and upgrades are not orders --
+        # UPG U (upgrade), TAB T (Galaxy Tab) and PAD P (ported iPad) drop out
+        # of sold AND activated; PEND P (new-number iPhone) stays sold.
         office, reps = C.activation_rates(self.lines, TODAY)
-        self.assertEqual(office["0-30"]["sold"], 7)
-        self.assertEqual(office["0-30"]["activated"], 6)
+        self.assertEqual(office["0-30"]["sold"], 4)
+        self.assertEqual(office["0-30"]["activated"], 3)
         self.assertEqual(office["31-60"]["sold"], 0)
         self.assertIsNone(office["31-60"]["rate"])
         self.assertEqual(reps["Nick Smedra"]["0-30"]["rate"], 1.0)
+        self.assertEqual(reps["Andrew Park"]["0-30"]["rate"], 0.5)
+        self.assertEqual(C.excluded_orders(self.lines, TODAY),
+                         {"upgrade": 1, "device": 2})
+
+    def test_counts_as_order(self):
+        by = {l["customer"]: l for l in self.lines}
+        self.assertTrue(C.counts_as_order(by["HENRY W"]))     # ported phone
+        self.assertTrue(C.counts_as_order(by["PEND P"]))      # new-number phone
+        self.assertTrue(C.counts_as_order(by["MARIA G"]))     # Air
+        self.assertFalse(C.counts_as_order(by["UPG U"]))      # upgrade
+        self.assertFalse(C.counts_as_order(by["TAB T"]))      # tablet, 'new'
+        self.assertFalse(C.counts_as_order(by["PAD P"]))      # ported iPad
 
     def test_tiers_and_status(self):
         self.assertEqual(comp.tier_for(2.2, comp.NONBYOD_0_30), 4)

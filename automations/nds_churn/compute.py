@@ -221,17 +221,51 @@ _NON_PHONE_WORDS = ("ipad", "tablet", " tab ", "tab a", "galaxy tab", "watch",
 _NON_PHONE_TYPES = ("tablet", "wearable", "watch", "hotspot", "data", "connected")
 
 
+def is_non_phone(ln: dict) -> bool:
+    """A tablet / wearable / hotspot line whatever its TN type says: the
+    wireless type or the device / package words say so."""
+    wt = (ln.get("wireless_type") or "").strip().lower()
+    blob = " %s %s " % ((ln.get("device") or "").lower(), (ln.get("package") or "").lower())
+    return (any(w in wt for w in _NON_PHONE_TYPES)
+            or any(w in blob for w in _NON_PHONE_WORDS))
+
+
 def line_kind(ln: dict) -> str:
     """'port' (a voice port line -- the churn base), 'upgrade', 'new'
     (add-a-line, on NDS mostly tablets / wearables), 'device' (a tablet or
     wearable even though its number ported) or 'untyped'."""
-    wt = (ln.get("wireless_type") or "").strip().lower()
-    blob = " %s %s " % ((ln.get("device") or "").lower(), (ln.get("package") or "").lower())
     t = (ln.get("tn_type") or "").strip().lower()
-    if t == PORT and (any(w in wt for w in _NON_PHONE_TYPES)
-                      or any(w in blob for w in _NON_PHONE_WORDS)):
+    if t == PORT and is_non_phone(ln):
         return "device"
     return t if t in (PORT, "upgrade", "new") else "untyped"
+
+
+def counts_as_order(ln: dict) -> bool:
+    """Carlos 2026-11-10: "tablets watches and upgrades we should not count
+    towards pending orders or activations". A wireless line that is an
+    upgrade or a tablet / wearable / hotspot is not an order on the
+    activation rate or the pending count; phones (ported or new-number),
+    Air and Internet are. The churn base (churn_units) is narrower still:
+    port phone lines only, Smart Circle's rule."""
+    if ln.get("prod") != "Wireless":
+        return True
+    t = (ln.get("tn_type") or "").strip().lower()
+    return t != "upgrade" and not is_non_phone(ln)
+
+
+def excluded_orders(lines: List[dict], today: dt.date) -> Dict[str, int]:
+    """Lines sold in the 0-30 window that counts_as_order drops, by kind
+    ('upgrade' / 'device'), for the log and the tab note."""
+    out: Dict[str, int] = collections.Counter()
+    for ln in lines:
+        od = ln["order_date"]
+        if not od or not (0 <= (today - od).days <= WINDOW_DAYS):
+            continue
+        if counts_as_order(ln):
+            continue
+        t = (ln.get("tn_type") or "").strip().lower()
+        out["upgrade" if t == "upgrade" else "device"] += 1
+    return dict(out)
 
 
 def churn_units(lines: List[dict], today: dt.date, days: int = WINDOW_DAYS,
@@ -378,7 +412,7 @@ def activation_rates(lines: List[dict], today: dt.date) -> Tuple[dict, dict]:
     reps: Dict[str, dict] = {}
     for ln in lines:
         od = ln["order_date"]
-        if not od:
+        if not od or not counts_as_order(ln):   # tablets / wearables / upgrades out
             continue
         age = (today - od).days
         bucket = "0-30" if 0 <= age <= 30 else "31-60" if 31 <= age <= 60 else None
@@ -405,17 +439,21 @@ def pending_orders(lines: List[dict], today: dt.date) -> dict:
     add pending orders"): lines SOLD in the 0-30 window -- sale-date age,
     the same bucket the activation rate uses -- that are neither activated
     (Posted / Disconnected) nor canceled: Confirmed, Shipped, blank ... still
-    waiting to activate. Per product (PRODUCT_ORDER; a label the map ignores
+    waiting to activate. Tablets, wearables and upgrades are not orders here
+    (counts_as_order; reported as 'excluded'). Per product (PRODUCT_ORDER; a label the map ignores
     lands in 'Other'), plus the status mix so an unknown terminal status
     shows in the log instead of hiding inside the count. Ties out with the
     activation board: sold = activated + pending + canceled."""
     out: Dict[str, int] = {p: 0 for p in PRODUCT_ORDER}
     out["Other"] = 0
     statuses: Dict[str, int] = collections.Counter()
-    canceled = 0
+    canceled = excluded = 0
     for ln in lines:
         od = ln["order_date"]
         if not od or not (0 <= (today - od).days <= WINDOW_DAYS):
+            continue
+        if not counts_as_order(ln):          # tablets / wearables / upgrades
+            excluded += 1
             continue
         st = ln["status"].lower()
         if st in ACTIVATED:
@@ -428,6 +466,7 @@ def pending_orders(lines: List[dict], today: dt.date) -> dict:
     res: dict = dict(out)
     res["total"] = sum(out.values())
     res["canceled"] = canceled
+    res["excluded"] = excluded
     res["statuses"] = dict(statuses)
     return res
 

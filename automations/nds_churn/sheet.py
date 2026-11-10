@@ -191,8 +191,9 @@ def write_pending(ws, pend: dict, log=print) -> None:
     split = " · ".join(f"{p} {pend.get(p, 0)}" for p in C.PRODUCT_ORDER)
     if pend.get("Other"):
         split += f" · Other {pend['Other']}"
-    note = (f"Pending = sold in the last {C.WINDOW_DAYS} days, not activated yet, "
-            f"not canceled ({pend.get('canceled', 0)} canceled) — {split}")
+    note = (f"Pending = phone, Air & Internet lines sold in the last {C.WINDOW_DAYS} days, "
+            f"not activated yet, not canceled ({pend.get('canceled', 0)} canceled; "
+            f"tablets, watches & upgrades not counted: {pend.get('excluded', 0)}) — {split}")
     r, n = PENDING_ROW, PENDING_NOTE_ROW
     _retry(lambda: ws.batch_update([
         {"range": f"A{r}:D{r}", "values": [["Pending Orders", int(pend.get("total", 0)), "", ""]]},

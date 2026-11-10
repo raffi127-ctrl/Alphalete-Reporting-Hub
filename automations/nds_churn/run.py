@@ -232,7 +232,9 @@ def main(argv=None) -> int:
     log(f"PENDING 0-30 (sold, not activated, not canceled): {pend['total']} "
         f"(W {pend['Wireless']} / Air {pend['Air']} / Int {pend['Internet']}"
         f"{' / Other %d' % pend['Other'] if pend['Other'] else ''}; "
-        f"canceled {pend['canceled']}; statuses {pend['statuses']})")
+        f"canceled {pend['canceled']}; tablets/wearables/upgrades not counted "
+        f"{pend['excluded']}; statuses {pend['statuses']})")
+    log(f"NOT ORDERS (0-30, by kind): {C.excluded_orders(lines, today)}")
     log(f"CHURN 0-30 (by activation date): base {summary['base']} "
         f"disc {summary['disc']}  wireless split {summary['split']}")
     log(f"ROLLOFF rows: {len(helper)}")
