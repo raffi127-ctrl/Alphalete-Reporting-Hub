@@ -196,6 +196,37 @@ def write_new_starts(rows, weeks, failed_ids):
     log("wrote %d row(s) to %s" % (len(rows), NEW_STARTS_TAB))
 
 
+HEAL_WEEKS = 4      # the recordings email shows the last 4 closed weeks
+HEAL_FROM_HOUR = 20  # ET: only the last hourly run of the day (20:07 ET = 19:07 CT)
+
+
+def missing_new_starts(old, office_ids, today, n=HEAL_WEEKS):
+    """Offices that lack any of the last n closed weeks in the New Starts tab."""
+    sun = week_sunday(today)
+    want = {(sun - dt.timedelta(days=7 * k)).isoformat() for k in range(1, n + 1)}
+    have = {}
+    for x in old:
+        if len(x) > 2:
+            have.setdefault(x[2], set()).add(x[0])
+    return sorted(i for i in office_ids if not want <= have.get(i, set()))
+
+
+def heal_new_starts(office_ids, today):
+    """After the day's last hourly run, pull the closed weeks any office is
+    missing (Eve 2026-11-10: the backfill should finish before the day ends,
+    without anyone's PC on). A no-op once the tab is complete."""
+    import subprocess
+    S = _sheets()
+    r = _ok(lambda: S.get(API + "/values/'%s'!A2:F100000" % NEW_STARTS_TAB))
+    todo = missing_new_starts(r.json().get("values", []), office_ids, today)
+    if not todo:
+        log("New Starts: all %d office(s) have the last %d weeks" % (len(office_ids), HEAL_WEEKS))
+        return
+    log("New Starts: %d office(s) missing weeks -> backfilling" % len(todo))
+    subprocess.run([sys.executable, "-u", "-m", "automations.second_round_retention.run",
+                    "--backfill-new-starts", str(HEAL_WEEKS), "--only", "|".join(todo)])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="pull and print, write nothing")
@@ -225,6 +256,7 @@ def main():
     with appstream_direct_session(**sess) as page:
         rqst = re.search(r"rqst=([A-Za-z0-9-]+)", page.url).group(1)
         offices = [o for o in scrape_offices(page) if o.get("office_id")]
+        all_ids = [o["office_id"] for o in offices]
         if a.only:
             ids = set(a.only.split("|"))
             offices = [o for o in offices if o["office_id"] in ids]
@@ -271,6 +303,12 @@ def main():
         log("!! New Starts tab not written: %s: %s" % (type(e).__name__, str(e)[:200]))
         if a.backfill_new_starts:
             return 1
+    if (not a.backfill_new_starts and not a.only and not a.today
+            and dt.datetime.now(ET).hour >= HEAL_FROM_HOUR):
+        try:
+            heal_new_starts(all_ids, today)
+        except Exception as e:  # noqa: BLE001 — never costs the hourly run
+            log("!! New Starts heal skipped: %s: %s" % (type(e).__name__, str(e)[:200]))
     return 1 if failed else 0
 
 
