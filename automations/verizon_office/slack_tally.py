@@ -56,8 +56,18 @@ REP_ALIASES = {
 _LINE = re.compile(r"^\s*[*_~]*([A-Za-zÀ-ÿ'][A-Za-zÀ-ÿ' .-]*?)[*_~]*\s*((?::drop_of_blood:\s*)+)")
 
 
+# THE HEADER IS NOT ALWAYS "VERIZON". 11/9 the room's list was headed
+# "ATT (D2D)" / "D2D AT&T" from 8:22 PM on (whoever posted it), and those
+# posts were skipped: GARY 4 + GIO 8 never counted, so the 10:45 PM owners
+# text read Nico at 5 for a 17-line day (Nico 11/10: "my sales are wrong here
+# we are at 17"). A post is the tally when it has a Verizon line AND either
+# says Verizon or carries the room's "N/50" running total.
+_GOAL = re.compile(r"\b\d+\s*/\s*\d+\b")
+
+
 def is_tally(text: str) -> bool:
-    return VZ in (text or "") and bool(re.search(r"\bverizon\b", text or "", re.I))
+    t = text or ""
+    return VZ in t and bool(re.search(r"\bverizon\b", t, re.I) or _GOAL.search(t))
 
 
 def parse(text: str) -> Dict[str, int]:

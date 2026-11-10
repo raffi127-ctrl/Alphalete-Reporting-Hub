@@ -54,7 +54,30 @@ def at(y, m, d, hh, mm):
     return dt.datetime(y, m, d, hh, mm, tzinfo=CT)
 
 
+NOV9_2204 = """ATT (D2D)
+
+GARY :drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood:
+
+JAYDEN :drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood:
+
+Chacon :drop_of_blood:
+
+GIO :drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood::drop_of_blood:
+
+Diego :calling::calling::calling::calling:
+
+Esme -:calling::calling::calling::calling:
+
+37/50:bangbang:"""
+
+
 class Tally(unittest.TestCase):
+    def test_a_list_headed_att_still_counts_its_verizon_lines(self):
+        # 11/9: the last lists were headed "ATT (D2D)"; Nico had 17, the text said 5
+        c = T.day_counts([(at(2026, 11, 9, 22, 4), NOV9_2204)], dt.date(2026, 11, 9))
+        self.assertEqual(sum(c.values()), 17)
+        self.assertFalse(T.is_tally("GARY :drop_of_blood: nice job"))   # no header, no N/50
+
     def test_only_blood_drops_count_and_spaced_drops_count(self):
         c = T.parse(NOV5_FINAL)
         self.assertEqual(c["SAMANTHA"], 3)          # ":drop_of_blood: :drop_of_blood: …" with spaces
