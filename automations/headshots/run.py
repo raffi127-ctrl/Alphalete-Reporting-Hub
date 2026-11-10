@@ -426,7 +426,9 @@ def redo(name: str, *, dry_run: bool = True,
         cl.files_upload_v2(
             channel=channel, thread_ts=anchor["ts"], file=fh,
             filename=out_p.name,
-            initial_comment=f"*{got}* — headshot redone ⤵{ov}")
+            initial_comment=(f"*{got}* — headshot redone ⤵{ov}"
+                             + by_hand_tags(ov, hs_form.submitter(m),
+                                            off.admin_slack_id)))
     return {"status": "redone", "name": got, "ts": m["ts"],
             "file": str(out_p), **act}
 
@@ -468,8 +470,28 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
     # LucyEco offices: their computers' answers go back into their threads.
     if any(o.uploader == "eco" and o.eco_key for o in offices):
         from automations.headshots import eco
-        eco.post_results(cl, dry_run=dry_run)
+        admins = {o.eco_key: o.admin_slack_id for o in offices if o.eco_key}
+        by_job = {v.get("job"): v.get("by", "") for v in state.values()
+                  if isinstance(v, dict) and v.get("job")}
+
+        def tags(r):
+            return by_hand_tags(eco.result_line(r), by_job.get(r.get("job_id"), ""),
+                                admins.get(str(r.get("office", "")).lower(), ""))
+        eco.post_results(cl, dry_run=dry_run, tags=tags)
     return actions
+
+
+def by_hand_tags(note: str, submitter: str, admin: str) -> str:
+    """When a headshot has to be done by hand, tag who submitted it and the
+    office's headshot admin (Megan 2026-11-10: "David needs done manually"
+    sat there unseen). Returns "" when nothing needs a person."""
+    low = (note or "").lower()
+    if not any(k in low for k in ("by hand", "manually", "didn't go through")):
+        return ""
+    who = [u for u in dict.fromkeys([submitter, admin]) if u]
+    if not who:
+        return ""
+    return "\n" + " ".join(f"<@{u}>" for u in who) + " this one needs doing by hand in OwnerVille."
 
 
 def _state_key(off, ts: str) -> str:
@@ -557,6 +579,9 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
                 ov_note = _eco_handoff_note(off, name, out_p, anchor["ts"],
                                             state, sk, act, replace=is_redo)
             what = "headshot redone" if is_redo else "headshot ready"
+            by = hs_form.submitter(m)
+            state.setdefault(sk, {})["by"] = by
+            ov_note += by_hand_tags(ov_note, by, off.admin_slack_id)
 
             # Post the finished image into the week's thread + ✅ the reply.
             with open(out_p, "rb") as fh:

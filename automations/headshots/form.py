@@ -55,6 +55,16 @@ def parse(msg: Dict) -> Optional[Tuple[str, bool]]:
     return m.group("name").strip(), bool(m.group("redo"))
 
 
+_BY = re.compile(r"Headshot from <@([A-Z0-9]+)>")
+
+
+def submitter(msg: Dict) -> str:
+    """Who filled in the form (the form post itself is Jiraiya's); for any
+    other message, who posted it."""
+    m = _BY.search(msg.get("text") or "") if msg.get("user") == JIRAIYA else None
+    return m.group(1) if m else (msg.get("user") or "")
+
+
 def line(first: str, last: str, user: str, redo: bool) -> str:
     from automations.shared.name_case import titlecase_name
     name = titlecase_name(f"{first.strip()} {last.strip()}")
@@ -206,6 +216,12 @@ def post_button(channel: str, thread_ts: str, *, text: str = BUTTON_TEXT,
     try:
         from automations.due_diligence.watch import _client as jiraiya
         bot = jiraiya()
+        # ONLY JIRAIYA'S BUTTON WORKS: a tap reaches the app that posted it.
+        # On a machine without Jiraiya's token this client falls back to
+        # Lucy's bot, whose button would do nothing -- so post nothing; the
+        # Monday ensure_buttons job on Lucy 1 (where Jiraiya lives) adds it.
+        if bot.auth_test().get("user_id") != JIRAIYA:
+            return {"action": "not_jiraiya", "channel": channel}
         try:
             from automations.shared import slack_metrics_post as smp
             smp._client().conversations_invite(channel=channel,
@@ -221,14 +237,52 @@ def post_button(channel: str, thread_ts: str, *, text: str = BUTTON_TEXT,
         return {"action": "failed", "error": str(e)[:200]}
 
 
+def has_button(cl, channel: str, thread_ts: str) -> bool:
+    """Is a 📸 Add headshot button already in this thread?"""
+    for m in cl.conversations_replies(channel=channel, ts=thread_ts,
+                                      limit=200).get("messages", []):
+        for b in m.get("blocks") or []:
+            if any(el.get("action_id") == BUTTON for el in b.get("elements") or []):
+                return True
+    return False
+
+
+def ensure_buttons(*, live: bool) -> list:
+    """Every LIVE office's thread this week gets the button, once. Runs on
+    Lucy 1 Monday morning after Lucy 3 posts the threads; safe to re-run."""
+    from automations.headshots import config
+    from automations.headshots import weekly_thread as wt
+    from automations.shared import slack_metrics_post as smp
+    cl = smp._client()
+    out = []
+    for off in config.live_offices():
+        anchor = wt.find_week_anchor(cl, off.channel)
+        if not anchor:
+            out.append({"office": off.key, "action": "no_thread_yet"})
+        elif has_button(cl, off.channel, anchor["ts"]):
+            out.append({"office": off.key, "action": "already_there"})
+        else:
+            out.append(dict(post_button(off.channel, anchor["ts"], live=live),
+                            office=off.key))
+    return out
+
+
 def main(argv=None) -> int:
     from automations.headshots import config
     from automations.headshots import weekly_thread as wt
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--post-button", action="store_true", required=True)
-    ap.add_argument("--office", required=True, help="a key in headshots config.OFFICES")
+    ap.add_argument("--post-button", action="store_true")
+    ap.add_argument("--ensure-buttons", action="store_true",
+                    help="every live office's thread this week gets the button, once")
+    ap.add_argument("--office", help="a key in headshots config.OFFICES")
     ap.add_argument("--live", action="store_true")
     args = ap.parse_args(argv)
+    if args.ensure_buttons:
+        for r in ensure_buttons(live=args.live):
+            print(json.dumps(r))
+        return 0
+    if not (args.post_button and args.office):
+        ap.error("--post-button needs --office (or use --ensure-buttons)")
     off = config.OFFICES.get(args.office.lower())
     if off is None:
         print(f"no office {args.office!r}; known: {', '.join(config.OFFICES)}")

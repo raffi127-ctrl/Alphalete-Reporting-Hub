@@ -42,7 +42,21 @@ from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 import datetime as dt
 import re
 from contextlib import contextmanager
-from playwright.sync_api import sync_playwright, TimeoutError as _PWTimeoutP
+# NEITHER DRIVER IS REQUIRED TO IMPORT THIS MODULE. `session()` binds to the
+# warm console, which hands back a PATCHRIGHT page; plain playwright is used
+# only by `start()`, the one-time headed-login helper. A hard import of it
+# meant that on a box with patchright and no playwright -- Lucy 3 -- merely
+# importing this file raised ModuleNotFoundError, and the onboarding board's
+# seed step died there on 2026-11-10 without ever reaching AppStream.
+try:
+    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import TimeoutError as _PWTimeoutP
+except Exception:  # noqa: BLE001 — runner with patchright only
+    sync_playwright = None
+
+    class _PWTimeoutP(Exception):
+        """Stand-in so `except PWTimeout` still parses where playwright is not
+        installed. Nothing raises it; the patchright class below does."""
 
 # The warm session (appstream_direct_session) yields a PATCHRIGHT page, whose
 # TimeoutError is a DIFFERENT class than playwright's. Catch both, or the
@@ -89,6 +103,11 @@ class ApplicantStream:
 
     # ---- lifecycle -------------------------------------------------------
     def start(self):
+        if sync_playwright is None:
+            raise RuntimeError(
+                "start() needs plain playwright, which is not installed here. "
+                "Scheduled runs do not use it -- session() binds to the warm "
+                "console instead. This is only the one-time headed login.")
         self._pw = sync_playwright().start()
         self.ctx = self._pw.chromium.launch_persistent_context(
             user_data_dir=config.USER_DATA_DIR,

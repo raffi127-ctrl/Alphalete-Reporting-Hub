@@ -378,8 +378,9 @@ def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 # a second session competes for the token the 4am batches share.
 OFFICES_BY_MACHINE = {
     "Lucy 3": ("raf",),
-    # LUCY 1 runs ONE step for this office -- see STEPS_BY_MACHINE.
+    # These two run SOME of this office's steps -- see STEPS_BY_MACHINE.
     "Lucy 1": ("raf",),
+    "Lucy 2": ("raf",),
 }
 
 # WHICH STEPS A MACHINE IS RESPONSIBLE FOR. Absent from here means all of them,
@@ -389,9 +390,11 @@ OFFICES_BY_MACHINE = {
 # and a step run anywhere else does not fail -- it quietly finds nothing, which
 # is the worst way for this to be wrong. So the split is written down:
 #
-#   Lucy 3  everything off OwnerVille, AppStream and Blue Ink, because its
-#           OwnerVille is Raf's (`rhidalgo`) and it holds a warm AppStream
-#           session.
+#   Lucy 3  OwnerVille and AppStream: its OwnerVille account is Raf's
+#           (`rhidalgo`) and it holds a warm AppStream session.
+#   Lucy 2  Blue Ink, because the signed-in Blue Ink session is there -- it is
+#           the box the Blue Ink completed-sweep already runs on. Lucy 3 was
+#           tried on 2026-11-10 and answered "No Blue Ink session".
 #   Lucy 1  contacts, because `second_round_contacts` runs there and its state
 #           file -- the record of every contact it has created -- is a local
 #           file on that box. Read from anywhere else it is simply absent.
@@ -404,7 +407,8 @@ OFFICES_BY_MACHINE = {
 # from whichever machine runs it.
 STEPS_BY_MACHINE = {
     "Lucy 1": ("contacts", "sterling"),
-    "Lucy 3": ("seed", "ownerville", "blueink"),
+    "Lucy 2": ("blueink",),
+    "Lucy 3": ("seed", "ownerville"),
 }
 
 # A machine that is neither a Lucy nor an ECO box can still name its offices,
@@ -504,6 +508,18 @@ def main(argv=None) -> int:
         print("no office to run: pass --office, or run this on a machine that "
               "is enrolled for one.")
         return 1
+    # SAY WHICH BOX THIS IS AND WHAT IT IS RESPONSIBLE FOR. Each step runs on
+    # the machine holding its data, and a step on the wrong box reads nothing
+    # rather than failing -- so a log that does not name the split cannot be
+    # told apart from a quiet day.
+    try:
+        from automations.shared import hub_identity as _HI
+        _me = _HI.machine_name()
+    except Exception:          # noqa: BLE001
+        _me = "this machine"
+    print("%s · %s · steps: %s"
+          % (_me, ", ".join(offices), ", ".join(only) if only else "all"))
+
     bad = 0
     for office in offices:
         got = for_office(office, week, dry_run=not a.write, only=only)

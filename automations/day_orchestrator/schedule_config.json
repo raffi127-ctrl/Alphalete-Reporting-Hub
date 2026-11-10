@@ -1759,6 +1759,32 @@
    "verify": null,
    "timeout_minutes": 20
   },
+  "headshots_buttons": {
+   "on_scheduler": true,
+   "_note": "Each MONDAY after Lucy 3 posts the headshot threads (8:30am): puts the \ud83d\udcf8 Add headshot button into every LIVE office's thread that lacks one (automations/headshots/form.py). Runs HERE because only Jiraiya's button works and Jiraiya's token lives on Lucy 1. Idempotent: a thread that already has the button is left alone. Manual: `lucy rerun headshots_buttons --machine \"Lucy 1\"`.",
+   "display_name": "Headshot Bot \u2014 Monday form buttons",
+   "machine": "Lucy 1",
+   "command": [
+    "automations.headshots.form"
+   ],
+   "base_args": [
+    "--ensure-buttons",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0
+    ],
+    "not_before": "08:45"
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 10,
+   "verify": null
+  },
   "headshots_ov_probe": {
    "on_scheduler": false,
    "_note": "READ-ONLY probe for the headshot bot's OwnerVille uploader (Phase 2): find a rep on Onboard -> View Progress and report the Photo pill, changing NOTHING. Runs where the session holder keeps the OV login warm (the mini) — the laptop's storage_state goes stale. `lucy rerun headshots_ov_probe` (default probe rep: Ahna Vanmeter, from Megan's 8/23 walkthrough).",

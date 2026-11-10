@@ -54,11 +54,16 @@ class Office:
     eco_key: str = ""             # LucyEco office key (uploader="eco")
     mode: str = "dry"             # "dry" | "live"
     sheet_log: bool = False       # tick the OBCL sheet (Raf's only)
+    # Who to tag, with the person who submitted it, when a headshot has to be
+    # done BY HAND in OwnerVille (Megan 2026-11-10). The ICD names them at
+    # enrollment; blank = only the submitter is tagged.
+    admin_slack_id: str = ""
 
 
 OFFICES = {
     "raf": Office(key="raf", owner="Rafael Hidalgo", channel=CHANNEL_ID,
-                  uploader="lucy", mode="live", sheet_log=True),
+                  uploader="lucy", mode="live", sheet_log=True,
+                  admin_slack_id="U0BBG374GE9"),     # Alisson Rodriguez
     # Omar Mohamad, Kalkan Marketing (24153), in his recruiting room (Slack
     # Connect, Lucy Reporting is in it). Signed up on LucyEco 2026-10-26 as
     # `omar` (Omars-iMac); his OwnerVille login only landed 2026-10-28 (first
@@ -67,7 +72,8 @@ OFFICES = {
     # Guerrero in his View Progress (RES-AT&T) -> LIVE 2026-10-29 (Megan: yes).
     # 2026-11-06: C0C6HKZ63EK renamed #old-omar-dont-use; live room = #24232-kalkan-marketing-inc-omar-mohamad
     "omar": Office(key="omar", owner="Omar Mohamad", channel="C0CEZ64FYM6",
-                   uploader="eco", eco_key="omar", mode="live"),
+                   uploader="eco", eco_key="omar", mode="live",
+                   admin_slack_id="U0CC5AYHWNL"),    # Nadege Lamarre
 }
 
 
@@ -108,3 +114,8 @@ OUTPUT_DIR = os.path.join("output", "headshots")
 # "Headshot Photo" checkbox on that week's D2D OBCL tab and tint it green —
 # the same marking blueink_docs does for its own column. See sheet_log.py.
 SHEET_LOG_ENABLED = True
+
+# The background + finishing (Megan 2026-11-10): "white" = the original pure
+# white; "blue" = brightened/sharpened person on a very light blue textured
+# studio backdrop (process.enhance_subject + studio_background).
+BACKGROUND = "white"

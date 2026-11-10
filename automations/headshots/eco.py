@@ -147,7 +147,7 @@ def result_line(r: Dict) -> str:
             "computer — please upload this one by hand" % name)
 
 
-def post_results(cl, *, dry_run: bool = True, log=print) -> int:
+def post_results(cl, *, dry_run: bool = True, log=print, tags=None) -> int:
     """Reply in each office's thread with its computer's answers. Answers
     with no thread (a --test-job) are left for `--results` to show."""
     try:
@@ -160,6 +160,8 @@ def post_results(cl, *, dry_run: bool = True, log=print) -> int:
         if not (r.get("channel") and r.get("thread_ts")):
             continue
         line = result_line(r)
+        if tags:
+            line += tags(r)          # submitter + admin when it needs a person
         if dry_run:
             log("  WOULD reply in %s: %s" % (r["channel"], line))
             continue

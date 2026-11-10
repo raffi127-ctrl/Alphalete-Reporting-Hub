@@ -22,7 +22,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 from automations.headshots import config
 
@@ -131,6 +131,66 @@ def head_shoulders_box(cutout: Image.Image) -> tuple[int, int, int, int] | None:
     return (max(0, left - pad), top, min(cutout.width, right + pad + 1), bottom)
 
 
+# ---- the look (Megan 2026-11-10: "bright/clear/good cropping ... a very
+# light blue texture background instead of white") --------------------------
+def enhance_subject(cutout: Image.Image) -> Image.Image:
+    """A clearer person WITHOUT changing who they look like.
+
+    First try (2026-11-10) judged exposure on the whole person: dark clothes
+    pulled the average down, the lift washed faces out and lightened skin.
+    So: exposure is judged on the FACE band only and capped small (skin tone
+    must stay true), contrast is a light touch, then a gentle sharpen.
+
+    The halo: the cutout's edge pixels still carry the original wall (often
+    white), which reads as a glowing outline on a coloured backdrop. Pull the
+    edge in ~2px, then soften it."""
+    import numpy as np
+    from PIL import ImageEnhance
+
+    rgb, alpha = cutout.convert("RGB"), cutout.getchannel("A")
+    a = np.asarray(alpha) > 128
+    if a.sum() < 500:
+        return cutout
+    ys = np.where(a.any(axis=1))[0]
+    top, bot = ys[0], ys[-1]
+    face = a.copy()
+    face[top + int((bot - top) * 0.32):] = False          # head + face only
+    px = np.asarray(rgb).astype(np.float32)
+    lum = 0.299 * px[..., 0] + 0.587 * px[..., 1] + 0.114 * px[..., 2]
+    fmed = float(np.median(lum[face])) if face.sum() > 200 else float(np.median(lum[a]))
+    gain = float(np.clip(150.0 / max(fmed, 1.0), 0.97, 1.12))   # small, capped
+    out = Image.fromarray(np.clip(px * gain, 0, 255).astype("uint8"))
+    out = ImageEnhance.Contrast(out).enhance(1.05)
+    out = out.filter(ImageFilter.UnsharpMask(radius=1.6, percent=55, threshold=3))
+    edge = alpha.filter(ImageFilter.MinFilter(5)).filter(ImageFilter.GaussianBlur(1.4))
+    out.putalpha(edge)
+    return out
+
+
+def studio_background(W: int, H: int, seed: int = 7) -> Image.Image:
+    """A very light blue studio backdrop: soft mottled texture, a touch
+    brighter behind the head, a touch deeper at the bottom corners."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    # Low-frequency mottle: tiny noise blown up + blurred = soft cloudy patches.
+    small = rng.normal(0, 1, (12, 10)).astype(np.float32)
+    mott = np.asarray(Image.fromarray(((small - small.min()) /
+                                       (np.ptp(small) or 1) * 255).astype("uint8"))
+                      .resize((W, H), Image.BICUBIC)
+                      .filter(ImageFilter.GaussianBlur(60))).astype(np.float32) / 255 - 0.5
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    # Glow centered where the head sits (upper third), falling off outward.
+    d = np.sqrt(((xx - W / 2) / W) ** 2 + ((yy - H * 0.33) / H) ** 2)
+    light = 1.0 - np.clip(d * 0.9, 0, 0.45)
+    base = np.array([226, 236, 248], np.float32)      # very light blue
+    edge = np.array([205, 220, 239], np.float32)      # a shade deeper
+    img = edge + (base - edge) * light[..., None]
+    img = img + mott[..., None] * 10                   # the texture, subtle
+    img = img + rng.normal(0, 1.2, (H, W, 1))          # fine grain, no banding
+    return Image.fromarray(np.clip(img, 0, 255).astype("uint8"), "RGB")
+
+
 def compose_clean(cutout: Image.Image) -> Image.Image:
     """Cutout -> the person centered on a pure-white portrait canvas."""
     box = head_shoulders_box(cutout)
@@ -159,7 +219,11 @@ def compose_clean(cutout: Image.Image) -> Image.Image:
     head_cx = (sum((l + r) / 2 for _, l, r in top_band) / len(top_band)) \
         if top_band else sized.width / 2
 
-    canvas = Image.new("RGB", (W, H), "white")
+    if getattr(config, "BACKGROUND", "white") == "blue":
+        sized = enhance_subject(sized)
+        canvas = studio_background(W, H)
+    else:
+        canvas = Image.new("RGB", (W, H), "white")
     x = round(W / 2 - head_cx)
     x = min(0, max(x, W - sized.width)) if sized.width > W \
         else max(0, min(x, W - sized.width))

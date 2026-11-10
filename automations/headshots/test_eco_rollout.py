@@ -303,3 +303,37 @@ class TheAddHeadshotForm(unittest.TestCase):
         self.assertIn("first", errs)
         self.assertEqual(self.F.problems({"files": [img], "first": "Maria",
                                           "last": "Lopez", "redo": False}), {})
+
+
+class ByHandTagsWhoSubmittedAndTheAdmin(unittest.TestCase):
+    """Megan 2026-11-10: a "do it by hand" line must tag the submitter and
+    the office's headshot admin (Raf's = Alisson Rodriguez)."""
+
+    def test_raf_admin_is_alisson(self):
+        self.assertEqual(config.OFFICES["raf"].admin_slack_id, "U0BBG374GE9")
+
+    def test_a_by_hand_note_tags_both_once(self):
+        t = R.by_hand_tags("\n⚠ OwnerVille: upload didn't go through — please "
+                           "upload this one manually", "UREP", "UADMIN")
+        self.assertIn("<@UREP> <@UADMIN>", t)
+        self.assertEqual(R.by_hand_tags("x by hand", "UA", "UA").count("<@UA>"), 1)
+
+    def test_a_good_upload_tags_nobody(self):
+        self.assertEqual(R.by_hand_tags("\nOwnerVille: uploaded ✅", "U1", "U2"), "")
+
+    def test_the_form_submitter_is_the_person_not_jiraiya(self):
+        from automations.headshots import form as F
+        msg = {"user": F.JIRAIYA, "text": F.line("Ana", "Diaz", "UREP", False)}
+        self.assertEqual(F.submitter(msg), "UREP")
+
+    def test_an_office_computer_failure_tags_the_submitter_and_admin(self):
+        cl = FakeSlack([])
+        r = {"job_id": "j1", "office": "omar", "name": "Ana Diaz",
+             "channel": "CO", "thread_ts": "100",
+             "result": {"status": "not_found"}}
+        with mock.patch.object(eco, "results", return_value=[r]), \
+                mock.patch.object(eco, "mark_posted"):
+            eco.post_results(cl, dry_run=False,
+                             tags=lambda x: R.by_hand_tags(eco.result_line(x),
+                                                           "UREP", "UADM"))
+        self.assertIn("<@UREP> <@UADM>", cl.posts[0]["text"])

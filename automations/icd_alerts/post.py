@@ -2196,6 +2196,8 @@ FINISH_SETUP_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
 # never clears the emailed-code check. Both were what these alerts sent.
 SARA_SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
                     "sara-signin.html")
+SARA_FORWARD_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
+                     "sara-forward.html")
 SARA_PASSWORD_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
                       "sara-password.html")
 
@@ -2212,6 +2214,13 @@ SARA_PASSWORD_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
 #   sweep with the saved password, so a failure means the PASSWORD is wrong or
 #   changed -- and the fix is to run the installer again, which asks for it.
 #   Sending them to sign in inside a browser would fix nothing.
+# ONE LINK FOR EVERY SIGN-IN (Megan 2026-11-10: "switch the alerts to the one
+# link"). Every alert below sends FINISH_SETUP_PAGE -- except the SaraPlus
+# emailed-code alert, which sends the code-forward page: finish_setup checks each
+# sign-in first and asks only for what is broken -- the Box authenticator
+# window, the SaraPlus emailed code (sara_signin) or new password, the
+# OwnerVille window, code forwarding. The single-fix pages still work for
+# anyone holding an old message; they are just no longer sent.
 SYSTEMS = {
     "servicecloud": {
         "name": "My Service Cloud",
@@ -2221,7 +2230,7 @@ SYSTEMS = {
         # longer without making the ONE thing it has to convey -- which
         # computer to walk to -- any clearer.
         "why": "",
-        "how": "Open this on that computer and press the button:\n" + SIGNIN_PAGE,
+        "how": "Open this on that computer and press the button:\n" + FINISH_SETUP_PAGE,
     },
     # ONLY THE EMAILED-CODE WALL is filed as signin-saraplus (run.cmd_once).
     # A refused password stays a sweep fault and gets the password box on the
@@ -2232,15 +2241,17 @@ SYSTEMS = {
         "what": "Credit checks and sales",
         "ask": SARA_CODE_ASK,
         "why": "",
-        "how": SARA_SIGNIN_PAGE,
+        # THE CODE ALERT KEEPS ITS OWN PAGE (Megan 2026-11-10): the forward is
+        # what stops the codes for good -- Lucy types every later one herself.
+        "how": SARA_FORWARD_PAGE,
     },
     "ownerville": {
         "name": "OwnerVille",
         "what": "Your knocks board",
         "why": " The saved password is not being accepted — it has probably "
                "changed.",
-        "how": "Open this on that computer and run it again; it will ask for "
-               "the new password:\n" + INSTALL_PAGE,
+        "how": "Open this on that computer and run it; it opens OwnerVille "
+               "for you to sign in:\n" + FINISH_SETUP_PAGE,
     },
     # THE TWO A PERSON HAS TO FIX THAT USED TO GO TO THE CHANNEL ONLY (Eve
     # 2026-10-13: Eveliz's refused SaraPlus password and Jennifer's locked
@@ -2256,7 +2267,7 @@ SYSTEMS = {
         "why": " SaraPlus says the saved email/password is not valid — "
                "usually because the password was changed.",
         "how": "On that computer, open this and follow the steps on the "
-               "page (about 1 minute):\n" + SARA_PASSWORD_PAGE,
+               "page; it asks for the new password:\n" + FINISH_SETUP_PAGE,
     },
     # RESUME PUSHING FROM THE OFFICE'S OWN COMPUTER (Megan 2026-10-21: "set up
     # a DM to the owner/Eve/myself ... when the human check needs to be
