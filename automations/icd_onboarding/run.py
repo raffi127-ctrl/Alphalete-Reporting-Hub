@@ -330,12 +330,32 @@ def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     return out
 
 
-# A machine that is NOT an ECO box but holds an office's logins anyway says so
-# here, one key per line. Megan's Mac runs Alphalete's own board this way.
+# WHICH BOARD A FLEET RUNNER WORKS. An ICD's own computer needs no entry --
+# its enrolment names its office. A Lucy is not enrolled for anybody, so the
+# board it works is routed here, the way applicant_push routes its offices.
 #
-# A FILE, not the committed plist: the same plist is installed on every box, so
-# an office key written into it would have every ECO machine working somebody
-# else's board.
+# LUCY 2 (Megan, 2026-11-10: "run it now on the lightest machine"). It holds a
+# warm AppStream session, which the seed step cannot work without, and it was
+# the lightest of the three that do -- 28 scheduled entries against Lucy 3's 38
+# and Lucy 1's 44. It also drives Blue Ink rather than OwnerVille, so it does
+# not contend with Lucy 3's OBCL sweep for a browser profile.
+#
+# NOT MEGAN'S MAC, which ran this for one evening and could not keep an
+# AppStream session alive: saved at 22:00, working at 22:02, rejected by 22:53.
+# No session holder there, and the credential is deliberately not on her
+# laptop, so every expiry needed her at the keyboard.
+#
+# NOT LUCY 4, whose `holds_appstream` is off on purpose -- fleet.py calls
+# turning it on "the one Lucy 4 change that can cost the LIVE fleet", because
+# a second session competes for the token the 4am batches share.
+OFFICES_BY_MACHINE = {
+    "Lucy 2": ("raf",),
+}
+
+# A machine that is neither a Lucy nor an ECO box can still name its offices,
+# one key per line. A FILE, not the committed plist: the same plist is
+# installed on every box, so an office key written into it would have every
+# ECO machine working somebody else's board.
 OFFICES_FILE = (pathlib.Path.home() / ".config" / "recruiting-report"
                 / "icd-onboarding-offices")
 
@@ -343,7 +363,8 @@ OFFICES_FILE = (pathlib.Path.home() / ".config" / "recruiting-report"
 def offices_here() -> List[str]:
     """The offices THIS machine should work.
 
-    In order: the env var, this machine's file, then its ECO enrollment. So the
+    In order: the env var, this runner's routed board, this machine's file,
+    then its ECO enrollment. So the
     hourly run takes no arguments on an ECO box -- the machine already knows
     whose logins it holds, and a key typed into a plist is a key that goes
     stale the day an office is re-enrolled. An office running two campaigns has
@@ -351,6 +372,14 @@ def offices_here() -> List[str]:
     """
     import os
     named = os.environ.get("ICD_ONBOARDING_OFFICES", "")
+    if not named:
+        try:
+            from automations.shared import hub_identity as HI
+            routed = OFFICES_BY_MACHINE.get(HI.machine_name())
+        except Exception:      # noqa: BLE001 — identity is never fatal here
+            routed = None
+        if routed:
+            return list(routed)
     if not named and OFFICES_FILE.exists():
         try:
             named = OFFICES_FILE.read_text(encoding="utf-8")
