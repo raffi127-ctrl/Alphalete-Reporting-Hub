@@ -353,7 +353,16 @@ def write_box_rates(ws, rates: dict, log=print) -> None:
     Pending rows and a bucket with no sales stay blank (not 0%)."""
     _unmerge_box_rates(ws, log=log)
     white = {"red": 1, "green": 1, "blue": 1}
-    vals, fmt = [], []
+    vals = []
+    # Every rate cell styled like E5:F5 (the original office-rate cells):
+    # the rows below carried leftovers -- a small italic note format on row
+    # 9, borders on 5-7 only -- that the duplicate and earlier layouts left.
+    fmt = [{"copyPaste": {
+        "source": {"sheetId": ws.id, "startRowIndex": BOX_FIRST_ROW - 1,
+                   "endRowIndex": BOX_FIRST_ROW, "startColumnIndex": 4, "endColumnIndex": 6},
+        "destination": {"sheetId": ws.id, "startRowIndex": BOX_FIRST_ROW,
+                        "endRowIndex": BOX_LAST_ROW, "startColumnIndex": 4, "endColumnIndex": 6},
+        "pasteType": "PASTE_FORMAT", "pasteOrientation": "NORMAL"}}]
     for i, (key, _label, kind) in enumerate(BOX_ROWS):
         r0 = BOX_FIRST_ROW - 1 + i
         row = []
