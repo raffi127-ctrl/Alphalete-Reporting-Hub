@@ -828,7 +828,7 @@ def write(S, ssid, owner_rows, rep_rows, totals, month_list):
 # re-read yesterday's late 2nd rounds. Plain HTML, no images.
 
 # Raf + Colten try it first (Raf + Eve 2026-11-09); then --email-org for everyone.
-TRIAL_TO = ["raffi127@gmail.com", "coltenwrightsc@gmail.com"]
+TRIAL_TO = ["raffi127@gmail.com", "coltenwrightsc@gmail.com", "alphaletemarketing@gmail.com"]
 ORG_SENT_DIR = HERE.parents[1] / "output" / "state" / "lucy_recordings_org_sent"
 
 
