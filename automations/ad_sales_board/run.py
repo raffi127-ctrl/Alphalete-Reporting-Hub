@@ -403,22 +403,46 @@ def main(argv=None):
     sess = sheet.session(verbose=True)
     if not a.dry_run:
         try:
-            # Three attempts: sheets.googleapis.com read-timeouts come in
-            # bursts (three consecutive runs aborted on one 2026-09-01), and a
-            # transient network blip should not kill a run that hasn't pulled
-            # anything yet. A real permission fault fails all three instantly.
-            for _probe in (1, 2, 3):
+            # sheets.googleapis.com read-timeouts come in bursts (three
+            # consecutive runs aborted on one 2026-09-01), and a transient
+            # blip should not kill a run that hasn't pulled anything yet. A
+            # real permission fault fails every attempt instantly.
+            # Waits grow (30s, 1m, 2m): the 1 PM chain writes the Indeed
+            # data into this same workbook just before, and its recalc kept
+            # the probe timing out for several minutes — three 20s-spaced
+            # tries all died inside it on 10/29, 10/31, 11/2, 11/7, 11/8 and
+            # 11/9, and the run 15 minutes later was always clean.
+            _waits = (30, 60, 120)   # not longer: two passes share the chain's 60-min step cap
+            for _probe in range(1, len(_waits) + 2):
                 try:
                     sheet.probe_write(sess)
                     break
                 except Exception:  # noqa: BLE001
-                    if _probe == 3:
+                    if _probe > len(_waits):
                         raise
                     print("[ad_sales_board] preflight probe failed (attempt "
-                          "%d/3) — retrying in 20s" % _probe, flush=True)
+                          "%d/%d) — retrying in %ds"
+                          % (_probe, len(_waits) + 1, _waits[_probe - 1]),
+                          flush=True)
                     import time as _t
-                    _t.sleep(20)
+                    _t.sleep(_waits[_probe - 1])
         except Exception as e:  # noqa: BLE001 — the reason matters more than the trace
+            _why = str(e)
+            if ("timed out" in _why.lower()
+                    or any(" %d " % s in " %s " % _why for s in (500, 502, 503, 504))
+                    or "Server Error" in _why):
+                # Google slow / erroring, not our access: say so, or the
+                # channel chases credentials that were never the problem.
+                print("[ad_sales_board] ABORT — Google Sheets kept timing out "
+                      "on the workbook: %s" % _why[:200], flush=True)
+                _publish_outcome(
+                    "failed",
+                    "🧲 *Ad Sales Board skipped this pass — Google Sheets was too slow to answer*",
+                    ["• The test write timed out on every try over ~10 minutes: %s" % _why[:200],
+                     "• Not a permissions problem. The next scheduled pass retries.",
+                     "• Nothing was pulled and nothing was changed."],
+                    started_at=run_started, dry_run=a.dry_run)
+                return 3
             print("[ad_sales_board] ABORT — cannot write the workbook as this "
                   "machine's identity: %s" % str(e)[:200], flush=True)
             print("  fix: run build_tab.py once if the 'Ad Sales Data' tab does "
