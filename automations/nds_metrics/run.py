@@ -1620,9 +1620,10 @@ def build_customer_churn(cols, crew, today, log=print) -> Path:
 
 # Sections that BUILD (so --only/--dm previews work) but never post to the
 # thread (Carlos 2026-10-29: "dont send the override tree on the nds thread
-# yet") — move a sid out of here when he says go. customer_churn joined
-# 2026-11-09: held until Carlos okays the NDS CHURN preview.
-HELD_FROM_THREAD = {"override_board", "customer_churn"}
+# yet") — move a sid out of here when he says go. customer_churn was held
+# here 2026-11-09 (preview DM'd) and released 2026-11-10 (Carlos: "you didnt
+# post the churn screenshot this morning") — it posts daily now.
+HELD_FROM_THREAD = {"override_board"}
 
 SECTIONS = [
     ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
@@ -1656,8 +1657,8 @@ SECTIONS = [
     ("activation_by_week", "\U0001F4C6", "NDS Activation Rate by Week Ending",
      build_activation_by_week),
     # Carlos 2026-11-09: the B2B thread's Customer Churn picture, remade --
-    # the NDS CHURN tab (nds_churn, 07:00) as one shot. HELD_FROM_THREAD
-    # until he okays the preview.
+    # the NDS CHURN tab (nds_churn, 06:00) as one shot. In the thread daily
+    # since 2026-11-10.
     ("customer_churn", "\U0001F43A", "NDS Customer Churn",
      build_customer_churn),
     # Carlos 2026-11-07: the Tableau "Order Tiered Bonus - Rep Ranking" view
