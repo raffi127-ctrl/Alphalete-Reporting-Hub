@@ -642,6 +642,34 @@ def probe_accounts_schema(page, borrowed=None, log=print, rows=None) -> Optional
     return text
 
 
+def session_alive(log=print) -> Optional[bool]:
+    """Is this computer still signed in to My Service Cloud? One quiet look,
+    no window. True / False, or None when it could not tell (the sweep had the
+    profile open, the page would not load).
+
+    WHY (Megan 2026-11-10): the finish-setup link opened the authenticator
+    sign-in on EVERY run, even for an office whose session was fine -- "we
+    just need it asking for the one or 2 that are missing".
+    """
+    from patchright.sync_api import sync_playwright
+    if signin_in_progress():
+        return None
+    try:
+        with sync_playwright() as p:
+            ctx = _context(p, True)
+            try:
+                page = ctx.new_page()
+                base = SC.LOGIN_URL.rsplit("/", 1)[0]
+                page.goto(base + SC.CONTRACTS_PATH, timeout=SC.LOGIN_TIMEOUT_MS)
+                page.wait_for_timeout(3000)
+                return not SC.session_lost(page)
+            finally:
+                ctx.close()
+    except Exception as e:  # noqa: BLE001 -- can't tell is not "signed out"
+        log("  could not check the My Service Cloud sign-in: %s" % type(e).__name__)
+        return None
+
+
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
              log=print, back_days: int = 6) -> Dict:
     """Today's Box work, in the shape every other surface already reads.

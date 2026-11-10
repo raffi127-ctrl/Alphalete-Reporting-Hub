@@ -203,6 +203,14 @@ def _service_cloud(log) -> str:
         return "not available yet"
     log("")
     log("  Checking your My Service Cloud sign-in.")
+    # LOOK BEFORE ASKING (Megan 2026-11-10): only open the authenticator
+    # sign-in when the session has really gone. "Can't tell" asks, as before.
+    try:
+        from automations.icd_alerts import box_read
+        if box_read.session_alive(log=log) is True:
+            return "already working"
+    except Exception:  # noqa: BLE001 -- older copy: ask, as before
+        pass
     return "done" if box_signin.run(log=log) == 0 else "still needs signing in"
 
 
