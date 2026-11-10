@@ -224,6 +224,27 @@ def _ownerville(log) -> str:
     return "done" if ov_signin.run(log=log) == 0 else "still needs signing in"
 
 
+def _digi_docs(log) -> str:
+    """The onboarding-documents question — asked once, on this office's own
+    computer, because the answers are the labels on ITS OwnerVille.
+
+    Megan, 2026-11-09: "when an icd enrolls we should ask them this question to
+    make sure we send it right for them specifically." Until it is answered,
+    digi_docs refuses to send for that office rather than falling back to
+    Alphalete's bundle, which would mail a real person the wrong contract.
+    """
+    try:
+        from automations.icd_alerts import config as IC
+        from automations.icd_alerts import digi_docs_setup as DD
+        rows = IC.enrollments()
+        key = (rows[0].get("office_key") if rows else "") or ""
+        if not key:
+            return "not enrolled yet"
+        return DD.ask_office(key, log=log)
+    except Exception as e:  # noqa: BLE001
+        return "not available yet (%s)" % type(e).__name__
+
+
 def _resume_push(log) -> str:
     """Resume pushing from this computer (Carlos 2026-10-05). Asked ONCE per
     machine; a NO is remembered, a YES gets its login and sign-in checked
@@ -390,7 +411,8 @@ def run(log=print, skip_box: bool = False) -> int:
                    ("Box sales sign-in",
                     _service_cloud_deferred if skip_box else _service_cloud),
                    ("OwnerVille sign-in", _ownerville),
-                   ("Resume pushing", _resume_push)]
+                   ("Resume pushing", _resume_push),
+                   ("Onboarding documents", _digi_docs)]
     results = []
     for name, fn in steps:
         try:
