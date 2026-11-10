@@ -310,16 +310,48 @@ def ensure_rolloff_layout(ws, log=print) -> str:
         done.append(f"{hint_cell} hint")
     if updates:
         _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
+    # The list's date columns (Fall-Off, Order, Activation, Disconnect) get
+    # an explicit date format on every row the FILTER can spill into: the
+    # IFNA wrapper leaves spilled dates as bare serials otherwise (11/10:
+    # only row 16, formatted at setup, read as a date).
+    date_fmt = {"userEnteredFormat": {"numberFormat": {"type": "DATE",
+                                                       "pattern": "mm/dd/yyyy"}}}
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": [
+        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 15,
+                                  "endRowIndex": 14 + cap,
+                                  "startColumnIndex": c0, "endColumnIndex": c1},
+                        "cell": date_fmt, "fields": "userEnteredFormat.numberFormat"}}
+        for c0, c1 in ((1, 2), (6, 9))]}))          # B, G:I
     log(f"  ✓ {ws.title}: rolloff list follows the box "
         f"({'; '.join(done) if done else 'already in place'}; block {first}:{last}, "
         f"key {key}, rows to {cap}, view {vabs})")
     return vabs
 
 
+def _unmerge_box_rates(ws, log=print) -> None:
+    """The tab was duplicated with E5:E7 / F5:F7 merged (one office-wide
+    rate across the three product rows); per-row rates need them apart --
+    a value written into a merge's hidden cell is silently dropped (11/10:
+    All Wireless came out blank). Only merges touching E5:F12 go."""
+    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),merges)"}))
+    merges = next((sh.get("merges", []) for sh in meta.get("sheets", [])
+                   if sh["properties"]["sheetId"] == ws.id), [])
+    r0, r1, c0, c1 = BOX_FIRST_ROW - 1, BOX_LAST_ROW, 4, 6        # E5:F12, half-open
+    hit = [m for m in merges
+           if m["startRowIndex"] < r1 and m["endRowIndex"] > r0
+           and m["startColumnIndex"] < c1 and m["endColumnIndex"] > c0]
+    if hit:
+        _retry(lambda: ws.spreadsheet.batch_update({"requests": [
+            {"unmergeCells": {"range": dict(m, sheetId=ws.id)}} for m in hit]}))
+        log(f"  ✓ {ws.title}: unmerged {len(hit)} range(s) over E5:F12 (per-row rates)")
+
+
 def write_box_rates(ws, rates: dict, log=print) -> None:
     """E5:F12 -- the 0-30 / 31-60 activation rate per box row
     (compute.box_activation_rates), banded like the office rate was; the
     Pending rows and a bucket with no sales stay blank (not 0%)."""
+    _unmerge_box_rates(ws, log=log)
     white = {"red": 1, "green": 1, "blue": 1}
     vals, fmt = [], []
     for i, (key, _label, kind) in enumerate(BOX_ROWS):
