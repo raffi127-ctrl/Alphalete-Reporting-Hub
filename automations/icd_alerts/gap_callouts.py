@@ -295,10 +295,38 @@ def _tagged_first(office_key: str, full_name: str, first: str, *, remember: bool
     return first
 
 
+def _slot(now: dt.datetime) -> str:
+    """The half hour a call-out belongs to: '2026-11-10|13:30'."""
+    return "%s|%02d:%02d" % (now.date().isoformat(), now.hour, 30 if now.minute >= 30 else 0)
+
+
+def template_index(kind: str, office_key: str, now: dt.datetime, pool, last=None) -> int:
+    """Which sentence of `pool` this office gets in this half hour.
+
+    NEVER THE ONE IT GOT LAST TIME (Megan 2026-11-10, Sahil's room: "Lucy
+    posted the same call out twice in a row" -- "admiring the neighborhood"
+    at 1:03 and again at 1:41). The choice was seeded by office + HOUR while
+    the call-outs go every 30 minutes, so both call-outs of any clock hour
+    drew the same sentence. Now the seed is the half hour, and `last` -- the
+    [slot, index] this office's previous call-out saved -- is stepped past
+    when chance lands on it again. A re-run inside the SAME half hour still
+    repeats itself: `last` only counts when it is from another slot.
+    """
+    seed = "%s|%s|%s" % (kind, office_key, _slot(now))
+    i = zlib.crc32(seed.encode("utf-8")) % len(pool)
+    try:
+        last_slot, last_i = last
+    except (TypeError, ValueError):
+        return i
+    if last_slot != _slot(now) and last_i == i and len(pool) > 1:
+        i = (i + 1) % len(pool)
+    return i
+
+
 def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None,
-         *, remember: bool = True) -> str:
-    """One sentence in the house voice, chosen by office + hour so a re-run
-    repeats itself and neighbouring hours don't."""
+         *, remember: bool = True, last=None) -> str:
+    """One sentence in the house voice, chosen by office + half hour so a
+    re-run repeats itself and back-to-back call-outs don't (template_index)."""
     if not callouts:
         return ""
     firsts, shown = [], {}
@@ -310,9 +338,8 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None,
     firsts = [shown.get(f, f) for f in firsts]
     m = min(c["mins"] for c in callouts)
     m = (m // 5) * 5                       # "40+", not "43+"
-    seed = "callout|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
     pool = lines_for(campaign)
-    template = pool[zlib.crc32(seed.encode("utf-8")) % len(pool)]
+    template = pool[template_index("callout", office_key, now, pool, last)]
     spanish = _is_spanish(template)
     if len(firsts) <= INLINE_NAMES:
         joiner = " y " if spanish else " and "
@@ -397,7 +424,8 @@ def receipts(called: List[str], records_now: Dict[str, int], records_prev: Dict[
     return out
 
 
-def receipt_line(office_key: str, names: List[str], now: dt.datetime, campaign=None) -> str:
+def receipt_line(office_key: str, names: List[str], now: dt.datetime, campaign=None,
+                 last=None) -> str:
     """One receipts sentence, in the house voice, seeded like line()."""
     firsts = []
     for n in names or []:
@@ -407,8 +435,7 @@ def receipt_line(office_key: str, names: List[str], now: dt.datetime, campaign=N
     if not firsts:
         return ""
     pool = receipt_lines_for(campaign)
-    seed = "receipt|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
-    template = pool[zlib.crc32(seed.encode("utf-8")) % len(pool)]
+    template = pool[template_index("receipt", office_key, now, pool, last)]
     joined = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + " and " + firsts[-1]
     return template.format(names=joined)
 
@@ -460,10 +487,16 @@ def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict
     if not due(st, now, CALLOUT_EVERY_OVERRIDES.get(key)):
         return ""
     prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records_now or {})
-    text = line(key, pick_from_gaps(gaps, records_now, prev), now, remember=remember)
+    text = line(key, pick_from_gaps(gaps, records_now, prev), now, remember=remember,
+                last=st.get("line"))
     if remember:
-        _remember(key, {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
-                        "records": dict(records_now or {})})
+        mark = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
+                "records": dict(records_now or {})}
+        if text:
+            mark["line"] = [_slot(now), template_index("callout", key, now, lines_for(None), st.get("line"))]
+        elif st.get("line"):
+            mark["line"] = st["line"]
+        _remember(key, mark)
     return text
 
 
@@ -982,11 +1015,20 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             proven = receipts(called_before, sold, prev_sold)
         else:
             proven = receipts(called_before, records, prev)
-        receipt = receipt_line(key, proven, now, campaign)
+        receipt = receipt_line(key, proven, now, campaign, last=st.get("receipt"))
         callouts = pick(rows, records, prev, now)
-        text = line(key, callouts, now, getattr(office, "campaign", None))
+        text = line(key, callouts, now, campaign, last=st.get("line"))
         state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
                       "records": records, "sold": sold, "called": [c["name"] for c in callouts]}
+        # WHICH SENTENCE WENT OUT, so the next call-out can step past it. A
+        # tick that said nothing keeps the last one that did.
+        for went, kind, pool in ((text, "line", lines_for(campaign)),
+                                 (receipt, "receipt", receipt_lines_for(campaign))):
+            if went:
+                state[key][kind] = [_slot(now), template_index(
+                    "callout" if kind == "line" else "receipt", key, now, pool, st.get(kind))]
+            elif st.get(kind):
+                state[key][kind] = st[kind]
         if send:
             _remember(key, state[key])
         dests = [c.id for c in (approved_ch.get(key) or [])]

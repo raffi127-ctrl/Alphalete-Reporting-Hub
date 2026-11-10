@@ -61,9 +61,11 @@ class LineTest(unittest.TestCase):
     def test_nobody_is_no_message(self):
         self.assertEqual(G.line("carlos", [], NOW), "")
 
-    def test_same_hour_repeats_next_hour_differs(self):
+    def test_same_half_hour_repeats_next_hour_differs(self):
+        # Seeded by the HALF hour since 2026-11-10 (two call-outs in one clock
+        # hour drew the same sentence); see test_callout_no_repeat.
         c = [{"name": "Nick Smith", "mins": 45}]
-        a = G.line("carlos", c, NOW); b = G.line("carlos", c, NOW.replace(minute=30))
+        a = G.line("carlos", c, NOW.replace(minute=2)); b = G.line("carlos", c, NOW.replace(minute=25))
         self.assertEqual(a, b)
         seen = {G.line("carlos", c, NOW.replace(hour=h)) for h in range(13, 21)}
         self.assertGreater(len(seen), 1)
@@ -221,7 +223,9 @@ class BoxOfficesGetB2BTalk(unittest.TestCase):
 
     def test_run_passes_the_campaign(self):
         import inspect
-        self.assertIn('line(key, callouts, now, getattr(office, "campaign", None))', inspect.getsource(G.run))
+        src = inspect.getsource(G.run)
+        self.assertIn('campaign = getattr(office, "campaign", None)', src)
+        self.assertIn('line(key, callouts, now, campaign, last=st.get("line"))', src)
 
 
 class TheDayIsJudgedOnce(unittest.TestCase):
