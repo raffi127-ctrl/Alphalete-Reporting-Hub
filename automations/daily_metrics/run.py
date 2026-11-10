@@ -6,6 +6,7 @@ they produce the 10 metrics posted to that thread every morning:
 
     🪵 Telemapper Knocks + ⏰ Time Gaps   (total_knocks)
     📋 Order Log + 🆕 Rep Activations     (uploaded.order_log)
+    📆 Activations Scheduled Today        (activations_today)
     📅 Sales Scheduled 6+ Days Out        (scheduled_6_days_out)
     🚫 Canceled Orders                    (canceled_orders)
     🔁 Ongoing Cancel                     (ongoing_cancel)
@@ -68,6 +69,10 @@ METRICS = [
      "automations.total_knocks.run", []),
     ("order_log", "📋 Order Log",
      "automations.uploaded.order_log", []),
+    # Raf 2026-11-10 ("Yes this is beautiful"): today's installs by rep, with
+    # the customer's phone, so reps reach out the same day. Order Log source.
+    ("activations_today", "📆 Activations Scheduled Today",
+     "automations.activations_today.run", ["--post-slack"]),
     ("sales_6plus", "📅 Sales Scheduled 6+ Days Out",
      "automations.scheduled_6_days_out.run", ["--post-slack", "--send-email"]),
     ("cancels", "🚫 Canceled Orders",
