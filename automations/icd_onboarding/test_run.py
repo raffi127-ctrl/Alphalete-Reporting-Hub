@@ -72,13 +72,39 @@ def test_only_runs_just_the_named_steps(monkeypatch):
     assert ran == ["blueink"]
 
 
-def test_the_two_self_ticking_sources_are_not_run_here():
-    """The contact sync and the Apex run tick as they act — running them from
-    here would be asking them to redo work they already recorded."""
+def test_apex_is_not_run_here_because_it_ticks_as_it_acts():
+    """The Apex run knows at the moment it saves a record, so running it from
+    here would be asking it to redo work it already recorded."""
     names = [n for n, _ in R.STEPS]
-    assert "contacts" not in names and "apex" not in names
+    assert "apex" not in names
     from automations.icd_onboarding import fillers as F
-    assert set(F.SOURCES) - set(names) == {"contacts", "apex"}
+    assert set(F.SOURCES) - set(names) == {"apex"}
+
+
+def test_contacts_is_a_LOOKUP_even_though_the_sync_could_tick_as_it_adds():
+    """An as-it-happens tick cannot backfill, and that is most of this column.
+
+    Somebody contacted at their second round three weeks ago is never re-added,
+    so a tick that only fires on creation leaves them blank for ever -- while
+    on the real OBCL Contact Added is true for nearly everybody. Reading the
+    sync's own record answers for them too (Megan, 2026-11-09: "connect to
+    Eve's already built automation").
+    """
+    import inspect
+    names = [n for n, _ in R.STEPS]
+    assert "contacts" in names
+    src = inspect.getsource(R.from_contacts)
+    # Eve's record, not a second Google Contacts call of our own.
+    assert "second_round_contacts" in src and "STATE_PATH" in src
+    assert "contacts" not in src.split("def from_contacts")[0]
+
+
+def test_an_absent_state_file_ticks_nothing_rather_than_claiming_nobody():
+    """It runs where the contact sync runs. Anywhere else the file is simply
+    missing, which is unread -- never 'nobody has been added'."""
+    import inspect
+    src = inspect.getsource(R.from_contacts)
+    assert "exists()" in src and "return 0" in src
 
 
 # ----------------------------------- closing the incomplete OwnerVille read
