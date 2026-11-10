@@ -1784,7 +1784,15 @@ def _main(argv=None) -> int:
 
     # Carlos 2026-08-09: mirror the B2B AT&T / B2B Box boards to their iMessage
     # groups, right after they land in Slack. Off unless --text-trackers is passed.
-    if args.text_trackers:
+    # ONLY A FULL RUN TEXTS THE ORG GROUPS. A per-office re-post (`--orgs
+    # nigel`, `--orgs juan,zaid`: a newcomer catch-up or a by-hand repair) is
+    # the same country-wide board the morning run already texted, so handing
+    # it to Lucy 2 again sends ATT B2B Leaders / NEW A Players the NDS tracker
+    # twice (2026-11-06 Nigel's day, 2026-11-09 Juan + Zaid's).
+    if args.text_trackers and (args.orgs or "all").strip().lower() != "all":
+        print("  (text_tracker hand-off skipped: a per-org re-post never re-texts "
+              "the org groups)", flush=True)
+    elif args.text_trackers:
         captured_ids = {spec["id"] for spec, _ in captures}
         posted_somewhere = (len(posted_ok) - n_noop) > 0
         _queue_tracker_texts(captured_ids, posted_somewhere, dry_run=False)
