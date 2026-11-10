@@ -689,7 +689,9 @@ def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
     u = (user or "").strip()
     if not u.upper().startswith("U"):
         raise ValueError("refusing: {!r} is not a user id".format(u))
-    for item in expected_items(o):
+    exp = expected_items(o)
+    # + a pre-launch section run by --only (not in the live list yet).
+    for item in exp + [i for i in ITEMS if i["id"] in captured and i not in exp]:
         path = captured.get(item["id"])
         if not path:
             continue
