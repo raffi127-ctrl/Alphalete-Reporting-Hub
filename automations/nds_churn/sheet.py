@@ -195,7 +195,7 @@ BOX_LAST_ROW = BOX_FIRST_ROW + len(BOX_ROWS) - 1          # 12
 BASE_CELLS = ("($B$7+$B$9)", "$B$11", "$B$12")
 BOX_WIRELESS_CHURN_CELLS = ("D5", "D7", "D9")   # the wireless colour ramp
 BOX_AIR_CHURN_CELL = "D11"
-BOX_COL_A_PX = 150                              # 'All Wireless Pending' fits
+BOX_COL_A_PX = 170                              # "All Wireless Pending" in bold 12pt needs the room
 BOX_NOTE = ("Top-left box: phone lines (ported or new-number) + Air; no tablets, "
             "watches, upgrades or Internet; All Wireless = non-BYOD phones; BYODs = "
             "BYOD phones; activated / disconnected by activation date in the last 30 "
