@@ -854,15 +854,32 @@ def date_range() -> str:
     return a if a == b else "%s – %s" % (a, b)
 
 
+# Raf 2026-11-10: the 4-week new start % as a column (and card) of the first
+# table. main() fills this from new_starts_table(); empty = column shows "—".
+NEW_START_PCT = {}
+
+
+def ns_pct_by_owner(table: list) -> dict:
+    """{owner name: started/scheduled} from new_starts_table, plus "" = total.
+    The "(N wk)" note stays on the name in the detail table only."""
+    out = {re.sub(r" \(\d+ wk\)$", "", r[0]): r[3] for r in table}
+    s, h = sum(r[1] for r in table), sum(r[2] for r in table)
+    if s:
+        out[""] = round(h / s, 4)
+    return out
+
+
 def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
-                     show_link: bool = True) -> str:
+                     show_link: bool = True, new_start_pct: dict = None) -> str:
+    ns = NEW_START_PCT if new_start_pct is None else new_start_pct
     t = next((x for x in totals if x[0] == month), [month, 0, "", "", "", 0])
-    fmt_pct = lambda v: "—" if v == "" else "%d%%" % round(v * 100)
+    fmt_pct = lambda v: "—" if v == "" or v is None else "%d%%" % round(v * 100)
     fmt_num = lambda v: "—" if v == "" else str(v)
     cards = [("Recordings", fmt_num(t[1])), ("2nd Rounds Done", fmt_num(t[2])),
-             ("% Recorded", fmt_pct(t[3])), ("Avg Score", fmt_num(t[4]))]
+             ("% Recorded", fmt_pct(t[3])), ("Avg Score", fmt_num(t[4])),
+             ("New Start % (4 wk)", fmt_pct(ns.get("")))]
     card_html = "".join(
-        '<td style="background:#EEF2FA;padding:12px 8px;text-align:center;width:25%%">'
+        '<td style="background:#EEF2FA;padding:12px 8px;text-align:center;width:20%%">'
         '<div style="font-size:11px;color:#7A8294;font-weight:bold">%s</div>'
         '<div style="font-size:24px;color:#1F2A44;font-weight:bold">%s</div></td>' % c
         for c in cards)
@@ -872,13 +889,16 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
         bg = "#F1F1F1" if r[1] == NO_OWNER else ("#F6F8FC" if i % 2 else "#FFFFFF")
         pct_bg = _cell_color(r[4], (0.5, 0.25))
         sc_bg = _cell_color(r[5], (8, 6))
+        nsv = ns.get(r[1])
+        ns_bg = _cell_color(nsv, (0.5, 0.25)) if nsv is not None else ""
         body.append(
             '<tr style="background:%s"><td style="padding:6px 10px">%s</td>'
             '<td style="text-align:center">%s</td><td style="text-align:center">%s</td>'
             '<td style="text-align:center;background:%s">%s</td>'
-            '<td style="text-align:center;background:%s;font-weight:bold">%s</td></tr>'
+            '<td style="text-align:center;background:%s;font-weight:bold">%s</td>'
+            '<td style="text-align:center;background:%s">%s</td></tr>'
             % (bg, r[1], r[2], fmt_num(r[3]), pct_bg or bg, fmt_pct(r[4]),
-               sc_bg or bg, fmt_num(r[5])))
+               sc_bg or bg, fmt_num(r[5]), ns_bg or bg, fmt_pct(nsv)))
     link = "https://docs.google.com/spreadsheets/d/%s" % ssid
     button = ('<p style="margin:16px 0"><a href="%s" style="background:#E0B84C;color:#1F2A44;padding:10px 16px;'
               'text-decoration:none;font-weight:bold;border-radius:4px">Open the full sheet (by rep)</a></p>'
@@ -895,7 +915,8 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
         '<table style="width:100%%;border-collapse:separate;border-spacing:4px"><tr>%s</tr></table>'
         '<table style="width:100%%;border-collapse:collapse;font-size:13px;margin-top:10px">'
         '<tr style="background:#2E3E61;color:#fff"><th style="text-align:left;padding:8px 10px">Owner</th>'
-        '<th>Recordings</th><th>2nd Rounds Done</th><th>%% Recorded</th><th>Avg Score</th></tr>%s</table>'
+        '<th>Recordings</th><th>2nd Rounds Done</th><th>%% Recorded</th><th>Avg Score</th>'
+        '<th>New Start %% (4 wk)</th></tr>%s</table>'
         '%s%s</div>' % (date_range(), card_html, "".join(body), rule, button))
 
 
@@ -996,6 +1017,8 @@ def main(argv=None) -> int:
     log("new starts: %d owner(s), weeks with data: %s (wanted %s)" % (
         len(ns_table), ", ".join(ns_seen) or "none", ", ".join(w.isoformat() for w in ns_weeks)))
     extra_html = new_starts_html(ns_table, ns_seen)
+    NEW_START_PCT.clear()
+    NEW_START_PCT.update(ns_pct_by_owner(ns_table))
     if unmatched:
         log("owners with NO AppStream office match (2nd rounds blank): " + ", ".join(unmatched))
     no_uid = sum(1 for r in export["records"] if not r.get("uid"))

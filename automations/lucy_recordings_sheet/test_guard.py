@@ -97,6 +97,16 @@ class NewStartsTest(unittest.TestCase):
         self.assertIn("40%", html)
         self.assertIn("Total", html)
 
+    def test_first_table_gets_the_new_start_column(self):
+        from automations.lucy_recordings_sheet.run import build_email_html, ns_pct_by_owner
+        ns = ns_pct_by_owner([["Ann (1 wk)", 10, 6, 0.6, 6.0], ["Bo", 10, 2, 0.2, 0.5]])
+        self.assertEqual(ns, {"Ann": 0.6, "Bo": 0.2, "": 0.4})
+        html = build_email_html("Nov", [["Nov", 5, 50, 0.1, 4.0, 0]],
+                                [["Nov", "Ann", 3, 10, 0.3, 7.0]], "x", False, ns)
+        self.assertIn("New Start % (4 wk)", html)
+        self.assertIn(">60%<", html)
+        self.assertIn(">40%<", html)
+
 
 if __name__ == "__main__":
     unittest.main()
