@@ -61,10 +61,10 @@ class ActivationsTodayTest(unittest.TestCase):
         self.assertIn("SalesBoardOriginal", url)
         self.assertIn("Start%20Date=2026-09-29&End%20Date=2026-11-10", url)
 
-    def test_status_colors(self):
-        self.assertEqual(run.status_color("Past Due"), run._RED)
-        self.assertEqual(run.status_color("JEP Order"), run._RED)
-        self.assertEqual(run.status_color("Pending"), "")
+    def test_install_type_colors(self):
+        self.assertEqual(run.status_color("Tech Install"), run._YELLOW)
+        self.assertEqual(run.status_color("Self Install"), run._BLUE)
+        self.assertEqual(run.status_color(""), "")
 
     def test_render(self):
         today = pull.scheduled_on(pull.owner_rows(self.rows, "Rafael Hidalgo"),

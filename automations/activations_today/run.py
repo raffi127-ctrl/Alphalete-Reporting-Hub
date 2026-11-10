@@ -47,17 +47,22 @@ DEFAULT_OWNER = "Rafael Hidalgo"
 LABEL = "📆 Activations Scheduled Today"
 NONE_TEXT = "📆 No Activations Scheduled Today"
 REACT = "date"
-SPLIT_AT = 20
+# Eve 11/10: always ONE image, even past 20 rows.
+SPLIT_AT = 10_000
 
 COLUMNS = ("Customer", "Phone", "Sale Date", "Status", "Install", "Package")
 
-_RED = "FFC7CE"
-_PROBLEM = ("past due", "jep", "jeopardy", "hold", "issue", "error", "fallout")
+# Eve 11/10: row color = install type. Tech Install yellow, Self Install blue.
+_YELLOW, _BLUE = "FFF2CC", "DDEBF7"
 
 
-def status_color(status: str, _history=()) -> str:
-    s = (status or "").strip().lower()
-    return _RED if any(w in s for w in _PROBLEM) else ""
+def status_color(install_type: str, _history=()) -> str:
+    t = (install_type or "").strip().lower()
+    if t.startswith("tech"):
+        return _YELLOW
+    if t.startswith("self"):
+        return _BLUE
+    return ""
 
 
 class _Row:
@@ -96,7 +101,7 @@ def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
                  status or "—",
                  r.get(pull.TECH, ""),
                  r.get(pull.PACKAGE, "") or _short_product(r.get(pull.PRODUCT, "")))
-        items.append(_Row(cells, status, r.get(pull.REP, "") or "(no rep)",
+        items.append(_Row(cells, r.get(pull.TECH, ""), r.get(pull.REP, "") or "(no rep)",
                           sale, cust))
     n = len(items)
     reps = bp.by_rep(items)
