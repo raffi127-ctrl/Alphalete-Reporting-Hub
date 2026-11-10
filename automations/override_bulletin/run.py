@@ -192,6 +192,20 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
     special = dict(special_led)
     raf_key = _norm_name("Rafael Hidalgo")
     special[raf_key] = raf_special or special.get(raf_key)
+    # Raf's monthly Profit Share counts as Special Override (Maud 2026-11-09).
+    # Email-only source; a failed read never blocks the fill — the backtrack
+    # re-reads it and rebuilds the week once the inbox answers.
+    try:
+        from automations.override_bulletin import profit_share as PS
+        ps = PS.amounts_by_week(verbose=verbose).get(week_mdy)
+        if ps:
+            special[raf_key] = round((special.get(raf_key) or 0) + ps, 2)
+            print(f"+ Raf profit share ${ps:,.2f} into his {week_mdy} Special Override")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ Raf profit share NOT read ({type(e).__name__}: {e}) — "
+              f"backtrack will add it once the inbox answers")
+        if failures is not None:
+            failures.append(f"Raf profit share email: {type(e).__name__}")
     # credico folds into the regular component (per FILL_SOURCES)
     # Rekey every source onto canonical names so a Tableau spelling matches the
     # sheet roster (e.g. 'HAMMAD HAQUE' -> 'Hammad Haque').
