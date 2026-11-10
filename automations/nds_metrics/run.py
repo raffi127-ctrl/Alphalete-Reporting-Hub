@@ -722,12 +722,20 @@ def build_pending_soh(ix, crew, today, pulled_at, log=print):
 # Customer Phone column) between Package and Status, headed Phone Number.
 # The house NDS rep tabs drop the number, and Raf's NDS offices keep theirs:
 # this layout rides only on the crew's build below.
+# 2026-11-10 (Carlos: "can we also add in the zip code on file"): the
+# customer's zip (the export's 'Customer Zip Simple') rides along as a crew-
+# only extra column -- Zip Code right after Phone Number on the rep tabs,
+# Customer Zip at the end of the All tab. The export is Tableau's NDS-SN
+# order log, not SaraPlus (whose wireless feed carries no address).
+CREW_EXTRA_COLUMNS = [
+    ("Customer Zip", "Customer Zip", ("customer zip simple", "customer zip", "zip")),
+]
 CREW_REP_TAB_COLUMNS = [
     "Order Date", "Activation Date", "Customer Name", "SPM Number", "Type",
-    "Next Up", "Package", "Customer Phone", "Status", "Install Date",
-    "Ported From", "Tier Bonus $",
+    "Next Up", "Package", "Customer Phone", "Customer Zip", "Status",
+    "Install Date", "Ported From", "Tier Bonus $",
 ]
-CREW_REP_TAB_DISPLAY = {"Customer Phone": "Phone Number"}
+CREW_REP_TAB_DISPLAY = {"Customer Phone": "Phone Number", "Customer Zip": "Zip Code"}
 
 
 def build_order_log(cols, crew, today, log=print) -> Path:
@@ -760,7 +768,8 @@ def build_order_log(cols, crew, today, log=print) -> Path:
             x, n = NOL._render_order_log("Carlos Hidalgo", header2, rows2,
                                          today, OUT_DIR,
                                          rep_tab_columns=CREW_REP_TAB_COLUMNS,
-                                         rep_tab_display=CREW_REP_TAB_DISPLAY)
+                                         rep_tab_display=CREW_REP_TAB_DISPLAY,
+                                         extra_columns=CREW_EXTRA_COLUMNS)
             log(f"[nds] house order log: {n} line(s) -> {Path(x).name}")
             return Path(x)
         log("[nds] house order log: no rows for Carlos — falling back")

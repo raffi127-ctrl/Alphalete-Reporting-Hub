@@ -315,7 +315,8 @@ _NDS_ORDERLOG_SRC = {
 
 
 def _render_order_log(owner, header, rows, target, out_dir,
-                      rep_tab_columns=None, rep_tab_display=None):
+                      rep_tab_columns=None, rep_tab_display=None,
+                      extra_columns=None):
     """Isaiah's Order Log as the SAME color-coded .xlsx every office gets, in
     the wireless column layout above: emit his order lines as a UTF-16 tab
     file (like a Tableau crosstab export) and run it through the house
@@ -324,10 +325,18 @@ def _render_order_log(owner, header, rows, target, out_dir,
 
     `rep_tab_columns` / `rep_tab_display`: an owner's own per-rep-tab layout
     (Carlos's crew puts the line's number between Package and Status,
-    2026-11-09); None = the house NDS rep tabs every other office gets."""
+    2026-11-09); None = the house NDS rep tabs every other office gets.
+    `extra_columns`: [(raw name, friendly header, export finder candidates)]
+    pass-through columns added AFTER the house set for THIS build only (the
+    crew's Customer Zip, 2026-11-10) -- they land at the end of the All tab
+    and wherever `rep_tab_columns` places them; every other office's log
+    never sees them."""
     from automations.uploaded import order_log as _house
+    extra = list(extra_columns or [])
     idx = {col: _find(header, *cands)
            for col, cands in _NDS_ORDERLOG_SRC.items()}
+    for raw, _friendly, cands in extra:
+        idx[raw] = _find(header, *cands)
     wt_i = _find(header, "spe.wireless type", "wireless type")
     pt_i = _find(header, "product type (broken out)", "product type")
     wip_i = _find(header, "wireless installment plan")
@@ -394,14 +403,17 @@ def _render_order_log(owner, header, rows, target, out_dir,
         i = idx.get(col)
         return _san(_cell(r, i)) if i is not None else ""
 
-    lines = ["\t".join(_NDS_COLUMNS_TO_KEEP)]
+    keep = _NDS_COLUMNS_TO_KEEP + [raw for raw, _f, _c in extra]
+    friendly = _NDS_FRIENDLY_HEADERS + [f for _r, f, _c in extra]
+    lines = ["\t".join(keep)]
     for r in line_rows:
-        lines.append("\t".join(_val(r, col) for col in _NDS_COLUMNS_TO_KEEP))
+        lines.append("\t".join(_val(r, col) for col in keep))
     tsv = out_dir / f"nds_order_log_src_{target.isoformat()}.csv"
     tsv.write_text("\n".join(lines), encoding="utf-16")
-    with _house.column_profile(_NDS_COLUMNS_TO_KEEP, _NDS_FRIENDLY_HEADERS,
+    with _house.column_profile(keep, friendly,
                                optional_raw={"Type", "Next Up", "Ported From",
-                                             "Rep Tier Bonus Amount"},
+                                             "Rep Tier Bonus Amount"}
+                               | {raw for raw, _f, _c in extra},
                                rep_tab_columns=rep_tab_columns,
                                rep_tab_display=rep_tab_display):
         return _house.csv_to_xlsx(tsv, out_dir, owner=owner), len(line_rows)

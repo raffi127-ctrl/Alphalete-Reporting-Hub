@@ -79,7 +79,7 @@ from automations.rc_contact_sync import ringcentral as RC
 
 REPORT_ID = "rc_delivered_text"
 SENT_PATH = C.CONFIG_DIR / "rc-delivered-sent.json"
-COL_SENT = "Delivered Message Sent"      # column T on the tab since 11/9 (S before; header-resolved, never by index)
+COL_SENT = "Delivered Message Sent"      # column U on the tab since 11/10 (T 11/9, S before; header-resolved, never by index)
 DELIVERED = "delivered"                  # the Line Status word that triggers
 # statuses where a Delivered DATE must NOT trigger: the phone is in use, gone,
 # or never shipped. Anything else with a plausible date is "delivered, not yet

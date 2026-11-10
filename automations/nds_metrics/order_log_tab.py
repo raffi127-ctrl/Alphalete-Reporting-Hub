@@ -37,7 +37,13 @@ DAYS_KEPT = 60
 # line_phone), Carlos 2026-11-09: "the order log is missing the type of phone
 # that was sold. lets get that added". Everything after it moved one column
 # right (Delivered Message Sent is T, was S); every reader resolves by header.
-HEADERS = ("Week Ending", "Rep", "Customer", "Order Date", "DSI #",
+# "Zip" (after Customer) since 2026-11-10, Carlos: "can we also add in the zip
+# code on file". The wireless feed carries no address, so the zip comes from
+# the day's Tableau NDS-SN order-log export (ZipIndex: by the line's phone
+# number, then BAN, then DSI); a line the export can't place keeps the zip
+# the tab already had. Everything after Customer moved one column right
+# (Delivered Message Sent is U, was T); every reader resolves by header.
+HEADERS = ("Week Ending", "Rep", "Customer", "Zip", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
            "Line Status", "Ship Date", "Delivered", "Port Status",
            "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
@@ -48,6 +54,7 @@ HEADERS = ("Week Ending", "Rep", "Customer", "Order Date", "DSI #",
 CARRIED = ("Notes", "Being worked on", "Delivered Message Sent")
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
+_TEXT_COLS = _ID_COLS + ("Zip",)        # written as text, never a number
 # a change in any of these restamps Last Updated
 _STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Port Status",
                "Type", "Phone #", "Device", "Plan")
@@ -85,17 +92,95 @@ def _norm(s) -> str:
     return " ".join(str(s or "").split()).strip().lower()
 
 
-def line_row(line: dict, stamp: str) -> List[str]:
-    """One tab row from one wireless_pull line (the thread's own row shape)."""
+def line_row(line: dict, stamp: str, zip_of=None) -> List[str]:
+    """One tab row from one wireless_pull line (the thread's own row shape).
+    `zip_of(line)` -> the customer's zip (ZipIndex.for_line); None/'' = blank."""
     import html
     from automations.nds_metrics.order_xlsx import _row_of
     # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
     core = [html.unescape(str(x or "")).strip() for x in _row_of(line)]
     od = _parse_date(core[2])
     model = html.unescape(str(device_model(line) or "")).strip()
-    i_dev = _COL["Device"] - 1           # core has no Week Ending in front
+    zip_code = str((zip_of(line) if zip_of else "") or "").strip()
+    i_zip = _COL["Zip"] - 1              # core has no Week Ending in front
+    core = core[:i_zip] + [zip_code] + core[i_zip:]
+    i_dev = _COL["Device"] - 1
     core = core[:i_dev] + [model] + core[i_dev:]
     return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp] + [""] * len(CARRIED)
+
+
+class ZipIndex:
+    """Customer zip by line, off the day's Tableau NDS-SN order-log export
+    (nds_metrics.run.pull's cache; 'Customer Zip Simple'): the line's phone
+    number (spe.TN) first, then the account (spe.Account BAN), then the
+    order (sp.SPM Number = the feed's DSI #). 2026-11-10: all 317 tab lines
+    matched by each key alone."""
+
+    def __init__(self, by_phone: dict, by_ban: dict, by_dsi: dict):
+        self.by_phone, self.by_ban, self.by_dsi = by_phone, by_ban, by_dsi
+
+    def __len__(self):
+        return len(self.by_phone)
+
+    @staticmethod
+    def _digits(v) -> str:
+        return "".join(ch for ch in str(v or "") if ch.isdigit())
+
+    def lookup(self, phone="", ban="", dsi="") -> str:
+        d = self._digits
+        return (self.by_phone.get(d(phone)) or self.by_ban.get(d(ban))
+                or self.by_dsi.get(d(dsi)) or "")
+
+    def for_line(self, line: dict) -> str:
+        # the feed parser's "device" IS the line's phone number (see device_model)
+        return self.lookup(line.get("device"), line.get("ban"), line.get("dsi"))
+
+    @classmethod
+    def from_rows(cls, header: Sequence[str], rows: Sequence[Sequence[str]]) -> "ZipIndex":
+        from automations.office_metrics.nds_orderlog import _cell, _find
+        iz = _find(list(header), "customer zip simple", "customer zip", "zip")
+        itn = _find(list(header), "spe.tn")
+        iban = _find(list(header), "spe.account ban", "account ban")
+        ispm = _find(list(header), "sp.spm number", "spm number")
+        if iz is None:
+            raise RuntimeError("order-log export has no Customer Zip column -- header: %r"
+                               % list(header)[:40])
+        by_phone, by_ban, by_dsi = {}, {}, {}
+        d = cls._digits
+        for r in rows:
+            z = _cell(r, iz)
+            if not z:
+                continue
+            for i, store in ((itn, by_phone), (iban, by_ban), (ispm, by_dsi)):
+                k = d(_cell(r, i)) if i is not None else ""
+                if k:
+                    store.setdefault(k, z)
+        return cls(by_phone, by_ban, by_dsi)
+
+    @classmethod
+    def from_export(cls, today: dt.date, log=print) -> Optional["ZipIndex"]:
+        """Today's cached export -> index; None (and a log line) when the
+        export isn't cached (the tab then keeps the zips it has). Never
+        pulls Tableau itself: --tab alone promises no pull."""
+        from automations.nds_metrics.run import OUT_DIR
+        from automations.office_metrics.nds_orderlog import _read_csv
+        path = OUT_DIR / f"nds_orderlog_{today.isoformat()}.csv"
+        if not path.exists() or path.stat().st_size < 500:
+            log("[nds] NDS Order Log tab: no Tableau export cached for %s -- zips kept as they were"
+                % today)
+            return None
+        grid = _read_csv(path)
+        if not grid:
+            log("[nds] NDS Order Log tab: export %s unreadable -- zips kept as they were" % path.name)
+            return None
+        try:
+            zi = cls.from_rows(grid[0], grid[1:])
+        except RuntimeError as e:
+            log("[nds] NDS Order Log tab: %s -- zips kept as they were" % e)
+            return None
+        log("[nds] NDS Order Log tab: zips for %d phone number(s) / %d BAN(s) / %d order(s) from %s"
+            % (len(zi.by_phone), len(zi.by_ban), len(zi.by_dsi), path.name))
+        return zi
 
 
 def device_model(line: dict) -> str:
@@ -136,12 +221,14 @@ def _key(row: Sequence[str]) -> tuple:
 
 
 def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
-          today: dt.date, existing_header: Optional[Sequence[str]] = None) -> Dict[str, object]:
+          today: dt.date, existing_header: Optional[Sequence[str]] = None,
+          zip_of=None) -> Dict[str, object]:
     """Kept-if-absent, replaced-if-present, aged-out past DAYS_KEPT by Order
     Date. Last Updated restamps only when the line's state changed. Notes
     carry by key. existing_header is the live tab's own header row: rows are
     remapped by name, so a column added here never shifts Carlos's typed
-    columns on the rows the tab carries."""
+    columns on the rows the tab carries. `zip_of(line)` fills Zip (ZipIndex);
+    a line it can't place keeps the zip the tab already had."""
     stamp = _fmt(today)
     merged: "collections.OrderedDict[tuple, List[str]]" = collections.OrderedDict()
     for row in existing:
@@ -156,7 +243,7 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
     oldest = today - dt.timedelta(days=DAYS_KEPT)
     added = changed = 0
     for line in lines:
-        fresh = line_row(line, stamp)
+        fresh = line_row(line, stamp, zip_of)
         od = _parse_date(fresh[_COL["Order Date"]])
         if od and od < oldest:
             continue
@@ -164,6 +251,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         if prior is None:
             added += 1
         else:
+            if not fresh[_COL["Zip"]]:
+                fresh[_COL["Zip"]] = prior[_COL["Zip"]]
             same = all(_norm(prior[_COL[c]]) == _norm(fresh[_COL[c]])
                        for c in _STATE_COLS)
             if same:
@@ -216,7 +305,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
                                    "fields": "gridProperties.frozenRowCount"}},
         {"setBasicFilter": {"filter": {"range": rng(0, max(n_rows, 1) + 1, 0, n_cols)}}},
     ]
-    for name in _ID_COLS:
+    for name in _TEXT_COLS:
         c = _COL[name]
         reqs.append({"repeatCell": {"range": rng(1, max(n_rows, 1) + 1, c, c + 1),
                                     "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
@@ -253,7 +342,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
 
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
-         sheet_id: Optional[str] = None, log=print) -> Dict[str, object]:
+         sheet_id: Optional[str] = None, log=print, zip_of=None) -> Dict[str, object]:
     """Merge today's feed lines into the tab and rewrite it."""
     from automations.recruiting_report.fill import _retry, open_by_key
     if TAB in PROTECTED_TABS:
@@ -263,10 +352,15 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     ws = _ensure_tab(sh, TAB, cols=len(HEADERS))
     prior = _retry(lambda: ws.get_all_values())
     result = merge(prior[1:] if prior else [], lines, today=today,
-                   existing_header=prior[0] if prior else None)
+                   existing_header=prior[0] if prior else None, zip_of=zip_of)
     rows = result["rows"]
     if not rows:
         raise RuntimeError("NDS Order Log merge produced no rows -- refusing to blank the tab")
+    # a leading-zero zip would be typed in as a number otherwise
+    zc = _COL["Zip"]
+    for r in rows:
+        if r[zc].isdigit() and r[zc].startswith("0"):
+            r[zc] = "'" + r[zc]
     body = [list(HEADERS)] + rows
     _retry(lambda: ws.resize(rows=max(1000, len(body) + 50), cols=len(HEADERS)))
     _retry(lambda: ws.clear())
@@ -321,4 +415,5 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
             "lines without a customer/rep would be nameless rows; tab left as it was"
             % (len(orders), len(lines)))
         return None
-    return push(lines, today=today, log=log)
+    zips = ZipIndex.from_export(today, log=log)
+    return push(lines, today=today, log=log, zip_of=zips.for_line if zips else None)

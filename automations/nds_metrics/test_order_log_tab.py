@@ -26,10 +26,44 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[19], "Delivered Message Sent")   # column T on the live tab (S until 11/9)
+        self.assertEqual(T.HEADERS[20], "Delivered Message Sent")   # column U on the live tab (T until 11/10, S until 11/9)
         self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")        # the feed's "device" = Line Number cell
         self.assertEqual(r[T._COL["Device"]], "iPhone 16")            # the model, feed's "line_phone"
         self.assertEqual(r[T._COL["Plan"]], "Unlimited")
+        self.assertEqual(r[T._COL["Zip"]], "")                        # no index given -> blank
+        self.assertEqual(T.HEADERS[3], "Zip")                         # right after Customer
+        self.assertEqual(r[T._COL["Customer"]], "John Doe")
+        self.assertEqual(r[T._COL["Order Date"]], "10/24/2026")
+
+    def test_zip_from_the_export_by_phone_then_ban_then_dsi(self):
+        hdr = ["Owner & Office", "Customer Name", "Customer Zip Simple", "spe.TN",
+               "spe.Account BAN", "sp.SPM Number", "Measure Names"]
+        rows = [["CARLOS HIDALGO - X", "JOHN D", "75060", "9453928474", "BAN9", "DSI123", "Unit Count"],
+                ["CARLOS HIDALGO - X", "JOHN D", "75060", "9453928474", "BAN9", "DSI123", "Sales (All)"],
+                ["CARLOS HIDALGO - X", "ANA R", "76017", "2145550199", "BAN7", "DSI777", "Unit Count"]]
+        zi = T.ZipIndex.from_rows(hdr, rows)
+        self.assertEqual(len(zi), 2)
+        self.assertEqual(zi.for_line(line()), "75060")                           # by phone
+        self.assertEqual(zi.for_line(line(device="000-000-0000")), "75060")      # by BAN
+        self.assertEqual(zi.for_line(line(device="000-000-0000", ban="")), "75060")   # by DSI
+        self.assertEqual(zi.for_line(line(device="", ban="", dsi="")), "")
+        r = T.line_row(line(), "x", zi.for_line)
+        self.assertEqual(r[T._COL["Zip"]], "75060")
+        self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")
+        self.assertEqual(r[T._COL["Device"]], "iPhone 16")
+        with self.assertRaises(RuntimeError):
+            T.ZipIndex.from_rows(["Customer Name", "spe.TN"], [["X", "1"]])
+
+    def test_zip_kept_when_today_cannot_place_the_line(self):
+        first = T.merge([], [line()], today=TODAY, zip_of=lambda l: "75060")
+        self.assertEqual(first["rows"][0][T._COL["Zip"]], "75060")
+        second = T.merge(first["rows"], [line()], today=TODAY + dt.timedelta(days=1), zip_of=None)
+        self.assertEqual(second["rows"][0][T._COL["Zip"]], "75060")
+        self.assertEqual(second["changed"], 0)                         # a zip is not a state change
+        third = T.merge(second["rows"], [line()], today=TODAY + dt.timedelta(days=2),
+                        zip_of=lambda l: "76017")
+        self.assertEqual(third["rows"][0][T._COL["Zip"]], "76017")
+        self.assertEqual(third["changed"], 0)
 
     def test_old_tab_layout_remaps_by_header(self):
         # the live tab before 11/9: no "Phone #", "Device" held the number, column S = Delivered Message Sent
@@ -43,6 +77,7 @@ class Rows(unittest.TestCase):
         self.assertEqual(len(r), len(T.HEADERS))
         self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")
         self.assertEqual(r[T._COL["Device"]], "")
+        self.assertEqual(r[T._COL["Zip"]], "")                          # the live tab before 11/10 has no Zip
         self.assertEqual(r[T._COL["Notes"]], "called 10/28")
         self.assertEqual(r[T._COL["Being worked on"]], "Yes")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "Yes")
