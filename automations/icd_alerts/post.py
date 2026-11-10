@@ -487,6 +487,42 @@ def catchup_lines(board: str) -> str:
     return "\n".join(moved or reps)
 
 
+def sara_standings_text(records: Dict, show=None, now: Optional[dt.datetime] = None,
+                        title: str = "SARA CHECKS") -> str:
+    """The list Frank Matos types into his group by hand (2026-11-09):
+
+        SARA CHECKS — 3:45 PM
+        MEKHI HENRY 4
+        JAMAL 3
+        ...
+        TOTAL: 21 IN SARA
+
+    records = {rep: credit checks today} off the office's own relay. Reps with
+    0 are left off (his list only names people who have run one); sorted by
+    count, then name, names UPPERCASE the way he writes them. Empty when
+    nobody has a check -- never post blank."""
+    rows = [(int(v or 0), str(k)) for k, v in (records or {}).items() if int(v or 0) > 0]
+    if not rows:
+        return ""
+    rows.sort(key=lambda t: (-t[0], t[1]))
+    stamp = (now or dt.datetime.now()).strftime("%-I:%M %p") if os.name != "nt" \
+        else (now or dt.datetime.now()).strftime("%I:%M %p").lstrip("0")
+    lines = ["%s — %s" % (title, stamp)]
+    for n, rep in rows:
+        name = (show(rep) if show else rep) or rep
+        lines.append("%s %d" % (str(name).upper(), n))
+    lines.append("")
+    lines.append("TOTAL: %d IN SARA" % sum(n for n, _ in rows))
+    return "\n".join(lines)
+
+
+def _sara_moved(records: Dict, last: Dict) -> bool:
+    """Did any rep's credit-check count change since the last post?"""
+    r = {str(k): int(v or 0) for k, v in (records or {}).items()}
+    l = {str(k): int(v or 0) for k, v in (last or {}).items()}
+    return any(r.get(k, 0) != l.get(k, 0) for k in set(r) | set(l))
+
+
 def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
                     show=None, teams=None) -> str:
     """The day's standings for an office's TEXT GROUP -- Raf's partner-chat
@@ -1226,6 +1262,13 @@ def approved_texts(book=None) -> Dict[str, List[Dict]]:
                          # group. The standings text below is unaffected;
                          # knocks_post.boards_for_texts skips it.
                          "standings_only": bool(g.get("standings_only")),
+                         # SARA STANDINGS (Frank Matos, 2026-11-09 via Megan:
+                         # "he's posting these Sara numbers - he doesn't want
+                         # the knock boards"): the per-rep credit-check list
+                         # with the office total, texted whenever a count
+                         # moves. Like standings_only, no board and no gap
+                         # list ride to this group. See sara_standings_text.
+                         "sara_standings": bool(g.get("sara_standings")),
                          # THE BOARD LESS OFTEN THAN THE LIST (Maxamad Aden,
                          # 2026-09-28: "knock boards every 30 min in slack
                          # and text, the gap text every 15"). cadence_min is
@@ -1988,6 +2031,27 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                             % (key, group, "" if send else "  (dry run)"))
                     except Exception as e:  # noqa: BLE001
                         log("%-10s FAILED to text standings to %r: %s: %s"
+                            % (key, group, type(e).__name__, str(e)[:120]))
+        # THE SARA LIST to a group that asked for it (Frank, 2026-11-09):
+        # whenever a rep's credit-check count moves, the whole day's list
+        # with the office total -- what he was typing by hand. Same place in
+        # the pass as the standings: after Slack, never blocking it.
+        sara_groups = [t for t in (texts.get(key) or []) if t.get("sara_standings")]
+        if sara_groups and records and _sara_moved(records, last) and key not in TEXT_PAUSED:
+            sara_text = sara_standings_text(records, show)
+            if sara_text and not can_text:
+                log("%-10s Sara standings text skipped -- this machine cannot "
+                    "send iMessage" % key)
+            elif sara_text:
+                from automations.b2b_dispositions import text_post as tp
+                for t in sara_groups:
+                    group = t.get("channel_name") or ""
+                    try:
+                        tp.send_text_to_group(group, sara_text, dry_run=not send, dest=t)
+                        log("%-10s Sara standings -> text group %r%s"
+                            % (key, group, "" if send else "  (dry run)"))
+                    except Exception as e:  # noqa: BLE001
+                        log("%-10s FAILED to text Sara standings to %r: %s: %s"
                             % (key, group, type(e).__name__, str(e)[:120]))
         if not send:
             continue

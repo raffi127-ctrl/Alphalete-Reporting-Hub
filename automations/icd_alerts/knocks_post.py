@@ -259,7 +259,8 @@ def boards_for_texts(texts) -> List[Dict]:
     `standings_only` (Drew Tepper, 2026-09-28 via Megan: scoreboard texts,
     no knock board, no gap list) is skipped: its standings come from post.py
     on every sale and nothing here is sent to it."""
-    return [t for t in (texts or []) if not t.get("standings_only")]
+    return [t for t in (texts or [])
+            if not t.get("standings_only") and not t.get("sara_standings")]
 
 
 def gaps_due(dest: Dict, last_gaps: Optional[dt.datetime],
