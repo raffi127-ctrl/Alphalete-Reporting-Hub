@@ -180,8 +180,55 @@ def probe(csv_path: Optional[Path], owner: str, day: dt.date) -> Path:
     return csv_path
 
 
+def probe_urls(owner: str, day: dt.date) -> int:
+    """Which URL filter spelling does this view honor? 2026-11-10: Owner + ISO
+    sale weeks + ISO install week hid the sheet (empty match). Each variant
+    below carries ONE filter and NO owner, so a filter Tableau ignores shows up
+    as the stale default (April-July sales) instead of a hidden sheet."""
+    from urllib.parse import quote
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+    from automations.shared.tableau_patchright import tableau_session
+    sun = pull._week_end(day, 6)
+    sat = pull._week_end(day, 5)
+    weeks = [sun - dt.timedelta(weeks=i) for i in range(pull.SALE_WEEKS)]
+    mdy = lambda d: "{}/{}/{}".format(d.month, d.day, d.year)
+    long_ = lambda d: d.strftime("%B ") + "{}, {}".format(d.day, d.year)
+    variants = [
+        ("owner only", [("Owner Name", owner)]),
+        ("sale weeks ISO", [("Sale Date Week Ending",
+                             ",".join(d.isoformat() for d in weeks))]),
+        ("sale weeks M/D/YYYY", [("Sale Date Week Ending",
+                                  ",".join(mdy(d) for d in weeks))]),
+        ("sale weeks long", [("Sale Date Week Ending",
+                              ",".join(long_(d) for d in weeks))]),
+        ("install week ISO", [("Current Install Date Week Ending", sat.isoformat())]),
+        ("install week M/D/YYYY", [("Current Install Date Week Ending", mdy(sat))]),
+    ]
+    out = Path(tempfile.gettempdir()) / "activations_today_variant.csv"
+    with tableau_session(verbose=False) as page:
+        for name, params in variants:
+            url = pull.VIEW_URL + "?" + "&".join(
+                "{}={}".format(quote(k), quote(v, safe=",-/")) for k, v in params)
+            try:
+                if out.exists():
+                    out.unlink()
+                drive_crosstab_dialog(page, url, pull.WORKSHEET, out, verbose=False)
+                rows = pull.read_rows(out)
+            except Exception as e:  # noqa: BLE001 — a probe reports, never dies
+                print("VARIANT {:24s} FAILED: {}".format(name, str(e).splitlines()[0][:160]))
+                continue
+            sale = sorted({pull.parse_date(r.get(pull.SALE_DATE)) for r in rows} - {None})
+            mine = pull.owner_rows(rows, owner)
+            print("VARIANT {:24s} rows={} sales {}..{} owners={} {}={} today={}".format(
+                name, len(rows), sale[0] if sale else "-", sale[-1] if sale else "-",
+                len({r.get(pull.OWNER) for r in rows}), owner, len(mine),
+                len(pull.scheduled_on(mine, day))))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="activations_today")
+    ap.add_argument("--probe-urls", action="store_true")
     ap.add_argument("--owner", default=DEFAULT_OWNER)
     ap.add_argument("--day", default=None, help="YYYY-MM-DD (default: today CT)")
     ap.add_argument("--csv", default=None, help="Use this crosstab, skip Tableau")
@@ -194,6 +241,8 @@ def main(argv=None) -> int:
 
     day = dt.date.fromisoformat(args.day) if args.day else pull.central_today()
     csv_path = Path(args.csv) if args.csv else None
+    if args.probe_urls:
+        return probe_urls(args.owner, day)
     if args.probe:
         csv_path = probe(csv_path, args.owner, day)
         if not (args.post_slack or args.post_to or args.dm_user):
