@@ -65,6 +65,25 @@ class Rows(unittest.TestCase):
         self.assertEqual(third["rows"][0][T._COL["Zip"]], "76017")
         self.assertEqual(third["changed"], 0)
 
+    def test_carried_row_without_a_zip_is_looked_up_by_its_own_cells(self):
+        # a line the feed has forgotten: on the tab, no zip yet (the column is
+        # new), absent from today's lines -> filled through zip_lookup
+        kept = T.line_row(line(wireless_order="WOGONE", line_no="1"), "10/20/2026")
+        self.assertEqual(kept[T._COL["Zip"]], "")
+        seen = []
+        def lookup(phone, ban, dsi):
+            seen.append((phone, ban, dsi))
+            return "75060" if phone == "945-392-8474" else ""
+        out = T.merge([kept], [line(line_no="2")], today=TODAY, zip_of=lambda l: "76017",
+                      zip_lookup=lookup)
+        by_key = {T._key(x): x for x in out["rows"]}
+        self.assertEqual(by_key[("wo", "wogone", "1")][T._COL["Zip"]], "75060")
+        self.assertEqual(by_key[("wo", "wo555", "2")][T._COL["Zip"]], "76017")
+        self.assertEqual(seen, [("945-392-8474", "BAN9", "DSI123")])
+        # a row that already has a zip is left alone (no lookup)
+        again = T.merge(out["rows"], [], today=TODAY, zip_lookup=lambda *a: "00000")
+        self.assertEqual({x[T._COL["Zip"]] for x in again["rows"]}, {"75060", "76017"})
+
     def test_old_tab_layout_remaps_by_header(self):
         # the live tab before 11/9: no "Phone #", "Device" held the number, column S = Delivered Message Sent
         old_hdr = ["Week Ending", "Rep", "Customer", "Order Date", "DSI #", "Wireless Order #", "BAN",

@@ -222,13 +222,15 @@ def _key(row: Sequence[str]) -> tuple:
 
 def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
           today: dt.date, existing_header: Optional[Sequence[str]] = None,
-          zip_of=None) -> Dict[str, object]:
+          zip_of=None, zip_lookup=None) -> Dict[str, object]:
     """Kept-if-absent, replaced-if-present, aged-out past DAYS_KEPT by Order
     Date. Last Updated restamps only when the line's state changed. Notes
     carry by key. existing_header is the live tab's own header row: rows are
     remapped by name, so a column added here never shifts Carlos's typed
-    columns on the rows the tab carries. `zip_of(line)` fills Zip (ZipIndex);
-    a line it can't place keeps the zip the tab already had."""
+    columns on the rows the tab carries. `zip_of(line)` fills Zip on today's
+    feed lines and `zip_lookup(phone, ban, dsi)` on carried rows still
+    without one (ZipIndex.for_line / .lookup); a line neither can place
+    keeps the zip the tab already had."""
     stamp = _fmt(today)
     merged: "collections.OrderedDict[tuple, List[str]]" = collections.OrderedDict()
     for row in existing:
@@ -237,6 +239,12 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         row = list(row) + [""] * (len(HEADERS) - len(row))
         if not str(row[_COL["Line"]]).strip():
             continue          # a header-shaped row that slipped in earlier: never carried
+        if zip_lookup and not str(row[_COL["Zip"]]).strip():
+            # a line the feed has forgotten (kept from earlier days) gets its
+            # zip off the export by its own cells -- the first run after the
+            # column was added left 4 of 317 blank this way (11/10)
+            row[_COL["Zip"]] = str(zip_lookup(row[_COL["Phone #"]], row[_COL["BAN"]],
+                                              row[_COL["DSI #"]]) or "")
         if (row[_COL["Customer"]] or row[_COL["Wireless Order #"]]
                 or row[_COL["DSI #"]]):
             merged[_key(row)] = row
@@ -342,7 +350,8 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
 
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
-         sheet_id: Optional[str] = None, log=print, zip_of=None) -> Dict[str, object]:
+         sheet_id: Optional[str] = None, log=print, zip_of=None,
+         zip_lookup=None) -> Dict[str, object]:
     """Merge today's feed lines into the tab and rewrite it."""
     from automations.recruiting_report.fill import _retry, open_by_key
     if TAB in PROTECTED_TABS:
@@ -352,7 +361,8 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     ws = _ensure_tab(sh, TAB, cols=len(HEADERS))
     prior = _retry(lambda: ws.get_all_values())
     result = merge(prior[1:] if prior else [], lines, today=today,
-                   existing_header=prior[0] if prior else None, zip_of=zip_of)
+                   existing_header=prior[0] if prior else None, zip_of=zip_of,
+                   zip_lookup=zip_lookup)
     rows = result["rows"]
     if not rows:
         raise RuntimeError("NDS Order Log merge produced no rows -- refusing to blank the tab")
@@ -416,4 +426,5 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
             % (len(orders), len(lines)))
         return None
     zips = ZipIndex.from_export(today, log=log)
-    return push(lines, today=today, log=log, zip_of=zips.for_line if zips else None)
+    return push(lines, today=today, log=log, zip_of=zips.for_line if zips else None,
+                zip_lookup=zips.lookup if zips else None)
