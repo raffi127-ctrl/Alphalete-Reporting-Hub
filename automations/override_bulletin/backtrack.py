@@ -192,6 +192,22 @@ def raf_fresh_for_week(week_mdy, *, period_num=None, page=None, verbose=True):
     except Exception as e:  # noqa: BLE001
         if verbose:
             print("  (raf special unavailable: {})".format(type(e).__name__))
+    # Raf's Profit Share is part of his Special (Maud 2026-11-09). Re-sourcing the
+    # special WITHOUT it would erase it from that week, so if the inbox can't be
+    # read, don't re-source at all — None keeps the on-sheet value.
+    if spec is not None:
+        try:
+            from automations.override_bulletin import profit_share as PS
+            ps = PS.amounts_by_week(verbose=verbose).get(week_mdy)
+            if ps:
+                spec = round(spec + ps, 2)
+                if verbose:
+                    print("  + profit share {:,.2f} in {} special".format(ps, week_mdy))
+        except Exception as e:  # noqa: BLE001
+            if verbose:
+                print("  (profit share unreadable: {} — raf special left as on sheet)"
+                      .format(type(e).__name__))
+            spec = None
     return cap, spec
 
 
