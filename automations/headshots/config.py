@@ -99,7 +99,7 @@ HEAD_MARGIN = 0.08
 
 # rembg model. "u2net_human_seg" is trained on people — cleaner hair edges
 # than the generic model. The model file downloads once to ~/.u2net/.
-REMBG_MODEL = "u2net_human_seg"
+REMBG_MODEL = "birefnet-portrait"   # hair edges (Megan 2026-11-10); was u2net_human_seg
 
 # Phase 2: after processing, upload the clean headshot to the rep's
 # OwnerVille profile (Onboard -> View Progress -> Edit; see ov_upload.py).
@@ -118,4 +118,4 @@ SHEET_LOG_ENABLED = True
 # The background + finishing (Megan 2026-11-10): "white" = the original pure
 # white; "blue" = brightened/sharpened person on a very light blue textured
 # studio backdrop (process.enhance_subject + studio_background).
-BACKGROUND = "white"
+BACKGROUND = "blue"                   # live 2026-11-10 (Megan: "yes")

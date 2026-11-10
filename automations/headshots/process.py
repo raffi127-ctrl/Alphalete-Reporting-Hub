@@ -161,10 +161,91 @@ def enhance_subject(cutout: Image.Image) -> Image.Image:
     gain = float(np.clip(150.0 / max(fmed, 1.0), 0.97, 1.12))   # small, capped
     out = Image.fromarray(np.clip(px * gain, 0, 255).astype("uint8"))
     out = ImageEnhance.Contrast(out).enhance(1.05)
-    out = out.filter(ImageFilter.UnsharpMask(radius=1.6, percent=55, threshold=3))
-    edge = alpha.filter(ImageFilter.MinFilter(5)).filter(ImageFilter.GaussianBlur(1.4))
-    out.putalpha(edge)
+    # Light cleanup: a little of a 3px median smooths sensor noise and harsh
+    # skin texture without the plastic look; the sharpen after brings eyes,
+    # lashes and hair back.
+    out = Image.blend(out, out.filter(ImageFilter.MedianFilter(3)), 0.35)
+    out = out.filter(ImageFilter.UnsharpMask(radius=1.6, percent=60, threshold=3))
+    out.putalpha(alpha)
+    return decontaminate(out)
+
+
+def decontaminate(cutout: Image.Image) -> Image.Image:
+    """Hair and edges without the old wall in them (Megan 2026-11-10: "the
+    hair is still weird"). The cutout's half-transparent edge pixels still
+    hold the original background's colour -- usually a white wall -- which
+    shows as a pale rim. pymatting re-estimates each edge pixel's colour as
+    if nothing were behind it. Shrinking the edge instead (the first fix)
+    cut hair off."""
+    import numpy as np
+    try:
+        from pymatting import estimate_foreground_ml
+    except Exception:  # noqa: BLE001 -- no pymatting: keep the plain cutout
+        return cutout
+    rgba = np.asarray(cutout).astype(np.float64) / 255.0
+    fg = estimate_foreground_ml(rgba[..., :3], rgba[..., 3])
+    out = Image.fromarray((np.clip(fg, 0, 1) * 255).astype("uint8"), "RGB")
+    out.putalpha(cutout.getchannel("A"))
     return out
+
+
+def white_balance(original: Image.Image, cutout: Image.Image) -> Image.Image:
+    """Take the office light's colour cast out, using the WALL we just cut
+    away as the reference: a white/grey wall should read neutral, so whatever
+    tint it carries is the lighting's. Only when the wall is bright and plain
+    enough to trust, and never more than a 10% nudge per channel."""
+    import numpy as np
+    a = np.asarray(cutout.getchannel("A"))
+    px = np.asarray(original.convert("RGB")).astype(np.float32)
+    if px.shape[:2] != a.shape:
+        return cutout
+    wall = px[a < 10]
+    if wall.shape[0] < 5000:
+        return cutout
+    m = wall.mean(axis=0)
+    if m.mean() < 150 or (m.max() - m.min()) / m.mean() > 0.25:
+        return cutout                      # dark or colourful wall: no reference
+    gains = np.clip(m.mean() / np.maximum(m, 1), 0.9, 1.1)
+    rgb = np.asarray(cutout.convert("RGB")).astype(np.float32) * gains
+    out = Image.fromarray(np.clip(rgb, 0, 255).astype("uint8"))
+    out.putalpha(cutout.getchannel("A"))
+    return balance_on_person(out)
+
+
+def balance_on_person(cutout: Image.Image) -> Image.Image:
+    """Second pass, on the PERSON (Megan 2026-11-10: "we need to color
+    balance more" -- the wall alone moved colours only ~4%).
+
+    The reference is ONLY what should truly be grey: low-saturation pixels
+    on the person (grey/white/black clothing, eye whites, teeth). Skin is
+    never the reference -- a first try levelled each channel's brightest
+    pixels, which on a person in a dark shirt IS skin, and turned faces
+    grey-green. Capped at 10% per channel."""
+    import numpy as np
+    a = np.asarray(cutout.getchannel("A")) > 200
+    px = np.asarray(cutout.convert("RGB")).astype(np.float32)
+    mx, mn = px.max(axis=2), px.min(axis=2)
+    sat = (mx - mn) / np.maximum(mx, 1)
+    lum = px.mean(axis=2)
+    neutral = a & (sat < 0.12) & (lum > 45) & (lum < 245)
+    if neutral.sum() < 3000:
+        return cutout                      # nothing on them is reliably grey
+    m = px[neutral].mean(axis=0)
+    gains = np.clip(m.mean() / np.maximum(m, 1), 0.9, 1.1)
+    out = Image.fromarray(np.clip(px * gains, 0, 255).astype("uint8"))
+    out.putalpha(cutout.getchannel("A"))
+    return out
+
+
+def studio_shadow(canvas: Image.Image, subject: Image.Image, at) -> Image.Image:
+    """A soft shadow just behind the shoulders, so the person sits IN the
+    backdrop instead of floating on it."""
+    sh = Image.new("RGBA", subject.size, (60, 75, 100, 0))
+    alpha = subject.getchannel("A").point(lambda v: int(v * 0.22))
+    sh.putalpha(alpha.filter(ImageFilter.GaussianBlur(28)))
+    canvas = canvas.convert("RGBA")
+    canvas.alpha_composite(sh, (at[0] + 14, at[1] + 18))
+    return canvas.convert("RGB")
 
 
 def studio_background(W: int, H: int, seed: int = 7) -> Image.Image:
@@ -173,21 +254,28 @@ def studio_background(W: int, H: int, seed: int = 7) -> Image.Image:
     import numpy as np
 
     rng = np.random.default_rng(seed)
-    # Low-frequency mottle: tiny noise blown up + blurred = soft cloudy patches.
-    small = rng.normal(0, 1, (12, 10)).astype(np.float32)
-    mott = np.asarray(Image.fromarray(((small - small.min()) /
-                                       (np.ptp(small) or 1) * 255).astype("uint8"))
-                      .resize((W, H), Image.BICUBIC)
-                      .filter(ImageFilter.GaussianBlur(60))).astype(np.float32) / 255 - 0.5
+
+    def mottle(cells, blur):
+        """Tiny noise blown up + blurred = soft cloudy patches, -0.5..0.5."""
+        small = rng.normal(0, 1, cells).astype(np.float32)
+        im = Image.fromarray(((small - small.min()) / (np.ptp(small) or 1)
+                              * 255).astype("uint8"))
+        return np.asarray(im.resize((W, H), Image.BICUBIC)
+                          .filter(ImageFilter.GaussianBlur(blur))
+                          ).astype(np.float32) / 255 - 0.5
+    # "lighter blue and more textured" (Megan 2026-11-10): big soft clouds
+    # plus a finer layer of mottle, like a painted studio backdrop.
+    mott = mottle((9, 7), 60) * 1.0 + mottle((36, 28), 12) * 0.7 \
+        + mottle((120, 96), 3) * 0.25
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     # Glow centered where the head sits (upper third), falling off outward.
     d = np.sqrt(((xx - W / 2) / W) ** 2 + ((yy - H * 0.33) / H) ** 2)
     light = 1.0 - np.clip(d * 0.9, 0, 0.45)
-    base = np.array([226, 236, 248], np.float32)      # very light blue
-    edge = np.array([205, 220, 239], np.float32)      # a shade deeper
+    base = np.array([238, 244, 252], np.float32)      # very light blue
+    edge = np.array([222, 233, 247], np.float32)      # a shade deeper
     img = edge + (base - edge) * light[..., None]
-    img = img + mott[..., None] * 10                   # the texture, subtle
-    img = img + rng.normal(0, 1.2, (H, W, 1))          # fine grain, no banding
+    img = img + mott[..., None] * np.array([30, 26, 16], np.float32)  # texture
+    img = img + rng.normal(0, 1.6, (H, W, 1))          # fine grain, no banding
     return Image.fromarray(np.clip(img, 0, 255).astype("uint8"), "RGB")
 
 
@@ -227,10 +315,16 @@ def compose_clean(cutout: Image.Image) -> Image.Image:
     x = round(W / 2 - head_cx)
     x = min(0, max(x, W - sized.width)) if sized.width > W \
         else max(0, min(x, W - sized.width))
+    if getattr(config, "BACKGROUND", "white") == "blue":
+        canvas = studio_shadow(canvas, sized, (x, H - sized.height))
     canvas.paste(sized, (x, H - sized.height), sized)
     return canvas
 
 
 def process(data: bytes) -> Image.Image:
     """Photo bytes -> finished white-background headshot."""
-    return compose_clean(cut_subject(decode(data)))
+    im = decode(data)
+    cut = cut_subject(im)
+    if getattr(config, "BACKGROUND", "white") == "blue":
+        cut = white_balance(im, cut)
+    return compose_clean(cut)
