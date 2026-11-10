@@ -23,7 +23,6 @@ straight into the channel still works exactly as before.
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import sys
 import tempfile
@@ -63,32 +62,143 @@ def _text(block_id: str, label: str, hint: str = "", optional: bool = False,
             "label": {"type": "plain_text", "text": label}, "element": el}
 
 
-def form(channel: str, today: dt.date | None = None) -> Dict:
-    """One question per box, 7-year-old simple. Photos, who and what are required."""
-    today = today or dt.date.today()
-    return {
-        "type": "modal", "callback_id": FORM, "private_metadata": channel,
-        "title": {"type": "plain_text", "text": "New post"},
-        "submit": {"type": "plain_text", "text": "Submit"},
-        "close": {"type": "plain_text", "text": "Cancel"},
-        "blocks": [
-            {"type": "input", "block_id": "photos",
-             "label": {"type": "plain_text", "text": "Photos for this post"},
-             "hint": {"type": "plain_text",
-                      "text": f"Up to {MAX_PHOTOS}. They all go in ONE post. "
-                              "For separate posts, tap New post again."},
-             "element": {"type": "file_input", "action_id": "v", "max_files": MAX_PHOTOS,
-                         "filetypes": ["jpg", "jpeg", "png", "heic", "webp"]}},
-            _text("who", "Who's in it?", "Sarah, Mike and the whole Dallas team"),
-            _text("what", "What's happening?", "Sarah's first sale!", multiline=True),
-            _text("where", "Where?", "Dallas office, out in Frisco...", optional=True),
-            {"type": "input", "block_id": "when", "optional": True,
-             "label": {"type": "plain_text", "text": "When?"},
-             "element": {"type": "datepicker", "action_id": "v",
-                         "initial_date": today.isoformat()}},
-            _text("extra", "Anything else to mention?", "optional", optional=True,
-                  multiline=True),
-        ]}
+# WHAT KIND OF POST, THEN QUESTIONS THAT FIT IT (Megan 2026-11-10: "we don't
+# need a when/date on this - we need to ask more / prompt more so they know
+# what to put - things like 'Is this a team night, what team is this, is this
+# a promotion? if so, what level?'"). Picking a kind redraws the form with
+# that kind's questions; what's already typed or uploaded stays.
+#   (block_id, label, example shown in the box, required, big box)
+# Built from what actually gets posted (scanned 2026-11-10): 400 @alphaletemarketing
+# Instagram captions (Apr 2023-now), 100 @southshoreflorida (May-Nov 2026), and
+# a year of #alphaletesocialmedia -- incl. what Lucy kept coming back to ask
+# ("which one is Hank, left or right?", "who did the promoting?", "celebrating
+# a win?"). Kinds in order of how often they're posted. No quote/motivation
+# kind: those aren't photo posts (Megan 2026-11-10: "remove the quote"). The details each kind
+# asks for are the ones its captions used most (a promotion caption names the
+# level 96/110 times, the trainer 61, the team 60, time with the company 49).
+KINDS = {
+    "promotion": ("🎉 A promotion", [
+        ("promoted", "Who got promoted?", "Sarah Lopez (or several names)", True, False),
+        ("level", "What level did they get promoted to?",
+         "Level 1, Level 2, Level 3, Mastermind, AL Partner...", True, False),
+        ("trainer", "Who's their trainer / who promoted them?", "Rashad", False, False),
+        ("spots", "Who's where in the photo?", "Sarah on the left, Rashad on the right", False, False),
+        ("team", "What team are they on?", "Team Elite", False, False),
+        ("tenure", "How long have they been with the company?", "6 months, just hit 1 year...", False, False),
+        ("earned", "What did they do to earn it? Anything about their story?",
+         "Broke the office record, built a team of 5, started with zero sales experience...",
+         False, True),
+        ("shoutouts", "Anyone else to shout out?", "Their team, their trainer's trainer...", False, False)]),
+    "celebration": ("🎂 A birthday, work anniversary or holiday", [
+        ("occasion", "What are we celebrating?",
+         "Al's birthday, Kiyah's 1 year with us, the Christmas party, Halloween...", True, False),
+        ("role", "Their level or role (if it's about one person)", "Level 2 leader", False, False),
+        ("fun", "Anything fun happen, or anything to say about them?",
+         "Cake + singing, costume contest, one of our top leaders...", False, True)]),
+    "day": ("☀️ A day with the team", [
+        ("moment", "What's going on?", "Monday kickoff, the early crew, heading out to knock...", True, True),
+        ("team", "What team or office?", "Team Elite, the Dallas office", False, False),
+        ("people", "Anyone to name?", "Names, or leave blank", False, False)]),
+    "spotlight": ("⭐ A spotlight on someone", [
+        ("person", "Who are we spotlighting?", "Pranish", True, False),
+        ("role", "Their level or role", "Owner, Level 3 leader, top recruiter...", False, False),
+        ("story", "What should people know about them?",
+         "Started 2 years ago, now runs his own office; always first one in...", True, True)]),
+    "win": ("🏆 A big win, contest or award", [
+        ("winner", "Who won?", "Mike Chen, 1st Jacie / 2nd Oscar / 3rd Maliha, the whole team...", True, True),
+        ("feat", "What did they win or do?",
+         "Mentor of the Year, top of the board, a sales contest, 10 sales in a day...", True, True),
+        ("prize", "Any prize?", "Trophy, cash, a trip...", False, False),
+        ("team", "What team are they on?", "Team Elite", False, False)]),
+    # Megan 2026-11-10: "team night should ask where it was or what the
+    # activity was" -- both asked, at least ONE of them needed (ONE_OF).
+    "teamnight": ("🍻 A team night, outing or reward trip", [
+        ("team", "What team is this?", "Team Elite, the managers, the whole Dallas office...", True, False),
+        ("where", "Where did you go?", "Dee Lincoln, Topgolf, DFW Adventure Park...", False, False),
+        ("activity", "What did you do?", "Laser tag, volleyball, team dinner, Lambo ride...", False, True),
+        ("why", "Celebrating anything, or a reward for something?",
+         "A record week, top 3 in sales for October, or just for fun", False, True),
+        ("thanks", "Anyone to thank for it?", "Raf, Carlos and Colten for treating everyone", False, False)]),
+    "training": ("📚 A training or meeting", [
+        ("topic", "What was it about?", "Leadership meeting, door approach training...", True, True),
+        ("leader", "Who led it?", "Randy", False, False),
+        ("people", "Who's in the photos?", "Names, or 'the whole team'", False, False)]),
+    "event": ("🎤 A conference, trip or new market", [
+        ("event", "What was it?",
+         "Regionals, Captain's Retreat, opening our Chicago market, visiting Starr's office...", True, True),
+        ("city", "What city?", "Las Vegas, Chicago...", False, False),
+        ("people", "Who went?", "Names, or 'the Hashiras team'", False, False),
+        ("standout", "Did anyone speak, get recognized, or do it for the first time?",
+         "Raf was a featured speaker; Indesia's first regionals", False, True)]),
+    # Hiring posts stay about the job, never who we hire (recruiting copy rules).
+    "hiring": ("📣 We're hiring / join us", [
+        ("pitch", "What should people know about the job?",
+         "Paid training, room to grow into management, what a day looks like...", True, True),
+        ("office", "What office or city?", "Dallas", False, False),
+        ("apply", "How do they apply?", "DM us, link in bio, a link...", False, False)]),
+    "community": ("❤️ A community event", [
+        ("event", "What's the event?", "Toy drive, school supply giveaway...", True, True),
+        ("people", "Who's in the photos?", "Names, or 'the whole team'", False, False)]),
+    "other": ("✨ Something else", [
+        ("who", "Who's in it?", "Names, or 'the whole team'", True, False),
+        ("what", "What's happening?", "Tell Lucy what's going on in the photos", True, True)]),
+}
+# a kind that needs at least one of these filled (the error goes on the first)
+ONE_OF = {"teamnight": ("where", "activity")}
+ALWAYS = [("where", "Where was this?", "Dallas office, out in Frisco...", False, False),
+          ("extra", "Anything else Lucy should know or mention?",
+           "Shout-outs, a hashtag, something funny that happened...", False, True)]
+
+
+def _questions(kind: str) -> list:
+    """The kind's own questions, then the always-asked ones it doesn't already ask."""
+    own = KINDS[kind][1] if kind in KINDS else []
+    have = {q[0] for q in own}
+    return own + [q for q in ALWAYS if q[0] not in have]
+
+
+def _kind_block(kind: str = "") -> Dict:
+    el = {"type": "radio_buttons", "action_id": "kind",
+          "options": [{"text": {"type": "plain_text", "text": t, "emoji": True}, "value": k}
+                      for k, (t, _) in KINDS.items()]}
+    if kind in KINDS:
+        el["initial_option"] = next(o for o in el["options"] if o["value"] == kind)
+    return {"type": "input", "block_id": "kind", "dispatch_action": True,
+            "label": {"type": "plain_text", "text": "What kind of post is this?"},
+            "element": el}
+
+
+def form(channel: str, kind: str = "") -> Dict:
+    """Photos + what kind of post. Once a kind is picked, its questions show."""
+    blocks = [
+        {"type": "input", "block_id": "photos",
+         "label": {"type": "plain_text", "text": "Photos for this post"},
+         "hint": {"type": "plain_text",
+                  "text": f"Up to {MAX_PHOTOS}. They all go in ONE post. "
+                          "For separate posts, tap New post again."},
+         "element": {"type": "file_input", "action_id": "v", "max_files": MAX_PHOTOS,
+                     "filetypes": ["jpg", "jpeg", "png", "heic", "webp"]}},
+        _kind_block(kind)]
+    if kind in KINDS:
+        for bid, label, eg, req, big in _questions(kind):
+            blocks.append(_text(bid, label, eg, optional=not req, multiline=big))
+    else:
+        blocks.append({"type": "context", "elements": [{
+            "type": "mrkdwn", "text": "Pick one and Lucy will ask a few quick questions."}]})
+    return {"type": "modal", "callback_id": FORM,
+            "private_metadata": json.dumps({"channel": channel, "kind": kind}),
+            "title": {"type": "plain_text", "text": "New post"},
+            "submit": {"type": "plain_text", "text": "Submit"},
+            "close": {"type": "plain_text", "text": "Cancel"}, "blocks": blocks}
+
+
+def _meta(view: Dict) -> Dict:
+    raw = view.get("private_metadata") or ""
+    try:
+        m = json.loads(raw)
+        return m if isinstance(m, dict) else {"channel": raw}
+    except Exception:
+        return {"channel": raw}
 
 
 def answers(view: Dict) -> Dict:
@@ -96,10 +206,14 @@ def answers(view: Dict) -> Dict:
 
     def v(bid):
         a = (vals.get(bid) or {}).get("v") or {}
-        return (a.get("value") or a.get("selected_date") or "").strip()
+        return (a.get("value") or "").strip()
+    kind = (((vals.get("kind") or {}).get("kind") or {}).get("selected_option") or {}).get("value") \
+        or _meta(view).get("kind") or ""
     files = ((vals.get("photos") or {}).get("v") or {}).get("files") or []
-    return {"files": files, "who": v("who"), "what": v("what"), "where": v("where"),
-            "when": v("when"), "extra": v("extra")}
+    qs = _questions(kind)
+    return {"files": files, "kind": kind,
+            "fields": [(bid, label, v(bid)) for bid, label, *_ in qs],
+            "required": [bid for bid, _l, _e, req, _b in qs if req]}
 
 
 def problems(a: Dict) -> Dict[str, str]:
@@ -110,32 +224,25 @@ def problems(a: Dict) -> Dict[str, str]:
         errs["photos"] = "Add at least one photo."
     elif len(pics) < len(a["files"]):
         errs["photos"] = "Photos only, please (no videos or documents)."
-    if not a["who"]:
-        errs["who"] = "Tell Lucy who's in it."
-    if not a["what"]:
-        errs["what"] = "Tell Lucy what's happening."
+    if a["kind"] not in KINDS:
+        errs["kind"] = "Pick what kind of post this is."
+    got = {bid: val for bid, _label, val in a["fields"]}
+    for bid in a["required"]:
+        if not got.get(bid):
+            errs[bid] = "Lucy needs this one to write the caption."
+    either = ONE_OF.get(a["kind"])
+    if either and not any(got.get(b) for b in either):
+        errs[either[0]] = "Tell Lucy where you went or what you did (one is enough)."
     return errs
-
-
-def _nice_date(iso: str) -> str:
-    try:
-        d = dt.date.fromisoformat(iso)
-    except Exception:
-        return iso
-    return "today" if d == dt.date.today() else f"{d:%a %b} {d.day}"
 
 
 def message(a: Dict, user: str) -> str:
     """The text under the photos -- what the inbox captions from."""
     n = len(a["files"])
-    lines = [f"📸 *New post from <@{user}>*" + (f" · {n} photos, one post" if n > 1 else ""),
-             f"*Who:* {a['who']}", f"*What:* {a['what']}"]
-    if a["where"]:
-        lines.append(f"*Where:* {a['where']}")
-    if a["when"]:
-        lines.append(f"*When:* {_nice_date(a['when'])}")
-    if a["extra"]:
-        lines.append(f"*Also:* {a['extra']}")
+    kind = KINDS.get(a["kind"], ("", []))[0]
+    lines = [f"📸 *New post from <@{user}>*" + (f" · {kind}" if kind else "")
+             + (f" · {n} photos, one post" if n > 1 else "")]
+    lines += [f"*{label}* {val}" for _bid, label, val in a["fields"] if val]
     return "\n".join(lines)
 
 
@@ -165,7 +272,8 @@ def wants(req) -> bool:
     if req.type != "interactive":
         return False
     if p.get("type") == "block_actions":
-        return any(a.get("action_id") == BUTTON for a in p.get("actions") or [])
+        return (any(a.get("action_id") == BUTTON for a in p.get("actions") or [])
+                or (p.get("view") or {}).get("callback_id") == FORM)
     if p.get("type") == "view_submission":
         return (p.get("view") or {}).get("callback_id") == FORM
     return False
@@ -184,6 +292,15 @@ def ack(req) -> Dict | None:
 def handle(client, req) -> None:
     p = req.payload or {}
     web = client.web_client
+    if p.get("type") == "block_actions" and p.get("view"):
+        # a kind was picked: redraw with its questions (same block ids keep
+        # whatever was already typed / uploaded)
+        view = p["view"]
+        kind = next((a.get("selected_option", {}).get("value") for a in p.get("actions") or []
+                     if a.get("action_id") == "kind"), "")
+        web.views_update(view_id=view["id"], hash=view.get("hash"),
+                         view=form(_meta(view).get("channel", ""), kind))
+        return
     if p.get("type") == "block_actions":
         chan = (p.get("channel") or {}).get("id") or (p.get("container") or {}).get("channel_id", "")
         web.views_open(trigger_id=p["trigger_id"], view=form(chan))
@@ -191,7 +308,7 @@ def handle(client, req) -> None:
     a = answers(p["view"])
     if problems(a):
         return                                    # the form stayed open with the errors
-    chan, user = p["view"].get("private_metadata") or "", p["user"]["id"]
+    chan, user = _meta(p["view"]).get("channel", ""), p["user"]["id"]
     threading.Thread(target=deliver, args=(web, chan, user, a), daemon=True).start()
 
 
@@ -222,8 +339,7 @@ def deliver(web, chan: str, user: str, a: Dict) -> None:
         try:
             web.chat_postEphemeral(channel=chan, user=user,
                                    text=":x: Your post didn't go through. Please tap "
-                                        "📸 New post and try again, or just drop the "
-                                        "photos here with a line about them.")
+                                        "📸 New post and try again.")
         except Exception:
             pass
 
