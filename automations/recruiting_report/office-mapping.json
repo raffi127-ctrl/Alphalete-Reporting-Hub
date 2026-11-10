@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 56,
+  "confirmed_count": 57,
   "needs_review_count": 0,
   "skip_count": 37,
   "confirmed": [
@@ -425,6 +425,14 @@
       "as_company": "Kalkan Marketing",
       "confidence": 1.0,
       "note": "tab added 2026-11-03 (Raf). as_owner is on purpose NOT what AppStream lists: it shows office 24153 under Rafael Hidalgo, and as_owner is a Tableau fallback name, so that spelling would pull Raf's numbers into this tab. 2026-11-06: office 24153 -> 24232 (eStream closed 24153 on 11/4; Omar's call list moved to 24232 on 10/30)."
+    },
+    {
+      "sheet_tab": "Hasan Salame",
+      "office_id": "24279",
+      "as_owner": "Hasan Salame",
+      "as_company": "Ascend Elite Marketing, Inc.",
+      "confidence": 1.0,
+      "note": "tab added 2026-11-10 (Raf: 'he's recruiting under an app stream under me called Hasan'). Office 24279 sits under Rafael Hidalgo in AppStream; as_owner is on purpose Hasan's name (Tableau fallback), not Raf's, so Raf's numbers never land here. His own AppStream account 24337 (U-HasanSalame) has no access yet: switch office_id when the team migrates."
     }
   ],
   "needs_review": [],
