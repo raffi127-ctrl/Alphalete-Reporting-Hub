@@ -3885,22 +3885,55 @@ def _render_office_admin_logins() -> None:
             st.caption("No admin logins yet.")
 
     with st.expander("✅ Office ApplicantStream accounts"):
+        # Megan 2026-11-09: no typing account numbers -- the ICD's accounts are
+        # found by owner name in ApplicantStream's office list (Lucy 1 saves it
+        # daily, office_admin.appstream_offices) and come up TICKED to confirm.
+        from automations.office_admin import appstream_offices as _ao
+        office2 = st.selectbox("Office", keys, format_func=lambda k: labels.get(k, k),
+                               index=keys.index("raf") if "raf" in keys else 0, key="oa_acct_office")
+        owner = dict(offices).get(office2, "")
+        listing = _oa_appstream_list()
+        approved_now = _oa_approved(office2)
+        mine = _ao.for_owner(owner, listing)
+        ids = [o["id"] for o in mine] + [n for n in approved_now if n not in {o["id"] for o in mine}]
+        names = {o["id"]: o["office"] for o in listing}
+        if not listing:
+            st.caption("Lucy hasn't saved ApplicantStream's office list yet. Type the numbers below.")
+        elif not ids:
+            st.caption("No ApplicantStream account lists **%s** as owner. Type the numbers below." % owner)
+        else:
+            st.caption("**%s**'s ApplicantStream accounts. Untick any that aren't theirs." % owner)
         with st.form("oa_accts"):
-            office2 = st.selectbox("Office", keys, format_func=lambda k: labels.get(k, k),
-                                   index=keys.index("raf") if "raf" in keys else 0, key="oa_acct_office")
-            nums = st.text_area("Account numbers, one per line (this replaces the list)",
-                                placeholder="11280\n23965")
-            c1, c2 = st.columns(2)
-            show = c1.form_submit_button("Show current")
-            save = c2.form_submit_button("Save accounts", type="primary")
-        if show or save:
-            found = _re.findall(r"\d+", nums or "")
-            if save and not found:
-                st.error("Type at least one account number.")
+            ticks = {n: st.checkbox("%s · %s" % (n, names.get(n, "")), value=True, key="oa_acct_%s_%s" % (office2, n))
+                     for n in ids}
+            extra = st.text_input("Another account number (optional)")
+            save = st.form_submit_button("Save accounts", type="primary")
+        if save:
+            found = [n for n, on in ticks.items() if on] + _re.findall(r"\d+", extra or "")
+            if not found:
+                st.error("Tick at least one account.")
             else:
-                ok, out = _oa_run(["--accounts", office2] + (found if save else []))
-                (st.success if ok else st.error)("Saved" if (ok and save) else ("Current list" if ok else "Didn't work"))
+                ok, out = _oa_run(["--accounts", office2] + found)
+                _oa_approved.clear()
+                (st.success if ok else st.error)("Saved" if ok else "Didn't work")
                 st.code(out or "(no output)", language=None)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _oa_approved(office):
+    """The office's approved accounts (cached: the Hub redraws constantly)."""
+    import re as _re
+    ok, out = _oa_run(["--accounts", office])
+    return _re.findall(r"\d+", (out.split("approved:", 1) + [""])[1].split("\n")[0]) if ok else []
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _oa_appstream_list():
+    from automations.office_admin import appstream_offices as _ao
+    try:
+        return _ao.cached()
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _render_texas_de_brazil_dinner_inputs() -> None:

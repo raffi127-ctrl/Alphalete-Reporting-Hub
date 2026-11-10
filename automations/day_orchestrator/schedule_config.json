@@ -16694,6 +16694,29 @@
    "report_id": "linkedin-2nd-round-contacts",
    "_note": "Raf's rules on what the two passes added: not hired / left as a message 7 days after the second round -> removed; new start scheduled but never showed, 3 weeks after -> removed; showed but OwnerVille View Progress under 100% 3 weeks after -> removed (Carlos 2026-10-31: Onboard -> View Progress -> campaign -> search -> Progress 100% = fully onboarded); showed + 100% -> kept for good, terminated later or not (Raf: rehires). State in output/second_round_contacts/state.json."
   },
+  "appstream_office_list": {
+   "close_on": "exit_zero",
+   "order": 70.0,
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "ApplicantStream office list (for the Office Admin Logins card)",
+   "command": [
+    "automations.office_admin.appstream_offices"
+   ],
+   "base_args": [],
+   "cadence": {
+    "not_before": "09:30"
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 10,
+   "verify": null,
+   "_note": "Megan 2026-11-09: the Hub card ticks an ICD's ApplicantStream accounts by owner name instead of typing numbers. Reads the office picker's full list (Office ID / Owner / Office Name) off the warm session and saves it to the relay's 'AppStream Offices' tab. Read-only on AppStream. Rerun by hand: `lucy rerun appstream_office_list`."
+  },
   "bgc_not_sent_raf": {
    "close_on": "exit_zero",
    "order": 70.1,
