@@ -223,12 +223,12 @@ def main(argv=None) -> int:
 
     if not today:
         # Megan's rule: no blank boards, and a "none" only when the export
-        # proves it loaded. An owner with pending installs but none today is a
-        # real zero; an export with nothing for the owner at all is not.
-        if not mine:
-            print("✗ export has NO orders for {} at all — can't tell "
-                  "a real zero from data that didn't load. Posting nothing."
-                  .format(args.owner))
+        # proves it loaded. The view is org-wide, so an export holding orders
+        # for ANY office proves it loaded — a small office with no open orders
+        # is a real zero (same rule as 6+ Days Out). An empty export is not.
+        if not rows:
+            print("✗ export is EMPTY — can't tell a real zero from data that "
+                  "didn't load. Posting nothing.")
             return 1
         if args.post_to:
             print("  (none today — test mode posts nothing)")

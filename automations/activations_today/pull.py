@@ -81,11 +81,32 @@ def build_url(day: dt.date) -> str:
     return VIEW_URL_TMPL.format(start=start.isoformat(), end=day.isoformat())
 
 
+# Eve 2026-11-10: every office's Metrics thread gets this board, and the view is
+# org-wide, so one machine downloads it ONCE per morning and every office run
+# after that slices the same file. Older than this -> pull again (statuses move
+# during the day; a hand rerun in the afternoon should see them).
+CACHE_MAX_AGE_S = 3 * 3600
+
+
+def cache_path(day: dt.date) -> Path:
+    return Path(tempfile.gettempdir()) / "activations_today_orderlog_{}.csv".format(day)
+
+
 def fetch(day: dt.date, out_path: Optional[Path] = None,
           verbose: bool = True, page=None) -> Path:
+    import time
     from automations.shared.tableau_patchright import download_crosstab_patchright
-    out_path = out_path or (Path(tempfile.gettempdir())
-                            / "activations_today_orderlog.csv")
+    if out_path is None:
+        out_path = cache_path(day)
+        try:
+            age = time.time() - out_path.stat().st_mtime
+            if out_path.stat().st_size > 0 and age < CACHE_MAX_AGE_S and read_rows(out_path):
+                if verbose:
+                    print("  view: cached {} ({} min old)".format(out_path, int(age // 60)),
+                          flush=True)
+                return out_path
+        except OSError:
+            pass
     url = build_url(day)
     if verbose:
         print("  view: {}".format(url), flush=True)

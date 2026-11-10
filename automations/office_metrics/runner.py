@@ -259,6 +259,14 @@ def metrics_for(o: Office) -> list[dict]:
              env=({"HARVEST_MODE": "on", "HARVEST_VERBOSE": "1"}
                   if o.key in _HARVEST_ORDER_LOG_OFFICES else {}),
              dry_flag="--no-slack", post_flag=None),
+        # 📆 Activations Scheduled Today — today's installs by rep with the
+        # customer's phone, so reps call them the same day. Raf approved it
+        # 2026-11-10 for his thread; Eve the same day: every office. One
+        # org-wide ORDER LOG pull per machine per morning (cached in pull.fetch).
+        dict(slug="activations_today", label="📆 Activations Scheduled Today",
+             module="automations.activations_today.run",
+             owner_args=["--owner", o.owner], env={},
+             dry_flag=None, post_flag="--post-slack"),
         dict(slug="sales_6plus", label="📅 Sales Scheduled 6+ Days Out",
              module="automations.scheduled_6_days_out.run",
              owner_args=["--owner", o.owner], env={},
@@ -1208,6 +1216,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         default = [m for m in _full if m["slug"] in want]   # empty => posts nothing
     elif enrolled:
         enrolled_slugs = {OWNER_KEY_TO_SLUG.get(k, k) for k in enrolled}
+        # Boards added after an office enrolled ride along with the board they
+        # belong to — the enrollment list was "everything" on the day it was
+        # written. Activations Scheduled Today goes wherever the Order Log goes
+        # (Eve 2026-11-10: every office).
+        if "order_log" in enrolled_slugs:
+            enrolled_slugs.add("activations_today")
         default = [m for m in _full if m["slug"] in enrolled_slugs] or _full
     else:
         default = _full
