@@ -17399,7 +17399,7 @@
   "zaid_metrics": {
    "order": 36.989999999999995,
    "machine": "Lucy 4",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Zaid's Daily Metrics",
    "source_type": "tableau",
    "data_sources": [
