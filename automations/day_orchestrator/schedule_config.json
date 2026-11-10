@@ -8050,6 +8050,28 @@
    "verify": null,
    "report_id": "atef-nds-watch"
   },
+  "nds_activation_rate": {
+   "close_on": "exit_zero",
+   "on_scheduler": false,
+   "display_name": "NDS Activation Rate by rep (build)",
+   "_note": "BUILD (Eve 2026-11-10). Raf + Dylan Twaddle: per-rep NDS activation at 10-19 / 20-29 / 30-60 days for the 3 NDS captainships (Khalil, Colten, Jairo). One crosstab per captain from Eve's custom view NDSActivationbyRep (ChurnActivationRateRep with Owner Name expanded to Rep) filtered by NDS Captain Teams. Writes 'NDS Activation Log' + 'Activation Rate - <Captain> (NDS)' in the SANDBOX copy of the Captainship Metrics workbook unless --real. Off the scheduler until Eve says 'use the real Sheet'.",
+   "command": [
+    "automations.nds_activation_rate.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 30,
+   "verify": null,
+   "report_id": "nds-activation-rate"
+  },
   "nds_activation_rate_probe": {
    "close_on": "exit_zero",
    "on_scheduler": false,

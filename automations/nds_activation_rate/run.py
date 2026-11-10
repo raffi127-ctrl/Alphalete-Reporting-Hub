@@ -10,11 +10,14 @@ SOURCE
   ICD Rep Name / Non-BYOD or BYOD)
   https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/ChurnActivationRateRep
 
-Right now this module only PROBES: it writes nothing to any Sheet and posts
-nothing. It saves what Tableau hands back to output/nds_activation_rate/ and
-prints the shape, so the fill can be built against real column names.
+FILL (pull.py + sheet.py): one download per captainship from Eve's custom
+view "NDS Activation by Rep", logged to 'NDS Activation Log' and drawn as
+'Activation Rate - <Captain> (NDS)' tabs. SANDBOX workbook unless --real.
 
-  python -m automations.nds_activation_rate.run --probe
+  python -m automations.nds_activation_rate.run                # sandbox
+  python -m automations.nds_activation_rate.run --only khalil
+  python -m automations.nds_activation_rate.run --dry-run
+  python -m automations.nds_activation_rate.run --probe        # build probes
 """
 from __future__ import annotations
 
@@ -178,20 +181,82 @@ def find_rep() -> int:
     return 0
 
 
+CAPTAINS = (
+    # slug, short name (tab), full name (title), Tableau team
+    ("khalil", "Khalil", "Khalil Mansour", "Khalil's Team"),
+    ("colten", "Colten", "Colten Wright", "Colten's Team"),
+    ("jairo", "Jairo", "Jairo Ruiz", "Jairo's Team"),
+)
+
+
+def fill(args) -> int:
+    """Download each captainship from the custom view, log it, redraw its tab."""
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.nds_activation_rate import pull, sheet
+
+    day = (dt.date.fromisoformat(args.date) if args.date
+           else dt.datetime.now(TZ).date())
+    caps = [c for c in CAPTAINS if not args.only or c[0] in args.only]
+    where = "SANDBOX" if args.sandbox else "REAL"
+    print(f"NDS activation by rep — {day} — {where} workbook — "
+          f"{', '.join(c[1] for c in caps)}")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    pulled = {}
+    with tableau_session(verbose=False) as page:
+        for slug, short, _full, team in caps:
+            data = pull.download_team(page, team,
+                                      OUT_DIR / f"{slug}_{day.isoformat()}.csv")
+            n_reps = sum(1 for o in data["owners"].values()
+                         for v in o["reps"].values() if any(v.values()))
+            print(f"  {short}: {len(data['owners'])} owner(s), {n_reps} rep(s) "
+                  f"with a number; avg {data['avg']}")
+            for owner, o in data["owners"].items():
+                print(f"     {owner}: {o['total']}")
+            pulled[slug] = data
+
+    if args.dry_run:
+        print("\n(dry-run) nothing written.")
+        return 0
+
+    book = sheet.open_book(args.sandbox)
+    for slug, short, full, _team in caps:
+        data = pulled[slug]
+        print(f"\n--- {short} ---")
+        grid = sheet.write_log(book, day, short,
+                               sheet.log_rows(day, short, data))
+        rows, kinds, n_days = sheet.render(short, full, grid,
+                                           list(data["owners"]))
+        sheet.write_tab(book, short, rows, kinds, n_days)
+    print(f"\nDONE: {len(caps)} tab(s) written to the {where} workbook.")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--probe", action="store_true",
-                    help="download the view + print its shape; writes nothing")
+                    help="download the base view + print its shape; writes nothing")
     ap.add_argument("--find-rep", action="store_true",
-                    help="list every view of the workbook and flag the ones "
-                         "with activation per rep; writes nothing")
+                    help="list the workbook's views (build-stage probe)")
+    ap.add_argument("--sandbox", action="store_true",
+                    help="write the SANDBOX copy of the workbook (default while "
+                         "building: the real one needs Eve's 'use the real Sheet')")
+    ap.add_argument("--real", action="store_true",
+                    help="write the REAL workbook")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="download and print, write nothing")
+    ap.add_argument("--only", action="append", default=None,
+                    choices=[c[0] for c in CAPTAINS],
+                    help="one captain (repeatable)")
+    ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today, CT)")
     args = ap.parse_args(argv)
     if args.find_rep:
         return find_rep()
-    if not args.probe:
-        print("Only --probe exists yet (build stage). Nothing to fill.")
-        return 2
-    return probe()
+    if args.probe:
+        return probe()
+    if not args.real:
+        args.sandbox = True       # sandbox-first until Eve says "use the real Sheet"
+    return fill(args)
 
 
 if __name__ == "__main__":
