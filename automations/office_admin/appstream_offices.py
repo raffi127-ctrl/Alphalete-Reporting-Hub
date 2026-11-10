@@ -82,10 +82,39 @@ def _norm(name: str) -> str:
     return " ".join(re.sub(r"[^a-z ]", " ", (name or "").lower()).split())
 
 
-def for_owner(owner: str, offices: List[Dict]) -> List[Dict]:
-    """Accounts whose Owner Name is this ICD (case and punctuation ignored)."""
+def for_owner(owner: str, offices: List[Dict], aliases=None) -> List[Dict]:
+    """Accounts whose Owner Name is this ICD: exact, then first + last name,
+    then any name the team's ICD Aliases sheet gives for them ("Kash Rai" is
+    "Akashdeep Rai" in ApplicantStream)."""
+    hit = _for_name(owner, offices)
+    if hit:
+        return hit
+    try:
+        from automations.focus_office_att import aliases as AL
+        raw = aliases if aliases is not None else AL.load_aliases()
+        for name in AL.get_search_candidates(owner, raw):
+            hit = _for_name(name, offices)
+            if hit:
+                return hit
+    except Exception:  # noqa: BLE001 -- the sheet unreadable: no extra names
+        pass
+    return []
+
+
+def _for_name(owner: str, offices: List[Dict]) -> List[Dict]:
     want = _norm(owner)
-    return [o for o in offices if want and _norm(o["owner"]) == want]
+    if not want:
+        return []
+    exact = [o for o in offices if _norm(o["owner"]) == want]
+    if exact:
+        return exact
+    # Same first + last name, middle names ignored ("Trang Canavan" is
+    # "Trang Le Nguyen Canavan" in ApplicantStream).
+    w = want.split()
+    def fl(n):
+        p = _norm(n).split()
+        return (p[0], p[-1]) if p else None
+    return [o for o in offices if len(w) > 1 and fl(o["owner"]) == (w[0], w[-1])]
 
 
 def main(argv=None) -> int:
