@@ -125,6 +125,12 @@ NO_AD_ANSWERS = {
     # tab (11901, Total First Interviews): Keegan Blackerby. Camila: "it could,
     # they hopped off before introducing themselves".
     '2026-11-03|"melida"': "Sales Leadership Trainee, Frisco, TX",
+    # Colten, Eve 11/10: the sheet's "Sabrina Soria" typed "..., miami, fl" (no
+    # Miami copy of that ad). AppStream 14733, Total First Interviews 11/5
+    # 4:45 PM: the one Sabrina that day is "Sabrina Prada", ad "Bilingual Team
+    # Member - AT&T" -- same as Virgilio Capote and Jorge Luis Dominguez that
+    # day, both typed "? Homestead FL". So: the Homestead ad.
+    "2026-11-05|sabrina soria": "Bilingual Team Member - AT&T ? Homestead FL",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
