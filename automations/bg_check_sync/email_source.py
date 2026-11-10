@@ -135,15 +135,22 @@ _FORWARD_HEADERS = ("X-Forwarded-For", "X-Forwarded-To", "X-Original-To",
 def _forwarded_from(msg) -> str:
     """The ICD mailbox a result was forwarded through, lower-cased.
 
-    X-Forwarded-For is often "<from> <to>"; the LAST address is the mailbox
-    that did the forwarding.
+    Gmail writes `X-Forwarded-For: <the mailbox that forwarded> <where it went>`
+    — checked against real headers on 2026-11-09, where an ICD's results read
+    `aeonreception9@gmail.com lucysterlingreports@gmail.com`. So the FIRST
+    address is the office and the last is us; a chain of forwards stacks these
+    headers with the nearest hop on top, and the first address that is not our
+    own inbox is the one that sent it.
     """
     import re as _re
+    mine = {a.strip().lower()
+            for a in (_re.findall(r"[\w.+-]+@[\w.-]+", ACCOUNT or ""))}
     for header in _FORWARD_HEADERS:
         for raw in msg.get_all(header) or ():
-            found = _re.findall(r"[\w.+-]+@[\w.-]+", _decode(raw) or "")
-            if found:
-                return found[-1].strip().lower()
+            for found in _re.findall(r"[\w.+-]+@[\w.-]+", _decode(raw) or ""):
+                addr = found.strip().lower()
+                if addr and addr not in mine:
+                    return addr
     return ""
 
 

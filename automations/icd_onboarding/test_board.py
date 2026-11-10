@@ -202,12 +202,25 @@ def test_each_person_gets_a_checklist_not_a_run_on_line():
     assert "Blue Ink" not in text, "a done step is not on the list to tick"
 
 
-def test_the_html_gives_every_outstanding_step_its_own_box():
+def test_the_sheet_is_a_grid_with_a_column_for_every_step():
+    """Megan, 2026-11-09: the printed page mimics Raf's OBCL. That is a grid --
+    a row per person, a column per step -- so every step gets a head whether or
+    not anybody on the page still owes it."""
     rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS[:7]})]
     html = B.print_html(B.sheets(rows), week="Week of 11.02")
-    assert html.count("class='box'") == 2
-    assert "Owner Submit" in html and "Added to APEX" in html
+    for step in B.STEPS:
+        assert ">%s<" % B.SHORT.get(step, step) in html
     assert "Week of 11.02" in html
+
+
+def test_an_outstanding_step_leaves_an_empty_cell_to_tick():
+    """The leader is holding a pen. A step nobody has done has to print as an
+    enterable box, not as a cell with something already in it."""
+    rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS[:7]})]
+    html = B.print_html(B.sheets(rows))
+    body = html.split("<tbody>")[1]
+    assert body.count("<td class=''></td>") == 2      # the two still to do
+    assert body.count("class='on'>✓<") == 7
 
 
 def test_each_classroom_starts_a_new_sheet_of_paper():
@@ -222,7 +235,7 @@ def test_each_classroom_starts_a_new_sheet_of_paper():
 def test_somebody_finished_prints_with_no_boxes():
     rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS})]
     html = B.print_html(B.sheets(rows))
-    assert "class='box'" not in html
+    assert "<td class=''></td>" not in html
     assert "t-done'>done<" in html
 
 
@@ -247,8 +260,8 @@ def test_the_colour_is_never_the_only_thing_saying_it():
     rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS[:8]}),
             _row("Bruno Castell", "A")]
     html = B.print_html(B.sheets(rows))
-    assert "class='tag t-close'>close<" in html
-    assert "class='tag t-behind'>behind<" in html
+    assert "class='t-close'>8/9<" in html
+    assert "class='t-behind'>0/9<" in html
     text = B.print_text(B.sheets(rows))
     assert "[CLOSE]" in text and "[BEHIND]" in text
 

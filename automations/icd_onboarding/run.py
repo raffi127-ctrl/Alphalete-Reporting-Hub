@@ -222,21 +222,54 @@ def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     return out
 
 
+def offices_here() -> List[str]:
+    """The offices THIS machine is enrolled for.
+
+    So the hourly run takes no arguments on an ECO box: the machine already
+    knows whose logins it holds, and a key typed into a plist is a key that
+    goes stale the day an office is re-enrolled. An office running two
+    campaigns has one board, so the keys are de-duplicated by office.
+    """
+    try:
+        from automations.icd_alerts import config as AC
+        rows = AC.enrollments()
+    except Exception:          # noqa: BLE001 — not an ECO machine
+        return []
+    out = []
+    for r in rows:
+        key = str(r.get("office_key") or "").strip().lower()
+        # A second campaign's key hangs off the same office (jamis / jamis10);
+        # the board is the office's, so the first one wins.
+        base = key.split("-")[0]
+        if key and base not in out:
+            out.append(base)
+    return out
+
+
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description="Bring an onboarding board up to date.")
-    ap.add_argument("--office", action="append", default=[], required=True,
-                    help="office key; repeatable")
-    ap.add_argument("--week", default=None, help="YYYY-MM-DD in the week")
+    ap.add_argument("--office", action="append", default=[],
+                    help="office key; repeatable. Left out, this machine's own.")
+    ap.add_argument("--week", default=None,
+                    help="YYYY-MM-DD in the week (default: this week)")
     ap.add_argument("--only", action="append", default=[],
                     choices=[n for n, _ in STEPS],
                     help="just these steps; repeatable")
     ap.add_argument("--write", action="store_true",
                     help="actually write (default is a dry run)")
     a = ap.parse_args(argv)
+    # THE CURRENT WEEK, always (Megan, 2026-11-09: "OBCL should just always be
+    # active for that current week"). Monday-normalised by week_label, so an
+    # hourly run on a Thursday works the same board it worked on Monday.
     week = dt.date.fromisoformat(a.week) if a.week else dt.date.today()
+    offices = a.office or offices_here()
+    if not offices:
+        print("no office to run: pass --office, or run this on a machine that "
+              "is enrolled for one.")
+        return 1
     bad = 0
-    for office in a.office:
+    for office in offices:
         got = for_office(office, week, dry_run=not a.write, only=a.only)
         bad += sum(1 for v in got.values() if isinstance(v, str))
         print()

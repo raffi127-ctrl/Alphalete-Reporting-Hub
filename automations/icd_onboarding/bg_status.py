@@ -53,6 +53,21 @@ INBOX = os.environ.get("ICD_STERLING_INBOX", "lucysterlingreports@gmail.com")
 DONE_STATUSES = ("Passed", "Failed", "Unperformable", "Complete")
 
 
+# The app password for that inbox, already installed and named by the Sterling
+# install (`set_lucysterling_app_password`). ITS OWN FILE, not raffi127's: the
+# reader defaults to the main reporting account, so pointing only the ADDRESS
+# at this inbox authenticates the wrong mailbox's password against it and
+# Gmail answers "Invalid credentials" — which reads like a dead inbox rather
+# than the wiring mistake it is.
+APP_PW_PATH = os.environ.get("ICD_STERLING_APPPW_PATH", "")
+
+
+def _creds() -> Dict[str, str]:
+    from automations.icd_alerts import code_answer as CA
+    return {"BGSYNC_IMAP_ACCOUNT": INBOX,
+            "BGSYNC_IMAP_APPPW_PATH": APP_PW_PATH or str(CA.RESULTS_APP_PW)}
+
+
 def events(since_days: int = 30, verbose: bool = True) -> List:
     """Parsed Sterling events from the ICDs' inbox.
 
@@ -61,17 +76,18 @@ def events(since_days: int = 30, verbose: bool = True) -> List:
     """
     from automations.bg_check_sync import email_source
 
-    before = os.environ.get("BGSYNC_IMAP_ACCOUNT")
-    os.environ["BGSYNC_IMAP_ACCOUNT"] = INBOX
+    before = {k: os.environ.get(k) for k in _creds()}
+    os.environ.update(_creds())
     try:
         import importlib
         importlib.reload(email_source)
         return email_source.fetch_events(since_days=since_days, verbose=verbose)
     finally:
-        if before is None:
-            os.environ.pop("BGSYNC_IMAP_ACCOUNT", None)
-        else:
-            os.environ["BGSYNC_IMAP_ACCOUNT"] = before
+        for k, v in before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def _name_of(ev) -> str:
@@ -96,10 +112,11 @@ def office_by_address(book=None) -> Dict[str, str]:
     out: Dict[str, str] = {}
     try:
         if book is None:
+            # The relay workbook, where code_answer files every address an
+            # office sends home. Named here the same way code_answer names it.
+            from automations.icd_alerts import post as P
             from automations.recruiting_report.fill import open_by_key
-            book = open_by_key(CA.BOOK_ID) if hasattr(CA, "BOOK_ID") else None
-        if book is None:
-            return out
+            book = open_by_key(P.RELAY_SPREADSHEET_ID)
         tab = CA.SERVICES[CA.STERLING_RESULTS]["tab"]
         ws = book.worksheet(tab)
         grid = ws.get_all_values()
@@ -204,6 +221,13 @@ def run(week_start: Optional[dt.date] = None, *, offices: Sequence[str] = (),
     total = 0
     for office, people in routed.items():
         log("  %s: %d check(s) with a status" % (office, len(people)))
+        if office not in books:
+            # The address says whose it is, but that office has no board for
+            # this week. Said out loud rather than dropped: a result nobody
+            # can file is exactly the thing this report exists to surface.
+            log("    held — %s has no board for this week (%s)"
+                % (office, ", ".join(sorted(people))))
+            continue
         total += F.apply(books[office], week, "sterling",
                          {n: {"BG Status": s} for n, s in people.items()},
                          dry_run=dry_run, log=log)

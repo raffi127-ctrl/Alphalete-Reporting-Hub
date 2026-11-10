@@ -14758,6 +14758,28 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "install_icd_onboarding_agent": {
+   "on_scheduler": false,
+   "machine": "",
+   "_off_scheduler_note": "Installs com.alphalete.icd-onboarding on an ICD'S OWN ECO MACHINE (hourly 06:00-20:00 machine-local, every day, deploy/icd_onboarding.sh; Megan 2026-11-09: 'OBCL should just always be active for that current week - updating every hour 6am-8pm'). Seeds the week off the office's training calendar, then lets OwnerVille / Blue Ink / the forwarded Sterling results tick what they have earned on that office's Onboarding tab. Takes NO office argument: the machine's own enrollment names it, so the same plist is right on every box -- pass --machine when queueing it. MODE knob in the wrapper: 'write' (LIVE). Sends nothing.",
+   "display_name": "Install ICD onboarding board agent (hourly 6am-8pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "icd-onboarding"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "colten_metrics": {
    "order": 26.5,
    "machine": "Lucy 4",

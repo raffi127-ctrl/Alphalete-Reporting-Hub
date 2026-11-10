@@ -24,6 +24,12 @@
   const STEPS = ['Contact Added', 'BG Status', 'Digi Docs', 'Onboarding Quizzes',
                  'Blue Ink', 'Headshot Photo', 'UID Request', 'Owner Submit',
                  'Added to APEX'];
+  // What each step is CALLED on screen. The key is the sheet's column, which
+  // every tick is looked up by; the label is what a person reads. Spelled out,
+  // never abbreviated (Megan, 2026-11-09). Same wording as the printed sheet,
+  // so the panel and the paper in the leader's hand say the same thing.
+  const LABEL = {'UID Request': 'UID Requested', 'Added to APEX': 'Added to Apex'};
+  const label = s => LABEL[s] || s;
   const UNASSIGNED = 'No classroom yet';
 
   const who = p => ((p['Name'] || '') + ' ' + (p['Last Name'] || '')).trim();
@@ -106,7 +112,7 @@
           '</span></div>' +
           '<div class="bd-steps">' + STEPS.map(s =>
             '<span class="bd-step' + (String(p[s] || '').trim() ? ' bd-ok' : '') +
-            '" title="' + esc(s) + '">' + esc(s) + '</span>').join('') + '</div>' +
+            '" title="' + esc(label(s)) + '">' + esc(label(s)) + '</span>').join('') + '</div>' +
           '<div class="bd-acts">' +
           '<input class="bd-cls" data-who="' + esc(name) + '" placeholder="classroom" value="' +
           esc(p['Classroom'] || '') + '">' +

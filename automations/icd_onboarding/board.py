@@ -278,6 +278,11 @@ def sheets(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
             "done": len(STEPS) - len(left),
             "total": len(STEPS),
             "terminated": bool(str(r.get(TERMINATED_AT) or "").strip()),
+            # Every step, not only the outstanding ones. The printed sheet is a
+            # GRID like the OBCL it came from, so it needs the full row -- a
+            # leader reading down a column wants to see the ticks as well as
+            # the gaps.
+            "steps": {c: str(r.get(c) or "").strip() for c in STEPS},
         })
     named = sorted(k for k in out if k != UNASSIGNED)
     order = named + ([UNASSIGNED] if UNASSIGNED in out else [])
@@ -338,42 +343,80 @@ def band_of(person: Dict) -> str:
     return "behind"
 
 
+# How a step's cell reads on the grid. The OBCL carries dates and words in
+# these cells, not just a tick -- "Passed" in BG Status is the thing somebody
+# wants to see -- so a short value is printed as-is and a date becomes a tick.
+def cell_text(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    dated = len(text) == 10 and text[2] == "/" and text[5] == "/"
+    return "✓" if dated or text.upper() == "TRUE" else text
+
+
+# How each step is HEADED on the printed sheet and in the panel. Spelled out,
+# never abbreviated (Megan, 2026-11-09: "we need it to say 'contact added / BG
+# status / UID requested / Added to Apex'") -- the leader reading down a column
+# has to know what they are ticking, and "UID" or "APEX" on its own does not
+# say it. The column NAMES on the sheet stay as the OBCL writes them, because
+# they are what every tick is looked up by; this is only what gets printed.
+SHORT = {
+    "Contact Added": "Contact Added",
+    "BG Status": "BG Status",
+    "Digi Docs": "Digi Docs",
+    "Onboarding Quizzes": "Onboarding Quizzes",
+    "Blue Ink": "Blue Ink",
+    "Headshot Photo": "Headshot Photo",
+    "UID Request": "UID Requested",
+    "Owner Submit": "Owner Submit",
+    "Added to APEX": "Added to Apex",
+}
+
 PRINT_CSS = """
- @page { margin: 14mm; }
- body { font: 12pt/1.45 -apple-system, Helvetica, Arial, sans-serif; color: #111; }
+ @page { margin: 10mm; size: landscape; }
+ body { font: 10pt/1.3 -apple-system, Helvetica, Arial, sans-serif; color: #111; }
  .sheet { page-break-after: always; }
  .sheet:last-child { page-break-after: auto; }
- h1 { font-size: 20pt; margin: 0 0 2pt; }
- .sub { color: #555; font-size: 10pt; margin-bottom: 14pt; }
- .who { margin: 0 0 12pt; page-break-inside: avoid; }
- .nm { font-weight: 700; font-size: 13pt; }
- .cnt { color: #666; font-weight: 400; font-size: 10pt; }
- ul { list-style: none; margin: 4pt 0 0; padding-left: 4pt; }
- li { padding: 2.5pt 0; }
- .box { display: inline-block; width: 11pt; height: 11pt; border: 1.2pt solid #333;
-        margin-right: 8pt; vertical-align: -1pt; border-radius: 2pt; }
- .done { color: #1e6b34; font-weight: 600; }
- /* The bands. A wash behind the name rather than coloured text, so it still
-    reads when somebody prints it in black and white. */
- .who { border-left: 4pt solid #ccc; padding: 4pt 0 4pt 8pt; }
- .b-done   { border-left-color: #1e6b34; background: #E6F4EA; }
- .b-close  { border-left-color: #7a5a00; background: #FFF6DB; }
- .b-behind { border-left-color: #8a1c13; background: #FDECEA; }
- .tag { font-size: 9pt; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .04em; margin-left: 6pt; }
+ h1 { font-size: 18pt; margin: 0 0 2pt; }
+ .sub { color: #555; font-size: 9.5pt; margin-bottom: 9pt; }
+ table { border-collapse: collapse; width: 100%; }
+ th, td { border: 0.8pt solid #999; padding: 4pt 5pt; }
+ thead th { background: #0f5c4d; color: #fff; font-size: 8.5pt; font-weight: 700;
+            text-align: center; line-height: 1.15; vertical-align: bottom; }
+ thead th.nm { text-align: left; width: 22%; }
+ tbody td { height: 20pt; text-align: center; font-size: 10pt; }
+ tbody td.nm { text-align: left; font-weight: 600; white-space: nowrap; }
+ tbody tr:nth-child(even) td { background: #FAFAFA; }
+ /* A ticked cell is washed green and a blank one is left empty to be ticked by
+    hand -- the leader is holding a pen, so the box has to be enterable. */
+ td.on { background: #E6F4EA !important; color: #1e6b34; font-weight: 700; }
+ td.val { font-size: 8.5pt; font-weight: 600; }
+ /* How far along somebody is, read off the name cell: it still says it in a
+    word, so the sheet works out of a black-and-white printer. */
+ td.nm span { font-weight: 400; font-size: 8pt; letter-spacing: .04em;
+              text-transform: uppercase; margin-left: 5pt; }
+ .b-done   td.nm { border-left: 4pt solid #1e6b34; }
+ .b-close  td.nm { border-left: 4pt solid #7a5a00; }
+ .b-behind td.nm { border-left: 4pt solid #8a1c13; }
  .t-done { color: #1e6b34; } .t-close { color: #7a5a00; } .t-behind { color: #8a1c13; }
- .key { font-size: 9pt; color: #555; margin-bottom: 10pt; }
- .key span { margin-right: 12pt; }
+ .key { font-size: 8.5pt; color: #555; margin: 8pt 0 0; }
+ .key span { margin-right: 14pt; }
  .sw { display: inline-block; width: 9pt; height: 9pt; border-radius: 2pt;
        vertical-align: -1pt; margin-right: 4pt; }
 """
 
 
 def print_html(pages: List[Dict], *, week: str = "") -> str:
-    """One printable page per classroom, each step a box to tick.
+    """One printable page per classroom, laid out like the OBCL it came from.
 
-    Self-contained: the panel opens it and the ICD presses print. One classroom
-    per sheet of paper is the whole request, so the page break is not styling.
+    Megan, 2026-11-09: *"I want it to mimic Raf's OBCL in look — that should be
+    what a printed page the leader that's running the classroom gets to do a
+    checklist."* So it is a GRID: a row per person, a column per step, ticks in
+    the cells and blanks left open to be filled in by hand. The OBCL is the
+    thing leaders already read; a sheet shaped like it needs no explaining.
+
+    Landscape, because nine step columns beside a name do not fit down a
+    portrait page at a size anybody can read across a classroom.
     """
     def esc(t):
         return (str(t).replace("&", "&amp;").replace("<", "&lt;")
@@ -386,27 +429,32 @@ def print_html(pages: List[Dict], *, week: str = "") -> str:
         parts.append("<div class='sheet'>")
         parts.append("<h1>%s</h1>" % esc(p["classroom"]))
         bits = [esc(week)] if week else []
+        bits.append("%d people" % len(p["people"]))
         bits.append("%d still to do" % p["outstanding"] if p["outstanding"]
                     else "everything done")
         parts.append("<div class='sub'>%s</div>" % " · ".join(bits))
-        parts.append(
-            "<div class='key'>"
-            "<span><i class='sw' style='background:#E6F4EA;border:1pt solid #1e6b34'></i>done</span>"
-            "<span><i class='sw' style='background:#FFF6DB;border:1pt solid #7a5a00'></i>close — 1-2 left</span>"
-            "<span><i class='sw' style='background:#FDECEA;border:1pt solid #8a1c13'></i>behind — 3+</span>"
-            "</div>")
+        parts.append("<table><thead><tr><th class='nm'>Name</th>")
+        parts.extend("<th>%s</th>" % esc(SHORT.get(c, c)) for c in STEPS)
+        parts.append("</tr></thead><tbody>")
         for who in p["people"]:
             band = band_of(who)
-            parts.append("<div class='who b-%s'><div class='nm'>%s" % (band, esc(who["name"])))
-            if who["remaining"]:
-                parts.append(" <span class='cnt'>%d of %d done</span>"
-                             "<span class='tag t-%s'>%s</span></div>"
-                             % (who["done"], who["total"], band, band))
-                parts.append("<ul>")
-                parts.extend("<li><span class='box'></span>%s</li>" % esc(s)
-                             for s in who["remaining"])
-                parts.append("</ul></div>")
-            else:
-                parts.append(" <span class='tag t-done'>done</span></div></div>")
+            parts.append("<tr class='b-%s'>" % band)
+            parts.append("<td class='nm'>%s<span class='t-%s'>%s</span></td>"
+                         % (esc(who["name"]), band,
+                            "done" if band == "done"
+                            else "%d/%d" % (who["done"], who["total"])))
+            for c in STEPS:
+                text = cell_text((who.get("steps") or {}).get(c, ""))
+                klass = "on" if text == "✓" else ("on val" if text else "")
+                parts.append("<td class='%s'>%s</td>" % (klass, esc(text)))
+            parts.append("</tr>")
+        parts.append("</tbody></table>")
+        parts.append(
+            "<div class='key'>"
+            "<span><i class='sw' style='background:#1e6b34'></i>done</span>"
+            "<span><i class='sw' style='background:#7a5a00'></i>close — 1-2 left</span>"
+            "<span><i class='sw' style='background:#8a1c13'></i>behind — 3+</span>"
+            "<span>A blank cell is one to tick off here.</span>"
+            "</div>")
         parts.append("</div>")
     return "\n".join(parts)
