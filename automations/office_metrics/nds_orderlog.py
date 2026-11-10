@@ -145,28 +145,12 @@ def load(path: Path, owner: str) -> tuple[list[str], list[list[str]]]:
     header = rows[0]
     idx = {_norm_h(h): i for i, h in enumerate(header)}
     owner_col = next((idx[k] for k in idx if k.startswith("owner")), 0)
-    want = _norm_owner(owner)
-    # THE ALIAS SHEET DECIDES SPELLING, here like everywhere else. Tableau's
-    # 'Owner & Office' carries the owner's full legal name: 'JUAN IGNACIO LUCIO
-    # [lucio marketing, inc.]' for the office we call Juan Lucio, 'ZAID ARABYAT'
-    # for Zaid Arabiyat (2026-11-09: both dry runs read 0 orders against 2,584
-    # and 698 real rows). A literal match was the per-report patch the alias
-    # rule forbids; resolve each crosstab owner through the ICD Aliases first.
-    accept = {want}
-    try:
-        from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
-        raw = load_aliases()
-        canon = _norm_owner(alias_to_canonical(owner, raw))
-        accept.add(canon)
-        for a in raw.get(alias_to_canonical(owner, raw), []) or []:
-            accept.add(_norm_owner(a))
-        for c, als in raw.items():
-            if _norm_owner(c) in accept:
-                accept.update(_norm_owner(a) for a in als)
-    except Exception:  # noqa: BLE001 -- the alias sheet unreadable: literal match, as before
-        pass
+    # THE ALIAS SHEET DECIDES SPELLING (owner_match): Tableau's 'Owner &
+    # Office' says 'JUAN IGNACIO LUCIO [lucio marketing, inc.]' for Juan Lucio.
+    from automations.office_metrics.owner_match import accepted_spellings, is_owner
+    accept = accepted_spellings(owner)
     mine = [r for r in rows[1:]
-            if len(r) > owner_col and _norm_owner(r[owner_col]) in accept]
+            if len(r) > owner_col and is_owner(r[owner_col], accept)]
     return header, mine
 
 

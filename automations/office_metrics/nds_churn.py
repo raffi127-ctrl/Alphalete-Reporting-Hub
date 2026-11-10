@@ -91,9 +91,11 @@ def _parse(csv_path: Path) -> dict:
     Owner/Rep are merged (blank on repeat) → forward-fill. The view's own average
     row is a GRAND total across all owners, so we skip it and recompute this
     office's total from its reps (same as the D2D slice path)."""
-    from automations.alphalete_org_report.opt_nds import _norm_owner
     from automations.new_internet_churn.pull import _recompute_office_total
-    want = _norm_owner(_SLICE_OWNER) if _SLICE_OWNER else ""
+    from automations.office_metrics.owner_match import accepted_spellings, is_owner
+    # The slice accepts every spelling the alias sheet knows for the owner:
+    # the churn view says 'ZAID ARABYAT' for Zaid Arabiyat (2026-11-09).
+    want = accepted_spellings(_SLICE_OWNER) if _SLICE_OWNER else set()
     rows = _decode(csv_path)
     owner = rep = ""
     reps: dict = {}
@@ -104,7 +106,7 @@ def _parse(csv_path: Path) -> dict:
         rep = (r[1] or "").strip() or rep
         if "average" in owner.lower() or "average" in rep.lower():
             continue                                  # grand-total row — skip
-        if want and _norm_owner(owner) != want:
+        if want and not is_owner(owner, want):
             continue                                  # slice: this owner only
         color = (r[2] or "").strip()
         metric = (r[3] or "").strip()
