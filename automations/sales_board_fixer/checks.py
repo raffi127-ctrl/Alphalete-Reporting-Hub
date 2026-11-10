@@ -66,6 +66,7 @@ KIND_LABEL = {
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "cf_row_shift": "color de estado que pinta la fila de al lado, no la del rep",
+    "cf_week_tag": "color de Wk 2 / Wk 3 que no pinta: la regla busca '(Wk 2)' y acá escriben 'Wk2'",
     "day_stats_formula": "fila de resumen del día (en el campo / en el board) con otra fórmula que los demás días",
     "day_formula_differs": "un día con otra fórmula que los demás días en la misma fila",
     "status_word": "la fórmula busca un estado que no existe en Field Status (nunca se cumple)",
@@ -1429,6 +1430,61 @@ def _row_shifts(tab, sheet_id, rules, first, dead) -> List[Finding]:
             "cf_row_shift", tab, "regla %d" % i,
             "%s: %s en %s" % (KIND_LABEL["cf_row_shift"], text, _ranges_a1(rule)),
             before=text, after=fixed,
+            request={"updateConditionalFormatRule":
+                     {"sheetId": sheet_id, "index": i, "rule": new}}))
+    return out
+
+
+# '(Wk 2)' as a "text contains" color, the way Raf's Line Up / Stations paint
+# week-2/3 reps. Cody (2026-11-10) writes 'Jay Hernandez Wk2': no brackets, no
+# space, so the copied rule never fired. Raf: "not making WK2's yellow".
+WEEK_TAG = re.compile(r"^\(\s*wk\s*(\d)\s*\)$", re.I)
+
+
+def week_tag_loose(n: str) -> re.Pattern:
+    return re.compile(r"\bwk ?%s\b" % n, re.I)
+
+
+def week_tag_formula(anchor: str, n: str) -> str:
+    """Catches '(Wk 2)', 'Wk2', 'wk 2', 'Wk2 (NC)' -- not 'Wk 20'."""
+    return '=REGEXMATCH(TO_TEXT(%s),"(?i)\\bwk ?%s\\b")' % (anchor, n)
+
+
+def check_week_tags(tab: str, sheet_id: int, rules: List[dict], values) -> List[Finding]:
+    """A '(Wk N)' text-contains rule over cells where the tag is spelled another
+    way: the rule turns into a formula that takes both spellings. Only when the
+    tab really has a name it misses -- a board that writes '(Wk 2)' is left as is."""
+    out = []
+    for i, rule in enumerate(rules):
+        cond = (rule.get("booleanRule") or {}).get("condition") or {}
+        vals = cond.get("values") or []
+        if cond.get("type") != "TEXT_CONTAINS" or len(vals) != 1:
+            continue
+        m = WEEK_TAG.match(str(vals[0].get("userEnteredValue", "")).strip())
+        ranges = rule.get("ranges") or []
+        if not m or not ranges:
+            continue
+        n, strict = m.group(1), vals[0]["userEnteredValue"].lower()
+        loose = week_tag_loose(n)
+        missed = []
+        for rg in ranges:
+            for r in range(rg.get("startRowIndex", 0) + 1, rg.get("endRowIndex", 0) + 1):
+                for c in range(rg.get("startColumnIndex", 0) + 1, rg.get("endColumnIndex", 0) + 1):
+                    cell = _g(values, r, c)
+                    if loose.search(cell) and strict not in cell.lower():
+                        missed.append(cell.strip())
+        if not missed:
+            continue
+        anchor = "%s%d" % (col_letter(ranges[0].get("startColumnIndex", 0) + 1),
+                           ranges[0].get("startRowIndex", 0) + 1)
+        text = week_tag_formula(anchor, n)
+        new = dict(rule)
+        new["booleanRule"] = dict(rule["booleanRule"], condition={
+            "type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": text}]})
+        out.append(Finding(
+            "cf_week_tag", tab, "regla %d" % i,
+            "%s (%s)" % (KIND_LABEL["cf_week_tag"], ", ".join(sorted(set(missed))[:5])),
+            before=_rule_text(rule), after=text,
             request={"updateConditionalFormatRule":
                      {"sheetId": sheet_id, "index": i, "rule": new}}))
     return out

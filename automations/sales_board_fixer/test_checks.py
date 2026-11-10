@@ -647,3 +647,38 @@ class StatusWords(unittest.TestCase):
         found = K.check_status_words("t", v, f)
         self.assertEqual([(x.where, x.value) for x in found],
                          [("D7", '=COUNTIFS(D4:D6,"<>1st Wk",$D4:$D6,"<>RT")')])
+
+
+class WeekTags(unittest.TestCase):
+    """Cody 2026-11-10: names say 'Jay Hernandez Wk2', the rule looks for '(Wk 2)'."""
+
+    @staticmethod
+    def rule(text):
+        return {"ranges": [{"startRowIndex": 3, "endRowIndex": 6,
+                            "startColumnIndex": 1, "endColumnIndex": 4}],
+                "booleanRule": {"condition": {"type": "TEXT_CONTAINS",
+                                              "values": [{"userEnteredValue": text}]},
+                                "format": {"backgroundColor": {"red": 1}}}}
+
+    def grid(self, name):
+        return [[""] * 5 for _ in range(3)] + [["1", "Ann", name, "", ""]] + [[""] * 5] * 2
+
+    def test_wk2_without_brackets_gets_a_formula(self):
+        found = K.check_week_tags("Line Up", 7, [self.rule("(Wk 2)")], self.grid("Jay Hernandez Wk2"))
+        self.assertEqual(len(found), 1)
+        cond = found[0].request["updateConditionalFormatRule"]["rule"]["booleanRule"]["condition"]
+        self.assertEqual(cond["values"][0]["userEnteredValue"],
+                         r'=REGEXMATCH(TO_TEXT(B4),"(?i)\bwk ?2\b")')
+        self.assertIn("Jay Hernandez Wk2", found[0].detail)
+
+    def test_board_that_writes_brackets_is_left_alone(self):
+        self.assertEqual(K.check_week_tags("Line Up", 7, [self.rule("(Wk 2)")],
+                                           self.grid("Jay (Wk 2)")), [])
+
+    def test_week_20_is_not_week_2(self):
+        self.assertEqual(K.check_week_tags("Line Up", 7, [self.rule("(Wk 2)")],
+                                           self.grid("Bo Wk 20")), [])
+
+    def test_other_text_rules_untouched(self):
+        self.assertEqual(K.check_week_tags("Line Up", 7, [self.rule("Yes")],
+                                           self.grid("Jay Hernandez Wk2")), [])

@@ -325,6 +325,8 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
     else:
         found = K.check_errors(title, v, f)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
+        if owner:   # Line Up / Stations of an owner: Wk2 written their own way
+            found += K.check_week_tags(title, t["sheet_id"], t["rules"], v)
         if t.get("boards"):
             found += K.check_lineup_names(title, f, t["boards"], t.get("home"),
                                           keep=t.get("run_boards", ()))
@@ -887,7 +889,7 @@ def lane_tabs(sh, only_for=None) -> list:
 # past the cap, which would have stopped every fix on her board.
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate", "cf_self",
-               "cf_strike_stray", "cf_row_shift", "day_stats_formula", "lineup_short", "lineup_old_week",
+               "cf_strike_stray", "cf_row_shift", "cf_week_tag", "day_stats_formula", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
                "date_wrong",
                "dropdown_missing",
