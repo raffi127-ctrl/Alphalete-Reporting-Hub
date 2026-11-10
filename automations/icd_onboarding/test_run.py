@@ -241,3 +241,61 @@ def test_a_machine_that_is_not_routed_runs_everything(monkeypatch):
 def test_the_env_var_wins(monkeypatch):
     monkeypatch.setenv("ICD_ONBOARDING_STEPS", "seed, blueink")
     assert R.steps_here() == ("seed", "blueink")
+
+
+# ------------------------------------- the box has to KNOW which box it is
+
+def test_a_lucy_with_no_marker_is_still_recognised_by_hostname(monkeypatch):
+    """The bug this exists to stop: `machine_name()` falls back to the
+    hostname when the `.machine-profile` marker is missing, that misses both
+    routing tables, and the box quietly runs EVERY step instead of its own
+    two -- reading nothing and ticking nothing on four of them, which looks
+    exactly like a quiet day."""
+    monkeypatch.delenv("ICD_ONBOARDING_STEPS", raising=False)
+    monkeypatch.delenv("ICD_ONBOARDING_OFFICES", raising=False)
+    from automations.shared import hub_identity as HI
+    monkeypatch.setattr(HI, "machine_name", lambda: "Lucys-Mac-mini.local")
+    assert R.this_machine() == "Lucy 3"
+    assert R.steps_here() == R.STEPS_BY_MACHINE["Lucy 3"]
+
+
+def test_the_lucy_hostnames_are_not_guessed_from_the_word_lucy(monkeypatch):
+    """`Lucys-Mac-mini.local` is Lucy 3 and `Lucys-MacBook-Neo` is Lucy 2;
+    `Lucys-Mac-mini-2.local` is Lucy 4, not Lucy 2."""
+    from automations.shared import hub_identity as HI
+    for host, want in (("Alphaletes-Mac-mini.local", "Lucy 1"),
+                       ("Lucys-MacBook-Neo.local", "Lucy 2"),
+                       ("Lucys-Mac-mini.local", "Lucy 3"),
+                       ("Lucys-Mac-mini-2.local", "Lucy 4")):
+        monkeypatch.setattr(HI, "machine_name", lambda h=host: h)
+        assert R.this_machine() == want, host
+
+
+def test_the_marker_still_wins_when_it_is_there(monkeypatch):
+    from automations.shared import hub_identity as HI
+    monkeypatch.setattr(HI, "machine_name", lambda: "Lucy 2")
+    assert R.this_machine() == "Lucy 2"
+
+
+def test_an_unknown_machine_is_not_quietly_called_a_lucy(monkeypatch):
+    """`mini_control._machine_profile()` defaults to "Lucy 1"; doing that here
+    would have an ICD's own computer running Alphalete's split -- four steps
+    it has no logins for, and none of its own."""
+    monkeypatch.delenv("ICD_ONBOARDING_STEPS", raising=False)
+    from automations.shared import hub_identity as HI
+    monkeypatch.setattr(HI, "machine_name", lambda: "Some-Office-iMac.local")
+    assert R.this_machine() not in R.STEPS_BY_MACHINE
+    assert R.steps_here() == ()
+
+
+def test_identity_failing_outright_runs_everything(monkeypatch):
+    """A box that cannot name itself is treated as an ICD box, not as a Lucy
+    with somebody else's steps."""
+    monkeypatch.delenv("ICD_ONBOARDING_STEPS", raising=False)
+    from automations.shared import hub_identity as HI
+
+    def boom():
+        raise OSError("no")
+    monkeypatch.setattr(HI, "machine_name", boom)
+    assert R.this_machine() == ""
+    assert R.steps_here() == ()

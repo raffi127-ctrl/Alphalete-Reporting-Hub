@@ -419,6 +419,45 @@ OFFICES_FILE = (pathlib.Path.home() / ".config" / "recruiting-report"
                 / "icd-onboarding-offices")
 
 
+def this_machine() -> str:
+    """Which box this is, for the routing tables above. "" when unknown.
+
+    `hub_identity.machine_name()` reads the gitignored `.machine-profile`
+    marker and otherwise falls back to the HOSTNAME -- so on a Lucy whose
+    marker is missing it answers "Lucys-Mac-mini.local", that misses both
+    tables, and the box silently runs EVERY step instead of its own two. The
+    failure is invisible: a step on the wrong box reads nothing and ticks
+    nothing, which looks exactly like a quiet day.
+
+    So an unrecognised answer is tried against `fleet.HOSTNAMES`, the curated
+    hostname list (four nearly-identical names -- `Lucys-Mac-mini.local` is
+    Lucy 3 and `Lucys-MacBook-Neo` is Lucy 2, so nothing here guesses from the
+    word "lucy").
+
+    UNKNOWN STAYS UNKNOWN. An ICD's own computer is deliberately in neither
+    table and must run every step, so this never falls back to a Lucy's name
+    the way `mini_control._machine_profile()` does -- that would have an
+    office's machine running Alphalete's split.
+    """
+    try:
+        from automations.shared import hub_identity as HI
+        said = (HI.machine_name() or "").strip()
+    except Exception:          # noqa: BLE001 — identity is never fatal here
+        return ""
+    if said in STEPS_BY_MACHINE or said in OFFICES_BY_MACHINE:
+        return said
+    try:
+        from automations.shared import fleet
+    except Exception:          # noqa: BLE001
+        return said
+    low = said.lower().removesuffix(".local")
+    for name, hosts in fleet.HOSTNAMES.items():
+        for h in hosts:
+            if low == h.lower().removesuffix(".local"):
+                return name
+    return said
+
+
 def offices_here() -> List[str]:
     """The offices THIS machine should work.
 
@@ -432,11 +471,7 @@ def offices_here() -> List[str]:
     import os
     named = os.environ.get("ICD_ONBOARDING_OFFICES", "")
     if not named:
-        try:
-            from automations.shared import hub_identity as HI
-            routed = OFFICES_BY_MACHINE.get(HI.machine_name())
-        except Exception:      # noqa: BLE001 — identity is never fatal here
-            routed = None
+        routed = OFFICES_BY_MACHINE.get(this_machine())
         if routed:
             return list(routed)
     if not named and OFFICES_FILE.exists():
@@ -478,11 +513,7 @@ def steps_here() -> Sequence[str]:
     named = os.environ.get("ICD_ONBOARDING_STEPS", "")
     if named:
         return tuple(x.strip() for x in named.replace(",", " ").split() if x.strip())
-    try:
-        from automations.shared import hub_identity as HI
-        return tuple(STEPS_BY_MACHINE.get(HI.machine_name()) or ())
-    except Exception:          # noqa: BLE001 — identity is never fatal here
-        return ()
+    return tuple(STEPS_BY_MACHINE.get(this_machine()) or ())
 
 
 def main(argv=None) -> int:
@@ -512,11 +543,7 @@ def main(argv=None) -> int:
     # the machine holding its data, and a step on the wrong box reads nothing
     # rather than failing -- so a log that does not name the split cannot be
     # told apart from a quiet day.
-    try:
-        from automations.shared import hub_identity as _HI
-        _me = _HI.machine_name()
-    except Exception:          # noqa: BLE001
-        _me = "this machine"
+    _me = this_machine() or "this machine"
     print("%s · %s · steps: %s"
           % (_me, ", ".join(offices), ", ".join(only) if only else "all"))
 
