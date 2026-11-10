@@ -3663,6 +3663,23 @@
    "depends_on": [],
    "verify": null
   },
+  "probe_appstream_office": {
+   "_note": "READ-ONLY probe (2026-11-09): logs into AppStream like the Focus fill (rcaptain profile) and reports, per office id, the switcher dropdown, the account's office list, whether the switch lands, and what the Retention Report returns for the week. Writes nothing. Built for Nigel Marshall's 23515, which the Focus refill skipped silently twice. Pinned to Lucy 1 on purpose: the fill runs there, and the question is what THAT login sees.",
+   "machine": "Lucy 1",
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "display_name": "Probe one AppStream office (read-only)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": ["automations.recruiting_report.probe_office"],
+   "base_args": ["20034", "23515", "--week-start", "2026-11-01"],
+   "cadence": {"weekdays": []},
+   "timeout_minutes": 20,
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
   "probe_quantum_views": {
    "on_scheduler": true,
    "hand_run_only": true,
