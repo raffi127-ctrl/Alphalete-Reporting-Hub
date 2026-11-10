@@ -201,6 +201,28 @@ def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],
     return list(targets.values())
 
 
+def pick_done_unmarked(header: Sequence[str], rows: Sequence[Sequence[str]],
+                       sent_state: Dict[str, dict]) -> List[Dict]:
+    """Lines that will never get the text (status in DONE_STATES) and whose
+    column S is still blank: they get "No", so the column reads complete --
+    Yes = texted, No = never texted (the line was already active / gone by
+    the morning run), blank = still on the way. Carlos 2026-11-09: "you're
+    also not filling out the delivered message column". A line in the state
+    file (texted, mark failed) is left for the Yes path."""
+    cols = _hdr(header)
+    out = []
+    for i, row in enumerate(rows):
+        if _cell(row, cols, "Line Status").lower() not in DONE_STATES:
+            continue
+        if _cell(row, cols, COL_SENT):
+            continue
+        if line_key(_order_key(row, cols), _cell(row, cols, "Line")) in sent_state:
+            continue
+        out.append({"sheet_row": i + 2, "line": _cell(row, cols, "Line"),
+                    "customer": _cell(row, cols, "Customer")})
+    return out
+
+
 def customer_phone(target: Dict, customers: Sequence[Dict[str, str]]) -> str:
     """The contact phone off the feed's order header, matched by Wireless
     Order # then DSI #. '' when the feed window doesn't carry the order."""
@@ -243,29 +265,49 @@ def _save_sent(state: Dict[str, dict]) -> None:
     SENT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def mark_sent(ws, header: Sequence[str], lines: Sequence[Dict], log=print) -> None:
-    """Write Yes into column S for exactly these sheet rows (one batched
-    values update; header-resolved column)."""
+def mark_sent(ws, header: Sequence[str], lines: Sequence[Dict], log=print,
+              value: str = "Yes") -> None:
+    """Write Yes (or No) into column S for exactly these sheet rows (one
+    batched values update; header-resolved column)."""
     from gspread.utils import rowcol_to_a1
     from automations.recruiting_report.fill import _retry
     col = _hdr(header)[COL_SENT.lower()] + 1
-    data = [{"range": rowcol_to_a1(l["sheet_row"], col), "values": [["Yes"]]}
+    data = [{"range": rowcol_to_a1(l["sheet_row"], col), "values": [[value]]}
             for l in lines]
     _retry(lambda: ws.batch_update(data, value_input_option="RAW"))
-    log("    column S marked Yes on row(s) %s"
-        % ", ".join(str(l["sheet_row"]) for l in lines))
+    log("    column S marked %s on row(s) %s"
+        % (value, ", ".join(str(l["sheet_row"]) for l in lines)))
+
+
+def fill_no(ws, header: Sequence[str], rows: Sequence[Sequence[str]],
+            sent_state: Dict[str, dict], *, live: bool, log=print) -> int:
+    """"No" on every done, never-texted, blank line (pick_done_unmarked)."""
+    done = pick_done_unmarked(header, rows, sent_state)
+    if not done:
+        log("column S: every done line is already marked")
+        return 0
+    custs = len({d["customer"] for d in done})
+    if not live:
+        log("column S: would mark No on %d done line(s) never texted (%d customer(s))"
+            % (len(done), custs))
+        return len(done)
+    mark_sent(ws, header, done, log=lambda *a, **k: None, value="No")
+    log("column S: marked No on %d done line(s) never texted (%d customer(s))"
+        % (len(done), custs))
+    return len(done)
 
 
 # --- the run -----------------------------------------------------------------------
 
 def run(*, live: bool = False, limit: Optional[int] = None,
-        today: Optional[dt.date] = None, log=print) -> int:
+        today: Optional[dt.date] = None, mark_only: bool = False, log=print) -> int:
     from automations.nds_metrics.order_log_tab import TAB, VANTURA_SHEET_ID
     from automations.rc_contact_sync import guest, wrapup
     from automations.recruiting_report.fill import _retry, open_by_key
 
     today = today or dt.date.today()
-    log("Delivered-phone text — %s%s" % (today, "" if live else "  (DRY RUN)"))
+    log("Delivered-phone text — %s%s%s" % (today, "" if live else "  (DRY RUN)",
+                                          "  (MARK ONLY, no texts)" if mark_only else ""))
 
     # 1. the tab: who is Delivered and not yet texted
     sh = open_by_key(VANTURA_SHEET_ID)
@@ -277,12 +319,19 @@ def run(*, live: bool = False, limit: Optional[int] = None,
         return 0
     header, rows = values[0], values[1:]
     sent_state = _load_sent()
+    # column S "No" on lines that are already done and never got the text
+    n_no = fill_no(ws, header, rows, sent_state, live=live, log=log)
+    if mark_only:
+        _manifest([], dry_run=not live, note="mark only: %d line(s) marked No" % n_no)
+        print("[%s] ✅ Finished" % REPORT_ID, flush=True)
+        print("=== done ===", flush=True)
+        return 0
     targets = pick_targets(header, rows, sent_state, today=today)
     n_delivered_lines = sum(len(t["lines"]) for t in targets)
     log("tab: %d line(s); %d customer(s) with %d Delivered line(s) not yet texted"
         % (len(rows), len(targets), n_delivered_lines))
     if not targets:
-        _manifest([], dry_run=not live, note="no delivered lines to text")
+        _manifest([], dry_run=not live, note="no delivered lines to text; %d line(s) marked No" % n_no)
         print("[%s] ✅ Finished" % REPORT_ID, flush=True)
         print("=== done ===", flush=True)
         return 0
@@ -418,6 +467,9 @@ def main(argv=None) -> int:
                     help="preview even when --live is also given -- `lucy rerun "
                          "rc_delivered_text -- --dry-run` is the safe rerun, since "
                          "the registry's base_args carry --live")
+    ap.add_argument("--mark-only", action="store_true",
+                    help="only fill column S with No on done lines; send nothing "
+                         "(`lucy rerun rc_delivered_text -- --mark-only` is safe any time)")
     ap.add_argument("--limit", type=int, default=None,
                     help="only the first N customers (for a careful first --live)")
     ap.add_argument("--date", default=None, metavar="YYYY-MM-DD",
@@ -425,7 +477,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     today = dt.date.fromisoformat(args.date) if args.date else None
     live = bool(args.live and not args.dry_run)   # --dry-run always wins
-    return run(live=live, limit=args.limit, today=today)
+    return run(live=live, limit=args.limit, today=today, mark_only=args.mark_only)
 
 
 if __name__ == "__main__":

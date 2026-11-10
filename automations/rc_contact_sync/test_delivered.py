@@ -107,6 +107,20 @@ class Phone(unittest.TestCase):
 
 
 class Text(unittest.TestCase):
+    def test_done_never_texted_lines_get_no(self):
+        rows = [row(Line="1", **{"Line Status": "Active"}),                      # -> No
+                row(Line="2", **{"Line Status": "Disconnected"}),                # -> No
+                row(Line="3", **{"Line Status": "Cancelled"}),                   # -> No
+                row(Line="4", **{"Line Status": "Active", "Delivered Message Sent": "Yes"}),
+                row(Line="5", **{"Line Status": "Active", "Delivered Message Sent": "No"}),
+                row(Line="6", **{"Line Status": "Shipped"}),                     # still pending
+                row(Line="7"),                                                   # Delivered: the Yes path
+                row(Line="8", **{"Line Status": "Active"})]                      # texted, mark failed
+        state = {D.line_key("99-1", "8"): {"at": "x"}}
+        got = D.pick_done_unmarked(HDR, rows, state)
+        self.assertEqual([g["line"] for g in got], ["1", "2", "3"])
+        self.assertEqual([g["sheet_row"] for g in got], [2, 3, 4])
+
     def test_spanish_name_gets_spanish_text(self):
         self.assertIs(D.text_for("Yesenia Cordero"), D.TEXT_ES)
         self.assertIs(D.text_for("Thomas Blake"), D.TEXT)
