@@ -662,5 +662,23 @@
       "vzftr"
     ],
     "notes": "wired by hand 2026-11-09 (metrics-only office); all 9 trackers like frank."
+  },
+  {
+    "key": "emiliano",
+    "label": "Emiliano's Local Office (channel from ECO sign-up)",
+    "owner": "Milly Villagrana",
+    "channel_ids": [],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-11-10 (his Lucy ECO enrollment); all 9 trackers like tre; channel_ids filled once his ECO sign-up names the room."
   }
 ]

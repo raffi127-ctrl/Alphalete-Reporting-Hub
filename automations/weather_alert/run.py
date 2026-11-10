@@ -158,6 +158,7 @@ METRICS_CITY = {
     "nigel": "phoenix",         # VP Executives (ATT Fiber): Phoenix now, Los Angeles from 2026-11-30 (Megan 2026-11-06, CITY_CHANGES); #vp-sales
     "oren": "kansas_city",      # Omnia Management (ATT Fiber 22536): order-log zips 66062/66212/641xx = KC metro (2026-11-06); Central; channel from ECO sign-up
     "miguel": "sacramento",     # Nobilis Marketing Group (ATT Fiber 24145): order-log zips 95841/95826/95827 + Marysville/Yuba City (2026-11-06); Pacific; channel from ECO sign-up
+    "emiliano": "sacramento",   # Vincere Marketing (ATT Fiber 22001), Emiliano "Milly" Villagrana: Gold River CA = Sacramento (captainship zones.py); Pacific; channel from ECO sign-up
     "juan": "corpus_christi",   # Juan Lucio / Lucio Marketing (NDS): customer zips 784xx Corpus Christi (NDS order log 2026-11-09; OV address says McAllen); Central; #juan-lucio-metrics
     "zaid": "boston",           # Zaid Arabiyat / Aces Acquisitions (NDS): zips 02124 Boston, 03103 Manchester NH, 03060 Nashua, 01841 Lawrence (NDS order log 2026-11-09); EASTERN; #zaid-arabiyat-metrics
     "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up

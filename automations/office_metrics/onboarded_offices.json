@@ -1512,5 +1512,57 @@
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
     "notes": "wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship, five NDS boards like frank on Lucy 4. Channel #zaid-arabiyat-metrics C0CGA1H2T0A (private; Megan made it 11/09; lucy_reporting in it). Sheet 'Zaid Arabiyat - Lucy Metrics' 1OS9Kt0wJcVVINSypYpSnTQS1iXXCtJYqlumNXjowKu0 (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read. | 2026-11-09 19:40 CT: Tableau 'Owner & Office' = 'ZAID ARABYAT [aces acquisitions, inc.]' (2,584 orders/60d; alias 'Zaid Arabyat' saved); zips 02124/03103/03060/01841/01902 = Boston MA + southern NH -> weather boston, EASTERN. | 2026-11-09 21:35 CT: dry run after the shared owner-match fix = 388 wireless orders, churn 29 reps in 0-30; scheduler ON."
+  },
+  {
+    "key": "emiliano",
+    "report_id": "emiliano_metrics",
+    "label": "Emiliano's Local Office",
+    "owner": "Milly Villagrana",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "sheet_id": "1j32Le5tKLT2xf6GiQ7GMbL7cLx0Xo9xYyXdPLGlVEnE",
+    "knocks_office": "Milly Villagrana",
+    "ov_account": "22001",
+    "owner_office": "",
+    "business_name": "Vincere Marketing, Inc.",
+    "website": "",
+    "header_label": "Emiliano Villagrana",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-11-10 (Megan: 'Emiliano Villagrana is enrolling in ECO - let's do his dry run'). Vincere Marketing, Inc., OwnerVille/AppStream 22001 (office-mapping.json), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Every system spells him 'Milly Villagrana' (AppStream, Tableau, the ICD Aliases canonical), so owner/knocks_office use that; the label and header say Emiliano. Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Emiliano Villagrana - Lucy Metrics' 1j32Le5tKLT2xf6GiQ7GMbL7cLx0Xo9xYyXdPLGlVEnE (Master Metrics Templates copy, writer alphaletereporting@). Gold River CA (captainship zones.py) = Sacramento, Pacific. Scheduler OFF until the dry run is read.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]
