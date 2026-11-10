@@ -3894,7 +3894,7 @@ def _render_office_admin_logins() -> None:
         owner = dict(offices).get(office2, "")
         listing = _oa_appstream_list()
         approved_now = _oa_approved(office2)
-        mine = _ao.for_owner(owner, listing)
+        mine = _ao.for_owner(owner, listing, _oa_aliases())
         ids = [o["id"] for o in mine] + [n for n in approved_now if n not in {o["id"] for o in mine}]
         names = {o["id"]: o["office"] for o in listing}
         if not listing:
@@ -3925,6 +3925,16 @@ def _oa_approved(office):
     import re as _re
     ok, out = _oa_run(["--accounts", office])
     return _re.findall(r"\d+", (out.split("approved:", 1) + [""])[1].split("\n")[0]) if ok else []
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _oa_aliases():
+    """The team's ICD Aliases sheet ("Kash Rai" = "Akashdeep Rai")."""
+    try:
+        from automations.focus_office_att import aliases as AL
+        return AL.load_aliases()
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 @st.cache_data(ttl=600, show_spinner=False)
