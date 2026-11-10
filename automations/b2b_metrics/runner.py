@@ -146,6 +146,11 @@ def _order_log(o: B2BOffice, out_dir: Path, log, today=None):
     return capture.order_log_workbook(o, out_dir, log=log)
 
 
+def _activations_today(o: B2BOffice, out_dir: Path, log, today=None):
+    from automations.activations_today import b2b
+    return b2b.image(o, out_dir, log=log, today=today)
+
+
 def _payout(o: B2BOffice, out_dir: Path, log, today=None):
     from automations.b2b_metrics import capture
     return capture.payout_image(o, out_dir, log=log)
@@ -184,6 +189,9 @@ ITEMS = [
          capture=_pending_orders),
     dict(id="order_log", emoji="\U0001F4C4", title="Order Log", is_file=True,
          capture=_order_log),
+    # Raf 2026-11-10: the D2D offices' 📆 board, from the same ORDERLOG pull.
+    dict(id="activations_today", emoji="\U0001F4C6",
+         title="Activations Scheduled Today", capture=_activations_today),
     dict(id="order_tiered_bonus", emoji="\U0001F3C6",
          title="Order Tiered Bonus - Rep Ranking",
          capture=_tableau_shot("order_tiered_bonus")),
@@ -516,6 +524,11 @@ REVENUE_BOARD_OFFICES = {"jamis"}
 # board filtered to NEW INTERNET + CRU). Eveliz 2026-10-06.
 FIBER_CRU_OFFICES = {"eveliz"}
 
+# 📆 Activations Scheduled Today (Raf 2026-11-10). OFF in the 4am threads until
+# Eve OKs the DM sample; `--only activations_today` still runs it for that
+# sample. Flip to True to post it in every B2B thread.
+ACTIVATIONS_TODAY_LIVE = False
+
 
 def expected_items(o: B2BOffice) -> list:
     """The sections this office's parent post ENUMERATES — the completeness
@@ -531,6 +544,7 @@ def expected_items(o: B2BOffice) -> list:
     except the ones this office gates out via `skip_views`."""
     from automations.shared import thread_plans as tp
     default = [i for i in ITEMS if i["id"] not in o.skip_views
+               and (i["id"] != "activations_today" or ACTIVATIONS_TODAY_LIVE)
                and (i["id"] not in ("churn_by_rep", "activation_revenue",
                                     "revenue_board", "pending_orders")
                     or o.rep_boards
@@ -695,6 +709,8 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     # Capture/post in the SAME resolved order the header enumerates (plan-aware,
     # or today's ITEMS-minus-skip_views default). --only narrows to one section.
     items = [i for i in expected_items(o) if not only or i["id"] == only]
+    if only == "activations_today" and not items:      # pre-launch sample
+        items = [i for i in ITEMS if i["id"] == only]
 
     log("B2B Metrics — {} — {}  ({})".format(
         o.label, today, "POST" if post else "DRY-RUN"))

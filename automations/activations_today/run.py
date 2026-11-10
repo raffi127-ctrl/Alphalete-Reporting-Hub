@@ -108,7 +108,8 @@ def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
     day_txt = day.strftime("%A, %B %d, %Y").replace(" 0", " ")
     subtitle = ("{} — {} install{} scheduled today across {} rep{}. "
                 "Reach out to your customers today."
-                .format(owner, n, bp.plural(n), len(reps), bp.plural(len(reps))))
+                .format(owner, n, bp.plural(n), len(reps), bp.plural(len(reps)))
+                if n else "{} — no installs scheduled today.".format(owner))
     return {"today": day, "count": n, "subtitle": subtitle,
             "title": "Activations Scheduled Today — {}".format(day_txt),
             "columns": COLUMNS, "color_fn": status_color,
