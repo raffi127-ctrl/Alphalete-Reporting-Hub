@@ -69,12 +69,40 @@ def parse_date(v) -> Optional[dt.date]:
     return None
 
 
-def fetch(out_path: Optional[Path] = None, verbose: bool = True,
-          page=None, worksheet: str = WORKSHEET) -> Path:
+# The view's DEFAULT filters are stale (Lucy 4 probe 2026-11-10: 98 rows, all
+# April-July sales, no Rafael Hidalgo). So pass Dylan's Loom filters by URL:
+# Owner Name, the last SALE_WEEKS sale weeks (end Sunday) and this week's
+# install week (ends Saturday). Multiple values = comma-separated.
+SALE_WEEKS = 6
+
+
+def _week_end(day: dt.date, weekday: int) -> dt.date:
+    """The `weekday` (Mon=0..Sun=6) on or after `day`."""
+    return day + dt.timedelta(days=(weekday - day.weekday()) % 7)
+
+
+def build_url(owner: str, day: dt.date) -> str:
+    from urllib.parse import quote
+    last_sun = _week_end(day, 6)
+    sale_weeks = [last_sun - dt.timedelta(weeks=i) for i in range(SALE_WEEKS)]
+    params = [
+        ("Owner Name", owner),
+        ("Sale Date Week Ending", ",".join(d.isoformat() for d in sale_weeks)),
+        ("Current Install Date Week Ending", _week_end(day, 5).isoformat()),
+    ]
+    return VIEW_URL + "?" + "&".join(
+        "{}={}".format(quote(k), quote(v, safe=",-")) for k, v in params)
+
+
+def fetch(owner: str, day: dt.date, out_path: Optional[Path] = None,
+          verbose: bool = True, page=None, worksheet: str = WORKSHEET) -> Path:
     from automations.shared.tableau_patchright import download_crosstab_patchright
     out_path = out_path or (Path(tempfile.gettempdir())
                             / "activations_today_pending_installs.csv")
-    download_crosstab_patchright(VIEW_URL, worksheet, out_path,
+    url = build_url(owner, day)
+    if verbose:
+        print("  view: {}".format(url), flush=True)
+    download_crosstab_patchright(url, worksheet, out_path,
                                  verbose=verbose, page=page)
     return out_path
 

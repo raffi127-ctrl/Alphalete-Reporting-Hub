@@ -51,6 +51,12 @@ class ActivationsTodayTest(unittest.TestCase):
         self.assertEqual([r["Customer Name"] for r in today],
                          ["ARIANA H", "ADILENE C", "JAVIER N"])
 
+    def test_url_filters_like_the_loom(self):
+        url = pull.build_url("Rafael Hidalgo", dt.date(2026, 11, 10))
+        self.assertIn("Owner%20Name=Rafael%20Hidalgo", url)
+        self.assertIn("Sale%20Date%20Week%20Ending=2026-11-15,2026-11-08,", url)
+        self.assertIn("Current%20Install%20Date%20Week%20Ending=2026-11-14", url)
+
     def test_status_colors(self):
         self.assertEqual(run.status_color("On Track"), run._GREEN)
         self.assertEqual(run.status_color("Rescheduled Install Past Due"), run._RED)

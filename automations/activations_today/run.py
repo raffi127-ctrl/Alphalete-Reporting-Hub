@@ -157,7 +157,7 @@ def probe(csv_path: Optional[Path], owner: str, day: dt.date) -> Path:
             wanted = next((s for s in sheets if "install" in s.lower()),
                           pull.WORKSHEET)
             print("PROBE pulling sheet: {!r}".format(wanted))
-            csv_path = pull.fetch(page=page, worksheet=wanted)
+            csv_path = pull.fetch(owner, day, page=page, worksheet=wanted)
     rows = pull.read_rows(csv_path)
     print("PROBE file: {}".format(csv_path))
     print("PROBE rows: {}".format(len(rows)))
@@ -201,7 +201,7 @@ def main(argv=None) -> int:
 
     print("=== {} — {} — {} (Central) ===".format(LABEL, args.owner, day))
     if csv_path is None:
-        csv_path = pull.fetch()
+        csv_path = pull.fetch(args.owner, day)
     rows = pull.read_rows(csv_path)
     mine = pull.owner_rows(rows, args.owner)
     today = pull.scheduled_on(mine, day)
