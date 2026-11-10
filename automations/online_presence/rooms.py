@@ -34,6 +34,18 @@ LUCY = "U0BCG8F9B5Z"          # Lucy Reporting (resources/owner-slack-ids.md)
 MEGAN = "U04G5HJBGFN"
 EVE = "U088E2KJEV8"           # Evelyn Sobrino
 HUBPOSTER = "U0BBW3TH5DX"     # @hubposter: the bot with files:read
+# THE LUCYECO SOCIAL MANAGER (Megan 2026-11-10: "I'm going to hire 1 person to
+# manage this so she would be the one getting it"). Gets every LucyECO Social
+# alert as a DM (e.g. the Google review key going missing) and is added to
+# every new office channel. Megan until the hire starts: change this ONE line
+# to the new manager's Slack ID (resources/owner-slack-ids.md).
+MANAGER = MEGAN
+# WHERE LUCYECO SOCIAL ALERTS GO: sign-ups, Google key trouble, copies of the
+# offices' bad reviews and mentions. One setting, so moving them to their own
+# channel is one line. Private #lucyeco-social-alerts since 2026-11-10 (Megan:
+# "create a slack channel specifically for any alerts pertaining to this");
+# Alphalete's own brand-health alerts stay in #alphaletemarketingbrandhealth.
+SOCIAL_ALERTS = "C0CGMHXUVUZ"
 SUFFIX = "-lucyeco-social"
 
 
@@ -58,7 +70,7 @@ def _people(row: Dict, cl) -> (List[str], List[str]):
     Returns (Slack ids, people we couldn't place -- never guessed)."""
     from automations.online_presence.setup import resolve_person
     from automations.online_presence.post_form import JIRAIYA   # runs the 📸 button
-    ids, missed = [MEGAN, EVE, LUCY, HUBPOSTER, JIRAIYA], []
+    ids, missed = [MEGAN, EVE, MANAGER, LUCY, HUBPOSTER, JIRAIYA], []
     owner = str(row.get("Owner") or "").strip()
     try:
         ids.append(resolve_person(owner, cl))
@@ -217,7 +229,7 @@ def ping_new(*, live: bool, cl=None, tab=None, channel: str | None = None) -> Li
         if cl is None:
             from automations.brand_audit.social_inbox import _client
             cl = _client()
-        ch = channel or ALERT_SLACK_CHANNEL_ID
+        ch = channel or SOCIAL_ALERTS
         r = cl.chat_postMessage(channel=ch, text=head)
         cl.chat_postMessage(channel=ch, thread_ts=r.get("ts"), text=detail)
         tab.update_cell(i, header.index("Pinged At") + 1,

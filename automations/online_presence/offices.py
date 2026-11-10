@@ -105,6 +105,11 @@ class Presence:
     post_hours: Tuple[int, ...] = DEFAULT_POST_HOURS
     auto_reply_min_stars: int = 4
     auto_reply_daily_cap: int = 10
+    # Review cards waiting on a ✅ (1-3★, or anything Lucy can't auto-post)
+    # added per day. A new office's backlog of old bad reviews comes in a few a
+    # day instead of all at once (Megan 2026-11-10: "we want every review they
+    # have to have a response"). 0 = no limit (Alphalete, unchanged).
+    review_draft_daily_cap: int = 5
     notes: str = ""
     # --- set only by alphalete(); offices never write these ---
     review_channel: str = ""       # "" = same room as photos
@@ -207,6 +212,7 @@ def alphalete() -> Presence:
         zoho_schedules=True,
         auto_reply_min_stars=C.AUTO_POST_MIN_STARS,
         auto_reply_daily_cap=C.AUTO_POST_DAILY_CAP,
+        review_draft_daily_cap=0,
         state_dir=str(ba),
         zoho_profile_dir=str(zoho_draft.ZOHO_PROFILE_DIR),
         learned_style_path=str(ba / "learned_style.json"),

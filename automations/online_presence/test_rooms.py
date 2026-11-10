@@ -132,11 +132,10 @@ class Ping(unittest.TestCase):
             return {"ts": "1.%d" % len(self.posts)}
 
     def test_announced_once_in_the_alerts_channel_short_header_detail_in_thread(self):
-        from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID
         tab, cl = _sheet(), self.Cl()
         res = rooms.ping_new(live=True, cl=cl, tab=tab)
         self.assertEqual(len(res), 1)
-        self.assertEqual([p["channel"] for p in cl.posts], [ALERT_SLACK_CHANNEL_ID] * 2)
+        self.assertEqual([p["channel"] for p in cl.posts], [rooms.SOCIAL_ALERTS] * 2)
         self.assertIn("Kash Marketing", cl.posts[0]["text"])
         self.assertNotIn("thread_ts", cl.posts[0])              # header
         self.assertEqual(cl.posts[1]["thread_ts"], "1.1")        # detail in the thread
@@ -162,6 +161,7 @@ class LivePassSkipsDryOffices(unittest.TestCase):
                 mock.patch("automations.online_presence.relay.answered", return_value=[]), \
                 mock.patch("automations.online_presence.timing.record"), \
                 mock.patch("automations.online_presence.review_alerts.check", return_value=[]), \
+                mock.patch("automations.online_presence.key_watch.check", return_value=[]), \
                 mock.patch("automations.online_presence.email_alerts.check", return_value=[]):
             self.assertEqual(run.main(["--live"]), 0)
 

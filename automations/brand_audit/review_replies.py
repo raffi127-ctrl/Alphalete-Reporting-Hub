@@ -410,6 +410,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     channel = channel or P.reviews_channel
     who = P.counted_approvers
     min_stars, cap = P.auto_reply_min_stars, P.auto_reply_daily_cap
+    draft_cap = getattr(P, "review_draft_daily_cap", 0) or 0
     state_file = P.path("review_replies.json")
     cl = _client()
     state = _load(state_file)
@@ -434,6 +435,35 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     counts = state.setdefault("auto_post_counts", {})
     posted_today = counts.get(today, 0)          # throttle across runs in a day
     deferred = 0
+    drafts = state.setdefault("draft_counts", {})
+    drafted_today = drafts.get(today, 0)
+
+    # EVERY REVIEW GETS A RESPONSE (Megan 2026-11-10). An auto-reply whose
+    # post to Google failed (a blip, access briefly lost) used to sit with
+    # post_error forever -- it has no Slack card, so nothing ever looked at it
+    # again. Retry those first; they share today's auto-post cap.
+    if auto_ok:
+        for k, st in state["reviews"].items():
+            if not st.get("auto") or st.get("posted") or posted_today >= cap:
+                continue
+            if not (st.get("post_error") or st.get("approved_pending_api")):
+                continue
+            rv = st.get("review") or {}
+            if not rv.get("name"):
+                continue
+            actions.append({"action": "retry_post", "review": k})
+            if dry_run:
+                continue
+            try:
+                post_reply_to_google(rv, st["reply"], company)
+                st["posted"] = True
+                st.pop("post_error", None)
+                st.pop("approved_pending_api", None)
+                posted_today += 1
+                counts[today] = posted_today
+            except Exception as e:
+                st["post_error"] = str(e)[:200]
+
     for rv in get_reviews(company, P.gbp_location):
         k = _key(rv)
         if k in state["reviews"]:
@@ -444,6 +474,11 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
         # Throttle: once today's auto-post cap is hit, leave the rest UNTOUCHED
         # (don't draft, don't record) so the next daily run picks them up.
         if auto and posted_today >= cap:
+            deferred += 1
+            continue
+        # Same for cards waiting on a ✅: an office's old bad reviews arrive a
+        # few a day (newest first) instead of flooding its channel.
+        if not auto and draft_cap and drafted_today >= draft_cap:
             deferred += 1
             continue
         reply = draft_reply(rv, company_name, avoid=recent[:15],
@@ -472,6 +507,8 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
         # TOP-LEVEL, not inside the digest thread: each card needs its own thread
         # so an approver can reply with edit feedback (see _human_note).
         actions.append({"action": "draft", "rating": stars, "reply": reply})
+        drafted_today += 1
+        drafts[today] = drafted_today
         if not dry_run:
             r = cl.chat_postMessage(channel=channel, text=_review_block(rv, reply))
             state["reviews"][k] = {"reply": reply, "reply_ts": r.get("ts"),
@@ -479,7 +516,9 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     if deferred:
         actions.append({"action": "deferred", "count": deferred,
                         "note": f"{deferred} more held for later daily runs "
-                                f"(cap {cap} auto-posts/day)"})
+                                f"(cap {cap} auto-posts/day"
+                                + (f", {draft_cap} cards for ✅/day" if draft_cap else "")
+                                + ")"})
     if not dry_run and hdr and new_count == 0 and not hdr.get("noted_empty"):
         cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
                             text="No new reviews needing a response today. React "

@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID
+from automations.online_presence.rooms import SOCIAL_ALERTS as ALERT_SLACK_CHANNEL_ID
 from automations.online_presence import offices, review_alerts as RA
 
 

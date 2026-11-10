@@ -127,7 +127,7 @@ def _inbox():
 
 def check(offices: List, cl, *, live: bool, mailbox=None) -> List[Dict]:
     """New mail -> alerts. `offices` = the live offices + Alphalete."""
-    from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID
+    from automations.online_presence.rooms import SOCIAL_ALERTS as _SOCIAL_ALERTS
     M = mailbox or _inbox()
     st = _load()
     try:
@@ -154,8 +154,8 @@ def check(offices: List, cl, *, live: bool, mailbox=None) -> List[Dict]:
                 if not live:
                     continue
                 rooms = [P.reviews_channel]
-                if P.key != "alphalete" and ALERT_SLACK_CHANNEL_ID not in rooms:
-                    rooms.append(ALERT_SLACK_CHANNEL_ID)
+                if P.key != "alphalete" and _SOCIAL_ALERTS not in rooms:
+                    rooms.append(_SOCIAL_ALERTS)
                 for ch in rooms:
                     r = cl.chat_postMessage(channel=ch, text=head)
                     cl.chat_postMessage(channel=ch, thread_ts=r.get("ts"), text=detail)

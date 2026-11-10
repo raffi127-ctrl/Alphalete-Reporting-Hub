@@ -60,7 +60,7 @@ def messages(P, rv: Dict) -> tuple:
 def check(P, cl, *, live: bool, reviews: List[Dict] | None = None) -> List[Dict]:
     """New bad reviews for one office (or Alphalete). Returns actions."""
     from automations.brand_audit import gbp_api
-    from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID
+    from automations.online_presence.rooms import SOCIAL_ALERTS as _SOCIAL_ALERTS
     if not P.gbp_location:
         return []
     if reviews is None:
@@ -92,8 +92,8 @@ def check(P, cl, *, live: bool, reviews: List[Dict] | None = None) -> List[Dict]
         if not live:
             continue
         rooms = [P.reviews_channel]
-        if P.key != "alphalete" and ALERT_SLACK_CHANNEL_ID not in rooms:
-            rooms.append(ALERT_SLACK_CHANNEL_ID)
+        if P.key != "alphalete" and _SOCIAL_ALERTS not in rooms:
+            rooms.append(_SOCIAL_ALERTS)
         for ch in rooms:
             r = cl.chat_postMessage(channel=ch, text=head)
             cl.chat_postMessage(channel=ch, thread_ts=r.get("ts"), text=detail)

@@ -107,6 +107,17 @@ def main(argv=None) -> int:
     except Exception as e:
         print(f"[room] couldn't check for rooms to make ({type(e).__name__}: {str(e)[:80]})")
 
+    # Can Lucy read Google reviews at all? One key covers Alphalete and every
+    # office; a missing or dead key alerts the manager (key_watch, 11/10).
+    if not a.office:
+        try:
+            from automations.online_presence import key_watch
+            for x in key_watch.check(live=a.live):
+                if x["action"] != "ok":
+                    print(f"[google key] {x['action']} · {x.get('why') or x.get('kind') or ''}")
+        except Exception as e:
+            print(f"[google key] check failed ({type(e).__name__}: {str(e)[:80]})")
+
     # Alphalete's own bad Google reviews alert on the same 10 minutes (its
     # reply drafts still come from the noon brand_audit run, unchanged).
     if not a.office:
