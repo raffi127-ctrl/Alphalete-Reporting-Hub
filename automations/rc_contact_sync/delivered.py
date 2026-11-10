@@ -89,16 +89,16 @@ DONE_STATES = ("active", "disconnected", "cancelled", "byod")
 # and never activated is a different conversation, not this one)
 MAX_ORDER_AGE_DAYS = 31
 
-# Carlos's words, 2026-10-29.
+# Carlos's words, 2026-10-29, reworded by him 2026-11-09 ("on you when it activates").
 TEXT = ("Hello! I see that your device(s) have been delivered! It will "
         "auto-activate within 24hrs. Wouldn't want it to happen that you "
-        "don't have the new phone, so if you need help activating, please "
-        "let me know!")
+        "don't have the new phone on you when it activates, so if you need "
+        "help activating, please let me know!")
 # the same, in Spanish, for customers with a Spanish name (Carlos 2026-11-09)
 TEXT_ES = ("¡Hola! Veo que ya le entregaron su(s) equipo(s). Se activará "
-           "automáticamente dentro de 24 horas. No queremos que se quede sin "
-           "su teléfono nuevo, así que si necesita ayuda para activarlo, "
-           "¡avíseme por favor!")
+           "automáticamente dentro de 24 horas. No queremos que no tenga el "
+           "teléfono nuevo con usted cuando se active, así que si necesita "
+           "ayuda para activarlo, ¡avíseme por favor!")
 
 
 def text_for(customer: str) -> str:
