@@ -139,6 +139,18 @@ def tz_label(zone: str) -> str:
 
 _TIME = re.compile(r"^\d{1,2}:\d{2}$")
 
+
+def phone_e164(text) -> str:
+    """'(313) 555-0142' -> '+13135550142'. '' when it is not a US cell number.
+
+    Ten digits, or eleven starting with 1 -- however they typed it. An email,
+    a short number or a blank comes back '' so the form can say so in plain
+    words instead of saving something Lucy cannot tie a group text to."""
+    digits = "".join(ch for ch in str(text or "") if ch.isdigit())
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    return "+1" + digits if len(digits) == 10 else ""
+
 # EVERY QUARTER HOUR FROM 6 AM TO 11.45 PM. Wide enough for an office that
 # starts early or runs late, and a list rather than a text box because
 # "1:30pm", "1.30", "130" and "13:30" are all things a person types into a
@@ -198,15 +210,27 @@ class IcdSignup(NamedTuple):
     # and it is the only thing that tells one Verizon office's reports from
     # another's in the shared Hub inbox (Megan 2026-11-06).
     credico_office: str = ""
+    # THE TWO A PLAYERS' CELL NUMBERS, '["+1...", "+1..."]' (Megan 2026-11-10:
+    # "putting in 2 numbers of your TOP A players so that Lucy can tie to that
+    # number"). A group text is found by WHO IS IN IT, not by its name -- the
+    # name gets changed, and a renamed chat silently receives nothing. The
+    # owner's own number is `contact`; `text_pins` is all three together.
+    # Only asked when they want texts. Rows from before this stay "[]" and
+    # keep being found by name, exactly as they were.
+    text_pins_json: str = "[]"
 
     def problems(self) -> List[str]:
         """What is wrong with this, in the words of the person who typed it."""
         out = []
         if not self.owner.strip() or len(self.owner.split()) < 2:
             out.append("Please give your first and last name.")
-        if not self.contact.strip():
-            out.append("Please leave an email or phone number so we can reach "
-                       "you with your setup link.")
+        # A PHONE NUMBER, AND THEIRS (Megan 2026-11-10: "we should make it
+        # phone number so that we know it's theirs and who to tie it to").
+        # It used to take an email or a phone; an email cannot be found in a
+        # group text.
+        if not phone_e164(self.contact):
+            out.append("Please enter your own cell phone number, with the "
+                       "area code (10 digits).")
         if self.platform not in PLATFORMS:
             out.append("Please say whether this is a Mac or a Windows PC.")
         for label, value in (("start", self.day_start), ("end", self.day_end)):
@@ -220,6 +244,33 @@ class IcdSignup(NamedTuple):
                 if not _TIME.match(value or ""):
                     out.append("The Saturday %s time should look like 10:45."
                                % label)
+        # TEXTS NEED THE TWO A PLAYERS. Without them the group can only be
+        # found by its name, which is the thing that keeps breaking.
+        if any(group_name(g) for g in self.text_groups):
+            typed = [str(x) for x in _loads_list(self.text_pins_json)]
+            good = [phone_e164(x) for x in typed if phone_e164(x)]
+            me = phone_e164(self.contact)
+            if len(typed) < 2 or len(good) < 2:
+                out.append("To get the group text, please enter the cell "
+                           "phone numbers of your top 2 A players (10 digits "
+                           "each).")
+            elif len(set(good)) < 2 or (me and me in good):
+                out.append("The two A player numbers need to be two different "
+                           "people, and not your own number.")
+        return out
+
+    @property
+    def text_pins(self) -> List[str]:
+        """Who Lucy ties the group text to: the owner, then the two A players.
+        [] for an office that signed up before the form asked."""
+        players = [phone_e164(x) for x in _loads_list(self.text_pins_json)]
+        players = [p for p in players if p]
+        if not players:
+            return []
+        out = []
+        for n in [phone_e164(self.contact)] + players:
+            if n and n not in out:
+                out.append(n)
         return out
 
     @property
@@ -273,6 +324,7 @@ class IcdSignup(NamedTuple):
             alert_channels_json=str(row.get("alert_channels_json") or "[]"),
             knocks_json=str(row.get("knocks_json") or "[]"),
             credico_office=str(row.get("credico_office") or "").strip(),
+            text_pins_json=str(row.get("text_pins_json") or "[]"),
         )
 
 

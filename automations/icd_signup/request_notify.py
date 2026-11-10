@@ -60,6 +60,11 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
     if texts:
         detail += ["", "*Check Lucy is in their group text:*"]
         detail += ["   • %s" % t for t in texts]
+        # The numbers the group will be tied to, so a wrong one is caught
+        # here rather than by a board that never arrives.
+        if rec.text_pins:
+            detail += ["   _tied to (owner + 2 A players):_ %s"
+                       % ", ".join(rec.text_pins)]
 
     detail += ["", "*Approve:*  %s" % (APPROVE_URL % rec.office_key)]
     return head, detail

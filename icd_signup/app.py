@@ -152,11 +152,15 @@ with st.container(border=True):
     st.subheader("Who you are")
     owner = st.text_input("Your full name",
                           placeholder="e.g. Cyrus Wade")
+    # A PHONE NUMBER, AND THEIR OWN (Megan 2026-11-10). It is how the
+    # reporting team reaches them AND the first of the three numbers Lucy
+    # ties their group text to.
     contact = st.text_input(
-        "Email or phone, in case we need to reach you",
-        help="Your setup link appears on this page the moment you submit — "
-             "nothing is emailed. This is so the reporting team can reach you "
-             "if something goes wrong.")
+        "Your cell phone number",
+        placeholder="e.g. 313-555-0142",
+        help="Your own cell, with the area code. The reporting team reaches "
+             "you here, and Lucy uses it to find your group text. Your setup "
+             "link appears on this page the moment you submit.")
 
     st.subheader("Your campaign")
     campaign = st.radio(
@@ -317,6 +321,7 @@ with st.container(border=True):
         "Do you want it texted?", ["Yes", "No"], index=1, horizontal=True,
         key="want_texts", label_visibility="collapsed")
     text_groups = []
+    text_pins = []
     if want_texts == "Yes":
         # TWO LINES: what to do, then the thing to add. The address was
         # inline code inside the sentence and rendered as small grey
@@ -346,6 +351,19 @@ with st.container(border=True):
         st.caption("Type the name **exactly** as it appears at the top of the "
                    "chat in Messages — capitals, spaces, emojis and all. A "
                    "name that does not match sends to nobody.")
+        # WHO LUCY TIES THE CHAT TO (Megan 2026-11-10). A chat gets renamed
+        # and people come and go; three numbers that stay put are how Lucy
+        # keeps finding it. Their own number is the one at the top.
+        st.markdown("**Your top 2 A players**")
+        st.caption("Lucy ties the group text to your number and these two. "
+                   "Pick two people who will stay in the chat — if they "
+                   "leave it, the texts stop.")
+        p1, p2 = st.columns(2)
+        pin_a = p1.text_input("A player 1 — cell phone number",
+                              key="text_pin_0", placeholder="e.g. 313-555-0142")
+        pin_b = p2.text_input("A player 2 — cell phone number",
+                              key="text_pin_1", placeholder="e.g. 313-555-0199")
+        text_pins = [pin_a.strip(), pin_b.strip()]
 
     # LAST THING BEFORE THEY SEND, because it is the one action of theirs
     # that has to happen OUTSIDE this page -- sitting up beside the channel
@@ -387,10 +405,13 @@ if submitted:
         sat_start=sat_start.strip(), sat_end=sat_end.strip(),
         ov_name=ov_name.strip(), campaign=campaign,
         knocks_cadence=first_cadence,
-        wanted_channels=summary, contact=contact.strip(),
+        wanted_channels=summary,
+        contact=S.phone_e164(contact) or contact.strip(),
         alert_channels_json=json.dumps(alerts),
         knocks_json=json.dumps(dests),
         text_groups_json=json.dumps(texts),
+        text_pins_json=json.dumps(
+            [S.phone_e164(x) or x for x in text_pins] if texts else []),
         credico_office=(credico_office or "").strip())
     problems = rec.problems()
     if problems:

@@ -26,7 +26,7 @@ def _rec(**kw):
                 saturday=True, sat_start="11:15", sat_end="16:00",
                 ov_name="", knocks_cadence=15, wanted_channels="#ambient",
                 alert_channels_json='["#ambient"]',
-                contact="cy@example.com", office_key="cyrus")
+                contact="313-555-0142", office_key="cyrus")
     base.update(kw)
     return IcdSignup(**base)
 
@@ -37,7 +37,7 @@ class WhatTheFormRefuses(unittest.TestCase):
         bad = _rec(owner="Cy", contact="", day_start="half one")
         problems = " ".join(bad.problems())
         self.assertIn("first and last name", problems)
-        self.assertIn("email or phone", problems)
+        self.assertIn("cell phone number", problems)
         self.assertIn("13:30", problems)
         # No jargon: they are reading this, not us.
         for word in ("schema", "validation", "field", "None"):

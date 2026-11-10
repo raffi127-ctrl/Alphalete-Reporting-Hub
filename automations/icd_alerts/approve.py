@@ -342,19 +342,40 @@ def cmd_texts(office_key: str, standings_only: bool = False) -> int:
     except Exception:  # noqa: BLE001
         pass
 
+    # THE THREE NUMBERS FROM THE FORM (owner + top 2 A players, Megan
+    # 2026-11-10). When the sign-up carries them the group is tied to those
+    # people from the first approval, so a rename can never lose it. Older
+    # sign-ups have none and stay found by name, as before.
+    pins = list(rec.text_pins) if rec else []
+    if pins:
+        print("  tied to %d number(s) from their sign-up (owner + A players)"
+              % len(pins))
+
     resolved, problems = [], []
     for name, cadence in asked:
         how = ("every %d min" % cadence) if cadence else "same as their board"
+        entry = {"group": name, "cadence_min": cadence}
+        if pins:
+            entry["require_handles"] = list(pins)
         if not can_check:
             print("  %-30s %-22s UNVERIFIED (this machine cannot see "
                   "Messages)" % (name, how))
-            resolved.append({"group": name, "cadence_min": cadence})
+            resolved.append(entry)
             continue
         try:
             from automations.b2b_dispositions import text_post as tp
-            tp.send_to_group(name, "", [], dry_run=True)
-            print("  %-30s %-22s found" % (name, how))
-            resolved.append({"group": name, "cadence_min": cadence})
+            if pins:
+                # By the people in it. The id rides along only to break a tie
+                # between two chats holding the same three.
+                hit = tp.resolve_dest(entry)
+                if hit.get("id"):
+                    entry["chat_guid"] = hit["id"]
+                print("  %-30s %-22s found by its %d numbers"
+                      % (name, how, len(pins)))
+            else:
+                tp.send_to_group(name, "", [], dry_run=True)
+                print("  %-30s %-22s found" % (name, how))
+            resolved.append(entry)
         except Exception as e:  # noqa: BLE001
             problems.append("%s — %s" % (name, str(e)[:160]))
 
