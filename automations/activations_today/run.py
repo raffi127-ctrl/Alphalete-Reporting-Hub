@@ -5,22 +5,24 @@ Raf 2026-11-09: "on the metrics report can we add to the thread a post called
 will be that the reps can see what customers they have scheduled for INSTALL
 that day and then the reps can reach out to those customers that day."
 
-Source path: Tableau -> ATT Tracker 2.1 - D2D -> PENDING INSTALLS
-("Pending Installs (Internet/Video)") -> Crosstab -> Owner Name = <owner>,
-Current Install Date = today (Central). See pull.py.
+Source path: Tableau -> ATT TRACKER 2.1 - D2D -> ORDER LOG -> 'Sales Board
+Original' view -> worksheet 'A.Order Log', last 42 days of sales -> Owner Name =
+<owner>, spe.Install Date = today (Central), not activated, not canceled. See
+pull.py for why it is not the PENDING INSTALLS view from Dylan's Loom.
 
 The board is grouped by rep, like the Order Log: a gray band per rep
-("Alyssa Moreno • 3 orders") with that rep's customers under it, rows tinted by
-Install Status (green on track, yellow self-install missing package, red past
-due / JEP). Over 20 rows it splits into two images on one message.
+("Alyssa Moreno • 3 orders") with that rep's customers + phone under it.
+Problem statuses (past due / jeopardy / hold / issue) are tinted red. Over 20
+rows it splits into two images on one message.
 
 Outward actions are OFF by default:
   (no flag)            pull + render, print what it WOULD post
   --post-slack         post into today's Metrics thread (#alphalete-sales)
   --post-to CHANNEL    post as a plain message to CHANNEL instead (tests: Eve's
                        self-DM D087ZGE2B0F only)
-  --probe              list the view's crosstab sheets + describe the export
-                       (no image, no post) — run this first on a Lucy
+  --probe              describe the export (header, statuses, this week's
+                       installs) — no image, no post
+  --dm-user USER_ID    test: Lucy DMs the image to that one person
   --csv PATH           skip Tableau, read a crosstab you already have
 """
 from __future__ import annotations
@@ -47,24 +49,15 @@ NONE_TEXT = "📆 No Activations Scheduled Today"
 REACT = "date"
 SPLIT_AT = 20
 
-COLUMNS = ("Customer", "Sale Date", "Install Status", "Product", "Package")
+COLUMNS = ("Customer", "Phone", "Sale Date", "Status", "Install", "Package")
 
-# Install Status -> row tint (hex, pending_png._rgb). Definitions are the ones
-# printed on the view itself.
-_GREEN, _YELLOW, _RED = "C6EFCE", "FFF2CC", "FFC7CE"
+_RED = "FFC7CE"
+_PROBLEM = ("past due", "jep", "jeopardy", "hold", "issue", "error", "fallout")
 
 
 def status_color(status: str, _history=()) -> str:
     s = (status or "").strip().lower()
-    if not s:
-        return ""
-    if "past due" in s or "jep" in s:
-        return _RED
-    if "on track" in s:
-        return _GREEN
-    if "self install" in s:          # self-install, package info missing
-        return _YELLOW
-    return ""
+    return _RED if any(w in s for w in _PROBLEM) else ""
 
 
 class _Row:
@@ -96,12 +89,13 @@ def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
     for r in rows:
         sale = pull.parse_date(r.get(pull.SALE_DATE))
         cust = r.get(pull.CUSTOMER, "")
-        status = r.get(pull.INSTALL_STATUS, "")
+        status = r.get(pull.STATUS, "")
         cells = (cust,
+                 r.get(pull.PHONE, ""),
                  sale.strftime("%m/%d/%Y") if sale else "",
                  status or "—",
-                 _short_product(r.get(pull.PRODUCT, "")),
-                 r.get(pull.PACKAGE, ""))
+                 r.get(pull.TECH, ""),
+                 r.get(pull.PACKAGE, "") or _short_product(r.get(pull.PRODUCT, "")))
         items.append(_Row(cells, status, r.get(pull.REP, "") or "(no rep)",
                           sale, cust))
     n = len(items)
@@ -146,92 +140,36 @@ def render(work: Dict, out: Path) -> List[Path]:
 
 
 def probe(csv_path: Optional[Path], owner: str, day: dt.date) -> Path:
-    """Describe the view + export so the filters can be confirmed: sheet names,
-    header, and whether the default view covers today's installs."""
+    """Describe the export so the source can be checked: header, statuses,
+    and the owner's open installs this week (compare with Pending Installs)."""
     if csv_path is None:
-        from automations.recruiting_report.opt_phase import list_crosstab_sheets
-        from automations.shared.tableau_patchright import tableau_session
-        with tableau_session(verbose=True) as page:
-            sheets = list_crosstab_sheets(pull.VIEW_URL, page=page, verbose=True)
-            print("PROBE sheets: {}".format(sheets))
-            wanted = next((s for s in sheets if "install" in s.lower()),
-                          pull.WORKSHEET)
-            print("PROBE pulling sheet: {!r}".format(wanted))
-            csv_path = pull.fetch(owner, day, page=page, worksheet=wanted)
+        csv_path = pull.fetch(day)
     rows = pull.read_rows(csv_path)
     print("PROBE file: {}".format(csv_path))
     print("PROBE rows: {}".format(len(rows)))
     if rows:
         print("PROBE header: {}".format(list(rows[0].keys())))
-        print("PROBE first row: {}".format(rows[0]))
-    for col in (pull.OWNER, "Sale Date Week Ending", "Current Install Date Week Ending"):
+    for col in (pull.STATUS, pull.TECH):
         vals = Counter(r.get(col, "<missing>") for r in rows)
-        print("PROBE {}: {} distinct, top: {}".format(
-            col, len(vals), vals.most_common(8)))
-    inst = Counter(r.get(pull.INSTALL_DATE, "") for r in rows)
-    print("PROBE install dates: {}".format(sorted(inst.items())[:40]))
+        print("PROBE {}: {}".format(col, vals.most_common(15)))
     mine = pull.owner_rows(rows, owner)
-    today = pull.scheduled_on(mine, day)
-    print("PROBE {}: {} row(s), {} installing {}".format(
-        owner, len(mine), len(today), day))
-    for r in today[:10]:
-        print("   ", r.get(pull.REP), "|", r.get(pull.CUSTOMER), "|",
-              r.get(pull.INSTALL_STATUS))
+    week = [r for r in mine if pull.is_open(r)
+            and (pull.parse_date(r.get(pull.INSTALL_DATE)) or dt.date.min)
+            >= day - dt.timedelta(days=3)
+            and (pull.parse_date(r.get(pull.INSTALL_DATE)) or dt.date.max)
+            <= day + dt.timedelta(days=4)]
+    print("PROBE {}: {} row(s), {} open installing {}..{}, {} today".format(
+        owner, len(mine), len(week), day - dt.timedelta(days=3),
+        day + dt.timedelta(days=4), len(pull.scheduled_on(mine, day))))
+    for r in sorted(week, key=lambda r: (r.get(pull.REP, ""), r.get(pull.INSTALL_DATE, ""))):
+        print("PROBE row:", r.get(pull.REP), "|", r.get(pull.CUSTOMER), "|",
+              r.get(pull.SPM), "| sold", r.get(pull.SALE_DATE), "| install",
+              r.get(pull.INSTALL_DATE), "|", r.get(pull.STATUS), "|", r.get(pull.TECH))
     return csv_path
-
-
-def probe_urls(owner: str, day: dt.date) -> int:
-    """Which URL filter spelling does this view honor? 2026-11-10: Owner + ISO
-    sale weeks + ISO install week hid the sheet (empty match). Each variant
-    below carries ONE filter and NO owner, so a filter Tableau ignores shows up
-    as the stale default (April-July sales) instead of a hidden sheet."""
-    from urllib.parse import quote
-    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
-    from automations.shared.tableau_patchright import tableau_session
-    sun = pull._week_end(day, 6)
-    sat = pull._week_end(day, 5)
-    weeks = [sun - dt.timedelta(weeks=i) for i in range(pull.SALE_WEEKS)]
-    mdy = lambda d: "{}/{}/{}".format(d.month, d.day, d.year)
-    long_ = lambda d: d.strftime("%B ") + "{}, {}".format(d.day, d.year)
-    # Round 1 (11/10): owner / ISO sale weeks / ISO install week each HID the
-    # sheet alone (each collides with the view's stale saved filters); M/D/YYYY
-    # and long dates were IGNORED. Round 2 = ISO combos.
-    sale6 = ("Sale Date Week Ending", ",".join(d.isoformat() for d in weeks))
-    sale1 = ("Sale Date Week Ending", (sun - dt.timedelta(weeks=1)).isoformat())
-    inst = ("Current Install Date Week Ending", sat.isoformat())
-    variants = [
-        ("sale1 + install", [sale1, inst]),
-        ("sale6 + install", [sale6, inst]),
-        ("sale1 + install + owner", [sale1, inst, ("Owner Name", owner)]),
-        ("sale6 + install(All)", [sale6, ("Current Install Date Week Ending", "")]),
-        ("sale1 only", [sale1]),
-    ]
-    _ = (mdy, long_)
-    out = Path(tempfile.gettempdir()) / "activations_today_variant.csv"
-    with tableau_session(verbose=False) as page:
-        for name, params in variants:
-            url = pull.VIEW_URL + "?" + "&".join(
-                "{}={}".format(quote(k), quote(v, safe=",-/")) for k, v in params)
-            try:
-                if out.exists():
-                    out.unlink()
-                drive_crosstab_dialog(page, url, pull.WORKSHEET, out, verbose=False)
-                rows = pull.read_rows(out)
-            except Exception as e:  # noqa: BLE001 — a probe reports, never dies
-                print("VARIANT {:24s} FAILED: {}".format(name, str(e).splitlines()[0][:160]))
-                continue
-            sale = sorted({pull.parse_date(r.get(pull.SALE_DATE)) for r in rows} - {None})
-            mine = pull.owner_rows(rows, owner)
-            print("VARIANT {:24s} rows={} sales {}..{} owners={} {}={} today={}".format(
-                name, len(rows), sale[0] if sale else "-", sale[-1] if sale else "-",
-                len({r.get(pull.OWNER) for r in rows}), owner, len(mine),
-                len(pull.scheduled_on(mine, day))))
-    return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="activations_today")
-    ap.add_argument("--probe-urls", action="store_true")
     ap.add_argument("--owner", default=DEFAULT_OWNER)
     ap.add_argument("--day", default=None, help="YYYY-MM-DD (default: today CT)")
     ap.add_argument("--csv", default=None, help="Use this crosstab, skip Tableau")
@@ -244,8 +182,6 @@ def main(argv=None) -> int:
 
     day = dt.date.fromisoformat(args.day) if args.day else pull.central_today()
     csv_path = Path(args.csv) if args.csv else None
-    if args.probe_urls:
-        return probe_urls(args.owner, day)
     if args.probe:
         csv_path = probe(csv_path, args.owner, day)
         if not (args.post_slack or args.post_to or args.dm_user):
@@ -253,7 +189,7 @@ def main(argv=None) -> int:
 
     print("=== {} — {} — {} (Central) ===".format(LABEL, args.owner, day))
     if csv_path is None:
-        csv_path = pull.fetch(args.owner, day)
+        csv_path = pull.fetch(day)
     rows = pull.read_rows(csv_path)
     mine = pull.owner_rows(rows, args.owner)
     today = pull.scheduled_on(mine, day)
@@ -285,7 +221,7 @@ def main(argv=None) -> int:
         # proves it loaded. An owner with pending installs but none today is a
         # real zero; an export with nothing for the owner at all is not.
         if not mine:
-            print("✗ export has NO pending installs for {} at all — can't tell "
+            print("✗ export has NO orders for {} at all — can't tell "
                   "a real zero from data that didn't load. Posting nothing."
                   .format(args.owner))
             return 1

@@ -9278,7 +9278,7 @@
   },
   "activations_today_probe": {
    "on_scheduler": true,
-   "_note": "BUILD probe (Eve 2026-11-10) for Raf's 'Activations Scheduled Today' (#alphalete-sales thread 11/9 + Dylan's Loom): lists the ATT TRACKER 2.1 D2D / PENDING INSTALLS crosstab sheets and describes the export (header, default sale-week / install-week filters, Raf's installs today), then Lucy DMs ONLY Eve (U088E2KJEV8) a [SAMPLE] image with today's real installs. Nothing goes to any channel. weekdays=[] never auto-runs; `lucy rerun activations_today_probe` with no --machine.",
+   "_note": "BUILD probe (Eve 2026-11-10) for Raf's 'Activations Scheduled Today' (#alphalete-sales thread 11/9 + Dylan's Loom): pulls the ATT TRACKER 2.1 D2D ORDER LOG (Sales Board Original, last 42 days of sales; the PENDING INSTALLS view can't be driven by URL) and describes it (header, statuses, Raf's open installs this week), then Lucy DMs ONLY Eve (U088E2KJEV8) a [SAMPLE] image with today's real installs. Nothing goes to any channel. weekdays=[] never auto-runs; `lucy rerun activations_today_probe` with no --machine.",
    "display_name": "Activations Scheduled Today (probe)",
    "source_type": "tableau",
    "data_sources": [],
