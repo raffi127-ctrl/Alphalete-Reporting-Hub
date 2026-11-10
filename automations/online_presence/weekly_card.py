@@ -1,15 +1,20 @@
-"""The weekly Brand Health card for each office, Fridays at noon, in its room.
+"""The weekly card for each office, Fridays at noon, in its Slack channel.
 
 Megan 2026-11-08: "this review card we can just do once a week - friday at
-noon". Same engine as Alphalete's card (brand_audit: Google reviews, search
-results, Reddit, website, design review), pointed at the office's OWN
-details from its sign-up. Posted to the office's room as the card image,
-then one short message whose thread lists what doesn't match their sign-up
-(consistency.py) and what to check by hand.
+noon". Since 2026-11-10 it is the SIMPLE card (simple_card.py, Megan: "redo
+the card all together"): Google rating + new reviews, the top 5 Google
+results for their name, posts, their info online, up to 3 things to do, 3
+ways to rank higher on Google, and week-by-week charts.
 
-INDEED + GLASSDOOR ARE NOT READ HERE. Both block robots; for offices they
-are "check by hand" lines in the thread, never scraped (Megan's rule: Indeed
-is notify-only, and we don't get around robot checks).
+What goes out, per office:
+    the card picture                     (channel, the parent post)
+      -> links + every new review and how it was answered   (thread)
+      -> the PDF: every "why + how" spelled out, links that work   (thread)
+Then this Friday's numbers are saved, so next Friday can say "vs last week"
+(record() -- only a live post saves; a preview never becomes "last week").
+
+INDEED + GLASSDOOR ARE NOT READ HERE: both block robots (Megan's rule:
+Indeed is notify-only, and we don't get around robot checks).
 
 LIVE OFFICES ONLY on a --live run; anything else is a dry run that renders
 the card locally and posts nothing.
@@ -21,17 +26,13 @@ the card locally and posts nothing.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import sys
 import traceback
+from pathlib import Path
 from typing import Dict, List
 
 from automations.online_presence import offices
-
-# What an office card reads (the Alphalete card's list, minus the Indeed /
-# Glassdoor scrape and the Meta API, which only Alphalete has a token for).
-OFFICE_COLLECTORS = ("google_reviews", "serp", "reddit", "website",
-                     "social_public", "website_review")
-
 
 def company_for(p) -> "object":
     """The brand_audit Company for an office, built from its sign-up."""
@@ -46,60 +47,54 @@ def company_for(p) -> "object":
                    indeed=p.indeed_url, glassdoor=p.glassdoor_url)
 
 
-def audit(company) -> tuple:
-    """(scorecard, results) with only the office collectors."""
-    from automations.brand_audit import score
-    from automations.brand_audit import collectors as C
-    from automations.brand_audit.collectors.base import CollectorResult
-    import importlib
-    results = {}
-    for name in OFFICE_COLLECTORS:
-        mod = importlib.import_module(f"automations.brand_audit.collectors.{name}")
-        try:
-            r = mod.collect(company)
-        except Exception as e:
-            r = CollectorResult.failed(getattr(mod, "SOURCE", name), str(e))
-        results[r.source] = r.as_dict()
-    return score.build_scorecard(results, company).as_dict(), results
+OUT = Path(__file__).resolve().parents[2] / "output" / "online_presence"
 
 
-def checks_message(p) -> tuple:
-    """(short header, thread detail) for the sign-up match + by-hand list."""
-    from automations.online_presence import consistency
-    rows = consistency.checks(p)
-    bad = [r for r in rows if r["ok"] is False]
-    hand = [r for r in rows if r["ok"] is None]
-    head = (f":white_check_mark: *Everything Lucy can check matches your sign-up*"
-            if not bad else
-            f":warning: *{len(bad)} thing{'s' if len(bad) != 1 else ''} "
-            f"{'don' if len(bad) != 1 else 'doesn'}'t match your sign-up this week*")
-    lines = [f"• *{r['site']}: {r['item']}*: should be `{r['expected']}`, "
-             f"shows `{r['found']}`" for r in bad]
-    if hand:
-        lines += ["", "*Check by hand* (these sites block Lucy):"]
-        lines += [f"• {r['site']}: {r['expected']} ({r['where']})" for r in hand]
-    return head, "\n".join(lines) or "Nothing to fix."
-
-
-def run_office(p, *, live: bool) -> Dict:
-    from automations.brand_audit import alerts, report
-    company = company_for(p)
-    card, results = audit(company)
-    path = report.save_report(company, card, results)
-    out = {"office": p.key, "grade": card.get("overall_grade"),
-           "score": card.get("overall_score"), "card": str(path)}
+def run_office(p, *, live: bool, now: dt.datetime | None = None) -> Dict:
+    from automations.online_presence import simple_card as sc
+    now = now or dt.datetime.now()
+    card = sc.build(p, now=now)
+    stem = f"weekly_card_{p.key}_{now:%Y%m%d}"
+    files = sc.files(card, OUT / p.key, stem)
+    out = {"office": p.key, "verdict": card["verdict"], "card": str(files["png"])}
     if not live:
         out["action"] = "would_post"
         return out
-    png = report.render_card_png(path)
-    alerts.post_card_image(p.business_name, png, card, channel_id=p.slack_channel)
     from automations.brand_audit.social_inbox import _client
     cl = _client()
-    head, detail = checks_message(p)
-    r = cl.chat_postMessage(channel=p.slack_channel, text=head)
-    cl.chat_postMessage(channel=p.slack_channel, thread_ts=r.get("ts"), text=detail)
+    head = (f":bar_chart: *Your week online · {card['week_of']} – {card['until']}* · "
+            f"{card['verdict']}")
+    cl.files_upload_v2(channel=p.slack_channel, file=str(files["png"]),
+                       filename=f"{p.business_name} weekly card.png",
+                       title=f"{p.business_name} · your week online",
+                       initial_comment=head)
+    # The parent is the picture; everything else goes in its thread
+    # (Raf's standing post shape: parent = title/image only).
+    parent = _parent_ts(cl, p.slack_channel, head)
+    if not parent:
+        raise RuntimeError("card picture didn't show up in the channel")
+    thread = sc.thread_text(card)
+    if thread:
+        cl.chat_postMessage(channel=p.slack_channel, thread_ts=parent, text=thread)
+    cl.files_upload_v2(channel=p.slack_channel, thread_ts=parent, file=str(files["pdf"]),
+                       filename=f"{p.business_name} weekly card.pdf",
+                       title="The full card: why + how for every step",
+                       initial_comment=":page_facing_up: The full card, with why + how for every step.")
+    sc.record(p, card, now)
     out["action"] = "posted"
     return out
+
+
+def _parent_ts(cl, channel: str, head: str) -> str:
+    """The ts of the card we just posted (files_upload_v2 doesn't hand it back
+    reliably), found by its header in the channel's newest messages."""
+    import time
+    for _ in range(6):
+        for m in cl.conversations_history(channel=channel, limit=10).get("messages") or []:
+            if head.split(" · ")[0] in (m.get("text") or "") and m.get("files"):
+                return m["ts"]
+        time.sleep(3)
+    return ""
 
 
 def main(argv=None) -> int:
@@ -126,7 +121,7 @@ def main(argv=None) -> int:
             continue
         try:
             r = run_office(p, live=a.live and p.is_live)
-            print(f"[{p.key}] {r['action']} · {r['grade']} ({r['score']}/100) · {r['card']}")
+            print(f"[{p.key}] {r['action']} · {r['verdict']} · {r['card']}")
         except Exception:
             failed += 1
             print(f"[{p.key}] FAILED\n{traceback.format_exc()}")

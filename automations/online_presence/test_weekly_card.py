@@ -28,63 +28,49 @@ class Company(unittest.TestCase):
                          ("Kash Marketing", "Dallas", "https://kash.example",
                           "https://instagram.com/kash"))
 
-    def test_never_reads_indeed_or_glassdoor(self):
-        self.assertNotIn("reputation", W.OFFICE_COLLECTORS)
 
-
-class Message(unittest.TestCase):
-    def _msg(self, rows):
-        with mock.patch("automations.online_presence.consistency.checks", return_value=rows):
-            return W.checks_message(_office())
-
-    def test_all_match(self):
-        head, _ = self._msg([{"site": "Google", "item": "phone", "ok": True,
-                              "expected": "", "found": "", "where": ""}])
-        self.assertIn("matches", head)
-
-    def test_one_thing_grammar_and_detail(self):
-        head, detail = self._msg([{"site": "Google", "item": "phone", "ok": False,
-                                   "expected": "214-555-0100", "found": "972-000-0000",
-                                   "where": ""}])
-        self.assertIn("1 thing doesn't match", head)
-        self.assertIn("972-000-0000", detail)
-
-    def test_two_things(self):
-        bad = {"site": "Google", "item": "x", "ok": False, "expected": "", "found": "", "where": ""}
-        head, _ = self._msg([bad, bad])
-        self.assertIn("2 things don't match", head)
+CARD = {"verdict": "A few things need you", "week_of": "Nov 4", "until": "Nov 10",
+        "lines": {}, "review_link": "https://g/r", "slack_link": "https://s/c"}
 
 
 class Posting(unittest.TestCase):
     def _run(self, argv, rows):
-        posted = []
-        fake = mock.MagicMock()
-        fake.chat_postMessage.side_effect = lambda **kw: posted.append(kw) or {"ts": "1.1"}
+        self.fake = fake = mock.MagicMock()
+        self.posted, self.uploads = [], []
+        fake.chat_postMessage.side_effect = lambda **kw: self.posted.append(kw) or {"ts": "2.2"}
+        fake.files_upload_v2.side_effect = lambda **kw: self.uploads.append(kw) or {"ok": True}
+        fake.conversations_history.return_value = {"messages": [
+            {"ts": "1.1", "text": ":bar_chart: *Your week online · Nov 4 – Nov 10* · x",
+             "files": [{}]}]}
+        from automations.online_presence import simple_card as sc
+        self.record = mock.Mock()
         with mock.patch.object(offices, "load", return_value=rows), \
-                mock.patch.object(W, "audit", return_value=({"overall_grade": "B", "overall_score": 80}, {})), \
-                mock.patch("automations.brand_audit.report.save_report", return_value="card.html"), \
-                mock.patch("automations.brand_audit.report.render_card_png", return_value="card.png"), \
-                mock.patch("automations.brand_audit.alerts.post_card_image") as img, \
+                mock.patch.object(sc, "build", return_value=CARD), \
+                mock.patch.object(sc, "files", return_value={"png": "c.png", "pdf": "c.pdf"}), \
+                mock.patch.object(sc, "thread_text", return_value="links + reviews"), \
+                mock.patch.object(sc, "record", self.record), \
                 mock.patch("automations.brand_audit.social_inbox._client", return_value=fake), \
-                mock.patch.object(W, "checks_message", return_value=("head", "detail")):
+                mock.patch("automations.online_presence.timing.record"):
             W.main(argv)
-        return img, posted
 
-    def test_live_posts_card_and_checks_in_the_office_room(self):
-        img, posted = self._run(["--live"], {"kash": _office()})
-        self.assertEqual(img.call_args.kwargs["channel_id"], "C0KASHROOM")
-        self.assertEqual([p["channel"] for p in posted], ["C0KASHROOM", "C0KASHROOM"])
-        self.assertEqual(posted[1]["thread_ts"], "1.1")
+    def test_live_posts_picture_then_links_and_pdf_in_its_thread(self):
+        self._run(["--live"], {"kash": _office()})
+        self.assertEqual([u["channel"] for u in self.uploads], ["C0KASHROOM", "C0KASHROOM"])
+        self.assertNotIn("thread_ts", self.uploads[0])                 # the picture = parent
+        self.assertEqual(self.uploads[1]["thread_ts"], "1.1")           # the PDF in its thread
+        self.assertTrue(self.uploads[1]["file"].endswith(".pdf"))
+        self.assertEqual(self.posted[0]["thread_ts"], "1.1")            # links + reviews
+        self.record.assert_called_once()                                # next week's "vs last week"
 
     def test_dry_office_skipped_on_the_friday_run(self):
-        img, posted = self._run(["--live"], {"kash": _office(mode="dry")})
-        self.assertFalse(img.called)
-        self.assertEqual(posted, [])
+        self._run(["--live"], {"kash": _office(mode="dry")})
+        self.assertEqual((self.uploads, self.posted), ([], []))
+        self.record.assert_not_called()
 
-    def test_dry_run_posts_nothing(self):
-        img, posted = self._run([], {"kash": _office()})
-        self.assertFalse(img.called)
-        self.assertEqual(posted, [])
+    def test_dry_run_posts_nothing_and_saves_no_history(self):
+        self._run([], {"kash": _office()})
+        self.assertEqual((self.uploads, self.posted), ([], []))
+        self.record.assert_not_called()
 
 
 if __name__ == "__main__":
