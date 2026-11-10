@@ -157,6 +157,15 @@ _CODE_CHANGE: Sequence[Tuple[str, str]] = (
      "This machine is not allowed into that source any more."),
     ("404",
      "The page or file it downloads is gone."),
+    # Not a code change, but the same answer: re-running changes nothing until
+    # a PERSON does something. slack_skool_email refuses to mail last week's
+    # new starts when the newest D2D OBCL tab isn't dated today (run.py
+    # _wrong_week). 2026-10-12 it did exactly that — newest tab was 10.5 — and
+    # triage said "the reason isn't in the log" with the reason sitting in it.
+    ("this week's lineup hasn't been built yet",
+     "There's no D2D OBCL tab for this week, so nothing was sent. No new "
+     "starts this week? Nothing to do. If there are, build the tab and re-run "
+     "it from its Hub card."),
 )
 
 # A re-run genuinely IS the fix for these, and the orchestrator is already doing

@@ -33,24 +33,29 @@
          should just always be active for that current week - updating every
          hour 6am-8pm"). Every day including Sunday: a board is seeded off the
          training calendar, and somebody finishing a quiz on a Sunday should
-         not wait until Monday to come off the chase list. -->
+         not wait until Monday to come off the chase list.
+
+         AT HALF PAST, not on the hour: on Lucy 3 the OBCL <- OwnerVille sweep
+         fires on the hour and drives the same OwnerVille. Two runs sharing a
+         browser profile wedge it (obcl_ov_sweep keeps its own profile for
+         exactly that reason), so the two are kept half an hour apart. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

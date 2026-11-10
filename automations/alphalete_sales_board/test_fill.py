@@ -205,6 +205,18 @@ def test_the_twin_is_planned_against_its_own_rows():
     assert a[0]["values"] == b[0]["values"]
 
 
+def test_a_typed_leading_zero_is_the_same_week():
+    """WE 11.1 was named 'Sales Board WE 11.01' and the sweep stopped dead:
+    three failed passes and no sales texts, over one zero."""
+    assert fill.same_tab("Sales Board WE 11.01", "Sales Board WE 11.1")
+    assert fill.same_tab(" sales board we 11.1 ", "Sales Board WE 11.1")
+    assert fill.same_tab("Sales Board WE 09.06", "Sales Board WE 9.6")
+    assert not fill.same_tab("Sales Board WE 11.10", "Sales Board WE 11.1")
+    assert not fill.same_tab("Sales Board WE 1.1", "Sales Board WE 11.1")
+    assert not fill.same_tab("Line Up WE 11.01", "Sales Board WE 11.1")
+    assert not fill.same_tab("SANDBOX — Sales Board WE 11.1", "Sales Board WE 11.1")
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

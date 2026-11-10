@@ -174,3 +174,29 @@ def test_the_search_skips_people_it_cannot_learn_anything_about(monkeypatch):
     got = R._board_names("raf", MONDAY, columns=cols)
     assert got == ["Ada Fournier"], (
         "the marked-off and the already-complete are not worth a request")
+
+
+# ------------------------------------- a credential this box was never given
+
+def test_sterling_is_skipped_not_failed_without_the_password(tmp_path, monkeypatch):
+    """It reads ONE inbox shared by every office and writes through Sheets, so
+    it runs wherever the password is, once — not on each office's machine. A
+    box without it is not broken, and failing the hourly run over it makes
+    every other step's result read like an outage (Lucy 2, 2026-11-10)."""
+    from automations.icd_onboarding import bg_status as BG
+    monkeypatch.setattr(BG, "APP_PW_PATH", str(tmp_path / "nope"))
+    called = []
+    monkeypatch.setattr(BG, "run", lambda *a, **k: called.append(1))
+    said = []
+    assert R.from_sterling("raf", MONDAY, log=said.append) == 0
+    assert not called, "it must not open the inbox without a password"
+    assert any("skipped" in s for s in said)
+
+
+def test_sterling_runs_where_the_password_is(tmp_path, monkeypatch):
+    from automations.icd_onboarding import bg_status as BG
+    pw = tmp_path / "gmail-app-password-lucysterling"
+    pw.write_text("abcd efgh ijkl mnop")
+    monkeypatch.setattr(BG, "APP_PW_PATH", str(pw))
+    monkeypatch.setattr(BG, "run", lambda *a, **k: 7)
+    assert R.from_sterling("raf", MONDAY, log=lambda *a: None) == 7

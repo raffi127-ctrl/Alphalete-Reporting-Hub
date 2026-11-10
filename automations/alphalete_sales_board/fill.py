@@ -31,6 +31,7 @@ workbook, not just this one. [[reference_sheets_write_quota_429]]
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Dict, List, Optional, Tuple
 
 from automations.alphalete_sales_board import config as C
@@ -51,6 +52,14 @@ SANDBOX_PREFIX = "SANDBOX — "
 def tab_title(day: dt.date) -> str:
     sunday = C.week_ending(day)
     return "%s %d.%d" % (TAB_PREFIX, sunday.month, sunday.day)
+
+
+def same_tab(title: str, want: str) -> bool:
+    """Same tab, reading 'WE 11.01' and 'WE 11.1' as one week (people type both;
+    `week_roll.find_tab` already reads them that way)."""
+    def norm(s):
+        return re.sub(r"(?<=[ .])0+(?=\d)", "", " ".join(s.split())).lower()
+    return norm(title) == norm(want)
 
 
 def open_tab(day: dt.date, client=None):

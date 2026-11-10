@@ -139,21 +139,22 @@ JOBS: Dict[str, dict] = {
     },
     "icd_onboarding": {
         "name": "ICD onboarding board",
-        # LUCY 2 since 2026-11-10. It ran one evening on Megan's Mac and could
-        # not keep an AppStream session alive -- saved 22:00, working 22:02,
-        # rejected by 22:53, with no session holder there and the credential
-        # deliberately not on her laptop. An ICD's own box runs its own copy.
-        "machine": "Lucy 2",
-        "first_by": "07:00",       # first pass 06:00 + 60 min grace
+        # LUCY 3: the only box that can do all five steps. The board must run
+        # where that office's OwnerVille is -- Lucy 2 saw 0 of 10 because it
+        # signs in as `chidalgo`, Carlos's account; Lucy 3 is `rhidalgo`.
+        # Megan's Mac could not hold an AppStream session for an hour.
+        # An ICD's own box runs its own copy for its own office.
+        "machine": "Lucy 3",
+        "first_by": "07:30",       # first pass 06:30 + 60 min grace
         "max_gap_min": 150,        # hourly → 2.5h tolerates one skipped pass
-        "active_until": "21:00",   # last pass 20:00 + grace
+        "active_until": "21:30",   # last pass 20:30 + grace
         "weekdays": None,
         "watch_from": "2026-11-09",
         "means": ("the onboarding board stops filling itself, so the printed "
                   "classroom sheets go stale and people are chased for steps "
                   "they have already done. Nothing is sent or lost — only the "
                   "ticks go cold."),
-        "fix": "lucy rerun install_icd_onboarding_agent --machine \"Lucy 2\"",
+        "fix": "lucy rerun install_icd_onboarding_agent --machine \"Lucy 3\"",
     },
     "obcl_ov_sweep": {
         "name": "OBCL <- OwnerVille sweep",

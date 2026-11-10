@@ -58,7 +58,7 @@ class BackstopAdoptionTest(unittest.TestCase):
 
     def _ran_outside(self, *report_ids):
         ids = set(report_ids)
-        R._ran_outside_the_flow = lambda rid: rid in ids
+        R._ran_outside_the_flow = lambda rid, name="": rid in ids
 
     # ---- the 2026-09-10 incident, replayed ----
 
@@ -116,7 +116,7 @@ class BackstopAdoptionTest(unittest.TestCase):
         self.assertEqual(ds.reports["credico_fetch"].status, state.FAILED)
 
     def test_a_broken_hub_lookup_cannot_invent_a_done(self):
-        def boom(rid):
+        def boom(rid, name=""):
             raise RuntimeError("hub unreachable")
         R._ran_outside_the_flow = boom
         ds = self._day({"a": (state.PENDING, "box")})
@@ -158,3 +158,57 @@ class BackstopAdoptionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SharedCardAdoptionTest(unittest.TestCase):
+    """2026-10-15: dd_week_roll publishes to the dd_populate card. At noon the
+    roll's 09:20 success row was read as proof that dd_populate had run, so
+    populate was adopted DONE without running, the 10.11.26 column stayed $0
+    and the DD bulletin hard-blocked all day. On a shared card only a row with
+    THIS report's name counts."""
+
+    ROWS = [{"Report ID": "dd_populate", "Started At": "2026-10-15T09:20:03",
+             "Report Name": "DD — roll the week-ending column",
+             "Status": "success"}]
+
+    def setUp(self):
+        from automations.day_orchestrator import hub_publish as H
+        self.H = H
+        self._ws, self._card = H._ws, H.hub_card_id
+
+        class _WS:
+            def __init__(s, rows): s.rows = rows
+            def get_all_records(s): return s.rows
+        self._WS = _WS
+        H.hub_card_id = lambda rid: "dd_populate"
+
+    def tearDown(self):
+        self.H._ws, self.H.hub_card_id = self._ws, self._card
+
+    def _rows(self, rows):
+        self.H._ws = lambda: self._WS(rows)
+
+    def test_the_rolls_row_does_not_prove_populate_ran(self):
+        self._rows(self.ROWS)
+        self.assertFalse(self.H.ran_ok_today(
+            "dd_populate", "2026-10-15",
+            report_name="DD — populate all owners from our mapping"))
+
+    def test_shared_card_without_a_name_cannot_prove_anything(self):
+        self._rows(self.ROWS)
+        self.assertFalse(self.H.ran_ok_today("dd_populate", "2026-10-15"))
+
+    def test_populates_own_row_still_counts(self):
+        self._rows(self.ROWS + [{
+            "Report ID": "dd_populate", "Started At": "2026-10-15T09:31:00",
+            "Report Name": "DD — populate all owners from our mapping",
+            "Status": "success"}])
+        self.assertTrue(self.H.ran_ok_today(
+            "dd_populate", "2026-10-15",
+            report_name="DD — populate all owners from our mapping"))
+
+    def test_unshared_card_is_unchanged(self):
+        self.H.hub_card_id = lambda rid: "solo-card"
+        self._rows([{"Report ID": "solo-card", "Started At": "2026-10-15T08:00",
+                     "Report Name": "anything", "Status": "success"}])
+        self.assertTrue(self.H.ran_ok_today("solo_report", "2026-10-15"))

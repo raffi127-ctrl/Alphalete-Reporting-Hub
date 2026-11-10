@@ -1257,6 +1257,7 @@ OPTIONAL_RAW_COLUMNS = {"spe.Phone", "Auto Bill Pay", "Next Up",
 
 STATUS_ORDER = [
     "Active",
+    "Posted",           # NDS: the order posted (paid) — see nds_orderlog
     "Cancelled",
     "Delivered",
     "Disconnected",
@@ -1269,6 +1270,7 @@ STATUS_ORDER = [
 
 STATUS_COLORS = {
     "Active":           "57BB8A",
+    "Posted":           "57BB8A",
     "Cancelled":        "E67C73",
     "Disconnected":     "E67C73",
     "Scheduled":        "FFD666",
@@ -1617,9 +1619,10 @@ def _ol_width(char_len: int) -> float:
 
 
 def _pdc_code(status) -> str | None:
-    """Active -> None (belongs in a week tab); else P/D/C for the pendings tab."""
+    """Active/Posted -> None (belongs in a week tab); else P/D/C for the
+    pendings tab."""
     s = str(status or "").strip()
-    if s == "Active":
+    if s in ("Active", "Posted"):
         return None
     if s == "Cancelled":
         return "C"

@@ -35,6 +35,16 @@ class Buckets(unittest.TestCase):
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
         self.assertIn("Tableau view", v.reason)
 
+    def test_skool_email_missing_tab_names_the_tab(self):
+        """2026-10-12: the refusal was in the log and triage said it wasn't."""
+        tail = ("Refusing to send: the newest tab is 'D2D OBCL 10.5' (dated "
+                "2026-10-05), but today is 2026-10-12.\n"
+                "  That means this week's lineup hasn't been built yet.")
+        v = _classify(tail=tail)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("D2D OBCL tab", tri.line_for(v))
+        self.assertNotIn("reason isn't in the log", tri.line_for(v))
+
     def test_expired_login_early_is_lucys(self):
         v = _classify(tail="appstream session expired — no live token")
         self.assertEqual(v.bucket, tri.LUCY)

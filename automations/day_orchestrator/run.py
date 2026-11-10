@@ -1830,7 +1830,7 @@ def _adopt_out_of_band(ds) -> bool:
             continue
         if rs.nothing_to_do:
             continue
-        if not _ran_outside_the_flow(rs.report_id):
+        if not _ran_outside_the_flow(rs.report_id, rs.display_name):
             continue
         ds.set(rs.report_id, state.DONE,
                reason="already ran today outside the 4am flow (a standalone "
@@ -1843,14 +1843,14 @@ def _adopt_out_of_band(ds) -> bool:
     return moved
 
 
-def _ran_outside_the_flow(report_id: str) -> bool:
+def _ran_outside_the_flow(report_id: str, report_name: str = "") -> bool:
     """Did this report already publish a successful run today from somewhere
     other than this loop (its standalone launchd agent)? Best-effort: any
     problem answers False, so a lookup failure can only keep today's behaviour,
     never invent a DONE."""
     try:
         from automations.day_orchestrator import hub_publish
-        return bool(hub_publish.ran_ok_today(report_id))
+        return bool(hub_publish.ran_ok_today(report_id, report_name=report_name))
     except Exception:  # noqa: BLE001
         return False
 
@@ -1885,7 +1885,7 @@ def _apply_backstop(ds, stale_after):
             # honest terminal state: nothing was scheduled to happen, and nothing did.
             ds.set(rs.report_id, state.SKIPPED,
                    reason=f"nothing to do today ({rs.last_reason or 'n/a'})")
-        elif _ran_outside_the_flow(rs.report_id):
+        elif _ran_outside_the_flow(rs.report_id, rs.display_name):
             # IT DID RUN — just not through this loop (Megan 2026-08-30).
             # Several reports exist BOTH in the 4am flow and as a standalone
             # launchd agent kept as a backstop. b2b_metrics is the live case: its

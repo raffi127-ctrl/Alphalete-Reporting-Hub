@@ -241,7 +241,27 @@ def from_blueink(office_key: str, week_start: dt.date, *,
 
 def from_sterling(office_key: str, week_start: dt.date, *,
                   dry_run: bool = True, log=print) -> int:
+    """BG Status, off the ICDs' shared Sterling inbox.
+
+    SKIPPED, NOT FAILED, where that inbox's app password is not installed.
+    This reads ONE inbox shared by every office and writes through Sheets, so
+    it does not have to run on the office's own machine -- it has to run
+    wherever the password is, once. A box without it is not broken; it simply
+    is not the one that does this job, and failing the whole hourly run over a
+    credential it was never given makes every other step's result look like an
+    outage (Lucy 2, 2026-11-10).
+
+    Nothing is ticked on the way past, so a skipped pass can never be mistaken
+    for "nobody has a result" ([[feedback_empty_means_proven_zero]]).
+    """
     from automations.icd_onboarding import bg_status
+
+    from automations.icd_alerts import code_answer as CA
+    path = bg_status.APP_PW_PATH or str(CA.RESULTS_APP_PW)
+    if not pathlib.Path(path).exists():
+        log("  sterling: this machine has no %s password — skipped. BG Status "
+            "fills from whichever box holds it." % bg_status.INBOX)
+        return 0
     return bg_status.run(week_start, offices=[office_key],
                          dry_run=dry_run, log=log)
 
@@ -334,11 +354,19 @@ def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 # its enrolment names its office. A Lucy is not enrolled for anybody, so the
 # board it works is routed here, the way applicant_push routes its offices.
 #
-# LUCY 2 (Megan, 2026-11-10: "run it now on the lightest machine"). It holds a
-# warm AppStream session, which the seed step cannot work without, and it was
-# the lightest of the three that do -- 28 scheduled entries against Lucy 3's 38
-# and Lucy 1's 44. It also drives Blue Ink rather than OwnerVille, so it does
-# not contend with Lucy 3's OBCL sweep for a browser profile.
+# THE BOARD RUNS WHERE THAT OFFICE'S OWNERVILLE IS. That is the constraint
+# that decides this, and it is not negotiable: five of the nine columns are
+# read off View Progress, and a machine signed in as somebody else sees none
+# of this office's reps. Lucy 2 was tried for a morning on 2026-11-10 and
+# found 0 of 10 -- its OwnerVille account is `chidalgo`, Carlos's. Nothing was
+# wrongly ticked, because unread never ticks, but those columns could never
+# have filled. Lucy 3 is `rhidalgo`, Raf's, which is why the OBCL sweep for
+# the same people already lives there.
+#
+# It also holds a warm AppStream session (Lucy 1/2/3 do; Lucy 4's
+# holds_appstream is off on purpose, and fleet.py calls turning it on "the one
+# Lucy 4 change that can cost the LIVE fleet"), and seed cannot work without
+# one -- Megan's Mac could not keep a session alive for an hour.
 #
 # NOT MEGAN'S MAC, which ran this for one evening and could not keep an
 # AppStream session alive: saved at 22:00, working at 22:02, rejected by 22:53.
@@ -349,7 +377,7 @@ def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 # turning it on "the one Lucy 4 change that can cost the LIVE fleet", because
 # a second session competes for the token the 4am batches share.
 OFFICES_BY_MACHINE = {
-    "Lucy 2": ("raf",),
+    "Lucy 3": ("raf",),
 }
 
 # A machine that is neither a Lucy nor an ECO box can still name its offices,
