@@ -193,17 +193,20 @@ def probe_urls(owner: str, day: dt.date) -> int:
     weeks = [sun - dt.timedelta(weeks=i) for i in range(pull.SALE_WEEKS)]
     mdy = lambda d: "{}/{}/{}".format(d.month, d.day, d.year)
     long_ = lambda d: d.strftime("%B ") + "{}, {}".format(d.day, d.year)
+    # Round 1 (11/10): owner / ISO sale weeks / ISO install week each HID the
+    # sheet alone (each collides with the view's stale saved filters); M/D/YYYY
+    # and long dates were IGNORED. Round 2 = ISO combos.
+    sale6 = ("Sale Date Week Ending", ",".join(d.isoformat() for d in weeks))
+    sale1 = ("Sale Date Week Ending", (sun - dt.timedelta(weeks=1)).isoformat())
+    inst = ("Current Install Date Week Ending", sat.isoformat())
     variants = [
-        ("owner only", [("Owner Name", owner)]),
-        ("sale weeks ISO", [("Sale Date Week Ending",
-                             ",".join(d.isoformat() for d in weeks))]),
-        ("sale weeks M/D/YYYY", [("Sale Date Week Ending",
-                                  ",".join(mdy(d) for d in weeks))]),
-        ("sale weeks long", [("Sale Date Week Ending",
-                              ",".join(long_(d) for d in weeks))]),
-        ("install week ISO", [("Current Install Date Week Ending", sat.isoformat())]),
-        ("install week M/D/YYYY", [("Current Install Date Week Ending", mdy(sat))]),
+        ("sale1 + install", [sale1, inst]),
+        ("sale6 + install", [sale6, inst]),
+        ("sale1 + install + owner", [sale1, inst, ("Owner Name", owner)]),
+        ("sale6 + install(All)", [sale6, ("Current Install Date Week Ending", "")]),
+        ("sale1 only", [sale1]),
     ]
+    _ = (mdy, long_)
     out = Path(tempfile.gettempdir()) / "activations_today_variant.csv"
     with tableau_session(verbose=False) as page:
         for name, params in variants:
