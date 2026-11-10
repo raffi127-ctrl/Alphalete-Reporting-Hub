@@ -136,7 +136,9 @@ def is_open(r: Dict[str, str]) -> bool:
     """Still to install: no activation date and not canceled."""
     if parse_date(r.get(ACTIVATION)):
         return False
-    return "cancel" not in r.get(STATUS, "").lower()
+    # Lucy 4 probe 11/10: an 'Active' line can still have no activation date.
+    s = r.get(STATUS, "").strip().lower()
+    return not ("cancel" in s or s in ("active", "disconnected"))
 
 
 def scheduled_on(rows: List[Dict[str, str]], day: dt.date) -> List[Dict[str, str]]:
