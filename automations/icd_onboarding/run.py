@@ -30,6 +30,7 @@ exists to avoid.
 from __future__ import annotations
 
 import datetime as dt
+import pathlib
 from typing import Dict, List, Optional, Sequence
 
 from automations.icd_onboarding import board as B
@@ -202,12 +203,26 @@ def from_blueink(office_key: str, week_start: dt.date, *,
     if not people:
         log("  blueink: nobody on the board for that week")
         return 0
-    hires = BID.for_people(people, keep_ssn=False)
+    # THE API ONLY IF THIS MACHINE HAS A KEY. API Access is an Enterprise-only
+    # feature on this Blue Ink plan, which is why no machine in the fleet had a
+    # key on 2026-08-24 and recent_ui exists at all. An ICD on a normal plan
+    # may not be able to create one even if asked, so the web session -- the
+    # same screen a person reads -- is the route that always works.
+    from automations.blueink_docs import config as BC
     verdicts = {}
-    for p in people:
-        h = hires.get(p.name)
-        if h is not None and not h.missing_packet:
-            verdicts[p.name] = {"Blue Ink": True}
+    if str(BC._creds().get("blueink_api_key") or "").strip():
+        hires = BID.for_people(people, keep_ssn=False)
+        for p in people:
+            h = hires.get(p.name)
+            if h is not None and not h.missing_packet:
+                verdicts[p.name] = {"Blue Ink": True}
+    else:
+        from automations.blueink_docs import recent_ui as RU
+        log("  blueink: no API key on this machine — reading the web app")
+        done = RU.signed(people, headless=True)
+        for p in people:
+            if (p.email or "").strip().lower() in done:
+                verdicts[p.name] = {"Blue Ink": True}
     return F.apply(book, week_start, "blueink", verdicts,
                    dry_run=dry_run, log=log)
 
@@ -303,14 +318,40 @@ def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     return out
 
 
-def offices_here() -> List[str]:
-    """The offices THIS machine is enrolled for.
+# A machine that is NOT an ECO box but holds an office's logins anyway says so
+# here, one key per line. Megan's Mac runs Alphalete's own board this way.
+#
+# A FILE, not the committed plist: the same plist is installed on every box, so
+# an office key written into it would have every ECO machine working somebody
+# else's board.
+OFFICES_FILE = (pathlib.Path.home() / ".config" / "recruiting-report"
+                / "icd-onboarding-offices")
 
-    So the hourly run takes no arguments on an ECO box: the machine already
-    knows whose logins it holds, and a key typed into a plist is a key that
-    goes stale the day an office is re-enrolled. An office running two
-    campaigns has one board, so the keys are de-duplicated by office.
+
+def offices_here() -> List[str]:
+    """The offices THIS machine should work.
+
+    In order: the env var, this machine's file, then its ECO enrollment. So the
+    hourly run takes no arguments on an ECO box -- the machine already knows
+    whose logins it holds, and a key typed into a plist is a key that goes
+    stale the day an office is re-enrolled. An office running two campaigns has
+    one board, so the keys are de-duplicated by office.
     """
+    import os
+    named = os.environ.get("ICD_ONBOARDING_OFFICES", "")
+    if not named and OFFICES_FILE.exists():
+        try:
+            named = OFFICES_FILE.read_text(encoding="utf-8")
+        except Exception:      # noqa: BLE001
+            named = ""
+    if named:
+        out = []
+        for line in named.replace(",", "\n").splitlines():
+            key = line.strip().lower()
+            if key and not key.startswith("#") and key not in out:
+                out.append(key)
+        if out:
+            return out
     try:
         from automations.icd_alerts import config as AC
         rows = AC.enrollments()

@@ -327,6 +327,66 @@ def screen(people: List[NewStart], headless: bool = True,
     return out
 
 
+# --- has this person SIGNED? ------------------------------------------------
+# A different question from screen()'s. That one asks "is anything in the way
+# of sending?" and treats Sent, Pending and Completed alike, because all three
+# mean do not send again. The onboarding board wants only the FINISHED ones: a
+# packet still out for signature has no answers in it, and a tick that cannot
+# be un-ticked must never go on for somebody who has not signed.
+#
+# WHY IT IS HERE AND NOT ON THE API. Reading /bundles/ needs a private API key,
+# and API Access is an ENTERPRISE-ONLY feature on this plan -- which is why no
+# machine in the fleet had one on 2026-08-24 and this module exists at all.
+# An ICD on a normal plan may not be able to create a key even if asked, so the
+# board reads the same screen a person would (Megan, 2026-11-09, on asking an
+# owner for an API key: "is it going to be hard for them?").
+SIGNED = {"completed", "complete", "signed"}
+
+
+def signed_rows(text: str) -> str:
+    """The date a searched address FINISHED signing, or "".
+
+    Freshness is deliberately not applied: screen() only cares about recent
+    packets because an old one should not block a new send, while the board is
+    asking whether this person ever signed theirs.
+    """
+    for status, datestr in _ROW_RE.findall(text or ""):
+        if status.lower() in SIGNED:
+            return datestr
+    return ""
+
+
+def signed(people: List[NewStart], headless: bool = True) -> Dict[str, str]:
+    """{lowercased email: the date they finished} for everyone who has signed.
+
+    One browser for the whole week, like screen() -- relaunching per person
+    turns a few minutes into an hour.
+
+    ONLY THE EMAIL IS SEARCHED. screen() falls back to the NAME because a
+    duplicate send is worse than a false block; here the risk runs the other
+    way, and a same-name hit would tick somebody's step off the strength of a
+    different person's signature.
+    """
+    out: Dict[str, str] = {}
+    todo = [p for p in people if (p.email or "").strip()]
+    if not todo:
+        return out
+    sync_playwright = S._sync_api()
+    with sync_playwright() as p:
+        browser, ctx = S.open_context(p, headless=headless)
+        page = ctx.new_page()
+        try:
+            open_dashboard(page)
+            for person in todo:
+                email = person.email.strip()
+                when = signed_rows(_search(page, email))
+                if when:
+                    out[email.lower()] = when
+        finally:
+            browser.close()
+    return out
+
+
 # --- diagnostics ------------------------------------------------------------
 
 def _tids(page, want: str = "", limit: int = 40) -> str:

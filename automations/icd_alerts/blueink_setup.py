@@ -119,77 +119,94 @@ def _save(key: str, template_id: str = "", log=print) -> None:
     log("  saved to %s (owner-only)" % CREDS_PATH)
 
 
-def run(*, ask=None, log=print) -> str:
-    """Connect this office's Blue Ink. A word for finish_setup's summary.
+def connect_key(*, ask=None, log=print) -> str:
+    """Ask for, PROVE and save an API key. Not part of normal setup.
 
-    Never raises: one setup step must not cost the ones after it.
+    API Access is an Enterprise-only feature on this Blue Ink plan, so most
+    offices cannot create a key however clearly they are asked -- which is why
+    the board reads the web app instead and `run()` never requests one. This
+    stays for an office that does have Enterprise access, run by hand.
     """
     if ask is None:
         from automations.icd_alerts import dialogs as ask  # type: ignore
-
-    said = []
     try:
-        if have_key():
-            said.append("key already here")
-        else:
-            key = ask.password(ASK_KEY).strip()
-            if not key:
-                return "left for later"
-            why = _works(key)
-            if why:
-                # NOT SAVED. A bad key looks exactly like a good one until the
-                # first real run, which is a week later on somebody's first day.
-                ask.message(why + "\n\nNothing was saved — run this again with "
-                                  "the key from Settings → API.", error=True)
-                return "key not accepted"
-            picked = ""
-            templates = _templates(key)
-            if len(templates) == 1:
-                picked = str(templates[0].get("id") or "")
-                log("  one document template on the account: %s"
-                    % templates[0].get("name"))
-            elif templates:
-                names = [str(t.get("name") or t.get("id")) for t in templates]
-                choice = ask.choose(
-                    "Which document template do your new starts sign?",
-                    names + [SKIP])
-                if choice != SKIP:
-                    picked = str(templates[names.index(choice)].get("id") or "")
-            _save(key, picked, log=log)
-            said.append("key saved")
+        key = ask.password(ASK_KEY).strip()
+        if not key:
+            return "left for later"
+        why = _works(key)
+        if why:
+            # NOT SAVED. A bad key looks exactly like a good one until the
+            # first real run, which is a week later on somebody's first day.
+            ask.message(why + "\n\nNothing was saved — run this again with "
+                              "the key from Settings → API.", error=True)
+            return "key not accepted"
+        picked = ""
+        templates = _templates(key)
+        if len(templates) == 1:
+            picked = str(templates[0].get("id") or "")
+            log("  one document template on the account: %s"
+                % templates[0].get("name"))
+        elif templates:
+            names = [str(t.get("name") or t.get("id")) for t in templates]
+            choice = ask.choose(
+                "Which document template do your new starts sign?",
+                names + [SKIP])
+            if choice != SKIP:
+                picked = str(templates[names.index(choice)].get("id") or "")
+        _save(key, picked, log=log)
+        return "key saved"
     except ask.Cancelled:
         return "left for later"
     except Exception as e:     # noqa: BLE001
         log("  Blue Ink key step stopped: %s" % type(e).__name__)
         return "could not finish — run this again"
 
-    # The sign-in, which is only needed to SEND. An office that has the key but
-    # not this still fills its board.
+
+def run(*, ask=None, log=print) -> str:
+    """Connect this office's Blue Ink. ONE STEP: sign in.
+
+    Megan, 2026-11-09, on asking an owner for an API key: *"is it going to be
+    hard for them?"* It was, and worse than hard -- API Access is an
+    Enterprise-only feature on this plan, so an owner on a normal plan cannot
+    create a key however clearly they are asked. So nothing is asked for. The
+    person signs in to Blue Ink the way they always do, and the board reads
+    who has signed off the same screen they would look at themselves.
+
+    A key that happens to be on the machine is still used for the read, since
+    it is quicker. It is simply never requested.
+
+    Never raises: one setup step must not cost the ones after it.
+    """
+    if ask is None:
+        from automations.icd_alerts import dialogs as ask  # type: ignore
+
+    said = ["API key here too" if have_key() else "reading the web app"]
     try:
         from automations.blueink_docs import session as S
         # have_session() is "is there a saved session worth replaying"; check()
-        # actually opens it and asks the app. The cheap one first: an office
-        # that has never signed in needs no browser opened to find that out.
+        # opens it and asks the app. The cheap one first: an office that has
+        # never signed in needs no browser opened to find that out.
         if S.have_session() and S.check(headless=True) == 0:
             said.append("signed in")
+            return ", ".join(said)
+        yes = ask.choose(
+            "Sign in to Blue Ink?\n\n"
+            "Lucy needs this to see who has signed their onboarding documents, "
+            "and to send them for you. Your browser opens on Blue Ink — sign in "
+            "the way you normally do.",
+            ["Yes, open Blue Ink", SKIP])
+        if yes == SKIP:
+            said.append("not signed in yet")
         else:
-            yes = ask.choose(
-                "Sign in to Blue Ink now?\n\n"
-                "This is only needed for Lucy to SEND documents for you. "
-                "Reading who has signed already works.",
-                ["Yes, open Blue Ink", SKIP])
-            if yes == SKIP:
-                said.append("not signed in yet (sending is off)")
-            else:
-                S.login()
-                said.append("signed in" if S.have_session()
-                            else "sign-in did not stick")
+            S.login()
+            said.append("signed in" if S.have_session()
+                        else "sign-in did not stick")
     except ask.Cancelled:
-        said.append("not signed in yet (sending is off)")
+        said.append("not signed in yet")
     except Exception as e:     # noqa: BLE001
         log("  Blue Ink sign-in stopped: %s" % type(e).__name__)
         said.append("sign-in could not be opened")
-    return ", ".join(said) or "nothing to do"
+    return ", ".join(said)
 
 
 def main(argv=None) -> int:
