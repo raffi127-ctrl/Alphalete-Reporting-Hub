@@ -2112,7 +2112,8 @@
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
-   "timeout_minutes": 60,
+   "timeout_minutes": 90,
+   "_timeout_note": "90 (was 60), Eve 2026-11-10: 17 owner books, Cyrus Wade alone has 17 tabs, plus 70s waits on the Sheets read quota. On 11/10 it fixed every owner and was killed at 60 min right before its report and the wrong-dates DM.",
    "verify": null,
    "close_on": "exit_zero"
   },
