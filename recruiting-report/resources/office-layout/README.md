@@ -7,6 +7,7 @@ Generators for the Alphalete new-office drawings (traced from O'Brien sheet A2.0
 | `plan2d.py` | numbered 2D key map | `keymap.svg` |
 | `isogen.py` | 3D isometric overview of the whole floor | `office.svg` |
 | `studio.py` | interactive room-by-room studio (embeds both of the above) | `studio.html` |
+| `suite500/` | Suite 500 (from the IMG_2709 walk-through): 3D view + flat plan + furniture order list. Run `python3 suite500/iso500.py suite500/iso500.svg` then `python3 suite500/build.py suite500 output/suite-500-floor-plan.html` | `output/suite-500-floor-plan.html` |
 
 Run in that order — `studio.py` reads the two SVGs. Then serve:
 
