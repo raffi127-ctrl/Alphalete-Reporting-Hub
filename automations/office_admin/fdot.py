@@ -224,10 +224,12 @@ def read_week(app, office_id: str, week_start: dt.date, log=print,
               days: int = 7) -> List[Dict]:
     """SUNDAY to SATURDAY of one week, pooled and de-duplicated.
 
-    Sunday-start, matching the board (Megan, 2026-11-09: "every new start
-    scheduled for that week Sunday - Sat"). Training runs on Saturdays, and a
-    Monday-start week puts a Saturday classroom in the following week's
-    column -- the person then prints on a sheet nobody is holding that day.
+    Sunday-start, matching the board AND ApplicantStream itself (Megan,
+    2026-11-09: "sun-sat matches the retention details report in app stream" --
+    its Retention Report reads a week of 11-08-2026 as 11/08 to 11/14, Sunday
+    through Saturday). Training runs on Saturdays, and a Monday-start week puts
+    a Saturday classroom in the following week's column -- the person then
+    prints on a sheet nobody is holding that day.
 
     Every day is read. A day that cannot be read raises rather than being
     skipped quietly -- a missing Tuesday is a missing new start, and the first
