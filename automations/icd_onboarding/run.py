@@ -55,12 +55,30 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     from automations.icd_onboarding import sheet as S
     from automations.office_admin import fdot
 
+    from automations.office_admin import retention
+
     account = _appstream_id(office_key)
     if not account:
         log("  seed: %s has no ApplicantStream id" % office_key)
         return 0
     with session() as app:
-        people = fdot.read_week(app, account, week_start, log=log)
+        app.select_office(account)
+        # The Retention Report first: it answers this in TWO page loads where
+        # the calendar walk takes seven (Megan, 2026-11-09: "you should just
+        # look at the retention details report and not walk the calendar as
+        # this would be faster"). Checked against the walk on Raf's week of
+        # 11/01 -- the same 29 people, the same 29 emails.
+        #
+        # The walk stays as the fallback, not as dead code: the report is one
+        # page that an office might not carry the row on, and a week that
+        # could not be read must never seed as an empty one
+        # ([[feedback_empty_means_proven_zero]]).
+        try:
+            people = retention.read_week(app, account, week_start, log=log)
+        except Exception as e:      # noqa: BLE001 — fall back, never give up
+            log("  retention report unavailable (%s: %s) — walking the calendar"
+                % (type(e).__name__, str(e)[:120]))
+            people = fdot.read_week(app, account, week_start, log=log)
     book = F.workbook_for(office_key)
     got = S.seed(book, week_start, people, dry_run=dry_run, log=log)
     return len(got.get("add") or [])
