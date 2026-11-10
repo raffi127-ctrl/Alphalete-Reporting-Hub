@@ -30,9 +30,15 @@ VANTURA_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 TAB = "NDS Order Log"
 DAYS_KEPT = 60
 
-# order_xlsx.HDR, with the tab's own columns around it.
+# order_xlsx.HDR, with the tab's own columns around it. "Phone #" is what the
+# feed parser calls "device" (the Line Number cell: the customer's number on
+# that line) -- until 2026-11-09 the tab showed it under the header "Device".
+# "Device" is now the phone MODEL (the feed's "Phone" cell, parser key
+# line_phone), Carlos 2026-11-09: "the order log is missing the type of phone
+# that was sold. lets get that added". Everything after it moved one column
+# right (Delivered Message Sent is T, was S); every reader resolves by header.
 HEADERS = ("Week Ending", "Rep", "Customer", "Order Date", "DSI #",
-           "Wireless Order #", "BAN", "Line", "Type", "Device", "Plan",
+           "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
            "Line Status", "Ship Date", "Delivered", "Port Status",
            "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
 # Carlos's own columns: typed by hand (or, for column S, by rc_contact_sync.delivered),
@@ -44,7 +50,7 @@ _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
 # a change in any of these restamps Last Updated
 _STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Port Status",
-               "Type", "Device", "Plan")
+               "Type", "Phone #", "Device", "Plan")
 DEAD = ("disconnected", "cancelled", "canceled")
 
 # Tabs this module must never write to, whatever TAB is set to.
@@ -86,7 +92,35 @@ def line_row(line: dict, stamp: str) -> List[str]:
     # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
     core = [html.unescape(str(x or "")).strip() for x in _row_of(line)]
     od = _parse_date(core[2])
+    model = html.unescape(str(device_model(line) or "")).strip()
+    i_dev = _COL["Device"] - 1           # core has no Week Ending in front
+    core = core[:i_dev] + [model] + core[i_dev:]
     return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp] + [""] * len(CARRIED)
+
+
+def device_model(line: dict) -> str:
+    """The phone model sold on this line. The feed's line cells read Line,
+    Line Type, Device Type, Line Number, Phone, Plan, ... and wireless_pull
+    names them one off: "device" is the Line Number (a phone number),
+    "line_number" the Device Type word, "line_phone" the model (what
+    line_revenue reads the same way)."""
+    return str(line.get("line_phone") or "")
+
+
+def remap(row: Sequence[str], header: Sequence[str]) -> List[str]:
+    """A row off the live tab, laid out by ITS header, in today's HEADERS
+    order (missing columns blank). A tab from before 2026-11-09 has no
+    "Phone #" and its "Device" column holds the phone number: that value
+    moves to "Phone #" and "Device" starts blank until the feed fills it."""
+    names = [" ".join(str(h).split()) for h in header]
+    at = {n: i for i, n in enumerate(names)}
+    if "Phone #" not in at and "Device" in at:
+        at["Phone #"] = at.pop("Device")
+    out = []
+    for h in HEADERS:
+        i = at.get(h)
+        out.append(str(row[i]) if i is not None and i < len(row) else "")
+    return out
 
 
 def _key(row: Sequence[str]) -> tuple:
@@ -102,13 +136,17 @@ def _key(row: Sequence[str]) -> tuple:
 
 
 def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
-          today: dt.date) -> Dict[str, object]:
+          today: dt.date, existing_header: Optional[Sequence[str]] = None) -> Dict[str, object]:
     """Kept-if-absent, replaced-if-present, aged-out past DAYS_KEPT by Order
     Date. Last Updated restamps only when the line's state changed. Notes
-    carry by key."""
+    carry by key. existing_header is the live tab's own header row: rows are
+    remapped by name, so a column added here never shifts Carlos's typed
+    columns on the rows the tab carries."""
     stamp = _fmt(today)
     merged: "collections.OrderedDict[tuple, List[str]]" = collections.OrderedDict()
     for row in existing:
+        if existing_header:
+            row = remap(row, existing_header)
         row = list(row) + [""] * (len(HEADERS) - len(row))
         if not str(row[_COL["Line"]]).strip():
             continue          # a header-shaped row that slipped in earlier: never carried
@@ -193,7 +231,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
                                                          "startIndex": 0, "endIndex": n_cols}}})
     for name, px in (("Notes", 220), ("Being worked on", 130), ("Delivered Message Sent", 150),
-                     ("Customer", 190), ("Rep", 190)):
+                     ("Customer", 190), ("Rep", 190), ("Device", 170)):
         c = _COL[name]
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
@@ -224,7 +262,8 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     sh = open_by_key(sheet_id or VANTURA_SHEET_ID)
     ws = _ensure_tab(sh, TAB, cols=len(HEADERS))
     prior = _retry(lambda: ws.get_all_values())
-    result = merge(prior[1:] if prior else [], lines, today=today)
+    result = merge(prior[1:] if prior else [], lines, today=today,
+                   existing_header=prior[0] if prior else None)
     rows = result["rows"]
     if not rows:
         raise RuntimeError("NDS Order Log merge produced no rows -- refusing to blank the tab")

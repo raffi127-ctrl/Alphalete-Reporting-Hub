@@ -9,7 +9,8 @@ TODAY = dt.date(2026, 10, 29)
 def line(**kw):
     base = {"rep": "YAHIR LOPEZ", "customer": "JOHN DOE", "order_date": "10/24/2026",
             "dsi": "DSI123", "wireless_order": "WO555", "ban": "BAN9", "line_no": "1",
-            "line_type": "New", "device": "iPhone 16", "plan": "Unlimited",
+            "line_type": "New", "device": "945-392-8474", "line_number": "Smartphone",
+            "line_phone": "iPhone 16", "plan": "Unlimited",
             "line_status": "Shipped", "ship_date": "10/25/2026", "delivered": "", "port_status": ""}
     base.update(kw)
     return base
@@ -25,7 +26,36 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[18], "Delivered Message Sent")   # column S on the live tab
+        self.assertEqual(T.HEADERS[19], "Delivered Message Sent")   # column T on the live tab (S until 11/9)
+        self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")        # the feed's "device" = Line Number cell
+        self.assertEqual(r[T._COL["Device"]], "iPhone 16")            # the model, feed's "line_phone"
+        self.assertEqual(r[T._COL["Plan"]], "Unlimited")
+
+    def test_old_tab_layout_remaps_by_header(self):
+        # the live tab before 11/9: no "Phone #", "Device" held the number, column S = Delivered Message Sent
+        old_hdr = ["Week Ending", "Rep", "Customer", "Order Date", "DSI #", "Wireless Order #", "BAN",
+                   "Line", "Type", "Device", "Plan", "Line Status", "Ship Date", "Delivered", "Port Status",
+                   "Last Updated", "Notes", "Being worked on", "Delivered Message Sent"]
+        old_row = ["10/25/2026", "Yahir Lopez", "John Doe", "10/24/2026", "DSI123", "WO555", "BAN9",
+                   "2", "Port", "945-392-8474", "Unlimited", "Shipped", "10/25/2026", "", "",
+                   "10/29/2026", "called 10/28", "Yes", "Yes"]
+        r = T.remap(old_row, old_hdr)
+        self.assertEqual(len(r), len(T.HEADERS))
+        self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")
+        self.assertEqual(r[T._COL["Device"]], "")
+        self.assertEqual(r[T._COL["Notes"]], "called 10/28")
+        self.assertEqual(r[T._COL["Being worked on"]], "Yes")
+        self.assertEqual(r[T._COL["Delivered Message Sent"]], "Yes")
+        # through merge: line 2 absent from today's feed is kept with its typed columns in place
+        out = T.merge([old_row], [line()], today=TODAY, existing_header=old_hdr)
+        by_key = {T._key(x): x for x in out["rows"]}
+        kept = by_key[("wo", "wo555", "2")]
+        self.assertEqual(kept[T._COL["Delivered Message Sent"]], "Yes")
+        self.assertEqual(kept[T._COL["Notes"]], "called 10/28")
+        self.assertEqual(kept[T._COL["Phone #"]], "945-392-8474")
+        # today's header round-trips unchanged
+        fresh = out["rows"][0]
+        self.assertEqual(T.remap(fresh, T.HEADERS), list(fresh))
 
     def test_html_entities_are_unescaped(self):
         r = T.line_row(line(plan="AT&amp;T Premium", customer="O&#39;BRIEN"), "x")
