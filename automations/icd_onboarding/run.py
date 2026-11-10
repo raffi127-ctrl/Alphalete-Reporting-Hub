@@ -285,8 +285,12 @@ def from_contacts(office_key: str, week_start: dt.date, *,
     leave them blank for ever. On the real OBCL Contact Added is true for
     nearly everybody, and that is why.
 
-    MATCHED THE WAY SHE MATCHES: phone first, else email -- `state.key_for`'s
-    rule, not a new one. A name is not an identity here; two offices share one.
+    MATCHED THE WAY SHE MATCHES: phone first, then email -- `state.key_for`'s
+    rule, not a new one. A name is only the last resort, and it is a weak one:
+    an applicant types their own name into ApplicantStream, so the board and
+    the sync disagree over "Mike"/"Michael", a middle name, a married name or
+    an accent, and a name-only match answered 0 of 21 on Raf's week of 11/08
+    while 98 contacts sat on record. The phone is the same digits in both.
 
     WHERE IT RUNS. Wherever the state file is, which is the machine her job
     runs on (Lucy 1). On any other machine the file is simply absent and this
@@ -303,16 +307,28 @@ def from_contacts(office_key: str, week_start: dt.date, *,
             "sync runs. Nothing ticked." % SC.STATE_PATH)
         return 0
 
-    added = {}
+    from automations.applicant_contacts.extract import phone10
+
+    by_phone, by_email, by_name = {}, {}, {}
+    n = 0
     for _account, people in (SS.load() or {}).items():
         for entry in (people or {}).values():
             if str(entry.get("status") or "") == SS.REMOVED:
                 continue      # taken out again; not an added contact
+            n += 1
+            ph = phone10(str(entry.get("phone") or ""))
+            if ph:
+                by_phone[ph] = entry
+            em = str(entry.get("email") or "").strip().lower()
+            if em:
+                by_email[em] = entry
             name = ("%s %s" % (entry.get("first_name", ""),
                                entry.get("last_name", ""))).strip()
             if name:
-                added[B._fold(name)] = entry
-    log("  contacts: %d on record from the second-round sync" % len(added))
+                by_name[B._fold(name)] = entry
+    log("  contacts: %d on record from the second-round sync "
+        "(%d with a phone, %d with an email)"
+        % (n, len(by_phone), len(by_email)))
 
     ws = S.open_board(F.workbook_for(office_key), create=False)
     if ws is None:
@@ -320,10 +336,25 @@ def from_contacts(office_key: str, week_start: dt.date, *,
         return 0
     rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
     verdicts = {}
+    how = {"phone": 0, "email": 0, "name": 0}
     for r in rows:
         name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
-        if B._fold(name) in added:
-            verdicts[name] = {"Contact Added": True}
+        ph = phone10(str(r.get("Phone") or ""))
+        em = str(r.get("Email") or "").strip().lower()
+        if ph and ph in by_phone:
+            hit = "phone"
+        elif em and em in by_email:
+            hit = "email"
+        elif B._fold(name) in by_name:
+            hit = "name"
+        else:
+            continue
+        how[hit] += 1
+        verdicts[name] = {"Contact Added": True}
+    if verdicts:
+        log("    matched %d: %s"
+            % (len(verdicts), ", ".join("%d by %s" % (v, k)
+                                        for k, v in how.items() if v)))
     return F.apply(F.workbook_for(office_key), week_start, "contacts",
                    verdicts, dry_run=dry_run, log=log)
 

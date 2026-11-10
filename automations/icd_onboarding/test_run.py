@@ -164,7 +164,6 @@ def test_the_search_skips_people_it_cannot_learn_anything_about(monkeypatch):
     rows = [row("Ada Fournier"),
             row("Bruno Castell", **{B.TERMINATED_AT: "11/06/2026"}),
             row("Cora Nilsen", **{c: "x" for c in cols})]
-    monkeypatch.setattr(S, "open_board", lambda book, create=False: object())
     monkeypatch.setattr(S, "rows_of", lambda grid: rows)
     monkeypatch.setattr(F, "workbook_for", lambda k: object())
     class WS:
@@ -299,3 +298,78 @@ def test_identity_failing_outright_runs_everything(monkeypatch):
     monkeypatch.setattr(HI, "machine_name", boom)
     assert R.this_machine() == ""
     assert R.steps_here() == ()
+
+
+# --------------------------- Contact Added matches on the phone, not the name
+
+def _contacts_board(monkeypatch, rows, state):
+    """One board, one state file, and no network."""
+    from automations.icd_onboarding import sheet as S
+    from automations.second_round_contacts import config as SC
+    from automations.second_round_contacts import state as SS
+    import pathlib as _pl
+    monkeypatch.setattr(SC, "STATE_PATH", _pl.Path(__file__))   # exists
+    monkeypatch.setattr(SS, "load", lambda: {"acct": state})
+    monkeypatch.setattr(R.F, "workbook_for", lambda key: "BOOK")
+    class _WS:
+        def get_all_values(self):
+            return []
+    monkeypatch.setattr(S, "open_board", lambda book, create=False: _WS())
+    monkeypatch.setattr(S, "rows_of", lambda grid: rows)
+    monkeypatch.setattr(R.B, "for_week", lambda rows, week: rows)
+    seen = {}
+    monkeypatch.setattr(R.F, "apply",
+                        lambda book, week, step, verdicts, **k:
+                        (seen.update(verdicts), len(verdicts))[1])
+    return seen
+
+
+def test_a_contact_is_matched_by_phone_when_the_name_disagrees(monkeypatch):
+    """An applicant types their own name into ApplicantStream, so the board
+    and the sync disagree over Mike/Michael, a middle name or an accent. The
+    phone is the same ten digits in both -- and a name-only match answered 0
+    of 21 on Raf's week of 11/08 while 98 contacts sat on record."""
+    rows = [{"Name": "Mike", "Last Name": "Ruiz-Soto",
+             "Phone": "(555) 201-3344", "Email": ""}]
+    state = {"p:5552013344": {"first_name": "Michael", "last_name": "Soto",
+                              "phone": "555-201-3344", "email": "",
+                              "status": "tracked"}}
+    seen = _contacts_board(monkeypatch, rows, state)
+    assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 1
+    assert seen == {"Mike Ruiz-Soto": {"Contact Added": True}}
+
+
+def test_a_contact_is_matched_by_email_when_there_is_no_phone(monkeypatch):
+    rows = [{"Name": "Ada", "Last Name": "F", "Phone": "",
+             "Email": "Ada.F@Example.com"}]
+    state = {"e:ada.f@example.com": {"first_name": "A", "last_name": "F",
+                                     "phone": "", "email": "ada.f@example.com",
+                                     "status": "tracked"}}
+    seen = _contacts_board(monkeypatch, rows, state)
+    assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 1
+    assert "Ada F" in seen
+
+
+def test_somebody_the_sync_never_added_is_left_blank(monkeypatch):
+    """Unread and not-done are the same cell here, so a false tick is the one
+    thing this must not do."""
+    rows = [{"Name": "Nobody", "Last Name": "Here",
+             "Phone": "555-000-0000", "Email": "no@example.com"}]
+    state = {"p:5552013344": {"first_name": "Michael", "last_name": "Soto",
+                              "phone": "555-201-3344", "email": "",
+                              "status": "tracked"}}
+    seen = _contacts_board(monkeypatch, rows, state)
+    assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 0
+    assert seen == {}
+
+
+def test_a_contact_taken_back_out_is_not_an_added_contact(monkeypatch):
+    from automations.second_round_contacts import state as SS
+    rows = [{"Name": "Michael", "Last Name": "Soto",
+             "Phone": "555-201-3344", "Email": ""}]
+    state = {"p:5552013344": {"first_name": "Michael", "last_name": "Soto",
+                              "phone": "555-201-3344", "email": "",
+                              "status": SS.REMOVED}}
+    seen = _contacts_board(monkeypatch, rows, state)
+    assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 0
+    assert seen == {}
