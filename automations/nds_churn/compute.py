@@ -397,6 +397,41 @@ def activation_rates(lines: List[dict], today: dt.date) -> Tuple[dict, dict]:
     return office, reps
 
 
+CANCELED = ("canceled", "cancelled", "cancel")
+
+
+def pending_orders(lines: List[dict], today: dt.date) -> dict:
+    """Pending orders (Carlos 2026-11-10: "under the internet section lets
+    add pending orders"): lines SOLD in the 0-30 window -- sale-date age,
+    the same bucket the activation rate uses -- that are neither activated
+    (Posted / Disconnected) nor canceled: Confirmed, Shipped, blank ... still
+    waiting to activate. Per product (PRODUCT_ORDER; a label the map ignores
+    lands in 'Other'), plus the status mix so an unknown terminal status
+    shows in the log instead of hiding inside the count. Ties out with the
+    activation board: sold = activated + pending + canceled."""
+    out: Dict[str, int] = {p: 0 for p in PRODUCT_ORDER}
+    out["Other"] = 0
+    statuses: Dict[str, int] = collections.Counter()
+    canceled = 0
+    for ln in lines:
+        od = ln["order_date"]
+        if not od or not (0 <= (today - od).days <= WINDOW_DAYS):
+            continue
+        st = ln["status"].lower()
+        if st in ACTIVATED:
+            continue
+        if st in CANCELED:
+            canceled += 1
+            continue
+        out[ln["prod"] or "Other"] += 1
+        statuses[ln["status"] or "(blank)"] += 1
+    res: dict = dict(out)
+    res["total"] = sum(out.values())
+    res["canceled"] = canceled
+    res["statuses"] = dict(statuses)
+    return res
+
+
 # ------------------------------------------------------------- tiers ----
 
 def _pct(disc: int, base: int) -> Optional[float]:

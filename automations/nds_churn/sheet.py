@@ -176,6 +176,51 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
         f"live bands {live_n}/{live_b})")
 
 
+PENDING_ROW = 8                      # right under Internet (row 7) in the product box
+PENDING_NOTE_ROW = 9
+
+
+def write_pending(ws, pend: dict, log=print) -> None:
+    """A8:B8 = 'Pending Orders' + the count, right under the Internet row
+    (Carlos 2026-11-10: "under the internet section lets add pending
+    orders"), styled like the product rows above it; A9 carries the
+    definition and the per-product split in the status line's small italic.
+    compute.pending_orders is the only source. Idempotent."""
+    from automations.nds_churn import compute as C
+    split = " · ".join(f"{p} {pend.get(p, 0)}" for p in C.PRODUCT_ORDER)
+    if pend.get("Other"):
+        split += f" · Other {pend['Other']}"
+    note = (f"Pending = sold in the last {C.WINDOW_DAYS} days, not activated yet, "
+            f"not canceled ({pend.get('canceled', 0)} canceled) — {split}")
+    r, n = PENDING_ROW, PENDING_NOTE_ROW
+    _retry(lambda: ws.batch_update([
+        {"range": f"A{r}:D{r}", "values": [["Pending Orders", int(pend.get("total", 0)), "", ""]]},
+        {"range": f"A{n}:F{n}", "values": [[note, "", "", "", "", ""]]},
+    ], value_input_option="USER_ENTERED"))
+    sid = ws.id
+    reqs = [
+        # the product rows' look (borders, bold label, centred count)
+        {"copyPaste": {
+            "source": {"sheetId": sid, "startRowIndex": r - 2, "endRowIndex": r - 1,
+                       "startColumnIndex": 0, "endColumnIndex": 4},
+            "destination": {"sheetId": sid, "startRowIndex": r - 1, "endRowIndex": r,
+                            "startColumnIndex": 0, "endColumnIndex": 4},
+            "pasteType": "PASTE_FORMAT", "pasteOrientation": "NORMAL"}},
+        {"repeatCell": {"range": {"sheetId": sid, "startRowIndex": n - 1, "endRowIndex": n,
+                                  "startColumnIndex": 0, "endColumnIndex": 6},
+                        "cell": {"userEnteredFormat": {
+                            "wrapStrategy": "OVERFLOW_CELL",
+                            "verticalAlignment": "MIDDLE",
+                            "horizontalAlignment": "LEFT",
+                            "textFormat": {"fontSize": 9, "italic": True, "bold": False,
+                                           "foregroundColor": VF._rgb("#3E4A5C")}}},
+                        "fields": "userEnteredFormat(wrapStrategy,verticalAlignment,"
+                                  "horizontalAlignment,textFormat)"}},
+    ]
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
+    log(f"  ✓ {ws.title}: A{r} Pending Orders = {pend.get('total', 0)} ({split})")
+
+
 def write_status(ws, text: str, log=print) -> None:
     _retry(lambda: ws.batch_update([{"range": STATUS_CELL, "values": [[text]]}],
                                    value_input_option="USER_ENTERED"))

@@ -94,6 +94,24 @@ class Compute(unittest.TestCase):
         self.assertEqual(r[11], "BYOD")
         self.assertIsNone(r[3]); self.assertIsNone(r[13])
 
+    def test_pending_orders(self):
+        # PEND P: sold 11/5, Shipped -> the one pending line; everything else
+        # in the window is Posted / Disconnected (activated), OLD O is 9/1.
+        p = C.pending_orders(self.lines, TODAY)
+        self.assertEqual((p["Wireless"], p["Air"], p["Internet"], p["Other"]),
+                         (1, 0, 0, 0))
+        self.assertEqual((p["total"], p["canceled"]), (1, 0))
+        self.assertEqual(p["statuses"], {"Shipped": 1})
+        # a canceled line is neither pending nor activated: counted apart
+        extra = dict(next(l for l in self.lines if l["customer"] == "PEND P"))
+        extra.update({"status": "Canceled", "spe": "SPE10", "tn": "1010"})
+        p2 = C.pending_orders(list(self.lines) + [extra], TODAY)
+        self.assertEqual((p2["total"], p2["canceled"]), (1, 1))
+        # ties out with the activation bucket: sold = activated + pending + canceled
+        office, _ = C.activation_rates(list(self.lines) + [extra], TODAY)
+        self.assertEqual(office["0-30"]["sold"],
+                         office["0-30"]["activated"] + p2["total"] + p2["canceled"])
+
     def test_activation_rates(self):
         office, reps = C.activation_rates(self.lines, TODAY)
         self.assertEqual(office["0-30"]["sold"], 7)

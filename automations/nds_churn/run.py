@@ -228,6 +228,11 @@ def main(argv=None) -> int:
     um = C.unmapped_products(lines, today)
     if um:
         log(f"⚠ product labels in the 0-30 window the map ignores: {um}")
+    pend = C.pending_orders(lines, today)
+    log(f"PENDING 0-30 (sold, not activated, not canceled): {pend['total']} "
+        f"(W {pend['Wireless']} / Air {pend['Air']} / Int {pend['Internet']}"
+        f"{' / Other %d' % pend['Other'] if pend['Other'] else ''}; "
+        f"canceled {pend['canceled']}; statuses {pend['statuses']})")
     log(f"CHURN 0-30 (by activation date): base {summary['base']} "
         f"disc {summary['disc']}  wireless split {summary['split']}")
     log(f"ROLLOFF rows: {len(helper)}")
@@ -249,6 +254,7 @@ def main(argv=None) -> int:
                     f"RATES: {_fmt_rates(office)} ({len(reps)} reps)",
                     f"RECONCILE: {ok} -- {detail}",
                     "STATUS: " + status,
+                    f"PENDING: {pend}",
                     f"UNMAPPED: {um}",
                     "ROLLOFF ROWS (%d):" % len(helper)] + rows_txt
                    + ["VIEW REPS (0-30 disc / activated / pct):"]
@@ -294,6 +300,7 @@ def main(argv=None) -> int:
         log(f"  ✓ no sales yet in {', '.join(empty)} — cell left blank")
     S.write_tier_tables(ws, ts, log=log)
     S.write_status(ws, status, log=log)
+    S.write_pending(ws, pend, log=log)
     if a.dm:
         from automations.shared import slack_metrics_post as smp
         from automations.vantura_churn import shot
