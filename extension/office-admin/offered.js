@@ -34,7 +34,9 @@ var LucyOffered = (function () {
   function officeId(d) {
     on(d);
     var t = doc.body.innerText || '';
-    var m = t.match(/Office ID:\s*(\d+)/) || t.match(/\(#(\d+)\s*-/);
+    // "Office ID: 11280" (call-center login), "(Account No: 21151)" (the
+    // owner's own login -- Cody 11/09), or the V2 picker "(#11280 - ...)".
+    var m = t.match(/Office ID:\s*(\d+)/) || t.match(/Account No:\s*(\d+)/i) || t.match(/\(#(\d+)\s*-/);
     return m ? m[1] : '';
   }
 
