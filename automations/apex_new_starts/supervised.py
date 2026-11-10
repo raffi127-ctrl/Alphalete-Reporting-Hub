@@ -144,8 +144,11 @@ def wait_for_form(page, log=print, *, seconds: int = WAIT_SECONDS) -> bool:
             log("")
             log("  Waiting for the Add Employee form.")
             log("")
-            log("  In the window that just opened:")
-            log("    1. Roster -> Employees -> the All Employees tab")
+            log("  Apex will be showing 'change your password'. Ignore it —")
+            log("  it never needs actioning. USE THE LEFT-HAND NAV, not a")
+            log("  URL: typing one in from that page redirects you back to it.")
+            log("")
+            log("    1. ROSTER -> Employees -> the All Employees tab")
             log("    2. Filter for them and CHECK THEY ARE NOT ALREADY THERE.")
             log("       Not on Pending is not the same as not in Apex, and a")
             log("       create on somebody already there makes a second")
@@ -161,49 +164,38 @@ def wait_for_form(page, log=print, *, seconds: int = WAIT_SECONDS) -> bool:
 def signin(log=print, *, minutes: int = 20) -> int:
     """Open Apex in the profile this run uses, and wait while a person signs in.
 
-    WHY THIS IS SEPARATE FROM `run`. `ApexSession.require_login` raises the
-    moment Apex shows "change your password before you continue", which is
-    right for a scheduled report -- it has no business sitting on that screen.
-    But it also closes the window the person could have cleared it in, and on
-    2026-11-10 that is exactly what happened: a fresh sign-in went password ->
-    2FA -> change-password and the run exited with the screen in front of her.
+    For a profile that has actually been signed out. The fill run opens its
+    own window and waits too, so this is only worth running on its own when
+    you would rather get the sign-in out of the way first.
 
-    So this mode does not treat that screen as the end. It says what to do and
-    keeps the window open, because the new password has to be set SOMEWHERE and
-    setting it here leaves the session in the profile that needs it. Signing in
-    with her own browser would clear the account's gate and leave this profile
-    just as stale.
+    IT DOES NOT ASK FOR A PASSWORD CHANGE. Apex lands every signed-in session
+    on its change-password page and that prompt never needs actioning (Megan,
+    2026-11-10: "apex ALWAYS goes to reset pw -- you have to use the NAV on the
+    left"), so reaching it is SUCCESS here, not something to clear. An earlier
+    version of this told her to set a new password there, which was wrong.
 
-    NO PASSWORD IS TYPED OR READ. Same rule as everywhere else -- the person
-    sets it, in the window, by hand.
+    NO PASSWORD IS TYPED OR READ, either way.
     """
     import time
 
     from automations.apex_new_starts import apex as AX
 
     with AX.ApexSession(log=log) as s:
-        if s.signed_in() and not s.password_gate():
+        if s.signed_in():
             log("  Already signed in — %s" % s.page.url)
             return 0
         log("")
         log("  Apex is open. Sign in there, with the 2FA code if it asks.")
         log("")
-        log("  IF IT ASKS YOU TO CHANGE YOUR PASSWORD, do it right here in")
-        log("  this window. Apex is holding the account behind that screen,")
-        log("  so nothing reaches the roster until it is cleared -- and")
-        log("  doing it here is what leaves Lucy a session she can use.")
+        log("  It will land on 'change your password'. IGNORE THAT — it is")
+        log("  Apex's standing prompt and it never needs actioning. You are")
+        log("  signed in as soon as you see it.")
         log("  Nothing is typed for you and no password is read.")
         log("")
         deadline = time.time() + minutes * 60
         said = ""
         while time.time() < deadline:
             s.page.wait_for_timeout(2000)
-            if s.password_gate():
-                if said != "change":
-                    log("  ...you're on the change-password screen — set the "
-                        "new one here")
-                    said = "change"
-                continue
             step = s.on_signin_step()
             if step and step != said:
                 log("  ...waiting — you're on %s" % step)
@@ -303,14 +295,10 @@ def main(argv=None) -> int:
     day = dt.date.fromisoformat(a.week) if a.week else dt.date.today()
     try:
         return run(a.office, a.person, B.week_start_of(day))
-    except AX.PasswordChangeRequired as e:
-        # Say the next command rather than only the diagnosis. Without it the
-        # obvious move is to clear the gate in your own browser, which leaves
-        # THIS profile just as stale and the next run back on this message.
+    except AX.NotLoggedIn as e:
         print("  %s" % e)
         print("")
-        print("  Clear it in Lucy's own window, which also leaves her a")
-        print("  usable session:")
+        print("  Sign in first, then run this again:")
         print("    PYTHONPATH=. .venv/bin/python -m "
               "automations.apex_new_starts.supervised --signin")
         return 1

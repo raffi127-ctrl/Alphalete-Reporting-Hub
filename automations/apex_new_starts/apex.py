@@ -276,6 +276,13 @@ def have_session() -> bool:
 #   /Identity/Account/ChangePassword
 _AUTH_PATH = re.compile(r"/(?:identity/)?account/")
 
+# THE CHANGE-PASSWORD PAGE IS NOT A SIGN-IN SCREEN, and it is not a wall.
+# Megan, 2026-11-10: "apex ALWAYS goes to reset pw -- you have to use the NAV
+# on the left." Every signed-in session lands there, and the prompt never needs
+# actioning ([[reference_apex_password_prompt]]). It only looks like a login
+# because it has password boxes on it.
+_PW_CHANGE = re.compile(r"/(?:identity/)?account/changepassword")
+
 
 class ApexSession:
     """A browser sitting on Apex, signed in -- waiting for a person if it isn't.
@@ -346,23 +353,48 @@ class ApexSession:
     def on_signin_step(self) -> str:
         """Which sign-in screen is showing, for a log line that helps."""
         url = (self.page.url or "").lower()
+        # changepassword is deliberately NOT here: it is where a finished
+        # sign-in lands, so reporting it as a step still to go had the wait
+        # loop announcing progress backwards.
+        if _PW_CHANGE.search(url):
+            return ""
         for tag, name in (("account/login", "the password page"),
                           ("sendcode", "the 2FA code page"),
-                          ("verifycode", "the 2FA code page"),
-                          ("changepassword", "the change-password page")):
+                          ("verifycode", "the 2FA code page")):
             if tag in url:
                 return name
         return "the sign-in" if _AUTH_PATH.search(url) else ""
 
-    def password_gate(self) -> bool:
-        """Is Apex holding this session behind a forced password change?
+    def _say_standing_prompt(self) -> None:
+        """Apex's standing change-password page, named so a log reads right.
 
-        Checked by URL: the modal on that page can be dismissed, but every
-        navigation lands straight back on it, so a closed modal is not
-        progress. Seen on a STALE copied session -- a freshly signed-in one
-        has never shown it.
+        Said rather than raised: the session is good, and the only thing this
+        page changes is that getting anywhere has to be done IN-APP.
         """
-        return "changepassword" in (self.page.url or "").lower()
+        self.log("  Apex is signed in, sitting on its standing "
+                 "change-password prompt — that never needs actioning.")
+        self.log("  (navigate with the left-hand nav, not by URL: a URL load "
+                 "from this page redirects straight back to it)")
+
+    def password_gate(self) -> bool:
+        """Is the standing change-password prompt what is on screen?
+
+        NOT A FAILURE, and nothing raises on it any more. Every signed-in Apex
+        session lands here and the prompt never needs actioning (Megan,
+        2026-11-10: "apex ALWAYS goes to reset pw -- you have to use the NAV on
+        the left").
+
+        It still has to be ASKED, because it changes how you get anywhere: a
+        `page.goto('/roster')` from this page redirects straight back to it, so
+        navigation has to be in-app -- clicking ROSTER -> Employees -- which is
+        what `resources/apex-form-controls.md` says and what run.py's menu
+        fallback does.
+
+        The earlier docstring here said this was "seen on a STALE copied
+        session -- a freshly signed-in one has never shown it". That was wrong:
+        a fresh sign-in on 2026-11-10 went password -> 2FA -> change-password.
+        """
+        return bool(_PW_CHANGE.search((self.page.url or "").lower()))
 
     def signed_in(self) -> bool:
         """On a real Apex page -- not anywhere in the sign-in flow.
@@ -384,6 +416,13 @@ class ApexSession:
         url = (self.page.url or "").lower()
         if "herbjoyent.com" not in url:
             return False
+        if _PW_CHANGE.search(url):
+            # Signed in, standing on Apex's own standing prompt. Treating this
+            # as logged-out made every session read as a failure: `check_apex`
+            # printed "❌ Apex" on a perfectly good login, and require_login
+            # raised before run.py could reach the in-app menu fallback that
+            # actually works.
+            return True
         return not _AUTH_PATH.search(url)
 
     def require_login(self) -> None:
@@ -396,11 +435,8 @@ class ApexSession:
             self.log(f"Apex is signed in — {self.page.url}")
             return
         if self.password_gate():
-            raise PasswordChangeRequired(
-                "Apex is holding this session behind 'change your password "
-                "before you continue'. That is the account's own state and "
-                "only its owner can clear it — this automation never sets a "
-                "password.")
+            self._say_standing_prompt()
+            return
         # No tty is NOT a reason to refuse. The wait is already bounded by
         # login_timeout_s, and the person who needs to sign in is looking at
         # the window, not at whichever shell launched it -- refusing outright
@@ -423,9 +459,8 @@ class ApexSession:
                 self.log(f"  ...waiting — you're on {step}")
                 said = step
             if self.password_gate():
-                raise PasswordChangeRequired(
-                    "Apex is asking for a password change before it will let "
-                    "anyone in. Clear that in Apex, then run this again.")
+                self._say_standing_prompt()
+                return
             if self.signed_in() and "herbjoyent" in (self.page.url or ""):
                 self.log(f"  signed in — {self.page.url}")
                 return
@@ -443,11 +478,18 @@ class ProfileInUse(RuntimeError):
 
 
 class PasswordChangeRequired(RuntimeError):
-    """Apex is signed in but won't let anyone past until the password is
-    changed. A different problem from being logged out, and it has to say so:
-    apex_payroll's login test sees the password boxes on that screen and calls
-    it a login page, which sends whoever is running this off to sign in again
-    -- something they have already done and which will not help.
+    """NO LONGER RAISED. Kept so the existing `except` clauses still import.
+
+    It was raised whenever Apex showed its change-password page, on the
+    understanding that the page meant the account was held. It does not: every
+    signed-in session lands there and the prompt never needs actioning (Megan,
+    2026-11-10: "apex ALWAYS goes to reset pw -- you have to use the NAV on the
+    left"). So `check_apex` printed "❌ Apex" on a good login and the supervised
+    fill exited with the page in front of the person.
+
+    What it got right, and what `_say_standing_prompt` keeps: that page is NOT
+    a login page, however many password boxes are on it, and nobody should be
+    sent off to sign in again over it.
 
     Nobody but the account holder can clear this. This automation does not set
     passwords, so it stops here every time and names the screen.

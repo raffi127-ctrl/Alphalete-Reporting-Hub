@@ -135,24 +135,22 @@ def test_the_password_box_is_called_out():
 
 # ------------------------- the password-change screen is clearable, not fatal
 
-def test_signin_does_not_treat_the_password_gate_as_the_end():
-    """ApexSession.require_login raises on it and closes the window the person
-    could have cleared it in -- which is what happened on 2026-11-10: a fresh
-    sign-in went password -> 2FA -> change-password and the run exited with
-    that screen in front of her."""
-    src = inspect.getsource(SUP.signin)
-    assert "password_gate" in src
-    # The CODE, not the docstring -- which names require_login to explain why.
-    body = src.split('"""', 2)[-1]
+def test_signin_never_waits_on_the_standing_prompt():
+    """Apex lands EVERY signed-in session on change-password and the prompt
+    never needs actioning (Megan, 2026-11-10: "apex ALWAYS goes to reset pw --
+    you have to use the NAV on the left"). Waiting on it waits for ever."""
+    body = inspect.getsource(SUP.signin).split('"""', 2)[-1]
+    assert "password_gate" not in body
     assert "raise" not in body
-    assert "require_login" not in body
 
 
-def test_signin_says_to_change_it_in_lucys_window():
-    """Clearing the gate in her own browser leaves THIS profile just as stale
-    and the next run back on the same message."""
+def test_signin_never_asks_for_a_new_password():
+    """An earlier version told her to set one there. It is not a wall."""
     src = inspect.getsource(SUP.signin)
-    assert "this window" in src
+    assert "IGNORE THAT" in src
+    # The CODE: the docstring names the old wrong advice to explain itself.
+    body = src.split('"""', 2)[-1]
+    assert "set the new" not in body and "new password" not in body
 
 
 def test_signin_types_no_password():
@@ -163,10 +161,22 @@ def test_signin_types_no_password():
         assert bad not in body, bad
 
 
-def test_the_gate_error_names_the_next_command():
-    """A diagnosis on its own sends you to your own browser."""
+def test_being_logged_out_names_the_next_command():
     src = inspect.getsource(SUP.main)
-    assert "PasswordChangeRequired" in src and "--signin" in src
+    assert "NotLoggedIn" in src and "--signin" in src
+
+
+def test_the_standing_prompt_is_not_caught_as_a_failure():
+    """It is where a good session lives, not an error."""
+    src = inspect.getsource(SUP.main)
+    assert "PasswordChangeRequired" not in src
+
+
+def test_the_operator_is_told_to_use_the_nav_not_a_url():
+    """A URL typed from the change-password page redirects straight back to
+    it, so "go to /roster" is advice that cannot work."""
+    src = inspect.getsource(SUP.wait_for_form)
+    assert "LEFT-HAND NAV" in src and "redirects" in src
 
 
 def test_signin_needs_no_person(monkeypatch):
@@ -180,3 +190,66 @@ def test_a_fill_still_needs_a_person(capsys):
     import pytest
     with pytest.raises(SystemExit):
         SUP.main(["--office", "raf"])
+
+
+# ------------- the standing change-password page is a good session, not a wall
+
+class _FakePage:
+    def __init__(self, url):
+        self.url = url
+
+    def wait_for_timeout(self, _ms):
+        pass
+
+
+def _sess(url):
+    from automations.apex_new_starts import apex as AX
+    s = AX.ApexSession.__new__(AX.ApexSession)
+    s.page = _FakePage(url)
+    s.log = lambda *a: None
+    return s
+
+
+def test_the_change_password_page_counts_as_signed_in():
+    """Megan, 2026-11-10: "apex ALWAYS goes to reset pw -- you have to use the
+    NAV on the left." Calling it logged-out made `check_apex` print "❌ Apex"
+    on a perfectly good login."""
+    for url in ("https://apex.herbjoyent.com/Identity/Account/ChangePassword",
+                "https://apex.herbjoyent.com/Account/ChangePassword"):
+        assert _sess(url).signed_in() is True, url
+
+
+def test_it_is_still_recognised_as_the_prompt():
+    """It has to be asked about: a URL load from it redirects back, so
+    navigation has to be in-app."""
+    s = _sess("https://apex.herbjoyent.com/Identity/Account/ChangePassword")
+    assert s.password_gate() is True
+
+
+def test_the_real_sign_in_screens_are_still_not_signed_in():
+    """Both prefixes -- a check written for /Identity only once waved a
+    half-finished 2FA straight through."""
+    for url in ("https://apex.herbjoyent.com/Identity/Account/Login",
+                "https://apex.herbjoyent.com/Account/SendCode?ReturnUrl=/roster",
+                "https://apex.herbjoyent.com/Identity/Account/VerifyCode"):
+        assert _sess(url).signed_in() is False, url
+        assert _sess(url).password_gate() is False, url
+
+
+def test_the_prompt_is_not_announced_as_a_step_still_to_come():
+    """It is where a finished sign-in lands, so listing it as a step had the
+    wait loop reporting progress backwards."""
+    s = _sess("https://apex.herbjoyent.com/Identity/Account/ChangePassword")
+    assert s.on_signin_step() == ""
+
+
+def test_nothing_raises_on_the_prompt_any_more():
+    from automations.apex_new_starts import apex as AX
+    src = inspect.getsource(AX.ApexSession.require_login)
+    assert "PasswordChangeRequired" not in src
+
+
+def test_the_old_exception_still_imports():
+    """run.py and other callers still name it in an except clause."""
+    from automations.apex_new_starts import apex as AX
+    assert issubclass(AX.PasswordChangeRequired, RuntimeError)
