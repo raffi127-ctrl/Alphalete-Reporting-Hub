@@ -96,5 +96,8 @@ EXCLUDE = (
     # --- two-week zero rule, 2026-11-03 (Eve). Cero en WE 11.01 y WE 10.25.
     "Eric Martinez",        # Chan's captainship — Fiber New Internet + All Units
     "Roberto Rodriguez",    # Luis' captainship — B2B - All Units
+    # --- two-week zero rule, 2026-11-10 (Eve). Country Sales Board; cero en
+    # WE 11.08, 11.01 y 10.25, ult. venta WE 10.18.
+    "Ece Buyukozer",        # Country board — ALPHALETE ORG / Fiber - All Units
 )
 

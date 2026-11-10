@@ -113,6 +113,7 @@ EXCLUDE: set = {
     "brian tran",           # 2026-10-29 (Sahil) — oficina cerrada (Raf)
     "eric martinez",        # 2026-11-03 (Chan) — two-week zero rule
     "roberto rodriguez",    # 2026-11-03 (Luis) — two-week zero rule
+    "ece buyukozer",        # 2026-11-10 (Country board, ALPHALETE ORG Fiber) — two-week zero rule
 }
 
 
