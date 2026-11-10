@@ -450,7 +450,7 @@ OFFICE_TIMEZONES: dict = {
     "oren":    "America/Chicago",               # Omnia Management, Kansas City metro (order-log zips 66062/66212/641xx, 2026-11-06) -- CENTRAL
     "miguel":  "America/Los_Angeles",          # Nobilis Marketing Group (ATT Fiber, 24145), Sacramento CA (order-log zips 958xx, 2026-11-06) -- PACIFIC
     "zaid":   "America/Chicago",               # Zaid Arabiyat (NDS, Khalil's captainship) -- PLACEHOLDER until order-log zips confirm
-    "juan":   "America/Chicago",               # Juan Lucio (NDS, Khalil's captainship) -- PLACEHOLDER until order-log zips confirm
+    "juan":   "America/Chicago",               # Juan Lucio / Lucio Marketing (NDS), Corpus Christi TX (order-log zips 784xx; OV address McAllen) -- CENTRAL
     "sahil":   "America/New_York",             # M Coast, Raleigh NC -- Eastern
     "starr":   "America/Los_Angeles",          # Nova Management, Fremont CA -- Pacific
     "atef":    "America/Denver",               # Domin8 Acquisitions, Denver CO — Mountain

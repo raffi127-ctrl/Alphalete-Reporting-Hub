@@ -93,6 +93,8 @@ CITIES = {
     # not find him under Raf's login (not on the Office Access list).
     "santa_clara": ("Santa Clara, CA", 37.3541, -121.9552, "America/Los_Angeles"),
     "sacramento": ("Sacramento, CA", 38.5816, -121.4944, "America/Los_Angeles"),
+    "mcallen": ("McAllen, TX", 26.2034, -98.2300, "America/Chicago"),
+    "boston": ("Boston, MA", 42.3601, -71.0589, "America/New_York"),
     # valeria / Altura Marketing: Tampa, FL -- the company's own site
     # (alturamarketinginc.com, 410 S Ware Blvd), 2026-10-08.
     "tampa": ("Tampa, FL", 27.9506, -82.4572, "America/New_York"),
@@ -156,6 +158,8 @@ METRICS_CITY = {
     "nigel": "phoenix",         # VP Executives (ATT Fiber): Phoenix now, Los Angeles from 2026-11-30 (Megan 2026-11-06, CITY_CHANGES); #vp-sales
     "oren": "kansas_city",      # Omnia Management (ATT Fiber 22536): order-log zips 66062/66212/641xx = KC metro (2026-11-06); Central; channel from ECO sign-up
     "miguel": "sacramento",     # Nobilis Marketing Group (ATT Fiber 24145): order-log zips 95841/95826/95827 + Marysville/Yuba City (2026-11-06); Pacific; channel from ECO sign-up
+    "juan": "corpus_christi",   # Juan Lucio / Lucio Marketing (NDS): customer zips 784xx Corpus Christi (NDS order log 2026-11-09; OV address says McAllen); Central; #juan-lucio-metrics
+    "zaid": "boston",           # Zaid Arabiyat / Aces Acquisitions (NDS): zips 02124 Boston, 03103 Manchester NH, 03060 Nashua, 01841 Lawrence (NDS order log 2026-11-09); EASTERN; #zaid-arabiyat-metrics
     "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up
     "starr": "fremont",         # Nova Management, Fremont CA; Pacific; channel from ECO sign-up
     "omar": "southfield",       # Kalkan Marketing, Dearborn MI (next door to Detroit); Eastern

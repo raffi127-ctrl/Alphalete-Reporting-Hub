@@ -146,8 +146,27 @@ def load(path: Path, owner: str) -> tuple[list[str], list[list[str]]]:
     idx = {_norm_h(h): i for i, h in enumerate(header)}
     owner_col = next((idx[k] for k in idx if k.startswith("owner")), 0)
     want = _norm_owner(owner)
+    # THE ALIAS SHEET DECIDES SPELLING, here like everywhere else. Tableau's
+    # 'Owner & Office' carries the owner's full legal name: 'JUAN IGNACIO LUCIO
+    # [lucio marketing, inc.]' for the office we call Juan Lucio, 'ZAID ARABYAT'
+    # for Zaid Arabiyat (2026-11-09: both dry runs read 0 orders against 2,584
+    # and 698 real rows). A literal match was the per-report patch the alias
+    # rule forbids; resolve each crosstab owner through the ICD Aliases first.
+    accept = {want}
+    try:
+        from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
+        raw = load_aliases()
+        canon = _norm_owner(alias_to_canonical(owner, raw))
+        accept.add(canon)
+        for a in raw.get(alias_to_canonical(owner, raw), []) or []:
+            accept.add(_norm_owner(a))
+        for c, als in raw.items():
+            if _norm_owner(c) in accept:
+                accept.update(_norm_owner(a) for a in als)
+    except Exception:  # noqa: BLE001 -- the alias sheet unreadable: literal match, as before
+        pass
     mine = [r for r in rows[1:]
-            if len(r) > owner_col and _norm_owner(r[owner_col]) == want]
+            if len(r) > owner_col and _norm_owner(r[owner_col]) in accept]
     return header, mine
 
 
@@ -367,7 +386,19 @@ def _render_order_log(owner, header, rows, target, out_dir,
             return ""
         return _cell(r, car_i).split(",")[0].strip()
 
-    computed = {"Type": _type, "Next Up": _next_up, "Ported From": _ported}
+    dtr_i = _find(header, "dtr status")
+    spe_i = idx["spe.Status"]
+
+    def _status(r) -> str:
+        # A posted (paid) line can still carry its shipping status
+        # ("Delivered") in spe.Status, which put paid orders on the pending
+        # tab. DTR Status = Posted wins (Colten 2026-10-28).
+        if _cell(r, dtr_i).lower() == "posted":
+            return "Posted"
+        return _cell(r, spe_i)
+
+    computed = {"Type": _type, "Next Up": _next_up, "Ported From": _ported,
+                "spe.Status": _status}
 
     def _san(v: str) -> str:                     # tabs/newlines would break the TSV
         return (v or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")

@@ -1444,7 +1444,7 @@
     "knocks_office": "Juan Lucio",
     "ov_account": "",
     "owner_office": "",
-    "business_name": "",
+    "business_name": "Lucio Marketing, Inc.",
     "website": "",
     "header_label": "Juan Lucio",
     "thresholds": {
@@ -1471,7 +1471,7 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
-    "notes": "wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship (captainship_night_knocks/owners.py), five NDS boards like frank on Lucy 4. Channel #juan-lucio-metrics C0CG4THDLG5 (private; Megan made it 11/09). Sheet 'Juan Lucio - Lucy Metrics' 1W10xyOqckxJpw8dklX1Ye2q8Abnu6896XacZLwAeH0o (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read."
+    "notes": "wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship (captainship_night_knocks/owners.py), five NDS boards like frank on Lucy 4. Channel #juan-lucio-metrics C0CG4THDLG5 (private; Megan made it 11/09). Sheet 'Juan Lucio - Lucy Metrics' 1W10xyOqckxJpw8dklX1Ye2q8Abnu6896XacZLwAeH0o (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read. | city McAllen TX (captainship_night_knocks/zones.py, OV address harvest) -> weather mcallen, Central confirmed. | 2026-11-09 19:40 CT: Tableau 'Owner & Office' = 'JUAN IGNACIO LUCIO [lucio marketing, inc.]' (698 orders/60d; alias Juan Ignacio Lucio already on the sheet); zips 784xx Corpus Christi -> weather corpus_christi."
   },
   {
     "key": "zaid",
@@ -1484,7 +1484,7 @@
     "knocks_office": "Zaid Arabiyat",
     "ov_account": "",
     "owner_office": "",
-    "business_name": "",
+    "business_name": "Aces Acquisitions, Inc.",
     "website": "",
     "header_label": "Zaid Arabiyat",
     "thresholds": {
@@ -1511,6 +1511,6 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
-    "notes": "wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship, five NDS boards like frank on Lucy 4. Channel #zaid-arabiyat-metrics C0CGA1H2T0A (private; Megan made it 11/09; lucy_reporting in it). Sheet 'Zaid Arabiyat - Lucy Metrics' 1OS9Kt0wJcVVINSypYpSnTQS1iXXCtJYqlumNXjowKu0 (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read."
+    "notes": "wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship, five NDS boards like frank on Lucy 4. Channel #zaid-arabiyat-metrics C0CGA1H2T0A (private; Megan made it 11/09; lucy_reporting in it). Sheet 'Zaid Arabiyat - Lucy Metrics' 1OS9Kt0wJcVVINSypYpSnTQS1iXXCtJYqlumNXjowKu0 (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read. | 2026-11-09 19:40 CT: Tableau 'Owner & Office' = 'ZAID ARABYAT [aces acquisitions, inc.]' (2,584 orders/60d; alias 'Zaid Arabyat' saved); zips 02124/03103/03060/01841/01902 = Boston MA + southern NH -> weather boston, EASTERN."
   }
 ]
