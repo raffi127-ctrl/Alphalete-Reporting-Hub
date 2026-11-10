@@ -164,7 +164,7 @@ def ping_line(row: Dict) -> tuple:
     detail = "\n".join([
         f"*Owner:* {row.get('Owner')}  {row.get('Owner Email') or ''}".rstrip(),
         f"*Posts to:* {row.get('Pages') or '(none)'}",
-        f"*Slack room:* {room}",
+        f"*Slack channel:* {room}",
         f"*Address / phone:* {row.get('Address')} · {row.get('Phone')}",
         f"*Website:* {row.get('Website')}",
         f"*Google listing:* {row.get('Google Listing Link')}",
@@ -221,13 +221,13 @@ def main(argv=None) -> int:
         except (AttributeError, ValueError):
             pass
     ap = argparse.ArgumentParser(prog="online_presence.rooms")
-    ap.add_argument("--live", action="store_true", help="actually create the rooms")
+    ap.add_argument("--live", action="store_true", help="actually create the channels")
     a = ap.parse_args(argv)
     for p in ping_new(live=a.live):
         print(f"{p['business']}: {p['action']} in the alerts channel")
     res = run(live=a.live)
     if not res:
-        print("No sign-ups waiting for a room.")
+        print("No sign-ups waiting for a channel.")
     for r in res:
         line = f"{r['business']}: {r['action']} #{r.get('channel', '')}"
         if r.get("id"):

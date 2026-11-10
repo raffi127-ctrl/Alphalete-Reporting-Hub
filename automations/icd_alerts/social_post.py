@@ -73,6 +73,22 @@ def check(payload: Dict, log=print) -> Dict:
     return {"status": "ok", "channels": r["channels"]}
 
 
+def _unpack_album(data: bytes, folder: Path) -> list:
+    """The .zip relay.album_bytes made -> photo paths in posting order."""
+    import io
+    import zipfile
+    out = []
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for name in sorted(z.namelist()):
+            base = Path(name).name                      # never write outside folder
+            if not base.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
+            p = folder / base
+            p.write_bytes(z.read(name))
+            out.append(str(p))
+    return out
+
+
 def post(payload: Dict, live: bool, log=print) -> Dict:
     from automations.brand_audit import zoho_draft
     caption = str(payload.get("caption") or "").strip()
@@ -91,13 +107,19 @@ def post(payload: Dict, live: bool, log=print) -> Dict:
         return {"status": "dry_run" if pages else "no_channels",
                 "channels": r["channels"], "would_post_to": pages}
     video = payload.get("media") == "video"          # the weekly reel
+    album = payload.get("media") == "album"          # several photos, one post
     with tempfile.TemporaryDirectory(prefix="lucy-social-") as tmp:
-        photo = Path(tmp) / ("post.mp4" if video else "post.jpg")
-        photo.write_bytes(base64.b64decode(raw))
+        if album:
+            photo = _unpack_album(base64.b64decode(raw), Path(tmp))
+            if not photo:
+                return {"status": "error", "error": "album job had no photos in it"}
+        else:
+            photo = Path(tmp) / ("post.mp4" if video else "post.jpg")
+            photo.write_bytes(base64.b64decode(raw))
         # From here on a retry could double-post: every outcome is a RESULT.
         try:
             keep = tuple(payload.get("pages") or ()) or None
-            res = zoho_draft.post_now(caption, str(photo), "",
+            res = zoho_draft.post_now(caption, photo if album else str(photo), "",
                                       media_type="video" if video else "photo",
                                       profile_dir=PROFILE, keep=keep)
         except RuntimeError as e:

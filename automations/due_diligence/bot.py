@@ -166,6 +166,19 @@ def _handler(client, req):
         print(f"[aca] FAILED {type(e).__name__}: {e}", flush=True)
         return
 
+    # 📸 New post — the button pinned in each LucyECO Social channel
+    # (automations.online_presence.post_form). Same rule as /aca: ask, ack, wrap.
+    try:
+        from automations.online_presence import post_form as _newpost
+        if _newpost.wants(req):
+            client.send_socket_mode_response(SocketModeResponse(
+                envelope_id=req.envelope_id, payload=_newpost.ack(req)))
+            _newpost.handle(client, req)
+            return
+    except Exception as e:                    # noqa: BLE001
+        print(f"[newpost] FAILED {type(e).__name__}: {e}", flush=True)
+        return
+
     # /personality — the word-pick personality test
     # (automations.personality.bot). Same rule as /aca: ask, ack, wrap.
     try:

@@ -144,6 +144,20 @@ def blur_variance(img_bytes: bytes) -> float:
     return float(lap.var())
 
 
+def dhash(img_bytes: bytes) -> int:
+    """A 64-bit fingerprint of what the photo LOOKS like (difference hash).
+    The same shot re-sent, re-saved or lightly edited lands within a few bits;
+    a different photo lands ~30 bits away. Used to never post a photo twice."""
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(img_bytes))).convert("L")
+    g = np.asarray(im.resize((9, 8)), dtype=np.int16)
+    bits = (g[:, 1:] > g[:, :-1]).flatten()
+    return int("".join("1" if b else "0" for b in bits), 2)
+
+
+def hash_distance(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
+
 # below this sharpness score a photo is too blurry to meet posting standards
 BLUR_THRESHOLD = 80.0
 

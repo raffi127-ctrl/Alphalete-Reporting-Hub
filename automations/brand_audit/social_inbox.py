@@ -120,6 +120,109 @@ def _image_files(msg: dict) -> list[dict]:
             if str(f.get("mimetype", "")).startswith("image/")]
 
 
+# SAME / NEAR-SAME PHOTO GUARD (Megan 2026-11-09: "we need to build a guard to
+# not post 2 of the same photo/similar photo"). Every photo Lucy proposes is
+# fingerprinted (photo_edit.dhash, on the edited version, so old photos can be
+# fingerprinted from what's saved). A new one within SAME_PHOTO_BITS of any
+# earlier one is held: Lucy says which one it matches, and an approver ✅ posts
+# it anyway (a genuinely different shot) or ❌ drops it.
+MAX_PHOTOS = 10              # one post holds up to 10 photos (Instagram's cap)
+SAME_PHOTO_BITS = 10          # of 64; same shot re-sent ~0-4, a burst shot ~6-10
+_HASHES = "_photo_hashes"
+KEEP_HASHES = 500
+
+
+def _seed_hashes(state: dict) -> list:
+    """The fingerprint list, back-filled from photos proposed before the guard."""
+    seen = state.setdefault(_HASHES, [])
+    have = {x["ts"] for x in seen}
+    for k, st in list(state.items()):
+        if k.startswith("_") or not isinstance(st, dict):
+            continue
+        for i, p in enumerate(_paths(st)):
+            key = k if i == 0 else f"{k}#{i}"
+            if key in have or not Path(p).exists():
+                continue
+            try:
+                seen.append({"ts": key, "h": f"{photo_edit.dhash(Path(p).read_bytes()):016x}"})
+            except Exception:
+                pass
+    return seen
+
+
+def _paths(st: dict) -> list:
+    """Every edited photo of one post (a post made before albums has one)."""
+    return list(st.get("photo_paths") or ([st["photo_path"]] if st.get("photo_path") else []))
+
+
+def twin_of(seen: list, h: int, ts: str) -> dict | None:
+    """The earlier photo this one matches, or None."""
+    best = None
+    for x in seen:
+        if x["ts"] == ts:
+            continue
+        d = photo_edit.hash_distance(h, int(x["h"], 16))
+        if d <= SAME_PHOTO_BITS and (best is None or d < best[0]):
+            best = (d, x)
+    return best[1] if best else None
+
+
+def _dup_text(cl, chan: str, ts: str, twins: list, n: int) -> str:
+    """The hold note: which photo matches which earlier one, with a link."""
+    bits = []
+    for i, twin in twins:
+        link = ""
+        if _post_ts(twin["ts"]) != ts:
+            try:
+                link = cl.chat_getPermalink(channel=chan,
+                                            message_ts=_post_ts(twin["ts"])).get("permalink", "")
+            except Exception:
+                pass
+        if _post_ts(twin["ts"]) == ts:
+            j = int(twin["ts"].split("#")[1]) if "#" in twin["ts"] else 0
+            where = f"photo {j + 1} in this same post"
+        else:
+            where = (f"<{link}|the one sent {_when(twin['ts'])}>" if link
+                     else f"one sent {_when(twin['ts'])}")
+        bits.append((f"photo {i + 1}" if n > 1 else "it") + f" looks like {where}")
+    return (":repeat: *Holding this one*: " + "; ".join(bits) + ". We never post the "
+            "same photo twice.\n*Approvers: react :white_check_mark: if they're really "
+            "different photos, :x: to skip this post.*")
+
+
+def _merge_quality(reports: list) -> dict | None:
+    reports = [r or {} for r in reports]
+    if len(reports) == 1:
+        return reports[0]
+    warns = [f"Photo {i + 1}: {w}" for i, r in enumerate(reports) for w in r.get("warnings") or []]
+    return {"ok": all(r.get("ok", True) for r in reports), "warnings": warns}
+
+
+def _save_edits(prefix: str, ts: str, edited: list) -> list:
+    """Photo 1 keeps the old file name (so older posts still line up)."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    stem = f"{prefix}{ts.replace('.', '')}_ig"
+    out = []
+    for i, im in enumerate(edited):
+        p = OUTPUT_DIR / (f"{stem}.jpg" if i == 0 else f"{stem}_{i + 1}.jpg")
+        p.write_bytes(im)
+        out.append(p)
+    return out
+
+
+def _post_ts(key: str) -> str:
+    return key.split("#")[0]
+
+
+def _when(ts: str) -> str:
+    import datetime as _dt
+    try:
+        d = _dt.datetime.fromtimestamp(float(_post_ts(ts)))
+        return f"{d:%b} {d.day}"            # no %-d: it breaks on Windows
+    except Exception:
+        return "earlier"
+
+
 def _download(url: str) -> bytes:
     # File downloads need files:read — use the bot token (it has it) and fall
     # back to the user token. The bot must be a member of the channel.
@@ -535,7 +638,7 @@ def _office_publish(P, cl, ts: str, st: dict, caption: str, dry_run: bool,
     from automations.brand_audit import zoho_draft
     if st.get("scheduled") or st.get("published") or st.get("eco_job"):
         return []
-    photo = st.get("photo_path")
+    photo = _paths(st)
     now = dt.datetime.now(ZoneInfo(P.timezone)).replace(tzinfo=None)
     if P.post_via == "eco":
         return _office_queue(P, ts, st, caption, dry_run, sched_file, now)
@@ -616,13 +719,14 @@ def _office_queue(P, ts: str, st: dict, caption: str, dry_run: bool,
                  "note": f"{now:%H:%M} office time is outside "
                          f"{min(P.post_hours)}:00-{max(P.post_hours)}:59"}]
     act = {"ts": ts, "action": "queue_to_office", "caption": caption,
-           "photo": st.get("photo_path"), "pages": list(P.pages)}
+           "photo": st.get("photo_path"), "photos": _paths(st), "pages": list(P.pages)}
     if dry_run:
         return [act]
     from automations.brand_audit import zoho_draft
     from automations.online_presence import relay
     try:
-        st["eco_job"] = relay.enqueue_post(P.key, caption, Path(st["photo_path"]),
+        st["eco_job"] = relay.enqueue_post(P.key, caption,
+                                           [Path(p) for p in _paths(st)],
                                            P.pages, live=True, thread_ts=ts)
     except Exception as e:
         return [act, {"ts": ts, "action": "schedule_error", "error": str(e)[:200]}]
@@ -660,6 +764,12 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
     # line even days apart). Newest first; we feed the recent slice as a
     # "do-not-reuse" list to every new caption.
     recent_captions = list(state.get("_recent_captions", []))
+    seen_photos = _seed_hashes(state)
+    # FORM ONLY from here on (online_presence.post_form): a photo dropped
+    # straight into the channel gets one pointer to the 📸 New post button and
+    # is never posted. Anything already under way finishes as before.
+    from automations.online_presence import post_form
+    since = state.setdefault("_form_only_since", f"{time.time():.6f}")
     actions = []
 
     for m in msgs:
@@ -669,6 +779,13 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         if not imgs:
             continue
         ts = m["ts"]
+        if ts not in state and not post_form.from_form(m):
+            if float(ts) > float(since):
+                actions.append({"ts": ts, "action": "use_the_button"})
+                if not dry_run:
+                    post_form.point_to_button(chan, ts, cl)
+                    state[ts] = {"posted": True, "redirected": True}
+            continue
         st = state.setdefault(ts, {})
         if st.get("killed"):
             continue
@@ -701,26 +818,79 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         if st.get("posted"):
             continue
 
+        # ONE MESSAGE = ONE POST, ALL ITS PHOTOS (Megan 2026-11-09: "we want to
+        # be able to have multi photos on a post - but that means each photo
+        # needs edited"). Every photo is edited, screened and checked for
+        # repeats on its own; they're approved and posted together. Past
+        # MAX_PHOTOS, say once that only the first ones go in.
+        if len(imgs) > MAX_PHOTOS and not st.get("over_cap_told"):
+            actions.append({"ts": ts, "action": "over_photo_cap", "photos": len(imgs)})
+            if not dry_run:
+                cl.chat_postMessage(
+                    channel=chan, thread_ts=ts,
+                    text=f":information_source: One post holds up to {MAX_PHOTOS} photos, "
+                         f"so I'll use the first {MAX_PHOTOS} of these {len(imgs)}. Send "
+                         "the rest as their own post, with a line about them.")
+                st["over_cap_told"] = True
+        imgs = imgs[:MAX_PHOTOS]
+
+        # SAME PHOTO TWICE: an approver already answered the hold?
+        if st.get("dup_ts") and not st.get("dup_ok"):
+            drx = _thread_reactions(cl, ts, chan).get(st["dup_ts"])
+            if _reacted(drx, SOCIAL_APPROVE_EMOJI, who):
+                st["dup_ok"] = True
+            elif _reacted(drx, SOCIAL_REJECT_EMOJI, who):
+                actions.append({"ts": ts, "action": "duplicate_dropped"})
+                if not dry_run:
+                    cl.chat_postMessage(channel=chan, thread_ts=ts,
+                                        text=":ok_hand: Skipped, it won't post twice.")
+                    st["posted"] = True
+                continue
+            else:
+                actions.append({"ts": ts, "action": "awaiting_duplicate_review"})
+                continue
+
         # PROPOSE: post the edited PHOTO right away (no context needed); the
         # CAPTION follows once we have enough context. Approved separately.
         if not (st.get("photo_ts") and st.get("caption")):
             # the edited image — process fresh if the photo isn't posted yet,
             # else reuse the version already saved (caption-only passes)
             quality = None
-            if st.get("photo_ts") and st.get("photo_path") and \
-                    Path(st["photo_path"]).exists():
-                img = Path(st["photo_path"]).read_bytes()
-                raw = None
+            if st.get("photo_ts") and _paths(st) and \
+                    all(Path(p).exists() for p in _paths(st)):
+                edited = [Path(p).read_bytes() for p in _paths(st)]
+                raws = None
             else:
                 try:
-                    raw = _download(imgs[-1]["url_private"])
-                    quality = photo_edit.quality_report(raw)
-                    img = photo_edit.process_bytes(
-                        raw, zoom=style.photo_default_zoom(style_file))
+                    raws = [_download(f["url_private"]) for f in imgs]
+                    zoom = style.photo_default_zoom(style_file)
+                    edited = [photo_edit.process_bytes(r, zoom=zoom) for r in raws]
+                    quality = _merge_quality([photo_edit.quality_report(r) for r in raws])
                 except Exception as e:
                     actions.append({"ts": ts, "action": "caption_error",
                                     "error": str(e)})
                     continue
+                if not st.get("dup_ok"):
+                    twins = []
+                    for i, im in enumerate(edited):
+                        key = ts if i == 0 else f"{ts}#{i}"
+                        h = photo_edit.dhash(im)
+                        twin = twin_of(seen_photos, h, key)
+                        if twin:
+                            twins.append((i, twin))
+                        if not any(x["ts"] == key for x in seen_photos):
+                            seen_photos.append({"ts": key, "h": f"{h:016x}"})
+                    if twins:
+                        actions.append({"ts": ts, "action": "duplicate_held",
+                                        "matches": [t["ts"] for _, t in twins]})
+                        if not dry_run:
+                            r0 = cl.chat_postMessage(
+                                channel=chan, thread_ts=ts,
+                                text=_dup_text(cl, chan, ts, twins, len(edited)))
+                            st["dup_ts"] = r0.get("ts")
+                        continue
+                    st["dup_ok"] = True
+            img = edited[0]          # the caption reads the first photo
 
             # 1) BRAND-SAFETY SCREEN — gate everything. Flag (don't auto-block)
             #    alcohol/smoking/drugs/profanity/gang signs/weapons/cash/blur or
@@ -743,10 +913,14 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                         actions.append({"ts": ts, "action": "awaiting_screen_review"})
                         continue
                 else:
-                    issues = list(screen_photo(img, company_name))
-                    if raw is not None and photo_edit.is_too_blurry(raw):
-                        issues.append("too blurry to meet our posting standards "
-                                      "(couldn't sharpen it enough)")
+                    issues = []
+                    for i, im in enumerate(edited):
+                        mine = list(screen_photo(im, company_name))
+                        if raws is not None and photo_edit.is_too_blurry(raws[i]):
+                            mine.append("too blurry to meet our posting standards "
+                                        "(couldn't sharpen it enough)")
+                        tag = f"photo {i + 1}: " if len(edited) > 1 else ""
+                        issues += [tag + x for x in mine]
                     if issues:
                         actions.append({"ts": ts, "action": "photo_flagged",
                                         "issues": issues})
@@ -763,25 +937,30 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
 
             # 2) post the EDITED PHOTO for approval — NO context needed
             if not st.get("photo_ts"):
-                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-                photo_path = OUTPUT_DIR / f"{photo_prefix}{ts.replace('.', '')}_ig.jpg"
-                photo_path.write_bytes(img)
+                paths = _save_edits(photo_prefix, ts, edited)
+                many = len(paths) > 1
                 actions.append({"ts": ts, "action": "propose_photo",
-                                "photo": str(photo_path), "quality": quality})
+                                "photo": str(paths[0]), "photos": [str(p) for p in paths],
+                                "quality": quality})
                 if not dry_run:
                     warn = ""
                     if quality and quality.get("warnings"):
                         warn = (":warning: *Photo quality* — "
                                 + " ".join(quality["warnings"]) + "\n\n")
+                    what = (f"*{len(paths)} edited photos, one post*" if many
+                            else "*Edited photo*")
                     cl.files_upload_v2(
                         channel=chan, thread_ts=ts,
-                        file=str(photo_path), title="Edited photo — IG ready",
-                        initial_comment=f"{warn}:frame_with_picture: *Edited "
-                        "photo* (auto-enhanced + cropped) — react "
-                        ":white_check_mark: to approve the PHOTO, :x: to ask for "
-                        "a different edit / upload your own.")
+                        file_uploads=[{"file": str(p), "title": f"Edited photo {i + 1}"
+                                       if many else "Edited photo — IG ready"}
+                                      for i, p in enumerate(paths)],
+                        initial_comment=f"{warn}:frame_with_picture: {what} "
+                        "(auto-enhanced + cropped) — react "
+                        f":white_check_mark: to approve the {'PHOTOS' if many else 'PHOTO'}, "
+                        ":x: to ask for a different edit / upload your own.")
                     st["photo_ts"] = _newest_file_reply_ts(cl, ts, chan)
-                    st["photo_path"] = str(photo_path)
+                    st["photo_paths"] = [str(p) for p in paths]
+                    st["photo_path"] = str(paths[0])
 
             # 3) CAPTION — needs context; ask the rep / wait, then post
             if not st.get("caption"):
@@ -847,7 +1026,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             if fb and fb.get("text"):
                 style.add_caption_feedback(fb["text"], style_file)   # Lucy learns from it
             try:
-                raw = _download(imgs[-1]["url_private"])
+                raw = _download(imgs[0]["url_private"])
                 newcap = caption_for(photo_edit.process_bytes(raw), text,
                                      company_name,
                                      avoid=(rejected + recent_captions)[:25],
@@ -906,33 +1085,37 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                     st["photo_dismissed"] = True
                     st["posted"] = True
                 continue
-            # fix: re-edit per their feedback and re-post for approval
+            # fix: re-edit per their feedback (every photo the same way) and
+            # re-post for approval
             try:
-                raw = _download(imgs[-1]["url_private"])
                 asp = interp.get("aspect") or "keep"
                 opts = {"brightness": interp.get("brightness", 1.0),
                         "contrast": interp.get("contrast", 1.0),
                         "color": interp.get("saturation", 1.0)}
-                newimg = photo_edit.process_bytes(
-                    raw, aspect=("auto" if asp == "keep" else asp),
-                    adjust_opts=opts, zoom=float(interp.get("zoom") or 1.0))
+                newimgs = [photo_edit.process_bytes(
+                    _download(f["url_private"]), aspect=("auto" if asp == "keep" else asp),
+                    adjust_opts=opts, zoom=float(interp.get("zoom") or 1.0)) for f in imgs]
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
-            new_path = OUTPUT_DIR / f"{photo_prefix}{ts.replace('.', '')}_ig.jpg"
-            new_path.write_bytes(newimg)
+            new_paths = _save_edits(photo_prefix, ts, newimgs)
             actions.append({"ts": ts, "action": "photo_reedited",
-                            "photo": str(new_path)})
+                            "photo": str(new_paths[0]),
+                            "photos": [str(p) for p in new_paths]})
             if not dry_run:
                 note = interp.get("note") or "Updated the edit."
+                many = len(new_paths) > 1
                 cl.files_upload_v2(
                     channel=chan, thread_ts=ts,
-                    file=str(new_path), title="Edited photo (v2)",
+                    file_uploads=[{"file": str(p), "title": f"Edited photo {i + 1} (v2)"
+                                   if many else "Edited photo (v2)"}
+                                  for i, p in enumerate(new_paths)],
                     initial_comment=f":frame_with_picture: {note} React "
-                    ":white_check_mark: to approve the PHOTO, :x: if it still "
-                    "needs work.")
+                    f":white_check_mark: to approve the {'PHOTOS' if many else 'PHOTO'}, "
+                    ":x: if it still needs work.")
                 st["photo_ts"] = _newest_file_reply_ts(cl, ts, chan)
-                st["photo_path"] = str(new_path)
+                st["photo_paths"] = [str(p) for p in new_paths]
+                st["photo_path"] = str(new_paths[0])
                 st["photo_why_ts"] = None   # next ❌ asks why again
             continue
 
@@ -952,7 +1135,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             if not dry_run and not st.get("scheduled"):
                 try:
                     res = zoho_draft.schedule_post(
-                        cur, st.get("photo_path"), company_name,
+                        cur, _paths(st), company_name,
                         when=slot, media_type="photo", dry_run=False)
                 except Exception as e:
                     res = {"ok": False, "error": str(e)}
@@ -984,6 +1167,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
 
     if not dry_run:
         state["_recent_captions"] = recent_captions[:50]   # cap history
+        state[_HASHES] = seen_photos[-KEEP_HASHES:]
         _save_state(state, state_file)
     return actions
 

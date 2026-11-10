@@ -33,16 +33,35 @@ def enqueue(office: str, kind: str, payload: Dict, *, live: bool) -> str:
     return str(out["job_id"])
 
 
-def enqueue_post(office: str, caption: str, photo: Path, pages, *,
+def enqueue_post(office: str, caption: str, photo, pages, *,
                  live: bool, thread_ts: str = "", media: str = "photo") -> str:
     """`photo` is the file to post -- a .jpg, or the reel's .mp4 with
     media="video". It rides the relay's existing photo field (bytes are
-    bytes), so a reel needs no relay change."""
+    bytes), so a reel needs no relay change.
+
+    A LIST of photos (one post, several photos) rides the same field as one
+    .zip with media="album" -- still no relay change. The office's computer
+    unpacks it in order (social_post.post)."""
+    photos = list(photo) if isinstance(photo, (list, tuple)) else [photo]
+    if len(photos) > 1:
+        media, data = "album", album_bytes(photos)
+    else:
+        data = Path(photos[0]).read_bytes()
     return enqueue(office, "social_post", {
         "caption": caption, "pages": list(pages), "thread_ts": thread_ts,
-        "media": media,
-        "photo_b64": base64.b64encode(Path(photo).read_bytes()).decode()},
+        "media": media, "photo_b64": base64.b64encode(data).decode()},
         live=live)
+
+
+def album_bytes(photos) -> bytes:
+    """Photos 1..N as one .zip, named so they unpack in posting order."""
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
+        for i, p in enumerate(photos, 1):
+            z.writestr(f"{i:02d}.jpg", Path(p).read_bytes())
+    return buf.getvalue()
 
 
 def answered() -> List[Dict]:

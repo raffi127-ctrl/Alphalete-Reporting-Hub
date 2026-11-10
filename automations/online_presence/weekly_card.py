@@ -110,7 +110,7 @@ def main(argv=None) -> int:
             pass
     ap = argparse.ArgumentParser(prog="online_presence.weekly_card")
     ap.add_argument("--office", default="")
-    ap.add_argument("--live", action="store_true", help="post to live offices' rooms")
+    ap.add_argument("--live", action="store_true", help="post to live offices' channels")
     a = ap.parse_args(argv)
     import time as _time
     started = _time.monotonic()

@@ -53,7 +53,7 @@ def messages(P, rv: Dict) -> tuple:
     text = (rv.get("text") or "").strip() or "(rating only, no text)"
     when = (rv.get("publish_time") or "")[:10]
     detail = (f"*{rv.get('author') or 'A reviewer'}* · {when}\n> {text}\n\n"
-              "Lucy's reply draft follows in this room for ✅ / ❌.")
+              "Lucy's reply draft follows in this channel for ✅ / ❌.")
     return head, detail
 
 

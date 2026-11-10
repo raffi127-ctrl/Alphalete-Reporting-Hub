@@ -72,7 +72,7 @@ for page in signup.PAGES:
     socials[field] = st.text_input(f"Your {page} page link", key=f"link_{page}",
                                    placeholder=f"{host0}/yourpage")
 
-st.subheader("Your Slack room")
+st.subheader("Your Slack channel")
 st.caption("Lucy puts your photos, captions and review replies for approval in one "
            "Slack channel.")
 has_room = st.radio(

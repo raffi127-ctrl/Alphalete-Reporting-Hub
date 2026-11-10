@@ -192,14 +192,18 @@ def _compose(pg, caption: str, image_path: str | None,
 
     # photo: media button -> file chooser -> gallery -> Attach (set_input_files
     # alone uploads to the gallery but never inserts it)
-    if image_path:
+    # Several photos = one post (Megan 2026-11-09): they go into the gallery
+    # together and Attach inserts them all.
+    files = ([str(x) for x in image_path] if isinstance(image_path, (list, tuple))
+             else [str(image_path)] if image_path else [])
+    if files:
         with pg.expect_file_chooser(timeout=15000) as fc:
             pg.locator(_MEDIA_BTN).first.click(timeout=10000)
-        fc.value.set_files(image_path)
+        fc.value.set_files(files if len(files) > 1 else files[0])
         # A reel uploads + processes far slower than a photo: give it time
         # before Attach (a too-early click attaches nothing).
-        is_video = str(image_path).lower().endswith((".mp4", ".mov"))
-        pg.wait_for_timeout(20000 if is_video else 3500)
+        is_video = files[0].lower().endswith((".mp4", ".mov"))
+        pg.wait_for_timeout(20000 if is_video else 3500 + 2500 * (len(files) - 1))
         attach = pg.get_by_role("button", name="Attach").first
         attach.click(timeout=60000 if is_video else 15000)
         try:

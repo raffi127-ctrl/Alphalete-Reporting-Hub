@@ -151,7 +151,7 @@ class Presence:
         if not self.business_name.strip():
             out.append("no business name")
         if not self.slack_channel.strip():
-            out.append("no Slack room")
+            out.append("no Slack channel")
         for field, label in (("address", "office address"), ("phone", "company phone"),
                              ("website", "company website"),
                              ("google_link", "Google listing link")):

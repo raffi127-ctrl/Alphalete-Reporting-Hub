@@ -227,7 +227,9 @@ def all_locations(sess=None) -> list[dict]:
                                   .get("primaryPhone") or ""),
                         "website": loc.get("websiteUri") or "",
                         "place_id": meta.get("placeId") or "",
-                        "maps_uri": meta.get("mapsUri") or ""})
+                        "maps_uri": meta.get("mapsUri") or "",
+                        # the "leave us a review" link an office texts customers
+                        "review_link": meta.get("newReviewUri") or ""})
     return out
 
 

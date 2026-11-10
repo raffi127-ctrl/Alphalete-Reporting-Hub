@@ -156,7 +156,7 @@ def _fill_from_signup(a) -> bool:
         if str(row.get("Slack Channel") or "").strip():
             a.room = str(row["Slack Channel"]).strip()
         elif row.get("Slack Room") == "create us one":
-            print("  ⚠ they asked us to CREATE their Slack room: make "
+            print("  ⚠ they asked us to CREATE their Slack channel: make "
                   f"#{a.office}-online-presence, invite Lucy + @hubposter + them, "
                   "then re-run with --room")
     print(f"  using the sign-up {a.from_signup!r} sent on {row.get('Submitted At')}")
@@ -195,7 +195,7 @@ def cmd_add(a) -> int:
                 **{f"{n}_url": getattr(a, n) or getattr(base, f"{n}_url")
                    for n in ("instagram", "facebook", "linkedin", "x", "tiktok", "youtube")})
     offices.save(p)
-    print(f"✓ saved {p.key}: {p.business_name} · room {p.slack_channel} · "
+    print(f"✓ saved {p.key}: {p.business_name} · channel {p.slack_channel} · "
           f"{len(p.approvers)} approver(s) · posts to "
           f"{', '.join(p.pages) or 'nothing yet'} · mode {p.mode}")
     for prob in p.problems():
@@ -326,13 +326,13 @@ def _slack_room_check(p) -> List[Tuple[bool, str]]:
         out.append((bool(info.get("is_member")),
                     f"Lucy is in #{info.get('name')}"))
     except Exception as e:
-        out.append((False, f"Lucy can't open the room ({str(e)[:80]})"))
+        out.append((False, f"Lucy can't open the channel ({str(e)[:80]})"))
         return out
     bot = credentials.optional("slack_bot_token")
     if bot:
         # The bot can only read files (no channels:read), so it can't look the
         # room up itself: ask who IT is, then read the room's members as Lucy.
-        label = "@hubposter is in the room (needed to open the photos)"
+        label = "@hubposter is in the channel (needed to open the photos)"
         try:
             from automations.shared import slack_metrics_post as smp
             bot_id = smp._client(bot).auth_test()["user_id"]
@@ -435,7 +435,7 @@ def main(argv=None) -> int:
     s = sub.add_parser("add", help="add or update an office")
     s.add_argument("--office", required=True, help="the office's ECO key, e.g. kash")
     s.add_argument("--name", default="", help="business name exactly as on Google")
-    s.add_argument("--room", default="", help="Slack room, e.g. #kash-online-presence")
+    s.add_argument("--room", default="", help="Slack channel, e.g. #kash-online-presence")
     s.add_argument("--approvers", default="", help="names, comma separated")
     s.add_argument("--email", default="", help="where complaints are invited to write")
     s.add_argument("--timezone", default="", help="e.g. America/Los_Angeles")
