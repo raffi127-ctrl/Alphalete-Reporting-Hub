@@ -104,9 +104,21 @@ def already_set_up() -> bool:
 
 def _login_email() -> str:
     try:
-        return str(C.creds().get("email") or "").strip()
+        return mailbox_of(str(C.creds().get("email") or "").strip())
     except Exception:  # noqa: BLE001 -- no login saved yet
         return ""
+
+
+def mailbox_of(login: str) -> str:
+    """The Gmail box behind a SaraPlus LOGIN. SaraPlus usernames carry a
+    campaign prefix -- D2D_owner@gmail.com, b2b_owner@gmail.com --
+    and a Gmail address can never hold "_", so that box does not exist. One owner
+    pressed "Yes, that one" on it (2026-11-10) and Gmail's confirmation could
+    never reach us. Only gmail.com is cut: other domains may use "_"."""
+    local, at, domain = login.partition("@")
+    if at and domain.lower() in ("gmail.com", "googlemail.com") and "_" in local:
+        return local.rsplit("_", 1)[-1] + "@" + domain
+    return login
 
 
 def _copy(text: str, say=print) -> None:
@@ -193,7 +205,8 @@ def _already_working(office_key: str, say=print) -> bool:
     return True
 
 
-def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) -> str:
+def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True,
+                 address: str = "") -> str:
     """Ask which address SaraPlus mails, show the steps, send it home, and do
     not call it done until Gmail has confirmed it.
 
@@ -210,10 +223,16 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True) ->
     # ALREADY CONFIRMED (the address was added before, or one of us clicked the
     # mail): the only thing left is the filter, so nobody redoes step 1.
     if R.forward_confirmed(office_key):
-        return _finish(ask, say, _login_email(), office_key)
+        return _finish(ask, say, address.strip() if "@" in address
+                       else _login_email(), office_key)
     try:
-        login = _login_email()
-        if login:
+        # ALREADY KNOWN (Eve 2026-11-10): an owner who stopped halfway already
+        # picked the box. The resume line carries it, so they go straight to
+        # Gmail instead of being asked again as if nothing had happened.
+        login = address.strip() if "@" in address else _login_email()
+        if "@" in address:
+            pick = YES
+        elif login:
             # ONE BOX, NOT TWO: the owner who just signed in gets the reason and
             # the question together (Eve 2026-11-03, fewer clicks).
             pick = ask.choose(("" if can_skip else OFFER)
@@ -347,7 +366,10 @@ def main(argv=None) -> int:
         say("")
         say("  ALL SET. From now on, Lucy types SaraPlus's codes for you.")
         return 0
-    said = walk_through(ask, say)
+    # --address <box>: the resume line for an owner who stopped halfway.
+    args = list(argv or [])
+    address = args[args.index("--address") + 1] if "--address" in args[:-1] else ""
+    said = walk_through(ask, say, address=address)
     say("")
     if said != "done":
         say("  NOT YET -- run this same line again when you are ready.")
@@ -359,4 +381,4 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     import sys
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

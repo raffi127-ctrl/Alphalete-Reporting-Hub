@@ -115,6 +115,23 @@ class OnTheMac(unittest.TestCase):
         self.assertEqual(self._go(FakeAsk(CF.OTHER, "codes@office.com")), "done")
         self.assertEqual(self.sent, ["codes@office.com"])
 
+    def test_a_known_address_goes_straight_to_gmail(self):
+        # The resume line (Eve 2026-11-10): no question, that box, that account.
+        ask = FakeAsk(None)          # any question would raise Cancelled
+        self.assertEqual(CF.walk_through(ask, say=lambda *_: None,
+                                         address="owner@office.com"), "done")
+        self.assertEqual(self.sent, ["owner@office.com"])
+        self.assertIn("authuser=owner@office.com", self.opened[0])
+
+    def test_a_saraplus_prefix_is_not_a_gmail_box(self):
+        # 2026-11-10: D2D_... was offered, accepted, and could never confirm.
+        self.assertEqual(CF.mailbox_of("D2D_owner123@gmail.com"),
+                         "owner123@gmail.com")
+        self.assertEqual(CF.mailbox_of("b2b_owner456@gmail.com"),
+                         "owner456@gmail.com")
+        self.assertEqual(CF.mailbox_of("a_b@office.com"), "a_b@office.com")
+        self.assertEqual(CF.mailbox_of("owner@gmail.com"), "owner@gmail.com")
+
     def test_skip_or_cancel_sends_nothing_and_asks_again(self):
         for ask in (FakeAsk(CF.LATER), FakeAsk(None), FakeAsk(CF.OTHER, "nope")):
             self.assertEqual(self._go(ask), "skipped for now")
@@ -439,6 +456,14 @@ class TheTerminalLine(unittest.TestCase):
                 mock.patch("builtins.print"):
             self.assertEqual(CF.main(), 0)
         self.assertEqual(self.opened, [])
+
+    def test_the_resume_line_passes_the_address(self):
+        walk = mock.Mock(return_value="done")
+        with mock.patch.object(CF, "walk_through", walk),                 mock.patch.object(R, "forward_working", return_value=False),                 mock.patch("builtins.print"):
+            CF.main(["--address", "owner@office.com"])
+            CF.main([])
+        self.assertEqual(walk.call_args_list[0].kwargs["address"], "owner@office.com")
+        self.assertEqual(walk.call_args_list[1].kwargs["address"], "")
 
     def test_stopped_halfway_says_not_yet(self):
         with mock.patch.object(CF, "walk_through", return_value="not confirmed yet"), \
