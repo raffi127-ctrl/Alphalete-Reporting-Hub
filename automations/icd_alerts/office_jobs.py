@@ -144,6 +144,18 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
                         "error": "new starts -> Apex is not switched on for %s "
                                  "(apex_mode is off in office_admin.config)."
                                  % office_key}
+            # NO BLUE INK, NO APEX. Every field Apex needs -- date of birth,
+            # address, city, zip -- is read out of the signed packet, so an
+            # office without an account would have every person blocked with
+            # "no signed Blue Ink packet", every week. Said once, here, rather
+            # than discovered one person at a time (Megan, 2026-11-09).
+            from automations.icd_onboarding import office_steps as OS
+            if OS.uses_blueink(office_key) is False:
+                return {"status": "error", "mode": mode,
+                        "error": "%s has no Blue Ink account, and Apex needs "
+                                 "the date of birth and address off the signed "
+                                 "packet. Those two steps are marked n/a on "
+                                 "this office's board." % office_key}
             live = live and mode == "live"
             # New starts -> Apex. The job carries a DATE and nothing else: who
             # is in the week is read here, off this office's own training

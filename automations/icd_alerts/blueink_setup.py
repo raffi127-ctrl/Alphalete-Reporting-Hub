@@ -180,6 +180,34 @@ def run(*, ask=None, log=print) -> str:
     if ask is None:
         from automations.icd_alerts import dialogs as ask  # type: ignore
 
+    # DOES THIS OFFICE EVEN HAVE BLUE INK? Asked before anything else, because
+    # an office without it cannot do Apex either -- Apex reads each person's
+    # date of birth and address out of the signed packet -- and both steps are
+    # then marked n/a on their board rather than sitting open for ever.
+    try:
+        from automations.icd_alerts import config as IC
+        from automations.icd_onboarding import office_steps as OS
+        rows = IC.enrollments()
+        key = (rows[0].get("office_key") if rows else "") or ""
+        known = OS.uses_blueink(key) if key else None
+        if known is None and key:
+            said_yes = ask.choose(
+                "Does your office use Blue Ink for onboarding documents?\n\n"
+                "It is what new starts sign before their first day. If you do "
+                "not use it, Lucy will skip those steps for you.",
+                ["Yes", "No", SKIP])
+            if said_yes == SKIP:
+                return "left for later"
+            known = said_yes == "Yes"
+            OS.save_blueink(key, known, log=log)
+        if known is False:
+            return "not used by this office — Blue Ink and Apex are skipped"
+    except ask.Cancelled:
+        return "left for later"
+    except Exception as e:     # noqa: BLE001
+        log("  could not check whether this office uses Blue Ink: %s"
+            % type(e).__name__)
+
     said = ["API key here too" if have_key() else "reading the web app"]
     try:
         from automations.blueink_docs import session as S

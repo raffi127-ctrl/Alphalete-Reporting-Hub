@@ -82,6 +82,12 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
             people = fdot.read_week(app, account, week_start, log=log)
     book = F.workbook_for(office_key)
     got = S.seed(book, week_start, people, dry_run=dry_run, log=log)
+    # A step this office does not do is not an outstanding step. Marked at
+    # seed time so the office never reads as behind on work that does not
+    # exist (Megan, 2026-11-09: "if they don't then they can't enroll in apex
+    # and so we would skip that part").
+    from automations.icd_onboarding import office_steps as OS
+    OS.mark_not_applicable(office_key, week_start, dry_run=dry_run, log=log)
     return len(got.get("add") or [])
 
 
@@ -189,6 +195,12 @@ def from_blueink(office_key: str, week_start: dt.date, *,
     from automations.apex_new_starts import blueink_data as BID
     from automations.apex_new_starts import eco_run as ECO
     from automations.icd_onboarding import sheet as S
+
+    from automations.icd_onboarding import office_steps as OS
+    if OS.uses_blueink(office_key) is False:
+        log("  blueink: %s has no Blue Ink account — nothing to read"
+            % office_key)
+        return 0
 
     book = F.workbook_for(office_key)
     ws = S.open_board(book, create=False)
