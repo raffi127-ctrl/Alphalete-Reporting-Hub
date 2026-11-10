@@ -107,10 +107,16 @@ CITY_COORDS = {
     "grapevine": (32.9343, -97.0781),
 }
 
-# Who gets the alert email: Megan. Email, not Slack, on purpose (Megan,
-# 2026-11-10): the only Slack login on her laptop is her own, and Slack never
-# pings you for your own message — an inbox does.
-ALERT_EMAIL = "ltdhidalgos@gmail.com"
+# Who gets the alert email: Megan's own pick (2026-11-10). Email, not Slack:
+# the only Slack login on her laptop is her own, and Slack never pings you for
+# your own message. The address lives OFF the repo, on this Mac only:
+#   ~/.config/recruiting-report/marketplace-alert-email
+from pathlib import Path as _P
+try:
+    ALERT_EMAIL = (_P.home() / ".config/recruiting-report/marketplace-alert-email"
+                   ).read_text().strip()
+except OSError:
+    ALERT_EMAIL = ""
 
 # Never more than this many alert emails a day (Megan, 2026-11-10). The schedule runs
 # twice (9am + 3pm); this is the backstop if someone reruns it by hand.
