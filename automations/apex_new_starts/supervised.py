@@ -158,6 +158,69 @@ def wait_for_form(page, log=print, *, seconds: int = WAIT_SECONDS) -> bool:
     return False
 
 
+def signin(log=print, *, minutes: int = 20) -> int:
+    """Open Apex in the profile this run uses, and wait while a person signs in.
+
+    WHY THIS IS SEPARATE FROM `run`. `ApexSession.require_login` raises the
+    moment Apex shows "change your password before you continue", which is
+    right for a scheduled report -- it has no business sitting on that screen.
+    But it also closes the window the person could have cleared it in, and on
+    2026-11-10 that is exactly what happened: a fresh sign-in went password ->
+    2FA -> change-password and the run exited with the screen in front of her.
+
+    So this mode does not treat that screen as the end. It says what to do and
+    keeps the window open, because the new password has to be set SOMEWHERE and
+    setting it here leaves the session in the profile that needs it. Signing in
+    with her own browser would clear the account's gate and leave this profile
+    just as stale.
+
+    NO PASSWORD IS TYPED OR READ. Same rule as everywhere else -- the person
+    sets it, in the window, by hand.
+    """
+    import time
+
+    from automations.apex_new_starts import apex as AX
+
+    with AX.ApexSession(log=log) as s:
+        if s.signed_in() and not s.password_gate():
+            log("  Already signed in — %s" % s.page.url)
+            return 0
+        log("")
+        log("  Apex is open. Sign in there, with the 2FA code if it asks.")
+        log("")
+        log("  IF IT ASKS YOU TO CHANGE YOUR PASSWORD, do it right here in")
+        log("  this window. Apex is holding the account behind that screen,")
+        log("  so nothing reaches the roster until it is cleared -- and")
+        log("  doing it here is what leaves Lucy a session she can use.")
+        log("  Nothing is typed for you and no password is read.")
+        log("")
+        deadline = time.time() + minutes * 60
+        said = ""
+        while time.time() < deadline:
+            s.page.wait_for_timeout(2000)
+            if s.password_gate():
+                if said != "change":
+                    log("  ...you're on the change-password screen — set the "
+                        "new one here")
+                    said = "change"
+                continue
+            step = s.on_signin_step()
+            if step and step != said:
+                log("  ...waiting — you're on %s" % step)
+                said = step
+                continue
+            if s.signed_in():
+                log("")
+                log("  Signed in — %s" % s.page.url)
+                log("  Now run the fill:")
+                log("    PYTHONPATH=. .venv/bin/python -m "
+                    "automations.apex_new_starts.supervised \\")
+                log('        --office raf --person "First Last"')
+                return 0
+        log("  Nobody got through in %d minutes. Nothing was typed." % minutes)
+        return 1
+
+
 def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
     from automations.apex_new_starts import apex as AX
 
@@ -224,13 +287,33 @@ def main(argv=None) -> int:
         description="Fill ONE new start into Apex with somebody watching. "
                     "Never saves.")
     ap.add_argument("--office", default="raf", help="office key (default: raf)")
-    ap.add_argument("--person", required=True, help='"First Last", as the '
-                                                    "board spells them")
+    ap.add_argument("--person", default="", help='"First Last", as the '
+                                                 "board spells them")
     ap.add_argument("--week", default=None, help="YYYY-MM-DD in the week")
+    ap.add_argument("--signin", action="store_true",
+                    help="just open Apex and wait for a sign-in (use this "
+                         "when Apex is asking for a password change)")
     a = ap.parse_args(argv)
+    if a.signin:
+        return signin()
+    if not a.person:
+        ap.error("--person is required (or use --signin)")
+    from automations.apex_new_starts import apex as AX
     from automations.icd_onboarding import board as B
     day = dt.date.fromisoformat(a.week) if a.week else dt.date.today()
-    return run(a.office, a.person, B.week_start_of(day))
+    try:
+        return run(a.office, a.person, B.week_start_of(day))
+    except AX.PasswordChangeRequired as e:
+        # Say the next command rather than only the diagnosis. Without it the
+        # obvious move is to clear the gate in your own browser, which leaves
+        # THIS profile just as stale and the next run back on this message.
+        print("  %s" % e)
+        print("")
+        print("  Clear it in Lucy's own window, which also leaves her a")
+        print("  usable session:")
+        print("    PYTHONPATH=. .venv/bin/python -m "
+              "automations.apex_new_starts.supervised --signin")
+        return 1
 
 
 if __name__ == "__main__":

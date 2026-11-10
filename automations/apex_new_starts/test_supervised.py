@@ -131,3 +131,52 @@ def test_the_password_box_is_called_out():
     """It DEFAULTS TO TICKED and saving with it on emails a brand new rep."""
     src = inspect.getsource(SUP.run)
     assert "password-reset" in src and "TICKED" in src
+
+
+# ------------------------- the password-change screen is clearable, not fatal
+
+def test_signin_does_not_treat_the_password_gate_as_the_end():
+    """ApexSession.require_login raises on it and closes the window the person
+    could have cleared it in -- which is what happened on 2026-11-10: a fresh
+    sign-in went password -> 2FA -> change-password and the run exited with
+    that screen in front of her."""
+    src = inspect.getsource(SUP.signin)
+    assert "password_gate" in src
+    # The CODE, not the docstring -- which names require_login to explain why.
+    body = src.split('"""', 2)[-1]
+    assert "raise" not in body
+    assert "require_login" not in body
+
+
+def test_signin_says_to_change_it_in_lucys_window():
+    """Clearing the gate in her own browser leaves THIS profile just as stale
+    and the next run back on the same message."""
+    src = inspect.getsource(SUP.signin)
+    assert "this window" in src
+
+
+def test_signin_types_no_password():
+    src = inspect.getsource(SUP.signin)
+    assert "no password is read" in src
+    body = src.split('"""', 2)[-1]
+    for bad in ("fill(", "type(", "password=", "creds"):
+        assert bad not in body, bad
+
+
+def test_the_gate_error_names_the_next_command():
+    """A diagnosis on its own sends you to your own browser."""
+    src = inspect.getsource(SUP.main)
+    assert "PasswordChangeRequired" in src and "--signin" in src
+
+
+def test_signin_needs_no_person(monkeypatch):
+    called = []
+    monkeypatch.setattr(SUP, "signin", lambda: called.append(True) or 0)
+    assert SUP.main(["--signin"]) == 0
+    assert called
+
+
+def test_a_fill_still_needs_a_person(capsys):
+    import pytest
+    with pytest.raises(SystemExit):
+        SUP.main(["--office", "raf"])
