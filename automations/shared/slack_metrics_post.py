@@ -602,6 +602,8 @@ def ensure_metrics_thread(today: dt.date | None = None,
         # header line (Megan 2026-08-22).
         ":door: Total Knocks (with Time Gaps)",
         ":clipboard: Order Log",
+        # Raf 2026-11-10; every D2D office the same day (Eve).
+        ":calendar: Activations Scheduled Today",
         ":date: Sales scheduled 6+ days out",
         ":no_entry_sign: Canceled Orders",
         ":arrows_counterclockwise: Ongoing Cancel",
