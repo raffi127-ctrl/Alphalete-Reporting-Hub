@@ -40,6 +40,19 @@ HEADER_ROW = 1
 FIRST_DATA_ROW = 2
 
 
+def _values(ws) -> List[List[str]]:
+    """One tab's grid, retried through the per-user read quota.
+
+    Google counts 60 reads a MINUTE per user across everything that user's
+    credentials are doing ([[reference_sheets_per_user_read_cap]]), and this
+    board is read by an hourly job on every ICD machine beside whatever else is
+    running. A 429 here is transient and reads like a dead board, so it is
+    waited out rather than raised: 6 tries spans ~31s, most of a quota window.
+    """
+    from automations.shared import sheets_retry
+    return sheets_retry.call(ws.get_all_values, tries=6)
+
+
 def _a1(col: int) -> str:
     out = ""
     while col:
@@ -84,7 +97,8 @@ def open_board(workbook, *, create: bool = True):
     Never re-lays an existing tab: somebody may have added a column of their
     own, and this has no business tidying it away.
     """
-    for ws in workbook.worksheets():
+    from automations.shared import sheets_retry
+    for ws in sheets_retry.call(workbook.worksheets, tries=6):
         if ws.title == B.TAB:
             return ws
     if not create:
@@ -115,7 +129,7 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
         log("  (dry run — no %s tab on this workbook yet)" % B.TAB)
         all_rows, existing = [], []
     else:
-        all_rows = rows_of(ws.get_all_values())
+        all_rows = rows_of(_values(ws))
         existing = B.for_week(all_rows, week_start)
     fresh = B.seed_rows(people, started=week_start)
     plan = B.merge(existing, fresh)
@@ -124,7 +138,7 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
            ", %d marked off" % len(plan["left"]) if plan["left"] else ""))
     if dry_run or not plan["add"]:
         return plan
-    cols = layout(ws.get_all_values()) or {n: i for i, n in enumerate(B.COLUMNS)}
+    cols = layout(_values(ws)) or {n: i for i, n in enumerate(B.COLUMNS)}
     width = max(cols.values()) + 1
     block = []
     for r in plan["add"]:
@@ -151,7 +165,7 @@ def tick(workbook, week_start: dt.date, column: str, names: Sequence[str],
     if ws is None:
         log("  no %s tab on this workbook yet" % B.TAB)
         return 0
-    grid = ws.get_all_values()
+    grid = _values(ws)
     cols = layout(grid)
     if column not in cols:
         raise RuntimeError(
@@ -182,7 +196,7 @@ def terminate(workbook, week_start: dt.date, names: Sequence[str],
     ws = open_board(workbook, create=False)
     if ws is None:
         return 0
-    grid = ws.get_all_values()
+    grid = _values(ws)
     cols = layout(grid)
     if B.TERMINATED_AT not in cols:
         raise RuntimeError("the board has no %r column." % B.TERMINATED_AT)
@@ -209,7 +223,7 @@ def set_classroom(workbook, week_start: dt.date, assignments: Dict[str, str],
     ws = open_board(workbook, create=False)
     if ws is None:
         return 0
-    grid = ws.get_all_values()
+    grid = _values(ws)
     cols = layout(grid)
     if B.CLASSROOM not in cols:
         raise RuntimeError("the board has no %r column." % B.CLASSROOM)
@@ -233,7 +247,7 @@ def set_classroom(workbook, week_start: dt.date, assignments: Dict[str, str],
 
 def write_step(workbook, week_start: dt.date, column: str,
                people: Dict[str, str], *, dry_run: bool = False,
-               log=print) -> int:
+               log=print, ws=None) -> int:
     """Put a VALUE in a step's cell for each named person.
 
     `tick` writes today's date, which proves something happened. Some steps
@@ -242,11 +256,15 @@ def write_step(workbook, week_start: dt.date, column: str,
     this week's rows, only cells that are still empty, never a column a machine
     does not own, and nothing is ever cleared.
     """
-    ws = open_board(workbook, create=False)
+    # `ws` lets a caller that has already opened the tab hand it over.
+    # Applying a source's five columns used to re-open and re-read the board
+    # five times, which is five of the sixty reads a minute this account gets
+    # across every job it runs -- and it ran out mid-apply on 2026-11-09.
+    ws = ws or open_board(workbook, create=False)
     if ws is None:
         log("  no %s tab on this workbook yet" % B.TAB)
         return 0
-    grid = ws.get_all_values()
+    grid = _values(ws)
     cols = layout(grid)
     if column not in cols:
         raise RuntimeError(

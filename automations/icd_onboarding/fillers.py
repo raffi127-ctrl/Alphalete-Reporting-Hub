@@ -148,7 +148,9 @@ def apply(workbook, week_start, source: str,
         return 0
     n = 0
     for column, people in got.items():
-        n += S.write_step(workbook, week_start, column, people,
+        # The tab this already opened, handed down: five columns were five
+        # re-opens and five re-reads of the same board.
+        n += S.write_step(workbook, week_start, column, people, ws=ws,
                           log=lambda *a: None)
     log("  ticked %d" % n)
     return n

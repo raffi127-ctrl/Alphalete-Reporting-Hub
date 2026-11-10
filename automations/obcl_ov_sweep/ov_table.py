@@ -272,8 +272,17 @@ def read_table(page, *, verbose: bool = True, campaign: str = None) -> tuple:
         raise RuntimeError(
             "OwnerVille has no %r programme on this login. It offers: %s"
             % (want, ", ".join(options) or "nothing"))
-    sel.select_option(label=want)
-    _settle(page)
+    # ONLY IF IT IS NOT ALREADY THE ONE. Re-selecting the campaign the page is
+    # already showing fires its change handler, and the handler EMPTIES the
+    # grid: measured 2026-11-09 on Raf's View Progress -- 26 rows on load, 1
+    # row after re-picking RES-AT&T, 26 again after a plain reload. The read
+    # then finds nobody and nobody is ticked, which looks exactly like an
+    # office where nothing has been done.
+    current = (sel.evaluate(
+        "s => (s.options[s.selectedIndex] || {}).text || ''") or "").strip()
+    if current != want:
+        sel.select_option(label=want)
+        _settle(page)
     _show_all(page)
     _settle(page)
     _largest_page_length(page) or dov._show_all_entries(page)
