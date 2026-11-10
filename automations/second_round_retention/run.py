@@ -26,9 +26,11 @@ USAGE
 """
 import argparse
 import datetime as dt
+import json
 import os
 import re
 import sys
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from automations.funnel_board.fetch import report_week
@@ -113,6 +115,34 @@ def _sheets():
     return AuthorizedSession(load_credentials())
 
 
+def _ok(call, tries=6):
+    """Run one Sheets call; on 429/5xx wait and try again. A 3-hour pull must
+    not die on a one-minute quota blip at write time (11/10: lost twice)."""
+    import time
+    for n in range(tries):
+        r = call()
+        if r.status_code != 429 and r.status_code < 500:
+            r.raise_for_status()
+            return r
+        log("sheets %s, retry %d/%d in %ds" % (r.status_code, n + 1, tries, min(30 * 2 ** n, 120)))
+        time.sleep(min(30 * 2 ** n, 120))
+    r.raise_for_status()
+    return r
+
+
+SAVED_PULL = Path(__file__).resolve().parents[2] / "output" / "state" / "new_starts_last_pull.json"
+
+
+def save_pull(ns_rows, weeks, failed):
+    try:
+        SAVED_PULL.parent.mkdir(parents=True, exist_ok=True)
+        SAVED_PULL.write_text(json.dumps({"rows": ns_rows, "weeks": [w.isoformat() for w in weeks],
+                                          "failed": sorted(failed)}), encoding="utf-8")
+        log("saved the pull to %s (rewrite with --write-saved)" % SAVED_PULL)
+    except Exception as e:  # noqa: BLE001
+        log("!! could not save the pull: %s" % e)
+
+
 def write(rows, weeks, failed_ids):
     S = _sheets()
     r = S.get(API + "/values/Datos!A1:I100000")
@@ -153,18 +183,16 @@ def merge_new_starts(old, rows, weeks, failed_ids):
 
 def write_new_starts(rows, weeks, failed_ids):
     S = _sheets()
-    meta = S.get(API, params={"fields": "sheets.properties.title"})
-    meta.raise_for_status()
+    meta = _ok(lambda: S.get(API, params={"fields": "sheets.properties.title"}))
     if NEW_STARTS_TAB not in [s["properties"]["title"] for s in meta.json()["sheets"]]:
-        S.post(API + ":batchUpdate", json={"requests": [
-            {"addSheet": {"properties": {"title": NEW_STARTS_TAB}}}]}).raise_for_status()
+        _ok(lambda: S.post(API + ":batchUpdate", json={"requests": [
+            {"addSheet": {"properties": {"title": NEW_STARTS_TAB}}}]}))
     rng = "'%s'" % NEW_STARTS_TAB
-    r = S.get(API + "/values/%s!A1:F100000" % rng)
-    r.raise_for_status()
+    r = _ok(lambda: S.get(API + "/values/%s!A1:F100000" % rng))
     body = merge_new_starts(r.json().get("values", [])[1:], rows, weeks, failed_ids)
-    S.post(API + "/values/%s!A:F:clear" % rng).raise_for_status()
-    S.put(API + "/values/%s!A1" % rng, params={"valueInputOption": "RAW"},
-          json={"values": [NEW_STARTS_HEADER] + body}).raise_for_status()
+    _ok(lambda: S.post(API + "/values/%s!A:F:clear" % rng))
+    _ok(lambda: S.put(API + "/values/%s!A1" % rng, params={"valueInputOption": "RAW"},
+                      json={"values": [NEW_STARTS_HEADER] + body}))
     log("wrote %d row(s) to %s" % (len(rows), NEW_STARTS_TAB))
 
 
@@ -175,7 +203,14 @@ def main():
     ap.add_argument("--today", help="override today (YYYY-MM-DD)")
     ap.add_argument("--backfill-new-starts", type=int, metavar="WEEKS",
                     help="pull this many closed weeks into the New Starts tab ONLY")
+    ap.add_argument("--write-saved", action="store_true",
+                    help="write the last saved pull to New Starts (no AppStream)")
     a = ap.parse_args()
+
+    if a.write_saved:
+        d = json.loads(SAVED_PULL.read_text(encoding="utf-8"))
+        write_new_starts(d["rows"], [dt.date.fromisoformat(w) for w in d["weeks"]], set(d["failed"]))
+        return 0
 
     today = dt.date.fromisoformat(a.today) if a.today else dt.datetime.now(ET).date()
     weeks = target_weeks(today)
@@ -226,6 +261,7 @@ def main():
     if a.dry_run:
         log("dry run — not writing (%d rows)" % len(rows))
         return 0
+    save_pull(ns_rows, weeks, failed)
     if not a.backfill_new_starts:
         write(rows, weeks, failed)
     # Never lets a problem here cost Camila's dashboard its numbers.
