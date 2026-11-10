@@ -232,6 +232,26 @@ def fill(args) -> int:
     return 0
 
 
+def redraw(args) -> int:
+    """Redraw the captain tabs from 'NDS Activation Log' alone — no Tableau.
+    For a layout/format change: the record is the log, the tabs are views."""
+    from automations.nds_activation_rate import sheet
+    caps = [c for c in CAPTAINS if not args.only or c[0] in args.only]
+    book = sheet.open_book(args.sandbox)
+    grid = sheet._shared._retry(book.worksheet(sheet.LOG_TAB).get_all_values)
+    for _slug, short, full, _team in caps:
+        days, _vals, owners = sheet.history(grid, short)
+        if not days:
+            print(f"  {short}: nothing in the log yet, skipped")
+            continue
+        latest = [r[2] for r in grid[1:] if len(r) > 3 and r[1] == short
+                  and r[0] == days[0] and r[2] != sheet.CAPTAINSHIP
+                  and r[3] == "Total"]
+        rows, kinds, n_days = sheet.render(short, full, grid, latest)
+        sheet.write_tab(book, short, rows, kinds, n_days)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--probe", action="store_true",
@@ -249,6 +269,8 @@ def main(argv=None) -> int:
                     choices=[c[0] for c in CAPTAINS],
                     help="one captain (repeatable)")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today, CT)")
+    ap.add_argument("--redraw", action="store_true",
+                    help="redraw the captain tabs from the log only (no Tableau)")
     args = ap.parse_args(argv)
     if args.find_rep:
         return find_rep()
@@ -256,6 +278,8 @@ def main(argv=None) -> int:
         return probe()
     if not args.real:
         args.sandbox = True       # sandbox-first until Eve says "use the real Sheet"
+    if args.redraw:
+        return redraw(args)
     return fill(args)
 
 

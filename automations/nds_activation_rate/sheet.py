@@ -219,6 +219,12 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
             reqs.append(fmt(r, bold=True, size=13, c1=1))
         elif kind == "box":
             reqs.append(fmt(r, bg=ORANGE, bold=True, size=12))
+            # The day labels parse as dates — show them as dates, not as the
+            # 0.0% the day columns carry (11/10 first draw read '4633600.0%').
+            reqs.append({"repeatCell": {"range": rng(r, 2, width), "cell": {
+                "userEnteredFormat": {"numberFormat": {
+                    "type": "DATE", "pattern": "ddd m/d/yy"}}},
+                "fields": "userEnteredFormat.numberFormat"}})
         elif kind == "avg":
             reqs.append(fmt(r, bg=PINK, bold=True, size=12))
         elif kind == "owner":
