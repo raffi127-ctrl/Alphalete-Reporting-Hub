@@ -18,8 +18,6 @@ MAX_PRICE = 100
 # slug FB accepts in the URL; the 65 km radius around Dallas covers all of
 # Collin/Denton, then MAX_MILES trims it to our side of town.
 SEARCHES = [
-    "office chair",
-    "desk chair",
     "desk",
     "office desk",
     "standing desk",
@@ -37,6 +35,15 @@ SEARCHES = [
     "large wall art",
     "floor mirror",
     "artificial tree",
+]
+
+# NOT wanted: rolling/swivel desk chairs (Megan, 2026-11-10). These phrases
+# are cut out of the title first, so "Desk and Office Chair" still counts as
+# a desk, but "Swivel office chair" has nothing left and is dropped.
+WHEELED_CHAIR = [
+    "office chair", "desk chair", "computer chair", "task chair",
+    "executive chair", "gaming chair", "swivel", "rolling", "wheels",
+    "casters", "ergonomic", "mesh",
 ]
 
 # A title must hit one of these to count as office furniture...

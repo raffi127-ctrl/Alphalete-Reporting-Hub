@@ -90,7 +90,14 @@ def keep(card: dict, unknown_cities: set) -> Listing | None:
     if card["price"] > C.MAX_PRICE:
         return None
     title = card["title"]
-    if not _has_word(title, C.KEEP_WORDS) or _has_word(title, C.SKIP_WORDS):
+    rest = title.lower()
+    wheeled = False
+    for w in C.WHEELED_CHAIR:
+        rest, n = re.subn(rf"{re.escape(w)}s?", " ", rest)
+        wheeled = wheeled or n > 0
+    if wheeled:   # "Rolling chair": the leftover "chair" is the same chair
+        rest = re.sub(r"\bchairs?\b", " ", rest)
+    if not _has_word(rest, C.KEEP_WORDS) or _has_word(title, C.SKIP_WORDS):
         return None
     if "," not in card["city"]:      # "Ships to you" = no pickup city
         return None

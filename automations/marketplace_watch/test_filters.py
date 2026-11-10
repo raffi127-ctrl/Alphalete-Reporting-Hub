@@ -13,7 +13,7 @@ class T(unittest.TestCase):
     def test_parse_plain(self):
         c = card("Just listed\n$40\nOffice chair\nFrisco, TX")
         self.assertEqual((c["price"], c["title"], c["city"]),
-                         (40, "Office chair", "Frisco, TX"))
+                         (40, "Office chair", "Frisco, TX"))  # parse only
 
     def test_parse_marked_down_uses_current_price(self):
         c = card("$70\n$80\nWorkstation\nPlano, TX")
@@ -49,6 +49,16 @@ class T(unittest.TestCase):
         for t in ("Set of 4 guest chairs", "Leather loveseat", "Large canvas wall art",
                   "Artificial fiddle leaf tree 6ft", "Floor mirror"):
             self.assertIsNotNone(keep(card(f"$60\n{t}\nFrisco, TX"), set()), t)
+
+    def test_drops_rolling_desk_chairs(self):
+        for t in ("Office chair", "Swivel desk chair", "Hbada ergonomic mesh chair",
+                  "Black Leather Office Chair - Padded with Armrests",
+                  "S-RACER GAMING CHAIR", "Rolling chair"):
+            self.assertIsNone(keep(card(f"$20\n{t}\nPlano, TX"), set()), t)
+
+    def test_desk_sold_with_office_chair_still_counts(self):
+        self.assertIsNotNone(keep(card("$65\nDesk and Office Chair\nPlano, TX"), set()))
+        self.assertIsNotNone(keep(card("$40\nSet of 2 guest chairs\nPlano, TX"), set()))
 
     def test_drops_over_price(self):
         self.assertIsNone(keep(card("$150\nDesk\nPlano, TX"), set()))
