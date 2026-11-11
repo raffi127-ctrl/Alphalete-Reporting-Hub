@@ -302,6 +302,19 @@ def _col_letter(n: int) -> str:
     return out
 
 
+def _on_a_lucy() -> bool:
+    """Is this one of the machines that actually sends the texts?
+
+    BY WHOSE SLACK TOKEN IT HOLDS, the same test cmd_approve prints. The
+    machine marker cannot tell: a Mac with no `.machine-profile` reads as
+    "Lucy 1", and Megan's laptop has none.
+    """
+    try:
+        return _client().auth_test().get("user_id") == LUCY_REPORTING
+    except Exception:  # noqa: BLE001 — unsure is "no": no id beats a wrong id
+        return False
+
+
 def cmd_texts(office_key: str, standings_only: bool = False) -> int:
     """Sign off an office's iMessage group(s).
 
@@ -368,7 +381,11 @@ def cmd_texts(office_key: str, standings_only: bool = False) -> int:
                 # By the people in it. The id rides along only to break a tie
                 # between two chats holding the same three.
                 hit = tp.resolve_dest(entry)
-                if hit.get("id"):
+                # ONLY A LUCY'S OWN ID. Messages gives the same group a
+                # different chat id on every Mac, and the one that breaks a
+                # tie has to be the sender's. Approving Oren from Megan's
+                # laptop (2026-11-10) stored the laptop's id for his group.
+                if hit.get("id") and _on_a_lucy():
                     entry["chat_guid"] = hit["id"]
                 print("  %-30s %-22s found by its %d numbers"
                       % (name, how, len(pins)))

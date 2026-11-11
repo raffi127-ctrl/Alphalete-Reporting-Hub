@@ -77,10 +77,11 @@ class TheTwoAPlayers(unittest.TestCase):
 
 class TheApprovalTiesTheGroup(unittest.TestCase):
 
-    def _approve(self, rec, can_text, resolve=None):
+    def _approve(self, rec, can_text, resolve=None, on_a_lucy=True):
         from automations.icd_alerts import approve as A
         wrote = []
         with mock.patch("automations.icd_signup.store.get", return_value=rec), \
+                mock.patch.object(A, "_on_a_lucy", return_value=on_a_lucy), \
                 mock.patch("automations.gap_alerts.config.can_text", return_value=can_text), \
                 mock.patch.object(A, "_write_texts_approval", lambda k, r: wrote.append(r)), \
                 mock.patch("automations.b2b_dispositions.text_post.resolve_dest",
@@ -105,6 +106,16 @@ class TheApprovalTiesTheGroup(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(seen[0]["require_handles"], [ME, A1, A2])
         self.assertEqual(wrote[0][0]["chat_guid"], "chat-9")
+
+    def test_a_mac_that_is_not_a_lucy_checks_the_chat_but_keeps_its_id_out(self):
+        # Oren, 2026-11-10: approved from Megan's laptop, which is in his group
+        # too -- and the laptop's chat id (not Lucy's) was stored as the tie-break.
+        rec = _rec(text_groups_json=GROUP, text_pins_json=json.dumps([A1, A2]))
+        rc, wrote = self._approve(rec, can_text=True, on_a_lucy=False,
+                                  resolve=lambda d: {"id": "the-laptops-id"})
+        self.assertEqual(rc, 0)
+        self.assertEqual(wrote[0][0]["require_handles"], [ME, A1, A2])
+        self.assertNotIn("chat_guid", wrote[0][0])
 
     def test_no_chat_holding_them_is_refused_and_nothing_is_written(self):
         rec = _rec(text_groups_json=GROUP, text_pins_json=json.dumps([A1, A2]))
