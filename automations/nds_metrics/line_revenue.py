@@ -7,8 +7,12 @@ WHAT THE DEPOSIT DOES (Vantura RAW tab, Campaign 'NDS Wireless'): one Base
 row per LINE, dated the day THAT line activated (Port Line $213 OOF / $193
 IF, BYOD - Port $188); an Add On row per line for its plan (Unlimited Extra
 $10 / Premium $15, Protect $15); one AIR row per Internet Air install ($93 +
-$30 auto bill pay); plus the rep's monthly Tier Volume Bonus rows. Its weeks
-run Monday..Sunday (WE 11.1 = 10/26..11/1).
+$30 auto bill pay); a $25 'Wireless AIR Bundle' Campaign row per activated
+OOF port/BYOD line when the order also has an Air install (WE 11.8: Elisa
+2x, Smedra 3x); a $15 'Next Up' Add On row per enrolled line -- NOT MODELED:
+'Next Up' appears nowhere in the SOH export or the wireless feed (probed
+2026-11-11), so it is DD-only like the tier DNQ rule; plus the rep's monthly
+Tier Volume Bonus rows. Its weeks run Monday..Sunday (WE 11.1 = 10/26..11/1).
 
 WHAT THIS BOARD DOES: the same, from what SaraPlus shows today.
   * lines + statuses: the NDS Wireless Resolution Report (wireless_pull's
@@ -488,6 +492,15 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
         panel = lines_by_order.get(oid)
         first_act: Optional[dt.date] = None
         order_dead = any(w in _soh_cell(ix, r, "Wireless Status").lower() for w in DEAD_WORDS)
+        # Wireless AIR Bundle: the WE 11.8 deposit pays a $25 'Wireless AIR
+        # Bundle' Campaign row per activated OOF port/BYOD line on an order
+        # that also has an Internet Air install (Elisa 2 ports + Air -> 2x,
+        # Smedra 3 BYODs + Air -> 3x). The sow_rates key existed unwired.
+        pkg = _soh_cell(ix, r, "Internet Package").lower()
+        ist = _soh_cell(ix, r, "Internet Status").lower()
+        air_on_order = ("air" in pkg
+                        and not any(w in ist for w in DEAD_WORDS)
+                        and bool(ist or _soh_cell(ix, r, "Internet Install Date")))
         if _soh_cell(ix, r, "Wireless Status") or _soh_cell(ix, r, "Wireless Line Count"):
             if panel:
                 try:
@@ -507,7 +520,11 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                     addon = addon_of(ln.get("plan", ""), rates) if act else 0.0
                     tier = (tier_for(rep, _soh_cell(ix, r, "Order Date"))
                             if (act and kind.split(" IF")[0] in ("port", "byod port")) else 0.0)
-                    amt = base + addon + tier
+                    bundle = (float(rates["addons"]["oof_bundle_with_internet_air"])
+                              if (air_on_order and act and not infp
+                                  and kind.split(" IF")[0] in ("port", "byod port"))
+                              else 0.0)
+                    amt = base + addon + tier + bundle
                     where = "open"
                     if dead is not None:
                         # SOW: activated-and-disconnected the same week is
@@ -523,6 +540,9 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                         if tier and where.startswith("posted_"):
                             tier_total[where.split("_")[1].split("+")[0]] += tier
                             stats["tier_lines"] += 1
+                        if bundle and where.startswith("posted_"):
+                            stats["bundle_lines"] += 1
+                            stats["bundle_$_" + where.split("_")[1].split("+")[0]] += bundle
                     elif dead is None:
                         a["open"] += base
                         stats["open"] += 1
@@ -541,7 +561,8 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                         "activation": act.isoformat() if act else "",
                         "dead": dead.isoformat() if dead else "",
                         "kind": kind + (" (BYOD assumed)" if ln.get("_byod_assumed") else ""),
-                        "base": base, "addon": addon, "tier": tier, "bucket": where})
+                        "base": base, "addon": addon, "tier": tier,
+                        "bundle": bundle, "bucket": where})
                 stats["lines"] += len(panel)
             else:
                 # not on the wireless report: order-level, the old way
@@ -597,9 +618,8 @@ def compute(soh, today: dt.date, lines: Sequence[dict], state: dict,
                 "activation": act_p.isoformat() if act_p else "", "dead": "",
                 "kind": "protect x%d" % sold, "base": amt, "addon": 0.0, "tier": 0.0,
                 "bucket": where})
-        # Internet Air off the SOH (install date = the deposit's activation)
-        pkg = _soh_cell(ix, r, "Internet Package").lower()
-        ist = _soh_cell(ix, r, "Internet Status").lower()
+        # Internet Air off the SOH (install date = the deposit's activation);
+        # pkg/ist were read at the top of the loop for the bundle check.
         if "air" in pkg and (ist or _soh_cell(ix, r, "Internet Install Date")):
             air = rates["internet_air"]
             amt = float(air["activation"]) + (
