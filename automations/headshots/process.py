@@ -20,6 +20,10 @@ Cross-platform: Pillow + rembg only.
 from __future__ import annotations
 
 import io
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 from PIL import Image, ImageFilter, ImageOps
@@ -29,11 +33,48 @@ from automations.headshots import config
 _session = None
 
 
+FALLBACK_MODEL = "u2net_human_seg"   # small (~170MB); used until the big one lands
+
+
+def _model_file(name: str) -> Path:
+    home = os.environ.get("U2NET_HOME") or str(Path.home() / ".u2net")
+    return Path(home) / f"{name}.onnx"
+
+
+def _start_background_download(name: str) -> None:
+    """Fetch a big model in its OWN process so no headshot waits on it.
+
+    birefnet-portrait is ~973MB. Downloading it inside the 5-min tick timed
+    out on Lucy 3 every run (2026-11-11), so no headshot got processed at all.
+    One detached download at a time (lock file, stale after 2h)."""
+    lock = _model_file(name).with_suffix(".downloading")
+    try:
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        if lock.exists() and time.time() - lock.stat().st_mtime < 2 * 3600:
+            return
+        lock.write_text(str(os.getpid()))
+        code = ("import pathlib\n"
+                "from rembg import new_session\n"
+                "try:\n"
+                f"    new_session({name!r})\n"
+                "finally:\n"
+                f"    pathlib.Path({str(lock)!r}).unlink(missing_ok=True)\n")
+        subprocess.Popen([sys.executable, "-c", code],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception:  # noqa: BLE001 -- the fallback model still works
+        pass
+
+
 def _rembg_session():
     global _session
     if _session is None:
         from rembg import new_session
-        _session = new_session(config.REMBG_MODEL)
+        name = config.REMBG_MODEL
+        if name != FALLBACK_MODEL and not _model_file(name).exists():
+            _start_background_download(name)
+            name = FALLBACK_MODEL
+        _session = new_session(name)
     return _session
 
 

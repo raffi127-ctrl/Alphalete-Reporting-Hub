@@ -618,8 +618,8 @@ def _ask_with_button(cl, channel: str, thread_ts: str, m: dict,
     try:
         cl.chat_postMessage(
             channel=channel, thread_ts=thread_ts,
-            text=(f"<@{who}> {why} Reply with ONE photo and the person's "
-                  "*First Last* name in the same reply."))
+            text=(f"<@{who}> {why} Tap the *📸 Add headshot* button in "
+                  "this thread to send it."))
     except Exception:  # noqa: BLE001
         pass
 
