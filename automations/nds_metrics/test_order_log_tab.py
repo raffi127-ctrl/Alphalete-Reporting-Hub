@@ -26,12 +26,13 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[20], "Delivered Message Sent")   # column U on the live tab (T until 11/10, S until 11/9)
+        self.assertEqual(T.HEADERS[21], "Delivered Message Sent")   # column V on the live tab (U until 11/11, T until 11/10, S until 11/9)
         self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")        # the feed's "device" = Line Number cell
         self.assertEqual(r[T._COL["Device"]], "iPhone 16")            # the model, feed's "line_phone"
         self.assertEqual(r[T._COL["Plan"]], "Unlimited")
         self.assertEqual(r[T._COL["Zip"]], "")                        # no index given -> blank
         self.assertEqual(T.HEADERS[3], "Zip")                         # right after Customer
+        self.assertEqual(T.HEADERS[4], "Email")                       # 11/11: right after Zip
         self.assertEqual(r[T._COL["Customer"]], "John Doe")
         self.assertEqual(r[T._COL["Order Date"]], "10/24/2026")
 
@@ -178,8 +179,6 @@ class Merge(unittest.TestCase):
         self.assertNotIn(T.TAB, T.PROTECTED_TABS)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class LineIndexTests(unittest.TestCase):
@@ -241,3 +240,36 @@ class LineIndexTests(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(T, "today_lines", lambda today=None, log=print: None):
             self.assertIsNone(T.preview(TODAY, log=lambda *_a, **_k: None))
+
+
+class EmailColumnTests(unittest.TestCase):
+    """11/11: the e-mail off the SaraPlus customer card (customer_email.py's
+    cache) rides the tab like Zip does -- filled on today's lines, looked up
+    on carried rows still blank, kept when neither can place it."""
+
+    def test_email_index_fills_fresh_and_carried_rows(self):
+        idx = T.EmailIndex({"DSI123": "jerry@example.com"})
+        self.assertEqual(idx.for_line(line()), "jerry@example.com")
+        self.assertEqual(idx.lookup("dsi123"), "jerry@example.com")
+        first = T.merge([], [line()], today=TODAY, email_of=idx.for_line)
+        self.assertEqual(first["rows"][0][T._COL["Email"]], "jerry@example.com")
+        # a carried row (feed forgot it) with a blank Email gets it by DSI
+        prior = [list(r) for r in first["rows"]]
+        prior[0][T._COL["Email"]] = ""
+        second = T.merge(prior, [], today=TODAY, email_lookup=idx.lookup)
+        self.assertEqual(second["rows"][0][T._COL["Email"]], "jerry@example.com")
+        # no index at all: the tab's own value stays
+        prior[0][T._COL["Email"]] = "kept@example.com"
+        third = T.merge(prior, [line()], today=TODAY)
+        self.assertEqual(third["rows"][0][T._COL["Email"]], "kept@example.com")
+
+    def test_old_tab_without_email_column_remaps(self):
+        old_hdr = [h for h in T.HEADERS if h != "Email"]
+        old_row = [dict(zip(T.HEADERS, T.line_row(line(), "11/10/2026")))[h] for h in old_hdr]
+        out = T.merge([old_row], [], today=TODAY, existing_header=old_hdr)
+        self.assertEqual(out["rows"][0][T._COL["Email"]], "")
+        self.assertEqual(out["rows"][0][T._COL["Customer"]], old_row[old_hdr.index("Customer")])
+
+
+if __name__ == "__main__":
+    unittest.main()

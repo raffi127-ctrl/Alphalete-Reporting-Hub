@@ -43,7 +43,12 @@ DAYS_KEPT = 60
 # number, then BAN, then DSI); a line the export can't place keeps the zip
 # the tab already had. Everything after Customer moved one column right
 # (Delivered Message Sent is U, was T); every reader resolves by header.
-HEADERS = ("Week Ending", "Rep", "Customer", "Zip", "Order Date", "DSI #",
+# "Email" (after Zip) since 2026-11-11, Carlos: "we need to add the customers
+# email so we can check the shipping status" (AT&T's order lookup wants it).
+# No pull carries it; nds_metrics.customer_email reads it off the SaraPlus
+# customer card into customer_emails.json (EmailIndex, by DSI #). Everything
+# after Zip moved one column right (Delivered Message Sent is V, was U).
+HEADERS = ("Week Ending", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
            "Line Status", "Ship Date", "Delivered", "Port Status",
            "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
@@ -54,7 +59,7 @@ HEADERS = ("Week Ending", "Rep", "Customer", "Zip", "Order Date", "DSI #",
 CARRIED = ("Notes", "Being worked on", "Delivered Message Sent")
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
-_TEXT_COLS = _ID_COLS + ("Zip",)        # written as text, never a number
+_TEXT_COLS = _ID_COLS + ("Zip", "Email")   # written as text, never a number
 # a change in any of these restamps Last Updated
 _STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Port Status",
                "Type", "Phone #", "Device", "Plan")
@@ -92,9 +97,10 @@ def _norm(s) -> str:
     return " ".join(str(s or "").split()).strip().lower()
 
 
-def line_row(line: dict, stamp: str, zip_of=None) -> List[str]:
+def line_row(line: dict, stamp: str, zip_of=None, email_of=None) -> List[str]:
     """One tab row from one wireless_pull line (the thread's own row shape).
-    `zip_of(line)` -> the customer's zip (ZipIndex.for_line); None/'' = blank."""
+    `zip_of(line)` -> the customer's zip (ZipIndex.for_line); None/'' = blank.
+    `email_of(line)` -> the customer's e-mail (EmailIndex.for_line), same."""
     import html
     from automations.nds_metrics.order_xlsx import _row_of
     # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
@@ -102,11 +108,45 @@ def line_row(line: dict, stamp: str, zip_of=None) -> List[str]:
     od = _parse_date(core[2])
     model = html.unescape(str(device_model(line) or "")).strip()
     zip_code = str((zip_of(line) if zip_of else "") or "").strip()
+    email = str((email_of(line) if email_of else "") or "").strip()
     i_zip = _COL["Zip"] - 1              # core has no Week Ending in front
-    core = core[:i_zip] + [zip_code] + core[i_zip:]
+    core = core[:i_zip] + [zip_code, email] + core[i_zip:]
     i_dev = _COL["Device"] - 1
     core = core[:i_dev] + [model] + core[i_dev:]
     return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp] + [""] * len(CARRIED)
+
+
+class EmailIndex:
+    """Customer e-mail by order, off nds_metrics.customer_email's cache
+    (output/nds_metrics/customer_emails.json: {dsi: {email, ...}}), read
+    off the SaraPlus customer card since 2026-11-11."""
+
+    def __init__(self, by_dsi: dict):
+        self.by_dsi = {ZipIndex._digits(k): v for k, v in by_dsi.items() if v}
+
+    def __len__(self):
+        return len(self.by_dsi)
+
+    def lookup(self, dsi="") -> str:
+        return self.by_dsi.get(ZipIndex._digits(dsi), "")
+
+    def for_line(self, line: dict) -> str:
+        return self.lookup(line.get("dsi"))
+
+    @classmethod
+    def from_cache(cls, log=print) -> Optional["EmailIndex"]:
+        try:
+            from automations.nds_metrics.customer_email import load_cache
+            data = load_cache()
+        except Exception as e:  # noqa: BLE001
+            log("[nds] NDS Order Log tab: e-mail cache unreadable (%s) -- e-mails kept as they were" % e)
+            return None
+        if not data:
+            log("[nds] NDS Order Log tab: no e-mail cache yet -- e-mails kept as they were")
+            return None
+        idx = cls({k: (v or {}).get("email", "") for k, v in data.items()})
+        log("[nds] NDS Order Log tab: e-mails for %d order(s) from customer_emails.json" % len(idx))
+        return idx
 
 
 class ZipIndex:
@@ -222,7 +262,8 @@ def _key(row: Sequence[str]) -> tuple:
 
 def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
           today: dt.date, existing_header: Optional[Sequence[str]] = None,
-          zip_of=None, zip_lookup=None) -> Dict[str, object]:
+          zip_of=None, zip_lookup=None, email_of=None,
+          email_lookup=None) -> Dict[str, object]:
     """Kept-if-absent, replaced-if-present, aged-out past DAYS_KEPT by Order
     Date. Last Updated restamps only when the line's state changed. Notes
     carry by key. existing_header is the live tab's own header row: rows are
@@ -230,7 +271,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
     columns on the rows the tab carries. `zip_of(line)` fills Zip on today's
     feed lines and `zip_lookup(phone, ban, dsi)` on carried rows still
     without one (ZipIndex.for_line / .lookup); a line neither can place
-    keeps the zip the tab already had."""
+    keeps the zip the tab already had. `email_of(line)` / `email_lookup(dsi)`
+    do the same for Email (EmailIndex.for_line / .lookup)."""
     stamp = _fmt(today)
     merged: "collections.OrderedDict[tuple, List[str]]" = collections.OrderedDict()
     for row in existing:
@@ -245,13 +287,15 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
             # column was added left 4 of 317 blank this way (11/10)
             row[_COL["Zip"]] = str(zip_lookup(row[_COL["Phone #"]], row[_COL["BAN"]],
                                               row[_COL["DSI #"]]) or "")
+        if email_lookup and not str(row[_COL["Email"]]).strip():
+            row[_COL["Email"]] = str(email_lookup(row[_COL["DSI #"]]) or "")
         if (row[_COL["Customer"]] or row[_COL["Wireless Order #"]]
                 or row[_COL["DSI #"]]):
             merged[_key(row)] = row
     oldest = today - dt.timedelta(days=DAYS_KEPT)
     added = changed = 0
     for line in lines:
-        fresh = line_row(line, stamp, zip_of)
+        fresh = line_row(line, stamp, zip_of, email_of)
         od = _parse_date(fresh[_COL["Order Date"]])
         if od and od < oldest:
             continue
@@ -261,6 +305,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         else:
             if not fresh[_COL["Zip"]]:
                 fresh[_COL["Zip"]] = prior[_COL["Zip"]]
+            if not fresh[_COL["Email"]]:
+                fresh[_COL["Email"]] = prior[_COL["Email"]]
             same = all(_norm(prior[_COL[c]]) == _norm(fresh[_COL[c]])
                        for c in _STATE_COLS)
             if same:
@@ -328,7 +374,8 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
                                                          "startIndex": 0, "endIndex": n_cols}}})
     for name, px in (("Notes", 220), ("Being worked on", 130), ("Delivered Message Sent", 150),
-                     ("Customer", 190), ("Rep", 190), ("Device", 170)):
+                     ("Customer", 190), ("Rep", 190), ("Device", 170),
+                     ("Email", 210)):
         c = _COL[name]
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
@@ -351,7 +398,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
          sheet_id: Optional[str] = None, log=print, zip_of=None,
-         zip_lookup=None) -> Dict[str, object]:
+         zip_lookup=None, email_of=None, email_lookup=None) -> Dict[str, object]:
     """Merge today's feed lines into the tab and rewrite it."""
     from automations.recruiting_report.fill import _retry, open_by_key
     if TAB in PROTECTED_TABS:
@@ -362,7 +409,7 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     prior = _retry(lambda: ws.get_all_values())
     result = merge(prior[1:] if prior else [], lines, today=today,
                    existing_header=prior[0] if prior else None, zip_of=zip_of,
-                   zip_lookup=zip_lookup)
+                   zip_lookup=zip_lookup, email_of=email_of, email_lookup=email_lookup)
     rows = result["rows"]
     if not rows:
         raise RuntimeError("NDS Order Log merge produced no rows -- refusing to blank the tab")
@@ -437,8 +484,11 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
     if lines is None:
         return None
     zips = ZipIndex.from_export(today, log=log)
+    emails = EmailIndex.from_cache(log=log)
     return push(lines, today=today, log=log, zip_of=zips.for_line if zips else None,
-                zip_lookup=zips.lookup if zips else None)
+                zip_lookup=zips.lookup if zips else None,
+                email_of=emails.for_line if emails else None,
+                email_lookup=emails.lookup if emails else None)
 
 
 def preview(today: Optional[dt.date] = None, log=print,
@@ -464,10 +514,13 @@ def preview(today: Optional[dt.date] = None, log=print,
         log("[nds] NDS Order Log tab: could not read the live tab (%s: %s) -- "
             "Last Updated left blank on the workbook" % (type(e).__name__, str(e)[:120]))
     zips = ZipIndex.from_export(today, log=log)
+    emails = EmailIndex.from_cache(log=log)
     result = merge(prior[1:] if prior else [], lines, today=today,
                    existing_header=prior[0] if prior else None,
                    zip_of=zips.for_line if zips else None,
-                   zip_lookup=zips.lookup if zips else None)
+                   zip_lookup=zips.lookup if zips else None,
+                   email_of=emails.for_line if emails else None,
+                   email_lookup=emails.lookup if emails else None)
     rows = result["rows"]
     if not tab_ok:
         for r in rows:

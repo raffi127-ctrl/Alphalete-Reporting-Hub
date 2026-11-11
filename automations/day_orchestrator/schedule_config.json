@@ -1761,8 +1761,8 @@
   },
   "headshots_buttons": {
    "on_scheduler": true,
-   "_note": "Each MONDAY after Lucy 3 posts the headshot threads (8:30am): puts the \ud83d\udcf8 Add headshot button into every LIVE office's thread that lacks one (automations/headshots/form.py). Runs HERE because only Jiraiya's button works and Jiraiya's token lives on Lucy 1. Idempotent: a thread that already has the button is left alone. Manual: `lucy rerun headshots_buttons --machine \"Lucy 1\"`.",
-   "display_name": "Headshot Bot \u2014 Monday form buttons",
+   "_note": "Each MONDAY after Lucy 3 posts the headshot threads (8:30am): puts the 📸 Add headshot button into every LIVE office's thread that lacks one (automations/headshots/form.py). Runs HERE because only Jiraiya's button works and Jiraiya's token lives on Lucy 1. Idempotent: a thread that already has the button is left alone. Manual: `lucy rerun headshots_buttons --machine \"Lucy 1\"`.",
+   "display_name": "Headshot Bot — Monday form buttons",
    "machine": "Lucy 1",
    "command": [
     "automations.headshots.form"
@@ -15046,7 +15046,7 @@
   "install_icd_onboarding_agent": {
    "on_scheduler": false,
    "machine": "Lucy 3",
-   "_off_scheduler_note": "Installs com.alphalete.icd-onboarding. ON LUCY 1, 2 AND 3 since 2026-11-11 -- each box runs the steps whose data it holds (run.STEPS_BY_MACHINE): Lucy 3 seed + ownerville, Lucy 2 blueink, Lucy 1 contacts + sterling. Before that only Lucy 3 had it, so Contact Added and BG Status had nothing running them and sat at 0 of 21 on Raf\u0027s live board while one shared heartbeat stayed green; pass --machine for each. Lucy 3 is still the one that matters most: THE BOARD RUNS WHERE THAT OFFICE'S OWNERVILLE IS: five of the nine columns come off View Progress, and Lucy 2 found 0 of 10 on 2026-11-10 because it signs in as chidalgo (Carlos's); Lucy 3 is rhidalgo (Raf's), which is why the OBCL sweep for the same people already lives there. It also holds a warm AppStream session, which seed cannot work without -- NOT Megan's Mac, which could not keep one alive for an hour, and NOT Lucy 4, whose holds_appstream is off on purpose. Fires at HALF PAST so it never shares OwnerVille with the OBCL sweep's on-the-hour pass. An ICD'S OWN ECO MACHINE installs the same agent for its own office (hourly 06:30-20:30 machine-local, every day, deploy/icd_onboarding.sh; Megan 2026-11-09: 'OBCL should just always be active for that current week - updating every hour 6am-8pm'). Seeds the week off the office's training calendar, then lets OwnerVille / Blue Ink / the forwarded Sterling results tick what they have earned on that office's Onboarding tab. Takes NO office argument: the machine's own enrollment names it, so the same plist is right on every box -- pass --machine when queueing it. MODE knob in the wrapper: 'write' (LIVE). Sends nothing.",
+   "_off_scheduler_note": "Installs com.alphalete.icd-onboarding. ON LUCY 1, 2 AND 3 since 2026-11-11 -- each box runs the steps whose data it holds (run.STEPS_BY_MACHINE): Lucy 3 seed + ownerville, Lucy 2 blueink, Lucy 1 contacts + sterling. Before that only Lucy 3 had it, so Contact Added and BG Status had nothing running them and sat at 0 of 21 on Raf's live board while one shared heartbeat stayed green; pass --machine for each. Lucy 3 is still the one that matters most: THE BOARD RUNS WHERE THAT OFFICE'S OWNERVILLE IS: five of the nine columns come off View Progress, and Lucy 2 found 0 of 10 on 2026-11-10 because it signs in as chidalgo (Carlos's); Lucy 3 is rhidalgo (Raf's), which is why the OBCL sweep for the same people already lives there. It also holds a warm AppStream session, which seed cannot work without -- NOT Megan's Mac, which could not keep one alive for an hour, and NOT Lucy 4, whose holds_appstream is off on purpose. Fires at HALF PAST so it never shares OwnerVille with the OBCL sweep's on-the-hour pass. An ICD'S OWN ECO MACHINE installs the same agent for its own office (hourly 06:30-20:30 machine-local, every day, deploy/icd_onboarding.sh; Megan 2026-11-09: 'OBCL should just always be active for that current week - updating every hour 6am-8pm'). Seeds the week off the office's training calendar, then lets OwnerVille / Blue Ink / the forwarded Sterling results tick what they have earned on that office's Onboarding tab. Takes NO office argument: the machine's own enrollment names it, so the same plist is right on every box -- pass --machine when queueing it. MODE knob in the wrapper: 'write' (LIVE). Sends nothing.",
    "display_name": "Install ICD onboarding board agent (hourly 6:30am-8:30pm)",
    "source_type": "local",
    "data_sources": [],
@@ -16639,6 +16639,39 @@
    "verify": null,
    "timeout_minutes": 30,
    "machine": "Lucy 2"
+  },
+  "nds_customer_email": {
+   "_note": "Carlos 2026-11-11: 'looks like on the nds order log we need to add the customers email so we can check the shipping status' (AT&T's guest order lookup wants order #, ZIP and the e-mail on the order). Nothing we pull carries it; this reads it off NDS SaraPlus (Sales Order History -> the row's View Customer card, E-mail Address) for every order on the feed/tab still without one, into output/nds_metrics/customer_emails.json, then refreshes the NDS Order Log tab so the 'Email' column (after Zip) fills. Sits after nds_metrics (the tab's own refresh) and before the 6:45 contact sync.",
+   "close_on": "exit_zero",
+   "order": 11.45,
+   "on_scheduler": true,
+   "display_name": "NDS customer e-mails (SaraPlus card -> NDS Order Log 'Email')",
+   "machine": "Lucy 2",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.nds_metrics.customer_email"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "not_before": "06:40"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "after": [
+    "nds_metrics"
+   ],
+   "timeout_minutes": 25,
+   "verify": null
   },
   "nds_churn": {
    "on_scheduler": true,
