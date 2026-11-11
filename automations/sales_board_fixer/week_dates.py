@@ -4,10 +4,13 @@ week, a warning when it doesn't.
 Eve, 2026-11-03: Omar's ' 11/08' showed Monday 26 and 'WE9/7-9/13' in the week
 of 11/2. Reps kept selling on it, nothing broke, and nobody saw it.
 
-WRITES ONLY ON A TAB WITH A DATE IN ITS NAME (Eve 2026-11-03): the name settles
+WRITES ON A TAB WITH A DATE IN ITS NAME (Eve 2026-11-03): the name settles
 the week, so a typed day number or label gets corrected. A tab with no date
 ('Sales Board') only warns: a stale date row may mean the owner hasn't rolled
 the board yet, and new dates would put last week's sales under this week.
+EXCEPT (Eve 2026-11-11) when the board itself shows it was rolled: Tue-Fri,
+the days still to come are empty and an earlier day has sales
+(rolled_this_week) -- then it gets this week's dates too.
 A 'Copy of' tab and a date cell that is a formula only warn too.
 
 WHICH WEEK. A tab with a date in its name is that week, by the weekday of the
@@ -157,7 +160,50 @@ def findings(values, title: str, today: dt.date, formulas=None) -> List[Finding]
         first = first or out
     if named and formulas is not None:
         return _make_fixable(first, numbers, label_cell, title, named, formulas)
+    if (formulas is not None and not title.strip().lower().startswith("copy of")
+            and rolled_this_week(values, today)):
+        return _make_fixable(first, numbers, label_cell, title, this_week, formulas)
     return first
+
+
+def _day_sales(values) -> dict:
+    """{0..6: True when a rep has a number other than 0 in that day's Apps (or
+    Units, B2B) column}. Only that column: the last day's block runs on into
+    whatever sits right of the board (Frank's REP/STATUS lists, Eveliz's
+    side totals)."""
+    lay = K.layout(values)
+    long_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                  "Saturday", "Sunday"]
+    sold = {}
+    for day, cols in K.day_blocks(values).items():
+        c = cols.get("apps") or cols.get("units")
+        if not c or day not in long_names:
+            continue
+        d = long_names.index(day)
+        sold[d] = False
+        for r in range(lay.sub_row, lay.last):
+            row = values[r] if r < len(values) else []
+            try:
+                if c - 1 < len(row) and float(str(row[c - 1]).replace(",", "")) != 0:
+                    sold[d] = True
+                    break
+            except ValueError:
+                pass
+    return sold
+
+
+def rolled_this_week(values, today: dt.date) -> bool:
+    """A board with no date in its name is already THIS week's when the days
+    still to come are empty and an earlier day has sales (Eve 2026-11-11: Frank,
+    Drew, Cody, Eveliz had 11/9-11/10 sales under last week's 2-8; checked
+    against the ICD Relay). Only Tue-Fri: on Monday nothing has sold yet, and
+    on Sat/Sun a single empty day proves nothing (offices off on Sunday)."""
+    if not 1 <= today.weekday() <= 4:
+        return False
+    sold = _day_sales(values)
+    before = [sold.get(d, False) for d in range(today.weekday())]
+    after = [sold.get(d) for d in range(today.weekday() + 1, 7)]
+    return any(before) and all(x is False for x in after)
 
 
 def warning_line(found: List[Finding]) -> str:

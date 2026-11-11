@@ -63,12 +63,46 @@ class DatedTab(unittest.TestCase):
         self.assertEqual(W.findings(v, "10.12", TUE, chain(v)), [])
 
 
+def sold_on(v, days):
+    """Put a sale for Ana under each day index in days (and nowhere else)."""
+    v = [list(r) for r in v]
+    ana = v[3]
+    for c in range(2, len(ana)):
+        ana[c] = ""
+    for d in days:
+        c = 2 + 2 * d
+        while len(ana) <= c:
+            ana.append("")
+        ana[c] = "3"
+    return v
+
+
 class UndatedTab(unittest.TestCase):
     def test_cody_sales_board_warns_and_writes_nothing(self):
-        v = board("WE 6/8 - 6/14", [8, 9, 10, 11, 12, 13, 14])
+        # Thursday has sales on a Tuesday: last week's board, not rolled yet
+        v = sold_on(board("WE 6/8 - 6/14", [8, 9, 10, 11, 12, 13, 14]), [0, 3])
         got = W.findings(v, "Sales Board", TUE, chain(v))
         self.assertEqual(len(got), 2)
         self.assertFalse(any(x.fixable for x in got))
+
+    def test_rolled_board_gets_this_weeks_dates(self):
+        # Eve 11/11: Mon+Tue sold, Wed-Sun empty on a Wednesday = this week
+        wed = dt.date(2026, 11, 11)
+        v = sold_on(board("WE 11/2-11/8", [2, 3, 4, 5, 6, 7, 8]), [0, 1])
+        got = W.findings(v, "Sales Board", wed, chain(v))
+        self.assertEqual(cells(got), [("C2", "9"), ("B3", "WE 11/9-11/15")])
+
+    def test_rolled_needs_an_earlier_sale(self):
+        v = sold_on(board("x", [26, 27, 28, 29, 30, 31, 1]), [])
+        got = W.findings(v, "Sales Board", TUE, chain(v))
+        self.assertTrue(got)
+        self.assertFalse(any(x.fixable for x in got))
+
+    def test_rolled_never_on_monday_or_weekend(self):
+        v = sold_on(board("x", [6, 7, 8, 9, 10, 11, 12]), [0])
+        for day in (dt.date(2026, 11, 7), dt.date(2026, 11, 8)):
+            self.assertFalse(W.rolled_this_week(v, day), day)
+        self.assertTrue(W.rolled_this_week(v, TUE))
 
     def test_copy_of_tab_warns_and_writes_nothing(self):
         v = board("WE 10/26-11/1", [26, 27, 28, 29, 30, 31, 32])
