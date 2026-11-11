@@ -137,30 +137,7 @@ JOBS: Dict[str, dict] = {
                   "Nothing is sent or lost — only the ticks go cold."),
         "fix": "lucy rerun install_blueink_sweep_agent --machine \"Lucy 2\"",
     },
-    "icd_onboarding": {
-        "name": "ICD onboarding board",
-        # LUCY 3 + LUCY 1 (see icd_onboarding.run.STEPS_BY_MACHINE). Each
-        # step runs where its data is: OwnerVille/AppStream/Blue Ink on Lucy 3,
-        # contacts and the Sterling inbox on Lucy 1. Both beat the same job id,
-        # so this reads whichever ran last -- a stopped half would be noticed
-        # only when BOTH stop. Split the row if that is ever not enough.
-        # LUCY 3: the box that can do the OwnerVille steps. The board must run
-        # where that office's OwnerVille is -- Lucy 2 saw 0 of 10 because it
-        # signs in as `chidalgo`, Carlos's account; Lucy 3 is `rhidalgo`.
-        # Megan's Mac could not hold an AppStream session for an hour.
-        # An ICD's own box runs its own copy for its own office.
-        "machine": "Lucy 3",
-        "first_by": "07:30",       # first pass 06:30 + 60 min grace
-        "max_gap_min": 150,        # hourly → 2.5h tolerates one skipped pass
-        "active_until": "21:30",   # last pass 20:30 + grace
-        "weekdays": None,
-        "watch_from": "2026-11-09",
-        "means": ("the onboarding board stops filling itself, so the printed "
-                  "classroom sheets go stale and people are chased for steps "
-                  "they have already done. Nothing is sent or lost — only the "
-                  "ticks go cold."),
-        "fix": "lucy rerun install_icd_onboarding_agent --machine \"Lucy 3\"",
-    },
+    # (the per-machine icd_onboarding rows are built after this table)
     "obcl_ov_sweep": {
         "name": "OBCL <- OwnerVille sweep",
         "machine": "Lucy 3",
@@ -249,6 +226,56 @@ for _hb_machine in _fleet.MORNING_CLOCK_MACHINES:
                 "\"%s\"" % _hb_machine),
     }
 del _hb_machine
+
+# --- the onboarding board, ONE ROW PER MACHINE ---------------------------------
+# 2026-11-11: this was a single row keyed on one job id, and all three runners
+# beat it. That hid exactly the failure it existed to catch -- the board was
+# only ever installed on Lucy 3, so Lucy 1's steps (Contact Added, BG Status)
+# and Lucy 2's (Blue Ink) had nothing running them at all, while Lucy 3's beat
+# kept the row green for days. Contact Added and BG Status sat at 0 of 21 on
+# Raf's live board and nothing said a word.
+#
+# Each step runs where its data is (icd_onboarding.run.STEPS_BY_MACHINE), so
+# each box now stamps its own row and a stopped half is visible on its own.
+try:
+    from automations.icd_onboarding.run import STEPS_BY_MACHINE as _OB_STEPS
+except Exception:                       # noqa: BLE001 -- never break the watch
+    _OB_STEPS = {"Lucy 1": ("contacts", "sterling"), "Lucy 2": ("blueink",),
+                 "Lucy 3": ("seed", "ownerville")}
+
+# What stops filling when that box's half stops, in the words of the board.
+_OB_MEANS = {
+    "contacts": "Contact Added stops ticking",
+    "sterling": "BG Status stops ticking, so a background-check result nobody "
+                "reads looks like a check nobody has taken",
+    "blueink": "Blue Ink stops ticking",
+    "seed": "nobody new is put on the board at all",
+    "ownerville": "Digi Docs, Onboarding Quizzes, Headshot Photo, UID Request "
+                  "and Owner Submit stop ticking",
+}
+
+for _ob_machine, _ob_steps in sorted(_OB_STEPS.items()):
+    JOBS["icd_onboarding_%s" % _ob_machine.lower().replace(" ", "_")] = {
+        "name": "ICD onboarding board (%s: %s)" % (_ob_machine, ", ".join(_ob_steps)),
+        "machine": _ob_machine,
+        "first_by": "07:30",       # first pass 06:30 + 60 min grace
+        "max_gap_min": 150,        # hourly -> 2.5h tolerates one skipped pass
+        "active_until": "21:30",   # last pass 20:30 + grace
+        "weekdays": None,
+        # Every box gets a clean day from 2026-11-11, because the per-machine
+        # beat ships in deploy/icd_onboarding.sh and each runner has to PULL it
+        # -- including Lucy 3, which until now beat the old shared id.
+        "watch_from": "2026-11-12",
+        "means": ("%s on %s. The rest of the board carries on, which is what "
+                  "makes this worth saying out loud: the printed sheets look "
+                  "complete and people are chased for steps they have already "
+                  "done." % (_OB_MEANS.get(_ob_steps[0], "part of the board "
+                                           "stops filling"), _ob_machine)),
+        "fix": ("lucy rerun install_icd_onboarding_agent --machine \"%s\""
+                % _ob_machine),
+    }
+del _ob_machine, _ob_steps
+
 
 # --- each runner's Mini Control queue -----------------------------------------
 # 2026-10-19: Lucy 1 stopped taking ANY queued row at ~08:40 CT — both lanes,

@@ -53,8 +53,13 @@ ST=$?
 echo "[$(date)] onboarding board finished exit=$ST" >> "$LOG_FILE"
 
 # Heartbeat (one overwritten row) so a run that stops firing is noticed.
+# --beat-machine, not --beat: this ONE script runs on Lucy 1, 2 and 3, each
+# doing its own share of the board (run.STEPS_BY_MACHINE). On a single shared
+# id, one box still beating kept the row green while the other two were not
+# running at all -- which is exactly how Contact Added and BG Status sat at 0
+# for days without a word (2026-11-11).
 "$VENV_PY" -m automations.shared.silent_job_watch \
-    --beat icd_onboarding --exit "$ST" >> "$LOG_FILE" 2>&1 || true
+    --beat-machine icd_onboarding --exit "$ST" >> "$LOG_FILE" 2>&1 || true
 
 # Hub Activity row — the heartbeat alone is invisible to the missed-run watcher
 # ([[feedback_launchd_reports_must_publish]]). Fifteen fires a day would drown
