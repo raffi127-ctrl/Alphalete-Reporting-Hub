@@ -174,10 +174,12 @@ def write(rows, weeks, failed_ids):
 
 def merge_new_starts(old, rows, weeks, failed_ids):
     """Rows of the weeks not pulled, plus what was pulled. An office that failed
-    keeps its last good numbers."""
+    keeps its last good numbers, and so does every office this run didn't
+    pull (11/10: an --only backfill of 104 offices wiped the other 69)."""
     pulled = {w.isoformat() for w in weeks}
+    done = {x[2] for x in rows if len(x) > 2} - set(failed_ids)
     keep = [x for x in old if x and (x[0] not in pulled
-                                     or (len(x) > 2 and x[2] in failed_ids))]
+                                     or (len(x) > 2 and x[2] not in done))]
     return sorted(keep + rows, key=lambda x: (x[0], str(x[3]).lower(), x[1]))
 
 
