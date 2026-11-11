@@ -257,6 +257,28 @@ class TheTabGrowsItsOwnColumns(unittest.TestCase):
         self.assertEqual(written.get("range"),
                          "%s1" % store._a1_col(len(existing) + 1))
 
+    def test_a_full_grid_gets_room_before_the_columns_are_written(self):
+        # Oren, 2026-11-10: the tab's grid ended at its last header, the
+        # write past it failed quietly, and his A-player numbers were dropped.
+        existing = store._HEADER[:-3]
+        calls = []
+
+        class FakeTab:
+            col_count = len(existing)
+
+            def row_values(self, _n):
+                return list(existing)
+
+            def add_cols(self, n):
+                calls.append(("add_cols", n))
+
+            def update(self, range_name=None, values=None, **kw):
+                calls.append(("update", values))
+
+        store._ensure_header(FakeTab())
+        self.assertEqual(calls, [("add_cols", 3),
+                                 ("update", [store._HEADER[-3:]])])
+
     def test_a_current_header_is_left_alone(self):
         touched = []
 

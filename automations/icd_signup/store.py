@@ -108,6 +108,17 @@ def _ensure_header(tab) -> None:
     missing = [h for h in _HEADER if h not in head]
     if not missing:
         return
+    # MAKE ROOM FIRST. A tab whose grid ends at its last header cannot be
+    # written past: the update below failed with "exceeds grid limits", the
+    # except swallowed it, and the columns never appeared -- so Oren's two
+    # A-player numbers were dropped on the way in (2026-11-10), the exact
+    # silent loss this function exists to stop.
+    try:
+        short = len(head) + len(missing) - int(getattr(tab, "col_count", 0) or 0)
+        if short > 0:
+            tab.add_cols(short)
+    except Exception:  # noqa: BLE001 — the update below still gets its try
+        pass
     try:
         tab.update(range_name="%s1" % _a1_col(len(head) + 1),
                    values=[missing], value_input_option="RAW")
