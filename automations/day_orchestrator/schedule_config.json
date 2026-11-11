@@ -15502,6 +15502,27 @@
     "type": "not_configured"
    }
   },
+  "daily_plan_text": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_note": "Carlos 2026-11-11: 8:00 AM Monday-Saturday, one text to NEW A Players ('Please assign who's doing what...' -- leader meetings, Day 1/Day 2 rooms, lesson, circle up, announcements, impact). One template per weekday in daily_plan_text/config.py TEMPLATES; a weekday with no template sends nothing. Real schedule = Report Library card daily_plan_text_8am. Dry-run by default; --send is the only flag that queues the text (once per day; --force resends).",
+   "display_name": "Daily plan text (8am Mon-Sat)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.daily_plan_text.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "08:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "nds_tnc_check": {
    "on_scheduler": false,
    "machine": "Lucy 2",

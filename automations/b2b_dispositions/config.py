@@ -194,6 +194,9 @@ TEXT_ROUTES = {
     # 2026-11-06: "just on the att b2b leaders text chain".
     ("RES AT&T OOF", "nds_no_dispo"): [TEXT_GROUP_ATT],
     ("RES AT&T OOF", "nds_week"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
+    # Daily plan text, 8:00 AM Mon-Sat (daily_plan_text). Carlos 2026-11-11:
+    # "Send it as a text message in the A Players text chain."
+    ("DAILY PLAN", "daily_plan"): [TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send
