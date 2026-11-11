@@ -70,7 +70,8 @@ def check(payload: Dict, log=print) -> Dict:
     r = zoho_draft.channel_check(PROFILE)
     if not r["logged_in"]:
         return {"status": "signed_out", "channels": []}
-    return {"status": "ok", "channels": r["channels"], "names": r.get("names") or {}}
+    return {"status": "ok", "channels": r["channels"], "names": r.get("names") or {},
+            "pages": r.get("pages") or {}}
 
 
 def _unpack_album(data: bytes, folder: Path) -> list:

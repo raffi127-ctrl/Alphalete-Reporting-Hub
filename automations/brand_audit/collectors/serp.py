@@ -256,6 +256,10 @@ def collect(company) -> CollectorResult:
     res.evidence["knowledge_graph"] = {"title": kg.get("title"),
                                        "type": kg.get("type"),
                                        "rating": kg.get("rating")}
+    # The social pages Google ties to the business (its panel's profile row):
+    # live pages Google itself shows -- the proof a link really opens.
+    res.evidence["profiles"] = [{"name": x.get("name") or "", "link": x.get("link") or ""}
+                                for x in (kg.get("profiles") or []) if x.get("link")]
     res.evidence["people_also_ask"] = [q.get("question") for q in paa]
 
     # Flags — the reputation-critical ones first.

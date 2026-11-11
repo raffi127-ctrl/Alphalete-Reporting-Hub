@@ -240,8 +240,9 @@ def search_line(p) -> Dict:
         d = serp.collect(company_for(p)).as_dict()
         m = d.get("metrics") or {}
         page1 = (d.get("evidence") or {}).get("page1") or []
+        profiles = (d.get("evidence") or {}).get("profiles") or []
     except Exception:
-        m, page1 = {}, []
+        m, page1, profiles = {}, [], []
     # The top 5 Google results for their name, as people see them (Megan
     # 2026-11-10: "this should say what the top 5 results are and if it's bad
     # be red").
@@ -257,7 +258,11 @@ def search_line(p) -> Dict:
         color = RED if (own is None or neg < own) else YELLOW
     else:
         bad, color = "no negative results on page 1", (GREEN if own and own <= 3 else YELLOW)
-    return {"color": color, "text": f"{site} · {bad}", "own": own, "neg": neg, "top": top}
+    return {"color": color, "text": f"{site} · {bad}", "own": own, "neg": neg, "top": top,
+            "ratings": m.get("serp_ratings") or {},
+            "live_links": [x["link"] for x in profiles] + [r.get("link") or "" for r in page1],
+            "panel": profiles,
+            "domains": sorted({r.get("domain") or "" for r in page1})}
 
 
 def posts_line(p, now: dt.datetime) -> Dict:
@@ -302,6 +307,41 @@ PROBLEM = {
 
 SEO_ONLY = {"name in page title"}
 
+# ONE THING AT A TIME (Megan 2026-11-10: "we just need to prioritize the one
+# thing until it's done and then move to the next"). Most damaging first: a
+# site or listing people can't reach beats a detail that's slightly off.
+PRIORITY = ["site loads", "listing", "listing is the one they gave us",
+            "website link is secure (https)", "website", "phone", "address",
+            "business name", "listing verified"]
+
+
+def _prio(r: Dict) -> tuple:
+    item, site = r["item"], (r.get("site") or "")
+    rank = PRIORITY.index(item) if item in PRIORITY else len(PRIORITY)
+    return (rank, 0 if site == "Google" else 1, item)
+
+
+# The full checklist behind the card, worded as the thing that should be true.
+CHECK_LABEL = {
+    "site loads": "opens", "listing": "listing found",
+    "listing is the one they gave us": "is the listing from your sign-up",
+    "website link is secure (https)": "website link starts with https://",
+    "website": "links to your correct website", "phone": "has your correct phone number",
+    "address": "has your correct address", "business name": "has your exact business name",
+    "listing verified": "listing is verified",
+    "name in page title": "page title has your business name",
+    "check by hand": "check by hand (it blocks Lucy)",
+}
+
+
+def check_label(r: Dict) -> str:
+    site = r.get("site") or ""
+    who = "Your website" if site.lower() == "website" else site
+    item = r["item"]
+    if item.startswith("links to their "):
+        return f"{who} links to your {_page(item)} page"
+    return f"{who}: {CHECK_LABEL.get(item, item)}"
+
 
 def problem_text(r: Dict) -> str:
     item, site = r["item"], r.get("site") or ""
@@ -311,15 +351,24 @@ def problem_text(r: Dict) -> str:
         site="your website" if site.lower() == "website" else site)
 
 
-def info_line(p) -> Dict:
+def info_line(p, aliases: Optional[Dict[str, set]] = None) -> Dict:
     from automations.online_presence import consistency
     try:
-        rows = consistency.checks(p)
+        rows = consistency.checks(p, aliases)
     except Exception:
         return {"color": GREY, "text": "Couldn't check this week", "fixes": [], "checks": {}}
     checks = {f'{r["site"]}|{r["item"]}': r["ok"] for r in rows}
+    # The value that SHOULD be there is shown under each name/address/phone/
+    # website line (Megan 2026-11-10: "should say has your correct address
+    # and list the address, same for phone").
+    show = ("address", "phone", "business name", "website")
+    audit = sorted(({"label": check_label(r), "ok": r["ok"], "found": r.get("found") or "",
+                     "value": (r.get("expected") or "") if r["item"] in show else "",
+                     "page": r["item"][len("links to their "):] if r["item"].startswith("links to their ") else "",
+                     "url": r.get("expected") or ""}
+                    for r in rows), key=lambda x: {False: 0, None: 1, True: 2}[x["ok"]])
     rows = [r for r in rows if r["item"] not in SEO_ONLY]
-    bad = [r for r in rows if r["ok"] is False]
+    bad = sorted((r for r in rows if r["ok"] is False), key=_prio)
     def say(r):
         if (r.get("site") or "").lower() == "website":
             if r["item"] == "site loads":
@@ -334,10 +383,10 @@ def info_line(p) -> Dict:
     checked = sorted({r["site"] for r in rows if r.get("ok") is not None})
     if not bad:
         return {"color": GREEN, "text": "Everything matches", "fixes": [], "problems": [],
-                "checked": checked, "checks": checks}
+                "checked": checked, "checks": checks, "audit": audit}
     return {"color": RED, "text": f"{len(bad)} thing{'s' if len(bad) != 1 else ''} to fix",
             "fixes": fixes, "problems": [problem_text(r) for r in bad], "checked": checked,
-            "checks": checks}
+            "checks": checks, "audit": audit}
 
 
 def todo(lines: Dict, review_link: str = "") -> List[Dict]:
@@ -347,7 +396,7 @@ def todo(lines: Dict, review_link: str = "") -> List[Dict]:
     if g.get("bad"):
         out.append({"text": "Approve Lucy's reply to the bad review (it's in your Slack channel)",
                     "why": WHY["bad_review"], "how": HOW["bad_review"]})
-    out += inf.get("fixes", [])
+    out += inf.get("fixes", [])[:1]          # one thing at a time, most important first
     if po["color"] != GREEN:
         out.append({"text": "Tap 📸 New post in your Slack channel and send 3 team posts", "why": WHY["photos"], "how": HOW["photos"]})
     if g["color"] == YELLOW or s["color"] in (RED, YELLOW):
@@ -623,30 +672,56 @@ def names_check(business: str, names: Dict[str, str]) -> Optional[Tuple[bool, st
     return (not off, "; ".join(off))
 
 
-def page_names(p) -> Dict[str, str]:
-    """The names Zoho shows for their pages: the office computer's daily check
-    (watch.json), or Alphalete's own Zoho when this machine has it."""
+def zoho_pages(p) -> Dict:
+    """What Zoho knows about their connected pages: {"names": {page: name},
+    "pages": {page: {id, name, connected}}}. From the office computer's daily
+    check (watch.json), or Alphalete's own Zoho when this machine has it."""
     try:
         st = json.loads(p.path("watch.json").read_text())
-        names = ((st.get("last_check") or {}).get("result") or {}).get("names") or {}
-        if names:
-            return names
+        res = (st.get("last_check") or {}).get("result") or {}
+        if res.get("names") or res.get("pages"):
+            return {"names": res.get("names") or {}, "pages": res.get("pages") or {}}
     except Exception:
         pass
     if p.key == "alphalete":
         from automations.brand_audit import zoho_draft
-        cache = p.path("page_names.json")
+        cache = p.path("zoho_pages.json")
         try:
             if zoho_draft.ZOHO_PROFILE_DIR.exists():
-                names = zoho_draft.channel_check(headless=False).get("names") or {}
-                if names:
+                r = zoho_draft.channel_check(headless=False)
+                got = {"names": r.get("names") or {}, "pages": r.get("pages") or {}}
+                if got["names"] or got["pages"]:
                     cache.parent.mkdir(parents=True, exist_ok=True)
-                    cache.write_text(json.dumps(names))
-                    return names
+                    cache.write_text(json.dumps(got))
+                    return got
             return json.loads(cache.read_text())
         except Exception:
-            return {}
-    return {}
+            return {"names": {}, "pages": {}}
+    return {"names": {}, "pages": {}}
+
+
+def page_names(p) -> Dict[str, str]:
+    return zoho_pages(p).get("names") or {}
+
+
+def page_aliases(search: Dict, zp: Dict) -> Dict[str, set]:
+    """Every way each of their accounts is written: its number and username
+    from Zoho, plus the address Google's business panel shows for it."""
+    from automations.online_presence.consistency import account_key
+    al: Dict[str, set] = {}
+    for page, x in (zp.get("pages") or {}).items():
+        keys = {str(x.get("id") or "").lower()}
+        if page in ("instagram", "x", "tiktok"):            # their 'name' is the username
+            keys.add(re.sub(r"[^a-z0-9._]", "", (x.get("name") or "").lower()))
+        al.setdefault(page, set()).update(k for k in keys if k)
+    for x in search.get("panel") or []:
+        n = (x.get("name") or "").lower()
+        page = ("facebook" if "facebook" in n else "instagram" if "instagram" in n else
+                "linkedin" if "linkedin" in n else "x" if ("twitter" in n or n.strip() == "x") else
+                "tiktok" if "tiktok" in n else "")
+        if page and page in al:            # Google's panel = that same connected account
+            al[page].add(account_key(x["link"]))
+    return al
 
 
 def step_done(key: str, lines: Dict):
@@ -720,6 +795,61 @@ def seo_ideas(lines: Dict, todo_items: List[Dict], n: int = 3) -> List[Dict]:
     return out
 
 
+def confirm_links(audit: List[Dict], lines: Dict, p=None) -> List[Dict]:
+    """Do the website's social links really open to the right page? (Megan
+    2026-11-10: "are you making sure all these social links actually open to
+    the correct pages and aren't broken?") Lucy can't open Facebook /
+    LinkedIn / Instagram herself (they block or ask for a sign-in), so the
+    proof is Google: a page Google shows for their name is live. The link
+    must also be the account from their sign-up (consistency.py checks that
+    part). Megan: "the important thing is making sure their website links are
+    correct" -- so this grades the WEBSITE's links only."""
+    from automations.online_presence.consistency import social_handle
+    s = lines["search"]
+    if s.get("color") == GREY:
+        return audit
+    from automations.online_presence.consistency import account_key
+    live = {(_host_of(u), social_handle(u)) for u in s.get("live_links") or [] if u}
+    known = (lines.get("info") or {}).get("aliases") or {}
+    out = []
+    for a in audit:
+        if a.get("page") and a["ok"] is True:
+            key = (_host_of(a["url"]), social_handle(a["url"]))
+            if key in live:
+                a = dict(a, label=a["label"] + " (Google shows it's live)")
+            elif account_key(a["url"]) in set(known.get(a["page"]) or []):
+                a = dict(a, label=a["label"] + " (matches your page in Zoho)")
+            else:
+                a = dict(a, ok=None, label=a["label"] + " (right account; Lucy couldn't confirm it opens)")
+        out.append(a)
+    return out
+
+
+def _host_of(u: str) -> str:
+    h = re.sub(r"^https?://", "", (u or "").lower()).split("/")[0]
+    h = re.sub(r"^(www|m|[a-z]{2})\.", "", h)
+    return {"twitter.com": "x.com"}.get(h, h)
+
+
+def review_site_rows(lines: Dict) -> List[Dict]:
+    """Indeed + Glassdoor on the checklist, from what Lucy CAN see: the Google
+    search for their name (Megan 2026-11-10: "we should have them on there if
+    it's lucy"). Both sites block Lucy, so their pages are never opened."""
+    s = lines["search"]
+    if s.get("color") == GREY:
+        return []
+    out = []
+    for key, name, dom in (("indeed", "Indeed", "indeed.com"), ("glassdoor", "Glassdoor", "glassdoor.com")):
+        shows = any(d.endswith(dom) for d in s.get("domains") or [])
+        rt = (s.get("ratings") or {}).get(key) or {}
+        found = (f'{rt["rating"]}★' + (f' · {rt["reviews"]} reviews' if rt.get("reviews") else "")
+                 if rt.get("rating") is not None else "")
+        label = f"{name}: your page shows on Google for your name" + (f" ({found})" if found else "")
+        out.append({"label": label, "ok": shows,
+                    "found": "not on page 1 of Google" if not shows else ""})
+    return out
+
+
 def _score_block(p, lines: Dict, now: dt.datetime, prog: List[Dict]) -> Dict:
     """This week's score, last week's, and the line of weeks for the graph.
 
@@ -763,9 +893,13 @@ def slack_link(channel_id: str) -> str:
 
 def build(p, now: Optional[dt.datetime] = None, review_days: int = 7) -> Dict:
     now = now or dt.datetime.now()
-    lines = {"google": google_line(p, now, review_days), "search": search_line(p),
-             "posts": posts_line(p, now), "info": info_line(p)}
-    lines["info"]["names"] = names_check(p.business_name, page_names(p))
+    search = search_line(p)
+    zp = zoho_pages(p)
+    aliases = page_aliases(search, zp)
+    lines = {"google": google_line(p, now, review_days), "search": search,
+             "posts": posts_line(p, now), "info": info_line(p, aliases)}
+    lines["info"]["names"] = names_check(p.business_name, zp.get("names") or {})
+    lines["info"]["aliases"] = {k: sorted(v) for k, v in aliases.items()}
     link = ""
     try:
         from automations.brand_audit import gbp_api
@@ -774,6 +908,11 @@ def build(p, now: Optional[dt.datetime] = None, review_days: int = 7) -> Dict:
     except Exception:
         pass
     prog = progress(p, lines, now)
+    inf = lines["info"]
+    inf["audit"] = sorted(confirm_links([a for a in inf.get("audit") or [] if "check by hand" not in a["label"]],
+                                        lines, p)
+                          + review_site_rows(lines),
+                          key=lambda x: {False: 0, None: 1, True: 2}[x["ok"]])
     colors = [v["color"] for v in lines.values()]
     trend = compare(lines, last_week(p, now))
     verdict = ("Great week 🎉" if all(c == GREEN for c in colors) else
@@ -916,12 +1055,35 @@ def render(card: Dict, mode: str = "image") -> str:
     probs = inf.get("problems") or []
     checked = " and ".join(("your website" if c.lower() == "website" else c)
                            for c in inf.get("checked") or []) or "Google and your website"
+    audit = inf.get("audit") or []
+    n_ok = sum(1 for a in audit if a["ok"] is True)
+    n_known = sum(1 for a in audit if a["ok"] is not None)
+    def audit_list():
+        mark = {True: ("ok", "✅"), False: ("no", "❌"), None: ("na", "—")}
+        return '<ul class="audit">' + "".join(
+            f'<li class="{mark[a["ok"]][0]}"><span class="am">{mark[a["ok"]][1]}</span><span class="at">'
+            f'{e(a["label"])}'
+            + (f'<small class="val">{e(a["value"])}</small>' if a.get("value") and a["ok"] is not False else "")
+            + (f'<small>Should be: {e(a["value"])}</small>' if a.get("value") and a["ok"] is False else "")
+            + (f'<small>Lucy sees: {e(a["found"])}</small>' if a["ok"] is False and a["found"] else "")
+            + "</span></li>" for a in audit) + "</ul>"
+    if audit and web:
+        listing = (f'<details class="aud"><summary>{n_ok} of {n_known} checks pass · '
+                   f'<span class="tap">See the full checklist ▾</span></summary>{audit_list()}</details>')
+    elif audit and pdf:
+        listing = f'<div class="aud"><b>{n_ok} of {n_known} checks pass</b>{audit_list()}</div>'
+    elif audit:
+        listing = f'<div class="aud">{n_ok} of {n_known} checks pass · full checklist in the PDF</div>'
+    else:
+        listing = ""
     if probs:
-        info_body = "".join(f'<li class="prob">{e(t)}</li>' for t in probs)
-        k_info = kpi("info", "Your info online", "", f'<ul class="probs">{info_body}</ul>')
+        more = (f'<div class="more">Then {len(probs) - 1} more, one at a time</div>'
+                if len(probs) > 1 else "")
+        k_info = kpi("info", "Your info online", "",
+                     f'<div class="probs"><div class="prob">{e(probs[0])}</div></div>{more}', listing)
     elif inf["color"] == GREEN:
         k_info = kpi("info", "Your info online", "", f'<div class="okline">✓ Your name, address, '
-                     f'phone and website match on {e(checked)}</div>')
+                     f'phone and website match on {e(checked)}</div>', listing)
     else:
         k_info = kpi("info", "Your info online", "", f'<div class="okline na">{e(inf["text"])}</div>')
     kpis = k_rating + k_posts + k_info + k_search.replace('class="kpi"', 'class="kpi wide"', 1)
@@ -1066,7 +1228,12 @@ def render(card: Dict, mode: str = "image") -> str:
  .btn.gold{{background:var(--gold);color:#fff}} .btn.line{{border:2px solid var(--gold);color:var(--gold-d)}}
  .lk2{{font-size:14px;color:var(--soft)}}
  .kpis{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}} .kpi.wide{{grid-column:1/-1}}
- ul.probs{{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:6px}}
+ .probs{{margin-top:10px}} .more{{font-size:13px;color:var(--soft);margin-top:6px}}
+ .aud{{font-size:14px;margin-top:10px;color:var(--soft)}} .aud summary{{cursor:pointer;list-style:none}}
+ ul.audit{{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:4px;font-size:14px;color:var(--ink)}}
+ ul.audit li{{display:flex;gap:8px;align-items:flex-start}} ul.audit li.no{{color:var(--bad);font-weight:600}}
+ ul.audit li.na{{color:var(--soft)}} .am{{flex:none;width:20px}} .at{{flex:1;min-width:0}}
+ ul.audit small{{display:block;font-size:12px;font-weight:400}} ul.audit small.val{{color:var(--soft);font-size:13px}}
  .prob{{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:8px 10px;font-weight:600;font-size:15px}}
  .okline{{margin-top:10px;font-size:15px;color:var(--good);font-weight:600}} .okline.na{{color:var(--na)}}
  .toph{{font-size:14px;font-weight:700;color:var(--soft);margin-top:14px}}

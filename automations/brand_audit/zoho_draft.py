@@ -131,6 +131,25 @@ _NAME_ICON = {"fbPage": "facebook", "ig": "instagram", "tw": "x",
               "linPage": "linkedin", "tiktok": "tiktok"}
 
 
+# Zoho's GetBrandsIn answer: per network, the page's own ID + name (read
+# 2026-11-10). Network codes seen on Alphalete's Zoho; 10 = a PERSON's
+# LinkedIn (skipped). CHSTATUS "1" = connected.
+_ZOHO_NET = {"1": "facebook", "2": "x", "3": "linkedin", "5": "instagram",
+             "14": "google", "19": "tiktok"}
+
+
+def pages_from_brands(data: dict) -> dict:
+    """{page: {"id", "name", "connected"}} from Zoho's GetBrandsIn JSON."""
+    out = {}
+    for brand in (data or {}).values():
+        for code, ch in ((brand or {}).get("networks") or {}).items():
+            page = _ZOHO_NET.get(str(code))
+            if page and isinstance(ch, dict) and ch.get("PROFILEID"):
+                out[page] = {"id": str(ch["PROFILEID"]), "name": ch.get("PROFILE_NAME") or "",
+                             "connected": str(ch.get("CHSTATUS")) == "1"}
+    return out
+
+
 def page_names(pg) -> dict:
     """{page: public name} for the connected pages, e.g. {"facebook":
     "Alphalete Marketing", "instagram": "alphaletemarketing"}. {} if the
@@ -259,6 +278,15 @@ def channel_check(profile_dir: Path | None = None, *, headless: bool = False,
         ctx = _launch_zoho(p, headless, profile_dir)
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            brands = {}
+
+            def _grab(r):
+                if "GetBrandsIn" in r.url and not brands:
+                    try:
+                        brands.update(r.json())
+                    except Exception:
+                        pass
+            pg.on("response", _grab)
             pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
             if "accounts.zoho.com" in pg.url:
                 return {"logged_in": False, "channels": []}
@@ -267,13 +295,15 @@ def channel_check(profile_dir: Path | None = None, *, headless: bool = False,
                 names = page_names(pg)
             except Exception:
                 names = {}
+            pages = pages_from_brands(brands)
             btn = next((x for x in pg.locator(_NEW_POST).all() if x.is_visible()), None)
             if btn is None:
-                return {"logged_in": True, "channels": [], "names": names,
+                return {"logged_in": True, "channels": [], "names": names, "pages": pages,
                         "note": "no New Post button"}
             btn.click(timeout=15000)
             pg.wait_for_timeout(4000)
-            return {"logged_in": True, "channels": _present_channels(pg), "names": names}
+            return {"logged_in": True, "channels": _present_channels(pg), "names": names,
+                    "pages": pages}
         finally:
             ctx.close()
 

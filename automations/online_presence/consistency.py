@@ -126,15 +126,16 @@ def google_checks(p) -> List[Dict]:
     if p.website:
         out.append(_row("Google", "website", host(p.website) == host(loc["website"]),
                         p.website, loc["website"] or "(none)", w))
-        if loc["website"].startswith("http://"):
-            out.append(_row("Google", "website link is secure (https)", False,
+        if loc["website"]:
+            out.append(_row("Google", "website link is secure (https)",
+                            not loc["website"].startswith("http://"),
                             "https://…", loc["website"], w))
     out.append(_row("Google", "listing verified", loc.get("verified") is not False,
                     "verified", "verified" if loc.get("verified") else "NOT verified", w))
     return out
 
 
-def website_checks(p) -> List[Dict]:
+def website_checks(p, aliases: Dict[str, set] | None = None) -> List[Dict]:
     if not p.website:
         return [_row("Website", "website", False, "their website from sign-up",
                      "no website on file", "sign-up")]
@@ -178,7 +179,7 @@ def website_checks(p) -> List[Dict]:
                   or (page == "tiktok" and "tiktok.com" in u)
                   or (page == "youtube" and re.search(r"youtu\.?be", u))]
         handles = sorted({social_handle(u) for u in theirs})
-        ok = want in handles
+        ok = want in handles or any(same_account(page, url, u, aliases) for u in theirs)
         out.append(_row("Website", f"links to their {page}", ok, url,
                         "links to it" if ok else (f"links to {', '.join(handles)} instead"
                                                   if handles else f"no {page} link on the site"),
@@ -190,13 +191,35 @@ def social_handle(url: str) -> str:
     """'instagram.com/AlphaleteMarketing/reels' -> 'instagram.com/alphaletemarketing'
     -- the account, not the page of it, so two links to one account agree."""
     u = re.sub(r"^https?://", "", (url or "").strip().lower())
-    u = re.sub(r"^(www\.|m\.|mobile\.)", "", u).split("?")[0].split("#")[0]
+    u = re.sub(r"^(www\.|m\.|mobile\.|[a-z]{2}\.)(?=linkedin\.com)", "", u)
+    u = re.sub(r"^(www\.|m\.|mobile\.|web\.)", "", u)
+    # facebook.com/profile.php?id=123 IS the account (its number), keep it
+    m = re.match(r"(facebook\.com)/profile\.php\?(?:.*&)?id=(\d+)", u)
+    if m:
+        return f"{m.group(1)}/{m.group(2)}"
+    u = u.split("?")[0].split("#")[0]
     u = u.replace("twitter.com", "x.com").replace("youtu.be", "youtube.com")
     parts = [x for x in u.split("/") if x]
     if not parts:
         return ""
     keep = 3 if len(parts) > 2 and parts[1] in ("company", "in", "channel", "c", "user") else 2
     return "/".join(parts[:keep]).lstrip("@")
+
+
+def account_key(url: str) -> str:
+    """The account part alone: 'alphaletemarketing', '15255695'."""
+    return social_handle(url).split("/")[-1].lower()
+
+
+def same_account(page: str, a: str, b: str, aliases: Dict[str, set] | None) -> bool:
+    """Two links to ONE account, however each is written: the same handle,
+    or both among the names that account is known by -- its number and
+    username (from Zoho) and the address Google shows for it (Megan
+    2026-11-10: "we need to be able to read both versions")."""
+    if social_handle(a) == social_handle(b):
+        return True
+    known = (aliases or {}).get(page) or set()
+    return account_key(a) in known and account_key(b) in known
 
 
 def _directory_checks(site: str, url: str, p) -> List[Dict]:
@@ -212,12 +235,12 @@ def _directory_checks(site: str, url: str, p) -> List[Dict]:
                  f"open {url} and confirm", url)]
 
 
-def checks(p) -> List[Dict]:
+def checks(p, aliases: Dict[str, set] | None = None) -> List[Dict]:
     """Every check for one office (each site fails soft on its own)."""
     out: List[Dict] = []
     for fn in (google_checks, website_checks):
         try:
-            out += fn(p)
+            out += fn(p, aliases) if fn is website_checks else fn(p)
         except Exception as e:
             out.append(_row(fn.__name__.split("_")[0].title(), "check", None, "",
                             f"check crashed: {type(e).__name__}", ""))

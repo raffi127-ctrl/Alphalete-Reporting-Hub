@@ -76,5 +76,65 @@ class Score(unittest.TestCase):
         self.assertEqual(parts["search"], 0)
 
 
+class OneThingAtATime(unittest.TestCase):
+    def test_most_damaging_problem_first(self):
+        rows = [{"site": "Google", "item": "phone"}, {"site": "Website", "item": "site loads"},
+                {"site": "Google", "item": "website link is secure (https)"}]
+        self.assertEqual([r["item"] for r in sorted(rows, key=sc._prio)],
+                         ["site loads", "website link is secure (https)", "phone"])
+
+    def test_do_this_week_carries_only_the_top_info_fix(self):
+        lines = {"google": {"color": "green"}, "search": {"color": "green"},
+                 "posts": {"color": "green"},
+                 "info": {"fixes": [{"text": "first"}, {"text": "second"}]}}
+        texts = [t["text"] for t in sc.todo(lines)]
+        self.assertIn("first", texts)
+        self.assertNotIn("second", texts)
+
+
+class WebsiteLinks(unittest.TestCase):
+    def _row(self, page, url, ok=True):
+        return {"label": f"Your website links to your {page} page", "ok": ok, "found": "",
+                "value": "", "page": page, "url": url}
+
+    def test_green_only_when_google_shows_the_page_live(self):
+        lines = {"search": {"color": "yellow", "live_links": [
+            "https://www.instagram.com/kashmktg/", "https://facebook.com/kashmktg"]}}
+        out = sc.confirm_links([self._row("instagram", "https://instagram.com/kashmktg"),
+                                self._row("linkedin", "https://www.linkedin.com/company/123")], lines)
+        self.assertTrue(out[0]["ok"])
+        self.assertIn("live", out[0]["label"])
+        self.assertIsNone(out[1]["ok"])                      # right account, not confirmed: never a guess ✅
+
+    def test_a_wrong_account_stays_red(self):
+        lines = {"search": {"color": "yellow", "live_links": []}}
+        out = sc.confirm_links([self._row("facebook", "https://facebook.com/other", ok=False)], lines)
+        self.assertFalse(out[0]["ok"])
+
+
+class BothLinkStyles(unittest.TestCase):
+    def test_number_and_name_style_are_one_account(self):
+        from automations.online_presence.consistency import same_account
+        al = {"linkedin": {"15255695", "alphalete-marketing"}}
+        self.assertTrue(same_account("linkedin", "https://www.linkedin.com/company/15255695",
+                                     "https://ar.linkedin.com/company/alphalete-marketing/", al))
+        self.assertFalse(same_account("linkedin", "https://www.linkedin.com/company/15255695",
+                                      "https://www.linkedin.com/company/someone-else", al))
+
+    def test_facebook_profile_php_keeps_its_number(self):
+        from automations.online_presence.consistency import social_handle, account_key
+        self.assertEqual(social_handle("https://www.facebook.com/profile.php?id=61550000000001&sk=about"),
+                         "facebook.com/61550000000001")
+        self.assertEqual(account_key("https://m.facebook.com/profile.php?id=42"), "42")
+
+    def test_zoho_and_google_feed_the_aliases(self):
+        al = sc.page_aliases(
+            {"panel": [{"name": "LinkedIn", "link": "https://www.linkedin.com/company/alphalete-marketing"}]},
+            {"pages": {"linkedin": {"id": "15255695", "name": "Alphalete Marketing"},
+                       "instagram": {"id": "1784", "name": "alphaletemarketing"}}})
+        self.assertEqual(al["linkedin"], {"15255695", "alphalete-marketing"})
+        self.assertIn("alphaletemarketing", al["instagram"])
+
+
 if __name__ == "__main__":
     unittest.main()
