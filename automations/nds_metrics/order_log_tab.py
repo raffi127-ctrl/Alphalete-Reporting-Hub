@@ -48,9 +48,15 @@ DAYS_KEPT = 60
 # No pull carries it; nds_metrics.customer_email reads it off the SaraPlus
 # customer card into customer_emails.json (EmailIndex, by DSI #). Everything
 # after Zip moved one column right (Delivered Message Sent is V, was U).
+# "Activation Date" (after Delivered) since 2026-11-11, Carlos: "an activation
+# date we may should have on here ... Tableau might make more sense ... we
+# always refer to Tableau as what determines the paycheck". The SaraPlus feed
+# only flips a line to Active with no date; the Tableau NDS-SN export carries
+# DTR Active Date per line (spe.TN), so it comes from there by the line's phone
+# number (ZipIndex.active_date). Delivered Message Sent is W now.
 HEADERS = ("Week Ending", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
-           "Line Status", "Ship Date", "Delivered", "Port Status",
+           "Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
            "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
 # Carlos's own columns: typed by hand (or, for column S, by rc_contact_sync.delivered),
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
@@ -61,7 +67,7 @@ _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
 _TEXT_COLS = _ID_COLS + ("Zip", "Email")   # written as text, never a number
 # a change in any of these restamps Last Updated
-_STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Port Status",
+_STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
                "Type", "Phone #", "Device", "Plan")
 DEAD = ("disconnected", "cancelled", "canceled")
 
@@ -97,10 +103,11 @@ def _norm(s) -> str:
     return " ".join(str(s or "").split()).strip().lower()
 
 
-def line_row(line: dict, stamp: str, zip_of=None, email_of=None) -> List[str]:
+def line_row(line: dict, stamp: str, zip_of=None, email_of=None, active_of=None) -> List[str]:
     """One tab row from one wireless_pull line (the thread's own row shape).
     `zip_of(line)` -> the customer's zip (ZipIndex.for_line); None/'' = blank.
-    `email_of(line)` -> the customer's e-mail (EmailIndex.for_line), same."""
+    `email_of(line)` -> the customer's e-mail (EmailIndex.for_line), same.
+    `active_of(line)` -> the line's Tableau activation date (ZipIndex.active_for_line)."""
     import html
     from automations.nds_metrics.order_xlsx import _row_of
     # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
@@ -113,6 +120,9 @@ def line_row(line: dict, stamp: str, zip_of=None, email_of=None) -> List[str]:
     core = core[:i_zip] + [zip_code, email] + core[i_zip:]
     i_dev = _COL["Device"] - 1
     core = core[:i_dev] + [model] + core[i_dev:]
+    act = str((active_of(line) if active_of else "") or "").strip()
+    i_act = _COL["Activation Date"] - 1
+    core = core[:i_act] + [act] + core[i_act:]
     return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp] + [""] * len(CARRIED)
 
 
@@ -156,8 +166,10 @@ class ZipIndex:
     order (sp.SPM Number = the feed's DSI #). 2026-11-10: all 317 tab lines
     matched by each key alone."""
 
-    def __init__(self, by_phone: dict, by_ban: dict, by_dsi: dict):
+    def __init__(self, by_phone: dict, by_ban: dict, by_dsi: dict, active_by_phone: Optional[dict] = None):
         self.by_phone, self.by_ban, self.by_dsi = by_phone, by_ban, by_dsi
+        # the line's DTR Active Date (Tableau = the paycheck), by spe.TN
+        self.active_by_phone = active_by_phone or {}
 
     def __len__(self):
         return len(self.by_phone)
@@ -175,6 +187,12 @@ class ZipIndex:
         # the feed parser's "device" IS the line's phone number (see device_model)
         return self.lookup(line.get("device"), line.get("ban"), line.get("dsi"))
 
+    def active_date(self, phone="") -> str:
+        return self.active_by_phone.get(self._digits(phone), "")
+
+    def active_for_line(self, line: dict) -> str:
+        return self.active_date(line.get("device"))
+
     @classmethod
     def from_rows(cls, header: Sequence[str], rows: Sequence[Sequence[str]]) -> "ZipIndex":
         from automations.office_metrics.nds_orderlog import _cell, _find
@@ -182,12 +200,18 @@ class ZipIndex:
         itn = _find(list(header), "spe.tn")
         iban = _find(list(header), "spe.account ban", "account ban")
         ispm = _find(list(header), "sp.spm number", "spm number")
+        iact = _find(list(header), "dtr active date", "active date", "activation date")
         if iz is None:
             raise RuntimeError("order-log export has no Customer Zip column -- header: %r"
                                % list(header)[:40])
-        by_phone, by_ban, by_dsi = {}, {}, {}
+        by_phone, by_ban, by_dsi, active = {}, {}, {}, {}
         d = cls._digits
         for r in rows:
+            if iact is not None and itn is not None:
+                a = _parse_date(_cell(r, iact))
+                tn = d(_cell(r, itn))
+                if a and tn:
+                    active.setdefault(tn, _fmt(a))
             z = _cell(r, iz)
             if not z:
                 continue
@@ -195,7 +219,7 @@ class ZipIndex:
                 k = d(_cell(r, i)) if i is not None else ""
                 if k:
                     store.setdefault(k, z)
-        return cls(by_phone, by_ban, by_dsi)
+        return cls(by_phone, by_ban, by_dsi, active)
 
     @classmethod
     def from_export(cls, today: dt.date, log=print) -> Optional["ZipIndex"]:
@@ -218,8 +242,9 @@ class ZipIndex:
         except RuntimeError as e:
             log("[nds] NDS Order Log tab: %s -- zips kept as they were" % e)
             return None
-        log("[nds] NDS Order Log tab: zips for %d phone number(s) / %d BAN(s) / %d order(s) from %s"
-            % (len(zi.by_phone), len(zi.by_ban), len(zi.by_dsi), path.name))
+        log("[nds] NDS Order Log tab: zips for %d phone number(s) / %d BAN(s) / %d order(s), "
+            "activation dates for %d line(s) from %s"
+            % (len(zi.by_phone), len(zi.by_ban), len(zi.by_dsi), len(zi.active_by_phone), path.name))
         return zi
 
 
@@ -263,7 +288,7 @@ def _key(row: Sequence[str]) -> tuple:
 def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
           today: dt.date, existing_header: Optional[Sequence[str]] = None,
           zip_of=None, zip_lookup=None, email_of=None,
-          email_lookup=None) -> Dict[str, object]:
+          email_lookup=None, active_of=None, active_lookup=None) -> Dict[str, object]:
     """Kept-if-absent, replaced-if-present, aged-out past DAYS_KEPT by Order
     Date. Last Updated restamps only when the line's state changed. Notes
     carry by key. existing_header is the live tab's own header row: rows are
@@ -272,7 +297,9 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
     feed lines and `zip_lookup(phone, ban, dsi)` on carried rows still
     without one (ZipIndex.for_line / .lookup); a line neither can place
     keeps the zip the tab already had. `email_of(line)` / `email_lookup(dsi)`
-    do the same for Email (EmailIndex.for_line / .lookup)."""
+    do the same for Email (EmailIndex.for_line / .lookup), `active_of(line)` /
+    `active_lookup(phone)` for Activation Date (ZipIndex.active_for_line /
+    .active_date)."""
     stamp = _fmt(today)
     merged: "collections.OrderedDict[tuple, List[str]]" = collections.OrderedDict()
     for row in existing:
@@ -289,13 +316,15 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
                                               row[_COL["DSI #"]]) or "")
         if email_lookup and not str(row[_COL["Email"]]).strip():
             row[_COL["Email"]] = str(email_lookup(row[_COL["DSI #"]]) or "")
+        if active_lookup and not str(row[_COL["Activation Date"]]).strip():
+            row[_COL["Activation Date"]] = str(active_lookup(row[_COL["Phone #"]]) or "")
         if (row[_COL["Customer"]] or row[_COL["Wireless Order #"]]
                 or row[_COL["DSI #"]]):
             merged[_key(row)] = row
     oldest = today - dt.timedelta(days=DAYS_KEPT)
     added = changed = 0
     for line in lines:
-        fresh = line_row(line, stamp, zip_of, email_of)
+        fresh = line_row(line, stamp, zip_of, email_of, active_of)
         od = _parse_date(fresh[_COL["Order Date"]])
         if od and od < oldest:
             continue
@@ -307,6 +336,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
                 fresh[_COL["Zip"]] = prior[_COL["Zip"]]
             if not fresh[_COL["Email"]]:
                 fresh[_COL["Email"]] = prior[_COL["Email"]]
+            if not fresh[_COL["Activation Date"]]:
+                fresh[_COL["Activation Date"]] = prior[_COL["Activation Date"]]
             same = all(_norm(prior[_COL[c]]) == _norm(fresh[_COL[c]])
                        for c in _STATE_COLS)
             if same:
@@ -403,7 +434,8 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
          sheet_id: Optional[str] = None, log=print, zip_of=None,
-         zip_lookup=None, email_of=None, email_lookup=None) -> Dict[str, object]:
+         zip_lookup=None, email_of=None, email_lookup=None, active_of=None,
+         active_lookup=None) -> Dict[str, object]:
     """Merge today's feed lines into the tab and rewrite it."""
     from automations.recruiting_report.fill import _retry, open_by_key
     if TAB in PROTECTED_TABS:
@@ -414,7 +446,8 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     prior = _retry(lambda: ws.get_all_values())
     result = merge(prior[1:] if prior else [], lines, today=today,
                    existing_header=prior[0] if prior else None, zip_of=zip_of,
-                   zip_lookup=zip_lookup, email_of=email_of, email_lookup=email_lookup)
+                   zip_lookup=zip_lookup, email_of=email_of, email_lookup=email_lookup,
+                   active_of=active_of, active_lookup=active_lookup)
     rows = result["rows"]
     if not rows:
         raise RuntimeError("NDS Order Log merge produced no rows -- refusing to blank the tab")
@@ -493,7 +526,9 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
     return push(lines, today=today, log=log, zip_of=zips.for_line if zips else None,
                 zip_lookup=zips.lookup if zips else None,
                 email_of=emails.for_line if emails else None,
-                email_lookup=emails.lookup if emails else None)
+                email_lookup=emails.lookup if emails else None,
+                active_of=zips.active_for_line if zips else None,
+                active_lookup=zips.active_date if zips else None)
 
 
 def preview(today: Optional[dt.date] = None, log=print,
@@ -525,7 +560,9 @@ def preview(today: Optional[dt.date] = None, log=print,
                    zip_of=zips.for_line if zips else None,
                    zip_lookup=zips.lookup if zips else None,
                    email_of=emails.for_line if emails else None,
-                   email_lookup=emails.lookup if emails else None)
+                   email_lookup=emails.lookup if emails else None,
+                   active_of=zips.active_for_line if zips else None,
+                   active_lookup=zips.active_date if zips else None)
     rows = result["rows"]
     if not tab_ok:
         for r in rows:

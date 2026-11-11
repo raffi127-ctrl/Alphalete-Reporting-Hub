@@ -26,7 +26,8 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[21], "Delivered Message Sent")   # column V on the live tab (U until 11/11, T until 11/10, S until 11/9)
+        self.assertEqual(T.HEADERS[22], "Delivered Message Sent")   # column W on the live tab (U until 11/11, T until 11/10, S until 11/9)
+        self.assertEqual(T.HEADERS[T._COL["Delivered"] + 1], "Activation Date")   # 11/11: right after Delivered
         self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")        # the feed's "device" = Line Number cell
         self.assertEqual(r[T._COL["Device"]], "iPhone 16")            # the model, feed's "line_phone"
         self.assertEqual(r[T._COL["Plan"]], "Unlimited")
@@ -282,6 +283,50 @@ class ValidationTests(unittest.TestCase):
         self.assertGreaterEqual(dv[0]["range"]["endColumnIndex"], len(T.HEADERS))
         cols = {d["range"]["startColumnIndex"] for d in dv[1:]}
         self.assertEqual(cols, {T._COL["Being worked on"], T._COL["Delivered Message Sent"]})
+
+
+class ActivationDateTests(unittest.TestCase):
+    """11/11: the line's activation date comes off the Tableau export (DTR
+    Active Date by spe.TN) -- Tableau is what the paycheck follows; the
+    SaraPlus feed only says Active with no date."""
+
+    HDR = ["Customer Name", "Customer Zip Simple", "spe.TN", "spe.Account BAN",
+           "sp.SPM Number", "DTR Active Date", "DTR Status"]
+
+    def test_index_reads_dtr_active_date_by_phone(self):
+        zi = T.ZipIndex.from_rows(self.HDR, [
+            ["John Doe", "75060", "9453928474", "BAN9", "DSI123", "11/8/2026", "Posted"],
+            ["Jane Roe", "75061", "2145550000", "BAN1", "DSI1", "", "Pending"]])
+        self.assertEqual(zi.active_date("945-392-8474"), "11/08/2026")
+        self.assertEqual(zi.active_date("214-555-0000"), "")
+        self.assertEqual(zi.active_for_line(line()), "11/08/2026")
+
+    def test_fills_fresh_and_carried_rows_and_restamps(self):
+        zi = T.ZipIndex.from_rows(self.HDR, [
+            ["John Doe", "75060", "9453928474", "BAN9", "DSI123", "11/8/2026", "Posted"]])
+        first = T.merge([], [line()], today=TODAY, active_of=zi.active_for_line)
+        self.assertEqual(first["rows"][0][T._COL["Activation Date"]], "11/08/2026")
+        # a carried row without one gets it by its Phone #
+        prior = [list(r) for r in first["rows"]]
+        prior[0][T._COL["Activation Date"]] = ""
+        second = T.merge(prior, [], today=TODAY, active_lookup=zi.active_date)
+        self.assertEqual(second["rows"][0][T._COL["Activation Date"]], "11/08/2026")
+        # the date arriving is a state change: Last Updated restamps
+        prior[0][T._COL["Last Updated"]] = "10/20/2026"
+        third = T.merge(prior, [line()], today=TODAY, active_of=zi.active_for_line)
+        self.assertEqual(third["rows"][0][T._COL["Last Updated"]], "10/29/2026")
+        self.assertEqual(third["changed"], 1)
+        # no export today: what the tab has stays
+        prior[0][T._COL["Activation Date"]] = "11/01/2026"
+        fourth = T.merge(prior, [line()], today=TODAY)
+        self.assertEqual(fourth["rows"][0][T._COL["Activation Date"]], "11/01/2026")
+
+    def test_old_tab_without_the_column_remaps(self):
+        old_hdr = [h for h in T.HEADERS if h != "Activation Date"]
+        full = dict(zip(T.HEADERS, T.line_row(line(), "11/10/2026")))
+        out = T.merge([[full[h] for h in old_hdr]], [], today=TODAY, existing_header=old_hdr)
+        self.assertEqual(out["rows"][0][T._COL["Activation Date"]], "")
+        self.assertEqual(out["rows"][0][T._COL["Port Status"]], full["Port Status"])
 
 
 if __name__ == "__main__":
