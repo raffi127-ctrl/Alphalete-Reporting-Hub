@@ -140,17 +140,18 @@ def _parse_date(v: str) -> Optional[dt.date]:
 
 
 def delivered_by_date(row: Sequence[str], cols: Dict[str, int], *, today: dt.date) -> bool:
-    """A plausible Delivered DATE on a line that is still on the way: the date
-    parses, is on/after the Order Date (the swapped-column junk is years
-    earlier) and not after today, and the status is none of DONE_STATES."""
+    """A Delivered DATE on a line that is still on the way: the date parses
+    and is not after today, and the status is none of DONE_STATES. The date
+    is taken at face value even when it is nonsense (Jose Deleon's BYOD lines
+    read Delivered 3/17/2025 against a 10/26/2026 ship date) -- Carlos 11/11:
+    "assume it's the date that you see come up, and do whatever you would
+    normally do. If we haven't texted these people, we need to text them."
+    Only a date still in the future waits."""
     status = _cell(row, cols, "Line Status").lower()
     if status in DONE_STATES:
         return False
     dd = _parse_date(_cell(row, cols, "Delivered"))
-    if dd is None or dd > today:
-        return False
-    od = _parse_date(_cell(row, cols, "Order Date"))
-    return od is None or dd >= od
+    return dd is not None and dd <= today
 
 
 def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],

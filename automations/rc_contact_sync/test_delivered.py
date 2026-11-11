@@ -50,14 +50,19 @@ class PickTargets(unittest.TestCase):
         t = D.pick_targets(HDR, [row()], {}, today=TODAY)
         self.assertEqual(t[0]["lines"][0]["why"], "status")
 
+    def test_nonsense_delivered_date_is_taken_at_face_value(self):
+        # 11/11: Jose Deleon's lines read Delivered 3/17/2025 on a 10/26/2026
+        # ship -- Carlos: assume the date you see and text them anyway
+        rows = [row(**{"Line Status": "Shipped", "Delivered": "3/17/2025"})]
+        t = D.pick_targets(HDR, rows, {}, today=TODAY)
+        self.assertEqual(len(t), 1)
+        self.assertEqual(t[0]["lines"][0]["why"], "date")
+
     def test_delivered_date_never_fires_on_done_or_junk(self):
         # in use / gone / never shipped: the date alone must not text them
         for status in ("Active", "Disconnected", "Cancelled", "BYOD"):
             rows = [row(**{"Line Status": status, "Delivered": "10/28/2026"})]
             self.assertEqual(D.pick_targets(HDR, rows, {}, today=TODAY), [], status)
-        # the swapped-column junk (years before the order) on a Shipped line
-        rows = [row(**{"Line Status": "Shipped", "Delivered": "3/17/2025"})]
-        self.assertEqual(D.pick_targets(HDR, rows, {}, today=TODAY), [])
         # a date in the future, or no date at all, on a Shipped line
         for d in ("11/2/2026", "", "n/a"):
             rows = [row(**{"Line Status": "Shipped", "Delivered": d})]
