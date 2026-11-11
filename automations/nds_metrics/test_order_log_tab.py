@@ -263,6 +263,19 @@ class EmailColumnTests(unittest.TestCase):
         prior[0][T._COL["Email"]] = "kept@example.com"
         third = T.merge(prior, [line()], today=TODAY)
         self.assertEqual(third["rows"][0][T._COL["Email"]], "kept@example.com")
+        # 11/11: a KNOWN order's value replaces the tab's -- blank included --
+        # so a wrong address (the rep's) comes off; an unknown order keeps its own
+        blank = T.EmailIndex({"DSI123": ""})
+        self.assertTrue(blank.known("dsi123")); self.assertFalse(blank.known("DSI9"))
+        fourth = T.merge(prior, [line()], today=TODAY, email_of=blank.for_line,
+                         email_lookup=blank.lookup, email_known=blank.known)
+        self.assertEqual(fourth["rows"][0][T._COL["Email"]], "")
+        fifth = T.merge(prior, [], today=TODAY, email_lookup=blank.lookup, email_known=blank.known)
+        self.assertEqual(fifth["rows"][0][T._COL["Email"]], "")
+        other = T.EmailIndex({"DSI9": "x@example.com"})
+        sixth = T.merge(prior, [line()], today=TODAY, email_of=other.for_line,
+                        email_lookup=other.lookup, email_known=other.known)
+        self.assertEqual(sixth["rows"][0][T._COL["Email"]], "kept@example.com")
 
     def test_old_tab_without_email_column_remaps(self):
         old_hdr = [h for h in T.HEADERS if h != "Email"]

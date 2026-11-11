@@ -115,7 +115,9 @@ def wanted_orders(today: dt.date, cache: Dict[str, dict], *, only: Sequence[str]
         for d in keep - set(want):
             want[d] = {"customer": "", "order_date": ""}
         return want
-    return {d: v for d, v in want.items() if not (cache.get(d) or {}).get("email")}
+    # an order the grid showed WITHOUT an e-mail is not asked for again every
+    # morning (it is in the cache with email ""), only ones never seen
+    return {d: v for d, v in want.items() if d not in cache}
 
 
 def tab_orders_without_email(log=print) -> Dict[str, dict]:
@@ -261,8 +263,16 @@ def pick_email(found: List[dict], login_email: str = "") -> str:
 
 
 def _email_column(headers: Sequence[str]) -> Optional[int]:
-    for i, h in enumerate(headers):
-        if re.search(r"e-?mail", h or "", re.I):
+    """The CUSTOMER's e-mail column. The grid carries "User Email" (the rep
+    who placed the order) eighteen columns before "Email" (the customer);
+    the first harvest on 11/11 took the first match and put every rep's
+    address on their customers (Carlos: "thats the sales reps email")."""
+    norm = [_norm(h).lower() for h in headers]
+    for want in ("email", "e-mail", "customer email", "customer e-mail", "e-mail address", "email address"):
+        if want in norm:
+            return norm.index(want)
+    for i, h in enumerate(norm):
+        if re.search(r"e-?mail", h) and not re.search(r"user|rep|sales|dealer|agent|entered", h):
             return i
     return None
 
@@ -322,6 +332,7 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
             headers_logged = False
             combo_settable = None
             windows_run = 0
+            ecol_logged = False
             for start, end in wins:
                 if not remaining:
                     break
@@ -387,6 +398,10 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                         "shrink WINDOW_DAYS if this keeps happening)")
                 ecol = _email_column(headers)
                 id_cols = _id_columns(headers)
+                if not ecol_logged:
+                    log("[email] customer e-mail column: %s" % (
+                        ("%r (#%d)" % (headers[ecol], ecol + 1)) if ecol is not None else "none -- reading the card"))
+                    ecol_logged = True
                 hit_rows: List[Tuple[str, dict]] = []
                 for r in rows:
                     d = _row_dsi(r["cells"], id_cols, remaining)
@@ -406,13 +421,13 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                         email = card_email(ctx, page, r, cr.get("email", ""), log=log)
                         source = "card" if email else ""
                     cust = want.get(d, {}).get("customer", "")
+                    found[d] = {"email": email, "customer": cust, "source": source,
+                                "seen": today.isoformat()}
+                    remaining.discard(d)
                     if email:
-                        found[d] = {"email": email, "customer": cust, "source": source,
-                                    "seen": today.isoformat()}
-                        remaining.discard(d)
                         log("  %-14s %-26s %s  (%s)" % (d, cust[:26], email, source))
                     else:
-                        log("  %-14s %-26s NO E-MAIL on the card" % (d, cust[:26]))
+                        log("  %-14s %-26s NO E-MAIL on the order" % (d, cust[:26]))
         finally:
             ctx.close()
     if remaining:
@@ -482,9 +497,11 @@ def card_email(ctx, page, row: dict, login_email: str, log=print) -> str:
 # --- entry ----------------------------------------------------------------------
 
 def run(today: Optional[dt.date] = None, *, dry_run: bool = False, limit: Optional[int] = None,
-        only: Sequence[str] = (), headless: bool = True, log=print) -> int:
+        only: Sequence[str] = (), headless: bool = True, refresh: bool = False, log=print) -> int:
     today = today or dt.date.today()
-    cache = load_cache()
+    cache = {} if refresh else load_cache()
+    if refresh:
+        log("[email] --refresh: the cache is rebuilt from scratch and every order is read again")
     want = wanted_orders(today, cache, only=only, log=log)
     if not want:
         log("[email] every order already has an e-mail in %s (%d)" % (CACHE.name, len(cache)))
@@ -508,10 +525,13 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, default=None, help="only the first N wanted orders")
     ap.add_argument("--dsi", action="append", default=[], help="only this order (repeatable)")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--refresh", action="store_true",
+                    help="forget the cache and read every order again (a wrong column was read on 11/11)")
     ap.add_argument("--today", default=None, help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)
     today = dt.datetime.strptime(a.today, "%Y-%m-%d").date() if a.today else dt.date.today()
-    rc = run(today, dry_run=a.dry_run, limit=a.limit, only=a.dsi, headless=not a.headed)
+    rc = run(today, dry_run=a.dry_run, limit=a.limit, only=a.dsi, headless=not a.headed,
+             refresh=a.refresh)
     print("=== done ===", flush=True)
     return rc
 

@@ -134,13 +134,19 @@ class EmailIndex:
     off the SaraPlus customer card since 2026-11-11."""
 
     def __init__(self, by_dsi: dict):
-        self.by_dsi = {ZipIndex._digits(k): v for k, v in by_dsi.items() if v}
+        # every order the harvest saw, blank e-mail included: a known order's
+        # value REPLACES what the tab has (the 11/11 run put the reps' own
+        # addresses on 24 orders; the refresh has to take them back off)
+        self.by_dsi = {ZipIndex._digits(k): (v or "") for k, v in by_dsi.items()}
 
     def __len__(self):
-        return len(self.by_dsi)
+        return sum(1 for v in self.by_dsi.values() if v)
 
     def lookup(self, dsi="") -> str:
         return self.by_dsi.get(ZipIndex._digits(dsi), "")
+
+    def known(self, dsi="") -> bool:
+        return ZipIndex._digits(dsi) in self.by_dsi
 
     def for_line(self, line: dict) -> str:
         return self.lookup(line.get("dsi"))
@@ -290,7 +296,8 @@ def _key(row: Sequence[str]) -> tuple:
 def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
           today: dt.date, existing_header: Optional[Sequence[str]] = None,
           zip_of=None, zip_lookup=None, email_of=None,
-          email_lookup=None, active_of=None, active_lookup=None) -> Dict[str, object]:
+          email_lookup=None, email_known=None, active_of=None,
+          active_lookup=None) -> Dict[str, object]:
     """Kept-if-absent, replaced-if-present, aged-out past DAYS_KEPT by Order
     Date. Last Updated restamps only when the line's state changed. Notes
     carry by key. existing_header is the live tab's own header row: rows are
@@ -316,7 +323,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
             # column was added left 4 of 317 blank this way (11/10)
             row[_COL["Zip"]] = str(zip_lookup(row[_COL["Phone #"]], row[_COL["BAN"]],
                                               row[_COL["DSI #"]]) or "")
-        if email_lookup and not str(row[_COL["Email"]]).strip():
+        if email_lookup and (not str(row[_COL["Email"]]).strip()
+                             or (email_known and email_known(row[_COL["DSI #"]]))):
             row[_COL["Email"]] = str(email_lookup(row[_COL["DSI #"]]) or "")
         if active_lookup and not str(row[_COL["Activation Date"]]).strip():
             row[_COL["Activation Date"]] = str(active_lookup(row[_COL["Phone #"]]) or "")
@@ -340,7 +348,7 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         else:
             if not fresh[_COL["Zip"]]:
                 fresh[_COL["Zip"]] = prior[_COL["Zip"]]
-            if not fresh[_COL["Email"]]:
+            if not fresh[_COL["Email"]] and not (email_known and email_known(fresh[_COL["DSI #"]])):
                 fresh[_COL["Email"]] = prior[_COL["Email"]]
             if not fresh[_COL["Activation Date"]]:
                 fresh[_COL["Activation Date"]] = prior[_COL["Activation Date"]]
@@ -454,8 +462,8 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
          sheet_id: Optional[str] = None, log=print, zip_of=None,
-         zip_lookup=None, email_of=None, email_lookup=None, active_of=None,
-         active_lookup=None) -> Dict[str, object]:
+         zip_lookup=None, email_of=None, email_lookup=None, email_known=None,
+         active_of=None, active_lookup=None) -> Dict[str, object]:
     """Merge today's feed lines into the tab and rewrite it."""
     from automations.recruiting_report.fill import _retry, open_by_key
     if TAB in PROTECTED_TABS:
@@ -467,7 +475,7 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     result = merge(prior[1:] if prior else [], lines, today=today,
                    existing_header=prior[0] if prior else None, zip_of=zip_of,
                    zip_lookup=zip_lookup, email_of=email_of, email_lookup=email_lookup,
-                   active_of=active_of, active_lookup=active_lookup)
+                   email_known=email_known, active_of=active_of, active_lookup=active_lookup)
     rows = result["rows"]
     if not rows:
         raise RuntimeError("NDS Order Log merge produced no rows -- refusing to blank the tab")
@@ -547,6 +555,7 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
                 zip_lookup=zips.lookup if zips else None,
                 email_of=emails.for_line if emails else None,
                 email_lookup=emails.lookup if emails else None,
+                email_known=emails.known if emails else None,
                 active_of=zips.active_for_line if zips else None,
                 active_lookup=zips.active_date if zips else None)
 
@@ -581,6 +590,7 @@ def preview(today: Optional[dt.date] = None, log=print,
                    zip_lookup=zips.lookup if zips else None,
                    email_of=emails.for_line if emails else None,
                    email_lookup=emails.lookup if emails else None,
+                   email_known=emails.known if emails else None,
                    active_of=zips.active_for_line if zips else None,
                    active_lookup=zips.active_date if zips else None)
     rows = result["rows"]
