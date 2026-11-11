@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 57,
+  "confirmed_count": 58,
   "needs_review_count": 0,
   "skip_count": 37,
   "confirmed": [
@@ -433,6 +433,14 @@
       "as_company": "Ascend Elite Marketing, Inc.",
       "confidence": 1.0,
       "note": "tab added 2026-11-10 (Raf: 'he's recruiting under an app stream under me called Hasan'). Office 24279 sits under Rafael Hidalgo in AppStream; as_owner is on purpose Hasan's name (Tableau fallback), not Raf's, so Raf's numbers never land here. His own AppStream account 24337 (U-HasanSalame) has no access yet: switch office_id when the team migrates."
+    },
+    {
+      "sheet_tab": "Vincent Dodson",
+      "office_id": "24290",
+      "as_owner": "Vincent Dodson",
+      "as_company": "Relevant Specialized Connections, Inc.",
+      "confidence": 1.0,
+      "note": "tab added 2026-11-11 (Eve). He recruits under Raf's AppStream office \"Vincent's Funnel\" (24290) until he starts on his own account 24332 (U-VincentDodson, Relevant Specialized Connections, Inc.; access requested 11/11): switch office_id then. as_owner is on purpose Vincent's name (Tableau fallback), not Raf's, so Raf's numbers never land here."
     }
   ],
   "needs_review": [],
