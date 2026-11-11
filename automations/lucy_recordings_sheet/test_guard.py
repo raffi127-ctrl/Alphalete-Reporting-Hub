@@ -152,6 +152,9 @@ class YesterdayTest(unittest.TestCase):
         self.assertIn("*JD Mascorro* (1)", txt)
         self.assertIn(":x: " + DUPLICATE, txt)
         self.assertIn("*1 counted*", txt)
+        self.assertIn("1. Ana Lopez · 9:05 AM · score 5.0 :white_check_mark:", txt)
+        self.assertIn("2. Ana Lopez · 2:30 PM", txt)
+        self.assertNotIn(" min ·", txt)
 
 
 class ScopeTest(unittest.TestCase):

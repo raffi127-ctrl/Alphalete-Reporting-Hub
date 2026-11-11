@@ -1082,25 +1082,27 @@ def yesterday_text(day: str, rows: list) -> str:
     for r in rows:
         by_owner[r[2]].append(r)
     out = head
+    # Raf 2026-11-11 (on the first post): numbers instead of bullets, no
+    # length, name first then the time.
+    n = 0
     for own in sorted(by_owner, key=lambda o: (o == NO_OWNER, o)):
         rs = by_owner[own]
         out.append("")
         out.append("*%s* (%d)" % (own, sum(1 for r in rs if r[5] == COUNTED)))
         for r in rs:
-            bits = [r[0], r[1]]
-            if r[3] != "":
-                bits.append("%s min" % r[3])
+            n += 1
+            bits = [r[1], r[0]]
             if r[4] != "":
                 bits.append("score %s" % r[4])
             mark = ":white_check_mark:" if r[5] == COUNTED else ":x: " + r[5].replace("Not counted: ", "")
-            out.append("• %s %s" % (" · ".join(bits), mark))
+            out.append("%d. %s %s" % (n, " · ".join(bits), mark))
     out.append("")
     out.append("_Recordings sent twice, or under %d min, don't count. Missing one? Reply here "
                "with the rep's name and the time it was sent._" % (MIN_RECORDING_SECONDS // 60))
     return "\n".join(out)
 
 
-def post_yesterday(target: str, day: str, rows: list) -> None:
+def post_yesterday(target: str, day: str, rows: list, edit_ts: str = "") -> None:
     """Posts as Lucy: the Lucy Reporting USER token on purpose (no bot app on
     Lucy 1). target = a channel/DM id, or user ids (U..., comma separated):
     one = a 1-to-1 test DM, several = the group DM with those people."""
@@ -1109,6 +1111,12 @@ def post_yesterday(target: str, day: str, rows: list) -> None:
     channel = target
     if target.startswith(("U", "W")):
         channel = client.conversations_open(users=target)["channel"]["id"]
+    if edit_ts:
+        # Fix a list already in the DM in place - never a second post.
+        resp = client.chat_update(channel=channel, ts=edit_ts, text=yesterday_text(day, rows))
+        log("edited yesterday's list in place (%d recording(s)) ts=%s ok=%s"
+            % (len(rows), edit_ts, resp.get("ok")))
+        return
     resp = client.chat_postMessage(channel=channel, text=yesterday_text(day, rows),
                                    unfurl_links=False)
     log("posted yesterday's list (%d recording(s)) to %s ts=%s" % (len(rows), target, resp.get("ts")))
@@ -1135,6 +1143,9 @@ def main(argv=None) -> int:
     ap.add_argument("--yesterday-slack", nargs="?", const=YESTERDAY_DM,
                     help="also post who sent a recording yesterday, as Lucy (default: Raf's "
                          "group DM; pass a user id U... to test in a 1-to-1 DM)")
+    ap.add_argument("--yesterday-edit", metavar="TS",
+                    help="with --yesterday-slack: rewrite the list already posted at this ts "
+                         "instead of posting a new one")
     ap.add_argument("--day", help="with --yesterday-slack / --dry-run: list this day (YYYY-MM-DD) instead of yesterday")
     a = ap.parse_args(argv)
 
@@ -1194,7 +1205,7 @@ def main(argv=None) -> int:
         # Before the sheet write: a 429 on the sheet must not cost the group
         # their morning list.
         try:
-            post_yesterday(a.yesterday_slack, day, y_rows)
+            post_yesterday(a.yesterday_slack, day, y_rows, a.yesterday_edit or "")
         except Exception as e:  # noqa: BLE001
             log("yesterday list NOT posted: %s" % e)
 
