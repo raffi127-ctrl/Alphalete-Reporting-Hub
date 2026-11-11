@@ -256,7 +256,7 @@ class PickOfficeTest(unittest.TestCase):
 BOARD = grid({"Yahir Uriel Lopez": "0", "Nick Smedra": "2", "Aaron De La Torre": "",
               "Andrew De La Torre": "1", "Diego Borres": "4", "Jacob Ortega": "X",
               "Sebastian Avellaneda": "F", "Nico Murrugarra": "", "Will Bautista": "",
-              "Jose Manuel Pimentel Lugo": "3"})
+              "Jose Manuel Pimentel Lugo": "3", "Stefany Zaldivar": ""})
 ROWS = R.campaign_rows(BOARD, "B2B")
 
 
@@ -268,6 +268,17 @@ class NameMatchingTest(unittest.TestCase):
                            ("JOSE MANUEL PIMENTEL LUGO", "jose manuel pimentel lugo"),
                            ("Sebastian Avellaneda", "sebastian avellaneda")]:
             self.assertEqual(run.board_key(sara, ROWS), want, sara)
+
+    def test_first_plus_paternal_surname_reaches_the_board(self):
+        # Tue 11/10: SaraPlus "STEFANY MICHELLE ZALDIVAR JUSTINIANO" (6 NL) vs
+        # the board's "Stefany Zaldivar" -- first + last token misses, first +
+        # second-to-last lands. Aaron / Andrew De La Torre must still split.
+        self.assertEqual(run.board_key("STEFANY MICHELLE ZALDIVAR JUSTINIANO", ROWS),
+                         "stefany zaldivar")
+        self.assertIn("stefany zaldivar", run.candidates("STEFANY MICHELLE ZALDIVAR JUSTINIANO"))
+        self.assertEqual(run.board_key("AARON DE LA TORRE", ROWS), "aaron de la torre")
+        self.assertEqual(run.board_key("ANDREW DE LA TORRE", ROWS), "andrew de la torre")
+        self.assertIsNone(run.board_key("SOMEONE NEW HERE", ROWS))
 
     def test_aliases_for_the_names_the_rule_cannot_reach(self):
         self.assertEqual(run.board_key("NICHOLAS SMEDRA", ROWS), "nick smedra")

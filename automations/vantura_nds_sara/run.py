@@ -695,6 +695,17 @@ def candidates(sara_name: str) -> List[str]:
     legal = _legal_first(name)
     if legal and legal != R._norm(name):
         out.append(legal)
+    # First + PATERNAL surname: SaraPlus carries the full legal name and the
+    # board keeps the first surname -- "STEFANY MICHELLE ZALDIVAR JUSTINIANO"
+    # vs "Stefany Zaldivar" -- so first + LAST token misses and her 6 units of
+    # Tue 11/10 landed nowhere (Carlos 11/11: "showing 30 but should add up
+    # to 38"; SaraPlus had 36, hers were the 6). Tried after the full forms.
+    for cand in (R._norm(name), legal):
+        parts = cand.split()
+        if len(parts) >= 3:
+            short = f"{parts[0]} {parts[-2]}"
+            if short not in out:
+                out.append(short)
     return out
 
 
