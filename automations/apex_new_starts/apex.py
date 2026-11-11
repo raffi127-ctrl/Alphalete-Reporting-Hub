@@ -53,6 +53,18 @@ ROSTER_URL = "https://apex.herbjoyent.com/roster"
 # Our own browser profile, not a copy of anybody's. Gitignored by the
 # .*_profile rule, same as the other patchright profiles in this repo.
 PROFILE_DIR = Path(__file__).resolve().parent / ".apex_profile"
+
+# THE SIGN-IN, KEPT BETWEEN RUNS. Apex's auth cookie is a SESSION cookie: it
+# dies when the browser closes, so a persistent profile is not enough and every
+# run came up logged out. Megan, 2026-11-10, after signing in five times in one
+# evening: "I can't keep signing in." An hourly unattended run on an ICD's
+# machine could never have worked at all.
+#
+# Same answer the rest of the fleet already uses for AppStream and OwnerVille:
+# save the storage state, put it back next time. Kept beside the other ECO
+# credentials rather than in the repo -- a `git pull` replaces the repo copy,
+# and the ICD app may be installed where the user cannot write.
+STATE_PATH = Path.home() / ".config" / "lucy-reports" / "apex-state.json"
 SCREEN_PATH = Path(__file__).resolve().parent / "apex_screen.json"
 
 # The labels a person reads beside each box. ALL of the stage-one wordings are
@@ -338,15 +350,19 @@ class ApexSession:
                     "time). Stop that run with Ctrl+C and close its window, "
                     "then start this one again. Nothing was typed.")
             raise
+        self._restore_state()
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
         self.page.goto(ROSTER_URL, wait_until="domcontentloaded", timeout=60000)
         self.page.wait_for_timeout(2500)
         return self
 
     def __exit__(self, *exc):
-        # Closed gracefully so Chrome writes what it can. The session cookie is
-        # non-persistent either way; the remembered-device one is not, and that
-        # is the part worth keeping.
+        # Closed gracefully so Chrome writes what it can -- and the session
+        # cookie, which Chrome will NOT write, is saved separately.
+        try:
+            self._save_state()
+        except Exception:      # noqa: BLE001 — never fail a run over the cache
+            pass
         try:
             if self.ctx:
                 self.ctx.close()
@@ -400,6 +416,52 @@ class ApexSession:
         a fresh sign-in on 2026-11-10 went password -> 2FA -> change-password.
         """
         return bool(_PW_CHANGE.search((self.page.url or "").lower()))
+
+    def _restore_state(self) -> None:
+        """Put a saved sign-in back, if there is one.
+
+        Cookies only: localStorage is per-origin and Chrome already keeps it in
+        the profile. A cookie that has expired is handed over anyway and simply
+        does not work -- Apex then shows the login page and the usual wait
+        takes over, which is the right outcome and needs no check here.
+        """
+        try:
+            body = json.loads(STATE_PATH.read_text())
+        except Exception:      # noqa: BLE001 — no state yet, or unreadable
+            return
+        cookies = body.get("cookies") or []
+        if not cookies:
+            return
+        try:
+            self.ctx.add_cookies(cookies)
+            self.log("  (restored a saved Apex sign-in — %d cookie(s))"
+                     % len(cookies))
+        except Exception as e:  # noqa: BLE001
+            self.log("  (saved Apex sign-in could not be restored: %s)"
+                     % type(e).__name__)
+
+    def _save_state(self) -> None:
+        """Keep this sign-in for the next run. Only when there IS one.
+
+        Saving a logged-out state would overwrite a good one with nothing, so
+        the page has to be somewhere real first -- the standing
+        change-password prompt counts, since that is where a finished sign-in
+        lands.
+        """
+        if not self.ctx or not self.page:
+            return
+        if not self.signed_in():
+            return
+        state = self.ctx.storage_state()
+        if not (state.get("cookies") or []):
+            return
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        STATE_PATH.write_text(json.dumps({"cookies": state["cookies"]}))
+        try:
+            STATE_PATH.chmod(0o600)   # it IS the sign-in; owner only
+        except OSError:
+            pass
+        self.log("  (saved this Apex sign-in for next time)")
 
     def _adopt_signed_in_page(self) -> bool:
         """Follow the sign-in to whichever TAB it finished in.

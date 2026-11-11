@@ -295,3 +295,50 @@ def test_the_run_follows_the_sign_in_into_another_tab():
     assert "ctx.pages" in src
     assert "self.page = page" in src
     assert "_adopt_signed_in_page" in inspect.getsource(AX.ApexSession.require_login)
+
+
+# --------------------------- the sign-in survives the browser closing
+
+def test_the_sign_in_is_saved_outside_the_repo():
+    """A `git pull` replaces the repo copy, and the ICD app may be installed
+    where the user cannot write."""
+    from automations.apex_new_starts import apex as AX
+    assert ".config" in str(AX.STATE_PATH) and "lucy-reports" in str(AX.STATE_PATH)
+    repo = str(__import__("pathlib").Path(AX.__file__).resolve().parents[2])
+    assert not str(AX.STATE_PATH).startswith(repo)
+
+
+def test_a_logged_out_session_never_overwrites_a_good_one():
+    """Saving on the way out of a failed run would throw away the sign-in the
+    previous run earned."""
+    from automations.apex_new_starts import apex as AX
+    src = inspect.getsource(AX.ApexSession._save_state)
+    assert "if not self.signed_in():" in src
+    assert "return" in src
+
+
+def test_the_saved_sign_in_is_owner_only():
+    from automations.apex_new_starts import apex as AX
+    assert "chmod(0o600)" in inspect.getsource(AX.ApexSession._save_state)
+
+
+def test_it_is_restored_before_the_first_page_load():
+    """Restored after the goto, the first page would still be the login one."""
+    from automations.apex_new_starts import apex as AX
+    src = inspect.getsource(AX.ApexSession.__enter__)
+    assert "_restore_state" in src
+    assert src.index("_restore_state") < src.index("goto(ROSTER_URL")
+
+
+def test_a_broken_state_file_is_not_fatal():
+    """No state yet is the normal first run."""
+    from automations.apex_new_starts import apex as AX
+    src = inspect.getsource(AX.ApexSession._restore_state)
+    assert "except Exception" in src and "return" in src
+
+
+def test_saving_never_fails_the_run():
+    from automations.apex_new_starts import apex as AX
+    src = inspect.getsource(AX.ApexSession.__exit__)
+    assert "_save_state" in src
+    assert "except Exception" in src
