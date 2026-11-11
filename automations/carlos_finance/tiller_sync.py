@@ -135,7 +135,17 @@ def read_ledger(svc) -> list[list]:
     return [r + [""] * (12 - len(r)) for r in v[1:] if r and r[0] != ""]
 
 
-def build_rows(ledger: list[list], tiller: list[dict]) -> tuple[list[list], list[list]]:
+
+def security_payouts(svc) -> list[tuple[int, float]]:
+    """[(date serial, amount)] of every 'Payout to bank' row on the Security Ledger tab (amounts positive)."""
+    try:
+        rows = svc.values().get(spreadsheetId=PNL, range="'Security Ledger'!A2:E", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    except Exception as e:  # noqa: BLE001
+        log(f"security payouts unavailable ({str(e)[:80]}); split by size only")
+        return []
+    return [(int(r[0]), -float(r[4])) for r in rows if len(r) > 4 and r[2] == "Payout to bank" and isinstance(r[0], (int, float)) and isinstance(r[4], (int, float))]
+
+def build_rows(ledger: list[list], tiller: list[dict], svc=None) -> tuple[list[list], list[list]]:
     have = {str(r[10]) for r in ledger}
     new = []
     for t in tiller:
@@ -146,14 +156,21 @@ def build_rows(ledger: list[list], tiller: list[dict]) -> tuple[list[list], list
         new.append([ser(t["date"]), ser(C.week_end(t["date"])), t["date"].strftime("%Y-%m"), name, "", t["desc"][:80], t["amt"], cat, "", "", t["id"], t["full"][:120]])
         have.add(t["id"])
     rows = [list(r[:12]) for r in ledger] + new
-    # SCI weekly split, only in weeks that received new rows
+    # SCI weekly split, only in weeks that received new rows. A deposit that matches a Security-ledger payout
+    # (same amount within 5 days) is a payout even when it is the largest deposit that week (2026-10-20: a $30k
+    # payout landed two days before the $20k sales deposit and was tagged as sales).
     touched = {r[1] for r in new}
+    payouts = security_payouts(svc) if (touched and svc is not None) else []
     for wk in touched:
         sci = [r for r in rows if r[1] == wk and r[3] == BIZ_CHK and r[7] in (SALES, SEC_XFER) and isinstance(r[6], (int, float)) and r[6] > 0
                and "FEDWIRE" not in str(r[11]).upper()]
-        if sci:
-            top = max(sci, key=lambda r: r[6])
-            for r in sci:
+        matched = [r for r in sci if any(abs(p_amt - r[6]) <= 15 and abs(p_day - r[0]) <= 5 for p_day, p_amt in payouts)]
+        rest = [r for r in sci if r not in matched]
+        for r in matched:
+            r[7] = SEC_XFER
+        if rest:
+            top = max(rest, key=lambda r: r[6])
+            for r in rest:
                 r[7] = SALES if r is top else SEC_XFER
     # derived fields for every row (manual category edits flow through)
     for r in rows:
@@ -265,7 +282,7 @@ def main(argv=None) -> int:
     svc = _svc()
     tiller = read_tiller(svc)
     ledger = read_ledger(svc)
-    rows, new = build_rows(ledger, tiller)
+    rows, new = build_rows(ledger, tiller, svc)
     log(f"Tiller {len(tiller)} txns (since {START}); Ledger had {len(ledger)}; new {len(new)}")
     if new:
         dts = [unser(r[0]) for r in new]
