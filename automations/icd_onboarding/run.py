@@ -26,6 +26,15 @@ is built on.
 WHERE IT RUNS. The office's own machine, which holds its own logins. Reading
 one office's calendar from another office's session is the thing this report
 exists to avoid.
+
+FOUR SOURCES, AND NO FIFTH. OwnerVille, ApplicantStream, Blue Ink, Apex (Megan,
+2026-11-10: "we need to function off of OV / AS / Blueink / Apex ONLY moving
+forward -- we generate the OBCL"). An ICD's ECO machine holds those four logins
+and nothing else, so anything reading a fifth source works for Alphalete and
+silently produces nothing for the other ~52 offices -- the sales board above
+all, which is Alphalete's own. This board is an OUTPUT of the four, and where
+they hold nothing (Classroom, Gender) it carries a column a person fills rather
+than a read of somewhere else.
 """
 from __future__ import annotations
 
