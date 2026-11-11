@@ -1711,6 +1711,18 @@ def build_customer_churn(cols, crew, today, log=print) -> Path:
 # here 2026-11-09 (preview DM'd) and released 2026-11-10 (Carlos: "you didnt
 # post the churn screenshot this morning") — it posts daily now.
 HELD_FROM_THREAD = {"override_board"}
+# Carlos 2026-11-11 ("I just don't like this order log in general that gets
+# sent out. Let's go ahead and just cancel it"): the crew's Order Log
+# workbook is neither built nor posted any more. Its builder stays for a
+# one-off preview (`--only order_log --dm U...`); never the thread. The
+# 'NDS Order Log' TAB on the Vantura board is a different thing and still
+# refreshes every morning (order_log_tab.refresh).
+RETIRED = {"order_log"}
+
+
+def thread_sections():
+    """The sections the live thread lists and posts."""
+    return [sec for sec in SECTIONS if sec[0] not in HELD_FROM_THREAD | RETIRED]
 
 SECTIONS = [
     ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
@@ -1780,17 +1792,14 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         header = f"NDS Metrics — {today.strftime('%B %d, %Y')}"
         ts = client.chat_postMessage(channel=CHANNEL[1], text=header)["ts"]
         contents = "\n".join(f"{emoji} {title}"
-                             for _id, emoji, title, _fn in SECTIONS
-                             if _id not in HELD_FROM_THREAD)
+                             for _id, emoji, title, _fn in thread_sections())
         client.chat_postMessage(channel=CHANNEL[1], thread_ts=ts,
                                 text="In this thread:\n" + contents)
         state = {"ts": ts, "posted": []}
         log(f"[nds] opened thread {ts} in {CHANNEL[0]}")
         from automations.shared.slack_metrics_post import pin_message
         pin_message(client, CHANNEL[1], ts, log=log)
-    for (sid, emoji, title, _fn) in SECTIONS:
-        if sid in HELD_FROM_THREAD:
-            continue
+    for (sid, emoji, title, _fn) in thread_sections():
         path = artifacts.get(sid)
         if not path or (sid in state["posted"] and not force):
             continue
@@ -1970,6 +1979,8 @@ def main(argv=None) -> int:
     for sid, _e, _t, fn in SECTIONS:
         if only and sid not in only:
             continue
+        if sid in RETIRED and not only:
+            continue                      # cancelled; built only when named by --only
         try:
             artifacts[sid] = fn(cols, crew, today)
         except Exception as e:  # noqa: BLE001 — one board never sinks the rest

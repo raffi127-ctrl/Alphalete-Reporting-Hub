@@ -54,10 +54,21 @@ DAYS_KEPT = 60
 # only flips a line to Active with no date; the Tableau NDS-SN export carries
 # DTR Active Date per line (spe.TN), so it comes from there by the line's phone
 # number (ZipIndex.active_date). Delivered Message Sent is W now.
-HEADERS = ("Week Ending", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
+# "Pay Period" at B since 2026-11-11 pm (Carlos: "to the right of column A, let's
+# add in a pay period column ... anything cancelled or disconnected, label it;
+# pending, put pending; if it's activated, you know the activation date, add
+# the pay period"): Cancelled / Disconnected by the feed's Line Status, else
+# the Sun-Sat activation week + its Friday pay date off this row's Activation
+# Date (Tableau's DTR Active Date, the column above), else Pending -- the same
+# Sun-Sat / Friday rule as the board's Pay Period reference tab. Tableau's
+# export carries no pay-period field (probed 11/11), so it is computed.
+# Everything after Week Ending moved one column right (Delivered Message Sent
+# is X, was W); every reader resolves by header.
+HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
            "Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
            "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
+_LEAD = 2                       # columns in front of the feed's own row shape (Week Ending, Pay Period)
 # Carlos's own columns: typed by hand (or, for column S, by rc_contact_sync.delivered),
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
@@ -118,14 +129,49 @@ def line_row(line: dict, stamp: str, zip_of=None, email_of=None, active_of=None)
     model = html.unescape(str(device_model(line) or "")).strip()
     zip_code = str((zip_of(line) if zip_of else "") or "").strip()
     email = str((email_of(line) if email_of else "") or "").strip()
-    i_zip = _COL["Zip"] - 1              # core has no Week Ending in front
+    i_zip = _COL["Zip"] - _LEAD          # core has no Week Ending / Pay Period in front
     core = core[:i_zip] + [zip_code, email] + core[i_zip:]
-    i_dev = _COL["Device"] - 1
+    i_dev = _COL["Device"] - _LEAD
     core = core[:i_dev] + [model] + core[i_dev:]
     act = str((active_of(line) if active_of else "") or "").strip()
-    i_act = _COL["Activation Date"] - 1
+    i_act = _COL["Activation Date"] - _LEAD
     core = core[:i_act] + [act] + core[i_act:]
-    return [_fmt(week_ending_sunday(od)) if od else ""] + core + [stamp] + [""] * len(CARRIED)
+    pay = pay_period_for(line.get("line_status"), _parse_date(act))
+    return ([_fmt(week_ending_sunday(od)) if od else "", pay] + core + [stamp]
+            + [""] * len(CARRIED))
+
+
+PENDING = "Pending"
+
+
+def pay_week_label(d: dt.date) -> str:
+    """The Sun-Sat activation week d falls in and its Friday pay date, the
+    way the order-log workbook banded its rep tabs: '11/1-11/7 • Paid 11/13'
+    (automations.shared.pay_period rule: paid the Friday after the Saturday)."""
+    from automations.shared.pay_period import week_bounds
+    a, b, c = week_bounds(d)
+    return f"{a.month}/{a.day}-{b.month}/{b.day} • Paid {c.month}/{c.day}"
+
+
+def is_pay_week(s) -> bool:
+    return "Paid " in str(s or "")
+
+
+def pay_period_for(status, activation: Optional[dt.date], prior: str = "") -> str:
+    """The Pay Period cell: Cancelled / Disconnected by the feed's Line
+    Status, else the activation week off the row's Activation Date, else the
+    week the tab already showed (an export that can't place the line that
+    morning), else Pending."""
+    s = _norm(status)
+    if s == "disconnected":
+        return "Disconnected"
+    if s in ("cancelled", "canceled"):
+        return "Cancelled"
+    if activation:
+        return pay_week_label(activation)
+    if is_pay_week(prior):
+        return str(prior).strip()
+    return PENDING
 
 
 class EmailIndex:
@@ -367,6 +413,11 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         if od and od < oldest:
             aged += 1
             continue
+        # Pay Period follows the row's settled Line Status + Activation Date
+        # (fresh or carried alike), never the feed row alone
+        row[_COL["Pay Period"]] = pay_period_for(row[_COL["Line Status"]],
+                                                 _parse_date(row[_COL["Activation Date"]]),
+                                                 prior=row[_COL["Pay Period"]])
         kept.append(row)
     kept.sort(key=lambda r: (
         -(_parse_date(r[_COL["Order Date"]]) or dt.date.min).toordinal(),
@@ -439,7 +490,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
                                                          "startIndex": 0, "endIndex": n_cols}}})
     for name, px in (("Notes", 220), ("Being worked on", 130), ("Delivered Message Sent", 150),
                      ("Customer", 190), ("Rep", 190), ("Device", 170),
-                     ("Email", 210)):
+                     ("Email", 210), ("Pay Period", 185)):
         c = _COL[name]
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})

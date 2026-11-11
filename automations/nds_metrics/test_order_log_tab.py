@@ -26,14 +26,16 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[22], "Delivered Message Sent")   # column W on the live tab (U until 11/11, T until 11/10, S until 11/9)
+        self.assertEqual(T.HEADERS[23], "Delivered Message Sent")   # column X on the live tab (W earlier on 11/11, U until 11/11, T until 11/10, S until 11/9)
+        self.assertEqual(T.HEADERS[1], "Pay Period")                  # 11/11 pm: column B
+        self.assertEqual(r[T._COL["Pay Period"]], "Pending")          # Shipped, no activation date -> Pending
         self.assertEqual(T.HEADERS[T._COL["Delivered"] + 1], "Activation Date")   # 11/11: right after Delivered
         self.assertEqual(r[T._COL["Phone #"]], "945-392-8474")        # the feed's "device" = Line Number cell
         self.assertEqual(r[T._COL["Device"]], "iPhone 16")            # the model, feed's "line_phone"
         self.assertEqual(r[T._COL["Plan"]], "Unlimited")
         self.assertEqual(r[T._COL["Zip"]], "")                        # no index given -> blank
-        self.assertEqual(T.HEADERS[3], "Zip")                         # right after Customer
-        self.assertEqual(T.HEADERS[4], "Email")                       # 11/11: right after Zip
+        self.assertEqual(T.HEADERS[4], "Zip")                         # right after Customer
+        self.assertEqual(T.HEADERS[5], "Email")                       # 11/11: right after Zip
         self.assertEqual(r[T._COL["Customer"]], "John Doe")
         self.assertEqual(r[T._COL["Order Date"]], "10/24/2026")
 
@@ -372,3 +374,51 @@ class DateSpellingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PayPeriod(unittest.TestCase):
+    """2026-11-11 pm: column B. Cancelled / Disconnected by status, else the
+    activation week + Friday pay date off the row's Activation Date, else
+    Pending."""
+
+    def test_rules(self):
+        act = dt.date(2026, 11, 3)                       # Tue -> week 11/1-11/7, paid Fri 11/13
+        self.assertEqual(T.pay_period_for("Active", act), "11/1-11/7 • Paid 11/13")
+        self.assertEqual(T.pay_period_for("Shipped", None), "Pending")
+        self.assertEqual(T.pay_period_for("Active", None), "Pending")           # active on the feed, not posted yet
+        self.assertEqual(T.pay_period_for("Disconnected", act), "Disconnected")
+        self.assertEqual(T.pay_period_for("Cancelled", act), "Cancelled")
+        self.assertEqual(T.pay_period_for("Canceled", None), "Cancelled")
+        self.assertEqual(T.pay_period_for("Active", None, prior="11/1-11/7 • Paid 11/13"),
+                         "11/1-11/7 • Paid 11/13")                              # export lag: keep the week
+        self.assertEqual(T.pay_period_for("Active", None, prior="Pending"), "Pending")
+        self.assertEqual(T.pay_week_label(dt.date(2026, 12, 30)), "12/27-1/2 • Paid 1/8")
+
+    def test_fresh_carried_and_relabelled_rows(self):
+        active_of = lambda l: "11/3/2026"  # noqa: E731 -- Tableau placed the line
+        first = T.merge([], [line(line_status="Active")], today=TODAY, active_of=active_of)
+        row = first["rows"][0]
+        self.assertEqual(row[T._COL["Pay Period"]], "11/1-11/7 • Paid 11/13")
+        # next day the export cannot place the line: Activation Date carries, so does the week
+        second = T.merge(first["rows"], [line(line_status="Active")], today=TODAY + dt.timedelta(days=1))
+        self.assertEqual(second["rows"][0][T._COL["Pay Period"]], "11/1-11/7 • Paid 11/13")
+        # the feed drops the line (carried row): still labelled off its own cells
+        carried = T.merge(second["rows"], [], today=TODAY + dt.timedelta(days=2))
+        self.assertEqual(carried["rows"][0][T._COL["Pay Period"]], "11/1-11/7 • Paid 11/13")
+        # cancelled / disconnected win even though the line had a week
+        third = T.merge(first["rows"], [line(line_status="Cancelled")], today=TODAY + dt.timedelta(days=1), active_of=active_of)
+        self.assertEqual(third["rows"][0][T._COL["Pay Period"]], "Cancelled")
+        fourth = T.merge(first["rows"], [line(line_status="Disconnected")], today=TODAY + dt.timedelta(days=1))
+        self.assertEqual(fourth["rows"][0][T._COL["Pay Period"]], "Disconnected")
+        # a shipped line with no activation date is Pending
+        fifth = T.merge([], [line(line_status="Shipped")], today=TODAY, active_of=lambda l: "")
+        self.assertEqual(fifth["rows"][0][T._COL["Pay Period"]], "Pending")
+
+    def test_old_tab_without_the_column_gets_it(self):
+        old_hdr = [h for h in T.HEADERS if h != "Pay Period"]
+        old_row = [c for h, c in zip(T.HEADERS, T.line_row(line(), "10/20/2026", active_of=lambda l: "10/21/2026"))
+                   if h != "Pay Period"]
+        out = T.merge([old_row], [], today=TODAY, existing_header=old_hdr)
+        self.assertEqual(out["rows"][0][T._COL["Pay Period"]], "10/18-10/24 • Paid 10/30")
+        self.assertEqual(out["rows"][0][T._COL["Customer"]], "John Doe")
+
