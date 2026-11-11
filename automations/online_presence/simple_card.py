@@ -289,7 +289,7 @@ def posts_line(p, now: dt.datetime) -> Dict:
 # 2026-11-10: "this should just say what it is"). The to-do list says what
 # to DO; this says what Lucy found.
 PROBLEM = {
-    "website link is secure (https)": "Your website link on {site} doesn't start with https://",
+    "website link is secure (https)": "Your website link on {site} is missing the \"s\" in https://, so it may not open",
     "address": "The address on {site} doesn't match yours",
     "phone": "The phone number on {site} is different from yours",
     "website": "The website link on {site} is wrong",
