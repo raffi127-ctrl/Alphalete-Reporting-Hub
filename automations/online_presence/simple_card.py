@@ -357,6 +357,34 @@ def todo(lines: Dict, review_link: str = "") -> List[Dict]:
 
 
 # ---- last week, for the lines Lucy can't rebuild from dates ------------------------
+# ONE SCORE OUT OF 100 (Megan 2026-11-10: "this should be some type of score
+# with a WOW then line graph of their score"). Four parts, 25 points each, so
+# every card on the page shows where its points went:
+#   Google reviews  15 for the rating (3.0★ = 0 ... 5.0★ = 15) + 10 for new
+#                   reviews this week (3 or more = all 10)
+#   Google search   15 for your website's spot (#1 15, #2 12, #3 9, #4-5 6,
+#                   lower or missing 0) + 10 when no negative result is on
+#                   page 1 (5 when it's below #5)
+#   Posts           3 or more posts this week = all 25
+#   Your info       25, minus 8 for each thing that doesn't match
+# A part Lucy couldn't check scores 0 and says so -- never a free pass.
+def score(lines: Dict) -> Tuple[int, Dict[str, int]]:
+    g, s, po, inf = lines["google"], lines["search"], lines["posts"], lines["info"]
+    parts = {}
+    avg = g.get("avg")
+    parts["google"] = round((max(0.0, min(1.0, (avg - 3) / 2)) * 15 if avg else 0)
+                            + min(g.get("new") or 0, 3) / 3 * 10)
+    if s.get("color") == GREY:
+        parts["search"] = 0
+    else:
+        own, neg = s.get("own"), s.get("neg")
+        spot = {1: 15, 2: 12, 3: 9, 4: 6, 5: 6}.get(own or 0, 0)
+        parts["search"] = spot + (10 if not neg else 5 if neg > 5 else 0)
+    parts["posts"] = round(min(po.get("n") or 0, 3) / 3 * 25)
+    parts["info"] = 0 if inf.get("color") == GREY else max(0, 25 - 8 * len(inf.get("problems") or []))
+    return sum(parts.values()), parts
+
+
 def _history(p) -> Dict:
     import json
     try:
@@ -373,7 +401,8 @@ def record(p, card: Dict, now: Optional[dt.datetime] = None) -> None:
     h = _history(p)
     L = card["lines"]
     h[now.date().isoformat()] = {"own": L["search"].get("own"), "neg": L["search"].get("neg"),
-                                 "fixes": len(L["info"].get("fixes", []))}
+                                 "fixes": len(L["info"].get("fixes", [])),
+                                 "score": card.get("score")}
     f = p.path("weekly_card_history.json")
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(dict(sorted(h.items())[-12:]), indent=2))
@@ -470,10 +499,12 @@ def chart_svg(c: Dict, w: int = 330, h: int = 150) -> str:
     if not vals:
         return ""
     lo, hi = min(vals), max(vals)
-    if hi == lo:
+    if c.get("range"):
+        lo, hi = c["range"]                            # e.g. the score: always 0-100
+    elif hi == lo:
         pad = 1 if lo >= 1 else 0.1
         lo, hi = lo - pad, hi + pad
-    if c.get("fmt", "").startswith("{:.0f}") and lo > 0:
+    if not c.get("range") and c.get("fmt", "").startswith("{:.0f}") and lo > 0:
         lo = 0                                         # counts sit on zero
     L, R, T, B = 14, 54, 26, 30
     pw, ph = w - L - R, h - T - B
@@ -689,6 +720,42 @@ def seo_ideas(lines: Dict, todo_items: List[Dict], n: int = 3) -> List[Dict]:
     return out
 
 
+def _score_block(p, lines: Dict, now: dt.datetime, prog: List[Dict]) -> Dict:
+    """This week's score, last week's, and the line of weeks for the graph.
+
+    Saved Fridays win. Until there are enough of them, the earlier weeks are
+    worked out from what has dates -- the Google rating then, the new reviews
+    and posts that week -- with this week's search + info standing in for the
+    parts that can't be rebuilt (the card says so)."""
+    total, parts = score(lines)
+    hist = {k: v.get("score") for k, v in _history(p).items()
+            if v.get("score") is not None and k < now.date().isoformat()}
+    prev = hist[max(hist)] if hist else None
+    by = {c["title"]: c["points"] for c in prog}
+    rating = by.get("⭐ Google rating") or []
+    newc = by.get("💬 New reviews each week") or []
+    posts = by.get("📸 Posts each week") or []
+    pts, estimated = [], False
+    for i, (lab, _) in enumerate(posts[:-1]):            # the weeks before this one
+        end = now - dt.timedelta(days=7 * (len(posts) - 1 - i))
+        saved = next((v for k, v in hist.items() if abs((dt.date.fromisoformat(k) - end.date()).days) <= 3), None)
+        if saved is not None:
+            pts.append((lab, saved))
+            continue
+        r = rating[i][1] if i < len(rating) else None
+        n = newc[i][1] if i < len(newc) else 0
+        g = round((max(0.0, min(1.0, (r - 3) / 2)) * 15 if r else 0) + min(n or 0, 3) / 3 * 10)
+        pp = round(min(posts[i][1] or 0, 3) / 3 * 25)
+        pts.append((lab, g + parts["search"] + pp + parts["info"]))
+        estimated = True
+    pts.append((_md(now), total))
+    if prev is None and len(pts) >= 2:
+        prev = pts[-2][1]                  # last week, worked out the same way
+    return {"score": total, "score_parts": parts, "score_prev": prev,
+            "score_line": {"title": "Your score", "points": pts, "fmt": "{:.0f}", "range": (0, 100),
+                           "estimated": estimated}}
+
+
 def slack_link(channel_id: str) -> str:
     """Opens the office's channel in Slack (app or browser) -- no workspace id needed."""
     return f"https://slack.com/app_redirect?channel={channel_id}" if channel_id else ""
@@ -706,6 +773,7 @@ def build(p, now: Optional[dt.datetime] = None, review_days: int = 7) -> Dict:
                      if l["path"] == p.gbp_location), "")
     except Exception:
         pass
+    prog = progress(p, lines, now)
     colors = [v["color"] for v in lines.values()]
     trend = compare(lines, last_week(p, now))
     verdict = ("Great week 🎉" if all(c == GREEN for c in colors) else
@@ -715,8 +783,9 @@ def build(p, now: Optional[dt.datetime] = None, review_days: int = 7) -> Dict:
             if hasattr(now, "strftime") else "", "until": _md(now),
             "lines": lines, "todo": todo(lines, link), "verdict": verdict, "trend": trend,
             "review_link": link, "slack_link": slack_link(p.slack_channel),
-            "progress": progress(p, lines, now),
-            "seo": seo_ideas(lines, todo(lines, link))}
+            "progress": prog,
+            "seo": seo_ideas(lines, todo(lines, link)),
+            **_score_block(p, lines, now, prog)}
 
 
 # ---- the page --------------------------------------------------------------------
@@ -803,9 +872,18 @@ def render(card: Dict, mode: str = "image") -> str:
             return '<div class="vs na">First week: nothing to compare yet</div>'
         return f'<div class="vs {cls}"><b>{a}</b> vs last week · {e(txt)}</div>'
 
+    parts = card.get("score_parts") or {}
+
+    def pts(k):
+        if k not in parts:
+            return pill(L[k]["color"])
+        v = parts[k]
+        cls = "good" if v >= 20 else "watch" if v >= 12 else "bad"
+        return f'<span class="pill {cls}">{v}/25</span>'
+
     def kpi(k, label, big, sub, extra=""):
         return (f'<div class="kpi"><div class="kh"><span class="kl">{label}</span>'
-                f'{pill(L[k]["color"])}</div>' + (f'<div class="big">{big}</div>' if big else "")
+                f'{pts(k)}</div>' + (f'<div class="big">{big}</div>' if big else "")
                 + f'<div class="sub">{sub}</div>{extra}{delta(k)}</div>')
 
     avg = g.get("avg")
@@ -929,8 +1007,30 @@ def render(card: Dict, mode: str = "image") -> str:
               if ch else "")
     why_note = ('<p class="lede">Open the PDF below for why each one matters and how to do it.</p>'
                 if img else "")
-    verdict_cls = ("good" if card["verdict"].startswith("Great") else
-                   "bad" if "need" in card["verdict"] else "watch")
+    sc_now, sc_prev = card.get("score"), card.get("score_prev")
+    band = ("good" if (sc_now or 0) >= 80 else "watch" if (sc_now or 0) >= 60 else "bad")
+    if sc_now is None:
+        wow = ""
+    elif sc_prev is None:
+        wow = '<div class="wow na">First week: next Friday shows the change</div>'
+    else:
+        d = sc_now - sc_prev
+        wow = (f'<div class="wow {"up" if d > 0 else "down" if d < 0 else "same"}">'
+               f'{"▲" if d > 0 else "▼" if d < 0 else "●"} {abs(d) if d else "same as"}'
+               f'{" vs" if d else ""} last week ({sc_prev})</div>')
+    score_html = (f'<div class="score {band}"><div class="sl">Your score</div>'
+                  f'<div class="sn">{sc_now}<span>/100</span></div>{wow}</div>'
+                  if sc_now is not None else "")
+    line = card.get("score_line") or {}
+    if len(line.get("points") or []) >= 2:
+        est = ('<div class="cknote">Earlier weeks are worked out from your reviews and posts '
+               'by date; search and info use this week\'s numbers until Lucy has saved those weeks.</div>'
+               if line.get("estimated") else "")
+        score_graph = (f'<section class="sg"><h2>Your score, week by week</h2>'
+                       f'{chart_svg(dict(line, title=""), w=700, h=170)}{est}</section>')
+    else:
+        score_graph = ('<div class="sg0">📈 Your score graph starts next Friday: one dot '
+                       'each week, so you can see it climb.</div>')
     initial = e((card["business"] or "?").strip()[:1].upper())
 
     return f"""<!doctype html><html><head><meta charset="utf-8">
@@ -950,6 +1050,13 @@ def render(card: Dict, mode: str = "image") -> str:
  .hn{{flex:1;min-width:0}} .biz{{font:700 30px Georgia,"Times New Roman",serif;margin:0}}
  .kick{{font-size:13px;letter-spacing:.14em;color:var(--gold-d);font-weight:700;margin-top:3px}}
  .wk{{font-size:15px;color:var(--soft);margin-top:4px}}
+ .score{{text-align:right;flex:none}} .sl{{font-size:13px;letter-spacing:.12em;font-weight:700;color:var(--gold-d);text-transform:uppercase}}
+ .sn{{font:700 56px Georgia,serif;line-height:1}} .sn span{{font-size:22px;color:var(--soft);margin-left:2px}}
+ .score.good .sn{{color:var(--good)}} .score.watch .sn{{color:var(--watch)}} .score.bad .sn{{color:var(--bad)}}
+ .wow{{font-size:14px;font-weight:700;margin-top:4px}} .wow.up{{color:var(--good)}} .wow.down{{color:var(--bad)}}
+ .wow.same,.wow.na{{color:var(--soft);font-weight:600}}
+ .sg{{margin:0 0 18px}} .sg svg{{width:100%;height:auto}}
+ .sg0{{font-size:15px;color:var(--soft);background:var(--ground);border-radius:12px;padding:10px 14px;margin-bottom:18px}}
  .verdict{{font-size:16px;font-weight:700;border-radius:999px;padding:8px 16px;white-space:nowrap}}
  .verdict.good{{background:var(--good-bg);color:var(--good)}} .verdict.watch{{background:var(--watch-bg);color:var(--watch)}}
  .verdict.bad{{background:var(--bad-bg);color:var(--bad)}}
@@ -1020,16 +1127,17 @@ def render(card: Dict, mode: str = "image") -> str:
   <div class="hn"><h1 class="biz">{e(card['business'])}</h1>
    <div class="kick">LUCYECO SOCIAL · WEEKLY CARD</div>
    <div class="wk">Week of {e(card['week_of'])} – {e(card['until'])}</div></div>
-  <div class="verdict {verdict_cls}">{e(card['verdict'])}</div></div>
+  {score_html}</div>
  <div class="wrap">
+  {score_graph}
   <div class="kpis">{kpis}</div>
   {revs}
   <section><h2>Do this week</h2>{why_note}{todo_html}</section>
   {seo_sec}
   {charts}
-  {links}
-  <div class="foot">Lucy checks this every Friday at noon. Google rating and reviews come from your
-   Google listing; "When people Google you" is a logged-out Google search for your business name.</div>
+  <div class="foot">Lucy checks this every Friday at noon. Your score is 4 parts of 25: Google
+   reviews (rating + new reviews), Google search (your spot + no negative results), posts (3 a week)
+   and your info (25, minus 8 per thing that doesn't match).</div>
  </div></div></body></html>"""
 
 

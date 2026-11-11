@@ -56,5 +56,25 @@ class Ideas(unittest.TestCase):
             self.assertNotIn("youtube", (t["why"] + str(t["how"])).lower())
 
 
+class Score(unittest.TestCase):
+    def _lines(self, avg=4.8, new=0, own=2, neg=3, n=0, problems=1, search_color="yellow"):
+        return {"google": {"avg": avg, "new": new}, "search": {"own": own, "neg": neg, "color": search_color},
+                "posts": {"n": n}, "info": {"color": "red" if problems else "green",
+                                            "problems": ["x"] * problems}}
+
+    def test_four_parts_of_25(self):
+        total, parts = sc.score(self._lines())
+        self.assertEqual(parts, {"google": 13, "search": 12, "posts": 0, "info": 17})
+        self.assertEqual(total, 42)
+
+    def test_a_perfect_week_is_100(self):
+        total, _ = sc.score(self._lines(avg=5.0, new=3, own=1, neg=None, n=3, problems=0))
+        self.assertEqual(total, 100)
+
+    def test_a_part_lucy_couldnt_check_scores_zero(self):
+        _, parts = sc.score(self._lines(search_color="grey"))
+        self.assertEqual(parts["search"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
