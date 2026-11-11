@@ -55,6 +55,13 @@ FIX = {
 # THE REASON BEHIND EVERY PIECE OF ADVICE (Megan 2026-11-09: "we always want
 # to have reasons behind advise"). Plain words, one or two sentences each.
 WHY_FIX = {
+    "no spelling or grammar mistakes":
+        "Customers and applicants notice typos, and they make a real business look careless.",
+    "info on the site is correct":
+        "Wrong or old details send people to the wrong place and make Google trust your site less.",
+    "hiring wording follows the rules":
+        "Naming an age, gender or who you want to hire in a job post is against the law. "
+        "Keep it to what the job offers.",
     "website link is secure (https)":
         "Google and phones flag sites without https as \"Not secure\", and some people "
         "won't click a link that looks unsafe. It's free to change and takes a minute.",
@@ -147,6 +154,9 @@ def website_ask(r: Dict) -> str:
         page = _page(item)
         return (f"Can you add a link to our {page} page on the website" +
                 (f": {want}" if want else "") + "?")
+    if r.get("issues"):                 # website content: every change, exact text -> fix
+        lines = "; ".join(f'change "{i["quote"]}" to "{i["fix"]}"' for i in r["issues"][:8])
+        return f"Can you make these changes on our website: {lines}?"
     return f"Can you fix the {item} on our website" + (f" (it should be {want})" if want else "") + "?"
 
 
@@ -342,6 +352,9 @@ PROBLEM = {
     "listing verified": "Your Google listing isn't verified",
     "site loads": "Your website isn't loading",
     "listing": "Lucy can't find your Google listing",
+    "no spelling or grammar mistakes": "Your website has a spelling or grammar mistake",
+    "info on the site is correct": "Your website has something wrong or out of date about you",
+    "hiring wording follows the rules": "Your website's hiring wording mentions age, gender or who you hire",
 }
 
 
@@ -351,8 +364,10 @@ SEO_ONLY = {"name in page title"}
 # thing until it's done and then move to the next"). Most damaging first: a
 # site or listing people can't reach beats a detail that's slightly off.
 PRIORITY = ["site loads", "listing", "listing is the one they gave us",
+            "hiring wording follows the rules",
             "website link is secure (https)", "website", "phone", "address",
-            "business name", "listing verified"]
+            "business name", "info on the site is correct", "listing verified",
+            "no spelling or grammar mistakes"]
 
 
 def _prio(r: Dict) -> tuple:
@@ -371,6 +386,9 @@ CHECK_LABEL = {
     "listing verified": "listing is verified",
     "name in page title": "page title has your business name",
     "check by hand": "check by hand (it blocks Lucy)",
+    "no spelling or grammar mistakes": "no spelling or grammar mistakes",
+    "info on the site is correct": "everything it says about you is correct",
+    "hiring wording follows the rules": "hiring wording is safe (no age, gender or \"who we hire\")",
 }
 
 
@@ -415,6 +433,12 @@ def info_line(p, aliases: Optional[Dict[str, set]] = None) -> Dict:
                 return "Your website isn't loading: tell your website person"
             if r["item"].startswith("links to their "):
                 return f"Ask your website person to add your {_page(r['item'])} link"
+            if r.get("issues"):
+                n = len(r["issues"])
+                what = {"no spelling or grammar mistakes": "spelling and grammar",
+                        "info on the site is correct": "wrong or old info",
+                        "hiring wording follows the rules": "hiring wording"}.get(r["item"], "wording")
+                return f"Send your website person {n} {what} fix{'es' if n != 1 else ''} for your site"
             return f"Ask your website person to fix the {r['item']} on your site"
         return FIX.get(r["item"], f"Fix your {r['item']} on {{site}}").format(site=r["site"])
     fixes = [{"text": say(r),

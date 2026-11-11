@@ -244,6 +244,13 @@ def checks(p, aliases: Dict[str, set] | None = None) -> List[Dict]:
         except Exception as e:
             out.append(_row(fn.__name__.split("_")[0].title(), "check", None, "",
                             f"check crashed: {type(e).__name__}", ""))
+    # what the site SAYS: spelling, wrong info, hiring wording (website_content.py)
+    if any(r["item"] == "site loads" and r["ok"] for r in out):
+        try:
+            from automations.online_presence import website_content
+            out += website_content.rows(p)
+        except Exception as e:
+            out.append(_row("Website", "content check", None, "", f"check crashed: {type(e).__name__}", ""))
     for site, url in (("Indeed", p.indeed_url), ("Glassdoor", p.glassdoor_url)):
         try:
             out += _directory_checks(site, url or "", p)
