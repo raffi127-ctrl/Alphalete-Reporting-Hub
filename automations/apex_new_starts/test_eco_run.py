@@ -20,6 +20,7 @@ import pytest
 
 from automations.apex_new_starts import blueink_data as BID
 from automations.apex_new_starts import eco_run
+from automations.icd_onboarding import board as B
 from automations.apex_new_starts.ssn_prompt import Secret
 
 MONDAY = dt.date(2026, 11, 2)
@@ -198,7 +199,7 @@ class _FakeSession:
         return False
 
 
-def _patch(monkeypatch, *, rows, hires, for_people=None):
+def _patch(monkeypatch, *, rows, hires, for_people=None, removed=()):
     from automations.office_admin import fdot
     monkeypatch.setattr(fdot, "read_week", lambda *a, **k: rows)
     monkeypatch.setattr("automations.applicant_tracker.applicantstream.session",
@@ -206,6 +207,11 @@ def _patch(monkeypatch, *, rows, hires, for_people=None):
     monkeypatch.setattr(BID, "for_people",
                         for_people or (lambda people, *a, **k: dict(hires or {})))
     monkeypatch.setattr(eco_run, "fill_one", lambda *a, **k: None)
+    # The board read is a GOOGLE SHEETS call. Unpatched, every one of these
+    # tests opened Raf's live onboarding board -- about 67 seconds, and a unit
+    # test that depends on today's real data (noticed 2026-11-11).
+    monkeypatch.setattr(eco_run, "_removed_on_the_board",
+                        lambda office_key, monday, log=print: set(removed))
 
 
 # ------------------------------------- the control map, read off the real form
@@ -418,3 +424,47 @@ def test_the_sweep_passes_the_office_key_through():
     import inspect
     from automations.icd_alerts import office_jobs as OJ
     assert "office_key=office_key" in inspect.getsource(OJ.work)
+
+
+# ------------------------------- only people still on the onboarding checklist
+
+def test_somebody_removed_on_the_board_never_reaches_apex(monkeypatch):
+    """Megan, 2026-11-11: "you should only add those then NOT removed from the
+    OBCL". The calendar says who showed up for training; the board says who is
+    still going through onboarding, and between the two somebody quits,
+    no-shows or fails a check. An Apex record is payroll with no undo."""
+    seen = []
+    monkeypatch.setattr(eco_run, "plan",
+                        lambda people, hires, log=print:
+                        seen.append([p.name for p in people])
+                        or {"ready": [], "blocked": []})
+    _patch(monkeypatch, rows=_rows("Ada Fournier", "Dev Rao"),
+           hires={"Ada Fournier": _hire("Ada Fournier"),
+                  "Dev Rao": _hire("Dev Rao")},
+           removed=[B._fold("Dev Rao")])
+    eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                     live=False, log=lambda *a: None)
+    assert seen == [["Ada Fournier"]], seen
+
+
+def test_a_board_that_cannot_be_read_refuses_rather_than_adding_everybody(monkeypatch):
+    """"I could not look" must never pass for "nobody was removed" -- that is
+    how somebody the ICD took off lands on payroll."""
+    def _boom(*a, **k):
+        raise RuntimeError("Sheets said no")
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier")})
+    monkeypatch.setattr(eco_run, "_removed_on_the_board", _boom)
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                           live=False, log=lambda *a: None)
+    assert res["status"] == "error"
+    assert "removed is unknown" in res["error"], res["error"]
+
+
+def test_everyone_removed_is_a_week_with_nobody_not_a_crash(monkeypatch):
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier")},
+           removed=[B._fold("Ada Fournier")])
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                           live=False, log=lambda *a: None)
+    assert res["status"] == "none"

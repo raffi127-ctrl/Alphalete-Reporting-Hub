@@ -1596,6 +1596,16 @@ _JS = r"""
        if(bx&&await setVal(bx[0],sec)&&await setVal(bx[1],sec)) done.push('Social');
        else miss.push('Social'); }
    }
+   /* THE CREATE FORM EMAILS THE PERSON UNLESS YOU STOP IT. Apex renders
+      "$ctrl.sendUserPassword" ALREADY TICKED on a fresh Add Employee form, so
+      saving sends them their password -- this filled and saved that form for
+      months without ever touching the box (found 2026-11-11; eco_run's
+      FILL_JS has always set it deliberately and lists it in NEVER).
+      Set, never left as found: a default that changes is a send nobody chose. */
+   if(which==='new'){
+     var pw=document.querySelector('[ng-model="$ctrl.sendUserPassword"]');
+     if(pw){ if(pw.checked){ pw.click(); } done.push('password email OFF'); }
+   }
    /* Security Roles is on the EMPLOYMENT record, and this was only ever
       attempting it on the tax tab -- so the whole-week run never ticked a role
       at all, and page 1 could not save. It read as fixed because the first

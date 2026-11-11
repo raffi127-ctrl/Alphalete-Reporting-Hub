@@ -2992,3 +2992,31 @@ def test_a_filtered_list_does_not_select_the_wrong_row(page, tmp_path):
     assert page.evaluate("() => window.__ansSelected()") == 12, \
         "the right row, not whatever index 1 pointed at"
     assert page.input_value("#msid") == "12"
+
+
+def test_the_create_form_never_emails_the_new_start_their_password():
+    """Apex renders $ctrl.sendUserPassword ALREADY TICKED on a fresh Add
+    Employee form, so saving sends the person their password. The bookmarklet
+    filled and saved that form for months without touching the box (found
+    2026-11-11). It is now SET, never left as found -- a default that changes
+    under us is a send nobody chose.
+    """
+    from automations.apex_new_starts import filler as F
+    js = F._JS
+    assert "$ctrl.sendUserPassword" in js, "the create path must handle the box"
+    # it has to be handled on the NEW form specifically -- that is the only
+    # page that creates a login to email.
+    new_block = js.split("if(which==='new')", 1)
+    assert len(new_block) == 2, "no new-form branch in doPage"
+    guarded = new_block[1][:400]
+    assert "sendUserPassword" in guarded, "the box is not handled on the new form"
+    assert "pw.click()" in guarded, "it must actually untick it"
+
+
+def test_eco_run_and_the_bookmarklet_agree_about_the_password_box():
+    """Two writers, one rule. They disagreed until 2026-11-11 and only
+    eco_run's side was safe."""
+    from automations.apex_new_starts import filler as F
+    from automations.apex_new_starts import eco_run as E
+    assert "$ctrl.sendUserPassword" in E.NEVER
+    assert "$ctrl.sendUserPassword" in F._JS
