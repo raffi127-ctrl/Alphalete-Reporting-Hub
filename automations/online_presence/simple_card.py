@@ -123,10 +123,14 @@ HOW = {
                "Say who's in it and what's happening, then tap Submit.",
                "Lucy edits every photo, writes the caption, and asks for your ✅ "
                "before anything posts."],
-    "reviews": ["Tap your review link above and copy it.",
+    "reviews": ["Tap your review link and copy it.",
                 "Text it to your new leaders and ask them to write about the team.",
                 "Text it to this week's happy customers too. A mix of both reads best.",
                 "Keep it short: \"Would you leave us a quick Google review? It helps a ton!\""],
+    "employer_reviews": ["Tap your {site} link and copy it.",
+                         "Text it to your new leaders and ask them to share what working on the team is like.",
+                         "Keep it short: \"Would you leave us a quick {site} review? It helps a ton!\"",
+                         "Never offer anything for a review, and let them write what they really think."],
 }
 
 
@@ -178,6 +182,8 @@ def _how(r: Dict) -> List[str]:
 
 
 WHY = {
+    "employer_reviews": "{site} is where applicants check what it's like to work for you. It's "
+                        "your lowest rating, so a few honest reviews from your team move it the most.",
     "bad_review": "People read the bad reviews first. A calm, professional reply shows "
                   "every future customer and applicant that you care, even if you can't "
                   "change the review.",
@@ -282,6 +288,18 @@ def result_label(r: Dict) -> str:
     return (f"Your {name}" if r.get("kind") == "profile" else name) + what
 
 
+def _with_review_pages(p, ratings: Dict) -> Dict:
+    """Each rating carries the link to that site's reviews page (Megan
+    2026-11-11: "provide the link to their glassdoor and indeed review
+    pages"). Their sign-up link wins over the one Google showed."""
+    from automations.brand_audit.collectors.serp import reviews_page
+    out = {k: dict(v) for k, v in ratings.items()}
+    for key, url in (("indeed", getattr(p, "indeed_url", "")), ("glassdoor", getattr(p, "glassdoor_url", ""))):
+        if url:
+            out.setdefault(key, {})["link"] = reviews_page(key, url)
+    return out
+
+
 def search_line(p) -> Dict:
     from automations.brand_audit.collectors import serp
     from automations.online_presence.weekly_card import company_for
@@ -309,7 +327,7 @@ def search_line(p) -> Dict:
     text = f"{green} of the top {len(top) or 5} on Google are yours" + (
         f" · a negative result is #{neg}" if neg_top else "")
     return {"color": color, "text": text, "own": own, "neg": neg, "top": top, "green": green,
-            "ratings": m.get("serp_ratings") or {},
+            "ratings": _with_review_pages(p, m.get("serp_ratings") or {}),
             "live_links": [x["link"] for x in profiles] + [r.get("link") or "" for r in page1],
             "panel": profiles,
             "domains": sorted({r.get("domain") or "" for r in page1})}
@@ -466,6 +484,23 @@ def info_line(p, aliases: Optional[Dict[str, set]] = None) -> Dict:
 # Where an owner edits their Google listing: Google's Business Profile
 # manager lists every listing their account manages, with Edit profile.
 GBP_EDIT = "https://business.google.com/locations"
+LOW_RATING = 4.5          # any rating under this shows red (Megan 2026-11-11)
+
+
+def lowest_rating(lines: Dict):
+    """(key, name, rating) of the lowest of Google / Indeed / Glassdoor, or
+    None when every one Lucy can see is 4.5 or more."""
+    found = []
+    if lines["google"].get("avg"):
+        found.append(("google", "Google", lines["google"]["avg"]))
+    for key, nm in (("indeed", "Indeed"), ("glassdoor", "Glassdoor")):
+        x = (lines["search"].get("ratings") or {}).get(key) or {}
+        if x.get("rating"):
+            found.append((key, nm, float(x["rating"])))
+    if not found:
+        return None
+    low = min(found, key=lambda f: f[2])
+    return low if low[2] < LOW_RATING else None
 
 
 def todo(lines: Dict, review_link: str = "") -> List[Dict]:
@@ -478,7 +513,17 @@ def todo(lines: Dict, review_link: str = "") -> List[Dict]:
     out += inf.get("fixes", [])[:1]          # one thing at a time, most important first
     if po["color"] != GREEN:
         out.append({"text": "Tap 📸 New post in your Slack channel and send 2–3 team posts (they go to Google too)", "why": WHY["photos"], "how": HOW["photos"]})
-    if g["color"] == YELLOW or s["color"] in (RED, YELLOW):
+    # Point them at their LOWEST-rated review site (Megan 2026-11-11: "their
+    # lowest scoring platform's review link should be here so that's the one
+    # they focus on boosting"). Indeed + Glassdoor are reviews of working
+    # there, so those asks go to the team, not customers.
+    low = lowest_rating(lines)
+    if low and low[0] != "google":
+        key, nm, rating = low
+        out.append({"text": f"Send your {nm} link to your new leaders ({nm} is your lowest rating "
+                            f"at {rating:.1f}★)", "why": WHY["employer_reviews"].format(site=nm),
+                    "how": [x.format(site=nm) for x in HOW["employer_reviews"]]})
+    elif g["color"] == YELLOW or s["color"] in (RED, YELLOW) or low:
         out.append({"text": "Send your review link to your new leaders and this week's happy "
                             "customers (you want a mix of both)", "why": WHY["reviews"],
                     "how": HOW["reviews"]})
@@ -718,7 +763,7 @@ SEO = {
         "why": "How many reviews you get, and how recently, is one of the biggest things "
                "Google uses to rank local businesses. A steady trickle beats a big burst.",
         "how": [("Each week, ask your new leaders and a few happy customers. A mix of both reads best.", "weekly_reviews"),
-                "Send them your review link (it's in Quick actions and the Slack message).",
+                "Send them your review link.",
                 "Lucy answers every review, which Google also likes."]},
     "google_posts": {
         "text": "Post on your Google listing every week",
@@ -1136,6 +1181,10 @@ def thread_text(card: Dict) -> str:
     lines = []
     if card.get("review_link"):
         lines.append(f"⭐ <{card['review_link']}|Your review link> (send it to happy customers)")
+    for key, nm in (("indeed", "Indeed"), ("glassdoor", "Glassdoor")):
+        link = ((card["lines"]["search"].get("ratings") or {}).get(key) or {}).get("link")
+        if link:
+            lines.append(f"📝 <{link}|Your {nm} reviews>")
     if card.get("slack_link"):
         lines.append(f"💬 <{card['slack_link']}|Your Slack channel>")
     if not revs:
@@ -1213,19 +1262,27 @@ def render(card: Dict, mode: str = "image") -> str:
                 + f'<div class="sub">{sub}</div>{extra}{tip(k)}{delta(k)}</div>')
 
     avg = g.get("avg")
-    # Indeed + Glassdoor next to Google, from the Google search (Megan 11/11).
-    # Shown only; the score stays Google's.
-    other = []
+    # The reviews card: Google, Indeed and Glassdoor as three equal rows, each
+    # linked to that site's reviews page (Megan 2026-11-11: "google doesn't
+    # need to be the stand out - this is just the reviews section"). The
+    # score is still Google's: it's the one Lucy answers and can count.
+    def rrow(nm, rating, count, link, extra=""):
+        low = ' class="low"' if rating < LOW_RATING else ""
+        lab = f'<a href="{e(link)}">{nm}</a>' if link and not img else nm
+        return (f'<div class="orow"><span>{lab}</span><b{low}>{rating:.1f}★</b>'
+                f'<small>{f"{count:,} reviews" if count else ""}{extra}</small></div>')
+    rows_html = []
+    if avg:
+        pid = re.search(r"placeid=([^&]+)", card.get("review_link") or "")
+        glink = f"https://search.google.com/local/reviews?placeid={pid.group(1)}" if pid else ""
+        rows_html.append(rrow("Google", avg, g.get("count") or 0, glink,
+                              f" · <b>{n_new}</b> new this week"))
     for key, nm in (("indeed", "Indeed"), ("glassdoor", "Glassdoor")):
         x = (s.get("ratings") or {}).get(key) or {}
         if x.get("rating"):
-            cnt = f' · {x["reviews"]:,} reviews' if x.get("reviews") else ""
-            other.append(f'<div class="orow"><span>{nm}</span><b>{x["rating"]:.1f}★</b>'
-                         f'<small>{cnt.lstrip(" ·")}</small></div>')
-    k_rating = kpi("google", "Google rating",
-                   f'{avg:.1f}<span class="star">★</span>' if avg else "—",
-                   f'{g.get("count") or 0:,} reviews · <b>{n_new}</b> new this week',
-                   f'<div class="others">{"".join(other)}</div>' if other else "")
+            rows_html.append(rrow(nm, x["rating"], x.get("reviews"), x.get("link")))
+    k_rating = kpi("google", "Reviews", "",
+                   f'<div class="others first">{"".join(rows_html)}</div>' if rows_html else "No ratings found this week")
     own, neg = s.get("own"), s.get("neg")
     TAG = {"owned": ("own", "Your website"), "profile": ("prof", "Your page"),
            "negative": ("neg", "Negative"), "neutral": ("", "")}
@@ -1320,6 +1377,11 @@ def render(card: Dict, mode: str = "image") -> str:
             if rl:
                 out = out.replace("your review link",
                                   f'<a class="inl" href="{e(rl)}">your review link</a>', 1)
+            for key, nm in (("indeed", "Indeed"), ("glassdoor", "Glassdoor")):
+                lk = ((s.get("ratings") or {}).get(key) or {}).get("link")
+                if lk:
+                    out = out.replace(f"your {nm} link",
+                                      f'<a class="inl" href="{e(lk)}">your {nm} link</a>', 1)
             out = out.replace("your Google listing",
                               f'<a class="inl" href="{GBP_EDIT}">your Google listing</a>', 1)
         return out
@@ -1329,8 +1391,8 @@ def render(card: Dict, mode: str = "image") -> str:
             mark = {True: '<span class="ck yes">✅ done</span>', False: '<span class="ck no">❌ not yet</span>'
                     }.get(x.get("done"), "")
             det = f'<div class="ckd">Lucy sees: {e(x["detail"])}</div>' if x.get("detail") else ""
-            return f'<li>{e(x["text"])} {mark}{det}</li>'
-        return f"<li>{e(x)}</li>"
+            return f'<li>{linkify(x["text"])} {mark}{det}</li>'
+        return f"<li>{linkify(x)}</li>"
 
     def steps(t):
         how = t.get("how") or []
@@ -1484,8 +1546,10 @@ def render(card: Dict, mode: str = "image") -> str:
  h2{{font:700 22px Georgia,serif;margin:0 0 4px}} h3{{font:700 18px Georgia,serif;margin:0 0 8px}}
  .lede{{font-size:15px;color:var(--soft);margin:0 0 10px}}
  .others{{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}}
- .orow{{display:flex;gap:8px;align-items:baseline;font-size:15px;margin-top:2px}} .orow span{{min-width:72px;color:var(--soft)}}
- .orow small{{color:var(--soft)}}
+ .others.first{{border-top:0;padding-top:0;margin-top:6px}}
+ .orow{{display:flex;gap:8px;align-items:baseline;font-size:16px;margin-top:6px;flex-wrap:wrap}} .orow span{{min-width:84px;font-weight:600}}
+ .orow > b{{font-size:20px}}
+ .orow small{{color:var(--soft)}} .low{{color:var(--bad)!important}}
  .dbox{{border-radius:10px;padding:10px 12px;margin-top:10px;font-size:15px;line-height:1.45}}
  .dbox.now{{background:#F4F1EA;color:var(--soft)}} .dbox.new{{background:var(--good-bg);border:1.5px solid #BFDCC6}}
  .dh{{font-weight:800;font-size:13px;letter-spacing:.03em;text-transform:uppercase;margin-bottom:4px;color:var(--ink)}}

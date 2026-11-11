@@ -10,6 +10,8 @@ one ties SEO to reputation, which is the whole point of this tool.
 """
 from __future__ import annotations
 
+import re
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,6 +63,20 @@ _SWEEP_EVERY_DAYS = 7
 # Cached between runs so the card always shows the latest sweep even on the days
 # it doesn't re-query. Local state only (like review_history) — safe every run.
 _SWEEP_STATE = Path.home() / ".config" / "brand-audit" / "serp_sweep.json"
+
+
+def reviews_page(site: str, link: str) -> str:
+    """The company's REVIEWS page on Indeed / Glassdoor, from any of its pages
+    Google shows (salaries, jobs, overview...). Unknown shape -> the link."""
+    if site == "indeed":
+        m = re.search(r"indeed\.com/cmp/([^/?#]+)", link or "", re.I)
+        return f"https://www.indeed.com/cmp/{m.group(1)}/reviews" if m else link
+    if site == "glassdoor":
+        m = (re.search(r"glassdoor\.com/Reviews/([^/?#]+?)-Reviews-(E\d+)", link or "", re.I)
+             or re.search(r"glassdoor\.com/\w+/(?:Working-at-)?([^/?#]+?)-EI_I(E\d+)", link or "", re.I))
+        return (f"https://www.glassdoor.com/Reviews/{m.group(1)}-Reviews-{m.group(2)}.htm"
+                if m else link)
+    return link
 
 
 def _domain(url: str) -> str:
@@ -218,7 +234,8 @@ def collect(company) -> CollectorResult:
         for site_dom, key in _RATING_SITES.items():
             if dom.endswith(site_dom) and rich.get("rating") is not None and key not in serp_ratings:
                 serp_ratings[key] = {"rating": rich.get("rating"),
-                                     "reviews": rich.get("reviews")}
+                                     "reviews": rich.get("reviews"),
+                                     "link": reviews_page(key, link)}
         is_own = bool(own_domain) and dom.endswith(own_domain)
         if is_own and own_position is None:
             own_position = pos
