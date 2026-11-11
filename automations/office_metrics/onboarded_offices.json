@@ -1564,5 +1564,57 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "natalia",
+    "report_id": "natalia_metrics",
+    "label": "Natalia's Local Office",
+    "owner": "Natalia Gwarda",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "sheet_id": "13v5Ckq_HDa_Bh_Ro6zLztBsiMVSuvW2Sm8WFsUNx2GE",
+    "knocks_office": "Natalia Gwarda",
+    "ov_account": "23431",
+    "owner_office": "",
+    "business_name": "Zora Industries, Inc.",
+    "website": "",
+    "header_label": "Natalia Gwarda",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-11-10 (Megan: 'Natalia Gwarda is enrolling - let's do her dry run'). Zora Industries, Inc., OwnerVille/AppStream 23431 (office-mapping.json; a second office 23624 'Zora Industries, Inc. 2nd' also exists under her name), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until her ECO sign-up names it. Sheet 'Natalia Gwarda - Lucy Metrics' 13v5Ckq_HDa_Bh_Ro6zLztBsiMVSuvW2Sm8WFsUNx2GE (Master Metrics Templates copy, writer alphaletereporting@). San Leandro CA (captainship zones.py) = Pacific; her Slack profile says Eastern, so confirm with the order-log zips. Scheduler OFF until the dry run is read.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

@@ -17618,6 +17618,45 @@
    "_onboarded": true,
    "_note": "Office metrics for emiliano. wired by hand 2026-11-10 (Megan: 'Emiliano Villagrana is enrolling in ECO - let's do his dry run'). Vincere Marketing, Inc., OwnerVille/AppStream 22001 (office-mapping.json), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Every system spells him 'Milly Villagrana' (AppStream, Tableau, the ICD Aliases canonical), so owner/knocks_office use that; the label and header say Emiliano. Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Emiliano Villagrana - Lucy Metrics' 1j32Le5tKLT2xf6GiQ7GMbL7cLx0Xo9xYyXdPLGlVEnE (Master Metrics Templates copy, writer alphaletereporting@). Gold River CA (captainship zones.py) = Sacramento, Pacific. Scheduler OFF until the dry run is read."
   },
+  "natalia_metrics": {
+   "order": 36.996,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Natalia's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "natalia",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "natalia_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for natalia. wired by hand 2026-11-10 (Megan: 'Natalia Gwarda is enrolling - let's do her dry run'). Zora Industries, Inc., OwnerVille/AppStream 23431 (office-mapping.json; a second office 23624 'Zora Industries, Inc. 2nd' also exists under her name), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until her ECO sign-up names it. Sheet 'Natalia Gwarda - Lucy Metrics' 13v5Ckq_HDa_Bh_Ro6zLztBsiMVSuvW2Sm8WFsUNx2GE (Master Metrics Templates copy, writer alphaletereporting@). San Leandro CA (captainship zones.py) = Pacific; her Slack profile says Eastern, so confirm with the order-log zips. Scheduler OFF until the dry run is read."
+  },
   "juan_metrics": {
    "order": 36.98,
    "machine": "Lucy 4",
