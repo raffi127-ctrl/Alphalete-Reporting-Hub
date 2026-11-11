@@ -9,7 +9,8 @@ Source path: same as run.py — Tableau -> ATT TRACKER 2.1 - D2D -> ORDER LOG ->
 'Sales Board Original' -> worksheet 'A.Order Log', last 42 days of sales,
 pulled ONCE, then per owner: spe.Install Date = today (Central), still open.
 
-WHO gets a mail: an owner with >= 1 install today who is NOT already covered by
+WHO gets a mail: an owner ON THE ORG SALES BOARD (Eve 11/10: nobody outside
+the org) with >= 1 install today who is NOT already covered by
 a Metrics thread (an office_metrics office on the scheduler, or Raf's
 daily_metrics). Addresses come from captainship_night_knocks.owners (the pinned
 owner -> email table the 9 PM knocks mail uses), Eve always in copy. An owner
@@ -101,6 +102,39 @@ def recipients_for(owner: str) -> List[str]:
     return [addr, EVE] if addr else []
 
 
+# --- the org -------------------------------------------------------------------
+def org_matcher():
+    """True for a name on the live Alphalete ORG Sales Board (or one of its ICD
+    Aliases). Eve 2026-11-10: Raf does not want this reaching owners outside
+    the org, so an owner who is not on the board gets NO mail."""
+    from automations.focus_office_att.aliases import load_aliases
+    from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
+    from automations.recruiting_report.fill import open_by_key, _retry
+    vals = _retry(_retry(lambda: open_by_key(SHEET_ID).worksheet(SANDBOX_TAB)).get_all_values)
+    org = set()
+    for r in vals:
+        for c in r[:3]:
+            c = c.strip()
+            if c and len(c.split()) >= 2 and len(c) < 40 and not any(ch.isdigit() for ch in c):
+                org.add(_norm(c))
+    if len(org) < 50:
+        raise RuntimeError("org board read looks wrong ({} names) — sending nothing"
+                           .format(len(org)))
+    groups = [{_norm(k), *(_norm(x) for x in v)} for k, v in load_aliases().items()]
+    firstlast = {(o.split()[0], o.split()[-1]) for o in org}
+
+    def in_org(name: str) -> bool:
+        k = _norm(name)
+        keys = {k}
+        for g in groups:
+            if k in g:
+                keys |= g
+        return any(x in org or (len(x.split()) >= 2
+                                and (x.split()[0], x.split()[-1]) in firstlast)
+                   for x in keys)
+    return in_org
+
+
 # --- the mail ------------------------------------------------------------------
 def build_mail(owner: str, rows, day: dt.date, png: Path, to: List[str],
                *, sample: bool) -> EmailMessage:
@@ -112,6 +146,8 @@ def build_mail(owner: str, rows, day: dt.date, png: Path, to: List[str],
         subject = "[SAMPLE] " + subject
     msg = EmailMessage()
     msg["From"] = FROM_ADDR
+    if sample and any(a.lower() != EVE for a in to):
+        raise RuntimeError("sample mail must name only Eve, got {}".format(to))
     msg["To"] = ", ".join(to)
     msg["Subject"] = subject
     msg["Message-ID"] = make_msgid(domain="alphalete.report")
@@ -176,11 +212,19 @@ def main(argv=None) -> int:
         print("✗ export is EMPTY — sending nothing.")
         return 1
     covered = thread_owners()
+    in_org = org_matcher()
     by_owner: Dict[str, list] = {}
+    outside = set()
     for r in pull.scheduled_on(rows, day):
         o = r.get(pull.OWNER, "").strip()
-        if o and o.casefold() not in covered:
-            by_owner.setdefault(o, []).append(r)
+        if not o or o.casefold() in covered:
+            continue
+        if not in_org(o):
+            outside.add(o)
+            continue
+        by_owner.setdefault(o, []).append(r)
+    if outside:
+        print("  (skipped, not on the ORG board: {})".format(", ".join(sorted(outside))))
     print("=== owner mails — {} — {} owner(s) with installs today and no thread "
           "({}) ===".format(day, len(by_owner), mode.upper()))
 
@@ -204,8 +248,11 @@ def main(argv=None) -> int:
         try:
             png = out_dir / "activations_today_{}.png".format(_norm(owner).replace(" ", "_"))
             at_run.render(at_run.build(orows, owner, day), png)
+            # A SAMPLE names ONLY Eve, in the header too (2026-11-10: the To:
+            # line showed the owner while delivery went to Eve alone — it read
+            # as sent to Chan, and a reply-all WOULD have reached him).
             dest = [EVE] if mode == "sample" else to
-            _send(build_mail(owner, orows, day, png, to, sample=mode == "sample"), dest)
+            _send(build_mail(owner, orows, day, png, dest, sample=mode == "sample"), dest)
             sent.append((owner, len(orows)))
             print("  ✓ {:<28} {:>3} installs → {}".format(owner, len(orows), ", ".join(dest)))
         except Exception as e:  # noqa: BLE001 — one owner must not stop the rest
