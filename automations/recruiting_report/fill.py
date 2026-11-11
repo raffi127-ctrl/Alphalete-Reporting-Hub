@@ -185,7 +185,11 @@ OFFICE_METRIC_TO_ROW_LABEL = {
     "new_starts_scheduled":       "New Starts Scheduled",
     "new_starts_showed":          "New Starts Showed",
     "pct_new_start_retention":    "New Start Retention",
-    "removed_from_process_emails": "Removed From Process Emails",
+    # Row is being renamed tab by tab (Raf, 2026-11-10): new name first so a
+    # relabelled tab still matches; the old name until every tab is moved.
+    "removed_from_process_emails": ["Duplicate/Already Interviewed",
+                                    "Duplicate / Already Interviewed",
+                                    "Removed From Process Emails"],
     "total_applies":              "Total Applies",
     "duplicate_pct":              "Duplicate %",
     "pct_first_showed_booked_2nd":["Retention 1st showed Booked for 2nd", "% of 1st Booked 2nd"],
@@ -958,6 +962,53 @@ def keep_blank_or_zero_cells(values: List[List[str]], metric_rows: Dict[str, int
     return out
 
 
+# ---------- Duplicate % (Raf's Loom, 2026-11-10) ----------
+# Old: row "Removed From Process Emails" = every removal, Total Applies =
+# pull + removed, Duplicate % = removed / pull (could pass 100%).
+# New: row renamed "Duplicate/Already Interviewed" = only the duplicate
+# reasons from AppStream's View Details box, Total Applies = Emails Received,
+# Duplicate % = duplicates / Emails Received.
+# Goes tab by tab: preview tab first, the rest after Eve says "roll out".
+# Put "*" in the set to switch every tab.
+DUPLICATE_V2_TABS = {"Marcellus Butler"}
+DUPLICATE_ROW_LABEL = "Duplicate/Already Interviewed"
+OLD_DUPLICATE_ROW_LABEL = "Removed From Process Emails"
+
+
+def duplicate_v2_on(tab_name: str) -> bool:
+    return "*" in DUPLICATE_V2_TABS or tab_name in DUPLICATE_V2_TABS
+
+
+def apply_duplicate_v2(metrics: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
+    """Swap the three rows to the new definition. If the duplicate count could
+    not be read, drop all three — never mix old and new numbers in a column."""
+    out = dict(metrics)
+    if metrics.get("duplicates") is None:
+        for k in ("removed_from_process_emails", "total_applies", "duplicate_pct"):
+            out.pop(k, None)
+        return out
+    out["removed_from_process_emails"] = metrics.get("duplicates")
+    out["total_applies"] = metrics.get("total_applies_v2")
+    out["duplicate_pct"] = metrics.get("duplicate_pct_v2")
+    return out
+
+
+def relabel_duplicate_row(ws: gspread.Worksheet, row: int, dry_run: bool) -> Optional[str]:
+    """Rename the row's column-B label (keeps any 'Name - ' prefix on
+    multi-office tabs). Returns a log line, or None when already renamed."""
+    cell = gspread.utils.rowcol_to_a1(row, LABEL_COLUMN)
+    current = str(_retry(ws.acell, cell).value or "")
+    low = current.lower()
+    i = low.find(OLD_DUPLICATE_ROW_LABEL.lower())
+    if i < 0:
+        return None
+    new = current[:i] + DUPLICATE_ROW_LABEL + current[i + len(OLD_DUPLICATE_ROW_LABEL):]
+    if dry_run:
+        return f"    {cell} label: {current!r} -> {new!r} (dry-run)"
+    _retry(ws.update_acell, cell, new)
+    return f"    {cell} label: {current!r} -> {new!r}"
+
+
 def fill_office_section(
     ws: gspread.Worksheet,
     metric_rows: Dict[str, int],
@@ -971,6 +1022,13 @@ def fill_office_section(
     section's rows on a multi-office tab) and the date columns."""
     log: List[str] = []
     updates: List[Tuple[str, str]] = []
+    tab_name = ws.title if getattr(ws, "title", None) else label.split(" (id ")[0]
+    if duplicate_v2_on(tab_name):
+        week_data = {w: apply_duplicate_v2(m) for w, m in week_data.items()}
+        if "removed_from_process_emails" in metric_rows:
+            line = relabel_duplicate_row(ws, metric_rows["removed_from_process_emails"], dry_run)
+            if line:
+                log.append(line)
     for sunday, metrics in week_data.items():
         col = sunday_to_col.get(sunday)
         if col is None:

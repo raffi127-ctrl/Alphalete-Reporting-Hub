@@ -537,21 +537,50 @@ def _scrape_metrics(page: Page) -> Dict[str, Optional[float]]:
           });
 
           // Small 1-row reason-tooltip tables (skip the first 2 tables which
-          // are header + main).
+          // are header + main). Each "View Details" hover box is a run of these;
+          // group them by the box that holds them so the Removed-From-Process
+          // box can be told apart from the Removed-from-Call-List one.
           const reasons = [];
+          const boxOf = (t) => {
+            let el = t.parentElement;
+            while (el && el !== document.body) {
+              const txt = (el.textContent || '');
+              if (/lock box/i.test(txt) || (el.id && el.tagName === 'DIV')) return el;
+              el = el.parentElement;
+            }
+            return t.parentElement;
+          };
+          const boxes = [];
           tables.forEach((t, i) => {
             if (i < 2) return;
+            if (tables[1].contains(t)) return;
             const trs = t.querySelectorAll('tr');
             if (trs.length !== 1) return;
             const cells = trs[0].querySelectorAll('td, th');
             if (cells.length !== 2) return;
+            const box = boxOf(t);
+            let g = boxes.indexOf(box);
+            if (g < 0) { boxes.push(box); g = boxes.length - 1; }
             reasons.push([
               (cells[0].innerText || '').trim(),
               (cells[1].innerText || '').trim(),
+              g,
             ]);
           });
 
-          return {main, reasons};
+          // Which box belongs to the Removed From Process Emails row: the one
+          // whose id the row's markup points at. Falls back to the first box
+          // (it is the first "View Details" on the page).
+          let processBox = boxes.length ? 0 : -1;
+          tables[1].querySelectorAll('tr').forEach(tr => {
+            const c0 = tr.querySelector('th, td');
+            if (!c0 || !/^Removed From Process Emails/i.test((c0.innerText || '').trim())) return;
+            const html = tr.outerHTML;
+            boxes.forEach((b, g) => { if (b.id && html.includes(b.id)) processBox = g; });
+          });
+          const boxIds = boxes.map(b => (b.id || b.className || b.tagName));
+
+          return {main, reasons, processBox, boxIds};
         }
         """
     )
@@ -600,7 +629,38 @@ def _scrape_metrics(page: Page) -> Dict[str, Optional[float]]:
             parsed[metric_key] = int((p or 0) + (r or 0)) if (p is not None or r is not None) else None
         else:
             parsed[metric_key] = None
+    parsed.update(_duplicate_metrics(payload, parsed))
     return parsed
+
+
+DUPLICATE_REASON_RE = re.compile(r"duplicate", re.I)
+
+
+def _duplicate_metrics(payload: dict, parsed: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
+    """Raf's Duplicate % (Loom 2026-11-10): hover "View Details" on Removed
+    From Process Emails, take the Duplicate/Already Interviewed count, divide
+    by Emails Received. Total Applies becomes Emails Received.
+
+    Every reason in that box whose name says "duplicate" counts (some offices
+    split it into "Duplicate", "Auto Process - Duplicate", "Duplicate /
+    Already Interviewed"). No box on the page -> None, so nothing is written
+    rather than a fake 0."""
+    out: Dict[str, Optional[float]] = {
+        "duplicates": None, "total_applies_v2": None, "duplicate_pct_v2": None}
+    emails = parsed.get("emails_received")
+    out["total_applies_v2"] = emails
+    reasons = payload.get("reasons") or []
+    box = payload.get("processBox", -1)
+    if box is None or box < 0 or not reasons:
+        return out
+    dup = 0
+    for r in reasons:
+        if len(r) >= 3 and r[2] == box and DUPLICATE_REASON_RE.search(r[0] or ""):
+            dup += _parse_value(r[1], "count") or 0
+    out["duplicates"] = int(dup)
+    if emails is not None:
+        out["duplicate_pct_v2"] = round(dup / emails * 100) if emails else 0
+    return out
 
 
 def _parse_value(raw: str, type_: str) -> Optional[float]:

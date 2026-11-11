@@ -3575,6 +3575,26 @@
    "verify": null,
    "timeout_minutes": 45
   },
+  "recruiting_duplicate_backfill": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "MANUAL-ONLY. Added 2026-11-11 for Raf's Duplicate % Loom: rewrites ONLY the Duplicate/Already Interviewed, Total Applies and Duplicate % rows (+ renames the row label) N weeks back. Preview: `lucy rerun recruiting_duplicate_backfill --tabs \"Marcellus Butler\" --dry-run`. Rollout: `--all --weeks 8` per captainship, after fill.DUPLICATE_V2_TABS = {\"*\"}. No machine on purpose.",
+   "display_name": "Recruiting — Duplicate % backfill",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.recruiting_report.duplicate_backfill"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 90
+  },
   "nds_ps_week_probe": {
    "hand_run_only": true,
    "on_scheduler": true,
