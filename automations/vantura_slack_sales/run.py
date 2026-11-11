@@ -264,6 +264,10 @@ NAME_ALIASES = {
     "gio": "Giovanni Monreal",
     "nick": "Nicholas Esmerado Macias",
     "bautista": "Will Bautista",
+    # 11/10 the room wrote "William" (Tue: 4 drops) and a bare token only
+    # resolves on a row's first/last word -- his row says "Will" -- so the 4
+    # landed nowhere (Carlos 11/11). Same for the Credico spelling below.
+    "william": "Will Bautista",
     # Verizon (2026-10-08) — Slack's display names vs the Verizon board rows.
     # KNOWN_USERS carries the board spelling today, so these only matter once
     # users.info works; "Will Bautista", "Luis Valenciano" and "Kyara" are

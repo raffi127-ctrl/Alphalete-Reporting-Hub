@@ -34,6 +34,7 @@ class RosterTokens(unittest.TestCase):
         self.assertEqual(self.m("GIO"), _norm("Giovanni Monreal"))
         self.assertEqual(self.m("Nick"), _norm("Nicholas Esmerado Macias"))
         self.assertEqual(self.m("Bautista"), _norm("Will Bautista"))
+        self.assertEqual(self.m("William"), _norm("Will Bautista"))     # 11/10 roster spelling
         self.assertEqual(self.m("Nico"), _norm("Nico Murrugarra"))
 
     def test_middle_name_go_by(self):
