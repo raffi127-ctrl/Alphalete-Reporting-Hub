@@ -34,13 +34,27 @@ from typing import Dict, List, Optional, Sequence
 from automations.nds_metrics.run import OUT_DIR, REPO_ROOT
 
 CHECK_URL = "https://www.att.com/orders/checkmyorder"
+# The details page itself takes the three values in its address (seen 11/11
+# after a lookup by hand): no form, no e-mail dialog, no overlays to fight.
+DETAILS_URL = "https://www.att.com/acctmgmt/order/details?emailAddress={email}&orderId={order}&zipCode={zip}"
+# FedEx's public tracking page: AT&T's page names the carrier and number, and
+# FedEx says what AT&T's "Shipped" hides (11/11, Rajeshkanna: "couldn't be
+# delivered and is returning to the shipper", three weeks in)
+FEDEX_URL = "https://www.fedex.com/fedextrack/?trknbr={n}"
+FEDEX_KEEP_RE = re.compile(r"deliver|on the way|return|currently in|exception|held|pick ?up|delay|"
+                           r"label created|scheduled|new tracking|signature required", re.I)
+FEDEX_NOISE_RE = re.compile(r"delivery manager|register or log in|view more details|get status updates|"
+                            r"^#|^label created$|^on the way$|^delivered$|^delivery updated$|^returning to shipper$|"
+                            r"we'll need someone|if you're not home", re.I)
 PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".att_profile"
 STALE_DAYS = 3
 NOTE_TAG = "AT&T:"
 NAV_TIMEOUT_MS = 60_000
 KEEP_RE = re.compile(r"shipp|deliver|transit|track|arriv|estimat|carrier|\bups\b|fedex|usps|"
-                     r"status|on its way|out for|label|cancel", re.I)
+                     r"status|on its way|out for|label|cancel|ordered on", re.I)
 NOISE_RE = re.compile(r"cookie|privacy|feedback|sign in|skip navigation|chat|cart|search or|"
+                      r"look up another order|shipping address|device protection|shop again|back up your device|"
+                      r"^order status\s*\|?|number of items|^ordered$|^shipped$|^delivered$|"
                       r"check my status|confirm the status for orders|search as a guest|"
                       r"find an order or claim|view all my orders|order or claim$|zip code$|"
                       r"start search|let.s verify your info|please enter the email|email address$",
@@ -142,23 +156,26 @@ def summarize(text: str) -> Dict[str, object]:
         if len(lines) >= 6:
             break
     tracking = ""
+    trackings: List[str] = []
     for m in TRACK_RE.finditer(text or ""):
         at = text.rfind("\n", 0, m.start())
         ctx = text[max(0, at - 80): m.end() + 40].lower()
-        if "track" in ctx or m.group(1).startswith("1Z"):
-            tracking = m.group(1)
-            break
+        if ("track" in ctx or m.group(1).startswith("1Z")) and m.group(1) not in trackings:
+            trackings.append(m.group(1))
+    tracking = trackings[0] if trackings else ""
     landing = bool(LANDING_RE.search(text or ""))
     failed = (bool(FAIL_RE.search(text or "")) and not lines) or landing
     if landing:
         lines = []
-    return {"lines": lines, "tracking": tracking, "failed": failed, "landing": landing}
+    return {"lines": lines, "tracking": tracking, "trackings": trackings, "failed": failed,
+            "landing": landing}
 
 
-def note_text(summary: Dict[str, object], today: dt.date) -> str:
-    parts = list(summary.get("lines") or [])
-    if summary.get("tracking"):
-        parts.append("tracking %s" % summary["tracking"])
+def note_text(summary: Dict[str, object], today: dt.date, carrier: Sequence[str] = ()) -> str:
+    parts = [l for l in (summary.get("lines") or []) if not l.lower().startswith("fedex tracking")]
+    for n in (summary.get("trackings") or ([summary["tracking"]] if summary.get("tracking") else [])):
+        parts.append("tracking %s" % n)
+    parts.extend(c for c in carrier if c)
     return "%s %s %s" % (today.strftime("%m/%d"), NOTE_TAG, "; ".join(parts))
 
 
@@ -190,10 +207,60 @@ def _dismiss_overlays(page, log=print) -> None:
             continue
 
 
+def fedex_status(page, number: str, log=print) -> str:
+    """What FedEx's tracking page says about one package, in a line or two."""
+    try:
+        page.goto(FEDEX_URL.format(n=number), wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        try:
+            page.wait_for_load_state("networkidle", timeout=25_000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(5000)
+        text = page.evaluate("() => (document.body.innerText || '')")
+    except Exception as e:  # noqa: BLE001
+        log("    (FedEx %s: page failed: %s)" % (number, type(e).__name__))
+        return ""
+    kept, seen = [], set()
+    for raw in (text or "").splitlines():
+        ln = _norm(raw)
+        if not ln or len(ln) > 170 or FEDEX_NOISE_RE.search(ln) or not FEDEX_KEEP_RE.search(ln):
+            continue
+        if ln.lower() in seen:
+            continue
+        seen.add(ln.lower())
+        kept.append(ln[:120])
+        if len(kept) >= 3:
+            break
+    if not kept:
+        log("    (FedEx %s: no status read -- %d chars)" % (number, len(text or "")))
+        return ""
+    return "FedEx %s: %s" % (number, " / ".join(kept))
+
+
 def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, object]:
     """One guest lookup on AT&T's page; returns summarize()'s dict plus
-    'text' (the page) and 'error' (why it could not be read)."""
+    'text' (the page) and 'error' (why it could not be read). The details
+    address is opened straight away; the form is the fallback when that
+    lands back on the lookup page."""
     import re as _re
+    from urllib.parse import quote
+    try:
+        page.goto(DETAILS_URL.format(email=quote(email), order=quote(order), zip=quote(zip_code)),
+                  wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        try:
+            page.wait_for_load_state("networkidle", timeout=25_000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(4000)
+        text = page.evaluate("() => (document.querySelector('main') || document.body).innerText || ''")
+        s = summarize(text)
+        if s["lines"] and not s["failed"]:
+            s["text"] = text
+            s["error"] = ""
+            return s
+        log("    (details address did not show a status -- trying the form)")
+    except Exception as e:  # noqa: BLE001
+        log("    (details address failed: %s -- trying the form)" % type(e).__name__)
     page.goto(CHECK_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
     try:
         page.wait_for_load_state("networkidle", timeout=20_000)
@@ -325,7 +392,15 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                         pass
                     continue
                 read += 1
-                body = note_text(s, today)
+                carrier = []
+                for n in (s.get("trackings") or [])[:3]:
+                    if n.startswith("1Z"):
+                        log("    (UPS %s: not looked up)" % n)
+                        continue
+                    fx = fedex_status(page, n, log=log)
+                    if fx:
+                        carrier.append(fx)
+                body = note_text(s, today, carrier)
                 log("    %s" % body)
                 for ln in o["lines"]:
                     if already_noted(ln["notes"], body):

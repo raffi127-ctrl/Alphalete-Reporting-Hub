@@ -72,7 +72,51 @@ Feedback
 """
 
 
+DETAILS = """Look up another order
+Print
+My order details
+Ordered on:
+Tue, Oct 20, 2026
+Order:
+99-717053512695236
+Shipping address:
+Sign in to see
+Wireless order
+Order status
+Number of items: 4
+Shipped on: Wed, Oct 21, 2026
+Ordered
+Shipped
+Delivered
+Shipped
+Your order is on the way! Check the tracking info to confirm delivery details.
+Line 4: xxx.xxx.4914
+Apple iPhone 18 Pro - 256GB - Burgundy
+Device protection:Not enrolled | Learn more
+FedEx tracking:879024018564
+Shop again
+Shipped on: Mon, Nov 2, 2026
+Your order is on the way! Check the tracking info to confirm delivery details.
+Line 1: xxx.xxx.5740
+FedEx tracking:879615850332
+"""
+
+
 class Summaries(unittest.TestCase):
+    def test_real_details_page(self):
+        # Rajeshkanna's page, read by hand on 11/11
+        s = A.summarize(DETAILS)
+        self.assertFalse(s["failed"])
+        self.assertIn("Shipped on: Wed, Oct 21, 2026", s["lines"])
+        self.assertIn("Your order is on the way! Check the tracking info to confirm delivery details.", s["lines"])
+        self.assertEqual(s["trackings"], ["879024018564", "879615850332"])
+        self.assertNotIn("Shipped", s["lines"])
+        note = A.note_text(s, TODAY, ["FedEx 879024018564: returning to the shipper"])
+        self.assertIn("tracking 879024018564; tracking 879615850332; FedEx 879024018564: returning", note)
+        self.assertNotIn("FedEx tracking:", note)
+        self.assertTrue(A.DETAILS_URL.startswith("https://www.att.com/acctmgmt/order/details?"))
+
+
     def test_status_lines_and_tracking(self):
         s = A.summarize(PAGE)
         self.assertFalse(s["failed"])
