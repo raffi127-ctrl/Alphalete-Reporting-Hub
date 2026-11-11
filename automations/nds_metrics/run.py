@@ -736,12 +736,46 @@ CREW_EXTRA_COLUMNS = [
     # 90 Day / 120 Day columns. Right after Status on the rep tabs.
     ("Churn Bucket", "Churn Bucket", None),
 ]
+# Carlos 2026-11-11 ("Let's add in: the wireless order number, BAN, the
+# line, the type, device, ship date, delivered, port status, last updated"):
+# the Vantura NDS Order Log TAB's own columns, on the crew's workbook too.
+# The workbook is Tableau and the tab is the SaraPlus wireless feed, so each
+# Tableau line is joined to its tab row by the line's phone number
+# (order_log_tab.LineIndex over order_log_tab.preview = the rows the tab
+# will carry after its own refresh later in the run). (tab header, workbook
+# header): the tab's "Type" (Port / New / Upgrade) is "Line Type" on the
+# workbook, whose Type already means Phone / Tablet / Wearable.
+CREW_TAB_COLUMNS = [
+    ("Wireless Order #", "Wireless Order #"), ("BAN", "BAN"), ("Line", "Line"),
+    ("Type", "Line Type"), ("Device", "Device"), ("Ship Date", "Ship Date"),
+    ("Delivered", "Delivered"), ("Port Status", "Port Status"),
+    ("Last Updated", "Last Updated"),
+]
+CREW_TEXT_COLUMNS = ("Wireless Order #", "BAN")     # kept as text in the workbook
+# Rep-tab order mirrors the tab's where the pinned placements allow: Package,
+# Phone Number, Zip Code, Status, Churn Bucket stay contiguous (11/9-11/11).
 CREW_REP_TAB_COLUMNS = [
-    "Order Date", "Activation Date", "Customer Name", "SPM Number", "Type",
+    "Order Date", "Activation Date", "Customer Name", "SPM Number",
+    "Wireless Order #", "BAN", "Line", "Line Type", "Type", "Device",
     "Next Up", "Package", "Customer Phone", "Customer Zip", "Status",
-    "Churn Bucket", "Install Date", "Ported From", "Tier Bonus $",
+    "Churn Bucket", "Ship Date", "Delivered", "Port Status", "Last Updated",
+    "Install Date", "Ported From", "Tier Bonus $",
 ]
 CREW_REP_TAB_DISPLAY = {"Customer Phone": "Phone Number", "Customer Zip": "Zip Code"}
+
+
+def crew_extra_columns(index=None):
+    """CREW_EXTRA_COLUMNS plus the tab columns, each read off `index`
+    (order_log_tab.LineIndex) by the row's phone number + DSI #. None =
+    every tab column blank (no usable feed / tab rows today)."""
+    def col(tab_header):
+        def fn(get):
+            if index is None:
+                return ""
+            return index.value(tab_header, phone=get("sp.Customer Phone"),
+                               dsi=get("sp.SPM Number"))
+        return fn
+    return list(CREW_EXTRA_COLUMNS) + [(wb, wb, col(tab)) for tab, wb in CREW_TAB_COLUMNS]
 
 
 def build_order_log(cols, crew, today, log=print) -> Path:
@@ -771,12 +805,27 @@ def build_order_log(cols, crew, today, log=print) -> Path:
                  if len(r) > _oc and "CARLOS" in str(r[_oc]).upper()
                  and "HIDALGO" in str(r[_oc]).upper()]
         if rows2:
+            index = None
+            try:
+                from automations.nds_metrics import order_log_tab
+                tab_rows = order_log_tab.preview(today, log=log)
+                if tab_rows:
+                    index = order_log_tab.LineIndex(tab_rows)
+            except Exception as e:  # noqa: BLE001 -- tab columns blank; the log still ships
+                log(f"[nds] house order log: tab columns unavailable "
+                    f"({type(e).__name__}: {str(e)[:120]}) -- left blank")
             x, n = NOL._render_order_log("Carlos Hidalgo", header2, rows2,
                                          today, OUT_DIR,
                                          rep_tab_columns=CREW_REP_TAB_COLUMNS,
                                          rep_tab_display=CREW_REP_TAB_DISPLAY,
-                                         extra_columns=CREW_EXTRA_COLUMNS)
+                                         extra_columns=crew_extra_columns(index),
+                                         text_columns=CREW_TEXT_COLUMNS)
             log(f"[nds] house order log: {n} line(s) -> {Path(x).name}")
+            if index is not None:
+                log(f"[nds] house order log: tab columns matched {len(index.hits)} "
+                    f"of {len(index.hits) + len(index.misses)} line(s)")
+            else:
+                log("[nds] house order log: tab columns blank (no feed/tab rows today)")
             return Path(x)
         log("[nds] house order log: no rows for Carlos — falling back")
     except Exception as e:  # noqa: BLE001

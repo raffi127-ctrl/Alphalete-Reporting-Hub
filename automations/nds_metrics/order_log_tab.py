@@ -398,9 +398,10 @@ def usable(orders: Sequence[dict], lines: Sequence[dict]) -> bool:
     return named >= 0.8 * len(lines)
 
 
-def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, object]]:
-    """Today's cached wireless feed -> the tab. None (and a log line) when
-    there is no feed today; the tab then keeps yesterday's rows."""
+
+def today_lines(today: Optional[dt.date] = None, log=print) -> Optional[List[dict]]:
+    """Today's cached wireless feed as the tab's line dicts, or None (and a
+    log line) when there is no usable feed today."""
     from automations.nds_metrics import wireless_pull
     today = today or dt.date.today()
     cache = wireless_pull.cached(today)
@@ -425,6 +426,94 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
             "lines without a customer/rep would be nameless rows; tab left as it was"
             % (len(orders), len(lines)))
         return None
+    return lines
+
+
+def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, object]]:
+    """Today's cached wireless feed -> the tab. None (and a log line) when
+    there is no feed today; the tab then keeps yesterday's rows."""
+    today = today or dt.date.today()
+    lines = today_lines(today, log=log)
+    if lines is None:
+        return None
     zips = ZipIndex.from_export(today, log=log)
     return push(lines, today=today, log=log, zip_of=zips.for_line if zips else None,
                 zip_lookup=zips.lookup if zips else None)
+
+
+def preview(today: Optional[dt.date] = None, log=print,
+            sheet_id: Optional[str] = None) -> Optional[List[List[str]]]:
+    """The rows the tab WILL carry after today's refresh, without writing
+    it: today's feed merged over the live tab's rows (Last Updated restamps
+    and all). The order-log workbook is built before the tab refreshes, so
+    this is how its tab columns say what the tab says (Carlos 2026-11-11).
+    None when there is no usable feed today. When the live tab can't be
+    read, the feed lines come back alone with Last Updated blank (unknown,
+    never stamped today)."""
+    today = today or dt.date.today()
+    lines = today_lines(today, log=log)
+    if lines is None:
+        return None
+    prior, tab_ok = [], True
+    try:
+        from automations.recruiting_report.fill import _retry, open_by_key
+        ws = open_by_key(sheet_id or VANTURA_SHEET_ID).worksheet(TAB)
+        prior = _retry(lambda: ws.get_all_values()) or []
+    except Exception as e:  # noqa: BLE001 -- the workbook never waits on the tab
+        tab_ok = False
+        log("[nds] NDS Order Log tab: could not read the live tab (%s: %s) -- "
+            "Last Updated left blank on the workbook" % (type(e).__name__, str(e)[:120]))
+    zips = ZipIndex.from_export(today, log=log)
+    result = merge(prior[1:] if prior else [], lines, today=today,
+                   existing_header=prior[0] if prior else None,
+                   zip_of=zips.for_line if zips else None,
+                   zip_lookup=zips.lookup if zips else None)
+    rows = result["rows"]
+    if not tab_ok:
+        for r in rows:
+            r[_COL["Last Updated"]] = ""
+    return rows
+
+
+class LineIndex:
+    """The tab's rows by the line's phone number (digits), for the order-log
+    workbook's tab columns: a Tableau line (spe.TN = the number on the line,
+    sp.SPM Number = the DSI #) -> its tab row. A number the tab doesn't carry
+    falls back to the order's DSI # when that order has exactly ONE tab
+    line; anything else is a miss (blank cells, never a guess). `hits` /
+    `misses` count distinct lines looked up, for the run log."""
+
+    def __init__(self, rows: Sequence[Sequence[str]]):
+        self.by_phone: Dict[str, List[str]] = {}
+        self.by_dsi: Dict[str, List[List[str]]] = {}
+        for r in rows:
+            r = list(r) + [""] * (len(HEADERS) - len(r))
+            p = self.digits(r[_COL["Phone #"]])
+            if p:
+                self.by_phone.setdefault(p, r)
+            d = _norm(r[_COL["DSI #"]])
+            if d:
+                self.by_dsi.setdefault(d, []).append(r)
+        self.hits: set = set()
+        self.misses: set = set()
+
+    @staticmethod
+    def digits(v) -> str:
+        d = "".join(ch for ch in str(v or "") if ch.isdigit())
+        return d[1:] if len(d) == 11 and d.startswith("1") else d
+
+    def __len__(self):
+        return len(self.by_phone)
+
+    def row(self, phone="", dsi="") -> Optional[List[str]]:
+        p = self.digits(phone)
+        r = self.by_phone.get(p) if p else None
+        if r is None:
+            cands = self.by_dsi.get(_norm(dsi), []) if dsi else []
+            r = cands[0] if len(cands) == 1 else None
+        (self.hits if r is not None else self.misses).add(p or _norm(dsi) or "?")
+        return r
+
+    def value(self, header: str, phone="", dsi="") -> str:
+        r = self.row(phone, dsi)
+        return str(r[_COL[header]]).strip() if r is not None else ""

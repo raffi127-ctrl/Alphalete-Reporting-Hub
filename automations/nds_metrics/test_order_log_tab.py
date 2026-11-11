@@ -180,3 +180,64 @@ class Merge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LineIndexTests(unittest.TestCase):
+    """2026-11-11: the order-log workbook's tab columns are looked up by the
+    line's phone number; a miss falls back to a one-line order's DSI #."""
+
+    def test_by_phone_digits_then_single_line_dsi(self):
+        a = T.line_row(line(device="945-392-8474", dsi="DSI123", line_no="1"), "10/29/2026")
+        b = T.line_row(line(device="945-392-8475", dsi="DSI123", line_no="2"), "10/29/2026")
+        c = T.line_row(line(device="214-555-0100", dsi="DSI777", line_no="1", customer="ANA R"),
+                       "10/28/2026")
+        ix = T.LineIndex([a, b, c])
+        self.assertEqual(len(ix), 3)
+        self.assertEqual(ix.value("Line", phone="9453928475"), "2")              # digits match
+        self.assertEqual(ix.value("Line", phone="(945) 392-8474"), "1")
+        self.assertEqual(ix.value("Line", phone="19453928474"), "1")             # leading 1 dropped
+        self.assertEqual(ix.value("Last Updated", phone="9453928474"), "10/29/2026")
+        self.assertEqual(ix.value("Customer", phone="0000000001", dsi="DSI777"), "Ana R")  # one-line order
+        self.assertEqual(ix.value("Line", phone="0000000002", dsi="DSI123"), "")     # two lines: no guess
+        self.assertEqual(ix.value("Line", phone="", dsi=""), "")
+        self.assertEqual(len(ix.hits), 3)
+        self.assertEqual(len(ix.misses), 2)
+
+    def test_preview_merges_todays_feed_over_the_live_tab(self):
+        from unittest import mock
+        prior = [list(T.HEADERS), T.line_row(line(), "10/20/2026")]
+        prior[1][T._COL["Notes"]] = "called 10/21"
+
+        class _WS:
+            def get_all_values(self):
+                return prior
+
+        class _SH:
+            def worksheet(self, _title):
+                return _WS()
+
+        quiet = lambda *_a, **_k: None  # noqa: E731
+        with mock.patch.object(T, "today_lines", lambda today=None, log=print: [line()]), \
+             mock.patch.object(T.ZipIndex, "from_export", lambda today, log=print: None), \
+             mock.patch("automations.recruiting_report.fill.open_by_key", lambda *_a, **_k: _SH()):
+            rows = T.preview(TODAY, log=quiet)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][T._COL["Last Updated"]], "10/20/2026")   # unchanged line keeps its stamp
+        self.assertEqual(rows[0][T._COL["Notes"]], "called 10/21")
+
+    def test_preview_without_the_live_tab_blanks_last_updated(self):
+        from unittest import mock
+        quiet = lambda *_a, **_k: None  # noqa: E731
+        with mock.patch.object(T, "today_lines", lambda today=None, log=print: [line()]), \
+             mock.patch.object(T.ZipIndex, "from_export", lambda today, log=print: None), \
+             mock.patch("automations.recruiting_report.fill.open_by_key",
+                        side_effect=RuntimeError("no sheet")):
+            rows = T.preview(TODAY, log=quiet)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][T._COL["Last Updated"]], "")
+        self.assertEqual(rows[0][T._COL["Customer"]], "John Doe")
+
+    def test_preview_is_none_without_a_feed(self):
+        from unittest import mock
+        with mock.patch.object(T, "today_lines", lambda today=None, log=print: None):
+            self.assertIsNone(T.preview(TODAY, log=lambda *_a, **_k: None))

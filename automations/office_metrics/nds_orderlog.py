@@ -355,7 +355,7 @@ _OWNER_REP_TABS = {
 
 def _render_order_log(owner, header, rows, target, out_dir,
                       rep_tab_columns=None, rep_tab_display=None,
-                      extra_columns=None):
+                      extra_columns=None, text_columns=()):
     """Isaiah's Order Log as the SAME color-coded .xlsx every office gets, in
     the wireless column layout above: emit his order lines as a UTF-16 tab
     file (like a Tableau crosstab export) and run it through the house
@@ -369,13 +369,18 @@ def _render_order_log(owner, header, rows, target, out_dir,
     pass-through columns added AFTER the house set for THIS build only (the
     crew's Customer Zip, 2026-11-10) -- they land at the end of the All tab
     and wherever `rep_tab_columns` places them; every other office's log
-    never sees them."""
+    never sees them. A third element that is CALLABLE is computed per row
+    instead: fn(get) -> str, where get(raw_col) is this row's value for any
+    column of the set (the crew's Vantura NDS Order Log tab columns, joined
+    on by the line's phone number, 2026-11-11). `text_columns`: raw names
+    the writer must keep as text (a 12-digit BAN read as a number shows as
+    1.77E+11 on a phone)."""
     from automations.uploaded import order_log as _house
     extra = list(extra_columns or [])
     idx = {col: _find(header, *cands)
            for col, cands in _NDS_ORDERLOG_SRC.items()}
     for raw, _friendly, cands in extra:
-        if cands:                                # None = computed below (Churn Bucket)
+        if cands and not callable(cands):        # None/callable = computed below
             idx[raw] = _find(header, *cands)
     # Same precedence as nds_churn.compute FIELDS['posted'], so a line's
     # bucket here is the one the NDS CHURN tab counts it in.
@@ -452,6 +457,11 @@ def _render_order_log(owner, header, rows, target, out_dir,
         i = idx.get(col)
         return _san(_cell(r, i)) if i is not None else ""
 
+    for raw, _f, cands in extra:                 # callable extras: fn(get) per row
+        if callable(cands):
+            computed[raw] = (lambda r, fn=cands:
+                             _san(str(fn(lambda col: _val(r, col)) or "")))
+
     keep = _NDS_COLUMNS_TO_KEEP + [raw for raw, _f, _c in extra]
     friendly = _NDS_FRIENDLY_HEADERS + [f for _r, f, _c in extra]
     lines = ["\t".join(keep)]
@@ -464,7 +474,8 @@ def _render_order_log(owner, header, rows, target, out_dir,
                                              "Rep Tier Bonus Amount"}
                                | {raw for raw, _f, _c in extra},
                                rep_tab_columns=rep_tab_columns,
-                               rep_tab_display=rep_tab_display):
+                               rep_tab_display=rep_tab_display,
+                               text_raw=tuple(text_columns)):
         return _house.csv_to_xlsx(tsv, out_dir, owner=owner), len(line_rows)
 
 

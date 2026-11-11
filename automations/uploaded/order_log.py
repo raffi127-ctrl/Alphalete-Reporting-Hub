@@ -1301,6 +1301,10 @@ DATE_COLUMN_NAMES = ("Order Date", "Install Date", "Activation Date")
 DATE_COLUMN_INDEXES = tuple(
     FRIENDLY_HEADERS.index(name) + 1 for name in DATE_COLUMN_NAMES
 )
+# Raw columns read as TEXT, never inferred as numbers (set per build by
+# column_profile; the house fiber log keeps none). A 12-digit account number
+# inferred as a number lands in the .xlsx as 1.77E+11 on a narrow screen.
+TEXT_RAW_COLUMNS: tuple = ()
 
 
 def _status_sort_key(value) -> int:
@@ -1421,7 +1425,8 @@ def _load_and_clean(csv_path: Path) -> pd.DataFrame:
               "export; owner likely has no orders in the window)")
         return pd.DataFrame(columns=FRIENDLY_HEADERS)
 
-    df = pd.read_csv(csv_path, encoding="utf-16", sep="\t", skiprows=header_idx)
+    df = pd.read_csv(csv_path, encoding="utf-16", sep="\t", skiprows=header_idx,
+                     dtype={c: str for c in TEXT_RAW_COLUMNS} or None)
     # Tableau pads some header cells ("Next Up " with a trailing space in the
     # live ORDER LOG export) — normalize so name-based selection can't miss.
     df.columns = [str(c).strip() for c in df.columns]
@@ -1554,7 +1559,7 @@ _INVALID_SHEET_CHARS = str.maketrans({c: " " for c in r":\/?*[]"})
 # width unit (Calibri 11), so autofit scales char count by _OL_WIDTH_FACTOR.
 @contextmanager
 def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset(),
-                   rep_tab_columns=None, rep_tab_display=None):
+                   rep_tab_columns=None, rep_tab_display=None, text_raw=()):
     """Swap the order-log column set for ONE build, then restore the house
     fiber layout — for a campaign whose lines have a different shape (the NDS
     wireless log). Everything the pipeline reads at call time is swapped
@@ -1587,12 +1592,13 @@ def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset(),
         rep_cols = list(rep_tab_columns)
     global COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS
     global DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER, _REP_NCOL
-    global _REP_TAB_DISPLAY
+    global _REP_TAB_DISPLAY, TEXT_RAW_COLUMNS
     saved = (COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS,
              DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER, _REP_NCOL,
-             _REP_TAB_DISPLAY)
+             _REP_TAB_DISPLAY, TEXT_RAW_COLUMNS)
     try:
         COLUMNS_TO_KEEP = list(columns_to_keep)
+        TEXT_RAW_COLUMNS = tuple(text_raw)
         FRIENDLY_HEADERS = friendly
         OPTIONAL_RAW_COLUMNS = set(optional_raw)
         DATE_COLUMN_INDEXES = tuple(FRIENDLY_HEADERS.index(n) + 1
@@ -1607,7 +1613,7 @@ def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset(),
     finally:
         (COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS,
          DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER,
-         _REP_NCOL, _REP_TAB_DISPLAY) = saved
+         _REP_NCOL, _REP_TAB_DISPLAY, TEXT_RAW_COLUMNS) = saved
 
 
 _OL_FONT_NAME = "Georgia"
