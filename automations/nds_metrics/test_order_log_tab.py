@@ -271,5 +271,18 @@ class EmailColumnTests(unittest.TestCase):
         self.assertEqual(out["rows"][0][T._COL["Customer"]], old_row[old_hdr.index("Customer")])
 
 
+class ValidationTests(unittest.TestCase):
+    def test_yes_no_rule_cleared_everywhere_before_it_is_set(self):
+        # 11/11: the dropdown rule stayed on column R (Last Updated) after the
+        # columns shifted -- every data cell there showed a red corner
+        reqs = T._format_requests(7, 10, 0)
+        dv = [r["setDataValidation"] for r in reqs if "setDataValidation" in r]
+        self.assertNotIn("rule", dv[0])                      # the first one clears
+        self.assertEqual(dv[0]["range"]["startColumnIndex"], 0)
+        self.assertGreaterEqual(dv[0]["range"]["endColumnIndex"], len(T.HEADERS))
+        cols = {d["range"]["startColumnIndex"] for d in dv[1:]}
+        self.assertEqual(cols, {T._COL["Being worked on"], T._COL["Delivered Message Sent"]})
+
+
 if __name__ == "__main__":
     unittest.main()

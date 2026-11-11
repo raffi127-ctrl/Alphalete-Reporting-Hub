@@ -364,7 +364,12 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
         reqs.append({"repeatCell": {"range": rng(1, max(n_rows, 1) + 1, c, c + 1),
                                     "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
                                     "fields": "userEnteredFormat.numberFormat"}})
-    # "Being worked on" / "Delivered Message Sent": a Yes / No dropdown on every data row
+    # "Being worked on" / "Delivered Message Sent": a Yes / No dropdown on every data row.
+    # Cleared off EVERY column first: a rule stays on its letter when a column
+    # is added (11/11: R, S, T and U all carried it, so Last Updated's dates and
+    # the Notes showed red "invalid" corners -- Carlos: "Column R has a bunch of
+    # red dots in the top-right corner").
+    reqs.append({"setDataValidation": {"range": rng(0, 1000, 0, max(n_cols, 26))}})
     for name in ("Being worked on", "Delivered Message Sent"):
         c_w = _COL[name]
         reqs.append({"setDataValidation": {"range": rng(1, 1000, c_w, c_w + 1), "rule": {
