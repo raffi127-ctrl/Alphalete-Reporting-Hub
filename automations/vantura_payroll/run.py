@@ -446,6 +446,9 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
         out_rows.append([wnum, cell("B"), cell("C"), cell("D"),
                          cell("E"), cell("F"), cell("G"), cell("H")])
         jn_rows.append([cell("J"), cell("K"), cell("L"), cell("M"), cell("N")])
+    rules = _transfer_rules(sh, log=log)
+    moved = _apply_transfers(out_rows, rules, where="DD load", log=log) if rules else 0
+    log(f"transfers: {len(rules)} rule(s), {moved} line(s) moved")
     end = start + len(out_rows) - 1
     log(f"RAW load: {len(out_rows)} rows, week {wnum}, would fill A{start}:H{end}")
     if out_rows:
@@ -461,6 +464,7 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
     # literal written anywhere in it kills the whole column.
     raw.update(f"J{start}:N{end}", jn_rows, value_input_option="USER_ENTERED")
     log(f"  WROTE RAW A{start}:H{end} and J{start}:N{end}")
+    _stamp_transfers(sh, rules, wnum, log=log)
     return (start, end)
 
 
@@ -507,6 +511,141 @@ def _dd_norm(v) -> str:
         except ValueError:
             continue
     return s.lower()
+
+
+# Carlos 2026-11-11 ("Jacob Ortega just made a sale under Sebastian's login
+# ... let the payroll automation know, for whenever that customer activates,
+# that it needs to get paid out to Jacob instead"): standing rep transfers
+# live on the board's 'Payroll Transfers' tab (Customer | Sale Date | From Rep
+# | To Rep | Note | Added | Last applied). Every DD row the load writes to RAW
+# is checked: a row matches a rule when EVERY filled-in key matches (customer
+# name word-for-word, sale date, from-rep words all present in the DD's rep
+# spelling) and is written under To Rep (board spelling) instead. Blank keys
+# are not checked; a rule with no key or no To Rep is skipped and logged. The
+# RESUME path (week already in RAW) never re-applies -- move those by hand.
+TRANSFERS_TAB = "Payroll Transfers"
+_TRANSFERS_NOTE: list = []          # this run's applied transfers, for the kickoff DM
+_TRANSFERS_RULES_N: list = [0]      # rules seen this run (0 = the tab is empty/missing)
+
+
+def _words(s) -> list:
+    t = "".join(ch if ch.isalnum() else " " for ch in str(s or "").lower())
+    return t.split()
+
+
+def _transfer_rules(sh, log=_log) -> list:
+    """Rows of the 'Payroll Transfers' tab as rules; [] when the tab is
+    missing or unreadable (nothing applied) -- never raises into payroll."""
+    try:
+        import gspread
+        try:
+            ws = sh.worksheet(TRANSFERS_TAB)
+        except gspread.WorksheetNotFound:
+            _TRANSFERS_RULES_N[0] = 0
+            return []
+        vals = ws.get_all_values()
+    except Exception as e:  # noqa: BLE001
+        log(f"transfers: could not read {TRANSFERS_TAB!r} ({type(e).__name__}: {e}) -- none applied")
+        return []
+    rules = rules_from_values(vals, log=log)
+    _TRANSFERS_RULES_N[0] = len(rules)
+    return rules
+
+
+def rules_from_values(vals, log=_log) -> list:
+    """The tab's rows (header first) -> rules. Columns by header name."""
+    if not vals:
+        return []
+    hdr = [str(h).strip().lower() for h in vals[0]]
+
+    def col(name):
+        return hdr.index(name) if name in hdr else None
+    ic, isd, ifr, ito = col("customer"), col("sale date"), col("from rep"), col("to rep")
+    if ito is None:
+        log(f"transfers: {TRANSFERS_TAB!r} has no 'To Rep' column -- none applied")
+        return []
+    rules = []
+    for n, r in enumerate(vals[1:], start=2):
+        def g(i, r=r):
+            return str(r[i]).strip() if i is not None and i < len(r) else ""
+        rule = {"row": n, "customer": g(ic), "sale_date": g(isd),
+                "from_rep": g(ifr), "to_rep": g(ito), "hits": 0}
+        if not rule["to_rep"]:
+            continue                       # a blank line or the how-it-works note
+        if not (rule["customer"] or rule["sale_date"] or rule["from_rep"]):
+            log(f"transfers: row {n} names a To Rep but no key (customer / sale date / from rep) -- skipped")
+            continue
+        rules.append(rule)
+    return rules
+
+
+def _transfer_matches(rule: dict, rep, sale_date, customer) -> bool:
+    if rule["customer"] and _words(rule["customer"]) != _words(customer):
+        return False
+    if rule["sale_date"] and _dd_norm(rule["sale_date"]) != _dd_norm(sale_date):
+        return False
+    if rule["from_rep"]:
+        have = set(_words(rep))
+        if not all(w in have for w in _words(rule["from_rep"])):
+            return False
+    return True
+
+
+def _apply_transfers(out_rows: list, rules: list, *, where: str, log=_log) -> int:
+    """Rewrite col B (index 1) of the matching RAW rows in place; the count."""
+    moved = 0
+    for row in out_rows:
+        rep, sale_date, customer = row[1], row[2], row[6]
+        for rule in rules:
+            if _transfer_matches(rule, rep, sale_date, customer):
+                log(f"transfer ({where}): {customer} {sale_date} {rep} -> {rule['to_rep']} "
+                    f"(rule row {rule['row']})")
+                row[1] = rule["to_rep"]
+                rule["hits"] += 1
+                moved += 1
+                _TRANSFERS_NOTE.append(f"{customer} ({sale_date}) {rep} -> {rule['to_rep']}")
+                break
+    return moved
+
+
+def _stamp_transfers(sh, rules: list, wnum, log=_log) -> None:
+    """Best effort after a live write: 'Last applied' = 'wnum: n line(s)'."""
+    hit = [r for r in rules if r["hits"]]
+    if not hit:
+        return
+    try:
+        ws = sh.worksheet(TRANSFERS_TAB)
+        hdr = [str(h).strip().lower() for h in ws.row_values(1)]
+        if "last applied" not in hdr:
+            return
+        c = hdr.index("last applied") + 1
+        for r in hit:
+            ws.update_cell(r["row"], c, f"{wnum}: {r['hits']} line(s)")
+    except Exception as e:  # noqa: BLE001
+        log(f"transfers: could not stamp Last applied ({type(e).__name__}: {e})")
+
+
+def _transfers_probe(sheet_id: str, log=_log) -> int:
+    """Read-only (`--transfers-probe`): list the rules, flag a To Rep the
+    board has never paid (spelling), and dry-match the newest RAW week."""
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(sheet_id)
+    rules = _transfer_rules(sh, log=log)
+    log(f"transfers probe: {len(rules)} rule(s) on {TRANSFERS_TAB!r}")
+    vals = sh.worksheet("RAW").get_all_values()
+    reps_seen = {_dd_norm(r[1]) for r in vals[1:] if len(r) > 1 and r[1]}
+    for rule in rules:
+        flag = ("" if _dd_norm(rule["to_rep"]) in reps_seen
+                else "  [To Rep never seen in RAW col B -- check the board spelling]")
+        log(f"  row {rule['row']}: customer={rule['customer']!r} sale_date={rule['sale_date']!r} "
+            f"from={rule['from_rep']!r} -> {rule['to_rep']!r}{flag}")
+    weeks = [r[0] for r in vals[1:] if r and r[0]]
+    newest = weeks[-1] if weeks else ""
+    block = [list(r) + [""] * (8 - len(r)) for r in vals[1:] if r and r[0] == newest]
+    n = _apply_transfers(block, rules, where=f"probe week {newest}", log=log) if rules else 0
+    log(f"transfers probe: week {newest}: {len(block)} RAW row(s), {n} would have moved (nothing written)")
+    _TRANSFERS_NOTE.clear()
+    return 0
 
 
 def _load_raf_extra(week: dt.date, raw_range: tuple[int, int], *, write: bool,
@@ -584,6 +723,9 @@ def _load_raf_extra(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         out_rows.append([wnum, cell("B"), cell("C"), cell("D"),
                          cell("E"), cell("F"), cell("G"), cell("H")])
         jn_rows.append([cell("J"), cell("K"), cell("L"), cell("M"), cell("N")])
+    rules = _transfer_rules(sh, log=log)
+    if rules and out_rows:
+        log(f"transfers (ORG sweep): {_apply_transfers(out_rows, rules, where='ORG sweep', log=log)} line(s) moved")
     note = (f"ORG DD sweep: +{len(out_rows)} row(s) for allowlist reps under "
             f"other owners ({dups} already present)")
     if not out_rows:
@@ -600,6 +742,7 @@ def _load_raf_extra(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     raw.update(f"A{start}:H{end}", out_rows, value_input_option="USER_ENTERED")
     raw.update(f"J{start}:N{end}", jn_rows, value_input_option="USER_ENTERED")
     log(f"  WROTE RAW A{start}:H{end} and J{start}:N{end}")
+    _stamp_transfers(sh, rules, wnum, log=log)
     return (first_row, end), note
 
 
@@ -1203,6 +1346,9 @@ def _kickoff_dm(week: dt.date, raw_range, summary, checks, *, send: bool, log=_l
         f"• RAW rows: {raw_range}",
         f"• Sync summary: {summary}",
         f"• P&L checks: {checks}",
+    ] + ([f"• Transfers ({TRANSFERS_TAB}): "
+          + ("; ".join(_TRANSFERS_NOTE) if _TRANSFERS_NOTE else "no DD line matched a rule this week")]
+         if _TRANSFERS_RULES_N[0] else []) + [
         "",
         "Left for you: enter this week's bonuses / no-pay / rate changes, then "
         "Refresh again, verify, and Print the commission pack. It auto-locks "
@@ -2137,6 +2283,8 @@ def main(argv: list[str] | None = None) -> int:
                          "owners) and log every cl.ICD Owner Name value plus "
                          "which allowlist reps appear under which owner. "
                          "Never writes.")
+    ap.add_argument("--transfers-probe", action="store_true",
+                    help="read-only: list the 'Payroll Transfers' rules and what the newest RAW week would move")
     args = ap.parse_args(argv)
     if getattr(args, "refresh_only", False):
         url = _webapp_url()
@@ -2166,6 +2314,8 @@ def main(argv: list[str] | None = None) -> int:
                                skip_discover=args.skip_discover,
                                tab_suffix=args.dd_tab_suffix)
 
+    if args.transfers_probe:
+        return _transfers_probe(SHEET_ID)
     if args.rafdd_probe:
         from automations.shared.tableau_patchright import tableau_session
         from automations.recruiting_report.opt_phase import (
