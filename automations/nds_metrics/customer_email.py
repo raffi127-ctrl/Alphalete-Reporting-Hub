@@ -302,9 +302,11 @@ def _row_dsi(cells: Sequence[str], id_cols: Sequence[int], wanted: Set[str]) -> 
 
 
 def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
-            limit: Optional[int] = None, log=print) -> Dict[str, dict]:
+            limit: Optional[int] = None, log=print, save=None) -> Dict[str, dict]:
     """Open NDS SaraPlus and read the e-mail for each wanted order. Returns
-    {dsi: {email, customer, source, seen}} for the ones found."""
+    {dsi: {email, customer, source, seen}} for the ones found. `save(found)`
+    is called after every window, so a run that dies keeps what it read
+    (the 11/11 refresh lost 66 addresses to a panel that would not re-open)."""
     from patchright.sync_api import sync_playwright
     from automations.rc_contact_sync import config as C
     from automations.rc_contact_sync import sara
@@ -346,9 +348,22 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                 if windows_run:
                     # The full run on 11/11 read the same 41 rows for every
                     # window: once the grid is up, new dates + Submit leave it
-                    # as it was. The panel is re-opened fresh per window.
-                    page.goto(base + C.HUB_PATH, wait_until="networkidle", timeout=C.NAV_TIMEOUT_MS)
-                    sara.open_order_history_panel(page, log=lambda *a, **k: None)
+                    # as it was. The panel is re-opened fresh per window --
+                    # twice if need be, and a window whose panel will not come
+                    # back is skipped, not the run.
+                    opened = False
+                    for attempt in (1, 2):
+                        try:
+                            page.goto(base + C.HUB_PATH, wait_until="networkidle", timeout=C.NAV_TIMEOUT_MS)
+                            page.wait_for_timeout(1500 * attempt)
+                            sara.open_order_history_panel(page, log=lambda *a, **k: None)
+                            opened = True
+                            break
+                        except Exception as e:  # noqa: BLE001
+                            log("[email] %s..%s: panel did not re-open (try %d: %s: %s)"
+                                % (start, end, attempt, type(e).__name__, str(e)[:120]))
+                    if not opened:
+                        continue
                 windows_run += 1
                 sara._set_telerik_date(page, C.FIELD_START, start)
                 sara._set_telerik_date(page, C.FIELD_END, end)
@@ -428,8 +443,12 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                         log("  %-14s %-26s %s  (%s)" % (d, cust[:26], email, source))
                     else:
                         log("  %-14s %-26s NO E-MAIL on the order" % (d, cust[:26]))
+                if save and hit_rows:
+                    save(found)
         finally:
             ctx.close()
+            if save:
+                save(found)
     if remaining:
         log("[email] %d order(s) not found on any Sales Order History page: %s"
             % (len(remaining), ", ".join(sorted(remaining))[:600]))
@@ -506,10 +525,13 @@ def run(today: Optional[dt.date] = None, *, dry_run: bool = False, limit: Option
     if not want:
         log("[email] every order already has an e-mail in %s (%d)" % (CACHE.name, len(cache)))
     else:
-        found = harvest(want, today, headless=headless, limit=limit, log=log)
-        cache.update(found)
-        save_cache(cache)
-        log("[email] %d found this run, %d in %s" % (len(found), len(cache), CACHE.name))
+        def _save(found):
+            cache.update(found)
+            save_cache(cache)
+        found = harvest(want, today, headless=headless, limit=limit, log=log, save=_save)
+        _save(found)
+        log("[email] %d order(s) read this run, %d in %s (%d with an address)"
+            % (len(found), len(cache), CACHE.name, sum(1 for v in cache.values() if (v or {}).get("email"))))
     if dry_run:
         log("[email] --dry-run: the tab is not refreshed")
         return 0
