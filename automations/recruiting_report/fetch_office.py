@@ -634,6 +634,7 @@ def _scrape_metrics(page: Page) -> Dict[str, Optional[float]]:
 
 
 DUPLICATE_REASON_RE = re.compile(r"duplicate", re.I)
+LAST_DUPLICATE_DEBUG: dict = {}
 
 
 def _duplicate_metrics(payload: dict, parsed: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
@@ -651,6 +652,9 @@ def _duplicate_metrics(payload: dict, parsed: Dict[str, Optional[float]]) -> Dic
     out["total_applies_v2"] = emails
     reasons = payload.get("reasons") or []
     box = payload.get("processBox", -1)
+    global LAST_DUPLICATE_DEBUG
+    LAST_DUPLICATE_DEBUG = {"processBox": box, "boxIds": payload.get("boxIds"),
+                            "reasons": reasons}
     if box is None or box < 0 or not reasons:
         return out
     dup = 0

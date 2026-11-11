@@ -33,6 +33,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap.add_argument("--weeks", type=int, default=8, help="How many weeks back (default 8).")
     ap.add_argument("--week", help="Last WE Sunday, YYYY-MM-DD (default: most recent Sunday).")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--debug", action="store_true", help="Print the View Details boxes read.")
     return ap.parse_args(argv)
 
 
@@ -103,6 +104,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                       f"dup={m.get('duplicates')} -> {m.get('duplicate_pct_v2')}% "
                       f"(old: removed={m.get('removed_from_process_emails')} "
                       f"applies={m.get('total_applies')} dup%={m.get('duplicate_pct')})")
+                if args.debug:
+                    dbg = fetch_office.LAST_DUPLICATE_DEBUG
+                    print(f"    box={dbg.get('processBox')} ids={dbg.get('boxIds')}")
+                    for r in dbg.get("reasons") or []:
+                        print(f"    reason {r}")
                 data[w] = {k: v for k, v in m.items()
                            if k in ROWS or k in ("duplicates", "total_applies_v2", "duplicate_pct_v2")}
             if data:
