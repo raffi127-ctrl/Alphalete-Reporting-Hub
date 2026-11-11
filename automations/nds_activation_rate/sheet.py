@@ -102,6 +102,11 @@ def _ws(book, title: str, rows: int = 200, cols: int = 40):
 
 # ---------------------------------------------------------------- the log --
 
+# Captain column for an NDS owner outside the 3 captainships (run.SOLO_OWNERS).
+# No captain tab is drawn for it; slack_board leaves out the captainship row.
+NO_CAPTAIN = "(No captain)"
+
+
 def log_rows(day: dt.date, captain: str, data: Dict) -> List[List[str]]:
     d = day.isoformat()
     out = [[d, captain, CAPTAINSHIP, "Total"]

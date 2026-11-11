@@ -188,6 +188,11 @@ CAPTAINS = (
     ("jairo", "Jairo", "Jairo Ruiz", "Jairo's Team"),
 )
 
+# NDS owners with NO captainship (so no 'NDS Captain Teams' value): pulled one
+# by one with an Owner Name filter, logged under sheet.NO_CAPTAIN, no captain
+# tab. Their metrics thread still gets the 3 images (Eve 2026-11-11, Aiden).
+SOLO_OWNERS = ("Aiden Atoori",)
+
 
 def fill(args) -> int:
     """Download each captainship from the custom view, log it, redraw its tab."""
@@ -214,6 +219,21 @@ def fill(args) -> int:
             for owner, o in data["owners"].items():
                 print(f"     {owner}: {o['total']}")
             pulled[slug] = data
+        # Solo owners: a miss here never sinks the captainship tabs above.
+        solo = {}
+        for owner in (SOLO_OWNERS if not args.only else ()):
+            slug = "_".join(owner.lower().split())
+            try:
+                data = pull.download_owner(
+                    page, owner, OUT_DIR / f"solo_{slug}_{day.isoformat()}.csv")
+            except Exception as e:  # noqa: BLE001
+                print(f"  ⚠ {owner} (no captain): not pulled — {e}")
+                continue
+            n_reps = sum(1 for v in data["owners"].get(owner, {})
+                         .get("reps", {}).values() if any(v.values()))
+            print(f"  {owner} (no captain): {n_reps} rep(s) with a number; "
+                  f"office {data['owners'][owner]['total']}")
+            solo[owner] = data
 
     if args.dry_run:
         print("\n(dry-run) nothing written.")
@@ -228,6 +248,12 @@ def fill(args) -> int:
         rows, kinds, n_days = sheet.render(short, full, grid,
                                            list(data["owners"]))
         sheet.write_tab(book, short, rows, kinds, n_days)
+    if solo:
+        rows = [r for data in solo.values()
+                for r in sheet.log_rows(day, sheet.NO_CAPTAIN, data)
+                if r[2] != sheet.CAPTAINSHIP]
+        print(f"\n--- {sheet.NO_CAPTAIN}: {', '.join(solo)} ---")
+        sheet.write_log(book, day, sheet.NO_CAPTAIN, rows)
     print(f"\nDONE: {len(caps)} tab(s) written to the {where} workbook.")
     return 0
 

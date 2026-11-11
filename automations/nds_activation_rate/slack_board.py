@@ -149,8 +149,9 @@ def build_html(win: str, owner: str, captain: str, days: List[str],
         return f"{x.strftime('%a')}<br>{x.month}/{x.day}"
 
     head = "".join(f"<th>{lab(d)}</th>" for d in days)
-    body = [row(f"{owner} — Office Total", reps.get("Total", {}), "office"),
-            row(f"{captain}'s Captainship Avg", cap, "cap")]
+    body = [row(f"{owner} — Office Total", reps.get("Total", {}), "office")]
+    if captain != sheet.NO_CAPTAIN:      # no captainship = no average row
+        body.append(row(f"{captain}'s Captainship Avg", cap, "cap"))
     for rep in sorted((r for r in reps if r != "Total"), key=str.lower):
         if any(reps[rep].get(d, {}).get(win) is not None for d in days):
             body.append(row(rep, reps[rep]))

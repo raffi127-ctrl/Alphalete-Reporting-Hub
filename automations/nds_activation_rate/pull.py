@@ -113,6 +113,28 @@ def parse(rows: List[List[str]]) -> Dict:
     return out
 
 
+OWNER_FIELD = "Owner Name"
+
+
+def owner_url(owner: str) -> str:
+    return f"{CUSTOM_VIEW}?{quote(OWNER_FIELD)}={quote(owner)}&:iid=1"
+
+
+def download_owner(page, owner: str, out_path: Path) -> Dict:
+    """ONE owner with no captainship (filter Owner Name). Must come back as
+    exactly that owner — anything else means the filter was ignored."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    p = download_crosstab_patchright(owner_url(owner), WORKSHEET, out_path,
+                                     verbose=False, page=page)
+    data = parse(read_rows(p))
+    if list(data["owners"]) != [owner]:
+        raise RuntimeError(
+            f"'{OWNER_FIELD}={owner}' came back with owners "
+            f"{list(data['owners'])[:5]} (n={len(data['owners'])}) — "
+            "filter ignored or the name is spelled differently in Tableau")
+    return data
+
+
 def download_team(page, team: str, out_path: Path) -> Dict:
     from automations.shared.tableau_patchright import download_crosstab_patchright
     p = download_crosstab_patchright(team_url(team), WORKSHEET, out_path,
