@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.interviewers-retention</string>
+
+    <!-- Interviewers Retention: Raf + Perla + Camila, every day at 6 PM
+         CENTRAL (Camila, 2026-11-11). Lives on Camila's Mac (her Gmail sends
+         it). Fires at minute 5 of EVERY hour on the local clock; the module's
+         scheduled gate sends only in the 18:00 Central hour, once a day.
+         Path is the laptop placeholder; install_agent.py rewrites it:
+         python -m automations.day_orchestrator.install_agent interviewers-retention -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/interviewers_retention.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key>
+        <integer>5</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/interviewers-retention.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/interviewers-retention.err</string>
+</dict>
+</plist>

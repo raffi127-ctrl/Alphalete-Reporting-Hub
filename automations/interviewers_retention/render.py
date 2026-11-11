@@ -89,8 +89,9 @@ def board_html(b: Board, show_detail: bool = True) -> str:
     counts = (f'<div class="counts"><span class="pill good">{b.green} at 50% or more</span>'
               f'<span class="pill bad">{b.red} under 50%</span></div>') if b.lines else ""
     hist_note = (f'<div class="note">Last {len(hist)} columns: the % of each of the '
-                 f'{len(hist)} weeks before this one, oldest to newest (week starting '
-                 f'that Sunday). — = no 2nd rounds booked that week.</div>') if hist else ""
+                 f'last {len(hist)} weeks, oldest to newest, this week included (each '
+                 f'labelled by the Sunday it starts). — = no 2nd rounds booked that '
+                 f'week.</div>') if hist else ""
     return (f'<div class="board" id="board"><div class="head">'
             f'<div class="title">{e(b.title)}</div><div class="sub">{e(b.subtitle)}</div>'
             f'{counts}</div>{hist_note}'

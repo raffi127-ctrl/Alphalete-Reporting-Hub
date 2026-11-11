@@ -44,10 +44,19 @@ class Weeks(unittest.TestCase):
 
     def test_history_is_prior_weeks_oldest_first(self):
         pi, po = build.podiums(build.parse_weeks(TAB, TODAY))
-        self.assertEqual(pi.history_labels, ["10/25", "11/1"])
+        self.assertEqual(pi.history_labels, ["10/25", "11/1", "11/8"])
         g = pi.lines[0]
-        self.assertEqual(g.history, [None, 0.5])          # 10/25 none, 11/1 = 3/6
-        self.assertEqual(pi.lines[1].history, [0.5, None])
+        self.assertEqual(g.history, [None, 0.5, 0.65])    # 10/25 none, 11/1 = 3/6, 11/8 = 13/20
+        self.assertEqual(pi.lines[1].history, [0.5, None, 0.25])
+
+    def test_header_spellings_and_skipped_boxes(self):
+        tab = [["11/15", "", " INTERVIEWERS RETENTION"], ["", "OFFICE"],
+               ["INTERVIEWER", "", "2ND RD BOOKED", "2nd Rd Showed"], ["Atef", "G", "4", "2"],
+               ["11/8", "", " INTERVIEWERS RETENTION"], ["", "OFFICE"],
+               ["INTERVIEWER", "", "Booked", "Showed"], ["Atef", "G", "4", "2"]]
+        w = build.parse_weeks(tab, TODAY)
+        self.assertEqual([(x.label, x.rows[0].booked) for x in w], [("11/15", 4)])
+        self.assertEqual([lbl for lbl, _ in build.SKIPPED], ["11/8"])
 
     def test_colour_fifty_is_green(self):
         self.assertEqual(build.colour(0.5), "good")
@@ -65,6 +74,40 @@ class Weeks(unittest.TestCase):
         self.assertTrue(has)
         self.assertEqual([(l.name, l.booked, l.showed) for l in bi.lines], [("G", 4, 3), ("N", 2, 0)])
         self.assertEqual([(l.name, l.booked, l.showed) for l in bo.lines], [("Omar", 1, 1), ("Atef", 5, 2)])
+
+
+class Datos(unittest.TestCase):
+    H = ["Semana (domingo)", "Fecha", "Día", "Office ID", "Owner", "Empresa",
+         "2nd agendadas", "2nd vinieron", "% vinieron"]
+
+    def test_office_podium_last_full_week_and_four_weeks(self):
+        rows = build.parse_datos([self.H,
+            ["2026-11-01", "2026-11-02", "Lun", "1", "Atef", "", "4", "2", ""],
+            ["2026-11-01", "2026-11-03", "Mar", "1", "Atef", "", "6", "4", ""],
+            ["2026-11-01", "2026-11-02", "Lun", "2", "Omar", "", "2", "2", ""],
+            ["2026-10-18", "2026-10-19", "Lun", "1", "Atef", "", "4", "1", ""],
+            ["2026-11-08", "2026-11-10", "Mar", "1", "Atef", "", "5", "1", ""]])
+        wk = build.last_full_week(TODAY)                  # Wed 11/11 -> Sun 11/1
+        self.assertEqual(wk, dt.date(2026, 11, 1))
+        b = build.office_podium_datos(rows, wk)
+        self.assertEqual(b.history_labels, ["10/11", "10/18", "10/25", "11/1"])
+        self.assertEqual([(l.name, l.booked, l.showed) for l in b.lines],
+                         [("Omar", 2, 2), ("Atef", 10, 6)])
+        self.assertEqual(b.lines[1].history, [None, 0.25, None, 0.6])
+        y = build.yesterday_office_datos(rows, dt.date(2026, 11, 10))
+        self.assertEqual([(l.name, l.booked, l.showed) for l in y.lines], [("Atef", 5, 1)])
+
+
+class Roster(unittest.TestCase):
+    def test_only_roster_offices_with_roster_spelling(self):
+        D = lambda oid, owner: build.DayRow(dt.date(2026, 11, 1), dt.date(2026, 11, 2), oid, owner, 2, 1)
+        rows = [D("1", "Juan Botero-Berrio"), D("2", "Andre Burton Jr"), D("3", "Someone Else"),
+                D("4", "Jamis Garay New")]
+        kept, missing = build.match_offices(rows, ["Juan Botero Berrio", "Andre Burton",
+                                                   "Jamis Garay", "Steve McElwee"])
+        self.assertEqual(sorted((r.office_id, r.owner) for r in kept),
+                         [("1", "Juan Botero Berrio"), ("2", "Andre Burton"), ("4", "Jamis Garay")])
+        self.assertEqual(missing, ["Steve McElwee"])
 
 
 if __name__ == "__main__":

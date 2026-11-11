@@ -34,12 +34,14 @@ SOURCE_TAB = "Interviewers Retention (Interviewer)"
 BLOCK_MARK = "INTERVIEWERS RETENTION"      # col C of a week box's first row
 HEAD_OWNER = "INTERVIEWER"                  # col A of the column-header row
 TOTALS_LABEL = "AVERAGES"                   # last row of a box; never an owner
-BOOKED_HEADER = "2nd r booked"
-SHOWED_HEADER = "2nd r showed"
+# Header spellings seen / tolerated, compared letters+digits only, so
+# '2nd R BOOKED', '2ND RD BOOKED', '2nd Round Booked' all match.
+BOOKED_HEADERS = ("2ndrbooked", "2ndrdbooked", "2ndroundbooked", "2ndroundsbooked")
+SHOWED_HEADERS = ("2ndrshowed", "2ndrdshowed", "2ndroundshowed", "2ndroundsshowed")
 INTERVIEWER_SUBHEAD = "OFFICE"              # the row above the headers names col B
 
 GOAL = 0.50                                 # >= 50% green, < 50% red
-HISTORY_WEEKS = 4                           # Raf: the 4 weeks before this one
+HISTORY_WEEKS = 4                           # Raf: the last 4 weeks, this one included
 
 
 # ------------------------------------------------------------------ helpers
@@ -123,16 +125,28 @@ def _cell(row: List, i: Optional[int]) -> str:
     return norm(row[i]) if i is not None and 0 <= i < len(row) else ""
 
 
-def _find(row: List, want: str) -> Optional[int]:
+def _flat(s) -> str:
+    return re.sub(r"[^a-z0-9]", "", norm(s).lower())
+
+
+def _find(row: List, wants) -> Optional[int]:
+    wants = (wants,) if isinstance(wants, str) else wants
     for i, c in enumerate(row):
-        if norm(c).lower() == want:
+        if _flat(c) in wants:
             return i
     return None
+
+
+# Boxes the last parse_weeks() call could NOT read, as (label, reason): the run
+# prints them, so a week that silently drops out never happens again (11/11:
+# the 4-week columns stopped at 10/18 and nothing said why).
+SKIPPED: List[Tuple[str, str]] = []
 
 
 def parse_weeks(values: List[List], today: dt.date) -> List[Week]:
     """Every week box on the tab, newest first (the tab's own order)."""
     starts = [i for i, r in enumerate(values) if BLOCK_MARK in _cell(r, 2).upper()]
+    del SKIPPED[:]
     weeks: List[Week] = []
     for n, s in enumerate(starts):
         end = starts[n + 1] if n + 1 < len(starts) else len(values)
@@ -147,10 +161,14 @@ def _parse_week(values, start, end, today) -> Optional[Week]:
     head_i = next((i for i in range(start + 1, min(start + 6, end))
                    if _cell(values[i], 0).upper() == HEAD_OWNER), None)
     if not label or head_i is None:
+        SKIPPED.append((label or f"row {start + 1}",
+                        f"no '{HEAD_OWNER}' header row under row {start + 1}"))
         return None
     head = values[head_i]
-    b_col, s_col = _find(head, BOOKED_HEADER), _find(head, SHOWED_HEADER)
+    b_col, s_col = _find(head, BOOKED_HEADERS), _find(head, SHOWED_HEADERS)
     if b_col is None or s_col is None:
+        SKIPPED.append((label, f"row {head_i + 1} has no 2nd R BOOKED / SHOWED column "
+                               f"(headers: {', '.join(norm(c) for c in head if norm(c))})"))
         return None
     # The interviewer column is the one the row above the headers labels
     # 'OFFICE' (the swapped label); col B when that row is missing.
@@ -248,7 +266,8 @@ def podiums(weeks: List[Week], pick: int = 0) -> Tuple[Board, Board]:
     """The interviewer podium and the office podium for weeks[pick], each row
     carrying the % of the HISTORY_WEEKS weeks before it, oldest to newest."""
     wk = weeks[pick]
-    prior = weeks[pick + 1: pick + 1 + HISTORY_WEEKS][::-1]          # oldest first
+    # The last HISTORY_WEEKS weeks ending with the one shown, oldest first.
+    prior = weeks[pick: pick + HISTORY_WEEKS][::-1]
     labels = [md(w.start) if w.start else w.label for w in prior]
     hist_i = [by_interviewer(w.rows) for w in prior]
     hist_o = [by_office(w.rows) for w in prior]
@@ -286,3 +305,139 @@ def yesterday_boards(second: Dict[str, Dict[dt.date, object]], day: dt.date
     bi = Board("YESTERDAY BY INTERVIEWER", sub, "Interviewer", ranked(ints))
     bo = Board("YESTERDAY BY OFFICE", sub, "Office", ranked(offs))
     return bi, bo, bool(bi.lines)
+
+
+# ------------------------------------------------- offices, from AppStream
+# Camila 2026-11-11: the weekly tab lags (it ended at 10/25 on 11/11), so the
+# OFFICE podium, its 4 weeks and yesterday-by-office come from AppStream
+# instead -- the 'Datos' tab a Lucy refreshes every hour
+# (automations/second_round_retention): one row per office per day,
+#   Semana (domingo) | Fecha | Día | Office ID | Owner | Empresa |
+#   2nd agendadas | 2nd vinieron | % vinieron
+# The INTERVIEWER podium stays on the weekly tab: AppStream has no per-
+# interviewer split. Columns are found by header text.
+DATOS_TAB = "Datos"
+DATOS_COLS = {"week": "semana (domingo)", "date": "fecha", "id": "office id",
+              "owner": "owner", "booked": "2nd agendadas", "showed": "2nd vinieron"}
+
+
+@dataclass
+class DayRow:
+    week: dt.date
+    date: dt.date
+    office_id: str
+    owner: str
+    booked: int
+    showed: int
+    company: str = ""          # 'Empresa': tells apart two offices of one owner
+
+
+def parse_datos(values: List[List]) -> List[DayRow]:
+    if not values:
+        return []
+    head = [norm(c).lower() for c in values[0]]
+    try:
+        col = {k: head.index(v) for k, v in DATOS_COLS.items()}
+    except ValueError as e:
+        raise RuntimeError(f"'{DATOS_TAB}' is missing a column ({e}); headers: {values[0]}")
+    out: List[DayRow] = []
+    for r in values[1:]:
+        try:
+            w = dt.date.fromisoformat(_cell(r, col["week"]))
+            d = dt.date.fromisoformat(_cell(r, col["date"]))
+        except ValueError:
+            continue
+        oid = _cell(r, col["id"])
+        if not oid:
+            continue
+        comp = _cell(r, head.index("empresa")) if "empresa" in head else ""
+        out.append(DayRow(w, d, oid, _cell(r, col["owner"]),
+                          count(_cell(r, col["booked"])), count(_cell(r, col["showed"])), comp))
+    return out
+
+
+def _office_lines(rows: Iterable[DayRow]) -> Dict[str, Line]:
+    out: Dict[str, Line] = {}
+    for r in rows:
+        ln = out.setdefault(r.office_id, Line(name=r.owner or r.office_id))
+        ln.booked += r.booked
+        ln.showed += r.showed
+        # The company goes under the name, so an owner with two offices (Rafael
+        # Hidalgo has several) shows as two rows that can be told apart.
+        if r.company and r.company not in ln.detail:
+            ln.detail.append(r.company)
+    return out
+
+
+def last_full_week(today: dt.date) -> dt.date:
+    """The Sunday of the last COMPLETE Sun-Sat week before `today`."""
+    this_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    return this_sun - dt.timedelta(days=7)
+
+
+def office_podium_datos(rows: List[DayRow], week: dt.date) -> Board:
+    """Office podium for the Sun-Sat week starting `week`, with the last
+    HISTORY_WEEKS weeks (this one included), oldest first."""
+    weeks = [week - dt.timedelta(days=7 * k) for k in range(HISTORY_WEEKS)][::-1]
+    per = {w: _office_lines(r for r in rows if r.week == w) for w in weeks}
+    lines = ranked(per[week])
+    for ln in lines:
+        oid = next(k for k, v in per[week].items() if v is ln)
+        ln.history = [per[w][oid].pct if oid in per[w] else None for w in weeks]
+    sub = (f"week of {md(week)} (Sun {md(week)} - Sat {md(week + dt.timedelta(days=6))}) "
+           f"· source: AppStream")
+    return Board("PODIUM BY OFFICE", sub, "Office", lines,
+                 history_labels=[md(w) for w in weeks])
+
+
+def yesterday_office_datos(rows: List[DayRow], day: dt.date) -> Board:
+    return Board("YESTERDAY BY OFFICE", f"{day:%A} {md(day)} · source: AppStream",
+                 "Office", ranked(_office_lines(r for r in rows if r.date == day)))
+
+
+# AppStream lists EVERY office in the company (158 on 11/11); the podium is
+# only Camila's -- the owners on the weekly tab. AppStream spells some owners
+# differently, so: exact (accents/punctuation ignored), then this alias list,
+# then a narrow fuzzy pass (same first name, one name's words inside the
+# other's, and only if exactly one AppStream office fits). The alias list is
+# the one Camila's 'Comparativa por oficinas' dashboard already uses.
+OWNER_ALIASES = {
+    "andre burton": "andre burton jr",
+    "calvin ribero": "calvin ribera",
+    "kash rai": "akashdeep rai",
+    "max aden": "maxamad aden",
+    "jose velazques": "jose velasquez",
+    "jc pascual": "jc gerard pascual",
+    "tre mitchell": "lamar mitchell iii",
+}
+
+
+def match_offices(rows: List[DayRow], roster: Iterable[str]
+                  ) -> Tuple[List[DayRow], List[str]]:
+    """(rows of the roster's offices, renamed to the roster's spelling,
+        roster owners with no AppStream office)."""
+    by_key: Dict[str, List[str]] = {}               # AppStream owner key -> office ids
+    for r in rows:
+        ids = by_key.setdefault(name_key(r.owner), [])
+        if r.office_id not in ids:
+            ids.append(r.office_id)
+    keep: Dict[str, str] = {}                        # office id -> roster name
+    missing: List[str] = []
+    for owner in roster:
+        k = name_key(owner)
+        k = OWNER_ALIASES.get(k, k)
+        ids = by_key.get(k)
+        if not ids:
+            want = k.split()
+            cands = [ak for ak in by_key
+                     if want and ak.split() and ak.split()[0] == want[0]
+                     and (set(want) <= set(ak.split()) or set(ak.split()) <= set(want))]
+            ids = by_key[cands[0]] if len(cands) == 1 else None
+        if not ids:
+            missing.append(owner)
+            continue
+        for oid in ids:
+            keep.setdefault(oid, owner)
+    out = [DayRow(r.week, r.date, r.office_id, keep[r.office_id], r.booked, r.showed,
+                  r.company) for r in rows if r.office_id in keep]
+    return out, missing
