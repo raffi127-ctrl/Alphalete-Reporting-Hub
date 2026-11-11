@@ -3593,7 +3593,7 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": null,
-   "timeout_minutes": 90
+   "timeout_minutes": 420
   },
   "nds_ps_week_probe": {
    "hand_run_only": true,

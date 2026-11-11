@@ -971,12 +971,16 @@ def keep_blank_or_zero_cells(values: List[List[str]], metric_rows: Dict[str, int
 # Goes tab by tab: preview tab first, the rest after Eve says "roll out".
 # Put "*" in the set to switch every tab.
 DUPLICATE_V2_TABS = {"Marcellus Butler"}
+# Rolled out 2026-11-11 (Eve: "roll out") to every tab of the ATT Program
+# focus report — Raf's captainship. Carlos / NDS keep the old rows.
+DUPLICATE_V2_CAPTAINSHIPS = {"Raf"}
 DUPLICATE_ROW_LABEL = "Duplicate/Already Interviewed"
 OLD_DUPLICATE_ROW_LABEL = "Removed From Process Emails"
 
 
 def duplicate_v2_on(tab_name: str) -> bool:
-    return "*" in DUPLICATE_V2_TABS or tab_name in DUPLICATE_V2_TABS
+    return (CAPTAINSHIP in DUPLICATE_V2_CAPTAINSHIPS
+            or "*" in DUPLICATE_V2_TABS or tab_name in DUPLICATE_V2_TABS)
 
 
 def apply_duplicate_v2(metrics: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
