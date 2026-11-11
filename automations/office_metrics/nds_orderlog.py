@@ -338,6 +338,21 @@ _NDS_ORDERLOG_SRC = {
 }
 
 
+# Per-owner rep-tab layouts for the scheduled NDS Order Log. Colten
+# 2026-11-11 (#l10-alphalete: "add the account holder phone number to this
+# page as well so we can reach out directly from here"): the customer's
+# number (spe.TN, already on the All tab) between Package and Status, same
+# spot and header as Carlos's crew. Owners not listed keep the house tabs.
+_OWNER_REP_TABS = {
+    "Colten Wright": (
+        ["Order Date", "Activation Date", "Customer Name", "SPM Number",
+         "Type", "Next Up", "Package", "Customer Phone", "Status",
+         "Install Date", "Ported From", "Tier Bonus $"],
+        {"Customer Phone": "Phone Number"},
+    ),
+}
+
+
 def _render_order_log(owner, header, rows, target, out_dir,
                       rep_tab_columns=None, rep_tab_display=None,
                       extra_columns=None):
@@ -837,7 +852,10 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
     elif board == "activation_rate":
         img, count = _render_activation_rate(owner, header, rows, target, out_dir)
     elif board == "order_log":
-        img, count = _render_order_log(owner, header, rows, target, out_dir)
+        _cols, _disp = _OWNER_REP_TABS.get(owner, (None, None))
+        img, count = _render_order_log(owner, header, rows, target, out_dir,
+                                       rep_tab_columns=_cols,
+                                       rep_tab_display=_disp)
         is_file = True
     elif board == "pending_orders":
         imgs, count = _render_pending_orders(owner, header, rows, target, out_dir)
