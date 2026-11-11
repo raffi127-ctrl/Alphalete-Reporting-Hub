@@ -155,10 +155,75 @@ AGENT_FILES = [
     # Office admin page jobs (Raf 2026-11-01): the admin's buttons, done on
     # this computer with this office's own logins.
     "automations/icd_alerts/office_jobs.py",
-    # New starts -> Apex (Megan 2026-11-08). The office's own computer reads
-    # its training calendar and its Blue Ink packets; the admin only presses a
-    # button. values.py rather than run.py on purpose -- run.py pulls the sales
-    # board and so Google Sheets, which has no business on an office Mac.
+    # Online presence (2026-11-08): the office's OWN Zoho, signed in on this
+    # computer; office_jobs hands it the admin's approved posts. These four
+    # were added to agent_files.txt -- so every office has had them since --
+    # but never to this list, which is one half of why the manifest test sat
+    # red for three days.
+    "automations/icd_alerts/social_post.py",
+    "automations/brand_audit/__init__.py",
+    "automations/brand_audit/config.py",
+    "automations/brand_audit/zoho_draft.py",
+    "automations/icd_alerts/sterling_send.py",
+    "automations/icd_alerts/sterling_forward.py",
+    "automations/icd_alerts/sterling_setup.py",
+    # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
+    "automations/icd_alerts/pnl.py",
+    # The PNL's Apex half: the owner's one sign-in window, and Carlos's
+    # export shipped whole (stdlib at the top; its Google writes are never
+    # called on an office Mac).
+    "automations/icd_alerts/apex_signin.py",
+    "automations/carlos_payroll_pull/__init__.py",
+    "automations/carlos_payroll_pull/run.py",
+    # Whether this Mac can read the owner's SaraPlus code texts (Eve 2026-10-29).
+    "automations/icd_alerts/messages_probe.py",
+    # SaraPlus's code read off the owner's texts in Messages (Eve 2026-10-31).
+    "automations/icd_alerts/sms_code.py",
+]
+
+# NEW STARTS -> APEX: DECLARED, NOT DELIVERED. (2026-11-11)
+#
+# These went into AGENT_FILES on 2026-11-08 ("apex_week: ship it to the office
+# machines") and were never added to agent_files.txt -- and agent_files.txt is
+# the list an office actually downloads (install.sh, update.sh, selfupdate).
+# So no office computer has ever had one of them: an `apex_week` job handed to
+# an office machine answers "No module named automations.office_admin", and
+# always has. Nobody noticed because no apex_week job has been queued yet.
+#
+# THEY STAY OUT until the job can really run there, which is more than adding
+# nineteen lines to a text file. Since the 8th the path has grown imports an
+# office Mac cannot satisfy, because it has no Google access at all:
+#
+#   eco_run._removed_on_the_board   reads the office's onboarding board, a
+#       Google Sheet (icd_onboarding.sheet / fillers -> recruiting_report.fill).
+#       Unreadable there, and unreadable means REFUSE -- "a board that cannot
+#       be read is NOT a board with nobody removed" -- so the job stops before
+#       it adds anyone. Right answer, but it is every run. The removals have
+#       to reach the office another way (in the job, through the relay).
+#   office_jobs.work                icd_onboarding.office_steps (uses_blueink)
+#   office_admin.fdot               icd_onboarding.board.week_start_of, and
+#                                   raf_daily_update.run._CAL_NAV_JS
+#   apex_new_starts.blueink_data    terminated_reps.board.base_name -- a module
+#                                   that opens Google Sheets as it imports
+#   applicant_tracker.applicantstream.session
+#                                   shared.tableau_patchright
+#
+# WHERE IT RUNS IS SETTLED (Megan, 2026-11-11): "apex has to run on the ECO
+# machine since it's that ICDs independent login." So it is not moving to a
+# Lucy, and the office Mac is not getting Google access: what the job needs
+# from our Sheets has to TRAVEL WITH THE JOB -- who the board says was removed
+# that week (and that the board was really read: a missing list is not an
+# empty one), whether the office uses Blue Ink -- and the "Added to APEX" tick
+# has to be written on our side from the result the office sends back. The
+# pure helpers (week_start_of, base_name, the calendar-nav script) need to
+# live in files that can ship.
+#
+# Shipping the files without settling those would put a payroll job on forty
+# office computers that can only ever answer "error". When it is ready: move
+# these back into AGENT_FILES, add them (and what they import) to
+# agent_files.txt in the same commit, and the two tests in
+# test_knocks.ShippedClosureTests / UpdateScriptTests will say what is left.
+APEX_WEEK_FILES = [
     "automations/apex_new_starts/__init__.py",
     "automations/apex_new_starts/eco_run.py",
     "automations/apex_new_starts/values.py",
@@ -178,21 +243,6 @@ AGENT_FILES = [
     "automations/shared/hub_autopublish.py",
     "automations/applicant_tracker/__init__.py",
     "automations/applicant_tracker/applicantstream.py",
-    "automations/icd_alerts/sterling_send.py",
-    "automations/icd_alerts/sterling_forward.py",
-    "automations/icd_alerts/sterling_setup.py",
-    # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
-    "automations/icd_alerts/pnl.py",
-    # The PNL's Apex half: the owner's one sign-in window, and Carlos's
-    # export shipped whole (stdlib at the top; its Google writes are never
-    # called on an office Mac).
-    "automations/icd_alerts/apex_signin.py",
-    "automations/carlos_payroll_pull/__init__.py",
-    "automations/carlos_payroll_pull/run.py",
-    # Whether this Mac can read the owner's SaraPlus code texts (Eve 2026-10-29).
-    "automations/icd_alerts/messages_probe.py",
-    # SaraPlus's code read off the owner's texts in Messages (Eve 2026-10-31).
-    "automations/icd_alerts/sms_code.py",
 ]
 
 # HUB-ONLY IMPORTS THAT SHIP ON PURPOSE, each inside a function, never at
@@ -231,11 +281,67 @@ HUB_ONLY_IMPORTS = {
      "upload"),
     ("automations/headshots/ov_upload.py", "automations.headshots",
      "announce"),
+    # ---- everything below was added 2026-11-11, when the closure test had
+    # ---- been red for weeks and so was guarding nothing. Each was checked
+    # ---- by hand against what an office machine actually calls.
+    #
+    # The push window: an office calls in_hours / due / needs_batch_check.
+    # gate() is the Lucys' own tick (deploy/*.sh, `python -m ...window`) and
+    # is the only thing that asks the mini whether the 4am run is going.
+    ("automations/applicant_push/window.py",
+     "automations.day_orchestrator.mini_control", "gate"),
+    # Zoho: social_post uses wait_for_signin / channel_check / page_of /
+    # select_channels / post_now. launch_login and main are the Hub's own
+    # sign-in command for Alphalete's and the online-presence offices' Zoho.
+    ("automations/brand_audit/zoho_draft.py",
+     "automations.shared.tableau_patchright", "launch_login"),
+    ("automations/brand_audit/zoho_draft.py",
+     "automations.online_presence", "main"),
+    # code_answer ships for its request WORDING. Reading the code out of the
+    # inbox is Lucy 1's half, and so is everything that writes the forwards
+    # down in a Sheet -- each of those inside a try that carries on without.
+    ("automations/icd_alerts/code_answer.py",
+     "automations.rc_contact_sync", "_newest_code"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.rc_contact_sync", "_sterling_inbox_code"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.recruiting_report.fill", "_main"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.recruiting_report.fill", "answer_requests"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.recruiting_report.fill", "record_forwards"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.recruiting_report.fill", "confirm_forwards"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.recruiting_report.fill", "publish_confirmed"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.recruiting_report.fill", "publish_working"),
+    ("automations/icd_alerts/code_answer.py",
+     "automations.recruiting_report.fill", "check_forward_scope"),
+    # Setup offers the standard AppStream login when the Hub's provisioner is
+    # there; on an office machine it is not, and setup says so and goes on.
+    ("automations/icd_alerts/finish_setup.py",
+     "automations.shared.appstream_provision", "_standard_appstream_login"),
+    # NEW STARTS -> APEX IS NOT ON OFFICE MACHINES YET (APEX_WEEK_FILES, up by
+    # AGENT_FILES, says why). office_jobs.work is one big try: an `apex_week` job
+    # that reaches an office today answers status "error" naming the module
+    # it could not import, and adds nobody. _appstream_id is only ever called
+    # from that same branch, after the import that fails first.
+    ("automations/icd_alerts/office_jobs.py", "automations.office_admin", "work"),
+    ("automations/icd_alerts/office_jobs.py", "automations.icd_onboarding", "work"),
+    ("automations/icd_alerts/office_jobs.py", "automations.apex_new_starts", "work"),
+    ("automations/icd_alerts/office_jobs.py", "automations.office_admin",
+     "_appstream_id"),
 }
 # The functions in that list the office push must never reach.
 HUB_ONLY_ENTRY_POINTS = {"_nophone_ws", "run",
                          # Lucy 3's side of the headshot uploader
-                         "_lucy_rqst", "upload", "announce"}
+                         "_lucy_rqst", "upload", "announce",
+                         # 2026-11-11: the Lucys' tick, the Hub's Zoho sign-in,
+                         # Lucy 1's inbox read, and the Apex branch's helper
+                         "gate", "launch_login", "main",
+                         "_newest_code", "_sterling_inbox_code", "_main",
+                         "_appstream_id"}
 
 # The repo's automations/__init__.py installs the Hub's auto-publish hook. That
 # is Hub machinery and has no business on an ICD's laptop, so the bundle gets
