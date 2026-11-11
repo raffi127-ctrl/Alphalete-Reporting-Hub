@@ -245,8 +245,12 @@ def terminate(workbook, week_start: dt.date, names: Sequence[str],
         return 0
     why = (reason or "").strip()
     if why and why not in B.REMOVAL_REASONS:
-        log("  ! %r is not one of %s -- writing it anyway"
-            % (why, ", ".join(B.REMOVAL_REASONS)))
+        # Expected: the panel's "Other" lets somebody type the reason nobody
+        # thought of. Still said out loud, because a typed reason is one
+        # nothing can count later -- if the same words keep appearing here,
+        # that is a sixth reason asking to join the pick list.
+        log("  typed reason (not one of the %d offered): %r"
+            % (len(B.REMOVAL_REASONS), why))
     a1 = _a1(cols[B.TERMINATED_AT] + 1)
     stamp = dt.date.today().strftime("%m/%d/%Y")
     writes = [{"range": "%s%d" % (a1, FIRST_DATA_ROW + i),

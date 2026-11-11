@@ -370,8 +370,21 @@
             '<td colspan="' + (STEPS.length + 6) + '">' +
             '<span class="whyq">Remove <b>' + esc(name) +
             '</b> from onboarding \u2014 why?</span>' +
+            '<span class="whypick">' +
             REASONS.map(r => '<button class="bd-why" data-who="' + esc(name) +
               '" data-why="' + esc(r) + '">' + esc(r) + '</button>').join('') +
+            // OTHER, for the reason nobody thought of (Megan, 2026-11-11).
+            // Last, after the five that cover most weeks, so it is the way
+            // out rather than the easy first click -- a typed reason is one
+            // nothing can count later.
+            '<button class="bd-other" data-who="' + esc(name) +
+            '">Other\u2026</button>' +
+            '</span>' +
+            '<span class="whytype" hidden>' +
+            '<input class="bd-whytext" data-who="' + esc(name) +
+            '" placeholder="Why are they coming off?" maxlength="60">' +
+            '<button class="bd-whysave" data-who="' + esc(name) + '">Save</button>' +
+            '</span>' +
             '<button class="bd-nvm" data-who="' + esc(name) + '">Cancel</button>' +
             '</td></tr>';
         }
@@ -451,13 +464,38 @@
         if (open) open.hidden = was;
       };
     });
-    root.querySelectorAll('.bd-nvm').forEach(b => { b.onclick = shut; });
     const mark = async (who, action, reason) => {
       await ask('board_mark', {office: state.office, week: state.week,
                                names: [who], action: action, reason: reason || ''});
       await load(state.office, state.week);
       render(root);
     };
+    root.querySelectorAll('.bd-nvm').forEach(b => { b.onclick = shut; });
+    // "Other" swaps the pick list for a box. The question stays on screen, so
+    // it is still obvious who is being removed while they type.
+    root.querySelectorAll('.bd-other').forEach(b => {
+      b.onclick = () => {
+        const row = b.closest('tr');
+        row.querySelector('.whypick').hidden = true;
+        const box = row.querySelector('.whytype');
+        box.hidden = false;
+        box.querySelector('.bd-whytext').focus();
+      };
+    });
+    const typed = async i => {
+      const why = i.value.trim();
+      // A blank "Other" is not a reason. Saying nothing would record a
+      // removal nobody can explain later, which is the whole point of asking.
+      if (!why) { i.focus(); return; }
+      i.disabled = true;
+      await mark(i.dataset.who, 'terminate', why);
+    };
+    root.querySelectorAll('.bd-whytext').forEach(i => {
+      i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); typed(i); } };
+    });
+    root.querySelectorAll('.bd-whysave').forEach(b => {
+      b.onclick = () => typed(b.closest('tr').querySelector('.bd-whytext'));
+    });
     root.querySelectorAll('.bd-why').forEach(b => {
       b.onclick = async () => {
         b.disabled = true;

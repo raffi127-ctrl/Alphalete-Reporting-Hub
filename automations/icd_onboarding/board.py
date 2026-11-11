@@ -140,11 +140,14 @@ TERMINATED_AT = "Terminated"
 # date that everything already reading it still understands.
 REMOVED_WHY = "Removed Because"
 
-# The only four answers. A pick list, not a free-text box: four words that mean
-# the same thing to everybody beat fifty spellings of "quit" that nothing can
-# count later (Megan, 2026-11-11). "Failed BG" is here because it is the common
-# one -- it is NOT how a failed check gets recorded, which is the BG Status
-# column's job; this is only why the person left the board.
+# The answers offered. A pick list first, because words that mean the same
+# thing to everybody beat fifty spellings of "quit" that nothing can count
+# later (Megan, 2026-11-11). The panel also offers "Other", which lets
+# somebody type one -- so this is the list that is OFFERED, never a list of
+# what is allowed, and anything read back may be a typed reason instead.
+# "Failed BG" is here because it is the common one -- it is NOT how a failed
+# check gets recorded, which is the BG Status column's job; this is only why
+# the person left the board.
 REMOVAL_REASONS: Sequence[str] = ("Terminated", "Failed BG", "No Show",
                                   "Did not show to day 1 Classroom",
                                   "Left Classroom")

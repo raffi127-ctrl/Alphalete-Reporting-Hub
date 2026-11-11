@@ -141,6 +141,7 @@ def test_removing_somebody_asks_why_before_it_does_anything(page):
     offered = page.eval_on_selector_all(
         ".whyrow:not([hidden]) .bd-why", "els => els.map(e => e.textContent)")
     assert offered == list(B.REMOVAL_REASONS)
+    assert page.locator(".whyrow:not([hidden]) .bd-other").count() == 1
     page.locator(".whyrow:not([hidden]) .bd-nvm").click()
     assert page.locator(".whyrow:not([hidden])").count() == 0, "cancel closes it"
 
@@ -225,3 +226,30 @@ def test_live_people_are_numbered_down_the_left(page):
     _show(page, people, show_off=True)
     nums = page.eval_on_selector_all("td.no", "els => els.map(e => e.textContent)")
     assert nums == ["1", "2", "1", "2"], nums
+
+
+def test_other_lets_somebody_type_a_reason_and_refuses_a_blank_one(page):
+    """Megan, 2026-11-11: an Other option they can free type. A blank one is
+    not a reason, though -- saving nothing would record a removal nobody can
+    explain later, which is the whole point of asking."""
+    _show(page, [_person("Ada Fournier", "A")])
+    page.locator(".bd-ask").first.click()
+    page.locator(".bd-other").first.click()
+    assert not page.locator(".whypick").first.is_visible(), "the buttons give way"
+    assert page.locator(".bd-whytext").first.is_visible()
+    page.evaluate("""() => {
+        const seen = [], old = window.chrome.runtime.sendMessage;
+        window.chrome.runtime.sendMessage = (m, cb) => { seen.push(m); old(m, cb); };
+        window.__seen = seen;
+    }""")
+    page.locator(".bd-whysave").first.click()
+    assert page.evaluate("() => window.__seen.length") == 0, "a blank is not saved"
+    page.locator(".bd-whytext").first.fill("Moved out of state")
+    page.locator(".bd-whysave").first.click()
+    # A plain wait, not wait_for_function: that one polls in an isolated
+    # world where the page's own window.__seen does not exist.
+    page.wait_for_timeout(500)
+    sent = page.evaluate("() => window.__seen[0]")
+    assert sent["call"] == "board_mark"
+    assert sent["extra"]["action"] == "terminate"
+    assert sent["extra"]["reason"] == "Moved out of state"
