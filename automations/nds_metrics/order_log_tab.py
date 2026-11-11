@@ -66,6 +66,8 @@ CARRIED = ("Notes", "Being worked on", "Delivered Message Sent")
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
 _TEXT_COLS = _ID_COLS + ("Zip", "Email")   # written as text, never a number
+_DATE_COLS = ("Week Ending", "Order Date", "Ship Date", "Delivered", "Activation Date",
+              "Last Updated")                # one date pattern, so a sort sees one 11/08/2026
 # a change in any of these restamps Last Updated
 _STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
                "Type", "Phone #", "Device", "Plan")
@@ -318,6 +320,10 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
             row[_COL["Email"]] = str(email_lookup(row[_COL["DSI #"]]) or "")
         if active_lookup and not str(row[_COL["Activation Date"]]).strip():
             row[_COL["Activation Date"]] = str(active_lookup(row[_COL["Phone #"]]) or "")
+        for c in _DATE_COLS:
+            d = _parse_date(row[_COL[c]])
+            if d:
+                row[_COL[c]] = _fmt(d)
         if (row[_COL["Customer"]] or row[_COL["Wireless Order #"]]
                 or row[_COL["DSI #"]]):
             merged[_key(row)] = row
@@ -390,10 +396,24 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
                                    "fields": "gridProperties.frozenRowCount"}},
         {"setBasicFilter": {"filter": {"range": rng(0, max(n_rows, 1) + 1, 0, n_cols)}}},
     ]
+    # Formats outlive ws.clear(), so a column that inherits another's letter
+    # after an insert keeps that column's format: Order Date landed on DSI #'s
+    # TEXT format on 11/11 and the dates split into "11/08/2026" (text) and
+    # "11/8/2026" (a date) -- Carlos: "when I'm sorting it, it's like they're
+    # two different options". Every column is reset to AUTOMATIC first, then
+    # the id/zip/e-mail columns get TEXT and the date columns one date pattern.
+    reqs.append({"repeatCell": {"range": rng(1, 1000, 0, max(n_cols, 26)),
+                                "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "General"}}},
+                                "fields": "userEnteredFormat.numberFormat"}})
     for name in _TEXT_COLS:
         c = _COL[name]
-        reqs.append({"repeatCell": {"range": rng(1, max(n_rows, 1) + 1, c, c + 1),
+        reqs.append({"repeatCell": {"range": rng(1, 1000, c, c + 1),
                                     "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
+                                    "fields": "userEnteredFormat.numberFormat"}})
+    for name in _DATE_COLS:
+        c = _COL[name]
+        reqs.append({"repeatCell": {"range": rng(1, 1000, c, c + 1),
+                                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "mm/dd/yyyy"}}},
                                     "fields": "userEnteredFormat.numberFormat"}})
     # "Being worked on" / "Delivered Message Sent": a Yes / No dropdown on every data row.
     # Cleared off EVERY column first: a rule stays on its letter when a column

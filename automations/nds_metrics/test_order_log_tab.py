@@ -329,5 +329,33 @@ class ActivationDateTests(unittest.TestCase):
         self.assertEqual(out["rows"][0][T._COL["Port Status"]], full["Port Status"])
 
 
+class DateSpellingTests(unittest.TestCase):
+    """11/11: Week Ending read back as both 11/08/2026 and 11/8/2026 and sorted
+    as two values -- carried rows are re-spelt and the date columns get one
+    date format on every rewrite."""
+
+    def test_carried_rows_dates_are_respelt(self):
+        prior = T.line_row(line(), "11/9/2026")
+        prior[T._COL["Week Ending"]] = "11/8/2026"
+        prior[T._COL["Order Date"]] = "10/24/26"
+        out = T.merge([prior], [], today=TODAY)
+        r = out["rows"][0]
+        self.assertEqual(r[T._COL["Week Ending"]], "11/08/2026")
+        self.assertEqual(r[T._COL["Order Date"]], "10/24/2026")
+        self.assertEqual(r[T._COL["Last Updated"]], "11/09/2026")
+
+    def test_date_columns_get_one_format_after_a_reset(self):
+        reqs = [r["repeatCell"] for r in T._format_requests(7, 10, 0) if "repeatCell" in r]
+        fmts = [(r["range"]["startColumnIndex"], r["range"]["endColumnIndex"],
+                 r["cell"]["userEnteredFormat"].get("numberFormat", {}))
+                for r in reqs if "numberFormat" in r["cell"]["userEnteredFormat"]]
+        self.assertEqual(fmts[0][0], 0)                                  # the reset comes first
+        self.assertGreaterEqual(fmts[0][1], len(T.HEADERS))
+        dates = {c0 for c0, c1, f in fmts if f.get("type") == "DATE"}
+        self.assertEqual(dates, {T._COL[c] for c in T._DATE_COLS})
+        texts = {c0 for c0, c1, f in fmts if f.get("type") == "TEXT"}
+        self.assertEqual(texts, {T._COL[c] for c in T._TEXT_COLS})
+
+
 if __name__ == "__main__":
     unittest.main()
