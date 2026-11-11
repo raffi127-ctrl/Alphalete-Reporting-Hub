@@ -869,6 +869,24 @@ def ns_pct_by_owner(table: list) -> dict:
     return out
 
 
+# One-day notes at the top of the email, keyed by CT date (Eve 2026-11-11).
+DAY_NOTES = {
+    "2026-11-11": (
+        "Heads up: in today's email, the New Start % column is missing some offices "
+        "for a few owners. It will be complete in tomorrow's email. These changes have "
+        "to be tested before they go out, a couple of test runs failed along the way, "
+        "and each run ties up Lucy for about 2.5 hours, so we're rolling it out step by step."),
+}
+
+
+def day_note_html() -> str:
+    note = DAY_NOTES.get(dt.datetime.now(CT).date().isoformat())
+    if not note:
+        return ""
+    return ('<div style="background:#FDECEC;border-left:5px solid #D9534F;padding:10px 14px;'
+            'margin:6px 0;font-size:13px;color:#1F2A44">%s</div>' % note)
+
+
 def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
                      show_link: bool = True, new_start_pct: dict = None) -> str:
     ns = NEW_START_PCT if new_start_pct is None else new_start_pct
@@ -908,7 +926,7 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
     return (
         '<div style="font-family:Roboto,Arial,sans-serif;max-width:680px">'
         '<div style="background:#1F2A44;color:#fff;padding:14px 16px;font-size:18px;font-weight:bold">'
-        'LUCY · 2nd Round Recordings</div>'
+        'LUCY · 2nd Round Recordings</div>' + day_note_html() +
         '<div style="background:#FFF4CC;border-left:5px solid #E0B84C;padding:10px 14px;margin:6px 0">'
         '<span style="font-size:22px;font-weight:bold;color:#1F2A44">%s</span>'
         '<span style="font-size:14px;color:#5B6478;padding-left:8px">· Month to date</span></div>'
