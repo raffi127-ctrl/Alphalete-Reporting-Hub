@@ -151,6 +151,15 @@ def phone_e164(text) -> str:
         digits = digits[1:]
     return "+1" + digits if len(digits) == 10 else ""
 
+
+def email_ok(text: str) -> str:
+    """'  Pat@Example.com ' -> 'pat@example.com', or '' when it is not one.
+    Loose on purpose: it only has to catch a name or a phone number typed
+    into the wrong box, not police what a mail server would accept."""
+    s = str(text or "").strip().lower()
+    return s if re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", s) else ""
+
+
 # EVERY QUARTER HOUR FROM 6 AM TO 11.45 PM. Wide enough for an office that
 # starts early or runs late, and a list rather than a text box because
 # "1:30pm", "1.30", "130" and "13:30" are all things a person types into a
@@ -218,6 +227,15 @@ class IcdSignup(NamedTuple):
     # Only asked when they want texts. Rows from before this stay "[]" and
     # keep being found by name, exactly as they were.
     text_pins_json: str = "[]"
+    # THE EMAIL THEY SIGN IN TO SLACK WITH (Megan 2026-11-10: "let's add adding
+    # in their email they use for their slack account"). Lucy turns it into
+    # their Slack id when she announces the sign-up, which is what puts the
+    # owner in the group DM when their computer goes quiet. Without it the
+    # id column sat blank until somebody remembered -- Samuel's never was,
+    # and his "gone quiet" notice reached Megan and Eve and not him. An
+    # email rather than a name: two people here share a name more often than
+    # anybody would guess, and a DM to the look-alike is worse than none.
+    slack_email: str = ""
 
     def problems(self) -> List[str]:
         """What is wrong with this, in the words of the person who typed it."""
@@ -231,6 +249,8 @@ class IcdSignup(NamedTuple):
         if not phone_e164(self.contact):
             out.append("Please enter your own cell phone number, with the "
                        "area code (10 digits).")
+        if not email_ok(self.slack_email):
+            out.append("Please enter the email you use to sign in to Slack.")
         if self.platform not in PLATFORMS:
             out.append("Please say whether this is a Mac or a Windows PC.")
         for label, value in (("start", self.day_start), ("end", self.day_end)):
@@ -325,6 +345,7 @@ class IcdSignup(NamedTuple):
             knocks_json=str(row.get("knocks_json") or "[]"),
             credico_office=str(row.get("credico_office") or "").strip(),
             text_pins_json=str(row.get("text_pins_json") or "[]"),
+            slack_email=str(row.get("slack_email") or "").strip().lower(),
         )
 
 

@@ -34,6 +34,22 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.icd_signup import schema as S, store          # noqa: E402
+
+# A DEPLOY DOES NOT RESTART THIS APP. Streamlit Cloud pulls the new files and
+# re-runs THIS script from disk, but the modules it imports stay as they were
+# loaded when the server started. So the 2026-11-10 form (phone number + two
+# A players) went live on top of a schema from before it: every field showed,
+# and pressing Send crashed on `S.phone_e164` -- with an owner on a Zoom,
+# mid-enrolment. Reloading the two modules this page is built on, in the
+# order they depend on each other, makes a deploy mean what it says. It costs
+# a few milliseconds a run, and a failed reload leaves the old module in
+# place rather than taking the page down.
+import importlib                                                # noqa: E402
+for _mod in (S, store):
+    try:
+        importlib.reload(_mod)
+    except Exception:  # noqa: BLE001
+        pass
 from automations.shared import onboarding_ui as ui             # noqa: E402
 
 MAX_CHANNELS = 3      # the installer allows 4; three is plenty to type
@@ -161,6 +177,16 @@ with st.container(border=True):
         help="Your own cell, with the area code. The reporting team reaches "
              "you here, and Lucy uses it to find your group text. Your setup "
              "link appears on this page the moment you submit.")
+
+    # THE EMAIL ON THEIR SLACK ACCOUNT (Megan 2026-11-10). It is how Lucy
+    # finds THEM in Slack -- a name is not enough, two people here often
+    # share one -- so a "your computer has gone quiet" message reaches the
+    # owner and not only the reporting team.
+    slack_email = st.text_input(
+        "The email you use for Slack",
+        placeholder="e.g. you@gmail.com",
+        help="The email you sign in to Slack with. Lucy uses it to message "
+             "you directly if your office computer stops checking in.")
 
     st.subheader("Your campaign")
     campaign = st.radio(
@@ -407,6 +433,7 @@ if submitted:
         knocks_cadence=first_cadence,
         wanted_channels=summary,
         contact=S.phone_e164(contact) or contact.strip(),
+        slack_email=S.email_ok(slack_email) or slack_email.strip(),
         alert_channels_json=json.dumps(alerts),
         knocks_json=json.dumps(dests),
         text_groups_json=json.dumps(texts),

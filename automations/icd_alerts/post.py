@@ -3628,7 +3628,17 @@ def notify_new_signups(*, send: bool = False, book=None, log=print) -> List:
                 link = SS.setup_link(keys[r.office_key])
         except Exception:  # noqa: BLE001 — the announcement matters more
             pass
-        head, detail = RN.lines(r, link)
+        # THEIR SLACK EMAIL -> THEIR SLACK ID, here, on the machine that holds
+        # Lucy's token (the form is a stranger to the workspace). None when
+        # they gave no email (an older row): nothing was looked up, so
+        # nothing is said about it.
+        slack_id = None
+        if r.slack_email:
+            from automations.icd_signup import slack_lookup as SL
+            slack_id = SL.id_for_email(r.slack_email, log=log)
+            if slack_id:
+                SS.set_slack_id(r.office_key, slack_id, book)
+        head, detail = RN.lines(r, link, slack_id)
         try:
             ts = _slack(O.OPS_CHANNEL, head)
             _slack(O.OPS_CHANNEL, "\n".join(detail), thread_ts=ts)

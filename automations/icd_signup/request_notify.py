@@ -26,7 +26,8 @@ CADENCE_WORDS = {15: "every 15 minutes", 30: "every 30 minutes",
                  -1: "not wanted"}
 
 
-def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
+def lines(rec: IcdSignup, link: str = "",
+          slack_id: "str | None" = None) -> Tuple[str, List[str]]:
     """(headline, thread detail). SHORT.
 
     It used to carry everything the form collected -- hours, timezone,
@@ -65,6 +66,14 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
         if rec.text_pins:
             detail += ["   _tied to (owner + 2 A players):_ %s"
                        % ", ".join(rec.text_pins)]
+
+    # ONLY WHEN IT DID NOT WORK. `slack_id` is None when nobody looked; ""
+    # means Lucy looked their Slack email up and found no account -- the one
+    # case a person has to do something about, because without the id the
+    # owner is left out of their own "computer has gone quiet" DM.
+    if slack_id == "" and rec.slack_email:
+        detail += ["", "*Slack:* no account found for `%s` — fill their "
+                       "Slack id on the sign-up sheet." % rec.slack_email]
 
     detail += ["", "*Approve:*  %s" % (APPROVE_URL % rec.office_key)]
     return head, detail

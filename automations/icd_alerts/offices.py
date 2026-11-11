@@ -435,6 +435,53 @@ def typed_name(raw) -> str:
     return s
 
 
+_SLACK_IDS_MD = (Path(__file__).resolve().parents[2] / "resources"
+                 / "owner-slack-ids.md")
+
+
+def _plain(text: str) -> List[str]:
+    import re
+    import unicodedata
+    text = unicodedata.normalize("NFKD", str(text or ""))
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9 ]", " ", text.lower()).split()
+
+
+def slack_id_on_file(owner: str, path: Optional[Path] = None) -> str:
+    """The owner's Slack id from resources/owner-slack-ids.md, or ''.
+
+    WHY (Megan 2026-11-10: "this alert should have went into a dm with sam").
+    The form does not ask for a Slack id, so a sign-up row starts with the
+    column blank and stays blank until somebody remembers to fill it. Samuel's
+    never was: his "computer has gone quiet" notice reached Megan and Eve and
+    not him. The owners file is where every confirmed id already lives (it is
+    written at the dry run, before the sign-up exists), so a blank cell falls
+    back to it.
+
+    FIRST AND LAST NAME, EXACTLY, and only the id in the id column -- the
+    notes column is where the look-alike accounts are written down, and a
+    DM to a look-alike is worse than no DM. Never raises.
+    """
+    import re
+    want = _plain(owner)
+    if len(want) < 2:
+        return ""
+    try:
+        lines = (path or _SLACK_IDS_MD).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or not re.fullmatch(r"U[A-Z0-9]{8,12}", cells[2]):
+            continue
+        name = _plain(re.sub(r"\(.*?\)", "", cells[0]))
+        if name and name[0] == want[0] and name[-1] == want[-1]:
+            return cells[2]
+    return ""
+
+
 def _office_from_signup(row: Dict) -> Optional[AlertOffice]:
     key = str(row.get("office_key") or "").strip().lower()
     if not key:
@@ -467,7 +514,11 @@ def _office_from_signup(row: Dict) -> Optional[AlertOffice]:
         # until somebody says where they go [[destinations]].
         active=status != "declined",
         platform=str(row.get("platform") or "mac").strip().lower(),
-        slack_user_id=str(row.get("slack_user_id") or "").strip(),
+        # The sheet's cell wins; a blank one falls back to the owners file,
+        # so an office is never without its owner in the DM just because
+        # nobody filled the column after the form was submitted.
+        slack_user_id=(str(row.get("slack_user_id") or "").strip()
+                       or slack_id_on_file(owner)),
         day_start=str(row.get("day_start") or "13:30").strip(),
         day_end=str(row.get("day_end") or "20:30").strip(),
         sat_start=str(row.get("sat_start") or "10:45").strip(),

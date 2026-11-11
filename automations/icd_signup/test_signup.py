@@ -26,7 +26,8 @@ def _rec(**kw):
                 saturday=True, sat_start="11:15", sat_end="16:00",
                 ov_name="", knocks_cadence=15, wanted_channels="#ambient",
                 alert_channels_json='["#ambient"]',
-                contact="313-555-0142", office_key="cyrus")
+                contact="313-555-0142",
+                slack_email="pat@example.com", office_key="cyrus")
     base.update(kw)
     return IcdSignup(**base)
 

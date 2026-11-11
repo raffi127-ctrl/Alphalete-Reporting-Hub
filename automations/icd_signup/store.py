@@ -29,7 +29,8 @@ _HEADER = ["office_key", "owner", "office_label", "contact", "platform",
            # and reordering columns under somebody is how a sheet stops
            # meaning what it says.
            "alert_channels_json", "knocks_json", "campaign",
-           "text_groups_json", "credico_office", "text_pins_json"]
+           "text_groups_json", "credico_office", "text_pins_json",
+           "slack_email"]
 
 _LOCAL_FALLBACK = (Path(__file__).resolve().parents[2] / "output"
                    / "icd_signup_submissions.json")
@@ -470,6 +471,40 @@ def set_status(office_key: str, status: str, note: str = "", book=None) -> bool:
                      "values": [[note]]} for i in hits]
     tab.batch_update(updates)
     return True
+
+
+def set_slack_id(office_key: str, slack_id: str, book=None) -> bool:
+    """Write the owner's Slack id on their row(s) -- ONLY where it is blank.
+
+    A filled cell is somebody's decision (the look-alike accounts are sorted
+    out by hand), so a lookup never overwrites one. Never raises.
+    """
+    key = (office_key or "").strip().lower()
+    slack_id = (slack_id or "").strip()
+    if not key or not slack_id:
+        return False
+    try:
+        tab = _tab(book)
+        values = tab.get_all_values()
+        head = [h.strip() for h in (values[0] if values else [])]
+        c_key = head.index("office_key")
+        if "slack_user_id" not in head:
+            tab.update(range_name="%s1" % _a1_col(len(head) + 1),
+                       values=[["slack_user_id"]], value_input_option="RAW")
+            head.append("slack_user_id")
+        c_id = head.index("slack_user_id")
+        updates = [{"range": "%s%d" % (_a1_col(c_id + 1), i),
+                    "values": [[slack_id]]}
+                   for i, row in enumerate(values[1:], start=2)
+                   if len(row) > c_key
+                   and (row[c_key] or "").strip().lower() == key
+                   and not (row[c_id] if len(row) > c_id else "").strip()]
+        if not updates:
+            return False
+        tab.batch_update(updates)
+        return True
+    except Exception:  # noqa: BLE001 — the sign-up itself is already saved
+        return False
 
 
 def request_approval(office_key: str, by: str = "", book=None) -> bool:

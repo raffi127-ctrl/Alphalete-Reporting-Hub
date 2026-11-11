@@ -17,7 +17,8 @@ def _rec(**kw):
                 timezone="America/Chicago", day_start="13:30", day_end="20:30",
                 saturday=False, sat_start="", sat_end="", ov_name="",
                 knocks_cadence=15, wanted_channels="#room",
-                contact="313-555-0142", office_key="pat")
+                contact="313-555-0142",
+                slack_email="pat@example.com", office_key="pat")
     base.update(kw)
     return IcdSignup(**base)
 
@@ -64,7 +65,9 @@ class TheTwoAPlayers(unittest.TestCase):
     def test_it_survives_the_sheet_round_trip(self):
         rec = _rec(text_groups_json=GROUP, text_pins_json=json.dumps([A1, A2]))
         self.assertIn("text_pins_json", store._HEADER)
-        self.assertEqual(store._HEADER[-1], "text_pins_json", "appended, never inserted")
+        # Appended, never inserted: only columns added AFTER it may follow.
+        self.assertEqual(store._HEADER[store._HEADER.index("text_pins_json"):],
+                         ["text_pins_json", "slack_email"])
         self.assertEqual(IcdSignup.from_row(rec.as_row()).text_pins, [ME, A1, A2])
 
     def test_an_old_row_without_the_column_still_loads(self):
