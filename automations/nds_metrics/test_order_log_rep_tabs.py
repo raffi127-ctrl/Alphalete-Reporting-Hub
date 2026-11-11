@@ -27,8 +27,8 @@ HEADER = ["Owner Name", "Rep", "sp.Order Date", "DTR Active Date", "spe.TN",
           "spe.Name", "Measure Names"]
 CREW_TAB_HEADER = ["Order Date", "Activation Date", "Customer Name",
                    "SPM Number", "Type", "Next Up", "Package", "Phone Number",
-                   "Zip Code", "Status", "Install Date", "Ported From",
-                   "Tier Bonus $"]
+                   "Zip Code", "Status", "Churn Bucket", "Install Date",
+                   "Ported From", "Tier Bonus $"]
 TODAY = dt.date(2026, 11, 9)
 
 
@@ -95,7 +95,7 @@ class CrewRepTabsCarryThePhoneNumber(unittest.TestCase):
         self.assertEqual(phones, ["2145550100", "2145550101"])
         # The All tab is as it was, plus the zip at the very end: the number
         # stays at D as Customer Phone.
-        self.assertEqual(all_hdr, NOL._NDS_FRIENDLY_HEADERS + ["Customer Zip"])
+        self.assertEqual(all_hdr, NOL._NDS_FRIENDLY_HEADERS + ["Customer Zip", "Churn Bucket"])
 
     def test_zip_code_sits_after_the_phone_number(self):
         _all, headers, data = _build(**CREW_KW)
@@ -105,6 +105,27 @@ class CrewRepTabsCarryThePhoneNumber(unittest.TestCase):
         zips = sorted(_digits(r[CREW_TAB_HEADER.index("Zip Code")]) for r in data)
         self.assertEqual(zips, ["75060", "76017"])
 
+    def test_churn_bucket_sits_after_status(self):
+        # Row 1 posted 11/5 (age 4 on 11/9) -> the live window; row 2 has not
+        # posted -> blank. The All tab carries it at the end, after the zip.
+        all_hdr, headers, data = _build(**CREW_KW)
+        for h in headers:
+            self.assertEqual(h.index("Churn Bucket"), h.index("Status") + 1)
+        got = {r[CREW_TAB_HEADER.index("Customer Name")]: r[CREW_TAB_HEADER.index("Churn Bucket")]
+               for r in data}
+        self.assertEqual(got["CARLOS JAVIER P"], "0-30 Day")
+        self.assertIn(got["DEISY P"], (None, ""))
+        self.assertEqual(all_hdr[-2:], ["Customer Zip", "Churn Bucket"])
+
+    def test_churn_bucket_edges_follow_tableaus_columns(self):
+        today = dt.date(2026, 11, 11)
+        for age, want in [(0, "0-30 Day"), (30, "0-30 Day"), (31, "30 Day"), (60, "30 Day"),
+                          (61, "60 Day"), (90, "60 Day"), (91, "90 Day"), (120, "90 Day"),
+                          (121, "120 Day"), (150, "120 Day"), (151, "150+ Day")]:
+            self.assertEqual(NOL.churn_bucket(today - dt.timedelta(days=age), today), want, age)
+        self.assertEqual(NOL.churn_bucket(None, today), "")
+        self.assertEqual(NOL.churn_bucket(today + dt.timedelta(days=1), today), "")
+
     def test_house_nds_rep_tabs_are_unchanged(self):
         all_hdr, headers, _data = _build()
         house = [h for h in NOL._NDS_FRIENDLY_HEADERS
@@ -113,6 +134,7 @@ class CrewRepTabsCarryThePhoneNumber(unittest.TestCase):
             self.assertEqual(h, house)
             self.assertNotIn("Phone Number", h)
             self.assertNotIn("Zip Code", h)
+            self.assertNotIn("Churn Bucket", h)
         self.assertEqual(all_hdr, NOL._NDS_FRIENDLY_HEADERS)   # no zip for Raf's offices
 
     def test_house_fiber_profile_restored_after_a_crew_build(self):
@@ -128,11 +150,12 @@ class CrewRepTabsCarryThePhoneNumber(unittest.TestCase):
         self.assertEqual(cols.index("Customer Phone"), cols.index("Package") + 1)
         self.assertEqual(cols.index("Customer Zip"), cols.index("Customer Phone") + 1)
         self.assertEqual(cols.index("Customer Zip"), cols.index("Status") - 1)
+        self.assertEqual(cols.index("Churn Bucket"), cols.index("Status") + 1)
         self.assertEqual(set(cols),
-                         (set(NOL._NDS_FRIENDLY_HEADERS) - {"Rep"}) | {"Customer Zip"})
+                         (set(NOL._NDS_FRIENDLY_HEADERS) - {"Rep"}) | {"Customer Zip", "Churn Bucket"})
         self.assertEqual(R.CREW_REP_TAB_DISPLAY,
                          {"Customer Phone": "Phone Number", "Customer Zip": "Zip Code"})
-        self.assertEqual([x[1] for x in R.CREW_EXTRA_COLUMNS], ["Customer Zip"])
+        self.assertEqual([x[1] for x in R.CREW_EXTRA_COLUMNS], ["Customer Zip", "Churn Bucket"])
 
     def test_unknown_rep_tab_column_refuses(self):
         with self.assertRaises(ValueError):

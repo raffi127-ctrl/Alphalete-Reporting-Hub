@@ -154,6 +154,30 @@ def load(path: Path, owner: str) -> tuple[list[str], list[list[str]]]:
     return header, mine
 
 
+# Tableau's CHURN RATES columns, by the line's age since its activation
+# (posted) date: the live 0-30 window, then 30-day cohorts. A disconnect
+# "falls" from one column into the next as its line ages (Carlos 11/11:
+# "so we can see what disconnects are falling into what column"). The 0-30
+# edge is the NDS CHURN tab's (age 0..30 inclusive), which reconciles with
+# the view; the later edges follow the same 30-day step.
+CHURN_BUCKETS = ((30, "0-30 Day"), (60, "30 Day"), (90, "60 Day"),
+                 (120, "90 Day"), (150, "120 Day"))
+CHURN_BUCKET_BEYOND = "150+ Day"
+
+
+def churn_bucket(posted: dt.date | None, today: dt.date) -> str:
+    """Which churn column a line sits in today, or '' before it posts."""
+    if posted is None:
+        return ""
+    age = (today - posted).days
+    if age < 0:
+        return ""
+    for hi, label in CHURN_BUCKETS:
+        if age <= hi:
+            return label
+    return CHURN_BUCKET_BEYOND
+
+
 def _find(header: list[str], *candidates: str) -> int | None:
     """Column index by name (exact first, then substring). Never a fixed index."""
     norm = [_norm_h(h) for h in header]
@@ -336,7 +360,12 @@ def _render_order_log(owner, header, rows, target, out_dir,
     idx = {col: _find(header, *cands)
            for col, cands in _NDS_ORDERLOG_SRC.items()}
     for raw, _friendly, cands in extra:
-        idx[raw] = _find(header, *cands)
+        if cands:                                # None = computed below (Churn Bucket)
+            idx[raw] = _find(header, *cands)
+    # Same precedence as nds_churn.compute FIELDS['posted'], so a line's
+    # bucket here is the one the NDS CHURN tab counts it in.
+    posted_i = _find(header, "spe.dtr posted date", "dtr active date",
+                     "activatoin date (order log)", "activation date")
     wt_i = _find(header, "spe.wireless type", "wireless type")
     pt_i = _find(header, "product type (broken out)", "product type")
     wip_i = _find(header, "wireless installment plan")
@@ -390,8 +419,13 @@ def _render_order_log(owner, header, rows, target, out_dir,
             return "Posted"
         return _cell(r, spe_i)
 
+    def _bucket(r) -> str:
+        if posted_i is None:
+            return ""
+        return churn_bucket(_parse_date(_cell(r, posted_i)), target)
+
     computed = {"Type": _type, "Next Up": _next_up, "Ported From": _ported,
-                "spe.Status": _status}
+                "spe.Status": _status, "Churn Bucket": _bucket}
 
     def _san(v: str) -> str:                     # tabs/newlines would break the TSV
         return (v or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")

@@ -729,11 +729,17 @@ def build_pending_soh(ix, crew, today, pulled_at, log=print):
 # order log, not SaraPlus (whose wireless feed carries no address).
 CREW_EXTRA_COLUMNS = [
     ("Customer Zip", "Customer Zip", ("customer zip simple", "customer zip", "zip")),
+    # 11/11 (Carlos: "does our order log have a churn bucket column like b2b
+    # had so we can see what disconnects are falling into what column?"):
+    # the export carries none, so it is computed from the activation date
+    # (nds_orderlog.churn_bucket) -- Tableau's 0-30 Day / 30 Day / 60 Day /
+    # 90 Day / 120 Day columns. Right after Status on the rep tabs.
+    ("Churn Bucket", "Churn Bucket", None),
 ]
 CREW_REP_TAB_COLUMNS = [
     "Order Date", "Activation Date", "Customer Name", "SPM Number", "Type",
     "Next Up", "Package", "Customer Phone", "Customer Zip", "Status",
-    "Install Date", "Ported From", "Tier Bonus $",
+    "Churn Bucket", "Install Date", "Ported From", "Tier Bonus $",
 ]
 CREW_REP_TAB_DISPLAY = {"Customer Phone": "Phone Number", "Customer Zip": "Zip Code"}
 
