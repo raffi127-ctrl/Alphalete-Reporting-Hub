@@ -9,8 +9,8 @@ Source path: same as run.py — Tableau -> ATT TRACKER 2.1 - D2D -> ORDER LOG ->
 'Sales Board Original' -> worksheet 'A.Order Log', last 42 days of sales,
 pulled ONCE, then per owner: spe.Install Date = today (Central), still open.
 
-WHO gets a mail: an owner ON THE ORG SALES BOARD (Eve 11/10: nobody outside
-the org) with >= 1 install today who is NOT already covered by
+WHO gets a mail: an owner in the RAF ORG section of the ORG Sales Board
+(Eve 11/10: nobody outside the org; the captainship sections are not the org) with >= 1 install today who is NOT already covered by
 a Metrics thread (an office_metrics office on the scheduler, or Raf's
 daily_metrics). Addresses come from captainship_night_knocks.owners (the pinned
 owner -> email table the 9 PM knocks mail uses), Eve always in copy. An owner
@@ -111,13 +111,21 @@ def org_matcher():
     from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
     from automations.recruiting_report.fill import open_by_key, _retry
     vals = _retry(_retry(lambda: open_by_key(SHEET_ID).worksheet(SANDBOX_TAB)).get_all_values)
+    # ONLY the "RAF ORG" section (Eve 11/10: the captainship sections below it
+    # -- Wayne's, Chan's, Tony's... -- are NOT the org). Found by its label,
+    # ended at the next section title, never by row number.
+    start = next((i for i, r in enumerate(vals)
+                  if len(r) > 1 and r[1].strip().upper().startswith("RAF ORG")), None)
+    if start is None:
+        raise RuntimeError("no 'RAF ORG' section on the org board — sending nothing")
     org = set()
-    for r in vals:
-        for c in r[:3]:
-            c = c.strip()
-            if c and len(c.split()) >= 2 and len(c) < 40 and not any(ch.isdigit() for ch in c):
-                org.add(_norm(c))
-    if len(org) < 50:
+    for r in vals[start + 1:]:
+        c = (r[1] if len(r) > 1 else "").strip()
+        if "PERFORMANCE" in c.upper() or "CAPTAIN" in c.upper():
+            break
+        if c and len(c.split()) >= 2 and len(c) < 40 and not any(ch.isdigit() for ch in c):
+            org.add(_norm(c))
+    if len(org) < 15:
         raise RuntimeError("org board read looks wrong ({} names) — sending nothing"
                            .format(len(org)))
     groups = [{_norm(k), *(_norm(x) for x in v)} for k, v in load_aliases().items()]
