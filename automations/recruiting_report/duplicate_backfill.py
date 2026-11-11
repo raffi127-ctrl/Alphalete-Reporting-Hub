@@ -33,6 +33,8 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap.add_argument("--weeks", type=int, default=8, help="How many weeks back (default 8).")
     ap.add_argument("--week", help="Last WE Sunday, YYYY-MM-DD (default: most recent Sunday).")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--skip-done", action="store_true",
+                    help="Skip tabs whose row already reads Duplicate/Already Interviewed.")
     ap.add_argument("--debug", action="store_true", help="Print the View Details boxes read.")
     return ap.parse_args(argv)
 
@@ -85,6 +87,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                       f"only the top section is done here")
             rows = fill.find_office_metric_rows(ws, anchor_row=1, max_rows=30)
             rows = {k: v for k, v in rows.items() if k in ROWS}
+            dup_row = rows.get("removed_from_process_emails")
+            if args.skip_done and dup_row and len(values) >= dup_row and                     fill.DUPLICATE_ROW_LABEL.lower() in str(values[dup_row - 1][1] if len(values[dup_row - 1]) > 1 else "").lower():
+                print(f"{tab}: already done — skipped")
+                continue
             if not rows:
                 print(f"\n{tab}: no Duplicate rows on the tab — skipped")
                 continue

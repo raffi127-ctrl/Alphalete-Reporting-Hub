@@ -1027,12 +1027,12 @@ def fill_office_section(
     log: List[str] = []
     updates: List[Tuple[str, str]] = []
     tab_name = ws.title if getattr(ws, "title", None) else label.split(" (id ")[0]
+    relabel_row = None
     if duplicate_v2_on(tab_name):
         week_data = {w: apply_duplicate_v2(m) for w, m in week_data.items()}
-        if "removed_from_process_emails" in metric_rows:
-            line = relabel_duplicate_row(ws, metric_rows["removed_from_process_emails"], dry_run)
-            if line:
-                log.append(line)
+        # Renamed AFTER the numbers land, so a renamed label means the tab is
+        # done (duplicate_backfill --skip-done relies on it).
+        relabel_row = metric_rows.get("removed_from_process_emails")
     for sunday, metrics in week_data.items():
         col = sunday_to_col.get(sunday)
         if col is None:
@@ -1058,6 +1058,10 @@ def fill_office_section(
             for cell, val in updates
         ], value_input_option="USER_ENTERED")
         log.append(f"[OK] {label}: wrote {len(updates)} cells across {len(week_data)} weeks")
+    if relabel_row:
+        line = relabel_duplicate_row(ws, relabel_row, dry_run)
+        if line:
+            log.append(line)
     return log
 
 
