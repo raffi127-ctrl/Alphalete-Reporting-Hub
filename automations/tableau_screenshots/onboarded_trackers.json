@@ -589,9 +589,11 @@
   },
   {
     "key": "oren",
-    "label": "Oren's Local Office (channel from ECO sign-up)",
+    "label": "Oren's Local Office",
     "owner": "Oren Shezaf",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CHGUJAUF2"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
