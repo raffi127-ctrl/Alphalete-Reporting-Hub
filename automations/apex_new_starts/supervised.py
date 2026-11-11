@@ -93,8 +93,12 @@ def _board_person(office_key: str, name: str, week_start: dt.date,
                 break
             except ValueError:
                 continue
+        # GENDER COMES OFF THE BOARD, not a sales board -- an ECO machine has
+        # no sales board to read (Megan, 2026-11-10). Blank is blank: nothing
+        # guesses it, because a guess lands on a payroll record.
         return ECO.Starter(name=full, email=str(r.get("Email") or "").strip(),
                            phone=str(r.get("Phone") or "").strip(),
+                           gender=str(r.get(B.GENDER) or "").strip(),
                            hire_date=when or week_start,
                            source="onboarding board")
     log("  %r is not on the week of %s. That week has: %s"

@@ -139,6 +139,12 @@ def apply(workbook, week_start, source: str,
     if ws is None:
         log("  no %s tab on this workbook" % B.TAB)
         return 0
+    # A column this code knows about and the tab has not got would otherwise
+    # never appear on a board that already existed.
+    try:
+        S.ensure_columns(ws, log=log)
+    except Exception as e:     # noqa: BLE001 — never fail a tick over a header
+        log("  (could not add missing columns: %s)" % type(e).__name__)
     rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
     got = plan(rows, source, verdicts)
     log("%s, week of %s:" % (source, B.week_label(week_start)))

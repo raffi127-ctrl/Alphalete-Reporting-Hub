@@ -182,7 +182,7 @@ def test_the_apex_record_carries_the_office_settings():
     # A User Name is derived now, for somebody being CREATED -- but it must
     # never reach a record that already has an account, which is what Apex
     # rejected as "already being used". Proven at the PAGE level below.
-    assert v["username"] == "ann"
+    assert v["username"] == "ann@example.com"
     assert "ssn" not in v          # never, in the dict that gets typed
 
 
@@ -337,7 +337,7 @@ def test_a_user_name_only_ever_reaches_the_add_employee_form():
             assert "username" not in keys, page
 
 
-def test_a_user_name_is_the_email_without_its_domain():
+def test_a_user_name_is_the_whole_email():
     """Megan, 2026-09-09: "just use their email but leave off the @gmail.com
     part". Needed only for somebody being CREATED -- the ones already on the
     Pending tab have an account, and writing a user name onto a record that
@@ -348,7 +348,12 @@ def test_a_user_name_is_the_email_without_its_domain():
     v = RUN.apex_values(_cand(), BID.NewHire(
         name="Aundre Browder",
         values={"email": "aundrebrowder22@gmail.com"}))
-    assert v["username"] == "aundrebrowder22"
+    # THE WHOLE EMAIL (Megan, 2026-11-10: "use the full email"), replacing the
+    # 2026-09-09 "leave off the @gmail.com part". The live roster settled it:
+    # David Flores's existing record is `dflore1381@gmail.com`, and a username
+    # is what somebody signs in with -- creating people under a different
+    # convention from everyone already in Apex is the thing to avoid.
+    assert v["username"] == "aundrebrowder22@gmail.com"
     assert v["account_email"] == "aundrebrowder22@gmail.com"
 
 

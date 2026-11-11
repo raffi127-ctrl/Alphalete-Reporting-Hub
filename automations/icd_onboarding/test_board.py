@@ -319,3 +319,27 @@ def test_different_rooms_still_get_their_own_sheet():
 def test_the_unassigned_pile_is_still_last():
     rows = [_row("Ada Fournier", ""), _row("Bruno Castell", "zebra room")]
     assert [p["classroom"] for p in B.sheets(rows)][-1] == B.UNASSIGNED
+
+
+# ------------------------------ Gender: the other column only a person fills
+
+def test_gender_is_on_the_board():
+    """Apex wants one and an ECO machine has nowhere to read it from -- on
+    Raf's office it comes off the sales board, and an ICD has no sales board
+    (Megan, 2026-11-10)."""
+    assert B.GENDER in B.COLUMNS
+
+
+def test_gender_is_not_something_an_automation_may_write():
+    """Same as Classroom: a guess here lands on a payroll record."""
+    assert B.GENDER not in B.TICKS
+    assert B.CLASSROOM not in B.TICKS
+
+
+def test_gender_is_not_counted_as_an_outstanding_step():
+    """The printed sheet counts steps, and a blank Gender is not one -- it
+    would make every office read as permanently behind."""
+    assert B.GENDER not in B.STEPS
+    row = {c: "" for c in B.STEPS}
+    row.update({"Name": "Ada", "Last Name": "F"})
+    assert B.GENDER not in set(B.remaining(row))

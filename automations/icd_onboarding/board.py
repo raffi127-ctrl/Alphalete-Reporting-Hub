@@ -47,6 +47,13 @@ IDENTITY: Sequence[str] = (WEEK, "Name", "Last Name", "Email", "Phone", "Start")
 # It also decides which printed sheet somebody lands on.
 CLASSROOM = "Classroom"
 
+# THE OTHER COLUMN ONLY A PERSON CAN FILL. Apex wants a gender and an ECO
+# machine has nowhere to read one from: on Raf's office it comes off the sales
+# board, and an ICD does not have one (Megan, 2026-11-10: "we are going to have
+# to add gender to the OBCL as there won't be a sales board to read for ECO
+# machines"). Nothing guesses it -- a guess here goes onto a payroll record.
+GENDER = "Gender"
+
 # The onboarding steps, in the order a person works through them. Every one is
 # filled by an automation that already exists -- see the spec for which.
 STEPS: Sequence[str] = (
@@ -61,10 +68,11 @@ STEPS: Sequence[str] = (
     "Added to APEX",
 )
 
-COLUMNS: Sequence[str] = tuple(IDENTITY) + (CLASSROOM,) + tuple(STEPS)
+COLUMNS: Sequence[str] = (tuple(IDENTITY) + (CLASSROOM, GENDER)
+                          + tuple(STEPS))
 
-# Which columns a machine may write. Classroom is the ICD's; identity is the
-# seed's; everything else is a step.
+# Which columns a machine may write. Classroom and Gender are the ICD's;
+# identity is the seed's; everything else is a step.
 TICKS: Sequence[str] = tuple(STEPS)
 
 # MOST steps are a TICK: written once, never changed, because the date is

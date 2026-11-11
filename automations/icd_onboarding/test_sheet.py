@@ -246,3 +246,45 @@ def test_write_step_refuses_a_column_no_machine_owns():
     with pytest.raises(ValueError):
         S.write_step(FakeBook(ws), MONDAY, B.CLASSROOM,
                      {"Ada Fournier": "Tuesday AM"}, log=lambda *a: None)
+
+
+# ------------------- a new column has to reach boards that already exist
+
+class _FakeWS:
+    def __init__(self, head):
+        self.grid = [list(head)]
+        self.updates = []
+
+    def get_all_values(self):
+        return self.grid
+
+    def update(self, values=None, range_name=None):
+        self.updates.append((range_name, values))
+
+
+def test_a_missing_column_is_appended(monkeypatch):
+    """open_board never re-lays an existing tab, so a column added to
+    B.COLUMNS would only ever reach boards made afterwards."""
+    head = [c for c in B.COLUMNS if c != B.GENDER] + [B.TERMINATED_AT]
+    ws = _FakeWS(head)
+    got = S.ensure_columns(ws, log=lambda *a: None)
+    assert got == [B.GENDER]
+    (where, values), = ws.updates
+    assert values == [[B.GENDER]]
+    # appended to the RIGHT of everything already there, row 1
+    assert where == "%s%d" % (S._a1(len(head) + 1), S.HEADER_ROW)
+
+
+def test_nothing_is_moved_or_removed(monkeypatch):
+    """Somebody may have added a column of their own."""
+    head = list(B.COLUMNS) + [B.TERMINATED_AT, "Megan's note"]
+    ws = _FakeWS(head)
+    assert S.ensure_columns(ws, log=lambda *a: None) == []
+    assert ws.updates == []
+
+
+def test_an_empty_tab_is_left_alone():
+    """A blank grid is not a board with every column missing."""
+    ws = _FakeWS([])
+    assert S.ensure_columns(ws, log=lambda *a: None) == []
+    assert ws.updates == []

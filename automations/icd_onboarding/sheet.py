@@ -91,11 +91,39 @@ def _header_block() -> List[List[str]]:
     return [list(B.COLUMNS) + [B.TERMINATED_AT]]
 
 
+def ensure_columns(ws, log=print) -> List[str]:
+    """Append any column this code knows about that the tab has not got.
+
+    APPEND ONLY, to the right of whatever is already there. Nothing is moved,
+    renamed or removed: somebody may have added a column of their own, and
+    `layout()` finds everything by label so position never mattered anyway.
+
+    Without this a column added to `B.COLUMNS` only ever reaches boards created
+    afterwards -- `open_board` deliberately does not re-lay an existing tab --
+    so every office already running would silently lack it (`Gender`, added
+    2026-11-10, is the case that showed this up).
+    """
+    from automations.shared import sheets_retry
+    grid = sheets_retry.call(ws.get_all_values, tries=6)
+    head = [str(h).strip() for h in (grid[HEADER_ROW - 1] if grid else [])]
+    if not head:
+        return []
+    missing = [c for c in list(B.COLUMNS) + [B.TERMINATED_AT] if c not in head]
+    if not missing:
+        return []
+    at = len(head) + 1
+    ws.update(values=[missing],
+              range_name="%s%d" % (_a1(at), HEADER_ROW))
+    log("  board: added the %s column(s)" % ", ".join(missing))
+    return missing
+
+
 def open_board(workbook, *, create: bool = True):
     """This office's Onboarding tab, made with its headers if it is new.
 
     Never re-lays an existing tab: somebody may have added a column of their
-    own, and this has no business tidying it away.
+    own, and this has no business tidying it away. A column this code knows
+    about and the tab lacks is APPENDED -- see `ensure_columns`.
     """
     from automations.shared import sheets_retry
     for ws in sheets_retry.call(workbook.worksheets, tries=6):

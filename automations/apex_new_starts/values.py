@@ -47,9 +47,17 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     if email:
         v["account_email"] = email
         # Only needed for somebody being CREATED: the ones already on the
-        # Pending tab have an account and it is not ours to change. Megan,
-        # 2026-09-09: "just use their email but leave off the @gmail.com part".
-        v["username"] = email.split("@")[0]
+        # Pending tab have an account and it is not ours to change.
+        #
+        # THE FULL EMAIL, lower-cased (Megan, 2026-11-10: "use the full
+        # email"). This REPLACES her 2026-09-09 "just use their email but
+        # leave off the @gmail.com part" -- the live roster settled it. David
+        # Flores's existing record is `dflore1381@gmail.com`, so the old rule
+        # would have created people under a different convention from everyone
+        # already in Apex, and a username is what somebody signs in with.
+        # Lower-cased because that record is, while the signed packet spells
+        # his address with a capital D.
+        v["username"] = email.strip().lower()
         # NOT the user name. The new starts are ALREADY in Apex, sitting on the
         # Pending tab with their account created (Megan, 2026-09-09) -- which is
         # also why Apex rejected the email as "already being used": it was this
