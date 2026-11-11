@@ -40,11 +40,18 @@ NOTE_TAG = "AT&T:"
 NAV_TIMEOUT_MS = 60_000
 KEEP_RE = re.compile(r"shipp|deliver|transit|track|arriv|estimat|carrier|\bups\b|fedex|usps|"
                      r"status|on its way|out for|label|cancel", re.I)
-NOISE_RE = re.compile(r"cookie|privacy|feedback|sign in|skip navigation|chat|cart|search or",
+NOISE_RE = re.compile(r"cookie|privacy|feedback|sign in|skip navigation|chat|cart|search or|"
+                      r"check my status|confirm the status for orders|search as a guest|"
+                      r"find an order or claim|view all my orders|order or claim$|zip code$|"
+                      r"start search|let.s verify your info|please enter the email|email address$",
                       re.I)
+# still on the lookup form (or back on it): nothing was looked up
+LANDING_RE = re.compile(r"search as a guest|find an order or claim|let.s verify your info", re.I)
+SHOT_TAB = "ATT Shot"            # the last lookup's page, base64-chunked on the control sheet
 FAIL_RE = re.compile(r"couldn.t find|can.t find|unable to|doesn.t match|does not match|"
                      r"no (?:matching )?order|try again|something went wrong|not found", re.I)
 TRACK_RE = re.compile(r"\b(1Z[0-9A-Z]{16}|\d{12,22})\b")
+EMAIL_PROMPT_RE = re.compile(r"let.s verify your info|email address", re.I)
 
 
 def _parse_date(v) -> Optional[dt.date]:
@@ -141,8 +148,11 @@ def summarize(text: str) -> Dict[str, object]:
         if "track" in ctx or m.group(1).startswith("1Z"):
             tracking = m.group(1)
             break
-    failed = bool(FAIL_RE.search(text or "")) and not lines
-    return {"lines": lines, "tracking": tracking, "failed": failed}
+    landing = bool(LANDING_RE.search(text or ""))
+    failed = (bool(FAIL_RE.search(text or "")) and not lines) or landing
+    if landing:
+        lines = []
+    return {"lines": lines, "tracking": tracking, "failed": failed, "landing": landing}
 
 
 def note_text(summary: Dict[str, object], today: dt.date) -> str:
@@ -203,8 +213,15 @@ def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, 
     s["error"] = ""
     if s["failed"] or not s["lines"]:
         m = FAIL_RE.search(text or "")
-        s["error"] = ("AT&T: %s" % _norm(text[max(0, m.start() - 40): m.end() + 80])) if m \
-            else "no status lines on the page (%d chars)" % len(text or "")
+        if s.get("landing"):
+            s["error"] = "still on the lookup form -- the search never returned a status (%s)" % (
+                "e-mail prompt seen" if EMAIL_PROMPT_RE.search(text or "") else "no e-mail prompt")
+        elif m:
+            s["error"] = "AT&T: %s" % _norm(text[max(0, m.start() - 40): m.end() + 80])
+        else:
+            s["error"] = "no status lines on the page (%d chars)" % len(text or "")
+        log("    page said: %s" % " / ".join(
+            _norm(l) for l in (text or "").splitlines() if _norm(l) and not NOISE_RE.search(l))[:600])
     return s
 
 
@@ -254,6 +271,11 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
             for o in todo:
                 log("• %s  %s  zip %s  %s" % (o["customer"], o["order"], o["zip"], o["email"]))
                 s = lookup(page, o["order"], o["zip"], o["email"], log=log)
+                try:
+                    from automations.rc_contact_sync.status_probe import _upload_shot
+                    _upload_shot(page.screenshot(full_page=True), SHOT_TAB, log=log)
+                except Exception as e:  # noqa: BLE001
+                    log("    (page shot not uploaded: %s)" % type(e).__name__)
                 if s["error"]:
                     failed += 1
                     log("    ✗ %s" % s["error"])

@@ -84,6 +84,16 @@ class Summaries(unittest.TestCase):
         self.assertTrue(note.startswith("11/11 AT&T: "))
         self.assertTrue(note.endswith("tracking 1Z999AA10123456784"))
 
+    def test_lookup_form_itself_is_not_a_status(self):
+        # 11/11: the first live run wrote "Check my status; Confirm the status
+        # for orders, claims..." -- the lookup form's own words -- on 4 lines
+        form = ("Check my status\nSearch as a guest\nFind an order or claim\nOrder or claim\n"
+                "ZIP Code\nStart search\nSign in\nView all my orders or claims\n"
+                "Confirm the status for orders, claims, store purchases, and returns.\n")
+        s = A.summarize(form)
+        self.assertTrue(s["failed"])
+        self.assertEqual(s["lines"], [])
+
     def test_not_found_page_fails(self):
         s = A.summarize("We couldn't find an order with that information. Please try again.")
         self.assertTrue(s["failed"])
