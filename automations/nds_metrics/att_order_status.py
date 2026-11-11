@@ -172,6 +172,24 @@ def already_noted(notes: str, body: str) -> bool:
     return False
 
 
+def _dismiss_overlays(page, log=print) -> None:
+    """The cookie banner and the "Andi" assistant panel sit over the page
+    (seen in the 11/11 page shot); their close / opt-out controls are
+    clicked when present so nothing covers the form."""
+    import re as _re
+    for name in (_re.compile(r"^close$", _re.I), _re.compile(r"opt out|reject|decline", _re.I)):
+        try:
+            btns = page.get_by_role("button", name=name)
+            n = btns.count()
+            for i in range(min(n, 3)):
+                b = btns.nth(i)
+                if b.is_visible():
+                    b.click(timeout=3_000)
+                    page.wait_for_timeout(600)
+        except Exception:  # noqa: BLE001
+            continue
+
+
 def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, object]:
     """One guest lookup on AT&T's page; returns summarize()'s dict plus
     'text' (the page) and 'error' (why it could not be read)."""
@@ -182,22 +200,42 @@ def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, 
     except Exception:  # noqa: BLE001
         pass
     page.wait_for_timeout(1500)
+    _dismiss_overlays(page, log)
     try:
         page.get_by_role("textbox", name=_re.compile(r"order", _re.I)).first.fill(order, timeout=15_000)
-        page.get_by_role("textbox", name=_re.compile(r"zip", _re.I)).first.fill(zip_code, timeout=15_000)
+        zipbox = page.get_by_role("textbox", name=_re.compile(r"zip", _re.I)).first
+        zipbox.fill(zip_code, timeout=15_000)
         page.get_by_role("button", name=_re.compile(r"start search|search", _re.I)).first.click(timeout=15_000)
     except Exception as e:  # noqa: BLE001
         return {"lines": [], "tracking": "", "failed": True, "text": "",
                 "error": "lookup form not usable: %s: %s" % (type(e).__name__, str(e)[:140])}
     page.wait_for_timeout(2500)
-    # the e-mail step ("Let's verify your info")
-    try:
-        box = page.get_by_role("textbox", name=_re.compile(r"e-?mail", _re.I)).first
-        box.wait_for(timeout=15_000)
-        box.fill(email, timeout=10_000)
-        page.get_by_role("button", name=_re.compile(r"see details|continue|submit", _re.I)).first.click(timeout=10_000)
-    except Exception as e:  # noqa: BLE001
-        log("    (no e-mail prompt: %s)" % type(e).__name__)
+    # the e-mail step ("Let's verify your info"). 11/11 on Lucy 2 (headless):
+    # the form stayed put after the click -- the screenshot showed the order
+    # and ZIP filled and nothing else -- so Enter in the ZIP box is tried too.
+    box = page.get_by_role("textbox", name=_re.compile(r"e-?mail", _re.I)).first
+    prompted = False
+    for attempt in ("click", "enter"):
+        try:
+            box.wait_for(timeout=12_000)
+            prompted = True
+            break
+        except Exception:  # noqa: BLE001
+            if attempt == "click":
+                log("    (no e-mail prompt after the click -- pressing Enter in the ZIP box)")
+                try:
+                    zipbox.press("Enter", timeout=5_000)
+                except Exception:  # noqa: BLE001
+                    pass
+                page.wait_for_timeout(2500)
+    if prompted:
+        try:
+            box.fill(email, timeout=10_000)
+            page.get_by_role("button", name=_re.compile(r"see details|continue|submit", _re.I)).first.click(timeout=10_000)
+        except Exception as e:  # noqa: BLE001
+            log("    (e-mail prompt could not be answered: %s)" % type(e).__name__)
+    else:
+        log("    (no e-mail prompt: the search never returned)")
     try:
         page.wait_for_load_state("networkidle", timeout=30_000)
     except Exception:  # noqa: BLE001
