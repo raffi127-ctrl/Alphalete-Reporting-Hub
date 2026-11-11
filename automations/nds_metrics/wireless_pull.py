@@ -156,10 +156,18 @@ def parse(data: bytes, log=print):
     log(f"[ndsw] parsed {len(orders)} order(s), {len(lines)} line(s)")
     if lines and not orders:
         # 11/11: 316 lines, 0 orders, tab left as it was -- the order rows had
-        # changed shape and nothing said how. Show what was skipped.
+        # changed shape and nothing said how. Show what was skipped, the row
+        # width histogram, and the raw markup around the first order header
+        # (chunked so `logtail nds_metrics "[ndsw] raw"` can page it).
         for c in skipped:
             log(f"[ndsw] no-order-row sample ({len(c)} cells): "
                 + " | ".join((x or "")[:18] for x in c[:14]))
+        widths = _coll.Counter(len(cells(tr)) for tr in trs)
+        log("[ndsw] row widths: " + ", ".join(f"{w}x{n}" for w, n in sorted(widths.items())))
+        at = txt.find("Customer Name")
+        raw = re.sub(r"\s+", " ", txt[max(0, at - 600): at + 2400]) if at >= 0 else "(no 'Customer Name' in the export)"
+        for i in range(0, min(len(raw), 3000), 150):
+            log(f"[ndsw] raw {i // 150:02d}: {raw[i:i + 150]}")
     return orders, lines
 
 
