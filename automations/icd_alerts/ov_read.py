@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.11.06.1"
+CODE_RELEASE = "2026.11.11.1"
 
 
 class KnocksProblem(RuntimeError):
@@ -567,7 +567,13 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             if cid and _is_v2(page):
                 _l("new-interface page: choosing the client through its own switcher")
                 if _choose_client(page, cid, campaign, log=_l):
-                    K.navigate(page, rqst, mdy, attempts=1, log=_l)
+                    # THE SAME THREE TRIES AS THE FIRST LANDING. This one had
+                    # a single 25s try, and it is the heavier load of the two
+                    # (the grid again, now for the chosen client). Colten
+                    # (2026-11-11): 126 knocks reads lost in six days, every
+                    # one of them a timeout on this line; a slow Mac or a slow
+                    # line never got a second go.
+                    K.navigate(page, rqst, mdy, log=_l)
             try:
                 try:
                     rows = K.read_rows(page, log=_l)
@@ -581,7 +587,7 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
                     # on the page once more, and read again.
                     if not _choose_client(page, cid, campaign, log=_l):
                         raise
-                    K.navigate(page, rqst, mdy, attempts=1, log=_l)
+                    K.navigate(page, rqst, mdy, log=_l)   # three tries, as above
                     rows = K.read_rows(page, log=_l)
             except K.OwnervilleError as e:
                 # STAMPED WITH THE RELEASE: the relay folds same-summary
