@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-11-10 07:30 CST_
+_Last sync: 2026-11-11 07:30 CST_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 
@@ -17,14 +17,14 @@ Source: `~/alphalete-readmes/`
 | [AD-SALES-BOARD-README.md](ops/AD-SALES-BOARD-README.md) | Ad Sales Board — how it works, and what breaks when you change it | 2026-09-06 |
 | [BOX-ORDER-LOG-README.md](ops/BOX-ORDER-LOG-README.md) | BOX Order Log — how it all works | 2026-10-29 |
 | [FOCUS-REPORT-CAMPAIGN-README.md](ops/FOCUS-REPORT-CAMPAIGN-README.md) | Focus Report Campaign Metrics — System README | 2026-09-30 |
-| [LOCAL-OFFICE-SALES-CALLOUTS-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-README.md) | Local Office Sales Call Outs — README | 2026-11-09 |
+| [LOCAL-OFFICE-SALES-CALLOUTS-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-README.md) | Local Office Sales Call Outs — README | 2026-11-10 |
 | [LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md) | Local Office Sales Call Outs — session README (Sep 29 → Oct 19, 2026) | 2026-10-21 |
 | [LUCY2-OPERATIONS-README.md](ops/LUCY2-OPERATIONS-README.md) | Sheets identity per machine (11/4/2026) | 2026-11-06 |
 | [ONE-ON-ONES-README.md](ops/ONE-ON-ONES-README.md) | ONE-ON-ONES README — Carlos's Monday 1:1 call | 2026-10-19 |
 | [RESUME-PUSHING-README.md](ops/RESUME-PUSHING-README.md) | Resume Pushing — How It Works | 2026-11-03 |
 | [SECOND-ROUND-CONTACTS-README.md](ops/SECOND-ROUND-CONTACTS-README.md) | Second-round contacts for new owners — how it works | 2026-10-31 |
-| [VANTURA-BOARD-README.md](ops/VANTURA-BOARD-README.md) | Vantura Master Sales Board — How It All Works | 2026-11-09 |
-| [VANTURA-PAYROLL-SESSION-README.md](ops/VANTURA-PAYROLL-SESSION-README.md) | Vantura Payroll — Session Handoff README | 2026-11-04 |
+| [VANTURA-BOARD-README.md](ops/VANTURA-BOARD-README.md) | Vantura Master Sales Board — How It All Works | 2026-11-10 |
+| [VANTURA-PAYROLL-SESSION-README.md](ops/VANTURA-PAYROLL-SESSION-README.md) | Vantura Payroll — Session Handoff README | 2026-11-10 |
 | [VANTURA-PNL-COMMISSION-README.md](ops/VANTURA-PNL-COMMISSION-README.md) | Vantura P&L + Commission — How It All Works | 2026-09-06 |
 | [VANTURA-REPS-CONTACTS-README.md](ops/VANTURA-REPS-CONTACTS-README.md) | Vantura Reps → Google Contacts (alphaletegp) — how it works | 2026-10-31 |
 
