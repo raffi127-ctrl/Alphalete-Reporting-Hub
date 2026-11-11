@@ -103,6 +103,8 @@ def parse(data: bytes, log=print):
     orders, lines = [], []
     cur = None
     skipped = []            # wide rows that were neither a line nor an order (diagnostic)
+    wide = []               # first rows wide enough to be an order row (diagnostic)
+    hdr_cells = None        # the grid header row's cells (diagnostic)
     for tr in trs:
         c = cells(tr)
         if not any(c):
@@ -110,12 +112,16 @@ def parse(data: bytes, log=print):
         joined = " ".join(c)
         if "Customer Name" in c or "Page size" in joined \
                 or "Data pager" in joined:
+            if "Customer Name" in c and hdr_cells is None:
+                hdr_cells = c
             continue
         if "Line Type" in c and "Line Status" in c:
             continue
         if len(c) >= 6 and (c[1] or "").strip().lower() not in LINE_TYPES \
                 and len(skipped) < 4:
             skipped.append(c)
+        if len(c) >= 13 and len(wide) < 3:        # the order-row candidates themselves
+            wide.append(c)
         # LINE row: its second cell is a line type word
         if len(c) >= 8 and (c[1] or "").strip().lower() in LINE_TYPES:
             lines.append({**(cur or {}),
@@ -162,6 +168,10 @@ def parse(data: bytes, log=print):
         for c in skipped:
             log(f"[ndsw] no-order-row sample ({len(c)} cells): "
                 + " | ".join((x or "")[:18] for x in c[:14]))
+        if hdr_cells is not None:
+            log(f"[ndsw] wide header ({len(hdr_cells)} cells): " + " | ".join(x[:22] for x in hdr_cells))
+        for c in wide:
+            log(f"[ndsw] wide row ({len(c)} cells): " + " | ".join((x or "")[:22] for x in c))
         widths = _coll.Counter(len(cells(tr)) for tr in trs)
         log("[ndsw] row widths: " + ", ".join(f"{w}x{n}" for w, n in sorted(widths.items())))
         at = txt.find("Customer Name")
