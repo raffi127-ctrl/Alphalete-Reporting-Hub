@@ -9,10 +9,12 @@ the board. Week windows can never see cross-week events; a window that starts
 at the ad's POSTING DATE and ends today always contains both dates.
 
 WHAT IT DOES. Reads the ads on 'carlos' live ads' (title, city, posting date;
-deduped to the OLDEST posting per title+city, capped at 35 days back — a
-closed-and-reposted ad is one family, and a window that starts at the newest
-repost would drop every old-version applicant's later bookings, which is
-exactly the hole this module exists to close), then pulls ONE Source Report
+deduped to the NEWEST posting per title+city, capped at 35 days back — Carlos
+chose per-version scoring 2026-11-11: a close-and-repost starts the window
+over, and the closed version's applicants and their later bookings drop off
+the board on purpose; the dead repost must not wear the old version's
+trainings. Cross-WEEK events within a version stay covered because the
+window still spans that version's whole life), then pulls ONE Source Report
 per DISTINCT posting date — [posting date → today+LOOKAHEAD] for office
 11580 — and writes each ad family's funnel totals to the hidden 'SL Funnel'
 tab. The board's far-right funnel columns read that tab, so "since live"
@@ -78,13 +80,16 @@ def _as_date(v):
 
 
 def _live_ads(sess, today):
-    """(title, city, posted) per ad family — OLDEST posting wins, closed rows
-    included. Same title+city reposted (Magma/Ascendra/Fast Track pattern:
-    close the ad, repost it minutes later at a new budget) is ONE family to
-    the Source Report, and the window must start when the family first went
-    live or every old-version applicant's later trainings fall outside it.
-    Versions older than MAX_AGE_DAYS drop out of the cap individually, so a
-    long-running family degrades to its newer postings on its own."""
+    """(title, city, posted) per ad family — NEWEST posting wins, closed rows
+    included. Same title+city reposted (close the ad, repost it minutes later
+    at a new budget) shares a board row, but the window starts at the LATEST
+    version's posting date, so the row shows what the ad running now has
+    produced — Carlos 2026-11-11, after Titanium's $49 repost (3 pull, zero
+    bookings of its own) showed up wearing the old $53 version's 3 trainings.
+    Was OLDEST 2026-11-02→11-11; the old versions' full history stays in
+    'SL History' snapshots from that span. Carried prior-week copies never
+    get close stamps, so open/closed can't be trusted for version-picking;
+    the posting date alone is."""
     best = {}
     for r in sheet.get_values(sess, LIVE_RANGE):
         r = list(r) + [""] * 9
@@ -108,7 +113,7 @@ def _live_ads(sess, today):
         cur = best.get(key)
         if cur is None:
             best[key] = (t, city, d)
-        elif d < cur[2]:
+        elif d > cur[2]:
             best[key] = (cur[0], cur[1], d)
     return list(best.values())
 
