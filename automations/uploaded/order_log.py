@@ -2003,7 +2003,8 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "",
                         legend_font)
                 banner_rows.add(r); r += 1
             _header(sh, r); header_rows.add(r); r += 1
-            for code, rec in sorted(pdc, key=lambda x: (x[0], _week_key(x[1]))):
+            for code, rec in sorted(pdc, key=lambda x: (_status_sort_key(x[1]["Status"]) > 1,
+                                                       x[0], _week_key(x[1]))):
                 bg = STATUS_COLORS.get(str(rec["Status"]).strip(), "FFD666")
                 _write_rep_row(sh, r, [(h, rec[h]) for h in _REP_TAB_COLUMNS],
                                border, center_v, bg, "000000")
