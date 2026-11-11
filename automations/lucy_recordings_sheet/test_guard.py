@@ -140,3 +140,13 @@ class YesterdayTest(unittest.TestCase):
         self.assertIn("*JD Mascorro* (1)", txt)
         self.assertIn(":x: " + DUPLICATE, txt)
         self.assertIn("*1 counted*", txt)
+
+
+class ScopeTest(unittest.TestCase):
+    def test_raf_office_plus_algemar_plus_no_owner(self):
+        from automations.lucy_recordings_sheet.run import in_yesterday_scope
+        self.assertTrue(in_yesterday_scope("Rafael Hidalgo"))
+        self.assertTrue(in_yesterday_scope("Algemar Kennel"))
+        self.assertTrue(in_yesterday_scope(NO_OWNER))
+        self.assertFalse(in_yesterday_scope("Carlos Hidalgo"))
+        self.assertFalse(in_yesterday_scope("Kash Rai"))

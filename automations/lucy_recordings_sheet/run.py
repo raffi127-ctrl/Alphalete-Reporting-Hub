@@ -1029,6 +1029,19 @@ def yesterday_rows(kept: list, dropped: list, export: dict, guesses: dict, day: 
 
 # Raf's group DM (Raf, JD, Basil, Algemar) - Eve 2026-11-11.
 YESTERDAY_DM = "C0CGXQFPTAQ"
+# Raf wants HIS office under control, not the org. Eve 2026-11-11: Algemar
+# still counts as part of Raf's office for now. Matched on the bot's owner name
+# (accents/case ignored, every word must be there).
+YESTERDAY_OWNERS = ("rafael hidalgo", "algemar")
+
+
+def in_yesterday_scope(owner: str, wanted=YESTERDAY_OWNERS) -> bool:
+    """Raf's office owners, plus recordings with no owner: a rep of ours the bot
+    can't place lands there, which is exactly the 'we sent more' gap."""
+    if owner == NO_OWNER:
+        return True
+    words = set(norm(owner).split())
+    return any(set(w.split()) <= words for w in wanted)
 
 
 def yesterday_text(day: str, rows: list) -> str:
@@ -1036,7 +1049,7 @@ def yesterday_text(day: str, rows: list) -> str:
     d = dt.date.fromisoformat(day)
     label = "%s, %s %d" % (d.strftime("%A"), d.strftime("%b"), d.day)
     counted = [r for r in rows if r[5] == COUNTED]
-    head = ["*LUCY · Recordings Sent Yesterday — %s*" % label]
+    head = ["*LUCY · Recordings Sent Yesterday · Raf's Office — %s*" % label]
     if not rows:
         return head[0] + "\nNo recordings were sent to LUCY this day."
     head.append("*%d counted* · %d rep(s) · %d not counted" % (
@@ -1138,7 +1151,12 @@ def main(argv=None) -> int:
         log("%d recording(s) with no known uploader -> '%s'" % (no_uid, NO_OWNER))
 
     day = a.day or (dt.datetime.now(CT).date() - dt.timedelta(days=1)).isoformat()
-    y_rows = yesterday_rows(kept_all, dropped, export, guesses, day)
+    y_all = yesterday_rows(kept_all, dropped, export, guesses, day)
+    y_rows = [r for r in y_all if in_yesterday_scope(r[2])]
+    mine = sorted(o.get("name", "") for o in export["owners"]
+                  if in_yesterday_scope(o.get("name", "")))
+    log("yesterday list owners: %s (%d of %d recording(s) org-wide)" % (
+        ", ".join(mine) or "NONE MATCHED", len(y_rows), len(y_all)))
     log("--- recordings sent %s: %d (%d counted) ---" % (
         day, len(y_rows), sum(1 for r in y_rows if r[5] == COUNTED)))
     for r in y_rows:
