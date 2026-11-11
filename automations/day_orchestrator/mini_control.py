@@ -3238,6 +3238,30 @@ def _action_textgroup_image(args: str) -> tuple[bool, str]:
         res.get("participants"))
 
 
+def _textgroup_numbers(group: str):
+    """A destination pinned to phone numbers, or None when `group` is a name.
+
+    Two or more numbers, and nothing but numbers: one number is a person (use
+    sendtext), and a name with a digit in it ("Team 5") is still a name.
+    """
+    import re
+    parts = [x for x in re.split(r"[,;]+", group or "") if x.strip()]
+    if len(parts) < 2:
+        return None
+    handles = []
+    for part in parts:
+        if re.search(r"[A-Za-z]", part):
+            return None
+        digits = re.sub(r"\D", "", part)
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        if len(digits) != 10:
+            return None
+        handles.append("+1" + digits)
+    return {"group": "group with " + ", ".join(handles),
+            "require_handles": handles}
+
+
 def _action_textgroup(args: str) -> tuple[bool, str]:
     """Send ONE text to an iMessage GROUP, by name, from THIS machine.
 
@@ -3269,9 +3293,16 @@ def _action_textgroup(args: str) -> tuple[bool, str]:
     text = text.replace("\\n", "\n").strip()
     if not group or not text:
         return False, "textgroup needs both a group name and a message"
+    # BY THE PEOPLE IN IT, when the "name" is phone numbers:
+    #     textgroup +13135550142,+13135550199,+19015550107 :: Hi team ...
+    # Oren's intro (2026-11-10) was refused by name -- 15 chats on Lucy 1
+    # match "A Players" -- and the sign-up form now collects the owner's
+    # number and two A players for exactly this. Same participant lookup the
+    # boards use: the one chat holding ALL of them, or a refusal.
+    dest = _textgroup_numbers(group)
     try:
         from automations.b2b_dispositions import text_post as tp
-        res = tp.send_text_to_group(group, text, dry_run=False)
+        res = tp.send_text_to_group(group, text, dry_run=False, dest=dest)
     except Exception as e:  # noqa: BLE001
         return False, "text to %r FAILED: %s: %s" % (group, type(e).__name__,
                                                      str(e)[:300])
