@@ -524,10 +524,10 @@ REVENUE_BOARD_OFFICES = {"jamis"}
 # board filtered to NEW INTERNET + CRU). Eveliz 2026-10-06.
 FIBER_CRU_OFFICES = {"eveliz"}
 
-# 📆 Activations Scheduled Today (Raf 2026-11-10). OFF in the 4am threads until
-# Eve OKs the DM sample; `--only activations_today` still runs it for that
-# sample. Flip to True to post it in every B2B thread.
-ACTIVATIONS_TODAY_LIVE = False
+# 📆 Activations Scheduled Today (Raf 2026-11-10). ON since Eve 11/10 ("prendelo
+# para b2b tambien"): posts in every B2B thread. False takes it back out of the
+# 4am threads; `--only activations_today` still runs it for a DM sample.
+ACTIVATIONS_TODAY_LIVE = True
 
 
 def expected_items(o: B2BOffice) -> list:
