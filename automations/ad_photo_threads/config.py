@@ -142,6 +142,10 @@ NO_AD_ANSWERS = {
     "2026-11-05|heidi gerhardt": "Handshake / Marketing Assistant",
     "2026-11-05|luis almaraz": "Handshake / Marketing Assistant",
     "2026-11-05|alani jacob": "Handshake / Marketing Assistant",
+    # Jairo, Camila 11/11: the 11/6 1st rounds with a blank Ad Title (tab
+    # `Jairo Ruiz` rows 4572/4574).
+    "2026-11-06|aiden moore": "Entry Level Manager ? Miami FL",
+    "2026-11-06|deaurius martinez": "AT&T Customer Service Associate (Paid Training) ? Pembroke Pines FL",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
