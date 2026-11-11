@@ -85,7 +85,8 @@ def test_the_board_calls_are_wired_end_to_end():
     src = _source()
     for call, fn in (("board_week", "_boardWeek"),
                      ("board_mark", "_boardMark"),
-                     ("board_classroom", "_boardClassroom")):
+                     ("board_classroom", "_boardClassroom"),
+                     ("board_gender", "_boardGender")):
         assert "what === '%s'" % call in src, "nothing dispatches %s" % call
         assert "function %s(" % fn in src, "%s has no handler" % fn
 

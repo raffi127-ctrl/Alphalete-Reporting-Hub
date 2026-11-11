@@ -32,6 +32,13 @@
   const label = s => LABEL[s] || s;
   const UNASSIGNED = 'No classroom yet';
 
+  // Exactly how Apex's own dropdown spells them, so what the panel saves is
+  // what gets typed. Blank is a real choice and the default: nothing guesses a
+  // gender, because the value lands on somebody's payroll record.
+  const GENDERS = [{value: '', label: '— gender —'},
+                   {value: 'Female', label: 'Female'},
+                   {value: 'Male', label: 'Male'}];
+
   const who = p => ((p['Name'] || '') + ' ' + (p['Last Name'] || '')).trim();
   const isOff = p => !!String(p['Terminated'] || '').trim();
   const remaining = p => STEPS.filter(s => !String(p[s] || '').trim());
@@ -130,6 +137,14 @@
           '<div class="bd-acts">' +
           '<input class="bd-cls" data-who="' + esc(name) + '" placeholder="classroom" value="' +
           esc(p['Classroom'] || '') + '">' +
+          // Apex requires a gender and an ECO machine has no sales board to
+          // read one from (Megan, 2026-11-10). A PICK LIST, not a box: it goes
+          // onto a payroll record, Apex spells it exactly two ways, and a
+          // typed "f" or "femal" would just be dropped on the floor.
+          '<select class="bd-gen" data-who="' + esc(name) + '">' +
+          GENDERS.map(g => '<option value="' + esc(g.value) + '"' +
+            (String(p['Gender'] || '').trim() === g.value ? ' selected' : '') +
+            '>' + esc(g.label) + '</option>').join('') + '</select>' +
           '<button class="bd-mark" data-who="' + esc(name) + '" data-off="' +
           (isOff(p) ? '1' : '0') + '">' +
           (isOff(p) ? 'Put back' : 'Mark off') + '</button>' +
@@ -178,6 +193,15 @@
         const a = {}; a[i.dataset.who] = i.value.trim();
         await ask('board_classroom', {office: state.office, week: state.week,
                                       assignments: a});
+        await load(state.office, state.week);
+        render(root);
+      };
+    });
+    root.querySelectorAll('.bd-gen').forEach(i => {
+      i.onchange = async () => {
+        const a = {}; a[i.dataset.who] = i.value;
+        await ask('board_gender', {office: state.office, week: state.week,
+                                   assignments: a});
         await load(state.office, state.week);
         render(root);
       };

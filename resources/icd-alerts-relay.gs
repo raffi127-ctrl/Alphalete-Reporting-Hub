@@ -1304,6 +1304,7 @@ function _officeAdminCall(a) {
   if (what === 'board_week') return _boardWeek(office, a);
   if (what === 'board_mark') return _boardMark(office, a);
   if (what === 'board_classroom') return _boardClassroom(office, a);
+  if (what === 'board_gender') return _boardGender(office, a);
   if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
   if (what === 'already') return _admAlready(office);
   if (what === 'bg_status') return _admBgStatus(office);
@@ -1622,11 +1623,26 @@ function _boardMark(office, a) {
 
 // The one column the ICD owns: who goes on which printed sheet.
 function _boardClassroom(office, a) {
+  return _boardColumn(office, a, 'Classroom');
+}
+
+function _boardGender(office, a) {
+  // Apex requires a gender and an ECO machine has no sales board to read one
+  // from (Megan, 2026-11-10). Typed in the panel week over week, like the
+  // classroom, because both change every week and neither is derivable.
+  return _boardColumn(office, a, 'Gender');
+}
+
+function _boardColumn(office, a, colName) {
+  // The one shape both of the ICD's own columns use. Writes only the cells it
+  // was asked about, only on the week it was given, and only when the value
+  // actually differs -- so a panel save never rewrites the whole column and
+  // never touches another week.
   var sh = _boardTab(office);
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var got = _boardRows(sh);
-  var col = got.head.indexOf('Classroom');
-  if (col < 0) return {ok: false, error: "The board has no 'Classroom' column."};
+  var col = got.head.indexOf(colName);
+  if (col < 0) return {ok: false, error: "The board has no '" + colName + "' column."};
   var want = {};
   Object.keys(a.assignments || {}).forEach(function (k) {
     want[_boardKey(k)] = String(a.assignments[k] || '').trim();
@@ -1635,7 +1651,7 @@ function _boardClassroom(office, a) {
   got.rows.forEach(function (r) {
     if (a.week && r['Week of'] !== a.week) return;
     var k = _boardKey((r['Name'] || '') + ' ' + (r['Last Name'] || ''));
-    if (!(k in want) || r['Classroom'] === want[k]) return;
+    if (!(k in want) || r[colName] === want[k]) return;
     sh.getRange(r.__row, col + 1).setValue(want[k]);
     n++;
   });

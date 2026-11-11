@@ -269,3 +269,39 @@ def test_a_run_request_reaches_the_engine_with_its_week(page):
         {detail: {week: 'WE 11.8', data: d}}))""", PEOPLE)
     assert page.evaluate("window.__got.week") == "WE 11.8"
     assert page.evaluate("window.__got.data.length") == 2
+
+
+# ---------------------------------- Gender is a pick list, not a typed box
+
+def _board_js():
+    import pathlib
+    return (pathlib.Path(__file__).resolve().parents[2]
+            / "extension" / "apex-new-starts" / "board.js").read_text()
+
+
+def test_the_panel_offers_a_gender_picker():
+    """Apex requires a gender and an ECO machine has no sales board to read
+    one from (Megan, 2026-11-10)."""
+    js = _board_js()
+    assert "bd-gen" in js
+    assert "board_gender" in js
+
+
+def test_the_options_are_spelt_the_way_apex_spells_them():
+    """What the panel saves is what gets typed into Apex."""
+    js = _board_js()
+    for want in ("'Female'", "'Male'"):
+        assert want in js, want
+
+
+def test_blank_is_a_real_choice_and_the_default():
+    """Nothing guesses a gender — the value lands on a payroll record."""
+    js = _board_js()
+    assert "{value: '', label:" in js
+
+
+def test_it_is_a_select_not_a_free_text_box():
+    """A typed 'f' or 'femal' would be dropped on the floor by _gender()."""
+    js = _board_js()
+    assert 'select class="bd-gen"' in js
+    assert 'input class="bd-gen"' not in js
