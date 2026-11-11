@@ -82,6 +82,9 @@ class Presence:
     x_url: str = ""
     tiktok_url: str = ""
     youtube_url: str = ""
+    # What they sell, by campaign key (att, nds, b2b_att, b2b_box, verizon...).
+    # Feeds the Google description suggestion (Megan 2026-11-11).
+    campaign: str = "att"
 
     @property
     def social_links(self) -> Dict[str, str]:
@@ -193,6 +196,7 @@ def alphalete() -> Presence:
     return Presence(
         key="alphalete",
         business_name="Alphalete Marketing",
+        campaign="att",
         slack_channel=C.SOCIAL_INBOX_CHANNEL_ID,
         review_channel=C.ALERT_SLACK_CHANNEL_ID,
         approvers=tuple(C.SOCIAL_APPROVERS),

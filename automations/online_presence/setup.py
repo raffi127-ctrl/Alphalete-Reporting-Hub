@@ -192,6 +192,7 @@ def cmd_add(a) -> int:
                 google_link=a.google_link or base.google_link,
                 indeed_url=a.indeed or base.indeed_url,
                 glassdoor_url=a.glassdoor or base.glassdoor_url,
+                campaign=(a.campaign or base.campaign).strip().lower(),
                 **{f"{n}_url": getattr(a, n) or getattr(base, f"{n}_url")
                    for n in ("instagram", "facebook", "linkedin", "x", "tiktok", "youtube")})
     offices.save(p)
@@ -467,6 +468,7 @@ def main(argv=None) -> int:
                    help="their Google listing link (Share → Copy link)")
     s.add_argument("--indeed", default="", help="their Indeed company page (optional)")
     s.add_argument("--glassdoor", default="", help="their Glassdoor page (optional)")
+    s.add_argument("--campaign", default="", help="what they sell: att, nds, b2b_att, b2b_box, verizon")
     for n in ("instagram", "facebook", "linkedin", "x", "tiktok", "youtube"):
         s.add_argument(f"--{n}", default="", help=f"their {n} link")
     s.add_argument("--pages", default="",

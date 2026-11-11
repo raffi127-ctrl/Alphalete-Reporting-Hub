@@ -150,3 +150,21 @@ class BothLinkStyles(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GoogleDescription(unittest.TestCase):
+    def _lines(self, gd):
+        return {"google": {"new": 5, "color": "green"}, "search": {"green": 5, "color": "green"},
+                "posts": {"n": 3, "color": "green"},
+                "info": {"color": "green", "problems": [], "description": gd}}
+
+    def test_shows_now_and_suggested(self):
+        ideas = sc.seo_ideas(self._lines({"now": "old", "suggested": "new", "needs_change": True,
+                                          "what_changed": "cut fluff"}), [])
+        d = next(i for i in ideas if i["key"] == "description")
+        self.assertEqual((d["now"], d["suggested"]), ("old", "new"))
+
+    def test_skipped_when_already_good(self):
+        ideas = sc.seo_ideas(self._lines({"now": "fine", "suggested": "fine", "needs_change": False,
+                                          "what_changed": ""}), [])
+        self.assertFalse(any(i["key"] == "description" for i in ideas))

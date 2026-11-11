@@ -457,6 +457,40 @@ def todo(lines: Dict, review_link: str = "") -> List[Dict]:
 #   Posts           2 or more posts this week = all 25 (goal 2-3)
 #   Your info       25, minus 8 for each thing that doesn't match
 # A part Lucy couldn't check scores 0 and says so -- never a free pass.
+def raise_tips(lines: Dict, parts: Dict[str, int]) -> Dict[str, str]:
+    """For each card, the one thing that raises that part of the score, with
+    the points it's worth (Megan 2026-11-11: "we need to be able to tell them
+    what they can do to improve their score"). A full part says so."""
+    g, s, po, inf = lines["google"], lines["search"], lines["posts"], lines["info"]
+    out = {}
+    new = g.get("new") or 0
+    if new < 3:
+        k = 3 - new
+        gain = 10 - round(min(new, 3) / 3 * 10)
+        out["google"] = (f"Get {k} more new review{'s' if k != 1 else ''} this week "
+                         f"(+{gain} points). Send your review link to new leaders and happy customers.")
+    elif (g.get("avg") or 0) < 4.8:
+        out["google"] = "Keep 3 new reviews a week coming: every 5★ review lifts your rating."
+    n = po.get("n") or 0
+    if n < POST_GOAL:
+        k = POST_GOAL - n
+        out["posts"] = (f"Send {k} more post{'s' if k != 1 else ''} with 📸 New post "
+                        f"(+{25 - parts.get('posts', 0)} points).")
+    if s.get("color") != GREY:
+        top = s.get("top") or []
+        bad = [r for r in top if r["kind"] not in GREEN_KINDS]
+        if bad:
+            first = bad[0]
+            what = ("Push the negative result down" if first["kind"] == "negative"
+                    else f"Get one of your own pages above #{first['pos']}")
+            out["search"] = (f"{what} (+5 points for each top-5 spot that's yours). "
+                             f"See \"Rank higher on Google\" below.")
+    probs = inf.get("problems") or []
+    if probs:
+        out["info"] = f"Fix the first thing above (+8 points each, {len(probs)} to go)."
+    return out
+
+
 def score(lines: Dict) -> Tuple[int, Dict[str, int]]:
     g, s, po, inf = lines["google"], lines["search"], lines["posts"], lines["info"]
     parts = {}
@@ -649,13 +683,11 @@ SEO = {
                 ("One post a week is plenty.", "weekly_posts")]},
     "push_down": {
         "text": "Push the negative result down",
-        "why": "Google shows the pages it trusts most for your name. Every active page you "
-               "own (your website, Google listing, Facebook, Instagram, LinkedIn) can take a "
-               "top spot and push the negative one down to page 2, where almost nobody looks.",
-        "how": [("Make sure every social page uses your business name (Facebook and LinkedIn: the exact name; "
-                 "Instagram, X and TikTok usernames can be a short version).", "page_names"),
-                ("Keep posting to them every week with 📸 New post (Lucy posts to all of them at once).", "weekly_posts"),
-                ("Link to them from your website and your Google listing.", "site_links_socials")]},
+        "why": "The more of your own pages show up when people Google you, the further down "
+               "the negative one goes. Page 2 is where almost nobody looks.",
+        "how": [("Use your business name on your Facebook, Instagram and LinkedIn pages.", "page_names"),
+                ("Post 2–3 times a week with 📸 New post. Lucy puts it on all your pages.", "weekly_posts"),
+                ("Put your Facebook, Instagram and LinkedIn links on your website.", "site_links_socials")]},
     "own_site": {
         "text": "Fill more of the top 5 with your own pages",
         "why": "Every top-5 spot that's yours is one less spot for someone else's page about "
@@ -672,8 +704,8 @@ SEO = {
         "text": "Say what you do and where, in your Google description",
         "why": "Google matches searches like \"AT&T internet Dallas\" to the words in your listing.",
         "how": ["Open your Google listing and tap Edit profile, then Description.",
-                "One or two sentences: what you sell and the cities you cover.",
-                "Save. No keyword stuffing; write it like you'd say it."]},
+                "Paste in the new version below (or change it to how you'd say it).",
+                "Save."]},
 }
 
 
@@ -828,6 +860,17 @@ def seo_ideas(lines: Dict, todo_items: List[Dict], n: int = 3) -> List[Dict]:
     for k in dict.fromkeys(picks):
         if k == "reviews" and "review link" in done:
             continue
+        if k == "description":
+            gd = (lines.get("info") or {}).get("description")
+            if gd and gd.get("needs_change") is False:
+                continue                     # theirs already says what + where
+            if gd and gd.get("suggested"):
+                out.append(dict(SEO[k], key=k, how=_marked(SEO[k]["how"], lines),
+                                now=gd.get("now") or "", suggested=gd["suggested"],
+                                what_changed=gd.get("what_changed") or ""))
+                if len(out) == n:
+                    break
+                continue
         how = _marked(SEO[k]["how"], lines)
         # every step already done -> nothing to tell them; show the next idea
         if how and all(h["done"] is True for h in how):
@@ -980,6 +1023,11 @@ def build(p, now: Optional[dt.datetime] = None, review_days: int = 7) -> Dict:
              "posts": posts_line(p, now), "info": info_line(p, aliases)}
     lines["info"]["names"] = names_check(p.business_name, zp.get("names") or {})
     lines["info"]["aliases"] = {k: sorted(v) for k, v in aliases.items()}
+    try:
+        from automations.online_presence import google_description
+        lines["info"]["description"] = google_description.check(p)
+    except Exception:
+        lines["info"]["description"] = None
     link = ""
     try:
         from automations.brand_audit import gbp_api
@@ -1092,16 +1140,18 @@ def render(card: Dict, mode: str = "image") -> str:
         return f'<div class="vs {cls}"><b>{a}</b> vs last week · {e(txt)}</div>'
 
     parts = card.get("score_parts") or {}
+    tips = raise_tips(L, parts) if parts else {}
+
+    def tip(k):
+        if k not in parts:
+            return ""
+        if k in tips:
+            return f'<div class="up"><b>How to raise your score:</b> {e(tips[k])}</div>'
+        return '<div class="up full">✓ Full points here. Keep doing what you\'re doing.</div>' if parts[k] >= 25 else ""
 
     def pts(k):
-        if k == "search" and k in parts:      # goal: all 5 green (Megan 11/11)
-            n = s.get("green") or 0
-            cls = "good" if n >= 5 else "bad" if any(r["kind"] == "negative" for r in s.get("top") or []) else "watch"
-            return f'<span class="pill {cls}">Goal: all 5 green</span>'
-        if k == "posts":                      # a goal people get, not points (Megan 11/11)
-            n = po.get("n") or 0
-            cls = "good" if n >= POST_GOAL else "watch" if n else "bad"
-            return f'<span class="pill {cls}">Goal: {POST_GOAL_TEXT}</span>'
+        # every card shows its score out of 25, then HOW to raise it (Megan
+        # 2026-11-11: "this is meant to give them DIRECTION")
         if k not in parts:
             return pill(L[k]["color"])
         v = parts[k]
@@ -1111,7 +1161,7 @@ def render(card: Dict, mode: str = "image") -> str:
     def kpi(k, label, big, sub, extra=""):
         return (f'<div class="kpi"><div class="kh"><span class="kl">{label}</span>'
                 f'{pts(k)}</div>' + (f'<div class="big">{big}</div>' if big else "")
-                + f'<div class="sub">{sub}</div>{extra}{delta(k)}</div>')
+                + f'<div class="sub">{sub}</div>{extra}{tip(k)}{delta(k)}</div>')
 
     avg = g.get("avg")
     k_rating = kpi("google", "Google rating",
@@ -1136,7 +1186,7 @@ def render(card: Dict, mode: str = "image") -> str:
     neg_top = any(r["kind"] == "negative" for r in top)
     k_search = kpi("search", "When people Google you",
                    f"{n_green}/{n_top}" if top else "—",
-                   f"of the top {n_top} are yours" + (f' · <span class="warn">a negative result is #{neg}</span>'
+                   f"of the top {n_top} are yours (goal: all 5)" + (f' · <span class="warn">a negative result is #{neg}</span>'
                                                        if neg_top else ""),
                    top_html)
     pages = po.get("pages") or []
@@ -1229,12 +1279,21 @@ def render(card: Dict, mode: str = "image") -> str:
         note = ('<div class="cknote">✅ / ❌ = what Lucy could see this week</div>' if known else "")
         return '<ol class="how">' + "".join(step_li(x) for x in how) + "</ol>" + note
 
+    def desc_boxes(t):
+        if not t.get("suggested"):
+            return ""
+        now = e(t.get("now") or "") or "<i>Empty: your listing has no description yet.</i>"
+        changed = (f'<div class="dchg">{e(t["what_changed"])}</div>' if t.get("what_changed") else "")
+        return (f'<div class="dbox now"><div class="dh">What it says now</div>{now}</div>'
+                f'<div class="dbox new"><div class="dh">What we\'d change it to</div>{e(t["suggested"])}'
+                f'{changed}</div>')
+
     def task(i, t, tag="Why + how"):
         head = f'<span class="num">{i}</span><span class="tt">{linkify(t["text"])}</span>'
         if img:
             return f'<div class="task flat">{head}</div>'
         inner = (f'<div class="why"><b>Why:</b> {e(t["why"])}</div>'
-                 f'<div class="howh">How:</div>{steps(t)}')
+                 f'<div class="howh">How:</div>{steps(t)}' + desc_boxes(t))
         if pdf:
             return f'<div class="task open"><div class="th">{head}</div>{inner}</div>'
         return (f'<details class="task"><summary>{head}<span class="wq">{tag} ▾</span></summary>'
@@ -1347,6 +1406,8 @@ def render(card: Dict, mode: str = "image") -> str:
  .kl{{font-size:15px;color:var(--soft);font-weight:600}}
  .big{{font:700 40px Georgia,serif;margin:6px 0 2px;line-height:1}} .star{{color:var(--gold);font-size:34px;margin-left:4px}}
  .sub{{font-size:15px;color:var(--ink)}} .warn{{color:var(--bad);font-weight:700}}
+ .up{{margin-top:10px;padding:8px 10px;border-radius:8px;background:#F6EEDC;color:#6B4E12;font-size:14px;line-height:1.35}}
+ .up.full{{background:#E6F1E8;color:var(--good)}}
  .vs{{font-size:14px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);color:var(--soft)}}
  .vs b{{margin-right:4px}} .vs.up b{{color:var(--good)}} .vs.down b{{color:var(--bad)}} .vs.same b{{color:var(--na)}}
  .pill{{font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap}}
@@ -1361,6 +1422,12 @@ def render(card: Dict, mode: str = "image") -> str:
  section{{margin-top:28px}}
  h2{{font:700 22px Georgia,serif;margin:0 0 4px}} h3{{font:700 18px Georgia,serif;margin:0 0 8px}}
  .lede{{font-size:15px;color:var(--soft);margin:0 0 10px}}
+ .dbox{{border-radius:10px;padding:10px 12px;margin-top:10px;font-size:15px;line-height:1.45}}
+ .dbox.now{{background:#F4F1EA;color:var(--soft)}} .dbox.new{{background:var(--good-bg);border:1.5px solid #BFDCC6}}
+ .dh{{font-weight:800;font-size:13px;letter-spacing:.03em;text-transform:uppercase;margin-bottom:4px;color:var(--ink)}}
+ .dchg{{font-size:13px;color:var(--soft);margin-top:6px;font-style:italic}}
+ .dothis{{margin-top:24px;padding:18px 18px 20px;border:3px solid var(--gold);border-radius:18px;background:#FBF3E2}}
+ .dothis h2{{font-size:26px}} .dothis .tt{{font-weight:800;font-size:19px}} .dothis .task{{border-color:#E2CFA4}}
  .task{{border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:10px;background:#fff}}
  .task summary,.task .th,.task.done,.task.flat{{display:flex;align-items:center;gap:12px}}
  .num{{width:30px;height:30px;border-radius:50%;background:var(--gold);color:#fff;font-weight:800;
@@ -1394,9 +1461,9 @@ def render(card: Dict, mode: str = "image") -> str:
   {score_graph}
   <div class="kpis">{kpis}</div>
   {revs}
-  <section><h2>Do this week</h2>{why_note}{todo_html}</section>
   {seo_sec}
   {charts}
+  <section class="dothis"><h2>✅ Do this week</h2>{why_note}{todo_html}</section>
   <div class="foot">Lucy checks this every Friday at noon. Your score is 4 parts of 25: Google
    reviews (rating + new reviews), Google search (5 per top-5 result that's yours), posts (2–3 a week)
    and your info (25, minus 8 per thing that doesn't match).</div>
