@@ -834,7 +834,8 @@ def write(S, ssid, owner_rows, rep_rows, totals, month_list):
 # possible" -> the 8:00 AM CT run, after the 7:07 AM retention pass has
 # re-read yesterday's late 2nd rounds. Plain HTML, no images.
 
-# Raf + Colten try it first (Raf + Eve 2026-11-09); then --email-org for everyone.
+# Raf + Colten tried it first (Raf + Eve 2026-11-09). Raf 2026-11-11 "send to
+# everyone" -> the daily agent passes --email-org (Alphalete Org Owners).
 TRIAL_TO = ["raffi127@gmail.com", "coltenwrightsc@gmail.com", "alphaletemarketing@gmail.com"]
 ORG_SENT_DIR = HERE.parents[1] / "output" / "state" / "lucy_recordings_org_sent"
 

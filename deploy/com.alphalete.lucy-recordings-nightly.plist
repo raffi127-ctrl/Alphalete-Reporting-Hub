@@ -12,8 +12,9 @@
     <array>
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/lucy_recordings_nightly.sh</string>
-        <!-- Mail Raf the month-to-date summary after the fill (Eve rolled it out 2026-11-06). -->
-        <string>--email</string>
+        <!-- Month-to-date summary to the whole org (Alphalete Org Owners distro, once a day).
+             Raf 2026-11-11: "yes please lets send to everyone" -> was --email (Raf + Colten + Eve). -->
+        <string>--email-org</string>
         <!-- Who sent a recording yesterday, Raf's office, posted by Lucy in Raf's group DM
              C0CGXQFPTAQ (Raf, JD, Basil, Algemar). Eve rolled it out 2026-11-11. -->
         <string>--yesterday-slack</string>
