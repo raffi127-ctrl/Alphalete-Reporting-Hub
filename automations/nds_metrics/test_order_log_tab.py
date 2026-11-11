@@ -442,3 +442,35 @@ class ShippingNotesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChurnBucketTests(unittest.TestCase):
+    """2026-11-11 pm: Churn Bucket, the last column, off the row's Activation
+    Date -- the cancelled workbook's rule, now ageing on the tab."""
+
+    def test_last_column_and_fresh_rows(self):
+        self.assertEqual(T.HEADERS[-1], "Churn Bucket")
+        self.assertEqual(T.HEADERS[_COLX("Delivered Message Sent") + 1], "Churn Bucket")
+        r = T.line_row(line(line_status="Active"), "11/09/2026", active_of=lambda l: "11/3/2026")
+        self.assertEqual(r[T._COL["Churn Bucket"]], "0-30 Day")
+        self.assertEqual(len(r), len(T.HEADERS))
+        self.assertEqual(T.line_row(line(), "x")[T._COL["Churn Bucket"]], "")        # no activation / odd stamp
+
+    def test_ages_on_every_rewrite_and_blank_until_activated(self):
+        act = lambda l: "11/3/2026"  # noqa: E731
+        day0 = dt.date(2026, 11, 9)
+        first = T.merge([], [line(line_status="Active")], today=day0, active_of=act)
+        self.assertEqual(first["rows"][0][T._COL["Churn Bucket"]], "0-30 Day")
+        later = T.merge(first["rows"], [], today=dt.date(2026, 12, 10))             # 37 days: carried row ages
+        self.assertEqual(later["rows"][0][T._COL["Churn Bucket"]], "30 Day")
+        # 61 days after activation (order still inside the 60-day keep window)
+        much_later = T.merge([], [line(order_date="11/4/2026", line_status="Disconnected")],
+                             today=dt.date(2027, 1, 3), active_of=act)
+        self.assertEqual(much_later["rows"][0][T._COL["Churn Bucket"]], "60 Day")     # a disconnect keeps its cohort
+        pending = T.merge([], [line(line_status="Shipped")], today=day0, active_of=lambda l: "")
+        self.assertEqual(pending["rows"][0][T._COL["Churn Bucket"]], "")
+
+
+def _COLX(name):
+    return T._COL[name]
+

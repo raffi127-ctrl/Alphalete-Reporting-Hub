@@ -67,7 +67,14 @@ DAYS_KEPT = 60
 HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
            "Line Status", "Ship Date", "Shipping Notes", "Delivered", "Activation Date", "Port Status",
-           "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
+           "Last Updated", "Notes", "Being worked on", "Delivered Message Sent", "Churn Bucket")
+# "Churn Bucket" LAST (column Z, after the typed columns) since 2026-11-11 pm,
+# Carlos: "add the churn bucket to the NDS order log, but add it to the right
+# of the notes section": days since the row's Activation Date into Tableau's
+# CHURN RATES columns (0-30 Day / 30 Day / 60 Day / 90 Day / 120 Day / 150+
+# Day -- office_metrics.nds_orderlog.churn_bucket, the cancelled workbook's
+# rule), blank until the line activates; recomputed on every rewrite, so a
+# line ages from one bucket to the next.
 # "Shipping Notes" (right after Ship Date) since 2026-11-11 pm, Carlos: "we need a
 # shipping notes column right next to the ship date for all of these sales that
 # say shipped ... whenever something is shipped, you're always checking the
@@ -149,7 +156,16 @@ def line_row(line: dict, stamp: str, zip_of=None, email_of=None, active_of=None)
     core = core[:i_act] + [act] + core[i_act:]
     pay = pay_period_for(line.get("line_status"), _parse_date(act))
     return ([_fmt(week_ending_sunday(od)) if od else "", pay] + core + [stamp]
-            + [""] * len(_TRAILING))
+            + [""] * len(_TRAILING) + [_bucket(_parse_date(act), _parse_date(stamp))])
+
+
+def _bucket(activation: Optional[dt.date], today: Optional[dt.date]) -> str:
+    """Days since activation into Tableau's CHURN RATES columns (0-30 Day,
+    30 Day, 60 Day, 90 Day, 120 Day, 150+ Day); '' until the line activates."""
+    if not activation or not today:
+        return ""
+    from automations.office_metrics.nds_orderlog import churn_bucket
+    return churn_bucket(activation, today)
 
 
 PENDING = "Pending"
@@ -429,6 +445,7 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         row[_COL["Pay Period"]] = pay_period_for(row[_COL["Line Status"]],
                                                  _parse_date(row[_COL["Activation Date"]]),
                                                  prior=row[_COL["Pay Period"]])
+        row[_COL["Churn Bucket"]] = _bucket(_parse_date(row[_COL["Activation Date"]]), today)
         kept.append(row)
     kept.sort(key=lambda r: (
         -(_parse_date(r[_COL["Order Date"]]) or dt.date.min).toordinal(),
@@ -501,7 +518,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
                                                          "startIndex": 0, "endIndex": n_cols}}})
     for name, px in (("Notes", 220), ("Shipping Notes", 260), ("Being worked on", 130), ("Delivered Message Sent", 150),
                      ("Customer", 190), ("Rep", 190), ("Device", 170),
-                     ("Email", 210), ("Pay Period", 185)):
+                     ("Email", 210), ("Pay Period", 185), ("Churn Bucket", 110)):
         c = _COL[name]
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
