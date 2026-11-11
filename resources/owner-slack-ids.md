@@ -49,6 +49,12 @@ When you confirm a new ID, add it here in the same commit.
 | Oren Shezaf | Omnia Management Inc (AT&T Fiber, 22536; Starr's captainship) | U09F8EMT21J | orenshezaf@gmail.com — the account Megan DMs (screenshot 2026-11-06). ⚠ look-alike U0BAW17EYP3 "Oren Shezaf" (omniamanagementinc@gmail.com, the captainship email) is a second account |
 | Miguel Zaragoza | Nobilis Marketing Group (AT&T Fiber, 24145; new owner off Starr's team, Starr's captainship) | U0BQLCVB2BW | miguelzaragoza39@gmail.com (Megan's screenshot 2026-11-06). Only Slack account under that name |
 | Emiliano "Milly" Villagrana | Vincere Marketing, Inc. (AT&T Fiber, 22001; Starr's captainship; ECO key `emiliano`) | U0CG5CLF6S3 | milly.vinceremarketing@gmail.com, display name "milly". Only Slack account on that email, which matches `captainship_night_knocks/owners.py`. Systems spell him Milly Villagrana (2026-11-10) |
+| Natalia Gwarda | Zora Industries, Inc. (AT&T Fiber, 23431; Starr's captainship; ECO key `natalia`) | U08CPA4JZD0 | nataliagwarda@gmail.com (Megan's screenshot 2026-11-10). Only Slack account under that name |
+| Samuel Acay | Dynasty Growth Group (NDS, 23751; ECO `samuel`) | U0BV4FKFZ25 | samuelacay0628@gmail.com — the profile Megan showed 2026-11-10. ⚠ look-alike U0BV4GGQ83T "Samuel Acay" (samuel.david.acay@gmail.com) is a second account |
+| Hasani Lynch | Covenant (ECO `hasani`) | U07FLTR1FR9 | hasanilynch17@gmail.com. Only Slack account under that name (2026-11-10) |
+| Steve McElwee | Luxe (ECO `steve`) | U07UML6M3EY | mcelwee.steve95@gmail.com. Only Slack account under that name (2026-11-10) |
+| Jose Velasquez | Legacy Shore (NDS; ECO `jose`) | U07K1FNKRLY | joseavm20198@gmail.com. Only "Jose Velasquez" (the other Velasquez accounts are different people) (2026-11-10) |
+| Haytham Nagi | ECO `haytham` | U0740MXJFFC | nagihaytham81@gmail.com — the profile Megan showed 2026-11-10. ⚠ look-alike U0CCYN487U6 "Haytham Nagi" (haythamnagi1@gmail.com) is a second account |
 | Atef Choudhury | Domin8 Acquisitions (23467) | U06E0GV0RNH | atefchy98@gmail.com. ⚠ look-alike U0CCYL2JZ7G "Atef's Office Slack" (atefchoudhury349@gmail.com) is a second account. Megan 2026-10-29 (sign-in alert DM) |
 | Cesar Castillo | Domin8 — Atef's super A / helper | U07GR1FUHKL | spikemaxblue12358@gmail.com. Gets Atef's sign-in alert DM with Megan, Eve, Atef (Megan 2026-10-29) |
 | Rashad Reed | Rashad's Local Office | U08LSELFTDW | |
