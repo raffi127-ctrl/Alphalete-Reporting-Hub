@@ -107,6 +107,18 @@ class NewStartsTest(unittest.TestCase):
         self.assertIn(">60%<", html)
         self.assertIn(">40%<", html)
 
+    def test_first_table_gets_the_new_starts_count(self):
+        from automations.lucy_recordings_sheet.run import build_email_html, ns_count_by_owner
+        nc = ns_count_by_owner([["Ann (1 wk)", 10, 6, 0.6, 6.0], ["Bo", 10, 2, 0.2, 0.5]])
+        self.assertEqual(nc, {"Ann": 6, "Bo": 2, "": 8})
+        html = build_email_html("Nov", [["Nov", 5, 50, 0.1, 4.0, 0]],
+                                [["Nov", "Ann", 3, 10, 0.3, 7.0], ["Nov", "Cy", 1, 5, 0.2, 5.0]],
+                                "x", False, {"Ann": 0.6}, nc)
+        self.assertIn("New Starts (4 wk)", html)
+        self.assertIn('font-weight:bold">6</td></tr>', html)
+        self.assertIn('font-weight:bold">—</td></tr>', html)
+        self.assertIn(">8<", html)
+
 
 if __name__ == "__main__":
     unittest.main()
