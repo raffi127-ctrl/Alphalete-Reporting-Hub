@@ -1381,8 +1381,17 @@ def _audit_stations_tab(prefix, vals, form, week_board, known,
     legend_hdr = {i + 1 for i, row in enumerate(vals, start=1)
                   if row and str(row[0]).strip().lower() == "stations"}
 
+    # Under the station blocks sits the WEEKLY MEETING PLAN (Carlos,
+    # 2026-11-11: Mon-Sat day bands, ITEM / WHO / TIME / ROOM / TOPIC columns)
+    # -- first names, 'Sebastian & Smedra', 'Atmo Conference Room': free text
+    # that is nobody's identity, and the room names are person-shaped. The
+    # plan starts at the row whose col A carries its title; nothing below it
+    # is the station grid, so the name scan stops there.
+    PLAN_TITLE = "weekly meeting plan"
     unknown = set()
     for i, row in enumerate(vals, start=1):
+        if row and str(row[0]).strip().lower().startswith(PLAN_TITLE):
+            break
         if i < 4 or i in legend_hdr or _header_row(row):
             continue
         for j in name_cols:

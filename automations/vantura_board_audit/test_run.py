@@ -318,6 +318,32 @@ class StationsAllCapsHeadings(unittest.TestCase):
         self.assertIn("JJ Unknownperson", reported)
 
 
+class StationsWeeklyMeetingPlan(unittest.TestCase):
+    """2026-11-11: the WEEKLY MEETING PLAN under the station blocks (Mon-Sat
+    day bands, ITEM / WHO / TIME / ROOM / TOPIC, room names like 'Atmo
+    Conference Room') is not a list of people. The name scan stops at the
+    plan's title row; a bad name ABOVE the title is still reported."""
+
+    def _reported(self, above, below):
+        rows = [[""] * 95 for _ in range(10)]
+        rows[4][0] = above
+        rows[6][0] = "WEEKLY MEETING PLAN  \u2014  MONDAY TO SATURDAY"
+        rows[8][0] = "ATT Leaders Meeting"
+        rows[8][1] = below
+        rows[8][3] = "Atmo Conference Room"
+        return StationsLegendHeaderRow._names_reported(self, (rows, []))
+
+    def test_plan_rows_are_not_reported(self):
+        reported = self._reported("", "Zed Unknownperson")
+        self.assertNotIn("Zed Unknownperson", reported)
+        self.assertNotIn("Atmo Conference Room", reported)
+        self.assertNotIn("Leaders Meeting", reported)
+
+    def test_a_typo_above_the_plan_is_still_reported(self):
+        reported = self._reported("Zed Unknownperson", "")
+        self.assertIn("Zed Unknownperson", reported)
+
+
 class StationsLegendHeaderRow(unittest.TestCase):
     """The STATIONS legend's own header row is not a list of people.
 
