@@ -1044,10 +1044,10 @@ def yesterday_rows(kept: list, dropped: list, export: dict, guesses: dict, day: 
 
 # Raf's group DM (Raf, JD, Basil, Algemar) - Eve 2026-11-11.
 YESTERDAY_DM = "C0CGXQFPTAQ"
-# Raf wants HIS office under control, not the org. Eve 2026-11-11: Algemar
-# still counts as part of Raf's office for now. Matched on the bot's owner name
-# (accents/case ignored, every word must be there).
-YESTERDAY_OWNERS = ("rafael hidalgo", "algemar")
+# Raf wants HIS office under control, not the org. Eve 2026-11-11: JD, Basil
+# and Algemar are leaders INSIDE Raf's office, not owners - the owner is Raf.
+# Matched on the bot's owner name (accents/case ignored, every word must be there).
+YESTERDAY_OWNERS = ("rafael hidalgo",)
 
 
 def in_yesterday_scope(owner: str, wanted=YESTERDAY_OWNERS) -> bool:
