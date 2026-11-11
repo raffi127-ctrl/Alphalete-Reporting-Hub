@@ -1042,8 +1042,16 @@ def yesterday_rows(kept: list, dropped: list, export: dict, guesses: dict, day: 
     return [x[1:] for x in rows]
 
 
-# Raf's group DM (Raf, JD, Basil, Algemar) - Eve 2026-11-11.
-YESTERDAY_DM = "C0CGXQFPTAQ"
+# Lucy's own group DM with Raf, JD, Bas, Algemar and Eve (Eve 2026-11-11). Raf's
+# existing DM (C0CGXQFPTAQ) has the OTHER Lucy, not lucy_reporting, and a group
+# DM can't take new people -> Lucy opens this one by its members.
+YESTERDAY_DM = ",".join([
+    "U045Z8N0ZQC",   # Rafael Hidalgo
+    "U05094TTPKQ",   # JD Mascorro (NOT the look-alike U068T4LA0C8)
+    "U067WLPK92T",   # Bas (basboosmahdi; NOT U09TWLG53EZ, also "Bas")
+    "U09MXMU76MB",   # Algemar Kennel
+    "U088E2KJEV8",   # Eve
+])
 # Raf wants HIS office under control, not the org. Eve 2026-11-11: JD, Basil
 # and Algemar are leaders INSIDE Raf's office, not owners - the owner is Raf.
 # Matched on the bot's owner name (accents/case ignored, every word must be there).
@@ -1093,11 +1101,12 @@ def yesterday_text(day: str, rows: list) -> str:
 
 def post_yesterday(target: str, day: str, rows: list) -> None:
     """Posts as Lucy: the Lucy Reporting USER token on purpose (no bot app on
-    Lucy 1). target = a channel/DM id, or a user id (U...) for a 1-to-1 test."""
+    Lucy 1). target = a channel/DM id, or user ids (U..., comma separated):
+    one = a 1-to-1 test DM, several = the group DM with those people."""
     from automations.shared.slack_metrics_post import _client
     client = _client()
     channel = target
-    if target.startswith("U"):
+    if target.startswith(("U", "W")):
         channel = client.conversations_open(users=target)["channel"]["id"]
     resp = client.chat_postMessage(channel=channel, text=yesterday_text(day, rows),
                                    unfurl_links=False)
