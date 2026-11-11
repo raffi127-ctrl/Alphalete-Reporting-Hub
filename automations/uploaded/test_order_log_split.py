@@ -143,3 +143,29 @@ class TestRouting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SingleFileReadsOnPhone(unittest.TestCase):
+    """Eve 2026-11-11 (Natalia's log on her phone): the one-file offices get
+    the same name band on every rep tab, and the long log goes last."""
+
+    def test_banners_and_log_last_no_double_band_on_split(self):
+        from openpyxl import load_workbook
+        with tempfile.TemporaryDirectory() as d:
+            p = _book(Path(d) / "ol.xlsx", reps=3, rows=6)
+            wb = load_workbook(p)
+            wb.create_sheet("Pay Period", 0)
+            order_log._phone_readable(wb)
+            self.assertEqual(wb.sheetnames[0], "Pay Period")
+            self.assertEqual(wb.sheetnames[-1], ols.LOG_TAB)
+            for n in ("Rep 0", "Rep 1", "Rep 2"):
+                self.assertEqual(wb[n]["A1"].value, n.upper())
+            self.assertEqual(wb["Pay Period"]["A1"].value, None)
+            wb.save(p)
+            # The split runs on this same file: still exactly one band.
+            for _label, part in ols.split(p, Path(d) / "parts"):
+                pw = load_workbook(part)
+                for n in pw.sheetnames:
+                    if n not in ols.NON_REP_TABS:
+                        self.assertEqual(pw[n]["A1"].value, n.upper())
+                        self.assertNotEqual(pw[n]["A3"].value, n.upper())

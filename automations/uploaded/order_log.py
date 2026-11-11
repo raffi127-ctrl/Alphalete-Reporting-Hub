@@ -2118,6 +2118,21 @@ def _autosize_rep_tab(ws, banner_rows: set, header_rows: set = frozenset()) -> N
 _TAB_ERROR: Optional[str] = None
 
 
+def _phone_readable(wb) -> None:
+    """Every office's single file reads like the letter files (Eve 2026-11-11,
+    Natalia's log on her phone: the tabs have no names). Slack's phone preview
+    never shows tab NAMES -- the pages just scroll by -- so each rep tab gets
+    its name in a big black band on top, and the long Cleaned Order Log moves
+    to the end so the reps' pages come first. Same helpers as the split."""
+    from automations.uploaded import order_log_split as ols
+    for name in wb.sheetnames:
+        if name not in ols.NON_REP_TABS:
+            ols._name_banner(wb[name], name)
+    if ols.LOG_TAB in wb.sheetnames:
+        wb.move_sheet(ols.LOG_TAB,
+                      offset=len(wb.sheetnames) - 1 - wb.sheetnames.index(ols.LOG_TAB))
+
+
 def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "",
                 owner: str = "") -> Path:
     """Build the cleaned, color-coded .xlsx ready for Slack.
@@ -2194,6 +2209,10 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "",
         _add_pay_period_tab(wb, date.today())
     except Exception as e:  # noqa: BLE001 — a calendar never sinks the log
         print(f"  ⚠ Pay Period tab skipped: {e}")
+    try:
+        _phone_readable(wb)
+    except Exception as e:  # noqa: BLE001 — layout polish never sinks the log
+        print(f"  ⚠ rep name banners skipped: {e}")
 
     # Resilient save: if today's file is still open in Excel, Windows locks it
     # and wb.save() raises PermissionError. Fall back to a timestamped name so

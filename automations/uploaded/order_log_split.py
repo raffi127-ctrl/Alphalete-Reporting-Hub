@@ -83,6 +83,10 @@ def _name_banner(ws, name: str) -> None:
     was. openpyxl's insert_rows doesn't move merged ranges, so the week
     banners are unmerged, shifted down by hand, and merged again."""
     from openpyxl.styles import Alignment, Font, PatternFill
+    # Already bannered (csv_to_xlsx does it for every office since 11/11, and
+    # the split works on that same file): never stack a second band.
+    if ws.cell(row=1, column=1).value == name.upper():
+        return
     merges = [(m.min_row, m.min_col, m.max_row, m.max_col)
               for m in ws.merged_cells.ranges]
     for m in list(ws.merged_cells.ranges):
