@@ -429,6 +429,11 @@ def info_line(p, aliases: Optional[Dict[str, set]] = None) -> Dict:
             "checks": checks, "audit": audit}
 
 
+# Where an owner edits their Google listing: Google's Business Profile
+# manager lists every listing their account manages, with Edit profile.
+GBP_EDIT = "https://business.google.com/locations"
+
+
 def todo(lines: Dict, review_link: str = "") -> List[Dict]:
     """At most 3 plain steps, most important first -- each with its WHY."""
     out: List[Dict] = []
@@ -443,7 +448,14 @@ def todo(lines: Dict, review_link: str = "") -> List[Dict]:
         out.append({"text": "Send your review link to your new leaders and this week's happy "
                             "customers (you want a mix of both)", "why": WHY["reviews"],
                     "how": HOW["reviews"]})
-    return out[:3]
+    gd = inf.get("description") or {}
+    if gd.get("needs_change") and gd.get("suggested"):
+        # editing the listing is a quick action, with the link (Megan 11/11)
+        out.append({"text": "Paste the new description into your Google listing",
+                    "why": SEO["description"]["why"], "how": SEO["description"]["how"],
+                    "now": gd.get("now") or "", "suggested": gd["suggested"],
+                    "what_changed": gd.get("what_changed") or ""})
+    return out[:4]
 
 
 # ---- last week, for the lines Lucy can't rebuild from dates ------------------------
@@ -672,7 +684,7 @@ SEO = {
         "why": "How many reviews you get, and how recently, is one of the biggest things "
                "Google uses to rank local businesses. A steady trickle beats a big burst.",
         "how": [("Each week, ask your new leaders and a few happy customers. A mix of both reads best.", "weekly_reviews"),
-                "Send them your review link (it's in \"Do this week\" and the Slack message).",
+                "Send them your review link (it's in Quick actions and the Slack message).",
                 "Lucy answers every review, which Google also likes."]},
     "google_posts": {
         "text": "Post on your Google listing every week",
@@ -703,9 +715,10 @@ SEO = {
     "description": {
         "text": "Say what you do and where, in your Google description",
         "why": "Google matches searches like \"AT&T internet Dallas\" to the words in your listing.",
-        "how": ["Open your Google listing and tap Edit profile, then Description.",
-                "Paste in the new version below (or change it to how you'd say it).",
-                "Save."]},
+        "how": ["Tap your Google listing. Don't see your business? Check the email in the top "
+                "right corner and switch to the Google account that manages your listing.",
+                "Tap Edit profile, then Description.",
+                "Paste in the new version below (or change it to how you'd say it), then Save."]},
 }
 
 
@@ -861,6 +874,8 @@ def seo_ideas(lines: Dict, todo_items: List[Dict], n: int = 3) -> List[Dict]:
         if k == "reviews" and "review link" in done:
             continue
         if k == "description":
+            if "google description" in done or "your google listing" in done:
+                continue                     # already a quick action up top
             gd = (lines.get("info") or {}).get("description")
             if gd and gd.get("needs_change") is False:
                 continue                     # theirs already says what + where
@@ -1164,9 +1179,19 @@ def render(card: Dict, mode: str = "image") -> str:
                 + f'<div class="sub">{sub}</div>{extra}{tip(k)}{delta(k)}</div>')
 
     avg = g.get("avg")
+    # Indeed + Glassdoor next to Google, from the Google search (Megan 11/11).
+    # Shown only; the score stays Google's.
+    other = []
+    for key, nm in (("indeed", "Indeed"), ("glassdoor", "Glassdoor")):
+        x = (s.get("ratings") or {}).get(key) or {}
+        if x.get("rating"):
+            cnt = f' · {x["reviews"]:,} reviews' if x.get("reviews") else ""
+            other.append(f'<div class="orow"><span>{nm}</span><b>{x["rating"]:.1f}★</b>'
+                         f'<small>{cnt.lstrip(" ·")}</small></div>')
     k_rating = kpi("google", "Google rating",
                    f'{avg:.1f}<span class="star">★</span>' if avg else "—",
-                   f'{g.get("count") or 0:,} reviews · <b>{n_new}</b> new this week')
+                   f'{g.get("count") or 0:,} reviews · <b>{n_new}</b> new this week',
+                   f'<div class="others">{"".join(other)}</div>' if other else "")
     own, neg = s.get("own"), s.get("neg")
     TAG = {"owned": ("own", "Your website"), "profile": ("prof", "Your page"),
            "negative": ("neg", "Negative"), "neutral": ("", "")}
@@ -1261,6 +1286,8 @@ def render(card: Dict, mode: str = "image") -> str:
             if rl:
                 out = out.replace("your review link",
                                   f'<a class="inl" href="{e(rl)}">your review link</a>', 1)
+            out = out.replace("your Google listing",
+                              f'<a class="inl" href="{GBP_EDIT}">your Google listing</a>', 1)
         return out
 
     def step_li(x):
@@ -1303,7 +1330,7 @@ def render(card: Dict, mode: str = "image") -> str:
                  or '<div class="task done"><span class="num">✓</span><span class="tt">'
                     'Nothing this week. Keep sending Lucy your photos!</span></div>')
     seo_html = "".join(task(i, t) for i, t in enumerate(card.get("seo") or [], 1))
-    seo_sec = (f'<section><h2>Rank higher on Google</h2><p class="lede">Picked from this '
+    seo_sec = (f'<section><h2>Rank Higher On Google / Improve Your SEO</h2><p class="lede">Picked from this '
                f'week\'s numbers. Each one helps you show up first when people search you.</p>'
                f'{seo_html}</section>') if seo_html else ""
 
@@ -1422,6 +1449,9 @@ def render(card: Dict, mode: str = "image") -> str:
  section{{margin-top:28px}}
  h2{{font:700 22px Georgia,serif;margin:0 0 4px}} h3{{font:700 18px Georgia,serif;margin:0 0 8px}}
  .lede{{font-size:15px;color:var(--soft);margin:0 0 10px}}
+ .others{{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}}
+ .orow{{display:flex;gap:8px;align-items:baseline;font-size:15px;margin-top:2px}} .orow span{{min-width:72px;color:var(--soft)}}
+ .orow small{{color:var(--soft)}}
  .dbox{{border-radius:10px;padding:10px 12px;margin-top:10px;font-size:15px;line-height:1.45}}
  .dbox.now{{background:#F4F1EA;color:var(--soft)}} .dbox.new{{background:var(--good-bg);border:1.5px solid #BFDCC6}}
  .dh{{font-weight:800;font-size:13px;letter-spacing:.03em;text-transform:uppercase;margin-bottom:4px;color:var(--ink)}}
@@ -1463,7 +1493,7 @@ def render(card: Dict, mode: str = "image") -> str:
   {revs}
   {seo_sec}
   {charts}
-  <section class="dothis"><h2>✅ Do this week</h2>{why_note}{todo_html}</section>
+  <section class="dothis"><h2>⚡ Quick actions you can take this week</h2>{why_note}{todo_html}</section>
   <div class="foot">Lucy checks this every Friday at noon. Your score is 4 parts of 25: Google
    reviews (rating + new reviews), Google search (5 per top-5 result that's yours), posts (2–3 a week)
    and your info (25, minus 8 per thing that doesn't match).</div>
