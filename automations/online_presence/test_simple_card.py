@@ -57,18 +57,18 @@ class Ideas(unittest.TestCase):
 
 
 class Score(unittest.TestCase):
-    def _lines(self, avg=4.8, new=0, own=2, neg=3, n=0, problems=1, search_color="yellow"):
-        return {"google": {"avg": avg, "new": new}, "search": {"own": own, "neg": neg, "color": search_color},
+    def _lines(self, avg=4.8, new=0, green=3, n=0, problems=1, search_color="yellow"):
+        return {"google": {"avg": avg, "new": new}, "search": {"green": green, "color": search_color},
                 "posts": {"n": n}, "info": {"color": "red" if problems else "green",
                                             "problems": ["x"] * problems}}
 
     def test_four_parts_of_25(self):
         total, parts = sc.score(self._lines())
-        self.assertEqual(parts, {"google": 13, "search": 12, "posts": 0, "info": 17})
-        self.assertEqual(total, 42)
+        self.assertEqual(parts, {"google": 13, "search": 15, "posts": 0, "info": 17})
+        self.assertEqual(total, 45)
 
     def test_a_perfect_week_is_100(self):
-        total, _ = sc.score(self._lines(avg=5.0, new=3, own=1, neg=None, n=3, problems=0))
+        total, _ = sc.score(self._lines(avg=5.0, new=3, green=5, n=2, problems=0))
         self.assertEqual(total, 100)
 
     def test_a_part_lucy_couldnt_check_scores_zero(self):
@@ -104,7 +104,19 @@ class WebsiteLinks(unittest.TestCase):
                                 self._row("linkedin", "https://www.linkedin.com/company/123")], lines)
         self.assertTrue(out[0]["ok"])
         self.assertIn("live", out[0]["label"])
-        self.assertIsNone(out[1]["ok"])                      # right account, not confirmed: never a guess ✅
+        self.assertFalse(out[1]["ok"])           # Google can't find it: a real ❌, never a blank (Megan 11/11)
+
+    def test_numeric_linkedin_found_on_google_by_name(self):
+        from unittest import mock
+        from types import SimpleNamespace
+        p = SimpleNamespace(business_name="Kash Marketing")
+        hit = {"organic_results": [{"link": "https://www.linkedin.com/company/kash-marketing",
+                                    "title": "Kash Marketing | LinkedIn"}]}
+        lines = {"search": {"color": "yellow", "live_links": []},
+                 "info": {"aliases": {"linkedin": ["123"]}}}
+        with mock.patch("automations.brand_audit.collectors.serp._search", return_value=hit):
+            out = sc.confirm_links([self._row("linkedin", "https://www.linkedin.com/company/123")], lines, p)
+        self.assertTrue(out[0]["ok"])
 
     def test_a_wrong_account_stays_red(self):
         lines = {"search": {"color": "yellow", "live_links": []}}

@@ -117,7 +117,8 @@ HOW = {
                "Lucy edits every photo, writes the caption, and asks for your ✅ "
                "before anything posts."],
     "reviews": ["Tap your review link above and copy it.",
-                "Text it to 5 customers who were happy with their service.",
+                "Text it to your new leaders and ask them to write about the team.",
+                "Text it to this week's happy customers too. A mix of both reads best.",
                 "Keep it short: \"Would you leave us a quick Google review? It helps a ton!\""],
 }
 
@@ -233,6 +234,38 @@ def google_line(p, now: dt.datetime, days: int = 7) -> Dict:
             "_revs": revs}
 
 
+GREEN_KINDS = ("owned", "profile")   # results that count as theirs
+
+
+# Short "what is it" label for each top-5 result (Megan 2026-11-11: "-Your
+# Indeed (Reviews)", "-Your Website", "-Reddit").
+SITE_NAMES = {"indeed.com": "Indeed", "glassdoor.com": "Glassdoor", "ziprecruiter.com": "ZipRecruiter",
+              "linkedin.com": "LinkedIn", "facebook.com": "Facebook", "instagram.com": "Instagram",
+              "tiktok.com": "TikTok", "x.com": "X", "twitter.com": "X", "youtube.com": "YouTube",
+              "reddit.com": "Reddit", "yelp.com": "Yelp", "bbb.org": "BBB", "smartrecruiters.com": "SmartRecruiters",
+              "google.com": "Google", "mapquest.com": "MapQuest", "comparably.com": "Comparably",
+              "trustpilot.com": "Trustpilot", "yellowpages.com": "Yellow Pages", "simplyhired.com": "SimplyHired"}
+JOB_SITES = ("indeed.com", "glassdoor.com", "ziprecruiter.com", "linkedin.com", "smartrecruiters.com",
+             "simplyhired.com", "comparably.com")
+
+
+def result_label(r: Dict) -> str:
+    dom = (r.get("domain") or "").lower()
+    if r.get("kind") == "owned":
+        return "Your website"
+    base = next((d for d in SITE_NAMES if dom == d or dom.endswith("." + d)), None)
+    name = SITE_NAMES[base] if base else (dom.split(".")[-2].title() if dom.count(".") else dom or "A website")
+    what = ""
+    if base in JOB_SITES:
+        link, title = (r.get("link") or "").lower(), (r.get("title") or "").lower()
+        if any(w in link for w in ("/reviews", "/salaries", "/benefits")) or "review" in title:
+            what = " - Reviews"
+        elif any(w in link for w in ("/jobs", "/job/", "/viewjob", "careers.")) or any(
+                w in title for w in ("job", "hiring", "career", "representative")):
+            what = " - Job listings"
+    return (f"Your {name}" if r.get("kind") == "profile" else name) + what
+
+
 def search_line(p) -> Dict:
     from automations.brand_audit.collectors import serp
     from automations.online_presence.weekly_card import company_for
@@ -252,17 +285,24 @@ def search_line(p) -> Dict:
     if not m:
         return {"color": GREY, "text": "Couldn't search Google this week"}
     own, neg = m.get("own_site_position"), m.get("top_negative_position")
-    site = f"Your website is #{own}" if own else "Your website isn't on page 1"
-    if neg:
-        bad = f"a negative result is #{neg}"
-        color = RED if (own is None or neg < own) else YELLOW
-    else:
-        bad, color = "no negative results on page 1", (GREEN if own and own <= 3 else YELLOW)
-    return {"color": color, "text": f"{site} · {bad}", "own": own, "neg": neg, "top": top,
+    # The goal is all 5 green -- their own site or pages. Where the website
+    # itself lands doesn't matter (Megan 2026-11-11).
+    green = sum(1 for r in top if r["kind"] in GREEN_KINDS)
+    neg_top = any(r["kind"] == "negative" for r in top)
+    color = RED if neg_top else (GREEN if top and green == len(top) else YELLOW)
+    text = f"{green} of the top {len(top) or 5} on Google are yours" + (
+        f" · a negative result is #{neg}" if neg_top else "")
+    return {"color": color, "text": text, "own": own, "neg": neg, "top": top, "green": green,
             "ratings": m.get("serp_ratings") or {},
             "live_links": [x["link"] for x in profiles] + [r.get("link") or "" for r in page1],
             "panel": profiles,
             "domains": sorted({r.get("domain") or "" for r in page1})}
+
+
+# Posting goal (Megan 2026-11-11): 2-3 posts a week. 2 already earns the full
+# posts score; the card asks for 2-3.
+POST_GOAL = 2
+POST_GOAL_TEXT = "2–3"
 
 
 def posts_line(p, now: dt.datetime) -> Dict:
@@ -283,7 +323,7 @@ def posts_line(p, now: dt.datetime) -> Dict:
             n += 1
         elif t >= since2:
             n_prev += 1
-    color = GREEN if n >= 3 else (YELLOW if n else RED)
+    color = GREEN if n >= POST_GOAL else (YELLOW if n else RED)
     pages = tuple(p.pages) or (ALPHALETE_PAGES if p.key == "alphalete" else ())
     pages = tuple(x for x in pages if x in BADGE)
     return {"color": color, "text": f"{n} post{'s' if n != 1 else ''} went out", "n": n,
@@ -398,9 +438,10 @@ def todo(lines: Dict, review_link: str = "") -> List[Dict]:
                     "why": WHY["bad_review"], "how": HOW["bad_review"]})
     out += inf.get("fixes", [])[:1]          # one thing at a time, most important first
     if po["color"] != GREEN:
-        out.append({"text": "Tap 📸 New post in your Slack channel and send 3 team posts", "why": WHY["photos"], "how": HOW["photos"]})
+        out.append({"text": "Tap 📸 New post in your Slack channel and send 2–3 team posts (they go to Google too)", "why": WHY["photos"], "how": HOW["photos"]})
     if g["color"] == YELLOW or s["color"] in (RED, YELLOW):
-        out.append({"text": "Text 5 happy customers your review link", "why": WHY["reviews"],
+        out.append({"text": "Send your review link to your new leaders and this week's happy "
+                            "customers (you want a mix of both)", "why": WHY["reviews"],
                     "how": HOW["reviews"]})
     return out[:3]
 
@@ -411,10 +452,9 @@ def todo(lines: Dict, review_link: str = "") -> List[Dict]:
 # every card on the page shows where its points went:
 #   Google reviews  15 for the rating (3.0★ = 0 ... 5.0★ = 15) + 10 for new
 #                   reviews this week (3 or more = all 10)
-#   Google search   15 for your website's spot (#1 15, #2 12, #3 9, #4-5 6,
-#                   lower or missing 0) + 10 when no negative result is on
-#                   page 1 (5 when it's below #5)
-#   Posts           3 or more posts this week = all 25
+#   Google search   5 for each of the top 5 results that's theirs (their
+#                   website or one of their pages) -- the goal is all 5 green
+#   Posts           2 or more posts this week = all 25 (goal 2-3)
 #   Your info       25, minus 8 for each thing that doesn't match
 # A part Lucy couldn't check scores 0 and says so -- never a free pass.
 def score(lines: Dict) -> Tuple[int, Dict[str, int]]:
@@ -426,10 +466,8 @@ def score(lines: Dict) -> Tuple[int, Dict[str, int]]:
     if s.get("color") == GREY:
         parts["search"] = 0
     else:
-        own, neg = s.get("own"), s.get("neg")
-        spot = {1: 15, 2: 12, 3: 9, 4: 6, 5: 6}.get(own or 0, 0)
-        parts["search"] = spot + (10 if not neg else 5 if neg > 5 else 0)
-    parts["posts"] = round(min(po.get("n") or 0, 3) / 3 * 25)
+        parts["search"] = 5 * min(s.get("green") or 0, 5)      # 5 per green result in the top 5
+    parts["posts"] = round(min(po.get("n") or 0, POST_GOAL) / POST_GOAL * 25)
     parts["info"] = 0 if inf.get("color") == GREY else max(0, 25 - 8 * len(inf.get("problems") or []))
     return sum(parts.values()), parts
 
@@ -449,7 +487,7 @@ def record(p, card: Dict, now: Optional[dt.datetime] = None) -> None:
     now = now or dt.datetime.now()
     h = _history(p)
     L = card["lines"]
-    h[now.date().isoformat()] = {"own": L["search"].get("own"), "neg": L["search"].get("neg"),
+    h[now.date().isoformat()] = {"green": L["search"].get("green"), "own": L["search"].get("own"), "neg": L["search"].get("neg"),
                                  "fixes": len(L["info"].get("fixes", [])),
                                  "score": card.get("score")}
     f = p.path("weekly_card_history.json")
@@ -485,10 +523,11 @@ def compare(lines: Dict, prev: Optional[Dict]) -> Dict[str, Dict]:
         for k in ("search", "info"):
             out[k] = {"text": "Last week: first week, nothing to compare yet", "dir": "new"}
     else:
-        own = lines["search"].get("own")
-        was = f"#{prev['own']}" if prev.get("own") else "not on page 1"
-        out["search"] = {"text": f"Last week: your website was {was}",
-                         "dir": d(own or 99, prev.get("own") or 99, higher_better=False)}
+        if prev.get("green") is None:
+            out["search"] = {"text": "Last week: first week, nothing to compare yet", "dir": "new"}
+        else:
+            out["search"] = {"text": f"Last week: {prev['green']} of 5 green",
+                             "dir": d(lines["search"].get("green") or 0, prev["green"])}
         n_now, n_then = len(lines["info"].get("fixes", [])), prev.get("fixes", 0)
         out["info"] = {"text": f"Last week: {n_then} thing{'s' if n_then != 1 else ''} to fix",
                        "dir": d(n_now, n_then, higher_better=False)}
@@ -598,7 +637,7 @@ SEO = {
         "text": "Get 3+ new Google reviews every week",
         "why": "How many reviews you get, and how recently, is one of the biggest things "
                "Google uses to rank local businesses. A steady trickle beats a big burst.",
-        "how": [("Pick 3 happy customers each week (a great install, a thank-you text).", "weekly_reviews"),
+        "how": [("Each week, ask your new leaders and a few happy customers. A mix of both reads best.", "weekly_reviews"),
                 "Send them your review link (it's in \"Do this week\" and the Slack message).",
                 "Lucy answers every review, which Google also likes."]},
     "google_posts": {
@@ -618,9 +657,9 @@ SEO = {
                 ("Keep posting to them every week with 📸 New post (Lucy posts to all of them at once).", "weekly_posts"),
                 ("Link to them from your website and your Google listing.", "site_links_socials")]},
     "own_site": {
-        "text": "Get your website to #1 when people search your name",
-        "why": "When your own site isn't first, people land on someone else's page about you "
-               "first. Google puts your site first when everything points to it.",
+        "text": "Fill more of the top 5 with your own pages",
+        "why": "Every top-5 spot that's yours is one less spot for someone else's page about "
+               "you. Google ranks your pages higher when they all point to each other.",
         "how": [("Use the exact same business name on your website, Google listing and social pages.", "name_match"),
                 ("Link your website from your Google listing and every social page.", "site_on_google"),
                 ("Put your business name in your website's page title (your website person can do this in 5 minutes).", "title_name")]},
@@ -694,6 +733,9 @@ def zoho_pages(p) -> Dict:
                     cache.parent.mkdir(parents=True, exist_ok=True)
                     cache.write_text(json.dumps(got))
                     return got
+        except Exception:
+            pass                     # a failed live read falls back to the last good one
+        try:
             return json.loads(cache.read_text())
         except Exception:
             return {"names": {}, "pages": {}}
@@ -775,11 +817,12 @@ def seo_ideas(lines: Dict, todo_items: List[Dict], n: int = 3) -> List[Dict]:
         picks.append("reviews")
     if s.get("neg"):
         picks.append("push_down")
-    if s.get("own") and s["own"] > 1:
+    if (s.get("green") or 0) < 5:
         picks.append("own_site")
-    if (po.get("n") or 0) < 1:
-        picks.append("google_posts")
-    picks += ["photos", "description"]
+    # Posting to Google + Google photos aren't separate ideas any more: the
+    # 📸 New post step in "Do this week" already sends to Google (Megan
+    # 2026-11-11: "these are pretty redundant").
+    picks += ["description"]
     done = " ".join(t["text"].lower() for t in todo_items)
     out = []
     for k in dict.fromkeys(picks):
@@ -817,12 +860,49 @@ def confirm_links(audit: List[Dict], lines: Dict, p=None) -> List[Dict]:
             key = (_host_of(a["url"]), social_handle(a["url"]))
             if key in live:
                 a = dict(a, label=a["label"] + " (Google shows it's live)")
-            elif account_key(a["url"]) in set(known.get(a["page"]) or []):
-                a = dict(a, label=a["label"] + " (matches your page in Zoho)")
+            elif _google_has_page(a["page"], a["url"], p, known):
+                a = dict(a, label=a["label"] + " (Google shows it's live)")
             else:
-                a = dict(a, ok=None, label=a["label"] + " (right account; Lucy couldn't confirm it opens)")
+                a = dict(a, ok=False, label=a["label"] + " (Google can't find this page)",
+                         found="Google can't find it: open the link and check it isn't broken")
         out.append(a)
     return out
+
+
+LINK_HOSTS = {"linkedin": "linkedin.com/company", "facebook": "facebook.com", "instagram": "instagram.com",
+              "x": "x.com", "tiktok": "tiktok.com"}
+
+
+def _google_has_page(page: str, url: str, p, known: Dict) -> bool:
+    """The audit can't leave a link unchecked (Megan 2026-11-11: "we need to
+    make sure we can check everything as this is our audit"). LinkedIn and
+    friends block Lucy from opening their pages, so ask Google directly:
+    search that site for the business name. A hit that IS this account (same
+    handle, or Zoho says it's their connected page by that name) = live.
+    Numeric LinkedIn links (/company/15255695) never show on Google as the
+    number, so a page under their name tied to that number in Zoho counts."""
+    from automations.online_presence.consistency import social_handle, account_key
+    if p is None or page not in LINK_HOSTS:
+        return False
+    try:
+        from automations.brand_audit.collectors import serp
+        data = serp._search(f'site:{LINK_HOSTS[page]} "{p.business_name}"', "")
+    except Exception:
+        return False
+    want = social_handle(url)
+    mine = set(known.get(page) or []) | {account_key(url)}
+    name = re.sub(r"[^a-z0-9]", "", p.business_name.lower())
+    for res in data.get("organic_results") or []:
+        link = res.get("link") or ""
+        if _host_of(link) != _host_of(url):
+            continue
+        if social_handle(link) == want or account_key(link) in mine:
+            return True
+        # numeric LinkedIn id: Zoho ties it to them, Google shows it by name
+        if (page == "linkedin" and account_key(url).isdigit() and account_key(url) in set(known.get(page) or [])
+                and name in re.sub(r"[^a-z0-9]", "", (res.get("title") or "").lower())):
+            return True
+    return False
 
 
 def _host_of(u: str) -> str:
@@ -875,7 +955,7 @@ def _score_block(p, lines: Dict, now: dt.datetime, prog: List[Dict]) -> Dict:
         r = rating[i][1] if i < len(rating) else None
         n = newc[i][1] if i < len(newc) else 0
         g = round((max(0.0, min(1.0, (r - 3) / 2)) * 15 if r else 0) + min(n or 0, 3) / 3 * 10)
-        pp = round(min(posts[i][1] or 0, 3) / 3 * 25)
+        pp = round(min(posts[i][1] or 0, POST_GOAL) / POST_GOAL * 25)
         pts.append((lab, g + parts["search"] + pp + parts["info"]))
         estimated = True
     pts.append((_md(now), total))
@@ -1014,6 +1094,14 @@ def render(card: Dict, mode: str = "image") -> str:
     parts = card.get("score_parts") or {}
 
     def pts(k):
+        if k == "search" and k in parts:      # goal: all 5 green (Megan 11/11)
+            n = s.get("green") or 0
+            cls = "good" if n >= 5 else "bad" if any(r["kind"] == "negative" for r in s.get("top") or []) else "watch"
+            return f'<span class="pill {cls}">Goal: all 5 green</span>'
+        if k == "posts":                      # a goal people get, not points (Megan 11/11)
+            n = po.get("n") or 0
+            cls = "good" if n >= POST_GOAL else "watch" if n else "bad"
+            return f'<span class="pill {cls}">Goal: {POST_GOAL_TEXT}</span>'
         if k not in parts:
             return pill(L[k]["color"])
         v = parts[k]
@@ -1035,6 +1123,7 @@ def render(card: Dict, mode: str = "image") -> str:
 
     def result(r):
         cls, tag = TAG.get(r["kind"], TAG["neutral"])
+        tag = result_label(r) + (" · Negative" if r["kind"] == "negative" else "")
         title = e(r["title"][:80] + ("…" if len(r["title"]) > 80 else ""))
         name = (f'<a href="{e(r["link"])}">{title}</a>' if (r["link"] and not img) else title)
         return (f'<li class="res {cls}"><span class="rp">{r["pos"]}</span><span class="rt">'
@@ -1043,14 +1132,16 @@ def render(card: Dict, mode: str = "image") -> str:
     top = s.get("top") or []
     top_html = (f'<div class="toph">Top 5 on Google for your name</div>'
                 f'<ol class="top5">{"".join(result(r) for r in top)}</ol>') if top else ""
+    n_top, n_green = len(top) or 5, s.get("green") or 0
+    neg_top = any(r["kind"] == "negative" for r in top)
     k_search = kpi("search", "When people Google you",
-                   f"#{own}" if own else "—",
-                   "your website's spot" + (f' · <span class="warn">a negative result is #{neg}</span>'
-                                            if neg else " · no negative results near the top"),
+                   f"{n_green}/{n_top}" if top else "—",
+                   f"of the top {n_top} are yours" + (f' · <span class="warn">a negative result is #{neg}</span>'
+                                                       if neg_top else ""),
                    top_html)
     pages = po.get("pages") or []
     k_posts = kpi("posts", "Posts this week", f'{po.get("n") or 0}',
-                  "posts went out",
+                  "posts went out (goal: 2–3 a week)",
                   f'<div class="pages">{badges(pages)}</div>' if pages else "")
     probs = inf.get("problems") or []
     checked = " and ".join(("your website" if c.lower() == "website" else c)
@@ -1067,13 +1158,16 @@ def render(card: Dict, mode: str = "image") -> str:
             + (f'<small>Should be: {e(a["value"])}</small>' if a.get("value") and a["ok"] is False else "")
             + (f'<small>Lucy sees: {e(a["found"])}</small>' if a["ok"] is False and a["found"] else "")
             + "</span></li>" for a in audit) + "</ul>"
+    all_pass = bool(audit) and not probs and inf["color"] == GREEN
+    count = "" if all_pass else f"{n_ok} of {n_known} checks pass · "
     if audit and web:
-        listing = (f'<details class="aud"><summary>{n_ok} of {n_known} checks pass · '
+        listing = (f'<details class="aud"><summary>{count}'
                    f'<span class="tap">See the full checklist ▾</span></summary>{audit_list()}</details>')
     elif audit and pdf:
-        listing = f'<div class="aud"><b>{n_ok} of {n_known} checks pass</b>{audit_list()}</div>'
+        listing = (f'<div class="aud"><b>{"The full checklist" if all_pass else count.rstrip(" ·")}'
+                   f'</b>{audit_list()}</div>')
     elif audit:
-        listing = f'<div class="aud">{n_ok} of {n_known} checks pass · full checklist in the PDF</div>'
+        listing = f'<div class="aud">{count}full checklist in the PDF</div>'
     else:
         listing = ""
     if probs:
@@ -1082,8 +1176,9 @@ def render(card: Dict, mode: str = "image") -> str:
         k_info = kpi("info", "Your info online", "",
                      f'<div class="probs"><div class="prob">{e(probs[0])}</div></div>{more}', listing)
     elif inf["color"] == GREEN:
-        k_info = kpi("info", "Your info online", "", f'<div class="okline">✓ Your name, address, '
-                     f'phone and website match on {e(checked)}</div>', listing)
+        okline = (f"✓ {n_ok}/{n_known} passed in your online brand audit" if all_pass
+                  else f"✓ Your name, address, phone and website match on {checked}")
+        k_info = kpi("info", "Your info online", "", f'<div class="okline">{e(okline)}</div>', listing)
     else:
         k_info = kpi("info", "Your info online", "", f'<div class="okline na">{e(inf["text"])}</div>')
     kpis = k_rating + k_posts + k_info + k_search.replace('class="kpi"', 'class="kpi wide"', 1)
@@ -1303,7 +1398,7 @@ def render(card: Dict, mode: str = "image") -> str:
   {seo_sec}
   {charts}
   <div class="foot">Lucy checks this every Friday at noon. Your score is 4 parts of 25: Google
-   reviews (rating + new reviews), Google search (your spot + no negative results), posts (3 a week)
+   reviews (rating + new reviews), Google search (5 per top-5 result that's yours), posts (2–3 a week)
    and your info (25, minus 8 per thing that doesn't match).</div>
  </div></div></body></html>"""
 
