@@ -243,6 +243,25 @@ class Pick(unittest.TestCase):
         raw = dict(self.SMS, on_scheduler=True)
         self.assertIsNone(_pick(raw, "sms_log", self._hist(lucy_2=40)))
 
+    def test_on_scheduler_with_no_days_is_a_build_and_moves(self):
+        """2026-11-11: a hand-run backfill registered `on_scheduler: true` +
+        `weekdays: []` never runs at 4am, so it must not be pinned home."""
+        for extra in ({"cadence": {"weekdays": []}}, {"hand_run_only": True}):
+            with self.subTest(extra=extra):
+                raw = dict({"source_type": "tableau", "on_scheduler": True}, **extra)
+                self.assertEqual(_pick(raw, "raf_backfill",
+                                       self._hist(lucy_1=9, lucy_3=3, lucy_4=1)),
+                                 "Lucy 4")
+
+    def test_box_local_actions_never_move(self):
+        for rid in ("disable_x_agent", "enable_x_agent"):
+            with self.subTest(rid=rid):
+                self.assertIsNone(_pick({"source_type": "tableau"}, rid,
+                                        self._hist(lucy_1=9, lucy_4=0)))
+        self.assertIsNone(_pick({"source_type": "tableau", "stay_home": True,
+                                 "cadence": {"weekdays": []}, "on_scheduler": True},
+                                "set_wake", self._hist(lucy_1=9, lucy_4=0)))
+
     def test_unpinned_probe_leaves_a_busy_lucy_1(self):
         self.assertEqual(_pick({"source_type": "tableau"}, "raf_special_probe",
                                self._hist(lucy_1=9, lucy_3=3, lucy_4=1)), "Lucy 4")

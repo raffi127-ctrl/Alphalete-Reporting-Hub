@@ -76,7 +76,27 @@ QUIET_HOURS = (3, 5)
 #: How far back a clean finish counts as proof a report runs on a box.
 PROVEN_DAYS = 30
 #: Report ids that act ON a machine (install/remove a LaunchAgent, etc.).
-NEVER_MOVE_PREFIXES = ("install_", "uninstall_", "remove_")
+NEVER_MOVE_PREFIXES = ("install_", "uninstall_", "remove_", "disable_", "enable_")
+
+
+def has_schedule(raw_report: dict) -> bool:
+    """`on_scheduler: true` only means scheduled work when the entry has days.
+
+    2026-11-11 (Megan: "things Eve and I are working on are going to lucy 1
+    and 2 and really clogging them up"). 42 hand-run builds — backfills,
+    probes, previews, scoped OPT re-runs — carry `on_scheduler: true` beside
+    `cadence.weekdays: []` (registered so `lucy rerun` can reach them), and
+    is_build_or_fix read the flag alone, so every one stayed on its home box,
+    36 of them Lucy 1. No weekdays = the 4am run never starts it = it is not
+    scheduled. `hand_run_only: true` says the same in words."""
+    if not raw_report.get("on_scheduler"):
+        return False
+    if raw_report.get("hand_run_only"):
+        return False
+    cad = raw_report.get("cadence")
+    if isinstance(cad, dict) and cad.get("weekdays") == []:
+        return False
+    return True
 
 _BUSY = ("queued", "running")
 
@@ -241,7 +261,7 @@ def has_launch_agent(raw_report: dict, report_id: str,
 def is_build_or_fix(raw_report: dict, report_id: str,
                     deploy_text: Optional[str] = None) -> bool:
     """True for hand-run work (probes, backfills, pulls) that may move."""
-    if raw_report.get("on_scheduler") or raw_report.get("stay_home"):
+    if has_schedule(raw_report) or raw_report.get("stay_home"):
         return False
     if any(raw_report.get(k) for k in TIMER_KEYS):
         return False

@@ -3494,6 +3494,8 @@
    "verify": null
   },
   "set_wake": {
+   "stay_home": true,
+   "_stay_home_note": "Acts on THIS box (its wake timer / poller / its own 4am log), so a rerun must never move to a lighter Lucy (routing.py, 2026-11-11).",
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY (weekdays []). `lucy rerun set_wake` sets a daily 03:55 pmset wakeorpoweron schedule on the mini so the 4am orchestrator isn't deferred to ~6am (the mini deep-sleeps overnight; diagnosed via morning_diag 2026-07-06 — START=06:00 with daily_focus clean in 1 try, so NOT an AppStream issue). Uses sudo -n (needs passwordless sudo for pmset). Reversible: sudo pmset repeat cancel.",
@@ -3736,12 +3738,7 @@
    "command": [
     "automations.recruiting_report.probe_office"
    ],
-   "base_args": [
-    "20034",
-    "23515",
-    "--week-start",
-    "2026-11-01"
-   ],
+   "base_args": [],
    "cadence": {
     "weekdays": []
    },
@@ -4508,6 +4505,8 @@
    "_order_note": "IN THE 4AM BATCH, immediately before alphalete_production (6) - Eve 2026-09-09: the box has to be filled by the time the bot posts the production screenshots in #alphalete-sales, and that post happens ONCE a morning. Sits after rep_sales_fill (3.95) and energy_slack_fill (5), which write the same tab's day columns, so the whole board is settled before it is rendered. Do NOT move it past 6."
   },
   "morning_diag": {
+   "stay_home": true,
+   "_stay_home_note": "Acts on THIS box (its wake timer / poller / its own 4am log), so a rerun must never move to a lighter Lucy (routing.py, 2026-11-11).",
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY diagnostic (weekdays [] -> never auto-runs). `lucy rerun morning_diag` prints, from the mini, when the 4am launchd orchestrator ACTUALLY started (from its per-run log filename: ~04:00 = mini awake, so the ~6am report delay is the AppStream session; ~06:00 = mini was asleep and launchd deferred the job) + pmset wake schedule/sleep timer + daily_focus attempt/fail count. Built 2026-07-06 to diagnose why AppStream/recruiting reports land ~6am not 4am.",
@@ -9992,6 +9991,8 @@
    "verify": null
   },
   "kick_poller": {
+   "stay_home": true,
+   "_stay_home_note": "Acts on THIS box (its wake timer / poller / its own 4am log), so a rerun must never move to a lighter Lucy (routing.py, 2026-11-11).",
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Bootstrap: lucy rerun kick_poller restarts the mini-control poller so it reloads its code — works even when the running poller predates restart_poller/self-reload, because rerun spawns a fresh subprocess. After the poller has self-reload, lucy update alone suffices; keep this for a forced restart.",

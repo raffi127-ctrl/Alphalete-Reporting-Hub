@@ -9869,6 +9869,14 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
         by = "{}{}".format(AUTO_BY_PREFIX, by)
     if action == "rerun" and machine is None:
         machine = _rerun_home(args, by)
+    # No machine named = this box's own queue (Lucy 1 off a laptop), but still
+    # through the OWN-WORKBOOK path below. Left as None it fell to
+    # `_open(..., legacy=True)` — the old AUTOMATION MASTER tab — so a plain
+    # `lucy rerun <lucy-1 report>` ran but never showed in Lucy 1's own
+    # `--status` (2026-11-11: two reruns looked lost for an hour and nearly got
+    # queued twice; see reference_per_lucy_queue_workbooks).
+    if machine is None and not sandbox:
+        machine = _machine_profile(None)
     # NOTE _tab_is_live (module level) is what "a runner reads this tab" means.
     # An EXPLICIT --machine target whose tab doesn't exist is a typo, not a new
     # machine: _open would silently create a tab no poller reads and the row
