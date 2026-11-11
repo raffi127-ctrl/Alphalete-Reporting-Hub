@@ -44,9 +44,22 @@ class SameThingWrittenDifferently(unittest.TestCase):
 
 
 class GoogleMatches(unittest.TestCase):
-    def _run(self, loc):
-        with mock.patch("automations.brand_audit.gbp_api.location_for_link", return_value=loc):
-            return {r["item"]: r for r in C.google_checks(_office())}
+    def _run(self, loc, social=None, **kw):
+        with mock.patch("automations.brand_audit.gbp_api.location_for_link", return_value=loc), \
+                mock.patch("automations.brand_audit.gbp_api.social_links", return_value=social or {}):
+            return {r["item"]: r for r in C.google_checks(_office(**kw))}
+
+    def test_listing_social_links_are_their_accounts(self):
+        rows = self._run(LOC, social={"instagram": "https://instagram.com/kashmktg",
+                                      "facebook": "https://facebook.com/someoneelse"},
+                         instagram_url="https://www.instagram.com/kashmktg/",
+                         facebook_url="https://www.facebook.com/kashmktg",
+                         linkedin_url="https://www.linkedin.com/company/kash")
+        self.assertTrue(rows["links to their instagram"]["ok"])
+        self.assertFalse(rows["links to their facebook"]["ok"])
+        self.assertIn("someoneelse", rows["links to their facebook"]["found"])
+        self.assertFalse(rows["links to their linkedin"]["ok"])
+        self.assertIn("no linkedin link", rows["links to their linkedin"]["found"])
 
     def test_all_match(self):
         rows = self._run(LOC)
@@ -61,6 +74,7 @@ class GoogleMatches(unittest.TestCase):
 
     def test_link_not_ours_yet(self):
         with mock.patch("automations.brand_audit.gbp_api.location_for_link", return_value=None), \
+                mock.patch("automations.brand_audit.gbp_api.social_links", return_value={}), \
                 mock.patch("automations.brand_audit.gbp_api.all_locations", return_value=[]):
             rows = C.google_checks(_office())
         self.assertFalse(rows[0]["ok"])

@@ -166,6 +166,12 @@ def _how(r: Dict) -> List[str]:
         return ["Text or email your website person (whoever edits your site) this message:",
                 f"\u201c{website_ask(r)}\u201d",
                 "That's it. Lucy re-checks your site next Friday."]
+    if item.startswith("links to their ") and site == "Google":
+        want = (r.get("expected") or "").strip()
+        return ["Tap your Google listing. Don't see your business? Check the email in the top "
+                "right corner and switch to the Google account that manages your listing.",
+                "Tap Edit profile, then Social profiles.",
+                f"Add your {_page(item)} link" + (f": {want}" if want else "") + ", then Save."]
     if item in HOW_FIX:
         return HOW_FIX[item]
     return HOW_FIX["_google" if "google" in site.lower() else "_other"]
@@ -394,7 +400,8 @@ CHECK_LABEL = {
 
 def check_label(r: Dict) -> str:
     site = r.get("site") or ""
-    who = "Your website" if site.lower() == "website" else site
+    who = ("Your website" if site.lower() == "website" else
+           "Your Google listing" if site == "Google" else site)
     item = r["item"]
     if item.startswith("links to their "):
         return f"{who} links to your {_page(item)} page"
@@ -404,7 +411,8 @@ def check_label(r: Dict) -> str:
 def problem_text(r: Dict) -> str:
     item, site = r["item"], r.get("site") or ""
     if item.startswith("links to their "):
-        return f"Your website doesn't link to your {_page(item)} page"
+        where = "Google listing" if site == "Google" else "website"
+        return f"Your {where} doesn't link to your {_page(item)} page"
     return PROBLEM.get(item, f"Your {item} on {{site}} needs a look").format(
         site="your website" if site.lower() == "website" else site)
 
@@ -440,6 +448,8 @@ def info_line(p, aliases: Optional[Dict[str, set]] = None) -> Dict:
                         "hiring wording follows the rules": "hiring wording"}.get(r["item"], "wording")
                 return f"Send your website person {n} {what} fix{'es' if n != 1 else ''} for your site"
             return f"Ask your website person to fix the {r['item']} on your site"
+        if r["item"].startswith("links to their ") and r.get("site") == "Google":
+            return f"Add your {_page(r['item'])} link to your Google listing"
         return FIX.get(r["item"], f"Fix your {r['item']} on {{site}}").format(site=r["site"])
     fixes = [{"text": say(r),
               "why": WHY_FIX.get(r["item"], WHY_FIX["_"]),
@@ -938,7 +948,7 @@ def confirm_links(audit: List[Dict], lines: Dict, p=None) -> List[Dict]:
     known = (lines.get("info") or {}).get("aliases") or {}
     out = []
     for a in audit:
-        if a.get("page") and a["ok"] is True:
+        if a.get("page") and a["ok"] is True and a["label"].startswith("Your website"):
             key = (_host_of(a["url"]), social_handle(a["url"]))
             if key in live:
                 a = dict(a, label=a["label"] + " (Google shows it's live)")

@@ -92,7 +92,7 @@ def _row(site, item, ok, expected, found, where) -> Dict:
             "found": found, "where": where}
 
 
-def google_checks(p) -> List[Dict]:
+def google_checks(p, aliases: Dict[str, set] | None = None) -> List[Dict]:
     from automations.brand_audit import gbp_api
     if not p.google_link and not p.gbp_location:
         return [_row("Google", "listing", False, "the Google listing link from sign-up",
@@ -132,6 +132,24 @@ def google_checks(p) -> List[Dict]:
                             "https://…", loc["website"], w))
     out.append(_row("Google", "listing verified", loc.get("verified") is not False,
                     "verified", "verified" if loc.get("verified") else "NOT verified", w))
+    # The social links ON the Google listing must be their accounts too
+    # (Megan 2026-11-11: "we're looking at their website and google for links
+    # right?"). Same rule as the website's links.
+    try:
+        on_google = gbp_api.social_links(loc["path"])
+    except Exception as e:
+        on_google = None
+        out.append(_row("Google", "social links", None, "", f"couldn't read ({type(e).__name__})", w))
+    if on_google is not None:
+        for page, url in p.social_links.items():
+            if page == "youtube":
+                continue
+            got = on_google.get(page, "")
+            ok = bool(got) and (social_handle(got) == social_handle(url)
+                                or same_account(page, url, got, aliases))
+            out.append(_row("Google", f"links to their {page}", ok, url,
+                            "links to it" if ok else (f"links to {got} instead" if got
+                                                      else f"no {page} link on the listing"), w))
     return out
 
 
@@ -240,7 +258,7 @@ def checks(p, aliases: Dict[str, set] | None = None) -> List[Dict]:
     out: List[Dict] = []
     for fn in (google_checks, website_checks):
         try:
-            out += fn(p, aliases) if fn is website_checks else fn(p)
+            out += fn(p, aliases)
         except Exception as e:
             out.append(_row(fn.__name__.split("_")[0].title(), "check", None, "",
                             f"check crashed: {type(e).__name__}", ""))

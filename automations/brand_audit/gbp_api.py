@@ -197,6 +197,26 @@ def list_locations(account_name: str, sess=None) -> list[dict]:
             return out
 
 
+SOCIAL_ATTRS = {"url_facebook": "facebook", "url_instagram": "instagram",
+                "url_linkedin": "linkedin", "url_twitter": "x", "url_tiktok": "tiktok",
+                "url_youtube": "youtube", "url_pinterest": "pinterest"}
+
+
+def social_links(location_path: str, sess=None) -> dict:
+    """{page: url} -- the social profiles on the Google listing (Edit profile
+    -> Social profiles), from the location's attributes."""
+    sess = sess or _session()
+    lid = location_path.split("/locations/")[-1]
+    data = _get(sess, f"{_INFO_API}/locations/{lid}/attributes")
+    out = {}
+    for a in data.get("attributes") or []:
+        page = SOCIAL_ATTRS.get((a.get("name") or "").split("/")[-1])
+        uris = [u.get("uri") for u in a.get("uriValues") or [] if u.get("uri")]
+        if page and uris:
+            out[page] = uris[0]
+    return out
+
+
 def _norm(name: str) -> str:
     import re
     return re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).strip()
