@@ -204,10 +204,26 @@ _EMAILS_JS = """
 () => {
   const out = [];
   const re = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/;
+  const labelOf = (el) => {
+    // the card lays each field out as a blue label above a grey box: the
+    // nearest label-ish text before the input, within its block
+    let n = el, hops = 0;
+    while (n && hops < 6) {
+      let p = n.previousElementSibling;
+      while (p) {
+        const t = (p.innerText || p.textContent || '').trim();
+        if (t && t.length < 40) return t;
+        p = p.previousElementSibling;
+      }
+      n = n.parentElement; hops += 1;
+    }
+    return '';
+  };
   for (const el of document.querySelectorAll('input,textarea')) {
     const v = (el.value || '').trim();
     const tag = ((el.id || '') + ' ' + (el.name || '') + ' ' + (el.placeholder || '')).toLowerCase();
-    if (re.test(v)) out.push({where: 'input', id: el.id || el.name || '', value: v, mail: /mail/.test(tag)});
+    if (re.test(v)) out.push({where: 'input', id: el.id || el.name || '', value: v,
+                              label: labelOf(el), mail: /mail/.test(tag)});
   }
   const m = (document.body ? (document.body.innerText || '') : '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g) || [];
   for (const v of m) out.push({where: 'text', id: '', value: v, mail: false});
@@ -227,13 +243,15 @@ _CLOSE_CARD_JS = """
 
 
 def pick_email(found: List[dict], login_email: str = "") -> str:
-    """The customer's address out of what the card shows: a labelled e-mail
-    input first, then any input holding an address, then page text -- never
-    our own login."""
+    """The customer's address out of what the card shows: the input under
+    the card's "E-mail Address" label first, then an input whose id says
+    mail, then any input holding an address, then page text -- never our
+    own login."""
     own = (login_email or "").strip().lower()
     cands = [f for f in found if f.get("value") and f["value"].strip().lower() != own
              and not f["value"].lower().endswith("saraplus.com")]
-    for pred in (lambda f: f["where"] == "input" and f.get("mail"),
+    for pred in (lambda f: f["where"] == "input" and re.search(r"e-?mail", f.get("label") or "", re.I),
+                 lambda f: f["where"] == "input" and f.get("mail"),
                  lambda f: f["where"] == "input",
                  lambda f: True):
         for f in cands:
@@ -425,6 +443,12 @@ def card_email(ctx, page, row: dict, login_email: str, log=print) -> str:
             except Exception:  # noqa: BLE001
                 continue
     email = pick_email(found, login_email)
+    # every address the card showed, with where it sat -- Carlos 11/11 on the
+    # first harvest: "thats the sales reps email", so the log has to show
+    # which field each address came from
+    for f in found:
+        log("    candidate %-6s %-28s label=%r id=%r" % (f.get("where"), f.get("value"),
+                                                       (f.get("label") or "")[:30], (f.get("id") or "")[:40]))
     # tidy up: a popped tab is closed, a RadWindow card gets its X
     for v in ctx.pages[pages_before:]:
         try:
