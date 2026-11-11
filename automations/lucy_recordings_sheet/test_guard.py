@@ -110,3 +110,33 @@ class NewStartsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class YesterdayTest(unittest.TestCase):
+    def test_lists_counted_and_not_counted_for_that_day_only(self):
+        from automations.lucy_recordings_sheet.run import COUNTED, yesterday_rows
+        export = {"owners": [{"id": "o1", "name": "JD Mascorro"}],
+                  "reps": {"U1": {"owner_id": "o1"}},
+                  "names": {"U1": "Ana Lopez", "U2": "Bo Ray"}}
+        a = rec("2026-11-10T09:05:00", "U1", 1800.0, "a")
+        b = rec("2026-11-10T14:30:00", "U1", 1800.0, "a")
+        c = rec("2026-11-11T08:00:00", "U2", 1500.0, "c")
+        kept, dropped = apply_guard([a, b, c])
+        rows = yesterday_rows(kept, dropped, export, {"U2": ("Kash Rai", "knocks")}, "2026-11-10")
+        self.assertEqual([r[0] for r in rows], ["9:05 AM", "2:30 PM"])
+        self.assertEqual(rows[0][1:5], ["Ana Lopez", "JD Mascorro", 30, 5.0])
+        self.assertEqual(rows[0][5], COUNTED)
+        self.assertEqual(rows[1][5], "Not counted: " + DUPLICATE)
+
+    def test_empty_day_still_says_so(self):
+        from automations.lucy_recordings_sheet.run import yesterday_text
+        self.assertIn("No recordings", yesterday_text("2026-11-10", []))
+
+    def test_text_groups_by_owner_and_marks_not_counted(self):
+        from automations.lucy_recordings_sheet.run import COUNTED, yesterday_text
+        txt = yesterday_text("2026-11-10", [
+            ["9:05 AM", "Ana Lopez", "JD Mascorro", 30, 5.0, COUNTED],
+            ["2:30 PM", "Ana Lopez", "JD Mascorro", 30, 5.0, "Not counted: " + DUPLICATE]])
+        self.assertIn("*JD Mascorro* (1)", txt)
+        self.assertIn(":x: " + DUPLICATE, txt)
+        self.assertIn("*1 counted*", txt)

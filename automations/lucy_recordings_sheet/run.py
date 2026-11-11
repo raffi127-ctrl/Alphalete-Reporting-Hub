@@ -987,6 +987,95 @@ def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str,
     log("emailed '%s' to %s" % (msg["Subject"], ", ".join(to)))
 
 
+# ---------- yesterday's list (Raf 2026-11-11) ----------
+#
+# "JD thinks we submitted more recordings than the report is saying" -> every
+# morning, the list of who sent a recording the day before. Every recording
+# shows, the ones that don't count too (with why), so a missing one is easy to
+# spot. Day = the audit's finish time on Lucy 1 (CT), like the month report.
+
+COUNTED = "Counted"
+
+
+def yesterday_rows(kept: list, dropped: list, export: dict, guesses: dict, day: str) -> list:
+    """[time, rep, owner, minutes, score, status] for recordings finished on
+    `day` (YYYY-MM-DD), oldest first."""
+    owners = {o["id"]: o.get("name", o["id"]) for o in export.get("owners") or []}
+    reps, names = export.get("reps") or {}, export.get("names") or {}
+
+    def owner_for(uid):
+        oid = (reps.get(uid) or {}).get("owner_id") if uid else None
+        if oid:
+            return owners.get(oid, NO_OWNER)
+        return guesses[uid][0] if uid in guesses else NO_OWNER
+
+    rows = []
+    for r, status in [(r, COUNTED) for r in kept] + [(r, "Not counted: " + why) for r, why in dropped]:
+        ts = r.get("ts") or ""
+        if ts[:10] != day:
+            continue
+        uid = r.get("uid") or ""
+        secs = r.get("seconds")
+        try:
+            t = dt.datetime.fromisoformat(ts[:19]).strftime("%I:%M %p").lstrip("0")
+        except ValueError:
+            t = ""
+        rows.append([ts, t, names.get(uid) or NO_NAME, owner_for(uid),
+                     "" if secs is None else int(round(secs / 60)),
+                     "" if r.get("score") is None else r["score"], status])
+    rows.sort(key=lambda x: x[0])
+    return [x[1:] for x in rows]
+
+
+# Raf's group DM (Raf, JD, Basil, Algemar) - Eve 2026-11-11.
+YESTERDAY_DM = "C0CGXQFPTAQ"
+
+
+def yesterday_text(day: str, rows: list) -> str:
+    """Slack message: one block per owner, one line per recording."""
+    d = dt.date.fromisoformat(day)
+    label = "%s, %s %d" % (d.strftime("%A"), d.strftime("%b"), d.day)
+    counted = [r for r in rows if r[5] == COUNTED]
+    head = ["*LUCY · Recordings Sent Yesterday — %s*" % label]
+    if not rows:
+        return head[0] + "\nNo recordings were sent to LUCY this day."
+    head.append("*%d counted* · %d rep(s) · %d not counted" % (
+        len(counted), len({r[1] for r in counted}), len(rows) - len(counted)))
+    by_owner = defaultdict(list)
+    for r in rows:
+        by_owner[r[2]].append(r)
+    out = head
+    for own in sorted(by_owner, key=lambda o: (o == NO_OWNER, o)):
+        rs = by_owner[own]
+        out.append("")
+        out.append("*%s* (%d)" % (own, sum(1 for r in rs if r[5] == COUNTED)))
+        for r in rs:
+            bits = [r[0], r[1]]
+            if r[3] != "":
+                bits.append("%s min" % r[3])
+            if r[4] != "":
+                bits.append("score %s" % r[4])
+            mark = ":white_check_mark:" if r[5] == COUNTED else ":x: " + r[5].replace("Not counted: ", "")
+            out.append("• %s %s" % (" · ".join(bits), mark))
+    out.append("")
+    out.append("_Recordings sent twice, or under %d min, don't count. Missing one? Reply here "
+               "with the rep's name and the time it was sent._" % (MIN_RECORDING_SECONDS // 60))
+    return "\n".join(out)
+
+
+def post_yesterday(target: str, day: str, rows: list) -> None:
+    """Posts as Lucy: the Lucy Reporting USER token on purpose (no bot app on
+    Lucy 1). target = a channel/DM id, or a user id (U...) for a 1-to-1 test."""
+    from automations.shared.slack_metrics_post import _client
+    client = _client()
+    channel = target
+    if target.startswith("U"):
+        channel = client.conversations_open(users=target)["channel"]["id"]
+    resp = client.chat_postMessage(channel=channel, text=yesterday_text(day, rows),
+                                   unfurl_links=False)
+    log("posted yesterday's list (%d recording(s)) to %s ts=%s" % (len(rows), target, resp.get("ts")))
+
+
 def main(argv=None) -> int:
     for s in (sys.stdout, sys.stderr):
         try:
@@ -1005,12 +1094,17 @@ def main(argv=None) -> int:
     ap.add_argument("--email-to", help="after writing, email THESE addresses (comma separated) the org version (test)")
     ap.add_argument("--restyle", action="store_true",
                     help="rebuild the two visible tabs' layout (keeps the sheet + link)")
+    ap.add_argument("--yesterday-slack", nargs="?", const=YESTERDAY_DM,
+                    help="also post who sent a recording yesterday, as Lucy (default: Raf's "
+                         "group DM; pass a user id U... to test in a 1-to-1 DM)")
+    ap.add_argument("--day", help="with --yesterday-slack / --dry-run: list this day (YYYY-MM-DD) instead of yesterday")
     a = ap.parse_args(argv)
 
     export = load_bot_export(a.from_json)
     log("bot: %d recording(s), %d rep(s), %d owner(s)"
         % (len(export["records"]), len(export["reps"]), len(export["owners"])))
     export["records"], dropped = apply_guard(export["records"])
+    kept_all = list(export["records"])
     this_month = dt.datetime.now(CT).strftime("%Y-%m")
     _log_guard(export, dropped, this_month)
     _log_lengths(export["records"], this_month)
@@ -1042,6 +1136,22 @@ def main(argv=None) -> int:
     no_uid = sum(1 for r in export["records"] if not r.get("uid"))
     if no_uid:
         log("%d recording(s) with no known uploader -> '%s'" % (no_uid, NO_OWNER))
+
+    day = a.day or (dt.datetime.now(CT).date() - dt.timedelta(days=1)).isoformat()
+    y_rows = yesterday_rows(kept_all, dropped, export, guesses, day)
+    log("--- recordings sent %s: %d (%d counted) ---" % (
+        day, len(y_rows), sum(1 for r in y_rows if r[5] == COUNTED)))
+    for r in y_rows:
+        print("  %-9s %-28s %-28s %4s min  score=%-5s %s" % tuple(r))
+    if a.dry_run:
+        print(yesterday_text(day, y_rows))
+    elif a.yesterday_slack:
+        # Before the sheet write: a 429 on the sheet must not cost the group
+        # their morning list.
+        try:
+            post_yesterday(a.yesterday_slack, day, y_rows)
+        except Exception as e:  # noqa: BLE001
+            log("yesterday list NOT posted: %s" % e)
 
     if a.dry_run:
         cur = month_list[0] if month_list else ""
