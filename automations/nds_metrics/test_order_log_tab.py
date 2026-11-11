@@ -26,7 +26,8 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[23], "Delivered Message Sent")   # column X on the live tab (W earlier on 11/11, U until 11/11, T until 11/10, S until 11/9)
+        self.assertEqual(T.HEADERS[24], "Delivered Message Sent")   # column Y on the live tab (X, W, U earlier on 11/11, T until 11/10, S until 11/9)
+        self.assertEqual(T.HEADERS[T._COL["Ship Date"] + 1], "Shipping Notes")   # 11/11 pm: right after Ship Date
         self.assertEqual(T.HEADERS[1], "Pay Period")                  # 11/11 pm: column B
         self.assertEqual(r[T._COL["Pay Period"]], "Pending")          # Shipped, no activation date -> Pending
         self.assertEqual(T.HEADERS[T._COL["Delivered"] + 1], "Activation Date")   # 11/11: right after Delivered
@@ -372,8 +373,7 @@ class DateSpellingTests(unittest.TestCase):
         self.assertEqual(texts, {T._COL[c] for c in T._TEXT_COLS})
 
 
-if __name__ == "__main__":
-    unittest.main()
+
 
 
 class PayPeriod(unittest.TestCase):
@@ -422,3 +422,23 @@ class PayPeriod(unittest.TestCase):
         self.assertEqual(out["rows"][0][T._COL["Pay Period"]], "10/18-10/24 • Paid 10/30")
         self.assertEqual(out["rows"][0][T._COL["Customer"]], "John Doe")
 
+
+class ShippingNotesTests(unittest.TestCase):
+    """11/11 pm: Shipping Notes sits after Ship Date, starts blank on a fresh
+    line and is carried by line key through every rewrite (att_order_status
+    writes it every morning)."""
+
+    def test_blank_on_fresh_lines_and_carried(self):
+        r = T.line_row(line(), "11/11/2026")
+        self.assertEqual(len(r), len(T.HEADERS))
+        self.assertEqual(r[T._COL["Shipping Notes"]], "")
+        self.assertEqual(r[T._COL["Delivered"]], "")                  # the cells after it did not shift
+        self.assertEqual(r[T._COL["Ship Date"]], "10/25/2026")
+        prior = list(r); prior[T._COL["Shipping Notes"]] = "11/11 AT&T: on the way; FedEx 879: returning"
+        out = T.merge([prior], [line()], today=TODAY)
+        self.assertEqual(out["rows"][0][T._COL["Shipping Notes"]], "11/11 AT&T: on the way; FedEx 879: returning")
+        self.assertIn("Shipping Notes", T.CARRIED)
+
+
+if __name__ == "__main__":
+    unittest.main()

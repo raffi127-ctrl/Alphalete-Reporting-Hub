@@ -1,5 +1,11 @@
-"""AT&T's own order status for NDS lines stuck in "Shipped" -> the NDS Order
-Log tab's Notes.
+"""AT&T's own order status (and FedEx's) for every NDS line still in
+"Shipped" -> the NDS Order Log tab's Shipping Notes column.
+
+Carlos 2026-11-11 pm: "we need a shipping notes column right next to the ship
+date for all of these sales that say shipped ... whenever something is
+shipped, you're always checking the status updates once a day and updating
+it on here." So: every line in Shipped with no Delivered date, every morning,
+whatever its age; the cell is REPLACED with today's reading.
 
 Carlos 2026-11-11: "If it's been shipped for more than 3 days and it's still
 in shipped status, go ahead and look up the order on AT&T's site and put in
@@ -47,8 +53,9 @@ FEDEX_NOISE_RE = re.compile(r"delivery manager|register or log in|view more deta
                             r"^#|^label created$|^on the way$|^delivered$|^delivery updated$|^returning to shipper$|"
                             r"we'll need someone|if you're not home", re.I)
 PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".att_profile"
-STALE_DAYS = 3
+STALE_DAYS = 0                   # every Shipped line, every day (was 3 until 11/11 pm)
 NOTE_TAG = "AT&T:"
+COL_OUT = "Shipping Notes"       # the column written (Notes until 11/11 pm)
 NAV_TIMEOUT_MS = 60_000
 KEEP_RE = re.compile(r"shipp|deliver|transit|track|arriv|estimat|carrier|\bups\b|fedex|usps|"
                      r"status|on its way|out for|label|cancel|ordered on", re.I)
@@ -101,7 +108,7 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
     with 'why' set, so the log says what blocks them."""
     cols = _hdr(header)
     for need in ("Line Status", "Ship Date", "Delivered", "Wireless Order #",
-                 "Zip", "Email", "Notes", "Customer", "Line"):
+                 "Zip", "Email", COL_OUT, "Customer", "Line"):
         if need.lower() not in cols:
             raise RuntimeError("NDS Order Log tab has no %r column -- header: %r"
                                % (need, list(header)))
@@ -113,7 +120,9 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
         if _parse_date(_cell(r, cols, "Delivered")):
             continue
         sd = _parse_date(_cell(r, cols, "Ship Date"))
-        if sd is None or sd > cutoff:
+        # a Shipped line with no ship date at all is looked up too (11/11:
+        # six of them a week old); with days > 0 only dated, old ones are
+        if days > 0 and (sd is None or sd > cutoff):
             continue
         order = _cell(r, cols, "Wireless Order #")
         if not order:
@@ -123,7 +132,7 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
             "email": _cell(r, cols, "Email"), "customer": _cell(r, cols, "Customer"),
             "rep": _cell(r, cols, "Rep"), "lines": [], "why": ""})
         o["lines"].append({"row": n, "line": _cell(r, cols, "Line"), "ship_date": _fmt(sd),
-                           "notes": _cell(r, cols, "Notes")})
+                           "notes": _cell(r, cols, COL_OUT)})
     out = []
     for o in by_order.values():
         missing = [k for k in ("zip", "email") if not o[k]]
@@ -349,8 +358,8 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
     if only:
         keep = {_norm(x) for x in only}
         orders = [o for o in orders if o["order"] in keep]
-    log("[att] %d order(s) with a line Shipped %d+ days and no Delivered date"
-        % (len(orders), days))
+    log("[att] %d order(s) with a line in Shipped and no Delivered date%s"
+        % (len(orders), (" (shipped %d+ days ago)" % days) if days else ""))
     blocked = [o for o in orders if o["why"]]
     for o in blocked:
         log("  – %-26s %s  %s" % (o["customer"][:26], o["order"], o["why"]))
@@ -361,7 +370,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
         log("[att] nothing to look up")
         return 0
     cols = _hdr(header)
-    i_notes = cols["notes"]
+    i_notes = cols[COL_OUT.lower()]
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     import gspread
@@ -403,11 +412,12 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                 body = note_text(s, today, carrier)
                 log("    %s" % body)
                 for ln in o["lines"]:
-                    if already_noted(ln["notes"], body):
+                    if ln["notes"].strip() == body:
                         unchanged += 1
                         continue
-                    new = body if not ln["notes"] else "%s | %s" % (body, ln["notes"])
-                    cells.append(gspread.cell.Cell(ln["row"], i_notes + 1, new))
+                    # today's reading replaces yesterday's: the column is a
+                    # status, not a history (Notes keeps the history)
+                    cells.append(gspread.cell.Cell(ln["row"], i_notes + 1, body))
         finally:
             ctx.close()
     log("[att] %d order(s) read, %d failed, %d line note(s) to write (%d already said this)"
@@ -417,7 +427,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
         return 0
     if cells:
         _retry(lambda: ws.update_cells(cells, value_input_option="RAW"))
-        log("[att] Notes written on %d line(s)" % len(cells))
+        log("[att] %s written on %d line(s)" % (COL_OUT, len(cells)))
     return 0
 
 
@@ -427,7 +437,8 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="write the notes (default: dry run)")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--order", action="append", default=[], help="only this Wireless Order # (repeatable)")
-    ap.add_argument("--days", type=int, default=STALE_DAYS, help="shipped at least this many days ago")
+    ap.add_argument("--days", type=int, default=STALE_DAYS,
+                    help="only lines shipped at least this many days ago (default 0: every Shipped line)")
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--today", default=None, help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)

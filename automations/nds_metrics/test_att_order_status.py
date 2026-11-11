@@ -6,8 +6,8 @@ from automations.nds_metrics import att_order_status as A
 TODAY = dt.date(2026, 11, 11)
 HDR = ["Week Ending", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
        "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
-       "Line Status", "Ship Date", "Delivered", "Port Status", "Last Updated",
-       "Notes", "Being worked on", "Delivered Message Sent"]
+       "Line Status", "Ship Date", "Shipping Notes", "Delivered", "Activation Date", "Port Status",
+       "Last Updated", "Notes", "Being worked on", "Delivered Message Sent"]
 
 
 def row(**kw):
@@ -22,21 +22,25 @@ def row(**kw):
 
 class StaleOrders(unittest.TestCase):
     def test_shipped_three_days_with_no_delivered_date_is_stale(self):
-        out = A.stale_orders(HDR, [row()], today=TODAY)
+        out = A.stale_orders(HDR, [row()], today=TODAY, days=3)
         self.assertEqual(len(out), 1)
         o = out[0]
         self.assertEqual((o["order"], o["zip"], o["email"], o["why"]),
                          ("99-717053512695236", "75063", "raj@example.com", ""))
         self.assertEqual(o["lines"][0]["row"], 2)          # sheet row: header is 1
 
-    def test_recent_delivered_or_other_status_left_alone(self):
-        self.assertEqual(A.stale_orders(HDR, [row(**{"Ship Date": "11/09/2026"})], today=TODAY), [])
+    def test_every_shipped_line_by_default_even_without_a_ship_date(self):
+        # 11/11 pm: "whenever something is shipped, you're always checking the
+        # status updates once a day" -- no age threshold, no ship date needed
+        self.assertEqual(len(A.stale_orders(HDR, [row(**{"Ship Date": "11/09/2026"})], today=TODAY)), 1)
+        self.assertEqual(len(A.stale_orders(HDR, [row(**{"Ship Date": ""})], today=TODAY)), 1)
         self.assertEqual(A.stale_orders(HDR, [row(Delivered="10/26/2026")], today=TODAY), [])
         for st in ("Active", "Delivered", "Pending Shipment", "Cancelled", ""):
             self.assertEqual(A.stale_orders(HDR, [row(**{"Line Status": st})], today=TODAY), [], st)
-        # exactly 3 days old counts, 2 does not
-        self.assertEqual(len(A.stale_orders(HDR, [row(**{"Ship Date": "11/08/2026"})], today=TODAY)), 1)
-        self.assertEqual(A.stale_orders(HDR, [row(**{"Ship Date": "11/09/2026"})], today=TODAY), [])
+        # with --days 3: exactly 3 days old counts, 2 does not, undated not
+        self.assertEqual(len(A.stale_orders(HDR, [row(**{"Ship Date": "11/08/2026"})], today=TODAY, days=3)), 1)
+        self.assertEqual(A.stale_orders(HDR, [row(**{"Ship Date": "11/09/2026"})], today=TODAY, days=3), [])
+        self.assertEqual(A.stale_orders(HDR, [row(**{"Ship Date": ""})], today=TODAY, days=3), [])
 
     def test_missing_zip_or_email_is_listed_as_blocked(self):
         out = A.stale_orders(HDR, [row(Email="")], today=TODAY)
@@ -51,6 +55,10 @@ class StaleOrders(unittest.TestCase):
         self.assertEqual([o["order"] for o in out], ["99-2", "99-717053512695236"])
         self.assertEqual(out[1]["zip"], "07030")
         self.assertEqual([l["line"] for l in out[1]["lines"]], ["2", "3"])
+
+    def test_lines_carry_the_shipping_notes_cell_not_notes(self):
+        out = A.stale_orders(HDR, [row(**{"Shipping Notes": "11/10 AT&T: x", "Notes": "hand note"})], today=TODAY)
+        self.assertEqual(out[0]["lines"][0]["notes"], "11/10 AT&T: x")
 
     def test_header_resolved(self):
         shuffled = list(reversed(HDR))

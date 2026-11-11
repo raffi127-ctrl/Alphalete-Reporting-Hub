@@ -66,14 +66,23 @@ DAYS_KEPT = 60
 # is X, was W); every reader resolves by header.
 HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
-           "Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
+           "Line Status", "Ship Date", "Shipping Notes", "Delivered", "Activation Date", "Port Status",
            "Last Updated", "Notes", "Being worked on", "Delivered Message Sent")
+# "Shipping Notes" (right after Ship Date) since 2026-11-11 pm, Carlos: "we need a
+# shipping notes column right next to the ship date for all of these sales that
+# say shipped ... whenever something is shipped, you're always checking the
+# status updates once a day and updating it on here". Written by
+# nds_metrics.att_order_status every morning (AT&T's order page + FedEx), carried
+# through every rewrite like Notes. Delivered Message Sent is column Y now.
 _LEAD = 2                       # columns in front of the feed's own row shape (Week Ending, Pay Period)
 # Carlos's own columns: typed by hand (or, for column S, by rc_contact_sync.delivered),
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
 # have dropped the column.
-CARRIED = ("Notes", "Being worked on", "Delivered Message Sent")
+CARRIED = ("Shipping Notes", "Notes", "Being worked on", "Delivered Message Sent")
+# the carried columns that sit AFTER Last Updated (line_row pads these; Shipping
+# Notes sits inside the feed's own span and is inserted where it belongs)
+_TRAILING = tuple(c for c in CARRIED if c != "Shipping Notes")
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
 _TEXT_COLS = _ID_COLS + ("Zip", "Email")   # written as text, never a number
@@ -133,12 +142,14 @@ def line_row(line: dict, stamp: str, zip_of=None, email_of=None, active_of=None)
     core = core[:i_zip] + [zip_code, email] + core[i_zip:]
     i_dev = _COL["Device"] - _LEAD
     core = core[:i_dev] + [model] + core[i_dev:]
+    i_sn = _COL["Shipping Notes"] - _LEAD
+    core = core[:i_sn] + [""] + core[i_sn:]          # filled by att_order_status, carried
     act = str((active_of(line) if active_of else "") or "").strip()
     i_act = _COL["Activation Date"] - _LEAD
     core = core[:i_act] + [act] + core[i_act:]
     pay = pay_period_for(line.get("line_status"), _parse_date(act))
     return ([_fmt(week_ending_sunday(od)) if od else "", pay] + core + [stamp]
-            + [""] * len(CARRIED))
+            + [""] * len(_TRAILING))
 
 
 PENDING = "Pending"
@@ -488,7 +499,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     # columns wide enough for full names (auto-fit, then a floor for the typed columns)
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
                                                          "startIndex": 0, "endIndex": n_cols}}})
-    for name, px in (("Notes", 220), ("Being worked on", 130), ("Delivered Message Sent", 150),
+    for name, px in (("Notes", 220), ("Shipping Notes", 260), ("Being worked on", 130), ("Delivered Message Sent", 150),
                      ("Customer", 190), ("Rep", 190), ("Device", 170),
                      ("Email", 210), ("Pay Period", 185)):
         c = _COL[name]

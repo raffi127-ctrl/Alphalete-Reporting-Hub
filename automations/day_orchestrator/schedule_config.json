@@ -16674,12 +16674,12 @@
    "verify": null
   },
   "nds_att_order_status": {
-   "_note": "Carlos 2026-11-11: 'If it's been shipped for more than 3 days and it's still in shipped status, go ahead and look up the order on AT&T's site and put in the notes what you see.' Per order on the NDS Order Log tab with a line Shipped 3+ days ago and no Delivered date: att.com/orders/checkmyorder with the order #, Zip and Email off the tab, then '<date> AT&T: <status lines; tracking>' in front of Notes on those lines. Same words as a note already there -> not written again; a lookup AT&T refuses writes nothing (screenshot in output/nds_metrics). Runs after the e-mail harvest, which is what fills Email.",
+   "_note": "Carlos 2026-11-11: 'If it's been shipped for more than 3 days and it's still in shipped status, go ahead and look up the order on AT&T's site and put in the notes what you see.' Then, same evening: 'we need a shipping notes column right next to the ship date for all of these sales that say shipped ... whenever something is shipped, you're always checking the status updates once a day and updating it on here.' Per order on the NDS Order Log tab with a line in Shipped and no Delivered date (any age): AT&T's order details page (att.com/acctmgmt/order/details, order # + Zip + Email off the tab), then each FedEx number on it on fedex.com; '<date> AT&T: <status>; tracking N; FedEx N: <what FedEx says>' REPLACES the line's Shipping Notes cell each morning. A lookup AT&T refuses writes nothing (page shot on the control sheet's 'ATT Shot' tab). Runs after the e-mail harvest, which is what fills Email.",
    "_base_args_note": "The WRAPPER passes --live. The module is DRY RUN by default, so `lucy rerun nds_att_order_status` reads AT&T and prints the notes it would write without touching the tab.",
    "close_on": "exit_zero",
    "order": 11.46,
    "on_scheduler": true,
-   "display_name": "AT&T order status for stale Shipped lines (-> NDS Order Log Notes)",
+   "display_name": "AT&T + FedEx status for every Shipped line (-> NDS Order Log Shipping Notes)",
    "machine": "Lucy 2",
    "source_type": "browser",
    "data_sources": [],
