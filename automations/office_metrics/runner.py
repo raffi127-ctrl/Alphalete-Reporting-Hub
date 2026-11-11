@@ -158,6 +158,11 @@ def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
 _HARVEST_ORDER_LOG_OFFICES = {"rashad"}
 
 
+# NDS offices with no captainship (not in Dylan's NDSActivationbyRep view):
+# their Activation Rate board stays on the order-log version.
+_ACT_RATE_ORDER_LOG_OFFICES = {"aiden"}
+
+
 def _nds_metrics(o: Office) -> list[dict]:
     """Boards for an NDS owner — sourced from the NDS-SN (RES-ATT-OOF) workbook,
     NOT the ATT-D2D one the standard boards pull (an NDS owner isn't in that book,
@@ -216,14 +221,21 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.office_metrics.nds_orderlog",
              owner_args=["--owner", o.owner, "--board", "pending_orders"], env={},
              dry_flag="--dry-run", post_flag="--live"),
-        # 📈 Activation Rate by Rep — per rep, wireless lines activated / sold,
-        # 0-30 and 31-60 days, off a 60-day NDS ORDER LOG pull (Khalil asked
-        # 2026-10-05 after seeing Carlos's B2B board; Megan: "add it to all NDS
-        # threads").
-        dict(slug="activation_rate", label="📈 Activation Rate by Rep",
-             module="automations.office_metrics.nds_orderlog",
-             owner_args=["--owner", o.owner, "--board", "activation_rate"], env={},
-             dry_flag="--dry-run", post_flag="--live"),
+        # 📈 Activation Rate by Rep — 3 images (10-19 / 20-29 / 30-60 days),
+        # reps x last 7 days, from Dylan's Tableau New/Port trailing rate via
+        # the 'NDS Activation Log' that nds_activation_rate fills each morning
+        # (Raf + Dylan 2026-11-11, replaces Megan's order-log board of
+        # 2026-10-05). An owner outside the 3 NDS captainships isn't in that
+        # Tableau view, so they keep the old order-log board.
+        (dict(slug="activation_rate", label="📈 Activation Rate by Rep",
+              module="automations.office_metrics.nds_orderlog",
+              owner_args=["--owner", o.owner, "--board", "activation_rate"], env={},
+              dry_flag="--dry-run", post_flag="--live")
+         if o.key in _ACT_RATE_ORDER_LOG_OFFICES else
+         dict(slug="activation_rate", label="📈 Activation Rate by Rep",
+              module="automations.nds_activation_rate.slack_board",
+              owner_args=["--owner", o.owner], env={},
+              dry_flag="--dry-run", post_flag="--live")),
         # 📋 Order Log — the raw wireless order list (kept SEPARATE from Rep
         # Activations per Megan 2026-08-07; every office shows both). Same current
         # window pull.

@@ -8099,15 +8099,27 @@
   },
   "nds_activation_rate": {
    "close_on": "exit_zero",
-   "on_scheduler": false,
-   "display_name": "NDS Activation Rate by rep (build)",
-   "_note": "BUILD (Eve 2026-11-10). Raf + Dylan Twaddle: per-rep NDS activation at 10-19 / 20-29 / 30-60 days for the 3 NDS captainships (Khalil, Colten, Jairo). One crosstab per captain from Eve's custom view NDSActivationbyRep (ChurnActivationRateRep with Owner Name expanded to Rep) filtered by NDS Captain Teams. Writes 'NDS Activation Log' + 'Activation Rate - <Captain> (NDS)' in the SANDBOX copy of the Captainship Metrics workbook unless --real. Off the scheduler until Eve says 'use the real Sheet'.",
+   "order": 19.5,
+   "machine": "Lucy 1",
+   "on_scheduler": true,
+   "display_name": "NDS Activation Rate by rep",
+   "_note": "LIVE (Eve 2026-11-11, Raf approved in the NDS activation rate thread). Raf + Dylan Twaddle: per-rep NDS New/Port trailing activation at 10-19 / 20-29 / 30-60 days for the 3 NDS captainships (Khalil, Colten, Jairo). One crosstab per captain from Eve's custom view NDSActivationbyRep (ChurnActivationRateRep with Owner Name expanded to Rep) filtered by NDS Captain Teams. Appends today to 'NDS Activation Log' + redraws 'Activation Rate - <Captain> (NDS)' in the REAL Captainship Metrics workbook. Lucy 1 on purpose: its Tableau account is the one that opens Eve's custom view (Lucy 3 could not). Order 19.5 = before the NDS office metrics runners on Lucy 4 (26.4+), whose 'Activation Rate by Rep' images (nds_activation_rate.slack_board) read this log.",
    "command": [
     "automations.nds_activation_rate.run"
    ],
-   "base_args": [],
+   "base_args": [
+    "--real"
+   ],
    "cadence": {
-    "weekdays": []
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
    },
    "data_sources": [],
    "depends_on": [],
