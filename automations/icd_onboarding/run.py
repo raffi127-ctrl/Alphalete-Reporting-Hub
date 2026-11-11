@@ -275,78 +275,84 @@ def from_sterling(office_key: str, week_start: dt.date, *,
                          dry_run=dry_run, log=log)
 
 
+def reception_account(office_key: str) -> str:
+    """The office's OWN reception Gmail, off the second-round roster.
+
+    Megan, 2026-11-11: "each ICD will have their own reception email" -- so
+    this is a per-office login like OwnerVille or Blue Ink, not one account
+    every office would have to be given a key to.
+    """
+    from automations.second_round_contacts import roster as SR
+    want = str(_appstream_id(office_key) or "").strip()
+    if not want:
+        return ""
+    for o in SR.read():
+        if want in [str(x).strip() for x in (o.offices or [o.office])]:
+            return str(o.account or "").strip()
+    return ""
+
+
 def from_contacts(office_key: str, week_start: dt.date, *,
                   dry_run: bool = True, log=print) -> int:
-    """Contact Added, off Eve's second-round contact sync.
+    """Contact Added, read off the office's reception Google Contacts.
 
     Megan, 2026-11-09: "we need to connect to Eve's already built automation
-    that's adding 2nd round contacts."
+    that's adding 2nd round contacts." Her job puts every second-round
+    applicant into that owner's reception account; this asks the account
+    whether the contact is there.
 
-    IT READS HER RECORD RATHER THAN REDOING HER WORK. `second_round_contacts`
-    writes every contact it creates to its own state file -- name, phone,
-    email, office, status -- so the question "has this person been added?" is
-    already answered there. Reading it needs no change to her job, no second
-    Google Contacts call, and no second idea of who counts as added.
+    IT ASKS THE ACCOUNT, NOT THE JOB'S NOTES. This used to read
+    `second_round_contacts`'s state file, which records what the sync BELIEVES
+    it did -- a different thing from what is in the account, and where they
+    disagree the account is right. That file held 98 contacts and matched 0 of
+    Raf's 21 for the week of 11/08, with no way to tell a sync that had not
+    run from one whose notes were about other offices. A contact either exists
+    or it does not.
 
     IT ALSO COVERS THE PEOPLE ADDED BEFORE THE BOARD EXISTED, which an
     as-it-happens tick cannot: somebody contacted at their second round three
-    weeks ago is never re-added, so a tick that only fires on creation would
+    weeks ago is never re-added, so a tick that only fired on creation would
     leave them blank for ever. On the real OBCL Contact Added is true for
-    nearly everybody, and that is why.
+    nearly everybody, and that is why this is a LOOKUP.
 
-    MATCHED THE WAY SHE MATCHES: phone first, then email -- `state.key_for`'s
-    rule, not a new one. A name is only the last resort, and it is a weak one:
-    an applicant types their own name into ApplicantStream, so the board and
-    the sync disagree over "Mike"/"Michael", a middle name, a married name or
-    an accent, and a name-only match answered 0 of 21 on Raf's week of 11/08
-    while 98 contacts sat on record. The phone is the same digits in both.
+    PHONE, THEN EMAIL. NEVER THE NAME. An applicant types their own name into
+    ApplicantStream, so the two sides disagree over Mike/Michael, a middle
+    name, a married name or an accent -- and a name match that is wrong ticks
+    a step for somebody nobody ever rang. The ten digits of the phone are the
+    same in both.
 
-    WHERE IT RUNS. Wherever the state file is, which is the machine her job
-    runs on (Lucy 1). On any other machine the file is simply absent and this
-    says so and ticks nothing -- an unread source is never a "no"
-    ([[feedback_empty_means_proven_zero]]). The tick itself goes to the Sheet,
-    so it reaches the office's board from wherever it is made.
+    SKIPPED, NOT FAILED, where this machine holds no token for that account --
+    the Sterling inbox's rule. A box without the token is not broken; it is
+    simply not the one that does this job. Nothing is ticked on the way past,
+    so a skipped pass can never be mistaken for "nobody has been contacted"
+    ([[feedback_empty_means_proven_zero]]).
     """
     from automations.icd_onboarding import sheet as S
-    from automations.second_round_contacts import config as SC
-    from automations.second_round_contacts import state as SS
-
-    if not SC.STATE_PATH.exists():
-        log("  contacts: no state file at %s — this runs where the contact "
-            "sync runs. Nothing ticked." % SC.STATE_PATH)
-        return 0
-
+    from automations.second_round_contacts import contacts as K
     from automations.applicant_contacts.extract import phone10
 
-    by_phone, by_email, by_name = {}, {}, {}
-    per_account: Dict[str, int] = {}
-    n = 0
-    for _account, people in (SS.load() or {}).items():
-        for entry in (people or {}).values():
-            if str(entry.get("status") or "") == SS.REMOVED:
-                continue      # taken out again; not an added contact
-            n += 1
-            per_account[str(_account)] = per_account.get(str(_account), 0) + 1
-            ph = phone10(str(entry.get("phone") or ""))
-            if ph:
-                by_phone[ph] = entry
-            em = str(entry.get("email") or "").strip().lower()
-            if em:
-                by_email[em] = entry
-            name = ("%s %s" % (entry.get("first_name", ""),
-                               entry.get("last_name", ""))).strip()
-            if name:
-                by_name[B._fold(name)] = entry
-    log("  contacts: %d on record from the second-round sync "
-        "(%d with a phone, %d with an email)"
-        % (n, len(by_phone), len(by_email)))
-    # WHOSE contacts they are. The sync keys its state by ApplicantStream
-    # account, and a state full of somebody else's offices looks exactly like
-    # a state full of nobody -- both tick zero. 98 contacts matched 0 of
-    # Raf's 21 on 2026-11-10 and the counts alone could not say which it was.
-    if per_account:
-        log("    by account: %s"
-            % ", ".join("%s=%d" % kv for kv in sorted(per_account.items())))
+    account = reception_account(office_key)
+    if not account:
+        log("  contacts: %s has no reception account on the second-round "
+            "roster -- nothing to read" % office_key)
+        return 0
+    if not K.has_token(account):
+        log("  contacts: no Contacts token for %s on this machine (%s) -- "
+            "this runs where that token is. Nothing ticked."
+            % (account, K.token_file(account)))
+        return 0
+
+    try:
+        svc = K.service(account)
+        by_phone, by_email = K.existing_index(svc)
+    except Exception as e:      # noqa: BLE001
+        # An account that could not be READ is not an account with nobody in
+        # it. Say so and tick nothing.
+        log("  contacts: could not read %s: %s: %s -- nothing ticked"
+            % (account, type(e).__name__, str(e)[:160]))
+        return 0
+    log("  contacts: %s holds %d contact(s) with a phone, %d with an email"
+        % (account, len(by_phone), len(by_email)))
 
     ws = S.open_board(F.workbook_for(office_key), create=False)
     if ws is None:
@@ -354,7 +360,7 @@ def from_contacts(office_key: str, week_start: dt.date, *,
         return 0
     rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
     verdicts = {}
-    how = {"phone": 0, "email": 0, "name": 0}
+    how = {"phone": 0, "email": 0}
     for r in rows:
         name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
         ph = phone10(str(r.get("Phone") or ""))
@@ -363,8 +369,6 @@ def from_contacts(office_key: str, week_start: dt.date, *,
             hit = "phone"
         elif em and em in by_email:
             hit = "email"
-        elif B._fold(name) in by_name:
-            hit = "name"
         else:
             continue
         how[hit] += 1
@@ -381,6 +385,7 @@ def from_contacts(office_key: str, week_start: dt.date, *,
             "email to match on)" % (len(rows), askable))
     return F.apply(F.workbook_for(office_key), week_start, "contacts",
                    verdicts, dry_run=dry_run, log=log)
+
 
 
 STEPS = (("seed", seed), ("ownerville", from_ownerville),

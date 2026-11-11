@@ -94,17 +94,21 @@ def test_contacts_is_a_LOOKUP_even_though_the_sync_could_tick_as_it_adds():
     names = [n for n, _ in R.STEPS]
     assert "contacts" in names
     src = inspect.getsource(R.from_contacts)
-    # Eve's record, not a second Google Contacts call of our own.
-    assert "second_round_contacts" in src and "STATE_PATH" in src
-    assert "contacts" not in src.split("def from_contacts")[0]
+    # THE ACCOUNT ITSELF, not the sync's notes about what it did. The state
+    # file read 98 contacts and matched 0 of Raf's 21 (2026-11-08), and could
+    # not say whether the sync had run or had been about other offices.
+    assert "existing_index" in src, "it has to ask the account"
+    assert "STATE_PATH" not in src, "the state file is what it believes, not what is"
 
 
-def test_an_absent_state_file_ticks_nothing_rather_than_claiming_nobody():
-    """It runs where the contact sync runs. Anywhere else the file is simply
-    missing, which is unread -- never 'nobody has been added'."""
+def test_no_token_for_the_account_ticks_nothing_rather_than_claiming_nobody():
+    """It runs where that account's token is. Anywhere else it is unread --
+    never 'nobody has been contacted'."""
     import inspect
     src = inspect.getsource(R.from_contacts)
-    assert "exists()" in src and "return 0" in src
+    assert "has_token" in src and "return 0" in src
+    # and a read that THROWS is unread too, not an empty account
+    assert "could not read" in src
 
 
 # ----------------------------------- closing the incomplete OwnerVille read
@@ -302,14 +306,17 @@ def test_identity_failing_outright_runs_everything(monkeypatch):
 
 # --------------------------- Contact Added matches on the phone, not the name
 
-def _contacts_board(monkeypatch, rows, state):
-    """One board, one state file, and no network."""
+def _contacts_board(monkeypatch, rows, phones=(), emails=()):
+    """One board and one reception account, and no network."""
     from automations.icd_onboarding import sheet as S
-    from automations.second_round_contacts import config as SC
-    from automations.second_round_contacts import state as SS
-    import pathlib as _pl
-    monkeypatch.setattr(SC, "STATE_PATH", _pl.Path(__file__))   # exists
-    monkeypatch.setattr(SS, "load", lambda: {"acct": state})
+    from automations.second_round_contacts import contacts as K
+    monkeypatch.setattr(R, "reception_account", lambda key: "recep@example.com")
+    monkeypatch.setattr(K, "has_token", lambda a: True)
+    monkeypatch.setattr(K, "token_file", lambda a: "tok.json")
+    monkeypatch.setattr(K, "service", lambda a: object())
+    monkeypatch.setattr(K, "existing_index",
+                        lambda svc: ({p: "x" for p in phones},
+                                     {e: "x" for e in emails}))
     monkeypatch.setattr(R.F, "workbook_for", lambda key: "BOOK")
     class _WS:
         def get_all_values(self):
@@ -326,15 +333,12 @@ def _contacts_board(monkeypatch, rows, state):
 
 def test_a_contact_is_matched_by_phone_when_the_name_disagrees(monkeypatch):
     """An applicant types their own name into ApplicantStream, so the board
-    and the sync disagree over Mike/Michael, a middle name or an accent. The
-    phone is the same ten digits in both -- and a name-only match answered 0
-    of 21 on Raf's week of 11/08 while 98 contacts sat on record."""
+    and the account disagree over Mike/Michael, a middle name or an accent.
+    The phone is the same ten digits in both -- and a name-only match answered
+    0 of 21 on Raf's week of 11/08 while 98 contacts sat on record."""
     rows = [{"Name": "Mike", "Last Name": "Ruiz-Soto",
              "Phone": "(555) 201-3344", "Email": ""}]
-    state = {"p:5552013344": {"first_name": "Michael", "last_name": "Soto",
-                              "phone": "555-201-3344", "email": "",
-                              "status": "tracked"}}
-    seen = _contacts_board(monkeypatch, rows, state)
+    seen = _contacts_board(monkeypatch, rows, phones=["5552013344"])
     assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 1
     assert seen == {"Mike Ruiz-Soto": {"Contact Added": True}}
 
@@ -342,34 +346,48 @@ def test_a_contact_is_matched_by_phone_when_the_name_disagrees(monkeypatch):
 def test_a_contact_is_matched_by_email_when_there_is_no_phone(monkeypatch):
     rows = [{"Name": "Ada", "Last Name": "F", "Phone": "",
              "Email": "Ada.F@Example.com"}]
-    state = {"e:ada.f@example.com": {"first_name": "A", "last_name": "F",
-                                     "phone": "", "email": "ada.f@example.com",
-                                     "status": "tracked"}}
-    seen = _contacts_board(monkeypatch, rows, state)
+    seen = _contacts_board(monkeypatch, rows, emails=["ada.f@example.com"])
     assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 1
     assert "Ada F" in seen
 
 
-def test_somebody_the_sync_never_added_is_left_blank(monkeypatch):
+def test_somebody_not_in_the_account_is_left_blank(monkeypatch):
     """Unread and not-done are the same cell here, so a false tick is the one
     thing this must not do."""
     rows = [{"Name": "Nobody", "Last Name": "Here",
              "Phone": "555-000-0000", "Email": "no@example.com"}]
-    state = {"p:5552013344": {"first_name": "Michael", "last_name": "Soto",
-                              "phone": "555-201-3344", "email": "",
-                              "status": "tracked"}}
-    seen = _contacts_board(monkeypatch, rows, state)
+    seen = _contacts_board(monkeypatch, rows, phones=["5552013344"])
     assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 0
     assert seen == {}
 
 
-def test_a_contact_taken_back_out_is_not_an_added_contact(monkeypatch):
-    from automations.second_round_contacts import state as SS
+def test_a_matching_NAME_alone_never_ticks(monkeypatch):
+    """The name is not a match. Two different people share one often enough,
+    and a wrong tick here says somebody was contacted who never was."""
     rows = [{"Name": "Michael", "Last Name": "Soto",
-             "Phone": "555-201-3344", "Email": ""}]
-    state = {"p:5552013344": {"first_name": "Michael", "last_name": "Soto",
-                              "phone": "555-201-3344", "email": "",
-                              "status": SS.REMOVED}}
-    seen = _contacts_board(monkeypatch, rows, state)
+             "Phone": "555-999-8888", "Email": "other@example.com"}]
+    seen = _contacts_board(monkeypatch, rows, phones=["5552013344"],
+                           emails=["michael.soto@example.com"])
     assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 0
     assert seen == {}
+
+
+def test_an_office_with_no_reception_account_is_said_not_ticked(monkeypatch):
+    """Every ICD gets their own reception Gmail (Megan, 2026-11-11). One that
+    has not been given one yet is UNREAD, not a week where nobody was rung."""
+    monkeypatch.setattr(R, "reception_account", lambda key: "")
+    said = []
+    assert R.from_contacts("raf", MONDAY, dry_run=True,
+                           log=lambda *a: said.append(" ".join(map(str, a)))) == 0
+    assert any("no reception account" in s for s in said), said
+
+
+def test_an_account_this_machine_has_no_token_for_is_skipped(monkeypatch):
+    from automations.second_round_contacts import contacts as K
+    monkeypatch.setattr(R, "reception_account", lambda key: "recep@example.com")
+    monkeypatch.setattr(K, "has_token", lambda a: False)
+    monkeypatch.setattr(K, "token_file", lambda a: "tok.json")
+    said = []
+    assert R.from_contacts("raf", MONDAY, dry_run=True,
+                           log=lambda *a: said.append(" ".join(map(str, a)))) == 0
+    assert any("no Contacts token" in s for s in said), said
