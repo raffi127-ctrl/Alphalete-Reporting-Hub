@@ -40,7 +40,9 @@ import io
 import json
 import os
 import re
+import signal
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -50,6 +52,7 @@ from automations.shared.name_case import titlecase_name
 
 _STATE = Path.home() / ".config" / "headshots" / "state.json"
 _LOCK = Path.home() / ".config" / "headshots" / "headshots.lock"
+_STALE_LOCK_SECONDS = 20 * 60
 
 
 class HeadshotError(RuntimeError):
@@ -73,7 +76,21 @@ def acquire_lock() -> bool:
         except ValueError:
             old = 0
         if old and old != os.getpid() and _pid_alive(old):
-            return False
+            # A healthy run takes a few minutes. One holding the lock longer
+            # is hung (2026-11-11: a stuck model download held it for an hour
+            # and every 5-min tick quietly skipped) -- end it and carry on.
+            try:
+                age = time.time() - _LOCK.stat().st_mtime
+            except OSError:
+                age = 0
+            if age < _STALE_LOCK_SECONDS:
+                return False
+            print(f"  headshots lock held {int(age // 60)} min by pid {old} "
+                  "-- ending the stuck run")
+            try:
+                os.kill(old, signal.SIGKILL)
+            except OSError:
+                pass
     _LOCK.write_text(str(os.getpid()))
     return True
 
