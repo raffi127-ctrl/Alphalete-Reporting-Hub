@@ -358,8 +358,165 @@ def check_errors(values, formulas, skip=frozenset()) -> List[Finding]:
     return out
 
 
-def audit(values, formulas, template_values=None) -> List[Finding]:
-    found = check_reps(values, formulas) + check_totals(values, formulas)
+# --- % Paid to Rep + colors (Rafael / Maud, 2026-11-11) ----------------------
+#
+# Maud added a 4th column per week, '% Paid to Rep' (=iferror(Got Paid /
+# Brought In, 0)), to the template, Cy and Kash. Rafael's colors for it:
+# green 49.9% or less, grey 50-54.9%, red 55% or more. Profit/Loss keeps its
+# green (made money) / red (lost money).
+#
+# Colors are conditional-format rules. What goes wrong (Cy, 11/11): a rule
+# that stops before the newest reps, or that also paints Brought In / Got
+# Paid. The fix rewrites the rule's ranges over the rep rows: exactly the
+# Profit/Loss (or % Paid) columns, first rep to last rep. Ranges outside the
+# rep rows (the PNL Office row, etc.) are kept as they are. A missing rule
+# is added with the template's colors.
+
+GREEN = {"red": 0.7176471, "green": 0.88235295, "blue": 0.8039216}
+RED = {"red": 0.95686275, "green": 0.78039217, "blue": 0.7647059}
+GREY = {"red": 0.7137255, "green": 0.7137255, "blue": 0.7137255}
+
+# (name, condition type, values, color) -- the rules every PNL should have
+PL_RULES = (("verde (gana)", "NUMBER_GREATER", ["0"], GREEN),
+            ("rojo (pierde)", "NUMBER_LESS", ["0"], RED))
+PCT_RULES = (("rojo 55% o más", "NUMBER_GREATER_THAN_EQ", ["0.55"], RED),
+             ("gris 50-54.9%", "NUMBER_BETWEEN", ["0.5", "0.549999999"], GREY),
+             ("verde 49.9% o menos", "NUMBER_BETWEEN", ["0.000000001", "0.499999999"], GREEN))
+PCT_HEADER = "% paid to rep"
+
+KIND_LABEL.update({
+    "pct_missing_col": "no tiene la columna '% Paid to Rep' (la agrega Maud)",
+    "pct_formula": "% Paid to Rep sin fórmula / distinta",
+    "colors_wrong": "colores que no cubren a todos los reps o pintan otra columna",
+    "colors_missing": "falta la regla de color",
+})
+NOTE_LABEL["pct_formula"] = "% Paid to Rep formula was missing"
+
+
+def pct_cols(values, lay: Layout) -> Tuple[int, ...]:
+    return tuple(c for c, x in enumerate(values[lay.header - 1], 1) if _norm(x) == PCT_HEADER)
+
+
+def total_cols(values, lay: Layout) -> Tuple[int, ...]:
+    """A whole-year 'TOTAL' column right of the last week (Cy's HL)."""
+    return tuple(c for c, x in enumerate(values[lay.header - 1], 1)
+                 if _norm(x) == "total" and c > lay.pl_cols[-1])
+
+
+def check_pct(values, formulas) -> List[Finding]:
+    """The % Paid to Rep column: missing on the tab (report), or a rep row with
+    money and no formula / a different one. Missing -> fixed like Profit/Loss;
+    typed or different -> fixed too (Eve 10/30: typed over a formula always
+    goes back to the formula)."""
+    lay = layout(values)
+    if not lay:
+        return []
+    pcs = pct_cols(values, lay)
+    if not pcs:
+        return [Finding("pct_missing_col", "—", KIND_LABEL["pct_missing_col"])]
+    first, last = lay.reps
+    out = []
+    for p in pcs:
+        pats = {r: normalize_rc(str(_g(formulas, r, p)), r, p) for r in range(first, last + 1)
+                if _is_formula(_g(formulas, r, p))}
+        top = _majority(list(pats.values()))
+        if not top:
+            continue
+        for r in range(first, last + 1):
+            if pats.get(r) == top:
+                continue
+            raw = str(_g(formulas, r, p))
+            money = _amount(_g(values, r, p - 3)) or _amount(_g(values, r, p - 2))
+            if not money:
+                continue
+            want = denormalize_rc(top, r, p)
+            out.append(Finding("pct_formula", K.a1(r, p),
+                               "%s · %s" % (KIND_LABEL["pct_formula"], _who(values, r)),
+                               before=raw[:120] or "(vacía)", after=want, value=want))
+    return out
+
+
+def _cells(rng: dict, rows: Tuple[int, int]) -> set:
+    """(row, col) 1-based cells of a rule range that fall inside rows."""
+    r0 = max(rng.get("startRowIndex", 0) + 1, rows[0])
+    r1 = min(rng.get("endRowIndex", 10 ** 6), rows[1])
+    c0, c1 = rng.get("startColumnIndex", 0) + 1, rng.get("endColumnIndex", 10 ** 3)
+    return {(r, c) for r in range(r0, r1 + 1) for c in range(c0, c1 + 1)}
+
+
+def _outside(rng: dict, rows: Tuple[int, int]) -> List[dict]:
+    """The parts of a range above / below the rep rows, kept untouched."""
+    out = []
+    s, e = rng.get("startRowIndex", 0), rng.get("endRowIndex")
+    if s < rows[0] - 1:
+        out.append(dict(rng, endRowIndex=min(e if e is not None else 10 ** 6, rows[0] - 1)))
+    if e is None or e > rows[1]:
+        out.append(dict(rng, startRowIndex=max(s, rows[1])))
+    return [x for x in out if x.get("endRowIndex", 10 ** 6) > x.get("startRowIndex", 0)]
+
+
+def _rule_matches(cf: dict, ctype: str, vals: List[str]) -> bool:
+    c = (cf.get("booleanRule") or {}).get("condition", {})
+    return (c.get("type") == ctype and [v.get("userEnteredValue") for v in c.get("values", [])] == vals
+            and bool(cf["booleanRule"].get("format", {}).get("backgroundColor")))
+
+
+def _color_findings(values, lay, cfs, sheet_id, rows, cols, rules, what) -> List[Finding]:
+    """Only what shows on screen counts: a rep row in use without color, or
+    a number painted in another column. Blank cells a rule happens to cover
+    (the spacer row, empty columns after the year) are not worth a rewrite."""
+    want = {(r, c) for r in range(rows[0], rows[1] + 1) for c in cols}
+    exp_ranges = [{"sheetId": sheet_id, "startRowIndex": rows[0] - 1, "endRowIndex": rows[1],
+                   "startColumnIndex": c - 1, "endColumnIndex": c} for c in cols]
+    out = []
+    for name, ctype, vals, color in rules:
+        idx = next((i for i, cf in enumerate(cfs) if _rule_matches(cf, ctype, vals)
+                    and any(_cells(r, rows) for r in cf["ranges"])), None)
+        if idx is None:
+            rule = {"ranges": exp_ranges, "booleanRule": {
+                "condition": {"type": ctype, "values": [{"userEnteredValue": v} for v in vals]},
+                "format": {"backgroundColor": color}}}
+            out.append(Finding("colors_missing", what, "%s: %s · %s" % (KIND_LABEL["colors_missing"], what, name),
+                               after="filas %d-%d" % rows, value="cf",
+                               extra={"request": {"addConditionalFormatRule": {"rule": rule, "index": 10 ** 6}}}))
+            continue
+        cf = cfs[idx]
+        have = set().union(*(_cells(r, rows) for r in cf["ranges"]))
+        missing = {(r, c) for r, c in want - have if used(values, lay, r)}
+        extra = {(r, c) for r, c in have - want if _s(values, r, c)}
+        if not missing and not extra:
+            continue
+        new = dict(cf, ranges=[x for r in cf["ranges"] for x in _outside(r, rows)] + exp_ranges)
+        bits = []
+        if missing:
+            bits.append("%d celdas sin color (reps hasta la fila %d)" % (len(missing), max(r for r, _ in missing)))
+        if extra:
+            bits.append("%d números pintados fuera de %s" % (len(extra), what))
+        out.append(Finding("colors_wrong", what, "%s: %s · %s — %s" % (
+            KIND_LABEL["colors_wrong"], what, name, "; ".join(bits)),
+            before="%d rangos" % len(cf["ranges"]), after="filas %d-%d, solo %s" % (rows + (what,)),
+            value="cf", extra={"request": {"updateConditionalFormatRule": {
+                "index": idx, "sheetId": sheet_id, "rule": new}}}))
+    return out
+
+
+def check_colors(values, cfs, sheet_id) -> List[Finding]:
+    """Profit/Loss green/red and % Paid to Rep tiers, over every rep row."""
+    lay = layout(values)
+    if not lay or cfs is None:
+        return []
+    first, last = lay.reps
+    rows = (first, last if used(values, lay, last) else last - 1)   # the spacer row stays out
+    out = _color_findings(values, lay, cfs, sheet_id, rows, lay.pl_cols + total_cols(values, lay),
+                          PL_RULES, "Profit/Loss")
+    pcs = pct_cols(values, lay)
+    if pcs:
+        out += _color_findings(values, lay, cfs, sheet_id, rows, pcs, PCT_RULES, "% Paid to Rep")
+    return out
+
+
+def audit(values, formulas, template_values=None, cfs=None, sheet_id=0) -> List[Finding]:
+    found = check_reps(values, formulas) + check_totals(values, formulas) + check_pct(values, formulas)
     # a stretched range and a restored total on the same cell: keep the restore
     seen, out = set(), []
     for x in found:
@@ -369,6 +526,7 @@ def audit(values, formulas, template_values=None) -> List[Finding]:
             seen.add(x.where)
         out.append(x)
     out += check_errors(values, formulas, seen)
+    out += check_colors(values, cfs, sheet_id)
     if template_values:
         out += check_rows_vs_template(values, template_values)
     return out

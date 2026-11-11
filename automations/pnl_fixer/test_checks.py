@@ -89,5 +89,95 @@ class Totals(unittest.TestCase):
         self.assertEqual([x.value for x in found], ["=K1+7"])
 
 
+def rng(r0, r1, c0, c1=None):
+    """1-based inclusive rows/cols -> a Sheets grid range."""
+    return {"sheetId": 7, "startRowIndex": r0 - 1, "endRowIndex": r1,
+            "startColumnIndex": c0 - 1, "endColumnIndex": (c1 or c0)}
+
+
+def rule(ctype, vals, ranges):
+    return {"ranges": ranges, "booleanRule": {
+        "condition": {"type": ctype, "values": [{"userEnteredValue": v} for v in vals]},
+        "format": {"backgroundColor": P.GREEN}}}
+
+
+class Colors(unittest.TestCase):
+    def setUp(self):
+        self.f = pnl([("Rep%d" % i, "", {0: ("900", "300")}, ()) for i in range(6)], weeks=3)
+        self.lay = P.layout(self.f)
+        self.pl = self.lay.pl_cols                     # G, J, M
+        self.first, spacer = self.lay.reps
+        self.last = spacer - 1                         # the blank row above the totals stays out
+
+    def good(self):
+        return [rule(t, v, [rng(self.first, self.last, c) for c in self.pl]) for _, t, v, _ in P.PL_RULES]
+
+    def test_right_colors_say_nothing(self):
+        self.assertEqual(P.check_colors(self.f, self.good(), 7), [])
+
+    def test_rule_that_stops_early_and_paints_got_paid_is_rewritten(self):
+        cfs = self.good()
+        # Cy, 11/11: stops before the newest reps, also paints Got Paid
+        cfs[0]["ranges"] = [rng(self.first, 6, c) for c in self.pl] + \
+                           [rng(5, 6, c - 1) for c in self.pl]
+        found = P.check_colors(self.f, cfs, 7)
+        self.assertEqual([x.kind for x in found], ["colors_wrong"])
+        self.assertIn("sin color", found[0].detail)
+        self.assertIn("pintados fuera", found[0].detail)
+        new = found[0].extra["request"]["updateConditionalFormatRule"]["rule"]["ranges"]
+        self.assertEqual(new, [rng(self.first, self.last, c) for c in self.pl])
+
+    def test_blank_cells_only_are_not_worth_a_rewrite(self):
+        cfs = self.good()
+        cfs[0]["ranges"] += [rng(self.last, self.last, c - 1) for c in self.pl]   # blank spare row
+        self.assertEqual(P.check_colors(self.f, cfs, 7), [])
+
+    def test_a_range_outside_the_rep_rows_is_kept(self):
+        cfs = self.good()
+        office = rng(self.last + 5, self.last + 5, self.pl[0])
+        cfs[1]["ranges"] = [rng(self.first, 4, self.pl[0])] + [office]
+        found = P.check_colors(self.f, cfs, 7)
+        new = found[0].extra["request"]["updateConditionalFormatRule"]["rule"]["ranges"]
+        self.assertIn(office, new)
+
+    def test_missing_rule_is_added(self):
+        found = P.check_colors(self.f, self.good()[:1], 7)
+        self.assertEqual([x.kind for x in found], ["colors_missing"])
+        self.assertIn("addConditionalFormatRule", found[0].extra["request"])
+
+
+class PctPaid(unittest.TestCase):
+    def with_pct(self, reps):
+        """Maud's layout: Brought In | Got Paid | Profit/Loss | % Paid to Rep."""
+        f = pnl(reps, weeks=3)
+        out = []
+        for r, row in enumerate(f, 1):
+            new = row[:4]
+            for w in range(3):
+                blk = row[4 + 3 * w: 7 + 3 * w]
+                c = 5 + 4 * w
+                if r == 2:
+                    extra = "% Paid to Rep"
+                elif 3 <= r <= 2 + len(reps):
+                    e, g = P.K.col_letter(c), P.K.col_letter(c + 1)
+                    blk = [blk[0], blk[1], "=SUM(%s%d)-(%s%d*1.12)" % (e, r, g, r)]
+                    extra = "=iferror(%s%d/%s%d,0)" % (g, r, e, r)
+                else:
+                    extra = ""
+                new += blk + [extra]
+            out.append(new)
+        return out
+
+    def test_tab_without_the_column_is_reported(self):
+        f = pnl([("Rep%d" % i, "", {}, ()) for i in range(6)])
+        self.assertEqual([x.kind for x in P.check_pct(f, f)], ["pct_missing_col"])
+
+    def test_typed_pct_with_money_goes_back_to_formula(self):
+        f = self.with_pct([("Rep%d" % i, "", {0: ("100", "40")}, ()) for i in range(6)])
+        f[3][7] = "0.4"                                        # H4 typed
+        found = P.check_pct(f, f)
+        self.assertEqual([(x.where, x.value) for x in found], [("H4", "=iferror(F4/E4,0)")])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -49,12 +49,13 @@ def tab_name(today: dt.date) -> re.Pattern:
 
 def load(sh, today: dt.date) -> dict:
     """This year's visible PNL tab: formulas, what it shows, notes."""
-    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId,title,hidden))"})
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId,title,hidden),conditionalFormats)"})
     want = tab_name(today)
-    tab = next((s["properties"] for s in meta["sheets"]
-                if want.match(s["properties"]["title"]) and not s["properties"].get("hidden")), None)
-    if not tab:
+    sheet = next((s for s in meta["sheets"]
+                  if want.match(s["properties"]["title"]) and not s["properties"].get("hidden")), None)
+    if not sheet:
         return {}
+    tab = sheet["properties"]
     title = tab["title"]
     rng = "'%s'" % title
 
@@ -67,7 +68,8 @@ def load(sh, today: dt.date) -> dict:
     rows = grid["sheets"][0]["data"][0].get("rowData", [])
     notes = [[(v or {}).get("note", "") for v in rd.get("values", [])] for rd in rows]
     return {"title": title, "sheet_id": tab["sheetId"], "ws": sh.worksheet(title),
-            "formulas": formulas, "values": values, "notes": notes}
+            "formulas": formulas, "values": values, "notes": notes,
+            "cfs": sheet.get("conditionalFormats", [])}
 
 
 def _load_retry(name, sid, today):
@@ -86,19 +88,31 @@ def _load_retry(name, sid, today):
 def backup(name: str, t: dict, stamp: str) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     p = OUT_DIR / ("backup_%s_%s.json" % (stamp, re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-")))
-    p.write_text(json.dumps({"title": t["title"], "values": t["values"], "formulas": t["formulas"]},
+    p.write_text(json.dumps({"title": t["title"], "values": t["values"], "formulas": t["formulas"],
+                             "conditionalFormats": t.get("cfs", [])},
                             ensure_ascii=False), encoding="utf-8")
     return p
 
 
 def apply(t: dict, found: list) -> list:
     todo = [x for x in found if x.fixable]
-    if todo:
-        t["ws"].batch_update([{"range": x.where, "values": [[x.value]]} for x in todo],
+    cells = [x for x in todo if "request" not in x.extra]
+    if cells:
+        t["ws"].batch_update([{"range": x.where, "values": [[x.value]]} for x in cells],
                              value_input_option="USER_ENTERED")
-        notes = P.note_requests(todo, t["sheet_id"], t["notes"], dt.date.today().strftime("%m/%d"))
+        notes = P.note_requests(cells, t["sheet_id"], t["notes"], dt.date.today().strftime("%m/%d"))
         if notes:
             t["ws"].spreadsheet.batch_update({"requests": notes})
+    # colors: rule updates keep their index; added rules go last
+    reqs = [x.extra["request"] for x in todo if "request" in x.extra]
+    reqs.sort(key=lambda q: "addConditionalFormatRule" in q)
+    for q in reqs:
+        if "addConditionalFormatRule" in q:
+            q["addConditionalFormatRule"]["index"] = len(t.get("cfs", []))
+            q["addConditionalFormatRule"]["rule"]["ranges"] = [
+                dict(r, sheetId=t["sheet_id"]) for r in q["addConditionalFormatRule"]["rule"]["ranges"]]
+    if reqs:
+        t["ws"].spreadsheet.batch_update({"requests": reqs})
     return todo
 
 
@@ -143,7 +157,7 @@ def main(argv=None) -> int:
             print("== %s: sin tab PNL %d" % (name, today.year))
             results[name] = [P.Finding("row_missing", "—", "no tiene tab 'PNL %d' a la vista" % today.year)]
             continue
-        found = P.audit(t["values"], t["formulas"], tpl.get("values"))
+        found = P.audit(t["values"], t["formulas"], tpl.get("values"), t.get("cfs"), t["sheet_id"])
         n_fix = sum(1 for x in found if x.fixable)
         print("== %s · %s: %d hallazgos (%d arreglables)" % (name, t["title"], len(found), n_fix))
         on = a.apply and (bool(a.owner) or b.get("apply", False))
