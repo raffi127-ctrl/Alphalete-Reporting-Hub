@@ -375,6 +375,8 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     import gspread
     cells = []
+    pending = []
+    written = 0
     read = failed = unchanged = 0
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
@@ -411,13 +413,24 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                         carrier.append(fx)
                 body = note_text(s, today, carrier)
                 log("    %s" % body)
+                batch = []
                 for ln in o["lines"]:
                     if ln["notes"].strip() == body:
                         unchanged += 1
                         continue
                     # today's reading replaces yesterday's: the column is a
                     # status, not a history (Notes keeps the history)
-                    cells.append(gspread.cell.Cell(ln["row"], i_notes + 1, body))
+                    batch.append(gspread.cell.Cell(ln["row"], i_notes + 1, body))
+                cells.extend(batch)
+                # written as it goes: ~40 orders x (AT&T + FedEx pages) runs
+                # long, and a run cut off by its timeout must keep what it read
+                if live and batch:
+                    try:
+                        _retry(lambda: ws.update_cells(batch, value_input_option="RAW"))
+                        written += len(batch)
+                    except Exception as e:  # noqa: BLE001
+                        log("    (write failed, kept for the end: %s)" % type(e).__name__)
+                        pending.extend(batch)
         finally:
             ctx.close()
     log("[att] %d order(s) read, %d failed, %d line note(s) to write (%d already said this)"
@@ -425,9 +438,10 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
     if not live:
         log("[att] dry run -- nothing written (pass --live)")
         return 0
-    if cells:
-        _retry(lambda: ws.update_cells(cells, value_input_option="RAW"))
-        log("[att] %s written on %d line(s)" % (COL_OUT, len(cells)))
+    if pending:
+        _retry(lambda: ws.update_cells(pending, value_input_option="RAW"))
+        written += len(pending)
+    log("[att] %s written on %d line(s)" % (COL_OUT, written))
     return 0
 
 
