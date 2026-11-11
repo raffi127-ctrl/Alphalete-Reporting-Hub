@@ -321,6 +321,7 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
             sara.open_order_history_panel(page, log=log)
             headers_logged = False
             combo_settable = None
+            windows_run = 0
             for start, end in wins:
                 if not remaining:
                     break
@@ -331,6 +332,13 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                               or start <= _parse_date(want[d].get("order_date")) <= end)]
                 if not in_win:
                     continue
+                if windows_run:
+                    # The full run on 11/11 read the same 41 rows for every
+                    # window: once the grid is up, new dates + Submit leave it
+                    # as it was. The panel is re-opened fresh per window.
+                    page.goto(base + C.HUB_PATH, wait_until="networkidle", timeout=C.NAV_TIMEOUT_MS)
+                    sara.open_order_history_panel(page, log=lambda *a, **k: None)
+                windows_run += 1
                 sara._set_telerik_date(page, C.FIELD_START, start)
                 sara._set_telerik_date(page, C.FIELD_END, end)
                 # The NDS dealer's Customer Type box is locked ("Residential",
@@ -365,7 +373,15 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                     log("[email] grid columns (%d): %s"
                         % (len(headers), " | ".join(h for h in headers if h)[:1500]))
                     headers_logged = True
-                log("[email] %s..%s: %d row(s)" % (start, end, len(rows)))
+                # the dates the grid actually shows, so a window that did not
+                # take (same rows as the last one) is visible in the log
+                i_od = next((i for i, h in enumerate(headers) if _norm(h).lower() == "order date"), None)
+                shown = sorted({_parse_date(r["cells"][i_od]) for r in rows
+                                if i_od is not None and i_od < len(r["cells"])} - {None})
+                log("[email] %s..%s: %d row(s), order dates %s..%s" % (
+                    start, end, len(rows), shown[0] if shown else "?", shown[-1] if shown else "?"))
+                if shown and (shown[-1] < start or shown[0] > end):
+                    log("[email]   the grid ignored the window -- rows are outside it")
                 if len(rows) >= GRID_PAGE_ROWS:
                     log("[email]   (a full grid page -- orders past it are not read; "
                         "shrink WINDOW_DAYS if this keeps happening)")
