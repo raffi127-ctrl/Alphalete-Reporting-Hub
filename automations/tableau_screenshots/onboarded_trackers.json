@@ -685,9 +685,11 @@
   },
   {
     "key": "natalia",
-    "label": "Natalia's Local Office (channel from ECO sign-up)",
+    "label": "Natalia's Local Office",
     "owner": "Natalia Gwarda",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CGEM0221M"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
