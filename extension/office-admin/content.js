@@ -408,14 +408,22 @@
     };
     boxes.forEach(b => b.addEventListener('change', count));
     count();
+    // ONE CLICK = ONE SEND (Megan 11/11: Raf's 16 went twice, 3 s apart). Every
+    // Yes button calls this; a second click while the first is on its way is
+    // ignored. The relay refuses a second copy too.
+    let sending = false;
     const send = async (picked, resend, bigOk) => {
+      if (sending) return;
+      sending = true;
+      panel.querySelectorAll('.lucy-oa-choices button').forEach(b => { b.disabled = true; });
       btn.disabled = true;
       btn.textContent = 'Sending to ' + owner() + ' Lucy ECO machine…';
       // Next week's starts are a RE-SEND on purpose: no "already sent?" stop.
       const out = await ask('send', {office: office.office, people: picked,
                                      resend: R ? 'all' : (resend || ''), big_ok: !!bigOk,
                                      source: R ? 'next_week' : 'today', week_monday: R ? (opts.monday || '') : '',
-                                     appstream: Array.from(new Set(picked.map(p => p.acct))).join(', ')});
+                                     appstream: Array.from(new Set(picked.map(p => p.acct))).join(', ')})
+        .finally(() => { sending = false; });
       // MUCH BIGGER THAN USUAL (Megan 11/08): a second, separate yes.
       if (out.needs_big_confirm) {
         const usual = out.usual ? 'about ' + Math.round(out.count / Math.max(1, out.usual)) + '× this office\'s usual (' +

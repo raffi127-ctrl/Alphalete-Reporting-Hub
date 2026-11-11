@@ -980,8 +980,29 @@ function _officeJobEnqueue(j) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var id = Utilities.getUuid();
     var sh = _ojSheet();
+    // ONE SEND AT A TIME PER PERSON (Megan 2026-11-11: Raf's 16 went to
+    // Sterling twice -- two sends 3 s apart, a double-click). Inside the lock,
+    // so two clicks can't both get past it: if any of these emails is already
+    // in a send this office hasn't finished, hand back THAT send instead of
+    // queuing a second one. A finished send is the duplicate check's job.
+    if (j.one_at_a_time) {
+      var want = {};
+      (payload.people || []).forEach(function (p) { want[String(p.email || '').toLowerCase()] = 1; });
+      var rows = sh.getDataRange().getValues();
+      for (var i = rows.length - 1; i >= 1; i--) {
+        var r = rows[i];
+        if (String(r[OJ.OFFICE]).trim().toLowerCase() !== office || String(r[OJ.KIND]) !== kind) continue;
+        if (r[OJ.RESULT_AT] instanceof Date || String(r[OJ.RESULT_AT] || '')) continue;
+        // a send stuck for over 30 min never blocks a real retry
+        if (!(r[OJ.QUEUED] instanceof Date) || Date.now() - r[OJ.QUEUED].getTime() > 30 * 60000) continue;
+        var pl = {};
+        try { pl = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
+        var hit = (pl.people || []).some(function (p) { return want[String(p.email || '').toLowerCase()]; });
+        if (hit) return {ok: true, job_id: String(r[OJ.ID]), already_sending: true};
+      }
+    }
+    var id = Utilities.getUuid();
     // 'checking' = held until Lucy 1 has re-read the names on ApplicantStream
     // (office_job_checked); the office's computer is only ever handed 'queued'.
     var start = String(j.status || '') === 'checking' ? 'checking' : 'queued';
@@ -1518,6 +1539,7 @@ function _admSend(sess, office, a) {
   }
   var source = String(a.source || '') === 'next_week' ? 'next_week' : 'today';
   return _officeJobEnqueue({office: office, kind: 'bgc_send', mode: o.mode, status: 'checking',
+                            one_at_a_time: true,
                             payload: {people: people, by: sess.username, appstream: acct,
                                       source: source, week_monday: String(a.week_monday || ''),
                                       location: {country: 'United States', state: o.state, city: o.city}}});
