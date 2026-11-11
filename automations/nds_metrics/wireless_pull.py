@@ -102,6 +102,7 @@ def parse(data: bytes, log=print):
     DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
     orders, lines = [], []
     cur = None
+    skipped = []            # wide rows that were neither a line nor an order (diagnostic)
     for tr in trs:
         c = cells(tr)
         if not any(c):
@@ -112,6 +113,9 @@ def parse(data: bytes, log=print):
             continue
         if "Line Type" in c and "Line Status" in c:
             continue
+        if len(c) >= 6 and (c[1] or "").strip().lower() not in LINE_TYPES \
+                and len(skipped) < 4:
+            skipped.append(c)
         # LINE row: its second cell is a line type word
         if len(c) >= 8 and (c[1] or "").strip().lower() in LINE_TYPES:
             lines.append({**(cur or {}),
@@ -150,6 +154,12 @@ def parse(data: bytes, log=print):
         + (", ".join(f"{k[:20]}={v}" for k, v in reps.most_common(12))
            or "NONE"))
     log(f"[ndsw] parsed {len(orders)} order(s), {len(lines)} line(s)")
+    if lines and not orders:
+        # 11/11: 316 lines, 0 orders, tab left as it was -- the order rows had
+        # changed shape and nothing said how. Show what was skipped.
+        for c in skipped:
+            log(f"[ndsw] no-order-row sample ({len(c)} cells): "
+                + " | ".join((x or "")[:18] for x in c[:14]))
     return orders, lines
 
 
