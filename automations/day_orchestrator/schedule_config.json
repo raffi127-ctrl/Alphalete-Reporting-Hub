@@ -9353,6 +9353,54 @@
     "type": "not_configured"
    }
   },
+  "activations_today_owner_mail_sample": {
+   "on_scheduler": true,
+   "_note": "SAMPLE (Eve 2026-11-10): the owner-mail version of Activations Scheduled Today, for the owners with NO Metrics thread. --sample sends up to 3 owner mails + the summary (who has no email on file) to EVE ONLY, subject [SAMPLE]. weekdays=[] never auto-runs; `lucy rerun activations_today_owner_mail_sample` with no --machine.",
+   "display_name": "Activations Scheduled Today - owner mails (SAMPLE)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.activations_today.owner_mail"
+   ],
+   "base_args": [
+    "--sample"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "activations_today_owner_mail": {
+   "on_scheduler": true,
+   "_note": "LIVE owner mails (Eve 2026-11-10, 'por mail'): every owner with installs TODAY and no Metrics thread gets their own Activations Scheduled Today board by email, Eve in copy; Eve also gets a summary naming owners with no email on file (add them in captainship_night_knocks/owners.py). OFF (weekdays=[]) until Eve OKs the sample; then set weekdays to [0..6]. Same ORDER LOG pull as the thread boards.",
+   "display_name": "Activations Scheduled Today - owner mails",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.activations_today.owner_mail"
+   ],
+   "base_args": [
+    "--send"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "rashad_metrics_review": {
    "on_scheduler": true,
    "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Raf (U045Z8N0ZQC) AND Megan (U04G5HJBGFN) via --channel, for review BEFORE going public to #elevate-sales. NOTE: U045Z8N0ZQC is RAF, not Megan — an earlier version of this note mislabelled it and a session DM'd Carlos's B2B images to Raf by trusting it (2026-07-18). Megan is U04G5HJBGFN; resolve any recipient via users.info before sending. weekdays=[] never auto-runs.",
