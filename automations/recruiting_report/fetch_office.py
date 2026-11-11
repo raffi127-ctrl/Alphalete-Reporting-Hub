@@ -558,8 +558,12 @@ def _scrape_metrics(page: Page) -> Dict[str, Optional[float]]:
             if (trs.length !== 1) return;
             const cells = trs[0].querySelectorAll('td, th');
             if (cells.length !== 2) return;
+            // One hover box can be several elements sharing ONE id (live page
+            // 2026-11-11: three 'sticky_RmvFromProcessEmails', one per reason),
+            // so group by the id, not the element.
             const box = boxOf(t);
-            let g = boxes.indexOf(box);
+            const key = box.id || box;
+            let g = boxes.findIndex(b => (b.id || b) === key);
             if (g < 0) { boxes.push(box); g = boxes.length - 1; }
             reasons.push([
               (cells[0].innerText || '').trim(),
@@ -576,8 +580,12 @@ def _scrape_metrics(page: Page) -> Dict[str, Optional[float]]:
             const c0 = tr.querySelector('th, td');
             if (!c0 || !/^Removed From Process Emails/i.test((c0.innerText || '').trim())) return;
             const html = tr.outerHTML;
-            boxes.forEach((b, g) => { if (b.id && html.includes(b.id)) processBox = g; });
+            const g = boxes.findIndex(b => b.id && html.includes(b.id));
+            if (g >= 0) processBox = g;
           });
+          // AppStream names it outright — trust that over everything above.
+          const named = boxes.findIndex(b => /RmvFromProcessEmails/i.test(b.id || ''));
+          if (named >= 0) processBox = named;
           const boxIds = boxes.map(b => (b.id || b.className || b.tagName));
 
           return {main, reasons, processBox, boxIds};
