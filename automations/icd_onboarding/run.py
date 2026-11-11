@@ -609,7 +609,27 @@ def main(argv=None) -> int:
         print()
     if not a.write:
         print("(dry run — nothing was written. --write to do it for real.)")
+    elif not bad:
+        _record_delivery(offices)
     return 1 if bad else 0
+
+
+def _record_delivery(offices: Sequence[str]) -> None:
+    """Today's manifest = the proof shared/delivery_check looks for.
+
+    2026-11-09 to 11-11 every failure-icd_onboarding ticket stayed open after
+    a clean re-run — "ran clean, but nothing can confirm it DELIVERED" —
+    because this board wrote no manifest. Only a clean --write pass records
+    one, so a dry run or a pass with a failed step never fakes the proof.
+    Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            "icd_onboarding", succeeded=list(offices),
+            note="board up to date for %s" % ", ".join(offices))
+    except Exception as e:  # noqa: BLE001 — the proof must never fail the run
+        print("manifest skipped: %s: %s — the board is written, but a failure "
+              "ticket won't close itself" % (type(e).__name__, str(e)[:120]))
 
 
 if __name__ == "__main__":
