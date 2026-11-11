@@ -302,6 +302,7 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
             page.goto(base + C.HUB_PATH, wait_until="networkidle", timeout=C.NAV_TIMEOUT_MS)
             sara.open_order_history_panel(page, log=log)
             headers_logged = False
+            combo_settable = None
             for start, end in wins:
                 if not remaining:
                     break
@@ -314,10 +315,27 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                     continue
                 sara._set_telerik_date(page, C.FIELD_START, start)
                 sara._set_telerik_date(page, C.FIELD_END, end)
-                sara._set_customer_type(page, C.CUSTOMER_TYPE_BOTH, log=lambda *a, **k: None)
-                sara._set_telerik_date(page, C.FIELD_START, start)
-                sara._set_telerik_date(page, C.FIELD_END, end)
-                sara._submit(page, log=log)
+                # The NDS dealer's Customer Type box is locked ("Residential",
+                # disabled -- first run 2026-11-11 timed out clicking it); on a
+                # login where it can be set, Both is what sara.open_report uses.
+                if combo_settable is None:
+                    combo_settable = _combo_enabled(page)
+                    if not combo_settable:
+                        log("[email] customer type box is fixed on this login -- left as is")
+                if combo_settable:
+                    try:
+                        sara._set_customer_type(page, C.CUSTOMER_TYPE_BOTH, log=lambda *a, **k: None)
+                    except Exception as e:  # noqa: BLE001
+                        combo_settable = False
+                        log("[email] customer type not settable (%s) -- left as is" % type(e).__name__)
+                    sara._set_telerik_date(page, C.FIELD_START, start)
+                    sara._set_telerik_date(page, C.FIELD_END, end)
+                try:
+                    sara._submit(page, log=log)
+                except Exception as e:  # noqa: BLE001
+                    log("[email] %s..%s: submit failed (%s: %s) -- %s"
+                        % (start, end, type(e).__name__, str(e)[:120], sara.page_state(page)))
+                    continue
                 grid = page.evaluate(_GRID_JS, {"header": C.GRID_HEADER, "data": C.GRID_DATA})
                 if grid.get("missing"):
                     log("[email] %s..%s: grid missing (%s) -- %s"
@@ -341,6 +359,8 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                     if d:
                         hit_rows.append((d, r))
                 log("[email]   %d wanted order(s) on this page" % len(hit_rows))
+                if not hit_rows and rows:
+                    log("[email]   first row: %s" % " | ".join(c for c in rows[0]["cells"] if c)[:400])
                 for d, r in hit_rows:
                     email = ""
                     source = ""
@@ -365,6 +385,19 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
         log("[email] %d order(s) not found on any Sales Order History page: %s"
             % (len(remaining), ", ".join(sorted(remaining))[:600]))
     return found
+
+
+def _combo_enabled(page) -> bool:
+    """Can the Customer Type combo be set on this login? (disabled on the
+    NDS dealer's Sales Order History)"""
+    from automations.rc_contact_sync import config as C
+    try:
+        return bool(page.evaluate(
+            """(id) => { const e = document.getElementById(id);
+                         return !!e && !e.disabled && !e.readOnly; }""",
+            C.COMBO_CUSTOMER_TYPE + "_Input"))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def card_email(ctx, page, row: dict, login_email: str, log=print) -> str:
