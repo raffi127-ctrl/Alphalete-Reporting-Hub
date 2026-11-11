@@ -194,6 +194,28 @@ for _xorg, _xcids in EXTRA_ORG_CHANNELS.items():
             if _xlabel not in ORG_LABEL.get(_xorg, ""):
                 ORG_LABEL[_xorg] = f"{ORG_LABEL.get(_xorg, _xorg)} + {_xlabel}"
 
+# --- Archived channels -------------------------------------------------------
+# A channel archived on Slack's side takes no posts (`is_archived`), so leaving
+# it wired opens a 🚨 incident every morning for a channel nobody reads. Stripped
+# here, AFTER the extras, because tracker_onboarding.apply rebuilds the Sheet's
+# rows into onboarded_trackers.json and would put it straight back.
+#
+# trang (Megan 2026-11-11): #freshsuccess-all-leaders archived in FRESH
+# SUCCESS — "if the channel was archived we no longer need to post in it".
+# #freshsuccess-team (EXTRA_ORG_CHANNELS above) keeps getting the trackers.
+ARCHIVED_CHANNELS: dict[str, str] = {
+    "C07TRPJ7HFH": "#freshsuccess-all-leaders",
+}
+for _aorg, _acids in list(ORG_CHANNELS.items()):
+    _gone = [c for c in _acids if c in ARCHIVED_CHANNELS]
+    if not _gone:
+        continue
+    ORG_CHANNELS[_aorg] = [c for c in _acids if c not in ARCHIVED_CHANNELS]
+    _parts = [p for p in ORG_LABEL.get(_aorg, "").split(" + ")
+              if p and p not in {ARCHIVED_CHANNELS[c] for c in _gone}]
+    ORG_LABEL[_aorg] = " + ".join(_parts) or " + ".join(
+        EXTRA_CHANNEL_LABELS.get(c, c) for c in ORG_CHANNELS[_aorg])
+
 # --- Paused orgs -------------------------------------------------------------
 # A channel we deliberately do NOT post to right now. This is NOT a failure and
 # must not read like one: while an org is here the run never loops it, so it

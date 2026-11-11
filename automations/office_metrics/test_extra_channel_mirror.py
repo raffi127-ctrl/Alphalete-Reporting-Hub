@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import unittest
+from unittest import mock
 
 from automations.office_metrics import offices as off
 from automations.office_metrics import runner
@@ -32,13 +33,28 @@ class _Args:
         self.channel = channel
 
 
+# trang was the live example until 2026-11-11, when #freshsuccess-all-leaders
+# was archived and #freshsuccess-team became her only (primary) channel. The
+# mirror machinery still exists for any office that gets an extra channel, so
+# these tests now pin a STAND-IN extra channel on trang instead of reading the
+# live table.
+_FAKE_EXTRA = "C0FAKEXTRA1"
+_FAKE_PLANS = {"trang": [{"channel_id": _FAKE_EXTRA,
+                          "channel_name": "#stand-in-extra"}]}
+
+
 class ExtraChannelIsNotFanOut(unittest.TestCase):
+    def setUp(self):
+        p = mock.patch.dict(off.EXTRA_CHANNEL_PLANS, _FAKE_PLANS, clear=True)
+        p.start()
+        self.addCleanup(p.stop)
+
     def test_trang_has_no_fan_out_plans(self):
         o = off.OFFICES["trang"]
         self.assertEqual(getattr(o, "channel_plans", ()), (),
                          "an extra channel must not become a fan-out plan — "
                          "that is the double pull this replaced")
-        self.assertEqual(off.extra_channel_ids("trang"), ["C07QS80KJL8"])
+        self.assertEqual(off.extra_channel_ids("trang"), [_FAKE_EXTRA])
 
     def test_one_destination_carrying_every_metric(self):
         o = off.OFFICES["trang"]
@@ -47,7 +63,7 @@ class ExtraChannelIsNotFanOut(unittest.TestCase):
         dests, skipped = runner.build_destinations(
             o, wired, o.channel_id, True, manual_channel=False)
         self.assertEqual(len(dests), 1)
-        self.assertEqual(dests[0]["channel_id"], "C07TRPJ7HFH")
+        self.assertEqual(dests[0]["channel_id"], "C07QS80KJL8")
         self.assertEqual([m["slug"] for m in dests[0]["metrics"]],
                          ["churn", "abp"])
         self.assertEqual(skipped, [])
@@ -56,16 +72,30 @@ class ExtraChannelIsNotFanOut(unittest.TestCase):
         # The pull is single, but the day lands in both places — the card has to
         # say so (Megan 2026-08-20).
         label = runner._office_channels_label(off.OFFICES["trang"])
-        self.assertIn("#freshsuccess-all-leaders", label)
         self.assertIn("#freshsuccess-team", label)
+        self.assertIn("#stand-in-extra", label)
 
     def test_manual_channel_override_never_mirrors(self):
         o = off.OFFICES["trang"]
         self.assertEqual(runner._mirror_env(o, manual_channel=False),
-                         ["C07QS80KJL8"])
+                         [_FAKE_EXTRA])
         self.assertEqual(runner._mirror_env(o, manual_channel=True), [],
                          "--channel is a one-destination backfill; a mirror "
                          "would post it into the channel that already has it")
+
+
+class TrangArchivedChannel(unittest.TestCase):
+    """Megan 2026-11-11: the archived #freshsuccess-all-leaders gets nothing."""
+
+    def test_trang_posts_only_to_team(self):
+        o = off.OFFICES["trang"]
+        self.assertEqual(o.channel_id, "C07QS80KJL8")
+        self.assertEqual(off.extra_channel_ids("trang"), [])
+
+    def test_trackers_skip_the_archived_channel(self):
+        from automations.tableau_screenshots import slack_post as sp
+        self.assertEqual(sp.ORG_CHANNELS["trang"], ["C07QS80KJL8"])
+        self.assertNotIn("all-leaders", sp.ORG_LABEL["trang"])
 
 
 class MirrorRouting(unittest.TestCase):

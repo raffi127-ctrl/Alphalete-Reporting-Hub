@@ -368,10 +368,11 @@ CROSS_WS_TOKEN_FILES: dict = {"trang": "slack-token-freshsuccess"}
 # (C07QS80KJL8) as well as #freshsuccess-all-leaders. Same FRESH SUCCESS
 # workspace, so the same FS bot token routes both; the bot is already a member.
 # [[project_trang_fresh_success]]
-EXTRA_CHANNEL_PLANS: dict = {
-    "trang": [{"channel_id": "C07QS80KJL8",
-               "channel_name": "#freshsuccess-team"}],
-}
+#
+# 2026-11-11: #freshsuccess-all-leaders was ARCHIVED, so #freshsuccess-team is
+# now trang's PRIMARY (CHANNEL_OVERRIDES below) and the mirror is gone — a
+# mirror into the primary itself would double-post.
+EXTRA_CHANNEL_PLANS: dict = {}
 
 
 # PRIMARY-channel moves for onboarded offices, applied on top of
@@ -392,6 +393,10 @@ CHANNEL_OVERRIDES: dict = {
                "header_label": "Isaiah Revelle"},
     "khalil": {"channel_id": "C0C2E04TY6N", "channel_name": "everforward-sales",
                "header_label": "Khalil Mansour"},
+    # trang (Megan 2026-11-11): #freshsuccess-all-leaders (C07TRPJ7HFH) was
+    # archived in the FRESH SUCCESS workspace — "if the channel was archived we
+    # no longer need to post in it". Everything goes to #freshsuccess-team.
+    "trang": {"channel_id": "C07QS80KJL8", "channel_name": "#freshsuccess-team"},
 }
 
 
