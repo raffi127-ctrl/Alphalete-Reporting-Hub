@@ -294,6 +294,10 @@ def main(argv=None) -> int:
     S.ensure_rolloff_layout(ws, log=log)
     VF.update_churn_tab(ws, summary["base"], helper, log=log, write_bases=False,
                         formulas=S.rolloff_formulas())
+    try:                                  # rose on disconnects from the last 7 days
+        S.ensure_recent_highlight(ws, log=log)
+    except Exception as e:  # noqa: BLE001 -- a colour never blocks the numbers
+        log(f"  ⚠ recent-disconnect highlight skipped: {e}")
     for b in [b for b in C.BUCKETS if office[b]["rate"] is None]:
         office[b]["rate"] = 0.0               # the writer logs rate:.1%
     VF.update_activation_rates(ws, office, reps, log=log)   # E5/F5 + the per-rep list

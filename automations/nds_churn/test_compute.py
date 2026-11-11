@@ -134,6 +134,20 @@ class Compute(unittest.TestCase):
         office, _ = C.activation_rates(self.lines, TODAY)   # no Internet in the fixture
         self.assertEqual(office["0-30"]["sold"], r["all_orders"]["0-30"]["sold"])
 
+    def test_recent_highlight_follows_the_disconnect_column(self):
+        from automations.nds_churn import sheet as S
+        formula, ranges = S.recent_highlight_spec(7, 41)
+        # Disconnect Date is the 10th shown column (J); the rule must name it,
+        # not the $H the B2B tab's copy carried.
+        self.assertEqual(S.LIST_HEADERS[9], "Disconnect Date")
+        self.assertEqual(formula, '=AND($J16<>"",TODAY()-$J16>=0,TODAY()-$J16<=7)')
+        # helper rows 2..41 spill into list rows 16..55 -> A16:N55, half-open
+        self.assertEqual(ranges, [{"sheetId": 7, "startRowIndex": 15, "endRowIndex": 55,
+                                   "startColumnIndex": 0, "endColumnIndex": 14}])
+        self.assertEqual(S._norm_range({"sheetId": 7, "startRowIndex": 15, "endRowIndex": 55,
+                                        "endColumnIndex": 14}),
+                         S._norm_range(ranges[0]))
+
     def test_rolloff_formulas_follow_the_box(self):
         from automations.nds_churn import sheet as S
         from automations.vantura_churn import fill as VF

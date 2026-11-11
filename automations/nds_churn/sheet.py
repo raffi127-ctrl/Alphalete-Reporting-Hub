@@ -229,6 +229,78 @@ ROLLOFF_SUBTITLE = ("Days left = (Posted+30) − Today. Filter = a box row (All 
                     "row's lines still on the 0–30 report once this group has aged "
                     "off ÷ its activations (B5 / B7).")
 FILTER_HINT = "◀ pick a box row to filter the rolloff list below"
+LIST_FIRST_ROW = 16                   # the A16 FILTER spills from here (header row 15)
+RECENT_DAYS = 7                       # a disconnect stays rose this many days past its
+                                      # Disconnect Date -- the LUCY CHURN (B2B) rule
+RECENT_BG = {"red": 0.91764706, "green": 0.6, "blue": 0.6}   # #EA9999, the B2B tab's rose
+
+
+def recent_highlight_spec(sheet_id: int, cap: int) -> Tuple[str, list]:
+    """The 'new disconnect' conditional format as (formula, ranges): rose
+    over every row the A16 FILTER can spill into (16 .. cap+14, A:N) when
+    the row's Disconnect Date is within the last RECENT_DAYS days.
+
+    The column comes from LIST_HEADERS, never a letter: the rule the tab
+    inherited from LUCY CHURN watched $H -- Disconnect Date THERE, Order
+    Date (Sold) here once the list was reshuffled -- so a new disconnect
+    never lit up (Carlos, 11/11)."""
+    col = VF._colletter(LIST_HEADERS.index("Disconnect Date"))
+    r = LIST_FIRST_ROW
+    formula = (f'=AND(${col}{r}<>"",TODAY()-${col}{r}>=0,'
+               f'TODAY()-${col}{r}<={RECENT_DAYS})')
+    ranges = [{"sheetId": sheet_id, "startRowIndex": r - 1,
+               "endRowIndex": cap + r - 2,                # helper rows 2..cap spill to row cap+14
+               "startColumnIndex": 0, "endColumnIndex": len(LIST_HEADERS)}]
+    return formula, ranges
+
+
+def _norm_range(g: dict) -> tuple:
+    # the API drops zero-valued fields (startColumnIndex 0 comes back absent)
+    return (g.get("sheetId", 0), g.get("startRowIndex", 0), g.get("endRowIndex"),
+            g.get("startColumnIndex", 0), g.get("endColumnIndex"))
+
+
+def ensure_recent_highlight(ws, log=print) -> str:
+    """Assert the rose 'recent disconnect' rule over the rolloff list.
+    Idempotent, every run, and called AFTER update_churn_tab so it spans
+    the block even on a day the list outgrew its cap (new disconnects sit
+    at the BOTTOM of the list, exactly where it grows). The tab's existing
+    TODAY()-based rule is retargeted in place; none -> one is added on top."""
+    cap = VF.helper_bounds(ws)["cap"]
+    formula, ranges = recent_highlight_spec(ws.id, cap)
+    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(
+        params={"fields": "sheets(properties(sheetId),conditionalFormats)"}))
+    rules = next((sh.get("conditionalFormats", []) for sh in meta.get("sheets", [])
+                  if sh["properties"]["sheetId"] == ws.id), [])
+    idx = None
+    for i, rule in enumerate(rules):
+        cond = rule.get("booleanRule", {}).get("condition", {})
+        vals = [str(v.get("userEnteredValue", "")) for v in cond.get("values", [])]
+        if cond.get("type") == "CUSTOM_FORMULA" and any("TODAY()-$" in v for v in vals):
+            idx = i
+            break
+    rule = {"ranges": ranges,
+            "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
+                                          "values": [{"userEnteredValue": formula}]},
+                            "format": {"backgroundColor": RECENT_BG}}}
+    if idx is None:
+        req = {"addConditionalFormatRule": {"rule": rule, "index": 0}}
+        what = "added"
+    else:
+        cur = rules[idx]
+        cur_vals = [str(v.get("userEnteredValue", "")) for v in
+                    cur["booleanRule"]["condition"].get("values", [])]
+        if cur_vals == [formula] and \
+                [_norm_range(g) for g in cur["ranges"]] == [_norm_range(g) for g in ranges]:
+            log(f"  ✓ {ws.title}: recent-disconnect highlight already in place "
+                f"(rule {idx}, A{LIST_FIRST_ROW}:{VF._colletter(len(LIST_HEADERS) - 1)}{cap + LIST_FIRST_ROW - 2})")
+            return "in place"
+        req = {"updateConditionalFormatRule": {"sheetId": ws.id, "index": idx, "rule": rule}}
+        what = f"rule {idx} retargeted (was {' / '.join(cur_vals) or 'blank'})"
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": [req]}))
+    log(f"  ✓ {ws.title}: recent-disconnect highlight {what}: {formula} over "
+        f"A{LIST_FIRST_ROW}:{VF._colletter(len(LIST_HEADERS) - 1)}{cap + LIST_FIRST_ROW - 2}")
+    return what
 assert len(LIST_HEADERS) == len(LIST_COL_PX) == VF.H_WIDTH - 2
 assert LIST_COL_PX[0] == BOX_COL_A_PX
 assert LIST_HEADERS[C.H_ALL_ORDERS_F].startswith(CHURN_AFTER[0])
