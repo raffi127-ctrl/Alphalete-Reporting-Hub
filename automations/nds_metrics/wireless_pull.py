@@ -80,6 +80,48 @@ def pull(start: dt.date, end: dt.date, log=print) -> bytes:
             ctx.close()
 
 
+_ORDER_FIELDS = (("customer", "customer name"), ("phone", "contact phone"),
+                 ("dsi", "order number"), ("order_date", "order date"),
+                 ("wireless_order", "wireless order number"),
+                 ("ban", "wireless account number"), ("line_count", "lines"),
+                 ("rep", "salesperson"), ("order_status", "order status"))
+_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
+
+
+def _order_by_header(c, hdr_idx):
+    """An order row read by the grid header's column names (None when no
+    header was seen, the row is narrower than the header, or the cells
+    under Customer Name / Order Date don't look like one)."""
+    if not hdr_idx or "customer name" not in hdr_idx or "order date" not in hdr_idx:
+        return None
+    if len(c) <= max(hdr_idx["customer name"], hdr_idx["order date"]):
+        return None
+
+    def at(name):
+        i = hdr_idx.get(name)
+        return (c[i] if i is not None and i < len(c) else "").strip()
+
+    if not at("customer name") or not _DATE_RE.match(at("order date")):
+        return None
+    return {key: at(name) for key, name in _ORDER_FIELDS}
+
+
+def _order_by_position(c):
+    """The pre-11/11 read, kept as the fallback when no header row came
+    through: the first (customer, date) pair three cells apart, the customer
+    sitting in cell 1..5 (one or two leading expand cells, or none), the
+    rest of the order following the date in the old order; Order Status =
+    the last cell."""
+    for j in range(3, min(len(c), 9)):
+        if _DATE_RE.match((c[j] or "").strip()) and (c[j - 3] or "").strip():
+            g = lambda i: (c[i] if i < len(c) else "").strip()  # noqa: E731
+            return {"customer": g(j - 3), "phone": g(j - 2), "dsi": g(j - 1),
+                    "order_date": g(j), "wireless_order": g(j + 1), "ban": g(j + 2),
+                    "line_count": g(j + 3), "rep": g(j + 4),
+                    "order_status": (c[-1] or "").strip()}
+    return None
+
+
 def parse(data: bytes, log=print):
     """-> (orders, lines). Orders: one dict per order header row; lines:
     one dict per nested line row carrying its parent order."""
@@ -102,6 +144,7 @@ def parse(data: bytes, log=print):
     DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
     orders, lines = [], []
     cur = None
+    hdr_idx = None          # {header text: cell index} once the grid header has been seen
     skipped = []            # wide rows that were neither a line nor an order (diagnostic)
     wide = []               # first rows wide enough to be an order row (diagnostic)
     hdr_cells = None        # the grid header row's cells (diagnostic)
@@ -114,6 +157,11 @@ def parse(data: bytes, log=print):
                 or "Data pager" in joined:
             if "Customer Name" in c and hdr_cells is None:
                 hdr_cells = c
+                # 11/11: SaraPlus re-cut the order grid (one leading cell
+                # instead of two, ICD Company ID / ICD Owner / Employer added
+                # after Salesperson) and the positional read found no order
+                # for a whole morning. Read order rows BY HEADER from here on.
+                hdr_idx = {h.strip().lower(): i for i, h in enumerate(c) if h.strip()}
             continue
         if "Line Type" in c and "Line Status" in c:
             continue
@@ -137,22 +185,10 @@ def parse(data: bytes, log=print):
             continue
         # ORDER row: wide, has a customer and an order date
         if len(c) >= 13:
-            cand = c
-            # the grid may carry a leading expand cell — align on the
-            # first cell pair (customer, phone-ish) before a date cell
-            off = None
-            for k in range(0, min(4, len(cand) - 11)):
-                if cand[k + 2] and DATE_RE.match(cand[k + 5] or ""):
-                    off = k
-                    break
-            if off is None:
+            order = _order_by_header(c, hdr_idx) or _order_by_position(c)
+            if order is None:
                 continue
-            cur = {"customer": cand[off + 2], "phone": cand[off + 3],
-                   "dsi": cand[off + 4], "order_date": cand[off + 5],
-                   "wireless_order": cand[off + 6], "ban": cand[off + 7],
-                   "line_count": cand[off + 8], "rep": cand[off + 9],
-                   "order_status": cand[off + 12]
-                   if len(cand) > off + 12 else ""}
+            cur = order
             orders.append(cur)
     import collections as _coll
     reps = _coll.Counter((l.get("rep") or "(none)") for l in lines)
