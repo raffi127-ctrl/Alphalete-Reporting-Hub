@@ -302,7 +302,7 @@ def _row_dsi(cells: Sequence[str], id_cols: Sequence[int], wanted: Set[str]) -> 
 
 
 def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
-            limit: Optional[int] = None, log=print, save=None) -> Dict[str, dict]:
+            limit: Optional[int] = None, log=print, save=None, card: bool = False) -> Dict[str, dict]:
     """Open NDS SaraPlus and read the e-mail for each wanted order. Returns
     {dsi: {email, customer, source, seen}} for the ones found. `save(found)`
     is called after every window, so a run that dies keeps what it read
@@ -432,6 +432,15 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
                         m = EMAIL_RE.search(r["cells"][ecol] or "")
                         if m:
                             email, source = m.group(0), "grid"
+                    if card and email:
+                        # --card: the customer card is read as well and both
+                        # are logged (Carlos 11/11 on Nelson Guerra: is the
+                        # grid's address the customer's or the rep's?)
+                        log("  %-14s grid says %s -- now the card:" % (d, email))
+                        c_email = card_email(ctx, page, r, cr.get("email", ""), log=log)
+                        log("  %-14s card says %s" % (d, c_email or "(nothing)"))
+                        if c_email:
+                            email, source = c_email, "card"
                     if not email:
                         email = card_email(ctx, page, r, cr.get("email", ""), log=log)
                         source = "card" if email else ""
@@ -516,7 +525,8 @@ def card_email(ctx, page, row: dict, login_email: str, log=print) -> str:
 # --- entry ----------------------------------------------------------------------
 
 def run(today: Optional[dt.date] = None, *, dry_run: bool = False, limit: Optional[int] = None,
-        only: Sequence[str] = (), headless: bool = True, refresh: bool = False, log=print) -> int:
+        only: Sequence[str] = (), headless: bool = True, refresh: bool = False, card: bool = False,
+        log=print) -> int:
     today = today or dt.date.today()
     cache = {} if refresh else load_cache()
     if refresh:
@@ -528,7 +538,7 @@ def run(today: Optional[dt.date] = None, *, dry_run: bool = False, limit: Option
         def _save(found):
             cache.update(found)
             save_cache(cache)
-        found = harvest(want, today, headless=headless, limit=limit, log=log, save=_save)
+        found = harvest(want, today, headless=headless, limit=limit, log=log, save=_save, card=card)
         _save(found)
         log("[email] %d order(s) read this run, %d in %s (%d with an address)"
             % (len(found), len(cache), CACHE.name, sum(1 for v in cache.values() if (v or {}).get("email"))))
@@ -547,13 +557,15 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, default=None, help="only the first N wanted orders")
     ap.add_argument("--dsi", action="append", default=[], help="only this order (repeatable)")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--card", action="store_true",
+                    help="also open each order's View Customer card and log every address on it")
     ap.add_argument("--refresh", action="store_true",
                     help="forget the cache and read every order again (a wrong column was read on 11/11)")
     ap.add_argument("--today", default=None, help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)
     today = dt.datetime.strptime(a.today, "%Y-%m-%d").date() if a.today else dt.date.today()
     rc = run(today, dry_run=a.dry_run, limit=a.limit, only=a.dsi, headless=not a.headed,
-             refresh=a.refresh)
+             refresh=a.refresh, card=a.card)
     print("=== done ===", flush=True)
     return rc
 
