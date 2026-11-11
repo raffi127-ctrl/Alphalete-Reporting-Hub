@@ -263,5 +263,50 @@ class MissingClassroomTab(unittest.TestCase):
         self.assertIn("D2D OBCL 10.12", notes[0])
 
 
+class ClassroomHeaderMovedDown(unittest.TestCase):
+    # 2026-11-11: 'D2D OBCL 11.9' had 20 rows pasted above its title row
+    # (row 2 -> row 22) and the run died on "no header row ... first 12 rows".
+    HEAD = ["#", "2ND Round Interviewer", "Start Time", "Name", "Last Name",
+            "Classroom", "Badge", "Contact Added", "Email", "Phone",
+            "Location"]
+
+    def _locations(self, grid):
+        class _WS:
+            title = "D2D OBCL 11.9"
+
+            def get_all_values(self):
+                return grid
+
+        class _Book:
+            title = "All in One Local Office - Raf"
+
+            def worksheets(self):
+                return [_WS()]
+
+        class _Client:
+            def open_by_key(self, _key):
+                return _Book()
+
+        return S.locations(_Client(), dt.date(2026, 11, 11))
+
+    def test_rows_above_and_below_a_low_header_are_both_read(self):
+        above = [["%d" % i, "X", "12:30", "Above%d" % i, "Rep", "Al", "FALSE",
+                  "TRUE", "a@b.com", "1555", "Plano"] for i in range(20)]
+        grid = ([["11/9/2026"]] + above + [self.HEAD]
+                + [["1", "X", "1:00", "Below", "Rep", "Al", "FALSE", "TRUE",
+                    "c@d.com", "1666", "Sherman"]])
+        pairs, _notes = self._locations(grid)
+        self.assertEqual(len(pairs), 21)
+        self.assertIn(("Above0 Rep", "Plano"), pairs)
+        self.assertIn(("Below Rep", "Sherman"), pairs)
+
+    def test_a_shifted_row_with_a_phone_under_location_is_skipped(self):
+        grid = [["11/9/2026"], self.HEAD,
+                ["1", "X", "1:00", "Rasir", "Hart", "", "FALSE", "FALSE",
+                 "TRUE", "r@y.com", "14693506078"]]
+        pairs, _notes = self._locations(grid)
+        self.assertEqual(pairs, [])
+
+
 if __name__ == "__main__":
     unittest.main()

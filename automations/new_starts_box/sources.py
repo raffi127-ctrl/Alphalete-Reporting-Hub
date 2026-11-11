@@ -54,6 +54,13 @@ def _header(grid, labels: Tuple[str, ...], scan_rows: int = 12
                                            scan_rows))
 
 
+def _looks_like_city(value: str) -> bool:
+    """A row shifted one cell right puts the phone (or email) under Location;
+    a city has letters and no '@'."""
+    return (bool(value) and any(ch.isalpha() for ch in value)
+            and "@" not in value)
+
+
 def _band_end(book, tab_title: str, header_row: int, start_col: int,
               grid) -> int:
     """The last column of the blue box, read off the header row's fill.
@@ -158,13 +165,21 @@ def locations(client, day: dt.date) -> Tuple[List[Tuple[str, str]], List[str]]:
         return [], ["MISSING: no %r tab in %r -- Location left blank"
                     % (title, book.title)]
     grid = ws.get_all_values()
+    # ROWS ABOVE THE HEADER (2026-11-11). 'D2D OBCL 11.9' had 20 rows pasted
+    # ABOVE its title row, which slid from row 2 to row 22 -- past the 12-row
+    # scan -- and the run died. Those rows are this week's people, so the
+    # header is looked for over the whole tab and every row but row 1 (the
+    # date) and the header itself is read. Nobody's tab gets re-arranged.
     hrow, cols = _header(grid, (C.OBCL_FIRST_LABEL, C.OBCL_LAST_LABEL,
-                                C.OBCL_LOCATION_LABEL))
+                                C.OBCL_LOCATION_LABEL),
+                         scan_rows=len(grid))
     out: List[Tuple[str, str]] = []
-    for r in range(hrow + 1, len(grid) + 1):
+    for r in range(2, len(grid) + 1):
+        if r == hrow:
+            continue
         full = ("%s %s" % (cell(grid, r, cols[C.OBCL_FIRST_LABEL]),
                            cell(grid, r, cols[C.OBCL_LAST_LABEL]))).strip()
         city = cell(grid, r, cols[C.OBCL_LOCATION_LABEL]).strip()
-        if full and city:
+        if full and _looks_like_city(city):
             out.append((full, city))
     return out, ["%r: %d people with a location" % (ws.title, len(out))]
