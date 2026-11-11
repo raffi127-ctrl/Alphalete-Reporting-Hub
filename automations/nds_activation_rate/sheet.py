@@ -64,10 +64,25 @@ PALETTE = {
     "30-60": {"header": _hex("#8A3B00"), "avg": _hex("#C25E00"),
               "owner": _hex("#EF8A17"), "band": _hex("#FBD3A6")},
 }
-# Heat scale on every % cell: red low, yellow middle, green high.
-HEAT = (("NUMBER", "0.5", _hex("#E06666")),
-        ("NUMBER", "0.75", _hex("#FFD966")),
-        ("NUMBER", "0.9", _hex("#57BB8A")))
+# Fiber's cutoffs (Raf/Dylan OK 11/10): same as the Fiber activation tabs.
+# 10-19 and 20-29 = Fiber 0-30: green 83%+, grey 79-82.99%, red 78.99% or less.
+# 30-60 = Fiber 30-60: green 83%+, red 82.99% or less.
+GREEN, GREY, RED = _hex("#93C47D"), _hex("#D9D9D9"), _hex("#E06666")
+CUTOFFS = {
+    "10-19": ((0.83, None, GREEN), (0.79, 0.83, GREY), (None, 0.79, RED)),
+    "20-29": ((0.83, None, GREEN), (0.79, 0.83, GREY), (None, 0.79, RED)),
+    "30-60": ((0.83, None, GREEN), (None, 0.83, RED)),
+}
+
+
+def band_color(win: str, pct):
+    """The Fiber band colour for one value (None when blank)."""
+    if pct is None:
+        return None
+    for lo, hi, color in CUTOFFS[win]:
+        if (lo is None or pct >= lo) and (hi is None or pct < hi):
+            return color
+    return None
 
 
 def tab_name(captain: str) -> str:
@@ -287,13 +302,22 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
                 run = [r, r, (win, idx)]
                 rep_runs.append(run)
     for win, (lo, hi) in box_rows.items():
-        pts = {}
-        for name, (typ, val, color) in zip(("minpoint", "midpoint", "maxpoint"), HEAT):
-            pts[name] = {"type": typ, "value": val, "color": color}
-        reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
-            "ranges": [{"sheetId": sid, "startRowIndex": lo - 1, "endRowIndex": hi,
-                        "startColumnIndex": 2, "endColumnIndex": width}],
-            "gradientRule": pts}}})
+        for c_lo, c_hi, color in CUTOFFS[win]:
+            # Formula relative to the range's top-left cell (C<lo>); ISNUMBER
+            # keeps blank days uncoloured.
+            cell = f"C{lo}"
+            cond = [f"ISNUMBER({cell})"]
+            if c_lo is not None:
+                cond.append(f"{cell}>={c_lo}")
+            if c_hi is not None:
+                cond.append(f"{cell}<{c_hi}")
+            reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
+                "ranges": [{"sheetId": sid, "startRowIndex": lo - 1, "endRowIndex": hi,
+                            "startColumnIndex": 2, "endColumnIndex": width}],
+                "booleanRule": {
+                    "condition": {"type": "CUSTOM_FORMULA", "values": [
+                        {"userEnteredValue": "=AND(" + ",".join(cond) + ")"}]},
+                    "format": {"backgroundColor": color}}}}})
 
     for r, kind, win, idx in kinds:
         pal = PALETTE.get(win, {})
