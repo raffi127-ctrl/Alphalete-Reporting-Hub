@@ -32,9 +32,10 @@ from typing import Dict, Iterable, List, Optional, Sequence
 
 # The board every ICD gets. Taken from the real OBCL rather than invented, and
 # cut to what travels: Alphalete's own workflow columns (#, 2ND Round
-# Interviewer, Start Time, Badge, Location, Telemapper / Skool / Slack / Upline
-# Slack / SaraPlus / Friday Confirmation) are left off until an office asks for
-# one. An empty column nobody fills is a column everybody learns to ignore.
+# Interviewer, Start Time, Badge, Telemapper / Skool / Slack / Upline Slack /
+# SaraPlus / Friday Confirmation) are left off until an office asks for one. An
+# empty column nobody fills is a column everybody learns to ignore. Location
+# came back on 2026-11-11 because Megan asked for it -- that is the route.
 # One tab per office, weeks stacked — so the week is a column, and the
 # extension's week picker filters on it. Tabs-per-week would put 52 a year into
 # somebody's own workbook (Megan, 2026-11-08: "add a tab to their metrics
@@ -54,6 +55,13 @@ CLASSROOM = "Classroom"
 # machines"). Nothing guesses it -- a guess here goes onto a payroll record.
 GENDER = "Gender"
 
+# AND A THIRD: WHERE THEY ARE (Megan, 2026-11-11: "this should also have a
+# column for location that can be manually entered in"). Alphalete's own OBCL
+# has had one all along; it was left off here until an office asked, and one
+# has. Hand-typed like the other two -- an office's locations are its own and
+# no system we read holds them.
+LOCATION = "Location"
+
 # The onboarding steps, in the order a person works through them. Every one is
 # filled by an automation that already exists -- see the spec for which.
 STEPS: Sequence[str] = (
@@ -64,12 +72,26 @@ STEPS: Sequence[str] = (
     "Blue Ink",
     "Headshot Photo",
     "UID Request",
+    # WHAT OWNERVILLE SAYS ABOUT THE BACKGROUND CHECK, kept apart from what
+    # Sterling says (Megan, 2026-11-11: "let's add a column that is 'OV BG
+    # status' that sits to the left of ownersubmit and that's where we can put
+    # what ov says"). Two columns, not one, because they disagree for a while
+    # and the difference is the whole point: Sterling is the truth and
+    # onboarding carries on from its Passed, while OwnerVille catches up later
+    # and is what actually un-greys the Owner Submit button. Side by side you
+    # can see at a glance who is waiting on the lag rather than on a result.
+    "OV BG Status",
     "Owner Submit",
     "Added to APEX",
 )
 
-COLUMNS: Sequence[str] = (tuple(IDENTITY) + (CLASSROOM, GENDER)
+COLUMNS: Sequence[str] = (tuple(IDENTITY) + (CLASSROOM, GENDER, LOCATION)
                           + tuple(STEPS))
+
+# The columns a PERSON fills and no automation may ever write. All three are
+# things no system we read holds, so a guess here is a made-up fact on a row
+# somebody acts on.
+BY_HAND: Sequence[str] = (CLASSROOM, GENDER, LOCATION)
 
 # Which columns a machine may write. Classroom and Gender are the ICD's;
 # identity is the seed's; everything else is a step.
@@ -83,7 +105,9 @@ TICKS: Sequence[str] = tuple(STEPS)
 # (Megan, 2026-11-09: "a status could also be Sent but not taken", "or not
 # sent"). So it ADVANCES: Sent -> Taken - Pending -> Review -> Complete ->
 # Passed/Failed/Unperformable, and never goes backwards. Blank means not sent.
-STATUS_STEPS: Sequence[str] = ("BG Status",)
+# Both background-check columns ADVANCE rather than tick: the useful thing is
+# which answer is showing, including the ones that are not an answer yet.
+STATUS_STEPS: Sequence[str] = ("BG Status", "OV BG Status")
 NOT_SENT = "Not sent"
 
 
@@ -108,6 +132,22 @@ def status_rank(text) -> int:
 # in. It still has to live somewhere for the row to stay hidden next time, so
 # it sits past the chart's columns, written by the panel and nobody else.
 TERMINATED_AT = "Terminated"
+
+# WHY THEY CAME OFF. Megan, 2026-11-11: "when it's clicked we make them have a
+# reason why". A date alone says somebody was removed and nothing about what
+# happened, and the person who needs to know is reading the row weeks later.
+# Kept beside the date rather than inside it, so TERMINATED_AT stays a plain
+# date that everything already reading it still understands.
+REMOVED_WHY = "Removed Because"
+
+# The only four answers. A pick list, not a free-text box: four words that mean
+# the same thing to everybody beat fifty spellings of "quit" that nothing can
+# count later (Megan, 2026-11-11). "Failed BG" is here because it is the common
+# one -- it is NOT how a failed check gets recorded, which is the BG Status
+# column's job; this is only why the person left the board.
+REMOVAL_REASONS: Sequence[str] = ("Terminated", "Failed BG", "No Show",
+                                  "Did not show to day 1 Classroom",
+                                  "Left Classroom")
 
 GREEN = {"red": 0.71, "green": 0.87, "blue": 0.66}
 

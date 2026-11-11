@@ -229,7 +229,9 @@ def test_an_outstanding_step_leaves_an_empty_cell_to_tick():
     rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS[:7]})]
     html = B.print_html(B.sheets(rows))
     body = html.split("<tbody>")[1]
-    assert body.count("<td class=''></td>") == 2      # the two still to do
+    # Derived, never a hard 2: the step list grows (OV BG Status landed
+    # 2026-11-11) and a count typed in here just starts failing.
+    assert body.count("<td class=''></td>") == len(B.STEPS) - 7
     assert body.count("class='on'>✓<") == 7
 
 
@@ -270,8 +272,8 @@ def test_the_colour_is_never_the_only_thing_saying_it():
     rows = [_row("Ada Fournier", "A", **{c: "✓" for c in B.STEPS[:8]}),
             _row("Bruno Castell", "A")]
     html = B.print_html(B.sheets(rows))
-    assert "class='t-close'>8/9<" in html
-    assert "class='t-behind'>0/9<" in html
+    assert "class='t-close'>8/%d<" % len(B.STEPS) in html
+    assert "class='t-behind'>0/%d<" % len(B.STEPS) in html
     text = B.print_text(B.sheets(rows))
     assert "[CLOSE]" in text and "[BEHIND]" in text
 

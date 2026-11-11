@@ -71,12 +71,12 @@ def test_somebody_marked_off_is_hidden_until_asked_for(page):
     people = [_person("Ada Fournier"), _person("Bruno Castell", off="11/06/2026")]
     assert "Bruno" not in _show(page, people)
     shown = _show(page, people, show_off=True)
-    assert "Bruno" in shown and "marked off" in shown
+    assert "Bruno" in shown and "removed" in shown
 
 
 def test_the_count_of_people_marked_off_is_offered(page):
     people = [_person("Ada Fournier"), _person("Bruno Castell", off="11/06/2026")]
-    assert "show 1 marked off" in _show(page, people)
+    assert "show 1 removed" in _show(page, people)
 
 
 def test_one_group_per_classroom_with_no_classroom_last(page):
@@ -123,9 +123,26 @@ def test_the_week_picker_offers_every_week(page):
 
 def test_every_person_offers_mark_off_and_a_classroom_box(page):
     _show(page, [_person("Ada Fournier")])
-    assert page.locator(".bd-mark").count() == 1
+    assert page.locator(".bd-ask").count() == 1
     assert page.locator(".bd-cls").count() == 1
+    assert page.locator(".bd-loc").count() == 1
     assert page.locator("#bd-print").count() == 1
+
+
+def test_removing_somebody_asks_why_before_it_does_anything(page):
+    """Megan, 2026-11-11: "when it's clicked we make them have a reason why".
+    The press opens the question; nothing is written until a reason is picked,
+    so a mis-click on a small button costs nothing."""
+    _show(page, [_person("Ada Fournier")])
+    assert page.locator(".whyrow").count() == 1
+    assert page.locator(".whyrow:not([hidden])").count() == 0, "asks nothing yet"
+    page.locator(".bd-ask").first.click()
+    assert page.locator(".whyrow:not([hidden])").count() == 1
+    offered = page.eval_on_selector_all(
+        ".whyrow:not([hidden]) .bd-why", "els => els.map(e => e.textContent)")
+    assert offered == list(B.REMOVAL_REASONS)
+    page.locator(".whyrow:not([hidden]) .bd-nvm").click()
+    assert page.locator(".whyrow:not([hidden])").count() == 0, "cancel closes it"
 
 
 def test_a_sign_in_error_is_somewhere_it_can_actually_be_seen():
@@ -139,3 +156,72 @@ def test_a_sign_in_error_is_somewhere_it_can_actually_be_seen():
     assert 'id="msg"' in before_home, (
         "#msg must sit outside the signed-in section, or sign-in errors are "
         "invisible")
+
+
+def test_a_background_check_code_says_what_it_means_on_hover(page):
+    """Megan asked for this twice: two letters mean nothing to somebody who
+    does not already have the list. The browser's own `title` waits about a
+    second and often never shows, so the panel carries its own tooltip and the
+    meaning has to be ON the cell, not only in a colour."""
+    _show(page, [_person("Ada Fournier", "A", BG_Status="Complete")])
+    cell = page.locator("td.bg").first
+    assert cell.inner_text().strip() == "C"
+    tip = cell.get_attribute("data-tip") or ""
+    assert "Complete" in tip and "NOT a pass" in tip, tip
+    cell.hover()
+    shown = page.locator(".bd-tip:not([hidden])")
+    assert shown.count() == 1, "the tooltip has to actually appear"
+    assert "Complete" in shown.inner_text()
+
+
+def test_every_background_check_status_has_a_meaning(page):
+    """A code with no explanation is the thing this exists to prevent."""
+    _show(page, [_person("Ada Fournier")])
+    got = page.evaluate("Object.values(window.LucyBoard.BG || {})"
+                        ".map(g => [g.code, g.name, g.means])")
+    assert got, "the status table is not reachable"
+    for code, name, means in got:
+        assert code and name and means, (code, name, means)
+
+
+def _removed(name, why, classroom="A"):
+    row = _person(name, classroom, off="11/10/2026")
+    row[B.REMOVED_WHY] = why
+    return row
+
+
+def test_removed_people_are_grouped_by_reason(page):
+    """Megan, 2026-11-11: "same reasons should be grouped together". Four No
+    Shows under one heading is a fact about the week; the same four scattered
+    down a list is something somebody has to count by hand."""
+    people = [_person("Ada Fournier", "A"),
+              _removed("Bruno Castell", "No Show"),
+              _removed("Cara Dunne", "No Show"),
+              _removed("Dane Ellis", "Failed BG")]
+    _show(page, people, show_off=True)
+    heads = page.eval_on_selector_all("tr.sep", "els => els.map(e => e.textContent)")
+    assert heads == ["Removed \u00b7 Failed BG (1)", "Removed \u00b7 No Show (2)"], heads
+    # the reason is on the row itself too, not only in the heading above it
+    assert "Failed BG" in page.inner_text("tr.b-gone td.gonewhy")
+
+
+def test_a_removal_with_no_reason_is_not_hidden(page):
+    """An older row from before the reason existed still has to show up --
+    under a heading that says plainly that nobody recorded one."""
+    _show(page, [_person("Ada Fournier", "A"),
+                 _person("Bruno Castell", "A", off="11/10/2026")],
+          show_off=True)
+    heads = page.eval_on_selector_all("tr.sep", "els => els.map(e => e.textContent)")
+    assert heads == ["Removed \u00b7 No reason recorded (1)"], heads
+
+
+def test_live_people_are_numbered_down_the_left(page):
+    """Megan, 2026-11-11: "we need them numbered on the left" -- so two people
+    on the phone can say "number 7" and mean the same row. Each removal group
+    counts from 1 again, which is what makes its heading's count readable."""
+    people = [_person("Ada Fournier", "A"), _person("Bruno Castell", "A"),
+              _removed("Cara Dunne", "No Show"),
+              _removed("Dane Ellis", "No Show")]
+    _show(page, people, show_off=True)
+    nums = page.eval_on_selector_all("td.no", "els => els.map(e => e.textContent)")
+    assert nums == ["1", "2", "1", "2"], nums

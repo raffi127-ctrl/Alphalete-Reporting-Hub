@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <style>
-  body { width: 420px; margin: 0; font: 14px/1.45 -apple-system, Segoe UI, Arial, sans-serif; color: #1d2330; }
+  body { width: 800px; margin: 0; font: 14px/1.45 -apple-system, Segoe UI, Arial, sans-serif; color: #1d2330; }
   header { background: #0F766E; color: #fff; padding: 12px 16px; font-weight: 600; font-size: 16px; }
   main { padding: 14px 16px 18px; }
   label { display: block; font-size: 12px; color: #555; margin: 8px 0 3px; }
@@ -31,27 +31,166 @@
   .bd-top { font-size: 13px; color: #444; margin-bottom: 8px; }
   .bd-top select { width: auto; display: inline-block; padding: 3px 6px; }
   .bd-sum { margin: 4px 0; color: #0b4f4a; font-weight: 600; }
-  .bd-showoff { font-size: 12px; color: #666; }
-  .bd-class h3 { margin: 12px 0 4px; font-size: 13px; text-transform: uppercase;
-                 letter-spacing: .04em; color: #555; }
-  .bd-row { border-left: 4px solid #ccc; padding: 6px 8px; margin-bottom: 6px;
-            border-radius: 0 6px 6px 0; }
-  .bd-done   { border-left-color: #1e6b34; background: #E6F4EA; }
-  .bd-close  { border-left-color: #7a5a00; background: #FFF6DB; }
-  .bd-behind { border-left-color: #8a1c13; background: #FDECEA; }
-  .bd-gone   { opacity: .55; }
-  .bd-nm { font-weight: 700; font-size: 14px; }
-  .bd-tag { font-size: 10px; text-transform: uppercase; font-weight: 700;
-            margin-left: 6px; color: #555; }
-  .bd-cnt { float: right; font-size: 12px; color: #555; font-weight: 500; }
-  .bd-steps { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 3px; }
-  .bd-step { font-size: 9px; padding: 2px 5px; border-radius: 9px;
-             background: #fff; border: 1px solid #d4d4d4; color: #999; }
-  .bd-step.bd-ok { background: #0F766E; border-color: #0F766E; color: #fff; }
-  .bd-acts { display: flex; gap: 6px; margin-top: 5px; }
-  .bd-acts input { flex: 1; padding: 4px 6px; font-size: 12px; }
-  .bd-acts button { width: auto; margin: 0; padding: 4px 10px; font-size: 12px;
-                    background: #e4e9ef; color: #1d2330; }
+  /* The global `input {width:100%}` rule turns a checkbox into a full-width
+     block on its own line, which is how this one ended up floating above its
+     own label. */
+  .bd-showoff { font-size: 12px; color: #666; display: flex; align-items: center;
+                gap: 5px; margin-top: 2px; }
+  .bd-showoff input { width: auto; margin: 0; }
+  /* THE CHART -- the OBCL itself, in the panel (Megan, 2026-11-11: "The
+     extension should show me the OBCL like Raf's ... a chart that we can have
+     a Week of drop down to select so we can see all names"). Same shape as the
+     printed sheet: a row per person, a column per step, ticks shaded. */
+  .bd-wrap { border: 1px solid #d7dee6; border-radius: 8px; overflow: auto;
+             max-height: 62vh; }
+  /* Fixed layout with every column but the name pinned to a width: the step
+     columns are the point of the chart, and in auto layout the three text
+     columns ate them. The name column takes whatever is left. */
+  table.bd-grid { border-collapse: separate; border-spacing: 0; width: 100%;
+                  table-layout: fixed; font-size: 12px; }
+  .bd-grid th, .bd-grid td { border-bottom: 1px solid #e7ecf1;
+                             border-right: 1px solid #eef2f6; padding: 0; }
+  .bd-grid tr:last-child td { border-bottom: 0; }
+  .bd-grid th:last-child, .bd-grid td:last-child { border-right: 0; }
+  /* The heading row stays put while the names scroll under it -- on row 15
+     there is otherwise no way to tell which column you are looking at. */
+  .bd-grid thead th { position: sticky; top: 0; z-index: 3; background: #0f5c4d;
+                      color: #fff; font-weight: 600; vertical-align: bottom;
+                      border-right-color: #2b7366; }
+  .bd-grid th.h-no, .bd-grid th.h-nm, .bd-grid th.h-cls,
+  .bd-grid th.h-loc, .bd-grid th.h-gen {
+      padding: 8px 8px; text-align: left; font-size: 11px;
+      text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  /* Nine step headings on end, so every one fits beside the names at the width
+     a popup can be -- and stays the whole word rather than an abbreviation
+     nobody can decode (Megan, 2026-11-09). */
+  .bd-grid th.h-no { width: 26px; }
+  .bd-grid th.h-cls { width: 92px; }
+  .bd-grid th.h-loc { width: 88px; }
+  .bd-grid th.h-gen { width: 78px; }
+  .bd-grid th.h-st { width: 26px; height: 136px; padding: 6px 0 8px; }
+  .bd-grid th.h-st span { writing-mode: vertical-rl; transform: rotate(180deg);
+                          font-size: 10.5px; letter-spacing: .02em;
+                          white-space: nowrap; display: inline-block; }
+  .bd-grid th.h-off { width: 28px; }
+  /* The tick columns are centred; the name is not -- it reads as a list. Both
+     the alignment and the colour have to be said again here, because the
+     tbody rule that greys an empty tick would otherwise grey the names too. */
+  .bd-grid td.no { text-align: right; padding: 5px 5px; font-size: 10px;
+                   color: #97a3b0; font-variant-numeric: tabular-nums; }
+  .bd-grid td.nm { padding: 5px 8px 5px 7px; font-weight: 600; text-align: left;
+                   color: #1d2330; white-space: nowrap; overflow: hidden;
+                   text-overflow: ellipsis; border-left: 4px solid transparent; }
+  .bd-grid td.nm .cnt { font-weight: 400; font-size: 10px; color: #777;
+                        margin-left: 6px; }
+  .bd-grid td.cls, .bd-grid td.loc, .bd-grid td.gen { padding: 3px 4px; }
+  .bd-grid td.cls input, .bd-grid td.loc input {
+                          width: 100%; padding: 3px 5px; font-size: 11.5px;
+                          border-radius: 4px; }
+  .bd-grid td.gen select { width: 100%; padding: 3px 4px; font-size: 11.5px;
+                           border-radius: 4px; }
+  .bd-grid td.on, .bd-grid td.val { text-align: center; }
+  .bd-grid tbody td { text-align: center; color: #c3ccd6; }
+  .bd-grid td.on { background: #E6F4EA; color: #1e6b34; font-weight: 700;
+                   font-size: 13px; }
+  .bd-grid td.val { font-size: 9.5px; font-weight: 600; line-height: 1.15;
+                    padding: 3px 2px; }
+  .bd-grid td.off { padding: 0; }
+  .bd-grid td.off button, .bd-grid td.off .bd-ask, .bd-grid td.off .bd-back {
+                          width: 22px; margin: 0; padding: 2px 0; font-size: 13px;
+                           background: none; color: #b9c3cd; font-weight: 700;
+                           border-radius: 4px; }
+  .bd-grid td.off button:hover { background: #FDECEA; color: #8a1c13; }
+  /* The same three bands as the printout, as a stripe down the name. */
+  .bd-grid tr.b-done   td.nm { border-left-color: #1e6b34; }
+  .bd-grid tr.b-close  td.nm { border-left-color: #c79a12; }
+  .bd-grid tr.b-behind td.nm { border-left-color: #c0392b; }
+  .bd-grid tr.b-gone { opacity: .5; }
+  .bd-grid tbody tr:hover td { background: #f6f9fc; }
+  .bd-grid tbody tr:hover td.on { background: #dcefe2; }
+  /* OWNER SUBMITTED: the whole line goes green (Megan, 2026-11-11). Owner
+     Submit is the attestation that the checks passed, so once it is in, the
+     row is settled -- read across and the eye stops on the lines that are
+     not. After the hover rules on purpose, so a submitted row stays green
+     under the pointer instead of flashing grey. */
+  .bd-grid tr.b-sub td { background: #E6F4EA; }
+  .bd-grid tr.b-sub td.nm { border-left-color: #1e6b34; color: #14532d; }
+  .bd-grid tr.b-sub td.on { background: #CDE9D6; }
+  .bd-grid tr.b-sub:hover td { background: #DCEFE2; }
+  .bd-grid tr.b-sub:hover td.on { background: #C2E3CD; }
+  /* The one step still outstanding on an otherwise-green line: amber until it
+     is in, green the moment it is (Megan, 2026-11-11). */
+  .bd-grid td.todo { background: #FFF3C4; color: #7a5a00; font-weight: 700; }
+  .bd-grid tr.b-sub td.todo { background: #FFF3C4; color: #7a5a00; }
+  .bd-grid tbody tr:hover td.todo { background: #FBE79B; }
+
+  /* BOTH BACKGROUND-CHECK COLUMNS: a letter and a colour (Megan, 2026-11-11).
+     S sent → blue, P/C still moving → yellow, R in review → orange,
+     PA passed → green,
+     F failed → dark red, NA not available → light red. A status nobody has
+     seen before keeps its own words and gets no colour at all, because
+     guessing its band is how a Failed check comes to look like progress.
+     Written `tbody tr td.x` so a colour survives the row being green and the
+     pointer being over it -- a failed check must never be tinted by its row. */
+  .bd-grid td.bg { font-size: 10.5px; font-weight: 800; letter-spacing: .01em; }
+  .bd-grid tbody tr td.bg-sent    { background: #CFE2F7; color: #14477d; }
+  .bd-grid tbody tr td.bg-rev     { background: #FBD9A5; color: #7a4708; }
+  .bd-grid tbody tr td.bg-pend    { background: #FFF3C4; color: #7a5a00; }
+  .bd-grid tbody tr td.bg-pass    { background: #CDE9D6; color: #14532d; }
+  .bd-grid tbody tr td.bg-fail    { background: #8a1c13; color: #fff; }
+  .bd-grid tbody tr td.bg-na      { background: #FADBD8; color: #8a1c13; }
+  .bd-grid tbody tr td.bg-unknown { background: #EEF2F7; color: #34495e;
+                                    font-size: 9px; font-weight: 600; }
+  .bd-grid tbody tr:hover td.bg-sent { background: #B9D4F2; }
+  .bd-grid tbody tr:hover td.bg-rev  { background: #F7CC8B; }
+  .bd-grid tbody tr:hover td.bg-pend { background: #FBE79B; }
+  .bd-grid tbody tr:hover td.bg-pass { background: #BCE0C7; }
+  .bd-grid tbody tr:hover td.bg-fail { background: #731610; }
+  .bd-grid tbody tr:hover td.bg-na   { background: #F4C9C5; }
+
+  /* A row whose background check came back Failed or Unperformable: never
+     green, whatever else is ticked on it. Faint red the whole way across, so
+     it reads as a stop at a glance rather than as one dark cell inside an
+     otherwise finished-looking line. */
+  .bd-grid tbody tr.b-stop td { background: #FDF2F1; }
+  .bd-grid tbody tr.b-stop td.nm { border-left-color: #8a1c13; color: #7d1a12; }
+  .bd-grid tbody tr.b-stop td.on { background: #F2E4E2; color: #8a7572; }
+  .bd-grid tbody tr.b-stop:hover td { background: #FBE4E1; }
+
+  /* Removed people sit at the bottom behind their own heading, with the
+     reason beside the name (Megan, 2026-11-11). */
+  .bd-grid tr.sep-off td { background: #FBE9E7; color: #8a1c13; }
+  .bd-grid tr.sep td { background: #f1f4f8; color: #5a6676; font-size: 10px;
+                       text-transform: uppercase; letter-spacing: .06em;
+                       font-weight: 700; text-align: left; padding: 5px 8px; }
+  .bd-grid td.gonewhy { text-align: left; padding: 5px 9px; font-size: 11px;
+                        color: #7d1a12; white-space: nowrap; overflow: hidden;
+                        text-overflow: ellipsis; }
+  .bd-grid td.gonewhy b { font-weight: 700; }
+  /* The reason question, under the person it is about. */
+  .bd-grid tr.whyrow td { background: #FDF2F1; text-align: left; padding: 7px 9px;
+                          border-top: 1px solid #F0C8C2; }
+  .bd-grid tr.whyrow .whyq { font-size: 12px; color: #7d1a12; margin-right: 8px; }
+  .bd-grid tr.whyrow button { width: auto; margin: 0 4px 0 0; padding: 4px 10px;
+                              font-size: 11.5px; font-weight: 600;
+                              background: #fff; color: #8a1c13;
+                              border: 1px solid #E2A9A2; border-radius: 5px; }
+  .bd-grid tr.whyrow button:hover { background: #8a1c13; color: #fff;
+                                    border-color: #8a1c13; }
+  .bd-grid tr.whyrow button.bd-nvm { color: #5a6676; border-color: #c9d3de; }
+  .bd-grid tr.whyrow button.bd-nvm:hover { background: #e4e9ef; color: #1d2330;
+                                           border-color: #c9d3de; }
+
+  /* THE TERMINATE COLUMN IS ALWAYS FAINTLY RED (Megan, 2026-11-11: "the mark
+     off column should be super light red all the time"). It is the only
+     column that takes something away, so it reads as its own thing whatever
+     the row is doing -- including on a green line, which is why these sit
+     after the owner-submitted rules and are specific enough to beat them. */
+  .bd-grid tbody tr td.off { background: #FDF2F1; }
+  .bd-grid tbody tr:hover td.off { background: #FBE4E1; }
+  .bd-grid thead th.h-off { background: #8f3b33; border-right-color: #8f3b33; }
+  .bd-grid td.off button { color: #c08d87; }
+  .bd-grid td.off button:hover { background: #F7CFC9; color: #8a1c13; }
   /* The print row: pick one classroom, or all, then print. Side by side so
      it reads as one action rather than two separate things to find. */
   .bd-print { display: flex; gap: 6px; margin-top: 12px; align-items: stretch; }
@@ -59,6 +198,19 @@
   .bd-print .bd-primary { width: auto; margin: 0; padding: 8px 18px; }
   .bd-primary { margin-top: 12px; }
   .bd-none { color: #666; font-size: 13px; }
+
+  /* Our own tooltip. The browser's `title` waits about a second and often
+     never appears, which left the background-check codes unexplained in
+     practice. Fixed-positioned so it is never clipped by the chart's own
+     scrolling box. */
+  .bd-tip { position: fixed; z-index: 50; max-width: 290px; padding: 8px 10px;
+            background: #1d2330; color: #fff; border-radius: 7px;
+            font-size: 11.5px; line-height: 1.4; pointer-events: none;
+            box-shadow: 0 6px 20px rgba(10,15,25,.28); }
+  .bd-tip b { display: block; font-size: 12px; margin-bottom: 3px; }
+  .bd-tip i { display: block; margin-top: 6px; padding-top: 6px; font-style: normal;
+              border-top: 1px solid rgba(255,255,255,.22); color: #c6cedb;
+              font-size: 10.5px; }
 </style>
 </head>
 <body>
@@ -81,8 +233,8 @@
     <div class="row"><b id="name"></b><button class="link" id="out">Sign out</button></div>
 
     <div class="tabs">
-      <button id="t-board" class="tab on">Onboarding board</button>
-      <button id="t-apex" class="tab">New starts &rarr; Apex</button>
+      <button id="t-board" class="tab on">Onboarding Checklist (OBCL)</button>
+      <button id="t-apex" class="tab" title="Adds this week's new starts to Apex. Anyone removed from the checklist is left out.">Add New Starts to Apex</button>
     </div>
 
     <div id="board"></div>
@@ -95,7 +247,7 @@
     <p class="muted" id="none" hidden>No week loaded yet.</p>
     <button id="fetch">Get this week</button>
     <button id="forget" class="quiet" hidden>Forget this week</button>
-    <p class="muted" id="apexhint">Then open Apex and press <b>Fill Apex</b>, bottom right.</p>
+    <p class="muted" id="apexhint">Anyone removed from the checklist is left out. Then open Apex and press <b>Fill Apex</b>, bottom right.</p>
   </section>
 </main>
 <script src="board.js"></script>

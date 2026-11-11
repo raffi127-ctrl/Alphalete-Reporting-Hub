@@ -142,6 +142,29 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
     if not people:
         return _result(monday, status="none", live=live, counted=0)
 
+    # ONLY PEOPLE STILL ON THE OBCL (Megan, 2026-11-11: "you should only add
+    # those then NOT removed from the OBCL"). The calendar says who showed up
+    # for training; the board says who is still going through onboarding, and
+    # between the two somebody quits, no-shows or fails a check. An Apex record
+    # is a payroll record with no undo, so the board's removals win.
+    try:
+        gone = _removed_on_the_board(office_key, monday, log=log)
+    except Exception as e:  # noqa: BLE001
+        # A board that cannot be read is NOT a board with nobody removed.
+        # Carrying on here would put somebody the ICD removed onto payroll.
+        return _result(monday, status="error", live=live, counted=len(people),
+                       error="could not read the onboarding board, so who was "
+                             "removed is unknown: %s: %s"
+                             % (type(e).__name__, str(e)[:200]))
+    if gone:
+        from automations.icd_onboarding import board as _B
+        kept = [p for p in people if _B._fold(p.name) not in gone]
+        log("  %d removed on the board -- not going to Apex (%d left)"
+            % (len(people) - len(kept), len(kept)))
+        people = kept
+        if not people:
+            return _result(monday, status="none", live=live, counted=0)
+
     # The Social is asked for ONLY when this run is going to type it.
     try:
         hires = BID.for_people(people, keep_ssn=live)
@@ -170,6 +193,35 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
     _tell_the_board(office_key, monday, added, log=log)
     return _result(monday, status="filled", live=True, counted=len(people),
                    added=added, blocked=blocked)
+
+
+def _removed_on_the_board(office_key: str, monday: dt.date,
+                          log=print) -> set:
+    """Folded names the office's board says are OFF for this week.
+
+    An office with no board yet has nobody removed -- that is a real answer,
+    not a missing one, so it returns empty rather than raising. Anything that
+    goes WRONG while reading a board that does exist raises, because "I could
+    not look" must never be mistaken for "nobody was removed".
+    """
+    from automations.icd_onboarding import board as B
+    from automations.icd_onboarding import fillers as F
+    from automations.icd_onboarding import sheet as S
+    if not office_key:
+        return set()
+    ws = S.open_board(F.workbook_for(office_key), create=False)
+    if ws is None:
+        log("  (no onboarding board for %s yet -- nobody removed)" % office_key)
+        return set()
+    rows = B.for_week(S.rows_of(S._values(ws)), monday)
+    gone = set()
+    for r in rows:
+        if str(r.get(B.TERMINATED_AT) or "").strip():
+            why = str(r.get(B.REMOVED_WHY) or "").strip() or "removed"
+            name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+            log("    off the board: %s (%s)" % (name, why))
+            gone.add(B._fold(name))
+    return gone
 
 
 def _tell_the_board(office_key: str, monday: dt.date, added, log=print) -> None:

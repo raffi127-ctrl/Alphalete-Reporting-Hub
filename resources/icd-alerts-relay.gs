@@ -1305,6 +1305,7 @@ function _officeAdminCall(a) {
   if (what === 'board_mark') return _boardMark(office, a);
   if (what === 'board_classroom') return _boardClassroom(office, a);
   if (what === 'board_gender') return _boardGender(office, a);
+  if (what === 'board_location') return _boardLocation(office, a);
   if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
   if (what === 'already') return _admAlready(office);
   if (what === 'bg_status') return _admBgStatus(office);
@@ -1610,12 +1611,19 @@ function _boardMark(office, a) {
   var off = String(a.action || 'terminate') !== 'restore';
   var stamp = off ? Utilities.formatDate(new Date(),
       Session.getScriptTimeZone(), 'MM/dd/yyyy') : '';
+  // WHY they came off, beside the date (Megan, 2026-11-11). Written only on
+  // the way out; putting somebody back clears it, so a restored row does not
+  // keep a reason for a removal that was undone. An older tab without the
+  // column still records the removal -- it just cannot say why.
+  var whyCol = got.head.indexOf('Removed Because');
+  var why = off ? String(a.reason || '') : '';
   var n = 0;
   got.rows.forEach(function (r) {
     if (a.week && r['Week of'] !== a.week) return;
     if (!want[_boardKey((r['Name'] || '') + ' ' + (r['Last Name'] || ''))]) return;
     if (off === !!r['Terminated']) return;            // already how they want it
     sh.getRange(r.__row, col + 1).setValue(stamp);
+    if (whyCol >= 0) sh.getRange(r.__row, whyCol + 1).setValue(why);
     n++;
   });
   return {ok: true, changed: n};
@@ -1624,6 +1632,13 @@ function _boardMark(office, a) {
 // The one column the ICD owns: who goes on which printed sheet.
 function _boardClassroom(office, a) {
   return _boardColumn(office, a, 'Classroom');
+}
+
+function _boardLocation(office, a) {
+  // Where this person is working from (Megan, 2026-11-11). Typed in the panel
+  // like the classroom: an office's locations are its own, and nothing we read
+  // holds them.
+  return _boardColumn(office, a, 'Location');
 }
 
 function _boardGender(office, a) {

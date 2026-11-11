@@ -63,9 +63,19 @@ def test_a_source_cannot_tick_somebody_elses_column():
         F.plan(rows, "blueink", {"Ada Fournier": {"Owner Submit": True}})
 
 
-def test_the_ownerville_columns_are_the_sweeps_own_five():
+def test_the_ownerville_columns_are_the_sweeps_own_five_plus_the_bg_state():
+    """The sweep's own tick columns, and nothing else except OV BG Status.
+
+    That one is read off the same View Progress table but is a STATE, not a
+    tick -- it says what OwnerVille thinks of the background check, which is
+    the thing the Owner Submit button waits on (Megan, 2026-11-11). Anything
+    ELSE appearing here means the two lists have drifted, and a column the
+    sweep does not fill is a column everybody learns to ignore."""
     from automations.obcl_ov_sweep import config as OV
-    assert set(F.SOURCES["ownerville"]) == set(OV.COLUMNS)
+    extra = set(F.SOURCES["ownerville"]) - set(OV.COLUMNS)
+    assert extra == {"OV BG Status"}
+    assert set(OV.COLUMNS) <= set(F.SOURCES["ownerville"])
+    assert "OV BG Status" in B.STATUS_STEPS, "it advances, it is not ticked"
 
 
 def test_every_source_column_is_a_real_board_step():
@@ -157,7 +167,8 @@ def test_a_single_column_source_can_tick_by_name(monkeypatch):
 
 def test_a_multi_column_source_must_say_which(monkeypatch):
     monkeypatch.setattr(F, "workbook_for", lambda k: object())
-    with pytest.raises(ValueError, match="owns 5 columns"):
+    n = len(F.SOURCES["ownerville"])
+    with pytest.raises(ValueError, match="owns %d columns" % n):
         F.tick("raf", MONDAY, "ownerville", ["Ada Fournier"], log=lambda *a: None)
 
 

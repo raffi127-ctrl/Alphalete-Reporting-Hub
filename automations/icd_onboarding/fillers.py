@@ -41,7 +41,7 @@ from automations.icd_onboarding import board as B
 # fill these, not invented: obcl_ov_sweep.config.COLUMNS is exactly its five.
 SOURCES: Dict[str, Sequence[str]] = {
     "ownerville": ("Digi Docs", "Onboarding Quizzes", "Headshot Photo",
-                   "UID Request", "Owner Submit"),
+                   "UID Request", "OV BG Status", "Owner Submit"),
     "blueink": ("Blue Ink",),
     "sterling": ("BG Status",),
     "contacts": ("Contact Added",),

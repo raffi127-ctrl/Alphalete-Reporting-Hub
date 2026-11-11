@@ -88,7 +88,7 @@ def rows_of(grid: List[List[str]]) -> List[Dict]:
 
 
 def _header_block() -> List[List[str]]:
-    return [list(B.COLUMNS) + [B.TERMINATED_AT]]
+    return [list(B.COLUMNS) + [B.TERMINATED_AT, B.REMOVED_WHY]]
 
 
 def ensure_columns(ws, log=print) -> List[str]:
@@ -215,11 +215,17 @@ def tick(workbook, week_start: dt.date, column: str, names: Sequence[str],
 
 
 def terminate(workbook, week_start: dt.date, names: Sequence[str],
-              *, dry_run: bool = False, log=print) -> int:
-    """Mark people off for the week — the panel's 'click them off'.
+              *, reason: str = "", dry_run: bool = False, log=print) -> int:
+    """Take people off the board for the week — the panel's 'remove'.
 
-    Writes the date into the row-state column. The row STAYS: hidden from the
-    board and the printout, still there to answer what happened to somebody.
+    Writes the date into the row-state column and WHY beside it. The row
+    STAYS: hidden from the board and the printout, still there to answer what
+    happened to somebody.
+
+    `reason` is one of B.REMOVAL_REASONS. An unrecognised one is still written
+    -- refusing the removal because the word was odd would leave somebody on
+    the board who is not coming -- but it is logged loudly, because a reason
+    nobody can count is the thing the pick list exists to prevent.
     """
     ws = open_board(workbook, create=False)
     if ws is None:
@@ -237,10 +243,25 @@ def terminate(workbook, week_start: dt.date, names: Sequence[str],
     log("  marking off %d" % len(hit))
     if dry_run or not hit:
         return 0
+    why = (reason or "").strip()
+    if why and why not in B.REMOVAL_REASONS:
+        log("  ! %r is not one of %s -- writing it anyway"
+            % (why, ", ".join(B.REMOVAL_REASONS)))
     a1 = _a1(cols[B.TERMINATED_AT] + 1)
     stamp = dt.date.today().strftime("%m/%d/%Y")
-    ws.batch_update([{"range": "%s%d" % (a1, FIRST_DATA_ROW + i),
-                      "values": [[stamp]]} for i in hit])
+    writes = [{"range": "%s%d" % (a1, FIRST_DATA_ROW + i),
+               "values": [[stamp]]} for i in hit]
+    # The reason goes in only if the column is there. An older tab that has not
+    # had ensure_columns run on it still records the removal; it just cannot
+    # say why yet, and that is better than refusing to remove anybody.
+    if why and B.REMOVED_WHY in cols:
+        w1 = _a1(cols[B.REMOVED_WHY] + 1)
+        writes += [{"range": "%s%d" % (w1, FIRST_DATA_ROW + i),
+                    "values": [[why]]} for i in hit]
+    elif why:
+        log("  (no %r column on this tab yet -- reason not written)"
+            % B.REMOVED_WHY)
+    ws.batch_update(writes)
     return len(hit)
 
 
