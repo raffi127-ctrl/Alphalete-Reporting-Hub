@@ -29,7 +29,7 @@ WORK_SITES=(
   "OwnerVille|https://ownerville.com/"
   "ApplicantStream|https://applicantstream.com/"
   "Apex|https://apex.herbjoyent.com/"
-  "Sterling|https://www.sterlingcheck.com/login/"
+  "Sterling|https://auth.sterlingcheck.app/oauth2/login"
   "BlueInk|https://app.blueink.com/"
 )
 
