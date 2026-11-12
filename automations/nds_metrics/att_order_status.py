@@ -373,7 +373,7 @@ def status_from_clause(clause: str) -> str:
     tail = (" (%s)" % asof.group(1)) if asof else ""
     low = c.lower()
     if low.startswith("delivered"):
-        m = re.match(r"delivered ([A-Z][a-z]{2} \d{1,2})", c)
+        m = re.match(r"delivered ([A-Z][a-z]{2} \d{1,2})", c, re.I)
         return ("Delivered %s" % m.group(1) if m else "Delivered") + tail
     m = re.match(r"(\d{1,2})/(\d{1,2})/\d{4}", c)          # 11/12's early form: the date line itself
     if m:
