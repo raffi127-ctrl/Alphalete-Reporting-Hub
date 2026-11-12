@@ -447,16 +447,28 @@ Don't close the black window." "Let's go" "Let's go" >/dev/null
 fi
 start_downloads
 
-# WHOSE COMPUTER (Maud, 2026-11-11): the owner's laptop signs in to the
-# OWNER'S OWN iCloud; a second laptop or the iMac uses the reception iCloud.
-COMPUTER="$(recall COMPUTER)"
-if [ -z "$COMPUTER" ]; then
-  if [ $DRY_RUN = 1 ]; then COMPUTER=office; else
-    b="$(_dialog "Laptop Set Up" "Whose computer is this?" "Office computer,The owner's laptop" "The owner's laptop")"
-    [ "$b" = "The owner's laptop" ] && COMPUTER=owner || COMPUTER=office
-  fi
-  remember COMPUTER "$COMPUTER"
-fi
+# THEIR NAME, NOT "WHOSE COMPUTER" (Megan, 2026-11-11: "this should just be
+# where they type their name. It's a new laptop for them."). It's always the
+# person's own new laptop, so the Apple step uses THEIR OWN Apple account.
+# The name also tells them their Drive folder: Maud names it after them.
+COMPUTER=owner
+PERSON_NAME="$(recall PERSON_NAME)"
+while [ -z "$PERSON_NAME" ]; do
+  if [ $DRY_RUN = 1 ]; then PERSON_NAME="Example Person"; break; fi
+  PERSON_NAME="$(osascript - "Laptop Set Up" "Type your first and last name." <<'APPLESCRIPT' 2>/dev/null
+on run argv
+  try
+    set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer "" buttons {"OK"} default button "OK" with icon note
+    return text returned of r
+  on error
+    return ""
+  end try
+end run
+APPLESCRIPT
+)"
+  PERSON_NAME="$(echo "$PERSON_NAME" | sed 's/^ *//; s/ *$//')"
+done
+remember PERSON_NAME "$PERSON_NAME"
 
 # ------------------------------------------------------------------------
 step_0() {
@@ -768,7 +780,7 @@ section "Share Google Drive"
 human drive_shared "Wait for the launch team to share your Google Drive folder with:
 ${RECEPTION_EMAIL}
 
-(It's named with the owner's first and last name.)" "Drive folder shared with reception (launch team)" "They confirmed it done"
+(It's named: ${PERSON_NAME})" "Drive folder shared with reception (launch team)" "They confirmed it done"
 
 # ------------------------------------------------------------------------
 }
@@ -984,7 +996,7 @@ REPORT="$HOME/Desktop/Laptop-Setup-Report.txt"
 [ $DRY_RUN = 1 ] && REPORT="$(mktemp)"
 {
   echo "Laptop Set Up — $(scutil --get ComputerName 2>/dev/null) — $(date '+%Y-%m-%d %H:%M')"
-  echo "Reception email: $RECEPTION_EMAIL    Owner: $OWNER_EMAIL"
+  echo "For: $PERSON_NAME    Reception email: $RECEPTION_EMAIL    Sara+ email: $OWNER_EMAIL"
   echo "Launch team — Lucy background-check forward: $REGISTER_CMD"
   echo; echo "DONE:";                           for s in "${DONE[@]}";   do echo "  ✅ $s"; done | awk '!seen[$0]++'
   echo; echo "COULD NOT DO (fix by hand):";     for s in "${FAILED[@]}"; do echo "  ❌ $s"; done
