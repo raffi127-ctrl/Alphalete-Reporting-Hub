@@ -172,7 +172,7 @@ start_downloads() {
   [ $DRY_RUN = 1 ] && { echo "  (dry run) would start downloading Chrome, Slack, Zoom, Excel in the background"; return; }
   mkdir -p "$CACHE"; rm -f "$BG_DONE"
   (
-    [ -d "/Applications/Google Chrome.app" ] || { _fetch "Google Chrome" "$CHROME_URL" dmg && _dmg_to_apps "Google Chrome"; } &
+    [ -d "/Applications/Google Chrome.app" ] || { _fetch "Google Chrome" "$CHROME_URL" dmg && _dmg_to_apps "Google Chrome" && touch "$CACHE/chrome.ready"; } &
     [ -d "/Applications/Slack.app" ]         || { _fetch "Slack" "$SLACK_URL" dmg && _dmg_to_apps "Slack"; } &
     [ -d "/Applications/zoom.us.app" ]       || _fetch "zoom.us" "$ZOOM_URL" pkg &
     [ -d "/Applications/Microsoft Excel.app" ] || _fetch "Microsoft Excel" "$EXCEL_URL" pkg &
@@ -180,6 +180,20 @@ start_downloads() {
     touch "$BG_DONE"
   ) >>"$CACHE/download.log" 2>&1 &
   BG_PID=$!
+}
+
+# Step 1 makes the Gmail INSIDE Chrome, so step 6 finds it already signed in
+# (Megan, 2026-11-11). Chrome is small and downloads first; wait for it, but
+# never more than 4 minutes -- after that, Google's page opens in Safari.
+wait_for_chrome() {
+  [ $DRY_RUN = 1 ] && return
+  [ -d "/Applications/Google Chrome.app" ] && [ ! -f "$CACHE/Google Chrome.dmg" ] && return
+  local i=0
+  printf "  Getting Chrome ready"
+  while [ ! -f "$CACHE/chrome.ready" ] && [ $i -lt 48 ] && kill -0 "$BG_PID" 2>/dev/null; do
+    printf "."; sleep 5; i=$((i+1))
+  done
+  echo
 }
 
 wait_for_downloads() {
@@ -291,6 +305,7 @@ Example: Alphalete Marketing" "")"
     COMPANY="$(echo "$SHORT_NAME" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"
   done
   RECEPTION_EMAIL="${COMPANY}reception@gmail.com"
+  wait_for_chrome
   open_chrome "https://accounts.google.com/signup"
   if human reception_email "Google is open.
 
@@ -388,9 +403,9 @@ section "Sign in to Google"
 open_chrome "https://mail.google.com/" "https://calendar.google.com/" "https://drive.google.com/"
 human chrome_google "Chrome is open.
 
-1. Sign in with:
-${RECEPTION_EMAIL}
-2. Chrome asks to turn on sync. Click “Yes”.
+1. Click your picture at the top right of Chrome.
+2. Click “Turn on sync”. Then “Yes, I'm in”.
+(Asked to sign in? Use ${RECEPTION_EMAIL}.)
 3. Save each page (Gmail, Calendar, Drive):
 click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
 
