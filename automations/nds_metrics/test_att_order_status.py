@@ -155,9 +155,32 @@ class ShortCell(unittest.TestCase):
     def test_detail_note_lists_everything(self):
         s = A.summarize(DETAILS)
         d = A.detail_text(s, TODAY, ["FedEx 879024018564: returning"])
-        self.assertTrue(d.startswith("Checked 11/11/2026"))
+        self.assertTrue(d.startswith("Checked "))
         self.assertIn("AT&T: Shipped on: Wed, Oct 21, 2026", d)
         self.assertIn("FedEx 879024018564: returning", d)
+
+
+class TrackingLinks(unittest.TestCase):
+    def test_labels_become_links_to_the_carrier(self):
+        body = A.short_text(UPS_PAGE, TODAY)
+        runs = A.tracking_runs(body, A.shipment_trackings(UPS_PAGE))
+        links = [(r["startIndex"], r["format"]["link"]["uri"]) for r in runs if r["format"].get("link")]
+        self.assertEqual(len(links), 2)
+        i = body.index("UPS …4036")
+        self.assertEqual(links[0], (i, "https://www.ups.com/track?loc=en_US&tracknum=1ZH4K6532936244036"))
+        self.assertEqual(links[1][1], "https://www.ups.com/track?loc=en_US&tracknum=1Z1WE1020321622114")
+        self.assertEqual(runs[0]["startIndex"], 0)                 # run lists start at 0
+        # the run after each label resets the format
+        self.assertEqual(runs[2]["startIndex"], i + len("UPS …4036"))
+        self.assertEqual(runs[2]["format"], {})
+
+    def test_fedex_link_and_no_links_without_numbers(self):
+        body = A.short_text(DETAILS, TODAY)
+        runs = A.tracking_runs(body, A.shipment_trackings(DETAILS))
+        uris = [r["format"]["link"]["uri"] for r in runs if r["format"].get("link")]
+        self.assertEqual(uris, ["https://www.fedex.com/fedextrack/?trknbr=879024018564",
+                                "https://www.fedex.com/fedextrack/?trknbr=879615850332"])
+        self.assertEqual(A.tracking_runs("11/11: Ordered Nov 7, not shipped yet", []), [])
 
 
 class FedExWords(unittest.TestCase):

@@ -246,6 +246,16 @@ def _status_word(s: str) -> str:
     return _norm(s)[:40]
 
 
+def shipment_trackings(text: str) -> List[str]:
+    """Every "FedEx 879…" / "UPS 1Z…" on the page, carrier and number."""
+    out: List[str] = []
+    for sh in shipments(text):
+        for t in sh["tracking"]:
+            if t not in out:
+                out.append(t)
+    return out
+
+
 def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
     """The cell: one short clause per shipment, today's date in front.
     'Shipped Nov 9, on the way (UPS …4036) | Delivered Nov 10 (UPS …2114)';
@@ -273,6 +283,40 @@ def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
     if not parts:
         return ""
     return "%s: %s" % (today.strftime("%m/%d"), " | ".join(parts))
+
+
+TRACK_URLS = {
+    "FedEx": "https://www.fedex.com/fedextrack/?trknbr={n}",
+    "UPS": "https://www.ups.com/track?loc=en_US&tracknum={n}",
+    "USPS": "https://tools.usps.com/go/TrackConfirmAction?tLabels={n}",
+}
+
+
+def tracking_runs(body: str, trackings: Sequence[str]) -> List[dict]:
+    """Sheets textFormatRuns that turn each "FedEx …8564" / "UPS …4036" in
+    the cell into a link to that carrier's tracking page (Carlos 11/12:
+    "are we able to make it clickable so it takes us straight to the
+    link"). `trackings` are the page's full numbers ("FedEx 879024018564");
+    the label in the cell carries the last four digits."""
+    runs: List[dict] = []
+    full = {}
+    for t in trackings or ():
+        bits = str(t).split()
+        if len(bits) == 2:
+            full[(bits[0], bits[1][-4:])] = bits[1]
+    for m in re.finditer(r"(FedEx|UPS|USPS) …(\w{4})", body or ""):
+        n = full.get((m.group(1), m.group(2)))
+        url = TRACK_URLS.get(m.group(1))
+        if not n or not url:
+            continue
+        runs.append({"startIndex": m.start(), "format": {"link": {"uri": url.format(n=n)},
+                                                          "foregroundColor": {"red": 0.07, "green": 0.33, "blue": 0.8},
+                                                          "underline": True}})
+        runs.append({"startIndex": m.end(), "format": {}})
+    # a run list must start at 0
+    if runs and runs[0]["startIndex"] > 0:
+        runs.insert(0, {"startIndex": 0, "format": {}})
+    return runs
 
 
 def keep_fedex_from(body: str, prev: str) -> str:
@@ -582,31 +626,29 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                 detail = detail_text(s, today, carrier)
                 log("    %s" % body)
                 batch = []
-                note_reqs = []
+                reqs = []
+                runs = tracking_runs(body, shipment_trackings(s.get("text", "")))
                 for ln in o["lines"]:
-                    # the hover note carries the full detail and is rewritten
-                    # every day (Carlos 11/11: "put them inside of a note where
-                    # we hover over it and we can read everything")
-                    note_reqs.append({"updateCells": {
+                    # one request per line: the short status as the value, the
+                    # carrier labels as links, the full detail as the hover note
+                    # (Carlos 11/11 + 11/12). Written even when the words did
+                    # not change, since the tab rewrite drops links and notes.
+                    cell = {"userEnteredValue": {"stringValue": body}, "note": detail}
+                    if runs:
+                        cell["textFormatRuns"] = runs
+                    reqs.append({"updateCells": {
                         "start": {"sheetId": ws.id, "rowIndex": ln["row"] - 1, "columnIndex": i_notes},
-                        "rows": [{"values": [{"note": detail}]}], "fields": "note"}})
+                        "rows": [{"values": [cell]}], "fields": "userEnteredValue,textFormatRuns,note"}})
                     if ln["notes"].strip() == body:
                         unchanged += 1
-                        continue
-                    # today's reading replaces yesterday's: the column is a
-                    # status, not a history (Notes keeps the history)
-                    batch.append(gspread.cell.Cell(ln["row"], i_notes + 1, body))
+                    else:
+                        batch.append(gspread.cell.Cell(ln["row"], i_notes + 1, body))
                 cells.extend(batch)
-                if live and note_reqs:
-                    try:
-                        _retry(lambda: sh.batch_update({"requests": note_reqs}))
-                    except Exception as e:  # noqa: BLE001
-                        log("    (hover notes not written: %s)" % type(e).__name__)
                 # written as it goes: ~40 orders x (AT&T + FedEx pages) runs
                 # long, and a run cut off by its timeout must keep what it read
-                if live and batch:
+                if live and reqs:
                     try:
-                        _retry(lambda: ws.update_cells(batch, value_input_option="RAW"))
+                        _retry(lambda: sh.batch_update({"requests": reqs}))
                         written += len(batch)
                     except Exception as e:  # noqa: BLE001
                         log("    (write failed, kept for the end: %s)" % type(e).__name__)
