@@ -1090,7 +1090,7 @@ verify zoom "Zoom signed in" chk_zoom
 }
 
 step_1() {
-section "Make the reception email"
+section "$( [ "$ROLE" = reception ] && echo "Sign in to the reception email" || echo "Make the reception email" )"
 # <companyname>reception@gmail.com — the first step on every laptop (Megan, 2026-11-11).
 RECEPTION_EMAIL="$(recall RECEPTION_EMAIL)"
 if [ "$FORCE" = 0 ] && [ -n "$RECEPTION_EMAIL" ] && is_done reception_email; then
@@ -1114,10 +1114,36 @@ Example: Alphalete Marketing" "")"
   done
   RECEPTION_EMAIL="${COMPANY}reception@gmail.com"
   wait_for_chrome
-  # ROLE: on an admin/reception laptop the ICD has usually made the reception
+  # ROLE: RECEPTION comes after the ICD's own setup (Megan, 2026-11-12: "icd
+# needs to start on their own laptop and then the reception laptop can login to
+# it"). The Owner run makes the reception Gmail and the code forwarding; this
+# laptop only signs in.
+if [ "$ROLE" = reception ] && [ $DRY_RUN = 0 ] && ! is_done icd_went_first; then
+  if [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Has the ICD already done their own laptop setup?
+(The Owner link, on the ICD's laptop.)" "No,Yes" "Yes")" = "Yes" ]; then
+    mark_done icd_went_first
+  else
+    _dialog "Laptop Set Up — $ROLE_NAME" "The ICD goes first.
+
+1. Do the Owner setup on the ICD's laptop.
+2. Then open this Reception link again on this laptop." "OK" "OK" >/dev/null
+    exit 0
+  fi
+fi
+# ROLE: on an admin/reception laptop the ICD has usually made the reception
   # Gmail already -- but sometimes the admin does (Megan, 2026-11-12). Ask.
   ALREADY=""
-  if [ "$ROLE" != owner ] && [ $DRY_RUN = 0 ]; then
+  if [ "$ROLE" = reception ] && [ $DRY_RUN = 0 ]; then
+    ALREADY=1
+    if [ "$(_dialog "Step $N of $TOTAL — $TITLE" "This laptop signs in to the reception Gmail the ICD made.
+
+Is this the reception email?
+${RECEPTION_EMAIL}" "No, it's different,Yes, that's it" "Yes, that's it")" != "Yes, that's it" ]; then
+      RECEPTION_EMAIL="$(ask_email "Type the reception email:" "")"
+    fi
+    is_done reception_email || mark_done reception_email
+    ok "Reception email (made on the ICD's laptop): $RECEPTION_EMAIL"
+  elif [ "$ROLE" != owner ] && [ $DRY_RUN = 0 ]; then
     if [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Has the reception Gmail already been made?
 
 ${RECEPTION_EMAIL}" "No, make it now,Yes, it's made" "Yes, it's made")" = "Yes, it's made" ]; then
@@ -1237,12 +1263,14 @@ else
   human icloud "System Settings is open.
 (The gray ⚙️ window. Look behind this box.)
 
-1. Click “Sign in”.
-2. Click “Create Apple Account”.
-3. Use this email:
+This laptop's Apple account is the reception email:
 ${RECEPTION_EMAIL}
 
-Already signed in to a different Apple account? Ask the launch team." "iCloud for reception email created"
+1. Click “Sign in”.
+2. Sign in with that email.
+(No Apple account for it yet? Click “Create Apple Account”.)
+
+Already signed in to a different Apple account? Ask the launch team." "Apple account = reception email"
   verify icloud "Apple account signed in as reception" chk_apple
   save_password pw_apple "Apple account" "apple.com" "$(defaults read MobileMeAccounts Accounts 2>/dev/null | sed -n 's/.*AccountID = "\{0,1\}\([^";]*\).*/\1/p' | head -1)" "Apple Accounts|Apple Account|Apple"
 fi
@@ -1357,6 +1385,7 @@ done
 }
 step_8() {
 section "Send login codes to reception"
+if [ "$ROLE" = reception ]; then ok "Code forwarding: set up on the ICD's laptop"; return 0; fi
 # Sara+ and Sterling login codes reach reception (Megan, 2026-11-11: "it
 # should be sara and sterling codes"), plus OwnerVille's verification code
 # because it's on the checklist ("keep it if it's on the list"). Sara+'s sender
@@ -1458,6 +1487,7 @@ fi
 }
 step_9() {
 section "Send background checks to Lucy"
+if [ "$ROLE" = reception ]; then ok "Background-check forwarding: set up on the ICD's laptop"; return 0; fi
 if [ "$(recall NO_ICD_GMAIL)" = 1 ]; then ok "Background-check forwarding: left for the launch team (no access to the ICD's Gmail)"; gmail_done; return 0; fi
 # Everything from Sterling also goes to Lucy's inbox, so each new start's BG
 # Status fills itself in on the ICD board. Both forwards are approved by the
