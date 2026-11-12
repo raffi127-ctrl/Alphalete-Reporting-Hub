@@ -314,8 +314,30 @@ class ApplicantStream:
         # The office switch IS a navigation; wait for a ready DOM instead of
         # 'networkidle' — the report page keeps a socket.io connection open, so
         # networkidle/'load' never settles and 30s-times-out every switch.
+        #
+        # A STALE ROW MUST NOT EAT THE CLICK (2026-11-11, office 11280 — Rafael
+        # Hidalgo — failed every try today with "Locator.click: Timeout 20000ms
+        # exceeded" while probe_office switched into it fine). The dropdown can
+        # re-render between finding the row and clicking it, so the row held is
+        # detached and click() waits out its whole budget. Same fix as
+        # recruiting's fetch_office._switch_office (10/20 + 10/21): a short
+        # click with no_wait_after (expect_navigation owns the reload wait),
+        # then ONE retype and a click on the FRESH visible row for this exact id.
+        try:
+            with self.page.expect_navigation(timeout=30000,
+                                             wait_until="domcontentloaded"):
+                item.click(timeout=8000, no_wait_after=True)
+            return self.current_owner
+        except PWTimeout:
+            print(f"  ~ [{office_id}] dropdown row went stale before the click "
+                  "— retyping once", flush=True)
+        box.fill("")
+        box.type(str(office_id), delay=60)
+        fresh = self.page.locator("ul.ui-autocomplete li:visible",
+                                  has_text=str(office_id)).first
+        fresh.wait_for(state="visible", timeout=8000)
         with self.page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
-            item.click()
+            fresh.click(timeout=8000, no_wait_after=True)
         return self.current_owner
 
     def _autocomplete_responded(self) -> bool:
