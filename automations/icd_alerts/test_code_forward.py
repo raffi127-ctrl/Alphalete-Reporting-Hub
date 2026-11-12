@@ -19,6 +19,7 @@ from unittest import mock
 
 from automations.icd_alerts import code_answer as CA
 from automations.icd_alerts import code_forward as CF
+from automations.icd_alerts import gmail_filters as G
 from automations.icd_alerts import post as P
 from automations.icd_alerts import relay as R
 from automations.icd_alerts.test_code_answer import Book, Sheet
@@ -37,6 +38,11 @@ def setUpModule():
     p.start()
     unittest.addModuleCleanup(p.stop)
     p = mock.patch.object(R, "report_fault", return_value=True)
+    p.start()
+    unittest.addModuleCleanup(p.stop)
+    # Nor open Google's page. The tests below are the hand-built road, which is
+    # what an owner who doesn't click Allow gets; LucyMakesTheFilter is the other.
+    p = mock.patch.object(G, "set_up", return_value=G.DECLINED)
     p.start()
     unittest.addModuleCleanup(p.stop)
 
@@ -206,6 +212,45 @@ class OnTheMac(unittest.TestCase):
         # Both older names were written on a press of OK.
         real = inspect.getsource(CF).split('MARK_PATH = C.APP_DIR / "')[1].split('"')[0]
         self.assertEqual(real, "sara-code-forward-working.txt")
+
+
+class LucyMakesTheFilter(OnTheMac):
+    """One Google Allow, Lucy makes + reads back the filter (2026-11-12)."""
+
+    def test_a_filter_lucy_made_is_done_with_no_filter_box(self):
+        self.confirmed.side_effect = lambda *a, **k: True
+        ask = FakeAsk(CF.YES)
+        with mock.patch.object(G, "set_up", return_value=G.MADE) as made:
+            self.assertEqual(self._go(ask), "done")
+        self.assertEqual(self.opened, [], "no Gmail filter box")
+        self.assertNotIn(CF.FILTER_STEPS, ask.shown)
+        self.assertTrue(CF.already_set_up(), "read back from Gmail = proof")
+        account, wants = made.call_args.args[1], made.call_args.args[2]
+        self.assertEqual(account, "owner@gmail.com")
+        self.assertEqual([w.body() for w in wants], [{
+            "criteria": {"from": "security.info@saraplus.com"},
+            "action": {"forward": "alphaletereporting@gmail.com"}}])
+
+    def test_no_allow_opens_the_hand_built_box(self):
+        self.confirmed.side_effect = lambda *a, **k: True
+        for word in (G.DECLINED, G.FAILED, G.NOT_ACCEPTED):
+            self.opened.clear()
+            ask = FakeAsk(CF.YES)
+            with mock.patch.object(G, "set_up", return_value=word):
+                self.assertEqual(self._go(ask), "done")
+            self.assertEqual(self.opened, [CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
+            self.assertIn(CF.FILTER_STEPS, ask.shown)
+            self.assertFalse(CF.already_set_up())
+
+    def test_the_terminal_line_says_all_set_when_lucy_made_it(self):
+        said = []
+        self.confirmed.side_effect = lambda *a, **k: True
+        with mock.patch.object(G, "set_up", return_value=G.MADE), \
+                mock.patch("automations.icd_alerts.dialogs.choose", return_value=CF.YES), \
+                mock.patch("automations.icd_alerts.dialogs.message"), \
+                mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(a[0] if a else "")):
+            self.assertEqual(CF.main(), 0)
+        self.assertIn("  ALL SET. From now on, Lucy types SaraPlus's codes for you.", said)
 
 
 class TheWaitBeforeTheFilter(OnTheMac):

@@ -19,6 +19,10 @@ background-check RESULT. Those stay in the ICD's inbox; only the login code
 mails come to us. code_answer.check_forward_scope(service="sterling") tells
 Megan + Eve if results start arriving anyway.
 
+LUCY MAKES THE FILTER (Megan 2026-11-12), the same way code_forward does: one
+Google Allow, Lucy creates it through Gmail's API, reads it back, and throws the
+permission away (gmail_filters). No Allow: the hand-built filter box, as before.
+
 Reuses code_forward's helpers (clipboard, Gmail screens, the confirmation
 wait) rather than copying them, so a fix there reaches this too.
 
@@ -151,6 +155,17 @@ ONE_FILTER_STEPS = (
     "Click OK here when you're done." % (STERLING_SENDER, RESULTS_INBOX))
 
 
+def _one_filter():
+    """The 11/09 ONE filter: everything from Sterling -> Lucy's Sterling inbox,
+    no subject. Exactly what ONE_FILTER_URL fills in by hand."""
+    from automations.icd_alerts import gmail_filters as G
+    return G.Want(RESULTS_INBOX, "Sterling (codes + results)",
+                  **{"from": STERLING_SENDER})
+
+
+ONE_FILTER = _one_filter()
+
+
 def walk_through(ask, say=print, office_key: str = "") -> str:
     """ONE forward, ONE filter (Megan 2026-11-09): everything Sterling emails
     -- login codes AND results -- goes to Lucy's own Sterling inbox,
@@ -187,6 +202,9 @@ def walk_through(ask, say=print, office_key: str = "") -> str:
             if not _wait_for_results(office_key, say, sleep=F.holding(ask)):
                 ask.message(F.LEFT_OPEN)
                 return "not confirmed yet"
+        from automations.icd_alerts import gmail_filters as G
+        if G.set_up(ask, address, [ONE_FILTER], say) == G.MADE:
+            return "done"
         F._open(F.for_account(ONE_FILTER_URL, address), say)
         ask.message(ONE_FILTER_STEPS)
         return "done"

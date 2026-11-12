@@ -60,6 +60,13 @@ button.done{background:var(--ok);color:#fff}
 .ok{border-color:var(--ok)}
 .ok .num{background:var(--ok);color:#fff}
 .help{background:var(--soft);border-radius:12px;padding:16px;font-size:.95rem}
+.gwarn{font-weight:700}
+.gsafe{background:#1a73e8;color:#fff;border-radius:6px;padding:6px 14px;font-weight:600;align-self:flex-end}
+.tiny{font-size:.72rem;color:var(--muted)}
+.tiny.gbtn{color:var(--fg)}
+.box::before{content:"\2610  ";font-size:1.1em}
+.box.on::before{content:"\2611  ";color:var(--ok)}
+.gsplit{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;flex-wrap:wrap}
 </style>
 
 <div class="wrap">
@@ -126,22 +133,47 @@ button.done{background:var(--ok);color:#fff}
   </section>
 
   <section class="step">
-    <div class="head"><div class="num">6</div><h2>Save one filter</h2><span class="time">30 sec</span></div>
-    <p>Gmail opens by itself with SaraPlus's address already filled in.</p>
+    <div class="head"><div class="num">6</div><h2>Click Allow for Lucy</h2><span class="time">1 min</span></div>
+    <p>A Google page opens, so Lucy can make the filter for you.</p>
+    <p class="warn"><b>It will look like an error. It's not.</b> Google shows this for small companies' apps, and this one is ours. The buttons you need are <b>small grey words at the bottom left</b>, so look closely.</p>
     <ul>
-      <li>Click <b>Create filter</b>.</li>
-      <li>Check <b>Forward it to</b> and pick our address.</li>
-      <li>Click <b>Create filter</b> again, then <b>OK</b> on the small window.</li>
+      <li>Pick the <b>same Gmail</b> as before.</li>
+      <li>You'll see <b>&ldquo;Google hasn't verified this app&rdquo;</b>. Do <b>not</b> click the big blue <b>Back to safety</b> button.</li>
+      <li>At the <b>bottom left</b>, click the small word <b>Advanced</b>.</li>
+      <li>More words show up. At the <b>bottom left</b>, click the small link <b>Go to Recruiting Report (unsafe)</b>.</li>
     </ul>
-    <p class="note">If our address isn't in the list yet, wait a minute and reload the page.</p>
+    <div class="screen" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span>Google: looks like an error, but it's OK</span></div>
+      <div class="web">
+        <div class="gwarn">&#9888;&#65039; Google hasn't verified this app</div>
+        <div class="gsplit">
+          <div class="tiny gbtn">Advanced <span class="tag yes">1. Click this</span></div>
+          <div class="gsafe">Back to safety</div>
+        </div>
+        <div class="tag no">Don't click &ldquo;Back to safety&rdquo;</div>
+        <div class="tiny gbtn">Go to Recruiting Report (unsafe) <span class="tag yes">2. Then this</span></div>
+      </div>
+    </div>
+    <ul>
+      <li>On the next page, <b>tick the box next to Gmail</b> (or <b>Select all</b>). Skip this and it won't work.</li>
+      <li>Click <b>Continue</b>, then <b>OK</b> on the small window.</li>
+    </ul>
+    <div class="screen" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span>Google: Recruiting Report wants access</span></div>
+      <div class="web">
+        <div class="box">Select all</div>
+        <div class="box on gbtn">See, edit, create, or change your email settings and filters in Gmail <span class="tag yes">3. Tick this</span></div>
+        <div class="gsplit"><span></span><div class="gsafe">Continue</div></div>
+      </div>
+    </div>
+    <p class="note">Lucy makes the filter, checks it's there, then gives the permission back. She only makes this one filter. Rather do it yourself? Click <b>Cancel</b> on the Google page: Gmail opens a box with SaraPlus's address already filled in. Click <b>Create filter</b>, check <b>Forward it to</b>, pick our address, and click <b>Create filter</b> again.</p>
   </section>
 
   <section class="step ok">
     <div class="head"><div class="num">✓</div><h2>You're done</h2></div>
     <div class="screen" aria-hidden="true">
       <div class="bar"><i></i><i></i><i></i><span>Terminal</span></div>
-      <div class="term"><b>ALL SET</b> once that filter is saved. From now on, Lucy types
-SaraPlus's codes for you.</div>
+      <div class="term"><b>ALL SET.</b> From now on, Lucy types SaraPlus's codes for you.</div>
     </div>
     <p>If Terminal says <b>NOT YET</b>, no problem. Paste the same line again and it picks up where you stopped.</p>
   </section>

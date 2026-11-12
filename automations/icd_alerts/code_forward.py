@@ -42,6 +42,12 @@ and a press of OK would have stopped the asking for good. The mark is now writte
 only once Lucy 1 has seen a forwarded code (_already_working). Until then every
 hand sign-in shows the filter step again. New file name again, so the marks
 written on an OK count for nothing.
+
+LUCY MAKES THE FILTER (Megan 2026-11-12). The owner clicks Allow once on a
+Google page; Lucy creates the filter through Gmail's API, reads Gmail's filters
+back to check it is there, and throws the permission away (gmail_filters). That
+read-back IS the proof the filter was saved, so it writes the mark. No Allow, or
+Google says no: the hand-built filter box opens, exactly as before.
 """
 from __future__ import annotations
 
@@ -184,9 +190,20 @@ def _step(office_key: str, word: str) -> None:
 
 
 def _finish(ask, say=print, address: str = "", office_key: str = "") -> str:
-    """The forward is confirmed: the filter is all that is left. No mark here:
-    OK on that box does not prove the filter was saved. _already_working marks
-    this computer once a code has really arrived."""
+    """The forward is confirmed: the filter is all that is left.
+
+    First Lucy offers to make it herself (one Google Allow). Read back from
+    Gmail, that is proof, so it marks. Otherwise the hand-built box, with no
+    mark: OK on that box does not prove the filter was saved, and
+    _already_working marks this computer once a code has really arrived."""
+    from automations.icd_alerts import gmail_filters as G
+    made = G.set_up(ask, address, [FILTER], say)
+    _step(office_key, "lucy's filter: %s" % made)
+    if made == G.MADE:
+        _mark(REPORTING_INBOX)
+        return "done"
+    if made == G.NOT_ACCEPTED:
+        say("      Gmail hasn't accepted our address yet -- showing the filter box.")
     if not open_filter(ask, say, address):
         _step(office_key, "filter not shown")
         return "filter not shown"
@@ -326,6 +343,14 @@ FILTER_STEPS = (
     % (SARAPLUS_SENDER, REPORTING_INBOX))
 
 
+def _filter():
+    from automations.icd_alerts import gmail_filters as G
+    return G.Want(REPORTING_INBOX, "SaraPlus codes", **{"from": SARAPLUS_SENDER})
+
+
+FILTER = _filter()
+
+
 def for_account(url: str, address: str) -> str:
     """The same Gmail screen, in THAT account. /u/0 is whichever account this
     browser calls its first: on Trang's office Mac the steps went by with nothing
@@ -374,6 +399,9 @@ def main(argv=None) -> int:
     if said != "done":
         say("  NOT YET -- run this same line again when you are ready.")
         return 1
+    if already_set_up():
+        say("  ALL SET. From now on, Lucy types SaraPlus's codes for you.")
+        return 0
     say("  ALL SET once that filter is saved. From now on, Lucy types")
     say("  SaraPlus's codes for you.")
     return 0
