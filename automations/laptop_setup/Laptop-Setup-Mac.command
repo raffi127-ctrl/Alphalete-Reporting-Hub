@@ -90,6 +90,7 @@ APPLESCRIPT
 
 say_info() {   # message   (OK; Back from step 2 on)
   [ "$GO" = back ] && return 0
+  [ "${QUIET_INFO:-0}" = 1 ] && return 0
   if [ $DRY_RUN = 1 ]; then echo "  (pop-up) $1" | head -3; return; fi
   if [ "$N" -gt 1 ]; then
     [ "$(_dialog "Step $N of $TOTAL — $TITLE" "$1" "Back,OK" "OK")" = "Back" ] && GO=back
@@ -829,69 +830,126 @@ save_password pw_excel "Excel" "microsoft.com"
 }
 step_17() {
 section "Printers"
-# Office printers announce themselves on the Wi-Fi (AirPrint), so no
-# addresses are needed. Each is added with the Mac's built-in driver. One
-# already added is skipped by its ID, so re-running never makes the
-# "Printer_2, Printer_3, Printer_4" pile-up seen on Megan's Mac.
+if [ "$FORCE" = 0 ] && is_done printers; then ok "Printers (done earlier)"; return 0; fi
+# ONLY THIS NETWORK'S PRINTERS (Megan, 2026-11-11: "this should only show those
+# on the current network as they will be at their office and then have the
+# option of adding more"). Office printers announce themselves on the Wi-Fi
+# (AirPrint), so no addresses are needed; each new one is added with the Mac's
+# built-in driver. One already added is matched by its ID, so re-running never
+# makes the "Printer_2, Printer_3, Printer_4" pile-up seen on Megan's Mac.
+# Printers added somewhere else (another office) are never listed here.
+PRINT_SETTINGS="x-apple.systempreferences:com.apple.Print-Scanner-Settings.extension"
 FOUND="$(ippfind -T 5 _ipp._tcp --exec echo '{service_name}|{}|{txt_UUID}' \; 2>/dev/null | sort -u -t'|' -k1,1)"
 HAVE="$(lpstat -v 2>/dev/null)"
-HAVE_NAMES="$(lpstat -l -p 2>/dev/null | sed -n 's/^[[:space:]]*Description: //p')"
-if [ -n "$HAVE_NAMES" ]; then
-  echo "  This laptop is already connected to:"; echo "$HAVE_NAMES" | sed 's/^/    ✅ /'
-else
-  echo "  This laptop isn't connected to any printer yet."
-fi
-NEW=()
+QUEUES_BEFORE="$(lpstat -v 2>/dev/null | sed -n 's/^device for \([^:]*\):.*/\1/p')"
+NEW=(); ON_NET=""
 while IFS= read -r line; do
   [ -z "$line" ] && continue
   IFS='|' read -r pname puri puuid <<< "$line"
-  if [ -n "$puuid" ] && echo "$HAVE" | grep -qi "$puuid"; then continue; fi
-  NEW+=("$line")
-done <<< "$FOUND"
-CONNECTED_MSG=""
-[ -n "$HAVE_NAMES" ] && CONNECTED_MSG="Already connected:
-$(echo "$HAVE_NAMES" | sed 's/^/✅ /')
-
+  if [ -n "$puuid" ] && echo "$HAVE" | grep -qi "$puuid"; then
+    ON_NET="${ON_NET}✅ ${pname}
 "
+  else
+    NEW+=("$line")
+  fi
+done <<< "$FOUND"
+
+# 1) new printers on this Wi-Fi: add them (one Yes)
 if [ ${#NEW[@]} -gt 0 ]; then
   NEW_LIST="$(for l in "${NEW[@]}"; do echo "🖨  ${l%%|*}"; done)"
-  if ask_yes "${CONNECTED_MSG}New printers:
-${NEW_LIST}
+  if ask_yes "Printers on this Wi-Fi:
+${ON_NET}${NEW_LIST}
 
-Add them?"; then
+Add the 🖨 ones?"; then
     for l in "${NEW[@]}"; do
       IFS='|' read -r pname puri puuid <<< "$l"
       queue="$(echo "$pname" | tr -c 'A-Za-z0-9\n' '_' | sed 's/__*/_/g; s/_$//')"
-      if run lpadmin -p "$queue" -E -v "$puri" -m everywhere -D "$pname"; then ok "Printer added: $pname"
-      else fail "Printer $pname (add it in System Settings → Printers & Scanners → +)"; fi
+      if run lpadmin -p "$queue" -E -v "$puri" -m everywhere -D "$pname"; then
+        ok "Printer added: $pname"; ON_NET="${ON_NET}✅ ${pname}
+"
+      else
+        fail "Printer $pname (add it in System Settings → Printers & Scanners)"
+      fi
     done
   else
-    todo "Printers: add them in System Settings → Printers & Scanners → +"
+    todo "Printers on this Wi-Fi not added"
   fi
-elif [ -n "$HAVE_NAMES" ]; then
-  ok "Already connected to $(echo "$HAVE_NAMES" | wc -l | tr -d ' ') printer(s)"
-  say_info "${CONNECTED_MSG}All set!"
-else
-  fail "No printers found on this Wi-Fi"
-  say_info "No printers found.
-
-1. Join the office Wi-Fi.
-2. Turn on the printer.
-3. Open this file again."
 fi
 
+# 2) what's connected on this Wi-Fi, plus "add another" for anything not found
+if [ $DRY_RUN = 1 ]; then echo "  (pop-up) printers on this Wi-Fi + Add another printer"; return 0; fi
+[ "$GO" = back ] && return 0
+while :; do
+  if [ -n "$ON_NET" ]; then
+    MSG="Connected printers on this Wi-Fi:
+${ON_NET}
+Need another printer? Click “Add another printer”."
+  else
+    MSG="No printers found on this Wi-Fi.
+
+1. Make sure you're on the office Wi-Fi.
+2. Turn on the printer.
+3. Click “Add another printer”."
+  fi
+  b="$(_dialog "Step $N of $TOTAL — $TITLE" "$MSG" "Back,Add another printer,Done" "Done")"
+  case "$b" in
+    Back) GO=back; return 0;;
+    "Add another printer")
+      open "$PRINT_SETTINGS"
+      _dialog "Step $N of $TOTAL — $TITLE" "System Settings is open on Printers.
+(The gray ⚙️ window. Look behind this box.)
+
+1. Click “Add Printer, Scanner or Fax…”.
+2. Click the printer. Click “Add”." "I did it" "I did it" >/dev/null
+      # list whatever they just added, by its own name
+      for q in $(lpstat -v 2>/dev/null | sed -n 's/^device for \([^:]*\):.*/\1/p'); do
+        echo "$QUEUES_BEFORE" | grep -qxF "$q" && continue
+        QUEUES_BEFORE="$QUEUES_BEFORE
+$q"
+        pname="$(lpstat -l -p "$q" 2>/dev/null | sed -n 's/^[[:space:]]*Description: //p' | head -1)"
+        ok "Printer added: ${pname:-$q}"; ON_NET="${ON_NET}✅ ${pname:-$q}
+"
+      done
+      ;;
+    *)
+      if [ -n "$ON_NET" ]; then is_done printers || mark_done printers; ok "Printers connected: $(echo "$ON_NET" | grep -c ✅)"; else todo "Printers: none connected"; fi
+      return 0;;
+  esac
+done
 }
 
 # ---------------------------------------------------------- run the steps
 # One function per step, so Back can re-open the previous one.
 STEPS=($(declare -F | awk '{print $3}' | grep -E '^step_[0-9]+$' | sort -t_ -k2 -n))
-i=0
-while [ $i -lt ${#STEPS[@]} ]; do
-  STEP_I=$i; GO=next
-  "${STEPS[$i]}"
-  if [ "$GO" = back ] && [ $i -gt 0 ]; then i=$((i-1)); FORCE=1; else i=$((i+1)); FORCE=0; fi
+run_all() {
+  local i=0
+  while [ $i -lt ${#STEPS[@]} ]; do
+    STEP_I=$i; GO=next
+    "${STEPS[$i]}"
+    if [ "$GO" = back ] && [ $i -gt 0 ]; then i=$((i-1)); FORCE=1; else i=$((i+1)); FORCE=0; fi
+  done
+  GO=next
+}
+
+# LEFTOVERS POP UP, NOT JUST THE REPORT (Megan, 2026-11-11: "this should pop up
+# the remaining boxes not just show in the terminal what's not done"). After a
+# pass, anything skipped or failed is offered again as its own window; a second
+# pass shows ONLY those (finished steps skip by themselves, info boxes stay quiet).
+QUIET_INFO=0
+while :; do
+  run_all
+  LEFT=$(( ${#YOURS[@]} + ${#FAILED[@]} ))
+  [ $DRY_RUN = 1 ] || [ $LEFT -eq 0 ] && break
+  LIST="$( { printf '%s\n' "${YOURS[@]}"; printf '%s\n' "${FAILED[@]}"; } | grep -v '^$' \
+          | sed 's/ (Lucy checked: not done)//' | awk '!seen[$0]++' | head -8 | sed 's/^/• /')"
+  b="$(_dialog "Laptop Set Up" "$LEFT step(s) aren't done yet:
+
+$LIST
+
+Finish them now?" "Later,Finish them now" "Finish them now")"
+  [ "$b" = "Finish them now" ] || break
+  DONE=(); YOURS=(); FAILED=(); QUIET_INFO=1
 done
-GO=next
 
 # ----------------------------------------------------------------- report
 REPORT="$HOME/Desktop/Laptop-Setup-Report.txt"
