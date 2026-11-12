@@ -3020,3 +3020,28 @@ def test_eco_run_and_the_bookmarklet_agree_about_the_password_box():
     from automations.apex_new_starts import eco_run as E
     assert "$ctrl.sendUserPassword" in E.NEVER
     assert "$ctrl.sendUserPassword" in F._JS
+
+
+def test_an_id_that_arrives_late_is_not_a_miss_if_the_widget_shows_the_value():
+    """Since Apex's Beta rewrite the hidden ...ID is empty straight after a
+    selection -- Apex fills it on blur or submit. A probe on 2026-11-12 drove
+    Position, Basis of Pay and Pay Frequency with a REAL browser click: all
+    three displayed the right value and all three ids were empty, so the old
+    check called the whole employment tab a miss and nothing filled."""
+    from automations.apex_new_starts import filler as F
+    js = F._JS
+    assert "function shownText" in js
+    body = js.split("function bindingLooksReal", 1)[1][:900]
+    assert "shownText(el)" in body, "it has to look at what is on screen"
+    assert "if(!shown) return false;" in body, \
+        "a blank id under a blank display is still a miss"
+
+
+def test_the_marital_status_bug_is_still_caught():
+    """An id holding the WORDS rather than an id was the original failure:
+    the page looked right and the save said MaritalStatusID is required.
+    Forgiving a late id must not forgive that."""
+    from automations.apex_new_starts import filler as F
+    body = F._JS.split("function bindingLooksReal", 1)[1][:1600]
+    assert "return norm(b)!==norm(v);" in body, \
+        "a bound value equal to the words we typed is still a miss"

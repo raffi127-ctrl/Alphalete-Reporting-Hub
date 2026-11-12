@@ -301,12 +301,29 @@ def _complete(page, who, person, apex_id, log=print) -> int:
     if not drive.keep_loaded(page, [who], log=log):
         log("  The engine did not survive the move. Nothing was typed.")
         return 1
-    for _ in range(40):
-        if page.evaluate("() => !!document.querySelector('input,select')"):
-            break
-        page.wait_for_timeout(250)
+    # Wait for a REAL box, not for the loading message to clear -- the tab
+    # drops that message before its fields exist, and a run that had just
+    # filled everything found nothing at all on the next attempt.
+    if not drive.wait_for_field(page, "Position", people=[who], log=log):
+        log("  The form never finished loading, so nothing was typed.")
+        _hold_open(page, log=log)
+        return 1
 
     log("  Filling the FIRST tab only, and stopping before Save.")
+    # THE DROPDOWNS GO FIRST, BY REAL CLICK. The engine's in-page clicks do
+    # nothing to them since the Beta rewrite (2026-11-12), so these are set
+    # from here, where the events are trusted. The engine then fills the plain
+    # text boxes, which it has never had trouble with.
+    picks = {k: v for k, v in (who.get("pages", {}).get("employment") or {}).items()
+             if k in ("Position", "Basis of Pay", "Pay Frequency",
+                      "State Working In", "Department")}
+    if picks:
+        drive.set_dropdowns(page, picks, log=log)
+    # Rate of Pay is a numeric widget and ignores a JS-set value the same way:
+    # it read as filled and Apex refused the save for a missing rate.
+    rate = (who.get("pages", {}).get("employment") or {}).get("Rate of Pay")
+    if rate:
+        drive.type_into(page, "Rate of Pay", rate, log=log)
     got = page.evaluate(
         "async (p) => await window.__ansDoPage(p, 'employment')", who)
     done = (got or {}).get("done") or []

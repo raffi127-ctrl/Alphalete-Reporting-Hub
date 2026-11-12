@@ -497,15 +497,38 @@ _JS = r"""
          box.querySelector('input[type=hidden]');
    return h?h.value:null;
  }
+ function shownText(el){
+   /* What the person sees in the widget beside this input. */
+   var sp=widgetSpan(el);
+   if(!sp) return '';
+   return norm((sp.innerText||sp.textContent||'').replace(/\s+/g,' '));
+ }
  function bindingLooksReal(el,v){
    /* The screen said Texas and the server said
       request.HomeAddress.StateProvinceID: "An error has occurred." -- the
       display text was right and the id behind it was never set. So a widget
       that reports success is not believed until the bound field holds
-      something, and something OTHER than the words we just put on screen. */
+      something, and something OTHER than the words we just put on screen.
+
+      SINCE THE BETA REWRITE THE ID ARRIVES LATER. A probe on 2026-11-12
+      drove Position, Basis of Pay and Pay Frequency with a real browser
+      click: each one SHOWED the right value and each hidden ...ID was
+      still empty straight afterwards -- Apex fills it on blur or on
+      submit, which this file has said all along. The old check called all
+      three a miss and the whole employment tab filled nothing.
+
+      So an empty id is no longer proof of failure -- but it is only
+      forgiven when the widget is DISPLAYING what we asked for. A blank id
+      under a blank display is still a miss, and an id holding the words
+      themselves still is too: that is the Marital Status bug and it must
+      stay caught. */
    var b=boundValue(el);
    if(b===null) return true;              /* nothing bound: nothing to check */
-   if(!String(b).trim()) return false;
+   if(!String(b).trim()){
+     var shown=shownText(el), want=norm(v);
+     if(!shown) return false;             /* empty id AND nothing on screen */
+     return shown===want||shown.indexOf(want)>=0||want.indexOf(shown)>=0;
+   }
    return norm(b)!==norm(v);
  }
  function clearBadId(el){
@@ -914,6 +937,14 @@ _JS = r"""
    return bits.join(' ;; ');
  }
  window.__ansShape=fieldShape;
+ /* Exposed so a probe can ask WHY a label did not resolve, instead of
+    guessing at the markup from outside (2026-11-12). */
+ window.__ansFieldFor=fieldFor;
+ /* kendoClick writes a TRACE as it goes -- which span it found, how long the
+    list took, whether it fell back to the arrow. Exposed so a probe can read
+    the reason instead of inferring it (2026-11-12). */
+ window.__ansTrace=function(){ return TRACE.slice(); };
+ window.__ansSetVal=setVal;
  window.__ansPutId=putIdBeside;
  window.__ansClearBadId=clearBadId;
  window.__ansSelected=function(){

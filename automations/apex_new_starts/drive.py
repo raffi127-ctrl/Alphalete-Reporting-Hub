@@ -161,7 +161,7 @@ def to_roster(page, log=print) -> bool:
     #    and the only way across, which is why the instructions have always
     #    said to use it.
     try:
-        went = page.evaluate("""() => {
+        went = page.evaluate(r"""() => {
             const want = [...document.querySelectorAll('a[href]')];
             const byHref = want.find(a => /[/]roster\b/i.test(a.getAttribute('href') || ''));
             const byText = want.find(a =>
@@ -270,3 +270,145 @@ def triage(page, people, log=print) -> Dict[str, dict]:
     log("  triage: %s" % (", ".join("%d to %s" % (n, k)
                                     for k, n in sorted(tally.items())) or "nobody"))
     return out
+
+
+def set_dropdown(page, label: str, value: str, log=print) -> bool:
+    """Set one of Apex's dropdowns with a REAL browser click.
+
+    THE ENGINE CANNOT DO THIS ANY MORE, and that is the whole reason this
+    exists. Since the Beta rewrite its in-page clicks do nothing at all to
+    these widgets: a probe on 2026-11-12 drove Position, Basis of Pay and Pay
+    Frequency both ways on the same live record -- the engine's synthetic
+    click left the box showing nothing, and a driver click showed the right
+    value every time. Browsers mark JavaScript-made events untrusted, and
+    whatever Apex now binds these to ignores them.
+
+    So a bookmarklet can never fill these fields again. Only something driving
+    the browser from outside can, which is this.
+
+    The hidden ...ID stays empty for a moment afterwards -- Apex writes it on
+    blur or submit -- so this checks what the widget DISPLAYS, not the id.
+    """
+    box = page.evaluate(
+        """(L) => { const el = window.__ansFieldFor(L);
+             if (!el) return '';
+             const sp = el.parentElement.querySelector('.k-dropdown, .k-widget');
+             if (!sp) return '';
+             sp.setAttribute('data-ans-pick', '1');
+             return el.id || el.name || 'x'; }""", label)
+    if not box:
+        # Never silent. A failure that prints nothing is indistinguishable
+        # from not having run at all, which cost a whole live run to notice.
+        log("    %s: no box or no dropdown beside it" % label)
+        return False
+    try:
+        page.click("[data-ans-pick='1']", timeout=5000)
+        page.wait_for_timeout(700)
+        # the row, by its exact words
+        try:
+            page.click("ul.k-list li:text-is(%r)" % value, timeout=4000)
+        except Exception:      # noqa: BLE001
+            page.click("li:text-is(%r)" % value, timeout=3000)
+        page.wait_for_timeout(700)
+    except Exception as e:     # noqa: BLE001
+        log("    %s: could not pick %r (%s)" % (label, value, type(e).__name__))
+        page.evaluate("() => document.querySelectorAll('[data-ans-pick]')"
+                      ".forEach(e => e.removeAttribute('data-ans-pick'))")
+        return False
+    shown = page.evaluate(
+        """(L) => { const el = window.__ansFieldFor(L);
+             const sp = el && el.parentElement.querySelector('.k-dropdown, .k-widget');
+             return sp ? (sp.innerText || '').replace(/\\s+/g, ' ').trim() : ''; }""",
+        label)
+    page.evaluate("() => document.querySelectorAll('[data-ans-pick]')"
+                  ".forEach(e => e.removeAttribute('data-ans-pick'))")
+    ok = bool(shown) and value.lower() in shown.lower()
+    if not ok:
+        log("    %s: clicked, but it shows %r" % (label, shown))
+    return ok
+
+
+def set_dropdowns(page, pairs, log=print) -> dict:
+    """{label: value} -> {"set": [...], "missed": [...]}."""
+    done, missed = [], []
+    for label, value in (pairs or {}).items():
+        if not str(value or "").strip():
+            continue
+        (done if set_dropdown(page, label, value, log=log) else missed).append(label)
+    log("    set by click: %s%s"
+        % (", ".join(done) or "nothing",
+           ("  |  could not: " + ", ".join(missed)) if missed else ""))
+    return {"set": done, "missed": missed}
+
+
+def type_into(page, label: str, value: str, log=print) -> bool:
+    """Type into a box with real keystrokes.
+
+    Rate of Pay is a Kendo numeric widget and ignores a JavaScript-set value
+    exactly as the dropdowns ignore a JavaScript click: the engine reported it
+    filled and Apex said "Rate of Pay is required" on save (2026-11-12).
+    Typed through the driver, the keystrokes are trusted and it takes.
+    """
+    # THE BOX A PERSON TYPES IN, not the one the form submits. A Kendo
+    # numeric widget is a visible input over a hidden one, and fieldFor hands
+    # back the hidden one -- which the driver rightly refuses to type into,
+    # because it is invisible (TimeoutError, 2026-11-12).
+    found = page.evaluate(
+        """(L) => { const el = window.__ansFieldFor(L);
+             if (!el) return '';
+             let box = el;
+             if (el.type === 'hidden' || !el.offsetParent) {
+               const w = el.parentElement;
+               const vis = w ? [...w.querySelectorAll('input')]
+                 .filter(i => i.offsetParent && i.type !== 'hidden') : [];
+               if (vis.length) box = vis[0];
+             }
+             if (!box.offsetParent) return '';
+             box.setAttribute('data-ans-type', '1');
+             return box.id || box.name || 'x'; }""", label)
+    if not found:
+        log("    %s: no box" % label)
+        return False
+    try:
+        page.fill("[data-ans-type='1']", "")
+        page.type("[data-ans-type='1']", str(value), delay=40)
+        page.evaluate("""() => { const e = document.querySelector('[data-ans-type]');
+              if (e) e.dispatchEvent(new Event('blur', {bubbles: true})); }""")
+        page.wait_for_timeout(500)
+        got = page.evaluate("() => { const e = document.querySelector('[data-ans-type]');"
+                            " return e ? (e.value || '') : ''; }")
+    except Exception as e:     # noqa: BLE001
+        log("    %s: could not type (%s)" % (label, type(e).__name__))
+        got = ""
+    page.evaluate("() => document.querySelectorAll('[data-ans-type]')"
+                  ".forEach(e => e.removeAttribute('data-ans-type'))")
+    ok = bool(str(got).strip())
+    log("    %s: typed %r -> %r%s" % (label, value, got, "" if ok else "  STILL EMPTY"))
+    return ok
+
+
+def wait_for_field(page, label: str, *, seconds: int = 25, people=None,
+                   log=print) -> bool:
+    """Wait until the engine can actually FIND a named box on this page.
+
+    Waiting for "Loading ... data" to disappear is not enough: the employment
+    tab clears that message before its fields exist, so a run that had just
+    filled everything correctly found nothing at all on the next attempt
+    (2026-11-12). The only honest ready signal is the box itself.
+
+    Re-loads the engine as it goes, because the thing that most often makes
+    fieldFor return nothing is the script having gone with a page load.
+    """
+    for i in range(max(1, seconds * 2)):
+        if not ready(page):
+            load(page, people, "", log=lambda *a: None)
+        try:
+            if page.evaluate("(L) => !!window.__ansFieldFor(L)", label):
+                if i:
+                    log("    (%s appeared after %.1fs)" % (label, i * 0.5))
+                return True
+        except Exception:      # noqa: BLE001 — mid-navigation; try again
+            pass
+        page.wait_for_timeout(500)
+    log("    %s never appeared on %s" % (label, page.url or "?"))
+    return False

@@ -122,6 +122,169 @@ def main() -> int:
                 print("  buttons :", " | ".join(shape["buttons"]))
                 print("  iframes :", shape["frames"])
                 print("  text    :", shape["body"][:300])
+            if name == "employment":
+                # WHY fieldFor cannot reach them. The engine ships its own
+                # describer; ask it rather than guessing at the markup.
+                why = page.evaluate(r"""(labels) => {
+                  const out = {};
+                  for (const L of labels) {
+                    let el = null;
+                    try { el = window.__ansFieldFor ? window.__ansFieldFor(L) : null; } catch (e) {}
+                    const labs = [...document.querySelectorAll('label')]
+                      .filter(x => (x.innerText || '').replace(/\s+/g, ' ').trim()
+                                   .toLowerCase().includes(L.toLowerCase()));
+                    const seen = labs.map(x => {
+                      const sib = x.nextElementSibling;
+                      const inner = x.querySelector('input,select,textarea');
+                      const sibIn = sib ? sib.querySelector('input,select,textarea') : null;
+                      return {
+                        text: (x.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 30),
+                        htmlFor: x.htmlFor || '',
+                        inner: inner ? inner.name || inner.type : '',
+                        sibTag: sib ? sib.tagName.toLowerCase() : '',
+                        sibClass: sib ? (sib.className || '').slice(0, 40) : '',
+                        sibInput: sibIn ? (sibIn.name || sibIn.type) : '',
+                      };
+                    });
+                    out[L] = {found: !!el, labels: seen};
+                  }
+                  return out;
+                }""", ["Position", "Rate of Pay", "State Working In",
+                       "Basis of Pay", "Pay Frequency", "Department"])
+                widget = page.evaluate(r"""(pairs) => {
+                  const out = {};
+                  for (const [L, want] of pairs) {
+                    const el = window.__ansFieldFor(L);
+                    if (!el) { out[L] = {found: false}; continue; }
+                    const span = el.parentElement
+                      ? el.parentElement.querySelector('.k-widget, .k-dropdown, .k-numerictextbox')
+                      : null;
+                    let api = null, items = [];
+                    try {
+                      const $ = window.jQuery;
+                      if ($ && $(el).data) {
+                        const w = $(el).data('kendoDropDownList') || $(el).data('kendoComboBox')
+                               || $(el).data('kendoNumericTextBox');
+                        if (w) {
+                          api = w.options && w.options.name || 'kendo';
+                          if (w.dataSource && w.dataSource.view)
+                            items = w.dataSource.view().slice(0, 6)
+                              .map(x => (x.Text || x.text || x.Name || JSON.stringify(x)).toString().slice(0, 28));
+                        }
+                      }
+                    } catch (e) { api = 'err:' + e.message.slice(0, 30); }
+                    out[L] = {found: true, tag: el.tagName.toLowerCase(),
+                              type: el.type || '', name: el.name || '',
+                              span: span ? (span.className || '').slice(0, 34) : '',
+                              api: api, want: want, items: items};
+                  }
+                  return out;
+                }""", [["Position", "Sales Rep"], ["Basis of Pay", "Commissions"],
+                       ["Pay Frequency", "Weekly"], ["Department", "400 Sales"],
+                       ["State Working In", "Texas"], ["Rate of Pay", "10.00"]])
+                print("\n  -- the widget behind each label --")
+                for k, v in widget.items():
+                    if not v.get("found"):
+                        print("   %-18s NOT FOUND" % k)
+                        continue
+                    print("   %-18s %s[%s] name=%-26s span=%-22s api=%s"
+                          % (k, v["tag"], v["type"], v["name"], v["span"], v["api"]))
+                    if v.get("items"):
+                        print("      options: %s" % ", ".join(v["items"]))
+
+                opened = page.evaluate(r"""() => {
+                  const el = window.__ansFieldFor('Position');
+                  if (!el) return {error: 'no Position box'};
+                  const span = el.parentElement.querySelector('.k-widget, .k-dropdown');
+                  if (!span) return {error: 'no widget span'};
+                  const uls = () => [...document.querySelectorAll('ul,[role=listbox]')]
+                    .filter(u => u.offsetParent && u.querySelectorAll('li,[role=option]').length);
+                  const before = uls().length;
+                  for (const type of ['mousedown', 'mouseup', 'click']) {
+                    span.dispatchEvent(new MouseEvent(type, {bubbles: true, cancelable: true}));
+                  }
+                  return {before: before, span: (span.className || '').slice(0, 40),
+                          clicked: true};
+                }""")
+                page.wait_for_timeout(1500)
+                after = page.evaluate(r"""() => {
+                  const uls = [...document.querySelectorAll('ul,[role=listbox]')]
+                    .filter(u => u.offsetParent && u.querySelectorAll('li,[role=option]').length);
+                  return uls.slice(-3).map(u => ({
+                    cls: (u.className || '').slice(0, 40),
+                    n: u.querySelectorAll('li,[role=option]').length,
+                    items: [...u.querySelectorAll('li,[role=option]')].slice(0, 6)
+                      .map(li => (li.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24)),
+                  }));
+                }""")
+                print("\n  -- does clicking Position open a list? --")
+                print("   click: %s" % opened)
+                for u in after:
+                    print("   list %-28s %d item(s): %s"
+                          % (u["cls"], u["n"], ", ".join(u["items"])))
+                if not after:
+                    print("   NO LIST OPENED")
+
+                li = page.evaluate(r"""() => {
+                  const el = window.__ansFieldFor('Position');
+                  const span = el.parentElement.querySelector('.k-widget, .k-dropdown');
+                  for (const type of ['mousedown', 'mouseup', 'click'])
+                    span.dispatchEvent(new MouseEvent(type, {bubbles: true, cancelable: true, view: window}));
+                  return true;
+                }""")
+                page.wait_for_timeout(1200)
+                shape = page.evaluate(r"""() => {
+                  const lists = [...document.querySelectorAll('ul.k-list, ul.k-reset, [role=listbox]')]
+                    .filter(u => u.offsetParent && u.querySelectorAll('li,[role=option]').length);
+                  const u = lists[lists.length - 1];
+                  if (!u) return {error: 'no list open'};
+                  const items = [...u.querySelectorAll('li,[role=option]')].slice(0, 4).map(li => {
+                    const at = {};
+                    for (const a of li.attributes) at[a.name] = String(a.value).slice(0, 30);
+                    return {text: (li.textContent || '').trim().slice(0, 20), attrs: at};
+                  });
+                  // is there a plain <select> behind it anywhere?
+                  const sel = [...document.querySelectorAll('select')]
+                    .map(s => ({name: s.name || s.id, opts: s.options.length}));
+                  return {items: items, selects: sel.slice(0, 6)};
+                }""")
+                print("\n  -- what the option rows carry --")
+                if shape.get("error"):
+                    print("   %s" % shape["error"])
+                else:
+                    for it in shape["items"]:
+                        print("   %-20s %s" % (it["text"], it["attrs"]))
+                    print("   selects on page: %s" % shape["selects"])
+
+                print("\n  -- what setVal actually does --")
+                for lab, val in (("Position", "Sales Rep"),
+                                 ("Rate of Pay", "10.00"),
+                                 ("Department", "400 Sales")):
+                    r = page.evaluate(r"""async (a) => {
+                      const el = window.__ansFieldFor(a.label);
+                      if (!el) return {ok: null, trace: ['no box']};
+                      let ok = null, err = '';
+                      try { ok = await window.__ansSetVal(el, a.value); }
+                      catch (e) { err = String(e && e.message || e).slice(0, 80); }
+                      return {ok: ok, err: err,
+                              trace: (window.__ansTrace ? window.__ansTrace() : []),
+                              now: (el.value || '').slice(0, 24)};
+                    }""", {"label": lab, "value": val})
+                    print("   %-14s -> %s%s  value=%r"
+                          % (lab, r.get("ok"),
+                             ("  ERR " + r["err"]) if r.get("err") else "",
+                             r.get("now")))
+                    for t in (r.get("trace") or [])[:6]:
+                        print("        %s" % t)
+                    page.wait_for_timeout(600)
+
+                print("\n  -- why fieldFor misses them --")
+                for k, v in why.items():
+                    print("   %-18s fieldFor=%s" % (k, v["found"]))
+                    for L in v["labels"][:2]:
+                        print("      label %-22s for=%-14s inner=%-10s sib=%s.%s -> %s"
+                              % (L["text"], L["htmlFor"], L["inner"],
+                                 L["sibTag"], L["sibClass"][:18], L["sibInput"]))
             fields = page.evaluate(DUMP)
             found[name] = fields
             print("\n=== %s === %d field(s)" % (name, len(fields)))
