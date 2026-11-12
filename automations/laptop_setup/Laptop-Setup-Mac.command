@@ -576,15 +576,16 @@ done
 # ------------------------------------------------------------------------
 }
 step_8() {
-section "Send Sterling + OwnerVille codes to reception"
-# The checklist's filters: Sterling + OwnerVille login codes reach reception.
+section "Send Sterling codes to reception"
+# Sterling's login codes reach reception. (The checklist also listed an
+# OwnerVille filter; Megan 2026-11-11: "there's no OV login code" -- dropped.)
 # Google won't let a script add a forwarding address to a regular Gmail (that
 # API is Workspace-admin only) and a filter can only forward to a CONFIRMED
 # address — so the person adds + confirms it, then imports a filter file this
 # script writes, with Gmail's own "Import filters" button. No sign-in tokens.
 OWNER_EMAIL="$(recall OWNER_EMAIL)"
 if [ -z "$OWNER_EMAIL" ]; then
-  OWNER_EMAIL="$(ask_email "Next: your Sterling and OwnerVille login codes will go to reception.
+  OWNER_EMAIL="$(ask_email "Next: your Sterling login codes will go to reception.
 
 What email address is your Sara+ account set up with?" "")"
   remember OWNER_EMAIL "$OWNER_EMAIL"
@@ -594,8 +595,7 @@ if [ $DRY_RUN = 1 ]; then OUT="$(mktemp -d)"; else OUT="$HOME/Desktop"; fi
 F_RECEPTION="$OUT/Gmail-Filters-1-Reception.xml"
 F_LUCY="$OUT/Gmail-Filters-2-Lucy-Background-Checks.xml"
 write_filters "$F_RECEPTION" \
-  "$STERLING|Authentication Request|$RECEPTION_EMAIL" \
-  "noreply@ownerville.com|Your Account Verification Code|$RECEPTION_EMAIL"
+  "$STERLING|Authentication Request|$RECEPTION_EMAIL"
 write_filters "$F_LUCY" "$STERLING||$LUCY_BG_INBOX"
 
 if is_done filters_reception; then
@@ -619,7 +619,7 @@ Don't change anything else." "Owner's Gmail: reception added as a forwarding add
 1. Scroll to the bottom. Click “Import filters”.
 2. Click “Choose File”. Pick this from the Desktop:
 Gmail-Filters-1-Reception
-3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sterling + OwnerVille login codes to reception"
+3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sterling login codes to reception"
   fi
 fi
 
