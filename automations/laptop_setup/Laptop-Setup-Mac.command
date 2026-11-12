@@ -250,10 +250,14 @@ Make this Gmail:
 ${RECEPTION_EMAIL}
 
 Name: ${SHORT_NAME} Reception" "Reception email created"; then
-    if ! ask_yes "Did you get this email?
+    # Google sometimes says the name is taken and makes them pick another.
+    # Every later step uses this address, so ask which one they ended up with.
+    if [ $DRY_RUN = 0 ] && [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Is this your new email?
 
-${RECEPTION_EMAIL}"; then
-      RECEPTION_EMAIL="$(ask_email "Type the email you got:" "")"
+${RECEPTION_EMAIL}
+
+(Google sometimes makes you pick a different one.)" "No, I got a different one,Yes, that's it" "Yes, that's it")" != "Yes, that's it" ]; then
+      RECEPTION_EMAIL="$(ask_email "Type your new email:" "")"
     fi
   fi
   remember RECEPTION_EMAIL "$RECEPTION_EMAIL"
