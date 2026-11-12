@@ -795,6 +795,12 @@ def main(argv: list[str] | None = None) -> int:
     if not acquire_lock():
         print("Another headshots run is active — skipping this tick.")
         return 0
+    if not args.dry_run:
+        try:   # fetch the big cutout model in the background between photos
+            from automations.headshots import process as P
+            P.prefetch_model()
+        except Exception:  # noqa: BLE001 -- the small model still works
+            pass
     try:
         actions = scan(dry_run=args.dry_run, channel=args.channel)
     finally:

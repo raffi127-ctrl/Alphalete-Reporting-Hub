@@ -55,12 +55,20 @@ def _start_background_download(name: str) -> None:
 
     birefnet-portrait is ~973MB. Downloading it inside the 5-min tick timed
     out on Lucy 3 every run (2026-11-11), so no headshot got processed at all.
-    One detached download at a time (lock file, stale after 2h)."""
+    One detached download at a time (lock file holds the downloader's pid)."""
     lock = _model_file(name).with_suffix(".downloading")
     try:
         lock.parent.mkdir(parents=True, exist_ok=True)
-        if lock.exists() and time.time() - lock.stat().st_mtime < 2 * 3600:
-            return
+        if lock.exists():
+            try:
+                pid = int(lock.read_text().strip() or "0")
+                os.kill(pid, 0)          # downloader still alive: leave it be
+                return
+            except (ValueError, OSError):
+                pass                     # dead or unreadable: start again
+        failed = _model_file(name).with_suffix(".failed")
+        if failed.exists() and time.time() - failed.stat().st_mtime < 3600:
+            return                       # last try failed: wait an hour
         lock.write_text(str(os.getpid()))
         # A half file left by a killed download looks "present" -- rembg then
         # re-downloads it in the foreground and the tick hangs. Start clean.
@@ -71,13 +79,27 @@ def _start_background_download(name: str) -> None:
                 "try:\n"
                 f"    new_session({name!r})\n"
                 f"    pathlib.Path({str(_ready_marker(name))!r}).write_text('ok')\n"
+                "except Exception:\n"
+                f"    pathlib.Path({str(_model_file(name).with_suffix('.failed'))!r}).write_text('x')\n"
                 "finally:\n"
                 f"    pathlib.Path({str(lock)!r}).unlink(missing_ok=True)\n")
-        subprocess.Popen([sys.executable, "-c", code],
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        proc = subprocess.Popen([sys.executable, "-c", code],
+                                stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        lock.write_text(str(proc.pid))
     except Exception:  # noqa: BLE001 -- the fallback model still works
         pass
+
+
+def prefetch_model() -> None:
+    """Start the big model's background download if it isn't ready yet.
+    Called every tick, so it lands BEFORE the next photo arrives instead of
+    that photo being the one that kicks it off."""
+    name = config.REMBG_MODEL
+    if name != FALLBACK_MODEL and not _model_ready(name):
+        _start_background_download(name)
 
 
 def _rembg_session():
