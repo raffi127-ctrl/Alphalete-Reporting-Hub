@@ -963,6 +963,27 @@ APPLESCRIPT
   PERSON_NAME="$(echo "$PERSON_NAME" | sed 's/^ *//; s/ *$//')"
 done
 remember PERSON_NAME "$PERSON_NAME"
+# ROLE: the All in One is named after the ICD (owner), not the admin or
+# reception person setting up (Megan, 2026-11-12: "this should be the ICD
+# name - this is the admin's name"). On the owner's laptop they're the same.
+ICD_NAME="$(recall ICD_NAME)"
+if [ "$ROLE" = owner ]; then ICD_NAME="$PERSON_NAME"; fi
+while [ -z "$ICD_NAME" ]; do
+  if [ $DRY_RUN = 1 ]; then ICD_NAME="Example Owner"; break; fi
+  ICD_NAME="$(osascript - "Laptop Set Up — $ROLE_NAME" "Type the first and last name of the ICD (owner) you work for." <<'APPLESCRIPT' 2>/dev/null
+on run argv
+  try
+    set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer "" buttons {"OK"} default button "OK" with icon note
+    return text returned of r
+  on error
+    return ""
+  end try
+end run
+APPLESCRIPT
+)"
+  ICD_NAME="$(echo "$ICD_NAME" | sed 's/^ *//; s/ *$//')"
+done
+remember ICD_NAME "$ICD_NAME"
 
 # ------------------------------------------------------------------------
 step_0() {
@@ -1070,7 +1091,7 @@ section "Your All in One sheet"
 # reception as Editor; its "Passwords" tab gets every login from here on
 # (Maud + Megan, 2026-11-12). It moved up from near the end so it's open
 # before the first password is saved.
-ALLIN_NAME="All in One - ${PERSON_NAME}"
+ALLIN_NAME="All in One - ${ICD_NAME}"
 human drive_shared "Wait for the launch team to share your All in One with:
 ${RECEPTION_EMAIL}
 
@@ -1576,7 +1597,7 @@ REPORT="$HOME/Desktop/Laptop-Setup-Report.txt"
 [ $DRY_RUN = 1 ] && REPORT="$(mktemp)"
 {
   echo "Laptop Set Up — $(scutil --get ComputerName 2>/dev/null) — $(date '+%Y-%m-%d %H:%M')"
-  echo "For: $PERSON_NAME    Reception email: $RECEPTION_EMAIL    Sara+ email: $OWNER_EMAIL"
+  echo "For: $PERSON_NAME ($ROLE_NAME, ICD: $ICD_NAME)    Reception email: $RECEPTION_EMAIL    Sara+ email: $OWNER_EMAIL"
   echo "Launch team — Lucy background-check forward: $REGISTER_CMD"
   echo; echo "DONE:";                           for s in "${DONE[@]}";   do echo "  ✅ $s"; done | awk '!seen[$0]++'
   echo; echo "COULD NOT DO (fix by hand):";     for s in "${FAILED[@]}"; do echo "  ❌ $s"; done
