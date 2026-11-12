@@ -531,10 +531,9 @@ human chrome_sync "Turn on Chrome sync.
 1. Click your picture at the top right of Chrome.
 2. Click “Turn on sync”. Then “Yes, I'm in”." "Chrome sync on"
 verify chrome_sync "Chrome signed in as reception, sync on" chk_chrome
-# Zoom was signed in on step 1, before there was a Google account to save to.
-# Every login gets saved, personal ones too: the passwords are for THEM on
-# their new laptop (Megan, 2026-11-11: "It can all be saved").
-save_password pw_zoom "Zoom" "zoom.us"
+# No Zoom password to save: they make Zoom with "Sign up -> Google", so it
+# logs in through their personal Gmail and has no password of its own.
+# (Every other login is saved -- Megan 2026-11-11: "It can all be saved".)
 
 # ------------------------------------------------------------------------
 }
