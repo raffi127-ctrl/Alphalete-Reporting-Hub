@@ -529,7 +529,10 @@ human chrome_sync "Turn on Chrome sync.
 1. Click your picture at the top right of Chrome.
 2. Click “Turn on sync”. Then “Yes, I'm in”." "Chrome sync on"
 verify chrome_sync "Chrome signed in as reception, sync on" chk_chrome
-# (No Zoom password here: Zoom is their PERSONAL account -- Maud, 2026-11-11.)
+# Zoom was signed in on step 1, before there was a Google account to save to.
+# Every login gets saved, personal ones too: the passwords are for THEM on
+# their new laptop (Megan, 2026-11-11: "It can all be saved").
+save_password pw_zoom "Zoom" "zoom.us"
 
 # ------------------------------------------------------------------------
 }
@@ -543,6 +546,7 @@ if [ "$COMPUTER" = owner ]; then
 1. Click “Sign in”.
 2. Sign in with YOUR OWN Apple account." "Owner's own iCloud signed in"
   verify icloud "Apple account signed in" chk_apple_any
+  save_password pw_apple "Apple account" "apple.com"
 else
   human icloud "System Settings is open.
 (The gray ⚙️ window. Look behind this box.)
