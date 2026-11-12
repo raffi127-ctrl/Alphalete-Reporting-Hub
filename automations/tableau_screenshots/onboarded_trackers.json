@@ -667,9 +667,11 @@
   },
   {
     "key": "emiliano",
-    "label": "Emiliano's Local Office (channel from ECO sign-up)",
+    "label": "Emiliano's Local Office",
     "owner": "Milly Villagrana",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CH4JK1CKV"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
