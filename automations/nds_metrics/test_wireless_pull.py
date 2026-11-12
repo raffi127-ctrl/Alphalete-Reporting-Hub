@@ -80,5 +80,26 @@ class OrderRows(unittest.TestCase):
         self.assertTrue(any("no-order-row sample" in x for x in logs))   # the diagnostic fires
 
 
+class Windows(unittest.TestCase):
+    def test_31_days_become_four_disjoint_windows(self):
+        # 11/12: the grid shows one page of 100 orders; a 31-day window passed
+        # 100 on 11/10 and the newest orders fell off every pull since
+        import datetime as dt
+        w = WP.windows(dt.date(2026, 10, 12), dt.date(2026, 11, 12))
+        self.assertEqual(w[0], (dt.date(2026, 10, 12), dt.date(2026, 10, 21)))
+        self.assertEqual(w[-1], (dt.date(2026, 11, 11), dt.date(2026, 11, 12)))
+        self.assertEqual(len(w), 4)
+        for (a, b), (c, d) in zip(w, w[1:]):
+            self.assertEqual(c, b + dt.timedelta(days=1))
+            self.assertLessEqual((b - a).days, 9)
+
+    def test_two_joined_documents_parse_in_order(self):
+        import pathlib
+        one = pathlib.Path(__file__).with_name("test_wireless_pull.py").read_bytes()  # any bytes: parse must not choke
+        two = b"\n<!-- window -->\n".join([one, one])
+        o, l = WP.parse(two, log=lambda *a, **k: None)
+        self.assertEqual((o, l), ([], []))
+
+
 if __name__ == "__main__":
     unittest.main()

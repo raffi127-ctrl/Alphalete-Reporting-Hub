@@ -29,7 +29,36 @@ from automations.nds_metrics.run import (NDS_SARA_CREDS, NDS_SARA_PROFILE,
                                          OUT_DIR)
 
 
+WINDOW_DAYS = 10
+
+
 def pull(start: dt.date, end: dt.date, log=print) -> bytes:
+    """The wireless feed for [start, end], pulled in WINDOW_DAYS-day windows
+    and concatenated. The dealer's grid shows one page of 100 orders: on
+    2026-11-10 the 31-day window passed 100 orders and every pull since read
+    the same 100 (the oldest) -- no order after 11/07 reached the tab, the
+    wrap-up and never-texted checks saw "0 customer(s)" for four days.
+    parse() walks the concatenated documents in order; windows are disjoint
+    by order date, so no order appears twice."""
+    chunks = []
+    for w_start, w_end in windows(start, end):
+        log(f"[ndsw] window {w_start}..{w_end}")
+        chunks.append(_pull_window(w_start, w_end, log=log))
+    return b"\n<!-- window -->\n".join(chunks)
+
+
+def windows(start: dt.date, end: dt.date, days: int = WINDOW_DAYS):
+    """[start, end] cut into runs of `days` days, oldest first."""
+    out = []
+    cur = start
+    while cur <= end:
+        w_end = min(end, cur + dt.timedelta(days=days - 1))
+        out.append((cur, w_end))
+        cur = w_end + dt.timedelta(days=1)
+    return out
+
+
+def _pull_window(start: dt.date, end: dt.date, log=print) -> bytes:
     import json as _json
     from patchright.sync_api import sync_playwright
     from automations.rc_contact_sync import config as RC
