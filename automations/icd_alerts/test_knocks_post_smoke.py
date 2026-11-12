@@ -189,7 +189,10 @@ class TheSendBranchDoesNotTouchTheHandlersVariables(unittest.TestCase):
         from automations.icd_alerts import knocks_post as KP
         src = __import__("inspect").getsource(KP.run)
         i = src.index("FAILED to post to")
-        self.assertIn("_said_already", src[i:i + 500])
+        # The memory moved from once-a-day (_said_already) to the quiet-
+        # computer clock (_text_alert_due, 2026-11-11). What is pinned is the
+        # same thing: the handler asks before it says anything.
+        self.assertIn("_text_alert_due", src[i:i + 500])
 
     def test_a_text_send_reaches_text_post(self):
         # End to end through run(): the send must call _text, not raise.

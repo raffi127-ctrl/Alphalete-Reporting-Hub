@@ -265,6 +265,11 @@ def find_group_by_handles(require: Sequence, guid: str = "") -> List[Dict]:
     return hits
 
 
+# How long to wait before the second look in resolve_dest. Long enough for
+# Messages to finish whatever it was doing, short enough to cost a tick nothing.
+RELOOK_SECONDS = 4.0
+
+
 def resolve_dest(dest: Dict) -> Dict:
     """The ONE live chat this destination means. Raises on 0 or 2+.
 
@@ -279,6 +284,18 @@ def resolve_dest(dest: Dict) -> Dict:
 
     guid = str(dest.get("chat_guid") or "")
     hits = find_group_by_handles(require, guid)
+    if not hits:
+        # LOOK TWICE BEFORE SAYING SOMEBODY LEFT. list_chats reads every
+        # chat's members in one AppleScript pass, with a `try` round each
+        # chat so one bad chat cannot cost the rest -- which also means a
+        # Messages hiccup part-way through a chat hands back a SHORT member
+        # list, and a short list matches nothing. One miss is not evidence:
+        # Jamis 11/09, Jacob 11/10 and Natalia 11/11 (her first day) each got
+        # "those numbers left the group" from a single tick, with the group
+        # untouched and the very next tick delivering. A group that is really
+        # gone is still gone a few seconds later.
+        time.sleep(RELOOK_SECONDS)
+        hits = find_group_by_handles(require, guid)
     label = dest.get("group") or "(participant-pinned group)"
     if not hits:
         raise GroupTextError(

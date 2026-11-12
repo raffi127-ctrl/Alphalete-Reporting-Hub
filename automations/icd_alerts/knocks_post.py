@@ -692,6 +692,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                             tp.send_text_to_group(
                                 d.get("group") or d.get("channel_name") or "",
                                 g, dry_run=False, dest=d)
+                            _text_worked(key, d.get("channel_name") or cid)
                             posted_total += 1
                         else:
                             log("%-10s %s: nobody over the line -- no text this tick"
@@ -710,6 +711,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                             _gaps_text(office, rows_for_board, now,
                                        dest=d["channel_id"]))
                     _text(d, boards, body)
+                    _text_worked(key, d.get("channel_name") or cid)
                     # When the picture last went to this group. Read only by
                     # board_rides() for a group with board_min; harmless
                     # bookkeeping for the rest.
@@ -729,15 +731,16 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 where = d.get("channel_name") or d["channel_id"]
                 log("%-10s FAILED to post to %s: %s: %s"
                     % (key, where, type(e).__name__, str(e)[:120]))
-                if P.is_text_dest(d["channel_id"]) and not _said_already(
-                        "text", key, day,
-                        "%s|%s" % (where, type(e).__name__)):
+                again = (_text_alert_due(key, where)
+                         if P.is_text_dest(d["channel_id"]) else None)
+                if again:
                     # A GROUP NAME IS THE ONE THING NOBODY CAN CHECK FOR THEM.
                     # It is typed on a form, it cannot be verified from the
                     # machine that approves it, and a near-miss delivers
                     # nothing. So this goes where a person will see it rather
                     # than into a log.
-                    msg = _text_failed_msg(office.label, where, d, e)
+                    msg = _text_failed_msg(office.label, where, d, e,
+                                           still=(again == "still"))
                     try:
                         P._slack(O.OPS_CHANNEL, msg)
                     except Exception:  # noqa: BLE001
@@ -757,7 +760,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     return {"posted": posted_total}
 
 
-def _text_failed_msg(label: str, where: str, dest: Dict, err: Exception) -> str:
+def _text_failed_msg(label: str, where: str, dest: Dict, err: Exception,
+                     still: bool = False) -> str:
     """What the channel and the owner's DM say when a group text fails.
 
     THE WHOLE REASON, NOT ITS FIRST 200 CHARACTERS. Jenny's 2026-10-10 alert
@@ -776,9 +780,113 @@ def _text_failed_msg(label: str, where: str, dest: Dict, err: Exception) -> str:
                "add them (and Lucy) back to the group.")
     else:
         fix = "Check the group name is exactly right and that Lucy is in the chat."
-    return (":speech_balloon: *%s* — could not text their board to "
+    # THE REPEAT SAYS IT IS A REPEAT. "Could not text" a second time reads as
+    # a second problem; "still" says it is the first one, not fixed.
+    opened = ("*Still* could not text their board to" if still
+              else "could not text their board to")
+    return (":speech_balloon: *%s* — %s "
             "\u201c%s\u201d.\n> %s\n> Their Slack channels are unaffected. %s"
-            % (label, where, str(err)[:600], fix))
+            % (label, opened, where, str(err)[:600], fix))
+
+
+# A GROUP TEXT THAT STAYS BROKEN IS SAID AGAIN, on the quiet-computer clock.
+#
+# This alert used to be once a day per group (_said_already). Megan,
+# 2026-11-11, after Natalia's false alarm: "this should alert just like their
+# 'down' relay machine" -- because once-a-day meant one blip at 5:59 PM spent
+# the day's only alert, and texts really stopping at 7 would have said nothing.
+# So it follows warn_quiet's rule: said when it breaks, then again every
+# NUDGE_STILL_QUIET_MIN while it is STILL broken -- about three times across a
+# selling day, not once and not every two minutes.
+TEXT_ALERTS_FILE = ".text_alerts.json"
+
+
+def _text_alerts() -> Dict:
+    try:
+        return json.loads((OUT_DIR / TEXT_ALERTS_FILE).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _text_alerts_save(data: Dict) -> None:
+    try:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        (OUT_DIR / TEXT_ALERTS_FILE).write_text(json.dumps(data))
+    except OSError:
+        pass
+
+
+def _text_alert_due(key: str, where: str,
+                    now: Optional[dt.datetime] = None) -> Optional[str]:
+    """A text to this group just failed. Say so? 'first', 'still', or None.
+
+    'first'  nothing has been said about this group since it last worked.
+    'still'  it was said, it has not worked since, and NUDGE_STILL_QUIET_MIN
+             has gone by -- the same wait the quiet-computer nudge uses.
+    None     it was said recently enough; the poster runs every two minutes
+             and an alert with no memory is a flood.
+
+    Best effort, like _said_already: failing to remember must never stop the
+    boards, so anything going wrong here answers 'first' (say it) rather than
+    swallowing a real failure.
+    """
+    now = now or dt.datetime.now()
+    try:
+        data = _text_alerts()
+        slot = "%s|%s" % (key, where)
+        was = data.get(slot) or {}
+        last = None
+        try:
+            last = dt.datetime.fromisoformat(was.get("alerted") or "")
+        except ValueError:
+            last = None
+        since = (now - last) if last else None
+        if last is None:
+            verdict = "first"
+        elif was.get("ok"):
+            # It worked in between, so this is a NEW break and gets said --
+            # but not inside half an hour of the last one: a group that
+            # flickers on and off every tick must not page its owner every
+            # tick. NUDGE_REPEAT_MIN is the floor warn_quiet already uses.
+            if since < dt.timedelta(minutes=P.NUDGE_REPEAT_MIN):
+                return None
+            verdict = "first"
+        elif since >= dt.timedelta(minutes=P.NUDGE_STILL_QUIET_MIN):
+            verdict = "still"
+        else:
+            return None
+        # Entries older than two days are not worth carrying.
+        keep = {}
+        for k, v in data.items():
+            try:
+                if (now - dt.datetime.fromisoformat(v.get("alerted") or "")
+                        ) < dt.timedelta(days=2):
+                    keep[k] = v
+            except (ValueError, AttributeError):
+                continue
+        keep[slot] = {"alerted": now.isoformat(timespec="seconds")}
+        _text_alerts_save(keep)
+        return verdict
+    except Exception:  # noqa: BLE001
+        return "first"
+
+
+def _text_worked(key: str, where: str) -> None:
+    """A text to this group went out: whatever was wrong is over.
+
+    Marked, not forgotten: "it worked since" is what makes the NEXT failure a
+    fresh 'first' and not a 'still' four hours after a blip nobody remembers,
+    and the time of the last alert is what stops a flickering group paging
+    its owner every tick.
+    """
+    try:
+        data = _text_alerts()
+        was = data.get("%s|%s" % (key, where))
+        if was and not was.get("ok"):
+            was["ok"] = True
+            _text_alerts_save(data)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _said_already(kind: str, key: str, day: dt.date, detail: str) -> bool:
