@@ -1157,7 +1157,14 @@ section "Apple account (iCloud)"
 # ROLE: owners and admins are already signed in to their OWN Apple account on
 # their Mac -- nothing to do or check (Megan, 2026-11-12). Only RECEPTION
 # creates an iCloud account, with the reception email.
-if [ "$ROLE" != reception ]; then ok "Apple account: their own, already set up (skipped)"; return 0; fi
+# Saved: the OWNER's Apple login (on the owner's laptop) and RECEPTION's.
+# An admin's personal Apple account is never saved (Megan, 2026-11-12).
+if [ "$ROLE" = admin ]; then ok "Apple account: the admin's own (not saved)"; return 0; fi
+if [ "$ROLE" = owner ]; then
+  ok "Apple account: the owner's own, already signed in"
+  save_password pw_apple "Apple account" "apple.com" "$(defaults read MobileMeAccounts Accounts 2>/dev/null | sed -n 's/.*AccountID = "\{0,1\}\([^";]*\).*/\1/p' | head -1)" "Apple Accounts|Apple Account|Apple"
+  return 0
+fi
 if [ "$COMPUTER" = owner ] && [ $DRY_RUN = 0 ] && [ -z "$(chk_apple_any)" ]; then
   # A new Mac signs in to Apple during its own first-time setup, before the
   # call (Megan, 2026-11-11) -- so usually there's nothing to do here.
