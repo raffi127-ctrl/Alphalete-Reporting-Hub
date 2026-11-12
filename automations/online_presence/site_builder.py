@@ -116,6 +116,7 @@ def facts(p, x: Dict) -> Dict:
         "theme": theme, "t": THEMES[theme],
         "colors": {**THEMES[theme]["colors"], **(x.get("colors") or {})},
         "year": dt.date.today().year,
+        "noindex": bool(x.get("noindex")),   # test sites: Google must not list them
     }
 
 
@@ -154,6 +155,7 @@ def _head(f, page: str, depth: str, desc: str) -> str:
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(title)}</title>'
             f'<meta name="description" content="{e(desc)}">'
+            + ('<meta name="robots" content="noindex,nofollow">' if f.get("noindex") else "")
             + (f'<link rel="canonical" href="{e(canon)}">' if canon else "")
             + f'<link rel="icon" href="{depth}favicon.svg">'
             f'<link rel="preconnect" href="https://fonts.googleapis.com">'
@@ -188,7 +190,8 @@ def _footer(f) -> str:
         f'<a href="tel:+1{f["tel"]}">{e(f["phone"])}</a>' if f["phone"] else "",
         f'<a href="mailto:{e(f["email"])}">{e(f["email"])}</a>' if f["email"] else "") if x)
     return (f'<footer><div class="wrap"><b>{e(f["name"])}</b><p class="muted">{nap}</p>'
-            f'<p class="muted">{soc}</p><p class="muted small">© {f["year"]} {e(f["name"])}</p>'
+            f'<p class="muted">{soc}</p><p class="muted small">© {f["year"]} {e(f["name"])} · '
+            f'<a href="{f.get("_depth", "")}privacy/">Privacy policy</a></p>'
             f'</div></footer></body></html>')
 
 
@@ -288,6 +291,32 @@ def page_contact(f, c) -> str:
               f'Apply in 2 minutes</a></div></div></section>' + _footer(f))
 
 
+def page_privacy(f, c) -> str:
+    """Plain privacy policy: Indeed and text-message consent both expect one
+    (Megan 2026-11-12). Facts only from the office's own details."""
+    d = "../"
+    who = e(f["name"])
+    contact = " or ".join(x for x in (
+        f'<a href="mailto:{e(f["email"])}">{e(f["email"])}</a>' if f["email"] else "",
+        f'<a href="tel:+1{f["tel"]}">{e(f["phone"])}</a>' if f["phone"] else "") if x)
+    body = "".join(f"<h3>{t}</h3><p class=\"body\">{p}</p>" for t, p in (
+        ("What we collect", f"When you apply or contact {who}, we collect what you give us: your name, "
+                            "phone number, email, resume and anything you write to us."),
+        ("How we use it", "Only to review your application, contact you about jobs with us, and schedule "
+                          "interviews. If you agree to texts, we text you about your application."),
+        ("Who we share it with", "We don't sell your information. We share it only with the tools we use to "
+                                 "manage applications and messages, and only to do those things."),
+        ("Texts and calls", "You can ask us to stop texting or calling you at any time, and we will."),
+        ("Your choices", "You can ask us to see, fix or delete your information" +
+                         (f" by contacting us at {contact}." if contact else ".")),
+        ("Where we are", e(f["address"])),
+    ))
+    return (_head(f, "Privacy", d, f"Privacy policy for {f['name']}.") + _nav(f, d, "")
+            + f'<section class="first"><div class="wrap"><span class="ey">Privacy</span>'
+              f'<h2>Privacy policy</h2><p class="muted small">Last updated {dt.date.today():%B} {dt.date.today().day}, '
+              f'{dt.date.today().year}</p>{body}</div></section>' + _footer(f))
+
+
 def page_apply(f, c) -> str:
     d = "../"
     if f["apply_url"]:
@@ -349,9 +378,11 @@ def build(p, out: Optional[Path] = None, extra: Optional[Dict] = None, copy: Opt
     out = out or OUT / p.key
     if out.exists():
         shutil.rmtree(out)
-    for (path, _), fn in zip(PAGES, (page_home, page_about, page_contact, page_apply)):
+    for (path, _), fn in list(zip(PAGES, (page_home, page_about, page_contact, page_apply))) + \
+            [(("privacy/index.html", "Privacy"), page_privacy)]:
         target = out / path
         target.parent.mkdir(parents=True, exist_ok=True)
+        f["_depth"] = "" if path == "index.html" else "../"
         target.write_text(fn(f, c))
     (out / "site.css").write_text(CSS)
     if f["photos"]:
@@ -364,9 +395,11 @@ def build(p, out: Optional[Path] = None, extra: Optional[Dict] = None, copy: Opt
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="32" '
         f'fill="{f["colors"]["accent"]}"/><text x="32" y="43" font-size="34" font-family="Arial" '
         f'font-weight="900" text-anchor="middle" fill="#fff">{e(f["name"][:1].upper())}</text></svg>')
-    if f["url"]:
+    if f["noindex"]:
+        (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n")
+    elif f["url"]:
         urls = "".join(f"<url><loc>{f['url']}/{'' if pth == 'index.html' else pth.split('/')[0] + '/'}</loc></url>"
-                       for pth, _ in PAGES)
+                       for pth, _ in PAGES + (("privacy/index.html", "Privacy"),))
         (out / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?><urlset '
                                          f'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>')
         (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {f['url']}/sitemap.xml\n")

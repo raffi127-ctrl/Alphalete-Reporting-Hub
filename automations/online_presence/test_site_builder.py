@@ -35,6 +35,10 @@ class Builds(unittest.TestCase):
             self.assertIn("https://www.instagram.com/kashmktg/", s)
             self.assertIn('"@type": "LocalBusiness"', s)
         self.assertEqual((out / "CNAME").read_text().strip(), "kashmarketing.com")
+        priv = (out / "privacy" / "index.html").read_text()
+        self.assertIn("Privacy policy", priv)
+        self.assertIn('href="privacy/"', (out / "index.html").read_text())
+        self.assertIn('href="../privacy/"', (out / "about" / "index.html").read_text())
         self.assertIn("https://kashmarketing.com/apply/", (out / "sitemap.xml").read_text())
 
     def test_no_pay_numbers_unless_the_office_gives_its_own(self):
