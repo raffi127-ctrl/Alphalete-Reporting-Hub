@@ -1707,7 +1707,7 @@
    "source_type": "local",
    "data_sources": [],
    "command": [
-    "automations.headshots.run"
+    "automations.headshots.tick_now"
    ],
    "base_args": [],
    "cadence": {
