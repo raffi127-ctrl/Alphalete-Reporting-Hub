@@ -106,16 +106,18 @@ say_info() {   # message   (OK; Back from step 2 on)
 # said to click it, because the step was marked done before checks existed).
 LAST_MSG=""; LAST_SHOWN=0
 human() {
-  local key="$1" msg="$2" label="${3:-$TITLE}"
+  # 4th arg: the "done" button's words (default "I did it"); launch-team
+  # steps say "They confirmed it done" (Megan, 2026-11-11).
+  local key="$1" msg="$2" label="${3:-$TITLE}" done="${4:-I did it}"
   [ "$GO" = back ] && return 1
   LAST_MSG="$msg"; LAST_SHOWN=0
   if [ "$FORCE" = 0 ] && is_done "$key"; then ok "$label (done earlier)"; return 0; fi
   LAST_SHOWN=1
   if [ $DRY_RUN = 1 ]; then echo "  (pop-up) $label"; return 0; fi
-  local btns="Skip,I did it"; [ "$N" -gt 1 ] && btns="Back,Skip,I did it"
-  local b; b="$(_dialog "Step $N of $TOTAL — $TITLE" "$msg" "$btns" "I did it")"
+  local btns="Skip,$done"; [ "$N" -gt 1 ] && btns="Back,Skip,$done"
+  local b; b="$(_dialog "Step $N of $TOTAL — $TITLE" "$msg" "$btns" "$done")"
   [ "$b" = "Back" ] && { GO=back; return 1; }
-  if [ "$b" = "I did it" ]; then is_done "$key" || mark_done "$key"; ok "$label"; return 0; fi
+  if [ "$b" = "$done" ]; then is_done "$key" || mark_done "$key"; ok "$label"; return 0; fi
   todo "$label"; return 1
 }
 
@@ -617,7 +619,7 @@ ${RECEPTION_EMAIL}
 3. Click Next. Then Proceed. Then OK.
 
 Don't change anything else." "Owner's Gmail: reception added as a forwarding address"
-  human fwd_reception_confirmed "Wait for the launch team to approve your forwarding." "Launch team approved the reception forwarding"
+  human fwd_reception_confirmed "Wait for the launch team to approve your forwarding." "Launch team approved the reception forwarding" "They confirmed it done"
   if is_done fwd_reception_confirmed || [ $DRY_RUN = 1 ]; then
     open_chrome "$OWNER_GMAIL#settings/filters"
     human filters_reception "Gmail is open.
@@ -656,7 +658,7 @@ ${LUCY_BG_INBOX}
 3. Click Next. Then Proceed. Then OK.
 
 Don't change anything else." "Owner's Gmail: Lucy added as a forwarding address"
-  human fwd_lucy_approved "Wait for the launch team to approve your forwarding." "Launch team approved the Lucy forwarding"
+  human fwd_lucy_approved "Wait for the launch team to approve your forwarding." "Launch team approved the Lucy forwarding" "They confirmed it done"
   if is_done fwd_lucy_approved || [ $DRY_RUN = 1 ]; then
     open_chrome "$OWNER_GMAIL#settings/filters"
     human filters_lucy "Gmail is open.
@@ -750,7 +752,7 @@ human slack_phone "Grab your phone.
 3. Turn on “Allow Notifications”." "Slack alerts on the phone"
 human slack_admin "Ask the launch team to make you a Slack admin.
 
-They will do it on the Zoom call." "Slack: made admin (AO)"
+They will do it on the Zoom call." "Slack: made admin (AO)" "They confirmed it done"
 
 # ------------------------------------------------------------------------
 }
