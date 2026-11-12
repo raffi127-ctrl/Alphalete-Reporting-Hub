@@ -146,6 +146,39 @@ open_chrome() {   # url...   (falls back to the default browser before Chrome ex
   fi
 }
 
+# --- check their work: did the ☆ really get clicked? -----------------------
+# Chrome keeps the profile's bookmarks in a plain file; after "I did it" Lucy
+# reads it and names any page with no star (Megan, 2026-11-11: "is there a
+# way for us to check ... their work"). Chrome saves that file ~2s after a
+# click, hence the short wait before each look.
+CHROME_DIR="$HOME/Library/Application Support/Google/Chrome/$CHROME_PROFILE"
+unmark() { [ $DRY_RUN = 0 ] && { grep -vxF "$1" "$PROGRESS" 2>/dev/null > "$PROGRESS.tmp"; mv "$PROGRESS.tmp" "$PROGRESS"; }; }
+missing_stars() {   # "Name|text-in-the-address" ... -> prints the names with no bookmark
+  local urls e
+  urls="$(grep -o '"url": *"[^"]*"' "$CHROME_DIR/Bookmarks" 2>/dev/null)"
+  for e in "$@"; do echo "$urls" | grep -qi "${e#*|}" || echo "${e%%|*}"; done
+}
+check_stars() {   # step-key  "Name|text-in-the-address" ...
+  local key="$1"; shift
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) would check the ☆ for: ${*%%|*}"; return 0; }
+  grep -qxF "$key" "$PROGRESS" 2>/dev/null || return 0   # they skipped; nothing to check
+  local miss b
+  while :; do
+    sleep 3
+    miss="$(missing_stars "$@")"
+    if [ -z "$miss" ]; then ok "Lucy checked: ☆ saved for $(printf '%s, ' "${@%%|*}" | sed 's/, $//')"; return 0; fi
+    b="$(_dialog "Step $N of $TOTAL — $TITLE" "Lucy can't find a ☆ on:
+$miss
+
+Go to that tab.
+Click the ☆ at the right end of the web address bar.
+Then click “Done”." "Skip,Check again" "Check again")"
+    if [ "$b" != "Check again" ]; then
+      unmark "$key"; todo "Bookmark (☆) missing: $(echo "$miss" | tr '\n' ' ')"; return 1
+    fi
+  done
+}
+
 # ------------------------------------------------------------- installers
 # DOWNLOADS START THE MOMENT THE WALKTHROUGH OPENS (Megan, 2026-11-11: "the
 # goal is to shorten this call"). Excel alone is ~1 GB; fetched while the
@@ -408,6 +441,7 @@ human chrome_google "Chrome is open.
 (Asked to sign in? Use ${RECEPTION_EMAIL}.)
 3. Gmail, Calendar and Drive are open in tabs at the top.
 Click each tab. Click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
+check_stars chrome_google "Gmail|mail.google.com" "Calendar|calendar.google.com" "Drive|drive.google.com"
 
 # ------------------------------------------------------------------------
 section "Sign in to work websites"
@@ -422,10 +456,13 @@ Ask the owner for the password."
 1. Log in.${extra}
 2. Chrome asks to save the password. Click “Save”.
 3. Save the page: click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: logged in to $sname + bookmarked"
+  # what to look for in the saved address (Apex lives on herbjoyent.com)
+  needle="$(echo "$sname" | tr 'A-Z' 'a-z')"; [ "$sname" = "Apex" ] && needle="herbjoyent"
+  check_stars "site_$sname" "$sname|$needle"
 done
 
 # ------------------------------------------------------------------------
-section "Send codes to reception"
+section "Send Sterling + OwnerVille codes to reception"
 # The checklist's filters: Sterling + OwnerVille login codes reach reception.
 # Google won't let a script add a forwarding address to a regular Gmail (that
 # API is Workspace-admin only) and a filter can only forward to a CONFIRMED
@@ -433,7 +470,9 @@ section "Send codes to reception"
 # script writes, with Gmail's own "Import filters" button. No sign-in tokens.
 OWNER_EMAIL="$(recall OWNER_EMAIL)"
 if [ -z "$OWNER_EMAIL" ]; then
-  OWNER_EMAIL="$(ask_email "Type the OWNER's email:" "")"
+  OWNER_EMAIL="$(ask_email "Next: your Sterling and OwnerVille login codes will go to reception.
+
+What email address is your Sara+ account set up with?" "")"
   remember OWNER_EMAIL "$OWNER_EMAIL"
 fi
 OWNER_GMAIL="https://mail.google.com/mail/?authuser=$OWNER_EMAIL"
