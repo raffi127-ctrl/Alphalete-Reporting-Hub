@@ -85,8 +85,18 @@ class NewStartsTest(unittest.TestCase):
         owners = [{"id": "a", "name": "Ann"}, {"id": "b", "name": "Bo"}, {"id": "c", "name": "Cy"}]
         offices = {"a": ["A1", "A2"], "b": ["B1"], "c": ["C1"]}
         table, seen = new_starts_table(rows, self.WEEKS, owners, offices)
-        self.assertEqual(table, [["Bo (1 wk)", 4, 4, 1.0, 4.0], ["Ann", 20, 8, 0.4, 4.0]])
+        self.assertEqual(table, [["Bo (1 wk)", 4, 4, 1.0, 4.0, 0, 0], ["Ann", 20, 8, 0.4, 4.0, 0, 0]])
         self.assertEqual(seen, ["2026-10-11", "2026-11-01"])
+
+    def test_training_stays_apart_and_training_only_owner_shows(self):
+        rows = [["2026-11-01", "2026-11-02", "A1", "x", "10", "5", "3", "2"],
+                ["2026-11-01", "2026-11-02", "B1", "y", "0", "0", "9", "7"]]
+        owners = [{"id": "a", "name": "Ann"}, {"id": "b", "name": "Bo"}]
+        table, _ = new_starts_table(rows, self.WEEKS, owners, {"a": ["A1"], "b": ["B1"]})
+        self.assertEqual(table, [["Ann", 10, 5, 0.5, 5.0, 3, 2], ["Bo", 0, 0, None, 0.0, 9, 7]])
+        html = new_starts_html(table, ["2026-11-01"])
+        self.assertIn("Training Scheduled", html)
+        self.assertIn("—", html)
 
     def test_no_data_leaves_the_table_out(self):
         self.assertEqual(new_starts_html([], []), "")

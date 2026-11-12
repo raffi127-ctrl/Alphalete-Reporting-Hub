@@ -215,7 +215,7 @@ def load_new_starts(S) -> list:
     """Rows of the retention sheet's 'New Starts' tab. Empty if it can't be read:
     the recordings report still goes out, without this table."""
     try:
-        r = S.get("%s/%s/values/%s!A2:F100000" % (SHEETS, RETENTION_SSID, _q("New Starts")))
+        r = S.get("%s/%s/values/%s!A2:H100000" % (SHEETS, RETENTION_SSID, _q("New Starts")))
         r.raise_for_status()
         return r.json().get("values", [])
     except Exception as e:  # noqa: BLE001
@@ -224,13 +224,18 @@ def load_new_starts(S) -> list:
 
 
 def new_starts_table(rows: list, weeks: list, owners: list, offices: dict) -> tuple:
-    """([owner, scheduled, started, %, started per week], weeks that have data).
+    """([owner, scheduled, started, %, started per week, training scheduled,
+    training showed], weeks that have data).
     Best show ratio first; owners with nothing scheduled are left out.
+    Training (cols G/H, Raf 2026-11-12) is the TRAINING calendar, kept apart
+    from new starts, never added in (Eve: separate). An owner who only books
+    on Training still shows, with "—" for the new start %.
     Per week = over the weeks THAT owner has loaded; an owner with fewer weeks
     than the table gets "(N wk)" after the name (Eve 2026-11-10: a half-loaded
     owner must not look like 100% over 4 weeks)."""
     wanted = {w.isoformat() for w in weeks}
     sched, started, seen = defaultdict(int), defaultdict(int), set()
+    tsched, tshow = defaultdict(int), defaultdict(int)
     office_weeks = defaultdict(set)
     for row in rows:
         if len(row) < 6 or row[0] not in wanted:
@@ -243,16 +248,22 @@ def new_starts_table(rows: list, weeks: list, owners: list, offices: dict) -> tu
         office_weeks[row[2]].add(row[0])
         sched[row[2]] += s
         started[row[2]] += h
+        try:
+            tsched[row[2]] += int(float(row[6] or 0)) if len(row) > 6 else 0
+            tshow[row[2]] += int(float(row[7] or 0)) if len(row) > 7 else 0
+        except ValueError:
+            pass
     out = []
     n = max(len(seen), 1)
     for o in owners:
         ids = offices.get(o["id"]) or []
         s, h = sum(sched[x] for x in ids), sum(started[x] for x in ids)
-        if s:
+        ts, th = sum(tsched[x] for x in ids), sum(tshow[x] for x in ids)
+        if s or ts:
             k = len(set().union(*(office_weeks[x] for x in ids))) or n
             name = o.get("name", o["id"]) + ("" if k >= n else " (%d wk)" % k)
-            out.append([name, s, h, round(h / s, 4), round(h / k, 1)])
-    out.sort(key=lambda r: (-r[3], -r[1], r[0]))
+            out.append([name, s, h, round(h / s, 4) if s else None, round(h / k, 1), ts, th])
+    out.sort(key=lambda r: (-(r[3] if r[3] is not None else -1), -r[1], -r[5], r[0]))
     return out, sorted(seen)
 
 
@@ -865,7 +876,7 @@ NEW_START_COUNT = {}
 def ns_pct_by_owner(table: list) -> dict:
     """{owner name: started/scheduled} from new_starts_table, plus "" = total.
     The "(N wk)" note stays on the name in the detail table only."""
-    out = {re.sub(r" \(\d+ wk\)$", "", r[0]): r[3] for r in table}
+    out = {re.sub(r" \(\d+ wk\)$", "", r[0]): r[3] for r in table if r[3] is not None}
     s, h = sum(r[1] for r in table), sum(r[2] for r in table)
     if s:
         out[""] = round(h / s, 4)
@@ -882,6 +893,9 @@ def ns_count_by_owner(table: list) -> dict:
 
 # One-day notes at the top of the email, keyed by CT date (Eve 2026-11-11).
 DAY_NOTES = {
+    "2026-11-12": (
+        "Updated: the New Starts table now also shows the Training calendar, in its own "
+        "columns. Some offices book new starts on Training, so New Starts alone was missing them."),
     "2026-11-11": (
         "Heads up: in today's email, the New Start % column is missing some offices "
         "for a few owners. It will be complete in tomorrow's email. These changes have "
@@ -967,15 +981,18 @@ def new_starts_html(table: list, weeks_seen: list) -> str:
         body.append(
             '<tr style="background:%s"><td style="padding:6px 10px">%s</td>'
             '<td style="text-align:center">%s</td><td style="text-align:center">%s</td>'
-            '<td style="text-align:center;background:%s;font-weight:bold">%d%%</td>'
-            '<td style="text-align:center">%s</td></tr>'
-            % (bg, r[0], r[1], r[2], _cell_color(r[3], (0.5, 0.25)), round(r[3] * 100), r[4]))
+            '<td style="text-align:center;background:%s;font-weight:bold">%s</td>'
+            '<td style="text-align:center">%s</td>%s</tr>'
+            % (bg, r[0], r[1], r[2], _cell_color(r[3], (0.5, 0.25)), _pct(r[3]), r[4],
+               _training_tds(r)))
     s, h = sum(r[1] for r in table), sum(r[2] for r in table)
+    tot = ["Total", s, h, h / s if s else None, round(h / n, 1),
+           sum(r[5] for r in table if len(r) > 5), sum(r[6] for r in table if len(r) > 6)]
     body.append(
         '<tr style="background:#EEF2FA;font-weight:bold"><td style="padding:6px 10px">Total</td>'
         '<td style="text-align:center">%d</td><td style="text-align:center">%d</td>'
-        '<td style="text-align:center">%d%%</td><td style="text-align:center">%s</td></tr>'
-        % (s, h, round(100 * h / s), round(h / n, 1)))
+        '<td style="text-align:center">%s</td><td style="text-align:center">%s</td>%s</tr>'
+        % (s, h, _pct(tot[3]), tot[4], _training_tds(tot)))
     return (
         '<div style="font-family:Roboto,Arial,sans-serif;max-width:680px;margin-top:22px">'
         '<div style="background:#1F2A44;color:#fff;padding:12px 16px;font-size:16px;font-weight:bold">'
@@ -983,8 +1000,27 @@ def new_starts_html(table: list, weeks_seen: list) -> str:
         '<div style="padding:8px 2px;font-size:13px;color:#5B6478">%s</div>'
         '<table style="width:100%%;border-collapse:collapse;font-size:13px">'
         '<tr style="background:#2E3E61;color:#fff"><th style="text-align:left;padding:8px 10px">Owner</th>'
-        '<th>Scheduled</th><th>Started</th><th>%% Started</th><th>Avg Started / Week</th></tr>%s</table></div>'
-        % (n, span, "".join(body)))
+        '<th>Scheduled</th><th>Started</th><th>%% Started</th><th>Avg Started / Week</th>'
+        '<th style="background:%s">Training Scheduled</th><th style="background:%s">Training Showed</th>'
+        '</tr>%s</table>'
+        '<div style="padding:6px 2px;font-size:12px;color:#5B6478">Training = the Training calendar in '
+        'AppStream, shown apart from New Starts (some offices book new starts there).</div></div>'
+        % (n, span, TRAINING_HEAD, TRAINING_HEAD, "".join(body)))
+
+
+TRAINING_HEAD = "#4A5A7E"   # a shade lighter: these columns are a separate calendar
+
+
+def _pct(v) -> str:
+    return "—" if v is None else "%d%%" % round(v * 100)
+
+
+def _training_tds(r) -> str:
+    """The two Training cells; "—" for a table built before G/H existed."""
+    ts = r[5] if len(r) > 5 else "—"
+    th = r[6] if len(r) > 6 else "—"
+    return ('<td style="text-align:center;border-left:2px solid #C9D2E3">%s</td>'
+            '<td style="text-align:center">%s</td>' % (ts, th))
 
 
 def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str,
