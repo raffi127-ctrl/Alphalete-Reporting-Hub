@@ -734,13 +734,15 @@ human slack_signin "Slack is open.
 Sign in with YOUR OWN email.
 No Slack account yet? Click “Create an account”." "Slack: signed in"
 verify slack_signin "Slack signed in" chk_slack
-human slack_alerts_laptop "Turn on Slack alerts.
+# Slack's own alert choice lives in their Slack account (online), so the
+# laptop can't set it -- and Slack already alerts on DMs + mentions. What
+# "Notification On" needs is the Mac's permission, which only a person can
+# grant; Lucy opens the exact switch (tested 2026-11-11).
+run open "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.tinyspeck.slackmacgap"
+human slack_alerts_laptop "Slack alerts are open in System Settings.
+(The gray ⚙️ window. Look behind this box.)
 
-1. In Slack, click your picture (top right).
-2. Click Preferences. Then Notifications.
-3. Pick “All new messages”.
-
-If the laptop asks, click Allow." "Slack alerts on the laptop"
+Turn on “Allow notifications”." "Slack alerts on the laptop"
 human slack_phone "Grab the phone.
 
 1. Get Slack from the App Store.
