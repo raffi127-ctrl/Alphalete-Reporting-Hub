@@ -220,8 +220,8 @@ $problem" "Skip,Check again" "Check again")"
 # also be done pretty early since they would have been saving them as we
 # went"). Apps that aren't websites go into Google Passwords by hand, one at a
 # time, then Lucy checks it landed.
-save_password() {   # step-key  "App name"  website
-  local key="$1" name="$2" site="$3"
+save_password() {   # step-key  "App name"  website  [username]  [All-in-One labels]
+  local key="$1" name="$2" site="$3" user="${4:-}" labels="${5:-$2}"
   open_chrome "https://passwords.google.com/?authuser=$RECEPTION_EMAIL"
   human "$key" "Save your ${name} password.
 Google Passwords is open in Chrome.
@@ -229,9 +229,9 @@ Google Passwords is open in Chrome.
 1. Click “Add”.
 2. Website: ${site}
 3. Type your ${name} email and password.
-4. Click “Save”.
-5. Then type it in your All in One “Passwords” tab (pinned in Chrome): website, email, password." "${name} password saved (Google Passwords + All in One)"
+4. Click “Save”." "${name} password saved in Google Passwords"
   verify "$key" "${name} password saved" chk_passwords "${name}|${site}"
+  allin_login "allin_$key" "$labels" "$user"
 }
 
 # --- PINS: Lucy pins the tab herself, then checks it stuck -----------------
@@ -368,6 +368,147 @@ Click “Pin”." "Pinned: $(printf '%s, ' "${@%%|*}" | sed 's/, $//')"
   verify "$key" "pinned: $(printf '%s, ' "${@%%|*}" | sed 's/, $//')" chk_pins "$@"
 }
 
+# --- THE ALL IN ONE "Passwords" TAB ------------------------------------------
+# (Maud + Megan, 2026-11-12) Every login goes in the office's "All in One -
+# First Last" sheet, tab "Passwords". That tab is BLOCKS, not a table (read off
+# the real "All in One - Oren"): a label (A or E), then "UN" and "PW" in the
+# column right of it, and the value one column further (C or G). Blocks are
+# found by LABEL, never by row number; a missing one (ApplicantStream, BlueInk,
+# Slack, Zoom...) is added in the next free spot.
+# Lucy types the USERNAME and turns the PW box green; the person types the
+# password; Lucy clears the green. She never reads or types a password: only
+# columns A/B/E/F (labels + UN/PW keys) are ever read, and the value cells are
+# only ever WRITTEN (usernames, or "code sent to email" where there's no pw).
+# Access = the RECEPTION account's Google Sheets permission (the sheet is
+# shared with reception); the sheet is found from the tab they opened, so no
+# Drive-wide access is asked for.
+STOKEN=""; SREFRESH=""; SHEET_ID=""; PW_TAB="Passwords"
+sheets_auth() {
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would ask Google for Sheets access (reception)"; return 1; }
+  [ -n "$STOKEN" ] && return 0
+  _consent_retry "$RECEPTION_EMAIL" "https://www.googleapis.com/auth/spreadsheets" "spreadsheets" \
+    "Lucy will fill in your All in One for you." "Google Sheets" || return 1
+  STOKEN="$C_TOKEN"; SREFRESH="$C_REFRESH"; S_CID="$C_CID"; S_SEC="$C_SEC"; return 0
+}
+sheets_done() {
+  [ -n "$STOKEN" ] && curl -fsS -d "token=${SREFRESH:-$STOKEN}" https://oauth2.googleapis.com/revoke >/dev/null 2>&1
+  STOKEN=""; SREFRESH=""
+}
+_s_api() {   # METHOD  url-tail  json-body|""  out-file   -> HTTP code (refreshes once on 401)
+  local m="$1" u="https://sheets.googleapis.com/v4/spreadsheets/$2" b="$3" o="$4" code try
+  for try in 1 2; do
+    if [ -n "$b" ]; then
+      code="$(curl -sS -w '%{http_code}' -o "$o" -X "$m" -H "Authorization: Bearer $STOKEN" -H "Content-Type: application/json" -d "$b" "$u" 2>/dev/null)"
+    else
+      code="$(curl -sS -w '%{http_code}' -o "$o" -X "$m" -H "Authorization: Bearer $STOKEN" "$u" 2>/dev/null)"
+    fi
+    [ "$code" = 401 ] && [ -n "$SREFRESH" ] && [ $try = 1 ] || break
+    STOKEN="$(curl -fsS https://oauth2.googleapis.com/token --data-urlencode "client_id=$S_CID" \
+      --data-urlencode "client_secret=$S_SEC" --data-urlencode "refresh_token=$SREFRESH" \
+      --data-urlencode "grant_type=refresh_token" 2>/dev/null | plutil -extract access_token raw -o - - 2>/dev/null)"
+  done
+  echo "$code"
+}
+find_allin_sheet() {   # sets SHEET_ID from the All in One tab open in the Reception Chrome
+  local id t
+  t="$(mktemp -d)"
+  for id in $(_reception_urls | sed -n 's#.*docs\.google\.com/spreadsheets/d/\([A-Za-z0-9_-]*\).*#\1#p' | awk '!s[$0]++'); do
+    [ "$(_s_api GET "$id?fields=properties.title" "" "$t/p.json")" = 200 ] || continue
+    if _json "$t/p.json" properties.title | grep -qi "all in one"; then SHEET_ID="$id"; break; fi
+  done
+  rm -rf "$t"; [ -n "$SHEET_ID" ]
+}
+_col() { printf "\\$(printf '%03o' $((65+$1)))"; }   # 0 -> A
+_pw_keys() {   # -> lines "row<TAB>labelcol<TAB>label" for every block (reads A:B and E:F ONLY)
+  local t r i lab key; t="$(mktemp -d)"
+  _s_api GET "$SHEET_ID/values:batchGet?ranges=${PW_TAB}%21A1:B400&ranges=${PW_TAB}%21E1:F400&majorDimension=ROWS" "" "$t/k.json" >/dev/null
+  for r in 0 1; do
+    i=0
+    while _json "$t/k.json" valueRanges.$r.values.$i >/dev/null; do
+      lab="$(_json "$t/k.json" valueRanges.$r.values.$i.0)"
+      key="$(_json "$t/k.json" valueRanges.$r.values.$((i+1)).1)"
+      [ -n "$lab" ] && [ "$(echo "$key" | tr 'a-z' 'A-Z')" = UN ] && printf '%s\t%s\t%s\n' "$((i+1))" "$((r*4))" "$lab"
+      i=$((i+1))
+    done
+  done
+  rm -rf "$t"
+}
+_pw_free_row() {   # labelcol -> first row (1,5,9...) whose 3 rows are empty in that block column
+  local lc="$1" t r col; t="$(mktemp -d)"; col="$(_col "$lc")"
+  _s_api GET "$SHEET_ID/values/${PW_TAB}%21${col}1:$(_col $((lc+1)))400" "" "$t/f.json" >/dev/null
+  r=1
+  while [ $r -lt 400 ]; do
+    if [ -z "$(_json "$t/f.json" values.$((r-1)).0)$(_json "$t/f.json" values.$r.1)$(_json "$t/f.json" values.$((r+1)).1)" ]; then echo $r; rm -rf "$t"; return; fi
+    r=$((r+4))
+  done
+  rm -rf "$t"; echo 401
+}
+_sheet_gid() {
+  local t g; t="$(mktemp -d)"
+  _s_api GET "$SHEET_ID?fields=sheets.properties" "" "$t/s.json" >/dev/null
+  local i=0
+  while _json "$t/s.json" sheets.$i.properties.title >/dev/null; do
+    [ "$(_json "$t/s.json" sheets.$i.properties.title)" = "$PW_TAB" ] && { g="$(_json "$t/s.json" sheets.$i.properties.sheetId)"; break; }
+    i=$((i+1))
+  done
+  rm -rf "$t"; echo "$g"
+}
+_paint() {   # row(1-based) col(0-based) green|clear
+  local gid rgb; gid="$(_sheet_gid)"; [ -n "$gid" ] || return 1
+  [ "$3" = green ] && rgb='"red":0.72,"green":0.94,"blue":0.72' || rgb='"red":1,"green":1,"blue":1'
+  _s_api POST "$SHEET_ID:batchUpdate" "{\"requests\":[{\"repeatCell\":{\"range\":{\"sheetId\":$gid,\"startRowIndex\":$(($1-1)),\"endRowIndex\":$1,\"startColumnIndex\":$2,\"endColumnIndex\":$(($2+1))},\"cell\":{\"userEnteredFormat\":{\"backgroundColor\":{$rgb}}},\"fields\":\"userEnteredFormat.backgroundColor\"}}]}" /dev/null >/dev/null
+}
+_put() {   # A1  value
+  local v="${2//\"/\\\"}"
+  _s_api PUT "$SHEET_ID/values/${PW_TAB}%21$1?valueInputOption=RAW" "{\"values\":[[\"$v\"]]}" /dev/null >/dev/null
+}
+_saved_username() {   # text-in-the-address -> the username Chrome saved for that site
+  local t db u; t="$(mktemp -d)"
+  for db in "Login Data For Account" "Login Data"; do
+    [ -f "$CHROME_DIR/$db" ] || continue
+    cp "$CHROME_DIR/$db" "$t/db" 2>/dev/null || continue
+    u="$(sqlite3 -readonly "$t/db" "select username_value from logins where origin_url like '%$1%' and username_value<>'' order by date_last_used desc limit 1;" 2>/dev/null)"
+    [ -n "$u" ] && break
+  done
+  rm -rf "$t"; echo "$u"
+}
+allin_login() {   # step-key  "Label|other label|..."  username  [pw-note]
+  local key="$1" labels="$2" user="$3" note="$4" name="${2%%|*}"
+  [ "$GO" = back ] && return 0
+  if [ $DRY_RUN = 1 ]; then
+    if [ -n "$note" ]; then echo "  (dry run) All in One: $name -> username + “$note”"; else echo "  (dry run) All in One: $name -> username + green PW box"; fi
+    return 0
+  fi
+  if [ "$FORCE" = 0 ] && is_done "$key"; then ok "All in One: $name (done earlier)"; return 0; fi
+  if [ -z "$STOKEN" ] || [ -z "$SHEET_ID" ]; then
+    human "$key" "In your All in One “Passwords” tab (pinned in Chrome), fill in:
+${name}
+UN: ${user:-your username}
+PW: ${note:-your password}" "All in One: $name"
+    return
+  fi
+  local row lc found l
+  found="$(_pw_keys | awk -F'\t' -v L="$labels" 'BEGIN{n=split(tolower(L),a,"|")} {for(i=1;i<=n;i++) if(tolower($3)==a[i]){print $1"\t"$2; exit}}')"
+  if [ -n "$found" ]; then
+    row="${found%%	*}"; lc="${found##*	}"     # row = the block's LABEL row
+  else
+    lc=4; row="$(_pw_free_row 4)"
+    _put "$(_col 4)$row" "$name"; _put "$(_col 5)$((row+1))" "UN"; _put "$(_col 5)$((row+2))" "PW"
+  fi
+  local vcol=$((lc+2)) uncell pwcell
+  uncell="$(_col $vcol)$((row+1))"; pwcell="$(_col $vcol)$((row+2))"
+  [ -n "$user" ] && _put "$uncell" "$user"
+  if [ -n "$note" ]; then
+    _put "$pwcell" "$note"; mark_done "$key"; ok "All in One: $name filled ($note)"; return
+  fi
+  _paint $((row+2)) $vcol green
+  human "$key" "Click your All in One tab (pinned in Chrome).
+
+Lucy typed your ${name} username.
+Type your ${name} password in the GREEN box (${pwcell})." "All in One: $name"
+  _paint $((row+2)) $vcol clear
+}
+
 # Each check prints nothing when it's done, or what's wrong + how to fix it.
 chk_stars() {   # "Name|text-in-the-address" ...
   local urls e miss=""
@@ -454,24 +595,29 @@ OAUTH_CLIENT_URL="https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Repo
 _json() { plutil -extract "$2" raw -o - "$1" 2>/dev/null; }   # file  key.path
 _urldecode() { local v="${1//+/ }"; printf '%b' "${v//%/\\x}"; }
 
-gmail_auth() {   # email-we-expect  -> sets GTOKEN (and GMAIL_AS); 0 on success
-  local want="$1" t cid sec port state url raw code req
-  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would ask Google for Gmail settings access (to make + check filters)"; return 1; }
-  [ -n "$GTOKEN" ] && [ "$GMAIL_AS" = "$want" ] && return 0
+# One Google consent, used twice: the OWNER's Gmail (filters) and the
+# RECEPTION account (the All in One sheet it's shared with).
+#   _google_consent  email  scope-url  scope-word  why  tick-name
+# -> 0 and fills C_TOKEN / C_REFRESH / C_AS / C_CID / C_SEC; 2 = box unticked.
+C_TOKEN=""; C_REFRESH=""; C_AS=""; C_CID=""; C_SEC=""
+_google_consent() {
+  local want="$1" scope="$2" word="$3" why="$4" tick="$5" t port state url raw code req
+  C_TOKEN=""; C_REFRESH=""; C_AS=""
   t="$(mktemp -d)"
   curl -fsSL "$OAUTH_CLIENT_URL" -o "$t/c.json" || { rm -rf "$t"; return 1; }
-  cid="$(_json "$t/c.json" installed.client_id)"; sec="$(_json "$t/c.json" installed.client_secret)"
-  [ -n "$cid" ] || { rm -rf "$t"; return 1; }
+  C_CID="$(_json "$t/c.json" installed.client_id)"; C_SEC="$(_json "$t/c.json" installed.client_secret)"
+  [ -n "$C_CID" ] || { rm -rf "$t"; return 1; }
   port=$(( 49200 + RANDOM % 600 )); state="lucy$RANDOM$RANDOM"
-  url="https://accounts.google.com/o/oauth2/v2/auth?response_type=code&access_type=online&prompt=consent"
-  url="$url&client_id=$cid&redirect_uri=http://127.0.0.1:$port&state=$state&login_hint=$want"
-  url="$url&scope=https://www.googleapis.com/auth/gmail.settings.basic%20email"
-  # the local catcher: answers Google's redirect with a "you can close this" page
+  # offline = a refresh token too, so a long call doesn't outlive the 1-hour
+  # access token. It lives in memory only and is revoked at the end.
+  url="https://accounts.google.com/o/oauth2/v2/auth?response_type=code&access_type=offline&prompt=consent"
+  url="$url&client_id=$C_CID&redirect_uri=http://127.0.0.1:$port&state=$state&login_hint=$want"
+  url="$url&scope=${scope}%20email"
   ( printf 'HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<html><body style="font:22px -apple-system;padding:40px">✅ Done. You can close this tab and go back to Lucy.</body></html>' \
       | nc -l 127.0.0.1 "$port" > "$t/req" 2>/dev/null ) &
   local ncpid=$!
   open_chrome "$url"
-  _dialog "Step $N of $TOTAL — $TITLE" "Lucy will set up your Gmail filters for you.
+  _dialog "Step $N of $TOTAL — $TITLE" "${why}
 
 A Google page just opened in Chrome.
 
@@ -480,7 +626,7 @@ A Google page just opened in Chrome.
 That's OK. It's ours.
 3. Click “Advanced” (bottom left).
 4. Click “Go to Recruiting Report (unsafe)” at the bottom.
-5. Tick the box next to Gmail (or “Select all”).
+5. Tick the box next to ${tick} (or “Select all”).
 6. Click “Continue”." "OK" "OK" >/dev/null
   local i=0
   while kill -0 $ncpid 2>/dev/null && [ $i -lt 120 ]; do sleep 1; i=$((i+1)); done
@@ -491,38 +637,48 @@ That's OK. It's ours.
   [ -n "$raw" ] || { rm -rf "$t"; return 1; }
   code="$(_urldecode "$raw")"
   curl -fsS https://oauth2.googleapis.com/token \
-    --data-urlencode "code=$code" --data-urlencode "client_id=$cid" \
-    --data-urlencode "client_secret=$sec" --data-urlencode "redirect_uri=http://127.0.0.1:$port" \
+    --data-urlencode "code=$code" --data-urlencode "client_id=$C_CID" \
+    --data-urlencode "client_secret=$C_SEC" --data-urlencode "redirect_uri=http://127.0.0.1:$port" \
     --data-urlencode "grant_type=authorization_code" -o "$t/tok.json" 2>/dev/null
-  GTOKEN="$(_json "$t/tok.json" access_token)"
-  [ -n "$GTOKEN" ] || { rm -rf "$t"; return 1; }
-  # Google's page lets them untick Gmail; then the token can't read settings
+  C_TOKEN="$(_json "$t/tok.json" access_token)"; C_REFRESH="$(_json "$t/tok.json" refresh_token)"
+  [ -n "$C_TOKEN" ] || { rm -rf "$t"; return 1; }
+  # Google's page lets them untick the box; then the token can't do the job
   # (tested 2026-11-11: HTTP 403 "insufficient authentication scopes").
-  if ! _json "$t/tok.json" scope | grep -q "gmail.settings.basic"; then
-    curl -fsS -d "token=$GTOKEN" https://oauth2.googleapis.com/revoke >/dev/null 2>&1
-    GTOKEN=""; rm -rf "$t"; return 2
+  if ! _json "$t/tok.json" scope | grep -q "$word"; then
+    curl -fsS -d "token=${C_REFRESH:-$C_TOKEN}" https://oauth2.googleapis.com/revoke >/dev/null 2>&1
+    C_TOKEN=""; C_REFRESH=""; rm -rf "$t"; return 2
   fi
-  curl -fsS -H "Authorization: Bearer $GTOKEN" https://openidconnect.googleapis.com/v1/userinfo -o "$t/me.json" 2>/dev/null
-  GMAIL_AS="$(_json "$t/me.json" email | tr 'A-Z' 'a-z')"
-  rm -rf "$t"
-  return 0
+  curl -fsS -H "Authorization: Bearer $C_TOKEN" https://openidconnect.googleapis.com/v1/userinfo -o "$t/me.json" 2>/dev/null
+  C_AS="$(_json "$t/me.json" email | tr 'A-Z' 'a-z')"
+  rm -rf "$t"; return 0
 }
-gmail_auth_retry() {   # email  -> like gmail_auth, but asks again if Gmail wasn't ticked
+_consent_retry() {   # same args as _google_consent; asks again if the box wasn't ticked
   local tries=0 rc
   while [ $tries -lt 3 ]; do
-    gmail_auth "$1"; rc=$?
+    _google_consent "$@"; rc=$?
     [ $rc = 2 ] || return $rc
     tries=$((tries+1))
-    _dialog "Step $N of $TOTAL — $TITLE" "Almost! The Gmail box wasn't ticked.
+    _dialog "Step $N of $TOTAL — $TITLE" "Almost! The ${5} box wasn't ticked.
 
 Lucy will open the Google page again.
-This time tick the box next to Gmail (or “Select all”). Then click “Continue”." "OK" "OK" >/dev/null
+This time tick the box next to ${5} (or “Select all”). Then click “Continue”." "OK" "OK" >/dev/null
   done
   return 1
 }
+
+GREFRESH=""
+gmail_auth_retry() {   # owner email -> GTOKEN (+ GMAIL_AS)
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would ask Google for Gmail settings access (to make + check filters)"; return 1; }
+  [ -n "$GTOKEN" ] && [ "$GMAIL_AS" = "$1" ] && return 0
+  _consent_retry "$1" "https://www.googleapis.com/auth/gmail.settings.basic" "gmail.settings.basic" \
+    "Lucy will set up your Gmail filters for you." "Gmail" || return 1
+  GTOKEN="$C_TOKEN"; GREFRESH="$C_REFRESH"; GMAIL_AS="$C_AS"; return 0
+}
+gmail_auth() { gmail_auth_retry "$@"; }
+
 gmail_done() {   # throw the permission away
-  [ -n "$GTOKEN" ] && curl -fsS -d "token=$GTOKEN" https://oauth2.googleapis.com/revoke >/dev/null 2>&1
-  GTOKEN=""; GMAIL_AS=""
+  [ -n "$GTOKEN" ] && curl -fsS -d "token=${GREFRESH:-$GTOKEN}" https://oauth2.googleapis.com/revoke >/dev/null 2>&1
+  GTOKEN=""; GREFRESH=""; GMAIL_AS=""
 }
 _gmail_get() {   # settings-path  out-file  -> 0 on HTTP 200/204 (GMAIL_HTTP keeps the code)
   GMAIL_HTTP="$(curl -sS -w '%{http_code}' -H "Authorization: Bearer $GTOKEN" \
@@ -892,11 +1048,12 @@ human allin_open "Google Drive is open.
 
 1. Open “${ALLIN_NAME}”.
 2. Click the “Passwords” tab at the bottom.
-3. Type your reception Gmail login in the next empty row:
-gmail.com · ${RECEPTION_EMAIL} · its password
 
-You'll add every login here as you go. Lucy pins this tab for you." "All in One open, reception Gmail logged"
+Lucy fills in this tab as you go, and pins it for you." "All in One open"
 pin_tabs allin_pin "All in One|docs.google.com/spreadsheets"
+if sheets_auth; then sleep 3; find_allin_sheet || echo "  couldn't find the All in One tab in Chrome -> typed by hand"; fi
+allin_login allin_gmail "Gmail" "$RECEPTION_EMAIL"
+allin_login allin_zoom "Zoom" "your personal Gmail" "Sign in with Google (personal Gmail)"
 }
 
 step_2() {
@@ -905,7 +1062,7 @@ if [ "$COMPUTER" = owner ] && [ $DRY_RUN = 0 ] && [ -z "$(chk_apple_any)" ]; the
   # A new Mac signs in to Apple during its own first-time setup, before the
   # call (Megan, 2026-11-11) -- so usually there's nothing to do here.
   ok "Apple account already signed in"; is_done icloud || mark_done icloud
-  save_password pw_apple "Apple account" "apple.com"
+  save_password pw_apple "Apple account" "apple.com" "$(defaults read MobileMeAccounts Accounts 2>/dev/null | sed -n 's/.*AccountID = "\{0,1\}\([^";]*\).*/\1/p' | head -1)" "Apple Accounts|Apple Account|Apple"
 elif [ "$COMPUTER" = owner ]; then
   run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
   human icloud "System Settings is open.
@@ -914,7 +1071,7 @@ elif [ "$COMPUTER" = owner ]; then
 1. Click “Sign in”.
 2. Sign in with YOUR OWN Apple account." "Owner's own iCloud signed in"
   verify icloud "Apple account signed in" chk_apple_any
-  save_password pw_apple "Apple account" "apple.com"
+  save_password pw_apple "Apple account" "apple.com" "$(defaults read MobileMeAccounts Accounts 2>/dev/null | sed -n 's/.*AccountID = "\{0,1\}\([^";]*\).*/\1/p' | head -1)" "Apple Accounts|Apple Account|Apple"
 else
   run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
   human icloud "System Settings is open.
@@ -927,7 +1084,7 @@ ${RECEPTION_EMAIL}
 
 Already signed in to a different Apple account? Ask the launch team." "iCloud for reception email created"
   verify icloud "Apple account signed in as reception" chk_apple
-  save_password pw_apple "Apple account" "apple.com"
+  save_password pw_apple "Apple account" "apple.com" "$(defaults read MobileMeAccounts Accounts 2>/dev/null | sed -n 's/.*AccountID = "\{0,1\}\([^";]*\).*/\1/p' | head -1)" "Apple Accounts|Apple Account|Apple"
 fi
 
 # ------------------------------------------------------------------------
@@ -1022,13 +1179,13 @@ The launch team will give you your BlueInk login."
 
 1. Log in.${extra}
 2. Chrome asks to save the password. Click “Save”.
-3. Then type it in your All in One “Passwords” tab (pinned in Chrome): website, email, password.
 
-Lucy pins this tab for you." "Chrome: logged in to $sname + saved"
+Lucy pins this tab and fills in your All in One." "Chrome: logged in to $sname + saved"
   # what to look for in the saved address (Apex lives on herbjoyent.com)
   needle="$(echo "$sname" | tr 'A-Z' 'a-z')"; [ "$sname" = "Apex" ] && needle="herbjoyent"
   verify "site_$sname" "$sname: password saved" chk_passwords "$sname|$needle"
   pin_tabs "pin_$sname" "$sname|$needle"
+  allin_login "allin_$sname" "$sname" "$(_saved_username "$needle")"
 done
 
 # ------------------------------------------------------------------------
@@ -1213,9 +1370,9 @@ Make a new Slack account for reception:
 2. Type: ${RECEPTION_EMAIL}
 3. Slack emails a code. Open Gmail (pinned in Chrome). Type the code.
 4. Join the company Slack from the invite.
-5. In your All in One “Passwords” tab add:
-Slack · ${RECEPTION_EMAIL} · code sent to email" "Slack: reception account signed in"
+" "Slack: reception account signed in"
 verify slack_signin "Slack signed in" chk_slack
+allin_login allin_slack "Slack" "$RECEPTION_EMAIL" "code sent to email"
 # Slack's own alert choice lives in their Slack account (online), so the
 # laptop can't set it -- and Slack already alerts on DMs + mentions. What
 # "Notification On" needs is the Mac's permission, which only a person can
@@ -1250,10 +1407,9 @@ human excel "Excel is open.
 1. Click “Sign in”.
 2. Type: alphaletereception@gmail.com
 3. Microsoft sends a code. The launch team will tell you the code.
-4. Type the code.
-5. In your All in One “Passwords” tab add:
-Excel · alphaletereception@gmail.com · code sent to email" "Excel: signed in"
+4. Type the code." "Excel: signed in"
 verify excel "Excel signed in" chk_excel
+allin_login allin_excel "Microsoft Office|Miscrosoft Office|Excel" "alphaletereception@gmail.com" "code sent to email"
 
 # ------------------------------------------------------------------------
 }
@@ -1380,7 +1536,8 @@ Finish them now?" "Later,Finish them now" "Finish them now")"
   DONE=(); YOURS=(); FAILED=(); QUIET_INFO=1
 done
 
-gmail_done   # never leave the Gmail permission behind, whatever step they stopped at
+gmail_done   # never leave a Google permission behind, whatever step they stopped at
+sheets_done
 
 # ----------------------------------------------------------------- report
 REPORT="$HOME/Desktop/Laptop-Setup-Report.txt"
