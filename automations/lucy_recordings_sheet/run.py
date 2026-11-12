@@ -1068,6 +1068,16 @@ def in_yesterday_scope(owner: str, wanted=YESTERDAY_OWNERS) -> bool:
     return any(set(w.split()) <= words for w in wanted)
 
 
+def short_name(name: str) -> str:
+    """Raf 2026-11-12: first name + last name's initial, capitalized the same
+    for everyone ('ANDRES MEJIA' / 'savannah moreno' -> 'Andres M.' / 'Savannah M.')."""
+    if not name or name == NO_NAME:
+        return name
+    words = name.split()
+    first = "-".join(w[:1].upper() + w[1:].lower() for w in words[0].split("-"))
+    return first if len(words) == 1 else "%s %s." % (first, words[-1][:1].upper())
+
+
 def yesterday_text(day: str, rows: list) -> str:
     """Slack message: one block per owner, one line per recording."""
     d = dt.date.fromisoformat(day)
@@ -1091,7 +1101,7 @@ def yesterday_text(day: str, rows: list) -> str:
         out.append("*%s* (%d)" % (own, sum(1 for r in rs if r[5] == COUNTED)))
         for r in rs:
             n += 1
-            bits = [r[1], r[0]]
+            bits = [short_name(r[1]), r[0]]
             if r[4] != "":
                 bits.append("score %s" % r[4])
             mark = ":white_check_mark:" if r[5] == COUNTED else ":x: " + r[5].replace("Not counted: ", "")

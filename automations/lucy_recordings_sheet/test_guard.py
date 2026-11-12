@@ -152,8 +152,8 @@ class YesterdayTest(unittest.TestCase):
         self.assertIn("*JD Mascorro* (1)", txt)
         self.assertIn(":x: " + DUPLICATE, txt)
         self.assertIn("*1 counted*", txt)
-        self.assertIn("1. Ana Lopez · 9:05 AM · score 5.0 :white_check_mark:", txt)
-        self.assertIn("2. Ana Lopez · 2:30 PM", txt)
+        self.assertIn("1. Ana L. · 9:05 AM · score 5.0 :white_check_mark:", txt)
+        self.assertIn("2. Ana L. · 2:30 PM", txt)
         self.assertNotIn(" min ·", txt)
 
 
@@ -165,3 +165,16 @@ class ScopeTest(unittest.TestCase):
         self.assertTrue(in_yesterday_scope(NO_OWNER))
         self.assertFalse(in_yesterday_scope("Carlos Hidalgo"))
         self.assertFalse(in_yesterday_scope("Kash Rai"))
+
+
+class ShortNameTest(unittest.TestCase):
+    def test_first_name_plus_last_initial(self):
+        from automations.lucy_recordings_sheet.run import NO_NAME, short_name, yesterday_text, COUNTED
+        self.assertEqual(short_name("Hank Tran"), "Hank T.")
+        self.assertEqual(short_name("savannah moreno"), "Savannah M.")
+        self.assertEqual(short_name("ANDRES MEJIA"), "Andres M.")
+        self.assertEqual(short_name("Sydney"), "Sydney")
+        self.assertEqual(short_name(NO_NAME), NO_NAME)
+        txt = yesterday_text("2026-11-10", [["9:05 AM", "Hank Tran", "Rafael Hidalgo", 30, 9.0, COUNTED]])
+        self.assertIn("1. Hank T. · 9:05 AM", txt)
+        self.assertNotIn("Tran", txt)
