@@ -1249,6 +1249,72 @@ AUTOMATED_REPORTS = [
         "checklist": [],
     },
     {
+        "id": "applicant-stream-card",
+        "name": "Applicant Stream Grade Card",
+        "creator": "Megan & Claude",
+        "emoji": "\U0001F4CB",
+        "color": "#0F6E64",
+        "category": "\U0001F4F2 Ops",
+        "assignees": ["Lucy 2"],
+        "sheet_url": "",
+        "description": (
+            "One grade card per ICD for their whole ApplicantStream: right "
+            "address / Zoom / phone, AI replies and escalations, grammar in "
+            "templates and texts, AI vs recruiter bookings and show-ups, "
+            "days to book, best times, what moves show-ups, and a report "
+            "card per recruiter. Every miss comes with the steps to fix it."
+        ),
+        "breakdown": (
+            "WHAT IT CHECKS\n"
+            "**•** **Address, Zoom link, phone** in every SMS + email "
+            "template and the AI Settings page, against what the office "
+            "gave us.\n"
+            "**•** **AI texts + escalations**: how many replies send the "
+            "office's own words (standard 31 on Don't Escalate), rows that "
+            "answer with nothing, deflections, timed call promises, and the "
+            "180 / 300 / 60 AI Preferences standard.\n"
+            "**•** **Grammar + wording**: templates, saved replies and "
+            "recruiter texts.\n"
+            "**•** **AI vs recruiters**: % of bookings each, show-up "
+            "rate each, and whether the gap holds at the same speed.\n"
+            "**•** **Time to book**: resume processed → booked, "
+            "texts sent before the 1st round, % booked a day or more late.\n"
+            "**•** **Best times** + **what moves show-ups most**, "
+            "ranked, with chance gaps marked.\n"
+            "**•** **Recruiter report cards** from the weekly "
+            "scorecards.\n\n"
+            "HOW TO READ IT\n"
+            "**•** Green / yellow / red per section, then **Do this "
+            "first** (max 3), then every fix with the why and click-by-click "
+            "steps.\n"
+            "**•** **Grey = not checked**, never a pass. A pull older "
+            "than 7 days shows **Re-pull before sending** at the top.\n\n"
+            "WHERE IT RUNS\n"
+            "**•** Read-only: builds from pulls already on disk / in the "
+            "control sheet. Writes `output/applicant-stream-card-<id>.html`. "
+            "Sends nothing yet."
+        ),
+        "assignee_note": (
+            "Reads the AppStream pulls Lucy 2 already makes (calendar walk, "
+            "SMS log, AI Settings, templates)."
+        ),
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {"frequency": "on_demand", "estimated_minutes": 3},
+        "checklist": [],
+        "actions": [
+            {
+                "label": "Build grade cards",
+                "icon": "▶",
+                "primary": True,
+                "help": "Build every office's card from what is already "
+                        "pulled. Sends nothing.",
+                "module": "automations.applicant_stream_card.run",
+                "args_fn": lambda: ["--all"],
+            },
+        ],
+    },
+    {
         "id": "interview-audit-bot",
         "name": "2nd Round Interview Auditor — AO (24/7)",
         "creator": "Raf & Claude",
