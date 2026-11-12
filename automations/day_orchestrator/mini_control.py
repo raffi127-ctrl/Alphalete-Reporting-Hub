@@ -304,7 +304,12 @@ READONLY_ACTIONS = {"push_appstream_fleet",
                     "find_group", "group_members", "text_resolve",
                     "text_replies", "logdump",
                     # Looks at a peer over the LAN; only sends a WoL packet.
-                    "peer_probe"}
+                    "peer_probe",
+                    # NOT read-only, on purpose in this lane (2026-11-11): it
+                    # frees the ownerville lock from a HUNG automation job, and
+                    # the main lane is exactly what sits behind that job. Bounded
+                    # to one process tree, only past --min-age; see the action.
+                    "ov_unstick"}
 
 # --- lanes --------------------------------------------------------------------
 # The queue is ONE serial worker, so a 2-second read waits behind whatever report
@@ -9259,6 +9264,100 @@ def _action_kill_report(args: str) -> tuple[bool, str]:
     return True, f"ended: {shown}"
 
 
+def _action_ov_unstick(args: str) -> tuple[bool, str]:
+    """Stop a HUNG automation job that still holds this box's ownerville lock.
+
+      ov_unstick [--dry] [--min-age MIN]
+        --dry         say who holds it and what WOULD be stopped; change nothing
+        --min-age     only stop a holder running at least MIN minutes (default 30)
+
+    WHY (Megan 2026-11-11, "no one is at the machine"): rep_knock_threads hung
+    on Lucy 3 at 17:12 with no browser left, still holding the ownerville
+    session lock. The stall alert said "kill pid 46739 on Lucy 3"; nothing
+    remote could, so for 3+ hours the knocks fill, /knocks, the knock boards,
+    the OBCL sweep and Intraday Knocks all skipped or failed. chrome_unstick
+    only kills Chromes, and there was no Chrome to kill.
+
+    Guards: the holder must be a `-m automations.*` Python job, never this
+    poller and never the session-holder Chrome; it must be older than
+    --min-age; it gets SIGTERM, 10s, then SIGKILL, and its children go with it.
+    Lives in the READ lane so it can't queue behind the job it is freeing."""
+    import shlex
+    import signal as _signal
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    dry = "--dry" in parts
+    min_age = 30
+    if "--min-age" in parts:
+        try:
+            min_age = int(parts[parts.index("--min-age") + 1])
+        except (IndexError, ValueError):
+            return False, "--min-age needs a number of minutes"
+    from automations.shared import tableau_patchright as _tp
+    lock = str(_tp.OWNERVILLE_SESSION_LOCK)
+    try:
+        pids = subprocess.run(["lsof", "-t", lock], capture_output=True,
+                              text=True, timeout=10).stdout.split()
+    except Exception as e:  # noqa: BLE001
+        return False, "couldn't ask who holds the lock: {}".format(e)
+    if not pids:
+        return True, "ownerville lock is FREE on this box — nothing to stop"
+    me = {os.getpid(), os.getppid()}
+    out, stopped = [], 0
+    for p in pids:
+        if not p.isdigit() or int(p) in me:
+            continue
+        try:
+            row = subprocess.run(["ps", "-p", p, "-o", "etime=,command="],
+                                 capture_output=True, text=True,
+                                 timeout=10).stdout.strip()
+        except Exception:  # noqa: BLE001
+            row = ""
+        if not row:
+            continue
+        etime, _, cmd = row.partition(" ")
+        mod = re.search(r"-m\s+(automations\.[\w.]+)", cmd)
+        # etime: [[dd-]hh:]mm:ss
+        mins = 0
+        try:
+            d, _, rest = etime.rpartition("-")
+            hms = [int(x) for x in rest.split(":")]
+            while len(hms) < 3:
+                hms.insert(0, 0)
+            mins = (int(d) if d else 0) * 1440 + hms[0] * 60 + hms[1]
+        except ValueError:
+            pass
+        who = "pid {} ({}, {} min)".format(p, mod.group(1) if mod else
+                                           (cmd.split()[0] if cmd else "?"), mins)
+        if not mod or "mini_control" in cmd or "holder" in cmd:
+            out.append(who + " — left alone (not a stoppable automation job)")
+            continue
+        if mins < min_age:
+            out.append(who + " — left alone (younger than {} min)".format(min_age))
+            continue
+        if dry:
+            out.append(who + " — WOULD stop")
+            continue
+        tree = [int(p)] + _descendants(int(p))
+        for pid in tree:
+            try:
+                os.kill(pid, _signal.SIGTERM)
+            except Exception:  # noqa: BLE001
+                pass
+        time.sleep(10)
+        for pid in tree:
+            try:
+                os.kill(pid, 0)
+                os.kill(pid, _signal.SIGKILL)
+            except Exception:  # noqa: BLE001
+                pass
+        stopped += 1
+        out.append(who + " — STOPPED ({} process(es))".format(len(tree)))
+    return True, "; ".join(out) or "only this poller holds it — nothing to stop"
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -9837,6 +9936,7 @@ ACTIONS = {
     "nsf_status": _action_nsf_status,
     "chrome_sync_diag": _action_chrome_sync_diag,
     "chrome_unstick": _action_chrome_unstick,
+    "ov_unstick": _action_ov_unstick,
     "kill_report": _action_kill_report,
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
