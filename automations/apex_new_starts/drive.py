@@ -24,6 +24,8 @@ starts it and reads back what it said.
 """
 from __future__ import annotations
 
+import re
+
 import json
 from typing import Dict, List, Optional
 
@@ -378,7 +380,14 @@ def type_into(page, label: str, value: str, log=print) -> bool:
         log("    %s: no box" % label)
         return False
     try:
-        page.fill("[data-ans-type='1']", "")
+        # SELECT ALL, THEN TYPE. `fill("")` does not reliably empty a Kendo
+        # numeric box -- it reformats instead -- so the new keystrokes landed
+        # on top of what was there and Rate of Pay came out $10.10 for a
+        # person whose rate is $10.00 (2026-11-12). A wrong number on a
+        # payroll record is worse than an empty one.
+        page.click("[data-ans-type='1']")
+        page.keyboard.press("Meta+a")
+        page.keyboard.press("Delete")
         page.type("[data-ans-type='1']", str(value), delay=40)
         page.evaluate("""() => { const e = document.querySelector('[data-ans-type]');
               if (e) e.dispatchEvent(new Event('blur', {bubbles: true})); }""")
@@ -390,9 +399,35 @@ def type_into(page, label: str, value: str, log=print) -> bool:
         got = ""
     page.evaluate("() => document.querySelectorAll('[data-ans-type]')"
                   ".forEach(e => e.removeAttribute('data-ans-type'))")
-    ok = bool(str(got).strip())
-    log("    %s: typed %r -> %r%s" % (label, value, got, "" if ok else "  STILL EMPTY"))
+    ok = same_value(value, got)
+    log("    %s: typed %r -> %r%s"
+        % (label, value, got,
+           "" if ok else ("  STILL EMPTY" if not str(got).strip()
+                          else "  WRONG -- DO NOT SAVE")))
     return ok
+
+
+def same_value(want, got) -> bool:
+    """Is what the box shows the value we asked for?
+
+    Anything non-empty used to count, which let Rate of Pay report success
+    showing $10.10 when the rate is $10.00. A box holding the WRONG number is
+    the one outcome nobody would see was wrong, so it has to be checked.
+
+    Money and dates come back decorated -- "$10.00", "12/11/1976" -- so the
+    comparison is on the characters that carry meaning, and numerically when
+    both sides are numbers.
+    """
+    w, g = str(want or "").strip(), str(got or "").strip()
+    if not g:
+        return False
+    try:
+        return abs(float(re.sub(r"[^0-9.\-]", "", w))
+                   - float(re.sub(r"[^0-9.\-]", "", g))) < 0.005
+    except (TypeError, ValueError):
+        pass
+    fold = lambda t: re.sub(r"[^0-9a-z]", "", t.lower())   # noqa: E731
+    return fold(w) == fold(g) if fold(w) else False
 
 
 def wait_for_field(page, label: str, *, seconds: int = 25, people=None,
@@ -507,9 +542,16 @@ def type_by_name(page, name: str, value, log=print, *, secret: bool = False) -> 
     except Exception as e:     # noqa: BLE001
         log("    %s: could not type (%s)" % (name, type(e).__name__))
         return False
-    ok = bool(str(got).strip())
-    log("    %s: %s" % (name, "set" if ok else "STILL EMPTY")
-        if secret else "    %s: %r -> %r" % (name, raw, got))
+    # THE VALUE, not just "something". A box holding the wrong value is the
+    # one outcome nobody would see was wrong -- see same_value.
+    ok = same_value(raw, got)
+    if secret:
+        log("    %s: %s" % (name, "set" if ok else
+                            ("STILL EMPTY" if not str(got).strip()
+                             else "WRONG -- DO NOT SAVE")))
+    else:
+        log("    %s: %r -> %r%s" % (name, raw, got,
+                                    "" if ok else "  WRONG -- DO NOT SAVE"))
     return ok
 
 
@@ -693,9 +735,52 @@ def go_tab(page, apex_id, path: str, *, people=None, log=print) -> bool:
     try:
         page.evaluate("async (p) => await window.__ansGoSpa(p)", where)
     except Exception as e:     # noqa: BLE001
-        log("    could not navigate to %s (%s)" % (path, type(e).__name__))
-        return False
+        log("    goSpa raised on %s (%s)" % (path, type(e).__name__))
     page.wait_for_timeout(1500)
+
+    if where not in (page.url or ""):
+        # A DRIVER CLICK ON THE TAB LINK. goSpa clicks the anchor from inside
+        # the page, and that worked from the roster -- an ordinary link
+        # navigates on a JS click. From ON a record it does nothing: the tab
+        # strip is wired up, and this rewrite ignores untrusted events, which
+        # is why the walk stopped dead after the employment tab
+        # (2026-11-12). Clicked from out here, the event is trusted.
+        marked = page.evaluate(
+            """(w) => { document.querySelectorAll('[data-ans-tab]')
+                 .forEach(e => e.removeAttribute('data-ans-tab'));
+               const a = [...document.querySelectorAll('a[href]')]
+                 .find(x => (x.getAttribute('href') || '').indexOf(w) >= 0);
+               if (!a) return '';
+               a.setAttribute('data-ans-tab', '1');
+               return (a.innerText || 'link').trim().slice(0, 40); }""", where)
+        if marked:
+            try:
+                page.click("[data-ans-tab]", timeout=6000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
+                page.wait_for_timeout(1200)
+            except Exception as e:     # noqa: BLE001
+                log("    could not click %r (%s)" % (marked, type(e).__name__))
+        else:
+            log("    no link to %s on this page" % path)
+
+    if where not in (page.url or ""):
+        # THE URL, DIRECTLY. The tab links are real and their hrefs are
+        # right -- probe_tabs read them off the live record -- but each one
+        # carries ui-sref=".userProfile" and friends. UI-Router's handler
+        # cancels the click and then tries a transition through an injector
+        # that is not there any more, so BOTH a page click and a driver click
+        # are swallowed and the page never moves (2026-11-12).
+        #
+        # location.assign is not an event, so nothing can intercept it.
+        # `page.goto` is still avoided: Apex bounces a typed URL back to its
+        # change-password page at the start of a session.
+        try:
+            page.evaluate("(u) => { window.location.assign(u); }", where)
+            page.wait_for_load_state("domcontentloaded", timeout=20000)
+            page.wait_for_timeout(1200)
+        except Exception as e:     # noqa: BLE001
+            log("    could not go to %s (%s)" % (path, type(e).__name__))
+
     if where not in (page.url or ""):
         log("    did not land on %s (sitting on %s)" % (path, page.url))
         return False

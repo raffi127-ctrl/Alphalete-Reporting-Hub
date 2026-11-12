@@ -289,40 +289,51 @@ def _complete(page, who, person, apex_id, log=print) -> int:
     # the two parallel fillers happened, and the whole point of this run is
     # that what gets watched is what will run by itself.
     values = who.get("_values") or {}
-    log("  Filling each tab and stopping before Save.")
+    log("  Filling all three tabs. Nothing here presses Save.")
+    log("")
 
-    def pause(tab: str, got: dict) -> bool:
-        if got.get("absent"):
-            log("")
-            log("  Apex will refuse this tab until these are filled: %s"
-                % ", ".join(got["absent"]))
-            log("  Type them in yourself, or stop and get them onto the board.")
-        log("")
-        log("  SAVE THIS TAB YOURSELF, then press Return.")
-        log("")
-        return _wait_for_person(log=log)
-
+    # NO KEYBOARD STEP. This used to stop after each tab and wait for Return
+    # in the terminal, and Megan could not find the terminal (2026-11-12) --
+    # which is the whole "7-year-old-simple" rule: a step somebody cannot
+    # find is a step that does not work. Every tab is filled, the window is
+    # left open, and the person presses Save on each one IN APEX, where they
+    # are already looking. Nothing here presses Save either way, so the
+    # guarantee this run exists for is unchanged.
     walked = drive.complete_person(page, who, apex_id, values=values,
-                                   social=who.get("_social"),
-                                   save=pause, log=log)
+                                   social=who.get("_social"), log=log)
     if not walked:
         log("")
         log("  Nothing was filled on any tab, so there is nothing to save.")
         _hold_open(page, log=log)
         return 1
+
+    gaps = sorted({k for got in walked.values() for k in (got.get("absent") or [])})
+    missed = sorted({k for got in walked.values() for k in (got.get("missed") or [])})
+    # ONLY THE TABS IT ACTUALLY FILLED. This printed "ALL THREE TABS ARE
+    # FILLED" and listed all three after reaching only the first one
+    # (2026-11-12) -- which is the same lie as a green run that delivered
+    # nothing, and it is read by somebody about to press Save.
     log("")
-    log("  Done. Nothing here pressed Save.")
+    log("  In Apex, press Save on %s:"
+        % ("each of these" if len(walked) > 1 else "this tab"))
+    for tab, _path, _prove in drive.TABS:
+        if tab in walked:
+            log("    - %s" % tab)
+    short = [t for t, _p, _v in drive.TABS if t not in walked]
+    if short:
+        log("")
+        log("  NOT FILLED, and not reached: %s" % ", ".join(short))
+        log("  Those still need doing -- this run did not get to them.")
+    if gaps or missed:
+        log("")
+        log("  PICK THESE BY HAND FIRST -- Apex refuses the tab without them:")
+        for k in gaps:
+            log("    %-18s nothing on the board says" % k)
+        for k in missed:
+            log("    %-18s could not be set from here" % k)
+    log("")
+    _hold_open(page, log=log)
     return 0
-
-
-def _wait_for_person(log=print) -> bool:
-    """Wait for Return. False when there is no keyboard to wait on."""
-    try:
-        input()
-        return True
-    except (EOFError, KeyboardInterrupt):
-        log("  (no keyboard here -- stopping rather than carrying on unwatched)")
-        return False
 
 
 def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:

@@ -374,9 +374,13 @@ def test_the_complete_rehearsal_never_calls_runPerson():
         assert "__ansRunPerson" not in src, "%s must not save" % fn.__name__
     # and the rehearsal's own pause is what stands between a filled tab and a
     # saved one: it hands complete_person a callback that waits for a person.
+    # Nothing holds the Save because nothing presses it: complete_person is
+    # called with no `save` callback at all, so it fills and stops. The
+    # person presses Save in Apex, where they are already looking -- the
+    # terminal keypress this used to need was a step Megan could not find.
     src = inspect.getsource(SUP._complete)
-    assert "save=pause" in src, "the rehearsal has to hold the Save"
-    assert "_wait_for_person" in src
+    assert "save=" not in src, "nothing here may press Save"
+    assert "_hold_open(page, log=log)" in src, "the window stays open to read"
 
 
 def test_neither_path_safe_means_nothing_is_typed():
@@ -465,3 +469,20 @@ def test_the_complete_rehearsal_opens_the_record_before_filling_it():
     assert "edit/%s" in inspect.getsource(drive.go_tab)
     assert dict((t[0], t[1]) for t in drive.TABS)["employment record"] \
         == "employment-record"
+
+
+def test_the_summary_names_only_the_tabs_it_filled():
+    """It printed "ALL THREE TABS ARE FILLED" and listed all three after
+    reaching only the first (2026-11-12). Somebody about to press Save reads
+    that line, and a tab it never opened is not a tab to go and save."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP._complete)
+    # THE LINES IT PRINTS, not the comments explaining why. A comment that
+    # records the bug is not the bug.
+    printed = [l for l in src.splitlines()
+               if "log(" in l and not l.strip().startswith("#")]
+    assert not any("ALL THREE TABS" in l for l in printed), \
+        "it cannot claim three tabs"
+    assert "if tab in walked:" in src, "list what was filled"
+    assert any("not reached" in l for l in printed), "and say what was not"

@@ -340,3 +340,61 @@ def test_no_social_means_no_social_box_is_touched():
     got = drive.fill_tax(page, {}, None, log=lambda *a: None)
     assert page.typed_into == []
     assert "Social" not in got["set"] + got["missed"]
+
+
+def test_a_box_holding_the_wrong_value_is_not_a_success():
+    """Rate of Pay reported filled showing $10.10 for somebody whose rate is
+    $10.00 (2026-11-12). Anything non-empty counted, so a wrong number on a
+    payroll record passed -- the one failure nobody would ever see."""
+    assert drive.same_value("10.00", "$10.00")
+    assert not drive.same_value("10.00", "$10.10")
+    assert not drive.same_value("10.00", "")
+    # decoration is fine; a different value is not
+    assert drive.same_value("4000.00", "$4,000.00")
+    assert drive.same_value("512-743-2199", "512-743-2199")
+    assert drive.same_value("Jenniferleegreen.jg@gmail.com",
+                            "jenniferleegreen.jg@gmail.com")
+    assert not drive.same_value("Green", "Greene")
+
+
+def test_typing_clears_the_box_before_it_types():
+    """`fill("")` does not empty a Kendo numeric box -- it reformats -- so the
+    new keystrokes landed on top of the old value. That is where $10.10 came
+    from: $10.00 was already in there."""
+    import inspect
+    src = inspect.getsource(drive.type_into)
+    assert 'page.fill("[data-ans-type=' not in src, "fill does not clear these"
+    assert "Meta+a" in src and "Delete" in src, "select all, then delete"
+    assert src.index("Delete") < src.index("page.type("), "clear BEFORE typing"
+
+
+def test_moving_between_tabs_falls_back_to_a_real_click():
+    """goSpa clicks the tab anchor from inside the page. That works from the
+    roster but not from ON a record, where the tab strip is wired up and this
+    rewrite ignores untrusted events -- so the walk stopped dead after the
+    employment tab."""
+    import inspect
+    src = inspect.getsource(drive.go_tab)
+    assert "data-ans-tab" in src
+    assert src.index("__ansGoSpa") < src.index('[data-ans-tab]", timeout'), \
+        "try the page's own navigation first, then click it for real"
+
+
+def test_a_tab_is_reached_by_url_when_the_router_swallows_the_click():
+    """The tab links are real and their hrefs are right, but each carries
+    ui-sref=".userProfile": UI-Router cancels the click and then fails,
+    because the injector is gone. A page click and a driver click are both
+    swallowed, so the last resort is location.assign, which is not an event
+    and cannot be intercepted (2026-11-12)."""
+    import inspect
+    src = inspect.getsource(drive.go_tab)
+    assert "window.location.assign" in src
+    # LAST, after the two clicks -- and never page.goto, which Apex bounces
+    # back to its change-password page.
+    assert src.index("[data-ans-tab]") < src.index("location.assign")
+    # and never page.goto, which Apex bounces to its change-password page.
+    # THE CODE: the docstring and the comments both say why there isn't one,
+    # and an explanation of a rule is not a breach of it.
+    body = src.split('"""', 2)[-1]
+    code = [l for l in body.splitlines() if not l.strip().startswith("#")]
+    assert not any("page.goto" in l for l in code)
