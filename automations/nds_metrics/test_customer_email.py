@@ -16,6 +16,16 @@ class EmailColumn(unittest.TestCase):
         self.assertIsNone(E._email_column(["Order ID", "User Email"]))
         self.assertIsNone(E._email_column(["Order ID", "Phone"]))
 
+    def test_row_is_matched_by_its_id_columns_only(self):
+        # 11/11: Nelson Guerra's DSI sat in another row's notes and that row's
+        # (rep's) address was taken; with id columns present the row must BE the order
+        hdr = ["Order ID", "Customer Name", "Order Notes", "Email"]
+        ids = E._id_columns(hdr)
+        self.assertEqual(ids, [0])
+        self.assertEqual(E._row_dsi(["DSI1", "Nelson", "", "n@x.com"], ids, {"DSI1"}), "DSI1")
+        self.assertEqual(E._row_dsi(["DSI2", "Other", "see DSI1", "rep@x.com"], ids, {"DSI1"}), "")
+        self.assertEqual(E._row_dsi(["x", "Other", "see DSI123456", "rep@x.com"], [], {"DSI123456"}), "DSI123456")
+
     def test_pick_email_prefers_the_labelled_field(self):
         found = [{"where": "input", "value": "rep@example.com", "label": "Entered by", "id": "a"},
                  {"where": "input", "value": "cust@example.com", "label": "E-mail Address", "id": "b"},

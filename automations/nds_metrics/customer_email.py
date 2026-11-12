@@ -288,11 +288,17 @@ def _id_columns(headers: Sequence[str]) -> List[int]:
 
 
 def _row_dsi(cells: Sequence[str], id_cols: Sequence[int], wanted: Set[str]) -> str:
+    """The wanted order this grid row IS -- by its id columns. The whole row
+    is searched only when the grid has no id column at all: on 11/11 a DSI
+    mentioned in another row's notes claimed that row, and Nelson Guerra got
+    his rep's address (rodobazan01@) instead of his own."""
     for i in id_cols:
         if i < len(cells):
             d = _norm_dsi(cells[i])
             if d in wanted:
                 return d
+    if id_cols:
+        return ""
     for c in cells:
         for m in re.findall(r"(?:DSI|SPM)\s*\d{6,}", c or "", re.I):
             d = _norm_dsi(m)
