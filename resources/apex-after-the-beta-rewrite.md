@@ -1,6 +1,6 @@
 # Apex after the Beta rewrite — what is actually on the page
 
-Read off the live site on 2026-11-11 with `output/apex_fields.py` (read only,
+Read off the live site on 2026-11-11 with `automations/apex_new_starts/probe_fields.py` (read only,
 types nothing). Victoria Newsom, employee 3421274, Alphalete Marketing Inc. –
 Arlington. Re-run it rather than trusting this page once Apex moves again.
 
@@ -94,7 +94,7 @@ is the other reason to key on `name` here.
 
 ## How to re-read this
 
-    PYTHONPATH=. .venv/bin/python output/apex_fields.py --person "First Last"
+    PYTHONPATH=. .venv/bin/python -m automations.apex_new_starts.probe_fields --person "First Last"
 
 Writes `output/apex-fields.json`. It opens one record and reads it; it types
 nothing, clicks only the Edit control the engine itself uses, and saves nothing.
