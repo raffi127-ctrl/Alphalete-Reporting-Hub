@@ -26,8 +26,9 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[24], "Delivered Message Sent")   # column Y on the live tab (X, W, U earlier on 11/11, T until 11/10, S until 11/9)
-        self.assertEqual(T.HEADERS[T._COL["Ship Date"] + 1], "Shipping Notes")   # 11/11 pm: right after Ship Date
+        self.assertEqual(T.HEADERS[23], "Delivered Message Sent")   # column X on the live tab (11/12: Shipping Notes moved behind it)
+        self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Notes")   # 11/12: far right, before Churn Bucket
+        self.assertEqual(T.HEADERS[T._COL["Ship Date"] + 1], "Delivered")
         self.assertEqual(T.HEADERS[1], "Pay Period")                  # 11/11 pm: column B
         self.assertEqual(r[T._COL["Pay Period"]], "Pending")          # Shipped, no activation date -> Pending
         self.assertEqual(T.HEADERS[T._COL["Delivered"] + 1], "Activation Date")   # 11/11: right after Delivered
@@ -432,8 +433,9 @@ class ShippingNotesTests(unittest.TestCase):
         r = T.line_row(line(), "11/11/2026")
         self.assertEqual(len(r), len(T.HEADERS))
         self.assertEqual(r[T._COL["Shipping Notes"]], "")
-        self.assertEqual(r[T._COL["Delivered"]], "")                  # the cells after it did not shift
+        self.assertEqual(r[T._COL["Delivered"]], "")
         self.assertEqual(r[T._COL["Ship Date"]], "10/25/2026")
+        self.assertEqual(r[T._COL["Churn Bucket"]], "")                 # still last
         prior = list(r); prior[T._COL["Shipping Notes"]] = "11/11 AT&T: on the way; FedEx 879: returning"
         out = T.merge([prior], [line()], today=TODAY)
         self.assertEqual(out["rows"][0][T._COL["Shipping Notes"]], "11/11 AT&T: on the way; FedEx 879: returning")
@@ -449,7 +451,7 @@ class ChurnBucketTests(unittest.TestCase):
 
     def test_last_column_and_fresh_rows(self):
         self.assertEqual(T.HEADERS[-1], "Churn Bucket")
-        self.assertEqual(T.HEADERS[_COLX("Delivered Message Sent") + 1], "Churn Bucket")
+        self.assertEqual(T.HEADERS[_COLX("Delivered Message Sent") + 2], "Churn Bucket")   # Shipping Notes sits between (11/12)
         r = T.line_row(line(line_status="Active"), "11/09/2026", active_of=lambda l: "11/3/2026")
         self.assertEqual(r[T._COL["Churn Bucket"]], "0-30 Day")
         self.assertEqual(len(r), len(T.HEADERS))
