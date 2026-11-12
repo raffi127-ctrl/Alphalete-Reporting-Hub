@@ -39,7 +39,11 @@ case " $* " in
   *" --dry-run "*) : ;;
   *) "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('brand_audit','Brand Health Audit')" >> "$LOG_FILE" 2>&1 || true ;;
 esac
-"$VENV_PY" -m automations.brand_audit.run --company "Alphalete Marketing" "$@" >> "$LOG_FILE" 2>&1
+# --no-card: the old daily Brand Health picture is retired -- the weekly
+# LucyECO Social card (Friday noon, online_presence.weekly_card) replaced it
+# (Megan 2026-11-12: "the old card still posted today"). The audit itself
+# still runs: negative-finding alerts, the sheet log and review history.
+"$VENV_PY" -m automations.brand_audit.run --company "Alphalete Marketing" --no-card "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
 echo "[$(date)] brand-audit noon scan finished exit=$ST" >> "$LOG_FILE"

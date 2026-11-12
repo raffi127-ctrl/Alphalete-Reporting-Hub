@@ -6384,34 +6384,33 @@ AUTOMATED_REPORTS = [
         "emoji": "🩺",
         "color": "#6366F1",
         "category": "🩺 Brand Health",
-        "description": "Daily reputation + brand scan for Alphalete Marketing — Google reviews, search results, Reddit, website, and public social — posted to the Brand Health Slack channel. Auto-replies to Google reviews, and every Sunday DMs the week's rep shout-out list (reps named in new Google reviews) + writes them to the Monday ATMO print.",
+        "description": "Daily noon scan for Alphalete Marketing: answers Google reviews, alerts on new negative search results, logs the numbers, and every Sunday sends the rep shout-out list. No daily picture any more: the weekly LucyECO Social card (Fridays) replaced it.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Runs every brand collector for **Alphalete Marketing** (Google "
-            "reviews, search results, Reddit mentions, website, reputation "
-            "sites, public social) and posts the results in the **Brand "
-            "Health Slack Channel**. It also **auto-replies to Google reviews** "
-            "(4–5★ thank-yous post straight to Google, throttled; 1–3★ queue to "
-            "the channel for approve/redo).\n\n"
+            "Every day at **noon (Central)** on **Lucy 3**, for **Alphalete "
+            "Marketing**:\n"
+            "**•** **Answers Google reviews**: 4–5★ thank-yous post straight to "
+            "Google; 1–3★ wait in the Slack channel for ✅ / redo.\n"
+            "**•** **Alerts** on any new negative search result.\n"
+            "**•** Logs the day's numbers (reviews, search, Reddit) to the sheet.\n\n"
+            "THE PICTURE IS RETIRED (11/12)\n"
+            "The old daily **Brand Health** picture no longer posts. The **LucyECO "
+            "Social weekly card** (Fridays at noon, #alphaletesocialmedia) "
+            "replaced it, with the score, how to raise it and the quick actions.\n\n"
             "REP SHOUT-OUTS (Sundays)\n"
             "Every **Sunday** it tallies the reps **named in the last 7 days "
-            "of Google reviews** — one point per review, highest first, ties "
-            "flagged for rock-paper-scissors — DMs the **“Google Review WE "
-            "x.x”** list to Bas + Raf + Megan, and writes the names as bullets "
-            "under **“Google Review S/O’s & Money!”** on the Monday ATMO print "
-            "(Fiber Local Office Checklist doc). Empty weeks post **“No New "
-            "Reviews for this week”** so the group always hears back.\n\n"
+            "of Google reviews**, one point per review, highest first, ties "
+            "flagged for rock-paper-scissors. It DMs the **“Google Review WE "
+            "x.x”** list to Bas + Raf + Megan and writes the names under "
+            "**“Google Review S/O’s & Money!”** on the Monday ATMO print. Empty "
+            "weeks post **“No New Reviews for this week”**.\n\n"
             "WHEN IT RUNS\n"
-            "**Every day at noon (Central)**, via a launchd timer on the Mac "
-            "mini (LUCY); the rep shout-out rides that same noon run on "
-            "Sundays. The **Run Now** button here triggers an extra pass "
-            "any time."
+            "Its own noon timer on Lucy 3. **Run Now** here does an extra pass."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
-        # Runs on Lucy 1 / the Hub. (Was swept to Lucy 2 by e3f1893 "sales boards:
-        # move to Lucy 2", which flipped this neighbouring card too.)
-        "assignees": ["Lucy 1"],
+        # Runs on Lucy 3 (noon agent moved there 2026-08-22; schedule_config agrees).
+        "assignees": ["Lucy 3"],
         # Self-running background job (noon launchd) — keep it out of the "due
         # today / not completed" tallies; it doesn't report completion to the Hub.
         "self_scheduled": True,
@@ -7833,20 +7832,27 @@ AUTOMATED_REPORTS = [
         "emoji": "🩺",
         "color": "#8B5CF6",
         "category": "📸 Social",
-        "description": "Every live LucyECO Social office's Brand Health card, posted in its own Slack room Fridays at noon, with a thread of anything online that doesn't match the office's sign-up.",
+        "description": "Fridays at noon: each live office's LucyECO Social scorecard in its own Slack channel (Alphalete's in #alphaletesocialmedia), with the score, how to raise it, and quick actions.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Fridays at **noon CST** on Lucy 3, for each **live** office:\n"
-            "**•** Builds its **Brand Health card**: Google reviews, where it "
-            "shows up in search, Reddit mentions, its website, and a design "
-            "review of the site.\n"
-            "**•** Posts the card in the office's **own room**.\n"
-            "**•** Checks Google and their website against **what they told us "
-            "on sign-up** (address, phone, website, social links) and lists "
-            "anything that doesn't match in the thread.\n\n"
+            "Fridays at **noon CST** on Lucy 3, for **Alphalete** and every "
+            "**live** office:\n"
+            "**•** **Score out of 100** (4 parts of 25) with the change from last "
+            "week and a line graph.\n"
+            "**•** **Reviews**: Google, Indeed and Glassdoor ratings, each linked "
+            "to its reviews page; anything under 4.5★ is red.\n"
+            "**•** **Posts** this week (goal 2–3), **When people Google you** (how "
+            "many of the top 5 are theirs, goal all 5), and **Your info online** "
+            "(the brand audit checklist: Google listing, website, social links, "
+            "website wording).\n"
+            "**•** Each part says **how to raise the score**, then **Rank Higher "
+            "On Google** ideas and **⚡ Quick actions you can take this week** "
+            "(review link, 📸 New post, Google description rewrite).\n"
+            "**•** Posts the picture in the office's **Slack channel**, with the "
+            "links, new reviews and the full PDF in its thread.\n\n"
             "GOOD TO KNOW\n"
-            "**•** **Indeed and Glassdoor are check-by-hand lines**: both block "
-            "Lucy, and she doesn't get around that.\n"
+            "**•** Indeed and Glassdoor ratings come from the Google search: both "
+            "sites block Lucy, and she doesn't get around that.\n"
             "**•** Bad reviews don't wait for Friday: they alert within ~10 "
             "minutes (the LucyECO Social card)."
         ),
