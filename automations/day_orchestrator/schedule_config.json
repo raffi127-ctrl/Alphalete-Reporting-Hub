@@ -8213,6 +8213,28 @@
    "verify": null,
    "report_id": "nds-activation-rate-probe"
   },
+  "fiber_activation_rate": {
+   "close_on": "exit_zero",
+   "on_scheduler": false,
+   "display_name": "Fiber Activation Rate by rep (build)",
+   "_note": "BUILD (Eve 2026-11-12). Raf (Slack 11/12, at Haytham's): ongoing per-rep Fiber activation rate like the Ongoing Cancel image. Downloads ATTTRACKER2_1-D2D/Metrics 'Metrics Call Last week data (Internet)' once (Rolling 4 Weeks + 30-60 activation, rep rows) and logs it to 'Fiber Activation Log' in the SANDBOX workbook (no --real yet). Posts nothing; fiber_activation_rate.slack_board draws the images from the log. No machine on purpose: build runs go to the least-loaded Lucy.",
+   "command": [
+    "automations.fiber_activation_rate.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "fiber-activation-rate"
+  },
   "nds_orderlog_status_probe": {
    "close_on": "exit_zero",
    "on_scheduler": false,
