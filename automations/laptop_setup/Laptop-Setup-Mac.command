@@ -1355,11 +1355,14 @@ section "Send login codes to reception"
 # API is Workspace-admin only) and a filter can only forward to a CONFIRMED
 # address — so the person adds + confirms it, then imports a filter file this
 # script writes, with Gmail's own "Import filters" button. No sign-in tokens.
+# ROLE: on an admin/reception laptop these are the ICD's logins, not theirs
+# (Megan, 2026-11-12: "this needs to say ICD login not your").
+if [ "$ROLE" = owner ]; then WHOSE="your"; else WHOSE="${ICD_NAME:-the ICD}'s"; fi
 OWNER_EMAIL="$(recall OWNER_EMAIL)"
 if [ -z "$OWNER_EMAIL" ]; then
-  OWNER_EMAIL="$(ask_email "Next: your Sara+, Sterling and OwnerVille login codes will go to reception.
+  OWNER_EMAIL="$(ask_email "Next: ${WHOSE} Sara+, Sterling and OwnerVille login codes will go to reception.
 
-What email address is your Sara+ account set up with?" "")"
+What email address is ${WHOSE} Sara+ account set up with?" "")"
   remember OWNER_EMAIL "$OWNER_EMAIL"
 fi
 OWNER_GMAIL="https://mail.google.com/mail/?authuser=$OWNER_EMAIL"
@@ -1384,7 +1387,7 @@ else
   open_chrome "$OWNER_GMAIL#settings/fwdandpop"
   human fwd_reception_added "Gmail is open for:
 ${OWNER_EMAIL}
-(the email your Sara+ account uses)
+(the email ${WHOSE} Sara+ account uses)
 Sign in to it if it asks.
 
 1. Click “Add a forwarding address”.
@@ -1436,7 +1439,7 @@ else
   open_chrome "$OWNER_GMAIL#settings/fwdandpop"
   human fwd_lucy_added "Gmail is open for:
 ${OWNER_EMAIL}
-(the email your Sara+ account uses)
+(the email ${WHOSE} Sara+ account uses)
 Sign in to it if it asks.
 
 1. Click “Add a forwarding address”.
