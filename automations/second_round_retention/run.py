@@ -46,7 +46,10 @@ ET = ZoneInfo("America/New_York")
 HEADER = ["Semana (domingo)", "Fecha", "Día", "Office ID", "Owner", "Empresa",
           "2nd agendadas", "2nd vinieron", "% vinieron"]
 NEW_STARTS_TAB = "New Starts"
-NEW_STARTS_HEADER = ["Week (Sunday)", "Date", "Office ID", "Owner", "Scheduled", "Showed"]
+# G/H (Raf 2026-11-12): the same report's TRAINING calendar. Some owners book
+# new starts there instead of on the New Starts calendar.
+NEW_STARTS_HEADER = ["Week (Sunday)", "Date", "Office ID", "Owner", "Scheduled", "Showed",
+                     "Training Scheduled", "Training Showed"]
 DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
 
@@ -90,7 +93,8 @@ def pull_office(page, rqst, weeks, today):
         for i in range(7):
             d = sun + dt.timedelta(days=i)
             if d in days and d <= today:
-                out[d] = (days[d]["b2"], days[d]["s2"], days[d]["nss"], days[d]["nsh"])
+                out[d] = (days[d]["b2"], days[d]["s2"], days[d]["nss"], days[d]["nsh"],
+                          days[d].get("trb", 0), days[d].get("trs", 0))
     return out
 
 
@@ -106,7 +110,7 @@ def rows_for(office, days):
 
 def new_start_rows(office, days):
     return [[week_sunday(d).isoformat(), d.isoformat(), office["office_id"], office["owner"],
-             days[d][2], days[d][3]] for d in sorted(days)]
+             days[d][2], days[d][3], days[d][4], days[d][5]] for d in sorted(days)]
 
 
 def _sheets():
@@ -190,9 +194,9 @@ def write_new_starts(rows, weeks, failed_ids):
         _ok(lambda: S.post(API + ":batchUpdate", json={"requests": [
             {"addSheet": {"properties": {"title": NEW_STARTS_TAB}}}]}))
     rng = "'%s'" % NEW_STARTS_TAB
-    r = _ok(lambda: S.get(API + "/values/%s!A1:F100000" % rng))
+    r = _ok(lambda: S.get(API + "/values/%s!A1:H100000" % rng))
     body = merge_new_starts(r.json().get("values", [])[1:], rows, weeks, failed_ids)
-    _ok(lambda: S.post(API + "/values/%s!A:F:clear" % rng))
+    _ok(lambda: S.post(API + "/values/%s!A:H:clear" % rng))
     _ok(lambda: S.put(API + "/values/%s!A1" % rng, params={"valueInputOption": "RAW"},
                       json={"values": [NEW_STARTS_HEADER] + body}))
     log("wrote %d row(s) to %s" % (len(rows), NEW_STARTS_TAB))
@@ -203,12 +207,14 @@ HEAL_FROM_HOUR = 20  # ET: only the last hourly run of the day (20:07 ET = 19:07
 
 
 def missing_new_starts(old, office_ids, today, n=HEAL_WEEKS):
-    """Offices that lack any of the last n closed weeks in the New Starts tab."""
+    """Offices that lack any of the last n closed weeks in the New Starts tab.
+    A row without the training columns (G/H, added 11/12) counts as missing,
+    so the nightly heal fills them in once for the old weeks."""
     sun = week_sunday(today)
     want = {(sun - dt.timedelta(days=7 * k)).isoformat() for k in range(1, n + 1)}
     have = {}
     for x in old:
-        if len(x) > 2:
+        if len(x) >= len(NEW_STARTS_HEADER):
             have.setdefault(x[2], set()).add(x[0])
     return sorted(i for i in office_ids if not want <= have.get(i, set()))
 
@@ -219,7 +225,7 @@ def heal_new_starts(office_ids, today):
     without anyone's PC on). A no-op once the tab is complete."""
     import subprocess
     S = _sheets()
-    r = _ok(lambda: S.get(API + "/values/'%s'!A2:F100000" % NEW_STARTS_TAB))
+    r = _ok(lambda: S.get(API + "/values/'%s'!A2:H100000" % NEW_STARTS_TAB))
     todo = missing_new_starts(r.json().get("values", []), office_ids, today)
     if not todo:
         log("New Starts: all %d office(s) have the last %d weeks" % (len(office_ids), HEAL_WEEKS))

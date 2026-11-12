@@ -51,6 +51,15 @@ WANT = {
 }
 # Total Applies is NOT measured — it is sent + removed.
 
+# Rows read when the report has them, 0 when it doesn't (never an error: the
+# funnel board must not break over them). Raf 2026-11-12: some owners (Nabil,
+# Stergios) book new starts on the TRAINING calendar, so "New Starts Showed Up"
+# misses them; second_round_retention stores these next to the new starts.
+OPTIONAL = {
+    "trb": "Total Training",
+    "trs": "Training Showed Up",
+}
+
 _JS_ROWS = """() => {
     const t = document.getElementById('totalsTable');
     if (!t) return null;
@@ -144,6 +153,10 @@ def report_week(page, rqst, start: dt.date, verbose=True):
     out = {d: {} for d in dates}
     for key, label in WANT.items():
         vals = by_label[label]["vals"]
+        for i, d in enumerate(dates):
+            out[d][key] = _num(vals[i]) or 0
+    for key, label in OPTIONAL.items():
+        vals = by_label[label]["vals"] if label in by_label else [None] * len(dates)
         for i, d in enumerate(dates):
             out[d][key] = _num(vals[i]) or 0
     for d in dates:
