@@ -53,6 +53,7 @@ PRODUCT = "Product Type (Broken Out)"
 PACKAGE = "Package"
 TECH = "Tech Install"
 SPM = "sp.SPM Number"
+LINES = "_wireless_lines"   # ours, set by wireless_pending (lines per order)
 
 # Crosstab exports sometimes leave a merged dimension blank on the rows under
 # its first one; carry the last value down for these.
@@ -172,7 +173,19 @@ def wireless_pending(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     open wireless line in the window (Delivered / Shipped / BYOD /
     Backordered, no activation) rides along under its rep. Rep A-Z, then
     oldest sale first."""
-    hit = [r for r in rows if is_wireless(r) and is_open(r)]
+    # Eve 11/12: one row per ORDER (SPM), not per line — the first sample was
+    # 391 rows for Raf because every line of a 5-line order was its own row.
+    orders: Dict[tuple, Dict[str, str]] = {}
+    for r in rows:
+        if not (is_wireless(r) and is_open(r)):
+            continue
+        key = (r.get(REP, "").casefold(),
+               r.get(SPM, "") or (r.get(CUSTOMER, ""), r.get(SALE_DATE, "")))
+        if key in orders:
+            orders[key][LINES] = str(int(orders[key][LINES]) + 1)
+        else:
+            orders[key] = dict(r, **{LINES: "1"})
+    hit = list(orders.values())
     hit.sort(key=lambda r: (r.get(REP, "").casefold(),
                             parse_date(r.get(SALE_DATE)) or dt.date.min,
                             r.get(CUSTOMER, "").casefold()))

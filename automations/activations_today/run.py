@@ -92,6 +92,15 @@ def _short_product(v: str) -> str:
     return s.title() if s.isupper() else s
 
 
+def count_text(rows) -> str:
+    """'18 installs' or '18 installs + 40 wireless pending' (Eve 11/12: the
+    first sample said '391 installs' when most were wireless orders)."""
+    wl = sum(1 for r in rows if pull.is_wireless(r))
+    n = len(rows) - wl
+    txt = "{} install{}".format(n, "" if n == 1 else "s")
+    return txt + (" + {} wireless pending".format(wl) if wl else "")
+
+
 def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
     from automations.box_order_log import pending as bp
     items = []
@@ -99,13 +108,18 @@ def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
         sale = pull.parse_date(r.get(pull.SALE_DATE))
         cust = r.get(pull.CUSTOMER, "")
         status = r.get(pull.STATUS, "")
-        install = WIRELESS_TAG if pull.is_wireless(r) else r.get(pull.TECH, "")
+        wl = pull.is_wireless(r)
+        install = WIRELESS_TAG if wl else r.get(pull.TECH, "")
+        package = r.get(pull.PACKAGE, "") or _short_product(r.get(pull.PRODUCT, ""))
+        if wl and r.get(pull.LINES):
+            k = int(r[pull.LINES])
+            package = "{} line{}".format(k, "" if k == 1 else "s")
         cells = (cust,
                  r.get(pull.PHONE, ""),
                  sale.strftime("%m/%d/%Y") if sale else "",
                  status or "—",
                  install,
-                 r.get(pull.PACKAGE, "") or _short_product(r.get(pull.PRODUCT, "")))
+                 package)
         items.append(_Row(cells, install, r.get(pull.REP, "") or "(no rep)",
                           sale, cust))
     n = len(items)
@@ -116,7 +130,7 @@ def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
     if not n:
         subtitle = "{} — no installs scheduled today.".format(owner)
     elif n_wl:
-        subtitle = ("{} — {} install{} scheduled today + {} wireless line{} "
+        subtitle = ("{} — {} install{} scheduled today + {} wireless order{} "
                     "still pending, across {} rep{}. Reach out to your "
                     "customers today.".format(
                         owner, n_in, bp.plural(n_in), n_wl, bp.plural(n_wl),
@@ -272,8 +286,8 @@ def main(argv=None) -> int:
         for i, p in enumerate(render(work, out), 1):
             res = smp.dm_user_with_file(  # Lucy 4 has no bot token: metrics token
                 p, user=args.dm_user, as_bot=False,
-                comment="SAMPLE (real data, {}) — {} — {} installs{}".format(
-                    day, LABEL, len(today), " (part {})".format(i) if i > 1 else ""))
+                comment="SAMPLE (real data, {}) — {} — {}{}".format(
+                    day, LABEL, count_text(today), " (part {})".format(i) if i > 1 else ""))
             print("  ✓ DM: {}".format(res))
         return 0
 
@@ -299,8 +313,7 @@ def main(argv=None) -> int:
     pngs = render(work, out)
     print("  ✓ rendered {}".format(", ".join(str(p) for p in pngs)))
 
-    comment = "{} — {} install{}".format(LABEL, len(today),
-                                         "" if len(today) == 1 else "s")
+    comment = "{} — {}".format(LABEL, count_text(today))
     for i, p in enumerate(pngs, 1):
         c = comment if len(pngs) == 1 else "{} ({} of {})".format(comment, i, len(pngs))
         res = smp.post_reply_with_image(
