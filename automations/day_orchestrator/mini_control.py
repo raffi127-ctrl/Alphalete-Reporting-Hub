@@ -2924,6 +2924,49 @@ def _action_ping(args: str) -> tuple[bool, str]:
     return True, f"pong from {socket.gethostname()} @ {_now()}"
 
 
+def _peer_queue_verdict(name: str) -> str:
+    """For a peer that is UP: BUSY (a row is running), STUCK (rows waiting,
+    nothing running) or IDLE -- read from that machine's own queue tab."""
+    try:
+        mach = _machine_profile(name)
+        ws = _own_live_tab(mach, _control_tab_for(mach))
+        if ws is None:
+            ws = _open(False, name, legacy=True)
+        rows = ws.get_all_records()[-40:]
+    except Exception as e:  # noqa: BLE001 -- the network facts still stand
+        return ("VERDICT: machine is UP on the LAN. Couldn't read its queue "
+                f"({type(e).__name__}) to tell busy from stuck -- check "
+                f"`lucy --machine \"{name}\" status` before restarting anything.")
+    running = [r for r in rows if str(r.get("Status", "")).strip().lower() == "running"]
+    queued = [r for r in rows if str(r.get("Status", "")).strip().lower() == "queued"]
+    if running:
+        r = running[-1]
+        what = f"{r.get('Action', '')} {r.get('Args', '')}".strip()[:80]
+        at = _parse_ts(str(r.get("Queued At", "")).strip())
+        mins = None
+        if at is not None:
+            try:
+                from datetime import datetime as _dt
+                mins = int((_dt.now(at.tzinfo) - at).total_seconds() // 60)
+            except Exception:  # noqa: BLE001
+                mins = None
+        age = f"{mins} min" if mins is not None else "an unknown time"
+        if mins is not None and mins > 180:
+            return (f"VERDICT: machine is UP; `{what}` has been 'running' for "
+                    f"{age} -- longer than any report should take, so it may be "
+                    f"hung. {len(queued)} row(s) waiting. Read its log before "
+                    "restarting.")
+        return (f"VERDICT: machine is UP and BUSY -- running `{what}` for "
+                f"{age}; {len(queued)} row(s) waiting their turn. This is NOT "
+                "frozen; don't restart it.")
+    if queued:
+        oldest = str(queued[0].get("Queued At", "")).strip()
+        return (f"VERDICT: machine is UP but its queue is STUCK -- {len(queued)} "
+                f"row(s) waiting since {oldest or '?'} and nothing running. Its "
+                "poller is dead or it has no internet (Sheets unreachable).")
+    return "VERDICT: machine is UP and IDLE -- nothing running, nothing waiting."
+
+
 def _action_peer_probe(args: str) -> tuple[bool, str]:
     """From THIS box, look at another Lucy over the office LAN: is it there?
 
@@ -2980,8 +3023,12 @@ def _action_peer_probe(args: str) -> tuple[bool, str]:
     if not mac:
         out.append("  arp: no MAC cached for it")
     if ping_ok and port_ok:
-        out.append("VERDICT: machine is UP on the LAN — its jobs are dead or it "
-                   "has no internet (Sheets/Slack unreachable).")
+        # UP + a stalled queue is NOT "frozen". On 2026-11-12 this line said
+        # "its jobs are dead" about Lucy 4 while Eve's captainship_drafts was
+        # simply running and everything else was waiting its turn -- a false
+        # alarm that nearly got the box restarted. Read the peer's own queue
+        # and say which it is.
+        out.append(_peer_queue_verdict(name))
     elif ip or mac:
         out.append("VERDICT: on the network but not answering — most likely ASLEEP.")
     else:
