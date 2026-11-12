@@ -87,6 +87,14 @@ def ready(page) -> bool:
     return len(got) == len(ENTRY_POINTS)
 
 
+def _plain(value) -> str:
+    """The ONE place a Secret is unwrapped. Both the engine path and the
+    driven path come through here, so `reveal()` stays countable: the wrapper
+    is worth nothing the moment it is called in two places that each think
+    they are the only one."""
+    return (value.reveal() if hasattr(value, "reveal") else str(value or ""))
+
+
 def hand_over(page, *, genders=None, socials=None, log=print) -> dict:
     """Put the two things only a PERSON ever supplied into the driven page.
 
@@ -98,15 +106,15 @@ def hand_over(page, *, genders=None, socials=None, log=print) -> dict:
 
     NOTHING IS LOGGED BUT COUNTS. A Social reaches this page and no further: it
     is written straight into the map the engine reads and never returned,
-    echoed or put in a message. `Secret.reveal()` is called here and nowhere
-    else in this module, which is the point of the wrapper.
+    echoed or put in a message. Unwrapping goes through `_plain`, the one
+    `reveal()` call site in this module, which is the point of the wrapper.
 
     Returns {"genders": n, "socials": n} -- how many landed, never which.
     """
     pairs_g = {str(k): str(v) for k, v in (genders or {}).items() if str(v or "").strip()}
     pairs_s = {}
     for k, v in (socials or {}).items():
-        raw = v.reveal() if hasattr(v, "reveal") else str(v or "")
+        raw = _plain(v)
         digits = "".join(c for c in raw if c.isdigit())
         # Nine digits or nothing. A short one would be typed into a payroll
         # record as a real Social and Apex would take it.
@@ -412,3 +420,366 @@ def wait_for_field(page, label: str, *, seconds: int = 25, people=None,
         page.wait_for_timeout(500)
     log("    %s never appeared on %s" % (label, page.url or "?"))
     return False
+
+
+# --------------------------------------------------------------- by NAME
+# The tax tab cannot be driven by label: Apex puts "Fed. Tax Exempt" on the
+# Marital Status box and gives the two Social boxes no label at all. Their
+# `name` attributes are clean, so these take a name instead (2026-11-12).
+
+_MARK = "data-ans-box"
+
+
+def _mark_by_name(page, name: str) -> str:
+    """Tag the element with this name, and hand back the one a person uses.
+
+    A Kendo widget is a visible box over a hidden one; the hidden one is what
+    submits and the visible one is what you type into or click.
+    """
+    return page.evaluate(
+        """([n, mark]) => {
+             document.querySelectorAll('[' + mark + ']')
+               .forEach(e => e.removeAttribute(mark));
+             const el = document.querySelector('[name="' + n + '"]')
+                      || document.getElementById(n);
+             if (!el) return '';
+             let box = el;
+             if (el.type === 'hidden' || !el.offsetParent) {
+               const w = el.parentElement;
+               const vis = w ? [...w.querySelectorAll('input')]
+                 .filter(i => i.offsetParent && i.type !== 'hidden') : [];
+               if (vis.length) box = vis[0];
+             }
+             box.setAttribute(mark, '1');
+             const sp = el.parentElement
+               ? el.parentElement.querySelector('.k-dropdown, .k-widget') : null;
+             if (sp) sp.setAttribute(mark + '-widget', '1');
+             return box.offsetParent ? 'visible' : 'hidden';
+           }""", [name, _MARK])
+
+
+def set_dropdown_by_name(page, name: str, value: str, log=print) -> bool:
+    """Pick `value` in the dropdown whose input is called `name`."""
+    if not _mark_by_name(page, name):
+        log("    %s: no box" % name)
+        return False
+    try:
+        page.click("[%s-widget]" % _MARK, timeout=5000)
+        page.wait_for_timeout(700)
+        try:
+            page.click("ul.k-list li:text-is(%r)" % value, timeout=4000)
+        except Exception:      # noqa: BLE001
+            page.click("li:text-is(%r)" % value, timeout=3000)
+        page.wait_for_timeout(600)
+    except Exception as e:     # noqa: BLE001
+        log("    %s: could not pick %r (%s)" % (name, value, type(e).__name__))
+        return False
+    shown = page.evaluate(
+        "(m) => { const e = document.querySelector('[' + m + '-widget]');"
+        " return e ? (e.innerText || '').replace(/\\s+/g, ' ').trim() : ''; }", _MARK)
+    ok = bool(shown) and value.lower() in shown.lower()
+    if not ok:
+        log("    %s: clicked, shows %r" % (name, shown))
+    return ok
+
+
+def type_by_name(page, name: str, value, log=print, *, secret: bool = False) -> bool:
+    """Type into the box called `name`, with real keystrokes.
+
+    `secret` keeps the value out of the log -- it is a Social, and the whole
+    point of the Secret wrapper is that it never reaches a terminal.
+    """
+    raw = _plain(value)
+    if not raw:
+        return False
+    if not _mark_by_name(page, name):
+        log("    %s: no box" % name)
+        return False
+    try:
+        page.fill("[%s]" % _MARK, "")
+        page.type("[%s]" % _MARK, raw, delay=30)
+        page.evaluate("(m) => { const e = document.querySelector('[' + m + ']');"
+                      " if (e) e.dispatchEvent(new Event('blur', {bubbles: true})); }",
+                      _MARK)
+        page.wait_for_timeout(400)
+        got = page.evaluate("(m) => { const e = document.querySelector('[' + m + ']');"
+                            " return e ? (e.value || '') : ''; }", _MARK)
+    except Exception as e:     # noqa: BLE001
+        log("    %s: could not type (%s)" % (name, type(e).__name__))
+        return False
+    ok = bool(str(got).strip())
+    log("    %s: %s" % (name, "set" if ok else "STILL EMPTY")
+        if secret else "    %s: %r -> %r" % (name, raw, got))
+    return ok
+
+
+def password_email_off(page, log=print) -> None:
+    """Untick "Override the user's password with a temporary password".
+
+    It moved to the profile tab in the rewrite and it is the same hazard as
+    the create form's: saving with it on emails the person. Set, never left
+    as found.
+    """
+    state = page.evaluate(
+        """() => {
+             const lab = [...document.querySelectorAll('label')]
+               .find(l => /override .*password/i.test(l.innerText || ''));
+             if (!lab) return 'absent';
+             const box = lab.querySelector('input[type=checkbox]')
+               || (lab.htmlFor ? document.getElementById(lab.htmlFor) : null)
+               || (lab.parentElement
+                   ? lab.parentElement.querySelector('input[type=checkbox]') : null);
+             if (!box) return 'no box';
+             if (!box.checked) return 'already off';
+             box.setAttribute('data-ans-pw', '1');
+             return 'ON';
+           }""")
+    if state == "ON":
+        # A DRIVER CLICK, not box.click(). The rewrite's controls ignore
+        # events JavaScript makes -- that is the whole finding of 2026-11-12 --
+        # and this is the one tick whose state emails a real person.
+        try:
+            page.click("[data-ans-pw]", timeout=4000)
+            page.wait_for_timeout(300)
+        except Exception as e:     # noqa: BLE001
+            log("    password email: STILL ON -- could not untick (%s)"
+                % type(e).__name__)
+            return
+        still = page.evaluate(
+            "() => { const b = document.querySelector('[data-ans-pw]');"
+            " return b ? !!b.checked : false; }")
+        state = "STILL ON -- do not save" if still else "was ON, now off"
+    log("    password email: %s" % state)
+
+
+# What each tab holds, as Apex names it now. Read off a live record on
+# 2026-11-12 (resources/apex-after-the-beta-rewrite.md). Labels for the
+# employment tab, NAMES for the other two -- see the note above.
+PROFILE_TEXT = (("FirstName", "first"), ("MiddleName", "middle"),
+                ("LastName", "last"), ("EmailAddress", "account_email"),
+                ("BirthDay", "dob"), ("StreetLine1", "address1"),
+                ("AptNum", "apt"), ("StreetLine2", "address2"),
+                ("City", "city"), ("PostalCode", "zip"),
+                ("PhoneNumber", "home_phone"))
+PROFILE_PICKS = (("Gender_input", "gender"), ("StateProvinceID", "state"),
+                 ("CountryID", "country"))
+TAX_PICKS = (("MaritalStatus_input", "marital_status"),
+             ("StateToBeTaxedIn_input", "tax_state"))
+# Claim Dependants has NO name attribute, so it is the one field on the tax
+# tab that has to go by label -- and Apex refuses the tab without it. Apex
+# spells it with an A, which is why filler.LABEL_FOR does too.
+TAX_BY_LABEL = (("Claim Dependants", "claim_dependents"),)
+
+# Every key the three tabs can fill, so a caller can say what it is NOT
+# filling. Checked against filler.PAGE_OF by the tests -- the two maps
+# disagreeing is how a value would quietly stop being typed.
+FILLS = (tuple(k for _n, k in PROFILE_TEXT + PROFILE_PICKS)
+         + tuple(k for _n, k in TAX_PICKS)
+         + tuple(k for _l, k in TAX_BY_LABEL))
+
+
+# The starred boxes. Apex refuses the tab when one of these is blank, and the
+# refusal names only the first -- so a run that is missing three of them looks
+# like three separate failures. Reported up front instead.
+PROFILE_REQUIRED = ("first", "last", "account_email", "dob", "gender",
+                    "address1", "city", "state", "zip", "country")
+TAX_REQUIRED = ("marital_status", "claim_dependents", "tax_state")
+
+
+def absent(values, required) -> list:
+    """Which starred boxes this person has no value for."""
+    return [k for k in required if not str(values.get(k) or "").strip()]
+
+
+def fill_profile(page, values, log=print) -> dict:
+    """The User Profile & Account tab. Never presses Save."""
+    set_, miss = [], []
+    for name, key in PROFILE_PICKS:
+        v = values.get(key)
+        if v and set_dropdown_by_name(page, name, v, log=log):
+            set_.append(name)
+        elif v:
+            miss.append(name)
+    for name, key in PROFILE_TEXT:
+        v = values.get(key)
+        if v and type_by_name(page, name, v, log=log):
+            set_.append(name)
+        elif v:
+            miss.append(name)
+    gaps = absent(values, PROFILE_REQUIRED)
+    if gaps:
+        log("    NO VALUE FOR (Apex requires these): %s" % ", ".join(gaps))
+    # ALWAYS, and last: a save with this on emails the person.
+    password_email_off(page, log=log)
+    return {"set": set_, "missed": miss, "absent": gaps}
+
+
+def fill_tax(page, values, social=None, log=print) -> dict:
+    """The Tax & Bank Information tab, Social included. Never presses Save.
+
+    The Social is typed and never logged -- `type_by_name(secret=True)` says
+    only whether a box took it.
+    """
+    set_, miss = [], []
+    for name, key in TAX_PICKS:
+        v = values.get(key)
+        if v and set_dropdown_by_name(page, name, v, log=log):
+            set_.append(name)
+        elif v:
+            miss.append(name)
+    for label, key in TAX_BY_LABEL:
+        v = values.get(key)
+        if v and type_into(page, label, v, log=log):
+            set_.append(label)
+        elif v:
+            miss.append(label)
+    if social is not None:
+        ok1 = type_by_name(page, "SSN", social, log=log, secret=True)
+        ok2 = type_by_name(page, "ConfirmSSN", social, log=log, secret=True)
+        (set_ if (ok1 and ok2) else miss).append("Social")
+    gaps = absent(values, TAX_REQUIRED)
+    if gaps:
+        log("    NO VALUE FOR (Apex requires these): %s" % ", ".join(gaps))
+    return {"set": set_, "missed": miss, "absent": gaps}
+
+
+def wait_for_field_named(page, name: str, *, seconds: int = 25, people=None,
+                         log=print) -> bool:
+    """wait_for_field, by `name` rather than by label.
+
+    The profile and tax tabs are full page loads of their own, and each one
+    clears "Loading ... data" before its boxes exist -- the same trap the
+    employment tab set. Neither tab can be waited on by label (Apex labels
+    its tax fields wrongly), so this waits on the name attribute.
+    """
+    for i in range(max(1, seconds * 2)):
+        if not ready(page):
+            load(page, people, "", log=lambda *a: None)
+        try:
+            if page.evaluate(
+                    "(n) => !!document.querySelector('[name=\"' + n + '\"]')",
+                    name):
+                if i:
+                    log("    (%s appeared after %.1fs)" % (name, i * 0.5))
+                return True
+        except Exception:      # noqa: BLE001 — mid-navigation; try again
+            pass
+        page.wait_for_timeout(500)
+    log("    %s never appeared on %s" % (name, page.url or "?"))
+    return False
+
+
+# ------------------------------------------------- all three tabs, in order
+TABS = (
+    # (what to call it, the path, the box that proves the tab is ready)
+    ("employment record", "employment-record", None),
+    ("user profile", "user-profile", "Gender_input"),
+    ("tax & bank", "bank-info", "MaritalStatus_input"),
+)
+
+
+def go_tab(page, apex_id, path: str, *, people=None, log=print) -> bool:
+    """Move to one of an employee's three tabs, and come back loaded.
+
+    EVERY TAB IS A FULL PAGE LOAD, so the injected script goes with it and has
+    to be put back on the other side -- and `page.goto` is no use here: Apex
+    lands every session on its change-password page and a typed URL redirects
+    straight back to it. The way across is the app's own navigation.
+    """
+    where = "/employees/%s/edit/%s" % (apex_id, path)
+    if where in (page.url or ""):
+        return keep_loaded(page, people, "", log=lambda *a: None)
+    keep_loaded(page, people, "", log=lambda *a: None)
+    try:
+        page.evaluate("async (p) => await window.__ansGoSpa(p)", where)
+    except Exception as e:     # noqa: BLE001
+        log("    could not navigate to %s (%s)" % (path, type(e).__name__))
+        return False
+    page.wait_for_timeout(1500)
+    if where not in (page.url or ""):
+        log("    did not land on %s (sitting on %s)" % (path, page.url))
+        return False
+    return keep_loaded(page, people, "", log=lambda *a: None)
+
+
+def fill_employment(page, who, log=print) -> dict:
+    """The employment record. Never presses Save.
+
+    The dropdowns are set from HERE, by real click, because the engine's
+    in-page clicks do nothing to them since the Beta rewrite. The engine then
+    fills the plain text boxes, which it has never had trouble with.
+    """
+    pages = who.get("pages") or {}
+    labels = pages.get("employment") or {}
+    picks = {k: v for k, v in labels.items()
+             if k in ("Position", "Basis of Pay", "Pay Frequency",
+                      "State Working In", "Department")}
+    set_, miss = [], []
+    if picks:
+        got = set_dropdowns(page, picks, log=log)
+        set_ += list(got.get("set") or [])
+        miss += list(got.get("missed") or [])
+    # Rate of Pay is a numeric widget and ignores a JS-set value the same way:
+    # it read as filled and Apex refused the save for a missing rate.
+    rate = labels.get("Rate of Pay")
+    if rate:
+        (set_ if type_into(page, "Rate of Pay", rate, log=log)
+         else miss).append("Rate of Pay")
+    # THE TEXT BOXES ONLY. The engine's in-page clicks cannot fill these
+    # dropdowns on the Beta rewrite, and asking it about them afterwards gets
+    # a false "missed" for all five -- the hidden ...ID is empty until Apex
+    # writes it at submit. The display is what was checked above, by the code
+    # that actually set them.
+    text_only = dict(who)
+    text_only["pages"] = dict(pages)
+    text_only["pages"]["employment"] = {
+        k: v for k, v in labels.items() if k not in picks and k != "Rate of Pay"}
+    engine = page.evaluate(
+        "async (p) => await window.__ansDoPage(p, 'employment')",
+        text_only) or {}
+    set_ += list(engine.get("done") or [])
+    miss += list(engine.get("miss") or [])
+    return {"set": set_, "missed": miss, "absent": []}
+
+
+def complete_person(page, who, apex_id, *, values=None, social=None,
+                    save=None, log=print) -> dict:
+    """Walk one person's three tabs, filling each. SAVING IS THE CALLER'S.
+
+    `save` is called as save(tab, result) after each tab is filled and must
+    return True to carry on. It gets that tab's result rather than having to
+    wait for the return value, so a caller can report what Apex will refuse
+    BEFORE the person presses Save. Passing None fills every tab and presses
+    nothing, which is what the supervised rehearsal wants.
+
+    Returns {tab: {"set": [...], "missed": [...], "absent": [...]}} for the
+    tabs it reached. A tab that is absent from the result was never filled --
+    silence is not a save, here either.
+    """
+    values = values or who.get("_values") or {}
+    out = {}
+    for tab, path, prove in TABS:
+        if not go_tab(page, apex_id, path, people=[who], log=log):
+            log("  could not open the %s tab -- stopping." % tab)
+            break
+        log("  %s:" % tab)
+        if prove is None:
+            if not wait_for_field(page, "Position", people=[who], log=log):
+                log("  the %s tab never finished loading -- nothing typed." % tab)
+                break
+        elif not wait_for_field_named(page, prove, people=[who], log=log):
+            log("  the %s tab never finished loading -- nothing typed." % tab)
+            break
+        if tab.startswith("employment"):
+            got = fill_employment(page, who, log=log)
+        elif tab.startswith("user"):
+            got = fill_profile(page, values, log=log)
+        else:
+            got = fill_tax(page, values, social, log=log)
+        log("    set: %s" % (", ".join(got["set"]) or "nothing"))
+        if got["missed"]:
+            log("    NOT set: %s" % ", ".join(got["missed"]))
+        out[tab] = got
+        if save is not None and not save(tab, got):
+            break
+    return out

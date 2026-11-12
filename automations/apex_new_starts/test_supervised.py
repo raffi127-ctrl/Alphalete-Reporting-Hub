@@ -363,10 +363,20 @@ def test_the_complete_rehearsal_never_calls_runPerson():
     point of it -- and exactly what must not happen while somebody is still
     deciding whether to trust the thing."""
     import inspect
+    from automations.apex_new_starts import drive
     from automations.apex_new_starts import supervised as SUP
+    # The tab walk moved into drive.complete_person so the rehearsal and the
+    # unattended week run the SAME code -- so the rule has to be checked
+    # where that code is, not only here.
+    for fn in (SUP._complete, drive.complete_person, drive.fill_employment,
+               drive.fill_profile, drive.fill_tax):
+        src = inspect.getsource(fn)
+        assert "__ansRunPerson" not in src, "%s must not save" % fn.__name__
+    # and the rehearsal's own pause is what stands between a filled tab and a
+    # saved one: it hands complete_person a callback that waits for a person.
     src = inspect.getsource(SUP._complete)
-    assert "__ansRunPerson" not in src, "a rehearsal must not save"
-    assert "__ansDoPage" in src, "it fills one tab and stops"
+    assert "save=pause" in src, "the rehearsal has to hold the Save"
+    assert "_wait_for_person" in src
 
 
 def test_neither_path_safe_means_nothing_is_typed():
@@ -417,7 +427,7 @@ def test_run_reaches_the_triage_without_a_NameError(monkeypatch):
                         lambda office, name, week, log=print: person)
     monkeypatch.setattr(SUP.BID, "for_people", lambda *a, **k: {})
     monkeypatch.setattr(SUP.ECO, "plan",
-                        lambda people, hires, log=print:
+                        lambda people, hires, log=print, office_key="":
                         {"ready": [(person, {"first": "Ada"})], "blocked": []})
     reached = {}
     def _load(page, people, week, log=print):
@@ -444,8 +454,14 @@ def test_the_complete_rehearsal_opens_the_record_before_filling_it():
     """doPage fills whatever page is showing. On the roster that is nothing,
     which is exactly what the first run did (2026-11-11)."""
     import inspect
-    from automations.apex_new_starts import supervised as SUP
-    src = inspect.getsource(SUP._complete)
-    assert "edit/employment-record" in src, "it has to open their record"
-    assert src.index("__ansGoSpa") < src.index("__ansDoPage"), \
+    from automations.apex_new_starts import drive
+    src = inspect.getsource(drive.complete_person)
+    assert src.index("go_tab(") < src.index("fill_employment("), \
         "move first, then fill"
+    # and the move waits for a box that tab actually owns -- the loading
+    # message clears before the fields exist, which is the trap that cost a
+    # day on the employment tab.
+    assert src.index("wait_for_field") < src.index("fill_employment(")
+    assert "edit/%s" in inspect.getsource(drive.go_tab)
+    assert dict((t[0], t[1]) for t in drive.TABS)["employment record"] \
+        == "employment-record"

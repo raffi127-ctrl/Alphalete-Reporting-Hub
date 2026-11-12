@@ -527,22 +527,23 @@ def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
 
     # Then complete everybody on Pending -- the ones who were already there,
     # plus the ones just created, which is where a create leaves them. One at
-    # a time, carrying on past anybody the engine could not finish.
-    page.evaluate("() => window.__ansSetReport([])")
-    working = [p for p in people
-               if need.get(p["name"], {}).get("need") in (drive.COMPLETE, drive.ADD)]
-    for person in working:
-        try:
-            page.evaluate(
-                "async (p) => { await window.__ansRunPerson(p, () => {}); }",
-                person)
-        except Exception as e:      # noqa: BLE001
-            log("  %s: %s" % (person["name"], type(e).__name__))
-    report = page.evaluate("() => window.__ansRundown ? "
-                           "window.__ansRundown() : null")
-    out = _from_report(report, [p["name"] for p in working], log=log)
-    out["blocked"] = list(out["blocked"]) + by_hand
-    return out
+    # a time, carrying on past anybody that could not be finished.
+    #
+    # THE ENGINE'S OWN WALK, AND IT CANNOT WORK YET. `__ansRunPerson` does
+    # the three tabs and saves each -- the right shape -- but it fills every
+    # dropdown with an in-page click, and the Beta rewrite ignores those
+    # (2026-11-12). So every starred dropdown stays empty and Apex refuses
+    # each save: it fails loudly rather than quietly, but it cannot finish
+    # anybody. `drive.complete_person` is the walk that was watched working;
+    # moving this loop onto it needs a Save step and a result that is read
+    # from the page rather than from the engine's rundown, and neither is
+    # built. Until then this raises instead of running a walk that is known
+    # not to complete a record.
+    raise RuntimeError(
+        "the unattended week still runs the engine's walk, whose dropdowns "
+        "the Beta rewrite ignores -- it would refuse every save. Complete "
+        "people with supervised.py until fill_week is moved onto "
+        "drive.complete_person.")
 
 
 def _from_report(report, names: Sequence[str], log=print) -> Dict:

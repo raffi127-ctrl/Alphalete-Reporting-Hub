@@ -3022,19 +3022,28 @@ def test_eco_run_and_the_bookmarklet_agree_about_the_password_box():
     assert "$ctrl.sendUserPassword" in F._JS
 
 
-def test_an_id_that_arrives_late_is_not_a_miss_if_the_widget_shows_the_value():
-    """Since Apex's Beta rewrite the hidden ...ID is empty straight after a
-    selection -- Apex fills it on blur or submit. A probe on 2026-11-12 drove
-    Position, Basis of Pay and Pay Frequency with a REAL browser click: all
-    three displayed the right value and all three ids were empty, so the old
-    check called the whole employment tab a miss and nothing filled."""
+def test_an_empty_id_is_a_miss_again_and_the_dropdowns_never_come_here():
+    """An id Apex fills at submit and an id Apex never fills look IDENTICAL
+    on the page, so forgiving the first believed the second -- the lying
+    widget, which is the display-right-save-wrong failure nobody can see
+    (reverted 2026-11-12).
+
+    It is safe to be strict because this code no longer fills those
+    dropdowns: the Beta rewrite ignores its in-page clicks, so they are set
+    by real browser clicks and drive.fill_employment keeps them out of what
+    it hands doPage -- otherwise all five would read as missed."""
+    import inspect
+    from automations.apex_new_starts import drive
     from automations.apex_new_starts import filler as F
-    js = F._JS
-    assert "function shownText" in js
-    body = js.split("function bindingLooksReal", 1)[1][:900]
-    assert "shownText(el)" in body, "it has to look at what is on screen"
-    assert "if(!shown) return false;" in body, \
-        "a blank id under a blank display is still a miss"
+    body = F._JS.split("function bindingLooksReal", 1)[1]
+    body = body.split("\n function ", 1)[0]
+    assert "if(!String(b).trim()) return false;" in body, \
+        "an id that was never set is a miss"
+    assert "shownText(el)" not in body, \
+        "the display cannot settle this -- both cases look the same"
+    # and the five dropdowns are not asked about
+    src = inspect.getsource(drive.fill_employment)
+    assert "k not in picks" in src, "doPage must get the text boxes only"
 
 
 def test_the_marital_status_bug_is_still_caught():
@@ -3042,6 +3051,9 @@ def test_the_marital_status_bug_is_still_caught():
     the page looked right and the save said MaritalStatusID is required.
     Forgiving a late id must not forgive that."""
     from automations.apex_new_starts import filler as F
-    body = F._JS.split("function bindingLooksReal", 1)[1][:1600]
+    # the FUNCTION, not a character count: a comment above the code grew and
+    # a fixed window stopped reaching the code at all (twice now).
+    body = F._JS.split("function bindingLooksReal", 1)[1]
+    body = body.split("\n function ", 1)[0]
     assert "return norm(b)!==norm(v);" in body, \
         "a bound value equal to the words we typed is still a miss"

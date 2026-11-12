@@ -80,7 +80,15 @@ Clean `name` attributes; map on these rather than labels.
 **The password box moved here.** "Override the user's password with a temporary
 password" is a checkbox on this tab now (no name attribute). It is the same
 hazard as the create form's: saving with it on emails the person. Everything
-that writes this tab has to set it deliberately, never leave it as found.
+that writes this tab has to set it deliberately, never leave it as found —
+and with a DRIVER click, not `box.click()` from JavaScript. An untrusted
+click on this rewrite reports success and leaves the tick on
+(`drive.password_email_off`).
+
+**Phone Number, not Home Phone.** `filler.LABEL_FOR` calls it "Home Phone",
+which is what the old form said, so the engine's label lookup misses this box
+and the bookmarklet has never typed a phone number onto a profile. The driven
+path goes by `name` and fills it.
 
 Gender is a Kendo combobox: `Gender_input` is the visible box and `GenderID_364` is the hidden id that actually saves. Write the id.
 
@@ -102,6 +110,27 @@ The two Social boxes carry **no label at all**, so a label-only lookup cannot
 find them — match on `name`. Several labels on this tab are plainly wrong in
 Apex's own markup ("Fed. Tax Exempt" appears on the Marital Status box), which
 is the other reason to key on `name` here.
+
+**Claim Dependants has no name**, and it is required — Apex refuses the tab
+without it. It is the one field here that has to go by label, and Apex spells
+it with an A (`drive.TAX_BY_LABEL`).
+
+## Driving all three tabs
+
+`drive.fill_profile` and `drive.fill_tax` fill the second and third tabs the
+way `set_dropdowns` / `type_into` fill the first: real clicks, real
+keystrokes. They are keyed on `name` rather than label for the reasons above,
+and `drive.FILLS` is checked against `filler.PAGE_OF` by the tests, so a value
+cannot be built and previewed and then quietly never typed.
+
+Each tab is its OWN page load, and each one clears "Loading ... data" before
+its boxes exist — so after every move: `keep_loaded`, then
+`wait_for_field_named` on a box that tab owns (`Gender_input`,
+`MaritalStatus_input`). Waiting on the loading message is not enough; that
+trap cost a day on the employment tab.
+
+Neither function presses Save. `absent()` names the starred boxes this person
+has no value for, because Apex's refusal names only the first one.
 
 ## How to re-read this
 

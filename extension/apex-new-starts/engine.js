@@ -448,18 +448,22 @@ window.__ansEngine = function (CFG) {
       submit, which this file has said all along. The old check called all
       three a miss and the whole employment tab filled nothing.
 
-      So an empty id is no longer proof of failure -- but it is only
-      forgiven when the widget is DISPLAYING what we asked for. A blank id
-      under a blank display is still a miss, and an id holding the words
-      themselves still is too: that is the Marital Status bug and it must
-      stay caught. */
+      THAT FORGIVENESS IS GONE AGAIN, AND ON PURPOSE (2026-11-12). An empty
+      id under a display showing the right words is EXACTLY the same thing in
+      both cases -- an id Apex will fill at submit, and an id Apex will never
+      fill -- and nothing readable on the page tells them apart. Forgiving it
+      believed the lying widget too, which is the "display was right, the
+      save was wrong" failure nobody can see.
+
+      This file does not need the forgiveness any more: nothing here fills
+      those dropdowns. The Beta rewrite ignores in-page clicks, so they are
+      set by real browser clicks from drive.set_dropdowns, which checks the
+      display itself, and the whole record is read back after the fact by
+      probe_saved. `drive.fill_employment` keeps the dropdowns away from this
+      code rather than asking it a question it cannot answer. */
    var b=boundValue(el);
    if(b===null) return true;              /* nothing bound: nothing to check */
-   if(!String(b).trim()){
-     var shown=shownText(el), want=norm(v);
-     if(!shown) return false;             /* empty id AND nothing on screen */
-     return shown===want||shown.indexOf(want)>=0||want.indexOf(shown)>=0;
-   }
+   if(!String(b).trim()) return false;    /* the id was never set */
    return norm(b)!==norm(v);
  }
  function clearBadId(el){

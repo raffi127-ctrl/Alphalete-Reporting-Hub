@@ -230,3 +230,113 @@ def test_keep_loaded_does_nothing_when_the_engine_is_already_there():
             assert "filter(n => typeof window[n]" in js, "it must not re-run the script"
             return list(drive.ENTRY_POINTS)
     assert drive.keep_loaded(_P(), log=lambda *a: None) is True
+
+
+# --------------------------------------------------- the other two tabs
+# Profile and tax are driven by field NAME, because Apex mislabels its own
+# tax fields and gives the two Social boxes no label at all. These pin the
+# three things that would go wrong silently.
+
+class _Tabs:
+    """A page that answers the by-name driver, and records every click."""
+
+    def __init__(self, *, shown="", typed="", pw_on=False):
+        self.clicks, self.typed_into, self.shown, self.value = [], [], shown, typed
+        self.pw_on = pw_on
+
+    def evaluate(self, js, arg=None):
+        if "data-ans-pw" in js and "override" in js.lower():
+            return "ON" if self.pw_on else "already off"
+        if "data-ans-pw" in js:
+            return self.pw_on
+        # removeAttribute FIRST: _mark_by_name's own script mentions
+        # '.k-widget')' in passing, so a widget-shaped test matches it too.
+        if "removeAttribute" in js:
+            return "visible"
+        if "-widget']" in js or "-widget')" in js:
+            return self.shown
+        if "e.value" in js:
+            return self.value
+        return ""
+
+    def click(self, sel, timeout=None):
+        self.clicks.append(sel)
+        if sel == "[data-ans-pw]":
+            self.pw_on = False
+
+    def fill(self, sel, val):
+        pass
+
+    def type(self, sel, val, delay=None):
+        self.typed_into.append((sel, val))
+
+    def wait_for_timeout(self, ms):
+        pass
+
+
+def test_every_field_on_those_two_tabs_is_covered():
+    """A key in filler.PAGE_OF that no map here carries is a value that gets
+    built, previewed, and then quietly never typed."""
+    for page in ("profile", "tax"):
+        missing = [k for k in F.PAGE_OF[page] if k not in drive.FILLS]
+        assert not missing, "%s tab does not fill %s" % (page, missing)
+
+
+def test_claim_dependants_goes_by_label_with_apex_s_own_spelling():
+    """It has no name attribute, and Apex refuses the tax tab without it. A
+    'Claim Dependents' with an E matches nothing and reports nothing."""
+    assert dict(drive.TAX_BY_LABEL) == {"Claim Dependants": "claim_dependents"}
+
+
+def test_the_password_email_tick_is_unticked_with_a_real_click():
+    """box.click() from JavaScript is untrusted, and this rewrite ignores
+    untrusted events -- so the old JS untick would report success while the
+    tick stayed on and the save emailed a real person their password."""
+    page = _Tabs(pw_on=True)
+    said = []
+    drive.password_email_off(page, log=said.append)
+    assert page.clicks == ["[data-ans-pw]"], page.clicks
+    assert "now off" in said[0], said
+
+
+def test_a_tick_that_will_not_come_off_says_do_not_save():
+    """Silence here is the dangerous answer: the operator is about to press
+    Save themselves."""
+    page = _Tabs(pw_on=True)
+    page.evaluate = lambda js, arg=None: (  # noqa: E731 — stays ON throughout
+        "ON" if "override" in js.lower() else True)
+    said = []
+    drive.password_email_off(page, log=said.append)
+    assert "do not save" in said[-1], said
+
+
+def test_the_profile_tab_always_ends_by_unticking_the_password_email():
+    """Last, and unconditionally. An early return that skips it is how it
+    leaked in production from September."""
+    src = inspect.getsource(drive.fill_profile)
+    body = src.split("for name, key in PROFILE_TEXT")[1]
+    assert "password_email_off(page, log=log)" in body
+    # the untick, then one return. A return between them is the leak.
+    before, after = body.split("password_email_off(page, log=log)")
+    assert "return" not in before, "nothing may return before the untick"
+    assert after.count("return") == 1, after
+
+
+def test_a_social_on_the_tax_tab_is_typed_and_never_logged():
+    page = _Tabs(typed="123456789")
+    said = []
+    got = drive.fill_tax(page, {}, Secret("123456789"), log=said.append)
+    assert got["set"] == ["Social"], got
+    assert "123456789" not in " ".join(said), said
+    # both boxes, every time: Apex refuses the tab when they disagree
+    assert [v for _s, v in page.typed_into] == ["123456789", "123456789"]
+
+
+def test_no_social_means_no_social_box_is_touched():
+    """The rehearsal reads Blue Ink with keep_ssn=False, so there is nothing
+    to type -- and an empty Social typed into a payroll record is worse than
+    a blank one."""
+    page = _Tabs()
+    got = drive.fill_tax(page, {}, None, log=lambda *a: None)
+    assert page.typed_into == []
+    assert "Social" not in got["set"] + got["missed"]

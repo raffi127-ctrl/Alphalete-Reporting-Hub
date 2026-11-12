@@ -271,7 +271,7 @@ def _complete(page, who, person, apex_id, log=print) -> int:
     This is the path that runs twenty-odd times a week. The engine's own
     `runPerson` does all three tabs and SAVES each as it goes -- which is what
     must not happen while somebody is still deciding whether to trust it -- so
-    this fills one tab and leaves the Save to the person watching.
+    this fills each tab and leaves the Save to the person watching.
 
     APEX IS NOT A SINGLE-PAGE APP ANY MORE. A probe on 2026-11-11 found no
     Angular on any page, and every tab is an ordinary link: moving between
@@ -279,75 +279,50 @@ def _complete(page, who, person, apex_id, log=print) -> int:
     script goes back in after each move, from here, rather than the page being
     trusted to still hold it.
     """
-    want = "/employees/%s/edit/employment-record" % apex_id
-
     log("")
     log("  They are already on Pending, so this is the COMPLETE path:")
     log("  employment record, then user profile, then tax.")
     log("")
 
-    if want not in (page.url or ""):
-        drive.keep_loaded(page, [who], log=log)
-        page.evaluate("async (p) => await window.__ansGoSpa(p)", want)
-        page.wait_for_timeout(1500)
-    if want not in (page.url or ""):
-        log("  Could not open their employment record (%s)." % (page.url or "?"))
-        log("  Nothing was typed.")
-        return 1
-    log("  On their employment record.")
+    # ALL THREE TABS, through the one walker drive.complete_person -- the same
+    # code the unattended week runs. A second copy of the tab walk here is how
+    # the two parallel fillers happened, and the whole point of this run is
+    # that what gets watched is what will run by itself.
+    values = who.get("_values") or {}
+    log("  Filling each tab and stopping before Save.")
 
-    # The move was a page load, so put the engine back before asking it to
-    # fill anything -- and wait for the form, which renders after the shell.
-    if not drive.keep_loaded(page, [who], log=log):
-        log("  The engine did not survive the move. Nothing was typed.")
-        return 1
-    # Wait for a REAL box, not for the loading message to clear -- the tab
-    # drops that message before its fields exist, and a run that had just
-    # filled everything found nothing at all on the next attempt.
-    if not drive.wait_for_field(page, "Position", people=[who], log=log):
-        log("  The form never finished loading, so nothing was typed.")
+    def pause(tab: str, got: dict) -> bool:
+        if got.get("absent"):
+            log("")
+            log("  Apex will refuse this tab until these are filled: %s"
+                % ", ".join(got["absent"]))
+            log("  Type them in yourself, or stop and get them onto the board.")
+        log("")
+        log("  SAVE THIS TAB YOURSELF, then press Return.")
+        log("")
+        return _wait_for_person(log=log)
+
+    walked = drive.complete_person(page, who, apex_id, values=values,
+                                   social=who.get("_social"),
+                                   save=pause, log=log)
+    if not walked:
+        log("")
+        log("  Nothing was filled on any tab, so there is nothing to save.")
         _hold_open(page, log=log)
         return 1
-
-    log("  Filling the FIRST tab only, and stopping before Save.")
-    # THE DROPDOWNS GO FIRST, BY REAL CLICK. The engine's in-page clicks do
-    # nothing to them since the Beta rewrite (2026-11-12), so these are set
-    # from here, where the events are trusted. The engine then fills the plain
-    # text boxes, which it has never had trouble with.
-    picks = {k: v for k, v in (who.get("pages", {}).get("employment") or {}).items()
-             if k in ("Position", "Basis of Pay", "Pay Frequency",
-                      "State Working In", "Department")}
-    if picks:
-        drive.set_dropdowns(page, picks, log=log)
-    # Rate of Pay is a numeric widget and ignores a JS-set value the same way:
-    # it read as filled and Apex refused the save for a missing rate.
-    rate = (who.get("pages", {}).get("employment") or {}).get("Rate of Pay")
-    if rate:
-        drive.type_into(page, "Rate of Pay", rate, log=log)
-    got = page.evaluate(
-        "async (p) => await window.__ansDoPage(p, 'employment')", who)
-    done = (got or {}).get("done") or []
-    miss = (got or {}).get("miss") or []
-    log("    filled: %s" % (", ".join(done) or "nothing"))
-    if miss:
-        log("    NOT filled: %s" % ", ".join(miss))
-    if not done:
-        log("")
-        log("  Nothing went in, so there is nothing to save. The boxes it")
-        log("  looked for are not on this page under those labels.")
-        _hold_open(page, log=log)
-        return 1
-    if "Gender" in miss or not person.gender:
-        log("")
-        log("  Gender is blank on the board for everybody this week, and Apex")
-        log("  wants one on the profile tab. Set it by hand there.")
     log("")
-    log("  READ THE TAB, THEN PRESS SAVE YOURSELF.")
-    log("  Nothing here will press it. If this tab saves clean, the other two")
-    log("  are the same shape and the whole-week run is safe to arm.")
-    log("")
-    _hold_open(page, log=log)
+    log("  Done. Nothing here pressed Save.")
     return 0
+
+
+def _wait_for_person(log=print) -> bool:
+    """Wait for Return. False when there is no keyboard to wait on."""
+    try:
+        input()
+        return True
+    except (EOFError, KeyboardInterrupt):
+        log("  (no keyboard here -- stopping rather than carrying on unwatched)")
+        return False
 
 
 def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
@@ -392,7 +367,11 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
         # OwnerVille, so COMPLETING is the common path and creating is the
         # rare one. Rehearsing only the create was rehearsing the wrong thing.
         who = {"name": person.name, "pages": _pages(values),
-               "find": (person.name.split()[-1] if person.name else "")}
+               "find": (person.name.split()[-1] if person.name else ""),
+               # carried for the profile and tax tabs, which are driven by
+               # field NAME rather than by the engine's page map
+               "_values": values,
+               "_social": getattr(hires.get(person.name), "ssn", None)}
         if not drive.load(s.page, [who], week_start.strftime("%m/%d/%Y"), log=log):
             log("  The Apex engine did not load, so nothing was typed.")
             return 1
