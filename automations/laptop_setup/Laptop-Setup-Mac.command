@@ -234,6 +234,140 @@ Google Passwords is open in Chrome.
   verify "$key" "${name} password saved" chk_passwords "${name}|${site}"
 }
 
+# --- PINS: Lucy pins the tab herself, then checks it stuck -----------------
+# (Maud 2026-11-12: pin, not bookmark; Megan: "can you just pin it for them?")
+# Lucy clicks Chrome's own Tab > Pin Tab on the Reception window. macOS asks
+# once to let Terminal click for her (Accessibility); skipped -> they pin by
+# hand. The CHECK reads Chrome's own session file for the Reception profile:
+# each open tab's address + its pinned flag (Chrome's SNSS format: command 6 =
+# a tab's address, 12 = its pinned state, 16 = tab closed). Only the NEWEST
+# Session_ file counts -- Chrome keeps old ones beside it (an old file showed a
+# pin that was long gone, 2026-11-12). Read with the Mac's built-in perl; if
+# perl or the file is missing, the check stands down instead of failing them.
+AX_ASKED=0
+_pin_reader() {
+  local r; r="$(mktemp)"
+  cat > "$r" <<'PERL'
+use strict; use warnings;
+my (%url,%pin,%closed);
+my $f = shift; open(my $fh,'<:raw',$f) or exit; local $/; my $d=<$fh>; close $fh;
+exit unless substr($d,0,4) eq 'SNSS';
+my ($p,$n)=(8,length $d);
+while ($p+2 <= $n) {
+  my $size=unpack('v',substr($d,$p,2)); $p+=2;
+  last if $size==0 || $p+$size>$n;
+  my $id=ord(substr($d,$p,1)); my $pl=substr($d,$p+1,$size-1); $p+=$size;
+  if ($id==12 && length($pl)>=5) { my ($t,$b)=unpack('l C',$pl); $pin{$t}=$b?1:0; }
+  elsif ($id==6 && length($pl)>=16) { my (undef,$t,undef,$ul)=unpack('L l l l',$pl);
+    $url{$t}=substr($pl,16,$ul) if $ul>=0 && 16+$ul<=length $pl; }
+  elsif ($id==16 && length($pl)>=4) { $closed{unpack('l',$pl)}=1; }
+}
+for my $t (keys %url) { next if $closed{$t}; print(($pin{$t}//0),"\t",$url{$t},"\n"); }
+PERL
+  echo "$r"
+}
+chk_pins() {   # "Name|text-in-the-address" ...
+  command -v perl >/dev/null 2>&1 || return 0
+  local sess r tabs e miss=""
+  sess="$(ls -t "$CHROME_DIR/Sessions/" 2>/dev/null | grep '^Session_' | head -1)"
+  [ -n "$sess" ] || return 0
+  r="$(_pin_reader)"; tabs="$(perl "$r" "$CHROME_DIR/Sessions/$sess" 2>/dev/null)"; rm -f "$r"
+  for e in "$@"; do echo "$tabs" | grep -qiE "^1	.*${e#*|}" || miss="$miss${e%%|*}
+"; done
+  [ -n "$miss" ] && printf "Not pinned yet:\n%s\nRight-click its tab at the top of Chrome.\nClick “Pin”." "$miss"
+}
+_reception_urls() {   # every open tab address in the Reception profile (newest session file)
+  command -v perl >/dev/null 2>&1 || return 0
+  local sess r
+  sess="$(ls -t "$CHROME_DIR/Sessions/" 2>/dev/null | grep '^Session_' | head -1)"
+  [ -n "$sess" ] || return 0
+  r="$(_pin_reader)"; perl "$r" "$CHROME_DIR/Sessions/$sess" 2>/dev/null | cut -f2; rm -f "$r"
+}
+_auto_pin() {   # text-in-the-address -> pinned | already | notfound | denied
+  # Picks the Chrome window that IS the Reception profile: the one whose tabs
+  # best match Reception's own session list. AppleScript can't name a window's
+  # profile, and "the front window" was wrong in Megan's test (2026-11-12) --
+  # it pinned a tab in her own Chrome.
+  osascript - "$1" "$(_reception_urls)" <<'APPLESCRIPT' 2>/dev/null
+on run argv
+  set needle to item 1 of argv
+  set blob to item 2 of argv
+  set bestW to 0
+  set bestScore to -1
+  set bestTab to 0
+  tell application "Google Chrome"
+    repeat with wi from 1 to count of windows
+      set w to window wi
+      set score to 0
+      set hit to 0
+      set i to 0
+      repeat with t in tabs of w
+        set i to i + 1
+        set u to URL of t
+        if blob is not "" and blob contains u then set score to score + 1
+        if hit = 0 and u contains needle then set hit to i
+      end repeat
+      if hit > 0 and score > bestScore then
+        set bestScore to score
+        set bestW to wi
+        set bestTab to hit
+      end if
+    end repeat
+    if bestW = 0 then return "notfound"
+    set w to window bestW
+    set active tab index of w to bestTab
+    set index of w to 1
+    activate
+  end tell
+  delay 0.7
+  try
+    tell application "System Events" to tell process "Google Chrome"
+      if exists menu item "Unpin Tab" of menu "Tab" of menu bar 1 then return "already"
+      click menu item "Pin Tab" of menu "Tab" of menu bar 1
+    end tell
+    return "pinned"
+  on error
+    return "denied"
+  end try
+end run
+APPLESCRIPT
+}
+pin_tabs() {   # step-key  "Name|text-in-the-address" ...
+  local key="$1"; shift
+  [ "$GO" = back ] && return 0
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would pin: ${*%%|*}"; return 0; }
+  if [ "$FORCE" = 0 ] && is_done "$key"; then ok "Pinned: ${*%%|*} (done earlier)"; return 0; fi
+  local e r left="" denied=0 try
+  for try in 1 2; do
+    left=""; denied=0
+    for e in "$@"; do
+      r="$(_auto_pin "${e#*|}")"
+      case "$r" in pinned|already) ;; denied) denied=1; left="$left${e%%|*}
+";; *) left="$left${e%%|*}
+";; esac
+    done
+    [ $denied = 1 ] && [ $AX_ASKED = 0 ] || break
+    AX_ASKED=1
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Let Lucy pin your tabs for you.
+
+System Settings is open on Accessibility.
+(The gray ⚙️ window. Look behind this box.)
+
+Turn on “Terminal”.
+(Type your laptop password if it asks.)" "Skip,I turned it on" "I turned it on")" = "I turned it on" ] || break
+  done
+  if [ -z "$left" ]; then
+    mark_done "$key"; ok "Lucy pinned: $(printf '%s, ' "${@%%|*}" | sed 's/, $//')"
+  else
+    human "$key" "Pin these tabs:
+${left}
+Right-click its tab at the top of Chrome.
+Click “Pin”." "Pinned: $(printf '%s, ' "${@%%|*}" | sed 's/, $//')"
+  fi
+  verify "$key" "pinned: $(printf '%s, ' "${@%%|*}" | sed 's/, $//')" chk_pins "$@"
+}
+
 # Each check prints nothing when it's done, or what's wrong + how to fix it.
 chk_stars() {   # "Name|text-in-the-address" ...
   local urls e miss=""
@@ -715,11 +849,11 @@ human allin_open "Google Drive is open.
 
 1. Open “${ALLIN_NAME}”.
 2. Click the “Passwords” tab at the bottom.
-3. Right-click its tab at the top of Chrome. Click “Pin”.
-4. Type your reception Gmail login in the next empty row:
+3. Type your reception Gmail login in the next empty row:
 gmail.com · ${RECEPTION_EMAIL} · its password
 
-You'll add every login here as you go." "All in One open + pinned, reception Gmail logged"
+You'll add every login here as you go. Lucy pins this tab for you." "All in One open, reception Gmail logged"
+pin_tabs allin_pin "All in One|docs.google.com/spreadsheets"
 }
 
 step_2() {
@@ -822,14 +956,11 @@ say_info "The laptop did these by itself:
 # ------------------------------------------------------------------------
 }
 step_6() {
-section "Pin Gmail, Calendar, Drive"
+section "Gmail, Calendar, Drive"
 open_chrome "https://mail.google.com/" "https://calendar.google.com/" "https://drive.google.com/"
-# PIN, NOT BOOKMARK (Maud, 2026-11-12). Chrome doesn't record pins anywhere
-# Lucy can read, so this step has no ☆-style check.
-human chrome_google "Gmail, Calendar and Drive are open in tabs at the top of Chrome.
-
-For each one:
-Right-click its tab. Click “Pin”." "Chrome: Gmail, Calendar, Drive pinned"
+# PIN, NOT BOOKMARK (Maud, 2026-11-12) -- Lucy pins them herself.
+sleep 3
+pin_tabs chrome_google "Gmail|mail.google.com" "Calendar|calendar.google.com" "Drive|drive.google.com"
 verify chrome_google "Chrome signed in as reception, sync on" chk_chrome
 
 # ------------------------------------------------------------------------
@@ -848,11 +979,13 @@ The launch team will give you your BlueInk login."
 
 1. Log in.${extra}
 2. Chrome asks to save the password. Click “Save”.
-3. Right-click this tab at the top. Click “Pin”.
-4. Then type it in your All in One “Passwords” tab (pinned in Chrome): website, email, password." "Chrome: logged in to $sname, saved + pinned"
+3. Then type it in your All in One “Passwords” tab (pinned in Chrome): website, email, password.
+
+Lucy pins this tab for you." "Chrome: logged in to $sname + saved"
   # what to look for in the saved address (Apex lives on herbjoyent.com)
   needle="$(echo "$sname" | tr 'A-Z' 'a-z')"; [ "$sname" = "Apex" ] && needle="herbjoyent"
   verify "site_$sname" "$sname: password saved" chk_passwords "$sname|$needle"
+  pin_tabs "pin_$sname" "$sname|$needle"
 done
 
 # ------------------------------------------------------------------------
