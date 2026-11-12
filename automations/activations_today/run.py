@@ -296,15 +296,37 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
                                     unfurl_media=False)
         return r["ts"]
 
-    def _upload(path, name) -> str:
+    def _image_reply(thread_ts, text, path, name) -> str:
+        """Name + image as ONE visible reply (Eve 11/12, phone: the index
+        must land on 'Ana Griffin' + the picture, not on a file link).
+        Returns that message's ts (for the index link), '' if never seen."""
+        fid = ""
         for _ in range(3):
             try:
-                r = client.files_upload_v2(file=str(path), filename=name)
+                r = client.files_upload_v2(
+                    file=str(path), filename=name, channel=channel_id,
+                    thread_ts=thread_ts, initial_comment=text)
                 f = r.get("file") or (r.get("files") or [{}])[0]
-                return f.get("permalink", "")
+                fid = f.get("id", "")
+                break
             except Exception as e:  # noqa: BLE001  (rate limit -> wait)
                 print("  retry {}: {}".format(name, e))
                 time.sleep(20)
+        # The share message appears once Slack processes the file; wait for it
+        # so the next rep lands below (A-Z order) and we learn its ts.
+        deadline = time.monotonic() + 30
+        while fid and time.monotonic() < deadline:
+            try:
+                msgs = client.conversations_replies(
+                    channel=channel_id, ts=thread_ts,
+                    limit=200).get("messages") or []
+                for m in msgs:
+                    if any(x.get("id") == fid for x in m.get("files") or []):
+                        return m["ts"]
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(1)
+        print("  ⚠ {}: image not seen in the thread".format(name))
         return ""
 
     def _link(ts) -> str:
@@ -329,13 +351,12 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
                                     reps=[(rep, rr)])])
             png = tmp / "{}.png".format("".join(c for c in rep if c.isalnum()) or "rep")
             pending_png.render(w, png)
-            url = _upload(png, "{} - Pending Orders {}.png".format(rep, md))
-            r_ts = _text(ts, "*{}* — {} order{}{}".format(
-                rep, len(rr), bp.plural(len(rr)),
-                "\n<{}|{} - Pending Orders>".format(url, rep) if url else ""))
-            links.append((rep, _link(r_ts)))
-            time.sleep(1)
-        index = "\n".join("• <{}|{}>".format(u, rep) for rep, u in links)
+            r_ts = _image_reply(ts, "*{}* — {} order{}".format(
+                rep, len(rr), bp.plural(len(rr))), png,
+                "{} - Pending Orders {}.png".format(rep, md))
+            links.append((rep, _link(r_ts) if r_ts else ""))
+        index = "\n".join("• <{}|{}>".format(u, rep) if u else "• {}".format(rep)
+                          for rep, u in links)
         try:
             client.chat_update(channel=channel_id, ts=index_ts,
                                text="👉 *Tap your name:*\n" + index)
