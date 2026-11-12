@@ -226,12 +226,16 @@ RECEPTION_EMAIL="$(recall RECEPTION_EMAIL)"
 if [ -n "$RECEPTION_EMAIL" ] && is_done reception_email; then
   ok "Reception email: $RECEPTION_EMAIL (done earlier)"
 else
+  # The FULL company name (Megan, 2026-11-11): "Alphalete Marketing" ->
+  # alphaletemarketingreception@gmail.com. COMPANY_NAME keeps it as typed
+  # for Google's "First name" box; COMPANY is the email-safe version.
   COMPANY=""
   while [ -z "$COMPANY" ]; do
-    COMPANY="$(ask_text "Type the company name.
+    COMPANY_NAME="$(ask_text "Type your full company name.
 
-Example: Alphalete" "" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"
-    [ $DRY_RUN = 1 ] && COMPANY="examplecompany"
+Example: Alphalete Marketing" "")"
+    [ $DRY_RUN = 1 ] && COMPANY_NAME="Example Marketing"
+    COMPANY="$(echo "$COMPANY_NAME" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"
   done
   RECEPTION_EMAIL="${COMPANY}reception@gmail.com"
   open_chrome "https://accounts.google.com/signup"
@@ -241,7 +245,7 @@ Make a new Gmail with this name:
 
 ${RECEPTION_EMAIL}
 
-First name: ${COMPANY}
+First name: ${COMPANY_NAME}
 Last name: Reception
 
 Google sends a code to a phone. Type it in.
