@@ -492,6 +492,56 @@ def _mirror_reply(client, channel_id: str, thread_ts: str, today: dt.date,
                 {"channel": dst, "ok": False, "error": str(e)[:200]})
 
 
+# --- Known header ts: no history read needed -------------------------------
+# 2026-11-11 (trang -> #freshsuccess-team). The FRESH SUCCESS bot posted the
+# day's header into a PUBLIC channel and then could not find it: every board
+# failed "couldn't find today's header" and the runner, using the same read,
+# would have posted a second header on the next run. So the header ts is
+# carried two ways that need no conversations.history at all:
+#   * METRICS_THREAD_TS in the env (the runner hands it to each board), and
+#   * a per-machine file of {channel:date -> ts} written when we post one.
+_HEADER_STATE = (Path(__file__).resolve().parents[2] / "output" / "state"
+                 / "metrics_headers.json")
+
+
+def _header_key(channel: str, today: dt.date) -> str:
+    return "{}:{}:{}".format(channel, today.isoformat(), HEADER_LABEL or "")
+
+
+def remember_header_ts(channel: str, today: dt.date, ts: str) -> None:
+    """Best-effort: never let bookkeeping fail a post."""
+    if not (channel and ts):
+        return
+    try:
+        import json as _json
+        data = {}
+        if _HEADER_STATE.exists():
+            data = _json.loads(_HEADER_STATE.read_text(encoding="utf-8") or "{}")
+        data[_header_key(channel, today)] = ts
+        # keep it small: only the last ~14 days
+        cutoff = (today - dt.timedelta(days=14)).isoformat()
+        data = {k: v for k, v in data.items() if k.split(":")[1] >= cutoff}
+        _HEADER_STATE.parent.mkdir(parents=True, exist_ok=True)
+        _HEADER_STATE.write_text(_json.dumps(data, indent=1), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def known_header_ts(channel: str, today: dt.date) -> str:
+    """The header ts we already know for this channel today, or ''."""
+    env_ts = (os.environ.get("METRICS_THREAD_TS") or "").strip()
+    if env_ts and channel == (os.environ.get("METRICS_CHANNEL_ID") or CHANNEL_ID):
+        return env_ts
+    try:
+        import json as _json
+        if _HEADER_STATE.exists():
+            data = _json.loads(_HEADER_STATE.read_text(encoding="utf-8") or "{}")
+            return str(data.get(_header_key(channel, today)) or "")
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
 def find_metrics_thread_ts(client, today: dt.date,
                            channel_id: str | None = None) -> str:
     """Find today's Metrics parent thread in #alphalete-sales.
@@ -506,6 +556,9 @@ def find_metrics_thread_ts(client, today: dt.date,
     English ('Metrics for: May 28th 2026') or legacy short form
     ('Metrics 5/28'). Spanish month names included for completeness.
     """
+    _known = known_header_ts(channel_id or CHANNEL_ID, today)
+    if _known:
+        return _known
     text_candidates = [
         f"Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}",
         f"Metrics for: {today.strftime('%B')} {_ordinal(today.day)}",
@@ -636,6 +689,8 @@ def ensure_metrics_thread(today: dt.date | None = None,
         resp = client.chat_postMessage(channel=CHANNEL_ID, text=header_text)
         out = {"ok": resp.get("ok"), "existed": False,
                "thread_ts": resp.get("ts"), "header_text": header_text}
+    if out.get("thread_ts"):
+        remember_header_ts(CHANNEL_ID, today, out["thread_ts"])
     # copy the parent into each mirror channel (best-effort — a broken mirror
     # must never take down the primary thread)
     if out.get("thread_ts"):

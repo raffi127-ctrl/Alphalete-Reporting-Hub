@@ -1027,6 +1027,10 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     help="pull + render, DO NOT post. Real Tableau pulls — run "
                          "on the mini.")
     ap.add_argument("--only", default=None, help="run a single metric by slug.")
+    ap.add_argument("--thread-ts", default=None,
+                    help="post into THIS existing header thread (its Slack ts) "
+                         "instead of looking today's header up; for a recovery "
+                         "when the header is there but can't be read back.")
     ap.add_argument("--force-header", action="store_true",
                     help="with --only: still open today's Metrics header thread "
                          "(same as METRICS_FORCE_HEADER=1). For a recovery that is "
@@ -1546,10 +1550,16 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     # => sections=None => default 12 (byte-identical).
                     _sections = ([m["label"] for m in dest["metrics"]]
                                  if o.nds else None)
+                    if getattr(args, "thread_ts", None):
+                        smp.remember_header_ts(chan, dt.date.today(), args.thread_ts)
                     res = smp.ensure_metrics_thread(sections=_sections)
                     print(f"  [{dest['channel_name']}] header thread: "
                           f"{'existed' if res.get('existed') else 'posted'} "
                           f"({res.get('thread_ts')})")
+                    # Hand the ts to every board so none has to read history
+                    # to find it (see smp.known_header_ts).
+                    if res.get("thread_ts"):
+                        child_env["METRICS_THREAD_TS"] = res["thread_ts"]
                 except Exception as e:          # noqa: BLE001
                     print(f"  ⚠ [{dest['channel_name']}] could not ensure header "
                           f"thread: {e}")
