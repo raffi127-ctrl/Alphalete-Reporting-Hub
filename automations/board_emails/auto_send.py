@@ -676,7 +676,15 @@ class Verdict:
 def judge(t: Target, day: dt.date, state: dict, *,
           clean=None, tableau=None, names=None, visual=None,
           verbose: bool = True) -> Verdict:
-    clean = clean or (lambda: wr.day_is_clean([t.report_id], day))
+    # The email's OWN job is judged by what it built, not by its status: the
+    # --post run builds the images and the 15-min --check can tick before the
+    # orchestrator marks that same run DONE. On 2026-11-11 that held the Country
+    # email with "country_sales_board_email (PENDING)" — the gate holding itself.
+    # The built images are checked further down (structural_issues + visual);
+    # a FAILED own run still holds via day_is_clean's step 1.
+    clean = clean or (lambda: wr.day_is_clean(
+        [t.report_id], day,
+        verify=lambda: (True, "its images are checked below")))
     tableau = tableau or (lambda: stale_sources(t, day))
     names = names or (lambda: owner_names(t.grid()))
     late: List[str] = []    # filled below; the default visual reads it then

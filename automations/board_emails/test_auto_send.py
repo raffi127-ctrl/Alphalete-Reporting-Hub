@@ -642,3 +642,39 @@ class CaptainOnlyNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OwnJobPendingTest(unittest.TestCase):
+    """2026-11-11: the Country email was held with
+    "country_sales_board_email (PENDING)" — the --check tick ran between the
+    --post run building the images and the orchestrator marking that same run
+    DONE. The email's own job is judged by its images (checked later in judge),
+    never by its status; a FAILED own run still holds."""
+
+    def judge_clean(self, own_status):
+        rid = "country_sales_board_email"
+        state = {"reports": {"country_sales_board": {"status": "DONE"},
+                             rid: {"status": own_status}}}
+        t = A.Target(key="country", name="Country Sales Board",
+                     report_id="country-sales-board-email",
+                     images=lambda d: [], grid=lambda: [])
+        seen = {}
+
+        def visual(new, prior):
+            raise AssertionError("not reached")
+
+        with mock.patch.object(A.wr, "_state", return_value=state), \
+                mock.patch.object(A.wr, "dependency_closure",
+                                  return_value=["country_sales_board", rid]), \
+                mock.patch.object(A.wr, "_scheduled_today",
+                                  return_value={"country_sales_board", rid}), \
+                mock.patch.object(A.wr, "is_travel_day", return_value=False):
+            v = A.judge(t, THU, {}, tableau=lambda: [], names=lambda: set(),
+                        visual=visual, verbose=False)
+        return [r for r in v.blocked if "not clean" in r]
+
+    def test_own_job_still_pending_does_not_hold(self):
+        self.assertEqual(self.judge_clean("PENDING"), [])
+
+    def test_own_job_failed_still_holds(self):
+        self.assertTrue(self.judge_clean("FAILED"))
