@@ -214,6 +214,15 @@ class ShortCell(unittest.TestCase):
         self.assertEqual(A.status_for_line(body, pk, "945-233-4914"), "Returning to shipper")
         self.assertEqual(A.status_for_line(body, pk, "817-296-5740"), "Delivered Nov 10")
 
+    def test_status_sync_follows_notes_without_downgrading(self):
+        rows = [row(**{"Shipping Notes": "11/11: Delivered Nov 10 (UPS …4810)", "Shipping Status": "", "Line Status": "Active"}),
+                row(**{"Shipping Notes": "11/12: Delivered Nov 10 · FedEx …8491", "Shipping Status": "No record yet"}),
+                row(**{"Shipping Notes": "11/12: Shipped Oct 31, FedEx has no record yet · FedEx …0260", "Shipping Status": "Delivered Oct 25"}),
+                row(**{"Shipping Notes": "", "Shipping Status": ""}),
+                row(**{"Shipping Notes": "11/12: In transit, shipped Nov 9 · FedEx …4300", "Shipping Status": "In transit"})]
+        fixes = A.status_sync(HDR, rows)
+        self.assertEqual(fixes, [{"row": 2, "status": "Delivered Nov 10"}, {"row": 3, "status": "Delivered Nov 10"}])
+
     def test_fedex_date_forms(self):
         self.assertEqual(A._fedex_date("Delivered / Tuesday 11/3/2026 at 2:14 pm"), "Nov 3")
         self.assertEqual(A._fedex_date("Delivered / November 3, 2026"), "Nov 3")

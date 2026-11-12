@@ -741,9 +741,40 @@ def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, 
     return s
 
 
+WEAK_STATUS = ("", "Not checked", "No record yet")
+
+
+def status_sync(header: Sequence[str], rows: Sequence[Sequence[str]]) -> List[Dict[str, object]]:
+    """Lines whose Shipping Status should follow their Shipping Notes: a
+    line that left Shipped (delivered, activated) keeps yesterday's note and
+    is never looked up again, so its status stayed blank (25 lines on 11/12
+    pm), and a weak status beside a note that holds a real reading. Returns
+    [{row, status}] -- no browser, no lookup, the cell's own words."""
+    cols = _hdr(header)
+    i_n, i_s = cols.get(COL_OUT.lower()), cols.get(COL_STATUS.lower())
+    if i_n is None or i_s is None:
+        return []
+    out = []
+    for n, r in enumerate(rows, start=2):
+        notes = r[i_n] if i_n < len(r) else ""
+        cur = (r[i_s] if i_s < len(r) else "").strip()
+        if not notes.strip():
+            continue
+        m = re.match(r"\d\d/\d\d(?: AT&T)?: (.*)$", notes.strip())
+        if not m:
+            continue
+        want = status_from_clause(m.group(1).split(" | ")[0])
+        if not want or want == cur:
+            continue
+        if cur not in WEAK_STATUS and want.split(" (")[0] in WEAK_STATUS:
+            continue                      # a real word is never downgraded
+        out.append({"row": n, "status": want})
+    return out
+
+
 def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[int] = None,
         only: Sequence[str] = (), days: int = STALE_DAYS, headless: bool = True,
-        log=print) -> int:
+        status_only: bool = False, log=print) -> int:
     from patchright.sync_api import sync_playwright
     from automations.nds_metrics import order_log_tab as T
     from automations.recruiting_report.fill import open_by_key, _retry
@@ -756,6 +787,19 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
         log("[att] the NDS Order Log tab is empty")
         return 0
     header = rows[0]
+    # the status column follows the notes first (lines no longer in Shipped
+    # keep their last note; a weak status beside a real reading is lifted)
+    fixes = status_sync(header, rows[1:])
+    log("[att] status from notes: %d line(s) to set" % len(fixes))
+    if fixes and live:
+        import gspread
+        i_status0 = _hdr(header)[COL_STATUS.lower()]
+        _retry(lambda: ws.update_cells([gspread.cell.Cell(f["row"], i_status0 + 1, f["status"]) for f in fixes],
+                                       value_input_option="RAW"))
+    if status_only:
+        if not live:
+            log("[att] dry run -- nothing written (pass --live)")
+        return 0
     orders = stale_orders(header, rows[1:], today=today, days=days)
     if only:
         keep = {_norm(x) for x in only}
@@ -906,10 +950,13 @@ def main(argv=None) -> int:
     ap.add_argument("--days", type=int, default=STALE_DAYS,
                     help="only lines shipped at least this many days ago (default 0: every Shipped line)")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--status-only", action="store_true",
+                    help="only set Shipping Status from the Shipping Notes already on the tab (no lookups)")
     ap.add_argument("--today", default=None, help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)
     today = dt.datetime.strptime(a.today, "%Y-%m-%d").date() if a.today else dt.date.today()
-    rc = run(today, live=a.live, limit=a.limit, only=a.order, days=a.days, headless=not a.headed)
+    rc = run(today, live=a.live, limit=a.limit, only=a.order, days=a.days, headless=not a.headed,
+             status_only=a.status_only)
     print("=== done ===", flush=True)
     return rc
 
