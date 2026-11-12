@@ -427,6 +427,8 @@
    "timeout_minutes": 30
   },
   "pay_period_office_info": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): its Slack message ts lives in Lucy 1's output/state — another box would post a NEW message.",
    "on_scheduler": true,
    "machine": "Lucy 1",
    "_note": "MENSUAL, dia 1 (Raf 2026-09-16): dibuja el calendario de pagos (semana dom-sab, paga el viernes siguiente; 4 semanas atras + 12 adelante) como PNG y lo CAMBIA DENTRO de un unico mensaje de Lucy en #alphalete-sales (chat.update, sin post nuevo). El link 'Pay Period' de Files -> Office Info apunta a ese mensaje y lo agrega una persona a mano (Lucy no tiene scopes de bookmarks). El ts del mensaje vive en output/state/pay_period_office_info.json de Lucy 1: si se pierde, la corrida postea un mensaje NUEVO y el link queda viejo. Primera corrida live OK 2026-09-19 (mensaje ts 1789872951.044339, imagen visible); desde ahi on_scheduler true. `lucy rerun pay_period_office_info` PUBLICA (base_args --live); en seco: `python -m automations.pay_period_office_info.run`.",
@@ -2869,6 +2871,8 @@
    }
   },
   "drb_tableau_pull": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): reaches Tableau through the ownerville SSO session that lives on its home box.",
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY. Scoped Tableau crosstab pull for the Daily Rep Breakdown, so a PAST week's production can be pulled/verified without the full daily run. Runs on the MINI (Tableau is reached via ownerville SSO, which is single-session and lives there). READ-ONLY check of a past week: `lucy rerun drb_tableau_pull --week-ending 2026-07-12 --fill --dry-run` — step7 passes --dry-run through to step6 (step7:477) and step6 only writes `if cells and not dry_run` (step6:296), so it downloads + reports 'would write' per owner and touches NO cells. ⚠ NEVER pass --fill WITHOUT --dry-run for a PAST week: step6 maps the crosstab onto the CURRENT week's day columns, so that would write last week's production into this week's block on all 28 tabs. Registered 2026-07-07.",
@@ -2891,6 +2895,8 @@
    "verify": null
   },
   "drb_fill_owner": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): ownerville is single-session and the holder lives on its home box.",
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY recovery — scoped ownerville fill for ONE owner tab, so a single tab can be refilled WITHOUT the full 130-min 28-tab daily_rep_breakdown run (automations.focus_office_att.daily takes no CLI args and can't be scoped). Runs on the MINI (ownerville is single-session and the holder lives there; a laptop scrape knocks out every other report). Full current week: `lucy rerun drb_fill_owner --week-start 2026-07-13 --only \"Kiarri McBroom\"`. Incremental (yesterday only, what the daily run uses Tue-Sun): add --daily-window instead of --week-start. NOTE this fills ownerville ACTIVITY only — Tableau production is org-wide and lands on the next 4am run. Registered 2026-07-07.",
@@ -2911,6 +2917,8 @@
    "verify": null
   },
   "rebuild_lastweek": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): ownerville is single-session and the holder lives on its home box.",
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY recovery — registered so it can run on the MINI via lucy (the ownerville session lives there; a laptop scrape knocks out the session every other report shares). Replays the known-good Monday sequence for a target week: label top as last week -> scrape last week (ownerville) -> [Tableau, full run only] -> FREEZE (HARD-GATED: aborts before the wipe if the freeze writes 0 tabs) -> label top as this week -> wipe -> scrape this week. Use when a tab's frozen LAST WEEK block is STRUCTURALLY broken (nested/duplicate 'LAST WEEK' labels, reps stranded far below) — drb_backfill_lastweek only refills activity by rep name and CANNOT fix structure. Preview: `lucy rerun rebuild_lastweek --monday 2026-07-06 --plan`. One tab: `lucy rerun rebuild_lastweek --monday 2026-07-06 --only '\"Kiarri McBroom\"'` (note the literal quotes — lucy joins argv, shlex re-splits). WARNING: --only SKIPS Tableau (org-wide, unscopable), so the rebuilt frozen block has NO SALES — a frozen block is a static snapshot and can't be sales-patched after. Only use --only on a tab you've confirmed had zero sales that week. Registered 2026-07-07.",
@@ -2931,6 +2939,8 @@
    "verify": null
   },
   "drb_backfill_lastweek": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): replays the home box's ownerville scrapes.",
    "hand_run_only": true,
    "on_scheduler": true,
    "_note": "MANUAL-ONLY recovery. `lucy rerun drb_backfill_lastweek <MONDAY>` re-pulls last week's Tue-Sun activity from ownerville and writes it into the frozen bottom LAST WEEK block (matched by rep name), touching NEITHER this week NOR the totals/Monday. For when last week's daily scrapes failed (e.g. the mini-sleep gaps) and the LAST WEEK block shows 'x' for Tue-Sun. Preview one tab first: `lucy rerun drb_backfill_lastweek 2026-06-29 --only \"Rafael Hidalgo\"`; then full: `lucy rerun drb_backfill_lastweek 2026-06-29`. Per-owner 5-min cap + 150-min report timeout. Built 2026-07-06.",
@@ -4317,6 +4327,8 @@
    "timeout_minutes": 15
   },
   "reformat_incident_alerts": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): chat.update only edits the posting box's own messages.",
    "on_scheduler": true,
    "_note": "MANUAL catch-up for posts made BEFORE the 2026-08-18 one-line format (`lucy rerun reformat_incident_alerts`). Copies each parent's original text into its thread, then trims the channel line to '*What broke* — why'. RUN ON THE MINI: chat.update only touches your own messages and these go out as Lucy. Keeps the '_incident · …_' marker and any RESOLVED stamp. weekdays [] = manual only.",
    "display_name": "Re-format today's #claudecorrections alerts",
@@ -6689,6 +6701,8 @@
    "timeout_minutes": 5
   },
   "texas_de_brazil": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): previews the LaunchAgent installed on Lucy 1.",
    "on_scheduler": true,
    "standalone_watch": false,
    "_standalone_watch_note": "Paused 2026-09-05 (Rafael): the competition ended, the wrapper is flagged off (deploy/texas_de_brazil_745.DISABLED) and com.alphalete.texas-de-brazil-745 is booted out. FALSE force-EXCLUDES it from machine_digest's standalone watcher: its didn't-run branch builds expectation from the Activity log's HISTORY, so a report that ran daily for weeks starts looking missing the day you pause it — that is how `standalone-june_texas_de_brazil_monthly_competition` (\"didn't run today on the mini\") went up on 9/7 for a job we had switched off ourselves. Same lever energy_slack_fill uses. Belt and braces with day_orchestrator.paused_reports, which the watcher also reads now. Delete this line when the comp restarts.",
@@ -6861,6 +6875,8 @@
    "timeout_minutes": 5
   },
   "send_email_preview": {
+   "stay_home": true,
+   "_stay_home_note": "Must run on its own box (routing.py, 2026-11-11): reads THIS machine's installed jobs and day_state.",
    "on_scheduler": true,
    "_note": "NOT a report — renders + SENDS the current day's checkpoint email from today's saved day_state so you can VIEW the email format on demand (runs NO reports). Run via `lucy rerun send_email_preview` (add `--final` for the end-of-day summary, `--machine \"Lucy 2\"` for the other box). The Remaining-runs-later-today section reads this machine's real installed jobs, so it must run ON the mini to be accurate. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'.",
    "display_name": "Send a preview of the daily email",
