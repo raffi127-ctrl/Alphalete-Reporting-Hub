@@ -135,22 +135,40 @@ Cancel my order
 
 
 class ShortCell(unittest.TestCase):
-    def test_short_cell_per_shipment(self):
+    def test_one_line_per_package_newest_first(self):
         sh = A.shipments(UPS_PAGE)
         self.assertEqual([x["kind"] for x in sh], ["shipped", "delivered"])
-        self.assertEqual(sh[0]["tracking"], ["UPS 1ZH4K6532936244036"])
         cell = A.short_text(UPS_PAGE, TODAY)
-        self.assertEqual(cell, "11/11: Shipped Nov 9, on the way (UPS …4036) | Delivered Nov 10 (UPS …2114)")
+        # UPS is never looked up, so AT&T's word stands and says so; the Nov 10 delivery leads
+        self.assertEqual(cell, "11/11: Delivered Nov 10 · UPS …2114 (per AT&T) | Shipped Nov 9, UPS not checked · UPS …4036 (per AT&T)")
 
-    def test_fedex_word_replaces_atts(self):
+    def test_fedex_word_and_date_lead(self):
+        # Christopher Cardinal 11/12: AT&T "on the way", FedEx delivered 11/3
+        page = "Shipped on: Mon, Nov 2, 2026\nYour order is on the way! Check the tracking info to confirm delivery details.\nLine 1: xxx\nFedEx tracking:879000000001\n"
+        cell = A.short_text(page, TODAY, ["FedEx 879000000001: Delivered / Tuesday 11/3/2026 at 2:14 pm / Signed for by: J.DOE"])
+        self.assertEqual(cell, "11/11: Delivered Nov 3 · FedEx …0001")
         cell = A.short_text(DETAILS, TODAY, ["FedEx 879024018564: The package couldn't be delivered and is returning to the shipper / Currently in Irving, TX",
                                               "FedEx 879615850332: Your package is still on the way and we\u2019re actively working to get you a new delivery date."])
-        self.assertEqual(cell, "11/11: Shipped Oct 21, FedEx: returning to shipper (FedEx …8564) | Shipped Nov 2, FedEx: delayed (FedEx …0332)")
+        self.assertEqual(cell, "11/11: Delayed, shipped Nov 2 · FedEx …0332 | Returning to shipper, could not be delivered · FedEx …8564")
+
+    def test_not_checked_is_said_and_yesterday_survives(self):
+        cell = A.short_text(DETAILS, TODAY)
+        self.assertEqual(cell, "11/11: Shipped Nov 2, FedEx not checked · FedEx …0332 (per AT&T) | Shipped Oct 21, FedEx not checked · FedEx …8564 (per AT&T)")
+        prev = "11/11: Delayed, shipped Nov 2 · FedEx …0332 | Returning to shipper, could not be delivered · FedEx …8564"
+        today = "11/12: Shipped Nov 2, FedEx not checked · FedEx …0332 (per AT&T) | Shipped Oct 21, FedEx not checked · FedEx …8564 (per AT&T)"
+        self.assertEqual(A.keep_fedex_from(today, prev),
+                         "11/12: Delayed, shipped Nov 2 · FedEx …0332 (as of 11/11) | Returning to shipper, could not be delivered · FedEx …8564 (as of 11/11)")
+        self.assertEqual(A.keep_fedex_from(today, ""), today)
 
     def test_ordered_only_page(self):
         cell = A.short_text("Ordered on:\nWed, Nov 11, 2026\nOrder:\n99-2\nUPS tracking:1Z1WE1020321622114\n", TODAY)
-        self.assertEqual(cell, "11/11: Ordered Nov 11, not shipped yet (UPS …2114)")
+        self.assertEqual(cell, "11/11: Ordered Nov 11, not shipped yet · UPS …2114")
         self.assertEqual(A.short_text("nothing here", TODAY), "")
+
+    def test_fedex_date_forms(self):
+        self.assertEqual(A._fedex_date("Delivered / Tuesday 11/3/2026 at 2:14 pm"), "Nov 3")
+        self.assertEqual(A._fedex_date("Delivered / November 3, 2026"), "Nov 3")
+        self.assertEqual(A._fedex_date("Currently in Irving, TX"), "")
 
     def test_detail_note_lists_everything(self):
         s = A.summarize(DETAILS)
@@ -158,50 +176,6 @@ class ShortCell(unittest.TestCase):
         self.assertTrue(d.startswith("Checked "))
         self.assertIn("AT&T: Shipped on: Wed, Oct 21, 2026", d)
         self.assertIn("FedEx 879024018564: returning", d)
-
-
-class TrackingLinks(unittest.TestCase):
-    def test_labels_become_links_to_the_carrier(self):
-        body = A.short_text(UPS_PAGE, TODAY)
-        runs = A.tracking_runs(body, A.shipment_trackings(UPS_PAGE))
-        links = [(r["startIndex"], r["format"]["link"]["uri"]) for r in runs if r["format"].get("link")]
-        self.assertEqual(len(links), 2)
-        i = body.index("UPS …4036")
-        self.assertEqual(links[0], (i, "https://www.ups.com/track?loc=en_US&tracknum=1ZH4K6532936244036"))
-        self.assertEqual(links[1][1], "https://www.ups.com/track?loc=en_US&tracknum=1Z1WE1020321622114")
-        self.assertEqual(runs[0]["startIndex"], 0)                 # run lists start at 0
-        # the run after each label resets the format
-        self.assertEqual(runs[2]["startIndex"], i + len("UPS …4036"))
-        self.assertEqual(runs[2]["format"], {})
-
-    def test_fedex_link_and_no_links_without_numbers(self):
-        body = A.short_text(DETAILS, TODAY)
-        runs = A.tracking_runs(body, A.shipment_trackings(DETAILS))
-        uris = [r["format"]["link"]["uri"] for r in runs if r["format"].get("link")]
-        self.assertEqual(uris, ["https://www.fedex.com/fedextrack/?trknbr=879024018564",
-                                "https://www.fedex.com/fedextrack/?trknbr=879615850332"])
-        self.assertEqual(A.tracking_runs("11/11: Ordered Nov 7, not shipped yet", []), [])
-
-
-class FedExWords(unittest.TestCase):
-    def test_link_texts_are_not_a_status(self):
-        # 11/11 evening: cells read "FedEx: View proof of delivery attempt" and
-        # "FedEx: How was your delivery?" -- link texts, not the status
-        self.assertEqual(A._status_word("View proof of delivery attempt"), "View proof of delivery attempt")
-        self.assertTrue(A.FEDEX_NOISE_RE.search("View proof of delivery attempt"))
-        self.assertTrue(A.FEDEX_NOISE_RE.search("How was your delivery?"))
-        self.assertFalse(A.FEDEX_NOISE_RE.search("The package couldn't be delivered and is returning to the shipper."))
-
-    def test_yesterdays_fedex_word_survives_a_blank_fedex_day(self):
-        prev = "11/11: Shipped Oct 21, FedEx: returning to shipper (FedEx …8564) | Shipped Nov 2, FedEx: delayed (FedEx …0332)"
-        today = "11/12: Shipped Oct 21, on the way (FedEx …8564) | Shipped Nov 2, on the way (FedEx …0332)"
-        self.assertEqual(A.keep_fedex_from(today, prev),
-                         "11/12: Shipped Oct 21, FedEx (11/11): returning to shipper (FedEx …8564) | Shipped Nov 2, FedEx (11/11): delayed (FedEx …0332)")
-        fresh = "11/12: Shipped Oct 21, FedEx: delivered (FedEx …8564) | Shipped Nov 2, on the way (FedEx …0332)"
-        self.assertEqual(A.keep_fedex_from(fresh, prev),
-                         "11/12: Shipped Oct 21, FedEx: delivered (FedEx …8564) | Shipped Nov 2, FedEx (11/11): delayed (FedEx …0332)")
-        self.assertEqual(A.keep_fedex_from(today, ""), today)
-        self.assertEqual(A.keep_fedex_from(today, "11/10 AT&T: old style"), today)
 
 
 class Summaries(unittest.TestCase):

@@ -48,7 +48,9 @@ DETAILS_URL = "https://www.att.com/acctmgmt/order/details?emailAddress={email}&o
 # delivered and is returning to the shipper", three weeks in)
 FEDEX_URL = "https://www.fedex.com/fedextrack/?trknbr={n}"
 FEDEX_KEEP_RE = re.compile(r"deliver|on the way|return|currently in|exception|held|pick ?up|delay|"
-                           r"label created|scheduled|new tracking|signature required", re.I)
+                           r"label created|scheduled|new tracking|signature required|"
+                           r"\b\d{1,2}/\d{1,2}/\d{4}\b|(january|february|march|april|may|june|july|august|"
+                           r"september|october|november|december) \d{1,2}", re.I)
 # the status sentence itself, ahead of anything else on the page
 FEDEX_STATUS_RE = re.compile(r"couldn.t be delivered|returning to the shipper|still on the way|is on the way|"
                              r"has been delivered|was delivered|^delivered\b|out for delivery|in transit|"
@@ -256,33 +258,95 @@ def shipment_trackings(text: str) -> List[str]:
     return out
 
 
-def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
-    """The cell: one short clause per shipment, today's date in front.
-    'Shipped Nov 9, on the way (UPS …4036) | Delivered Nov 10 (UPS …2114)';
-    a FedEx reading replaces AT&T's word for that package."""
+MONTHS = {m: i for i, m in enumerate(("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
+                                     "Sep", "Oct", "Nov", "Dec"), start=1)}
+FEDEX_DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})|"
+                           r"(January|February|March|April|May|June|July|August|September|October|"
+                           r"November|December) (\d{1,2}),? (\d{4})", re.I)
+
+
+def _fedex_date(fx: str) -> str:
+    """The date on FedEx's status, as 'Nov 3' (the page shows it as
+    'Tuesday 11/3/2026' or 'November 3, 2026'); '' when none is shown."""
+    m = FEDEX_DATE_RE.search(fx or "")
+    if not m:
+        return ""
+    if m.group(1):
+        mo, d = int(m.group(1)), int(m.group(2))
+    else:
+        mo, d = MONTHS.get(m.group(4)[:3].title(), 0), int(m.group(5))
+    names = {v: k for k, v in MONTHS.items()}
+    return "%s %d" % (names.get(mo, "?"), d)
+
+
+def _date_key(label: str, today: dt.date) -> dt.date:
+    """'Nov 3' -> a date (the year that puts it in the past year), for sorting."""
+    m = re.match(r"([A-Z][a-z]{2}) (\d{1,2})", label or "")
+    if not m or m.group(1) not in MONTHS:
+        return dt.date.min
+    d = dt.date(today.year, MONTHS[m.group(1)], int(m.group(2)))
+    return d if d <= today + dt.timedelta(days=7) else dt.date(today.year - 1, d.month, d.day)
+
+
+def package_lines(text: str, today: dt.date, carrier: Sequence[str] = ()) -> List[Dict[str, object]]:
+    """One line per package, the carrier's word first (Carlos 11/12 on
+    Christopher Cardinal: AT&T still said "on the way" for a package FedEx
+    had delivered on 11/3). Each: {text, when, label} where `when` is the
+    date of the status for sorting newest first."""
     fx = {}
     for c in carrier or ():
         m = re.match(r"FedEx (\d+): (.*)", c or "")
         if m:
-            fx[m.group(1)] = _status_word(m.group(2).split(" / ")[0])
-    parts = []
+            fx[m.group(1)] = m.group(2)
+    out = []
     for sh in shipments(text):
-        word = _status_word(str(sh["status"]))
-        for t in sh["tracking"]:
-            n = t.split()[-1]
-            if n in fx and fx[n]:
-                word = "FedEx: " + fx[n]
-        tr = ", ".join("%s …%s" % (t.split()[0], t.split()[-1][-4:]) for t in sh["tracking"])
-        if sh["kind"] == "delivered":
-            head = "Delivered %s" % sh["date"]
-        elif sh["kind"] == "shipped":
-            head = "Shipped %s%s" % (sh["date"], (", " + word) if word and word != "delivered" else (", delivered" if word == "delivered" else ""))
+        labels = ["%s …%s" % (t.split()[0], t.split()[-1][-4:]) for t in sh["tracking"]]
+        numbers = [t.split()[-1] for t in sh["tracking"]]
+        label = ", ".join(labels)
+        fx_text = next((fx[n] for n in numbers if n in fx and fx[n]), "")
+        ship = str(sh["date"])
+        if fx_text:
+            word = _status_word(fx_text.split(" / ")[0])
+            when = _fedex_date(fx_text)
+            if word == "delivered":
+                head, key = "Delivered %s" % (when or "(date not shown)"), when or ship
+            elif word == "returning to shipper":
+                head, key = "Returning to shipper, could not be delivered", when or ship
+            elif word == "delayed":
+                head, key = "Delayed, shipped %s" % ship, ship
+            elif word == "held for pickup":
+                head, key = "Held for pickup, shipped %s" % ship, ship
+            elif word == "on the way":
+                head, key = "In transit, shipped %s" % ship, ship
+            else:
+                head, key = "%s, shipped %s" % (word[:1].upper() + word[1:], ship), ship
+            src = "FedEx"
         else:
-            head = "Ordered %s, not shipped yet" % sh["date"]
-        parts.append(head + ((" (%s)" % tr) if tr else ""))
-    if not parts:
+            kind = sh["kind"]
+            if kind == "delivered":
+                head, key, src = "Delivered %s" % ship, ship, "AT&T"
+            elif kind == "shipped":
+                carrier_name = labels[0].split()[0] if labels else ""
+                head, key = "Shipped %s, %s not checked" % (ship, carrier_name or "carrier"), ship
+                src = "AT&T"
+            else:
+                head, key, src = "Ordered %s, not shipped yet" % ship, ship, "AT&T"
+        txt = head + ((" · " + label) if label else "")
+        if src == "AT&T" and sh["kind"] != "ordered" and label:
+            txt += " (per AT&T)"
+        out.append({"text": txt, "when": _date_key(key, today), "label": label})
+    out.sort(key=lambda x: x["when"], reverse=True)
+    return out
+
+
+def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
+    """The cell: one line per package, newest status first, today's date in
+    front. 'Delivered Nov 3 · FedEx …2830' / 'In transit, shipped Nov 9 ·
+    FedEx …4300' / 'Shipped Nov 9, UPS not checked · UPS …4036 (per AT&T)'."""
+    lines = package_lines(text, today, carrier)
+    if not lines:
         return ""
-    return "%s: %s" % (today.strftime("%m/%d"), " | ".join(parts))
+    return "%s: %s" % (today.strftime("%m/%d"), " | ".join(l["text"] for l in lines))
 
 
 TRACK_URLS = {
@@ -320,11 +384,12 @@ def tracking_runs(body: str, trackings: Sequence[str]) -> List[dict]:
 
 
 def keep_fedex_from(body: str, prev: str) -> str:
-    """When today's clause for a package has only AT&T's word but yesterday's
-    cell had FedEx's for the same package, FedEx's stays (dated): FedEx
-    walls a long run and would otherwise downgrade "returning to shipper"
-    to "on the way" (Rajeshkanna, 11/11 evening)."""
-    if not body or not prev or ":" not in body:
+    """When today's line for a package says the carrier was not checked but
+    yesterday's cell had the carrier's word for the same package, yesterday's
+    line stays, marked with its date: FedEx walls a long run and would
+    otherwise turn "Delivered Nov 3" back into "Shipped Nov 2, FedEx not
+    checked" (Rajeshkanna, 11/11 evening; Christopher Cardinal, 11/12)."""
+    if not body or not prev:
         return body
     m = re.match(r"(\d\d/\d\d): (.*)$", body)
     pm = re.match(r"(\d\d/\d\d): (.*)$", prev)
@@ -332,15 +397,15 @@ def keep_fedex_from(body: str, prev: str) -> str:
         return body
     prev_by_pkg = {}
     for clause in pm.group(2).split(" | "):
-        k = re.search(r"\((?:FedEx|UPS|USPS) …(\w+)\)", clause)
-        if k and "FedEx:" in clause:
+        k = re.search(r"((?:FedEx|UPS|USPS) …\w+)", clause)
+        if k and "not checked" not in clause and "(per AT&T)" not in clause:
             prev_by_pkg[k.group(1)] = clause
     out = []
     for clause in m.group(2).split(" | "):
-        k = re.search(r"\((?:FedEx|UPS|USPS) …(\w+)\)", clause)
-        if k and "FedEx:" not in clause and k.group(1) in prev_by_pkg:
-            out.append(prev_by_pkg[k.group(1)].replace("FedEx:", "FedEx (%s):" % pm.group(1), 1)
-                       if "FedEx (" not in prev_by_pkg[k.group(1)] else prev_by_pkg[k.group(1)])
+        k = re.search(r"((?:FedEx|UPS|USPS) …\w+)", clause)
+        if k and "not checked" in clause and k.group(1) in prev_by_pkg:
+            old = prev_by_pkg[k.group(1)]
+            out.append(old if "(as of " in old else old + " (as of %s)" % pm.group(1))
         else:
             out.append(clause)
     return "%s: %s" % (m.group(1), " | ".join(out))
@@ -616,7 +681,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                             log("    (FedEx %s: skipped -- 6 blank pages in a row, FedEx has walled this run)" % n)
                             fedex_seen[n] = ""
                         else:
-                            page.wait_for_timeout(2500)         # FedEx walls a quick run of lookups
+                            page.wait_for_timeout(8000)         # FedEx walls a quick run of lookups (2.5s still did)
                             fedex_seen[n] = fedex_status(page, n, log=log)
                             fedex_blank = 0 if fedex_seen[n] else fedex_blank + 1
                     if fedex_seen[n]:
