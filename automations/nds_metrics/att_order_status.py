@@ -66,6 +66,7 @@ PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".att_profile"
 STALE_DAYS = 0                   # every Shipped line, every day (was 3 until 11/11 pm)
 NOTE_TAG = "AT&T:"
 COL_OUT = "Shipping Notes"       # the column written (Notes until 11/11 pm)
+COL_STATUS = "Shipping Status"   # one carrier word per line, left of the notes (11/12 pm)
 NAV_TIMEOUT_MS = 60_000
 KEEP_RE = re.compile(r"shipp|deliver|transit|track|arriv|estimat|carrier|\bups\b|fedex|usps|"
                      r"status|on its way|out for|label|cancel|ordered on", re.I)
@@ -119,7 +120,7 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
     with 'why' set, so the log says what blocks them."""
     cols = _hdr(header)
     for need in ("Line Status", "Ship Date", "Delivered", "Wireless Order #",
-                 "Zip", "Email", COL_OUT, "Customer", "Line"):
+                 "Zip", "Email", COL_OUT, COL_STATUS, "Customer", "Line", "Phone #"):
         if need.lower() not in cols:
             raise RuntimeError("NDS Order Log tab has no %r column -- header: %r"
                                % (need, list(header)))
@@ -143,7 +144,8 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
             "email": _cell(r, cols, "Email"), "customer": _cell(r, cols, "Customer"),
             "rep": _cell(r, cols, "Rep"), "lines": [], "why": ""})
         o["lines"].append({"row": n, "line": _cell(r, cols, "Line"), "ship_date": _fmt(sd),
-                           "notes": _cell(r, cols, COL_OUT)})
+                           "notes": _cell(r, cols, COL_OUT), "status": _cell(r, cols, COL_STATUS),
+                           "phone": _cell(r, cols, "Phone #")})
     out = []
     for o in by_order.values():
         missing = [k for k in ("zip", "email") if not o[k]]
@@ -217,9 +219,14 @@ def shipments(text: str) -> List[Dict[str, str]]:
             if not when and i + 1 < len(lines) and re.match(r"^[A-Z][a-z]{2}, ", lines[i + 1]):
                 when = lines[i + 1]
                 i += 1
-            cur = {"kind": kind, "date": _short_date(when), "status": "", "tracking": []}
+            cur = {"kind": kind, "date": _short_date(when), "status": "", "tracking": [], "lines": []}
             out.append(cur)
         elif cur is not None:
+            lm = re.match(r"^Line \d+:\s*(?:x{3}\.x{3}\.|\D*)(\d{4})\s*$", ln, re.I)
+            if lm:
+                cur["lines"].append(lm.group(1))
+                i += 1
+                continue
             c = CARRIER_RE.match(ln)
             if c:
                 cur["tracking"].append("%s %s" % (c.group(1).upper() if c.group(1).lower() != "fedex" else "FedEx", c.group(2)))
@@ -342,9 +349,29 @@ def package_lines(text: str, today: dt.date, carrier: Sequence[str] = ()) -> Lis
         txt = head + ((" · " + label) if label else "")
         if src == "AT&T" and sh["kind"] != "ordered" and label:
             txt += " (per AT&T)"
-        out.append({"text": txt, "when": _date_key(key, today), "label": label})
+        # the Shipping Status cell: the carrier's word alone (Carlos 11/12:
+        # "only based off of what we get from the tracking number")
+        if fx_text:
+            status = {"delivered": "Delivered %s" % (when or ""), "returning to shipper": "Returning to shipper",
+                      "delayed": "Delayed", "held for pickup": "Held for pickup", "on the way": "In transit",
+                      "no record at fedex yet": "No record yet"}.get(word, word[:1].upper() + word[1:])
+        else:
+            status = "Not checked"
+        out.append({"text": txt, "when": _date_key(key, today), "label": label,
+                    "status": status.strip(), "lines": list(sh.get("lines") or [])})
     out.sort(key=lambda x: x["when"], reverse=True)
     return out
+
+
+def line_status(packages: Sequence[Dict[str, object]], phone: str) -> str:
+    """The Shipping Status for one tab line: the package AT&T names that line
+    in (by the number's last four digits); when AT&T names none, the newest
+    package's word; '' when nothing was read."""
+    last4 = "".join(ch for ch in str(phone or "") if ch.isdigit())[-4:]
+    for pk in packages:
+        if last4 and last4 in (pk.get("lines") or []):
+            return str(pk.get("status") or "")
+    return str(packages[0].get("status") or "") if packages else ""
 
 
 def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
@@ -695,6 +722,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
         return 0
     cols = _hdr(header)
     i_notes = cols[COL_OUT.lower()]
+    i_status = cols[COL_STATUS.lower()]
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     import gspread
@@ -760,6 +788,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                             fedex_blank = 0 if fedex_seen[n] else fedex_blank + 1
                     if fedex_seen[n]:
                         carrier.append(fedex_seen[n])
+                packages = package_lines(s.get("text", ""), today, carrier)
                 body = short_text(s.get("text", ""), today, carrier) or note_text(s, today, carrier)
                 body = keep_fedex_from(body, o["lines"][0]["notes"] if o["lines"] else "")
                 detail = detail_text(s, today, carrier)
@@ -778,6 +807,17 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                     reqs.append({"updateCells": {
                         "start": {"sheetId": ws.id, "rowIndex": ln["row"] - 1, "columnIndex": i_notes},
                         "rows": [{"values": [cell]}], "fields": "userEnteredValue,textFormatRuns,note"}})
+                    # the Shipping Status cell, per line; a weak word today
+                    # ("Not checked", "No record yet") never replaces a real one
+                    st = line_status(packages, ln["phone"])
+                    if st in ("Not checked", "No record yet") and ln["status"].strip() \
+                            and ln["status"].strip() not in ("Not checked", "No record yet"):
+                        st = ln["status"].strip()
+                    if st and st != ln["status"].strip():
+                        reqs.append({"updateCells": {
+                            "start": {"sheetId": ws.id, "rowIndex": ln["row"] - 1, "columnIndex": i_status},
+                            "rows": [{"values": [{"userEnteredValue": {"stringValue": st}}]}],
+                            "fields": "userEnteredValue"}})
                     if ln["notes"].strip() == body:
                         unchanged += 1
                     else:

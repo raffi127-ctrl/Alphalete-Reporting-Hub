@@ -27,7 +27,8 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
         self.assertEqual(T.HEADERS[23], "Delivered Message Sent")   # column X on the live tab (11/12: Shipping Notes moved behind it)
-        self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Notes")   # 11/12: far right, before Churn Bucket
+        self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Status")  # 11/12 pm: carrier word, left of the notes
+        self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Shipping Notes")
         self.assertEqual(T.HEADERS[T._COL["Ship Date"] + 1], "Delivered")
         self.assertEqual(T.HEADERS[1], "Pay Period")                  # 11/11 pm: column B
         self.assertEqual(r[T._COL["Pay Period"]], "Pending")          # Shipped, no activation date -> Pending
@@ -440,6 +441,8 @@ class ShippingNotesTests(unittest.TestCase):
         out = T.merge([prior], [line()], today=TODAY)
         self.assertEqual(out["rows"][0][T._COL["Shipping Notes"]], "11/11 AT&T: on the way; FedEx 879: returning")
         self.assertIn("Shipping Notes", T.CARRIED)
+        self.assertIn("Shipping Status", T.CARRIED)
+        self.assertEqual(r[T._COL["Shipping Status"]], "")
 
 
 
@@ -451,7 +454,7 @@ class ChurnBucketTests(unittest.TestCase):
 
     def test_last_column_and_fresh_rows(self):
         self.assertEqual(T.HEADERS[-1], "Churn Bucket")
-        self.assertEqual(T.HEADERS[_COLX("Delivered Message Sent") + 2], "Churn Bucket")   # Shipping Notes sits between (11/12)
+        self.assertEqual(T.HEADERS[_COLX("Delivered Message Sent") + 3], "Churn Bucket")   # Shipping Status + Notes sit between (11/12)
         r = T.line_row(line(line_status="Active"), "11/09/2026", active_of=lambda l: "11/3/2026")
         self.assertEqual(r[T._COL["Churn Bucket"]], "0-30 Day")
         self.assertEqual(len(r), len(T.HEADERS))

@@ -7,7 +7,7 @@ TODAY = dt.date(2026, 11, 11)
 HDR = ["Week Ending", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
        "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
        "Line Status", "Ship Date", "Shipping Notes", "Delivered", "Activation Date", "Port Status",
-       "Last Updated", "Notes", "Being worked on", "Delivered Message Sent"]
+       "Last Updated", "Notes", "Being worked on", "Delivered Message Sent", "Shipping Status"]
 
 
 def row(**kw):
@@ -15,7 +15,7 @@ def row(**kw):
     base.update({"Rep": "Jacob Isaiah Ortega", "Customer": "Rajeshkanna Chandrakasan",
                  "Zip": "75063", "Email": "raj@example.com", "Order Date": "10/20/2026",
                  "DSI #": "DSI280405775", "Wireless Order #": "99-717053512695236",
-                 "Line": "2", "Line Status": "Shipped", "Ship Date": "10/21/2026"})
+                 "Line": "2", "Line Status": "Shipped", "Ship Date": "10/21/2026", "Phone #": "817-673-3727"})
     base.update(kw)
     return [base[h] for h in HDR]
 
@@ -184,6 +184,19 @@ class ShortCell(unittest.TestCase):
         cell = A.short_text(page, TODAY, ["FedEx 879000000300: No record at FedEx yet (label not scanned)"])
         self.assertEqual(cell, "11/11: Shipped Nov 9, FedEx has no record yet · FedEx …0300")
         self.assertTrue(A.FEDEX_NOT_FOUND_RE.search("We can\u2019t find that tracking number. Please check with the shipper"))
+
+    def test_shipping_status_per_line(self):
+        # AT&T names the lines in each package ("Line 4: xxx.xxx.4914"); the
+        # status cell follows the line's own package
+        pk = A.package_lines(DETAILS, TODAY, ["FedEx 879024018564: The package couldn't be delivered and is returning to the shipper",
+                                               "FedEx 879615850332: Delivered Tuesday 11/10/2026 at 9:02 am"])
+        self.assertEqual(A.line_status(pk, "945-233-4914"), "Returning to shipper")   # line 4 rode …8564
+        self.assertEqual(A.line_status(pk, "817-296-5740"), "Delivered Nov 10")      # line 1 rode …0332
+        self.assertEqual(A.line_status(pk, "000-000-0000"), "Delivered Nov 10")      # unnamed: newest package
+        self.assertEqual(A.line_status(A.package_lines(DETAILS, TODAY), "945-233-4914"), "Not checked")
+        self.assertEqual(A.line_status([], "x"), "")
+        o = A.stale_orders(HDR, [row(**{"Shipping Status": "Delayed"})], today=TODAY)
+        self.assertEqual((o[0]["lines"][0]["status"], o[0]["lines"][0]["phone"]), ("Delayed", "817-673-3727"))
 
     def test_fedex_date_forms(self):
         self.assertEqual(A._fedex_date("Delivered / Tuesday 11/3/2026 at 2:14 pm"), "Nov 3")

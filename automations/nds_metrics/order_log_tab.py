@@ -67,8 +67,13 @@ DAYS_KEPT = 60
 HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
            "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
            "Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
-           "Last Updated", "Notes", "Being worked on", "Delivered Message Sent", "Shipping Notes",
-           "Churn Bucket")
+           "Last Updated", "Notes", "Being worked on", "Delivered Message Sent", "Shipping Status",
+           "Shipping Notes", "Churn Bucket")
+# "Shipping Status" left of Shipping Notes since 2026-11-12 pm, Carlos: "to the
+# left of shipping notes a shipping status and this status is only based off
+# of what we get from the tracking number" -- one short word per LINE off the
+# carrier (Delivered Nov 3 / In transit / Delayed / Returning to shipper / Held
+# for pickup / No record yet / Not checked), written by att_order_status.
 # "Shipping Notes" moved from beside Ship Date to the far right, between
 # Delivered Message Sent and Churn Bucket (Carlos 2026-11-12: "kind of in the
 # middle of everything. Let's move it to the far right, in between columns Y
@@ -91,7 +96,7 @@ _LEAD = 2                       # columns in front of the feed's own row shape (
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
 # have dropped the column.
-CARRIED = ("Notes", "Being worked on", "Delivered Message Sent", "Shipping Notes")   # in HEADERS order
+CARRIED = ("Notes", "Being worked on", "Delivered Message Sent", "Shipping Status", "Shipping Notes")   # in HEADERS order
 # the carried columns that sit AFTER Last Updated (line_row pads these; Shipping
 # Notes sits inside the feed's own span and is inserted where it belongs)
 _TRAILING = CARRIED             # all four sit after Last Updated now
@@ -524,7 +529,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     # columns wide enough for full names (auto-fit, then a floor for the typed columns)
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
                                                          "startIndex": 0, "endIndex": n_cols}}})
-    for name, px in (("Notes", 220), ("Shipping Notes", 260), ("Being worked on", 130), ("Delivered Message Sent", 150),
+    for name, px in (("Notes", 220), ("Shipping Notes", 260), ("Shipping Status", 170), ("Being worked on", 130), ("Delivered Message Sent", 150),
                      ("Customer", 190), ("Rep", 190), ("Device", 170),
                      ("Email", 210), ("Pay Period", 185), ("Churn Bucket", 110)):
         c = _COL[name]
