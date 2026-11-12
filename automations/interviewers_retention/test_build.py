@@ -110,5 +110,57 @@ class Roster(unittest.TestCase):
         self.assertEqual(missing, ["Steve McElwee"])
 
 
+class ByDay(unittest.TestCase):
+    def test_days_this_week_or_last_week_on_sunday_monday(self):
+        days, last = build.report_days(dt.date(2026, 11, 12))            # Thursday
+        self.assertEqual((days[0], days[-1], last), (dt.date(2026, 11, 9), dt.date(2026, 11, 11), False))
+        for today in (dt.date(2026, 11, 16), dt.date(2026, 11, 15)):    # Monday, Sunday
+            days, last = build.report_days(today)
+            self.assertTrue(last)
+            self.assertEqual((days[0], days[-1]), (dt.date(2026, 11, 9), dt.date(2026, 11, 14)))
+        days, last = build.report_days(dt.date(2026, 11, 17))            # Tuesday: Monday only
+        self.assertEqual((days, last), ([dt.date(2026, 11, 16)], False))
+
+    def test_short_names_resolve_within_the_owner(self):
+        people = {"eveliz wright": ["Romina Viadana", "Diana Duarte"],
+                  "joseph logan": ["Gabriela Salazar"], "frank matos": ["Sofia Schilder", "Sofia Soto"]}
+        self.assertEqual(build.resolve_interviewer("Eveliz Wright", "Romina", people), "Romina Viadana")
+        self.assertEqual(build.resolve_interviewer("Joseph Logan", "Gabriela Sa", people), "Gabriela Salazar")
+        self.assertEqual(build.resolve_interviewer("Frank Matos", "Sofia", people), "Sofia")   # two fit: keep
+        self.assertEqual(build.resolve_interviewer("Nobody", "Owner", people), "Owner")
+
+    def test_week_board_sums_days_and_sorts_by_week(self):
+        d1, d2 = dt.date(2026, 11, 9), dt.date(2026, 11, 10)
+        second = {"Atef": {d1: SimpleNamespace(by={"Gaby": [4, 1]}), d2: SimpleNamespace(by={"Gaby": [0, 0]})},
+                  "Omar": {d1: SimpleNamespace(by={"Nic": [2, 2]})}}
+        lines = build.interviewer_days(second, [d1, d2], {})
+        b = build.week_board(lines, [d1, d2], False, "T", "Interviewer", {"nic": [0.5, None, 1.0, 1.0]},
+                             ["10/18", "10/25", "11/1", "11/8"])
+        self.assertEqual([(l.name, l.booked, l.showed) for l in b.lines], [("Nic", 2, 2), ("Gaby", 4, 1)])
+        self.assertIsNone(b.lines[1].day_pct(d2))          # 0 booked -> no %, drawn as —
+        self.assertEqual(b.lines[0].history, [0.5, None, 1.0, 1.0])
+        self.assertEqual(b.lines[1].history, [None] * 4)
+
+
+class ArsWeeks(unittest.TestCase):
+    def test_podium_and_history_from_ars_and_unmatched_listed(self):
+        people = {"atef": ["Gabriela Salazar", "Nicole Renee"], "omar": ["Gabriela Salazar"]}
+        res = build.Resolver(people)
+        d = lambda m, dd: dt.date(2026, m, dd)
+        second = {"Atef": {d(11, 2): SimpleNamespace(by={"Gabriela": [4, 3], "Sofia R.": [2, 0]}),
+                           d(11, 7): SimpleNamespace(by={"Nicole": [2, 1]}),
+                           d(10, 27): SimpleNamespace(by={"Gabriela S": [2, 2]}),
+                           d(11, 9): SimpleNamespace(by={"Gabriela": [9, 9]})},      # current week: out
+                  "Omar": {d(11, 3): SimpleNamespace(by={"Gaby": [2, 1]})}}
+        wk = dt.date(2026, 11, 1)
+        per = build.ars_interviewer_weeks(second, [wk - dt.timedelta(days=7 * k) for k in range(4)], res)
+        b = build.interviewer_podium_ars(per, wk)
+        self.assertEqual([(l.name, l.booked, l.showed) for l in b.lines],
+                         [("Gabriela Salazar", 4, 3), ("Gaby", 2, 1), ("Nicole Renee", 2, 1), ("Sofia R.", 2, 0)])
+        self.assertEqual(b.history_labels, ["10/11", "10/18", "10/25", "11/1"])
+        self.assertEqual(b.lines[0].history, [None, None, 1.0, 0.75])
+        self.assertEqual(res.report(), ["Atef: 'Sofia R.'", "Omar: 'Gaby'"])
+
+
 if __name__ == "__main__":
     unittest.main()

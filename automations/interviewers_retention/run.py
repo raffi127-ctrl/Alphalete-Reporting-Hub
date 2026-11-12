@@ -13,9 +13,13 @@ module, with the three changes Raf asked for:
   3. each picture is cropped to the board itself (no grey frame, no side
      margins), at most ~880px wide, big type, inline in the email body.
 
-The email body, top to bottom:
-    Yesterday by interviewer   Yesterday by office
-    Podium by interviewer      Podium by office       (the newest week box)
+The email body, top to bottom (Raf, 11/12):
+    This week by day, interviewers   This week by day, offices
+        (Mon..yesterday per day + Week total + last 4 weeks; on Sunday/Monday
+         LAST week Mon..Sat, with its dates)
+    Podium by interviewer            Podium by office
+
+    python -m automations.interviewers_retention.run --preview   # send nothing, open it in the browser
 
 TESTING ONLY: there is no production recipient in this file on purpose. Every
 hand run goes to TEST_TO (Camila only). --production sends to PROD_TO
@@ -62,6 +66,9 @@ SHEET_ID = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Management 2.0
 DATOS_SHEET_ID = "1JF1M-SYYbRnrp0dFr-IKxPiXMPdHPvGomyP6r4aSFZw"
 REPO = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO / "output" / "interviewers_retention"
+# While this file exists the daily scheduled send does nothing (hand runs still
+# work). Pause: touch it. Resume: delete it.
+PAUSE_FLAG = OUT_DIR / "PAUSED"
 
 # ONLY Camila while testing (Camila, 2026-11-11: "the email goes ONLY to me,
 # never to Raf"). There is deliberately no production list and no --to flag.
@@ -269,6 +276,43 @@ def send(msg: EmailMessage) -> None:
         s.send_message(msg)
 
 
+def write_preview(msg: EmailMessage, path: Path) -> Path:
+    """The email's HTML as one standalone page (pictures embedded), to look at
+    in a browser before anything is sent (Camila / Raf, 11/12)."""
+    import base64
+    body, pics = "", {}
+    for part in msg.walk():
+        ct = part.get_content_type()
+        if ct == "text/html":
+            body = part.get_content()
+        elif ct.startswith("image/") and part["Content-ID"]:
+            pics[part["Content-ID"].strip("<>")] = base64.b64encode(part.get_content()).decode()
+    for cid, b64 in pics.items():
+        body = body.replace(f"cid:{cid}", f"data:image/png;base64,{b64}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("<!doctype html><html><head><meta charset='utf-8'>"
+                    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                    f"<title>{html.escape(str(msg['Subject']))}</title></head>"
+                    "<body style='margin:0;padding:16px;background:#fff'>"
+                    f"<p style='font:13px Arial;color:#5f6a63'>PREVIEW — not sent. "
+                    f"Would go to: {html.escape(str(msg['To']))}</p>{body}</body></html>",
+                    encoding="utf-8")
+    return path
+
+
+def open_in_browser(path: Path, logfn=print) -> None:
+    """`open` on a Mac (the default browser), the OS default elsewhere."""
+    import subprocess
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["open", str(path)], check=False)
+        else:
+            import webbrowser
+            webbrowser.open(path.resolve().as_uri())
+    except Exception as e:                           # noqa: BLE001
+        logfn(f"  could not open the browser ({e}); open {path} by hand")
+
+
 # ---------------------------------------------------------------------- run
 def read_datos(logfn=print) -> Optional[List[build.DayRow]]:
     """AppStream's per-office, per-day 2nd rounds (tab 'Datos', refreshed hourly
@@ -294,6 +338,8 @@ def scheduled_gate(now_ct: dt.datetime, sent_flag: Path) -> Optional[str]:
     against Central twice a year); only the fire in the 18:00 Central hour
     sends, and only once a day -- a Mac waking from sleep can deliver two
     missed fires at once, and nobody wants the email twice."""
+    if PAUSE_FLAG.exists():
+        return f"PAUSED ({PAUSE_FLAG} exists; delete it to resume)"
     if now_ct.hour != SEND_HOUR_CT:
         return f"{now_ct:%H:%M} Central is not the {SEND_HOUR_CT}:00 send hour"
     if sent_flag.exists():
@@ -303,7 +349,8 @@ def scheduled_gate(now_ct: dt.datetime, sent_flag: Path) -> Optional[str]:
 
 def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
         fixture: Optional[Path] = None, dry_run: bool = False,
-        production: bool = False, scheduled: bool = False, logfn=print) -> int:
+        production: bool = False, scheduled: bool = False, preview: bool = False,
+        logfn=print) -> int:
     from zoneinfo import ZoneInfo
     now_ct = dt.datetime.now(ZoneInfo("America/Chicago"))
     sent_flag = OUT_DIR / f"sent-{now_ct:%Y-%m-%d}.txt"
@@ -337,7 +384,40 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
     if daily is None:
         owners = sorted({r.owner for w in weeks[:2] for r in w.rows})
         daily = read_daily(owners, today, logfn=logfn)
-    y_int, y_off, _ = build.yesterday_boards(daily, yday)
+
+    # ---- interviewers from the ARS REPORT (Camila 11/12): the podium and the
+    # last 4 weeks, up to the last COMPLETE week, nothing loaded by hand. The
+    # tab only lends the full names; unmatched short names are listed at the end.
+    people: Dict[str, List[str]] = {}
+    for w in weeks[:4]:
+        for k, names in build.tab_people(w).items():
+            people.setdefault(k, [])
+            people[k] += [n for n in names if n not in people[k]]
+    resolver = build.Resolver(people)
+    iw = build.last_full_week(today)
+    per_week = build.ars_interviewer_weeks(
+        daily, [iw - dt.timedelta(days=7 * k) for k in range(build.HISTORY_WEEKS)], resolver)
+    if per_week.get(iw):
+        pod_int = build.interviewer_podium_ars(per_week, iw)
+        int_labels, int_hist = build.interviewer_history_ars(per_week, iw)
+        int_src = "ARS REPORT"
+        logfn(f"  interviewers from ARS REPORT: week of {build.md(iw)}, "
+              f"4 weeks {', '.join(int_labels)}")
+    else:
+        int_labels, int_hist = build.interviewer_history(weeks, i)
+        int_src = "weekly tab"
+        logfn(f"  note: ARS REPORT has nothing for the week of {build.md(iw)}; "
+              f"interviewer podium falls back to the weekly tab ({wk.label})")
+
+    # ---- THIS WEEK BY DAY (Raf 11/12): Monday..yesterday, or last week on Sun/Mon
+    days, last_week = build.report_days(today)
+    logfn(f"  by-day columns: {', '.join(f'{d:%a} {d.isoformat()}' for d in days)}"
+          f"{' (LAST week: no day of this week finished yet)' if last_week else ''}")
+    wk_int = build.week_board(build.interviewer_days(daily, days, people, resolver),
+                              days, last_week, "THIS WEEK BY DAY · INTERVIEWERS",
+                              "Interviewer", int_hist, int_labels)
+    if last_week:
+        wk_int.title = "LAST WEEK BY DAY · INTERVIEWERS"
 
     # ---- offices: AppStream (Camila 11/11), the weekly tab only as a fallback
     off_src = "weekly tab"
@@ -356,42 +436,56 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
         if ow not in have:
             ow = have[-1]
         pod_off = build.office_podium_datos(datos, ow)
-        y_off = build.yesterday_office_datos(datos, yday)
+        off_labels, off_hist = build.office_history_datos(datos, ow)
+        off_lines = build.office_days_datos(datos, days)
         off_src = "AppStream"
         off_week_txt = pod_off.subtitle.split(" · ")[0]
         logfn(f"  offices from AppStream: week of {build.md(ow)}, "
               f"4 weeks {', '.join(pod_off.history_labels)}")
+    else:
+        off_labels, off_hist = build.office_history_tab(weeks, i)
+        off_lines = build.office_days_from_second(daily, days)
+    wk_off = build.week_board(off_lines, days, last_week,
+                              ("LAST" if last_week else "THIS") + " WEEK BY DAY · OFFICES",
+                              "Office", off_hist, off_labels,
+                              source="AppStream" if off_src == "AppStream" else "")
 
     stamp = f"{today:%Y-%m-%d}"
     out = OUT_DIR / stamp
-    boards = [b for b in (y_int, y_off) if b.lines] + [pod_int, pod_off]
-    paths = render.render_boards(boards, out, stem="interviewers-retention")
-    named = {id(b): p for b, p in zip(boards, paths)}
+    week_boards = [b for b in (wk_int, wk_off) if b.lines]
+    wpaths = render.render_day_boards(week_boards, out, stem="interviewers-retention-week")
+    ppaths = render.render_boards([pod_int, pod_off], out, stem="interviewers-retention-podium")
+    paths = wpaths + ppaths
+    named = {id(b): p for b, p in zip(week_boards + [pod_int, pod_off], paths)}
+    span = f"{days[0]:%a} {build.md(days[0])} - {days[-1]:%a} {build.md(days[-1])}"
 
     def no_data(what: str, where: str) -> Tuple[str, Path]:
-        return (f"NOTE:<b>{what} ({yday:%A} {build.md(yday)}):</b> no 2nd rounds are "
-                f"recorded for that day in {where}, so there is no table. Nothing is "
-                f"estimated.", Path())
+        return (f"NOTE:<b>{what} ({span}):</b> no 2nd rounds are recorded for those days "
+                f"in {where}, so there is no table. Nothing is estimated.", Path())
 
     images: List[Tuple[str, Path]] = []
-    images.append((y_int.title, named[id(y_int)]) if y_int.lines
-                  else no_data("Yesterday by interviewer", "the ARS REPORT tabs"))
-    images.append((y_off.title, named[id(y_off)]) if y_off.lines
-                  else no_data("Yesterday by office", off_src))
+    images.append((wk_int.title, named[id(wk_int)]) if wk_int.lines
+                  else no_data("By day, interviewers", "the ARS REPORT tabs"))
+    images.append((wk_off.title, named[id(wk_off)]) if wk_off.lines
+                  else no_data("By day, offices", off_src))
     images += [(pod_int.title, named[id(pod_int)]), (pod_off.title, named[id(pod_off)])]
 
     intro = (f"<b>Interviewers Retention</b> — 2nd rounds showed / booked. "
              f"Green = 50% or more, red = under 50%.<br>"
-             f"Yesterday: {yday:%A} {build.md(yday)}. "
-             f"Podium by interviewer: {html.escape(build.week_span(wk))}. "
+             f"{'Last week' if last_week else 'This week'} by day: {span}. "
+             f"Podium by interviewer: {html.escape(pod_int.subtitle.split(' · ')[0])}. "
              f"Podium by office: {html.escape(off_week_txt)}.")
-    notes = [f"Sources: interviewers = ARS Management 2.0 → '{build.SOURCE_TAB}' → week box "
-             f"{html.escape(wk.label)} → 2nd R BOOKED / 2nd R SHOWED; yesterday by interviewer = "
-             f"each owner's ARS REPORT tab → '2ND RD SHOWED RETENTION' → {build.md(yday)} B / S. "
+    notes = [(f"Sources: interviewers = each owner's ARS REPORT tab → '2ND RD SHOWED RETENTION' → "
+              f"B / S per day, summed per day and per Sun-Sat week (full names from "
+              f"ARS Management 2.0 → '{build.SOURCE_TAB}'). "
+              if int_src == "ARS REPORT" else
+              f"Sources: interviewer podium = ARS Management 2.0 → '{build.SOURCE_TAB}' → week box "
+              f"{html.escape(wk.label)}; by day = each owner's ARS REPORT tab → "
+              f"'2ND RD SHOWED RETENTION' → B / S per day. ")
              + (f"Offices = AppStream → Retention - Details (new), per office per day "
                 f"(sheet {DATOS_SHEET_ID} → '{build.DATOS_TAB}', updated hourly by a Lucy)."
                 if off_src == "AppStream" else
-                "Offices = the same weekly tab (AppStream sheet could not be read).")]
+                "Offices = the weekly tab and the ARS REPORT tabs (AppStream sheet could not be read).")]
     # The send time in the TEST subject, so Gmail doesn't fold each test into
     # the previous one's conversation (they all looked like "no new mail").
     subject = (f"Interviewers Retention — {today:%A} {build.md(today)}" if production else
@@ -403,10 +497,21 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
     eml = out / "interviewers-retention.eml"
     eml.write_bytes(bytes(msg))
     logfn(f"  boards: {', '.join(p.name for p in paths)} -> {out}")
-    logfn(f"  yesterday {yday}: {len(y_int.lines)} interviewers, {len(y_off.lines)} offices")
+    logfn(f"  by day {span}{' (LAST week)' if last_week else ''}: "
+          f"{len(wk_int.lines)} interviewers, {len(wk_off.lines)} offices")
     logfn(f"  podiums: {len(pod_int.lines)} interviewers "
           f"({pod_int.green} green / {pod_int.red} red), {len(pod_off.lines)} offices "
           f"({pod_off.green} green / {pod_off.red} red, {off_src})")
+    if resolver.unmatched:
+        logfn(f"  NOT MATCHED ({len(resolver.unmatched)}) -- short names kept as written, "
+              f"no full name could be chosen among that office's interviewers:")
+        for line in resolver.report():
+            logfn(f"    {line}")
+    if preview:
+        page = write_preview(msg, out / "interviewers-retention-preview.html")
+        logfn(f"[preview] nothing sent. Preview page: {page}")
+        open_in_browser(page, logfn=logfn)
+        return 0
     if dry_run:
         logfn(f"[dry run] nothing sent. Preview: {eml}")
         return 0
@@ -426,12 +531,14 @@ def main(argv=None) -> int:
     ap.add_argument("--fixture", help="JSON stand-in for the Sheet reads (testing)")
     ap.add_argument("--production", action="store_true",
                     help="send to Raf, Perla and Camila (default: Camila only)")
+    ap.add_argument("--preview", action="store_true",
+                    help="send nothing: save the email as an .html page and open it in the browser")
     ap.add_argument("--scheduled", action="store_true",
                     help="the LaunchAgent's pass: send only at 6 PM Central, once a day")
     a = ap.parse_args(argv)
     return run(week=a.week, date=dt.date.fromisoformat(a.date) if a.date else None,
                fixture=Path(a.fixture) if a.fixture else None, dry_run=a.dry_run,
-               production=a.production, scheduled=a.scheduled)
+               production=a.production, scheduled=a.scheduled, preview=a.preview)
 
 
 if __name__ == "__main__":

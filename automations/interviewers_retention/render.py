@@ -17,7 +17,7 @@ import html
 from pathlib import Path
 from typing import List, Optional
 
-from automations.interviewers_retention.build import Board, colour
+from automations.interviewers_retention.build import Board, colour, pct
 
 MAX_W = 880             # CSS px; Raf: "max width ~900px"
 BASE_PX = 24
@@ -153,3 +153,111 @@ def css_width(path: Path) -> int:
     from PIL import Image
     with Image.open(path) as im:
         return round(im.width / SCALE)
+
+
+# ------------------------------------------------- THIS WEEK BY DAY (Raf 11/12)
+# A wide board: per day B / S / %, the week B / S / %, then 4 weekly %. Raf:
+# readable on a phone at max ~900px; "if 3+ days don't fit, show only the %
+# per day and leave Booked/Showed in the Week column". So the renderer tries
+# the full layout, then the compact one, then steps the type down, and keeps
+# the first that fits MAX_W.
+DAY_FONTS = (24, 22, 20, 18)
+
+
+def day_board_html(b, *, compact: bool, base: int) -> str:
+    e = html.escape
+    sub_px, th_px, small_px = base - 4, max(base - 8, 12), max(base - 6, 12)
+    per_day = 1 if compact else 3
+    top = [f'<th rowspan="2">#</th>', f'<th rowspan="2" class="l">{e(b.name_header)}</th>']
+    second = []
+    for i, d in enumerate(b.days):
+        # Compact: the day on two short lines, so the header never sets the width.
+        label = (f"{d:%a}<br>{d.month}/{d.day}" if compact else f"{d:%a} {d.month}/{d.day}")
+        top.append(f'<th colspan="{per_day}" class="grp c">{label}</th>')
+        second += (['<th class="grp">%</th>'] if compact else
+                   ['<th class="grp">B</th>', "<th>S</th>", "<th>%</th>"])
+    top.append('<th colspan="3" class="grp c wk">Week</th>')
+    second += ['<th class="grp wk">B</th>', '<th class="wk">S</th>', '<th class="wk">%</th>']
+    if b.history_labels:
+        top.append(f'<th colspan="{len(b.history_labels)}" class="grp c">Last 4 weeks</th>')
+        second += [f'<th class="{"grp" if i == 0 else ""}">{e(l)}</th>'
+                   for i, l in enumerate(b.history_labels)]
+    rows = []
+    for n, ln in enumerate(b.lines, 1):
+        det = f"<small>{e(', '.join(ln.detail))}</small>" if ln.detail else ""
+        cells = [f'<td class="rk">{n}</td>', f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>']
+        for d in b.days:
+            bk, sh = ln.days.get(d, [0, 0])
+            p = pct(sh, bk)
+            pc = f'<td class="{colour(p) or "na"} {"grp" if compact else ""}">{fmt(p)}</td>'
+            if compact:
+                cells.append(pc)
+            else:
+                cells += [f'<td class="grp">{bk if bk else "—"}</td>',
+                          f'<td>{sh if bk else "—"}</td>', pc]
+        cells += [f'<td class="grp wk">{ln.booked}</td>', f'<td class="wk">{ln.showed}</td>',
+                  f'<td class="{colour(ln.pct)} wkp">{fmt(ln.pct)}</td>']
+        for j, p in enumerate(ln.history):
+            cells.append(f'<td class="h {colour(p) or "na"} {"grp" if j == 0 else ""}">{fmt(p)}</td>')
+        rows.append("<tr>" + "".join(cells) + "</tr>")
+    counts = (f'<div class="counts"><span class="pill good">{b.green} at 50% or more</span>'
+              f'<span class="pill bad">{b.red} under 50%</span></div>') if b.lines else ""
+    css = f"""
+    .board {{ font-size:{base}px; }}
+    .board .title {{ font-size:{base + 6}px; }}
+    .board .sub, .board .pill, .board .note {{ font-size:{sub_px}px; }}
+    .board th {{ font-size:{th_px}px; padding:6px 8px; }}
+    .board td {{ padding:7px 6px; }}
+    .board td.h {{ font-size:{base - 2}px; }}
+    .board td.nm small {{ font-size:{small_px}px; }}
+    .board td.nm div {{ max-width:{base * 10}px; }}
+    .board th.c {{ text-align:center; }}
+    .board th.grp, .board td.grp {{ border-left:2px solid #b9bfb4; }}
+    .board th.wk {{ background:#e3e7e0; color:#1d2420; }}
+    .board td.wk {{ background:#f6f7f4; font-weight:600; }}
+    .board td.wkp {{ font-size:{base + 2}px; }}
+    """
+    note = ('<div class="note">— = no 2nd rounds booked that day / week. '
+            'Last 4 weeks = the same weeks as the podium below.</div>')
+    return (f'<style>{css}</style><div class="board" id="board"><div class="head">'
+            f'<div class="title">{e(b.title)}</div><div class="sub">{e(b.subtitle)}</div>'
+            f'{counts}</div>{note}<table><thead><tr>{"".join(top)}</tr>'
+            f'<tr>{"".join(second)}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
+
+
+def _fit_day_board(pg, b) -> str:
+    """The first layout that fits MAX_W: full (only when < 3 days), then compact,
+    each at decreasing type sizes. Measured with the width cap lifted."""
+    tries = ([(False, f) for f in DAY_FONTS] if len(b.days) < 3 else []) + \
+            [(True, f) for f in DAY_FONTS]
+    last = None
+    for compact, font in tries:
+        doc = day_board_html(b, compact=compact, base=font)
+        pg.set_content(page(doc))
+        w = pg.evaluate("() => { const b = document.getElementById('board');"
+                        " b.style.maxWidth = 'none'; return b.scrollWidth; }")
+        last = doc
+        if w <= MAX_W:
+            return doc
+    return last                      # smallest compact layout; the cap still applies
+
+
+def render_day_boards(boards, out_dir: Path, stem: str = "week") -> List[Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    p, browser = _launch()
+    paths: List[Path] = []
+    try:
+        ctx = browser.new_context(device_scale_factor=SCALE,
+                                  viewport={"width": MAX_W, "height": 800})
+        pg = ctx.new_page()
+        for n, b in enumerate(boards, 1):
+            doc = _fit_day_board(pg, b)
+            pg.set_content(page(doc))
+            path = out_dir / f"{stem}-{n}.png"
+            pg.locator("#board").screenshot(path=str(path))
+            _shrink(path)
+            paths.append(path)
+    finally:
+        browser.close()
+        p.stop()
+    return paths

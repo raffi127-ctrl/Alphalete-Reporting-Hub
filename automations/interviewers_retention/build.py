@@ -441,3 +441,259 @@ def match_offices(rows: List[DayRow], roster: Iterable[str]
     out = [DayRow(r.week, r.date, r.office_id, keep[r.office_id], r.booked, r.showed,
                   r.company) for r in rows if r.office_id in keep]
     return out, missing
+
+
+# --------------------------------------------------- THIS WEEK BY DAY (Raf 11/12)
+# Replaces the two YESTERDAY tables: one row per interviewer (and per office in
+# the second table), a column group per finished day of THIS week (Monday to
+# yesterday), then the week's total, then the same last-4-weeks % as the
+# podium. On Sunday/Monday no day of this week is finished yet, so it shows
+# LAST week, Monday to Saturday, with its dates. Sorted by the week's %.
+def report_days(today: dt.date) -> Tuple[List[dt.date], bool]:
+    """(the days to show, True if they are LAST week's)."""
+    sunday = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    monday = sunday + dt.timedelta(days=1)
+    yday = today - dt.timedelta(days=1)
+    if yday < monday:                                 # Sunday or Monday
+        last_mon = monday - dt.timedelta(days=7)
+        return [last_mon + dt.timedelta(days=k) for k in range(6)], True
+    days = [monday + dt.timedelta(days=k) for k in range((yday - monday).days + 1)]
+    return [d for d in days if d <= yday], False
+
+
+@dataclass
+class DayLine:
+    name: str
+    detail: List[str] = field(default_factory=list)
+    days: Dict[dt.date, List[int]] = field(default_factory=dict)   # date -> [booked, showed]
+    history: List[Optional[float]] = field(default_factory=list)
+    key: str = ""
+
+    @property
+    def booked(self) -> int:
+        return sum(v[0] for v in self.days.values())
+
+    @property
+    def showed(self) -> int:
+        return sum(v[1] for v in self.days.values())
+
+    @property
+    def pct(self) -> Optional[float]:
+        return pct(self.showed, self.booked)
+
+    def day_pct(self, d: dt.date) -> Optional[float]:
+        b, s = self.days.get(d, [0, 0])
+        return pct(s, b)
+
+
+@dataclass
+class DayBoard:
+    title: str
+    subtitle: str
+    name_header: str
+    days: List[dt.date]
+    lines: List[DayLine]
+    history_labels: List[str] = field(default_factory=list)
+
+    @property
+    def green(self) -> int:
+        return sum(1 for l in self.lines if colour(l.pct) == "good")
+
+    @property
+    def red(self) -> int:
+        return sum(1 for l in self.lines if colour(l.pct) == "bad")
+
+
+def _rank_days(lines: Dict[str, DayLine]) -> List[DayLine]:
+    have = [l for l in lines.values() if l.booked > 0]
+    return sorted(have, key=lambda l: (-l.pct, -l.showed, l.name.lower()))
+
+
+def resolve_interviewer(owner: str, short: str, tab_people: Dict[str, List[str]]) -> str:
+    """The ARS REPORT tabs often write a short name ('Romina', 'Gabriela Sa');
+    the weekly tab has the full one ('Romina Viadana'). Look among THAT owner's
+    interviewers on the weekly tab for the one whose words start with the short
+    name's words, in order; use it only when exactly one fits."""
+    want = name_key(short).split()
+    if not want:
+        return short
+    people = tab_people.get(name_key(owner), [])
+    hits = []
+    for full in people:
+        have = name_key(full).split()
+        if len(have) >= len(want) and all(h.startswith(w) for w, h in zip(want, have)):
+            hits.append(full)
+    return hits[0] if len(hits) == 1 else short
+
+
+def interviewer_days(second: Dict[str, Dict[dt.date, object]], days: List[dt.date],
+                     tab_people: Dict[str, List[str]], resolve=None) -> Dict[str, DayLine]:
+    """{name key: DayLine} from call_list_to_2nd.read_second_rounds' blocks,
+    one interviewer summed across every office they worked."""
+    out: Dict[str, DayLine] = {}
+    for owner, by_day in second.items():
+        for d in days:
+            sr = by_day.get(d)
+            if sr is None:
+                continue
+            for short, (b, s) in getattr(sr, "by", {}).items():
+                name = (resolve(owner, short) if resolve
+                        else resolve_interviewer(owner, short, tab_people))
+                k = name_key(name)
+                ln = out.setdefault(k, DayLine(name=name, key=k))
+                cell = ln.days.setdefault(d, [0, 0])
+                cell[0] += b
+                cell[1] += s
+                if owner not in ln.detail:
+                    ln.detail.append(owner)
+    return out
+
+
+def office_days_from_second(second: Dict[str, Dict[dt.date, object]], days: List[dt.date]
+                            ) -> Dict[str, DayLine]:
+    """Fallback when AppStream can't be read: offices from the same ARS blocks."""
+    out: Dict[str, DayLine] = {}
+    for owner, by_day in second.items():
+        k = name_key(owner)
+        for d in days:
+            sr = by_day.get(d)
+            if sr is None:
+                continue
+            for _, (b, s) in getattr(sr, "by", {}).items():
+                ln = out.setdefault(k, DayLine(name=owner, key=k))
+                cell = ln.days.setdefault(d, [0, 0])
+                cell[0] += b
+                cell[1] += s
+    return out
+
+
+def office_days_datos(rows: List[DayRow], days: List[dt.date]) -> Dict[str, DayLine]:
+    want = set(days)
+    out: Dict[str, DayLine] = {}
+    for r in rows:
+        if r.date not in want:
+            continue
+        ln = out.setdefault(r.office_id, DayLine(name=r.owner or r.office_id, key=r.office_id))
+        cell = ln.days.setdefault(r.date, [0, 0])
+        cell[0] += r.booked
+        cell[1] += r.showed
+        if r.company and r.company not in ln.detail:
+            ln.detail.append(r.company)
+    return out
+
+
+def week_board(lines: Dict[str, DayLine], days: List[dt.date], last_week: bool,
+               title: str, header: str, history: Dict[str, List[Optional[float]]],
+               history_labels: List[str], source: str = "") -> DayBoard:
+    ranked_lines = _rank_days(lines)
+    for ln in ranked_lines:
+        ln.history = history.get(ln.key, [None] * len(history_labels))
+    span = f"Mon {md(days[0])} - {days[-1]:%a} {md(days[-1])}"
+    sub = (f"LAST week ({span}) — no day of this week is finished yet" if last_week
+           else f"this week so far ({span})")
+    if source:
+        sub += f" · source: {source}"
+    return DayBoard(title=title, subtitle=sub, name_header=header, days=days,
+                    lines=ranked_lines, history_labels=history_labels)
+
+
+def interviewer_history(weeks: List[Week], pick: int) -> Tuple[List[str], Dict[str, List[Optional[float]]]]:
+    """The podium's last-4-weeks % per interviewer key (same weeks, same order)."""
+    hist_weeks = weeks[pick: pick + HISTORY_WEEKS][::-1]
+    per = [by_interviewer(w.rows) for w in hist_weeks]
+    keys = set().union(*[set(p) for p in per]) if per else set()
+    labels = [md(w.start) if w.start else w.label for w in hist_weeks]
+    return labels, {k: [p[k].pct if k in p else None for p in per] for k in keys}
+
+
+def office_history_datos(rows: List[DayRow], week: dt.date
+                         ) -> Tuple[List[str], Dict[str, List[Optional[float]]]]:
+    weeks = [week - dt.timedelta(days=7 * k) for k in range(HISTORY_WEEKS)][::-1]
+    per = {w: _office_lines(r for r in rows if r.week == w) for w in weeks}
+    ids = set().union(*[set(p) for p in per.values()])
+    return ([md(w) for w in weeks],
+            {oid: [per[w][oid].pct if oid in per[w] else None for w in weeks] for oid in ids})
+
+
+def office_history_tab(weeks: List[Week], pick: int
+                       ) -> Tuple[List[str], Dict[str, List[Optional[float]]]]:
+    hist_weeks = weeks[pick: pick + HISTORY_WEEKS][::-1]
+    per = [by_office(w.rows) for w in hist_weeks]
+    keys = set().union(*[set(p) for p in per]) if per else set()
+    labels = [md(w.start) if w.start else w.label for w in hist_weeks]
+    return labels, {k: [p[k].pct if k in p else None for p in per] for k in keys}
+
+
+def tab_people(week: Week) -> Dict[str, List[str]]:
+    """{owner key: [full interviewer names]} from one week box."""
+    out: Dict[str, List[str]] = {}
+    for r in week.rows:
+        lst = out.setdefault(name_key(r.owner), [])
+        if r.interviewer not in lst:
+            lst.append(r.interviewer)
+    return out
+
+
+# ------------------------------------- interviewers, from the ARS REPORT (11/12)
+# Camila 11/12: the interviewer podium and every interviewer "last 4 weeks"
+# come from the ARS REPORT daily blocks, summed per Sun-Sat week -- nothing
+# loaded by hand, always up to the last complete week. The weekly tab is only
+# used for the FULL names (to complete 'Romina' -> 'Romina Viadana'). A short
+# name that doesn't match exactly one interviewer of that office stays short
+# and is listed at the end of the run: never guessed.
+class Resolver:
+    def __init__(self, tab_people: Dict[str, List[str]]):
+        self.people = tab_people
+        self.unmatched: Dict[Tuple[str, str], int] = {}
+
+    def __call__(self, owner: str, short: str) -> str:
+        full = resolve_interviewer(owner, short, self.people)
+        known = {name_key(p) for p in self.people.get(name_key(owner), [])}
+        if name_key(full) not in known:
+            self.unmatched[(owner, short)] = self.unmatched.get((owner, short), 0) + 1
+        return full
+
+    def report(self) -> List[str]:
+        return [f"{owner}: '{short}'" for owner, short in sorted(self.unmatched)]
+
+
+def sunday_of(d: dt.date) -> dt.date:
+    return d - dt.timedelta(days=(d.weekday() + 1) % 7)
+
+
+def ars_interviewer_weeks(second: Dict[str, Dict[dt.date, object]], sundays: List[dt.date],
+                          resolve: "Resolver") -> Dict[dt.date, Dict[str, Line]]:
+    """{week Sunday: {interviewer key: Line}} -- each interviewer's 2nd rounds
+    of that Sun-Sat week, summed across the days and every office they worked."""
+    want = set(sundays)
+    out: Dict[dt.date, Dict[str, Line]] = {w: {} for w in sundays}
+    for owner, by_day in second.items():
+        for d, sr in by_day.items():
+            w = sunday_of(d)
+            if w not in want:
+                continue
+            for short, (b, s) in getattr(sr, "by", {}).items():
+                name = resolve(owner, short)
+                _add(out[w], name_key(name), name, b, s, owner)
+    return out
+
+
+def interviewer_podium_ars(per_week: Dict[dt.date, Dict[str, Line]], week: dt.date) -> Board:
+    weeks = [week - dt.timedelta(days=7 * k) for k in range(HISTORY_WEEKS)][::-1]
+    lines = ranked(per_week.get(week, {}))
+    for ln in lines:
+        k = name_key(ln.name)
+        ln.history = [per_week[w][k].pct if k in per_week.get(w, {}) else None for w in weeks]
+    sub = (f"week of {md(week)} (Sun {md(week)} - Sat {md(week + dt.timedelta(days=6))}) "
+           f"· source: ARS REPORT")
+    return Board("PODIUM BY INTERVIEWER", sub, "Interviewer", lines,
+                 history_labels=[md(w) for w in weeks])
+
+
+def interviewer_history_ars(per_week: Dict[dt.date, Dict[str, Line]], week: dt.date
+                            ) -> Tuple[List[str], Dict[str, List[Optional[float]]]]:
+    weeks = [week - dt.timedelta(days=7 * k) for k in range(HISTORY_WEEKS)][::-1]
+    keys = set().union(*[set(per_week.get(w, {})) for w in weeks])
+    return ([md(w) for w in weeks],
+            {k: [per_week[w][k].pct if k in per_week.get(w, {}) else None for w in weeks]
+             for k in keys})
