@@ -421,7 +421,7 @@ chk_slack() {
            "$HOME/Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/storage/root-state.json"; do
     grep -Eq '"workspaces":\{"[A-Z0-9]+"' "$f" 2>/dev/null && return
   done
-  printf "Slack isn't signed in.\n\nIn Slack, sign in with your own email."
+  printf "Slack isn't signed in.\n\nIn Slack, sign in with:\n%s" "$RECEPTION_EMAIL"
 }
 chk_zoom() {
   ls -d "$HOME/Library/Application Support/zoom.us/data/"*@xmpp.zoom.us >/dev/null 2>&1 && return
@@ -1141,13 +1141,21 @@ run open -a Slack 2>/dev/null
 # Slack is the PERSON's own login, not reception's (Megan 2026-11-11: "idk why
 # an ICD would sign in using their company reception email"; the checklist
 # says "Login/Create account - made admin AO").
+# The laptop's Slack is a NEW account on the RECEPTION email -- that's the one
+# the launch team makes admin; their own Slack stays on their phone (Megan +
+# Maud, 2026-11-12). Slack signs in with a code emailed to reception, so
+# there's no password to save -- it's logged in the All in One like Excel.
 human slack_signin "Slack is open.
 (Look behind this box.)
 
-Sign in with YOUR OWN email.
-No Slack account yet? Click “Create an account”." "Slack: signed in"
+Make a new Slack account for reception:
+1. Click “Create an account” (or “Sign in”).
+2. Type: ${RECEPTION_EMAIL}
+3. Slack emails a code. Open Gmail (pinned in Chrome). Type the code.
+4. Join the company Slack. (The launch team sends the invite.)
+5. In your All in One “Passwords” tab add:
+Slack · ${RECEPTION_EMAIL} · code sent to email" "Slack: reception account signed in"
 verify slack_signin "Slack signed in" chk_slack
-save_password pw_slack "Slack" "slack.com"
 # Slack's own alert choice lives in their Slack account (online), so the
 # laptop can't set it -- and Slack already alerts on DMs + mentions. What
 # "Notification On" needs is the Mac's permission, which only a person can
