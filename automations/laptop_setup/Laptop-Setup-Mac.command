@@ -689,10 +689,17 @@ ${RECEPTION_EMAIL}
 }
 step_11() {
 section "Contacts"
-open_chrome "https://contacts.google.com/?authuser=$RECEPTION_EMAIL"
-human contacts_laptop "Google Contacts is open.
+# "Google Contacts (Laptop & Phone)" = reception's Google contacts show up in
+# the Mac's Contacts app, the same way the phone step does on the phone.
+# Opening the Google Contacts website alone did nothing on a new account.
+run open "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension"
+human contacts_laptop "System Settings is open on Internet Accounts.
+(The gray ⚙️ window. Look behind this box.)
 
-Check the contacts are there." "Contacts on the laptop"
+1. Click “Add Account”. Click “Google”.
+2. Sign in with:
+${RECEPTION_EMAIL}
+3. Turn on “Contacts”. Click “Done”." "Google Contacts on the laptop"
 human contacts_phone "Grab the phone.
 
 1. Open Settings.
