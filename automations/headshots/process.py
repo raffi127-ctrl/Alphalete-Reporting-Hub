@@ -77,10 +77,13 @@ def _start_background_download(name: str) -> None:
         # re-downloads it in the foreground and the tick hangs. Start clean.
         if not _model_ready(name):
             _model_file(name).unlink(missing_ok=True)
+        # DOWNLOAD only -- don't load the model into memory here (loading the
+        # big one alongside a photo is what froze 8 GB Lucy 3 on 11/11).
         code = ("import pathlib\n"
-                "from rembg import new_session\n"
                 "try:\n"
-                f"    new_session({name!r})\n"
+                "    from rembg.sessions import sessions_class\n"
+                f"    cls = [c for c in sessions_class if c.name() == {name!r}][0]\n"
+                "    cls.download_models()\n"
                 f"    pathlib.Path({str(_ready_marker(name))!r}).write_text('ok')\n"
                 "except Exception:\n"
                 f"    pathlib.Path({str(_model_file(name).with_suffix('.failed'))!r}).write_text('x')\n"
