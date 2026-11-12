@@ -239,26 +239,19 @@ def coverage(csv_path: Optional[Path], day: dt.date) -> int:
 # OWN thread next to Metrics (like the Order Log), so Metrics doesn't flood; the
 # Metrics thread gets one pointer line.
 PENDING_TITLE = "⏳ Pending Orders"
-PENDING_MAX_ROWS = 40          # Eve's "long": past this, a new image (whole reps)
+PENDING_MAX_NAMES = 20   # same cap as the Order Log index (MAX_INDEX_NAMES)
 
 
-def letter_groups(reps, max_rows: int = PENDING_MAX_ROWS):
-    """[(label, [(rep, rows)])] — reps A-Z cut into images of <= max_rows
-    rows, never splitting a rep. Label = 'A–F' (first letters); '' if one."""
-    groups, cur, n = [], [], 0
-    for rep, rr in reps:
-        if cur and n + len(rr) > max_rows:
-            groups.append(cur)
-            cur, n = [], 0
-        cur.append((rep, rr))
-        n += len(rr)
-    if cur:
-        groups.append(cur)
+def name_groups(reps, max_names: int = PENDING_MAX_NAMES):
+    """[(label, [(rep, rows)])] — reps A-Z cut into posts of <= max_names
+    reps (Order Log rule). Label = 'A–F' by first letters; '' if one post."""
+    groups = [reps[i:i + max_names] for i in range(0, len(reps), max_names)] or [[]]
     if len(groups) == 1:
         return [("", groups[0])]
 
     def first(rep):
         return (rep.strip()[:1] or "?").upper()
+
     def label(g):
         a, b = first(g[0][0]), first(g[-1][0])
         return a if a == b else "{}–{}".format(a, b)
@@ -268,61 +261,94 @@ def letter_groups(reps, max_rows: int = PENDING_MAX_ROWS):
 def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
                         channel_id: Optional[str] = None,
                         sample_reps: int = 0,
-                        max_rows: int = PENDING_MAX_ROWS,
-                        fresh_parent: bool = False) -> int:
-    """Today's fiber installs + every pending wireless order, rep by rep, in
-    its own '⏳ Pending Orders — <date>' thread, one image per letter group."""
+                        max_names: int = PENDING_MAX_NAMES,
+                        sample: bool = False) -> int:
+    """Eve 11/12 "como el order log": one channel post per group of <= 20
+    reps; in its thread the FIRST reply is a 'Tap your name' index, then one
+    small image per rep (name + its image in ONE reply), so nobody scrolls a
+    giant picture. Fiber = installs today; Wireless = every open order."""
+    import time
     from automations.box_order_log import pending as bp
+    from automations.box_order_log import pending_png
     from automations.shared import slack_metrics_post as smp
     rows = pull.board_rows(mine, day)
     work = build(rows, owner, day)
     reps = work["sections"][0]["reps"]
     if sample_reps:
         reps = reps[:sample_reps]
-    groups = letter_groups(reps, max_rows)
+    groups = name_groups(reps, max_names)
     day_txt = day.strftime("%A, %B %d, %Y").replace(" 0", " ")
-    tmp = Path(tempfile.gettempdir())
-    pngs = []
-    for i, (label, part) in enumerate(groups, 1):
-        prows = [x for _r, rr in part for x in rr]
-        w = dict(work, count=len(prows),
-                 title="Pending Orders — {}{}".format(
-                     day_txt, "  ({})".format(label) if label else ""),
-                 sections=[dict(work["sections"][0], rows=prows, reps=part)])
-        p = tmp / "pending_orders_{}_{}.png".format(day, i)
-        from automations.box_order_log import pending_png
-        pending_png.render(w, p)
-        pngs.append((label, len(part), len(prows), p))
-    print("  pending thread: {} — {} image(s): {}".format(
-        count_text(rows), len(pngs),
-        ", ".join("{} {} reps/{} rows".format(l or "all", a, b)
-                  for l, a, b, _p in pngs)))
-    if not rows:
+    md = "{}/{}".format(day.month, day.day)
+    tmp = Path(tempfile.gettempdir()) / "pending_orders_{}".format(day)
+    tmp.mkdir(parents=True, exist_ok=True)
+    print("  pending: {} — {} post(s): {}".format(
+        count_text(rows), len(groups),
+        ", ".join("{} {} reps".format(l or "all", len(g)) for l, g in groups)))
+    if not rows or dry_run:
         return 0
-    lines = ["{} — {}. One image per group of reps (A–Z). Fiber = installs "
-             "scheduled today; Wireless = every order not activated yet."
-             .format(owner, count_text(rows))]
-    if fresh_parent and not dry_run:
-        # Sample to a DM: post the parent outright (no history search — a
-        # Lucy token can't read a DM's history).
-        first = "*{} — {}*".format(PENDING_TITLE, day.strftime("%B %d, %Y"))
-        resp = smp._client().chat_postMessage(
-            channel=channel_id, text="\n".join(["[SAMPLE] " + first, ""] + lines))
-        head = {"ok": resp.get("ok"), "thread_ts": resp.get("ts")}
-    else:
-        head = smp.ensure_named_thread(
-            PENDING_TITLE, today=day, dry_run=dry_run, channel_id=channel_id,
-            lines=lines)
-    print("  thread: {}".format(head))
-    ts = head.get("thread_ts")
-    for label, a, b, p in pngs:
-        res = smp.post_reply_with_image(
-            p, comment="{}{} — {} rep{}, {} order{}".format(
-                PENDING_TITLE, " ({})".format(label) if label else "",
-                a, bp.plural(a), b, bp.plural(b)),
-            today=day, dry_run=dry_run, thread_ts=ts, channel_id=channel_id,
-            wait_visible=True, mirror=False)
-        print("  ✓ image ({}): {}".format("DRY-RUN" if dry_run else "LIVE", res))
+
+    client = smp._client()
+    tag = "[SAMPLE] " if sample else ""
+
+    def _text(thread_ts, text):
+        r = client.chat_postMessage(channel=channel_id, thread_ts=thread_ts,
+                                    text=text, unfurl_links=False,
+                                    unfurl_media=False)
+        return r["ts"]
+
+    def _upload(path, name) -> str:
+        for _ in range(3):
+            try:
+                r = client.files_upload_v2(file=str(path), filename=name)
+                f = r.get("file") or (r.get("files") or [{}])[0]
+                return f.get("permalink", "")
+            except Exception as e:  # noqa: BLE001  (rate limit -> wait)
+                print("  retry {}: {}".format(name, e))
+                time.sleep(20)
+        return ""
+
+    def _link(ts) -> str:
+        return client.chat_getPermalink(channel=channel_id,
+                                        message_ts=ts)["permalink"]
+
+    for label, part in groups:
+        span = " — reps {}".format(label) if label else ""
+        title = "{}{} *Pending Orders {}{}*".format(tag, PENDING_TITLE[:1], md, span)
+        ts = _text(None, "{}\nOpen the thread 👇 and tap your name".format(title))
+        index_ts = _text(ts, "👉 *Tap your name:* (names loading...)")
+        links = []
+        for rep, rr in part:
+            k_wl = sum(1 for x in rr if x.cells[4] == WIRELESS_TAG)
+            k_in = len(rr) - k_wl
+            w = dict(work, count=len(rr),
+                     title="Pending Orders — {} — {}".format(rep, day_txt),
+                     subtitle="{} — {} install{} today + {} wireless order{} "
+                              "not activated yet.".format(
+                                  rep, k_in, bp.plural(k_in), k_wl, bp.plural(k_wl)),
+                     sections=[dict(work["sections"][0], rows=rr,
+                                    reps=[(rep, rr)])])
+            png = tmp / "{}.png".format("".join(c for c in rep if c.isalnum()) or "rep")
+            pending_png.render(w, png)
+            url = _upload(png, "{} - Pending Orders {}.png".format(rep, md))
+            r_ts = _text(ts, "*{}* — {} order{}{}".format(
+                rep, len(rr), bp.plural(len(rr)),
+                "\n<{}|{} - Pending Orders>".format(url, rep) if url else ""))
+            links.append((rep, _link(r_ts)))
+            time.sleep(1)
+        index = "\n".join("• <{}|{}>".format(u, rep) for rep, u in links)
+        try:
+            client.chat_update(channel=channel_id, ts=index_ts,
+                               text="👉 *Tap your name:*\n" + index)
+        except Exception as e:  # noqa: BLE001
+            print("  ⚠ index update failed, posting new: {}".format(e))
+            index_ts = _text(ts, "👉 *Tap your name:*\n" + index)
+        try:
+            client.chat_update(channel=channel_id, ts=ts,
+                               text="{}\n👉 <{}|Find your name here>".format(
+                                   title, _link(index_ts)))
+        except Exception as e:  # noqa: BLE001
+            print("  ⚠ could not link the post to its index: {}".format(e))
+        print("  ✓ posted {} ({} reps)".format(label or "all", len(links)))
     return 0
 
 
@@ -350,7 +376,7 @@ def main(argv=None) -> int:
     ap.add_argument("--pending-sample", type=int, default=0, metavar="N",
                     help="Test (Eve 11/12): only the Pending Orders thread, first "
                          "N reps, to --post-to (Eve's self-DM); nothing else")
-    ap.add_argument("--max-rows", type=int, default=PENDING_MAX_ROWS)
+    ap.add_argument("--max-names", type=int, default=PENDING_MAX_NAMES)
     args = ap.parse_args(argv)
 
     day = dt.date.fromisoformat(args.day) if args.day else pull.central_today()
@@ -373,16 +399,25 @@ def main(argv=None) -> int:
             return 2
         from automations.shared import slack_metrics_post as smp
         ch = smp._postable_channel(smp._client(), args.post_to)  # U… -> DM id
-        rc = post_pending_thread(mine, args.owner, day, dry_run=False,
-                                 channel_id=ch, fresh_parent=True,
-                                 sample_reps=args.pending_sample,
-                                 max_rows=args.max_rows)
         fiber = pull.scheduled_on(mine, day)
+        if fiber:   # 1) what the Metrics thread keeps showing (unchanged)
+            fw = build(fiber, args.owner, day)
+            fw["title"] = "[SAMPLE — Metrics thread, as today] " + fw["title"]
+            fp = Path(tempfile.gettempdir()) / "activations_today_fiber_{}.png".format(day)
+            render(fw, fp)
+            smp.post_reply_with_image(
+                fp, comment="[SAMPLE — Metrics thread, unchanged] {} — {}".format(
+                    LABEL, count_text(fiber)),
+                today=day, channel_id=ch, top_level=True, mirror=False)
         smp._client().chat_postMessage(
             channel=ch,
             text="[SAMPLE — this line would go in the Metrics thread, under "
                  "the fiber-only image]\n"
                  + pending_pointer_text(pull.board_rows(mine, day)))
+        rc = post_pending_thread(mine, args.owner, day, dry_run=False,
+                                 channel_id=ch, sample=True,
+                                 sample_reps=args.pending_sample,
+                                 max_names=args.max_names)
         print("  fiber-only Metrics image unchanged: {} install(s) today".format(len(fiber)))
         return rc
     today = (pull.board_rows(mine, day) if args.with_wireless
