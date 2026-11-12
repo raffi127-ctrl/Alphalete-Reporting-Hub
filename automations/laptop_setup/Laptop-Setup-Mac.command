@@ -406,8 +406,8 @@ human chrome_google "Chrome is open.
 1. Click your picture at the top right of Chrome.
 2. Click “Turn on sync”. Then “Yes, I'm in”.
 (Asked to sign in? Use ${RECEPTION_EMAIL}.)
-3. Save each page (Gmail, Calendar, Drive):
-click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
+3. Gmail, Calendar and Drive are open in tabs at the top.
+Click each tab. Click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
 
 # ------------------------------------------------------------------------
 section "Sign in to work websites"
