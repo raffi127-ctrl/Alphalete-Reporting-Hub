@@ -7,13 +7,16 @@ activation format." Same idea as nds_activation_rate (NDS, 2026-11-11), for ATT
 Fiber. (His JEP-% request in the same thread was withdrawn — not built.)
 
 SOURCE (one download serves every Fiber office)
-  Tableau → ATTTRACKER2_1-D2D → Metrics (base view, 'Metrics View' pinned to
-  Internet) → worksheet 'Metrics Call Last week data (Internet)' → rows
+  Tableau → ATTTRACKER2_1-D2D → Metrics → saved view MetricsINTfullyEXP
+  (Internet, rep rows expanded; also read by captainship_abp_6days) → worksheet 'Metrics Call Last week data (Internet)' → rows
   Captain's Bonus Teams / ICD Owner Name (rep) / Rep Name → columns
     'Rolling 4 Weeks'                         (= 0-30 day activation rate)
     '30-60 day New Internet activation rate'
-  The same view + columns the Captainship Activation Rate tabs read
-  (captainship_activation_rate.pull), but here we keep the REP rows too.
+  NOT the base view: since 2026-08-07 it exports collapsed to owners (no
+  'Rep Name' column) — the first run here died on exactly that (Lucy 4,
+  2026-11-12). Expect an owner's Total to sit 0.1-1.5 pts off the Captainship
+  Activation Rate tabs on 30-60: the expanded view counts partial cohorts a
+  little differently (see captainship_abp_6days.pull).
 
 Tableau only shows TODAY's rolling number, so the day-by-day history is ours:
 each run appends today's numbers to the 'Fiber Activation Log' tab
@@ -48,6 +51,10 @@ TOTAL = "Total"
 WINDOWS = (("0-30", "Rolling 4 Weeks"),
            ("30-60", "30-60 day New Internet activation rate"))
 WIN_KEYS = [k for k, _ in WINDOWS]
+VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER2_1-D2D/Metrics/"
+            "de2c904b-1438-4d76-bb14-8e5b2861d2ec/MetricsINTfullyEXP")
+WORKSHEET = "Metrics Call Last week data (Internet)"
 
 SHEET_IDS = {   # same workbook pair as nds_activation_rate (Captainship Metrics)
     "real": "1P95BxzlmLKkuvcL0gqjD9EfEHPLniGN-m4eE9UsPe_E",
@@ -187,9 +194,10 @@ def main(argv=None) -> int:
     if args.csv:
         path = Path(args.csv)
     else:
-        from automations.captainship_activation_rate import pull as _cap
+        from automations.shared.tableau_patchright import download_crosstab_patchright
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        path = _cap.fetch(OUT_DIR / f"metrics_{day.isoformat()}.csv")
+        path = download_crosstab_patchright(
+            VIEW_URL, WORKSHEET, OUT_DIR / f"metrics_{day.isoformat()}.csv")
     data = parse(_read_csv(path))
     n_reps = sum(1 for o in data.values() for r in o["reps"] if r != TOTAL)
     print(f"  {len(data)} owner(s), {n_reps} rep(s) with a number", flush=True)
