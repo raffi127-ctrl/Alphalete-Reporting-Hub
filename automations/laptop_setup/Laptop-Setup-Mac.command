@@ -146,37 +146,105 @@ open_chrome() {   # url...   (falls back to the default browser before Chrome ex
   fi
 }
 
-# --- check their work: did the ☆ really get clicked? -----------------------
-# Chrome keeps the profile's bookmarks in a plain file; after "I did it" Lucy
-# reads it and names any page with no star (Megan, 2026-11-11: "is there a
-# way for us to check ... their work"). Chrome saves that file ~2s after a
-# click, hence the short wait before each look.
+# --- check their work -------------------------------------------------------
+# After "I did it", Lucy looks for proof on the laptop itself and won't move on
+# until it's there or they press Skip (Megan, 2026-11-11: "we should check as
+# much as we can ... we want this idiot proof"). Every check reads a file or
+# setting the app itself keeps -- no Python (a new Mac has none), no network.
+#   Apple account  -> MobileMeAccounts (signed in, and as reception)
+#   Chrome         -> the Reception profile's Preferences (signed in + sync on)
+#   ☆ bookmarks    -> the profile's Bookmarks file
+#   saved passwords-> the profile's "Login Data" databases (site names only;
+#                     Lucy never reads a password)
+#   Slack          -> Slack's root-state.json lists a workspace
+#   Zoom           -> Zoom keeps a per-account folder once someone signs in
+#   Excel          -> Office records the email it's activated with
+#   Magnet         -> the app is in /Applications
+# Not checkable from the laptop: Gmail filters/forwarding, Drive sharing,
+# anything on the phone, Slack admin. Those stay "I did it".
 CHROME_DIR="$HOME/Library/Application Support/Google/Chrome/$CHROME_PROFILE"
 unmark() { [ $DRY_RUN = 0 ] && { grep -vxF "$1" "$PROGRESS" 2>/dev/null > "$PROGRESS.tmp"; mv "$PROGRESS.tmp" "$PROGRESS"; }; }
-missing_stars() {   # "Name|text-in-the-address" ... -> prints the names with no bookmark
-  local urls e
-  urls="$(grep -o '"url": *"[^"]*"' "$CHROME_DIR/Bookmarks" 2>/dev/null)"
-  for e in "$@"; do echo "$urls" | grep -qi "${e#*|}" || echo "${e%%|*}"; done
-}
-check_stars() {   # step-key  "Name|text-in-the-address" ...
-  local key="$1"; shift
-  [ $DRY_RUN = 1 ] && { echo "  (dry run) would check the ☆ for: ${*%%|*}"; return 0; }
-  grep -qxF "$key" "$PROGRESS" 2>/dev/null || return 0   # they skipped; nothing to check
-  local miss b
-  while :; do
-    sleep 3
-    miss="$(missing_stars "$@")"
-    if [ -z "$miss" ]; then ok "Lucy checked: ☆ saved for $(printf '%s, ' "${@%%|*}" | sed 's/, $//')"; return 0; fi
-    b="$(_dialog "Step $N of $TOTAL — $TITLE" "Lucy can't find a ☆ on:
-$miss
 
-Go to that tab.
-Click the ☆ at the right end of the web address bar.
-Then click “Done”." "Skip,Check again" "Check again")"
+verify() {   # step-key  "what was checked"  check-function  args...
+  local key="$1" what="$2" fn="$3"; shift 3
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would check: $what"; return 0; }
+  grep -qxF "$key" "$PROGRESS" 2>/dev/null || return 0   # they skipped: nothing to check
+  local problem b
+  while :; do
+    sleep 3                       # apps save their files a moment after a click
+    problem="$("$fn" "$@")"
+    if [ -z "$problem" ]; then ok "Lucy checked ✓ $what"; return 0; fi
+    b="$(_dialog "Step $N of $TOTAL — $TITLE" "Lucy checked. Not done yet:
+
+$problem" "Skip,Check again" "Check again")"
     if [ "$b" != "Check again" ]; then
-      unmark "$key"; todo "Bookmark (☆) missing: $(echo "$miss" | tr '\n' ' ')"; return 1
+      unmark "$key"; todo "$what (Lucy checked: not done)"; return 1
     fi
   done
+}
+
+# Each check prints nothing when it's done, or what's wrong + how to fix it.
+chk_stars() {   # "Name|text-in-the-address" ...
+  local urls e miss=""
+  urls="$(grep -o '"url": *"[^"]*"' "$CHROME_DIR/Bookmarks" 2>/dev/null)"
+  for e in "$@"; do echo "$urls" | grep -qi "${e#*|}" || miss="$miss${e%%|*}
+"; done
+  [ -n "$miss" ] && printf "No ☆ on:\n%s\nGo to that tab.\nClick the ☆ at the right end of the web address bar.\nThen click “Done”." "$miss"
+}
+_saved_sites() {   # the site addresses with a saved login (both of Chrome's lists)
+  local t db; t="$(mktemp -d)"
+  for db in "Login Data" "Login Data For Account"; do
+    [ -f "$CHROME_DIR/$db" ] || continue
+    cp "$CHROME_DIR/$db" "$t/db" 2>/dev/null && sqlite3 -readonly "$t/db" "select origin_url from logins;" 2>/dev/null
+  done
+  rm -rf "$t"
+}
+chk_passwords() {   # "Name|text-in-the-address" ...
+  local sites e miss=""
+  sites="$(_saved_sites)"
+  for e in "$@"; do echo "$sites" | grep -qi "${e#*|}" || miss="$miss${e%%|*}
+"; done
+  [ -n "$miss" ] && printf "No saved password for:\n%s\nLog out. Log in again.\nWhen Chrome asks to save the password, click “Save”." "$miss"
+}
+chk_site() {   # "Name|text-in-the-address"
+  local p; p="$(chk_stars "$1")"; [ -n "$p" ] && { echo "$p"; return; }
+  chk_passwords "$1"
+}
+chk_apple() {
+  local acct; acct="$(defaults read MobileMeAccounts Accounts 2>/dev/null)"
+  if ! echo "$acct" | grep -q "LoggedIn = 1"; then
+    printf "No Apple account is signed in.\n\nIn System Settings, click “Sign in” (top left)."
+  elif ! echo "$acct" | grep -qi "$RECEPTION_EMAIL"; then
+    printf "This Mac is signed in to a different Apple account.\n\nAsk the launch team."
+  fi
+}
+chk_chrome() {
+  local f="$CHROME_DIR/Preferences"
+  if ! grep -o '"account_info":\[[^]]*\]' "$f" 2>/dev/null | grep -qi "\"email\":\"$RECEPTION_EMAIL\""; then
+    printf "Chrome isn't signed in as:\n%s\n\n1. Click your picture at the top right of Chrome.\n2. Click “Turn on sync”. Then “Yes, I'm in”." "$RECEPTION_EMAIL"
+  elif ! grep -q '"consented_to_sync":true' "$f" 2>/dev/null; then
+    printf "Sync is off.\n\n1. Click your picture at the top right of Chrome.\n2. Click “Turn on sync”. Then “Yes, I'm in”."
+  fi
+}
+chk_slack() {
+  local f
+  for f in "$HOME/Library/Application Support/Slack/storage/root-state.json" \
+           "$HOME/Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/storage/root-state.json"; do
+    grep -Eq '"workspaces":\{"[A-Z0-9]+"' "$f" 2>/dev/null && return
+  done
+  printf "Slack isn't signed in.\n\nIn Slack, sign in with:\n%s" "$RECEPTION_EMAIL"
+}
+chk_zoom() {
+  ls -d "$HOME/Library/Application Support/zoom.us/data/"*@xmpp.zoom.us >/dev/null 2>&1 && return
+  printf "Zoom isn't signed in.\n\nIn Zoom, click “Sign in”."
+}
+chk_excel() {
+  defaults read com.microsoft.office OfficeActivationEmailAddress 2>/dev/null | grep -q @ && return
+  printf "Excel isn't signed in.\n\nIn Excel, click “Sign in”."
+}
+chk_magnet() {
+  [ -d "/Applications/Magnet.app" ] && return
+  printf "Magnet isn't on the laptop yet.\n\nIn the App Store, click “Get”.\nWait until it's done."
 }
 
 # ------------------------------------------------------------- installers
@@ -371,6 +439,7 @@ human icloud "System Settings is open.
 ${RECEPTION_EMAIL}
 
 Already signed in to a different Apple account? Ask the launch team." "iCloud for reception email created"
+verify icloud "Apple account signed in as reception" chk_apple
 
 # ------------------------------------------------------------------------
 section "Get the apps"
@@ -396,6 +465,7 @@ else
 
 1. Click “Get”.
 2. Wait until it's done." "Magnet installed"
+  verify magnet "Magnet installed" chk_magnet
 fi
 if [ $DRY_RUN = 1 ]; then
   echo "  (dry run) would set Magnet to open at startup"
@@ -441,7 +511,8 @@ human chrome_google "Chrome is open.
 (Asked to sign in? Use ${RECEPTION_EMAIL}.)
 3. Gmail, Calendar and Drive are open in tabs at the top.
 Click each tab. Click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
-check_stars chrome_google "Gmail|mail.google.com" "Calendar|calendar.google.com" "Drive|drive.google.com"
+verify chrome_google "Chrome signed in as reception, sync on" chk_chrome
+verify chrome_google "☆ on Gmail, Calendar, Drive" chk_stars "Gmail|mail.google.com" "Calendar|calendar.google.com" "Drive|drive.google.com"
 
 # ------------------------------------------------------------------------
 section "Sign in to work websites"
@@ -458,7 +529,7 @@ Ask the owner for the password."
 3. Save the page: click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: logged in to $sname + bookmarked"
   # what to look for in the saved address (Apex lives on herbjoyent.com)
   needle="$(echo "$sname" | tr 'A-Z' 'a-z')"; [ "$sname" = "Apex" ] && needle="herbjoyent"
-  check_stars "site_$sname" "$sname|$needle"
+  verify "site_$sname" "$sname: ☆ + password saved" chk_site "$sname|$needle"
 done
 
 # ------------------------------------------------------------------------
@@ -587,6 +658,7 @@ human slack_signin "Slack is open.
 
 Sign in with:
 ${RECEPTION_EMAIL}" "Slack: signed in"
+verify slack_signin "Slack signed in" chk_slack
 human slack_alerts_laptop "Turn on Slack alerts.
 
 1. In Slack, click your picture (top right).
@@ -613,6 +685,7 @@ Sign in with:
 ${RECEPTION_EMAIL}
 
 No account? Click “Sign up”." "Zoom: signed in"
+verify zoom "Zoom signed in" chk_zoom
 
 # ------------------------------------------------------------------------
 section "Excel"
@@ -622,6 +695,7 @@ human excel "Excel is open.
 1. Click “Sign in”.
 2. Use the reception login.
 (Alphalete: alphaletereception)" "Excel: signed in"
+verify excel "Excel signed in" chk_excel
 
 # ------------------------------------------------------------------------
 section "Save the other passwords"
@@ -641,6 +715,7 @@ For each one:
 1. Click “Add”.
 2. Type the website, username and password.
 3. Click “Save”." "Apple, Slack, Zoom and Excel passwords saved in Google Passwords"
+verify save_passwords "Apple, Slack, Zoom, Excel passwords saved" chk_passwords "Apple|apple.com" "Slack|slack.com" "Zoom|zoom.us" "Excel|microsoft.com"
 
 # ------------------------------------------------------------------------
 section "Printers"
