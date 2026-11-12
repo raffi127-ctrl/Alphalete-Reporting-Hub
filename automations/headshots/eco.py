@@ -50,12 +50,43 @@ def _admin_key() -> str:
     return k
 
 
+RELAY_DEADLINE_SECONDS = 90
+
+
+def _post_with_deadline(post, url: str, data: bytes) -> str:
+    """The relay call, with a WALL-CLOCK limit.
+
+    relay._post's 30s timeout is per socket read, so a reply that trickles in
+    (or an SSL read that never returns) can block forever. On 2026-11-11 that
+    hung Lucy 3's headshot tick for hours: Raf's photos waited behind Omar's
+    relay check. Past the deadline we give up; the next tick asks again."""
+    import threading
+    box: Dict = {}
+
+    def _go():
+        try:
+            box["raw"] = post(url, data)
+        except Exception as e:  # noqa: BLE001 -- re-raised below
+            box["err"] = e
+
+    t = threading.Thread(target=_go, daemon=True)
+    t.start()
+    t.join(RELAY_DEADLINE_SECONDS)
+    if t.is_alive():
+        raise EcoError("relay didn't answer in %ds -- trying again next tick"
+                       % RELAY_DEADLINE_SECONDS)
+    if "err" in box:
+        raise EcoError("relay call failed: %s" % type(box["err"]).__name__)
+    return box["raw"]
+
+
 def _call(extra: Dict) -> Dict:
     from automations.icd_alerts import offices as O
     from automations.icd_alerts import relay as R
     body = {"admin_key": _admin_key()}
     body.update(extra)
-    raw = R._post(O.RELAY_URL, json.dumps(body).encode("utf-8"))
+    raw = _post_with_deadline(R._post, O.RELAY_URL,
+                              json.dumps(body).encode("utf-8"))
     try:
         out = json.loads(raw)
     except ValueError:
@@ -173,7 +204,10 @@ def post_results(cl, *, dry_run: bool = True, log=print, tags=None) -> int:
             log("  could not reply for %s: %s" % (r.get("name"),
                                                  type(e).__name__))
     if posted:
-        mark_posted(posted)
+        try:
+            mark_posted(posted)
+        except EcoError as e:   # rare: the reply may post once more next tick
+            log("  headshot results not marked posted: %s" % e)
     return len(posted)
 
 
