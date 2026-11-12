@@ -16286,6 +16286,30 @@
    "timeout_minutes": 2,
    "machine": "Lucy 3"
   },
+  "kick_lucy3_queue": {
+   "on_scheduler": false,
+   "display_name": "Restart Lucy 3's queue reader (from Lucy 1)",
+   "_note": "MANUAL HANDLE (2026-11-12). Lucy 3's Mini Control queue went silent at 21:17 while the box stayed up on the LAN; this runs on Lucy 1 (same LAN) and kickstarts Lucy 3's mini-control lanes over SSH, then prints the top processes. Fails fast if Lucy 1 has no key for Lucy 3.",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.kick_peer_queue"
+   ],
+   "base_args": [
+    "--target",
+    "lucy3"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "close_on": "exit_zero",
+   "timeout_minutes": 2,
+   "machine": "Lucy 1"
+  },
   "social_media_posting": {
    "on_scheduler": false,
    "display_name": "Alphalete social media posting (Run Now)",

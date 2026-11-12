@@ -18,12 +18,21 @@ import sys
 
 TARGETS = {
     "lucy1": ("alphalete", ("Alphaletes-Mac-mini.local",)),
+    # 2026-11-12: Lucy 3's queue went silent at 21:17 while the box stayed up
+    # on the LAN (peer_probe from Lucy 1: ping + :22 answer). Same fix, run
+    # from Lucy 1 as `lucy rerun kick_lucy3_queue`.
+    "lucy3": ("lucy3", ("Lucys-Mac-mini.local",)),
 }
 CMD = ("launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control; "
        "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-read "
        "2>/dev/null; "
        "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-text "
-       "2>/dev/null; echo KICKED; launchctl list | grep mini-control")
+       "2>/dev/null; echo KICKED; launchctl list | grep mini-control; "
+       # A wedged box (slow ping) usually has one process eating it -- show
+       # the top few so the kick's log says what to look at next.
+       "echo '--- top cpu/mem ---'; "
+       "ps -Ao pid,%cpu,%mem,etime,comm -r | head -6; "
+       "vm_stat | egrep 'free|Swap' ")
 
 
 def main(argv=None) -> int:
