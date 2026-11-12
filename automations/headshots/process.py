@@ -41,6 +41,15 @@ def _model_file(name: str) -> Path:
     return Path(home) / f"{name}.onnx"
 
 
+def _ready_marker(name: str) -> Path:
+    return _model_file(name).with_suffix(".ready")
+
+
+def _model_ready(name: str) -> bool:
+    """Only a download that FINISHED counts (it writes the .ready marker)."""
+    return _model_file(name).exists() and _ready_marker(name).exists()
+
+
 def _start_background_download(name: str) -> None:
     """Fetch a big model in its OWN process so no headshot waits on it.
 
@@ -53,10 +62,15 @@ def _start_background_download(name: str) -> None:
         if lock.exists() and time.time() - lock.stat().st_mtime < 2 * 3600:
             return
         lock.write_text(str(os.getpid()))
+        # A half file left by a killed download looks "present" -- rembg then
+        # re-downloads it in the foreground and the tick hangs. Start clean.
+        if not _model_ready(name):
+            _model_file(name).unlink(missing_ok=True)
         code = ("import pathlib\n"
                 "from rembg import new_session\n"
                 "try:\n"
                 f"    new_session({name!r})\n"
+                f"    pathlib.Path({str(_ready_marker(name))!r}).write_text('ok')\n"
                 "finally:\n"
                 f"    pathlib.Path({str(lock)!r}).unlink(missing_ok=True)\n")
         subprocess.Popen([sys.executable, "-c", code],
@@ -71,9 +85,10 @@ def _rembg_session():
     if _session is None:
         from rembg import new_session
         name = config.REMBG_MODEL
-        if name != FALLBACK_MODEL and not _model_file(name).exists():
+        if name != FALLBACK_MODEL and not _model_ready(name):
             _start_background_download(name)
             name = FALLBACK_MODEL
+        print(f"  cutout model: {name}", flush=True)
         _session = new_session(name)
     return _session
 

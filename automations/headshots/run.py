@@ -202,6 +202,7 @@ def process_one(data: bytes, name: str) -> Path:
     """Run the pipeline and archive the finished headshot, named for the
     person so the admins (and Phase 2) know whose it is."""
     from automations.headshots import process as P
+    print(f"  making headshot: {name}", flush=True)
     out = P.process(data)
     path = _archive_dir() / f"{_safe_stem(name)} - Headshot.png"
     out.save(path)
