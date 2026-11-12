@@ -1829,6 +1829,14 @@ _JS = r"""
    REPORT.push({name:p.name,ok:true,status:status,miss:seen});
    return true;
  }
+ /* THE WHOLE OF ONE PERSON, as an entry point. runPerson walks the three
+    tabs, saves each, and reads the Status back -- the orchestration that
+    has been doing Raf's weeks since September. It was the only part of
+    this file NOT on window, so a driven page could reach doPage and
+    openPerson but had to re-assemble the loop around them in Python.
+    Re-assembling it is exactly how two fillers came to disagree about the
+    same form (2026-11-11). One copy, called from either side. */
+ window.__ansRunPerson=runPerson;
 
  var old=document.getElementById('anspanel'); if(old) old.remove();
  var p=D[Math.min(I,D.length-1)];

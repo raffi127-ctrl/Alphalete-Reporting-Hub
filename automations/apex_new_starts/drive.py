@@ -84,3 +84,42 @@ def ready(page) -> bool:
     except Exception:          # noqa: BLE001
         return False
     return len(got) == len(ENTRY_POINTS)
+
+
+def hand_over(page, *, genders=None, socials=None, log=print) -> dict:
+    """Put the two things only a PERSON ever supplied into the driven page.
+
+    The engine reads a Gender out of `window.__ansGender` and a Social out of
+    `window.__ansSSN`, keyed by its own `norm(name)`. In the extension a person
+    types both into the panel. Driven, nobody is sitting there, so they have to
+    arrive another way -- Gender off the office's onboarding board, the Social
+    out of the signed Blue Ink packet.
+
+    NOTHING IS LOGGED BUT COUNTS. A Social reaches this page and no further: it
+    is written straight into the map the engine reads and never returned,
+    echoed or put in a message. `Secret.reveal()` is called here and nowhere
+    else in this module, which is the point of the wrapper.
+
+    Returns {"genders": n, "socials": n} -- how many landed, never which.
+    """
+    pairs_g = {str(k): str(v) for k, v in (genders or {}).items() if str(v or "").strip()}
+    pairs_s = {}
+    for k, v in (socials or {}).items():
+        raw = v.reveal() if hasattr(v, "reveal") else str(v or "")
+        digits = "".join(c for c in raw if c.isdigit())
+        # Nine digits or nothing. A short one would be typed into a payroll
+        # record as a real Social and Apex would take it.
+        if len(digits) == 9:
+            pairs_s[str(k)] = digits
+    page.evaluate(
+        """([g, s]) => {
+             const norm = x => (x || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+             window.__ansGender = window.__ansGender || {};
+             window.__ansSSN = window.__ansSSN || {};
+             for (const k in g) window.__ansGender[norm(k)] = g[k];
+             for (const k in s) window.__ansSSN[norm(k)] = s[k];
+           }""",
+        [pairs_g, pairs_s])
+    log("  handed the page %d gender(s) and %d Social(s)"
+        % (len(pairs_g), len(pairs_s)))
+    return {"genders": len(pairs_g), "socials": len(pairs_s)}
