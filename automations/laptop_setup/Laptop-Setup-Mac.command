@@ -602,8 +602,10 @@ if is_done filters_reception; then
   ok "Owner's Gmail forwards login codes to reception (done earlier)"
 else
   open_chrome "$OWNER_GMAIL#settings/fwdandpop"
-  human fwd_reception_added "The owner's Gmail is open.
-(Sign in as the owner if it asks.)
+  human fwd_reception_added "Gmail is open for:
+${OWNER_EMAIL}
+(the email your Sara+ account uses)
+Sign in to it if it asks.
 
 1. Click “Add a forwarding address”.
 2. Type:
@@ -639,8 +641,10 @@ if is_done filters_lucy; then
 else
   echo "  For the launch team: $REGISTER_CMD"
   open_chrome "$OWNER_GMAIL#settings/fwdandpop"
-  human fwd_lucy_added "The owner's Gmail is open.
-(Sign in as the owner if it asks.)
+  human fwd_lucy_added "Gmail is open for:
+${OWNER_EMAIL}
+(the email your Sara+ account uses)
+Sign in to it if it asks.
 
 1. Click “Add a forwarding address”.
 2. Type:
@@ -666,7 +670,9 @@ fi
 step_10() {
 section "Share Google Drive"
 open_chrome "https://drive.google.com/drive/u/0/my-drive?authuser=$OWNER_EMAIL"
-human drive_shared "The owner's Google Drive is open.
+human drive_shared "Google Drive is open for:
+${OWNER_EMAIL}
+Sign in to it if it asks.
 
 For each folder reception needs:
 1. Right-click it. Click “Share”.
