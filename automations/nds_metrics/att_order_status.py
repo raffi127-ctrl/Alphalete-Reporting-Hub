@@ -271,7 +271,7 @@ def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
 
 def detail_text(summary: Dict[str, object], today: dt.date, carrier: Sequence[str] = ()) -> str:
     """The hover note: everything AT&T and FedEx said, one item per line."""
-    parts = ["Checked %s" % today.strftime("%m/%d/%Y %H:%M"), ""]
+    parts = ["Checked %s" % dt.datetime.now().strftime("%m/%d/%Y %H:%M"), ""]
     parts.extend("AT&T: " + l for l in (summary.get("lines") or []))
     parts.extend(str(c) for c in (carrier or ()) if c)
     return "\n".join(parts)
@@ -318,10 +318,14 @@ def fedex_status(page, number: str, log=print) -> str:
     try:
         page.goto(FEDEX_URL.format(n=number), wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
         try:
-            page.wait_for_load_state("networkidle", timeout=12_000)
+            # the page is script-built: wait for its status words, not for the network
+            page.wait_for_function(
+                """() => /currently in|on the way|delivered|returning|label created|signature|exception/i
+                         .test(document.body ? document.body.innerText : '')""",
+                timeout=20_000)
         except Exception:  # noqa: BLE001
             pass
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(1500)
         text = page.evaluate("() => (document.body.innerText || '')")
     except Exception as e:  # noqa: BLE001
         log("    (FedEx %s: page failed: %s)" % (number, type(e).__name__))
@@ -360,7 +364,7 @@ def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, 
         page.wait_for_timeout(2500)
         text = page.evaluate("() => (document.querySelector('main') || document.body).innerText || ''")
         s = summarize(text)
-        if s["lines"] and not s["failed"]:
+        if s["lines"] and not s["failed"] and shipments(text):
             s["text"] = text
             s["error"] = ""
             return s
@@ -422,6 +426,8 @@ def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, 
     s = summarize(text)
     s["text"] = text
     s["error"] = ""
+    if not s["failed"] and s["lines"] and not shipments(text):
+        s["failed"] = True                  # words like "Check status" with no order on the page
     if s["failed"] or not s["lines"]:
         m = FAIL_RE.search(text or "")
         if s.get("landing"):
