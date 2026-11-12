@@ -99,7 +99,7 @@ HEAD_MARGIN = 0.08
 
 # rembg model. "u2net_human_seg" is trained on people — cleaner hair edges
 # than the generic model. The model file downloads once to ~/.u2net/.
-REMBG_MODEL = "u2net_human_seg"   # birefnet-portrait (better hair) parked: its 973MB download hung Lucy 3 all day 2026-11-11
+REMBG_MODEL = "birefnet-portrait"   # hair edges (Megan 2026-11-10). Used only once its background download finishes (process._model_ready); until then u2net_human_seg
 
 # Phase 2: after processing, upload the clean headshot to the rep's
 # OwnerVille profile (Onboard -> View Progress -> Edit; see ov_upload.py).
