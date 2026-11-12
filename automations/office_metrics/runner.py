@@ -1027,6 +1027,11 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     help="pull + render, DO NOT post. Real Tableau pulls — run "
                          "on the mini.")
     ap.add_argument("--only", default=None, help="run a single metric by slug.")
+    ap.add_argument("--force-header", action="store_true",
+                    help="with --only: still open today's Metrics header thread "
+                         "(same as METRICS_FORCE_HEADER=1). For a recovery that is "
+                         "the day's FIRST post in a channel; reuses an existing "
+                         "header, so it never posts a second one.")
     ap.add_argument("--resend-email", action="store_true",
                     help="EMAIL-ONLY OFFICES: re-send today's already-rendered "
                          "boards and do nothing else. For when the metrics were "
@@ -1072,6 +1077,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                          "view sliced to this office matches its per-office view. "
                          "No post. Run before flipping CANCEL_USE_ALL_OFFICE.")
     args = ap.parse_args(argv)
+    # A queued `lucy rerun` can't set env vars, so the flag is the way a
+    # recovery asks for the header (2026-11-11: trang moved to
+    # #freshsuccess-team mid-day; every --only re-run failed on "couldn't find
+    # today's header" because the header only existed in the archived channel).
+    if getattr(args, "force_header", False):
+        os.environ["METRICS_FORCE_HEADER"] = "1"
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
     # mistake that cross-posts one office's numbers) aborts before anything runs.
