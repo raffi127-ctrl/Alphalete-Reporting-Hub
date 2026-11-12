@@ -160,6 +160,14 @@ class ShortCell(unittest.TestCase):
                          "11/12: Delayed, shipped Nov 2 · FedEx …0332 (as of 11/11) | Returning to shipper, could not be delivered · FedEx …8564 (as of 11/11)")
         self.assertEqual(A.keep_fedex_from(today, ""), today)
 
+    def test_no_record_today_does_not_erase_a_real_reading(self):
+        prev = "11/11: Delivered Nov 3 · FedEx …8080"
+        today = "11/12: Shipped Nov 2, FedEx has no record yet · FedEx …8080"
+        self.assertEqual(A.keep_fedex_from(today, prev), "11/12: Delivered Nov 3 · FedEx …8080 (as of 11/11)")
+        # but a real reading today replaces a "no record" from yesterday
+        self.assertEqual(A.keep_fedex_from("11/12: Delivered Nov 3 · FedEx …8080", today.replace("11/12", "11/11")),
+                         "11/12: Delivered Nov 3 · FedEx …8080")
+
     def test_ordered_only_page(self):
         cell = A.short_text("Ordered on:\nWed, Nov 11, 2026\nOrder:\n99-2\nUPS tracking:1Z1WE1020321622114\n", TODAY)
         self.assertEqual(cell, "11/11: Ordered Nov 11, not shipped yet · UPS …2114")

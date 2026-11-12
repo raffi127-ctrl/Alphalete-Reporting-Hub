@@ -403,15 +403,16 @@ def keep_fedex_from(body: str, prev: str) -> str:
     pm = re.match(r"(\d\d/\d\d): (.*)$", prev)
     if not m or not pm:
         return body
+    weak = ("not checked", "no record yet", "label not scanned")
     prev_by_pkg = {}
     for clause in pm.group(2).split(" | "):
         k = re.search(r"((?:FedEx|UPS|USPS) …\w+)", clause)
-        if k and "not checked" not in clause and "(per AT&T)" not in clause:
+        if k and not any(w in clause for w in weak) and "(per AT&T)" not in clause:
             prev_by_pkg[k.group(1)] = clause
     out = []
     for clause in m.group(2).split(" | "):
         k = re.search(r"((?:FedEx|UPS|USPS) …\w+)", clause)
-        if k and "not checked" in clause and k.group(1) in prev_by_pkg:
+        if k and any(w in clause for w in weak) and k.group(1) in prev_by_pkg:
             old = prev_by_pkg[k.group(1)]
             out.append(old if "(as of " in old else old + " (as of %s)" % pm.group(1))
         else:
@@ -503,7 +504,15 @@ def fedex_status(page, number: str, log=print) -> str:
         if FEDEX_NOT_FOUND_RE.search(text or ""):
             # AT&T lists the number before FedEx has scanned the label: an
             # answer, not a blank (11/12: every "blank" page of a full pass
-            # was this notice, and the six-blank stop then skipped the rest)
+            # was this notice, and the six-blank stop then skipped the rest).
+            # FedEx serves the SAME notice when it throttles (a number found
+            # at 12:41 was "not found" at 12:49), so it is asked once more
+            # after a pause, and a real reading from an earlier day outranks
+            # it on the tab (keep_fedex_from).
+            if attempt == 1:
+                log("    (FedEx %s: 'can't find' -- asking once more in 15s)" % number)
+                page.wait_for_timeout(15_000)
+                continue
             log("    (FedEx %s: no record at FedEx yet)" % number)
             return "FedEx %s: No record at FedEx yet (label not scanned)" % number
         if FEDEX_KEEP_RE.search(text or "") and len(text or "") > 800:
@@ -746,7 +755,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                             log("    (FedEx %s: skipped -- 6 blank pages in a row, FedEx has walled this run)" % n)
                             fedex_seen[n] = ""
                         else:
-                            page.wait_for_timeout(8000)         # FedEx walls a quick run of lookups (2.5s still did)
+                            page.wait_for_timeout(20_000)       # FedEx throttles a quick run (8s still did)
                             fedex_seen[n] = fedex_status(page, n, log=log)
                             fedex_blank = 0 if fedex_seen[n] else fedex_blank + 1
                     if fedex_seen[n]:
