@@ -192,6 +192,19 @@ class AppStreamBusy(RuntimeError):
 LOGGED_OUT_TEXT = "login is timed out"
 
 
+# A 500 ON THE BIGGEST REPORT (2026-11-12). Rafael Hidalgo (11280) came back
+# "Server Error 500 - Internal server error" on p=702 for the month, at 11:20
+# in the day, after the 5-minute table wait -- AppStream's server failing on
+# the size of the request, not slowness. source_report() then asks for the
+# month in two halves and joins them (every column is a count, so the halves
+# add up to the same numbers; see parse.load_table).
+SERVER_ERROR_TEXT = "server error 500"
+
+
+class AppStreamServerError(RuntimeError):
+    """AppStream returned its 'Server Error 500' page for the report."""
+
+
 class AppStreamLoggedOut(RuntimeError):
     """The AppStream session expired mid-run (the 'login is timed out' page)."""
 
@@ -223,6 +236,9 @@ def _no_table_error(page):
     print("     no table — %s" % says, flush=True)
     if LOGGED_OUT_TEXT in says.lower():
         return AppStreamLoggedOut("AppStream session timed out mid-run")
+    if SERVER_ERROR_TEXT in says.lower():
+        return AppStreamServerError("AppStream answered with a Server Error "
+                                    "500 for this report")
     if BUSY_TEXT in says.lower():
         return AppStreamBusy("AppStream answered with its own error page "
                              "(\"The request can not be processed\")")
@@ -287,7 +303,8 @@ def _one_pass(page, tok, start, end, timeout):
     return "<table>" + best.inner_html() + "</table>", owner, n
 
 
-def source_report(page, tok, start, end, timeout=120000, attempts=2):
+def source_report(page, tok, start, end, timeout=120000, attempts=2,
+                  split=True):
     """Run p=702 for start/end (mm-dd-yyyy) and return the table HTML.
 
     Retries the WHOLE pass, not just the post: a failed attempt leaves the page
@@ -310,4 +327,27 @@ def source_report(page, tok, start, end, timeout=120000, attempts=2):
                       % (i + 1, attempts - 1, str(e).splitlines()[0][:90]), flush=True)
                 page.wait_for_timeout(
                     BUSY_PAUSE_MS if isinstance(e, AppStreamBusy) else 2500)
+    if isinstance(last, AppStreamServerError) and split:
+        halves = _split_range(start, end)
+        if halves:
+            print("     AppStream 500 on %s..%s -- pulling it in two halves "
+                  "(%s..%s, %s..%s)" % (start, end, *halves[0], *halves[1]),
+                  flush=True)
+            parts = [source_report(page, tok, a, b, timeout=timeout,
+                                   attempts=attempts, split=False)
+                     for a, b in halves]
+            html = "".join(p[0] for p in parts)
+            return html, parts[0][1], sum(p[2] for p in parts)
     raise last
+
+
+def _split_range(start, end):
+    """Two disjoint halves of an inclusive mm-dd-yyyy range, or None."""
+    import datetime as _dt
+    a = _dt.datetime.strptime(start, "%m-%d-%Y").date()
+    b = _dt.datetime.strptime(end, "%m-%d-%Y").date()
+    if b <= a:
+        return None
+    mid = a + (b - a) // 2
+    f = lambda d: d.strftime("%m-%d-%Y")
+    return [(f(a), f(mid)), (f(mid + _dt.timedelta(days=1)), f(b))]

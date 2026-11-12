@@ -151,7 +151,15 @@ def account_name(inbox):
 
 def load_table(html, keep_multi=False):
     """Parse one Source Report table into per-ad records."""
-    d = pd.read_html(io.StringIO(html))[0]
+    # More than one table = the same report pulled in pieces (fetch splits a
+    # month AppStream answers with a 500 for, 2026-11-12). Every field is a
+    # count, so stacking the pieces' rows and letting merge() add them gives
+    # the same numbers as one pull. Only tables that ARE a Source Report join.
+    frames = [f for f in pd.read_html(io.StringIO(html))
+              if 'Email Subject Line' in f.columns]
+    if not frames:
+        frames = pd.read_html(io.StringIO(html))[:1]
+    d = frames[0] if len(frames) == 1 else pd.concat(frames, ignore_index=True)
 
     # Column fallbacks must prefer the name that CARRIES DATA, not merely the
     # first name present. Carlos's office (2026-10-30): its report has a
