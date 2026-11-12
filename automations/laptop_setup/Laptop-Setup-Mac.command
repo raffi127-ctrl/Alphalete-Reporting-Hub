@@ -381,7 +381,8 @@ human chrome_google "Chrome is open.
 1. Sign in with:
 ${RECEPTION_EMAIL}
 2. Chrome asks to turn on sync. Click “Yes”.
-3. Click the ☆ star at the top of each tab." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
+3. Save each page (Gmail, Calendar, Drive):
+click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
 
 # ------------------------------------------------------------------------
 section "Sign in to work websites"
@@ -395,7 +396,7 @@ Ask the owner for the password."
 
 1. Log in.${extra}
 2. Chrome asks to save the password. Click “Save”.
-3. Click the ☆ star at the top." "Chrome: logged in to $sname + bookmarked"
+3. Save the page: click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: logged in to $sname + bookmarked"
 done
 
 # ------------------------------------------------------------------------
