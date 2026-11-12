@@ -791,6 +791,12 @@ chk_fwd_added() {   # forward-to
   [ -n "$(_fwd_status "$1")" ] && return
   printf "Lucy can't find %s as a forwarding address yet.\n\n1. Click “Add a forwarding address”.\n2. Type it.\n3. Click Next. Then Proceed. Then OK.\nThen click “Check again”." "$1"
 }
+chk_fwd_accepted() {   # forward-to
+  [ -n "$GTOKEN" ] || return 0
+  local st; st="$(_fwd_status "$1")"
+  [ "$st" = accepted ] && return
+  printf "The forwarding to %s isn't approved yet.\n\nIn the reception Gmail, open “Gmail Forwarding Confirmation”, click the link, then “Confirm”.\nThen click “Check again”." "$1"
+}
 _has_filter() {   # filters.json  from  subject  to
   local i=0 f_from f_subj fwd
   while f_from="$(_json "$1" filter.$i.criteria.from)" || _json "$1" filter.$i.id >/dev/null; do
@@ -1366,6 +1372,19 @@ What email address is ${WHOSE} Sara+ account set up with?" "")"
   remember OWNER_EMAIL "$OWNER_EMAIL"
 fi
 OWNER_GMAIL="https://mail.google.com/mail/?authuser=$OWNER_EMAIL"
+# ROLE: an admin/reception person often can't get into the ICD's Gmail
+# (Megan, 2026-11-12). Ask once; "No" skips both forwarding steps (and the
+# Google permission) and leaves them for the launch team to do with the ICD.
+NO_ICD_GMAIL="$(recall NO_ICD_GMAIL)"
+if [ "$ROLE" != owner ] && [ $DRY_RUN = 0 ] && [ -z "$NO_ICD_GMAIL" ]; then
+  if [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Can you sign in to ${WHOSE} Gmail right now?
+${OWNER_EMAIL}" "No,Yes" "Yes")" = "Yes" ]; then NO_ICD_GMAIL=0; else NO_ICD_GMAIL=1; fi
+  remember NO_ICD_GMAIL "$NO_ICD_GMAIL"
+fi
+if [ "$NO_ICD_GMAIL" = 1 ]; then
+  todo "Code forwarding needs ${WHOSE} Gmail (${OWNER_EMAIL}). The launch team sets it up with ${ICD_NAME:-the ICD}."
+  return 0
+fi
 if [ $DRY_RUN = 1 ]; then OUT="$(mktemp -d)"; else OUT="$HOME/Desktop"; fi
 F_RECEPTION="$OUT/Gmail-Filters-1-Reception.xml"
 F_LUCY="$OUT/Gmail-Filters-2-Lucy-Background-Checks.xml"
@@ -1397,7 +1416,17 @@ ${RECEPTION_EMAIL}
 
 Don't change anything else." "Owner's Gmail: reception added as a forwarding address"
   verify fwd_reception_added "reception added as a forwarding address" chk_fwd_added "$RECEPTION_EMAIL"
-  human fwd_reception_confirmed "Wait for the launch team to approve your forwarding." "Launch team approved the reception forwarding" "They confirmed it done"
+  # The person is already signed in to the RECEPTION Gmail, so they approve
+  # this forward themselves (Megan, 2026-11-12) -- no launch team needed.
+  open_chrome "https://mail.google.com/mail/?authuser=$RECEPTION_EMAIL#search/forwarding+confirmation"
+  human fwd_reception_confirmed "The reception Gmail is open (${RECEPTION_EMAIL}).
+
+Approve the forwarding:
+1. Open the email “Gmail Forwarding Confirmation”.
+2. Click the link inside. Then click “Confirm”.
+
+(Don't see it? Wait a minute and refresh.)" "Reception forwarding approved"
+  verify fwd_reception_confirmed "reception forwarding approved" chk_fwd_accepted "$RECEPTION_EMAIL"
   if is_done fwd_reception_confirmed || [ $DRY_RUN = 1 ]; then
     if make_filters "$RECEPTION_EMAIL" \
          "security.info@saraplus.com||Sara+ codes" \
@@ -1425,6 +1454,7 @@ fi
 }
 step_9() {
 section "Send background checks to Lucy"
+if [ "$(recall NO_ICD_GMAIL)" = 1 ]; then ok "Background-check forwarding: left for the launch team (no access to the ICD's Gmail)"; gmail_done; return 0; fi
 # Everything from Sterling also goes to Lucy's inbox, so each new start's BG
 # Status fills itself in on the ICD board. Both forwards are approved by the
 # LAUNCH TEAM on the Zoom call (Megan, 2026-11-11) — the person just waits.
