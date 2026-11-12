@@ -668,8 +668,8 @@ def _upload_with_retry(client, channel: str, thread_ts: str, png, spec: dict, to
     Same rule as _read_with_retry: a call that never got an answer gets another
     go while the run's transport budget lasts; a real Slack error does not."""
     global _transport_retries_left
-    # An Eco owner's own channel gets the copy with THEIR row in yellow
-    # (Rafael 2026-11-12). Same filename + caption as the plain image, so
+    # An owner's own channel gets the copy with THEIR row in yellow
+    # (Rafael + Megan 2026-11-12). Same filename + caption as the plain image, so
     # posted_ids / dedupe / --replace see no difference. Never raises: any
     # trouble hands back the plain png.
     src = highlighter().png_for(channel, png, spec)
@@ -1326,6 +1326,11 @@ def _email_all(captures: list, pages: list, today: dt.date, *, org: str,
                                f"{label} today — not sending a duplicate set")}
         captures = fresh
 
+    # The owner's own row in yellow, same as their Slack channel would get.
+    hl = highlighter()
+    owner = hl.owner_for_org(org)
+    if owner:
+        captures = [(s, hl.png_for_owner(owner, p, s)) for s, p in captures]
     blocks, ids = [], []
     for spec, path in captures:
         # reply_caption is the thread's wording; reused so the mail and the Slack

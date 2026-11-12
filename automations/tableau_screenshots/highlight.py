@@ -1,8 +1,9 @@
-"""Highlight an Eco owner's own row on the tracker images we post to THEIR channel.
+"""Highlight each owner's own row on the tracker images we send to THEM.
 
 Rafael 2026-11-12 ("Highlighted trackers"): "When we post a tracker on these
 guys' Slacks, can we also get their names highlighted on whatever tracker that
-they're on? ... We should only do it for the people that are using Lucy Eco."
+they're on?" First scoped to Lucy Eco owners; Megan 2026-11-12 widened it:
+"we can do it for all 38 ICDs we post to" (Eve: "Yes!").
 
 HOW IT WORKS (no OCR install needed — runs the same on Mac and Windows):
   1. rows_of(png)  — Tableau tables draw a grey rule under every row, so the
@@ -20,10 +21,9 @@ NEVER BLOCKS A POST. Any failure — no API key, Claude down, name not on the
 board, ambiguous match — returns the ORIGINAL png and the post goes out exactly
 as it did before this file existed.
 
-Who gets it: an owner row in onboarded_trackers.json whose Lucy Eco machine
-sent a reading in the last 7 days (eco_owners). A sign-up that never
-reported is not "using" it. Shared channels
-(#alphalete-sales, org channels) never get a highlight.
+Who gets it: EVERY owner row in onboarded_trackers.json — their Slack
+channel, or their email for the rows delivered by mail. Shared channels
+(#alphalete-sales, org channels) never get a highlight: no one owner.
 
   python -m automations.tableau_screenshots.highlight <png> "Starr Rodenhurst"
       -> writes the highlighted copy, prints where. Preview tool.
@@ -43,13 +43,10 @@ MODEL = "claude-sonnet-5"
 
 # OFF until Eve OKs the preview ("preview before rollout"). While False only a
 # run with --highlight (run.py) paints anything; flip to True to go live in
-# every Eco owner's channel.
+# every owner's channel and email.
 LIVE = False
 FORCE = False            # set by run.py --highlight
 
-# "Using Lucy Eco" = their machine sent a reading this recently. A week, not a
-# day: a laptop shut over a weekend is still an Eco office.
-ECO_RECENT_DAYS = 7
 
 # Row-rule detection. A rule is grey (not white, not black text) and long.
 _GREY_MAX = 248          # lighter than this is background (Quantum/VZ rules are ~242)
@@ -292,6 +289,10 @@ def _matches(text_read: str, spellings: list) -> bool:
         # a clean prefix of 8+ letters of the full name also counts.
         if t == n or (len(t) >= 8 and n.startswith(t)):
             return True
+        # A one-word owner row ('Haytham') against the board's full name
+        # ('HAYTHAM NAGI').
+        if " " not in s.strip() and len(n) >= 5 and t.startswith(n):
+            return True
     return False
 
 
@@ -347,27 +348,6 @@ def highlighted(png: Path, key: str, bands: list) -> Path:
 
 
 # ------------------------------------------------------------------ who gets it
-def eco_owners(today: dt.date | None = None) -> set:
-    """letters-only names of owners USING Lucy Eco: every Eco feed (sign-up
-    sheet + relayed offices, eco_feeds.feeds) whose machine has sent a reading
-    in the last ECO_RECENT_DAYS. Signed up but never reported = not using.
-    Empty on error (= plain images for everyone)."""
-    today = today or dt.date.today()
-    try:
-        from automations.icd_sales_board import eco_feeds as E
-        from automations.icd_sales_board import relay_read as RR
-        out = set()
-        for f in E.feeds().values():
-            day = (RR.last_reading(f.key) or {}).get("day")
-            if day and (today - day).days <= ECO_RECENT_DAYS:
-                out.add(norm(f.owner))
-        return out
-    except Exception as e:   # noqa: BLE001
-        print(f"   highlight: Eco list unreadable ({type(e).__name__}: {e}) "
-              f"- posting plain images", flush=True)
-        return set()
-
-
 def spellings(owner: str) -> list:
     """The owner's name plus every alias the ICD Aliases sheet knows."""
     out = [owner]
@@ -387,13 +367,13 @@ def spellings(owner: str) -> list:
     return uniq
 
 
-def channel_owners(rows: list, eco: set) -> dict:
-    """{channel_id: owner} for Slack rows in onboarded_trackers whose owner is
-    on Lucy Eco. Email-only rows and shared channels are never here."""
+def channel_owners(rows: list) -> dict:
+    """{channel_id: owner} for every Slack row in onboarded_trackers. Shared
+    channels (ORG_CHANNELS) are not rows there, so they are never here."""
     out = {}
     for r in rows:
         owner = (r.get("owner") or "").strip()
-        if not owner or norm(owner) not in eco:
+        if not owner:
             continue
         for c in r.get("channel_ids") or []:
             out[c] = owner
@@ -403,9 +383,10 @@ def channel_owners(rows: list, eco: set) -> dict:
 class Highlighter:
     """One per run: decides per channel which png to upload. Never raises."""
 
-    def __init__(self, rows: list | None = None, eco: set | None = None):
+    def __init__(self, rows: list | None = None):
         self._by_channel: dict | None = None
-        self._rows, self._eco = rows, eco
+        self._owners: set = set()
+        self._rows = rows
         self._located: dict = {}   # png path -> {owner: bands}
 
     def _channels(self) -> dict:
@@ -417,18 +398,19 @@ class Highlighter:
                 if rows is None:
                     p = Path(__file__).with_name("onboarded_trackers.json")
                     rows = json.loads(p.read_text(encoding="utf-8"))
-                eco = self._eco if self._eco is not None else eco_owners()
-                self._by_channel = channel_owners(rows, eco)
-                if self._by_channel:
-                    print(f"   highlight: Eco owners' channels -> "
-                          f"{sorted(set(self._by_channel.values()))}", flush=True)
+                self._rows = rows
+                self._by_channel = channel_owners(rows)
+                self._owners = {(r.get("owner") or "").strip() for r in rows
+                                if (r.get("owner") or "").strip()}
+                print(f"   highlight: on for {len(self._owners)} owner(s)",
+                      flush=True)
             except Exception as e:   # noqa: BLE001
                 print(f"   highlight: off ({type(e).__name__}: {e})", flush=True)
                 self._by_channel = {}
         return self._by_channel
 
     def owner_for_org(self, org: str) -> str:
-        """The Eco owner behind an onboarded org key ('starr'), or ''."""
+        """The owner behind an onboarded org key ('starr'), or ''."""
         rows = self._rows
         if rows is None:
             try:
@@ -436,9 +418,9 @@ class Highlighter:
                 rows = json.loads(p.read_text(encoding="utf-8"))
             except Exception:   # noqa: BLE001
                 return ""
-        owners = set(self._channels().values())
+        self._channels()
         for r in rows:
-            if r.get("key") == org and r.get("owner") in owners:
+            if r.get("key") == org and r.get("owner") in self._owners:
                 return r["owner"]
         return ""
 
@@ -451,7 +433,7 @@ class Highlighter:
         try:
             key = str(png)
             if key not in self._located:
-                people = {o: spellings(o) for o in set(self._channels().values())}
+                people = {o: spellings(o) for o in sorted(self._owners)}
                 self._located[key] = locate(Path(png), people)
             bands = self._located[key].get(owner)
             if not bands:
@@ -465,7 +447,7 @@ class Highlighter:
             # the run, so nine boards never each wait out the same timeout.
             print(f"   highlight: {owner} skipped ({type(e).__name__}: {e})"
                   f" - highlights off for this run", flush=True)
-            self._by_channel = {}
+            self._by_channel, self._owners = {}, set()
             return png
 
 

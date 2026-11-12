@@ -1,4 +1,4 @@
-"""Eco owners' rows highlighted on their own channel's trackers (Rafael 2026-11-12).
+"""Owners' rows highlighted on their own channel's trackers (Rafael 2026-11-12).
 
   python -m unittest automations.tableau_screenshots.test_highlight
 """
@@ -70,7 +70,7 @@ class WhoTest(unittest.TestCase):
     def test_switched_off_means_plain_everywhere(self):
         H.FORCE = False
         with mock.patch.object(H, "LIVE", False),                 mock.patch.object(H, "locate") as loc:
-            hl = H.Highlighter(rows=self.ROWS, eco={H.norm("Starr Rodenhurst")})
+            hl = H.Highlighter(rows=self.ROWS)
             self.assertEqual(hl.png_for("C1", "x.png"), "x.png")
             loc.assert_not_called()
 
@@ -80,26 +80,31 @@ class WhoTest(unittest.TestCase):
         {"key": "joseph", "owner": "Joseph Logan", "emails": ["x@y.z"]},
     ]
 
-    def test_only_eco_slack_channels(self):
-        eco = {H.norm("Starr Rodenhurst"), H.norm("Joseph Logan")}
-        self.assertEqual(H.channel_owners(self.ROWS, eco),
-                         {"C1": "Starr Rodenhurst"})
+    def test_every_owner_slack_channel(self):
+        self.assertEqual(H.channel_owners(self.ROWS),
+                         {"C1": "Starr Rodenhurst", "C2": "Nii Tagoe"})
 
-    def test_non_eco_channel_and_shared_channel_get_the_plain_png(self):
+    def test_email_owner_found_by_org(self):
         H.FORCE = True
-        hl = H.Highlighter(rows=self.ROWS, eco={H.norm("Starr Rodenhurst")})
+        hl = H.Highlighter(rows=self.ROWS)
+        self.assertEqual(hl.owner_for_org("joseph"), "Joseph Logan")
+
+    def test_one_word_owner_matches_full_name(self):
+        self.assertTrue(H._matches("HAYTHAM NAGI", ["Haytham"]))
+
+    def test_shared_channel_gets_the_plain_png(self):
+        H.FORCE = True
+        hl = H.Highlighter(rows=self.ROWS)
         with mock.patch.object(H, "locate") as loc:
-            self.assertEqual(hl.png_for("C2", "x.png"), "x.png")
             self.assertEqual(hl.png_for("C_ALPHALETE", "x.png"), "x.png")
             loc.assert_not_called()
 
-    def test_eco_channel_gets_its_own_row(self):
+    def test_owner_channel_gets_its_own_row(self):
         with tempfile.TemporaryDirectory() as d:
             p = _board(Path(d) / "b.png")
             band = H.rows_of(Image.open(p))[1]
             H.FORCE = True
-            hl = H.Highlighter(rows=self.ROWS,
-                               eco={H.norm("Starr Rodenhurst")})
+            hl = H.Highlighter(rows=self.ROWS)
             with mock.patch.object(H, "locate",
                                    return_value={"Starr Rodenhurst": [band]}), \
                     mock.patch.object(H, "spellings", side_effect=lambda o: [o]):
@@ -107,11 +112,11 @@ class WhoTest(unittest.TestCase):
             self.assertNotEqual(Path(out), p)
             self.assertTrue(Path(out).exists())
             self.assertEqual(hl.owner_for_org("starr"), "Starr Rodenhurst")
-            self.assertEqual(hl.owner_for_org("nii"), "")
+            self.assertEqual(hl.owner_for_org("nope"), "")
 
     def test_claude_failure_posts_plain_and_switches_off(self):
         H.FORCE = True
-        hl = H.Highlighter(rows=self.ROWS, eco={H.norm("Starr Rodenhurst")})
+        hl = H.Highlighter(rows=self.ROWS)
         with mock.patch.object(H, "locate", side_effect=RuntimeError("no key")), \
                 mock.patch.object(H, "spellings", side_effect=lambda o: [o]):
             self.assertEqual(hl.png_for("C1", "a.png"), "a.png")
