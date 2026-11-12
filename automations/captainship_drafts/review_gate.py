@@ -1105,14 +1105,17 @@ DEFER_REBUILD = "needs a rebuild after the build that is running"
 
 def auto_check(today: dt.date, blocks: Sequence["config.Block"],
                done: Set[str], *, act: bool = True, verbose: bool = True,
-               rebuild: bool = True
+               rebuild: bool = True, ignore_chain: bool = False
                ) -> Tuple[Set[str], Dict[str, List[str]], Dict[str, List[str]]]:
     """Revisa a cada capitan todavia sin mandar de `blocks`.
 
     Devuelve (pueden salir, {frenado: motivos}, {re-armado: lo que se arreglo}).
     Lo que se arregla re-corriendo se re-arma UNA vez aca mismo y se vuelve a
     revisar en esta pasada. No postea nada: eso lo decide `auto_day`.
-    `act=False` revisa sin re-armar (la corrida de prueba / --audit)."""
+    `act=False` revisa sin re-armar (la corrida de prueba / --audit).
+    `ignore_chain` = no frenar por la cadena de la manana, para que el --audit
+    igual abra cada draft (un dia sin 4am, 2026-11-12, frenaba a todos antes
+    de mirar ninguno)."""
     from automations.captainship_drafts import auto_send as A
     keys = [k for b in blocks for k in b.captains if k not in done]
     if not keys:
@@ -1125,7 +1128,7 @@ def auto_check(today: dt.date, blocks: Sequence["config.Block"],
     # The reason goes to Slack, so it is built here in English from the report
     # ids — scope_today's own `why` is a Spanish log line (Eve 2026-10-05:
     # "que llegue en inglés los avisos").
-    hit, _why = scope_today(today)
+    hit, _why = (set(), "") if ignore_chain else scope_today(today)
     ids = wr.blocking_reports([REPORT_ID], today,
                               own_ids=[REPORT_ID, "captainship_drafts"]) or []
     names = ", ".join(f"`{i}`" for i in ids) or "a report in the chain"
@@ -1921,6 +1924,10 @@ def main(argv=None) -> int:
                     help="run the automatic check (auto_send) on every block "
                          "and PRINT what it would do. Read-only: no rebuild, "
                          "no Slack post, no send. Works on any --date.")
+    ap.add_argument("--ignore-chain", action="store_true",
+                    help="with --audit: skip the morning-chain hold so every "
+                         "draft is still opened and checked (a day with no "
+                         "4am run holds everyone before looking at any).")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the PDF and stop (no Drive, no Slack).")
     ap.add_argument("--preview", action="store_true",
@@ -1954,7 +1961,8 @@ def main(argv=None) -> int:
     if args.audit:
         # Before --post: `lucy rerun captainship_drafts_review --audit` arrives
         # as "--post --audit" (base_args) and must stay read-only.
-        ok, held, _fixed = auto_check(today, blocks, set(), act=False)
+        ok, held, _fixed = auto_check(today, blocks, set(), act=False,
+                                      ignore_chain=args.ignore_chain)
         print(f"\n=== auto-check {today}: {len(ok)} would go out, "
               f"{len(held)} held ===", flush=True)
         for k, reasons in held.items():
