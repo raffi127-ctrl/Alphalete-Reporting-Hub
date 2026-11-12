@@ -46,8 +46,11 @@ def _ready_marker(name: str) -> Path:
 
 
 def _model_ready(name: str) -> bool:
-    """Only a download that FINISHED counts (it writes the .ready marker)."""
-    return _model_file(name).exists() and _ready_marker(name).exists()
+    """Only a download that FINISHED counts: the background downloader writes
+    the .ready marker right after rembg loaded the model. The marker alone is
+    the test -- where rembg keeps the .onnx depends on its version (~/.u2net
+    on Lucy 3's rembg, ~/.rembg/models on newer ones)."""
+    return _ready_marker(name).exists()
 
 
 def _start_background_download(name: str) -> None:
