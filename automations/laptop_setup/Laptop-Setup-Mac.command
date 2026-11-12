@@ -53,15 +53,20 @@ DONE=(); YOURS=(); FAILED=()
 
 # ================================================================= helpers
 bold()  { printf "\n\033[1m%s\033[0m\n" "$1"; }
-ok()    { printf "  \033[32m✅ %s\033[0m\n" "$1"; DONE+=("$1"); }
-fail()  { printf "  \033[31m❌ %s\033[0m\n" "$1"; FAILED+=("$1"); }
-todo()  { printf "  ☐ %s\n" "$1"; YOURS+=("$1"); }
-run()   { if [ $DRY_RUN = 1 ]; then echo "  (dry run) would run: $*"; else "$@"; fi; }
+# GO=back is set when someone presses Back; everything after that in the
+# current step stands down (no pop-ups, no actions, no report lines) and the
+# loop at the bottom re-opens the previous step with FORCE=1, so its windows
+# show again even if they were done.
+GO=next; FORCE=0; STEP_I=0
+ok()    { [ "$GO" = back ] && return 0; printf "  \033[32m✅ %s\033[0m\n" "$1"; DONE+=("$1"); }
+fail()  { [ "$GO" = back ] && return 0; printf "  \033[31m❌ %s\033[0m\n" "$1"; FAILED+=("$1"); }
+todo()  { [ "$GO" = back ] && return 0; printf "  ☐ %s\n" "$1"; YOURS+=("$1"); }
+run()   { [ "$GO" = back ] && return 0; if [ $DRY_RUN = 1 ]; then echo "  (dry run) would run: $*"; else "$@"; fi; }
 
 # Sections number themselves: TOTAL is however many `section` lines this file has.
 TOTAL="$(grep -c '^section "' "$0")"
 N=0; TITLE=""
-section() { N=$((N+1)); TITLE="$1"; bold "Step $N of $TOTAL — $TITLE"; }
+section() { N=$((STEP_I+1)); TITLE="$1"; bold "Step $N of $TOTAL — $TITLE"; }
 
 # Progress memory: a step marked Done is never asked again.
 is_done()   { [ $DRY_RUN = 0 ] && grep -qxF "$1" "$PROGRESS" 2>/dev/null; }
@@ -83,19 +88,34 @@ end run
 APPLESCRIPT
 }
 
-say_info() {   # message   (one OK button)
+say_info() {   # message   (OK; Back from step 2 on)
+  [ "$GO" = back ] && return 0
   if [ $DRY_RUN = 1 ]; then echo "  (pop-up) $1" | head -3; return; fi
-  _dialog "Step $N of $TOTAL — $TITLE" "$1" "OK" "OK" >/dev/null
+  if [ "$N" -gt 1 ]; then
+    [ "$(_dialog "Step $N of $TOTAL — $TITLE" "$1" "Back,OK" "OK")" = "Back" ] && GO=back
+  else
+    _dialog "Step $N of $TOTAL — $TITLE" "$1" "OK" "OK" >/dev/null
+  fi
 }
 
 # A step only a person can do. key, then the instructions.
 # Done -> remembered; Skip -> listed on the report as still to do.
+# LAST_MSG / LAST_SHOWN let a check that fails on a step finished in an
+# EARLIER run show that step's instructions first, never a bare "not done"
+# (Megan's test 2026-11-11: ApplicantStream said "No ☆" without ever having
+# said to click it, because the step was marked done before checks existed).
+LAST_MSG=""; LAST_SHOWN=0
 human() {
   local key="$1" msg="$2" label="${3:-$TITLE}"
-  if is_done "$key"; then ok "$label (done earlier)"; return 0; fi
+  [ "$GO" = back ] && return 1
+  LAST_MSG="$msg"; LAST_SHOWN=0
+  if [ "$FORCE" = 0 ] && is_done "$key"; then ok "$label (done earlier)"; return 0; fi
+  LAST_SHOWN=1
   if [ $DRY_RUN = 1 ]; then echo "  (pop-up) $label"; return 0; fi
-  local b; b="$(_dialog "Step $N of $TOTAL — $TITLE" "$msg" "Skip,I did it" "I did it")"
-  if [ "$b" = "I did it" ]; then mark_done "$key"; ok "$label"; return 0; fi
+  local btns="Skip,I did it"; [ "$N" -gt 1 ] && btns="Back,Skip,I did it"
+  local b; b="$(_dialog "Step $N of $TOTAL — $TITLE" "$msg" "$btns" "I did it")"
+  [ "$b" = "Back" ] && { GO=back; return 1; }
+  if [ "$b" = "I did it" ]; then is_done "$key" || mark_done "$key"; ok "$label"; return 0; fi
   todo "$label"; return 1
 }
 
@@ -167,6 +187,7 @@ unmark() { [ $DRY_RUN = 0 ] && { grep -vxF "$1" "$PROGRESS" 2>/dev/null > "$PROG
 
 verify() {   # step-key  "what was checked"  check-function  args...
   local key="$1" what="$2" fn="$3"; shift 3
+  [ "$GO" = back ] && return 0
   [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would check: $what"; return 0; }
   grep -qxF "$key" "$PROGRESS" 2>/dev/null || return 0   # they skipped: nothing to check
   local problem b
@@ -174,6 +195,13 @@ verify() {   # step-key  "what was checked"  check-function  args...
     sleep 3                       # apps save their files a moment after a click
     problem="$("$fn" "$@")"
     if [ -z "$problem" ]; then ok "Lucy checked ✓ $what"; return 0; fi
+    if [ "$LAST_SHOWN" = 0 ] && [ -n "$LAST_MSG" ]; then
+      # finished in an earlier run but not really done: give the instructions again
+      LAST_SHOWN=1
+      b="$(_dialog "Step $N of $TOTAL — $TITLE" "$LAST_MSG" "Skip,I did it" "I did it")"
+      [ "$b" = "I did it" ] && continue
+      unmark "$key"; todo "$what (Lucy checked: not done)"; return 1
+    fi
     b="$(_dialog "Step $N of $TOTAL — $TITLE" "Lucy checked. Not done yet:
 
 $problem" "Skip,Check again" "Check again")"
@@ -383,10 +411,11 @@ fi
 start_downloads
 
 # ------------------------------------------------------------------------
+step_1() {
 section "Make the reception email"
 # <companyname>reception@gmail.com — the first step on every laptop (Megan, 2026-11-11).
 RECEPTION_EMAIL="$(recall RECEPTION_EMAIL)"
-if [ -n "$RECEPTION_EMAIL" ] && is_done reception_email; then
+if [ "$FORCE" = 0 ] && [ -n "$RECEPTION_EMAIL" ] && is_done reception_email; then
   ok "Reception email: $RECEPTION_EMAIL (done earlier)"
 else
   # They type the FULL company name (Megan, 2026-11-11), but the email uses
@@ -428,6 +457,8 @@ ${RECEPTION_EMAIL}
 fi
 
 # ------------------------------------------------------------------------
+}
+step_2() {
 section "Make an Apple account"
 run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
 human icloud "System Settings is open.
@@ -442,6 +473,8 @@ Already signed in to a different Apple account? Ask the launch team." "iCloud fo
 verify icloud "Apple account signed in as reception" chk_apple
 
 # ------------------------------------------------------------------------
+}
+step_3() {
 section "Get the apps"
 # Downloads started at the welcome screen; usually finished by now.
 say_info "Lucy is putting 4 apps on this laptop:
@@ -456,6 +489,8 @@ for app in "Google Chrome" "Slack" "zoom.us" "Microsoft Excel"; do report_app "$
 [ $DRY_RUN = 0 ] && rm -rf "$CACHE"
 
 # ------------------------------------------------------------------------
+}
+step_4() {
 section "Get Magnet"
 if [ -d "/Applications/Magnet.app" ]; then
   ok "Magnet already installed"
@@ -482,6 +517,8 @@ else
 fi
 
 # ------------------------------------------------------------------------
+}
+step_5() {
 section "Mouse and screen"
 for app in "/Applications/Google Chrome.app" "/Applications/Slack.app" \
            "/Applications/zoom.us.app" "/Applications/Microsoft Excel.app"; do
@@ -502,6 +539,8 @@ say_info "The laptop did these by itself:
 ✅ Screen saver off"
 
 # ------------------------------------------------------------------------
+}
+step_6() {
 section "Sign in to Google"
 open_chrome "https://mail.google.com/" "https://calendar.google.com/" "https://drive.google.com/"
 human chrome_google "Chrome is open.
@@ -515,6 +554,8 @@ verify chrome_google "Chrome signed in as reception, sync on" chk_chrome
 verify chrome_google "☆ on Gmail, Calendar, Drive" chk_stars "Gmail|mail.google.com" "Calendar|calendar.google.com" "Drive|drive.google.com"
 
 # ------------------------------------------------------------------------
+}
+step_7() {
 section "Sign in to work websites"
 for entry in "${WORK_SITES[@]}"; do
   IFS='|' read -r sname surl <<< "$entry"
@@ -533,6 +574,8 @@ Ask the owner for the password."
 done
 
 # ------------------------------------------------------------------------
+}
+step_8() {
 section "Send Sterling + OwnerVille codes to reception"
 # The checklist's filters: Sterling + OwnerVille login codes reach reception.
 # Google won't let a script add a forwarding address to a regular Gmail (that
@@ -581,6 +624,8 @@ Gmail-Filters-1-Reception
 fi
 
 # ------------------------------------------------------------------------
+}
+step_9() {
 section "Send background checks to Lucy"
 # Everything from Sterling also goes to Lucy's inbox, so each new start's BG
 # Status fills itself in on the ICD board. Both forwards are approved by the
@@ -617,6 +662,8 @@ fi
 [ $DRY_RUN = 1 ] && rm -rf "$OUT"
 
 # ------------------------------------------------------------------------
+}
+step_10() {
 section "Share Google Drive"
 open_chrome "https://drive.google.com/drive/u/0/my-drive?authuser=$OWNER_EMAIL"
 human drive_shared "The owner's Google Drive is open.
@@ -628,6 +675,8 @@ ${RECEPTION_EMAIL}
 3. Click “Send”." "Google Drive docs shared with reception"
 
 # ------------------------------------------------------------------------
+}
+step_11() {
 section "Contacts"
 open_chrome "https://contacts.google.com/?authuser=$RECEPTION_EMAIL"
 human contacts_laptop "Google Contacts is open.
@@ -643,6 +692,8 @@ ${RECEPTION_EMAIL}
 5. Turn on Contacts." "Contacts on the phone"
 
 # ------------------------------------------------------------------------
+}
+step_12() {
 section "Calendar on the phone"
 human phone_calendar "Grab the phone.
 
@@ -652,6 +703,8 @@ human phone_calendar "Grab the phone.
 ${RECEPTION_EMAIL}" "Google Calendar app on the phone"
 
 # ------------------------------------------------------------------------
+}
+step_13() {
 section "Slack"
 run open -a Slack 2>/dev/null
 human slack_signin "Slack is open.
@@ -677,6 +730,8 @@ human slack_admin "Ask the launch team to make you a Slack admin.
 They will do it on the Zoom call." "Slack: made admin (AO)"
 
 # ------------------------------------------------------------------------
+}
+step_14() {
 section "Zoom"
 run open -a zoom.us 2>/dev/null
 human zoom "Zoom is open.
@@ -688,6 +743,8 @@ No account? Click “Sign up”." "Zoom: signed in"
 verify zoom "Zoom signed in" chk_zoom
 
 # ------------------------------------------------------------------------
+}
+step_15() {
 section "Excel"
 run open -a "Microsoft Excel" 2>/dev/null
 human excel "Excel is open.
@@ -698,6 +755,8 @@ human excel "Excel is open.
 verify excel "Excel signed in" chk_excel
 
 # ------------------------------------------------------------------------
+}
+step_16() {
 section "Save the other passwords"
 # The website logins are saved by Chrome as they log in (step 7). These ones
 # aren't websites, so they go into Google Passwords by hand. Signed in to
@@ -718,6 +777,8 @@ For each one:
 verify save_passwords "Apple, Slack, Zoom, Excel passwords saved" chk_passwords "Apple|apple.com" "Slack|slack.com" "Zoom|zoom.us" "Excel|microsoft.com"
 
 # ------------------------------------------------------------------------
+}
+step_17() {
 section "Printers"
 # Office printers announce themselves on the Wi-Fi (AirPrint), so no
 # addresses are needed. Each is added with the Mac's built-in driver. One
@@ -770,6 +831,19 @@ else
 3. Open this file again."
 fi
 
+}
+
+# ---------------------------------------------------------- run the steps
+# One function per step, so Back can re-open the previous one.
+STEPS=($(declare -F | awk '{print $3}' | grep -E '^step_[0-9]+$' | sort -t_ -k2 -n))
+i=0
+while [ $i -lt ${#STEPS[@]} ]; do
+  STEP_I=$i; GO=next
+  "${STEPS[$i]}"
+  if [ "$GO" = back ] && [ $i -gt 0 ]; then i=$((i-1)); FORCE=1; else i=$((i+1)); FORCE=0; fi
+done
+GO=next
+
 # ----------------------------------------------------------------- report
 REPORT="$HOME/Desktop/Laptop-Setup-Report.txt"
 [ $DRY_RUN = 1 ] && REPORT="$(mktemp)"
@@ -777,7 +851,7 @@ REPORT="$HOME/Desktop/Laptop-Setup-Report.txt"
   echo "Laptop Set Up — $(scutil --get ComputerName 2>/dev/null) — $(date '+%Y-%m-%d %H:%M')"
   echo "Reception email: $RECEPTION_EMAIL    Owner: $OWNER_EMAIL"
   echo "Launch team — Lucy background-check forward: $REGISTER_CMD"
-  echo; echo "DONE:";                           for s in "${DONE[@]}";   do echo "  ✅ $s"; done
+  echo; echo "DONE:";                           for s in "${DONE[@]}";   do echo "  ✅ $s"; done | awk '!seen[$0]++'
   echo; echo "COULD NOT DO (fix by hand):";     for s in "${FAILED[@]}"; do echo "  ❌ $s"; done
   echo; echo "STILL TO DO (run this file again):"; for s in "${YOURS[@]}";  do echo "  ☐ $s"; done
 } > "$REPORT"
