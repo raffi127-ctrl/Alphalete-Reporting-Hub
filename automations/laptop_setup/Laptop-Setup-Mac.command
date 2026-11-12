@@ -655,7 +655,7 @@ chk_excel() {
 }
 chk_magnet() {
   [ -d "/Applications/Magnet.app" ] && return
-  printf "Magnet isn't on the laptop yet.\n\nIn the App Store, click “Get”.\nWait until it's done."
+  printf "Magnet isn't on the laptop yet.\n\nMagnet costs \$4.99 (one time).\nIn the App Store, click the price.\nPay with Touch ID or the Apple account password.\nWait until it's done."
 }
 
 # --- Lucy reads the Gmail's forwarding + filters (Megan, 2026-11-11: "add a
@@ -1263,8 +1263,13 @@ else
   run open "$MAGNET_APPSTORE"
   human magnet "The App Store is open.
 
-1. Click “Get”.
-2. Wait until it's done." "Magnet installed"
+Magnet costs \$4.99 (one time). It's not free.
+
+1. Click the price button (“\$4.99”).
+2. A box opens. There is no Buy button.
+   Pay with Touch ID (finger on the top-right key),
+   or type the Apple account password if it asks.
+3. Wait until it's done." "Magnet installed"
   verify magnet "Magnet installed" chk_magnet
 fi
 if [ $DRY_RUN = 1 ]; then
