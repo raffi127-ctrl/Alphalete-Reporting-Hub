@@ -560,13 +560,10 @@ chk_apple_any() {
   defaults read MobileMeAccounts Accounts 2>/dev/null | grep -q "LoggedIn = 1" && return
   printf "No Apple account is signed in.\n\nIn System Settings, click “Sign in” (top left)."
 }
-chk_chrome() {
+chk_chrome() {   # signed in to Chrome as reception (newer Chrome has no separate sync switch)
   local f="$CHROME_DIR/Preferences"
-  if ! grep -o '"account_info":\[[^]]*\]' "$f" 2>/dev/null | grep -qi "\"email\":\"$RECEPTION_EMAIL\""; then
-    printf "Chrome isn't signed in as:\n%s\n\n1. Click your picture at the top right of Chrome.\n2. Click “Turn on sync”. Then “Yes, I'm in”." "$RECEPTION_EMAIL"
-  elif ! grep -q '"consented_to_sync":true' "$f" 2>/dev/null; then
-    printf "Sync is off.\n\n1. Click your picture at the top right of Chrome.\n2. Click “Turn on sync”. Then “Yes, I'm in”."
-  fi
+  grep -o '"account_info":\[[^]]*\]' "$f" 2>/dev/null | grep -qi "\"email\":\"$RECEPTION_EMAIL\"" && return
+  printf "Chrome isn't signed in as:\n%s\n\nClick your picture at the top right of Chrome.\nSign in with that email." "$RECEPTION_EMAIL"
 }
 chk_slack() {
   local f
@@ -1052,12 +1049,15 @@ ${RECEPTION_EMAIL}
 fi
 # Sync goes on NOW, not at "Sign in to Google": every password from here on
 # is saved as they go, and Lucy's password check reads Chrome's synced list.
-human chrome_sync "Turn on Chrome sync.
-(It saves your passwords to Google.)
+# Newer Chrome has no "Turn on sync" (Megan's test 2026-11-12): being signed
+# in to Chrome already saves passwords to the Google account. Older Chrome
+# still shows the button, so both are covered.
+human chrome_sync "Make sure Chrome is signed in as reception.
 
 1. Click your picture at the top right of Chrome.
-2. Click “Turn on sync”. Then “Yes, I'm in”." "Chrome sync on"
-verify chrome_sync "Chrome signed in as reception, sync on" chk_chrome
+2. It should show: ${RECEPTION_EMAIL}
+(See “Turn on sync”? Click it. Then “Yes, I'm in”.)" "Chrome signed in as reception"
+verify chrome_sync "Chrome signed in as reception" chk_chrome
 # No Zoom password to save: they make Zoom with "Sign up -> Google", so it
 # logs in through their personal Gmail and has no password of its own.
 # (Every other login is saved -- Megan 2026-11-11: "It can all be saved".)
