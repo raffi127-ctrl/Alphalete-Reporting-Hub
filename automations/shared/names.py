@@ -40,6 +40,7 @@ Ink send cannot be unsent. Leave it alone.
 """
 from __future__ import annotations
 
+import re
 import unicodedata
 
 # Letters NFKD will not split into ASCII + a combining mark, because the stroke
@@ -74,3 +75,31 @@ def fold_accents(s: str) -> str:
             s = s.replace(bad, good)
     s = unicodedata.normalize("NFKD", s)
     return "".join(c for c in s if not unicodedata.combining(c))
+
+# ---------------------------------------------------------------- whole names
+# Moved here from terminated_reps.board on 2026-11-11. Both are PURE, and both
+# are needed by code that SHIPS to an office computer -- which cannot import
+# terminated_reps.board at all, because that module reaches
+# recruiting_report.fill (Google Sheets) at import time, and an office Mac has
+# no Google access. A helper that cannot travel is a helper somebody rewrites.
+
+def norm_name(s: str) -> str:
+    """Fold a name for comparison only — never for writing. Handles the
+    non-breaking spaces and stray tabs that pasted names carry
+    ('Gabriel\\xa0 Armando Rivera', 'Christian\\tWilliams')."""
+    return " ".join(str(s or "").replace("\xa0", " ").replace("\t", " ").split()).lower()
+
+
+_PAREN = re.compile(r"\([^)]*\)")
+
+
+def base_name(s: str) -> str:
+    """`norm_name` with the parentheticals dropped, for recognising the SAME
+    PERSON across two week tabs.
+
+    The board re-labels people week to week — 'Jaylen (Ash) Walker (Wk 3)' on
+    WE 8.23 is plain 'Jaylen (Ash) Walker' on WE 8.30 — so the '(Wk n)' marker
+    has to come off before the two can be compared. It is NOT used for the
+    tracker's dedupe key: that one is written to a Sheet Eve reads, and folding
+    away a middle name there would merge two different people."""
+    return " ".join(_PAREN.sub(" ", norm_name(s)).split())

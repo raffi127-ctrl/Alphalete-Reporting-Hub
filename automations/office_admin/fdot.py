@@ -188,7 +188,7 @@ def read(app, office_id: str, day: dt.date, log=print) -> List[Dict]:
     `app` is an applicant_tracker ApplicantStream session. RAISES when the
     calendar cannot be read; an empty list means it WAS read and nobody showed.
     """
-    from automations.raf_daily_update.run import _CAL_NAV_JS
+    from automations.office_admin.cal_nav import CAL_NAV_JS as _CAL_NAV_JS
     app.select_office(office_id)
     app.open_calendar()
     app.page.wait_for_timeout(10000)                   # rows render late
@@ -235,7 +235,7 @@ def read_week(app, office_id: str, week_start: dt.date, log=print,
     skipped quietly -- a missing Tuesday is a missing new start, and the first
     anybody would hear of it is a rep with no payroll record.
     """
-    from automations.icd_onboarding.board import week_start_of
+    from automations.shared.onboarding_week import week_start_of
     sunday = week_start_of(week_start)
     out: List[Dict] = []
     for i in range(days):

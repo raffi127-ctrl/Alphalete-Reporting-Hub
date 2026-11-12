@@ -114,15 +114,9 @@ _CALENDAR_JS = r"""() => {
 # Moves the calendar to another day. page.evaluate runs in an isolated world
 # where window.cal is invisible, so the call goes in a <script> tag, which
 # runs in the page's own world. Display only — changes nothing in AppStream.
-_CAL_NAV_JS = r"""(d) => {
-    const s = document.createElement('script');
-    s.textContent = `try { if (window.jQuery) jQuery("#topLevelDatePicker").val("${d}");
-        if (window.cal) { cal.currentDate = "${d}"; cal.currentDateLocale = "${d}"; cal.navigate(); }
-        document.body.setAttribute('data-calnav', window.cal ? 'ok' : 'nocal');
-    } catch (e) { document.body.setAttribute('data-calnav', 'err'); }`;
-    document.head.appendChild(s);
-    return document.body.getAttribute('data-calnav');
-}"""
+# The calendar nav script now lives in office_admin.cal_nav, which can ship to
+# an office computer; this module cannot. Same string, one copy.
+from automations.office_admin.cal_nav import CAL_NAV_JS as _CAL_NAV_JS
 
 
 # The START day's calendar lists every new start as a "First Day of

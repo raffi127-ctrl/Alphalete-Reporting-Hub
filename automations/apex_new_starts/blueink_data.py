@@ -124,7 +124,7 @@ def _key(name: str) -> str:
     written from this.
     """
     import unicodedata
-    from automations.terminated_reps.board import base_name
+    from automations.shared.names import base_name
     folded = unicodedata.normalize("NFKD", base_name(name))
     folded = "".join(c for c in folded if not unicodedata.combining(c))
     parts = [p for p in _PUNCT.sub("", folded.replace("-", " ")).split()
@@ -213,7 +213,7 @@ def near_key(board: str, packet: str) -> bool:
     two people. A board middle name that is the packet's first name counts
     too ('Ortencia Denice Martinez' signed as 'Denice Martinez')."""
     from difflib import SequenceMatcher
-    from automations.terminated_reps.board import base_name
+    from automations.shared.names import base_name
     a, b = _key(board).split("|"), _key(packet).split("|")
     if len(a) != 2 or len(b) != 2 or a[0] != b[0]:
         return False

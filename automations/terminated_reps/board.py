@@ -215,26 +215,12 @@ class Check:
         return (norm_name(self.name), self.reason)
 
 
-def norm_name(s: str) -> str:
-    """Fold a name for comparison only — never for writing. Handles the
-    non-breaking spaces and stray tabs that pasted names carry
-    ('Gabriel\\xa0 Armando Rivera', 'Christian\\tWilliams')."""
-    return " ".join(str(s or "").replace("\xa0", " ").replace("\t", " ").split()).lower()
+# Both moved to automations.shared.names on 2026-11-11 so they can SHIP to an
+# office computer: apex_new_starts.blueink_data needs base_name, and importing
+# THIS module to get it drags in recruiting_report.fill (Google Sheets), which
+# an office Mac has no access to. Re-exported so every caller keeps working.
+from automations.shared.names import base_name, norm_name  # noqa: F401
 
-
-_PAREN = re.compile(r"\([^)]*\)")
-
-
-def base_name(s: str) -> str:
-    """`norm_name` with the parentheticals dropped, for recognising the SAME
-    PERSON across two week tabs.
-
-    The board re-labels people week to week — 'Jaylen (Ash) Walker (Wk 3)' on
-    WE 8.23 is plain 'Jaylen (Ash) Walker' on WE 8.30 — so the '(Wk n)' marker
-    has to come off before the two can be compared. It is NOT used for the
-    tracker's dedupe key: that one is written to a Sheet Eve reads, and folding
-    away a middle name there would merge two different people."""
-    return " ".join(_PAREN.sub(" ", norm_name(s)).split())
 
 
 def _norm(s) -> str:
