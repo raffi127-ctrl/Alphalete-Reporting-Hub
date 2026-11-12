@@ -451,6 +451,7 @@ OFFICE_TIMEZONES: dict = {
     "haytham": "America/Chicago",              # Austin, TX
     "jose":    "America/Los_Angeles",          # Legacy Shore Marketing, California (Megan 2026-10-28; ECO sign-up tz Pacific)
     "aiden":   "America/Los_Angeles",          # Atoori Management, north LA county (Tableau zips, 2026-11-03) -- PACIFIC
+    "george-delgado": "America/New_York",     # Skyline Elite (NDS), Miami FL (Colten 2026-11-12) -- EASTERN
     "nigel":   "America/Los_Angeles",          # VP Executives, Portland OR (order-log zips 97211-97232, 2026-11-06) -- PACIFIC
     "oren":    "America/Chicago",               # Omnia Management, Kansas City metro (order-log zips 66062/66212/641xx, 2026-11-06) -- CENTRAL
     "miguel":  "America/Los_Angeles",          # Nobilis Marketing Group (ATT Fiber, 24145), Sacramento CA (order-log zips 958xx, 2026-11-06) -- PACIFIC

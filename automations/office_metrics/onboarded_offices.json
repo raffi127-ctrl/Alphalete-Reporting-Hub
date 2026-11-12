@@ -1616,5 +1616,45 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "george-delgado",
+    "report_id": "george_delgado_metrics",
+    "label": "George's Local Office",
+    "owner": "George Delgado",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (held: channel from ECO sign-up)",
+    "sheet_id": "1KlXsWBV5gAz8mn03Jw0LLuxMr_q0xK5K2Sllfs6DizA",
+    "knocks_office": "George Delgado",
+    "ov_account": "",
+    "owner_office": "",
+    "business_name": "Skyline Elite, Inc.",
+    "website": "",
+    "header_label": "George Delgado",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-11-12 (Colten: George Delgado's Miami office is getting an iMac for Lucy ECO; Eve: dry run before the 5 PM CT setup call). Skyline Elite, Inc., NDS wireless in Colten's org, OwnerVille/AppStream 22477. Five NDS boards like joseph-delgado / aiden. Miami = Eastern, weather city miami. Sheet 'George Delgado - Lucy Metrics' 1KlXsWBV5gAz8mn03Jw0LLuxMr_q0xK5K2Sllfs6DizA copied from the Master Metrics Templates (owner alphaletemarketing@, editor alphaletereporting@). Channel held on Megan's DM until his ECO sign-up names the room. Scheduler OFF until the dry run shows data on every board."
   }
 ]

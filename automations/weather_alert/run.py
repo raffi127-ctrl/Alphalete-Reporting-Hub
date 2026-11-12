@@ -156,6 +156,7 @@ METRICS_CITY = {
     "steve": "abilene",         # Luxe Global Consulting, Abilene TX -- #luxe-chat (2026-10-21); Central
     "jose": "sacramento",       # Legacy Shore Marketing, Sacramento CA (Megan 2026-10-28); Pacific; #westwavesales
     "aiden": "los_angeles",     # Atoori Management (NDS), Los Angeles (Megan 2026-11-03); Pacific; #odysseyy
+    "george-delgado": "miami",  # Skyline Elite (NDS), Miami office (Colten 2026-11-12); Eastern; channel from ECO sign-up
     "nigel": "phoenix",         # VP Executives (ATT Fiber): Phoenix now, Los Angeles from 2026-11-30 (Megan 2026-11-06, CITY_CHANGES); #vp-sales
     "oren": "kansas_city",      # Omnia Management (ATT Fiber 22536): order-log zips 66062/66212/641xx = KC metro (2026-11-06); Central; channel from ECO sign-up
     "miguel": "sacramento",     # Nobilis Marketing Group (ATT Fiber 24145): order-log zips 95841/95826/95827 + Marysville/Yuba City (2026-11-06); Pacific; channel from ECO sign-up
