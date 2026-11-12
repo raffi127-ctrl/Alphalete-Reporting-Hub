@@ -456,7 +456,7 @@ _urldecode() { local v="${1//+/ }"; printf '%b' "${v//%/\\x}"; }
 
 gmail_auth() {   # email-we-expect  -> sets GTOKEN (and GMAIL_AS); 0 on success
   local want="$1" t cid sec port state url raw code req
-  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would ask Google for read-only Gmail settings access"; return 1; }
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would ask Google for Gmail settings access (to make + check filters)"; return 1; }
   [ -n "$GTOKEN" ] && [ "$GMAIL_AS" = "$want" ] && return 0
   t="$(mktemp -d)"
   curl -fsSL "$OAUTH_CLIENT_URL" -o "$t/c.json" || { rm -rf "$t"; return 1; }
@@ -471,7 +471,7 @@ gmail_auth() {   # email-we-expect  -> sets GTOKEN (and GMAIL_AS); 0 on success
       | nc -l 127.0.0.1 "$port" > "$t/req" 2>/dev/null ) &
   local ncpid=$!
   open_chrome "$url"
-  _dialog "Step $N of $TOTAL — $TITLE" "Lucy will check your Gmail is set up right.
+  _dialog "Step $N of $TOTAL — $TITLE" "Lucy will set up your Gmail filters for you.
 
 A Google page just opened in Chrome.
 
@@ -533,6 +533,56 @@ _gmail_get() {   # settings-path  out-file  -> 0 on HTTP 200/204 (GMAIL_HTTP kee
   [ "$GMAIL_HTTP" = 200 ] || [ "$GMAIL_HTTP" = 204 ]
 }
 
+# LUCY MAKES THE FILTERS (Megan, 2026-11-12: "since we're doing the google
+# allow can we make the forwarding and filters for them?"). The same read +
+# settings permission lets Lucy CREATE filters (users.settings.filters.create).
+# She can't ADD a forwarding address: Google keeps that for Workspace admins
+# only, so the person still types it in and the launch team approves it.
+_fwd_status() {   # forward-to -> accepted | pending | (empty)
+  local t i e st=""; t="$(mktemp -d)"
+  if _gmail_get forwardingAddresses "$t/fa.json"; then
+    i=0
+    while e="$(_json "$t/fa.json" forwardingAddresses.$i.forwardingEmail)"; [ -n "$e" ]; do
+      [ "$(echo "$e" | tr 'A-Z' 'a-z')" = "$1" ] && st="$(_json "$t/fa.json" forwardingAddresses.$i.verificationStatus)"
+      i=$((i+1))
+    done
+  fi
+  rm -rf "$t"; echo "$st"
+}
+chk_fwd_added() {   # forward-to
+  [ -n "$GTOKEN" ] || return 0
+  [ -n "$(_fwd_status "$1")" ] && return
+  printf "Lucy can't find %s as a forwarding address yet.\n\n1. Click “Add a forwarding address”.\n2. Type it.\n3. Click Next. Then Proceed. Then OK.\nThen click “Check again”." "$1"
+}
+_has_filter() {   # filters.json  from  subject  to
+  local i=0 f_from f_subj fwd
+  while f_from="$(_json "$1" filter.$i.criteria.from)" || _json "$1" filter.$i.id >/dev/null; do
+    fwd="$(_json "$1" filter.$i.action.forward | tr 'A-Z' 'a-z')"
+    f_subj="$(_json "$1" filter.$i.criteria.subject)"
+    if echo "$f_from" | grep -qiF "$2" && [ "$fwd" = "$4" ] \
+       && { [ -z "$3" ] || echo "$f_subj" | grep -qiF "$3"; }; then return 0; fi
+    i=$((i+1)); [ $i -gt 400 ] && break
+  done
+  return 1
+}
+make_filters() {   # forward-to  "from|subject|Name" ...   (only the missing ones)
+  [ -n "$GTOKEN" ] || return 1
+  local to="$1"; shift
+  local t e from subj name crit code; t="$(mktemp -d)"
+  _gmail_get filters "$t/fl.json" || { rm -rf "$t"; return 1; }
+  for e in "$@"; do
+    IFS='|' read -r from subj name <<< "$e"
+    _has_filter "$t/fl.json" "$from" "$subj" "$to" && continue
+    crit="\"from\":\"$from\""; [ -n "$subj" ] && crit="$crit,\"subject\":\"$subj\""
+    code="$(curl -sS -w '%{http_code}' -o "$t/new.json" -X POST \
+      -H "Authorization: Bearer $GTOKEN" -H "Content-Type: application/json" \
+      -d "{\"criteria\":{$crit},\"action\":{\"forward\":\"$to\"}}" \
+      https://gmail.googleapis.com/gmail/v1/users/me/settings/filters 2>/dev/null)"
+    [ "$code" = 200 ] && ok "Lucy made the filter: $name" || echo "  filter $name: Google said $code" >&2
+  done
+  rm -rf "$t"; return 0
+}
+
 chk_gmail_setup() {   # gmail-we-expect  forward-to  "from|subject|Name" ...
   local want="$1" to="$2"; shift 2
   [ -n "$GTOKEN" ] || { printf "Lucy couldn't open your Gmail settings.\n\nAsk the launch team to check your forwarding and filters."; return; }
@@ -559,14 +609,7 @@ chk_gmail_setup() {   # gmail-we-expect  forward-to  "from|subject|Name" ...
   fi
   for e in "$@"; do
     IFS='|' read -r from subj name <<< "$e"
-    ok_f=0; i=0
-    while f_from="$(_json "$t/fl.json" filter.$i.criteria.from)" || _json "$t/fl.json" filter.$i.id >/dev/null; do
-      fwd="$(_json "$t/fl.json" filter.$i.action.forward | tr 'A-Z' 'a-z')"
-      f_subj="$(_json "$t/fl.json" filter.$i.criteria.subject)"
-      if echo "$f_from" | grep -qiF "$from" && [ "$fwd" = "$to" ] \
-         && { [ -z "$subj" ] || echo "$f_subj" | grep -qiF "$subj"; }; then ok_f=1; break; fi
-      i=$((i+1)); [ $i -gt 400 ] && break
-    done
+    ok_f=0; _has_filter "$t/fl.json" "$from" "$subj" "$to" && ok_f=1
     [ $ok_f = 1 ] || miss="$miss$name
 "
   done
@@ -1017,6 +1060,12 @@ write_filters "$F_RECEPTION" \
   "noreply@ownerville.com|Your Account Verification Code|$RECEPTION_EMAIL"
 write_filters "$F_LUCY" "$STERLING||$LUCY_BG_INBOX"
 
+# ONE Google "Allow" covers this step and the next: Lucy checks the
+# forwarding, then makes the filters herself. No permission -> the old
+# import-the-file steps come back as the fallback.
+if ! is_done filters_reception || ! is_done filters_lucy; then
+  gmail_auth_retry "$OWNER_EMAIL"
+fi
 if is_done filters_reception; then
   ok "Owner's Gmail forwards login codes to reception (done earlier)"
 else
@@ -1032,23 +1081,28 @@ ${RECEPTION_EMAIL}
 3. Click Next. Then Proceed. Then OK.
 
 Don't change anything else." "Owner's Gmail: reception added as a forwarding address"
+  verify fwd_reception_added "reception added as a forwarding address" chk_fwd_added "$RECEPTION_EMAIL"
   human fwd_reception_confirmed "Wait for the launch team to approve your forwarding." "Launch team approved the reception forwarding" "They confirmed it done"
   if is_done fwd_reception_confirmed || [ $DRY_RUN = 1 ]; then
-    open_chrome "$OWNER_GMAIL#settings/filters"
-    human filters_reception "Gmail is open.
+    if make_filters "$RECEPTION_EMAIL" \
+         "security.info@saraplus.com||Sara+ codes" \
+         "$STERLING|Authentication Request|Sterling codes" \
+         "noreply@ownerville.com|Your Account Verification Code|OwnerVille codes"; then
+      mark_done filters_reception
+    else
+      open_chrome "$OWNER_GMAIL#settings/filters"
+      human filters_reception "Gmail is open.
 
 1. Scroll to the bottom. Click “Import filters”.
 2. Click “Choose File”. Pick this from the Desktop:
 Gmail-Filters-1-Reception
 3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sara+, Sterling and OwnerVille login codes to reception"
-    if is_done filters_reception; then
-      gmail_auth_retry "$OWNER_EMAIL"
-      verify filters_reception "Gmail forwards login codes to reception (forwarding approved, 3 filters)" \
-        chk_gmail_setup "$OWNER_EMAIL" "$RECEPTION_EMAIL" \
-        "security.info@saraplus.com||Sara+ codes" \
-        "$STERLING|Authentication Request|Sterling codes" \
-        "noreply@ownerville.com|Your Account Verification Code|OwnerVille codes"
     fi
+    verify filters_reception "Gmail forwards login codes to reception (forwarding approved, 3 filters)" \
+      chk_gmail_setup "$OWNER_EMAIL" "$RECEPTION_EMAIL" \
+      "security.info@saraplus.com||Sara+ codes" \
+      "$STERLING|Authentication Request|Sterling codes" \
+      "noreply@ownerville.com|Your Account Verification Code|OwnerVille codes"
   fi
 fi
 
@@ -1079,23 +1133,25 @@ ${LUCY_BG_INBOX}
 3. Click Next. Then Proceed. Then OK.
 
 Don't change anything else." "Owner's Gmail: Lucy added as a forwarding address"
+  verify fwd_lucy_added "Lucy added as a forwarding address" chk_fwd_added "$LUCY_BG_INBOX"
   human fwd_lucy_approved "Wait for the launch team to approve your forwarding." "Launch team approved the Lucy forwarding" "They confirmed it done"
   if is_done fwd_lucy_approved || [ $DRY_RUN = 1 ]; then
-    open_chrome "$OWNER_GMAIL#settings/filters"
-    human filters_lucy "Gmail is open.
+    if make_filters "$LUCY_BG_INBOX" "$STERLING||Sterling background checks"; then
+      mark_done filters_lucy
+    else
+      open_chrome "$OWNER_GMAIL#settings/filters"
+      human filters_lucy "Gmail is open.
 
 1. Scroll to the bottom. Click “Import filters”.
 2. Click “Choose File”. Pick this from the Desktop:
 Gmail-Filters-2-Lucy-Background-Checks
 3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sterling background checks to Lucy"
-      if is_done filters_lucy; then
-        gmail_auth_retry "$OWNER_EMAIL"
-        verify filters_lucy "Gmail forwards background checks to Lucy (forwarding approved, filter)" \
-          chk_gmail_setup "$OWNER_EMAIL" "$LUCY_BG_INBOX" "$STERLING||Sterling background checks"
-        gmail_done
-      fi
+    fi
+    verify filters_lucy "Gmail forwards background checks to Lucy (forwarding approved, filter)" \
+      chk_gmail_setup "$OWNER_EMAIL" "$LUCY_BG_INBOX" "$STERLING||Sterling background checks"
   fi
 fi
+gmail_done
 [ $DRY_RUN = 1 ] && rm -rf "$OUT"
 
 # ------------------------------------------------------------------------
