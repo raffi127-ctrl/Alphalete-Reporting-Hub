@@ -924,7 +924,8 @@ def check_forward_scope(book=None, *, send: bool = False,
 
 
 def register_forward(book, office: str, address: str, note: str = "by hand",
-                     now: Optional[dt.datetime] = None) -> str:
+                     now: Optional[dt.datetime] = None,
+                     service: str = SARAPLUS) -> str:
     """Put ONE office's code address on MAIL_TAB without a setup run.
 
     WHY (Carlos 2026-11-02). His office Mac hit the wall at 10:01, asked for
@@ -937,13 +938,21 @@ def register_forward(book, office: str, address: str, note: str = "by hand",
 
     One row per office, same as record_forwards: an existing row is replaced.
     Returns "added" or "replaced".
+
+    service picks the tab (SERVICES[service]["tab"]). sterling_results is the
+    one a new owner/admin laptop needs (laptop_setup, 2026-11-11): that laptop
+    is not enrolled, so it cannot send its own address home, and Lucy 1 only
+    confirms a Gmail forward into lucysterlingreports@ for an address on
+    "Sterling Results Mail".
     """
+    if service not in SERVICES:
+        raise ValueError("unknown service %r" % service)
     office = (office or "").strip().lower()
     address = (address or "").strip()
     if not office or "@" not in address:
         raise ValueError("need an office key and an email address")
     now = now or dt.datetime.now().astimezone()
-    mail = _tab(book, MAIL_TAB, MAIL_HEADER)
+    mail = _tab(book, SERVICES[service]["tab"], MAIL_HEADER)
     rows = mail.get_all_values()
     row = [office, address, now.isoformat(timespec="seconds"), note]
     at = next((i for i, r in enumerate(rows[1:], start=2)
@@ -961,6 +970,9 @@ def _main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--register", nargs=2, metavar=("OFFICE", "ADDRESS"),
                     help="put this office's SaraPlus code address on the "
                          "'%s' tab (replaces an existing row)" % MAIL_TAB)
+    ap.add_argument("--service", default=SARAPLUS, choices=sorted(SERVICES),
+                    help="which tab: saraplus (default), sterling (codes) or "
+                         "sterling_results (BG results -> %s)" % RESULTS_INBOX)
     ap.add_argument("--note", default="by hand (queue)")
     ap.add_argument("--list", action="store_true",
                     help="print the offices registered (addresses masked)")
@@ -970,11 +982,13 @@ def _main(argv: Optional[List[str]] = None) -> int:
     book = open_by_key(P.RELAY_SPREADSHEET_ID)
     if a.register:
         office, address = a.register
-        what = register_forward(book, office, address, note=a.note)
-        print("%s: %s row on '%s' -> codes mailed to %s***" % (
-            office.strip().lower(), what, MAIL_TAB, address.split("@")[0][:3]))
+        what = register_forward(book, office, address, note=a.note,
+                                service=a.service)
+        print("%s: %s row on '%s' -> forwards from %s***" % (
+            office.strip().lower(), what, SERVICES[a.service]["tab"],
+            address.split("@")[0][:3]))
     if a.list or not a.register:
-        for office, address in sorted(forwarding_addresses(book).items()):
+        for office, address in sorted(forwarding_addresses(book, a.service).items()):
             print("%-14s %s***@%s" % (office, address.split("@")[0][:3],
                                       address.split("@")[-1]))
     return 0

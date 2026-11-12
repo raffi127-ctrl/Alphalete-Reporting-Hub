@@ -190,3 +190,16 @@ class RegisterByHand(unittest.TestCase):
     def test_refuses_junk(self):
         with self.assertRaises(ValueError):
             CA.register_forward(book_with([]), "x", "no-at-sign")
+
+    def test_sterling_results_goes_on_its_own_tab(self):
+        book = book_with([], mail=[["rashad", "old@x.com", "", ""]])
+        CA.register_forward(book, "newoffice", "owner@x.com", now=NOW,
+                            service=CA.STERLING_RESULTS)
+        self.assertEqual(CA.forwarding_addresses(book, CA.STERLING_RESULTS),
+                         {"newoffice": "owner@x.com"})
+        # the SaraPlus tab is untouched
+        self.assertEqual(CA.forwarding_addresses(book), {"rashad": "old@x.com"})
+
+    def test_refuses_unknown_service(self):
+        with self.assertRaises(ValueError):
+            CA.register_forward(book_with([]), "x", "a@b.c", service="nope")
