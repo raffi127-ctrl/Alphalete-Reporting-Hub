@@ -27,6 +27,8 @@ Actions:
   purge_login_test_profile   delete the leftover .ov_login_test scratch Chrome
                         profile (the one thing git_stash/git_recover won't touch)
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
+  set_cloudflare_token <tok>   install Lucy's Cloudflare key (office websites +
+                        their domain settings) in keys.json. Args auto-redacted.
   set_doubleentry_creds <user> <pass>   install the doubleentry.com financial
                         login into ownerville-creds.json + verify it by signing
                         in. The Args cell is auto-redacted when the row finishes.
@@ -249,6 +251,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "cherry_pick",
                     "set_slack_token", "set_office_slack_token",
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
+                    "set_cloudflare_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "set_credico_state", "set_ownerville_state",
@@ -430,6 +433,7 @@ _LANE_TAG_RE = r"·\s*(main|read|text)\s+lane"
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_cloudflare_token",
                   "set_posted_state",   # a 30KB blob -- blank the cell on finish
                   "set_ownerville_creds",
                   "set_appstream_account",
@@ -5187,6 +5191,45 @@ def _action_set_meta_token(args: str) -> tuple[bool, str]:
                   f"{r.get('followers_count')} followers")
 
 
+def _action_set_cloudflare_token(args: str) -> tuple[bool, str]:
+    """Install Lucy's Cloudflare API token (Megan 2026-11-12) in
+    ~/.config/brand-audit/keys.json as cloudflare_api_token: office websites
+    are hosted on Cloudflare Pages and Lucy sets each office's domain records
+    (site + Google Workspace mail). Verifies it with Cloudflare before saving;
+    never echoes it. Args are auto-redacted (SECRET_ACTIONS)."""
+    token = (args or "").strip()
+    if not token or " " in token:
+        return False, "set_cloudflare_token needs the Cloudflare API token as the Args"
+    import json
+    import shutil
+    try:
+        import requests
+        r = requests.get("https://api.cloudflare.com/client/v4/user/tokens/verify",
+                         headers={"Authorization": f"Bearer {token}"}, timeout=20).json()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't reach Cloudflare: {str(e).splitlines()[0][:100]}"
+    if not r.get("success") or (r.get("result") or {}).get("status") != "active":
+        return False, "Cloudflare says that token isn't active -- nothing saved"
+    keys_path = Path.home() / ".config" / "brand-audit" / "keys.json"
+    try:
+        data = json.loads(keys_path.read_text()) if keys_path.exists() else {}
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read keys.json: {str(e).splitlines()[0][:120]}"
+    if keys_path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(keys_path, keys_path.parent / f"keys.json.bak.{stamp}")
+        except Exception:  # noqa: BLE001
+            pass
+    data["cloudflare_api_token"] = token
+    keys_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        keys_path.write_text(json.dumps(data, indent=2))
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write keys.json: {str(e).splitlines()[0][:120]}"
+    return True, "Cloudflare token verified (active) + installed"
+
+
 def _action_set_slack_token(args: str) -> tuple[bool, str]:
     """Install/refresh the 'Lucy' Slack BOT token on THIS machine so reports that
     DM/post as Lucy run unattended here (e.g. carlos_captainship_bonus DMing the
@@ -9915,6 +9958,7 @@ ACTIONS = {
     "icd_correct_sales": _action_icd_correct_sales,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
+    "set_cloudflare_token": _action_set_cloudflare_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_appstream_creds": _action_set_appstream_creds,
     "set_appstream_username": _action_set_appstream_username,
