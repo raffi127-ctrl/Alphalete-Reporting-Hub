@@ -439,11 +439,38 @@ _pw_keys() {   # -> lines "row<TAB>labelcol<TAB>label" for every block (reads A:
     while _json "$t/k.json" valueRanges.$r.values.$i >/dev/null; do
       lab="$(_json "$t/k.json" valueRanges.$r.values.$i.0)"
       key="$(_json "$t/k.json" valueRanges.$r.values.$((i+1)).1)"
-      [ -n "$lab" ] && [ "$(echo "$key" | tr 'a-z' 'A-Z')" = UN ] && printf '%s\t%s\t%s\n' "$((i+1))" "$((r*4))" "$lab"
+      [ -n "$lab" ] && [ "$(echo "$key" | tr 'a-z' 'A-Z' | tr -d ': ')" = UN ] && printf '%s\t%s\t%s\n' "$((i+1))" "$((r*4))" "$lab"
       i=$((i+1))
     done
   done
   rm -rf "$t"
+}
+_block_free_un() {   # label-row  labelcol -> first UN row in that block whose value is EMPTY (or nothing)
+  # A block can hold several UN/PW pairs (Gmail: the owner's, then reception's
+  # -- seen in "All in One - Cyrus Wade", 2026-11-12). Never overwrite a filled
+  # UN: only an empty one is used. Reads the key column and the UN value cells
+  # one by one -- never a PW cell.
+  local lr="$1" lc="$2" t kcol vcol r k unrows="" ranges="" i=0 u
+  t="$(mktemp -d)"; kcol="$(_col $((lc+1)))"; vcol="$(_col $((lc+2)))"
+  _s_api GET "$SHEET_ID/values/${PW_TAB}%21${kcol}$((lr+1)):${kcol}$((lr+24))" "" "$t/k.json" >/dev/null
+  r=0
+  while :; do
+    k="$(_json "$t/k.json" values.$r.0 | tr 'a-z' 'A-Z' | tr -d ': ')"
+    case "$k" in
+      UN) unrows="$unrows $((lr+1+r))";;
+      PW) ;;
+      *) break;;
+    esac
+    r=$((r+1)); [ $r -gt 22 ] && break
+  done
+  for u in $unrows; do ranges="$ranges&ranges=${PW_TAB}%21${vcol}$u"; done
+  [ -n "$ranges" ] || { rm -rf "$t"; return 1; }
+  _s_api GET "$SHEET_ID/values:batchGet?${ranges#&}" "" "$t/v.json" >/dev/null
+  for u in $unrows; do
+    if [ -z "$(_json "$t/v.json" valueRanges.$i.values.0.0)" ]; then echo "$u"; rm -rf "$t"; return 0; fi
+    i=$((i+1))
+  done
+  rm -rf "$t"; return 1
 }
 _pw_free_row() {   # labelcol -> first row (1,5,9...) whose 3 rows are empty in that block column
   local lc="$1" t r col; t="$(mktemp -d)"; col="$(_col "$lc")"
@@ -501,24 +528,29 @@ PW: ${note:-your password}" "All in One: $name"
   fi
   local row lc found l
   found="$(_pw_keys | awk -F'\t' -v L="$labels" 'BEGIN{n=split(tolower(L),a,"|")} {for(i=1;i<=n;i++) if(tolower($3)==a[i]){print $1"\t"$2; exit}}')"
+  local unrow=""
   if [ -n "$found" ]; then
     row="${found%%	*}"; lc="${found##*	}"     # row = the block's LABEL row
-  else
+    unrow="$(_block_free_un "$row" "$lc")"
+  fi
+  if [ -z "$unrow" ]; then
+    # no block, or every pair in it is already filled -> a new block
     lc=4; row="$(_pw_free_row 4)"
     _put "$(_col 4)$row" "$name"; _put "$(_col 5)$((row+1))" "UN"; _put "$(_col 5)$((row+2))" "PW"
+    unrow=$((row+1))
   fi
   local vcol=$((lc+2)) uncell pwcell
-  uncell="$(_col $vcol)$((row+1))"; pwcell="$(_col $vcol)$((row+2))"
+  uncell="$(_col $vcol)$unrow"; pwcell="$(_col $vcol)$((unrow+1))"
   [ -n "$user" ] && _put "$uncell" "$user"
   if [ -n "$note" ]; then
     _put "$pwcell" "$note"; mark_done "$key"; ok "All in One: $name filled ($note)"; return
   fi
-  _paint $((row+2)) $vcol green
+  _paint $((unrow+1)) $vcol green
   human "$key" "Click your All in One tab (pinned in Chrome).
 
 Lucy typed your ${name} username.
 Type your ${name} password in the GREEN box (${pwcell})." "All in One: $name"
-  _paint $((row+2)) $vcol clear
+  _paint $((unrow+1)) $vcol clear
 }
 
 # Each check prints nothing when it's done, or what's wrong + how to fix it.
@@ -1104,7 +1136,11 @@ human allin_open "Google Drive is open.
 
 Lucy fills in this tab as you go, and pins it for you." "All in One open"
 pin_tabs allin_pin "All in One|docs.google.com/spreadsheets"
-if sheets_auth; then sleep 3; find_allin_sheet || echo "  couldn't find the All in One tab in Chrome -> typed by hand"; fi
+if sheets_auth; then
+  sleep 3; find_allin_sheet || echo "  ⚠️  Lucy couldn't find the All in One tab in the Reception Chrome -> typed by hand"
+else
+  echo "  ⚠️  Google Sheets permission didn't go through -> All in One typed by hand"
+fi
 allin_login allin_gmail "Gmail" "$RECEPTION_EMAIL"
 allin_login allin_zoom "Zoom" "your personal Gmail" "Sign in with Google (personal Gmail)"
 }
