@@ -132,8 +132,18 @@ ask_email() {   # question default -> prints a lower-cased email, asks until it 
 remember() { [ $DRY_RUN = 0 ] && { grep -v "^$1=" "$PROGRESS" 2>/dev/null > "$PROGRESS.tmp"; echo "$1=$2" >> "$PROGRESS.tmp"; mv "$PROGRESS.tmp" "$PROGRESS"; }; }
 recall()   { [ $DRY_RUN = 0 ] && sed -n "s/^$1=//p" "$PROGRESS" 2>/dev/null | tail -1; }
 
+# Every page opens in Chrome's OWN "Reception" profile, never whatever
+# profile is already open. Megan's test 2026-11-11: on a Mac whose Chrome was
+# already signed in, "open Gmail/Calendar/Drive" landed in HER Drive. A
+# separate profile starts empty, so the person always sees a sign-in screen
+# and reception's logins/passwords never mix with the owner's own Chrome.
+CHROME_PROFILE="Reception"
 open_chrome() {   # url...   (falls back to the default browser before Chrome exists)
-  if [ -d "/Applications/Google Chrome.app" ]; then run open -a "Google Chrome" "$@"; else run open "$@"; fi
+  if [ -d "/Applications/Google Chrome.app" ]; then
+    run open -na "Google Chrome" --args --profile-directory="$CHROME_PROFILE" "$@"
+  else
+    run open "$@"
+  fi
 }
 
 # ------------------------------------------------------------- installers
