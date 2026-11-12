@@ -5336,6 +5336,48 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "interviewers_retention": {
+   "hand_run_only": true,
+   "on_scheduler": false,
+   "_note": "Camila's Interviewers Retention email (built by Camila 11/11, by-day change Raf 11/12): this week by day + last 4 weeks + podium by interviewer and by office. Daily 18:00 CENTRAL to Raf, Perla and Camila, FROM alphaletereporting, replies to Camila. Moved off Camila's Mac to a Lucy 2026-11-12 (Eve). Real clock = deploy/com.alphalete.interviewers-retention.plist on Lucy 4 (fires :05 every hour; --scheduled sends only the 18:00 Central fire, once a day; output/interviewers_retention/PAUSED stops it). A bare hand run mails Eve only: `lucy rerun interviewers_retention` (add -- --dry-run to send nothing).",
+   "display_name": "Interviewers Retention — Camila's email to Raf",
+   "source_type": "local",
+   "command": [
+    "automations.interviewers_retention.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P2",
+   "timeout_minutes": 45,
+   "verify": null
+  },
+  "install_interviewers_retention_agent": {
+   "on_scheduler": true,
+   "_note": "NOT a report — one-shot LaunchAgent installer: `lucy rerun install_interviewers_retention_agent`. Bootstraps com.alphalete.interviewers-retention (Camila's 6 PM Central email) on Lucy 4. Needs the alphaletereporting Gmail app password + Drive token (Lucy 4 has both).",
+   "machine": "Lucy 4",
+   "display_name": "Install interviewers-retention agent",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "interviewers-retention"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "below_the_mark": {
    "hand_run_only": true,
    "on_scheduler": true,

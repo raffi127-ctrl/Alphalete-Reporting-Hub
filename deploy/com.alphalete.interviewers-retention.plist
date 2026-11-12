@@ -6,8 +6,8 @@
     <string>com.alphalete.interviewers-retention</string>
 
     <!-- Interviewers Retention: Raf + Perla + Camila, every day at 6 PM
-         CENTRAL (Camila, 2026-11-11). Lives on Camila's Mac (her Gmail sends
-         it). Fires at minute 5 of EVERY hour on the local clock; the module's
+         CENTRAL (Camila, 2026-11-11). Lives on a LUCY since 2026-11-12
+         (alphaletereporting sends it), not on Camila's Mac. Fires at minute 5 of EVERY hour on the local clock; the module's
          scheduled gate sends only in the 18:00 Central hour, once a day.
          Path is the laptop placeholder; install_agent.py rewrites it:
          python -m automations.day_orchestrator.install_agent interviewers-retention -->

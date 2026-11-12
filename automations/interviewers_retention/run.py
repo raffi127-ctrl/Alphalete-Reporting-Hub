@@ -21,12 +21,13 @@ The email body, top to bottom (Raf, 11/12):
 
     python -m automations.interviewers_retention.run --preview   # send nothing, open it in the browser
 
-TESTING ONLY: there is no production recipient in this file on purpose. Every
-hand run goes to TEST_TO (Camila only). --production sends to PROD_TO
-(Raf, Perla, Camila); the daily 6 PM CENTRAL send is deploy/interviewers_retention.sh
-via the com.alphalete.interviewers-retention LaunchAgent on Camila's Mac
-(her Gmail app password lives there):
-    python -m automations.day_orchestrator.install_agent interviewers-retention
+Every hand run goes to TEST_TO (Eve only). --production sends to PROD_TO
+(Raf, Perla, Camila). SENT BY A LUCY since 2026-11-12 (Eve: the point of the
+repo is that it doesn't depend on Camila's Mac), from alphaletereporting@gmail.com
+like every other automated email; replies go to Camila. The daily 6 PM CENTRAL
+send is deploy/interviewers_retention.sh via the com.alphalete.interviewers-retention
+LaunchAgent on the Lucy named in schedule_config (install_interviewers_retention_agent):
+    lucy rerun install_interviewers_retention_agent
 
     python -m automations.interviewers_retention.run --dry-run   # build + preview, send nothing
     python -m automations.interviewers_retention.run             # send to Camila only
@@ -70,24 +71,20 @@ OUT_DIR = REPO / "output" / "interviewers_retention"
 # work). Pause: touch it. Resume: delete it.
 PAUSE_FLAG = OUT_DIR / "PAUSED"
 
-# ONLY Camila while testing (Camila, 2026-11-11: "the email goes ONLY to me,
-# never to Raf"). There is deliberately no production list and no --to flag.
-TEST_TO = ["camilahornosk@gmail.com"]
+# Hand runs / samples go ONLY to Eve (Eve, 2026-11-12: sample mails go to Eve).
+TEST_TO = ["eve@alphaletemarketing.com"]
 # LIVE list (Camila, 2026-11-11): every day at 6 PM Central.
 PROD_TO = ["raffi127@gmail.com",                  # Raf
            "perlafalabella@gmail.com",            # Perla
            "camilahornosk@gmail.com"]             # Camila
 SEND_HOUR_CT = 18
 
-# SENT FROM CAMILA'S OWN GMAIL (Camila, 2026-11-11), not the shared
-# alphaletereporting@gmail.com robot. Gmail only lets a script in with an App
-# Password (Google account -> Security -> 2-Step Verification -> App passwords),
-# kept OUT of the repo in this file on the machine that sends (or in the env var).
-# Signed as Camila, so Eve's robot signature and photo are not used here.
-SENDER = "camilahornosk@gmail.com"
+# Sent by a Lucy from the shared alphaletereporting@gmail.com robot (Eve,
+# 2026-11-12) -- same sender + app password as every other automated email
+# (scheduled_6_days_out.email_send). Still signed as Camila, and replies go to
+# her: it's her report.
 SENDER_NAME = "Camila Hornos Kraschinsky"
-SENDER_PW_FILE = Path.home() / ".config" / "recruiting-report" / "camila-gmail-app-password"
-SENDER_PW_ENV = "CAMILA_GMAIL_APP_PASSWORD"
+REPLY_TO = "camilahornosk@gmail.com"
 
 
 def today_ct() -> dt.date:
@@ -222,8 +219,10 @@ def build_message(*, subject: str, to: Sequence[str], intro: str,
     from automations.shared import board_email_html as beh
 
     msg = EmailMessage()
-    msg["From"] = formataddr((SENDER_NAME, SENDER))
+    from automations.scheduled_6_days_out.email_send import FROM_ADDR
+    msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to)
+    msg["Reply-To"] = formataddr((SENDER_NAME, REPLY_TO))
     msg["Subject"] = subject
     rows = [_text_row(intro)]
     cids: List[Tuple[str, Path]] = []
@@ -254,26 +253,11 @@ def build_message(*, subject: str, to: Sequence[str], intro: str,
     return msg
 
 
-def sender_password() -> str:
-    import os
-    raw = os.environ.get(SENDER_PW_ENV, "")
-    if not raw and SENDER_PW_FILE.exists():
-        raw = SENDER_PW_FILE.read_text(encoding="utf-8-sig")
-    pw = "".join(raw.split())          # Google shows it in 4 groups with spaces
-    if not pw:
-        raise SystemExit(
-            f"No Gmail app password for {SENDER}. Create one (Google account -> "
-            f"Security -> 2-Step Verification -> App passwords) and save it, one line, "
-            f"to {SENDER_PW_FILE} -- or set {SENDER_PW_ENV}. Never commit it.")
-    return pw
-
-
 def send(msg: EmailMessage) -> None:
-    import smtplib
-    import ssl
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ssl.create_default_context()) as s:
-        s.login(SENDER, sender_password())
-        s.send_message(msg)
+    """alphaletereporting over Gmail SMTP, through the one shared sender (it
+    also records the delivery that closes a corrections ticket)."""
+    from automations.shared import report_email
+    report_email.send_message(msg)
 
 
 def write_preview(msg: EmailMessage, path: Path) -> Path:
@@ -516,7 +500,7 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
         logfn(f"[dry run] nothing sent. Preview: {eml}")
         return 0
     send(msg)
-    logfn(f"  sent from {SENDER} to {', '.join(to)} ({len(bytes(msg)) / 1024:.0f} KB)")
+    logfn(f"  sent from alphaletereporting to {', '.join(to)} ({len(bytes(msg)) / 1024:.0f} KB)")
     if production:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         sent_flag.write_text(f"{dt.datetime.now().isoformat()} -> {', '.join(to)}\n", encoding="utf-8")

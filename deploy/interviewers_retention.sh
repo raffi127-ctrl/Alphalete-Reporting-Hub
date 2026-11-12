@@ -1,9 +1,9 @@
 #!/bin/bash
 # Interviewers Retention -- the two podiums by email, every day at 6 PM CENTRAL
-# (Camila, 2026-11-11), to Raf, Perla and Camila, sent from Camila's Gmail.
+# (Camila, 2026-11-11), to Raf, Perla and Camila.
 #
-# Runs on CAMILA'S MAC: her Gmail app password lives there
-# (~/.config/recruiting-report/camila-gmail-app-password).
+# Runs on a LUCY since 2026-11-12 (not Camila's Mac), sent from
+# alphaletereporting@gmail.com. Installed by `lucy rerun install_interviewers_retention_agent`.
 # launchd fires every hour on the local clock; the module's --scheduled gate
 # sends only in the 18:00 Central hour, once a day, whatever zone the Mac is on.
 #
