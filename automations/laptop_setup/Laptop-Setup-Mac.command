@@ -1145,6 +1145,10 @@ run open -a Slack 2>/dev/null
 # the launch team makes admin; their own Slack stays on their phone (Megan +
 # Maud, 2026-11-12). Slack signs in with a code emailed to reception, so
 # there's no password to save -- it's logged in the All in One like Excel.
+human slack_invite "Wait for the launch team to invite the reception email to Slack:
+${RECEPTION_EMAIL}
+
+(The invite lands in that Gmail.)" "Launch team invited reception to Slack" "They confirmed it done"
 human slack_signin "Slack is open.
 (Look behind this box.)
 
@@ -1152,7 +1156,7 @@ Make a new Slack account for reception:
 1. Click “Create an account” (or “Sign in”).
 2. Type: ${RECEPTION_EMAIL}
 3. Slack emails a code. Open Gmail (pinned in Chrome). Type the code.
-4. Join the company Slack. (The launch team sends the invite.)
+4. Join the company Slack from the invite.
 5. In your All in One “Passwords” tab add:
 Slack · ${RECEPTION_EMAIL} · code sent to email" "Slack: reception account signed in"
 verify slack_signin "Slack signed in" chk_slack
