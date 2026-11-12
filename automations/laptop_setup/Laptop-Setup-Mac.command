@@ -560,8 +560,13 @@ verify chrome_sync "Chrome signed in as reception, sync on" chk_chrome
 }
 step_2() {
 section "Apple account (iCloud)"
-run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
-if [ "$COMPUTER" = owner ]; then
+if [ "$COMPUTER" = owner ] && [ $DRY_RUN = 0 ] && [ -z "$(chk_apple_any)" ]; then
+  # A new Mac signs in to Apple during its own first-time setup, before the
+  # call (Megan, 2026-11-11) -- so usually there's nothing to do here.
+  ok "Apple account already signed in"; is_done icloud || mark_done icloud
+  save_password pw_apple "Apple account" "apple.com"
+elif [ "$COMPUTER" = owner ]; then
+  run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
   human icloud "System Settings is open.
 (The gray ⚙️ window. Look behind this box.)
 
@@ -570,6 +575,7 @@ if [ "$COMPUTER" = owner ]; then
   verify icloud "Apple account signed in" chk_apple_any
   save_password pw_apple "Apple account" "apple.com"
 else
+  run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
   human icloud "System Settings is open.
 (The gray ⚙️ window. Look behind this box.)
 
