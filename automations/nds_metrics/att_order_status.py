@@ -342,7 +342,15 @@ def fedex_status(page, number: str, log=print) -> str:
         if len(kept) >= 3:
             break
     if not kept:
-        log("    (FedEx %s: no status read -- %d chars)" % (number, len(text or "")))
+        # what FedEx's page did show, so a wall (consent, "enable JavaScript",
+        # a bot check) is visible in the log -- 683 chars and no status on
+        # every package on 11/11
+        shown = " / ".join(_norm(l) for l in (text or "").splitlines() if _norm(l))[:400]
+        log("    (FedEx %s: no status read -- %d chars: %s)" % (number, len(text or ""), shown))
+        try:
+            page.screenshot(path=str(OUT_DIR / ("fedex_%s.png" % number)), full_page=True)
+        except Exception:  # noqa: BLE001
+            pass
         return ""
     return "FedEx %s: %s" % (number, " / ".join(kept))
 
