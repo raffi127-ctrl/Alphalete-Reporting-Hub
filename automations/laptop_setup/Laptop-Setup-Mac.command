@@ -18,10 +18,22 @@
 # Needs nothing installed first. A brand-new Mac has no Python/Homebrew, so
 # this is plain bash + built-in Mac tools only (bash 3.2 safe).
 
-DRY_RUN=0
-[ "$1" = "--dry-run" ] && DRY_RUN=1
-PROGRESS="$HOME/.laptop-setup-progress"
-[ "$1" = "--reset" ] && rm -f "$PROGRESS"
+# WHO this laptop is for (Maud, 2026-11-12: "3 different set ups pretty
+# much: Owner, Admin, Reception"). Each has its own link (the page passes
+# owner|admin|reception); they're the same walkthrough with a few differences,
+# each marked "ROLE:" where it happens. Known so far: reception uses the
+# reception iCloud, the owner their own. Admin = owner's steps until Maud's
+# list of differences says otherwise.
+DRY_RUN=0; RESET=0; ROLE=owner
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY_RUN=1;; --reset) RESET=1;;
+    owner|admin|reception) ROLE="$a";;
+  esac
+done
+case "$ROLE" in admin) ROLE_NAME="Admin";; reception) ROLE_NAME="Reception";; *) ROLE_NAME="Owner";; esac
+PROGRESS="$HOME/.laptop-setup-progress-$ROLE"
+[ $RESET = 1 ] && rm -f "$PROGRESS"
 
 # ---- Work sites (checklist: "Gmail, Google Calendar, Google Drive &") ----
 # name|url — each gets its own "log in here" step.
@@ -902,12 +914,12 @@ write_filters() {  # file  entries...(as "from|subject|to")
 
 # ===================================================================== RUN
 bold "════════════════════════════════════════════"
-bold "  Laptop Set Up — Owner & Admin"
+bold "  Laptop Set Up — $ROLE_NAME"
 [ $DRY_RUN = 1 ] && bold "  DRY RUN — nothing will change, no pop-ups"
 bold "════════════════════════════════════════════"
 
 if [ $DRY_RUN = 0 ]; then
-  _dialog "Laptop Set Up" "Hi! Let's set up this laptop.
+  _dialog "Laptop Set Up — $ROLE_NAME" "Hi! Let's set up this $ROLE_NAME laptop.
 
 A window will tell you what to do.
 Do it. Then click “I did it”.
@@ -934,11 +946,13 @@ start_downloads
 # where they type their name. It's a new laptop for them."). It's always the
 # person's own new laptop, so the Apple step uses THEIR OWN Apple account.
 # The name also tells them their Drive folder: Maud names it after them.
-COMPUTER=owner
+# ROLE: the owner (and, until told otherwise, an admin) signs in to their OWN
+# Apple account; reception's laptop uses the reception iCloud (Maud 11/11).
+if [ "$ROLE" = reception ]; then COMPUTER=office; else COMPUTER=owner; fi
 PERSON_NAME="$(recall PERSON_NAME)"
 while [ -z "$PERSON_NAME" ]; do
   if [ $DRY_RUN = 1 ]; then PERSON_NAME="Example Person"; break; fi
-  PERSON_NAME="$(osascript - "Laptop Set Up" "Type the first and last name of the ICD we're setting up." <<'APPLESCRIPT' 2>/dev/null
+  PERSON_NAME="$(osascript - "Laptop Set Up" "$( [ "$ROLE" = owner ] && echo "Type the first and last name of the ICD we're setting up." || echo "Type the first and last name of the $ROLE_NAME we're setting up." )" <<'APPLESCRIPT' 2>/dev/null
 on run argv
   try
     set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer "" buttons {"OK"} default button "OK" with icon note

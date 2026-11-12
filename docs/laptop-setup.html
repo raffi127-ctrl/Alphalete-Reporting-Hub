@@ -28,6 +28,7 @@
 </style>
 <div class="wrap">
   <h1>Set up your laptop</h1>
+  <p class="who" id="who">Owner laptop</p>
 
   <div class="step"><div class="num">1</div><div>
     Join our Zoom call on this laptop.<br>
@@ -70,7 +71,14 @@
   // remembered in ~/.laptop-setup-progress, so it carries on, not restarts.
   var URL = "https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/automations/laptop_setup/Laptop-Setup-Mac.command";
   var F = "~/Desktop/Laptop-Setup.command";
-  var CMD = "curl -fsSL " + URL + " -o " + F + " && chmod +x " + F + " && " + F;
+  // Which setup: ?for=admin / ?for=reception (default owner). Megan 2026-11-12:
+  // three versions of this link. The role rides along to the walkthrough.
+  var ROLE = (new URLSearchParams(location.search).get("for") || "owner").toLowerCase();
+  if (["owner", "admin", "reception"].indexOf(ROLE) < 0) ROLE = "owner";
+  var CMD = "curl -fsSL " + URL + " -o " + F + " && chmod +x " + F + " && " + F + " " + ROLE;
+  var LABEL = {owner: "Owner", admin: "Admin", reception: "Reception"}[ROLE];
+  document.getElementById("who").textContent = LABEL + " laptop";
+  document.title = "Set up your laptop — " + LABEL;
   // "Open Terminal": a web page can't start a Terminal shell, but macOS's own
   // x-man-page:// link does open Terminal (Chrome asks "Open Terminal?"
   // first). It opens a finished man-page window, so the page tells them to
