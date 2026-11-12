@@ -51,7 +51,9 @@ td {{ padding: 8px 12px; text-align: right; border-bottom: 1px solid #d9ddd6;
 th.l, td.l {{ text-align: left; }}
 td.rk {{ color: #5f6a63; }}
 td.nm {{ white-space: normal; font-weight: 600; }}
-td.nm div {{ max-width: 340px; }}   /* a long office list wraps, never widens the table */
+td.nm div {{ max-width: 340px; }}
+td.ow {{ white-space: normal; color: #5f6a63; font-size: {BASE_PX - 4}px; }}
+td.ow div {{ max-width: 240px; }}   /* a long office list wraps, never widens the table */
 td.nm small {{ display: block; font-weight: 400; color: #5f6a63;
               font-size: {BASE_PX - 6}px; margin-top: 2px; }}
 td.good {{ background: {GREEN_BG}; color: {GREEN_FG}; font-weight: 700; }}
@@ -67,19 +69,32 @@ def fmt(p: Optional[float]) -> str:
     return "—" if p is None else f"{round(p * 100)}%"
 
 
+def owner_column(b) -> bool:
+    """Interviewer boards get the owner in its own column right next to the name
+    (Raf 11/12: "separate the owner from the interviewing team")."""
+    return b.name_header == "Interviewer"
+
+
+def owner_td(ln) -> str:
+    return f'<td class="l ow"><div>{html.escape(", ".join(ln.detail))}</div></td>'
+
+
 def board_html(b: Board, show_detail: bool = True) -> str:
     e = html.escape
     hist = b.history_labels
+    own = owner_column(b)
     head = (f'<th>#</th><th class="l">{e(b.name_header)}</th>'
-            '<th>Booked</th><th>Showed</th><th>%</th>'
+            + ('<th class="l">Owner</th>' if own else '')
+            + '<th>Booked</th><th>Showed</th><th>%</th>'
             + "".join(f'<th class="{"hist" if i == 0 else ""}">{e(l)}</th>'
                       for i, l in enumerate(hist)))
     rows: List[str] = []
     for i, ln in enumerate(b.lines, 1):
         det = (f"<small>{e(', '.join(ln.detail))}</small>"
-               if show_detail and ln.detail else "")
+               if show_detail and ln.detail and not own else "")
         cells = [f'<td class="rk">{i}</td>',
                  f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>',
+                 *([owner_td(ln)] if own else []),
                  f"<td>{ln.booked}</td>", f"<td>{ln.showed}</td>",
                  f'<td class="{colour(ln.pct)}">{fmt(ln.pct)}</td>']
         for j, p in enumerate(ln.history):
@@ -168,7 +183,10 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     e = html.escape
     sub_px, th_px, small_px = base - 4, max(base - 8, 12), max(base - 6, 12)
     per_day = 1 if compact else 3
+    own = owner_column(b)
     top = [f'<th rowspan="2">#</th>', f'<th rowspan="2" class="l">{e(b.name_header)}</th>']
+    if own:
+        top.append('<th rowspan="2" class="l">Owner</th>')
     second = []
     for i, d in enumerate(b.days):
         # Compact: the day on two short lines, so the header never sets the width.
@@ -184,8 +202,10 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
                    for i, l in enumerate(b.history_labels)]
     rows = []
     for n, ln in enumerate(b.lines, 1):
-        det = f"<small>{e(', '.join(ln.detail))}</small>" if ln.detail else ""
+        det = f"<small>{e(', '.join(ln.detail))}</small>" if ln.detail and not own else ""
         cells = [f'<td class="rk">{n}</td>', f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>']
+        if own:
+            cells.append(owner_td(ln))
         for d in b.days:
             bk, sh = ln.days.get(d, [0, 0])
             p = pct(sh, bk)
@@ -211,6 +231,8 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     .board td.h {{ font-size:{base - 2}px; }}
     .board td.nm small {{ font-size:{small_px}px; }}
     .board td.nm div {{ max-width:{base * 10}px; }}
+    .board td.ow {{ font-size:{sub_px}px; }}
+    .board td.ow div {{ max-width:{base * 8}px; }}
     .board th.c {{ text-align:center; }}
     .board th.grp, .board td.grp {{ border-left:2px solid #b9bfb4; }}
     .board th.wk {{ background:#e3e7e0; color:#1d2420; }}

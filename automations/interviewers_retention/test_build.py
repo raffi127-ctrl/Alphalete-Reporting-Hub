@@ -34,20 +34,22 @@ class Weeks(unittest.TestCase):
                          [("Atef", "Gabriela", 10, 5), ("Atef", "Nicole", 4, 1),
                           ("Omar", "Gabriela", 10, 8), ("Kash", "Valeria", 0, 0)])
 
-    def test_interviewer_sums_across_offices_and_ranks(self):
+    def test_interviewer_one_row_per_office_and_ranks(self):
+        # Raf 11/12: an interviewer who works for 2 owners gets 2 rows, never summed.
         pi, po = build.podiums(build.parse_weeks(TAB, TODAY))
-        self.assertEqual([(l.name, l.booked, l.showed) for l in pi.lines],
-                         [("Gabriela", 20, 13), ("Nicole", 4, 1)])   # Valeria: 0 booked, left out
-        self.assertEqual(pi.lines[0].detail, ["Atef", "Omar"])
+        self.assertEqual([(l.name, l.detail, l.booked, l.showed) for l in pi.lines],
+                         [("Gabriela", ["Omar"], 10, 8), ("Gabriela", ["Atef"], 10, 5),
+                          ("Nicole", ["Atef"], 4, 1)])   # Valeria: 0 booked, left out
         self.assertEqual([(l.name, l.booked, l.showed) for l in po.lines],
                          [("Omar", 10, 8), ("Atef", 14, 6)])
 
     def test_history_is_prior_weeks_oldest_first(self):
         pi, po = build.podiums(build.parse_weeks(TAB, TODAY))
         self.assertEqual(pi.history_labels, ["10/25", "11/1", "11/8"])
-        g = pi.lines[0]
-        self.assertEqual(g.history, [None, 0.5, 0.65])    # 10/25 none, 11/1 = 3/6, 11/8 = 13/20
-        self.assertEqual(pi.lines[1].history, [0.5, None, 0.25])
+        # Each office's row keeps its OWN history: Gabriela for Omar, then for Atef.
+        self.assertEqual(pi.lines[0].history, [None, 1.0, 0.8])     # Omar: 11/1 = 2/2, 11/8 = 8/10
+        self.assertEqual(pi.lines[1].history, [None, 0.25, 0.5])    # Atef: 11/1 = 1/4, 11/8 = 5/10
+        self.assertEqual(pi.lines[2].history, [0.5, None, 0.25])
 
     def test_header_spellings_and_skipped_boxes(self):
         tab = [["11/15", "", " INTERVIEWERS RETENTION"], ["", "OFFICE"],
@@ -72,7 +74,7 @@ class Weeks(unittest.TestCase):
             {"Atef": {day: SimpleNamespace(by={"G": [3, 2], "N": [2, 0]})},
              "Omar": {day: SimpleNamespace(by={"G": [1, 1]})}}, day)
         self.assertTrue(has)
-        self.assertEqual([(l.name, l.booked, l.showed) for l in bi.lines], [("G", 4, 3), ("N", 2, 0)])
+        self.assertEqual([(l.name, l.booked, l.showed) for l in bi.lines], [("G", 1, 1), ("G", 3, 2), ("N", 2, 0)])
         self.assertEqual([(l.name, l.booked, l.showed) for l in bo.lines], [("Omar", 1, 1), ("Atef", 5, 2)])
 
 
@@ -134,12 +136,28 @@ class ByDay(unittest.TestCase):
         second = {"Atef": {d1: SimpleNamespace(by={"Gaby": [4, 1]}), d2: SimpleNamespace(by={"Gaby": [0, 0]})},
                   "Omar": {d1: SimpleNamespace(by={"Nic": [2, 2]})}}
         lines = build.interviewer_days(second, [d1, d2], {})
-        b = build.week_board(lines, [d1, d2], False, "T", "Interviewer", {"nic": [0.5, None, 1.0, 1.0]},
+        b = build.week_board(lines, [d1, d2], False, "T", "Interviewer", {"nic|omar": [0.5, None, 1.0, 1.0]},
                              ["10/18", "10/25", "11/1", "11/8"])
         self.assertEqual([(l.name, l.booked, l.showed) for l in b.lines], [("Nic", 2, 2), ("Gaby", 4, 1)])
         self.assertIsNone(b.lines[1].day_pct(d2))          # 0 booked -> no %, drawn as —
         self.assertEqual(b.lines[0].history, [0.5, None, 1.0, 1.0])
         self.assertEqual(b.lines[1].history, [None] * 4)
+
+
+class OnePerOffice(unittest.TestCase):
+    def test_rafaela_gets_a_row_per_owner_and_owner_has_its_own_column(self):
+        # Raf 11/12: Rafaela works for Haytham AND Rafael -> two rows, one per owner.
+        from automations.interviewers_retention import render
+        d = dt.date(2026, 11, 10)
+        second = {"Haytham Nagi": {d: SimpleNamespace(by={"Rafaela": [5, 1]})},
+                  "Rafael Hidalgo": {d: SimpleNamespace(by={"Rafaela": [2, 2]})}}
+        b = build.week_board(build.interviewer_days(second, [d], {}), [d], False, "T",
+                             "Interviewer", {}, [])
+        self.assertEqual([(l.name, l.detail, l.booked, l.showed) for l in b.lines],
+                         [("Rafaela", ["Rafael Hidalgo"], 2, 2), ("Rafaela", ["Haytham Nagi"], 5, 1)])
+        doc = render.day_board_html(b, compact=True, base=20)
+        self.assertIn(">Owner</th>", doc)
+        self.assertNotIn("<small>", doc)       # owner no longer squeezed under the name
 
 
 class ArsWeeks(unittest.TestCase):

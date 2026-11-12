@@ -200,14 +200,21 @@ class Line:
     showed: int = 0
     detail: List[str] = field(default_factory=list)       # their offices / interviewers
     history: List[Optional[float]] = field(default_factory=list)   # oldest -> newest
+    key: str = ""
 
     @property
     def pct(self) -> Optional[float]:
         return pct(self.showed, self.booked)
 
 
+def ikey(interviewer: str, owner: str) -> str:
+    """One row per interviewer PER OFFICE (Raf 11/12: Rafaela works for Haytham
+    and for Rafael -> two rows, one under each owner, never summed)."""
+    return f"{name_key(interviewer)}|{name_key(owner)}"
+
+
 def _add(lines: Dict[str, Line], key: str, name: str, b: int, s: int, detail: str):
-    ln = lines.setdefault(key, Line(name=name))
+    ln = lines.setdefault(key, Line(name=name, key=key))
     ln.booked += b
     ln.showed += s
     if detail and detail not in ln.detail:
@@ -217,7 +224,7 @@ def _add(lines: Dict[str, Line], key: str, name: str, b: int, s: int, detail: st
 def by_interviewer(rows: Iterable[Row]) -> Dict[str, Line]:
     out: Dict[str, Line] = {}
     for r in rows:
-        _add(out, name_key(r.interviewer), r.interviewer, r.booked, r.showed, r.owner)
+        _add(out, ikey(r.interviewer, r.owner), r.interviewer, r.booked, r.showed, r.owner)
     return out
 
 
@@ -275,7 +282,7 @@ def podiums(weeks: List[Week], pick: int = 0) -> Tuple[Board, Board]:
     def board(lines, hist, title, header) -> Board:
         out = ranked(lines)
         for ln in out:
-            k = name_key(ln.name)
+            k = ln.key or name_key(ln.name)
             ln.history = [h[k].pct if k in h else None for h in hist]
         return Board(title=title, subtitle=week_span(wk), name_header=header,
                      lines=out, history_labels=labels)
@@ -299,7 +306,7 @@ def yesterday_boards(second: Dict[str, Dict[dt.date, object]], day: dt.date
         if sr is None:
             continue
         for interviewer, (b, s) in getattr(sr, "by", {}).items():
-            _add(ints, name_key(interviewer), interviewer, b, s, owner)
+            _add(ints, ikey(interviewer, owner), interviewer, b, s, owner)
             _add(offs, name_key(owner), owner, b, s, interviewer)
     sub = f"{day:%A} {md(day)}"
     bi = Board("YESTERDAY BY INTERVIEWER", sub, "Interviewer", ranked(ints))
@@ -528,8 +535,8 @@ def resolve_interviewer(owner: str, short: str, tab_people: Dict[str, List[str]]
 
 def interviewer_days(second: Dict[str, Dict[dt.date, object]], days: List[dt.date],
                      tab_people: Dict[str, List[str]], resolve=None) -> Dict[str, DayLine]:
-    """{name key: DayLine} from call_list_to_2nd.read_second_rounds' blocks,
-    one interviewer summed across every office they worked."""
+    """{interviewer|owner key: DayLine} from call_list_to_2nd.read_second_rounds'
+    blocks: one row per interviewer PER OFFICE (Raf 11/12)."""
     out: Dict[str, DayLine] = {}
     for owner, by_day in second.items():
         for d in days:
@@ -539,7 +546,7 @@ def interviewer_days(second: Dict[str, Dict[dt.date, object]], days: List[dt.dat
             for short, (b, s) in getattr(sr, "by", {}).items():
                 name = (resolve(owner, short) if resolve
                         else resolve_interviewer(owner, short, tab_people))
-                k = name_key(name)
+                k = ikey(name, owner)
                 ln = out.setdefault(k, DayLine(name=name, key=k))
                 cell = ln.days.setdefault(d, [0, 0])
                 cell[0] += b
@@ -663,8 +670,8 @@ def sunday_of(d: dt.date) -> dt.date:
 
 def ars_interviewer_weeks(second: Dict[str, Dict[dt.date, object]], sundays: List[dt.date],
                           resolve: "Resolver") -> Dict[dt.date, Dict[str, Line]]:
-    """{week Sunday: {interviewer key: Line}} -- each interviewer's 2nd rounds
-    of that Sun-Sat week, summed across the days and every office they worked."""
+    """{week Sunday: {interviewer|owner key: Line}} -- each interviewer's 2nd
+    rounds of that Sun-Sat week, one entry PER OFFICE they worked (Raf 11/12)."""
     want = set(sundays)
     out: Dict[dt.date, Dict[str, Line]] = {w: {} for w in sundays}
     for owner, by_day in second.items():
@@ -674,7 +681,7 @@ def ars_interviewer_weeks(second: Dict[str, Dict[dt.date, object]], sundays: Lis
                 continue
             for short, (b, s) in getattr(sr, "by", {}).items():
                 name = resolve(owner, short)
-                _add(out[w], name_key(name), name, b, s, owner)
+                _add(out[w], ikey(name, owner), name, b, s, owner)
     return out
 
 
@@ -682,7 +689,7 @@ def interviewer_podium_ars(per_week: Dict[dt.date, Dict[str, Line]], week: dt.da
     weeks = [week - dt.timedelta(days=7 * k) for k in range(HISTORY_WEEKS)][::-1]
     lines = ranked(per_week.get(week, {}))
     for ln in lines:
-        k = name_key(ln.name)
+        k = ln.key
         ln.history = [per_week[w][k].pct if k in per_week.get(w, {}) else None for w in weeks]
     sub = (f"week of {md(week)} (Sun {md(week)} - Sat {md(week + dt.timedelta(days=6))}) "
            f"· source: ARS REPORT")
