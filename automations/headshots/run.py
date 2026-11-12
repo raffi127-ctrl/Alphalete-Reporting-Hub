@@ -83,7 +83,7 @@ def acquire_lock() -> bool:
                 age = time.time() - _LOCK.stat().st_mtime
             except OSError:
                 age = 0
-            if age < _STALE_LOCK_SECONDS:
+            if age < _STALE_LOCK_SECONDS and not os.environ.get("HEADSHOTS_TAKE_LOCK"):
                 return False
             print(f"  headshots lock held {int(age // 60)} min by pid {old} "
                   "-- ending the stuck run")
