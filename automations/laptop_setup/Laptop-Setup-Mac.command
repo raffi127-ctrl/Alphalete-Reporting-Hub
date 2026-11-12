@@ -109,13 +109,15 @@ LAST_MSG=""; LAST_SHOWN=0
 human() {
   # 4th arg: the "done" button's words (default "I did it"); launch-team
   # steps say "They confirmed it done" (Megan, 2026-11-11).
-  local key="$1" msg="$2" label="${3:-$TITLE}" done="${4:-I did it}"
+  # 5th arg "required": no Skip button (the step everything else depends on).
+  local key="$1" msg="$2" label="${3:-$TITLE}" done="${4:-I did it}" req="${5:-}"
   [ "$GO" = back ] && return 1
   LAST_MSG="$msg"; LAST_SHOWN=0
   if [ "$FORCE" = 0 ] && is_done "$key"; then ok "$label (done earlier)"; return 0; fi
   LAST_SHOWN=1
   if [ $DRY_RUN = 1 ]; then echo "  (pop-up) $label"; return 0; fi
-  local btns="Skip,$done"; [ "$N" -gt 1 ] && btns="Back,Skip,$done"
+  local skip="Skip,"; [ "$req" = required ] && skip=""
+  local btns="${skip}$done"; [ "$N" -gt 1 ] && btns="Back,${skip}$done"
   local b; b="$(_dialog "Step $N of $TOTAL — $TITLE" "$msg" "$btns" "$done")"
   [ "$b" = "Back" ] && { GO=back; return 1; }
   if [ "$b" = "$done" ]; then is_done "$key" || mark_done "$key"; ok "$label"; return 0; fi
@@ -531,7 +533,7 @@ Example: Alphalete Marketing" "")"
 Make this Gmail:
 ${RECEPTION_EMAIL}
 
-Name: ${SHORT_NAME} Reception" "Reception email created"; then
+Name: ${SHORT_NAME} Reception" "Reception email created" "I did it" required; then
     # Google sometimes says the name is taken and makes them pick another.
     # Every later step uses this address, so ask which one they ended up with.
     if [ $DRY_RUN = 0 ] && [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Is this your new email?
