@@ -19,7 +19,8 @@ if TYPE_CHECKING:          # annotations only -- never imported at run time, so
     from automations.apex_new_starts import blueink_data as BID  # noqa: F401
 
 
-def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
+def apex_values(c: BRD.Candidate, hire: BID.NewHire,
+                office_key: str = "") -> dict:
     """Everything that goes into Apex for one person, from three sources.
 
       the I-9        who they are   -- name, address, DOB, email, phone
@@ -43,6 +44,24 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
                                             # NewHire.fillable
     v.update(AX.DEFAULTS)
     v.update(AX.TAX_DEFAULTS)
+
+    # THE RATE IS THE OFFICE'S, NOT A CONSTANT (Megan, 2026-11-12: "Rate of
+    # pay is something that we should ask the ICD upon enrollment ... to make
+    # sure we're putting the right information for their office here"). The
+    # $10.00 in DEFAULTS is Alphalete's. Apex will not save without a rate, so
+    # a missing one has to hold the person back and say so -- typing somebody
+    # else's number onto a payroll record is the one outcome nobody would see
+    # was wrong.
+    if office_key:
+        try:
+            from automations.icd_onboarding import office_steps as OS
+            said = OS.rate_of_pay(office_key)
+        except Exception:      # noqa: BLE001 -- unreadable is not "use ours"
+            said = None
+        if said:
+            v["rate"] = said
+        elif str(office_key).strip().lower() != "raf":
+            v.pop("rate", None)
     email = v.pop("email", "")
     if email:
         v["account_email"] = email

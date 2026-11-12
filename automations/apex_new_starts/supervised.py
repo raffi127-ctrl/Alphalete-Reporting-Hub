@@ -363,7 +363,7 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
     # The packet. NO SOCIAL: keep_ssn stays off, so there is nothing here that
     # could reach a log, a result or a Google Sheet.
     hires = BID.for_people([person], keep_ssn=False)
-    got = ECO.plan([person], hires, log=log)
+    got = ECO.plan([person], hires, log=log, office_key=office_key)
     if not got["ready"]:
         why = (got["blocked"] or [{}])[0].get("why", "unknown")
         log("  held back: %s" % why)

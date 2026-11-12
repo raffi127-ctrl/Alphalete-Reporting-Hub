@@ -457,7 +457,7 @@ def test_somebody_removed_on_the_board_never_reaches_apex(monkeypatch):
     no-shows or fails a check. An Apex record is payroll with no undo."""
     seen = []
     monkeypatch.setattr(eco_run, "plan",
-                        lambda people, hires, log=print:
+                        lambda people, hires, log=print, office_key="":
                         seen.append([p.name for p in people])
                         or {"ready": [], "blocked": []})
     _patch(monkeypatch, rows=_rows("Ada Fournier", "Dev Rao"),
@@ -535,3 +535,33 @@ def test_a_report_that_came_back_empty_blocks_everybody():
     got = eco_run._from_report(None, ["Ada Fournier"], log=lambda *a: None)
     assert got["added"] == []
     assert got["blocked"][0]["name"] == "Ada Fournier"
+
+
+def test_an_office_with_no_rate_holds_the_person_back(monkeypatch):
+    """Apex REFUSES the save without a Rate of Pay -- the first completed
+    record bounced on exactly that. And the rate is the office's own, so a
+    missing one must hold the person back, not quietly pay them Alphalete's
+    (Megan, 2026-11-12)."""
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {
+                            "dob": "10/25/2002", "address1": "x",
+                            "city": "Dallas", "zip": "75262"})
+    person = eco_run.Starter(name="Ada Fournier", email="a@b.c")
+    got = eco_run.plan([person], {"Ada Fournier": _hire("Ada Fournier")},
+                       log=lambda *a: None, office_key="someone")
+    assert got["ready"] == []
+    why = got["blocked"][0]["why"]
+    assert "Rate of Pay" in why and "enrolment" in why, why
+
+
+def test_a_rate_that_is_there_lets_them_through(monkeypatch):
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {
+                            "dob": "10/25/2002", "address1": "x",
+                            "city": "Dallas", "zip": "75262", "rate": "12.00"})
+    person = eco_run.Starter(name="Ada Fournier", email="a@b.c")
+    got = eco_run.plan([person], {"Ada Fournier": _hire("Ada Fournier")},
+                       log=lambda *a: None, office_key="jacob")
+    assert [p.name for p, _ in got["ready"]] == ["Ada Fournier"]

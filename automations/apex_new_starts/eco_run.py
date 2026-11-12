@@ -74,7 +74,7 @@ def starters(rows: List[Dict], day: Optional[dt.date] = None) -> List[Starter]:
 
 
 def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
-         log=print) -> Dict:
+         log=print, office_key: str = "") -> Dict:
     """Who can go in, and why anybody cannot -- without touching Apex.
 
     Returns {ready: [(Starter, values)], blocked: [{name, why}]}. Nothing is
@@ -92,12 +92,19 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
             blocked.append({"name": p.name,
                             "why": "no signed Blue Ink packet — type this one by hand"})
             continue
-        values = V.apex_values(p, hire)
-        gaps = [lbl for lbl in ("dob", "address1", "city", "zip")
+        values = V.apex_values(p, hire, office_key)
+        # Rate of Pay is in here because Apex REFUSES THE SAVE without one,
+        # and because it is the office's own number -- an office nobody has
+        # asked has none, and that must hold the person back rather than
+        # quietly paying them Alphalete's rate (Megan, 2026-11-12).
+        gaps = [lbl for lbl in ("dob", "address1", "city", "zip", "rate")
                 if not values.get(lbl)]
         if gaps:
             blocked.append({"name": p.name,
-                            "why": "their packet is missing " + ", ".join(gaps)})
+                            "why": ("this office has no Rate of Pay on its "
+                                    "enrolment — ask the ICD and add it"
+                                    if gaps == ["rate"] else
+                                    "their packet is missing " + ", ".join(gaps))})
             continue
         ready.append((p, values))
     log("  %d ready, %d held back" % (len(ready), len(blocked)))
@@ -173,7 +180,7 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
         return _result(monday, status="error", live=live, counted=len(people),
                        error="Blue Ink: %s: %s" % (type(e).__name__, str(e)[:200]))
 
-    got = plan(people, hires, log=log)
+    got = plan(people, hires, log=log, office_key=office_key)
     if not live:
         return _result(monday, status="dry_run", live=False, counted=len(people),
                        added=[p.name for p, _ in got["ready"]],

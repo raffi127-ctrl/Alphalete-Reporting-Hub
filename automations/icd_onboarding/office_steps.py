@@ -33,6 +33,7 @@ from typing import Dict, List, Optional, Sequence
 TAB = "Office Settings"
 COL_OFFICE = "Office"
 COL_BLUEINK = "Blue Ink"
+COL_RATE = "Rate of Pay"
 
 YES = {"yes", "y", "true", "1", "on"}
 NO = {"no", "n", "false", "0", "off", "none"}
@@ -88,6 +89,40 @@ def uses_blueink(office_key: str, book=None) -> Optional[bool]:
         if said in NO:
             return False
         return None
+    return None
+
+
+def rate_of_pay(office_key: str, book=None) -> Optional[str]:
+    """What this office pays per hour, or None when nobody has said.
+
+    Megan, 2026-11-12, after Apex refused the first completed record: *"Rate
+    of pay is something that we should ask the ICD upon enrollment, by the
+    way, to make sure we're putting the right information for their office
+    here."*
+
+    APEX WILL NOT SAVE WITHOUT IT -- the first supervised run filled every
+    other box correctly and still bounced on "Rate of Pay is required".
+
+    NONE IS NOT A DEFAULT. $10.00 is what Alphalete pays, and it reached the
+    code as a constant; another office's rate is their own, like their address
+    and their pay facts. An office nobody has asked returns None and the
+    person is held back and named, because a wrong rate lands on a real
+    payroll record and nobody would see it was wrong.
+    """
+    key = str(office_key or "").strip().lower()
+    if not key:
+        return None
+    for r in _rows(book):
+        if r.get(COL_OFFICE, "").strip().lower() != key:
+            continue
+        said = str(r.get(COL_RATE, "")).strip().lstrip("$").strip()
+        if not said:
+            return None
+        try:
+            return "%.2f" % float(said)
+        except ValueError:
+            # Words in a money column: say nothing rather than type them in.
+            return None
     return None
 
 
