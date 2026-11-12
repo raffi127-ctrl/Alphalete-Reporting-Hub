@@ -457,7 +457,7 @@ OFFICE_TIMEZONES: dict = {
     "miguel":  "America/Los_Angeles",          # Nobilis Marketing Group (ATT Fiber, 24145), Sacramento CA (order-log zips 958xx, 2026-11-06) -- PACIFIC
     "emiliano": "America/Los_Angeles",         # Vincere Marketing (ATT Fiber, 22001), Gold River / Sacramento CA (captainship zones.py) -- PACIFIC
     "natalia": "America/Los_Angeles",          # Zora Industries (ATT Fiber, 23431), San Leandro CA (captainship zones.py) -- PACIFIC (OwnerVille address, harvested)
-    "zaid":   "America/Chicago",               # Zaid Arabiyat (NDS, Khalil's captainship) -- PLACEHOLDER until order-log zips confirm
+    "zaid":   "America/New_York",              # Zaid Arabiyat / Aces Acquisitions (NDS, Khalil's captainship): Boston MA + southern NH by order-log zips (02124, 03103, 03060, 01841) and his Slack clock -- EASTERN
     "juan":   "America/Chicago",               # Juan Lucio / Lucio Marketing (NDS), Corpus Christi TX (order-log zips 784xx; OV address McAllen) -- CENTRAL
     "sahil":   "America/New_York",             # M Coast, Raleigh NC -- Eastern
     "starr":   "America/Los_Angeles",          # Nova Management, Fremont CA -- Pacific
