@@ -131,23 +131,43 @@ def test_the_result_that_goes_to_the_relay_carries_no_social(monkeypatch):
     assert NUMBER not in blob and "ssn" not in blob.lower()
 
 
+def _armed(monkeypatch, *, added=(), blocked=()):
+    """Open the save gate and stand in for the driven engine.
+
+    The gate is the real behaviour -- a live run refuses until somebody has
+    watched one record save. These tests are about what happens AFTER that, so
+    they arm it deliberately and never touch Apex.
+    """
+    monkeypatch.setenv("APEX_FILL_PROVEN", "1")
+    monkeypatch.setattr(eco_run, "_genders_from_board",
+                        lambda office_key, monday, log=print: {})
+
+    class _S:
+        page = object()
+        def require_login(self):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(eco_run.apex, "ApexSession", lambda *a, **k: _S())
+    monkeypatch.setattr(eco_run, "fill_week",
+                        lambda page, ready, hires, week, genders=None, log=print:
+                        {"added": list(added), "blocked": [dict(b) for b in blocked]})
+
+
 def test_one_person_apex_refuses_does_not_stop_the_rest(monkeypatch):
     _patch(monkeypatch, rows=_rows("Ada Fournier", "Dev Rao"),
            hires={"Ada Fournier": _hire("Ada Fournier", ssn=True),
                   "Dev Rao": _hire("Dev Rao", ssn=True)})
 
-    def fill(person, values, hire, log=print):
-        if person.name == "Ada Fournier":
-            raise RuntimeError("Apex said no")
-
-    monkeypatch.setattr(eco_run, "fill_one", fill)
+    _armed(monkeypatch, added=["Dev Rao"],
+           blocked=[{"name": "Ada Fournier", "why": "employment: Apex refused it"}])
     res = eco_run.run_week(MONDAY, office_appstream="11280", live=True,
                            log=lambda *a: None)
     assert res["added"] == ["Dev Rao"]
     held = {b["name"]: b["why"] for b in res["needs_hand"]}
     assert "Ada Fournier" in held
-    assert "Apex said no" not in held["Ada Fournier"], \
-        "exception TEXT is not quoted back — it can contain a field value"
 
 
 # --------------------------------------------------------------- the week
@@ -375,6 +395,7 @@ def test_a_live_run_ticks_added_to_apex_for_whoever_it_saved(monkeypatch):
     _patch(monkeypatch, rows=_rows("Ada Fournier", "Dev Rao"),
            hires={"Ada Fournier": _hire("Ada Fournier", ssn=True),
                   "Dev Rao": _hire("Dev Rao", ssn=True)})
+    _armed(monkeypatch, added=["Ada Fournier", "Dev Rao"])
     eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
                      live=True, log=lambda *a: None)
     assert told["office"] == "raf" and told["source"] == "apex"
@@ -402,6 +423,7 @@ def test_a_board_that_cannot_be_ticked_never_fails_the_run(monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no board")))
     _patch(monkeypatch, rows=_rows("Ada Fournier"),
            hires={"Ada Fournier": _hire("Ada Fournier", ssn=True)})
+    _armed(monkeypatch, added=["Ada Fournier"])
     said = []
     res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
                            live=True, log=said.append)
@@ -468,3 +490,48 @@ def test_everyone_removed_is_a_week_with_nobody_not_a_crash(monkeypatch):
     res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
                            live=False, log=lambda *a: None)
     assert res["status"] == "none"
+
+
+# --------------------------------------------- the gate, and what it stands for
+
+def test_a_live_run_refuses_until_somebody_has_watched_one_save(monkeypatch):
+    """Nothing in this repo has ever saved an Apex record unwatched. The gate
+    is not a formality -- a half-right save lands on a real person's payroll
+    record and there is no undo."""
+    monkeypatch.delenv("APEX_FILL_PROVEN", raising=False)
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier", ssn=True)})
+    touched = []
+    monkeypatch.setattr(eco_run, "fill_week",
+                        lambda *a, **k: touched.append(a) or {"added": [], "blocked": []})
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                           live=True, log=lambda *a: None)
+    assert res["status"] == "error"
+    assert "never been watched" in res["error"]
+    assert touched == [], "Apex must not be opened at all"
+    assert res["added"] == []
+
+
+def test_the_payload_is_built_with_the_engines_own_field_map():
+    """Writing a second values-to-page mapping here is how the two copies of
+    this would start disagreeing about which Apex box a value belongs in."""
+    import inspect
+    src = inspect.getsource(eco_run.payload_for)
+    assert "rows_for" in src, "it has to use filler.rows_for"
+
+
+def test_silence_about_a_person_is_never_a_save():
+    """The engine reports per person. Somebody it said nothing about did not
+    go in -- counting them as added would tick a board for a payroll record
+    that does not exist."""
+    got = eco_run._from_report(
+        [{"name": "Ada Fournier", "ok": True}],
+        ["Ada Fournier", "Dev Rao"], log=lambda *a: None)
+    assert got["added"] == ["Ada Fournier"]
+    assert [b["name"] for b in got["blocked"]] == ["Dev Rao"]
+
+
+def test_a_report_that_came_back_empty_blocks_everybody():
+    got = eco_run._from_report(None, ["Ada Fournier"], log=lambda *a: None)
+    assert got["added"] == []
+    assert got["blocked"][0]["name"] == "Ada Fournier"

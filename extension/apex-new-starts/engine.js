@@ -1313,6 +1313,15 @@ window.__ansEngine = function (CFG) {
    return made;
  }
  window.__ansAddMissing=addMissing;
+ /* WHICH OF THE TWO A PERSON NEEDS (Megan, 2026-11-11: "needs to be able
+    to know if they need added or if they just need the user profile
+    completed because they are already on the pending"). addMissing has
+    always asked this question and kept the answer to itself, so a driven
+    run could only guess from runPerson failing. Returns true, false, or a
+    STRING saying why it could not tell -- and "could not tell" must never
+    be read as "not there": creating somebody who is already in Apex makes
+    a second payroll record for a real employee. */
+ window.__ansExistsAnywhere=existsAnywhere;
  /* The two controls the Add path hangs on, reachable from a test. They
     were matched on exact text and silently found nothing on the real
     roster; nothing pinned either of them. */

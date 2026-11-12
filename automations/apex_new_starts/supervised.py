@@ -258,6 +258,48 @@ def _hold_open(page, log=print, *, minutes: int = HOLD_MINUTES) -> None:
             return
 
 
+def _pages(values):
+    """{page: {Apex label: value}} — filler's own map, not a second one."""
+    from automations.apex_new_starts import filler as FL
+    return FL.rows_for(values)
+
+
+def _complete(page, who, person, log=print) -> int:
+    """Walk the three tabs of somebody ALREADY on Pending, stopping at Save.
+
+    This is the path that runs twenty-odd times a week. The engine's own
+    `runPerson` does it and saves each tab as it goes, which is exactly what
+    must not happen while somebody is still deciding whether to trust it -- so
+    this does NOT call runPerson. It fills one tab, stops, and leaves the Save
+    to the person watching.
+    """
+    from automations.apex_new_starts import drive
+
+    log("")
+    log("  They are already on Pending, so this is the COMPLETE path:")
+    log("  employment record, then user profile, then tax.")
+    log("")
+    log("  Filling the FIRST tab only, and stopping before Save.")
+    got = page.evaluate(
+        "async (p) => await window.__ansDoPage(p, 'employment')", who)
+    done = (got or {}).get("done") or []
+    miss = (got or {}).get("miss") or []
+    log("    filled: %s" % (", ".join(done) or "nothing"))
+    if miss:
+        log("    NOT filled: %s" % ", ".join(miss))
+    if "Gender" in miss or not person.gender:
+        log("")
+        log("  Gender is blank on the board for everybody this week, and Apex")
+        log("  wants one on the profile tab. Set it by hand here.")
+    log("")
+    log("  READ THE TAB, THEN PRESS SAVE YOURSELF.")
+    log("  Nothing here will press it. If this tab saves clean, the other two")
+    log("  are the same shape and the whole-week run is safe to arm.")
+    log("")
+    _hold_open(page, log=log)
+    return 0
+
+
 def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
     from automations.apex_new_starts import apex as AX
 
@@ -293,6 +335,31 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
     # not lose a prepared fill to a timeout.
     with AX.ApexSession(log=log, login_timeout_s=25 * 60) as s:
         s.require_login()
+
+        # WHICH OF THE TWO THIS PERSON NEEDS. Both checks of this week landed
+        # on somebody already on Pending (David Flores, Victoria Newsom): an
+        # ICD's people arrive there by themselves once they are in
+        # OwnerVille, so COMPLETING is the common path and creating is the
+        # rare one. Rehearsing only the create was rehearsing the wrong thing.
+        who = {"name": person.name, "pages": _pages(values),
+               "find": (person.name.split()[-1] if person.name else "")}
+        if not drive.load(s.page, [who], week_start.strftime("%m/%d/%Y"), log=log):
+            log("  The Apex engine did not load, so nothing was typed.")
+            return 1
+        need = drive.triage(s.page, [who], log=log).get(person.name, {})
+        log("")
+        log("  %s: %s" % (person.name, need.get("why", "unknown")))
+        if need.get("need") == drive.COMPLETE:
+            return _complete(s.page, who, person, log=log)
+        if need.get("need") != drive.ADD:
+            log("")
+            log("  Neither path is safe for them. Creating would make a SECOND")
+            log("  payroll record for a real employee, and there is nothing on")
+            log("  Pending to complete. Find them on All Employees by hand.")
+            log("  Nothing was typed.")
+            return 1
+
+        log("  Apex has never heard of them, so this is the create form.")
         if not wait_for_form(s.page, log=log):
             log("  The form never appeared, so nothing was typed.")
             return 1

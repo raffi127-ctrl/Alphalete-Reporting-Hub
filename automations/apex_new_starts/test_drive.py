@@ -87,3 +87,75 @@ def test_a_blank_gender_is_not_handed_over_as_a_guess():
                           log=lambda *a: None)
     assert got["genders"] == 1
     assert page.calls[-1][1][0] == {"Dev Rao": "Male"}
+
+
+# ------------------------------- which of the two each person actually needs
+
+class _Triage:
+    """A page that answers the two lookups from a script it was given."""
+
+    def __init__(self, pending=(), anywhere=(), raises=None, says=None):
+        self.pending = set(pending)
+        self.anywhere = set(anywhere)
+        self.raises = raises or set()
+        self.says = says or {}
+
+    def evaluate(self, js, arg=None):
+        name = (arg or {}).get("name", "")
+        if name in self.raises:
+            raise RuntimeError("the page gave up")
+        if "__ansOpen" in js:
+            return "id-%s" % name if name in self.pending else ""
+        if "__ansExistsAnywhere" in js:
+            if name in self.says:
+                return self.says[name]          # a string: could not tell
+            return name in self.anywhere
+        return None
+
+
+def test_somebody_on_pending_is_completed_not_created():
+    """Megan, 2026-11-11: "know if they need added or if they just need the
+    user profile completed because they're already on the pending". Both
+    checks this week landed on somebody already there."""
+    page = _Triage(pending={"Victoria Newsom"})
+    got = drive.triage(page, [{"name": "Victoria Newsom"}], log=lambda *a: None)
+    assert got["Victoria Newsom"]["need"] == drive.COMPLETE
+
+
+def test_somebody_apex_has_never_heard_of_is_created():
+    page = _Triage()
+    got = drive.triage(page, [{"name": "New Person"}], log=lambda *a: None)
+    assert got["New Person"]["need"] == drive.ADD
+
+
+def test_in_apex_but_not_on_pending_goes_to_a_person():
+    """Creating them duplicates a real payroll record; completing them has
+    nowhere to start. Neither is safe, so it is named instead."""
+    page = _Triage(anywhere={"Old Hand"})
+    got = drive.triage(page, [{"name": "Old Hand"}], log=lambda *a: None)
+    assert got["Old Hand"]["need"] == drive.BY_HAND
+    assert "not on Pending" in got["Old Hand"]["why"]
+
+
+def test_could_not_tell_is_never_read_as_not_there():
+    """The engine returns a STRING when it cannot read All Employees. Taking
+    that as "not in Apex" would create a second record for a real employee."""
+    page = _Triage(says={"X Y": "no All Employees tab on this page"})
+    got = drive.triage(page, [{"name": "X Y"}], log=lambda *a: None)
+    assert got["X Y"]["need"] == drive.BY_HAND
+    assert "All Employees" in got["X Y"]["why"]
+
+
+def test_a_lookup_that_throws_is_by_hand_not_a_create():
+    page = _Triage(raises={"X Y"})
+    got = drive.triage(page, [{"name": "X Y"}], log=lambda *a: None)
+    assert got["X Y"]["need"] == drive.BY_HAND
+
+
+def test_a_whole_week_is_sorted_into_the_three():
+    page = _Triage(pending={"On Pending"}, anywhere={"Elsewhere In"})
+    got = drive.triage(page, [{"name": "On Pending"}, {"name": "Elsewhere In"},
+                              {"name": "Brand New"}], log=lambda *a: None)
+    assert got["On Pending"]["need"] == drive.COMPLETE
+    assert got["Elsewhere In"]["need"] == drive.BY_HAND
+    assert got["Brand New"]["need"] == drive.ADD

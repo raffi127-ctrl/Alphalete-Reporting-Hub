@@ -342,3 +342,45 @@ def test_saving_never_fails_the_run():
     src = inspect.getsource(AX.ApexSession.__exit__)
     assert "_save_state" in src
     assert "except Exception" in src
+
+
+# ------------------------------------------- the path that actually runs often
+
+def test_it_rehearses_the_COMPLETE_path_not_only_the_create():
+    """Megan, 2026-11-11, after both checks landed on somebody already on
+    Pending: an ICD's people arrive there by themselves once they are in
+    OwnerVille, so completing runs twenty-odd times a week and creating is
+    rare. Rehearsing only the create was rehearsing the wrong thing."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP.run)
+    assert "drive.triage" in src, "it has to ask which one they need"
+    assert "drive.COMPLETE" in src and "drive.ADD" in src
+
+
+def test_the_complete_rehearsal_never_calls_runPerson():
+    """runPerson saves each of the three tabs as it goes. That is the whole
+    point of it -- and exactly what must not happen while somebody is still
+    deciding whether to trust the thing."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP._complete)
+    assert "__ansRunPerson" not in src, "a rehearsal must not save"
+    assert "__ansDoPage" in src, "it fills one tab and stops"
+
+
+def test_neither_path_safe_means_nothing_is_typed():
+    """In Apex but not on Pending: creating duplicates a real payroll record,
+    completing has nowhere to start."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP.run)
+    assert "SECOND" in src and "Nothing was typed" in src
+
+
+def test_both_paths_share_one_field_map():
+    """A second values-to-page mapping is how two callers come to disagree
+    about which Apex box a value belongs in."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    assert "rows_for" in inspect.getsource(SUP._pages)

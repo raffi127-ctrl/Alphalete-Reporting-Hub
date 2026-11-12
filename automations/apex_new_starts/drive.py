@@ -123,3 +123,69 @@ def hand_over(page, *, genders=None, socials=None, log=print) -> dict:
     log("  handed the page %d gender(s) and %d Social(s)"
         % (len(pairs_g), len(pairs_s)))
     return {"genders": len(pairs_g), "socials": len(pairs_s)}
+
+
+# What a person needs from Apex, decided BEFORE anything is typed.
+COMPLETE = "complete"      # already on Pending — fill the three tabs
+ADD = "add"                # Apex has never heard of them — create the record
+BY_HAND = "by_hand"        # in Apex but not on Pending, or we could not tell
+
+
+def triage(page, people, log=print) -> Dict[str, dict]:
+    """{name: {"need": COMPLETE|ADD|BY_HAND, "why": str}} for the whole week.
+
+    Megan, 2026-11-11: "Lucy Eco Machine needs to be able to know if they need
+    added or if they just need the user profile completed because they're
+    already on the pending. So we have to build it to recognize either."
+
+    Both of this week's checks landed on somebody ALREADY on Pending (David
+    Flores, Victoria Newsom) -- an ICD's people arrive there by themselves once
+    they are in OwnerVille, so completing is the common case and creating is
+    the rare one. Guessing from a failed run gets that backwards.
+
+    THE ORDER MATTERS. Pending first, because that is the cheap in-page
+    lookup; All Employees only for the ones it did not find, because that one
+    clicks a tab and waits. And a person who is in Apex but NOT on Pending is
+    neither: creating them duplicates a real payroll record and completing
+    them has nowhere to start, so they are named for a person.
+
+    "COULD NOT TELL" IS NEVER "NOT THERE". The engine returns a string when it
+    cannot read the All Employees tab, and that string becomes BY_HAND.
+    """
+    out: Dict[str, dict] = {}
+    for p in people or []:
+        name = str((p or {}).get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            found = page.evaluate(
+                "async (p) => { const id = await window.__ansOpen(p);"
+                " return id ? String(id) : ''; }", p)
+        except Exception as e:      # noqa: BLE001
+            out[name] = {"need": BY_HAND,
+                         "why": "could not look on Pending (%s)" % type(e).__name__}
+            continue
+        if found:
+            out[name] = {"need": COMPLETE, "why": "on Pending"}
+            continue
+        try:
+            there = page.evaluate(
+                "async (p) => await window.__ansExistsAnywhere(p)", p)
+        except Exception as e:      # noqa: BLE001
+            out[name] = {"need": BY_HAND,
+                         "why": "could not check All Employees (%s)" % type(e).__name__}
+            continue
+        if isinstance(there, str):
+            out[name] = {"need": BY_HAND, "why": there[:160]}
+        elif there:
+            out[name] = {"need": BY_HAND,
+                         "why": "in Apex but not on Pending — find them on "
+                                "All Employees"}
+        else:
+            out[name] = {"need": ADD, "why": "not in Apex at all"}
+    tally = {}
+    for v in out.values():
+        tally[v["need"]] = tally.get(v["need"], 0) + 1
+    log("  triage: %s" % (", ".join("%d to %s" % (n, k)
+                                    for k, n in sorted(tally.items())) or "nobody"))
+    return out

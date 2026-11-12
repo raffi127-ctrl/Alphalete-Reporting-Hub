@@ -39,6 +39,7 @@ import datetime as dt
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from automations.apex_new_starts import apex
 from automations.apex_new_starts import blueink_data as BID
 
 KIND = "apex_week"
@@ -178,21 +179,60 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
                        added=[p.name for p, _ in got["ready"]],
                        blocked=got["blocked"])
 
-    added, blocked = [], list(got["blocked"])
-    for person, values in got["ready"]:
-        try:
-            fill_one(person, values, hires.get(person.name), log=log)
-            added.append(person.name)
-        except Exception as e:  # noqa: BLE001
-            # One person Apex will not take does not stop the rest -- the same
-            # rule the browser run follows. Exception text only; a field VALUE
-            # is never quoted into a result that goes to the relay.
-            blocked.append({"name": person.name,
-                            "why": "Apex refused it (%s)" % type(e).__name__})
-            log("  %s: %s" % (person.name, type(e).__name__))
+    # THE GATE. Everything above this line reads; everything below SAVES to a
+    # payroll record, and no code has yet done that unwatched. Somebody has to
+    # see one go in by hand first (Megan: "nothing actually sends" -- the
+    # create form's password email is off, but the save itself is still the
+    # thing nobody has watched).
+    import os
+    if not os.environ.get("APEX_FILL_PROVEN"):
+        return _result(monday, status="error", live=True, counted=len(people),
+                       added=[], blocked=list(got["blocked"]),
+                       error="ready to fill %d, but saving into Apex has never "
+                             "been watched end to end. Run supervised.py, see "
+                             "one record save, then set APEX_FILL_PROVEN=1."
+                             % len(got["ready"]))
+
+    genders = _genders_from_board(office_key, monday, log=log)
+    with apex.ApexSession(log=log) as s:
+        s.require_login()
+        out = fill_week(s.page, got["ready"], hires, monday,
+                        genders=genders, log=log)
+    added = out["added"]
+    blocked = list(got["blocked"]) + out["blocked"]
     _tell_the_board(office_key, monday, added, log=log)
     return _result(monday, status="filled", live=True, counted=len(people),
                    added=added, blocked=blocked)
+
+
+def _genders_from_board(office_key: str, monday: dt.date, log=print) -> Dict:
+    """{name: Gender} off the office's onboarding board.
+
+    Apex requires one and an ICD has no sales board to read it from (Megan,
+    2026-11-10), so it is a column a person fills. Nothing guesses it: a name
+    with no gender on the board simply is not in here, and the engine leaves
+    that box alone and says it missed it.
+    """
+    try:
+        from automations.icd_onboarding import board as B
+        from automations.icd_onboarding import fillers as F
+        from automations.icd_onboarding import sheet as S
+        ws = S.open_board(F.workbook_for(office_key), create=False)
+        if ws is None:
+            return {}
+        out = {}
+        for r in B.for_week(S.rows_of(S._values(ws)), monday):
+            name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+            g = str(r.get(B.GENDER) or "").strip()
+            if name and g:
+                out[name] = g
+        log("  %d gender(s) off the board" % len(out))
+        return out
+    except Exception as e:      # noqa: BLE001
+        # Not fatal: the engine fills everything else and names the box it
+        # could not set, which is visible on the record.
+        log("  (no genders read: %s)" % type(e).__name__)
+        return {}
 
 
 def _removed_on_the_board(office_key: str, monday: dt.date,
@@ -389,6 +429,131 @@ def fill_spec(person: Starter, values: Dict) -> Dict:
         # "reset your password" email to a brand new rep is a support call.
         "email_password_reset": False,
     }
+
+
+def payload_for(ready, hires, week_start: dt.date) -> List[Dict]:
+    """The week, in the shape the engine's own `D` array expects.
+
+    Built with filler.rows_for -- the SAME function the bookmarklet uses to
+    turn a values dict into per-page labels. Writing a second one here is how
+    the two copies of this would start disagreeing about which Apex box a
+    value belongs in.
+    """
+    from automations.apex_new_starts import filler as FL
+    out = []
+    for person, values in ready:
+        hire = hires.get(person.name)
+        out.append({
+            "name": person.name,
+            "pages": FL.rows_for(values),
+            "hire": (person.hire_date or week_start).strftime("%m/%d/%Y"),
+            # The surname is what the Blue Ink dashboard is searched by, and
+            # the only thing about a person that ends up in a URL.
+            "find": (person.name.split()[-1] if person.name else ""),
+            "doc": (BID.signed_pdf_url(hire.bundle_id, prefer="w4")
+                    if hire is not None and getattr(hire, "bundle_id", "") else ""),
+        })
+    return out
+
+
+def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
+              log=print) -> Dict:
+    """Drive the ENGINE over a whole week, the way the panel's own run does.
+
+    Megan, 2026-11-10: "look at pending and complete if existing or create if
+    not on there yet." That is `addMissing` then `runPerson`, which is exactly
+    the order the panel's Run button uses -- so this starts them rather than
+    re-implementing the loop around them.
+
+    SAVING IS WHAT THIS DOES. `runPerson` saves each of the three tabs and
+    `addMissing` saves a new record, which is why the caller holds the gate.
+
+    Returns {"added": [names], "blocked": [{name, why}]} from the engine's own
+    REPORT, never from a guess about what happened.
+    """
+    from automations.apex_new_starts import drive
+
+    people = payload_for(ready, hires, week_start)
+    if not drive.load(page, people, week_start.strftime("%m/%d/%Y"), log=log):
+        raise RuntimeError("the Apex engine did not load — nothing was touched")
+    if not drive.ready(page):
+        raise RuntimeError("the Apex engine loaded only partly — nothing was "
+                           "touched")
+
+    # The two things a person used to type into the panel.
+    socials = {}
+    for person, _values in ready:
+        hire = hires.get(person.name)
+        sec = getattr(hire, "ssn", None) if hire is not None else None
+        if sec is not None:
+            socials[person.name] = sec
+    drive.hand_over(page, genders=genders or {}, socials=socials, log=log)
+
+    # WHICH OF THE TWO EACH PERSON NEEDS, decided before anything is typed
+    # (Megan, 2026-11-11). Completing is the common case: an ICD's people
+    # arrive on Pending by themselves once they are in OwnerVille.
+    need = drive.triage(page, people, log=log)
+
+    by_hand = [{"name": n, "why": v["why"]}
+               for n, v in need.items() if v["need"] == drive.BY_HAND]
+    for b in by_hand:
+        log("  %s: %s" % (b["name"], b["why"]))
+
+    # Create only the ones Apex has never heard of. The engine checks All
+    # Employees for each one again on its way past, so this cannot make a
+    # second payroll record even if the triage were wrong.
+    to_add = [p for p in people if need.get(p["name"], {}).get("need") == drive.ADD]
+    if to_add:
+        made = page.evaluate(
+            "async (d) => { const said = [];"
+            " const n = await window.__ansAddMissing(d, m => said.push(String(m)));"
+            " return {made: n, said: said}; }", to_add)
+        log("  created %s of %d in Apex" % ((made or {}).get("made", 0), len(to_add)))
+
+    # Then complete everybody on Pending -- the ones who were already there,
+    # plus the ones just created, which is where a create leaves them. One at
+    # a time, carrying on past anybody the engine could not finish.
+    page.evaluate("() => window.__ansSetReport([])")
+    working = [p for p in people
+               if need.get(p["name"], {}).get("need") in (drive.COMPLETE, drive.ADD)]
+    for person in working:
+        try:
+            page.evaluate(
+                "async (p) => { await window.__ansRunPerson(p, () => {}); }",
+                person)
+        except Exception as e:      # noqa: BLE001
+            log("  %s: %s" % (person["name"], type(e).__name__))
+    report = page.evaluate("() => window.__ansRundown ? "
+                           "window.__ansRundown() : null")
+    out = _from_report(report, [p["name"] for p in working], log=log)
+    out["blocked"] = list(out["blocked"]) + by_hand
+    return out
+
+
+def _from_report(report, names: Sequence[str], log=print) -> Dict:
+    """The engine's REPORT -> {added, blocked}. A person the report says
+    nothing about is BLOCKED, never added: silence is not a save."""
+    rows = []
+    if isinstance(report, dict):
+        rows = report.get("rows") or report.get("report") or []
+    elif isinstance(report, list):
+        rows = report
+    said = {}
+    for r in rows or []:
+        if isinstance(r, dict) and r.get("name"):
+            said[str(r["name"])] = r
+    added, blocked = [], []
+    for n in names:
+        r = said.get(n)
+        if r and r.get("ok"):
+            added.append(n)
+        else:
+            why = (r or {}).get("why") or "the run said nothing about them"
+            blocked.append({"name": n, "why": str(why)[:160]})
+    if blocked:
+        log("  %d not finished: %s"
+            % (len(blocked), ", ".join(b["name"] for b in blocked)))
+    return {"added": added, "blocked": blocked}
 
 
 def fill_one(person: Starter, values: Dict, hire, log=print, *, page=None,
