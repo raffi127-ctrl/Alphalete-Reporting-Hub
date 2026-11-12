@@ -180,6 +180,103 @@ def summarize(text: str) -> Dict[str, object]:
             "landing": landing}
 
 
+SHIP_ON_RE = re.compile(r"^(shipped|delivered|ordered) on:\s*(.*)$", re.I)
+CARRIER_RE = re.compile(r"^(fedex|ups|usps)\s+tracking:\s*([0-9A-Z]+)$", re.I)
+
+
+def _short_date(s: str) -> str:
+    """'Wed, Oct 21, 2026' -> 'Oct 21'."""
+    m = re.search(r"([A-Z][a-z]{2}) (\d{1,2}), (\d{4})", s or "")
+    return "%s %s" % (m.group(1), m.group(2)) if m else _norm(s)
+
+
+def shipments(text: str) -> List[Dict[str, str]]:
+    """AT&T's details page as shipment blocks: each 'Shipped on:' /
+    'Delivered on:' (or a lone 'Ordered on:') opens a block that gathers its
+    status line and its carrier tracking numbers."""
+    out: List[Dict[str, object]] = []
+    cur: Optional[Dict[str, object]] = None
+    lines = [_norm(l) for l in (text or "").splitlines()]
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        m = SHIP_ON_RE.match(ln)
+        if m:
+            kind, when = m.group(1).lower(), m.group(2).strip()
+            if not when and i + 1 < len(lines) and re.match(r"^[A-Z][a-z]{2}, ", lines[i + 1]):
+                when = lines[i + 1]
+                i += 1
+            cur = {"kind": kind, "date": _short_date(when), "status": "", "tracking": []}
+            out.append(cur)
+        elif cur is not None:
+            c = CARRIER_RE.match(ln)
+            if c:
+                cur["tracking"].append("%s %s" % (c.group(1).upper() if c.group(1).lower() != "fedex" else "FedEx", c.group(2)))
+            elif not cur["status"] and re.search(r"on the way|arrived|delivered|cancel|return|delay|held|pick", ln, re.I) \
+                    and not NOISE_RE.search(ln) and len(ln) < 120:
+                cur["status"] = ln
+        i += 1
+    # 'Ordered on:' heads every page; it only counts as a block of its own
+    # when nothing has shipped yet (its tracking numbers then belong to it)
+    if any(b["kind"] != "ordered" for b in out):
+        out = [b for b in out if b["kind"] != "ordered"]
+    return out
+
+
+def _status_word(s: str) -> str:
+    low = (s or "").lower()
+    if "return" in low:
+        return "returning to shipper"
+    if "arrived" in low or "was delivered" in low or low.startswith("delivered"):
+        return "delivered"
+    if "delay" in low or "new delivery date" in low:
+        return "delayed"
+    if "on the way" in low or "on its way" in low:
+        return "on the way"
+    if "cancel" in low:
+        return "cancelled"
+    if "held" in low or "pick" in low:
+        return "held for pickup"
+    return _norm(s)[:40]
+
+
+def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
+    """The cell: one short clause per shipment, today's date in front.
+    'Shipped Nov 9, on the way (UPS …4036) | Delivered Nov 10 (UPS …2114)';
+    a FedEx reading replaces AT&T's word for that package."""
+    fx = {}
+    for c in carrier or ():
+        m = re.match(r"FedEx (\d+): (.*)", c or "")
+        if m:
+            fx[m.group(1)] = _status_word(m.group(2).split(" / ")[0])
+    parts = []
+    for sh in shipments(text):
+        word = _status_word(str(sh["status"]))
+        for t in sh["tracking"]:
+            n = t.split()[-1]
+            if n in fx and fx[n]:
+                word = "FedEx: " + fx[n]
+        tr = ", ".join("%s …%s" % (t.split()[0], t.split()[-1][-4:]) for t in sh["tracking"])
+        if sh["kind"] == "delivered":
+            head = "Delivered %s" % sh["date"]
+        elif sh["kind"] == "shipped":
+            head = "Shipped %s%s" % (sh["date"], (", " + word) if word and word != "delivered" else (", delivered" if word == "delivered" else ""))
+        else:
+            head = "Ordered %s, not shipped yet" % sh["date"]
+        parts.append(head + ((" (%s)" % tr) if tr else ""))
+    if not parts:
+        return ""
+    return "%s: %s" % (today.strftime("%m/%d"), " | ".join(parts))
+
+
+def detail_text(summary: Dict[str, object], today: dt.date, carrier: Sequence[str] = ()) -> str:
+    """The hover note: everything AT&T and FedEx said, one item per line."""
+    parts = ["Checked %s" % today.strftime("%m/%d/%Y %H:%M"), ""]
+    parts.extend("AT&T: " + l for l in (summary.get("lines") or []))
+    parts.extend(str(c) for c in (carrier or ()) if c)
+    return "\n".join(parts)
+
+
 def note_text(summary: Dict[str, object], today: dt.date, carrier: Sequence[str] = ()) -> str:
     parts = [l for l in (summary.get("lines") or []) if not l.lower().startswith("fedex tracking")]
     for n in (summary.get("trackings") or ([summary["tracking"]] if summary.get("tracking") else [])):
@@ -413,10 +510,18 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                         fedex_seen[n] = fedex_status(page, n, log=log)
                     if fedex_seen[n]:
                         carrier.append(fedex_seen[n])
-                body = note_text(s, today, carrier)
+                body = short_text(s.get("text", ""), today, carrier) or note_text(s, today, carrier)
+                detail = detail_text(s, today, carrier)
                 log("    %s" % body)
                 batch = []
+                note_reqs = []
                 for ln in o["lines"]:
+                    # the hover note carries the full detail and is rewritten
+                    # every day (Carlos 11/11: "put them inside of a note where
+                    # we hover over it and we can read everything")
+                    note_reqs.append({"updateCells": {
+                        "start": {"sheetId": ws.id, "rowIndex": ln["row"] - 1, "columnIndex": i_notes},
+                        "rows": [{"values": [{"note": detail}]}], "fields": "note"}})
                     if ln["notes"].strip() == body:
                         unchanged += 1
                         continue
@@ -424,6 +529,11 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                     # status, not a history (Notes keeps the history)
                     batch.append(gspread.cell.Cell(ln["row"], i_notes + 1, body))
                 cells.extend(batch)
+                if live and note_reqs:
+                    try:
+                        _retry(lambda: sh.batch_update({"requests": note_reqs}))
+                    except Exception as e:  # noqa: BLE001
+                        log("    (hover notes not written: %s)" % type(e).__name__)
                 # written as it goes: ~40 orders x (AT&T + FedEx pages) runs
                 # long, and a run cut off by its timeout must keep what it read
                 if live and batch:

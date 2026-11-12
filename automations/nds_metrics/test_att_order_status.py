@@ -110,6 +110,56 @@ FedEx tracking:879615850332
 """
 
 
+UPS_PAGE = """My order details
+Ordered on:
+Mon, Nov 9, 2026
+Order:
+99-1
+Order status
+Number of items: 2
+Shipped on: Mon, Nov 9, 2026
+Ordered
+Shipped
+Delivered
+Shipped
+Your order is on the way! Check the tracking info to confirm delivery details.
+Line 1: xxx.xxx.1111
+UPS tracking:1ZH4K6532936244036
+Delivered on: Tue, Nov 10, 2026
+Delivered
+Your order arrived\u2014it's unboxing time!
+Line 2: xxx.xxx.2222
+UPS tracking:1Z1WE1020321622114
+Cancel my order
+"""
+
+
+class ShortCell(unittest.TestCase):
+    def test_short_cell_per_shipment(self):
+        sh = A.shipments(UPS_PAGE)
+        self.assertEqual([x["kind"] for x in sh], ["shipped", "delivered"])
+        self.assertEqual(sh[0]["tracking"], ["UPS 1ZH4K6532936244036"])
+        cell = A.short_text(UPS_PAGE, TODAY)
+        self.assertEqual(cell, "11/11: Shipped Nov 9, on the way (UPS …4036) | Delivered Nov 10 (UPS …2114)")
+
+    def test_fedex_word_replaces_atts(self):
+        cell = A.short_text(DETAILS, TODAY, ["FedEx 879024018564: The package couldn't be delivered and is returning to the shipper / Currently in Irving, TX",
+                                              "FedEx 879615850332: Your package is still on the way and we\u2019re actively working to get you a new delivery date."])
+        self.assertEqual(cell, "11/11: Shipped Oct 21, FedEx: returning to shipper (FedEx …8564) | Shipped Nov 2, FedEx: delayed (FedEx …0332)")
+
+    def test_ordered_only_page(self):
+        cell = A.short_text("Ordered on:\nWed, Nov 11, 2026\nOrder:\n99-2\nUPS tracking:1Z1WE1020321622114\n", TODAY)
+        self.assertEqual(cell, "11/11: Ordered Nov 11, not shipped yet (UPS …2114)")
+        self.assertEqual(A.short_text("nothing here", TODAY), "")
+
+    def test_detail_note_lists_everything(self):
+        s = A.summarize(DETAILS)
+        d = A.detail_text(s, TODAY, ["FedEx 879024018564: returning"])
+        self.assertTrue(d.startswith("Checked 11/11/2026"))
+        self.assertIn("AT&T: Shipped on: Wed, Oct 21, 2026", d)
+        self.assertIn("FedEx 879024018564: returning", d)
+
+
 class Summaries(unittest.TestCase):
     def test_real_details_page(self):
         # Rajeshkanna's page, read by hand on 11/11

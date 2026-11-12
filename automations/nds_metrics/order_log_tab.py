@@ -502,6 +502,11 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
         reqs.append({"repeatCell": {"range": rng(1, 1000, c, c + 1),
                                     "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "mm/dd/yyyy"}}},
                                     "fields": "userEnteredFormat.numberFormat"}})
+    # Shipping Notes' hover notes (att_order_status) belong to a line, not a
+    # row: rows move on every rewrite, so the notes are wiped here and the
+    # 06:50 job writes them back on the right cells.
+    reqs.append({"repeatCell": {"range": rng(1, 1000, _COL["Shipping Notes"], _COL["Shipping Notes"] + 1),
+                                "cell": {"note": ""}, "fields": "note"}})
     # "Being worked on" / "Delivered Message Sent": a Yes / No dropdown on every data row.
     # Cleared off EVERY column first: a rule stays on its letter when a column
     # is added (11/11: R, S, T and U all carried it, so Last Updated's dates and

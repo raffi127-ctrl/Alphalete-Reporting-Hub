@@ -330,7 +330,18 @@ def harvest(want: Dict[str, dict], today: dt.date, *, headless: bool = True,
             base = sara.login(page, cr["email"], cr["password"], log=log)
             log("[email] logged in as %s" % cr["email"])
             page.goto(base + C.HUB_PATH, wait_until="networkidle", timeout=C.NAV_TIMEOUT_MS)
-            sara.open_order_history_panel(page, log=log)
+            # the first open fails now and then too (18:07 on 11/11: "panel
+            # never appeared after the tab postback"); one more try before giving up
+            for attempt in (1, 2):
+                try:
+                    sara.open_order_history_panel(page, log=log)
+                    break
+                except Exception as e:  # noqa: BLE001
+                    if attempt == 2:
+                        raise
+                    log("[email] panel did not open (try 1: %s) -- once more" % type(e).__name__)
+                    page.wait_for_timeout(4000)
+                    page.goto(base + C.HUB_PATH, wait_until="networkidle", timeout=C.NAV_TIMEOUT_MS)
             headers_logged = False
             combo_settable = None
             windows_run = 0

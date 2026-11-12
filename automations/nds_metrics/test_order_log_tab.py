@@ -364,7 +364,7 @@ class DateSpellingTests(unittest.TestCase):
         reqs = [r["repeatCell"] for r in T._format_requests(7, 10, 0) if "repeatCell" in r]
         fmts = [(r["range"]["startColumnIndex"], r["range"]["endColumnIndex"],
                  r["cell"]["userEnteredFormat"].get("numberFormat", {}))
-                for r in reqs if "numberFormat" in r["cell"]["userEnteredFormat"]]
+                for r in reqs if "numberFormat" in r["cell"].get("userEnteredFormat", {})]
         self.assertEqual(fmts[0][0], 0)                                  # the reset comes first
         self.assertGreaterEqual(fmts[0][1], len(T.HEADERS))
         dates = {c0 for c0, c1, f in fmts if f.get("type") == "DATE"}
@@ -440,8 +440,7 @@ class ShippingNotesTests(unittest.TestCase):
         self.assertIn("Shipping Notes", T.CARRIED)
 
 
-if __name__ == "__main__":
-    unittest.main()
+
 
 
 class ChurnBucketTests(unittest.TestCase):
@@ -474,3 +473,17 @@ class ChurnBucketTests(unittest.TestCase):
 def _COLX(name):
     return T._COL[name]
 
+
+class HoverNoteTests(unittest.TestCase):
+    def test_shipping_notes_hover_notes_wiped_on_rewrite(self):
+        # 11/11 pm: the hover notes belong to a line; rows move on every
+        # rewrite, so the column's notes are cleared and the 06:50 job re-adds them
+        reqs = [r["repeatCell"] for r in T._format_requests(7, 10, 0) if "repeatCell" in r]
+        wipes = [r for r in reqs if r.get("fields") == "note"]
+        self.assertEqual(len(wipes), 1)
+        self.assertEqual(wipes[0]["range"]["startColumnIndex"], T._COL["Shipping Notes"])
+        self.assertEqual(wipes[0]["cell"], {"note": ""})
+
+
+if __name__ == "__main__":
+    unittest.main()
