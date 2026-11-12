@@ -87,6 +87,9 @@ def _recruiters(oid):
             "booked": sum(w.get("booked") or 0 for w in p["weeks"].values()),
             "retention": "{:.0f}%".format(ret) if ret is not None else "-",
             "focus": fix[0]["area"] if fix else "keep it up",
+            # The full scorecard, inline: Megan 2026-11-12, "just click the
+            # recruiter name and have their full scorecard show".
+            "body": _scorecard_html(SC, p, oid, weeks),
             "file": "scorecard-{}-{}.html".format(
                 oid, re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-"))})
     rows.sort(key=lambda r: "FDCBA".index(r["grade"]))
@@ -120,6 +123,21 @@ def _log_date(log):
     ts = [_when(r.get("sent_at") or r.get("queued_at")) for r in log or []]
     ts = [t for t in ts if t]
     return max(ts).date() if ts else None
+
+
+def _scorecard_html(SC, person, oid, weeks):
+    try:
+        body = "\n".join(SC.card_body(person, oid, weeks))
+    except Exception as e:  # noqa: BLE001 — a card that will not draw
+        return "<p>Scorecard could not be drawn ({}).</p>".format(
+            type(e).__name__)
+    # Its own "back to the list" link points at a page that is not here.
+    return re.sub(r"<p class='date'><a href='#top'>.*?</a></p>", "", body)
+
+
+def scorecard_css():
+    from automations.sms_audit import scorecard as SC
+    return SC.CSS
 
 
 def gather(oid, use_sheets=True):
@@ -246,11 +264,11 @@ def main(argv=None):
             print("[card] {} FAILED: {}: {}".format(oid, type(e).__name__, e))
             continue
         path = OUTPUT / "applicant-stream-card-{}.html".format(oid)
-        path.write_text(C.render(card), encoding="utf-8")
+        path.write_text(C.render(card, scorecard_css()), encoding="utf-8")
         print("[card] {}".format(oid))
         for ln in card["lines"]:
             print("  [{:<6}] {:<28} {}".format(ln["dot"], ln["title"],
-                                               ln["text"][:90]))
+                                               ln["short"][:90]))
         for f in card["stale"]:
             print("  STALE: {} ({})".format(f["what"], f["where"]))
         print("[card] wrote {}".format(path))

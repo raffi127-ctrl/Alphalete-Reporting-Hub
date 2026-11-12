@@ -143,7 +143,27 @@ class CardTest(unittest.TestCase):
                                   ("Texts", dt.date(2026, 11, 11), "file")],
                     now=now)
         self.assertEqual([f["what"] for f in c["stale"]], ["AI Settings"])
-        self.assertIn("Re-pull before sending", C.render(c))
+        self.assertIn("re-pull before sending", C.render(c))
+
+    def test_top_three_are_one_line_actions(self):
+        c = C.build("1", info_items=[F.template(
+            "WRONG ADDRESS", "Directions / Directions: sends x",
+            {"address": "3100 Premier"})],
+            stats=S.summary(office_week()))
+        self.assertLessEqual(len(c["todo"]), 3)
+        self.assertEqual(c["todo"][0]["text"],
+                         "Fix the address in “Directions”")
+        # the speed habit makes the list when booking runs late
+        self.assertTrue(any(t["line"] == "speed" for t in c["todo"]))
+
+    def test_recruiter_name_opens_full_scorecard(self):
+        c = C.build("1", recruiter_rows=[{
+            "name": "Jorge Pena", "grade": "C", "booked": 9,
+            "retention": "40%", "focus": "1st Round Retention",
+            "body": "<h1>Jorge Pena</h1><p>FULL CARD</p>"}])
+        out = C.render(c, "h1{color:red}")
+        self.assertIn("FULL CARD", out)
+        self.assertIn(".sc h1{color:red}", out)
 
     def test_renders(self):
         html = C.render(C.build("11280", stats=S.summary(office_week())))
