@@ -217,6 +217,8 @@ def _daily_cap() -> int:
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
+                    # Ends one stuck report; bounded, nothing re-runs.
+                    "kill_report",
                     # Raises TODAY's cap. Exempt because the cap is already
                     # reached when you need it -- a lock with the key inside.
                     "set_autorun_cap",
@@ -9198,6 +9200,65 @@ def _action_install_tracker_mirror(args: str) -> tuple[bool, str]:
     return ok, msg[:400]
 
 
+def _action_kill_report(args: str) -> tuple[bool, str]:
+    """End a STUCK report on this machine, by module name.
+
+      kill_report <module> [--dry]
+        module  e.g. rep_knock_threads  (or automations.rep_knock_threads.run)
+        --dry   list what would be ended and change nothing
+
+    WHY (Megan 2026-11-11): a rep_knock_threads run held Lucy 3's ownerville
+    session for hours, so every headshot upload and the OBCL sweep sat waiting
+    behind it, and the queue had no way to end a report that isn't a rerun.
+    Only `python -m automations.<module>` processes match (never Chrome, the
+    poller or the session holder). SIGTERM, then SIGKILL after 10s. Their
+    browser may be left behind: chrome_unstick <profile> clears that."""
+    import signal as _signal
+    parts = (args or "").split()
+    dry = "--dry" in parts
+    names = [p for p in parts if p != "--dry"]
+    if not names:
+        return False, "usage: kill_report <module> [--dry]   e.g. rep_knock_threads"
+    mod = names[0]
+    if not mod.startswith("automations."):
+        mod = "automations." + mod
+    if not re.fullmatch(r"automations(\.[A-Za-z_][\w]*)+", mod):
+        return False, f"not a module name: {names[0]!r}"
+    if mod.startswith("automations.day_orchestrator"):
+        return False, "refusing: that is the queue/orchestrator itself"
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True,
+                             text=True, timeout=20).stdout
+    except Exception as e:  # noqa: BLE001
+        return False, f"ps failed: {str(e)[:120]}"
+    pat = re.compile(r"-m\s+" + re.escape(mod) + r"(\.run)?(\s|$)")
+    hits = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or "Google Chrome" in line:
+            continue
+        pid, _, cmd = line.partition(" ")
+        if pat.search(cmd) and int(pid) != os.getpid():
+            hits.append((int(pid), cmd.strip()))
+    if not hits:
+        return True, f"nothing running for {mod}"
+    shown = "; ".join(f"pid {p} ({c[:70]})" for p, c in hits[:4])
+    if dry:
+        return True, f"WOULD end: {shown}"
+    for p, _ in hits:
+        try:
+            os.kill(p, _signal.SIGTERM)
+        except OSError:
+            pass
+    time.sleep(10)
+    for p, _ in hits:
+        try:
+            os.kill(p, _signal.SIGKILL)
+        except OSError:
+            pass
+    return True, f"ended: {shown}"
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -9776,6 +9837,7 @@ ACTIONS = {
     "nsf_status": _action_nsf_status,
     "chrome_sync_diag": _action_chrome_sync_diag,
     "chrome_unstick": _action_chrome_unstick,
+    "kill_report": _action_kill_report,
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,

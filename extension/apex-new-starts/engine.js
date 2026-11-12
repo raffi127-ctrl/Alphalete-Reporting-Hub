@@ -1275,6 +1275,7 @@ window.__ansEngine = function (CFG) {
      }
      add.click();
      await sleep(1500);
+     await waitLoaded();
      var r=await doPage(p,'new');
      /* The office block (Position, State Working In, Basis of Pay, Pay
         Frequency, Department) renders after the account fields, so a single
@@ -1459,6 +1460,21 @@ window.__ansEngine = function (CFG) {
  }catch(e){}
  function injector(){
    try{ return angular.element(document.body).injector(); }catch(e){ return null; }
+ }
+ async function waitLoaded(){
+   /* THE TAB RENDERS, THEN FETCHES. Since the Beta rewrite
+      (roster.separateEditPages) an employee tab draws its heading and
+      only then goes for the data -- "Loading Employment Record data...".
+      A probe on 2026-11-11 read the employment tab mid-flight and found
+      ZERO fields on it, which is why every label came back missed and
+      nothing was filled. A fixed sleep was always a guess; this waits for
+      the page to stop saying it is loading. */
+   for(var i=0;i<60;i++){
+     var t=(document.body&&document.body.innerText)||'';
+     if(!/loading .*data/i.test(t)) { await sleep(400); return true; }
+     await sleep(500);
+   }
+   return false;
  }
  async function goSpa(path){
    if((location.pathname||'').indexOf(path)>=0) return true;
@@ -1733,7 +1749,7 @@ window.__ansEngine = function (CFG) {
          why:'could not reach the '+tabs[t][0]+' tab',miss:seen});
        return false;
      }
-     await sleep(800);
+     await waitLoaded();
      var r=await doPage(p,tabs[t][0]);
      var err=await saveHere();
      if(err==='no Save button on this page'){
