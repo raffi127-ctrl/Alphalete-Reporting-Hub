@@ -484,6 +484,17 @@ def fedex_status(page, number: str, log=print) -> str:
     lines = [_norm(l) for l in (text or "").splitlines()]
     lines = [l for l in lines if l and len(l) <= 170 and not FEDEX_NOISE_RE.search(l)]
     kept, seen = [], set()
+    # FedEx shows a delivered package as the word "Delivered" over a date
+    # line ("Tuesday 11/3/2026 at 2:48 pm") and a "Signed for by" line; the
+    # bare word is also the rail's step label (noise), so the state is read
+    # off that shape and put first (Christopher Cardinal 11/12: the cell read
+    # "11/03/2026 at 2:48 pm, shipped Nov 2")
+    m = re.search(r"\bDelivered\b[^\n]*\n\s*((?:[A-Za-z]+,?\s+)?\d{1,2}/\d{1,2}/\d{4}[^\n]*|"
+                  r"(?:January|February|March|April|May|June|July|August|September|October|November|December)"
+                  r"\s+\d{1,2},?\s+\d{4}[^\n]*)", text or "")
+    if m or re.search(r"signed for by", text or "", re.I):
+        kept.append(("Delivered " + _norm(m.group(1))) if m else "Delivered")
+        seen.add(kept[0].lower())
     # the status sentence first ("The package couldn't be delivered and is
     # returning to the shipper"), then "Currently in X" and the rest
     for pick in (lambda l: FEDEX_STATUS_RE.search(l), lambda l: l.lower().startswith("currently in"),
@@ -657,11 +668,14 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
     written = 0
     read = failed = unchanged = 0
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(PROFILE_DIR), headless=headless, args=["--disable-sync"],
-            viewport={"width": 1400, "height": 1000})
+        def _open():
+            c = p.chromium.launch_persistent_context(
+                str(PROFILE_DIR), headless=headless, args=["--disable-sync"],
+                viewport={"width": 1400, "height": 1000})
+            return c, (c.pages[0] if c.pages else c.new_page())
+        ctx, page = _open()
+        reopened = 0
         try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
             for o in todo:
                 log("• %s  %s  zip %s  %s" % (o["customer"], o["order"], o["zip"], o["email"]))
                 s = lookup(page, o["order"], o["zip"], o["email"], log=log)
@@ -687,6 +701,19 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                         log("    (UPS %s: not looked up)" % n)
                         continue
                     if n not in fedex_seen:
+                        if fedex_blank >= 3 and reopened < 2:
+                            # FedEx walls the session, not the machine: single
+                            # runs read fine while a long pass went blank from
+                            # its first number (11/12) -- a fresh browser
+                            # session, twice per run at most
+                            log("    (FedEx: 3 blank pages in a row -- opening a fresh browser session)")
+                            try:
+                                ctx.close()
+                            except Exception:  # noqa: BLE001
+                                pass
+                            ctx, page = _open()
+                            reopened += 1
+                            fedex_blank = 0
                         if fedex_blank >= 6:
                             log("    (FedEx %s: skipped -- 6 blank pages in a row, FedEx has walled this run)" % n)
                             fedex_seen[n] = ""

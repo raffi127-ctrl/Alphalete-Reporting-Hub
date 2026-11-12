@@ -165,6 +165,12 @@ class ShortCell(unittest.TestCase):
         self.assertEqual(cell, "11/11: Ordered Nov 11, not shipped yet · UPS …2114")
         self.assertEqual(A.short_text("nothing here", TODAY), "")
 
+    def test_fedex_delivered_read_off_the_page_shape(self):
+        # Christopher Cardinal 11/12: FedEx's page = "Delivered" over "Tuesday 11/3/2026 at 2:48 pm"
+        page = "Shipped on: Mon, Nov 2, 2026\nYour order is on the way!\nLine 1: xxx\nFedEx tracking:879000000080\n"
+        fx = "FedEx 879000000080: Delivered Tuesday 11/3/2026 at 2:48 pm / Signed for by: C.CARDINAL / Irving, TX US"
+        self.assertEqual(A.short_text(page, TODAY, [fx]), "11/11: Delivered Nov 3 · FedEx …0080")
+
     def test_fedex_date_forms(self):
         self.assertEqual(A._fedex_date("Delivered / Tuesday 11/3/2026 at 2:14 pm"), "Nov 3")
         self.assertEqual(A._fedex_date("Delivered / November 3, 2026"), "Nov 3")
