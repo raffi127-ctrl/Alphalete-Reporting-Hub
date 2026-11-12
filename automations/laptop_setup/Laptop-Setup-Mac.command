@@ -249,9 +249,7 @@ Example: Alphalete Marketing" "")"
 Make this Gmail:
 ${RECEPTION_EMAIL}
 
-Name: ${SHORT_NAME} Reception
-
-Write the password on paper." "Reception email created"; then
+Name: ${SHORT_NAME} Reception" "Reception email created"; then
     if ! ask_yes "Did you get this email?
 
 ${RECEPTION_EMAIL}"; then
