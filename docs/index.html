@@ -99,36 +99,20 @@
   <div class="stop" id="stopbar">
     <b>This only works on a stationary computer</b> &mdash; an iMac, a Mac mini
     or a Mac Studio. A laptop stops the moment its lid closes, which would take
-    your channel quiet without anybody noticing.
-    <div style="margin-top:12px">
-      Not sure? Run this first &mdash; it checks this computer and
-      <b>installs nothing</b>.
-    </div>
-    <div class="cmd" id="chk">loading&#8230;</div>
-    <button id="copychk">Copy the check</button>
+    your channel quiet without anybody noticing. On a laptop, the install
+    stops by itself before it puts anything on the computer.
   </div>
 
   <div id="main">
     <div class="step">
       <div class="num">1</div>
       <div style="min-width:0;flex:1" data-os="mac">
-        <h2>Open Terminal</h2>
-        <p>Hold down the Command key and tap Space. A search bar appears in the
-           middle of the screen.</p>
-        <div class="keys"><kbd>&#8984;</kbd><span class="plus">+</span><kbd>Space</kbd></div>
-        <p>Type <b>terminal</b> and press Return.</p>
-        <div class="shot">
-          <div class="spotlight">
-            <span class="mag">&#128269;</span>
-            <span class="typed">terminal<span class="caret"></span></span>
-          </div>
-          <div class="hit">
-            <span class="ico">&gt;_</span>
-            <span><b>Terminal</b> &nbsp;&mdash;&nbsp; Application</span>
-          </div>
-        </div>
-        <p class="cap">A window full of text opens. That is Terminal &mdash; it
-           may be white or black depending on your Mac, and either is right.</p>
+        <h2>Click this button</h2>
+        <p>It copies your line and opens Terminal for you.</p>
+        <button id="go">Open Terminal</button>
+        <p class="cap">If it asks <b>&ldquo;Open Terminal?&rdquo;</b> (or
+           <b>&ldquo;Allow this page to open Terminal?&rdquo;</b>), click
+           <b>Open</b> / <b>Allow</b>.</p>
       </div>
       <div style="min-width:0;flex:1" data-os="win">
         <h2>Open PowerShell</h2>
@@ -152,7 +136,33 @@
 
     <div class="step">
       <div class="num">2</div>
-      <div style="min-width:0;flex:1">
+      <div style="min-width:0;flex:1" data-os="mac">
+        <h2>Command + N, then V, then Return</h2>
+        <p>Terminal opens and says <b>&ldquo;No manual entry&rdquo;</b>. That's
+           OK. Hold down the Command key and tap <b>N</b>, then <b>V</b>. Let go.
+           Press Return.</p>
+        <div class="keys"><kbd>&#8984;</kbd><span class="plus">+</span><kbd>N</kbd>
+          <span class="plus">then</span><kbd>&#8984;</kbd><span class="plus">+</span><kbd>V</kbd>
+          <span class="plus">then</span><kbd>Return</kbd></div>
+        <div class="term">
+          <div class="bar">
+            <span class="dot" style="background:#FF5F57"></span>
+            <span class="dot" style="background:#FEBC2E"></span>
+            <span class="dot" style="background:#28C840"></span>
+          </div>
+          <div class="body"><span class="prompt">$</span>
+            <span class="termcmd">curl -fsSL &#8230;</span></div>
+        </div>
+        <p class="cap scrollcap">A lot of text will scroll past for a
+           few minutes. Leave it alone and let it finish &mdash; do not close
+           the window.</p>
+        <div class="note" style="margin-top:14px">
+          <b>Terminal didn't open?</b> Hold Command and tap Space. Type
+          <b>terminal</b> and press Return. Then hold Command and tap <b>V</b>,
+          and press Return.
+        </div>
+      </div>
+      <div style="min-width:0;flex:1" data-os="win">
         <h2>Copy your line</h2>
         <p>Press the button. Nothing visible happens &mdash; that is normal, it
            is held ready to paste.</p>
@@ -161,18 +171,13 @@
       </div>
     </div>
 
-    <div class="step">
+    <div class="step" data-os="win">
       <div class="num">3</div>
       <div style="min-width:0;flex:1">
-        <h2 data-os="mac">Paste it into that window and press Return</h2>
-        <h2 data-os="win">Paste it into that window and press Enter</h2>
-        <p data-os="mac">Click once anywhere inside that window first, so it is
+        <h2>Paste it into that window and press Enter</h2>
+        <p>Click once anywhere inside that window first, so it is
            the window you are typing into. Then:</p>
-        <p data-os="win">Click once anywhere inside that window first, so it is
-           the window you are typing into. Then:</p>
-        <div class="keys" data-os="mac"><kbd>&#8984;</kbd><span class="plus">+</span><kbd>V</kbd>
-          <span class="plus">then</span><kbd>Return</kbd></div>
-        <div class="keys" data-os="win"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>V</kbd>
+        <div class="keys"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>V</kbd>
           <span class="plus">then</span><kbd>Enter</kbd></div>
         <div class="term">
           <div class="bar">
@@ -180,10 +185,10 @@
             <span class="dot" style="background:#FEBC2E"></span>
             <span class="dot" style="background:#28C840"></span>
           </div>
-          <div class="body"><span class="prompt">$</span>
-            <span id="termcmd">curl -fsSL &#8230;</span></div>
+          <div class="body"><span class="prompt">&gt;</span>
+            <span class="termcmd">irm &#8230;</span></div>
         </div>
-        <p class="cap" id="scrollcap">A lot of text will scroll past for a
+        <p class="cap scrollcap">A lot of text will scroll past for a
            few minutes. Leave it alone and let it finish &mdash; do not close
            the window.</p>
       </div>
@@ -263,9 +268,9 @@
     // "A few minutes" is the INSTALL. An update is over in seconds, and a
     // page that promises minutes teaches them to walk away from a window
     // that has already finished -- or to think a fast one failed.
-    var cap = document.getElementById("scrollcap");
-    if (cap) {
-      cap.textContent = "Some text scrolls past and it is done, usually in " +
+    var caps = document.querySelectorAll(".scrollcap");
+    for (var c = 0; c < caps.length; c++) {
+      caps[c].textContent = "Some text scrolls past and it is done, usually in " +
         "under a minute. Leave it alone until it stops.";
     }
   } else {
@@ -274,9 +279,6 @@
       "minutes, and you will not need to do anything afterwards.";
   }
 
-  var cmd = "curl -fsSL " + RAW + " | bash -s -- " + code;
-  document.getElementById("cmd").textContent = cmd;
-  document.getElementById("termcmd").textContent = cmd;
 
   // WHICH COMPUTER THIS IS. The two installers are genuinely different -- one
   // is bash, one is PowerShell -- so the wrong one hands somebody a line that
@@ -295,38 +297,44 @@
     : "$env:LUCY_KEY='" + code + "'; irm " + RAW + "/install.ps1 | iex";
   var cmd = "";
 
-  var CHK_MAC = "curl -fsSL " + RAW + "/check.sh | bash";
-  var CHK_WIN = "irm " + RAW + "/check.ps1 | iex";
-
   function paint() {
     cmd = os === "win" ? WIN : MAC;
     document.getElementById("cmd").textContent = cmd;
-    document.getElementById("termcmd").textContent = cmd;
-    document.getElementById("chk").textContent =
-      os === "win" ? CHK_WIN : CHK_MAC;
+    var tc = document.querySelectorAll(".termcmd");
+    for (var j = 0; j < tc.length; j++) { tc[j].textContent = cmd; }
     var t = document.querySelectorAll("[data-os]");
     for (var i = 0; i < t.length; i++) {
       t[i].style.display = t[i].getAttribute("data-os") === os ? "" : "none";
     }
     btn.textContent = "Copy the command";
     btn.className = "";
+    // Mac has no step 3 (the button does steps 1-2 of Windows), so the boxes
+    // are step 3 there, step 4 on Windows.
+    document.querySelector("#step4 .num").textContent = os === "win" ? "4" : "3";
   }
   var btn = document.getElementById("copy");
-  var chkBtn = document.getElementById("copychk");
-  chkBtn.addEventListener("click", function () {
-    var text = document.getElementById("chk").textContent;
+  // "Open Terminal" (Mac). A web page can't start a Terminal shell, but
+  // macOS's own x-man-page:// link does open Terminal -- the browser asks
+  // "Open Terminal?" first. It opens a finished man-page window ("No manual
+  // entry"), so step 2 says Command+N for a fresh window, then paste. Same as
+  // laptop-setup.html (tested 2026-11-11). Windows has no such link.
+  function openTerminal() { window.location.href = "x-man-page://lucy-eco"; }
+  var go = document.getElementById("go");
+  go.addEventListener("click", function () {
     function ok() {
-      chkBtn.textContent = "Copied — paste it into " +
-        (os === "win" ? "PowerShell" : "Terminal");
-      chkBtn.className = "done";
+      go.textContent = "Copied ✓ — opening Terminal";
+      go.className = "done";
+      openTerminal();
+    }
+    function fallback() {
+      var t = document.createElement("textarea");
+      t.value = cmd; document.body.appendChild(t); t.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(t); ok();
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(ok, function () {
-        chkBtn.textContent = "Select the line above and copy it";
-      });
-    } else {
-      chkBtn.textContent = "Select the line above and copy it";
-    }
+      navigator.clipboard.writeText(cmd).then(ok, fallback);
+    } else { fallback(); }
   });
   paint();
   btn.addEventListener("click", function () {
