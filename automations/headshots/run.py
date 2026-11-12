@@ -750,6 +750,11 @@ def diag(channel: str | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # A run should finish in a few minutes. If it is still going after 4, write
+    # every thread's stack into the log (and again every 4 min) so a hang
+    # shows WHERE it is stuck -- 2026-11-11 ran blind for hours without it.
+    import faulthandler
+    faulthandler.dump_traceback_later(240, repeat=True, file=sys.stderr)
     ap = argparse.ArgumentParser(description="White-background headshot bot.")
     ap.add_argument("--dry-run", action="store_true",
                     help="process + save previews locally, post nothing")
