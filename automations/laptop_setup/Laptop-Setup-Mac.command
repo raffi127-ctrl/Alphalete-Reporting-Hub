@@ -226,29 +226,31 @@ RECEPTION_EMAIL="$(recall RECEPTION_EMAIL)"
 if [ -n "$RECEPTION_EMAIL" ] && is_done reception_email; then
   ok "Reception email: $RECEPTION_EMAIL (done earlier)"
 else
-  # The FULL company name (Megan, 2026-11-11): "Alphalete Marketing" ->
-  # alphaletemarketingreception@gmail.com. COMPANY_NAME keeps it as typed
-  # for Google's "First name" box; COMPANY is the email-safe version.
+  # They type the FULL company name (Megan, 2026-11-11), but the email uses
+  # just the brand: "Alphalete Marketing" -> alphaletereception@gmail.com
+  # (ours). Generic business words are dropped; if that leaves nothing, the
+  # whole name is used.
   COMPANY=""
   while [ -z "$COMPANY" ]; do
     COMPANY_NAME="$(ask_text "Type your full company name.
 
 Example: Alphalete Marketing" "")"
     [ $DRY_RUN = 1 ] && COMPANY_NAME="Example Marketing"
-    COMPANY="$(echo "$COMPANY_NAME" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"
+    SHORT_NAME="$(echo "$COMPANY_NAME" | tr -s ' ' '\n' \
+      | grep -viE '^(marketing|llc|l\.l\.c\.?|inc\.?|co\.?|corp\.?|company|group|enterprises?|solutions|the|and|&)$' \
+      | tr '\n' ' ' | sed 's/ *$//')"
+    [ -z "$SHORT_NAME" ] && SHORT_NAME="$COMPANY_NAME"
+    COMPANY="$(echo "$SHORT_NAME" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"
   done
   RECEPTION_EMAIL="${COMPANY}reception@gmail.com"
   open_chrome "https://accounts.google.com/signup"
   if human reception_email "Google is open.
 
-Make a new Gmail with this name:
-
+Make this Gmail:
 ${RECEPTION_EMAIL}
 
-First name: ${COMPANY_NAME}
-Last name: Reception
+Name: ${SHORT_NAME} Reception
 
-Google sends a code to a phone. Type it in.
 Write the password on paper." "Reception email created"; then
     if ! ask_yes "Did you get this email?
 
