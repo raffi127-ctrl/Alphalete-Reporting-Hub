@@ -969,7 +969,9 @@ remember PERSON_NAME "$PERSON_NAME"
 
 # ------------------------------------------------------------------------
 step_0() {
-section "Get on the Zoom call"
+section "Zoom app"
+# Purpose (Megan, 2026-11-12): make sure they have the Zoom APP and are signed
+# in to it, not using Zoom in the browser -- same for owner, admin, reception.
 # ZOOM COMES FIRST (Megan, 2026-11-11: "this should be with the zoom account
 # launch prompt and be their personal email"). The launch team runs the rest
 # of the setup on that call, so Zoom is installed before anything else -- it's
@@ -980,11 +982,10 @@ run open -a zoom.us 2>/dev/null
 human zoom "Zoom is open.
 (Look behind this box.)
 
-Make your Zoom account:
-1. Click “Sign up”.
+Sign in to the Zoom APP (not the browser):
+1. Click “Sign in”.
 2. Click “Google”. Pick your personal Gmail.
-(Already have a Zoom account? Click “Sign in” instead.)
-3. Join our Zoom call." "Zoom account made + on the call"
+(No Zoom account yet? Click “Sign up” → “Google” instead.)" "Zoom app signed in"
 verify zoom "Zoom signed in" chk_zoom
 }
 
