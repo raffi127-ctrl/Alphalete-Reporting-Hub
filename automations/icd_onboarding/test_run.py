@@ -391,3 +391,54 @@ def test_an_account_this_machine_has_no_token_for_is_skipped(monkeypatch):
     assert R.from_contacts("raf", MONDAY, dry_run=True,
                            log=lambda *a: said.append(" ".join(map(str, a)))) == 0
     assert any("no Contacts token" in s for s in said), said
+
+
+def test_a_fully_ticked_week_never_touches_the_contacts_account(monkeypatch):
+    """Megan, 2026-11-11: "ours will be much larger than anyone else's" --
+    Alphalete's reception Gmail holds ~16,000 contacts, which is 17 API pages,
+    29 times a day on the half-hourly run. A tick never comes off, so once
+    everybody on the week is ticked the answer cannot change."""
+    from automations.second_round_contacts import contacts as K
+    rows = [{"Name": "Ada", "Last Name": "F", "Phone": "555-201-3344",
+             "Email": "", "Contact Added": "11/11/2026"}]
+    seen = _contacts_board(monkeypatch, rows, phones=["5552013344"])
+
+    def _boom(*a, **k):
+        raise AssertionError("the account must not be read at all")
+    monkeypatch.setattr(K, "service", _boom)
+    monkeypatch.setattr(K, "existing_index", _boom)
+    said = []
+    assert R.from_contacts("raf", MONDAY, dry_run=True,
+                           log=lambda *a: said.append(" ".join(map(str, a)))) == 0
+    assert seen == {}
+    assert any("already ticked" in s for s in said), said
+
+
+def test_somebody_removed_is_not_a_reason_to_keep_reading(monkeypatch):
+    """A removed row has no tick and never will. Counting it as outstanding
+    would make the expensive read happen for ever."""
+    from automations.second_round_contacts import contacts as K
+    rows = [{"Name": "Ada", "Last Name": "F", "Phone": "555-201-3344",
+             "Email": "", "Contact Added": "11/11/2026"},
+            {"Name": "Bruno", "Last Name": "C", "Phone": "555-999-0000",
+             "Email": "", "Contact Added": "", "Terminated": "11/10/2026"}]
+    _contacts_board(monkeypatch, rows, phones=["5552013344"])
+
+    def _boom(*a, **k):
+        raise AssertionError("the account must not be read at all")
+    monkeypatch.setattr(K, "service", _boom)
+    monkeypatch.setattr(K, "existing_index", _boom)
+    assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 0
+
+
+def test_one_person_still_missing_is_enough_to_read(monkeypatch):
+    """The saving is only safe because it cannot hide somebody."""
+    rows = [{"Name": "Ada", "Last Name": "F", "Phone": "555-201-3344",
+             "Email": "", "Contact Added": "11/11/2026"},
+            {"Name": "Bruno", "Last Name": "C", "Phone": "555-999-0000",
+             "Email": "", "Contact Added": ""}]
+    seen = _contacts_board(monkeypatch, rows,
+                           phones=["5552013344", "5559990000"])
+    assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 1
+    # only the one that needed it -- the already-ticked row is not re-written
+    assert seen == {"Bruno C": {"Contact Added": True}}

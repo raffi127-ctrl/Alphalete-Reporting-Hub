@@ -342,6 +342,24 @@ def from_contacts(office_key: str, week_start: dt.date, *,
             % (account, K.token_file(account)))
         return 0
 
+    # THE BOARD FIRST, AND OFTEN NOTHING AFTER IT. Reading this account means
+    # paging the WHOLE of it -- Alphalete's reception Gmail holds 16,000-odd
+    # contacts (Megan, 2026-11-11: "ours will be much larger than anyone
+    # else's"), which is 17 pages, 29 times a day on the half-hourly run. A
+    # tick never comes off, so once everybody on the week is ticked the answer
+    # cannot change and the whole read is wasted work.
+    ws = S.open_board(F.workbook_for(office_key), create=False)
+    if ws is None:
+        log("  contacts: no board yet")
+        return 0
+    rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
+    live = [r for r in rows if not str(r.get(B.TERMINATED_AT) or "").strip()]
+    want = [r for r in live if not str(r.get("Contact Added") or "").strip()]
+    if not want:
+        log("  contacts: all %d on the board are already ticked -- not reading "
+            "%s" % (len(live), account))
+        return 0
+
     try:
         svc = K.service(account)
         by_phone, by_email = K.existing_index(svc)
@@ -351,17 +369,14 @@ def from_contacts(office_key: str, week_start: dt.date, *,
         log("  contacts: could not read %s: %s: %s -- nothing ticked"
             % (account, type(e).__name__, str(e)[:160]))
         return 0
-    log("  contacts: %s holds %d contact(s) with a phone, %d with an email"
-        % (account, len(by_phone), len(by_email)))
+    log("  contacts: %s holds %d contact(s) with a phone, %d with an email "
+        "(looking for %d of %d)"
+        % (account, len(by_phone), len(by_email), len(want), len(live)))
 
-    ws = S.open_board(F.workbook_for(office_key), create=False)
-    if ws is None:
-        log("  contacts: no board yet")
-        return 0
-    rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
     verdicts = {}
     how = {"phone": 0, "email": 0}
-    for r in rows:
+    # only the ones still missing the tick -- the rest cannot change.
+    for r in want:
         name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
         ph = phone10(str(r.get("Phone") or ""))
         em = str(r.get("Email") or "").strip().lower()
@@ -378,11 +393,11 @@ def from_contacts(office_key: str, week_start: dt.date, *,
             % (len(verdicts), ", ".join("%d by %s" % (v, k)
                                         for k, v in how.items() if v)))
     else:
-        askable = sum(1 for r in rows
+        askable = sum(1 for r in want
                       if str(r.get("Phone") or "").strip()
                       or str(r.get("Email") or "").strip())
-        log("    matched 0 of %d on the board (%d of them had a phone or an "
-            "email to match on)" % (len(rows), askable))
+        log("    matched 0 of the %d still missing a tick (%d of them had a "
+            "phone or an email to match on)" % (len(want), askable))
     return F.apply(F.workbook_for(office_key), week_start, "contacts",
                    verdicts, dry_run=dry_run, log=log)
 
