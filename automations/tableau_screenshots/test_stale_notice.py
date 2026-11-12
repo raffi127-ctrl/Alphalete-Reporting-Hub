@@ -190,20 +190,20 @@ class HeldHandoffNoteTest(unittest.TestCase):
 
     def test_the_morning_run_names_the_next_pass(self):
         note = self._note("04:31")
-        self.assertIn("picks it up", note)
-        self.assertIn("08:00", note)
+        self.assertIn("post on their own at", note)
+        self.assertIn("8am", note)
 
     def test_a_late_morning_run_skips_the_passes_already_gone(self):
         note = self._note("11:00")
-        self.assertIn("13:00", note)
-        self.assertNotIn("08:00", note)
-        self.assertNotIn("10:00", note)
+        self.assertIn("1pm", note)
+        self.assertNotIn("8am", note)
+        self.assertNotIn("10am", note)
 
     def test_after_the_last_pass_it_says_nobody_is_coming(self):
         """The alisei case: 21:03, every pass done, no automatic retry left."""
         note = self._note("21:03")
-        self.assertIn("NO automatic pass is left today", note)
-        self.assertNotIn("picks it up", note)
+        self.assertIn("no more automatic tries today", note)
+        self.assertNotIn("post on their own", note)
 
     def test_the_passes_come_from_the_schedule_not_from_this_file(self):
         """Move a settle pass and the channel is told the new time — the two

@@ -535,6 +535,17 @@ def _catch_up_passes(today: dt.date) -> list:
     return sorted(out)
 
 
+def _ampm(hhmm: str) -> str:
+    """'13:00' -> '1pm', '08:30' -> '8:30am' (the way people read a clock)."""
+    try:
+        h, m = (int(x) for x in hhmm.split(":"))
+    except ValueError:
+        return hhmm
+    suf = "am" if h < 12 else "pm"
+    h12 = h % 12 or 12
+    return ("%d%s" % (h12, suf)) if m == 0 else ("%d:%02d%s" % (h12, m, suf))
+
+
 def _held_handoff_note(today: dt.date, now: dt.datetime) -> str:
     """What will ACTUALLY pick these boards up, given the time right now.
 
@@ -548,15 +559,17 @@ def _held_handoff_note(today: dt.date, now: dt.datetime) -> str:
     later = [(hhmm, name) for hhmm, name in _catch_up_passes(today)
              if hhmm > now.strftime("%H:%M")]
     if not later:
-        return ("Held, not posted — and NO automatic pass is left today, so it "
-                "will not post unless someone re-runs it.")
+        return ("There are no more automatic tries today, so they will NOT post "
+                "unless someone re-runs them.")
     hhmm, name = later[0]
     # Times only for the passes after the next one — the names are long and the
     # useful fact is "there are more chances, and here is when they stop".
-    rest = (" (then %s)" % ", ".join(t for t, _ in later[1:])) if later[1:] else ""
-    return ("Held, not posted: the board is listed in today's thread header as "
-            "still coming, and *%s* picks it up from %s%s once its extract lands."
-            % (name, hhmm, rest))
+    rest = (" (and again at %s)" % ", ".join(_ampm(t) for t, _ in later[1:])
+            if later[1:] else "")
+    # Plain words (Megan 2026-11-12: "this freshness word, I have no idea what
+    # that means"). The pass's own name stays out — it is a schedule label.
+    return ("Nothing to do: they post on their own at %s%s once Tableau "
+            "catches up." % (_ampm(hhmm), rest))
 
 
 def _drop_alert_lines(held: dict) -> list:
@@ -577,9 +590,9 @@ def _drop_alert_lines(held: dict) -> list:
             by_extract.setdefault(eid, []).append(bid)
     if not by_extract:
         return []
-    out = ["", ":rotating_light: *PART-LOADED TABLEAU DATA — not just a late "
-               "tracker.* The day landed short, so anything else that read "
-               "this workbook this morning may be wrong too:"]
+    out = ["", ":rotating_light: *Tableau only loaded PART of the day.* "
+               "Other reports that read this data this morning may be "
+               "showing short numbers too:"]
     for eid, bids in by_extract.items():
         wb = fr.workbook_of(eid) or eid
         others = fr.downstream_reports(eid)
@@ -597,19 +610,40 @@ def _drop_alert_lines(held: dict) -> list:
     return out
 
 
+def _plain_reason(why: str) -> str:
+    """One plain clause for a held board, or '' for the usual case.
+
+    The usual hold (Tableau simply hasn't updated) says nothing extra: the
+    alert's first line already says it. Only a PART-loaded day gets a note,
+    because that one means other reports may have read short numbers too."""
+    from automations.tableau_screenshots import freshness as fr
+    w = why or ""
+    if fr.DROP_MARK in w or "part-loaded" in w:
+        return " (Tableau only loaded part of the day)"
+    return ""
+
+
 def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
     """Tell #claudecorrections-and-requests, in real time, that a board was held
     for a stale extract (Megan's standing rule: every fail / glitch / missed part
     posts there). Best-effort — an alert must never sink the run."""
-    lines = [f"*Tableau Country Trackers — {len(held)} board(s) held for stale "
-             f"data* ({today.isoformat()})"]
+    # PLAIN WORDS (Megan 2026-11-12, of the old "held for stale data … first
+    # sample of the day — no proof it has finished loading — extract not
+    # refreshed" version: "I hate this alert. It just needs to say Tableau is
+    # delayed, so trackers aren't being pulled"). The detailed reasons are
+    # still what decides the hold (freshness.py matches them); they just stay
+    # out of the message. And it gets a TITLE — it used to post with none, so
+    # the channel line was only the incident tag.
+    lines = [f"Tableau hasn't finished loading yesterday's numbers, so "
+             f"{len(held)} tracker(s) are on hold instead of posting old "
+             f"numbers:"]
     for bid, why in held.items():
         title = (pages_mod.by_id(bid) or {}).get("title") or bid
-        lines.append(f"• {title} — {why}")
+        lines.append(f"• {title}" + _plain_reason(why))
     lines += [
         "",
         _held_handoff_note(today, dt.datetime.now()),
-        "Post it by hand once the data is in:",
+        "To post them by hand once Tableau is updated:",
         "`python -m automations.tableau_screenshots.run --only "
         + ",".join(held) + " --fresh`",
     ]
@@ -619,7 +653,8 @@ def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
         # An extract that's late today is usually late tomorrow too, and this
         # posted fresh every run. One thread; the repeats go inside it and it
         # closes itself the first time the boards post clean.
-        notify.post_alert("", lines, tag="tracker-freshness", dry_run=dry_run,
+        notify.post_alert("*Country Trackers* — Tableau is running late",
+                          lines, tag="tracker-freshness", dry_run=dry_run,
                           incident="tracker-freshness")
     except Exception as e:                            # noqa: BLE001
         print(f"  (corrections alert failed: {type(e).__name__}: {str(e)[:120]})",
@@ -735,27 +770,27 @@ def _alert_not_sent(today: dt.date, still_behind: dict, *, dry_run: bool) -> Non
     the ~7am catch-up will post it"; this one says the catch-up came and went and
     the board is not going out today at all. Threaded under the same incident so a
     board that is behind for days is one conversation, not one post per run."""
-    lines = [f"*Tableau Country Trackers — {len(still_behind)} board(s) NOT sent* "
-             f"({today.isoformat()})"]
+    lines = [f"Tableau still hasn't loaded yesterday's numbers, so "
+             f"{len(still_behind)} tracker(s) did NOT go out today:"]
     for bid, why in still_behind.items():
         title = (pages_mod.by_id(bid) or {}).get("title") or bid
-        lines.append(f"• {title} — {why}")
+        lines.append(f"• {title}" + _plain_reason(why))
     lines += [
         "",
-        "These were held this morning and their Tableau data STILL hasn't "
-        "refreshed, so the catch-up did not post them either. Every channel's "
-        "thread lists them as not updated — nothing stale went out.",
+        "Every channel's thread shows them as not updated, so no old numbers "
+        "went out.",
         # Same correction as _held_handoff_note: "they post on their own" was a
         # flat promise, and after the day's last settle pass nobody is coming.
         _held_handoff_note(today, dt.datetime.now()),
-        "To force one out as-is:",
+        "To post them anyway, with whatever Tableau has now:",
         "`python -m automations.tableau_screenshots.run --only "
         + ",".join(still_behind) + " --fresh`",
     ]
     try:
         from automations.day_orchestrator import notify
-        notify.post_alert("", lines, tag="tracker-freshness", dry_run=dry_run,
-                          incident="tracker-freshness")
+        notify.post_alert("*Country Trackers* — not sent today, Tableau "
+                          "never caught up", lines, tag="tracker-freshness",
+                          dry_run=dry_run, incident="tracker-freshness")
     except Exception as e:                            # noqa: BLE001
         print(f"  (corrections alert failed: {type(e).__name__}: {str(e)[:120]})",
               flush=True)
