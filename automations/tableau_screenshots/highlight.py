@@ -41,10 +41,10 @@ from pathlib import Path
 
 MODEL = "claude-sonnet-5"
 
-# OFF until Eve OKs the preview ("preview before rollout"). While False only a
-# run with --highlight (run.py) paints anything; flip to True to go live in
-# every owner's channel and email.
-LIVE = False
+# LIVE since 2026-11-12: Eve saw the Starr preview ("se ve ok, roll out para
+# todos!"). Set False to stop; --highlight (run.py) still forces it for a
+# preview while it is off.
+LIVE = True
 FORCE = False            # set by run.py --highlight
 
 
