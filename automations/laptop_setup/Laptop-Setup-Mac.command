@@ -1154,6 +1154,10 @@ fi
 
 step_2() {
 section "Apple account (iCloud)"
+# ROLE: owners and admins are already signed in to their OWN Apple account on
+# their Mac -- nothing to do or check (Megan, 2026-11-12). Only RECEPTION
+# creates an iCloud account, with the reception email.
+if [ "$ROLE" != reception ]; then ok "Apple account: their own, already set up (skipped)"; return 0; fi
 if [ "$COMPUTER" = owner ] && [ $DRY_RUN = 0 ] && [ -z "$(chk_apple_any)" ]; then
   # A new Mac signs in to Apple during its own first-time setup, before the
   # call (Megan, 2026-11-11) -- so usually there's nothing to do here.
