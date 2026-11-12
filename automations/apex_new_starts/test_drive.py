@@ -159,3 +159,74 @@ def test_a_whole_week_is_sorted_into_the_three():
     assert got["On Pending"]["need"] == drive.COMPLETE
     assert got["Elsewhere In"]["need"] == drive.BY_HAND
     assert got["Brand New"]["need"] == drive.ADD
+
+
+def test_the_roster_is_reached_through_the_app_not_the_address_bar():
+    """Every signed-in Apex session lands on the change-password page, which
+    has no roster on it: a triage run straight from there was told the page
+    offers "log off, support, feedback" and refused everybody (2026-11-11).
+    A page.goto redirects back to that page, so this has to go through the
+    app's own router."""
+    import inspect
+    src = inspect.getsource(drive.to_roster)
+    assert "__ansGoSpa" in src
+    # the CODE, not the docstring that explains why -- a comment naming the
+    # thing we must not do is not the thing being done.
+    body = src.split(chr(34) * 3, 2)[-1]
+    assert "goto" not in body, "a typed URL bounces back to change-password"
+
+
+def test_a_roster_that_cannot_be_reached_is_not_a_week_with_nobody_in_apex():
+    class _P:
+        url = "https://apex.example/Identity/Account/Manage/ChangePassword"
+        def evaluate(self, *a, **k):
+            return False
+    assert drive.to_roster(_P(), log=lambda *a: None) is False
+
+
+def test_every_entry_point_the_drivers_call_is_listed():
+    """ENTRY_POINTS is what `ready` checks before anything runs. One missing
+    from the list reads as Apex refusing something, rather than as a script
+    that half-loaded."""
+    from automations.apex_new_starts import filler as F
+    for name in drive.ENTRY_POINTS:
+        assert "window.%s=" % name in F._JS, name
+
+
+def test_the_triage_keeps_the_apex_id_for_the_complete_path():
+    """Completing somebody means going to /employees/<id>/edit/... . The
+    first rehearsal threw the id away, called doPage on whatever page was
+    showing -- the roster -- and filled nothing at all (2026-11-11)."""
+    page = _Triage(pending={"Victoria Newsom"})
+    got = drive.triage(page, [{"name": "Victoria Newsom"}], log=lambda *a: None)
+    assert got["Victoria Newsom"]["id"] == "id-Victoria Newsom"
+
+
+def test_the_engine_is_put_back_after_a_full_page_load():
+    """Crossing from Apex's Identity page into the app is a real link, so
+    everything on window goes with it. The first complete rehearsal reached
+    the roster, lost the engine on the way, and could not open anybody's
+    record (2026-11-11)."""
+    calls = {"evals": 0}
+
+    class _P:
+        def __init__(self):
+            self.loaded = False
+        def evaluate(self, js, arg=None):
+            calls["evals"] += 1
+            if "filter(n => typeof window[n]" in js:
+                return list(drive.ENTRY_POINTS) if self.loaded else []
+            self.loaded = True       # the script body ran
+            return None
+
+    page = _P()
+    assert drive.keep_loaded(page, [{"name": "X"}], "11/08/2026",
+                             log=lambda *a: None) is True
+
+
+def test_keep_loaded_does_nothing_when_the_engine_is_already_there():
+    class _P:
+        def evaluate(self, js, arg=None):
+            assert "filter(n => typeof window[n]" in js, "it must not re-run the script"
+            return list(drive.ENTRY_POINTS)
+    assert drive.keep_loaded(_P(), log=lambda *a: None) is True

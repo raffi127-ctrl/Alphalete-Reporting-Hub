@@ -1391,6 +1391,14 @@ _JS = r"""
     be read as "not there": creating somebody who is already in Apex makes
     a second payroll record for a real employee. */
  window.__ansExistsAnywhere=existsAnywhere;
+ /* IN-APP NAVIGATION, the only kind that works from where Apex lands you.
+    Every signed-in session starts on the change-password page, and that
+    page has no roster on it at all -- a driven triage asked it for the
+    All Employees tab and was told the page offers "log off, support,
+    feedback" (2026-11-11). A page.goto would redirect straight back
+    there, which is why the engine has always moved through $location
+    rather than the address bar. */
+ window.__ansGoSpa=goSpa;
  /* The two controls the Add path hangs on, reachable from a test. They
     were matched on exact text and silently found nothing on the real
     roster; nothing pinned either of them. */
@@ -1522,6 +1530,13 @@ _JS = r"""
    try{ return angular.element(document.body).injector(); }catch(e){ return null; }
  }
  async function goSpa(path){
+   if((location.pathname||'').indexOf(path)>=0) return true;
+   /* THE ROUTER, WHEN THERE IS ONE. Apex used to be an AngularJS app and
+      this moved through $location so a run never lost its page. A probe on
+      2026-11-11 found angular absent on EVERY page -- the landing page, the
+      roster and an employee record -- so this returned false everywhere and
+      runPerson stopped at its first tab. Kept, because it costs nothing and
+      a rollback would bring it straight back. */
    var inj=injector();
    if(inj){
      try{
@@ -1531,7 +1546,23 @@ _JS = r"""
        if((location.pathname||'').indexOf(path)>=0) return true;
      }catch(e){}
    }
-   return false;      /* a reload would kill the run, so we do not do one */
+   /* THE REAL LINK. Every tab on a record is an ordinary anchor --
+      Employment Record, User Profile & Account, Tax & Bank Information --
+      and so is Roster. Clicking one is what a person does, and since the
+      rewrite it is the only thing that works. It is a full page load, so
+      whoever called this has to put the script back afterwards. */
+   var want=null, as=document.querySelectorAll("a[href]"), i2;
+   for(i2=0;i2<as.length;i2++){
+     var h=as[i2].getAttribute("href")||"";
+     if(h.indexOf(path)>=0){ want=as[i2]; break; }
+   }
+   if(!want) return false;
+   want.click();
+   for(var w=0;w<40;w++){
+     await sleep(250);
+     if((location.pathname||'').indexOf(path)>=0) return true;
+   }
+   return false;
  }
  function saveButton(){
    var b=document.querySelectorAll('button,a'), i;

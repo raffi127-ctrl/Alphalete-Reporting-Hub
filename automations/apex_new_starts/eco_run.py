@@ -492,6 +492,14 @@ def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
     # WHICH OF THE TWO EACH PERSON NEEDS, decided before anything is typed
     # (Megan, 2026-11-11). Completing is the common case: an ICD's people
     # arrive on Pending by themselves once they are in OwnerVille.
+    if not drive.to_roster(page, log=log):
+        raise RuntimeError("could not reach Roster -> Employees — nothing was "
+                           "touched")
+    # The nav link is a full page load; the engine does not survive it.
+    if not drive.keep_loaded(page, people, week_start.strftime("%m/%d/%Y"),
+                             log=log):
+        raise RuntimeError("the Apex engine did not survive the move to the "
+                           "roster — nothing was touched")
     need = drive.triage(page, people, log=log)
 
     by_hand = [{"name": n, "why": v["why"]}

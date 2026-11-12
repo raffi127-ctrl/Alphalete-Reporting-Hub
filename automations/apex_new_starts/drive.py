@@ -32,7 +32,8 @@ from automations.apex_new_starts import filler as F
 # Installed by the script on load. Checked by name rather than assumed, because
 # a script that half-evaluates leaves some of these and not others, and calling
 # a missing one reads as "Apex refused it".
-ENTRY_POINTS = ("__ansAddMissing", "__ansOpen", "__ansDoPage", "__ansRoster")
+ENTRY_POINTS = ("__ansAddMissing", "__ansOpen", "__ansDoPage", "__ansRoster",
+                "__ansRunPerson", "__ansExistsAnywhere", "__ansGoSpa")
 
 
 def script(people: Optional[List[Dict]] = None, week: str = "") -> str:
@@ -131,6 +132,81 @@ ADD = "add"                # Apex has never heard of them — create the record
 BY_HAND = "by_hand"        # in Apex but not on Pending, or we could not tell
 
 
+def to_roster(page, log=print) -> bool:
+    """Get to Roster -> Employees, the way the engine does.
+
+    EVERY SIGNED-IN APEX SESSION LANDS ON THE CHANGE-PASSWORD PAGE, and that
+    page has no roster on it -- a triage run straight from there was told the
+    page offers "log off, support, feedback" and correctly refused everybody
+    (2026-11-11). A page.goto redirects back to it, which is why this moves
+    through the app's own router instead of the address bar.
+    """
+    # Already there.
+    if "/roster" in (page.url or "").lower():
+        return True
+
+    # 1. The app's own router, which only exists INSIDE the Angular app. From
+    #    the change-password page there is no injector to reach, so this
+    #    quietly returns false there rather than erroring (2026-11-11).
+    try:
+        if page.evaluate("async () => await window.__ansGoSpa('/roster')"):
+            page.wait_for_timeout(1200)
+            return True
+    except Exception:          # noqa: BLE001
+        pass
+
+    # 2. THE LEFT-HAND NAV. Apex lands every session on an ASP.NET Identity
+    #    page that is not the Angular app at all -- no router to call, and a
+    #    typed URL redirects straight back to it. The nav link is a real link
+    #    and the only way across, which is why the instructions have always
+    #    said to use it.
+    try:
+        went = page.evaluate("""() => {
+            const want = [...document.querySelectorAll('a[href]')];
+            const byHref = want.find(a => /[/]roster\b/i.test(a.getAttribute('href') || ''));
+            const byText = want.find(a =>
+                (a.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'employees');
+            const hit = byHref || byText;
+            if (!hit) return '';
+            hit.click();
+            return hit.getAttribute('href') || 'clicked';
+        }""")
+    except Exception as e:      # noqa: BLE001
+        log("  could not reach the roster: %s" % type(e).__name__)
+        return False
+    if not went:
+        log("  no Roster link on %s" % (page.url or "?"))
+        return False
+    try:
+        page.wait_for_url("**/roster**", timeout=20000)
+    except Exception:          # noqa: BLE001
+        page.wait_for_timeout(2500)
+    if "/roster" not in (page.url or "").lower():
+        log("  the Roster link did not land: still on %s" % (page.url or "?"))
+        return False
+    page.wait_for_timeout(1200)
+    return True
+
+
+def keep_loaded(page, people=None, week: str = "", log=print) -> bool:
+    """Put the engine back if the page has moved out from under it.
+
+    CROSSING FROM THE IDENTITY PAGE INTO THE APP IS A FULL PAGE LOAD. Apex
+    lands every session on /Identity/Account/Manage/ChangePassword, which is
+    not the Angular app, and the only way across is its nav link -- a real
+    link, so everything on `window` goes with it, this script included. The
+    first complete rehearsal reached the roster, lost the engine on the way,
+    and then could not open anybody's record (2026-11-11).
+
+    Idempotent and cheap: it checks first and only re-evaluates when something
+    is actually missing.
+    """
+    if ready(page):
+        return True
+    load(page, people, week, log=log)
+    return ready(page)
+
+
 def triage(page, people, log=print) -> Dict[str, dict]:
     """{name: {"need": COMPLETE|ADD|BY_HAND, "why": str}} for the whole week.
 
@@ -166,7 +242,12 @@ def triage(page, people, log=print) -> Dict[str, dict]:
                          "why": "could not look on Pending (%s)" % type(e).__name__}
             continue
         if found:
-            out[name] = {"need": COMPLETE, "why": "on Pending"}
+            # KEEP THE ID. Completing somebody means going to
+            # /employees/<id>/edit/..., so throwing it away here means looking
+            # them up all over again -- or, worse, filling whatever page
+            # happens to be showing (2026-11-11: the first complete rehearsal
+            # filled nothing, on the roster).
+            out[name] = {"need": COMPLETE, "why": "on Pending", "id": found}
             continue
         try:
             there = page.evaluate(

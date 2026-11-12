@@ -384,3 +384,68 @@ def test_both_paths_share_one_field_map():
     import inspect
     from automations.apex_new_starts import supervised as SUP
     assert "rows_for" in inspect.getsource(SUP._pages)
+
+
+def test_run_reaches_the_triage_without_a_NameError(monkeypatch):
+    """The source-text tests above all passed while `run` had no `drive` in
+    scope at all -- it crashed on the live run, after signing in, at the first
+    line that used it (2026-11-11). Reading the source is not running it."""
+    from automations.apex_new_starts import supervised as SUP
+
+    class _Page:
+        url = "https://apex.example/roster"  # already there: to_roster returns at once
+        def evaluate(self, *a, **k):
+            return True
+        def wait_for_timeout(self, *a, **k):
+            pass
+
+    class _S:
+        page = _Page()
+        def require_login(self):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    import automations.apex_new_starts.apex as AX
+    monkeypatch.setattr(AX, "ApexSession", lambda *a, **k: _S())
+
+    person = SUP.ECO.Starter(name="Ada Fournier", email="a@b.c",
+                             hire_date=dt.date(2026, 11, 8))
+    monkeypatch.setattr(SUP, "_board_person",
+                        lambda office, name, week, log=print: person)
+    monkeypatch.setattr(SUP.BID, "for_people", lambda *a, **k: {})
+    monkeypatch.setattr(SUP.ECO, "plan",
+                        lambda people, hires, log=print:
+                        {"ready": [(person, {"first": "Ada"})], "blocked": []})
+    reached = {}
+    def _load(page, people, week, log=print):
+        reached["loaded"] = True
+        return list(drive.ENTRY_POINTS)
+
+    def _triage(page, people, log=print):
+        reached["triaged"] = True
+        return {"Ada Fournier": {"need": drive.BY_HAND, "why": "test"}}
+
+    from automations.apex_new_starts import drive
+    monkeypatch.setattr(SUP.drive, "load", _load)
+    monkeypatch.setattr(SUP.drive, "triage", _triage)
+    monkeypatch.setattr(SUP.drive, "to_roster", lambda page, log=print: True)
+    monkeypatch.setattr(SUP.drive, "keep_loaded",
+                        lambda page, people=None, week="", log=print: True)
+
+    rc = SUP.run("raf", "Ada Fournier", dt.date(2026, 11, 8), log=lambda *a: None)
+    assert reached.get("loaded"), "run never reached drive.load"
+    assert isinstance(rc, int)
+
+
+def test_the_complete_rehearsal_opens_the_record_before_filling_it():
+    """doPage fills whatever page is showing. On the roster that is nothing,
+    which is exactly what the first run did (2026-11-11)."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP._complete)
+    assert "edit/employment-record" in src, "it has to open their record"
+    assert src.index("__ansGoSpa") < src.index("__ansDoPage"), \
+        "move first, then fill"

@@ -48,6 +48,7 @@ import sys
 from typing import Dict, List, Optional
 
 from automations.apex_new_starts import blueink_data as BID
+from automations.apex_new_starts import drive
 from automations.apex_new_starts import eco_run as ECO
 
 # The create form is on screen when its own first control is. Read off the live
@@ -264,21 +265,47 @@ def _pages(values):
     return FL.rows_for(values)
 
 
-def _complete(page, who, person, log=print) -> int:
-    """Walk the three tabs of somebody ALREADY on Pending, stopping at Save.
+def _complete(page, who, person, apex_id, log=print) -> int:
+    """Fill the employment tab of somebody ALREADY on Pending, stopping at Save.
 
     This is the path that runs twenty-odd times a week. The engine's own
-    `runPerson` does it and saves each tab as it goes, which is exactly what
+    `runPerson` does all three tabs and SAVES each as it goes -- which is what
     must not happen while somebody is still deciding whether to trust it -- so
-    this does NOT call runPerson. It fills one tab, stops, and leaves the Save
-    to the person watching.
+    this fills one tab and leaves the Save to the person watching.
+
+    APEX IS NOT A SINGLE-PAGE APP ANY MORE. A probe on 2026-11-11 found no
+    Angular on any page, and every tab is an ordinary link: moving between
+    them is a FULL PAGE LOAD, which takes the injected script with it. So the
+    script goes back in after each move, from here, rather than the page being
+    trusted to still hold it.
     """
-    from automations.apex_new_starts import drive
+    want = "/employees/%s/edit/employment-record" % apex_id
 
     log("")
     log("  They are already on Pending, so this is the COMPLETE path:")
     log("  employment record, then user profile, then tax.")
     log("")
+
+    if want not in (page.url or ""):
+        drive.keep_loaded(page, [who], log=log)
+        page.evaluate("async (p) => await window.__ansGoSpa(p)", want)
+        page.wait_for_timeout(1500)
+    if want not in (page.url or ""):
+        log("  Could not open their employment record (%s)." % (page.url or "?"))
+        log("  Nothing was typed.")
+        return 1
+    log("  On their employment record.")
+
+    # The move was a page load, so put the engine back before asking it to
+    # fill anything -- and wait for the form, which renders after the shell.
+    if not drive.keep_loaded(page, [who], log=log):
+        log("  The engine did not survive the move. Nothing was typed.")
+        return 1
+    for _ in range(40):
+        if page.evaluate("() => !!document.querySelector('input,select')"):
+            break
+        page.wait_for_timeout(250)
+
     log("  Filling the FIRST tab only, and stopping before Save.")
     got = page.evaluate(
         "async (p) => await window.__ansDoPage(p, 'employment')", who)
@@ -287,10 +314,16 @@ def _complete(page, who, person, log=print) -> int:
     log("    filled: %s" % (", ".join(done) or "nothing"))
     if miss:
         log("    NOT filled: %s" % ", ".join(miss))
+    if not done:
+        log("")
+        log("  Nothing went in, so there is nothing to save. The boxes it")
+        log("  looked for are not on this page under those labels.")
+        _hold_open(page, log=log)
+        return 1
     if "Gender" in miss or not person.gender:
         log("")
         log("  Gender is blank on the board for everybody this week, and Apex")
-        log("  wants one on the profile tab. Set it by hand here.")
+        log("  wants one on the profile tab. Set it by hand there.")
     log("")
     log("  READ THE TAB, THEN PRESS SAVE YOURSELF.")
     log("  Nothing here will press it. If this tab saves clean, the other two")
@@ -322,7 +355,7 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
     _p, values = got["ready"][0]
 
     log("")
-    log("  This is what will be typed into the create form:")
+    log("  This is what will be typed in, on whichever path they need:")
     for line in _describe(values):
         log(line)
     log("")
@@ -346,11 +379,20 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
         if not drive.load(s.page, [who], week_start.strftime("%m/%d/%Y"), log=log):
             log("  The Apex engine did not load, so nothing was typed.")
             return 1
+        if not drive.to_roster(s.page, log=log):
+            log("  Could not get to Roster -> Employees, so nothing was typed.")
+            return 1
+        # The nav link was a full page load, so the engine went with it.
+        if not drive.keep_loaded(s.page, [who],
+                                 week_start.strftime("%m/%d/%Y"), log=log):
+            log("  The Apex engine did not survive the move, so nothing was typed.")
+            return 1
         need = drive.triage(s.page, [who], log=log).get(person.name, {})
         log("")
         log("  %s: %s" % (person.name, need.get("why", "unknown")))
         if need.get("need") == drive.COMPLETE:
-            return _complete(s.page, who, person, log=log)
+            return _complete(s.page, who, person,
+                             need.get("id", ""), log=log)
         if need.get("need") != drive.ADD:
             log("")
             log("  Neither path is safe for them. Creating would make a SECOND")
