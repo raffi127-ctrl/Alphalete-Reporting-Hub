@@ -682,7 +682,8 @@ For each folder reception needs:
 1. Right-click it. Click “Share”.
 2. Type:
 ${RECEPTION_EMAIL}
-3. Click “Send”." "Google Drive docs shared with reception"
+3. Make sure it says “Editor”.
+4. Click “Send”." "Google Drive docs shared with reception (Editor)"
 
 # ------------------------------------------------------------------------
 }
