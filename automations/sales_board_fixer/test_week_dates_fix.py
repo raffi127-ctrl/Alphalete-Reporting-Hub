@@ -93,7 +93,8 @@ class UndatedTab(unittest.TestCase):
         self.assertEqual(cells(got), [("C2", "9"), ("B3", "WE 11/9-11/15")])
 
     def test_rolled_needs_an_earlier_sale(self):
-        v = sold_on(board("x", [26, 27, 28, 29, 30, 31, 1]), [])
+        # sales only on a day still to come: not rolled (and not empty)
+        v = sold_on(board("x", [26, 27, 28, 29, 30, 31, 1]), [4])
         got = W.findings(v, "Sales Board", TUE, chain(v))
         self.assertTrue(got)
         self.assertFalse(any(x.fixable for x in got))
@@ -103,6 +104,11 @@ class UndatedTab(unittest.TestCase):
         for day in (dt.date(2026, 11, 7), dt.date(2026, 11, 8)):
             self.assertFalse(W.rolled_this_week(v, day), day)
         self.assertTrue(W.rolled_this_week(v, TUE))
+
+    def test_board_with_no_sales_at_all_says_nothing(self):
+        # Eve 11/12: Isaiah's 'NEW Sales Board', 0 everywhere, MON 22
+        v = sold_on(board("x", [22, 23, 24, 25, 26, 27, 28]), [])
+        self.assertEqual(W.findings(v, "NEW Sales Board", TUE, chain(v)), [])
 
     def test_copy_of_tab_warns_and_writes_nothing(self):
         v = board("WE 10/26-11/1", [26, 27, 28, 29, 30, 31, 32])

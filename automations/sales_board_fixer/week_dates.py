@@ -160,6 +160,11 @@ def findings(values, title: str, today: dt.date, formulas=None) -> List[Finding]
         first = first or out
     if named and formulas is not None:
         return _make_fixable(first, numbers, label_cell, title, named, formulas)
+    if not named and not any(_day_sales(values).values()):
+        # Eve 2026-11-12: Isaiah's 'NEW Sales Board' -- every rep 0 all week,
+        # dates from WE 12/28/25. A board nobody sells on is retired, not
+        # misdated; once sales land, the warning (or rolled_this_week) comes.
+        return []
     if (formulas is not None and not title.strip().lower().startswith("copy of")
             and rolled_this_week(values, today)):
         return _make_fixable(first, numbers, label_cell, title, this_week, formulas)
