@@ -431,56 +431,44 @@ find_allin_sheet() {   # sets SHEET_ID from the All in One tab open in the Recep
   rm -rf "$t"; [ -n "$SHEET_ID" ]
 }
 _col() { printf "\\$(printf '%03o' $((65+$1)))"; }   # 0 -> A
-_pw_keys() {   # -> lines "row<TAB>labelcol<TAB>label" for every block (reads A:B and E:F ONLY)
-  local t r i lab key; t="$(mktemp -d)"
-  _s_api GET "$SHEET_ID/values:batchGet?ranges=${PW_TAB}%21A1:B400&ranges=${PW_TAB}%21E1:F400&majorDimension=ROWS" "" "$t/k.json" >/dev/null
-  for r in 0 1; do
-    i=0
-    while _json "$t/k.json" valueRanges.$r.values.$i >/dev/null; do
-      lab="$(_json "$t/k.json" valueRanges.$r.values.$i.0)"
-      key="$(_json "$t/k.json" valueRanges.$r.values.$((i+1)).1)"
-      [ -n "$lab" ] && [ "$(echo "$key" | tr 'a-z' 'A-Z' | tr -d ': ')" = UN ] && printf '%s\t%s\t%s\n' "$((i+1))" "$((r*4))" "$lab"
-      i=$((i+1))
-    done
-  done
+# THE PASSWORDS TAB CAN MOVE AROUND (Megan, 2026-11-12: "we shouldn't hardcode
+# it to a certain cell"). Lucy reads the whole tab once and finds every block
+# wherever it sits: a cell saying UN (or "UN:") with a label above it; its
+# value is the cell to the right; PW is the row below. Only labels, UN/PW
+# positions and whether a UN is empty are kept -- password cells are read as
+# part of the tab but never kept, shown or written down.
+_pw_map() {   # -> "BLOCK<TAB>label<TAB>keycol<TAB>freeUNrow(0=none)" lines + one "SPOT<TAB>keycol<TAB>row"
+  local t pl; t="$(mktemp -d)"
+  _s_api GET "$SHEET_ID/values/${PW_TAB}%21A1:Z500" "" "$t/all.json" >/dev/null
+  cat > "$t/map.pl" <<'PERL'
+use strict; use warnings; use JSON::PP;
+my $f = shift; open(my $fh,'<',$f) or exit; local $/; my $d = eval { decode_json(<$fh>) } || {}; close $fh;
+my @v = @{ $d->{values} || [] };
+sub cell { my ($r,$c)=@_; return '' if $r<0 || $c<0 || $r>$#v; my $x=$v[$r][$c]; return defined $x ? $x : ''; }
+sub key  { my $s = uc cell(@_); $s =~ s/[\s:]//g; return $s; }
+my (%lastrow, $maxkc);
+for my $r (0..$#v) { for my $c (0..$#{$v[$r]}) {
+  next unless key($r,$c) eq 'UN';
+  next if $r>0 && (key($r-1,$c) eq 'UN' || key($r-1,$c) eq 'PW');   # not the first pair
+  my $label = '';
+  for my $up (1,2) { for my $cc ($c-1,$c,$c+1) { my $x = cell($r-$up,$cc); if ($x ne '') { $label=$x; last } } last if $label ne ''; }
+  my ($k,$free) = ($r,0);
+  while (key($k,$c) eq 'UN' || key($k,$c) eq 'PW') {
+    $free = $k+1 if !$free && key($k,$c) eq 'UN' && cell($k,$c+1) eq '';
+    $k++;
+  }
+  $label =~ s/\t/ /g;
+  print "BLOCK\t$label\t$c\t$free\n";
+  $lastrow{$c} = $k if !defined $lastrow{$c} || $k > $lastrow{$c};
+  $maxkc = $c if !defined $maxkc || $c > $maxkc;
+}}
+$maxkc = 5 unless defined $maxkc;
+my $end = $lastrow{$maxkc} // 0;
+for my $r ($end..$#v) { for my $cc ($maxkc-1..$maxkc+1) { $end = $r+1 if cell($r,$cc) ne '' } }
+print "SPOT\t$maxkc\t", $end+2, "\n";   # label row of a new block, 1-based, one blank row after the last
+PERL
+  perl "$t/map.pl" "$t/all.json"
   rm -rf "$t"
-}
-_block_free_un() {   # label-row  labelcol -> first UN row in that block whose value is EMPTY (or nothing)
-  # A block can hold several UN/PW pairs (Gmail: the owner's, then reception's
-  # -- seen in "All in One - Cyrus Wade", 2026-11-12). Never overwrite a filled
-  # UN: only an empty one is used. Reads the key column and the UN value cells
-  # one by one -- never a PW cell.
-  local lr="$1" lc="$2" t kcol vcol r k unrows="" ranges="" i=0 u
-  t="$(mktemp -d)"; kcol="$(_col $((lc+1)))"; vcol="$(_col $((lc+2)))"
-  _s_api GET "$SHEET_ID/values/${PW_TAB}%21${kcol}$((lr+1)):${kcol}$((lr+24))" "" "$t/k.json" >/dev/null
-  r=0
-  while :; do
-    k="$(_json "$t/k.json" values.$r.0 | tr 'a-z' 'A-Z' | tr -d ': ')"
-    case "$k" in
-      UN) unrows="$unrows $((lr+1+r))";;
-      PW) ;;
-      *) break;;
-    esac
-    r=$((r+1)); [ $r -gt 22 ] && break
-  done
-  for u in $unrows; do ranges="$ranges&ranges=${PW_TAB}%21${vcol}$u"; done
-  [ -n "$ranges" ] || { rm -rf "$t"; return 1; }
-  _s_api GET "$SHEET_ID/values:batchGet?${ranges#&}" "" "$t/v.json" >/dev/null
-  for u in $unrows; do
-    if [ -z "$(_json "$t/v.json" valueRanges.$i.values.0.0)" ]; then echo "$u"; rm -rf "$t"; return 0; fi
-    i=$((i+1))
-  done
-  rm -rf "$t"; return 1
-}
-_pw_free_row() {   # labelcol -> first row (1,5,9...) whose 3 rows are empty in that block column
-  local lc="$1" t r col; t="$(mktemp -d)"; col="$(_col "$lc")"
-  _s_api GET "$SHEET_ID/values/${PW_TAB}%21${col}1:$(_col $((lc+1)))400" "" "$t/f.json" >/dev/null
-  r=1
-  while [ $r -lt 400 ]; do
-    if [ -z "$(_json "$t/f.json" values.$((r-1)).0)$(_json "$t/f.json" values.$r.1)$(_json "$t/f.json" values.$((r+1)).1)" ]; then echo $r; rm -rf "$t"; return; fi
-    r=$((r+4))
-  done
-  rm -rf "$t"; echo 401
 }
 _sheet_gid() {
   local t g; t="$(mktemp -d)"
@@ -526,30 +514,39 @@ UN: ${user:-your username}
 PW: ${note:-your password}" "All in One: $name"
     return
   fi
-  local row lc found l
-  found="$(_pw_keys | awk -F'\t' -v L="$labels" 'BEGIN{n=split(tolower(L),a,"|")} {for(i=1;i<=n;i++) if(tolower($3)==a[i]){print $1"\t"$2; exit}}')"
-  local unrow=""
-  if [ -n "$found" ]; then
-    row="${found%%	*}"; lc="${found##*	}"     # row = the block's LABEL row
-    unrow="$(_block_free_un "$row" "$lc")"
-  fi
-  if [ -z "$unrow" ]; then
-    # no block, or every pair in it is already filled -> a new block
-    lc=4; row="$(_pw_free_row 4)"
-    _put "$(_col 4)$row" "$name"; _put "$(_col 5)$((row+1))" "UN"; _put "$(_col 5)$((row+2))" "PW"
+  local map hit kc unrow="" spot row
+  map="$(_pw_map)"
+  hit="$(echo "$map" | awk -F'\t' -v L="$labels" 'BEGIN{n=split(tolower(L),a,"|")} $1=="BLOCK"{l=tolower($2); gsub(/^ +| +$/,"",l); for(i=1;i<=n;i++) if(l==a[i] && $4>0){print $3"\t"$4; exit}}')"
+  if [ -n "$hit" ]; then
+    kc="${hit%%	*}"; unrow="${hit##*	}"
+  else
+    # no block, or every pair in it is already filled -> a new block below the
+    # last one in the right-most column of blocks
+    spot="$(echo "$map" | awk -F'\t' '$1=="SPOT"{print $2"\t"$3}')"
+    kc="${spot%%	*}"; row="${spot##*	}"
+    [ -n "$kc" ] || { kc=5; row=1; }
+    _put "$(_col $((kc-1)))$row" "$name"; _put "$(_col $kc)$((row+1))" "UN"; _put "$(_col $kc)$((row+2))" "PW"
     unrow=$((row+1))
   fi
-  local vcol=$((lc+2)) uncell pwcell
+  local vcol=$((kc+1)) uncell pwcell
   uncell="$(_col $vcol)$unrow"; pwcell="$(_col $vcol)$((unrow+1))"
   [ -n "$user" ] && _put "$uncell" "$user"
+  [ -z "$user" ] && [ -z "$note" ] && _paint "$unrow" $vcol green
   if [ -n "$note" ]; then
     _put "$pwcell" "$note"; mark_done "$key"; ok "All in One: $name filled ($note)"; return
   fi
   _paint $((unrow+1)) $vcol green
-  human "$key" "Click your All in One tab (pinned in Chrome).
+  if [ -n "$user" ]; then
+    human "$key" "Click your All in One tab (pinned in Chrome).
 
 Lucy typed your ${name} username.
 Type your ${name} password in the GREEN box (${pwcell})." "All in One: $name"
+  else
+    human "$key" "Click your All in One tab (pinned in Chrome).
+
+Type the ${name} username and password in the GREEN boxes (${uncell}, ${pwcell})." "All in One: $name"
+    _paint "$unrow" $vcol clear
+  fi
   _paint $((unrow+1)) $vcol clear
 }
 
@@ -1142,7 +1139,17 @@ else
   echo "  ⚠️  Google Sheets permission didn't go through -> All in One typed by hand"
 fi
 allin_login allin_gmail "Gmail" "$RECEPTION_EMAIL"
-allin_login allin_zoom "Zoom" "your personal Gmail" "Sign in with Google (personal Gmail)"
+# Zoom on this laptop is the person's PERSONAL account -> not saved. Only a
+# COMPANY Zoom login goes in the All in One, if the office has one (Megan,
+# 2026-11-12).
+if [ $DRY_RUN = 1 ] || ! is_done allin_zoom_asked; then
+  if [ $DRY_RUN = 0 ] && [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Does the office have a COMPANY Zoom login?
+
+(Not your personal one.)" "No,Yes" "No")" = "Yes" ]; then
+    allin_login allin_zoom "Zoom" ""
+  fi
+  [ $DRY_RUN = 0 ] && mark_done allin_zoom_asked
+fi
 }
 
 step_2() {
