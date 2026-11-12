@@ -132,5 +132,32 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(C.EXPECTED_OWNER_ID, RAF.EXPECTED_OWNER_ID)
 
 
+class TestTagging(unittest.TestCase):
+    """Who gets @-mentioned at the bottom of a post. Dry-run only — no Slack."""
+
+    def _dry_body(self, prof):
+        from automations.office_wrap_ups import run as R
+        lines = []
+        missing = [{"rep": "Rep A", "customer_name": "John Doe",
+                    "phone": "214-555-0001", "business": "", "products": ["Internet"]}]
+        R.post_office(prof, DAY, missing, 1, dry_run=True,
+                      cancel_map={}, log=lambda *a: lines.append(" ".join(map(str, a))))
+        return "\n".join(lines)
+
+    def test_crossws_freshsuccess_tags_dylan_and_zadrian(self):
+        prof = {"key": "trang", "owner": "Trang Canavan",
+                "owner_aliases": ["Trang Canavan"], "channel_id": "C_FS",
+                "channel_name": "#freshsuccess-all-leaders",
+                "slack_token_file": "slack-token-freshsuccess"}
+        body = self._dry_body(prof)
+        self.assertIn("<@U0BHD2UK0TA>", body)   # Dylan in Fresh Success
+        self.assertIn("<@U09B65SUW5A>", body)   # Zadrian Kessler in Fresh Success
+
+    def test_samews_office_tags_only_dylan_ao(self):
+        body = self._dry_body(_prof())          # same-ws, no token file
+        self.assertIn("<@%s>" % C.TAG_USER_ID, body)
+        self.assertNotIn("U09B65SUW5A", body)   # Zadrian is Fresh-Success-only
+
+
 if __name__ == "__main__":
     unittest.main()

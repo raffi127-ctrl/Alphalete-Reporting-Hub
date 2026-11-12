@@ -32,9 +32,13 @@ SLACK_HEADER = ":telephone_receiver: Reps that didn\'t send wrap ups"
 # (Trang → FRESH SUCCESS) uses his id there, keyed by the office's token file.
 TAG_USER_ID = "U048V0YA5FC"  # Dylan Twaddle, AO workspace
 TAG_USER_ID_CROSSWS = {
-    # token file -> Dylan's user id in that workspace. A mention only works with
-    # the id from that workspace.
-    "slack-token-freshsuccess": "U0BHD2UK0TA",  # Dylan in FRESH SUCCESS (Trang)
+    # token file -> user id(s) to @-mention in that workspace. A string tags one
+    # person; a list tags several. A mention only works with the id from THAT
+    # workspace.
+    "slack-token-freshsuccess": [
+        "U0BHD2UK0TA",   # Dylan Twaddle, FRESH SUCCESS (Trang)
+        "U09B65SUW5A",   # Zadrian Kessler, FRESH SUCCESS (Dylan 2026-11-12)
+    ],
 }
 
 # The bold+italic standing instruction at the very bottom of every reply — one

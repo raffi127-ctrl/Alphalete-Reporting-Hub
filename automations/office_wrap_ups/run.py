@@ -95,10 +95,12 @@ def post_office(profile: Dict[str, str], day: dt.date,
     # Tag Dylan so the morning post is readily visible to him — using his id
     # from THIS office's workspace (AO by default, or the cross-ws id keyed by
     # the token file). Dylan 2026-10-21.
-    tag_id = (C.TAG_USER_ID_CROSSWS.get(token_file) if token_file
-              else getattr(C, "TAG_USER_ID", ""))
-    if tag_id:
-        body = body + "\n\n<@%s>" % tag_id
+    tag_raw = (C.TAG_USER_ID_CROSSWS.get(token_file) if token_file
+               else getattr(C, "TAG_USER_ID", ""))
+    tag_ids = [tag_raw] if isinstance(tag_raw, str) else list(tag_raw or [])
+    tag_ids = [t for t in tag_ids if t]
+    if tag_ids:
+        body = body + "\n\n" + " ".join("<@%s>" % t for t in tag_ids)
     # Standing instruction at the very bottom (bold + italic).
     if getattr(C, "FOOTER", ""):
         body = body + "\n\n" + C.FOOTER
