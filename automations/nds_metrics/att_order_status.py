@@ -49,9 +49,15 @@ DETAILS_URL = "https://www.att.com/acctmgmt/order/details?emailAddress={email}&o
 FEDEX_URL = "https://www.fedex.com/fedextrack/?trknbr={n}"
 FEDEX_KEEP_RE = re.compile(r"deliver|on the way|return|currently in|exception|held|pick ?up|delay|"
                            r"label created|scheduled|new tracking|signature required", re.I)
+# the status sentence itself, ahead of anything else on the page
+FEDEX_STATUS_RE = re.compile(r"couldn.t be delivered|returning to the shipper|still on the way|is on the way|"
+                             r"has been delivered|was delivered|^delivered\b|out for delivery|in transit|"
+                             r"delivery exception|shipment exception|unable to deliver|ready for pickup|"
+                             r"held at|new delivery date|label created|picked up|at local fedex", re.I)
 FEDEX_NOISE_RE = re.compile(r"delivery manager|register or log in|view more details|get status updates|"
                             r"^#|^label created$|^on the way$|^delivered$|^delivery updated$|^returning to shipper$|"
-                            r"we'll need someone|if you're not home", re.I)
+                            r"we'll need someone|if you're not home|\?|^view |^how |^get |^manage |^track |"
+                            r"^sign |^print|proof of delivery|photo", re.I)
 PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".att_profile"
 STALE_DAYS = 0                   # every Shipped line, every day (was 3 until 11/11 pm)
 NOTE_TAG = "AT&T:"
@@ -269,6 +275,33 @@ def short_text(text: str, today: dt.date, carrier: Sequence[str] = ()) -> str:
     return "%s: %s" % (today.strftime("%m/%d"), " | ".join(parts))
 
 
+def keep_fedex_from(body: str, prev: str) -> str:
+    """When today's clause for a package has only AT&T's word but yesterday's
+    cell had FedEx's for the same package, FedEx's stays (dated): FedEx
+    walls a long run and would otherwise downgrade "returning to shipper"
+    to "on the way" (Rajeshkanna, 11/11 evening)."""
+    if not body or not prev or ":" not in body:
+        return body
+    m = re.match(r"(\d\d/\d\d): (.*)$", body)
+    pm = re.match(r"(\d\d/\d\d): (.*)$", prev)
+    if not m or not pm:
+        return body
+    prev_by_pkg = {}
+    for clause in pm.group(2).split(" | "):
+        k = re.search(r"\((?:FedEx|UPS|USPS) …(\w+)\)", clause)
+        if k and "FedEx:" in clause:
+            prev_by_pkg[k.group(1)] = clause
+    out = []
+    for clause in m.group(2).split(" | "):
+        k = re.search(r"\((?:FedEx|UPS|USPS) …(\w+)\)", clause)
+        if k and "FedEx:" not in clause and k.group(1) in prev_by_pkg:
+            out.append(prev_by_pkg[k.group(1)].replace("FedEx:", "FedEx (%s):" % pm.group(1), 1)
+                       if "FedEx (" not in prev_by_pkg[k.group(1)] else prev_by_pkg[k.group(1)])
+        else:
+            out.append(clause)
+    return "%s: %s" % (m.group(1), " | ".join(out))
+
+
 def detail_text(summary: Dict[str, object], today: dt.date, carrier: Sequence[str] = ()) -> str:
     """The hover note: everything AT&T and FedEx said, one item per line."""
     parts = ["Checked %s" % dt.datetime.now().strftime("%m/%d/%Y %H:%M"), ""]
@@ -338,15 +371,20 @@ def fedex_status(page, number: str, log=print) -> str:
         if FEDEX_KEEP_RE.search(text or "") and len(text or "") > 800:
             break
         log("    (FedEx %s: nothing yet on try %d)" % (number, attempt))
+    lines = [_norm(l) for l in (text or "").splitlines()]
+    lines = [l for l in lines if l and len(l) <= 170 and not FEDEX_NOISE_RE.search(l)]
     kept, seen = [], set()
-    for raw in (text or "").splitlines():
-        ln = _norm(raw)
-        if not ln or len(ln) > 170 or FEDEX_NOISE_RE.search(ln) or not FEDEX_KEEP_RE.search(ln):
-            continue
-        if ln.lower() in seen:
-            continue
-        seen.add(ln.lower())
-        kept.append(ln[:120])
+    # the status sentence first ("The package couldn't be delivered and is
+    # returning to the shipper"), then "Currently in X" and the rest
+    for pick in (lambda l: FEDEX_STATUS_RE.search(l), lambda l: l.lower().startswith("currently in"),
+                 lambda l: FEDEX_KEEP_RE.search(l)):
+        for ln in lines:
+            if ln.lower() in seen or not pick(ln):
+                continue
+            seen.add(ln.lower())
+            kept.append(ln[:120])
+            if len(kept) >= 3:
+                break
         if len(kept) >= 3:
             break
     if not kept:
@@ -496,6 +534,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
     cells = []
     pending = []
     fedex_seen: Dict[str, str] = {}
+    fedex_blank = 0
     written = 0
     read = failed = unchanged = 0
     with sync_playwright() as p:
@@ -529,10 +568,17 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                         log("    (UPS %s: not looked up)" % n)
                         continue
                     if n not in fedex_seen:
-                        fedex_seen[n] = fedex_status(page, n, log=log)
+                        if fedex_blank >= 6:
+                            log("    (FedEx %s: skipped -- 6 blank pages in a row, FedEx has walled this run)" % n)
+                            fedex_seen[n] = ""
+                        else:
+                            page.wait_for_timeout(2500)         # FedEx walls a quick run of lookups
+                            fedex_seen[n] = fedex_status(page, n, log=log)
+                            fedex_blank = 0 if fedex_seen[n] else fedex_blank + 1
                     if fedex_seen[n]:
                         carrier.append(fedex_seen[n])
                 body = short_text(s.get("text", ""), today, carrier) or note_text(s, today, carrier)
+                body = keep_fedex_from(body, o["lines"][0]["notes"] if o["lines"] else "")
                 detail = detail_text(s, today, carrier)
                 log("    %s" % body)
                 batch = []

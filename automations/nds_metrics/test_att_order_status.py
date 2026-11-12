@@ -160,6 +160,27 @@ class ShortCell(unittest.TestCase):
         self.assertIn("FedEx 879024018564: returning", d)
 
 
+class FedExWords(unittest.TestCase):
+    def test_link_texts_are_not_a_status(self):
+        # 11/11 evening: cells read "FedEx: View proof of delivery attempt" and
+        # "FedEx: How was your delivery?" -- link texts, not the status
+        self.assertEqual(A._status_word("View proof of delivery attempt"), "View proof of delivery attempt")
+        self.assertTrue(A.FEDEX_NOISE_RE.search("View proof of delivery attempt"))
+        self.assertTrue(A.FEDEX_NOISE_RE.search("How was your delivery?"))
+        self.assertFalse(A.FEDEX_NOISE_RE.search("The package couldn't be delivered and is returning to the shipper."))
+
+    def test_yesterdays_fedex_word_survives_a_blank_fedex_day(self):
+        prev = "11/11: Shipped Oct 21, FedEx: returning to shipper (FedEx …8564) | Shipped Nov 2, FedEx: delayed (FedEx …0332)"
+        today = "11/12: Shipped Oct 21, on the way (FedEx …8564) | Shipped Nov 2, on the way (FedEx …0332)"
+        self.assertEqual(A.keep_fedex_from(today, prev),
+                         "11/12: Shipped Oct 21, FedEx (11/11): returning to shipper (FedEx …8564) | Shipped Nov 2, FedEx (11/11): delayed (FedEx …0332)")
+        fresh = "11/12: Shipped Oct 21, FedEx: delivered (FedEx …8564) | Shipped Nov 2, on the way (FedEx …0332)"
+        self.assertEqual(A.keep_fedex_from(fresh, prev),
+                         "11/12: Shipped Oct 21, FedEx: delivered (FedEx …8564) | Shipped Nov 2, FedEx (11/11): delayed (FedEx …0332)")
+        self.assertEqual(A.keep_fedex_from(today, ""), today)
+        self.assertEqual(A.keep_fedex_from(today, "11/10 AT&T: old style"), today)
+
+
 class Summaries(unittest.TestCase):
     def test_real_details_page(self):
         # Rajeshkanna's page, read by hand on 11/11
