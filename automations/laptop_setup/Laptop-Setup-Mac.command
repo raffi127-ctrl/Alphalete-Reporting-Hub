@@ -743,11 +743,11 @@ human slack_alerts_laptop "Slack alerts are open in System Settings.
 (The gray ⚙️ window. Look behind this box.)
 
 Turn on “Allow notifications”." "Slack alerts on the laptop"
-human slack_phone "Grab the phone.
+human slack_phone "Grab your phone.
 
-1. Get Slack from the App Store.
-2. Sign in with YOUR OWN email.
-3. Tap Allow for alerts." "Slack on the phone"
+1. Open Slack. (Don't have it? Get it from the App Store and sign in with your own email.)
+2. Open the phone's Settings. Tap Notifications. Tap Slack.
+3. Turn on “Allow Notifications”." "Slack alerts on the phone"
 human slack_admin "Ask the launch team to make you a Slack admin.
 
 They will do it on the Zoom call." "Slack: made admin (AO)"
