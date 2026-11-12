@@ -190,6 +190,11 @@ def _css():
   .orgtab td:nth-child(2) {{ text-align:left; padding-right:34px; }}
   .orgtab td.rk {{ text-align:center; color:#8d887e; padding:4px 6px; }}
   .orgtab tr.tot td {{ font-size:11.5px; }}
+  /* All-ICDs TOTAL row: 7-digit sums in bold don't fit the 8-week grid at 13px
+     ("$1,015,89..."), so a touch smaller with tighter padding — full figure
+     always visible. */
+  .icdtable tr.tot td {{ font-size:11.5px; }}
+  .icdtable tr.tot td:not(.icd) {{ padding-left:3px; padding-right:5px; }}
   .adopt {{ color:#E5484D; font-weight:bold; }}
   .footkey {{ text-align:right; color:#8d887e; font-size:11px; margin-top:10px; }}
   tr.tot td {{ border-top:2px solid {GOLD}; font-weight:bold; color:{GOLD_LT}; }}
@@ -676,10 +681,26 @@ def _all_icds(d):
         c = ' class="hi"' if i <= 5 else ""
         body.append(f'<tr{c}><td class="rk">{i}</td><td class="icd">{r["name"]}</td>'
                     f'{wk}<td class="t26">{_fmt(r["total"])}</td></tr>')
+    body.append(_icd_total_row(rows, len(weeks)))
     return (f'<div class="sect">All ICDs &mdash; {len(rows)} with DD Data</div>'
             f'<table class="icdtable">{_icd_colgroup(len(weeks))}'
             f'<tr><th>#</th><th class="icd">ICD</th>{ths}'
             f'<th class="t26">Total 2026</th></tr>{"".join(body)}</table>')
+
+
+def _icd_total_row(rows, n_weeks):
+    """TOTAL row closing the All-ICDs table — one sum per week column plus the
+    2026 total (Raf 2026-11-12: "add the total number at the bottom ... have it
+    there moving forward"). Sums exactly the rows printed above it; Tracked
+    Separately stays out, as it does everywhere else."""
+    sums = [0.0] * n_weeks
+    for r in rows:
+        for j, v in enumerate(list(r["weeks"])[:n_weeks]):
+            sums[j] += D.money(v)
+    total = sum(D.money(r["total"]) for r in rows)
+    wk = "".join(f"<td>{_fmt(s)}</td>" for s in sums)
+    return (f'<tr class="tot"><td></td><td class="icd">TOTAL</td>'
+            f'{wk}<td class="t26">{_fmt(total)}</td></tr>')
 
 
 def page2(d):
