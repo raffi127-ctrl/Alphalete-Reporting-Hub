@@ -198,6 +198,22 @@ class ShortCell(unittest.TestCase):
         o = A.stale_orders(HDR, [row(**{"Shipping Status": "Delayed"})], today=TODAY)
         self.assertEqual((o[0]["lines"][0]["status"], o[0]["lines"][0]["phone"]), ("Delayed", "817-673-3727"))
 
+    def test_status_follows_the_final_notes_cell(self):
+        body = "11/12: Delivered Nov 3 · FedEx …8080 (as of 11/11)"
+        self.assertEqual(A.status_from_clause(body.split(": ", 1)[1]), "Delivered Nov 3 (as of 11/11)")
+        self.assertEqual(A.status_from_clause("11/03/2026 at 2:48 pm, shipped Nov 2 · FedEx …8080 (as of 11/12)"),
+                         "Delivered Nov 3 (as of 11/12)")
+        self.assertEqual(A.status_from_clause("Returning to shipper, could not be delivered · FedEx …8564"), "Returning to shipper")
+        self.assertEqual(A.status_from_clause("Shipped Nov 9, FedEx has no record yet · FedEx …0300"), "No record yet")
+        self.assertEqual(A.status_from_clause("Shipped Nov 9, UPS not checked · UPS …4036 (per AT&T)"), "Not checked")
+        self.assertEqual(A.status_from_clause("Ordered Nov 11, not shipped yet · UPS …2114"), "Not shipped yet")
+        pk = A.package_lines(DETAILS, TODAY, ["FedEx 879024018564: The package couldn't be delivered and is returning to the shipper",
+                                               "FedEx 879615850332: Delivered Tuesday 11/10/2026 at 9:02 am"])
+        body = A.short_text(DETAILS, TODAY, ["FedEx 879024018564: The package couldn't be delivered and is returning to the shipper",
+                                             "FedEx 879615850332: Delivered Tuesday 11/10/2026 at 9:02 am"])
+        self.assertEqual(A.status_for_line(body, pk, "945-233-4914"), "Returning to shipper")
+        self.assertEqual(A.status_for_line(body, pk, "817-296-5740"), "Delivered Nov 10")
+
     def test_fedex_date_forms(self):
         self.assertEqual(A._fedex_date("Delivered / Tuesday 11/3/2026 at 2:14 pm"), "Nov 3")
         self.assertEqual(A._fedex_date("Delivered / November 3, 2026"), "Nov 3")

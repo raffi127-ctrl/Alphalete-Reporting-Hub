@@ -363,6 +363,57 @@ def package_lines(text: str, today: dt.date, carrier: Sequence[str] = ()) -> Lis
     return out
 
 
+def status_from_clause(clause: str) -> str:
+    """The Shipping Status word for one package line of the notes cell, so
+    the status column always agrees with what the notes say after
+    keep_fedex_from kept yesterday's real reading: 'Delivered Nov 3 · FedEx
+    …8080 (as of 11/11)' -> 'Delivered Nov 3 (as of 11/11)'."""
+    c = _norm(clause)
+    asof = re.search(r"\((as of \d\d/\d\d)\)", c)
+    tail = (" (%s)" % asof.group(1)) if asof else ""
+    low = c.lower()
+    if low.startswith("delivered"):
+        m = re.match(r"delivered ([A-Z][a-z]{2} \d{1,2})", c)
+        return ("Delivered %s" % m.group(1) if m else "Delivered") + tail
+    m = re.match(r"(\d{1,2})/(\d{1,2})/\d{4}", c)          # 11/12's early form: the date line itself
+    if m:
+        names = {v: k for k, v in MONTHS.items()}
+        return "Delivered %s %d%s" % (names.get(int(m.group(1)), "?"), int(m.group(2)), tail)
+    if low.startswith("returning"):
+        return "Returning to shipper" + tail
+    if low.startswith("delayed"):
+        return "Delayed" + tail
+    if low.startswith("held"):
+        return "Held for pickup" + tail
+    if low.startswith("in transit"):
+        return "In transit" + tail
+    if "no record" in low or "label not scanned" in low:
+        return "No record yet"
+    if "not checked" in low:
+        return "Not checked"
+    if low.startswith("ordered"):
+        return "Not shipped yet"
+    return ""
+
+
+def status_for_line(body: str, packages: Sequence[Dict[str, object]], phone: str) -> str:
+    """The status column for a tab line, read off the FINAL notes cell: the
+    clause whose label matches the line's own package (AT&T names the lines
+    in each package), else the first (newest) clause."""
+    m = re.match(r"\d\d/\d\d: (.*)$", body or "")
+    if not m:
+        return ""
+    clauses = m.group(1).split(" | ")
+    last4 = "".join(ch for ch in str(phone or "") if ch.isdigit())[-4:]
+    label = ""
+    for pk in packages:
+        if last4 and last4 in (pk.get("lines") or []):
+            label = str(pk.get("label") or "")
+            break
+    pick = next((c for c in clauses if label and label.split(",")[0].strip() in c), clauses[0] if clauses else "")
+    return status_from_clause(pick)
+
+
 def line_status(packages: Sequence[Dict[str, object]], phone: str) -> str:
     """The Shipping Status for one tab line: the package AT&T names that line
     in (by the number's last four digits); when AT&T names none, the newest
@@ -809,7 +860,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                         "rows": [{"values": [cell]}], "fields": "userEnteredValue,textFormatRuns,note"}})
                     # the Shipping Status cell, per line; a weak word today
                     # ("Not checked", "No record yet") never replaces a real one
-                    st = line_status(packages, ln["phone"])
+                    st = status_for_line(body, packages, ln["phone"]) or line_status(packages, ln["phone"])
                     if st in ("Not checked", "No record yet") and ln["status"].strip() \
                             and ln["status"].strip() not in ("Not checked", "No record yet"):
                         st = ln["status"].strip()
