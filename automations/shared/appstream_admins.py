@@ -561,36 +561,68 @@ PYTHON_URL = "https://www.python.org/downloads/"
 
 
 def icd_message(owner: str, login: Dict) -> str:
-    """Megan 2026-11-06: say what it is, that the enrollment form is done
-    together on the Zoom call, give the Python download to do BEFORE the call
-    (the installer's slow first step), and list what to have ready — OwnerVille
-    login, the email the SaraPlus code goes to, anything else the installer asks.
-    NO STERLING here (Megan 2026-11-08): background checks are offered only to
-    some offices, by their own link -- docs/sterling-setup.html."""
+    """What an enrolling ICD is told to have ready: ONE SHORT CHECKLIST.
+
+    Megan 2026-11-06: give the Python download to do BEFORE the call (the
+    installer's slow first step), list what to have ready, and say the form is
+    done together on the call. NO STERLING here (Megan 2026-11-08): background
+    checks are offered only to some offices, by their own link.
+
+    REWRITTEN 2026-11-12 (Megan, George Delgado's enrollment: "super simplify
+    that message overall"). Two drafts in paragraphs were both wrong; what she
+    wanted, in her words: "they need like a bulleted list -- signed into your
+    gmail account that your sara+ sends codes to -- OV UN & PW -- Sara UN &
+    PW ... it should read like a checklist". So: a hello, a checklist with a
+    box per line, the form link. Nothing explained that the call will explain.
+
+    THE APPSTREAM LOGIN IS NOT ON THE CHECKLIST, and its two values sit on
+    their OWN LINES. As one line -- "`user` / `pass`" -- it "pasted weird in
+    slack where they can't copy the UN and PW" (Megan, same day): two code
+    spans side by side select as one. Her wording for the lead-in is kept.
+
+    THE GMAIL LINE IS THE ONE SHE ADDED. Setup opens that Gmail to forward the
+    SaraPlus codes to Lucy; an owner who is not signed in to it on that
+    computer spends the call hunting for a password.
+    """
     first = owner.strip().split()[0]
     return (
-        "Hi %s! Lucy here :wave: I'm Alphalete's reporting assistant.\n\n"
-        "*Your AppStream login for Lucy ECO is ready* (this is the login I use, "
-        "not your own):\n"
-        "• Username: `%s`\n"
-        "• Password: `%s`\n\n"
-        "We'll go through the enrollment form together on our Zoom call, so "
-        "nothing to fill in yet.\n\n"
-        "*Important:* Lucy HAS to run on your office iMac or Mac mini — a desktop "
-        "that stays on all day — not a laptop.\n\n"
-        "*One thing to do before the call* (it's the slow part): install Python "
-        "on that iMac or Mac mini. Click, download, open it and hit Next until "
-        "it's done:\n%s\n\n"
-        "*Please have these ready for the call:*\n"
-        "• Your OwnerVille username and password\n"
-        "• The email login where your SaraPlus codes go (if you're in that program)\n\n"
-        "That keeps the call short. Reply here if anything's unclear. "
-        "Here's the sign-up form we'll use on the call, for reference: %s"
-        % (first, login["username"], login["password"], PYTHON_URL, ENROLL_URL))
+        "Hi %s! Lucy here :wave: Your checklist for our Lucy ECO setup call:\n"
+        "☐ Python installed on your office iMac or Mac mini (not a laptop): %s\n"
+        "☐ Signed in to the Gmail account your Sara+ sends codes to\n"
+        "☐ Sara+ username and password\n"
+        "☐ OwnerVille username and password\n\n"
+        "Here is the UN & PW we will use when Lucy asks you to sign into "
+        "AppStream:\n"
+        "UN: `%s`\n"
+        "PW: `%s`\n\n"
+        "We'll fill in the sign-up form on the call: %s"
+        % (first, PYTHON_URL, login["username"], login["password"], ENROLL_URL))
+
+
+def _dm_members(owner: str, sid: str, office_key: str = "") -> List[str]:
+    """Who the enrollment DM is addressed to: Megan, Eve, the ICD -- and
+    whoever else that office's alerts go to (icd_alerts.offices.HELPERS), so
+    the call prep lands in the SAME group the alerts will. George Delgado,
+    2026-11-12: Megan named Colten Wright and Nickolas Oramas for "the message"
+    and "all alerts" in one breath; one list, read in both places.
+
+    Looked up under the office key AND the owner's first name, because the
+    key this tool is run with (`george-delgado`, the metrics key) is not
+    always the key the sign-up will get (`george`). Never raises.
+    """
+    people = [OPERATORS["megan"], OPERATORS["eve"], sid]
+    try:
+        from automations.icd_alerts import offices as O
+        first = (owner or "").strip().split()[0].lower() if (owner or "").strip() else ""
+        for key in (office_key, first):
+            people += list(O.helpers_for(key))
+    except Exception:  # noqa: BLE001 -- the three above still get it
+        pass
+    return [p for p in dict.fromkeys(people) if p]
 
 
 def _dm_icd(owner: str, login: Dict, slack_id: str, log=print,
-            via_lucy: bool = False) -> bool:
+            via_lucy: bool = False, office_key: str = "") -> bool:
     """Megan 2026-11-06: 'once this is created you should DM it and the lucyeco
     enrollment link to the ICD'. Only when the office is assigned — a login
     that sees no office is not ready to hand over.
@@ -607,12 +639,14 @@ def _dm_icd(owner: str, login: Dict, slack_id: str, log=print,
     if via_lucy:
         try:
             from automations.day_orchestrator import mini_control as M
-            members = ",".join(dict.fromkeys([OPERATORS["megan"], OPERATORS["eve"], sid]))
+            members = ",".join(_dm_members(owner, sid, office_key))
             text = icd_message(owner, login).replace("\n", "\\n")
             M.enqueue("post_note", "users=%s %s" % (members, text),
                       by=os.environ.get("MINI_BY") or "Megan", machine="Lucy 1")
-            log("group DM (Megan, Eve, %s %s) QUEUED on Lucy 1 so it comes from Lucy"
-                % (owner, sid))
+            log("group DM (Megan, Eve, %s %s%s) QUEUED on Lucy 1 so it comes from Lucy"
+                % (owner, sid,
+                   "" if members.count(",") == 2
+                   else " + %d more for this office" % (members.count(",") - 2)))
             return True
         except Exception as e:  # noqa: BLE001
             log("could not queue the DM on Lucy 1: %s — NOT sending from this "
@@ -623,9 +657,9 @@ def _dm_icd(owner: str, login: Dict, slack_id: str, log=print,
         # sure it's me, Eve, Nigel in the DM"), so the call prep is in one thread.
         from automations.icd_alerts import post as P
         from automations.icd_alerts import office_slack as _OS
-        members = [OPERATORS["megan"], OPERATORS["eve"], sid]
+        members = _dm_members(owner, sid, office_key)
         client = _OS.client_for(None)
-        conv = client.conversations_open(users=",".join(dict.fromkeys(members)))
+        conv = client.conversations_open(users=",".join(members))
         channel = (conv.get("channel") or {}).get("id")
         if not channel:
             raise RuntimeError("conversations.open gave no channel id")
@@ -854,7 +888,8 @@ def provision(owner: str, office_id: Optional[str] = None, office_key: str = "",
         verified = verify_login(login, log=log, headed=headed or local)
     dm_sent = False
     if dm and assigned and verified is not False:
-        dm_sent = _dm_icd(owner, login, slack_id, log=log, via_lucy=local)
+        dm_sent = _dm_icd(owner, login, slack_id, log=log, via_lucy=local,
+                          office_key=office_key)
     if dm_sent:
         note = (note + " · " if note else "") + "DM'd the ICD"
     _record(owner, office_key, login, office, assigned, verified, note, log=log)

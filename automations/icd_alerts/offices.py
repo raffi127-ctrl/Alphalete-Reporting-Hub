@@ -617,6 +617,13 @@ HELPERS = {
     # Amber. These three are AO-workspace users, so the DM goes on Lucy's AO
     # token like every other office's; only her boards live in Fresh Success.
     "trang": ("U0C3J8MN99S", "U09S2LTUZ55"),   # Michael Canavan, Amber (Hester)
+    # George Delgado, Skyline Elite (Megan 2026-11-12, with a screenshot of
+    # the group: "this will be who needs included in the message. for all
+    # alerts for George") -- Colten Wright, Nickolas Oramas, George, Megan,
+    # Eve. Under both keys: `george` is what his sign-up will be given,
+    # `george-delgado` is the key his metrics were wired under that morning.
+    "george": ("U047M3AAN0G", "U07M9JHP9V2"),          # Colten Wright, Nickolas Oramas
+    "george-delgado": ("U047M3AAN0G", "U07M9JHP9V2"),
 }
 
 

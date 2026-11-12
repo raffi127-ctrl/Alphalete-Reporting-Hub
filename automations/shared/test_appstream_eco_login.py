@@ -96,6 +96,57 @@ class IcdDm(unittest.TestCase):
         self.assertIn("LucyECOPat", m)
         self.assertIn(A.ENROLL_URL, m)
 
+    def test_message_says_to_be_signed_in_to_the_saraplus_gmail(self):
+        # Megan 2026-11-12: not "have the email ready" -- SIGNED IN, on that
+        # computer, because setup opens that Gmail to forward the codes.
+        m = A.icd_message("Pat Example", {"username": "u", "password": "p"})
+        self.assertIn("Signed in to the Gmail account your Sara+ sends codes to", m)
+        self.assertIn("OwnerVille username and password", m)
+        self.assertIn("Sara+ username and password", m)
+        self.assertIn(A.PYTHON_URL, m)
+
+    def test_message_reads_like_a_checklist(self):
+        # Megan 2026-11-12: "they need like a bulleted list ... it should
+        # read like a checklist". A box per line, five lines.
+        m = A.icd_message("Pat Example", {"username": "u", "password": "p"})
+        self.assertIn("Your checklist", m)
+        self.assertEqual(sum(1 for l in m.splitlines() if l.startswith("☐ ")), 4)
+
+    def test_the_login_can_be_copied_one_value_at_a_time(self):
+        # Megan 2026-11-12: on one line it "pasted weird in slack where they
+        # can't copy the UN and PW". Each value alone on its line.
+        m = A.icd_message("Pat Example", {"username": "LucyECOPat",
+                                          "password": "Pat123!"})
+        lines = m.splitlines()
+        self.assertIn("UN: `LucyECOPat`", lines)
+        self.assertIn("PW: `Pat123!`", lines)
+        self.assertIn("Here is the UN & PW we will use when Lucy asks you to "
+                      "sign into AppStream:", lines)
+
+    def test_message_stays_short(self):
+        # "Super simplify that message overall." The old one ran ~920
+        # characters; this is a ceiling, not a target.
+        m = A.icd_message("Pat Example", {"username": "LucyECOPat",
+                                          "password": "Pat123!"})
+        self.assertLess(len(m), 500)
+        self.assertNotIn("Sterling", m)
+
+    def test_the_dm_goes_to_megan_eve_and_the_icd(self):
+        self.assertEqual(A._dm_members("Pat Example", "U0PAT000001", "pat"),
+                         [A.OPERATORS["megan"], A.OPERATORS["eve"], "U0PAT000001"])
+
+    def test_an_offices_alert_people_get_the_enrollment_dm_too(self):
+        # George Delgado, 2026-11-12: Colten Wright and Nickolas Oramas are in
+        # "the message" and "all alerts". Found under the metrics key or the
+        # first-name key his sign-up will get.
+        for key in ("george-delgado", "george", ""):
+            got = A._dm_members("George Delgado", "U0C93NP6WJC", key)
+            self.assertEqual(got[:3], [A.OPERATORS["megan"], A.OPERATORS["eve"],
+                                       "U0C93NP6WJC"])
+            self.assertIn("U047M3AAN0G", got)       # Colten Wright
+            self.assertIn("U07M9JHP9V2", got)       # Nickolas Oramas
+            self.assertEqual(len(got), len(set(got)))
+
     def test_slack_id_from_the_md_table(self):
         self.assertEqual(A.owner_slack_id("Sahil Multani"), "U07QDQ62RNZ")
         self.assertEqual(A.owner_slack_id("Starr Rodenhurst"), "U0BQAF8B3S7")

@@ -35,6 +35,13 @@ class HelpersAreLookedUpByOfficeKeyTest(unittest.TestCase):
 
     def test_an_unknown_office_is_empty_not_an_error(self):
         self.assertEqual(O.helpers_for("nobody"), ())
+
+    def test_georges_alerts_include_colten_and_nickolas(self):
+        # Megan 2026-11-12: "this will be who needs included ... for all
+        # alerts for George".
+        for key in ("george", "george-delgado"):
+            self.assertEqual(set(O.helpers_for(key)),
+                             {"U047M3AAN0G", "U07M9JHP9V2"})
         self.assertEqual(O.helpers_for(""), ())
         self.assertEqual(O.helpers_for(None), ())
 
