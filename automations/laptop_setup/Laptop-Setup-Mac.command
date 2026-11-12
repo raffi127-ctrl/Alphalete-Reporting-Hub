@@ -266,6 +266,10 @@ chk_apple() {
     printf "This Mac is signed in to a different Apple account.\n\nAsk the launch team."
   fi
 }
+chk_apple_any() {
+  defaults read MobileMeAccounts Accounts 2>/dev/null | grep -q "LoggedIn = 1" && return
+  printf "No Apple account is signed in.\n\nIn System Settings, click “Sign in” (top left)."
+}
 chk_chrome() {
   local f="$CHROME_DIR/Preferences"
   if ! grep -o '"account_info":\[[^]]*\]' "$f" 2>/dev/null | grep -qi "\"email\":\"$RECEPTION_EMAIL\""; then
@@ -443,6 +447,17 @@ Don't close the black window." "Let's go" "Let's go" >/dev/null
 fi
 start_downloads
 
+# WHOSE COMPUTER (Maud, 2026-11-11): the owner's laptop signs in to the
+# OWNER'S OWN iCloud; a second laptop or the iMac uses the reception iCloud.
+COMPUTER="$(recall COMPUTER)"
+if [ -z "$COMPUTER" ]; then
+  if [ $DRY_RUN = 1 ]; then COMPUTER=office; else
+    b="$(_dialog "Laptop Set Up" "Whose computer is this?" "Office computer,The owner's laptop" "The owner's laptop")"
+    [ "$b" = "The owner's laptop" ] && COMPUTER=owner || COMPUTER=office
+  fi
+  remember COMPUTER "$COMPUTER"
+fi
+
 # ------------------------------------------------------------------------
 step_0() {
 section "Get on the Zoom call"
@@ -514,15 +529,22 @@ human chrome_sync "Turn on Chrome sync.
 1. Click your picture at the top right of Chrome.
 2. Click “Turn on sync”. Then “Yes, I'm in”." "Chrome sync on"
 verify chrome_sync "Chrome signed in as reception, sync on" chk_chrome
-# Zoom was signed in on step 1, before there was a Google account to save to.
-save_password pw_zoom "Zoom" "zoom.us"
+# (No Zoom password here: Zoom is their PERSONAL account -- Maud, 2026-11-11.)
 
 # ------------------------------------------------------------------------
 }
 step_2() {
-section "Make an Apple account"
+section "Apple account (iCloud)"
 run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
-human icloud "System Settings is open.
+if [ "$COMPUTER" = owner ]; then
+  human icloud "System Settings is open.
+(The gray ⚙️ window. Look behind this box.)
+
+1. Click “Sign in”.
+2. Sign in with YOUR OWN Apple account." "Owner's own iCloud signed in"
+  verify icloud "Apple account signed in" chk_apple_any
+else
+  human icloud "System Settings is open.
 (The gray ⚙️ window. Look behind this box.)
 
 1. Click “Sign in”.
@@ -531,8 +553,9 @@ human icloud "System Settings is open.
 ${RECEPTION_EMAIL}
 
 Already signed in to a different Apple account? Ask the launch team." "iCloud for reception email created"
-verify icloud "Apple account signed in as reception" chk_apple
-save_password pw_apple "Apple account" "apple.com"
+  verify icloud "Apple account signed in as reception" chk_apple
+  save_password pw_apple "Apple account" "apple.com"
+fi
 
 # ------------------------------------------------------------------------
 }
@@ -620,9 +643,18 @@ section "Sign in to work websites"
 for entry in "${WORK_SITES[@]}"; do
   IFS='|' read -r sname surl <<< "$entry"
   open_chrome "$surl"
+  if [ "$sname" = "BlueInk" ]; then
+    # Maud makes their BlueInk account (2026-11-11); Raf added it to the list
+    # only so it's pinned in Chrome. Bookmark only, no login/password check.
+    human "site_$sname" "BlueInk is open.
+
+The launch team makes your BlueInk login. Nothing to sign in to yet.
+
+Save the page: click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: BlueInk bookmarked"
+    verify "site_$sname" "BlueInk: ☆ saved" chk_stars "BlueInk|blueink"
+    continue
+  fi
   extra=""
-  [ "$sname" = "BlueInk" ] && extra="
-Ask the owner for the password."
   human "site_$sname" "${sname} is open.
 
 1. Log in.${extra}
@@ -733,17 +765,12 @@ fi
 }
 step_10() {
 section "Share Google Drive"
-open_chrome "https://drive.google.com/drive/u/0/my-drive?authuser=$OWNER_EMAIL"
-human drive_shared "Google Drive is open for:
-${OWNER_EMAIL}
-Sign in to it if it asks.
-
-For each folder reception needs:
-1. Right-click it. Click “Share”.
-2. Type:
+# Maud makes a Drive folder named after the owner (first + last name) and
+# shares it with reception as Editor (2026-11-11). Same folder for every office.
+human drive_shared "Wait for the launch team to share your Google Drive folder with:
 ${RECEPTION_EMAIL}
-3. Make sure it says “Editor”.
-4. Click “Send”." "Google Drive docs shared with reception (Editor)"
+
+(It's named with the owner's first and last name.)" "Drive folder shared with reception (launch team)" "They confirmed it done"
 
 # ------------------------------------------------------------------------
 }
@@ -818,13 +845,16 @@ They will do it on the Zoom call." "Slack: made admin (AO)" "They confirmed it d
 step_15() {
 section "Excel"
 run open -a "Microsoft Excel" 2>/dev/null
+# Every office's Excel signs in as Alphalete's reception (the checklist's
+# "Login alphaletereception"). There's no password: Microsoft emails a code to
+# that inbox, which the launch team reads out on the call (Maud, 2026-11-11).
 human excel "Excel is open.
 
 1. Click “Sign in”.
-2. Use the reception login.
-(Alphalete: alphaletereception)" "Excel: signed in"
+2. Type: alphaletereception@gmail.com
+3. Microsoft sends a code. The launch team will tell you the code.
+4. Type the code." "Excel: signed in"
 verify excel "Excel signed in" chk_excel
-save_password pw_excel "Excel" "microsoft.com"
 
 # ------------------------------------------------------------------------
 }
