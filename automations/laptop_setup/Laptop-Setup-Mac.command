@@ -1563,6 +1563,14 @@ Make a new Slack account for reception:
 " "Slack: reception account signed in"
 verify slack_signin "Slack signed in" chk_slack
 allin_login allin_slack "Slack" "$RECEPTION_EMAIL" "code sent to email"
+# Right after the reception account exists (Megan, 2026-11-12): the launch
+# team makes it admin AND adds it to the office's channel -- or the ICD adds
+# it, if the ICD made that channel. The owner is already an admin.
+human slack_admin "Ask the launch team to:
+1. Make the reception email a Slack admin:
+${RECEPTION_EMAIL}
+2. Add it to the office's Slack channel.
+(If the ICD made the channel, the ICD adds it.)" "Slack: reception made admin + added to the office channel" "They confirmed it done"
 else
   human slack_signin "Slack is open.
 (Look behind this box.)
@@ -1586,10 +1594,7 @@ human slack_phone "Grab your phone.
 3. Turn on “Allow Notifications”." "Slack alerts on the phone"
 # The owner is already a Slack admin; the RECEPTION email is the one that
 # needs it (Maud, 2026-11-12).
-[ "$ROLE" = reception ] && human slack_admin "Ask the launch team to make the reception email a Slack admin:
-${RECEPTION_EMAIL}
 
-They will do it on the Zoom call." "Slack: reception made admin (AO)" "They confirmed it done"
 
 # ------------------------------------------------------------------------
 }
