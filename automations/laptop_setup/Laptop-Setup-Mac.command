@@ -1014,8 +1014,25 @@ Example: Alphalete Marketing" "")"
   done
   RECEPTION_EMAIL="${COMPANY}reception@gmail.com"
   wait_for_chrome
-  open_chrome "https://accounts.google.com/signup"
-  if human reception_email "Google is open.
+  # ROLE: on an admin/reception laptop the ICD has usually made the reception
+  # Gmail already -- but sometimes the admin does (Megan, 2026-11-12). Ask.
+  ALREADY=""
+  if [ "$ROLE" != owner ] && [ $DRY_RUN = 0 ]; then
+    if [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Has the reception Gmail already been made?
+
+${RECEPTION_EMAIL}" "No, make it now,Yes, it's made" "Yes, it's made")" = "Yes, it's made" ]; then
+      ALREADY=1
+      if [ "$(_dialog "Step $N of $TOTAL — $TITLE" "Is this the reception email?
+
+${RECEPTION_EMAIL}" "No, it's different,Yes, that's it" "Yes, that's it")" != "Yes, that's it" ]; then
+        RECEPTION_EMAIL="$(ask_email "Type the reception email:" "")"
+      fi
+      is_done reception_email || mark_done reception_email
+      ok "Reception email (already made): $RECEPTION_EMAIL"
+    fi
+  fi
+  [ -z "$ALREADY" ] && open_chrome "https://accounts.google.com/signup"
+  if [ -z "$ALREADY" ] && human reception_email "Google is open.
 
 Make this Gmail:
 ${RECEPTION_EMAIL}
