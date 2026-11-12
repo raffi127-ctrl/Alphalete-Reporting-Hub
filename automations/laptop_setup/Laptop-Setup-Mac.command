@@ -213,6 +213,23 @@ $problem" "Skip,Check again" "Check again")"
   done
 }
 
+# SAVE EACH PASSWORD RIGHT AFTER SIGNING IN (Megan, 2026-11-11: "this should
+# also be done pretty early since they would have been saving them as we
+# went"). Apps that aren't websites go into Google Passwords by hand, one at a
+# time, then Lucy checks it landed.
+save_password() {   # step-key  "App name"  website
+  local key="$1" name="$2" site="$3"
+  open_chrome "https://passwords.google.com/?authuser=$RECEPTION_EMAIL"
+  human "$key" "Save your ${name} password.
+Google Passwords is open in Chrome.
+
+1. Click “Add”.
+2. Website: ${site}
+3. Type your ${name} email and password.
+4. Click “Save”." "${name} password saved in Google Passwords"
+  verify "$key" "${name} password saved" chk_passwords "${name}|${site}"
+}
+
 # Each check prints nothing when it's done, or what's wrong + how to fix it.
 chk_stars() {   # "Name|text-in-the-address" ...
   local urls e miss=""
@@ -327,6 +344,17 @@ wait_for_chrome() {
   echo
 }
 
+wait_for_file() {   # file-in-cache  message   (max 5 min; nothing to wait for if the app is there)
+  [ $DRY_RUN = 1 ] && return
+  local app="/Applications/${1%.*}.app" i=0
+  [ -d "$app" ] && return
+  printf "  %s" "$2"
+  while [ ! -f "$CACHE/$1" ] && [ $i -lt 60 ] && kill -0 "$BG_PID" 2>/dev/null; do
+    printf "."; sleep 5; i=$((i+1))
+  done
+  echo
+}
+
 wait_for_downloads() {
   [ $DRY_RUN = 1 ] && return
   local shown=0
@@ -337,9 +365,11 @@ wait_for_downloads() {
   [ $shown = 1 ] && echo " done."
 }
 
-install_pkgs() {   # the Zoom + Excel installers, ONE password box for both
-  local cmd="" name
-  for name in "zoom.us" "Microsoft Excel"; do
+install_pkgs() {   # the Zoom + Excel installers (or just the ones named), ONE password box
+  [ "$GO" = back ] && return 0
+  local cmd="" name list=("$@")
+  [ ${#list[@]} -eq 0 ] && list=("zoom.us" "Microsoft Excel")
+  for name in "${list[@]}"; do
     if [ -d "/Applications/$name.app" ]; then continue; fi
     if [ $DRY_RUN = 1 ]; then echo "  (dry run) would install $name"; continue; fi
     if [ -f "$CACHE/$name.pkg" ]; then
@@ -349,7 +379,7 @@ install_pkgs() {   # the Zoom + Excel installers, ONE password box for both
     fi
   done
   if [ -n "$cmd" ]; then
-    echo "  Installing Zoom + Excel (the Mac asks for the laptop password once)..."
+    echo "  Installing ${list[*]} (the Mac asks for the laptop password)..."
     osascript -e "do shell script \"$cmd\" with administrator privileges" >/dev/null 2>&1
   fi
 }
@@ -413,6 +443,24 @@ fi
 start_downloads
 
 # ------------------------------------------------------------------------
+step_0() {
+section "Get on the Zoom call"
+# ZOOM COMES FIRST (Megan, 2026-11-11: "this should be with the zoom account
+# launch prompt and be their personal email"). The launch team runs the rest
+# of the setup on that call, so Zoom is installed before anything else -- it's
+# small and downloads first -- and they sign in with their PERSONAL email.
+wait_for_file "zoom.us.pkg" "Getting Zoom ready"
+install_pkgs "zoom.us"
+run open -a zoom.us 2>/dev/null
+human zoom "Zoom is open.
+(Look behind this box.)
+
+1. Sign in with your personal email.
+No account? Click “Sign up”.
+2. Join our Zoom call." "On the Zoom call (signed in)"
+verify zoom "Zoom signed in" chk_zoom
+}
+
 step_1() {
 section "Make the reception email"
 # <companyname>reception@gmail.com — the first step on every laptop (Megan, 2026-11-11).
@@ -457,6 +505,16 @@ ${RECEPTION_EMAIL}
   fi
   remember RECEPTION_EMAIL "$RECEPTION_EMAIL"
 fi
+# Sync goes on NOW, not at "Sign in to Google": every password from here on
+# is saved as they go, and Lucy's password check reads Chrome's synced list.
+human chrome_sync "Turn on Chrome sync.
+(It saves your passwords to Google.)
+
+1. Click your picture at the top right of Chrome.
+2. Click “Turn on sync”. Then “Yes, I'm in”." "Chrome sync on"
+verify chrome_sync "Chrome signed in as reception, sync on" chk_chrome
+# Zoom was signed in on step 1, before there was a Google account to save to.
+save_password pw_zoom "Zoom" "zoom.us"
 
 # ------------------------------------------------------------------------
 }
@@ -473,14 +531,15 @@ ${RECEPTION_EMAIL}
 
 Already signed in to a different Apple account? Ask the launch team." "iCloud for reception email created"
 verify icloud "Apple account signed in as reception" chk_apple
+save_password pw_apple "Apple account" "apple.com"
 
 # ------------------------------------------------------------------------
 }
 step_3() {
 section "Get the apps"
 # Downloads started at the welcome screen; usually finished by now.
-say_info "Lucy is putting 4 apps on this laptop:
-Chrome, Slack, Zoom and Excel.
+say_info "Lucy is putting the apps on this laptop:
+Chrome, Slack and Excel.
 
 When it asks for the laptop password, type it.
 
@@ -543,15 +602,13 @@ say_info "The laptop did these by itself:
 # ------------------------------------------------------------------------
 }
 step_6() {
-section "Sign in to Google"
+section "Bookmark Gmail, Calendar, Drive"
 open_chrome "https://mail.google.com/" "https://calendar.google.com/" "https://drive.google.com/"
-human chrome_google "Chrome is open.
+human chrome_google "Gmail, Calendar and Drive are open in tabs at the top of Chrome.
 
-1. Click your picture at the top right of Chrome.
-2. Click “Turn on sync”. Then “Yes, I'm in”.
-(Asked to sign in? Use ${RECEPTION_EMAIL}.)
-3. Gmail, Calendar and Drive are open in tabs at the top.
-Click each tab. Click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: Gmail, Calendar, Drive signed in + bookmarked"
+Click each tab.
+Click the ☆ at the right end of the web address bar.
+Then click “Done”." "Chrome: Gmail, Calendar, Drive bookmarked"
 verify chrome_google "Chrome signed in as reception, sync on" chk_chrome
 verify chrome_google "☆ on Gmail, Calendar, Drive" chk_stars "Gmail|mail.google.com" "Calendar|calendar.google.com" "Drive|drive.google.com"
 
@@ -736,6 +793,7 @@ human slack_signin "Slack is open.
 Sign in with YOUR OWN email.
 No Slack account yet? Click “Create an account”." "Slack: signed in"
 verify slack_signin "Slack signed in" chk_slack
+save_password pw_slack "Slack" "slack.com"
 # Slack's own alert choice lives in their Slack account (online), so the
 # laptop can't set it -- and Slack already alerts on DMs + mentions. What
 # "Notification On" needs is the Mac's permission, which only a person can
@@ -756,20 +814,6 @@ They will do it on the Zoom call." "Slack: made admin (AO)" "They confirmed it d
 
 # ------------------------------------------------------------------------
 }
-step_14() {
-section "Zoom"
-run open -a zoom.us 2>/dev/null
-# Zoom is the person's own login, like Slack (Megan 2026-11-11: "zoom would be
-# their personal email").
-human zoom "Zoom is open.
-(Look behind this box.)
-
-Sign in with YOUR OWN email.
-No account? Click “Sign up”." "Zoom: signed in"
-verify zoom "Zoom signed in" chk_zoom
-
-# ------------------------------------------------------------------------
-}
 step_15() {
 section "Excel"
 run open -a "Microsoft Excel" 2>/dev/null
@@ -779,28 +823,7 @@ human excel "Excel is open.
 2. Use the reception login.
 (Alphalete: alphaletereception)" "Excel: signed in"
 verify excel "Excel signed in" chk_excel
-
-# ------------------------------------------------------------------------
-}
-step_16() {
-section "Save the other passwords"
-# The website logins are saved by Chrome as they log in (step 7). These ones
-# aren't websites, so they go into Google Passwords by hand. Signed in to
-# Chrome as reception, so they all live in the reception Google account.
-open_chrome "https://passwords.google.com/?authuser=$RECEPTION_EMAIL"
-human save_passwords "Google Passwords is open.
-
-Save each of these:
-• Apple account → website: apple.com
-• Slack → website: slack.com
-• Zoom → website: zoom.us
-• Excel → website: microsoft.com
-
-For each one:
-1. Click “Add”.
-2. Type the website, username and password.
-3. Click “Save”." "Apple, Slack, Zoom and Excel passwords saved in Google Passwords"
-verify save_passwords "Apple, Slack, Zoom, Excel passwords saved" chk_passwords "Apple|apple.com" "Slack|slack.com" "Zoom|zoom.us" "Excel|microsoft.com"
+save_password pw_excel "Excel" "microsoft.com"
 
 # ------------------------------------------------------------------------
 }
