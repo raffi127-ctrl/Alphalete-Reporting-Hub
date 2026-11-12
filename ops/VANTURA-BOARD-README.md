@@ -1792,3 +1792,70 @@ Carlos: "Samantha Ruiz is Brandy … whatever her credit code [Credico] name is,
 
 ### 2026-11-10 — Teams box head-count exclusions (NDS Sales Board)
 Carlos: Carlos Hidalgo, Jorge Hernandez and Eric Forsythe are not counted under Total Head Count / Leaders / Entry Level / In Training / Sales Avg by Rep; their sales still count in Apps. How: hidden col AR "No HC?" (`=IF(COUNTIF($AT$5:$AT$12,$B5)>0,1,0)`) fed by the hidden list AT4 "Not in Head Count" (AT5:AT12 — add a board-spelled name there to exclude someone else). D43:G48 multiply by `($AR$5:$AR$30=0)` next to the Term? factor `($AQ$5:$AQ$30=0)`; C (Apps) doesn't; H = ROUND(C/D,1). The script's `reanchorBoardStatRanges` and the audit's `_fix_stats_ranges` only re-anchor rows, so the range survives. Counting rule: Head Count = every named, non-terminated NDS row (1st-week reps included); Leaders = Level 1/Level 2/Mastermind; Entry Level = "Entry Level"; In Training = "In Training" and Field Status ≠ "1st Wk". Also restored the AQ5:AQ11 Term? formulas that had gone blank. Verizon board untouched.
+
+## 2026-11-11: Stations rows 60+ — WEEKLY MEETING PLAN (Mon–Sat)
+
+Carlos: "delete everything in the Stations tab under rows 60 and below; make a
+table for Monday–Saturday with a column for who, time and the room." The 9/9
+boxes ("9 AM TRAININGS" A60:C63, "MONDAY LEADERS MEETING" + "SALES TOTALS &
+GOALS / CIRCLE UP" A70:Q107 — merges, navy bands, runner dropdowns, 8-px
+spacer rows) are GONE (values backed up in the session scratchpad).
+
+**Layout (A:E, rows 60–146):** r60 title band `WEEKLY MEETING PLAN — MONDAY TO
+SATURDAY`, r61 the assignment instruction, then six 14-row blocks — MONDAY r63,
+TUESDAY r77, WEDNESDAY r91, THURSDAY r105, FRIDAY r119, SATURDAY r133. Each
+block: day band, header `ITEM | WHO | TIME | ROOM | TOPIC / NOTES`, 11 item
+rows (ATT Leaders Meeting, VZ Leaders Meeting, ATT Day 1, VZ Day 1, ATT Day 2,
+VZ Day 2, Lesson, Circle Up, ATT Announcements, VZ Announcements, Impact), one
+spacer. WHO cells carry a people dropdown fed by the hidden active-reps helper
+(`=Stations!$Z$5:$Z$80`, warning-only, so a pair or "None" still saves with the
+small red corner); ROOM / TOPIC are free text. Everything is centered with
+black grid lines; TIME cells are formatted `h:mm am/pm`.
+Only Wednesday was prefilled, from Carlos's message.
+
+**What depends on it:**
+- `vantura_board_audit` (4am) stops its unknown-rep name scan at the row whose
+  col A starts with "WEEKLY MEETING PLAN". Rename that title and every room
+  name in the plan ("Atmo Conference Room") comes back as a typo'd rep.
+- Nothing writes rows 57+: `resetOffList` sweeps A4:R56, car_rides reads
+  A5:F14 + the Verizon block, nds_oof's no-dispo range is C6:F15. The hidden
+  helpers S:Z spill downward (Z reaches ~r56 today) — keep the plan inside A:R
+  so a longer roster never collides with it.
+- `daily_plan_text` (8am Mon–Sat text to NEW A Players) still sends the static
+  Wednesday template from its config; it does NOT read this table yet.
+
+## 2026-11-11: "Add > New Starts to Car Rides" fixed (Code.gs `assignNewStartsToCarRides`)
+
+Carlos clicked the menu for the 11.15 new starts and nothing was added. Read the
+function through the Apps Script API; three causes, all fixed and pushed (HEAD is
+what the menu runs, no redeploy needed):
+
+1. **The NDS "section" was rows 6-25** — the car rides AND the Stations block
+   under them (that geometry dates from before 9/3, when the rides alone filled
+   6-25). Anyone typed anywhere in those rows counted as "already placed", so
+   Anairt and Christopher, sitting in the Day 1 / 10:30 station column (F20/F21),
+   were skipped. Now `placeSection("NDS","NDS",6,14)` — the ride rows only
+   (same rows Lucy `car_rides` reads, A5:F14, and the ride CF zones).
+2. **Verizon section was 29-40** — row 29 is the "CAR RIDES" title row and, with
+   C29:F29 empty, it was the first "blank" row a new trainer's ride would have
+   been written to. Now `placeSection('Verizon','Verizon',31,40)` (rides 31-38 +
+   the "New T" / blank spare rows 39-40).
+3. **New starts with no Trainer on the Roll Call vanished silently** (the 9/15
+   gotcha). They are still not placed — there is no trainer to put them under —
+   but the alert now ends with `No Trainer on the Roll Call (fill col G, then run
+   this again): NDS: <name>`. Yoangel Delgado Rodriguez was the case this week.
+
+Also: the ride grid read is now 4 wide (Leader + Rep #1-3 = C:F; the old 5-wide
+read reached the spacer column G and `REPS=[2,3,4,5]` could park a 4th rep
+there), and the `getDataValidations`/`setDataValidations` round-trip is gone
+(`setValues` keeps validations; re-setting them is exactly what turns the Chip
+dropdowns into Arrow style — see "THE AUTOFILL TRUTH" above).
+
+No blank ride row left in 6-14 → a trainer without a ride row is reported as
+"Bumped / no spot" instead of being written into the gap or the Stations rows.
+`placeStore` (unused) got the same return shape. Before/after copies of Code.gs
+sit in the 11/11 session scratchpad (`Code.gs.before-*/after-*.js`).
+
+Follow-up (same day): the "No Trainer" line names only new starts who are NOT
+already sitting in a ride row (hand-placed people are not a problem), so Yoangel,
+whom Carlos placed under Fernando by hand, stops showing up in it.
