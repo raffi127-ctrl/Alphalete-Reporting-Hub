@@ -21,30 +21,39 @@ Arlington. Re-run it rather than trusting this page once Apex moves again.
 
 ## Employment Record — `/employees/<id>/edit/employment-record`
 
-| On the page | type | name |
+**EVERY DROPDOWN HERE IS A KENDO WIDGET**: a visible span over an
+`<input type="hidden">`. A hidden input has `display:none` from the browser's
+own stylesheet, so a dump that skips invisible elements shows none of them —
+which is why Position, Basis of Pay, Pay Frequency, Department and State
+Working In read as "not on this page" for a day (2026-11-12). They were always
+there.
+
+| On the page | name | kind |
 | --- | --- | --- |
-| Rate of Pay * | text | *(none — Kendo widget, match by label)* |
-| **Salary** | text | *(none)* — **NEVER WRITE THIS.** It sits under Rate of Pay and is the wrong box for an hourly rate. |
-| Commission Threshold | text | *(none)* |
-| Time Clock | checkbox | `TimeClock_192` |
-| Require Break | checkbox | `RequireBreak_192` |
-| Track Time Entries in Real Time | checkbox | `TrackRealTime_192` |
-| Divisions | search | *(none)* |
-| Office Admin | radio | `Role_6_192` |
-| ICD Payroll Admin | radio | `Role_8_192` |
-| **Sales Rep** | radio | `Role_11_192` |
-| Owner | radio | `Role_12_192` |
+| Position * | `JobTitleID_192` | id |
+| Basis of Pay * | `BasisOfPayID_192` | id |
+| Pay Frequency * | `PayFrequencyID_192` | id |
+| State Working In * | `StateWorkingInID_192` | id |
+| Department * | `CompensationProfileID_192` | id |
+| Rate of Pay * | *(none — match by label)* | text |
+| **Salary** | *(none)* | **NEVER WRITE THIS.** It sits under Rate of Pay and is the wrong box for an hourly rate. |
+| Commission Threshold | *(none)* | text |
+| Divisions | *(none)* | search |
+| Time Clock | `TimeClock_192` | checkbox |
+| Require Break | `RequireBreak_192` | checkbox |
+| Track Time Entries in Real Time | `TrackRealTime_192` | checkbox |
+| Office Admin | `Role_6_192` | radio |
+| ICD Payroll Admin | `Role_8_192` | radio |
+| **Sales Rep** | `Role_11_192` | radio |
+| Owner | `Role_12_192` | radio |
 
-The `_192` suffix is the OFFICE, not the person — these names are per office
-block, so they change for another office and must never be hard-coded. Sales
-Rep is still role 11, which is what `ROLE_VALUE` has always said.
+**They are IDs, not labels.** `JobTitleID` wants the id of "Sales Rep", not the
+words — typing a label into one puts a word where an id belongs, the page looks
+right and the save is wrong. That was already the rule; it still is.
 
-**FIVE FIELDS THE OLD MAP WANTS ARE NOT ON THIS PAGE**: Position, State
-Working In, Basis of Pay, Pay Frequency, Department. The page carries an
-office block headed "Alphalete Marketing Inc. – Arlington" with an `Add Office`
-button and chips (`× General`), so they are most likely inside that block and
-not expanded when the dump ran. **This is the open question** — expand it and
-re-run the probe before changing the map.
+**`_192` IS THE OFFICE, NOT THE PERSON.** Every one of these names carries the
+office's id, so they differ for another office and must never be hard-coded.
+Find them by label and read the name off the element.
 
 ## User Profile & Account — `/employees/<id>/edit/user-profile`
 
@@ -57,7 +66,9 @@ Clean `name` attributes; map on these rather than labels.
 | Last Name * | `LastName` |
 | Account Email * | `EmailAddress` |
 | Date of Birth * | `BirthDay` |
-| Gender * | `Gender_input` |
+| Gender * | `GenderID_364` (the id) / `Gender_input` (what you see) |
+| State * | `StateProvinceID` |
+| Country * | `CountryID` |
 | Street Address * | `StreetLine1` |
 | Apt/PO Box | `AptNum` |
 | Street Address 2 | `StreetLine2` |
@@ -71,7 +82,7 @@ password" is a checkbox on this tab now (no name attribute). It is the same
 hazard as the create form's: saving with it on emails the person. Everything
 that writes this tab has to set it deliberately, never leave it as found.
 
-Gender is a Kendo combobox (`Gender_input`), not a `<select>`.
+Gender is a Kendo combobox: `Gender_input` is the visible box and `GenderID_364` is the hidden id that actually saves. Write the id.
 
 ## Tax & Bank Information — `/employees/<id>/edit/bank-info`
 

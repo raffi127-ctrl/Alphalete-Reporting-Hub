@@ -26,14 +26,22 @@ DUMP = r"""() => {
   const txt = e => (e ? (e.textContent || '') : '').replace(/\\s+/g, ' ').trim();
   const out = [];
   for (const el of document.querySelectorAll('input,select,textarea')) {
+    // A type=hidden input has display:none from the UA stylesheet, so the
+    // visibility check below skipped every Kendo dropdown's real input.
+    // Decide hidden-ness FIRST, then only apply the style check to the rest.
+    const isHidden = el.type === 'hidden';
     const style = window.getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden') continue;
-    if (el.type === 'hidden') continue;
+    if (!isHidden && (style.display === 'none' || style.visibility === 'hidden')) continue;
+    // KEEP THE HIDDEN ONES. A Kendo dropdown is a visible span over a
+    // hidden input, so skipping type=hidden hid Position, Basis of Pay, Pay
+    // Frequency, Department and State Working In -- the exact five that read
+    // as missing from the employment tab (2026-11-12).
+
     let label = '';
     if (el.id) label = txt(document.querySelector('label[for="' + el.id + '"]'));
     if (!label) {
-      let w = el.closest('div,td,li,fieldset');
-      for (let i = 0; i < 3 && w && !label; i++) {
+      let w = el.closest('div,td,li,fieldset,span');
+      for (let i = 0; i < 5 && w && !label; i++) {
         label = txt(w.querySelector('label'));
         w = w.parentElement;
       }
@@ -49,6 +57,7 @@ DUMP = r"""() => {
       options: el.tagName.toLowerCase() === 'select'
         ? [...el.options].slice(0, 6).map(o => txt(o)).filter(Boolean) : [],
       value: (el.value || '').slice(0, 30),
+      hidden: isHidden,
     });
   }
   return out;
