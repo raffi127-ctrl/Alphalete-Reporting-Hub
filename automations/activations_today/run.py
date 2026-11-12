@@ -53,7 +53,9 @@ SPLIT_AT = 10_000
 COLUMNS = ("Customer", "Phone", "Sale Date", "Status", "Install", "Package")
 
 # Eve 11/10: row color = install type. Tech Install yellow, Self Install blue.
-_YELLOW, _BLUE = "FFF2CC", "DDEBF7"
+# Wireless (Raf 11/12, pending lines under the same rep) green.
+_YELLOW, _BLUE, _GREEN = "FFF2CC", "DDEBF7", "E2EFDA"
+WIRELESS_TAG = "Wireless"
 
 
 def status_color(install_type: str, _history=()) -> str:
@@ -62,6 +64,8 @@ def status_color(install_type: str, _history=()) -> str:
         return _YELLOW
     if t.startswith("self"):
         return _BLUE
+    if t == WIRELESS_TAG.lower():
+        return _GREEN
     return ""
 
 
@@ -95,21 +99,32 @@ def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
         sale = pull.parse_date(r.get(pull.SALE_DATE))
         cust = r.get(pull.CUSTOMER, "")
         status = r.get(pull.STATUS, "")
+        install = WIRELESS_TAG if pull.is_wireless(r) else r.get(pull.TECH, "")
         cells = (cust,
                  r.get(pull.PHONE, ""),
                  sale.strftime("%m/%d/%Y") if sale else "",
                  status or "—",
-                 r.get(pull.TECH, ""),
+                 install,
                  r.get(pull.PACKAGE, "") or _short_product(r.get(pull.PRODUCT, "")))
-        items.append(_Row(cells, r.get(pull.TECH, ""), r.get(pull.REP, "") or "(no rep)",
+        items.append(_Row(cells, install, r.get(pull.REP, "") or "(no rep)",
                           sale, cust))
     n = len(items)
+    n_wl = sum(1 for r in rows if pull.is_wireless(r))
+    n_in = n - n_wl
     reps = bp.by_rep(items)
     day_txt = day.strftime("%A, %B %d, %Y").replace(" 0", " ")
-    subtitle = ("{} — {} install{} scheduled today across {} rep{}. "
-                "Reach out to your customers today."
-                .format(owner, n, bp.plural(n), len(reps), bp.plural(len(reps)))
-                if n else "{} — no installs scheduled today.".format(owner))
+    if not n:
+        subtitle = "{} — no installs scheduled today.".format(owner)
+    elif n_wl:
+        subtitle = ("{} — {} install{} scheduled today + {} wireless line{} "
+                    "still pending, across {} rep{}. Reach out to your "
+                    "customers today.".format(
+                        owner, n_in, bp.plural(n_in), n_wl, bp.plural(n_wl),
+                        len(reps), bp.plural(len(reps))))
+    else:
+        subtitle = ("{} — {} install{} scheduled today across {} rep{}. "
+                    "Reach out to your customers today."
+                    .format(owner, n, bp.plural(n), len(reps), bp.plural(len(reps))))
     return {"today": day, "count": n, "subtitle": subtitle,
             "title": "Activations Scheduled Today — {}".format(day_txt),
             "columns": COLUMNS, "color_fn": status_color,
@@ -215,6 +230,9 @@ def main(argv=None) -> int:
     ap.add_argument("--post-to", default=None, metavar="CHANNEL")
     ap.add_argument("--dm-user", default=None, metavar="USER_ID",
                     help="Test: Lucy DMs the image to this one person only")
+    ap.add_argument("--with-wireless", action="store_true",
+                    help="Raf 11/12: add every pending wireless line under its "
+                         "rep (OFF until Eve OKs the sample)")
     args = ap.parse_args(argv)
 
     day = dt.date.fromisoformat(args.day) if args.day else pull.central_today()
@@ -231,9 +249,13 @@ def main(argv=None) -> int:
         csv_path = pull.fetch(day)
     rows = pull.read_rows(csv_path)
     mine = pull.owner_rows(rows, args.owner)
-    today = pull.scheduled_on(mine, day)
-    print("  export {} row(s); {} for {}; {} installing today".format(
-        len(rows), len(mine), args.owner, len(today)))
+    today = (pull.board_rows(mine, day) if args.with_wireless
+             else pull.scheduled_on(mine, day))
+    print("  export {} row(s); {} for {}; {} on the board{}".format(
+        len(rows), len(mine), args.owner, len(today),
+        " (incl. {} pending wireless)".format(
+            sum(1 for r in today if pull.is_wireless(r)))
+        if args.with_wireless else ""))
 
     from automations.shared import slack_metrics_post as smp
     do_post = bool(args.post_slack or args.post_to)

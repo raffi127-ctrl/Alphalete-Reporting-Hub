@@ -162,6 +162,31 @@ def is_open(r: Dict[str, str]) -> bool:
     return not ("cancel" in s or s in ("active", "disconnected"))
 
 
+def is_wireless(r: Dict[str, str]) -> bool:
+    return r.get(PRODUCT, "").strip().upper() == "WIRELESS"
+
+
+def wireless_pending(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Raf 2026-11-12 ("Pending Orders for wireless"): wireless never carries
+    an spe.Install Date (it ships), so it never made the install board. Every
+    open wireless line in the window (Delivered / Shipped / BYOD /
+    Backordered, no activation) rides along under its rep. Rep A-Z, then
+    oldest sale first."""
+    hit = [r for r in rows if is_wireless(r) and is_open(r)]
+    hit.sort(key=lambda r: (r.get(REP, "").casefold(),
+                            parse_date(r.get(SALE_DATE)) or dt.date.min,
+                            r.get(CUSTOMER, "").casefold()))
+    return hit
+
+
+def board_rows(rows: List[Dict[str, str]], day: dt.date) -> List[Dict[str, str]]:
+    """Today's installs + every pending wireless line, rep by rep (Eve
+    2026-11-12: one image, both under the same rep band, installs first)."""
+    out = scheduled_on(rows, day) + wireless_pending(rows)
+    out.sort(key=lambda r: (r.get(REP, "").casefold(), is_wireless(r)))
+    return out
+
+
 def scheduled_on(rows: List[Dict[str, str]], day: dt.date) -> List[Dict[str, str]]:
     """Open orders whose install date is `day`, Rep A-Z then customer."""
     hit = [r for r in rows
