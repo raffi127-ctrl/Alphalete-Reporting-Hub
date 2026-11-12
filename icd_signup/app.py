@@ -343,8 +343,12 @@ with st.container(border=True):
     # insistence on copying it rather than describing it.
     st.subheader("Get the board as a group text too")
     st.caption("The same board, sent to an iMessage chat as well as Slack.")
+    # YES IS THE DEFAULT (Megan 2026-11-12). It opened on No, so an owner who
+    # skimmed past the question got no texts and nobody knew they had wanted
+    # them. Leaving it on Yes with no chat named still asks for nothing: a
+    # blank chat name is simply no text.
     want_texts = st.radio(
-        "Do you want it texted?", ["Yes", "No"], index=1, horizontal=True,
+        "Do you want it texted?", ["Yes", "No"], index=0, horizontal=True,
         key="want_texts", label_visibility="collapsed")
     text_groups = []
     text_pins = []
@@ -354,10 +358,21 @@ with st.container(border=True):
         # monospace, which is hard to read on the one string they have to
         # reproduce exactly (Megan 2026-09-15). Plain body text at full size,
         # labelled, so it is legible and obvious what it is.
+        # BOTH, EACH ON ITS OWN LINE (Megan 2026-11-12: "show my number to
+        # add to the group", then "also include Lucy's email to be added to
+        # the group text"). Megan's number was missing entirely, and it is
+        # how she gets into the chat to check it; Lucy's address is the one
+        # that posts. Labelled, at full size, one per line -- these are the
+        # two strings an owner has to reproduce exactly.
         st.info(
-            "**First, add Lucy to the group chat.** She cannot post into a "
-            "chat she is not in.\n\n"
-            "**Lucy Contact to add:** %s" % S.LUCY_IMESSAGE)
+            "**First, add these two to the group chat:**\n\n"
+            "**Megan:** %s\n\n"
+            "**Lucy:** %s" % (S.MEGAN_GROUP_NUMBER, S.LUCY_IMESSAGE))
+        # SAID LOUDLY, on its own, in her words ("it also needs to boldly say
+        # - group cannot include androids"). One Android in the chat turns it
+        # into a plain text group, and Lucy cannot post into those -- Cody's
+        # "ASC A-Players" had to be rebuilt for exactly this on 2026-11-09.
+        st.warning("**The group cannot include Androids.** iPhones only.")
         st.caption("Each chat can get it on its own schedule.")
         for i in range(MAX_TEXT_GROUPS):
             c1, c2 = st.columns([3, 2])

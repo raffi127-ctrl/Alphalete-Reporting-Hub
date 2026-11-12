@@ -391,3 +391,6 @@ def group_cadence(g) -> int:
 
 
 LUCY_IMESSAGE = "alphaletereporting@gmail.com"
+# Megan's number, shown on the sign-up form beside Lucy's address so the owner
+# adds both to their group text (Megan 2026-11-12).
+MEGAN_GROUP_NUMBER = "(419) 769-7114"
