@@ -576,18 +576,18 @@ done
 # ------------------------------------------------------------------------
 }
 step_8() {
-section "Send Sara+ and Sterling codes to reception"
+section "Send login codes to reception"
 # Sara+ and Sterling login codes reach reception (Megan, 2026-11-11: "it
-# should be sara and sterling codes"). The checklist photo listed an OwnerVille
-# filter; there is no OV login code, so it's gone. Sara+'s sender is the one
-# icd_alerts/code_forward.py already filters on (SARAPLUS_SENDER, from: only).
+# should be sara and sterling codes"), plus OwnerVille's verification code
+# because it's on the checklist ("keep it if it's on the list"). Sara+'s sender
+# is the one icd_alerts/code_forward.py already filters on (from: only).
 # Google won't let a script add a forwarding address to a regular Gmail (that
 # API is Workspace-admin only) and a filter can only forward to a CONFIRMED
 # address — so the person adds + confirms it, then imports a filter file this
 # script writes, with Gmail's own "Import filters" button. No sign-in tokens.
 OWNER_EMAIL="$(recall OWNER_EMAIL)"
 if [ -z "$OWNER_EMAIL" ]; then
-  OWNER_EMAIL="$(ask_email "Next: your Sara+ and Sterling login codes will go to reception.
+  OWNER_EMAIL="$(ask_email "Next: your Sara+, Sterling and OwnerVille login codes will go to reception.
 
 What email address is your Sara+ account set up with?" "")"
   remember OWNER_EMAIL "$OWNER_EMAIL"
@@ -598,7 +598,8 @@ F_RECEPTION="$OUT/Gmail-Filters-1-Reception.xml"
 F_LUCY="$OUT/Gmail-Filters-2-Lucy-Background-Checks.xml"
 write_filters "$F_RECEPTION" \
   "security.info@saraplus.com||$RECEPTION_EMAIL" \
-  "$STERLING|Authentication Request|$RECEPTION_EMAIL"
+  "$STERLING|Authentication Request|$RECEPTION_EMAIL" \
+  "noreply@ownerville.com|Your Account Verification Code|$RECEPTION_EMAIL"
 write_filters "$F_LUCY" "$STERLING||$LUCY_BG_INBOX"
 
 if is_done filters_reception; then
@@ -624,7 +625,7 @@ Don't change anything else." "Owner's Gmail: reception added as a forwarding add
 1. Scroll to the bottom. Click “Import filters”.
 2. Click “Choose File”. Pick this from the Desktop:
 Gmail-Filters-1-Reception
-3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sara+ and Sterling login codes to reception"
+3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sara+, Sterling and OwnerVille login codes to reception"
   fi
 fi
 
