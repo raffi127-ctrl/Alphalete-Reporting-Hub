@@ -4,7 +4,10 @@
 <title>Set up your laptop</title>
 <meta name="description" content="Set up a new owner or admin laptop, one easy step at a time.">
 <style>
-  :root { color-scheme: light dark; --gold:#B4975A; --line:#8884; }
+  :root { color-scheme: light dark; --gold:#B4975A; --line:#8884; --ink:#222; --card:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#eee; --card:#2a2a2a; } }
+  .pic { display:block; width:100%; max-width:340px; margin:.8rem 0; }
+  .help { font-size:.95rem; opacity:.85; margin-top:.6rem; }
   body { font:19px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
          margin:0; padding:40px 18px; }
   .wrap { max-width:34rem; margin:0 auto; }
@@ -34,20 +37,24 @@
   </div></div>
 
   <div class="step"><div class="num">2</div><div>
-    Open <b>Terminal</b>:<br>
-    Hold <kbd>Command</kbd> and tap <kbd>Space</kbd>.<br>
-    Type <b>terminal</b>. Press <kbd>Return</kbd>.
+    Click this button:
+    <button id="go">Open Terminal</button>
+    <div class="help">If it asks <b>“Open Terminal?”</b>, click <b>Open</b>.</div>
   </div></div>
 
   <div class="step"><div class="num">3</div><div>
-    Click this button:
-    <button id="copy">Copy</button>
+    Terminal opens. It says “No manual entry”. That's OK.<br>
+    Hold <kbd>Command</kbd> and tap <kbd>N</kbd>.
   </div></div>
 
   <div class="step"><div class="num">4</div><div>
-    Click in the Terminal window.<br>
     Hold <kbd>Command</kbd> and tap <kbd>V</kbd>.<br>
     Press <kbd>Return</kbd>.
+    <div class="help">
+      <b>Terminal didn't open?</b> Hold <kbd>Command</kbd> and tap <kbd>Space</kbd>.
+      Type <b>terminal</b>. Press <kbd>Return</kbd>. Then do step 4.<br>
+      Still stuck? Ask the launch team on Zoom.
+    </div>
   </div></div>
 
   <div class="step"><div class="num">5</div><div>
@@ -68,17 +75,24 @@
   var URL = "https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/automations/laptop_setup/Laptop-Setup-Mac.command";
   var F = "~/Desktop/Laptop-Setup.command";
   var CMD = "curl -fsSL " + URL + " -o " + F + " && chmod +x " + F + " && " + F;
-  var btn = document.getElementById("copy");
-  btn.onclick = function () {
-    var done = function () { btn.textContent = "Copied ✓"; btn.className = "done"; };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(CMD).then(done, fallback);
-    } else { fallback(); }
-    function fallback() {
+  // "Open Terminal": a web page can't start a Terminal shell, but macOS's own
+  // x-man-page:// link does open Terminal (Chrome asks "Open Terminal?"
+  // first). It opens a finished man-page window, so the page tells them to
+  // press Command+N for a fresh window, then paste. Tested 2026-11-11.
+  var btn = document.getElementById("go");
+  function copy(then) {
+    var ok = function () { btn.textContent = "Copied ✓ — opening Terminal"; btn.className = "done"; then(); };
+    var fallback = function () {
       var t = document.createElement("textarea");
       t.value = CMD; document.body.appendChild(t); t.select();
-      try { document.execCommand("copy"); done(); } catch (e) {}
-      document.body.removeChild(t);
-    }
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(t); ok();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(CMD).then(ok, fallback);
+    } else { fallback(); }
+  }
+  btn.onclick = function () {
+    copy(function () { window.location.href = "x-man-page://laptop-setup"; });
   };
 </script>
