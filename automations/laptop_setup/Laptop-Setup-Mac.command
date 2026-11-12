@@ -445,6 +445,15 @@ Before you start:
 
 Don't close the black window." "Let's go" "Let's go" >/dev/null
 fi
+# KEEP GOING OR START OVER (Megan's test 2026-11-11: an old run's remembered
+# email made step 2 check sync for an address that was never created). Asked
+# only when an earlier run left progress behind.
+if [ $DRY_RUN = 0 ] && [ -s "$PROGRESS" ]; then
+  b="$(_dialog "Laptop Set Up" "You started this before.
+
+Keep going where you left off, or start over from step 1?" "Start over,Keep going" "Keep going")"
+  [ "$b" = "Start over" ] && rm -f "$PROGRESS"
+fi
 start_downloads
 
 # THEIR NAME, NOT "WHOSE COMPUTER" (Megan, 2026-11-11: "this should just be
