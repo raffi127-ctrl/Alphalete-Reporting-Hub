@@ -260,7 +260,7 @@ chk_slack() {
            "$HOME/Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/storage/root-state.json"; do
     grep -Eq '"workspaces":\{"[A-Z0-9]+"' "$f" 2>/dev/null && return
   done
-  printf "Slack isn't signed in.\n\nIn Slack, sign in with:\n%s" "$RECEPTION_EMAIL"
+  printf "Slack isn't signed in.\n\nIn Slack, sign in with your own email."
 }
 chk_zoom() {
   ls -d "$HOME/Library/Application Support/zoom.us/data/"*@xmpp.zoom.us >/dev/null 2>&1 && return
@@ -725,10 +725,14 @@ ${RECEPTION_EMAIL}" "Google Calendar app on the phone"
 step_13() {
 section "Slack"
 run open -a Slack 2>/dev/null
+# Slack is the PERSON's own login, not reception's (Megan 2026-11-11: "idk why
+# an ICD would sign in using their company reception email"; the checklist
+# says "Login/Create account - made admin AO").
 human slack_signin "Slack is open.
+(Look behind this box.)
 
-Sign in with:
-${RECEPTION_EMAIL}" "Slack: signed in"
+Sign in with YOUR OWN email.
+No Slack account yet? Click “Create an account”." "Slack: signed in"
 verify slack_signin "Slack signed in" chk_slack
 human slack_alerts_laptop "Turn on Slack alerts.
 
@@ -740,8 +744,7 @@ If the laptop asks, click Allow." "Slack alerts on the laptop"
 human slack_phone "Grab the phone.
 
 1. Get Slack from the App Store.
-2. Sign in with:
-${RECEPTION_EMAIL}
+2. Sign in with YOUR OWN email.
 3. Tap Allow for alerts." "Slack on the phone"
 human slack_admin "Ask the launch team to make you a Slack admin.
 
