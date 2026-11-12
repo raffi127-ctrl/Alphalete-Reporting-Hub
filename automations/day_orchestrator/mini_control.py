@@ -303,6 +303,8 @@ READONLY_ACTIONS = {"push_appstream_fleet",
                     # Messages lookups: they read the chat list and send nothing.
                     "find_group", "group_members", "text_resolve",
                     "text_replies", "logdump",
+                    # Reads sysctl + disk usage; changes nothing.
+                    "machine_info",
                     # Looks at a peer over the LAN; only sends a WoL packet.
                     "peer_probe",
                     # NOT read-only, on purpose in this lane (2026-11-11): it
@@ -9205,6 +9207,33 @@ def _action_install_tracker_mirror(args: str) -> tuple[bool, str]:
     return ok, msg[:400]
 
 
+def _action_machine_info(args: str) -> tuple[bool, str]:
+    """READ-ONLY: this box's model, chip, memory, cores and free disk.
+
+    Built 2026-11-12 to pick which Lucy can run heavy work (the 973MB
+    birefnet-portrait cutout froze Lucy 3 overnight on 11/11)."""
+    import shutil
+    def _sysctl(key):
+        try:
+            return subprocess.run(["sysctl", "-n", key], capture_output=True,
+                                  text=True, timeout=10).stdout.strip()
+        except Exception:  # noqa: BLE001
+            return ""
+    mem = _sysctl("hw.memsize")
+    gb = f"{int(mem) / 2**30:.0f} GB" if mem.isdigit() else "?"
+    chip = _sysctl("machdep.cpu.brand_string") or "?"
+    model = _sysctl("hw.model") or "?"
+    cores = _sysctl("hw.ncpu") or "?"
+    try:
+        du = shutil.disk_usage(str(Path.home()))
+        disk = f"{du.free / 2**30:.0f} GB free of {du.total / 2**30:.0f} GB"
+    except Exception:  # noqa: BLE001
+        disk = "?"
+    swap = _sysctl("vm.swapusage")
+    return True, (f"memory {gb} · {chip} · {cores} cores · {model} · "
+                  f"disk {disk} · swap {swap}")
+
+
 def _action_kill_report(args: str) -> tuple[bool, str]:
     """End a STUCK report on this machine, by module name.
 
@@ -9938,6 +9967,7 @@ ACTIONS = {
     "chrome_unstick": _action_chrome_unstick,
     "ov_unstick": _action_ov_unstick,
     "kill_report": _action_kill_report,
+    "machine_info": _action_machine_info,
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,
