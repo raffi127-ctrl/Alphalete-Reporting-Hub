@@ -557,7 +557,15 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
         if gained or (baseline and today):
             for group in C.LIVE_GROUPS:
                 N.text_group(group, body, dry_run=not send, log=_log)
-        if not baseline:
+        if not baseline and not C.SLACK_LINES:
+            # Raf's ECO computer announces these in #alphalete-sales now
+            # (config.SLACK_LINES). Said in the log so a quiet channel on a
+            # day his Mac is shut is explainable from here.
+            _log("Slack lines left to Raf's ECO computer: %d sale line(s), "
+                 "%d credit-check line(s) not posted from this sweep"
+                 % (len([r for r in gained if r not in text_only]),
+                    len(rec_gained)))
+        if not baseline and C.SLACK_LINES:
             # THE SAME DAILY GIF ALLOWANCE THE ICD OFFICES GET. Raf's board
             # posts the same lines from shared/sale_hype, and without this it
             # was the one room with no cap: a rep past the gif bar stays past

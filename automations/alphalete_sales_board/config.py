@@ -85,6 +85,27 @@ NAME_MAP: Dict[str, str] = {
 # --- notifications ----------------------------------------------------------
 SLACK_CHANNEL = "C068PH3RFSM"          # #alphalete-sales
 
+# WHO ANNOUNCES RAF'S OFFICE IN #alphalete-sales: HIS OWN ECO COMPUTER, NOT US.
+#
+# Raf's Mac joined Lucy ECO on 2026-11-03 and its relay posts every sale and
+# credit check for his office through icd_alerts.post -- into this same
+# channel, in the same words (shared/credit_check_line, shared/sale_hype).
+# This sweep went on posting them too. Two readers of one SaraPlus office,
+# each with its own "already said" memory, so from 11/03 every credit check
+# and every sale was announced TWICE: once here as a line per rep, once by ECO
+# as one joined post, seconds or minutes apart depending on how late his Mac
+# relayed. Megan noticed "Sydney Agnew ... (2 today)" twice on 11/12, and was
+# asked which side should speak: "we need raf's running on his ECO machine."
+#
+# So this is False and stays False while his office is on ECO. What the sweep
+# still does, untouched: fills his Sales Board, texts the leaderboard to
+# LIVE_GROUPS, feeds the ECO board (eco_relay), Times of Sales.
+#
+# WHAT GOES WITH IT, knowingly: the per-rep running joke on sale lines
+# (shared.rep_asides, room "ao-board") only ever ran on THIS path. ECO's sale
+# lines do not carry it. Turning this back on brings the doubles back with it.
+SLACK_LINES = False
+
 # iMessage group needles for text_post.resolve_group (case-insensitive
 # substring; it raises on 0 or 2+ hits rather than guessing). The TS system
 # addressed these by chat.db ROWID (40 and 31) -- a per-machine integer that
