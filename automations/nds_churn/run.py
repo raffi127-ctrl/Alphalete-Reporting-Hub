@@ -69,14 +69,15 @@ def pull(today: dt.date, log=print) -> Path:
     return _pull(today, log=log)
 
 
-def view_counts(today: dt.date, log=print) -> Optional[dict]:
+def view_counts(today: dt.date, log=print, fresh: bool = False) -> Optional[dict]:
     """Wireless 0-30 disconnects / activated for Carlos on the NDS workbook's
     CHURNRATES view (the per-rep ChurnALlExp cut every NDS office reads),
-    summed over his reps -- the reconcile target, cached per day."""
+    summed over his reps -- the reconcile target, cached per day.
+    fresh=True ignores today's cache (see reconcile)."""
     from automations.office_metrics import nds_churn as NC
     NC._SLICE_OWNER = VIEW_OWNER
     out = OUT_DIR / f"nds_churn_view_{today.isoformat()}.csv"
-    if not (out.exists() and out.stat().st_size > 200):
+    if fresh or not (out.exists() and out.stat().st_size > 200):
         NC._fetch(out, verbose=False)
     parsed = NC._parse(out)
     reps = parsed.get("reps") or {}
@@ -121,10 +122,27 @@ def _rep_diff(lines, today, view: dict) -> str:
 def reconcile(lines, today: dt.date, summary: dict, log=print
               ) -> Tuple[Optional[bool], str]:
     """True = matches (disconnects exact, base within BASE_TOLERANCE),
-    False = mismatch (do not write), None = unverifiable."""
+    False = mismatch (do not write), None = unverifiable.
+
+    A mismatch against the CACHED view re-pulls it once before failing
+    (2026-11-12: the 06:08 pull caught the view mid-refresh -- 8/85 after
+    16/130 on 11/10 and 17/139 on 11/11 -- and the per-day cache made every
+    re-run that day compare against the same bad snapshot)."""
+    ok, detail = _reconcile_once(lines, today, summary, log, fresh=False)
+    if ok is False:
+        log(f"RECONCILE: mismatch on the cached view ({detail[:160]}) -- "
+            "re-pulling the view once")
+        ok2, detail2 = _reconcile_once(lines, today, summary, log, fresh=True)
+        if ok2 is not None:     # a failed re-pull keeps the known mismatch
+            ok, detail = ok2, detail2
+    return ok, detail
+
+
+def _reconcile_once(lines, today: dt.date, summary: dict, log, fresh: bool
+                    ) -> Tuple[Optional[bool], str]:
     global _LAST_VIEW
     try:
-        v = view_counts(today, log)
+        v = view_counts(today, log, fresh=fresh)
     except Exception as e:  # noqa: BLE001
         return None, f"view pull failed ({type(e).__name__}: {str(e)[:120]})"
     _LAST_VIEW = v
