@@ -301,6 +301,144 @@ chk_magnet() {
   printf "Magnet isn't on the laptop yet.\n\nIn the App Store, click “Get”.\nWait until it's done."
 }
 
+# --- Lucy reads the Gmail's forwarding + filters (Megan, 2026-11-11: "add a
+# check that the forwarding addresses were confirmed and that the correct
+# filters were set up" -> option B). Gmail keeps these on Google's servers,
+# so the person grants ONE read-only permission (gmail.settings.basic + their
+# email address) on a Google page; Lucy reads, checks, then REVOKES it. No
+# token is ever written to disk. Built-in tools only (a new Mac has no Python):
+#   nc     -> catches Google's redirect on 127.0.0.1
+#   curl   -> token exchange + Gmail API
+#   plutil -> reads Google's JSON replies
+# The Google app is the repo's own desktop client (oauth-client.json, already
+# public; Google treats a desktop client's secret as non-confidential).
+# If the person declines or Google refuses, the step stays on the to-do list
+# for the launch team to check by eye -- it never pretends to have checked.
+GTOKEN=""; GMAIL_AS=""
+OAUTH_CLIENT_URL="https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/oauth-client.json"
+_json() { plutil -extract "$2" raw -o - "$1" 2>/dev/null; }   # file  key.path
+_urldecode() { local v="${1//+/ }"; printf '%b' "${v//%/\\x}"; }
+
+gmail_auth() {   # email-we-expect  -> sets GTOKEN (and GMAIL_AS); 0 on success
+  local want="$1" t cid sec port state url raw code req
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would ask Google for read-only Gmail settings access"; return 1; }
+  [ -n "$GTOKEN" ] && [ "$GMAIL_AS" = "$want" ] && return 0
+  t="$(mktemp -d)"
+  curl -fsSL "$OAUTH_CLIENT_URL" -o "$t/c.json" || { rm -rf "$t"; return 1; }
+  cid="$(_json "$t/c.json" installed.client_id)"; sec="$(_json "$t/c.json" installed.client_secret)"
+  [ -n "$cid" ] || { rm -rf "$t"; return 1; }
+  port=$(( 49200 + RANDOM % 600 )); state="lucy$RANDOM$RANDOM"
+  url="https://accounts.google.com/o/oauth2/v2/auth?response_type=code&access_type=online&prompt=consent"
+  url="$url&client_id=$cid&redirect_uri=http://127.0.0.1:$port&state=$state&login_hint=$want"
+  url="$url&scope=https://www.googleapis.com/auth/gmail.settings.basic%20email"
+  # the local catcher: answers Google's redirect with a "you can close this" page
+  ( printf 'HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<html><body style="font:22px -apple-system;padding:40px">✅ Done. You can close this tab and go back to Lucy.</body></html>' \
+      | nc -l 127.0.0.1 "$port" > "$t/req" 2>/dev/null ) &
+  local ncpid=$!
+  open_chrome "$url"
+  _dialog "Step $N of $TOTAL — $TITLE" "Lucy will check your Gmail is set up right.
+
+A Google page just opened in Chrome.
+
+1. Pick: ${want}
+2. Google says “Google hasn't verified this app”.
+That's OK. It's ours.
+3. Click “Advanced” (bottom left).
+4. Click “Go to Recruiting Report (unsafe)” at the bottom.
+5. Tick the box next to Gmail (or “Select all”).
+6. Click “Continue”." "OK" "OK" >/dev/null
+  local i=0
+  while kill -0 $ncpid 2>/dev/null && [ $i -lt 120 ]; do sleep 1; i=$((i+1)); done
+  kill $ncpid 2>/dev/null
+  req="$(head -1 "$t/req" 2>/dev/null)"
+  echo "$req" | grep -q "state=$state" || { rm -rf "$t"; return 1; }
+  raw="$(echo "$req" | sed -n 's/.*[?&]code=\([^& ]*\).*/\1/p')"
+  [ -n "$raw" ] || { rm -rf "$t"; return 1; }
+  code="$(_urldecode "$raw")"
+  curl -fsS https://oauth2.googleapis.com/token \
+    --data-urlencode "code=$code" --data-urlencode "client_id=$cid" \
+    --data-urlencode "client_secret=$sec" --data-urlencode "redirect_uri=http://127.0.0.1:$port" \
+    --data-urlencode "grant_type=authorization_code" -o "$t/tok.json" 2>/dev/null
+  GTOKEN="$(_json "$t/tok.json" access_token)"
+  [ -n "$GTOKEN" ] || { rm -rf "$t"; return 1; }
+  # Google's page lets them untick Gmail; then the token can't read settings
+  # (tested 2026-11-11: HTTP 403 "insufficient authentication scopes").
+  if ! _json "$t/tok.json" scope | grep -q "gmail.settings.basic"; then
+    curl -fsS -d "token=$GTOKEN" https://oauth2.googleapis.com/revoke >/dev/null 2>&1
+    GTOKEN=""; rm -rf "$t"; return 2
+  fi
+  curl -fsS -H "Authorization: Bearer $GTOKEN" https://openidconnect.googleapis.com/v1/userinfo -o "$t/me.json" 2>/dev/null
+  GMAIL_AS="$(_json "$t/me.json" email | tr 'A-Z' 'a-z')"
+  rm -rf "$t"
+  return 0
+}
+gmail_auth_retry() {   # email  -> like gmail_auth, but asks again if Gmail wasn't ticked
+  local tries=0 rc
+  while [ $tries -lt 3 ]; do
+    gmail_auth "$1"; rc=$?
+    [ $rc = 2 ] || return $rc
+    tries=$((tries+1))
+    _dialog "Step $N of $TOTAL — $TITLE" "Almost! The Gmail box wasn't ticked.
+
+Lucy will open the Google page again.
+This time tick the box next to Gmail (or “Select all”). Then click “Continue”." "OK" "OK" >/dev/null
+  done
+  return 1
+}
+gmail_done() {   # throw the permission away
+  [ -n "$GTOKEN" ] && curl -fsS -d "token=$GTOKEN" https://oauth2.googleapis.com/revoke >/dev/null 2>&1
+  GTOKEN=""; GMAIL_AS=""
+}
+_gmail_get() {   # settings-path  out-file  -> 0 on HTTP 200/204 (GMAIL_HTTP keeps the code)
+  GMAIL_HTTP="$(curl -sS -w '%{http_code}' -H "Authorization: Bearer $GTOKEN" \
+    "https://gmail.googleapis.com/gmail/v1/users/me/settings/$1" -o "$2" 2>/dev/null)"
+  # 204 = read fine, nothing there (seen 2026-11-11 on an account with no
+  # forwarding/filters) -- that's an answer, not an error.
+  [ "$GMAIL_HTTP" = 204 ] && : > "$2"
+  [ "$GMAIL_HTTP" = 200 ] || [ "$GMAIL_HTTP" = 204 ]
+}
+
+chk_gmail_setup() {   # gmail-we-expect  forward-to  "from|subject|Name" ...
+  local want="$1" to="$2"; shift 2
+  [ -n "$GTOKEN" ] || { printf "Lucy couldn't open your Gmail settings.\n\nAsk the launch team to check your forwarding and filters."; return; }
+  if [ -n "$GMAIL_AS" ] && [ "$GMAIL_AS" != "$want" ]; then
+    printf "Lucy got permission for:\n%s\nbut the codes go to:\n%s\n\nAsk the launch team." "$GMAIL_AS" "$want"; return
+  fi
+  local t i e status="" from subj fwd ok_f miss=""
+  t="$(mktemp -d)"
+  if ! _gmail_get forwardingAddresses "$t/fa.json"; then
+    rm -rf "$t"; printf "Lucy couldn't read your Gmail settings (Google said %s).\n\nAsk the launch team to check your forwarding and filters." "${GMAIL_HTTP:-no answer}"; return
+  fi
+  i=0
+  while e="$(_json "$t/fa.json" forwardingAddresses.$i.forwardingEmail)"; [ -n "$e" ]; do
+    if [ "$(echo "$e" | tr 'A-Z' 'a-z')" = "$to" ]; then status="$(_json "$t/fa.json" forwardingAddresses.$i.verificationStatus)"; fi
+    i=$((i+1))
+  done
+  if [ -z "$status" ]; then
+    rm -rf "$t"; printf "%s isn't a forwarding address yet.\n\nIn Gmail: Settings → Forwarding → “Add a forwarding address”. Type it. Then click “Check again”." "$to"; return
+  elif [ "$status" != accepted ]; then
+    rm -rf "$t"; printf "Forwarding to %s isn't approved yet.\n\nAsk the launch team to approve it." "$to"; return
+  fi
+  if ! _gmail_get filters "$t/fl.json"; then
+    rm -rf "$t"; printf "Lucy couldn't read your Gmail filters (Google said %s).\n\nAsk the launch team to check them." "${GMAIL_HTTP:-no answer}"; return
+  fi
+  for e in "$@"; do
+    IFS='|' read -r from subj name <<< "$e"
+    ok_f=0; i=0
+    while f_from="$(_json "$t/fl.json" filter.$i.criteria.from)" || _json "$t/fl.json" filter.$i.id >/dev/null; do
+      fwd="$(_json "$t/fl.json" filter.$i.action.forward | tr 'A-Z' 'a-z')"
+      f_subj="$(_json "$t/fl.json" filter.$i.criteria.subject)"
+      if echo "$f_from" | grep -qiF "$from" && [ "$fwd" = "$to" ] \
+         && { [ -z "$subj" ] || echo "$f_subj" | grep -qiF "$subj"; }; then ok_f=1; break; fi
+      i=$((i+1)); [ $i -gt 400 ] && break
+    done
+    [ $ok_f = 1 ] || miss="$miss$name
+"
+  done
+  rm -rf "$t"
+  [ -n "$miss" ] && printf "These filters are missing:\n%s\nIn Gmail: Settings → Filters → “Import filters”. Pick the file from the Desktop again. Then click “Check again”." "$miss"
+}
+
 # ------------------------------------------------------------- installers
 # DOWNLOADS START THE MOMENT THE WALKTHROUGH OPENS (Megan, 2026-11-11: "the
 # goal is to shorten this call"). Excel alone is ~1 GB; fetched while the
@@ -745,6 +883,14 @@ Don't change anything else." "Owner's Gmail: reception added as a forwarding add
 2. Click “Choose File”. Pick this from the Desktop:
 Gmail-Filters-1-Reception
 3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sara+, Sterling and OwnerVille login codes to reception"
+    if is_done filters_reception; then
+      gmail_auth_retry "$OWNER_EMAIL"
+      verify filters_reception "Gmail forwards login codes to reception (forwarding approved, 3 filters)" \
+        chk_gmail_setup "$OWNER_EMAIL" "$RECEPTION_EMAIL" \
+        "security.info@saraplus.com||Sara+ codes" \
+        "$STERLING|Authentication Request|Sterling codes" \
+        "noreply@ownerville.com|Your Account Verification Code|OwnerVille codes"
+    fi
   fi
 fi
 
@@ -784,6 +930,12 @@ Don't change anything else." "Owner's Gmail: Lucy added as a forwarding address"
 2. Click “Choose File”. Pick this from the Desktop:
 Gmail-Filters-2-Lucy-Background-Checks
 3. Click “Open file”. Then “Create filters”." "Owner's Gmail forwards Sterling background checks to Lucy"
+      if is_done filters_lucy; then
+        gmail_auth_retry "$OWNER_EMAIL"
+        verify filters_lucy "Gmail forwards background checks to Lucy (forwarding approved, filter)" \
+          chk_gmail_setup "$OWNER_EMAIL" "$LUCY_BG_INBOX" "$STERLING||Sterling background checks"
+        gmail_done
+      fi
   fi
 fi
 [ $DRY_RUN = 1 ] && rm -rf "$OUT"
@@ -1007,6 +1159,8 @@ Finish them now?" "Later,Finish them now" "Finish them now")"
   [ "$b" = "Finish them now" ] || break
   DONE=(); YOURS=(); FAILED=(); QUIET_INFO=1
 done
+
+gmail_done   # never leave the Gmail permission behind, whatever step they stopped at
 
 # ----------------------------------------------------------------- report
 REPORT="$HOME/Desktop/Laptop-Setup-Report.txt"
