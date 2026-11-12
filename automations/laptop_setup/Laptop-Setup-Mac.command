@@ -604,7 +604,7 @@ COMPUTER=owner
 PERSON_NAME="$(recall PERSON_NAME)"
 while [ -z "$PERSON_NAME" ]; do
   if [ $DRY_RUN = 1 ]; then PERSON_NAME="Example Person"; break; fi
-  PERSON_NAME="$(osascript - "Laptop Set Up" "Type your first and last name." <<'APPLESCRIPT' 2>/dev/null
+  PERSON_NAME="$(osascript - "Laptop Set Up" "Type the first and last name of the ICD we're setting up." <<'APPLESCRIPT' 2>/dev/null
 on run argv
   try
     set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer "" buttons {"OK"} default button "OK" with icon note
