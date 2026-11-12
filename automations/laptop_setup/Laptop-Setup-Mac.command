@@ -471,9 +471,11 @@ run open -a zoom.us 2>/dev/null
 human zoom "Zoom is open.
 (Look behind this box.)
 
-1. Sign in with your personal email.
-No account? Click “Sign up”.
-2. Join our Zoom call." "On the Zoom call (signed in)"
+Make your Zoom account:
+1. Click “Sign up”.
+2. Click “Google”. Pick your personal Gmail.
+(Already have a Zoom account? Click “Sign in” instead.)
+3. Join our Zoom call." "Zoom account made + on the call"
 verify zoom "Zoom signed in" chk_zoom
 }
 
