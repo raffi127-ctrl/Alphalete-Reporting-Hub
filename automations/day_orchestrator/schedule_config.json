@@ -16706,8 +16706,9 @@
    "after": [
     "nds_customer_email"
    ],
-   "timeout_minutes": 30,
-   "verify": null
+   "timeout_minutes": 75,
+   "verify": null,
+   "_timeout_note": "75: the first full pass (95 Shipped lines, ~40 orders, an AT&T page + a FedEx page each) ran past 30 minutes on 2026-11-11 and was cut off; cells are written order by order so a cut-off keeps what was read."
   },
   "nds_churn": {
    "on_scheduler": true,

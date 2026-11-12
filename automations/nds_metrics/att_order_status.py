@@ -221,10 +221,10 @@ def fedex_status(page, number: str, log=print) -> str:
     try:
         page.goto(FEDEX_URL.format(n=number), wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
         try:
-            page.wait_for_load_state("networkidle", timeout=25_000)
+            page.wait_for_load_state("networkidle", timeout=12_000)
         except Exception:  # noqa: BLE001
             pass
-        page.wait_for_timeout(5000)
+        page.wait_for_timeout(3000)
         text = page.evaluate("() => (document.body.innerText || '')")
     except Exception as e:  # noqa: BLE001
         log("    (FedEx %s: page failed: %s)" % (number, type(e).__name__))
@@ -257,10 +257,10 @@ def lookup(page, order: str, zip_code: str, email: str, log=print) -> Dict[str, 
         page.goto(DETAILS_URL.format(email=quote(email), order=quote(order), zip=quote(zip_code)),
                   wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
         try:
-            page.wait_for_load_state("networkidle", timeout=25_000)
+            page.wait_for_load_state("networkidle", timeout=12_000)
         except Exception:  # noqa: BLE001
             pass
-        page.wait_for_timeout(4000)
+        page.wait_for_timeout(2500)
         text = page.evaluate("() => (document.querySelector('main') || document.body).innerText || ''")
         s = summarize(text)
         if s["lines"] and not s["failed"]:
@@ -376,6 +376,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
     import gspread
     cells = []
     pending = []
+    fedex_seen: Dict[str, str] = {}
     written = 0
     read = failed = unchanged = 0
     with sync_playwright() as p:
@@ -387,12 +388,12 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
             for o in todo:
                 log("• %s  %s  zip %s  %s" % (o["customer"], o["order"], o["zip"], o["email"]))
                 s = lookup(page, o["order"], o["zip"], o["email"], log=log)
-                try:
-                    from automations.rc_contact_sync.status_probe import _upload_shot
-                    _upload_shot(page.screenshot(full_page=True), SHOT_TAB, log=log)
-                except Exception as e:  # noqa: BLE001
-                    log("    (page shot not uploaded: %s)" % type(e).__name__)
                 if s["error"]:
+                    try:
+                        from automations.rc_contact_sync.status_probe import _upload_shot
+                        _upload_shot(page.screenshot(full_page=True), SHOT_TAB, log=log)
+                    except Exception as e:  # noqa: BLE001
+                        log("    (page shot not uploaded: %s)" % type(e).__name__)
                     failed += 1
                     log("    ✗ %s" % s["error"])
                     try:
@@ -408,9 +409,10 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                     if n.startswith("1Z"):
                         log("    (UPS %s: not looked up)" % n)
                         continue
-                    fx = fedex_status(page, n, log=log)
-                    if fx:
-                        carrier.append(fx)
+                    if n not in fedex_seen:
+                        fedex_seen[n] = fedex_status(page, n, log=log)
+                    if fedex_seen[n]:
+                        carrier.append(fedex_seen[n])
                 body = note_text(s, today, carrier)
                 log("    %s" % body)
                 batch = []
