@@ -229,7 +229,8 @@ Google Passwords is open in Chrome.
 1. Click “Add”.
 2. Website: ${site}
 3. Type your ${name} email and password.
-4. Click “Save”." "${name} password saved in Google Passwords"
+4. Click “Save”.
+5. Then type it in your All in One “Passwords” tab (pinned in Chrome): website, email, password." "${name} password saved (Google Passwords + All in One)"
   verify "$key" "${name} password saved" chk_passwords "${name}|${site}"
 }
 
@@ -698,6 +699,29 @@ verify chrome_sync "Chrome signed in as reception, sync on" chk_chrome
 
 # ------------------------------------------------------------------------
 }
+step_1.5() {
+section "Your All in One sheet"
+# Maud makes "All in One - First Last" before the call and shares it with
+# reception as Editor; its "Passwords" tab gets every login from here on
+# (Maud + Megan, 2026-11-12). It moved up from near the end so it's open
+# before the first password is saved.
+ALLIN_NAME="All in One - ${PERSON_NAME}"
+human drive_shared "Wait for the launch team to share your All in One with:
+${RECEPTION_EMAIL}
+
+It's named: ${ALLIN_NAME}" "All in One shared with reception (launch team)" "They confirmed it done"
+open_chrome "https://drive.google.com/drive/search?q=%22$(echo "$ALLIN_NAME" | sed 's/ /%20/g')%22"
+human allin_open "Google Drive is open.
+
+1. Open “${ALLIN_NAME}”.
+2. Click the “Passwords” tab at the bottom.
+3. Right-click its tab at the top of Chrome. Click “Pin”.
+4. Type your reception Gmail login in the next empty row:
+gmail.com · ${RECEPTION_EMAIL} · its password
+
+You'll add every login here as you go." "All in One open + pinned, reception Gmail logged"
+}
+
 step_2() {
 section "Apple account (iCloud)"
 if [ "$COMPUTER" = owner ] && [ $DRY_RUN = 0 ] && [ -z "$(chk_apple_any)" ]; then
@@ -798,15 +822,15 @@ say_info "The laptop did these by itself:
 # ------------------------------------------------------------------------
 }
 step_6() {
-section "Bookmark Gmail, Calendar, Drive"
+section "Pin Gmail, Calendar, Drive"
 open_chrome "https://mail.google.com/" "https://calendar.google.com/" "https://drive.google.com/"
+# PIN, NOT BOOKMARK (Maud, 2026-11-12). Chrome doesn't record pins anywhere
+# Lucy can read, so this step has no ☆-style check.
 human chrome_google "Gmail, Calendar and Drive are open in tabs at the top of Chrome.
 
-Click each tab.
-Click the ☆ at the right end of the web address bar.
-Then click “Done”." "Chrome: Gmail, Calendar, Drive bookmarked"
+For each one:
+Right-click its tab. Click “Pin”." "Chrome: Gmail, Calendar, Drive pinned"
 verify chrome_google "Chrome signed in as reception, sync on" chk_chrome
-verify chrome_google "☆ on Gmail, Calendar, Drive" chk_stars "Gmail|mail.google.com" "Calendar|calendar.google.com" "Drive|drive.google.com"
 
 # ------------------------------------------------------------------------
 }
@@ -817,17 +841,18 @@ for entry in "${WORK_SITES[@]}"; do
   open_chrome "$surl"
   extra=""
   # Maud makes their BlueInk login and the launch team gives it to them on the
-  # call (2026-11-11); then it's a normal log in + save + ☆ like the others.
+  # call (2026-11-11); then it's a normal log in + save + pin like the others.
   [ "$sname" = "BlueInk" ] && extra="
 The launch team will give you your BlueInk login."
   human "site_$sname" "${sname} is open.
 
 1. Log in.${extra}
 2. Chrome asks to save the password. Click “Save”.
-3. Save the page: click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: logged in to $sname + bookmarked"
+3. Right-click this tab at the top. Click “Pin”.
+4. Then type it in your All in One “Passwords” tab (pinned in Chrome): website, email, password." "Chrome: logged in to $sname, saved + pinned"
   # what to look for in the saved address (Apex lives on herbjoyent.com)
   needle="$(echo "$sname" | tr 'A-Z' 'a-z')"; [ "$sname" = "Apex" ] && needle="herbjoyent"
-  verify "site_$sname" "$sname: ☆ + password saved" chk_site "$sname|$needle"
+  verify "site_$sname" "$sname: password saved" chk_passwords "$sname|$needle"
 done
 
 # ------------------------------------------------------------------------
@@ -942,17 +967,6 @@ fi
 
 # ------------------------------------------------------------------------
 }
-step_10() {
-section "Share Google Drive"
-# Maud makes a Drive folder named after the owner (first + last name) and
-# shares it with reception as Editor (2026-11-11). Same folder for every office.
-human drive_shared "Wait for the launch team to share your Google Drive folder with:
-${RECEPTION_EMAIL}
-
-(It's named: ${PERSON_NAME})" "Drive folder shared with reception (launch team)" "They confirmed it done"
-
-# ------------------------------------------------------------------------
-}
 step_11() {
 section "Contacts"
 # "Google Contacts (Laptop & Phone)" = reception's Google contacts show up in
@@ -1015,9 +1029,12 @@ human slack_phone "Grab your phone.
 1. Open Slack. (Don't have it? Get it from the App Store and sign in with your own email.)
 2. Open the phone's Settings. Tap Notifications. Tap Slack.
 3. Turn on “Allow Notifications”." "Slack alerts on the phone"
-human slack_admin "Ask the launch team to make you a Slack admin.
+# The owner is already a Slack admin; the RECEPTION email is the one that
+# needs it (Maud, 2026-11-12).
+human slack_admin "Ask the launch team to make the reception email a Slack admin:
+${RECEPTION_EMAIL}
 
-They will do it on the Zoom call." "Slack: made admin (AO)" "They confirmed it done"
+They will do it on the Zoom call." "Slack: reception made admin (AO)" "They confirmed it done"
 
 # ------------------------------------------------------------------------
 }
@@ -1032,7 +1049,9 @@ human excel "Excel is open.
 1. Click “Sign in”.
 2. Type: alphaletereception@gmail.com
 3. Microsoft sends a code. The launch team will tell you the code.
-4. Type the code." "Excel: signed in"
+4. Type the code.
+5. In your All in One “Passwords” tab add:
+Excel · alphaletereception@gmail.com · code sent to email" "Excel: signed in"
 verify excel "Excel signed in" chk_excel
 
 # ------------------------------------------------------------------------
@@ -1129,7 +1148,7 @@ done
 
 # ---------------------------------------------------------- run the steps
 # One function per step, so Back can re-open the previous one.
-STEPS=($(declare -F | awk '{print $3}' | grep -E '^step_[0-9]+$' | sort -t_ -k2 -n))
+STEPS=($(declare -F | awk '{print $3}' | grep -E '^step_[0-9.]+$' | sort -t_ -k2 -g))
 run_all() {
   local i=0
   while [ $i -lt ${#STEPS[@]} ]; do
