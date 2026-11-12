@@ -63,6 +63,28 @@ class MatchTest(unittest.TestCase):
                                               ["Starr Rodenhurst"]}), {})
 
 
+class AnswerShapeTest(unittest.TestCase):
+    def test_all_caps_name_in_answer_still_counts(self):
+        # The model echoes 'STARR RODENHURST' for the key 'Starr Rodenhurst'.
+        with tempfile.TemporaryDirectory() as d:
+            p = _board(Path(d) / "b.png")
+            fake = [{"name": "STARR RODENHURST", "band": 2,
+                     "text_read": "STARR RODENHURST"}]
+            with mock.patch.object(H, "_ask", return_value=fake):
+                got = H.locate(p, {"Starr Rodenhurst": ["Starr Rodenhurst"]})
+            self.assertEqual(list(got), ["Starr Rodenhurst"])
+
+    def test_tall_board_is_sliced_without_cutting_a_row(self):
+        im = Image.new("RGB", (400, 3000), "white")
+        bands = [(y, y + 20, [(0, 399)]) for y in range(0, 2980, 30)]
+        t = H.tiles(im, bands)
+        self.assertGreater(len(t), 1)
+        self.assertEqual([b for _, _, s, e in t for b in range(s, e)],
+                         list(range(len(bands))))
+        for y0, y1, s, e in t:
+            self.assertLessEqual(y1 - y0, 1000 + 30)
+
+
 class WhoTest(unittest.TestCase):
     def tearDown(self):
         H.FORCE = False

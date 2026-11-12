@@ -63,6 +63,8 @@ _GAP = 3                 # off-grey pixels a rule may cross (cell borders)
 _MIN_BAND_PX = 8         # rows shorter than this are double rules, not rows
 _MAX_BAND_PX = 40        # taller than this is a header / chart, not a row
 _MARGIN = 34             # white strip added on the left for the band numbers
+_API_EDGE = 1400         # the API shrinks images to ~1568px on the long edge
+_MIN_TILE_PX = 1000      # a slice is at least this tall (narrow boards)
 
 HL_COLOR = (255, 236, 64)   # highlighter yellow
 
@@ -206,21 +208,51 @@ def rows_of(im) -> list:
     return out
 
 
-def numbered(im, bands: list):
-    """Copy with a white left margin and the band number beside each band."""
+def numbered(im, bands: list, first: int = 1):
+    """Copy with a white margin on BOTH sides, the band number in each, and a
+    thin red line between bands across the whole width.
+
+    The lines + right-hand numbers matter: on a wide board the API shrinks the
+    image ~2x, rows sit 15px apart and a left-only number got read one row
+    off (Tre Mitchell came back as Stergios's band, 2026-11-12). The numbers
+    also grow with the image so they survive that shrink."""
     from PIL import Image, ImageDraw, ImageFont
     W, H = im.size
-    canvas = Image.new("RGB", (W + _MARGIN, H), "white")
-    canvas.paste(im.convert("RGB"), (_MARGIN, 0))
+    size = max(11, round(11 * W / _API_EDGE))
+    margin = max(_MARGIN, size * 3)
+    canvas = Image.new("RGB", (W + 2 * margin, H), "white")
+    canvas.paste(im.convert("RGB"), (margin, 0))
     d = ImageDraw.Draw(canvas)
     try:
-        font = ImageFont.load_default(size=11)
+        font = ImageFont.load_default(size=size)
     except TypeError:          # Pillow < 10.1
         font = ImageFont.load_default()
-    for i, (top, bot, _segs) in enumerate(bands, 1):
-        d.text((2, top + max(0, (bot - top - 11) // 2)), str(i),
-               fill=(220, 0, 0), font=font)
+    line = max(1, size // 10)
+    for i, (top, bot, _segs) in enumerate(bands, first):
+        d.line([(0, top), (W + 2 * margin, top)], fill=(255, 90, 90), width=line)
+        y = top + max(0, (bot - top - size) // 2)
+        d.text((2, y), str(i), fill=(220, 0, 0), font=font)
+        d.text((W + margin + 2, y), str(i), fill=(220, 0, 0), font=font)
+    if bands:
+        bot = bands[-1][1]
+        d.line([(0, bot), (W + 2 * margin, bot)], fill=(255, 90, 90), width=line)
     return canvas
+
+
+def tiles(im, bands: list) -> list:
+    """[(y0, y1, start, end)] — bands[start:end] in each of the slices of the board, each no taller than
+    it is wide (min _MIN_TILE_PX). A 3400x6700 board sent whole is shrunk ~4x
+    by the API and every name blurs; sliced, each piece keeps its rows legible.
+    Bands are never cut in half."""
+    W, H = im.size
+    cap = max(W, _MIN_TILE_PX)
+    out, start = [], 0
+    for i in range(1, len(bands) + 1):
+        if i == len(bands) or bands[i][1] - bands[start][0] > cap:
+            out.append((max(0, bands[start][0] - 4),
+                        min(H, bands[i - 1][1] + 4), start, i))
+            start = i
+    return out
 
 
 def paint(im, band):
@@ -247,8 +279,9 @@ _SCHEMA = {
         "additionalProperties": False}}},
     "required": ["found"], "additionalProperties": False}
 
-_PROMPT = """This is a sales tracker table. Every table row has a small RED number
-in the left margin (the band number). For each person below, find the row whose
+_PROMPT = """This is a sales tracker table. Thin red lines split it into rows, and
+every row has a RED number in BOTH margins, level with that row (the band
+number). Read the number between the same two red lines as the name. For each person below, find the row whose
 owner / ICD name column shows that person, and return its red band number and
 the name text exactly as printed in that row. Names are often ALL CAPS and may
 be shortened. Only return a person if you are sure; leave them out otherwise.
@@ -299,7 +332,8 @@ def _matches(text_read: str, spellings: list) -> bool:
 def locate(png: Path, people: dict, cache_dir: Path | None = None) -> dict:
     """{key: [band, ...]} for every person found on this image.
 
-    `people` = {key: [spellings]}. One Claude call for all of them; the answer
+    `people` = {key: [spellings]}. One Claude call per slice of the board
+    (tiles) for all of them at once; the answer
     is cached next to the image (keyed by the image bytes) so a retry or a
     --replace run never pays twice."""
     from PIL import Image
@@ -317,10 +351,17 @@ def locate(png: Path, people: dict, cache_dir: Path | None = None) -> dict:
                     for k, v in raw.items()}
         except Exception:   # noqa: BLE001
             pass
-    found = _ask(numbered(im, bands), people)
+    found = []
+    for y0, y1, start, end in tiles(im, bands):
+        part = [(t - y0, b - y0, sg) for t, b, sg in bands[start:end]]
+        found += _ask(numbered(im.crop((0, y0, im.size[0], y1)), part,
+                               start + 1), people)
     out: dict = {}
+    # Claude echoes the name the way the board prints it ('TRE MITCHELL'),
+    # not the way we asked - match the key on letters only.
+    keys = {norm(k): k for k in people}
     for f in found:
-        k, i = f.get("name", ""), int(f.get("band") or 0)
+        k, i = keys.get(norm(f.get("name", "")), ""), int(f.get("band") or 0)
         if k not in people or not (1 <= i <= len(bands)):
             continue
         if not _matches(f.get("text_read", ""), people[k]):
@@ -348,12 +389,36 @@ def highlighted(png: Path, key: str, bands: list) -> Path:
 
 
 # ------------------------------------------------------------------ who gets it
+_ALIASES = None
+
+
+def _aliases() -> dict:
+    """The ICD Aliases sheet, read ONCE per process. Every owner channel gets a
+    highlight now (38 owners): one Sheet read each would hit the 60-reads/min
+    cap and stall the run on 429 retries."""
+    global _ALIASES
+    if _ALIASES is None:
+        try:
+            import time
+            from automations.focus_office_att import aliases as A
+            # The mirror every alias read leaves behind: under a day old, use
+            # it. A Sheet read on a 429-throttled account waited ~3 min on
+            # retries (2026-11-12) and the post sat behind it.
+            m = Path(A.CACHE_PATH)
+            if m.exists() and time.time() - m.stat().st_mtime < 86400:
+                _ALIASES = json.loads(m.read_text(encoding="utf-8")) or {}
+            else:
+                _ALIASES = A.load_aliases() or {}
+        except Exception:   # noqa: BLE001
+            _ALIASES = {}
+    return _ALIASES
+
+
 def spellings(owner: str) -> list:
     """The owner's name plus every alias the ICD Aliases sheet knows."""
     out = [owner]
     try:
-        from automations.focus_office_att import aliases as A
-        for canon, als in (A.load_aliases() or {}).items():
+        for canon, als in _aliases().items():
             als = [als] if isinstance(als, str) else list(als or [])
             if norm(owner) in {norm(canon), *map(norm, als)}:
                 out += [canon, *als]
