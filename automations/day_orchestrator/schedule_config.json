@@ -17868,5 +17868,27 @@
  },
  "excluded": {
   "_note": "Empty — all upload reports are now auto email-ingest: Frontier + Financial 2026-07-01. First/Last Sale RETIRED 2026-07-06 (Megan) — card + scheduler + Mon 2pm mini job removed. Manual Upload cards kept as fallbacks."
+ },
+ "mouse_prefs": {
+  "on_scheduler": false,
+  "_off_scheduler_note": "on_scheduler:false -- a one-off a PERSON runs, never scheduled. Sets fast mouse + trackpad and Apple-mouse right-click on the Lucy it runs on (Megan 2026-11-11: 'we need the right click on mouse thing and fast mouse on the Lucy's'). Same settings as the laptop walkthrough's 'Mouse and screen' step. Run it on EACH Lucy by name: `lucy --machine \"Lucy 2\" rerun mouse_prefs` (add `-- --dry-run` to only report). Takes effect at that Lucy's next restart/login; it restarts nothing. stay_home so build routing never moves it -- the machine named is the machine changed.",
+  "machine": "Lucy 1",
+  "stay_home": true,
+  "display_name": "Fast mouse + right-click on this Lucy (one-off)",
+  "source_type": "local",
+  "data_sources": [],
+  "command": [
+   "automations.laptop_setup.mouse_prefs"
+  ],
+  "base_args": [],
+  "cadence": {
+   "weekdays": []
+  },
+  "priority": "P3",
+  "freshness_target": null,
+  "depends_on": [],
+  "verify": {
+   "type": "not_configured"
+  }
  }
 }
