@@ -1317,9 +1317,10 @@ def _audit_stations_tab(prefix, vals, form, week_board, known,
     # the status was first set (2026-08-06). 'New T' (new territory) is the same
     # column and the same trap — anchored, so a real 'New Tyler Smith' still
     # gets checked (2026-09-08, A7 and A39). 'Need New T' is the same status
-    # value, capitalised (A10/A11, 2026-09-28).
+    # value, capitalised (A10/A11, 2026-09-28); "Needs New T" and
+    # "Needs NewT" too (A10/A6, 2026-11-12).
     LABELS = re.compile(r"^(\d|rep #|rep list|store|territory|t extended|"
-                        r"(need )?new t$|"
+                        r"(needs? )?new ?t$|"
                         r"car rides|"
                         r"stations|legend|off|terminated|new starts|monday|"
                         r"tuesday|wednesday|thursday|friday|in a |in both|"
