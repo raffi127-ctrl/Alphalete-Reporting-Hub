@@ -34,6 +34,9 @@ LOG_TAB = "Cleaned Order Log"
 NON_REP_TABS = {"Pay Period", LOG_TAB}
 # (label, first letter, last letter) — fixed, so a rep always knows which file.
 GROUPS = [("A-F", "A", "F"), ("G-M", "G", "M"), ("N-Z", "N", "Z")]
+# Label for a small office's log posted whole (no letter split), still with
+# the tap-your-name index thread (Eve 2026-11-12, Raf disliked the bare file).
+WHOLE = "All"
 # Slack's phone preview shows ~1,000 rows per tab and ~30 tabs. Warn early.
 ROW_WARN, TAB_WARN = 950, 28
 
@@ -230,12 +233,17 @@ def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
                                         message_ts=msg_ts)["permalink"]
 
     for label, path in parts:
-        title = f"📋 *Order Log {today_label} — reps {label.replace('-', '–')}*"
+        # WHOLE = a small office's log, not split by letter (Eve 2026-11-12):
+        # same thread + index, just one post with every rep.
+        whole = label == WHOLE
+        span = "" if whole else f" {label.replace('-', '–')}"
+        title = (f"📋 *Order Log {today_label}*" if whole
+                 else f"📋 *Order Log {today_label} — reps{span}*")
         ts = _text(None, f"{title}\nOpen the thread 👇 and tap your name")
         # The index is the FIRST reply (Eve 2026-11-01). Its names link to messages
         # that do not exist yet, so it goes up as a placeholder and is filled at the end.
         index_ts = _text(ts, f"👉 *Tap your name:* (names loading...)")
-        full_ts = _with_file(ts, f"*All reps {label.replace('-', '–')}* (one file)",
+        full_ts = _with_file(ts, f"*All reps{span}* (one file)",
                              path, path.name)
         links = []
         for rep, rpath in rep_files(path, out_dir / "reps" / label):
@@ -245,7 +253,7 @@ def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
             time.sleep(1)
         index = "\n".join(f"• <{url}|{rep}>" for rep, url in links)
         index_text = (f"👉 *Tap your name:*\n{index}\n\n"
-                      f"<{_link(full_ts)}|All reps {label} in one file>")
+                      f"<{_link(full_ts)}|All reps{span} in one file>")
         try:
             client.chat_update(channel=channel, ts=index_ts, text=index_text)
         except Exception as e:  # noqa: BLE001  (names still reach the thread)

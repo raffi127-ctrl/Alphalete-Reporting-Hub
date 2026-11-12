@@ -126,10 +126,31 @@ class TestRouting(unittest.TestCase):
                                           today=date(2026, 11, 1), post_to_slack=True)
         return letters, single
 
-    def test_small_office_keeps_single_file(self):
-        letters, single = self._post("COFFICE", False)
+    def test_small_office_gets_one_post_with_index(self):
+        """Eve 2026-11-12: no letter split, but still the tap-your-name thread."""
+        with mock.patch.object(order_log, "can_post_index", return_value=True):
+            letters, single = self._post("COFFICE", False)
+        self.assertEqual(letters.call_args[0][3], "COFFICE")
+        self.assertFalse(letters.call_args[1]["split"])
+        single.assert_not_called()
+
+    def test_email_office_keeps_single_file(self):
+        with mock.patch.object(order_log, "can_post_index", return_value=False):
+            letters, single = self._post("COFFICE", False)
         letters.assert_not_called()
         single.assert_called_once()
+
+    def test_whole_post_title_has_no_letters(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            book = _book(d / "Order Log.xlsx", 1, 1)
+            c = FakeClient()
+            with mock.patch.object(ols, "rep_files", return_value=[("Ana", book)]), \
+                    mock.patch("time.sleep"):
+                ols.post_threads(c, "C1", [(ols.WHOLE, book)], d, "11-12-2026")
+        parent = [x for x in c.calls if x[0] == "post"][0][2]["text"]
+        self.assertIn("Order Log 11-12-2026*", parent)
+        self.assertNotIn("reps", parent)
 
     def test_big_office_gets_letters_in_its_own_channel(self):
         letters, single = self._post("COFFICE", True)

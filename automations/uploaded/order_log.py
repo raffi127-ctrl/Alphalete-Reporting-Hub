@@ -2310,8 +2310,16 @@ def too_big_for_phone(xlsx_path: Path) -> bool:
     return over
 
 
+def can_post_index() -> bool:
+    """Every office with a Slack channel gets the tap-your-name thread (Eve
+    2026-11-12: Raf disliked Haytham's bare one-file log). Email offices have
+    no channel, so they keep the single attached file."""
+    from automations.shared import metrics_email_capture
+    return not metrics_email_capture.active()
+
+
 def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]",
-                         channel: str = "C068PH3RFSM") -> bool:
+                         channel: str = "C068PH3RFSM", split: bool = True) -> bool:
     """Raf's #alphalete-sales: the Order Log as THREE channel posts (reps
     A-F / G-M / N-Z), each thread = one reply per rep (name + their one-tab
     file) and a tap-your-name index as the FIRST reply. Lands right under the
@@ -2329,7 +2337,8 @@ def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]",
     try:
         # One folder per channel: several offices can split on the same day.
         out_dir = REPO_ROOT / "output" / "order_log_split" / f"{today:%Y-%m-%d}" / channel
-        parts = ols.split(xlsx_path, out_dir)
+        # Small office: one post with every rep, same index (Eve 2026-11-12).
+        parts = ols.split(xlsx_path, out_dir) if split else [(ols.WHOLE, xlsx_path)]
         if not parts:
             raise RuntimeError("split produced no files")
     except Exception as e:  # noqa: BLE001 — fall back to the one-file post
@@ -2337,10 +2346,11 @@ def _post_letter_threads(xlsx_path: Path, today, failures: "list[str]",
         return False
     stamp = f"{today:%m-%d-%Y}"
     labels = " / ".join(lab.replace("-", "–") for lab, _ in parts)
+    pointer = (f"📋 Order Log — posted in the channel as {labels} 👇 "
+               f"(open yours and tap your name)" if split else
+               "📋 Order Log — posted in the channel 👇 (open it and tap your name)")
     try:
-        post_reply_text_only(
-            f"📋 Order Log — posted in the channel as {labels} 👇 "
-            f"(open yours and tap your name)", react_emoji="clipboard")
+        post_reply_text_only(pointer, react_emoji="clipboard")
     except SlackPostError as e:
         failures.append(f"📋 Order Log pointer in the Metrics thread ({e})")
     client = _client()
@@ -2409,6 +2419,12 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
     elif metrics_channel != DEFAULT_METRICS_CHANNEL and too_big_for_phone(xlsx_path) and             (dry or _post_letter_threads(xlsx_path, today, failures, metrics_channel)):
         if dry:
             print("  --dry-run — would post Order Log as letter posts in this office's channel")
+    elif metrics_channel != DEFAULT_METRICS_CHANNEL and can_post_index() and \
+            (dry or _post_letter_threads(xlsx_path, today, failures, metrics_channel,
+                                         split=False)):
+        if dry:
+            print("  --dry-run — would post Order Log as one channel post "
+                  "(one reply per rep + name index)")
     else:
         slack_filename = f"Order Log {today:%m-%d-%Y}.xlsx"
         if dry:
