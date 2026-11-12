@@ -192,8 +192,17 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
             log("    searched %d in %.0fs — %d still not found in OwnerVille"
                 % (got, time.monotonic() - t0, len(still)))
 
-    verdicts = {name: ov_table.done_columns(heads, cells)
-                for name, cells in reps.items()}
+    verdicts = {}
+    for name, cells in reps.items():
+        v = ov_table.done_columns(heads, cells)
+        # WHAT OWNERVILLE SAYS ABOUT THE BACKGROUND CHECK, beside what
+        # Sterling says (Megan, 2026-11-11: "the BGstatus is the BG check
+        # column and what it says"). A STATE, not a tick: it advances, and a
+        # blank means the cell could not be read -- never "nothing happened".
+        said = ov_table.bg_status_text(heads, cells)
+        if said:
+            v["OV BG Status"] = said
+        verdicts[name] = v
     return F.apply(F.workbook_for(office_key), week_start, "ownerville",
                    verdicts, dry_run=dry_run, log=log)
 

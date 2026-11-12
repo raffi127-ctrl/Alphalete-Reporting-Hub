@@ -180,6 +180,45 @@ def owner_submit_state(headers: List[str], cells: List[dict]):
     return "bg_pending" if "pending" in bg else ""
 
 
+def bg_status_text(headers: List[str], cells: List[dict]):
+    """WHAT OWNERVILLE'S OWN "Background Check" COLUMN SAYS, for the board's
+    OV BG Status column (Megan, 2026-11-11: "the BGstatus is the BG check
+    column and what it says").
+
+    Worded in Sterling's vocabulary so the two columns sit side by side and
+    can be compared at a glance -- which is the whole reason the board carries
+    both. They disagree for a while: Sterling is the truth and onboarding
+    carries on from its Passed, while this one is what actually un-greys the
+    Owner Submit button, and it follows later.
+
+    THIS IS NOT STERLING'S ANSWER. OwnerVille's cell is its own attestation;
+    Sterling passing somebody does not turn it green. Mixing them up is the
+    mistake `missing_for_owner_submit` already warns about.
+
+    Returns "" when the header cannot be read -- unread is never "nothing has
+    happened" -- and the cell's OWN WORDS when they are not a state we know,
+    so a status nobody has seen before is shown rather than squeezed into the
+    nearest familiar one.
+    """
+    i = header_index(headers, "background check")
+    if i is None or i >= len(cells):
+        return ""
+    cell = cells[i] or {}
+    text = (cell.get("text") or "").strip()
+    html = (cell.get("html") or "").lower()
+    if not text and not html:
+        return ""
+    low = text.lower()
+    if "pending" in low:
+        return "Taken - Pending"
+    if any(m in html for m in RED_MARKERS):
+        return "Failed"
+    if DATE_RE.search(text):
+        return "Passed"
+    # Something else entirely. Say what it says.
+    return text
+
+
 def header_index(headers: List[str], want: str):
     hs = [_h(x) for x in headers]
     for i, h in enumerate(hs):
