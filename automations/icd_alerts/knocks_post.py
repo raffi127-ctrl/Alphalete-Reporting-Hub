@@ -426,6 +426,39 @@ def _received_at(text: str) -> Optional[dt.datetime]:
     return None
 
 
+def _read_moment(now: dt.datetime, received: str,
+                 clock: Optional[dt.datetime] = None) -> dt.datetime:
+    """`now`, wound back to when these knocks were actually READ.
+
+    A GAP IS MEASURED TO THE MOMENT WE LOOKED, NOT THE MOMENT WE SPEAK. The
+    gap list used to be `now - last knock`, with `now` the instant the text
+    went out. But the rows are a relay, and a relay has an age: Raf's 3:08 PM
+    text on 2026-11-12 was built from knocks his machine read at 2:46 (SaraPlus
+    was slow all day and each run on his Mac was taking over twenty minutes).
+    So a rep who had knocked ONE minute before the read was texted to fifty
+    people as "23 min", and 41 of his 53 reps landed between 22 and 28 --
+    exactly the age of the data, not of anybody's break. Raf: "This is off.
+    Not that many people on break when we look at telemapper."
+
+    Up to STALE_MINUTES of age is allowed before a board is withheld, so up to
+    that much was being added to every rep. Winding `now` back by the relay's
+    age takes it off again: what is listed is who was idle WHEN WE LOOKED,
+    which is the only thing the data can say.
+
+    `received` is the row's 'Received At' -- the relay's clock, the same one
+    _too_old reads against this machine's. Unreadable, in the future, or
+    absurdly old means we do not know the age, and the old behaviour (measure
+    to `now`) stands rather than guessing.
+    """
+    when = _received_at(received)
+    if when is None:
+        return now
+    age = (clock or dt.datetime.now()) - when
+    if age < dt.timedelta(0) or age > dt.timedelta(hours=6):
+        return now
+    return now - age
+
+
 def _too_old(text: str) -> bool:
     """Is this reading too old to draw a board from?
 
@@ -544,6 +577,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             continue
 
         now = _office_now(office)
+        # When these knocks were read, on the office's clock. Every gap list
+        # below is measured to THIS, never to `now` (see _read_moment).
+        gap_now = _read_moment(now, row[KN_RECEIVED])
         # THE END-OF-DAY RECAP. An office on set times (2:00 / 5:15 / 9:00)
         # picked 9:00 as the day's last look, and for most of them it falls
         # AFTER their field hours -- Colten ends at 8:30 and his 9:00 board
@@ -652,7 +688,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             if wants_gaps(d) and (
                     force or gaps_due(d, posted_at.get(_gaps_marker(cid)),
                                       posted_at.get(cid), now)):
-                listed_gaps[cid] = _gaps_text(office, rows_for_board, now,
+                listed_gaps[cid] = _gaps_text(office, rows_for_board, gap_now,
                                               dest=cid, slack=True,
                                               remember=send)
             if final_due(d, posted_at.get(cid), now, office):
@@ -669,7 +705,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 cid = d["channel_id"]
                 if P.is_text_dest(cid):
                     if not board_rides(d, posted_at.get(_board_marker(cid)), now):
-                        g = _gaps_text(office, rows_for_board, now, dest=cid,
+                        g = _gaps_text(office, rows_for_board, gap_now, dest=cid,
                                        remember=False)
                         log("%-10s %s would get the gap list alone (board every %s min):\n%s\n"
                             % (key, d.get("channel_name") or cid, d.get("board_min"),
@@ -686,7 +722,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     if not board_rides(d, posted_at.get(_board_marker(cid)), now):
                         # THE LIST ALONE, no picture, on this tick. A quiet
                         # stretch sends nothing and still spends the tick.
-                        g = _gaps_text(office, rows_for_board, now, dest=cid)
+                        g = _gaps_text(office, rows_for_board, gap_now, dest=cid)
                         if g:
                             from automations.b2b_dispositions import text_post as tp
                             tp.send_text_to_group(
@@ -708,7 +744,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     # not in texts"). The texts stay the board and the gap
                     # list; the last call rides the Slack caption only.
                     body = ("" if key in NO_GAP_LIST_IN_TEXTS else
-                            _gaps_text(office, rows_for_board, now,
+                            _gaps_text(office, rows_for_board, gap_now,
                                        dest=d["channel_id"]))
                     _text(d, boards, body)
                     _text_worked(key, d.get("channel_name") or cid)

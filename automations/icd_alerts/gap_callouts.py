@@ -1016,7 +1016,13 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         else:
             proven = receipts(called_before, records, prev)
         receipt = receipt_line(key, proven, now, campaign, last=st.get("receipt"))
-        callouts = pick(rows, records, prev, now)
+        # MEASURED TO WHEN THE KNOCKS WERE READ, not to now. A relay can be
+        # up to K.STALE_MINUTES old and still be used, and every minute of
+        # that was being added to every rep -- so a rep eight minutes quiet at
+        # the read could be named in the channel as "30+ min" (the same fault
+        # as the gap text; see knocks_post._read_moment, 2026-11-12).
+        callouts = pick(rows, records, prev,
+                        K._read_moment(now, krow[K.KN_RECEIVED]))
         text = line(key, callouts, now, campaign, last=st.get("line"))
         state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
                       "records": records, "sold": sold, "called": [c["name"] for c in callouts]}
