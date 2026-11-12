@@ -647,18 +647,11 @@ section "Sign in to work websites"
 for entry in "${WORK_SITES[@]}"; do
   IFS='|' read -r sname surl <<< "$entry"
   open_chrome "$surl"
-  if [ "$sname" = "BlueInk" ]; then
-    # Maud makes their BlueInk account (2026-11-11); Raf added it to the list
-    # only so it's pinned in Chrome. Bookmark only, no login/password check.
-    human "site_$sname" "BlueInk is open.
-
-The launch team makes your BlueInk login. Nothing to sign in to yet.
-
-Save the page: click the ☆ at the right end of the web address bar. Then click “Done”." "Chrome: BlueInk bookmarked"
-    verify "site_$sname" "BlueInk: ☆ saved" chk_stars "BlueInk|blueink"
-    continue
-  fi
   extra=""
+  # Maud makes their BlueInk login and the launch team gives it to them on the
+  # call (2026-11-11); then it's a normal log in + save + ☆ like the others.
+  [ "$sname" = "BlueInk" ] && extra="
+The launch team will give you your BlueInk login."
   human "site_$sname" "${sname} is open.
 
 1. Log in.${extra}
