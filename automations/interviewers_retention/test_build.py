@@ -35,21 +35,20 @@ class Weeks(unittest.TestCase):
                           ("Omar", "Gabriela", 10, 8), ("Kash", "Valeria", 0, 0)])
 
     def test_interviewer_one_row_per_office_and_ranks(self):
-        # Raf 11/12: an interviewer who works for 2 owners gets 2 rows, never summed.
         pi, po = build.podiums(build.parse_weeks(TAB, TODAY))
-        self.assertEqual([(l.name, l.detail, l.booked, l.showed) for l in pi.lines],
-                         [("Gabriela", ["Omar"], 10, 8), ("Gabriela", ["Atef"], 10, 5),
-                          ("Nicole", ["Atef"], 4, 1)])   # Valeria: 0 booked, left out
+        self.assertEqual([(l.name, l.owner, l.booked, l.showed) for l in pi.lines],
+                         [("Gabriela", "Omar", 10, 8), ("Gabriela", "Atef", 10, 5),
+                          ("Nicole", "Atef", 4, 1)])                 # Valeria: 0 booked, left out
+        self.assertTrue(pi.owner_col)
         self.assertEqual([(l.name, l.booked, l.showed) for l in po.lines],
                          [("Omar", 10, 8), ("Atef", 14, 6)])
 
     def test_history_is_prior_weeks_oldest_first(self):
         pi, po = build.podiums(build.parse_weeks(TAB, TODAY))
         self.assertEqual(pi.history_labels, ["10/25", "11/1", "11/8"])
-        # Each office's row keeps its OWN history: Gabriela for Omar, then for Atef.
-        self.assertEqual(pi.lines[0].history, [None, 1.0, 0.8])     # Omar: 11/1 = 2/2, 11/8 = 8/10
-        self.assertEqual(pi.lines[1].history, [None, 0.25, 0.5])    # Atef: 11/1 = 1/4, 11/8 = 5/10
-        self.assertEqual(pi.lines[2].history, [0.5, None, 0.25])
+        self.assertEqual(pi.lines[0].history, [None, 1.0, 0.8])     # Gabriela @ Omar
+        self.assertEqual(pi.lines[1].history, [None, 0.25, 0.5])    # Gabriela @ Atef
+        self.assertEqual(pi.lines[2].history, [0.5, None, 0.25])    # Nicole @ Atef
 
     def test_header_spellings_and_skipped_boxes(self):
         tab = [["11/15", "", " INTERVIEWERS RETENTION"], ["", "OFFICE"],
@@ -74,7 +73,7 @@ class Weeks(unittest.TestCase):
             {"Atef": {day: SimpleNamespace(by={"G": [3, 2], "N": [2, 0]})},
              "Omar": {day: SimpleNamespace(by={"G": [1, 1]})}}, day)
         self.assertTrue(has)
-        self.assertEqual([(l.name, l.booked, l.showed) for l in bi.lines], [("G", 1, 1), ("G", 3, 2), ("N", 2, 0)])
+        self.assertEqual([(l.name, l.booked, l.showed) for l in bi.lines], [("G", 4, 3), ("N", 2, 0)])
         self.assertEqual([(l.name, l.booked, l.showed) for l in bo.lines], [("Omar", 1, 1), ("Atef", 5, 2)])
 
 
@@ -138,7 +137,8 @@ class ByDay(unittest.TestCase):
         lines = build.interviewer_days(second, [d1, d2], {})
         b = build.week_board(lines, [d1, d2], False, "T", "Interviewer", {"nic|omar": [0.5, None, 1.0, 1.0]},
                              ["10/18", "10/25", "11/1", "11/8"])
-        self.assertEqual([(l.name, l.booked, l.showed) for l in b.lines], [("Nic", 2, 2), ("Gaby", 4, 1)])
+        self.assertEqual([(l.name, l.owner, l.booked, l.showed) for l in b.lines],
+                         [("Nic", "Omar", 2, 2), ("Gaby", "Atef", 4, 1)])
         self.assertIsNone(b.lines[1].day_pct(d2))          # 0 booked -> no %, drawn as —
         self.assertEqual(b.lines[0].history, [0.5, None, 1.0, 1.0])
         self.assertEqual(b.lines[1].history, [None] * 4)
@@ -153,8 +153,8 @@ class OnePerOffice(unittest.TestCase):
                   "Rafael Hidalgo": {d: SimpleNamespace(by={"Rafaela": [2, 2]})}}
         b = build.week_board(build.interviewer_days(second, [d], {}), [d], False, "T",
                              "Interviewer", {}, [])
-        self.assertEqual([(l.name, l.detail, l.booked, l.showed) for l in b.lines],
-                         [("Rafaela", ["Rafael Hidalgo"], 2, 2), ("Rafaela", ["Haytham Nagi"], 5, 1)])
+        self.assertEqual([(l.name, l.owner, l.booked, l.showed) for l in b.lines],
+                         [("Rafaela", "Rafael Hidalgo", 2, 2), ("Rafaela", "Haytham Nagi", 5, 1)])
         doc = render.day_board_html(b, compact=True, base=20)
         self.assertIn(">Owner</th>", doc)
         self.assertNotIn("<small>", doc)       # owner no longer squeezed under the name
@@ -176,10 +176,11 @@ class OnePerOffice(unittest.TestCase):
         self.assertLess(row.index("wkp"), row.index("na grp"))
 
 
+
 class ArsWeeks(unittest.TestCase):
     def test_podium_and_history_from_ars_and_unmatched_listed(self):
         people = {"atef": ["Gabriela Salazar", "Nicole Renee"], "omar": ["Gabriela Salazar"]}
-        res = build.Resolver(people)
+        res = build.Resolver(people, aliases={})
         d = lambda m, dd: dt.date(2026, m, dd)
         second = {"Atef": {d(11, 2): SimpleNamespace(by={"Gabriela": [4, 3], "Sofia R.": [2, 0]}),
                            d(11, 7): SimpleNamespace(by={"Nicole": [2, 1]}),
@@ -194,6 +195,44 @@ class ArsWeeks(unittest.TestCase):
         self.assertEqual(b.history_labels, ["10/11", "10/18", "10/25", "11/1"])
         self.assertEqual(b.lines[0].history, [None, None, 1.0, 0.75])
         self.assertEqual(res.report(), ["Atef: 'Sofia R.'", "Omar: 'Gaby'"])
+
+
+class Owners(unittest.TestCase):
+    def test_two_offices_two_rows_and_owner_rows_left_out(self):
+        people = {"haytham nagi": ["Rafaela Gomez", "Daniela Colorado"],
+                  "rafael hidalgo": ["Rafaela Gomez", "Andrea Ponce"]}
+        res = build.Resolver(people, aliases={})
+        d = dt.date(2026, 11, 3)
+        second = {"Haytham Nagi": {d: SimpleNamespace(by={"Rafaela": [4, 3], "Owner": [2, 2],
+                                                         "Haytham": [1, 1]})},
+                  "Rafael Hidalgo": {d: SimpleNamespace(by={"Rafaela": [2, 1], "Rafael Hidalgo": [5, 5]})}}
+        wk = dt.date(2026, 11, 1)
+        per = build.ars_interviewer_weeks(second, [wk], res)
+        b = build.interviewer_podium_ars(per, wk)
+        self.assertEqual([(l.name, l.owner, l.booked, l.showed) for l in b.lines],
+                         [("Rafaela Gomez", "Haytham Nagi", 4, 3), ("Rafaela Gomez", "Rafael Hidalgo", 2, 1)])
+        self.assertEqual(sorted(res.owners_skipped),
+                         [("Haytham Nagi", "Haytham"), ("Haytham Nagi", "Owner"),
+                          ("Rafael Hidalgo", "Rafael Hidalgo")])
+        self.assertEqual(res.unmatched, {})
+
+
+class Names(unittest.TestCase):
+    def test_initials_and_aliases(self):
+        people = {"rafael hidalgo": ["Gabriela Muñoz Toro", "Gabriela Sorto", "Daniela Colorado",
+                                     "Maria Eugenia Soler"]}
+        res = build.Resolver(people, aliases={"*": {"maru": "Maria Eugenia Soler"},
+                                              "rafael hidalgo": {"angela": "Angela Soriano"}})
+        self.assertEqual(res("Rafael Hidalgo", "Gabriela MT"), "Gabriela Muñoz Toro")
+        self.assertEqual(res("Rafael Hidalgo", "Daniela C."), "Daniela Colorado")
+        self.assertEqual(res("Rafael Hidalgo", "Maru"), "Maria Eugenia Soler")
+        self.assertEqual(res("Rafael Hidalgo", "Angela"), "Angela Soriano")
+        self.assertEqual(res("Rafael Hidalgo", "Gabriela"), "Gabriela")      # two Gabrielas: no guess
+        self.assertEqual(res.report(), ["Rafael Hidalgo: 'Gabriela'"])
+
+    def test_alias_file_loads(self):
+        a = build.load_name_aliases()
+        self.assertEqual(a["*"]["maru"], "Maria Eugenia Soler")
 
 
 if __name__ == "__main__":

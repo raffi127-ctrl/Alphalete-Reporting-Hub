@@ -1,0 +1,13 @@
+{
+  "_how": "Short name on the ARS REPORT -> full name on the weekly tab. '*' = that nickname in ANY office; an owner's name = only in that office. The run lists what it could not match under NOT MATCHED; add those here. Only add a pair you are sure of.",
+  "*": {
+    "Maru": "Maria Eugenia Soler",
+    "Mavi": "Maria Victoria Ferrero",
+    "Angela": "Angela Soriano",
+    "Belen": "Belén Vazquez",
+    "Rafaela": "Rafaela Ali",
+    "Perla": "Perla Falabella",
+    "Isabella": "Isabella Upegui"
+  },
+  "_confirmed": "Camila 2026-11-12: Maru, Mavi (her podium PDF); Angela, Belen, Rafaela, Perla, Isabella (Camila, chat)."
+}
