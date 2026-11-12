@@ -32,6 +32,8 @@ SKIP_PREFIXES = ("# Reps",)
 # (Kash's test tab showed 65.68 as "66" on 2026-09-14).
 TWO_DECIMAL_LABELS = (
     "Mon-Fri Avg Doors / Day",
+    "Mon-Fri Avg Doors / Hr",
+    "Sat Avg Doors / Hr",
     "Mon-Sat Avg Talk To's / Day",
     "Mon-Sat Avg Talk To's per App",
     "Sat Avg Doors / Day",

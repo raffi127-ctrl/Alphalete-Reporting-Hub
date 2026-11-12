@@ -1,10 +1,9 @@
-"""Mon–Sat Avg Knocks / Hr on the weekly board, offline.
+"""Mon–Fri / Sat Avg Doors / Hr on the weekly board, offline.
 
 Raf 2026-09-15: "for the weekly disposition NDS and Fiber are missing 'daily
 knocks per hour'". The cell is the MEAN of the rep's own daily rates (that
 day's doors over that day's first→last span), over the days they cleared the
-doors bar. Mon–Sat since 2026-09-17 (Raf): a Saturday that clears the bar
-counts like any other day.
+doors bar. Split into Mon–Fri and Saturday columns 2026-11-12 (Raf).
 
     python -m unittest automations.weekly_knock_dispositions.test_knocks_per_hour
 """
@@ -28,8 +27,8 @@ def _rep(name, daily, spans=None):
     return rec
 
 
-# Mon 120 doors over 4h = 30/hr, Tue 100 over 5h = 20/hr, Sat 50 over 2h =
-# 25/hr → 25. The walk-on Wednesday (15 doors) stays out.
+# Mon 120 doors over 4h = 30/hr, Tue 100 over 5h = 20/hr → Mon–Fri 25;
+# Sat 50 over 2h = 25/hr in the Saturday column. The walk-on Wednesday (15 doors) stays out.
 TWO_DAYS = _rep("Two Days", [120, 100, 15, 0, 0, 50],
                 [240, 300, 60, 0, 0, 120])
 STEADY = _rep("Steady", [90, 90, 90, 90, 90, 0],
@@ -42,13 +41,17 @@ class RepCell(unittest.TestCase):
     def test_mean_of_the_days_own_rates(self):
         self.assertAlmostEqual(B._knocks_per_hr(TWO_DAYS), 25.0)
 
-    def test_saturday_counts_like_any_other_day(self):
+    def test_saturday_has_its_own_column(self):
+        # Split Mon–Fri / Saturday (Raf 2026-11-12).
         rec = _rep("Sat Only", [0, 0, 0, 0, 0, 200], [0, 0, 0, 0, 0, 240])
-        self.assertAlmostEqual(B._knocks_per_hr(rec), 50.0)
+        self.assertIsNone(B._knocks_per_hr(rec))
+        self.assertAlmostEqual(B._sat_knocks_per_hr(rec), 50.0)
+        self.assertAlmostEqual(B._sat_knocks_per_hr(TWO_DAYS), 25.0)
 
     def test_a_walk_on_saturday_stays_out(self):
         rec = _rep("Sat Walk-on", [120, 0, 0, 0, 0, 20], [240, 0, 0, 0, 0, 60])
         self.assertAlmostEqual(B._knocks_per_hr(rec), 30.0)
+        self.assertIsNone(B._sat_knocks_per_hr(rec))
 
     def test_a_day_without_a_span_is_skipped_not_divided_by_zero(self):
         rec = _rep("No Span Tue", [120, 100, 0, 0, 0, 0],
@@ -82,6 +85,13 @@ class SummaryRow(unittest.TestCase):
 
     def test_the_column_drops_out_on_a_cached_week(self):
         self.assertIn(B.COL_KNOCKS_PER_HR, B.OPTIONAL_COLUMNS)
+        self.assertIn(B.COL_SAT_KNOCKS_PER_HR, B.OPTIONAL_COLUMNS)
+
+    def test_saturday_office_cell_sits_after_sat_doors(self):
+        i = B.HEADERS.index(B.COL_SAT_KNOCKS_PER_HR)
+        self.assertEqual(B.HEADERS[i - 1], B.COL_SAT_DOORS_PER_DAY)
+        row = B.totals_row([TWO_DAYS, STEADY, OLD_CACHE], None, [])
+        self.assertEqual(row[i], "25")
 
 
 class PullSpans(unittest.TestCase):

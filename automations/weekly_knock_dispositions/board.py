@@ -144,7 +144,13 @@ COL_DOORS_PER_DAY = "Mon\u2013Fri Avg Doors / Day"
 # Saturday's shorter shift lowers its doors target (140 vs 160), not its 23/hr
 # (render.KNOCKS_PER_HR_TARGET). So a Saturday that cleared the bar is one more
 # day in the mean \u2014 same bar, same raw span.
-COL_KNOCKS_PER_HR = "Mon\u2013Sat Avg Knocks / Hr"
+# SPLIT Mon\u2013Fri / Saturday 2026-11-12 (Raf, Slack: "Can we add average doors
+# knocked Per HR Monday - Friday & Saturday") -- the same split he made for
+# doors/day on 2026-09-13. The Mon\u2013Sat column is replaced by these two; the
+# per-rep rule is unchanged (mean of the days' own rates, days that cleared
+# the doors bar), only the days it looks at differ.
+COL_KNOCKS_PER_HR = "Mon\u2013Fri Avg Doors / Hr"
+COL_SAT_KNOCKS_PER_HR = "Sat Avg Doors / Hr"
 # Saturday's own doors-per-day (Raf 2026-09-13, same Loom at 1:52: "there can
 # be a column here … Saturday average doors knocked per day", cursor parked on
 # Sat First Knock — so it belongs in the SATURDAY block, not beside the weekday
@@ -243,7 +249,8 @@ HEADERS = [
     "Mon\u2013Sat Avg Gap / Day", "Mon\u2013Sat Total Gap Hours",
     # Saturday's own block, in the order he asked for it: knocking hours in
     # front of the gap hours, and both in front of Sat Last Knock.
-    COL_SAT_CLOCKED, COL_SAT_DOORS_PER_DAY, COL_SAT_TALK_PER_DAY,
+    COL_SAT_CLOCKED, COL_SAT_DOORS_PER_DAY, COL_SAT_KNOCKS_PER_HR,
+    COL_SAT_TALK_PER_DAY,
     "Sat First Knock", "Sat Avg Hrs Knocking",
     "Sat Avg Gap Hours", "Sat Last Knock",
 ]
@@ -265,7 +272,7 @@ HEADERS = [
 # COL_KNOCKS_PER_HR joins 2026-09-15 for the same reason: it needs
 # K_DAILY_SPAN_MIN, which only pulls from that date carry.
 OPTIONAL_COLUMNS = {COL_SAT_CLOCKED, COL_MF_LEADS, COL_SAT_TALK_PER_DAY,
-                    COL_KNOCKS_PER_HR}
+                    COL_KNOCKS_PER_HR, COL_SAT_KNOCKS_PER_HR}
 
 # The two columns that need a sales source. A B2B captainship has none (B2B
 # sales are not in the D2D PSS crosstab — Carlos's weekly, 2026-09-28), so its
@@ -541,22 +548,28 @@ def _doors_per_day(rec: dict) -> str:
     return "" if mf is None or not days else _num(mf / days)
 
 
-def _knocks_per_hr(rec: dict) -> float | None:
-    """One rep's Mon–Sat average knocks per hour (COL_KNOCKS_PER_HR): the mean
-    of that day's doors over that day's first→last span, over the days —
-    Saturday included — the rep cleared the doors bar. None — a blank cell,
-    never a 0 — when the pull carried no per-day spans (anything pulled before
-    2026-09-15) or no day qualifies."""
+def _knocks_per_hr(rec: dict, lo: int = 0, hi: int = WEEKDAYS
+                   ) -> float | None:
+    """One rep's average doors per hour over days [lo:hi] -- Mon-Fri by
+    default, SATURDAY..DAYS for the Saturday column: the mean of each day's
+    doors over that day's first->last span, over the days the rep cleared the
+    doors bar. None (a blank cell, never a 0) when the pull carried no per-day
+    spans (anything pulled before 2026-09-15) or no day qualifies."""
     daily = rec.get(K_DAILY_KNOCKS)
     spans = rec.get(K_DAILY_SPAN_MIN)
     if not isinstance(daily, (list, tuple)) or not isinstance(spans, (list, tuple)):
         return None
     rates = []
-    for i in range(min(DAYS, len(daily), len(spans))):
+    for i in range(lo, min(hi, len(daily), len(spans))):
         doors, span = int(daily[i] or 0), int(spans[i] or 0)
         if doors >= MIN_KNOCKS_PER_DAY and span > 0:
             rates.append(doors / (span / 60.0))
     return sum(rates) / len(rates) if rates else None
+
+
+def _sat_knocks_per_hr(rec: dict) -> float | None:
+    """Saturday's own doors per hour (COL_SAT_KNOCKS_PER_HR)."""
+    return _knocks_per_hr(rec, SATURDAY, DAYS)
 
 
 def _sat_cell(rec: dict, key: str) -> str:
@@ -759,6 +772,8 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             (_hm(int(gap_min)) if gap_min is not None else ""),
             ("Yes" if _sat_clocked(r) else ""),
             _sat_cell(r, K_DAILY_KNOCKS),
+            ("" if _sat_knocks_per_hr(r) is None
+             else _num(_sat_knocks_per_hr(r))),
             _sat_cell(r, K_DAILY_TALK_TO),
             str(r.get(K_SAT_FIRST, "")).strip(),
             (_knocking_hm(str(r.get(K_SAT_FIRST, "")),
@@ -840,6 +855,8 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
                 if g is not None]
     _sat_gaps = [g for g in (_sat_gap(r) for r in ov_rows) if g is not None]
     _kph = [x for x in (_knocks_per_hr(r) for r in ov_rows) if x is not None]
+    _skph = [x for x in (_sat_knocks_per_hr(r) for r in ov_rows)
+             if x is not None]
     return ([
         # "K of N" — reps who COUNT AS KNOCKING, out of the reps LISTED above
         # (Raf 2026-08-30: "have the total at the top and bottom headers").
@@ -884,6 +901,7 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         _hm(tot_gaps),
         _sat_clocked_cells(ov_rows),
         (_num(sum(_sat_doors) / len(_sat_doors)) if _sat_doors else ""),
+        (_num(sum(_skph) / len(_skph)) if _skph else ""),
         (_num(sum(_sat_talk) / len(_sat_talk)) if _sat_talk else ""),
         _avg_knock(ov_rows, K_SAT_FIRST),
         (_knocking_hm(_avg_knock(ov_rows, K_SAT_FIRST),

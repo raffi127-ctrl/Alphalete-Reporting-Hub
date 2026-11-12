@@ -19,7 +19,7 @@ Six KPIs, and which board column each one paints (each board keeps its own
 column -> KPI map, built from its own header constants):
 
     KPI            daily board              weekly board
-    knocks_hr      Avg Knocks / Hr          Mon–Sat Avg Knocks / Hr
+    knocks_hr      Avg Knocks / Hr          Mon–Fri Avg Doors / Hr
     doors          Total Knocks             Mon–Fri Avg Doors / Day
     talk_tos       Total Talk to            Mon–Sat Avg Talk To's / Day
     tt_per_app     Avg Talk To's per App    Mon–Sat Avg Talk To's per App
