@@ -171,6 +171,12 @@ class ShortCell(unittest.TestCase):
         fx = "FedEx 879000000080: Delivered Tuesday 11/3/2026 at 2:48 pm / Signed for by: C.CARDINAL / Irving, TX US"
         self.assertEqual(A.short_text(page, TODAY, [fx]), "11/11: Delivered Nov 3 · FedEx …0080")
 
+    def test_fedex_no_record_is_a_status_not_a_blank(self):
+        page = "Shipped on: Mon, Nov 9, 2026\nYour order is on the way!\nLine 1: xxx\nFedEx tracking:879000000300\n"
+        cell = A.short_text(page, TODAY, ["FedEx 879000000300: No record at FedEx yet (label not scanned)"])
+        self.assertEqual(cell, "11/11: Shipped Nov 9, FedEx has no record yet · FedEx …0300")
+        self.assertTrue(A.FEDEX_NOT_FOUND_RE.search("We can\u2019t find that tracking number. Please check with the shipper"))
+
     def test_fedex_date_forms(self):
         self.assertEqual(A._fedex_date("Delivered / Tuesday 11/3/2026 at 2:14 pm"), "Nov 3")
         self.assertEqual(A._fedex_date("Delivered / November 3, 2026"), "Nov 3")

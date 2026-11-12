@@ -52,6 +52,8 @@ FEDEX_KEEP_RE = re.compile(r"deliver|on the way|return|currently in|exception|he
                            r"\b\d{1,2}/\d{1,2}/\d{4}\b|(january|february|march|april|may|june|july|august|"
                            r"september|october|november|december) \d{1,2}", re.I)
 # the status sentence itself, ahead of anything else on the page
+FEDEX_NOT_FOUND_RE = re.compile(r"can.t find that tracking number|no record of this tracking number|"
+                                r"tracking number cannot be found", re.I)
 FEDEX_STATUS_RE = re.compile(r"couldn.t be delivered|returning to the shipper|still on the way|is on the way|"
                              r"has been delivered|was delivered|^delivered\b|out for delivery|in transit|"
                              r"delivery exception|shipment exception|unable to deliver|ready for pickup|"
@@ -246,6 +248,8 @@ def _status_word(s: str) -> str:
         return "cancelled"
     if "held" in low or "pick" in low:
         return "held for pickup"
+    if "no record" in low:
+        return "no record at fedex yet"
     return _norm(s)[:40]
 
 
@@ -319,6 +323,9 @@ def package_lines(text: str, today: dt.date, carrier: Sequence[str] = ()) -> Lis
                 head, key = "Held for pickup, shipped %s" % ship, ship
             elif word == "on the way":
                 head, key = "In transit, shipped %s" % ship, ship
+            elif word == "no record at fedex yet":
+                head, key = ("Shipped %s, FedEx has no record yet" % ship) if sh["kind"] == "shipped" \
+                    else ("Ordered %s, label not scanned yet" % ship), ship
             else:
                 head, key = "%s, shipped %s" % (word[:1].upper() + word[1:], ship), ship
             src = "FedEx"
@@ -456,6 +463,19 @@ def _dismiss_overlays(page, log=print) -> None:
             continue
 
 
+def _dismiss_fedex_cookies(page) -> None:
+    """FedEx's cookie banner sits over the bottom of the page; the privacy
+    choice is taken once per session so it stops covering anything."""
+    import re as _re
+    try:
+        b = page.get_by_role("button", name=_re.compile(r"reject optional cookies", _re.I))
+        if b.count() and b.first.is_visible():
+            b.first.click(timeout=3_000)
+            page.wait_for_timeout(500)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def fedex_status(page, number: str, log=print) -> str:
     """What FedEx's tracking page says about one package, in a line or two.
     FedEx fills the result in by script and only in a VISIBLE browser (a
@@ -466,18 +486,26 @@ def fedex_status(page, number: str, log=print) -> str:
         try:
             page.goto(FEDEX_URL.format(n=number), wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
             try:
-                # the page is script-built: wait for its status words, not for the network
+                # the page is script-built: wait for its status words (or its
+                # "can't find" notice), not for the network
                 page.wait_for_function(
-                    """() => /currently in|on the way|delivered|returning|label created|signature|exception/i
-                             .test(document.body ? document.body.innerText : '')""",
+                    """() => /currently in|on the way|delivered|returning|label created|signature|exception|"""
+                    """can.t find that tracking number/i.test(document.body ? document.body.innerText : '')""",
                     timeout=30_000 if attempt == 1 else 20_000)
             except Exception:  # noqa: BLE001
                 pass
+            _dismiss_fedex_cookies(page)
             page.wait_for_timeout(1500)
             text = page.evaluate("() => (document.body.innerText || '')")
         except Exception as e:  # noqa: BLE001
             log("    (FedEx %s: page failed: %s)" % (number, type(e).__name__))
             return ""
+        if FEDEX_NOT_FOUND_RE.search(text or ""):
+            # AT&T lists the number before FedEx has scanned the label: an
+            # answer, not a blank (11/12: every "blank" page of a full pass
+            # was this notice, and the six-blank stop then skipped the rest)
+            log("    (FedEx %s: no record at FedEx yet)" % number)
+            return "FedEx %s: No record at FedEx yet (label not scanned)" % number
         if FEDEX_KEEP_RE.search(text or "") and len(text or "") > 800:
             break
         log("    (FedEx %s: nothing yet on try %d)" % (number, attempt))
