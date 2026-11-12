@@ -643,7 +643,11 @@ chk_slack() {
            "$HOME/Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/storage/root-state.json"; do
     grep -Eq '"workspaces":\{"[A-Z0-9]+"' "$f" 2>/dev/null && return
   done
-  printf "Slack isn't signed in.\n\nIn Slack, sign in with:\n%s" "$RECEPTION_EMAIL"
+  if [ "$ROLE" = reception ]; then
+    printf "Slack isn't signed in.\n\nIn Slack, sign in with:\n%s" "$RECEPTION_EMAIL"
+  else
+    printf "Slack isn't signed in.\n\nIn Slack, sign in with your own account."
+  fi
 }
 chk_zoom() {
   ls -d "$HOME/Library/Application Support/zoom.us/data/"*@xmpp.zoom.us >/dev/null 2>&1 && return
@@ -1541,6 +1545,9 @@ run open -a Slack 2>/dev/null
 # the launch team makes admin; their own Slack stays on their phone (Megan +
 # Maud, 2026-11-12). Slack signs in with a code emailed to reception, so
 # there's no password to save -- it's logged in the All in One like Excel.
+# ROLE (Megan, 2026-11-12): only the RECEPTION laptop signs in to the
+# reception Slack account; the owner and admin use their own Slack.
+if [ "$ROLE" = reception ]; then
 human slack_invite "Wait for the launch team to invite the reception email to Slack:
 ${RECEPTION_EMAIL}
 
@@ -1556,6 +1563,13 @@ Make a new Slack account for reception:
 " "Slack: reception account signed in"
 verify slack_signin "Slack signed in" chk_slack
 allin_login allin_slack "Slack" "$RECEPTION_EMAIL" "code sent to email"
+else
+  human slack_signin "Slack is open.
+(Look behind this box.)
+
+Sign in to Slack with YOUR OWN account." "Slack: signed in (own account)"
+  verify slack_signin "Slack signed in" chk_slack
+fi
 # Slack's own alert choice lives in their Slack account (online), so the
 # laptop can't set it -- and Slack already alerts on DMs + mentions. What
 # "Notification On" needs is the Mac's permission, which only a person can
@@ -1572,7 +1586,7 @@ human slack_phone "Grab your phone.
 3. Turn on “Allow Notifications”." "Slack alerts on the phone"
 # The owner is already a Slack admin; the RECEPTION email is the one that
 # needs it (Maud, 2026-11-12).
-human slack_admin "Ask the launch team to make the reception email a Slack admin:
+[ "$ROLE" = reception ] && human slack_admin "Ask the launch team to make the reception email a Slack admin:
 ${RECEPTION_EMAIL}
 
 They will do it on the Zoom call." "Slack: reception made admin (AO)" "They confirmed it done"
