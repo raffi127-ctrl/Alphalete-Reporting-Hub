@@ -266,12 +266,15 @@ fi
 # ------------------------------------------------------------------------
 section "Make an Apple account"
 run open "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings"
-human icloud "Settings is open.
+human icloud "System Settings is open.
+(The gray ⚙️ window. Look behind this box.)
 
 1. Click “Sign in”.
 2. Click “Create Apple Account”.
 3. Use this email:
-${RECEPTION_EMAIL}" "iCloud for reception email created"
+${RECEPTION_EMAIL}
+
+Already signed in to a different Apple account? Ask the launch team." "iCloud for reception email created"
 
 # ------------------------------------------------------------------------
 section "Get the apps"
