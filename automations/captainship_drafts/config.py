@@ -929,7 +929,7 @@ RECIPIENTS["blake"] = [
 RECIPIENTS["luke"] = [
     # Copia del grupo vivo el 2026-10-01 (lo armo Eve).
     "takeoffenterprisesinc@gmail.com",  # Luke Baldwin
-    "asarabia@paydenterprise.com",      # Adrian Sarabia
+    # Adrian Sarabia fuera 2026-11-11: rebotaba y Luke pidio sacarlo.
     "aventus.marketinginc@gmail.com",   # Cruz Venegas (viene de Luis)
     "dpisikian@gmail.com",              # David Pisikian
     "CarlosHidalgo349@gmail.com",
