@@ -314,22 +314,30 @@ def _dismiss_overlays(page, log=print) -> None:
 
 
 def fedex_status(page, number: str, log=print) -> str:
-    """What FedEx's tracking page says about one package, in a line or two."""
-    try:
-        page.goto(FEDEX_URL.format(n=number), wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    """What FedEx's tracking page says about one package, in a line or two.
+    FedEx fills the result in by script and only in a VISIBLE browser (a
+    headless one gets the empty frame, 11/11); the first visit of a run is
+    slow, so a page that shows no status is loaded once more."""
+    text = ""
+    for attempt in (1, 2):
         try:
-            # the page is script-built: wait for its status words, not for the network
-            page.wait_for_function(
-                """() => /currently in|on the way|delivered|returning|label created|signature|exception/i
-                         .test(document.body ? document.body.innerText : '')""",
-                timeout=20_000)
-        except Exception:  # noqa: BLE001
-            pass
-        page.wait_for_timeout(1500)
-        text = page.evaluate("() => (document.body.innerText || '')")
-    except Exception as e:  # noqa: BLE001
-        log("    (FedEx %s: page failed: %s)" % (number, type(e).__name__))
-        return ""
+            page.goto(FEDEX_URL.format(n=number), wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+            try:
+                # the page is script-built: wait for its status words, not for the network
+                page.wait_for_function(
+                    """() => /currently in|on the way|delivered|returning|label created|signature|exception/i
+                             .test(document.body ? document.body.innerText : '')""",
+                    timeout=30_000 if attempt == 1 else 20_000)
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(1500)
+            text = page.evaluate("() => (document.body.innerText || '')")
+        except Exception as e:  # noqa: BLE001
+            log("    (FedEx %s: page failed: %s)" % (number, type(e).__name__))
+            return ""
+        if FEDEX_KEEP_RE.search(text or "") and len(text or "") > 800:
+            break
+        log("    (FedEx %s: nothing yet on try %d)" % (number, attempt))
     kept, seen = [], set()
     for raw in (text or "").splitlines():
         ln = _norm(raw)

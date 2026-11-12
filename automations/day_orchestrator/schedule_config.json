@@ -16687,7 +16687,8 @@
     "automations.nds_metrics.att_order_status"
    ],
    "base_args": [
-    "--live"
+    "--live",
+    "--headed"
    ],
    "cadence": {
     "weekdays": [
@@ -16708,7 +16709,8 @@
    ],
    "timeout_minutes": 75,
    "verify": null,
-   "_timeout_note": "75: the first full pass (95 Shipped lines, ~40 orders, an AT&T page + a FedEx page each) ran past 30 minutes on 2026-11-11 and was cut off; cells are written order by order so a cut-off keeps what was read."
+   "_timeout_note": "75: the first full pass (95 Shipped lines, ~40 orders, an AT&T page + a FedEx page each) ran past 30 minutes on 2026-11-11 and was cut off; cells are written order by order so a cut-off keeps what was read.",
+   "_headed_note": "--headed since 2026-11-11 pm: FedEx's tracking page fills its result only in a visible browser (headless got the empty frame on every package); Lucy 2 has a desktop, so the window is fine."
   },
   "nds_churn": {
    "on_scheduler": true,
