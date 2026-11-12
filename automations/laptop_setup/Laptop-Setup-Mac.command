@@ -944,8 +944,8 @@ Need another printer? Click “Add another printer”."
   else
     MSG="No printers found on this Wi-Fi.
 
-1. Make sure you're on the office Wi-Fi.
-2. Turn on the printer.
+1. Make sure this laptop is on the office Wi-Fi.
+2. Turn on the printer. Make sure the printer is on the office Wi-Fi too.
 3. Click “Add another printer”."
   fi
   b="$(_dialog "Step $N of $TOTAL — $TITLE" "$MSG" "Back,Add another printer,Done" "Done")"
