@@ -176,6 +176,7 @@ recall()   { [ $DRY_RUN = 0 ] && sed -n "s/^$1=//p" "$PROGRESS" 2>/dev/null | ta
 # and reception's logins/passwords never mix with the owner's own Chrome.
 CHROME_PROFILE="Reception"
 open_chrome() {   # url...   (falls back to the default browser before Chrome exists)
+  type use_reception_profile >/dev/null 2>&1 && use_reception_profile >/dev/null
   if [ -d "/Applications/Google Chrome.app" ]; then
     run open -na "Google Chrome" --args --profile-directory="$CHROME_PROFILE" "$@"
   else
@@ -200,10 +201,31 @@ open_chrome() {   # url...   (falls back to the default browser before Chrome ex
 # Not checkable from the laptop: Gmail filters/forwarding, Drive sharing,
 # anything on the phone, Slack admin. Those stay "I did it".
 CHROME_DIR="$HOME/Library/Application Support/Google/Chrome/$CHROME_PROFILE"
+# FIND THE PROFILE THAT IS ACTUALLY RECEPTION (Olivia's run, 2026-11-12: Chrome
+# was signed in as reception -- in Chrome's own default profile, not ours --
+# so every check looked in an empty "Reception" folder and said "not done").
+# Whichever profile is signed in as the reception email wins; checks, pins,
+# the All in One and newly opened pages all follow it.
+use_reception_profile() {
+  [ -n "$RECEPTION_EMAIL" ] || return 0
+  local base="$HOME/Library/Application Support/Google/Chrome" d
+  for d in "$base"/*/; do
+    d="${d%/}"
+    [ -f "$d/Preferences" ] || continue
+    if grep -o '"account_info":\[[^]]*\]' "$d/Preferences" 2>/dev/null | grep -qi "\"email\":\"$RECEPTION_EMAIL\""; then
+      if [ "$CHROME_DIR" != "$d" ]; then
+        CHROME_DIR="$d"; CHROME_PROFILE="${d##*/}"
+        echo "  (Chrome profile signed in as reception: $CHROME_PROFILE)"
+      fi
+      return 0
+    fi
+  done
+}
 unmark() { [ $DRY_RUN = 0 ] && { grep -vxF "$1" "$PROGRESS" 2>/dev/null > "$PROGRESS.tmp"; mv "$PROGRESS.tmp" "$PROGRESS"; }; }
 
 verify() {   # step-key  "what was checked"  check-function  args...
   local key="$1" what="$2" fn="$3"; shift 3
+  use_reception_profile
   [ "$GO" = back ] && return 0
   [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would check: $what"; return 0; }
   grep -qxF "$key" "$PROGRESS" 2>/dev/null || return 0   # they skipped: nothing to check
@@ -346,6 +368,7 @@ APPLESCRIPT
 }
 pin_tabs() {   # step-key  "Name|text-in-the-address" ...
   local key="$1"; shift
+  use_reception_profile
   [ "$GO" = back ] && return 0
   [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would pin: ${*%%|*}"; return 0; }
   if [ "$FORCE" = 0 ] && is_done "$key"; then ok "Pinned: ${*%%|*} (done earlier)"; return 0; fi
@@ -423,6 +446,7 @@ _s_api() {   # METHOD  url-tail  json-body|""  out-file   -> HTTP code (refreshe
 }
 find_allin_sheet() {   # sets SHEET_ID from the All in One tab open in the Reception Chrome
   local id t
+  use_reception_profile
   t="$(mktemp -d)"
   for id in $(_reception_urls | sed -n 's#.*docs\.google\.com/spreadsheets/d/\([A-Za-z0-9_-]*\).*#\1#p' | awk '!s[$0]++'); do
     [ "$(_s_api GET "$id?fields=properties.title" "" "$t/p.json")" = 200 ] || continue
@@ -452,13 +476,14 @@ for my $r (0..$#v) { for my $c (0..$#{$v[$r]}) {
   next if $r>0 && (key($r-1,$c) eq 'UN' || key($r-1,$c) eq 'PW');   # not the first pair
   my $label = '';
   for my $up (1,2) { for my $cc ($c-1,$c,$c+1) { my $x = cell($r-$up,$cc); if ($x ne '') { $label=$x; last } } last if $label ne ''; }
-  my ($k,$free) = ($r,0);
+  my ($k,$free,@have) = ($r,0);
   while (key($k,$c) eq 'UN' || key($k,$c) eq 'PW') {
     $free = $k+1 if !$free && key($k,$c) eq 'UN' && cell($k,$c+1) eq '';
+    push @have, ($k+1).'='.lc(cell($k,$c+1)) if key($k,$c) eq 'UN' && cell($k,$c+1) ne '';
     $k++;
   }
-  $label =~ s/\t/ /g;
-  print "BLOCK\t$label\t$c\t$free\n";
+  $label =~ s/\t/ /g; s/[\t|]/ /g for @have;
+  print "BLOCK\t$label\t$c\t$free\t", join('|',@have), "\n";
   $lastrow{$c} = $k if !defined $lastrow{$c} || $k > $lastrow{$c};
   $maxkc = $c if !defined $maxkc || $c > $maxkc;
 }}
@@ -501,6 +526,7 @@ _saved_username() {   # text-in-the-address -> the username Chrome saved for tha
 }
 allin_login() {   # step-key  "Label|other label|..."  username  [pw-note]
   local key="$1" labels="$2" user="$3" note="$4" name="${2%%|*}"
+  use_reception_profile
   [ "$GO" = back ] && return 0
   if [ $DRY_RUN = 1 ]; then
     if [ -n "$note" ]; then echo "  (dry run) All in One: $name -> username + “$note”"; else echo "  (dry run) All in One: $name -> username + green PW box"; fi
@@ -514,8 +540,25 @@ UN: ${user:-your username}
 PW: ${note:-your password}" "All in One: $name"
     return
   fi
-  local map hit kc unrow="" spot row
+  local map hit kc unrow="" spot row same
   map="$(_pw_map)"
+  # ALREADY THERE (Megan, 2026-11-12: "this is already filled but shouldn't it
+  # still highlight green?"): the same username is in the block -> green those
+  # boxes so they can see it, and don't add a second copy.
+  if [ -n "$user" ]; then
+    same="$(echo "$map" | awk -F'\t' -v L="$labels" -v U="$(echo "$user" | tr 'A-Z' 'a-z')" 'BEGIN{n=split(tolower(L),a,"|")} $1=="BLOCK"{l=tolower($2); gsub(/^ +| +$/,"",l); for(i=1;i<=n;i++) if(l==a[i]){m=split($5,h,"|"); for(j=1;j<=m;j++){split(h[j],p,"="); if(p[2]==U){print $3"\t"p[1]; exit}}}}')"
+    if [ -n "$same" ]; then
+      kc="${same%%	*}"; unrow="${same##*	}"
+      local sc; sc="$(_col $((kc+1)))"
+      _paint "$unrow" $((kc+1)) green; _paint $((unrow+1)) $((kc+1)) green
+      human "$key" "Click your All in One tab (pinned in Chrome).
+
+Your ${name} login is already there, in GREEN (${sc}${unrow}, ${sc}$((unrow+1))).
+Check it's right." "All in One: $name (already there)"
+      _paint "$unrow" $((kc+1)) clear; _paint $((unrow+1)) $((kc+1)) clear
+      return
+    fi
+  fi
   hit="$(echo "$map" | awk -F'\t' -v L="$labels" 'BEGIN{n=split(tolower(L),a,"|")} $1=="BLOCK"{l=tolower($2); gsub(/^ +| +$/,"",l); for(i=1;i<=n;i++) if(l==a[i] && $4>0){print $3"\t"$4; exit}}')"
   if [ -n "$hit" ]; then
     kc="${hit%%	*}"; unrow="${hit##*	}"
