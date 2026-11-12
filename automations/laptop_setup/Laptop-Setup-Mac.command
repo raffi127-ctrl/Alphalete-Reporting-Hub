@@ -757,11 +757,12 @@ They will do it on the Zoom call." "Slack: made admin (AO)"
 step_14() {
 section "Zoom"
 run open -a zoom.us 2>/dev/null
+# Zoom is the person's own login, like Slack (Megan 2026-11-11: "zoom would be
+# their personal email").
 human zoom "Zoom is open.
+(Look behind this box.)
 
-Sign in with:
-${RECEPTION_EMAIL}
-
+Sign in with YOUR OWN email.
 No account? Click “Sign up”." "Zoom: signed in"
 verify zoom "Zoom signed in" chk_zoom
 
