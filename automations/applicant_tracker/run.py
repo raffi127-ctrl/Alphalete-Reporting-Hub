@@ -87,6 +87,15 @@ FIRST_DAY_LIVE = False
 # orchestrator's timeout_minutes for applicant_sync_morning moved 25 -> 35 to
 # stay above HARD_BUDGET_S, which is the whole point of the watchdog.
 OFFICE_BUDGET_S = int(os.environ.get("APPLICANT_OFFICE_BUDGET_S", 120))
+# Offices whose pages are slow because they are BIG, not because they are stuck
+# (2026-11-11: 11280's Retention Details alone takes ~a minute, see
+# applicantstream.RETENTION_NAV_TIMEOUT_MS). They get a longer slice; every
+# other office keeps OFFICE_BUDGET_S.
+OFFICE_BUDGET_OVERRIDES = {"11280": 240}
+
+
+def _office_budget(office_id) -> int:
+    return OFFICE_BUDGET_OVERRIDES.get(str(office_id), OFFICE_BUDGET_S)
 RUN_BUDGET_S = int(os.environ.get("APPLICANT_RUN_BUDGET_S", 30 * 60))
 HARD_BUDGET_S = int(os.environ.get("APPLICANT_HARD_BUDGET_S", 33 * 60))
 # Once an office has WRITTEN its Call List it gets this long again to finish
@@ -409,7 +418,7 @@ def run(phase: str, target: dt.date | None = None,
                 break
             print(f"[{office_id}] selecting office... "
                   f"({i + 1}/{total}, {int(run_clock.elapsed)}s in)", flush=True)
-            clock = _Clock(OFFICE_BUDGET_S, str(office_id))
+            clock = _Clock(_office_budget(office_id), str(office_id))
             try:
                 if phase == "morning":
                     _morning_office(app, ws_call, ws_2r, office_id, header,
@@ -474,7 +483,7 @@ def run(phase: str, target: dt.date | None = None,
                 print(f"  ! [{office_id}] error: {type(e).__name__}: "
                       f"{str(e)[:120]} — retrying once (nothing written yet)",
                       flush=True)
-                clock = _Clock(OFFICE_BUDGET_S, str(office_id))
+                clock = _Clock(_office_budget(office_id), str(office_id))
                 try:
                     if phase == "morning":
                         _morning_office(app, ws_call, ws_2r, office_id, header,

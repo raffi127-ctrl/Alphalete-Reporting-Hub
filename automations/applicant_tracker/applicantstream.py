@@ -82,6 +82,12 @@ NAV_TIMEOUT_MS = 30_000
 # A p=715 detail page is a plain server-rendered table, so waiting for the
 # table itself is both faster and stricter than any load-state wait.
 DETAIL_TABLE_TIMEOUT_MS = 20_000
+# The Retention Details report (p=701) is computed server-side over the whole
+# office, so a big office's load runs past NAV_TIMEOUT_MS while every other
+# page is quick. 2026-11-11: Rafael Hidalgo's 11280 (~780 sent-to-call-list a
+# week) timed out at 30s on every try; probe_office, with no 30s cap, loaded
+# the same page in about a minute. Only this one load gets the longer wait.
+RETENTION_NAV_TIMEOUT_MS = 90_000
 
 
 class OfficeNotAvailable(Exception):
@@ -217,12 +223,13 @@ class ApplicantStream:
             pass
 
     # ---- navigation ------------------------------------------------------
-    def goto_page(self, page_num: int):
+    def goto_page(self, page_num: int, timeout_ms: int | None = None):
         # domcontentloaded, NOT networkidle: the report/console page (p=701) keeps
         # a socket.io connection open, so 'networkidle' never settles and every
         # console load 30s-times-out. Mirrors recruiting's fetch_office.
+        kw = {"timeout": timeout_ms} if timeout_ms else {}
         self.page.goto(f"{BASE}?rqst={self.token}&p={page_num}",
-                       wait_until="domcontentloaded")
+                       wait_until="domcontentloaded", **kw)
         self.page.wait_for_timeout(1200)  # let jQuery-UI wire up #searchMC
 
     def select_office(self, office_id: str, attempts: int = 3) -> str:
@@ -349,7 +356,8 @@ class ApplicantStream:
             return False
 
     def open_retention_details(self):
-        self.goto_page(PAGES["retention_details"])
+        self.goto_page(PAGES["retention_details"],
+                       timeout_ms=RETENTION_NAV_TIMEOUT_MS)
 
     def open_calendar(self):
         self.goto_page(PAGES["calendar"])
