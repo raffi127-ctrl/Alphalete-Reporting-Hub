@@ -45,6 +45,8 @@ from automations.total_knocks.pull import (
     COL_TALK_TO, COL_B2B_INACCURATE, COL_DNK, COL_CLOSE, COL_PRESENTATION,
     COL_B2B_CLIENT_ACQUIRED, COL_B2B_NO_CONTACT, COL_B2B_QUALIFYING_QS,
     COL_B2B_SARA_PLUS, COL_B2B_CUSTOMER_REVIEW,
+    COL_B2B_NO_OWNER_CONTACT, COL_B2B_TALKED_TO_OWNER, COL_B2B_PRESENTED_OWNER,
+    COL_B2B_CLOSED_OWNER, COL_B2B_SARA_CREDIT, COL_BOX_BILL_COLLECTED,
     SHEET_COLUMNS,
     _norm,
 )
@@ -616,6 +618,34 @@ B2B_ATT_KNOCKS_COLUMNS_V2 = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                              COL_B2B_CUSTOMER_REVIEW, COL_COME_BACK,
                              COL_B2B_NO_CONTACT, COL_B2B_INACCURATE, COL_DNK]
 B2B_ATT_KNOCKS_HEADERS_V2 = _with_derived(B2B_ATT_KNOCKS_COLUMNS_V2)
+# THE THIRD (2026-11-10): the "owner" buckets, AT&T SBS only -- Box did not
+# change. Disposition columns in the GRID'S OWN ORDER, which is the order a B2B
+# knock actually goes in: nobody there -> talked -> presented -> qualified ->
+# closed -> credit check -> sale, then the two dead ends.
+B2B_ATT_KNOCKS_COLUMNS_V3 = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                             COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+                             COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                             COL_GAPS, COL_TOTAL_GAPS,
+                             COL_B2B_NO_OWNER_CONTACT, COL_B2B_TALKED_TO_OWNER,
+                             COL_B2B_PRESENTED_OWNER, COL_B2B_QUALIFYING_QS,
+                             COL_B2B_CLOSED_OWNER, COL_B2B_SARA_CREDIT,
+                             COL_SALE, COL_B2B_INACCURATE_LEAD,
+                             COL_DO_NOT_KNOCK]
+B2B_ATT_KNOCKS_HEADERS_V3 = _with_derived(B2B_ATT_KNOCKS_COLUMNS_V3)
+# BOX'S THIRD: the grid it has actually had since 2026-10-08/09 (see
+# total_knocks.pull) -- part first vocabulary, part second. Same Box-only
+# Actual Talk To's; its three subtrahends (Corp - No Opp, Inaccessible,
+# Inaccurate Lead) are all still on this grid, so that number does not move.
+B2B_BOX_KNOCKS_COLUMNS_V3 = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                             COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+                             COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                             COL_GAPS, COL_TOTAL_GAPS,
+                             COL_TALK_TO, COL_NOT_INTERESTED, COL_PRESENTATION,
+                             COL_CLOSE, COL_BOX_CONTRACT_SIGNED,
+                             COL_BOX_BILL_COLLECTED, COL_SALE, COL_COME_BACK,
+                             COL_BOX_CORP_NO_OPP, COL_DO_NOT_KNOCK,
+                             COL_INACCESSIBLE, COL_B2B_INACCURATE_LEAD]
+B2B_BOX_KNOCKS_HEADERS_V3 = _with_derived(B2B_BOX_KNOCKS_COLUMNS_V3)
 B2B_BOX_KNOCKS_COLUMNS_V2 = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                              COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
                              COL_FIRST_KNOCK, COL_LAST_KNOCK,
@@ -629,6 +659,13 @@ B2B_BOX_KNOCKS_HEADERS_V2.insert(
     B2B_BOX_KNOCKS_HEADERS_V2.index(COL_TOTAL_KNOCKS) + 1, COL_BOX_ACTUAL_TALK_TO)
 B2B_BOX_KNOCKS_HEADERS_V2.insert(
     B2B_BOX_KNOCKS_HEADERS_V2.index(COL_TALK_TO_PER_REP) + 1,
+    COL_BOX_ACTUAL_TALK_TO_PER_REP)
+
+
+B2B_BOX_KNOCKS_HEADERS_V3.insert(
+    B2B_BOX_KNOCKS_HEADERS_V3.index(COL_TOTAL_KNOCKS) + 1, COL_BOX_ACTUAL_TALK_TO)
+B2B_BOX_KNOCKS_HEADERS_V3.insert(
+    B2B_BOX_KNOCKS_HEADERS_V3.index(COL_TALK_TO_PER_REP) + 1,
     COL_BOX_ACTUAL_TALK_TO_PER_REP)
 
 
@@ -677,6 +714,7 @@ BOX_BOARD_ORDER = [
     COL_COME_BACK,
     COL_BOX_OWNER_TALKED_TO,
     COL_BOX_BILL_NO_SALE,
+    COL_BOX_BILL_COLLECTED,     # 2026-10-08 name for the same slot
     COL_BOX_CONTRACT_SIGNED,
     # 2026-10-08 vocabulary, slotted where their v1 cousins sat; Ryan has not
     # re-typed the order for these yet.
@@ -693,6 +731,7 @@ BOX_BOARD_ORDER = [
     COL_BOX_TALKED_TO,
     COL_NOT_INTERESTED,
     COL_BOX_DO_NOT_DISTURB,
+    COL_DO_NOT_KNOCK,           # what Do Not Disturb is called on today's grid
     COL_BOX_AM_COME_BACK,
     COL_B2B_INACCURATE,
     COL_DNK,
@@ -2462,8 +2501,24 @@ SHAPE_VERIZON = "verizon"      # Verizon Optix, relayed bucketed (Sale Started)
 
 
 def b2b_vocab(rows: "list[dict]") -> str:
-    """"v2" when the rows carry the 2026-10-08 buckets, else "v1"."""
+    """Which B2B vocabulary these rows were relayed in.
+
+    "v3"  the 2026-11-10 AT&T SBS "owner" buckets (asked FIRST: that grid also
+          carries Qualifying Questions, Inaccurate Lead and Do Not Knock, which
+          the older two would otherwise claim it by)
+    "v2"  the 2026-10-08 buckets
+    "v1"  everything before
+    """
     first = rows[0] if rows else {}
+    if (COL_B2B_NO_OWNER_CONTACT in first or COL_B2B_TALKED_TO_OWNER in first
+            or COL_B2B_PRESENTED_OWNER in first or COL_B2B_CLOSED_OWNER in first):
+        return "v3"
+    # Box's third: plain Talk To (second vocabulary) ON THE SAME GRID as Corp -
+    # No Opp or Contract Signed (first). Neither older grid has both.
+    if COL_TALK_TO in first and (COL_BOX_CORP_NO_OPP in first
+                                 or COL_BOX_CONTRACT_SIGNED in first
+                                 or COL_BOX_BILL_COLLECTED in first):
+        return "v3"
     return "v2" if (COL_DNK in first or COL_B2B_CLIENT_ACQUIRED in first
                     or COL_B2B_INACCURATE in first) else "v1"
 
@@ -2471,10 +2526,15 @@ def b2b_vocab(rows: "list[dict]") -> str:
 def b2b_columns(shape: str, rows: "list[dict]") -> "tuple[list, list]":
     """(base columns, output headers) for a B2B shape, on the vocabulary the
     rows were relayed in."""
-    v2 = b2b_vocab(rows) == "v2"
+    vocab = b2b_vocab(rows)
+    v2 = vocab == "v2"
+    if shape == SHAPE_B2B_ATT and vocab == "v3":
+        return (B2B_ATT_KNOCKS_COLUMNS_V3, B2B_ATT_KNOCKS_HEADERS_V3)
     if shape == SHAPE_B2B_ATT:
         return ((B2B_ATT_KNOCKS_COLUMNS_V2, B2B_ATT_KNOCKS_HEADERS_V2) if v2
                 else (B2B_ATT_KNOCKS_COLUMNS, B2B_ATT_KNOCKS_HEADERS))
+    if vocab == "v3":
+        return (B2B_BOX_KNOCKS_COLUMNS_V3, B2B_BOX_KNOCKS_HEADERS_V3)
     return ((B2B_BOX_KNOCKS_COLUMNS_V2, B2B_BOX_KNOCKS_HEADERS_V2) if v2
             else (B2B_BOX_KNOCKS_COLUMNS, B2B_BOX_KNOCKS_HEADERS))
 
@@ -2508,6 +2568,11 @@ def knocks_shape(rows: "list[dict]") -> str:
     # plain Talk To + Inaccessible without any of those (the house grid says
     # "Do Not Knock" and "Talk To - Not Interested", so it never matches).
     if COL_B2B_CLIENT_ACQUIRED in first or COL_B2B_QUALIFYING_QS in first:
+        return SHAPE_B2B_ATT
+    # The 2026-11-10 "owner" vocabulary, should Qualifying Questions ever be
+    # hidden in somebody's Column Visibility: any one of these is AT&T SBS.
+    if (COL_B2B_NO_OWNER_CONTACT in first or COL_B2B_TALKED_TO_OWNER in first
+            or COL_B2B_PRESENTED_OWNER in first or COL_B2B_CLOSED_OWNER in first):
         return SHAPE_B2B_ATT
     if COL_DNK in first and COL_TALK_TO in first and COL_INACCESSIBLE in first:
         return SHAPE_B2B_BOX

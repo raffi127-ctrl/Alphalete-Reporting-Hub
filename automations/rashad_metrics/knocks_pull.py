@@ -244,13 +244,69 @@ _B2B_BOX_TALK_TO_PARTS_V2 = [
     knocks.COL_PRESENTATION, knocks.COL_CLOSE,
 ]
 
+# THE THIRD VOCABULARY (2026-11-10), AT&T SBS only. See total_knocks.pull.
+_B2B_ATT_COLUMNS_V3 = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_B2B_NO_OWNER_CONTACT, knocks.COL_B2B_TALKED_TO_OWNER,
+    knocks.COL_B2B_PRESENTED_OWNER, knocks.COL_B2B_QUALIFYING_QS,
+    knocks.COL_B2B_CLOSED_OWNER, knocks.COL_B2B_SARA_CREDIT, knocks.COL_SALE,
+    knocks.COL_B2B_INACCURATE_LEAD, knocks.COL_DO_NOT_KNOCK,
+]
+_B2B_ATT_COUNTS_V3 = set(_B2B_ATT_COLUMNS_V3) - {
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_FIRST_KNOCK,
+    knocks.COL_LAST_KNOCK}
+# Talk-to, by the same house rule as the two before it: every bucket where
+# somebody was spoken to. Excluded: No Owner Contact (nobody to speak to) and
+# Inaccurate Lead (wrong lead, nobody there). Do Not Knock counts, as it has
+# on every board since fiber's.
+_B2B_ATT_TALK_TO_PARTS_V3 = [
+    knocks.COL_B2B_TALKED_TO_OWNER, knocks.COL_B2B_PRESENTED_OWNER,
+    knocks.COL_B2B_QUALIFYING_QS, knocks.COL_B2B_CLOSED_OWNER,
+    knocks.COL_B2B_SARA_CREDIT, knocks.COL_SALE, knocks.COL_DO_NOT_KNOCK,
+]
+
+
+# BOX'S THIRD (on the grid since 2026-10-08/09; see total_knocks.pull).
+_B2B_BOX_COLUMNS_V3 = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_TALK_TO, knocks.COL_NOT_INTERESTED, knocks.COL_PRESENTATION,
+    knocks.COL_CLOSE, knocks.COL_BOX_CONTRACT_SIGNED,
+    knocks.COL_BOX_BILL_COLLECTED, knocks.COL_SALE, knocks.COL_COME_BACK,
+    knocks.COL_BOX_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
+    knocks.COL_INACCESSIBLE, knocks.COL_B2B_INACCURATE_LEAD,
+]
+_B2B_BOX_COUNTS_V3 = set(_B2B_BOX_COLUMNS_V3) - {
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_FIRST_KNOCK,
+    knocks.COL_LAST_KNOCK}
+# Same house rule. Excluded: Inaccessible and Inaccurate Lead. Corp - No Opp
+# and Do Not Knock count, as they did on the first Box board.
+_B2B_BOX_TALK_TO_PARTS_V3 = [
+    knocks.COL_TALK_TO, knocks.COL_NOT_INTERESTED, knocks.COL_PRESENTATION,
+    knocks.COL_CLOSE, knocks.COL_BOX_CONTRACT_SIGNED,
+    knocks.COL_BOX_BILL_COLLECTED, knocks.COL_SALE, knocks.COL_COME_BACK,
+    knocks.COL_BOX_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
+]
+
 
 def _has(idx: dict, col: str) -> bool:
     return knocks._norm(col) in idx
 
 
 def b2b_vocab(idx: dict) -> str:
-    """"v2" when the grid carries the 2026-10-08 buckets, else "v1"."""
+    """"v3" for the 2026-11-10 AT&T SBS owner buckets (asked first), "v2"
+    when the grid carries the 2026-10-08 buckets, else "v1"."""
+    if (_has(idx, knocks.COL_B2B_NO_OWNER_CONTACT)
+            or _has(idx, knocks.COL_B2B_TALKED_TO_OWNER)
+            or _has(idx, knocks.COL_B2B_PRESENTED_OWNER)
+            or _has(idx, knocks.COL_B2B_CLOSED_OWNER)):
+        return "v3"
+    if _has(idx, knocks.COL_TALK_TO) and (
+            _has(idx, knocks.COL_BOX_CORP_NO_OPP)
+            or _has(idx, knocks.COL_BOX_CONTRACT_SIGNED)
+            or _has(idx, knocks.COL_BOX_BILL_COLLECTED)):
+        return "v3"                       # Box's third
     return "v2" if (_has(idx, knocks.COL_DNK) or _has(idx, knocks.COL_B2B_CLIENT_ACQUIRED)
                     or _has(idx, knocks.COL_B2B_INACCURATE)) else "v1"
 
@@ -261,7 +317,10 @@ def _is_b2b_att_dispo(idx: dict) -> bool:
     Client Acquired / Qualifying Questions, which no other grid has."""
     return (_has(idx, knocks.COL_B2B_CORP_NO_OPP)
             or _has(idx, knocks.COL_B2B_CLIENT_ACQUIRED)
-            or _has(idx, knocks.COL_B2B_QUALIFYING_QS))
+            or _has(idx, knocks.COL_B2B_QUALIFYING_QS)
+            # v3 (2026-11-10): the owner buckets, which no other grid has.
+            or _has(idx, knocks.COL_B2B_TALKED_TO_OWNER)
+            or _has(idx, knocks.COL_B2B_NO_OWNER_CONTACT))
 
 
 def _is_b2b_box_dispo(idx: dict) -> bool:
@@ -379,7 +438,22 @@ def _scrape_b2b_rows(page, idx: dict) -> list[dict]:
     """B2B rows for whichever of the two grids this is, with Total Talk to
     summed over that campaign's own parts."""
     att = _is_b2b_att_dispo(idx)
-    v2 = b2b_vocab(idx) == "v2"
+    vocab = b2b_vocab(idx)
+    v2 = vocab == "v2"
+    if att and vocab == "v3":
+        rows = _scrape_shaped_rows(page, idx, _B2B_ATT_COLUMNS_V3,
+                                   _B2B_ATT_COUNTS_V3, "B2B AT&T")
+        for rec in rows:
+            rec[knocks.COL_TOTAL_TALK_TO] = sum(
+                int(rec.get(c) or 0) for c in _B2B_ATT_TALK_TO_PARTS_V3)
+        return rows
+    if not att and vocab == "v3":
+        rows = _scrape_shaped_rows(page, idx, _B2B_BOX_COLUMNS_V3,
+                                   _B2B_BOX_COUNTS_V3, "B2B Box")
+        for rec in rows:
+            rec[knocks.COL_TOTAL_TALK_TO] = sum(
+                int(rec.get(c) or 0) for c in _B2B_BOX_TALK_TO_PARTS_V3)
+        return rows
     cols, counts, parts, label = (
         ((_B2B_ATT_COLUMNS_V2, _B2B_ATT_COUNTS_V2, _B2B_ATT_TALK_TO_PARTS_V2, "B2B AT&T")
          if v2 else

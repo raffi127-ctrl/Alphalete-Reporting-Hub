@@ -128,6 +128,38 @@ COL_B2B_NO_CONTACT      = "No Contact"
 COL_B2B_QUALIFYING_QS   = "Qualifying Questions"
 COL_B2B_SARA_PLUS       = "Sara Plus"
 COL_B2B_CUSTOMER_REVIEW = "Customer Gave Review"
+# THE THIRD B2B AT&T VOCABULARY (2026-11-10 / 11-11). OwnerVille renamed the
+# AT&T SBS buckets again, this time around the business OWNER -- which is what
+# a B2B rep is actually trying to reach. Luke's machine relayed it first
+# (11/10); Jamis, Eveliz and Valeria the next morning. Read off their relayed
+# grids, in the grid's own left-to-right order:
+#   No Owner Contact, Talked To Owner, Presented To Owner, Qualifying
+#   Questions, Closed Owner, Sara Plus (Credit Check), Sale, Inaccurate Lead,
+#   Do Not Knock
+# Nobody announced it. The board kept drawing the first vocabulary's headings
+# (Talked To - Not Interested, Corp Franchise ...), blank, and dropped five of
+# the nine live columns -- 169 of Jamis's 212 knocks on 11/11 -- until he asked
+# why his B2B board read like a door-to-door one. Qualifying Questions, Sale,
+# Inaccurate Lead and Do Not Knock reuse constants that already exist.
+COL_B2B_NO_OWNER_CONTACT = "No Owner Contact"
+COL_B2B_TALKED_TO_OWNER  = "Talked To Owner"
+COL_B2B_PRESENTED_OWNER  = "Presented To Owner"
+COL_B2B_CLOSED_OWNER     = "Closed Owner"
+COL_B2B_SARA_CREDIT      = "Sara Plus (Credit Check)"
+# AND BOX, WHICH NOBODY HAD CAUGHT. Looking at every B2B office on 11/11 showed
+# the Box grid Roshan's and Ryan's machines have relayed since 10/08-10/09 is
+# NEITHER list above -- it kept Not Interested, Corp - No Opp, Contract Signed
+# and the long "Inaccurate Lead" / "Do Not Knock" spellings from the first one
+# and took plain Talk To, Presentation, Close and Sale from the second:
+#   Not Interested, Talk To, Come Back, Corp - No Opp, Inaccessible, Inaccurate
+#   Lead, Do Not Knock, Contract Signed, Sale, Bill Collected, Presentation,
+#   Close
+# Because Corp - No Opp is there it read as the FIRST vocabulary, so for a
+# month the Box board drew five dead columns (Talked To, Owner Talked To, Bill
+# Collected - No Sale, AM Come Back, Do Not Disturb) and left out six live ones
+# -- Talk To among them, 308 of Roshan's 515 leads on 11/11, missing from the
+# board and from Total Talk to. "Bill Collected" is the only new name.
+COL_BOX_BILL_COLLECTED   = "Bill Collected"
 # From Time Tracker (p=510 JSON), merged onto the disposition rows by badge ID.
 # VERIZON (Optix Lead Details, Megan 2026-11-06). Relayed by the office's own
 # machine (icd_alerts.optix_read.board_row) already bucketed; everything that
@@ -177,6 +209,11 @@ COUNT_COLUMNS = {
     COL_TALK_TO, COL_B2B_INACCURATE, COL_DNK, COL_CLOSE, COL_PRESENTATION,
     COL_B2B_CLIENT_ACQUIRED, COL_B2B_NO_CONTACT, COL_B2B_QUALIFYING_QS,
     COL_B2B_SARA_PLUS, COL_B2B_CUSTOMER_REVIEW,
+    # The 2026-11-10 B2B AT&T "owner" buckets.
+    COL_B2B_NO_OWNER_CONTACT, COL_B2B_TALKED_TO_OWNER, COL_B2B_PRESENTED_OWNER,
+    COL_B2B_CLOSED_OWNER, COL_B2B_SARA_CREDIT, COL_B2B_INACCURATE_LEAD,
+    # Box's own: a rep with none shows 0, like every bucket beside it.
+    COL_BOX_BILL_COLLECTED, COL_BOX_CONTRACT_SIGNED, COL_BOX_CORP_NO_OPP,
     COL_VZ_NOT_HOME, COL_VZ_APPOINTMENT, COL_VZ_SALE_STARTED, COL_VZ_CANCELED,
 }
 

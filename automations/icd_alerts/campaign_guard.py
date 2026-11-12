@@ -49,7 +49,10 @@ def _signatures() -> Dict[str, Tuple[str, Tuple[str, ...]]]:
     return {
         "b2b_att": ("B2B AT&T SBS", (K.COL_B2B_CORP_NO_OPP,
                                      K.COL_B2B_CLIENT_ACQUIRED,
-                                     K.COL_B2B_QUALIFYING_QS)),
+                                     K.COL_B2B_QUALIFYING_QS,
+                                     # 2026-11-10: the owner buckets
+                                     K.COL_B2B_TALKED_TO_OWNER,
+                                     K.COL_B2B_NO_OWNER_CONTACT)),
         "b2b_box": ("B2B-BOX-Energy", (K.COL_BOX_OWNER_TALKED_TO,
                                        K.COL_BOX_CORP_NO_OPP)),
     }
