@@ -137,33 +137,70 @@ open_chrome() {   # url...   (falls back to the default browser before Chrome ex
 }
 
 # ------------------------------------------------------------- installers
-install_dmg_app() {   # name url
-  local name="$1" url="$2"
-  if [ -d "/Applications/$name.app" ]; then ok "$name already installed"; return 0; fi
-  if [ $DRY_RUN = 1 ]; then echo "  (dry run) would download + install $name"; return 0; fi
-  echo "  Downloading $name..."
-  local tmp mnt; tmp="$(mktemp -d)"
-  if ! curl -fL --progress-bar -o "$tmp/app.dmg" "$url"; then fail "$name download"; rm -rf "$tmp"; return 1; fi
-  mnt="$(hdiutil attach -nobrowse -noverify "$tmp/app.dmg" | tail -1 | awk -F'\t' '{print $NF}')"
-  if [ -d "$mnt/$name.app" ] && cp -R "$mnt/$name.app" /Applications/; then ok "$name installed"; else fail "$name install"; fi
+# DOWNLOADS START THE MOMENT THE WALKTHROUGH OPENS (Megan, 2026-11-11: "the
+# goal is to shorten this call"). Excel alone is ~1 GB; fetched while the
+# person makes the Gmail + Apple account, it's usually done by step 3. Chrome
+# and Slack need no password, so they install by themselves in the
+# background too. Zoom + Excel need the laptop password, so step 3 installs
+# both behind ONE password box.
+CACHE="$HOME/Library/Caches/LaptopSetup"
+BG_DONE="$CACHE/downloads.done"
+
+_fetch() {   # name url ext -> $CACHE/name.ext  (resumes a half-finished file)
+  local out="$CACHE/$1.$3"
+  [ -f "$out" ] && return 0
+  curl -fsSL -C - -o "$out.part" "$2" && mv "$out.part" "$out"
+}
+_dmg_to_apps() {   # name  (copies name.app out of the downloaded dmg)
+  local mnt
+  mnt="$(hdiutil attach -nobrowse -noverify "$CACHE/$1.dmg" | tail -1 | awk -F'\t' '{print $NF}')"
+  [ -d "$mnt/$1.app" ] && cp -R "$mnt/$1.app" /Applications/
   hdiutil detach "$mnt" -quiet 2>/dev/null
-  rm -rf "$tmp"
 }
 
-install_pkg_app() {   # name url   (the Mac shows its own password pop-up)
-  local name="$1" url="$2"
-  if [ -d "/Applications/$name.app" ]; then ok "$name already installed"; return 0; fi
-  if [ $DRY_RUN = 1 ]; then echo "  (dry run) would download + install $name"; return 0; fi
-  echo "  Downloading $name..."
-  local tmp; tmp="$(mktemp -d)"
-  if ! curl -fL --progress-bar -o "$tmp/app.pkg" "$url"; then fail "$name download"; rm -rf "$tmp"; return 1; fi
-  echo "  Installing $name (the Mac will ask for the laptop password)..."
-  if osascript -e "do shell script \"/usr/sbin/installer -pkg '$tmp/app.pkg' -target /\" with administrator privileges" >/dev/null 2>&1; then
-    ok "$name installed"
-  else
-    fail "$name install"
+start_downloads() {
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) would start downloading Chrome, Slack, Zoom, Excel in the background"; return; }
+  mkdir -p "$CACHE"; rm -f "$BG_DONE"
+  (
+    [ -d "/Applications/Google Chrome.app" ] || { _fetch "Google Chrome" "$CHROME_URL" dmg && _dmg_to_apps "Google Chrome"; } &
+    [ -d "/Applications/Slack.app" ]         || { _fetch "Slack" "$SLACK_URL" dmg && _dmg_to_apps "Slack"; } &
+    [ -d "/Applications/zoom.us.app" ]       || _fetch "zoom.us" "$ZOOM_URL" pkg &
+    [ -d "/Applications/Microsoft Excel.app" ] || _fetch "Microsoft Excel" "$EXCEL_URL" pkg &
+    wait
+    touch "$BG_DONE"
+  ) >>"$CACHE/download.log" 2>&1 &
+  BG_PID=$!
+}
+
+wait_for_downloads() {
+  [ $DRY_RUN = 1 ] && return
+  local shown=0
+  while [ ! -f "$BG_DONE" ] && kill -0 "$BG_PID" 2>/dev/null; do
+    [ $shown = 0 ] && { printf "  Still downloading"; shown=1; }
+    printf "."; sleep 5
+  done
+  [ $shown = 1 ] && echo " done."
+}
+
+install_pkgs() {   # the Zoom + Excel installers, ONE password box for both
+  local cmd="" name
+  for name in "zoom.us" "Microsoft Excel"; do
+    if [ -d "/Applications/$name.app" ]; then continue; fi
+    if [ $DRY_RUN = 1 ]; then echo "  (dry run) would install $name"; continue; fi
+    if [ -f "$CACHE/$name.pkg" ]; then
+      cmd="$cmd/usr/sbin/installer -pkg '$CACHE/$name.pkg' -target / ; "
+    else
+      fail "$name download (check the Wi-Fi, then open the link again)"
+    fi
+  done
+  if [ -n "$cmd" ]; then
+    echo "  Installing Zoom + Excel (the Mac asks for the laptop password once)..."
+    osascript -e "do shell script \"$cmd\" with administrator privileges" >/dev/null 2>&1
   fi
-  rm -rf "$tmp"
+}
+
+report_app() {   # name -> ok/fail by what's actually in /Applications
+  if [ $DRY_RUN = 1 ] || [ -d "/Applications/$1.app" ]; then ok "$1 installed"; else fail "$1 install"; fi
 }
 
 DOCK_CHANGED=0
@@ -218,6 +255,7 @@ Before you start:
 
 Don't close the black window." "Let's go" "Let's go" >/dev/null
 fi
+start_downloads
 
 # ------------------------------------------------------------------------
 section "Make the reception email"
@@ -278,17 +316,17 @@ Already signed in to a different Apple account? Ask the launch team." "iCloud fo
 
 # ------------------------------------------------------------------------
 section "Get the apps"
-say_info "The laptop is getting the apps now.
+# Downloads started at the welcome screen; usually finished by now.
+say_info "Lucy is putting 4 apps on this laptop:
+Chrome, Slack, Zoom and Excel.
 
-It takes about 15 minutes.
+When it asks for the laptop password, type it.
 
-If it asks for the laptop password, type it.
-
-Click OK and wait."
-install_dmg_app "Google Chrome"   "$CHROME_URL"
-install_dmg_app "Slack"           "$SLACK_URL"
-install_pkg_app "zoom.us"         "$ZOOM_URL"
-install_pkg_app "Microsoft Excel" "$EXCEL_URL"
+Click OK."
+wait_for_downloads
+install_pkgs
+for app in "Google Chrome" "Slack" "zoom.us" "Microsoft Excel"; do report_app "$app"; done
+[ $DRY_RUN = 0 ] && rm -rf "$CACHE"
 
 # ------------------------------------------------------------------------
 section "Get Magnet"
