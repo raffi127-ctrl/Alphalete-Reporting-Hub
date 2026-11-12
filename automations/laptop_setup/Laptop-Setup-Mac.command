@@ -1503,17 +1503,12 @@ gmail_done
 }
 step_11() {
 section "Contacts"
-# "Google Contacts (Laptop & Phone)" = reception's Google contacts show up in
-# the Mac's Contacts app, the same way the phone step does on the phone.
-# Opening the Google Contacts website alone did nothing on a new account.
-run open "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension"
-human contacts_laptop "System Settings is open on Internet Accounts.
-(The gray ⚙️ window. Look behind this box.)
-
-1. Click “Add Account”. Click “Google”.
-2. Sign in with:
-${RECEPTION_EMAIL}
-3. Turn on “Contacts”. Click “Done”." "Google Contacts on the laptop"
+# "Google Contacts (Laptop & Phone)": on the laptop = Google Contacts pinned
+# in Chrome. The Mac's Internet Accounts route showed no "Contacts" switch on
+# newer macOS in Olivia's run (2026-11-12), so it was dropped.
+open_chrome "https://contacts.google.com/"
+sleep 3
+pin_tabs contacts_laptop "Google Contacts|contacts.google.com"
 human contacts_phone "Grab the phone.
 
 1. Open Settings.
