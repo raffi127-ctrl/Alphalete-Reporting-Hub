@@ -76,7 +76,8 @@ NOISE_RE = re.compile(r"cookie|privacy|feedback|sign in|skip navigation|chat|car
                       re.I)
 # still on the lookup form (or back on it): nothing was looked up
 LANDING_RE = re.compile(r"search as a guest|find an order or claim|let.s verify your info", re.I)
-SHOT_TAB = "ATT Shot"            # the last lookup's page, base64-chunked on the control sheet
+SHOT_TAB = "ATT Shot"
+_FEDEX_SHOT_SENT = False            # the last lookup's page, base64-chunked on the control sheet
 FAIL_RE = re.compile(r"couldn.t find|can.t find|unable to|doesn.t match|does not match|"
                      r"no (?:matching )?order|try again|something went wrong|not found", re.I)
 TRACK_RE = re.compile(r"\b(1Z[0-9A-Z]{16}|\d{12,22})\b")
@@ -503,9 +504,18 @@ def fedex_status(page, number: str, log=print) -> str:
         shown = " / ".join(_norm(l) for l in (text or "").splitlines() if _norm(l))[:400]
         log("    (FedEx %s: no status read -- %d chars: %s)" % (number, len(text or ""), shown))
         try:
-            page.screenshot(path=str(OUT_DIR / ("fedex_%s.png" % number)), full_page=True)
-        except Exception:  # noqa: BLE001
-            pass
+            png = page.screenshot(full_page=True)
+            (OUT_DIR / ("fedex_%s.png" % number)).write_bytes(png)
+            # the first blank page of a run goes to the control sheet so the
+            # wall FedEx puts up can be looked at (11/12: every full pass
+            # read blanks from its first FedEx number on, single runs work)
+            global _FEDEX_SHOT_SENT
+            if not _FEDEX_SHOT_SENT:
+                from automations.rc_contact_sync.status_probe import _upload_shot
+                _upload_shot(png, "FedEx Shot", log=log)
+                _FEDEX_SHOT_SENT = True
+        except Exception as e:  # noqa: BLE001
+            log("    (FedEx page shot failed: %s)" % type(e).__name__)
         return ""
     return "FedEx %s: %s" % (number, " / ".join(kept))
 
