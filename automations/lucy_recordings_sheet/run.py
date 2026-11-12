@@ -1132,6 +1132,71 @@ def post_yesterday(target: str, day: str, rows: list, edit_ts: str = "") -> None
     log("posted yesterday's list (%d recording(s)) to %s ts=%s" % (len(rows), target, resp.get("ts")))
 
 
+# ---------- "who's your owner?" (Raf 2026-11-12) ----------
+#
+# A rep in the "(no owner confirmed)" block: Raf doesn't know them either ->
+# "message them with me in the chat and I'm sure they'll respond". Lucy opens a
+# group DM with the rep + Raf (+ Eve, who maps the answer) and asks. Once per
+# rep, ever: a rep who keeps sending recordings must not get asked every day.
+
+ASK_WITH = ("U045Z8N0ZQC", "U088E2KJEV8")   # Rafael Hidalgo, Eve
+ASKED_DIR = HERE.parents[1] / "output" / "state" / "lucy_recordings_owner_asked"
+
+
+def no_owner_reps(kept: list, dropped: list, export: dict, guesses: dict, day: str) -> list:
+    """[(uid, name, first time)] of reps with no owner (not even a guess) who
+    sent a recording on `day`, oldest first. No uid = nobody to message."""
+    reps = export.get("reps") or {}
+    seen = {}
+    for r in list(kept) + [r for r, _ in dropped]:
+        ts, uid = r.get("ts") or "", r.get("uid") or ""
+        if ts[:10] != day or not uid.startswith(("U", "W")):
+            continue
+        if (reps.get(uid) or {}).get("owner_id") or uid in guesses:
+            continue
+        if uid not in seen or ts < seen[uid]:
+            seen[uid] = ts
+    out = []
+    for uid, ts in sorted(seen.items(), key=lambda x: x[1]):
+        try:
+            t = dt.datetime.fromisoformat(ts[:19]).strftime("%I:%M %p").lstrip("0")
+        except ValueError:
+            t = ""
+        out.append((uid, (export.get("names") or {}).get(uid) or "", t))
+    return out
+
+
+def ask_owner_text(name: str, day: str, time: str) -> str:
+    d = dt.date.fromisoformat(day)
+    first = short_name(name).split()[0] if name and name != NO_NAME else ""
+    when = "%s, %s %d" % (d.strftime("%A"), d.strftime("%b"), d.day) + (" at %s" % time if time else "")
+    return ("Hi%s! LUCY got your 2nd round recording on %s, but we don't know which "
+            "office you're with. Who is your owner? Just reply here :slightly_smiling_face:"
+            % (" " + first if first else "", when))
+
+
+def ask_owners(reps: list, day: str) -> None:
+    """One group DM per rep (rep + Raf + Eve), once per rep."""
+    from automations.shared.slack_metrics_post import _client
+    client = None
+    for uid, name, time in reps:
+        mark = ASKED_DIR / uid
+        if mark.exists():
+            log("owner question: %s (%s) already asked %s - skipping"
+                % (name, uid, mark.read_text(encoding="utf-8").strip()))
+            continue
+        client = client or _client()
+        try:
+            ch = client.conversations_open(users=",".join((uid,) + ASK_WITH))["channel"]["id"]
+            resp = client.chat_postMessage(channel=ch, text=ask_owner_text(name, day, time))
+        except Exception as e:  # noqa: BLE001
+            log("owner question NOT sent to %s (%s): %s" % (name, uid, e))
+            continue
+        ASKED_DIR.mkdir(parents=True, exist_ok=True)
+        mark.write_text(dt.datetime.now(CT).isoformat(), encoding="utf-8")
+        log("owner question sent to %s (%s) in %s ts=%s" % (name, uid, ch, resp.get("ts")))
+
+
 def main(argv=None) -> int:
     for s in (sys.stdout, sys.stderr):
         try:
@@ -1156,6 +1221,8 @@ def main(argv=None) -> int:
     ap.add_argument("--yesterday-edit", metavar="TS",
                     help="with --yesterday-slack: rewrite the list already posted at this ts "
                          "instead of posting a new one")
+    ap.add_argument("--ask-owners-only", action="store_true",
+                    help="only send the 'who's your owner?' DMs for --day (no list, no sheet)")
     ap.add_argument("--day", help="with --yesterday-slack / --dry-run: list this day (YYYY-MM-DD) instead of yesterday")
     a = ap.parse_args(argv)
 
@@ -1209,8 +1276,15 @@ def main(argv=None) -> int:
         day, len(y_rows), sum(1 for r in y_rows if r[5] == COUNTED)))
     for r in y_rows:
         print("  %-9s %-28s %-28s %4s min  score=%-5s %s" % tuple(r))
+    unknown = no_owner_reps(kept_all, dropped, export, guesses, day)
+    if a.ask_owners_only:
+        log("asking %d rep(s) with no owner for %s" % (len(unknown), day))
+        ask_owners(unknown, day)
+        return 0
     if a.dry_run:
         print(yesterday_text(day, y_rows))
+        for uid, name, time in unknown:
+            log("would ask %s (%s) who their owner is: %s" % (name, uid, ask_owner_text(name, day, time)))
     elif a.yesterday_slack:
         # Before the sheet write: a 429 on the sheet must not cost the group
         # their morning list.
@@ -1218,6 +1292,9 @@ def main(argv=None) -> int:
             post_yesterday(a.yesterday_slack, day, y_rows, a.yesterday_edit or "")
         except Exception as e:  # noqa: BLE001
             log("yesterday list NOT posted: %s" % e)
+        # Only with the real group list, never on a test or an in-place edit.
+        if a.yesterday_slack == YESTERDAY_DM and not a.yesterday_edit:
+            ask_owners(unknown, day)
 
     if a.dry_run:
         cur = month_list[0] if month_list else ""

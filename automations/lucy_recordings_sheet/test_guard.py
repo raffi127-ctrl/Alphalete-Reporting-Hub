@@ -178,3 +178,23 @@ class ShortNameTest(unittest.TestCase):
         txt = yesterday_text("2026-11-10", [["9:05 AM", "Hank Tran", "Rafael Hidalgo", 30, 9.0, COUNTED]])
         self.assertIn("1. Hank T. · 9:05 AM", txt)
         self.assertNotIn("Tran", txt)
+
+
+class AskOwnerTest(unittest.TestCase):
+    def test_only_reps_with_no_owner_and_no_guess(self):
+        from automations.lucy_recordings_sheet.run import no_owner_reps, ask_owner_text
+        export = {"owners": [{"id": "o1", "name": "Rafael Hidalgo"}],
+                  "reps": {"U1": {"owner_id": "o1"}},
+                  "names": {"U1": "Hank Tran", "U2": "kingdavid mensah", "U3": "Bo Ray"}}
+        recs = [rec("2026-11-11T09:00:00", "U1", 1800.0, "a"),
+                rec("2026-11-11T10:09:00", "U2", 1800.0, "b"),
+                rec("2026-11-11T10:20:00", "U2", 1800.0, "b"),
+                rec("2026-11-11T11:00:00", "U3", 1800.0, "c"),
+                rec("2026-11-10T11:00:00", "U2", 1800.0, "d")]
+        kept, dropped = apply_guard(recs)
+        got = no_owner_reps(kept, dropped, export, {"U3": ("Kash Rai", "knocks")}, "2026-11-11")
+        self.assertEqual(got, [("U2", "kingdavid mensah", "10:09 AM")])
+        txt = ask_owner_text("kingdavid mensah", "2026-11-11", "10:09 AM")
+        self.assertIn("Hi Kingdavid!", txt)
+        self.assertIn("Wednesday, Nov 11 at 10:09 AM", txt)
+        self.assertIn("Who is your owner?", txt)
