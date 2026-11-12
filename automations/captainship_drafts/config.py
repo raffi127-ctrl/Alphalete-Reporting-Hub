@@ -325,6 +325,10 @@ class ChurnSource:
     fiber_tiers: bool = False  # add each owner's Fiber churn tier + $ per sale
                                # to the images. Fiber captainships (Raf's
                                # Loom 2026-10-29; all fiber since Eve 2026-11-05).
+    wireless_tier_legend: bool = False  # draw the Wireless tier pay legend
+                               # (0-30 + 90 Day buckets, $ per port line vs
+                               # 3-3) on top of every bucket image. Raf
+                               # #l10-alphalete 2026-11-12. wireless_churn.tier_legend.
 
 
 @dataclass(frozen=True)
@@ -959,7 +963,8 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_cap.open_ws_new_int,  _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_cap.open_ws_wireless, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_rafael_boxes()),
     # ----- Fiber (Aron retired → Chan; Tony + Sahil added 2026-07-17) -----
     # Wireless churn joined the fiber drafts 2026-07-29. It comes off the
@@ -972,31 +977,36 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_fiber_wayne, _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_wayne, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_fiber_boxes("wayne")),
     Captain("starr", "Starr", "fiber", title_bg="#9900FF", to=_to("starr"), churn=[
         ChurnSource(_own.open_ws_fiber_starr, _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_starr, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_fiber_boxes("starr")),
     Captain("chan", "Chan", "fiber", title_bg="#8A7465", to=_to("chan"), churn=[
         ChurnSource(_own.open_ws_fiber_chan, _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_chan, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_fiber_boxes("chan")),
     Captain("tony", "Tony", "fiber", title_bg="#001F5B", to=_to("tony"), churn=[
         ChurnSource(_own.open_ws_fiber_tony, _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_tony, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_fiber_boxes("tony")),
     Captain("sahil", "Sahil", "fiber", title_bg="#800020", to=_to("sahil"), churn=[
         ChurnSource(_own.open_ws_fiber_sahil, _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_sahil, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_fiber_boxes("sahil")),
     # Pat y Jess, 2026-09-03: las dos capitanias de fiber nuevas. Sus seis
     # cuadros salen igual que los de los otros cinco (mismos libros, cortados
@@ -1014,13 +1024,15 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_fiber_pat, _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_pat, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_fiber_boxes("pat")),
     Captain("jess", "Jess", "fiber", title_bg="#C2379A", to=_to("jess"), churn=[
         ChurnSource(_own.open_ws_fiber_jess, _ni_render, "New Internet Churn",
                     fiber_tiers=True),
         ChurnSource(_own.open_ws_wl_jess, _wl_render, "Wireless Churn",
-                    brand_title=False),
+                    brand_title=False,
+                    wireless_tier_legend=True),
     ], boxes=_fiber_boxes("jess")),
     # ----- B2B (5 buckets incl 120) -----
     # Carlos RETIRADO 2026-10-19: él mismo escribió (mail del 10/18 al reporte

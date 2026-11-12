@@ -73,6 +73,16 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
             src.render_mod.render_multi_week(
                 ws, sect, period, today, path,
                 n_weeks=filled.get(period, MAX_WEEKS), **per_kw)
+            if getattr(src, "wireless_tier_legend", False):
+                # Raf 2026-11-12: the Wireless tier buckets + $ per port line
+                # vs 3-3, on top of every bucket's board (Eve: tiers arriba,
+                # churn abajo, en todos los buckets). A legend that fails to draw
+                # must never cost the captain the board itself.
+                try:
+                    from automations.wireless_churn import tier_legend as _wtl
+                    _wtl.add_to(path)
+                except Exception as e:  # noqa: BLE001
+                    logfn(f"  {captain.key}/{src.label}: tier legend skipped ({e})")
             images.append((f"{src.label} — {period} Day", path))
             rendered += 1
         logfn(f"  {captain.key}/{src.label}: rendered {rendered} bucket(s)")
