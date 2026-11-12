@@ -60,6 +60,13 @@ class TestLimit(unittest.TestCase):
         self.assertTrue(ols.over_phone_limit(
             _book(self.dir / "a.xlsx", 5, ols.ROW_WARN + 1))[0])
 
+    def test_more_reps_than_index_cap_splits(self):
+        """Eve 2026-11-12: few rows but more reps than one index should hold."""
+        self.assertTrue(ols.over_phone_limit(
+            _book(self.dir / "a.xlsx", ols.MAX_INDEX_NAMES + 1, 100))[0])
+        self.assertFalse(ols.over_phone_limit(
+            _book(self.dir / "b.xlsx", ols.MAX_INDEX_NAMES, 100))[0])
+
     def test_too_many_tabs_is_over(self):
         self.assertTrue(ols.over_phone_limit(
             _book(self.dir / "a.xlsx", ols.TAB_WARN + 1, 100))[0])

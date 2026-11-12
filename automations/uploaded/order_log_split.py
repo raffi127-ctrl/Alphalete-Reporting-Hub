@@ -39,6 +39,10 @@ GROUPS = [("A-F", "A", "F"), ("G-M", "G", "M"), ("N-Z", "N", "Z")]
 WHOLE = "All"
 # Slack's phone preview shows ~1,000 rows per tab and ~30 tabs. Warn early.
 ROW_WARN, TAB_WARN = 950, 28
+# Most names one "Tap your name" index may list (Eve 2026-11-12: no endless
+# index). An office with more reps than this splits by letter even when its
+# rows would fit on the phone. Raf's own letter indexes run ~20-24 names.
+MAX_INDEX_NAMES = 20
 
 
 def over_phone_limit(xlsx_path: Path) -> Tuple[bool, int, int]:
@@ -52,7 +56,7 @@ def over_phone_limit(xlsx_path: Path) -> Tuple[bool, int, int]:
         rows = sum(1 for r in wb[LOG_TAB].iter_rows(min_row=2, max_col=1, values_only=True)
                    if r[0] not in (None, ""))
     wb.close()
-    return (rows > ROW_WARN or tabs > TAB_WARN), rows, tabs
+    return (rows > ROW_WARN or tabs > min(TAB_WARN, MAX_INDEX_NAMES)), rows, tabs
 
 
 def group_of(rep: str) -> str:
