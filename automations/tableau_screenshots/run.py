@@ -959,6 +959,10 @@ def _main(argv=None) -> int:
                     help="Force full_page capture (whole board) for every "
                          "tracker, overriding each page's crop -- use on the "
                          "first mini run to see everything, then tune crop.")
+    ap.add_argument("--highlight", action="store_true",
+                    help="Paint each Lucy Eco owner's own row yellow on the "
+                         "trackers their channel gets (highlight.py), even "
+                         "while highlight.LIVE is off. For the preview.")
     ap.add_argument("--preview-dm", default=None,
                     help="Comma-separated Slack user id(s)/emails/names. Capture "
                          "then DM the full thread (header + real images) to them "
@@ -1047,6 +1051,9 @@ def _main(argv=None) -> int:
     ap.add_argument("--out-dir", default=str(OUT_DIR),
                     help="Where to write PNGs (default: output/tableau_screenshots).")
     args = ap.parse_args(argv)
+    if args.highlight:
+        from automations.tableau_screenshots import highlight as _hl
+        _hl.FORCE = True
 
     # One run, one budget for retrying reads that never reached Slack (see
     # slack_post.TRANSPORT_RETRY_BUDGET). Module state, so a second main() in

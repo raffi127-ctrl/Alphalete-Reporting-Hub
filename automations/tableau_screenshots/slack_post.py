@@ -644,6 +644,19 @@ def reset_transport_budget():
     _transport_retries_left = TRANSPORT_RETRY_BUDGET
 
 
+_HIGHLIGHTER = None
+
+
+def highlighter():
+    """The run's one Highlighter (Eco list read once, Claude asked once per
+    image). See highlight.py."""
+    global _HIGHLIGHTER
+    if _HIGHLIGHTER is None:
+        from automations.tableau_screenshots.highlight import Highlighter
+        _HIGHLIGHTER = Highlighter()
+    return _HIGHLIGHTER
+
+
 def _upload_with_retry(client, channel: str, thread_ts: str, png, spec: dict, today):
     """files_upload_v2 for one image, retried on a TRANSPORT failure.
 
@@ -655,12 +668,17 @@ def _upload_with_retry(client, channel: str, thread_ts: str, png, spec: dict, to
     Same rule as _read_with_retry: a call that never got an answer gets another
     go while the run's transport budget lasts; a real Slack error does not."""
     global _transport_retries_left
+    # An Eco owner's own channel gets the copy with THEIR row in yellow
+    # (Rafael 2026-11-12). Same filename + caption as the plain image, so
+    # posted_ids / dedupe / --replace see no difference. Never raises: any
+    # trouble hands back the plain png.
+    src = highlighter().png_for(channel, png, spec)
     attempt = 0
     while True:
         attempt += 1
         try:
             return client.files_upload_v2(
-                channel=channel, thread_ts=thread_ts, file=str(png),
+                channel=channel, thread_ts=thread_ts, file=str(src),
                 filename=Path(png).name, initial_comment=reply_caption(spec, today))
         except _TRANSIENT_TRANSPORT as e:
             if attempt > 2 or _transport_retries_left <= 0:
@@ -1109,6 +1127,11 @@ def preview_dm(captures: list, pages: list, users: list,
     label = ORG_LABEL.get(org or DEFAULT_ORG)
     if org is not None:
         captures, pages, _ = select_for_org(captures, pages, org)
+        # Preview what that owner's channel will really get, yellow row and all.
+        hl = highlighter()
+        owner = hl.owner_for_org(org)
+        if owner and not dry_run:
+            captures = [(s, hl.png_for_owner(owner, p, s)) for s, p in captures]
     if dry_run:
         return {"dry_run": True, "to_users": users, "label": label,
                 "header": header_text(pages, today),
