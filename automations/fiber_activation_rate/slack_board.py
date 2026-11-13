@@ -157,6 +157,12 @@ def run(owner: str, *, sandbox: bool, dry_run: bool, post_to: str = "",
     from automations.shared import slack_metrics_post as smp
     d = dt.date.fromisoformat(days[0])
     where = dict(channel_id=post_to, top_level=True, mirror=False) if post_to else {}
+    if not post_to:
+        # Same as daily_metrics: make sure today's 'Metrics for:' thread exists
+        # first. This board runs ~4am, and daily_metrics (which posts the header)
+        # can still be waiting on Tableau -> 11/13 died with "Couldn't find
+        # today's header thread" and posted nothing.
+        smp.ensure_metrics_thread()
     ok = True
     for w, img in zip(_run.WIN_KEYS, imgs):      # one post per image, in order
         comment = f"{LABEL} ({w} days) — {d.strftime('%b')} {d.day}"
