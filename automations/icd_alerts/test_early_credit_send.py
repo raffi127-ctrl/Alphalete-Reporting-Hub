@@ -126,6 +126,16 @@ class Wiring(unittest.TestCase):
                       "and day == C.today():", src)
         self.assertIn("on_records=early", src)
 
+    def test_the_early_send_never_holds_up_the_sales_grids(self):
+        # its own thread, and always waited for before the full send
+        src = inspect.getsource(RUN.cmd_once)
+        self.assertIn("threading.Thread(", src)
+        self.assertIn("target=R.send_records_early", src)
+        fin = src.index("finally:")
+        self.assertIn("t.join(EARLY_SEND_WAIT_S)", src[fin:fin + 400])
+        self.assertLess(fin, src.index("data = St.load()"))
+        self.assertLessEqual(RUN.EARLY_SEND_WAIT_S, 60)
+
     def test_the_stale_cap_sits_inside_the_posters_stale_window(self):
         # An office whose sales half is dead must still go stale: the cap has
         # to be shorter than the 25 minutes after which boards are withheld.

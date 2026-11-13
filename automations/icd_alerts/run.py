@@ -326,6 +326,11 @@ def _empty_read_due() -> bool:
     return True
 
 
+# Longer than relay._post's own timeout would ever need; a bound, so a hung
+# request cannot hold the two-minute slot.
+EARLY_SEND_WAIT_S = 45
+
+
 def cmd_once(headless: bool, dry_run: bool, day: dt.date,
              sales_only: bool = False, resume_only: bool = False) -> int:
     # FIRST, AND ONCE A DAY. Getting a fix onto an office's machine used to
@@ -382,10 +387,23 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # ONLY on an ordinary live sweep of today: outside the alert hours the
         # credit checks sent are deliberately the ones already seen, a
         # catch-up is reading a day that is over, and a dry run sends nothing.
-        early = None
+        #
+        # ON ITS OWN THREAD, so the sales grids start at once. The relay took
+        # 3-14 seconds to answer an early send on its first morning
+        # (2026-11-13), and in line that was 3-14 seconds added to every sale
+        # alert. It is a plain web request -- nothing of the browser's -- and
+        # the `finally` below waits for it before anything else is sent, so
+        # an early send can never land AFTER the full one and put older sales
+        # back on the row.
+        early, early_sends = None, []
         if not (dry_run or sales_only or resume_only) and day == C.today():
             def early(records):
-                R.send_records_early(records, day, office_key=att_key, log=_log)
+                import threading
+                t = threading.Thread(
+                    target=R.send_records_early, args=(dict(records), day),
+                    kwargs={"office_key": att_key, "log": _log}, daemon=True)
+                t.start()
+                early_sends.append(t)
         read = W.timed("sweep",
                        lambda: sara_read.read_day(day, headless=headless,
                                                   log=_log,
@@ -485,6 +503,11 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         _log("unexpected failure: %s" % traceback.format_exc())
         _report("sweep", e, office_key=att_key)
         return 1
+    finally:
+        # Whatever happened to the read, let the early send finish: on a read
+        # that was abandoned it is the only thing that went over at all.
+        for t in early_sends:
+            t.join(EARLY_SEND_WAIT_S)
 
     data = St.load()
     if sales_only:
