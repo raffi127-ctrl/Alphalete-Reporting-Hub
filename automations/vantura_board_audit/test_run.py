@@ -1541,6 +1541,18 @@ class RehireOnBoardIsNotReterminated(unittest.TestCase):
                          sheet.worksheet("Roll Call").written,
                          "a rehire on the board must not be closed from the store")
 
+    def test_rehire_is_not_reported_as_an_open_termination(self):
+        """Giovanni Monreal 2026-11-13: the rehire was kept Active (right) but
+        still reported as 'TERMINATION BATCH NOT CLOSED — set col B to
+        Terminated' (wrong), an alert that can never clear."""
+        sheet = self._sheet([("Edgar Camunez", [""] * 7)],
+                            self._roll("Edgar Camunez"),
+                            self._closed_store("Edgar Camunez"))
+        self._run(sheet, [])
+        appended = " ".join(str(c) for row in sheet.worksheet(
+            "Report an Issue").appended for c in (row if isinstance(row, (list, tuple)) else [row]))
+        self.assertNotIn("TERMINATION BATCH NOT CLOSED", appended)
+
     def test_a_T_on_the_board_still_closes(self):
         sheet = self._sheet([("Edgar Camunez", ["T"] * 7)],
                             self._roll("Edgar Camunez"),

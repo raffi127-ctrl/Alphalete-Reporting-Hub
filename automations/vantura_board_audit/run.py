@@ -578,9 +578,16 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
                     hit = store_terms[other]
                     break
         if hit and _still_on_board(_norm(who)):
-            held.append((ri, who, gone, f"RollCallData {hit[0]} says "
-                         f"{TERMINATED} but {who} has a live board row with no "
-                         f"{TERM_MARK!r} — rehire, store row ignored"))
+            # A REHIRE IS NOT AN OPEN TERMINATION (2026-11-13, Giovanni
+            # Monreal r571). This used to go in `held`, which the caller
+            # reports as "TERMINATION BATCH NOT CLOSED ... Set col B to
+            # 'Terminated'" — telling a human to terminate someone who is
+            # working, every morning, forever: the alert can never clear while
+            # he stays on the board. The row is right as it is (Active, no
+            # Date Gone); only the stale store row disagrees. Log it, move on.
+            log(f"rehire kept Active: {who} (Roll Call r{ri}) — RollCallData "
+                f"{hit[0]} says {TERMINATED} but a live board row has no "
+                f"{TERM_MARK!r}")
             continue
         if hit:
             label, gone_d = hit
