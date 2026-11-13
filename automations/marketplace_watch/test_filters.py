@@ -2,7 +2,7 @@
 python -m unittest automations.marketplace_watch.test_filters"""
 import unittest
 
-from automations.marketplace_watch.run import parse_card, keep
+from automations.marketplace_watch.run import parse_card, keep, section_of
 
 
 def card(text, item="1"):
@@ -67,6 +67,22 @@ class T(unittest.TestCase):
                   "Sled base visitor chair", "Leather armchair",
                   "Stackable chairs (10)", "Accent chair"):
             self.assertIsNotNone(keep(card(f"$50\n{t}\nAllen, TX"), set()), t)
+
+    def test_sections(self):
+        cases = {"Desk with chair": "Desks", "Modern L-Shaped Desk": "Desks",
+                 "86\" Sofa": "Couches", "Leather loveseat": "Couches",
+                 "Beautiful arm chair": "Chairs", "Silla": "Chairs",
+                 "2 file cabinets": "Storage", "Boho Framed Wall Art": "Decor",
+                 "Tall Artificial Ficus Tree": "Decor", "Floor mirror": "Decor"}
+        for title, want in cases.items():
+            self.assertIn(want, section_of(title), title)
+
+    def test_drops_junk_from_1113_email(self):
+        for t in ("PROFESSIONAL OFFICE CENTRE NOW LEASING", "christmas tree",
+                  "A Beautiful Tabletop Artificial Plant",
+                  "Round Faux Fur Cushion for a Papasan chair",
+                  "Night stand with mirror", "Jewelry Armoire with Mirror"):
+            self.assertIsNone(keep(card(f"$20\n{t}\nPlano, TX"), set()), t)
 
     def test_drops_over_price(self):
         self.assertIsNone(keep(card("$150\nDesk\nPlano, TX"), set()))

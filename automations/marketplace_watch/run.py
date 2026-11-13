@@ -248,32 +248,60 @@ def subject_for(items: list[Listing]) -> str:
     return f"🪑 {len(items)} new office furniture deals near the office{extra}"
 
 
+def section_of(title: str) -> str:
+    for name, words in C.SECTIONS:
+        if _has_word(title, words):
+            return name
+    return "📦 Other"
+
+
+def grouped(items: list[Listing]) -> list[tuple[str, list[Listing]]]:
+    """[(section, listings cheapest first)] in config order, empty ones out."""
+    order = [n for n, _ in C.SECTIONS] + ["📦 Other"]
+    by = {n: [] for n in order}
+    for it in items:
+        by[section_of(it.title)].append(it)
+    return [(n, sorted(by[n], key=lambda x: (x.price, x.miles)))
+            for n in order if by[n]]
+
+
+def _price(it: Listing) -> str:
+    return "FREE" if it.price == 0 else f"${it.price}"
+
+
 def format_text(items: list[Listing]) -> str:
-    lines = []
-    for it in sorted(items, key=lambda x: (x.price, x.miles)):
-        price = "FREE" if it.price == 0 else f"${it.price}"
-        lines.append(f"{price} — {it.title} · {it.city} ({it.miles} mi)\n"
-                     f"   {it.url}")
-    return "\n".join(lines)
+    out = []
+    for name, rows in grouped(items):
+        out.append(f"\n{name} ({len(rows)})")
+        for it in rows:
+            out.append(f"{_price(it)} — {it.title} · {it.city} "
+                       f"({it.miles} mi)\n   {it.url}")
+    return "\n".join(out).strip()
 
 
 def format_html(items: list[Listing]) -> str:
     from html import escape
-    rows = []
-    for it in sorted(items, key=lambda x: (x.price, x.miles)):
-        price = ("<b style='color:#1a7f37'>FREE</b>" if it.price == 0
-                 else f"<b>${it.price}</b>")
-        rows.append(
-            f"<tr><td style='padding:6px 12px 6px 0'>{price}</td>"
-            f"<td style='padding:6px 12px 6px 0'><a href='{it.url}'>"
-            f"{escape(it.title)}</a></td>"
-            f"<td style='padding:6px 0;color:#555'>{escape(it.city)} · "
-            f"{it.miles} mi</td></tr>")
-    return ("<div style='font-family:Arial,sans-serif;font-size:15px'>"
-            "<p>New on Facebook Marketplace — $100 or less, within ~20 min "
-            "of the office. Cheapest first.</p>"
-            f"<table style='border-collapse:collapse'>{''.join(rows)}</table>"
-            "</div>")
+    parts = ["<div style='font-family:Arial,sans-serif;font-size:15px'>"
+             "<p>New on Facebook Marketplace — $100 or less, within ~20 min "
+             "of the office. Cheapest first in each section.</p>"]
+    for name, rows in grouped(items):
+        parts.append(
+            f"<h3 style='margin:22px 0 6px;padding-bottom:4px;"
+            f"border-bottom:2px solid #ddd;font-size:17px'>{escape(name)} "
+            f"<span style='color:#888;font-weight:normal'>({len(rows)})"
+            f"</span></h3><table style='border-collapse:collapse'>")
+        for it in rows:
+            price = ("<b style='color:#1a7f37'>FREE</b>" if it.price == 0
+                     else f"<b>${it.price}</b>")
+            parts.append(
+                f"<tr><td style='padding:5px 14px 5px 0;width:52px'>{price}</td>"
+                f"<td style='padding:5px 14px 5px 0'><a href='{it.url}'>"
+                f"{escape(it.title)}</a></td>"
+                f"<td style='padding:5px 0;color:#555;white-space:nowrap'>"
+                f"{escape(it.city)} · {it.miles} mi</td></tr>")
+        parts.append("</table>")
+    parts.append("</div>")
+    return "".join(parts)
 
 
 def send_email(to: str, items: list[Listing]) -> None:

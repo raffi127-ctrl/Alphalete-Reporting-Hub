@@ -81,6 +81,9 @@ SKIP_WORDS = [
     "console", "dining", "kitchen", "bar table", "coffee table", "end table",
     "nightstand", "entry table", "dinning", "vanity", "salon", "barber",
     "hydraulic", "antenna", "hdtv", "tv",
+    # junk seen in the 11/13 email
+    "leasing", "for lease", "for rent", "christmas", "tabletop", "cushion",
+    "night stand", "jewelry", "armoire",
 ]
 
 # City center coordinates for every town within ~20 miles. A city that
@@ -126,6 +129,22 @@ CITY_COORDS = {
     "southlake": (32.9412, -97.1342),
     "grapevine": (32.9343, -97.0781),
 }
+
+# Email sections, in the order they show (Megan, 2026-11-13). A listing goes
+# in the FIRST section whose words its title hits — desks are checked before
+# chairs so "Desk with chair" lands under Desks. No hit = "Other".
+SECTIONS = [
+    ("🖥️ Desks & Tables", ["desk", "escritorio", "workstation", "table",
+                           "cubicle"]),
+    ("🛋️ Couches & Benches", ["sofa", "couch", "loveseat", "sectional",
+                              "settee", "bench"]),
+    ("🪑 Chairs", ["chair", "silla", "stool", "armchair", "seat"]),
+    ("🗄️ Storage", ["cabinet", "file", "filing", "bookcase", "bookshelf",
+                    "shelf", "shelving", "credenza", "locker"]),
+    ("🖼️ Decor", ["wall art", "art", "canvas", "painting", "artwork",
+                  "mirror", "artificial", "faux", "tree", "plant",
+                  "sculpture", "decor", "decoration", "rug"]),
+]
 
 # Who gets the alert email: Megan's own pick (2026-11-10). Email, not Slack:
 # the only Slack login on her laptop is her own, and Slack never pings you for
