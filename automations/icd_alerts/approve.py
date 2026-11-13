@@ -551,9 +551,54 @@ def _write_approval(office_key: str, resolved) -> None:
 
 HEALTH_DAYS = 3
 
+# WHAT A FAULT ROW IS, for the purpose of telling an approver "not done".
+#
+# The first version of health_lines called the office FAILING, and told the
+# approver to send the setup link, whenever it had ANY row in 'ICD Faults' in
+# three days. But most rows are not failures of setup:
+#   probe-*      a note the machine files about itself (a code screen it got
+#                past, the forward it set up). Filed, never posted, not a fault.
+#   slow reads   SaraPlus or OwnerVille being slow that day. Nothing an owner
+#                can do, and nothing the setup link changes.
+#   sign-ins     the real thing -- but only while it is STILL the last word.
+#                An owner who hit the code screen at 5:25 and was signed in and
+#                relaying by 5:55 is done.
+# On 2026-11-12 that cost a real answer: Milly (boards posting, credit checks
+# flowing) and George (signed in twenty minutes earlier) were both reported as
+# "setup is still unfinished, so each still needs the setup link".
+SLOW_STAGES = {"sweep-slow", "knocks-slow", "sweep-timeout", "knocks-timeout",
+               "run-timeout", "sweep-empty"}
+OWNER_WORDS = ("accountproblem", "knocksproblem", "sign-in failed",
+               "not signed in", "wants to confirm this computer",
+               "wants a code", "password")
+OV_WORDS = ("ownerville", "knocksproblem")
+
+
+def _needs_owner(stage: str, summary: str) -> bool:
+    low = (summary or "").lower()
+    return stage.lower().startswith("signin") or any(w in low for w in OWNER_WORDS)
+
+
+def _is_ownerville(stage: str, summary: str) -> bool:
+    low = (summary or "").lower()
+    return stage.lower().startswith("knocks") or any(w in low for w in OV_WORDS)
+
+
+def _latest_received(rows: List[List[str]], key: str, col: int):
+    """The newest 'Received At' this office has on a tab, or None."""
+    best = None
+    for r in rows[1:]:
+        if not r or r[0].strip().lower() != key or len(r) <= col:
+            continue
+        when = P._parse_received(r[col])
+        if when and (best is None or when > best):
+            best = when
+    return best
+
 
 def health_lines(office_key: str, faults: List[List[str]],
-                 relay: List[List[str]], today: dt.date) -> List[str]:
+                 relay: List[List[str]], today: dt.date,
+                 knocks: Optional[List[List[str]]] = None) -> List[str]:
     """What this office's MACHINE has been reporting, as lines to print.
 
     A CHANNEL BEING RIGHT IS NOT THE OFFICE WORKING. Eveliz was approved on
@@ -563,6 +608,11 @@ def health_lines(office_key: str, faults: List[List[str]],
     from OwnerVille and looked fine, so nobody looked further -- Megan found it.
     The faults were sitting in 'ICD Faults' the whole time; this prints them
     at the one moment somebody is guaranteed to be looking at the office.
+
+    "NOT DONE" IS SAID ONLY WHEN IT IS TRUE: the office has never relayed a
+    credit check, or a sign-in problem is newer than the last thing its
+    machine got through to us (see the note above SLOW_STAGES). Everything
+    else it has reported is listed underneath as what it is.
 
     Rows are passed in (not read here) so this can be tested without Sheets.
     """
@@ -578,29 +628,61 @@ def health_lines(office_key: str, faults: List[List[str]],
             continue
         if day < since:
             continue
-        s = by_stage.setdefault(row[P.F_STAGE].strip() or "?",
-                                {"count": 0, "first": day, "summary": ""})
+        stage = row[P.F_STAGE].strip() or "?"
+        if stage.lower().startswith("probe"):
+            continue                      # a note, not a fault
+        s = by_stage.setdefault(stage, {"count": 0, "first": day,
+                                        "summary": "", "last": None})
         try:
             s["count"] += int(row[P.F_COUNT] or 1)
         except ValueError:
             s["count"] += 1
         s["first"] = min(s["first"], day)
         s["summary"] = row[P.F_SUMMARY].strip().splitlines()[0][:160]
+        when = P._parse_received(row[P.F_LAST])
+        if when and (s["last"] is None or when > s["last"]):
+            s["last"] = when
     relayed = any(r and r[0].strip().lower() == key for r in relay[1:])
+    last_relay = _latest_received(relay, key, P.COL_RECEIVED)
+    last_knocks = _latest_received(knocks or [[]], key, 5)   # ICD Knocks 'Received At'
+
+    blocking, cleared, notes = [], [], []
+    for stage, s in sorted(by_stage.items()):
+        line = ("  - %s: %dx since %s — %s"
+                % (stage, s["count"], s["first"].isoformat(), s["summary"]))
+        if stage.lower() in SLOW_STAGES:
+            notes.append(line)
+        elif _needs_owner(stage, s["summary"]):
+            got_through = last_knocks if _is_ownerville(stage, s["summary"]) else last_relay
+            if s["last"] and got_through and got_through > s["last"]:
+                cleared.append("%s  (cleared: its computer got through again "
+                               "at %s)" % (line, got_through.strftime("%H:%M")))
+            else:
+                blocking.append(line)
+        else:
+            notes.append(line)
 
     out = []
-    if by_stage:
-        out.append("THIS OFFICE'S MACHINE IS FAILING (ICD Faults, last %d days):"
-                   % HEALTH_DAYS)
-        for stage, s in sorted(by_stage.items()):
-            out.append("  - %s: %dx since %s — %s"
-                       % (stage, s["count"], s["first"].isoformat(), s["summary"]))
-    if not relayed:
-        out.append("  - no credit checks EVER relayed (ICD Relay is empty for "
-                   "%s) — fine for a Box/Energy office, broken for AT&T" % key)
-    if out:
+    if blocking or not relayed:
+        if blocking:
+            out.append("THIS OFFICE'S MACHINE IS FAILING (ICD Faults, last %d days):"
+                       % HEALTH_DAYS)
+            out += blocking
+        if not relayed:
+            out.append("  - no credit checks EVER relayed (ICD Relay is empty for "
+                       "%s) — fine for a Box/Energy office, broken for AT&T" % key)
         out.append("The approval stands, but the office is not done. Send "
                    "them the setup link (docs/setup.html) and say so.")
+        if cleared or notes:
+            out.append("Also from its computer, not what is holding it up:")
+            out += cleared + notes
+    elif cleared or notes:
+        # SAYS ONLY WHAT WAS CHECKED. "Nothing here needs the owner" would
+        # be a promise this cannot keep: Sahil's rows are all slow and empty
+        # reads, and what is wrong with his office is the login he typed.
+        out.append("No sign-in problem is open. Also from this office's "
+                   "computer, last %d days:" % HEALTH_DAYS)
+        out += cleared + notes
     return out
 
 
@@ -609,10 +691,14 @@ def print_machine_health(office_key: str) -> None:
     try:
         from automations.recruiting_report.fill import open_by_key
         book = open_by_key(P.RELAY_SPREADSHEET_ID)
+        try:
+            knocks = book.worksheet("ICD Knocks").get_all_values()
+        except Exception:  # noqa: BLE001 -- judged on credit checks alone then
+            knocks = None
         lines = health_lines(office_key,
                              book.worksheet(P.FAULTS_TAB).get_all_values(),
                              book.worksheet(P.RELAY_TAB).get_all_values(),
-                             dt.date.today())
+                             dt.date.today(), knocks=knocks)
     except Exception as e:  # noqa: BLE001
         print("\n(could not read this office's machine health: %s)" % e)
         return
