@@ -40,7 +40,7 @@ class Posting(unittest.TestCase):
         fake.chat_postMessage.side_effect = lambda **kw: self.posted.append(kw) or {"ts": "2.2"}
         fake.files_upload_v2.side_effect = lambda **kw: self.uploads.append(kw) or {"ok": True}
         fake.conversations_history.return_value = {"messages": [
-            {"ts": "1.1", "text": ":bar_chart: *Your week online · Nov 4 – Nov 10* · x",
+            {"ts": "1.1", "text": ":bar_chart: *Your week online · Nov 4 – Nov 10*",
              "files": [{}]}]}
         from automations.online_presence import simple_card as sc
         self.record = mock.Mock()
@@ -53,13 +53,13 @@ class Posting(unittest.TestCase):
                 mock.patch("automations.online_presence.timing.record"):
             W.main(argv)
 
-    def test_live_posts_picture_then_links_and_pdf_in_its_thread(self):
+    def test_live_posts_picture_then_only_the_pdf_in_its_thread(self):
         self._run(["--live", "--office", "kash"], {"kash": _office()})
         self.assertEqual([u["channel"] for u in self.uploads], ["C0KASHROOM", "C0KASHROOM"])
         self.assertNotIn("thread_ts", self.uploads[0])                 # the picture = parent
         self.assertEqual(self.uploads[1]["thread_ts"], "1.1")           # the PDF in its thread
         self.assertTrue(self.uploads[1]["file"].endswith(".pdf"))
-        self.assertEqual(self.posted[0]["thread_ts"], "1.1")            # links + reviews
+        self.assertEqual(self.posted, [])                               # super simple: no link message
         self.record.assert_called_once()                                # next week's "vs last week"
 
     def test_dry_office_skipped_on_the_friday_run_alphalete_still_goes(self):

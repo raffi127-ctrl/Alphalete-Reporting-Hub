@@ -24,7 +24,7 @@ from urllib.parse import urljoin, urlparse
 MODEL = "claude-opus-5-5"
 MAX_PAGES = 5
 PAGE_CHARS = 6000
-KEY_PAGES = re.compile(r"about|contact|career|join|jobs|hiring|team|service|what-we-do|faq|location",
+KEY_PAGES = re.compile(r"about|contact|career|join|jobs|hiring|apply|team|service|what-we-do|faq|location",
                        re.I)
 
 ROWS = (

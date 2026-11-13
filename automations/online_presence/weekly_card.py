@@ -64,8 +64,10 @@ def run_office(p, *, live: bool, now: dt.datetime | None = None) -> Dict:
         return out
     from automations.brand_audit.social_inbox import _client
     cl = _client()
-    head = (f":bar_chart: *Your week online · {card['week_of']} – {card['until']}* · "
-            f"{card['verdict']}")
+    # SUPER SIMPLE (Megan 2026-11-13: "way too clogged up ... we need it super
+    # simple"): the picture + a one-line title, and ONE thing in the thread --
+    # the PDF. Its links (review link, Slack, listing) are tappable inside it.
+    head = f":bar_chart: *Your week online · {card['week_of']} – {card['until']}*"
     cl.files_upload_v2(channel=p.slack_channel, file=str(files["png"]),
                        filename=f"{p.business_name} weekly card.png",
                        title=f"{p.business_name} · your week online",
@@ -75,13 +77,10 @@ def run_office(p, *, live: bool, now: dt.datetime | None = None) -> Dict:
     parent = _parent_ts(cl, p.slack_channel, head)
     if not parent:
         raise RuntimeError("card picture didn't show up in the channel")
-    thread = sc.thread_text(card)
-    if thread:
-        cl.chat_postMessage(channel=p.slack_channel, thread_ts=parent, text=thread)
     cl.files_upload_v2(channel=p.slack_channel, thread_ts=parent, file=str(files["pdf"]),
                        filename=f"{p.business_name} weekly card.pdf",
-                       title="The full card: why + how for every step",
-                       initial_comment=":page_facing_up: The full card, with why + how for every step.")
+                       title="Full card (tap to open)",
+                       initial_comment="Tap to open the full card: every step, with the links.")
     sc.record(p, card, now)
     out["action"] = "posted"
     return out

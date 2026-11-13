@@ -35,12 +35,24 @@ SOCIAL_FIELDS = (("Instagram Link", "instagram.com", "Instagram"),
                  ("X Link", ("x.com", "twitter.com"), "X"),
                  ("TikTok Link", "tiktok.com", "TikTok"),
                  ("YouTube Link", ("youtube.com", "youtu.be"), "YouTube"))
+# Website launch questions (Megan 2026-11-12: we build + host their recruiting
+# site on a domain Alphalete registers). Appended at the END of the tab.
+SITE_FIELDS = ["Need Website", "Website Name Ideas", "Campaign", "Areas Served",
+               "Story Started", "Story Different", "Story Culture", "Site Look",
+               "Brand Color", "Apply Link"]
+CAMPAIGNS = {"AT&T Fiber": "att", "NDS (AT&T wireless)": "nds", "B2B AT&T": "b2b_att",
+             "B2B Box Energy": "b2b_box", "Verizon": "verizon", "Other": ""}
+LOOKS = {"Bold (dark, big photos)": "bold", "Clean (light, simple)": "clean",
+         "Mosaic (photo grid)": "mosaic", "Warm (soft colors, framed photos)": "warm",
+         "Pick for me": ""}
 HEADER = ["Submitted At", "Status", "Owner", "Owner Email", "Business Name",
           "Address", "Phone", "Website", "Google Listing Link", "Indeed Link",
           "Glassdoor Link", "Pages", "Approvers", "Complaints Email", "Timezone",
           "Notes"] + [f for f, _, _ in SOCIAL_FIELDS] + ["Slack Room", "Slack Channel",
-                                                         "Pinged At"]
+                                                         "Pinged At"] + SITE_FIELDS
 PAGES = ("Instagram", "Facebook", "Google", "LinkedIn", "X")
+
+
 _LOCAL = Path(__file__).resolve().parents[2] / "output" / "lucyeco_social_signups_local.json"
 _CLIENT = None
 
@@ -58,14 +70,27 @@ _GOOGLE = re.compile(r"(google\.[a-z.]+/maps|maps\.google\.|maps\.app\.goo\.gl|g
 def problems(a: Dict) -> List[str]:
     """Plain-English reasons the form can't be sent yet ([] = good)."""
     out = []
+    build = str(a.get("Need Website") or "").startswith("No")
     need = (("Owner", "your full name"), ("Business Name", "your business name"),
             ("Address", "your office address"), ("Phone", "your company phone"),
-            ("Website", "your website"), ("Google Listing Link", "your Google listing link"),
+            ("Google Listing Link", "your Google listing link"),
             ("Complaints Email", "an email for customer concerns"),
             ("Approvers", "who approves posts"))
     for k, label in need:
         if not str(a.get(k) or "").strip():
             out.append(f"Add {label}.")
+    if not a.get("Need Website"):
+        out.append("Tell us whether you already have a website.")
+    elif not build and not str(a.get("Website") or "").strip():
+        out.append("Add your website.")
+    if build:
+        for k, label in (("Website Name Ideas", "a name idea or two for your website"),
+                         ("Story Started", "how your office started"),
+                         ("Story Different", "what makes your team different")):
+            if not str(a.get(k) or "").strip():
+                out.append(f"Add {label}.")
+    if a.get("Apply Link") and not str(a["Apply Link"]).lower().startswith(("http", "www")):
+        out.append("The apply link should be a web link (https://…).")
     if a.get("Phone") and len(re.sub(r"\D", "", a["Phone"])) not in (10, 11):
         out.append("The phone number should have 10 digits.")
     if a.get("Address") and not re.search(r"\b\d{5}\b", a["Address"]):
@@ -108,7 +133,7 @@ def problems(a: Dict) -> List[str]:
 
 def tidy(a: Dict) -> Dict:
     a = {k: (v.strip() if isinstance(v, str) else v) for k, v in a.items()}
-    for k in ["Website"] + [f for f, _, _ in SOCIAL_FIELDS]:
+    for k in ["Website", "Apply Link"] + [f for f, _, _ in SOCIAL_FIELDS]:
         if a.get(k) and not str(a[k]).lower().startswith("http"):
             a[k] = "https://" + a[k]
     d = re.sub(r"\D", "", a.get("Phone") or "")[-10:]
@@ -186,6 +211,26 @@ def submit(a: Dict) -> bool:
 
 def _cell(v) -> str:
     return ", ".join(v) if isinstance(v, (list, tuple)) else str(v or "")
+
+
+def site_extras(row: Dict) -> Dict:
+    """A sign-up row -> the office's site.json for site_builder (only what the
+    office told us; photos come later from their Slack channel)."""
+    out = {"answers": {k: str(row.get(f) or "").strip() for k, f in (
+        ("started", "Story Started"), ("different", "Story Different"), ("culture", "Story Culture"))
+        if str(row.get(f) or "").strip()}}
+    look = LOOKS.get(str(row.get("Site Look") or ""), "")
+    if look:
+        out["theme"] = look
+    color = str(row.get("Brand Color") or "").strip()
+    if re.match(r"^#[0-9a-fA-F]{6}$", color):
+        out["colors"] = {"accent": color}
+    areas = [x.strip() for x in str(row.get("Areas Served") or "").split(",") if x.strip()]
+    if areas:
+        out["areas"] = areas
+    if str(row.get("Apply Link") or "").strip():
+        out["apply_url"] = str(row["Apply Link"]).strip()
+    return out
 
 
 def find(business_name: str) -> Dict | None:

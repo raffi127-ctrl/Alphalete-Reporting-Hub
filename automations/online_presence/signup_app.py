@@ -36,6 +36,12 @@ if _gc is not None:
     signup.set_client(_gc)
 
 st.divider()
+# Every launch starts with the company name: Lucy makes the logo options from
+# it, and the site + socials are built from the logo they pick (Megan 2026-11-12).
+st.subheader("Your company name")
+business = st.text_input("Business name (exactly as it shows on Google)",
+                         help="Lucy makes your logo options from this, then builds your "
+                              "website and social pages from the logo you pick.")
 st.subheader("About you")
 owner = st.text_input("Your full name")
 owner_email = st.text_input("Your email", help="We send your setup details here.")
@@ -43,15 +49,50 @@ owner_email = st.text_input("Your email", help="We send your setup details here.
 st.subheader("Your business, exactly as customers see it")
 st.caption("Lucy checks Google, your website, Indeed and Glassdoor against these "
            "and tells you when something doesn't match.")
-business = st.text_input("Business name (exactly as it shows on Google)")
 address = st.text_input("Office address", placeholder="100 Main St, Suite 200, Dallas, TX 75201")
 phone = st.text_input("Company phone", placeholder="(214) 555-0100")
-website = st.text_input("Company website", placeholder="yourcompany.com")
+need_site = st.radio("Do you have a website?",
+                     ["Yes, I have one", "No, build one for me"], index=None, key="need_site")
+website = ""
+if need_site == "Yes, I have one":
+    website = st.text_input("Company website", placeholder="yourcompany.com")
+elif need_site:
+    st.caption("We'll build your recruiting website, set up your company email "
+               "(like careers@yourcompany.com) and keep both running. A few questions "
+               "below make your site sound like YOUR team.")
 google_link = st.text_input(
     "Your Google listing link",
     help="Search your business on Google Maps → tap Share → Copy link, then paste it here.")
 indeed = st.text_input("Your Indeed company page (if you have one)", placeholder="optional")
 glassdoor = st.text_input("Your Glassdoor page (if you have one)", placeholder="optional")
+
+site = {}
+if need_site == "No, build one for me":
+    st.subheader("Your website")
+    site["Website Name Ideas"] = st.text_input(
+        "What should your website be called?",
+        placeholder="e.g. palaceacquisitions.com, palacesales.com",
+        help="Give one or two ideas. We check which are free and register it for you.")
+    site["Campaign"] = st.selectbox("What does your team sell?", list(signup.CAMPAIGNS), index=None,
+                                    placeholder="Pick one")
+    site["Areas Served"] = st.text_input("Which cities do you work in?",
+                                         placeholder="Dallas, Irving, Arlington")
+    st.markdown("**In your own words** (a sentence or two each, this becomes your site)")
+    site["Story Started"] = st.text_area("How did your office start?")
+    site["Story Different"] = st.text_area("What makes your team different?")
+    site["Story Culture"] = st.text_area("What's the culture like? (team nights, wins, trips…)",
+                                         placeholder="optional")
+    site["Site Look"] = st.radio("Pick a look for your site", list(signup.LOOKS), index=4,
+                                 key="site_look")
+    if st.checkbox("I have a brand color", key="has_color"):
+        site["Brand Color"] = st.color_picker("Your brand color", "#C8A24B")
+    site["Apply Link"] = st.text_input(
+        "Your job application link (if you have one)", placeholder="optional",
+        help="Your ApplicantStream or Indeed apply link. Without one, the Apply button "
+             "goes to your company email.")
+    st.info("📸 After you sign up, we'll ask for **10–15 photos** in your Slack channel: "
+            "team shots, the office, wins, team nights. They launch your website AND your "
+            "social pages.")
 
 st.subheader("Where should Lucy post?")
 st.caption("Tick each page Lucy should post your photos to, and paste the link to "
@@ -111,7 +152,8 @@ answers = {"Owner": owner, "Owner Email": owner_email, "Business Name": business
            "Complaints Email": complaints, "Timezone": tz, "Notes": notes,
            "Slack Room": {"Yes, I have one": "existing",
                           "No, please create one for me": "create us one"}.get(has_room or "", ""),
-           "Slack Channel": slack_channel, **socials}
+           "Slack Channel": slack_channel, **socials,
+           "Need Website": need_site or "", **site}
 
 st.divider()
 if st.button("Send my sign-up", type="primary"):

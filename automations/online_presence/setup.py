@@ -159,6 +159,12 @@ def _fill_from_signup(a) -> bool:
             print("  ⚠ they asked us to CREATE their Slack channel: make "
                   f"#{a.office}-online-presence, invite Lucy + @hubposter + them, "
                   "then re-run with --room")
+    if not a.campaign and str(row.get("Campaign") or "").strip():
+        a.campaign = signup.CAMPAIGNS.get(str(row["Campaign"]).strip(), "")
+    # website launch answers -> the office's site.json (site_builder reads it)
+    if str(row.get("Need Website") or "").startswith("No"):
+        a._site_extras = signup.site_extras(row)
+        a._site_names = str(row.get("Website Name Ideas") or "")
     print(f"  using the sign-up {a.from_signup!r} sent on {row.get('Submitted At')}")
     return True
 
@@ -196,6 +202,17 @@ def cmd_add(a) -> int:
                 **{f"{n}_url": getattr(a, n) or getattr(base, f"{n}_url")
                    for n in ("instagram", "facebook", "linkedin", "x", "tiktok", "youtube")})
     offices.save(p)
+    if getattr(a, "_site_extras", None) is not None:
+        import json as _json
+        sj = p.path("site.json")
+        try:
+            have = _json.loads(sj.read_text())
+        except Exception:
+            have = {}
+        sj.parent.mkdir(parents=True, exist_ok=True)
+        sj.write_text(_json.dumps({**a._site_extras, **have}, indent=1))   # hand edits win
+        print(f"  ✓ website answers saved; name ideas: {a._site_names or '(none)'} "
+              f"-> next: python -m automations.online_presence.launch {p.key}")
     print(f"✓ saved {p.key}: {p.business_name} · channel {p.slack_channel} · "
           f"{len(p.approvers)} approver(s) · posts to "
           f"{', '.join(p.pages) or 'nothing yet'} · mode {p.mode}")

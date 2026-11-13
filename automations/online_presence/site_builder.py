@@ -51,16 +51,35 @@ SOCIAL_NAME = {"instagram": "Instagram", "facebook": "Facebook", "linkedin": "Li
 # Four genuinely different looks. "home" is the section order on the homepage.
 THEMES = {
     "bold": {"label": "Bold", "dark": True, "head": "Oswald", "body": "Inter", "hero": "full",
-             "home": ["what", "gallery", "why", "path", "band"],
+             "home": ["what", "path", "gallery", "why", "faq", "where", "band"],
              "colors": {"bg": "#0C0C0D", "accent": "#C8A24B", "accent2": "#B22733"}},
     "clean": {"label": "Clean", "dark": False, "head": "Playfair Display", "body": "Source Sans 3", "hero": "split",
-              "home": ["why", "path", "what", "gallery", "band"],
+              "home": ["what", "why", "path", "faq", "gallery", "where", "band"],
               "colors": {"bg": "#FBFAF7", "accent": "#1F4D7A", "accent2": "#C8A24B"}},
     "mosaic": {"label": "Mosaic", "dark": True, "head": "Archivo Black", "body": "Archivo", "hero": "mosaic",
-               "home": ["gallery", "what", "path", "why", "band"],
+               "home": ["gallery", "what", "path", "why", "where", "faq", "band"],
                "colors": {"bg": "#111418", "accent": "#36C2B4", "accent2": "#F2A541"}},
+    # six more (Megan 2026-11-12: "lock down like 10 different formats")
+    "night": {"label": "Night", "dark": True, "head": "Montserrat", "body": "Inter", "hero": "split",
+              "home": ["what", "path", "why", "gallery", "faq", "where", "band"],
+              "colors": {"bg": "#0E1116", "accent": "#C0392B", "accent2": "#F2F0EC"}},
+    "sunrise": {"label": "Sunrise", "dark": False, "head": "Poppins", "body": "Inter", "hero": "full",
+                "home": ["why", "what", "gallery", "path", "where", "faq", "band"],
+                "colors": {"bg": "#FFFFFF", "accent": "#E07A1F", "accent2": "#1F2A44"}},
+    "studio": {"label": "Studio", "dark": False, "head": "Archivo Black", "body": "Archivo", "hero": "mosaic",
+               "home": ["what", "gallery", "faq", "path", "why", "where", "band"],
+               "colors": {"bg": "#F4F4F2", "accent": "#2F6FEB", "accent2": "#111111"}},
+    "classic": {"label": "Classic", "dark": False, "head": "Playfair Display", "body": "Inter", "hero": "framed",
+                "home": ["what", "path", "gallery", "why", "where", "faq", "band"],
+                "colors": {"bg": "#FFFDF8", "accent": "#7A1F2B", "accent2": "#C8A24B"}},
+    "pro": {"label": "Pro", "dark": True, "head": "Cinzel", "body": "Source Sans 3", "hero": "framed",
+            "home": ["why", "path", "what", "faq", "gallery", "where", "band"],
+            "colors": {"bg": "#101418", "accent": "#C8A24B", "accent2": "#4A6FA5"}},
+    "bright": {"label": "Bright", "dark": False, "head": "Bebas Neue", "body": "DM Sans", "hero": "split",
+               "home": ["what", "why", "gallery", "faq", "path", "where", "band"],
+               "colors": {"bg": "#FAFAFA", "accent": "#2F8F5B", "accent2": "#14151A"}},
     "warm": {"label": "Warm", "dark": False, "head": "DM Serif Display", "body": "DM Sans", "hero": "framed",
-             "home": ["what", "why", "gallery", "path", "band"],
+             "home": ["what", "why", "path", "gallery", "faq", "where", "band"],
              "colors": {"bg": "#F6EFE6", "accent": "#B4532A", "accent2": "#2E4A3F"}},
 }
 
@@ -70,7 +89,9 @@ e = html.escape
 FONT_WEIGHTS = {"Oswald": ":wght@400;600;700", "Inter": ":wght@400;600;700",
                 "Playfair Display": ":wght@600;800", "Source Sans 3": ":wght@400;600;700",
                 "Archivo Black": "", "Archivo": ":wght@400;600;700",
-                "DM Serif Display": "", "DM Sans": ":wght@400;600;700"}
+                "DM Serif Display": "", "DM Sans": ":wght@400;600;700",
+                "Montserrat": ":wght@400;600;800", "Poppins": ":wght@400;600;700", "Cinzel": ":wght@700",
+                "Bebas Neue": ""}
 
 
 # ---- facts ------------------------------------------------------------------
@@ -160,7 +181,7 @@ def _head(f, page: str, depth: str, desc: str) -> str:
             + f'<link rel="icon" href="{depth}favicon.svg">'
             f'<link rel="preconnect" href="https://fonts.googleapis.com">'
             f'<link href="https://fonts.googleapis.com/css2?{fonts}&display=swap" rel="stylesheet">'
-            f'<link rel="stylesheet" href="{depth}site.css">'
+            f'<link rel="stylesheet" href="{depth}site.css?v={CSS_VERSION}">'
             f'<style>:root{{--bg:{c["bg"]};--gold:{c["accent"]};--red:{c["accent2"]};--ink:{ink};--soft:{soft};'
             f'--panel:{panel};--line:{line};--hf:"{t["head"]}",Georgia,serif;--bf:"{t["body"]}",Arial,sans-serif}}</style>'
             + _schema(f) + f'</head><body class="t-{f["theme"]}">')
@@ -184,13 +205,13 @@ def _nav(f, depth: str, on: str) -> str:
 
 
 def _footer(f) -> str:
-    soc = " · ".join(f'<a href="{e(u)}">{SOCIAL_NAME.get(k, k.title())}</a>' for k, u in f["socials"].items())
+    soc = _socials(f, "socials small")
     nap = " · ".join(x for x in (
         e(f["address"]),
         f'<a href="tel:+1{f["tel"]}">{e(f["phone"])}</a>' if f["phone"] else "",
         f'<a href="mailto:{e(f["email"])}">{e(f["email"])}</a>' if f["email"] else "") if x)
     return (f'<footer><div class="wrap"><b>{e(f["name"])}</b><p class="muted">{nap}</p>'
-            f'<p class="muted">{soc}</p><p class="muted small">© {f["year"]} {e(f["name"])} · '
+            f'{soc}<p class="muted small">© {f["year"]} {e(f["name"])} · '
             f'<a href="{f.get("_depth", "")}privacy/">Privacy policy</a></p>'
             f'</div></footer></body></html>')
 
@@ -237,15 +258,67 @@ def _path(f) -> str:
             f'<h2>Promoted on performance</h2><div class="grid">{rungs}</div>{note}</div></section>')
 
 
+_ICON = {  # simple brand marks, drawn inline so nothing loads from elsewhere
+    "instagram": '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.3" fill="currentColor"/></svg>',
+    "facebook": '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M14 8h3V4h-3c-2.8 0-4 1.7-4 4.2V10H7v4h3v7h4v-7h3l.5-4H14V8.6c0-.4.3-.6.6-.6z"/></svg>',
+    "linkedin": '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 9h4v11H4zM6 3a2 2 0 110 4 2 2 0 010-4zm5 6h3.8v1.6h.1c.5-1 1.8-1.9 3.6-1.9 3.9 0 4.5 2.5 4.5 5.8V20h-4v-4.8c0-1.2 0-2.7-1.6-2.7s-1.9 1.3-1.9 2.6V20h-4z"/></svg>',
+    "tiktok": '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M16 3c.4 2.2 1.8 3.6 4 3.9v3.3c-1.5 0-2.9-.4-4-1.1V15a6 6 0 11-6-6v3.3a2.7 2.7 0 102.7 2.7V3z"/></svg>',
+    "x": '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 3h4.5l4 5.6L17.3 3H20l-6.2 7.2L21 21h-4.5l-4.4-6.1L6.8 21H4l6.8-7.8z"/></svg>',
+    "youtube": '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M22 8.2s-.2-1.5-.9-2.2c-.8-.9-1.8-.9-2.2-1C15.8 4.8 12 4.8 12 4.8s-3.8 0-6.9.2c-.4.1-1.4.1-2.2 1-.7.7-.9 2.2-.9 2.2S2 10 2 11.8v1.6C2 15.2 2.2 17 2.2 17s.2 1.5.9 2.2c.8.9 1.9.8 2.4.9 1.7.2 6.5.2 6.5.2s3.8 0 6.9-.2c.4-.1 1.4-.1 2.2-1 .7-.7.9-2.2.9-2.2s.2-1.8.2-3.6v-1.6c0-1.8-.2-3.5-.2-3.5zM10 15V9l5 3z"/></svg>',
+}
+
+
+def _socials(f, cls: str = "socials") -> str:
+    if not f["socials"]:
+        return ""
+    return f'<div class="{cls}">' + "".join(
+        f'<a href="{e(u)}" aria-label="{SOCIAL_NAME.get(k, k.title())}" title="{SOCIAL_NAME.get(k, k.title())}">'
+        f'{_ICON.get(k, "")}</a>' for k, u in f["socials"].items()) + "</div>"
+
+
+def _faq(f, c: Dict) -> str:
+    """Applicant questions, answered only from facts we have."""
+    where = _where(f) or "our office"
+    qa = [("Do I need experience?", "No. We train you from your first day."),
+          ("Is there training?", "Yes. You learn the sales system hands-on, with a leader beside you."),
+          ("How do I move up?", "Promotions come from performance, not seniority."),
+          ("Where is the office?", f"{f['address']}." if f["address"] else f"In {where}."),
+          ("How do I apply?", "Tap Apply. It takes about 2 minutes, and we read every application.")]
+    if f["sells"]:
+        qa.insert(1, ("What will I be doing?", f"Talking with people face to face about {f['sells']}."))
+    items = "".join(f"<details class=\"qa\"><summary>{e(q)}</summary><p>{e(a)}</p></details>" for q, a in qa)
+    return (f'<section><div class="wrap"><span class="ey">Questions</span><h2>Before you apply</h2>'
+            f'<div class="faq">{items}</div></div></section>')
+
+
+def _where_section(f, depth: str) -> str:
+    if not f["address"]:
+        return ""
+    from urllib.parse import quote
+    q = quote(f["address"])
+    areas = f'<p class="body">We work across {e(", ".join(f["areas"]))}.</p>' if f["areas"] else ""
+    return (f'<section><div class="wrap two"><div><span class="ey">Location</span>'
+            f'<h2>Where you\'ll work</h2><p class="body"><b>{e(f["name"])}</b><br>{e(f["address"])}</p>{areas}'
+            + (f'<p class="body"><a href="tel:+1{f["tel"]}">{e(f["phone"])}</a></p>' if f["phone"] else "")
+            + f'<div class="ctarow left"><a class="cta" href="{e(_apply_href(f, depth))}">Apply now</a>'
+              f'<a class="cta ghost" href="https://www.google.com/maps/search/?api=1&query={q}">Directions</a></div></div>'
+              f'<iframe class="map" title="Map to {e(f["name"])}" loading="lazy" '
+              f'src="https://www.google.com/maps?q={q}&output=embed"></iframe></div></section>')
+
+
 def _sections(f, c: Dict, depth: str) -> Dict[str, str]:
     areas = f'<p class="body">Serving {e(", ".join(f["areas"]))}.</p>' if f["areas"] else ""
     gal = "".join(_img(f, i, depth, "g") for i in range(1, min(len(f["photos"]), 9) + 1)) if f["photos"] else ""
     return {
-        "what": (f'<section><div class="wrap two"><div><span class="ey">What we do</span>'
+        "what": (f'<section><div class="wrap two"><div><span class="ey">The job</span>'
                  f'<h2>{e(c["what_title"])}</h2><p class="body">{e(c["what_body"])}</p>{areas}</div>'
                  f'{_img(f, 1, depth, "pic")}</div></section>'),
         "why": (f'<section><div class="wrap two rev">{_img(f, 2, depth, "pic")}<div><span class="ey">Why join</span>'
                 f'<h2>{e(c["why_title"])}</h2><p class="body">{e(c["why_body"])}</p></div></div></section>'),
+        "faq": _faq(f, c),
+        "where": _where_section(f, depth),
+        "follow": (f'<section><div class="wrap"><span class="ey">Follow us</span><h2>See the team in action</h2>'
+                   f'{_socials(f, "socials big")}</div></section>') if f["socials"] else "",
         "gallery": (f'<section class="gal"><div class="wrap"><span class="ey">Life on the team</span>'
                     f'<div class="gallery">{gal}</div></div></section>') if gal else "",
         "path": _path(f),
@@ -278,7 +351,7 @@ def page_about(f, c) -> str:
 
 def page_contact(f, c) -> str:
     d = "../"
-    soc = " · ".join(f'<a href="{e(u)}">{SOCIAL_NAME.get(k, k.title())}</a>' for k, u in f["socials"].items())
+    soc = _socials(f, "socials small")
     maps = f'<br><a href="{e(f["google_link"])}">Find us on Google</a>' if f["google_link"] else ""
     rows = "".join(f'<div><div class="ey">{k}</div><p>{v}</p></div>' for k, v in (
         ("Address", e(f["address"]) + maps),
@@ -288,7 +361,7 @@ def page_contact(f, c) -> str:
     return (_head(f, "Contact", d, f"Contact {f['name']}: {f['address']} · {f['phone']}") + _nav(f, d, "Contact")
             + f'<section class="first"><div class="wrap"><span class="ey">Contact</span><h2>Get in touch</h2>'
               f'<div class="info">{rows}</div><div class="ctarow left"><a class="cta" href="{e(_apply_href(f, d))}">'
-              f'Apply in 2 minutes</a></div></div></section>' + _footer(f))
+              f'Apply in 2 minutes</a></div></div></section>' + _where_section(f, d) + _footer(f))
 
 
 def page_privacy(f, c) -> str:
@@ -328,7 +401,7 @@ def page_apply(f, c) -> str:
         go = f'<a class="cta big" href="tel:+1{f["tel"]}">Call us to apply</a>'
     return (_head(f, "Apply", d, c["meta_description"]) + _nav(f, d, "Apply")
             + _hero(f, d, f"Join {e(f['name'])}", e(c["apply_title"]), e(c["apply_sub"]), go, 4)
-            + _path(f) + _footer(f))
+            + _path(f) + _faq(f, c) + _where_section(f, d) + _footer(f))
 
 
 CSS = """*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--bf);line-height:1.6;-webkit-font-smoothing:antialiased}
@@ -364,17 +437,30 @@ section{padding:72px 0;border-top:1px solid var(--line)}section.first{border-top
 .band{background:var(--gold);color:#fff}.band .wrap{padding:44px 20px;display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}.band .cta{background:#fff;color:#111}
 .info{display:flex;flex-wrap:wrap;gap:24px 56px;margin-top:26px}.info p{margin:6px 0 0;font-size:17px}
 footer{border-top:1px solid var(--line);padding:34px 0}footer p{margin:6px 0 0}
+.socials{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}.socials a{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1.5px solid var(--line);border-radius:999px;text-decoration:none;font-weight:600;font-size:14px;color:var(--ink);background:var(--panel)}
+.socials a:hover{border-color:var(--gold);color:var(--gold)}.socials svg{width:20px;height:20px;flex:none}
+.socials.big a{padding:14px 22px;font-size:16px}.socials.big svg{width:28px;height:28px}
+.socials.small{margin-top:12px;gap:8px}.socials.small a{width:34px;height:34px;padding:0;justify-content:center;border-radius:50%}.socials.small svg{width:16px;height:16px}
+.hero.mosaic .socials,.hero.full .socials{justify-content:flex-start}.hero.mosaic .socials{justify-content:center}
+.map{width:100%;height:340px;border:0;border-radius:14px}
+.faq{margin-top:20px;display:grid;gap:10px;max-width:760px}.qa{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+.qa summary{cursor:pointer;font-weight:700;font-size:17px}.qa p{margin:8px 0 0;color:var(--soft)}
+.ctarow.left{justify-content:flex-start}
 @media(max-width:800px){.two,.two.rev{grid-template-columns:1fr}.tiles{grid-template-columns:1fr 1fr}.tiles .tile:first-child{grid-column:span 2}.tile{height:200px}
 .gallery,.t-mosaic .gallery{grid-template-columns:1fr 1fr}.burger{display:block}.nav{position:absolute;top:64px;left:0;right:0;flex-direction:column;align-items:stretch;gap:0;background:var(--bg);border-bottom:1px solid var(--line);display:none;padding:8px 0}.nav.open{display:flex}.nav a{padding:12px 20px}.nav a.navcta{margin:8px 20px;text-align:center}
 .hero .htext{padding:60px 0 50px}}
 """
 
 
+CSS_VERSION = __import__("hashlib").sha1(CSS.encode()).hexdigest()[:8]   # new CSS -> browsers re-download it
+
+
 def build(p, out: Optional[Path] = None, extra: Optional[Dict] = None, copy: Optional[Dict] = None) -> Path:
     from automations.online_presence import site_copy
     x = extras(p) if extra is None else extra
     f = facts(p, x)
-    c = copy or site_copy.copy_for(p, f, x.get("answers") or {})
+    c = dict(copy or site_copy.copy_for(p, f, x.get("answers") or {}))
+    c.update({k: v for k, v in (x.get("copy_edits") or {}).items() if k in c and str(v).strip()})
     out = out or OUT / p.key
     if out.exists():
         shutil.rmtree(out)

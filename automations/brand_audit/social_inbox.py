@@ -778,6 +778,12 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         imgs = _image_files(m)
         if not imgs:
             continue
+        # Lucy's / an app's own pictures (the Friday card, logo sheets) are not
+        # a dropped photo: never answer them with the New post button (Megan
+        # 2026-11-13: Jiraiya replied "tap New post" under the weekly card).
+        if (m.get("bot_id") or m.get("app_id") or m.get("subtype") == "bot_message") \
+                and not post_form.from_form(m):
+            continue
         ts = m["ts"]
         if ts not in state and not post_form.from_form(m):
             if float(ts) > float(since):

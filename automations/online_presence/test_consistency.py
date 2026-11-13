@@ -155,7 +155,27 @@ class SignupAnswers(unittest.TestCase):
             "Address": "100 Main St, Dallas, TX 75201", "Phone": "214 555 0100",
             "Website": "kash.example", "Google Listing Link": "https://maps.app.goo.gl/x",
             "Complaints Email": "hr@kash.example", "Approvers": "Kash Rai",
-            "Pages": ["Google"], "Slack Room": "create us one"}
+            "Pages": ["Google"], "Slack Room": "create us one", "Need Website": "Yes, I have one"}
+
+    def test_build_me_a_site_needs_name_and_story_not_a_website(self):
+        a = dict(self.GOOD, **{"Need Website": "No, build one for me", "Website": ""})
+        probs = " ".join(signup.problems(a))
+        self.assertNotIn("Add your website", probs)
+        self.assertIn("name idea", probs)
+        self.assertIn("how your office started", probs)
+        a.update({"Website Name Ideas": "kashsales.com", "Story Started": "Two of us in a garage.",
+                  "Story Different": "Leaders ride along."})
+        self.assertEqual(signup.problems(a), [])
+
+    def test_site_answers_become_site_json(self):
+        x = signup.site_extras({"Story Started": "Started in 2021.", "Story Different": "Small team.",
+                                "Site Look": "Warm (soft colors, framed photos)", "Brand Color": "#123456",
+                                "Areas Served": "Dallas, Irving", "Apply Link": "https://apply.example"})
+        self.assertEqual(x["theme"], "warm")
+        self.assertEqual(x["colors"], {"accent": "#123456"})
+        self.assertEqual(x["areas"], ["Dallas", "Irving"])
+        self.assertEqual(x["answers"]["started"], "Started in 2021.")
+        self.assertEqual(x["apply_url"], "https://apply.example")
 
     def test_good_form_passes_and_is_tidied(self):
         self.assertEqual(signup.problems(self.GOOD), [])

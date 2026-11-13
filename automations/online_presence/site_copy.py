@@ -21,11 +21,11 @@ MODEL = "claude-opus-5-5"
 
 FIELDS = {
     "hero_h1": "2 short lines, max 9 words total, punchy, about the opportunity. Use \\n between the lines.",
-    "hero_sub": "1-2 sentences: what they sell, where, and that no experience is needed.",
-    "what_title": "3-6 words",
-    "what_body": "2-3 sentences about the work itself.",
-    "why_title": "3-6 words",
-    "why_body": "2-3 sentences about the team and culture, from the owner's answers.",
+    "hero_sub": "1-2 sentences to a job seeker ('you'): what you'd do (selling what they sell), where, and that no experience is needed. Not a pitch to customers.",
+    "what_title": "3-6 words, about THE JOB (for job seekers)",
+    "what_body": "2-3 sentences to a job seeker ('you'): what the job is day to day, that we train you, that you're paid on performance.",
+    "why_title": "3-6 words, about the team culture",
+    "why_body": "2-3 sentences to a job seeker about the team and culture, from the owner's answers.",
     "about_title": "3-6 words",
     "about_story": "3-5 sentences: the office's own story from the owner's answers. If no story was given, describe the team plainly without inventing history.",
     "value_1_title": "1-2 words", "value_1_body": "1 sentence",
@@ -39,7 +39,7 @@ FIELDS = {
 _SCHEMA = {"type": "object", "properties": {k: {"type": "string"} for k in FIELDS},
            "required": list(FIELDS), "additionalProperties": False}
 
-_SYSTEM = """You write the website for one small door-to-door sales office. The site is recruiting-first: it turns visitors into job applicants, and also tells customers who the office is.
+_SYSTEM = """You write the website for one small door-to-door sales office. The site is RECRUITING-FIRST (Megan 2026-11-12): it is written to job seekers, in "you", to turn visitors into applicants. It is not a sales page for customers; mention what they sell only as what the job involves.
 
 Voice: confident, plain, like the owner talking. Short sentences. No buzzwords ("leading", "premier", "passionate", "elevate", "unparalleled", "solutions", "journey", "world-class"), no exclamation marks, no emojis, no em dashes.
 
