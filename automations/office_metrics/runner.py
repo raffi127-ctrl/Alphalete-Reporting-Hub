@@ -163,7 +163,14 @@ _HARVEST_ORDER_LOG_OFFICES = {"rashad"}
 _ACT_RATE_ORDER_LOG_OFFICES = {"aiden"}
 
 # Fiber offices that get the per-rep Activation Rate board (fiber_activation_rate).
-_FIBER_ACT_RATE_OFFICES = {"haytham"}
+# None = EVERY Fiber office (Eve 2026-11-12, after a day on Haytham only); a set
+# of office keys narrows it again.
+_FIBER_ACT_RATE_OFFICES = None
+
+
+def _gets_fiber_act_rate(o: Office) -> bool:
+    return not o.nds and (_FIBER_ACT_RATE_OFFICES is None
+                          or o.key in _FIBER_ACT_RATE_OFFICES)
 
 
 def _nds_metrics(o: Office) -> list[dict]:
@@ -374,9 +381,8 @@ def metrics_for(o: Office) -> list[dict]:
     ]
     # 📈 Activation Rate by Rep — 2 images (0-30 / 30-60), reps x last 7 days,
     # from the 'Fiber Activation Log' that fiber_activation_rate fills each
-    # morning (Raf 2026-11-12, at Haytham's). Haytham only until Raf says which
-    # other offices (Eve 2026-11-12).
-    if o.key in _FIBER_ACT_RATE_OFFICES:
+    # morning (Raf 2026-11-12, at Haytham's). Every Fiber office (Eve 11/12).
+    if _gets_fiber_act_rate(o):
         boards.append(dict(slug="activation_rate", label="📈 Activation Rate by Rep",
                            module="automations.fiber_activation_rate.slack_board",
                            owner_args=["--owner", o.owner], env={},
@@ -1262,7 +1268,7 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         # (Eve 2026-11-10: every office).
         if "order_log" in enrolled_slugs:
             enrolled_slugs.add("activations_today")
-        if o.key in _FIBER_ACT_RATE_OFFICES:
+        if _gets_fiber_act_rate(o):
             enrolled_slugs.add("activation_rate")
         default = [m for m in _full if m["slug"] in enrolled_slugs] or _full
     else:

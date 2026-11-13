@@ -8215,11 +8215,11 @@
   },
   "fiber_activation_rate": {
    "close_on": "exit_zero",
-   "order": 31.5,
+   "order": 26.1,
    "machine": "Lucy 4",
    "on_scheduler": true,
    "display_name": "Fiber Activation Rate by rep",
-   "_note": "Raf (Slack 11/12, at Haytham's): ongoing per-rep Fiber activation rate like the Ongoing Cancel image. Downloads ATTTRACKER2_1-D2D/Metrics/MetricsINTfullyEXP 'Metrics Call Last week data (Internet)' once (Rolling 4 Weeks + 30-60 activation, rep rows) and appends to the permanent 'Fiber Activation Log' (SANDBOX workbook until Eve says --real). Lucy 4 order 31.5 = right before haytham_metrics (32), whose thread posts the 2 images (office_metrics.runner _FIBER_ACT_RATE_OFFICES = haytham only, Eve 2026-11-12).",
+   "_note": "Raf (Slack 11/12, at Haytham's): ongoing per-rep Fiber activation rate like the Ongoing Cancel image. Downloads ATTTRACKER2_1-D2D/Metrics/MetricsINTfullyEXP 'Metrics Call Last week data (Internet)' once (Rolling 4 Weeks + 30-60 activation, rep rows) and appends to the permanent 'Fiber Activation Log' (SANDBOX workbook until Eve says --real). Lucy 4 order 26.1 = before EVERY Fiber office metrics thread (earliest hammad_metrics 26.2; all on Lucy 4), each of which posts the 2 images (office_metrics.runner _FIBER_ACT_RATE_OFFICES = None = all Fiber offices, Eve 2026-11-12). If a Fiber office's metrics ever moves before 26.1 or off Lucy 4, it posts yesterday's log.",
    "command": [
     "automations.fiber_activation_rate.run"
    ],
