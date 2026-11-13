@@ -239,7 +239,7 @@ def coverage(csv_path: Optional[Path], day: dt.date) -> int:
 # OWN thread next to Metrics (like the Order Log), so Metrics doesn't flood; the
 # Metrics thread gets one pointer line.
 PENDING_TITLE = "⏳ Pending Orders"
-PENDING_MAX_NAMES = 20   # same cap as the Order Log index (MAX_INDEX_NAMES)
+PENDING_MAX_NAMES = 24   # Eve 11/12: same as Raf's Order Log groups (~24 names per thread)
 
 
 def name_groups(reps, max_names: int = PENDING_MAX_NAMES):
