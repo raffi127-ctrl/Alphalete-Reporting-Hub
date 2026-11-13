@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import List, Tuple
 
 from automations.captainship_drafts.config import Captain, BUCKET_ORDER
+
+# Buckets that carry the Wireless tier pay legend (Raf 2026-11-12 18:42).
+TIER_LEGEND_BUCKETS = ("0-30", "90")
 from automations.new_internet_churn import render as _ni
 
 # Never more than this many columns, however much history a tab holds
@@ -73,11 +76,13 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
             src.render_mod.render_multi_week(
                 ws, sect, period, today, path,
                 n_weeks=filled.get(period, MAX_WEEKS), **per_kw)
-            if getattr(src, "wireless_tier_legend", False):
+            if (getattr(src, "wireless_tier_legend", False)
+                    and period in TIER_LEGEND_BUCKETS):
                 # Raf 2026-11-12: the Wireless tier buckets + $ per port line
-                # vs 3-3, on top of every bucket's board (Eve: tiers arriba,
-                # churn abajo, en todos los buckets). A legend that fails to draw
-                # must never cost the captain the board itself.
+                # vs 3-3, on top of the board (tiers arriba, churn abajo).
+                # Raf 18:42: only on 0-30 and 90 Day — the two the guys look
+                # at and the two the pay is built from; 30/60 stay plain.
+                # A legend that fails to draw must never cost the board.
                 try:
                     from automations.wireless_churn import tier_legend as _wtl
                     _wtl.add_to(path)
