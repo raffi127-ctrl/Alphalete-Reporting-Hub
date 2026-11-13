@@ -529,21 +529,52 @@ def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
     # plus the ones just created, which is where a create leaves them. One at
     # a time, carrying on past anybody that could not be finished.
     #
-    # THE ENGINE'S OWN WALK, AND IT CANNOT WORK YET. `__ansRunPerson` does
-    # the three tabs and saves each -- the right shape -- but it fills every
-    # dropdown with an in-page click, and the Beta rewrite ignores those
-    # (2026-11-12). So every starred dropdown stays empty and Apex refuses
-    # each save: it fails loudly rather than quietly, but it cannot finish
-    # anybody. `drive.complete_person` is the walk that was watched working;
-    # moving this loop onto it needs a Save step and a result that is read
-    # from the page rather than from the engine's rundown, and neither is
-    # built. Until then this raises instead of running a walk that is known
-    # not to complete a record.
-    raise RuntimeError(
-        "the unattended week still runs the engine's walk, whose dropdowns "
-        "the Beta rewrite ignores -- it would refuse every save. Complete "
-        "people with supervised.py until fill_week is moved onto "
-        "drive.complete_person.")
+    # NOT `__ansRunPerson`. It walks the three tabs and saves each -- the
+    # right shape -- but it fills every dropdown with an in-page click, and
+    # the Beta rewrite ignores those, so every starred dropdown would stay
+    # empty and Apex would refuse each save (2026-11-12).
+    #
+    # `drive.complete_person` is the walk that was watched working, and it is
+    # the SAME walk the supervised rehearsal runs. The only difference is who
+    # presses Save: there a person does, here `drive.save_tab` does -- which
+    # is required, not a convenience, because Apex will not let a filled tab
+    # be left unsaved and the way past that prompt discards the fill.
+    by_name = {pp.name: vv for pp, vv in ready}
+    working = [p for p in people
+               if need.get(p["name"], {}).get("need") in (drive.COMPLETE, drive.ADD)]
+    added, stuck = [], []
+    for person in working:
+        name = person["name"]
+        apex_id = (need.get(name) or {}).get("id") or ""
+        if not apex_id:
+            # A create leaves them on Pending but the triage ran BEFORE it,
+            # so it has no id for them. Re-reading the roster per person is
+            # the next piece; until then they are reported, never guessed at.
+            stuck.append({"name": name,
+                          "why": "no Apex id yet — created this run, so it "
+                                 "needs a fresh look at the roster"})
+            continue
+        hire = hires.get(name)
+        try:
+            walked = drive.complete_person(
+                page, person, apex_id, values=by_name.get(name, {}),
+                social=(getattr(hire, "ssn", None) if hire is not None else None),
+                save=(lambda _tab, got, _id=apex_id: drive.save_tab(page, _id, got, log=log)),
+                log=log)
+        except Exception as e:      # noqa: BLE001 -- carry on past one person
+            log("  %s: %s" % (name, type(e).__name__))
+            stuck.append({"name": name, "why": "%s while filling" % type(e).__name__})
+            continue
+        short = [t for t, _p, _v in drive.TABS if t not in walked]
+        if short:
+            # SILENCE IS NOT A SAVE, and neither is a partial walk.
+            stuck.append({"name": name,
+                          "why": "stopped before " + ", ".join(short)})
+        else:
+            added.append(name)
+    out = {"added": added, "blocked": stuck}
+    out["blocked"] = list(out["blocked"]) + by_hand
+    return out
 
 
 def _from_report(report, names: Sequence[str], log=print) -> Dict:

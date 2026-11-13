@@ -374,12 +374,14 @@ def test_the_complete_rehearsal_never_calls_runPerson():
         assert "__ansRunPerson" not in src, "%s must not save" % fn.__name__
     # and the rehearsal's own pause is what stands between a filled tab and a
     # saved one: it hands complete_person a callback that waits for a person.
-    # Nothing holds the Save because nothing presses it: complete_person is
-    # called with no `save` callback at all, so it fills and stops. The
-    # person presses Save in Apex, where they are already looking -- the
-    # terminal keypress this used to need was a step Megan could not find.
+    # The callback WAITS for a save, it does not press one. Apex will not
+    # let a filled tab be left unsaved, so the walk has to pause there --
+    # and it pauses on the save itself, which it watches for, not on a
+    # keypress in a terminal Megan could not find.
     src = inspect.getsource(SUP._complete)
-    assert "save=" not in src, "nothing here may press Save"
+    assert "drive.wait_for_save(" in src, "it waits for the save"
+    assert "input()" not in src, "nothing waits on a keyboard"
+    assert ".click(" not in src, "nothing here may press Save"
     assert "_hold_open(page, log=log)" in src, "the window stays open to read"
 
 
@@ -480,9 +482,9 @@ def test_the_summary_names_only_the_tabs_it_filled():
     src = inspect.getsource(SUP._complete)
     # THE LINES IT PRINTS, not the comments explaining why. A comment that
     # records the bug is not the bug.
-    printed = [l for l in src.splitlines()
-               if "log(" in l and not l.strip().startswith("#")]
-    assert not any("ALL THREE TABS" in l for l in printed), \
-        "it cannot claim three tabs"
-    assert "if tab in walked:" in src, "list what was filled"
-    assert any("not reached" in l for l in printed), "and say what was not"
+    code = "\n".join(l for l in src.splitlines()
+                      if not l.strip().startswith("#"))
+    assert "ALL THREE TABS" not in code, "it cannot claim three tabs"
+    assert "tab in walked" in code, "list what was filled"
+    assert "NOT reached" in code, "and say what it did not reach"
+    assert "Stopped before" in code, "and that it stopped early"

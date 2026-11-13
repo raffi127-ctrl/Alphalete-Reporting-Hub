@@ -299,6 +299,10 @@ def set_dropdown(page, label: str, value: str, log=print) -> bool:
     The hidden ...ID stays empty for a moment afterwards -- Apex writes it on
     blur or submit -- so this checks what the widget DISPLAYS, not the id.
     """
+    # PUT THE LAST LIST AWAY FIRST -- see settle_popups. The five dropdowns
+    # on the employment tab are set one after another, so each one opens on
+    # top of the one before it.
+    settle_popups(page)
     box = page.evaluate(
         """(L) => { const el = window.__ansFieldFor(L);
              if (!el) return '';
@@ -324,7 +328,9 @@ def set_dropdown(page, label: str, value: str, log=print) -> bool:
         log("    %s: could not pick %r (%s)" % (label, value, type(e).__name__))
         page.evaluate("() => document.querySelectorAll('[data-ans-pick]')"
                       ".forEach(e => e.removeAttribute('data-ans-pick'))")
+        settle_popups(page)
         return False
+    settle_popups(page)
     shown = page.evaluate(
         """(L) => { const el = window.__ansFieldFor(L);
              const sp = el && el.parentElement.querySelector('.k-dropdown, .k-widget');
@@ -493,8 +499,44 @@ def _mark_by_name(page, name: str) -> str:
            }""", [name, _MARK])
 
 
+def settle_popups(page, *, seconds: float = 4.0) -> bool:
+    """Close any dropdown list still on screen, and wait for it to go.
+
+    MEASURED, not guessed (2026-11-12). Country timed out picking 'United
+    States' while a probe that opened the same dropdown on its own read the
+    list fine -- `['Canada', 'United States']`, the exact text it was looking
+    for. The difference was what came just before: in the real run State is
+    picked immediately beforehand, and ITS popup was still on screen. The
+    driver waits for the next widget to be able to receive a click, the stale
+    overlay is over it, and the wait runs out.
+
+    So every pick ends by putting the list away. Escape, then wait for the
+    container to actually be gone -- a popup mid-animation still swallows a
+    click.
+    """
+    try:
+        page.keyboard.press("Escape")
+    except Exception:      # noqa: BLE001
+        pass
+    for _ in range(max(1, int(seconds * 10))):
+        try:
+            open_now = page.evaluate(
+                """() => [...document.querySelectorAll(
+                     '.k-animation-container, .k-list-container')]
+                     .filter(e => e.offsetParent).length""")
+        except Exception:  # noqa: BLE001 -- mid-navigation
+            return True
+        if not open_now:
+            return True
+        page.wait_for_timeout(100)
+    return False
+
+
 def set_dropdown_by_name(page, name: str, value: str, log=print) -> bool:
     """Pick `value` in the dropdown whose input is called `name`."""
+    # PUT THE LAST LIST AWAY FIRST. A popup still on screen covers this
+    # widget and the click times out -- that is what broke Country.
+    settle_popups(page)
     if not _mark_by_name(page, name):
         log("    %s: no box" % name)
         return False
@@ -508,7 +550,9 @@ def set_dropdown_by_name(page, name: str, value: str, log=print) -> bool:
         page.wait_for_timeout(600)
     except Exception as e:     # noqa: BLE001
         log("    %s: could not pick %r (%s)" % (name, value, type(e).__name__))
+        settle_popups(page)
         return False
+    settle_popups(page)
     shown = page.evaluate(
         "(m) => { const e = document.querySelector('[' + m + '-widget]');"
         " return e ? (e.innerText || '').replace(/\\s+/g, ' ').trim() : ''; }", _MARK)
@@ -724,9 +768,23 @@ def go_tab(page, apex_id, path: str, *, people=None, log=print) -> bool:
     """Move to one of an employee's three tabs, and come back loaded.
 
     EVERY TAB IS A FULL PAGE LOAD, so the injected script goes with it and has
-    to be put back on the other side -- and `page.goto` is no use here: Apex
-    lands every session on its change-password page and a typed URL redirects
-    straight back to it. The way across is the app's own navigation.
+    to be put back on the other side.
+
+    A DRIVER CLICK ON THE TAB LINK, and nothing else. Measured on the live
+    site 2026-11-12 (probe_nav):
+
+      * there is NO Angular on a record at all -- `angular: False`, no
+        injector, no $state. The `ui-sref=".userProfile"` on each tab link is
+        a dead attribute with no handler, so the link is a plain anchor.
+      * a driver click on it navigates, every time, on a CLEAN form.
+      * a direct navigation does NOT work: the server answers 302 and sends
+        the session to its change-password page. So no `page.goto`, and no
+        `location.assign` either -- that was tried and bounced.
+
+    A DIRTY FORM HOLDS THE PAGE. Apex raises a confirm() when you leave a tab
+    with unsaved typing (probe_dirty, 2026-11-12). The dialog is DISMISSED,
+    never accepted: accepting it throws away what was just typed. So a tab
+    has to be saved before the next one can be opened -- see wait_for_save.
     """
     where = "/employees/%s/edit/%s" % (apex_id, path)
     if where in (page.url or ""):
@@ -764,27 +822,74 @@ def go_tab(page, apex_id, path: str, *, people=None, log=print) -> bool:
             log("    no link to %s on this page" % path)
 
     if where not in (page.url or ""):
-        # THE URL, DIRECTLY. The tab links are real and their hrefs are
-        # right -- probe_tabs read them off the live record -- but each one
-        # carries ui-sref=".userProfile" and friends. UI-Router's handler
-        # cancels the click and then tries a transition through an injector
-        # that is not there any more, so BOTH a page click and a driver click
-        # are swallowed and the page never moves (2026-11-12).
-        #
-        # location.assign is not an event, so nothing can intercept it.
-        # `page.goto` is still avoided: Apex bounces a typed URL back to its
-        # change-password page at the start of a session.
-        try:
-            page.evaluate("(u) => { window.location.assign(u); }", where)
-            page.wait_for_load_state("domcontentloaded", timeout=20000)
-            page.wait_for_timeout(1200)
-        except Exception as e:     # noqa: BLE001
-            log("    could not go to %s (%s)" % (path, type(e).__name__))
-
-    if where not in (page.url or ""):
         log("    did not land on %s (sitting on %s)" % (path, page.url))
         return False
     return keep_loaded(page, people, "", log=lambda *a: None)
+
+
+def guard_unsaved(page, log=print) -> list:
+    """Never let a confirm() throw away what was just typed.
+
+    Apex asks "are you sure" when a tab with unsaved typing is left, and
+    Playwright's default is to dismiss a dialog -- which is the SAFE answer
+    here and the one we want, but only by accident. Made deliberate, and
+    recorded, so a run can say "that tab is still unsaved" instead of looking
+    like a click that did nothing (2026-11-12).
+
+    Returns the list it appends to, so the caller can see them fire.
+    """
+    seen: list = []
+
+    def _on(d):
+        seen.append(d.type)
+        try:
+            d.dismiss()        # STAY. Accepting discards the fill.
+        except Exception:      # noqa: BLE001 -- already handled elsewhere
+            pass
+
+    page.on("dialog", _on)
+    return seen
+
+
+def wait_for_save(page, apex_id, *, seconds: int = 900, log=print) -> bool:
+    """Wait until the person has saved the tab that is on screen.
+
+    NOT a keypress in a terminal. The first version stopped and waited for
+    Return, and Megan could not find the terminal (2026-11-12) -- a step
+    somebody cannot find is a step that does not work.
+
+    A save is a POST to this employee's own URL, so it can simply be watched
+    for. That is a direct observation of the thing itself, not a guess from a
+    page that looks different afterwards.
+    """
+    done = []
+    want = "/employees/%s" % apex_id
+
+    def _on(res):
+        try:
+            if (res.request.method or "GET").upper() == "GET":
+                return
+            if want in (res.url or "") and 200 <= res.status < 400:
+                done.append(res.url)
+        except Exception:      # noqa: BLE001 -- the page may be navigating
+            pass
+
+    page.on("response", _on)
+    try:
+        for i in range(max(1, seconds * 2)):
+            if done:
+                log("    (saved after %.0fs)" % (i * 0.5))
+                page.wait_for_timeout(1500)
+                return True
+            page.wait_for_timeout(500)
+    finally:
+        try:
+            page.remove_listener("response", _on)
+        except Exception:      # noqa: BLE001
+            pass
+    log("    nobody saved this tab in %d minutes -- stopping here rather than "
+        "leaving it" % (seconds // 60))
+    return False
 
 
 def fill_employment(page, who, log=print) -> dict:
@@ -834,14 +939,26 @@ def complete_person(page, who, apex_id, *, values=None, social=None,
     `save` is called as save(tab, result) after each tab is filled and must
     return True to carry on. It gets that tab's result rather than having to
     wait for the return value, so a caller can report what Apex will refuse
-    BEFORE the person presses Save. Passing None fills every tab and presses
-    nothing, which is what the supervised rehearsal wants.
+    BEFORE the tab is saved.
+
+    IT IS NOT OPTIONAL ANY MORE, AND HERE IS WHY. The first version filled
+    all three tabs and left the saving to the end. Apex does not allow that:
+    it raises a confirm() when a tab with unsaved typing is left, and the
+    only way past is to accept it, which THROWS AWAY the fill (probe_dirty,
+    2026-11-12). So each tab has to be saved before the next is opened, and
+    `save` is where that happens -- by watching for the save with
+    wait_for_save, or by pressing it, depending on the caller. Passing None
+    fills the first tab and stops, because that is all that is possible
+    without saving.
 
     Returns {tab: {"set": [...], "missed": [...], "absent": [...]}} for the
     tabs it reached. A tab that is absent from the result was never filled --
     silence is not a save, here either.
     """
     values = values or who.get("_values") or {}
+    # NEVER accept the unsaved-changes confirm: accepting it discards the
+    # fill. Installed before the first tab is touched.
+    rang = guard_unsaved(page, log=log)
     out = {}
     for tab, path, prove in TABS:
         if not go_tab(page, apex_id, path, people=[who], log=log):
@@ -864,7 +981,120 @@ def complete_person(page, who, apex_id, *, values=None, social=None,
         log("    set: %s" % (", ".join(got["set"]) or "nothing"))
         if got["missed"]:
             log("    NOT set: %s" % ", ".join(got["missed"]))
+        if rang:
+            log("    Apex asked about unsaved changes (%s) and was told to "
+                "stay -- nothing was discarded." % ", ".join(rang))
+            rang.clear()
         out[tab] = got
-        if save is not None and not save(tab, got):
+        if save is None:
+            # Nothing may save, so nothing may move on: the next tab is
+            # behind a confirm() that would discard this one.
+            log("    (stopping here -- the next tab cannot be opened until "
+                "this one is saved)")
+            break
+        if not save(tab, got):
             break
     return out
+
+
+# ------------------------------------------------------------ pressing Save
+SAVE_WORDS = ("save", "submit", "update")
+
+
+def find_save(page) -> str:
+    """Mark the tab's own Save control. Returns what it says, or ''."""
+    return page.evaluate(
+        """(words) => {
+             document.querySelectorAll('[data-ans-save]')
+               .forEach(e => e.removeAttribute('data-ans-save'));
+             const cands = [...document.querySelectorAll(
+               'button, input[type=submit], a.btn')];
+             const hit = cands.find(e => {
+               if (!e.offsetParent || e.disabled) return false;
+               const t = ((e.innerText || e.value || '') + ' ' +
+                          (e.getAttribute('aria-label') || ''))
+                         .replace(/\\s+/g, ' ').trim().toLowerCase();
+               return t.length < 24 && words.some(w => t === w || t.startsWith(w + ' '));
+             });
+             if (!hit) return '';
+             hit.setAttribute('data-ans-save', '1');
+             return ((hit.innerText || hit.value || 'Save')
+                     .replace(/\\s+/g, ' ').trim().slice(0, 24)); }""",
+        list(SAVE_WORDS))
+
+
+def save_tab(page, apex_id, got=None, *, log=print, seconds: int = 60) -> bool:
+    """Press Save on the tab that is on screen, and prove it went through.
+
+    THE AUTOMATED HALF. The supervised run waits for a person to press this;
+    an ICD machine has nobody to wait for, and Apex will not let a filled tab
+    be left unsaved, so the code has to press it (Megan, 2026-11-12: "but we
+    want this fully automated").
+
+    IT REFUSES RATHER THAN SAVE SOMETHING WRONG. A tab with a required box
+    nobody has a value for, or a box holding a value that is not the one we
+    asked for, is not saved at all: Apex would refuse it anyway, and the one
+    outcome that must never happen is a wrong number landing on a real
+    payroll record.
+
+    A save is only a save when the POST comes back, so this watches for it
+    rather than trusting that the click looked fine.
+    """
+    got = got or {}
+    if got.get("absent"):
+        log("    NOT SAVED -- no value for: %s" % ", ".join(got["absent"]))
+        return False
+    if got.get("missed"):
+        log("    NOT SAVED -- these did not take: %s" % ", ".join(got["missed"]))
+        return False
+
+    which = find_save(page)
+    if not which:
+        log("    NOT SAVED -- no Save control on this tab")
+        return False
+
+    posted = []
+    want = "/employees/%s" % apex_id
+
+    def _on(res):
+        try:
+            if (res.request.method or "GET").upper() == "GET":
+                return
+            if want in (res.url or "") and 200 <= res.status < 400:
+                posted.append(res.status)
+        except Exception:      # noqa: BLE001 -- mid-navigation
+            pass
+
+    page.on("response", _on)
+    try:
+        page.click("[data-ans-save]", timeout=8000)
+        for _ in range(max(1, seconds * 2)):
+            if posted:
+                break
+            page.wait_for_timeout(500)
+    except Exception as e:     # noqa: BLE001
+        log("    NOT SAVED -- %r raised %s" % (which, type(e).__name__))
+        return False
+    finally:
+        try:
+            page.remove_listener("response", _on)
+        except Exception:      # noqa: BLE001
+            pass
+
+    if not posted:
+        log("    NOT SAVED -- pressed %r and nothing was posted" % which)
+        return False
+    page.wait_for_timeout(1500)
+    # AND APEX MUST NOT BE OBJECTING. A validation failure posts too, and a
+    # run that calls that a save is the "green means delivered" mistake on a
+    # payroll record.
+    objects = page.evaluate(
+        """() => [...document.querySelectorAll(
+             '.validation-summary-errors, .field-validation-error, .alert-danger')]
+             .map(e => (e.innerText || '').replace(/\\s+/g, ' ').trim())
+             .filter(Boolean).slice(0, 4)""")
+    if objects:
+        log("    NOT SAVED -- Apex objects: %s" % "; ".join(objects))
+        return False
+    log("    saved (%r)" % which)
+    return True

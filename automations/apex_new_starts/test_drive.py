@@ -380,21 +380,168 @@ def test_moving_between_tabs_falls_back_to_a_real_click():
         "try the page's own navigation first, then click it for real"
 
 
-def test_a_tab_is_reached_by_url_when_the_router_swallows_the_click():
-    """The tab links are real and their hrefs are right, but each carries
-    ui-sref=".userProfile": UI-Router cancels the click and then fails,
-    because the injector is gone. A page click and a driver click are both
-    swallowed, so the last resort is location.assign, which is not an event
-    and cannot be intercepted (2026-11-12)."""
+def test_a_tab_is_reached_only_by_clicking_its_link():
+    """Measured on the live site, 2026-11-12 (probe_nav):
+
+      * there is no Angular on a record at all, so the ui-sref on each tab
+        link has no handler and the link is a plain anchor
+      * a driver click on it navigates every time, on a clean form
+      * a DIRECT navigation is refused: the server answers 302 and sends the
+        session to its change-password page
+
+    So the click is the only way, and both location.assign and page.goto are
+    dead ends that were each tried and each bounced."""
     import inspect
-    src = inspect.getsource(drive.go_tab)
-    assert "window.location.assign" in src
-    # LAST, after the two clicks -- and never page.goto, which Apex bounces
-    # back to its change-password page.
-    assert src.index("[data-ans-tab]") < src.index("location.assign")
-    # and never page.goto, which Apex bounces to its change-password page.
-    # THE CODE: the docstring and the comments both say why there isn't one,
-    # and an explanation of a rule is not a breach of it.
-    body = src.split('"""', 2)[-1]
+    body = inspect.getsource(drive.go_tab).split('"""', 2)[-1]
     code = [l for l in body.splitlines() if not l.strip().startswith("#")]
-    assert not any("page.goto" in l for l in code)
+    assert any("[data-ans-tab]" in l for l in code), "click the link"
+    for dead in ("page.goto", "location.assign"):
+        assert not any(dead in l for l in code), "%s is bounced by Apex" % dead
+
+
+def test_the_unsaved_changes_confirm_is_always_dismissed():
+    """Apex raises a confirm() when a tab with unsaved typing is left. The
+    dialog has to be DISMISSED: accepting it navigates away and throws the
+    fill on the floor (probe_dirty, 2026-11-12)."""
+    import inspect
+    src = inspect.getsource(drive.guard_unsaved)
+    assert "d.dismiss()" in src
+    assert "d.accept()" not in src, "accepting discards what was typed"
+    walk = inspect.getsource(drive.complete_person)
+    assert walk.index("guard_unsaved(") < walk.index("for tab, path, prove")
+
+
+def test_no_tab_is_left_behind_an_unsaved_one():
+    """Each tab must be saved before the next opens -- the next one is behind
+    the confirm, and the only way through it discards this one. So a walk
+    with nothing to save fills ONE tab and stops, rather than carrying on and
+    losing the work."""
+    import inspect
+    src = inspect.getsource(drive.complete_person)
+    assert "if save is None:" in src
+    assert src.index("if save is None:") < src.index("if not save(tab, got):")
+    assert "cannot be opened until" in src, "and it says why it stopped"
+
+
+def test_a_save_is_watched_for_not_asked_for():
+    """A POST to the employee's own URL IS the save -- a direct observation,
+    not a guess from a page that looks different afterwards. And not a
+    keypress in a terminal: that was the first version, and a step somebody
+    cannot find is a step that does not work."""
+    import inspect
+    src = inspect.getsource(drive.wait_for_save)
+    assert 'want in (res.url or "")' in src
+    assert "GET" in src, "a GET is not a save"
+    assert "input()" not in src, "nothing waits on a keyboard"
+
+
+# ------------------------------------------------- pressing Save by machine
+
+class _Saver:
+    """A page that records the Save click and can refuse to post."""
+
+    def __init__(self, *, found="Save", post=True, objects=()):
+        self.found, self.post, self.objects = found, post, list(objects)
+        self.clicks, self.handlers = [], []
+
+    def evaluate(self, js, arg=None):
+        if "data-ans-save" in js and "removeAttribute" in js:
+            return self.found
+        if "validation-summary-errors" in js:
+            return self.objects
+        return ""
+
+    def on(self, what, fn):
+        self.handlers.append((what, fn))
+
+    def remove_listener(self, what, fn):
+        pass
+
+    def click(self, sel, timeout=None):
+        self.clicks.append(sel)
+        if not self.post:
+            return
+        res = type("R", (), {
+            "url": "https://apex.example/employees/42/edit",
+            "status": 200,
+            "request": type("Q", (), {"method": "POST"})()})()
+        for what, fn in self.handlers:
+            if what == "response":
+                fn(res)
+
+    def wait_for_timeout(self, ms):
+        pass
+
+
+def test_nothing_is_saved_when_a_required_box_has_no_value():
+    """Apex would refuse it anyway, and a refused save leaves the form dirty
+    -- which blocks every tab after it."""
+    page = _Saver()
+    said = []
+    assert not drive.save_tab(page, 42, {"absent": ["gender"]}, log=said.append)
+    assert page.clicks == [], "it must not even press Save"
+    assert "gender" in said[0]
+
+
+def test_nothing_is_saved_when_a_box_holds_the_wrong_value():
+    """The $10.10 case. A wrong number on a payroll record is the one outcome
+    nobody would ever see was wrong, so it never reaches Save."""
+    page = _Saver()
+    said = []
+    assert not drive.save_tab(page, 42, {"missed": ["Rate of Pay"]}, log=said.append)
+    assert page.clicks == []
+    assert "Rate of Pay" in said[0]
+
+
+def test_a_save_is_only_a_save_when_the_post_comes_back():
+    """A click that looked fine is not a save. This is the 'green means
+    delivered' rule, on a payroll record."""
+    page = _Saver(post=False)
+    said = []
+    assert not drive.save_tab(page, 42, {}, log=said.append, seconds=1)
+    assert "nothing was posted" in said[-1]
+    assert drive.save_tab(_Saver(post=True), 42, {}, log=lambda *a: None)
+
+
+def test_apex_objecting_is_not_a_save():
+    """A validation failure POSTs too. Calling that a save is exactly the
+    mistake that must never pass here."""
+    page = _Saver(objects=["Rate of Pay is required."])
+    said = []
+    assert not drive.save_tab(page, 42, {}, log=said.append)
+    assert "Apex objects" in said[-1]
+
+
+def test_no_save_control_is_reported_not_assumed():
+    page = _Saver(found="")
+    said = []
+    assert not drive.save_tab(page, 42, {}, log=said.append)
+    assert "no Save control" in said[0]
+
+
+def test_every_pick_puts_the_list_away():
+    """Country timed out picking 'United States' while a probe that opened
+    the same dropdown on its own read `['Canada', 'United States']` straight
+    off it -- the exact text. The difference was State being picked
+    immediately beforehand, with its popup still on screen covering the next
+    widget (2026-11-12). So a pick settles the popups before it opens one and
+    after it picks."""
+    import inspect
+    for fn in (drive.set_dropdown, drive.set_dropdown_by_name):
+        src = inspect.getsource(fn)
+        body = src.split('"""', 2)[-1]
+        first_click = body.index("page.click(")
+        assert "settle_popups(page)" in body[:first_click], \
+            "%s must clear the last popup before opening one" % fn.__name__
+        assert body.count("settle_popups(page)") >= 2, \
+            "%s must put its own list away too" % fn.__name__
+
+
+def test_settling_waits_for_the_popup_to_actually_go():
+    """A container mid-animation still swallows a click, so pressing Escape
+    is not enough on its own."""
+    import inspect
+    src = inspect.getsource(drive.settle_popups)
+    assert "Escape" in src
+    assert "k-animation-container" in src
+    assert "offsetParent" in src, "gone means not rendered, not just marked"
