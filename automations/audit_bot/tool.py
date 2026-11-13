@@ -78,7 +78,45 @@ def _action_grep(args: str) -> tuple[bool, str]:
                   f"-> `lucy logtail {stem} . 40`")
 
 
+def _action_regrade(args: str) -> tuple[bool, str]:
+    """Start a SILENT regrade (automations/audit_bot/regrade.py) of the reports
+    listed in automations/audit_bot/regrade_lists/<name>.txt, detached, in the
+    bot's own venv. Returns at once; progress goes to output/logs/.
+
+      audit_bot_tool regrade company_name
+      audit_bot_tool regrade colten company_name"""
+    import os
+    import subprocess
+    root, rest, label = mc._audit_bot_root(shlex.split(args or ""))
+    if not rest:
+        return False, "usage: audit_bot_tool regrade [colten] <list name>"
+    here = mc.REPO_ROOT / "automations" / "audit_bot"
+    lst = here / "regrade_lists" / f"{rest[0]}.txt"
+    if not lst.is_file():
+        return False, f"no list {lst.name} (run `update` first?)"
+    py = root / ".runtime" / "venv" / "bin" / "python"
+    if not py.exists():
+        return False, f"no bot venv at {py}"
+    ps = subprocess.run(["ps", "-axo", "command"], capture_output=True, text=True,
+                        timeout=15).stdout
+    if any("regrade.py" in l and str(lst) in l for l in ps.splitlines()):
+        return False, f"[{label}] a regrade of {lst.name} is already running"
+    log = mc.REPO_ROOT / "output" / "logs" / f"regrade-{label}-{rest[0]}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    env["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib:" + env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    argv = [str(py), str(here / "regrade.py"), str(lst)] + (["colten"] if label == "colten" else [])
+    with open(log, "a", encoding="utf-8") as fh:
+        p = subprocess.Popen(argv, cwd=str(root / ".runtime"), stdout=fh,
+                             stderr=subprocess.STDOUT, env=env, start_new_session=True)
+    n = sum(1 for ln in lst.read_text(encoding="utf-8").splitlines() if ln.strip())
+    return True, (f"[{label}] regrade of {n} report(s) started, pid {p.pid} — "
+                  f"progress `lucy logtail regrade-{label}-{rest[0]} . 20`, "
+                  f"results `logdump regrade-{label}-{rest[0]}.tsv`")
+
+
 _ACTIONS = {
+    "regrade": _action_regrade,
     "grep": _action_grep,
     "channels": _action_channels,
     "snapshot": mc._action_audit_bot_snapshot,
