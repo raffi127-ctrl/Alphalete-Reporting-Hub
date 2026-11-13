@@ -767,6 +767,81 @@ def eco_zero_lines(sales: Dict, knock_rows: List[Dict], campaign=None,
     return ["", "Reps on a Zero:"] + names if names else []
 
 
+def _standings_board(key, day, office, board_sales, flames, show, tab,
+                     knocks_today, log=print):
+    """The whole day's standings the text group gets -- the scoreboard plus
+    the headcount block, zero names and no-row note. Returns (board,
+    knocks_today) so the knocks are read at most once a pass."""
+    from automations.icd_alerts import config as _CFG
+    from automations.icd_alerts import knocks_post as _KP
+    board = scoreboard_text(board_sales, flames, office.campaign, show,
+                            teams=_KP._teams_for(office, day))
+    if not board:
+        return board, knocks_today
+    # RAF'S HEADCOUNT BLOCK under the totals, same as his partner chat
+    # (Megan 2026-10-22). Knocks read once, on first need.
+    if knocks_today is None:
+        knocks_today = _knocks_today(tab.spreadsheet, day)
+    from automations.alphalete_sales_board import notify as N
+    stats, unlisted = board_reads(key, day, board_sales, log=log)
+    if stats is None:
+        stats = eco_headcount(board_sales, knocks_today.get(key),
+                              office.campaign, show)
+    hc = N.headcount_lines(stats)
+    if hc:
+        board += "\n" + "\n".join(hc)
+    if _CFG.zero_names_wanted(key):
+        zeros = eco_zero_lines(board_sales, knocks_today.get(key),
+                               office.campaign, show)
+        if zeros:
+            board += "\n" + "\n".join(zeros)
+    # Last, where Lucy 1 puts it: who sold with no row on the board.
+    note = no_row_note(unlisted)
+    if note:
+        board += "\n" + "\n".join(note)
+    return board, knocks_today
+
+
+SLACK_STANDINGS_PATH = (Path.home() / ".config" / "recruiting-report"
+                        / "icd_slack_standings.json")
+
+
+def slack_standings_due(was: Optional[int], total: int, every: int,
+                        first_read: bool = False) -> Tuple[bool, int]:
+    """(post now?, step to record). Posts each time TOTALS reaches the next
+    multiple of `every` -- 3, 6, 9 -- once each, even if two sales land in one
+    read. Nothing recorded yet today, or the day's first read: record, no post."""
+    step = int(total) // int(every)
+    if was is None or first_read:
+        return False, step
+    return step > was, max(step, was)
+
+
+def _slack_standings_step(key: str, day: dt.date) -> Optional[int]:
+    """Which multiple of N the office's Slack standings last went out at
+    today; None = nothing recorded yet today."""
+    try:
+        v = json.loads(SLACK_STANDINGS_PATH.read_text()).get(
+            "%s|%s" % (day.isoformat(), key))
+    except (OSError, ValueError):
+        return None
+    return None if v is None else int(v)
+
+
+def _save_slack_standings_step(key: str, day: dt.date, step: int) -> None:
+    try:
+        seen = json.loads(SLACK_STANDINGS_PATH.read_text())
+    except (OSError, ValueError):
+        seen = {}
+    seen = {k: v for k, v in seen.items() if k.startswith(day.isoformat())}
+    seen["%s|%s" % (day.isoformat(), key)] = int(step)
+    try:
+        SLACK_STANDINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SLACK_STANDINGS_PATH.write_text(json.dumps(seen, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+
 def _knocks_today(book, day: dt.date) -> Dict[str, List[Dict]]:
     """{office key: today's relayed knock rows}, ONE read of 'ICD Knocks'
     for the whole tick. {} if the tab is missing or unreadable -- the block
@@ -1990,31 +2065,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         if (sold or (sales_baseline and merged_sales)) and texts.get(key)                 and key in TEXT_PAUSED:
             log("%-10s standings text paused -- %s" % (key, TEXT_PAUSED[key]))
         elif (sold or (sales_baseline and merged_sales)) and texts.get(key):
-            board = scoreboard_text(board_sales, [] if sales_baseline else sold,
-                                    office.campaign, show,
-                                    teams=_KP._teams_for(office, day))
-            if board:
-                # RAF'S HEADCOUNT BLOCK under the totals, same as his partner
-                # chat (Megan 2026-10-22). Knocks read once, on first need.
-                if knocks_today is None:
-                    knocks_today = _knocks_today(tab.spreadsheet, day)
-                from automations.alphalete_sales_board import notify as N
-                stats, unlisted = board_reads(key, day, board_sales, log=log)
-                if stats is None:
-                    stats = eco_headcount(board_sales, knocks_today.get(key),
-                                          office.campaign, show)
-                hc = N.headcount_lines(stats)
-                if hc:
-                    board += "\n" + "\n".join(hc)
-                if _CFG.zero_names_wanted(key):
-                    zeros = eco_zero_lines(board_sales, knocks_today.get(key),
-                                           office.campaign, show)
-                    if zeros:
-                        board += "\n" + "\n".join(zeros)
-                # Last, where Lucy 1 puts it: who sold with no row on the board.
-                note = no_row_note(unlisted)
-                if note:
-                    board += "\n" + "\n".join(note)
+            board, knocks_today = _standings_board(
+                key, day, office, board_sales, [] if sales_baseline else sold,
+                show, tab, knocks_today, log)
             if board and not can_text:
                 log("%-10s standings text skipped -- this machine cannot "
                     "send iMessage" % key)
@@ -2053,6 +2106,44 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     except Exception as e:  # noqa: BLE001
                         log("%-10s FAILED to text Sara standings to %r: %s: %s"
                             % (key, group, type(e).__name__, str(e)[:120]))
+        # THE STANDINGS TO SLACK EVERY N SALES, for an office that asked
+        # (Jairo Ruiz 2026-11-12 via Megan: "post this on slack through the
+        # day as well not just iMessage" -- every 3 sales). Opt-in per office:
+        # the default stays Megan's 2026-10-06 call, no scoreboard in Slack.
+        # Same board the text group gets, posted each time the office's
+        # TOTALS crosses the next multiple of N. A first read records where
+        # the day stands and posts nothing, like every other first read.
+        every = _CFG.slack_standings_every(key)
+        if every and (sold or sales_baseline):
+            total = sum(H_SHAPE(office.campaign).total(m or {})
+                        for m in board_sales.values())
+            due, step = slack_standings_due(
+                _slack_standings_step(key, day), total, every, sales_baseline)
+            if not due:
+                if send:
+                    _save_slack_standings_step(key, day, step)
+            else:
+                board, knocks_today = _standings_board(
+                    key, day, office, board_sales, sold, show, tab,
+                    knocks_today, log)
+                if board:
+                    targets, held = O.destinations(office, approved.get(key))
+                    for channel in ([] if held else targets):
+                        if not send:
+                            log("%-10s standings (%d sales) -> Slack %s  (dry run)"
+                                % (key, total, channel.name))
+                            continue
+                        try:
+                            from automations.icd_alerts import office_slack as _OS
+                            _slack(channel.id, board, **_OS.post_kwargs(key))
+                            log("%-10s standings (%d sales) -> Slack %s"
+                                % (key, total, channel.name))
+                        except Exception as e:  # noqa: BLE001
+                            log("%-10s FAILED to post standings to %s: %s: %s"
+                                % (key, channel.name, type(e).__name__,
+                                   str(e)[:120]))
+                    if send:
+                        _save_slack_standings_step(key, day, step)
         if not send:
             continue
         if hype_lines or lines:

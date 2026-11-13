@@ -477,6 +477,17 @@ def zero_names_wanted(office_key: str) -> bool:
     return str(office_key or "").strip().lower() in ZERO_NAMES_KEYS
 
 
+# Offices whose text-group standings ALSO post to their Slack channel, every
+# N sales (each time TOTALS crosses the next multiple). Opt-in per office.
+SLACK_STANDINGS_EVERY = {
+    "jairo15": 3,                               # Jairo, asked 2026-11-12
+}
+
+
+def slack_standings_every(office_key: str) -> int:
+    return int(SLACK_STANDINGS_EVERY.get(str(office_key or "").strip().lower(), 0))
+
+
 def credit_tiers_here() -> bool:
     """Does any office this machine relays for want the three alerts?"""
     return any(credit_tiers_wanted(r.get("office_key"))
