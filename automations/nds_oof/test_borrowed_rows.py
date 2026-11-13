@@ -200,13 +200,13 @@ class SurnameFallback(unittest.TestCase):
     def test_misspelled_first_name_matches_on_unique_surname(self):
         LOG.clear()
         got = self._run([{"Rep": "Cinthya Reyes Roadtrip", "Total Knocks": "3"},
-                         {"Rep": "Anette Climaco", "Total Knocks": "9"}])
-        self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Anette Climaco"])
+                         {"Rep": "Annett Michell Climaco", "Total Knocks": "9"}])
+        self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Annett Michell Climaco"])
         self.assertTrue(any("via surname 'climaco'" in m for m in LOG), LOG)
 
     def test_two_rows_with_the_surname_claim_nobody(self):
         LOG.clear()
-        got = self._run([{"Rep": "Anette Climaco", "Total Knocks": "9"},
+        got = self._run([{"Rep": "Annett Climaco", "Total Knocks": "9"},
                          {"Rep": "Maria Climaco", "Total Knocks": "2"}])
         self.assertEqual([r["Rep"] for r in got], [])
         self.assertTrue(any("not on rafael's rows today" in m for m in LOG), LOG)
