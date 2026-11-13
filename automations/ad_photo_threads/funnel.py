@@ -98,6 +98,9 @@ def match(app_ads: List[dict], book, keys) -> Dict[str, dict]:
         rec = a.get("rec") or {}
         for k in APP_KEYS:
             got[k] += int(rec.get(k) or 0)
+        got.setdefault("bob", None)
+        if rec.get("bob") is not None:          # AppStream's "Brought on Board"
+            got["bob"] = (got["bob"] or 0) + int(rec["bob"])
     return out
 
 
@@ -113,7 +116,8 @@ def rows_for(sheet: Dict[str, dict], app: Optional[Dict[str, dict]],
         else:
             title, city = sc.title_city(titles.get(key, key))
         if app is not None and a is None:
-            a = {k: 0 for k in APP_KEYS}
+            has_bob = any(v.get("bob") is not None for v in app.values())
+            a = dict({k: 0 for k in APP_KEYS}, bob=0 if has_bob else None)
         if a is not None and not s and not any(a[k] for k in APP_KEYS):
             continue
         rows.append({"title": title, "city": city, "sheet": s, "app": a})
@@ -124,8 +128,12 @@ def rows_for(sheet: Dict[str, dict], app: Optional[Dict[str, dict]],
 
 def total(rows: List[dict], app_read: bool) -> dict:
     s = {k: sum((r["sheet"] or {}).get(k, 0) for r in rows) for k in SHEET_KEYS}
-    a = ({k: sum((r["app"] or {}).get(k, 0) for r in rows) for k in APP_KEYS}
-         if app_read else None)
+    a = None
+    if app_read:
+        a = {k: sum((r["app"] or {}).get(k, 0) for r in rows) for k in APP_KEYS}
+        bobs = [(r["app"] or {}).get("bob") for r in rows]
+        a["bob"] = (sum(b for b in bobs if b is not None)
+                    if any(b is not None for b in bobs) else None)
     return {"title": "TOTAL", "city": "", "sheet": s, "app": a}
 
 
@@ -133,12 +141,25 @@ def cells(r: dict, n: Optional[int]) -> List[str]:
     s, a = r["sheet"], r["app"]
 
     def g(d, k):
-        return str(d[k]) if d is not None else "-"
+        return str(d[k]) if d is not None and d.get(k) is not None else "-"
+    # Raf's tab never fills Offered / BOB (Eve 11/12): BOB from AppStream's
+    # "Brought on Board" instead; Job offered has no AppStream twin -> "-".
+    offers = config.SCORECARD_FUNNEL_OFFERS
     return [str(n) if n is not None else "", r["title"], r["city"],
             g(a, "apps"), g(a, "b1"), g(s, "s1"),
-            g(s if config.SCORECARD_FUNNEL_OFFERS else None, "offered"),
-            g(s if config.SCORECARD_FUNNEL_OFFERS else None, "bob"),
+            g(s if offers else None, "offered"),
+            g(s, "bob") if offers else g(a, "bob"),
             g(a, "nb"), g(a, "ns")]
+
+
+# Eve 11/12: said in Raf's post, so he knows before he reads the picture.
+NOTE_APPSTREAM_BOB = ("_2nd picture: BOB comes from ApplicantStream (Brought on Board) -- "
+                      "Job offered shows \"-\" because it isn't filled in on your "
+                      "interviewers' sheet._")
+
+
+def post_note() -> str:
+    return "" if config.SCORECARD_FUNNEL_OFFERS else NOTE_APPSTREAM_BOB
 
 
 # ---- AppStream ---------------------------------------------------------------
@@ -237,6 +258,9 @@ def make(day: dt.date, owner: str, office_id: str = "", out_dir: Path = sc.OUT_D
     month_label = f"THIS MONTH · {f['first']:%B} 1 - {day.day} · {len(f['month'])} ads"
     sub = ("Applies, 1st sched. and new starts from ApplicantStream · 1st showed, "
            "job offered and BOB from the interviewers' sheet")
+    if not config.SCORECARD_FUNNEL_OFFERS:
+        sub = ("Applies, 1st sched., BOB and new starts from ApplicantStream · "
+               "1st showed from the interviewers' sheet · job offered not tracked")
     if f["app_error"] or not office_id or not use_appstream:
         sub = "ApplicantStream not read this time (\"-\") · 1st showed, job offered " \
               "and BOB from the interviewers' sheet"

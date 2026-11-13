@@ -48,7 +48,7 @@ class Funnel(unittest.TestCase):
                {"title": "Dead Ad", "city": "", "rec": {"apps": 0, "b1": 0, "nb": 0, "ns": 0}}]
         sheet = {"sales agent": {"s1": 2, "offered": 1, "bob": 1}}
         app = funnel.match(ads, _Book(), sheet.keys())
-        self.assertEqual(app["sales agent"], {"apps": 50, "b1": 10, "nb": 2, "ns": 1})
+        self.assertEqual(app["sales agent"], {"apps": 50, "b1": 10, "nb": 2, "ns": 1, "bob": None})
         rows = funnel.rows_for(sheet, app, {"sales agent": "Sales Agent"})
         self.assertEqual([r["title"] for r in rows], ["Sales Agent", "Brand New Ad"])
         self.assertEqual(funnel.cells(rows[0], 1),
@@ -70,6 +70,19 @@ class Funnel(unittest.TestCase):
         try:
             rows = funnel.rows_for({"x": {"s1": 3, "offered": 0, "bob": 0}}, None, {"x": "X"})
             self.assertEqual(funnel.cells(rows[0], 1)[5:8], ["3", "-", "-"])
+            # Raf: BOB from AppStream's Brought on Board, summed in the total.
+            ads = [{"title": "X", "city": "", "rec": {"apps": 9, "b1": 4, "nb": 1, "ns": 1, "bob": 2}},
+                   {"title": "Y", "city": "", "rec": {"apps": 3, "b1": 1, "nb": 0, "ns": 0, "bob": 1}}]
+            app = funnel.match(ads, _Book(), ["x"])
+            rows = funnel.rows_for({"x": {"s1": 3, "offered": 0, "bob": 0}}, app, {"x": "X"})
+            self.assertEqual(funnel.cells(rows[0], 1)[5:8], ["3", "-", "2"])
+            self.assertEqual(funnel.cells(funnel.total(rows, True), None)[7], "3")
+            self.assertTrue(funnel.post_note())
+            # A report without the column: "-", never a fake 0.
+            ads[0]["rec"]["bob"] = ads[1]["rec"]["bob"] = None
+            app = funnel.match(ads, _Book(), ["x"])
+            rows = funnel.rows_for({"x": {"s1": 3, "offered": 0, "bob": 0}}, app, {"x": "X"})
+            self.assertEqual(funnel.cells(funnel.total(rows, True), None)[7], "-")
         finally:
             config.SCORECARD_FUNNEL_OFFERS = old
 

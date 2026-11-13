@@ -215,6 +215,9 @@ def load_table(html, keep_multi=False):
                    ts=col('First Day of Training Showed Up'),
                    nb=col(*nb_src),
                    ns=col(*ns_src))
+        # Ad Scorecard funnel (Raf 11/12): BOB on its own; None = the office's
+        # report has no such column. Not in FIELDS -- merge() never sums it.
+        rec['bob'] = num(r['Brought on Board']) if 'Brought on Board' in d.columns else None
         ads.append(dict(inbox=inbox.strip(), title=title, city=city,
                         base=base_role(title), rec=rec))
     return ads

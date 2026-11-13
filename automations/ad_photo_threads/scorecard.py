@@ -546,6 +546,8 @@ def publish(day: dt.date, channel: str, owner: str, *, cl=None, record: bool = T
             fp = funnel.make(day, owner, config.SCORECARD_FUNNEL_OFFICE)
             files.append({"file": str(fp), "filename": fp.name,
                           "title": f"Ad Scorecard Funnel {day.isoformat()}"})
+            if funnel.post_note():
+                msg += chr(10) + funnel.post_note()
         except Exception as e:                 # noqa: BLE001 -- picture 1 still goes out
             print(f"scorecard funnel failed: {type(e).__name__}: {str(e)[:200]}")
     r = cl.files_upload_v2(channel=channel, file_uploads=files, initial_comment=msg)
