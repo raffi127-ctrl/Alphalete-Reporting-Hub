@@ -162,6 +162,9 @@ _HARVEST_ORDER_LOG_OFFICES = {"rashad"}
 # their Activation Rate board stays on the order-log version.
 _ACT_RATE_ORDER_LOG_OFFICES = {"aiden"}
 
+# Fiber offices that get the per-rep Activation Rate board (fiber_activation_rate).
+_FIBER_ACT_RATE_OFFICES = {"haytham"}
+
 
 def _nds_metrics(o: Office) -> list[dict]:
     """Boards for an NDS owner — sourced from the NDS-SN (RES-ATT-OOF) workbook,
@@ -262,7 +265,7 @@ def metrics_for(o: Office) -> list[dict]:
     across offices — only the env values (views/sheet/owner) come from `o`."""
     if o.nds:                       # NDS owners get a distinct NDS-sourced set
         return _nds_metrics(o)
-    return [
+    boards = [
         dict(slug="order_log", label="📋 Order Log / 🆕 Rep Activations",
              module="automations.uploaded.order_log",
              owner_args=["--owner", o.owner],
@@ -369,6 +372,16 @@ def metrics_for(o: Office) -> list[dict]:
              owner_args=["--owner", o.owner], env={},
              dry_flag="--dry-run", post_flag="--live"),
     ]
+    # 📈 Activation Rate by Rep — 2 images (0-30 / 30-60), reps x last 7 days,
+    # from the 'Fiber Activation Log' that fiber_activation_rate fills each
+    # morning (Raf 2026-11-12, at Haytham's). Haytham only until Raf says which
+    # other offices (Eve 2026-11-12).
+    if o.key in _FIBER_ACT_RATE_OFFICES:
+        boards.append(dict(slug="activation_rate", label="📈 Activation Rate by Rep",
+                           module="automations.fiber_activation_rate.slack_board",
+                           owner_args=["--owner", o.owner], env={},
+                           dry_flag="--dry-run", post_flag="--live"))
+    return boards
 
 
 def _problems_for(office: str, problems: list) -> list:
@@ -1249,6 +1262,8 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         # (Eve 2026-11-10: every office).
         if "order_log" in enrolled_slugs:
             enrolled_slugs.add("activations_today")
+        if o.key in _FIBER_ACT_RATE_OFFICES:
+            enrolled_slugs.add("activation_rate")
         default = [m for m in _full if m["slug"] in enrolled_slugs] or _full
     else:
         default = _full
