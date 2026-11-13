@@ -45,6 +45,12 @@ from automations.activations_today import pull
 
 DEFAULT_OWNER = "Rafael Hidalgo"
 LABEL = "📆 Activations Scheduled Today"
+FIBER_TAG = "(fiber only)"      # Eve 11/12: the Metrics image says so, since
+                                # the Pending Orders thread now carries wireless
+PENDING_TAG = "(fiber + pending wireless)"
+# Live switch (Eve 11/12 "prendelo"): every --post-slack run also posts the
+# Pending Orders thread + one pointer line in Metrics. False = old behavior.
+PENDING_LIVE = True
 NONE_TEXT = "📆 No Activations Scheduled Today"
 REACT = "date"
 # Eve 11/10: always ONE image, even past 20 rows.
@@ -295,8 +301,9 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
                         channel_id: Optional[str] = None,
                         sample_reps: int = 0,
                         max_names: int = PENDING_MAX_NAMES,
-                        sample: bool = False) -> int:
-    """Eve 11/12 "como el order log": one channel post per group of <= 20
+                        sample: bool = False) -> str:
+    """Returns the permalink of the first post ('' if nothing posted).
+    Eve 11/12 "como el order log": one channel post per group of ~30
     reps; in its thread the FIRST reply is a 'Tap your name' index, then one
     small image per rep (name + its image in ONE reply), so nobody scrolls a
     giant picture. Fiber = installs today; Wireless = every open order."""
@@ -318,10 +325,16 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
         count_text(rows), len(groups),
         ", ".join("{} {} reps".format(l or "all", len(g)) for l, g in groups)))
     if not rows or dry_run:
-        return 0
+        return ""
 
     client = smp._client()
     tag = "[SAMPLE] " if sample else ""
+    if not sample:
+        # A rerun the same day must not post the thread twice.
+        prev = _find_pending_post(client, channel_id, md)
+        if prev:
+            print("  pending thread already posted today — not posting again")
+            return prev
 
     def _text(thread_ts, text):
         r = client.chat_postMessage(channel=channel_id, thread_ts=thread_ts,
@@ -366,9 +379,11 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
         return client.chat_getPermalink(channel=channel_id,
                                         message_ts=ts)["permalink"]
 
+    first_link = ""
     for label, part in groups:
         span = " — reps {}".format(label) if label else ""
-        title = "{}{} *Pending Orders {}{}*".format(tag, PENDING_TITLE[:1], md, span)
+        title = "{}{} *Pending Orders {}*{} {}".format(
+            tag, PENDING_TITLE[:1], md, span, PENDING_TAG)
         ts = _text(None, "{}\nOpen the thread 👇 and tap your name".format(title))
         index_ts = _text(ts, "👉 *Tap your name:* (names loading...)")
         links = []
@@ -403,13 +418,63 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
         except Exception as e:  # noqa: BLE001
             print("  ⚠ could not link the post to its index: {}".format(e))
         print("  ✓ posted {} ({} reps)".format(label or "all", len(links)))
-    return 0
+        first_link = first_link or _link(ts)
+    return first_link
 
 
-def pending_pointer_text(rows) -> str:
-    """The one line the Metrics thread gets instead of the long images."""
-    return ("{} — {} → see today's *Pending Orders* thread in this channel "
-            "(by rep, A–Z).".format(PENDING_TITLE, count_text(rows)))
+def pending_pointer_text(rows, link: str = "") -> str:
+    """The one line the Metrics thread gets under the fiber-only image."""
+    return "{} {} — {} → {}".format(
+        PENDING_TITLE, PENDING_TAG, count_text(rows),
+        "<{}|open>".format(link) if link else "see the Pending Orders post")
+
+
+def _find_pending_post(client, channel_id: str, md: str) -> str:
+    """Permalink of today's first Pending Orders post in the channel, or ''."""
+    start = dt.datetime.combine(pull.central_today(), dt.time.min,
+                                tzinfo=pull.CENTRAL).timestamp()
+    try:
+        msgs = client.conversations_history(channel=channel_id,
+                                            oldest=str(start),
+                                            limit=200).get("messages") or []
+    except Exception as e:  # noqa: BLE001 — can't tell: post (better than none)
+        print("  (could not check for an earlier Pending Orders post: {})".format(e))
+        return ""
+    want = "*Pending Orders {}*".format(md)
+    hits = [m for m in msgs if want in (m.get("text") or "")
+            and "[SAMPLE]" not in (m.get("text") or "")]
+    if not hits:
+        return ""
+    first = min(hits, key=lambda m: float(m["ts"]))
+    try:
+        return client.chat_getPermalink(channel=channel_id,
+                                        message_ts=first["ts"])["permalink"]
+    except Exception:  # noqa: BLE001
+        return "found"
+
+
+def post_pending_live(mine, owner: str, day: dt.date) -> None:
+    """Live: the Pending Orders thread, then one pointer line in Metrics.
+    Never fails the fiber board — a problem here prints loud and moves on."""
+    from automations.shared import slack_metrics_post as smp
+    if smp._email_capture() is not None:
+        print("  (email delivery — no Slack thread for Pending Orders)")
+        return
+    rows = pull.board_rows(mine, day)
+    if not rows:
+        print("  (nothing pending — no Pending Orders thread)")
+        return
+    try:
+        link = post_pending_thread(mine, owner, day, dry_run=False,
+                                   channel_id=smp.CHANNEL_ID)
+        if link == "found":
+            link = ""
+        res = smp.post_reply_text_only(pending_pointer_text(rows, link),
+                                       today=day)
+        print("  ✓ pointer in Metrics: {}".format(res))
+    except Exception as e:  # noqa: BLE001
+        print("⚠ Pending Orders thread FAILED: {}: {}".format(
+            type(e).__name__, str(e)[:300]))
 
 
 def main(argv=None) -> int:
@@ -468,12 +533,12 @@ def main(argv=None) -> int:
             text="[SAMPLE — this line would go in the Metrics thread, under "
                  "the fiber-only image]\n"
                  + pending_pointer_text(pull.board_rows(mine, day)))
-        rc = post_pending_thread(mine, args.owner, day, dry_run=False,
-                                 channel_id=ch, sample=True,
-                                 sample_reps=args.pending_sample,
-                                 max_names=args.max_names)
+        post_pending_thread(mine, args.owner, day, dry_run=False,
+                            channel_id=ch, sample=True,
+                            sample_reps=args.pending_sample,
+                            max_names=args.max_names)
         print("  fiber-only Metrics image unchanged: {} install(s) today".format(len(fiber)))
-        return rc
+        return 0
     today = (pull.board_rows(mine, day) if args.with_wireless
              else pull.scheduled_on(mine, day))
     print("  export {} row(s); {} for {}; {} on the board{}".format(
@@ -514,9 +579,12 @@ def main(argv=None) -> int:
         if args.post_to:
             print("  (none today — test mode posts nothing)")
             return 0
-        res = smp.post_reply_text_only(NONE_TEXT, react_emoji=REACT,
+        res = smp.post_reply_text_only(NONE_TEXT + " " + FIBER_TAG,
+                                       react_emoji=REACT,
                                        today=day, dry_run=not do_post)
         print("  ✓ Slack ({}): {}".format("LIVE" if do_post else "DRY-RUN", res))
+        if do_post and PENDING_LIVE and not args.with_wireless:
+            post_pending_live(mine, args.owner, day)
         return 0
 
     work = build(today, args.owner, day)
@@ -524,7 +592,7 @@ def main(argv=None) -> int:
     pngs = render(work, out)
     print("  ✓ rendered {}".format(", ".join(str(p) for p in pngs)))
 
-    comment = "{} — {}".format(LABEL, count_text(today))
+    comment = "{} {} — {}".format(LABEL, FIBER_TAG, count_text(today))
     for i, p in enumerate(pngs, 1):
         c = comment if len(pngs) == 1 else "{} ({} of {})".format(comment, i, len(pngs))
         res = smp.post_reply_with_image(
@@ -534,6 +602,8 @@ def main(argv=None) -> int:
         if do_post and not res.get("dry_run") and not res.get("ok", True):
             print("✗ Slack post FAILED.")
             return 1
+    if do_post and not args.post_to and PENDING_LIVE and not args.with_wireless:
+        post_pending_live(mine, args.owner, day)
     print("=== done ===")
     return 0
 

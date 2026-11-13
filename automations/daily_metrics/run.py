@@ -61,7 +61,10 @@ PER_METRIC_TIMEOUT_S = 20 * 60
 # The Order Log now posts A-F / G-M / N-Z threads with one reply per rep in
 # #alphalete-sales AND its #alphalete-lvl1-chat mirror (~130 reps x 2), which
 # alone can take ~15 min of Slack calls on top of the pull (2026-10-31).
-TIMEOUT_BY_MODULE = {"automations.uploaded.order_log": 35 * 60}
+# Activations Today also posts the Pending Orders thread (one image per rep,
+# ~60 reps for Raf) since 2026-11-12 — ~5 min of Slack calls on top of the pull.
+TIMEOUT_BY_MODULE = {"automations.uploaded.order_log": 35 * 60,
+                     "automations.activations_today.run": 30 * 60}
 
 # (slug, label, module, base_args) — order matches the Metrics thread.
 METRICS = [
