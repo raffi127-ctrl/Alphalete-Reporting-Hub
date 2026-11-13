@@ -151,6 +151,39 @@ def _activations_today(o: B2BOffice, out_dir: Path, log, today=None):
     return b2b.image(o, out_dir, log=log, today=today)
 
 
+class NoKnocksLogged(Exception):
+    """The knocks pull COMPLETED and the office logged nothing that day — a
+    proven zero, not a failure. Posts one line instead of an image."""
+
+
+def _knocks(o: B2BOffice, out_dir: Path, log, today=None):
+    """🚪 Total Knocks — YESTERDAY'S complete day, the same board the D2D
+    metrics threads post (Megan 2026-11-13, Midspire: "show the complete
+    previous day like we do for D2D").
+
+    Same source order as the D2D knocks_run: the office's own ECO laptop's
+    relayed rows first, the ownerville impersonation scrape only when the relay
+    can't vouch for the day. Rendered through render_knocks_boards, which picks
+    the board off the row shape — so a B2B AT&T or Box grid gets ITS columns,
+    not the fiber layout knocks_run would draw."""
+    from automations.rashad_metrics import knocks_relay, knocks_run
+    from automations.rashad_metrics.knocks_pull import pull_office_knocks
+    from automations.total_knocks import render as knocks_render
+    target = (today or dt.date.today()) - dt.timedelta(days=1)
+    rows = knocks_relay.relayed_rows(o.key, o.knocks_office, target, log=log)
+    if rows is None:
+        log("  [knocks] relay can't vouch for {} — scraping ownerville "
+            "as {}".format(target, o.knocks_office))
+        target, rows = pull_office_knocks(o.knocks_office, target)
+    knocks_run._log_day(target, o.knocks_office, rows)
+    if not rows:
+        raise NoKnocksLogged(target)
+    pngs, shape = knocks_render.render_knocks_boards(target, rows=rows,
+                                                     out_dir=out_dir)
+    log("  [knocks] {} rep(s), {} board, {}".format(len(rows), shape, target))
+    return pngs[0] if len(pngs) == 1 else pngs
+
+
 def _payout(o: B2BOffice, out_dir: Path, log, today=None):
     from automations.b2b_metrics import capture
     return capture.payout_image(o, out_dir, log=log)
@@ -203,6 +236,10 @@ ITEMS = [
          title="Activation Revenue Overview", capture=_activation_revenue),
     dict(id="out_of_bounds", emoji="\U0001F6A7", title="Out of Bounds",
          capture=_tableau_shot("out_of_bounds"), post_when_blank=True),
+    # Yesterday's full day of knocks (Megan 2026-11-13) — only for offices
+    # whose row names their ownerville office (knocks_office).
+    dict(id="knocks", emoji="\U0001F6AA", title="Total Knocks",
+         capture=_knocks),
 ]
 
 
@@ -551,7 +588,8 @@ def expected_items(o: B2BOffice) -> list:
                     or (i["id"] == "revenue_board"
                         and o.key in REVENUE_BOARD_OFFICES))
                and (i["id"] != "fiber_cru_activation"
-                    or o.key in FIBER_CRU_OFFICES)]
+                    or o.key in FIBER_CRU_OFFICES)
+               and (i["id"] != "knocks" or bool(o.knocks_office))]
     # rep_boards offices post in CARLOS'S ORDER (2026-09-14, dictated in
     # full): money first, then activations, then churn (customer churn ahead
     # of the rate boards), then the log. sales_metrics went unmentioned in
@@ -765,6 +803,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     captured = {}
     deferred = []       # sections held back on ORDERLOG freshness (not failures)
     no_data = []        # sections this office has never had data for (not failures)
+    empty_day = {}      # section id -> note text: a PROVEN-empty day (not a miss)
     for item in items:
         try:
             # `today` reaches the capture so --today moves the WEEK too, not
@@ -778,6 +817,15 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
                 " + ".join(p.name for p in path)
                 if isinstance(path, (list, tuple))
                 else (path.name if path else "no artifact")))
+        except NoKnocksLogged as nk:
+            # Proven zero: the pull finished and nobody knocked. One line in
+            # the thread (like the D2D "No data available"), never a blank board.
+            day = nk.args[0]
+            log("  [{}] no knocks logged {} (verified empty)".format(
+                item["id"], day))
+            captured[item["id"]] = None
+            empty_day[item["id"]] = "{} *{}* — {} {} — no knocks logged".format(
+                item["emoji"], item["title"], day.strftime("%b"), day.day)
         except OrderLogNotFresh as nf:
             # Not a failure — the extract just hasn't landed. A later floor pass
             # posts it once it's in. Logged as DEFERRED so it doesn't read as a
@@ -830,6 +878,8 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
 
     if not post:
         ready = [k for k, v in captured.items() if v]
+        for sid, text in empty_day.items():
+            log("  [{}] would post: {}".format(sid, text))
         log("")
         log("  DRY-RUN — captured {}/{}: {}".format(
             len(ready), len(items), ", ".join(ready)))
@@ -864,7 +914,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         # loop skips any item outside every channel's set). Only ALWAYS-ON sections
         # (Out of Bounds posts even when empty) fall through to the primary channel.
         from automations.b2b_metrics.offices import items_for_report_keys
-        _ALWAYS_ON = {"out_of_bounds"}
+        _ALWAYS_ON = {"out_of_bounds", "knocks"}
         chan_items, claimed = {}, set()
         for p in o.channel_plans:
             ids = items_for_report_keys(p.get("report_keys") or [])
@@ -943,6 +993,25 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             record_ever_posted(o.key, item["id"], today)
             time.sleep(POST_SETTLE_SEC)               # let Slack finalize this
             log("  [{}] {} posted".format(chan, item["id"]))
+
+        # A PROVEN-EMPTY day (knocks: the pull finished, nobody knocked) is
+        # different from "no data yet": the section IS delivered — its one line
+        # is the answer — so the real id goes into today's posted state and
+        # counts as present. Retry passes then don't re-pull it all morning.
+        for sid, text in empty_day.items():
+            if chan_items is not None and sid not in chan_items.get(chan, set()):
+                continue
+            if sid in already and not force:
+                continue
+            try:
+                client.chat_postMessage(channel=chan, thread_ts=ts, text=text)
+            except Exception as e:  # noqa: BLE001
+                log("  [{}] {} empty-day line failed: {}".format(
+                    chan, sid, str(e)[:120]))
+                continue
+            already.append(sid)
+            bq._save_state(today, chan, ts, already)
+            log("  [{}] {} empty-day line posted".format(chan, sid))
 
         # A section with no data yet gets ONE line rather than a silent gap, so
         # the thread explains itself to the office reading it. Tracked under a

@@ -312,6 +312,12 @@ class B2BOffice:
     # (with_all_teams). For an owner Tableau moved off a captain team.
     all_teams: bool = False
 
+    # The office's name in OwnerVille (Office Access / impersonation), for the
+    # 🚪 Total Knocks section — yesterday's full day, the same board the D2D
+    # metrics threads carry (Megan 2026-11-13, Midspire). Empty -> no knocks
+    # section for this office.
+    knocks_office: str = ""
+
     @property
     def channel_names(self) -> list:
         """Every channel this office posts into, primary first — for display."""
@@ -492,6 +498,7 @@ B2B_OWNER_KEY_TO_ITEMS = {
     "b2b_customer_churn": ["customer_churn"],
     "b2b_order_log_att":  ["order_log", "order_tiered_bonus"],
     "b2b_order_log_box":  [],   # standalone report, not a thread section
+    "b2b_knocks":         ["knocks"],
 }
 
 ONBOARDED_EXTRA: dict = {}
@@ -592,6 +599,7 @@ def _merge_onboarded() -> None:
                 channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
                 **_tabs,
                 owner_office=r.get("owner_office", ""),
+                knocks_office=(r.get("knocks_office") or "").strip(),
                 view_overrides=overrides,
                 # An onboarded override is an ALL-TEAM base view, not a saved
                 # slice of one person — so it still needs ?<field>=<owner>

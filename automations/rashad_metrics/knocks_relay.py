@@ -151,12 +151,21 @@ def _key_matches(office_key: str, office_name: str) -> bool:
     KNOCKS_OFFICE -- and they come from the same row, so disagreeing means
     something upstream has drifted. Refuse and scrape.
     """
+    key = (office_key or "").strip().lower()
     try:
         from automations.office_metrics import offices as OM
-        off = dict(OM.OFFICES).get((office_key or "").strip().lower())
+        off = dict(OM.OFFICES).get(key)
     except Exception:  # noqa: BLE001
-        return False
+        off = None
     if off is None:
+        # A B2B office (b2b_metrics registry) — its Total Knocks section asks
+        # with its own row's key + knocks_office, the same one-row join.
+        try:
+            from automations.b2b_metrics import offices as B2B
+            off = dict(B2B.OFFICES).get(key)
+        except Exception:  # noqa: BLE001
+            off = None
+    if off is None or not getattr(off, "knocks_office", ""):
         return False
     return _norm_name(getattr(off, "knocks_office", "")) == _norm_name(office_name)
 
