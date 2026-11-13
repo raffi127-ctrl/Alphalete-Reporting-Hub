@@ -42,6 +42,41 @@ def ask_login(ask, say=print) -> str:
     return "saved"
 
 
+def digi_docs_step(office_key: str, say=print) -> str:
+    """The onboarding-documents question (which campaign and bundle THIS
+    office's OwnerVille sends a new start), asked HERE and not in the main ECO
+    install (Megan, 2026-11-13: "this should also only be on the sterling
+    installer right now"). Asked once; an office with its answers saved is
+    skipped. Never costs the Sterling setup, and a copy that does not carry
+    the step yet shows no error."""
+    try:
+        from automations.icd_alerts import digi_docs_setup as DD
+    except Exception:  # noqa: BLE001 -- not shipped to this office yet
+        return "nothing to do yet"
+    if not office_key:
+        return "not enrolled yet"
+    try:
+        return DD.ask_office(office_key, log=say)
+    except Exception as e:  # noqa: BLE001
+        return "left for later (%s)" % type(e).__name__
+
+
+def blueink_step(say=print) -> str:
+    """The office's own Blue Ink account, asked HERE and not in the main ECO
+    install (Megan, 2026-11-13: "the main eco installer shouldn't ask for blue
+    ink - that's for a sterling/bg enrollment anyways"). Never costs the
+    Sterling setup: an office whose copy does not carry the Blue Ink step yet
+    is told nothing is needed, not shown an error it cannot act on."""
+    try:
+        from automations.icd_alerts import blueink_setup as BS
+    except Exception:  # noqa: BLE001 -- not shipped to this office yet
+        return "nothing to do yet"
+    try:
+        return BS.run(log=say)
+    except Exception as e:  # noqa: BLE001
+        return "left for later (%s)" % type(e).__name__
+
+
 def main(argv=None) -> int:
     from automations.icd_alerts import dialogs as ask
     from automations.icd_alerts import sterling_forward, sterling_send
@@ -60,6 +95,8 @@ def main(argv=None) -> int:
     say("  Testing the sign-in (about a minute)...")
     res = sterling_send.check_login(office_key=office_key, log=say)
     if res.get("ok"):
+        say("      Onboarding documents: %s" % digi_docs_step(office_key, say))
+        say("      Blue Ink account: %s" % blueink_step(say))
         say("  ALL SET. Your admin can send background checks from now on.")
         if fwd != "done":
             say("  (The forward isn't finished yet -- run this same line again later")

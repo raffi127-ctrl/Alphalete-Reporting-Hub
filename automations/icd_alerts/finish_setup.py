@@ -232,43 +232,6 @@ def _ownerville(log) -> str:
     return "done" if ov_signin.run(log=log) == 0 else "still needs signing in"
 
 
-def _blueink(log) -> str:
-    """This office's OWN Blue Ink account (Megan, 2026-11-09: "each ICD will
-    have their own blueink account").
-
-    Two separate things: the API key, which is how the board reads who has
-    signed, and a browser sign-in, which is the only way documents can be SENT
-    without burning the 50-a-year Bulk Envelope allowance. An office can have
-    the first and not the second -- the board fills, nothing is sent.
-    """
-    try:
-        from automations.icd_alerts import blueink_setup as BS
-        return BS.run(log=log)
-    except Exception as e:  # noqa: BLE001
-        return "not available yet (%s)" % type(e).__name__
-
-
-def _digi_docs(log) -> str:
-    """The onboarding-documents question — asked once, on this office's own
-    computer, because the answers are the labels on ITS OwnerVille.
-
-    Megan, 2026-11-09: "when an icd enrolls we should ask them this question to
-    make sure we send it right for them specifically." Until it is answered,
-    digi_docs refuses to send for that office rather than falling back to
-    Alphalete's bundle, which would mail a real person the wrong contract.
-    """
-    try:
-        from automations.icd_alerts import config as IC
-        from automations.icd_alerts import digi_docs_setup as DD
-        rows = IC.enrollments()
-        key = (rows[0].get("office_key") if rows else "") or ""
-        if not key:
-            return "not enrolled yet"
-        return DD.ask_office(key, log=log)
-    except Exception as e:  # noqa: BLE001
-        return "not available yet (%s)" % type(e).__name__
-
-
 def _resume_push(log) -> str:
     """Resume pushing from this computer (Carlos 2026-10-05). Asked ONCE per
     machine; a NO is remembered, a YES gets its login and sign-in checked
@@ -435,9 +398,14 @@ def run(log=print, skip_box: bool = False) -> int:
                    ("Box sales sign-in",
                     _service_cloud_deferred if skip_box else _service_cloud),
                    ("OwnerVille sign-in", _ownerville),
-                   ("Resume pushing", _resume_push),
-                   ("Onboarding documents", _digi_docs),
-                   ("Blue Ink account", _blueink)]
+                   ("Resume pushing", _resume_push)]
+    # NOT HERE: Blue Ink and the onboarding-documents question. Both belong
+    # to the Sterling / background-check enrolment (`sterling_setup`), which
+    # an office runs when it takes on onboarding -- not to the main ECO
+    # install, where every new owner saw "not available yet" for two things
+    # they were never asked to have (Megan, 2026-11-13, on George's install
+    # summary: "the main eco installer shouldn't ask for blue ink"; "this
+    # should also only be on the sterling installer right now").
     results = []
     for name, fn in steps:
         try:
