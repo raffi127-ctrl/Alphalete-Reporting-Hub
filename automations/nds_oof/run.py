@@ -340,10 +340,32 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
             # (Carlos: "i may have slight mispelling"): any row sharing a
             # token (a last name, usually) with the wanted name.
             toks = set(G._plain(name).split())
-            close = [G._rep(x) for x in src
-                     if toks & set(G._plain(G._rep(x)).split())]
+            close = [i for i, x in enumerate(src)
+                     if i not in claimed and toks & set(G._plain(G._rep(x)).split())]
+            # SURNAME FALLBACK (Carlos 2026-11-13: "Anettes name might be
+            # spelled slightly different on RAFs ownerville"): the matcher
+            # anchors on the first name, so 'Anette' never reaches 'Annett'.
+            # When exactly ONE unclaimed row shares the wanted SURNAME, that is
+            # her -- claim it and say so. Two rows sharing it tell us nothing.
+            surname = (G._plain(name).split() or [""])[-1]
+            by_surname = [i for i in close
+                          if surname and surname in set(G._plain(G._rep(src[i])).split())]
+            if len(by_surname) == 1:
+                i = by_surname[0]
+                row = src[i]
+                if G._norm(G._rep(row)) in have:
+                    _log("borrowed: %s is already on our own rows -- not doubled" % name)
+                    continue
+                claimed[i] = name
+                if keep:
+                    row = {k: v for k, v in row.items() if k in keep}
+                out.append(row)
+                _log("borrowed: %s off %s via surname %r (row reads %r; shared %s, %s)"
+                     % (name, key, surname, G._rep(src[i]), at_text, where))
+                continue
+            close_names = [G._rep(src[i]) for i in close]
             _log("borrowed: %s not on %s's rows today%s"
-                 % (name, key, (" (close: %s)" % ", ".join(close)) if close else
+                 % (name, key, (" (close: %s)" % ", ".join(close_names)) if close_names else
                     " (%d rows: %s)" % (len(src), ", ".join(G._rep(x) for x in src)[:400])))
     for key in want:
         if key not in seen:
