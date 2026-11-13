@@ -935,4 +935,105 @@ def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
                          % str(out.get("error") or "no reason given"))
     log("sent %d rep(s) with credit checks, %d with sales, for %s"
         % (len(body["records"]), len(body["sales"]), body["day"]))
+    _remember_sales(rec["office_key"], body["day"], body["sales"])
     return out
+
+
+# ---------------------------------------------------------------------------
+# CREDIT CHECKS GO THE MOMENT THEY ARE READ (Megan, 2026-11-13: "how can we get
+# these sara alerts to go quicker for everyone?").
+#
+# A sweep is four SaraPlus passes -- credit checks first, then three sales
+# grids -- and until now nothing was sent until all four had finished. The
+# credit checks were in hand after ~50 seconds and then waited on the slow
+# half: across the 1,281 slow reads of 11/10-11/13 the AT&T sales grid averaged
+# 144s against 51s for the credit pass, and a read that passed the 300s
+# deadline was thrown away WITH the credit checks it had already read (George
+# 4x on his first evening, Nigel 20x in three days).
+#
+# So the credit checks are sent as soon as their pass is done, and the full
+# send still follows when the sales grids are in.
+#
+# THE RELAY OVERWRITES THE WHOLE ROW, sales included (`body.sales || {}`), and
+# it is an Apps Script deployment this code cannot change. An early send with
+# no sales would blank the office's sales for the minutes until the full send
+# -- and every board and standings post reading the row in that window would
+# see an office that had sold nothing. So the early send carries THE SALES
+# EXACTLY AS LAST SENT, kept here. The row then differs from the last full
+# send only in its credit checks, which is the point.
+#
+# AND ONLY WHILE THOSE SALES ARE RECENT. An office whose sales half has been
+# failing for longer than EARLY_SALES_MAX_AGE_MIN stops sending early, so its
+# row goes stale and the existing "this office has gone quiet" checks still
+# fire. Otherwise a dead sales read would hide behind fresh credit checks.
+# ---------------------------------------------------------------------------
+EARLY_SALES_MAX_AGE_MIN = 20
+_LAST_SALES_FILE = "last_sales_sent.json"
+
+
+def _last_sales_path():
+    return C.STATE_PATH.parent / _LAST_SALES_FILE
+
+
+def _remember_sales(office_key: str, day_iso: str, sales: Dict,
+                    now: Optional[dt.datetime] = None) -> None:
+    """Keep what the full send just handed over. Never raises: a note that
+    cannot be written costs the NEXT sweep its early send, nothing else."""
+    try:
+        C.app_dir()
+        _last_sales_path().write_text(json.dumps({
+            "office_key": str(office_key or ""), "day": str(day_iso),
+            "at": (now or dt.datetime.now()).isoformat(timespec="seconds"),
+            "sales": sales}))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _recent_sales(office_key: str, day_iso: str,
+                  now: Optional[dt.datetime] = None) -> Optional[Dict]:
+    """The sales last sent for this office TODAY, if recent enough to send
+    again unchanged. None means "do not send early" -- first sweep of the day,
+    another office's note, or a sales half that has been failing too long."""
+    try:
+        got = json.loads(_last_sales_path().read_text())
+        if (str(got.get("office_key") or "") != str(office_key or "")
+                or str(got.get("day") or "") != str(day_iso)):
+            return None
+        at = dt.datetime.fromisoformat(str(got.get("at") or ""))
+        age = ((now or dt.datetime.now()) - at).total_seconds() / 60.0
+        if age < 0 or age > EARLY_SALES_MAX_AGE_MIN:
+            return None
+        sales = got.get("sales")
+        return sales if isinstance(sales, dict) else None
+    except Exception:  # noqa: BLE001 -- no note, or an unreadable one
+        return None
+
+
+def send_records_early(records: Dict[str, int], day: Optional[dt.date] = None,
+                       *, office_key: str = "", log=print,
+                       now: Optional[dt.datetime] = None) -> bool:
+    """Send the credit checks just read, with the sales as last sent.
+
+    True when it went. False when there was nothing safe to send it with (see
+    `_recent_sales`) or the POST did not land -- neither is an error: the full
+    send at the end of the sweep hands everything over exactly as before.
+    NEVER RAISES. This is a head start, and a head start must not be able to
+    cost the read it is ahead of.
+    """
+    try:
+        day = day or C.today()
+        rec = _endpoint(office_key)
+        sales = _recent_sales(rec["office_key"], day.isoformat(), now=now)
+        if sales is None:
+            return False
+        body = payload(records, day, rec)
+        body["sales"] = sales          # verbatim: already shaped by its send
+        out = json.loads(_post(rec["relay_url"], json.dumps(body).encode("utf-8")))
+        if not out.get("ok"):
+            return False
+        log("sent %d rep(s) with credit checks EARLY (sales follow)"
+            % len(body["records"]))
+        return True
+    except Exception as e:  # noqa: BLE001
+        log("early credit-check send skipped: %s" % type(e).__name__)
+        return False

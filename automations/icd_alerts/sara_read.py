@@ -957,7 +957,8 @@ def _empty_read_evidence(page, day, raw_rows) -> str:
 
 
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
-             log=print, resume_only: bool = False) -> Dict:
+             log=print, resume_only: bool = False,
+             on_records=None) -> Dict:
     """{'records': {REP: credit checks}, 'sales': {REP: {Int, Int Up, DTV, NL}}}.
 
     ONE SESSION, THREE PASSES. A failure in the sales half must not cost the
@@ -1053,6 +1054,21 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
             if not records:
                 empty_evidence = _empty_read_evidence(page, day, _raw)
                 log("credit-check grid came back EMPTY -- " + empty_evidence[:300].replace("\n", " | "))
+
+            # THE CREDIT CHECKS ARE IN HAND: hand them over NOW, before the
+            # three sales grids (the slow half -- relay.send_records_early
+            # has the numbers). Timed like a pass so a slow sweep's breakdown
+            # shows what the head start cost, and it can never cost the read.
+            if on_records is not None:
+                _t_early = time.time()
+                try:
+                    on_records(dict(records))
+                except Exception as e:  # noqa: BLE001
+                    log("early hand-over skipped: %s" % type(e).__name__)
+                try:
+                    S._record_pass("early send", 1, time.time() - _t_early, True)
+                except Exception:  # noqa: BLE001
+                    pass
 
             sales = {}
             try:

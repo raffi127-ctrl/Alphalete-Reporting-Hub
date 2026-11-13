@@ -377,10 +377,20 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # with no fault either time because nothing had failed, it was still
         # working. Abandoning it costs one gap; holding the slot costs the
         # afternoon, and the numbers are cumulative so nothing is lost.
+        # CREDIT CHECKS GO AS SOON AS THEIR PASS IS DONE, not after the three
+        # sales grids behind it (Megan 2026-11-13; relay.send_records_early).
+        # ONLY on an ordinary live sweep of today: outside the alert hours the
+        # credit checks sent are deliberately the ones already seen, a
+        # catch-up is reading a day that is over, and a dry run sends nothing.
+        early = None
+        if not (dry_run or sales_only or resume_only) and day == C.today():
+            def early(records):
+                R.send_records_early(records, day, office_key=att_key, log=_log)
         read = W.timed("sweep",
                        lambda: sara_read.read_day(day, headless=headless,
                                                   log=_log,
-                                                  resume_only=resume_only),
+                                                  resume_only=resume_only,
+                                                  on_records=early),
                        log=_log, report=_report, office_key=att_key)
         current, sales = read["records"], read["sales"]
         # Wireless credit checks, offices on the three alerts only; None when
