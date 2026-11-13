@@ -279,7 +279,8 @@ def name_groups(reps, max_names: int = PENDING_MAX_NAMES):
     # A tiny last post (a few reps) rides on the one before ("si tiene que
     # entrar alguno más, ok").
     if len(groups) > 1 and sum(len(b[1]) for b in groups[-1]) < 8:
-        groups[-2] = groups[-2] + groups.pop()
+        tail = groups.pop()
+        groups[-1] = groups[-1] + tail
     if len(groups) == 1:
         return [("", [x for _l, xs in groups[0] for x in xs])]
     out = []
