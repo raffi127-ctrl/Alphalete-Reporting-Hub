@@ -34,10 +34,14 @@ class ProfitShareTest(unittest.TestCase):
         self.assertEqual(PS.posted_date("no sentence", dt.date(2026, 11, 3)),
                          dt.date(2026, 11, 3))
 
-    def test_week_is_the_sunday_closing_it(self):
-        self.assertEqual(PS.week_label(dt.date(2026, 11, 9)), "11.15.26")
+    def test_week_is_the_bulletin_out_the_week_the_email_arrives(self):
+        # Mon 11/9 email -> Fri 11/13 bulletin -> WE 11.8.26 (Eve's hand tab)
+        self.assertEqual(PS.week_label(dt.date(2026, 11, 9)), "11.8.26")
+        self.assertEqual(PS.week_label(dt.date(2026, 11, 13)), "11.8.26")
+        # Saturday: that Friday's bulletin is already out -> next one
+        self.assertEqual(PS.week_label(dt.date(2026, 11, 14)), "11.15.26")
         self.assertEqual(PS.week_label(dt.date(2026, 11, 15)), "11.15.26")
-        self.assertEqual(PS.week_label(dt.date(2026, 12, 28)), "1.3.27")
+        self.assertEqual(PS.week_label(dt.date(2026, 12, 28)), "12.27.26")
 
     def test_by_week_sums_two_periods_same_week(self):
         es = [{"week": "11.15.26", "net": 10.0}, {"week": "11.15.26", "net": 5.5},

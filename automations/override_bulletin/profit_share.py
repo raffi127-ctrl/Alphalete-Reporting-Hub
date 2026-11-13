@@ -18,9 +18,15 @@ Source path for the number:
 NET is what posts to his security account, same as every other Special the
 bulletin carries (ledger Transaction Amount).
 
-Which week: the sheet week (Sunday label) that contains the "posted ... by EOD
-<date>" date from the body — the week the money actually hits his account.
-Falls back to the email's own date if the body ever drops that sentence.
+Which week (Eve 2026-11-13): the bulletin that goes out the week the EMAIL
+ARRIVES — not the "posted ... by EOD" date, not the Special's period. Eve would
+rather it sat with Raf's Special Override, but until Smart Circle / Maud say
+otherwise it goes in the week of the email. The bulletin goes out Friday and
+reports the week that closed the Sunday before, so: next Friday on or after the
+arrival date, minus 5 days. P10-2026 arrived Mon 11/9 -> Fri 11/13 bulletin ->
+11.8.26 (matches Eve's hand tab). A Saturday arrival goes to the NEXT bulletin
+— that Friday's is already out. The posted date is kept only as a fallback if
+the email has no readable Date header.
 
 STATELESS on purpose: the inbox IS the state. Every fill/backtrack re-reads the
 emails, so a re-run never adds it twice and a backtrack rebuild of that week
@@ -105,8 +111,10 @@ def posted_date(body: str, fallback: Optional[dt.date]) -> Optional[dt.date]:
 
 
 def week_label(d: dt.date) -> str:
-    """Sheet week label (Sunday that closes the week holding `d`): 11/9/26 -> 11.15.26."""
-    sun = d + dt.timedelta(days=(6 - d.weekday()) % 7)
+    """Week of the bulletin that goes out the week `d` arrives: the Friday on or
+    after `d`, minus 5 days (Mon 11/9/26 -> Fri 11/13 -> 11.8.26)."""
+    fri = d + dt.timedelta(days=(4 - d.weekday()) % 7)
+    sun = fri - dt.timedelta(days=5)
     return f"{sun.month}.{sun.day}.{sun.strftime('%y')}"
 
 
@@ -155,8 +163,12 @@ def fetch(since_days: int = SINCE_DAYS, verbose: bool = True) -> List[dict]:
                 for per, amt in parse_xlsx(path).items():
                     if per in by_period:
                         continue
-                    when = posted_date(body, sent)
-                    by_period[per] = {"period": per, **amt, "posted": when,
+                    # Week = when the email ARRIVED (Eve 2026-11-13); the
+                    # posted date only stands in if the Date header is unreadable.
+                    when = sent or posted_date(body, None)
+                    by_period[per] = {"period": per, **amt,
+                                      "posted": posted_date(body, None),
+                                      "arrived": sent,
                                       "week": week_label(when) if when else None,
                                       "file": path.name}
                     if verbose:
