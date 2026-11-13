@@ -183,6 +183,34 @@ class FixesTest(unittest.TestCase):
         self.assertNotIn("See the 5", P.options_html(["x"]))
 
 
+class PullAllTest(unittest.TestCase):
+    def test_weeks_are_finished_mon_to_sat(self):
+        from automations.applicant_stream_card import pull_all as PA
+        # Sunday 11/15: the week that ended yesterday is the newest
+        self.assertEqual(PA.mon_sat_weeks(1, dt.date(2026, 11, 15)),
+                         [(dt.date(2026, 11, 9), dt.date(2026, 11, 14))])
+        # Friday 11/13: that week isn't finished, so last week's
+        got = PA.mon_sat_weeks(6, dt.date(2026, 11, 13))
+        self.assertEqual(got[-1], (dt.date(2026, 11, 2), dt.date(2026, 11, 7)))
+        self.assertEqual(len(got), 6)
+        self.assertTrue(all(m.weekday() == 0 and s.weekday() == 5
+                            for m, s in got))
+
+    def test_a_week_pulled_again_replaces_only_that_week(self):
+        from automations.applicant_stream_card import pull_all as PA
+        old = [{"date": "11-02-2026", "v": "old"},
+               {"date": "10-26-2026", "v": "keep"}]
+        new = [{"date": "11-03-2026", "v": "new"}]
+        got = PA.merge(old, new, dt.date(2026, 11, 2), dt.date(2026, 11, 7),
+                       PA._rec_day)
+        self.assertEqual(sorted(r["v"] for r in got), ["keep", "new"])
+        got = PA.trim(got, dt.date(2026, 11, 1), PA._rec_day)
+        self.assertEqual([r["v"] for r in got], ["new"])
+        self.assertEqual(PA._log_day({"sent_at": "", "queued_at":
+                                      "10-19-2026 12:47 AM"}),
+                         dt.date(2026, 10, 19))
+
+
 class VitalsTest(unittest.TestCase):
     def test_sundays_are_finished_weeks_oldest_first(self):
         from automations.applicant_stream_card import vitals as V
@@ -212,7 +240,12 @@ class VitalsTest(unittest.TestCase):
         # a line per vital, the weekly numbers behind a click
         self.assertIn("<svg class='spark'", page0)
         self.assertIn("<details class='vital'>", page0)
-        self.assertIn("Week of 11/1", page0)
+        # opened: weeks left to right, oldest first, numbers coloured
+        self.assertIn("<div class='weeks'", page0)
+        self.assertLess(page0.index("<span class='wl'>10/4</span>"),
+                        page0.index("<span class='wl'>11/1</span>"))
+        self.assertIn("<b style='color:#1f8a4c'>44%</b>", page0)  # best wk
+        self.assertIn("<b style='color:#c0392b'>40%</b>", page0)  # worst wk
         # coloured by height: red low weeks -> orange -> green best weeks
         self.assertIn("linearGradient", page0)
         self.assertIn("stop-color='#c0392b'", page0)

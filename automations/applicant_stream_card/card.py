@@ -566,6 +566,13 @@ ol.replies li{margin:.45em 0}
 .vv b{font-size:1.2em}
 .vv span{font-size:.82em}
 .spark{display:block}
+.vitals .body{padding:0 .9em .8em}
+.weeks{display:grid;gap:.3em;border-top:1px solid var(--line);
+     padding-top:.6em}
+.wk{text-align:center;padding:.3em .1em;border-radius:6px}
+.wk.now{background:var(--soft)}
+.wk .wl{display:block;font-size:.75em;color:var(--muted)}
+.wk b{font-size:1.05em}
 @media (max-width:420px){.vitals details.vital>summary{
      grid-template-columns:minmax(0,1fr) 6.5em}.spark{grid-column:1/-1;
      grid-row:2;width:100%}}
@@ -687,7 +694,9 @@ def trend_html(vitals):
         len(weeks)), "<div class='vitals'>"]
     for key, label, pct in V.VITALS:
         latest, delta = V.trend(weeks, key)
-        if delta is None or abs(delta) < (1 if pct else 0.5):
+        if latest is None:
+            way, chg = "steady", "<span class='s'>no data</span>"
+        elif delta is None or abs(delta) < (1 if pct else 0.5):
             way = "steady"
             chg = "<span class='steady'>\u2192 steady</span>"
         else:
@@ -697,13 +706,28 @@ def trend_html(vitals):
                 "+" if delta > 0 else "\u2212",
                 "{:.0f}{}".format(abs(delta), " pts" if pct else ""))
         pts = [(lab, v.get(key)) for lab, (_d, v) in zip(labs, weeks)]
-        rows = "".join("<tr><td>Week of {}</td><td>{}</td></tr>".format(
-            lab, _vfmt(v, pct)) for lab, v in reversed(pts))
+        # Opened: the weeks left to right, oldest first, each number in the
+        # colour of its dot (red = this vital's weakest week, green = best).
+        have = [v for _l, v in pts if v is not None]
+        lo, hi = (min(have), max(have)) if have else (0, 0)
+
+        def tone(v):
+            if v is None:
+                return "#6b6b6b"
+            return MID if hi == lo else _heat((v - lo) / (hi - lo))
+        rows = "".join(
+            "<div class='wk{}'><span class='wl'>{}</span>"
+            "<b style='color:{}'>{}</b></div>".format(
+                " now" if i == len(pts) - 1 else "", lab, tone(v),
+                _vfmt(v, pct))
+            for i, (lab, v) in enumerate(pts))
         out.append(
             "<details class='vital'><summary><span class='vn'>{}</span>"
             "{}<span class='vv'><b>{}</b>{}</span></summary>"
-            "<div class='body'><table>{}</table></div></details>".format(
-                _e(label), _spark(pts, pct, way), _vfmt(latest, pct), chg, rows))
+            "<div class='body'><div class='weeks' style='grid-template-columns:"
+            "repeat({}, minmax(0,1fr))'>{}</div></div></details>".format(
+                _e(label), _spark(pts, pct, way), _vfmt(latest, pct), chg,
+                len(pts), rows))
     out.append("</div><p class='s'>Tap a vital for its week-by-week numbers. "
                "Weeks run Sunday to Saturday, dated by their Sunday. The "
                "change compares the latest week with the 3 before it.</p>")
