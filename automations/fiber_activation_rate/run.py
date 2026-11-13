@@ -70,9 +70,9 @@ LOG_HEADER = ["Date", "Captainship", "Owner", "Rep",
 OLD_LOG_HEADERS = (["Date", "Team", "Owner", "Rep", "0-30", "30-60"],)
 # Owner value of a captainship's own average row (Tableau's team 'Total').
 CAPTAINSHIP = "(Captainship)"
-# Captainships whose 'Activation by Rep' tab is drawn. PREVIEW: Raf's only
-# (Eve 11/12: one first, the rest after her OK). None = every captainship.
-TAB_TEAMS = ("Raf's Team",)
+# Captainships whose 'Activation by Rep' tab is drawn. None = every
+# captainship + the Lumen Owners tab (Eve OK'd Raf's preview 11/12: "si").
+TAB_TEAMS = None
 
 
 def _pct(cell: str) -> str:

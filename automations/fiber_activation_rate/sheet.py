@@ -1,7 +1,8 @@
 """Readable Fiber tabs, drawn from the log — same look as the NDS captain tabs.
 
 TABS  'Activation by Rep - <Captain> (ATT Fiber)' — one per Captain's Bonus
-      Team (+ 'Unassigned'). Two boxes (0-30 = Rolling 4 Weeks, 30-60): the
+      Team, plus 'Lumen Owners' for OUR owners Tableau files under
+      'Unassigned' (see NO_CAPTAIN_OWNERS). Two boxes (0-30 = Rolling 4 Weeks, 30-60): the
       Captainship Avg, then every owner (their office total) with their reps
       folded underneath ('+' opens them), the newest day in column C and older
       days to the right. Redrawn from the log on every run — nobody types here.
@@ -105,9 +106,42 @@ def render(team: str, grid):
     return rows, kinds, len(days)
 
 
+# Tableau files owners with no captain under 'Unassigned' — 15 on 11/12, most
+# of them not ours. Only OUR captain-less owners get a tab, under this name
+# (Eve 11/12: the Lumen Owners group). An owner who gains a captain moves to
+# that captain's tab by himself; one who becomes ours without a captain has to
+# be added here.
+UNASSIGNED = "Unassigned"
+NO_CAPTAIN_TAB = "Lumen Owners"
+NO_CAPTAIN_OWNERS = ("Lajahnik Valentine", "Nigel Marshall", "Aaron Nimako",
+                     "David Pancoast")
+
+
+def _norm(s: str) -> str:
+    return " ".join((s or "").lower().split())
+
+
+def no_captain_grid(grid):
+    """The 'Unassigned' rows of OUR owners only, relabelled as the Lumen tab
+    (no captainship avg: Tableau's 'Unassigned' total mixes in other owners)."""
+    ours = {_norm(o) for o in NO_CAPTAIN_OWNERS}
+    return [grid[0]] + [[r[0], NO_CAPTAIN_TAB] + r[2:] for r in grid[1:]
+                        if len(r) > 3 and r[1] == UNASSIGNED and _norm(r[2]) in ours]
+
+
 def draw(book, grid, only_teams=None, *, logfn=print) -> List[str]:
     done = []
     for team in teams(grid):
+        if team == UNASSIGNED:
+            if only_teams and NO_CAPTAIN_TAB not in only_teams:
+                continue
+            sub = no_captain_grid(grid)
+            if len(sub) > 1:
+                rows, kinds, n_days = render(NO_CAPTAIN_TAB, sub)
+                done.append(_nds.write_tab(book, NO_CAPTAIN_TAB, rows, kinds, n_days,
+                                           logfn=logfn, title=tab_name(NO_CAPTAIN_TAB),
+                                           palette=PALETTE, cutoffs=CUTOFFS))
+            continue
         if only_teams and team not in only_teams:
             continue
         rows, kinds, n_days = render(team, grid)
