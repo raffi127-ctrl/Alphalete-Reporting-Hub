@@ -94,7 +94,10 @@ WEEK_MONDAY_THREAD = "NDS Metrics"
 # matched the way total_knocks.guests matches (loose, unique hits only).
 # BOARD ONLY: not the gaps list, not the call-outs, not the owners' board
 # share (Raf's row there already carries them). Raf's own board is untouched.
-BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Nathaly Benitez"]}
+# Carlos 2026-11-13: "Anette look for her where you find cinthya. Nathaly look
+# for her where everyone else is at" -- Annett joins the borrowed list, Nathaly
+# knocks on Carlos's own Ownerville again and comes off it.
+BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Annett Climaco"]}
 # Raf's rows are re-shared only when HIS board draws (~:04 and ~:34), so a
 # board drawn at :00/:30 carried numbers 26 minutes old (Carlos 2026-11-03
 # 2:30pm: "the numbers dont seem accurate"). Before pulling, a board tick
