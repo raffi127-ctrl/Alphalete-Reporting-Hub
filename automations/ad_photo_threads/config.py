@@ -715,6 +715,10 @@ _SCORECARD_TABS = {
                "scorecard_tab": "Colten (D2D) - Ad Scorecard",
                "scorecard_seconds_from_sheet": True, "scorecard": True,
                "scorecard_tag": "U047M3AAN0G",
+               # Raf 11/12 ("AD Score Card - Edit"): a 2nd picture with the
+               # whole funnel per ad; applies / 1st sched. / new starts come
+               # from this AppStream office's Source Report (funnel.py).
+               "scorecard_funnel_office": "14733",
                # Valeria 10/12 (scorecard thread): the Assistant Manager ad
                # runs in Doral AND Princeton -- one row (see _ALIASES), both
                # cities in its City cell instead of a blank.
@@ -787,6 +791,7 @@ SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 SCORECARD_SECONDS_FROM_SHEET = False   # set by use()
 SCORECARD_TAG = ""            # set by use(); Slack user tagged on the post
 SCORECARD_CITIES: dict = {}   # set by use(); {ad title: City cell} for a city-less title
+SCORECARD_FUNNEL_OFFICE = ""  # set by use(); AppStream office id -> 2nd (funnel) picture
 SCORECARD_REPLACED: dict = {}  # set by use(); {"YYYY-MM-DD" week Monday: [ad titles replaced]}
 
 # The ad scorecard (Raf 10/9): "a weekly scorecard maybe on Friday ... as
@@ -816,6 +821,8 @@ def use(o: dict) -> None:
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
     global TITLE_ALIASES, TITLE_ONLY, SECOND_ROUNDS_OWNER, SCORECARD_SECONDS_FROM_SHEET
     global SCORECARD_TAG, SCORECARD_CITIES, SCORECARD_REPLACED, ROWS_FROM_SLACK
+    global SCORECARD_FUNNEL_OFFICE
+    SCORECARD_FUNNEL_OFFICE = o.get("scorecard_funnel_office") or ""
     SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     SCORECARD_SECONDS_FROM_SHEET = bool(o.get("scorecard_seconds_from_sheet"))
     SCORECARD_TAG = o.get("scorecard_tag") or ""

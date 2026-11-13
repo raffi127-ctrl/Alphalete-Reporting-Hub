@@ -538,15 +538,25 @@ def publish(day: dt.date, channel: str, owner: str, *, cl=None, record: bool = T
     msg, png = make(day, owner)
     if config.SCORECARD_TAG:                   # Eve 10/11: tag Colten / Eveliz
         msg = f"<@{config.SCORECARD_TAG}> {msg}"
-    r = cl.files_upload_v2(channel=channel, file=str(png), filename=png.name,
-                           title=f"Ad Scorecard {day.isoformat()}", initial_comment=msg)
+    files = [{"file": str(png), "filename": png.name,
+              "title": f"Ad Scorecard {day.isoformat()}"}]
+    if config.SCORECARD_FUNNEL_OFFICE:         # Raf 11/12: 2nd picture, the funnel
+        try:
+            from automations.ad_photo_threads import funnel
+            fp = funnel.make(day, owner, config.SCORECARD_FUNNEL_OFFICE)
+            files.append({"file": str(fp), "filename": fp.name,
+                          "title": f"Ad Scorecard Funnel {day.isoformat()}"})
+        except Exception as e:                 # noqa: BLE001 -- picture 1 still goes out
+            print(f"scorecard funnel failed: {type(e).__name__}: {str(e)[:200]}")
+    r = cl.files_upload_v2(channel=channel, file_uploads=files, initial_comment=msg)
     if record:
         state = post._load_state()
         got = state.setdefault(channel, {}).setdefault("scorecards", [])
         if day.isoformat() not in got:
             got.append(day.isoformat())
         post._save_state(state)
-    return str((r.get("file") or {}).get("id", ""))
+    got = r.get("files") or [r.get("file") or {}]
+    return str((got[0] or {}).get("id", ""))
 
 
 def due(o: dict, day: dt.date) -> bool:
