@@ -503,6 +503,12 @@ _MORE = [
     # does not match). Photos channel created by Eve 11/2.
     ("hasan", "Hasan Salame", ARS_D_TO_I, "Hasan Salame", "24279", "Ascend Elite Marketing",
      "C0CAZ17H5NF", "C0CF59TUGBA", r"ascend\s*elite.*1st\s*round"),
+    # Tre Mitchell (Mission III Management, Houston): Raf asked 11/13. Daily
+    # thread "MISSION III MANAGEMENT - 1st Rounds - November 13" in his
+    # recruiting channel; ARS R-Z tab "Tre Mitchell". Photos go to
+    # #indeed-photos-tre-mitchells-office (created 11/13, both Lucys in).
+    ("tre", "Tre Mitchell", ARS_R_TO_Z, "Tre Mitchell", "21182", "Mission III Management",
+     "C0AUG0B5SKC", "C0CHK69GCSE", r"mission\s*iii\s*management.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -522,6 +528,7 @@ _TZ = {
     "valeria": "America/New_York",     # Altura Marketing, Tampa FL
     "frank": "America/New_York",       # ads: Boca Raton / Tamarac / Coral Springs, FL
     "hasan": "America/Chicago",        # Waco, TX (OFFICES INFO GENERAL: CST)
+    "tre": "America/Chicago",          # Houston, TX (Mission III)
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
