@@ -281,6 +281,17 @@ REVIEW_PEOPLE = HERE.parent / "owner_rep_audit" / "review_people.json"
 KNOCKS_SSID, KNOCKS_TAB = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw", "Knocks Daily"
 AUTO = " (auto)"
 
+# Reps who answered Lucy's "Who is your owner?" (or Raf/Eve placed by hand):
+# Slack id -> owner, as the owner's name. Wins over every guess and shows
+# WITHOUT "(auto)" - a person confirmed it. The bot still has no owner for them,
+# so this is what keeps them out of "(no owner confirmed)".
+ANSWERED = "answered"
+OWNER_ANSWERS = {
+    # Kingdavid Mayberry said "Salik Mallick"; Raf 11/13: Salik's sales and
+    # recruiting funnel all go under Hammad.
+    "U0C10KJT4SW": "Hammad Haque",
+}
+
 
 def _owner_index(owner_names: list) -> dict:
     """normalized name / channel slug -> bot owner name."""
@@ -335,6 +346,10 @@ def guess_owners(uids: list, names: dict, owner_names: list, slack: dict, knocks
             by_rep[norm(rep_name)] = own
     out = {}
     for uid in uids:
+        if uid in OWNER_ANSWERS:
+            want = OWNER_ANSWERS[uid]
+            out[uid] = (idx.get(norm(want)) or idx.get(_alias_canon()(want)) or want, ANSWERED)
+            continue
         slug = slack.get(uid)
         if slug and idx.get(slug):
             out[uid] = (idx[slug], "slack channel")
@@ -435,7 +450,7 @@ def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None)
         if oid:
             return owners.get(oid, NO_OWNER), False
         if uid in guesses:
-            return guesses[uid][0], True
+            return guesses[uid][0], guesses[uid][1] != ANSWERED
         return NO_OWNER, False
 
     own = defaultdict(lambda: {"n": 0, "scores": []})    # (month, owner name)
