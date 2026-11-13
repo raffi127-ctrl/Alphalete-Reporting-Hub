@@ -239,28 +239,55 @@ def coverage(csv_path: Optional[Path], day: dt.date) -> int:
 # OWN thread next to Metrics (like the Order Log), so Metrics doesn't flood; the
 # Metrics thread gets one pointer line.
 PENDING_TITLE = "⏳ Pending Orders"
-PENDING_MAX_NAMES = 24   # Eve 11/12: same as Raf's Order Log groups (~24 names per thread)
+PENDING_MAX_NAMES = 30   # Eve 11/12: up to ~30 reps per index
+
+
+def _initial(rep) -> str:
+    return (str(rep).strip()[:1] or "?").upper()
 
 
 def name_groups(reps, max_names: int = PENDING_MAX_NAMES):
-    """[(label, [(rep, rows)])] — up to max_names reps = one post; more =
-    always TWO posts, half and half (Eve 11/12: "dividir el post solo en
-    dos, 30 y 30"). Label = 'A–M' by first letters; '' if one post."""
+    """[(label, [(rep, rows)])] — reps A-Z cut ONLY between letters (Eve
+    11/12: never 'A–K' + 'K–Z'), each post as close to max_names as a letter
+    boundary allows; going a bit over to keep a letter whole is fine.
+    Label = 'A–K' by first letters; '' if one post."""
     if len(reps) <= max_names:
-        groups = [reps]
-    else:
-        half = (len(reps) + 1) // 2
-        groups = [reps[:half], reps[half:]]
+        return [("", list(reps))]
+    blocks = []                          # [(letter, [(rep, rows)])]
+    for rep, rr in reps:
+        if blocks and blocks[-1][0] == _initial(rep):
+            blocks[-1][1].append((rep, rr))
+        else:
+            blocks.append((_initial(rep), [(rep, rr)]))
+    groups, i = [], 0
+    while i < len(blocks):
+        left = sum(len(b[1]) for b in blocks[i:])
+        if left <= max_names:
+            groups.append(blocks[i:])
+            break
+        # cut after the letter whose running total is closest to max_names
+        best_j, best_d, run = i, None, 0
+        for j in range(i, len(blocks)):
+            run += len(blocks[j][1])
+            d = abs(run - max_names)
+            if best_d is None or d < best_d:
+                best_j, best_d = j, d
+            if run >= max_names:
+                break
+        groups.append(blocks[i:best_j + 1])
+        i = best_j + 1
+    # A tiny last post (a few reps) rides on the one before ("si tiene que
+    # entrar alguno más, ok").
+    if len(groups) > 1 and sum(len(b[1]) for b in groups[-1]) < 8:
+        groups[-2] = groups[-2] + groups.pop()
     if len(groups) == 1:
-        return [("", groups[0])]
-
-    def first(rep):
-        return (rep.strip()[:1] or "?").upper()
-
-    def label(g):
-        a, b = first(g[0][0]), first(g[-1][0])
-        return a if a == b else "{}–{}".format(a, b)
-    return [(label(g), g) for g in groups]
+        return [("", [x for _l, xs in groups[0] for x in xs])]
+    out = []
+    for g in groups:
+        a, z = g[0][0], g[-1][0]
+        out.append((a if a == z else "{}–{}".format(a, z),
+                    [x for _l, xs in g for x in xs]))
+    return out
 
 
 def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
