@@ -1209,7 +1209,11 @@ _UNBLOCKED = tuple(c.key for c in CAPTAINS
 # devolvio la grilla con reps (Katie Dominguez 98 / 25, Mathew Contreras,
 # Monserrat Villa Orozco...). Eve: "tenemos acceso a la oficina de francisco
 # castillo pero no se esta generando su knocks report".
-DROP_KNOCK_OWNERS: tuple = ()
+# Eve 2026-11-13, "hasta que yo te avise": ownerville sends both offices to
+# Maxamad Aden's 23066 (even by office number, 21757 / 23425), so their boards
+# come back yellow and hold Colten's / Jairo's mail every morning. Out until
+# Eve says they are fixed.
+DROP_KNOCK_OWNERS: tuple = ("Karrington Moody", "Justin Fermin")
 
 # Owners que SI llevan board de knocks en una capitania aunque NO esten en su
 # bloque del Org Sales Board (el roster normal). Se suman al final de
