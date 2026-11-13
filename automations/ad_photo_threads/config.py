@@ -277,6 +277,9 @@ OFFICES = [
         # the ad scorecard post (scorecard.py). Funnel 1 only for now.
         "second_rounds_owner": "Rafael Hidalgo",
         "scorecard": True,
+        # Funnel picture (Raf 11/12): his tab's "Offered Positon" / "BOB" are
+        # never filled (11/12: 0 of the last 500 rows) -> "-", not a fake 0.
+        "scorecard_funnel_offers": False,
         # Raf 10/10: the scorecard also as a tab in his "All in One Local
         # Office - Raf" workbook, rewritten every weekday night.
         "scorecard_book": ALL_IN_ONE_RAF,
@@ -715,10 +718,6 @@ _SCORECARD_TABS = {
                "scorecard_tab": "Colten (D2D) - Ad Scorecard",
                "scorecard_seconds_from_sheet": True, "scorecard": True,
                "scorecard_tag": "U047M3AAN0G",
-               # Raf 11/12 ("AD Score Card - Edit"): a 2nd picture with the
-               # whole funnel per ad; applies / 1st sched. / new starts come
-               # from this AppStream office's Source Report (funnel.py).
-               "scorecard_funnel_office": "14733",
                # Valeria 10/12 (scorecard thread): the Assistant Manager ad
                # runs in Doral AND Princeton -- one row (see _ALIASES), both
                # cities in its City cell instead of a blank.
@@ -792,6 +791,7 @@ SCORECARD_SECONDS_FROM_SHEET = False   # set by use()
 SCORECARD_TAG = ""            # set by use(); Slack user tagged on the post
 SCORECARD_CITIES: dict = {}   # set by use(); {ad title: City cell} for a city-less title
 SCORECARD_FUNNEL_OFFICE = ""  # set by use(); AppStream office id -> 2nd (funnel) picture
+SCORECARD_FUNNEL_OFFERS = True  # set by use(); False = the sheet's Offered/BOB aren't kept
 SCORECARD_REPLACED: dict = {}  # set by use(); {"YYYY-MM-DD" week Monday: [ad titles replaced]}
 
 # The ad scorecard (Raf 10/9): "a weekly scorecard maybe on Friday ... as
@@ -821,8 +821,13 @@ def use(o: dict) -> None:
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
     global TITLE_ALIASES, TITLE_ONLY, SECOND_ROUNDS_OWNER, SCORECARD_SECONDS_FROM_SHEET
     global SCORECARD_TAG, SCORECARD_CITIES, SCORECARD_REPLACED, ROWS_FROM_SLACK
-    global SCORECARD_FUNNEL_OFFICE
-    SCORECARD_FUNNEL_OFFICE = o.get("scorecard_funnel_office") or ""
+    global SCORECARD_FUNNEL_OFFICE, SCORECARD_FUNNEL_OFFERS
+    # Raf 11/12 + Eve "aplicalo a todos": every Ad Scorecard gets the funnel
+    # picture, read from the office's OWN AppStream office (its source's id).
+    SCORECARD_FUNNEL_OFFICE = o.get("scorecard_funnel_office") or (
+        next((s["office_id"] for s in o.get("sources") or [] if s.get("office_id")), "")
+        if o.get("scorecard") else "")
+    SCORECARD_FUNNEL_OFFERS = o.get("scorecard_funnel_offers", True)
     SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     SCORECARD_SECONDS_FROM_SHEET = bool(o.get("scorecard_seconds_from_sheet"))
     SCORECARD_TAG = o.get("scorecard_tag") or ""

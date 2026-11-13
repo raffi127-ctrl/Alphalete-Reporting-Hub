@@ -64,6 +64,26 @@ class Funnel(unittest.TestCase):
                          ["-", "-", "3", "0", "0", "-", "-"])
         self.assertEqual(funnel.cells(funnel.total(rows, False), None)[3], "-")
 
+    def test_offers_off_dashes(self):
+        old = config.SCORECARD_FUNNEL_OFFERS
+        config.SCORECARD_FUNNEL_OFFERS = False
+        try:
+            rows = funnel.rows_for({"x": {"s1": 3, "offered": 0, "bob": 0}}, None, {"x": "X"})
+            self.assertEqual(funnel.cells(rows[0], 1)[5:8], ["3", "-", "-"])
+        finally:
+            config.SCORECARD_FUNNEL_OFFERS = old
+
+    def test_every_scorecard_office_reads_its_own_appstream(self):
+        got = {}
+        for o in config.OFFICES:
+            if o.get("scorecard"):
+                config.use(o)
+                got[o["key"]] = config.SCORECARD_FUNNEL_OFFICE
+        self.assertEqual(got["colten"], "14733")
+        self.assertEqual(got["eveliz"], "18404")
+        self.assertEqual(got["jairo"], "21270")
+        self.assertEqual(got["rafael"], "11280")
+
 
 if __name__ == "__main__":
     unittest.main()

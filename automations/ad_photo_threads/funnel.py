@@ -20,7 +20,10 @@ Two sources, each for what only it has:
 AppStream down / office not set -> the AppStream columns show "-" and the
 picture still goes out (the sheet half is the same numbers as picture 1).
 
-Config: "scorecard_funnel_office": "<AppStream office id>" in _SCORECARD_TABS.
+Every office with "scorecard": True gets it (Eve 11/12 "aplicalo a todos"),
+from its own AppStream office (its source's office_id; "scorecard_funnel_office"
+overrides). "scorecard_funnel_offers": False (Raf -- his tab never fills
+Offered / BOB) shows those two columns as "-".
 By hand (PNG + printed table, nothing posted):
     python -m automations.ad_photo_threads.funnel --office colten --date 2026-11-06
     python -m automations.ad_photo_threads.funnel --office colten --date 2026-11-06 --no-appstream
@@ -132,7 +135,9 @@ def cells(r: dict, n: Optional[int]) -> List[str]:
     def g(d, k):
         return str(d[k]) if d is not None else "-"
     return [str(n) if n is not None else "", r["title"], r["city"],
-            g(a, "apps"), g(a, "b1"), g(s, "s1"), g(s, "offered"), g(s, "bob"),
+            g(a, "apps"), g(a, "b1"), g(s, "s1"),
+            g(s if config.SCORECARD_FUNNEL_OFFERS else None, "offered"),
+            g(s if config.SCORECARD_FUNNEL_OFFERS else None, "bob"),
             g(a, "nb"), g(a, "ns")]
 
 
@@ -250,7 +255,7 @@ def main(argv=None) -> int:
     o = config.office(a.office)
     config.use(o)
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
-    png = make(day, o["owner"], o.get("scorecard_funnel_office", ""),
+    png = make(day, o["owner"], config.SCORECARD_FUNNEL_OFFICE,
                use_appstream=not a.no_appstream)
     print("PNG:", png)
     return 0
