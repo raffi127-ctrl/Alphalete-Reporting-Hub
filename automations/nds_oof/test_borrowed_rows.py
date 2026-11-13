@@ -20,7 +20,7 @@ def _line(key, day, rows, at="2026-11-03T14:31:00"):
 
 
 RAF = [{"Rep": "Cinthya Reyes Roadtrip", "Total Knocks": "41", "First Knock": "1:40 PM", "Talk To's": "9"},
-       {"Rep": "Annett Climaco", "Total Knocks": "27", "First Knock": "2:05 PM", "Talk To's": "4"},
+       {"Rep": "Anette Climaco", "Total Knocks": "27", "First Knock": "2:05 PM", "Talk To's": "4"},
        {"Rep": "Jorge Gramajo", "Total Knocks": "60", "First Knock": "1:35 PM", "Talk To's": "12"}]
 OWN = [{"Rep": "Sebastian Avellaneda", "Total Knocks": "30", "First Knock": "2:01 PM"}]
 
@@ -35,7 +35,7 @@ class Borrowed(unittest.TestCase):
 
     def test_two_names_come_over_board_shape_only(self):
         got = self._run([_line("rafael", dt.date(2026, 11, 3), RAF)])
-        self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Annett Climaco"])
+        self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Anette Climaco"])
         for r in got:                       # trimmed to our own rows' columns
             self.assertEqual(set(r), {"Rep", "Total Knocks", "First Knock"})
         self.assertEqual(got[0]["Total Knocks"], "41")
@@ -44,7 +44,7 @@ class Borrowed(unittest.TestCase):
         self.assertEqual(self._run([_line("rafael", dt.date(2026, 11, 2), RAF)]), [])
 
     def test_other_keys_ignored_and_no_double(self):
-        own = OWN + [{"Rep": "Annett Climaco", "Total Knocks": "5", "First Knock": "2:10 PM"}]
+        own = OWN + [{"Rep": "Anette Climaco", "Total Knocks": "5", "First Knock": "2:10 PM"}]
         got = self._run([_line("steve", dt.date(2026, 11, 3), RAF),
                          _line("rafael", dt.date(2026, 11, 3), RAF)], own=own)
         self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip"])
@@ -79,7 +79,7 @@ class Borrowed(unittest.TestCase):
              mock.patch.object(R, "_log"):
             got = R.borrowed_rows(dt.date(2026, 11, 6), list(OWN))
             at = R._shared_at(dt.date(2026, 11, 6))
-        self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Annett Climaco"])
+        self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Anette Climaco"])
         self.assertEqual(at, {"rafael": dt.datetime(2026, 11, 6, 14, 31, 10)})
 
     def test_empty_relay_row_still_counts_as_reported(self):
@@ -193,7 +193,7 @@ class SurnameFallback(unittest.TestCase):
     def _run(self, raf_rows):
         with mock.patch.object(R, "_borrow_sources",
                                lambda today: {"rafael": (raf_rows, None, "ICD Knocks office raf")}), \
-             mock.patch.object(R.C, "BORROWED_ROWS", {"rafael": ["Cinthya Reyes", "Annett Climaco"]}), \
+             mock.patch.object(R.C, "BORROWED_ROWS", {"rafael": ["Cinthya Reyes", "Anette Climaco"]}), \
              mock.patch.object(R, "_log", lambda m: LOG.append(m)):
             return R.borrowed_rows(D, list(OWN))
 

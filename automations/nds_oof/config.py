@@ -97,7 +97,7 @@ WEEK_MONDAY_THREAD = "NDS Metrics"
 # Carlos 2026-11-13: "Anette look for her where you find cinthya. Nathaly look
 # for her where everyone else is at" -- Annett joins the borrowed list, Nathaly
 # knocks on Carlos's own Ownerville again and comes off it.
-BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Annett Climaco"]}
+BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Anette Climaco"]}  # Raf's row reads "Anette Climaco GP"
 # Raf's rows are re-shared only when HIS board draws (~:04 and ~:34), so a
 # board drawn at :00/:30 carried numbers 26 minutes old (Carlos 2026-11-03
 # 2:30pm: "the numbers dont seem accurate"). Before pulling, a board tick
