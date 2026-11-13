@@ -707,9 +707,11 @@
   },
   {
     "key": "george-delgado",
-    "label": "George's Local Office (channel from ECO sign-up)",
+    "label": "George's Local Office",
     "owner": "George Delgado",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CAVMPTS03"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
