@@ -307,6 +307,9 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
                                           fill_blank=not owner, own_format=t.get("own_numfmts"))
                  + K.check_styles(title, t["sheet_id"], v, t["styles"], fill_blank=not owner)
                  + K.check_background_shift(title, t["sheet_id"], v, t.get("bgs") or [])
+                 + K.check_dropdown_blank_paint(title, t["sheet_id"], v, t.get("dropdowns") or [],
+                                                t.get("bgs") or [])
+                 + K.check_checkbox_leftovers(title, v, t.get("dropdowns") or [])
                  + K.check_dropdowns(title, t["sheet_id"], v, t.get("dropdowns") or [],
                                      fill_blank=True, hidden=t.get("hidden_rows") or ()))
         if not owner:
@@ -892,7 +895,7 @@ OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
                "cf_strike_stray", "cf_row_shift", "cf_week_tag", "day_stats_formula", "lineup_short", "lineup_old_week",
                "font", "number_format", "roll_call_blank", "x_over_formula",
                "date_wrong",
-               "dropdown_missing",
+               "dropdown_missing", "dropdown_blank_paint", "checkbox_leftover",
                *LC.REPAIRS}
 
 

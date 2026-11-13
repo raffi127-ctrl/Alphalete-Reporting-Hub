@@ -63,6 +63,8 @@ KIND_LABEL = {
     "cf_strike_stray": "tachado de Car Rides pegado sobre los autos (tacha nombres ya puestos)",
     "cf_stray_cell": "regla de color pegada en una celda suelta (no la tiene el resto de la columna)",
     "background_shift": "colores de fondo corridos una columna en esta fila",
+    "dropdown_blank_paint": "celda vacía de un desplegable con color viejo: vuelve a blanco",
+    "checkbox_leftover": "quedó TRUE del checkbox viejo: pasa a la palabra del desplegable",
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
     "cf_row_shift": "color de estado que pinta la fila de al lado, no la del rep",
@@ -1033,6 +1035,77 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
                     "source": _cell_range(sheet_id, source, c),
                     "destination": _cell_range(sheet_id, r, c),
                     "pasteType": "PASTE_DATA_VALIDATION"}} if can_copy else None, **base))
+    return out
+
+
+BLANK_PAINT_MIN = 3   # blank cells a column needs before its "normal" blank color counts
+
+
+def check_dropdown_blank_paint(tab: str, sheet_id: int, values, rules, bgs) -> List[Finding]:
+    """A blank cell in a dropdown column keeps the column's normal blank color
+    (white). Maud 2026-11-13: Direct Deposit went from checkbox to dropdown
+    (Completed / Submitted / Can't get DD / Pending); the label colors come from
+    the dropdown, but the old checkbox paint stayed under the cells, so a cell
+    emptied out shows orange or red. Only the paint is cleared, never the value
+    or the dropdown (a written dropdown loses its colors, see check_campaign)."""
+    first, last = block_rows(values)
+    lay = layout(values)
+
+    def at(grid, r, c):
+        row = grid[r - 1] if r - 1 < len(grid) else []
+        return row[c - 1] if c - 1 < len(row) else None
+
+    width = max((len(rules[r - 1]) for r in range(first, last + 1) if r - 1 < len(rules)), default=0)
+    out = []
+    for c in range(lay.name_col + 1, width + 1):
+        # 'ZZ EXTRA' / 'xx' filler rows are greyed out whole on purpose (Eveliz B2B)
+        cells = [r for r in range(first, last + 1)
+                 if _dropdown_choices(at(rules, r, c) or {}) and not _g(values, r, c).strip()
+                 and not _SPARE_NAME.match(name_at(values, r) or "")]
+        if len(cells) < BLANK_PAINT_MIN:
+            continue
+        def paint_at(r):
+            p = at(bgs, r, c) or ""
+            return "" if p and all(v == 1 for k, v in json.loads(p).items() if k != "alpha") \
+                and len([k for k in json.loads(p) if k != "alpha"]) == 3 else p
+        normal, hits = collections.Counter(paint_at(r) for r in cells).most_common(1)[0]
+        # Only ever takes old color OFF: a column whose blanks are painted on
+        # purpose is somebody's design.
+        if normal or hits < MAJORITY * len(cells):
+            continue
+        for r in cells:
+            paint = paint_at(r)
+            if paint == normal:
+                continue
+            out.append(Finding(
+                "dropdown_blank_paint", tab, a1(r, c),
+                "%s, columna %s" % (KIND_LABEL["dropdown_blank_paint"], header(values, c)),
+                row=r, name=name_at(values, r), before=paint, after=normal or "sin color",
+                request={"updateCells": {
+                    "range": _cell_range(sheet_id, r, c),
+                    "rows": [{"values": [{"userEnteredFormat":
+                        {"backgroundColor": json.loads(normal)} if normal else {}}]}],
+                    "fields": "userEnteredFormat.backgroundColor"}}))
+    return out
+
+
+# Checkbox words left behind when a column became a dropdown (Maud 2026-11-13:
+# Direct Deposit TRUE = Completed). Only when the column's list has the word.
+CHECKBOX_LEFTOVER = {"TRUE": "Completed"}
+
+
+def check_checkbox_leftovers(tab: str, values, rules) -> List[Finding]:
+    first, last = block_rows(values)
+    out = []
+    for r in range(first, last + 1):
+        for c, rule in enumerate(rules[r - 1] if r - 1 < len(rules) else [], 1):
+            choices = _dropdown_choices(rule or {}) or set()
+            text = _g(values, r, c).strip().upper()
+            word = CHECKBOX_LEFTOVER.get(text)
+            if word and word in choices and text not in choices:
+                out.append(Finding("checkbox_leftover", tab, a1(r, c),
+                                   "%s, columna %s" % (KIND_LABEL["checkbox_leftover"], header(values, c)),
+                                   row=r, name=name_at(values, r), before=text, after=word, value=word))
     return out
 
 
