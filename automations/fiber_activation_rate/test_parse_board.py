@@ -22,7 +22,9 @@ ROWS = [H,
 class T(unittest.TestCase):
     def test_parse(self):
         d = run.parse(ROWS)
-        self.assertEqual(set(d), {"Haytham Nagi", "Other Owner"})
+        self.assertEqual(set(d), {"Haytham Nagi", "Other Owner",
+                                  "(Captainship)|Sahil's Team"})
+        self.assertEqual(d["(Captainship)|Sahil's Team"]["reps"]["Total"]["0-30"], "80.0%")
         h = d["Haytham Nagi"]
         self.assertEqual(h["team"], "Sahil's Team")
         self.assertEqual(h["reps"]["Total"], {"0-30": "81.0%", "30-60": "84.2%"})
@@ -45,6 +47,22 @@ class T(unittest.TestCase):
         self.assertIn("#D9D9D9", html)      # 81% grey on 0-30
         html = slack_board.build_html("30-60", owner, slack_board.last_days(reps), reps)
         self.assertNotIn("#D9D9D9;", html)  # no grey band on 30-60
+
+
+    def test_captain_tab_rows(self):
+        from automations.fiber_activation_rate import sheet
+        day = dt.date(2026, 11, 12)
+        grid = [run.LOG_HEADER] + run.log_rows(day, run.parse(ROWS))
+        self.assertIn(["2026-11-12", "Sahil's Team", "(Captainship)", "Total",
+                       "80.0%", "80.0%"], grid)
+        self.assertEqual(sheet.tab_name("Sahil's Team"), "Activation by Rep - Sahil (ATT Fiber)")
+        rows, kinds, n = sheet.render("Sahil's Team", grid)
+        self.assertEqual(n, 1)
+        flat = [r[:3] for r in rows]
+        self.assertIn(["Captainship Avg", "", "80.0%"], flat)
+        self.assertIn(["Haytham Nagi", "Office total", "81.0%"], flat)
+        self.assertIn(["", "   Zachery Boren", "90.0%"], flat)
+        self.assertEqual([k[1] for k in kinds].count("box"), 2)
 
 
 if __name__ == "__main__":

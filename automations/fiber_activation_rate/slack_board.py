@@ -1,6 +1,6 @@
 """📈 Activation Rate by Rep — one Fiber office's reps, as Slack images.
 
-Reads ONLY the 'Fiber Activation Log' tab that run.py fills each morning from
+Reads ONLY the 'Fiber Activation by REP (daily log)' tab that run.py fills each morning from
 Tableau (ATTTRACKER2_1-D2D → Metrics → 'Metrics Call Last week data
 (Internet)' → ICD Owner Name (rep) / Rep Name → 'Rolling 4 Weeks' and
 '30-60 day New Internet activation rate').
@@ -130,7 +130,7 @@ def run(owner: str, *, sandbox: bool, dry_run: bool, post_to: str = "",
     if grid is None:
         from automations.new_internet_churn import fill as _shared
         book = _run.open_book(sandbox)
-        grid = _shared._retry(book.worksheet(_run.LOG_TAB).get_all_values)
+        grid = _shared._retry(_run.log_ws(book).get_all_values)
     try:
         from automations.focus_office_att.aliases import load_aliases
         aliases = load_aliases()

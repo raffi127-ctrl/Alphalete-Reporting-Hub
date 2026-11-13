@@ -224,8 +224,13 @@ def render(captain: str, captain_full: str, grid, today_owners: List[str]):
     return rows, kinds, len(days)
 
 
-def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
-    title = tab_name(captain)
+def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print,
+              title=None, palette=None, cutoffs=None):
+    # title/palette/cutoffs: fiber_activation_rate draws its own tabs with this
+    # same writer (its windows are '0-30' / '30-60', not NDS's three).
+    title = title or tab_name(captain)
+    palette = palette or PALETTE
+    cutoffs = cutoffs or CUTOFFS
     width = 2 + max(n_days, 1)
     ws = _ws(book, title, rows=max(200, len(rows) + 50), cols=max(40, width + 5))
     if ws.row_count < len(rows) + 10:
@@ -307,7 +312,7 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
                 run = [r, r, (win, idx)]
                 rep_runs.append(run)
     for win, (lo, hi) in box_rows.items():
-        for c_lo, c_hi, color in CUTOFFS[win]:
+        for c_lo, c_hi, color in cutoffs[win]:
             # Formula relative to the range's top-left cell (C<lo>); ISNUMBER
             # keeps blank days uncoloured.
             cell = f"C{lo}"
@@ -325,7 +330,7 @@ def write_tab(book, captain: str, rows, kinds, n_days: int, *, logfn=print):
                     "format": {"backgroundColor": color}}}}})
 
     for r, kind, win, idx in kinds:
-        pal = PALETTE.get(win, {})
+        pal = palette.get(win, {})
         if kind == "title":
             reqs.append(fmt(r, bold=True, size=14, c1=1))
         elif kind == "box":

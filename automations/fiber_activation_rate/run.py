@@ -19,9 +19,10 @@ SOURCE (one download serves every Fiber office)
   little differently (see captainship_abp_6days.pull).
 
 Tableau only shows TODAY's rolling number, so the day-by-day history is ours:
-each run appends today's numbers to the 'Fiber Activation Log' tab
-(Date | Team | Owner | Rep | 0-30 | 30-60; Rep 'Total' = the owner's office
-number). slack_board.py draws the images from that log. The log is the
+each run appends today's numbers to the 'Fiber Activation by REP (daily log)'
+tab (Date | Captainship | Owner | Rep | 0-30 | 30-60; Rep 'Total' = the owner's
+office number, Owner '(Captainship)' = the captainship average). sheet.py draws
+the readable 'Activation by Rep - <captain> (ATT Fiber)' tabs from it. slack_board.py draws the images from that log. The log is the
 PERMANENT record (Eve 2026-11-12: "no es info desechable") — nothing is ever
 deleted from it; only a re-run of the same day replaces that day's rows.
 
@@ -60,8 +61,18 @@ SHEET_IDS = {   # same workbook pair as nds_activation_rate (Captainship Metrics
     "real": "1P95BxzlmLKkuvcL0gqjD9EfEHPLniGN-m4eE9UsPe_E",
     "sandbox": "1Je8W3Pv5sQ1GurNQeExBQBimzgDjN5gAxJq2o7P17-M",
 }
-LOG_TAB = "Fiber Activation Log"
-LOG_HEADER = ["Date", "Team", "Owner", "Rep"] + WIN_KEYS
+# Renamed 11/12 (Eve: the old name read like the per-office 'Activation Rate -
+# <captain> (ATT Fiber)' tabs). log_ws() renames the old tab on first sight.
+LOG_TAB = "Fiber Activation by REP (daily log)"
+OLD_LOG_TABS = ("Fiber Activation Log",)
+LOG_HEADER = ["Date", "Captainship", "Owner", "Rep",
+              "0-30 (Rolling 4 Wks)", "30-60"]
+OLD_LOG_HEADERS = (["Date", "Team", "Owner", "Rep", "0-30", "30-60"],)
+# Owner value of a captainship's own average row (Tableau's team 'Total').
+CAPTAINSHIP = "(Captainship)"
+# Captainships whose 'Activation by Rep' tab is drawn. PREVIEW: Raf's only
+# (Eve 11/12: one first, the rest after her OK). None = every captainship.
+TAB_TEAMS = ("Raf's Team",)
 
 
 def _pct(cell: str) -> str:
@@ -102,8 +113,14 @@ def parse(rows: List[List[str]]) -> Dict[str, Dict]:
         if r[owner_i].strip():
             owner = r[owner_i].strip()
         rep = r[rep_i].strip()
-        if not owner or not rep or owner in (TOTAL, "Grand Total") \
-                or team == "Grand Total":
+        if team == "Grand Total" or owner == "Grand Total":
+            continue
+        if owner == TOTAL and team and rep in ("", TOTAL):
+            # The captainship's own average (Tableau's team subtotal).
+            out[f"{CAPTAINSHIP}|{team}"] = {"team": team, "reps": {
+                TOTAL: {k: _pct(r[i]) for k, i in win_i.items()}}}
+            continue
+        if not owner or not rep or owner == TOTAL:
             continue
         vals = {k: _pct(r[i]) for k, i in win_i.items()}
         o = out.setdefault(owner, {"team": team, "reps": {}})
@@ -117,7 +134,8 @@ def parse(rows: List[List[str]]) -> Dict[str, Dict]:
 def log_rows(day: dt.date, data: Dict) -> List[List[str]]:
     d = day.isoformat()
     rows = []
-    for owner, o in data.items():
+    for key, o in data.items():
+        owner = CAPTAINSHIP if key.startswith(CAPTAINSHIP + "|") else key
         for rep, vals in sorted(o["reps"].items(),
                                 key=lambda kv: (kv[0] != TOTAL, kv[0].lower())):
             rows.append([d, o["team"], owner, rep] + [vals.get(k, "") for k in WIN_KEYS])
@@ -141,12 +159,11 @@ def write_log(book, day: dt.date, new_rows, *, logfn=print) -> None:
     """Append today's rows. A re-run of the same day replaces that day's
     rows; older days are NEVER touched (the log is the permanent record)."""
     from automations.new_internet_churn import fill as _shared
-    try:
-        ws = book.worksheet(LOG_TAB)
-    except Exception:  # noqa: BLE001 — WorksheetNotFound: first run
-        ws = book.add_worksheet(title=LOG_TAB, rows=max(1000, len(new_rows) + 100),
-                                cols=len(LOG_HEADER))
+    ws = log_ws(book, create_rows=len(new_rows))
     grid = _shared._retry(ws.get_all_values)
+    if grid and grid[0][:len(LOG_HEADER)] in OLD_LOG_HEADERS:
+        ws.update(values=[LOG_HEADER], range_name="A1")
+        grid[0] = list(LOG_HEADER)
     if not grid or grid[0][:len(LOG_HEADER)] != LOG_HEADER:
         if grid and any(any(c for c in r) for r in grid):
             raise RuntimeError(f"'{LOG_TAB}' has an unexpected header "
@@ -168,6 +185,35 @@ def write_log(book, day: dt.date, new_rows, *, logfn=print) -> None:
             ws.add_rows(len(new_rows) + 500)
         ws.append_rows(new_rows, value_input_option="RAW")
     logfn(f"  log: {len(new_rows)} row(s) for {d} in '{LOG_TAB}'")
+    return ws
+
+
+def log_ws(book, create_rows: int = 0):
+    """The log tab — renaming the pre-11/12 'Fiber Activation Log' in place."""
+    try:
+        return book.worksheet(LOG_TAB)
+    except Exception:  # noqa: BLE001 — WorksheetNotFound
+        pass
+    for old in OLD_LOG_TABS:
+        try:
+            ws = book.worksheet(old)
+        except Exception:  # noqa: BLE001
+            continue
+        ws.update_title(LOG_TAB)
+        return ws
+    return book.add_worksheet(title=LOG_TAB, rows=max(1000, create_rows + 100),
+                              cols=len(LOG_HEADER))
+
+
+def draw_tabs(book, ws=None, *, logfn=print) -> None:
+    """Style the log + redraw the 'Activation by Rep' captain tabs from it."""
+    from automations.new_internet_churn import fill as _shared
+    from automations.fiber_activation_rate import sheet
+    ws = ws or log_ws(book)
+    grid = _shared._retry(ws.get_all_values)
+    sheet.style_log(book, ws, len(grid))
+    for t in sheet.draw(book, grid, TAB_TEAMS, logfn=logfn):
+        logfn(f"  drew '{t}'")
 
 
 def _read_csv(path: Path) -> List[List[str]]:
@@ -184,7 +230,12 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="pull + print, write nothing")
     ap.add_argument("--csv", default=None, help="parse this crosstab instead of pulling")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today, CT)")
+    ap.add_argument("--redraw", action="store_true",
+                    help="only restyle the log + redraw the captain tabs (no Tableau)")
     args = ap.parse_args(argv)
+    if args.redraw:
+        draw_tabs(open_book(not args.real))
+        return 0
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(TZ).date())
     where = "REAL" if args.real else "SANDBOX"
@@ -200,7 +251,9 @@ def main(argv=None) -> int:
             VIEW_URL, WORKSHEET, OUT_DIR / f"metrics_{day.isoformat()}.csv")
     data = parse(_read_csv(path))
     n_reps = sum(1 for o in data.values() for r in o["reps"] if r != TOTAL)
-    print(f"  {len(data)} owner(s), {n_reps} rep(s) with a number", flush=True)
+    caps = [k for k in data if k.startswith(CAPTAINSHIP + "|")]
+    print(f"  {len(data) - len(caps)} owner(s), {len(caps)} captainship avg(s), "
+          f"{n_reps} rep(s) with a number", flush=True)
     for owner, o in sorted(data.items()):
         t = o["reps"].get(TOTAL, {})
         print(f"     {owner} [{o['team'] or '-'}]: 0-30 {t.get('0-30') or '–'}"
@@ -208,7 +261,9 @@ def main(argv=None) -> int:
     if args.dry_run:
         print("\n(dry-run) nothing written.")
         return 0
-    write_log(open_book(not args.real), day, log_rows(day, data))
+    book = open_book(not args.real)
+    ws = write_log(book, day, log_rows(day, data))
+    draw_tabs(book, ws)
     print("DONE")
     return 0
 
