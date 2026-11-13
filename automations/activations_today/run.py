@@ -243,9 +243,14 @@ PENDING_MAX_NAMES = 24   # Eve 11/12: same as Raf's Order Log groups (~24 names 
 
 
 def name_groups(reps, max_names: int = PENDING_MAX_NAMES):
-    """[(label, [(rep, rows)])] — reps A-Z cut into posts of <= max_names
-    reps (Order Log rule). Label = 'A–F' by first letters; '' if one post."""
-    groups = [reps[i:i + max_names] for i in range(0, len(reps), max_names)] or [[]]
+    """[(label, [(rep, rows)])] — up to max_names reps = one post; more =
+    always TWO posts, half and half (Eve 11/12: "dividir el post solo en
+    dos, 30 y 30"). Label = 'A–M' by first letters; '' if one post."""
+    if len(reps) <= max_names:
+        groups = [reps]
+    else:
+        half = (len(reps) + 1) // 2
+        groups = [reps[:half], reps[half:]]
     if len(groups) == 1:
         return [("", groups[0])]
 
