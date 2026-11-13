@@ -5,11 +5,22 @@ Megan 2026-11-13: "we should have a 'trend' section as the 1st page where we
 list their key vitals": 1st round retention, 2nd round retention, new start
 retention, 1st rounds showed, sent to call list, 2nd round showed, RTCL.
 
-Source: AppStream Reports -> Retention Report (p=701), one week at a time,
-through the same reader the ATT Program - Focus Report uses
-(recruiting_report.fetch_office.fetch_one). The card pulls it ITSELF rather
-than reading the Focus Report's sheet: each card pulls its own sources
-(feedback: no cross-report data reuse).
+Source: AppStream -> Retention Details report (p=783), one week at a time,
+through the reader the Recruiting Funnel Board uses
+(funnel_board.fetch.report_week). Megan 2026-11-13: new start retention is
+"on the retention details report in applicant stream" — its "Retention New
+Starts Scheduled" row read 53% for 11280 the week the Focus Report's p=783
+pull showed 0%. The card pulls it ITSELF rather than reading another
+report's sheet: each card pulls its own sources (no cross-report reuse).
+
+The report gives daily COUNTS; each vital is worked out from the week's
+totals, so a week is never an average of daily percentages:
+    1st round retention   1st showed / 1st booked
+    2nd round retention   2nd showed / 2nd booked
+    new start retention   new starts showed / new starts scheduled
+    sent to call list     every intake path's sent-to-call-list
+    RTCL                  AppStream's Retention Call List, rebuilt from the
+                          numerator report_week stores (retb) / sent
 
 The pull needs the AppStream session, so it runs on a Lucy and writes a
 control-sheet tab, "AS Vitals <office>", that the card reads anywhere — the
@@ -62,7 +73,7 @@ def _client():
 
 def to_rows(weeks):
     """[(sunday, {key: value})] -> sheet rows (row 1 stamp, row 2 header)."""
-    body = [["pulled {} from AppStream p=701".format(
+    body = [["pulled {} from AppStream p=783".format(
         dt.datetime.now().isoformat(timespec="seconds"))] + [""] * len(KEYS),
         ["week"] + KEYS]
     for sunday, vals in weeks:
@@ -134,16 +145,57 @@ def trend(weeks, key):
     return vals[-1], vals[-1] - sum(before) / len(before)
 
 
+def from_days(days):
+    """{date: {metric: int}} for one report week -> {vital key: value}."""
+    t = {}
+    for d in days.values():
+        for k, v in d.items():
+            t[k] = t.get(k, 0) + (v or 0)
+    sent = (t.get("sent", 0) + t.get("manual", 0) + t.get("scoop_s", 0)
+            + t.get("file_s", 0))
+
+    def pct(a, b):
+        return round(100.0 * t.get(a, 0) / t[b], 1) if t.get(b) else None
+    return {
+        "pct_first_retention": pct("s1", "b1"),
+        "pct_second_retention": pct("s2", "b2"),
+        "pct_new_start_retention": pct("nsh", "nss"),
+        "first_showed": t.get("s1"),
+        "pull": sent,
+        "second_showed": t.get("s2"),
+        "pct_apps_booked_first": (round(100.0 * t.get("retb", 0) / sent, 1)
+                                  if sent else None),
+    }
+
+
+def _rqst(page):
+    import re
+    m = re.search(r"rqst=([A-Za-z0-9_-]+)", page.url or "")
+    if m:
+        return m.group(1)
+    m = re.search(r"rqst=([A-Za-z0-9_-]+)", page.evaluate(
+        "() => document.documentElement.innerHTML") or "")
+    return m.group(1) if m else None
+
+
 def pull(office, n=WEEKS, page=None):
-    """[(sunday, {key: value})] for the last `n` finished weeks."""
+    """[(first day, {key: value})] for the last `n` finished weeks."""
+    from automations.funnel_board import fetch as FB
     from automations.recruiting_report import fetch_office as fo
+    if not fo._switch_office(page, office, "", confirm_denial=True):
+        raise RuntimeError("could not switch to office {}".format(office))
+    page.wait_for_timeout(1500)
+    rqst = _rqst(page)
+    if not rqst:
+        raise RuntimeError("no rqst token after switching to {}".format(office))
     out = []
     for sunday in last_sundays(n):
-        got = fo.fetch_one(page, office, "", sunday) or {}
-        out.append((sunday, {k: got.get(k) for k in KEYS}))
+        days = FB.report_week(page, rqst, sunday, verbose=False)
+        vals = from_days(days)
+        out.append((min(days) if days else sunday, vals))
         print("[vitals] {} week of {}: {}".format(
-            office, sunday, ", ".join("{}={}".format(k, got.get(k))
-                                      for k in KEYS)), flush=True)
+            office, min(days) if days else sunday, ", ".join(
+                "{}={}".format(k, vals.get(k)) for k in KEYS)), flush=True)
     return out
 
 

@@ -18057,7 +18057,7 @@
    "_onboarded": true
   },
   "as_card_vitals": {
-   "_note": "MANUAL (Megan 2026-11-13): the Applicant Stream Grade Card's Trend page — 1st/2nd/new start retention, 1st and 2nd rounds showed, sent to call list and RTCL, for the last 8 finished Sun-Sat weeks, off AppStream's Retention Report (p=701) via recruiting_report.fetch_office.fetch_one. Writes the control-sheet tab 'AS Vitals <office>', which the card reads on any machine. READ-ONLY in AppStream. Args: --office, --weeks, --dry-run.",
+   "_note": "MANUAL (Megan 2026-11-13): the Applicant Stream Grade Card's Trend page — 1st/2nd/new start retention, 1st and 2nd rounds showed, sent to call list and RTCL, for the last 8 finished Sun-Sat weeks, off AppStream's Retention Details report (p=783) via funnel_board.fetch.report_week (Megan: new start retention lives there). Writes the control-sheet tab 'AS Vitals <office>', which the card reads on any machine. READ-ONLY in AppStream. Args: --office, --weeks, --dry-run.",
    "on_scheduler": false,
    "display_name": "Grade card vitals (Retention Report, 8 weeks)",
    "source_type": "appstream",

@@ -557,15 +557,20 @@ ul.acts .body{padding-left:.9em}
 ol.replies li{margin:.45em 0}
 .owner{margin:.4em 0;padding:.35em .6em;background:#eef3fb;
        border-radius:6px}
-.scroll{overflow-x:auto}
-table.trend{background:#fff;border:1px solid var(--line);border-radius:10px;
-     min-width:30em}
-table.trend th{font-size:.8em;color:var(--muted);font-weight:normal;
-     text-align:right;padding:.4em .35em}
-table.trend td{text-align:right;padding:.45em .35em;white-space:nowrap}
-table.trend td.vl{text-align:left;white-space:normal;font-weight:bold}
-table.trend td.last{font-weight:bold;background:var(--soft)}
+.vitals details.vital>summary{display:grid;
+     grid-template-columns:minmax(0,1fr) auto 6.5em;gap:.7em;
+     align-items:center}
+.vitals details.vital>summary:after{display:none}
+.vn{font-weight:bold}
+.vv{text-align:right;display:flex;flex-direction:column;line-height:1.2}
+.vv b{font-size:1.2em}
+.vv span{font-size:.82em}
+.spark{display:block}
+@media (max-width:420px){.vitals details.vital>summary{
+     grid-template-columns:minmax(0,1fr) 6.5em}.spark{grid-column:1/-1;
+     grid-row:2;width:100%}}
 .up{color:#156E46;font-weight:bold}.down{color:#A8322A;font-weight:bold}
+.steady{color:#b06d00;font-weight:bold}
 .foot{color:var(--muted);font-size:.85em;margin-top:2em}
 """
 
@@ -583,39 +588,125 @@ def _vfmt(v, pct):
     return "{:.0f}%".format(v) if pct else "{:.0f}".format(v)
 
 
+# Megan 2026-11-13: colour along the line by how good each week was — the
+# row's lowest weeks red, the middle orange, its best weeks green. Every
+# vital here is higher-is-better. The arrow + words still say the direction.
+LOW, MID, HIGH = "#c0392b", "#e08a00", "#1f8a4c"
+_SPARK_N = [0]
+
+
+def _mix(a, b, t):
+    a = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#{:02x}{:02x}{:02x}".format(*[round(x + (y - x) * t)
+                                          for x, y in zip(a, b)])
+
+
+def _heat(t):
+    """0 = the row's worst week (red) .. 1 = its best (green)."""
+    t = max(0.0, min(1.0, t))
+    return _mix(LOW, MID, t / 0.5) if t < 0.5 else _mix(MID, HIGH,
+                                                          (t - 0.5) / 0.5)
+
+
+def _spark(points, pct, way="steady"):
+    """Inline SVG line, red at the row's low weeks, orange in the middle,
+    green at its best (a vertical gradient on the stroke). The latest week
+    is the big dot. Each point carries a native hover tooltip."""
+    W, H, P = 132, 34, 5
+    vals = [v for _l, v in points if v is not None]
+    if len(vals) < 2:
+        return "<span class='s'>not enough weeks</span>"
+    lo, hi = min(vals), max(vals)
+    flat = hi == lo
+    span = (hi - lo) or 1
+    n = len(points)
+    xy = []
+    for i, (lab, v) in enumerate(points):
+        x = P + i * (W - 2 * P) / (n - 1)
+        if v is None:
+            y = None
+        elif flat:
+            y = H / 2
+        else:
+            y = H - P - (v - lo) / span * (H - 2 * P)
+        xy.append((x, y, lab, v))
+    segs, cur = [], []
+    for x, y, _l, _v in xy:
+        if y is None:
+            if len(cur) > 1:
+                segs.append(cur)
+            cur = []
+        else:
+            cur.append("{:.1f},{:.1f}".format(x, y))
+    if len(cur) > 1:
+        segs.append(cur)
+    _SPARK_N[0] += 1
+    gid = "g{}".format(_SPARK_N[0])
+    # A week-on-week flat line has no best or worst: one orange.
+    stroke = MID if flat else "url(#{})".format(gid)
+    out = ["<svg class='spark' viewBox='0 0 {0} {1}' width='{0}' height='{1}' "
+           "role='img' aria-label='trend'>".format(W, H)]
+    if not flat:
+        out.append("<defs><linearGradient id='{}' gradientUnits='userSpaceOnUse'"
+                   " x1='0' y1='{}' x2='0' y2='{}'><stop offset='0' "
+                   "stop-color='{}'/><stop offset='.5' stop-color='{}'/>"
+                   "<stop offset='1' stop-color='{}'/></linearGradient></defs>"
+                   .format(gid, H - P, P, LOW, MID, HIGH))
+    for seg in segs:
+        out.append("<polyline points='{}' fill='none' stroke='{}' "
+                   "stroke-width='2.5' stroke-linejoin='round' "
+                   "stroke-linecap='round'/>".format(" ".join(seg), stroke))
+    last = max(i for i, p in enumerate(xy) if p[1] is not None)
+    for i, (x, y, lab, v) in enumerate(xy):
+        if y is None:
+            continue
+        fill = MID if flat else _heat((v - lo) / span)
+        out.append("<circle cx='{:.1f}' cy='{:.1f}' r='{}' fill='{}' "
+                   "stroke='#fff' stroke-width='1.5'><title>Week of {}: {}"
+                   "</title></circle>".format(x, y, 4 if i == last else 2.8,
+                                               fill, lab,
+                                               html.unescape(_vfmt(v, pct))))
+    out.append("</svg>")
+    return "".join(out)
+
+
 def trend_html(vitals):
-    """Page 0: each key vital, the last few weeks side by side, and which
-    way it is heading. `vitals` is (weeks, stamp) from vitals.read."""
+    """Page 0: one tile per key vital — latest week, change, and a line of
+    the last weeks for a glance at progression. Click a tile for the
+    week-by-week numbers. `vitals` is (weeks, stamp) from vitals.read."""
     from automations.applicant_stream_card import vitals as V
     weeks, stamp = vitals or ([], None)
     if not weeks:
         return ("<h2 class='k'>Key vitals</h2><p class='s'>Not pulled yet. "
-                "They come from AppStream's Retention Report, week by week."
+                "They come from AppStream's Retention Details report, week by week."
                 "</p>")
     weeks = weeks[-TREND_WEEKS:]
-    out = ["<h2 class='k'>Key vitals \u00b7 week by week</h2>",
-           "<div class='scroll'><table class='trend'><tr><th></th>"]
-    for sunday, _v in weeks:
-        out.append("<th>{}/{}</th>".format(sunday.month, sunday.day))
-    out.append("<th>Trend</th></tr>")
+    labs = ["{}/{}".format(d.month, d.day) for d, _v in weeks]
+    out = ["<h2 class='k'>Key vitals \u00b7 last {} weeks</h2>".format(
+        len(weeks)), "<div class='vitals'>"]
     for key, label, pct in V.VITALS:
         latest, delta = V.trend(weeks, key)
         if delta is None or abs(delta) < (1 if pct else 0.5):
-            arrow = "<span class='s'>\u2192 steady</span>"
+            way = "steady"
+            chg = "<span class='steady'>\u2192 steady</span>"
         else:
-            arrow = "<span class='{}'>{} {}{}</span>".format(
-                "up" if delta > 0 else "down",
-                "\u25b2" if delta > 0 else "\u25bc",
+            way = "up" if delta > 0 else "down"
+            chg = "<span class='{}'>{} {}{}</span>".format(
+                way, "\u25b2" if delta > 0 else "\u25bc",
                 "+" if delta > 0 else "\u2212",
                 "{:.0f}{}".format(abs(delta), " pts" if pct else ""))
-        cells = "".join("<td{}>{}</td>".format(
-            " class='last'" if i == len(weeks) - 1 else "",
-            _vfmt(v.get(key), pct)) for i, (_s, v) in enumerate(weeks))
-        out.append("<tr><td class='vl'>{}</td>{}<td>{}</td></tr>".format(
-            _e(label), cells, arrow))
-    out.append("</table></div><p class='s'>Weeks run Sunday to Saturday, "
-               "dated by their Sunday. Trend compares the latest week with "
-               "the 3 before it.</p>")
+        pts = [(lab, v.get(key)) for lab, (_d, v) in zip(labs, weeks)]
+        rows = "".join("<tr><td>Week of {}</td><td>{}</td></tr>".format(
+            lab, _vfmt(v, pct)) for lab, v in reversed(pts))
+        out.append(
+            "<details class='vital'><summary><span class='vn'>{}</span>"
+            "{}<span class='vv'><b>{}</b>{}</span></summary>"
+            "<div class='body'><table>{}</table></div></details>".format(
+                _e(label), _spark(pts, pct, way), _vfmt(latest, pct), chg, rows))
+    out.append("</div><p class='s'>Tap a vital for its week-by-week numbers. "
+               "Weeks run Sunday to Saturday, dated by their Sunday. The "
+               "change compares the latest week with the 3 before it.</p>")
     return "".join(out)
 
 

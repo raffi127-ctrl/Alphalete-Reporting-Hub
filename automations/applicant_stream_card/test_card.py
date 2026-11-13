@@ -209,8 +209,35 @@ class VitalsTest(unittest.TestCase):
         self.assertIn("44%", page0)
         self.assertIn("\u25b2 +2 pts", page0)
         self.assertIn("RTCL", page0)
+        # a line per vital, the weekly numbers behind a click
+        self.assertIn("<svg class='spark'", page0)
+        self.assertIn("<details class='vital'>", page0)
+        self.assertIn("Week of 11/1", page0)
+        # coloured by height: red low weeks -> orange -> green best weeks
+        self.assertIn("linearGradient", page0)
+        self.assertIn("stop-color='#c0392b'", page0)
+        self.assertIn("fill='#1f8a4c'", page0)          # its best week
+        self.assertIn("stroke='#e08a00'", page0)        # a flat row
         # Trend is the tab that opens first
         self.assertIn("id='pg0' checked", out)
+
+    def test_vitals_from_a_week_of_retention_details_counts(self):
+        from automations.applicant_stream_card import vitals as V
+        days = {dt.date(2026, 11, 1): {"b1": 60, "s1": 30, "b2": 20, "s2": 10,
+                                       "nss": 40, "nsh": 21, "sent": 90,
+                                       "manual": 10, "scoop_s": 0,
+                                       "file_s": 0, "retb": 50},
+                dt.date(2026, 11, 2): {"b1": 40, "s1": 30, "b2": 0, "s2": 0,
+                                       "nss": 1, "nsh": 1, "sent": 100,
+                                       "manual": 0, "scoop_s": 0,
+                                       "file_s": 0, "retb": 50}}
+        got = V.from_days(days)
+        self.assertEqual(got["pct_first_retention"], 60.0)      # 60 / 100
+        self.assertEqual(got["pct_new_start_retention"], 53.7)  # 22 / 41
+        self.assertEqual(got["pull"], 200)
+        self.assertEqual(got["pct_apps_booked_first"], 50.0)    # 100 / 200
+        self.assertIsNone(V.from_days({dt.date(2026, 11, 1): {"b1": 0}})[
+            "pct_first_retention"])
 
     def test_no_vitals_says_not_pulled(self):
         out = C.render(C.build("1"))
