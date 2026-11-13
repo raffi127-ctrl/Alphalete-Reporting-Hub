@@ -45,12 +45,12 @@ from automations.activations_today import pull
 
 DEFAULT_OWNER = "Rafael Hidalgo"
 LABEL = "📆 Activations Scheduled Today"
-FIBER_TAG = "(fiber only)"      # Eve 11/12: the Metrics image says so, since
-                                # the Pending Orders thread now carries wireless
 PENDING_TAG = "(fiber + pending wireless)"
-# Live switch (Eve 11/12 "prendelo"): every --post-slack run also posts the
-# Pending Orders thread + one pointer line in Metrics. False = old behavior.
-PENDING_LIVE = True
+# Live switch: True = every --post-slack run also posts the Pending Orders
+# thread + one pointer line in Metrics. Eve 11/12: OFF until Raf confirms.
+PENDING_LIVE = False
+# The Metrics image says "(fiber only)" only while the Pending thread is live.
+FIBER_TAG = "(fiber only)" if PENDING_LIVE else ""
 NONE_TEXT = "📆 No Activations Scheduled Today"
 REACT = "date"
 # Eve 11/10: always ONE image, even past 20 rows.
@@ -579,7 +579,7 @@ def main(argv=None) -> int:
         if args.post_to:
             print("  (none today — test mode posts nothing)")
             return 0
-        res = smp.post_reply_text_only(NONE_TEXT + " " + FIBER_TAG,
+        res = smp.post_reply_text_only((NONE_TEXT + " " + FIBER_TAG).strip(),
                                        react_emoji=REACT,
                                        today=day, dry_run=not do_post)
         print("  ✓ Slack ({}): {}".format("LIVE" if do_post else "DRY-RUN", res))
@@ -592,7 +592,8 @@ def main(argv=None) -> int:
     pngs = render(work, out)
     print("  ✓ rendered {}".format(", ".join(str(p) for p in pngs)))
 
-    comment = "{} {} — {}".format(LABEL, FIBER_TAG, count_text(today))
+    comment = "{} — {}".format(" ".join(x for x in (LABEL, FIBER_TAG) if x),
+                               count_text(today))
     for i, p in enumerate(pngs, 1):
         c = comment if len(pngs) == 1 else "{} ({} of {})".format(comment, i, len(pngs))
         res = smp.post_reply_with_image(
