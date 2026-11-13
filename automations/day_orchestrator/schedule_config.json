@@ -8219,11 +8219,13 @@
    "machine": "Lucy 4",
    "on_scheduler": true,
    "display_name": "Fiber Activation Rate by rep",
-   "_note": "Raf (Slack 11/12, at Haytham's): ongoing per-rep Fiber activation rate like the Ongoing Cancel image. Downloads ATTTRACKER2_1-D2D/Metrics/MetricsINTfullyEXP 'Metrics Call Last week data (Internet)' once (Rolling 4 Weeks + 30-60 activation, rep rows) and appends to the permanent 'Fiber Activation Log' (SANDBOX workbook until Eve says --real). Lucy 4 order 26.05 = before EVERY Fiber office metrics thread (earliest aya_metrics 26.1; all on Lucy 4), each of which posts the 2 images (office_metrics.runner _FIBER_ACT_RATE_OFFICES = None = all Fiber offices, Eve 2026-11-12). If a Fiber office's metrics ever moves before 26.05 or off Lucy 4, it posts yesterday's log.",
+   "_note": "Raf (Slack 11/12, at Haytham's): ongoing per-rep Fiber activation rate like the Ongoing Cancel image. Downloads ATTTRACKER2_1-D2D/Metrics/MetricsINTfullyEXP 'Metrics Call Last week data (Internet)' once (Rolling 4 Weeks + 30-60 activation, rep rows) and appends to the permanent 'Fiber Activation Log' (REAL Captainship Metrics Report since Eve 11/12 'podes rollear en la hoja real'). Lucy 4 order 26.05 = before EVERY Fiber office metrics thread (earliest aya_metrics 26.1; all on Lucy 4), each of which posts the 2 images (office_metrics.runner _FIBER_ACT_RATE_OFFICES = None = all Fiber offices, Eve 2026-11-12). If a Fiber office's metrics ever moves before 26.05 or off Lucy 4, it posts yesterday's log.",
    "command": [
     "automations.fiber_activation_rate.run"
    ],
-   "base_args": [],
+   "base_args": [
+    "--real"
+   ],
    "cadence": {
     "weekdays": [
      0,
@@ -8251,13 +8253,14 @@
    "machine": "Lucy 4",
    "on_scheduler": true,
    "display_name": "Raf's Activation Rate by Rep (alphalete-sales)",
-   "_note": "Raf's own #alphalete-sales Metrics thread is daily_metrics (order 9), which runs BEFORE fiber_activation_rate has today's numbers. So Raf's 2 images (0-30 / 30-60, reps x last 7 days) are added to that same thread LATER, right after the pull (26.05) on the same box (Eve 2026-11-12: 'hacelo asi'). Reads the 'Fiber Activation Log' (SANDBOX until --real); posts into today's 'Metrics for:' thread (+ the usual #alphalete-lvl1-chat mirror).",
+   "_note": "Raf's own #alphalete-sales Metrics thread is daily_metrics (order 9), which runs BEFORE fiber_activation_rate has today's numbers. So Raf's 2 images (0-30 / 30-60, reps x last 7 days) are added to that same thread LATER, right after the pull (26.05) on the same box (Eve 2026-11-12: 'hacelo asi'). Reads the 'Fiber Activation Log' (REAL workbook); posts into today's 'Metrics for:' thread (+ the usual #alphalete-lvl1-chat mirror).",
    "command": [
     "automations.fiber_activation_rate.slack_board"
    ],
    "base_args": [
     "--owner",
     "Rafael Hidalgo",
+    "--real",
     "--live"
    ],
    "cadence": {

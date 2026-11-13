@@ -385,7 +385,7 @@ def metrics_for(o: Office) -> list[dict]:
     if _gets_fiber_act_rate(o):
         boards.append(dict(slug="activation_rate", label="📈 Activation Rate by Rep",
                            module="automations.fiber_activation_rate.slack_board",
-                           owner_args=["--owner", o.owner], env={},
+                           owner_args=["--owner", o.owner, "--real"], env={},
                            dry_flag="--dry-run", post_flag="--live"))
     return boards
 
