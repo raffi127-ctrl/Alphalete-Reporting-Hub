@@ -366,3 +366,105 @@ def summary(recs, start=None, end=None):
         "times": booking_times(tl),
         "drivers": retention_drivers(tl),
     }
+
+
+# ------------------------------------------------------------- delivery
+
+# AppStream's Status word -> (plain reason, whose problem). "ours" is the
+# office's sending number: carriers block or hold texts from a number that
+# is flagged as spam or not fully registered, which is also what makes an
+# applicant see the office as a scam.
+STATUS_REASON = {
+    "failed": ("Blocked by the phone carrier", "ours"),
+    "requeued": ("Held back by the carrier and retried", "ours"),
+    "undelivered": ("Blocked by the phone carrier", "ours"),
+    "dummy phone": ("Applicant gave a fake number", "theirs"),
+    "failed - phone not valid": ("Not a real phone number", "theirs"),
+}
+
+
+def delivery(log, min_sent=100):
+    """Texts that never arrived, why, and which office number they came
+    from. Outbound rows of the p=336 SMS log only."""
+    outs = [r for r in log or []
+            if (r.get("type") or "").strip().lower().startswith("out")]
+    if not outs:
+        return {"ok": False, "why": "no SMS log pulled"}
+    reasons = collections.Counter()
+    ours = theirs = 0
+    by_num = collections.defaultdict(lambda: [0, 0])
+    for r in outs:
+        st = (r.get("status") or "").strip()
+        num = (r.get("sender_phone") or "").strip() or "(unknown)"
+        by_num[num][0] += 1
+        if st.lower() == "delivered":
+            continue
+        label, side = STATUS_REASON.get(
+            st.lower(), ("Not delivered ({})".format(st or "no status"),
+                         "ours"))
+        reasons[label] += 1
+        if side == "ours":
+            ours += 1
+            by_num[num][1] += 1
+        else:
+            theirs += 1
+    n = len(outs)
+    numbers = sorted(((num, s, 100.0 * f / s) for num, (s, f) in
+                      by_num.items() if s >= min_sent),
+                     key=lambda x: -x[2])
+    return {"ok": True, "sent": n, "failed": ours + theirs,
+            "rate": 100.0 * (ours + theirs) / n,
+            "ours": ours, "ours_rate": 100.0 * ours / n,
+            "theirs": theirs, "reasons": reasons.most_common(),
+            "numbers": numbers}
+
+
+# ----------------------------------------------------- interview slots
+
+def _clock(t):
+    """'01:15 PM' -> minutes after midnight, or None."""
+    import re as _re
+    m = _re.match(r"\s*(\d{1,2}):(\d{2})\s*([AP])M", t or "", _re.I)
+    if not m:
+        return None
+    h = int(m.group(1)) % 12 + (12 if m.group(3).upper() == "P" else 0)
+    return h * 60 + int(m.group(2))
+
+
+def slots(hours, recs=None):
+    """How many interview slots the office opens a day, morning vs
+    afternoon, and how full they get. `hours` is ai_settings.parse_hours'
+    {weekday: [{"start","end","seats"}]}; `recs` the booked 1st rounds.
+    Returns None when there are no slots on file."""
+    days = {d: v for d, v in (hours or {}).items() if v}
+    if not days:
+        return None
+    per = []
+    booked_on = collections.Counter()
+    weeks = set()
+    for r in recs or []:
+        try:
+            dd = dt.datetime.strptime(r.get("date") or "", "%m-%d-%Y")
+        except ValueError:
+            continue
+        booked_on[dd.strftime("%A")] += 1
+        weeks.add(dd.isocalendar()[:2])
+    nweeks = max(len(weeks), 1)
+    for day, lst in days.items():
+        am = [x for x in lst if (_clock(x.get("start")) or 0) < 12 * 60]
+        pm = [x for x in lst if (_clock(x.get("start")) or 0) >= 12 * 60]
+        seats = sum((x.get("seats") or 1) for x in lst)
+        per.append({"day": day, "morning": len(am), "afternoon": len(pm),
+                    "seats": seats,
+                    "booked": booked_on.get(day, 0) / nweeks if recs else None,
+                    "times": [x.get("start") for x in lst]})
+    n = len(per)
+    out = {"days": n, "per_day": per,
+           "morning": sum(p["morning"] for p in per) / n,
+           "afternoon": sum(p["afternoon"] for p in per) / n,
+           "seats": sum(p["seats"] for p in per) / n}
+    if recs:
+        booked = sum(p["booked"] for p in per) / n
+        out["booked"] = booked
+        out["fill"] = booked / out["seats"] if out["seats"] else None
+    return out

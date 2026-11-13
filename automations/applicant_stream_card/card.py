@@ -28,12 +28,17 @@ import datetime as dt
 import html
 import re
 
+from automations.applicant_stream_card import fixes as F
+from automations.applicant_stream_card import setup_page as SP
+
 GREEN, YELLOW, RED, GREY = "green", "yellow", "red", "grey"
 DOT = {GREEN: "#22A35A", YELLOW: "#E8A317", RED: "#D93A3A", GREY: "#9AA0A6"}
 
 # Findings that put wrong information in front of an applicant.
 WRONG_INFO = {"WRONG ROOM", "WRONG MEETING ID", "WRONG ADDRESS",
-              "CHECK PHONE", "DEAD LINK", "MERGE", "ADDRESS", "PLACEHOLDER"}
+              "CHECK PHONE", "DEAD LINK", "MERGE", "ADDRESS"}
+# A live template whose whole body is "test" is wording, not wrong info,
+# but it reaches applicants today, so it ranks with the AI faults.
 # The AI answering an applicant with nothing, or the wrong thing.
 AI_BROKEN = {"SILENT AND BLANK", "DEFLECTS", "PROMISES A CALL",
              "PAY WORDING", "AI IS A REAL PERSON", "SAME NAME", "ROUTING"}
@@ -90,18 +95,19 @@ ACTION = {
     "NOT PLAIN TEXT": "Swap curly quotes and long dashes in {w}",
     "TOO LONG": "Shorten {w}",
     "GRAMMAR": "Fix the grammar in {w}",
-    "SILENT AND BLANK": "Give the AI an answer for “{w}”",
+    "SILENT AND BLANK": "The AI says nothing to “{w}”",
     "DEFLECTS": "Make the AI answer “{w}” instead of dodging",
     "PROMISES A CALL": "Take the call-time promise out of “{w}”",
     "PAY WORDING": "Fix the pay wording in “{w}”",
-    "ROUTING": "Switch the AI to your approved replies",
+    "ROUTING": "Not all of our recommended AI replies are active and set "
+               "to the right escalation type",
     "AI IS A REAL PERSON": "Rename the AI so it isn't a real teammate",
     "SAME NAME": "Make the escalation contact a real recruiter",
     "NAME MISMATCH": "Match the AI's name to your templates",
     "WRONG TITLE": "Change the escalation title to who really calls",
     "ONE INTERVIEW TYPE": "Set Interview Type to your 1st round",
-    "PREF offered_buffer": "Set the AI's offered buffer to 180",
-    "PREF accepted_buffer": "Set the AI's accepted buffer to 300",
+    "PREF offered_buffer": "Set the AI's offered buffer to 60",
+    "PREF accepted_buffer": "Set the AI's accepted buffer to 60",
     "PREF ghosting_threshold": "Set ghosting to 60 minutes",
 }
 
@@ -118,6 +124,12 @@ def _short_where(item):
 
 
 def action_of(item):
+    """One plain line; '(you or Aptel)' when Aptel can do it for them."""
+    line = _action(item)
+    return "{} (you or Aptel)".format(line) if item.get("owner") else line
+
+
+def _action(item):
     """One plain line for an item, e.g. 'Fix the address in "Directions"'."""
     k = item["kind"]
     if k == "TYPO":
@@ -217,6 +229,92 @@ def speed(st, ttb=None):
         "Book everyone within 24 hours — {:.0f}% wait longer and show "
         "up {}".format(late, _pct(d["late_show"])))
     return _line("speed", "⏱️", t, dot, short, text, facts,
+                 action=action)
+
+
+# Carrier blocks on the office's own number, as a share of texts sent.
+DELIVERY_OK, DELIVERY_BAD = 3.0, 6.0
+
+
+def texts_arrived(dv):
+    title = "Texts that didn't arrive"
+    if not dv or not dv.get("ok"):
+        return _line("delivery", "\U0001F4F5", title, GREY, "Not checked")
+    facts = [("Texts sent", "{:,}".format(dv["sent"])),
+             ("Didn't arrive", "{:,} ({:.0f}%)".format(dv["failed"],
+                                                      dv["rate"]))]
+    facts += [("  " + why, "{:,}".format(n)) for why, n in dv["reasons"]]
+    for num, sent, rate in dv["numbers"]:
+        facts.append(("From {}".format(num),
+                      "{:.0f}% blocked of {:,}".format(rate, sent)))
+    r = dv["ours_rate"]
+    dot = GREEN if r <= DELIVERY_OK else YELLOW if r <= DELIVERY_BAD else RED
+    short = "{:.0f}% never arrived \u00b7 {:.0f}% blocked by carriers".format(
+        dv["rate"], r)
+    text = ("Carriers block texts from a number that is flagged as spam or "
+            "not fully registered. Applicants then see the office as a scam.")
+    action = None if dot == GREEN else (
+        "{:.0f}% of your texts are blocked by carriers \u2014 check the "
+        "number's registration (Aptel team)".format(r))
+    return _line("delivery", "\U0001F4F5", title, dot, short, text, facts,
+                 action=action)
+
+
+# Coaching lines for the interview schedule (Megan 2026-11-13: "hey, you're
+# not really giving the recruiters a lot of options, or maybe too much").
+# My first cut at the numbers, to tune once a few offices are in:
+FEW_SLOTS = 2          # under 2 morning or 2 afternoon times a day = few
+EMPTY_FILL = 0.25      # under a quarter of seats booked = more than needed
+FULL_FILL = 0.85       # over 85% booked = running out
+
+
+def _share(x):
+    return "{:.0f}%".format(100 * x)
+
+
+def slot_line(sl):
+    title = "Interview slots"
+    if not sl:
+        return _line("slots", "\U0001F4C5", title, GREY,
+                     "Not pulled yet")
+    am, pm = sl["morning"], sl["afternoon"]
+    short = "1st rounds: {:.1f} morning · {:.1f} afternoon a day".format(am, pm)
+    facts = [("Days with interviews", "{} a week".format(sl["days"])),
+             ("Morning times a day (before noon)", "{:.1f}".format(am)),
+             ("Afternoon times a day", "{:.1f}".format(pm)),
+             ("Seats a day (people the slots can hold)",
+              "{:.0f}".format(sl["seats"]))]
+    if sl.get("fill") is not None:
+        facts.append(("Booked a day, on average", "{:.1f} ({} of seats)".format(
+            sl["booked"], _share(sl["fill"]))))
+        short += " · {} booked".format(_share(sl["fill"]))
+    for p in sl["per_day"]:
+        facts.append((p["day"], "{} morning · {} afternoon".format(
+            p["morning"], p["afternoon"])))
+    facts.append(("2nd rounds", "Not pulled yet"))
+    action, text, dot = None, "", GREEN
+    few = [w for w, n in (("morning", am), ("afternoon", pm)) if n < FEW_SLOTS]
+    if few:
+        dot = YELLOW
+        action = "Add more {} interview times so recruiters have options " \
+                 "to offer".format(" and ".join(few))
+        text = ("Recruiters and the AI can only offer what's open. With "
+                "under {} {} times a day, an applicant who can't make those "
+                "gets pushed to another day, and same-day bookings show up "
+                "57% against 42% next day.".format(FEW_SLOTS,
+                                                    " or ".join(few)))
+    elif sl.get("fill") is not None and sl["fill"] < EMPTY_FILL:
+        dot = YELLOW
+        action = "Fewer interview times would fill the ones you keep"
+        text = ("Only {} of seats get booked. Spreading applicants over "
+                "many times leaves interviewers waiting on near-empty "
+                "slots.".format(_share(sl["fill"])))
+    elif sl.get("fill") is not None and sl["fill"] > FULL_FILL:
+        dot = YELLOW
+        action = "Add interview times: the ones you have are nearly full"
+        text = ("{} of seats are booked, so applicants are being pushed to "
+                "later days.".format(_share(sl["fill"])))
+    return _line("slots", "\U0001F4C5", title, dot, short, text, facts,
                  action=action)
 
 
@@ -328,7 +426,7 @@ def _rank(item):
     k = item["kind"]
     if k in WRONG_INFO:
         return 0
-    if k in AI_BROKEN:
+    if k in AI_BROKEN or k == "PLACEHOLDER":
         return 1
     if k.startswith("PREF"):
         return 3
@@ -348,8 +446,8 @@ def todo(lines, n=TOP_N):
             cands.append((_rank(i), {"text": i["action"], "item": i,
                                      "line": ln["key"]}))
         if ln.get("action"):
-            r = 2 if ln["key"] == "speed" else 2.5 if ln["key"] == "who" \
-                else 6
+            r = {"delivery": 1.5, "speed": 2, "who": 2.5,
+                 "slots": 2.7}.get(ln["key"], 6)
             cands.append((r, {"text": ln["action"], "item": None,
                               "line": ln["key"]}))
     cands.sort(key=lambda c: c[0])
@@ -358,7 +456,8 @@ def todo(lines, n=TOP_N):
 
 def build(office, stats=None, ttb=None, recruiter_rows=None,
           info_items=(), info_skipped=(), word_items=(), word_skipped=(),
-          ai_items=(), ai_skipped=(), sources=(), now=None):
+          ai_items=(), ai_skipped=(), sources=(), grading=(), delivery=None,
+          setup=None, slots=None, vitals=None, now=None):
     """The whole card as data. `sources` is [(what, date or None, where)]."""
     now = now or dt.datetime.now()
     fresh = []
@@ -374,9 +473,11 @@ def build(office, stats=None, ttb=None, recruiter_rows=None,
                       list(ai_items), list(ai_skipped), AI_BROKEN),
         _checked_line("words", "✍️", "Grammar + wording",
                       list(word_items), list(word_skipped), set()),
+        texts_arrived(delivery),
         who_books(stats),
         speed(stats, ttb),
         best_times(stats),
+        slot_line(slots),
         drivers(stats),
         recruiters(recruiter_rows),
     ]
@@ -384,6 +485,7 @@ def build(office, stats=None, ttb=None, recruiter_rows=None,
             "span": (stats or {}).get("span"),
             "booked": (stats or {}).get("n"),
             "todo": todo(lines), "sources": fresh,
+            "grading": list(grading), "setup": setup, "vitals": vitals,
             "stale": [f for f in fresh if f["stale"]]}
 
 
@@ -433,6 +535,37 @@ ul.acts .body{padding-left:.9em}
 .grade{flex:none;width:1.8em;font-weight:bold;text-align:center}
 .g-A,.g-B{color:#156E46}.g-C{color:#8a6d00}.g-D,.g-F{color:#A8322A}
 .sc{padding:.2em .9em .9em}
+.names .sc .fix{background:#fdecea;border-color:#e3a6a0}
+.truth{background:#fff;border:2px solid var(--ink);border-radius:10px;
+       padding:.7em .9em;margin:0 0 .6em}
+.truth td:last-child{text-align:left;white-space:normal;
+       word-break:break-word}
+.truth td:first-child{width:7.5em;color:var(--muted)}
+.names{display:grid;grid-template-columns:1fr 1fr;gap:.35em 1em;
+       background:#fff;border:1px solid var(--line);border-radius:10px;
+       padding:.7em .9em}
+.names details.rc{margin:0;border:0;background:none}
+.names details.rc>summary{color:#1a56c4;font-weight:bold;cursor:pointer;
+       list-style:none;display:flex;gap:.4em;align-items:baseline;
+       padding:.1em 0}
+.names details.rc>summary::-webkit-details-marker{display:none}
+.names details.rc>summary::after{content:none}
+.names details.rc>summary:hover{text-decoration:underline}
+.names details.rc[open]{grid-column:1/-1;border:2px solid #1a56c4;
+       border-radius:10px;background:#fff;padding:.3em .5em}
+.names .grade{width:1.3em}
+ol.replies li{margin:.45em 0}
+.owner{margin:.4em 0;padding:.35em .6em;background:#eef3fb;
+       border-radius:6px}
+.scroll{overflow-x:auto}
+table.trend{background:#fff;border:1px solid var(--line);border-radius:10px;
+     min-width:30em}
+table.trend th{font-size:.8em;color:var(--muted);font-weight:normal;
+     text-align:right;padding:.4em .35em}
+table.trend td{text-align:right;padding:.45em .35em;white-space:nowrap}
+table.trend td.vl{text-align:left;white-space:normal;font-weight:bold}
+table.trend td.last{font-weight:bold;background:var(--soft)}
+.up{color:#156E46;font-weight:bold}.down{color:#A8322A;font-weight:bold}
 .foot{color:var(--muted);font-size:.85em;margin-top:2em}
 """
 
@@ -441,14 +574,69 @@ def _e(t):
     return html.escape(str(t if t is not None else ""))
 
 
+TREND_WEEKS = 6
+
+
+def _vfmt(v, pct):
+    if v is None:
+        return "<span class='s'>\u2014</span>"
+    return "{:.0f}%".format(v) if pct else "{:.0f}".format(v)
+
+
+def trend_html(vitals):
+    """Page 0: each key vital, the last few weeks side by side, and which
+    way it is heading. `vitals` is (weeks, stamp) from vitals.read."""
+    from automations.applicant_stream_card import vitals as V
+    weeks, stamp = vitals or ([], None)
+    if not weeks:
+        return ("<h2 class='k'>Key vitals</h2><p class='s'>Not pulled yet. "
+                "They come from AppStream's Retention Report, week by week."
+                "</p>")
+    weeks = weeks[-TREND_WEEKS:]
+    out = ["<h2 class='k'>Key vitals \u00b7 week by week</h2>",
+           "<div class='scroll'><table class='trend'><tr><th></th>"]
+    for sunday, _v in weeks:
+        out.append("<th>{}/{}</th>".format(sunday.month, sunday.day))
+    out.append("<th>Trend</th></tr>")
+    for key, label, pct in V.VITALS:
+        latest, delta = V.trend(weeks, key)
+        if delta is None or abs(delta) < (1 if pct else 0.5):
+            arrow = "<span class='s'>\u2192 steady</span>"
+        else:
+            arrow = "<span class='{}'>{} {}{}</span>".format(
+                "up" if delta > 0 else "down",
+                "\u25b2" if delta > 0 else "\u25bc",
+                "+" if delta > 0 else "\u2212",
+                "{:.0f}{}".format(abs(delta), " pts" if pct else ""))
+        cells = "".join("<td{}>{}</td>".format(
+            " class='last'" if i == len(weeks) - 1 else "",
+            _vfmt(v.get(key), pct)) for i, (_s, v) in enumerate(weeks))
+        out.append("<tr><td class='vl'>{}</td>{}<td>{}</td></tr>".format(
+            _e(label), cells, arrow))
+    out.append("</table></div><p class='s'>Weeks run Sunday to Saturday, "
+               "dated by their Sunday. Trend compares the latest week with "
+               "the 3 before it.</p>")
+    return "".join(out)
+
+
 def _fix_body(i):
     out = []
     if i.get("found"):
         out.append("<div class='found'>{}</div>".format(_e(i["found"])))
     if i.get("why"):
         out.append("<p class='why'><b>Why:</b> {}</p>".format(_e(i["why"])))
-    out.append("<b>How:</b><ol>{}</ol>".format(
-        "".join("<li>{}</li>".format(_e(s)) for s in i["steps"])))
+    if i.get("owner"):
+        out.append("<p class='owner'><b>Who fixes it:</b> {}</p>".format(
+            _e(i["owner"])))
+    if i.get("replies"):
+        out.append("<b>Not set up yet:</b><ol class='replies'>{}</ol>".format(
+            "".join("<li value='{}'><b>{}</b>{}</li>".format(
+                n, _e(name), SP.options_html(F.reply_versions(name, msg),
+                                             F.reply_link(name)))
+                for n, name, msg in i["replies"])))
+    if i["steps"]:
+        out.append("<b>How:</b><ol>{}</ol>".format(
+            "".join("<li>{}</li>".format(_e(s)) for s in i["steps"])))
     return "".join(out)
 
 
@@ -488,7 +676,7 @@ def render(card, scorecard_css=""):
     add("<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Applicant Stream Card {}</title><style>{}{}</style></head>"
-        "<body>".format(_e(card["office"]), CSS,
+        "<body>".format(_e(card["office"]), CSS + SP.CSS,
                         _scope_css(scorecard_css, ".sc")))
     add("<h1>Applicant Stream Grade Card</h1>")
     add("<div class='sub'>{}</div>".format(sub))
@@ -496,6 +684,26 @@ def render(card, scorecard_css=""):
         add("<div class='stale'>⚠ Old data: {} — re-pull before "
             "sending.</div>".format(_e(", ".join(
                 f["what"].split(" (")[0] for f in card["stale"]))))
+    # Page 2 (Megan 2026-11-13): what AppStream is set to. Radio tabs, so the
+    # switch works with no script and no #links (dead in the app pane).
+    # Trend first (Megan 2026-11-13: "a 'trend' section as the 1st page").
+    add("<input type='radio' name='pg' id='pg0' checked>"
+        "<input type='radio' name='pg' id='pg1'>"
+        "<input type='radio' name='pg' id='pg2'>"
+        "<div class='tabs'><label for='pg0'>Trend</label>"
+        "<label for='pg1'>Grade card</label>"
+        "<label for='pg2'>AppStream setup</label></div>"
+        "<div class='page0'>{}</div>"
+        "<div class='page1'>".format(trend_html(card.get("vitals"))))
+
+    if card.get("grading"):
+        add("<div class='truth'><b>Make sure these are correct.</b> This is "
+            "what we're grading against.<table>")
+        for row in card["grading"]:
+            label, value = row[0], row[1]
+            add("<tr><td>{}</td><td>{}</td></tr>".format(
+                _e(label), _e(value) if value else "<i>not on file</i>"))
+        add("</table></div>")
 
     if card["todo"]:
         add("<h2 class='k'>Fix these first</h2><div class='top'>")
@@ -536,18 +744,29 @@ def render(card, scorecard_css=""):
 
     rc = next((ln for ln in card["lines"] if ln["key"] == "recruiters"), None)
     if rc:
-        add("<h2 class='k'>Recruiters — tap a name</h2>")
+        add("<h2 class='k' id='rcl'>Recruiters — tap a name</h2>")
         people = rc.get("people") or []
         if not people:
             add("<p class='s'>{}</p>".format(_e(rc["short"])))
-        for r in people:
-            add("<details><summary><span class='grade g-{0}'>{0}</span>"
-                "<span class='row'><span class='t'>{1}</span>"
-                "<span class='s'>Work on: {2}</span></span></summary>"
-                .format(_e(r["grade"]), _e(r["name"]), _e(r["focus"])))
-            add("<div class='sc'>{}</div></details>".format(
-                r.get("body") or "<p class='s'>Booked {} · showed {}"
-                "</p>".format(_e(r["booked"]), _e(r["retention"]))))
+        # Megan 2026-11-12: "names in blue, super simple bolded list ...
+        # 2 columns ... with just their overall score", sorted A to D.
+        # Each name is a <details>: click opens their full scorecard right
+        # there, across both columns. No links or script, so it works in
+        # any viewer (the old #anchor version did nothing in the app pane).
+        if people:
+            order = "ABCDF"
+            people = sorted(people, key=lambda r: order.find(
+                r["grade"]) if r["grade"] in order else len(order))
+            add("<div class='names'>")
+            for r in people:
+                add("<details class='rc'><summary><span class='grade g-{0}'>"
+                    "{0}</span>{1}</summary><div class='sc'>{2}</div>"
+                    "</details>".format(
+                        _e(r["grade"]), _e(r["name"]),
+                        r.get("body") or "<p class='s'>Booked {} \u00b7 "
+                        "showed {}</p>".format(_e(r["booked"]),
+                                               _e(r["retention"]))))
+            add("</div>")
 
     if card.get("sources"):
         add("<details class='foot'><summary>Where the numbers come from"
@@ -560,5 +779,7 @@ def render(card, scorecard_css=""):
                 if f["when"] else "date unknown"))
         add("</table><p class='s'>Read-only. Grey means not checked, never "
             "passed.</p></div></details>")
-    add("</body></html>")
+    add("</div><div class='page2'>")
+    add(SP.render(card.get("setup")))
+    add("</div>{}</body></html>".format(SP.COPY_JS))
     return "\n".join(L)

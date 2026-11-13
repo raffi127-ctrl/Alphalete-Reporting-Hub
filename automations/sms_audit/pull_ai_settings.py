@@ -53,6 +53,7 @@ except Exception:
     pass
 
 from automations.recruiting_report import fetch_office as fo
+from automations.sms_audit import ai_settings as AIS
 from automations.shared.tableau_patchright import appstream_direct_session
 
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
@@ -331,6 +332,22 @@ def main(argv=None):
             time.sleep(1.0)
             rows = scrape_escalations(page) or []
 
+            # The 1st-round interview slots the AI books into (Megan
+            # 2026-11-13: coach the ICD on how many options recruiters get).
+            hours = {}
+            try:
+                _open(page, tok, "hours")
+                for _ in range(20):
+                    text = page.evaluate("() => document.body.innerText") or ""
+                    hours = AIS.parse_hours(text)
+                    if hours:
+                        break
+                    page.wait_for_timeout(500)
+            except Exception as e:  # noqa: BLE001 — slots are extra, never the pull
+                print("   hours pane failed: {}".format(e), flush=True)
+            print("   {} interview slots across {} days".format(
+                sum(len(v) for v in hours.values()), len(hours)), flush=True)
+
             if not info and not rows:
                 print("[ai_settings] {}: nothing scraped — the page shape "
                       "changed, or the office never loaded".format(office),
@@ -362,7 +379,8 @@ def main(argv=None):
             (OUTPUT_DIR / "ai_settings_{}.json".format(office)).write_text(
                 json.dumps({"office": office,
                             "pulled": dt.datetime.now().isoformat(timespec="seconds"),
-                            "office_info": info, "preferences": prefs},
+                            "office_info": info, "preferences": prefs,
+                            "hours": hours},
                            ensure_ascii=False, indent=2), encoding="utf-8")
             (OUTPUT_DIR / "escalations_{}.json".format(office)).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -371,7 +389,7 @@ def main(argv=None):
             # reads, so a clean run is visible everywhere.
             try:
                 from automations.sms_audit import ai_settings_tab as TAB
-                tab, n = TAB.write(office, info, prefs, rows)
+                tab, n = TAB.write(office, info, prefs, rows, hours=hours)
                 print("[ai_settings]   -> {} ({} rows)".format(tab, n),
                       flush=True)
             except Exception as e:  # noqa: BLE001

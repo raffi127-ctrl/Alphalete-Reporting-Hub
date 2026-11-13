@@ -56,59 +56,29 @@ Two faults found here on 2026-10-01:
 
 ## AI Preferences — the two that actually cost bookings
 
-The pair is confusing because **both are buffers measured backwards from the
-appointment**, so a bigger second number means the applicant gets *less* time.
+> **Corrected 2026-11-13.** Aptel (Cruise Turner, confirmed with William
+> Kraft) says both buffers are "too soon" floors. This section used to model
+> them as a window (offered − accepted); that reading was wrong, and so was
+> the later 180 / 300 standard built on a third reading. The standard is now
+> **60 / 60 / 60** — evidence and history in
+> [../appstream-ai-preferences-standard.md](../appstream-ai-preferences-standard.md).
 
 **Timeslot Buffer — For Times Offered by AI (minutes)**
-How far ahead the first offered slot is. Talking to someone at 9:30 with a
-60-minute buffer, the earliest the AI can offer is 10:30. This is your prep
-time.
+The AI will not offer a time sooner than this. Talking to someone at 9:30 with
+60 here, the earliest the AI offers is 10:30.
 
 **Timeslot Buffer — For Times Accepted by Candidates (minutes)**
-How long before that slot the AI stops accepting it. With a 10:30 slot and 55
-here, acceptance closes at 9:35 — so the applicant had five minutes.
+An applicant cannot pick a time sooner than this. At 300, nothing inside five
+hours can be accepted — at noon, that rules out the rest of the afternoon.
 
-**The window an applicant actually gets = (offered − accepted).**
+Same-day is what to protect: same day showed **57%** at 11280 against
+**42%** next day (1,901 and 1,801 bookings). A buffer high enough to push
+people to tomorrow costs more than it saves.
 
-11280 on 2026-10-01 was set to **15 offered / 10 accepted = a 5-minute
-window**. Measured against 5,882 applicant replies in the week to 25 Sep:
-
-| Applicant replies within | Share |
-|---|---|
-| 5 minutes | **32%** |
-| 10 minutes | 39% |
-| 15 minutes | 44% |
-| 30 minutes | 52% |
-| median | **26 minutes** |
-
-So about two thirds of applicants were too slow to take the time they were
-offered, and the AI has to offer again — extra round trips on a channel
-already losing 11% of its texts.
-
-### What 11280 was changed to, 2026-10-01
-
-**Offered 60 · Accepted 5 · Ghosting 60** — a 55-minute acceptance window
-instead of 5.
-
-The window was widened by lowering the *accepted* cut-off, not by pushing
-the offered time further out, because same-day interviews show up far
-better at this office:
-
-| Booked for | Booked | Show rate |
-|---|---|---|
-| Same day | 1,901 | **57%** |
-| Next day | 1,801 | 42% |
-| 2–3 days | 781 | 38% |
-| 4+ days | 84 | 39% |
-
-A longer offered buffer would start spilling bookings into tomorrow and
-cost more than the wider window gains. 60 minutes keeps it same day.
-
-**The trade-off:** at accepted = 5 an applicant can take a slot five
-minutes before it starts. That only happens to someone replying ~55
-minutes late, but the office has to be willing to run it. If the team gets
-caught out, accepted = 15 gives a 45-minute window (about 57% of
-applicants) with 15 minutes' notice guaranteed.
+What 11280 has been on: 15 / 10 / 45 (2026-10-01), then 60 / 5 / 60.
+The applicant reply-speed numbers measured at the time (median 26 minutes)
+were real, but the "too slow to take the time they were offered" conclusion
+came from the window reading and is withdrawn.
 
 **Ghosting Threshold (minutes)**
 Silence for this long puts a ghost icon on the conversation so a recruiter can
@@ -130,7 +100,7 @@ Open it in a browser; typing in any field rebuilds the ten messages on
 the right. Fields marked NEW do not exist in AppStream today: suite,
 campaign type, pay range, per-round interview type, a second Zoom link,
 and languages recruited in. It also cross-checks the pair of timeslot
-buffers and warns when the AI persona and the escalation contact share
+buffers (on the old window reading — see the correction above) and warns when the AI persona and the escalation contact share
 a name.
 
 The ten messages it generates are the top ten things applicants

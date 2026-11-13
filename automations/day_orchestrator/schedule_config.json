@@ -18055,6 +18055,25 @@
    },
    "_note": "Office metrics for zaid. wired by hand 2026-11-09 (Megan: metrics only, NOT Lucy ECO, own Slack channel). NDS on Khalil's captainship, five NDS boards like frank on Lucy 4. Channel #zaid-arabiyat-metrics C0CGA1H2T0A (private; Megan made it 11/09; lucy_reporting in it). Sheet 'Zaid Arabiyat - Lucy Metrics' 1OS9Kt0wJcVVINSypYpSnTQS1iXXCtJYqlumNXjowKu0 (Master Metrics Templates copy, writer alphaletereporting@). Business name / office id / city pending the order-log pull. Scheduler OFF until the dry run is read.",
    "_onboarded": true
+  },
+  "as_card_vitals": {
+   "_note": "MANUAL (Megan 2026-11-13): the Applicant Stream Grade Card's Trend page — 1st/2nd/new start retention, 1st and 2nd rounds showed, sent to call list and RTCL, for the last 8 finished Sun-Sat weeks, off AppStream's Retention Report (p=701) via recruiting_report.fetch_office.fetch_one. Writes the control-sheet tab 'AS Vitals <office>', which the card reads on any machine. READ-ONLY in AppStream. Args: --office, --weeks, --dry-run.",
+   "on_scheduler": false,
+   "display_name": "Grade card vitals (Retention Report, 8 weeks)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.applicant_stream_card.vitals"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30
   }
  },
  "read_only_standalone": {

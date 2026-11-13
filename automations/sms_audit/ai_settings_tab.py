@@ -39,8 +39,10 @@ def _client():
     return _fill._client()
 
 
-def write(office, info, prefs, rows, gc=None):
-    """Push one office's pull to its tab. Returns (tab, rows) or (None, 0)."""
+def write(office, info, prefs, rows, gc=None, hours=None):
+    """Push one office's pull to its tab. Returns (tab, rows) or (None, 0).
+    `hours` is ai_settings.parse_hours' {weekday: [slots]} — one row per
+    weekday, section "hours" (older readers skip sections they don't know)."""
     body = [["pulled {} from AppStream p=1504".format(
         dt.datetime.now().isoformat(timespec="seconds"))] + [""] * 2,
         list(COLUMNS)]
@@ -48,6 +50,8 @@ def write(office, info, prefs, rows, gc=None):
         body.append(["office_info", str(key), str(val)[:CELL_CAP]])
     for key, val in sorted((prefs or {}).items()):
         body.append(["preferences", str(key), str(val)[:CELL_CAP]])
+    for day, slots in (hours or {}).items():
+        body.append(["hours", str(day), json.dumps(slots)[:CELL_CAP]])
     for r in (rows or []):
         body.append(["escalation", str(r.get("name") or ""),
                      json.dumps({k: r.get(k) for k in ESC_FIELDS},
@@ -111,3 +115,29 @@ def read(office, gc=None):
     if info is None and not rows:
         return None, None, [], None
     return info, prefs, rows, "sheet tab '{}'".format(tab_for(office))
+
+
+def parse_hours(values):
+    """{weekday: [slots]} off the tab's "hours" rows, or {}."""
+    out = {}
+    for raw in (values or [])[2:]:
+        if raw and (raw[0] or "").strip() == "hours" and len(raw) > 2:
+            try:
+                out[raw[1].strip()] = json.loads(raw[2])
+            except (ValueError, TypeError):
+                continue
+    return out
+
+
+def read_hours(office, gc=None):
+    """({weekday: [slots]}, pulled-line) or (None, None) — never raises."""
+    try:
+        gc = gc or _client()
+        values = gc.open_by_key(CONTROL_SHEET_ID).worksheet(
+            tab_for(office)).get_all_values()
+    except Exception:  # noqa: BLE001
+        return None, None
+    hours = parse_hours(values)
+    if not hours:
+        return None, None
+    return hours, (values[0][0] if values and values[0] else None)

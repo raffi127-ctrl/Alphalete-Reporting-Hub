@@ -238,7 +238,14 @@ def lint(bodies, states, office=None):
                     "{}: sends \u201c{}\u201d — this office is {}.".format(
                         where, bad, want_addr)))
         if want_phone:
-            for got in re.findall(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", body):
+            # A Zoom meeting id is ten digits too — in the link
+            # (zoom.us/j/2935077152) and after "Meeting ID". Read as a
+            # phone number, every Zoom template was "the wrong number".
+            plain = re.sub(r"https?://\S+", " ", body)
+            plain = re.sub(r"(?i)(meeting\s*id|passcode|password)[:\s]*[\d\s]+",
+                           " ", plain)
+            for got in re.findall(r"(?<!\d)\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?!\d)",
+                                  plain):
                 digits = "".join(c for c in got if c.isdigit())[-10:]
                 if digits != want_phone[-10:]:
                     findings.append((

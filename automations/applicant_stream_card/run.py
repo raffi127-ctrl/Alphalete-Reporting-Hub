@@ -35,6 +35,9 @@ OUTPUT = Path(__file__).resolve().parents[2] / "output"
 
 # ai_settings checks this card replaces with the written-down standard.
 REPLACED = {"WINDOW TOO SHORT", "GHOST TOO SOON"}
+# Template checks the card does not grade. Megan 2026-11-12, on "Add Reply
+# STOP to opt out to 30 templates": "we're not doing this anywhere".
+NOT_GRADED = {"NO OPT-OUT"}
 TYPO_LIMIT = 10
 
 
@@ -49,14 +52,113 @@ def _office(oid, use_sheets=True):
     return row or {"office": oid}
 
 
-def _templates(office, use_sheets):
+def _template_bodies(oid, use_sheets):
+    """(bodies, states) of the saved templates, or (None, why). The raw
+    pull text is left on _template_bodies.text for page 2."""
+    _template_bodies.text = None
     if not use_sheets:
         return None, "templates not read (--no-sheets)"
-    from automations.sms_audit import icd_audit as IA
-    got, why = IA.template_findings(office)
-    if got is None:
-        return None, why
-    return got[0], None
+    from automations.sms_audit import templates as T
+    try:
+        text, _src = T.load_text(office=oid)
+    except Exception as e:  # noqa: BLE001 — not pulled yet is not a failure
+        return None, "no templates pulled yet ({})".format(type(e).__name__)
+    _template_bodies.text = text      # page 2 reads the email list off it
+    return (T.parse_bodies(text), T.parse_activation(text)), None
+
+
+ZOOM = re.compile(r"https?://[\w.-]*zoom\.us/j/\d+")
+
+
+def zoom_in_use(bodies, states):
+    """{1: [links], 2: [links]} — Zoom links the LIVE templates send, by
+    round, most used first. A template is 2nd round when its section says
+    Second Interview / 2nd Interview / 2nd Round; "2nd Left Message - Call
+    List" is still a 1st-round call-list text."""
+    import collections
+    seen = {1: collections.Counter(), 2: collections.Counter()}
+    for section, _name, body in bodies or []:
+        if states.get(section) != "Activated":
+            continue
+        rnd = 2 if SECOND.search(section or "") else 1
+        for url in ZOOM.findall(body or ""):
+            seen[rnd][url.rstrip("/")] += 1
+    return {r: [u for u, _n in c.most_common()] for r, c in seen.items()}
+
+
+SECOND = re.compile(r"(second|2nd)\s*(interview|round|rd)", re.I)
+
+
+def _mode(raw):
+    m = (raw or "").strip().lower()
+    if m.startswith("zoom") or "virtual" in m or "online" in m:
+        return "Zoom"
+    if "person" in m or "office" in m:
+        return "In person"
+    return ""
+
+
+def grading_facts(office, sinfo, zooms):
+    """What every check grades against, shown at the top of the card.
+
+    Megan 2026-11-12: "read the set information in the AI settings of what
+    the office name is, the address that's set, the phone number that's set
+    ... make sure these are correct. This is what we're grading against."
+    Then: "an office could have a separate Zoom link for first rounds than
+    second rounds ... first rounds conducted in person or over Zoom, second
+    rounds in person or over Zoom." And no "where it came from" line: "just
+    needs to know that's what's being sent out".
+
+    Name, address and phone come from AI Settings. AI Settings holds no Zoom
+    link and one interview type, so each round's way of interviewing comes
+    from what the office told us, and its link from what they told us or,
+    failing that, the link their live templates send for that round."""
+    si = sinfo or {}
+    zooms = zooms if isinstance(zooms, dict) else {1: list(zooms or []),
+                                                   2: []}
+    addr = ", ".join(x for x in (
+        (si.get("office_address1") or "").strip(),
+        (si.get("office_city") or "").strip(),
+        " ".join(x for x in ((si.get("office_state") or "").strip(),
+                             (si.get("office_zip") or "").strip()) if x),
+    ) if x)
+    if addr:
+        office["address"] = addr
+    if (si.get("office_phone") or "").strip():
+        office["phone"] = si["office_phone"].strip()
+    for rnd, key, mode_key in ((1, "zoom", "r1_mode"),
+                               (2, "zoom2", "r2_mode")):
+        # An in-person round has no room: a Zoom link in its templates is
+        # a mistake to flag, never the link to grade against.
+        if _mode(office.get(mode_key)) == "In person":
+            office[key] = ""
+            continue
+        if not (office.get(key) or "").strip() and zooms.get(rnd):
+            office[key] = zooms[rnd][0]
+    # A single-room office runs both rounds in one Zoom.
+    if not office.get("zoom2") and _mode(office.get("r2_mode")) == "Zoom":
+        office["zoom2"] = office.get("zoom") or ""
+
+    def how(rnd, mode_key, link_key):
+        mode = _mode(office.get(mode_key))
+        if not mode and rnd == 1:
+            mode = _mode(si.get("interview_type"))
+        link = (office.get(link_key) or "").strip()
+        if not mode and link:
+            mode = "Zoom"
+        if mode == "Zoom":
+            return "Zoom \u00b7 {}".format(link) if link else \
+                "Zoom \u00b7 link not on file"
+        if mode == "In person":
+            return "In person \u00b7 {}".format(addr) if addr else "In person"
+        return None
+    return [
+        ("Office name", (si.get("office_name") or "").strip() or None),
+        ("Address", addr or None),
+        ("Phone", office.get("phone") if si.get("office_phone") else None),
+        ("1st rounds", how(1, "r1_mode", "zoom")),
+        ("2nd rounds", how(2, "r2_mode", "zoom2")),
+    ]
 
 
 def _recruiters(oid):
@@ -147,24 +249,34 @@ def gather(oid, use_sheets=True):
     from automations.sms_audit import icd_audit as IA
     from automations.sms_audit import offices as O
 
+    from automations.sms_audit import templates as T
+
     office = _office(oid, use_sheets)
-    if use_sheets:
-        try:
-            IA.apply_address_history(office)
-        except Exception as e:  # noqa: BLE001
-            print("[card] address history not applied: {}".format(e))
+    sinfo, prefs = AIS.load(oid)
+    got, tmpl_why = _template_bodies(oid, use_sheets)
+    bodies, states = got if got else (None, {})
+    grading = grading_facts(office, sinfo, zoom_in_use(bodies, states))
+    try:
+        IA.apply_address_history(office)
+    except Exception as e:  # noqa: BLE001
+        print("[card] address history not applied: {}".format(e))
 
     info, info_skip, words, words_skip, ai, ai_skip = [], [], [], [], [], []
     for gap in O.missing_fields(office):
-        info_skip.append(gap)
+        (words_skip if "pay" in gap else info_skip).append(gap)
 
     # --- templates: wrong info vs wording -----------------------------
-    tmpl, why = _templates(office, use_sheets)
-    if tmpl is None:
-        info_skip.append(why)
-        words_skip.append(why)
+    if got is None:
+        info_skip.append(tmpl_why)
+        words_skip.append(tmpl_why)
     else:
-        for kind, text in tmpl:
+        found, _personas = T.lint(bodies, states, office)
+        z2 = (office.get("zoom2") or "").strip()
+        for kind, text in found:
+            if kind in NOT_GRADED:
+                continue
+            if kind == "WRONG ROOM" and z2 and z2 in text:
+                continue          # the office's second room, not a wrong one
             item = F.template(kind, text, office)
             (info if kind in C.WRONG_INFO else words).append(item)
 
@@ -192,7 +304,6 @@ def gather(oid, use_sheets=True):
         words_skip.append("recruiter texts not checked — no SMS log")
 
     # --- AI Settings + escalations ------------------------------------
-    sinfo, prefs = AIS.load(oid)
     if sinfo is None:
         ai_skip.append("AI Settings page not pulled")
     else:
@@ -200,10 +311,24 @@ def gather(oid, use_sheets=True):
                                    None, humans):
             if kind in REPLACED or kind == "NOT PULLED":
                 continue
+            # ai_settings raises this whenever the two rounds differ. The
+            # page holds ONE type, so it is only wrong when that type is
+            # not the 1st round's.
+            if kind == "ONE INTERVIEW TYPE" and _mode(
+                    sinfo.get("interview_type")) == _mode(
+                    office.get("r1_mode")):
+                continue
             item = F.setting(kind, text, office)
             (info if kind in C.WRONG_INFO else ai).append(item)
         ai.extend(F.check_preferences(prefs))
     rows, src = ESC.load(oid)
+    # AppStream appends "Message not sent as written: ..." to a row whose
+    # type does not send it. That note is not the office's words: left in,
+    # it was measured as part of the reply (a 229-character reply read as
+    # 341, "longer than two segments").
+    from automations.applicant_stream_card.setup_page import NOT_SENT
+    for r in rows:
+        r["message"] = NOT_SENT.sub("", r.get("message") or "").strip()
     if not src:
         ai_skip.append("Escalation rows not pulled")
     else:
@@ -229,11 +354,28 @@ def gather(oid, use_sheets=True):
         (None, "not pulled")
     sources.append(("AI Settings + Escalations (p=1504)", when, where))
 
-    return C.build(oid, stats=stats, ttb=ttb,
+    from automations.applicant_stream_card import setup_page as SP
+    setup = SP.gather(
+        sinfo, prefs, rows if src else None, bodies, states,
+        pulled={"ai": when},
+        emails=SP.parse_email_list(getattr(_template_bodies, "text", None))
+        if bodies is not None else None,
+        items=info + words + ai)
+
+    hours, _hw = AIS.load_hours(oid)
+    slots = S.slots(hours, recs) if hours else None
+    setup["hours"] = hours
+
+    from automations.applicant_stream_card import vitals as V
+    vitals = V.read(oid) if use_sheets else ([], None)
+
+    return C.build(oid, stats=stats, ttb=ttb, setup=setup, slots=slots,
+                   vitals=vitals,
                    recruiter_rows=_recruiters(oid),
                    info_items=info, info_skipped=info_skip,
                    word_items=words, word_skipped=words_skip,
-                   ai_items=ai, ai_skipped=ai_skip, sources=sources)
+                   ai_items=ai, ai_skipped=ai_skip, sources=sources,
+                   grading=grading, delivery=S.delivery(log))
 
 
 def main(argv=None):

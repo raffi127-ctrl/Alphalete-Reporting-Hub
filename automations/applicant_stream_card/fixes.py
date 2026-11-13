@@ -15,13 +15,15 @@ Click paths come from:
   * SMS / email templates — "All About SMS Templates" and "All About
     Emails" (Sept 2024 Looms): SMS/Email -> SMS Templates / Email
     Templates -> pencil -> save -> ACTIVATE AGAIN.
-  * AI Settings + Escalations — resources/recruiting-context/
-    appstream-ai-settings.md and appstream-ai-escalations.md (current,
-    checked against the live page Oct 2026), including the editor traps.
-  * The three AI Preferences numbers — resources/appstream-ai-preferences-
-    standard.md (180 / 300 / 60).
+  * AI replies, escalation types and AI Settings get NO steps: the Aptel
+    team sets those up, so the card names the problem and the owner.
+    Standards: appstream-ai-escalations.md and appstream-ai-preferences-
+    standard.md (60 / 60 / 60 since 2026-11-13).
 """
 from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
+
+import re
+from pathlib import Path
 
 from automations.sms_audit import ai_settings as AIS
 from automations.sms_audit import escalations as ESC
@@ -37,22 +39,6 @@ EMAIL_TPL = ["In ApplicantStream, open SMS/Email, then Email Templates.",
              "Find {where} and click the pencil to edit it."]
 SAVE_TPL = ["Click Save, then click Activate again. Saving a change can "
             "leave the template switched off."]
-
-ESC_OPEN = ["Open the AI tab, then AI Settings, then the Escalations tab.",
-            "Type “{where}” in the Search box so only that row "
-            "shows."]
-ESC_SAVE = ["Click Save and wait 10-15 seconds while it checks the "
-            "wording.",
-            "If it says the message is not compliant, tick “I've read "
-            "the AI's concerns…” and press Save Anyway (it turns "
-            "from faded to solid once the tick registers).",
-            "Reload the page and search the row again to make sure it "
-            "kept your change."]
-ESC_TYPE = ["Click into the message box (it often takes two clicks), "
-            "select all, then type the new wording. Check the counter "
-            "moved off 0/250, or nothing was entered."]
-
-SETTINGS_OPEN = ["Open the AI tab, then AI Settings, then the Settings tab."]
 
 # ----------------------------------------------------- per-finding HOW
 
@@ -81,86 +67,36 @@ TEMPLATE_HOW = {
                 "address field instead of typing the address out.",
 }
 
-ESC_HOW = {
-    "SILENT AND BLANK": [
-        "Write a short, direct answer in the message box (approved "
-        "wording: resources/recruiting-context/appstream-ai-"
-        "escalations.md, section 3).",
-        "Set the row to Don't Escalate. It is the ONLY setting that sends "
-        "your words; Clarify and Escalate let the AI write its own."],
-    "NO MESSAGE": [
-        "Write the answer you want the AI to give, then set the row to "
-        "Don't Escalate so it actually sends it.",
-        "Leave it on Escalate with no message ONLY if a person truly has "
-        "to step in (e.g. All Timeslots Booked)."],
-    "DEFLECTS": [
-        "Rewrite it to answer the question first, then invite them to the "
-        "interview. Never “the hiring manager will explain”."],
-    "PROMISES A CALL": [
-        "Take out the time word (“shortly”, “today”, "
-        "“in a few minutes”). Say “we'll give you a "
-        "call”. Keep the row on Escalate so a recruiter sees it."],
-    "PAY WORDING": [
-        "Say weekly pay {pay}. Never “base”."],
-    "NOT PLAIN TEXT": [
-        "Retype every curly quote and long dash as a plain ' and -."],
-    "TOO LONG": [
-        "Cut it under 250 characters (2 texts). Use officeAddress1 / "
-        "officeCity instead of typing the address."],
-    "GRAMMAR": ["Fix the wording shown. It goes out every time an "
-                "applicant hits this situation."],
-    "SHOUTING": ["Retype the capitals in normal case."],
-    "WRONG ADDRESS": [
-        "Replace the typed address with the variables officeAddress1, "
-        "officeCity, officeState, so it can never drift from the record."],
-}
-
-SETTINGS_HOW = {
-    "AI IS A REAL PERSON": [
-        "Under Office Info, change Name your AI Assistant to a name nobody "
-        "on the team uses, and match it to the name your Await Call "
-        "template signs."],
-    "SAME NAME": [
-        "Under Office Info, set Escalation Contact Person Name to the real "
-        "recruiter who calls applicants. It must be different from the AI "
-        "assistant name."],
-    "NAME MISMATCH": [
-        "Make Name your AI Assistant match the name the live templates "
-        "sign (or change the templates to match). Applicants should meet "
-        "one name."],
-    "WRONG TITLE": [
-        "Change Escalation Contact Title to the person who really calls, "
-        "e.g. “Recruiting Coordinator”, not “Hiring "
-        "Manager”."],
-    "ONE INTERVIEW TYPE": [
-        "Set Interview Type to how the FIRST round is run. The page holds "
-        "one answer; the second round has to be covered in the 2nd round "
-        "templates."],
-    "ADDRESS": [
-        "The address on the right is greyed out: only eStream can change "
-        "it. Email {estream} with your account number ({office}) and the "
-        "full address on ONE line, suite included: {want_address}. There "
-        "is no Line 2, so the suite has to go in Line 1."],
-}
-
 # The ICD-wide AI Preferences standard (appstream-ai-preferences-standard.md).
-STANDARD = {"offered_buffer": 180, "accepted_buffer": 300,
+# 60 / 60 / 60 since 2026-11-13: Aptel confirmed both buffers are "too soon"
+# floors, so the old 180 / 300 (which read "accepted" as a hold time) blocked
+# same-day bookings.
+STANDARD = {"offered_buffer": 60, "accepted_buffer": 60,
             "ghosting_threshold": 60}
+# A buffer is only flagged outside this range: above it same-day closes,
+# below it the AI can book a slot nobody can make in time.
+BUFFER_OK = (30, 120)
 STANDARD_WHY = {
     "offered_buffer": (
-        "Earliest time the AI can offer is too soon",
-        "Interviews set under 3 hours out show 45%; 3-6 hours out show 59%. "
-        "180 stops the AI offering into the worst window and keeps "
-        "same-day open."),
+        "The AI's earliest offer is set too far out" ,
+        "Same-day interviews show up 57% against 42% next day. Above 2 hours, "
+        "anyone who texts in the afternoon can only be offered tomorrow. "
+        "60 gives them an hour to get ready and keeps same-day open."),
     "accepted_buffer": (
-        "Applicants lose the time before they can answer",
-        "At 5 minutes, 36% of people who reply find the slot already gone "
-        "and get offered new times. At 300, 92% are still in time."),
+        "Applicants can't pick a time soon enough",
+        "This is the earliest time an applicant can pick. Above 2 hours, "
+        "anyone who texts in the afternoon can't take a same-day slot, and "
+        "same-day shows up 57% against 42% next day. 60 keeps it open."),
     "ghosting_threshold": (
         "Conversations get flagged as ghosting too early",
         "Most applicants answer within the hour. 60 flags the ones that "
         "really went quiet."),
 }
+# When a buffer is set too LOW (under 30) instead.
+TOO_SOON_WHY = (
+    "The AI can book a time that's too soon",
+    "Under 30 minutes, an applicant can be booked into an interview they "
+    "can't get ready for or log in to in time. 60 gives them an hour.")
 STANDARD_LABEL = {
     "offered_buffer": "Timeslot Buffer — For Times Offered by AI",
     "accepted_buffer": "Timeslot Buffer — For Times Accepted by "
@@ -216,103 +152,178 @@ def template(kind, text, office):
             "steps": _fill(steps, ctx)}
 
 
+# AI replies, escalation types and AI Settings are set up by the Aptel team
+# (Megan 2026-11-12: "the AppTel team would be in charge of setting these
+# up, they'll know how to do it ... we just need them notified"). So these
+# items say what is wrong and who fixes it, with no click-by-click steps.
+APTEL = "Aptel team"
+# Megan 2026-11-13: the office "or their admin can go into their app stream
+# at any time and make these edits" — so the owner line names both.
+WHO_FIXES = ("You or your admin can change this in ApplicantStream "
+             "anytime, or message the Aptel team to help you get it done.")
+
+
+def _aptel(source, kind, title, where, found, why):
+    return {"source": source, "kind": kind, "title": title, "where": where,
+            "found": found, "why": why, "steps": [], "owner": WHO_FIXES}
+
+
 def escalation(kind, text, office):
     where, detail = split_where(text)
     title, why = ESC.WHY.get(kind, (kind.title(), ""))
-    ctx = dict(context(office), where=where)
-    steps = ESC_OPEN + ["Click the row to open it."] + ESC_TYPE \
-        + ESC_HOW.get(kind, ["Fix what is shown."]) + ESC_SAVE
-    return {"source": "AI replies (Escalations)", "kind": kind,
-            "title": title, "where": where, "found": detail or text,
-            "why": why, "steps": _fill(steps, ctx)}
+    return _aptel("AI replies", kind, title, where, detail or text, why)
 
 
 def setting(kind, text, office):
     title, why = AIS.WHY.get(kind, (kind.title(), ""))
-    ctx = context(office)
-    steps = SETTINGS_OPEN + SETTINGS_HOW.get(kind, ["Fix what is shown."])
-    return {"source": "AI Settings", "kind": kind, "title": title,
-            "where": "AI Settings", "found": text, "why": why,
-            "steps": _fill(steps, ctx)}
+    return _aptel("AI Settings", kind, title, "AI Settings", text, why)
 
 
 def preference(field, now):
-    """A buffer off the standard -> one walkthrough."""
-    want = STANDARD[field]
+    """A buffer off the standard."""
     title, why = STANDARD_WHY[field]
-    return {"source": "AI Settings", "kind": "PREF " + field,
-            "title": title, "where": STANDARD_LABEL[field],
-            "found": "set to {} minutes".format(now),
-            "why": why,
-            "steps": SETTINGS_OPEN + [
-                "Under AI Preferences, set {} to {}.".format(
-                    STANDARD_LABEL[field], want),
-                "Click Save, reload, and check the number stuck."]}
+    return _aptel("AI Settings", "PREF " + field, title,
+                  STANDARD_LABEL[field],
+                  "Set to {} minutes. Should be {}.".format(
+                      now, STANDARD[field]), why)
 
 
 def check_preferences(prefs):
-    """[walkthrough] for every AI Preferences number off the standard.
+    """[item] for every AI Preferences number outside the standard's range.
 
     Replaces ai_settings' WINDOW TOO SHORT / GHOST TOO SOON for this card:
-    those read the two buffers as (offered - accepted), which the 180/300
-    standard written down after them (6c9de67) would itself fail."""
+    those read the two buffers as a window (offered - accepted), which Aptel
+    confirmed is not how they work (2026-11-13)."""
+    lo, hi = BUFFER_OK
     out = []
     for field, want in STANDARD.items():
         now = AIS._int((prefs or {}).get(field))
         if now is None:
             continue
-        if field == "offered_buffer" and now < 60:
+        if field == "ghosting_threshold":
+            if now < 30:
+                out.append(preference(field, now))
+        elif now > hi:
             out.append(preference(field, now))
-        elif field == "accepted_buffer" and now < want:
-            out.append(preference(field, now))
-        elif field == "ghosting_threshold" and now < 30:
-            out.append(preference(field, now))
+        elif now < lo:
+            item = preference(field, now)
+            item["title"], item["why"] = TOO_SOON_WHY
+            out.append(item)
     return out
 
 
 # 11280 and 24065 after the 29-30 Oct rebuild: 31 of 51 rows on Don't
-# Escalate (appstream-ai-escalations.md §2). Only Don't Escalate sends the
-# office's own words; Clarify and Escalate let the AI write its own.
-DONT_ESCALATE_STANDARD = 31
+# Escalate (appstream-ai-escalations.md section 2). Only Don't Escalate
+# sends the office's own words; Clarify and Escalate let the AI write its
+# own. The list itself is read from that doc so it never drifts.
 
 
-def routing_summary(rows):
-    """One finding when too few rows send the office's own wording.
+APPROVED_DOC = (Path(__file__).resolve().parents[2] / "resources"
+                / "recruiting-context" / "appstream-ai-escalations.md")
+_ROW = re.compile(r"^\|\s*\*\*(.+?)\*\*(.*?)\|\s*(.+?)\s*\|\s*$")
+# The doc's Commute row types 11280's own address; any office gets the fields.
+_HARD_ADDR = "5217 Tennyson Pkwy Suite 100, Plano TX"
+_ADDR_VARS = "{officeAddress1}, {officeCity} {officeState} {officeZip}"
+
+
+def approved_replies(doc=None):
+    """[(number, row name, reply)] — the signed-off Don't Escalate set, in the
+    doc's order (section 3 of appstream-ai-escalations.md). AppStream does
+    not number these rows, so the number is ours, stable as long as the
+    doc's order is. Rows the doc marks Silent are left out."""
+    try:
+        text = Path(doc or APPROVED_DOC).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    sect = text.split("## 3.", 1)[-1].split("\n## ", 1)[0]
+    out = []
+    for line in sect.splitlines():
+        m = _ROW.match(line.strip())
+        if not m or "silent" in m.group(2).lower():
+            continue
+        out.append((len(out) + 1, m.group(1).strip(),
+                    m.group(3).replace(_HARD_ADDR, _ADDR_VARS)))
+    return out
+
+
+# Megan 2026-11-13: "we have 5 versions of the reply ... give them, hey,
+# these are the 5 potential responses we'd recommend". They live on the
+# Approved Applicant Replies page (23 questions x 5 versions, each with its
+# own Copy button), so the card links to the right question rather than
+# copying the words and letting the two drift.
+REPLY_PAGE = "https://claude.ai/artifact/QqHyfff9tDpzU9C2SRUCKL"
+# AppStream AI reply row -> that page's question number. Only clear matches;
+# a row with none keeps the one signed-off reply from the escalations doc.
+REPLY_QUESTION = {
+    "Compensation": 16,
+    "Remote Work": 7,
+    "Work Flexibility (Remote/Flex hours)": 7,
+    "Applicant Requested Directions": 8,
+    "Company Name Confusion": 11,
+    "Confusion About Role Type": 11,
+    "Does Not Remember Applying": 11,
+    "Job Description": 14,
+    "Request for Unprovided Information": 14,
+    "Work Hours": 19,
+    "Work Days": 19,
+    "Full-Time / Part-Time Definitions": 19,
+    "Empathetic Reason / Personal Hardship": 17,
+    "Request to talk via Phone": 12,
+}
+
+
+def reply_link(name):
+    """Link to the 5 approved versions for this row, or None."""
+    want = _key(name)
+    for row, q in REPLY_QUESTION.items():
+        if _key(row) == want:
+            return "{}#q{}".format(REPLY_PAGE, q)
+    return None
+
+
+def reply_versions(name, approved_msg):
+    """The words to offer inline when the row has no replies-page match."""
+    return [approved_msg] if approved_msg else []
+
+
+def _key(name):
+    return re.sub(r"[^a-z0-9]+", " ", (name or "").lower()
+                  .replace("\u2019", "'")).strip()
+
+
+def routing_summary(rows, approved=None):
+    """One finding listing which of our recommended AI replies are not on
+    Don't Escalate, by number, with the reply to paste in.
 
     Replaces escalations' per-row NO MESSAGE: a blank box on an Escalate
     row is deliberate (a person must act) and on a Silent row it is
     meant to say nothing, so 30-odd 'no message' lines were mostly noise.
     """
-    def mode(r):
-        return (r.get("routing") or "").strip().lower().replace("’", "'")
-    dont = sum(1 for r in rows if mode(r) in ("don't escalate",
-                                              "dont escalate",
-                                              "do not escalate"))
-    if dont >= DONT_ESCALATE_STANDARD or not rows:
+    if not rows:
         return None
-    clar = [r["name"] for r in rows if mode(r) == "clarify"]
-    return {"source": "AI replies (Escalations)", "kind": "ROUTING",
-            "title": "The AI is not using the office's own replies",
-            "where": "{} of {} rows on Don't Escalate (standard {})".format(
-                dont, len(rows), DONT_ESCALATE_STANDARD),
-            "found": ("Clarify rows (the AI writes its own deflection): "
-                      + ", ".join(clar[:12])) if clar else "",
-            "why": "Only Don't Escalate sends the words you wrote. On "
-                   "Clarify or Escalate the AI makes up its own answer, so "
-                   "every custom message on those rows has never reached an "
-                   "applicant.",
-            "steps": ESC_OPEN[:1] + [
-                "Load the 32 approved replies (resources/recruiting-context/"
-                "appstream-ai-escalations.md, section 3).",
-                "For each one: search the row, paste the approved wording, "
-                "set it to Don't Escalate, Save.",
-                "Leave these six on Escalate with the box EMPTY — a "
-                "person has to act: All Timeslots Booked, Request Outside "
-                "Available Timeframes, Scheduling Dead End, Scheduling "
-                "Impasse / Repeated Rejection, External Context Reference, "
-                "Work Location.",
-                "Reload and count the Don't Escalate rows: it should be "
-                "31."]}
+    approved = approved_replies() if approved is None else approved
+    if not approved:
+        return None
+
+    def dont(r):
+        m = (r.get("routing") or "").strip().lower().replace("\u2019", "'")
+        return m in ("don't escalate", "dont escalate", "do not escalate")
+    on = {_key(r.get("name")) for r in rows if dont(r)}
+    missing = [a for a in approved if _key(a[1]) not in on]
+    if not missing:
+        return None
+    total = len(approved)
+    item = _aptel(
+        "AI replies", "ROUTING",
+        "Not all of our recommended AI replies are active and set to the "
+        "right escalation type",
+        "{} of {} set up".format(total - len(missing), total),
+        "{} of {} set up. Set these to Don't Escalate with the reply "
+        "below:\n{}".format(total - len(missing), total, "\n".join(
+            "#{} {}".format(n, name) for n, name, _m in missing)),
+        "Until they are, the AI writes its own answer instead of ours.")
+    item["replies"] = missing
+    return item
 
 
 def recruiter_text(entry):

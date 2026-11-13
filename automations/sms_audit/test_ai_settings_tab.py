@@ -122,6 +122,32 @@ class Parsing(unittest.TestCase):
         self.assertEqual(rows[0]["routing"], "")
 
 
+class Hours(unittest.TestCase):
+    PAGE = ("Hours\nCurrent Active Interview Time\nVideo Tutorial\nM\n"
+            "08:15 AM - 08:45 AM\n4\n01:00 PM - 01:30 PM\n3\nT\n"
+            "09:00 AM - 09:30 AM\n2\nW\nT\nF\nS\nS\nSave")
+
+    def test_slots_and_seats_off_the_hours_pane(self):
+        from automations.sms_audit import ai_settings as AIS
+        got = AIS.parse_hours(self.PAGE)
+        self.assertEqual(sorted(got), ["Monday", "Tuesday"])
+        self.assertEqual(got["Monday"][1], {"start": "01:00 PM",
+                                            "end": "01:30 PM", "seats": 3})
+        self.assertEqual(AIS.parse_hours("no list here"), {})
+
+    def test_hours_round_trip_and_old_readers_ignore_them(self):
+        from automations.sms_audit import ai_settings as AIS
+        hours = AIS.parse_hours(self.PAGE)
+        ws = FakeWorksheet()
+        TAB.write("11280", INFO, PREFS, ROWS, gc=FakeClient(FakeSheet(ws)),
+                  hours=hours)
+        self.assertEqual(TAB.parse_hours(ws.values), hours)
+        info, prefs, rows = TAB.parse(ws.values)        # unchanged
+        self.assertEqual(len(rows), len(ROWS))
+        got, when = TAB.read_hours("11280", gc=FakeClient(FakeSheet(ws)))
+        self.assertEqual(got, hours)
+
+
 class Reading(unittest.TestCase):
     def test_read_reports_a_source_when_there_is_data(self):
         ws = FakeWorksheet()

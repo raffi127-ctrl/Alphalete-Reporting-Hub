@@ -162,22 +162,19 @@ in section 3 is written **with** brackets. Both are correct and both work —
 
 ## 6. The AI Preferences numbers — the ICD-wide standard
 
-Full evidence in `resources/appstream-ai-preferences-standard.md`. Short version,
-and both accounts are set this way:
+Full evidence in `resources/appstream-ai-preferences-standard.md`. Short version
+(standard changed 2026-11-13 — the 180 / 300 that was here read the accepted
+buffer wrong; Aptel confirmed both buffers are "too soon" floors):
 
 | Setting | Standard | Never |
 |---|---|---|
-| Timeslot Buffer — times **offered by AI** | **180** | below 60 |
-| Timeslot Buffer — times **accepted by candidates** | **300** | 5 |
+| Timeslot Buffer — times **offered by AI** | **60** | above 120 · under 30 |
+| Timeslot Buffer — times **accepted by candidates** | **60** | above 120 · under 30 |
 | Ghosting Threshold | 60 (30 where someone works the queue) | — |
 
 These are per office, nothing surfaces them, and no two offices were found set
-the same. **Check them on every ICD.**
-
-The accepted buffer matters most: at 5 minutes, 36% of the people who reply find
-the slot already released. 950 offers measured — median reply 2 minutes, but
-only 63.5% inside 5 minutes against 92.4% inside 300. Late repliers were ~3x
-more likely to be re-offered times (19.6% vs 7.0%).
+the same. **Check them on every ICD.** The point of the standard is to keep
+same-day bookings open: same day shows 57% against 42% next day.
 
 ## 7. Is it working? — first measurement, 30 Oct
 

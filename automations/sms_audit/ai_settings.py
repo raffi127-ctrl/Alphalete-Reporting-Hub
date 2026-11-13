@@ -99,6 +99,65 @@ def load(office):
     return info or {}, prefs or {}
 
 
+# AI > AI Settings > Hours (p=1504&pane=hours): "Current Active Interview
+# Time" is the 1st-round schedule the AI books into (Megan 2026-10-28: "for
+# the schedule we need to look at AI>ai settings>hours"). One header letter
+# per weekday, M T W T F S S (a day with no slots still shows its letter),
+# then one "08:15 AM - 08:45 AM" line per slot with how many it holds under
+# it. Same page oat_processing/await_template.parse_ai_hours reads.
+HOURS_MARK = "Current Active Interview Time"
+WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+        "Sunday"]
+_SLOT = re.compile(r"^(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)$",
+                   re.I)
+
+
+def parse_hours(text):
+    """{weekday: [{"start", "end", "seats"}]} off the Hours pane, or {}.
+    `seats` is the number under the slot (how many it can hold), None when
+    the page shows none."""
+    i = (text or "").find(HOURS_MARK)
+    if i < 0:
+        return {}
+    out, day, idx, last = {}, None, -1, None
+    for x in (ln.strip() for ln in text[i + len(HOURS_MARK):].splitlines()):
+        if not x or x == "Video Tutorial":
+            continue
+        if x.isdigit():
+            if last is not None and last.get("seats") is None:
+                last["seats"] = int(x)
+            continue
+        if x in ("M", "T", "W", "F", "S"):
+            j = idx + 1
+            while j < 7 and WEEK[j][0] != x:
+                j += 1
+            if j >= 7:
+                break
+            idx, day, last = j, WEEK[j], None
+            continue
+        m = _SLOT.match(x)
+        if m and day:
+            last = {"start": m.group(1).upper().replace("  ", " "),
+                    "end": m.group(2).upper().replace("  ", " "),
+                    "seats": None}
+            out.setdefault(day, []).append(last)
+            continue
+        if day:
+            break                      # the list is over
+    return out
+
+
+def load_hours(office):
+    """({weekday: [slots]}, pulled-date-string) or (None, None)."""
+    f = OUTPUT / "ai_settings_{}.json".format(office)
+    if f.exists():
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if d.get("hours"):
+            return d["hours"], d.get("pulled")
+    from automations.sms_audit import ai_settings_tab as TAB
+    return TAB.read_hours(office)
+
+
 def _int(v):
     try:
         return int(str(v).strip())
