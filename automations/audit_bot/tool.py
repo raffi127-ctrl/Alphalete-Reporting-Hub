@@ -9,6 +9,7 @@ disk. A rerun spawns its own python, so it always runs the code that's on disk.
     lucy rerun audit_bot_tool deploy [colten] audit.py [file…]
     lucy rerun audit_bot_tool ls [colten] inbox
     lucy rerun audit_bot_tool channels [colten]
+    lucy rerun audit_bot_tool grep [colten] "<regex>"   (search saved reports)
 """
 import shlex
 import sys
@@ -47,7 +48,38 @@ def _action_channels(args: str) -> tuple[bool, str]:
         l.split()[-1] for l in lines) + f" (log: {stem})"
 
 
+def _action_grep(args: str) -> tuple[bool, str]:
+    """READ-ONLY: search the bot's saved reports (reports/*.md) for a regex and
+    dump every hit as `file :: line` into output/logs for `logtail`.
+
+      audit_bot_tool grep "(?i)company name"
+      audit_bot_tool grep colten "(?i)company name"
+    """
+    import re
+    root, rest, label = mc._audit_bot_root(shlex.split(args or ""))
+    if not rest:
+        return False, "usage: audit_bot_tool grep [colten] <regex>"
+    try:
+        rx = re.compile(" ".join(rest))  # main() re-joins argv with spaces
+    except re.error as e:
+        return False, f"bad regex: {e}"
+    reports = root / "reports"
+    if not reports.is_dir():
+        return False, f"no reports folder: {reports}"
+    out, files = [], 0
+    for p in sorted(reports.glob("*.md")):
+        hits = [ln.strip() for ln in p.read_text(encoding="utf-8", errors="replace").splitlines()
+                if rx.search(ln)]
+        if hits:
+            files += 1
+            out += [f"{p.name} :: {h[:500]}" for h in hits]
+    stem = mc._audit_bot_dump(label, "grep", "\n".join(out) + "\n")
+    return True, (f"[{label}] {files} report(s), {len(out)} line(s) match "
+                  f"-> `lucy logtail {stem} . 40`")
+
+
 _ACTIONS = {
+    "grep": _action_grep,
     "channels": _action_channels,
     "snapshot": mc._action_audit_bot_snapshot,
     "deploy": mc._action_audit_bot_deploy,
