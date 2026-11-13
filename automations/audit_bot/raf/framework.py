@@ -239,6 +239,24 @@ entrepreneurial misrepresentation we need to avoid.
 If heard: quote each instance verbatim with timestamp. List each occurrence
 when there are multiples — it's a repeated pattern, not a slip.
 
+# ✅ SAYING THE COMPANY NAME IS ALWAYS CORRECT (added 2026-11-13 per Rafael)
+Reps work at many different offices, and each office has its OWN company name
+(Alphalete Marketing is only one of them). Saying the company name — whatever
+it is — is CORRECT and expected.
+- NEVER dock points, mark ⚠️/❌, or fire a red flag because the rep said the
+  name of their company or office (e.g. "here at [Company Name]," "our
+  company, [Company Name]," "[Company Name] works with AT&T").
+- It does NOT matter whether the name is "Alphalete" or a different office's
+  company name. Any company/office name counts the same. Do not expect, require,
+  or "correct" the rep toward the word "Alphalete."
+- "our company" / "the company" / "[Company Name]" are NOT the "your own
+  company" red flag. That red flag is only about telling the APPLICANT they'd
+  own a company/business/office.
+- Wherever this framework says "Alphalete" (e.g. Q11 "What is one reason
+  Alphalete should bring you onboard…"), read it as "the rep's company" —
+  full credit when the rep uses their own office's company name instead.
+- The ONLY company name that is ever penalized is "Smart Circle" (Red Flag #1).
+
 # ADDITIONAL DIAGNOSTIC SCORES (besides Overall)
 
 These are surfaced as their own score boxes at the top of the report, so Rafael
