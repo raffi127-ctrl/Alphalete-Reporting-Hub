@@ -84,7 +84,8 @@ def _action_regrade(args: str) -> tuple[bool, str]:
     bot's own venv. Returns at once; progress goes to output/logs/.
 
       audit_bot_tool regrade company_name
-      audit_bot_tool regrade colten company_name"""
+      audit_bot_tool regrade colten company_name
+      audit_bot_tool regrade company_name --at 22:00   (sleeps until then)"""
     import os
     import subprocess
     root, rest, label = mc._audit_bot_root(shlex.split(args or ""))
@@ -105,7 +106,8 @@ def _action_regrade(args: str) -> tuple[bool, str]:
     log.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib:" + env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
-    argv = [str(py), str(here / "regrade.py"), str(lst)] + (["colten"] if label == "colten" else [])
+    argv = ([str(py), str(here / "regrade.py"), str(lst)]
+            + (["colten"] if label == "colten" else []) + rest[1:])  # e.g. --at 22:00
     with open(log, "a", encoding="utf-8") as fh:
         p = subprocess.Popen(argv, cwd=str(root / ".runtime"), stdout=fh,
                              stderr=subprocess.STDOUT, env=env, start_new_session=True)

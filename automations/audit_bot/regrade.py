@@ -11,7 +11,7 @@ writes the new grade NEXT TO the old one — nothing else:
     scores) goes to output/logs/ so `logdump` can bring it to the laptop.
 
     lucy rerun audit_bot_tool regrade company_name     # starts it detached
-    python -m automations.audit_bot.regrade <list.txt> [colten]   # the worker
+    python -m automations.audit_bot.regrade <list.txt> [colten] [--at HH:MM]   # the worker
 
 The list is one saved report file name per line (reports/<name>.md).
 """
@@ -113,7 +113,14 @@ def main(argv: list) -> int:
         return 2
     names = [ln.strip() for ln in Path(argv[0]).read_text(encoding="utf-8").splitlines()
              if ln.strip().endswith(".md")]
-    label = "colten" if len(argv) > 1 and argv[1] == "colten" else "raf"
+    label = "colten" if "colten" in argv[1:] else "raf"
+    if "--at" in argv:  # wait (asleep, no load) until HH:MM on this box's clock
+        hh, mm = (int(x) for x in argv[argv.index("--at") + 1].split(":"))
+        now = dt.datetime.now()
+        start = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if start > now:
+            print(f"waiting until {start:%Y-%m-%d %H:%M} to start", flush=True)
+            time.sleep((start - now).total_seconds())
     root = Path.home() / ("2nd-rd-audits-colten" if label == "colten" else "2nd-rd-audits")
     rt = root / ".runtime"
     sys.path.insert(0, str(rt))
