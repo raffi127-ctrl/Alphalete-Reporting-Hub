@@ -239,48 +239,48 @@ def coverage(csv_path: Optional[Path], day: dt.date) -> int:
 # OWN thread next to Metrics (like the Order Log), so Metrics doesn't flood; the
 # Metrics thread gets one pointer line.
 PENDING_TITLE = "⏳ Pending Orders"
-PENDING_MAX_NAMES = 30   # Eve 11/12: up to ~30 reps per index
+PENDING_MAX_NAMES = 30   # Eve 11/12: 30 reps per index, max
+PENDING_STRETCH = 34     # ...up to 34 only to keep a letter in one post
 
 
 def _initial(rep) -> str:
     return (str(rep).strip()[:1] or "?").upper()
 
 
-def name_groups(reps, max_names: int = PENDING_MAX_NAMES):
-    """[(label, [(rep, rows)])] — reps A-Z cut ONLY between letters (Eve
-    11/12: never 'A–K' + 'K–Z'), each post as close to max_names as a letter
-    boundary allows; going a bit over to keep a letter whole is fine.
-    Label = 'A–K' by first letters; '' if one post."""
-    if len(reps) <= max_names:
-        return [("", list(reps))]
+def name_groups(reps, max_names: int = PENDING_MAX_NAMES,
+                stretch: int = PENDING_STRETCH):
+    """[(label, [(rep, rows)])] — reps A-Z, whole letters per post (Eve
+    11/12: never 'A–K' + 'K–Z'). Fill letter by letter up to max_names; a
+    letter that would take the post to max_names+1..stretch goes in whole
+    and closes it; past stretch it opens the next post. Only a single letter
+    bigger than stretch is split (unavoidable). Label = 'A–K'; '' if one."""
     blocks = []                          # [(letter, [(rep, rows)])]
     for rep, rr in reps:
         if blocks and blocks[-1][0] == _initial(rep):
             blocks[-1][1].append((rep, rr))
         else:
             blocks.append((_initial(rep), [(rep, rr)]))
-    groups, i = [], 0
-    while i < len(blocks):
-        left = sum(len(b[1]) for b in blocks[i:])
-        if left <= max_names:
-            groups.append(blocks[i:])
-            break
-        # cut after the letter whose running total is closest to max_names
-        best_j, best_d, run = i, None, 0
-        for j in range(i, len(blocks)):
-            run += len(blocks[j][1])
-            d = abs(run - max_names)
-            if best_d is None or d < best_d:
-                best_j, best_d = j, d
-            if run >= max_names:
-                break
-        groups.append(blocks[i:best_j + 1])
-        i = best_j + 1
-    # A tiny last post (a few reps) rides on the one before ("si tiene que
-    # entrar alguno más, ok").
-    if len(groups) > 1 and sum(len(b[1]) for b in groups[-1]) < 8:
-        tail = groups.pop()
-        groups[-1] = groups[-1] + tail
+    # a letter too big for any post is cut into max_names pieces
+    pieces = []
+    for letter, xs in blocks:
+        if len(xs) > stretch:
+            pieces += [(letter, xs[k:k + max_names])
+                       for k in range(0, len(xs), max_names)]
+        else:
+            pieces.append((letter, xs))
+    groups, cur, n = [], [], 0
+    for letter, xs in pieces:
+        if cur and n + len(xs) > stretch:
+            groups.append(cur)
+            cur, n = [], 0
+        cur.append((letter, xs))
+        n += len(xs)
+        if n >= max_names:              # full (30), or stretched to <= 34
+            groups.append(cur)
+            cur, n = [], 0
+    if cur:
+        groups.append(cur)
+    groups = groups or [[]]
     if len(groups) == 1:
         return [("", [x for _l, xs in groups[0] for x in xs])]
     out = []
