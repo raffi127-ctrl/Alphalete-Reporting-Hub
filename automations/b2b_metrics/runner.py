@@ -549,6 +549,48 @@ def header_text(o: B2BOffice, day: dt.date) -> str:
     return "\n".join(lines)
 
 
+def _delete_prior_upload(client, chan: str, thread_ts: str, filenames: set,
+                         day: dt.date, log=print) -> int:
+    """--replace: delete THIS bot's earlier upload(s) of the same file name(s)
+    in this thread today, so the corrected image takes its place instead of
+    landing as a second copy. Lucy can't read these channels' history, but
+    files.list shows her own uploads + the rooms they're in, and files.info
+    says which thread. Raises if the lookup itself fails — the caller then
+    posts nothing rather than a duplicate."""
+    me = client.auth_test().get("user_id")
+    oldest = int(dt.datetime.combine(day, dt.time(0, 0)).timestamp())
+    found, page = [], 1
+    while True:
+        resp = client.files_list(user=me, ts_from=str(oldest), count=100,
+                                 page=page)
+        for f in resp.get("files", []):
+            rooms = ((f.get("channels") or []) + (f.get("groups") or [])
+                     + (f.get("ims") or []))
+            if chan in rooms and f.get("name") in filenames:
+                found.append(f["id"])
+        paging = resp.get("paging") or {}
+        if page >= int(paging.get("pages") or 1):
+            break
+        page += 1
+    deleted = 0
+    for fid in found:
+        info = client.files_info(file=fid).get("file") or {}
+        posts = [pm for sh in (info.get("shares") or {}).values()
+                 for ch, pms in sh.items() if ch == chan for pm in pms]
+        if not any(pm.get("thread_ts") == thread_ts for pm in posts):
+            continue                      # same name, some other thread/day
+        client.files_delete(file=fid)
+        for pm in posts:
+            if pm.get("thread_ts") == thread_ts and pm.get("ts"):
+                try:
+                    client.chat_delete(channel=chan, ts=pm["ts"])
+                except Exception:  # noqa: BLE001 — files_delete may take it
+                    pass
+        deleted += 1
+        log("  [{}] replaced: deleted earlier {}".format(chan, info.get("name")))
+    return deleted
+
+
 def refresh_header(o: B2BOffice, day: dt.date, log=print) -> int:
     """Rewrite today's PARENT post in place so its section list matches what
     the thread now carries (Megan 2026-11-13: a section added mid-day landed
@@ -768,7 +810,10 @@ def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
 
 def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         channel_override: str = None, today: dt.date = None, force: bool = False,
-        new_thread: bool = False, log=print) -> dict:
+        new_thread: bool = False, replace: bool = False, log=print) -> dict:
+    # --replace re-posts a section that is already in the thread, deleting
+    # the earlier copy first — so it implies force for what it touches.
+    force = force or replace
     today = today or dt.date.today()
     out_dir = _out_dir(o)
     # Capture/post in the SAME resolved order the header enumerates (plan-aware,
@@ -1006,6 +1051,21 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             # 20 rows — Carlos 2026-09-13); both ride ONE message so the
             # thread stays one reply per section and dedup stays one id.
             paths = list(path) if isinstance(path, (list, tuple)) else [path]
+            if replace and item["id"] in already:
+                try:
+                    n_del = _delete_prior_upload(client, chan, ts,
+                                                 {p.name for p in paths},
+                                                 today, log=log)
+                except Exception as e:  # noqa: BLE001
+                    n_del, why = 0, str(e)[:160]
+                else:
+                    why = "earlier copy not found in this thread"
+                if not n_del:
+                    # Couldn't find/delete the old one: post NOTHING rather
+                    # than a second copy next to it.
+                    log("  [{}] {} replace FAILED, not reposting: {}".format(
+                        chan, item["id"], why))
+                    continue
             client.files_upload_v2(
                 channel=chan, thread_ts=ts, initial_comment=caption,
                 file_uploads=[{"file": str(p), "filename": p.name}
@@ -1112,6 +1172,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-crop", action="store_true",
                     help="skip crop-to-last-rep on Churn/Activation (diagnostic — "
                          "shows the full captured image)")
+    ap.add_argument("--replace", action="store_true",
+                    help="with --post: delete today's earlier copy of each "
+                         "section in the thread, then post the new one")
     ap.add_argument("--refresh-header", action="store_true",
                     help="edit today's parent post(s) so the section list "
                          "matches the current items; posts nothing new")
@@ -1316,7 +1379,7 @@ def main(argv=None) -> int:
         try:
             res = run(o, post=args.post, only=args.only, dm=args.dm,
                       channel_override=args.channel, today=today, force=args.force,
-                      new_thread=args.new_thread)
+                      new_thread=args.new_thread, replace=args.replace)
             print("\nresult ({}):".format(key), res)
             missed = res.get("missed") or []
             present = res.get("present") or []
