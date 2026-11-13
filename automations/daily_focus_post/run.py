@@ -43,7 +43,7 @@ try:
 except Exception:
     pass
 
-from automations.daily_focus_post import roster
+from automations.daily_focus_post import roster, schedule
 from automations.recruiting_report import daily_focus, fill, focus_shot
 from automations.shared import run_manifest, slack_metrics_post as smp
 
@@ -158,6 +158,38 @@ def text_office(office: "roster.FocusOffice", png: Path, today: dt.date, *,
     return out
 
 
+def schedule_office(office: "roster.FocusOffice", today: dt.date,
+                    thread_ts: Optional[str], *, dry_run: bool = True,
+                    force: bool = False) -> dict:
+    """Reply in the thread with tomorrow's 1st/2nd rounds by time slot.
+
+    Own state entry ("<key>|schedule"), like the texts: an AppStream hiccup at
+    7:00 retries at 7:10 without a second screenshot, and never blocks it."""
+    offices = tuple(getattr(office, "schedule_offices", ()) or ())
+    if not offices:
+        return {}
+    k = f"{office.key}|schedule"
+    if _load_state().get(k) == today.isoformat() and not force:
+        return {"skipped": True}
+    day = schedule.next_day(today)
+    try:
+        data = schedule.read(day, offices)
+        text = schedule.format_text(day, data)
+        res = smp.post_reply_text_only(text, today=today, dry_run=dry_run,
+                                       channel_id=office.channel_id,
+                                       thread_ts=thread_ts)
+    except Exception as e:  # noqa: BLE001 — the screenshot already went out
+        print(f"[{office.key}] !! SCHEDULE reply FAILED: {type(e).__name__}: {e}")
+        return {"error": f"schedule: {type(e).__name__}: {e}"}
+    print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} schedule "
+          f"for {day}:\n{text}")
+    if not dry_run:
+        state = _load_state()
+        state[k] = today.isoformat()
+        _save_state(state)
+    return {"text": text, "reply": res}
+
+
 def post_office(office: "roster.FocusOffice", spreadsheet, *,
                 dry_run: bool = True, force: bool = False,
                 keep_png: bool = False,
@@ -171,6 +203,22 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         groups = tuple(getattr(office, "text_groups", ()) or ())
         owed = [g for g in groups
                 if state.get(f"{office.key}|text|{g}") != today.isoformat()]
+        sched_owed = (bool(getattr(office, "schedule_offices", ()))
+                      and state.get(f"{office.key}|schedule") != today.isoformat())
+        if sched_owed:
+            # Slack screenshot went out, the schedule reply didn't: retry it
+            # into today's existing thread only.
+            parent = smp.ensure_named_thread(
+                roster.THREAD_TITLE, today,
+                dry_run=dry_run, channel_id=office.channel_id)
+            sched = schedule_office(office, today,
+                                    None if dry_run else parent.get("thread_ts"),
+                                    dry_run=dry_run)
+            if not owed:
+                if sched.get("error"):
+                    return {"office": office.key,
+                            "skipped": "schedule_retry_failed"}
+                return {"office": office.key, "schedule": sched}
         if not owed:
             print(f"[{office.key}] already posted for {today} — skipping "
                   f"(use --force to repost)")
@@ -222,6 +270,9 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         state = _load_state()
         state[office.key] = today.isoformat()
         _save_state(state)
+    sched = schedule_office(office, today,
+                            None if dry_run else parent.get("thread_ts"),
+                            dry_run=dry_run, force=force)
     texts = text_office(office, png, today, dry_run=dry_run, force=force)
 
     if dry_run:
@@ -234,17 +285,21 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         if keep_png:
             print(f"[{office.key}]   PNG kept at {png}")
         return {"office": office.key, "dry_run": True, "png": str(png),
-                "parent": parent, "reply": reply, "texts": texts}
+                "parent": parent, "reply": reply, "texts": texts,
+                "schedule": sched}
 
     print(f"[{office.key}] POSTED to {office.channel_name} "
           f"thread={parent.get('thread_ts')} existed={parent.get('existed')}")
-    if texts["errors"]:
-        # Slack posted; a chat didn't. Fail the office so the Hub shows it —
-        # the next tick re-texts only the chat that missed.
-        raise RuntimeError("Slack posted, but text failed: "
-                           + "; ".join(texts["errors"]))
+    errs = list(texts["errors"])
+    if sched.get("error"):
+        errs.append(sched["error"])
+    if errs:
+        # Slack posted; a chat or the schedule reply didn't. Fail the office so
+        # the Hub shows it — the next tick retries only what missed.
+        raise RuntimeError("Slack posted, but: " + "; ".join(errs))
     return {"office": office.key, "dry_run": False, "png": str(png),
-            "parent": parent, "reply": reply, "texts": texts}
+            "parent": parent, "reply": reply, "texts": texts,
+            "schedule": sched}
 
 
 def main(argv: Optional[List[str]] = None) -> int:

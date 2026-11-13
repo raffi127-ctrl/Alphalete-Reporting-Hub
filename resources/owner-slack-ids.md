@@ -16,6 +16,7 @@ When you confirm a new ID, add it here in the same commit.
 | Maud Miller | | U045USN7NCD |
 | JD Mascorro | Apex new-starts heads-up DM (with Alisson, Eve, Megan) | U05094TTPKQ | josh.mascorro17@gmail.com, confirmed by Megan 2026-11-06 (screenshot). ⚠ look-alike U068T4LA0C8 "JD Mascorro" (jd.alphaletemarketing@gmail.com) is a second account |
 | Bas | Leader in Raf's office; Lucy's daily recordings group DM | U067WLPK92T | basboosmahdi@gmail.com, confirmed by Eve 2026-11-11. ⚠ look-alike U09TWLG53EZ "Bas" (basitsanusi29@gmail.com) is someone else |
+| MJ | Raf's office team; tagged on the 7 PM Daily Focus post | U0488R0E9D5 | given by Eve 2026-11-13 |
 | Camila Hornos Kraschinsky | Recruiting (ARS reports); tagged on 1st to 2nd Below the Mark | U07FWSYP3NV |
 | Lucy Reporting | The bot account all reports post as | U0BCG8F9B5Z |
 

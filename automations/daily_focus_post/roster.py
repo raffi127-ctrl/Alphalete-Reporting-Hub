@@ -68,6 +68,9 @@ class FocusOffice:
     # chat id -- same rule as every other Lucy text. Lucy 1 (the mini, where
     # the 7pm agent runs) must be a member of each.
     text_groups: tuple = ()
+    # AppStream office ids whose Weekly Calendar feeds the "tomorrow's 1st /
+    # 2nd rounds by time slot" reply (schedule.py). Empty = no schedule reply.
+    schedule_offices: tuple = ()
 
 
 # Raf's office. The channel is PRIVATE and was renamed from
@@ -83,7 +86,21 @@ RAF = FocusOffice(
     channel_id="C0AUAS88FGW",
     channel_name="#rafs-office-recruiting-11280",
     timezone="America/Chicago",
-    tag_user_ids=("U045Z8N0ZQC",),   # Rafael Hidalgo
+    # Raf, Loom 2026-11-13: "Can we start tagging MJ, JD, Bass, Al, and
+    # Allison on every post ... and actually also tag Tiffany so that everyone
+    # knows what really the second round schedule is for the next day."
+    # IDs from resources/owner-slack-ids.md (Eve 2026-11-13).
+    tag_user_ids=(
+        "U045Z8N0ZQC",   # Rafael Hidalgo
+        "U0488R0E9D5",   # MJ
+        "U05094TTPKQ",   # JD Mascorro (NOT the look-alike U068T4LA0C8)
+        "U067WLPK92T",   # Bas (NOT the look-alike U09TWLG53EZ)
+        "U09MXMU76MB",   # Al (Algemar) Kennel
+        "U0BBG374GE9",   # Alisson Rodriguez
+        "U0B9924FHCL",   # Tiffani Brown
+    ),
+    # Raf's three 1st round funnels (same as first_round_scorecards.appstream).
+    schedule_offices=("11280", "23965", "24065"),
     # Raf, #rafs-office-recruiting-11280, 2026-11-06: "Can we get this
     # automatically sent in our 'ADMIN Staff' Chat + 'Alphalete Ateam' Chat".
     # Both rooms already get Lucy texts from Lucy 1: Admin Staff = birthday
