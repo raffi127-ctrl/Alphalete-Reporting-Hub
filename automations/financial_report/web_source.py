@@ -48,7 +48,9 @@ _OTP_SENDER = "doubleentry.com"
 _OTP_RE = re.compile(r"(?<!\d)\d{6}(?!\d)")
 # Delivery is usually a few seconds. Wait generously — the code stays valid for
 # 10 min, so a slow mail is worth waiting out rather than failing the run.
-_OTP_WAIT_S = 180
+# 15 min since 2026-11-13: that day the codes landed 10+ min late (some never),
+# and 3 min gave up on ones that did arrive.
+_OTP_WAIT_S = 900
 _OTP_POLL_S = 5
 _OTP_SETTLE_S = 10
 
@@ -288,6 +290,11 @@ _REPORTS_EP = f"{API}/client/reports"
 # campaigns) shouldn't be read as 'this office didn't exist yet'.
 _HISTORY_MISS_LIMIT = 2
 
+# The last fetch_offices() result in this process, so a step that runs after the
+# financial pull (the Financial Bulletin) can reuse it instead of signing in again
+# — Double Entry stops mailing the code when the logins come close together.
+LAST_OFFICES: "dict | None" = None
+
 
 def _api_token(page, *, verbose: bool = True) -> str:
     """The Bearer token the app sends to api.doubleentry.com.
@@ -445,7 +452,8 @@ def _apply_payees(metrics: dict, by_week: dict) -> None:
                 metrics.setdefault(metric, {})[week] = totals[metric]
 
 
-def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
+def fetch_offices(*, date: "str | None" = None, verbose: bool = True,
+                  deep: tuple = ()):
     """Every office's financials, in the SAME shape parse.parse_financial_files
     returns: (by_owner, weeks, problems).
 
@@ -455,6 +463,9 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
     `date` is the week-ending the report is anchored to (YYYY-MM-DD); the API
     answers with that week plus the three before it. Defaults to the most recent
     closed week, matching what the page opens on.
+
+    `deep`: owner keys that also get the four weeks BEFORE those, in the same
+    session (one more call each) — 8 weeks for a report that shows 8.
     """
     from automations.financial_report.parse import (_num, _owner_from_office,
                                                     _state_from_office, norm_name)
@@ -463,6 +474,7 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
     problems: list = []
     weeks: list = []
     detail_cache: dict = {}   # an office can sit under several promoting owners
+    carrier: dict = {}        # deep key -> promoting owner id that shows it
     with session(verbose=verbose) as page:
         token = _api_token(page, verbose=verbose)
         owners = _get(page, f"{_OWNERS_EP}?per_page=200&page=1", token)["items"]
@@ -521,6 +533,8 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
                 if not key:
                     problems.append((name, "no (OWNER-STATE) in the company name"))
                     continue
+                if key in deep:
+                    carrier.setdefault(key, o["id"])
                 office = {"office": name, "owner": owner,
                           "state": _state_from_office(name), "metrics": metrics}
                 # Same dedup rule as the email parser: one office per
@@ -532,6 +546,36 @@ def fetch_offices(*, date: "str | None" = None, verbose: bool = True):
                     bucket.append(office)
                 else:
                     bucket[at] = office
+        older = (dt.date.fromisoformat(date) - dt.timedelta(days=28)).isoformat()
+        for key, oid in carrier.items():
+            try:
+                data = _get(page, f"{_SUMMARY_EP}?date={older}"
+                                  f"&promoting_owner_id={oid}&color_scheme=light", token)
+            except Exception as e:  # noqa: BLE001 — the 4 recent weeks still stand
+                problems.append((key, f"older weeks fetch failed: {str(e)[:90]}"))
+                continue
+            ends = [dt.date.fromisoformat(r["end"]) for r in data["ranges"]]
+            for comp in data.get("companies", []):
+                name = (comp.get("name") or "").strip()
+                if norm_name(_owner_from_office(name)) != key:
+                    continue
+                extra: dict = {}
+                for cat in comp.get("categories", []):
+                    label = (cat.get("label") or "").strip().upper()
+                    vals = cat.get("transactions") or []
+                    extra[label] = {ends[i]: _num(vals[i])
+                                    for i in range(min(len(ends), len(vals)))
+                                    if vals[i] not in (None, "")}
+                _sign_profit_loss(extra)
+                for off in by_owner.get(key, []):
+                    if off["office"] != name:
+                        continue
+                    for label, vals in extra.items():
+                        series = off["metrics"].setdefault(label, {})
+                        for wk, v in vals.items():
+                            series.setdefault(wk, v)
+    global LAST_OFFICES
+    LAST_OFFICES = by_owner
     if verbose:
         n = sum(len(v) for v in by_owner.values())
         print(f"-> doubleentry: {n} office(s) for {len(by_owner)} owner(s); "

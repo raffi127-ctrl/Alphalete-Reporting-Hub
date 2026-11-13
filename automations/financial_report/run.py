@@ -398,7 +398,10 @@ def main() -> int:
         if args.web:
             from automations.financial_report import web_source as _ws
             print("Pulling the org summary from Double Entry…")
-            web_parsed = _ws.fetch_offices(date=args.date)
+            # Raf's own office gets 8 weeks: the Financial Bulletin (last step)
+            # shows 8 and reuses this pull rather than signing in again.
+            from automations.financial_bulletin.run import RAF_OFFICE_KEY
+            web_parsed = _ws.fetch_offices(date=args.date, deep=(RAF_OFFICE_KEY,))
         email_parsed = None
         if files:
             email_parsed = parse_financial_files(files)

@@ -254,6 +254,57 @@ def read_owners() -> Tuple[Dict[str, Dict[str, Dict[dt.date, float]]], Dict[str,
     return owners, source
 
 
+# Raf's own office (Rafael, reply to the Org Finances mail 2026-11-12: "Can I
+# get mine added on here as well please?"). His Focus tab has no financial
+# section (financial_report.fill skips it), so it can't be read back like the
+# others — it comes straight from Double Entry: ALPHALETE MARKETING, INC.
+# (RAFAEL HIDALGO-TX). Not ALPHALETE MARKETING GROUP — that one is Maud's
+# (Maud, 2026-11-13).
+RAF_OFFICE_KEY = "rafael hidalgo"       # parse.norm_name of the (OWNER-STATE)
+RAF_OFFICE_NAME = "Raf Hidalgo"
+# Double Entry weeks end Saturday; the tabs show them a week later, on the
+# Sunday column (financial_report.fill: +7 days, then the nearest Sunday).
+_BOOK_TO_COLUMN = dt.timedelta(days=8)
+
+
+def own_office_series(offices) -> Dict[str, Dict[dt.date, float]]:
+    """fetch_office_history's offices → {metric label: {tab week: value}},
+    the same shape read_owners() gives every other owner."""
+    from automations.financial_report.parse import FINANCIAL_METRICS
+    out: Dict[str, Dict[dt.date, float]] = {}
+    for label, _h, kind in METRICS:
+        series: Dict[dt.date, float] = {}
+        for off in offices:
+            for wk, v in off["metrics"].get(FINANCIAL_METRICS[label], {}).items():
+                x = _pct(v) if kind == "pct" else _num(v)
+                if x is not None:
+                    series.setdefault(wk + _BOOK_TO_COLUMN, x)
+        if series:
+            out[label] = series
+    return out
+
+
+def read_raf_office(weeks: int = WEEKS_SHOWN) -> Dict[str, Dict[dt.date, float]]:
+    """Raf's office, last `weeks` (+ a month of slack) from Double Entry.
+    Reuses the financial pull's fetch when it ran in this same process (the
+    Thursday run); otherwise signs in on its own. {} if it can't be reached —
+    the bulletin still goes out without his row."""
+    from automations.financial_report import web_source
+    if web_source.LAST_OFFICES and web_source.LAST_OFFICES.get(RAF_OFFICE_KEY):
+        return own_office_series(web_source.LAST_OFFICES[RAF_OFFICE_KEY])
+    try:
+        offices, _w = web_source.fetch_office_history(
+            RAF_OFFICE_KEY, weeks_back=weeks + 4, verbose=False)
+    except Exception as e:  # noqa: BLE001
+        print(f"financial bulletin: Raf's office not added "
+              f"({type(e).__name__}: {str(e)[:120]})")
+        return {}
+    got = own_office_series(offices)
+    if not got:
+        print("financial bulletin: Raf's office not found on Double Entry")
+    return got
+
+
 def pick_weeks(owners, n: int = WEEKS_SHOWN, today: Optional[dt.date] = None) -> List[dt.date]:
     """The last `n` week columns, ending at the latest week that has a Total
     Funds Available value for at least a quarter of the owners (one early
@@ -540,7 +591,12 @@ def main(argv=None) -> int:
     if not weeks:
         print("financial bulletin: no week has financial data — nothing to build")
         return 1
+    raf = read_raf_office(a.weeks)
+    if raf:
+        owners[RAF_OFFICE_NAME] = raf
     groups = org_of(owners, read_org_tree())
+    if raf:
+        groups[RAF_OFFICE_NAME] = REST   # the tree's root — his own office
     print(f"financial bulletin: {len(owners)} owners, weeks {weeks[0]} → {weeks[-1]}")
     for g in ORG_GROUPS + [OUTSIDE]:
         print(f"  {g}: " + ", ".join(sorted(o for o, x in groups.items() if x == g)))
