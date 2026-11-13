@@ -128,6 +128,11 @@ def rows_for(soh, lines: Sequence[dict], state: dict, today: dt.date,
     """The crew totals: [{we, orders, orders_act, lines, activated, churned,
     pending, cancelled, rate, current}] oldest first, the last `weeks`."""
     all_weeks, data = aggregate(soh, lines, state, today, weeks)
+    return rows_from(all_weeks, data, today)
+
+
+def rows_from(all_weeks: Sequence[dt.date], data: dict, today: dt.date) -> List[dict]:
+    """The crew-total rows off an aggregate (SaraPlus or Tableau alike)."""
     this_we = week_ending(today)
     out = []
     for we in all_weeks:
@@ -164,7 +169,9 @@ def _color(we: dt.date, today: dt.date, rate: float) -> str:
 
 
 def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
-           today: dt.date, pulled_at=None, feed_date: Optional[dt.date] = None) -> Path:
+           today: dt.date, pulled_at=None, feed_date: Optional[dt.date] = None,
+           title: str = "NDS \u2014 ACTIVATION RATE BY WEEK ENDING",
+           sub: Optional[str] = None) -> Path:
     """Same picture as 'NDS Activation Rate by Rep' (b2b_metrics.rep_boards.
     render_table_png): Crew Total first, a row per rep, a column per week
     ending, each cell (activated/sold) + rate on the activation colour bands."""
@@ -222,15 +229,16 @@ def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
             ("Crew Total \u2014 lines still pending", "", True, _crew_pending())]
     for rep in sorted((k for k in data if k != TOTAL), key=str.lower):
         rows.append((rep, "", False, _cells(data[rep])))
-    sub = ("Carlos's crew on his own NDS code \u2014 %s (of the sales made each Mon\u2013Sun week: "
-           "activated/sold lines + rate off SaraPlus per-line statuses; activated = went Active, "
-           "churned-after included; cancel rate = cancelled-before-activating/sold; cancels count as sold; "
-           "* = week in progress; last %d weeks; "
-           "wireless report %s, SaraPlus %s)"
-           % (today.strftime("%B %d, %Y"), WEEKS,
-              feed_date.strftime("%m/%d") if feed_date else "n/a",
-              pulled_at.strftime("%H:%M") if pulled_at else "n/a"))
-    return render_table_png("NDS \u2014 ACTIVATION RATE BY WEEK ENDING", sub, columns, rows, out)
+    if sub is None:
+        sub = ("Carlos's crew on his own NDS code \u2014 %s (of the sales made each Mon\u2013Sun week: "
+               "activated/sold lines + rate off SaraPlus per-line statuses; activated = went Active, "
+               "churned-after included; cancel rate = cancelled-before-activating/sold; cancels count as sold; "
+               "* = week in progress; last %d weeks; "
+               "wireless report %s, SaraPlus %s)"
+               % (today.strftime("%B %d, %Y"), WEEKS,
+                  feed_date.strftime("%m/%d") if feed_date else "n/a",
+                  pulled_at.strftime("%H:%M") if pulled_at else "n/a"))
+    return render_table_png(title, sub, columns, rows, out)
 
 
 def build(soh, today: dt.date, out: Path, log=print) -> Path:
@@ -246,3 +254,94 @@ def build(soh, today: dt.date, out: Path, log=print) -> Path:
     log("[nds] activation rate by week ending (SARAPLUS per line, %d rep row(s))"
         % (len(data) - 1))
     return out
+
+
+# ---------------------------------------------------------------- Tableau twin ----
+# Carlos 2026-11-13 ("are you sure this is updating properly? can you make a
+# tableau version and post both always"): the same board off the Tableau
+# NDS-SN order-log export, posted right after the SaraPlus one every morning.
+# Same shape, same counting, different source: every WIRELESS line of the
+# export by its sp.Order Date week (Air / Internet lines stay out, like the
+# SaraPlus board's Air-only orders); activated = DTR Status Posted or
+# Disconnected (was active before it fell -- the Activation Rate by Rep rule);
+# cancelled = Canceled and never posted; the rest pending. Tablets, watches
+# and upgrades count like on the SaraPlus board (every line), unlike the
+# Activation Rate by Rep board. On 2026-11-13 the two sources agreed line for
+# line on the live tab (58 / 61 / 50 / 8 activated per week).
+POSTED_WORDS = ("posted",)
+
+
+def aggregate_tableau(cols, crew: Sequence, today: dt.date, weeks: int = WEEKS):
+    """-> (week endings oldest first, {rep | TOTAL: {we: Counter}}) in the
+    SaraPlus aggregate's shape, off the crew's Tableau order-log lines (one
+    row per line, as nds_metrics.run.load_crew returns them)."""
+    from automations.nds_metrics.run import _c
+    i_od = cols.need("order date", "sp.order date (copy)", "sp.order date", "order date")
+    i_st = cols.need("status", "dtr status", "spe.status")
+    i_rep = cols.need("rep", "rep")
+    i_prod = cols.find("product type (broken out)", "product type")
+    i_spm = cols.find("sp.spm number", "spm number")
+    i_spe = cols.find("spe.name")
+    data: Dict[str, Dict[dt.date, collections.Counter]] = collections.defaultdict(dict)
+    orders: Dict[tuple, set] = collections.defaultdict(set)      # (key, we) -> order ids
+    orders_act: Dict[tuple, set] = collections.defaultdict(set)
+    seen = set()
+    for r in crew:
+        od = _parse_date(_c(cols, r, i_od))
+        if od is None or od < NDS_SINCE:
+            continue
+        prod = _c(cols, r, i_prod).upper() if i_prod is not None else "WIRELESS"
+        if prod and "WIRELESS" not in prod:
+            continue                                   # Air / Internet lines are not wireless sales
+        oid = _c(cols, r, i_spm) if i_spm is not None else ""
+        line_id = (oid, _c(cols, r, i_spe) if i_spe is not None else "", _c(cols, r, i_rep), _c(cols, r, i_od))
+        if i_spe is not None and _c(cols, r, i_spe):
+            if line_id in seen:
+                continue                               # a measure row that slipped the collapse
+            seen.add(line_id)
+        st = _c(cols, r, i_st).lower()
+        activated = st in POSTED_WORDS or st == "disconnected"
+        dead = ("cancel" in st) or st == "disconnected"
+        we = week_ending(od)
+        rep = _c(cols, r, i_rep) or "(no rep)"
+        for key in (rep, TOTAL):
+            c = data[key].setdefault(we, collections.Counter())
+            c["lines"] += 1
+            if activated:
+                c["activated"] += 1
+                if st == "disconnected":
+                    c["churned"] += 1
+            elif dead:
+                c["cancelled"] += 1
+            else:
+                c["pending"] += 1
+            if oid:
+                orders[(key, we)].add(oid)
+                if activated:
+                    orders_act[(key, we)].add(oid)
+    for (key, we), ids in orders.items():
+        data[key][we]["orders"] = len(ids)
+    for (key, we), ids in orders_act.items():
+        data[key][we]["orders_act"] = len(ids)
+    all_weeks = sorted(data.get(TOTAL, {}))[-weeks:]
+    return all_weeks, data
+
+
+def build_tableau(cols, crew: Sequence, today: dt.date, out: Path, *,
+                  pulled_at=None, log=print) -> Path:
+    all_weeks, data = aggregate_tableau(cols, crew, today)
+    if not all_weeks:
+        raise RuntimeError("activation by week (Tableau): no NDS-era wireless lines on the export")
+    log_rows(rows_from(all_weeks, data, today), log=log)
+    sub = ("Carlos's crew on his own NDS code \u2014 %s (of the sales made each Mon\u2013Sun week: "
+           "activated/sold wireless lines + rate off the Tableau NDS-SN order log; activated = Posted or "
+           "Disconnected (churned-after included); cancel rate = Canceled-before-posting/sold; cancels count "
+           "as sold; every wireless line counts, like the SaraPlus board; * = week in progress; last %d weeks; "
+           "export pulled %s)"
+           % (today.strftime("%B %d, %Y"), WEEKS,
+              pulled_at.strftime("%m/%d %H:%M") if pulled_at else "n/a"))
+    render(all_weeks, data, out, today=today, pulled_at=pulled_at,
+           title="NDS \u2014 ACTIVATION RATE BY WEEK ENDING (TABLEAU)", sub=sub)
+    log("[nds] activation rate by week ending (TABLEAU per line, %d rep row(s))" % (len(data) - 1))
+    return out
+

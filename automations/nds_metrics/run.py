@@ -68,6 +68,7 @@ SOURCES: Dict[str, str] = {
     "activation_revenue": "Sara",
     "activation_by_rep": "Tableau",
     "activation_by_week": "Sara",
+    "activation_by_week_tableau": "Tableau",
 }
 
 
@@ -1637,6 +1638,19 @@ def build_activation_by_week(cols, crew, today, log=print) -> Path:
     return AW.build(soh, today, OUT_DIR / "nds_activation_by_week.png", log=log)
 
 
+def build_activation_by_week_tableau(cols, crew, today, log=print) -> Path:
+    """The Tableau twin of #activation_by_week, posted right after it (Carlos
+    2026-11-13: "can you make a tableau version and post both always") --
+    activation_by_week.build_tableau off this run's order-log pull."""
+    from automations.nds_metrics import activation_by_week as AW
+    path = OUT_DIR / f"nds_orderlog_{today.isoformat()}.csv"
+    pulled_at = (dt.datetime.fromtimestamp(path.stat().st_mtime)
+                 if path.exists() else None)
+    return AW.build_tableau(cols, crew, today,
+                            OUT_DIR / "nds_activation_by_week_tableau.png",
+                            pulled_at=pulled_at, log=log)
+
+
 def build_rep_tiers_shot(cols, crew, today, log=print) -> Path:
     from automations.nds_metrics import tableau_shots as TS
     return TS.capture("rep_tiers", OUT_DIR, log=log)
@@ -1755,6 +1769,8 @@ SECTIONS = [
     # weeks since NDS started, off SaraPlus per-line statuses.
     ("activation_by_week", "\U0001F4C6", "NDS Activation Rate by Week Ending",
      build_activation_by_week),
+    ("activation_by_week_tableau", "\U0001F4C6", "NDS Activation Rate by Week Ending (Tableau)",
+     build_activation_by_week_tableau),
     # Carlos 2026-11-09: the B2B thread's Customer Churn picture, remade --
     # the NDS CHURN tab (nds_churn, 06:00) as one shot. In the thread daily
     # since 2026-11-10.
