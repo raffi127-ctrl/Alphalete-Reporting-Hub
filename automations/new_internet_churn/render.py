@@ -183,12 +183,15 @@ def _draw_bullseye(d, cx: int, cy: int, r: int) -> None:
 
 
 def _draw_goal_band(d, x: int, y: int, width: int, goal: dict,
-                    today_pct: str) -> None:
+                    today_pct: str) -> Tuple[int, int]:
     """One full-width band: bullseye + 'GOAL x.xx%' on the left, and on the right
     a chip saying whether TODAY's Office Avg is over or under it.
 
     The chip is the point of the band — a target nobody is measured against is
-    just decoration, and the captains read this image for the incentive."""
+    just decoration, and the captains read this image for the incentive.
+
+    Returns the (left, right) x of the empty middle of the band, where the
+    30 Day image puts the SCI tier legend."""
     # Type scales with the band so the height is the single knob for "louder".
     f_big = _font(max(14, int(GOAL_BAND_H * 0.5)), bold=True)
     f_small = _font(max(10, int(GOAL_BAND_H * 0.32)), bold=True)
@@ -204,16 +207,19 @@ def _draw_goal_band(d, x: int, y: int, width: int, goal: dict,
     d.text((x + 26 + r * 2, cy - int(GOAL_BAND_H * 0.28)), label,
            fill=GOAL_FG, font=f_big)
     lw = d.textlength(label, font=f_big)
+    free_l = x + 26 + r * 2 + lw
     if goal["is_max"]:
         d.text((x + 32 + r * 2 + lw, cy - int(GOAL_BAND_H * 0.14)), "max",
                fill=GOAL_FG, font=f_small)
+        free_l = x + 32 + r * 2 + lw + d.textlength("max", font=f_small)
+    free = (int(free_l) + 14, x + width - 10)
 
     # Status chip — needs a parsable Office Avg for today.
     raw = (today_pct or "").strip().rstrip("%")
     try:
         avg = float(raw)
     except ValueError:
-        return
+        return free
     diff = avg - goal["value"]
     # 'AVG' spelled out: the chip compares the AVERAGE row above (office or
     # captainship, whatever the tab calls it) against the goal — not any one rep.
@@ -229,6 +235,45 @@ def _draw_goal_band(d, x: int, y: int, width: int, goal: dict,
                         radius=ch // 2, fill=chip_bg)
     d.text((cx0 + 12, cy - int(ch * 0.34)), chip_txt, fill=GOAL_CHIP_FG,
            font=f_chip)
+    return free[0], int(cx0) - 14
+
+
+# SCI's Fiber churn tier colors, as on the CHURN TIERS block Raf screenshotted
+# (Tier 1 red ... Tier 6 green). Anything else falls back to gray.
+TIER_LEGEND_COLORS = {
+    "Tier 1": (255, 0, 0), "Tier 2": (255, 109, 1), "Tier 3": (180, 80, 20),
+    "Tier 4": (255, 204, 0), "Tier 5": (204, 255, 51), "Tier 6": (102, 255, 51),
+}
+TIER_CHIP_MIN_W = 92   # narrower than this and the text no longer fits
+TIER_CHIP_GAP = 6
+TIER_STRIP_H = 34      # own strip under the band when the band has no room
+
+
+def _tier_legend_fits(d, span: Tuple[int, int], n: int) -> bool:
+    return n > 0 and (span[1] - span[0] - TIER_CHIP_GAP * (n - 1)) / n >= TIER_CHIP_MIN_W
+
+
+def _draw_tier_legend(d, span: Tuple[int, int], cy: int, h: int, legend) -> None:
+    """Raf 2026-11-12 ("Fiber Captainship email - New Internet tier Bonuses"):
+    SCI's 30+ day churn tiers and the $ per sale each one is worth, as one
+    colored chip per tier: 'Tier 1  -$40' over '6.01%+'."""
+    n = len(legend)
+    x0, x1 = span
+    w = min(130, (x1 - x0 - TIER_CHIP_GAP * (n - 1)) / n)
+    total = w * n + TIER_CHIP_GAP * (n - 1)
+    x = x0 + (x1 - x0 - total) / 2
+    f_top = _font(11, bold=True)
+    f_bot = _font(10, bold=True)
+    for tier, rng, impact in legend:
+        bg = TIER_LEGEND_COLORS.get(tier, (217, 217, 217))
+        fg = contrast_fg(bg)
+        d.rounded_rectangle([x, cy - h / 2, x + w, cy + h / 2], radius=5, fill=bg)
+        top = f"{tier}  {impact}"
+        tw = d.textlength(top, font=f_top)
+        d.text((x + (w - tw) / 2, cy - h / 2 + 2), top, fill=fg, font=f_top)
+        bw = d.textlength(rng, font=f_bot)
+        d.text((x + (w - bw) / 2, cy + 1), rng, fill=fg, font=f_bot)
+        x += w + TIER_CHIP_GAP
 
 
 def _impact_color(impact: str) -> Tuple[int, int, int]:
@@ -404,8 +449,21 @@ def render_multi_week(
     # drafts drop it; the Slack post keeps it).
     title_h = TITLE_H if show_subtitle else 36
     goal_h = GOAL_BAND_H if goal else 0     # tabs without a goal line: unchanged
+    # SCI tier legend: only on the 30 Day image (the tiers are 30+ day churn),
+    # only when the tier column is on. It sits in the empty middle of the goal
+    # band; a narrow (young) tab without room there gets its own strip under it.
+    legend = (tier_column.legend() if tier_column and period == "30"
+              and hasattr(tier_column, "legend") else [])
+    today_avg_pct = office_avg[0][0] if office_avg else ""
+    legend_in_band = False
+    if legend and goal:
+        # Dry-run the band on a scratch canvas to learn how much room is left.
+        probe = ImageDraw.Draw(Image.new("RGB", (total_w, GOAL_BAND_H)))
+        span = _draw_goal_band(probe, PAD, 0, total_w - PAD * 2, goal, today_avg_pct)
+        legend_in_band = _tier_legend_fits(probe, span, len(legend))
+    strip_h = TIER_STRIP_H if legend and not legend_in_band else 0
     h = (title_h + ROW_H * 2 + HEADER_BAR_H        # title + section-hdr + avg + col-hdr
-         + goal_h
+         + goal_h + strip_h
          + ROW_H * max(len(reps), 1) + PAD * 2)
 
     img = Image.new("RGB", (total_w, h), "white")
@@ -468,9 +526,15 @@ def render_multi_week(
 
     # 3b. Goal band — ONE band under Office Avg, before the per-rep breakdown.
     if goal:
-        today_avg_pct = office_avg[0][0] if office_avg else ""
-        _draw_goal_band(d, x, y, total_w - PAD * 2, goal, today_avg_pct)
+        span = _draw_goal_band(d, x, y, total_w - PAD * 2, goal, today_avg_pct)
+        if legend_in_band:
+            _draw_tier_legend(d, span, y + GOAL_BAND_H // 2, GOAL_BAND_H - 8, legend)
         y += GOAL_BAND_H
+    if strip_h:
+        d.rectangle([x, y, x + total_w - PAD * 2, y + strip_h], fill=GOAL_BG)
+        _draw_tier_legend(d, (x + 8, x + total_w - PAD * 2 - 8),
+                          y + strip_h // 2, strip_h - 8, legend)
+        y += strip_h
 
     # 4. Col-header bar (Rep / % units repeating)
     d.rectangle([x, y, x + total_w - PAD * 2, y + HEADER_BAR_H], fill=COL_HEADER_BG)

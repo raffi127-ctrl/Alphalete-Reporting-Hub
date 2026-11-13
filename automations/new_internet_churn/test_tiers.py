@@ -60,6 +60,20 @@ class ColumnTest(unittest.TestCase):
         self.assertEqual(col.for_owner("Joseph Logan"), ("Tier 4", "$0"))
         self.assertEqual(col.for_owner("Nobody Here"), ("", ""))
 
+    def test_legend_ranges_by_label(self):
+        rows = [self.ROWS[0], ["30+\nDay Churn Tiers"] + self.ROWS[1][1:], self.ROWS[2]]
+        self.assertEqual(T.ranges_from_sheet(rows)["Tier 1"], "6%+")
+        col = T.TierColumn("November", {}, T.impact_from_sheet(rows), None,
+                           T.ranges_from_sheet(rows))
+        self.assertEqual(col.legend()[0], ("Tier 1", "6%+", "-$40"))
+        self.assertEqual(col.legend()[-1], ("Tier 6", "0%-2%", "$30"))
+        self.assertEqual(len(col.legend()), 6)
+
+    def test_no_range_row_no_legend(self):
+        self.assertEqual(T.ranges_from_sheet([self.ROWS[0], self.ROWS[2]]), {})
+        col = T.TierColumn("November", {}, T.impact_from_sheet(self.ROWS))
+        self.assertEqual(col.legend(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

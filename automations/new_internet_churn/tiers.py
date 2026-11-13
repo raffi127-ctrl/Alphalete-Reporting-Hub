@@ -143,15 +143,40 @@ def impact_from_sheet(rows: List[List[str]]) -> Dict[str, str]:
             if t.strip() and v.strip()}
 
 
+def ranges_from_sheet(rows: List[List[str]]) -> Dict[str, str]:
+    """{'Tier 1': '6.01%+', ...} from the '30+ Day Churn Tiers' row of the same
+    block — the churn % each tier covers. Found by label like the $ row."""
+    head = next((r for r in rows if r and r[0].strip().lower() == "churn tiers"), None)
+    rng = next((r for r in rows if r and r[0].strip().lower() != "churn tiers"
+                and "churn tier" in r[0].lower()), None)
+    if not head or not rng:
+        return {}
+    return {t.strip(): v.strip() for t, v in zip(head[1:], rng[1:])
+            if t.strip() and v.strip()}
+
+
 class TierColumn:
-    """What the renderer draws: one (tier, $) per owner."""
+    """What the renderer draws: one (tier, $) per owner, plus the SCI tier
+    table itself (ranges + $) for the legend in the 30 Day goal band."""
 
     def __init__(self, month: str, tiers: Dict[str, str], impact: Dict[str, str],
-                 candidates: Optional[Callable[[str], List[str]]] = None):
+                 candidates: Optional[Callable[[str], List[str]]] = None,
+                 ranges: Optional[Dict[str, str]] = None):
         self.header = f"{month[:3]} Tier" if month else "Tier"
         self.tiers = tiers
         self.impact = impact
         self.candidates = candidates
+        self.ranges = ranges or {}
+
+    def legend(self) -> List[Tuple[str, str, str]]:
+        """[('Tier 1', '6.01%+', '-$40'), ...] in tier order; [] when the tab
+        has no range row (then no legend is drawn)."""
+        out = []
+        for tier, impact in self.impact.items():
+            rng = self.ranges.get(tier, "")
+            if rng:
+                out.append((tier, rng, impact))
+        return out
 
     def for_owner(self, name: str) -> Tuple[str, str]:
         """('Tier 3', '-$20'), or ('', '') when the tracker doesn't list them."""
@@ -174,7 +199,9 @@ def build_column(ws, today: dt.date, *, logfn=print) -> Optional[TierColumn]:
     if not data:
         return None
     try:
-        impact = impact_from_sheet(ws.get("A1:G3"))
+        block = ws.get("A1:G3")
+        impact = impact_from_sheet(block)
+        ranges = ranges_from_sheet(block)
     except Exception as e:  # noqa: BLE001
         logfn(f"  churn tiers: couldn't read CHURN TIERS block: {str(e)[:150]}")
         return None
@@ -188,7 +215,8 @@ def build_column(ws, today: dt.date, *, logfn=print) -> Optional[TierColumn]:
         candidates = lambda n: _al.get_search_candidates(n, raw)  # noqa: E731
     except Exception as e:  # noqa: BLE001
         logfn(f"  churn tiers: alias sheet unavailable: {str(e)[:120]}")
-    return TierColumn(data.get("month", ""), data.get("tiers", {}), impact, candidates)
+    return TierColumn(data.get("month", ""), data.get("tiers", {}), impact,
+                      candidates, ranges)
 
 
 if __name__ == "__main__":
