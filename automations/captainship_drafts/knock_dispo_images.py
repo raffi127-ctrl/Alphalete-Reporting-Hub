@@ -422,7 +422,11 @@ def dropped_owners(raw=None, *, include_config: bool = True) -> set:
     vino por --drop-owner). include_config=False deja solo `raw`, para tests."""
     import os
     from automations.focus_office_att.aliases import _norm_name
-    names = (raw or "").split(",") if isinstance(raw, str) else list(raw or [])
+    # --drop-owner is action="append": "A,B" arrives as ONE list item, so the
+    # comma split has to happen per item too (2026-11-12: "Karrington Moody,
+    # Justin Fermin" matched nobody and Jairo's mail stayed blocked).
+    items = [raw] if isinstance(raw, str) else list(raw or [])
+    names = [n for it in items for n in str(it or "").split(",")]
     if include_config:
         # SUMA, nunca reemplazo. config.DROP_KNOCK_OWNERS es la lista DURABLE:
         # la corrida programada no pasa --drop-owner, asi que si un

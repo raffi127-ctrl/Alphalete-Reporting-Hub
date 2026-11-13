@@ -742,6 +742,13 @@ class DroppingAnOwnerOnPurpose(unittest.TestCase):
                               include_config=False),
             {"chan park", "francisco castillo"})
 
+    def test_a_comma_list_inside_the_append_list_is_split(self):
+        # --drop-owner is action="append": "A,B" arrives as ["A,B"].
+        self.assertEqual(
+            KD.dropped_owners(["Karrington Moody,Justin Fermin"],
+                              include_config=False),
+            {"karrington moody", "justin fermin"})
+
     def test_blank_entries_never_drop_anyone(self):
         """A trailing comma must not turn into an owner named ''."""
         self.assertEqual(
