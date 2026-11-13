@@ -178,8 +178,11 @@ def _knocks(o: B2BOffice, out_dir: Path, log, today=None):
     knocks_run._log_day(target, o.knocks_office, rows)
     if not rows:
         raise NoKnocksLogged(target)
+    # The ICD's name on top of the chart, like every other office knocks
+    # board (Megan 2026-11-13).
     pngs, shape = knocks_render.render_knocks_boards(target, rows=rows,
-                                                     out_dir=out_dir)
+                                                     out_dir=out_dir,
+                                                     title_suffix=o.owner)
     log("  [knocks] {} rep(s), {} board, {}".format(len(rows), shape, target))
     return pngs[0] if len(pngs) == 1 else pngs
 
@@ -544,6 +547,28 @@ def header_text(o: B2BOffice, day: dt.date) -> str:
     lines += ["{} {}".format(i["emoji"], i["title"])
               for i in expected_items(o)]
     return "\n".join(lines)
+
+
+def refresh_header(o: B2BOffice, day: dt.date, log=print) -> int:
+    """Rewrite today's PARENT post in place so its section list matches what
+    the thread now carries (Megan 2026-11-13: a section added mid-day landed
+    in the thread but the header didn't list it). Edits only; never posts a
+    new parent. Returns how many headers were updated."""
+    from automations.shared import slack_metrics_post as smp
+    import automations.b2b_quality.run as bq
+    client = smp._client()
+    targets = [o.channel_id] + [c for c, _n in o.mirror_channels
+                                if c != o.channel_id]
+    n = 0
+    for chan in targets:
+        ts = bq._load_state(day, chan).get("thread_ts")
+        if not ts:
+            log("  [{}] no thread today — nothing to refresh".format(chan))
+            continue
+        client.chat_update(channel=chan, ts=ts, text=header_text(o, day))
+        log("  [{}] header refreshed (ts={})".format(chan, ts))
+        n += 1
+    return n
 
 
 def contents_text(o: B2BOffice) -> str:
@@ -1087,6 +1112,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-crop", action="store_true",
                     help="skip crop-to-last-rep on Churn/Activation (diagnostic — "
                          "shows the full captured image)")
+    ap.add_argument("--refresh-header", action="store_true",
+                    help="edit today's parent post(s) so the section list "
+                         "matches the current items; posts nothing new")
     ap.add_argument("--check", action="store_true",
                     help="validate the office table and exit")
     ap.add_argument("--probe-week", action="store_true",
@@ -1212,6 +1240,13 @@ def main(argv=None) -> int:
     # Atef's and Jamis's included. Naming one office has to mean one office.
     office_keys = ([args.office] if args.office
                    else (list(_off.ORDER) if args.all_offices else [None]))
+    if args.refresh_header:
+        # Edit-only: returns BEFORE any capture/post, even though the
+        # orchestrator's base args carry --post.
+        for k in office_keys:
+            if k:
+                refresh_header(_off.get(k), today)
+        return 0
     # Publish to the Hub only for a REAL post run of the office's own channel —
     # not --dry-run, not a --channel verification post, and not a single-item
     # --only run (which would flip the whole card green off one item). One publish
