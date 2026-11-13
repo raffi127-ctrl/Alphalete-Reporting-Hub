@@ -30,6 +30,11 @@ from typing import Dict, Optional
 # board name -> ownerville office number
 OFFICE_PINS: Dict[str, str] = {
     "Shealey Miller": "23858",   # Azul Connections Inc 2nd (owner: Angel Padilla)
+    # 2026-11-12/13: a NAME search for these two landed on Maxamad Aden's
+    # 23066 three runs in a row (Colten's + Jairo's daily knocks). Their own
+    # offices, from funnel_board/state/resolved_offices.json (2026-09-15).
+    "Karrington Moody": "21757",
+    "Justin Fermin": "23425",
 }
 
 
