@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.11.13.1"
+CODE_RELEASE = "2026.11.13.2"
 
 
 class KnocksProblem(RuntimeError):
@@ -247,10 +247,16 @@ def _page_evidence(page, seen: List[str], wire: Optional[List[str]] = None) -> s
     return "\n".join(out)
 
 
-def _context(p, headless: bool):
+def _context(p, headless: bool, quiet: bool = False):
+    """`quiet` = a real window that `quiet_window.Guard` keeps hidden; it gets
+    the flags that stop Chrome slowing a window nobody can see."""
     C.OV_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    args = ["--disable-sync"]
+    if quiet and not headless:
+        from automations.icd_alerts import quiet_window as QW
+        args += QW.FLAGS
     ctx = p.chromium.launch_persistent_context(
-        str(C.OV_PROFILE_DIR), headless=headless, args=["--disable-sync"])
+        str(C.OV_PROFILE_DIR), headless=headless, args=args)
     if not headless:
         from automations.shared import browser_banner
         browser_banner.attach(ctx)
@@ -501,9 +507,27 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             held = ov_hold_message()
             if held:
                 raise KnocksProblem(held)
+        # IN THE BACKGROUND WHERE THAT IS ON TRIAL (Megan 2026-11-13: "they
+        # almost don't even know that Lucy is running on their machine").
+        # The window is still a real one -- the security check needs it --
+        # but the guard hides it the moment it comes forward and puts back
+        # what the owner was using. One office first; a computer whose hidden
+        # sign-in ever fails goes back to the window in view by itself
+        # (quiet_window).
+        quiet, guard = False, None
         if show:
-            log("OwnerVille needs signing in again — opening a window briefly")
-        ctx = _context(p, headless and not show)
+            try:
+                from automations.icd_alerts import quiet_window as QW
+                quiet = QW.use_quiet()
+                if quiet:
+                    guard = QW.Guard(C.OV_PROFILE_DIR).start()
+            except Exception:  # noqa: BLE001 -- the old window is the fallback
+                quiet, guard = False, None
+        if show:
+            log("OwnerVille needs signing in again — %s"
+                % ("in the background" if quiet
+                   else "opening a window briefly"))
+        ctx = _context(p, headless and not show, quiet=quiet)
         # KEEP WHAT THE READ SAW. When the grid never appears, the traceback
         # says only that -- and from a laptop we cannot open, that was the
         # whole story. Jamis (2026-10-06): signed in, campaigns pinned, no
@@ -547,7 +571,24 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.on("response", _on_response)
             page.on("console", _on_console)
-            rqst = _session(page, log=_l)
+            try:
+                rqst = _session(page, log=_l)
+            except KnocksProblem as e:
+                if quiet:
+                    # ONE FAILED TRY ENDS THE TRIAL ON THIS COMPUTER. Whether
+                    # the hidden window was the reason or not cannot be told
+                    # from here, and a second failed sign-in is an hour's
+                    # hold and one step nearer a locked account.
+                    QW.note_failed(str(e))
+                    QW.report(False, guard.hidden if guard else 0,
+                              why="%s\n%s" % (e, "\n".join(seen[-12:])),
+                              release=CODE_RELEASE)
+                raise
+            if quiet and any("has lapsed" in m for m in seen):
+                # Only when a sign-in really happened: a session that turned
+                # out to be good after all proves nothing about the window.
+                QW.report(True, guard.hidden if guard else 0,
+                          why="\n".join(seen[-12:]), release=CODE_RELEASE)
             # PIN THE CAMPAIGN FIRST. The campaign is a sticky session-global
             # in OwnerVille, so an unpinned read on a multi-campaign owner
             # returns whatever THEY last clicked. Whether the grid that
@@ -618,3 +659,5 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
                 ctx.close()
             except Exception:  # noqa: BLE001
                 pass
+            if guard:
+                guard.stop()

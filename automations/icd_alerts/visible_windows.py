@@ -86,7 +86,9 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
     # --- opens by itself, in view. TO BE MOVED. -----------------------------
     "automations/icd_alerts/ov_read.py":
         (OWED, "when the OwnerVille session lapses, Lucy signs in again in a "
-               "visible window (the security check never clears hidden)"),
+               "visible window (the security check never clears hidden). ON "
+               "TRIAL in a hidden real window at quiet_window.TRIAL_OFFICES "
+               "since 2026-11-13 -- becomes `hidden` when that is everyone"),
     "automations/brand_audit/zoho_draft.py":
         (OWED, "LucyECO Social drives Zoho in a visible window (hidden trips "
                "Zoho's bot check). NOT RELEASED to any office yet (Megan, "

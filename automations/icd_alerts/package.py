@@ -137,6 +137,7 @@ AGENT_FILES = [
     "automations/icd_alerts/run.py",
     "automations/icd_alerts/dialogs.py",
     "automations/icd_alerts/ov_read.py",
+    "automations/icd_alerts/quiet_window.py",
     "automations/shared/ownerville_knocks.py",
     "automations/shared/saraplus.py",
     "automations/shared/sara_passcode.py",
