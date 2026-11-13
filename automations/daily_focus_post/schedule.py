@@ -141,3 +141,58 @@ def format_text(day: dt.date, data: Dict) -> str:
         lines.append(f"{label:<10}{first.get(t, 0) or '-':>5}{second.get(t, 0) or '-':>5}")
     lines.append(f"{'Total':<10}{tot.get('first', 0):>5}{tot.get('second', 0):>5}")
     return head + "\n```" + "\n".join(lines) + "```"
+
+
+def screenshot(day: dt.date, office: str, out_png) -> Dict:
+    """Picture of one office's Weekly Calendar for `day`, with that day's 1st
+    and 2nd round bands BOTH open (Raf 2026-11-13: "a 2nd post that grabs the
+    LinkedIn screenshot of what's booked for the next day" -- office 24226,
+    'Linkedin Test', per Megan). READ-ONLY on AppStream.
+
+    Returns {'first': n, 'second': n} off the band headers so the caption can
+    say the counts even when the picture is long. A day with nothing booked
+    still gets a picture: an empty calendar IS the answer."""
+    from pathlib import Path
+    from automations.shared.tableau_patchright import appstream_direct_session
+    from automations.sms_thread_dump import run as dump
+
+    ds = day.strftime("%m-%d-%Y")
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    counts = {}
+    with appstream_direct_session(verbose=False) as page:
+        tok = dump._rqst(page)
+        if not tok:
+            raise RuntimeError("no rqst token on the AppStream console page")
+        page.goto("https://www.applicantstream.com/index.cfm?p=104"
+                  f"&rqst={tok}&newOfficeId={office}")
+        page.wait_for_load_state("networkidle")
+        time.sleep(1.0)
+        dump._goto_week_containing(page, tok, day)
+        for key, band in BANDS:
+            counts[key] = _band_count(page, band, ds)
+            if counts[key]:
+                page.get_by_text(f"{band} Date: {ds}.", exact=False).first.click()
+                time.sleep(1.0)
+        # Hide every OTHER day's rows: one day's open band would otherwise sit
+        # in a picture of the whole week. Rows are matched by the date in
+        # cell 0, the same way _band_rows reads them.
+        page.evaluate(
+            """(dstr) => {
+                 document.querySelectorAll('tr').forEach(tr => {
+                   const tds = [...tr.querySelectorAll('td')];
+                   if (tds.length < 7) return;
+                   const c0 = (tds[0].innerText || '').trim();
+                   if (/^\d\d-\d\d-\d{4}$/.test(c0) && c0 !== dstr)
+                     tr.style.display = 'none';
+                 });
+               }""", ds)
+        time.sleep(0.5)
+        page.screenshot(path=str(out_png), full_page=True)
+    return counts
+
+
+def screenshot_caption(day: dt.date, counts: Dict) -> str:
+    return (f"*LinkedIn (AppStream 24226) booked for {day:%a} "
+            f"{day.month}/{day.day}*\n1st rounds: *{counts.get('first', 0)}*   ·   "
+            f"2nd rounds: *{counts.get('second', 0)}*")

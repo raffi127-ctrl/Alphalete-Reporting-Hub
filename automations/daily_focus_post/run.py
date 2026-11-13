@@ -190,6 +190,41 @@ def schedule_office(office: "roster.FocusOffice", today: dt.date,
     return {"text": text, "reply": res}
 
 
+def linkedin_office_shot(office: "roster.FocusOffice", today: dt.date,
+                         thread_ts: Optional[str], *, dry_run: bool = True,
+                         force: bool = False) -> dict:
+    """Reply in the thread with a picture of the LinkedIn office's calendar
+    (AppStream 24226) for the next day, both bands open.
+
+    Own state entry ("<key>|linkedin"), like the schedule reply: a miss at
+    7:00 retries at 7:10 and never re-posts the main picture."""
+    li = getattr(office, "linkedin_office", "") or ""
+    if not li:
+        return {}
+    k = f"{office.key}|linkedin"
+    if _load_state().get(k) == today.isoformat() and not force:
+        return {"skipped": True}
+    day = schedule.next_day(today)
+    png = OUTPUT_DIR / f"daily-focus-{office.key}-linkedin-{today.isoformat()}.png"
+    try:
+        counts = schedule.screenshot(day, li, png)
+        caption = schedule.screenshot_caption(day, counts)
+        res = smp.post_reply_with_image(
+            png, comment=caption, today=today, dry_run=dry_run,
+            channel_id=office.channel_id, thread_ts=thread_ts,
+            file_name=f"LinkedIn booked {day.month}.{day.day}.png")
+    except Exception as e:  # noqa: BLE001 — the main picture already went out
+        print(f"[{office.key}] !! LINKEDIN reply FAILED: {type(e).__name__}: {e}")
+        return {"error": f"linkedin: {type(e).__name__}: {e}"}
+    print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} LinkedIn "
+          f"calendar {li} for {day} ({png}): {caption}")
+    if not dry_run:
+        state = _load_state()
+        state[k] = today.isoformat()
+        _save_state(state)
+    return {"png": str(png), "counts": counts, "reply": res}
+
+
 def post_office(office: "roster.FocusOffice", spreadsheet, *,
                 dry_run: bool = True, force: bool = False,
                 keep_png: bool = False,
@@ -205,20 +240,25 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
                 if state.get(f"{office.key}|text|{g}") != today.isoformat()]
         sched_owed = (bool(getattr(office, "schedule_offices", ()))
                       and state.get(f"{office.key}|schedule") != today.isoformat())
-        if sched_owed:
-            # Slack screenshot went out, the schedule reply didn't: retry it
-            # into today's existing thread only.
+        li_owed = (bool(getattr(office, "linkedin_office", ""))
+                   and state.get(f"{office.key}|linkedin") != today.isoformat())
+        if sched_owed or li_owed:
+            # Slack screenshot went out, a follow-up reply didn't: retry only
+            # the missing one(s) into today's existing thread.
             parent = smp.ensure_named_thread(
                 roster.THREAD_TITLE, today,
                 dry_run=dry_run, channel_id=office.channel_id)
-            sched = schedule_office(office, today,
-                                    None if dry_run else parent.get("thread_ts"),
-                                    dry_run=dry_run)
+            ts = None if dry_run else parent.get("thread_ts")
+            sched = (schedule_office(office, today, ts, dry_run=dry_run)
+                     if sched_owed else {})
+            li = (linkedin_office_shot(office, today, ts, dry_run=dry_run)
+                  if li_owed else {})
             if not owed:
-                if sched.get("error"):
+                if sched.get("error") or li.get("error"):
                     return {"office": office.key,
                             "skipped": "schedule_retry_failed"}
-                return {"office": office.key, "schedule": sched}
+                return {"office": office.key, "schedule": sched,
+                        "linkedin": li}
         if not owed:
             print(f"[{office.key}] already posted for {today} — skipping "
                   f"(use --force to repost)")
@@ -273,6 +313,9 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
     sched = schedule_office(office, today,
                             None if dry_run else parent.get("thread_ts"),
                             dry_run=dry_run, force=force)
+    li = linkedin_office_shot(office, today,
+                              None if dry_run else parent.get("thread_ts"),
+                              dry_run=dry_run, force=force)
     texts = text_office(office, png, today, dry_run=dry_run, force=force)
 
     if dry_run:
@@ -286,20 +329,22 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
             print(f"[{office.key}]   PNG kept at {png}")
         return {"office": office.key, "dry_run": True, "png": str(png),
                 "parent": parent, "reply": reply, "texts": texts,
-                "schedule": sched}
+                "schedule": sched, "linkedin": li}
 
     print(f"[{office.key}] POSTED to {office.channel_name} "
           f"thread={parent.get('thread_ts')} existed={parent.get('existed')}")
     errs = list(texts["errors"])
     if sched.get("error"):
         errs.append(sched["error"])
+    if li.get("error"):
+        errs.append(li["error"])
     if errs:
         # Slack posted; a chat or the schedule reply didn't. Fail the office so
         # the Hub shows it — the next tick retries only what missed.
         raise RuntimeError("Slack posted, but: " + "; ".join(errs))
     return {"office": office.key, "dry_run": False, "png": str(png),
             "parent": parent, "reply": reply, "texts": texts,
-            "schedule": sched}
+            "schedule": sched, "linkedin": li}
 
 
 def main(argv: Optional[List[str]] = None) -> int:

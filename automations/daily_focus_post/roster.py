@@ -71,6 +71,9 @@ class FocusOffice:
     # AppStream office ids whose Weekly Calendar feeds the "tomorrow's 1st /
     # 2nd rounds by time slot" reply (schedule.py). Empty = no schedule reply.
     schedule_offices: tuple = ()
+    # One AppStream office whose Weekly Calendar for the next day is posted as
+    # a PICTURE, as its own reply right after the schedule. Empty = none.
+    linkedin_office: str = ""
 
 
 # Raf's office. The channel is PRIVATE and was renamed from
@@ -101,6 +104,10 @@ RAF = FocusOffice(
     ),
     # Raf's three 1st round funnels (same as first_round_scorecards.appstream).
     schedule_offices=("11280", "23965", "24065"),
+    # Raf, Daily Recruiting Message Post thread, 2026-11-13: "in the same
+    # thread, can we do a 2nd post that grabs the LinkedIn Screenshot of whats
+    # booked for the next day" -- Megan: "That would be account #24226".
+    linkedin_office="24226",
     # Raf, #rafs-office-recruiting-11280, 2026-11-06: "Can we get this
     # automatically sent in our 'ADMIN Staff' Chat + 'Alphalete Ateam' Chat".
     # Both rooms already get Lucy texts from Lucy 1: Admin Staff = birthday

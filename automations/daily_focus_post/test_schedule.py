@@ -97,5 +97,63 @@ class ScheduleReply(unittest.TestCase):
         self.assertEqual(self.state, {})
 
 
+class LinkedInReply(unittest.TestCase):
+    """2nd reply: picture of AppStream 24226's calendar for the next day."""
+    def setUp(self):
+        self.state = {}
+        p = [mock.patch.object(R, "_load_state", lambda: dict(self.state)),
+             mock.patch.object(R, "_save_state", self.state.update)]
+        for x in p:
+            x.start()
+            self.addCleanup(x.stop)
+
+    def test_raf_points_at_24226(self):
+        self.assertEqual(roster.RAF.linkedin_office, "24226")
+
+    def test_caption(self):
+        c = S.screenshot_caption(dt.date(2026, 11, 16), {"first": 3, "second": 2})
+        self.assertIn("Mon 11/16", c)
+        self.assertIn("24226", c)
+        self.assertIn("*3*", c)
+        self.assertIn("*2*", c)
+
+    def test_posts_picture_once_into_thread_then_skips(self):
+        with mock.patch.object(S, "screenshot",
+                               return_value={"first": 1, "second": 0}) as shot,                 mock.patch.object(R.smp, "post_reply_with_image",
+                                  return_value={"ok": True}) as post:
+            out = R.linkedin_office_shot(roster.RAF, FRI, "123.4", dry_run=False)
+            self.assertIn("png", out)
+            self.assertEqual(shot.call_args.args[:2],
+                             (dt.date(2026, 11, 16), "24226"))
+            self.assertEqual(post.call_args.kwargs["thread_ts"], "123.4")
+            self.assertEqual(post.call_args.kwargs["channel_id"],
+                             roster.RAF.channel_id)
+            again = R.linkedin_office_shot(roster.RAF, FRI, "123.4", dry_run=False)
+            self.assertEqual(again, {"skipped": True})
+            post.assert_called_once()
+
+    def test_failure_is_reported_not_raised_and_retried(self):
+        with mock.patch.object(S, "screenshot", side_effect=RuntimeError("login")),                 mock.patch.object(R.smp, "post_reply_with_image") as post:
+            out = R.linkedin_office_shot(roster.RAF, FRI, "1", dry_run=False)
+        self.assertIn("error", out)
+        post.assert_not_called()
+        self.assertNotIn("raf|linkedin", self.state)
+
+    def test_retry_tick_posts_only_the_missing_picture(self):
+        """Main picture + schedule already out; only the LinkedIn reply owed."""
+        today = R.local_now(roster.RAF).date().isoformat()
+        self.state.update({"raf": today, "raf|schedule": today,
+                           "raf|text|Admin Staff": today,
+                           "raf|text|Alphalete A-Team Chat": today})
+        with mock.patch.object(R.smp, "ensure_named_thread",
+                               return_value={"thread_ts": "9.9"}),                 mock.patch.object(R, "schedule_office") as sched,                 mock.patch.object(R, "text_office") as texts,                 mock.patch.object(R, "linkedin_office_shot",
+                                  return_value={"png": "x"}) as li:
+            out = R.post_office(roster.RAF, None, dry_run=False)
+        sched.assert_not_called()
+        texts.assert_not_called()
+        self.assertEqual(li.call_args.args[2], "9.9")
+        self.assertEqual(out["linkedin"], {"png": "x"})
+
+
 if __name__ == "__main__":
     unittest.main()
