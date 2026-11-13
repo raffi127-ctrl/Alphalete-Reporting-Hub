@@ -940,7 +940,21 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
                 log("  [{}] SKIPPED (blank render, and this office's slice "
                     "value looks wrong — NOT 'no data yet'): {}".format(
                         item["id"], br))
-        except Exception:  # noqa: BLE001 — one item must not kill the rest
+        except Exception as e:  # noqa: BLE001 — one item must not kill the rest
+            if item["id"] == "knocks" and "access request pending" in str(e):
+                # OWNERVILLE ACCESS NOT GRANTED YET (2026-11-13, Sabrina). Our
+                # office-access request still says "Request Sent", so there is
+                # nothing we can pull until the owner approves it. That is the
+                # same situation as an office new to a section: say "no data
+                # yet" in the thread, don't page, and keep trying every
+                # morning — the day access lands it posts by itself. Same call
+                # the intraday knocks made (knocks_intraday.run.access_pending).
+                log("  [knocks] NO DATA YET — ownerville access request still "
+                    "pending for {}".format(o.knocks_office))
+                captured[item["id"]] = None
+                deferred.append(item["id"])
+                no_data.append(item["id"])
+                continue
             log("  [{}] FAILED:".format(item["id"]))
             for ln in traceback.format_exc().splitlines()[-6:]:
                 log("      " + ln[:180])
