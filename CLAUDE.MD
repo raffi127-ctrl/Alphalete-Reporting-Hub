@@ -96,6 +96,18 @@ fluff. I need clear visuals and concise communications.
   nothing moves 3–5am. A NEW build entry: leave `machine` out unless it
   truly needs one box. Pinning it to Lucy 1 is what piles everything
   there (Megan, 2026-10-21).
+- **Lucy ECO runs in the background — every piece, old and new.** Anything
+  that runs by itself on an office's computer (a read, a push, a post, a
+  send) opens NOTHING the owner can see: hidden browser, no dialog, no
+  window brought forward. "They almost don't even know Lucy is running on
+  their machine" (Megan, 2026-11-13). A window is allowed only when a
+  PERSON has to act in it (a code, a pick-list, the Mac's password box).
+  If a site refuses a hidden browser, open the real one behind everything
+  and keep it from taking focus (how `icd_alerts/resume_push.py` does it) —
+  never "just pop it up". The list of every exception, with why, is
+  `automations/icd_alerts/visible_windows.py`; a new one fails
+  `python -m unittest automations.icd_alerts.test_visible_windows` until
+  it is listed there with a reason.
 - **Cite the full source path** when telling me where a number comes
   from: workbook → view → worksheet → filter → row/col. I forget once
   I send the metric to you, so spell it out.
