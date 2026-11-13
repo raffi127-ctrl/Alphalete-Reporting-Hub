@@ -52,6 +52,8 @@ class MatchTest(unittest.TestCase):
         self.assertTrue(H._matches("CHRISTOPHER HU", ["Christopher Hurst"]))
         self.assertFalse(H._matches("STEVEN SYKES", ["Starr Rodenhurst"]))
         self.assertFalse(H._matches("STA", ["Starr Rodenhurst"]))
+        self.assertTrue(H._matches("GEORGE DELGADO [Fort Myers, FL]",
+                                   ["George Delgado"]))
 
     def test_a_wrong_answer_from_claude_is_dropped(self):
         with tempfile.TemporaryDirectory() as d:
@@ -74,6 +76,17 @@ class AnswerShapeTest(unittest.TestCase):
                 got = H.locate(p, {"Starr Rodenhurst": ["Starr Rodenhurst"]})
             self.assertEqual(list(got), ["Starr Rodenhurst"])
 
+    def test_cut_off_name_in_answer_maps_to_the_one_person_it_fits(self):
+        # B2B board prints 'CARLOS HIDAL..'; Claude echoes that as the name.
+        with tempfile.TemporaryDirectory() as d:
+            p = _board(Path(d) / "b.png")
+            fake = [{"name": "STARR RODENH..", "band": 2,
+                     "text_read": "STARR RODENH.."}]
+            with mock.patch.object(H, "_ask", return_value=fake):
+                got = H.locate(p, {"Starr Rodenhurst": ["Starr Rodenhurst"],
+                                   "Sahil Multani": ["Sahil Multani"]})
+            self.assertEqual(list(got), ["Starr Rodenhurst"])
+
     def test_tall_board_is_sliced_without_cutting_a_row(self):
         im = Image.new("RGB", (400, 3000), "white")
         bands = [(y, y + 20, [(0, 399)]) for y in range(0, 2980, 30)]
@@ -83,6 +96,24 @@ class AnswerShapeTest(unittest.TestCase):
                          list(range(len(bands))))
         for y0, y1, s, e in t:
             self.assertLessEqual(y1 - y0, 1000 + 30)
+
+
+class TwoOwnerChannelTest(unittest.TestCase):
+    def tearDown(self):
+        H.FORCE = False
+
+    def test_top_leaders_paints_raf_and_colten(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = _board(Path(d) / "b.png")
+            bands = H.rows_of(Image.open(p))
+            H.FORCE = True
+            hl = H.Highlighter(rows=[])
+            found = {"Rafael Hidalgo": [bands[0]], "Colten Wright": [bands[2]]}
+            with mock.patch.object(H, "locate", return_value=found), \
+                    mock.patch.object(H, "spellings", side_effect=lambda o: [o]), \
+                    mock.patch.object(H, "highlighted", return_value=Path("x")) as hi:
+                hl.png_for("C067TTGFEFR", p)
+            self.assertEqual(hi.call_args[0][2], [bands[0], bands[2]])
 
 
 class WhoTest(unittest.TestCase):
@@ -103,8 +134,26 @@ class WhoTest(unittest.TestCase):
     ]
 
     def test_every_owner_slack_channel(self):
-        self.assertEqual(H.channel_owners(self.ROWS),
+        self.assertEqual(H.channel_owners(self.ROWS, orgs={}),
                          {"C1": "Starr Rodenhurst", "C2": "Nii Tagoe"})
+
+    def test_single_owner_org_channels_get_their_owner(self):
+        # Megan 11/13: Raf's trackers go to the Alphalete org channels.
+        from automations.tableau_screenshots.slack_post import ORG_CHANNELS
+        got = H.channel_owners(self.ROWS)
+        for c in ORG_CHANNELS["alphalete"]:
+            if c != "C067TTGFEFR":
+                self.assertEqual(got[c], "Rafael Hidalgo")
+        # top-leaders = the whole RC/NC path, from the RCs and NCs report
+        from automations.override_bulletin.rcs_ncs_data import LEADERS
+        self.assertEqual(got["C067TTGFEFR"], tuple(l["name"] for l in LEADERS))
+        self.assertIn("Salik Mallick", got["C067TTGFEFR"])
+        self.assertEqual(got["C07J46MQNUX"], ("Carlos Hidalgo", "Nico Murrugarra"))
+        for c in ORG_CHANNELS["domin8"]:
+            self.assertEqual(got[c], "Atef Choudhury")
+        H.FORCE = True
+        self.assertEqual(H.Highlighter(rows=self.ROWS).owner_for_org("alphalete"),
+                         "Rafael Hidalgo")
 
     def test_email_owner_found_by_org(self):
         H.FORCE = True

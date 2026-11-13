@@ -57,7 +57,7 @@ _RULE_RUN = 40           # ink wider than this in one stroke is a rule
 _RULE_INK = 215          # rules are drawn lighter than text
 _MIN_TEXT_PX = 5         # shorter ink runs are rules / specks
 _MAX_TEXT_PX = 16        # one line of text is never taller than this
-_MAX_CELL_PX = 34        # two-line cells (NDS: name + [city]) — taller is a title bar/logo
+_MAX_CELL_PX = 60        # two-line cells (NDS: name + [city], ~50px on the 2600px board, Megan 11/13) — taller is a title bar/logo
 _EDGE = 5                # how much darker than above/below a rule is
 _GAP = 3                 # off-grey pixels a rule may cross (cell borders)
 _MIN_BAND_PX = 8         # rows shorter than this are double rules, not rows
@@ -313,7 +313,8 @@ def _ask(img, people: dict) -> list:
 
 
 def _matches(text_read: str, spellings: list) -> bool:
-    t = norm(text_read)
+    # NDS cells print the city under the name: 'GEORGE DELGADO [Fort Myers, FL]'.
+    t = norm(re.sub(r"\[[^\]]*\]?", "", text_read or ""))
     if not t:
         return False
     for s in spellings:
@@ -362,6 +363,12 @@ def locate(png: Path, people: dict, cache_dir: Path | None = None) -> dict:
     keys = {norm(k): k for k in people}
     for f in found:
         k, i = keys.get(norm(f.get("name", "")), ""), int(f.get("band") or 0)
+        if not k:
+            # On boards that cut names short Claude echoes the printed
+            # 'CARLOS HIDAL..' as the name: tie it to the ONE person it fits.
+            fits = [p for p in people
+                    if _matches(f.get("name", ""), people[p])]
+            k = fits[0] if len(fits) == 1 else ""
         if k not in people or not (1 <= i <= len(bands)):
             continue
         if not _matches(f.get("text_read", ""), people[k]):
@@ -432,10 +439,63 @@ def spellings(owner: str) -> list:
     return uniq
 
 
-def channel_owners(rows: list) -> dict:
-    """{channel_id: owner} for every Slack row in onboarded_trackers. Shared
-    channels (ORG_CHANNELS) are not rows there, so they are never here."""
-    out = {}
+# Org channels that belong to ONE owner get that owner's row too (Megan
+# 2026-11-13: "Raf hidalgo's trackers" weren't highlighted - his trackers go to
+# the Alphalete org channels, which were skipped as shared). Owner = the ICD
+# whose office the board shows for that org (Palace Acq.. -> Kash Rai, ...).
+# a_players is left out (stopped). carlos_gp has TWO owners: CHANNEL_OWNERS.
+ORG_OWNERS = {
+    "alphalete":   "Rafael Hidalgo",
+    "elevate":     "Rashad Reed",
+    "indelible":   "Aya Al-Khafaji",
+    "palace":      "Kash Rai",
+    "elite_prime": "Hammad Haque",
+    "ambient_1":   "Cyrus Wade",
+    "aeon":        "Cody Cannon",
+    "domin8":      "Atef Choudhury",       # Domin8 Acquisitions (Megan 11/13)
+}
+
+# Channels where MORE than one owner's row is painted.
+CHANNEL_OWNERS = {
+    "C07J46MQNUX": ("Carlos Hidalgo", "Nico Murrugarra"), # #alphalete-gp-sales
+}
+
+# #top-leaders-alphalete-org = everyone on the RC/NC path (Megan 2026-11-13:
+# "should highlight all those here on the RC/NC path"). Read from the Up and
+# Coming RCs and NCs report's own list, so someone joining the path there is
+# highlighted here with no second edit.
+TOP_LEADERS_CHANNEL = "C067TTGFEFR"
+_RC_NC_FALLBACK = ("Rafael Hidalgo", "Colten Wright", "Carlos Hidalgo",
+                   "Jairo Ruiz", "Eveliz Wright", "Khalil Mansour",
+                   "Salik Mallick", "Hammad Haque")
+
+
+def rc_nc_path() -> tuple:
+    try:
+        from automations.override_bulletin.rcs_ncs_data import LEADERS
+        names = tuple(l["name"] for l in LEADERS if l.get("name"))
+        return names or _RC_NC_FALLBACK
+    except Exception:   # noqa: BLE001
+        return _RC_NC_FALLBACK
+
+
+def org_channel_owners() -> dict:
+    """{channel_id: owner} for the ORG_OWNERS orgs' channels. {} on error."""
+    try:
+        from automations.tableau_screenshots.slack_post import ORG_CHANNELS
+    except Exception:   # noqa: BLE001
+        return {}
+    out = {c: owner for org, owner in ORG_OWNERS.items()
+           for c in ORG_CHANNELS.get(org) or []}
+    out.update(CHANNEL_OWNERS)
+    out[TOP_LEADERS_CHANNEL] = rc_nc_path()
+    return out
+
+
+def channel_owners(rows: list, orgs: dict | None = None) -> dict:
+    """{channel_id: owner} for every Slack row in onboarded_trackers, plus the
+    single-owner org channels (`orgs`, default org_channel_owners())."""
+    out = dict(org_channel_owners() if orgs is None else orgs)
     for r in rows:
         owner = (r.get("owner") or "").strip()
         if not owner:
@@ -467,6 +527,8 @@ class Highlighter:
                 self._by_channel = channel_owners(rows)
                 self._owners = {(r.get("owner") or "").strip() for r in rows
                                 if (r.get("owner") or "").strip()}
+                for v in self._by_channel.values():
+                    self._owners |= {v} if isinstance(v, str) else set(v)
                 print(f"   highlight: on for {len(self._owners)} owner(s)",
                       flush=True)
             except Exception as e:   # noqa: BLE001
@@ -484,6 +546,8 @@ class Highlighter:
             except Exception:   # noqa: BLE001
                 return ""
         self._channels()
+        if org in ORG_OWNERS and ORG_OWNERS[org] in self._owners:
+            return ORG_OWNERS[org]
         for r in rows:
             if r.get("key") == org and r.get("owner") in self._owners:
                 return r["owner"]
@@ -492,7 +556,9 @@ class Highlighter:
     def png_for(self, channel: str, png, spec: dict | None = None):
         return self.png_for_owner(self._channels().get(channel, ""), png, spec)
 
-    def png_for_owner(self, owner: str, png, spec: dict | None = None):
+    def png_for_owner(self, owner, png, spec: dict | None = None):
+        """`owner` = one name, or a tuple of names (CHANNEL_OWNERS) whose rows
+        are all painted on the same copy."""
         if not owner or self._by_channel == {}:
             return png
         try:
@@ -500,10 +566,12 @@ class Highlighter:
             if key not in self._located:
                 people = {o: spellings(o) for o in sorted(self._owners)}
                 self._located[key] = locate(Path(png), people)
-            bands = self._located[key].get(owner)
+            names = (owner,) if isinstance(owner, str) else tuple(owner)
+            bands = [b for o in names for b in self._located[key].get(o) or []]
             if not bands:
                 return png
-            out = highlighted(Path(png), norm(owner), bands)
+            out = highlighted(Path(png), "_".join(norm(o) for o in names), bands)
+            owner = " + ".join(names)
             print(f"   highlight: {owner} on {(spec or {}).get('id', Path(png).name)}"
                   f" ({len(bands)} row(s))", flush=True)
             return out
