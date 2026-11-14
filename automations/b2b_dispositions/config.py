@@ -203,6 +203,9 @@ TEXT_ROUTES = {
     ("NDS METRICS", "nds_customer_churn"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
     ("NDS METRICS", "nds_churn_rates"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
     ("NDS METRICS", "nds_churn_by_rep"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    # NDS Revenue Board with the tier-bonus columns (Carlos 2026-11-14:
+    # "send this new revenue board on the text chains and slack moving forward").
+    ("NDS METRICS", "nds_revenue_board"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

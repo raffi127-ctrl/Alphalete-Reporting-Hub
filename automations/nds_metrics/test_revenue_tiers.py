@@ -56,8 +56,9 @@ class Counting(unittest.TestCase):
         self.assertEqual(cells["Ana"][1]["text"], "✓ $150 now")
         self.assertNotIn("Ben", cells)
 
-    def test_flag_default_off(self):
-        self.assertFalse(R.FLAGS["tier_columns"])
+    def test_flag_default_on_and_texted(self):
+        self.assertTrue(R.FLAGS["tier_columns"])            # shipped 11/14 after Carlos's OK
+        self.assertIn("revenue_board", R.TEXT_SECTIONS)
 
 
 if __name__ == "__main__":

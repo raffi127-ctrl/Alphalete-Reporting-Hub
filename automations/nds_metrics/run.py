@@ -1605,12 +1605,12 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     return out
 
 
-# Run-time switches set by main() from the command line. `tier_columns`:
+# Run-time switches (main() may set them from the command line). `tier_columns`:
 # the Revenue Board's tier-bonus potential columns (Carlos 2026-11-14, "send
-# it to me before sending it to the whole Slack") -- OFF until he approves
-# the preview (`rerun nds_metrics --only revenue_board --dm U046G04P5LG
-# --tier-columns`); flip the default here to ship it on the morning thread.
-FLAGS = {"tier_columns": False}
+# it to me before sending it to the whole Slack" -> previewed, then "send
+# this new revenue board on the text chains and slack moving forward") --
+# ON since 11/14; `--tier-columns` is a no-op now, set False here to pull it.
+FLAGS = {"tier_columns": True}
 
 
 def tier_bands() -> list:
@@ -1954,7 +1954,9 @@ def _state_path(today: dt.date) -> Path:
 # under (TEXT_CAMPAIGN, "nds_" + sid); empty that list to stop the text.
 # + churn_rates / churn_by_rep (Carlos 2026-11-14: "Every morning after these
 # two are created, let's also send these on the same text chains").
-TEXT_SECTIONS = {"customer_churn", "churn_rates", "churn_by_rep"}
+# + revenue_board (Carlos 2026-11-14, after the tier-columns preview: "send
+# this new revenue board on the text chains and slack moving forward").
+TEXT_SECTIONS = {"customer_churn", "churn_rates", "churn_by_rep", "revenue_board"}
 TEXT_CAMPAIGN = "NDS METRICS"
 
 
