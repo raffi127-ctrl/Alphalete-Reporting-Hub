@@ -419,7 +419,7 @@ def test_no_tab_is_left_behind_an_unsaved_one():
     import inspect
     src = inspect.getsource(drive.complete_person)
     assert "if save is None:" in src
-    assert src.index("if save is None:") < src.index("if not save(tab, got):")
+    assert src.index("if save is None:") < src.index('bool(save(tab, got))')
     assert "cannot be opened until" in src, "and it says why it stopped"
 
 
@@ -545,3 +545,233 @@ def test_settling_waits_for_the_popup_to_actually_go():
     assert "Escape" in src
     assert "k-animation-container" in src
     assert "offsetParent" in src, "gone means not rendered, not just marked"
+
+
+def test_marking_a_box_clears_the_previous_widget_mark_too():
+    """Only [mark] was cleared, so every earlier [mark-widget] stayed on the
+    page and the SECOND pick on a tab matched two elements -- the click then
+    failed. That is why Country died straight after State, and why Gender
+    being skipped changed nothing (2026-11-12)."""
+    import inspect
+    src = inspect.getsource(drive._mark_by_name)
+    marks = src.split("querySelectorAll(", 1)[1].split(")", 1)[0]
+    assert "-widget" in marks, "both marks have to be cleared"
+    assert "removeAttribute(mark + '-widget')" in src
+
+
+def test_the_widget_is_found_above_the_input_as_well():
+    """Gender is a Kendo COMBOBOX: its input sits inside a .k-dropdown-wrap,
+    so the widget span is a grandparent and looking only at the parent's
+    children found nothing -- the click had no target and timed out."""
+    import inspect
+    src = inspect.getsource(drive._mark_by_name)
+    assert "closest(" in src, "walk up, not just across"
+    assert "k-combobox" in src, "a combobox is not a .k-dropdown"
+
+
+def test_a_missing_dropdown_says_so_instead_of_timing_out():
+    """'could not pick (TimeoutError)' is what a widget that was never found
+    looked like for two runs, and it reads like a slow page."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    assert "no dropdown around it" in src
+    assert src.index("no dropdown around it") < src.index('-widget] .k-select')
+
+
+def test_filled_is_not_the_same_answer_as_saved():
+    """A run that timed out waiting for somebody still printed "filled and
+    saved" for that tab (2026-11-13). That is calling an exit code a
+    delivery, on a payroll record."""
+    import inspect
+    src = inspect.getsource(drive.complete_person)
+    assert 'got["saved"] = False' in src, "nothing is saved until it is"
+    assert 'got["saved"] = bool(save(tab, got))' in src, "record what happened"
+    assert src.index('got["saved"] = False') < src.index("if save is None:")
+
+
+def test_a_combobox_is_opened_by_its_arrow_not_its_wrapper():
+    """Every failure on the profile and tax tabs was a name ending in
+    `_input` -- Gender_input, MaritalStatus_input, StateToBeTaxedIn_input --
+    while the plain ids went in first time (2026-11-13). Those are Kendo
+    COMBOBOXES, and the wrapper click that opens a DropDownList does nothing
+    to them. filler.py has said so all along: "a combobox takes typing; a
+    dropdown list does not"."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    assert ".k-select" in src, "the arrow is what opens a combobox"
+    assert src.index(".k-select") < src.index('("wrapper"'), \
+        "try the arrow before the wrapper"
+
+
+def test_a_list_that_never_opened_is_not_a_click_that_timed_out():
+    """'could not pick (TimeoutError)' hid this for three runs: it reads like
+    a slow page, not like a control that was never opened. Each way in is
+    tried and the one that worked is named in the log."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    assert "nothing opened its list" in src
+    assert "via %s" in src, "the log has to say how it opened"
+    # and the row is only clicked once something is actually open
+    assert src.index("if not opened:") < src.index("li:text-is(%r)")
+
+
+def test_the_row_is_clicked_before_anything_is_typed():
+    """Megan described what a person actually does: "you have to actually
+    click the word in the dropdown" -- a click, with no typing. Typing FIRST
+    filters the list, so the row being looked for may no longer be in it,
+    which is how Gender opened fine and set nothing three runs running
+    (2026-11-13). Typing is the fallback for a list too long to show the row,
+    not the opening move."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    assert "page.type(" not in src, "the picker itself does not type"
+    assert "_type_then_pick(" in src, "typing is a fallback it calls"
+    assert src.index("li:text-is(%r)") < src.index("_type_then_pick("), \
+        "click the word first"
+    # and the fallback refuses a box that cannot actually be typed into
+    helper = inspect.getsource(drive._type_then_pick)
+    assert "b.tagName === 'INPUT'" in helper and "readOnly" in helper
+
+
+def test_what_a_dropdown_shows_is_read_wherever_it_lives():
+    """A DropDownList puts the chosen text in its wrapper; a COMBOBOX keeps it
+    in an <input value=...>, which has no innerText -- so the check read ''
+    for Gender while the screen plainly said "Not Specified", and a pick that
+    worked would have been called a miss."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    read = src.split("shown = page.evaluate", 1)[1][:700]
+    assert "'value' in box" in read, "the input's value counts as shown"
+    assert "innerText" in read, "and so does the wrapper's text"
+
+
+def test_the_row_is_clicked_in_the_widgets_own_list():
+    """Megan watched it type "male" into Gender and the value still did not
+    stick: "it looks like you have to actually click the word in the
+    dropdown" (2026-11-13). The click was not raising, so it was landing
+    somewhere -- and these pages carry several `ul.k-list`, one per dropdown
+    plus the nav. A row clicked in another widget's list throws nothing and
+    does nothing, which is exactly what was seen.
+
+    Kendo names the list a widget owns via aria-owns / aria-controls."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    assert "aria-owns" in src and "aria-controls" in src
+    # scoped to that list by id, not to every k-list on the page
+    assert '[id=%s] li:text-is(%r)' in src
+    # and when there is no aria link, it falls back to the one list actually
+    # on screen rather than any k-list anywhere
+    assert 'ul.k-list:visible' in src
+
+
+def test_the_owned_list_is_matched_by_attribute_not_by_hash_id():
+    """Apex's aria-owns carries a literal, un-rendered Angular template --
+    `StateProvince_{{::$id}}_listbox` -- and Kendo really does create the list
+    under that id. Braces and colons are illegal in a CSS #id selector, so
+    `#...` threw and broke State and Country, which had been working
+    (2026-11-13)."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    assert '[id=%s]' in src, "an attribute selector takes the id as spelled"
+    assert '"#%s li' not in src, "a #id selector cannot hold braces or colons"
+    assert "json.dumps(owned)" in src, "and it has to be quoted"
+
+
+def test_a_numeric_spinner_is_never_treated_as_a_dropdown():
+    """Kendo gives its numeric textbox `k-widget` too, so "the widget near
+    this label" could resolve to Rate of Pay -- and the arrow click that
+    opens a list is then the SPIN-UP arrow. That is where $10.10 came from
+    for a $10.00 rate: one step of 0.1, twice onto a real payroll record.
+
+    Measured with probe_rate, 2026-11-13: typing the box is flawless (clear,
+    1, 10, 10., 10.0, 10.00, blur -> 10.00). The typing was never the bug."""
+    import inspect
+    for fn in (drive._mark_by_name, drive.set_dropdown):
+        src = inspect.getsource(fn)
+        assert "spinbutton" in src, \
+            "%s must recognise a spinner" % fn.__name__
+        assert "k-numerictextbox" in src, \
+            "%s must refuse a numeric widget" % fn.__name__
+
+
+def test_the_rate_is_read_back_after_everything_else():
+    """It is the value nobody would see was wrong, and a stray click moves it
+    by one step, so it is not trusted from the moment it was typed."""
+    import inspect
+    src = inspect.getsource(drive.fill_employment)
+    assert "DRIFTED" in src
+    assert src.index("__ansDoPage") < src.index("DRIFTED"), \
+        "check it after the engine has had its turn, not before"
+    assert 'miss.append("Rate of Pay")' in src, "and report it as not set"
+
+
+def test_a_pick_is_never_closed_with_escape():
+    """ESCAPE REVERTS A KENDO COMBOBOX. That was the whole Gender bug: the row
+    was clicked, the box read `Male`, and then settle_popups pressed Escape
+    and put it back to empty -- so the check read '' and called it a miss.
+
+    probe_gender measured it on the live record (2026-11-13): clicking the
+    row, ArrowDown+Enter and typing+Enter ALL set the box to `Male`. Every
+    one was being undone afterwards. State and Country are DropDownLists,
+    which do not revert -- which is why only the three comboboxes ever
+    failed."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    after = src.split("li:text-is(%r)", 1)[1]
+    assert "close_list(page)" in after, "a pick is closed with a blur"
+    # THE SUCCESS PATH ONLY. The failure branch may settle however it likes:
+    # there is no pick there to preserve.
+    won = after.split("return False", 1)[1]
+    reads = won.index("shown = page.evaluate")
+    assert "settle_popups(page)" not in won[:reads], \
+        "Escape after a pick undoes it"
+    assert "close_list(page)" in won[:reads]
+    # and close_list really does blur rather than press a key. THE CODE: its
+    # docstring says the word "Escape" while explaining why it does not press
+    # one, and an explanation of a rule is not a breach of it (third time
+    # this has caught me out today).
+    helper = inspect.getsource(drive.close_list)
+    body = helper.split('"""', 2)[-1]
+    code = [l for l in body.splitlines() if not l.strip().startswith("#")]
+    assert any("blur" in l for l in code), "it blurs"
+    assert not any("Escape" in l for l in code), "and presses no key"
+
+
+def test_a_masked_box_is_checked_by_length_not_by_value():
+    """The two Social fields read back as dots, not digits, so comparing them
+    with what was typed called a correct entry WRONG and refused the whole
+    tax tab (2026-11-13). A masked box can only be checked by length -- and
+    neither side is ever logged."""
+    from automations.apex_new_starts.ssn_prompt import Secret
+
+    class _Masked(_Tabs):
+        def evaluate(self, js, arg=None):
+            if "removeAttribute" in js:
+                return "visible"
+            if "e.value" in js:
+                return "•••••••••"          # nine dots for nine digits
+            return ""
+
+    page = _Masked()
+    said = []
+    got = drive.fill_tax(page, {}, Secret("123456789"), log=said.append)
+    assert got["set"] == ["Social"], got
+    assert "123456789" not in " ".join(said), said
+    assert "•" not in " ".join(said), "the mask is not logged either"
+
+
+def test_a_masked_box_of_the_wrong_length_is_still_refused():
+    """Nine digits typed and four dots back is not a Social that went in."""
+    from automations.apex_new_starts.ssn_prompt import Secret
+
+    class _Short(_Tabs):
+        def evaluate(self, js, arg=None):
+            if "removeAttribute" in js:
+                return "visible"
+            if "e.value" in js:
+                return "••••"
+            return ""
+
+    got = drive.fill_tax(_Short(), {}, Secret("123456789"),
+                         log=lambda *a: None)
+    assert got["missed"] == ["Social"], got

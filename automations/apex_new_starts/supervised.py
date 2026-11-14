@@ -37,8 +37,18 @@ page this session cannot open, is how the two parallel fillers happened. The
 person doing this run is looking at the roster anyway, so they do it -- and
 this says so out loud rather than leaving them to assume it was handled.
 
-NO SOCIAL IS FETCHED OR TYPED. `keep_ssn=False`, so there is nothing to leak;
-the Social belongs to the tax tab in stage two, not to the create form.
+THE SOCIAL IS FETCHED, AND TYPED INTO THE TAX TAB. It used to be withheld
+(`keep_ssn=False`) on the grounds that the create form does not need one. That
+was true while this run only reached the employment tab -- and wrong the
+moment it reached the third, because Apex will not save the tax tab without a
+Social, so the rehearsal could never finish the thing it exists to rehearse
+(Megan, 2026-11-13: "I can't save it without a social").
+
+It is handled the way it is everywhere else here: wrapped in `Secret`,
+unwrapped at exactly one call site, typed with `secret=True` so the log says
+only whether a box took it, and never returned, echoed or written to a Sheet.
+Same data this run already types off the same signed packet -- a date of
+birth and a home address are not less personal than a Social.
 """
 from __future__ import annotations
 
@@ -265,7 +275,8 @@ def _pages(values):
     return FL.rows_for(values)
 
 
-def _complete(page, who, person, apex_id, log=print) -> int:
+def _complete(page, who, person, apex_id, log=print, *,
+              social=None) -> int:
     """Fill the employment tab of somebody ALREADY on Pending, stopping at Save.
 
     This is the path that runs twenty-odd times a week. The engine's own
@@ -306,14 +317,29 @@ def _complete(page, who, person, apex_id, log=print) -> int:
     # URL -- and carries on when it sees one. The person only ever presses
     # Save, in the window they are already looking at.
     def saved(tab: str, got: dict) -> bool:
+        # A WRONG VALUE STOPS THE RUN. It used to print "WRONG -- DO NOT
+        # SAVE" and then, four lines later, "Press SAVE on this tab" -- and
+        # Kyle's Rate of Pay went in at $10.10 because the second line is the
+        # one that reads like an instruction (2026-11-13). Two contradictory
+        # messages are worse than one wrong one: the person follows the one
+        # that tells them what to do.
+        if got.get("missed"):
+            log("")
+            log("  *** DO NOT SAVE THIS TAB ***")
+            log("  These hold a value that is NOT what was asked for:")
+            for k in got["missed"]:
+                log("      %s" % k)
+            log("")
+            log("  Fix them by hand before you save, or close the window and")
+            log("  leave the record as it was. Nothing here will press Save.")
+            log("")
+            return False
         if got.get("absent"):
             log("")
             log("  FILL THESE IN YOURSELF FIRST -- Apex refuses the tab "
                 "without them:")
             for k in got["absent"]:
                 log("      %s" % k)
-        if got.get("missed"):
-            log("      (also not set from here: %s)" % ", ".join(got["missed"]))
         log("")
         log("  >>> Press SAVE on the %s tab in Apex. I am watching for it."
             % tab)
@@ -321,7 +347,7 @@ def _complete(page, who, person, apex_id, log=print) -> int:
         return drive.wait_for_save(page, apex_id, log=log)
 
     walked = drive.complete_person(page, who, apex_id, values=values,
-                                   social=who.get("_social"),
+                                   social=social,
                                    save=saved, log=log)
     if not walked:
         log("")
@@ -331,9 +357,17 @@ def _complete(page, who, person, apex_id, log=print) -> int:
 
     log("")
     for tab, _path, _prove in drive.TABS:
-        log("    %-20s %s" % (tab, "filled and saved" if tab in walked
-                              else "NOT reached"))
-    short = [t for t, _p, _v in drive.TABS if t not in walked]
+        got = walked.get(tab)
+        if got is None:
+            said = "NOT reached"
+        elif got.get("saved"):
+            said = "filled and saved"
+        else:
+            said = "FILLED BUT NOT SAVED"
+        log("    %-20s %s" % (tab, said))
+    # Short = anything not actually saved, not merely anything not reached.
+    short = [t for t, _p, _v in drive.TABS
+             if not (walked.get(t) or {}).get("saved")]
     if short:
         log("")
         log("  Stopped before: %s. Run this again to carry on." % ", ".join(short))
@@ -357,7 +391,9 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
 
     # The packet. NO SOCIAL: keep_ssn stays off, so there is nothing here that
     # could reach a log, a result or a Google Sheet.
-    hires = BID.for_people([person], keep_ssn=False)
+    # keep_ssn=True: the tax tab cannot be saved without it -- see the note
+    # at the top of this file.
+    hires = BID.for_people([person], keep_ssn=True)
     got = ECO.plan([person], hires, log=log, office_key=office_key)
     if not got["ready"]:
         why = (got["blocked"] or [{}])[0].get("why", "unknown")
@@ -390,8 +426,14 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
                "find": (person.name.split()[-1] if person.name else ""),
                # carried for the profile and tax tabs, which are driven by
                # field NAME rather than by the engine's page map
-               "_values": values,
-               "_social": getattr(hires.get(person.name), "ssn", None)}
+               "_values": values}
+        # THE SOCIAL NEVER RIDES ON `who`. That dict is handed to the page,
+        # and Playwright serializes its arguments to JSON -- which is where
+        # this crashed, "Object of type Secret is not JSON serializable"
+        # (2026-11-13). The wrapper did its job: a plain string would have
+        # gone quietly into a page payload. It is passed on its own instead,
+        # straight to the one place that types it.
+        social = getattr(hires.get(person.name), "ssn", None)
         if not drive.load(s.page, [who], week_start.strftime("%m/%d/%Y"), log=log):
             log("  The Apex engine did not load, so nothing was typed.")
             return 1
@@ -408,7 +450,7 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
         log("  %s: %s" % (person.name, need.get("why", "unknown")))
         if need.get("need") == drive.COMPLETE:
             return _complete(s.page, who, person,
-                             need.get("id", ""), log=log)
+                             need.get("id", ""), log=log, social=social)
         if need.get("need") != drive.ADD:
             log("")
             log("  Neither path is safe for them. Creating would make a SECOND")

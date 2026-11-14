@@ -97,14 +97,26 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
         # and because it is the office's own number -- an office nobody has
         # asked has none, and that must hold the person back rather than
         # quietly paying them Alphalete's rate (Megan, 2026-11-12).
-        gaps = [lbl for lbl in ("dob", "address1", "city", "zip", "rate")
+        # GENDER IS IN HERE NOW (Megan, 2026-11-13: "we need to only run on
+        # the ones I gave you genders for"). Apex refuses the profile tab
+        # without one, so starting somebody who has none does not fail
+        # early -- it saves the employment tab and then stops, leaving a
+        # part-filled record and a person who looks half done. Nothing
+        # guesses a gender, so a blank one holds them here, before anything
+        # is typed.
+        gaps = [lbl for lbl in ("dob", "address1", "city", "zip", "rate",
+                                "gender")
                 if not values.get(lbl)]
         if gaps:
-            blocked.append({"name": p.name,
-                            "why": ("this office has no Rate of Pay on its "
-                                    "enrolment — ask the ICD and add it"
-                                    if gaps == ["rate"] else
-                                    "their packet is missing " + ", ".join(gaps))})
+            if gaps == ["rate"]:
+                why = ("this office has no Rate of Pay on its enrolment — "
+                       "ask the ICD and add it")
+            elif gaps == ["gender"]:
+                why = ("no gender on the board — Apex will not take them "
+                       "without one, and nothing guesses it")
+            else:
+                why = "their packet is missing " + ", ".join(gaps)
+            blocked.append({"name": p.name, "why": why})
             continue
         ready.append((p, values))
     log("  %d ready, %d held back" % (len(ready), len(blocked)))
@@ -180,6 +192,19 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
         return _result(monday, status="error", live=live, counted=len(people),
                        error="Blue Ink: %s: %s" % (type(e).__name__, str(e)[:200]))
 
+    # THE BOARD'S GENDER, BEFORE THE PLAN. It lives on the board, and
+    # `starters()` builds people from the training calendar, which has no
+    # such column -- so without this every single person would be held for
+    # "no gender" even when the board has one. `plan` holds anybody still
+    # without one, which is the point (Megan, 2026-11-13).
+    genders = _genders_from_board(office_key, monday, log=log)
+    if genders:
+        from automations.icd_onboarding import board as _B
+        byk = {_B._fold(k): v for k, v in genders.items()}
+        for _p in people:
+            if not _p.gender:
+                _p.gender = byk.get(_B._fold(_p.name), "")
+
     got = plan(people, hires, log=log, office_key=office_key)
     if not live:
         return _result(monday, status="dry_run", live=False, counted=len(people),
@@ -200,8 +225,8 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
                              "one record save, then set APEX_FILL_PROVEN=1."
                              % len(got["ready"]))
 
-    genders = _genders_from_board(office_key, monday, log=log)
-    with apex.ApexSession(log=log) as s:
+    # NOBODY IS WATCHING THIS ONE -- no window on the owner's screen.
+    with apex.ApexSession(log=log, visible=False) as s:
         s.require_login()
         out = fill_week(s.page, got["ready"], hires, monday,
                         genders=genders, log=log)

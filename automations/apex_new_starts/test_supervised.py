@@ -29,16 +29,55 @@ def test_it_does_not_click_the_save_button():
 
 # ------------------------------------------------------- no Social, ever
 
-def test_no_social_is_fetched():
-    """keep_ssn off means there is nothing that could reach a log or a sheet."""
+def test_the_social_is_fetched_and_never_echoed():
+    """It used to be withheld, which was right while this run only reached the
+    employment tab. Apex will not save the TAX tab without a Social, so the
+    rehearsal could not finish the thing it exists to rehearse (Megan,
+    2026-11-13: "I can't save it without a social").
+
+    Fetching it changes nothing about custody -- see test_ssn_custody for the
+    unwrap-site and never-logged rules."""
     src = inspect.getsource(SUP.run)
-    assert "keep_ssn=False" in src
-    assert "keep_ssn=True" not in src
+    assert "keep_ssn=True" in src
+    assert "keep_ssn=False" not in src
 
 
-def test_it_never_asks_for_a_social():
-    src = inspect.getsource(SUP)
-    assert "ssn_prompt" not in src and "Secret" not in src
+def test_nobody_is_ever_ASKED_to_type_a_social():
+    """This guarantee survives the change above. It comes off the signed
+    packet, never from a person at a keyboard: an operator typing twenty-two
+    Socials is the thing this whole report exists to stop."""
+    # THE CALLS, read off the syntax tree. Comments and docstrings here
+    # explain the custody rules and the old keyboard wait, and naturally use
+    # these words -- an explanation of a thing is not the thing. Slicing
+    # strings got that wrong; the tree cannot.
+    import ast
+    import pathlib
+    tree = ast.parse(pathlib.Path(SUP.__file__).read_text(encoding="utf-8"))
+    called = set()
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        called.add(f.id if isinstance(f, ast.Name)
+                   else f.attr if isinstance(f, ast.Attribute) else "")
+    assert not any("ssn" in c.lower() and "prompt" in c.lower() for c in called), \
+        "nothing here prompts for one"
+    # The ONE input() in this module holds the window open at the end --
+    # "press Return when you are done". Banning input() outright would ban
+    # that, which is not what this rule is about: no VALUE is ever typed in
+    # at a prompt, least of all a Social.
+    prompts = [n for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+               and n.func.id == "input"]
+    assert len(prompts) == 1, "only the window-hold may wait on a keyboard"
+    asked = prompts[0].args[0].value if prompts[0].args else ""
+    assert "Return" in asked and "social" not in asked.lower(), asked
+    # and the module does not even import the prompt
+    imported = {a.name for n in ast.walk(tree)
+                if isinstance(n, ast.ImportFrom) for a in n.names}
+    imported |= {a.name for n in ast.walk(tree)
+                 if isinstance(n, ast.Import) for a in n.names}
+    assert not any("ssn_prompt" in i for i in imported), imported
 
 
 # ------------------------------- the duplicate check stays with the operator
@@ -485,6 +524,28 @@ def test_the_summary_names_only_the_tabs_it_filled():
     code = "\n".join(l for l in src.splitlines()
                       if not l.strip().startswith("#"))
     assert "ALL THREE TABS" not in code, "it cannot claim three tabs"
-    assert "tab in walked" in code, "list what was filled"
     assert "NOT reached" in code, "and say what it did not reach"
     assert "Stopped before" in code, "and that it stopped early"
+    # FILLED IS NOT SAVED: a tab it filled and nobody saved says so, rather
+    # than being counted as done (2026-11-13).
+    assert 'got.get("saved")' in code, "it has to read what actually saved"
+    assert "FILLED BUT NOT SAVED" in code
+
+
+def test_a_wrong_value_stops_the_run_instead_of_asking_for_a_save():
+    """It printed "WRONG -- DO NOT SAVE" and then, four lines later, "Press
+    SAVE on this tab". Kyle's Rate of Pay went in at $10.10 because the
+    second line is the one that reads like an instruction (2026-11-13).
+
+    Two contradictory messages are worse than one wrong one."""
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP._complete)
+    # THE CODE, not the comment that explains it. The note above this very
+    # check quotes both messages, and a comment saying what went wrong is not
+    # the thing going wrong (fourth time this has caught me out today).
+    stop = "\n".join(l for l in src.split("def saved(", 1)[1].splitlines()
+                      if not l.strip().startswith("#"))
+    assert stop.index("DO NOT SAVE THIS TAB") < stop.index("Press SAVE"), \
+        "it must refuse before it ever asks"
+    head = stop[:stop.index("Press SAVE")]
+    assert "return False" in head, "and stop, not carry on to the ask"

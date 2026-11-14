@@ -219,7 +219,8 @@ class _FakeSession:
         return False
 
 
-def _patch(monkeypatch, *, rows, hires, for_people=None, removed=()):
+def _patch(monkeypatch, *, rows, hires, for_people=None, removed=(),
+           genders=None):
     from automations.office_admin import fdot
     monkeypatch.setattr(fdot, "read_week", lambda *a, **k: rows)
     monkeypatch.setattr("automations.applicant_tracker.applicantstream.session",
@@ -232,6 +233,16 @@ def _patch(monkeypatch, *, rows, hires, for_people=None, removed=()):
     # test that depends on today's real data (noticed 2026-11-11).
     monkeypatch.setattr(eco_run, "_removed_on_the_board",
                         lambda office_key, monday, log=print: set(removed))
+    # The GENDER read is a Sheets call too, and it is read before the plan now
+    # -- Apex refuses the profile tab without one. These people have one
+    # unless a test says otherwise, because that is the ordinary case; the
+    # test for a blank gender passes genders={}.
+    if genders is None:
+        genders = {("%s %s" % (r.get("first_name", ""),
+                               r.get("last_name", ""))).strip(): "Female"
+                   for r in rows}
+    monkeypatch.setattr(eco_run, "_genders_from_board",
+                        lambda office_key, monday, log=print: dict(genders))
 
 
 # ------------------------------------- the control map, read off the real form
@@ -546,7 +557,8 @@ def test_an_office_with_no_rate_holds_the_person_back(monkeypatch):
     monkeypatch.setattr(V, "apex_values",
                         lambda c, hire, office_key="": {
                             "dob": "10/25/2002", "address1": "x",
-                            "city": "Dallas", "zip": "75262"})
+                            "city": "Dallas", "zip": "75262",
+                            "gender": "Female"})
     person = eco_run.Starter(name="Ada Fournier", email="a@b.c")
     got = eco_run.plan([person], {"Ada Fournier": _hire("Ada Fournier")},
                        log=lambda *a: None, office_key="someone")
@@ -560,8 +572,58 @@ def test_a_rate_that_is_there_lets_them_through(monkeypatch):
     monkeypatch.setattr(V, "apex_values",
                         lambda c, hire, office_key="": {
                             "dob": "10/25/2002", "address1": "x",
-                            "city": "Dallas", "zip": "75262", "rate": "12.00"})
+                            "city": "Dallas", "zip": "75262",
+                            "rate": "12.00", "gender": "Female"})
     person = eco_run.Starter(name="Ada Fournier", email="a@b.c")
     got = eco_run.plan([person], {"Ada Fournier": _hire("Ada Fournier")},
                        log=lambda *a: None, office_key="jacob")
     assert [p.name for p, _ in got["ready"]] == ["Ada Fournier"]
+
+
+def test_nobody_without_a_gender_is_started():
+    """Megan, 2026-11-13: "we need to only run on the ones I gave you genders
+    for." Apex refuses the profile tab without one, so starting such a person
+    does not fail early -- it saves the employment tab and THEN stops, leaving
+    a part-filled record that looks half done. They are held before anything
+    is typed, and nothing guesses a gender."""
+    import datetime as dt
+    from automations.apex_new_starts import blueink_data as BID
+    from automations.apex_new_starts import eco_run as E
+
+    who = E.Starter(name="Ada Fournier", hire_date=dt.date(2026, 11, 9))
+    hire = BID.NewHire(name="Ada Fournier", values={
+        "first": "Ada", "last": "Fournier", "dob": "01/02/1990",
+        "address1": "1 Main St", "city": "Plano", "state": "TX",
+        "zip": "75075", "filing_single": "True"})
+    got = E.plan([who], {"Ada Fournier": hire}, log=lambda *a: None,
+                 office_key="raf")
+    assert got["ready"] == [], "no gender means not ready"
+    assert len(got["blocked"]) == 1
+    why = got["blocked"][0]["why"]
+    assert "gender" in why.lower(), why
+    assert "guess" in why.lower(), "and it says why nothing fills it"
+
+
+def test_the_boards_gender_reaches_the_plan(monkeypatch):
+    """It lives on the BOARD, and people are built from the training
+    calendar, which has no such column. Without carrying it across, holding
+    anybody without a gender would hold EVERYBODY -- including the ones
+    somebody had just typed in (2026-11-13)."""
+    _patch(monkeypatch, rows=_rows("Ada Fournier", "Bruno Castell"),
+           hires={"Ada Fournier": _hire("Ada Fournier"),
+                  "Bruno Castell": _hire("Bruno Castell")},
+           genders={"Ada Fournier": "Female"})     # Bruno has none
+    res = eco_run.run_week(MONDAY, office_appstream="11280",
+                           log=lambda *a: None)
+    assert res["added"] == ["Ada Fournier"], res
+    held = {b["name"]: b["why"] for b in res["needs_hand"]}
+    assert "Bruno Castell" in held
+    assert "gender" in held["Bruno Castell"].lower(), held["Bruno Castell"]
+
+
+def test_the_gender_board_is_read_once_not_twice():
+    """It was read a second time further down, after the gate, for the engine
+    path -- the same Sheets call for the same answer."""
+    import inspect
+    src = inspect.getsource(eco_run.run_week)
+    assert src.count("_genders_from_board(") == 1, src.count("_genders_from_board(")

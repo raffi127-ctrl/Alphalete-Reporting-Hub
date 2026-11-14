@@ -304,13 +304,24 @@ _PW_CHANGE = re.compile(r"/(?:identity/)?account/(?:[a-z]+/)*changepassword")
 class ApexSession:
     """A browser sitting on Apex, signed in -- waiting for a person if it isn't.
 
-    The window is deliberately VISIBLE. Somebody is at the keyboard for this
-    report anyway (they add each Social and click Save), so a headless browser
-    would only hide the one screen they need to see.
+    VISIBLE ONLY WHEN SOMEBODY IS WATCHING. The supervised rehearsal shows
+    the window because the person at the keyboard presses Save in it. An
+    unattended run on an office machine must not: Lucy ECO runs in the
+    background, and an owner's screen is not ours to use (Megan, 2026-11-13 --
+    "they almost don't even know Lucy is running on their machine").
+
+    So `visible` is the caller's to state. It stays True by default because
+    the only caller today is the watched run, and a run that opens a window
+    nobody expected is worse than one that opens none. `eco_run` passes
+    False. If this ever ships to offices it also needs a line in
+    icd_alerts/visible_windows.ALLOWED, and the sign-in -- which really does
+    need a person -- is already there as apex_signin.py.
     """
 
-    def __init__(self, log=print, *, login_timeout_s: int = 600):
+    def __init__(self, log=print, *, login_timeout_s: int = 600,
+                 visible: bool = True):
         self.log = log
+        self.visible = visible
         self.login_timeout_s = login_timeout_s
         self._pw = None
         self.ctx = None
@@ -321,7 +332,8 @@ class ApexSession:
         self._pw = _sync_api()().start()
         try:
             self.ctx = self._pw.chromium.launch_persistent_context(
-            user_data_dir=str(PROFILE_DIR), headless=False, no_viewport=True,
+            user_data_dir=str(PROFILE_DIR), headless=not self.visible,
+            no_viewport=True,
             # NO channel="chrome" on purpose. macOS allows one primary Google
             # Chrome instance, so launching the real Chrome while somebody has
             # their own open gets our launch adopted into theirs -- blank

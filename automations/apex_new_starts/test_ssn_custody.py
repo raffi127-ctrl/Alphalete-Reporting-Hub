@@ -119,3 +119,49 @@ def test_a_wrong_shaped_social_is_still_rejected(monkeypatch):
     hire = BID.extract(BUNDLE, MAPPING, "Test Person", keep_ssn=True)
     if hire.ssn is not None:
         assert hire.ssn.reveal() != "214-555-0123x" or hire.has_ssn
+
+
+def test_the_rehearsal_fetches_the_social_because_the_tax_tab_needs_it():
+    """It used to withhold it (keep_ssn=False), which was right while this run
+    only reached the employment tab and wrong the moment it reached the third:
+    Apex will not save the tax tab without a Social, so the rehearsal could
+    never finish the thing it exists to rehearse (Megan, 2026-11-13)."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP.run)
+    assert "keep_ssn=True" in src
+    assert "keep_ssn=False" not in src
+
+
+def test_the_rehearsal_never_logs_or_returns_a_social():
+    """Fetching it changes nothing about how it is handled: one unwrap site,
+    typed with secret=True, never echoed."""
+    import ast
+    import pathlib
+    from automations.apex_new_starts import supervised as SUP
+    src = pathlib.Path(SUP.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    reveals = [n for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "reveal"]
+    assert reveals == [], "this module never unwraps one itself"
+    # it hands the wrapper straight to the filler, which types it secretly
+    assert 'social=social' in src
+    for leak in ("print(ssn", "log(ssn", '% ssn', "ssn)"):
+        assert leak not in src, leak
+
+
+def test_a_social_never_rides_on_the_dict_handed_to_the_page():
+    """`who` is passed to page.evaluate, and Playwright serializes its
+    arguments to JSON -- so a Social put on that dict would travel into a
+    page payload. It crashed instead ("Object of type Secret is not JSON
+    serializable", 2026-11-13), which is the wrapper working: a plain string
+    would have gone quietly. It travels on its own now."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP)
+    assert '"_social"' not in src, "nothing about a Social belongs on `who`"
+    assert "social=social" in src, "it is passed on its own"
+    # and the thing that DOES go to the page carries only page-shaped data
+    build = src.split('who = {"name": person.name', 1)[1].split("}", 1)[0]
+    assert "ssn" not in build.lower() and "social" not in build.lower(), build

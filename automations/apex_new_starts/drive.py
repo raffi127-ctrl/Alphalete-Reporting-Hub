@@ -306,7 +306,14 @@ def set_dropdown(page, label: str, value: str, log=print) -> bool:
     box = page.evaluate(
         """(L) => { const el = window.__ansFieldFor(L);
              if (!el) return '';
-             const sp = el.parentElement.querySelector('.k-dropdown, .k-widget');
+             /* NOT the numeric box -- see the note in _mark_by_name.
+                Clicking a numeric widget's arrow spins its value. */
+             let sp = el.parentElement.querySelector('.k-combobox, .k-dropdown');
+             if (!sp) {
+               const loose = el.parentElement.querySelector('.k-widget');
+               sp = (loose && (loose.matches('.k-numerictextbox')
+                     || loose.querySelector('[role=spinbutton]'))) ? null : loose;
+             }
              if (!sp) return '';
              sp.setAttribute('data-ans-pick', '1');
              return el.id || el.name || 'x'; }""", label)
@@ -330,7 +337,8 @@ def set_dropdown(page, label: str, value: str, log=print) -> bool:
                       ".forEach(e => e.removeAttribute('data-ans-pick'))")
         settle_popups(page)
         return False
-    settle_popups(page)
+    # NOT settle_popups: its Escape reverts a combobox and undoes the pick.
+    close_list(page)
     shown = page.evaluate(
         """(L) => { const el = window.__ansFieldFor(L);
              const sp = el && el.parentElement.querySelector('.k-dropdown, .k-widget');
@@ -479,8 +487,14 @@ def _mark_by_name(page, name: str) -> str:
     """
     return page.evaluate(
         """([n, mark]) => {
-             document.querySelectorAll('[' + mark + ']')
-               .forEach(e => e.removeAttribute(mark));
+             /* BOTH MARKS. Clearing only [mark] left every previous
+                [mark-widget] in place, so the second pick on a tab matched
+                two elements and the click failed -- which is why Country
+                died right after State on the profile tab, and why Gender
+                being skipped made no difference (2026-11-12). */
+             document.querySelectorAll('[' + mark + '], [' + mark + '-widget]')
+               .forEach(e => { e.removeAttribute(mark);
+                               e.removeAttribute(mark + '-widget'); });
              const el = document.querySelector('[name="' + n + '"]')
                       || document.getElementById(n);
              if (!el) return '';
@@ -492,8 +506,32 @@ def _mark_by_name(page, name: str) -> str:
                if (vis.length) box = vis[0];
              }
              box.setAttribute(mark, '1');
-             const sp = el.parentElement
-               ? el.parentElement.querySelector('.k-dropdown, .k-widget') : null;
+             /* UPWARDS, not just the parent's children. Gender is a Kendo
+                COMBOBOX: its input sits inside a .k-dropdown-wrap, so the
+                widget span is a GRANDparent and a parentElement lookup found
+                nothing at all -- the click then had no target and timed out.
+                closest() finds it whichever shape the widget is. */
+             /* A NUMERIC BOX IS NOT A DROPDOWN. Kendo gives its
+                numeric textbox `k-widget` too, so a lookup for "the widget
+                near this label" could land on Rate of Pay -- and then the
+                arrow click that opens a list is the SPIN-UP arrow instead.
+                That is where $10.10 came from for a $10.00 rate: one step of
+                0.1, twice onto a real payroll record (2026-11-13). The box
+                announces itself as role="spinbutton"; nothing here may treat
+                one as a list. */
+             const PICKY = '.k-combobox, .k-dropdown';
+             const isNum = e => !!(e && (e.matches('.k-numerictextbox')
+                                 || e.querySelector('[role=spinbutton]')));
+             let sp = el.closest(PICKY) || box.closest(PICKY)
+                   || (el.parentElement
+                       ? el.parentElement.querySelector(PICKY) : null);
+             if (!sp) {
+               const loose = el.closest('.k-widget')
+                 || (el.parentElement
+                     ? el.parentElement.querySelector('.k-widget') : null);
+               sp = isNum(loose) ? null : loose;
+             }
+             if (isNum(sp)) sp = null;
              if (sp) sp.setAttribute(mark + '-widget', '1');
              return box.offsetParent ? 'visible' : 'hidden';
            }""", [name, _MARK])
@@ -532,6 +570,67 @@ def settle_popups(page, *, seconds: float = 4.0) -> bool:
     return False
 
 
+def _type_then_pick(page, name: str, value: str, rows, log=print) -> bool:
+    """Filter a long list by typing, then click the row it leaves.
+
+    Only reached when the row was not in the list as opened. Typing is what
+    filler.py means by "a combobox takes typing", but it is NOT the first
+    move: typing filters, and a filtered list may no longer hold the row.
+    """
+    try:
+        if not page.evaluate(
+                "(m) => { const b = document.querySelector('[' + m + ']');"
+                " return !!(b && b.tagName === 'INPUT' && b.type !== 'hidden'"
+                " && !b.readOnly); }", _MARK):
+            log("    %s: and it cannot be typed into either" % name)
+            return False
+        page.fill("[%s]" % _MARK, "")
+        page.type("[%s]" % _MARK, value, delay=40)
+        page.wait_for_timeout(800)
+        page.click(rows or ("ul.k-list:visible li:text-is(%r)" % value),
+                   timeout=4000)
+        page.wait_for_timeout(600)
+        return True
+    except Exception as e:     # noqa: BLE001
+        log("    %s: typing did not find it either (%s)"
+            % (name, type(e).__name__))
+        return False
+
+
+def close_list(page, *, seconds: float = 3.0) -> bool:
+    """Put a dropdown's list away WITHOUT undoing the pick.
+
+    Escape reverts a Kendo COMBOBOX. That is the whole Gender bug: the row
+    was clicked, the box read `Male`, and then settle_popups pressed Escape
+    and put it back to empty -- so the check read '' and called it a miss
+    (measured with probe_gender, 2026-11-13; all three ways of picking set
+    the box, and all three were undone).
+
+    A blur closes the list and KEEPS the choice -- and it is also what makes
+    Apex write the hidden ...ID, which it does on blur or submit.
+    """
+    try:
+        page.evaluate(
+            """(m) => { const b = document.querySelector('[' + m + ']');
+                 if (b) { b.dispatchEvent(new Event('change', {bubbles: true}));
+                          b.blur && b.blur(); }
+                 document.body && document.body.click &&
+                   document.body.focus && document.body.focus(); }""", _MARK)
+    except Exception:      # noqa: BLE001 -- mid-navigation
+        return True
+    for _ in range(max(1, int(seconds * 10))):
+        try:
+            if not page.evaluate(
+                    """() => [...document.querySelectorAll(
+                         '.k-animation-container, .k-list-container')]
+                         .filter(e => e.offsetParent).length"""):
+                return True
+        except Exception:  # noqa: BLE001
+            return True
+        page.wait_for_timeout(100)
+    return False
+
+
 def set_dropdown_by_name(page, name: str, value: str, log=print) -> bool:
     """Pick `value` in the dropdown whose input is called `name`."""
     # PUT THE LAST LIST AWAY FIRST. A popup still on screen covers this
@@ -540,25 +639,110 @@ def set_dropdown_by_name(page, name: str, value: str, log=print) -> bool:
     if not _mark_by_name(page, name):
         log("    %s: no box" % name)
         return False
-    try:
-        page.click("[%s-widget]" % _MARK, timeout=5000)
-        page.wait_for_timeout(700)
+    # NEVER A BARE TIMEOUT. "could not pick (TimeoutError)" is what a missing
+    # widget looked like for two runs, and it reads like a slow page rather
+    # than a thing that was never found.
+    if not page.evaluate("(m) => !!document.querySelector('[' + m + '-widget]')",
+                         _MARK):
+        log("    %s: found the box but no dropdown around it" % name)
+        return False
+    # A COMBOBOX DOES NOT OPEN FROM ITS WRAPPER. Every failure on these two
+    # tabs was a name ending in `_input` -- Gender_input, MaritalStatus_input,
+    # StateToBeTaxedIn_input -- while the plain ids (StateProvinceID,
+    # CountryID) went in first time (2026-11-13). Those are Kendo COMBOBOXES:
+    # the wrapper click that opens a DropDownList does nothing to them, and
+    # filler.py has said so all along ("a combobox takes typing; a dropdown
+    # list does not"). So this tries the arrow, then the wrapper, then the
+    # input itself -- and SAYS which one worked, so the next person does not
+    # have to guess the way I did twice.
+    opened = ""
+    for how, sel in (("arrow", "[%s-widget] .k-select" % _MARK),
+                     ("arrow icon", "[%s-widget] .k-icon" % _MARK),
+                     ("wrapper", "[%s-widget]" % _MARK),
+                     ("the box itself", "[%s]" % _MARK)):
         try:
-            page.click("ul.k-list li:text-is(%r)" % value, timeout=4000)
-        except Exception:      # noqa: BLE001
-            page.click("li:text-is(%r)" % value, timeout=3000)
+            page.click(sel, timeout=2500)
+        except Exception:      # noqa: BLE001 -- try the next way in
+            continue
+        page.wait_for_timeout(700)
+        if page.evaluate("""() => [...document.querySelectorAll(
+                 'ul.k-list, .k-animation-container, .k-list-container')]
+                 .some(e => e.offsetParent)"""):
+            opened = how
+            break
+        settle_popups(page, seconds=1.0)
+    if not opened:
+        log("    %s: nothing opened its list" % name)
+        return False
+
+    # THE ROW IN *THIS* WIDGET'S LIST. Megan watched it type "male" into
+    # Gender and the value still did not stick: "it looks like you have to
+    # actually click the word in the dropdown" (2026-11-13). The click was
+    # not raising, so it was landing somewhere -- and every one of these
+    # pages carries several `ul.k-list`, one per dropdown plus the nav. A
+    # row clicked in somebody else's list throws no error and does nothing,
+    # which is exactly what was seen. Kendo names the list its widget owns
+    # through aria-owns / aria-controls, so that is what gets clicked.
+    owned = page.evaluate(
+        """(m) => {
+             const w = document.querySelector('[' + m + '-widget]');
+             const b = document.querySelector('[' + m + ']');
+             for (const e of [w, b]) {
+               const id = e && (e.getAttribute('aria-owns')
+                             || e.getAttribute('aria-controls'));
+               if (id && document.getElementById(id)) return id;
+             }
+             return ''; }""", _MARK)
+    # BY ATTRIBUTE, NOT BY #id. Apex's aria-owns carries a literal,
+    # un-rendered Angular template -- `StateProvince_{{::$id}}_listbox` -- and
+    # Kendo really does create the list under that id. Braces and colons are
+    # illegal in a CSS #id selector, so `#...` threw and broke State and
+    # Country, which had been working (2026-11-13). An attribute selector
+    # takes the id exactly as it is spelled, whatever is in it.
+    rows = ('[id=%s] li:text-is(%r)' % (json.dumps(owned), value)) if owned else None
+    try:
+        if rows:
+            page.click(rows, timeout=4000)
+        else:
+            # No aria link: fall back to the only list actually on screen,
+            # and say so -- a page with two open lists is not guessable.
+            page.click("ul.k-list:visible li:text-is(%r)" % value, timeout=4000)
         page.wait_for_timeout(600)
     except Exception as e:     # noqa: BLE001
-        log("    %s: could not pick %r (%s)" % (name, value, type(e).__name__))
-        settle_popups(page)
-        return False
-    settle_popups(page)
+        # THE ROW FIRST, TYPING ONLY IF IT IS NOT THERE. Megan described
+        # what a person does -- "you have to actually click the word in the
+        # dropdown" -- and that is a click, with no typing at all. Typing
+        # first filters the list, so the row being looked for may no longer
+        # be in it, which is how Gender ended up opening fine and setting
+        # nothing three runs running (2026-11-13). Now the word is clicked
+        # the way a person clicks it, and typing is the fallback for a list
+        # too long to show the row.
+        log("    %s: %r not in its list (%s) -- trying to type it"
+            % (name, value, type(e).__name__))
+        if not _type_then_pick(page, name, value, rows, log=log):
+            settle_popups(page)
+            return False
+    # NOT settle_popups HERE EITHER: its Escape reverts a combobox, which is
+    # exactly what undid Gender, Marital Status and Tax State -- the three
+    # comboboxes, and the only three that ever failed. A blur keeps the
+    # choice and is also what makes Apex write the hidden ...ID.
+    close_list(page)
+    # WHAT IT SHOWS, wherever that lives. A DropDownList puts the chosen text
+    # in the wrapper; a COMBOBOX keeps it in an <input value=...>, which has
+    # no innerText at all -- so this read '' for Gender while the screen
+    # plainly said "Not Specified" (2026-11-13).
     shown = page.evaluate(
-        "(m) => { const e = document.querySelector('[' + m + '-widget]');"
-        " return e ? (e.innerText || '').replace(/\\s+/g, ' ').trim() : ''; }", _MARK)
+        r"""(m) => { const box = document.querySelector('[' + m + ']');
+             if (box && 'value' in box && box.value) return String(box.value).trim();
+             const e = document.querySelector('[' + m + '-widget]');
+             const t = e ? (e.innerText || '').replace(/\s+/g, ' ').trim() : '';
+             if (t) return t;
+             const vis = e ? [...e.querySelectorAll('input')]
+               .filter(i => i.offsetParent) : [];
+             return vis.length ? String(vis[0].value || '').trim() : ''; }""",
+        _MARK)
     ok = bool(shown) and value.lower() in shown.lower()
-    if not ok:
-        log("    %s: clicked, shows %r" % (name, shown))
+    log("    %s: %s via %s" % (name, "set" if ok else "shows %r" % shown, opened))
     return ok
 
 
@@ -588,7 +772,17 @@ def type_by_name(page, name: str, value, log=print, *, secret: bool = False) -> 
         return False
     # THE VALUE, not just "something". A box holding the wrong value is the
     # one outcome nobody would see was wrong -- see same_value.
-    ok = same_value(raw, got)
+    #
+    # EXCEPT A MASKED BOX. The two Social fields read back as dots, not
+    # digits, so comparing them to what was typed called a correct entry
+    # WRONG and refused the tab (2026-11-13). A masked box is checked by
+    # LENGTH, which is all it will tell anybody -- and the comparison still
+    # never logs either side.
+    if secret and str(got).strip() and not same_value(raw, got):
+        masked = not any(c.isdigit() for c in str(got))
+        ok = masked and len(str(got).strip()) == len(raw)
+    else:
+        ok = same_value(raw, got)
     if secret:
         log("    %s: %s" % (name, "set" if ok else
                             ("STILL EMPTY" if not str(got).strip()
@@ -851,7 +1045,7 @@ def guard_unsaved(page, log=print) -> list:
     return seen
 
 
-def wait_for_save(page, apex_id, *, seconds: int = 900, log=print) -> bool:
+def wait_for_save(page, apex_id, *, seconds: int = 2700, log=print) -> bool:
     """Wait until the person has saved the tab that is on screen.
 
     NOT a keypress in a terminal. The first version stopped and waited for
@@ -861,6 +1055,11 @@ def wait_for_save(page, apex_id, *, seconds: int = 900, log=print) -> bool:
     A save is a POST to this employee's own URL, so it can simply be watched
     for. That is a direct observation of the thing itself, not a guess from a
     page that looks different afterwards.
+
+    FORTY-FIVE MINUTES, not fifteen. The person watching this is usually
+    talking to somebody about what they are seeing, and a run that gives up
+    mid-conversation throws away a filled tab and makes them start again
+    (2026-11-13). Waiting costs nothing: nothing is saved until they save it.
     """
     done = []
     want = "/employees/%s" % apex_id
@@ -929,6 +1128,29 @@ def fill_employment(page, who, log=print) -> dict:
         text_only) or {}
     set_ += list(engine.get("done") or [])
     miss += list(engine.get("miss") or [])
+
+    # RATE OF PAY IS CHECKED LAST, AFTER EVERYTHING ELSE HAS TOUCHED THE TAB.
+    # It is a spinner, and a single stray arrow click moves it by 0.1 -- which
+    # is how $10.10 reached a real payroll record for a $10.00 rate, twice
+    # (2026-11-13). The cause is fixed, but this is the value nobody would see
+    # was wrong, so it is read back once more at the end rather than trusted
+    # from the moment it was typed.
+    if rate:
+        now = page.evaluate(
+            r"""() => { const el = window.__ansFieldFor('Rate of Pay');
+                 if (!el) return '';
+                 const w = el.parentElement;
+                 const vis = w ? [...w.querySelectorAll('input')]
+                   .filter(i => i.type !== 'hidden') : [];
+                 const box = vis.length ? vis[0] : el;
+                 return String(box.value || box.getAttribute('title') || ''); }""")
+        if not same_value(rate, now):
+            log("    Rate of Pay DRIFTED to %r after the rest of the tab -- "
+                "asked for %r" % (now, rate))
+            if "Rate of Pay" in set_:
+                set_.remove("Rate of Pay")
+            if "Rate of Pay" not in miss:
+                miss.append("Rate of Pay")
     return {"set": set_, "missed": miss, "absent": []}
 
 
@@ -951,9 +1173,10 @@ def complete_person(page, who, apex_id, *, values=None, social=None,
     fills the first tab and stops, because that is all that is possible
     without saving.
 
-    Returns {tab: {"set": [...], "missed": [...], "absent": [...]}} for the
-    tabs it reached. A tab that is absent from the result was never filled --
-    silence is not a save, here either.
+    Returns {tab: {"set", "missed", "absent", "saved"}} for the tabs it
+    reached. A tab absent from the result was never filled, and `saved` says
+    whether it actually went in -- "filled" and "saved" are different
+    answers and this never conflates them.
     """
     values = values or who.get("_values") or {}
     # NEVER accept the unsaved-changes confirm: accepting it discards the
@@ -985,6 +1208,7 @@ def complete_person(page, who, apex_id, *, values=None, social=None,
             log("    Apex asked about unsaved changes (%s) and was told to "
                 "stay -- nothing was discarded." % ", ".join(rang))
             rang.clear()
+        got["saved"] = False
         out[tab] = got
         if save is None:
             # Nothing may save, so nothing may move on: the next tab is
@@ -992,7 +1216,12 @@ def complete_person(page, who, apex_id, *, values=None, social=None,
             log("    (stopping here -- the next tab cannot be opened until "
                 "this one is saved)")
             break
-        if not save(tab, got):
+        # FILLED IS NOT SAVED. A run that timed out waiting for somebody
+        # still printed "filled and saved" for that tab (2026-11-13) -- the
+        # same mistake as calling an exit code a delivery, on a payroll
+        # record. What happened is recorded, not assumed.
+        got["saved"] = bool(save(tab, got))
+        if not got["saved"]:
             break
     return out
 
