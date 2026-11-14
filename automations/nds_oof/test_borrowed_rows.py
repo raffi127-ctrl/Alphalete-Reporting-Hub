@@ -210,3 +210,41 @@ class SurnameFallback(unittest.TestCase):
                          {"Rep": "Maria Climaco", "Total Knocks": "2"}])
         self.assertEqual([r["Rep"] for r in got], [])
         self.assertTrue(any("not on rafael's rows today" in m for m in LOG), LOG)
+
+
+class CarRideBorrowing(unittest.TestCase):
+    """Carlos 2026-11-14: Cinthya's car knocks on Raf's Ownerville today."""
+    GRID = [["Territory Leader", "Rep #1", "Rep #2", "Rep #3"],
+            ["Fernando Salazar", "Rodolfo Bazan", "Isadora Bazan Puga", "Nathaly Benitez"],
+            ["Cinthya Reyes", "Anairt Triana", "Annett Michell Climaco", "Brianna Belen Contreras"],
+            ["Diego Borres", "Stefany Zaldivar"]]
+
+    def test_ride_members_is_the_leaders_row(self):
+        self.assertEqual(R.ride_members(self.GRID, ["Cinthya Reyes"]),
+                         ["Cinthya Reyes", "Anairt Triana", "Annett Michell Climaco", "Brianna Belen Contreras"])
+        self.assertEqual(R.ride_members(self.GRID, ["Nobody Here"]), [])
+
+    def test_dedupe_keeps_one_spelling_per_person(self):
+        self.assertEqual(R._dedupe_people(["Cinthya Reyes", "Anette Climaco", "Cinthya Reyes",
+                                           "Anairt Triana", "Annett Michell Climaco"]),
+                         ["Cinthya Reyes", "Anette Climaco", "Anairt Triana"])
+
+    def test_borrowed_wanted_adds_the_car_to_the_static_names(self):
+        class _WSG:
+            def get(self, rng): return CarRideBorrowing.GRID
+        class _Book:
+            def worksheet(self, name): return _WSG()
+        with mock.patch("automations.recruiting_report.fill.open_by_key", lambda key: _Book()), \
+             mock.patch.object(R.C, "BORROWED_ROWS", {"rafael": ["Cinthya Reyes", "Anette Climaco"]}), \
+             mock.patch.object(R.C, "BORROWED_RIDE_LEADERS", {"rafael": ["Cinthya Reyes"]}), \
+             mock.patch.object(R, "_log", lambda m: None):
+            self.assertEqual(R.borrowed_wanted(),
+                             {"rafael": ["Cinthya Reyes", "Anette Climaco", "Anairt Triana", "Brianna Belen Contreras"]})
+
+    def test_grid_failure_keeps_static_names(self):
+        def boom(key): raise RuntimeError("sheets down")
+        with mock.patch("automations.recruiting_report.fill.open_by_key", boom), \
+             mock.patch.object(R.C, "BORROWED_ROWS", {"rafael": ["Cinthya Reyes"]}), \
+             mock.patch.object(R.C, "BORROWED_RIDE_LEADERS", {"rafael": ["Cinthya Reyes"]}), \
+             mock.patch.object(R, "_log", lambda m: None):
+            self.assertEqual(R.borrowed_wanted(), {"rafael": ["Cinthya Reyes"]})

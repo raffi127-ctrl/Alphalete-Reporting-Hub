@@ -98,6 +98,13 @@ WEEK_MONDAY_THREAD = "NDS Metrics"
 # for her where everyone else is at" -- Annett joins the borrowed list, Nathaly
 # knocks on Carlos's own Ownerville again and comes off it.
 BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Anette Climaco"]}  # Raf's row reads "Anette Climaco GP"
+# Carlos 2026-11-14: "the people in Cynthia's car ride, those people are going
+# to be on Raf's ownerville today, and the rest of them you'll see on my
+# ownerville". So whoever rides with these leaders on the Stations car-ride
+# grid (NO_DISPO_RANGE, Territory Leader + Rep #1-#3) is ALSO looked for on
+# that owner's rows. Safe every day: a name already on our own rows is never
+# doubled, and a car member with no row on Raf's side is just a log line.
+BORROWED_RIDE_LEADERS = {"rafael": ["Cinthya Reyes"]}
 # Raf's rows are re-shared only when HIS board draws (~:04 and ~:34), so a
 # board drawn at :00/:30 carried numbers 26 minutes old (Carlos 2026-11-03
 # 2:30pm: "the numbers dont seem accurate"). Before pulling, a board tick

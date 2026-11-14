@@ -308,12 +308,69 @@ def wait_for_fresh_share(now: dt.datetime, *, shared_at, sleep=None,
         sleep(30)
 
 
+def ride_members(values: List[List[str]], leaders: List[str]) -> List[str]:
+    """Everyone in the car-ride rows led by `leaders` (leader first), from the
+    Stations grid as sheets hands it back (first column = Territory Leader)."""
+    from automations.total_knocks import guests as G
+    want = {G._norm(x) for x in leaders}
+    out: List[str] = []
+    for row in values or []:
+        if not row:
+            continue
+        lead = " ".join(str(row[0] or "").split())
+        if G._norm(lead) not in want:
+            continue
+        for cell in row:
+            name = " ".join(str(cell or "").split())
+            if name and name not in out:
+                out.append(name)
+    return out
+
+
+def _dedupe_people(names: List[str]) -> List[str]:
+    """One entry per person: a later name sharing the surname AND first
+    initial with an earlier one is the same rep spelled differently
+    ('Anette Climaco' / 'Annett Michell Climaco')."""
+    from automations.total_knocks import guests as G
+    out, seen = [], set()
+    for n in names:
+        toks = G._plain(n).split()
+        key = (toks[0][:1], toks[-1]) if toks else ("", n)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(n)
+    return out
+
+
+def borrowed_wanted() -> Dict[str, List[str]]:
+    """BORROWED_ROWS plus the car-ride members of BORROWED_RIDE_LEADERS, read
+    off the Stations grid. The grid being unreadable costs only the ride
+    members, never the static names."""
+    want = {k: list(v) for k, v in C.BORROWED_ROWS.items()}
+    leaders = getattr(C, "BORROWED_RIDE_LEADERS", {}) or {}
+    if leaders:
+        try:
+            from automations.recruiting_report import fill as _fill
+            ws = _fill.open_by_key(C.NO_DISPO_SHEET_ID).worksheet(C.NO_DISPO_TAB)
+            grid = ws.get(C.NO_DISPO_RANGE)
+        except Exception as e:  # noqa: BLE001
+            _log("borrowed: car-ride grid unavailable (%s) -- static names only" % type(e).__name__)
+            grid = []
+        for key, leads in leaders.items():
+            extra = ride_members(grid, leads)
+            if extra:
+                _log("borrowed: %s's car(s) today -> %s" % (", ".join(leads), ", ".join(extra)))
+            want[key] = _dedupe_people(want.get(key, []) + extra)
+    return want
+
+
 def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
     """Rows for C.BORROWED_ROWS off today's shared/relayed rows (_borrow_sources),
     matched like total_knocks.guests. A name already on `own` is left off, a
     name with no row today is logged. Never raises: the board matters more
     than the borrowed names."""
-    want = getattr(C, "BORROWED_ROWS", None) or {}
+    want = borrowed_wanted()
     if not want:
         return []
     from automations.total_knocks import guests as G
