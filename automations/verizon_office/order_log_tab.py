@@ -32,8 +32,10 @@ and its NDS Order Log carries them (Carlos 2026-10-29: "include the customers
 first and last name"). The Slack Order Log xlsx in the Verizon Metrics thread
 keeps them blank as before (thread_boards.nds_rows) -- that room is the reps'.
 
-SANDBOX FIRST (Eve's rule): writes go to the Sales Board SANDBOX copy until
-`--prod` is passed. The tab name is the same on both.
+SANDBOX FIRST (Eve's rule): a bare --write goes to the Sales Board SANDBOX
+copy; `--prod` is the Vantura Master. Carlos approved the sandbox preview on
+2026-11-14 (727 lines), so daily.py runs it with ORDER_LOG_PROD = True. The
+tab name is the same on both.
 
     python -m automations.verizon_office.order_log_tab --office nicolas            # dry run (fetch, plan, no write)
     python -m automations.verizon_office.order_log_tab --sv FILE.xlsx              # dry run off a local file
@@ -257,9 +259,12 @@ def lines(sv_path: Path) -> List[Dict[str, str]]:
 
     def ds(v) -> str:
         """A date cell as mm/dd/yyyy; a string the parser can't place is kept
-        as Credico wrote it (Ship / Delivery Date are text in the file)."""
+        as Credico wrote it (Ship / Delivery Date are text in the file), except
+        Credico's "N/A" (BYOD lines, nothing ships) which is a blank."""
         d = _d(v)
-        return _fmt(d) if d else s(v)
+        if d:
+            return _fmt(d)
+        return "" if s(v).upper() in ("N/A", "NA", "NONE", "NULL") else s(v)
 
     plan_of: Dict[str, str] = {}
     addons: Dict[Tuple[str, str], List[str]] = collections.defaultdict(list)

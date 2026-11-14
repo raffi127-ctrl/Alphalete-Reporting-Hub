@@ -76,6 +76,11 @@ class LinesTest(unittest.TestCase):
         self.assertEqual((a["Ship Date"], a["Delivered"], a["Approval Date"], a["Status Reason"]),
                          ("11/10/2026", "11/12/2026", "11/11/2026", "Customer request"))
 
+    def test_credico_na_ship_dates_are_blank(self):
+        # BYOD lines on the real file (11/14): Ship Date / Delivery Date = "N/A"
+        ls = T.lines(_file(["Ship Date", "Delivery Date"], ["N/A", "N/A"]))
+        self.assertEqual((ls[0]["Ship Date"], ls[0]["Delivered"]), ("", ""))
+
     def test_changed_file_is_refused(self):
         wb = openpyxl.Workbook()
         ws = wb.active

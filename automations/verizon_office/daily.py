@@ -33,9 +33,10 @@ from automations.verizon_office import board_image, offices as OF, parse, run as
 
 ROOT = Path(__file__).resolve().parents[2]
 LIVE_OFFICES: tuple = ("nicolas",)   # Nico on ECO 2026-11-07
-# The 'Verizon Order Log' tab (order_log_tab.py) writes to the Sales Board
-# SANDBOX copy until Carlos approves the preview; True = the Vantura Master.
-ORDER_LOG_PROD = False
+# The 'Verizon Order Log' tab (order_log_tab.py): True = the Vantura Master
+# (Carlos approved the sandbox preview 2026-11-14, 727 lines); False = the
+# Sales Board SANDBOX copy.
+ORDER_LOG_PROD = True
 
 
 def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
