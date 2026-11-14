@@ -197,6 +197,10 @@ TEXT_ROUTES = {
     # Daily plan text, 8:00 AM Mon-Sat (daily_plan_text). Carlos 2026-11-11:
     # "Send it as a text message in the A Players text chain."
     ("DAILY PLAN", "daily_plan"): [TEXT_GROUP_ALL],
+    # NDS Customer Churn rolloff shot, every morning right after the NDS
+    # Metrics thread posts it (nds_metrics.TEXT_SECTIONS). Carlos 2026-11-14:
+    # "B2B leaders text chain and the A-players text chain".
+    ("NDS METRICS", "nds_customer_churn"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send
