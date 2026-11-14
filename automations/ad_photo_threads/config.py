@@ -149,6 +149,11 @@ NO_AD_ANSWERS = {
     # Kash, Camila 11/11 (AppStream screenshot, 11/6 1:00 PM, Denva Wade):
     # "Aptel Flow - Monster" -- the source, Ad (Subject Line) is blank.
     "2026-11-06|mariam ade": "Aptel Flow - Monster",
+    # Colten, Eve 11/13: the sheet's "Amara" (11/9, Mafer D, no last name) is
+    # the one Amara in AppStream 14733 Total First Interviews, weeks of 11/1
+    # and 11/8: "Amara Simpson", ad "AT&T Management Associate, Pembroke
+    # Pines, FL".
+    "2026-11-09|amara": "AT&T Management Associate ? Pembroke Pines FL",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.

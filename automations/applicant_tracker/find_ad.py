@@ -164,7 +164,10 @@ def main(argv=None):
                 hi = {_norm(h): i for i, h in enumerate(t["head"])}
                 fi, li = hi.get("first name", 1), hi.get("last name", 2)
                 ai = hi.get("ad", len(t["head"]) - 2)
-                di = hi.get("date and time")
+                # AppStream heads it "1st Interview Date/Time" (Total First
+                # Interviews), not "Date and Time": exact lookup left every
+                # stamp blank, so --on never matched a row (Eve, 11/13).
+                di = next((i for h, i in hi.items() if "date" in h), None)
                 for r in t["rows"]:
                     if len(r) <= max(fi, li):
                         continue
