@@ -188,6 +188,27 @@ if up and st.button(f"Save {len(up)} photo(s)"):
     st.rerun()
 
 # ---- 5. preview ------------------------------------------------------------------
+st.header("4b · Social media branding")
+st.caption("Profile picture + covers sized for Facebook, LinkedIn, X and YouTube, from their logo and photos.")
+brand_dir = p.path("brand")
+if not (brand_dir / "logo-white.png").exists():
+    st.info("Pick or upload a logo first (step 2).")
+else:
+    from automations.online_presence import brand_kit as BK
+    if st.button("Make the social images"):
+        with st.spinner("Making profile picture + covers…"):
+            BK.for_office(p)
+        st.rerun()
+    kit = brand_dir / "social"
+    if kit.exists():
+        cols = st.columns(3)
+        for i, (fname, use) in enumerate(BK.USE.items()):
+            f = kit / fname
+            if f.exists():
+                with cols[i % 3]:
+                    st.image(str(f), caption=use, width="stretch")
+                    st.download_button(f"⬇ {fname}", f.read_bytes(), file_name=f"{p.key}-{fname}", key=f"kit{fname}")
+
 st.header("5 · Preview the site")
 project = f"{p.key}-site".replace("_", "-").lower()
 looks = list(SB.THEMES)
@@ -259,3 +280,31 @@ with st.sidebar:
     st.subheader(f"{p.business_name}")
     for line in L.status(p):
         st.write(line)
+
+# ---- 8. Google + Bing listings (the owner signs in; Lucy can't do these) -----------
+st.header("8 · Google + Bing listings")
+st.caption("Done live with the owner on their phone. Tick each one when it's done.")
+g1, g2 = st.columns(2)
+with g1:
+    st.markdown("**Google listing (Business Profile)**")
+    st.markdown(
+        "1. Owner opens **business.google.com** on their phone, signed in with their own Google account.\n"
+        "2. **Add your business** → type the company name exactly as on the site → pick the category "
+        "(e.g. *Marketing agency* or *Sales*).\n"
+        "3. Address: the office address. Phone + website: the new ones from this page.\n"
+        "4. **Verify**: Google usually asks for a short **video** of the office sign, the street and the "
+        "inside. Record it in one take. Approval takes a few days.\n"
+        "5. **Business Profile settings → People and access → Add → alphaletemarketing@gmail.com → Manager**. "
+        "That lets Lucy answer every review.")
+    st.checkbox("Google listing made + video sent", key="g_done")
+    st.checkbox("alphaletemarketing@gmail.com added as Manager", key="g_mgr")
+with g2:
+    st.markdown("**Bing listing (Bing Places)**")
+    st.markdown(
+        "1. Owner opens **bingplaces.com** → **Get started** → sign in with the same Google account.\n"
+        "2. Pick **Import from Google Business Profile** → tick this office → **Import**.\n"
+        "3. Bing copies the name, address, phone and website, and verifies it from the Google listing. "
+        "Nothing to type.\n"
+        "4. Only works once the Google listing is **verified**; if it isn't yet, come back to this step later.")
+    st.checkbox("Bing listing imported", key="b_done")
+

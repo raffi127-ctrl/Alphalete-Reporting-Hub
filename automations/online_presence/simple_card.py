@@ -288,6 +288,38 @@ def result_label(r: Dict) -> str:
     return (f"Your {name}" if r.get("kind") == "profile" else name) + what
 
 
+# Customer review sites BIS also watches (Megan 2026-11-14: "build everything
+# you can"). Notify only, never replied to. Read from Google: one site-search
+# each per week, the rating stars Google shows under the result.
+OTHER_SITES = (("yelp", "Yelp", "yelp.com/biz"), ("bbb", "BBB", "bbb.org/us"))
+
+
+def other_ratings(p) -> Dict:
+    from automations.brand_audit.collectors import serp
+    from automations.online_presence.consistency import city_of
+    name = p.business_name
+    words = [w for w in re.findall(r"[a-z0-9]+", name.lower()) if len(w) > 2]
+    out = {}
+    for key, nm, site in OTHER_SITES:
+        try:
+            data = serp._search(f'site:{site} "{name}" {city_of(p.address)}'.strip(), "")
+        except Exception:
+            continue
+        dom = site.split("/")[0]
+        for res in data.get("organic_results") or []:
+            title = (res.get("title") or "").lower()
+            where = f'{res.get("displayed_link") or ""} {res.get("link") or ""}'.lower()
+            if dom not in where:
+                continue                        # Google ignored site: -- not their Yelp/BBB page
+            if not all(w in title for w in words[:2]):
+                continue                        # someone else's page
+            rich = ((res.get("rich_snippet") or {}).get("top") or {}).get("detected_extensions") or {}
+            out[key] = {"rating": rich.get("rating"), "reviews": rich.get("reviews"),
+                        "link": res.get("link") or ""}
+            break
+    return out
+
+
 def _with_review_pages(p, ratings: Dict) -> Dict:
     """Each rating carries the link to that site's reviews page (Megan
     2026-11-11: "provide the link to their glassdoor and indeed review
@@ -327,7 +359,7 @@ def search_line(p) -> Dict:
     text = f"{green} of the top {len(top) or 5} on Google are yours" + (
         f" · a negative result is #{neg}" if neg_top else "")
     return {"color": color, "text": text, "own": own, "neg": neg, "top": top, "green": green,
-            "ratings": _with_review_pages(p, m.get("serp_ratings") or {}),
+            "ratings": {**_with_review_pages(p, m.get("serp_ratings") or {}), **other_ratings(p)},
             "live_links": [x["link"] for x in profiles] + [r.get("link") or "" for r in page1],
             "panel": profiles,
             "domains": sorted({r.get("domain") or "" for r in page1})}
@@ -1277,10 +1309,10 @@ def render(card: Dict, mode: str = "image") -> str:
         glink = f"https://search.google.com/local/reviews?placeid={pid.group(1)}" if pid else ""
         rows_html.append(rrow("Google", avg, g.get("count") or 0, glink,
                               f" · <b>{n_new}</b> new this week"))
-    for key, nm in (("indeed", "Indeed"), ("glassdoor", "Glassdoor")):
+    for key, nm in (("indeed", "Indeed"), ("glassdoor", "Glassdoor"), ("yelp", "Yelp"), ("bbb", "BBB")):
         x = (s.get("ratings") or {}).get(key) or {}
         if x.get("rating"):
-            rows_html.append(rrow(nm, x["rating"], x.get("reviews"), x.get("link")))
+            rows_html.append(rrow(nm, float(x["rating"]), x.get("reviews"), x.get("link")))
     k_rating = kpi("google", "Reviews", "",
                    f'<div class="others first">{"".join(rows_html)}</div>' if rows_html else "No ratings found this week")
     own, neg = s.get("own"), s.get("neg")

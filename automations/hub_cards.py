@@ -5170,6 +5170,76 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "recruiting-day-texts",
+        "name": "Recruiting Day Texts",
+        "creator": "Claude",
+        "emoji": "☀️",
+        "color": "#D97706",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Two texts to an ICD’s office iMessage group.\n\n"
+            "**Morning:** today’s 1st rounds and 2nd rounds by time slot, "
+            "plus new starts by name — a picture laid out like AppStream’s "
+            "Timeslot Count page.\n"
+            "**4pm:** only if they had new starts — “#/# showed, x% "
+            "retention” + a Showed / No show picture.\n"
+            "**Red \\*:** 1st or 2nd rounds under 75% of that weekday’s "
+            "average over the last 4 weeks → “You may want to reach "
+            "out to your recruiting team.”\n\n"
+            "Megan’s ask (2026-11-13). **37 ECO offices mapped**, one "
+            "iMessage group each. An office texts only once it is set to live "
+            "in `recruiting_day_texts/config.py`.\n\n"
+            "Each office runs on its OWN clock, Mon–Sat. The AppStream read "
+            "goes to the lighter of Lucy 1 / Lucy 3; the text always leaves "
+            "from Lucy 1."
+        ),
+        "breakdown": (
+            "WHERE THE NUMBERS COME FROM\n"
+            "**•** AppStream → the office → **Reports → Retention "
+            "Details** (p=701) → TODAY’s column → click into each cell:\n"
+            "  • `Total First Interviews` → 1st rounds (time = the "
+            "‘1st interview date/time’ column)\n"
+            "  • `Total Second Interviews` → 2nd rounds (‘2nd "
+            "interview date/time’)\n"
+            "  • `Total New Starts Scheduled` → new starts (names)\n"
+            "  • `New Starts Showed Up` → who showed (4pm text)\n"
+            "**•** Retention % = Showed Up ÷ Scheduled, same day.\n"
+            "**•** Checked 11/13 on Raf’s office against Calendar → "
+            "Timeslot Count: 76 1st rounds / 29 2nd rounds, every slot the same.\n\n"
+            "NEVER A BLANK TEXT\n"
+            "**•** Nothing on the calendar = no morning text. No new starts "
+            "= no 4pm text.\n"
+            "**•** A row missing from the report, or a detail page listing "
+            "fewer people than its cell, fails that office instead of texting a "
+            "half schedule."
+        ),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "recruiting_day_texts",
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Done — see the log for each office’s text.",
+            "message_failed": "❌ An office couldn’t be read. `lucy logtail recruiting_day_texts`.",
+        },
+        "actions": [
+            {
+                "label": "Preview morning text",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Reads today from AppStream, draws the picture, prints the text. Sends nothing.",
+                "module": "automations.recruiting_day_texts.run",
+                "args_fn": lambda: ["--mode", "morning"],
+            },
+            {
+                "label": "Preview 4pm text",
+                "icon": "\U0001F441",
+                "help": "Today's new starts: who showed and the retention %. Sends nothing.",
+                "module": "automations.recruiting_day_texts.run",
+                "args_fn": lambda: ["--mode", "showed"],
+            },
+        ],
+    },
+    {
         "id": "gap-alerts",
         "name": "Knocks & Dispositions (self-serve)",
         "creator": "Claude",
@@ -7881,6 +7951,39 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["--live"],
             },
         ],
+    },
+    {
+        "id": "lucyeco-launch-studio",
+        "name": "LucyECO Launch Studio",
+        "creator": "Megan",
+        "emoji": "🚀",
+        "color": "#8B5CF6",
+        "category": "📸 Social",
+        "description": "Launch a new office live on the install call: logo, social branding, recruiting website, domain, company email and listings, in one page.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Run it on the call with the owner, top to bottom:\n"
+            "**•** **Company** + basics (Alphalete org = shield logos).\n"
+            "**•** **Logo**: upload theirs (Lucy grades it: good / web only / redo) or make 6 options, "
+            "with a box for their ideas (\"red fire and a wolf\"). Every format: no background, white, "
+            "JPEG, print PDF, icon.\n"
+            "**•** **Social branding**: profile picture + Facebook, LinkedIn, X and YouTube covers.\n"
+            "**•** **Story, links, 10–15 photos** → **preview the site** (10 locked layouts, words editable).\n"
+            "**•** **Go live** on their domain (bought in the Alphalete Cloudflare account first), "
+            "then **company email** settings and the **Google + Bing listing** steps.\n\n"
+            "HOW TO OPEN IT\n"
+            "On Megan's Mac: `streamlit run automations/online_presence/launch_app.py` "
+            "(or the **launch-studio** preview). It needs the Cloudflare key, so it isn't a public page.\n\n"
+            "GOOD TO KNOW\n"
+            "**•** Nothing is bought and no accounts are made here: buying the domain and making the "
+            "Workspace inbox stay with a person.\n"
+            "**•** Every step can be redone."
+        ),
+        "assignees": ["Megan"],
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {"frequency": "on_demand", "estimated_minutes": 45},
+        "checklist": [],
     },
     {
         "id": "vantura-payroll",

@@ -168,3 +168,19 @@ class GoogleDescription(unittest.TestCase):
         ideas = sc.seo_ideas(self._lines({"now": "fine", "suggested": "fine", "needs_change": False,
                                           "what_changed": ""}), [])
         self.assertFalse(any(i["key"] == "description" for i in ideas))
+
+
+class OtherReviewSites(unittest.TestCase):
+    def test_only_a_real_yelp_or_bbb_page_counts(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        p = SimpleNamespace(business_name="Kash Marketing", address="1 Main St, Dallas, TX 75201")
+        fake = {"organic_results": [
+            {"title": "Kash Marketing Jobs", "link": "https://www.google.com/goto?x", "displayed_link": "https://www.ziprecruiter.com"},
+            {"title": "Kash Marketing - Dallas - Yelp", "link": "https://www.yelp.com/biz/kash-marketing-dallas",
+             "displayed_link": "https://www.yelp.com › biz",
+             "rich_snippet": {"top": {"detected_extensions": {"rating": 3.9, "reviews": 12}}}}]}
+        with mock.patch("automations.brand_audit.collectors.serp._search", return_value=fake):
+            got = sc.other_ratings(p)
+        self.assertEqual(got["yelp"]["rating"], 3.9)
+        self.assertIn("yelp.com/biz", got["yelp"]["link"])

@@ -59,6 +59,15 @@ def run_office(p, *, live: bool, now: dt.datetime | None = None) -> Dict:
     stem = f"weekly_card_{p.key}_{now:%Y%m%d}"
     files = sc.files(card, OUT / p.key, stem)
     out = {"office": p.key, "verdict": card["verdict"], "card": str(files["png"])}
+    alerts = new_review_alerts(p, card)
+    out["review_alerts"] = alerts
+    if live and alerts:
+        try:
+            from automations.brand_audit.social_inbox import _client as _lucy
+            from automations.online_presence.rooms import SOCIAL_ALERTS
+            _lucy().chat_postMessage(channel=SOCIAL_ALERTS, text="\n".join(alerts), unfurl_links=False)
+        except Exception:
+            pass
     if not live:
         out["action"] = "would_post"
         return out
@@ -84,6 +93,35 @@ def run_office(p, *, live: bool, now: dt.datetime | None = None) -> Dict:
     sc.record(p, card, now)
     out["action"] = "posted"
     return out
+
+
+def new_review_alerts(p, card: Dict) -> list:
+    """Yelp / BBB got a new review since last week -> one line each for the
+    alerts channel (notify only; Lucy never replies there)."""
+    import json
+    f = p.path("review_sites.json")
+    try:
+        before = json.loads(f.read_text())
+    except Exception:
+        before = None
+    now = {k: v for k, v in ((card.get("lines") or {}).get("search", {}).get("ratings") or {}).items()
+           if k in ("yelp", "bbb")}
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(now))
+    except Exception:
+        pass
+    if before is None:                       # first look: nothing to compare yet
+        return []
+    lines = []
+    for key, nm in (("yelp", "Yelp"), ("bbb", "BBB")):
+        a, b = before.get(key) or {}, now.get(key) or {}
+        if b.get("reviews") and (b["reviews"] or 0) > (a.get("reviews") or 0):
+            n = b["reviews"] - (a.get("reviews") or 0)
+            rating = f" · now {float(b['rating']):.1f}★" if b.get("rating") else ""
+            lines.append(f":mega: *{p.business_name}*: {n} new {nm} review{'s' if n != 1 else ''}{rating} "
+                         f"<{b.get('link')}|open {nm}> (notify only)")
+    return lines
 
 
 def _parent_ts(cl, channel: str, head: str) -> str:
