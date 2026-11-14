@@ -97,6 +97,14 @@ _LEAD = 2                       # columns in front of the feed's own row shape (
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
 # have dropped the column.
 CARRIED = ("Notes", "Being worked on", "Delivered Message Sent", "Shipping Status", "Shipping Notes")   # in HEADERS order
+# The typed columns' dropdown choices. "Not saveable" on Being worked on since
+# 2026-11-14, Carlos: "under the being worked on column/drop down lets add a
+# not saveable option" -- a customer nobody can win back, so the line stops
+# reading as open work. Nothing in the code reads this column's value.
+DROPDOWNS = {
+    "Being worked on": ("Yes", "No", "Not saveable"),
+    "Delivered Message Sent": ("Yes", "No"),
+}
 # the carried columns that sit AFTER Last Updated (line_row pads these; Shipping
 # Notes sits inside the feed's own span and is inserted where it belongs)
 _TRAILING = CARRIED             # all four sit after Last Updated now
@@ -521,10 +529,10 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     # the Notes showed red "invalid" corners -- Carlos: "Column R has a bunch of
     # red dots in the top-right corner").
     reqs.append({"setDataValidation": {"range": rng(0, 1000, 0, max(n_cols, 26))}})
-    for name in ("Being worked on", "Delivered Message Sent"):
+    for name, options in DROPDOWNS.items():
         c_w = _COL[name]
         reqs.append({"setDataValidation": {"range": rng(1, 1000, c_w, c_w + 1), "rule": {
-            "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Yes"}, {"userEnteredValue": "No"}]},
+            "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": o} for o in options]},
             "showCustomUi": True, "strict": False}}})
     # columns wide enough for full names (auto-fit, then a floor for the typed columns)
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",

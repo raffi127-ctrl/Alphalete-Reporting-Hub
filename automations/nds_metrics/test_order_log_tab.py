@@ -301,6 +301,11 @@ class ValidationTests(unittest.TestCase):
         self.assertGreaterEqual(dv[0]["range"]["endColumnIndex"], len(T.HEADERS))
         cols = {d["range"]["startColumnIndex"] for d in dv[1:]}
         self.assertEqual(cols, {T._COL["Being worked on"], T._COL["Delivered Message Sent"]})
+        # 11/14: Being worked on also offers "Not saveable"; Delivered Message Sent stays Yes / No
+        opts = {d["range"]["startColumnIndex"]: [v["userEnteredValue"] for v in d["rule"]["condition"]["values"]]
+                for d in dv[1:]}
+        self.assertEqual(opts[T._COL["Being worked on"]], ["Yes", "No", "Not saveable"])
+        self.assertEqual(opts[T._COL["Delivered Message Sent"]], ["Yes", "No"])
 
 
 class ActivationDateTests(unittest.TestCase):
