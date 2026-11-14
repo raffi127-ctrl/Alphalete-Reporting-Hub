@@ -29,10 +29,10 @@ class Cells(unittest.TestCase):
 
 
 class Counting(unittest.TestCase):
-    HDR = ["Rep", "sp.Order Date (copy)", "Ported From", "spe.TN Type", "Package", "sp.SPM Number"]
+    HDR = ["Rep", "sp.Order Date (copy)", "Ported From", "spe.TN Type", "Package", "sp.SPM Number", "DTR Status"]
 
-    def _row(self, rep, od, tn="port", spm="DSI1", ported="T-MOBILE", pkg="AT&T Extra 2.0"):
-        return [rep, od, ported if tn == "port" else "", tn, pkg, spm]
+    def _row(self, rep, od, tn="port", spm="DSI1", ported="T-MOBILE", pkg="AT&T Extra 2.0", st="Shipped"):
+        return [rep, od, ported if tn == "port" else "", tn, pkg, spm, st]
 
     def test_orders_lines_and_double_days(self):
         cols = R.Cols(self.HDR)
@@ -43,6 +43,7 @@ class Counting(unittest.TestCase):
                 self._row("Ana", "11/11/2026", tn="new", spm="DSI3"),   # new line only: not an order, not a port line
                 self._row("Ana", "11/8/2026", spm="DSI4"),           # Sunday 11/8 is in the tier week
                 self._row("Ana", "11/7/2026", spm="DSI0"),           # last tier week: out
+                self._row("Ana", "11/12/2026", spm="DSI1", st="Canceled"),   # cancelled port line: order counts, line does not
                 self._row("Ben", "11/12/2026", tn="upgrade", spm="DSI5")]  # upgrade-only: no order
         ix = {h: i for i, h in enumerate(self.HDR)}
         with mock.patch.object(R, "sow_rates", lambda: {"rep_tier": {"bands": BANDS, "double_days": ["2026-11-10"]}}), \

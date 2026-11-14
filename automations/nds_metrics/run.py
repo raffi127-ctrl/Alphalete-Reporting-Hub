@@ -1671,6 +1671,7 @@ def revenue_tier_columns(cols, lines, monday: dt.date, i_od, i_rep, i_port, i_tn
     except Exception as e:  # noqa: BLE001
         dbl = set(seed)
         log(f"[nds] revenue tiers: double-tier days off the seed only ({type(e).__name__})")
+    i_st = cols.find("dtr status", "spe.status")
     orders: Dict[str, dict] = {}        # rep -> {spm: order date}
     plines: Dict[str, int] = {}
     for r in lines:
@@ -1683,6 +1684,9 @@ def revenue_tier_columns(cols, lines, monday: dt.date, i_od, i_rep, i_port, i_tn
             continue
         spm = (_c(cols, r, i_spm) if i_spm is not None else "") or f"{rep}|{od}|{id(r)}"
         orders.setdefault(rep, {}).setdefault(spm, od)
+        st = _c(cols, r, i_st).lower() if i_st is not None else ""
+        if "cancel" in st or st == "disconnected":
+            continue                    # never activates -> never earns the bonus (Tableau's "eligible" count)
         plines[rep] = plines.get(rep, 0) + 1
     bands = tier_bands()
     headers = ['ORDERS<br><span class="dd">(port lines)</span>'] + [
