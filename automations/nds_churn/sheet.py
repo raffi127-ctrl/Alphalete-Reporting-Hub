@@ -517,6 +517,66 @@ def write_box_rates(ws, rates: dict, log=print) -> None:
                     for key, label, kind in BOX_ROWS if kind == "act"))
 
 
+def _a1_span_to_range(a1: str, sheet_id: int) -> dict:
+    """'P15:Q34' -> a GridRange (two-letter columns welcome)."""
+    m = re.match(r"([A-Z]{1,2})(\d+):([A-Z]{1,2})(\d+)$", a1.replace("$", ""))
+    if not m:
+        raise ValueError(f"not an A1 span: {a1!r}")
+    c0, r0, c1, r1 = m.groups()
+    return {"sheetId": sheet_id, "startRowIndex": int(r0) - 1, "endRowIndex": int(r1),
+            "startColumnIndex": VF._col_idx(c0), "endColumnIndex": VF._col_idx(c1) + 1}
+
+
+_SOLID = {"style": "SOLID", "width": 1, "color": {"red": 0, "green": 0, "blue": 0}}
+_NO_BORDER = {"style": "NONE"}
+
+
+def border_requests(sheet_id: int, n_rows: int, cap: int, rep_a1: Optional[str]) -> list:
+    """Thin black borders on the rolloff list -- header row 15 plus the
+    `n_rows` spilled rows, A:N -- and on the per-rep list (`rep_a1`, header
+    included); the rows the FILTER can still spill into below the list are
+    cleared so a longer earlier list leaves no empty grid. Pure, for tests."""
+    def rng(r0, r1, c0, c1):
+        return {"sheetId": sheet_id, "startRowIndex": r0, "endRowIndex": r1,
+                "startColumnIndex": c0, "endColumnIndex": c1}
+
+    def box(r, style):
+        return {"updateBorders": {"range": r, "top": style, "bottom": style, "left": style,
+                                  "right": style, "innerHorizontal": style, "innerVertical": style}}
+    hdr0 = LIST_FIRST_ROW - 2                       # row 15, 0-based
+    last = LIST_FIRST_ROW - 1 + max(0, n_rows)      # exclusive end after the spilled rows
+    reqs = [box(rng(hdr0, last, 0, len(LIST_HEADERS)), _SOLID)]
+    if last < cap:
+        reqs.append(box(rng(last, cap, 0, len(LIST_HEADERS)), _NO_BORDER))
+    if rep_a1:
+        reqs.append(box(_a1_span_to_range(rep_a1, sheet_id), _SOLID))
+    return reqs
+
+
+def ensure_borders(ws, log=print) -> None:
+    """Every run, last: borders on the rolloff list and the per-rep list.
+    The thread's picture is a PDF export with gridlines off, so without cell
+    borders both lists print as floating text (Carlos 2026-11-14: "customer
+    churn is missing the bordering lines")."""
+    b = VF.helper_bounds(ws)
+    cap = b["cap"]
+    col_a = _retry(lambda: ws.get(f"A{LIST_FIRST_ROW}:A{cap}"))
+    n = 0
+    for i, row in enumerate(col_a or [], start=1):
+        if row and str(row[0]).strip():
+            n = i
+    rep_a1 = None
+    try:
+        from automations.vantura_churn import shot as VS
+        rep_a1 = VS._rep_range(ws)
+    except Exception as e:  # noqa: BLE001 -- the list still gets its borders
+        log(f"  ⚠ rep list range not found for borders: {e}")
+    reqs = border_requests(ws.id, n, cap, rep_a1)
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
+    log(f"  ✓ {ws.title}: borders on the rolloff list (A15:N{LIST_FIRST_ROW - 1 + n})"
+        + (f" and the rep list ({rep_a1})" if rep_a1 else ""))
+
+
 def _a1_to_range(a1: str, sheet_id: int) -> dict:
     col = ord(a1[0]) - 65
     row = int(a1[1:]) - 1

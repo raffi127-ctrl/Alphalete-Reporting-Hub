@@ -326,6 +326,10 @@ def main(argv=None) -> int:
     S.write_tier_tables(ws, ts, log=log)
     S.write_status(ws, status + "  " + S.BOX_NOTE, log=log)
     S.write_product_box(ws, box, log=log)
+    try:                                  # lists bordered for the gridline-less shot
+        S.ensure_borders(ws, log=log)
+    except Exception as e:  # noqa: BLE001 -- a border never blocks the numbers
+        log(f"  ⚠ borders skipped: {e}")
     if a.dm:
         from automations.shared import slack_metrics_post as smp
         from automations.vantura_churn import shot
