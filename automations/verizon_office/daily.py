@@ -33,6 +33,9 @@ from automations.verizon_office import board_image, offices as OF, parse, run as
 
 ROOT = Path(__file__).resolve().parents[2]
 LIVE_OFFICES: tuple = ("nicolas",)   # Nico on ECO 2026-11-07
+# The 'Verizon Order Log' tab (order_log_tab.py) writes to the Sales Board
+# SANDBOX copy until Carlos approves the preview; True = the Vantura Master.
+ORDER_LOG_PROD = False
 
 
 def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
@@ -135,6 +138,16 @@ def main(argv=None) -> int:
             OV.fill(Path(sv), compliance=cf)
         except Exception as e:  # noqa: BLE001
             print("⚠ OPT tab fill failed (the thread posted fine): %s" % e)
+        # THE VERIZON ORDER LOG TAB rides the same pull too (Carlos 2026-11-13:
+        # "make an order log like the one we had for the NDS"): every wireless
+        # line of Credico's Order Detail merged into the 'Verizon Order Log' tab
+        # (verizon_office.order_log_tab). SANDBOX copy until Carlos says "use the
+        # real sheet" -- then ORDER_LOG_PROD = True. Its failure never undoes the post.
+        try:
+            from automations.verizon_office import order_log_tab as OL
+            OL.refresh(Path(sv), today=today, prod=ORDER_LOG_PROD)
+        except Exception as e:  # noqa: BLE001
+            print("⚠ Verizon Order Log tab failed (the thread posted fine): %s" % e)
     return 0
 
 

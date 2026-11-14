@@ -17833,6 +17833,33 @@
    },
    "timeout_minutes": 15
   },
+  "verizon_order_log_tab": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Verizon Order Log tab for Nico's office (Carlos 2026-11-13: 'make an order log like the one we had for the NDS'). on_scheduler:false = NOT in the 4am batch: it RIDES verizon_daily_nicolas (verizon_office.daily refreshes the tab right after the thread posts, same Credico pull). Present so `lucy rerun verizon_order_log_tab -- --write` refreshes it by hand and `-- --probe --push` lands Order Detail's header + fill counts (no values) on the control sheet tab 'VZ Order Detail Header'. SANDBOX copy (Sales Board -- SANDBOX 2) until Carlos approves, then daily.ORDER_LOG_PROD = True / `--prod`. Lucy 4: it has the Hub inbox login.",
+   "machine": "Lucy 4",
+   "display_name": "Verizon Order Log tab (Credico, rides the daily run)",
+   "source_type": "email",
+   "data_sources": [
+    "Credico Sales Verification (Hub inbox)"
+   ],
+   "command": [
+    "automations.verizon_office.order_log_tab"
+   ],
+   "base_args": [
+    "--office",
+    "nicolas"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 10
+  },
   "verizon_review_post": {
    "on_scheduler": false,
    "_off_scheduler_note": "HAND-RUN ONLY. Posts Nico's Verizon report EXAMPLES (resources/verizon_review/, built on Megan's laptop with `python -m automations.verizon_office.review --build`) to the review group DM C0CFN3SBFCM (Alphalete GP, Carlos, Evelyn, Lucy, Lucy Reporting, Megan, Nico): an intro explaining the reactions, then one post per report. A checkmark from Carlos or Nico = approved; an X = reply in the thread with what to change (Megan 2026-11-07). Lucy 4 so the posts come from Lucy, and pinned there because output/verizon_review_posted.json (what already went out) lives on that box: a retry posts only what is missing. Default (no --send) prints only.",
