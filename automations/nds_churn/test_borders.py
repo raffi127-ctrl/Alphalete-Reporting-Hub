@@ -33,3 +33,23 @@ class Borders(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActivationListTotal(unittest.TestCase):
+    """2026-11-14: the office 0-30 activation rate tops the per-rep list."""
+
+    def test_rows_and_bands(self):
+        from automations.vantura_churn import fill as VF
+        office = {"0-30": {"activated": 50, "sold": 100, "rate": 0.5}, "31-60": {"activated": 0, "sold": 0, "rate": None}}
+        reps = {"Ana": {"0-30": {"activated": 9, "sold": 10, "rate": 0.9}, "31-60": {"rate": None}},
+                "Ben": {"0-30": {"activated": 1, "sold": 4, "rate": 0.25}, "31-60": {"rate": None}},
+                "Cy": {"0-30": {"activated": 0, "sold": 0, "rate": None}, "31-60": {"rate": None}}}
+        rows, ranked, bands = VF.activation_list_rows(office, reps, "OFFICE TOTAL (all reps)")
+        self.assertEqual(rows, [["Rep Name", "0-30 Day Activation Rate"], ["OFFICE TOTAL (all reps)", 0.5],
+                                ["Ana", 0.9], ["Ben", 0.25]])
+        self.assertEqual(bands, [0.5, 0.9, 0.25])
+        self.assertEqual([r for r, _v in ranked], ["Ana", "Ben"])          # Cy: no 0-30 sales, dropped
+        rows2, _r, bands2 = VF.activation_list_rows(office, reps)         # B2B: no total row
+        self.assertEqual(rows2[1][0], "Ana")
+        self.assertEqual(bands2, [0.9, 0.25])
+

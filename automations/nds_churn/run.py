@@ -318,7 +318,8 @@ def main(argv=None) -> int:
         log(f"  ⚠ recent-disconnect highlight skipped: {e}")
     for b in [b for b in C.BUCKETS if office[b]["rate"] is None]:
         office[b]["rate"] = 0.0               # the writer logs rate:.1%
-    VF.update_activation_rates(ws, office, reps, log=log)   # E5/F5 + the per-rep list
+    VF.update_activation_rates(ws, office, reps, log=log,          # E5/F5 + the per-rep list
+                               total_label="OFFICE TOTAL (all reps)")   # Carlos 11/14
     # E5:F12 per box row (All Orders / All Wireless / BYODs / Air / Internet);
     # a bucket with no sales stays blank, not 0.0% (NDS started 10/19, so
     # 31-60 has nothing to rate until mid-November).

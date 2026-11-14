@@ -538,13 +538,36 @@ def hide_helper_columns(ws: gspread.Worksheet, log=print) -> bool:
     return True
 
 
+def activation_list_rows(office: dict, reps: dict, total_label: str = ""):
+    """The per-rep list as sheet rows: header, an optional office-total row
+    (Carlos 2026-11-14, NDS CHURN: "this should be a total activation rate
+    for the office on here"), then the reps greatest -> least, 0-30 day only,
+    reps with no 0-30 sales dropped (undefined, not 0%). Returns (rows,
+    ranked, band_rates) where band_rates[i] is the rate behind data row i."""
+    def _pct(d):
+        return "" if d["rate"] is None else round(d["rate"], 4)
+    ranked = sorted(
+        ((rep, v) for rep, v in reps.items() if v["0-30"]["rate"] is not None),
+        key=lambda kv: (-kv[1]["0-30"]["rate"], kv[0]))
+    rows = [["Rep Name", "0-30 Day Activation Rate"]]
+    band_rates = []
+    if total_label:
+        rows.append([total_label, _pct(office["0-30"])])
+        band_rates.append(office["0-30"]["rate"])
+    for rep, v in ranked:
+        rows.append([rep, _pct(v["0-30"])])
+        band_rates.append(v["0-30"]["rate"])
+    return rows, ranked, band_rates
+
+
 def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
-                            log=print) -> None:
+                            log=print, total_label: str = "") -> None:
     """Write the two office activation rates + the per-rep list.
 
     The office rates are OFFICE-WIDE, not per product, so they go in E5/F5
     only — repeating them down the Wireless/Air/Internet rows would read as
-    a per-product breakdown the source doesn't support.
+    a per-product breakdown the source doesn't support. `total_label` puts
+    the office 0-30 rate at the top of the per-rep list as well (NDS CHURN).
     """
     def _pct(d):
         return "" if d["rate"] is None else round(d["rate"], 4)
@@ -560,12 +583,7 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
     # actually have 0-30 data (Megan 2026-07-20). A rep with no 0-30 sales
     # has an undefined rate, not 0%, so they're dropped from the list rather
     # than shown blank. [[feedback_one_gig_blank_is_na]]
-    ranked = sorted(
-        ((rep, v) for rep, v in reps.items() if v["0-30"]["rate"] is not None),
-        key=lambda kv: (-kv[1]["0-30"]["rate"], kv[0]))
-    rows = [["Rep Name", "0-30 Day Activation Rate"]]
-    for rep, v in ranked:
-        rows.append([rep, _pct(v["0-30"])])
+    rows, ranked, band_rates = activation_list_rows(office, reps, total_label)
     rep_c0 = rep_list_col(ws)
     rep_first = _colletter(rep_c0)
     r0 = rep_list_row(ws)            # 1-based header row
@@ -621,10 +639,16 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
             "horizontalAlignment": "CENTER"}},
         "fields": "userEnteredFormat.numberFormat,"
                   "userEnteredFormat.horizontalAlignment"}})
-    for i, (_rep, v) in enumerate(ranked):
-        c = band_for(v["0-30"]["rate"], "0-30")
+    for i, rate in enumerate(band_rates):          # the total row (if any) first
+        c = band_for(rate, "0-30")
         if c:
             fmt_reqs.append(_bg(r0 + i, rep_c0 + 1, c))
+    if total_label:                                 # bold office-total row
+        fmt_reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": r0 + 1,
+                      "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 2},
+            "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+            "fields": "userEnteredFormat.textFormat.bold"}})
     # Rate column fixed width; name column auto-fits (names run past 30 chars).
     fmt_reqs.append({"updateDimensionProperties": {
         "range": {"sheetId": ws.id, "dimension": "COLUMNS",
