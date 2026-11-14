@@ -288,3 +288,48 @@ class StaleDeltaZeros(unittest.TestCase):
         g, at = self._settled(0)
         ups, _ = _plan(g, _days({"New Person": {"Monday": 5}}))
         self.assertNotIn(f"G{at['drow']}", {u["range"] for u in ups})
+
+
+class PlaceholderDeltaZeros(unittest.TestCase):
+    """Country WE 11.8 (email held 2026-11-14): att_owners_list added three
+    owners after the roll with 0 in every delta 'Last week' cell and LAST
+    WEEK'S TOTALS / leaderboard blank. The next fill grew the WE stack by their
+    52 but left the delta at 0 -> 'Last week' 6467 vs 'Sales (Last Week)' 6506.
+    Whatever goes into the stack must go into the delta row too."""
+
+    def _added_midweek(self):
+        g, at = _block(REPS)
+        g[at["drow"] - 1][6] = "0"                            # delta Mon
+        g[at["drow"] - 1][9] = "0"                            # delta Tue
+        return g, at
+
+    def test_placeholder_zeros_carry_the_same_days_as_the_stack(self):
+        g, at = self._added_midweek()
+        ups, _ = _plan(g, _days({"New Person": {"Monday": 5, "Tuesday": 3}}))
+        got = {u["range"]: u["values"][0][0] for u in ups}
+        self.assertEqual(got[f"C{at['stack']}"], 15)            # stack Mon +5
+        self.assertEqual(got[f"D{at['stack']}"], 13)            # stack Tue +3
+        self.assertEqual(got[f"G{at['drow']}"], 5)              # delta Mon
+        self.assertEqual(got[f"J{at['drow']}"], 3)              # delta Tue
+
+    def test_a_frozen_zero_week_of_someone_not_new_is_untouched(self):
+        g, at = _block(REPS + [("Zed Z", 0)])
+        zed = at["drow"] - 1                  # Zed's delta row: a real 0 week
+        g[zed - 1][6] = "0"
+        g[zed - 1][9] = "0"
+        ups, _ = _plan(g, _days({"New Person": {"Monday": 5}}))
+        rng = {u["range"] for u in ups}
+        self.assertNotIn(f"G{zed}", rng)
+        self.assertNotIn(f"J{zed}", rng)
+        self.assertIn(f"G{at['drow']}", rng)  # the newcomer's blank still is
+
+    def test_finder_ignores_a_row_with_a_real_number(self):
+        g, at = self._added_midweek()
+        g[at["drow"] - 1][9] = "2"
+        self.assertEqual(N.delta_placeholder_zeros(g, g, {"New Person"}), [])
+        g[at["drow"] - 1][9] = "0"
+        self.assertEqual(len(N.delta_placeholder_zeros(g, g, {"new person"})), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

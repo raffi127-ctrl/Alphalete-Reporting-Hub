@@ -287,6 +287,41 @@ def delta_zero_mismatch(grid, fgrid, leaderboard: Optional[dict],
     return out, want
 
 
+def delta_placeholder_zeros(grid, fgrid, names) -> List[Blank]:
+    """Per-day 'Last week' delta cells of `names` whose row holds nothing but
+    blanks and literal 0s -- the placeholder att_owners_list.board writes when
+    it adds an owner mid-week.
+
+    HOW IT HAPPENS (Country, WE 11.8, email held 2026-11-14). Deko Kofa, Isaiah
+    Kellum and Shealey Miller were added after the roll with 0 in every delta
+    'Last week' cell but LAST WEEK'S TOTALS / leaderboard blank. The next fill
+    sourced their week (6, 14, 32), wrote LAST WEEK'S TOTALS and the leaderboard
+    and grew the WE stack by 52 -- but left the delta at 0 (0 is not blank, and
+    delta_zero_mismatch only fires once the leaderboard ALREADY holds the
+    number). The box read 6467 vs 'Sales (Last Week)' 6506 and the email was
+    held. Only asked for people whose LAST WEEK'S TOTALS this run fills, so a
+    real frozen 0 week is never touched."""
+    want = {n.strip().lower() for n in names}
+    out: List[Blank] = []
+    if not want:
+        return out
+    from automations.org_sales_board import rollover as ro
+    for t in ro.find_delta_tables(grid):
+        days = {c: _cell(grid, t["header_row"] - 1, c).capitalize()
+                for c in t["this_cols"]}
+        days = {c: d for c, d in days.items() if d in WEEKDAYS}
+        for r in t["data_rows"]:
+            name = _cell(grid, r, 2)
+            if not name or name.strip().lower() not in want:
+                continue
+            cells = [(c + 1, d) for c, d in days.items()]
+            if all(not _is_formula(fgrid, r, c)
+                   and (_cell(grid, r, c) == "" or _num(_cell(grid, r, c)) == 0)
+                   for c, _d in cells):
+                out += [Blank(r, c, name, d) for c, d in cells]
+    return out
+
+
 def stack_row(grid, totals_row: int, today: dt.date) -> Optional[int]:
     """The 'WE m.d' row for last week, at the top of the stack under a daily
     Totals row (All Campaigns / Country). None when it is not there or is not
@@ -574,6 +609,14 @@ def plan_block(grid, fgrid, *, section: str, leaderboard: Optional[dict],
         days_of = lambda n: (_no_sales(), "")
 
     stack = stack_row(grid, anchor.totals_row, today) if anchor else None
+    # Whoever's LAST WEEK'S TOTALS this run fills also grows the WE stack, so
+    # their delta row must carry the SAME days -- including a row of 0
+    # placeholders, which delta_blanks can't see. Otherwise the delta box and
+    # 'Sales (Last Week)' disagree by exactly these people.
+    seen = {(b.row, b.col) for b in dcells + zcells}
+    pcells = [b for b in delta_placeholder_zeros(
+                  grid, fgrid, {b.name for b in dblank})
+              if (b.row, b.col) not in seen]
     adds: Dict[Tuple[int, int], float] = defaultdict(float)
     for name in names:
         days, why = days_of(name)
@@ -600,7 +643,7 @@ def plan_block(grid, fgrid, *, section: str, leaderboard: Optional[dict],
             updates.append({"range": f"{_a1(b.col)}{b.row}", "values": [[tot]]})
             if tot and leaderboard.get("totals_row"):
                 adds[(leaderboard["totals_row"], b.col)] += tot
-        for b in (b for b in dcells if b.name == name):
+        for b in (b for b in dcells + pcells if b.name == name):
             updates.append({"range": f"{_a1(b.col)}{b.row}",
                             "values": [[days.get(b.day, 0)]]})
         zmine = [b for b in zcells if b.name == name]
@@ -619,7 +662,7 @@ def plan_block(grid, fgrid, *, section: str, leaderboard: Optional[dict],
                              f"{_fmt(tot)} -- left as is")
         where = [w for w, got in (("LAST WEEK", mine),
                                   ("leaderboard", [b for b in lblank if b.name == name]),
-                                  ("delta", [b for b in dcells + zmine
+                                  ("delta", [b for b in dcells + pcells + zmine
                                              if b.name == name])) if got]
         notes.append(f"{board} / {name}: last week = {tot} "
                      f"({' '.join(f'{d[:3]} {days[d]}' for d in WEEKDAYS)}) -> "
