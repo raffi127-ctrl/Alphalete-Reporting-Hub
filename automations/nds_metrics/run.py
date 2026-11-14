@@ -2277,6 +2277,9 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="re-post sections already in today's thread state "
                          "(replace a bad one); pair with --only")
+    ap.add_argument("--rep-shot", default=None, metavar="NAME",
+                    help="build ONE rep's order-log screenshot (name substring; "
+                         "'all' = every rep) and DM it to --dm; nothing posted")
     ap.add_argument("--tab", action="store_true",
                     help="refresh the 'NDS Order Log' tab on the Vantura board from "
                          "today's wireless feed; alone = ONLY that, no pull, no post")
@@ -2304,6 +2307,24 @@ def main(argv=None) -> int:
             print(f"[nds] --repull: dropped {f.name}")
     path = pull(today)
     cols, crew = load_crew(path)
+    if a.rep_shot:
+        # Carlos 2026-11-14: the order log as a per-rep screenshot, not a
+        # file. Preview path: build the named rep(s), DM them, stop.
+        from automations.nds_metrics import rep_order_log as ROL
+        reps = None if a.rep_shot.strip().lower() == "all" else [a.rep_shot]
+        shots = ROL.build(cols, crew, today, OUT_DIR, reps=reps)
+        if not shots:
+            print(f"[nds] rep order log: no rep matches {a.rep_shot!r}")
+            return 1
+        if a.dm:
+            from automations.shared import slack_metrics_post as smp
+            for rep, png in shots.items():
+                smp.dm_user_with_file(Path(png), user=a.dm, file_name=Path(png).name,
+                                      comment=f"\U0001F4CB *Order Log — {rep}* — preview of the "
+                                              "per-rep screenshot (not sent to anyone else).")
+                print(f"[nds] DM'd rep order log for {rep}")
+        print("=== done ===", flush=True)
+        return 0
     only = set(a.only.split(",")) if a.only else None
     artifacts = {}
     for sid, _e, _t, fn in SECTIONS:
