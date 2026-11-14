@@ -69,6 +69,11 @@ SOURCES: Dict[str, str] = {
     "activation_by_rep": "Tableau",
     "activation_by_week": "Sara",
     "activation_by_week_tableau": "Tableau",
+    # Carlos 2026-11-14 (screenshot of the churn boards: "These two should
+    # have the source listed"): both compute off the 60-day Tableau D2D
+    # order log — churn needs the lookback SaraPlus lacks.
+    "churn_rates": "Tableau",
+    "churn_by_rep": "Tableau",
 }
 
 
