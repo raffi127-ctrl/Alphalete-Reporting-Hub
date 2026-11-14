@@ -413,7 +413,7 @@ _TIER_CHIP = {"T0": ("#eef1f4", "#5b6770"), "T1": ("#e8f0fb", "#1d4f91"),
 
 def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
            board_name: str = "Vantura B2B Revenue",
-           tiered: bool = True) -> Path:
+           tiered: bool = True, extra=None, note: str = "") -> Path:
     """Styled board (Carlos 2026-09-08: 'i want the revenue board to be easier
     to see', with his Daily Sales Board mock as the example): dark header,
     stat cards, tier chips, Mon-Sun day cells, office day totals in the
@@ -421,7 +421,7 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     — a plain board beats no board at 5:20am."""
     try:
         return _render_html(rows, office, monday, upto, dest, board_name,
-                            tiered)
+                            tiered, extra=extra, note=note)
     except Exception as e:  # noqa: BLE001
         print(f"  styled render failed ({type(e).__name__}: "
               f"{str(e).splitlines()[0][:90]}) — falling back to the plain "
@@ -431,7 +431,14 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
 
 
 def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
-                 board_name: str, tiered: bool = True) -> Path:
+                 board_name: str, tiered: bool = True, extra=None,
+                 note: str = "") -> Path:
+    """`extra` (NDS, Carlos 2026-11-14): right-side columns after the day
+    cells -- {"headers": [html, ...]} with each row carrying row["extra"] =
+    [{"text", "cls"}, ...] in the same order; the page widens to fit.
+    `note`: a line under the footer label."""
+    extra_hdrs = list((extra or {}).get("headers") or [])
+    n_extra = len(extra_hdrs)
     kick = ("BOX LEADERS" if "box" in board_name.lower()
             else "VERIZON LEADERS" if "verizon" in board_name.lower()
             else "AT&T B2B LEADERS")
@@ -464,13 +471,16 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         chip = (f'<td><span class="chip" style="background:{chip_bg};'
                 f'color:{chip_fg}">{row["tier"]}</span></td>' if tiered
                 else "")
+        xcells = "".join(
+            f'<td class="xt"><span class="{c.get("cls", "")}">{c.get("text", "")}</span></td>'
+            for c in (row.get("extra") or [{}] * n_extra)[:n_extra]) if n_extra else ""
         trs.append(
             f'<tr><td class="rk">{i}</td>'
             f'<td class="rep">{row["rep"].upper()}</td>'
             f'<td class="tot">{money(row["total"])}</td>'
             + chip + "".join(days)
             + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if tiered else "")
-            + '</tr>')
+            + xcells + '</tr>')
 
     # Office totals close the table (Carlos 2026-09-08: "the total at the
     # bottom of the monday list") — each day column sums at its foot.
@@ -482,7 +492,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         '<td class="rep">OFFICE TOTAL</td>'
         f'<td class="tot">{money(week_total)}</td>'
         + ('<td></td>' if tiered else '')
-        + tot_days + ('<td class="nxt"></td>' if tiered else '') + '</tr>')
+        + tot_days + ('<td class="nxt"></td>' if tiered else '')
+        + ('<td class="xt"></td>' * n_extra) + '</tr>')
 
     day_ths = "".join(
         f'<th class="dh{" cur" if d == upto else ""}">{c}<br>'
@@ -494,10 +505,16 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
                  if tiered else "")
     tier_th = '<th style="text-align:left">TIER</th>' if tiered else ""
     next_th = "<th>NEXT TIER</th>" if tiered else ""
+    extra_th = "".join(f'<th class="xh">{h}</th>' for h in extra_hdrs)
+    wrap_w = 1240 + 112 * n_extra            # the page grows a column at a time
+    tbl_w = wrap_w - 80
+    foot_w = wrap_w - 120
+    note_html = (f'<div style="color:#cfd6dc;font-size:12px;margin-top:6px">{note}</div>'
+                 if note else "")
 
     html = f"""<html><head><meta charset="utf-8"><style>
  body{{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f6f8}}
- .wrap{{width:1240px}}
+ .wrap{{width:{wrap_w}px}}
  .hdr{{background:#12181d;color:#fff;padding:30px 40px}}
  .kick{{color:#f0b429;font-weight:700;letter-spacing:.08em;font-size:14px}}
  .hrow{{display:flex;justify-content:space-between;align-items:baseline}}
@@ -510,7 +527,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .card:nth-child(3){{border-left-color:#f0b429}}
  .clab{{color:#5b6770;font-size:13px;letter-spacing:.06em;font-weight:600}}
  .cval{{font-size:36px;font-weight:800;margin-top:2px}}
- table{{border-collapse:collapse;width:1160px;margin:18px 40px;background:#fff;
+ table{{border-collapse:collapse;width:{tbl_w}px;margin:18px 40px;background:#fff;
         border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
  th{{background:#eef1f4;color:#3c4650;text-align:right;font-size:12px;
      letter-spacing:.04em;padding:9px 10px}}
@@ -531,7 +548,16 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .nxt.max{{color:#1e7d32;font-weight:700}}
  .foot{{display:flex;justify-content:space-between;background:#12181d;
         color:#fff;margin:4px 40px 30px;padding:14px 20px;border-radius:6px;
-        width:1120px}}
+        width:{foot_w}px}}
+ th.xh{{text-align:center;background:#e8eef5;border-left:1px solid #d9e1ea}}
+ .xt{{text-align:center;font-size:12px;white-space:nowrap;border-left:1px solid #eef1f4}}
+ .xt span{{display:inline-block;padding:3px 8px;border-radius:6px}}
+ .xt .now{{background:#e3f4e8;color:#1e7d32;font-weight:700}}
+ .xt .ok{{color:#1e7d32;font-weight:700}}
+ .xt .one{{background:#fff3c4;color:#7a5d00;font-weight:700}}
+ .xt .far{{color:#5b6770}}
+ .xt .ct{{color:#12181d;font-weight:700}}
+ .totrow .xt{{border-left:none}}
  .foot .lab{{color:#f0b429;font-weight:700;margin-right:8px}}
  .mx{{margin-left:12px;color:#cfd6dc;font-size:13px}} .mx b{{color:#fff}}
 </style></head><body><div class="wrap">
@@ -547,9 +573,9 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  {next_card}
  </div>
  <table><tr><th class="lh">#</th><th class="lh">REP</th><th>WEEK TOTAL</th>
- {tier_th}{day_ths}{next_th}</tr>
+ {tier_th}{day_ths}{next_th}{extra_th}</tr>
  {''.join(trs)}</table>
- <div class="foot"><div><span class="lab">{kick}</span></div>
+ <div class="foot"><div><span class="lab">{kick}</span>{note_html}</div>
  <div style="color:#cfd6dc;font-size:13px">{len(rows)} reps on the board</div>
  </div></div></body></html>"""
 
@@ -569,7 +595,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
             raise RuntimeError("no headless Chrome/Chromium")
         try:
             page = browser.new_page(device_scale_factor=2,
-                                    viewport={"width": 1280, "height": 900})
+                                    viewport={"width": wrap_w + 40, "height": 900})
             page.goto(tmp.as_uri(), wait_until="networkidle")
             page.query_selector(".wrap").screenshot(path=str(dest))
         finally:

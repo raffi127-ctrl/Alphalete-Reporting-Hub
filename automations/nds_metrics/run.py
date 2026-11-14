@@ -1580,12 +1580,121 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
         rec = per_rep.setdefault(rep, {"days": {}, "elig": 0, "payable": 0})
         rec["days"][od] = rec["days"].get(od, 0.0) + amt
     rows, office = build_rows(per_rep, monday, today, tiered=False)
+    extra, note = None, ""
+    if FLAGS.get("tier_columns"):
+        # Carlos 2026-11-14: "to the left of the total revenue [or] all the
+        # way to the far right ... multiple columns that show tier bonus
+        # potential revenue while showing how many more orders they need to
+        # get to that tier" -- one column per rep-tier band, far right.
+        i_spm = cols.find("sp.spm number", "spm number")
+        headers, cells = revenue_tier_columns(cols, lines, monday, i_od, i_rep,
+                                              i_port, i_tn, i_spm, log=log)
+        for row in rows:
+            row["extra"] = cells.get(row["rep"]) or tier_cells(0, 0)
+        extra = {"headers": headers}
+        note = ("Tier columns: orders with a port line this Sun–Sat week; "
+                "✓ = tier reached; +N = orders still needed; $ = that tier's "
+                "rate × the rep's port lines (+1 line per order still needed), "
+                "paid as those lines activate. DNQ rule not applied.")
     out = render(rows, office, monday, today,
                  OUT_DIR / "nds_revenue_board.png",
-                 board_name="NDS Revenue Board", tiered=False)
+                 board_name="NDS Revenue Board", tiered=False, extra=extra, note=note)
     log(f"[nds] revenue board (styled, ALL lines on his owner): {len(rows)} rep(s), "
-        f"crew ${sum(r['total'] for r in rows):,.0f}")
+        f"crew ${sum(r['total'] for r in rows):,.0f}"
+        + (", tier columns on" if extra else ""))
     return out
+
+
+# Run-time switches set by main() from the command line. `tier_columns`:
+# the Revenue Board's tier-bonus potential columns (Carlos 2026-11-14, "send
+# it to me before sending it to the whole Slack") -- OFF until he approves
+# the preview (`rerun nds_metrics --only revenue_board --dm U046G04P5LG
+# --tier-columns`); flip the default here to ship it on the morning thread.
+FLAGS = {"tier_columns": False}
+
+
+def tier_bands() -> list:
+    """[(orders needed, $ per activated port line), ...] ascending --
+    sow_rates.json rep_tier bands (Sean 10/19: 4 $30, 5-6 $50, 7-8 $75, 9+ $110)."""
+    return [(int(a), float(b)) for a, b in sow_rates()["rep_tier"]["bands"]]
+
+
+def tier_band_labels(bands=None) -> list:
+    bands = bands or tier_bands()
+    out = []
+    for i, (thr, _rate) in enumerate(bands):
+        nxt = bands[i + 1][0] if i + 1 < len(bands) else None
+        if nxt is None:
+            out.append(f"{thr}+ ORDERS")
+        elif nxt - thr == 1:
+            out.append(f"{thr} ORDERS")
+        else:
+            out.append(f"{thr}–{nxt - 1} ORDERS")
+    return out
+
+
+def tier_cells(n_orders: int, port_lines: int, bands=None) -> list:
+    """The rep's right-side cells: an orders/lines count, then one cell per
+    band -- reached-and-current '✓ $X now', reached-lower '✓', not yet
+    '+N → $Y' (Y = rate × (today's port lines + N), one more line per order
+    still needed, the floor of what that tier would pay)."""
+    bands = bands or tier_bands()
+    cells = [{"text": f"{n_orders} ({port_lines})", "cls": "ct"}]
+    reached = [thr for thr, _r in bands if n_orders >= thr]
+    current = max(reached) if reached else None
+    for thr, rate in bands:
+        need = thr - n_orders
+        if need <= 0:
+            if thr == current:
+                cells.append({"text": f"✓ ${rate * port_lines:,.0f} now", "cls": "now"})
+            else:
+                cells.append({"text": "✓", "cls": "ok"})
+        else:
+            cells.append({"text": f"+{need} → ${rate * (port_lines + need):,.0f}",
+                          "cls": "one" if need == 1 else "far"})
+    return cells
+
+
+def revenue_tier_columns(cols, lines, monday: dt.date, i_od, i_rep, i_port, i_tn, i_spm,
+                         log=print):
+    """-> (headers, {rep: cells}) for the Sun-Sat rep-tier week that holds
+    the board's week (Sun = the Monday - 1 .. Sat): an order counts when it
+    has a port line (sp.SPM Number distinct), a double-tier day counts it
+    twice (double_tier.days), port lines = the rep's port lines on those
+    orders."""
+    sun = monday - dt.timedelta(days=1)
+    sat = monday + dt.timedelta(days=5)
+    seed = sow_rates()["rep_tier"].get("double_days") or []
+    try:
+        from automations.nds_metrics import double_tier
+        dbl = set(double_tier.days(seed, log=log))
+    except Exception as e:  # noqa: BLE001
+        dbl = set(seed)
+        log(f"[nds] revenue tiers: double-tier days off the seed only ({type(e).__name__})")
+    orders: Dict[str, dict] = {}        # rep -> {spm: order date}
+    plines: Dict[str, int] = {}
+    for r in lines:
+        od = _parse_date(_c(cols, r, i_od))
+        rep = _c(cols, r, i_rep)
+        if not rep or od is None or not (sun <= od <= sat):
+            continue
+        ported = bool(_c(cols, r, i_port)) or _c(cols, r, i_tn).lower() == "port"
+        if not ported:
+            continue
+        spm = (_c(cols, r, i_spm) if i_spm is not None else "") or f"{rep}|{od}|{id(r)}"
+        orders.setdefault(rep, {}).setdefault(spm, od)
+        plines[rep] = plines.get(rep, 0) + 1
+    bands = tier_bands()
+    headers = ['ORDERS<br><span class="dd">(port lines)</span>'] + [
+        f'{lab}<br><span class="dd">${int(rate)}/line</span>'
+        for lab, (_thr, rate) in zip(tier_band_labels(bands), bands)]
+    cells = {}
+    for rep, spms in orders.items():
+        n = sum(2 if od.isoformat() in dbl else 1 for od in spms.values())
+        cells[rep] = tier_cells(n, plines.get(rep, 0), bands)
+    log(f"[nds] revenue tiers: week {sun:%m/%d}-{sat:%m/%d}, {len(cells)} rep(s) with a port order, "
+        f"{len(dbl)} double-tier day(s) known")
+    return headers, cells
 
 
 def build_sales_metrics(cols, crew, today, log=print) -> Path:
@@ -2060,7 +2169,10 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", action="store_true",
                     help="refresh the 'NDS Order Log' tab on the Vantura board from "
                          "today's wireless feed; alone = ONLY that, no pull, no post")
+    ap.add_argument("--tier-columns", action="store_true",
+                    help="Revenue Board: tier-bonus potential columns (preview; off by default)")
     a = ap.parse_args(argv)
+    FLAGS["tier_columns"] = bool(getattr(a, "tier_columns", False)) or FLAGS["tier_columns"]
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
