@@ -40,6 +40,31 @@ EMAIL_TPL = ["In ApplicantStream, open SMS/Email, then Email Templates.",
 SAVE_TPL = ["Click Save, then click Activate again. Saving a change can "
             "leave the template switched off."]
 
+# One general how-to per kind of template, instead of steps on every item
+# (Megan 2026-11-13: "we shouldn't have a 'how' section on each of these -
+# just like a link on how to edit text templates in general"). Raf's Looms,
+# linked from the ARS doc's training list.
+HOWTO_SMS = ("How to edit text templates",
+             "https://www.loom.com/share/97b7979b1a5249ec9a947aaceb98fa2a")
+HOWTO_EMAIL = ("How to edit email templates",
+               "https://www.loom.com/share/fe2af2505d214b169db9681fdada4b9e")
+
+
+def howto(item):
+    """(label, url) for a template item, or None."""
+    if item.get("source") != "Templates":
+        return None
+    return HOWTO_EMAIL if _is_email(item.get("where")) else HOWTO_SMS
+
+
+def recommend(item):
+    """The one line to do, without the click-by-click around it."""
+    steps = [st for st in item.get("steps") or []
+             if not st.startswith(("In ApplicantStream", "Find ",
+                                   "Click Save"))]
+    return " ".join(steps)
+
+
 # ----------------------------------------------------- per-finding HOW
 
 # What to change, written as the instruction. {detail} is the finding text.

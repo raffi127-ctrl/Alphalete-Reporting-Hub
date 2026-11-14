@@ -117,6 +117,9 @@ def main(argv=None):
     ap.add_argument("--office", default="11280")
     ap.add_argument("--initial", action="store_true",
                     help="first run: 6 weeks of bookings + texts")
+    ap.add_argument("--weeks", type=int, default=0,
+                    help="pull the last N finished weeks and merge them in "
+                         "(e.g. 2 to redo weeks a run missed)")
     ap.add_argument("--skip-setup", action="store_true",
                     help="leave AI Settings + templates as they are")
     a = ap.parse_args(argv)
@@ -129,7 +132,7 @@ def main(argv=None):
         print("[pull_all] {}: no saved weeks here yet — doing the 6-week "
               "first pull".format(oid), flush=True)
         a.initial = True
-    weeks = mon_sat_weeks(KEEP_WEEKS if a.initial else 1)
+    weeks = mon_sat_weeks(KEEP_WEEKS if a.initial else (a.weeks or 1))
     since = mon_sat_weeks(KEEP_WEEKS)[0][0]
     print("[pull_all] {}: {} week(s), {} to {}".format(
         oid, len(weeks), weeks[0][0], weeks[-1][1]), flush=True)
@@ -151,11 +154,12 @@ def main(argv=None):
     log = [] if a.initial else _load(log_p)
     for first, last in weeks:
         label = "{}_{}".format(_fmt(first), oid)
-        if _run("sms-log-" + label, "automations.sms_audit.pull_log",
-                "--office", oid, "--dates",
-                "{},{}".format(_fmt(first), _fmt(last))):
+        got = _run("sms-log-" + label, "automations.sms_audit.pull_log",
+                   "--office", oid, "--dates",
+                   "{},{}".format(_fmt(first), _fmt(last)))
+        if got:
             log = merge(log, _load(log_p), first, last, _log_day)
-        ok["log " + _fmt(first)] = log_p.exists()
+        ok["texts " + _fmt(first)] = got
         days = [first + dt.timedelta(days=i) for i in range(6)]
         if _run("bookings-" + label, "automations.sms_thread_dump.run",
                 "--office", oid, "--actions", "--dates",

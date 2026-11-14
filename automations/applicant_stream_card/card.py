@@ -198,22 +198,53 @@ def who_books(st):
                  action=action)
 
 
+# Good / middle / bad colours for a number (Megan 2026-11-13: "color code
+# the numbers of what is good (green) what is bad (red) - what is in the
+# middle (orange)").
+TONE = {"good": "#156E46", "mid": "#b06d00", "bad": "#A8322A"}
+
+
+def _tone(v, good, bad, higher_is_better=True):
+    """'good' / 'mid' / 'bad' for v against two cut-offs, or None."""
+    if v is None:
+        return None
+    if higher_is_better:
+        return "good" if v >= good else "bad" if v < bad else "mid"
+    return "good" if v <= good else "bad" if v > bad else "mid"
+
+
+# Time-to-book cut-offs (my first cut; same-day shows 57% vs 42% next day):
+#   processed -> booked, average days   good <= 0.5   bad > 1
+#   typical (median) hours              good <= 4     bad > 12
+#   booked the same day %               good >= 70    bad < 50
+#   booked a day or more later %        good <= 10    bad > 20
+#   show-up rate %                      good >= 50    bad < 35
+#   texts before the 1st round          good <= 3     bad > 6
+
+
 def speed(st, ttb=None):
     d = (st or {}).get("days") or {}
     t = "Time to book"
     if not d.get("ok"):
         return _line("speed", "⏱️", t, GREY, "Not checked")
     p = d["push_to_book"]
+    show = lambda v: (_pct(v), _tone(v, 50, 35))
     facts = [
         ("Resume processed → booked, average",
-         "{:.1f} days".format(p["avg_days"])),
-        ("Typical (median)", _hrs(p["median_h"])),
-        ("Booked the same day", _pct(d["same_day_share"])),
-        ("Booked a day or more later", _pct(d["late_share"])),
-        ("Show-up rate — within a day / later", "{} / {}".format(
-            _pct(d["under_show"]), _pct(d["late_show"]))),
+         [("{:.1f} days".format(p["avg_days"]),
+           _tone(p["avg_days"], 0.5, 1, False))]),
+        ("Typical (median)", [(_hrs(p["median_h"]),
+                               _tone(p["median_h"], 4, 12, False))]),
+        ("Booked the same day", [(_pct(d["same_day_share"]),
+                                  _tone(d["same_day_share"], 70, 50))]),
+        ("Booked a day or more later", [(_pct(d["late_share"]),
+                                         _tone(d["late_share"], 10, 20,
+                                               False))]),
+        ("Show-up rate — within a day / later",
+         [show(d["under_show"]), (" / ", None), show(d["late_show"])]),
         ("Texts sent before the 1st round was set",
-         "{:.1f} average".format(ttb["average"]) if ttb
+         [("{:.1f} average".format(ttb["average"]),
+           _tone(ttb["average"], 3, 6, False))] if ttb
          else "not checked"),
     ]
     late = d["late_share"]
@@ -236,6 +267,53 @@ def speed(st, ttb=None):
 DELIVERY_OK, DELIVERY_BAD = 3.0, 6.0
 
 
+# What to do about each reason a text didn't arrive (Megan 2026-11-13:
+# "Idk what held back by carrier is - can we give ways to fix this?").
+# (what it means, what to do, who does it). No STOP line: not house practice.
+DELIVERY_FIX = {
+    "Blocked by the phone carrier": (
+        "The carrier (AT&T, T-Mobile, Verizon) refused the text, usually "
+        "because it looks like spam or the number isn't fully registered.",
+        "Check the number's texting registration (10DLC) is approved and "
+        "lists this office. Keep texts sounding personal: the office name, "
+        "no ALL CAPS, no shortened links, not the same text to hundreds of "
+        "people at once.",
+        "Aptel team for the registration; you for the wording"),
+    "Held by the carrier, never delivered": (
+        "The carrier slowed this number down and AppStream queued the text "
+        "to try again. Almost none get through later.",
+        "Too many texts too fast from one number. Ask Aptel to check the "
+        "number's daily limit, and spread big sends out (or add a second "
+        "number).",
+        "Aptel team"),
+    "The account ran out of text credits": (
+        "AppStream didn't send it because the account had no credits left.",
+        "Add text credits in AppStream, or turn on auto-refill so it can't "
+        "run out.",
+        "You or your admin, or Aptel"),
+    "Applicant gave a fake number": (
+        "The applicant typed in a made-up number.",
+        "Nothing to fix on your side.", ""),
+    "Not a real phone number": (
+        "The number can't receive texts.",
+        "Nothing to fix on your side.", ""),
+}
+
+
+def _fixes_html(fixes):
+    if not fixes:
+        return ""
+    out = ["<p class='why'><b>What to do:</b></p><ul class='dfix'>"]
+    for label, n, (means, todo, who) in fixes:
+        out.append("<li><b>{}</b> <span class='s'>({:,})</span><br>{}<br>"
+                   "<b>Fix:</b> {}{}</li>".format(
+                       _e(label), n, _e(means), _e(todo),
+                       "<br><span class='who'><b>Who:</b> {}</span>".format(
+                           _e(who)) if who else ""))
+    out.append("</ul>")
+    return "".join(out)
+
+
 def texts_arrived(dv):
     title = "Texts that didn't arrive"
     if not dv or not dv.get("ok"):
@@ -251,13 +329,15 @@ def texts_arrived(dv):
     dot = GREEN if r <= DELIVERY_OK else YELLOW if r <= DELIVERY_BAD else RED
     short = "{:.0f}% never arrived \u00b7 {:.0f}% blocked by carriers".format(
         dv["rate"], r)
-    text = ("Carriers block texts from a number that is flagged as spam or "
-            "not fully registered. Applicants then see the office as a scam.")
+    text = ("When texts don't arrive, applicants never hear from you, and a "
+            "number the carriers flag starts to look like a scam.")
     action = None if dot == GREEN else (
-        "{:.0f}% of your texts are blocked by carriers \u2014 check the "
-        "number's registration (Aptel team)".format(r))
-    return _line("delivery", "\U0001F4F5", title, dot, short, text, facts,
-                 action=action)
+        "{:.0f}% of your texts never reach applicants".format(r))
+    ln = _line("delivery", "\U0001F4F5", title, dot, short, text, facts,
+               action=action)
+    ln["fixes"] = [(why, n, DELIVERY_FIX[why]) for why, n in dv["reasons"]
+                   if why in DELIVERY_FIX and DELIVERY_FIX[why][2]]
+    return ln
 
 
 # Coaching lines for the interview schedule (Megan 2026-11-13: "hey, you're
@@ -578,6 +658,9 @@ ol.replies li{margin:.45em 0}
      grid-row:2;width:100%}}
 .up{color:#156E46;font-weight:bold}.down{color:#A8322A;font-weight:bold}
 .steady{color:#b06d00;font-weight:bold}
+ul.dfix{padding-left:1.1em;margin:.2em 0}
+ul.dfix li{margin:.5em 0}
+.who{color:#1a56c4}
 .foot{color:var(--muted);font-size:.85em;margin-top:2em}
 """
 
@@ -749,17 +832,30 @@ def _fix_body(i):
                 n, _e(name), SP.options_html(F.reply_versions(name, msg),
                                              F.reply_link(name)))
                 for n, name, msg in i["replies"])))
-    if i["steps"]:
-        out.append("<b>How:</b><ol>{}</ol>".format(
-            "".join("<li>{}</li>".format(_e(s)) for s in i["steps"])))
+    rec = F.recommend(i)
+    if rec:
+        out.append("<p class='why'><b>We'd recommend:</b> {}</p>".format(
+            _e(rec)))
+    link = F.howto(i)
+    if link:
+        out.append("<p><a class='opts-link' href='{}' target='_blank' "
+                   "rel='noopener'>{} \u2197</a></p>".format(
+                       _e(link[1]), _e(link[0])))
     return "".join(out)
 
 
 def _facts(facts):
     if not facts:
         return ""
+    def cell(v):
+        # A value can be [(text, tone)] parts, each coloured by its tone.
+        if isinstance(v, list):
+            return "".join(
+                "<b style='color:{}'>{}</b>".format(TONE[t], _e(x)) if t
+                else _e(x) for x, t in v)
+        return _e(v)
     return "<table>{}</table>".format("".join(
-        "<tr><td>{}</td><td>{}</td></tr>".format(_e(k), _e(v))
+        "<tr><td>{}</td><td>{}</td></tr>".format(_e(k), cell(v))
         for k, v in facts))
 
 
@@ -831,8 +927,9 @@ def render(card, scorecard_css=""):
                 add(_fix_body(t["item"]))
             else:
                 ln = lines.get(t["line"]) or {}
-                add("<p class='why'>{}</p>{}".format(
-                    _e(ln.get("text", "")), _facts(ln.get("facts"))))
+                add("<p class='why'>{}</p>{}{}".format(
+                    _e(ln.get("text", "")), _facts(ln.get("facts")),
+                    _fixes_html(ln.get("fixes"))))
             add("</div></details>")
         add("</div>")
 
@@ -848,6 +945,7 @@ def render(card, scorecard_css=""):
         if ln["text"]:
             add("<p class='why'>{}</p>".format(_e(ln["text"])))
         add(_facts(ln["facts"]))
+        add(_fixes_html(ln.get("fixes")))
         if ln["items"]:
             add("<ul class='acts'>")
             for i in sorted(ln["items"], key=_rank):

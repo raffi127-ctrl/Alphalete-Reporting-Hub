@@ -44,13 +44,16 @@ WEEKS = 8
 
 # (fetch_office metric key, what the card calls it, percent?)
 VITALS = [
-    ("pct_first_retention", "1st round retention", True),
-    ("pct_second_retention", "2nd round retention", True),
-    ("pct_new_start_retention", "New start retention", True),
-    ("first_showed", "1st rounds showed", False),
+    # Megan's order, 2026-11-13: the funnel top to bottom, each count
+    # followed by its retention.
     ("pull", "Sent to call list", False),
-    ("second_showed", "2nd rounds showed", False),
     ("pct_apps_booked_first", "RTCL (call list booked for a 1st)", True),
+    ("first_showed", "1st rounds showed", False),
+    ("pct_first_retention", "1st round retention", True),
+    ("second_showed", "2nd rounds showed", False),
+    ("pct_second_retention", "2nd round retention", True),
+    ("new_starts_showed", "New starts showed", False),
+    ("pct_new_start_retention", "New start retention", True),
 ]
 KEYS = [k for k, _l, _p in VITALS]
 
@@ -163,6 +166,7 @@ def from_days(days):
         "first_showed": t.get("s1"),
         "pull": sent,
         "second_showed": t.get("s2"),
+        "new_starts_showed": t.get("nsh"),
         "pct_apps_booked_first": (round(100.0 * t.get("retb", 0) / sent, 1)
                                   if sent else None),
     }

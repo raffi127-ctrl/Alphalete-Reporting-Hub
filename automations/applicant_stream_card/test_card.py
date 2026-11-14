@@ -131,6 +131,26 @@ class FixesTest(unittest.TestCase):
         self.assertIn("3100 Premier Dr Suite 207", joined)
         self.assertIn("Activate again", joined)
 
+    def test_tone_good_middle_bad(self):
+        self.assertEqual(C._tone(60, 50, 35), "good")
+        self.assertEqual(C._tone(40, 50, 35), "mid")
+        self.assertEqual(C._tone(20, 50, 35), "bad")
+        self.assertEqual(C._tone(0.8, 0.5, 1, False), "mid")
+        self.assertEqual(C._tone(8, 3, 6, False), "bad")
+        self.assertIsNone(C._tone(None, 1, 2))
+        html_ = C._facts([("x", [("40%", "good"), (" / ", None),
+                                 ("23%", "bad")])])
+        self.assertIn("<b style='color:#156E46'>40%</b> / "
+                      "<b style='color:#A8322A'>23%</b>", html_)
+
+    def test_template_items_link_one_general_how_to(self):
+        f = F.template("PLACEHOLDER", "2nd Left Message - Call List / Test: "
+                       "the whole body is \u201ctest\u201d.", {})
+        body = C._fix_body(f)
+        self.assertNotIn("How:", body)
+        self.assertIn("We'd recommend:</b> Write the real message", body)
+        self.assertIn("How to edit text templates", body)
+
     def test_email_templates_go_to_the_email_page(self):
         f = F.template("SHOUTING", "Email / On Hold: “ALPHALETE”",
                        {})
@@ -170,6 +190,7 @@ class FixesTest(unittest.TestCase):
         self.assertIn("#1 ", got["found"])
         self.assertEqual([r[0] for r in got["replies"]], [1])
         body = C._fix_body(got)
+        self.assertNotIn("How:", body)
         self.assertIn("<li value='1'>", body)
         # #1 Request to talk via Phone links to the replies page
         self.assertIn("See the 5 replies", body)
@@ -237,6 +258,13 @@ class VitalsTest(unittest.TestCase):
         self.assertIn("44%", page0)
         self.assertIn("\u25b2 +2 pts", page0)
         self.assertIn("RTCL", page0)
+        # funnel order: sent to call list first, new start retention last
+        self.assertLess(page0.index("Sent to call list"),
+                        page0.index("RTCL"))
+        self.assertLess(page0.index("2nd round retention"),
+                        page0.index("New starts showed"))
+        self.assertLess(page0.index("New starts showed"),
+                        page0.index("New start retention"))
         # a line per vital, the weekly numbers behind a click
         self.assertIn("<svg class='spark'", page0)
         self.assertIn("<details class='vital'>", page0)
@@ -268,6 +296,7 @@ class VitalsTest(unittest.TestCase):
         self.assertEqual(got["pct_first_retention"], 60.0)      # 60 / 100
         self.assertEqual(got["pct_new_start_retention"], 53.7)  # 22 / 41
         self.assertEqual(got["pull"], 200)
+        self.assertEqual(got["new_starts_showed"], 22)
         self.assertEqual(got["pct_apps_booked_first"], 50.0)    # 100 / 200
         self.assertIsNone(V.from_days({dt.date(2026, 11, 1): {"b1": 0}})[
             "pct_first_retention"])
@@ -496,7 +525,12 @@ class CardTest(unittest.TestCase):
         self.assertEqual((dv["sent"], dv["failed"], dv["ours"]), (100, 10, 8))
         line = C.texts_arrived(dv)
         self.assertEqual(line["dot"], C.RED)
-        self.assertIn("Aptel", line["action"])
+        # each reason says what to do and who does it
+        fixes = {f[0]: f for f in line["fixes"]}
+        self.assertIn("Blocked by the phone carrier", fixes)
+        self.assertIn("10DLC", fixes["Blocked by the phone carrier"][2][1])
+        self.assertNotIn("Applicant gave a fake number", fixes)
+        self.assertIn("never reach", line["action"])
         self.assertEqual(dv["numbers"][0][0], "+1469")
 
     def test_grading_box_is_at_the_top(self):

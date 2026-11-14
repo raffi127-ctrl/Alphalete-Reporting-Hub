@@ -374,10 +374,16 @@ def summary(recs, start=None, end=None):
 # office's sending number: carriers block or hold texts from a number that
 # is flagged as spam or not fully registered, which is also what makes an
 # applicant see the office as a scam.
+# AppStream status -> (plain reason, whose side). "ours" = something the
+# office or Aptel can fix; "theirs" = the applicant's number.
 STATUS_REASON = {
     "failed": ("Blocked by the phone carrier", "ours"),
-    "requeued": ("Held back by the carrier and retried", "ours"),
     "undelivered": ("Blocked by the phone carrier", "ours"),
+    # AppStream's "Requeued": the carrier held it and AppStream queued it to
+    # try again. Checked on 11280 (11/13): 2 of 55 ever arrived later.
+    "requeued": ("Held by the carrier, never delivered", "ours"),
+    "insufficient sms credits": ("The account ran out of text credits",
+                                 "ours"),
     "dummy phone": ("Applicant gave a fake number", "theirs"),
     "failed - phone not valid": ("Not a real phone number", "theirs"),
 }
