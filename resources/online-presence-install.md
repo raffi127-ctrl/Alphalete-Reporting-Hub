@@ -49,6 +49,12 @@ Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workb
 4. **Sign Lucy's window into Zoho.** We send `zoho-signin`, a Zoho window opens on their
    screen, they sign in with the account from step 1, and it closes itself. Lucy never sees the
    password. Zoho's sign-in codes go to THEIR email; if Zoho ever signs them out, Lucy DMs them.
+5. **Facebook page → Alphalete (so Lucy answers their Facebook reviews).** On their phone:
+   **business.facebook.com** (Meta Business Suite) → Settings → Business assets → their **Page** →
+   **Partners** → **Assign partner** → **Business ID** `1600512619997772` (Alphalete Marketing) →
+   turn on **Content** + **Community activity** → **Assign**. Then we connect it (below, or
+   Launch Studio step 9). Their Facebook reviews then get the same treatment as Google's:
+   thank-yous on their own, negatives drafted for ✅, already-answered ones skipped.
 
 ## What we do
 
@@ -66,6 +72,7 @@ On the call:
 python -m automations.online_presence.setup zoho-signin <key>        # step 4: Zoho opens on their screen
 python -m automations.online_presence.setup invites --accept         # after step 3
 python -m automations.online_presence.setup link-google <key>
+python -m automations.brand_audit.fb_reviews --connect <key>         # after step 5: finds + connects their page
 python -m automations.online_presence.setup audit <key>              # every site vs their sign-up answers
 python -m automations.online_presence.setup check <key>              # everything ✅ but Mode = ready
 python -m automations.online_presence.run --office <key>             # dry run: prints what it WOULD do

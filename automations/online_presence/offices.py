@@ -85,6 +85,9 @@ class Presence:
     # What they sell, by campaign key (att, nds, b2b_att, b2b_box, verizon...).
     # Feeds the Google description suggestion (Megan 2026-11-11).
     campaign: str = "att"
+    # Their Facebook page, once it's shared with Alphalete's Meta business on
+    # the launch call -> Lucy answers its reviews like Google's (11/14).
+    facebook_page_id: str = ""
 
     @property
     def social_links(self) -> Dict[str, str]:

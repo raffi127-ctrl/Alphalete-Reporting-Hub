@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -32,9 +33,12 @@ def _keys() -> Dict:
     return json.loads((Path.home() / ".config" / "brand-audit" / "keys.json").read_text())
 
 
-def _page_token(k: Dict) -> str:
+BUSINESS_ID = "1600512619997772"           # Alphalete Marketing's Meta business
+
+
+def _page_token(k: Dict, page_id: str = "") -> str:
     import requests
-    r = requests.get(f"{GRAPH}/{k['facebook_page_id']}", timeout=20,
+    r = requests.get(f"{GRAPH}/{page_id or k['facebook_page_id']}", timeout=20,
                      params={"access_token": k["facebook_page_token"], "fields": "access_token"}).json()
     if not r.get("access_token"):
         raise RuntimeError(f"no Facebook page key: {r.get('error', {}).get('message', r)}")
@@ -84,14 +88,50 @@ def as_review(fb: Dict) -> Dict:
             "source": "Facebook"}
 
 
-def process(*, live: bool = False) -> List[Dict]:
+def shared_pages() -> List[Dict]:
+    """Pages offices have shared with Alphalete's Meta business (launch call)."""
+    import requests
+    k = _keys()
+    r = requests.get(f"{GRAPH}/{BUSINESS_ID}/client_pages", timeout=20,
+                     params={"access_token": k["facebook_page_token"], "fields": "id,name,link", "limit": 200}).json()
+    if "error" in r:
+        raise RuntimeError(r["error"].get("message"))
+    return r.get("data") or []
+
+
+def connect(page_id: str) -> Dict:
+    """Give Lucy's Meta helper reply access to a page the office shared, then
+    prove it by reading the page's reviews."""
+    import requests
+    k = _keys()
+    me = requests.get(f"{GRAPH}/me", params={"access_token": k["facebook_page_token"]}, timeout=20).json()
+    r = requests.post(f"{GRAPH}/{page_id}/assigned_users", timeout=30,
+                      data={"access_token": k["facebook_page_token"], "user": me.get("id"),
+                            "business": BUSINESS_ID, "tasks": json.dumps(["MODERATE", "CREATE_CONTENT", "MANAGE"])}).json()
+    if "error" in r and "already" not in r["error"].get("message", "").lower():
+        return {"ok": False, "why": r["error"].get("message")}
+    try:
+        n = len(get_reviews(page_id, _page_token(k, page_id)))
+    except Exception as e:
+        return {"ok": False, "why": str(e)[:200]}
+    return {"ok": True, "reviews": n}
+
+
+def process(*, live: bool = False, profile=None) -> List[Dict]:
+    """profile = an ECO office (offices.Presence) with facebook_page_id; None = Alphalete."""
     from automations.brand_audit import review_replies as RR
     from automations.brand_audit.config import SOCIAL_APPROVE_EMOJI, SOCIAL_REJECT_EMOJI
     k = _keys()
-    page_id = k["facebook_page_id"]
-    token = _page_token(k)
-    P = RR._profile(None)                          # Alphalete
-    state = json.loads(STATE.read_text()) if STATE.exists() else {"reviews": {}, "posted_counts": {}}
+    P = RR._profile(profile)
+    page_id = getattr(profile, "facebook_page_id", "") if profile else k["facebook_page_id"]
+    if not page_id:
+        return [{"action": "no_facebook_page"}]
+    token = _page_token(k, page_id)
+    name = profile.business_name if profile else "Alphalete Marketing"
+    state_file = profile.path("fb_review_replies.json") if profile else STATE
+    cap = (getattr(P, "auto_reply_daily_cap", 0) or DAILY_CAP) if profile else DAILY_CAP
+    dcap = (getattr(P, "review_draft_daily_cap", 0) or DRAFT_CAP) if profile else DRAFT_CAP
+    state = json.loads(state_file.read_text()) if state_file.exists() else {"reviews": {}, "posted_counts": {}}
     today = dt.date.today().isoformat()
     posted_today = state["posted_counts"].get(today, 0)
     drafted_today = state.setdefault("draft_counts", {}).get(today, 0)
@@ -106,11 +146,11 @@ def process(*, live: bool = False) -> List[Dict]:
             continue
         rv = as_review(fb)
         positive = rv["rating"] == 5
-        if positive and posted_today >= DAILY_CAP:
+        if positive and posted_today >= cap:
             continue                               # tomorrow's run picks it up
-        if not positive and drafted_today >= DRAFT_CAP:
+        if not positive and drafted_today >= dcap:
             continue
-        reply = RR.draft_reply(rv, "Alphalete Marketing", contact=P.contact_email)
+        reply = RR.draft_reply(rv, name, contact=P.contact_email)
         if positive:
             actions.append({"action": "auto_post", "story": sid, "reply": reply})
             if live:
@@ -118,7 +158,7 @@ def process(*, live: bool = False) -> List[Dict]:
                 posted_today += 1
                 state["reviews"][sid] = {"posted": True, "reply": reply}
             continue
-        if drafted_today >= DRAFT_CAP:
+        if drafted_today >= dcap:
             continue
         drafted_today += 1
         actions.append({"action": "draft", "story": sid, "reply": reply})
@@ -134,7 +174,7 @@ def process(*, live: bool = False) -> List[Dict]:
                 continue
             rx = RR._thread_reactions(cl, st["card_ts"], P.reviews_channel).get(st["card_ts"])
             if RR._reacted(rx, SOCIAL_REJECT_EMOJI, P.counted_approvers):
-                new = RR.draft_reply(st["review"], "Alphalete Marketing", contact=P.contact_email,
+                new = RR.draft_reply(st["review"], name, contact=P.contact_email,
                                      avoid=[st["reply"]])
                 r = cl.chat_postMessage(channel=P.reviews_channel,
                                         text=f":speech_balloon: *Facebook review, new draft*\n{new}\n\n"
@@ -147,15 +187,39 @@ def process(*, live: bool = False) -> List[Dict]:
                 actions.append({"action": "approved", "story": sid})
         state["posted_counts"][today] = posted_today
         state["draft_counts"][today] = drafted_today
-        STATE.parent.mkdir(parents=True, exist_ok=True)
-        STATE.write_text(json.dumps(state, indent=1))
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps(state, indent=1))
     return actions
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="brand_audit.fb_reviews")
     ap.add_argument("--live", action="store_true")
+    ap.add_argument("--connect", default="", metavar="OFFICE",
+                    help="after the owner shares their page: find it, connect it, save it to the office")
     a = ap.parse_args(argv)
+    if a.connect:
+        from dataclasses import replace
+        from automations.online_presence import offices
+        p = offices.get(a.connect)
+        if not p:
+            print(f"✗ no office {a.connect!r}")
+            return 1
+        want = re.sub(r"[^a-z0-9]", "", p.business_name.lower())
+        pages = shared_pages()
+        match = [x for x in pages if re.sub(r"[^a-z0-9]", "", (x.get("name") or "").lower()) == want]
+        if len(match) != 1:
+            print(f"✗ {len(match)} shared page(s) named like {p.business_name!r}. Shared with us now: "
+                  + (", ".join(x.get("name", x["id"]) for x in pages) or "none")
+                  + ". Use Launch Studio step 9 to pick by hand.")
+            return 1
+        res = connect(match[0]["id"])
+        if not res["ok"]:
+            print(f"✗ not connected: {res['why']}")
+            return 1
+        offices.save(replace(p, facebook_page_id=match[0]["id"]))
+        print(f"✓ {match[0].get('name')} connected ({res['reviews']} reviews readable); saved to {p.key}")
+        return 0
     acts = process(live=a.live)
     for x in acts:
         print(f"{x['action']}: {x.get('story')}" + (f"\n    {x['reply'][:160]}" if x.get("reply") else ""))

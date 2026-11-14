@@ -57,6 +57,12 @@ def run_office(p: offices.Presence, *, live: bool,
             from automations.online_presence import review_alerts
             out["bad reviews"] = review_alerts.check(p, _cl(), live=not dry)
         out["reviews"] = review_replies.process_reviews(dry_run=dry, profile=p)
+        if getattr(p, "facebook_page_id", ""):
+            try:
+                from automations.brand_audit import fb_reviews
+                out["facebook reviews"] = fb_reviews.process(live=not dry, profile=p)
+            except Exception as e:                  # never let Facebook stop the pass
+                out["facebook reviews"] = [{"action": "error", "note": str(e)[:200]}]
     if p.social:
         lock = p.path("social_inbox.lock")
         if not social_inbox.acquire_lock(lock):

@@ -27,5 +27,13 @@ class NeverTwice(unittest.TestCase):
             self.assertFalse(F.already_answered("S1", "PAGE", "t"))
 
 
+class Offices(unittest.TestCase):
+    def test_an_office_without_a_shared_page_does_nothing(self):
+        from automations.online_presence import offices
+        p = offices.Presence(key="kash", business_name="Kash Marketing", slack_channel="C1")
+        with mock.patch.object(F, "_keys", return_value={"facebook_page_token": "t", "facebook_page_id": "A"}):
+            self.assertEqual(F.process(live=False, profile=p), [{"action": "no_facebook_page"}])
+
+
 if __name__ == "__main__":
     unittest.main()

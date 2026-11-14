@@ -308,3 +308,35 @@ with g2:
         "4. Only works once the Google listing is **verified**; if it isn't yet, come back to this step later.")
     st.checkbox("Bing listing imported", key="b_done")
 
+
+# ---- 9. Facebook reviews (share their page with Alphalete's Meta business) ----------
+st.header("9 · Facebook reviews")
+st.caption("So Lucy can answer their Facebook reviews like Google's. About 2 minutes on the owner's phone.")
+st.markdown(
+    "1. Owner opens **business.facebook.com** (Meta Business Suite) → **Settings** → **Business assets** → "
+    "their **Page**.\n"
+    "2. **Partners** → **Assign partner** → **Business ID** → paste **1600512619997772** (Alphalete Marketing).\n"
+    "3. Turn on **Content** and **Community activity** (that's reviews + replies) → **Assign**.\n"
+    "4. Back here: **Find their page** → **Connect**.")
+from automations.brand_audit import fb_reviews as FB  # noqa: E402
+if p.facebook_page_id:
+    st.success(f"Connected: Facebook page {p.facebook_page_id}. Lucy answers its reviews like Google's.")
+if st.button("Find their page"):
+    try:
+        st.session_state["fb_pages"] = FB.shared_pages()
+        if not st.session_state["fb_pages"]:
+            st.warning("No shared page yet. Check step 2 used the right Business ID, then try again.")
+    except Exception as e:
+        st.error(f"Couldn't ask Facebook: {e}")
+pages = st.session_state.get("fb_pages") or []
+if pages:
+    pick = st.selectbox("Their page", pages, format_func=lambda x: x.get("name") or x["id"])
+    if st.button("Connect", type="primary"):
+        with st.spinner("Connecting and reading their reviews…"):
+            res = FB.connect(pick["id"])
+        if res["ok"]:
+            offices.save(replace(p, facebook_page_id=pick["id"]))
+            st.success(f"Connected. Lucy can read {res['reviews']} review(s) on {pick.get('name')}.")
+            st.rerun()
+        else:
+            st.error(f"Not connected yet: {res['why']}")
