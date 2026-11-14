@@ -1803,7 +1803,9 @@ def _state_path(today: dt.date) -> Path:
 # leaders text chain and the A-players text chain right after you get it for
 # the NDS metrics thread"). Routing lives in b2b_dispositions.config.TEXT_ROUTES
 # under (TEXT_CAMPAIGN, "nds_" + sid); empty that list to stop the text.
-TEXT_SECTIONS = {"customer_churn"}
+# + churn_rates / churn_by_rep (Carlos 2026-11-14: "Every morning after these
+# two are created, let's also send these on the same text chains").
+TEXT_SECTIONS = {"customer_churn", "churn_rates", "churn_by_rep"}
 TEXT_CAMPAIGN = "NDS METRICS"
 
 
