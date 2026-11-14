@@ -283,7 +283,7 @@ def render_table_png(title: str, subtitle: str, columns: list, rows: list,
     return _capture_board(html, out_path)
 
 
-def _capture_board(html: str, out_path: Path) -> Path:
+def _capture_board(html: str, out_path: Path, width: int = 1400) -> Path:
     """Write the page beside `out_path` and screenshot its .board."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_suffix(".html")
@@ -301,7 +301,7 @@ def _capture_board(html: str, out_path: Path) -> Path:
             raise RuntimeError("no headless Chrome/Chromium to render")
         try:
             page = browser.new_page(device_scale_factor=2,
-                                    viewport={"width": 1400, "height": 900})
+                                    viewport={"width": width, "height": 900})
             page.goto(tmp.as_uri(), wait_until="networkidle")
             page.query_selector(".board").screenshot(path=str(out_path))
         finally:
@@ -316,15 +316,22 @@ _SECT_CSS = """
        min-width:560px;border:1px solid #999;border-bottom:none}
  .banner td.lbl{font-weight:700}
  .gap{height:6px}
+ .row{display:flex;gap:18px;align-items:flex-start;justify-content:center;
+      margin-top:4px}
+ .col{display:inline-block;vertical-align:top}
+ .col .sect{margin:0;min-width:0;width:auto;border-bottom:1px solid #999}
+ .col table{margin:0}
 </style>"""
 
 
 def render_sections_png(title: str, subtitle: str, columns: list, banner: list,
-                        sections: list, out_path: Path) -> Path:
-    """One picture, several tables (Carlos 2026-11-14, Churn by Rep): a
-    `banner` table first (rows as in render_table_png -- the national
-    average), then each (heading, rows) of `sections` as its own table under
-    a shaded heading. Same cells, bands and label columns as render_table_png."""
+                        sections: list, out_path: Path, layout: str = "stack") -> Path:
+    """One picture, several tables (Carlos 2026-11-14, Churn by Rep): an
+    optional `banner` table first (rows as in render_table_png), then each
+    (heading, rows) of `sections` as its own table under a shaded heading --
+    stacked (`layout="stack"`) or side by side (`"row"`, Carlos: "more
+    across from each other, not going down"). Same cells, bands and label
+    columns as render_table_png."""
     ths = "".join(f'<th class="wh">{c}</th>' for c in columns)
 
     def table(rows, cls=""):
@@ -342,12 +349,17 @@ def render_sections_png(title: str, subtitle: str, columns: list, banner: list,
         return f'<table class="{cls}"><tr>{lbl_ths}{ths}</tr>' + "".join(trs) + "</table>"
 
     body = table(banner, "banner") if banner else ""
-    for heading, rows in sections:
-        body += f'<div class="sect">{heading}</div>' + table(rows)
+    if layout == "row":
+        body += '<div class="row">' + "".join(
+            f'<div class="col"><div class="sect">{heading}</div>{table(rows)}</div>'
+            for heading, rows in sections) + "</div>"
+    else:
+        for heading, rows in sections:
+            body += f'<div class="sect">{heading}</div>' + table(rows)
     html = (f"<html><head><meta charset='utf-8'>{_CSS}{_SECT_CSS}</head><body>"
             f'<div class="board"><div class="title">{title}</div>'
             f'<div class="sub">{subtitle}</div>' + body + "</div></body></html>")
-    return _capture_board(html, out_path)
+    return _capture_board(html, out_path, width=2300 if layout == "row" else 1400)
 
 
 # -------------------------------------------------------------------- build

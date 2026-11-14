@@ -1236,11 +1236,13 @@ def _churn_band(rate: float) -> str:
     return "Green" if rate < 0.04 else "Yellow" if rate < 0.06 else "Red"
 
 
-def _national_churn_rows(today, log=print) -> list:
-    """The banner row(s): the national 0-30 / 30 day churn off Smart Circle's
-    all-owners Churn Rates view (its own Average row; the sum over every rep
-    as the fraction). Today's cached pull (nds_churn's reconcile) first, a
-    fresh pull when there is none, an honest 'n/a' row when that fails."""
+def _national_churn_cells(today, log=print):
+    """-> (cells, note) for the NATIONAL AVERAGE row: the national 0-30 / 30
+    day churn off Smart Circle's all-owners Churn Rates view (its own Average
+    row; the sum over every rep as the fraction). Today's cached pull
+    (nds_churn's reconcile) first, a fresh pull when there is none; ({},
+    reason) when that fails. The view is every NDS office's port phone
+    lines together -- it does not split BYOD from non-BYOD or carry Air."""
     from automations.nds_churn.run import OUT_DIR as CHURN_OUT
     from automations.office_metrics import nds_churn as NC
     path = CHURN_OUT / f"nds_churn_view_{today.isoformat()}.csv"
@@ -1251,12 +1253,12 @@ def _national_churn_rows(today, log=print) -> list:
         nat = NC.national_average(path)
     except Exception as e:  # noqa: BLE001 -- the crew tables never wait on it
         log(f"[nds] churn by rep: national average unavailable ({type(e).__name__}: {str(e)[:100]})")
-        return [("NATIONAL AVERAGE \u2014 all NDS offices (view not available today)", "", True, {})]
+        return {}, "view not available today"
     cells = {}
     for col, period in (("0-30 Day", "0-30"), ("31-60 Day", "30")):
         a = nat["average"].get(period) or {}
-        s = nat["summed"].get(period) or {}
-        pct_txt = a.get("pct") or s.get("pct") or ""
+        s_ = nat["summed"].get(period) or {}
+        pct_txt = a.get("pct") or s_.get("pct") or ""
         try:
             rate = float(str(pct_txt).replace("%", "")) / 100.0
         except ValueError:
@@ -1264,15 +1266,14 @@ def _national_churn_rows(today, log=print) -> list:
         if rate is None:
             cells[col] = {}
             continue
-        num = a.get("num") if a.get("num") is not None else s.get("num")
-        den = a.get("denom") if a.get("denom") is not None else s.get("denom")
+        num = a.get("num") if a.get("num") is not None else s_.get("num")
+        den = a.get("denom") if a.get("denom") is not None else s_.get("denom")
         cells[col] = {"rate": f"{round(rate * 100, 1)}%", "color": _churn_band(rate),
                       **({"disc": str(int(round(num))), "act": str(int(round(den)))}
                          if num is not None and den else {})}
     log(f"[nds] churn by rep: national average {cells.get('0-30 Day', {}).get('rate', 'n/a')} 0-30 "
         f"({nat['owners']} office(s), {nat['reps']} rep(s) on the view)")
-    label = f"NATIONAL AVERAGE \u2014 all NDS offices ({nat['owners']} offices, {nat['reps']} reps)"
-    return [(label, "", True, cells)]
+    return cells, f"{nat['owners']} offices, {nat['reps']} reps"
 
 
 def build_churn_by_rep_png(cols, crew, today, log=print) -> Path:
@@ -1331,29 +1332,40 @@ def build_churn_by_rep_png(cols, crew, today, log=print) -> Path:
                         "rate": f"{round(rate * 100, 1)}%", "color": _churn_band(rate)}
         return cells
 
+    # Carlos 2026-11-14 pm: the three tables side by side, and the national
+    # average inside each one, right above its Crew Total. Smart Circle's
+    # view is one number for every NDS office's port phone lines (no BYOD /
+    # non-BYOD split, no Air), so both wireless tables carry that number,
+    # labelled as such, and the Air table says the view has none.
+    nat_cells, nat_note = _national_churn_cells(today, log=log)
+    nat_wireless = (f"NATIONAL AVG \u2014 all NDS offices, wireless port lines ({nat_note})"
+                    if nat_cells else f"NATIONAL AVG \u2014 {nat_note}")
     sections = []
     for key, heading in CHURN_SECTIONS:
+        nat_row = (("NATIONAL AVG \u2014 not on Smart Circle's view", "", True, {})
+                   if key == "air" else (nat_wireless, "", True, nat_cells))
         total = agg.get((key, "__TOTAL__"))
+        rows = [nat_row]
         if not total:
-            sections.append((heading, [("No activated lines in the window", "", False, {})]))
+            rows.append(("Crew Total \u2014 no activated lines in the window", "", True, {}))
+            sections.append((heading, rows))
             continue
-        rows = [("Crew Total", "", True, _cells(total))]
+        rows.append(("Crew Total", "", True, _cells(total)))
         sec = {(rep, ""): d for (s_, rep), d in agg.items() if s_ == key and rep != "__TOTAL__"}
         for (rep, _p) in churn_rep_order(sec):
             rows.append((rep, "", False, _cells(sec[(rep, "")])))
         sections.append((heading, rows))
-    banner = _national_churn_rows(today, log=log)
     n_rows = sum(len(rows) for _h, rows in sections)
-    log(f"[nds] churn by rep: 3 tables, {n_rows} row(s), {dropped} non-wireless/non-Air line(s) left out, "
-        "worst 0-30 churn first")
+    log(f"[nds] churn by rep: 3 tables side by side, {n_rows} row(s), {dropped} non-wireless/non-Air "
+        "line(s) left out, worst 0-30 churn first")
     return render_sections_png(
         "NDS \u2014 CHURN BY REP",
         f"Carlos's crew on his own NDS code \u2014 {today.strftime('%B %d, %Y')} "
         "(disconnects \u00f7 activated by sale-date age, from the D2D order log; "
-        "wireless non-BYOD / wireless BYOD / Internet Air, worst 0-30 day churn at the "
-        "top of each; national average = Smart Circle's all-offices Churn Rates view; "
+        "wireless non-BYOD / wireless BYOD / Internet Air, worst 0-30 day churn first; "
+        "NATIONAL AVG = Smart Circle's all-offices Churn Rates view, port phone lines; "
         "provisional bands green<4% yellow<6%)",
-        list(BUCKETS), banner, sections, OUT_DIR / "nds_churn_by_rep.png")
+        list(BUCKETS), [], sections, OUT_DIR / "nds_churn_by_rep.png", layout="row")
 
 
 def churn_rep_order(agg: Dict[tuple, dict]) -> List[tuple]:

@@ -193,6 +193,41 @@ def _fmt_rates(office: dict) -> str:
     return "   ".join(parts)
 
 
+def view_probe(today: dt.date, log=print) -> int:
+    """What Smart Circle's all-owners Churn Rates view (ChurnALlExp) carries,
+    off today's cached pull (a fresh pull when none): header, first rows,
+    the distinct colour / measure values, every Average row, and whether
+    anything on it says BYOD or Air -- to the probe tab (Carlos 2026-11-14:
+    a national average per BYOD / non-BYOD / Air table, if the view has it)."""
+    import collections
+    from automations.office_metrics import nds_churn as NC
+    path = OUT_DIR / f"nds_churn_view_{today.isoformat()}.csv"
+    if not (path.exists() and path.stat().st_size > 200):
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        NC._fetch(path, verbose=False)
+    rows = NC._decode(path)
+    out = [f"VIEW PROBE {today} {path.name}: {len(rows)} row(s)"]
+    if rows:
+        out.append("header: " + " | ".join(rows[0]))
+    for r in rows[1:16]:
+        out.append("row: " + " | ".join(r))
+    c2 = collections.Counter((r[2] or "").strip() for r in rows[1:] if len(r) > 3)
+    c3 = collections.Counter((r[3] or "").strip() for r in rows[1:] if len(r) > 3)
+    out.append("col2 (colour) values: " + ", ".join(f"{k or '(blank)'}={v}" for k, v in c2.most_common(12)))
+    out.append("col3 (measure) values: " + ", ".join(f"{k or '(blank)'}={v}" for k, v in c3.most_common(12)))
+    for r in rows[1:]:
+        if any("average" in (c or "").lower() for c in r[:2]):
+            out.append("AVERAGE row: " + " | ".join(r))
+    byod = sum(1 for r in rows if any("byod" in (c or "").lower() for c in r))
+    air = sum(1 for r in rows if any(" air" in (" " + (c or "")).lower() for c in r))
+    owners = {(r[0] or "").strip() for r in rows[1:] if len(r) > 1 and (r[0] or "").strip()}
+    out.append(f"rows mentioning BYOD: {byod}; Air: {air}; distinct owner cells: {len(owners)}")
+    print("\n".join(out))
+    write_diag(out, log=log, tab=PROBE_TAB)
+    print("=== view probe done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="nds_churn")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
@@ -201,6 +236,9 @@ def main(argv=None) -> int:
     ap.add_argument("--probe", action="store_true",
                     help="print the export header, the column mapping and "
                          "value counts; write nothing")
+    ap.add_argument("--view-probe", action="store_true",
+                    help="dump Smart Circle's all-owners Churn Rates view (header, "
+                         "rows, measures, Average rows, BYOD/Air mentions) to the probe tab")
     ap.add_argument("--dry-run", action="store_true",
                     help="compute + reconcile + print; write nothing")
     ap.add_argument("--skip-reconcile", action="store_true",
@@ -228,6 +266,8 @@ def main(argv=None) -> int:
         log(f"=== setup done ({'created' if made else 'kept'} {S.TAB}) ===")
         return 0
 
+    if a.view_probe:
+        return view_probe(today, log=log)
     path = Path(a.from_file) if a.from_file else pull(today, log)
     header, ix, lines = C.load_owner_lines(path, log=log)
     if a.probe:
