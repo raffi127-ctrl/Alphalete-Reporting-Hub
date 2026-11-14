@@ -62,6 +62,20 @@ class LinesTest(unittest.TestCase):
         a = ls[0]
         self.assertEqual((a["Customer"], a["Phone #"], a["Zip"]), ("Jane Doe", "2145550100", "75050"))
 
+    def test_look_alike_flags_never_match(self):
+        # the real file (11/14): flags whose names contain the words a substring
+        # match would take for the phone / e-mail / account number
+        ls = T.lines(_file(["MTN Change", "Reused Email Address", "Abandoned Flag", "Bill/Ship Addr Match"],
+                           ["N", "No", "N", "Y"]))
+        self.assertEqual((ls[0]["Phone #"], ls[0]["Email"], ls[0]["Zip"]), ("", "", ""))
+
+    def test_credico_extras_ship_delivery_approval_reason(self):
+        ls = T.lines(_file(["Ship Date", "Delivery Date", "Approval Date", "StatusReason"],
+                           ["11/10/2026", "2026-11-12", dt.datetime(2026, 11, 11), "Customer request"]))
+        a = ls[0]
+        self.assertEqual((a["Ship Date"], a["Delivered"], a["Approval Date"], a["Status Reason"]),
+                         ("11/10/2026", "11/12/2026", "11/11/2026", "Customer request"))
+
     def test_changed_file_is_refused(self):
         wb = openpyxl.Workbook()
         ws = wb.active

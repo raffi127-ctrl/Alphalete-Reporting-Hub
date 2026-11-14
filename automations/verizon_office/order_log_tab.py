@@ -17,13 +17,15 @@ one it still carries is replaced, aged out past DAYS_KEPT by Order Date.
 Last Updated restamps only when the line's state changed. Carlos's typed
 columns (Notes, Being worked on) ride along by line key = (Order #, Line).
 
-COLUMNS THE FILE MAY OR MAY NOT HAVE (Zip, Email, Phone #, BAN): read by
-header candidates (_OPTIONAL). Nothing in the repo had read them before
-2026-11-13 and no copy of the Verizon file was on Carlos's Mac, so `--probe`
-exists: it prints the Order Detail header + a per-column fill count (no
-values) and, with --push, lands that on the control sheet so the answer can
-be read from any machine. A column the file lacks stays blank on the tab,
-ready to type in.
+WHAT THE FILE CARRIES (probed on Lucy 4, 2026-11-14, 57 columns / 1,472
+rows): CustomerName, Ship Date, Delivery Date, Approval Date, StatusReason,
+Device ID#, Item Desc, Port Carrier, AutoPay flags -- and NO customer phone,
+zip, e-mail or account number (the look-alikes are flags: "MTN Change",
+"Reused Email Address", "Bill/Ship Addr Match"). So Zip / Email / Phone # stay
+blank, ready to type in, and are read only by EXACT header names (_OPTIONAL)
+in case Credico adds them. `--probe` prints the Order Detail header + a
+per-column fill count (no values) and, with --push, lands that on the control
+sheet so the answer can be read from any machine.
 
 CUSTOMER NAMES ARE ON THIS TAB. The Vantura Master is Carlos's own workbook
 and its NDS Order Log carries them (Carlos 2026-10-29: "include the customers
@@ -63,18 +65,22 @@ PROBE_TAB = "VZ Order Detail Header"     # control-sheet tab the --probe --push 
 
 # The NDS tab's names wherever the thing is the same, so Carlos reads both the
 # same way. "Order #" is Credico's one order number (NDS has a DSI # AND a
-# wireless order #). "Cancel Date", "Port Carrier", "Add-ons" and "AutoPay"
-# are Credico extras the NDS feed does not carry.
+# wireless order #). "Status Reason", "Approval Date", "Cancel Date", "Port
+# Carrier", "Add-ons" and "AutoPay" are Credico extras the NDS feed does not
+# carry; Ship Date / Delivered are Credico's own Ship Date / Delivery Date.
 HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Order Date",
            "Order #", "Line", "Type", "Port Carrier", "Phone #", "Device", "Plan", "Add-ons",
-           "AutoPay", "Line Status", "Activation Date", "Cancel Date", "Churn Bucket",
-           "Last Updated", "Notes", "Being worked on")
+           "AutoPay", "Line Status", "Status Reason", "Ship Date", "Delivered", "Approval Date",
+           "Activation Date", "Cancel Date", "Churn Bucket", "Last Updated", "Notes",
+           "Being worked on")
 CARRIED = ("Notes", "Being worked on")      # typed by hand, carried by line key
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _TEXT_COLS = ("Order #", "Line", "Zip", "Email", "Phone #")
-_DATE_COLS = ("Week Ending", "Order Date", "Activation Date", "Cancel Date", "Last Updated")
-_STATE_COLS = ("Line Status", "Activation Date", "Cancel Date", "Type", "Phone #", "Device",
-               "Plan", "Add-ons", "AutoPay")
+_DATE_COLS = ("Week Ending", "Order Date", "Ship Date", "Delivered", "Approval Date",
+              "Activation Date", "Cancel Date", "Last Updated")
+_STATE_COLS = ("Line Status", "Status Reason", "Ship Date", "Delivered", "Approval Date",
+               "Activation Date", "Cancel Date", "Type", "Phone #", "Device", "Plan", "Add-ons",
+               "AutoPay")
 DEAD = ("disconnected", "cancelled", "canceled")
 
 # Order Detail columns the code already relies on (thread_boards.nds_rows,
@@ -82,15 +88,23 @@ DEAD = ("disconnected", "cancelled", "canceled")
 REQUIRED = ("Sales Agent Name", "Signed Date", "Product Category", "Status Code",
             "Current Line Status", "Cancel Date", "Activation Date", "Order Number",
             "LineID", "Product Name")
-# Columns the file MAY carry, by header candidates (exact, then substring,
-# case/space-insensitive). The probe says which exist.
+# Columns the file MAY carry, by EXACT header name (case/space-insensitive).
+# Never a substring match: the 11/14 probe showed "MTN Change", "Reused Email
+# Address" and "Abandoned Flag" -- flags that a substring match took for the
+# phone, the e-mail and the account number. The probe says which exist.
 _OPTIONAL = {
     "Customer": ("CustomerName", "Customer Name", "Customer"),
     "Phone #": ("MTN", "Mobile Number", "Phone Number", "Line Number", "Telephone Number",
-                "Phone", "MDN"),
-    "BAN": ("Account Number", "Billing Account", "BAN", "AccountNum"),
-    "Zip": ("Zip", "Zip Code", "Postal Code"),
-    "Email": ("Email", "E-mail", "Email Address"),
+                "Customer Phone", "MDN"),
+    "Zip": ("Zip", "Zip Code", "Postal Code", "Customer Zip"),
+    "Email": ("Email", "E-mail", "Email Address", "Customer Email"),
+}
+# Order Detail columns that exist (11/14) and are read when present, by exact name.
+_EXTRA = {
+    "Ship Date": ("Ship Date",),
+    "Delivered": ("Delivery Date", "Delivered Date"),
+    "Approval Date": ("Approval Date",),
+    "Status Reason": ("StatusReason", "Status Reason"),
 }
 
 # Tabs this module must never write to, whatever TAB is set to.
@@ -111,16 +125,12 @@ def _norm_h(s) -> str:
 
 
 def _find(header: Sequence, *candidates: str) -> Optional[int]:
-    """Column index by name: exact first, then substring. Never a fixed index."""
+    """Column index by EXACT name (case/space-insensitive). Never a fixed
+    index, never a substring: Credico's file is full of look-alike flags."""
     norm = [_norm_h(h) for h in header]
     for c in candidates:
         if _norm_h(c) in norm:
             return norm.index(_norm_h(c))
-    for c in candidates:
-        cn = _norm_h(c)
-        for i, h in enumerate(norm):
-            if h and cn in h:
-                return i
     return None
 
 
@@ -207,16 +217,16 @@ def probe(sv_path: Path) -> List[List[str]]:
     header names and counts only, never a value, so it can be posted anywhere."""
     header, body = _order_detail(sv_path)
     out = [["Column", "Filled rows (of %d)" % len(body), "Type", "Mapped to"]]
-    wanted = {c: k for k, cands in _OPTIONAL.items() for c in cands}
     for i, h in enumerate(header):
         if not h:
             continue
         vals = [r[i] for r in body if i < len(r) and r[i] not in (None, "")]
         typ = type(vals[0]).__name__ if vals else ""
         mapped = "REQUIRED" if h in REQUIRED else ""
-        for k, cands in _OPTIONAL.items():
-            if _find([h], *cands) is not None:
-                mapped = "optional -> " + k
+        for group, label in ((_OPTIONAL, "optional -> "), (_EXTRA, "extra -> ")):
+            for k, cands in group.items():
+                if _find([h], *cands) is not None:
+                    mapped = label + k
         out.append([h, str(len(vals)), typ, mapped])
     return out
 
@@ -236,6 +246,7 @@ def lines(sv_path: Path) -> List[Dict[str, str]]:
     for name in ("Item Desc", "SKU Type", "Port Indicator", "Port Carrier", "AP_Comp_Ind"):
         ix[name] = _find(header, name)
     opt = {k: _find(header, *cands) for k, cands in _OPTIONAL.items()}
+    opt.update({k: _find(header, *cands) for k, cands in _EXTRA.items()})
 
     def g(r, col):
         i = ix.get(col) if col in ix else opt.get(col)
@@ -243,6 +254,12 @@ def lines(sv_path: Path) -> List[Dict[str, str]]:
 
     def s(v) -> str:
         return " ".join(str(v if v is not None else "").split())
+
+    def ds(v) -> str:
+        """A date cell as mm/dd/yyyy; a string the parser can't place is kept
+        as Credico wrote it (Ship / Delivery Date are text in the file)."""
+        d = _d(v)
+        return _fmt(d) if d else s(v)
 
     plan_of: Dict[str, str] = {}
     addons: Dict[Tuple[str, str], List[str]] = collections.defaultdict(list)
@@ -278,6 +295,9 @@ def lines(sv_path: Path) -> List[Dict[str, str]]:
             "Add-ons": ", ".join(addons.get((order, line_id.split("-")[0]), [])),
             "AutoPay": "Yes" if s(g(r, "AP_Comp_Ind")).lower() == "new" else "",
             "Line Status": line_status(s(g(r, "Status Code")), s(g(r, "Current Line Status")), act),
+            "Status Reason": s(g(r, "Status Reason")),
+            "Ship Date": ds(g(r, "Ship Date")), "Delivered": ds(g(r, "Delivered")),
+            "Approval Date": ds(g(r, "Approval Date")),
             "Activation Date": _fmt(act), "Cancel Date": _fmt(can),
         })
     out.sort(key=lambda l: (_d(l["Order Date"]) or dt.date.min, l["Rep"], l["Line"]))
@@ -426,7 +446,8 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
                                                          "startIndex": 0, "endIndex": n_cols}}})
     for name, px in (("Notes", 220), ("Being worked on", 130), ("Customer", 190), ("Rep", 190),
                      ("Device", 170), ("Plan", 170), ("Add-ons", 190), ("Email", 210),
-                     ("Pay Period", 185), ("Churn Bucket", 110), ("Port Carrier", 150)):
+                     ("Pay Period", 185), ("Churn Bucket", 110), ("Port Carrier", 150),
+                     ("Status Reason", 170)):
         c = _COL[name]
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
