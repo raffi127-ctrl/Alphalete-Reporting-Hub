@@ -439,8 +439,12 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     `note`: a line under the footer label."""
     extra_hdrs = list((extra or {}).get("headers") or [])
     n_extra = len(extra_hdrs)
+    # The label over the title and in the footer, by board name. NDS since
+    # 2026-11-14 (Carlos: "at the bottom it says b2b leaders idk why. were
+    # nds now").
     kick = ("BOX LEADERS" if "box" in board_name.lower()
             else "VERIZON LEADERS" if "verizon" in board_name.lower()
+            else "NDS LEADERS" if "nds" in board_name.lower()
             else "AT&T B2B LEADERS")
     week_total = sum(r["total"] for r in rows)
     next_total = sum(r.get("ntotal", 0) for r in rows)
