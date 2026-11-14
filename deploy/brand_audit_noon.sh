@@ -56,6 +56,14 @@ echo "[$(date)] brand-audit noon scan finished exit=$ST" >> "$LOG_FILE"
 echo "[$(date)] review-replies starting" >> "$LOG_FILE"
 "$VENV_PY" -m automations.brand_audit.review_replies --company "Alphalete Marketing" "$@" >> "$LOG_FILE" 2>&1
 echo "[$(date)] review-replies finished exit=$?" >> "$LOG_FILE"
+# Facebook review replies, same rules as Google (Megan 2026-11-14: "turn on
+# facebook replies for alphalete"). A --dry-run pass stays practice.
+echo "[$(date)] facebook-review-replies starting" >> "$LOG_FILE"
+case " $* " in
+  *" --dry-run "*) "$VENV_PY" -m automations.brand_audit.fb_reviews >> "$LOG_FILE" 2>&1 ;;
+  *) "$VENV_PY" -m automations.brand_audit.fb_reviews --live >> "$LOG_FILE" 2>&1 ;;
+esac
+echo "[$(date)] facebook-review-replies finished exit=$?" >> "$LOG_FILE"
 
 # Weekly rep shout-out list — SUNDAYS ONLY (Maud, 2026-08-07 Loom). Tallies
 # the reps named in the last 7 days of Google reviews and posts the "Google
