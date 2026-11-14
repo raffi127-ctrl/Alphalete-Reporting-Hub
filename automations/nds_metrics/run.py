@@ -31,6 +31,7 @@ import collections
 import datetime as dt
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -1881,6 +1882,7 @@ def build_customer_churn(cols, crew, today, log=print) -> Path:
 # here 2026-11-09 (preview DM'd) and released 2026-11-10 (Carlos: "you didnt
 # post the churn screenshot this morning") — it posts daily now.
 HELD_FROM_THREAD = {"override_board"}
+POST_GAP_SECONDS = 2.5          # between thread uploads, so they land in order
 # Carlos 2026-11-11 ("I just don't like this order log in general that gets
 # sent out. Let's go ahead and just cancel it"): the crew's Order Log
 # workbook is neither built nor posted any more. Its builder stays for a
@@ -1894,13 +1896,15 @@ def thread_sections():
     """The sections the live thread lists and posts."""
     return [sec for sec in SECTIONS if sec[0] not in HELD_FROM_THREAD | RETIRED]
 
+# Posting order = this order (Carlos 2026-11-14: "Lets move 16 and 17 to be
+# after 12, number 3 can be last, number 6 can be 2nd to last"): boards,
+# activation reports, the three churn boards together, rankings, pending,
+# then the Team Tree and the Knocks Board close the thread.
 SECTIONS = [
     ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
      build_day_board),
     ("week_board", "\U0001F4C5", "NDS Sales Board — Week to Date",
      build_week_board),
-    ("knocks_final", "\U0001F6AA", "NDS Knocks Board — Day Prior",
-     build_knocks_final),
     ("revenue_board", "\U0001F4B0", "NDS Revenue Board",
      build_revenue_board),
     # Carlos 2026-10-24: the Sales Board tab's "% on the Board" block, every
@@ -1908,13 +1912,8 @@ SECTIONS = [
     # this thread posts 7:30). Verizon's copy rides the 5:10 sales_boards run.
     ("pct_on_board", "\U0001F4CA", "NDS % On Board",
      build_pct_on_board),
-    ("team_tree", "\U0001F333", "NDS Team Tree",
-     build_team_tree),
-    ("override_board", "\U0001FA9C", "NDS Leader Overrides",
-     build_override_board),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
-    ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
     ("activation_overview", "\U0001F4B5", "NDS Activation Report Overview",
      build_activation_overview),
     ("activation_revenue", "\U0001F4B0", "NDS Activation Revenue Overview",
@@ -1929,9 +1928,13 @@ SECTIONS = [
      build_activation_by_week_tableau),
     # Carlos 2026-11-09: the B2B thread's Customer Churn picture, remade --
     # the NDS CHURN tab (nds_churn, 06:00) as one shot. In the thread daily
-    # since 2026-11-10.
+    # since 2026-11-10. The other two churn boards follow it (11/14).
     ("customer_churn", "\U0001F43A", "NDS Customer Churn",
      build_customer_churn),
+    ("churn_rates", "\U0001F4C9", "NDS Churn Rates",
+     build_churn_rates_png),
+    ("churn_by_rep", "\U0001F4C9", "NDS Churn by Rep",
+     build_churn_by_rep_png),
     # Carlos 2026-11-07: the Tableau "Order Tiered Bonus - Rep Ranking" view
     # filtered to his owner (posted on B2B before, never on NDS) and the
     # workbook's "Top 100 Reps View" (top 50), every morning.
@@ -1939,12 +1942,14 @@ SECTIONS = [
      build_rep_tiers_shot),
     ("top_reps", "\U0001F3C6", "NDS Top 50 Reps", build_top_reps_shot),
     ("pending_orders", "⏳", "NDS Pending Orders", build_pending_png),
-    # customer_churn: DISCONTINUED for Fiber (Carlos 2026-10-08 scope list);
-    # build_churn_rolloff_png stays importable for reference only.
-    ("churn_rates", "\U0001F4C9", "NDS Churn Rates",
-     build_churn_rates_png),
-    ("churn_by_rep", "\U0001F4C9", "NDS Churn by Rep",
-     build_churn_by_rep_png),
+    ("team_tree", "\U0001F333", "NDS Team Tree",
+     build_team_tree),
+    ("knocks_final", "\U0001F6AA", "NDS Knocks Board — Day Prior",
+     build_knocks_final),
+    # Held / retired (never listed or posted; see HELD_FROM_THREAD, RETIRED):
+    ("override_board", "\U0001FA9C", "NDS Leader Overrides",
+     build_override_board),
+    ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
 ]
 
 
@@ -2035,6 +2040,10 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
             initial_comment=caption(sid, emoji, title),
             file_uploads=[{"file": str(pp), "filename": Path(pp).name}
                           for pp in paths])
+        # Slack shares an upload asynchronously: two sent a second apart can
+        # land swapped (the Team Tree kept showing up between the activation
+        # reports, Carlos 2026-11-14). A short pause keeps SECTIONS order.
+        time.sleep(POST_GAP_SECONDS)
         if sid not in state["posted"]:
             state["posted"].append(sid)
         sp.write_text(json.dumps(state))
