@@ -74,6 +74,11 @@ SOURCES: Dict[str, str] = {
     # order log — churn needs the lookback SaraPlus lacks.
     "churn_rates": "Tableau",
     "churn_by_rep": "Tableau",
+    # Carlos 2026-11-14 (the rolloff shot: "What's the source for this
+    # report?"): the NDS CHURN tab is built from the same Tableau NDS-SN
+    # order-log export (nds_churn, 06:00), reconciled against Smart Circle's
+    # churn view before it is written.
+    "customer_churn": "Tableau",
 }
 
 
@@ -1258,18 +1263,44 @@ def build_churn_by_rep_png(cols, crew, today, log=print) -> Path:
     rows = [("Crew Total (all reps)", "All products" if multi else "", True,
              _cells(agg.get(("__TOTAL__", ""), {})))]
     last_rep = None
-    for (rep, prod) in sorted(k for k in agg if k[0] != "__TOTAL__"):
+    for (rep, prod) in churn_rep_order(agg):
         rows.append((rep if rep != last_rep else "",
                      prod if multi else "", False, _cells(agg[(rep, prod)])))
         last_rep = rep
     log(f"[nds] churn by rep: {len(rows) - 1} row(s), "
-        f"{len(prods)} product(s)")
+        f"{len(prods)} product(s), worst 0-30 churn first")
     return render_table_png(
         "NDS — CHURN BY REP",
         f"Carlos's crew on his own NDS code — {today.strftime('%B %d, %Y')} "
         "(disconnects ÷ activated by sale-date age, from the D2D order "
-        "log; provisional bands green<4% yellow<6%)",
+        "log; worst 0-30 day churn at the top, best at the bottom; "
+        "provisional bands green<4% yellow<6%)",
         list(BUCKETS), rows, OUT_DIR / "nds_churn_by_rep.png")
+
+
+def churn_rep_order(agg: Dict[tuple, dict]) -> List[tuple]:
+    """The (rep, product) keys of a churn-by-rep aggregate, worst 0-30 day
+    churn first (Carlos 2026-11-14: "instead of organizing it alphabetically,
+    let's organize it by the people that have the worst churn at the top, and
+    then the people with the best one at the bottom"). A rep ranks on the
+    rate across all their products; ties go to more disconnects, then more
+    activated lines, then the name. Reps with no 0-30 activations go last.
+    A rep's product rows stay together, products alphabetical."""
+    per_rep: Dict[str, dict] = {}
+    for (rep, _prod), d in agg.items():
+        if rep == "__TOTAL__":
+            continue
+        c = d.get("0-30 Day") or {}
+        t = per_rep.setdefault(rep, {"act": 0, "disc": 0})
+        t["act"] += int(c.get("act", 0) or 0)
+        t["disc"] += int(c.get("disc", 0) or 0)
+
+    def key(rep):
+        t = per_rep[rep]
+        rate = (t["disc"] / t["act"]) if t["act"] else -1.0
+        return (-rate, -t["disc"], -t["act"], rep.lower())
+    return [(rep, prod) for rep in sorted(per_rep, key=key)
+            for prod in sorted(p for (r, p) in agg if r == rep)]
 
 
 def sow_rates():
