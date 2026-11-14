@@ -16791,6 +16791,9 @@
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
+  "after": [
+   "nds_wireless_pull"
+  ],
    "verify": null,
    "timeout_minutes": 30,
    "machine": "Lucy 2"

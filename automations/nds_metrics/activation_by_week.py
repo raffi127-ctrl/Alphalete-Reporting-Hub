@@ -236,7 +236,10 @@ def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
                "* = week in progress; last %d weeks; "
                "wireless report %s, SaraPlus %s)"
                % (today.strftime("%B %d, %Y"), WEEKS,
-                  feed_date.strftime("%m/%d") if feed_date else "n/a",
+                  (feed_date.strftime("%m/%d")
+                   + ("" if feed_date >= today else
+                      " -- YESTERDAY'S, today's pull was not in yet"))
+                  if feed_date else "n/a",
                   pulled_at.strftime("%H:%M") if pulled_at else "n/a"))
     return render_table_png(title, sub, columns, rows, out)
 
