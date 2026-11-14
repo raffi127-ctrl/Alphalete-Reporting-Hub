@@ -190,10 +190,11 @@ class SurnameFallback(unittest.TestCase):
     Raf's Ownerville. A unique surname match still brings her over; two rows
     sharing the surname bring nobody."""
 
-    def _run(self, raf_rows):
+    def _run(self, raf_rows, names=("Cinthya Reyes", "Anette Climaco")):
         with mock.patch.object(R, "_borrow_sources",
                                lambda today: {"rafael": (raf_rows, None, "ICD Knocks office raf")}), \
-             mock.patch.object(R.C, "BORROWED_ROWS", {"rafael": ["Cinthya Reyes", "Anette Climaco"]}), \
+             mock.patch.object(R.C, "BORROWED_ROWS", {"rafael": list(names)}), \
+             mock.patch.object(R.C, "BORROWED_RIDE_LEADERS", {}), \
              mock.patch.object(R, "_log", lambda m: LOG.append(m)):
             return R.borrowed_rows(D, list(OWN))
 
@@ -202,7 +203,14 @@ class SurnameFallback(unittest.TestCase):
         got = self._run([{"Rep": "Cinthya Reyes Roadtrip", "Total Knocks": "3"},
                          {"Rep": "Annett Michell Climaco", "Total Knocks": "9"}])
         self.assertEqual([r["Rep"] for r in got], ["Cinthya Reyes Roadtrip", "Annett Michell Climaco"])
-        self.assertTrue(any("via surname 'climaco'" in m for m in LOG), LOG)
+        self.assertTrue(any("via close name" in m for m in LOG), LOG)
+
+    def test_two_shared_tokens_match_without_the_surname(self):
+        LOG.clear()
+        got = self._run([{"Rep": "Brianna Belen GP", "Total Knocks": "4"},
+                         {"Rep": "Brianna Smith", "Total Knocks": "1"}],
+                        names=["Cinthya Reyes", "Brianna Belen Contreras"])
+        self.assertEqual([r["Rep"] for r in got], ["Brianna Belen GP"])
 
     def test_two_rows_with_the_surname_claim_nobody(self):
         LOG.clear()

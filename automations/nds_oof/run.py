@@ -404,9 +404,12 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
             # anchors on the first name, so 'Anette' never reaches 'Annett'.
             # When exactly ONE unclaimed row shares the wanted SURNAME, that is
             # her -- claim it and say so. Two rows sharing it tell us nothing.
+            # ... or sharing TWO name tokens (Brianna 2026-11-14: Raf's row
+            # reads 'Brianna Belen GP', no Contreras at all).
             surname = (G._plain(name).split() or [""])[-1]
             by_surname = [i for i in close
-                          if surname and surname in set(G._plain(G._rep(src[i])).split())]
+                          if (surname and surname in set(G._plain(G._rep(src[i])).split()))
+                          or len(toks & set(G._plain(G._rep(src[i])).split())) >= 2]
             if len(by_surname) == 1:
                 i = by_surname[0]
                 row = src[i]
@@ -417,8 +420,8 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
                 if keep:
                     row = {k: v for k, v in row.items() if k in keep}
                 out.append(row)
-                _log("borrowed: %s off %s via surname %r (row reads %r; shared %s, %s)"
-                     % (name, key, surname, G._rep(src[i]), at_text, where))
+                _log("borrowed: %s off %s via close name (row reads %r; shared %s, %s)"
+                     % (name, key, G._rep(src[i]), at_text, where))
                 continue
             close_names = [G._rep(src[i]) for i in close]
             _log("borrowed: %s not on %s's rows today%s"
