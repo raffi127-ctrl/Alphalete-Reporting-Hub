@@ -127,6 +127,50 @@ def _parse(csv_path: Path) -> dict:
     return {"office_total": _recompute_office_total(reps), "reps": reps}
 
 
+def national_average(csv_path: Path) -> dict:
+    """The view's own GRAND-average row (every NDS owner, no slice) plus the
+    sum over every rep on the view, per period (Carlos 2026-11-14: "above
+    them all ... the country's national average"). ->
+    {"average": {period: {"pct", "num", "denom"}}, "summed": {period: {"num",
+    "denom", "pct"}}, "owners": n, "reps": n}. Empty dicts when the file has
+    no such rows."""
+    rows = _decode(csv_path)
+    owner = rep = ""
+    avg: dict = {}
+    summed: dict = {}
+    owners, reps = set(), set()
+    for r in rows[1:] if rows else []:
+        if len(r) < 8:
+            continue
+        owner = (r[0] or "").strip() or owner
+        rep = (r[1] or "").strip() or rep
+        is_avg = "average" in owner.lower() or "average" in rep.lower()
+        metric = (r[3] or "").strip().lower()
+        for pi, pkey in enumerate(PERIODS):
+            cell = (r[4 + pi] or "").strip()
+            if not cell:
+                continue
+            if is_avg:
+                slot = avg.setdefault(pkey, {})
+                if metric.startswith("churn rate"):
+                    slot["pct"] = cell
+                elif metric.startswith("disconnect count"):
+                    slot["num"] = _num(cell)
+                elif metric.startswith("activated"):
+                    slot["denom"] = _num(cell)
+            else:
+                owners.add(owner); reps.add((owner, rep))
+                slot = summed.setdefault(pkey, {"num": 0.0, "denom": 0.0})
+                if metric.startswith("disconnect count"):
+                    slot["num"] += _num(cell) or 0.0
+                elif metric.startswith("activated"):
+                    slot["denom"] += _num(cell) or 0.0
+    for slot in summed.values():
+        slot["pct"] = (f"{slot['num'] / slot['denom'] * 100:.1f}%"
+                       if slot["denom"] else "")
+    return {"average": avg, "summed": summed, "owners": len(owners), "reps": len(reps)}
+
+
 def run(owner: str | None = None, *, dry_run: bool = False,
         verbose: bool = False) -> int:
     """Slice the shared per-rep NDS churn view to `owner`, then run the full house

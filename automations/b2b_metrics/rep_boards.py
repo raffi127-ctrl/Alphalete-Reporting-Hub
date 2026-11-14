@@ -280,6 +280,11 @@ def render_table_png(title: str, subtitle: str, columns: list, rows: list,
             f'<div class="sub">{subtitle}</div>'
             f"<table><tr>{lbl_ths}{ths}</tr>"
             + "".join(trs) + "</table></div></body></html>")
+    return _capture_board(html, out_path)
+
+
+def _capture_board(html: str, out_path: Path) -> Path:
+    """Write the page beside `out_path` and screenshot its .board."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_suffix(".html")
     tmp.write_text(html, encoding="utf-8")
@@ -302,6 +307,47 @@ def render_table_png(title: str, subtitle: str, columns: list, rows: list,
         finally:
             browser.close()
     return out_path
+
+
+_SECT_CSS = """
+<style>
+ .sect{background:#dfe7f1;color:#1f3b64;font-weight:700;font-size:15px;
+       text-align:left;padding:8px 12px;margin:16px auto 0;width:fit-content;
+       min-width:560px;border:1px solid #999;border-bottom:none}
+ .banner td.lbl{font-weight:700}
+ .gap{height:6px}
+</style>"""
+
+
+def render_sections_png(title: str, subtitle: str, columns: list, banner: list,
+                        sections: list, out_path: Path) -> Path:
+    """One picture, several tables (Carlos 2026-11-14, Churn by Rep): a
+    `banner` table first (rows as in render_table_png -- the national
+    average), then each (heading, rows) of `sections` as its own table under
+    a shaded heading. Same cells, bands and label columns as render_table_png."""
+    ths = "".join(f'<th class="wh">{c}</th>' for c in columns)
+
+    def table(rows, cls=""):
+        two_col = any(r[1] for r in rows)
+        lbl_ths = ('<th class="wh"></th><th class="wh">Product</th>'
+                   if two_col else '<th class="wh"></th>')
+        trs = []
+        for label, sublabel, is_total, cells in rows:
+            g = " grand" if is_total else ""
+            tds = "".join(_cell(cells.get(c)) for c in columns)
+            lbl = f'<td class="lbl{g}">{label}</td>'
+            if two_col:
+                lbl += f'<td class="lbl{g}" style="min-width:120px">{sublabel}</td>'
+            trs.append(f"<tr>{lbl}{tds}</tr>")
+        return f'<table class="{cls}"><tr>{lbl_ths}{ths}</tr>' + "".join(trs) + "</table>"
+
+    body = table(banner, "banner") if banner else ""
+    for heading, rows in sections:
+        body += f'<div class="sect">{heading}</div>' + table(rows)
+    html = (f"<html><head><meta charset='utf-8'>{_CSS}{_SECT_CSS}</head><body>"
+            f'<div class="board"><div class="title">{title}</div>'
+            f'<div class="sub">{subtitle}</div>' + body + "</div></body></html>")
+    return _capture_board(html, out_path)
 
 
 # -------------------------------------------------------------------- build
