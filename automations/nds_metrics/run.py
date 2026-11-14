@@ -1803,6 +1803,58 @@ def _state_path(today: dt.date) -> Path:
     return OUT_DIR / f"thread_{today.isoformat()}.json"
 
 
+# Sections that ALSO go out as a text the moment they hit the thread (Carlos
+# 2026-11-14, the churn rolloff shot: "texted every single morning in the B2B
+# leaders text chain and the A-players text chain right after you get it for
+# the NDS metrics thread"). Routing lives in b2b_dispositions.config.TEXT_ROUTES
+# under (TEXT_CAMPAIGN, "nds_" + sid); empty that list to stop the text.
+# + churn_rates / churn_by_rep (Carlos 2026-11-14: "Every morning after these
+# two are created, let's also send these on the same text chains").
+TEXT_SECTIONS = {"customer_churn", "churn_rates", "churn_by_rep"}
+TEXT_CAMPAIGN = "NDS METRICS"
+
+
+def _text_section(sid, title, paths, today, log=print) -> bool:
+    """Hand the section's picture to the Lucy 2 poller through the
+    b2b_dispositions manifest + local text outbox (the identity with the
+    Messages grant) -- the same path nds_oof's boards take. Never raises:
+    the thread matters more than the text."""
+    try:
+        from automations.b2b_dispositions import text_post as tp
+        from automations.b2b_dispositions import run as bd_run
+        from automations.day_orchestrator import text_outbox as tob
+        kind = "nds_" + sid
+        spec = {"kind": kind,
+                "title": f"{title} — {today.strftime('%B')} {today.day}",
+                "by_campaign": {TEXT_CAMPAIGN: [str(p) for p in paths]}}
+        if not tp.spec_has_routes(spec):
+            log(f"[nds] text: no route for {TEXT_CAMPAIGN}/{kind} -- not queued")
+            return False
+        out_dir = bd_run.OUTPUT_DIR / today.isoformat()
+        mp = tp.write_manifest(spec, out_dir, f"{kind}-{dt.datetime.now().strftime('%H%M')}")
+        tob.drop(mp, by="nds_metrics", day=today.isoformat())
+        log(f"[nds] text: outbox {mp.name} ({sid})")
+        return True
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] text {sid} FAILED (thread unaffected): {type(e).__name__}: {e}")
+        return False
+
+
+def text_sections(artifacts, today, state, log=print, force: bool = False) -> None:
+    """Queue the text for every TEXT_SECTIONS picture built today, once per
+    day (state['texted']); --force re-texts."""
+    titles = {s: (e, t) for s, e, t, _fn in SECTIONS}
+    texted = state.setdefault("texted", [])
+    for sid in sorted(TEXT_SECTIONS):
+        path = artifacts.get(sid)
+        if not path or (sid in texted and not force):
+            continue
+        paths = list(path) if isinstance(path, (list, tuple)) else [path]
+        _emoji, title = titles.get(sid, ("", sid))
+        if _text_section(sid, title, paths, today, log=log) and sid not in texted:
+            texted.append(sid)
+
+
 def post_thread(artifacts, today, log=print, force: bool = False) -> None:
     from automations.shared.slack_metrics_post import _client
     client = _client()
@@ -1834,6 +1886,9 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
             state["posted"].append(sid)
         sp.write_text(json.dumps(state))
         log(f"[nds] posted {sid}")
+    # The texts ride on the same pass: right after the thread, same picture.
+    text_sections(artifacts, today, state, log=log, force=force)
+    sp.write_text(json.dumps(state))
 
 
 def delete_today(today, log=print) -> None:
