@@ -18,14 +18,14 @@ class Cells(unittest.TestCase):
     def test_roseanna_4_orders_13_lines(self):
         c = R.tier_cells(4, 13, BANDS)
         self.assertEqual([x["text"] for x in c],
-                         ["4 (13)", "✓ $390 now", "+1 → $700", "+3 → $1,200", "+5 → $1,980"])
+                         ["13", "✓ $390 now", "+1 → $700", "+3 → $1,200", "+5 → $1,980"])
         self.assertEqual([x["cls"] for x in c], ["ct", "now", "one", "far", "far"])
 
     def test_zero_and_max(self):
         self.assertEqual([x["text"] for x in R.tier_cells(0, 0, BANDS)],
-                         ["0 (0)", "+4 → $120", "+5 → $250", "+7 → $525", "+9 → $990"])
+                         ["0", "+4 → $120", "+5 → $250", "+7 → $525", "+9 → $990"])
         c = R.tier_cells(9, 20, BANDS)
-        self.assertEqual([x["text"] for x in c], ["9 (20)", "✓", "✓", "✓", "✓ $2,200 now"])
+        self.assertEqual([x["text"] for x in c], ["20", "✓", "✓", "✓", "✓ $2,200 now"])
 
 
 class Counting(unittest.TestCase):
@@ -48,11 +48,12 @@ class Counting(unittest.TestCase):
         ix = {h: i for i, h in enumerate(self.HDR)}
         with mock.patch.object(R, "sow_rates", lambda: {"rep_tier": {"bands": BANDS, "double_days": ["2026-11-10"]}}), \
              mock.patch("automations.nds_metrics.double_tier.days", lambda seed, log=print: set(seed)):
-            headers, cells = R.revenue_tier_columns(cols, rows, dt.date(2026, 11, 9), ix["sp.Order Date (copy)"],
+            headers, cells, counts = R.revenue_tier_columns(cols, rows, dt.date(2026, 11, 9), ix["sp.Order Date (copy)"],
                                                     ix["Rep"], ix["Ported From"], ix["spe.TN Type"],
                                                     ix["sp.SPM Number"], log=lambda *_a, **_k: None)
         self.assertEqual(len(headers), 5)
-        self.assertEqual(cells["Ana"][0]["text"], "4 (5)")      # DSI1 + DSI2x2 + DSI4 = 4 orders; 5 port lines
+        self.assertEqual(counts["Ana"], (4, 5))                 # DSI1 + DSI2x2 + DSI4 = 4 orders; 5 live port lines
+        self.assertEqual(cells["Ana"][0]["text"], "5")
         self.assertEqual(cells["Ana"][1]["text"], "✓ $150 now")
         self.assertNotIn("Ben", cells)
 

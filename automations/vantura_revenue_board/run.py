@@ -474,9 +474,11 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         xcells = "".join(
             f'<td class="xt"><span class="{c.get("cls", "")}">{c.get("text", "")}</span></td>'
             for c in (row.get("extra") or [{}] * n_extra)[:n_extra]) if n_extra else ""
+        badge = (f' <span class="rb">{row["rep_badge"]}</span>'
+                 if row.get("rep_badge") else "")
         trs.append(
             f'<tr><td class="rk">{i}</td>'
-            f'<td class="rep">{row["rep"].upper()}</td>'
+            f'<td class="rep">{row["rep"].upper()}{badge}</td>'
             f'<td class="tot">{money(row["total"])}</td>'
             + chip + "".join(days)
             + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if tiered else "")
@@ -558,6 +560,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .xt .far{{color:#5b6770}}
  .xt .ct{{color:#12181d;font-weight:700}}
  .totrow .xt{{border-left:none}}
+ .rb{{margin-left:8px;padding:2px 8px;border-radius:6px;background:#eef1f4;color:#3c4650;
+      font-size:12px;font-weight:700;vertical-align:middle}}
  .foot .lab{{color:#f0b429;font-weight:700;margin-right:8px}}
  .mx{{margin-left:12px;color:#cfd6dc;font-size:13px}} .mx b{{color:#fff}}
 </style></head><body><div class="wrap">

@@ -1587,15 +1587,21 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
         # potential revenue while showing how many more orders they need to
         # get to that tier" -- one column per rep-tier band, far right.
         i_spm = cols.find("sp.spm number", "spm number")
-        headers, cells = revenue_tier_columns(cols, lines, monday, i_od, i_rep,
-                                              i_port, i_tn, i_spm, log=log)
+        headers, cells, counts = revenue_tier_columns(cols, lines, monday, i_od, i_rep,
+                                                      i_port, i_tn, i_spm, log=log)
         for row in rows:
             row["extra"] = cells.get(row["rep"]) or tier_cells(0, 0)
+            # Carlos 2026-11-14: "next to the reps name can you have how many
+            # current orders the rep is at" -- the tier-week order count as a
+            # badge after the name; the far-right column keeps the port lines.
+            n = counts.get(row["rep"], (0, 0))[0]
+            row["rep_badge"] = f"{n} order{'' if n == 1 else 's'}"
         extra = {"headers": headers}
         note = ("Tier columns: orders with a port line this Sun–Sat week; "
-                "✓ = tier reached; +N = orders still needed; $ = that tier's "
-                "rate × the rep's port lines (+1 line per order still needed), "
-                "paid as those lines activate. DNQ rule not applied.")
+                "green ✓ = the tier you're on; yellow = one order away; "
+                "+N = orders still needed; $ = that tier's rate × the rep's port "
+                "lines (+1 line per order still needed), paid as those lines "
+                "activate. DNQ rule not applied.")
     out = render(rows, office, monday, today,
                  OUT_DIR / "nds_revenue_board.png",
                  board_name="NDS Revenue Board", tiered=False, extra=extra, note=note)
@@ -1639,7 +1645,7 @@ def tier_cells(n_orders: int, port_lines: int, bands=None) -> list:
     '+N → $Y' (Y = rate × (today's port lines + N), one more line per order
     still needed, the floor of what that tier would pay)."""
     bands = bands or tier_bands()
-    cells = [{"text": f"{n_orders} ({port_lines})", "cls": "ct"}]
+    cells = [{"text": f"{port_lines}", "cls": "ct"}]      # orders ride the name badge
     reached = [thr for thr, _r in bands if n_orders >= thr]
     current = max(reached) if reached else None
     for thr, rate in bands:
@@ -1657,7 +1663,7 @@ def tier_cells(n_orders: int, port_lines: int, bands=None) -> list:
 
 def revenue_tier_columns(cols, lines, monday: dt.date, i_od, i_rep, i_port, i_tn, i_spm,
                          log=print):
-    """-> (headers, {rep: cells}) for the Sun-Sat rep-tier week that holds
+    """-> (headers, {rep: cells}, {rep: (orders, port lines)}) for the Sun-Sat rep-tier week that holds
     the board's week (Sun = the Monday - 1 .. Sat): an order counts when it
     has a port line (sp.SPM Number distinct), a double-tier day counts it
     twice (double_tier.days), port lines = the rep's port lines on those
@@ -1689,16 +1695,17 @@ def revenue_tier_columns(cols, lines, monday: dt.date, i_od, i_rep, i_port, i_tn
             continue                    # never activates -> never earns the bonus (Tableau's "eligible" count)
         plines[rep] = plines.get(rep, 0) + 1
     bands = tier_bands()
-    headers = ['ORDERS<br><span class="dd">(port lines)</span>'] + [
+    headers = ['PORT LINES<br><span class="dd">this week</span>'] + [
         f'{lab}<br><span class="dd">${int(rate)}/line</span>'
         for lab, (_thr, rate) in zip(tier_band_labels(bands), bands)]
-    cells = {}
+    cells, counts = {}, {}
     for rep, spms in orders.items():
         n = sum(2 if od.isoformat() in dbl else 1 for od in spms.values())
+        counts[rep] = (n, plines.get(rep, 0))
         cells[rep] = tier_cells(n, plines.get(rep, 0), bands)
     log(f"[nds] revenue tiers: week {sun:%m/%d}-{sat:%m/%d}, {len(cells)} rep(s) with a port order, "
         f"{len(dbl)} double-tier day(s) known")
-    return headers, cells
+    return headers, cells, counts
 
 
 def build_sales_metrics(cols, crew, today, log=print) -> Path:
