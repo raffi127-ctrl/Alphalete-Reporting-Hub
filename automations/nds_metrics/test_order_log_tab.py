@@ -495,5 +495,28 @@ class HoverNoteTests(unittest.TestCase):
         self.assertEqual(wipes[0]["cell"], {"note": ""})
 
 
+class NotSaveableColour(unittest.TestCase):
+    """11/14: "Not saveable" turns the row purple, above yellow and below
+    green / red, and every rewrite puts the rule back."""
+
+    def test_rule_order_green_red_purple_yellow(self):
+        rules = T.status_rules()
+        self.assertEqual(len(rules), 4)
+        W = chr(65 + T._COL["Being worked on"])
+        self.assertIn('="active"', rules[0][0])
+        self.assertIn('"disconnected"', rules[1][0])
+        self.assertEqual(rules[2], (f'=LOWER(TRIM(${W}2))="not saveable"', T.PURPLE))
+        self.assertIn('<>"active"', rules[3][0])                       # yellow is last
+        self.assertIn(T.NOT_SAVEABLE, T.DROPDOWNS["Being worked on"])
+
+    def test_rewrite_adds_all_four_rules_in_order(self):
+        reqs = T._format_requests(7, 10, 3)
+        self.assertEqual(sum(1 for r in reqs if "deleteConditionalFormatRule" in r), 3)
+        adds = [r["addConditionalFormatRule"] for r in reqs if "addConditionalFormatRule" in r]
+        self.assertEqual([a["index"] for a in adds], [0, 1, 2, 3])
+        c = adds[2]["rule"]["booleanRule"]["format"]["backgroundColor"]
+        self.assertEqual((c["red"], c["green"], c["blue"]), T.PURPLE)
+
+
 if __name__ == "__main__":
     unittest.main()

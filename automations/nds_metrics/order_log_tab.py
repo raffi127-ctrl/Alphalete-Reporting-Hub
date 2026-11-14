@@ -102,7 +102,7 @@ CARRIED = ("Notes", "Being worked on", "Delivered Message Sent", "Shipping Statu
 # not saveable option" -- a customer nobody can win back, so the line stops
 # reading as open work. Nothing in the code reads this column's value.
 DROPDOWNS = {
-    "Being worked on": ("Yes", "No", "Not saveable"),
+    "Being worked on": ("Yes", "No", "Not saveable"),      # the third one = NOT_SAVEABLE (purple row)
     "Delivered Message Sent": ("Yes", "No"),
 }
 # the carried columns that sit AFTER Last Updated (line_row pads these; Shipping
@@ -479,6 +479,28 @@ def _ensure_tab(sh, title: str, cols: int):
         return _retry(lambda: sh.add_worksheet(title=title, rows=1000, cols=cols))
 
 
+NOT_SAVEABLE = "Not saveable"
+PURPLE = (0.851, 0.824, 0.914)
+
+
+def status_rules() -> List[tuple]:
+    """The row colours, first match wins: Active green, dead red, then
+    PURPLE for a line marked "Not saveable" under Being worked on, then
+    in-flight yellow. Carlos 2026-11-14: "when we select that option make it
+    so the row flips a purple color ... it shouldn't flip it back to yellow.
+    It should [still] get flipped to red or green if somehow it activates /
+    cancels / disconnects". Green and red sit above purple, so a status
+    change still wins; purple sits above yellow, so every rewrite keeps it."""
+    L = chr(65 + _COL["Line Status"])
+    W = chr(65 + _COL["Being worked on"])
+    return [
+        (f'=LOWER(${L}2)="active"', (0.776, 0.937, 0.808)),
+        (f'=OR(LOWER(${L}2)="disconnected",LOWER(${L}2)="cancelled",LOWER(${L}2)="canceled")', (1, 0.78, 0.808)),
+        (f'=LOWER(TRIM(${W}2))="{NOT_SAVEABLE.lower()}"', PURPLE),
+        (f'=AND(${L}2<>"",LOWER(${L}2)<>"active",LOWER(${L}2)<>"disconnected",LOWER(${L}2)<>"cancelled",LOWER(${L}2)<>"canceled")', (1, 0.949, 0.8)),
+    ]
+
+
 def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[dict]:
     n_cols = len(HEADERS)
 
@@ -546,12 +568,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     # status colours like the thread's workbook: Active green, dead red, in-flight yellow
     for _ in range(existing_rules):
         reqs.append({"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}})
-    L = chr(65 + _COL["Line Status"])
-    rules = [
-        (f'=LOWER(${L}2)="active"', (0.776, 0.937, 0.808)),
-        (f'=OR(LOWER(${L}2)="disconnected",LOWER(${L}2)="cancelled",LOWER(${L}2)="canceled")', (1, 0.78, 0.808)),
-        (f'=AND(${L}2<>"",LOWER(${L}2)<>"active",LOWER(${L}2)<>"disconnected",LOWER(${L}2)<>"cancelled",LOWER(${L}2)<>"canceled")', (1, 0.949, 0.8)),
-    ]
+    rules = status_rules()
     for i, (formula, (r, g, b)) in enumerate(rules):
         reqs.append({"addConditionalFormatRule": {"index": i, "rule": {
             "ranges": [rng(1, 1000, 0, n_cols)],
