@@ -236,7 +236,20 @@ def days_to_book(tl):
                         if _hours(t["pushed"], t["booked"]) is not None
                         and _hours(t["pushed"], t["booked"]) < CLIFF_HOURS])
     late_r, late_n = _rate(late)
-    return {"ok": True,
+    # Megan 2026-11-15: same day / next day go by the day the 1st round is
+    # ON, counted from the day the resume was processed (Send to Call
+    # List): processed Monday + interview Monday = same day, Tuesday =
+    # next day, Wednesday on = 2+ days.
+    gap = {0: [], 1: [], 2: []}
+    for t in tl:
+        if t["pushed"] and t["slot"]:
+            g = (t["slot"].date() - t["pushed"].date()).days
+            if g >= 0:
+                gap[min(g, 2)].append(t)
+    n_iv = sum(len(v) for v in gap.values())
+    iv = {k: {"share": 100.0 * len(v) / n_iv if n_iv else None,
+              "show": _rate(v)[0], "n": len(v)} for k, v in gap.items()}
+    return {"ok": True, "interview_gap": iv,
             "push_to_book": summ(p2b), "push_to_ai": summ(p2ai),
             "ai_to_book": summ(ai2b),
             "late_share": 100.0 * len(late) / len(p2b),

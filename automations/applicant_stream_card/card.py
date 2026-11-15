@@ -230,6 +230,8 @@ def speed(st, ttb=None):
     if not d.get("ok"):
         return _line("speed", "⏱️", t, GREY, "Not checked")
     p = d["push_to_book"]
+    iv = d.get("interview_gap") or {k: {"share": None, "show": None}
+                                     for k in (0, 1, 2)}
     show = lambda v: (_pct(v), _tone(v, 50, 35))
     facts = [
         ("Resume processed → booked, average",
@@ -237,35 +239,34 @@ def speed(st, ttb=None):
            _tone(p["avg_days"], 0.5, 1, False))]),
         ("Typical (median)", [(_hrs(p["median_h"]),
                                _tone(p["median_h"], 4, 12, False))]),
-        ("Booked the same day", [(_pct(d["same_day_share"]),
-                                  _tone(d["same_day_share"], 70, 50))]),
-        # Megan 2026-11-15: same day + a day or more was only 70%. The rest
-        # were booked the next calendar day but inside 24 hours; shown on
-        # their own line so the three add up.
-        ("Booked the next day, within 24 hours",
-         [(_pct(max(0.0, 100 - d["same_day_share"] - d["late_share"])),
-           None)]),
-        ("Booked a day or more later (24+ hours)",
-         [(_pct(d["late_share"]), _tone(d["late_share"], 10, 20, False))]),
-        ("Show-up rate — within a day / later",
-         [show(d["under_show"]), (" / ", None), show(d["late_show"])]),
+        # Megan 2026-11-15: counted by the day the 1st round is ON, from
+        # the day the resume was processed.
+        ("1st round the same day as processed",
+         [(_pct(iv[0]["share"]), _tone(iv[0]["share"], 60, 40))]),
+        ("1st round the next day", [(_pct(iv[1]["share"]), None)]),
+        ("1st round 2+ days later",
+         [(_pct(iv[2]["share"]), _tone(iv[2]["share"], 10, 20, False))]),
+        ("Show-up rate \u2014 same day / next day / 2+ days",
+         [show(iv[0]["show"]), (" / ", None), show(iv[1]["show"]),
+          (" / ", None), show(iv[2]["show"])]),
         ("Number of texts sent before the 1st round was set",
          [("{:.1f} average".format(ttb["average"]),
            _tone(ttb["average"], 3, 6, False))] if ttb
          else "not checked"),
     ]
-    late = d["late_share"]
+    late = iv[2]["share"] if iv[2]["share"] is not None else d["late_share"]
     dot = GREEN if late <= LATE_OK else YELLOW if late <= LATE_BAD else RED
-    short = "{:.1f} days average · {:.0f}% wait a day+".format(
-        p["avg_days"], late)
+    short = "{} same day · {} 2+ days out".format(
+        _pct(iv[0]["share"]), _pct(iv[2]["share"]))
     if ttb:
         short += " · {:.1f} texts".format(ttb["average"])
-    text = ("People booked a day or more after processing show up {} vs "
-            "{}.".format(
-                _pct(d["late_show"]), _pct(d["under_show"])))
+    text = ("1st rounds held the same day the resume was processed show "
+            "up {}; the next day {}; 2+ days later {}.".format(
+                _pct(iv[0]["show"]), _pct(iv[1]["show"]),
+                _pct(iv[2]["show"])))
     action = None if dot == GREEN else (
-        "Book everyone within 24 hours — {:.0f}% wait longer and show "
-        "up {}".format(late, _pct(d["late_show"])))
+        "{:.0f}% of 1st rounds are 2+ days after the resume was processed, "
+        "and they show up {}".format(late, _pct(iv[2]["show"])))
     return _line("speed", "⏱️", t, dot, short, text, facts,
                  action=action)
 
