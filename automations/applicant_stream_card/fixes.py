@@ -156,10 +156,15 @@ def context(office):
 
 def split_where(text):
     """'Section / Name: the rest' -> ('Section / Name', 'the rest')."""
-    if ": " in (text or ""):
-        a, b = text.split(": ", 1)
-        return a.strip(), b.strip()
-    return (text or "").strip(), ""
+    text = text or ""
+    # A colon inside the quoted opening ("(the one starting \u201cHere's the
+    # link again: https\u2026\u201d)") is part of the name, not the split.
+    m = re.search(r"\(the one starting \u201c.*?\u2026\u201d\)", text)
+    skip = m.end() if m else 0
+    i = text.find(": ", skip)
+    if i >= 0:
+        return text[:i].strip(), text[i + 2:].strip()
+    return text.strip(), ""
 
 
 def _is_email(where):
@@ -168,7 +173,7 @@ def _is_email(where):
 
 def template(kind, text, office):
     where, detail = split_where(text)
-    title, why = T.WHY.get(kind, (kind.title(), ""))
+    title, why = T.WHY.get(kind) or ESC.WHY.get(kind, (kind.title(), ""))
     ctx = dict(context(office), where="“{}”".format(where))
     steps = (EMAIL_TPL if _is_email(where) else SMS_TPL) \
         + [TEMPLATE_HOW.get(kind, "Fix what is shown.")] + SAVE_TPL
@@ -387,3 +392,54 @@ def house_rule(entry):
                       "Template over it.",
                       "Otherwise walk {} through the rule with the example "
                       "shown.".format(entry.get("sender") or "them")]}
+
+
+# --- the AI-reply rules, run on the office's templates too ----------------
+# Megan 2026-11-15: "we should also flag like bad grammar or red flag things
+# that we see in those text messages, following the same guidelines that
+# we've already set up for our AI responses". templates.lint (shared with
+# the weekly SMS audit) already covers curly quotes, length, block capitals,
+# base pay and wrong links; these are the reply rules it doesn't run, added
+# here so the shared audit is not changed under other reports.
+REPLY_RULES = ("GRAMMAR", "PROMISES A CALL")
+
+
+def template_where(bodies):
+    """[(section, name, body, where)] with the same 'where' label
+    templates.lint gives each template."""
+    seen = {}
+    out = []
+    for section, name, body in bodies or []:
+        where = (name if name.startswith(section)
+                 else "{} / {}".format(section, name))
+        seen[where] = seen.get(where, 0) + 1
+        if seen[where] > 1:
+            opening = " ".join((body or "").split())[:34]
+            where = "{} (the one starting “{}…”)".format(
+                where, opening)
+        out.append((section, name, body, where))
+    return out
+
+
+def reply_rule_findings(bodies):
+    """[(kind, text)] in templates.lint's shape for the reply rules."""
+    from automations.sms_audit import analyze as A
+    from automations.sms_audit import rebuttals as R
+    out = []
+    for _sec, _name, body, where in template_where(bodies):
+        # The pull adds "[Section / Name] input 0: <name>" lines: the name
+        # box, not the message. Proofread the message only.
+        msg = "\n".join(ln for ln in (body or "").splitlines()
+                        if not ln.startswith("[")).strip()
+        if not msg.strip():
+            continue
+        # No DEFLECTS here: a template is a message the office sends, not
+        # an answer to a question (Megan 2026-11-15, on a 1st interview
+        # confirmation: "This isn't answering a question").
+        if ESC.ESC_CALL_PROMISE.search(msg):
+            out.append(("PROMISES A CALL", "{}: “{}”".format(
+                where, msg[:130])))
+        for kind, detail in A.proofread(msg):
+            out.append(("GRAMMAR", "{}: {} — “{}”".format(
+                where, kind, detail)))
+    return out

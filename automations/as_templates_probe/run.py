@@ -68,12 +68,23 @@ def _dump_template_bodies(page, rqst, rows, want=None):
             if ((a.innerText||'').trim() !== 'Edit') return;
             let head = '', name = '';
             let n = a;
+            // The template's own row: the nearest parent that shows an
+            // on/off state, read up to that state ("Follow Up from Calendar
+            // - No Answer 1  Activated Edit ..."). Walking further up hit
+            // the whole table and returned the page's FIRST template name
+            // for every Edit (11280, 2026-11-15: 31 of 43 bodies came back
+            // as "1st Left Message - Call List Template #1").
             for (let hops = 0; hops < 12 && n; hops++) {
               n = n.parentElement;
               if (!n) break;
               const t = (n.innerText||'');
-              const m = t.match(/([A-Za-z0-9#\\/ .\\-]+ Template #\\d+|Test)/);
-              if (m && !name) name = m[1].trim();
+              const st = t.search(/\\b(Not Activated|Activated)\\b/);
+              if (st > 0) {
+                const lines = t.slice(0, st).split(/\\n/)
+                  .map(x => x.trim()).filter(Boolean);
+                name = lines.length ? lines[lines.length - 1] : '';
+                break;
+              }
             }
             let best = '', bestPos = -1;
             const pos = a.getBoundingClientRect().top + window.scrollY;

@@ -156,8 +156,8 @@ WHY = {
         "titles and company names are not counted here."),
     "BASE PAY": (
         "Says there is a base pay",
-        "Raf\u2019s rule: never say there is a base. The pay is $1,000\u2013$1,500 "
-        "weekly. Saying \u201cbase\u201d sets up an argument on day one."),
+        "Our pay answer is weekly pay of $1,000–$1,500, never a “base”. "
+        "Saying “base” sets up an argument about pay on day one."),
     "DEAD LINK": (
         "A link that cannot work",
         "The web address is spelled with a look-alike character, so it "

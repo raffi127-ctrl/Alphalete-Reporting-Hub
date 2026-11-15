@@ -59,9 +59,9 @@ WHY = {
         "want it to give instead of leaving it to guess."),
     "DEFLECTS": (
         "Pushes the question away instead of answering",
-        "These tell the applicant somebody else will explain. Megan's "
-        "ruling stands: deflection is not fine. Answer the question, then "
-        "invite them."),
+        "This tells the applicant someone else will explain later, so "
+        "they leave without an answer. Answer the question right here, "
+        "then invite them in."),
     "PROMISES A CALL": (
         "Promises a call by a certain time",
         "Handing a phone request to a person is right \u2014 that is what "
@@ -69,10 +69,10 @@ WHY = {
         "already complaining the call never came by when we said. Say we "
         "will call; do not say when."),
     "PAY WORDING": (
-        "Pay wording does not match Raf's ruling",
-        "Raf, via Megan on 2026-09-27: weekly pay $1,000–$1,500, never a "
-        "“base”, and not “depending on background/experience”. "
-        "This row teaches the wording that was retired."),
+        "Pay wording to update",
+        "Our pay answer is weekly pay of $1,000–$1,500 plus bonuses or "
+        "commission, and never the word “base”. This reply still uses "
+        "the older wording."),
     "NOT PLAIN TEXT": (
         "Curly quotes, so the text costs double",
         "AppStream warns about this in its own editor. A curly apostrophe "

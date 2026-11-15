@@ -271,6 +271,7 @@ def gather(oid, use_sheets=True):
         words_skip.append(tmpl_why)
     else:
         found, _personas = T.lint(bodies, states, office)
+        found = list(found) + F.reply_rule_findings(bodies)
         z2 = (office.get("zoom2") or "").strip()
         for kind, text in found:
             if kind in NOT_GRADED:
@@ -369,8 +370,15 @@ def gather(oid, use_sheets=True):
     from automations.applicant_stream_card import vitals as V
     vitals = V.read(oid) if use_sheets else ([], None)
 
+    # Save what the setup pull found, then compare with last week's
+    # (Megan 2026-11-15: "what changed this week versus last week").
+    from automations.applicant_stream_card import changes as CH
+    if when:
+        CH.save(oid, when, CH.snapshot(setup))
+    changes = CH.load(oid)
+
     return C.build(oid, stats=stats, ttb=ttb, setup=setup, slots=slots,
-                   vitals=vitals,
+                   vitals=vitals, changes=changes,
                    recruiter_rows=_recruiters(oid),
                    info_items=info, info_skipped=info_skip,
                    word_items=words, word_skipped=words_skip,

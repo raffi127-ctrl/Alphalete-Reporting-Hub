@@ -28,21 +28,33 @@ INFO = [
     ("office_state", "State"),
     ("office_zip", "Zip"),
     ("office_phone", "Phone"),
-    ("interview_type", "Interview type"),
+    ("interview_type", "1st round interview type"),
     ("interview_length", "Interview length"),
-    ("escalation_contact_name", "Escalation contact"),
+    ("escalation_contact_name", "Escalation contact (who your AI says "
+     "it'll pass questions to \u2014 usually your recruiter)"),
     ("escalation_contact_title", "Escalation contact title"),
 ]
+
+# Which office-info row each AI Settings flag is about
+# (sms_audit/ai_settings.WHY kinds).
+ROW_OF = {
+    "WRONG TITLE": "escalation_contact_title",
+    "SAME NAME": "escalation_contact_name",
+    "AI IS A REAL PERSON": "ai_assistant_name",
+    "NAME MISMATCH": "ai_assistant_name",
+    "ONE INTERVIEW TYPE": "interview_type",
+    "ADDRESS": "office_address1",
+}
 
 # What each AI Preferences number does, in plain words
 # (resources/appstream-ai-preferences-standard.md).
 PREFS = [
-    ("offered_buffer", "Earliest time the AI can offer",
-     "The AI won't offer an interview sooner than this many minutes from "
-     "now."),
-    ("accepted_buffer", "Earliest time an applicant can pick",
-     "An applicant can't pick an interview sooner than this many minutes "
-     "from now."),
+    ("offered_buffer", "Earliest time the AI suggests",
+     "When the AI texts the applicant a few times to choose from, none of "
+     "them are sooner than this."),
+    ("accepted_buffer", "Earliest time an applicant can ask for",
+     "When the applicant names their own time instead, the AI only books it "
+     "if it's at least this far away."),
     ("ghosting_threshold", "Ghosting flag",
      "Minutes of silence before a conversation is flagged as ghosting. "
      "Display only."),
@@ -154,6 +166,16 @@ def _spans(kind, body, detail):
         return [(0, len(body))]
     if kind == "NOT PLAIN TEXT":
         return [m.span() for m in CURLY.finditer(body)]
+    if kind == "PROMISES A CALL":
+        return [m.span() for m in SOON_WORDS.finditer(body)]
+    if kind == "GRAMMAR":
+        q = _quoted(detail)
+        q = re.sub(r" \(.+?\)$", "", q).split(" \u2192 ")[0]
+        if q == "i on its own":
+            return [m.span() for m in
+                    re.finditer(r"(?<![\w'/])i(?![\w'/])", body)]
+        i = body.find(q) if q else -1
+        return [(i, i + len(q))] if i >= 0 else []
     if kind == "BASE PAY":
         return [m.span() for m in re.finditer(r"\bbase\b", body, re.I)]
     out = []
@@ -176,6 +198,147 @@ def marked(body, spans):
         out += [_e(body[at:a]), "<mark>", _e(body[a:b]), "</mark>"]
         at = b
     out.append(_e(body[at:]))
+    return "".join(out)
+
+
+# Plain one-liners for the template flags people see most.
+PLAIN_FIX = {
+    "NOT PLAIN TEXT": "Retype the red mark with your keyboard's plain ' or -",
+    "PROMISES A CALL": "Take out the time you promise to call by",
+    "GRAMMAR": "Fix the grammar in the red part",
+    "DEFLECTS": "Answer the question here instead of pushing it off",
+    "SHOUTING": "Write the red part in normal letters, not all capitals",
+    "BASE PAY": "Take out the word \u201cbase\u201d: pay is $1,000-$1,500 a "
+                "week",
+}
+PLAIN_WHY = {
+    "NOT PLAIN TEXT": "It's a curly \u2019 (or long \u2014) pasted in from "
+                      "Word or a phone. It looks the same, but one curly mark "
+                      "makes the carrier bill the whole text at about double "
+                      "the cost, and longer texts are more likely to not "
+                      "arrive. The plain ' in \u201cyou're\u201d is the right "
+                      "one.",
+}
+
+
+SOON_WORDS = re.compile(
+    r"\s*\b(shortly|soon|today|right away|right now|in a (few|couple)"
+    r"( of)? (minutes|mins|hours)|within the (hour|next \w+)|momentarily|"
+    r"asap|straight away|in \d+ ?(minutes|mins|min|hours|hour))\b", re.I)
+
+
+def suggest(body, flags):
+    """`body` with the fixes we can make for sure, keeping the office's own
+    words (Megan 2026-11-15: "here's what we would recommend ... keeping it
+    as like what they have as possible"). Anything that needs a person's
+    judgement (base pay, deflecting) is left as it is and stays flagged."""
+    from automations.sms_audit import sms_text as SMS
+    out = body or ""
+    for f in flags:
+        kind, detail = f.get("kind"), f.get("detail") or ""
+        if kind == "NOT PLAIN TEXT":
+            out = SMS.clean(out)
+        elif kind == "PROMISES A CALL":
+            out = SOON_WORDS.sub("", out)
+        elif kind == "SHOUTING":
+            m = re.search("\u201c(.+?)\u201d", detail)
+            if m and m.group(1) in out:
+                out = out.replace(m.group(1), m.group(1).capitalize())
+        elif kind == "GRAMMAR":
+            out = _fix_grammar(out, detail)
+        elif kind in ("WRONG ROOM", "WRONG ADDRESS", "CHECK PHONE",
+                      "WRONG MEETING ID"):
+            pat = {"WRONG ROOM": r"sends (\S+) \u2014 this office\u2019s "
+                                 r"room is (\S+?)\.?$",
+                   "WRONG ADDRESS": r"sends \u201c(.+?)\u201d \u2014 this "
+                                    r"office is (.+?)\.?$",
+                   "CHECK PHONE": r"shows (.+?) \u2014 the office number on "
+                                  r"file is (.+?)\.?$",
+                   "WRONG MEETING ID": r"says (\d+) \u2014 this office's id "
+                                       r"is (\d+)\.?$"}[kind]
+            m = re.search(pat, detail)
+            if m and m.group(1) in out:
+                out = out.replace(m.group(1), m.group(2))
+    # Megan 2026-11-15: no unneeded spaces in what we recommend.
+    out = re.sub(r"[ \t\u00a0]{2,}", " ", out)
+    out = re.sub(r" +([,.!?])", r"\1", out)
+    out = "\n".join(ln.strip() for ln in out.splitlines())
+    return out
+
+
+def _quoted(detail):
+    m = re.search("\u201c(.+?)\u201d", detail or "")
+    return m.group(1) if m else ""
+
+
+def grammar_says(detail):
+    """(what's wrong, in plain words) for a proofread finding."""
+    q = _quoted(detail)
+    kind = (detail or "").split(" \u2014 ")[0].split(":")[0].strip()
+    if kind == "doubled word":
+        return "The same word twice in a row: \u201c{}\u201d".format(q)
+    if kind == "missing space":
+        return "Missing a space after the period in \u201c{}\u201d".format(q)
+    if kind == "lowercase i":
+        return "\u201ci\u201d on its own should be a capital \u201cI\u201d"
+    if kind == "capital mid-sentence":
+        return ("A capital letter in the middle of a sentence: \u201c{}\u201d"
+                .format(q))
+    if kind == "comma splice":
+        return ("Two sentences joined with a comma: \u201c{}\u201d. Use a "
+                "period instead".format(q))
+    if kind == "verb form":
+        a, _s, b = q.partition(" \u2192 ")
+        return "\u201c{}\u201d should be \u201c{}\u201d".format(a, b) \
+            if b else "Wrong verb form: \u201c{}\u201d".format(q)
+    if kind == "grammar":
+        m = re.match(r"(.+?) \((.+?) \u2192 (.+?)\)$", q)
+        if m:
+            return "\u201c{}\u201d: use \u201c{}\u201d, not \u201c{}\u201d".format(
+                m.group(1), m.group(3), m.group(2))
+    return "Reads as a mistake: \u201c{}\u201d".format(q) if q else \
+        "Reads as a mistake"
+
+
+def _fix_grammar(out, detail):
+    q = _quoted(detail)
+    kind = (detail or "").split(" \u2014 ")[0].split(":")[0].strip()
+    if kind == "doubled word":
+        return re.sub(r"\b(\w+)( \1)+\b", r"\1", out, flags=re.I)
+    if kind == "missing space":
+        return re.sub(r"([a-z]{2}[.!?])([A-Z][a-z])", r"\1 \2", out)
+    if kind == "lowercase i":
+        return re.sub(r"(?<![\w'/])i(?![\w'/])", "I", out)
+    if kind == "capital mid-sentence" and " " in q:
+        a, b = q.rsplit(" ", 1)
+        return out.replace(q, "{} {}".format(a, b.lower()))
+    if kind == "comma splice" and q:
+        m = re.search(r", (\w)", q)
+        if m:
+            fixed = q[:m.start()] + ". " + m.group(1).upper() + q[m.end():]
+            return out.replace(q, fixed)
+    if kind == "verb form":
+        a, _s, b = q.partition(" \u2192 ")
+        if b and a in out:
+            return out.replace(a, b)
+    if kind == "grammar":
+        m = re.match(r"(.+?) \((.+?) \u2192 (.+?)\)$", q)
+        if m:
+            hit, bad, good = m.groups()
+            return out.replace(hit, re.sub(re.escape(bad), good, hit,
+                                           count=1, flags=re.I))
+    return out
+
+
+def _changed(old, new):
+    """`new`, escaped, with what differs from `old` marked green."""
+    import difflib
+    sm = difflib.SequenceMatcher(None, old, new, autojunk=False)
+    out = []
+    for op, _a, _b, c, d in sm.get_opcodes():
+        piece = _e(new[c:d])
+        out.append(piece if op == "equal" or not new[c:d].strip()
+                   else "<ins>{}</ins>".format(piece))
     return "".join(out)
 
 
@@ -280,16 +443,29 @@ def gather(sinfo=None, prefs=None, esc_rows=None, bodies=None, states=None,
     items = list(items or ())
     out = {"pulled": pulled or {}}
     if sinfo is not None:
-        out["info"] = [(label, sinfo.get(key) or "", _flag(
-            "Blank. Fill this in.", "",
-            "The AI puts this into its texts. Blank leaves a hole in the "
-            "message.", APTEL_FIX) if key in MUST_FILL and not
-            (sinfo.get(key) or "").strip() else None)
-            for key, label in INFO]
-        out["info_flags"] = [_flag(i["title"], i["found"], i["why"],
-                                   APTEL_FIX)
-                             for i in items if i["source"] == "AI Settings"
-                             and not i["kind"].startswith("PREF ")]
+        # Megan 2026-11-15: flag "the actual section that we're
+        # recommending", on its own row, not in a pile at the bottom.
+        on_row = {}
+        loose = []
+        for i in items:
+            if i["source"] != "AI Settings" or i["kind"].startswith("PREF "):
+                continue
+            f = _flag(i["title"], i["found"], i["why"], APTEL_FIX)
+            key = ROW_OF.get(i["kind"])
+            if key:
+                on_row.setdefault(key, []).append(f)
+            else:
+                loose.append(f)
+        out["info"] = []
+        for key, label in INFO:
+            flags = list(on_row.get(key, []))
+            if key in MUST_FILL and not (sinfo.get(key) or "").strip():
+                flags.insert(0, _flag(
+                    "Blank. Fill this in.", "",
+                    "The AI puts this into its texts. Blank leaves a hole in "
+                    "the message.", APTEL_FIX))
+            out["info"].append((label, sinfo.get(key) or "", flags))
+        out["info_flags"] = loose
         out["prefs"] = []
         for key, label, meaning in PREFS:
             now = (prefs or {}).get(key)
@@ -362,6 +538,8 @@ def gather(sinfo=None, prefs=None, esc_rows=None, bodies=None, states=None,
             n = _template_of(i["where"], sec, tpls)
             f = _flag(i["title"], "", i["why"], YOU)
             f["rec"] = _rec(i)
+            f["kind"] = i["kind"]
+            f["detail"] = i["found"]
             if n is None:
                 f["found"] = i["found"]
                 by.setdefault(sec, []).append(f)
@@ -401,7 +579,7 @@ def count(setup):
     """Flags per section of page 2."""
     s = setup or {}
     return {
-        "ai": sum(1 for r in s.get("info", []) if r[2])
+        "ai": sum(len(r[2] or []) for r in s.get("info", []))
         + len(s.get("info_flags", [])),
         "prefs": sum(1 for r in s.get("prefs", []) if r[4]),
         "replies": sum(len(r[3]) for r in s.get("replies", []))
@@ -474,10 +652,54 @@ def slot_rows(hours):
         for a, b, am, pm, tot in rows]
 
 
+def _clock(minutes):
+    """Minutes after midnight -> '1:00 PM'."""
+    h, m = divmod(int(minutes) % (24 * 60), 60)
+    return "{}:{:02d} {}".format(h % 12 or 12, m, "AM" if h < 12 else "PM")
+
+
+def example(key, now):
+    """One worked example for a buffer, from what it's set to now
+    (Megan 2026-11-15: "if it's noon, then the soonest offered time would
+    be 1 p.m.")."""
+    try:
+        n = int(str(now).strip())
+    except (TypeError, ValueError):
+        return ""
+    if key == "offered_buffer":
+        return ("Example: at 12:00 PM the AI texts \u201cI have {} or "
+                "{}\u201d, never anything sooner.".format(
+                    _clock(12 * 60 + n), _clock(12 * 60 + n + 30)))
+    if key == "accepted_buffer":
+        soon = max(n - 30, 0)
+        return ("Example: at 12:00 PM the applicant asks \u201ccan I do "
+                "{}?\u201d The AI says no{}. {} or later, it books."
+                .format(_clock(12 * 60 + soon), "" if soon else
+                        " to anything right now", _clock(12 * 60 + n)))
+    if key == "ghosting_threshold":
+        return ("Example: if the applicant's last text was at 1:00 PM, it's "
+                "flagged at {}.".format(_clock(13 * 60 + n)))
+    return ""
+
+
+def _flag_body(f):
+    """One flag opened inside a row: its title, then the usual box."""
+    return "<div class='rowbox'><b>\u2691 {}</b>{}{}{}{}</div>".format(
+        _e(f["title"]),
+        "<div class='found'>{}</div>".format(_e(f["found"]))
+        if f.get("found") else "",
+        options_html(f.get("options"), f.get("link")),
+        "<p class='why'><b>Why:</b> {}</p>".format(_e(f["why"]))
+        if f.get("why") else "",
+        "<p class='who'><b>Who fixes it:</b> {}</p>".format(_e(f["owner"]))
+        if f.get("owner") else "")
+
+
 def _flags_html(flags):
     out = []
     for f in flags or []:
-        out.append("<div class='flag'><b>\u2691 {}</b>{}{}{}{}</div>".format(
+        out.append("<details class='flag'><summary>\u2691 {}</summary>"
+                   "{}{}{}{}</details>".format(
             _e(f["title"]),
             "<div class='found'>{}</div>".format(_e(f["found"]))
             if f.get("found") else "",
@@ -497,7 +719,7 @@ def _badge(n):
 def _head(title, n, when=None, checked=False):
     """`checked`: a section we grade, so a clean one says so in green
     (Megan 2026-11-15: "this section should check green")."""
-    ok = (" <span class='okay'>\u2713 matches our standard</span>"
+    ok = (" <span class='okay'>\u2713 matches what we recommend</span>"
           if checked and not n else "")
     return "<h2 class='k'>{}{} {}{}</h2>".format(
         _e(title), _e(_when(when)), _badge(n), ok)
@@ -539,9 +761,46 @@ def render(setup):
     return render_ai(setup) + "\n" + render_templates(setup)
 
 
+# Megan 2026-11-15: "if an office isn't set up with AI yet, that AI
+# breakdown tab should say so and then list the price of enrolling in AI and
+# how to set it up". Fill these in from Aptel; until then the tab says to ask.
+AI_PRICE = None          # e.g. "$X a month"
+AI_SETUP_STEPS = []      # plain-English steps, in order
+
+
+def no_ai(setup):
+    """True when the AI Settings pull ran but found no AI on the office:
+    no AI name, no replies and no interview times."""
+    s = setup or {}
+    if "info" not in s:
+        return False                       # not pulled: can't tell
+    name = next((v for label, v, _f in s["info"] if label == "AI's name"),
+                "")
+    return not (name or "").strip() and not s.get("replies") \
+        and not s.get("hours")
+
+
+def _no_ai_html():
+    price = ("<p><b>Price:</b> {}</p>".format(_e(AI_PRICE)) if AI_PRICE
+             else "<p><b>Price:</b> message the Aptel team for the current "
+             "price.</p>")
+    steps = ("<p><b>How to set it up:</b></p><ol>{}</ol>".format(
+        "".join("<li>{}</li>".format(_e(x)) for x in AI_SETUP_STEPS))
+        if AI_SETUP_STEPS else
+        "<p><b>How to set it up:</b> message the Aptel team and ask to "
+        "enroll this office in ApplicantStream's AI.</p>")
+    return ("<div class='flag noai'><b>This office isn't set up with "
+            "ApplicantStream's AI yet.</b><p>The AI texts every new "
+            "applicant within minutes, answers their questions and books "
+            "the 1st round for you, day and night.</p>{}{}</div>".format(
+                price, steps))
+
+
 def render_ai(setup):
     """HTML for the AI Settings tab."""
     s = setup or {}
+    if no_ai(s):
+        return _no_ai_html()
     n = s.get("flags") or count(s)
     L = _intro(flag_total(s, AI_PARTS),
                "What ApplicantStream's AI is set to")
@@ -554,16 +813,34 @@ def render_ai(setup):
     else:
         add("<div class='truth'><table>")
         for label, value, flag in s["info"]:
-            add("<tr{}><td>{}</td><td>{}{}</td></tr>".format(
-                " class='diff'" if flag else "", _e(label),
-                _e(value) if value else "<i>blank</i>",
-                _flags_html([flag]) if flag else ""))
+            main, _sep, note = label.partition(" (")
+            shown = _e(value) if value else "<i>blank</i>"
+            if flag:
+                # The value with a flag on the right; tap it to open the
+                # red box right there under the value.
+                shown = ("<details class='flag rowflag'><summary>{}<span "
+                         "class='pin'>\u2691 {}</span></summary>{}</details>"
+                         .format(shown, len(flag), "".join(
+                             _flag_body(f) for f in flag)))
+            add("<tr{}><td>{}</td><td>{}</td></tr>".format(
+                " class='diff'" if flag else "", _e(main) + (
+                    "<br><span class='s note'>{}</span>".format(
+                        _e(note.rstrip(")"))) if note else ""), shown))
+            if label == "1st round interview type":
+                # ApplicantStream has no 2nd-round type field yet; Megan is
+                # asking Aptel to add it.
+                add("<tr><td>2nd round interview type</td><td><i class='s'>"
+                    "Not available yet in ApplicantStream</i></td></tr>")
         add("</table>{}</div>".format(_flags_html(s.get("info_flags"))))
 
         add(_head("Buffer times + ghosting", n.get("prefs"), checked=True))
         add("<div class='truth'><table class='prefs'><tr><th></th>"
             "<th>Set now</th><th>Our standard</th></tr>")
-        for label, now, want, meaning, flag in s["prefs"]:
+        for (key, _l, _m), (label, now, want, meaning, flag) in zip(
+                PREFS, s["prefs"]):
+            ex = example(key, now)
+            if ex:
+                meaning = "{} {}".format(meaning, ex)
             add("<tr{}><td><b>{}</b><br><span class='s'>{}</span></td>"
                 "<td{}>{}{}</td><td>{}</td></tr>".format(
                     " class='diff'" if flag else "", _e(label), _e(meaning),
@@ -582,16 +859,15 @@ def render_ai(setup):
             "\u2192 Hours.</p>")
     else:
         add("<div class='truth'><table class='list'><tr><th>Day</th>"
-            "<th>Morning</th><th>Afternoon</th><th>Total / day</th>"
+            "<th>Morning</th><th>Afternoon</th><th>1st rounds / day</th>"
             "</tr>")
         for label, am, pm, tot in slot_rows(s["hours"]):
             add("<tr><td><b>{}</b></td><td>{}</td><td>{}</td>"
                 "<td class='tot'>{}</td></tr>".format(label, am, pm, tot))
-        add("</table><p class='s'>/ slot = how many people each time holds. "
-            "Total / day = 1st rounds the day holds with every slot full. 2nd-round times aren't "
-            "pulled yet.</p></div>")
+        add("</table></div>")
 
-    add(_head("AI replies (escalations)", n.get("replies"), when.get("ai")))
+    add(_head("AI replies (escalations)", n.get("replies"), when.get("ai"),
+              checked="replies" in s))
     if "replies" not in s:
         add("<p class='s'>Not pulled yet.</p>")
     else:
@@ -614,10 +890,15 @@ def render_ai(setup):
                 (name, msg, flags))
         for routing, rows in groups.items():
             nf = sum(len(f) for _n, _m, f in rows)
-            add("<details><summary><span class='t'>{}</span>"
+            # Megan 2026-11-15: "these should be green if they are set up
+            # correctly" - a group with no flags says so in green.
+            add("<details{}><summary>{}<span class='t'>{}</span>"
                 "<span class='s'>{} replies</span> {}</summary>"
                 "<div class='body'><table class='list'>".format(
-                    _e(routing), len(rows), _badge(nf)))
+                    "" if nf else " class='good'",
+                    "" if nf else "<span class='okay'>\u2713</span> ",
+                    _e(routing), len(rows), _badge(nf) if nf else
+                    "<span class='okay'>matches what we recommend</span>"))
             for name, msg, flags in rows:
                 add("<tr><td><b>{}</b><p class='lbl'>What your current "
                     "reply says:</p><div class='says'>{}</div>{}</td></tr>"
@@ -657,11 +938,21 @@ def render_templates(setup):
                     "<p class='lbl'>What it says now:</p>"
                     "<div class='says'>{}</div>".format(
                         _e(name), marked(body, spans)))
+                fixed = suggest(body, tflags) if tflags else body
+                if fixed != (body or ""):
+                    add("<p class='lbl'>Here's what we'd recommend:</p>"
+                        "<div class='opt rec'><span class='says ok'>{}</span>"
+                        "<button type='button' onclick='cp(this)'>Copy"
+                        "</button></div>".format(_changed(body or "", fixed)))
                 for f in tflags:
-                    add("<div class='flag'><b>\u2691 We'd recommend:</b> {}"
+                    add("<details class='flag'><summary>\u2691 {}</summary>"
                         "<p class='why'><b>Why:</b> {}</p>"
-                        "<p class='who'><b>Who fixes it:</b> {}</p></div>"
-                        .format(_e(f["rec"]), _e(f["why"]), _e(f["owner"])))
+                        "<p class='who'><b>Who fixes it:</b> {}</p></details>"
+                        .format(_e(grammar_says(f.get("detail"))
+                                   if f.get("kind") == "GRAMMAR" else
+                                   PLAIN_FIX.get(f.get("kind")) or f["rec"]),
+                                _e(PLAIN_WHY.get(f.get("kind")) or f["why"]),
+                                _e(f["owner"])))
                 add("</div>")
             if not tpls:
                 add("<p class='s'>No template saved here.</p>")
@@ -702,6 +993,9 @@ CSS = """
 #pg3:checked~.page3{display:block}
 .tabs .fl{font-size:.8em;margin-left:.3em}
 .okay{color:#156E46;font-weight:bold}
+.noai{background:#fff8e6;border-color:#e0b85c}
+details.good{border-color:#9fd3b5;background:#f1faf4}
+details.good summary .okay{margin-right:.2em}
 .list td.tot{text-align:center;font-size:1.15em}
 h2 .okay{font-size:.85em;margin-left:.4em;text-transform:none;
      letter-spacing:0}
@@ -721,6 +1015,32 @@ table.list td{text-align:left;white-space:normal}
      padding:.4em .6em;margin:.4em 0;font-size:.95em;text-align:left;
      white-space:normal}
 .flag .found{background:#fff}
+.opt.rec{display:flex;gap:.5em;align-items:flex-start}
+.opt.rec .says{flex:1;background:#f1faf4;border:1px solid #9fd3b5}
+.says ins{background:#cdebd8;color:#0f5a36;text-decoration:none;
+     font-weight:bold;border-radius:3px;padding:0 .12em}
+details.flag>summary{cursor:pointer;font-weight:bold;color:#A8322A;
+     list-style:none}
+details.flag>summary::-webkit-details-marker{display:none}
+details.flag>summary::after{content:" \u25B8";color:#A8322A}
+details.flag[open]>summary::after{content:" \u25BE"}
+details.flag:not([open]){background:transparent;border-left-color:transparent;
+     padding:.1em 0}
+.truth td{vertical-align:middle}
+tr.diff>td{background:#fdecea}
+details.rowflag,details.rowflag:not([open]){background:transparent;
+     border:0;padding:0;margin:0;font-size:1em}
+details.rowflag>summary{color:inherit;font-weight:normal;display:flex;
+     align-items:center;gap:.5em}
+details.rowflag>summary::after,details.rowflag[open]>summary::after{display:none}
+tr.diff>td:first-child{vertical-align:top;padding-top:.7em}
+details.rowflag .pin{margin-left:auto;color:#A8322A;font-weight:bold;
+     white-space:nowrap}
+details.rowflag[open] .pin::after{content:" \u25BE"}
+details.rowflag:not([open]) .pin::after{content:" \u25B8"}
+.rowbox{background:#fff;border-left:3px solid #A8322A;border-radius:6px;
+     padding:.4em .6em;margin:.4em 0 0;font-size:.95em}
+.note{font-size:.8em;line-height:1.25}
 .flag .why{margin:.2em 0}
 .rec{margin:.3em 0 .1em}
 .tpl{border-top:1px solid var(--line);padding:.5em 0 .2em;margin-top:.4em}
@@ -728,8 +1048,8 @@ table.list td{text-align:left;white-space:normal}
 .lbl{margin:.3em 0 .1em;color:var(--muted);font-size:.9em}
 .says{background:var(--soft);padding:.45em .6em;border-radius:6px;
      white-space:pre-wrap;word-break:break-word}
-.says mark{background:#f6c9c4;color:#8f1d14;font-weight:bold;
-     border-radius:3px;padding:0 .1em}
+.says mark{background:#f3b6ae;color:#7a1d14;font-weight:bold;
+     border-radius:3px;padding:0 .15em;outline:1px solid #A8322A}
 details.opts{background:#fff;border:1px solid var(--line);margin:.2em 0}
 a.opts-link{color:#1a56c4;font-weight:bold}
 details.opts>summary{padding:.35em .6em;color:#1a56c4;font-weight:bold}

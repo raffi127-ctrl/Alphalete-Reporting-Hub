@@ -398,7 +398,7 @@ class SetupPageTest(unittest.TestCase):
         self.assertIn("thing", page2)                     # the flag count
         self.assertIn("class='flag'", page2)
         # every flag says who fixes it
-        self.assertEqual(page2.count("class='flag'"),
+        self.assertEqual(page2.count("class='flag'") + page2.count("class='rowbox'"),
                          page2.count("Who fixes it:"))
         self.assertIn("You or your admin can change this", page2)
 
@@ -423,7 +423,7 @@ class SetupPageTest(unittest.TestCase):
         self.assertIn("What it says now:", out)
         self.assertIn("I<mark>\u2019</mark>ve", out)
         self.assertIn("<mark>test</mark>", out)
-        self.assertIn("We'd recommend:", out)
+        self.assertIn("class='flag'><summary>\u2691 ", out)
         # the section's flag count includes its templates' flags
         inv_head = out[out.index("2nd Interview Invite"):][:200]
         self.assertIn("\u2691 1", inv_head)
@@ -464,9 +464,87 @@ class SetupPageTest(unittest.TestCase):
 
     def test_clean_buffers_check_green(self):
         from automations.applicant_stream_card import setup_page as P
-        self.assertIn("matches our standard", P._head("x", 0, checked=True))
-        self.assertNotIn("matches our standard", P._head("x", 2, checked=True))
-        self.assertNotIn("matches our standard", P._head("x", 0))
+        self.assertIn("matches what we recommend", P._head("x", 0, checked=True))
+        self.assertNotIn("matches what we recommend", P._head("x", 2, checked=True))
+        self.assertNotIn("matches what we recommend", P._head("x", 0))
+
+    def test_clean_reply_group_is_green(self):
+        from automations.applicant_stream_card import setup_page as P
+        out = P.render_ai({"replies": [("Work Hours", "Don't Escalate",
+                                         "We work 9-5", [])],
+                           "replies_missing": []})
+        self.assertIn("<details class='good'>", out)
+        self.assertIn("matches what we recommend", out)
+
+    def test_office_without_ai_says_so(self):
+        from automations.applicant_stream_card import setup_page as P
+        bare = {"info": [("AI's name", "", None)], "replies": [], "hours": {}}
+        self.assertTrue(P.no_ai(bare))
+        self.assertIn("isn't set up with ApplicantStream's AI", P.render_ai(bare))
+        self.assertIn("Price:", P.render_ai(bare))
+        self.assertFalse(P.no_ai({}))                 # not pulled != no AI
+        self.assertFalse(P.no_ai({"info": [("AI's name", "Serena", None)]}))
+
+    def test_changes_week_over_week(self):
+        import datetime as dt
+        from automations.applicant_stream_card import changes as CH
+        a = {"Buffer \u00b7 Earliest time the AI can offer": "45",
+             "AI reply \u00b7 Work Hours": "Escalate: call us"}
+        b = {"Buffer \u00b7 Earliest time the AI can offer": "60",
+             "AI reply \u00b7 Work Hours": "Escalate: call us",
+             "AI reply \u00b7 Work Days": "Don't Escalate: Mon-Fri"}
+        then, now, diffs = CH.compare({"2026-11-08": a, "2026-11-15": b})
+        self.assertEqual((then, now), ("2026-11-08", "2026-11-15"))
+        self.assertEqual(len(diffs), 2)                 # buffer + new reply
+        # A part last week's pull missed is not a change.
+        _t, _n, d2 = CH.compare({"2026-11-08": {"Buffer \u00b7 x": "60"},
+                                 "2026-11-15": {"Buffer \u00b7 x": "60",
+                                                "Text step \u00b7 y": "On"}})
+        self.assertEqual(d2, [])
+        # Two runs 2 days apart: nothing old enough to compare yet.
+        self.assertIsNone(CH.compare({"2026-11-13": a, "2026-11-15": b})[0])
+        wk = [(dt.date(2026, 11, 1), {"pct_first_retention": 50.0}),
+              (dt.date(2026, 11, 8), {"pct_first_retention": 57.0})]
+        out = CH.html({"2026-11-08": a, "2026-11-15": b}, (wk, None))
+        self.assertIn("2 changes between 11/8 and 11/15", out)
+        self.assertIn("1st round retention: 50.0% \u2192 57.0%", out)
+        self.assertIn("hint, not proof", out)
+        self.assertIn("started tracking",
+                      CH.html({"2026-11-15": b}, (wk, None)))
+
+    def test_suggest_keeps_their_words(self):
+        from automations.applicant_stream_card import setup_page as P
+        body = "Hey, it\u2019s Aisha. We'll call you shortly!"
+        got = P.suggest(body, [{"kind": "NOT PLAIN TEXT"},
+                               {"kind": "PROMISES A CALL"}])
+        self.assertEqual(got, "Hey, it's Aisha. We'll call you!")
+        self.assertIn("<ins>", P._changed(body, got))
+        self.assertEqual(P.suggest("Pay has a base.", [{"kind": "BASE PAY"}]),
+                         "Pay has a base.")          # needs a person
+
+    def test_reply_rules_run_on_templates(self):
+        from automations.applicant_stream_card import fixes as F
+        got = F.reply_rule_findings([("No Answer", "No Answer #1",
+                                      "We will call you shortly.")])
+        self.assertIn("PROMISES A CALL", [k for k, _t in got])
+
+    def test_grammar_flag_explains_and_fixes(self):
+        from automations.applicant_stream_card import setup_page as P
+        body = "Hey  there, i think your going to love it."
+        d = "grammar \u2014 \u201cyour going (your \u2192 you're)\u201d"
+        self.assertIn("use \u201cyou're\u201d", P.grammar_says(d))
+        self.assertEqual(P._spans("GRAMMAR", body, d), [(20, 30)])
+        got = P.suggest(body, [{"kind": "GRAMMAR", "detail": d},
+                               {"kind": "GRAMMAR",
+                                "detail": "lowercase i \u2014 \u201ci on its own\u201d"}])
+        self.assertEqual(got, "Hey there, I think you're going to love it.")
+
+    def test_name_box_is_not_proofread(self):
+        from automations.applicant_stream_card import fixes as F
+        got = F.reply_rule_findings([("Friendly Reminder 1", "Friendly Reminder 1 1",
+            "See you soon!\n[Friendly Reminder 1 / Friendly Reminder 1 1] "
+            "input 0: Friendly Reminder 1 1")])
+        self.assertEqual(got, [])
 
     def test_page_two_says_not_pulled(self):
         out = C.render(C.build("1"))

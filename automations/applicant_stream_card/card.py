@@ -30,6 +30,7 @@ import re
 
 from automations.applicant_stream_card import fixes as F
 from automations.applicant_stream_card import setup_page as SP
+from automations.applicant_stream_card import changes as CH
 
 GREEN, YELLOW, RED, GREY = "green", "yellow", "red", "grey"
 DOT = {GREEN: "#22A35A", YELLOW: "#E8A317", RED: "#D93A3A", GREY: "#9AA0A6"}
@@ -537,7 +538,7 @@ def todo(lines, n=TOP_N):
 def build(office, stats=None, ttb=None, recruiter_rows=None,
           info_items=(), info_skipped=(), word_items=(), word_skipped=(),
           ai_items=(), ai_skipped=(), sources=(), grading=(), delivery=None,
-          setup=None, slots=None, vitals=None, now=None):
+          setup=None, slots=None, vitals=None, changes=None, now=None):
     """The whole card as data. `sources` is [(what, date or None, where)]."""
     now = now or dt.datetime.now()
     fresh = []
@@ -566,6 +567,7 @@ def build(office, stats=None, ttb=None, recruiter_rows=None,
             "booked": (stats or {}).get("n"),
             "todo": todo(lines), "sources": fresh,
             "grading": list(grading), "setup": setup, "vitals": vitals,
+            "changes": changes,
             "stale": [f for f in fresh if f["stale"]]}
 
 
@@ -887,7 +889,7 @@ def render(card, scorecard_css=""):
     add("<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Applicant Stream Card {}</title><style>{}{}</style></head>"
-        "<body>".format(_e(card["office"]), CSS + SP.CSS,
+        "<body>".format(_e(card["office"]), CSS + SP.CSS + CH.CSS,
                         _scope_css(scorecard_css, ".sc")))
     add("<h1>Applicant Stream Grade Card</h1>")
     add("<div class='sub'>{}</div>".format(sub))
@@ -908,15 +910,18 @@ def render(card, scorecard_css=""):
         "<input type='radio' name='pg' id='pg1'>"
         "<input type='radio' name='pg' id='pg2'>"
         "<input type='radio' name='pg' id='pg3'>"
-        "<div class='tabs'><label for='pg0'>Trend</label>"
+        "<div class='tabs'><label for='pg0'>Vitals</label>"
         "<label for='pg1'>Grade card</label>"
-        "<label for='pg2'>AI Settings{}</label>"
+        "<label for='pg2'>AI Settings{}{}</label>"
         "<label for='pg3'>Templates{}</label></div>"
         "<div class='page0'>{}</div>"
         "<div class='page1'>".format(
             _tab(SP.flag_total(setup, SP.AI_PARTS)),
+            " <span class='fl'>not set up</span>" if SP.no_ai(setup)
+            else "",
             _tab(SP.flag_total(setup, SP.TEMPLATE_PARTS)),
-            trend_html(card.get("vitals"))))
+            trend_html(card.get("vitals")) + CH.html(
+                card.get("changes"), card.get("vitals"))))
 
     if card.get("grading"):
         add("<div class='truth'><b>Make sure these are correct.</b> This is "
