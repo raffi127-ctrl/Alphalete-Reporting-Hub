@@ -437,13 +437,13 @@ def _slot_list(lst):
     span = _short_time(first) if first == last else "{}\u2013{}".format(
         _short_time(first), _short_time(last))
     seats = sorted({x["seats"] for x in lst if x.get("seats")})
-    each = ("" if not seats else " \u00b7 {} seats{}".format(
-        seats[0], " each" if len(lst) > 1 else "")
-            if len(seats) == 1 else " \u00b7 {}\u2013{} seats".format(
-                seats[0], seats[-1]))
-    return "<b>{} time{}</b>, {} {}{}".format(
-        len(lst), "" if len(lst) == 1 else "s", _e(span),
-        _ampm(last).upper(), each)
+    # Megan 2026-11-15: "5 slots with x amount / slot", on 2 distinct lines.
+    per = ("" if not seats else " \u00b7 {} / slot".format(seats[0])
+           if len(seats) == 1 else " \u00b7 {}\u2013{} / slot".format(
+               seats[0], seats[-1]))
+    return ("<b>{} slot{}</b>{}<br><span class='s'>{} {}</span>".format(
+        len(lst), "" if len(lst) == 1 else "s", per, _e(span),
+        _ampm(last).upper()))
 
 
 DAY_SHORT = {"Monday": "Mon", "Tuesday": "Tue", "Wednesday": "Wed",
@@ -580,7 +580,7 @@ def render_ai(setup):
         for label, am, pm in slot_rows(s["hours"]):
             add("<tr><td><b>{}</b></td><td>{}</td><td>{}</td></tr>".format(
                 label, am, pm))
-        add("</table><p class='s'>Seats = how many people each time holds. "
+        add("</table><p class='s'>/ slot = how many people each time holds. "
             "2nd-round times aren't pulled yet.</p></div>")
 
     add(_head("AI replies (escalations)", n.get("replies"), when.get("ai")))

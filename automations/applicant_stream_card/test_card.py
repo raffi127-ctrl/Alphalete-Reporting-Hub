@@ -342,8 +342,8 @@ class SlotsTest(unittest.TestCase):
         setup = P.gather()
         setup["hours"] = self._hours(1, 1)
         out = P.render(setup)
-        self.assertIn("9:00 AM \u00b7 2 seats", out)
-        self.assertIn("1:00 PM \u00b7 2 seats", out)
+        self.assertIn("1 slot</b> \u00b7 2 / slot", out)
+        self.assertIn("1:00 PM", out)
 
 
 class SetupPageTest(unittest.TestCase):
@@ -456,10 +456,9 @@ class SetupPageTest(unittest.TestCase):
                           "Friday")}
         rows = P.slot_rows(week)
         self.assertEqual([r[0] for r in rows], ["Mon\u2013Fri", "Sat\u2013Sun"])
-        self.assertIn("2 times", rows[0][1])
+        self.assertIn("2 slots</b> \u00b7 24 / slot", rows[0][1])
         self.assertIn("8:15\u20138:45 AM", rows[0][1])
-        self.assertIn("24 seats each", rows[0][1])
-        self.assertIn("1 time</b>, 12:15 PM", rows[0][2])
+        self.assertIn("1 slot</b>", rows[0][2])
 
     def test_clean_buffers_check_green(self):
         from automations.applicant_stream_card import setup_page as P
