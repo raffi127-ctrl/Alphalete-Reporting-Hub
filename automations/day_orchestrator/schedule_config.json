@@ -17997,6 +17997,33 @@
    },
    "timeout_minutes": 10
   },
+  "verizon_churn_tab": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "VERIZON CHURN tab for Nico's office (Carlos 2026-11-15: 'NDS has this NDS churn tab ... can we make one for Verizon as well?'). on_scheduler:false = NOT in the 4am batch: it RIDES verizon_daily_nicolas (verizon_office.daily refreshes it right after the Order Log tab, same Credico pull). Present so `lucy rerun verizon_churn_tab -- --write` refreshes it by hand. The 0-30 day rolloff list (stacked Port / BYOD / New tables), the activations-vs-disconnects box, Credico's eight churn tiers with '\u25c0 now' off the calendar window, the per-rep 0-30 activation rate. Terms from verizon_office/comp.py (the Credico PDFs Nico forwarded 11/7). SANDBOX copy until Carlos approves, then daily.CHURN_TAB_PROD = True / `--prod`. Lucy 4: it has the Hub inbox login.",
+   "machine": "Lucy 4",
+   "display_name": "Verizon Churn tab (Credico, rides the daily run)",
+   "source_type": "email",
+   "data_sources": [
+    "Credico Sales Verification (Hub inbox)"
+   ],
+   "command": [
+    "automations.verizon_office.churn_tab"
+   ],
+   "base_args": [
+    "--office",
+    "nicolas"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 10
+  },
   "verizon_review_post": {
    "on_scheduler": false,
    "_off_scheduler_note": "HAND-RUN ONLY. Posts Nico's Verizon report EXAMPLES (resources/verizon_review/, built on Megan's laptop with `python -m automations.verizon_office.review --build`) to the review group DM C0CFN3SBFCM (Alphalete GP, Carlos, Evelyn, Lucy, Lucy Reporting, Megan, Nico): an intro explaining the reactions, then one post per report. A checkmark from Carlos or Nico = approved; an X = reply in the thread with what to change (Megan 2026-11-07). Lucy 4 so the posts come from Lucy, and pinned there because output/verizon_review_posted.json (what already went out) lives on that box: a retry posts only what is missing. Default (no --send) prints only.",

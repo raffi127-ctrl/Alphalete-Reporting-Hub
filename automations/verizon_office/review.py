@@ -140,7 +140,7 @@ def build() -> List[Dict]:
     # 5-10. the NDS wireless thread
     whats = {
         "rep_activations": "The last 4 weeks per rep (two pictures: this + last week, then the two before): activated, pending, total, canceled/disconnected.",
-        "activation_by_week": "The last 4 sales weeks: of the lines sold each week, how many have activated since. Office total + every rep.",
+        "activation_by_week": "The last 6 sales weeks, oldest on the left: of the lines sold each week, how many have activated since. Office total + every rep.",
         "revenue_board": "This sales week (Sun-Sat): $ by rep by day on Credico's comp grid, each rep's weekly bonus tier, and the week total with the bonus. Estimates; Credico's statement is the pay.",
         "activation_revenue": "4 weeks (two pictures): activated $, canceled $ and still-open $ by rep, on Credico's comp grid.",
         "rep_tiers": "Each rep's weekly activation-bonus tier this week (4 / 5-6 / 7-8 / 9+ orders). Yellow = 1 order from the next tier.",

@@ -37,6 +37,9 @@ LIVE_OFFICES: tuple = ("nicolas",)   # Nico on ECO 2026-11-07
 # (Carlos approved the sandbox preview 2026-11-14, 727 lines); False = the
 # Sales Board SANDBOX copy.
 ORDER_LOG_PROD = True
+# The 'VERIZON CHURN' tab (churn_tab.py): sandbox copy until Carlos approves
+# the preview; True = the Vantura Master.
+CHURN_TAB_PROD = False
 
 
 def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
@@ -149,6 +152,15 @@ def main(argv=None) -> int:
             OL.refresh(Path(sv), today=today, prod=ORDER_LOG_PROD)
         except Exception as e:  # noqa: BLE001
             print("⚠ Verizon Order Log tab failed (the thread posted fine): %s" % e)
+        # THE VERIZON CHURN TAB too (Carlos 2026-11-15: "NDS has this NDS churn
+        # tab ... can we make one for Verizon as well?"): the 0-30 day rolloff
+        # list, the box and Credico's tier chart off the same file
+        # (verizon_office.churn_tab). Sandbox until CHURN_TAB_PROD flips.
+        try:
+            from automations.verizon_office import churn_tab as CH
+            CH.refresh(Path(sv), today=today, prod=CHURN_TAB_PROD)
+        except Exception as e:  # noqa: BLE001
+            print("⚠ Verizon Churn tab failed (the thread posted fine): %s" % e)
     return 0
 
 

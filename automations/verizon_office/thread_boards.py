@@ -265,19 +265,23 @@ def status_orders(owner, header, rows, target, out_dir, slug: str) -> Tuple[Path
                   empty_note=f"No new Local Office {noun} orders."), len(hits)
 
 
-def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 4) -> Tuple[Path, int]:
+def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6) -> Tuple[Path, int]:
     """Activation Rate by Week-Ending (Carlos 2026-11-07): the lines SOLD in
     each of the last `weeks` Sun-Sat weeks, and how many of those have
     activated since -- "all the sales from X week that have activated, not
     which sales activated on X week". Office total + one row per rep, same
-    table and colour bars as Activation Rate by Rep (0-30 day bands: the
-    newest four weeks are all inside 30 days)."""
+    table and colour bars as Activation Rate by Rep (0-30 day bands). SIX
+    weeks, OLDEST on the left and the newest on the far right, like the NDS
+    Activation Rate by Week Ending (Carlos 2026-11-15: "let's make sure that
+    for that one, we do 6 weeks ... the most recent week is on the far
+    right"). Counted "ever activated": a line that activated and later
+    disconnected still counts (the Churn board carries the disconnects)."""
     from automations.b2b_metrics.rep_boards import render_table_png
     from automations.office_metrics import nds_orderlog as N
     from automations.rep_activations.aggregate import week_bounds
     i = {c: header.index(c) for c in header}
     this_sun = week_bounds(target)[2]
-    ends = [this_sun - dt.timedelta(days=1 + 7 * k) for k in range(weeks)]   # newest first
+    ends = [this_sun - dt.timedelta(days=1 + 7 * k) for k in reversed(range(weeks))]   # oldest first
     cols = [f"WE {e.month}/{e.day}" for e in ends]
     data: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: {c: [0, 0] for c in cols})
     for r in rows:

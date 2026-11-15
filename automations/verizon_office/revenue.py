@@ -252,9 +252,15 @@ def main(argv=None) -> int:
         day = "%d/%d" % (target.month, target.day)
         for p in paths:
             for user in [u.strip() for u in a.dm.split(",") if u.strip()]:
-                r = S.dm_user_with_file(p, user=user,
-                                        comment=":dollar: *Activation Revenue Overview* — %s, four weeks on one picture (preview)" % day
-                                        if a.board == "activation_one" else ":moneybag: *%s* — %s (preview)" % (a.board, day))
+                comment = (":dollar: *Activation Revenue Overview* — %s, four weeks on one picture (preview)" % day
+                           if a.board == "activation_one" else ":moneybag: *%s* — %s (preview)" % (a.board, day))
+                try:
+                    r = S.dm_user_with_file(p, user=user, comment=comment)
+                except S.SlackPostError:
+                    # LUCY 4 HAS NO 'Lucy' BOT TOKEN (2026-11-15: "No 'Lucy' Slack
+                    # token found"); its metrics token is Lucy Reporting, the
+                    # account that posts the Verizon thread -- DM from that one.
+                    r = S.dm_user_with_file(p, user=user, comment=comment, as_bot=False)
                 print("  DM %s: %s" % (user, "ok" if r.get("ok") else r))
     return 0
 
