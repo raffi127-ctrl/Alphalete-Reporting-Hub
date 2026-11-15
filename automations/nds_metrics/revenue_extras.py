@@ -38,7 +38,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from automations.nds_metrics.run import (OUT_DIR, _c, _parse_date, load_soh,
                                          tier_bands, tier_cells)
 
-ACTIVATED_HEADER = 'LINES ACTIVATED<br><span class="dd">this week ($ activated)</span>'
+ACTIVATED_HEADER = 'LINES ACTIVATED<br><span class="dd">this week ($)</span>'
 NOTE = ("Tier = orders with a port line this Sun–Sat week (T1 4 · T2 5–6 · T3 7–8 · T4 9+). "
         "Lines activated = wireless lines that went active this Mon–Sun week on SaraPlus, "
         "($) = all $ that activated with them. Tier columns: green ✓ = your tier; yellow = one "
@@ -177,7 +177,7 @@ def churn_card(box: Optional[dict]) -> str:
         return "—"
     act, disc = int(box["act"]), int(box.get("disc") or 0)
     return "%.1f%% %s" % (100.0 * disc / act,
-                          _SMALL % ("%d of %d lines activated in the last 30 days" % (disc, act)))
+                          _SMALL % ("%d of %d activated in the last 30 days" % (disc, act)))
 
 
 def cards(weeks_rows, churn_box) -> List[Tuple[str, str]]:

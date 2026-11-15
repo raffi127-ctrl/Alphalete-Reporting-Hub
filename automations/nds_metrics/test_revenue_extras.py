@@ -77,7 +77,7 @@ class Cards(unittest.TestCase):
 
     def test_churn(self):
         self.assertTrue(RX.churn_card({"act": 71, "disc": 3, "pend": 9}).startswith("4.2% "))
-        self.assertIn("3 of 71 lines activated in the last 30 days", RX.churn_card({"act": 71, "disc": 3}))
+        self.assertIn("3 of 71 activated in the last 30 days", RX.churn_card({"act": 71, "disc": 3}))
         self.assertEqual(RX.churn_card({"act": 0, "disc": 0}), "—")
         self.assertEqual(RX.churn_card(None), "—")
         self.assertEqual([lab for lab, _v in RX.cards(None, None)],
