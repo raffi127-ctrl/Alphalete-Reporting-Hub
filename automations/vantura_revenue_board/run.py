@@ -439,6 +439,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     `note`: a line under the footer label."""
     extra_hdrs = list((extra or {}).get("headers") or [])
     n_extra = len(extra_hdrs)
+    bd = (extra or {}).get("breakdown")          # {"header": html, "pos": "right" | "after_total"}
     show_next = tiered and not (extra or {}).get("no_next")     # the NEXT TIER column
     # `extra["tier_chip"]` (NDS, Carlos 2026-11-15: "I like how the Verizon
     # one shows what tier they're on right next to the rep's week total"):
@@ -490,6 +491,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         # under the first name, and we're going to want to see 4 orders, 15
         # lines ... 7 auto pay, 9 unlimited plus, 15 mobile protection"):
         # row["rep_lines"] = name lines, row["rep_tags"] = the add-on counts.
+        bd = (extra or {}).get("breakdown")
+        bd_cell = (f'<td class="bd">{row.get("breakdown", "")}</td>' if bd else "")
         if row.get("rep_lines"):
             name_html = "".join(f'<div class="rn">{ln.upper()}</div>' for ln in row["rep_lines"])
             tags = (f'<div class="rtag">{row["rep_tags"]}</div>' if row.get("rep_tags") else "")
@@ -502,9 +505,12 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
             f'<tr><td class="rk">{i}</td>'
             + rep_cell
             + f'<td class="tot">{money(row["total"])}</td>'
+            + (bd_cell if bd and bd.get("pos") == "after_total" else "")
             + chip + "".join(days)
             + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if show_next else "")
-            + xcells + '</tr>')
+            + xcells
+            + (bd_cell if bd and bd.get("pos") != "after_total" else "")
+            + '</tr>')
 
     # Office totals close the table (Carlos 2026-09-08: "the total at the
     # bottom of the monday list") — each day column sums at its foot.
@@ -515,9 +521,11 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         '<tr class="totrow"><td class="rk"></td>'
         '<td class="rep">OFFICE TOTAL</td>'
         f'<td class="tot">{money(week_total)}</td>'
+        + ('<td class="bd"></td>' if bd and bd.get("pos") == "after_total" else '')
         + ('<td></td>' if show_chip else '')
         + tot_days + ('<td class="nxt"></td>' if show_next else '')
-        + ('<td class="xt"></td>' * n_extra) + '</tr>')
+        + ('<td class="xt"></td>' * n_extra)
+        + ('<td class="bd"></td>' if bd and bd.get("pos") != "after_total" else '') + '</tr>')
 
     day_ths = "".join(
         f'<th class="dh{" cur" if d == upto else ""}">{c}<br>'
@@ -543,7 +551,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     tier_th = '<th style="text-align:left">TIER</th>' if show_chip else ""
     next_th = "<th>NEXT TIER</th>" if show_next else ""
     extra_th = "".join(f'<th class="xh">{h}</th>' for h in extra_hdrs)
-    wrap_w = 1240 + 112 * n_extra            # the page grows a column at a time
+    bd_th = f'<th class="xh">{bd["header"]}</th>' if bd else ""
+    wrap_w = 1240 + 112 * n_extra + (230 if bd else 0)   # the page grows a column at a time
     tbl_w = wrap_w - 80
     foot_w = wrap_w - 120
     note_html = (f'<div style="color:#cfd6dc;font-size:12px;margin-top:6px">{note}</div>'
@@ -577,6 +586,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .rep.stacked{{line-height:1.25;padding-top:8px;padding-bottom:8px}}
  .rn{{font-size:15px;font-weight:800}} .rep.stacked .rb{{margin-left:0;display:inline-block;margin-top:4px}}
  .rtag{{font-size:12px;color:#3c4650;font-weight:600;margin-top:4px;white-space:nowrap}}
+ .bd{{font-size:12px;color:#3c4650;font-weight:600;white-space:nowrap;text-align:left;line-height:1.35}}
  .tot{{font-size:19px;font-weight:800}}
  .chip{{padding:4px 12px;border-radius:6px;font-weight:700;font-size:13px}}
  .day{{color:#3c4650;font-size:13px}}
@@ -615,7 +625,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  {next_card}
  </div>
  <table><tr><th class="lh">#</th><th class="lh">REP</th><th>WEEK TOTAL</th>
- {tier_th}{day_ths}{next_th}{extra_th}</tr>
+ {bd_th if bd and bd.get("pos") == "after_total" else ""}{tier_th}{day_ths}{next_th}{extra_th}{bd_th if bd and bd.get("pos") != "after_total" else ""}</tr>
  {''.join(trs)}</table>
  <div class="foot"><div><span class="lab">{kick}</span>{note_html}</div>
  <div style="color:#cfd6dc;font-size:13px;white-space:nowrap;margin-left:16px">{len(rows)} reps on the board</div>

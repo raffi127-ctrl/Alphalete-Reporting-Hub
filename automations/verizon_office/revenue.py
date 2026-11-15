@@ -32,7 +32,7 @@ def _week_lines(all_lines, start, end):
     return [l for l in all_lines if l["sold"] and start <= l["sold"] <= end]
 
 
-def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> Path:
+def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, layout: str = "right") -> Path:
     """Carlos's Vantura Revenue Board, Verizon's week: Sun-Sat columns by SALE
     date, the weekly activation-bonus tier, and the week total."""
     from automations.vantura_revenue_board import run as RB
@@ -88,12 +88,12 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
             # the week)")
             row["rep_badge"] = (f"{n} order{'' if n == 1 else 's'} · {sold} line{'' if sold == 1 else 's'}"
                                 + (" · DNQ" if bad else ""))
-            # first name over last name, then what pays on top (Carlos 2026-11-15)
-            parts = row["rep"].split()
-            row["rep_lines"] = [parts[0], " ".join(parts[1:])] if len(parts) > 1 else [row["rep"]]
+            # the add-on breakdown is its own COLUMN (Carlos 2026-11-15: the
+            # stacked cell "makes everything way too small"), far right or
+            # right after Week Total (layout)
             a = addons.get(row["rep"], {"autopay": 0, "premium": 0, "protect": 0, "byod": 0})
-            row["rep_tags"] = (f"{a['autopay']} AutoPay · {a['premium']} Unlimited Plus · "
-                               f"{a['protect']} Protect · {a['byod']} BYOD")
+            row["breakdown"] = (f"{a['autopay']} AutoPay &nbsp;·&nbsp; {a['premium']} Unlimited Plus<br>"
+                                f"{a['protect']} Protect &nbsp;·&nbsp; {a['byod']} BYOD")
         n_reps = max(len(rows), 1)
         avg = sum(sold_lines.values()) / n_reps
         reps_extra = (f' <span style="font-size:15px;color:#5b6770;font-weight:600">'
@@ -113,7 +113,9 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
                          out_dir / f"verizon_revenue_board_{target.isoformat()}.png",
                          board_name="Verizon Revenue Board", tiered=True,
                          extra={"headers": headers, "cards": cards, "no_next": True,
-                                "reps_extra": reps_extra}, note=note)
+                                "reps_extra": reps_extra,
+                                "breakdown": {"header": 'ADD-ONS<br><span class="dd">this week</span>',
+                                              "pos": "after_total" if layout == "left" else "right"}}, note=note)
     finally:
         RB.DAYS = saved
 
@@ -323,6 +325,8 @@ def main(argv=None) -> int:
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
+    ap.add_argument("--layout", choices=["right", "left"], default="right",
+                    help="revenue_board: the add-on breakdown column far right, or right after Week Total")
     ap.add_argument("--dm", help="Slack user id(s) to DM the picture to, as Lucy (comma-separated)")
     a = ap.parse_args(argv)
     from automations.verizon_office import offices as OF, run as RUN
@@ -343,7 +347,8 @@ def main(argv=None) -> int:
     else:
         fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
               "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]
-        got = fn(office.owner, Path(sv), target, out_dir)
+        got = (fn(office.owner, Path(sv), target, out_dir, layout=a.layout) if a.board == "revenue_board"
+               else fn(office.owner, Path(sv), target, out_dir))
     paths = got if isinstance(got, list) else [got]
     for p in paths:
         print("✓ %s" % p)
