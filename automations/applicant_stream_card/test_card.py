@@ -613,14 +613,20 @@ class SetupPageTest(unittest.TestCase):
     def test_advice_only_says_what_is_real(self):
         st = {"drivers": [
             {"key": "processed", "best": ("same day", 64, 900),
-             "worst": ("2+ days", 42, 900), "real": True},
+             "worst": ("2+ days", 42, 900), "real": True,
+             "won": 5, "weeks": 6},
+            {"key": "weekday", "best": ("Mon", 55, 900),
+             "worst": ("Tue", 48, 900), "real": True,
+             "won": 3, "weeks": 6},        # one or two big weeks: left out
             {"key": "board", "best": ("Indeed", 52, 3881),
              "worst": ("LinkedIn", 41, 34), "real": False}],
             "times": {"best_slot": ("9am", 55.0, 400)}}
-        got = C.advice(st, 6)
-        self.assertTrue(got.startswith("Based on the last 6 weeks: book"))
-        self.assertIn("vs 42% at 2+ days", got)
-        self.assertIn("9am", got)
+        head, pts = C.advice(st, 6)
+        got = " ".join(pts)
+        self.assertIn("last 6 weeks", head)
+        self.assertIn("vs 42% when it's 2+ days later", got)
+        self.assertIn("Held in 5 of 6 weeks", got)
+        self.assertNotIn("Monday", got)
         self.assertNotIn("Indeed", got)            # too few to be sure
 
     def test_page_two_says_not_pulled(self):

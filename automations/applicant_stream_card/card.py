@@ -24,6 +24,7 @@ Rules it keeps (from the audit it is built on):
 """
 from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
 
+import collections
 import datetime as dt
 import html
 import re
@@ -454,17 +455,34 @@ def _driver_html(d):
 FULL_DAY = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday",
             "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday",
             "Sun": "Sunday"}
+
+
+def _day(v):
+    return FULL_DAY.get(v, v)
+
+
+# Megan 2026-11-15: say what was compared - "this makes it seem like we only
+# looked at Monday and Tuesday" - so each point names the whole set, the
+# best AND the worst.
 ADVICE = {
-    "processed": lambda b: {
-        "same day": "book the 1st round for the same day the resume is "
-                    "processed",
-        "next day": "book the 1st round for the day after the resume is "
-                    "processed"}.get(b),
-    "part": lambda b: "book {} time slots".format(b),
-    "weekday": lambda b: "{} interviews show up best".format(
-        FULL_DAY.get(b, b)),
-    "board": lambda b: "candidates from {} show up best".format(b),
-    "booker": lambda b: "people booked by {} show up best".format(b),
+    "processed": lambda b, w: (
+        "Book the 1st round for the {} the resume is processed: {:.0f}% "
+        "show up, vs {:.0f}% when it's {}.".format(
+            "same day" if b[0] == "same day" else "day after", b[1], w[1],
+            "2+ days later" if w[0] == "2+ days" else w[0])
+        if b[0] in ("same day", "next day") else None),
+    "weekday": lambda b, w: (
+        "Of all days of the week, {} interviews show up best ({:.0f}%) and "
+        "{} the worst ({:.0f}%).".format(_day(b[0]), b[1], _day(w[0]), w[1])),
+    "part": lambda b, w: (
+        "Of all interview times, {} slots show up best ({:.0f}%) and {} the "
+        "worst ({:.0f}%).".format(b[0], b[1], w[0], w[1])),
+    "board": lambda b, w: (
+        "Of all job boards, candidates from {} show up best ({:.0f}%) and "
+        "{} the worst ({:.0f}%).".format(b[0], b[1], w[0], w[1])),
+    "booker": lambda b, w: (
+        "People booked by {} show up {:.0f}%, vs {:.0f}% for {}.".format(
+            b[0], b[1], w[1], w[0])),
 }
 
 
@@ -475,31 +493,43 @@ def _weeks_in(st):
     return max(1, round(((span[1] - span[0]).days + 1) / 7.0))
 
 
+def _holds(won, weeks):
+    """The best group beat the worst in most weeks (at least 2 of 3)."""
+    return bool(weeks) and weeks >= 3 and won * 3 >= weeks * 2
+
+
+def _held(won, weeks):
+    return "(Held in {} of {} weeks.)".format(won, weeks)
+
+
 def advice(st, weeks=None):
-    """One plain summary sentence for Bookings and show-ups, or None."""
-    dr = [d for d in (st or {}).get("drivers") or [] if d["real"]]
-    bits = []
-    for d in dr:
+    """(heading, [points]) for Bookings and show-ups, or None. Only gaps
+    big enough to trust go in: a summary that sells noise is worse than a
+    short one."""
+    from automations.applicant_stream_card import stream_stats as S
+    pts = []
+    for d in (st or {}).get("drivers") or []:
         fn = ADVICE.get(d["key"])
-        say = fn(d["best"][0]) if fn else None
-        if say:
-            bits.append("{} ({:.0f}% show up vs {:.0f}% {})".format(
-                say, d["best"][1], d["worst"][1],
-                "for " + FULL_DAY[d["worst"][0]] if d["worst"][0] in FULL_DAY
-                else "at " + d["worst"][0]))
-    best = ((st or {}).get("times") or {}).get("best_slot")
-    if best:
-        bits.append("your best show-up time is {} ({:.0f}%)".format(
-            best[0], best[1]))
-    if not bits:
+        if d["real"] and fn and _holds(d.get("won"), d.get("weeks")):
+            say = fn(d["best"], d["worst"])
+            if say:
+                pts.append("{} {}".format(say, _held(d["won"], d["weeks"])))
+    t = (st or {}).get("times") or {}
+    b, w = t.get("best_slot"), t.get("worst_slot")
+    won, wk = t.get("slot_won") or (0, 0)
+    if b and w and _holds(won, wk):
+        p = S._p_two(b[1], b[2], w[1], w[2])
+        if p is not None and p < 0.05:
+            pts.append("Of all interview times, across every day of the "
+                       "week, {} shows up best ({:.0f}%) and {} the worst "
+                       "({:.0f}%). {}".format(b[0], b[1], w[0], w[1],
+                                              _held(won, wk)))
+    if not pts:
         return None
-    head = "Based on the last {} weeks".format(weeks) if weeks else \
-        "Based on these weeks"
-    if len(bits) == 1:
-        body = bits[0]
-    else:
-        body = "; ".join(bits[:-1]) + "; and " + bits[-1]
-    return "{}: {}.".format(head, body[0].lower() + body[1:])
+    head = ("Based on every 1st round booked in the last {} weeks:".format(
+        weeks) if weeks else "Based on every 1st round booked in these "
+        "weeks:")
+    return head, pts
 
 
 def drivers(st):
@@ -734,6 +764,8 @@ ol.replies li{margin:.45em 0}
 .vitals details.vital>summary:after{display:none}
 details.drv{margin:.3em 0}
 details.drv>summary{flex-wrap:wrap;gap:.2em .6em}
+.advice ul{margin:.3em 0 0;padding-left:1.2em}
+.advice li{margin:.2em 0}
 .advice{background:#f1faf4;border:1px solid #9fd3b5;border-radius:10px;padding:.7em .9em;margin:.4em 0 .6em}
 label.go{color:#1a56c4;font-weight:bold;cursor:pointer;text-decoration:underline}
 .vn{font-weight:bold}
@@ -926,6 +958,46 @@ AI_KEYS = ("slots",)
 TEMPLATE_KEYS = ("delivery",)
 
 
+def _by_recruiter(items):
+    """Recruiter typing + wording as ONE row per person, their slips inside
+    (Megan 2026-11-15: "This should just have 1 per recruiter with their
+    breakdown")."""
+    ln = _checked_line("words", "\u270d\ufe0f", "Recruiter typing + wording",
+                       items, [], set())
+    if not ln["items"]:
+        return ln
+    people = {}
+    for i in ln["items"]:
+        people.setdefault(i["where"] or "(not recorded)", []).append(i)
+    order = sorted(people, key=lambda w: -len(people[w]))
+    html_ = []
+    for who in order:
+        mine = sorted(people[who], key=_rank)
+        kinds = collections.Counter(_slip_kind(i) for i in mine)
+        html_.append(
+            "<details class='drv'><summary><span class='t'>{}</span>"
+            "<span class='s'>{} to fix \u00b7 {}</span></summary>"
+            "<div class='body'><ul class='acts'>{}</ul></div></details>"
+            .format(_e(who), len(mine), _e(", ".join(
+                "{} {}".format(n, k) for k, n in kinds.most_common())),
+                "".join("<li><details><summary>{}</summary><div class='body'>"
+                        "{}</div></details></li>".format(
+                            _e(_slip_kind(i).capitalize()), _fix_body(i))
+                        for i in mine)))
+    ln["items"] = []
+    ln["extra_html"] = "".join(html_)
+    ln["short"] = "{} to fix across {} {}".format(
+        sum(len(v) for v in people.values()), len(people),
+        "person" if len(people) == 1 else "people")
+    return ln
+
+
+def _slip_kind(i):
+    """'spelling', 'missing space', 'sent the wrong office address' ..."""
+    t = i.get("title") or ""
+    return (t.split(" \u2014 ")[0] or i["kind"]).strip().lower()
+
+
 def _line_html(ln):
     """One scorecard line as a tap-to-open row."""
     out = ["<details><summary><span class='dot' style='background:{}'>"
@@ -954,9 +1026,13 @@ def _lines_html(card, keys, title, lead=None):
     got = [lines[k] for k in keys if k in lines]
     if not got:
         return ""
+    box = ""
+    if lead:
+        head, pts = lead
+        box = "<div class='advice'><b>{}</b><ul>{}</ul></div>".format(
+            _e(head), "".join("<li>{}</li>".format(_e(x)) for x in pts))
     return "<h2 class='k'>{}</h2>{}{}".format(
-        _e(title), "<p class='advice'>{}</p>".format(_e(lead)) if lead
-        else "", "".join(_line_html(ln) for ln in got))
+        _e(title), box, "".join(_line_html(ln) for ln in got))
 
 
 def _todo_html(card):
@@ -1113,11 +1189,11 @@ def render(card, scorecard_css=""):
     human = [lines[k] for k in HUMAN_KEYS if k in lines]
     words = lines.get("words")
     if words:
+        # People only: "AI Messaging" is the AI's own sender, not a person.
         mine = [i for i in words["items"]
-                if i.get("source") == "Recruiter texts"]
-        human.append(_checked_line("words", "\u270d\ufe0f",
-                                   "Recruiter typing + wording", mine, [],
-                                   set()))
+                if i.get("source") == "Recruiter texts"
+                and (i.get("where") or "").strip().lower() != "ai messaging"]
+        human.append(_by_recruiter(mine))
     add("<h2 class='k'>Your scorecard</h2>")
     for ln in human:
         add(_line_html(ln))

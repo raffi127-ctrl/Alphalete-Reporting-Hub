@@ -386,8 +386,8 @@ def house_rule(entry):
             "found": "{} text{} — e.g. {}".format(
                 entry.get("count"), "" if entry.get("count") == 1 else "s",
                 (entry.get("example") or "")[:180]),
-            "why": "These are set by Raf/Megan's rulings "
-                   "(resources/recruiting-context/megan-overrides.md).",
+            "why": "It goes against our house rules for what goes out to "
+                   "applicants.",
             "steps": ["If it came from a saved reply, click Load Template "
                       "in the text box, fix the saved copy once, and Save "
                       "Template over it.",

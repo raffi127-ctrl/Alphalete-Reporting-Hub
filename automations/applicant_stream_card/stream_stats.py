@@ -285,6 +285,8 @@ def booking_times(tl):
         if r is not None and n >= MIN_N:
             slot_rates.append((h, r, n))
     slot_rates.sort(key=lambda x: -x[1])
+    slot_won = (weeks_won(slots[slot_rates[0][0]], slots[slot_rates[-1][0]])
+                if len(slot_rates) > 1 else (0, 0))
     return {
         "ok": True, "total": total,
         "top_hours": [(_hour_label(h), n, 100.0 * n / total) for h, n in top],
@@ -295,6 +297,7 @@ def booking_times(tl):
         if slot_rates else None,
         "worst_slot": ((_hour_label(slot_rates[-1][0]),) + slot_rates[-1][1:])
         if len(slot_rates) > 1 else None,
+        "slot_won": slot_won,
     }
 
 
@@ -348,6 +351,37 @@ FACTORS = (
 )
 
 
+WEEK_MIN = 10    # a week counts only when both groups had this many
+
+
+def _week(t):
+    d = t["slot"].date() if t["slot"] else None
+    return d - __import__("datetime").timedelta(days=(d.weekday() + 1) % 7) \
+        if d else None
+
+
+def weeks_won(best, worst, min_n=WEEK_MIN):
+    """(weeks the best group beat the worst, weeks both had enough people).
+    Megan 2026-11-15: "make sure ... 1 bad week can't dictate the
+    recommendation" - a pattern has to hold week after week, not just in
+    the six-week total."""
+    by = {}
+    for side, grp in ((0, best), (1, worst)):
+        for t in grp:
+            w = _week(t)
+            if w:
+                by.setdefault(w, ([], []))[side].append(t)
+    won = n = 0
+    for b, w in by.values():
+        rb, nb = _rate(b)
+        rw, nw = _rate(w)
+        if rb is None or rw is None or nb < min_n or nw < min_n:
+            continue
+        n += 1
+        won += rb > rw
+    return won, n
+
+
 def retention_drivers(tl, min_n=MIN_N):
     """Each factor's best and worst group, biggest gap first.
 
@@ -371,9 +405,11 @@ def retention_drivers(tl, min_n=MIN_N):
         rated.sort(key=lambda x: -x[1])
         hi, lo = rated[0], rated[-1]
         p = _p_two(hi[1], hi[2], lo[1], lo[2])
+        won, weeks = weeks_won(groups[hi[0]], groups[lo[0]])
         out.append({"key": key, "label": label,
                     "best": hi, "worst": lo, "gap": hi[1] - lo[1],
                     "p": p, "real": p is not None and p < 0.05,
+                    "won": won, "weeks": weeks,
                     "groups": rated})
     out.sort(key=lambda d: (not d["real"], -d["gap"]))
     return out
