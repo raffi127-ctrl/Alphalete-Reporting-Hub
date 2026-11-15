@@ -991,6 +991,15 @@ def _board_title(office) -> str:
     label = getattr(office, "label", "") or getattr(office, "key", "")
     campaign = (getattr(office, "campaign", "") or "").strip().lower()
     short = BOARD_CAMPAIGN_NAME.get(campaign, "")
+    # NOT TWICE (Megan 2026-11-15): an office whose own label already names
+    # the campaign ("Jamis's Local Office (B2B — AT&T)") was drawn as
+    # "... (B2B — AT&T) (B2B AT&T)". Every word of the tag already in the
+    # label = the label already says it.
+    if short:
+        import re as _re
+        _words = lambda t: set(_re.findall(r"[a-z0-9&]+", t.lower()))
+        if _words(short) <= _words(label):
+            return label
     return "%s (%s)" % (label, short) if short else label
 
 
