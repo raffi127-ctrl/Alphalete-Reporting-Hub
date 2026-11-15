@@ -117,8 +117,12 @@ def connect(page_id: str) -> Dict:
     return {"ok": True, "reviews": n}
 
 
-def process(*, live: bool = False, profile=None) -> List[Dict]:
-    """profile = an ECO office (offices.Presence) with facebook_page_id; None = Alphalete."""
+def process(*, live: bool = False, profile=None, reviews=None, post=None) -> List[Dict]:
+    """profile = an ECO office (offices.Presence) with facebook_page_id; None = Alphalete.
+
+    reviews / post: the office's OWN computer reads and posts (eco_fb.py,
+    11/15). `reviews` = its last answer (already only unanswered ones),
+    post(story, text) queues the reply. Unset = Alphalete's Meta key here."""
     from automations.brand_audit import review_replies as RR
     from automations.brand_audit.config import SOCIAL_APPROVE_EMOJI, SOCIAL_REJECT_EMOJI
     if profile is None:
@@ -126,12 +130,14 @@ def process(*, live: bool = False, profile=None) -> List[Dict]:
         moved = moved_alphalete()
         if moved:
             return [{"action": "moved", "note": f"Alphalete runs as office {moved.key}"}]
-    k = _keys()
+    office_side = reviews is not None
+    k = {} if office_side else _keys()
     P = RR._profile(profile)
     page_id = getattr(profile, "facebook_page_id", "") if profile else k["facebook_page_id"]
     if not page_id:
         return [{"action": "no_facebook_page"}]
-    token = _page_token(k, page_id)
+    token = "" if office_side else _page_token(k, page_id)
+    _post = post or (lambda sid, text: post_reply(sid, text, token))
     name = profile.business_name if profile else "Alphalete Marketing"
     state_file = profile.path("fb_review_replies.json") if profile else STATE
     cap = (getattr(P, "auto_reply_daily_cap", 0) or DAILY_CAP) if profile else DAILY_CAP
@@ -142,11 +148,11 @@ def process(*, live: bool = False, profile=None) -> List[Dict]:
     drafted_today = state.setdefault("draft_counts", {}).get(today, 0)
     cl = RR._client() if live else None
     actions = []
-    for fb in get_reviews(page_id, token):
+    for fb in (reviews if office_side else get_reviews(page_id, token)):
         sid = fb["open_graph_story"]["id"]
         if sid in state["reviews"]:
             continue
-        if already_answered(sid, page_id, token):
+        if not office_side and already_answered(sid, page_id, token):
             state["reviews"][sid] = {"answered_before": True}
             continue
         rv = as_review(fb)
@@ -159,7 +165,7 @@ def process(*, live: bool = False, profile=None) -> List[Dict]:
         if positive:
             actions.append({"action": "auto_post", "story": sid, "reply": reply})
             if live:
-                post_reply(sid, reply, token)
+                _post(sid, reply)
                 posted_today += 1
                 state["reviews"][sid] = {"posted": True, "reply": reply}
             continue
@@ -187,7 +193,7 @@ def process(*, live: bool = False, profile=None) -> List[Dict]:
                 st.update({"reply": new, "card_ts": r.get("ts")})
                 actions.append({"action": "redraft", "story": sid})
             elif RR._reacted(rx, SOCIAL_APPROVE_EMOJI, P.counted_approvers):
-                post_reply(sid, st["reply"], token)
+                _post(sid, st["reply"])
                 st["posted"] = True
                 actions.append({"action": "approved", "story": sid})
         state["posted_counts"][today] = posted_today

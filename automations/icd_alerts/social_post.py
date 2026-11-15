@@ -58,7 +58,9 @@ SIGNIN_MAX_MINUTES = 15
 def _reviews_job(payload: Dict):
     """Google review jobs ride these same kinds (payload["do"]); they need no
     Zoho window, so they never wait on _busy()."""
-    return str((payload or {}).get("do") or "") in ("google_signin", "google_reviews", "google_reply")
+    return str((payload or {}).get("do") or "") in (
+        "google_signin", "google_reviews", "google_reply",
+        "fb_hello", "fb_key", "fb_reviews", "fb_reply")
 
 
 def signin(payload: Dict, log=print) -> Dict:
@@ -80,7 +82,12 @@ def signin(payload: Dict, log=print) -> Dict:
 def check(payload: Dict, log=print) -> Dict:
     if _reviews_job(payload):
         from automations.icd_alerts import office_reviews
-        res = (office_reviews.signin(payload, log=log) if payload.get("do") == "google_signin"
+        from automations.icd_alerts import office_facebook as FB
+        do = payload.get("do")
+        res = (office_reviews.signin(payload, log=log) if do == "google_signin"
+               else FB.hello(payload, log=log) if do == "fb_hello"
+               else FB.install_key(payload, log=log) if do == "fb_key"
+               else FB.read_job(payload, log=log) if do == "fb_reviews"
                else office_reviews.read_job(payload, log=log))
         return dict(res, do=payload["do"])     # Lucy 3 tells it from a Zoho check by this
     from automations.brand_audit import zoho_draft
@@ -112,6 +119,9 @@ def _unpack_album(data: bytes, folder: Path) -> list:
 def post(payload: Dict, live: bool, log=print) -> Dict:
     if _reviews_job(payload):
         from automations.icd_alerts import office_reviews
+        if payload["do"] == "fb_reply":
+            from automations.icd_alerts import office_facebook as FB
+            return dict(FB.reply_job(payload, live, log=log), do="fb_reply")
         return dict(office_reviews.reply_job(payload, live, log=log), do=payload["do"])
     from automations.brand_audit import zoho_draft
     caption = str(payload.get("caption") or "").strip()

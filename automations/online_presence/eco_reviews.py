@@ -99,7 +99,8 @@ def pick_listing(P, listings: List[Dict]) -> str:
 # ---- answers from the office's computer -----------------------------------------
 def split(rows: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
     """(ours, the rest). The rest go to watch.collect unchanged."""
-    ours = [r for r in rows if (r.get("result") or {}).get("do") in DOS]
+    from automations.online_presence.eco_fb import DOS as FB_DOS
+    ours = [r for r in rows if (r.get("result") or {}).get("do") in DOS + FB_DOS]
     return ours, [r for r in rows if r not in ours]
 
 

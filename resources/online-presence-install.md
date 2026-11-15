@@ -60,7 +60,9 @@ Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workb
    **Partners** → **Assign partner** → **Business ID** `1600512619997772` (Alphalete Marketing) →
    turn on **Content** + **Community activity** → **Assign**. Then we connect it (below, or
    Launch Studio step 9). Their Facebook reviews then get the same treatment as Google's:
-   thank-yous on their own, negatives drafted for ✅, already-answered ones skipped.
+   thank-yous on their own, negatives drafted for ✅, already-answered ones skipped. Their
+   computer reads + posts (every 30 min) with a key for just their page, sent to it sealed
+   (`eco_fb --connect`, run from Megan's Mac where Alphalete's Meta key lives).
 
 ## What we do
 
@@ -80,6 +82,7 @@ python -m automations.online_presence.setup google-signin <key>      # step 4b: 
 python -m automations.online_presence.setup invites --accept         # after step 3
 python -m automations.online_presence.setup link-google <key>
 python -m automations.brand_audit.fb_reviews --connect <key>         # after step 5: finds + connects their page
+python -m automations.online_presence.eco_fb --connect <key>         # then: their computer gets a key for THEIR page only (Megan's Mac)
 python -m automations.online_presence.setup audit <key>              # every site vs their sign-up answers
 python -m automations.online_presence.setup check <key>              # everything ✅ but Mode = ready
 python -m automations.online_presence.run --office <key>             # dry run: prints what it WOULD do

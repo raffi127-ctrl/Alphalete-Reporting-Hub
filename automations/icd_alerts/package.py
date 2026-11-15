@@ -164,6 +164,8 @@ AGENT_FILES = [
     # red for three days.
     "automations/icd_alerts/social_post.py",
     "automations/icd_alerts/office_reviews.py",
+    "automations/icd_alerts/office_facebook.py",
+    "automations/icd_alerts/sealed.py",
     "automations/brand_audit/__init__.py",
     "automations/brand_audit/config.py",
     "automations/brand_audit/zoho_draft.py",

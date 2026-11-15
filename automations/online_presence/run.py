@@ -42,7 +42,9 @@ def run_office(p: offices.Presence, *, live: bool,
         review_rows, answers = eco_reviews.split(answers or [])
         acts = watch.collect(p, answers, _client(), dry=dry) if answers else []
         if review_rows:
+            from automations.online_presence import eco_fb
             out["google reviews (office computer)"] = eco_reviews.collect(p, review_rows, _client(), dry=dry)
+            out["facebook (office computer)"] = eco_fb.collect(p, review_rows, _client(), dry=dry)
         chk = watch.ensure_daily_check(p, live=not dry)
         out["office computer"] = acts + ([chk] if chk else [])
         # Weekly reels (reels_flow.py) are PARKED (Megan 2026-11-09: "we don't
@@ -60,7 +62,9 @@ def run_office(p: offices.Presence, *, live: bool,
         if not (p.social and p.post_via == "eco"):      # answers not read above
             review_rows, _rest = eco_reviews.split(answers or [])
             if review_rows:
+                from automations.online_presence import eco_fb
                 out["google reviews (office computer)"] = eco_reviews.collect(p, review_rows, _cl(), dry=dry)
+                out["facebook (office computer)"] = eco_fb.collect(p, review_rows, _cl(), dry=dry)
         rd = eco_reviews.ensure_read(p, live=not dry)
         if not eco_reviews.signed_in(p):
             out["reviews"] = [{"action": "waiting_on_google_signin",
@@ -80,12 +84,27 @@ def run_office(p: offices.Presence, *, live: bool,
             from automations.online_presence import review_alerts
             out["bad reviews"] = review_alerts.check(p, _cl(), live=not dry)
         out["reviews"] = review_replies.process_reviews(dry_run=dry, profile=p)
-        if getattr(p, "facebook_page_id", ""):
-            try:
-                from automations.brand_audit import fb_reviews
-                out["facebook reviews"] = fb_reviews.process(live=not dry, profile=p)
-            except Exception as e:                  # never let Facebook stop the pass
-                out["facebook reviews"] = [{"action": "error", "note": str(e)[:200]}]
+    if p.reviews and getattr(p, "facebook_page_id", "") and getattr(p, "reviews_via", "lucy") == "eco":
+        # the office's own computer reads + posts with a key for just its page
+        try:
+            from automations.brand_audit import fb_reviews
+            from automations.online_presence import eco_fb
+            rd = eco_fb.ensure_read(p, live=not dry)
+            if not eco_fb.connected(p):
+                out["facebook reviews"] = [{"action": "waiting_on_facebook_connect",
+                                            "note": f"run `eco_fb --connect {p.key}` from Megan's Mac"}]
+            else:
+                out["facebook reviews"] = fb_reviews.process(
+                    live=not dry, profile=p, reviews=eco_fb.reviews(p),
+                    post=eco_fb.poster(p)) + ([rd] if rd else [])
+        except Exception as e:                  # never let Facebook stop the pass
+            out["facebook reviews"] = [{"action": "error", "note": str(e)[:200]}]
+    elif p.reviews and getattr(p, "facebook_page_id", ""):
+        try:
+            from automations.brand_audit import fb_reviews
+            out["facebook reviews"] = fb_reviews.process(live=not dry, profile=p)
+        except Exception as e:                  # never let Facebook stop the pass
+            out["facebook reviews"] = [{"action": "error", "note": str(e)[:200]}]
     if p.social:
         lock = p.path("social_inbox.lock")
         if not social_inbox.acquire_lock(lock):
