@@ -354,6 +354,78 @@ def write_doc(status: Optional[List[str]] = None, doc_id: str = DOC_ID, tab_id: 
     return True
 
 
+def _rgb(hexstr: str) -> dict:
+    h = hexstr.lstrip("#")
+    return {"color": {"rgbColor": {"red": int(h[0:2], 16) / 255, "green": int(h[2:4], 16) / 255, "blue": int(h[4:6], 16) / 255}}}
+
+
+def style_doc(tab_id: str = DOC_TAB_ID, doc_id: str = DOC_ID, log=print) -> int:
+    """Colour the tab the way the PNG is coloured (Carlos 2026-11-15: "you
+    added on to the B2B Vantura doc with no coloring whatsoever"): the title
+    red and centered, every table's header row Verizon red with white bold
+    text, the tier rows tinted green -> red, the bonus row yellow, money
+    cells dark red, every cell centered. Styles the LAST three tables of the
+    tab in place, so it can be re-run."""
+    import requests
+    token = _docs_token()
+    hdr = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+    base = "https://docs.googleapis.com/v1/documents/%s" % doc_id
+    j = requests.get(base + "?includeTabsContent=true", headers=hdr, timeout=60).json()
+    body = None
+    for t in j.get("tabs", []):
+        if t["tabProperties"]["tabId"] == tab_id:
+            body = t["documentTab"]["body"]["content"]
+    if body is None:
+        raise RuntimeError("tab %s not found" % tab_id)
+    reqs = []
+    # title + headings: red, centered; every paragraph centered
+    for el in body:
+        if "paragraph" not in el:
+            continue
+        txt = "".join(e.get("textRun", {}).get("content", "") for e in el["paragraph"]["elements"]).strip()
+        rng = {"startIndex": el["startIndex"], "endIndex": el["endIndex"], "tabId": tab_id}
+        reqs.append({"updateParagraphStyle": {"range": rng, "paragraphStyle": {"alignment": "CENTER"}, "fields": "alignment"}})
+        if txt == TITLE:
+            reqs.append({"updateTextStyle": {"range": rng, "textStyle": {"bold": True, "fontSize": {"magnitude": 20, "unit": "PT"},
+                                             "foregroundColor": _rgb(RED)}, "fields": "bold,fontSize,foregroundColor"}})
+        elif txt.startswith(("NEW PORT-IN", "REP TIER BONUS", "EVERYTHING ELSE")):
+            reqs.append({"updateTextStyle": {"range": rng, "textStyle": {"bold": True, "foregroundColor": _rgb(RED_DARK)}, "fields": "bold,foregroundColor"}})
+    tables = [el for el in body if "table" in el][-3:]
+    for el in tables:
+        tbl = el["table"]
+        start = {"index": el["startIndex"], "tabId": tab_id}
+        n_rows, n_cols = len(tbl["tableRows"]), len(tbl["tableRows"][0]["tableCells"])
+        is_tier = n_cols == 3 and n_rows == 9
+        is_bonus = n_rows == 2 and n_cols == 5
+
+        def cell_style(r, c, bg):
+            return {"updateTableCellStyle": {"tableRange": {"tableCellLocation": {"tableStartLocation": start, "rowIndex": r, "columnIndex": c},
+                                                            "rowSpan": 1, "columnSpan": 1},
+                                             "tableCellStyle": {"backgroundColor": _rgb(bg)}, "fields": "backgroundColor"}}
+        for r, trow in enumerate(tbl["tableRows"]):
+            for c, cell in enumerate(trow["tableCells"]):
+                crng = {"startIndex": cell["startIndex"], "endIndex": cell["endIndex"] - 1, "tabId": tab_id}
+                txt = "".join("".join(e.get("textRun", {}).get("content", "") for e in p2.get("paragraph", {}).get("elements", [])) for p2 in cell["content"]).strip()
+                reqs.append({"updateParagraphStyle": {"range": crng, "paragraphStyle": {"alignment": "CENTER"}, "fields": "alignment"}})
+                if r == 0:
+                    reqs.append(cell_style(r, c, RED))
+                    reqs.append({"updateTextStyle": {"range": crng, "textStyle": {"bold": True, "foregroundColor": _rgb("#ffffff")}, "fields": "bold,foregroundColor"}})
+                    continue
+                if is_tier:
+                    reqs.append(cell_style(r, c, _TIER_TINT[r]))
+                elif is_bonus:
+                    reqs.append(cell_style(r, c, "#fff3c4"))
+                bold = True
+                color = RED_DARK if txt.startswith(("$", "+$")) else "#1b1b1b"
+                if txt:
+                    reqs.append({"updateTextStyle": {"range": crng, "textStyle": {"bold": bold, "foregroundColor": _rgb(color)}, "fields": "bold,foregroundColor"}})
+    r = requests.post(base + ":batchUpdate", headers=hdr, json={"requests": reqs}, timeout=120)
+    if not r.ok:
+        raise RuntimeError("docs batchUpdate %s: %s" % (r.status_code, r.text[:400]))
+    log("[payout] doc tab %s styled (%d request(s), %d table(s))" % (tab_id, len(reqs), len(tables)))
+    return len(reqs)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--png", action="store_true")
@@ -361,6 +433,7 @@ def main(argv=None) -> int:
     ap.add_argument("--sheet-id", default=SHEET_ID)
     ap.add_argument("--doc", action="store_true")
     ap.add_argument("--doc-tab", default=DOC_TAB_ID, help="the B2B Vantura doc tab to append to")
+    ap.add_argument("--style-doc", action="store_true", help="colour the doc tab's title and tables in place")
     ap.add_argument("--no-status", action="store_true", help="skip the live 'where the office sits' lines")
     a = ap.parse_args(argv)
     status = [] if a.no_status else office_status()
@@ -372,7 +445,9 @@ def main(argv=None) -> int:
         write_tab(a.sheet_id, status)
     if a.doc:
         write_doc(status, tab_id=a.doc_tab)
-    if not (a.png or a.write_tab or a.doc):
+    if a.style_doc:
+        style_doc(a.doc_tab)
+    if not (a.png or a.write_tab or a.doc or a.style_doc):
         for heading, rows, note in tables():
             print("\n" + heading)
             for r in rows:

@@ -40,6 +40,8 @@ ORDER_LOG_PROD = True
 # The 'VERIZON CHURN' tab (churn_tab.py): sandbox copy until Carlos approves
 # the preview; True = the Vantura Master.
 CHURN_TAB_PROD = False
+# The comp grid leads the thread each morning through this date (Carlos 2026-11-15).
+PAYOUT_IN_THREAD_UNTIL = dt.date(2026, 11, 22)
 
 
 def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
@@ -60,6 +62,16 @@ def plan(office: OF.VerizonOffice, today: dt.date, sv_path: Path, cf_path=None):
     # fills the Vantura 'Verizon Sales Board' tab from the same Credico file
     # and posts its day + week pictures into this same thread (Lucy 2).
     steps = []
+    # THE COMP GRID FIRST, every morning through PAYOUT_IN_THREAD_UNTIL (Carlos
+    # 2026-11-15: "post it on there every morning this week and make it the
+    # first screenshot"). Its failure never costs the rest of the thread.
+    if today <= PAYOUT_IN_THREAD_UNTIL:
+        try:
+            from automations.verizon_office import payout as PO
+            png = PO.render_png(out / "boards" / f"verizon_payout_{today.isoformat()}.png", status=[], today=today)
+            steps.append(("image", (png, ":clipboard: *Verizon Wireless Comp Grid*")))
+        except Exception as e:  # noqa: BLE001
+            print("⚠ comp grid picture skipped: %s" % e)
     for it in thread_boards.build(office.owner, sv_path, today, out / "boards"):
         if it["kind"] == "text":
             steps.append(("text", it["comment"]))
