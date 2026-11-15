@@ -382,8 +382,10 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     reqs.append(box(r0 - 1, r1, 15, 18))
     reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 18}}})
-    for c, px in ((0, 175), (1, 90), (2, 95), (3, 90), (4, 180), (5, 180), (6, 30), (7, 100), (8, 120), (9, 130), (10, 60),
-                  (11, 150), (12, 150), (13, 300), (14, 30), (15, 230), (16, 190), (17, 120)):
+    # A:N serve BOTH the box (Product .. 31-60 Day rate) and the rolloff tables
+    # (Days Left .. Status Reason); O is the gap; P:R the rep list.
+    for c, px in ((0, 175), (1, 110), (2, 95), (3, 200), (4, 240), (5, 200), (6, 190), (7, 110), (8, 125), (9, 130), (10, 90),
+                  (11, 165), (12, 160), (13, 280), (14, 30), (15, 230), (16, 190), (17, 125)):
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
     return reqs
