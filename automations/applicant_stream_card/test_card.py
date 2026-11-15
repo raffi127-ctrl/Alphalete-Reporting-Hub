@@ -558,6 +558,11 @@ class SetupPageTest(unittest.TestCase):
             "input 0: Friendly Reminder 1 1")])
         self.assertEqual(got, [])
 
+    def test_fdot_spelled_out(self):
+        from automations.applicant_stream_card import setup_page as P
+        self.assertIn("First Day of Training", P._sec_label("No Show - FDOT"))
+        self.assertEqual(P._sec_label("Directions"), "Directions")
+
     def test_page_two_says_not_pulled(self):
         out = C.render(C.build("1"))
         self.assertIn("Not pulled yet", out[out.index("<div class='page2'>"):])

@@ -733,6 +733,20 @@ def _head(title, n, when=None, checked=False):
         _e(title), _e(_when(when)), _badge(n), ok)
 
 
+# ApplicantStream's short step names, spelled out next to the name
+# (Megan 2026-11-15: FDOT = "first day of training").
+ABBREV = {"FDOT": "First Day of Training"}
+
+
+def _sec_label(section):
+    """Escaped step name, with any short name spelled out after it."""
+    out = _e(section)
+    for short, full in ABBREV.items():
+        if re.search(r"\b{}\b".format(short), section or ""):
+            out += " <span class='s'>({} = {})</span>".format(short, full)
+    return out
+
+
 def _onoff(state):
     on = state == "Activated"
     return "<span class='onoff {}'>{}</span>".format(
@@ -938,7 +952,7 @@ def render_templates(setup):
                 s["sms"], key=lambda r: (not r[3], STATE_ORDER.get(r[1], 3))):
             add("<details><summary>{}<span class='t'>{}</span>"
                 "<span class='s'>{}</span> {}</summary><div class='body'>"
-                .format(_onoff(state), _e(section),
+                .format(_onoff(state), _sec_label(section),
                         "{} template{}".format(len(tpls),
                                                "" if len(tpls) == 1 else "s")
                         if tpls else "none saved", _badge(
@@ -987,7 +1001,7 @@ def render_templates(setup):
                 "<span class='s'>{}</span> {}</summary><div class='body'>"
                 "{}<p class='lbl'>Emails saved in this step:</p><ul>{}</ul>"
                 "</div></details>".format(
-                    _onoff(state), _e(section),
+                    _onoff(state), _sec_label(section),
                     _e(", ".join(live)) if live else
                     "{} saved, none on".format(len(tpls)),
                     _badge(len(flags)), _flags_html(flags),
