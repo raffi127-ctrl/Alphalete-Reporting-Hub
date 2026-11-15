@@ -31,7 +31,10 @@ DOS = ("google_signin", "google_reviews", "google_reply")
 READ_EVERY_MIN = 30
 READ_GIVE_UP_HOURS = 3          # an offline computer never answered: ask again
 SIGNIN_MINUTES = 14             # inside the office run's 20-minute hard stop
-OAUTH_CLIENT = Path.home() / ".config" / "recruiting-report" / "oauth-client.json"
+# Desktop client in alphalete-brand-profile (1008284642441), the project
+# with Business Profile API access (made 2026-11-15). The older shared
+# client lives in rafael-crm, which has none.
+OAUTH_CLIENT = Path.home() / ".config" / "recruiting-report" / "office-oauth-client.json"
 
 
 def _file(P) -> Path:
