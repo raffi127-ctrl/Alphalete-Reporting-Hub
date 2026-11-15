@@ -1,13 +1,14 @@
-"""The 8 Report Library cards that are this report's clock (all on Lucy 1).
+"""The ONE Report Library card that is this report's clock (on Lucy 1).
 
-Lucy 1's card_scheduler runs each at its Central time; each just runs
-`dispatch`, which decides from every office's own clock who is due. One card
-per zone so daylight saving and Arizona stay right without touching these.
+It fires at every zone's trigger -- 8 times a day, Mon-Sat, Central time --
+and each time runs `dispatch`, which works out from every office's own clock
+who is due for which text. Megan 2026-11-14: "shouldn't it just be one?"
+(card_scheduler takes a `times` list for exactly this.)
 
     python -m automations.recruiting_day_texts.cards            # show
-    python -m automations.recruiting_day_texts.cards --write    # add missing rows
+    python -m automations.recruiting_day_texts.cards --write    # add the row
 
-ADD THEM ONLY AFTER `lucy update` HAS PUT THIS MODULE ON LUCY 1 -- a card
+ADD IT ONLY AFTER `lucy update` HAS PUT THIS MODULE ON LUCY 1 -- a card
 whose module is not there fails every day on the Hub.
 """
 from __future__ import annotations
@@ -20,38 +21,27 @@ import sys
 LIBRARY = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TAB = "Report Library"
 MODULE = "automations.recruiting_day_texts.dispatch"
-# (card id suffix, mode, Central time, which zone it is for)
-SLOTS = [
-    ("morning_et", "morning", "6:00 AM", "Eastern"),
-    ("morning_ct", "morning", "7:00 AM", "Central"),
-    ("morning_mt", "morning", "8:00 AM", "Mountain"),
-    ("morning_pt", "morning", "9:00 AM", "Pacific"),
-    ("showed_et", "showed", "2:45 PM", "Eastern"),
-    ("showed_ct", "showed", "3:45 PM", "Central"),
-    ("showed_mt", "showed", "4:45 PM", "Mountain"),
-    ("showed_pt", "showed", "5:45 PM", "Pacific"),
-]
+# THE SAME ID AS THE HUB CARD (hub_cards.py "recruiting-day-texts"). The Hub
+# drops a library row whose id a built-in card already has, so people see ONE
+# card; card_scheduler reads the library directly, so the clock still fires and
+# its runs light up that same card.
+CARD_ID = "recruiting-day-texts"
+# Central times: each zone's 7:00 AM morning read, then its 3:45 PM read.
+TIMES = ["6:00 AM", "7:00 AM", "8:00 AM", "9:00 AM",      # ET CT MT PT mornings
+         "2:45 PM", "3:45 PM", "4:45 PM", "5:45 PM"]      # ET CT MT PT 4pm texts
 
 
 def rows():
-    out = []
-    for sfx, mode, t, zone in SLOTS:
-        cid = "recruiting_day_texts_" + sfx
-        name = "Recruiting day texts - %s (%s offices)" % (
-            "good morning" if mode == "morning" else "new starts 4pm", zone)
-        meta = {"id": cid, "name": name, "emoji": "☀️", "color": "#D97706",
-                "module": MODULE, "args": ["--mode", mode],
-                "assignees": ["Lucy 1"],
-                "schedule": {"frequency": "weekly", "weekdays": [0, 1, 2, 3, 4, 5],
-                             "time": t, "estimated_minutes": 1,
-                             "time_label": "%s CT Mon-Sat" % t},
-                "description": "Clock for recruiting_day_texts: queues the %s read for "
-                               "%s live offices on the lightest Lucy; Lucy 1 sends."
-                               % (mode, zone)}
-        out.append([cid, name, MODULE, "Claude",
-                    dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    json.dumps(meta), ""])
-    return out
+    meta = {"id": CARD_ID, "name": "Recruiting Day Texts",
+            "emoji": "\u2600\ufe0f", "color": "#D97706",
+            "module": MODULE, "args": [], "assignees": ["Lucy 1"],
+            "schedule": {"frequency": "weekly", "weekdays": [0, 1, 2, 3, 4, 5],
+                         "times": TIMES, "time": TIMES[0], "estimated_minutes": 1,
+                         "time_label": "Mon-Sat, each office 7:00 AM + 3:45 PM its own time"},
+            "description": "Clock for recruiting_day_texts: queues the due offices' read "
+                           "on the lightest Lucy; Lucy 1 sends."}
+    return [[CARD_ID, meta["name"], MODULE, "Claude",
+             dt.datetime.now().strftime("%Y-%m-%d %H:%M"), json.dumps(meta), ""]]
 
 
 def main(argv=None) -> int:
@@ -61,7 +51,7 @@ def main(argv=None) -> int:
     want = rows()
     if not a.write:
         for r in want:
-            print(r[0], "|", json.loads(r[5])["schedule"]["time_label"])
+            print(r[0], "|", ", ".join(json.loads(r[5])["schedule"]["times"]))
         return 0
     from automations.recruiting_report import fill
     ws = fill.open_by_key(LIBRARY).worksheet(TAB)

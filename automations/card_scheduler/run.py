@@ -88,26 +88,51 @@ def _assigned_here(meta: dict, machine: str) -> bool:
     return machine in (meta.get("assignees") or [])
 
 
-def _due(meta: dict, now: dt.datetime) -> tuple[bool, str]:
-    """(is_due, reason-if-not) for a card at `now`, ignoring the ran-today check."""
+def _times(sched: dict) -> list[str]:
+    """The card's clock times. `time` is the usual one; `times` (a list) lets
+    ONE card fire several times a day -- e.g. a report that runs at each time
+    zone's morning (Megan 2026-11-13: "shouldn't it just be one card?")."""
+    many = sched.get("times")
+    if isinstance(many, list) and many:
+        return [str(t) for t in many]
+    return [str(sched.get("time") or "")]
+
+
+def _due_slot(meta: dict, now: dt.datetime) -> tuple[str | None, str]:
+    """(the time slot that is due now, or None; reason-if-not)."""
     sched = meta.get("schedule")
     if not isinstance(sched, dict):
-        return False, "no schedule"
-    hm = _parse_hm(sched.get("time"))
-    if not hm:
-        return False, "no/ødd time"
+        return None, "no schedule"
     freq = str(sched.get("frequency") or "").lower()
     weekdays = sched.get("weekdays")
     if freq != "daily":
         if not weekdays or now.weekday() not in [int(d) for d in weekdays]:
-            return False, "not scheduled today"
-    sched_dt = now.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
-    delta_min = (now - sched_dt).total_seconds() / 60
-    if delta_min < 0:
-        return False, f"not yet (runs {sched.get('time')})"
-    if delta_min >= GRACE_MIN:
-        return False, f"missed window (was {sched.get('time')})"
-    return True, ""
+            return None, "not scheduled today"
+    why = "no/odd time"
+    for t in _times(sched):
+        hm = _parse_hm(t)
+        if not hm:
+            continue
+        sched_dt = now.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+        delta_min = (now - sched_dt).total_seconds() / 60
+        if 0 <= delta_min < GRACE_MIN:
+            return t, ""
+        why = f"not yet (runs {t})" if delta_min < 0 else f"missed window (was {t})"
+    return None, why
+
+
+def _due(meta: dict, now: dt.datetime) -> tuple[bool, str]:
+    """(is_due, reason-if-not) for a card at `now`, ignoring the ran-today check."""
+    slot, why = _due_slot(meta, now)
+    return slot is not None, why
+
+
+def _ran_key(meta: dict, slot: str) -> str:
+    """What 'already ran today' is recorded under: the card id for a one-time
+    card (unchanged), card id + slot for a several-times card."""
+    cid = meta.get("id")
+    multi = isinstance((meta.get("schedule") or {}).get("times"), list)
+    return f"{cid}@{slot}" if multi else cid
 
 
 def _load_ran(today: str) -> set[str]:
@@ -187,17 +212,18 @@ def main(argv=None) -> int:
         if not meta.get("module"):
             print(f"[{ts}] card-scheduler: skip {cid} — no module to run", flush=True)
             continue
-        if cid in ran_today:
+        slot, why = _due_slot(meta, now)
+        if slot is None:
             continue
-        due, why = _due(meta, now)
-        if not due:
+        key = _ran_key(meta, slot)
+        if key in ran_today:
             continue
         if not live:
-            print(f"[{ts}] card-scheduler: WOULD run {cid} "
-                  f"({meta.get('schedule', {}).get('time')}) [dry-run]", flush=True)
+            print(f"[{ts}] card-scheduler: WOULD run {cid} ({slot}) [dry-run]",
+                  flush=True)
             continue
-        print(f"[{ts}] card-scheduler: running {cid} …", flush=True)
-        _mark_ran(today, cid)   # mark BEFORE running so a crash can't double-fire
+        print(f"[{ts}] card-scheduler: running {cid} ({slot}) …", flush=True)
+        _mark_ran(today, key)   # mark BEFORE running so a crash can't double-fire
         ok, detail = _run_card(meta)
         fired += 1
         print(f"[{ts}] card-scheduler: {cid} {'ok' if ok else 'FAILED'} · {detail}",
