@@ -518,9 +518,16 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     tot_days = "".join(
         f'<td class="day ttl">{money(office["days"].get(c, 0.0))}</td>'
         for c, _d in shown)
+    # The totals row can carry the same badge / tag lines as a stacked rep
+    # cell (NDS, Carlos 2026-11-15: "the office total ... should also have
+    # the total amount of apps that we did in total").
+    off_badge = (f' <span class="rb">{office["rep_badge"]}</span>'
+                 if office.get("rep_badge") else "")
+    off_tags = (f'<div class="rtag">{office["rep_tags"]}</div>'
+                if office.get("rep_tags") else "")
     trs.append(
         '<tr class="totrow"><td class="rk"></td>'
-        '<td class="rep">OFFICE TOTAL</td>'
+        f'<td class="rep">OFFICE TOTAL{off_badge}{off_tags}</td>'
         + ('<td class="bd"></td>' if bd and bd.get("pos") == "before_total" else '')
         + f'<td class="tot">{money(week_total)}</td>'
         + ('<td class="bd"></td>' if bd and bd.get("pos") == "after_total" else '')
@@ -610,6 +617,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .xt .far{{color:#5b6770}}
  .xt .ct{{color:#12181d;font-weight:700}}
  .totrow .xt{{border-left:none}}
+ .totrow .rb{{background:#2a333b;color:#fff}} .totrow .rtag{{color:#cfd6dc}}
  .rb{{margin-left:8px;padding:2px 8px;border-radius:6px;background:#eef1f4;color:#3c4650;
       font-size:12px;font-weight:700;vertical-align:middle}}
  .foot .lab{{color:#f0b429;font-weight:700;margin-right:8px}}

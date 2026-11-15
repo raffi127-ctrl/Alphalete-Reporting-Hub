@@ -179,9 +179,13 @@ class Cols:
                 return self._norm.index(c)
         for c in cands:
             c = " ".join(c.lower().split())
-            for i, h in enumerate(self._norm):
-                if c in h:
-                    return i
+            hits = [i for i, h in enumerate(self._norm) if c in h]
+            if hits:
+                # The tightest header wins (2026-11-15: the mini's pull of the
+                # view carried a new 'Order date to Install Date Days' field,
+                # and 'order date' landed on it instead of 'sp.Order Date
+                # (copy)' -- an EMPTY column, every board blank).
+                return min(hits, key=lambda i: len(self._norm[i]))
         return None
 
     def need(self, label, *cands) -> int:
@@ -1638,12 +1642,13 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     BYOD read from the Package string; SOW base-comp OOF rates."""
     from automations.vantura_revenue_board.run import (build_rows, render,
                                                        week_of)
-    sw = sow_rates()["wireless"]
+    from automations.nds_metrics import revenue_extras as RX
+    rates = sow_rates()
     i_od = cols.need("order date", "sp.order date")
     i_rep = cols.need("rep", "rep")
     i_port = cols.find("ported from", "port")
-    i_pkg = cols.find("package")
     i_tn = cols.find("spe.tn type", "tn type")
+    idx = RX.column_index(cols)
     monday = week_of(today)
     # Carlos 2026-11-03: "if you ever see a sale from someone not on the
     # list you still want to add it for the revenue board" -- every line on
@@ -1660,13 +1665,13 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
         rep = _c(cols, r, i_rep)
         if not rep or od is None or not (monday <= od <= today):
             continue
-        tn = _c(cols, r, i_tn).lower()
-        ported = bool(_c(cols, r, i_port)) or tn == "port"
-        byod = "BYOD" in _c(cols, r, i_pkg).upper()
-        if ported:
-            amt = (sw["port_byod"] if byod else sw["port_nonbyod"])["OOF"]
-        else:
-            amt = sw["new_line"]
+        # Carlos 2026-11-15 pm ("ported new phones, BYODs, and AERS all have
+        # a slightly different payout"): each sold line priced like the
+        # deposit -- port $213 / $193 IF, BYOD port $188 / $168 IF, Internet
+        # Air $93 (+$30 ABP), tablet / wearable $25, new-number line $25.
+        # Before: every port $213 (BYOD read off the Package, which never
+        # says it), Air and wearables $25 as "new lines".
+        amt = RX.board_line_price(RX.line_rec(cols, r, idx), rates)
         rec = per_rep.setdefault(rep, {"days": {}, "elig": 0, "payable": 0})
         rec["days"][od] = rec["days"].get(od, 0.0) + amt
     rows, office = build_rows(per_rep, monday, today, tiered=False)
@@ -1684,23 +1689,41 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
         # beside the order count after the name, the 4-week activation rate
         # + 0-30 day wireless non-BYOD churn cards top right, sales per rep
         # on the reps card -- revenue_extras.
-        from automations.nds_metrics import revenue_extras as RX
+        import collections as _coll
         i_spm = cols.find("sp.spm number", "spm number")
         headers, cells, counts = revenue_tier_columns(cols, lines, monday, i_od, i_rep,
                                                       i_port, i_tn, i_spm, log=log)
         ex = RX.gather(cols, lines, today, log=log)
+        # Carlos 2026-11-15 pm: "just call it 23 apps, and then there should
+        # be a breakdown of how many were new phones and how many were BYODs
+        # ... only if it affects payout" -- the stacked name cell (first
+        # name / rest), "N orders · M apps", two lines of what sold; the
+        # OFFICE TOTAL row carries the sums (revenue_extras.apps_breakdown).
+        bd = RX.apps_breakdown(cols, lines, idx, i_od, monday, today)
+        n_orders = 0
         for row in rows:
             n, plines = counts.get(row["rep"], (0, 0))
-            row["extra"], row["rep_badge"], row["tier"] = RX.row_extras(
+            n_orders += n
+            row["extra"], _badge, row["tier"] = RX.row_extras(
                 n, plines, RX.activated_for(row["rep"], ex["activated"]))
-        sales = RX.board_sales(cols, lines, monday, today, i_od, i_rep, i_spm)
+            c = bd.get(row["rep"]) or _coll.Counter()
+            row["rep_lines"] = RX.name_lines(row["rep"])
+            row["rep_badge"] = RX.badge(n, c)
+            row["rep_tags"] = RX.tags_html(c)
+        off = bd.get(RX.OFFICE) or _coll.Counter()
+        office["rep_badge"] = RX.badge(n_orders, off)
+        office["rep_tags"] = RX.tags_html(off)
         extra = {"headers": [RX.ACTIVATED_HEADER] + headers[1:],
                  "cards": RX.cards(ex["weeks"], ex["churn"]),
                  "tier_chip": True,
-                 "reps_extra": RX.reps_extra(len(rows), sales)}
+                 "reps_extra": RX.reps_extra(len(rows), off["apps"])}
         note = RX.NOTE
-        log(f"[nds] revenue board: {sales} order(s) Mon-today on his owner, "
-            f"{len(rows)} rep(s) on the board")
+        log("[nds] revenue board: %d app(s) sold this week on his owner -- %d new phone, %d BYOD, "
+            "%d Air (+%d tablet/wearable, %d new-number, %d upgrade); %d Next Up; plans %d Premium / "
+            "%d Extra / %d Value; %d order(s); %d rep(s) on the board"
+            % (off["apps"], off["new phone"], off["byod"], off["air"], off["device"],
+               off["new number"], off["upgrade"], off["nextup"], off["premium"], off["extra"],
+               off["value"], off["orders"], len(rows)))
     out = render(rows, office, monday, today,
                  OUT_DIR / "nds_revenue_board.png",
                  board_name="NDS Revenue Board", tiered=False, extra=extra, note=note)

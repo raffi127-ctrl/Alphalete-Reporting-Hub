@@ -83,23 +83,93 @@ class Cards(unittest.TestCase):
         self.assertEqual([lab for lab, _v in RX.cards(None, None)],
                          ["ACTIVATION RATE BY WEEK-ENDING", "0–30 DAY CHURN · WIRELESS NON-BYOD"])
 
-    def test_sales_per_rep(self):
-        self.assertTrue(RX.reps_extra(19, 45).startswith(" <span"))     # rides after the count
-        self.assertIn("2.4 sales per rep (45 sales this week)", RX.reps_extra(19, 45))
+    def test_sales_per_rep_is_apps_per_rep(self):
+        self.assertTrue(RX.reps_extra(19, 134).startswith(" <span"))    # rides after the count
+        self.assertIn("7.1 sales per rep (134 apps this week)", RX.reps_extra(19, 134))
         self.assertIn("— sales per rep", RX.reps_extra(0, 0))
 
 
-class Sales(unittest.TestCase):
-    HDR = ["Rep", "sp.Order Date (copy)", "sp.SPM Number"]
+RATES = {"wireless": {"port_nonbyod": {"OOF": 213, "INFP": 193}, "port_byod": {"OOF": 188, "INFP": 168},
+                      "new_line": 25, "upgrade_voice": 30, "tablet_wearable_nonbyod": 25},
+         "internet_air": {"activation": 93, "auto_bill_pay_bonus": 30}}
 
-    def test_distinct_orders_in_the_board_week(self):
+
+def _rec(prod="WIRELESS", tn="port", device="iPhone 18 Pro - 256GB - Black", package="AT&T Extra 2.0",
+         wt="Phone", wip="Pending", ifoof="OOF", abp="Y"):
+    from automations.nds_churn import compute as NC
+    return {"prod": NC.product_of(prod), "tn_type": tn, "device": device, "package": package,
+            "wireless_type": wt, "wireless_ip": wip, "if_oof": ifoof, "abp": abp}
+
+
+class Kinds(unittest.TestCase):
+    def test_what_sold(self):
+        self.assertEqual(RX.line_kind(_rec()), "new phone")                          # financed, ported
+        self.assertEqual(RX.line_kind(_rec(wip="BYOD")), "byod")                    # the plan says so
+        self.assertEqual(RX.line_kind(_rec(device="XT2215-1")), "byod")             # pending: bare model = own phone
+        self.assertEqual(RX.line_kind(_rec(wip="Next36 w/o Next Up", device="SM-G991U")), "new phone")  # a plan beats the device rule
+        self.assertEqual(RX.line_kind(_rec(prod="AIR", tn="", wt="Unknown", package="AT&T Internet Air")), "air")
+        self.assertEqual(RX.line_kind(_rec(tn="new", wt="Wearable", device="Apple Watch Ultra 2")), "device")
+        self.assertEqual(RX.line_kind(_rec(tn="new")), "new number")
+        self.assertEqual(RX.line_kind(_rec(tn="upgrade")), "upgrade")
+        self.assertEqual(RX.line_kind(_rec(prod="INTERNET")), "internet")
+
+    def test_next_up_and_plan(self):
+        self.assertTrue(RX.has_next_up(_rec(wip="Next36 w/ Next Up Anytime")))
+        self.assertFalse(RX.has_next_up(_rec(wip="Next36 w/o Next Up")))
+        self.assertFalse(RX.has_next_up(_rec(wip="Pending")))
+        self.assertEqual([RX.plan_of(_rec(package=p)) for p in ("AT&T Premium 2.0", "AT&T Extra 2.0", "AT&T Value 2.0", "AT&T Internet Air")],
+                         ["premium", "extra", "value", ""])
+
+
+class Pricing(unittest.TestCase):
+    def test_deposit_rates(self):
+        self.assertEqual(RX.board_line_price(_rec(), RATES), 213)
+        self.assertEqual(RX.board_line_price(_rec(ifoof="IF"), RATES), 193)
+        self.assertEqual(RX.board_line_price(_rec(wip="BYOD"), RATES), 188)
+        self.assertEqual(RX.board_line_price(_rec(wip="BYOD", ifoof="IF"), RATES), 168)
+        self.assertEqual(RX.board_line_price(_rec(wip="BYOD", tn="new"), RATES), 25)     # own phone, new number
+        self.assertEqual(RX.board_line_price(_rec(tn="new"), RATES), 25)
+        self.assertEqual(RX.board_line_price(_rec(tn="upgrade"), RATES), 30)
+        self.assertEqual(RX.board_line_price(_rec(tn="new", wt="Wearable"), RATES), 25)
+        self.assertEqual(RX.board_line_price(_rec(prod="AIR", tn="", wt="Unknown", abp="Y"), RATES), 123)
+        self.assertEqual(RX.board_line_price(_rec(prod="AIR", tn="", wt="Unknown", abp="N"), RATES), 93)
+        self.assertEqual(RX.board_line_price(_rec(prod="INTERNET"), RATES), 0)
+
+
+class Breakdown(unittest.TestCase):
+    HDR = ["Rep", "sp.Order Date (copy)", "sp.SPM Number", "Product Type (Broken Out)", "spe.TN Type",
+           "Device Description", "Package", "spe.Wireless Type", "Wireless Installment Plan", "IF/OOF", "Auto Bill Pay"]
+
+    def _row(self, rep, od, spm, prod="WIRELESS", tn="port", dev="iPhone 18 Pro - 256GB - Black",
+             pkg="AT&T Extra 2.0", wt="Phone", wip="Pending", ifoof="OOF", abp="Y"):
+        return [rep, od, spm, prod, tn, dev, pkg, wt, wip, ifoof, abp]
+
+    def test_apps_and_the_payout_variables(self):
         cols = R.Cols(self.HDR)
-        rows = [["Ana", "11/9/2026", "DSI1"], ["Ana", "11/9/2026", "DSI1"],    # one order, two lines
-                ["Ana", "11/11/2026", "DSI2"], ["Ben", "11/8/2026", "DSI3"],  # Sunday before: out
-                ["Ben", "11/16/2026", "DSI4"],                                  # after today: out
-                ["Cal", "11/12/2026", ""]]                                      # no SPM: still an order
-        n = RX.board_sales(cols, rows, dt.date(2026, 11, 9), dt.date(2026, 11, 15), 1, 0, 2)
-        self.assertEqual(n, 3)
+        rows = [self._row("Ana Lopez", "11/9/2026", "DSI1"),                                   # new phone, Extra
+                self._row("Ana Lopez", "11/9/2026", "DSI1", wip="BYOD", pkg="AT&T Premium 2.0"),  # BYOD, Premium
+                self._row("Ana Lopez", "11/9/2026", "DSI1", dev="XT2215-1", pkg="AT&T Value 2.0"),  # BYOD by device, Value
+                self._row("Ana Lopez", "11/10/2026", "DSI2", wip="Next36 w/ Next Up Anytime"),  # new phone + Next Up
+                self._row("Ana Lopez", "11/10/2026", "DSI2", tn="new", wt="Wearable", dev="Apple Watch"),  # device: not an app
+                self._row("Ana Lopez", "11/11/2026", "DSI3", prod="AIR", tn="", wt="Unknown", pkg="AT&T Internet Air"),  # Air: an app
+                self._row("Ben Diaz", "11/12/2026", "DSI4", ifoof="IF"),
+                self._row("Ben Diaz", "11/8/2026", "DSI5"),                                    # Sunday before: out
+                self._row("Ben Diaz", "11/16/2026", "DSI6")]                                   # after today: out
+        idx = RX.column_index(cols)
+        bd = RX.apps_breakdown(cols, rows, idx, 1, dt.date(2026, 11, 9), dt.date(2026, 11, 15))
+        ana, off = bd["Ana Lopez"], bd[RX.OFFICE]
+        self.assertEqual((ana["orders"], ana["apps"], ana["new phone"], ana["byod"], ana["air"], ana["device"]),
+                         (3, 5, 2, 2, 1, 1))
+        self.assertEqual((ana["nextup"], ana["premium"], ana["extra"], ana["value"]), (1, 1, 2, 1))
+        self.assertEqual((off["orders"], off["apps"], off["new phone"]), (4, 6, 3))
+        self.assertEqual(RX.badge(5, ana), "5 orders · 5 apps")
+        self.assertEqual(RX.tags_html(ana), "2 new phones · 2 BYOD · 1 Air<br>1 Next Up · 1 Premium · 2 Extra · 1 Value")
+        self.assertEqual(RX.badge(1, None), "1 order · 0 apps")
+        self.assertEqual(RX.name_lines("Stefany Michelle Zaldivar Justiniano"), ["Stefany", "Michelle Zaldivar Justiniano"])
+        self.assertEqual(RX.name_lines("Cher"), ["Cher"])
+        # the same rows priced like the deposit
+        total = sum(RX.board_line_price(RX.line_rec(cols, r, idx), RATES) for r in rows[:7])
+        self.assertEqual(total, 213 + 188 + 188 + 213 + 25 + 123 + 193)
 
 
 if __name__ == "__main__":

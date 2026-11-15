@@ -23,8 +23,13 @@ activated this week"):
     row: lines activated in the last 30 days that have disconnected --
     no Air, no BYOD, no tablets / watches / upgrades).
   * "sales per rep" after the REPS ON THE BOARD count (renderer
-    extra["reps_extra"]): the board week's orders (distinct SPM numbers on
-    his owner, Mon..today) over the reps listed.
+    extra["reps_extra"]): this week's apps over the reps listed.
+  * (11/15 pm) the name cell stacked: first name / rest of the name, the
+    "N orders · M apps" badge (orders = the Sun-Sat tier count, apps = port
+    phones + BYODs + Airs sold this Mon-Sun week) and two lines of what
+    sold -- new phones / BYOD / Air, then Next Up / Premium / Extra / Value
+    -- the payout variables; the OFFICE TOTAL row carries the sums. Each
+    sold line is priced like the deposit (board_line_price).
 
 Every extra is best-effort: a source that cannot be read logs a NOTE and
 leaves its column / card blank -- the board itself never waits on it.
@@ -39,11 +44,12 @@ from automations.nds_metrics.run import (OUT_DIR, _c, _parse_date, load_soh,
                                          tier_bands, tier_cells)
 
 ACTIVATED_HEADER = 'LINES ACTIVATED<br><span class="dd">this week ($)</span>'
-NOTE = ("Tier = orders with a port line this Sun–Sat week (T1 4 · T2 5–6 · T3 7–8 · T4 9+). "
-        "Lines activated = wireless lines that went active this Mon–Sun week on SaraPlus, "
-        "($) = all $ that activated with them. Tier columns: green ✓ = your tier; yellow = one "
-        "order away; +N = orders still needed; $ = that tier's rate × your port lines (+1 per "
-        "order still needed), paid as they activate. DNQ not applied.")
+NOTE = ("Orders = this Sun–Sat bonus week (double-tier days count twice); apps = port lines + BYODs + "
+        "Airs sold this Mon–Sun week, breakdown under the name (Next Up shows once the line's installment "
+        "plan posts). Tier T1 4 · T2 5–6 · T3 7–8 · T4 9+ orders. Lines activated = wireless lines that "
+        "went active this week on SaraPlus, ($) = all $ that activated with them. Tier columns: green ✓ = "
+        "your tier; yellow = one order away; +N = orders still needed; $ = that tier's rate × your port "
+        "lines (+1 per order still needed). DNQ not applied.")
 WEEKS = 4
 _SMALL = '<span style="font-size:14px;color:#5b6770;font-weight:500">%s</span>'
 
@@ -134,26 +140,176 @@ def activated_for(rep: str, activated: Optional[Dict[str, Tuple[int, float]]]
     return activated.get(key, (0, 0.0)) if key else (0, 0.0)
 
 
-def board_sales(cols, lines, monday: dt.date, today: dt.date, i_od, i_rep, i_spm) -> int:
-    """Orders on the board week (Mon..today): distinct sp.SPM Numbers among
-    the lines priced on the board, any line type."""
-    seen = set()
+# ------------------------------------------------- what sold (apps) ----
+# Carlos 2026-11-15 pm, on the first version's "40 sales this week" (orders):
+# "That 40 sales is 100% wrong. We did 130-something ... Apps include the
+# port lines, the BYODs, and the AERS that were sold ... For Stephanie,
+# you're saying 23 port lines: just call it 23 apps, and then there should
+# be a breakdown of how many were new phones and how many were BYODs ...
+# only if it affects payout. For us, ported new phones, BYODs, and AERS all
+# have a slightly different payout ... How many had next up? ... Unlimited
+# premium versus unlimited extra". All of it off the Tableau order-log rows
+# the board prices (sold Mon..today); the office total row sums them.
+
+OFFICE = "__OFFICE__"
+APP_KINDS = ("new phone", "byod", "air")
+PHONE_KINDS = ("new phone", "byod", "new number")
+
+
+def column_index(cols) -> dict:
+    """The export columns the breakdown and the pricing read, by role
+    (None when the export lacks one -- the reader treats it as blank)."""
+    return {"prod": cols.find("product type (broken out)", "product type"),
+            "tn": cols.find("spe.tn type", "tn type"),
+            "device": cols.find("device description", "spe.phone", "device"),
+            "package": cols.find("package"),
+            "wt": cols.find("spe.wireless type", "wireless type"),
+            "wip": cols.find("wireless installment plan"),
+            "ifoof": cols.find("if/oof"),
+            "abp": cols.find("auto bill pay"),
+            "rep": cols.find("rep"),
+            "spm": cols.find("sp.spm number", "spm number")}
+
+
+def line_rec(cols, r, idx: dict) -> dict:
+    """One Tableau row as the fields line_kind / board_line_price read (the
+    NDS CHURN tab's record shape, so its BYOD and tablet rules apply)."""
+    from automations.nds_churn import compute as NC
+
+    def g(k):
+        return _c(cols, r, idx.get(k)) if idx.get(k) is not None else ""
+    prod = NC.product_of(g("prod")) if idx.get("prod") is not None else "Wireless"
+    return {"prod": prod, "tn_type": g("tn"), "device": g("device"), "package": g("package"),
+            "wireless_type": g("wt"), "wireless_ip": g("wip"), "if_oof": g("ifoof"),
+            "abp": g("abp")}
+
+
+def line_kind(rec: dict) -> str:
+    """'new phone' = a ported, financed phone; 'byod' = the customer's own
+    phone (the installment plan says BYOD, else the NDS CHURN tab's device
+    rule); 'air' = Internet Air; 'device' = tablet / wearable / hotspot;
+    'new number' = a financed phone on a new number; 'upgrade';
+    'internet' (fiber); 'other'."""
+    from automations.nds_churn import compute as NC
+    p = rec.get("prod")
+    if p == "Air":
+        return "air"
+    if p == "Internet":
+        return "internet"
+    if p != "Wireless":
+        return "other"
+    if NC.is_non_phone(rec):
+        return "device"
+    tn = str(rec.get("tn_type") or "").strip().lower()
+    if tn == "upgrade":
+        return "upgrade"
+    if NC.is_byod(rec):
+        return "byod"
+    return "new phone" if tn == "port" else "new number"
+
+
+def has_next_up(rec: dict) -> bool:
+    """The Wireless Installment Plan says 'Next36 w/ Next Up Anytime' once
+    the line activates ('Pending' before, 'Next36 w/o Next Up' = no)."""
+    v = str(rec.get("wireless_ip") or "").lower()
+    return "next up" in v and not any(w in v for w in ("w/o", "without", "no next"))
+
+
+def plan_of(rec: dict) -> str:
+    pk = str(rec.get("package") or "").upper()
+    return ("premium" if "PREMIUM" in pk else "extra" if "EXTRA" in pk
+            else "value" if "VALUE" in pk else "")
+
+
+def board_line_price(rec: dict, rates: Optional[dict] = None) -> float:
+    """Base comp for one SOLD line, the deposit's rates: port $213 ($193
+    in-footprint), BYOD port $188 ($168 IF), BYOD on a new number / any
+    new-number phone $25, upgrade $30, tablet or wearable $25, Internet Air
+    $93 (+$30 with auto bill pay); fiber and unknown products $0. Before
+    2026-11-15 every port priced $213 and Air / wearables $25."""
+    rates = rates or sow_rates()
+    sw, air = rates["wireless"], rates["internet_air"]
+    kind = line_kind(rec)
+    if kind == "air":
+        abp = str(rec.get("abp") or "").strip().upper() == "Y"
+        return float(air["activation"]) + (float(air["auto_bill_pay_bonus"]) if abp else 0.0)
+    if kind in ("internet", "other"):
+        return 0.0
+    if kind == "device":
+        return float(sw["tablet_wearable_nonbyod"])
+    if kind == "upgrade":
+        return float(sw["upgrade_voice"])
+    if kind == "new number":
+        return float(sw["new_line"])
+    ported = str(rec.get("tn_type") or "").strip().lower() == "port"
+    fp = "INFP" if str(rec.get("if_oof") or "").strip().upper() == "IF" else "OOF"
+    if kind == "byod":
+        return float(sw["port_byod"][fp]) if ported else float(sw["new_line"])
+    return float(sw["port_nonbyod"][fp])
+
+
+def apps_breakdown(cols, lines, idx: dict, i_od, monday: dt.date, today: dt.date) -> dict:
+    """{rep | OFFICE: Counter} over the lines sold Mon..today (what the board
+    prices): orders (distinct SPM numbers), apps (port phones + BYODs + Air),
+    'new phone' / 'byod' / 'air' / 'device' / 'new number' / 'upgrade',
+    nextup, and the phone lines' plan -- premium / extra / value."""
+    import collections
+    out = collections.defaultdict(collections.Counter)
+    spms = collections.defaultdict(set)
     for r in lines:
         od = _parse_date(_c(cols, r, i_od))
-        rep = _c(cols, r, i_rep)
+        rep = _c(cols, r, idx.get("rep")) if idx.get("rep") is not None else ""
         if not rep or od is None or not (monday <= od <= today):
             continue
-        spm = (_c(cols, r, i_spm) if i_spm is not None else "") or "%s|%s|%s" % (rep, od, id(r))
-        seen.add(spm)
-    return len(seen)
+        rec = line_rec(cols, r, idx)
+        kind = line_kind(rec)
+        spm = (_c(cols, r, idx["spm"]) if idx.get("spm") is not None else "") or "%s|%s|%s" % (rep, od, id(r))
+        for key in (rep, OFFICE):
+            c = out[key]
+            spms[key].add(spm)
+            c[kind] += 1
+            if kind in APP_KINDS:
+                c["apps"] += 1
+            if kind in PHONE_KINDS:
+                if has_next_up(rec):
+                    c["nextup"] += 1
+                pl = plan_of(rec)
+                if pl:
+                    c[pl] += 1
+    for key, c in out.items():
+        c["orders"] = len(spms[key])
+    return dict(out)
 
 
-def reps_extra(n_reps: int, n_sales: int) -> str:
+def name_lines(name: str) -> List[str]:
+    """First name on its own line, the rest under it (Carlos: "put part of
+    the last name under the first name, so we get more room")."""
+    parts = str(name or "").split()
+    return [parts[0], " ".join(parts[1:])] if len(parts) > 1 else [str(name or "")]
+
+
+def badge(n_orders: int, c) -> str:
+    apps = int(c.get("apps", 0)) if c else 0
+    return "%d order%s · %d app%s" % (n_orders, "" if n_orders == 1 else "s",
+                                      apps, "" if apps == 1 else "s")
+
+
+def tags_html(c) -> str:
+    """Two lines under the badge: what sold, then the add-ons that move the
+    payout."""
+    c = c or {}
+    n = int(c.get("new phone", 0))
+    return ("%d new phone%s · %d BYOD · %d Air<br>%d Next Up · %d Premium · %d Extra · %d Value"
+            % (n, "" if n == 1 else "s", c.get("byod", 0), c.get("air", 0), c.get("nextup", 0),
+               c.get("premium", 0), c.get("extra", 0), c.get("value", 0)))
+
+
+def reps_extra(n_reps: int, n_apps: int) -> str:
     """The REPS ON THE BOARD card's suffix (renderer extra["reps_extra"]):
-    sales per rep = the board week's orders over the reps listed."""
-    per = ("%.1f" % (n_sales / n_reps)) if n_reps else "—"
-    return " " + _SMALL % ("· %s sales per rep (%d sale%s this week)"
-                           % (per, n_sales, "" if n_sales == 1 else "s"))
+    sales per rep = this week's apps over the reps listed."""
+    per = ("%.1f" % (n_apps / n_reps)) if n_reps else "—"
+    return " " + _SMALL % ("· %s sales per rep (%d app%s this week)"
+                           % (per, n_apps, "" if n_apps == 1 else "s"))
 
 
 def weeks_card(rows: Optional[Sequence[dict]]) -> str:
