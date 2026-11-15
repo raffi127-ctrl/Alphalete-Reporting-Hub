@@ -276,7 +276,7 @@ def _pages(values):
 
 
 def _complete(page, who, person, apex_id, log=print, *,
-              social=None) -> int:
+              social=None, press_save: bool = False) -> int:
     """Fill the employment tab of somebody ALREADY on Pending, stopping at Save.
 
     This is the path that runs twenty-odd times a week. The engine's own
@@ -300,7 +300,9 @@ def _complete(page, who, person, apex_id, log=print, *,
     # the two parallel fillers happened, and the whole point of this run is
     # that what gets watched is what will run by itself.
     values = who.get("_values") or {}
-    log("  One tab at a time. Nothing here presses Save -- you do, in Apex.")
+    log("  One tab at a time. %s"
+        % ("THIS RUN PRESSES SAVE ITSELF." if press_save
+           else "Nothing here presses Save -- you do, in Apex."))
     log("")
 
     # WHY IT WAITS FOR YOUR SAVE, AND NOT FOR A KEYPRESS.
@@ -317,6 +319,12 @@ def _complete(page, who, person, apex_id, log=print, *,
     # URL -- and carries on when it sees one. The person only ever presses
     # Save, in the window they are already looking at.
     def saved(tab: str, got: dict) -> bool:
+        if press_save:
+            # ARMED (Megan, 2026-11-15: "arm the automatic save"). save_tab
+            # refuses on its own if a required box is empty, a value is not
+            # what was asked for, or Apex objects -- so this presses Save
+            # only on a tab that is already right.
+            return drive.save_tab(page, apex_id, got, log=log)
         # A WRONG VALUE STOPS THE RUN. It used to print "WRONG -- DO NOT
         # SAVE" and then, four lines later, "Press SAVE on this tab" -- and
         # Kyle's Rate of Pay went in at $10.10 because the second line is the
@@ -379,7 +387,8 @@ def _complete(page, who, person, apex_id, log=print, *,
     return 0 if not short else 1
 
 
-def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
+def run(office_key: str, name: str, week_start: dt.date, log=print,
+        *, press_save: bool = False) -> int:
     from automations.apex_new_starts import apex as AX
 
     person = _board_person(office_key, name, week_start, log=log)
@@ -450,7 +459,8 @@ def run(office_key: str, name: str, week_start: dt.date, log=print) -> int:
         log("  %s: %s" % (person.name, need.get("why", "unknown")))
         if need.get("need") == drive.COMPLETE:
             return _complete(s.page, who, person,
-                             need.get("id", ""), log=log, social=social)
+                             need.get("id", ""), log=log, social=social,
+                             press_save=press_save)
         if need.get("need") != drive.ADD:
             log("")
             log("  Neither path is safe for them. Creating would make a SECOND")
@@ -492,6 +502,9 @@ def main(argv=None) -> int:
     ap.add_argument("--person", default="", help='"First Last", as the '
                                                  "board spells them")
     ap.add_argument("--week", default=None, help="YYYY-MM-DD in the week")
+    ap.add_argument("--save", action="store_true",
+                    help="press Save itself instead of waiting for you. It "
+                         "still refuses a tab with a missing or wrong value.")
     ap.add_argument("--signin", action="store_true",
                     help="just open Apex and wait for a sign-in (use this "
                          "when Apex is asking for a password change)")
@@ -504,7 +517,8 @@ def main(argv=None) -> int:
     from automations.icd_onboarding import board as B
     day = dt.date.fromisoformat(a.week) if a.week else dt.date.today()
     try:
-        return run(a.office, a.person, B.week_start_of(day))
+        return run(a.office, a.person, B.week_start_of(day),
+                   press_save=a.save)
     except AX.NotLoggedIn as e:
         print("  %s" % e)
         print("")

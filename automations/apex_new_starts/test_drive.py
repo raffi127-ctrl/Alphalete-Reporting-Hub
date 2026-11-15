@@ -396,26 +396,6 @@ class _Secret(_Tabs):
         return super().evaluate(js, arg)
 
 
-def test_a_social_on_the_tax_tab_is_typed_and_never_logged():
-    page = _Secret(holds=9, typed="123456789")
-    said = []
-    got = drive.fill_tax(page, {}, Secret("123456789"), log=said.append)
-    assert got["set"] == ["Social"], got
-    assert "123456789" not in " ".join(said), said
-    # both boxes, every time: Apex refuses the tab when they disagree
-    assert [v for _s, v in page.typed_into] == ["123456789", "123456789"]
-
-
-def test_no_social_means_no_social_box_is_touched():
-    """The rehearsal reads Blue Ink with keep_ssn=False, so there is nothing
-    to type -- and an empty Social typed into a payroll record is worse than
-    a blank one."""
-    page = _Tabs()
-    got = drive.fill_tax(page, {}, None, log=lambda *a: None)
-    assert page.typed_into == []
-    assert "Social" not in got["set"] + got["missed"]
-
-
 def test_a_box_holding_the_wrong_value_is_not_a_success():
     """Rate of Pay reported filled showing $10.10 for somebody whose rate is
     $10.00 (2026-11-12). Anything non-empty counted, so a wrong number on a
@@ -811,39 +791,6 @@ def test_a_pick_is_never_closed_with_escape():
     assert not any("Escape" in l for l in code), "and presses no key"
 
 
-def test_a_masked_box_is_checked_by_count_not_by_value():
-    """A masked box shows dots or nothing at all, so the only honest check is
-    how many characters it holds. Comparing the dots with what was typed
-    called a correct entry WRONG and refused the whole tax tab
-    (2026-11-13)."""
-    from automations.apex_new_starts.ssn_prompt import Secret
-    said = []
-    got = drive.fill_tax(_Secret(holds=9), {}, Secret("123456789"),
-                         log=said.append)
-    assert got["set"] == ["Social"], got
-    assert "123456789" not in " ".join(said), said
-
-
-def test_a_social_one_digit_short_is_refused():
-    """Megan watched the Social go in correctly on the first box and ONE
-    DIGIT SHORT on the second: the confirm box reformats as you type and
-    swallowed a character (2026-11-13). Apex refuses a Social that does not
-    match its confirmation, and so does this."""
-    from automations.apex_new_starts.ssn_prompt import Secret
-    said = []
-    got = drive.fill_tax(_Secret(holds=8), {}, Secret("123456789"),
-                         log=said.append)
-    assert got["missed"] == ["Social"], got
-    assert "8 characters, typed 9" in " ".join(said), said
-    assert "123456789" not in " ".join(said), said
-
-
-def test_a_social_is_typed_slowly_enough_not_to_drop_one():
-    import inspect
-    src = inspect.getsource(drive.type_by_name)
-    assert "120 if secret else 30" in src, "a masked box needs the slower type"
-
-
 def test_a_tab_waits_for_its_whole_form_before_typing():
     """Waiting for ONE field was not enough. Alexandria's employment tab was
     saved after 24 seconds -- fast -- and the profile tab was still being
@@ -1071,3 +1018,154 @@ def test_apply_filters_is_found_in_js_and_clicked_for_real():
     assert not any("text-is" in l for l in code), "that did not click it"
     # and a page with no Apply control is UNKNOWN, never an empty result
     assert any("return None" in l for l in code)
+
+
+def test_a_surname_that_is_wrong_in_apex_does_not_hide_somebody():
+    """Alexandria was saved as "McCrob" instead of "McCrobie" -- by one of our
+    own runs, typing into a form that was still rendering. Every search for
+    her surname then found nobody, and "nobody" routes to the CREATE form and
+    a second payroll record (2026-11-15).
+
+    Finding somebody is what prevents a duplicate, so the search falls back
+    to their first name."""
+    page = _Triage(pending=set(), anywhere={"Alexandria McCrob"})
+    got = drive.triage(
+        page, [{"name": "Alexandria Mccrobie", "find": "Mccrobie"}],
+        log=lambda *a: None)
+    assert got["Alexandria Mccrobie"]["need"] == drive.BY_HAND, got
+    assert "not on Pending" in got["Alexandria Mccrobie"]["why"]
+
+
+def test_a_short_social_is_refused_even_when_it_counts_right():
+    """A masked Social shows dots AND a placeholder underscore for the digits
+    still missing, so "...-915_" counts the same as a full one -- which is
+    how an EIGHT digit Social was reported as set, while Apex itself outlined
+    the box in red (2026-11-15)."""
+    from automations.apex_new_starts.ssn_prompt import Secret
+
+    class _Short(_Tabs):
+        def evaluate(self, js, arg=None):
+            if "removeAttribute" in js:
+                return "visible"
+            if "blanks" in js:                    # what the page says
+                return {"bad": True, "filled": 8, "blanks": 1}
+            if ".length" in js:                   # the typing loop's count
+                return 9                          # it believes it landed
+            return ""
+
+    said = []
+    got = drive.fill_tax(_Short(), {}, Secret("123456789"), log=said.append)
+    assert got["missed"] == ["Social"], got
+    assert "8 of 9" in " ".join(said), said
+    assert "123456789" not in " ".join(said), said
+
+
+def test_a_full_social_the_page_accepts_is_set():
+    from automations.apex_new_starts.ssn_prompt import Secret
+
+    class _Good(_Tabs):
+        def evaluate(self, js, arg=None):
+            if "removeAttribute" in js:
+                return "visible"
+            if "blanks" in js:
+                return {"bad": False, "filled": 9, "blanks": 0}
+            if ".length" in js:
+                return 9
+            return ""
+
+    got = drive.fill_tax(_Good(), {}, Secret("123456789"),
+                         log=lambda *a: None)
+    assert got["set"] == ["Social"], got
+
+
+def test_a_social_is_typed_digit_by_digit_and_checked():
+    """A masked box swallows keystrokes however slowly they are sent -- 120ms
+    still lost one. Each digit is typed and counted, so a lost one is typed
+    again rather than discovered at the end."""
+    import inspect
+    src = inspect.getsource(drive.type_by_name)
+    assert "for want in range(1, len(raw) + 1)" in src
+    assert "raw[want - 1]" in src, "retype the digit that did not land"
+
+
+def test_no_social_means_no_social_box_is_touched():
+    """The rehearsal used to read Blue Ink with keep_ssn=False. An empty
+    Social typed into a payroll record is worse than a blank one."""
+    page = _Tabs()
+    got = drive.fill_tax(page, {}, None, log=lambda *a: None)
+    assert page.typed_into == []
+    assert "Social" not in got["set"] + got["missed"]
+
+
+def test_the_first_dropdown_on_a_tab_gets_a_second_attempt():
+    """The FIRST dropdown touched after a tab loads is the one that flakes:
+    Marital Status opened fine on one run and "nothing opened its list" on
+    the next, with State To Be Taxed In -- the very next control -- working
+    both times (2026-11-15). The page is still settling."""
+    import inspect
+    src = inspect.getsource(drive.set_dropdown_by_name)
+    assert "for attempt in (1, 2):" in src, "two passes, not one"
+    assert "_mark_by_name(page, name)" in src, "re-mark before the second"
+    assert src.index("for attempt") < src.index('if not opened:')
+
+
+def test_a_save_that_posts_elsewhere_is_still_a_save():
+    """The tax tab posts somewhere other than /employees/<id>, so watching
+    only for that URL reported a SAVED tab as "nothing was posted" --
+    Alexandria went Active off a save this called a failure (2026-11-15)."""
+    import inspect
+    src = inspect.getsource(drive.save_tab)
+    assert "apex.herbjoyent.com" in src, "any Apex write counts"
+    assert "want in url" in src, "this employee's own URL still counts first"
+    # and a GET is still never a save
+    assert '"GET"' in src
+
+
+def test_the_rate_is_typed_until_it_reads_back_right():
+    """A Kendo numeric box reformats as you go: fill("") does not empty it,
+    an empty one shows 0.00 of its own accord, and keystrokes can land on top
+    of that -- which is how a rate came out $10.10 one day (2026-11-12) and
+    $0.00 the next (2026-11-15). One attempt was never enough."""
+    import inspect
+    src = inspect.getsource(drive.type_into)
+    assert "for attempt in range(3):" in src, "three goes, not one"
+    assert "same_value(value, got)" in src, "and it checks between them"
+    assert "typing it again" in src, "and says so"
+
+
+def test_the_rate_box_is_found_again_before_each_retry():
+    """A Kendo numeric widget re-renders when it reformats, so the element
+    marked on the first pass is detached by the second -- and the retry could
+    not find it at all (TimeoutError, 2026-11-15)."""
+    import inspect
+    src = inspect.getsource(drive.type_into)
+    assert "mark_js" in src and "if attempt and not page.evaluate(mark_js" in src
+    assert "went away between tries" in src, "and it says so rather than looping"
+
+
+def test_a_blocked_submit_names_the_field_apex_wants():
+    """Save is a plain type=submit with no handler, so an invalid form does
+    nothing at all -- no error, no request, nothing to see (probe_taxsave,
+    2026-11-15). "Nothing was posted" left nobody any idea WHICH box Apex was
+    unhappy about."""
+    import inspect
+    src = inspect.getsource(drive.save_tab)
+    assert "ng-invalid" in src, "ask the page which fields it rejects"
+    assert "Apex still wants" in src, "and name them"
+
+
+def test_save_waits_for_the_form_to_be_valid_before_pressing():
+    """Save is a plain type=submit with no handler, so pressing it on a form
+    Angular still considers invalid does NOTHING -- no error, no request
+    (probe_taxsave, 2026-11-15).
+
+    And it is a race, not a wrong value: across four people the tax tab saved
+    on both runs where Rate of Pay typed cleanly first time, and failed on
+    both where it needed a retry. The slow runs press too early."""
+    import inspect
+    src = inspect.getsource(drive.save_tab)
+    assert "ng-invalid-required" in src
+    assert src.index("ng-invalid-required") < src.index("page.click("), \
+        "wait first, then press"
+    assert "Apex still wants" in src, "and name what it is waiting on"
+

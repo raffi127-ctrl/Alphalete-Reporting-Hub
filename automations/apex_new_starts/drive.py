@@ -353,6 +353,18 @@ def triage(page, people, log=print) -> Dict[str, dict]:
                                 "they are in Apex is UNKNOWN"}
             continue
         there = search_roster(page, surname, given, log=log)
+        if there == 0 and given:
+            # THE SURNAME IN APEX MAY BE WRONG -- ours sometimes put it there.
+            # Alexandria was saved as "McCrob" instead of "McCrobie" by a run
+            # that typed into a form still rendering, so every search for her
+            # surname found nobody and the run offered to CREATE her
+            # (2026-11-15). A first-name search finds her anyway, and finding
+            # somebody is what stops a duplicate payroll record.
+            again = search_roster(page, given, "", log=log)
+            if again:
+                log("    found by FIRST name, not surname -- the surname in "
+                    "Apex may not match the board")
+                there = again
         if there is None:
             out[name] = {"need": BY_HAND,
                          "why": "the All Employees search could not be run, "
@@ -489,24 +501,56 @@ def type_into(page, label: str, value: str, log=print) -> bool:
     if not found:
         log("    %s: no box" % label)
         return False
-    try:
-        # SELECT ALL, THEN TYPE. `fill("")` does not reliably empty a Kendo
-        # numeric box -- it reformats instead -- so the new keystrokes landed
-        # on top of what was there and Rate of Pay came out $10.10 for a
-        # person whose rate is $10.00 (2026-11-12). A wrong number on a
-        # payroll record is worse than an empty one.
-        page.click("[data-ans-type='1']")
-        page.keyboard.press("Meta+a")
-        page.keyboard.press("Delete")
-        page.type("[data-ans-type='1']", str(value), delay=40)
-        page.evaluate("""() => { const e = document.querySelector('[data-ans-type]');
-              if (e) e.dispatchEvent(new Event('blur', {bubbles: true})); }""")
-        page.wait_for_timeout(500)
-        got = page.evaluate("() => { const e = document.querySelector('[data-ans-type]');"
-                            " return e ? (e.value || '') : ''; }")
-    except Exception as e:     # noqa: BLE001
-        log("    %s: could not type (%s)" % (label, type(e).__name__))
-        got = ""
+    got = ""
+    # TYPE IT, CHECK IT, TYPE IT AGAIN. A Kendo numeric box reformats as you
+    # go: `fill("")` does not empty it, an empty one shows 0.00 of its own
+    # accord, and keystrokes can land on top of that -- which is how a rate
+    # came out $10.10 one day (2026-11-12) and $0.00 the next (2026-11-15).
+    # One attempt was never enough; what makes it right is checking.
+    mark_js = """(L) => { const el = window.__ansFieldFor(L);
+             if (!el) return '';
+             let box = el;
+             if (el.type === 'hidden' || !el.offsetParent) {
+               const w = el.parentElement;
+               const vis = w ? [...w.querySelectorAll('input')]
+                 .filter(i => i.offsetParent && i.type !== 'hidden') : [];
+               if (vis.length) box = vis[0];
+             }
+             if (!box.offsetParent) return '';
+             document.querySelectorAll('[data-ans-type]')
+               .forEach(e => e.removeAttribute('data-ans-type'));
+             box.setAttribute('data-ans-type', '1');
+             return box.id || box.name || 'x'; }"""
+    for attempt in range(3):
+        try:
+            # RE-MARK EVERY TIME. A Kendo numeric widget re-renders when it
+            # reformats, so the element marked on the first pass is detached
+            # by the second and the retry could not find it at all
+            # (TimeoutError, 2026-11-15).
+            if attempt and not page.evaluate(mark_js, label):
+                log("    %s: the box went away between tries" % label)
+                break
+            page.click("[data-ans-type='1']")
+            page.keyboard.press("ControlOrMeta+a")
+            page.keyboard.press("Delete")
+            page.keyboard.press("ControlOrMeta+a")
+            page.keyboard.press("Backspace")
+            page.type("[data-ans-type='1']", str(value), delay=60)
+            page.evaluate(
+                """() => { const e = document.querySelector('[data-ans-type]');
+                     if (e) e.dispatchEvent(new Event('blur', {bubbles: true})); }""")
+            page.wait_for_timeout(600)
+            got = page.evaluate(
+                "() => { const e = document.querySelector('[data-ans-type]');"
+                " return e ? (e.value || '') : ''; }")
+        except Exception as e:     # noqa: BLE001
+            log("    %s: could not type (%s)" % (label, type(e).__name__))
+            got = ""
+        if same_value(value, got):
+            break
+        if attempt < 2:
+            log("    %s: read back %r, typing it again" % (label, got))
+            page.wait_for_timeout(400)
     page.evaluate("() => document.querySelectorAll('[data-ans-type]')"
                   ".forEach(e => e.removeAttribute('data-ans-type'))")
     ok = same_value(value, got)
@@ -751,22 +795,33 @@ def set_dropdown_by_name(page, name: str, value: str, log=print) -> bool:
     # list does not"). So this tries the arrow, then the wrapper, then the
     # input itself -- and SAYS which one worked, so the next person does not
     # have to guess the way I did twice.
+    # TWICE, IF NEED BE. The FIRST dropdown touched after a tab loads is the
+    # one that flakes: Marital Status opened fine on one run and "nothing
+    # opened its list" on the next, with State To Be Taxed In -- the very
+    # next control -- working both times (2026-11-15). The page is still
+    # settling, so a second attempt costs a second and saves a whole run.
     opened = ""
-    for how, sel in (("arrow", "[%s-widget] .k-select" % _MARK),
-                     ("arrow icon", "[%s-widget] .k-icon" % _MARK),
-                     ("wrapper", "[%s-widget]" % _MARK),
-                     ("the box itself", "[%s]" % _MARK)):
-        try:
-            page.click(sel, timeout=2500)
-        except Exception:      # noqa: BLE001 -- try the next way in
-            continue
-        page.wait_for_timeout(700)
-        if page.evaluate("""() => [...document.querySelectorAll(
-                 'ul.k-list, .k-animation-container, .k-list-container')]
-                 .some(e => e.offsetParent)"""):
-            opened = how
+    for attempt in (1, 2):
+        for how, sel in (("arrow", "[%s-widget] .k-select" % _MARK),
+                         ("arrow icon", "[%s-widget] .k-icon" % _MARK),
+                         ("wrapper", "[%s-widget]" % _MARK),
+                         ("the box itself", "[%s]" % _MARK)):
+            try:
+                page.click(sel, timeout=2500)
+            except Exception:      # noqa: BLE001 -- try the next way in
+                continue
+            page.wait_for_timeout(700)
+            if page.evaluate("""() => [...document.querySelectorAll(
+                     'ul.k-list, .k-animation-container, .k-list-container')]
+                     .some(e => e.offsetParent)"""):
+                opened = how
+                break
+            settle_popups(page, seconds=1.0)
+        if opened:
             break
-        settle_popups(page, seconds=1.0)
+        if attempt == 1:
+            page.wait_for_timeout(1200)
+            _mark_by_name(page, name)
     if not opened:
         log("    %s: nothing opened its list" % name)
         return False
@@ -861,7 +916,25 @@ def type_by_name(page, name: str, value, log=print, *, secret: bool = False) -> 
         # (2026-11-13) -- the confirm box reformats as you type and swallowed
         # a character at 30ms. A Social that does not match its confirmation
         # is refused by Apex anyway, so this is typed slowly and counted.
-        page.type("[%s]" % _MARK, raw, delay=(120 if secret else 30))
+        if secret:
+            # ONE DIGIT AT A TIME, CHECKED AS IT GOES. A masked box swallows
+            # keystrokes however slowly they are sent -- 120ms still lost one
+            # (2026-11-15) -- so each digit is typed and counted, and a lost
+            # one is typed again rather than discovered at the end.
+            for want in range(1, len(raw) + 1):
+                for _try in range(3):
+                    got_n = page.evaluate(
+                        r"""(m) => { const e = document.querySelector(
+                                 '[' + m + ']');
+                             return e ? String(e.value)
+                               .replace(/[-\s().\/_]/g, '').length : -1; }""",
+                        _MARK)
+                    if got_n >= want:
+                        break
+                    page.type("[%s]" % _MARK, raw[want - 1], delay=0)
+                    page.wait_for_timeout(90)
+        else:
+            page.type("[%s]" % _MARK, raw, delay=30)
         page.evaluate("(m) => { const e = document.querySelector('[' + m + ']');"
                       " if (e) e.dispatchEvent(new Event('blur', {bubbles: true})); }",
                       _MARK)
@@ -880,31 +953,46 @@ def type_by_name(page, name: str, value, log=print, *, secret: bool = False) -> 
     # LENGTH, which is all it will tell anybody -- and the comparison still
     # never logs either side.
     if secret:
-        # COUNT, NEVER COMPARE. A masked box shows dots or nothing at all, so
-        # the only honest check is how many characters it holds -- and the
-        # count is read from the box itself, across the marked element and
-        # any visible sibling, because which of the pair carries the value
-        # differs. A short count is a dropped keystroke, which is exactly
-        # what happened to ConfirmSSN.
-        held = page.evaluate(
-            """([n, m]) => {
+        # ASK THE PAGE, DON'T COUNT. A masked Social shows dots AND a
+        # placeholder underscore for the digits still missing, so
+        # "...-915_" counts the same as a full one -- which is how an
+        # EIGHT digit Social was reported as set (2026-11-15, seen on
+        # screen, outlined red by Apex itself).
+        #
+        # Apex marks the box invalid the moment it is short. That is the
+        # page saying so directly, which beats any counting of a field
+        # designed not to be read.
+        state = page.evaluate(
+            r"""([n, m]) => {
                  const seen = [document.querySelector('[' + m + ']')];
                  for (const e of document.querySelectorAll('[name="' + n + '"]'))
                    seen.push(e);
-                 let best = -1;
                  for (const e of seen) {
                    if (!e || e.value === undefined) continue;
-                   best = Math.max(best, String(e.value).length);
+                   const cls = e.className || '';
+                   const bad = /ng-invalid|is-invalid|has-error/.test(cls)
+                            || e.getAttribute('aria-invalid') === 'true';
+                   const v = String(e.value);
+                   const filled = v.replace(/[-\s().\/_]/g, '').length;
+                   const blanks = (v.match(/_/g) || []).length;
+                   return {bad: bad, filled: filled, blanks: blanks};
                  }
-                 return best; }""", [name, _MARK])
-        ok = held == len(raw)
-        if not ok and held >= 0:
-            log("    %s: holds %d characters, typed %d -- NOT SAVED"
-                % (name, held, len(raw)))
-        elif not ok:
+                 return null; }""", [name, _MARK])
+        if not isinstance(state, dict):
             log("    %s: cannot be read back at all -- NOT SAVED" % name)
-        else:
+            return False
+        ok = (not state["bad"]) and state["blanks"] == 0 \
+            and state["filled"] == len(raw)
+        if ok:
             log("    %s: set" % name)
+        elif state["blanks"]:
+            log("    %s: %d of %d typed -- the box still shows blanks, "
+                "NOT SAVED" % (name, state["filled"], len(raw)))
+        elif state["bad"]:
+            log("    %s: Apex marks it invalid -- NOT SAVED" % name)
+        else:
+            log("    %s: holds %d of %d -- NOT SAVED"
+                % (name, state["filled"], len(raw)))
         return ok
     ok = same_value(raw, got)
     log("    %s: %r -> %r%s" % (name, raw, got,
@@ -1444,6 +1532,34 @@ def save_tab(page, apex_id, got=None, *, log=print, seconds: int = 60) -> bool:
         log("    NOT SAVED -- no Save control on this tab")
         return False
 
+    # WAIT FOR THE FORM TO BE VALID BEFORE PRESSING. Save is a plain
+    # type=submit with no handler, so pressing it on a form Angular still
+    # considers invalid does NOTHING AT ALL -- no error, no request, nothing
+    # to see (probe_taxsave, 2026-11-15).
+    #
+    # And it is a RACE, not a wrong value: across four people the tax tab
+    # saved on both runs where Rate of Pay typed cleanly first time, and
+    # failed on both where it needed a retry -- the slow runs are the ones
+    # that press too early.
+    for _ in range(40):
+        still = page.evaluate(
+            r"""() => [...document.querySelectorAll(
+                 'input.ng-invalid-required, select.ng-invalid-required,'
+                 + ' .k-widget.ng-invalid-required')]
+                 .filter(e => e.offsetParent || e.type === 'hidden').length""")
+        if not still:
+            break
+        page.wait_for_timeout(250)
+    else:
+        names = page.evaluate(
+            r"""() => [...document.querySelectorAll(
+                 'input.ng-invalid-required, select.ng-invalid-required,'
+                 + ' .k-widget.ng-invalid-required')]
+                 .map(e => e.getAttribute('name') || e.getAttribute('ng-model')
+                        || e.id || '?').slice(0, 6)""")
+        log("    NOT SAVED -- Apex still wants: %s" % ", ".join(names or ["?"]))
+        return False
+
     posted = []
     want = "/employees/%s" % apex_id
 
@@ -1451,7 +1567,16 @@ def save_tab(page, apex_id, got=None, *, log=print, seconds: int = 60) -> bool:
         try:
             if (res.request.method or "GET").upper() == "GET":
                 return
-            if want in (res.url or "") and 200 <= res.status < 400:
+            if not (200 <= res.status < 400):
+                return
+            url = res.url or ""
+            # THIS EMPLOYEE'S URL, OR ANY APEX WRITE. The tax tab posts
+            # somewhere other than /employees/<id>, so watching only for that
+            # reported a SAVED tab as "nothing was posted" -- Alexandria went
+            # Active off a save this called a failure (2026-11-15). A false
+            # negative is the safe direction, but it would make every tax tab
+            # look broken.
+            if want in url or "apex.herbjoyent.com" in url:
                 posted.append(res.status)
         except Exception:      # noqa: BLE001 -- mid-navigation
             pass
@@ -1473,7 +1598,21 @@ def save_tab(page, apex_id, got=None, *, log=print, seconds: int = 60) -> bool:
             pass
 
     if not posted:
-        log("    NOT SAVED -- pressed %r and nothing was posted" % which)
+        # NO REQUEST AT ALL MEANS ANGULAR BLOCKED THE SUBMIT. Save is a
+        # plain type=submit with no handler, so an invalid form simply does
+        # nothing -- no error, no post, nothing to see (probe_taxsave,
+        # 2026-11-15). Saying "nothing was posted" left somebody with no
+        # idea WHICH box Apex was unhappy about, so this asks.
+        bad = page.evaluate(
+            r"""() => [...document.querySelectorAll(
+                 'input.ng-invalid, select.ng-invalid, .k-widget.ng-invalid')]
+                 .map(e => e.getAttribute('name') || e.getAttribute('ng-model')
+                        || e.id || e.className.split(' ')[0])
+                 .filter(Boolean).slice(0, 8)""")
+        if bad:
+            log("    NOT SAVED -- Apex still wants: %s" % ", ".join(bad))
+        else:
+            log("    NOT SAVED -- pressed %r and nothing was posted" % which)
         return False
     page.wait_for_timeout(1500)
     # AND APEX MUST NOT BE OBJECTING. A validation failure posts too, and a

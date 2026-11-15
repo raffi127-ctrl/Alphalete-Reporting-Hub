@@ -549,3 +549,27 @@ def test_a_wrong_value_stops_the_run_instead_of_asking_for_a_save():
         "it must refuse before it ever asks"
     head = stop[:stop.index("Press SAVE")]
     assert "return False" in head, "and stop, not carry on to the ask"
+
+
+def test_the_armed_save_still_refuses_a_tab_that_is_wrong():
+    """Megan, 2026-11-15: "arm the automatic save". Pressing Save does not
+    lower the bar -- save_tab refuses on its own when a required box is
+    empty, a value is not what was asked for, or Apex objects, so the code
+    presses Save only on a tab that is already right."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP._complete)
+    assert "drive.save_tab(page, apex_id, got, log=log)" in src
+    # and it is OFF unless asked for
+    sig = inspect.signature(SUP._complete).parameters
+    assert sig["press_save"].default is False
+    assert inspect.signature(SUP.run).parameters["press_save"].default is False
+
+
+def test_the_run_says_which_mode_it_is_in():
+    """Somebody watching a run that presses Save itself needs to know that is
+    what they are watching."""
+    import inspect
+    from automations.apex_new_starts import supervised as SUP
+    src = inspect.getsource(SUP._complete)
+    assert "THIS RUN PRESSES SAVE ITSELF." in src
