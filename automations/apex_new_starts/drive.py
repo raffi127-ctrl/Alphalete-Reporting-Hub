@@ -217,6 +217,35 @@ def keep_loaded(page, people=None, week: str = "", log=print) -> bool:
     return ready(page)
 
 
+def on_roster(page) -> bool:
+    """Are we actually looking at a roster with people in it?
+
+    THE GUARD THAT WAS MISSING. On 2026-11-14 the roster page came up as
+    Apex's change-password page with no nav at all, so the Pending lookup
+    found nobody and the All-Employees check found nobody -- and triage
+    called that "not in Apex at all" for somebody whose employment record it
+    had saved twenty minutes earlier. Absence routes to the CREATE form, and
+    a create on an existing person is a second payroll record for a real
+    employee.
+
+    A lookup that could not run is not a lookup that found nothing
+    (feedback_empty_means_proven_zero). So: the tabs have to be on screen and
+    the list has to have rows in it before any "not found" is believed.
+    """
+    try:
+        return bool(page.evaluate(
+            r"""() => {
+                 const t = (document.body.innerText || '');
+                 if (/change your password/i.test(t) && !/Pending/i.test(t))
+                   return false;
+                 const tabs = /Pending/i.test(t) && /All Employees/i.test(t);
+                 const rows = document.querySelectorAll(
+                   'table tbody tr, .k-grid-content tr').length;
+                 return tabs && rows > 0; }"""))
+    except Exception:      # noqa: BLE001 -- mid-navigation is not proof either
+        return False
+
+
 def triage(page, people, log=print) -> Dict[str, dict]:
     """{name: {"need": COMPLETE|ADD|BY_HAND, "why": str}} for the whole week.
 
@@ -238,6 +267,16 @@ def triage(page, people, log=print) -> Dict[str, dict]:
     "COULD NOT TELL" IS NEVER "NOT THERE". The engine returns a string when it
     cannot read the All Employees tab, and that string becomes BY_HAND.
     """
+    # NOTHING IS DECIDED FROM A PAGE THAT IS NOT THE ROSTER -- see on_roster.
+    if not on_roster(page):
+        log("  NOT ON THE ROSTER (%s) -- nobody is triaged from this page."
+            % (getattr(page, "url", None) or "?"))
+        return {str((p or {}).get("name") or "").strip():
+                {"need": BY_HAND,
+                 "why": "could not reach the roster, so whether they are "
+                        "already in Apex is UNKNOWN -- never create from this"}
+                for p in (people or []) if (p or {}).get("name")}
+
     out: Dict[str, dict] = {}
     for p in people or []:
         name = str((p or {}).get("name") or "").strip()
@@ -272,6 +311,12 @@ def triage(page, people, log=print) -> Dict[str, dict]:
             out[name] = {"need": BY_HAND,
                          "why": "in Apex but not on Pending — find them on "
                                 "All Employees"}
+        elif not on_roster(page):
+            # The page drifted while we were looking. "Not found" on a page
+            # that is no longer the roster proves nothing at all.
+            out[name] = {"need": BY_HAND,
+                         "why": "the roster went away mid-check, so whether "
+                                "they are in Apex is UNKNOWN"}
         else:
             out[name] = {"need": ADD, "why": "not in Apex at all"}
     tally = {}
@@ -760,7 +805,12 @@ def type_by_name(page, name: str, value, log=print, *, secret: bool = False) -> 
         return False
     try:
         page.fill("[%s]" % _MARK, "")
-        page.type("[%s]" % _MARK, raw, delay=30)
+        # A MASKED BOX DROPS KEYSTROKES AT SPEED. Megan watched the Social go
+        # in correctly on the first box and ONE DIGIT SHORT on the second
+        # (2026-11-13) -- the confirm box reformats as you type and swallowed
+        # a character at 30ms. A Social that does not match its confirmation
+        # is refused by Apex anyway, so this is typed slowly and counted.
+        page.type("[%s]" % _MARK, raw, delay=(120 if secret else 30))
         page.evaluate("(m) => { const e = document.querySelector('[' + m + ']');"
                       " if (e) e.dispatchEvent(new Event('blur', {bubbles: true})); }",
                       _MARK)
@@ -778,17 +828,35 @@ def type_by_name(page, name: str, value, log=print, *, secret: bool = False) -> 
     # WRONG and refused the tab (2026-11-13). A masked box is checked by
     # LENGTH, which is all it will tell anybody -- and the comparison still
     # never logs either side.
-    if secret and str(got).strip() and not same_value(raw, got):
-        masked = not any(c.isdigit() for c in str(got))
-        ok = masked and len(str(got).strip()) == len(raw)
-    else:
-        ok = same_value(raw, got)
     if secret:
-        log("    %s: %s" % (name, "set" if ok else
-                            ("STILL EMPTY" if not str(got).strip()
-                             else "WRONG -- DO NOT SAVE")))
-    else:
-        log("    %s: %r -> %r%s" % (name, raw, got,
+        # COUNT, NEVER COMPARE. A masked box shows dots or nothing at all, so
+        # the only honest check is how many characters it holds -- and the
+        # count is read from the box itself, across the marked element and
+        # any visible sibling, because which of the pair carries the value
+        # differs. A short count is a dropped keystroke, which is exactly
+        # what happened to ConfirmSSN.
+        held = page.evaluate(
+            """([n, m]) => {
+                 const seen = [document.querySelector('[' + m + ']')];
+                 for (const e of document.querySelectorAll('[name="' + n + '"]'))
+                   seen.push(e);
+                 let best = -1;
+                 for (const e of seen) {
+                   if (!e || e.value === undefined) continue;
+                   best = Math.max(best, String(e.value).length);
+                 }
+                 return best; }""", [name, _MARK])
+        ok = held == len(raw)
+        if not ok and held >= 0:
+            log("    %s: holds %d characters, typed %d -- NOT SAVED"
+                % (name, held, len(raw)))
+        elif not ok:
+            log("    %s: cannot be read back at all -- NOT SAVED" % name)
+        else:
+            log("    %s: set" % name)
+        return ok
+    ok = same_value(raw, got)
+    log("    %s: %r -> %r%s" % (name, raw, got,
                                     "" if ok else "  WRONG -- DO NOT SAVE"))
     return ok
 
@@ -871,8 +939,49 @@ def absent(values, required) -> list:
     return [k for k in required if not str(values.get(k) or "").strip()]
 
 
+def wait_for_all_named(page, names, *, seconds: int = 25, people=None,
+                      log=print) -> bool:
+    """Wait until EVERY box a tab is about to fill exists, then settle.
+
+    Waiting for one field was not enough. Alexandria's profile tab was saved
+    after 24 seconds -- fast -- and the next tab was still being built when
+    the fill started: LastName took 'McCrob' instead of 'McCrobie', BirthDay
+    came out empty, and Street, City, Zip and Phone reported "no box" for
+    boxes that plainly exist (2026-11-14). Angular was still replacing the
+    form underneath it.
+
+    Kyle's run looked fine only because that save took 136 seconds, which
+    gave the page time. A race that depends on how fast somebody clicks is
+    not a thing to leave in.
+    """
+    want = [n for n in names if n]
+    for i in range(max(1, seconds * 2)):
+        if not ready(page):
+            load(page, people, "", log=lambda *a: None)
+        try:
+            missing = page.evaluate(
+                """(ns) => ns.filter(n =>
+                     !document.querySelector('[name="' + n + '"]')
+                     && !document.getElementById(n))""", want)
+        except Exception:      # noqa: BLE001 -- mid-navigation; try again
+            page.wait_for_timeout(500)
+            continue
+        if not missing:
+            # AND A BEAT MORE. Existing is not the same as settled: the form
+            # can still be re-bound for a moment after the last box appears.
+            page.wait_for_timeout(1200)
+            if i:
+                log("    (the form finished arriving after %.1fs)" % (i * 0.5))
+            return True
+        page.wait_for_timeout(500)
+    log("    these never arrived: %s" % ", ".join(missing or want))
+    return False
+
+
 def fill_profile(page, values, log=print) -> dict:
     """The User Profile & Account tab. Never presses Save."""
+    wait_for_all_named(page, [n for n, _k in PROFILE_TEXT + PROFILE_PICKS],
+                       log=log)
     set_, miss = [], []
     for name, key in PROFILE_PICKS:
         v = values.get(key)
@@ -900,6 +1009,8 @@ def fill_tax(page, values, social=None, log=print) -> dict:
     The Social is typed and never logged -- `type_by_name(secret=True)` says
     only whether a box took it.
     """
+    wait_for_all_named(page, [n for n, _k in TAX_PICKS]
+                       + ["SSN", "ConfirmSSN"], log=log)
     set_, miss = [], []
     for name, key in TAX_PICKS:
         v = values.get(key)

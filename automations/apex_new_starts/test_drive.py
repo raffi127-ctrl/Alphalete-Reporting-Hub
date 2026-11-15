@@ -92,7 +92,14 @@ def test_a_blank_gender_is_not_handed_over_as_a_guess():
 # ------------------------------- which of the two each person actually needs
 
 class _Triage:
-    """A page that answers the two lookups from a script it was given."""
+    """A page that answers the two lookups from a script it was given.
+
+    It reports itself AS A ROSTER WITH ROWS, because that is the state these
+    tests are about -- triage refuses to decide anything from a page that is
+    not one (see test_a_lookup_that_could_not_run_is_never_an_absence).
+    """
+
+    url = "https://apex.example/roster"
 
     def __init__(self, pending=(), anywhere=(), raises=None, says=None):
         self.pending = set(pending)
@@ -101,6 +108,8 @@ class _Triage:
         self.says = says or {}
 
     def evaluate(self, js, arg=None):
+        if "All Employees" in js:               # on_roster
+            return True
         name = (arg or {}).get("name", "")
         if name in self.raises:
             raise RuntimeError("the page gave up")
@@ -322,8 +331,22 @@ def test_the_profile_tab_always_ends_by_unticking_the_password_email():
     assert after.count("return") == 1, after
 
 
+class _Secret(_Tabs):
+    """A page whose Social boxes answer only a character COUNT -- which is
+    all a masked box will tell anybody."""
+
+    def __init__(self, holds=9, **kw):
+        super().__init__(**kw)
+        self.holds = holds
+
+    def evaluate(self, js, arg=None):
+        if "best = Math.max" in js:
+            return self.holds
+        return super().evaluate(js, arg)
+
+
 def test_a_social_on_the_tax_tab_is_typed_and_never_logged():
-    page = _Tabs(typed="123456789")
+    page = _Secret(holds=9, typed="123456789")
     said = []
     got = drive.fill_tax(page, {}, Secret("123456789"), log=said.append)
     assert got["set"] == ["Social"], got
@@ -737,41 +760,114 @@ def test_a_pick_is_never_closed_with_escape():
     assert not any("Escape" in l for l in code), "and presses no key"
 
 
-def test_a_masked_box_is_checked_by_length_not_by_value():
-    """The two Social fields read back as dots, not digits, so comparing them
-    with what was typed called a correct entry WRONG and refused the whole
-    tax tab (2026-11-13). A masked box can only be checked by length -- and
-    neither side is ever logged."""
+def test_a_masked_box_is_checked_by_count_not_by_value():
+    """A masked box shows dots or nothing at all, so the only honest check is
+    how many characters it holds. Comparing the dots with what was typed
+    called a correct entry WRONG and refused the whole tax tab
+    (2026-11-13)."""
     from automations.apex_new_starts.ssn_prompt import Secret
-
-    class _Masked(_Tabs):
-        def evaluate(self, js, arg=None):
-            if "removeAttribute" in js:
-                return "visible"
-            if "e.value" in js:
-                return "•••••••••"          # nine dots for nine digits
-            return ""
-
-    page = _Masked()
     said = []
-    got = drive.fill_tax(page, {}, Secret("123456789"), log=said.append)
+    got = drive.fill_tax(_Secret(holds=9), {}, Secret("123456789"),
+                         log=said.append)
     assert got["set"] == ["Social"], got
     assert "123456789" not in " ".join(said), said
-    assert "•" not in " ".join(said), "the mask is not logged either"
 
 
-def test_a_masked_box_of_the_wrong_length_is_still_refused():
-    """Nine digits typed and four dots back is not a Social that went in."""
+def test_a_social_one_digit_short_is_refused():
+    """Megan watched the Social go in correctly on the first box and ONE
+    DIGIT SHORT on the second: the confirm box reformats as you type and
+    swallowed a character (2026-11-13). Apex refuses a Social that does not
+    match its confirmation, and so does this."""
     from automations.apex_new_starts.ssn_prompt import Secret
-
-    class _Short(_Tabs):
-        def evaluate(self, js, arg=None):
-            if "removeAttribute" in js:
-                return "visible"
-            if "e.value" in js:
-                return "••••"
-            return ""
-
-    got = drive.fill_tax(_Short(), {}, Secret("123456789"),
-                         log=lambda *a: None)
+    said = []
+    got = drive.fill_tax(_Secret(holds=8), {}, Secret("123456789"),
+                         log=said.append)
     assert got["missed"] == ["Social"], got
+    assert "8 characters, typed 9" in " ".join(said), said
+    assert "123456789" not in " ".join(said), said
+
+
+def test_a_social_is_typed_slowly_enough_not_to_drop_one():
+    import inspect
+    src = inspect.getsource(drive.type_by_name)
+    assert "120 if secret else 30" in src, "a masked box needs the slower type"
+
+
+def test_a_tab_waits_for_its_whole_form_before_typing():
+    """Waiting for ONE field was not enough. Alexandria's employment tab was
+    saved after 24 seconds -- fast -- and the profile tab was still being
+    built when the fill began: LastName took 'McCrob' instead of 'McCrobie',
+    BirthDay came out empty, and Street, City, Zip and Phone reported "no
+    box" for boxes that plainly exist (2026-11-14).
+
+    Kyle's run looked fine only because that save took 136 seconds. A race
+    that depends on how fast somebody clicks is not a thing to leave in."""
+    import inspect
+    for fn in (drive.fill_profile, drive.fill_tax):
+        src = inspect.getsource(fn)
+        assert "wait_for_all_named(" in src, \
+            "%s must wait for its whole form" % fn.__name__
+        assert src.index("wait_for_all_named(") < src.index("set_, miss"), \
+            "%s must wait BEFORE it types" % fn.__name__
+
+
+def test_arrived_is_not_the_same_as_settled():
+    """The form can still be re-bound for a moment after the last box
+    appears, which is how two characters went missing off a surname."""
+    import inspect
+    src = inspect.getsource(drive.wait_for_all_named)
+    assert "wait_for_timeout(1200)" in src, "a beat after the last box arrives"
+    assert "never arrived" in src, "and it says so when they do not"
+
+
+class _Roster:
+    """A page that says whether it is a roster, and finds nobody on it."""
+
+    url = "https://apex.example/roster"
+
+    def __init__(self, *, is_roster=True, drifts=False):
+        self.is_roster, self.drifts, self.asked = is_roster, drifts, 0
+
+    def evaluate(self, js, arg=None):
+        if "All Employees" in js:              # on_roster
+            self.asked += 1
+            if self.drifts and self.asked > 1:
+                return False
+            return self.is_roster
+        if "__ansExistsAnywhere" in js:
+            return False                        # checked, genuinely absent
+        return ""                               # not on Pending
+
+
+def test_a_lookup_that_could_not_run_is_never_an_absence():
+    """On 2026-11-14 the roster came up as Apex's change-password page with
+    no nav, so the Pending lookup found nobody and the All-Employees check
+    found nobody -- and triage called that "not in Apex at all" for somebody
+    whose employment record it had saved twenty minutes earlier.
+
+    Absence routes to the CREATE form, and a create on an existing person is
+    a second payroll record for a real employee."""
+    page = _Roster(is_roster=False)
+    said = []
+    got = drive.triage(page, [{"name": "Ada Fournier"}], log=said.append)
+    assert got["Ada Fournier"]["need"] == drive.BY_HAND, got
+    why = got["Ada Fournier"]["why"].lower()
+    assert "unknown" in why and "never create" in why, why
+    assert "NOT ON THE ROSTER" in " ".join(said)
+
+
+def test_the_roster_drifting_mid_check_is_not_an_absence_either():
+    """It was the roster when we started looking and something else by the
+    time we had an answer. That answer proves nothing."""
+    page = _Roster(drifts=True)
+    got = drive.triage(page, [{"name": "Ada Fournier"}], log=lambda *a: None)
+    assert got["Ada Fournier"]["need"] == drive.BY_HAND, got
+    assert "went away" in got["Ada Fournier"]["why"]
+
+
+def test_a_real_roster_that_really_has_nobody_still_says_add():
+    """The guard must not swallow the genuine case: a roster with rows on
+    screen, searched properly, that does not hold this person."""
+    page = _Roster(is_roster=True)
+    got = drive.triage(page, [{"name": "Ada Fournier"}], log=lambda *a: None)
+    assert got["Ada Fournier"]["need"] == drive.ADD, got
