@@ -319,7 +319,7 @@ def main(argv=None) -> int:
     ap.add_argument("--office", default="nicolas")
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx instead of the inbox")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
-    ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab"],
+    ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab", "payout"],
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
@@ -328,8 +328,8 @@ def main(argv=None) -> int:
     from automations.verizon_office import offices as OF, run as RUN
     office = OF.get(a.office)
     target = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
-    sv = a.sv or RUN.fetch(office, "sales")
-    if not sv:
+    sv = a.sv or (None if a.board in ("churn_tab", "payout") else RUN.fetch(office, "sales"))
+    if not sv and a.board not in ("churn_tab", "payout"):
         print("✗ no Sales Verification in the Hub inbox -- is the office's Outlook rule delivering?")
         return 1
     out_dir = Path(__file__).resolve().parents[2] / "output" / "verizon_office" / office.key / "boards"
@@ -337,6 +337,9 @@ def main(argv=None) -> int:
         from automations.verizon_office import churn_tab as CH
         got = CH.screenshot(out_dir / f"verizon_churn_tab_{target.isoformat()}.png",
                             sheet_id=CH.PROD_SHEET_ID if a.prod_tab else CH.SANDBOX_SHEET_ID)
+    elif a.board == "payout":
+        from automations.verizon_office import payout as PO
+        got = PO.render_png(out_dir / f"verizon_payout_{target.isoformat()}.png", today=target)
     else:
         fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
               "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]
