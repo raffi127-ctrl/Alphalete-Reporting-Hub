@@ -53,20 +53,18 @@ class ChurnTabTest(unittest.TestCase):
         s = CT.churn_summary(self.lines, TODAY)
         self.assertEqual((s["All Lines"]["base"], s["All Lines"]["disc"]), (4, 2))      # 9/30 one is out
         self.assertAlmostEqual(s["All Lines"]["rate"], 0.5)
-        self.assertEqual((s["Port (non-BYOD)"]["base"], s["Port (non-BYOD)"]["disc"]), (2, 1))
-        self.assertEqual((s["BYOD"]["base"], s["BYOD"]["disc"]), (2, 1))
+        self.assertEqual(list(s), ["All Lines"])                                         # one churn, no port/BYOD split
         self.assertEqual(s["All Lines"]["pending"], 1)                                   # 11/12 submitted; the REJ one is cancelled
 
     def test_rolloff_soonest_first_with_pct_after(self):
         roll = CT.rolloff_rows(self.lines, TODAY)
-        self.assertEqual([r["customer"] for r in roll["port"]], ["Ana R"])
-        a = roll["port"][0]
+        self.assertEqual([(r["customer"], r["kind"]) for r in roll], [("Ana R", "port"), ("Dee U", "BYOD")])
+        a = roll[0]
         self.assertEqual((a["days_left"], a["falloff"], a["reason"]), (4, dt.date(2026, 11, 19), "Customer request"))
         # once Ana (10/20) ages off, the window holds Bob 10/25 (alive), Cal 11/02 (alive), Dee 11/05 (dead) -> 1/3
         self.assertAlmostEqual(a["pct_all"], 1 / 3)
-        self.assertAlmostEqual(a["pct_cls"], 0.0)                                       # port left: Bob only
-        self.assertEqual(roll["byod"][0]["days_left"], 20)
-        self.assertEqual(roll["new"], [])
+        self.assertEqual(roll[1]["days_left"], 20)
+        self.assertTrue(roll[1]["quick"] and not a["quick"])
 
     def test_activation_rates_by_order_age(self):
         office, reps = CT.activation_rates(self.lines, TODAY)

@@ -65,9 +65,14 @@ def run(office_key: str, days: int, log=print) -> List[List[str]]:
     # out at 15 minutes on Lucy 4 (2026-11-15). The any-sender pass is narrowed
     # by subject, the way verizon_office.run.fetch does it (an all-mail search
     # with no sender took 3+ minutes on 11/06).
-    globs = ["*.xlsx", "*.xlsm", "*.pdf"]
+    # fetch_by_globs keeps the NEWEST attachment per glob, so one glob per
+    # report type (the 11/15 16:49 run with "*.xlsx" saw only the Daily Sales
+    # scorecard). Sender-filtered searches are quick; the any-sender pass (the
+    # office's own forward of Credico's mail) is subject-narrowed.
+    report_globs = ["*Sales Verification*", "*Compliance*", "*Churn*", "*Scorecard*", "*Daily Sales*",
+                    "*Bulletin*", "*Bonus*", "*Quality*", "*Tracker*"]
     seen = set()
-    for sender, subject in ((SENDER, None), ("", "Verizon")):
+    for sender, subject, globs in ((SENDER, None, report_globs), ("", "Verizon Wireless", report_globs[:3])):
         found = email_ingest.fetch_by_globs(sender, globs, dest, subject=subject, since_days=days, verbose=False)
         for fname, path in found.items():
             if fname in seen:

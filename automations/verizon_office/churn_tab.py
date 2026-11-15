@@ -27,10 +27,11 @@ WHAT THE TAB SHOWS (one Credico Order Detail pull, same as the Order Log):
   * the Credico tier chart, the live band marked "◀ now" off the calendar
     window Credico actually scores (comp.office_tier), and a status line
     with the window, its rate and the rules;
-  * the 0-30 day rolloff list as stacked tables (Port non-BYOD / BYOD /
-    New), one row per disconnected line, soonest to fall off first: Days
-    Left = (Activation Date + 30) - today, and what the churn % becomes once
-    that line has aged off;
+  * the 0-30 day rolloff list, ONE table for every line (the SOW scores one
+    churn rate; port / new / BYOD is a column, not a split), one row per
+    disconnected line, soonest to fall off first: Days Left = (Activation
+    Date + 30) - today, and what the churn % becomes once that line has aged
+    off; red only when it disconnected within 7 days of activating;
   * the per-rep 0-30 day activation rate list on the right.
 
 Customer names are on this tab (the Vantura Master is Carlos's own workbook,
@@ -70,10 +71,14 @@ TITLE = "VERIZON — 0–30 Day Rolloff List — soonest to fall off"
 SOURCE = ("Verizon Wireless SOW Schedule A 6.16.26 + Churn Schedule Wireless 2026 (v1.13.26), "
           "Credico PDFs Nico forwarded 11/7 (comp.py)")
 
-CLASSES = ("port", "byod", "new")
-CLASS_TITLES = {"port": "PORT (non-BYOD)", "byod": "BYODs", "new": "NEW (non-BYOD)"}
-BOX_ROWS = (("All Lines", None), ("Port (non-BYOD)", "port"), ("BYOD", "byod"), ("New (non-BYOD)", "new"))
-LIST_HEADERS = ("Days Left", "Fall-Off Date", "Lines", "All Lines % After Rolloff", "% After Rolloff",
+# ONE churn for the office (SOW Schedule A: a single 30-Day Churn Rate over every
+# activated line that shows an approval date -- BYOD and new no-port lines
+# included, they only PAY differently; resources/verizon_comp/README.md).
+# Carlos 2026-11-15: "it shouldn't be separated by whether it's a port, BYOD,
+# or whatever ... that should all just be one thing". The rolloff list still
+# says port / new and the device on each row.
+BOX_ROWS = (("All Lines", None),)
+LIST_HEADERS = ("Days Left", "Fall-Off Date", "Lines", "% After Rolloff",
                 "Customer", "Sales Rep", "Order Date", "Activation Date", "Disconnect Date",
                 "Port / New", "Device", "Plan", "Status Reason")
 # Credico's tier bands, best first, as the SOW prints them (comp.CHURN_TIERS ceilings)
@@ -158,32 +163,28 @@ def activation_rates(lines, today: dt.date) -> Tuple[dict, dict]:
     return office, reps
 
 
-def rolloff_rows(lines, today: dt.date) -> Dict[str, List[dict]]:
-    """{class: [row dicts soonest to fall off first]}. Every disconnected line
-    in the 0-30 window; '% After Rolloff' = the churn % once this line AND
-    every line activated on or before it have aged off (all lines, and the
-    line's own class)."""
+def rolloff_rows(lines, today: dt.date) -> List[dict]:
+    """Every disconnected line in the 0-30 window, soonest to fall off first;
+    '% After Rolloff' = the office churn once this line AND every line
+    activated on or before it have aged off."""
     units = churn_units(lines, today)
-    out: Dict[str, List[dict]] = {c: [] for c in CLASSES}
 
-    def pct_after(scope_units, posted: dt.date) -> Optional[float]:
-        left = [u for u in scope_units if _d(u["Activation Date"]) > posted]
-        if not left:
-            return 0.0
-        return sum(1 for u in left if is_dead(u)) / len(left)
+    def pct_after(posted: dt.date) -> float:
+        left = [u for u in units if _d(u["Activation Date"]) > posted]
+        return (sum(1 for u in left if is_dead(u)) / len(left)) if left else 0.0
 
-    by_cls = {c: [u for u in units if line_class(u) == c] for c in CLASSES}
+    out = []
     for u in sorted((u for u in units if is_dead(u)),
                     key=lambda u: (_d(u["Activation Date"]), u.get("Customer", ""))):
         posted = _d(u["Activation Date"])
-        cls = line_class(u)
         falloff = posted + dt.timedelta(days=WINDOW_DAYS)
-        out[cls].append({
+        out.append({
             "days_left": (falloff - today).days, "falloff": falloff, "lines": 1,
-            "pct_all": pct_after(units, posted), "pct_cls": pct_after(by_cls[cls], posted),
+            "pct_all": pct_after(posted),
             "customer": u.get("Customer", ""), "rep": u.get("Rep", ""),
             "order_date": _d(u.get("Order Date")), "posted": posted, "disc_date": _d(u.get("Cancel Date")),
-            "kind": "port" if u.get("Type") == "Port" else "new",
+            "kind": ("BYOD" if (u.get("Device") or "").strip().upper() == "BYOD"
+                     else "port" if u.get("Type") == "Port" else "new"),
             "device": u.get("Device", ""), "plan": u.get("Plan", ""), "reason": u.get("Status Reason", ""),
             # RED only when it disconnected within 7 days of activating (the NDS
             # tab's 7-day flag; Carlos 2026-11-15)
@@ -272,23 +273,22 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
          "Source: %s." % (win, tier["why"], tier["pay"], SOURCE)])
     row()
     rep_top = len(g) + 1
-    for cls in CLASSES:
-        s = summary[{"port": "Port (non-BYOD)", "byod": "BYOD", "new": "New (non-BYOD)"}[cls]]
-        b = row(["%s — churn %s (%d of %d activated in the last 30 days disconnected)"
-                 % (CLASS_TITLES[cls], _pct(s["rate"]) or "0.00%", s["disc"], s["base"])])
-        marks["bands"].append(b)
-        h = row(list(LIST_HEADERS[:4]) + ["%s %s" % (CLASS_TITLES[cls], LIST_HEADERS[4])] + list(LIST_HEADERS[5:]))
-        marks["headers"].append(h)
-        for x in roll[cls]:
-            r = row(["%dd" % x["days_left"], _fmt(x["falloff"]), x["lines"], _pct(x["pct_all"]), _pct(x["pct_cls"]),
-                     x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
-                     x["kind"], x["device"], x["plan"], x["reason"]])
-            if x["quick"]:
-                marks["quick_rows"].append(r)
-        if not roll[cls]:
-            row(["(no disconnects in the 0-30 window)"])
-        marks["tables"].append((h, len(g)))
-        row()
+    s_all = summary["All Lines"]
+    b = row(["ALL LINES — 0–30 day churn %s (%d of %d activated in the last 30 days disconnected)"
+             % (_pct(s_all["rate"]) or "0.00%", s_all["disc"], s_all["base"])])
+    marks["bands"].append(b)
+    h = row(list(LIST_HEADERS))
+    marks["headers"].append(h)
+    for x in roll:
+        r = row(["%dd" % x["days_left"], _fmt(x["falloff"]), x["lines"], _pct(x["pct_all"]),
+                 x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
+                 x["kind"], x["device"], x["plan"], x["reason"]])
+        if x["quick"]:
+            marks["quick_rows"].append(r)
+    if not roll:
+        row(["(no disconnects in the 0-30 window)"])
+    marks["tables"].append((h, len(g)))
+    row()
     rep_rows = [("OFFICE TOTAL (all reps)", office["0-30"]["rate"], office["0-30"]["activated"], office["0-30"]["sold"])]
     rep_rows += sorted(((r, v["0-30"]["rate"], v["0-30"]["activated"], v["0-30"]["sold"]) for r, v in reps.items()
                         if v["0-30"]["sold"]), key=lambda t: (-(t[1] or 0), t[0].lower()))
@@ -337,19 +337,23 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
                                   "right": outer, "innerHorizontal": inner, "innerVertical": inner}}
     n = max(marks["n_rows"], 60)
     reqs = [
+        # EVERYTHING reset first, text format included: a row that was a header in
+        # yesterday's layout kept its white bold text and printed blank once data
+        # landed there (Lucy 4, 2026-11-15 16:47)
         {"repeatCell": {"range": rng(0, n, 0, 18), "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 1, "blue": 1},
-                        "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "wrapStrategy": "OVERFLOW_CELL"}},
-                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,wrapStrategy)"}},
+                        "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "wrapStrategy": "OVERFLOW_CELL",
+                        "textFormat": {"bold": False, "italic": False, "fontSize": 10, "foregroundColor": {"red": 0, "green": 0, "blue": 0}}}},
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,wrapStrategy,textFormat)"}},
         {"updateBorders": {"range": rng(0, n, 0, 18), "top": _NONE, "bottom": _NONE, "left": _NONE, "right": _NONE,
                            "innerHorizontal": _NONE, "innerVertical": _NONE}},
-        {"mergeCells": {"range": rng(0, 1, 0, 14), "mergeType": "MERGE_ALL"}},
-        {"mergeCells": {"range": rng(1, 2, 0, 14), "mergeType": "MERGE_ALL"}},
-        fill(0, 1, 0, 14, NAVY, True, WHITE),
+        {"mergeCells": {"range": rng(0, 1, 0, 13), "mergeType": "MERGE_ALL"}},
+        {"mergeCells": {"range": rng(1, 2, 0, 13), "mergeType": "MERGE_ALL"}},
+        fill(0, 1, 0, 13, NAVY, True, WHITE),
         {"updateSheetProperties": {"properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 2}}, "fields": "gridProperties.frozenRowCount"}},
     ]
     sr = marks["status_row"]
-    reqs.append({"mergeCells": {"range": rng(sr - 1, sr, 0, 14), "mergeType": "MERGE_ALL"}})
-    reqs.append({"repeatCell": {"range": rng(sr - 1, sr, 0, 14), "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP", "horizontalAlignment": "LEFT",
+    reqs.append({"mergeCells": {"range": rng(sr - 1, sr, 0, 13), "mergeType": "MERGE_ALL"}})
+    reqs.append({"repeatCell": {"range": rng(sr - 1, sr, 0, 13), "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP", "horizontalAlignment": "LEFT",
                  "verticalAlignment": "TOP", "textFormat": {"fontSize": 9, "italic": True}}},
                  "fields": "userEnteredFormat(wrapStrategy,horizontalAlignment,verticalAlignment,textFormat)"}})
     reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": sr - 1, "endIndex": sr},
@@ -357,8 +361,8 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     for r in marks["headers"]:
         reqs.append(fill(r - 1, r, 0, 18, NAVY, True, WHITE))
     for r in marks["bands"]:
-        reqs.append({"mergeCells": {"range": rng(r - 1, r, 0, 14), "mergeType": "MERGE_ALL"}})
-        reqs.append(fill(r - 1, r, 0, 14, DARK, True, WHITE))
+        reqs.append({"mergeCells": {"range": rng(r - 1, r, 0, 13), "mergeType": "MERGE_ALL"}})
+        reqs.append(fill(r - 1, r, 0, 13, DARK, True, WHITE))
     b0, b1 = marks["box"]
     reqs.append(fill(b0, b1, 0, 1, (1, 1, 1), True, align="LEFT"))
     reqs.append(box(b0 - 1, b1, 0, 6))
@@ -375,17 +379,17 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
             color = next(col for floor, col in _ACT_BANDS["0-30 Day"] if v >= floor)
             reqs.append(fill(r - 1, r, c, c + 1, {"Green": GREEN, "Yellow": YELLOW, "Red": RED}[color], c == 16))
     for h, last in marks["tables"]:
-        reqs.append(box(h - 1, last, 0, 14))
+        reqs.append(box(h - 1, last, 0, 13))
     for r in marks["quick_rows"]:
-        reqs.append(fill(r - 1, r, 0, 14, RED))
+        reqs.append(fill(r - 1, r, 0, 13, RED))
     r0, r1 = marks["rep_list"]
     reqs.append(box(r0 - 1, r1, 15, 18))
     reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 18}}})
     # A:N serve BOTH the box (Product .. 31-60 Day rate) and the rolloff tables
     # (Days Left .. Status Reason); O is the gap; P:R the rep list.
-    for c, px in ((0, 175), (1, 110), (2, 95), (3, 200), (4, 240), (5, 200), (6, 190), (7, 110), (8, 125), (9, 130), (10, 90),
-                  (11, 165), (12, 160), (13, 280), (14, 30), (15, 230), (16, 190), (17, 125)):
+    for c, px in ((0, 175), (1, 110), (2, 95), (3, 200), (4, 240), (5, 200), (6, 190), (7, 125), (8, 130), (9, 90),
+                  (10, 165), (11, 160), (12, 280), (13, 30), (14, 30), (15, 230), (16, 190), (17, 125)):
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
     return reqs
@@ -457,8 +461,7 @@ def main(argv=None) -> int:
         for label, s in churn_summary(lines, today).items():
             print("  %-18s activated %3d  disconnected %3d  churn %-8s pending %d" % (label, s["base"], s["disc"], _pct(s["rate"]) or "0%", s["pending"]))
         print("  Credico: %s -> $%d per new port line" % (tier["why"], tier["pay"]))
-        roll = rolloff_rows(lines, today)
-        print("  rolloff rows: %s" % {c: len(v) for c, v in roll.items()})
+        print("  rolloff rows: %d" % len(rolloff_rows(lines, today)))
         print("DRY RUN -- nothing written")
         return 0
     push(sv, today=today, sheet_id=PROD_SHEET_ID if a.prod else SANDBOX_SHEET_ID)
