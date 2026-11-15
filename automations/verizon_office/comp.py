@@ -6,8 +6,10 @@ Schedule 2026, Activation Bonus, AutoPay Bonus). Three separate things:
 
   1. BASE PAY PER LINE. Only a NEW smartphone that PORTS IN rides the office
      tier ($237 .. $127); every other line (new no-port, CPO, BYOD) is a flat
-     $25. The office tier comes from its 30-day churn, locked for a 4-week
-     block off Credico's churn calendar (CHURN_CALENDAR). A new office is
+     $25. The office tier comes from its 30-day churn -- ONE rate over every
+     activated line that shows an approval date, BYOD included (no BYOD churn
+     split in the SOW; resources/verizon_comp/README.md) -- over the lines
+     APPROVED in the calendar window, locked for a 4-week block (CHURN_CALENDAR). A new office is
      Tier 4 (neutral) until it has 15 activations in the window.
   2. ADD-ONS, flat on top: AutoPay +$60 (Credico's AP_Comp_Ind = "New"),
      Unlimited Plus / Ultimate +$35, Mobile Protect / Mobile Secure +$35.
@@ -108,6 +110,7 @@ def lines(sv_path: Path) -> List[Dict]:
             "line": str(g(r, "LineID") or ""),
             "sold": _d(g(r, "Signed Date")),
             "activated": act,
+            "approved": _d(g(r, "Approval Date")),
             "ended": _d(g(r, "Cancel Date")),
             "status": status,
             "port_new": (str(g(r, "SKU Type") or "").upper() == "NEW"
@@ -126,7 +129,13 @@ def office_tier(all_lines: List[Dict], sales_day: dt.date) -> Tuple[int, str]:
     if not block:
         return NEUTRAL_TIER, "before Credico's 2026 calendar — neutral"
     _b, w0, w1 = block[-1]
-    acts = [l for l in all_lines if l["activated"] and w0 <= l["activated"] <= w1]
+    # THE WINDOW IS BY APPROVAL DATE (Churn Schedule Wireless 2026: its
+    # columns are ApprovalStartDate / ApprovalEndDate; SOW Schedule A: churn
+    # "will be calculated based on Compensable Sales ... activated/installed
+    # and shows approval date"). Activation date only where Credico left the
+    # approval blank. resources/verizon_comp/README.md, 2026-11-15.
+    acts = [l for l in all_lines if l["activated"]
+            and w0 <= (l.get("approved") or l["activated"]) <= w1]
     if len(acts) < NEUTRAL_UNTIL_ACTIVATIONS:
         return NEUTRAL_TIER, (f"{len(acts)} activations in the {w0.month}/{w0.day}-{w1.month}/{w1.day} churn "
                               f"window (under {NEUTRAL_UNTIL_ACTIVATIONS}) — Tier 4 neutral")
