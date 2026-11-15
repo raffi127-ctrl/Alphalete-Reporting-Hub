@@ -591,7 +591,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
   <div class="card"><div class="clab">OFFICE WEEK TOTAL</div>
    <div class="cval">{money(week_total)}</div></div>
   <div class="card"><div class="clab">REPS ON THE BOARD</div>
-   <div class="cval">{len(rows)}</div></div>
+   <div class="cval">{len(rows)}{(extra or {}).get("reps_extra") or ""}</div></div>
  {next_card}
  </div>
  <table><tr><th class="lh">#</th><th class="lh">REP</th><th>WEEK TOTAL</th>

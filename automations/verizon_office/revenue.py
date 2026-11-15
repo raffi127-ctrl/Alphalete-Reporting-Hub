@@ -49,11 +49,15 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
         if l["activated"] and l["status"] not in ("Canceled", "Disconnected"):
             rec["payable"] += 1
     counts: Dict[str, tuple] = {}
+    sold_lines: Dict[str, int] = defaultdict(int)          # lines sold this week, cancelled out
+    for l in _week_lines(L, start, end):
+        if l["status"] != "Canceled":
+            sold_lines[l["rep"]] += 1
     for rep, rec in per_rep.items():
         bad = (C.cancel_rate_90(L, rep, target) or 0) >= C.DISQUALIFY_CANCEL_90
         n_orders = len(rec.pop("orders"))
         rec["elig"] = 0 if bad else n_orders
-        counts[rep] = (n_orders, rec["payable"], bad)
+        counts[rep] = (n_orders, rec["payable"], bad, sold_lines.get(rep, 0))
     saved = RB.DAYS
     RB.DAYS = _SUN_SAT                         # Credico weeks run Sun-Sat
     try:
@@ -73,9 +77,17 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
             f'{lab}<br><span class="dd">${int(rate)}/line</span>'
             for lab, (_thr, rate) in zip(tier_band_labels(bands), bands)]
         for row in rows:
-            n, lines_act, bad = counts.get(row["rep"], (0, 0, False))
+            n, lines_act, bad, sold = counts.get(row["rep"], (0, 0, False, 0))
             row["extra"] = tier_cells(n, lines_act, bands)
-            row["rep_badge"] = f"{n} order{'' if n == 1 else 's'}" + (" · DNQ" if bad else "")
+            # orders AND lines beside the name (Carlos 2026-11-15: "also add in
+            # the amount of apps that they're at (so lines that they're at for
+            # the week)")
+            row["rep_badge"] = (f"{n} order{'' if n == 1 else 's'} · {sold} line{'' if sold == 1 else 's'}"
+                                + (" · DNQ" if bad else ""))
+        n_reps = max(len(rows), 1)
+        avg = sum(sold_lines.values()) / n_reps
+        reps_extra = (f' <span style="font-size:15px;color:#5b6770;font-weight:600">'
+                      f'· {avg:.1f} sales / rep this week</span>')
         note = ("Tier columns: unique customer orders this Sun–Sat sales week (cancelled ones out); "
                 "green ✓ = the tier you're on; yellow = one order away; +N = orders still needed; "
                 "$ = that tier's rate × the rep's lines activated this week (+1 line per order still "
@@ -90,31 +102,46 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
         return RB.render(rows, office, start, upto,
                          out_dir / f"verizon_revenue_board_{target.isoformat()}.png",
                          board_name="Verizon Revenue Board", tiered=True,
-                         extra={"headers": headers, "cards": cards, "no_next": True}, note=note)
+                         extra={"headers": headers, "cards": cards, "no_next": True,
+                                "reps_extra": reps_extra}, note=note)
     finally:
         RB.DAYS = saved
 
 
+_BOX = {"Green": ("#dff3e2", "#1e7d32"), "Yellow": ("#fff3b0", "#8a6d00"), "Red": ("#ffd9dc", "#b3261e")}
+
+
 def _weeks_card(L, upto: dt.date, weeks: int = 4) -> str:
-    """'WE 10/24 94% · WE 10/31 82% · ...' oldest first, activated-ever over sold."""
-    import html as _h
+    """Each week-ending in its own little coloured box (Carlos 2026-11-15),
+    oldest first: activated-ever over sold, the thread board's 0-30 day
+    colour bands (green 75%+, yellow 65%+, red under)."""
+    from automations.office_metrics.nds_orderlog import _ACT_BANDS
     this_start, _ = C.sales_week(upto)
-    parts = []
+    boxes = []
     for k in reversed(range(weeks)):
         ws = this_start - dt.timedelta(weeks=k)
         we = ws + dt.timedelta(days=6)
         sold = [l for l in L if l["sold"] and ws <= l["sold"] <= we]
         act = sum(1 for l in sold if l["activated"])
-        pct = ("%.0f%%" % (100 * act / len(sold))) if sold else "—"
-        parts.append(f'<span style="white-space:nowrap">WE {we.month}/{we.day} <b>{pct}</b></span>')
-    return ('<span style="font-size:17px;font-weight:600">' + " &nbsp;·&nbsp; ".join(parts) + "</span>")
+        if sold:
+            rate = act / len(sold)
+            bg, fg = _BOX[next(c for floor, c in _ACT_BANDS["0-30 Day"] if rate >= floor)]
+            pct = "%.0f%%" % (100 * rate)
+        else:
+            bg, fg, pct = "#eef0f2", "#5b6770", "—"
+        boxes.append(f'<div style="background:{bg};color:{fg};border-radius:6px;padding:4px 10px;text-align:center;'
+                     f'min-width:64px"><div style="font-size:11px;font-weight:600;opacity:.8">WE {we.month}/{we.day}</div>'
+                     f'<div style="font-size:19px;font-weight:800">{pct}</div></div>')
+    return '<div style="display:flex;gap:8px;margin-top:4px">' + "".join(boxes) + "</div>"
 
 
 def _churn_card(sv_path: Path, target: dt.date) -> str:
+    """The office 0-30 day churn, in RED (Carlos 2026-11-15: "let's put that 10.6% in red")."""
     from automations.verizon_office import churn_tab as CH, order_log_tab as OL
     s = CH.churn_summary(OL.lines(Path(sv_path)), target)["All Lines"]
     pct = ("%.1f%%" % (100 * s["rate"])) if s["rate"] is not None else "—"
-    return f'{pct} <span style="font-size:14px;color:#5b6770;font-weight:500">{s["disc"]} of {s["base"]} activated in the last 30 days</span>'
+    return (f'<span style="color:#b3261e">{pct}</span> <span style="font-size:14px;color:#5b6770;font-weight:500">'
+            f'{s["disc"]} of {s["base"]} activated in the last 30 days</span>')
 
 
 _ACT_COLS = [("Rep Name", "rep", "left"), ("Activated $", "posted", "center"),
