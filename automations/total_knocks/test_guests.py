@@ -124,3 +124,52 @@ class SplitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TagAndSalesBoardTests(unittest.TestCase):
+    """Raf 2026-11-14: Carlos's reps come off by name tag ('… GP', '… Carlos
+    Road Trip') or by being on Carlos's sales board; Raf's own road trips
+    stay."""
+
+    def setUp(self):
+        self._orig = G._read_board
+        G._BOARD_CACHE.clear()
+
+    def tearDown(self):
+        G._read_board = self._orig
+        G._BOARD_CACHE.clear()
+
+    def test_gp_tag_moves_off_road_trips_stay(self):
+        G._read_board = lambda sid: []
+        host, guest = G.split(HOST, rows(
+            "Anette Climaco GP", "Brianna Belen GP", "Jon Road Trip",
+            "Roman Albert RT", "Andrew Sanborn Roadtrip", "Kim Lee Carlos Road Trip",
+            "Sam Ray GP Road Trip", "Justin Carlos Avila", "Juan Carlos"))
+        self.assertEqual(reps(guest[GUEST]), [
+            "Anette Climaco GP", "Brianna Belen GP", "Kim Lee Carlos Road Trip",
+            "Sam Ray GP Road Trip"])
+        self.assertEqual(reps(host), [
+            "Jon Road Trip", "Roman Albert RT", "Andrew Sanborn Roadtrip",
+            "Justin Carlos Avila", "Juan Carlos"])
+
+    def test_sales_board_rep_moves_off(self):
+        G._read_board = lambda sid: ["Maria Lopez", "Jon", "Not Knocking Here"]
+        host, guest = G.split(HOST, rows(
+            "Maria Lopez RT", "Jon Road Trip", "Hank Tran"))
+        self.assertEqual(reps(guest[GUEST]), ["Maria Lopez RT"])
+        # a one-word board name never claims anybody
+        self.assertEqual(reps(host), ["Jon Road Trip", "Hank Tran"])
+
+    def test_dead_sheet_falls_back_to_roster_and_tags(self):
+        def boom(sid):
+            raise RuntimeError("quota")
+        G._read_board = boom
+        logs = []
+        host, guest = G.split(HOST, rows("Christian Perez", "Ana Ruiz GP",
+                                         "Hank Tran"), logfn=logs.append)
+        self.assertEqual(reps(guest[GUEST]), ["Christian Perez", "Ana Ruiz GP"])
+        self.assertEqual(reps(host), ["Hank Tran"])
+        self.assertTrue(any("couldn't read" in m for m in logs))
+
+    def test_live_sheet_never_read_in_tests(self):
+        self.assertEqual(G.board_names(HOST, GUEST), [])

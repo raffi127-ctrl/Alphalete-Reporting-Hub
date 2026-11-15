@@ -36,6 +36,12 @@ and anything the roster names but the grid doesn't have is printed by
 `report()` — which the runs call, so a rep who leaves, gets re-spelled, or was
 typed wrong shows up in the log instead of quietly staying on Raf's board.
 
+THREE WAYS ONTO THE GUEST'S BOARD (Raf, 2026-11-14), checked in this order:
+the hand roster below, a NAME TAG at the end of the OwnerVille name ('… GP',
+'… Carlos Road Trip' — GUEST_TAGS), and the guest's own SALES BOARD
+(GUEST_SALES_BOARDS). Raf's own road trips ('RT', 'Road Trip', 'Roadtrip'
+with no guest tag) stay on his board on purpose.
+
 ADDING AN OFFICE IS ONE ENTRY in GUEST_REPS. Everything below is written
 host-agnostic; nothing in it knows Raf's or Carlos's name.
 """
@@ -77,6 +83,103 @@ GUEST_REPS: dict = {
         ],
     },
 }
+
+
+# NAME TAGS — the OwnerVille name itself says whose rep it is (Raf, #lucy-projects
+# 2026-11-14: "Maybe Carlos can tag their name as 'Carlos Road Trip', and if
+# their name is called 'Carlos Road Trip' or 'GP Road Trip', it'll
+# automatically not mark them"). Carlos's people already show up as
+# 'Anette Climaco GP' / 'Brianna Belen GP'. A tag is matched as the LAST
+# words of the name, so Raf's own road trips ('Jon Road Trip', 'Roman Albert
+# RT', 'Andrew Sanborn Roadtrip') never read as Carlos's — Raf wants those ON
+# his board, to coach them.
+GUEST_TAGS: dict = {
+    "Rafael Hidalgo": {
+        "Carlos Hidalgo": ("gp", "gp rt", "gp road trip", "gp roadtrip",
+                           "carlos rt", "carlos road trip",
+                           "carlos roadtrip"),
+    },
+}
+
+# SALES-BOARD CROSS-CHECK — anybody on the guest's own sales board is the
+# guest's, so a new rep of Carlos's comes off Raf's board the day Carlos puts
+# them on his, with nobody typing a roster line (Raf, same thread: "get
+# connected to his sales board and then cross-reference the knocks … and
+# remove any reps from our knocking report that are on his sales board").
+# Value = the Google Sheet holding that board (the Vantura Master Sales Board:
+# the NDS / BOX / Verizon tabs, read through vantura_boards.all_reps).
+GUEST_SALES_BOARDS: dict = {
+    "Rafael Hidalgo": {
+        "Carlos Hidalgo": "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY",
+    },
+}
+
+# One read of a board per process per half hour — gap_alerts runs all day in
+# one process and the Sheets read cap is per user. A failed read keeps the
+# last good list; with none, the split runs on the roster + tags alone and
+# says so in the log (a dead sheet must never stop the knock board).
+_BOARD_TTL_S = 30 * 60
+_BOARD_CACHE: dict = {}
+
+
+def _read_board(sheet_id: str) -> list:
+    """Every rep name on that workbook's sales-board tabs. Tests replace this."""
+    from automations.recruiting_report.fill import open_by_key
+    from automations.vantura_boards import all_reps
+    return [r["name"] for r in all_reps(open_by_key(sheet_id))]
+
+
+_LIVE_READ = _read_board
+
+
+def _lookup(table: dict, host: str, guest: str):
+    for h, guests in table.items():
+        if _norm(h) != _norm(host):
+            continue
+        for g, v in guests.items():
+            if _norm(g) == _norm(guest):
+                return v
+    return None
+
+
+def tags(host: str, guest: str) -> tuple:
+    return tuple(_lookup(GUEST_TAGS, host, guest) or ())
+
+
+def tagged(host: str, guest: str, name: str) -> bool:
+    """Does the OwnerVille name END in one of the guest's tags?"""
+    n = _plain(name)
+    return any(n.endswith(" " + t) for t in tags(host, guest))
+
+
+def board_names(host: str, guest: str, *, logfn=None) -> list:
+    """Names on the guest's own sales board ([] when the guest has none, or
+    the sheet can't be read and nothing was read before)."""
+    import os
+    import sys
+    import time
+    sheet_id = _lookup(GUEST_SALES_BOARDS, host, guest)
+    if not sheet_id or os.environ.get("GUESTS_SALES_BOARD", "1") == "0":
+        return []
+    # A unit test never reads the live sheet — only a test that swapped in
+    # its own reader gets board names. (No live runner imports unittest.)
+    if "unittest" in sys.modules and _read_board is _LIVE_READ:
+        return []
+    now = time.time()
+    hit = _BOARD_CACHE.get(sheet_id)
+    if hit and now - hit[0] < _BOARD_TTL_S:
+        return list(hit[1])
+    try:
+        names = [n for n in _read_board(sheet_id) if str(n or "").strip()]
+    except Exception as e:  # noqa: BLE001 — never let the sheet stop a board
+        if logfn:
+            logfn(f"[guests] couldn't read {guest}'s sales board "
+                  f"({type(e).__name__}: {e}) — "
+                  + ("using the last good copy" if hit else
+                     "splitting on the roster + name tags only"))
+        return list(hit[1]) if hit else []
+    _BOARD_CACHE[sheet_id] = (now, names)
+    return list(names)
 
 
 def guests_of(host: str) -> list:
@@ -210,8 +313,36 @@ def split(host: str, rows, *, logfn=None) -> tuple:
     pool = list(range(len(rows)))
     out: dict = {}
     for guest in guests_of(host):
-        claimed, missing = match_rows([rows[i] for i in pool],
-                                      roster(host, guest))
+        sub = [rows[i] for i in pool]
+        claimed, missing = match_rows(sub, roster(host, guest))
+        n_roster = len(claimed)
+
+        # Name tag ('… GP', '… Carlos Road Trip') — no list needed.
+        n_tag = 0
+        for i, r in enumerate(sub):
+            if i not in claimed and tagged(host, guest, _rep(r)):
+                claimed[i] = _rep(r)
+                n_tag += 1
+
+        # The guest's own sales board. Same unique-hit matcher as the roster;
+        # a board name needs a first AND last name (a lone 'Jon' would claim
+        # Raf's 'Jon Road Trip'), and a board rep who isn't knocking under the
+        # host is simply not there — that's not a miss worth logging.
+        have = {_plain(n) for n in roster(host, guest)}
+        extra = []
+        for n in board_names(host, guest, logfn=logfn):
+            p = _plain(n)
+            if len(p.split()) >= 2 and p not in have:
+                have.add(p)
+                extra.append(n)
+        n_board = 0
+        if extra:
+            rest = [i for i in range(len(sub)) if i not in claimed]
+            got, _ = match_rows([sub[i] for i in rest], extra)
+            for j, name in got.items():
+                claimed[rest[j]] = name
+            n_board = len(got)
+
         if not claimed:
             if logfn:
                 logfn(f"[guests] {guest}: none of "
@@ -221,11 +352,13 @@ def split(host: str, rows, *, logfn=None) -> tuple:
         picked = sorted(claimed)                 # positions within `pool`
         out[guest] = [rows[pool[i]] for i in picked]
         if logfn:
+            how = ", ".join(f"{k} by {w}" for k, w in
+                            ((n_roster, "roster"), (n_tag, "name tag"),
+                             (n_board, "sales board")) if k)
             logfn(f"[guests] {guest}: {len(picked)} rep(s) moved off "
-                  f"{host}'s board" + (f", {len(missing)} rostered rep(s) "
-                                       f"not on the grid: "
-                                       f"{', '.join(missing)}"
-                                       if missing else ""))
+                  f"{host}'s board ({how})"
+                  + (f", {len(missing)} rostered rep(s) not on the grid: "
+                     f"{', '.join(missing)}" if missing else ""))
         pool = [p for n, p in enumerate(pool) if n not in claimed]
 
     return [rows[i] for i in pool], out
