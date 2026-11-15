@@ -48,18 +48,42 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
             rec["orders"].add(l["order"])
         if l["activated"] and l["status"] not in ("Canceled", "Disconnected"):
             rec["payable"] += 1
+    counts: Dict[str, tuple] = {}
     for rep, rec in per_rep.items():
         bad = (C.cancel_rate_90(L, rep, target) or 0) >= C.DISQUALIFY_CANCEL_90
-        rec["elig"] = 0 if bad else len(rec.pop("orders"))
-        rec.pop("orders", None)
+        n_orders = len(rec.pop("orders"))
+        rec["elig"] = 0 if bad else n_orders
+        counts[rep] = (n_orders, rec["payable"], bad)
     saved = RB.DAYS
     RB.DAYS = _SUN_SAT                         # Credico weeks run Sun-Sat
     try:
         rows, office = RB.build_rows(per_rep, start, upto, tier_fn=C.weekly_tier,
                                      tiers=C.WEEKLY_TIERS, tiered=True)
+        # TIER COLUMNS on the far right + the order count beside the name, the
+        # NDS Revenue Board's 11/14 layout (Carlos 2026-11-15: "create a
+        # revenue board for Verizon that operates the same way as theirs but
+        # uses Verizon tiers"): one column per weekly activation-bonus band
+        # (4 / 5-6 / 7-8 / 9+ unique orders -> $30 / $50 / $75 / $110 a line,
+        # comp.WEEKLY_TIERS), green ✓ = the tier the rep is on, yellow = one
+        # order away, +N = orders still needed, $ = that band's rate x the
+        # rep's lines activated this week (+1 a line per order still needed).
+        from automations.nds_metrics.run import tier_band_labels, tier_cells
+        bands = sorted((thr, float(rate)) for thr, _name, rate in C.WEEKLY_TIERS if thr > 0)
+        headers = ['LINES ACTIVATED<br><span class="dd">this week</span>'] + [
+            f'{lab}<br><span class="dd">${int(rate)}/line</span>'
+            for lab, (_thr, rate) in zip(tier_band_labels(bands), bands)]
+        for row in rows:
+            n, lines_act, bad = counts.get(row["rep"], (0, 0, False))
+            row["extra"] = tier_cells(n, lines_act, bands)
+            row["rep_badge"] = f"{n} order{'' if n == 1 else 's'}" + (" · DNQ" if bad else "")
+        note = ("Tier columns: unique customer orders this Sun–Sat sales week (cancelled ones out); "
+                "green ✓ = the tier you're on; yellow = one order away; +N = orders still needed; "
+                "$ = that tier's rate × the rep's lines activated this week (+1 line per order still "
+                "needed), paid as lines activate. DNQ = 40%+ cancels in 90 days, no weekly bonus.")
         return RB.render(rows, office, start, upto,
                          out_dir / f"verizon_revenue_board_{target.isoformat()}.png",
-                         board_name="Verizon Revenue Board", tiered=True)
+                         board_name="Verizon Revenue Board", tiered=True,
+                         extra={"headers": headers}, note=note)
     finally:
         RB.DAYS = saved
 
