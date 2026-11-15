@@ -108,6 +108,24 @@ def pending_customers(header: Sequence[str], rows: Sequence[Sequence[str]],
     return out
 
 
+_TAPBACKS = ("liked “", "loved “", "laughed at “", "emphasized “", "questioned “", "disliked “",
+             'liked "', 'loved "', 'laughed at "', 'emphasized "')
+_SMALL = ("ok", "okay", "k", "thanks", "thank you", "thx", "ty", "gracias", "muchas gracias", "perfect",
+          "perfecto", "great", "got it", "sounds good", "will do", "all good", "yes", "si", "sí", "no",
+          "👍", "🙏", "nothing yet")
+
+
+def needs_no_reply(body: str) -> bool:
+    """A customer text that closes a thread rather than asks for anything:
+    blank / attachment only, a tapback ("Liked ..."), or a bare ok / thanks
+    (first run 11/15: Richard Barron's "Ok" and Christopher Cardinal's
+    "Liked ..." read as waiting on us)."""
+    b = _norm(body).lower().strip(" .!")
+    if not b or b.startswith(_TAPBACKS):
+        return True
+    return b in _SMALL or (len(b) <= 40 and b.startswith(("thanks", "thank you", "gracias", "ok ", "okay ")))
+
+
 def conversations(msgs: Sequence[Dict], gap_hours: int = GAP_HOURS) -> List[Dict]:
     """Split one customer's texts (each {when: datetime, tag: IN|OUT|REP|AUTO,
     body}) into conversations: a run with no gap over gap_hours. Each:
@@ -136,7 +154,16 @@ def conversations(msgs: Sequence[Dict], gap_hours: int = GAP_HOURS) -> List[Dict
                           and m is not first_in), None)
         real = [m for m in run if m["tag"] != "AUTO"] or run
         last = real[-1]
+        last_in = next((m for m in reversed(run) if m["tag"] == "IN"), None)
+        # nobody wrote back inside the run: did our side write LATER (the next
+        # day counts as an answer, a late one -- Thomas Blake 11/9 -> 11/10)
+        later = None
+        if first_in is not None and reply is None:
+            later = next((m for m in ordered if m["tag"] in ("OUT", "REP") and m["when"] > run[-1]["when"]), None)
         out.append({
+            "late_minutes": (int(round((later["when"] - last_in["when"]).total_seconds() / 60.0))
+                             if later is not None and last_in is not None else None),
+            "closing": bool(last_in is not None and needs_no_reply(last_in.get("body"))),
             "start": run[0]["when"], "end": run[-1]["when"],
             "minutes": int(round((run[-1]["when"] - run[0]["when"]).total_seconds() / 60.0)),
             "n_in": n_in, "n_us": n_us, "n_auto": n_auto,
@@ -173,14 +200,23 @@ def verdict(convs: Sequence[Dict], calls: Sequence[Dict]) -> str:
     called_in = [c for c in calls if c["inbound"]]
     if not texted_in and not called_in:
         return "NO CONTACT FROM THE CUSTOMER"
-    open_texts = [c for c in texted_in if not c["answered"]]
+    unanswered = [c for c in texted_in if not c["answered"]]
+    open_texts = [c for c in unanswered if c.get("late_minutes") is None and not c.get("closing")]
+    late = [c for c in unanswered if c.get("late_minutes") is not None]
     last = texted_in[-1] if texted_in else None
     missed = [c for c in called_in if (c.get("result") or "").lower() not in ANSWERED_CALLS]
     bits = []
-    if open_texts:
-        bits.append("NOT ANSWERED (%d text conversation(s) with no reply)" % len(open_texts))
-    elif last is not None and last["last_tag"] == "IN":
-        bits.append("ANSWERED, but the customer has the last word")
+    if last is not None and last["last_tag"] == "IN" and not last.get("closing") \
+            and (last["answered"] is False and last.get("late_minutes") is None or last["answered"]):
+        # the newest thing on the thread is a real customer text nobody wrote after
+        if last["answered"]:
+            bits.append("WAITING ON US: answered at first, but the customer wrote again and has the last word")
+        else:
+            bits.append("WAITING ON US: no reply to the latest conversation")
+    elif open_texts:
+        bits.append("NOT ANSWERED (%d earlier conversation(s) never got a reply)" % len(open_texts))
+    elif late:
+        bits.append("ANSWERED LATE (%s after the customer's text)" % span(max(c["late_minutes"] for c in late)))
     elif texted_in:
         bits.append("ANSWERED")
     if called_in:
@@ -315,7 +351,7 @@ def run(week_ending: dt.date, since: Optional[dt.date] = None, log=print) -> int
         v = verdict(convs, mine)
         if v.startswith("NO CONTACT"):
             n_none += 1
-        elif "NOT ANSWERED" in v or "not picked up" in v and ", 0 not picked up" not in v:
+        elif "WAITING ON US" in v or "NOT ANSWERED" in v or ("not picked up" in v and ", 0 not picked up" not in v):
             n_open += 1
         else:
             n_ok += 1
@@ -330,10 +366,16 @@ def run(week_ending: dt.date, since: Optional[dt.date] = None, log=print) -> int
                 say("  %s  we texted (no customer text): %d from us, %s"
                     % (k["start"].strftime("%m/%d %H:%M"), k["n_us"], span(k["minutes"])))
                 continue
+            if k["answered"]:
+                tail = ", first reply after %s" % span(k["reply_minutes"])
+            elif k.get("late_minutes") is not None:
+                tail = " -- no reply in the conversation, we wrote back %s later" % span(k["late_minutes"])
+            elif k.get("closing"):
+                tail = " -- no reply (their text needed none)"
+            else:
+                tail = " -- NO REPLY"
             say("  %s  conversation: %s long, %d from the customer, %d from us%s"
-                % (k["start"].strftime("%m/%d %H:%M"), span(k["minutes"]), k["n_in"], k["n_us"],
-                   (", first reply after %s" % span(k["reply_minutes"])) if k["answered"]
-                   else " -- NO REPLY"))
+                % (k["start"].strftime("%m/%d %H:%M"), span(k["minutes"]), k["n_in"], k["n_us"], tail))
             if k["last_tag"] == "IN":
                 say("      customer's last text: %s" % k["last_body"])
         for k in sorted(mine, key=lambda x: x["when"]):

@@ -70,11 +70,24 @@ class Verdicts(unittest.TestCase):
     def test_verdicts(self):
         self.assertEqual(F.verdict([], []), "NO CONTACT FROM THE CUSTOMER")
         open_ = F.conversations([msg(2, 9, 0, "IN", "help")])
-        self.assertTrue(F.verdict(open_, []).startswith("NOT ANSWERED"))
+        self.assertEqual(F.verdict(open_, []), "WAITING ON US: no reply to the latest conversation")
         ok = F.conversations([msg(2, 9, 0, "IN", "help"), msg(2, 9, 5, "OUT", "on it")])
         self.assertEqual(F.verdict(ok, []), "ANSWERED")
         last = F.conversations([msg(2, 9, 0, "IN", "help"), msg(2, 9, 5, "OUT", "on it"), msg(2, 9, 9, "IN", "still broken")])
-        self.assertEqual(F.verdict(last, []), "ANSWERED, but the customer has the last word")
+        self.assertTrue(F.verdict(last, []).startswith("WAITING ON US: answered at first"))
+        # a closing "thanks" after our reply is simply answered
+        done = F.conversations([msg(2, 9, 0, "IN", "help"), msg(2, 9, 5, "OUT", "on it"), msg(2, 9, 9, "IN", "Thanks!")])
+        self.assertEqual(F.verdict(done, []), "ANSWERED")
+        # 11/15: "Ok" and a tapback need no reply; a next-day text from us is a late answer
+        self.assertEqual(F.verdict(F.conversations([msg(2, 9, 0, "IN", "Ok")]), []), "ANSWERED")
+        self.assertTrue(F.needs_no_reply("Liked “Hey Chris, as a friendly reminder”"))
+        self.assertFalse(F.needs_no_reply("Ask Taylor to phone me 469-435-9609"))
+        late = F.conversations([msg(9, 16, 46, "IN", "Ask Taylor to phone me"), msg(10, 10, 50, "OUT", "hi Thomas")])
+        self.assertEqual(late[0]["late_minutes"], 18 * 60 + 4)
+        self.assertEqual(F.verdict(late, []), "ANSWERED LATE (18 h 04 min after the customer's text)")
+        # an old unanswered ask with newer answered talk still shows
+        old = F.conversations([msg(1, 9, 0, "IN", "where is my phone"), msg(5, 9, 0, "IN", "hello?"), msg(5, 9, 5, "OUT", "here")])
+        self.assertEqual(F.verdict(old, []), "ANSWERED LATE (4 d 0 h after the customer's text)")
         calls = [{"when": dt.datetime(2026, 11, 3, 14, 0), "inbound": True, "result": "Missed", "seconds": 0},
                  {"when": dt.datetime(2026, 11, 3, 15, 0), "inbound": True, "result": "Accepted", "seconds": 245}]
         self.assertEqual(F.verdict([], calls), "2 inbound call(s), 1 not picked up")
