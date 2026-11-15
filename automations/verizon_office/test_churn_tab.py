@@ -85,13 +85,13 @@ class ChurnTabTest(unittest.TestCase):
     def test_grid_shape(self):
         grid, marks = CT.build_grid(self.lines, TODAY, CT.credico_tier(self.sv, TODAY))
         self.assertEqual(grid[0][0], CT.TITLE)
-        self.assertTrue(all(len(r) == 17 for r in grid))
+        self.assertTrue(all(len(r) == 18 for r in grid))
         self.assertEqual(len(marks["tier_rows"]), 8)
         tiers = [grid[r - 1][7:11] for r in marks["tier_rows"]]
         self.assertEqual(tiers[0], ["Tier 1", "0 – 4.99%", "$237", ""])
         self.assertEqual(tiers[3][3], "◀ now")
         self.assertIn("OFFICE TOTAL (all reps)", [r[15] for r in grid])
-        self.assertEqual(len(marks["dead_rows"]), 2)
+        self.assertEqual(len(marks["quick_rows"]), 1)          # Dee: 11/05 -> 11/10 (5 days); Ana 12 days is not red
         self.assertNotIn(CT.TAB, CT.PROTECTED_TABS)
 
 

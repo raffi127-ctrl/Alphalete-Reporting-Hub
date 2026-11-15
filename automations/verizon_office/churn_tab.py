@@ -65,6 +65,7 @@ SANDBOX_SHEET_ID = OL.SANDBOX_SHEET_ID
 TAB = "VERIZON CHURN"
 PROTECTED_TABS = OL.PROTECTED_TABS + ("NDS CHURN", "LUCY CHURN", "Verizon Order Log")
 WINDOW_DAYS = 30
+QUICK_DAYS = 7                     # a disconnect this soon after activating is flagged red
 TITLE = "VERIZON — 0–30 Day Rolloff List — soonest to fall off"
 SOURCE = ("Verizon Wireless SOW Schedule A 6.16.26 + Churn Schedule Wireless 2026 (v1.13.26), "
           "Credico PDFs Nico forwarded 11/7 (comp.py)")
@@ -184,6 +185,9 @@ def rolloff_rows(lines, today: dt.date) -> Dict[str, List[dict]]:
             "order_date": _d(u.get("Order Date")), "posted": posted, "disc_date": _d(u.get("Cancel Date")),
             "kind": "port" if u.get("Type") == "Port" else "new",
             "device": u.get("Device", ""), "plan": u.get("Plan", ""), "reason": u.get("Status Reason", ""),
+            # RED only when it disconnected within 7 days of activating (the NDS
+            # tab's 7-day flag; Carlos 2026-11-15)
+            "quick": bool(_d(u.get("Cancel Date"))) and (_d(u.get("Cancel Date")) - posted).days <= QUICK_DAYS,
         })
     return out
 
@@ -215,11 +219,11 @@ def _rate(v: Optional[float]) -> str:
 
 def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict]:
     """The whole tab as a grid of strings plus the row/col map the formatter
-    needs. Columns A:N = box + rolloff tables, P:Q = the rep list."""
+    needs. Columns A:N = box + rolloff tables, P:R = the rep list."""
     summary = churn_summary(lines, today)
     office, reps = activation_rates(lines, today)
     roll = rolloff_rows(lines, today)
-    W = 17                                                     # A..Q
+    W = 18                                                     # A..R
     g: List[List[str]] = []
 
     def row(vals=(), at=None):
@@ -229,16 +233,16 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
         g.append(r)
         return len(g)                                          # 1-based row number
 
-    marks = {"bands": [], "headers": [], "churn_cells": [], "rate_cells": [], "dead_rows": []}
+    marks = {"bands": [], "headers": [], "churn_cells": [], "rate_cells": [], "quick_rows": [],
+             "tables": [], "box": None, "tiers": None, "rep_list": None, "status_row": None}
     row([TITLE])
     row(["Days left = (Activation Date + 30) − Today. Box = lines activated in the last 30 days and how many "
-         "have disconnected since; activation rates by order-date age (activated = active now, or disconnected after activating)."])
+         "have disconnected since; activation rates by order-date age (activated = active now, or disconnected after activating). "
+         "Red rows = disconnected within 7 days of activating."])
     row()
     hdr = row(["Product", "Activations", "Disconnects", "Churn %", "0-30 Day Activation Rate", "31-60 Day Activation Rate"])
     marks["headers"].append(hdr)
-    # tier chart header on the right of the box (H..K)
     g[hdr - 1][7:11] = ["Credico Tier", "0-30 Day Churn", "$ / new port line", ""]
-    tier_rows = []
     for label, cls in BOX_ROWS:
         s = summary[label]
         r = row([label, s["base"], s["disc"], _pct(s["rate"]),
@@ -247,8 +251,10 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
         marks["churn_cells"].append((r, 3, s["rate"]))
         if cls is None:
             marks["rate_cells"].append((r, 4, office["0-30"]["rate"]))
+            marks["rate_cells"].append((r, 5, office["31-60"]["rate"]))
         row([label + " Pending", s["pending"]])
-    # the eight tiers, written beside the box rows (rows hdr+1 .. hdr+8)
+    marks["box"] = (hdr, len(g))
+    tier_rows = []
     for t in range(1, 9):
         rr = hdr + t
         while len(g) < rr:
@@ -256,15 +262,15 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
         mark = "◀ now" if t == tier["tier"] else ""
         g[rr - 1][7:11] = ["Tier %d" % t, TIER_LABELS[t], "$%d" % C.PORT_TIER_PAY[t], mark]
         tier_rows.append(rr)
+    marks["tiers"] = (hdr, tier_rows[-1])
     row()
     w = tier["window"]
     win = "%d/%d–%d/%d" % (w[0].month, w[0].day, w[1].month, w[1].day) if w else "n/a"
-    row(["Credico window %s: %s → $%d per new port line. Flat $25 for new no-port / CPO / BYOD; AutoPay +$60; "
+    marks["status_row"] = row(["Credico window %s: %s → $%d per new port line. Flat $25 for new no-port / CPO / BYOD; AutoPay +$60; "
          "Unlimited Plus / Ultimate +$35; Mobile Protect / Secure +$35. Weekly bonus by unique orders 4 / 5–6 / 7–8 / 9+ "
          "→ $30 / $50 / $75 / $110 a line; a rep at 40%%+ 90-day cancels is DNQ. Tier 4 neutral under 15 activations. "
          "Source: %s." % (win, tier["why"], tier["pay"], SOURCE)])
     row()
-    # the rolloff tables + the rep list, side by side
     rep_top = len(g) + 1
     for cls in CLASSES:
         s = summary[{"port": "Port (non-BYOD)", "byod": "BYOD", "new": "New (non-BYOD)"}[cls]]
@@ -277,28 +283,40 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
             r = row(["%dd" % x["days_left"], _fmt(x["falloff"]), x["lines"], _pct(x["pct_all"]), _pct(x["pct_cls"]),
                      x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
                      x["kind"], x["device"], x["plan"], x["reason"]])
-            marks["dead_rows"].append(r)
+            if x["quick"]:
+                marks["quick_rows"].append(r)
         if not roll[cls]:
             row(["(no disconnects in the 0-30 window)"])
+        marks["tables"].append((h, len(g)))
         row()
-    # rep list in P:Q from rep_top
     rep_rows = [("OFFICE TOTAL (all reps)", office["0-30"]["rate"], office["0-30"]["activated"], office["0-30"]["sold"])]
     rep_rows += sorted(((r, v["0-30"]["rate"], v["0-30"]["activated"], v["0-30"]["sold"]) for r, v in reps.items()
                         if v["0-30"]["sold"]), key=lambda t: (-(t[1] or 0), t[0].lower()))
     need = rep_top + len(rep_rows) + 1
     while len(g) < need:
         row()
-    g[rep_top - 1][15:17] = ["Rep Name", "0-30 Day Activation Rate"]
+    g[rep_top - 1][15:18] = ["Rep Name", "0-30 Day Activation Rate", "Activated / Sold"]
     marks["headers"].append(rep_top)
     for k, (name, rate, a, n) in enumerate(rep_rows, 1):
-        g[rep_top - 1 + k][15:17] = [name, "%s  (%d/%d)" % (_rate(rate), a, n)]
+        g[rep_top - 1 + k][15:18] = [name, _rate(rate), "%d / %d" % (a, n)]
         marks["rate_cells"].append((rep_top + k, 16, rate))
+    marks["rep_list"] = (rep_top, rep_top + len(rep_rows))
     marks["tier_rows"] = tier_rows
     marks["n_rows"] = len(g)
     return g, marks
 
 
+_SOLID = {"style": "SOLID", "width": 1, "color": {"red": 0, "green": 0, "blue": 0}}
+_MEDIUM = {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}}
+_NONE = {"style": "NONE"}
+
+
 def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
+    """The NDS CHURN tab's look (Carlos 2026-11-15: "bolding of the lines
+    ... the boxing of everything up at the top ... cleaner, like the NDS
+    one"): navy headers, every table boxed with a medium outer border and
+    thin inner lines, the box and the tier chart boxed too, status colours,
+    red only on a disconnect within 7 days of activating."""
     from automations.office_metrics.nds_orderlog import _ACT_BANDS
     NAVY, DARK, WHITE = (0.12, 0.23, 0.37), (0.24, 0.24, 0.24), (1, 1, 1)
     GREEN, YELLOW, RED = (0.776, 0.937, 0.808), (1, 0.949, 0.8), (1, 0.78, 0.808)
@@ -306,43 +324,66 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     def rng(r0, r1, c0, c1):
         return {"sheetId": sheet_id, "startRowIndex": r0, "endRowIndex": r1, "startColumnIndex": c0, "endColumnIndex": c1}
 
-    def fill(r0, r1, c0, c1, rgb, bold=False, fg=None):
-        fmt = {"backgroundColor": {"red": rgb[0], "green": rgb[1], "blue": rgb[2]}, "horizontalAlignment": "CENTER"}
+    def fill(r0, r1, c0, c1, rgb, bold=False, fg=None, align="CENTER"):
+        fmt = {"backgroundColor": {"red": rgb[0], "green": rgb[1], "blue": rgb[2]}, "horizontalAlignment": align,
+               "verticalAlignment": "MIDDLE"}
         if bold or fg:
             fmt["textFormat"] = {"bold": bold, "foregroundColor": {"red": (fg or (0, 0, 0))[0], "green": (fg or (0, 0, 0))[1], "blue": (fg or (0, 0, 0))[2]}}
         return {"repeatCell": {"range": rng(r0, r1, c0, c1), "cell": {"userEnteredFormat": fmt},
-                               "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"}}
+                               "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"}}
+
+    def box(r0, r1, c0, c1, outer=_MEDIUM, inner=_SOLID):
+        return {"updateBorders": {"range": rng(r0, r1, c0, c1), "top": outer, "bottom": outer, "left": outer,
+                                  "right": outer, "innerHorizontal": inner, "innerVertical": inner}}
     n = max(marks["n_rows"], 60)
     reqs = [
-        {"repeatCell": {"range": rng(0, n, 0, 17), "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 1, "blue": 1}, "horizontalAlignment": "CENTER"}},
-                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}},
+        {"repeatCell": {"range": rng(0, n, 0, 18), "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 1, "blue": 1},
+                        "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "wrapStrategy": "OVERFLOW_CELL"}},
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,wrapStrategy)"}},
+        {"updateBorders": {"range": rng(0, n, 0, 18), "top": _NONE, "bottom": _NONE, "left": _NONE, "right": _NONE,
+                           "innerHorizontal": _NONE, "innerVertical": _NONE}},
         {"mergeCells": {"range": rng(0, 1, 0, 14), "mergeType": "MERGE_ALL"}},
         {"mergeCells": {"range": rng(1, 2, 0, 14), "mergeType": "MERGE_ALL"}},
         fill(0, 1, 0, 14, NAVY, True, WHITE),
         {"updateSheetProperties": {"properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 2}}, "fields": "gridProperties.frozenRowCount"}},
     ]
+    sr = marks["status_row"]
+    reqs.append({"mergeCells": {"range": rng(sr - 1, sr, 0, 14), "mergeType": "MERGE_ALL"}})
+    reqs.append({"repeatCell": {"range": rng(sr - 1, sr, 0, 14), "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP", "horizontalAlignment": "LEFT",
+                 "verticalAlignment": "TOP", "textFormat": {"fontSize": 9, "italic": True}}},
+                 "fields": "userEnteredFormat(wrapStrategy,horizontalAlignment,verticalAlignment,textFormat)"}})
+    reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": sr - 1, "endIndex": sr},
+                                               "properties": {"pixelSize": 48}, "fields": "pixelSize"}})
     for r in marks["headers"]:
-        reqs.append(fill(r - 1, r, 0, 17, NAVY, True, WHITE))
+        reqs.append(fill(r - 1, r, 0, 18, NAVY, True, WHITE))
     for r in marks["bands"]:
         reqs.append({"mergeCells": {"range": rng(r - 1, r, 0, 14), "mergeType": "MERGE_ALL"}})
         reqs.append(fill(r - 1, r, 0, 14, DARK, True, WHITE))
+    b0, b1 = marks["box"]
+    reqs.append(fill(b0, b1, 0, 1, (1, 1, 1), True, align="LEFT"))
+    reqs.append(box(b0 - 1, b1, 0, 6))
+    t0, t1 = marks["tiers"]
+    reqs.append(box(t0 - 1, t1, 7, 11))
     for r in marks["tier_rows"]:
         t = r - marks["tier_rows"][0] + 1
-        rgb = GREEN if t <= 3 else YELLOW if t <= 5 else RED
-        reqs.append(fill(r - 1, r, 8, 9, rgb))
+        reqs.append(fill(r - 1, r, 8, 9, GREEN if t <= 3 else YELLOW if t <= 5 else RED))
     for r, c, v in marks["churn_cells"]:
-        if v is None:
-            continue
-        reqs.append(fill(r - 1, r, c, c + 1, GREEN if v < 0.07 else YELLOW if v < 0.15 else RED, True))
+        if v is not None:
+            reqs.append(fill(r - 1, r, c, c + 1, GREEN if v < 0.07 else YELLOW if v < 0.15 else RED, True))
     for r, c, v in marks["rate_cells"]:
-        if v is None:
-            continue
-        color = next(col for floor, col in _ACT_BANDS["0-30 Day"] if v >= floor)
-        reqs.append(fill(r - 1, r, c, c + 1, {"Green": GREEN, "Yellow": YELLOW, "Red": RED}[color]))
-    for r in marks["dead_rows"]:
+        if v is not None:
+            color = next(col for floor, col in _ACT_BANDS["0-30 Day"] if v >= floor)
+            reqs.append(fill(r - 1, r, c, c + 1, {"Green": GREEN, "Yellow": YELLOW, "Red": RED}[color], c == 16))
+    for h, last in marks["tables"]:
+        reqs.append(box(h - 1, last, 0, 14))
+    for r in marks["quick_rows"]:
         reqs.append(fill(r - 1, r, 0, 14, RED))
-    reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 17}}})
-    for c, px in ((0, 90), (3, 190), (4, 220), (5, 170), (6, 200), (11, 160), (12, 150), (13, 300), (15, 230), (16, 200)):
+    r0, r1 = marks["rep_list"]
+    reqs.append(box(r0 - 1, r1, 15, 18))
+    reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
+    reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 18}}})
+    for c, px in ((0, 175), (1, 90), (2, 95), (3, 90), (4, 180), (5, 180), (6, 30), (7, 100), (8, 120), (9, 130), (10, 60),
+                  (11, 150), (12, 150), (13, 300), (14, 30), (15, 230), (16, 190), (17, 120)):
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
     return reqs
@@ -357,8 +398,8 @@ def push(sv_path: Path, *, today: Optional[dt.date] = None, sheet_id: str = SAND
     tier = credico_tier(Path(sv_path), today)
     grid, marks = build_grid(lines, today, tier)
     sh = open_by_key(sheet_id)
-    ws = OL._ensure_tab(sh, TAB, cols=17)
-    _retry(lambda: ws.resize(rows=max(200, len(grid) + 20), cols=17))
+    ws = OL._ensure_tab(sh, TAB, cols=18)
+    _retry(lambda: ws.resize(rows=max(200, len(grid) + 20), cols=18))
     _retry(lambda: ws.clear())
     _retry(lambda: sh.batch_update({"requests": [{"unmergeCells": {"range": {"sheetId": ws.id}}}]}))
     _retry(lambda: ws.update(grid, "A1", value_input_option="USER_ENTERED"))
@@ -380,7 +421,7 @@ def screenshot(out_path: Path, *, sheet_id: str = SANDBOX_SHEET_ID) -> Path:
     ws = open_by_key(sheet_id).worksheet(TAB)
     vals = _retry(ws.get_all_values)
     last = max((i for i, r in enumerate(vals, 1) if any(c.strip() for c in r)), default=1)
-    img = R.export(sheet_id, ws.id, "A1:Q%d" % last, _token())
+    img = R.export(sheet_id, ws.id, "A1:R%d" % last, _token())
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
