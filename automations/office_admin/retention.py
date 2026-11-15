@@ -43,6 +43,25 @@ from typing import Dict, List, Optional
 ROW_LABEL = "New Starts Showed Up"
 ROW_ID = "Hired_Showed_Up"
 
+# THE ROW THE BOARD IS SEEDED FROM (Megan, 2026-11-15): *"we would want this
+# extension to live off of the applicant stream for that current week that are
+# scheduled to start ... when they're brought on board, even though they're
+# brought on board Monday, they could have a 2 week out start date. So we want
+# to actually see the new starts on our onboarding list because those are the
+# ones that are actually starting in the office that week."*
+#
+# Showing up is a FACT ABOUT A SCHEDULED PERSON, not what puts them on the
+# board: seeded from the showed-up row, a row only appeared the morning they
+# walked in, which is too late to onboard anybody from. Both rows live on the
+# same report and are read the same way, so this is the same two page loads.
+SCHEDULED_ROW_LABEL = "Total New Starts Scheduled"
+SCHEDULED_STAGE = "Scheduled to start"
+
+# The detail table's own date column. For the scheduled row it is the day they
+# are due in, which is the board's Start -- and the reason a scheduled read
+# asks for it by name rather than taking the week's Sunday for everybody.
+DATE_COLUMN = "Date and Time"
+
 # The detail table's columns, as the page prints them (2026-11-09):
 #   '', First Name, Last Name, Email, Phone, Rating, Job Board, Date and Time,
 #   Ad (Subject Line), ''
@@ -58,8 +77,8 @@ class NotOnTheReport(RuntimeError):
     """The report rendered but carries no such row — fall back to the calendar."""
 
 
-def _week_href(page) -> Optional[str]:
-    """The weekly-total drill link for the new-starts row, off the report.
+def _week_href(page, label: str = ROW_LABEL) -> Optional[str]:
+    """The weekly-total drill link for one row of the report.
 
     By ROW LABEL and by the presence of `dt2` (what makes a link a RANGE), not
     by position: the report has sixty-odd rows and gains them.
@@ -76,7 +95,7 @@ def _week_href(page) -> Optional[str]:
                 .map(a => a.getAttribute('href'))
                 .find(h => h && h.indexOf('dt2=') !== -1) || null;
         }""",
-        ROW_LABEL,
+        label,
     )
 
 
@@ -103,7 +122,7 @@ def _retarget(href: str, week_start: dt.date) -> str:
     return href
 
 
-def _detail_rows(app) -> List[Dict]:
+def _detail_rows(app, want=WANT) -> List[Dict]:
     """The loaded detail page's table, as {header: value} per row."""
     got = app.page.evaluate(
         """() => {
@@ -128,7 +147,7 @@ def _detail_rows(app) -> List[Dict]:
     )
     if not got:
         raise RuntimeError("the detail page rendered no table")
-    missing = [c for c in WANT if c not in got["head"]]
+    missing = [c for c in want if c not in got["head"]]
     if missing:
         raise RuntimeError(
             "the detail table has no %s column (it has: %s). It was renamed or "
@@ -137,12 +156,45 @@ def _detail_rows(app) -> List[Dict]:
     return got["rows"]
 
 
-def _as_people(rows: List[Dict]) -> List[Dict]:
+def _day(text, week_start: Optional[dt.date]) -> Optional[dt.date]:
+    """The date in a detail row's date cell, when it is a day of that week.
+
+    A cell that will not parse, or parses to a day outside the week asked for,
+    answers None -- and None means the row falls back to the week's Sunday,
+    which is what every retention-seeded row already carries. It never invents
+    a day: a wrong Start on a row somebody onboards from is worse than a vague
+    one, and this is reported as a count rather than passed off as read.
+    """
+    got = " ".join(str(text or "").split())
+    if not got:
+        return None
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", got)
+    if not m:
+        return None
+    mm, dd, yy = (int(x) for x in m.groups())
+    if yy < 100:
+        yy += 2000
+    try:
+        day = dt.date(yy, mm, dd)
+    except ValueError:
+        return None
+    if week_start is not None and not (
+            week_start <= day <= week_start + dt.timedelta(days=6)):
+        return None
+    return day
+
+
+def _as_people(rows: List[Dict], *, stage: str = STAGE,
+               week_start: Optional[dt.date] = None,
+               dated: bool = False) -> List[Dict]:
     """The same shape `fdot.showed_up` returns, de-duplicated the same way.
 
     Deliberately identical: the seed does not know or care which reader filled
     it, and the day the two disagree about a field is the day one of them starts
     seeding a different person.
+
+    With `dated`, each person also carries the day they are due in, read off
+    the detail table's own date column.
     """
     out, seen = [], set()
     for r in rows:
@@ -156,26 +208,37 @@ def _as_people(rows: List[Dict]) -> List[Dict]:
         if key in seen:
             continue
         seen.add(key)
-        out.append({"first_name": first, "last_name": last, "email": email,
-                    "phone": phone, "stage": STAGE})
+        row = {"first_name": first, "last_name": last, "email": email,
+               "phone": phone, "stage": stage}
+        if dated:
+            day = _day(r.get(DATE_COLUMN), week_start)
+            if day is not None:
+                row["started"] = day
+        out.append(row)
     return out
 
 
-def read_week(app, office_id: str, week_start: dt.date, log=print) -> List[Dict]:
-    """This week's new starts who showed up — two page loads, not seven.
+def read_week(app, office_id: str, week_start: dt.date, log=print, *,
+              row_label: str = ROW_LABEL, stage: str = STAGE,
+              dated: bool = False) -> List[Dict]:
+    """One row of this week's Retention Report — two page loads, not seven.
 
     `app` is an applicant_tracker ApplicantStream session, already on the
     office. Raises if the report cannot be read; the caller falls back to the
     calendar walk rather than treating an unread week as an empty one.
+
+    `row_label` picks WHICH question is being asked. The default is who showed
+    up; `read_scheduled_week` asks who is due in. They are different questions
+    and must never stand in for one another -- see `SCHEDULED_ROW_LABEL`.
     """
     from automations.icd_onboarding.board import week_start_of
 
     want = week_start_of(week_start)
     app.open_retention_details()
-    href = _week_href(app.page)
+    href = _week_href(app.page, row_label)
     if not href:
         raise NotOnTheReport(
-            "%s has no %r row on the Retention Report" % (office_id, ROW_LABEL))
+            "%s has no %r row on the Retention Report" % (office_id, row_label))
 
     shown = _rendered_week(app.page)
     if shown != want:
@@ -186,7 +249,30 @@ def read_week(app, office_id: str, week_start: dt.date, log=print) -> List[Dict]
         href = _retarget(href, want)
 
     app._goto_detail(href)
-    people = _as_people(_detail_rows(app))
-    log("  week of %s: %d new starts showed up (Retention Report)"
-        % (want, len(people)))
+    rows = _detail_rows(app, WANT + ((DATE_COLUMN,) if dated else ()))
+    people = _as_people(rows, stage=stage, week_start=want, dated=dated)
+    log("  week of %s: %d %s (Retention Report)"
+        % (want, len(people), row_label))
+    if dated:
+        vague = [p for p in people if not p.get("started")]
+        if vague:
+            # SAID, never swallowed: those rows take the week's Sunday as their
+            # Start, which is a vaguer answer than the page was asked for.
+            log("    %d of them had no readable date — their Start falls back "
+                "to %s" % (len(vague), want.strftime("%m/%d/%Y")))
     return people
+
+
+def read_scheduled_week(app, office_id: str, week_start: dt.date,
+                        log=print) -> List[Dict]:
+    """Who is SCHEDULED to start in the office that week, with each day.
+
+    What the onboarding board is seeded from. NOT interchangeable with
+    `read_week`: if this row cannot be read, the caller reports that and seeds
+    nothing, because seeding the showed-up answer instead would quietly put a
+    different question's people on the board
+    ([[feedback_empty_means_proven_zero]]).
+    """
+    return read_week(app, office_id, week_start, log,
+                     row_label=SCHEDULED_ROW_LABEL, stage=SCHEDULED_STAGE,
+                     dated=True)

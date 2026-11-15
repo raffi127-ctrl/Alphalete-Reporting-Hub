@@ -72,13 +72,20 @@ def test_only_runs_just_the_named_steps(monkeypatch):
     assert ran == ["blueink"]
 
 
-def test_apex_is_not_run_here_because_it_ticks_as_it_acts():
-    """The Apex run knows at the moment it saves a record, so running it from
-    here would be asking it to redo work it already recorded."""
+def test_the_sources_that_tick_as_they_act_are_not_steps_here():
+    """Every source is a step of its own EXCEPT the two that already know the
+    answer at the moment they do the thing:
+
+      * `apex` ticks as it saves a record, so running it from here would be
+        asking it to redo work it had already recorded;
+      * `appstream` is the seed's own second read -- who of the scheduled
+        turned up -- and opening that session is the slow part, so it ticks
+        inside `seed` rather than as another job.
+    """
     names = [n for n, _ in R.STEPS]
-    assert "apex" not in names
+    assert "apex" not in names and "appstream" not in names
     from automations.icd_onboarding import fillers as F
-    assert set(F.SOURCES) - set(names) == {"apex"}
+    assert set(F.SOURCES) - set(names) == {"apex", "appstream"}
 
 
 def test_contacts_is_a_LOOKUP_even_though_the_sync_could_tick_as_it_adds():
@@ -442,3 +449,103 @@ def test_one_person_still_missing_is_enough_to_read(monkeypatch):
     assert R.from_contacts("raf", MONDAY, dry_run=True, log=lambda *a: None) == 1
     # only the one that needed it -- the already-ticked row is not re-written
     assert seen == {"Bruno C": {"Contact Added": True}}
+
+
+# ------------------------------------------- seeded from who is DUE to start
+
+def test_the_seed_reads_the_scheduled_row_and_has_no_fallback_for_it():
+    """Megan, 2026-11-15: the board's week is the week somebody starts in the
+    office, so it is seeded from who is SCHEDULED. The calendar walk answers
+    who SHOWED UP — standing in for this read it would quietly seed a
+    different set of people, so there is deliberately no fallback here."""
+    import ast
+    import pathlib
+
+    src = pathlib.Path(R.__file__).read_text()
+    body = ast.get_source_segment(src, next(
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.FunctionDef) and n.name == "seed"))
+    code = [l for l in body.splitlines() if not l.strip().startswith("#")]
+    joined = "\n".join(code)
+    assert "read_scheduled_week(" in joined, "the scheduled row is the seed"
+
+    at = next(i for i, l in enumerate(code) if "read_scheduled_week(" in l)
+    # No try/except wrapped around it: the lines before it must not open one.
+    assert not any(l.strip().startswith("try:") for l in code[max(0, at - 3):at]), \
+        "an unread scheduled row must raise, not fall back to a different row"
+    assert "fdot.read_week(" in joined, \
+        "the walk stays the fallback for the SHOWED-UP read, which it answers"
+
+
+def test_showing_up_ticks_the_row_and_never_takes_anybody_off():
+    """ON ONLY, like every other tick. Somebody absent on Monday may walk in
+    on Tuesday; marking them off is a person's call, and "No Show" is one of
+    the reasons the panel offers."""
+    import inspect
+    from automations.icd_onboarding import board as B
+
+    src = inspect.getsource(R._tick_showed_up)
+    code = [l for l in src.splitlines() if not l.strip().startswith("#")]
+    joined = "\n".join(code)
+    assert "True" in joined and "False" not in joined, \
+        "it only ever says yes"
+    assert "terminat" not in joined.lower() and "remove" not in joined.lower()
+    assert B.SHOWED_UP in joined or "SHOWED_UP" in joined
+
+
+def test_an_unread_showed_up_row_ticks_nobody_rather_than_emptying_it():
+    got = R._tick_showed_up("raf", MONDAY, None, dry_run=True,
+                            log=lambda *a: None)
+    assert got == 0
+
+
+def test_showing_up_is_not_an_onboarding_step():
+    """It is nothing anybody works through, so it is no column on the printed
+    chase sheet and no part of "4 of 10 done"."""
+    from automations.icd_onboarding import board as B
+
+    assert B.SHOWED_UP in B.COLUMNS
+    assert B.SHOWED_UP in B.TICKS, "a machine writes it"
+    assert B.SHOWED_UP not in B.STEPS
+    assert B.SHOWED_UP not in B.BY_HAND
+    assert B.SHOWED_UP not in B.SHORT, "not a heading on the printed sheet"
+
+
+def test_the_panel_knows_it_too_and_only_says_so_once_the_day_has_come():
+    """"not in yet" on somebody due Thursday reads as a problem when it is
+    not one."""
+    import pathlib
+    js = pathlib.Path("extension/apex-new-starts/board.js").read_text()
+    assert "const SHOWED_UP = 'Showed Up'" in js
+    assert "dueAlready" in js and "not in yet" in js
+    steps = js.split("const STEPS = [", 1)[1].split("]", 1)[0]
+    assert "Showed Up" not in steps, "not one of the step columns"
+
+
+def test_a_dry_run_tells_the_hub_nothing():
+    """It writes no cell, so there is nothing to report as done -- and a
+    read-only probe whose source could not be reached must not turn this
+    card RED for everybody. It did, on 2026-11-15: the AppStream credential
+    is deliberately not on Megan's Mac, so the probe failed there and the
+    live Hub card went red on the strength of a question."""
+    import ast
+    import pathlib
+
+    src = pathlib.Path(R.__file__).read_text()
+    body = ast.get_source_segment(src, next(
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.FunctionDef) and n.name == "main"))
+    code = [l for l in body.splitlines() if not l.strip().startswith("#")]
+    joined = "\n".join(code)
+    assert "nothing_to_report()" in joined
+    at = next(i for i, l in enumerate(code) if "nothing_to_report()" in l)
+    before = "\n".join(code[max(0, at - 8):at])
+    assert "not a.write" in before, "only on a dry run"
+    # ...and before any step runs, so a step that raises cannot beat it.
+    assert at < next(i for i, l in enumerate(code) if "for_office(" in l)
+
+
+def test_the_hub_hook_has_a_name_for_having_nothing_to_say():
+    from automations.shared import hub_autopublish as H
+    assert H.nothing_to_report() is None
+    assert H.already_reported() is True

@@ -100,6 +100,18 @@ def already_reported() -> bool:
     return _REPORTED
 
 
+def nothing_to_report() -> None:
+    """A run that WROTE NOTHING tells the Hub nothing (2026-11-15).
+
+    A dry run is a question, not a delivery. Before this, a read-only
+    verification run of icd_onboarding whose source could not be reached
+    turned that card RED on the live Hub -- the same class of mistake as a
+    dry run that writes a header. A module calls this as soon as it knows it
+    is not writing, and the exit hook stays silent either way it ends.
+    """
+    mark_reported()
+
+
 def _code_ok(code) -> bool:
     """A SystemExit payload is success only for None / 0. A STRING payload is an
     error message — `raise SystemExit("no '#' header in row 3")` exits 1."""

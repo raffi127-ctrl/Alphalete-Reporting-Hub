@@ -31,6 +31,10 @@
   const LABEL = {'UID Request': 'UID Requested', 'Added to APEX': 'Added to Apex'};
   const label = s => LABEL[s] || s;
   const UNASSIGNED = 'No classroom yet';
+  // DID THEY TURN UP. Not a step and not in STEPS: the board is seeded from
+  // who is SCHEDULED to start that week, so showing up is a fact about a row
+  // rather than what creates one, and it is no part of "4 of 10 done".
+  const SHOWED_UP = 'Showed Up';
   // Our own last step, after the office has signed off. Named here so the
   // chart can single it out; it is the sheet's column, not the label.
   const APEX_STEP = 'Added to APEX';
@@ -255,6 +259,18 @@
         '<span>Remove from onboarding</span></th>' +
         '</tr></thead><tbody>';
 
+      // Has their first day been and gone? Read off the row's own Start,
+      // because the board holds people due later in the week.
+      const dueAlready = p => {
+        const got = String(p['Start'] || '').trim();
+        const m = got.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (!m) return false;
+        const due = new Date(+m[3], +m[1] - 1, +m[2]);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return due <= today;
+      };
+
       const rowFor = (p, no) => {
           let out = '';
           const left = remaining(p), b = band(p), name = who(p);
@@ -284,6 +300,11 @@
             // 1 and a 2 under it, rather than a 18 and a 19 that mean nothing.
             '<td class="no">' + (no == null ? '' : no) + '</td>' +
             '<td class="nm" title="' + esc(name) + '">' + esc(name) +
+            // Scheduled, and not in yet. Only once their start day has
+            // actually arrived -- before that there is nothing to report,
+            // and "not in yet" on somebody due Thursday reads as a problem.
+            (!isOff(p) && dueAlready(p) && !String(p[SHOWED_UP] || '').trim()
+              ? '<span class="nyet">not in yet</span>' : '') +
             // The WORD as well as the colour -- a stripe nobody can name is
             // not a status. Same wording as the printed sheet: "done" when
             // there is nothing left, otherwise how far through they are.

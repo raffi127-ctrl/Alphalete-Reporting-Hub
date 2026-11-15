@@ -78,15 +78,25 @@ def test_the_ownerville_columns_are_the_sweeps_own_five_plus_the_bg_state():
     assert "OV BG Status" in B.STATUS_STEPS, "it advances, it is not ticked"
 
 
-def test_every_source_column_is_a_real_board_step():
+def test_every_source_column_is_one_a_machine_may_WRITE():
+    """TICKS, not STEPS: `Showed Up` is a machine-written fact about a row
+    rather than a step anybody works through, and a source claiming a by-hand
+    column (Classroom, Gender, Location) is a wiring mistake that would type
+    over somebody's own answer."""
     for source, cols in F.SOURCES.items():
         for c in cols:
-            assert c in B.STEPS, "%s claims %r, which is not a step" % (source, c)
+            assert c in B.TICKS, \
+                "%s claims %r, which no machine may write" % (source, c)
+            assert c not in B.BY_HAND, \
+                "%s claims %r, which a person fills" % (source, c)
 
 
-def test_the_five_sources_cover_every_step_exactly_once():
+def test_the_sources_cover_every_step_exactly_once():
     seen = [c for cols in F.SOURCES.values() for c in cols]
-    assert sorted(seen) == sorted(B.STEPS), "every step has exactly one owner"
+    assert sorted(c for c in seen if c in B.STEPS) == sorted(B.STEPS), \
+        "every step has exactly one owner"
+    assert sorted(seen) == sorted(B.TICKS), \
+        "and every machine-written column has one, steps or not"
 
 
 def test_an_unknown_source_is_refused():

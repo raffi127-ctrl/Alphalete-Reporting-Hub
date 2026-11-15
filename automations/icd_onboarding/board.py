@@ -62,6 +62,19 @@ GENDER = "Gender"
 # no system we read holds them.
 LOCATION = "Location"
 
+# DID THEY TURN UP. The board is seeded from who is SCHEDULED to start that
+# week (Megan, 2026-11-15: *"those are the ones that are actually starting in
+# the office that week that we're going to be onboarded"*), so the row is there
+# before Monday and showing up is a fact about a row rather than the thing that
+# creates one.
+#
+# NOT A STEP, and deliberately not in STEPS: it is nothing anybody works
+# through, so it is not a column on the printed chase sheet and not part of
+# "4 of 9 done". It is also NOT a removal -- nobody is marked off the board by
+# a machine for being absent on their first morning, because they may walk in
+# on the Tuesday. "No Show" stays one of the reasons a PERSON picks.
+SHOWED_UP = "Showed Up"
+
 # The onboarding steps, in the order a person works through them. Every one is
 # filled by an automation that already exists -- see the spec for which.
 STEPS: Sequence[str] = (
@@ -86,7 +99,7 @@ STEPS: Sequence[str] = (
 )
 
 COLUMNS: Sequence[str] = (tuple(IDENTITY) + (CLASSROOM, GENDER, LOCATION)
-                          + tuple(STEPS))
+                          + (SHOWED_UP,) + tuple(STEPS))
 
 # The columns a PERSON fills and no automation may ever write. All three are
 # things no system we read holds, so a guess here is a made-up fact on a row
@@ -95,7 +108,7 @@ BY_HAND: Sequence[str] = (CLASSROOM, GENDER, LOCATION)
 
 # Which columns a machine may write. Classroom and Gender are the ICD's;
 # identity is the seed's; everything else is a step.
-TICKS: Sequence[str] = tuple(STEPS)
+TICKS: Sequence[str] = tuple(STEPS) + (SHOWED_UP,)
 
 # MOST steps are a TICK: written once, never changed, because the date is
 # evidence that something happened and nothing is entitled to say it did not.

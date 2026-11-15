@@ -83,6 +83,13 @@
                    text-overflow: ellipsis; border-left: 4px solid transparent; }
   .bd-grid td.nm .cnt { font-weight: 400; font-size: 10px; color: #777;
                         margin-left: 6px; }
+  /* SCHEDULED BUT NOT IN YET. The board lists who is due to start that week,
+     so a row can be somebody who has not walked in. Said in words, not just a
+     shade -- and never styled as a removal, because they may come in
+     tomorrow. */
+  .bd-grid td.nm .nyet { font-weight: 700; font-size: 9.5px; color: #8a6a00;
+                         background: #fff6db; border-radius: 3px;
+                         padding: 1px 5px; margin-left: 6px; }
   .bd-grid td.cls, .bd-grid td.loc, .bd-grid td.gen { padding: 3px 4px; }
   .bd-grid td.cls input, .bd-grid td.loc input {
                           width: 100%; padding: 3px 5px; font-size: 11.5px;

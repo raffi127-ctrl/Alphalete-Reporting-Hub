@@ -7,6 +7,7 @@ rewritten here — this is the one place those answers become ticks, so there is
 a single thing to read when asking what is allowed to mark somebody's step
 done, and a single place the rules live.
 
+    AppStream retention       ->  Showed Up
     OwnerVille View Progress  ->  Digi Docs · Onboarding Quizzes ·
                                   Headshot Photo · UID Request · Owner Submit
     Blue Ink                  ->  Blue Ink
@@ -46,6 +47,8 @@ SOURCES: Dict[str, Sequence[str]] = {
     "sterling": ("BG Status",),
     "contacts": ("Contact Added",),
     "apex": ("Added to APEX",),
+    # The seed's second read: who of the scheduled actually turned up.
+    "appstream": (B.SHOWED_UP,),
 }
 
 
@@ -158,10 +161,22 @@ def apply(workbook, week_start, source: str,
         return 0
     # A column this code knows about and the tab has not got would otherwise
     # never appear on a board that already existed.
-    try:
-        S.ensure_columns(ws, log=log)
-    except Exception as e:     # noqa: BLE001 — never fail a tick over a header
-        log("  (could not add missing columns: %s)" % type(e).__name__)
+    #
+    # NOT ON A DRY RUN. A header is a write, and a dry run writes nothing --
+    # this sat above the dry-run check and would quietly add columns to a live
+    # board during a verification run (2026-11-15). It says what it would add
+    # instead, which is the useful half anyway.
+    if dry_run:
+        head = [str(h).strip() for h in (S._values(ws)[S.HEADER_ROW - 1] or [])]
+        would = [c for c in list(B.COLUMNS) + [B.TERMINATED_AT]
+                 if c not in head]
+        if would:
+            log("  (dry run — would add the %s column(s))" % ", ".join(would))
+    else:
+        try:
+            S.ensure_columns(ws, log=log)
+        except Exception as e:   # noqa: BLE001 — never fail a tick over a header
+            log("  (could not add missing columns: %s)" % type(e).__name__)
     rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
     got = plan(rows, source, verdicts)
     log("%s, week of %s:" % (source, B.week_label(week_start)))

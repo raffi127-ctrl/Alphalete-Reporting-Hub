@@ -60,7 +60,23 @@ def _ov_program(office_key: str) -> str:
 
 def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
          log=print) -> int:
-    """This week's showed-up people onto the board."""
+    """Everybody SCHEDULED to start in the office that week, onto the board.
+
+    Megan, 2026-11-15: *"we would want this extension to live off of the
+    applicant stream for that current week that are scheduled to start ... when
+    they're brought on board, even though they're brought on board Monday, they
+    could have a 2 week out start date. So we want to actually see the new
+    starts on our onboarding list because those are the ones that are actually
+    starting in the office that week that we're going to be onboarded."*
+
+    So the WEEK A ROW LANDS ON IS THE WEEK THEY START, never the week they were
+    brought on board, and the row is there before Monday rather than appearing
+    the morning they walk in.
+
+    TWO READS, ONE SESSION. The scheduled row makes the rows; the showed-up row
+    then ticks `Showed Up` on them. Opening the session is the slow part, so the
+    second read is two more page loads rather than another job.
+    """
     from automations.applicant_tracker.applicantstream import session
     from automations.icd_onboarding import sheet as S
     from automations.office_admin import fdot
@@ -73,24 +89,34 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
         return 0
     with session() as app:
         app.select_office(account)
-        # The Retention Report first: it answers this in TWO page loads where
-        # the calendar walk takes seven (Megan, 2026-11-09: "you should just
-        # look at the retention details report and not walk the calendar as
-        # this would be faster"). Checked against the walk on Raf's week of
-        # 11/01 -- the same 29 people, the same 29 emails.
+        # WHO IS DUE IN. The Retention Report answers this in TWO page loads
+        # where the calendar walk takes seven (Megan, 2026-11-09: "you should
+        # just look at the retention details report and not walk the calendar
+        # as this would be faster").
         #
-        # The walk stays as the fallback, not as dead code: the report is one
-        # page that an office might not carry the row on, and a week that
-        # could not be read must never seed as an empty one
+        # NO FALLBACK HERE, on purpose. The calendar walk answers who SHOWED
+        # UP, which is a different question -- standing in for this one it
+        # would quietly seed a different set of people, and a week that could
+        # not be read must never be seeded from the nearest thing to hand
         # ([[feedback_empty_means_proven_zero]]).
+        people = retention.read_scheduled_week(app, account, week_start,
+                                               log=log)
+        # AND WHO TURNED UP, of those. Read in the same session; the walk IS
+        # the fallback for this one, because it answers exactly this.
         try:
-            people = retention.read_week(app, account, week_start, log=log)
+            showed = retention.read_week(app, account, week_start, log=log)
         except Exception as e:      # noqa: BLE001 — fall back, never give up
-            log("  retention report unavailable (%s: %s) — walking the calendar"
+            log("  showed-up row unavailable (%s: %s) — walking the calendar"
                 % (type(e).__name__, str(e)[:120]))
-            people = fdot.read_week(app, account, week_start, log=log)
+            try:
+                showed = fdot.read_week(app, account, week_start, log=log)
+            except Exception as e2:     # noqa: BLE001 — the seed still stands
+                log("  (nobody could be ticked as shown up: %s — the rows ARE "
+                    "on the board)" % type(e2).__name__)
+                showed = None
     book = F.workbook_for(office_key)
     got = S.seed(book, week_start, people, dry_run=dry_run, log=log)
+    _tick_showed_up(office_key, week_start, showed, dry_run=dry_run, log=log)
     # A step this office does not do is not an outstanding step. Marked at
     # seed time so the office never reads as behind on work that does not
     # exist (Megan, 2026-11-09: "if they don't then they can't enroll in apex
@@ -98,6 +124,40 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     from automations.icd_onboarding import office_steps as OS
     OS.mark_not_applicable(office_key, week_start, dry_run=dry_run, log=log)
     return len(got.get("add") or [])
+
+
+def _tick_showed_up(office_key: str, week_start: dt.date, showed,
+                    *, dry_run: bool, log=print) -> int:
+    """Tick `Showed Up` for the scheduled people who turned up.
+
+    ON ONLY, like every other tick: an absence is not a tick off and is never
+    a removal -- somebody missing on Monday may walk in on the Tuesday, and
+    marking them off is a person's call ("No Show" is one of the reasons the
+    panel offers). An unread showed-up row ticks nobody rather than emptying
+    the column.
+
+    Never fails the seed: the rows are already on the board, and a column that
+    did not tick is a visible gap in the right place.
+    """
+    if showed is None:
+        return 0
+    from automations.icd_onboarding import board as BB
+    verdicts = {}
+    for p in showed:
+        name = ("%s %s" % (p.get("first_name") or "",
+                           p.get("last_name") or "")).strip()
+        if name:
+            verdicts[name] = {BB.SHOWED_UP: True}
+    if not verdicts:
+        log("  showed up: nobody yet this week")
+        return 0
+    try:
+        return F.apply(F.workbook_for(office_key), week_start, "appstream",
+                       verdicts, dry_run=dry_run, log=log)
+    except Exception as e:      # noqa: BLE001
+        log("  (Showed Up was not ticked: %s: %s)"
+            % (type(e).__name__, str(e)[:120]))
+        return 0
 
 
 def _board_names(office_key: str, week_start: dt.date,
@@ -630,6 +690,15 @@ def main(argv=None) -> int:
     _me = this_machine() or "this machine"
     print("%s · %s · steps: %s"
           % (_me, ", ".join(offices), ", ".join(only) if only else "all"))
+    if not a.write:
+        # A DRY RUN TELLS THE HUB NOTHING. It writes no cell, so there is
+        # nothing to report as done -- and a probe whose source could not be
+        # reached must not turn this card red for everybody (2026-11-15).
+        try:
+            from automations.shared import hub_autopublish
+            hub_autopublish.nothing_to_report()
+        except Exception:      # noqa: BLE001 — never fail a run over the pill
+            pass
 
     bad = 0
     for office in offices:
