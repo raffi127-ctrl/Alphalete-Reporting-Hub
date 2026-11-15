@@ -146,14 +146,16 @@ class Merge(unittest.TestCase):
         rows[0][T._COL["Being worked on"]] = "Yes"
         rows[0][T._COL["Delivered Message Sent"]] = "Yes"      # rc_contact_sync.delivered marked it
         noted_key = T._key(rows[0])
-        # next morning: line 1 activates, line 2 missing from the feed (kept), an old line ages out
+        # next morning: line 1 activates, line 2 missing from the feed (kept), an old line
+        # arrives (kept too: nothing ages off since 2026-11-15)
         later = TODAY + dt.timedelta(days=1)
         old = line(order_date="08/01/2026", wireless_order="WOOLD", line_no="1")
         second = T.merge(rows, [line(line_status="Active"), old], today=later)
-        self.assertEqual(second["aged_out"], 0)              # old one never entered the window
-        self.assertEqual(second["changed"], 1)
+        self.assertEqual(second["aged_out"], 0)
+        self.assertEqual((second["added"], second["changed"]), (1, 1))
         by_key = {T._key(r): r for r in second["rows"]}
-        self.assertEqual(len(by_key), 2)                      # line 2 kept though absent today
+        self.assertEqual(len(by_key), 3)                      # line 2 kept though absent today
+        self.assertEqual(by_key[("wo", "woold", "1")][T._COL["Order Date"]], "08/01/2026")
         self.assertEqual(by_key[noted_key][T._COL["Notes"]], "called 10/28")
         self.assertEqual(by_key[noted_key][T._COL["Being worked on"]], "Yes")
         self.assertEqual(by_key[noted_key][T._COL["Delivered Message Sent"]], "Yes")
@@ -169,11 +171,14 @@ class Merge(unittest.TestCase):
         self.assertEqual(second["changed"], 0)
         self.assertEqual(second["rows"][0][T._COL["Last Updated"]], "10/29/2026")
 
-    def test_ages_out_by_order_date(self):
+    def test_nothing_ages_out(self):
+        # Carlos 2026-11-15: "we shouldn't be removing anything past 60 days"
+        self.assertIsNone(T.DAYS_KEPT)
         stale = T.line_row(line(order_date="08/01/2026", wireless_order="WOOLD"), "08/02/2026")
         res = T.merge([stale], [line()], today=TODAY)
-        self.assertEqual(res["aged_out"], 1)
-        self.assertEqual(len(res["rows"]), 1)
+        self.assertEqual(res["aged_out"], 0)
+        self.assertEqual(len(res["rows"]), 2)
+        self.assertEqual(res["rows"][-1][T._COL["Order Date"]], "08/01/2026")   # oldest last
 
     def test_existing_rows_without_a_line_number_are_dropped(self):
         bad = T.line_row(line(line_no="", customer="Luis Martinez"), "10/29/2026")
@@ -520,3 +525,24 @@ class NotSaveableColour(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotSaveableMarks(unittest.TestCase):
+    """2026-11-15: the tab's Not saveable marks for the activation-by-week board."""
+
+    def test_marks_off_a_tab_read(self):
+        a = T.line_row(line(dsi="DSI7", line_no="1"), "10/29/2026")
+        a[T._COL["Being worked on"]] = "Not saveable"
+        b = T.line_row(line(dsi="DSI7", line_no="2", device="(817) 296-5740"), "10/29/2026")
+        b[T._COL["Being worked on"]] = " not SAVEABLE "
+        c = T.line_row(line(dsi="DSI8", line_no="1"), "10/29/2026")
+        c[T._COL["Being worked on"]] = "Yes"
+        m = T.marks_from_rows(list(T.HEADERS), [a, b, c])
+        self.assertEqual(m["n"], 2)
+        self.assertEqual(m["dsi_line"], {("dsi7", "1"), ("dsi7", "2")})
+        self.assertEqual(m["phone"], {"9453928474", "8172965740"})
+        # an older tab layout (the column somewhere else) resolves by header
+        hdr = ["Being worked on", "DSI #", "Line", "Phone #"]
+        m2 = T.marks_from_rows(hdr, [["Not saveable", "DSI9", "4", "214-555-0100"], ["", "DSI9", "5", ""]])
+        self.assertEqual((m2["n"], m2["dsi_line"], m2["phone"]), (1, {("dsi9", "4")}, {"2145550100"}))
+        self.assertEqual(T.marks_from_rows(list(T.HEADERS), [])["n"], 0)

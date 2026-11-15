@@ -82,3 +82,45 @@ class TableauTwin(unittest.TestCase):
         self.assertEqual(rows[0]["rate"], 0.5)
         self.assertTrue(rows[1]["current"])
 
+
+class NotSaveable(unittest.TestCase):
+    """2026-11-15: lines marked Not saveable on the NDS Order Log tab leave
+    the pending count for their own row; activated / cancelled unchanged."""
+
+    def test_marked_pending_lines_get_their_own_count(self):
+        o1 = order("Jacob", "DSI1", order_date="10/20/2026", **{"Wireless Status": "Shipped - Delivered", "Wireless Line Count": "4", "Port Line Count": "4"})
+        o2 = order("Eddie", "DSI2", order_date="10/22/2026", **{"Wireless Status": "Pending Shipment", "Wireless Line Count": "2", "Port Line Count": "2"})
+        lines = [line("DSI1", 1, "Delivered", tn="8172965740"), line("DSI1", 2, "Delivered", tn="8176733727"),
+                 line("DSI1", 3, "Active", tn="9452430223"), line("DSI1", 4, "Cancelled", tn="9452334914"),
+                 line("DSI2", 1, "Pending", tn="9404332268"), line("DSI2", 2, "Pending", tn="9404332269")]
+        marks = {"dsi_line": {("dsi1", "1"), ("dsi1", "3"), ("dsi1", "4")},    # 3 = active, 4 = cancelled: never moved
+                 "phone": {"8176733727", "9404332268"}, "n": 5}
+        we = dt.date(2026, 10, 25)
+        weeks, data = AW.aggregate((IX, [o1, o2], None), lines, {}, FRI, marks=marks)
+        t = data[AW.TOTAL][we]
+        self.assertEqual((t["lines"], t["activated"], t["cancelled"], t["pending"], t["not_saveable"]), (6, 1, 1, 1, 3))
+        _, plain = AW.aggregate((IX, [o1, o2], None), lines, {}, FRI)          # no marks: nothing moves
+        self.assertEqual((plain[AW.TOTAL][we]["pending"], plain[AW.TOTAL][we]["not_saveable"]), (4, 0))
+        rows = AW.rows_from(weeks, data, FRI)
+        self.assertEqual((rows[0]["pending"], rows[0]["not_saveable"]), (1, 3))
+        col = "WE 10/25 (2 sales)"
+        crew = AW.crew_rows(weeks, data, FRI, {we: col}, not_saveable_row=True)
+        self.assertEqual([r[0] for r in crew][2:], ["Crew Total \u2014 lines still pending", "Crew Total \u2014 not saveable"])
+        self.assertEqual(crew[2][3][col]["rate"], "1 of 6")
+        self.assertEqual(crew[3][3][col]["rate"], "3")
+        blank = AW.crew_rows(weeks, data, FRI, {we: col}, not_saveable_row=True, marks_missing=True)
+        self.assertEqual(blank[3][3][col], {})
+        self.assertEqual(len(AW.crew_rows(weeks, data, FRI, {we: col})), 3)      # the Tableau twin: no such row
+
+    def test_an_order_the_feed_forgot_counts_its_marks_by_dsi(self):
+        # past the feed's 31-day window the order falls back to its SOH status:
+        # the tab still carries the lines and their marks
+        o = order("Jacob", "DSI5", order_date="10/19/2026", **{"Wireless Status": "Shipped - Delivered", "Wireless Line Count": "3", "Port Line Count": "3"})
+        marks = {"dsi_line": {("dsi5", "1"), ("dsi5", "2")}, "phone": set(), "n": 2}
+        _, data = AW.aggregate((IX, [o], None), [], {}, FRI, marks=marks)
+        t = data[AW.TOTAL][dt.date(2026, 10, 25)]
+        self.assertEqual((t["lines"], t["pending"], t["not_saveable"]), (3, 1, 2))
+        self.assertEqual(AW.marked_lines_of("DSI5", marks), 2)
+        self.assertEqual(AW.marked_lines_of("", marks), 0)
+        self.assertTrue(AW.is_marked(line("DSI5", 1, "Delivered", tn=""), marks))
+        self.assertFalse(AW.is_marked(line("DSI5", 3, "Delivered", tn="9990000000"), marks))

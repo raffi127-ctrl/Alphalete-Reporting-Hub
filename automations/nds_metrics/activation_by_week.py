@@ -18,6 +18,14 @@ here on SaraPlus so it is current):
     counts as activated -- churn is a separate board.
   * Rate = activated lines / lines sold. "Sales w/ activation" = orders with
     at least one activated line.
+  * a line still pending that Carlos marked NOT SAVEABLE on the NDS Order Log
+    tab (Being worked on, col W: delivered or pending, never going to
+    activate) leaves the pending count for its own "not saveable" row
+    (Carlos 2026-11-15); the activation and cancel rates don't change. The
+    marks come off the live tab (order_log_tab.not_saveable_marks) by
+    (DSI #, Line) and by phone number; an order the feed has forgotten still
+    gets its marked lines counted by DSI #. Only this SaraPlus board has the
+    row, not the Tableau twin.
 The last WEEKS weeks since NDS_SINCE, oldest first, a column per week, Crew
 Total then a row per rep -- the same picture as "NDS Activation Rate by Rep"
 (Carlos 2026-11-06: "looks like the other activation reports ... every morning
@@ -56,10 +64,32 @@ def _n(v) -> int:
 TOTAL = "__TOTAL__"
 
 
+def is_marked(ln: dict, marks: dict) -> bool:
+    """A feed line carries the tab's Not saveable mark: by (DSI #, Line) --
+    the tab's own key, the feed's order id + line index -- or by the line's
+    phone number."""
+    from automations.nds_metrics.order_log_tab import LineIndex, _norm
+    if (_norm(ln.get("order_id")), _norm(ln.get("line_idx"))) in marks.get("dsi_line", ()):
+        return True
+    ph = LineIndex.digits(ln.get("tn"))
+    return bool(ph) and ph in marks.get("phone", ())
+
+
+def marked_lines_of(oid: str, marks: dict) -> int:
+    """How many of an order's lines the tab marks Not saveable, by DSI # --
+    for an order the wireless feed no longer carries (past its window)."""
+    from automations.nds_metrics.order_log_tab import _norm
+    o = _norm(oid)
+    return sum(1 for d, _l in marks.get("dsi_line", ()) if d == o) if o else 0
+
+
 def aggregate(soh, lines: Sequence[dict], state: dict, today: dt.date,
-              weeks: int = WEEKS):
+              weeks: int = WEEKS, marks: Optional[dict] = None):
     """-> (week endings oldest first, {rep | TOTAL: {we: Counter}}) with
-    orders / orders_act / lines / activated / churned / pending / cancelled."""
+    orders / orders_act / lines / activated / churned / pending / cancelled /
+    not_saveable. `marks` = the NDS Order Log tab's Not saveable marks
+    (order_log_tab.not_saveable_marks): a pending line that carries one counts
+    as not_saveable instead of pending; None = nothing moves."""
     from automations.sp_order_log import wireless_lines as WL
     ix, orders, _pulled = soh
     by_order: Dict[str, List[dict]] = collections.defaultdict(list)
@@ -96,11 +126,14 @@ def aggregate(soh, lines: Sequence[dict], state: dict, today: dt.date,
                         a["churned"] += 1
                 elif dead:
                     a["cancelled"] += 1
+                elif marks and is_marked(ln, marks):
+                    a["not_saveable"] += 1      # Carlos 11/15: out of pending, its own row
                 else:
                     a["pending"] += 1
         else:
             st = _soh_cell(ix, r, "Wireless Status").lower()
             a["lines"] += n_soh
+            pend = 0
             if any(w in st for w in DEAD_WORDS) and "active" not in st:
                 a["cancelled"] += n_soh
             elif st.startswith("active"):
@@ -110,10 +143,16 @@ def aggregate(soh, lines: Sequence[dict], state: dict, today: dt.date,
                     a["churned"] += n_soh
             elif st.startswith("partial - active"):
                 a["activated"] += 1
-                a["pending"] += n_soh - 1
+                pend = n_soh - 1
                 order_act = True
             else:
-                a["pending"] += n_soh
+                pend = n_soh
+            if pend:
+                # the feed has forgotten this order (past its 31-day window);
+                # the tab still carries its lines and their marks, by DSI #
+                ns = min(pend, marked_lines_of(oid, marks)) if marks else 0
+                a["not_saveable"] += ns
+                a["pending"] += pend - ns
         if order_act:
             a["orders_act"] += 1
         for key in (rep, TOTAL):
@@ -124,10 +163,11 @@ def aggregate(soh, lines: Sequence[dict], state: dict, today: dt.date,
 
 
 def rows_for(soh, lines: Sequence[dict], state: dict, today: dt.date,
-             weeks: int = WEEKS) -> List[dict]:
+             weeks: int = WEEKS, marks: Optional[dict] = None) -> List[dict]:
     """The crew totals: [{we, orders, orders_act, lines, activated, churned,
-    pending, cancelled, rate, current}] oldest first, the last `weeks`."""
-    all_weeks, data = aggregate(soh, lines, state, today, weeks)
+    pending, not_saveable, cancelled, rate, current}] oldest first, the last
+    `weeks`."""
+    all_weeks, data = aggregate(soh, lines, state, today, weeks, marks=marks)
     return rows_from(all_weeks, data, today)
 
 
@@ -140,7 +180,7 @@ def rows_from(all_weeks: Sequence[dt.date], data: dict, today: dt.date) -> List[
         out.append({"we": we, "orders": a["orders"], "orders_act": a["orders_act"],
                     "lines": a["lines"], "activated": a["activated"],
                     "churned": a["churned"], "pending": a["pending"],
-                    "cancelled": a["cancelled"],
+                    "not_saveable": a["not_saveable"], "cancelled": a["cancelled"],
                     "rate": (a["activated"] / a["lines"]) if a["lines"] else 0.0,
                     "current": we >= this_we})
     return out
@@ -149,9 +189,9 @@ def rows_from(all_weeks: Sequence[dt.date], data: dict, today: dt.date) -> List[
 def log_rows(rows: Sequence[dict], log=print) -> None:
     for r in rows:
         log("[nds] act-week WE %s: %d sale(s) / %d line(s) -> %d activated (%.0f%%), "
-            "%d pending, %d cancelled, %d churned-after; %d/%d sales with an activation%s"
+            "%d pending, %d not saveable, %d cancelled, %d churned-after; %d/%d sales with an activation%s"
             % (r["we"].strftime("%m/%d"), r["orders"], r["lines"], r["activated"],
-               r["rate"] * 100, r["pending"], r["cancelled"], r["churned"],
+               r["rate"] * 100, r["pending"], r.get("not_saveable", 0), r["cancelled"], r["churned"],
                r["orders_act"], r["orders"], " (in progress)" if r["current"] else ""))
 
 
@@ -168,38 +208,30 @@ def _color(we: dt.date, today: dt.date, rate: float) -> str:
     return ""
 
 
-def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
-           today: dt.date, pulled_at=None, feed_date: Optional[dt.date] = None,
-           title: str = "NDS \u2014 ACTIVATION RATE BY WEEK ENDING",
-           sub: Optional[str] = None) -> Path:
-    """Same picture as 'NDS Activation Rate by Rep' (b2b_metrics.rep_boards.
-    render_table_png): Crew Total first, a row per rep, a column per week
-    ending, each cell (activated/sold) + rate on the activation colour bands."""
-    from automations.b2b_metrics.rep_boards import render_table_png
-    this_we = week_ending(today)
-    columns = []
+def cells_for(per_week: dict, all_weeks: Sequence[dt.date], col_of: dict, today: dt.date) -> dict:
+    """One row's cells: (activated/sold) + rate on the activation bands."""
+    cells = {}
     for we in all_weeks:
-        t = data[TOTAL].get(we) or collections.Counter()
-        columns.append("WE %s%s (%d sales)" % (we.strftime("%-m/%-d"),
-                                              "*" if we >= this_we else "", t["orders"]))
-    col_of = dict(zip(all_weeks, columns))
+        c = per_week.get(we)
+        if not c or not c["lines"]:
+            cells[col_of[we]] = {}
+            continue
+        rate = c["activated"] / c["lines"]
+        cells[col_of[we]] = {"act": str(c["lines"]), "disc": str(c["activated"]),
+                             "rate": "%s%%" % round(rate * 100, 1),
+                             "color": _color(we, today, rate)}
+    return cells
 
-    def _cells(per_week: dict) -> dict:
-        cells = {}
-        for we in all_weeks:
-            c = per_week.get(we)
-            if not c or not c["lines"]:
-                cells[col_of[we]] = {}
-                continue
-            rate = c["activated"] / c["lines"]
-            cells[col_of[we]] = {"act": str(c["lines"]), "disc": str(c["activated"]),
-                                 "rate": "%s%%" % round(rate * 100, 1),
-                                 "color": _color(we, today, rate)}
-        return cells
 
-    # Carlos 2026-11-06: under the crew activation rate, the crew CANCEL rate
-    # (never-activated dead lines / sold; the Churn Rates board's colours)
-    # and how many lines are still PENDING; the rep rows stay activation only.
+def crew_rows(all_weeks: Sequence[dt.date], data: dict, today: dt.date, col_of: dict, *,
+              not_saveable_row: bool = False, marks_missing: bool = False) -> list:
+    """The Crew Total rows: activation rate, cancel rate, lines still pending
+    and -- on the SaraPlus board only -- the Not saveable count (Carlos
+    2026-11-15), as (label, "", bold, cells) for render_table_png.
+    Carlos 2026-11-06: under the crew activation rate, the crew CANCEL rate
+    (never-activated dead lines / sold; the Churn Rates board's colours) and
+    how many lines are still PENDING; the rep rows stay activation only.
+    `marks_missing` = the tab could not be read: the row stays blank."""
     def _crew_cancel() -> dict:
         cells = {}
         for we in all_weeks:
@@ -224,11 +256,51 @@ def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
             cells[col_of[we]] = {"rate": "%d of %d" % (c["pending"], c["lines"]), "color": ""}
         return cells
 
-    rows = [("Crew Total (all reps) \u2014 activation rate", "", True, _cells(data.get(TOTAL, {}))),
+    def _crew_not_saveable() -> dict:
+        cells = {}
+        for we in all_weeks:
+            c = data.get(TOTAL, {}).get(we)
+            if not c or not c["lines"] or marks_missing:
+                cells[col_of[we]] = {}
+                continue
+            cells[col_of[we]] = {"rate": "%d" % c["not_saveable"], "color": ""}
+        return cells
+
+    rows = [("Crew Total (all reps) \u2014 activation rate", "", True,
+             cells_for(data.get(TOTAL, {}), all_weeks, col_of, today)),
             ("Crew Total \u2014 cancel rate", "", True, _crew_cancel()),
             ("Crew Total \u2014 lines still pending", "", True, _crew_pending())]
+    if not_saveable_row:
+        # Carlos 2026-11-15: the lines he marked Not saveable on the NDS Order
+        # Log tab (delivered or pending, never going to activate) leave the
+        # pending line above and get their own count here
+        rows.append(("Crew Total \u2014 not saveable", "", True, _crew_not_saveable()))
+    return rows
+
+
+def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
+           today: dt.date, pulled_at=None, feed_date: Optional[dt.date] = None,
+           title: str = "NDS \u2014 ACTIVATION RATE BY WEEK ENDING",
+           sub: Optional[str] = None, not_saveable_row: bool = False,
+           marks_missing: bool = False) -> Path:
+    """Same picture as 'NDS Activation Rate by Rep' (b2b_metrics.rep_boards.
+    render_table_png): Crew Total first, a row per rep, a column per week
+    ending, each cell (activated/sold) + rate on the activation colour bands.
+    `not_saveable_row` adds the Crew Total -- not saveable row (the SaraPlus
+    board; the Tableau twin has none)."""
+    from automations.b2b_metrics.rep_boards import render_table_png
+    this_we = week_ending(today)
+    columns = []
+    for we in all_weeks:
+        t = data[TOTAL].get(we) or collections.Counter()
+        columns.append("WE %s%s (%d sales)" % (we.strftime("%-m/%-d"),
+                                              "*" if we >= this_we else "", t["orders"]))
+    col_of = dict(zip(all_weeks, columns))
+
+    rows = crew_rows(all_weeks, data, today, col_of, not_saveable_row=not_saveable_row,
+                     marks_missing=marks_missing)
     for rep in sorted((k for k in data if k != TOTAL), key=str.lower):
-        rows.append((rep, "", False, _cells(data[rep])))
+        rows.append((rep, "", False, cells_for(data[rep], all_weeks, col_of, today)))
     if sub is None:
         sub = ("Carlos's crew on his own NDS code \u2014 %s (of the sales made each Mon\u2013Sun week: "
                "activated/sold lines + rate off SaraPlus per-line statuses; activated = went Active, "
@@ -241,19 +313,32 @@ def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
                       " -- YESTERDAY'S, today's pull was not in yet"))
                   if feed_date else "n/a",
                   pulled_at.strftime("%H:%M") if pulled_at else "n/a"))
+    if not_saveable_row:
+        sub += (" \u2014 not saveable = lines marked Not saveable on the NDS Order Log tab, "
+                "taken out of pending")
     return render_table_png(title, sub, columns, rows, out)
 
 
-def build(soh, today: dt.date, out: Path, log=print) -> Path:
+def build(soh, today: dt.date, out: Path, log=print, marks: Optional[dict] = None) -> Path:
+    """`marks` = order_log_tab.not_saveable_marks(): the tab's Not saveable
+    lines leave the pending count for their own row; None = the tab could not
+    be read (row blank, pending as the feed has it)."""
     from automations.nds_metrics import line_revenue as LR
     ix, orders, pulled_at = soh
     soh_active, _ = LR.soh_dates(ix, orders)
     state, feed_date, lines = LR.replay(LR.cached_feeds(), soh_active, log=log, save=False)
-    all_weeks, data = aggregate(soh, lines, state, today)
+    all_weeks, data = aggregate(soh, lines, state, today, marks=marks)
     if not all_weeks:
         raise RuntimeError("activation by week: no NDS-era wireless orders on the SOH")
-    log_rows(rows_for(soh, lines, state, today), log=log)
-    render(all_weeks, data, out, today=today, pulled_at=pulled_at, feed_date=feed_date)
+    log_rows(rows_from(all_weeks, data, today), log=log)
+    if marks is None:
+        log("[nds] act-week: NOTE the NDS Order Log tab's Not saveable marks could not be read "
+            "-- the not saveable row is blank, pending left as the feed has it")
+    else:
+        log("[nds] act-week: %d line(s) marked Not saveable on the tab -> %d counted off pending"
+            % (marks.get("n", 0), sum(c["not_saveable"] for c in data.get(TOTAL, {}).values())))
+    render(all_weeks, data, out, today=today, pulled_at=pulled_at, feed_date=feed_date,
+           not_saveable_row=True, marks_missing=marks is None)
     log("[nds] activation rate by week ending (SARAPLUS per line, %d rep row(s))"
         % (len(data) - 1))
     return out

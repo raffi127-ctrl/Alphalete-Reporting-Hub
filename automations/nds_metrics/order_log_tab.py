@@ -12,8 +12,11 @@ behind.
 
 MERGE, not overwrite: the wireless feed is pulled with a 31-day window, so
 lines older than that exist only on the tab. A line is kept when the feed
-has forgotten it, replaced when the feed still carries it, aged out past 60
-days by Order Date. Carlos's Notes column rides along by line key.
+has forgotten it, replaced when the feed still carries it, and NEVER aged out
+(Carlos 2026-11-15: "we shouldn't be removing anything past 60 days, and we
+should be checking if anything past 60 days ever gets disconnected" -- it
+aged out past 60 days by Order Date until then; nothing had reached it).
+Carlos's Notes column rides along by line key.
 
 Key = (Wireless Order #, Line), falling back to (DSI #, Line) and then
 (Customer, Order Date, Line) while the portal has not assigned the number.
@@ -28,7 +31,12 @@ from typing import Dict, List, Optional, Sequence
 
 VANTURA_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 TAB = "NDS Order Log"
-DAYS_KEPT = 60
+# Carlos 2026-11-15: "we shouldn't be removing anything past 60 days" -- no
+# line ever ages off the tab (DAYS_KEPT was 60 until then; the oldest line is
+# 10/19, nothing had reached it). A number here restores the age-off by Order
+# Date. The feed's own window is still 31 days (nds_wireless_pull --days), so
+# a line older than that keeps the status it last had.
+DAYS_KEPT: Optional[int] = None       # None = keep every line
 
 # order_xlsx.HDR, with the tab's own columns around it. "Phone #" is what the
 # feed parser calls "device" (the Line Number cell: the customer's number on
@@ -387,8 +395,9 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
           zip_of=None, zip_lookup=None, email_of=None,
           email_lookup=None, email_known=None, active_of=None,
           active_lookup=None) -> Dict[str, object]:
-    """Kept-if-absent, replaced-if-present, aged-out past DAYS_KEPT by Order
-    Date. Last Updated restamps only when the line's state changed. Notes
+    """Kept-if-absent, replaced-if-present, never aged out (DAYS_KEPT None;
+    a number ages rows off past that many days by Order Date). Last Updated
+    restamps only when the line's state changed. Notes
     carry by key. existing_header is the live tab's own header row: rows are
     remapped by name, so a column added here never shifts Carlos's typed
     columns on the rows the tab carries. `zip_of(line)` fills Zip on today's
@@ -424,12 +433,12 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         if (row[_COL["Customer"]] or row[_COL["Wireless Order #"]]
                 or row[_COL["DSI #"]]):
             merged[_key(row)] = row
-    oldest = today - dt.timedelta(days=DAYS_KEPT)
+    oldest = today - dt.timedelta(days=DAYS_KEPT) if DAYS_KEPT else None
     added = changed = 0
     for line in lines:
         fresh = line_row(line, stamp, zip_of, email_of, active_of)
         od = _parse_date(fresh[_COL["Order Date"]])
-        if od and od < oldest:
+        if oldest and od and od < oldest:
             continue
         prior = merged.get(_key(fresh))
         if prior is None:
@@ -453,7 +462,7 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
     kept, aged = [], 0
     for row in merged.values():
         od = _parse_date(row[_COL["Order Date"]])
-        if od and od < oldest:
+        if oldest and od and od < oldest:
             aged += 1
             continue
         # Pay Period follows the row's settled Line Status + Activation Date
@@ -759,3 +768,49 @@ class LineIndex:
     def value(self, header: str, phone="", dsi="") -> str:
         r = self.row(phone, dsi)
         return str(r[_COL[header]]).strip() if r is not None else ""
+
+
+# ------------------------------------------- the tab's Not saveable marks ----
+# Carlos 2026-11-15, on the NDS Activation Rate by Week Ending board: "I want
+# a line that shows how many are not savable, which you would see in column W.
+# If they're marked not savable, I want you to remove them from the pending
+# line and just show how many are not savable. The only ones that ever get put
+# into not savable are ones that are delivered but I know they're not going to
+# get activated, or they're pending and I know they're not going to get
+# activated." The mark lives only on this tab (Being worked on = Not saveable),
+# so the board reads it off the live tab: by the line's (DSI #, Line) -- the
+# feed's order id + line index -- and by the line's phone number.
+
+def marks_from_rows(header: Sequence[str], rows: Sequence[Sequence[str]]) -> Dict[str, object]:
+    """{'dsi_line': {(dsi, line)}, 'phone': {digits}, 'n': rows marked} off a
+    tab read, header-resolved (a column move never matters)."""
+    dsi_line, phones, n = set(), set(), 0
+    want = _norm(NOT_SAVEABLE)
+    for raw in rows:
+        r = remap(raw, header)
+        if _norm(r[_COL["Being worked on"]]) != want:
+            continue
+        n += 1
+        d, ln = _norm(r[_COL["DSI #"]]), _norm(r[_COL["Line"]])
+        if d and ln:
+            dsi_line.add((d, ln))
+        ph = LineIndex.digits(r[_COL["Phone #"]])
+        if ph:
+            phones.add(ph)
+    return {"dsi_line": dsi_line, "phone": phones, "n": n}
+
+
+def not_saveable_marks(log=print, sheet_id: Optional[str] = None) -> Optional[Dict[str, object]]:
+    """The live tab's Not saveable marks; None (and a log line) when the tab
+    can't be read -- the board then leaves its row blank, never a 0."""
+    try:
+        from automations.recruiting_report.fill import _retry, open_by_key
+        ws = open_by_key(sheet_id or VANTURA_SHEET_ID).worksheet(TAB)
+        vals = _retry(lambda: ws.get_all_values()) or []
+    except Exception as e:  # noqa: BLE001 -- the board never waits on the tab
+        log("[nds] NDS Order Log tab: could not read the live tab for its %s marks (%s: %s)"
+            % (NOT_SAVEABLE, type(e).__name__, str(e)[:120]))
+        return None
+    marks = marks_from_rows(vals[0], vals[1:]) if vals else {"dsi_line": set(), "phone": set(), "n": 0}
+    log("[nds] NDS Order Log tab: %d line(s) marked %s" % (marks["n"], NOT_SAVEABLE))
+    return marks

@@ -1878,10 +1878,19 @@ def build_activation_by_week(cols, crew, today, log=print) -> Path:
     """Activation rate by Mon-Sun week ending, the last 5 weeks since NDS
     started (Carlos 2026-11-06) -- activation_by_week.py."""
     from automations.nds_metrics import activation_by_week as AW
+    from automations.nds_metrics import order_log_tab
     soh = load_soh(log=log)
     if not soh:
         raise RuntimeError("activation by week needs the SaraPlus relay")
-    return AW.build(soh, today, OUT_DIR / "nds_activation_by_week.png", log=log)
+    # Carlos 2026-11-15: the tab's Not saveable lines leave the pending row
+    # for their own "not saveable" row (order_log_tab.not_saveable_marks:
+    # None when the tab can't be read -> the row stays blank)
+    try:
+        marks = order_log_tab.not_saveable_marks(log=log)
+    except Exception as e:  # noqa: BLE001 -- the board never waits on the tab
+        log("[nds] act-week: Not saveable marks skipped (%s: %s)" % (type(e).__name__, str(e)[:120]))
+        marks = None
+    return AW.build(soh, today, OUT_DIR / "nds_activation_by_week.png", log=log, marks=marks)
 
 
 def build_activation_by_week_tableau(cols, crew, today, log=print) -> Path:
