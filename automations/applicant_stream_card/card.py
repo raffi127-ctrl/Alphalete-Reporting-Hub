@@ -433,9 +433,11 @@ CHANCE = "too few people to be sure"
 
 def _driver_html(d):
     """One factor: best vs worst on the row; tap for every group."""
-    rows = "".join(
-        "<tr><td>{}</td><td>{:.0f}%</td><td class='s'>{} people</td></tr>"
-        .format(_e(v), r, n) for v, r, n in d["groups"])
+    # Megan 2026-11-15: "what's the % of?" - say it: showed up, out of
+    # 1st rounds booked (not applications).
+    rows = ("<tr><th></th><th>Showed up</th><th>1st rounds booked</th></tr>"
+            + "".join("<tr><td>{}</td><td>{:.0f}%</td><td>{:,}</td></tr>"
+                      .format(_e(v), r, n) for v, r, n in d["groups"]))
     return ("<details class='drv'><summary><span class='t'>{}</span>"
             "<span class='s'>best {} {:.0f}% vs worst {} {:.0f}%{}</span>"
             "</summary><div class='body'><table class='list'>{}</table>"
@@ -452,8 +454,9 @@ def drivers(st):
         return _line("drivers", "\U0001F4C8", title, GREY, "Not enough data")
     # Megan 2026-11-15: each row is best vs worst; a tap shows every group.
     # "Could be chance" read as jargon: say what it means.
-    text = ("Show-up rate for the best and worst group of each. Tap one to "
-            "see every group. \u201c{}\u201d means the gap is small for how "
+    text = ("Of the 1st rounds booked in these weeks, the share that showed "
+            "up, for the best and worst group of each. Tap one to see every "
+            "group. \u201c{}\u201d means the gap is small for how "
             "few people are in it, so it may just be luck.".format(CHANCE))
     top = [d for d in dr if d["real"]][:1]
     if not top:
