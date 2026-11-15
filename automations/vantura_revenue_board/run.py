@@ -510,7 +510,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
             + chip + "".join(days)
             + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if show_next else "")
             + xcells
-            + (bd_cell if bd and bd.get("pos") != "after_total" else "")
+            + (bd_cell if bd and bd.get("pos") not in ("after_total", "before_total") else "")
             + '</tr>')
 
     # Office totals close the table (Carlos 2026-09-08: "the total at the
@@ -527,7 +527,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         + ('<td></td>' if show_chip else '')
         + tot_days + ('<td class="nxt"></td>' if show_next else '')
         + ('<td class="xt"></td>' * n_extra)
-        + ('<td class="bd"></td>' if bd and bd.get("pos") != "after_total" else '') + '</tr>')
+        + ('<td class="bd"></td>' if bd and bd.get("pos") not in ("after_total", "before_total") else '') + '</tr>')
 
     day_ths = "".join(
         f'<th class="dh{" cur" if d == upto else ""}">{c}<br>'
