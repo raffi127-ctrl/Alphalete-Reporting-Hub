@@ -153,8 +153,9 @@ def _activations_today(o: B2BOffice, out_dir: Path, log, today=None):
 
 # Offices whose Total Knocks board carries the 7 consumer-tally columns
 # (OwnerVille CRU/IRU Engagement → Consumer Tally). Jamis asked 2026-11-14;
-# widen by adding keys once another B2B office wants them.
-CONSUMER_TALLY_OFFICES = {"jamis"}
+# Megan 2026-11-15: "this is for ALL B2B offices". None = every B2B office
+# with a knocks section; a set of keys narrows it again.
+CONSUMER_TALLY_OFFICES = None
 
 
 def _consumer_columns(o: B2BOffice, day: dt.date, rows: list, log):
@@ -164,7 +165,7 @@ def _consumer_columns(o: B2BOffice, day: dt.date, rows: list, log):
     call returns only reps who logged one, so a missing rep IS a proven zero.
     A FAILED pull returns None: the knocks board still posts (business-only)
     and the log says so loudly, rather than the whole section failing."""
-    if o.key not in CONSUMER_TALLY_OFFICES:
+    if CONSUMER_TALLY_OFFICES is not None and o.key not in CONSUMER_TALLY_OFFICES:
         return None
     from automations.b2b_metrics import consumer_tally as ct
     try:
