@@ -50,9 +50,13 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
             rec["payable"] += 1
     counts: Dict[str, tuple] = {}
     sold_lines: Dict[str, int] = defaultdict(int)          # lines sold this week, cancelled out
+    addons: Dict[str, Dict[str, int]] = defaultdict(lambda: {"autopay": 0, "premium": 0, "protect": 0, "byod": 0})
     for l in _week_lines(L, start, end):
         if l["status"] != "Canceled":
             sold_lines[l["rep"]] += 1
+            for k in ("autopay", "premium", "protect", "byod"):
+                if l.get(k):
+                    addons[l["rep"]][k] += 1
     for rep, rec in per_rep.items():
         bad = (C.cancel_rate_90(L, rep, target) or 0) >= C.DISQUALIFY_CANCEL_90
         n_orders = len(rec.pop("orders"))
@@ -84,6 +88,12 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
             # the week)")
             row["rep_badge"] = (f"{n} order{'' if n == 1 else 's'} · {sold} line{'' if sold == 1 else 's'}"
                                 + (" · DNQ" if bad else ""))
+            # first name over last name, then what pays on top (Carlos 2026-11-15)
+            parts = row["rep"].split()
+            row["rep_lines"] = [parts[0], " ".join(parts[1:])] if len(parts) > 1 else [row["rep"]]
+            a = addons.get(row["rep"], {"autopay": 0, "premium": 0, "protect": 0, "byod": 0})
+            row["rep_tags"] = (f"{a['autopay']} AutoPay · {a['premium']} Unlimited Plus · "
+                               f"{a['protect']} Protect · {a['byod']} BYOD")
         n_reps = max(len(rows), 1)
         avg = sum(sold_lines.values()) / n_reps
         reps_extra = (f' <span style="font-size:15px;color:#5b6770;font-weight:600">'

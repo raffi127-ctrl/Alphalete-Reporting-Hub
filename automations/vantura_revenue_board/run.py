@@ -486,10 +486,22 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
             for c in (row.get("extra") or [{}] * n_extra)[:n_extra]) if n_extra else ""
         badge = (f' <span class="rb">{row["rep_badge"]}</span>'
                  if row.get("rep_badge") else "")
+        # A STACKED rep cell (Verizon, Carlos 2026-11-15: "put the last name
+        # under the first name, and we're going to want to see 4 orders, 15
+        # lines ... 7 auto pay, 9 unlimited plus, 15 mobile protection"):
+        # row["rep_lines"] = name lines, row["rep_tags"] = the add-on counts.
+        if row.get("rep_lines"):
+            name_html = "".join(f'<div class="rn">{ln.upper()}</div>' for ln in row["rep_lines"])
+            tags = (f'<div class="rtag">{row["rep_tags"]}</div>' if row.get("rep_tags") else "")
+            rep_cell = (f'<td class="rep stacked">{name_html}'
+                        + (f'<div><span class="rb">{row["rep_badge"]}</span></div>' if row.get("rep_badge") else "")
+                        + tags + "</td>")
+        else:
+            rep_cell = f'<td class="rep">{row["rep"].upper()}{badge}</td>'
         trs.append(
             f'<tr><td class="rk">{i}</td>'
-            f'<td class="rep">{row["rep"].upper()}{badge}</td>'
-            f'<td class="tot">{money(row["total"])}</td>'
+            + rep_cell
+            + f'<td class="tot">{money(row["total"])}</td>'
             + chip + "".join(days)
             + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if show_next else "")
             + xcells + '</tr>')
@@ -562,6 +574,9 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
      text-align:right}}
  .rk{{color:#2bb3a3;font-weight:700;width:26px;text-align:left}}
  .rep{{font-weight:700;text-align:left;white-space:nowrap}}
+ .rep.stacked{{line-height:1.25;padding-top:8px;padding-bottom:8px}}
+ .rn{{font-size:15px;font-weight:800}} .rep.stacked .rb{{margin-left:0;display:inline-block;margin-top:4px}}
+ .rtag{{font-size:12px;color:#3c4650;font-weight:600;margin-top:4px;white-space:nowrap}}
  .tot{{font-size:19px;font-weight:800}}
  .chip{{padding:4px 12px;border-radius:6px;font-weight:700;font-size:13px}}
  .day{{color:#3c4650;font-size:13px}}

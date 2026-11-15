@@ -115,6 +115,7 @@ def lines(sv_path: Path) -> List[Dict]:
             "status": status,
             "port_new": (str(g(r, "SKU Type") or "").upper() == "NEW"
                          and str(g(r, "Port Indicator") or "").upper() == "Y"),
+            "byod": str(g(r, "SKU Type") or "").upper() == "BYOD",
             "autopay": str(g(r, "AP_Comp_Ind") or "").strip().lower() == "new",
             "premium": plan_of.get(order, "").lower().startswith(("unlimited plus", "unlimited ultimate")),
             "protect": (order, str(g(r, "LineID") or "").split("-")[0]) in protect,
