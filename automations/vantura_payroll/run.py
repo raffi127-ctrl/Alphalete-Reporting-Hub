@@ -1239,26 +1239,34 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
 
 
 # ---------------------------------------------------------------------------
-# 'Vantura Commissions by Week' (Carlos 2026-11-04): a separate book with one
-# STATIC tab per week ending, so he can flip through weeks without the B1
-# dropdown + ~40s rebuild wait. The live Commission tab stays the engine and
-# the P&L chain is untouched; this freezes the finished render each Wednesday.
-# Rerun-safe: a tab with the same name is replaced, so re-snapping after a
-# hand-applied adjustment batch keeps the book current:
+# Commission Sheets, 'CS m.d' (Carlos 2026-11-15): one STATIC tab per week
+# ending AT THE END of the MASTER BOARD's tab strip (newest leftmost in the
+# block), so he flips tabs instead of the B1 dropdown + ~40s rebuild wait.
+# The live Commission tab stays the engine (B1 is still set by the Wednesday
+# load) and the P&L chain is untouched; this freezes the finished render each
+# Wednesday. Rerun-safe: a same-name CS tab is replaced in place, so re-snap
+# after every hand-applied adjustment batch:
 #   PYTHONPATH=. .venv/bin/python -c "import datetime as dt; \
 #     from automations.vantura_payroll.run import _snapshot_commission, \
-#     SHEET_ID; _snapshot_commission(dt.date(2026,11,1), write=True, \
+#     SHEET_ID; _snapshot_commission(dt.date(2026,11,8), write=True, \
 #     sheet_id=SHEET_ID)"
+# History: 2026-11-04..11-15 the snapshots lived in the separate book below
+# ('Vantura Commissions by Week'); all 21 tabs were copied onto the master as
+# CS tabs on 11/15 and the book is FROZEN — don't write to it.
 COMMISSIONS_BOOK_ID = "1jLiF63hKcV6X6j7DnTEKQr3Up6tnNwCuy9aUT7DxAoU"
 
 
 def _snapshot_commission(week: dt.date, *, write: bool, sheet_id: str,
                          log=_log) -> str:
-    """Copy the Commission tab (styling and all) into the commissions book as
-    'WE m.d', then overwrite every cell with its computed value so the tab is
-    static — no RAW refs, no dropdown, instant to open."""
+    """Copy the Commission tab (styling and all) into a static 'CS m.d' tab
+    ON THE MASTER BOARD ITSELF, at the end of the tab strip (newest CS tab
+    leftmost within the block), then overwrite every cell with its computed
+    value — no RAW refs, no dropdown, instant to open. Carlos 2026-11-15:
+    one tab per week ending named CS <wk> at the very end, instead of the
+    Commission!B1 dropdown (which stays, machine-driven, for the engine).
+    The old separate commissions book (COMMISSIONS_BOOK_ID) is frozen."""
     from automations.recruiting_report.fill import open_by_key
-    name = f"WE {week.month}.{week.day}"
+    name = f"CS {week.month}.{week.day}"
     if not write:
         log(f"dry-run: would snapshot Commission -> {name}")
         return ""
@@ -1268,16 +1276,26 @@ def _snapshot_commission(week: dt.date, *, write: bool, sheet_id: str,
     if str(b1) != str(_week_num(week)):
         raise RuntimeError(f"Commission!B1={b1!r} != {_week_num(week)} — "
                            "won't snapshot another week's render")
-    dest = open_by_key(COMMISSIONS_BOOK_ID)
-    props = comm.copy_to(COMMISSIONS_BOOK_ID)
+    dest = sh
+    props = comm.copy_to(sh.id)          # lands at the very end
     new_id = props["sheetId"]
-    for ws in dest.worksheets():
+    tabs = dest.worksheets()
+    target_index = None
+    for ws in tabs:
         if ws.title == name and ws.id != new_id:
+            target_index = ws._properties["index"]   # replace in place
             dest.del_worksheet(ws)
+    if target_index is None:
+        cs = [w._properties["index"] for w in tabs
+              if w.title.startswith("CS ") and w.id != new_id]
+        # new week goes at the head of the CS block (newest leftmost);
+        # with no CS tabs yet, it stays at the very end where copyTo put it
+        target_index = min(cs) if cs else len(tabs) - 1
     grid = comm._properties["gridProperties"]
     dest.batch_update({"requests": [
         {"updateSheetProperties": {"properties": {
-            "sheetId": new_id, "title": name, "index": 0, "hidden": False},
+            "sheetId": new_id, "title": name, "index": target_index,
+            "hidden": False},
             "fields": "title,index,hidden"}},
         {"setDataValidation": {"range": {  # the copied B1 dropdown is dead
             "sheetId": new_id, "startRowIndex": 0,
@@ -1292,7 +1310,7 @@ def _snapshot_commission(week: dt.date, *, write: bool, sheet_id: str,
     nws.update(mat, "A1", raw=True)
     if grid["rowCount"] > len(mat):  # clear any stray formulas below
         nws.batch_clear([f"A{len(mat) + 1}:{grid['rowCount']}"])
-    log(f"commissions book: snapped {name} ({len(mat)}x{width} cells)")
+    log(f"commission sheet: snapped {name} on the board ({len(mat)}x{width} cells)")
     return name
 
 
