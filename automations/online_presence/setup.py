@@ -493,7 +493,7 @@ def main(argv=None) -> int:
     s.set_defaults(fn=cmd_add)
     s = sub.add_parser("zoho-signin", help="open Zoho on the office's computer")
     s.add_argument("office")
-    s.add_argument("--minutes", type=int, default=20)
+    s.add_argument("--minutes", type=int, default=15)
     s.set_defaults(fn=cmd_zoho_signin)
     s = sub.add_parser("invites", help="Google manager invites waiting for us")
     s.add_argument("--accept", action="store_true")

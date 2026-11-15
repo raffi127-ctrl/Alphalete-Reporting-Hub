@@ -52,11 +52,16 @@ def _busy() -> bool:
     return any((PROFILE / n).exists() for n in ("SingletonLock", "lockfile"))
 
 
+SIGNIN_MAX_MINUTES = 15
+
+
 def signin(payload: Dict, log=print) -> Dict:
     from automations.brand_audit import zoho_draft
     if _busy():
         return {"status": "deferred"}
-    minutes = int(payload.get("minutes") or 20)
+    # Inside the scheduled run, which has a 20-minute hard stop (watchdog):
+    # a longer wait got killed mid-sign-in and never reported (Raf 11/15).
+    minutes = min(int(payload.get("minutes") or 15), SIGNIN_MAX_MINUTES)
     log("zoho: opening Zoho for the owner to sign in (%d min)" % minutes)
     r = zoho_draft.wait_for_signin(PROFILE, max_minutes=minutes)
     return {"status": "signed_in" if r["logged_in"] else "timed_out",

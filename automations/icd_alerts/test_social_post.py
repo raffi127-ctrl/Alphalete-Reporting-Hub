@@ -80,3 +80,16 @@ class Dispatch(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SigninFitsTheHardStop(unittest.TestCase):
+    def test_wait_never_outlasts_the_runs_20_minute_stop(self):
+        from unittest import mock
+        seen = {}
+        def fake_wait(profile, max_minutes):
+            seen["m"] = max_minutes
+            return {"logged_in": True, "channels": []}
+        with mock.patch.object(SP, "_busy", return_value=False), \
+                mock.patch("automations.brand_audit.zoho_draft.wait_for_signin", side_effect=fake_wait):
+            SP.signin({"minutes": 60})
+        self.assertLessEqual(seen["m"], 15)
