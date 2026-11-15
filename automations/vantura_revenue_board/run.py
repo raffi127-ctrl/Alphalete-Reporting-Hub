@@ -439,7 +439,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     `note`: a line under the footer label."""
     extra_hdrs = list((extra or {}).get("headers") or [])
     n_extra = len(extra_hdrs)
-    bd = (extra or {}).get("breakdown")          # {"header": html, "pos": "right" | "after_total"}
+    bd = (extra or {}).get("breakdown")          # {"header": html, "pos": "right" | "after_total" | "before_total"}
     show_next = tiered and not (extra or {}).get("no_next")     # the NEXT TIER column
     # `extra["tier_chip"]` (NDS, Carlos 2026-11-15: "I like how the Verizon
     # one shows what tier they're on right next to the rep's week total"):
@@ -504,6 +504,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         trs.append(
             f'<tr><td class="rk">{i}</td>'
             + rep_cell
+            + (bd_cell if bd and bd.get("pos") == "before_total" else "")
             + f'<td class="tot">{money(row["total"])}</td>'
             + (bd_cell if bd and bd.get("pos") == "after_total" else "")
             + chip + "".join(days)
@@ -520,7 +521,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     trs.append(
         '<tr class="totrow"><td class="rk"></td>'
         '<td class="rep">OFFICE TOTAL</td>'
-        f'<td class="tot">{money(week_total)}</td>'
+        + ('<td class="bd"></td>' if bd and bd.get("pos") == "before_total" else '')
+        + f'<td class="tot">{money(week_total)}</td>'
         + ('<td class="bd"></td>' if bd and bd.get("pos") == "after_total" else '')
         + ('<td></td>' if show_chip else '')
         + tot_days + ('<td class="nxt"></td>' if show_next else '')
@@ -624,8 +626,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
    <div class="cval">{len(rows)}{(extra or {}).get("reps_extra") or ""}</div></div>
  {next_card}
  </div>
- <table><tr><th class="lh">#</th><th class="lh">REP</th><th>WEEK TOTAL</th>
- {bd_th if bd and bd.get("pos") == "after_total" else ""}{tier_th}{day_ths}{next_th}{extra_th}{bd_th if bd and bd.get("pos") != "after_total" else ""}</tr>
+ <table><tr><th class="lh">#</th><th class="lh">REP</th>{bd_th if bd and bd.get("pos") == "before_total" else ""}<th>WEEK TOTAL</th>
+ {bd_th if bd and bd.get("pos") == "after_total" else ""}{tier_th}{day_ths}{next_th}{extra_th}{bd_th if bd and bd.get("pos") not in ("after_total", "before_total") else ""}</tr>
  {''.join(trs)}</table>
  <div class="foot"><div><span class="lab">{kick}</span>{note_html}</div>
  <div style="color:#cfd6dc;font-size:13px;white-space:nowrap;margin-left:16px">{len(rows)} reps on the board</div>

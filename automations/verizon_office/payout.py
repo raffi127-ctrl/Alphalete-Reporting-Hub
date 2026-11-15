@@ -61,16 +61,14 @@ def tables() -> List[Tuple[str, List[List[str]], Optional[str]]]:
                  ["BYOD — port or no port", "$%d" % C.FLAT_LINE, "Mobile Protect / Mobile Secure (any size)", "+$%d" % C.PROTECT],
                  ["Unlimited Welcome / Simplicity plan", "$0", "Tablet, watch, hotspot lines", "not on the grid"]]
     return [
-        ("NEW PORT-IN SMARTPHONE — by the office's churn tier (SOW Table 1 + 2)", tier_rows,
-         "One churn rate for the office: of every line activated AND approved in the window, the share that cancelled within 30 days of "
-         "activating -- BYOD and no-port lines count in it, they just pay flat. Under 15 activations in the window = Tier 4 neutral. "
-         "The window is on APPROVAL dates and is processed ~5 weeks before the sales weeks it prices."),
-        ("REP TIER BONUS — per line activated with an approval date, by unique customer orders in the Mon–Sun week", bonus_rows,
+        # Carlos 2026-11-15: no grey wording under the tier grid or Everything
+        # Else, no "where the office sits" box, no source line; the bonus
+        # heading without "by unique customer orders ..." and its note stays
+        ("NEW PORT-IN SMARTPHONE — by the office's churn tier", tier_rows, None),
+        ("REP TIER BONUS — per line activated with an approval date", bonus_rows,
          "Option 1, wireless-only mix (75%+ VZ Wireless). DQ: a 90-day cancel rate of 40%+ (lines cancelled with no approval date vs. "
          "compensable lines; 0% until the rep has placed 20 lines)."),
-        ("EVERYTHING ELSE", else_rows,
-         "Plan and protection add-ons stack on the line. A line cancelled within 90 days of activation is not paid (or is charged back); "
-         "so are number swaps and equipment downgrades inside 90 days. Credico pays when Verizon pays them."),
+        ("EVERYTHING ELSE", else_rows, None),
     ]
 
 
@@ -163,8 +161,6 @@ td.money{{color:{RED_DARK};font-weight:800;font-size:14.5px}} tr.bonus td{{backg
 </style></head><body><div id="card">
 <div class="top"><h1>{html.escape(TITLE)}</h1><div class="lead">{html.escape(LEAD)}</div></div>
 {''.join(parts)}
-{('<div class="status"><b>WHERE THE OFFICE SITS</b> (approval-date windows, Order Log as of %s)<ul>%s</ul></div>' % (day, stat)) if status else ''}
-<div class="foot">Source: Credico SOW Schedule A (6.16.26), Churn Schedule Wireless 2026, Activation Bonus (4.19.26–12.31.26), AutoPay Bonus (1.1.26) — resources/verizon_comp. Estimates; Credico's statement is the pay.</div>
 </div></body></html>"""
 
 
@@ -203,13 +199,6 @@ def grid(status: List[str]) -> Tuple[List[List[str]], dict]:
         if note:
             marks["notes"].append(row([note]))
         row()
-    if status:
-        marks["headers"].append(row(["WHERE THE OFFICE SITS (approval-date windows, off the Verizon Order Log)"]))
-        for s in status:
-            marks["notes"].append(row([s]))
-        row()
-    marks["notes"].append(row(["Source: Credico SOW Schedule A (6.16.26), Churn Schedule Wireless 2026, Activation Bonus, AutoPay Bonus "
-                              "(resources/verizon_comp). Estimates; Credico's statement is the pay."]))
     return g, marks
 
 

@@ -115,7 +115,7 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
                          extra={"headers": headers, "cards": cards, "no_next": True,
                                 "reps_extra": reps_extra,
                                 "breakdown": {"header": 'ADD-ONS<br><span class="dd">this week</span>',
-                                              "pos": "after_total" if layout == "left" else "right"}}, note=note)
+                                              "pos": "before_total" if layout == "left" else "right"}}, note=note)
     finally:
         RB.DAYS = saved
 
@@ -326,7 +326,7 @@ def main(argv=None) -> int:
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
     ap.add_argument("--layout", choices=["right", "left"], default="right",
-                    help="revenue_board: the add-on breakdown column far right, or right after Week Total")
+                    help="revenue_board: the add-on breakdown column far right, or LEFT of Week Total (Carlos 2026-11-15)")
     ap.add_argument("--dm", help="Slack user id(s) to DM the picture to, as Lucy (comma-separated)")
     a = ap.parse_args(argv)
     from automations.verizon_office import offices as OF, run as RUN
