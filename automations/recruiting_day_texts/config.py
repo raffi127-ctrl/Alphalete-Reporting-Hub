@@ -78,17 +78,17 @@ OFFICES: Dict[str, Office] = {
     "cody": Office(key="cody", appstream_id="21151", owner="Cody Cannon",
                   team="Aeon", group="ASC A-Players",
                   tz="America/Chicago"),
-    # only group is SCOREBOARD-ONLY (no other texts wanted) -- held until the owner says yes
+    # group is scoreboard-only for Lucy's other texts; Megan 11/15 turned these on here too
     "colten": Office(key="colten", appstream_id="14733", owner="Colten Wright",
                   team="South Shore", group="A Players",
-                  tz="America/New_York", mode="hold"),
+                  tz="America/New_York"),
     "cyrus": Office(key="cyrus", appstream_id="22815", owner="Cyrus Wade",
                   team="Ambient", group="Ambient Managing Partners",
                   tz="America/Chicago"),
-    # only group is SCOREBOARD-ONLY (no other texts wanted) -- held until the owner says yes
+    # group is scoreboard-only for Lucy's other texts; Megan 11/15 turned these on here too
     "drew": Office(key="drew", appstream_id="22583", owner="Drew Tepper",
                   team="Precision", group="Precision Mastermind",
-                  tz="America/New_York", mode="hold"),
+                  tz="America/New_York"),
     "emiliano": Office(key="emiliano", appstream_id="22001", owner="Emiliano Villagrana",
                   team="Vincere", group="A Players",
                   tz="America/Los_Angeles"),
@@ -107,10 +107,10 @@ OFFICES: Dict[str, Office] = {
     "jacob": Office(key="jacob", appstream_id="23607", owner="Jacob Dover",
                   team="Rockstar", group="RSW A-players",
                   tz="America/Chicago"),
-    # only group is SCOREBOARD-ONLY (no other texts wanted) -- held until the owner says yes
+    # group is scoreboard-only for Lucy's other texts; Megan 11/15 turned these on here too
     "jairo15": Office(key="jairo15", appstream_id="21270", owner="Jairo Ruiz",
                   team="Profits", group="A PLAYERSSS",
-                  tz="America/New_York", mode="hold"),
+                  tz="America/New_York"),
     "jamis": Office(key="jamis", appstream_id="19592", owner="Jamis Garay",
                   team="Midspire", group="Leaders chat",
                   tz="America/Chicago"),
@@ -179,9 +179,11 @@ OFFICES: Dict[str, Office] = {
                   tz="America/New_York"),
 }
 
-# LIVE from Mon 2026-11-16 (Megan 11/15: "All 34 offices"). Only these text;
+# LIVE from Mon 2026-11-16 (Megan 11/15: "All 34 offices", then Colten, Drew
+# and Jairo too -- all 37). Only these text;
 # an office added later stays "dry" until its key goes on this list.
 LIVE = frozenset({
+    "colten", "drew", "jairo15",
     "aiden", "atef", "aya", "carlos", "cody", "cyrus", "emiliano", "eveliz",
     "frank", "hasani", "haytham", "jacob", "jamis", "jennifer-att", "jose",
     "joseph", "khalil", "luke", "maxamad", "natalia", "nigel", "omar",

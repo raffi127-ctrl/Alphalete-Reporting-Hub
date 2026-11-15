@@ -192,13 +192,11 @@ class RedAlert(unittest.TestCase):
 
 
 class OfficeList(unittest.TestCase):
-    def test_one_group_per_icd_and_34_live(self):
+    def test_one_group_per_icd_and_37_live(self):
         ids = [o.appstream_id for o in C.OFFICES.values()]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertTrue(all(o.group for o in C.OFFICES.values()))
-        self.assertEqual(sum(o.mode == "live" for o in C.OFFICES.values()), 34)
-        self.assertEqual(sorted(o.key for o in C.OFFICES.values() if o.mode == "hold"),
-                         ["colten", "drew", "jairo15"])
+        self.assertEqual(sum(o.mode == "live" for o in C.OFFICES.values()), 37)
 
 
 if __name__ == "__main__":
