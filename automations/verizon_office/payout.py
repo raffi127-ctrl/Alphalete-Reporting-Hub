@@ -38,9 +38,9 @@ TAB = "Verizon Payout"
 DOC_ID = "12LSUQ10vb-vdOfbbvL6USBuAfXxVV9lp0I25Osmt2u0"          # B2B Vantura (Google Doc)
 DOC_TAB_ID = "t.jf6uam6tjkig"                                     # its "Verizon Breakdowns" tab
 GDOCS_TOKEN = Path.home() / ".config" / "brand-audit" / "gdocs-token.json"
-TITLE = "Verizon Wireless (Credico / SCI) — Payout — eff 6/16/2026"
-LEAD = ("Port pay floats on the office's 30-day churn tier, locked 4 weeks at a time off Credico's churn calendar. "
-        "Everything that is not a new port-in smartphone is a flat $25. Pay triggers on the APPROVAL date and runs ~2 weeks behind.")
+TITLE = "Verizon Wireless Comp Grid"
+LEAD = ("Pay triggers on the APPROVAL date and runs ~2 weeks behind. (Approval is different than the activation date: "
+        "approval is when the sale has been confirmed good to pay out.)")
 
 TIER_BANDS = {1: "0 – 4.99%", 2: "5 – 6.99%", 3: "7 – 8.99%", 4: "9 – 14.99%", 5: "15 – 19.99%",
               6: "20 – 26.99%", 7: "27 – 33.99%", 8: "34%+"}
