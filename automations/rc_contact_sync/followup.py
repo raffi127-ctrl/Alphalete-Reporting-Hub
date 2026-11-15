@@ -391,17 +391,124 @@ def run(week_ending: dt.date, since: Optional[dt.date] = None, log=print) -> int
     return 0
 
 
+def tab_phones(header: Sequence[str], rows: Sequence[Sequence[str]], words: Sequence[str]) -> Dict[str, object]:
+    """Every Phone # on the tab for customers whose name holds all the
+    words, plus their rep and line statuses: {name, rep, phones, lines}."""
+    cols = {_norm(h).lower(): i for i, h in enumerate(header)}
+    want = [w.lower() for w in words if w]
+    out = {"name": "", "rep": "", "phones": [], "lines": []}
+    for r in rows:
+        cell = lambda n: _norm(r[cols[n]]) if n in cols and cols[n] < len(r) else ""  # noqa: E731
+        name = cell("customer")
+        if not name or not all(w in name.lower() for w in want):
+            continue
+        out["name"], out["rep"] = name, cell("rep")
+        p = RC.norm_phone(cell("phone #"))
+        if p and p not in out["phones"]:
+            out["phones"].append(p)
+        out["lines"].append("L%s %s%s" % (cell("line"), cell("line status") or "(blank)",
+                                          (" [%s]" % cell("shipping status")) if cell("shipping status") else ""))
+    return out
+
+
+def run_threads(names: Sequence[str], since: dt.date, last: int = 12, log=print) -> int:
+    """READ-ONLY: the newest `last` texts with each named customer (Carlos
+    2026-11-15: "what was the last thing said from ... look through the
+    messages with ... is there anything there?"), with the same verdict and
+    conversation lengths as the weekly review. One report for all of them."""
+    from automations.nds_metrics import order_log_tab as T
+    from automations.rc_contact_sync import inbox
+    from automations.recruiting_report.fill import open_by_key, _retry
+
+    lines: List[str] = []
+
+    def say(msg=""):
+        log(msg)
+        lines.append(str(msg))
+
+    rows = _retry(lambda: open_by_key(T.VANTURA_SHEET_ID).worksheet(T.TAB).get_all_values())
+    creds = C.rc_creds()
+    info = RC.token_info(creds)
+    token = info["access_token"]
+    RC.assert_identity(RC.identity(info), creds.get("expected_owner_id") or C.RC_OWNER_ID)
+    watch_ext = str(creds["watch_extension_id"])
+    watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
+    book = RC.address_book(token, str(creds["contacts_extension_id"]))
+    msgs = inbox._messages_since(watch_token, watch_ext, since)
+    say("Customer threads on Taylor's line since %s (%d texts on the line)" % (since, len(msgs)))
+    say("")
+    for name in names:
+        words = name.split()
+        tab = tab_phones(rows[0], rows[1:], words) if rows else {"name": "", "rep": "", "phones": [], "lines": []}
+        numbers = set(tab["phones"])
+        for con in inbox.matching_contacts(book, words):
+            numbers.update(inbox._contact_numbers(con))
+        say("%s%s" % (tab["name"] or name, ("  (rep %s)" % tab["rep"]) if tab["rep"] else ""))
+        if tab["lines"]:
+            say("  tab: %s" % ", ".join(tab["lines"]))
+        if not numbers:
+            say("  no number found on the tab or in Taylor's contacts")
+            say("")
+            continue
+        thread = []
+        for m in msgs:
+            if not any(n in numbers for n in RC._msg_numbers(m)):
+                continue
+            when = _local(m.get("creationTime") or "")
+            if when is None:
+                continue
+            body = m.get("subject") or ""
+            if (m.get("direction") or "") != "Inbound":
+                tag = "AUTO" if not inbox.template_of(body).startswith("typed by") else "OUT"
+            elif inbox._sender(m) in numbers:
+                tag = "IN"
+            else:
+                tag = "REP"
+            thread.append({"when": when, "tag": tag, "body": body})
+        thread.sort(key=lambda m: m["when"])
+        if not thread:
+            say("  no texts with any of their %d number(s)" % len(numbers))
+            say("")
+            continue
+        say("  -> %s" % verdict(conversations(thread), []))
+        n_in = sum(1 for m in thread if m["tag"] == "IN")
+        say("  %d text(s): %d from the customer, %d from Taylor, %d from the rep, %d automatic"
+            % (len(thread), n_in, sum(1 for m in thread if m["tag"] == "OUT"),
+               sum(1 for m in thread if m["tag"] == "REP"), sum(1 for m in thread if m["tag"] == "AUTO")))
+        who = {"IN": "CUSTOMER", "OUT": "TAYLOR  ", "REP": "REP     ", "AUTO": "AUTO    "}
+        if len(thread) > last:
+            say("  ... %d earlier text(s) not shown" % (len(thread) - last))
+        for m in thread[-last:]:
+            say("  %s  %s  %s" % (m["when"].strftime("%m/%d %H:%M"), who[m["tag"]],
+                                  _norm(m["body"]).replace("\n", " ")[:400] or "(blank / attachment)"))
+        say("")
+    try:
+        from automations.rc_contact_sync.status_probe import _upload_bytes
+        _upload_bytes("\n".join(lines).encode(), TAB, log=log)
+    except Exception as e:  # noqa: BLE001
+        log("  (tab upload failed: %s: %s)" % (type(e).__name__, str(e)[:120]))
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="rc_followup",
                                  description="READ-ONLY: pending lines of a week -- did the customer "
                                              "text or call Taylor's line, and did we answer?")
-    ap.add_argument("--week-ending", required=True, metavar="YYYY-MM-DD",
+    ap.add_argument("--week-ending", default=None, metavar="YYYY-MM-DD",
                     help="the Week Ending value on the NDS Order Log (a Sunday)")
+    ap.add_argument("--customer", action="append", default=[], metavar="NAME",
+                    help="instead of a week: show this customer's newest texts (repeatable)")
+    ap.add_argument("--last", type=int, default=12, help="with --customer: how many texts to show each")
     ap.add_argument("--since", default=None, metavar="YYYY-MM-DD",
                     help="read texts/calls from this date (default: the week's first order date)")
     a = ap.parse_args(argv)
-    return run(dt.date.fromisoformat(a.week_ending),
-               dt.date.fromisoformat(a.since) if a.since else None)
+    since = dt.date.fromisoformat(a.since) if a.since else None
+    if a.customer:
+        return run_threads(a.customer, since or dt.date.today() - dt.timedelta(days=30), last=a.last)
+    if not a.week_ending:
+        ap.error("give --week-ending YYYY-MM-DD or one or more --customer NAME")
+    return run(dt.date.fromisoformat(a.week_ending), since)
 
 
 if __name__ == "__main__":

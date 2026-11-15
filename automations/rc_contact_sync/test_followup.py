@@ -39,6 +39,16 @@ class Pending(unittest.TestCase):
         self.assertEqual(out[0]["lines"], [("3", "(blank)")])
 
 
+class TabPhones(unittest.TestCase):
+    def test_every_number_of_a_named_customer(self):
+        rows = [row(Line="1", **{"Phone #": "214-555-0001", "Line Status": "Active"}), row(Line="3"),
+                row(Customer="Someone Else", **{"Phone #": "214-555-0009"})]
+        out = F.tab_phones(HDR, rows, ["thomas", "Blake"])
+        self.assertEqual((out["name"], out["rep"], len(out["phones"])), ("Thomas Blake", "Andrew De La Torre", 2))
+        self.assertEqual(out["lines"], ["L1 Active", "L3 Delivered"])
+        self.assertEqual(F.tab_phones(HDR, rows, ["nobody"])["phones"], [])
+
+
 class Conversations(unittest.TestCase):
     def test_answered_conversation_and_its_length(self):
         c = F.conversations([msg(9, 10, 0, "IN", "ipad sim wont swap"), msg(9, 10, 12, "OUT", "try this"),
