@@ -167,6 +167,12 @@ def _consumer_columns(o: B2BOffice, day: dt.date, rows: list, log):
     and the log says so loudly, rather than the whole section failing."""
     if CONSUMER_TALLY_OFFICES is not None and o.key not in CONSUMER_TALLY_OFFICES:
         return None
+    # The office's own machine already sent them on its rows (relay path):
+    # the board draws them from there, and Lucy 2 has nothing to fetch.
+    from automations.total_knocks.render import consumer_end_columns
+    if consumer_end_columns(rows):
+        log("  [knocks] consumer tallies came with the office's own rows")
+        return None
     from automations.b2b_metrics import consumer_tally as ct
     try:
         reps = ct.pull(o.knocks_office, day)

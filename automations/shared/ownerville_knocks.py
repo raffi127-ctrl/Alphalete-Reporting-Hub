@@ -323,6 +323,88 @@ def fetch_time_tracker(page, rqst: str, mdy: str, *, log=print) -> List[Dict]:
     return rows
 
 
+# --- consumer tallies (B2B) ---------------------------------------------------
+# OwnerVille → TeleMapper Leads → Reports → CRU/IRU Engagement → Consumer
+# Tally. A B2B rep also logs CONSUMER doors, and the disposition grid only
+# counts business ones (Jamis 2026-11-14). The tab is filled by ONE JSON call
+# (consumer_tally_probe, 2026-11-15): reps[{name, loc{c1..c6}, fly{c1..c6},
+# appts}], c1..c6 in the tab's column order; loc = at a business, fly = on the
+# fly, and the board shows their sum. Megan 2026-11-15: every B2B board, at the
+# far right, in its own shade.
+CONSUMER_COLUMNS = ["Consumer Talk To", "Consumer Qualifying Questions",
+                    "Consumer Presentation", "Consumer Close",
+                    "Consumer Sara Plus (Credit Check)", "Consumer Client Acq.",
+                    "Consumer Appointments Set"]
+# Raw-row keys are the board names lower-cased, like every other grid column.
+CONSUMER_KEYS = [c.lower() for c in CONSUMER_COLUMNS]
+
+
+def fetch_consumer_tally(page, rqst: str, day_iso: str, *,
+                         log=print) -> "List[Dict] | None":
+    """{rep name: {consumer column: n}} for one day, or None when the call
+    failed. An empty dict is a VERIFIED day with no consumer tallies."""
+    result = page.evaluate(
+        """async ({rqst, day}) => {
+            const url = `https://v2.ownerville.com/components/telemapper/`
+                + `report_consumer.cfc?method=getConsumerTally&rqst=${rqst}`
+                + `&startDate=${day}&endDate=${day}`;
+            try {
+                const r = await fetch(url, {credentials: 'include'});
+                const text = await r.text();
+                try { return {status: r.status, data: JSON.parse(text).data}; }
+                catch (e) { return {status: r.status, raw: text.slice(0, 160)}; }
+            } catch (e) { return {status: 0, raw: String(e).slice(0, 160)}; }
+        }""",
+        {"rqst": rqst, "day": day_iso})
+    data = (result or {}).get("data")
+    if (result or {}).get("status") != 200 or not isinstance(data, dict) \
+            or "reps" not in data:
+        log("consumer tally unavailable (status %s) — board posts without it"
+            % (result or {}).get("status"))
+        return None
+    out: Dict = {}
+    for r in data.get("reps") or []:
+        name = " ".join(str(r.get("name") or "").split())
+        if not name:
+            continue
+        loc, fly = r.get("loc") or {}, r.get("fly") or {}
+
+        def _n(v):
+            try:
+                return int(float(v or 0))
+            except (TypeError, ValueError):
+                return 0
+        vals = {CONSUMER_COLUMNS[i]: _n(loc.get("c%d" % (i + 1)))
+                + _n(fly.get("c%d" % (i + 1))) for i in range(6)}
+        vals[CONSUMER_COLUMNS[6]] = _n(r.get("appts"))
+        out[name] = vals
+    log("consumer tally: %d rep(s)" % len(out))
+    return out
+
+
+def attach_consumer(rows: List[Dict], tally: Dict, *, log=print) -> List[Dict]:
+    """Put each rep's consumer numbers onto THEIR grid row (raw keys), so they
+    travel with the knocks everywhere the knocks already go. Every grid row
+    gets all seven (0 when the rep logged none: the tally only lists reps who
+    did). A tally rep with no grid row is logged, not invented."""
+    def _k(s):
+        return " ".join(str(s or "").split()).lower()
+    by = {_k(n): v for n, v in (tally or {}).items()}
+    seen = set()
+    for row in rows or []:
+        rep = row.get("rep") or row.get("Rep") or ""
+        vals = by.get(_k(rep))
+        if vals is not None:
+            seen.add(_k(rep))
+        for col, key in zip(CONSUMER_COLUMNS, CONSUMER_KEYS):
+            row[key] = str((vals or {}).get(col, 0))
+    missing = [n for n in (tally or {}) if _k(n) not in seen]
+    if missing:
+        log("consumer tally: no grid row for %s — left off the board"
+            % ", ".join(missing))
+    return rows
+
+
 def read_rows(page, *, log=print) -> List[Dict[str, str]]:
     """Every rep row, as {header text: cell text}.
 

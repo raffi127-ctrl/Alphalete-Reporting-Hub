@@ -2650,6 +2650,17 @@ def needs_time_gaps(shape: str) -> bool:
     return not (COL_GAPS in cols and COL_TOTAL_GAPS in cols)
 
 
+def consumer_end_columns(rows: "list[dict]") -> "dict | None":
+    """{consumer column: {rep: n}} when ANY row carries consumer tallies, else
+    None. A row without them (a rep the tally did not list) counts 0."""
+    from automations.shared.ownerville_knocks import CONSUMER_COLUMNS
+    if not any(c in (r or {}) for r in rows or [] for c in CONSUMER_COLUMNS):
+        return None
+    return {c: {r.get(COL_REP, ""): int(r.get(c) or 0)
+                for r in rows if r.get(COL_REP)}
+            for c in CONSUMER_COLUMNS}
+
+
 def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          out_dir: Path = OUT_DIR_DEFAULT,
                          title_suffix: str = "",
@@ -2731,6 +2742,13 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         # is False for form-enrolled offices anyway, so this is belt and
         # braces).
         base, out = b2b_columns(shape, rows)
+        # CONSUMER TALLIES ride on the rows when the office's own machine sent
+        # them (ownerville_knocks.attach_consumer → knocks_map): every B2B
+        # board that draws these rows gets the teal far-right columns with no
+        # caller having to ask (Megan 2026-11-15: daytime boards too, every
+        # B2B office). A caller's explicit end_columns still wins.
+        if end_columns is None:
+            end_columns = consumer_end_columns(rows)
         return ([render_total_knocks(
             target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
             knocks_green_at=knocks_green_at,

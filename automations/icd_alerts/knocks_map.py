@@ -23,6 +23,7 @@ import re
 from typing import Dict, List
 
 from automations.total_knocks import pull as TP
+from automations.shared import ownerville_knocks as K
 
 
 def _norm(s) -> str:
@@ -143,6 +144,12 @@ def to_rows(raw: List[Dict[str, str]],
                         else (value or "").strip())
 
         rec[TP.COL_REP] = rep
+        # Consumer tallies (B2B), attached to the row by the office's own
+        # machine (ownerville_knocks.attach_consumer). Absent = that machine
+        # did not send them; the board then simply has no consumer columns.
+        for col, key in zip(K.CONSUMER_COLUMNS, K.CONSUMER_KEYS):
+            if key in row:
+                rec[col] = _int(row[key])
         # Calculated, exactly as the pull does it -- and for EVERY campaign
         # whose board draws the column, not just fiber's.
         #

@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.11.13.3"
+CODE_RELEASE = "2026.11.15.1"
 
 
 class KnocksProblem(RuntimeError):
@@ -653,6 +653,19 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
                 log("time tracker failed (%s) — gaps will be blank"
                     % type(e).__name__)
                 tracker = []
+            # CONSUMER TALLIES, B2B only (Jamis 2026-11-14; Megan 2026-11-15:
+            # every B2B board). One more same-origin call on the page we are
+            # already on -- nothing opens, nothing is clicked. Never fatal:
+            # the knocks still go if it fails, without the consumer columns.
+            if cid in (C.CAMPAIGN_IDS["b2b_att"], C.CAMPAIGN_IDS["b2b_box"]):
+                try:
+                    tally = K.fetch_consumer_tally(page, rqst, day.isoformat(),
+                                                   log=log)
+                    if tally is not None:
+                        K.attach_consumer(rows, tally, log=log)
+                except Exception as e:  # noqa: BLE001
+                    log("consumer tally failed (%s) — knocks go without it"
+                        % type(e).__name__)
             return {"rows": rows, "time_tracker": tracker}
         finally:
             try:
